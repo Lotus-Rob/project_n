@@ -681,7 +681,7 @@ Each phase lists the host tools from §5.0 that must be installed before it star
    - *Install first, on Linux:* Pixi (S4), Podman (S6, S1, S2).
    - *Install first, on Windows:* Pixi, Podman and VS Build Tools (S5, S3).
    - S5 and S3 need a Windows machine. They don't block the Linux work in phases 2 and 3 and can run whenever one is available.
-2. **Skeleton** (no new installs; in progress on `setup/repository`):
+2. ✅ **Skeleton** (no new installs; done 2026-10-29 on `setup/repository`. `check --sanitizers`, `check --container` and all three `artifact` builds pass):
    - `pixi.toml` and `pixi.lock`
    - `tools/project_n.py` with `commit-check` first, plus `.githooks/commit-msg` and the tests
    - `xmake.lua` (`set_version("0.1.0")`) with a hello-window target and one doctest test
