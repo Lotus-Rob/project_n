@@ -12,6 +12,11 @@ constexpr int WINDOW_HEIGHT = 720;
 constexpr SDL_FColor CLEAR_COLOR{ .r = 0.08F, .g = 0.10F, .b = 0.14F, .a = 1.0F };
 
 int Run() {
+#ifdef SDL_PLATFORM_LINUX
+    // SDL picks XWayland over Wayland when the compositor lacks fifo-v1 (niri, for one).
+    // A normal-priority hint, so SDL_VIDEO_DRIVER in the environment still overrides it.
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "wayland,x11");
+#endif
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         std::println(stderr, "SDL_Init failed: {}", SDL_GetError());
         return 1;

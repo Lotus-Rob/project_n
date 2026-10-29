@@ -14,6 +14,7 @@ All game and engine code. Its structure comes from the architecture design doc (
 - `pixi run project_n run --preset linux-clang [--debug]`
 
 ## Gotchas
+- SDL 3 silently falls back to XWayland when the compositor lacks `fifo-v1` (niri does), even with the Wayland driver compiled in. `main.cpp` hints `wayland,x11`; `SDL_VIDEO_DRIVER` still overrides it.
 
 ## Skill candidates
 | Workflow | Evidence | Proposed skill |
