@@ -1,0 +1,14 @@
+CompileFlags:
+  CompilationDatabase: build
+  Add:
+    - -ferror-limit=0
+    - -std=c++23
+    - -Wall
+    - -Wextra
+    - -Werror
+    - -Wpedantic
+    - -Wno-c99-designator
+    - -Isrc/
+    - -Wno-unknown-warning-option
+Diagnostics:
+  UnusedIncludes: Strict

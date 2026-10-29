@@ -1,0 +1,4 @@
+# LF everywhere, including Windows checkouts: shell scripts and hooks must keep LF to run.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
