@@ -1,0 +1,585 @@
+# 0001: Repository and build environment
+
+| | |
+|---|---|
+| Status | **Draft**: for refinement, nothing implemented |
+| Author | Rob G |
+| Created | 2026-10-29 |
+| Revised | 2026-10-29: development runs natively in a portable Pixi environment; containers only produce artefacts; headers only (no C++ modules); Conventional Commits + git-cliff + SemVer; open questions Q1–Q10 resolved (Appendix B); knowledge split across AGENTS.md, skills and design docs (§10); Steam Runtime dropped, so Linux artefacts are built in an Ubuntu + Pixi image with the glibc baseline set by the conda-forge sysroot |
+| Scope | Repository layout, development environment, artefact containers, toolchain pinning, testing, build tooling, commits and versioning, agent knowledge (AGENTS.md and skills) |
+
+---
+
+## 1. Goals and non-goals
+
+### Goals
+
+1. **Portable, replicable development environment.** The repository declares its whole native toolchain: compilers, XMake, debuggers, formatters and Python. A single command installs it into a project-local environment, the same way a virtual environment works, on Linux and Windows. You develop by opening the folder in an editor on the host. There are no containers in the development loop.
+2. **Reproducible build artefacts.** Containers have one job: producing release artefacts that are identical for the same commit, whichever machine builds them.
+3. **The same compilers everywhere.** The development environment and the artefact containers install from **one lock file**.
+4. **Portable Linux binaries.** Linux artefacts run on any distro with glibc at or above a pinned baseline. The conda-forge sysroot sets that baseline, and the C++ runtime is linked statically.
+5. **Three compilers:** GCC, Clang (with libc++) and MSVC, all building C++23 through XMake. The project uses conventional headers, not C++ modules.
+6. **One command surface** for humans, CI and agents.
+7. **Open-source tooling first:** Pixi/conda-forge, Podman, XMake, LLVM, GCC, Wine, Python and git-cliff. Proprietary pieces (MSVC, the Windows SDK) are isolated and pinned.
+8. **Test-suite ready.** doctest unit tests run on every preset, and the layout scales to a large suite.
+9. **Machine-readable history.** Conventional Commits from the first commit, so changelogs and SemVer versions are generated, not written by hand.
+10. **Agent-maintainable.** Agents get short, always-loaded facts from AGENTS.md and load procedures as skills on demand. Both are kept current as part of normal work.
+
+### Non-goals (for this document)
+
+- Engine and game architecture, and the choice of graphics, audio and windowing libraries. This includes which Linux libraries are bundled and which are expected from the system (O2).
+- Store integration, packaging and depots.
+- Console platforms and macOS.
+- CI workflows (deferred, §12).
+
+---
+
+## 2. Decisions at a glance
+
+| # | Decision | Rationale |
+|---|---|---|
+| D1 | **Pixi** ([pixi.sh](https://pixi.sh)) defines the development environment in `pixi.toml` with a committed `pixi.lock`. The environment lives in `.pixi/` inside the project. | It works like a venv, but for native tools. conda-forge ships GCC, Clang, lld, libc++, clang-format, clang-tidy, clangd, gdb, lldb, XMake, Python and git-cliff. One lock file covers Linux and Windows. conda-forge usually trails upstream compiler releases by weeks to months, which is accepted. |
+| D2 | **Podman (rootless)** is the container engine, used **only for artefact builds** and container-based checks. Containerfiles follow the OCI format. | Open source and daemonless. Runs on Windows through `podman machine` (WSL2). |
+| D3 | **Linux artefacts are built in `project_n-linux`**: Ubuntu LTS pinned by digest, plus `pixi install --locked`. The image has no distro compilers. The glibc baseline comes from the conda-forge sysroot pinned in `pixi.toml`. The C++ runtime is linked statically (`-static-libstdc++` for GCC, static libc++ for Clang). | Artefacts use exactly the development compilers. The container's job is isolation, not providing tools. Ubuntu is the most common base image. |
+| D4 | **All images use Ubuntu LTS**, pinned by digest, with apt pinned to a snapshot date for the few distro packages (Wine). | One base to pin and update. |
+| D5 | **MSVC artefacts are built under Wine** ([msvc-wine](https://github.com/mstorsjo/msvc-wine)) in a **local-only** image layered on `project_n-linux`. | Podman can't run Windows containers, and conda-forge can't ship MSVC. The MSVC licence forbids redistribution, so the image is never pushed. |
+| D6 | **On native Windows, MSVC comes from pinned Build Tools**: a versioned `.vsconfig` component, selected through XMake's `--vs_toolset`. Everything else comes from the Pixi environment. | MSVC is the one tool Pixi can't provide, so it is pinned separately. |
+| D7 | **XMake** owns the build graph, dependencies (`xmake-repo` packages with a committed lock file) and tests (`add_tests`, `xmake test`). | Avoids duplicating XMake features in scripts. |
+| D8 | **`tools/project_n.py` is the one entry point.** It is stdlib-only Python, exposed as the Pixi task `project_n`, so you run `pixi run project_n <command>`. | It hides Podman, the per-preset XMake config and the release steps. `pixi run` guarantees the pinned tools are on PATH. |
+| D9 | **Native is the default for every command except `artifact`.** `windows-msvc` falls back to its container on Linux hosts. | Development and testing happen in the Pixi environment, and containers are used only when needed. |
+| D10 | **Knowledge has three tiers.** AGENTS.md holds short facts and pointers and is always loaded. Skills hold procedures and detail and are loaded on demand. Design docs hold rationale. Each fact lives in exactly one tier (§10). | Keeps agent context small and procedures complete, with no duplicated text that can drift. |
+| D11 | **Conventional Commits 1.0.0**, checked by `project_n commit-check` through a committed `commit-msg` hook. **Linear history**: rebase only, no merge commits. | Rules and enforcement from day one, with no extra dependency. |
+| D12 | **git-cliff** generates `CHANGELOG.md` and the next **SemVer** version from commits. `project_n release` applies both atomically. | One command per release, and the version is always derived from history. |
+
+---
+
+## 3. Build matrix
+
+A **preset** is the combination of target platform and toolchain. The build mode (`debug`, `release`, `releasedbg`) is an orthogonal flag.
+
+| Preset | Target | Compiler source | Development (native) | Artefact / container check | Tests run in |
+|---|---|---|---|---|---|
+| `linux-gcc` | Linux x86_64 | conda-forge GCC (`pixi.lock`) | Pixi env on host | `project_n-linux` | Pixi env; Linux image |
+| `linux-clang` | Linux x86_64 | conda-forge Clang + libc++ (`pixi.lock`) | Pixi env on host | `project_n-linux` | Pixi env; Linux image |
+| `windows-msvc` | Windows x64 | MSVC 14.5x (VS 2026): `.vsconfig` natively, msvc-wine in the container | Windows host: Pixi env + Build Tools | `project_n-msvc` | Wine in container; native Windows is authoritative |
+
+Possible later additions, not part of the initial setup:
+
+- `windows-clang-cl`. Clang is in the Pixi environment on Windows, so this preset costs little.
+- Sanitizer modes for `linux-clang`.
+
+**Candidate pins**, the latest stable on conda-forge for `linux-64` and `win-64` as of 2026-10-29. Spike S4 confirms them, and phase 2 commits them to `pixi.toml`.
+
+| Package | Version | Notes |
+|---|---|---|
+| `gxx_linux-64` (GCC) | 16.2 | Linux only |
+| `clangxx`, `lld`, `libcxx`, `clang-format`, `clang-tools` | 23.1.4 | `libcxx` is used on Linux only |
+| `sysroot_linux-64` | 2.28 | glibc baseline |
+| `xmake` | 3.1.2 | |
+| `gdb` | 18.1 | Linux only |
+| `lldb` | 22.1.8 | Lags Clang by one major version |
+| `git-cliff` | 2.14.2 | |
+| `python` | 3.14.x | 3.15 is still a release candidate |
+| `doctest` | 2.5.3 | Comes from `xmake-repo`, not Pixi. Listed here for reference |
+
+MSVC (toolset 14.5x, VS 2026) and the Windows SDK versions are fixed in S1 and S5.
+
+---
+
+## 4. Repository layout
+
+```
+project_n/
+├── AGENTS.md                 # always-loaded: map, commands, brief rules, skill index (§10.3)
+├── CLAUDE.md                 # "@AGENTS.md"
+├── README.md                 # human quick start: install pixi, `pixi run project_n doctor`
+├── CHANGELOG.md              # generated by git-cliff at release time; never hand-edited
+├── cliff.toml                # git-cliff: changelog template + SemVer bump rules
+├── pixi.toml / pixi.lock     # dev environment; lock committed (linux-64, win-64)
+├── xmake.lua                 # C++23, warnings, presets → toolchains, set_version()
+├── xmake-requires.lock       # committed package lock
+├── .clang-format  .clang-tidy  .editorconfig  .gitattributes  .gitignore
+│                             # .gitignore: .pixi/, build/, dist/, compile_commands.json
+├── .githooks/
+│   └── commit-msg            # POSIX sh: `pixi run project_n commit-check "$1"`
+│
+├── .claude/skills/           # on-demand procedures (§10.4)
+│   ├── git-commit/SKILL.md
+│   └── agent-docs/SKILL.md
+│
+├── tools/
+│   ├── AGENTS.md
+│   ├── project_n.py          # the single entry point (§8)
+│   └── test_project_n.py     # unittest self-checks
+│
+├── containers/
+│   ├── AGENTS.md
+│   ├── linux.Containerfile   # Ubuntu LTS (digest) + pixi + `pixi install --locked`
+│   ├── msvc.Containerfile    # FROM project_n-linux + wine + msvc-wine (local-only)
+│   └── windows/
+│       └── buildtools.vsconfig
+│
+├── src/                      # structure decided by the architecture doc
+│   └── AGENTS.md
+├── tests/
+│   ├── AGENTS.md
+│   └── xmake.lua
+│
+└── docs/
+    └── design/               # numbered design docs (rationale tier)
+```
+
+Other notes:
+
+- Editor configuration is not committed.
+- Nested AGENTS.md files exist only where an area has rules that differ from its parent's.
+- Skills beyond the initial two are added as described in §10.5.
+
+---
+
+## 5. Environments
+
+### 5.0 Installing host prerequisites
+
+Every build tool comes from Pixi, so the host needs only the tools below. Install each one **when the phase that needs it starts**, not all up front.
+
+- Until phase 2, this table is the reference.
+- From phase 2, `doctor` checks each tool and prints the install command for the current OS, and README.md carries the same table for humans.
+- Agents never install system packages themselves. They run `doctor` and give the user its instructions.
+
+| Tool | Needed from | Linux (CachyOS / Arch) | Windows | Dev machine (2026-10-29) |
+|---|---|---|---|---|
+| Git | phase 0 | `sudo pacman -S git` | `winget install Git.Git` | 2.56 ✓ |
+| **Pixi** | phase 1 (S4) | `sudo pacman -S pixi` (in `extra`). Elsewhere: `curl -fsSL https://pixi.sh/install.sh \| sh`, then add `~/.pixi/bin` to PATH (fish: `fish_add_path ~/.pixi/bin`) | `winget install prefix-dev.pixi` | **missing** |
+| Podman | phase 1 (S1, S6) | `sudo pacman -S podman`. Rootless mode needs subordinate IDs; if `podman info` reports an error, run `sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 $USER` | `winget install RedHat.Podman`, then `podman machine init` and `podman machine start` | 6.1.4, rootless ✓ |
+| VS Build Tools (MSVC) | phase 1 (S5), Windows only | n/a | Run the Build Tools bootstrapper (from visualstudio.microsoft.com → Downloads → Build Tools) with `--config containers\windows\buildtools.vsconfig --passive --wait`. The winget ID and exact command are confirmed in S5 and then written here | n/a |
+
+Everything else comes from `pixi install`: compilers, XMake, debuggers, clang tools, Python and git-cliff. This includes the msvc-wine toolchain, which is downloaded inside the container. Host copies of GCC, Clang, XMake, gdb or Wine can stay installed. They're ignored, because `pixi run` puts the environment first on PATH.
+
+### 5.1 Development environment (Pixi, on the host)
+
+**Host prerequisites:** see §5.0.
+
+**Setup:**
+
+1. `pixi install` creates `.pixi/envs/default` from `pixi.lock`.
+2. `git config core.hooksPath .githooks` enables the commit hook. `doctor` reminds you if it's missing.
+
+**Daily loop:**
+
+1. Open the folder in your editor. Point its clangd, clang-format and debugger at `.pixi/envs/default/bin/`, or start the editor from `pixi shell`.
+2. `pixi run project_n build --preset linux-clang` builds into `build/<preset>/<mode>/` and writes `compile_commands.json` to the repository root.
+3. Run or debug the game from its stable path, `build/<preset>/<mode>/bin/<target>`, or use `pixi run project_n run --preset linux-clang --debug`.
+4. `pixi run project_n test --preset linux-gcc` runs the tests.
+5. `pixi run project_n check` runs the merge gate (§8).
+
+**Notes:**
+
+- conda-forge's Linux compilers build against their own glibc sysroot, not the host's headers, so the host distro doesn't leak into builds. Spike S4 confirms that XMake picks up these triplet-prefixed compilers.
+- The game runs directly on the host and uses the host's GPU drivers through the standard Vulkan and GL loaders.
+
+### 5.2 `project_n-linux` image (Linux artefacts and container checks)
+
+- **Base:** Ubuntu LTS (proposed 26.04), **pinned by digest**. It provides only a shell, libc and Pixi.
+- **Build:** `pixi install --locked` into a detached environment path outside `/src`, so the bind-mounted repository's `.pixi/` doesn't collide with the host's.
+- **Linking:**
+  - The glibc baseline is **2.28**, from the conda-forge sysroot, not from Ubuntu's glibc. It covers distros from about 2019 onward: RHEL 8, Ubuntu 20.04, Debian 10.
+  - The C++ runtime is linked statically.
+  - Nothing may be linked from the Pixi environment's shared libraries. Anything else the binary needs at runtime is either a common system library or ships with the game (O2).
+  - `artifact` fails if `ldd` reports a library that resolves into the Pixi environment.
+- **User:** a non-root `dev` user, run with `--userns=keep-id`.
+- **Tag:** `project_n-linux:<hash of Containerfile + pixi.lock>`.
+
+### 5.3 `project_n-msvc` image (Windows artefacts on Linux)
+
+- **Base:** `FROM project_n-linux`, which provides the Pixi environment with XMake and Python.
+- **Contents:** Wine, from apt pinned to a `snapshot.ubuntu.com` date, plus msvc-wine `vsdownload.py` pinned to an exact MSVC toolset and Windows SDK.
+- **Licence:** building it requires accepting the MSVC licence (`ACCEPT_MSVC_LICENSE=1`), and the image is **never pushed** to a registry. The Build Tools licence terms have been confirmed to fit the project, for both the container and native installs.
+- **Tests:** Windows test binaries run under Wine.
+
+### 5.4 Native Windows
+
+- **Toolchain:** `vs_BuildTools.exe --config containers/windows/buildtools.vsconfig`, which installs a **versioned** MSVC component (for example `Microsoft.VisualStudio.Component.VC.14.50.*`).
+- **Pinning:** XMake uses `--vs_toolset=<pinned>`.
+- **Environment:** `pixi install` provides XMake, Python, the Clang tools and git-cliff from the `win-64` section of the same lock file.
+- **Debugging:** native, using Visual Studio, RemedyBG, WinDbg or VS Code with cppvsdbg.
+
+### 5.5 Windows host running containers
+
+- Podman Desktop or `podman machine` with the WSL2 backend. The same commands work from PowerShell.
+- **Gotcha (documented in `containers/AGENTS.md`):** bind-mounting an NTFS checkout into WSL is slow, so keep a clone inside the WSL filesystem for heavy container builds. `doctor` warns when it detects this.
+
+### 5.6 Why not Windows containers?
+
+- Podman has no Windows-container support.
+- The alternatives (Docker on Windows Server, or containerd with nerdctl) add a second engine and multi-GB images, and they need Windows CI hosts.
+- msvc-wine plus a pinned native toolset covers the same need.
+- If S1 fails, the fallback is containerd with nerdctl on Windows, which is open source.
+
+---
+
+## 6. Reproducibility controls
+
+| What | Pinned by |
+|---|---|
+| Compilers, libc++, debuggers, clang tools, XMake, Python, git-cliff | `pixi.lock`, the same on the host and in both images |
+| Linux glibc baseline for artefacts | `sysroot_linux-64 2.28.*` in `pixi.toml` |
+| Container base and Wine | Ubuntu digest + apt snapshot date |
+| MSVC + Windows SDK (container) | `vsdownload.py --msvc-version … --sdk-version …` |
+| MSVC (native) | versioned `.vsconfig` component + `--vs_toolset` |
+| C++ dependencies | `xmake-requires.lock`; `add_requires` with exact versions |
+| Image identity | tag = hash of Containerfile + `pixi.lock` |
+| Version | `set_version()` in `xmake.lua` + annotated git tag `vX.Y.Z`, both written by `release` |
+| Artefact provenance | `dist/<preset>/manifest.json`: version, commit, image tag, `pixi.lock` hash, MSVC/SDK versions |
+
+Known gaps, to be closed later if they matter:
+
+- Packages are downloaded at install time, so a fully offline build would need mirrors.
+- msvc-wine's Microsoft CDN downloads can disappear, so CI caches the MSVC payload.
+
+---
+
+## 7. XMake configuration
+
+- **`xmake.lua`** sets:
+  - `set_languages("c++23")`
+  - `set_version("x.y.z")`
+  - warnings as errors in checks
+  - `set_policy("package.requires_lock", true)`
+  - `set_xmakever(...)`
+  - one toolchain mapping per preset, pointing at the Pixi environment's compilers (S4)
+  - `set_runtimes("c++_static")` for `linux-clang`, and the static libstdc++ equivalent for `linux-gcc`
+- **Build directories:** native builds use `build/<preset>/<mode>`, and artefact builds use `build/artifact/<preset>/<mode>`.
+- **Config isolation:** `XMAKE_CONFIGDIR` sits next to each build directory, so native and container configurations never overwrite each other.
+- **Package cache:** native builds use `~/.xmake`, and container builds use the named volume `project_n-xmake-cache`.
+- **IDE integration:** each native build refreshes `compile_commands.json` at the repository root.
+
+---
+
+## 8. Build tool: `tools/project_n.py`
+
+Constraints:
+
+- **Single file, stdlib only.** It is run through the Pixi task `project_n`.
+- **Thin.** It orchestrates XMake, Podman, git and git-cliff, and anything those tools already do stays there.
+- **Mechanical steps live here.** Skills call these commands instead of embedding shell sequences (§10.4).
+
+| Command | Does |
+|---|---|
+| `doctor` | Checks that the Pixi environment matches the lock, the hook path is set, Podman, Windows toolsets, the WSL path gotcha and images. For each missing tool, prints the §5.0 install command for the current OS. Never installs anything. |
+| `build --preset P [--mode M]` | Native build and refreshes `compile_commands.json`. |
+| `test --preset P [--mode M] [-- <doctest args>]` | Runs `xmake test` and forwards arguments to doctest, for example `--test-case=*physics*`. |
+| `run --preset P [--mode M] [--debug]` | Builds and launches the game natively. `--debug` launches it under gdb or lldb (`xmake run -d`). |
+| `check [--container]` | The merge gate: `commit-check` on unpushed commits, `fmt --check`, `lint`, then build and test for every preset. It runs natively where possible, and `--container` runs everything in the images. |
+| `artifact --preset P` | Clean-room release build in the preset's container, plus the Linux dependency check (§5.2). Writes `dist/<preset>/` and `manifest.json`. |
+| `release [--dry-run]` | Requires a clean `main` that is up to date. Runs `git cliff --bumped-version`, writes `set_version()`, regenerates `CHANGELOG.md`, commits `chore(release): vX.Y.Z` and creates the annotated tag `vX.Y.Z`. Never pushes. |
+| `commit-check <msg-file> \| --range A..B` | Validates commit messages (§11). |
+| `fmt [--check]` / `lint` | Runs clang-format and clang-tidy from the Pixi environment. |
+| `image [--preset P]` / `shell --preset P` / `clean [--preset P]` | Builds an image if missing / opens a debugging shell in a container / removes build directories. |
+
+Behaviour:
+
+- **Container re-entry.** Container commands run `podman run … pixi run project_n <cmd>`. Inside the image, `PROJECT_N_IN_CONTAINER=1` is set, so the script runs XMake directly instead of starting another container.
+- **Presets and allowed scopes** are dicts at the top of the file. They are the single source of truth.
+- **Self-check.** `tools/test_project_n.py` uses `unittest` to cover preset resolution, command assembly, commit validation and the release version and tag logic, with git-cliff stubbed.
+
+Rejected alternatives:
+
+- Shell scripts: two dialects to maintain.
+- Make or Just: one more tool to install.
+- XMake plugins: Podman orchestration in Lua is awkward.
+- Pixi tasks alone: presets and container re-entry need real logic.
+
+---
+
+## 9. Testing strategy
+
+- **Framework:** **doctest**, from `xmake-repo` with an exact version.
+  - It compiles quickly, which matters for a large suite.
+  - Each test executable has one `main`, from `DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN`.
+- **XMake integration:** `add_tests()` on each test target, and `xmake test` runs them on every preset.
+- **Layout:** `tests/unit/<area>/…` mirrors `src/`, with one test executable per area to keep link times down.
+- **Where tests run:**
+  - Day to day: in the native Pixi environment.
+  - `check`: all presets.
+  - `check --container`: Linux presets in `project_n-linux`, Windows under Wine.
+  - Release gate: native Windows.
+- **Later:** headless graphics smoke tests (Mesa llvmpipe and lavapipe), sanitizers and fuzzing, each with its own design note.
+
+---
+
+## 10. Agent knowledge: AGENTS.md, skills and design docs
+
+### 10.1 Three tiers, no duplication
+
+| Tier | Holds | Loaded | Size rule |
+|---|---|---|---|
+| **AGENTS.md** | Facts an agent needs for *any* task in the area: map, commands, one-line rules, pointers to skills | Always, when working in that directory | ≤ ~100 lines; one line per rule |
+| **Skills** (`.claude/skills/<name>/SKILL.md`) | *How* to do a specific job: steps, checklists, examples, detailed rules, gotchas for that job | On demand, when the task matches the skill's `description` | SKILL.md ≤ ~200 lines; longer reference material goes in a `references/` file inside the skill |
+| **Design docs** (`docs/design/`) | *Why* something is the way it is; alternatives rejected | When changing the design | No limit; superseded rather than edited once accepted |
+
+**Rule:** a fact lives in exactly one tier. The other tiers link to it instead of restating it. When a rule in AGENTS.md needs more than one line of explanation, the explanation moves to a skill and AGENTS.md keeps the one-line rule plus `→ <skill>`.
+
+### 10.2 Placement
+
+| File | Covers |
+|---|---|
+| `/AGENTS.md` | Project map, canonical commands, global one-line rules, skill index, contract summary |
+| `/containers/AGENTS.md` | Images and their roles, licence constraint, Linux linking rules, Podman/WSL gotchas |
+| `/tools/AGENTS.md` | `project_n.py` rules (stdlib only, thin, presets and scopes as single source of truth), running its tests |
+| `/src/AGENTS.md` | C++ conventions (filled in by the architecture doc) |
+| `/tests/AGENTS.md` | doctest conventions, layout, running and filtering tests |
+
+Every directory with an AGENTS.md also has a `CLAUDE.md` containing only `@AGENTS.md`.
+
+### 10.3 Root AGENTS.md draft
+
+```markdown
+# project_n: agent guide
+
+C++23 game (headers, no modules), XMake, doctest. All tools come from Pixi (pixi.toml/pixi.lock).
+Never use host compilers. Containers are only for artefacts and container checks.
+
+## Map
+- `src/` game and engine · `tests/` doctest suites · `tools/project_n.py` the only entry point
+- `containers/` artefact images · `docs/design/` rationale. Read the relevant doc before redesigning anything.
+
+## Commands
+- `pixi run project_n doctor` | `build|test|run --preset linux-gcc|linux-clang|windows-msvc`
+- `pixi run project_n check`: the merge gate. A change is done when it passes.
+
+## Rules
+- Commits: Conventional Commits; `feat`/`fix` only for game code; scopes from `SCOPES` in tools/project_n.py → git-commit skill
+- History is linear: rebase, never merge commits.
+- New C++ deps: exact version in `add_requires` and commit `xmake-requires.lock`. New tools: add to pixi.toml and commit `pixi.lock`.
+- Don't call podman, xmake or git-cliff directly; use project_n.py.
+- Missing host tool: run `doctor` and give the user its install instructions. Never install system packages yourself.
+
+## Skills (.claude/skills)
+- git-commit: writing commit messages, splitting changes, breaking changes
+- agent-docs: editing AGENTS.md or skills, proposing new skills
+
+## Keeping this true
+Update AGENTS.md and skills in the same commit as the change that affects them.
+Log non-obvious fixes under Gotchas. Propose a skill when a workflow repeats → agent-docs skill
+
+## Skill candidates
+| Workflow | Evidence | Proposed skill |
+|---|---|---|
+
+## Gotchas
+```
+
+Nested AGENTS.md files use the same skeleton (Scope, Rules, Commands, Skills, Gotchas, Skill candidates). They are written in phase 2 with the code they describe.
+
+### 10.4 Using skills well
+
+The `agent-docs` skill encodes these rules:
+
+1. **The description is the trigger.** A skill's front-matter `description` states *when* to use it, using the words a task would contain ("commit", "release", "bump gcc"). A vague description means the skill never loads.
+2. **Procedures call commands.** A skill says "run `pixi run project_n release --dry-run`, then check X". It doesn't re-implement steps in shell. If a skill grows mechanical steps, they move into `project_n.py`, and the skill shrinks.
+3. **Progressive disclosure.** SKILL.md holds the steps and the decisions an agent must make. Long tables, examples and templates go in `references/*.md` inside the skill, linked from SKILL.md.
+4. **Each skill has an owning area.** A skill lists the AGENTS.md that points to it, and that AGENTS.md lists the skill in its Skills section. Adding or removing a skill updates both in the same commit.
+5. **Skills are kept true too.** If following a skill fails or misleads, fix the skill in the same commit as the work, and add the failure under the skill's own Gotchas.
+6. **Skills hold no secrets or machine-specific paths.** They are committed and shared.
+7. **Creation needs approval.** Agents *propose* skills by adding a row to Skill candidates and telling the user. Only the two initial skills (§10.5) are created without that step, as part of phase 2.
+
+### 10.5 Skill plan
+
+**Created in phase 2.** Their content is already known:
+
+| Skill | Owning AGENTS.md | Contents |
+|---|---|---|
+| `git-commit` | root | The full commit spec from §11: types, scope table pointer, rules, breaking-change criteria, fixup-and-rebase workflow, examples, how to split a mixed change |
+| `agent-docs` | root | The three-tier rule (§10.1), the full self-update contract, the skill authoring rules (§10.4), AGENTS.md and SKILL.md templates, how to propose a skill |
+
+**Created in phase 3,** once the commands exist and each procedure has been run once:
+
+| Skill | Owning AGENTS.md | Contents |
+|---|---|---|
+| `release` | root | Choosing when to release, `release --dry-run` review, SemVer meaning for this project (§11.3), pushing tag and branch, attaching artefacts |
+| `bump-toolchain` | containers | Every pin location (`pixi.toml` including the sysroot, Ubuntu digest and snapshot, msvc-wine versions, `.vsconfig`, `--vs_toolset`), the update order, `check --container`, commit type `build(env)` or `build(containers)` |
+| `add-dependency` | root | `add_requires` with an exact version, updating the lock, Linux linking rules (§5.2), recording the licence, verifying all presets, `build(deps)` |
+
+**Backlog**, proposed when the trigger is met:
+
+| Skill | Owning AGENTS.md | Trigger |
+|---|---|---|
+| `add-unit-test` | tests | The first area with more than a handful of tests |
+| `design-doc` | root | The second design doc (template, numbering, status lifecycle) |
+| `new-subsystem` | src | After the architecture doc |
+| `msvc-wine-triage` | containers | 5+ Wine/MSVC gotchas |
+| `ci-failure` | (CI AGENTS.md) | Once CI exists |
+
+---
+
+## 11. Commits and versioning
+
+This section is the specification for the `git-commit` and `release` skills. Once those skills exist they are canonical, and this section records only the decision.
+
+### 11.1 Commit format
+
+[Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/): `<type>[(<scope>)][!]: <description>`, then an optional body and footers.
+
+| Type | Use for |
+|---|---|
+| `feat` / `fix` | Game or engine behaviour (`src/`) only, so the changelog lists what players get |
+| `perf` | A performance change with no behaviour change |
+| `refactor` | A code change that is neither a fix nor a feature |
+| `test` | Tests only |
+| `build` | `xmake.lua`, `pixi.*`, `containers/`, `tools/`, dependencies, including tooling features and fixes |
+| `ci` | CI configuration |
+| `docs` | Docs, design docs, AGENTS.md, skills |
+| `style` | Formatting only |
+| `chore` | Anything else, including release commits |
+| `revert` | Reverts. The body names the reverted commit's hash |
+
+**Scopes** are optional, but when present they must be in `SCOPES` in `tools/project_n.py`. The initial set is `repo`, `env`, `containers`, `tools`, `xmake`, `deps`, `tests`, `design`, `agents` and `release`. The architecture doc adds one scope per `src/` subsystem. A new scope is added in the same commit that first uses it.
+
+**Enforced by `commit-check`:**
+
+- known type, known scope or none
+- header at most 72 characters, lowercase imperative description, no trailing period
+- blank line before the body
+- breaking changes marked with `!` or a `BREAKING CHANGE:` footer
+- `fixup!`/`squash!` allowed locally, rejected by `check` and in CI ranges
+- merge commits rejected
+
+**Convention only:** wrap the body at 72 characters, and make one logical change per commit.
+
+### 11.2 History
+
+- Linear history.
+- Feature branches rebase onto `main` and merge fast-forward, or by rebase-merge on GitHub.
+- Use `git commit --fixup` plus `git rebase --autosquash` to tidy a branch before merging.
+- Once GitHub hosts the repository, branch protection on `main` requires linear history and allows only rebase merging.
+
+### 11.3 Versioning
+
+- **SemVer** `MAJOR.MINOR.PATCH`, starting at `0.1.0`. The git tag `vX.Y.Z` and `set_version()` always match.
+- **Before 1.0:**
+  - Breaking changes bump MINOR.
+  - `feat` bumps MINOR.
+  - `fix` and `perf` bump PATCH.
+  - git-cliff's `[bump]` settings in `cliff.toml` encode this.
+- **From 1.0:**
+  - Breaking changes bump MAJOR.
+  - In this project "breaking" means incompatible save files, config or mod/content formats, or a changed build interface (`project_n.py` commands, presets).
+- Commit types other than `feat`, `fix` and `perf` alone don't trigger a release bump. git-cliff still lists them in the changelog under their own groups.
+- `CHANGELOG.md` is regenerated by `release` and never edited by hand.
+
+### 11.4 Examples
+
+```
+docs(design): add 0001 repository and build environment
+build(env): pin gcc 15.2 and clang 21.1
+build(tools)!: rename `dist` command to `artifact`
+
+BREAKING CHANGE: scripts calling `project_n dist` must use `project_n artifact`.
+feat(render): recreate swapchain on window resize
+chore(release): v0.2.0
+```
+
+---
+
+## 12. CI (deferred)
+
+The repository will move to GitHub, and workflows are written in a later phase. The design constraints are fixed now so nothing blocks them later:
+
+- CI only runs `project_n` commands.
+- On a Linux runner: `commit-check --range`, then `check --container`, then `artifact` on tags.
+- On a Windows runner: `check` (native MSVC).
+- Caches: images, the XMake volume, the Pixi cache and the MSVC payload.
+- Branch protection enforces §11.2.
+
+---
+
+## 13. Risks and spikes (to do before phase 2)
+
+| # | Spike | Pass criteria | Fallback |
+|---|---|---|---|
+| S4 | **XMake + Pixi toolchains** (critical, first) | XMake uses the conda-forge GCC and Clang with libc++, not the host's. A C++23 hello-window with one xmake-repo dependency and a doctest test builds, opens a GPU-accelerated window on the host Wayland session, and is debuggable with gdb and lldb from the environment | XMake's `llvm` package toolchain for Clang, plus host GCC with version checks in `doctor` |
+| S6 | **Portable Linux artefact** | The hello-window from `artifact --preset linux-clang` and `--preset linux-gcc` shows no Pixi-environment libraries in `ldd`. Its tests pass in a plain Rocky/Alma 8 container (glibc 2.28) with no Pixi installed | Raise the baseline or bundle the offending library, then document it in `containers/AGENTS.md` |
+| S1 | XMake + msvc-wine | `xmake f -p windows --toolchain=msvc` finds msvc-wine, builds the hello-window and runs its doctest under Wine | Custom toolchain definition in `xmake.lua`, then the §5.6 fallback |
+| S5 | Pixi on Windows | The `win-64` environment provides XMake, Python, the Clang tools and git-cliff, and XMake finds the pinned VS toolset | Native XMake install at the pinned version, checked by `doctor` |
+| S2 | Bit-identical artefacts | Two clean `artifact --preset linux-gcc` runs on different machines match, or the differences are explained (add `-ffile-prefix-map` if needed) | Document "same toolchain" reproducibility rather than "bit-identical" |
+| S3 | Podman on Windows | `artifact --preset linux-gcc` works from PowerShell with podman machine | Document "Windows hosts build Linux artefacts from a WSL shell" |
+
+---
+
+## 14. Open questions
+
+| # | Question | Proposal |
+|---|---|---|
+None open. Deferred to the architecture doc:
+
+- **O2:** which Linux libraries are bundled (xmake-built static libraries such as SDL) and which are expected from the system (GPU drivers, Vulkan and GL loaders, audio). Until that doc decides, the S6 hello-window bundles everything except drivers and loaders.
+
+---
+
+## 15. Implementation phases (after go-ahead)
+
+Each phase lists the host tools from §5.0 that must be installed before it starts.
+
+0. **Commit this design doc** as `docs(design): add 0001 repository and build environment`. Commits follow §11 by hand until phase 2. *Install first: Git.*
+1. **Spikes** in a scratch branch that is never merged: S4 → S6 → S1 → S2, then S5 → S3. Fix the exact versions.
+   - *Install first, on Linux:* Pixi (S4), Podman (S6, S1, S2).
+   - *Install first, on Windows:* Pixi, Podman and VS Build Tools (S5, S3).
+   - S5 and S3 need a Windows machine. They don't block the Linux work in phases 2 and 3 and can run whenever one is available.
+2. **Skeleton** (no new installs):
+   - `pixi.toml` and `pixi.lock`
+   - `tools/project_n.py` with `commit-check` first, plus `.githooks/commit-msg` and the tests
+   - `xmake.lua` (`set_version("0.1.0")`) with a hello-window target and one doctest test
+   - lint/format configs and `cliff.toml`
+   - both containers and the `.vsconfig`
+   - all AGENTS.md and CLAUDE.md files
+   - the `git-commit` and `agent-docs` skills
+3. **Workflow green:**
+   - A native build, run and debug works from the editor on this machine.
+   - `check` and `check --container` pass.
+   - `artifact` produces Linux and Windows builds.
+   - The native Windows build runs.
+   - The first `release --dry-run` succeeds.
+   - Then create the `release`, `bump-toolchain` and `add-dependency` skills.
+4. **Later:** GitHub move and workflows, branch protection, `doctor --docs`, backlog skills as triggers fire.
+
+---
+
+## Appendix A: alternatives considered
+
+| Option | Why not (for now) |
+|---|---|
+| uv only | Can't provide C++ toolchains. Pixi uses uv internally for PyPI packages |
+| Host compilers + apt toolchains in containers | Two sources of compilers drift apart |
+| mise / asdf | No prebuilt GCC; toolchains would be assembled from scattered release tarballs |
+| Nix / Guix | No Windows support |
+| Steam Runtime SDK as the Linux artefact base | Dropped. It's a second environment alongside Pixi, and shipping on Steam isn't a requirement. Revisit if a Steam release needs it, since Steam runs plain glibc-baseline binaries anyway |
+| Dev Containers / distrobox for daily work | Development stays on the host |
+| Docker | Not rejected for function. Podman is preferred because it's daemonless and rootless |
+| CMake | XMake was a stated choice |
+| clang-cl + xwin instead of msvc-wine | It isn't MSVC. Possible later preset |
+| Windows containers | See §5.6 |
+| C++ modules | Out of scope by decision |
+| Catch2 / GoogleTest | doctest chosen for compile speed |
+| commitlint / commitizen / cocogitto | An extra dependency for a ~30-line check. git-cliff covers changelog and versioning |
+| Merge commits / squash merges | Linear rebase history chosen. Every commit stays validated and visible to git-cliff |
+
+---
+
+## Appendix B: resolved questions (2026-10-29)
+
+| # | Question | Answer |
+|---|---|---|
+| Q1 | Base image | Ubuntu LTS for all images |
+| Q2 | Clang standard library | libc++ |
+| Q3 | Test framework | doctest |
+| Q4 | Hosting / CI | GitHub eventually; workflows deferred |
+| Q5 | Linux baseline | Steam Runtime SDK at first, later dropped in favour of the Pixi/conda-forge sysroot (see O1) |
+| Q6 | Editor config | Nothing committed at first |
+| Q7 | Accept conda-forge compiler lag | Yes |
+| Q8 | Entry point name | `project_n` |
+| Q9 | Changelog / versioning | git-cliff, SemVer |
+| Q10 | Merge strategy | Linear history, rebase only |
+| O1 | Linux glibc baseline | 2.28 (conda-forge `sysroot_linux-64` 2.28) |
+| O2 | Bundled vs system Linux libraries | Deferred to the architecture doc |
+| O3 | VS Build Tools licence fits the project | Yes |
