@@ -1,18 +1,25 @@
-#include "core/cxx23.hpp"
+#include "core/cxx23.hpp" // IWYU pragma: keep
 
 #include <SDL3/SDL.h>
 
+#include <cstdio>
+#include <exception>
 #include <print>
 
-int main(int, char**)
-{
+namespace {
+
+constexpr int WINDOW_WIDTH = 1280;
+constexpr int WINDOW_HEIGHT = 720;
+constexpr SDL_FColor CLEAR_COLOR{ .r = 0.08F, .g = 0.10F, .b = 0.14F, .a = 1.0F };
+
+int Run() {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         std::println(stderr, "SDL_Init failed: {}", SDL_GetError());
         return 1;
     }
     SDL_Window* window = nullptr;
     SDL_Renderer* renderer = nullptr;
-    if (!SDL_CreateWindowAndRenderer("project_n", 1280, 720, SDL_WINDOW_RESIZABLE, &window, &renderer)) {
+    if (!SDL_CreateWindowAndRenderer("project_n", WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_RESIZABLE, &window, &renderer)) {
         std::println(stderr, "SDL_CreateWindowAndRenderer failed: {}", SDL_GetError());
         SDL_Quit();
         return 1;
@@ -25,7 +32,7 @@ int main(int, char**)
                 running = false;
             }
         }
-        SDL_SetRenderDrawColorFloat(renderer, 0.08f, 0.10f, 0.14f, 1.0f);
+        SDL_SetRenderDrawColorFloat(renderer, CLEAR_COLOR.r, CLEAR_COLOR.g, CLEAR_COLOR.b, CLEAR_COLOR.a);
         SDL_RenderClear(renderer);
         SDL_RenderPresent(renderer);
     }
@@ -34,4 +41,16 @@ int main(int, char**)
     SDL_DestroyWindow(window);
     SDL_Quit();
     return 0;
+}
+
+} // namespace
+
+int main(int /*argc*/, char** /*argv*/) {
+    try {
+        return Run();
+    }
+    catch (const std::exception& e) {
+        std::fputs(e.what(), stderr);
+        return 1;
+    }
 }
