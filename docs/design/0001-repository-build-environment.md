@@ -317,6 +317,8 @@ Each rule below fixed a concrete failure or host leak found in S4. `containers/A
 
 12. **MSVC 14.50 has no `/std:c++23`.** It warns (D9002), ignores the option and compiles as **C++14**. `/WX` doesn't make D9002 fatal, and XMake's flag check accepts it. `xmake.lua` therefore passes `/std:c++23preview` on Windows instead of `set_languages("c++23")`. To catch any future silent downgrade on any compiler, the project's core header carries a guard: `#if` on `__cplusplus` (or `_MSVC_LANG`) `<= 202002L` → `#error`. S1 verified that this fails under C++20 and passes with `/std:c++23preview`.
 
+13. **Windows links the C++ runtime statically** with `set_runtimes("MT")`, matching Linux (O4). Players need no Visual C++ Redistributable. XMake passes the runtime to packages and includes it in their cache key, so dependencies always match.
+
 **Running XMake**
 
 **Debuggers**
@@ -632,7 +634,8 @@ Built in `project_n-msvc` (the spike's `containers/msvc.Containerfile`) from the
 | C++23 hello + `fmt`, doctest suite, SDL3 window built (`/std:c++23preview`) | ✓ |
 | `xmake test` runs the Windows test binary under Wine with no extra setup | ✓ |
 | `hello.exe`, `hello_test.exe`, `window.exe` (offscreen driver) run under Wine | ✓ |
-| Imports | Windows system DLLs plus the dynamic MSVC runtime (`MSVCP140`, `VCRUNTIME140`, UCRT); see O4 |
+| Imports, default `/MD` | Windows system DLLs plus the MSVC runtime (`MSVCP140`, `VCRUNTIME140`, UCRT) |
+| Imports with `set_runtimes("MT")` (O4) | `hello.exe`: `KERNEL32.dll` only. `window.exe`: Windows system DLLs only. Packages were rebuilt with `/MT` automatically, and tests and window still pass |
 
 **Found and fixed:** the half-written Wine prefix (§5.3) and MSVC's ignored `/std:c++23` (§7.1 rule 12).
 
@@ -644,11 +647,7 @@ Built in `project_n-msvc` (the spike's `containers/msvc.Containerfile`) from the
 
 ## 14. Open questions
 
-| # | Question | Proposal |
-|---|---|---|
-| O4 | Windows C++ runtime: dynamic (`/MD`, today's default) or static (`/MT`)? | **Static (`/MT`, `set_runtimes("MT")`)**, matching Linux, which already links its C++ runtime statically. Players then need no Visual C++ Redistributable, and XMake builds packages with the same runtime. Dynamic would mean shipping the VC++ redistributable or app-local DLLs |
-
-Deferred to the architecture doc:
+None open. Deferred to the architecture doc:
 
 - **O2:** which Linux libraries are bundled (xmake-built static libraries such as SDL) and which are expected from the system (GPU drivers, Vulkan and GL loaders, audio). The SDL3 build in S4 bundles SDL statically and dlopens X11, Wayland, xkbcommon, EGL and GL from the system at runtime. The doc should also decide whether to prefer native Wayland over XWayland (§13.1).
 
@@ -717,6 +716,7 @@ Each phase lists the host tools from §5.0 that must be installed before it star
 | Q8 | Entry point name | `project_n` |
 | Q9 | Changelog / versioning | git-cliff, SemVer |
 | Q10 | Merge strategy | Linear history, rebase only |
+| O4 | Windows C++ runtime | Static (`/MT`), matching Linux |
 | O1 | Linux glibc baseline | 2.28 (conda-forge `sysroot_linux-64` 2.28) |
 | O2 | Bundled vs system Linux libraries | Deferred to the architecture doc |
 | O3 | VS Build Tools licence fits the project | Yes |
