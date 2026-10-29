@@ -357,7 +357,7 @@ Constraints:
 | `artifact --preset P` | Clean-room release build in the preset's container, plus the Linux dependency check (§5.2). Writes `dist/<preset>/` and `manifest.json`. |
 | `release [--dry-run]` | Requires a clean `main` that is up to date. Runs `git cliff --bumped-version`, writes `set_version()`, regenerates `CHANGELOG.md`, commits `chore(release): vX.Y.Z` and creates the annotated tag `vX.Y.Z`. Never pushes. |
 | `commit-check <msg-file> \| --range A..B` | Validates commit messages (§11). |
-| `fmt [--check]` / `lint` | Runs clang-format and clang-tidy from the Pixi environment. |
+| `fmt [--check]` / `lint [--fix]` | Runs clang-format and clang-tidy from the Pixi environment. `lint` always passes `--warnings-as-errors=*`, so any finding fails `check`. `--fix` applies clang-tidy's fixes and reformats; whatever remains is fixed by hand before a branch is finished (root AGENTS.md). |
 | `image [--preset P]` / `shell --preset P` / `clean [--preset P] [--packages]` | Builds an image if missing / opens a debugging shell in a container / removes build directories (`--packages` also removes XMake package directories for locks other than the current one). |
 
 Behaviour:

@@ -14,6 +14,10 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 - `pixi run project_n check`: the merge gate (commits, fmt, lint, build + test every preset). A change is done when it passes.
 - `pixi run project_n check --container`: the same in clean containers. Run it for any build, environment or dependency change: only a clean container catches host leaks.
 
+## Finishing a branch
+1. `pixi run project_n fmt`, then `pixi run project_n lint --fix`; fix every remaining finding by hand. Don't silence a check without the user's agreement.
+2. `pixi run project_n check` (plus `--container` for build, environment or dependency changes) until it passes.
+
 ## Rules
 - Commits: Conventional Commits; `feat`/`fix` only for game code; scopes from `SCOPES` in tools/project_n.py → git-commit skill
 - History is linear: rebase, never merge commits.

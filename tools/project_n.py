@@ -219,11 +219,17 @@ def cmd_fmt(args):
 
 def cmd_lint(args):
     if needs_container(LINT_PRESET, args.container):
-        return reenter(LINT_PRESET, ["lint"])
+        return reenter(LINT_PRESET, ["lint", *(["--fix"] if args.fix else [])])
     bdir = configure(LINT_PRESET, "debug")
     run(["xmake", "build"], env=xmake_env(bdir))
     run(["xmake", "project", "-k", "compile_commands", bdir], env=xmake_env(bdir))
-    run(["clang-tidy", "--quiet", "-p", bdir, *(f for f in source_files() if f.endswith(".cpp"))])
+    # Lint is a gate: every enabled check fails `check`, whatever .clang-tidy's WarningsAsErrors says.
+    tidy = ["clang-tidy", "--quiet", "--warnings-as-errors=*", "-p", bdir, *(["--fix"] if args.fix else [])]
+    try:
+        run(tidy + [f for f in source_files() if f.endswith(".cpp")])
+    finally:
+        if args.fix:
+            cmd_fmt(argparse.Namespace(check=False))  # clang-tidy's fixes don't follow .clang-format
 
 
 def commit_range():
@@ -242,7 +248,7 @@ def cmd_check(args):
     if rng and cmd_commit_check(argparse.Namespace(range=rng, message_file=None)):
         raise Fail("commit-check failed")
     cmd_fmt(argparse.Namespace(check=True))
-    cmd_lint(argparse.Namespace(container=args.container))
+    cmd_lint(argparse.Namespace(container=args.container, fix=False))
     for preset in PRESETS:
         cmd_test(argparse.Namespace(preset=preset, mode="release", werror=True, container=args.container, target=None, args=[]))
     print("check: all presets passed")
@@ -442,7 +448,8 @@ def main(argv=None):
     group.add_argument("--range", help="validate every commit in a git range, e.g. main..HEAD")
     p = add("fmt", cmd_fmt, "format sources with the pinned clang-format")
     p.add_argument("--check", action="store_true", help="fail instead of rewriting files")
-    add("lint", cmd_lint, "run the pinned clang-tidy over the sources", container=True)
+    p = add("lint", cmd_lint, "run the pinned clang-tidy over the sources (any finding fails)", container=True)
+    p.add_argument("--fix", action="store_true", help="apply clang-tidy's fixes, then reformat")
     add("image", cmd_image, "build container images if missing", preset="optional")
     add("shell", cmd_shell, "open a shell in a preset's container (to debug container failures)", preset="required")
     p = add("clean", cmd_clean, "remove build directories", preset="optional")
