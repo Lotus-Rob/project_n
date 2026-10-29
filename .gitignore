@@ -6,3 +6,6 @@
 build/
 dist/
 compile_commands.json
+
+# Python bytecode (tools/)
+__pycache__/
