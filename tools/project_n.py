@@ -167,8 +167,8 @@ def build(preset, mode):
     bdir = configure(preset, mode)
     run(["xmake", "build"], env=xmake_env(bdir))
     if not IN_CONTAINER:
-        # Native builds keep clangd current in any editor (container paths would be wrong).
-        run(["xmake", "project", "-k", "compile_commands", ROOT], env=xmake_env(bdir))
+        # Native builds keep clangd current (.clangd reads build/; container paths would be wrong).
+        run(["xmake", "project", "-k", "compile_commands", ROOT / "build"], env=xmake_env(bdir))
     return bdir
 
 

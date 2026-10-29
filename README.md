@@ -23,7 +23,7 @@ pixi run project_n doctor               # check everything; prints fixes, instal
 ```
 
 Point your editor's clangd, clang-format and debugger at `.pixi/envs/default/bin/` (or start the editor from `pixi shell`).
-`compile_commands.json` is written to the repository root by every native build.
+Every native build writes `build/compile_commands.json`, which `.clangd` reads.
 
 ## Build, test, run
 

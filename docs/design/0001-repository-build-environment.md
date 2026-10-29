@@ -101,7 +101,7 @@ project_n/
 ├── xmake-requires.lock       # committed package lock
 ├── xmake/repo/               # local xmake package overrides (§7.1 rule 7)
 ├── .clang-format  .clang-tidy  .editorconfig  .gitattributes  .gitignore
-│                             # .gitignore: .pixi/, build/, dist/, compile_commands.json
+│                             # .gitignore: .pixi/, build/, dist/, __pycache__/
 ├── .githooks/
 │   └── commit-msg            # POSIX sh: `pixi run project_n commit-check "$1"`
 │
@@ -171,7 +171,7 @@ Everything else comes from `pixi install`: compilers, XMake, debuggers, clang to
 **Daily loop:**
 
 1. Open the folder in your editor. Point its clangd, clang-format and debugger at `.pixi/envs/default/bin/`, or start the editor from `pixi shell`.
-2. `pixi run project_n build --preset linux-clang` builds into `build/<preset>/<mode>/` and writes `compile_commands.json` to the repository root.
+2. `pixi run project_n build --preset linux-clang` builds into `build/<preset>/<mode>/` and writes `build/compile_commands.json`, which `.clangd` reads.
 3. Run or debug the game from its stable path, `build/<preset>/<mode>/bin/<target>`, or use `pixi run project_n run --preset linux-clang --debug`.
 4. `pixi run project_n test --preset linux-gcc` runs the tests.
 5. `pixi run project_n check` runs the merge gate (§8).
@@ -276,7 +276,7 @@ Known gaps, to be closed later if they matter:
 - **Build directories:** native builds use `build/<preset>/<mode>`, and every container build (container checks and `artifact`) uses `build/container/<preset>/<mode>`. `artifact` then copies the binary to `dist/<preset>/`.
 - **Config isolation:** `XMAKE_CONFIGDIR` sits next to each build directory, so native and container configurations never overwrite each other.
 - **Package cache:** native builds use `~/.xmake`, and container builds use the named volume `project_n-xmake-cache`.
-- **IDE integration:** each native build refreshes `compile_commands.json` at the repository root.
+- **IDE integration:** each native build refreshes `build/compile_commands.json`, which `.clangd` (`CompilationDatabase: build`) reads.
 - **First build cost:** every dependency is built from source once per toolchain, including SDL3's X11/Wayland stack. That took about 15–25 minutes per toolchain in S4. The results are cached in `~/.xmake/packages` (or the container volume), and later builds reuse them.
 
 ### 7.1 Linux toolchain rules (proven in S4)
@@ -355,7 +355,7 @@ Constraints:
 | Command | Does |
 |---|---|
 | `doctor` | Checks that the Pixi environment matches the lock, the hook path is set, Podman, Windows toolsets, the WSL path gotcha and images. For each missing tool, prints the §5.0 install command for the current OS. Never installs anything. |
-| `build --preset P [--mode M]` | Native build and refreshes `compile_commands.json`. |
+| `build --preset P [--mode M]` | Native build and refreshes `build/compile_commands.json`. |
 | `test --preset P [--mode M] [--target T] [-- <doctest args>]` | Runs `xmake test`. With `--target`, runs that test executable and forwards the doctest arguments, for example `--test-case=*physics*`. |
 | `run --preset P [--mode M] [--debug]` | Builds and launches the game natively. `--debug` launches it under gdb or lldb (`xmake run -d`). |
 | `check [--container]` | The merge gate: `commit-check` on unpushed commits, `fmt --check`, `lint`, then build and test for every preset. It runs natively where possible, and `--container` runs everything in the images. |
