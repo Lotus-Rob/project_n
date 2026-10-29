@@ -18,6 +18,7 @@
 
 ## Gotchas
 - XMake's package cache ignores the compiler version: `env/activate.sh` gives each `pixi.toml` + `pixi.lock` its own `XMAKE_PKG_INSTALLDIR`. `project_n clean --packages` removes old ones.
+- `xmake f` runs with `-v` on purpose: it serialises package installs. In parallel, XMake installs duplicate variants with one build hash (libxcb, libx11 via SDL3) into the same directory and they corrupt each other ("install: ... No such file or directory").
 - The env's gdb reads `$CONDA_PREFIX/etc/gdbinit`, which the gdb package already uses; `env/activate.sh` appends a single `source` line for `debug/gdbinit` rather than replacing the file.
 
 ## Skill candidates

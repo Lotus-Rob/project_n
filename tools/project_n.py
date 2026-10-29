@@ -152,8 +152,11 @@ def reenter(preset, argv, interactive=False):
 
 def configure(preset, mode, werror=False):
     p, bdir = PRESETS[preset], build_dir(preset, mode)
-    cmd = ["xmake", "f", "-y", "-p", p["plat"], "-a", p["arch"], f"--toolchain={p['toolchain']}", "-m", mode, "-o", bdir,
-           f"--werror={'y' if werror else 'n'}"]
+    # -v makes XMake install packages one at a time (else 4 in parallel). shortcut: XMake installs
+    # duplicate variants with the same build hash (libxcb, libx11 for SDL3) concurrently into one
+    # directory and they corrupt each other; drop -v once that's fixed upstream.
+    cmd = ["xmake", "f", "-y", "-v", "-p", p["plat"], "-a", p["arch"], f"--toolchain={p['toolchain']}", "-m", mode,
+           "-o", bdir, f"--werror={'y' if werror else 'n'}"]
     if p["toolchain"] == "msvc":
         cmd.append("--sdk=/opt/msvc" if IN_CONTAINER else f"--vs_toolset={VS_TOOLSET}")
     run(cmd, env=xmake_env(bdir))
