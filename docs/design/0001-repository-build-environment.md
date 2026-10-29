@@ -61,7 +61,7 @@ A **preset** is the combination of target platform and toolchain. The build mode
 |---|---|---|---|---|---|
 | `linux-gcc` | Linux x86_64 | conda-forge GCC (`pixi.lock`) | Pixi env on host | `project_n-linux` | Pixi env; Linux image |
 | `linux-clang` | Linux x86_64 | conda-forge Clang + libc++ (`pixi.lock`) | Pixi env on host | `project_n-linux` | Pixi env; Linux image |
-| `windows-msvc` | Windows x64 | MSVC 14.5x (VS 2026): `.vsconfig` natively, msvc-wine in the container | Windows host: Pixi env + Build Tools | `project_n-msvc` | Wine in container; native Windows is authoritative |
+| `windows-msvc` | Windows x64 | MSVC 14.50.35717 (VS 2026, msvc-wine `--msvc-version 18.0`) + Windows SDK 10.0.26100: `.vsconfig` natively, msvc-wine in the container | Windows host: Pixi env + Build Tools | `project_n-msvc` | Wine in container; native Windows is authoritative |
 
 Possible later additions, not part of the initial setup:
 
@@ -83,7 +83,7 @@ Possible later additions, not part of the initial setup:
 | `patchelf` | latest | Used by `artifact` to strip the rpath that conda's GCC hard-codes |
 | `doctest` / `libsdl3` | 2.5.3 / 3.4.16 | Come from `xmake-repo`, not Pixi. Listed for reference |
 
-MSVC (toolset 14.5x, VS 2026) and the Windows SDK versions are fixed in S1 and S5.
+MSVC 14.50.35717 and Windows SDK 10.0.26100 were confirmed in S1 (container). S5 confirms the native Windows `.vsconfig` components match.
 
 ---
 
@@ -198,8 +198,10 @@ Everything else comes from `pixi install`: compilers, XMake, debuggers, clang to
 
 ### 5.3 `project_n-msvc` image (Windows artefacts on Linux)
 
-- **Base:** `FROM project_n-linux`, which provides the Pixi environment with XMake and Python.
-- **Contents:** Wine, from apt pinned to a `snapshot.ubuntu.com` date, plus msvc-wine `vsdownload.py` pinned to an exact MSVC toolset and Windows SDK.
+- **Base:** `FROM project_n-linux`, which provides the Pixi environment with XMake and Python (`vsdownload.py` runs with Pixi's Python).
+- **Contents:** Wine 10.0, winbind and msitools from the same apt snapshot. msvc-wine is pinned by commit, and `vsdownload.py --msvc-version 18.0 --sdk-version 10.0.26100 --architecture x64` installs to `/opt/msvc`.
+- **XMake:** `xmake f -p windows -a x64 --toolchain=msvc --sdk=/opt/msvc`. XMake's msvc toolchain supports msvc-wine directly, so no custom toolchain is needed.
+- **Wine prefix:** recreated as the image's last step with `wineboot -i`, then `wineserver -w`. Wine writes its registry only when `wineserver` exits, and the `RUN` step that ran msvc-wine's `install.sh` ended first. That left a prefix without `HKCU\Environment`, so `%TEMP%` was undefined and every `cl.exe` call failed with D8037 "cannot create temporary il file" (S1). Ubuntu keeps `wineserver` in `/usr/lib/x86_64-linux-gnu/wine`, which the image adds to `PATH`.
 - **Licence:** building it requires accepting the MSVC licence (`ACCEPT_MSVC_LICENSE=1`), and the image is **never pushed** to a registry. The Build Tools licence terms have been confirmed to fit the project, for both the container and native installs.
 - **Tests:** Windows test binaries run under Wine.
 
@@ -310,6 +312,10 @@ Each rule below fixed a concrete failure or host leak found in S4. `containers/A
 7. **Local package overrides fix xmake-repo packages that only build because the host fills a gap.** Phase 2 moves them into an in-repository package repository (`xmake/repo/`, registered with `add_repositories`), and each one is offered upstream:
    - `libsdl3-wayland` inherits `libsdl3` and adds `libxkbcommon` and `libglvnd` (for `egl.pc`). Without them SDL **silently** builds without Wayland.
    - `libxkbcommon-fixed` inherits `libxkbcommon` and adds `libxml2`.
+
+**MSVC**
+
+12. **MSVC 14.50 has no `/std:c++23`.** It warns (D9002), ignores the option and compiles as **C++14**. `/WX` doesn't make D9002 fatal, and XMake's flag check accepts it. `xmake.lua` therefore passes `/std:c++23preview` on Windows instead of `set_languages("c++23")`. To catch any future silent downgrade on any compiler, the project's core header carries a guard: `#if` on `__cplusplus` (or `_MSVC_LANG`) `<= 202002L` → `#error`. S1 verified that this fails under C++20 and passes with `/std:c++23preview`.
 
 **Running XMake**
 
@@ -573,7 +579,7 @@ The repository will move to GitHub, and workflows are written in a later phase. 
 |---|---|---|---|
 | S4 | **XMake + Pixi toolchains** — ✅ **passed 2026-10-29** (§13.1) | XMake uses the conda-forge GCC and Clang with libc++, not the host's. A C++23 hello-window with one xmake-repo dependency and a doctest test builds, opens a GPU-accelerated window on the host Wayland session, and is debuggable with gdb and lldb from the environment | XMake's `llvm` package toolchain for Clang, plus host GCC with version checks in `doctor` |
 | S6 | **Portable Linux artefact** — ✅ **passed 2026-10-29** (§13.2) | The hello-window from `artifact --preset linux-clang` and `--preset linux-gcc` shows no Pixi-environment libraries in `ldd`. Its tests pass in a plain Rocky/Alma 8 container (glibc 2.28) with no Pixi installed | Raise the baseline or bundle the offending library, then document it in `containers/AGENTS.md` |
-| S1 | XMake + msvc-wine | `xmake f -p windows --toolchain=msvc` finds msvc-wine, builds the hello-window and runs its doctest under Wine | Custom toolchain definition in `xmake.lua`, then the §5.6 fallback |
+| S1 | XMake + msvc-wine — ✅ **passed 2026-10-29** (§13.3) | `xmake f -p windows --toolchain=msvc` finds msvc-wine, builds the hello-window and runs its doctest under Wine | Custom toolchain definition in `xmake.lua`, then the §5.6 fallback |
 | S5 | Pixi on Windows | The `win-64` environment provides XMake, Python, the Clang tools and git-cliff, and XMake finds the pinned VS toolset | Native XMake install at the pinned version, checked by `doctor` |
 | S2 | Bit-identical artefacts — ◐ **partial** (§13.2) | Two clean `artifact --preset linux-gcc` runs on different machines match, or the differences are explained (add `-ffile-prefix-map` if needed) | Document "same toolchain" reproducibility rather than "bit-identical" |
 | S3 | Podman on Windows | `artifact --preset linux-gcc` works from PowerShell with podman machine | Document "Windows hosts build Linux artefacts from a WSL shell" |
@@ -615,11 +621,34 @@ The `artifact` flow was run by hand in `project_n-linux` (the spike's `container
 
 **S2 is still open** for its full criterion: different machines with empty package caches. That fits CI, so it moves to phase 4, where the GitHub workflow builds on a fresh runner and compares checksums with a local build.
 
+### 13.3 S1 results
+
+Built in `project_n-msvc` (the spike's `containers/msvc.Containerfile`) from the same `xmake.lua` as Linux.
+
+| Check | Result |
+|---|---|
+| XMake detects msvc-wine `cl.exe` as "Microsoft C/C++ Compiler (x64)" | ✓ |
+| doctest, `fmt` and SDL3 built from source with MSVC (CMake + Ninja under Wine) | ✓ |
+| C++23 hello + `fmt`, doctest suite, SDL3 window built (`/std:c++23preview`) | ✓ |
+| `xmake test` runs the Windows test binary under Wine with no extra setup | ✓ |
+| `hello.exe`, `hello_test.exe`, `window.exe` (offscreen driver) run under Wine | ✓ |
+| Imports | Windows system DLLs plus the dynamic MSVC runtime (`MSVCP140`, `VCRUNTIME140`, UCRT); see O4 |
+
+**Found and fixed:** the half-written Wine prefix (§5.3) and MSVC's ignored `/std:c++23` (§7.1 rule 12).
+
+**Image size (phase 2):** `project_n-linux` is 10.1 GB, and `project_n-msvc` adds 1.8 GB. Most of the base is probably Pixi's package cache left next to the installed environment, so clear it after `pixi install`. `vsdownload.py` also fetched a second toolset (14.51) alongside the pinned 14.50; drop it if it isn't needed.
+
+**Cosmetic (phase 2):** Pixi in the container warns that it found the host's `/src/.pixi/envs` through the bind mount and ignores it. The host environment isn't modified.
+
 ---
 
 ## 14. Open questions
 
-None open. Deferred to the architecture doc:
+| # | Question | Proposal |
+|---|---|---|
+| O4 | Windows C++ runtime: dynamic (`/MD`, today's default) or static (`/MT`)? | **Static (`/MT`, `set_runtimes("MT")`)**, matching Linux, which already links its C++ runtime statically. Players then need no Visual C++ Redistributable, and XMake builds packages with the same runtime. Dynamic would mean shipping the VC++ redistributable or app-local DLLs |
+
+Deferred to the architecture doc:
 
 - **O2:** which Linux libraries are bundled (xmake-built static libraries such as SDL) and which are expected from the system (GPU drivers, Vulkan and GL loaders, audio). The SDL3 build in S4 bundles SDL statically and dlopens X11, Wayland, xkbcommon, EGL and GL from the system at runtime. The doc should also decide whether to prefer native Wayland over XWayland (§13.1).
 
