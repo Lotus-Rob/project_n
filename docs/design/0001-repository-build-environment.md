@@ -68,19 +68,21 @@ Possible later additions, not part of the initial setup:
 - `windows-clang-cl`. Clang is in the Pixi environment on Windows, so this preset costs little.
 - Sanitizer modes for `linux-clang`.
 
-**Candidate pins**, the latest stable on conda-forge for `linux-64` and `win-64` as of 2026-10-29. Spike S4 confirms them, and phase 2 commits them to `pixi.toml`.
+**Pins confirmed by S4** (Linux, 2026-10-29). Phase 2 commits them to `pixi.toml`. The compiler activation packages (`gxx_linux-64`, `clangxx_linux-64`) are versioned by major.minor only, so they are pinned as `16.2.*` and `23.1.*`.
 
 | Package | Version | Notes |
 |---|---|---|
 | `gxx_linux-64` (GCC) | 16.2 | Linux only |
-| `clangxx`, `lld`, `libcxx`, `clang-format`, `clang-tools` | 23.1.4 | `libcxx` is used on Linux only |
-| `sysroot_linux-64` | 2.28 | glibc baseline |
+| `clangxx_linux-64`, `lld`, `libcxx-devel`, `clang-format`, `clang-tools` | 23.1.4 | `libcxx-devel` is used on Linux only |
+| `sysroot_linux-64` | 2.28 | glibc baseline. S4 binaries needed at most glibc 2.27 |
 | `xmake` | 3.1.2 | |
 | `gdb` | 18.1 | Linux only |
-| `lldb` | 22.1.8 | Lags Clang by one major version |
+| `lldb` | 22.1.8 | Lags Clang by one major version and can't display libc++ 23 containers. Prefer gdb until lldb 23 ships |
 | `git-cliff` | 2.14.2 | |
-| `python` | 3.14.x | 3.15 is still a release candidate |
-| `doctest` | 2.5.3 | Comes from `xmake-repo`, not Pixi. Listed here for reference |
+| `python` (+ `pip`, `setuptools`, `wheel`) | 3.14.x | XMake only accepts a build-tool Python that has all three |
+| `wayland` | 1.26 | Provides only the build-machine `wayland-scanner` (§7.1) |
+| `patchelf` | latest | Used by `artifact` to strip the rpath that conda's GCC hard-codes |
+| `doctest` / `libsdl3` | 2.5.3 / 3.4.16 | Come from `xmake-repo`, not Pixi. Listed for reference |
 
 MSVC (toolset 14.5x, VS 2026) and the Windows SDK versions are fixed in S1 and S5.
 
@@ -98,6 +100,7 @@ project_n/
 ├── pixi.toml / pixi.lock     # dev environment; lock committed (linux-64, win-64)
 ├── xmake.lua                 # C++23, warnings, presets → toolchains, set_version()
 ├── xmake-requires.lock       # committed package lock
+├── xmake/repo/               # local xmake package overrides (§7.1 rule 7)
 ├── .clang-format  .clang-tidy  .editorconfig  .gitattributes  .gitignore
 │                             # .gitignore: .pixi/, build/, dist/, compile_commands.json
 ├── .githooks/
@@ -110,7 +113,8 @@ project_n/
 ├── tools/
 │   ├── AGENTS.md
 │   ├── project_n.py          # the single entry point (§8)
-│   └── test_project_n.py     # unittest self-checks
+│   ├── test_project_n.py     # unittest self-checks
+│   └── debug/gdbinit         # pretty-printer registration (§7.1 rule 8)
 │
 ├── containers/
 │   ├── AGENTS.md
@@ -247,12 +251,55 @@ Known gaps, to be closed later if they matter:
   - warnings as errors in checks
   - `set_policy("package.requires_lock", true)`
   - `set_xmakever(...)`
-  - one toolchain mapping per preset, pointing at the Pixi environment's compilers (S4)
-  - `set_runtimes("c++_static")` for `linux-clang`, and the static libstdc++ equivalent for `linux-gcc`
+  - the toolchain definitions and the host lockdown described in §7.1
 - **Build directories:** native builds use `build/<preset>/<mode>`, and artefact builds use `build/artifact/<preset>/<mode>`.
 - **Config isolation:** `XMAKE_CONFIGDIR` sits next to each build directory, so native and container configurations never overwrite each other.
 - **Package cache:** native builds use `~/.xmake`, and container builds use the named volume `project_n-xmake-cache`.
 - **IDE integration:** each native build refreshes `compile_commands.json` at the repository root.
+- **First build cost:** every dependency is built from source once per toolchain, including SDL3's X11/Wayland stack. That took about 15–25 minutes per toolchain in S4. The results are cached in `~/.xmake/packages` (or the container volume), and later builds reuse them.
+
+### 7.1 Linux toolchain rules (proven in S4)
+
+Each rule below fixed a concrete failure or host leak found in S4. `containers/AGENTS.md` and `tools/AGENTS.md` carry the one-line versions.
+
+**Toolchains**
+
+1. **Custom toolchains `pixi-gcc` and `pixi-clang` are defined in `xmake.lua`.** They set `cc`, `cxx`, `ld`, `sh`, `ar`, `strip` and `as` to the `x86_64-conda-linux-gnu-*` tools. XMake's built-in `--toolchain=gcc`/`clang`, with or without `--cross` or `--sdk`, **silently uses the host's `/usr/bin` compilers**. The toolchain asserts that `CONDA_PREFIX` is set, so running outside `pixi run` fails loudly.
+2. **`pixi-clang` adds `-stdlib=libc++` and `-L$CONDA_PREFIX/lib`.** libc++ lives outside the sysroot's search path.
+
+**Static C++ runtime**
+
+3. **The static runtime is linked on the project's own targets, never in the toolchain.** Autotools passes XMake's link flags to dependencies' shared libraries too, which broke them.
+   - All presets: `add_ldflags("-static-libstdc++", "-static-libgcc")`.
+   - Clang additionally: `-Wl,--whole-archive,$CONDA_PREFIX/lib/libc++abi.a,--no-whole-archive -lpthread`. Clang's `-static-libstdc++` adds libc++ but not libc++abi, and whole-archiving makes link order irrelevant.
+4. **conda's GCC hard-codes `-rpath <env>/lib` in its built-in link settings.** No flag can turn it off, so `artifact` runs `patchelf --remove-rpath`. Native development builds keep the rpath, which is harmless there.
+
+**Host lockdown**
+
+5. **No library dependency may resolve from the host.** `add_requireconfs("**|<build tools>", {system = false})` makes every library come from xmake-repo. Without it, XMake used pacman's `fmt`, `libx11`, `libffi` and others. `"*"` alone covers only top-level requires.
+   - Build tools are excluded from the rule so they can come from Pixi.
+   - In S4 XMake still built most tools itself (Python, CMake, meson, ninja, bison, m4), probably after rejecting Pixi's versions. Phase 2 tries the simpler form, `"**"` with no exclusions and no autotools entries in `pixi.toml`, and keeps whichever works in the container.
+6. **Pixi's activation env is overridden on linux-64** (`[target.linux-64.activation.env]`):
+   - Clear `CFLAGS`, `CXXFLAGS`, `CPPFLAGS`, `LDFLAGS` and the `DEBUG_*` variants. The compiler packages export conda-build flags (`-O2 -march=nocona`, an rpath, `-isystem <env>/include`), and CMake-based package builds pick them up.
+   - Set `PKG_CONFIG=pkg-config.bin` and `PKG_CONFIG_LIBDIR=/dev/null`. conda's pkg-config wrappers append the host's `/usr/lib/pkgconfig` (the triplet wrapper does this when `CC` is Clang) and the environment's own `.pc` files. An empty `PKG_CONFIG_LIBDIR` counts as unset, hence `/dev/null`.
+   - Set `PKG_CONFIG_PATH_FOR_BUILD=$CONDA_PREFIX/share/pkgconfig:$CONDA_PREFIX/lib/pkgconfig`. XMake always runs meson in cross mode, and this is how meson finds build-machine tools such as `wayland-scanner`. Target libraries are unaffected.
+
+**Package fixes**
+
+7. **Local package overrides fix xmake-repo packages that only build because the host fills a gap.** Phase 2 moves them into an in-repository package repository (`xmake/repo/`, registered with `add_repositories`), and each one is offered upstream:
+   - `libsdl3-wayland` inherits `libsdl3` and adds `libxkbcommon` and `libglvnd` (for `egl.pc`). Without them SDL **silently** builds without Wayland.
+   - `libxkbcommon-fixed` inherits `libxkbcommon` and adds `libxml2`.
+
+**Running XMake**
+
+**Debuggers**
+
+8. **gdb pretty-printers:** `tools/debug/gdbinit` registers the libstdc++ printers from `$CONDA_PREFIX/share/gcc-*/python`. gdb never auto-loads them, because libstdc++ is linked statically. A Pixi activation script links the file to `$CONDA_PREFIX/etc/gdbinit`, the system init file this gdb reads on every start, so the terminal, editors and the container all get it without per-user setup. Verified in S4: `std::vector of length 4, capacity 4 = {1, 2, 3, 4}`.
+9. **lldb's libc++ formatters are compiled in and follow libc++'s internal layout.** lldb 22 shows libc++ 22 containers but not libc++ 23 ones (verified in S4). All LLVM packages (Clang, libc++, lld, clang-tools, lldb) must therefore share one version: the newest one for which conda-forge ships *all* of them. *Pending decision: pin LLVM 22.1.8 now (§3 still lists 23.1.4).*
+
+**Running XMake**
+
+10. **`project_n.py` doesn't pipe XMake's output through filters.** In S4, two piped `xmake f` runs stalled with no child processes while holding package locks, and file-redirected runs never did. The cause is unconfirmed. XMake writes to the terminal, and to a log in the build directory when needed.
 
 ---
 
@@ -405,6 +452,7 @@ The `agent-docs` skill encodes these rules:
 
 | Skill | Owning AGENTS.md | Trigger |
 |---|---|---|
+| `fix-xmake-package` | root | **Trigger already met in S4** (two overrides). Covers: diagnosing a package that only builds with host files (find the hidden dependency in the failed build's log, check SDL-style silent feature drops), writing a `set_base` override in `xmake/repo/`, and preparing the upstream xmake-repo change. Propose for creation in phase 2 |
 | `add-unit-test` | tests | The first area with more than a handful of tests |
 | `design-doc` | root | The second design doc (template, numbering, status lifecycle) |
 | `new-subsystem` | src | After the architecture doc |
@@ -498,22 +546,41 @@ The repository will move to GitHub, and workflows are written in a later phase. 
 
 | # | Spike | Pass criteria | Fallback |
 |---|---|---|---|
-| S4 | **XMake + Pixi toolchains** (critical, first) | XMake uses the conda-forge GCC and Clang with libc++, not the host's. A C++23 hello-window with one xmake-repo dependency and a doctest test builds, opens a GPU-accelerated window on the host Wayland session, and is debuggable with gdb and lldb from the environment | XMake's `llvm` package toolchain for Clang, plus host GCC with version checks in `doctor` |
+| S4 | **XMake + Pixi toolchains** — ✅ **passed 2026-10-29** (§13.1) | XMake uses the conda-forge GCC and Clang with libc++, not the host's. A C++23 hello-window with one xmake-repo dependency and a doctest test builds, opens a GPU-accelerated window on the host Wayland session, and is debuggable with gdb and lldb from the environment | XMake's `llvm` package toolchain for Clang, plus host GCC with version checks in `doctor` |
 | S6 | **Portable Linux artefact** | The hello-window from `artifact --preset linux-clang` and `--preset linux-gcc` shows no Pixi-environment libraries in `ldd`. Its tests pass in a plain Rocky/Alma 8 container (glibc 2.28) with no Pixi installed | Raise the baseline or bundle the offending library, then document it in `containers/AGENTS.md` |
 | S1 | XMake + msvc-wine | `xmake f -p windows --toolchain=msvc` finds msvc-wine, builds the hello-window and runs its doctest under Wine | Custom toolchain definition in `xmake.lua`, then the §5.6 fallback |
 | S5 | Pixi on Windows | The `win-64` environment provides XMake, Python, the Clang tools and git-cliff, and XMake finds the pinned VS toolset | Native XMake install at the pinned version, checked by `doctor` |
 | S2 | Bit-identical artefacts | Two clean `artifact --preset linux-gcc` runs on different machines match, or the differences are explained (add `-ffile-prefix-map` if needed) | Document "same toolchain" reproducibility rather than "bit-identical" |
 | S3 | Podman on Windows | `artifact --preset linux-gcc` works from PowerShell with podman machine | Document "Windows hosts build Linux artefacts from a WSL shell" |
 
+### 13.1 S4 results
+
+Built on CachyOS (niri Wayland session) with the pins in §3. The spike code is on the `spike/toolchains` branch, which is never merged.
+
+| Check | `pixi-gcc` (GCC 16.2) | `pixi-clang` (Clang 23.1.4 + libc++) |
+|---|---|---|
+| C++23 (`<expected>`, `<print>`, ranges) + `fmt` built from source + doctest via `xmake test` | ✓ | ✓ |
+| SDL3 3.4.16 window, native Wayland | ✓ OpenGL | ✓ OpenGL and Vulkan |
+| SDL3 window, X11 (XWayland) | ✓ | ✓ Vulkan |
+| Runtime dependencies of the release binary | libc, libm, libdl, libpthread | libc, libm, libdl, libpthread |
+| Highest glibc symbol needed | 2.27 | 2.27 |
+| rpath | conda's, removed by `patchelf` | none |
+| gdb 18.1: breakpoint, locals, backtrace | ✓, readable containers with the gdbinit from §7.1 rule 8 | ✓ |
+| lldb 22.1.8 | ✓ | Can't display libc++ 23 containers. Works with libc++ 22.1.8 (§7.1 rule 9) |
+
+**Findings now encoded in the design:** §7.1 rules 1–10. Most were host leaks or silent fallbacks that would only have surfaced later, as "works on my machine, fails in the container".
+
+**Left for later:**
+- SDL picks XWayland by default on niri. Native Wayland needs `SDL_VIDEO_DRIVER=wayland`, or a compositor with the newer protocols SDL prefers. The architecture doc decides the default (with O2).
+- Whether Pixi's build tools can replace XMake's own builds of them (§7.1 rule 5).
+
 ---
 
 ## 14. Open questions
 
-| # | Question | Proposal |
-|---|---|---|
 None open. Deferred to the architecture doc:
 
-- **O2:** which Linux libraries are bundled (xmake-built static libraries such as SDL) and which are expected from the system (GPU drivers, Vulkan and GL loaders, audio). Until that doc decides, the S6 hello-window bundles everything except drivers and loaders.
+- **O2:** which Linux libraries are bundled (xmake-built static libraries such as SDL) and which are expected from the system (GPU drivers, Vulkan and GL loaders, audio). The SDL3 build in S4 bundles SDL statically and dlopens X11, Wayland, xkbcommon, EGL and GL from the system at runtime. The doc should also decide whether to prefer native Wayland over XWayland (§13.1).
 
 ---
 
