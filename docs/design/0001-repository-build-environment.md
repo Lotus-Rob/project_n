@@ -68,16 +68,15 @@ Possible later additions, not part of the initial setup:
 - `windows-clang-cl`. Clang is in the Pixi environment on Windows, so this preset costs little.
 - Sanitizer modes for `linux-clang`.
 
-**Pins confirmed by S4** (Linux, 2026-10-29). Phase 2 commits them to `pixi.toml`. The compiler activation packages (`gxx_linux-64`, `clangxx_linux-64`) are versioned by major.minor only, so they are pinned as `16.2.*` and `23.1.*`.
+**Pins confirmed by S4** (Linux, 2026-10-29). Phase 2 commits them to `pixi.toml`. Every direct dependency is pinned with `==` (§6.1). The Clang activation package is versioned by major.minor only (`==22.1`).
 
 | Package | Version | Notes |
 |---|---|---|
 | `gxx_linux-64` (GCC) | 16.2 | Linux only |
-| `clangxx_linux-64`, `lld`, `libcxx-devel`, `clang-format`, `clang-tools` | 23.1.4 | `libcxx-devel` is used on Linux only |
+| `clangxx_linux-64`, `lld`, `libcxx`, `libcxx-devel`, `clang-format`, `clang-tools`, `lldb` | 22.1.8 | One version for all LLVM packages (§7.1 rule 9). Moves to 23 once conda-forge ships lldb 23. `libcxx` is used on Linux only |
 | `sysroot_linux-64` | 2.28 | glibc baseline. S4 binaries needed at most glibc 2.27 |
 | `xmake` | 3.1.2 | |
 | `gdb` | 18.1 | Linux only |
-| `lldb` | 22.1.8 | Lags Clang by one major version and can't display libc++ 23 containers. Prefer gdb until lldb 23 ships |
 | `git-cliff` | 2.14.2 | |
 | `python` (+ `pip`, `setuptools`, `wheel`) | 3.14.x | XMake only accepts a build-tool Python that has all three |
 | `wayland` | 1.26 | Provides only the build-machine `wayland-scanner` (§7.1) |
@@ -114,7 +113,8 @@ project_n/
 │   ├── AGENTS.md
 │   ├── project_n.py          # the single entry point (§8)
 │   ├── test_project_n.py     # unittest self-checks
-│   └── debug/gdbinit         # pretty-printer registration (§7.1 rule 8)
+│   ├── debug/gdbinit         # pretty-printer registration (§7.1 rule 8)
+│   └── env/activate.sh       # Pixi activation: package dir per lock, gdbinit hook (§7.1 rules 8, 11)
 │
 ├── containers/
 │   ├── AGENTS.md
@@ -236,6 +236,24 @@ Everything else comes from `pixi install`: compilers, XMake, debuggers, clang to
 | Version | `set_version()` in `xmake.lua` + annotated git tag `vX.Y.Z`, both written by `release` |
 | Artefact provenance | `dist/<preset>/manifest.json`: version, commit, image tag, `pixi.lock` hash, MSVC/SDK versions |
 
+### 6.1 Pinning policy
+
+Everything that affects build output is pinned exactly. Changing a pin is a deliberate commit (`build(env)` or `build(containers)`), done with the `bump-toolchain` skill.
+
+| Layer | How it's pinned |
+|---|---|
+| Pixi packages | Every direct dependency in `pixi.toml` uses `==X.Y.Z`. No `*` and no ranges. `pixi.lock` pins exact builds, including transitive dependencies |
+| LLVM | All LLVM packages share one version (§7.1 rule 9) |
+| XMake | `xmake ==X.Y.Z` in `pixi.toml`, plus `set_xmakever()` in `xmake.lua` |
+| C++ dependencies | Exact versions in `add_requires`, plus the committed `xmake-requires.lock` (phase 2 confirms the lock also records the xmake-repo commit) |
+| XMake package builds | A separate package directory per `pixi.lock` (§7.1 rule 11) |
+| Container images | Base by digest, Pixi binary version, apt snapshot date, msvc-wine commit, and exact MSVC and SDK versions |
+| Native MSVC | Versioned `.vsconfig` components plus `--vs_toolset` |
+
+**Not pinned exactly, on purpose:**
+- **Host tools** (Pixi, Podman, Git) come from the host's package manager and update with it. `pixi.toml` sets `requires-pixi = ">=0.83"`, and `doctor` checks minimum versions. Exact pins would break on every system update.
+- **GPU drivers and the display stack** belong to the host at runtime.
+
 Known gaps, to be closed later if they matter:
 
 - Packages are downloaded at install time, so a fully offline build would need mirrors.
@@ -294,12 +312,16 @@ Each rule below fixed a concrete failure or host leak found in S4. `containers/A
 
 **Debuggers**
 
-8. **gdb pretty-printers:** `tools/debug/gdbinit` registers the libstdc++ printers from `$CONDA_PREFIX/share/gcc-*/python`. gdb never auto-loads them, because libstdc++ is linked statically. A Pixi activation script links the file to `$CONDA_PREFIX/etc/gdbinit`, the system init file this gdb reads on every start, so the terminal, editors and the container all get it without per-user setup. Verified in S4: `std::vector of length 4, capacity 4 = {1, 2, 3, 4}`.
-9. **lldb's libc++ formatters are compiled in and follow libc++'s internal layout.** lldb 22 shows libc++ 22 containers but not libc++ 23 ones (verified in S4). All LLVM packages (Clang, libc++, lld, clang-tools, lldb) must therefore share one version: the newest one for which conda-forge ships *all* of them. *Pending decision: pin LLVM 22.1.8 now (§3 still lists 23.1.4).*
+8. **gdb pretty-printers:** `tools/debug/gdbinit` registers the libstdc++ printers from `$CONDA_PREFIX/share/gcc-*/python`. gdb never auto-loads them, because libstdc++ is linked statically. `tools/env/activate.sh` appends a `source` line for it to `$CONDA_PREFIX/etc/gdbinit` (the system init file this gdb reads on every start, which the gdb package already uses), replacing any stale line, so the terminal, editors and the container all get it without per-user setup. Verified in S4: `std::vector of length 4, capacity 4 = {1, 2, 3, 4}`.
+9. **lldb's libc++ formatters are compiled in and follow libc++'s internal layout.** lldb 22 shows libc++ 22 containers but not libc++ 23 ones (verified in S4). All LLVM packages (Clang, libc++, lld, clang-tools, lldb) must therefore share one version: the newest one for which conda-forge ships *all* of them. **Decided 2026-10-29: LLVM 22.1.8.**
 
 **Running XMake**
 
 10. **`project_n.py` doesn't pipe XMake's output through filters.** In S4, two piped `xmake f` runs stalled with no child processes while holding package locks, and file-redirected runs never did. The cause is unconfirmed. XMake writes to the terminal, and to a log in the build directory when needed.
+
+**Package cache**
+
+11. **XMake's package cache is keyed on the toolchain *name*, not the compiler version.** After the LLVM 23 → 22 switch, it silently reused packages built with Clang 23. `tools/env/activate.sh` therefore sets `XMAKE_PKG_INSTALLDIR=~/.xmake/project_n/<hash of pixi.lock>/packages`. Any change to the locked environment starts a fresh package directory, and `project_n clean --packages` removes old ones.
 
 ---
 
@@ -322,7 +344,7 @@ Constraints:
 | `release [--dry-run]` | Requires a clean `main` that is up to date. Runs `git cliff --bumped-version`, writes `set_version()`, regenerates `CHANGELOG.md`, commits `chore(release): vX.Y.Z` and creates the annotated tag `vX.Y.Z`. Never pushes. |
 | `commit-check <msg-file> \| --range A..B` | Validates commit messages (§11). |
 | `fmt [--check]` / `lint` | Runs clang-format and clang-tidy from the Pixi environment. |
-| `image [--preset P]` / `shell --preset P` / `clean [--preset P]` | Builds an image if missing / opens a debugging shell in a container / removes build directories. |
+| `image [--preset P]` / `shell --preset P` / `clean [--preset P] [--packages]` | Builds an image if missing / opens a debugging shell in a container / removes build directories (`--packages` also removes XMake package directories for locks other than the current one). |
 
 Behaviour:
 
@@ -445,7 +467,7 @@ The `agent-docs` skill encodes these rules:
 | Skill | Owning AGENTS.md | Contents |
 |---|---|---|
 | `release` | root | Choosing when to release, `release --dry-run` review, SemVer meaning for this project (§11.3), pushing tag and branch, attaching artefacts |
-| `bump-toolchain` | containers | Every pin location (`pixi.toml` including the sysroot, Ubuntu digest and snapshot, msvc-wine versions, `.vsconfig`, `--vs_toolset`), the update order, `check --container`, commit type `build(env)` or `build(containers)` |
+| `bump-toolchain` | containers | Every pin location (`pixi.toml` including the sysroot and the LLVM lockstep rule, Ubuntu digest and snapshot, msvc-wine versions, `.vsconfig`, `--vs_toolset`), the update order, `check --container`, commit type `build(env)` or `build(containers)` |
 | `add-dependency` | root | `add_requires` with an exact version, updating the lock, Linux linking rules (§5.2), recording the licence, verifying all presets, `build(deps)` |
 
 **Backlog**, proposed when the trigger is met:
@@ -557,7 +579,7 @@ The repository will move to GitHub, and workflows are written in a later phase. 
 
 Built on CachyOS (niri Wayland session) with the pins in §3. The spike code is on the `spike/toolchains` branch, which is never merged.
 
-| Check | `pixi-gcc` (GCC 16.2) | `pixi-clang` (Clang 23.1.4 + libc++) |
+| Check | `pixi-gcc` (GCC 16.2) | `pixi-clang` (Clang + libc++; first 23.1.4, re-verified on 22.1.8) |
 |---|---|---|
 | C++23 (`<expected>`, `<print>`, ranges) + `fmt` built from source + doctest via `xmake test` | ✓ | ✓ |
 | SDL3 3.4.16 window, native Wayland | ✓ OpenGL | ✓ OpenGL and Vulkan |
@@ -565,10 +587,10 @@ Built on CachyOS (niri Wayland session) with the pins in §3. The spike code is 
 | Runtime dependencies of the release binary | libc, libm, libdl, libpthread | libc, libm, libdl, libpthread |
 | Highest glibc symbol needed | 2.27 | 2.27 |
 | rpath | conda's, removed by `patchelf` | none |
-| gdb 18.1: breakpoint, locals, backtrace | ✓, readable containers with the gdbinit from §7.1 rule 8 | ✓ |
-| lldb 22.1.8 | ✓ | Can't display libc++ 23 containers. Works with libc++ 22.1.8 (§7.1 rule 9) |
+| gdb 18.1: breakpoint, locals, backtrace | ✓, readable containers with the auto-hooked gdbinit (§7.1 rule 8) | ✓ |
+| lldb 22.1.8 | ✓ | ✓ with LLVM 22.1.8 (couldn't display libc++ 23 containers, §7.1 rule 9) |
 
-**Findings now encoded in the design:** §7.1 rules 1–10. Most were host leaks or silent fallbacks that would only have surfaced later, as "works on my machine, fails in the container".
+**Findings now encoded in the design:** §7.1 rules 1–11. Most were host leaks or silent fallbacks that would only have surfaced later, as "works on my machine, fails in the container".
 
 **Left for later:**
 - SDL picks XWayland by default on niri. Native Wayland needs `SDL_VIDEO_DRIVER=wayland`, or a compositor with the newer protocols SDL prefers. The architecture doc decides the default (with O2).
