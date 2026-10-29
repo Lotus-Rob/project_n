@@ -147,8 +147,7 @@ Other notes:
 
 Every build tool comes from Pixi, so the host needs only the tools below. Install each one **when the phase that needs it starts**, not all up front.
 
-- Until phase 2, this table is the reference.
-- From phase 2, `doctor` checks each tool and prints the install command for the current OS, and README.md carries the same table for humans.
+- **README.md carries this table for humans** (since phase 2), and `doctor` (`INSTALL_HINTS` in `tools/project_n.py`) checks each tool and prints the install command for the current OS. Keep the three in sync.
 - Agents never install system packages themselves. They run `doctor` and give the user its instructions.
 
 | Tool | Needed from | Linux (CachyOS / Arch) | Windows | Dev machine (2026-10-29) |
@@ -274,7 +273,7 @@ Known gaps, to be closed later if they matter:
   - `set_policy("package.requires_lock", true)`
   - `set_xmakever(...)`
   - the toolchain definitions and the host lockdown described in §7.1
-- **Build directories:** native builds use `build/<preset>/<mode>`, and artefact builds use `build/artifact/<preset>/<mode>`.
+- **Build directories:** native builds use `build/<preset>/<mode>`, and every container build (container checks and `artifact`) uses `build/container/<preset>/<mode>`. `artifact` then copies the binary to `dist/<preset>/`.
 - **Config isolation:** `XMAKE_CONFIGDIR` sits next to each build directory, so native and container configurations never overwrite each other.
 - **Package cache:** native builds use `~/.xmake`, and container builds use the named volume `project_n-xmake-cache`.
 - **IDE integration:** each native build refreshes `compile_commands.json` at the repository root.
@@ -330,6 +329,10 @@ Each rule below fixed a concrete failure or host leak found in S4. `containers/A
 
 10. **`project_n.py` doesn't pipe XMake's output through filters.** In S4, two piped `xmake f` runs stalled with no child processes while holding package locks, and file-redirected runs never did. The cause is unconfirmed. XMake writes to the terminal, and to a log in the build directory when needed.
 
+**Package installs**
+
+14. **`xmake f` runs with `-v`, which makes XMake install packages one at a time (otherwise 4 at once).** For SDL3, XMake requests libxcb and libx11 twice, once as a private dependency. The two requests share one build hash, so they install concurrently into the same directory and corrupt each other ("install: … No such file or directory", phase 2). Every spike run that succeeded used `-v`. This is a `shortcut:` in `project_n.py`, to drop once XMake de-duplicates these requests (to report upstream).
+
 **Package cache**
 
 11. **XMake's package cache is keyed on the toolchain *name*, not the compiler version.** After the LLVM 23 → 22 switch, it silently reused packages built with Clang 23. `tools/env/activate.sh` therefore sets `XMAKE_PKG_INSTALLDIR=~/.xmake/project_n/<hash of pixi.toml + pixi.lock>/packages`. `pixi.toml` is included because activation variables (rule 6) change builds but aren't in the lock. Any change to the environment starts a fresh package directory, and `project_n clean --packages` removes old ones.
@@ -348,7 +351,7 @@ Constraints:
 |---|---|
 | `doctor` | Checks that the Pixi environment matches the lock, the hook path is set, Podman, Windows toolsets, the WSL path gotcha and images. For each missing tool, prints the §5.0 install command for the current OS. Never installs anything. |
 | `build --preset P [--mode M]` | Native build and refreshes `compile_commands.json`. |
-| `test --preset P [--mode M] [-- <doctest args>]` | Runs `xmake test` and forwards arguments to doctest, for example `--test-case=*physics*`. |
+| `test --preset P [--mode M] [--target T] [-- <doctest args>]` | Runs `xmake test`. With `--target`, runs that test executable and forwards the doctest arguments, for example `--test-case=*physics*`. |
 | `run --preset P [--mode M] [--debug]` | Builds and launches the game natively. `--debug` launches it under gdb or lldb (`xmake run -d`). |
 | `check [--container]` | The merge gate: `commit-check` on unpushed commits, `fmt --check`, `lint`, then build and test for every preset. It runs natively where possible, and `--container` runs everything in the images. |
 | `artifact --preset P` | Clean-room release build in the preset's container, plus the Linux dependency check (§5.2). Writes `dist/<preset>/` and `manifest.json`. |
@@ -546,7 +549,7 @@ This section is the specification for the `git-commit` and `release` skills. Onc
 - **From 1.0:**
   - Breaking changes bump MAJOR.
   - In this project "breaking" means incompatible save files, config or mod/content formats, or a changed build interface (`project_n.py` commands, presets).
-- Commit types other than `feat`, `fix` and `perf` alone don't trigger a release bump. git-cliff still lists them in the changelog under their own groups.
+- Any other commit type bumps PATCH (git-cliff's behaviour), and git-cliff lists it in the changelog under its own group. Releases are cut deliberately with `project_n release`, so a docs-only patch bump only happens if someone asks for it.
 - `CHANGELOG.md` is regenerated by `release` and never edited by hand.
 
 ### 11.4 Examples
@@ -658,11 +661,11 @@ None open. Deferred to the architecture doc:
 Each phase lists the host tools from §5.0 that must be installed before it starts.
 
 0. **Commit this design doc** as `docs(design): add 0001 repository and build environment`. Commits follow §11 by hand until phase 2. *Install first: Git.*
-1. **Spikes** in a scratch branch that is never merged: S4 → S6 → S1 → S2, then S5 → S3. Fix the exact versions.
+1. ✅ **Spikes** (Linux part done 2026-10-29: S4, S6, S1 passed; S2 partial) in a scratch branch that is never merged: S4 → S6 → S1 → S2, then S5 → S3. Fix the exact versions.
    - *Install first, on Linux:* Pixi (S4), Podman (S6, S1, S2).
    - *Install first, on Windows:* Pixi, Podman and VS Build Tools (S5, S3).
    - S5 and S3 need a Windows machine. They don't block the Linux work in phases 2 and 3 and can run whenever one is available.
-2. **Skeleton** (no new installs):
+2. **Skeleton** (no new installs; in progress on `setup/repository`):
    - `pixi.toml` and `pixi.lock`
    - `tools/project_n.py` with `commit-check` first, plus `.githooks/commit-msg` and the tests
    - `xmake.lua` (`set_version("0.1.0")`) with a hello-window target and one doctest test
