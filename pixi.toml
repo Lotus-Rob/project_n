@@ -1,0 +1,75 @@
+[workspace]
+name = "project_n"
+channels = ["conda-forge"]
+platforms = ["linux-64", "win-64"]
+requires-pixi = ">=0.83"  # minimum only: pixi itself comes from the host package manager
+
+[tasks]
+# The only build entry point: `pixi run project_n <command>` (see tools/AGENTS.md).
+project_n = "python tools/project_n.py"
+
+[dependencies]
+xmake = "==3.1.2"
+python = "==3.14.10"
+# XMake only accepts a Python with these when packages need it as a build tool.
+pip = "==26.2.2"
+setuptools = "==84.2.1"
+wheel = "==0.48.0"
+clang-format = "==22.1.8"
+clang-tools = "==22.1.8"
+git-cliff = "==2.14.2"
+# Build tools XMake uses when building packages from source.
+cmake = "==4.4.5"
+ninja = "==1.13.2"
+meson = "==1.12.1"
+
+# All LLVM packages share one version: lldb's libc++ formatters only match their own release.
+[target.linux-64.dependencies]
+sysroot_linux-64 = "==2.28"
+gxx_linux-64 = "==16.2.0"
+clangxx_linux-64 = "==22.1"
+lld = "==22.1.8"
+libcxx-devel = "==22.1.8"
+libcxx = "==22.1.8"
+gdb = "==18.1"
+lldb = "==22.1.8"
+patchelf = "==0.19.2"
+# Build tools for autotools-based packages.
+pkg-config = "==0.29.2"
+make = "==4.4.1"
+autoconf = "==2.72"
+automake = "==1.19"
+libtool = "==2.5.4"
+m4 = "==1.4.21"
+bison = "==3.8.2"
+flex = "==2.6.4"
+gperf = "==3.3"
+wayland = "==1.26.0"  # provides the build-machine wayland-scanner
+
+[target.linux-64.activation]
+scripts = ["tools/env/activate.sh"]
+
+[target.linux-64.activation.env]
+# The compiler packages' activation scripts export conda-build flags (-O2 -march=nocona,
+# an rpath into .pixi/, -isystem <env>/include). CMake-based package builds would inherit
+# them, so clear them: all flags come from xmake.lua.
+CFLAGS = ""
+CXXFLAGS = ""
+CPPFLAGS = ""
+LDFLAGS = ""
+DEBUG_CFLAGS = ""
+DEBUG_CXXFLAGS = ""
+DEBUG_CPPFLAGS = ""
+# conda's pkg-config wrappers append the host's /usr/lib/pkgconfig (triplet wrapper with
+# clang) and the env's own .pc files (plain wrapper). Use the real binary with no default
+# search path; XMake passes PKG_CONFIG_PATH for each dependency.
+PKG_CONFIG = "pkg-config.bin"
+PKG_CONFIG_LIBDIR = "/dev/null"  # an empty value counts as unset
+# Build-machine (meson `native: true`) lookups only, e.g. wayland-scanner: tools come
+# from the env. Target libraries are still resolved only through XMake packages.
+PKG_CONFIG_PATH_FOR_BUILD = "$CONDA_PREFIX/share/pkgconfig:$CONDA_PREFIX/lib/pkgconfig"
+# Build-machine compilers for meson's cross mode (XMake always uses it). Without AR_FOR_BUILD
+# meson falls back to the host's /usr/bin/ar; set all three so activation order can't change them.
+CC_FOR_BUILD = "x86_64-conda-linux-gnu-cc"
+CXX_FOR_BUILD = "x86_64-conda-linux-gnu-c++"
+AR_FOR_BUILD = "x86_64-conda-linux-gnu-ar"

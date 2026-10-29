@@ -1,0 +1,10 @@
+# Loaded by the Pixi env's gdb (hooked in by tools/env/activate.sh).
+python
+import glob, os, sys
+# libstdc++ is linked statically, so gdb never sees libstdc++.so's auto-load script.
+for d in glob.glob(os.path.join(os.environ.get("CONDA_PREFIX", ""), "share", "gcc-*", "python")):
+    sys.path.insert(0, d)
+    from libstdcxx.v6 import register_libstdcxx_printers
+    register_libstdcxx_printers(None)
+    break
+end
