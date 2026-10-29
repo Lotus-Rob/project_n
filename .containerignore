@@ -1,0 +1,5 @@
+# Build context for containers/*.Containerfile: only what the images copy in.
+*
+!pixi.toml
+!pixi.lock
+!tools/env/activate.sh
