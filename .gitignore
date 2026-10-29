@@ -1,0 +1,8 @@
+# Local environments and tool state
+.pixi/
+.xmake/
+
+# Build outputs
+build/
+dist/
+compile_commands.json
