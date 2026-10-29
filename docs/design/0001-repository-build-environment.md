@@ -184,7 +184,9 @@ Everything else comes from `pixi install`: compilers, XMake, debuggers, clang to
 
 ### 5.2 `project_n-linux` image (Linux artefacts and container checks)
 
-- **Base:** Ubuntu LTS (proposed 26.04), **pinned by digest**. It provides only a shell, libc and Pixi.
+- **Base:** Ubuntu 26.04 LTS, **pinned by digest**, with apt pinned to a snapshot date (`apt-get update --snapshot`). It provides only a shell, libc, download tools and Pixi (exact release, checksum-verified).
+- **GNU coreutils:** Ubuntu 25.10+ defaults to uutils coreutils, whose `ln -sf` and `install` break libtool installs ("Already exists"; libX11 failed in S6). The image swaps in GNU coreutils with Ubuntu's own `coreutils-from-gnu` package.
+- **Build context:** `.containerignore` admits only the files the image copies (`pixi.toml`, `pixi.lock`, `tools/env/activate.sh`), so the multi-GB `.pixi/` and `build/` never reach Podman.
 - **Build:** `pixi install --locked` into a detached environment path outside `/src`, so the bind-mounted repository's `.pixi/` doesn't collide with the host's.
 - **Linking:**
   - The glibc baseline is **2.28**, from the conda-forge sysroot, not from Ubuntu's glibc. It covers distros from about 2019 onward: RHEL 8, Ubuntu 20.04, Debian 10.
@@ -301,6 +303,7 @@ Each rule below fixed a concrete failure or host leak found in S4. `containers/A
    - Clear `CFLAGS`, `CXXFLAGS`, `CPPFLAGS`, `LDFLAGS` and the `DEBUG_*` variants. The compiler packages export conda-build flags (`-O2 -march=nocona`, an rpath, `-isystem <env>/include`), and CMake-based package builds pick them up.
    - Set `PKG_CONFIG=pkg-config.bin` and `PKG_CONFIG_LIBDIR=/dev/null`. conda's pkg-config wrappers append the host's `/usr/lib/pkgconfig` (the triplet wrapper does this when `CC` is Clang) and the environment's own `.pc` files. An empty `PKG_CONFIG_LIBDIR` counts as unset, hence `/dev/null`.
    - Set `PKG_CONFIG_PATH_FOR_BUILD=$CONDA_PREFIX/share/pkgconfig:$CONDA_PREFIX/lib/pkgconfig`. XMake always runs meson in cross mode, and this is how meson finds build-machine tools such as `wayland-scanner`. Target libraries are unaffected.
+   - Set `CC_FOR_BUILD`, `CXX_FOR_BUILD` and `AR_FOR_BUILD` to the `x86_64-conda-linux-gnu-*` tools. In cross mode meson also needs a build-machine compiler and `ar`. Without `AR_FOR_BUILD` it silently used the host's `/usr/bin/ar`, which surfaced only in the clean container (S6). Setting all three also stops the compiler activation scripts' order from deciding which compiler is used.
 
 **Package fixes**
 
@@ -321,7 +324,7 @@ Each rule below fixed a concrete failure or host leak found in S4. `containers/A
 
 **Package cache**
 
-11. **XMake's package cache is keyed on the toolchain *name*, not the compiler version.** After the LLVM 23 → 22 switch, it silently reused packages built with Clang 23. `tools/env/activate.sh` therefore sets `XMAKE_PKG_INSTALLDIR=~/.xmake/project_n/<hash of pixi.lock>/packages`. Any change to the locked environment starts a fresh package directory, and `project_n clean --packages` removes old ones.
+11. **XMake's package cache is keyed on the toolchain *name*, not the compiler version.** After the LLVM 23 → 22 switch, it silently reused packages built with Clang 23. `tools/env/activate.sh` therefore sets `XMAKE_PKG_INSTALLDIR=~/.xmake/project_n/<hash of pixi.toml + pixi.lock>/packages`. `pixi.toml` is included because activation variables (rule 6) change builds but aren't in the lock. Any change to the environment starts a fresh package directory, and `project_n clean --packages` removes old ones.
 
 ---
 
@@ -569,10 +572,10 @@ The repository will move to GitHub, and workflows are written in a later phase. 
 | # | Spike | Pass criteria | Fallback |
 |---|---|---|---|
 | S4 | **XMake + Pixi toolchains** — ✅ **passed 2026-10-29** (§13.1) | XMake uses the conda-forge GCC and Clang with libc++, not the host's. A C++23 hello-window with one xmake-repo dependency and a doctest test builds, opens a GPU-accelerated window on the host Wayland session, and is debuggable with gdb and lldb from the environment | XMake's `llvm` package toolchain for Clang, plus host GCC with version checks in `doctor` |
-| S6 | **Portable Linux artefact** | The hello-window from `artifact --preset linux-clang` and `--preset linux-gcc` shows no Pixi-environment libraries in `ldd`. Its tests pass in a plain Rocky/Alma 8 container (glibc 2.28) with no Pixi installed | Raise the baseline or bundle the offending library, then document it in `containers/AGENTS.md` |
+| S6 | **Portable Linux artefact** — ✅ **passed 2026-10-29** (§13.2) | The hello-window from `artifact --preset linux-clang` and `--preset linux-gcc` shows no Pixi-environment libraries in `ldd`. Its tests pass in a plain Rocky/Alma 8 container (glibc 2.28) with no Pixi installed | Raise the baseline or bundle the offending library, then document it in `containers/AGENTS.md` |
 | S1 | XMake + msvc-wine | `xmake f -p windows --toolchain=msvc` finds msvc-wine, builds the hello-window and runs its doctest under Wine | Custom toolchain definition in `xmake.lua`, then the §5.6 fallback |
 | S5 | Pixi on Windows | The `win-64` environment provides XMake, Python, the Clang tools and git-cliff, and XMake finds the pinned VS toolset | Native XMake install at the pinned version, checked by `doctor` |
-| S2 | Bit-identical artefacts | Two clean `artifact --preset linux-gcc` runs on different machines match, or the differences are explained (add `-ffile-prefix-map` if needed) | Document "same toolchain" reproducibility rather than "bit-identical" |
+| S2 | Bit-identical artefacts — ◐ **partial** (§13.2) | Two clean `artifact --preset linux-gcc` runs on different machines match, or the differences are explained (add `-ffile-prefix-map` if needed) | Document "same toolchain" reproducibility rather than "bit-identical" |
 | S3 | Podman on Windows | `artifact --preset linux-gcc` works from PowerShell with podman machine | Document "Windows hosts build Linux artefacts from a WSL shell" |
 
 ### 13.1 S4 results
@@ -595,6 +598,22 @@ Built on CachyOS (niri Wayland session) with the pins in §3. The spike code is 
 **Left for later:**
 - SDL picks XWayland by default on niri. Native Wayland needs `SDL_VIDEO_DRIVER=wayland`, or a compositor with the newer protocols SDL prefers. The architecture doc decides the default (with O2).
 - Whether Pixi's build tools can replace XMake's own builds of them (§7.1 rule 5).
+
+### 13.2 S6 and S2 results
+
+The `artifact` flow was run by hand in `project_n-linux` (the spike's `containers/linux.Containerfile`): a clean-room build of both Linux presets, `xmake test`, `patchelf --remove-rpath`, then an `ldd` check that fails on any library in the Pixi environment.
+
+**What the clean container caught,** none of which appeared on the host: the build-machine `ar` leak (§7.1 rule 6), uutils coreutils breaking libtool (§5.2), and `pixi.toml` missing from the package-cache key (§7.1 rule 11). This confirms `check --container` as the merge gate: host builds can't see host leaks.
+
+| Check (both presets) | Result |
+|---|---|
+| Clean-room build + doctest in `project_n-linux` | ✓ |
+| `ldd` after rpath removal | glibc libraries only (libc, libm, libdl, libpthread) |
+| Rocky Linux 8, glibc 2.28, no Pixi: `hello`, doctest suite, SDL3 window (offscreen driver) | ✓ all run |
+| Container-built window on the CachyOS host, native Wayland | ✓ |
+| **S2:** two clean-room rebuilds in fresh containers, same machine and package cache | ✓ all 6 binaries bit-identical |
+
+**S2 is still open** for its full criterion: different machines with empty package caches. That fits CI, so it moves to phase 4, where the GitHub workflow builds on a fresh runner and compares checksums with a local build.
 
 ---
 
