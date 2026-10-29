@@ -323,6 +323,16 @@ Each rule below fixed a concrete failure or host leak found in S4. `containers/A
 15. **Every build uses the highest warning level, always as errors**, not just in `check`: `set_warnings("everything", "pedantic", "error")`. That's `-Weverything` for Clang, `-Wall -Wextra -Weffc++ -Wpedantic` for GCC, and `/Wall /WX` for MSVC. The only exclusions report on the compiler rather than our code. For Clang, the C++98 and pre-C++20 compatibility groups. For MSVC, `/Wall`'s codegen notes: padding (C4820), inlining (C4710/C4711), unused inlines removed (C4514) and Spectre mitigation points (C5045). Measured on the hello window before the exclusions: Clang 6 warnings (all compatibility), GCC 0, MSVC 15 (all C4820, all in SDL headers).
 16. **Dependencies never produce warnings.** GCC and Clang see package headers through `-isystem`. MSVC uses `/external:anglebrackets /external:W0`, because XMake's own `/external:I` paths don't match under msvc-wine. Our headers use `"..."` and libraries `<...>`, which is what makes this work: with C4820 re-enabled, SDL's headers produced 0 warnings, against 15 before. clang-tidy reports only headers matching `HeaderFilterRegex` (`src/`) and skips system headers.
 
+**Sanitizers**
+
+17. **Sanitizers are available on request, never part of the gate:** `project_n build|test|run --sanitizer <name>`, or `check --sanitizers` for the full matrix. Support per preset is `SANITIZERS` in `project_n.py`: GCC and Clang have address, undefined, thread and leak, and MSVC has address only, since it has no others. Each sanitizer builds into `build/<preset>/<mode>-<sanitizer>`. The rules, each from a failure in phase 2:
+    - **Set per target** by a `sanitizer` rule, not with a project-level policy. XMake passes a project-level sanitizer to every package, and `asan = false` in `add_requireconfs` can't stop it: a dependency's `false` is replaced by its parent's value. Wayland's shared library then failed to link instrumented. Dependencies stay uninstrumented, which gives no false positives for ASan and UBSan and means no package rebuilds.
+    - **The C++ runtime is linked dynamically in sanitizer builds.** Sanitizer runtimes replace parts of it, and the whole-archived static `libc++abi` collided with TSan's `__cxa_guard_*`. Clang gets an rpath to the environment, and conda's GCC adds its own.
+    - **Findings fail the run:** `UBSAN_OPTIONS=halt_on_error=1` (UBSan only reports by default), and `xmake test --output-on-failure` shows the report.
+    - **Verified on Linux:** with GCC 16.2 and Clang 22.1.8, each sanitizer passes a clean run and catches its bug class (heap-buffer-overflow, signed overflow, data race, leak), including through `project_n test`.
+    - **MSVC ASan builds and links in the container but can't run under Wine.** Its interception hot-patches system DLLs, and Wine's start with CET `endbr64` prologues it can't patch. It runs on native Windows, which is unverified until S5. The ASan runtime is `clang_rt.asan_dynamic-x86_64.dll` even with `/MT`.
+    - **MemorySanitizer is excluded:** it needs every library instrumented, libc++ included, and conda-forge ships no MSan-built libc++. Adding it means building an instrumented libc++ as a package.
+
 **Running XMake**
 
 **Debuggers**
@@ -392,7 +402,8 @@ Rejected alternatives:
   - `check`: all presets.
   - `check --container`: Linux presets in `project_n-linux`, Windows under Wine.
   - Release gate: native Windows.
-- **Later:** headless graphics smoke tests (Mesa llvmpipe and lavapipe), sanitizers and fuzzing, each with its own design note.
+- **Sanitizers:** on request, per §7.1 rule 17.
+- **Later:** headless graphics smoke tests (Mesa llvmpipe and lavapipe) and fuzzing, each with its own design note.
 
 ---
 

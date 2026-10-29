@@ -23,6 +23,17 @@ MODES = ("debug", "release", "releasedbg")
 VS_TOOLSET = "14.50"  # native Windows MSVC; must match containers/windows/buildtools.vsconfig
 LINT_PRESET = "linux-clang"
 
+# Sanitizers each preset supports (on request only, never in plain `check`). MSVC has only
+# AddressSanitizer. MemorySanitizer is left out: it needs every library instrumented,
+# libc++ included, and conda-forge ships no MSan-built libc++.
+SANITIZERS = {
+    "linux-gcc": ("address", "undefined", "thread", "leak"),
+    "linux-clang": ("address", "undefined", "thread", "leak"),
+    "windows-msvc": ("address",),
+}
+# UBSan only reports by default; make every sanitizer finding fail the run.
+SANITIZER_ENV = {"UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1", "ASAN_OPTIONS": "abort_on_error=0:detect_leaks=1"}
+
 # Single source of truth for presets (docs/design/0001 §3). `host` is the OS that builds natively.
 PRESETS = {
     "linux-gcc": {"host": "linux", "plat": "linux", "arch": "x86_64", "toolchain": "pixi-gcc", "image": "linux"},
@@ -86,13 +97,19 @@ def needs_container(preset, force=False):
     return force or PRESETS[preset]["host"] != HOST
 
 
-def build_dir(preset, mode):
-    return Path("build", "container", preset, mode) if IN_CONTAINER else Path("build", preset, mode)
+def build_dir(preset, mode, sanitizer="none"):
+    leaf = mode if sanitizer == "none" else f"{mode}-{sanitizer}"
+    return Path("build", "container", preset, leaf) if IN_CONTAINER else Path("build", preset, leaf)
 
 
 def xmake_env(bdir):
     # Per-build config dir: native and container builds of one preset never share XMake state.
-    return dict(os.environ, XMAKE_CONFIGDIR=str(ROOT / bdir / ".xmake"))
+    return dict(os.environ, XMAKE_CONFIGDIR=str(ROOT / bdir / ".xmake"), **SANITIZER_ENV)
+
+
+def check_sanitizer(preset, sanitizer):
+    if sanitizer != "none" and sanitizer not in SANITIZERS[preset]:
+        raise Fail(f"{preset} supports sanitizers: {', '.join(SANITIZERS[preset])}")
 
 
 def read_version():
@@ -150,23 +167,24 @@ def reenter(preset, argv, interactive=False):
 # --- xmake ---------------------------------------------------------------------
 
 
-def configure(preset, mode):
-    p, bdir = PRESETS[preset], build_dir(preset, mode)
+def configure(preset, mode, sanitizer="none"):
+    check_sanitizer(preset, sanitizer)
+    p, bdir = PRESETS[preset], build_dir(preset, mode, sanitizer)
     # -v makes XMake install packages one at a time (else 4 in parallel). shortcut: XMake installs
     # duplicate variants with the same build hash (libxcb, libx11 for SDL3) concurrently into one
     # directory and they corrupt each other; drop -v once that's fixed upstream.
     cmd = ["xmake", "f", "-y", "-v", "-p", p["plat"], "-a", p["arch"], f"--toolchain={p['toolchain']}", "-m", mode,
-           "-o", bdir]
+           "-o", bdir, f"--sanitizer={sanitizer}"]
     if p["toolchain"] == "msvc":
         cmd.append("--sdk=/opt/msvc" if IN_CONTAINER else f"--vs_toolset={VS_TOOLSET}")
     run(cmd, env=xmake_env(bdir))
     return bdir
 
 
-def build(preset, mode):
-    bdir = configure(preset, mode)
+def build(preset, mode, sanitizer="none"):
+    bdir = configure(preset, mode, sanitizer)
     run(["xmake", "build"], env=xmake_env(bdir))
-    if not IN_CONTAINER:
+    if not IN_CONTAINER and sanitizer == "none":
         # Native builds keep clangd current (.clangd reads build/; container paths would be wrong).
         run(["xmake", "project", "-k", "compile_commands", ROOT / "build"], env=xmake_env(bdir))
     return bdir
@@ -182,20 +200,26 @@ def binary_path(preset, mode):
 
 
 def cmd_build(args):
+    check_sanitizer(args.preset, args.sanitizer)
     if needs_container(args.preset, args.container):
-        return reenter(args.preset, ["build", "--preset", args.preset, "--mode", args.mode])
-    build(args.preset, args.mode)
+        return reenter(args.preset, ["build", "--preset", args.preset, "--mode", args.mode, "--sanitizer", args.sanitizer])
+    build(args.preset, args.mode, args.sanitizer)
 
 
 def cmd_test(args):
     extra = args.args[1:] if args.args[:1] == ["--"] else args.args
     if extra and not args.target:
         raise Fail("pass --target <test target> to forward doctest arguments")
+    check_sanitizer(args.preset, args.sanitizer)
     if needs_container(args.preset, args.container):
-        argv = ["test", "--preset", args.preset, "--mode", args.mode]
+        argv = ["test", "--preset", args.preset, "--mode", args.mode, "--sanitizer", args.sanitizer]
         argv += (["--target", args.target] if args.target else []) + (["--", *extra] if extra else [])
         return reenter(args.preset, argv)
-    bdir = build(args.preset, args.mode)
+    bdir = build(args.preset, args.mode, args.sanitizer)
+    if PRESETS[args.preset]["plat"] == "windows" and args.sanitizer != "none" and HOST != "windows":
+        # MSVC's ASan hot-patches system DLLs; Wine's (CET endbr64 prologues) can't be patched.
+        print(f"test: built with {args.sanitizer} sanitizer; MSVC sanitizer runs need native Windows, not Wine")
+        return
     if args.target:
         run(["xmake", "run", args.target, *extra], env=xmake_env(bdir))
     else:
@@ -205,7 +229,7 @@ def cmd_test(args):
 def cmd_run(args):
     if PRESETS[args.preset]["host"] != HOST:
         raise Fail(f"`run` is native only; {args.preset} needs a {PRESETS[args.preset]['host']} host")
-    bdir = build(args.preset, args.mode)
+    bdir = build(args.preset, args.mode, args.sanitizer)
     run(["xmake", "run", *(["-d"] if args.debug else []), APP], env=xmake_env(bdir))
 
 
@@ -250,8 +274,14 @@ def cmd_check(args):
     cmd_fmt(argparse.Namespace(check=True))
     cmd_lint(argparse.Namespace(container=args.container, fix=False))
     for preset in PRESETS:
-        cmd_test(argparse.Namespace(preset=preset, mode="release", container=args.container, target=None, args=[]))
-    print("check: all presets passed")
+        cmd_test(argparse.Namespace(preset=preset, mode="release", sanitizer="none", container=args.container,
+                                    target=None, args=[]))
+    if args.sanitizers:
+        for preset, sanitizers in SANITIZERS.items():
+            for sanitizer in sanitizers:
+                cmd_test(argparse.Namespace(preset=preset, mode="debug", sanitizer=sanitizer, container=args.container,
+                                            target=None, args=[]))
+    print("check: all presets passed" + (" with every supported sanitizer" if args.sanitizers else ""))
 
 
 def cmd_artifact(args):
@@ -430,14 +460,23 @@ def main(argv=None):
         p.set_defaults(func=func)
         return p
 
+    all_sanitizers = sorted({s for supported in SANITIZERS.values() for s in supported})
+
+    def add_sanitizer(p):
+        p.add_argument("--sanitizer", choices=["none", *all_sanitizers], default="none",
+                       help="build with a sanitizer (support per preset: see SANITIZERS)")
+
     add("doctor", cmd_doctor, "check the environment; prints how to fix problems, installs nothing")
-    add("build", cmd_build, "build a preset", preset="required", mode=True, container=True)
+    add_sanitizer(add("build", cmd_build, "build a preset", preset="required", mode=True, container=True))
     p = add("test", cmd_test, "build and run the tests of a preset", preset="required", mode=True, container=True)
+    add_sanitizer(p)
     p.add_argument("--target", help="run one test target, forwarding the arguments after --")
     p.add_argument("args", nargs=argparse.REMAINDER, help="-- <doctest arguments>, e.g. -- --test-case='*physics*'")
     p = add("run", cmd_run, "build and launch the game natively", preset="required", mode=True)
     p.add_argument("--debug", action="store_true", help="launch under the debugger (xmake run -d)")
-    add("check", cmd_check, "the merge gate: commits, fmt, lint, build and test every preset", container=True)
+    add_sanitizer(p)
+    p = add("check", cmd_check, "the merge gate: commits, fmt, lint, build and test every preset", container=True)
+    p.add_argument("--sanitizers", action="store_true", help="also test every preset under each supported sanitizer")
     add("artifact", cmd_artifact, "clean-room release build in the preset's container, into dist/", preset="required")
     p = add("release", cmd_release, "bump the version with git-cliff, write CHANGELOG.md, commit and tag")
     p.add_argument("--dry-run", action="store_true")

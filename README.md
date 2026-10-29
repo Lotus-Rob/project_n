@@ -32,6 +32,7 @@ pixi run project_n build --preset linux-clang         # presets: linux-gcc, linu
 pixi run project_n test  --preset linux-gcc
 pixi run project_n run   --preset linux-clang --debug # launch under gdb
 pixi run project_n check                              # the merge gate: commits, format, lint, all presets
+pixi run project_n test  --preset linux-clang --sanitizer address   # on request: address, undefined, thread, leak
 ```
 
 Native builds land in `build/<preset>/<mode>/`. `windows-msvc` builds in a container on Linux, using the real MSVC under Wine.

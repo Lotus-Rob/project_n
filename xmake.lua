@@ -5,6 +5,21 @@ set_policy("package.requires_lock", true)
 add_rules("mode.debug", "mode.release", "mode.releasedbg")
 add_repositories("project_n-repo xmake/repo")
 
+-- Sanitizers only on request (`project_n test --sanitizer <name>`), never in the default gate.
+-- project_n.py holds which ones each preset supports. Set per target, not project-wide: XMake
+-- passes a project-level sanitizer to every package, and some (wayland) can't link instrumented.
+option("sanitizer", {default = "none", values = {"none", "address", "undefined", "thread", "leak"},
+                     description = "Build with a sanitizer"})
+rule("sanitizer")
+    on_load(function (target)
+        local sanitizer = get_config("sanitizer")
+        if sanitizer and sanitizer ~= "none" then
+            target:set("policy", "build.sanitizer." .. sanitizer, true)
+        end
+    end)
+rule_end()
+add_rules("sanitizer")
+
 -- The highest warning level on every compiler, always as errors. Packages are unaffected:
 -- they're built separately, and their headers are system/external includes for our code.
 set_warnings("everything", "pedantic", "error")
@@ -60,12 +75,20 @@ end)
 
 -- Our executables link the C++ runtime and libgcc statically so artefacts need only glibc
 -- (baseline 2.28). Project-level flags, so packages built from source never inherit them.
+-- Sanitizer builds (never shipped) link it dynamically instead: sanitizer runtimes replace parts
+-- of it (operator new, __cxa_guard_*), and a whole-archived static libc++abi collides with TSan.
+local sanitized = get_config("sanitizer") and get_config("sanitizer") ~= "none"
 if is_plat("linux") then
-    add_ldflags("-static-libstdc++", "-static-libgcc")
-    if get_config("toolchain") == "pixi-clang" then
-        -- -static-libstdc++ makes clang append a static -lc++, but not libc++abi;
-        -- whole-archive it so link order can't drop it.
-        add_ldflags("-Wl,--whole-archive," .. (os.getenv("CONDA_PREFIX") or "") .. "/lib/libc++abi.a,--no-whole-archive", "-lpthread")
+    local prefix = os.getenv("CONDA_PREFIX") or ""
+    if not sanitized then
+        add_ldflags("-static-libstdc++", "-static-libgcc")
+        if get_config("toolchain") == "pixi-clang" then
+            -- -static-libstdc++ makes clang append a static -lc++, but not libc++abi;
+            -- whole-archive it so link order can't drop it.
+            add_ldflags("-Wl,--whole-archive," .. prefix .. "/lib/libc++abi.a,--no-whole-archive", "-lpthread")
+        end
+    elseif get_config("toolchain") == "pixi-clang" then
+        add_ldflags("-Wl,-rpath," .. prefix .. "/lib") -- conda's GCC adds this rpath itself
     end
 end
 

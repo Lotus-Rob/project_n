@@ -65,6 +65,21 @@ class LocationRuleTest(unittest.TestCase):
         self.assertEqual(project_n.build_dir("linux-gcc", "release").parts, ("build", "container", "linux-gcc", "release"))
 
 
+class SanitizerTest(unittest.TestCase):
+    def test_each_sanitizer_gets_its_own_build_dir(self):
+        self.assertEqual(project_n.build_dir("linux-gcc", "debug").name, "debug")
+        self.assertEqual(project_n.build_dir("linux-gcc", "debug", "address").name, "debug-address")
+
+    def test_support_matrix_is_enforced(self):
+        project_n.check_sanitizer("linux-clang", "thread")
+        project_n.check_sanitizer("windows-msvc", "none")
+        with self.assertRaises(project_n.Fail):
+            project_n.check_sanitizer("windows-msvc", "undefined")
+
+    def test_ubsan_findings_fail_the_run(self):
+        self.assertIn("halt_on_error=1", project_n.xmake_env(project_n.build_dir("linux-gcc", "debug"))["UBSAN_OPTIONS"])
+
+
 class HelpersTest(unittest.TestCase):
     def test_with_version_replaces_only_the_version(self):
         lua = 'set_project("project_n")\nset_version("0.1.0")\nset_xmakever("3.1.2")\n'
