@@ -150,21 +150,21 @@ def reenter(preset, argv, interactive=False):
 # --- xmake ---------------------------------------------------------------------
 
 
-def configure(preset, mode, werror=False):
+def configure(preset, mode):
     p, bdir = PRESETS[preset], build_dir(preset, mode)
     # -v makes XMake install packages one at a time (else 4 in parallel). shortcut: XMake installs
     # duplicate variants with the same build hash (libxcb, libx11 for SDL3) concurrently into one
     # directory and they corrupt each other; drop -v once that's fixed upstream.
     cmd = ["xmake", "f", "-y", "-v", "-p", p["plat"], "-a", p["arch"], f"--toolchain={p['toolchain']}", "-m", mode,
-           "-o", bdir, f"--werror={'y' if werror else 'n'}"]
+           "-o", bdir]
     if p["toolchain"] == "msvc":
         cmd.append("--sdk=/opt/msvc" if IN_CONTAINER else f"--vs_toolset={VS_TOOLSET}")
     run(cmd, env=xmake_env(bdir))
     return bdir
 
 
-def build(preset, mode, werror=False):
-    bdir = configure(preset, mode, werror)
+def build(preset, mode):
+    bdir = configure(preset, mode)
     run(["xmake", "build"], env=xmake_env(bdir))
     if not IN_CONTAINER:
         # Native builds keep clangd current in any editor (container paths would be wrong).
@@ -192,10 +192,10 @@ def cmd_test(args):
     if extra and not args.target:
         raise Fail("pass --target <test target> to forward doctest arguments")
     if needs_container(args.preset, args.container):
-        argv = ["test", "--preset", args.preset, "--mode", args.mode] + (["--werror"] if args.werror else [])
+        argv = ["test", "--preset", args.preset, "--mode", args.mode]
         argv += (["--target", args.target] if args.target else []) + (["--", *extra] if extra else [])
         return reenter(args.preset, argv)
-    bdir = build(args.preset, args.mode, args.werror)
+    bdir = build(args.preset, args.mode)
     if args.target:
         run(["xmake", "run", args.target, *extra], env=xmake_env(bdir))
     else:
@@ -223,8 +223,8 @@ def cmd_lint(args):
     bdir = configure(LINT_PRESET, "debug")
     run(["xmake", "build"], env=xmake_env(bdir))
     run(["xmake", "project", "-k", "compile_commands", bdir], env=xmake_env(bdir))
-    # Lint is a gate: every enabled check fails `check`, whatever .clang-tidy's WarningsAsErrors says.
-    tidy = ["clang-tidy", "--quiet", "--warnings-as-errors=*", "-p", bdir, *(["--fix"] if args.fix else [])]
+    # Lint is a gate: .clang-tidy's WarningsAsErrors: '*' makes any finding fail `check`.
+    tidy = ["clang-tidy", "--quiet", "-p", bdir, *(["--fix"] if args.fix else [])]
     try:
         run(tidy + [f for f in source_files() if f.endswith(".cpp")])
     finally:
@@ -250,7 +250,7 @@ def cmd_check(args):
     cmd_fmt(argparse.Namespace(check=True))
     cmd_lint(argparse.Namespace(container=args.container, fix=False))
     for preset in PRESETS:
-        cmd_test(argparse.Namespace(preset=preset, mode="release", werror=True, container=args.container, target=None, args=[]))
+        cmd_test(argparse.Namespace(preset=preset, mode="release", container=args.container, target=None, args=[]))
     print("check: all presets passed")
 
 
@@ -434,7 +434,6 @@ def main(argv=None):
     add("build", cmd_build, "build a preset", preset="required", mode=True, container=True)
     p = add("test", cmd_test, "build and run the tests of a preset", preset="required", mode=True, container=True)
     p.add_argument("--target", help="run one test target, forwarding the arguments after --")
-    p.add_argument("--werror", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("args", nargs=argparse.REMAINDER, help="-- <doctest arguments>, e.g. -- --test-case='*physics*'")
     p = add("run", cmd_run, "build and launch the game natively", preset="required", mode=True)
     p.add_argument("--debug", action="store_true", help="launch under the debugger (xmake run -d)")

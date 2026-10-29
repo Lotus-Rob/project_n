@@ -2,7 +2,6 @@
 
 #include <SDL3/SDL.h>
 
-#include <cstdio>
 #include <exception>
 #include <print>
 
@@ -50,7 +49,7 @@ int main(int /*argc*/, char** /*argv*/) {
         return Run();
     }
     catch (const std::exception& e) {
-        std::fputs(e.what(), stderr);
+        std::println(stderr, "fatal: {}", e.what());
         return 1;
     }
 }

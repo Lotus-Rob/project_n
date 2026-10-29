@@ -5,12 +5,9 @@ set_policy("package.requires_lock", true)
 add_rules("mode.debug", "mode.release", "mode.releasedbg")
 add_repositories("project_n-repo xmake/repo")
 
-option("werror", {default = false, description = "Treat warnings as errors (set by `project_n check`)"})
-if has_config("werror") then
-    set_warnings("all", "error")
-else
-    set_warnings("all")
-end
+-- The highest warning level on every compiler, always as errors. Packages are unaffected:
+-- they're built separately, and their headers are system/external includes for our code.
+set_warnings("everything", "pedantic", "error")
 
 if is_plat("windows") then
     -- MSVC 14.50 has no /std:c++23: it warns (D9002, not fatal even with /WX), ignores it and
@@ -18,8 +15,18 @@ if is_plat("windows") then
     add_cxxflags("/std:c++23preview")
     -- Static C++ runtime, like Linux: players need no Visual C++ Redistributable.
     set_runtimes("MT")
+    -- Library headers (<...>) are external: no warnings from code we don't own. XMake's own
+    -- /external:I paths don't match under msvc-wine, so classify by include style instead.
+    add_cxflags("/external:anglebrackets", "/external:W0")
+    -- /Wall's codegen notes rather than code issues: padding (4820), inlining decisions (4710,
+    -- 4711), removed unused inlines (4514), Spectre mitigation points (5045).
+    add_cxflags("/wd4820", "/wd4710", "/wd4711", "/wd4514", "/wd5045")
 else
     set_languages("c++23")
+    if get_config("toolchain") == "pixi-clang" then
+        -- -Weverything includes compatibility warnings for standards older than C++23.
+        add_cxflags("-Wno-c++98-compat", "-Wno-c++98-compat-pedantic", "-Wno-pre-c++20-compat-pedantic")
+    end
 end
 
 -- conda-forge compilers from the Pixi env; names are triplet-prefixed, so XMake's

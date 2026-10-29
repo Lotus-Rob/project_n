@@ -269,7 +269,7 @@ Known gaps, to be closed later if they matter:
 - **`xmake.lua`** sets:
   - `set_languages("c++23")`
   - `set_version("x.y.z")`
-  - warnings as errors in checks
+  - the highest warning level, always as errors (§7.1 rule 15)
   - `set_policy("package.requires_lock", true)`
   - `set_xmakever(...)`
   - the toolchain definitions and the host lockdown described in §7.1
@@ -317,6 +317,11 @@ Each rule below fixed a concrete failure or host leak found in S4. `containers/A
 12. **MSVC 14.50 has no `/std:c++23`.** It warns (D9002), ignores the option and compiles as **C++14**. `/WX` doesn't make D9002 fatal, and XMake's flag check accepts it. `xmake.lua` therefore passes `/std:c++23preview` on Windows instead of `set_languages("c++23")`. To catch any future silent downgrade on any compiler, the project's core header carries a guard: `#if` on `__cplusplus` (or `_MSVC_LANG`) `<= 202002L` → `#error`. S1 verified that this fails under C++20 and passes with `/std:c++23preview`.
 
 13. **Windows links the C++ runtime statically** with `set_runtimes("MT")`, matching Linux (O4). Players need no Visual C++ Redistributable. XMake passes the runtime to packages and includes it in their cache key, so dependencies always match.
+
+**Warnings**
+
+15. **Every build uses the highest warning level, always as errors**, not just in `check`: `set_warnings("everything", "pedantic", "error")`. That's `-Weverything` for Clang, `-Wall -Wextra -Weffc++ -Wpedantic` for GCC, and `/Wall /WX` for MSVC. The only exclusions report on the compiler rather than our code. For Clang, the C++98 and pre-C++20 compatibility groups. For MSVC, `/Wall`'s codegen notes: padding (C4820), inlining (C4710/C4711), unused inlines removed (C4514) and Spectre mitigation points (C5045). Measured on the hello window before the exclusions: Clang 6 warnings (all compatibility), GCC 0, MSVC 15 (all C4820, all in SDL headers).
+16. **Dependencies never produce warnings.** GCC and Clang see package headers through `-isystem`. MSVC uses `/external:anglebrackets /external:W0`, because XMake's own `/external:I` paths don't match under msvc-wine. Our headers use `"..."` and libraries `<...>`, which is what makes this work: with C4820 re-enabled, SDL's headers produced 0 warnings, against 15 before. clang-tidy reports only headers matching `HeaderFilterRegex` (`src/`) and skips system headers.
 
 **Running XMake**
 
