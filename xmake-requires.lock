@@ -1,4 +1,7 @@
 {
+    __meta__ = {
+        version = "1.0"
+    },
     ["linux|x86_64"] = {
         ["autoconf#f56260b5"] = {
             repo = {
@@ -341,7 +344,36 @@
             version = "v1.3.2"
         }
     },
-    __meta__ = {
-        version = "1.0"
+    ["windows|x64"] = {
+        ["cmake#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
+                url = "https://gitlab.com/tboox/xmake-repo.git"
+            },
+            version = "4.3.4"
+        },
+        ["doctest 2.5.3#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
+                url = "https://gitlab.com/tboox/xmake-repo.git"
+            },
+            version = "2.5.3"
+        },
+        ["libsdl3-wayland 3.4.16#f56260b5"] = {
+            repo = {
+                url = "xmake/repo"
+            },
+            version = "3.4.16"
+        },
+        ["ninja#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
+                url = "https://gitlab.com/tboox/xmake-repo.git"
+            },
+            version = "v1.13.2"
+        }
     }
 }
