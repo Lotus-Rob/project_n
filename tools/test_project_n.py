@@ -41,5 +41,46 @@ class CommitCheckTest(unittest.TestCase):
         self.bad("\n# only comments\n", "empty")
 
 
+class LocationRuleTest(unittest.TestCase):
+    def setUp(self):
+        self.saved = (project_n.HOST, project_n.IN_CONTAINER)
+
+    def tearDown(self):
+        project_n.HOST, project_n.IN_CONTAINER = self.saved
+
+    def test_native_when_host_matches(self):
+        project_n.HOST, project_n.IN_CONTAINER = "linux", False
+        self.assertFalse(project_n.needs_container("linux-clang"))
+        self.assertTrue(project_n.needs_container("windows-msvc"))
+        self.assertTrue(project_n.needs_container("linux-gcc", force=True))
+
+    def test_windows_host(self):
+        project_n.HOST, project_n.IN_CONTAINER = "windows", False
+        self.assertFalse(project_n.needs_container("windows-msvc"))
+        self.assertTrue(project_n.needs_container("linux-gcc"))
+
+    def test_never_reenters_inside_a_container(self):
+        project_n.HOST, project_n.IN_CONTAINER = "linux", True
+        self.assertFalse(project_n.needs_container("windows-msvc", force=True))
+        self.assertEqual(project_n.build_dir("linux-gcc", "release").parts, ("build", "container", "linux-gcc", "release"))
+
+
+class HelpersTest(unittest.TestCase):
+    def test_with_version_replaces_only_the_version(self):
+        lua = 'set_project("project_n")\nset_version("0.1.0")\nset_xmakever("3.1.2")\n'
+        self.assertEqual(project_n.with_version(lua, "0.2.0"), lua.replace("0.1.0", "0.2.0"))
+
+    def test_image_tags_are_stable_and_distinct(self):
+        self.assertEqual(project_n.image_tag("linux"), project_n.image_tag("linux"))
+        self.assertNotEqual(project_n.image_tag("linux"), project_n.image_tag("msvc"))
+        self.assertRegex(project_n.image_tag("msvc"), r"^localhost/project_n-msvc:[0-9a-f]{12}$")
+
+    def test_container_command_mounts_repo_and_cache(self):
+        cmd = project_n.container_cmd("img", ["pixi", "run", "project_n", "build"])
+        self.assertIn(f"{project_n.ROOT}:/src:Z", cmd)
+        self.assertIn(f"{project_n.CACHE_VOLUME}:/home/dev/.xmake", cmd)
+        self.assertEqual(cmd[-5:], ["img", "pixi", "run", "project_n", "build"])
+
+
 if __name__ == "__main__":
     unittest.main()
