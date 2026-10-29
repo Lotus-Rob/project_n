@@ -199,7 +199,7 @@ def cmd_test(args):
     if args.target:
         run(["xmake", "run", args.target, *extra], env=xmake_env(bdir))
     else:
-        run(["xmake", "test"], env=xmake_env(bdir))
+        run(["xmake", "test", "--output-on-failure"], env=xmake_env(bdir))
 
 
 def cmd_run(args):
@@ -258,7 +258,7 @@ def cmd_artifact(args):
     if not IN_CONTAINER:
         return reenter(args.preset, ["artifact", "--preset", args.preset])
     bdir = build(args.preset, "release")
-    run(["xmake", "test"], env=xmake_env(bdir))
+    run(["xmake", "test", "--output-on-failure"], env=xmake_env(bdir))
     binary = binary_path(args.preset, "release")
     if PRESETS[args.preset]["plat"] == "linux":
         run(["patchelf", "--remove-rpath", binary])  # conda's GCC hard-codes an rpath into .pixi
