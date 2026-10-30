@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| Status | **Accepted**: phases 1–3 implemented on Linux; Windows-host spikes and macOS (§5.7) pending |
+| Status | **Accepted**: phases 1–4 implemented; S3 (Podman on Windows) and cross-machine S2 open |
 | Author | Rob G |
 | Created | 2026-10-29 |
-| Revised | 2026-10-30: macOS planned as a native `macos-clang` preset (D13, §5.7, S7). 2026-10-29: development runs natively in a portable Pixi environment; containers only produce artefacts; headers only (no C++ modules); Conventional Commits + git-cliff + SemVer; open questions Q1–Q10 resolved (Appendix B); knowledge split across AGENTS.md, skills and design docs (§10); Steam Runtime dropped, so Linux artefacts are built in an Ubuntu + Pixi image with the glibc baseline set by the conda-forge sysroot |
+| Revised | 2026-10-30: phase 4: GitHub Actions CI on Linux, Windows and macOS runners (§12); `macos-clang` implemented (§5.7, S7 passed); S5 passed in CI. Earlier the same day: macOS planned as a native `macos-clang` preset (D13). 2026-10-29: development runs natively in a portable Pixi environment; containers only produce artefacts; headers only (no C++ modules); Conventional Commits + git-cliff + SemVer; open questions Q1–Q10 resolved (Appendix B); knowledge split across AGENTS.md, skills and design docs (§10); Steam Runtime dropped, so Linux artefacts are built in an Ubuntu + Pixi image with the glibc baseline set by the conda-forge sysroot |
 | Scope | Repository layout, development environment, artefact containers, toolchain pinning, testing, build tooling, commits and versioning, agent knowledge (AGENTS.md and skills) |
 
 ---
@@ -64,7 +64,7 @@ A **preset** is the combination of target platform and toolchain. The build mode
 | `linux-clang` | Linux x86_64 | conda-forge Clang + libc++ (`pixi.lock`) | Pixi env on host | `project_n-linux` | Pixi env; Linux image |
 | `windows-msvc` | Windows x64 | MSVC 14.50.35717 (VS 2026, msvc-wine `--msvc-version 18.0`) + Windows SDK 10.0.26100: `.vsconfig` natively, msvc-wine in the container | Windows host: Pixi env + Build Tools | `project_n-msvc` | Wine in container; native Windows is authoritative |
 
-| `macos-clang` (planned, §5.7) | macOS arm64 | conda-forge Clang + libc++ (`pixi.lock`), Apple SDK from the Xcode Command Line Tools | Mac: Pixi env | none: `artifact` runs natively on a Mac or CI runner | Pixi env on macOS |
+| `macos-clang` (§5.7) | macOS arm64 | conda-forge Clang + libc++ (`pixi.lock`), Apple SDK from the Xcode Command Line Tools | Mac: Pixi env | none: `artifact` runs natively on a Mac or CI runner | Pixi env on macOS |
 
 Possible later additions, not part of the initial setup:
 
@@ -159,6 +159,7 @@ Every build tool comes from Pixi, so the host needs only the tools below. Instal
 | Git | phase 0 | `sudo pacman -S git` | `winget install Git.Git` | 2.56 ✓ |
 | **Pixi** | phase 1 (S4) | `sudo pacman -S pixi` (in `extra`). Elsewhere: `curl -fsSL https://pixi.sh/install.sh \| sh`, then add `~/.pixi/bin` to PATH (fish: `fish_add_path ~/.pixi/bin`) | `winget install prefix-dev.pixi` | **missing** |
 | Podman | phase 1 (S1, S6) | `sudo pacman -S podman`. Rootless mode needs subordinate IDs; if `podman info` reports an error, run `sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 $USER` | `winget install RedHat.Podman`, then `podman machine init` and `podman machine start` | 6.1.4, rootless ✓ |
+| Xcode Command Line Tools | phase 4, macOS only | n/a | n/a (`xcode-select --install` on the Mac) | n/a |
 | VS Build Tools (MSVC) | phase 1 (S5), Windows only | n/a | Run the Build Tools bootstrapper (from visualstudio.microsoft.com → Downloads → Build Tools) with `--config containers\windows\buildtools.vsconfig --passive --wait`. The winget ID and exact command are confirmed in S5 and then written here | n/a |
 
 Everything else comes from `pixi install`: compilers, XMake, debuggers, clang tools, Python and git-cliff. This includes the msvc-wine toolchain, which is downloaded inside the container. Host copies of GCC, Clang, XMake, gdb or Wine can stay installed. They're ignored, because `pixi run` puts the environment first on PATH.
@@ -227,15 +228,16 @@ Everything else comes from `pixi install`: compilers, XMake, debuggers, clang to
 - msvc-wine plus a pinned native toolset covers the same need.
 - If S1 fails, the fallback is containerd with nerdctl on Windows, which is open source.
 
-### 5.7 Native macOS (planned)
+### 5.7 Native macOS
 
-Nothing is implemented yet: it waits for a Mac or a CI macOS runner (phase 4), and spike S7 settles the open points.
+Implemented 2026-10-30 and verified on GitHub's `macos-26` (Apple Silicon) runners (S7).
 
 - **Target:** Apple Silicon (`osx-arm64`) only. Intel Macs stop getting new macOS releases, so no universal binaries.
-- **Toolchain:** the same LLVM 22.1.8 packages as Linux from the `osx-arm64` section of `pixi.lock` (all confirmed on conda-forge, 2026-10-30), with a custom `pixi-clang`-style XMake toolchain as on Linux. lldb is the debugger; gdb doesn't support Apple Silicon.
-- **SDK:** Apple's SDK comes from the Xcode Command Line Tools (`xcode-select --install`), a new host prerequisite for §5.0. It can't be pinned like a package, so `doctor` checks its version and `MACOSX_DEPLOYMENT_TARGET` fixes the oldest supported macOS (chosen in S7).
-- **XMake gap:** conda-forge has no `osx-arm64` XMake build (only `osx-64`, `win-64`, `linux-64`). The preferred fix is adding `osx-arm64` to the conda-forge xmake feedstock, so one lock still covers every platform. Fallbacks: the `osx-64` build under Rosetta, or a pinned upstream release that `doctor` checks.
-- **C++ runtime:** macOS's own libc++ is older than LLVM 22 and lacks parts of C++23 for older deployment targets, so link conda's libc++ statically, like Linux (§7.1). S7 confirms the static archives exist for `osx-arm64`.
+- **Toolchain:** the same LLVM 22.1.8 packages as Linux from the `osx-arm64` section of `pixi.lock` (`clangxx_osx-arm64` carries the full version there, Linux's only major.minor). The `pixi-clang` XMake toolchain picks the `arm64-apple-darwin20.0.0-` prefix on macOS hosts. lldb is the debugger; gdb doesn't support Apple Silicon.
+- **SDK:** from the Xcode Command Line Tools (`xcode-select --install`, §5.0). conda's `sdkroot_env` package sets `SDKROOT` through `xcrun`. The SDK can't be pinned like a package, so `doctor` reports its version. `MACOSX_DEPLOYMENT_TARGET=13.0` (Pixi activation) sets the oldest supported macOS for clang and CMake alike.
+- **XMake:** conda-forge has no `osx-arm64` build, so `project_n` downloads the upstream `xmake-bundle-v<version>.macos.arm64` for `set_xmakever()`'s version, checked against `XMAKE_MACOS_SHA256`, into `~/.xmake/project_n-tools/`. Adding `osx-arm64` to the conda-forge xmake feedstock would let the lock cover it again.
+- **C++ runtime:** conda's libc++ as a **dylib**, shipped next to the binary (`artifact` copies `libc++.1.dylib`, removes the rpath into `.pixi` and re-signs, since arm64 refuses binaries whose ad-hoc signature broke). Linked statically, as on Linux, it aborted every program at exit: libSystem loads the system libc++ anyway (through libobjc), and the two copies freed each other's memory. libc++abi is the system's, as for conda's own libc++. Only libc++ is linked from the env, by path: a `-L` into it let conda's libiconv shadow the SDK's.
+- **Availability markers:** libc++ marks features by the macOS release whose *system* libc++ has them (`std::to_chars` needs 13.3). We always run conda's libc++, so `_LIBCPP_DISABLE_AVAILABILITY` turns the markers off.
 - **Location rule:** `macos-clang` builds natively only on a macOS host; on Linux and Windows hosts, `project_n` refuses it with a pointer to CI, rather than falling back to a container. `check` and `build --preset all` skip it there and say so, so the gate stays runnable on every host; CI's macOS runner covers it.
 - **Signing and notarisation:** later, with packaging. `rcodesign` (open source) can sign and notarise from Linux with an Apple Developer account.
 
@@ -598,16 +600,22 @@ chore(release): v0.2.0
 
 ---
 
-## 12. CI (deferred)
+## 12. CI
 
-The repository will move to GitHub, and workflows are written in a later phase. The design constraints are fixed now so nothing blocks them later:
+GitHub Actions (`.github/workflows/ci.yml`, since phase 4) runs on every push, tag and pull request. It only runs `project_n` commands, split into parallel jobs (`check` stays the local gate):
 
-- CI only runs `project_n` commands.
-- On a Linux runner: `commit-check --range`, then `check --container`, then `artifact` on tags.
-- On a Windows runner: `check` (native MSVC).
-- On a macOS (Apple Silicon) runner: `check`, then `artifact --preset macos-clang` on tags (§5.7).
-- Caches: images, the XMake volume, the Pixi cache and the MSVC payload.
-- Branch protection enforces §11.2.
+| Job | Runner | Runs |
+|---|---|---|
+| `lint` | ubuntu-26.04 | `commit-check --range`, `doctor --docs`, `fmt --check`, `lint --container` |
+| `container (<preset>)` | ubuntu-26.04 | `artifact` for `linux-gcc`, `linux-clang` and `windows-msvc` (msvc-wine): clean-container build, tests, dependency check, `dist/` upload |
+| `windows` | windows-2025-vs2026 | native `windows-msvc` tests in release and under ASan, after adding the pinned toolset from `buildtools.vsconfig` |
+| `macos` | macos-26 | native `macos-clang` tests in release and under ASan, then `artifact` |
+
+- **Caches**, in two layers:
+  - Setup, saved as soon as its step finishes: the Pixi environments (setup-pixi), the `linux` and `wine` images in GHCR by content tag (`PROJECT_N_REGISTRY`), the MSVC 14.50 toolset on Windows, the macOS XMake bundle, and Microsoft's MSVC download for the `msvc` image (`PROJECT_N_MSVC_CACHE`).
+  - XMake packages per job, saved at job end even after a failure.
+- **Licence:** the `msvc` image is never pushed (`IMAGES[...]["push"]`). Microsoft's files do sit in Actions caches; fork PRs of a public repository can read those, which was accepted on the basis that the repository goes private once setup is done.
+- **Branch protection** on `main` requires the jobs above and linear history (§11.2).
 
 ---
 
@@ -618,9 +626,9 @@ The repository will move to GitHub, and workflows are written in a later phase. 
 | S4 | **XMake + Pixi toolchains** — ✅ **passed 2026-10-29** (§13.1) | XMake uses the conda-forge GCC and Clang with libc++, not the host's. A C++23 hello-window with one xmake-repo dependency and a doctest test builds, opens a GPU-accelerated window on the host Wayland session, and is debuggable with gdb and lldb from the environment | XMake's `llvm` package toolchain for Clang, plus host GCC with version checks in `doctor` |
 | S6 | **Portable Linux artefact** — ✅ **passed 2026-10-29** (§13.2) | The hello-window from `artifact --preset linux-clang` and `--preset linux-gcc` shows no Pixi-environment libraries in `ldd`. Its tests pass in a plain Rocky/Alma 8 container (glibc 2.28) with no Pixi installed | Raise the baseline or bundle the offending library, then document it in `containers/AGENTS.md` |
 | S1 | XMake + msvc-wine — ✅ **passed 2026-10-29** (§13.3) | `xmake f -p windows --toolchain=msvc` finds msvc-wine, builds the hello-window and runs its doctest under Wine | Custom toolchain definition in `xmake.lua`, then the §5.6 fallback |
-| S5 | Pixi on Windows | The `win-64` environment provides XMake, Python, the Clang tools and git-cliff, and XMake finds the pinned VS toolset | Native XMake install at the pinned version, checked by `doctor` |
+| S5 | Pixi on Windows — ✅ **passed 2026-10-30** in CI (`windows-2025-vs2026`) | The `win-64` environment provides XMake, Python, the Clang tools and git-cliff, and XMake finds the pinned VS toolset | Native XMake install at the pinned version, checked by `doctor` |
 | S2 | Bit-identical artefacts — ◐ **partial** (§13.2) | Two clean `artifact --preset linux-gcc` runs on different machines match, or the differences are explained (add `-ffile-prefix-map` if needed) | Document "same toolchain" reproducibility rather than "bit-identical" |
-| S7 | macOS toolchain (§5.7) | On a Mac or CI runner: the `osx-arm64` environment resolves from the same `pixi.toml`, XMake builds the hello-window with conda Clang and static libc++ against the Command Line Tools SDK, the window opens with SDL3 (Cocoa/Metal), doctest passes, and `otool -L` shows only system libraries | Link the system libc++ and raise `MACOSX_DEPLOYMENT_TARGET` until C++23 features are available |
+| S7 | macOS toolchain (§5.7) — ✅ **passed 2026-10-30** in CI (`macos-26`), with conda's libc++ shipped as a dylib rather than static | On a Mac or CI runner: the `osx-arm64` environment resolves from the same `pixi.toml`, XMake builds the hello-window with conda Clang and static libc++ against the Command Line Tools SDK, the window opens with SDL3 (Cocoa/Metal), doctest passes, and `otool -L` shows only system libraries | Link the system libc++ and raise `MACOSX_DEPLOYMENT_TARGET` until C++23 features are available |
 | S3 | Podman on Windows | `artifact --preset linux-gcc` works from PowerShell with podman machine | Document "Windows hosts build Linux artefacts from a WSL shell" |
 
 ### 13.1 S4 results
@@ -711,11 +719,10 @@ Each phase lists the host tools from §5.0 that must be installed before it star
    - ✅ A native build, run and debug works from the editor on this machine (Wayland by default since `defcefe`).
    - ✅ `check` and `check --container` pass.
    - ✅ `artifact` produces Linux and Windows builds.
-   - The native Windows build runs.
+   - ✅ The native Windows build runs (CI `windows` job, 2026-10-30).
    - ✅ The first `release --dry-run` succeeds (2026-10-30, would release v0.1.0).
    - ✅ Then create the `release`, `bump-toolchain` and `add-dependency` skills. Licences are recorded as comments on each `add_requires` line.
-4. **Later:** GitHub move and workflows, branch protection, `doctor --docs`, backlog skills as triggers fire.
-   - macOS: spike S7 on a CI macOS runner (or a Mac), then the `macos-clang` preset (§5.7): `osx-arm64` in `pixi.toml`, the toolchain in `xmake.lua`, `PRESETS`/`NATIVE_PRESET`/`doctor` in `project_n.py`, the Xcode Command Line Tools in §5.0 and README.
+4. ✅ **CI and macOS** (2026-10-30): GitHub repository, workflows and caches (§12), branch protection, `doctor --docs`, the `macos-clang` preset (§5.7). Backlog skills follow as their triggers fire.
 
 ---
 
