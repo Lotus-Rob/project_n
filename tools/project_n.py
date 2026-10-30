@@ -181,12 +181,12 @@ def image_tag(name):
 
 def ensure_image(name):
     tag = image_tag(name)
-    if subprocess.run(["podman", "image", "exists", tag]).returncode == 0:
+    if subprocess.run(["podman", "image", "exists", tag], check=False).returncode == 0:
         return tag
     spec = IMAGES[name]
     registry = os.environ.get("PROJECT_N_REGISTRY")
     remote = f"{registry}/{tag.removeprefix('localhost/')}" if registry and spec["push"] else None
-    if remote and subprocess.run(["podman", "pull", "-q", remote]).returncode == 0:
+    if remote and subprocess.run(["podman", "pull", "-q", remote], check=False).returncode == 0:
         run(["podman", "tag", remote, tag])
         return tag
     cmd = ["podman", "build", "-t", tag, "-f", spec["file"]]
@@ -382,6 +382,8 @@ def cmd_lint(args):
     found = unexplained_suppressions()
     if found:
         raise Fail("fix findings properly; a suppression is the last resort and must be narrow and explained:\n" + "\n".join(found))
+    run(["ruff", "check", "tools"])
+    run(["actionlint"])
     bdir = configure(LINT_PRESET, "debug")
     run(["xmake", "build"], env=xmake_env(bdir))
     run(["xmake", "project", "-k", "compile_commands", bdir], env=xmake_env(bdir))
@@ -398,7 +400,7 @@ def commit_range():
     """Commits not yet on the upstream (or on main): what `check` validates. CI passes its own."""
     if os.environ.get("PROJECT_N_COMMIT_RANGE"):
         return os.environ["PROJECT_N_COMMIT_RANGE"]
-    upstream = subprocess.run(["git", "rev-parse", "--abbrev-ref", "@{upstream}"], cwd=ROOT, capture_output=True, text=True)
+    upstream = subprocess.run(["git", "rev-parse", "--abbrev-ref", "@{upstream}"], check=False, cwd=ROOT, capture_output=True, text=True)
     if upstream.returncode == 0:
         return f"{upstream.stdout.strip()}..HEAD"
     if capture(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip() != "main":
@@ -607,7 +609,7 @@ def cmd_doctor(args):
     if podman:
         for name in IMAGES:
             tag = image_tag(name)
-            built = subprocess.run(["podman", "image", "exists", tag]).returncode == 0
+            built = subprocess.run(["podman", "image", "exists", tag], check=False).returncode == 0
             print(f"{'ok ' if built else '-- '}  image {tag}" + ("" if built else " (built on first use)"))
         installed = (msvc_dir() / ".installed").exists()
         print(f"{'ok ' if installed else '-- '}  MSVC in {msvc_dir()}" + ("" if installed else " (installed on first use)"))

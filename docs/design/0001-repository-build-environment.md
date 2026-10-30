@@ -81,6 +81,7 @@ Possible later additions, not part of the initial setup:
 | `xmake` | 3.1.2 | |
 | `gdb` | 18.1 | Linux only |
 | `git-cliff` | 2.14.2 | |
+| `ruff` / `actionlint` | 0.17.3 / 1.7.12 | `lint` checks project_n.py and the CI workflow |
 | `python` (+ `pip`, `setuptools`, `wheel`) | 3.14.x | XMake only accepts a build-tool Python that has all three |
 | `wayland` | 1.26 | Provides only the build-machine `wayland-scanner` (§7.1) |
 | `patchelf` | latest | Used by `artifact` to strip the rpath that conda's GCC hard-codes |
@@ -397,7 +398,7 @@ Constraints:
 | `artifact --preset P` | Clean-room release build in the preset's container (committed sources only, empty build directory), plus the Linux dependency check (§5.2). Writes `dist/<preset>/` and `manifest.json`. |
 | `release [--dry-run]` | Requires a clean `main` that is up to date (it fetches, then refuses if `main` is behind). Runs `git cliff --bumped-version`, writes `set_version()`, regenerates `CHANGELOG.md`, commits `chore(release): vX.Y.Z` and creates the annotated tag `vX.Y.Z`. Never pushes. |
 | `commit-check <msg-file> \| --range A..B` | Validates commit messages (§11). |
-| `fmt [--check]` / `lint [--fix]` | Runs clang-format and clang-tidy from the Pixi environment. `lint` always passes `--warnings-as-errors=*`, so any finding fails `check`. `--fix` applies clang-tidy's fixes and reformats; whatever remains is fixed by hand before a branch is finished (root AGENTS.md). |
+| `fmt [--check]` / `lint [--fix]` | Runs clang-format and clang-tidy from the Pixi environment; `lint` first runs ruff on `tools/` and actionlint on the workflow. `lint` always passes `--warnings-as-errors=*`, so any finding fails `check`. `--fix` applies clang-tidy's fixes and reformats; whatever remains is fixed by hand before a branch is finished (root AGENTS.md). |
 | `image [--preset P]` / `shell --preset P` / `clean [--preset P] [--packages]` | Builds an image if missing / opens a debugging shell in a container / removes build directories (`--packages` also removes XMake package directories for locks other than the current one). |
 
 Behaviour:
