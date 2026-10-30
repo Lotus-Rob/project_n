@@ -35,6 +35,7 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 - agent-docs: editing AGENTS.md or skills, proposing new skills
 - release: cutting a release, versions, changelog, artefacts
 - add-dependency: adding, bumping or removing a C++ library (`add_requires`, licence record, lock)
+- fix-xmake-package: a package that needs host files or drops a feature; overrides in `xmake/repo/` and their upstream fixes
 
 ## Keeping this true
 Update AGENTS.md files and skills in the same commit as the change that affects them. Log non-obvious fixes under Gotchas.
@@ -43,7 +44,6 @@ Propose a skill when a workflow repeats → agent-docs skill
 ## Skill candidates
 | Workflow | Evidence | Proposed skill |
 |---|---|---|
-| Fix an xmake-repo package that only builds with host files | Done twice in spike S4 (`xmake/repo/`) | `fix-xmake-package` |
 
 ## Gotchas
 - A build that passes natively can still fail in the container: hidden host files (headers, `/usr/bin/ar`, pkg-config paths) fill gaps on a dev machine. Trust `check --container`.
