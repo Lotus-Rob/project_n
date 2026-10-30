@@ -20,6 +20,7 @@
 ## Gotchas
 - Ubuntu 25.10+ ships uutils coreutils; its `ln -sf`/`install` break libtool installs ("Already exists"). The image swaps in `coreutils-from-gnu`.
 - Wine writes its registry only when `wineserver` exits: a prefix created in a `RUN` step lacks `HKCU\Environment` (no `%TEMP%`), and `cl.exe` fails with D8037. The msvc image recreates it with `wineboot -i && wineserver -w`.
+- msvc-wine's install includes an empty servicing stub of Microsoft's newest toolset (`VC/Tools/MSVC/14.51.*`), which XMake took for the toolset. `ensure_msvc` deletes toolset folders without `bin/`.
 - MSVC 14.50 ignores `/std:c++23` (warning D9002, compiles as C++14). xmake.lua uses `/std:c++23preview`; src/core/cxx23.hpp catches any fallback.
 - Podman on Windows: bind-mounting an NTFS checkout into WSL is slow; keep a clone inside WSL for container builds.
 

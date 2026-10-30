@@ -212,6 +212,11 @@ def ensure_msvc(image):
         dest.mkdir(parents=True)
         run(container_cmd(image, ["bash", "-c", MSVC_INSTALL], mounts=[f"{dest}:/opt/msvc:Z"]))
         (dest / ".installed").touch()
+    # The install also holds an empty servicing stub of Microsoft's newest toolset (14.51), and
+    # XMake (--vs_toolset is Windows-only) takes the newest folder as the toolset. Keep real ones.
+    for toolset in (dest / "VC" / "Tools" / "MSVC").glob("*"):
+        if not (toolset / "bin").is_dir():
+            shutil.rmtree(toolset)
     return dest
 
 

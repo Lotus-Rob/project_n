@@ -684,7 +684,7 @@ Built in `project_n-msvc` (the spike's `containers/msvc.Containerfile`) from the
 
 **Found and fixed:** the half-written Wine prefix (§5.3) and MSVC's ignored `/std:c++23` (§7.1 rule 12).
 
-**Image size (phase 2):** `project_n-linux` is 10.1 GB, and `project_n-msvc` adds 1.8 GB. Most of the base is probably Pixi's package cache left next to the installed environment, so clear it after `pixi install`. `vsdownload.py` also fetched a second toolset (14.51) alongside the pinned 14.50; drop it if it isn't needed.
+**Image size (phase 2):** `project_n-linux` is 10.1 GB, and `project_n-msvc` adds 1.8 GB. Most of the base is probably Pixi's package cache left next to the installed environment, so clear it after `pixi install`. What looked like a second toolset (14.51) is an empty servicing stub (`Auxiliary/*.props`, 8 KB), but XMake's msvc-wine detection takes the newest folder under `VC/Tools/MSVC` as the toolset (`--vs_toolset` is Windows-only), so its include and library paths named 14.51; compiles only used 14.50 because msvc-wine's wrappers set their own. `ensure_msvc` removes toolset folders without `bin/`. The side-by-side 14.50 component is Microsoft's pin; patch levels inside it (ASan 14.50.35734, SDK 10.0.26100.18) follow Microsoft's current manifest at install time, so `manifest.json` records what msvc-wine used.
 
 **Cosmetic (phase 2):** Pixi in the container warns that it found the host's `/src/.pixi/envs` through the bind mount and ignores it. The host environment isn't modified.
 
