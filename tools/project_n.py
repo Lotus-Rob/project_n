@@ -82,6 +82,9 @@ INSTALL_HINTS = {
 }
 
 
+DOCTOR_PROBLEMS = 3  # doctor's exit code for "problems found", distinct from errors (1) so CI can tolerate only it
+
+
 class Fail(Exception):
     """A user-facing error: printed without a traceback."""
 
@@ -101,7 +104,8 @@ def run(cmd, env=None, **kwargs):
 
 
 def capture(cmd, check=True):
-    return subprocess.run(resolve(cmd), cwd=ROOT, check=check, capture_output=True, text=True).stdout
+    # UTF-8, not the locale: Windows would decode with cp1252 and fail on XMake's output.
+    return subprocess.run(resolve(cmd), cwd=ROOT, check=check, capture_output=True, encoding="utf-8", errors="replace").stdout
 
 
 def sha256(*paths):
@@ -542,7 +546,7 @@ def cmd_doctor(args):
         report(bool(sdk), f"Xcode Command Line Tools (macOS SDK {sdk or 'missing'})", INSTALL_HINTS["xcode"]["macos"])
     if os.environ.get("PROJECT_N_ACCEPT_MSVC_LICENSE") != "1":
         print("--   PROJECT_N_ACCEPT_MSVC_LICENSE is not set: the MSVC image can't be built until you accept its licence")
-    return 1 if problems else 0
+    return DOCTOR_PROBLEMS if problems else 0
 
 
 def cmd_image(args):

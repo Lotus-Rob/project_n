@@ -63,7 +63,8 @@ jobs:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
           cache: true
-      - run: pixi run project_n doctor || true # report only: CI needs no commit hook
+      # Report only: CI needs no commit hook. Exit code 3 means problems found; anything else is a bug.
+      - run: pixi run project_n doctor || [ $? -eq 3 ]
       - run: pixi run project_n check --container
       - run: |
           pixi run project_n artifact --preset linux-gcc
@@ -113,7 +114,8 @@ jobs:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
           cache: true
-      - run: pixi run project_n doctor; exit 0 # report only: CI needs no commit hook or podman
+      # Report only: CI needs no commit hook or podman. Exit code 3 means problems found; anything else is a bug.
+      - run: pixi run project_n doctor; if ($LASTEXITCODE -notin 0, 3) { exit 1 }; exit 0
       - run: pixi run project_n test --preset windows-msvc --mode release
       - run: pixi run project_n test --preset windows-msvc --sanitizer address
 
@@ -138,7 +140,8 @@ jobs:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
           cache: true
-      - run: pixi run project_n doctor || true # report only: CI needs no commit hook or podman
+      # Report only: CI needs no commit hook or podman. Exit code 3 means problems found; anything else is a bug.
+      - run: pixi run project_n doctor || [ $? -eq 3 ]
       - run: pixi run project_n test --preset macos-clang --mode release
       - run: pixi run project_n test --preset macos-clang --sanitizer address
       - run: pixi run project_n artifact --preset macos-clang
