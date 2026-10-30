@@ -150,8 +150,10 @@ def packages_dir():
 
 def xmake_env(bdir):
     # Per-build config dir: native and container builds of one preset never share XMake state.
+    # The user's own sanitizer options go last: the last value of an option wins.
+    sanitizer_env = {k: f"{v}:{os.environ[k]}" if os.environ.get(k) else v for k, v in SANITIZER_ENV.items()}
     return dict(os.environ, XMAKE_CONFIGDIR=str(ROOT / bdir / ".xmake"), XMAKE_PKG_INSTALLDIR=str(packages_dir()),
-                **SANITIZER_ENV)
+                **sanitizer_env)
 
 
 def check_sanitizer(preset, sanitizer):
@@ -583,15 +585,15 @@ def check_message(message, allow_fixup=True):
 def stale_doc_commands():
     """`project_n <cmd>` and `./dev <cmd>` quoted in AGENTS.md, CLAUDE.md, skills and README that don't exist."""
     commands = set(make_parser()._subparsers._group_actions[0].choices)
-    docs = [*ROOT.glob("**/AGENTS.md"), *ROOT.glob("**/CLAUDE.md"), *ROOT.glob(".claude/skills/**/*.md"), ROOT / "README.md"]
+    # Ours only (tracked or new): build/ holds xmake-repo's own AGENTS.md.
+    docs = capture(["git", "ls-files", "--cached", "--others", "--exclude-standard", "--",
+                    "*AGENTS.md", "*CLAUDE.md", ".claude/skills/*.md", "README.md"]).splitlines()
     stale = []
-    for doc in docs:
-        if ".pixi" in doc.parts:
-            continue
-        for n, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
+    for doc in [d for d in docs if (ROOT / d).is_file()]:  # is_file: deleted but not yet committed
+        for n, line in enumerate((ROOT / doc).read_text(encoding="utf-8").splitlines(), 1):
             for cmd in re.findall(r"(?:project_n|\./dev) +([a-z][a-z-]*)", line):
                 if cmd not in commands:
-                    stale.append(f"{doc.relative_to(ROOT)}:{n}: unknown command {cmd!r}")
+                    stale.append(f"{doc}:{n}: unknown command {cmd!r}")
     return stale
 
 
@@ -633,7 +635,7 @@ def cmd_doctor(args):
         # Look at the directories: vswhere -find misses a toolset that wasn't installed by the VS installer (CI's cache).
         found = any(Path(vs, "VC", "Tools", "MSVC").glob(f"{VS_TOOLSET}.*") for vs in installs)
         report(found, f"MSVC toolset {VS_TOOLSET} (Build Tools)", INSTALL_HINTS["vs"]["windows"])
-        if podman and str(ROOT).lower().startswith(("c:", "d:")):
+        if podman and not str(ROOT).startswith("\\\\"):  # every drive letter is NTFS; WSL paths are \\wsl$\...
             print("note  container builds from an NTFS checkout are slow; keep a clone inside WSL for them")
     if HOST == "macos":
         sdk = capture(["xcrun", "--show-sdk-version"], check=False).strip() if shutil.which("xcrun") else ""

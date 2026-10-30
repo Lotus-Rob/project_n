@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import project_n
 
@@ -165,6 +166,11 @@ class SanitizerTest(unittest.TestCase):
 
     def test_ubsan_findings_fail_the_run(self):
         self.assertIn("halt_on_error=1", project_n.xmake_env(project_n.build_dir("linux-gcc", "debug"))["UBSAN_OPTIONS"])
+
+    def test_users_own_options_win(self):
+        with mock.patch.dict(project_n.os.environ, {"ASAN_OPTIONS": "detect_leaks=0"}):
+            options = project_n.xmake_env(project_n.build_dir("linux-gcc", "debug"))["ASAN_OPTIONS"]
+        self.assertTrue(options.startswith("abort_on_error=0") and options.endswith(":detect_leaks=0"), options)
 
 
 class HelpersTest(unittest.TestCase):
