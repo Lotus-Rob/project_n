@@ -46,16 +46,17 @@ end
 
 -- conda-forge compilers from the Pixi env; names are triplet-prefixed, so XMake's
 -- built-in gcc/clang toolchains would silently pick the host compilers instead.
+local triplet = is_host("macosx") and "arm64-apple-darwin20.0.0-" or "x86_64-conda-linux-gnu-"
 local function pixi_toolchain(name, cc, cxx, flags)
     toolchain(name)
         set_kind("standalone")
-        set_toolset("cc", "x86_64-conda-linux-gnu-" .. cc)
-        set_toolset("as", "x86_64-conda-linux-gnu-" .. cc)
-        set_toolset("cxx", "x86_64-conda-linux-gnu-" .. cxx)
-        set_toolset("ld", "x86_64-conda-linux-gnu-" .. cxx)
-        set_toolset("sh", "x86_64-conda-linux-gnu-" .. cxx)
-        set_toolset("ar", "x86_64-conda-linux-gnu-ar")
-        set_toolset("strip", "x86_64-conda-linux-gnu-strip")
+        set_toolset("cc", triplet .. cc)
+        set_toolset("as", triplet .. cc)
+        set_toolset("cxx", triplet .. cxx)
+        set_toolset("ld", triplet .. cxx)
+        set_toolset("sh", triplet .. cxx)
+        set_toolset("ar", triplet .. "ar")
+        set_toolset("strip", triplet .. "strip")
         on_load(function (tc)
             local prefix = os.getenv("CONDA_PREFIX")
             assert(prefix, "run through `pixi run project_n`: CONDA_PREFIX is not set")
@@ -74,7 +75,7 @@ pixi_toolchain("pixi-clang", "clang", "clang++", function (tc, prefix)
 end)
 
 -- Our executables link the C++ runtime and libgcc statically so artefacts need only glibc
--- (baseline 2.28). Project-level flags, so packages built from source never inherit them.
+-- (baseline 2.28; on macOS, only the system libraries). Project-level flags, so packages built from source never inherit them.
 -- Sanitizer builds (never shipped) link it dynamically instead: sanitizer runtimes replace parts
 -- of it (operator new, __cxa_guard_*), and a whole-archived static libc++abi collides with TSan.
 local sanitized = get_config("sanitizer") and get_config("sanitizer") ~= "none"
@@ -89,6 +90,14 @@ if is_plat("linux") then
         end
     elseif get_config("toolchain") == "pixi-clang" then
         add_ldflags("-Wl,-rpath," .. prefix .. "/lib") -- conda's GCC adds this rpath itself
+    end
+elseif is_plat("macosx") then
+    local prefix = os.getenv("CONDA_PREFIX") or ""
+    if not sanitized then
+        -- conda's libc++ (newer than the system's), statically; libc++abi stays macOS's own.
+        add_ldflags("-nostdlib++", prefix .. "/lib/libc++.a", "-lc++abi")
+    else
+        add_ldflags("-Wl,-rpath," .. prefix .. "/lib")
     end
 end
 

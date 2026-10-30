@@ -1,7 +1,7 @@
 [workspace]
 name = "project_n"
 channels = ["conda-forge"]
-platforms = ["linux-64", "win-64"]
+platforms = ["linux-64", "win-64", "osx-arm64"]
 requires-pixi = ">=0.83"  # minimum only: pixi itself comes from the host package manager
 
 [tasks]
@@ -9,7 +9,6 @@ requires-pixi = ">=0.83"  # minimum only: pixi itself comes from the host packag
 project_n = "python tools/project_n.py"
 
 [dependencies]
-xmake = "==3.1.2"
 python = "==3.14.10"
 # XMake only accepts a Python with these when packages need it as a build tool.
 pip = "==26.2.2"
@@ -23,8 +22,14 @@ cmake = "==4.4.5"
 ninja = "==1.13.2"
 meson = "==1.12.1"
 
+# XMake per platform: conda-forge has no osx-arm64 build, so project_n.py downloads the
+# upstream bundle there (XMAKE_MACOS_SHA256). Keep the version equal to set_xmakever().
+[target.win-64.dependencies]
+xmake = "==3.1.2"
+
 # All LLVM packages share one version: lldb's libc++ formatters only match their own release.
 [target.linux-64.dependencies]
+xmake = "==3.1.2"
 sysroot_linux-64 = "==2.28"
 gxx_linux-64 = "==16.2.0"
 clangxx_linux-64 = "==22.1"
@@ -45,6 +50,29 @@ bison = "==3.8.2"
 flex = "==2.6.4"
 gperf = "==3.3"
 wayland = "==1.26.0"  # provides the build-machine wayland-scanner
+
+[target.osx-arm64.dependencies]
+clangxx_osx-arm64 = "==22.1.8"  # full version on macOS (Linux's is major.minor)
+libcxx = "==22.1.8"
+libcxx-devel = "==22.1.8"
+lldb = "==22.1.8"
+pkg-config = "==0.29.2"
+make = "==4.4.1"
+
+[target.osx-arm64.activation]
+scripts = ["tools/env/activate.sh"]
+
+[target.osx-arm64.activation.env]
+# As on Linux, all flags come from xmake.lua. The SDK comes from sdkroot_env (SDKROOT via xcrun).
+CFLAGS = ""
+CXXFLAGS = ""
+CPPFLAGS = ""
+LDFLAGS = ""
+DEBUG_CFLAGS = ""
+DEBUG_CXXFLAGS = ""
+DEBUG_CPPFLAGS = ""
+# Oldest supported macOS; clang and CMake both read it (docs/design/0001 §5.7).
+MACOSX_DEPLOYMENT_TARGET = "13.0"
 
 [target.linux-64.activation]
 scripts = ["tools/env/activate.sh"]

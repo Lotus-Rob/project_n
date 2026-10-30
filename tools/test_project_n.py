@@ -59,6 +59,17 @@ class LocationRuleTest(unittest.TestCase):
         self.assertFalse(project_n.needs_container("windows-msvc"))
         self.assertTrue(project_n.needs_container("linux-gcc"))
 
+    def test_macos_builds_only_on_a_mac(self):
+        project_n.HOST, project_n.IN_CONTAINER = "linux", False
+        self.assertFalse(project_n.buildable_here("macos-clang"))
+        self.assertTrue(project_n.buildable_here("windows-msvc"))
+        with self.assertRaises(project_n.Fail):
+            project_n.reenter("macos-clang", ["build"])
+        project_n.HOST = "macos"
+        self.assertTrue(project_n.buildable_here("macos-clang"))
+        project_n.HOST, project_n.IN_CONTAINER = "linux", True
+        self.assertFalse(project_n.buildable_here("macos-clang"))
+
     def test_never_reenters_inside_a_container(self):
         project_n.HOST, project_n.IN_CONTAINER = "linux", True
         self.assertFalse(project_n.needs_container("windows-msvc", force=True))
@@ -86,7 +97,7 @@ class BuildAllTest(unittest.TestCase):
             result = project_n.build_all(project_n.argparse.Namespace(preset="all", mode="debug", sanitizer="none", container=False))
         finally:
             project_n.cmd_build = saved
-        self.assertEqual(built, list(project_n.PRESETS))
+        self.assertEqual(built, [p for p in project_n.PRESETS if project_n.buildable_here(p)])
         self.assertEqual(result, 1)
 
 

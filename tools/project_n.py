@@ -12,15 +12,19 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-HOST = "windows" if os.name == "nt" else "linux"
+HOST = "windows" if os.name == "nt" else "macos" if sys.platform == "darwin" else "linux"
 IN_CONTAINER = os.environ.get("PROJECT_N_IN_CONTAINER") == "1"
 
 APP = "project_n"
 MODES = ("debug", "release", "releasedbg")
 VS_TOOLSET = "14.50"  # native Windows MSVC; must match containers/windows/buildtools.vsconfig
+# conda-forge has no osx-arm64 XMake, so macOS uses the upstream bundle of set_xmakever()'s
+# version (docs/design/0001 §5.7). Checksum of xmake-bundle-v<version>.macos.arm64.
+XMAKE_MACOS_SHA256 = "e719121c56cd34f5f0c0731954a154c1df1b0915f303e5c82dfb6c6cb9e3ef9e"
 LINT_PRESET = "linux-clang"
 
 # Sanitizers each preset supports (on request only, never in plain `check`). MSVC has only
@@ -30,6 +34,7 @@ SANITIZERS = {
     "linux-gcc": ("address", "undefined", "thread", "leak"),
     "linux-clang": ("address", "undefined", "thread", "leak"),
     "windows-msvc": ("address",),
+    "macos-clang": ("address", "undefined", "thread"),
 }
 # UBSan only reports by default; make every sanitizer finding fail the run.
 SANITIZER_ENV = {"UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1", "ASAN_OPTIONS": "abort_on_error=0:detect_leaks=1"}
@@ -39,9 +44,11 @@ PRESETS = {
     "linux-gcc": {"host": "linux", "plat": "linux", "arch": "x86_64", "toolchain": "pixi-gcc", "image": "linux"},
     "linux-clang": {"host": "linux", "plat": "linux", "arch": "x86_64", "toolchain": "pixi-clang", "image": "linux"},
     "windows-msvc": {"host": "windows", "plat": "windows", "arch": "x64", "toolchain": "msvc", "image": "msvc"},
+    # No container: macOS builds only on a Mac (Apple's licences), so CI's macos job covers it.
+    "macos-clang": {"host": "macos", "plat": "macosx", "arch": "arm64", "toolchain": "pixi-clang", "image": None},
 }
 # build, test and run use this preset when --preset is left out.
-NATIVE_PRESET = {"linux": "linux-clang", "windows": "windows-msvc"}[HOST]
+NATIVE_PRESET = {"linux": "linux-clang", "windows": "windows-msvc", "macos": "macos-clang"}[HOST]
 
 # Images are tagged by a hash of everything they copy in, so changing any of it rebuilds them.
 IMAGES = {
@@ -63,8 +70,10 @@ VERSION_RE = re.compile(r'set_version\("([^"]+)"\)')
 INSTALL_HINTS = {
     "pixi": {"linux": "sudo pacman -S pixi  (or: curl -fsSL https://pixi.sh/install.sh | sh)", "windows": "winget install prefix-dev.pixi"},
     "git": {"linux": "sudo pacman -S git", "windows": "winget install Git.Git"},
-    "podman": {"linux": "sudo pacman -S podman", "windows": "winget install RedHat.Podman, then: podman machine init; podman machine start"},
+    "podman": {"linux": "sudo pacman -S podman", "windows": "winget install RedHat.Podman, then: podman machine init; podman machine start",
+               "macos": "brew install podman, then: podman machine init; podman machine start"},
     "vs": {"windows": r"vs_BuildTools.exe --config containers\windows\buildtools.vsconfig --passive --wait"},
+    "xcode": {"macos": "xcode-select --install"},
 }
 
 
@@ -97,6 +106,11 @@ def needs_container(preset, force=False):
     if IN_CONTAINER:
         return False
     return force or PRESETS[preset]["host"] != HOST
+
+
+def buildable_here(preset):
+    """Natively, or through its container; macos-clang has none."""
+    return bool(PRESETS[preset]["image"]) or (PRESETS[preset]["host"] == HOST and not IN_CONTAINER)
 
 
 def build_dir(preset, mode, sanitizer="none"):
@@ -162,6 +176,8 @@ def container_cmd(image, inner, interactive=False):
 
 def reenter(preset, argv, interactive=False):
     """Run `project_n <argv>` inside the preset's container: one code path, another environment."""
+    if not PRESETS[preset]["image"]:
+        raise Fail(f"{preset} builds only on a {PRESETS[preset]['host']} host; CI's {PRESETS[preset]['host']} job covers it")
     image = ensure_image(PRESETS[preset]["image"])
     run(container_cmd(image, ["pixi", "run", "--quiet", "project_n", *argv], interactive))
 
@@ -214,6 +230,9 @@ def build_all(args):
     """Build every preset in turn, past failures, then summarise; each build's errors print as it runs."""
     results = {}
     for preset in PRESETS:
+        if not buildable_here(preset):
+            results[preset] = f"skipped (needs a {PRESETS[preset]['host']} host)"
+            continue
         try:
             cmd_build(argparse.Namespace(**{**vars(args), "preset": preset}))
             results[preset] = "ok"
@@ -224,7 +243,7 @@ def build_all(args):
     print("\nbuild summary:")
     for preset, result in results.items():
         print(f"  {preset:14} {result}")
-    return 0 if all(r == "ok" for r in results.values()) else 1
+    return 1 if any(r.startswith("FAILED") for r in results.values()) else 0
 
 
 def cmd_test(args):
@@ -296,19 +315,21 @@ def cmd_check(args):
         raise Fail("commit-check failed")
     cmd_fmt(argparse.Namespace(check=True))
     cmd_lint(argparse.Namespace(container=args.container, fix=False))
-    for preset in PRESETS:
+    skipped = [p for p in PRESETS if not buildable_here(p) or (args.container and not PRESETS[p]["image"])]
+    for preset in [p for p in PRESETS if p not in skipped]:
         cmd_test(argparse.Namespace(preset=preset, mode="release", sanitizer="none", container=args.container,
                                     target=None, args=[]))
     if args.sanitizers:
         for preset, sanitizers in SANITIZERS.items():
-            for sanitizer in sanitizers:
+            for sanitizer in sanitizers if preset not in skipped else ():
                 cmd_test(argparse.Namespace(preset=preset, mode="debug", sanitizer=sanitizer, container=args.container,
                                             target=None, args=[]))
-    print("check: all presets passed" + (" with every supported sanitizer" if args.sanitizers else ""))
+    print("check: all presets passed" + (" with every supported sanitizer" if args.sanitizers else "")
+          + (f" (skipped {', '.join(skipped)}: not buildable on this host)" if skipped else ""))
 
 
 def cmd_artifact(args):
-    if not IN_CONTAINER:
+    if not IN_CONTAINER and (PRESETS[args.preset]["image"] or needs_container(args.preset)):
         return reenter(args.preset, ["artifact", "--preset", args.preset])
     bdir = build(args.preset, "release")
     run(["xmake", "test", "--output-on-failure"], env=xmake_env(bdir))
@@ -318,6 +339,10 @@ def cmd_artifact(args):
         leaked = [line for line in capture(["ldd", binary]).splitlines() if ".pixi" in line]
         if leaked:
             raise Fail("artefact links into the Pixi environment:\n" + "\n".join(leaked))
+    elif PRESETS[args.preset]["plat"] == "macosx":
+        leaked = [line for line in capture(["otool", "-L", binary]).splitlines()[1:] if not line.strip().startswith(("/usr/lib/", "/System/"))]
+        if leaked:
+            raise Fail("artefact links libraries macOS doesn't ship:\n" + "\n".join(leaked))
     dist = ROOT / "dist" / args.preset
     shutil.rmtree(dist, ignore_errors=True)
     dist.mkdir(parents=True)
@@ -438,6 +463,9 @@ def cmd_doctor(args):
         report(found, f"MSVC toolset {VS_TOOLSET} (Build Tools)", INSTALL_HINTS["vs"]["windows"])
         if podman and str(ROOT).lower().startswith(("c:", "d:")):
             print("note  container builds from an NTFS checkout are slow; keep a clone inside WSL for them")
+    if HOST == "macos":
+        sdk = capture(["xcrun", "--show-sdk-version"], check=False).strip() if shutil.which("xcrun") else ""
+        report(bool(sdk), f"Xcode Command Line Tools (macOS SDK {sdk or 'missing'})", INSTALL_HINTS["xcode"]["macos"])
     if os.environ.get("PROJECT_N_ACCEPT_MSVC_LICENSE") != "1":
         print("--   PROJECT_N_ACCEPT_MSVC_LICENSE is not set: the MSVC image can't be built until you accept its licence")
     return 1 if problems else 0
@@ -466,6 +494,22 @@ def cmd_clean(args):
             if d != current:
                 print(f"removing {d}")
                 shutil.rmtree(d)
+
+
+def ensure_macos_xmake():
+    """Download the pinned XMake bundle once into .pixi/ and put it first on PATH."""
+    version = re.search(r'set_xmakever\("([^"]+)"\)', (ROOT / "xmake.lua").read_text(encoding="utf-8"))[1]
+    exe = ROOT / ".pixi" / "xmake-bundle" / version / "xmake"
+    if not exe.exists():
+        url = f"https://github.com/xmake-io/xmake/releases/download/v{version}/xmake-bundle-v{version}.macos.arm64"
+        print(f"+ download {url}", flush=True)
+        data = urllib.request.urlopen(url).read()
+        if hashlib.sha256(data).hexdigest() != XMAKE_MACOS_SHA256:
+            raise Fail(f"checksum mismatch for {url}: update XMAKE_MACOS_SHA256 only on purpose (bump-toolchain skill)")
+        exe.parent.mkdir(parents=True, exist_ok=True)
+        exe.write_bytes(data)
+        exe.chmod(0o755)
+    os.environ["PATH"] = f"{exe.parent}{os.pathsep}{os.environ['PATH']}"
 
 
 def main(argv=None):
@@ -520,6 +564,8 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
     try:
+        if HOST == "macos":
+            ensure_macos_xmake()
         return args.func(args) or 0
     except Fail as e:
         print(f"project_n: {e}", file=sys.stderr)
