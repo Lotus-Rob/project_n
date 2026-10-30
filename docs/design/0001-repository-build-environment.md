@@ -691,11 +691,11 @@ Each phase lists the host tools from §5.0 that must be installed before it star
    - the `git-commit` and `agent-docs` skills
 3. **Workflow green:**
    - ✅ A native build, run and debug works from the editor on this machine (Wayland by default since `defcefe`).
-   - `check` and `check --container` pass.
-   - `artifact` produces Linux and Windows builds.
+   - ✅ `check` and `check --container` pass.
+   - ✅ `artifact` produces Linux and Windows builds.
    - The native Windows build runs.
-   - The first `release --dry-run` succeeds.
-   - Then create the `release`, `bump-toolchain` and `add-dependency` skills.
+   - ✅ The first `release --dry-run` succeeds (2026-10-30, would release v0.1.0).
+   - ✅ Then create the `release`, `bump-toolchain` and `add-dependency` skills. Licences are recorded as comments on each `add_requires` line.
 4. **Later:** GitHub move and workflows, branch protection, `doctor --docs`, backlog skills as triggers fire.
 
 ---
