@@ -21,6 +21,7 @@
 - XMake's package cache ignores the compiler version: `env/activate.sh` gives each `pixi.toml` + `pixi.lock` its own `XMAKE_PKG_INSTALLDIR`. `project_n clean --packages` removes old ones.
 - `xmake f` runs with `-v` on purpose: it serialises package installs. In parallel, XMake installs duplicate variants with one build hash (libxcb, libx11 via SDL3) into the same directory and they corrupt each other ("install: ... No such file or directory").
 - The env's gdb reads `$CONDA_PREFIX/etc/gdbinit`, which the gdb package already uses; `env/activate.sh` appends a single `source` line for `debug/gdbinit` rather than replacing the file.
+- XMake sometimes rewrites `xmake-requires.lock` with only the `__meta__` block moved (Lua table order). The content is unchanged: `git checkout xmake-requires.lock`; commit the lock only when versions or hashes change.
 
 ## Skill candidates
 | Workflow | Evidence | Proposed skill |
