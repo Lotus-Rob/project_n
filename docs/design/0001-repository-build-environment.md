@@ -317,7 +317,7 @@ Each rule below fixed a concrete failure or host leak found in S4. `containers/A
 
 5. **No library dependency may resolve from the host.** `add_requireconfs("**|<build tools>", {system = false})` makes every library come from xmake-repo. Without it, XMake used pacman's `fmt`, `libx11`, `libffi` and others. `"*"` alone covers only top-level requires.
    - Build tools are excluded from the rule so they can come from Pixi.
-   - In S4 XMake still built most tools itself (Python, CMake, meson, ninja, bison, m4), probably after rejecting Pixi's versions. Phase 2 tries the simpler form, `"**"` with no exclusions and no autotools entries in `pixi.toml`, and keeps whichever works in the container.
+   - In S4 XMake still built most tools itself (Python, CMake, meson, ninja, bison, m4). Since phase 2 it uses Pixi's for all of them: checked 2026-10-30, the package directory holds only empty bookkeeping entries for the tools, and the build logs run `.pixi/envs/default/bin/cmake`. The exclusions stay; without them XMake would build its own tools again.
 6. **Pixi's activation env is overridden on linux-64** (`[target.linux-64.activation.env]`):
    - Clear `CFLAGS`, `CXXFLAGS`, `CPPFLAGS`, `LDFLAGS` and the `DEBUG_*` variants. The compiler packages export conda-build flags (`-O2 -march=nocona`, an rpath, `-isystem <env>/include`), and CMake-based package builds pick them up.
    - Set `PKG_CONFIG=pkg-config.bin` and `PKG_CONFIG_LIBDIR=/dev/null`. conda's pkg-config wrappers append the host's `/usr/lib/pkgconfig` (the triplet wrapper does this when `CC` is Clang) and the environment's own `.pc` files. An empty `PKG_CONFIG_LIBDIR` counts as unset, hence `/dev/null`.
@@ -368,7 +368,7 @@ Each rule below fixed a concrete failure or host leak found in S4. `containers/A
 
 **Package cache**
 
-11. **XMake's package cache is keyed on the toolchain *name*, not the compiler version.** After the LLVM 23 → 22 switch, it silently reused packages built with Clang 23. `tools/env/activate.sh` therefore sets `XMAKE_PKG_INSTALLDIR=~/.xmake/project_n/<hash of pixi.toml + pixi.lock>/packages`. `pixi.toml` is included because activation variables (rule 6) change builds but aren't in the lock. Any change to the environment starts a fresh package directory, and `project_n clean --packages` removes old ones.
+11. **XMake's package cache is keyed on the toolchain *name*, not the compiler version.** After the LLVM 23 → 22 switch, it silently reused packages built with Clang 23. `project_n.py` therefore sets `XMAKE_PKG_INSTALLDIR=~/.xmake/project_n/<hash of pixi.toml + pixi.lock>/packages` for every XMake call, on every host (until phase 4 the Linux-only activation script did, so Windows shared one directory). `pixi.toml` is included because activation variables (rule 6) change builds but aren't in the lock. Any change to the environment starts a fresh package directory, and `project_n clean --packages` removes old ones.
 
 ---
 
@@ -522,7 +522,7 @@ The `agent-docs` skill encodes these rules:
 
 | Skill | Owning AGENTS.md | Trigger |
 |---|---|---|
-| `fix-xmake-package` | root | **Trigger already met in S4** (two overrides). Covers: diagnosing a package that only builds with host files (find the hidden dependency in the failed build's log, check SDL-style silent feature drops), writing a `set_base` override in `xmake/repo/`, and preparing the upstream xmake-repo change. Propose for creation in phase 2 |
+| `fix-xmake-package` | root | ✅ **Created 2026-10-30** (trigger met in S4: two overrides). Covers: diagnosing a package that only builds with host files (find the hidden dependency in the failed build's log, check SDL-style silent feature drops), writing a `set_base` override in `xmake/repo/`, and preparing the upstream xmake-repo change. Propose for creation in phase 2 |
 | `add-unit-test` | tests | The first area with more than a handful of tests |
 | `design-doc` | root | The second design doc (template, numbering, status lifecycle) |
 | `new-subsystem` | src | After the architecture doc |
@@ -602,7 +602,7 @@ chore(release): v0.2.0
 
 ## 12. CI
 
-GitHub Actions (`.github/workflows/ci.yml`, since phase 4) runs on every push, tag and pull request. It only runs `project_n` commands, split into parallel jobs (`check` stays the local gate):
+GitHub Actions (`.github/workflows/ci.yml`, since phase 4) only runs `project_n` commands, split into parallel jobs (`check` stays the local gate). The repository is private on GitHub Free, so minutes are metered (Windows 2x, macOS 10x): branch pushes run the Linux jobs, while pushes to `main` and tags run the Windows and macOS jobs. `main` only receives commits that already passed the Linux jobs on their branch. A manual run (`workflow_dispatch`) runs everything on any branch.
 
 | Job | Runner | Runs |
 |---|---|---|
@@ -615,7 +615,7 @@ GitHub Actions (`.github/workflows/ci.yml`, since phase 4) runs on every push, t
   - Setup, saved as soon as its step finishes: the Pixi environments (setup-pixi), the `linux` and `msvc` images in GHCR by content tag (`PROJECT_N_REGISTRY`), the MSVC install for msvc-wine (after `project_n image`), the MSVC 14.50 toolset on Windows, and the macOS XMake bundle.
   - XMake packages per job, saved at job end even after a failure.
 - **Licence:** no image contains Microsoft's files. They do sit in Actions caches (the MSVC install and the Windows toolset); fork PRs of a public repository can read those, which was accepted on the basis that the repository goes private once setup is done.
-- **Branch protection** on `main` requires the jobs above and linear history (§11.2).
+- **Branch protection** on `main` is configured for linear history (§11.2) and the Linux jobs, but GitHub Free doesn't enforce it on private repositories; the local `check` and CI results are the gate. Upgrading to GitHub Pro would enforce it.
 
 ---
 
