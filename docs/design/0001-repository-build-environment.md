@@ -627,7 +627,7 @@ GitHub Actions (`.github/workflows/ci.yml`, since phase 4) only runs `project_n`
 | S6 | **Portable Linux artefact** — ✅ **passed 2026-10-29** (§13.2) | The hello-window from `artifact --preset linux-clang` and `--preset linux-gcc` shows no Pixi-environment libraries in `ldd`. Its tests pass in a plain Rocky/Alma 8 container (glibc 2.28) with no Pixi installed | Raise the baseline or bundle the offending library, then document it in `containers/AGENTS.md` |
 | S1 | XMake + msvc-wine — ✅ **passed 2026-10-29** (§13.3) | `xmake f -p windows --toolchain=msvc` finds msvc-wine, builds the hello-window and runs its doctest under Wine | Custom toolchain definition in `xmake.lua`, then the §5.6 fallback |
 | S5 | Pixi on Windows — ✅ **passed 2026-10-30** in CI (`windows-2025-vs2026`) | The `win-64` environment provides XMake, Python, the Clang tools and git-cliff, and XMake finds the pinned VS toolset | Native XMake install at the pinned version, checked by `doctor` |
-| S2 | Bit-identical artefacts — ◐ **partial** (§13.2) | Two clean `artifact --preset linux-gcc` runs on different machines match, or the differences are explained (add `-ffile-prefix-map` if needed) | Document "same toolchain" reproducibility rather than "bit-identical" |
+| S2 | Bit-identical artefacts — ✅ **passed 2026-10-30** for Linux across machines; Windows after `/Brepro` (§13.2) | Two clean `artifact --preset linux-gcc` runs on different machines match, or the differences are explained (add `-ffile-prefix-map` if needed) | Document "same toolchain" reproducibility rather than "bit-identical" |
 | S7 | macOS toolchain (§5.7) — ✅ **passed 2026-10-30** in CI (`macos-26`), with conda's libc++ shipped as a dylib rather than static | On a Mac or CI runner: the `osx-arm64` environment resolves from the same `pixi.toml`, XMake builds the hello-window with conda Clang and static libc++ against the Command Line Tools SDK, the window opens with SDL3 (Cocoa/Metal), doctest passes, and `otool -L` shows only system libraries | Link the system libc++ and raise `MACOSX_DEPLOYMENT_TARGET` until C++23 features are available |
 | S3 | Podman on Windows | `artifact --preset linux-gcc` works from PowerShell with podman machine | Document "Windows hosts build Linux artefacts from a WSL shell" |
 
@@ -666,7 +666,7 @@ The `artifact` flow was run by hand in `project_n-linux` (the spike's `container
 | Container-built window on the CachyOS host, native Wayland | ✓ |
 | **S2:** two clean-room rebuilds in fresh containers, same machine and package cache | ✓ all 6 binaries bit-identical |
 
-**S2 is still open** for its full criterion: different machines with empty package caches. That fits CI, so it moves to phase 4, where the GitHub workflow builds on a fresh runner and compares checksums with a local build.
+**S2, full criterion (2026-10-30):** a GitHub runner's container artefacts for `d0e8972` against this machine's for `a869b2c` (the same sources plus `CHANGELOG.md`), each from empty package caches. Both Linux binaries were bit-identical. The MSVC binary differed in 4 bytes, the link timestamp in the PE header and debug directory; `/Brepro` (cl and link) makes it deterministic, and two clean local builds at different times now match. A cross-machine re-check of the Windows artefact waits for CI.
 
 ### 13.3 S1 results
 

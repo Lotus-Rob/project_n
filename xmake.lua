@@ -30,6 +30,10 @@ if is_plat("windows") then
     add_cxxflags("/std:c++23preview")
     -- Static C++ runtime, like Linux: players need no Visual C++ Redistributable.
     set_runtimes("MT")
+    -- Reproducible binaries (S2): the linker otherwise stamps the link time into the PE header and
+    -- debug directory, the only bytes that differed between two machines' builds.
+    add_cxflags("/Brepro", {force = true})
+    add_ldflags("/Brepro", {force = true})
     -- Library headers (<...>) are external: no warnings from code we don't own. XMake's own
     -- /external:I paths don't match under msvc-wine, so classify by include style instead.
     -- Forced: XMake probes each flag alone, and cl rejects /external:anglebrackets without
