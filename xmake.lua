@@ -93,6 +93,9 @@ if is_plat("linux") then
     end
 elseif is_plat("macosx") then
     local prefix = os.getenv("CONDA_PREFIX") or ""
+    -- libc++'s availability markers describe the system's libc++ (std::to_chars needs macOS 13.3);
+    -- we always run conda's, statically or (sanitized) from the env, so they don't apply.
+    add_defines("_LIBCPP_DISABLE_AVAILABILITY")
     if not sanitized then
         -- conda's libc++ (newer than the system's), statically; libc++abi stays macOS's own.
         add_ldflags("-nostdlib++", prefix .. "/lib/libc++.a", "-lc++abi")
