@@ -126,9 +126,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.CHECKOUT_REF }}
-      - name: Cached MSVC toolset
+      - name: Restore MSVC toolset
         id: msvc
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # What the versioned VC.14.50 component adds to the image's VS install.
           path: |
@@ -145,6 +145,15 @@ jobs:
             'modify', '--installPath', "`"$vs`"", '--config', "`"$PWD\containers\windows\buildtools.vsconfig`"",
             '--quiet', '--norestart', '--nocache')
           if ($proc.ExitCode -notin 0, 3010) { throw "VS installer failed: $($proc.ExitCode)" }
+      - name: Save MSVC toolset
+        # Straight after installing, whatever happens to the rest of the job.
+        if: steps.msvc.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.50.*
+            C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\14.50
+          key: msvc-${{ hashFiles('containers/windows/buildtools.vsconfig') }}
       - name: Restore XMake packages
         id: xmake-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -177,14 +186,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.CHECKOUT_REF }}
+      - name: XMake source checksum
+        run: echo "XMAKE_TOOL=$(grep -o 'XMAKE_MACOS_SHA256 = "[0-9a-f]*"' tools/project_n.py | cut -d'"' -f2)" >> "$GITHUB_ENV"
+      - name: Restore XMake
+        id: xmake-tool
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.xmake/project_n-tools
+          key: xmake-tool-macos-${{ env.XMAKE_TOOL }}
       - name: Restore XMake packages
         id: xmake-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          # XMAKE_PKG_INSTALLDIR (tools/env/activate.sh) and the XMake that project_n builds.
-          path: |
-            ~/.xmake/project_n
-            ~/.xmake/project_n-tools
+          path: ~/.xmake/project_n # XMAKE_PKG_INSTALLDIR (tools/env/activate.sh)
           key: xmake-macos-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
           restore-keys: xmake-macos-
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
@@ -193,15 +207,14 @@ jobs:
           locked: true
           cache: true
       # Report only: CI needs no commit hook or podman. Exit code 3 means problems found; anything else is a bug.
-      - run: pixi run project_n doctor || [ $? -eq 3 ]
+      - run: pixi run project_n doctor || [ $? -eq 3 ] # also builds XMake on a cache miss
+      - name: Save XMake
+        if: steps.xmake-tool.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.xmake/project_n-tools
+          key: xmake-tool-macos-${{ env.XMAKE_TOOL }}
       - run: pixi run project_n test --preset macos-clang --mode release
-      - name: Diagnose the abort at exit (temporary)
-        if: failure()
-        run: |
-          bin=build/macos-clang/release/macosx/arm64/release/core_tests
-          otool -L "$bin"
-          pixi run lldb --batch -o run -o "thread backtrace all" -- "$bin" || true
-          pixi run project_n test --preset macos-clang --sanitizer address || true
       - run: pixi run project_n test --preset macos-clang --sanitizer address
       - run: pixi run project_n artifact --preset macos-clang
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -217,8 +230,5 @@ jobs:
         if: always() && steps.xmake-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          # XMAKE_PKG_INSTALLDIR (tools/env/activate.sh) and the XMake that project_n builds.
-          path: |
-            ~/.xmake/project_n
-            ~/.xmake/project_n-tools
+          path: ~/.xmake/project_n
           key: xmake-macos-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
