@@ -53,13 +53,15 @@ PRESETS = {
 NATIVE_PRESET = {"linux": "linux-clang", "windows": "windows-msvc", "macos": "macos-clang"}[HOST]
 
 # Images are tagged by a hash of everything they copy in, so changing any of it rebuilds them.
-# `push`: may go to PROJECT_N_REGISTRY (CI's image cache). Never the msvc image: its licence
-# forbids redistribution.
+# `push`: may go to PROJECT_N_REGISTRY (CI's image cache). Images hold no Microsoft files: MSVC
+# is installed outside them (msvc_dir) because its licence forbids redistribution.
 IMAGES = {
     "linux": {"file": "containers/linux.Containerfile", "base": None, "push": True},
-    "wine": {"file": "containers/wine.Containerfile", "base": "linux", "push": True},
-    "msvc": {"file": "containers/msvc.Containerfile", "base": "wine", "push": False},
+    "msvc": {"file": "containers/msvc.Containerfile", "base": "linux", "push": True},
 }
+# Runs in the msvc image with msvc_dir() at /opt/msvc. vsdownload.py uses the Pixi env's Python.
+MSVC_INSTALL = ('pixi run python /opt/msvc-wine/vsdownload.py --accept-license --msvc-version "$MSVC_VERSION" '
+                '--sdk-version "$SDK_VERSION" --architecture x64 --dest /opt/msvc && /opt/msvc-wine/install.sh /opt/msvc')
 IMAGE_INPUTS = ("pixi.toml", "pixi.lock", "tools/env/activate.sh")
 CACHE_VOLUME = "project_n-xmake-cache"  # PROJECT_N_XMAKE_CACHE=<dir> bind-mounts a directory instead (CI caches it)
 
@@ -182,27 +184,45 @@ def ensure_image(name):
     cmd = ["podman", "build", "-t", tag, "-f", spec["file"]]
     if spec["base"]:
         cmd += ["--build-arg", f"BASE_IMAGE={ensure_image(spec['base'])}"]
-    if name == "msvc":
-        if os.environ.get("PROJECT_N_ACCEPT_MSVC_LICENSE") != "1":
-            raise Fail("Building the MSVC image downloads Microsoft's Build Tools. Accept their licence by setting PROJECT_N_ACCEPT_MSVC_LICENSE=1.")
-        cmd += ["--build-arg", "ACCEPT_MSVC_LICENSE=1"]
-        cache = os.environ.get("PROJECT_N_MSVC_CACHE")  # CI keeps Microsoft's downloads between runs
-        if cache:
-            Path(cache).mkdir(parents=True, exist_ok=True)
-            # :U hands the directory to the build's dev user; the image tag doesn't depend on it.
-            cmd += ["-v", f"{cache}:/var/cache/msvc:U", "--build-arg", "MSVC_CACHE=/var/cache/msvc"]
     run(cmd + ["."])
     if remote and os.environ.get("PROJECT_N_PUSH_IMAGES") == "1":
         run(["podman", "push", tag, remote])
     return tag
 
 
-def container_cmd(image, inner, interactive=False):
+def msvc_dir():
+    """MSVC and the Windows SDK, installed once per msvc.Containerfile (which pins their versions)."""
+    return Path.home() / ".xmake" / "project_n-tools" / f"msvc-{sha256(IMAGES['msvc']['file'])[:12]}"
+
+
+def ensure_msvc(image):
+    dest = msvc_dir()
+    if not (dest / ".installed").exists():
+        if os.environ.get("PROJECT_N_ACCEPT_MSVC_LICENSE") != "1":
+            raise Fail("Installing MSVC downloads Microsoft's Build Tools. Accept their licence by setting PROJECT_N_ACCEPT_MSVC_LICENSE=1.")
+        shutil.rmtree(dest, ignore_errors=True)
+        dest.mkdir(parents=True)
+        run(container_cmd(image, ["bash", "-c", MSVC_INSTALL], mounts=[f"{dest}:/opt/msvc:Z"]))
+        (dest / ".installed").touch()
+    return dest
+
+
+def preset_container(preset):
+    """The preset's image and mounts: windows-msvc also gets the MSVC install, never part of an image."""
+    if not PRESETS[preset]["image"]:
+        raise Fail(f"{preset} builds only on a {PRESETS[preset]['host']} host; CI's {PRESETS[preset]['host']} job covers it")
+    image = ensure_image(PRESETS[preset]["image"])
+    return image, [f"{ensure_msvc(image)}:/opt/msvc:Z"] if PRESETS[preset]["toolchain"] == "msvc" else []
+
+
+def container_cmd(image, inner, interactive=False, mounts=()):
     cache = os.environ.get("PROJECT_N_XMAKE_CACHE")
     if cache:
         Path(cache).mkdir(parents=True, exist_ok=True)
     cmd = ["podman", "run", "--rm", "--userns=keep-id:uid=1000,gid=1000", "-v", f"{ROOT}:/src:Z",
            "-v", f"{cache}:/home/dev/.xmake:Z" if cache else f"{CACHE_VOLUME}:/home/dev/.xmake", "-e", f"PROJECT_N_IMAGE={image}"]
+    for mount in mounts:
+        cmd += ["-v", mount]
     if interactive:
         cmd.append("-it")
     return cmd + [image, *inner]
@@ -210,10 +230,8 @@ def container_cmd(image, inner, interactive=False):
 
 def reenter(preset, argv, interactive=False):
     """Run `project_n <argv>` inside the preset's container: one code path, another environment."""
-    if not PRESETS[preset]["image"]:
-        raise Fail(f"{preset} builds only on a {PRESETS[preset]['host']} host; CI's {PRESETS[preset]['host']} job covers it")
-    image = ensure_image(PRESETS[preset]["image"])
-    run(container_cmd(image, ["pixi", "run", "--quiet", "project_n", *argv], interactive))
+    image, mounts = preset_container(preset)
+    run(container_cmd(image, ["pixi", "run", "--quiet", "project_n", *argv], interactive, mounts))
 
 
 # --- xmake ---------------------------------------------------------------------
@@ -550,6 +568,8 @@ def cmd_doctor(args):
             tag = image_tag(name)
             built = subprocess.run(["podman", "image", "exists", tag]).returncode == 0
             print(f"{'ok ' if built else '-- '}  image {tag}" + ("" if built else " (built on first use)"))
+        installed = (msvc_dir() / ".installed").exists()
+        print(f"{'ok ' if installed else '-- '}  MSVC in {msvc_dir()}" + ("" if installed else " (installed on first use)"))
     if HOST == "windows":
         vswhere = Path(os.environ.get("ProgramFiles(x86)", ""), "Microsoft Visual Studio/Installer/vswhere.exe")
         installs = capture([vswhere, "-products", "*", "-property", "installationPath"], check=False).splitlines() if vswhere.exists() else []
@@ -567,13 +587,14 @@ def cmd_doctor(args):
 
 
 def cmd_image(args):
-    for name in ([PRESETS[args.preset]["image"]] if args.preset else IMAGES):
-        print(ensure_image(name))
+    for preset in [args.preset] if args.preset else [p for p in PRESETS if PRESETS[p]["image"]]:
+        image, mounts = preset_container(preset)
+        print(image, *mounts)
 
 
 def cmd_shell(args):
-    image = ensure_image(PRESETS[args.preset]["image"])
-    run(container_cmd(image, ["bash"], interactive=True))
+    image, mounts = preset_container(args.preset)
+    run(container_cmd(image, ["bash"], interactive=True, mounts=mounts))
 
 
 def cmd_clean(args):
@@ -653,7 +674,7 @@ def make_parser():
     p.add_argument("--check", action="store_true", help="fail instead of rewriting files")
     p = add("lint", cmd_lint, "run the pinned clang-tidy over the sources (any finding fails)", container=True)
     p.add_argument("--fix", action="store_true", help="apply clang-tidy's fixes, then reformat")
-    add("image", cmd_image, "build container images if missing", preset="optional")
+    add("image", cmd_image, "build or pull container images if missing, and install MSVC for windows-msvc", preset="optional")
     add("shell", cmd_shell, "open a shell in a preset's container (to debug container failures)", preset="required")
     p = add("clean", cmd_clean, "remove build directories", preset="optional")
     p.add_argument("--packages", action="store_true", help="also remove XMake package dirs of other environments")

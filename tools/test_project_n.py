@@ -149,9 +149,14 @@ class HelpersTest(unittest.TestCase):
         self.assertNotEqual(project_n.image_tag("linux"), project_n.image_tag("msvc"))
         self.assertRegex(project_n.image_tag("msvc"), r"^localhost/project_n-msvc:[0-9a-f]{12}$")
 
-    def test_msvc_image_is_never_pushed(self):
-        self.assertFalse(project_n.IMAGES["msvc"]["push"])
-        self.assertTrue(project_n.IMAGES["wine"]["push"])
+    def test_pushed_images_hold_no_msvc(self):
+        # MSVC's licence forbids redistribution: it's installed into msvc_dir(), never into an image.
+        for name, spec in project_n.IMAGES.items():
+            if spec["push"]:
+                self.assertNotIn("vsdownload.py", (project_n.ROOT / spec["file"]).read_text(), name)
+
+    def test_msvc_install_follows_only_its_containerfile(self):
+        self.assertRegex(project_n.msvc_dir().name, r"^msvc-[0-9a-f]{12}$")
 
     def test_container_command_mounts_repo_and_cache(self):
         cmd = project_n.container_cmd("img", ["pixi", "run", "project_n", "build"])
