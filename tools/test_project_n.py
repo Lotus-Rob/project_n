@@ -101,6 +101,11 @@ class BuildAllTest(unittest.TestCase):
         self.assertEqual(result, 1)
 
 
+class DocsTest(unittest.TestCase):
+    def test_agent_docs_quote_only_real_commands(self):
+        self.assertEqual(project_n.stale_doc_commands(), [])
+
+
 class SanitizerTest(unittest.TestCase):
     def test_each_sanitizer_gets_its_own_build_dir(self):
         self.assertEqual(project_n.build_dir("linux-gcc", "debug").name, "debug")

@@ -325,6 +325,8 @@ def cmd_check(args):
     rng = commit_range()
     if rng and cmd_commit_check(argparse.Namespace(range=rng, message_file=None)):
         raise Fail("commit-check failed")
+    if cmd_doctor(argparse.Namespace(docs=True)):
+        raise Fail("agent docs quote commands that don't exist (agent-docs skill, contract rule 5)")
     cmd_fmt(argparse.Namespace(check=True))
     cmd_lint(argparse.Namespace(container=args.container, fix=False))
     skipped = [p for p in PRESETS if not buildable_here(p) or (args.container and not PRESETS[p]["image"])]
@@ -443,7 +445,26 @@ def check_message(message, allow_fixup=True):
     return problems
 
 
+def stale_doc_commands():
+    """`project_n <cmd>` and `./dev <cmd>` quoted in AGENTS.md, CLAUDE.md, skills and README that don't exist."""
+    commands = set(make_parser()._subparsers._group_actions[0].choices)
+    docs = [*ROOT.glob("**/AGENTS.md"), *ROOT.glob("**/CLAUDE.md"), *ROOT.glob(".claude/skills/**/*.md"), ROOT / "README.md"]
+    stale = []
+    for doc in docs:
+        if ".pixi" in doc.parts:
+            continue
+        for n, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
+            for cmd in re.findall(r"(?:project_n|\./dev) +([a-z][a-z-]*)", line):
+                if cmd not in commands:
+                    stale.append(f"{doc.relative_to(ROOT)}:{n}: unknown command {cmd!r}")
+    return stale
+
+
 def cmd_doctor(args):
+    if args.docs:
+        stale = stale_doc_commands()
+        print("\n".join(stale) or "doctor --docs: every quoted command exists")
+        return 1 if stale else 0
     problems = 0
 
     def report(ok, what, fix=None):
@@ -524,7 +545,7 @@ def ensure_macos_xmake():
     os.environ["PATH"] = f"{exe.parent}{os.pathsep}{os.environ['PATH']}"
 
 
-def main(argv=None):
+def make_parser():
     parser = argparse.ArgumentParser(prog="project_n", description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -546,7 +567,8 @@ def main(argv=None):
         p.add_argument("--sanitizer", choices=["none", *all_sanitizers], default="none",
                        help="build with a sanitizer (support per preset: see SANITIZERS)")
 
-    add("doctor", cmd_doctor, "check the environment; prints how to fix problems, installs nothing")
+    p = add("doctor", cmd_doctor, "check the environment; prints how to fix problems, installs nothing")
+    p.add_argument("--docs", action="store_true", help="only check that commands quoted in agent docs and README exist")
     add_sanitizer(add("build", cmd_build, "build a preset, or all of them", preset="native", mode=True, container=True,
                       choices=(*PRESETS, "all")))
     p = add("test", cmd_test, "build and run the tests of a preset", preset="native", mode=True, container=True)
@@ -573,8 +595,11 @@ def main(argv=None):
     add("shell", cmd_shell, "open a shell in a preset's container (to debug container failures)", preset="required")
     p = add("clean", cmd_clean, "remove build directories", preset="optional")
     p.add_argument("--packages", action="store_true", help="also remove XMake package dirs of other environments")
+    return parser
 
-    args = parser.parse_args(argv)
+
+def main(argv=None):
+    args = make_parser().parse_args(argv)
     try:
         if HOST == "macos":
             ensure_macos_xmake()

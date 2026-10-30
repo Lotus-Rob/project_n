@@ -23,7 +23,7 @@ Other tiers link to a fact instead of repeating it. When an AGENTS.md rule needs
 2. After resolving a non-obvious failure, add one line under **Gotchas** in the nearest AGENTS.md (or the skill whose procedure it affects): symptom, then fix.
 3. Respect the size limits; over the limit, move procedure into a skill or `docs/` and leave a pointer.
 4. Add a nested AGENTS.md only when an area's rules differ from its parent's; never duplicate parent content. Each AGENTS.md has a sibling `CLAUDE.md` containing only `@AGENTS.md`.
-5. Commands quoted anywhere must be real `project_n` commands; when renaming one, grep every AGENTS.md and skill.
+5. Commands quoted anywhere must be real `project_n` commands; `check` enforces it with `doctor --docs`. When renaming one, grep every AGENTS.md and skill.
 
 ## Skills
 

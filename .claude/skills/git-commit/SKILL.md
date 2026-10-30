@@ -60,7 +60,7 @@ fix(audio): stop crackle when the device sample rate changes
 build(env): pin llvm 22.1.8 for all llvm packages
 build(tools)!: rename `dist` command to `artifact`
 
-BREAKING CHANGE: scripts calling `project_n dist` must use `project_n artifact`.
+BREAKING CHANGE: scripts calling the old `dist` command must use `project_n artifact`.
 docs(agents): add gotcha for wine prefix flushing
 ```
 
