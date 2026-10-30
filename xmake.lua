@@ -32,7 +32,9 @@ if is_plat("windows") then
     set_runtimes("MT")
     -- Library headers (<...>) are external: no warnings from code we don't own. XMake's own
     -- /external:I paths don't match under msvc-wine, so classify by include style instead.
-    add_cxflags("/external:anglebrackets", "/external:W0")
+    -- Forced: XMake probes each flag alone, and cl rejects /external:anglebrackets without
+    -- /external:W, so the probe silently dropped it on native Windows.
+    add_cxflags("/external:anglebrackets", "/external:W0", {force = true})
     -- /Wall's codegen notes rather than code issues: padding (4820), inlining decisions (4710,
     -- 4711), removed unused inlines (4514), Spectre mitigation points (5045).
     add_cxflags("/wd4820", "/wd4710", "/wd4711", "/wd4514", "/wd5045")

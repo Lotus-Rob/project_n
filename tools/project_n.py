@@ -40,7 +40,9 @@ SANITIZERS = {
     "macos-clang": ("address", "undefined", "thread"),
 }
 # UBSan only reports by default; make every sanitizer finding fail the run.
-SANITIZER_ENV = {"UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1", "ASAN_OPTIONS": "abort_on_error=0:detect_leaks=1"}
+# MSVC's ASan has no LeakSanitizer and fails every run that asks for it.
+SANITIZER_ENV = {"UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1",
+                 "ASAN_OPTIONS": "abort_on_error=0" + ("" if HOST == "windows" else ":detect_leaks=1")}
 
 # Single source of truth for presets (docs/design/0001 §3). `host` is the OS that builds natively.
 PRESETS = {
@@ -93,8 +95,13 @@ class Fail(Exception):
 
 
 def resolve(cmd):
-    """Look the program up on PATH: Windows' CreateProcess only finds .exe files, and conda's xmake is xmake.cmd."""
-    return [shutil.which(str(cmd[0])) or str(cmd[0]), *(str(c) for c in cmd[1:])]
+    """Look the program up on PATH: Windows' CreateProcess only finds .exe files."""
+    exe = shutil.which(str(cmd[0])) or str(cmd[0])
+    if HOST == "windows" and cmd[0] == "xmake" and "CONDA_PREFIX" in os.environ:
+        # conda's xmake.cmd ends with `endlocal`, which replaces xmake's exit code with 0: failed
+        # builds and tests looked green. Run the xmake.exe it wraps.
+        exe = str(Path(os.environ["CONDA_PREFIX"], "Library", "share", "xmake", "xmake.exe"))
+    return [exe, *(str(c) for c in cmd[1:])]
 
 
 def run(cmd, env=None, **kwargs):

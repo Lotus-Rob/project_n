@@ -23,7 +23,7 @@
 - The env's gdb reads `$CONDA_PREFIX/etc/gdbinit`, which the gdb package already uses; `env/activate.sh` appends a single `source` line for `debug/gdbinit` rather than replacing the file.
 - XMake sometimes rewrites `xmake-requires.lock` with only the `__meta__` block moved (Lua table order). The content is unchanged: `git checkout xmake-requires.lock`; commit the lock only when versions or hashes change.
 
-- On Windows, `subprocess` decodes output with the locale (cp1252) and crashes on XMake's UTF-8; `capture()` forces UTF-8. Running a program by bare name finds only `.exe` files (conda's xmake is `xmake.cmd`); `run()`/`capture()` resolve it through `shutil.which`.
+- On Windows, `subprocess` decodes output with the locale (cp1252) and crashes on XMake's UTF-8; `capture()` forces UTF-8. Running a program by bare name finds only `.exe` files (conda's xmake is `xmake.cmd`); `run()`/`capture()` resolve it through `shutil.which`. For xmake they skip the shim entirely: its trailing `endlocal` turns every exit code into 0, so failed tests passed CI.
 - `doctor` exits 3 for "problems found", so CI can report them without hiding real errors (exit 1).
 
 ## Skill candidates
