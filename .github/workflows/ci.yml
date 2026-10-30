@@ -1,11 +1,14 @@
 # CI only runs project_n commands (docs/design/0001 §12); see .github/AGENTS.md.
 name: ci
 
+# Minutes are metered on a private repo (Windows 2x, macOS 10x): branch pushes run the Linux jobs,
+# main and tags run Windows and macOS (main's commits already passed the Linux jobs on their
+# branch). Run the workflow by hand on a branch to get everything before merging.
 on:
   push:
     branches: ["**"]
     tags: ["v*"]
-  pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
@@ -16,8 +19,6 @@ permissions:
 
 env:
   PIXI_VERSION: v0.83.0
-  # PRs check out their head commit, not GitHub's merge commit: history is linear (§11.2).
-  CHECKOUT_REF: ${{ github.event.pull_request.head.sha || github.sha }}
   PROJECT_N_REGISTRY: ghcr.io/lotus-rob
   PROJECT_N_PUSH_IMAGES: ${{ github.event_name == 'push' && '1' || '0' }}
   PROJECT_N_XMAKE_CACHE: /home/runner/xmake-cache
@@ -26,6 +27,7 @@ env:
 jobs:
   lint:
     # The non-build half of `check`: commit messages, quoted commands, formatting, clang-tidy.
+    if: github.ref != 'refs/heads/main'
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
@@ -34,13 +36,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ env.CHECKOUT_REF }}
           fetch-depth: 0
       - name: Commit range
         run: |
-          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
-            echo "RANGE=${{ github.event.pull_request.base.sha }}..HEAD" >> "$GITHUB_ENV"
-          elif [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ] && [ -n "${{ github.event.before }}" ]; then
+          if [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ] && [ -n "${{ github.event.before }}" ]; then
             echo "RANGE=${{ github.event.before }}..HEAD" >> "$GITHUB_ENV"
           else
             echo "RANGE=origin/main..HEAD" >> "$GITHUB_ENV"
@@ -73,6 +72,7 @@ jobs:
           key: xmake-lint-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
 
   container:
+    if: github.ref != 'refs/heads/main'
     # One clean-container build per preset (`project_n artifact`): build, tests, runtime-dependency check, dist/.
     strategy:
       fail-fast: false
@@ -87,8 +87,6 @@ jobs:
       PROJECT_N_ACCEPT_MSVC_LICENSE: "1" # confirmed to fit the project (design doc O3); image stays on the runner
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
       - name: Log in to the image cache
         run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin || true
       - name: Restore XMake packages
@@ -121,7 +119,7 @@ jobs:
       - run: pixi run project_n artifact --preset ${{ matrix.preset }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: dist-${{ matrix.preset }}-${{ env.CHECKOUT_REF }}
+          name: dist-${{ matrix.preset }}-${{ github.sha }}
           path: dist/
       - name: Save XMake packages
         # Even when a later step failed: packages that built are still valid.
@@ -132,15 +130,12 @@ jobs:
           key: xmake-${{ matrix.preset }}-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
 
   windows:
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     # Native MSVC: the authoritative Windows build, and the only place MSVC's ASan can run.
     runs-on: windows-2025-vs2026
     timeout-minutes: 180
-    env:
-      XMAKE_PKG_INSTALLDIR: C:\xmake-packages
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
       - name: Restore MSVC toolset
         id: msvc
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -173,7 +168,7 @@ jobs:
         id: xmake-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: C:\xmake-packages
+          path: ~/.xmake/project_n # packages_dir() in tools/project_n.py
           key: xmake-windows-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
           restore-keys: xmake-windows-
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
@@ -190,17 +185,16 @@ jobs:
         if: always() && steps.xmake-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: C:\xmake-packages
+          path: ~/.xmake/project_n # packages_dir() in tools/project_n.py
           key: xmake-windows-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
 
   macos:
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     # Native macos-clang on Apple Silicon: the only place it can build (docs/design/0001 §5.7).
     runs-on: macos-26
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
       - name: XMake source checksum
         run: echo "XMAKE_TOOL=$(grep -o 'XMAKE_MACOS_SHA256 = "[0-9a-f]*"' tools/project_n.py | cut -d'"' -f2)" >> "$GITHUB_ENV"
       - name: Restore XMake
@@ -213,7 +207,7 @@ jobs:
         id: xmake-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.xmake/project_n # XMAKE_PKG_INSTALLDIR (tools/env/activate.sh)
+          path: ~/.xmake/project_n # packages_dir() in tools/project_n.py
           key: xmake-macos-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
           restore-keys: xmake-macos-
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
@@ -234,12 +228,12 @@ jobs:
       - run: pixi run project_n artifact --preset macos-clang
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: dist-macos-${{ env.CHECKOUT_REF }}
+          name: dist-macos-${{ github.sha }}
           path: dist/
       - name: Save XMake packages
         # Even when a later step failed: packages that built are still valid.
         if: always() && steps.xmake-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.xmake/project_n
+          path: ~/.xmake/project_n # packages_dir() in tools/project_n.py
           key: xmake-macos-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
