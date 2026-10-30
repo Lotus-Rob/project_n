@@ -8,13 +8,15 @@ ARG MSVC_WINE_COMMIT=514f8ea34842cd6d831804d0e9658d3a32870ae1
 ARG MSVC_VERSION=18.0
 ARG SDK_VERSION=10.0.26100
 ARG ACCEPT_MSVC_LICENSE=0
+# Set by project_n when PROJECT_N_MSVC_CACHE mounts a download cache here (CI); unset, nothing is kept.
+ARG MSVC_CACHE=
 
 RUN [ "$ACCEPT_MSVC_LICENSE" = 1 ] || { echo "This image downloads MSVC: pass --build-arg ACCEPT_MSVC_LICENSE=1 to accept its licence."; exit 1; }
 
 RUN git clone -q https://github.com/mstorsjo/msvc-wine /opt/msvc-wine \
  && git -C /opt/msvc-wine checkout -q "$MSVC_WINE_COMMIT"
 # vsdownload.py runs with the Pixi env's Python, so no distro Python is needed.
-RUN pixi run python /opt/msvc-wine/vsdownload.py --accept-license \
+RUN pixi run python /opt/msvc-wine/vsdownload.py --accept-license ${MSVC_CACHE:+--cache "$MSVC_CACHE"} \
         --msvc-version "$MSVC_VERSION" --sdk-version "$SDK_VERSION" \
         --architecture x64 --dest /opt/msvc \
  && /opt/msvc-wine/install.sh /opt/msvc \

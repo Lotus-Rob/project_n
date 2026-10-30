@@ -189,6 +189,11 @@ def ensure_image(name):
         if os.environ.get("PROJECT_N_ACCEPT_MSVC_LICENSE") != "1":
             raise Fail("Building the MSVC image downloads Microsoft's Build Tools. Accept their licence by setting PROJECT_N_ACCEPT_MSVC_LICENSE=1.")
         cmd += ["--build-arg", "ACCEPT_MSVC_LICENSE=1"]
+        cache = os.environ.get("PROJECT_N_MSVC_CACHE")  # CI keeps Microsoft's downloads between runs
+        if cache:
+            Path(cache).mkdir(parents=True, exist_ok=True)
+            # :U hands the directory to the build's dev user; the image tag doesn't depend on it.
+            cmd += ["-v", f"{cache}:/var/cache/msvc:U", "--build-arg", "MSVC_CACHE=/var/cache/msvc"]
     run(cmd + ["."])
     if remote and os.environ.get("PROJECT_N_PUSH_IMAGES") == "1":
         run(["podman", "push", tag, remote])
