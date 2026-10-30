@@ -233,13 +233,9 @@ jobs:
       - run: pixi run project_n test --preset macos-clang --sanitizer address
       - run: pixi run project_n artifact --preset macos-clang
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
         with:
           name: dist-macos-${{ env.CHECKOUT_REF }}
-          # The lock too: its macosx|arm64 section can only be generated here.
-          path: |
-            dist/
-            xmake-requires.lock
+          path: dist/
       - name: Save XMake packages
         # Even when a later step failed: packages that built are still valid.
         if: always() && steps.xmake-cache.outputs.cache-hit != 'true'
