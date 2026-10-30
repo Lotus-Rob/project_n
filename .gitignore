@@ -1,6 +1,7 @@
 # Local environments and tool state
 .pixi/
 .xmake/
+.cache/
 .ruff_cache/
 .vs/
 .DS_Store

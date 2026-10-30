@@ -463,6 +463,8 @@ def cmd_artifact(args):
     shutil.rmtree(dist, ignore_errors=True)
     dist.mkdir(parents=True)
     shutil.copy2(ROOT / binary, dist)
+    for notice in ("LICENSE", "THIRD_PARTY_NOTICES.md"):  # AGPL and the bundled libraries' licences
+        shutil.copy2(ROOT / notice, dist)
     if PRESETS[args.preset]["plat"] == "macosx":
         shutil.copy2(Path(os.environ["CONDA_PREFIX"], "lib", "libc++.1.dylib"), dist)
     # Debug info XMake split off the release binary: kept for crash reports, never shipped to players.

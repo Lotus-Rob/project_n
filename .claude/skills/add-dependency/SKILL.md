@@ -9,13 +9,14 @@ Owned by: root AGENTS.md. Rationale: docs/design/0001 §5.2 (linking), §6.1 (pi
 
 ## Steps
 
-1. Find the package in xmake-repo at the commit recorded in `xmake-requires.lock`; pick an exact version that it offers. Check the licence: it must allow static linking into a closed game. Ask the user about anything copyleft (GPL, LGPL static linking).
+1. Find the package in xmake-repo at the commit recorded in `xmake-requires.lock`; pick an exact version that it offers. Check the licence: it must be compatible with the project's AGPL-3.0-or-later (permissive licences, Apache-2.0, LGPL and GPLv3 are; GPLv2-only and proprietary ones aren't). Ask the user when unsure.
 2. In `xmake.lua`, add `add_requires("<name> <x.y.z>")` with the licence in a trailing comment (`-- zlib`; add `tests only` when it never ships). These comments are the project's licence record. Add `add_packages("<name>")` only to the targets that use it.
 3. `pixi run project_n build --preset linux-clang`, then `--preset windows-msvc` (container). Each one writes its platform into `xmake-requires.lock`; check that the lock now has entries for both `linux|x86_64` and `windows|x64`.
 4. Check that nothing came from the host. Read the package's configure output for features that were silently skipped: SDL3 dropped Wayland without failing. If the package only builds with host files, fix it with an override in `xmake/repo/` (see the existing two, which use `set_base`) following the fix-xmake-package skill.
 5. If the package needs a build tool (cmake, meson, autotools…), the tool must come pinned from `pixi.toml` and be listed in the `add_requireconfs("**|...", {system = false})` exceptions in `xmake.lua`.
 6. `pixi run project_n check`, `pixi run project_n check --container`, and `pixi run project_n artifact --preset linux-gcc` (artifact fails if the binary depends on a shared library from the Pixi environment).
-7. Commit `xmake.lua` with `xmake-requires.lock`: `build(deps): add <name> <x.y.z>`.
+7. If it ships in the game (not tests only), add its licence text to `THIRD_PARTY_NOTICES.md`; `artifact` copies that file into every build.
+8. Commit `xmake.lua` with `xmake-requires.lock`: `build(deps): add <name> <x.y.z>`.
 
 ## Linking rules (Linux)
 

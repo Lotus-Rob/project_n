@@ -34,6 +34,7 @@ From 1.0, "breaking" means incompatible save files, config or mod/content format
 
 - `CHANGELOG.md` is generated; never edit it by hand. Fix a wrong entry by fixing the next commit message, not the file.
 - The tag `vX.Y.Z` and `set_version()` always match; only `release` changes either.
+- The game is AGPL-3.0-or-later: whoever receives a build must be able to get its source. Publish the tagged source with every build that leaves the machine.
 - `dist/<preset>/symbols/` (`.sym`, `.pdb`, `.dSYM`) is for decoding crash reports: keep it with the release, never ship it to players.
 - Never publish Microsoft's files (the MSVC install, anything from `/opt/msvc`) alongside artefacts (licence).
 

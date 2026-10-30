@@ -51,6 +51,11 @@ pixi run project_n artifact --preset linux-gcc   # clean-room build into dist/<p
 pixi run project_n release --dry-run             # next SemVer version and changelog from commit messages
 ```
 
+## Licence
+
+Copyright (C) 2026 Rob G. Licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
+Bundled libraries and their licences: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Contributing
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) and history is linear (rebase, no merge commits).
