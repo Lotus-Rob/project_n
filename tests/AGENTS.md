@@ -6,7 +6,7 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
 ## Rules
 - Layout mirrors `src/`: `tests/unit/<area>/`, one test executable per area (`<area>_tests`) to keep link times down.
 - Each executable has exactly one `main.cpp` with `DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN`; test files include `<doctest/doctest.h>` only.
-- A new area adds a target to `tests/xmake.lua` with `add_tests("default")`.
+- A new area adds a target to `tests/xmake.lua` with `add_tests("default")`, plus the `on_test(test_under_wine)` block from `core_tests` so its Windows build runs under Wine on Linux.
 - Sanitizers run on request, never in plain `check`. Supported per preset: `SANITIZERS` in tools/project_n.py (GCC/Clang: address, undefined, thread, leak; MSVC: address). Any finding fails the run.
 
 ## Commands
@@ -16,6 +16,7 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
   `pixi run project_n test --preset linux-clang --target core_tests -- --test-case='*expected*'`
 
 ## Gotchas
+- `xmake test` runs a Windows `.exe` directly on Linux; it only worked on a dev machine whose kernel hands `.exe` files to Wine (binfmt_misc). The test targets call Wine themselves (`test_under_wine`).
 - MSVC sanitizer builds compile and link in the container, but only *run* on native Windows: MSVC's ASan can't hot-patch Wine's system DLLs.
 - Sanitizer builds link the C++ runtime dynamically (static libc++abi collides with TSan) and don't instrument dependencies.
 
