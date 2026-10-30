@@ -72,8 +72,16 @@ pixi_toolchain("pixi-gcc", "gcc", "g++", function (tc, prefix) end)
 -- libc++ (and its static archives) live in the env's lib/, outside the sysroot search path.
 pixi_toolchain("pixi-clang", "clang", "clang++", function (tc, prefix)
     tc:add("cxxflags", "-stdlib=libc++")
-    tc:add("ldflags", "-stdlib=libc++", "-L" .. prefix .. "/lib")
-    tc:add("shflags", "-stdlib=libc++", "-L" .. prefix .. "/lib")
+    if is_host("macosx") then
+        -- Exactly the env's libc++, by path: a -L into the env let its other libraries shadow
+        -- the SDK's (artefacts linked @rpath/libiconv). libc++abi is the system's, as for conda.
+        local libcxx = {"-nostdlib++", prefix .. "/lib/libc++.1.dylib", "-lc++abi"}
+        tc:add("ldflags", libcxx)
+        tc:add("shflags", libcxx)
+    else
+        tc:add("ldflags", "-stdlib=libc++", "-L" .. prefix .. "/lib")
+        tc:add("shflags", "-stdlib=libc++", "-L" .. prefix .. "/lib")
+    end
 end)
 
 -- Our executables link the C++ runtime and libgcc statically so artefacts need only glibc
