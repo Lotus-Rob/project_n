@@ -544,7 +544,9 @@ def cmd_doctor(args):
             print(f"{'ok ' if built else '-- '}  image {tag}" + ("" if built else " (built on first use)"))
     if HOST == "windows":
         vswhere = Path(os.environ.get("ProgramFiles(x86)", ""), "Microsoft Visual Studio/Installer/vswhere.exe")
-        found = vswhere.exists() and VS_TOOLSET in capture([vswhere, "-products", "*", "-find", "VC/Tools/MSVC/*"], check=False)
+        installs = capture([vswhere, "-products", "*", "-property", "installationPath"], check=False).splitlines() if vswhere.exists() else []
+        # Look at the directories: vswhere -find misses a toolset that wasn't installed by the VS installer (CI's cache).
+        found = any(Path(vs, "VC", "Tools", "MSVC").glob(f"{VS_TOOLSET}.*") for vs in installs)
         report(found, f"MSVC toolset {VS_TOOLSET} (Build Tools)", INSTALL_HINTS["vs"]["windows"])
         if podman and str(ROOT).lower().startswith(("c:", "d:")):
             print("note  container builds from an NTFS checkout are slow; keep a clone inside WSL for them")
