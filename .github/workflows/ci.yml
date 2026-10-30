@@ -1,0 +1,86 @@
+# CI only runs project_n commands (docs/design/0001 §12); see .github/AGENTS.md.
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PIXI_VERSION: v0.83.0
+  # PRs check out their head commit, not GitHub's merge commit: history is linear (§11.2).
+  CHECKOUT_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  linux:
+    # Merge gate in clean containers (all presets, windows-msvc under msvc-wine), then artefacts.
+    runs-on: ubuntu-26.04
+    timeout-minutes: 240
+    env:
+      PROJECT_N_ACCEPT_MSVC_LICENSE: "1" # confirmed to fit the project (design doc O3); image stays on the runner
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          fetch-depth: 0
+      - name: Commit range
+        run: |
+          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
+            echo "PROJECT_N_COMMIT_RANGE=${{ github.event.pull_request.base.sha }}..HEAD" >> "$GITHUB_ENV"
+          elif [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ] && [ -n "${{ github.event.before }}" ]; then
+            echo "PROJECT_N_COMMIT_RANGE=${{ github.event.before }}..HEAD" >> "$GITHUB_ENV"
+          else
+            echo "PROJECT_N_COMMIT_RANGE=origin/main..HEAD" >> "$GITHUB_ENV"
+          fi
+      - name: Free disk space
+        # The images and XMake packages need ~25 GB; the runner keeps preinstalled SDKs we never use.
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache && df -h /
+      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+        with:
+          pixi-version: ${{ env.PIXI_VERSION }}
+          locked: true
+          cache: true
+      - run: pixi run project_n doctor || true # report only: CI needs no commit hook
+      - run: pixi run project_n check --container
+      - run: |
+          pixi run project_n artifact --preset linux-gcc
+          pixi run project_n artifact --preset linux-clang
+          pixi run project_n artifact --preset windows-msvc
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist-${{ env.CHECKOUT_REF }}
+          path: dist/
+
+  windows:
+    # Native MSVC: the authoritative Windows build, and the only place MSVC's ASan can run.
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Pinned MSVC toolset (containers/windows/buildtools.vsconfig)
+        shell: pwsh
+        run: |
+          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer"
+          $vs = & "$installer\vswhere.exe" -latest -property installationPath
+          $proc = Start-Process -Wait -PassThru -FilePath "$installer\setup.exe" -ArgumentList @(
+            'modify', '--installPath', "`"$vs`"", '--config', "`"$PWD\containers\windows\buildtools.vsconfig`"",
+            '--quiet', '--norestart', '--nocache')
+          if ($proc.ExitCode -notin 0, 3010) { throw "VS installer failed: $($proc.ExitCode)" }
+      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+        with:
+          pixi-version: ${{ env.PIXI_VERSION }}
+          locked: true
+          cache: true
+      - run: pixi run project_n doctor; exit 0 # report only: CI needs no commit hook or podman
+      - run: pixi run project_n test --preset windows-msvc --mode release
+      - run: pixi run project_n test --preset windows-msvc --sanitizer address

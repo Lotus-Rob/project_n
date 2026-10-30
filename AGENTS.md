@@ -8,6 +8,7 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 - `src/` game and engine (src/AGENTS.md) · `tests/` doctest suites (tests/AGENTS.md)
 - `tools/project_n.py` the only entry point (tools/AGENTS.md) · `containers/` artefact images (containers/AGENTS.md)
 - `xmake/repo/` local fixes to xmake-repo packages · `docs/design/` rationale: read before redesigning anything
+- `.github/` CI workflows (.github/AGENTS.md)
 
 ## Commands
 - `./dev <command>` (Windows `dev`) is shorthand for `pixi run project_n <command>`; either works from anywhere.

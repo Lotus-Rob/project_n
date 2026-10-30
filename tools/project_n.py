@@ -278,7 +278,9 @@ def cmd_lint(args):
 
 
 def commit_range():
-    """Commits not yet on the upstream (or on main): what `check` validates."""
+    """Commits not yet on the upstream (or on main): what `check` validates. CI passes its own."""
+    if os.environ.get("PROJECT_N_COMMIT_RANGE"):
+        return os.environ["PROJECT_N_COMMIT_RANGE"]
     upstream = subprocess.run(["git", "rev-parse", "--abbrev-ref", "@{upstream}"], cwd=ROOT, capture_output=True, text=True)
     if upstream.returncode == 0:
         return f"{upstream.stdout.strip()}..HEAD"
