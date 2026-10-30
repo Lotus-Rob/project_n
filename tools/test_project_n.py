@@ -126,6 +126,9 @@ class HelpersTest(unittest.TestCase):
         self.assertNotEqual(project_n.image_tag("linux"), project_n.image_tag("msvc"))
         self.assertRegex(project_n.image_tag("msvc"), r"^localhost/project_n-msvc:[0-9a-f]{12}$")
 
+    def test_msvc_image_is_never_pushed(self):
+        self.assertFalse(project_n.IMAGES["msvc"]["push"])
+
     def test_container_command_mounts_repo_and_cache(self):
         cmd = project_n.container_cmd("img", ["pixi", "run", "project_n", "build"])
         self.assertIn(f"{project_n.ROOT}:/src:Z", cmd)

@@ -51,12 +51,14 @@ PRESETS = {
 NATIVE_PRESET = {"linux": "linux-clang", "windows": "windows-msvc", "macos": "macos-clang"}[HOST]
 
 # Images are tagged by a hash of everything they copy in, so changing any of it rebuilds them.
+# `push`: may go to PROJECT_N_REGISTRY (CI's image cache). Never the msvc image: its licence
+# forbids redistribution.
 IMAGES = {
-    "linux": {"file": "containers/linux.Containerfile", "base": None},
-    "msvc": {"file": "containers/msvc.Containerfile", "base": "linux"},
+    "linux": {"file": "containers/linux.Containerfile", "base": None, "push": True},
+    "msvc": {"file": "containers/msvc.Containerfile", "base": "linux", "push": False},
 }
 IMAGE_INPUTS = ("pixi.toml", "pixi.lock", "tools/env/activate.sh")
-CACHE_VOLUME = "project_n-xmake-cache"
+CACHE_VOLUME = "project_n-xmake-cache"  # PROJECT_N_XMAKE_CACHE=<dir> bind-mounts a directory instead (CI caches it)
 
 # Conventional Commits (docs/design/0001 §11.1). Add a scope in the commit that first uses it.
 TYPES = ("feat", "fix", "perf", "refactor", "test", "build", "ci", "docs", "style", "chore", "revert")
@@ -155,6 +157,11 @@ def ensure_image(name):
     if subprocess.run(["podman", "image", "exists", tag]).returncode == 0:
         return tag
     spec = IMAGES[name]
+    registry = os.environ.get("PROJECT_N_REGISTRY")
+    remote = f"{registry}/{tag.removeprefix('localhost/')}" if registry and spec["push"] else None
+    if remote and subprocess.run(["podman", "pull", "-q", remote]).returncode == 0:
+        run(["podman", "tag", remote, tag])
+        return tag
     cmd = ["podman", "build", "-t", tag, "-f", spec["file"]]
     if spec["base"]:
         cmd += ["--build-arg", f"BASE_IMAGE={ensure_image(spec['base'])}"]
@@ -163,12 +170,17 @@ def ensure_image(name):
             raise Fail("Building the MSVC image downloads Microsoft's Build Tools. Accept their licence by setting PROJECT_N_ACCEPT_MSVC_LICENSE=1.")
         cmd += ["--build-arg", "ACCEPT_MSVC_LICENSE=1"]
     run(cmd + ["."])
+    if remote and os.environ.get("PROJECT_N_PUSH_IMAGES") == "1":
+        run(["podman", "push", tag, remote])
     return tag
 
 
 def container_cmd(image, inner, interactive=False):
-    cmd = ["podman", "run", "--rm", "--userns=keep-id:uid=1000,gid=1000",
-           "-v", f"{ROOT}:/src:Z", "-v", f"{CACHE_VOLUME}:/home/dev/.xmake", "-e", f"PROJECT_N_IMAGE={image}"]
+    cache = os.environ.get("PROJECT_N_XMAKE_CACHE")
+    if cache:
+        Path(cache).mkdir(parents=True, exist_ok=True)
+    cmd = ["podman", "run", "--rm", "--userns=keep-id:uid=1000,gid=1000", "-v", f"{ROOT}:/src:Z",
+           "-v", f"{cache}:/home/dev/.xmake:Z" if cache else f"{CACHE_VOLUME}:/home/dev/.xmake", "-e", f"PROJECT_N_IMAGE={image}"]
     if interactive:
         cmd.append("-it")
     return cmd + [image, *inner]
