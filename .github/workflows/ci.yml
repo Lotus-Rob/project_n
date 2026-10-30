@@ -45,9 +45,6 @@ jobs:
           else
             echo "RANGE=origin/main..HEAD" >> "$GITHUB_ENV"
           fi
-      - name: Free disk space
-        # The linux image needs ~10 GB; the runner keeps preinstalled SDKs we never use.
-        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache && df -h /
       - name: Log in to the image cache
         # Fork PRs have no write token; project_n then builds the image instead of pulling it.
         run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin || true
@@ -83,8 +80,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.CHECKOUT_REF }}
-      - name: Free disk space
-        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache && df -h /
       - name: Log in to the image cache
         run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin || true
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
