@@ -27,7 +27,7 @@ Owned by: containers/AGENTS.md. Rationale: docs/design/0001 §6.1 (pinning polic
 
 1. One layer per commit: a compiler bump and an image bump are separate commits, so a regression bisects to one change.
 2. Edit the pin(s) from the table. For Pixi packages, run `pixi install` to update `pixi.lock`. Never edit the lock by hand.
-3. `pixi run project_n check`. A new Pixi environment gets its own XMake package directory automatically (tools/env/activate.sh), so packages rebuild with the new compiler on the first build.
+3. `pixi run project_n check`. A new Pixi environment gets its own XMake package directory automatically (`packages_dir()` in tools/project_n.py), so packages rebuild with the new compiler on the first build.
 4. `pixi run project_n check --container`: the image tag is a hash of its inputs, so changed pins rebuild the image. For MSVC changes this needs `PROJECT_N_ACCEPT_MSVC_LICENSE=1`.
 5. Compiler, runtime or sysroot changes also need `pixi run project_n check --sanitizers` and `pixi run project_n artifact --preset <p>` for each affected preset (artifact checks the binary's runtime dependencies).
 6. An LLVM bump can add clang-tidy checks or findings: fix the code; never disable the new checks in `.clang-tidy`, and suppress a single finding only as the last resort (root AGENTS.md).

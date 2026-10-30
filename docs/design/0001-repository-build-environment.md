@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| Status | **Accepted**: phases 1–4 implemented; S3 (Podman on Windows) and cross-machine S2 open |
+| Status | **Accepted**: phases 1–4 implemented, review fixes applied; S3 (Podman on Windows) and the cross-machine Windows S2 check open |
 | Author | Rob G |
 | Created | 2026-10-29 |
-| Revised | 2026-10-30: phase 4: GitHub Actions CI on Linux, Windows and macOS runners (§12); `macos-clang` implemented (§5.7, S7 passed); S5 passed in CI. Earlier the same day: macOS planned as a native `macos-clang` preset (D13). 2026-10-29: development runs natively in a portable Pixi environment; containers only produce artefacts; headers only (no C++ modules); Conventional Commits + git-cliff + SemVer; open questions Q1–Q10 resolved (Appendix B); knowledge split across AGENTS.md, skills and design docs (§10); Steam Runtime dropped, so Linux artefacts are built in an Ubuntu + Pixi image with the glibc baseline set by the conda-forge sysroot |
+| Revised | 2026-10-30, review: LTO, PCH, split debug info and hardening (§7.1 rules 18–21); clean-room `artifact` with release zips; `selftest`, ruff and actionlint in the gate; Linux CI jobs on `main`; AGPL-3.0-or-later with third-party notices; large assets deferred (O5). Earlier, phase 4: GitHub Actions CI on Linux, Windows and macOS runners (§12); `macos-clang` implemented (§5.7, S7 passed); S5 passed in CI. Earlier the same day: macOS planned as a native `macos-clang` preset (D13). 2026-10-29: development runs natively in a portable Pixi environment; containers only produce artefacts; headers only (no C++ modules); Conventional Commits + git-cliff + SemVer; open questions Q1–Q10 resolved (Appendix B); knowledge split across AGENTS.md, skills and design docs (§10); Steam Runtime dropped, so Linux artefacts are built in an Ubuntu + Pixi image with the glibc baseline set by the conda-forge sysroot |
 | Scope | Repository layout, development environment, artefact containers, toolchain pinning, testing, build tooling, commits and versioning, agent knowledge (AGENTS.md and skills) |
 
 ---
@@ -30,7 +30,6 @@
 - Engine and game architecture, and the choice of graphics, audio and windowing libraries. This includes which Linux libraries are bundled and which are expected from the system (O2).
 - Store integration, packaging and depots.
 - Console platforms.
-- CI workflows (deferred, §12).
 
 ---
 
@@ -63,20 +62,18 @@ A **preset** is the combination of target platform and toolchain. The build mode
 | `linux-gcc` | Linux x86_64 | conda-forge GCC (`pixi.lock`) | Pixi env on host | `project_n-linux` | Pixi env; Linux image |
 | `linux-clang` | Linux x86_64 | conda-forge Clang + libc++ (`pixi.lock`) | Pixi env on host | `project_n-linux` | Pixi env; Linux image |
 | `windows-msvc` | Windows x64 | MSVC 14.50.35717 (VS 2026, msvc-wine `--msvc-version 18.0`) + Windows SDK 10.0.26100: `.vsconfig` natively, msvc-wine in the container | Windows host: Pixi env + Build Tools | `project_n-msvc` | Wine in container; native Windows is authoritative |
-
 | `macos-clang` (§5.7) | macOS arm64 | conda-forge Clang + libc++ (`pixi.lock`), Apple SDK from the Xcode Command Line Tools | Mac: Pixi env | none: `artifact` runs natively on a Mac or CI runner | Pixi env on macOS |
 
 Possible later additions, not part of the initial setup:
 
 - `windows-clang-cl`. Clang is in the Pixi environment on Windows, so this preset costs little.
-- Sanitizer modes for `linux-clang`.
 
 **Pins confirmed by S4** (Linux, 2026-10-29). Phase 2 commits them to `pixi.toml`. Every direct dependency is pinned with `==` (§6.1). The Clang activation package is versioned by major.minor only (`==22.1`).
 
 | Package | Version | Notes |
 |---|---|---|
 | `gxx_linux-64` (GCC) | 16.2 | Linux only |
-| `clangxx_linux-64`, `lld`, `libcxx`, `libcxx-devel`, `clang-format`, `clang-tools`, `lldb` | 22.1.8 | One version for all LLVM packages (§7.1 rule 9). Moves to 23 once conda-forge ships lldb 23. `libcxx` is used on Linux only |
+| `clangxx_linux-64` (`clangxx_osx-arm64` on macOS), `lld`, `libcxx`, `libcxx-devel`, `clang-format`, `clang-tools`, `lldb` | 22.1.8 | One version for all LLVM packages (§7.1 rule 9). Moves to 23 once conda-forge ships lldb 23. `libcxx` is used on Linux only |
 | `sysroot_linux-64` | 2.28 | glibc baseline. S4 binaries needed at most glibc 2.27 |
 | `xmake` | 3.1.2 | |
 | `gdb` | 18.1 | Linux only |
@@ -84,7 +81,7 @@ Possible later additions, not part of the initial setup:
 | `ruff` / `actionlint` | 0.17.3 / 1.7.12 | `lint` checks project_n.py and the CI workflow |
 | `python` (+ `pip`, `setuptools`, `wheel`) | 3.14.x | XMake only accepts a build-tool Python that has all three |
 | `wayland` | 1.26 | Provides only the build-machine `wayland-scanner` (§7.1) |
-| `patchelf` | latest | Used by `artifact` to strip the rpath that conda's GCC hard-codes |
+| `patchelf` | 0.19.2 | Used by `artifact` to strip the rpath that conda's GCC hard-codes |
 | `doctest` / `libsdl3` | 2.5.3 / 3.4.16 | Come from `xmake-repo`, not Pixi. Listed for reference |
 
 MSVC 14.50.35717 and Windows SDK 10.0.26100 were confirmed in S1 (container). S5 confirms the native Windows `.vsconfig` components match.
@@ -95,53 +92,45 @@ MSVC 14.50.35717 and Windows SDK 10.0.26100 were confirmed in S1 (container). S5
 
 ```
 project_n/
-├── AGENTS.md                 # always-loaded: map, commands, brief rules, skill index (§10.3)
-├── CLAUDE.md                 # "@AGENTS.md"
-├── README.md                 # human quick start: install pixi, `pixi run project_n doctor`
+├── AGENTS.md  CLAUDE.md      # always-loaded agent guide (§10.3); CLAUDE.md is "@AGENTS.md"
+├── README.md                 # human quick start: install, set up, build, release, licence
+├── LICENSE                   # AGPL-3.0 text (the project is AGPL-3.0-or-later)
+├── THIRD_PARTY_NOTICES.md    # licences of the libraries release builds include; copied into dist/
 ├── CHANGELOG.md              # generated by git-cliff at release time; never hand-edited
 ├── cliff.toml                # git-cliff: changelog template + SemVer bump rules
-├── pixi.toml / pixi.lock     # dev environment; lock committed (linux-64, win-64)
-├── xmake.lua                 # C++23, warnings, presets → toolchains, set_version()
+├── dev  dev.cmd              # shorthand for `pixi run project_n` (POSIX sh / cmd)
+├── pixi.toml / pixi.lock     # dev environment; lock committed (linux-64, win-64, osx-arm64)
+├── xmake.lua                 # C++23, warnings, toolchains, LTO, hardening, set_version()
 ├── xmake-requires.lock       # committed package lock
 ├── xmake/repo/               # local xmake package overrides (§7.1 rule 7)
-├── .clang-format  .clang-tidy  .editorconfig  .gitattributes  .gitignore
-│                             # .gitignore: .pixi/, build/, dist/, __pycache__/
-├── .githooks/
-│   └── commit-msg            # POSIX sh: `pixi run project_n commit-check "$1"`
-│
-├── .claude/skills/           # on-demand procedures (§10.4)
-│   ├── git-commit/SKILL.md
-│   └── agent-docs/SKILL.md
-│
+├── .clang-format  .clang-tidy  .clangd  .editorconfig  .gitattributes  .gitignore  .containerignore
+├── .githooks/commit-msg      # POSIX sh: `pixi run project_n commit-check "$1"`
+├── .github/                  # CI (§12): workflows/ci.yml, dependabot.yml, actionlint.yaml, AGENTS.md
+├── .claude/skills/           # on-demand procedures (§10.4): git-commit, agent-docs, release,
+│                             # bump-toolchain, add-dependency, fix-xmake-package
 ├── tools/
 │   ├── AGENTS.md
 │   ├── project_n.py          # the single entry point (§8)
-│   ├── test_project_n.py     # unittest self-checks
+│   ├── test_project_n.py     # unittest self-checks (`project_n selftest`)
 │   ├── debug/gdbinit         # pretty-printer registration (§7.1 rule 8)
-│   └── env/activate.sh       # Pixi activation: package dir per lock, gdbinit hook (§7.1 rules 8, 11)
-│
+│   └── env/activate.sh       # Pixi activation on linux-64: gdbinit hook (§7.1 rule 8)
 ├── containers/
 │   ├── AGENTS.md
 │   ├── linux.Containerfile   # Ubuntu LTS (digest) + pixi + `pixi install --locked`
 │   ├── msvc.Containerfile    # FROM project_n-linux + Wine + msvc-wine; MSVC mounted at /opt/msvc
-│   └── windows/
-│       └── buildtools.vsconfig
-│
-├── src/                      # structure decided by the architecture doc
+│   └── windows/buildtools.vsconfig
+├── src/                      # structure decided by the architecture doc; pch.hpp
 │   └── AGENTS.md
-├── tests/
-│   ├── AGENTS.md
-│   └── xmake.lua
-│
-└── docs/
-    └── design/               # numbered design docs (rationale tier)
+├── tests/                    # xmake.lua, unit/<area>/, unit/pch.hpp
+│   └── AGENTS.md
+└── docs/design/              # numbered design docs (rationale tier)
 ```
 
 Other notes:
 
 - Editor configuration is not committed.
 - Nested AGENTS.md files exist only where an area has rules that differ from its parent's.
-- Skills beyond the initial two are added as described in §10.5.
+- Skills beyond the initial two were added as described in §10.5.
 
 ---
 
@@ -157,10 +146,10 @@ Every build tool comes from Pixi, so the host needs only the tools below. Instal
 | Tool | Needed from | Linux (CachyOS / Arch) | Windows | Dev machine (2026-10-29) |
 |---|---|---|---|---|
 | Git | phase 0 | `sudo pacman -S git` | `winget install Git.Git` | 2.56 ✓ |
-| **Pixi** | phase 1 (S4) | `sudo pacman -S pixi` (in `extra`). Elsewhere: `curl -fsSL https://pixi.sh/install.sh \| sh`, then add `~/.pixi/bin` to PATH (fish: `fish_add_path ~/.pixi/bin`) | `winget install prefix-dev.pixi` | **missing** |
+| **Pixi** | phase 1 (S4) | `sudo pacman -S pixi` (in `extra`). Elsewhere: `curl -fsSL https://pixi.sh/install.sh \| sh`, then add `~/.pixi/bin` to PATH (fish: `fish_add_path ~/.pixi/bin`) | `winget install prefix-dev.pixi` | ✓ |
 | Podman | phase 1 (S1, S6) | `sudo pacman -S podman`. Rootless mode needs subordinate IDs; if `podman info` reports an error, run `sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 $USER` | `winget install RedHat.Podman`, then `podman machine init` and `podman machine start` | 6.1.4, rootless ✓ |
 | Xcode Command Line Tools | phase 4, macOS only | n/a | n/a (`xcode-select --install` on the Mac) | n/a |
-| VS Build Tools (MSVC) | phase 1 (S5), Windows only | n/a | Run the Build Tools bootstrapper (from visualstudio.microsoft.com → Downloads → Build Tools) with `--config containers\windows\buildtools.vsconfig --passive --wait`. The winget ID and exact command are confirmed in S5 and then written here | n/a |
+| VS Build Tools (MSVC) | phase 1 (S5), Windows only | n/a | Run the Build Tools bootstrapper (from visualstudio.microsoft.com → Downloads → Build Tools) with `--config containers\windows\buildtools.vsconfig --passive --wait`. CI adds the same components to its preinstalled Visual Studio with `setup.exe modify --config` (§12); a winget command is unverified until a Windows machine is available (S3) | n/a |
 
 Everything else comes from `pixi install`: compilers, XMake, debuggers, clang tools, Python and git-cliff. This includes the msvc-wine toolchain, which is downloaded inside the container. Host copies of GCC, Clang, XMake, gdb or Wine can stay installed. They're ignored, because `pixi run` puts the environment first on PATH.
 
@@ -249,7 +238,7 @@ Implemented 2026-10-30 and verified on GitHub's `macos-26` (Apple Silicon) runne
 | What | Pinned by |
 |---|---|
 | Compilers, libc++, debuggers, clang tools, XMake, Python, git-cliff | `pixi.lock`, the same on the host and in both images |
-| Linux glibc baseline for artefacts | `sysroot_linux-64 2.28.*` in `pixi.toml` |
+| Linux glibc baseline for artefacts | `sysroot_linux-64 ==2.28` in `pixi.toml` |
 | Container base and Wine | Ubuntu digest + apt snapshot date |
 | MSVC + Windows SDK (container) | `vsdownload.py --msvc-version … --sdk-version …` |
 | MSVC (native) | versioned `.vsconfig` component + `--vs_toolset` |
@@ -273,7 +262,7 @@ Everything that affects build output is pinned exactly. Changing a pin is a deli
 | Native MSVC | Versioned `.vsconfig` components plus `--vs_toolset` |
 
 **Not pinned exactly, on purpose:**
-- **Host tools** (Pixi, Podman, Git) come from the host's package manager and update with it. `pixi.toml` sets `requires-pixi = ">=0.83"`, and `doctor` checks minimum versions. Exact pins would break on every system update.
+- **Host tools** (Pixi, Podman, Git) come from the host's package manager and update with it. `pixi.toml` sets `requires-pixi = ">=0.83"`, which Pixi checks itself; Podman and Git have no minimum yet. Exact pins would break on every system update.
 - **GPU drivers and the display stack** belong to the host at runtime.
 
 Known gaps, to be closed later if they matter:
@@ -294,13 +283,13 @@ Known gaps, to be closed later if they matter:
   - the toolchain definitions and the host lockdown described in §7.1
 - **Build directories:** native builds use `build/<preset>/<mode>`, and every container build (container checks and `artifact`) uses `build/container/<preset>/<mode>`. `artifact` then copies the binary to `dist/<preset>/`.
 - **Config isolation:** `XMAKE_CONFIGDIR` sits next to each build directory, so native and container configurations never overwrite each other.
-- **Package cache:** native builds use `~/.xmake`, and container builds use the named volume `project_n-xmake-cache`.
+- **Package cache:** native builds use `~/.xmake`, and container builds use the named volume `project_n-xmake-cache`, or the directory `PROJECT_N_XMAKE_CACHE` names (CI caches it).
 - **IDE integration:** each native build refreshes `build/compile_commands.json`, which `.clangd` (`CompilationDatabase: build`) reads.
 - **First build cost:** every dependency is built from source once per toolchain, including SDL3's X11/Wayland stack. That took about 15–25 minutes per toolchain in S4. The results are cached in `~/.xmake/packages` (or the container volume), and later builds reuse them.
 
-### 7.1 Linux toolchain rules (proven in S4)
+### 7.1 Toolchain and build rules
 
-Each rule below fixed a concrete failure or host leak found in S4. `containers/AGENTS.md` and `tools/AGENTS.md` carry the one-line versions.
+Each rule below fixed a concrete failure or host leak (most found in S4) or records a build decision. `containers/AGENTS.md` and `tools/AGENTS.md` carry the one-line versions.
 
 **Toolchains**
 
@@ -331,23 +320,33 @@ Each rule below fixed a concrete failure or host leak found in S4. `containers/A
    - `libsdl3-wayland` inherits `libsdl3` and adds `libxkbcommon` and `libglvnd` (for `egl.pc`). Without them SDL **silently** builds without Wayland.
    - `libxkbcommon-fixed` inherits `libxkbcommon` and adds `libxml2`.
 
+**Debuggers**
+
+8. **gdb pretty-printers:** `tools/debug/gdbinit` registers the libstdc++ printers from `$CONDA_PREFIX/share/gcc-*/python`. gdb never auto-loads them, because libstdc++ is linked statically. `tools/env/activate.sh` appends a `source` line for it to `$CONDA_PREFIX/etc/gdbinit` (the system init file this gdb reads on every start, which the gdb package already uses), replacing any stale line, so the terminal, editors and the container all get it without per-user setup. Verified in S4: `std::vector of length 4, capacity 4 = {1, 2, 3, 4}`.
+9. **lldb's libc++ formatters are compiled in and follow libc++'s internal layout.** lldb 22 shows libc++ 22 containers but not libc++ 23 ones (verified in S4). All LLVM packages (Clang, libc++, lld, clang-tools, lldb) must therefore share one version: the newest one for which conda-forge ships *all* of them. **Decided 2026-10-29: LLVM 22.1.8.**
+
+**Running XMake**
+
+10. **`project_n.py` doesn't pipe XMake's output through filters.** In S4, two piped `xmake f` runs stalled with no child processes while holding package locks, and file-redirected runs never did. The cause is unconfirmed. XMake writes to the terminal, and to a log in the build directory when needed.
+
+**Package cache**
+
+11. **XMake's package cache is keyed on the toolchain *name*, not the compiler version.** After the LLVM 23 → 22 switch, it silently reused packages built with Clang 23. `project_n.py` therefore sets `XMAKE_PKG_INSTALLDIR=~/.xmake/project_n/<hash of pixi.toml + pixi.lock>/packages` for every XMake call, on every host (until phase 4 the Linux-only activation script did, so Windows shared one directory). `pixi.toml` is included because activation variables (rule 6) change builds but aren't in the lock. Any change to the environment starts a fresh package directory, and `project_n clean --packages` removes old ones.
+
 **MSVC**
 
 12. **MSVC 14.50 has no `/std:c++23`.** It warns (D9002), ignores the option and compiles as **C++14**. `/WX` doesn't make D9002 fatal, and XMake's flag check accepts it. `xmake.lua` therefore passes `/std:c++23preview` on Windows instead of `set_languages("c++23")`. To catch any future silent downgrade on any compiler, the project's core header carries a guard: `#if` on `__cplusplus` (or `_MSVC_LANG`) `<= 202002L` → `#error`. S1 verified that this fails under C++20 and passes with `/std:c++23preview`.
 
 13. **Windows links the C++ runtime statically** with `set_runtimes("MT")`, matching Linux (O4). Players need no Visual C++ Redistributable. XMake passes the runtime to packages and includes it in their cache key, so dependencies always match.
 
+**Package installs**
+
+14. **`xmake f` runs with `-v`, which makes XMake install packages one at a time (otherwise 4 at once).** For SDL3, XMake requests libxcb and libx11 twice, once as a private dependency. The two requests share one build hash, so they install concurrently into the same directory and corrupt each other ("install: … No such file or directory", phase 2). Every spike run that succeeded used `-v`. This is a `shortcut:` in `project_n.py`, to drop once XMake de-duplicates these requests (to report upstream).
+
 **Warnings**
 
 15. **Every build uses the highest warning level, always as errors**, not just in `check`: `set_warnings("everything", "pedantic", "error")`. That's `-Weverything` for Clang, `-Wall -Wextra -Weffc++ -Wpedantic` for GCC, and `/Wall /WX` for MSVC. The only exclusions report on the compiler rather than our code. For Clang, the C++98 and pre-C++20 compatibility groups. For MSVC, `/Wall`'s codegen notes: padding (C4820), inlining (C4710/C4711), unused inlines removed (C4514) and Spectre mitigation points (C5045). Measured on the hello window before the exclusions: Clang 6 warnings (all compatibility), GCC 0, MSVC 15 (all C4820, all in SDL headers).
 16. **Dependencies never produce warnings.** GCC and Clang see package headers through `-isystem`. MSVC uses `/external:anglebrackets /external:W0`, because XMake's own `/external:I` paths don't match under msvc-wine. Our headers use `"..."` and libraries `<...>`, which is what makes this work: with C4820 re-enabled, SDL's headers produced 0 warnings, against 15 before. clang-tidy reports only headers matching `HeaderFilterRegex` (`src/`) and skips system headers.
-
-**Optimised builds**
-
-18. **LTO for our targets in `release` and `releasedbg`**, set per target by an `lto` rule for the same reason as rule 17: a project-level LTO policy reaches every package. Sanitizer builds skip it. Clang on Linux links with `lld`: the env's `ld` has no LLVMgold plugin, and XMake's flag probe (without `lld`) silently dropped `-flto=thin`, so the rule forces both flags. MSVC gets `/GL` and `/LTCG`.
-19. **Precompiled headers:** `src/pch.hpp` for the game, `tests/unit/pch.hpp` for tests (`set_pcxxheader`). Sources still include what they use, so lint stays honest and nothing depends on the PCH. doctest's `main.cpp` defines `DOCTEST_CONFIG_IMPLEMENT` itself, because `DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN` implies it only on doctest.h's first inclusion, and the PCH has already included it.
-20. **Release builds keep debug info**, split off by XMake (`objcopy --only-keep-debug` into `.sym`, `dsymutil` into `.dSYM`, MSVC's `.pdb`) next to the stripped binary; `artifact` copies it to `dist/<preset>-symbols/`, which is kept with the release for crash reports and never shipped. It also zips both directories (`dist/project_n-<version>-<preset>[-symbols].zip`) for the GitHub release.
-21. **Hardening:** shipped Linux binaries are PIE with full RELRO (`-z relro -z now`), `-fstack-protector-strong` and `_FORTIFY_SOURCE=2` (3 needs glibc 2.33 headers; the baseline is 2.28); MSVC adds Control Flow Guard (`/guard:cf`, not in sanitizer builds). Debug builds bounds-check the standard library: `_GLIBCXX_ASSERTIONS`, libc++'s extensive hardening mode, `_MSVC_STL_HARDENING`. None changes the ABI, so packages need no rebuild.
 
 **Sanitizers**
 
@@ -359,24 +358,12 @@ Each rule below fixed a concrete failure or host leak found in S4. `containers/A
     - **MSVC ASan builds and links in the container but can't run under Wine.** Its interception hot-patches system DLLs, and Wine's start with CET `endbr64` prologues it can't patch. It runs on native Windows, which is unverified until S5. The ASan runtime is `clang_rt.asan_dynamic-x86_64.dll` even with `/MT`.
     - **MemorySanitizer is excluded:** it needs every library instrumented, libc++ included, and conda-forge ships no MSan-built libc++. Adding it means building an instrumented libc++ as a package.
 
-**Running XMake**
+**Optimised builds**
 
-**Debuggers**
-
-8. **gdb pretty-printers:** `tools/debug/gdbinit` registers the libstdc++ printers from `$CONDA_PREFIX/share/gcc-*/python`. gdb never auto-loads them, because libstdc++ is linked statically. `tools/env/activate.sh` appends a `source` line for it to `$CONDA_PREFIX/etc/gdbinit` (the system init file this gdb reads on every start, which the gdb package already uses), replacing any stale line, so the terminal, editors and the container all get it without per-user setup. Verified in S4: `std::vector of length 4, capacity 4 = {1, 2, 3, 4}`.
-9. **lldb's libc++ formatters are compiled in and follow libc++'s internal layout.** lldb 22 shows libc++ 22 containers but not libc++ 23 ones (verified in S4). All LLVM packages (Clang, libc++, lld, clang-tools, lldb) must therefore share one version: the newest one for which conda-forge ships *all* of them. **Decided 2026-10-29: LLVM 22.1.8.**
-
-**Running XMake**
-
-10. **`project_n.py` doesn't pipe XMake's output through filters.** In S4, two piped `xmake f` runs stalled with no child processes while holding package locks, and file-redirected runs never did. The cause is unconfirmed. XMake writes to the terminal, and to a log in the build directory when needed.
-
-**Package installs**
-
-14. **`xmake f` runs with `-v`, which makes XMake install packages one at a time (otherwise 4 at once).** For SDL3, XMake requests libxcb and libx11 twice, once as a private dependency. The two requests share one build hash, so they install concurrently into the same directory and corrupt each other ("install: … No such file or directory", phase 2). Every spike run that succeeded used `-v`. This is a `shortcut:` in `project_n.py`, to drop once XMake de-duplicates these requests (to report upstream).
-
-**Package cache**
-
-11. **XMake's package cache is keyed on the toolchain *name*, not the compiler version.** After the LLVM 23 → 22 switch, it silently reused packages built with Clang 23. `project_n.py` therefore sets `XMAKE_PKG_INSTALLDIR=~/.xmake/project_n/<hash of pixi.toml + pixi.lock>/packages` for every XMake call, on every host (until phase 4 the Linux-only activation script did, so Windows shared one directory). `pixi.toml` is included because activation variables (rule 6) change builds but aren't in the lock. Any change to the environment starts a fresh package directory, and `project_n clean --packages` removes old ones.
+18. **LTO for our targets in `release` and `releasedbg`**, set per target by an `lto` rule for the same reason as rule 17: a project-level LTO policy reaches every package. Sanitizer builds skip it. Clang on Linux links with `lld`: the env's `ld` has no LLVMgold plugin, and XMake's flag probe (without `lld`) silently dropped `-flto=thin`, so the rule forces both flags. MSVC gets `/GL` and `/LTCG`.
+19. **Precompiled headers:** `src/pch.hpp` for the game, `tests/unit/pch.hpp` for tests (`set_pcxxheader`). Sources still include what they use, so lint stays honest and nothing depends on the PCH. doctest's `main.cpp` defines `DOCTEST_CONFIG_IMPLEMENT` itself, because `DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN` implies it only on doctest.h's first inclusion, and the PCH has already included it.
+20. **Release builds keep debug info**, split off by XMake (`objcopy --only-keep-debug` into `.sym`, `dsymutil` into `.dSYM`, MSVC's `.pdb`) next to the stripped binary; `artifact` copies it to `dist/<preset>-symbols/`, which is kept with the release for crash reports and never shipped. It also zips both directories (`dist/project_n-<version>-<preset>[-symbols].zip`) for the GitHub release.
+21. **Hardening:** shipped Linux binaries are PIE with full RELRO (`-z relro -z now`), `-fstack-protector-strong` and `_FORTIFY_SOURCE=2` (3 needs glibc 2.33 headers; the baseline is 2.28); MSVC adds Control Flow Guard (`/guard:cf`, not in sanitizer builds). Debug builds bounds-check the standard library: `_GLIBCXX_ASSERTIONS`, libc++'s extensive hardening mode, `_MSVC_STL_HARDENING`. None changes the ABI, so packages need no rebuild.
 
 ---
 
@@ -390,13 +377,14 @@ Constraints:
 
 | Command | Does |
 |---|---|
-| `doctor` | Checks that the Pixi environment matches the lock, the hook path is set, Podman, Windows toolsets, the WSL path gotcha and images. For each missing tool, prints the §5.0 install command for the current OS. Never installs anything. |
+| `doctor` | Checks Python and the Pixi environment's XMake, the hook path, Podman, images and the MSVC install, the Windows toolset, the macOS SDK and the WSL path gotcha. Pixi itself syncs the environment to `pixi.lock` on every `pixi run`, and CI's `locked: true` rejects a lock that doesn't match `pixi.toml`. For each missing tool, prints the §5.0 install command for the current OS. Never installs anything. |
 | `build --preset P [--mode M]` | Native build and refreshes `build/compile_commands.json`. |
 | `test --preset P [--mode M] [--target T] [-- <doctest args>]` | Runs `xmake test`. With `--target`, runs that test executable and forwards the doctest arguments, for example `--test-case=*physics*`. |
 | `run --preset P [--mode M] [--debug]` | Builds and launches the game natively. `--debug` launches it under gdb or lldb (`xmake run -d`). |
 | `check [--container]` | The merge gate: `selftest`, `commit-check` on unpushed commits, `fmt --check`, `lint`, then build and test for every preset. It runs natively where possible, and `--container` runs everything in the images. |
 | `artifact --preset P` | Clean-room release build in the preset's container (committed sources only, empty build directory), plus the Linux dependency check (§5.2). Writes `dist/<preset>/` and `manifest.json`. |
 | `release [--dry-run]` | Requires a clean `main` that is up to date (it fetches, then refuses if `main` is behind). Runs `git cliff --bumped-version`, writes `set_version()`, regenerates `CHANGELOG.md`, commits `chore(release): vX.Y.Z` and creates the annotated tag `vX.Y.Z`. Never pushes. |
+| `selftest` | Runs `tools/test_project_n.py`; first step of `check`. |
 | `commit-check <msg-file> \| --range A..B` | Validates commit messages (§11). |
 | `fmt [--check]` / `lint [--fix]` | Runs clang-format and clang-tidy from the Pixi environment; `lint` first runs ruff on `tools/` and actionlint on the workflow. `lint` always passes `--warnings-as-errors=*`, so any finding fails `check`. `--fix` applies clang-tidy's fixes and reformats; whatever remains is fixed by hand before a branch is finished (root AGENTS.md). |
 | `image [--preset P]` / `shell --preset P` / `clean [--preset P] [--packages]` | Builds an image if missing / opens a debugging shell in a container / removes build directories (`--packages` also removes XMake package directories for locks other than the current one). |
@@ -427,7 +415,7 @@ Rejected alternatives:
   - Day to day: in the native Pixi environment.
   - `check`: all presets.
   - `check --container`: Linux presets in `project_n-linux`, Windows under Wine.
-  - Release gate: native Windows.
+  - Release gate: CI's native `windows` job on the release commit (release skill).
 - **Sanitizers:** on request, per §7.1 rule 17.
 - **Later:** headless graphics smoke tests (Mesa llvmpipe and lavapipe) and fuzzing, each with its own design note.
 
@@ -627,7 +615,7 @@ GitHub Actions (`.github/workflows/ci.yml`, since phase 4) only runs `project_n`
 
 ---
 
-## 13. Risks and spikes (to do before phase 2)
+## 13. Risks and spikes
 
 | # | Spike | Pass criteria | Fallback |
 |---|---|---|---|
@@ -674,7 +662,7 @@ The `artifact` flow was run by hand in `project_n-linux` (the spike's `container
 | Container-built window on the CachyOS host, native Wayland | ✓ |
 | **S2:** two clean-room rebuilds in fresh containers, same machine and package cache | ✓ all 6 binaries bit-identical |
 
-**S2, full criterion (2026-10-30):** a GitHub runner's container artefacts for `d0e8972` against this machine's for `a869b2c` (the same sources plus `CHANGELOG.md`), each from empty package caches. Both Linux binaries were bit-identical. The MSVC binary differed in 4 bytes, the link timestamp in the PE header and debug directory; `/Brepro` (cl and link) makes it deterministic, and two clean local builds at different times now match. A cross-machine re-check of the Windows artefact waits for CI.
+**S2, full criterion (2026-10-30):** a GitHub runner's container artefacts for `d0e8972` against this machine's for the same sources plus `CHANGELOG.md`, each from empty package caches. Both Linux binaries were bit-identical. The MSVC binary differed in 4 bytes, the link timestamp in the PE header and debug directory; `/Brepro` (cl and link) makes it deterministic, and two clean local builds at different times now match. A cross-machine re-check of the Windows artefact waits for CI.
 
 ### 13.3 S1 results
 
@@ -701,6 +689,8 @@ Built in `project_n-msvc` (the spike's `containers/msvc.Containerfile`) from the
 ## 14. Open questions
 
 None open. Deferred to the architecture doc:
+
+- **O5:** how large binary assets are stored: Git LFS (GitHub Free includes 1 GB of storage), another store, or a separate asset repository. Decide before the first real asset lands.
 
 - **O2:** which Linux libraries are bundled (xmake-built static libraries such as SDL) and which are expected from the system (GPU drivers, Vulkan and GL loaders, audio). The SDL3 build in S4 bundles SDL statically and dlopens X11, Wayland, xkbcommon, EGL and GL from the system at runtime. The doc should also decide whether to prefer native Wayland over XWayland (§13.1).
 
