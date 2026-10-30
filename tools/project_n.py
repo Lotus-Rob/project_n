@@ -463,13 +463,18 @@ def cmd_artifact(args):
     shutil.copy2(ROOT / binary, dist)
     if PRESETS[args.preset]["plat"] == "macosx":
         shutil.copy2(Path(os.environ["CONDA_PREFIX"], "lib", "libc++.1.dylib"), dist)
+    # Debug info XMake split off the release binary: kept for crash reports, never shipped to players.
+    symbols = ROOT / binary.with_suffix({"linux": ".sym", "windows": ".pdb", "macosx": ".dSYM"}[PRESETS[args.preset]["plat"]])
+    (dist / "symbols").mkdir()
+    (shutil.copytree if symbols.is_dir() else shutil.copy2)(symbols, dist / "symbols" / symbols.name)
     manifest = {
         "version": read_version(),
         "commit": capture(["git", "rev-parse", "HEAD"]).strip(),
         "preset": args.preset,
         "image": os.environ.get("PROJECT_N_IMAGE", "unknown"),
         "pixi_lock_sha256": sha256("pixi.lock"),
-        "files": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(dist.iterdir())},
+        "files": {p.relative_to(dist).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                  for p in sorted(dist.rglob("*")) if p.is_file()},
     }
     # Toolchain parts pixi.lock doesn't pin.
     if PRESETS[args.preset]["toolchain"] == "msvc":

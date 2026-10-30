@@ -13,6 +13,7 @@ target("core_tests")
     set_kind("binary")
     add_files("unit/core/*.cpp")
     add_includedirs("$(projectdir)/src")
+    set_pcxxheader("unit/pch.hpp")
     add_packages("doctest")
     add_tests("default")
     if is_plat("windows") and not is_host("windows") then

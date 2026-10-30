@@ -20,9 +20,34 @@ rule("sanitizer")
 rule_end()
 add_rules("sanitizer")
 
+-- LTO in optimised builds, per target for the same reason: XMake hands a project-level LTO policy
+-- to every package. Sanitizer builds (never shipped) skip it.
+rule("lto")
+    on_load(function (target)
+        local sanitizer = get_config("sanitizer")
+        if is_mode("release", "releasedbg") and (not sanitizer or sanitizer == "none") then
+            target:set("policy", "build.optimization.lto", true)
+            if target:is_plat("linux") and get_config("toolchain") == "pixi-clang" then
+                -- The env's ld has no LLVMgold plugin, so link with lld. Forced: XMake probes
+                -- -flto=thin alone, with the default ld, and silently drops it.
+                target:add("ldflags", "-fuse-ld=lld", "-flto=thin", {force = true})
+            end
+        end
+    end)
+rule_end()
+add_rules("lto")
+
+-- Release builds keep debug info, split off by XMake into a .sym, .dSYM or .pdb next to the
+-- stripped binary, so player crash reports can be symbolised. Only the binary ships.
+if is_mode("release") then
+    set_symbols("debug")
+end
+
 -- The highest warning level on every compiler, always as errors. Packages are unaffected:
 -- they're built separately, and their headers are system/external includes for our code.
 set_warnings("everything", "pedantic", "error")
+
+local sanitized = get_config("sanitizer") and get_config("sanitizer") ~= "none"
 
 if is_plat("windows") then
     -- MSVC 14.50 has no /std:c++23: it warns (D9002, not fatal even with /WX), ignores it and
@@ -42,8 +67,24 @@ if is_plat("windows") then
     -- /Wall's codegen notes rather than code issues: padding (4820), inlining decisions (4710,
     -- 4711), removed unused inlines (4514), Spectre mitigation points (5045).
     add_cxflags("/wd4820", "/wd4710", "/wd4711", "/wd4514", "/wd5045")
+    if not sanitized then
+        add_cxflags("/guard:cf") -- Control Flow Guard for shipped builds
+        add_ldflags("/guard:cf")
+    end
+    if is_mode("debug") then
+        add_defines("_MSVC_STL_HARDENING=1") -- bounds-checked STL in development builds; no ABI change
+    end
 else
     set_languages("c++23")
+    add_cxflags("-fstack-protector-strong")
+    if is_mode("release", "releasedbg") then
+        add_defines("_FORTIFY_SOURCE=2") -- 3 needs glibc 2.33 headers; the baseline is 2.28
+    end
+    if is_mode("debug") then
+        -- Bounds-checked standard library in development builds; neither changes the ABI.
+        add_defines(get_config("toolchain") == "pixi-gcc" and "_GLIBCXX_ASSERTIONS"
+                    or "_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE")
+    end
     if get_config("toolchain") == "pixi-clang" then
         -- -Weverything includes compatibility warnings for standards older than C++23.
         add_cxflags("-Wno-c++98-compat", "-Wno-c++98-compat-pedantic", "-Wno-pre-c++20-compat-pedantic")
@@ -63,6 +104,7 @@ local function pixi_toolchain(name, cc, cxx, flags)
         set_toolset("sh", triplet .. cxx)
         set_toolset("ar", triplet .. "ar")
         set_toolset("strip", triplet .. "strip")
+        set_toolset("objcopy", triplet .. "objcopy") -- splits release debug info into a .sym
         on_load(function (tc)
             local prefix = os.getenv("CONDA_PREFIX")
             assert(prefix, "run through `pixi run project_n`: CONDA_PREFIX is not set")
@@ -92,9 +134,9 @@ end)
 -- (baseline 2.28). macOS is the exception, below. Project-level flags, so packages built from source never inherit them.
 -- Sanitizer builds (never shipped) link it dynamically instead: sanitizer runtimes replace parts
 -- of it (operator new, __cxa_guard_*), and a whole-archived static libc++abi collides with TSan.
-local sanitized = get_config("sanitizer") and get_config("sanitizer") ~= "none"
 if is_plat("linux") then
     local prefix = os.getenv("CONDA_PREFIX") or ""
+    add_ldflags("-Wl,-z,relro,-z,now") -- full RELRO: the GOT is read-only after startup
     if not sanitized then
         add_ldflags("-static-libstdc++", "-static-libgcc")
         if get_config("toolchain") == "pixi-clang" then
@@ -126,6 +168,7 @@ target("project_n")
     set_kind("binary")
     add_files("src/**.cpp")
     add_includedirs("src")
+    set_pcxxheader("src/pch.hpp")
     add_packages("libsdl3-wayland")
 
 includes("tests")
