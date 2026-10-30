@@ -406,13 +406,18 @@ def cmd_artifact(args):
         if leaked:
             raise Fail("artefact links into the Pixi environment:\n" + "\n".join(leaked))
     elif PRESETS[args.preset]["plat"] == "macosx":
-        leaked = [line for line in capture(["otool", "-L", binary]).splitlines()[1:] if not line.strip().startswith(("/usr/lib/", "/System/"))]
+        run(["install_name_tool", "-delete_rpath", Path(os.environ["CONDA_PREFIX"], "lib"), binary])
+        run(["codesign", "--force", "--sign", "-", binary])  # arm64 refuses binaries whose ad-hoc signature broke
+        shipped = ("/usr/lib/", "/System/", "@rpath/libc++.1.dylib")  # libc++ ships next to the binary
+        leaked = [line for line in capture(["otool", "-L", binary]).splitlines()[1:] if not line.strip().startswith(shipped)]
         if leaked:
             raise Fail("artefact links libraries macOS doesn't ship:\n" + "\n".join(leaked))
     dist = ROOT / "dist" / args.preset
     shutil.rmtree(dist, ignore_errors=True)
     dist.mkdir(parents=True)
     shutil.copy2(ROOT / binary, dist)
+    if PRESETS[args.preset]["plat"] == "macosx":
+        shutil.copy2(Path(os.environ["CONDA_PREFIX"], "lib", "libc++.1.dylib"), dist)
     manifest = {
         "version": read_version(),
         "commit": capture(["git", "rev-parse", "HEAD"]).strip(),

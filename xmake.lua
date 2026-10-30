@@ -77,7 +77,7 @@ pixi_toolchain("pixi-clang", "clang", "clang++", function (tc, prefix)
 end)
 
 -- Our executables link the C++ runtime and libgcc statically so artefacts need only glibc
--- (baseline 2.28; on macOS, only the system libraries). Project-level flags, so packages built from source never inherit them.
+-- (baseline 2.28). macOS is the exception, below. Project-level flags, so packages built from source never inherit them.
 -- Sanitizer builds (never shipped) link it dynamically instead: sanitizer runtimes replace parts
 -- of it (operator new, __cxa_guard_*), and a whole-archived static libc++abi collides with TSan.
 local sanitized = get_config("sanitizer") and get_config("sanitizer") ~= "none"
@@ -95,15 +95,13 @@ if is_plat("linux") then
     end
 elseif is_plat("macosx") then
     local prefix = os.getenv("CONDA_PREFIX") or ""
+    -- conda's libc++ (newer than the system's) as a dylib. Linked statically it clashed with the
+    -- system libc++ that libSystem loads anyway (a bad free at exit, S7). `artifact` ships
+    -- libc++.1.dylib (Apache-2.0 WITH LLVM-exception) next to the binary and drops the env rpath.
+    add_ldflags("-Wl,-rpath,@executable_path", "-Wl,-rpath," .. prefix .. "/lib")
     -- libc++'s availability markers describe the system's libc++ (std::to_chars needs macOS 13.3);
-    -- we always run conda's, statically or (sanitized) from the env, so they don't apply.
+    -- we always run conda's, so they don't apply.
     add_defines("_LIBCPP_DISABLE_AVAILABILITY")
-    if not sanitized then
-        -- conda's libc++ (newer than the system's), statically; libc++abi stays macOS's own.
-        add_ldflags("-nostdlib++", prefix .. "/lib/libc++.a", "-lc++abi")
-    else
-        add_ldflags("-Wl,-rpath," .. prefix .. "/lib")
-    end
 end
 
 -- Libraries never resolve from the host (pacman, apt, pkg-config): only xmake-repo builds.
