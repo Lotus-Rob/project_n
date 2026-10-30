@@ -95,8 +95,8 @@ end
 -- Libraries never resolve from the host (pacman, apt, pkg-config): only xmake-repo builds.
 -- Build tools are the exception; they come pinned from the Pixi env (pixi.toml).
 add_requireconfs("**|python|cmake|ninja|meson|autoconf|automake|libtool|m4|bison|flex|gperf|nasm|pkg-config|pkgconf", {system = false})
-add_requires("doctest 2.5.3")
-add_requires("libsdl3-wayland 3.4.16") -- xmake/repo: libsdl3 plus its Wayland build deps
+add_requires("doctest 2.5.3") -- MIT; tests only
+add_requires("libsdl3-wayland 3.4.16") -- zlib; xmake/repo: libsdl3 plus its Wayland build deps
 
 target("project_n")
     set_kind("binary")

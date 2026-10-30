@@ -30,6 +30,8 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 ## Skills (.claude/skills)
 - git-commit: writing commit messages, splitting changes, breaking changes
 - agent-docs: editing AGENTS.md or skills, proposing new skills
+- release: cutting a release, versions, changelog, artefacts
+- add-dependency: adding, bumping or removing a C++ library (`add_requires`, licence record, lock)
 
 ## Keeping this true
 Update AGENTS.md files and skills in the same commit as the change that affects them. Log non-obvious fixes under Gotchas.

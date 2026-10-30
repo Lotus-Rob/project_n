@@ -15,7 +15,7 @@
 - `pixi run project_n artifact --preset <p>` builds into `dist/<preset>/` with `manifest.json`
 
 ## Skills
-- (planned) bump-toolchain: every pin location and the update order
+- bump-toolchain: every pin location and the update order
 
 ## Gotchas
 - Ubuntu 25.10+ ships uutils coreutils; its `ln -sf`/`install` break libtool installs ("Already exists"). The image swaps in `coreutils-from-gnu`.
