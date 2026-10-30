@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 import os
+import plistlib
 import re
 import shutil
 import subprocess
@@ -20,6 +21,7 @@ HOST = "windows" if os.name == "nt" else "macos" if sys.platform == "darwin" els
 IN_CONTAINER = os.environ.get("PROJECT_N_IN_CONTAINER") == "1"
 
 APP = "project_n"
+BUNDLE_ID = "dev.projectn.project-n"  # shortcut: placeholder macOS bundle id, fix it for good before signing (O6)
 MODES = ("debug", "release", "releasedbg")
 VS_TOOLSET = "14.50"  # native Windows MSVC; must match containers/windows/buildtools.vsconfig
 # conda-forge has no osx-arm64 XMake, so macOS uses the upstream bundle of set_xmakever()'s
@@ -445,6 +447,28 @@ def tree_dirty():
     return capture(["git", "status", "--porcelain", "--", ".", ":!xmake-requires.lock"]).strip()
 
 
+def info_plist(version):
+    # The oldest macOS comes from Pixi's MACOSX_DEPLOYMENT_TARGET (pixi.toml), like the compiler's.
+    return {"CFBundleIdentifier": BUNDLE_ID, "CFBundleName": APP, "CFBundleExecutable": APP, "CFBundlePackageType": "APPL",
+            "CFBundleShortVersionString": version, "CFBundleVersion": version,
+            "LSMinimumSystemVersion": os.environ["MACOSX_DEPLOYMENT_TARGET"], "LSApplicationCategoryType": "public.app-category.games"}
+
+
+def macos_bundle(dist, binary):
+    """dist/<APP>.app: the binary, conda's libc++ in Frameworks (the rpath in xmake.lua) and Info.plist."""
+    contents = dist / f"{APP}.app" / "Contents"
+    for d in ("MacOS", "Frameworks"):
+        (contents / d).mkdir(parents=True)
+    shutil.copy2(binary, contents / "MacOS")
+    shutil.copy2(Path(os.environ["CONDA_PREFIX"], "lib", "libc++.1.dylib"), contents / "Frameworks")
+    (contents / "Info.plist").write_bytes(plistlib.dumps(info_plist(read_version())))
+    # Ad-hoc signature (O6), nested code first: Apple's order, as --deep is deprecated. arm64 refuses
+    # to run code whose signature install_name_tool broke.
+    run(["codesign", "--force", "--sign", "-", contents / "Frameworks" / "libc++.1.dylib"])
+    run(["codesign", "--force", "--sign", "-", contents.parent])
+    run(["codesign", "--verify", "--strict", contents.parent])
+
+
 def cmd_artifact(args):
     # Release artefacts come from committed sources only; the container sees the whole checkout.
     if tree_dirty():
@@ -462,8 +486,7 @@ def cmd_artifact(args):
             raise Fail("artefact links into the Pixi environment:\n" + "\n".join(leaked))
     elif PRESETS[args.preset]["plat"] == "macosx":
         run(["install_name_tool", "-delete_rpath", Path(os.environ["CONDA_PREFIX"], "lib"), binary])
-        run(["codesign", "--force", "--sign", "-", binary])  # arm64 refuses binaries whose ad-hoc signature broke
-        shipped = ("/usr/lib/", "/System/", "@rpath/libc++.1.dylib")  # libc++ ships next to the binary
+        shipped = ("/usr/lib/", "/System/", "@rpath/libc++.1.dylib")  # libc++ ships in the bundle
         leaked = [line for line in capture(["otool", "-L", binary]).splitlines()[1:] if not line.strip().startswith(shipped)]
         if leaked:
             raise Fail("artefact links libraries macOS doesn't ship:\n" + "\n".join(leaked))
@@ -471,11 +494,12 @@ def cmd_artifact(args):
     for d in (dist, syms):
         shutil.rmtree(d, ignore_errors=True)
         d.mkdir(parents=True)
-    shutil.copy2(ROOT / binary, dist)
+    if PRESETS[args.preset]["plat"] == "macosx":
+        macos_bundle(dist, ROOT / binary)
+    else:
+        shutil.copy2(ROOT / binary, dist)
     for notice in ("LICENSE", "THIRD_PARTY_NOTICES.md"):  # AGPL and the bundled libraries' licences
         shutil.copy2(ROOT / notice, dist)
-    if PRESETS[args.preset]["plat"] == "macosx":
-        shutil.copy2(Path(os.environ["CONDA_PREFIX"], "lib", "libc++.1.dylib"), dist)
     # Debug info XMake split off the release binary: kept with the release for crash reports, never shipped.
     symbols = ROOT / binary.with_suffix({"linux": ".sym", "windows": ".pdb", "macosx": ".dSYM"}[PRESETS[args.preset]["plat"]])
     if not symbols.exists():

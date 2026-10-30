@@ -193,6 +193,23 @@ class HelpersTest(unittest.TestCase):
         env_sh = 'BASE=z:x\nMSVCVER=14.50.35717\nSDKVER=10.0.26100.0\nMSVCDIR="$MSVCBASE\\\\tools"\n'
         self.assertEqual(project_n.msvc_versions(env_sh), {"msvc": "14.50.35717", "windows_sdk": "10.0.26100.0"})
 
+    def test_macos_bundle_layout(self):
+        signed = []
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "lib").mkdir()
+            (root / "lib" / "libc++.1.dylib").write_bytes(b"dylib")
+            (root / "project_n").write_bytes(b"binary")
+            with (mock.patch.dict(project_n.os.environ, {"CONDA_PREFIX": d, "MACOSX_DEPLOYMENT_TARGET": "13.0"}),
+                  mock.patch.object(project_n, "run", lambda cmd, **_: signed.append(Path(cmd[-1]).name))):
+                project_n.macos_bundle(root / "dist", root / "project_n")
+            contents = root / "dist" / "project_n.app" / "Contents"
+            self.assertEqual((contents / "MacOS" / "project_n").read_bytes(), b"binary")
+            self.assertTrue((contents / "Frameworks" / "libc++.1.dylib").is_file())
+            plist = project_n.plistlib.loads((contents / "Info.plist").read_bytes())
+        self.assertEqual((plist["CFBundleExecutable"], plist["LSMinimumSystemVersion"]), ("project_n", "13.0"))
+        self.assertEqual(signed, ["libc++.1.dylib", "project_n.app", "project_n.app"])  # nested code first
+
     def test_msvc_install_follows_only_its_containerfile(self):
         self.assertRegex(project_n.msvc_dir().name, r"^msvc-[0-9a-f]{12}$")
 

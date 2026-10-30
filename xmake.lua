@@ -155,8 +155,8 @@ elseif is_plat("macosx") then
     local prefix = os.getenv("CONDA_PREFIX") or ""
     -- conda's libc++ (newer than the system's) as a dylib. Linked statically it clashed with the
     -- system libc++ that libSystem loads anyway (a bad free at exit, S7). `artifact` ships
-    -- libc++.1.dylib (Apache-2.0 WITH LLVM-exception) next to the binary and drops the env rpath.
-    add_ldflags("-Wl,-rpath,@executable_path", "-Wl,-rpath," .. prefix .. "/lib")
+    -- libc++.1.dylib (Apache-2.0 WITH LLVM-exception) in the app bundle's Frameworks and drops the env rpath.
+    add_ldflags("-Wl,-rpath,@executable_path/../Frameworks", "-Wl,-rpath," .. prefix .. "/lib")
     -- libc++'s availability markers describe the system's libc++ (std::to_chars needs macOS 13.3);
     -- we always run conda's, so they don't apply.
     add_defines("_LIBCPP_DISABLE_AVAILABILITY")
