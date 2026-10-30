@@ -231,7 +231,7 @@ Implemented 2026-10-30 and verified on GitHub's `macos-26` (Apple Silicon) runne
 - **C++ runtime:** conda's libc++ as a **dylib**, shipped next to the binary (`artifact` copies `libc++.1.dylib`, removes the rpath into `.pixi` and re-signs, since arm64 refuses binaries whose ad-hoc signature broke). Linked statically, as on Linux, it aborted every program at exit: libSystem loads the system libc++ anyway (through libobjc), and the two copies freed each other's memory. libc++abi is the system's, as for conda's own libc++. Only libc++ is linked from the env, by path: a `-L` into it let conda's libiconv shadow the SDK's.
 - **Availability markers:** libc++ marks features by the macOS release whose *system* libc++ has them (`std::to_chars` needs 13.3). We always run conda's libc++, so `_LIBCPP_DISABLE_AVAILABILITY` turns the markers off.
 - **Location rule:** `macos-clang` builds natively only on a macOS host; on Linux and Windows hosts, `project_n` refuses it with a pointer to CI, rather than falling back to a container. `check` and `build --preset all` skip it there and say so, so the gate stays runnable on every host; CI's macOS runner covers it.
-- **Signing and notarisation:** later, with packaging. `rcodesign` (open source) can sign and notarise from Linux with an Apple Developer account.
+- **Signing and notarisation:** open (O6). `rcodesign` (open source) can sign and notarise from Linux with an Apple Developer account.
 
 ---
 
@@ -693,6 +693,8 @@ Built in `project_n-msvc` (the spike's `containers/msvc.Containerfile`) from the
 None open. Deferred to the architecture doc:
 
 - **O5:** how large binary assets are stored: Git LFS (GitHub Free includes 1 GB of storage), another store, or a separate asset repository. Decide before the first real asset lands.
+
+- **O6:** code signing before the first public build. Artefacts are unsigned (macOS: ad-hoc only), so Gatekeeper blocks the macOS build on other Macs and SmartScreen warns on Windows. macOS needs an Apple Developer account and notarisation (`rcodesign` works from Linux); Windows needs a code-signing certificate or Azure Trusted Signing.
 
 - **O2:** which Linux libraries are bundled (xmake-built static libraries such as SDL) and which are expected from the system (GPU drivers, Vulkan and GL loaders, audio). The SDL3 build in S4 bundles SDL statically and dlopens X11, Wayland, xkbcommon, EGL and GL from the system at runtime. The doc should also decide whether to prefer native Wayland over XWayland (§13.1).
 
