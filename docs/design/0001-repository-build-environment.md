@@ -386,9 +386,9 @@ Constraints:
 | `build --preset P [--mode M]` | Native build and refreshes `build/compile_commands.json`. |
 | `test --preset P [--mode M] [--target T] [-- <doctest args>]` | Runs `xmake test`. With `--target`, runs that test executable and forwards the doctest arguments, for example `--test-case=*physics*`. |
 | `run --preset P [--mode M] [--debug]` | Builds and launches the game natively. `--debug` launches it under gdb or lldb (`xmake run -d`). |
-| `check [--container]` | The merge gate: `commit-check` on unpushed commits, `fmt --check`, `lint`, then build and test for every preset. It runs natively where possible, and `--container` runs everything in the images. |
+| `check [--container]` | The merge gate: `selftest`, `commit-check` on unpushed commits, `fmt --check`, `lint`, then build and test for every preset. It runs natively where possible, and `--container` runs everything in the images. |
 | `artifact --preset P` | Clean-room release build in the preset's container (committed sources only, empty build directory), plus the Linux dependency check (§5.2). Writes `dist/<preset>/` and `manifest.json`. |
-| `release [--dry-run]` | Requires a clean `main` that is up to date. Runs `git cliff --bumped-version`, writes `set_version()`, regenerates `CHANGELOG.md`, commits `chore(release): vX.Y.Z` and creates the annotated tag `vX.Y.Z`. Never pushes. |
+| `release [--dry-run]` | Requires a clean `main` that is up to date (it fetches, then refuses if `main` is behind). Runs `git cliff --bumped-version`, writes `set_version()`, regenerates `CHANGELOG.md`, commits `chore(release): vX.Y.Z` and creates the annotated tag `vX.Y.Z`. Never pushes. |
 | `commit-check <msg-file> \| --range A..B` | Validates commit messages (§11). |
 | `fmt [--check]` / `lint [--fix]` | Runs clang-format and clang-tidy from the Pixi environment. `lint` always passes `--warnings-as-errors=*`, so any finding fails `check`. `--fix` applies clang-tidy's fixes and reformats; whatever remains is fixed by hand before a branch is finished (root AGENTS.md). |
 | `image [--preset P]` / `shell --preset P` / `clean [--preset P] [--packages]` | Builds an image if missing / opens a debugging shell in a container / removes build directories (`--packages` also removes XMake package directories for locks other than the current one). |
@@ -397,7 +397,7 @@ Behaviour:
 
 - **Container re-entry.** Container commands run `podman run … pixi run project_n <cmd>`. Inside the image, `PROJECT_N_IN_CONTAINER=1` is set, so the script runs XMake directly instead of starting another container.
 - **Presets and allowed scopes** are dicts at the top of the file. They are the single source of truth.
-- **Self-check.** `tools/test_project_n.py` uses `unittest` to cover preset resolution, command assembly, commit validation and the release version and tag logic, with git-cliff stubbed.
+- **Self-check.** `project_n selftest` (part of `check`) runs `tools/test_project_n.py`, which uses `unittest` to cover preset resolution, command assembly, commit validation and the release version and tag logic, with git-cliff stubbed.
 
 Rejected alternatives:
 

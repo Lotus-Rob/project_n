@@ -12,7 +12,7 @@
 - `env/activate.sh` runs on every `pixi run`: keep it fast and idempotent.
 
 ## Commands
-- `pixi run python -m unittest discover -s tools` runs the self-checks (no Podman needed).
+- `pixi run project_n selftest` runs the self-checks in `test_project_n.py` (no Podman needed); `check` runs them first.
 
 ## Skills
 - git-commit (for `SCOPES` changes)

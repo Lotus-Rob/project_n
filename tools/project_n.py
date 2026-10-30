@@ -25,7 +25,7 @@ VS_TOOLSET = "14.50"  # native Windows MSVC; must match containers/windows/build
 # conda-forge has no osx-arm64 XMake, so macOS uses the upstream bundle of set_xmakever()'s
 # version (docs/design/0001 §5.7). Checksum of xmake-bundle-v<version>.macos.arm64.
 XMAKE_MACOS_SHA256 = "e719121c56cd34f5f0c0731954a154c1df1b0915f303e5c82dfb6c6cb9e3ef9e"
-LINT_PRESET = "linux-clang"
+LINT_PRESET = "linux-clang"  # shortcut: #ifdef'd Windows/macOS code isn't linted; lint each native preset once some exists
 
 # Sanitizers each preset supports (on request only, never in plain `check`). MSVC has only
 # AddressSanitizer. MemorySanitizer is left out: it needs every library instrumented,
@@ -408,6 +408,7 @@ def commit_range():
 
 def cmd_check(args):
     """The merge gate: commit messages, formatting, lint, then build and test every preset."""
+    cmd_selftest(args)
     rng = commit_range()
     if rng and cmd_commit_check(argparse.Namespace(range=rng, message_file=None)):
         raise Fail("commit-check failed")
@@ -479,11 +480,18 @@ def cmd_artifact(args):
     print(f"artifact: {dist.relative_to(ROOT)}")
 
 
+def cmd_selftest(args):
+    run([sys.executable, "-m", "unittest", "discover", "-q", "-s", "tools"])
+
+
 def cmd_release(args):
     if capture(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip() != "main":
         raise Fail("release runs on main")
     if capture(["git", "status", "--porcelain"]).strip():
         raise Fail("working tree is not clean")
+    run(["git", "fetch", "--quiet"])
+    if capture(["git", "rev-list", "--count", "HEAD..@{upstream}"], check=False).strip() not in ("", "0"):
+        raise Fail("main is behind its upstream: pull first")
     version = capture(["git", "cliff", "--bumped-version"]).strip().removeprefix("v")
     if args.dry_run:
         run(["git", "cliff", "--unreleased", "--tag", f"v{version}"])
@@ -638,7 +646,7 @@ def cmd_clean(args):
             run(["podman", "rmi", *stale])
     if args.packages:
         current = packages_dir().parent
-        for d in current.parent.iterdir():
+        for d in current.parent.iterdir() if current.parent.exists() else ():
             if d != current:
                 print(f"removing {d}")
                 shutil.rmtree(d)
@@ -655,8 +663,10 @@ def ensure_macos_xmake():
         if hashlib.sha256(data).hexdigest() != XMAKE_MACOS_SHA256:
             raise Fail(f"checksum mismatch for {url}: update XMAKE_MACOS_SHA256 only on purpose (bump-toolchain skill)")
         exe.parent.mkdir(parents=True, exist_ok=True)
-        exe.write_bytes(data)
-        exe.chmod(0o755)
+        part = exe.with_suffix(".part")  # renamed into place: an interrupted download never looks installed
+        part.write_bytes(data)
+        part.chmod(0o755)
+        part.replace(exe)
     os.environ["PATH"] = f"{exe.parent}{os.pathsep}{os.environ['PATH']}"
 
 
@@ -702,6 +712,7 @@ def make_parser():
     group = p.add_mutually_exclusive_group(required=True)
     group.add_argument("message_file", nargs="?", help="a commit message file (used by the commit-msg hook)")
     group.add_argument("--range", help="validate every commit in a git range, e.g. main..HEAD")
+    add("selftest", cmd_selftest, "run project_n.py's own unit tests (tools/test_project_n.py)")
     p = add("fmt", cmd_fmt, "format sources with the pinned clang-format")
     p.add_argument("--check", action="store_true", help="fail instead of rewriting files")
     p = add("lint", cmd_lint, "run the pinned clang-tidy over the sources (any finding fails)", container=True)

@@ -1,5 +1,7 @@
 """Self-checks for project_n.py. Run: pixi run python -m unittest discover -s tools"""
 
+import contextlib
+import io
 import unittest
 
 import project_n
@@ -94,7 +96,8 @@ class BuildAllTest(unittest.TestCase):
 
         project_n.cmd_build = fake_build
         try:
-            result = project_n.build_all(project_n.argparse.Namespace(preset="all", mode="debug", sanitizer="none", container=False))
+            with contextlib.redirect_stdout(io.StringIO()):  # its summary reports the faked failure
+                result = project_n.build_all(project_n.argparse.Namespace(preset="all", mode="debug", sanitizer="none", container=False))
         finally:
             project_n.cmd_build = saved
         self.assertEqual(built, [p for p in project_n.PRESETS if project_n.buildable_here(p)])
