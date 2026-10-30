@@ -29,7 +29,7 @@ Release only when the user asks; never on your own initiative.
 | `feat` | MINOR | MINOR |
 | anything else | PATCH | PATCH |
 
-From 1.0, "breaking" means incompatible save files, config or mod/content formats, or a changed build interface (`project_n.py` commands, presets). git-cliff applies these rules from `cliff.toml`; the first release is `v0.1.0` (`initial_tag`).
+From 1.0, "breaking" means incompatible save files, config or mod/content formats, or a changed build interface (`project_n.py` commands, presets). git-cliff applies these rules from `tools/cliff.toml`; the first release is `v0.1.0` (`initial_tag`).
 
 ## Rules
 

@@ -1,0 +1,6 @@
+# Build context (the repo root) for containers/*.Containerfile: only what the images copy in.
+# project_n passes it with --ignorefile (IMAGE_IGNORE).
+*
+!pixi.toml
+!pixi.lock
+!tools/env/activate.sh

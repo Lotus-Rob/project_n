@@ -1,5 +1,5 @@
 # git-cliff: CHANGELOG.md and the next SemVer version from Conventional Commits.
-# Used through `pixi run project_n release` (docs/design/0001 §11.3).
+# Used through `pixi run project_n release` (--config tools/cliff.toml) (docs/design/0001 §11.3).
 
 [changelog]
 header = """

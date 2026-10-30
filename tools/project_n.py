@@ -63,6 +63,7 @@ IMAGES = {
 MSVC_INSTALL = ('pixi run python /opt/msvc-wine/vsdownload.py --accept-license --msvc-version "$MSVC_VERSION" '
                 '--sdk-version "$SDK_VERSION" --architecture x64 --dest /opt/msvc && /opt/msvc-wine/install.sh /opt/msvc')
 IMAGE_INPUTS = ("pixi.toml", "pixi.lock", "tools/env/activate.sh")
+IMAGE_IGNORE = "containers/.containerignore"  # the build context is the repo root; this admits only IMAGE_INPUTS
 CACHE_VOLUME = "project_n-xmake-cache"  # PROJECT_N_XMAKE_CACHE=<dir> bind-mounts a directory instead (CI caches it)
 
 # Conventional Commits (docs/design/0001 §11.1). Add a scope in the commit that first uses it.
@@ -72,6 +73,7 @@ SCOPES = ("repo", "env", "containers", "tools", "xmake", "deps", "tests", "desig
 HEADER_RE = re.compile(r"^(?P<type>[a-z]+)(?:\((?P<scope>[a-z0-9-]+)\))?(?P<breaking>!)?: (?P<desc>.+)$")
 MAX_HEADER = 72
 VERSION_RE = re.compile(r'set_version\("([^"]+)"\)')
+CLIFF = ["git", "cliff", "--config", "tools/cliff.toml"]
 
 # Host prerequisites (docs/design/0001 §5.0): printed by `doctor`, never installed by it.
 INSTALL_HINTS = {
@@ -189,7 +191,7 @@ def ensure_image(name):
     if remote and subprocess.run(["podman", "pull", "-q", remote], check=False).returncode == 0:
         run(["podman", "tag", remote, tag])
         return tag
-    cmd = ["podman", "build", "-t", tag, "-f", spec["file"]]
+    cmd = ["podman", "build", "-t", tag, "-f", spec["file"], "--ignorefile", IMAGE_IGNORE]
     if spec["base"]:
         cmd += ["--build-arg", f"BASE_IMAGE={ensure_image(spec['base'])}"]
     run(cmd + ["."])
@@ -505,14 +507,14 @@ def cmd_release(args):
     run(["git", "fetch", "--quiet"])
     if capture(["git", "rev-list", "--count", "HEAD..@{upstream}"], check=False).strip() not in ("", "0"):
         raise Fail("main is behind its upstream: pull first")
-    version = capture(["git", "cliff", "--bumped-version"]).strip().removeprefix("v")
+    version = capture([*CLIFF, "--bumped-version"]).strip().removeprefix("v")
     if args.dry_run:
-        run(["git", "cliff", "--unreleased", "--tag", f"v{version}"])
+        run([*CLIFF, "--unreleased", "--tag", f"v{version}"])
         print(f"release --dry-run: would release v{version} (current {read_version()})")
         return
     xmake_lua = ROOT / "xmake.lua"
     xmake_lua.write_text(with_version(xmake_lua.read_text(encoding="utf-8"), version), encoding="utf-8")
-    run(["git", "cliff", "--tag", f"v{version}", "-o", "CHANGELOG.md"])
+    run([*CLIFF, "--tag", f"v{version}", "-o", "CHANGELOG.md"])
     run(["git", "add", "xmake.lua", "CHANGELOG.md"])
     run(["git", "commit", "-m", f"chore(release): v{version}"])
     run(["git", "tag", "-a", f"v{version}", "-m", f"v{version}"])
