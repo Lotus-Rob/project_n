@@ -32,6 +32,7 @@ use this machine's native preset: `linux-clang` on Linux, `windows-msvc` on Wind
 
 ```sh
 ./dev build                              # presets: linux-gcc, linux-clang, windows-msvc
+./dev build --preset all                 # every preset, past failures, then a pass/fail summary
 ./dev test --preset linux-gcc
 ./dev run                                # --debug launches under gdb
 ./dev check                              # the merge gate: commits, format, lint, all presets

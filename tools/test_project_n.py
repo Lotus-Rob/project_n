@@ -70,6 +70,26 @@ class NativePresetTest(unittest.TestCase):
         self.assertFalse(project_n.needs_container(project_n.NATIVE_PRESET))
 
 
+class BuildAllTest(unittest.TestCase):
+    def test_builds_every_preset_past_failures(self):
+        built, saved = [], project_n.cmd_build
+
+        def fake_build(args):
+            if args.preset == "all":
+                return saved(args)
+            built.append(args.preset)
+            if args.preset == "linux-gcc":
+                raise project_n.subprocess.CalledProcessError(1, "xmake")
+
+        project_n.cmd_build = fake_build
+        try:
+            result = project_n.build_all(project_n.argparse.Namespace(preset="all", mode="debug", sanitizer="none", container=False))
+        finally:
+            project_n.cmd_build = saved
+        self.assertEqual(built, list(project_n.PRESETS))
+        self.assertEqual(result, 1)
+
+
 class SanitizerTest(unittest.TestCase):
     def test_each_sanitizer_gets_its_own_build_dir(self):
         self.assertEqual(project_n.build_dir("linux-gcc", "debug").name, "debug")

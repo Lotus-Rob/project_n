@@ -202,10 +202,29 @@ def binary_path(preset, mode):
 
 
 def cmd_build(args):
+    if args.preset == "all":
+        return build_all(args)
     check_sanitizer(args.preset, args.sanitizer)
     if needs_container(args.preset, args.container):
         return reenter(args.preset, ["build", "--preset", args.preset, "--mode", args.mode, "--sanitizer", args.sanitizer])
     build(args.preset, args.mode, args.sanitizer)
+
+
+def build_all(args):
+    """Build every preset in turn, past failures, then summarise; each build's errors print as it runs."""
+    results = {}
+    for preset in PRESETS:
+        try:
+            cmd_build(argparse.Namespace(**{**vars(args), "preset": preset}))
+            results[preset] = "ok"
+        except Fail as e:
+            results[preset] = f"FAILED ({e})"
+        except subprocess.CalledProcessError:
+            results[preset] = "FAILED (errors above)"
+    print("\nbuild summary:")
+    for preset, result in results.items():
+        print(f"  {preset:14} {result}")
+    return 0 if all(r == "ok" for r in results.values()) else 1
 
 
 def cmd_test(args):
@@ -451,10 +470,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="project_n", description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
 
-    def add(name, func, help, preset=None, mode=False, container=False):
+    def add(name, func, help, preset=None, mode=False, container=False, choices=tuple(PRESETS)):
         p = sub.add_parser(name, help=help)
         if preset is not None:
-            p.add_argument("--preset", choices=PRESETS, required=preset == "required",
+            p.add_argument("--preset", choices=choices, required=preset == "required",
                            default=NATIVE_PRESET if preset == "native" else None)
         if mode:
             p.add_argument("--mode", choices=MODES, default="debug")
@@ -470,7 +489,8 @@ def main(argv=None):
                        help="build with a sanitizer (support per preset: see SANITIZERS)")
 
     add("doctor", cmd_doctor, "check the environment; prints how to fix problems, installs nothing")
-    add_sanitizer(add("build", cmd_build, "build a preset", preset="native", mode=True, container=True))
+    add_sanitizer(add("build", cmd_build, "build a preset, or all of them", preset="native", mode=True, container=True,
+                      choices=(*PRESETS, "all")))
     p = add("test", cmd_test, "build and run the tests of a preset", preset="native", mode=True, container=True)
     add_sanitizer(p)
     p.add_argument("--target", help="run one test target, forwarding the arguments after --")
