@@ -122,7 +122,8 @@ project_n/
 ├── containers/
 │   ├── AGENTS.md
 │   ├── linux.Containerfile   # Ubuntu LTS (digest) + pixi + `pixi install --locked`
-│   ├── msvc.Containerfile    # FROM project_n-linux + wine + msvc-wine (local-only)
+│   ├── wine.Containerfile    # FROM project_n-linux + Wine (cached in GHCR by CI)
+│   ├── msvc.Containerfile    # FROM project_n-wine + msvc-wine (local-only)
 │   └── windows/
 │       └── buildtools.vsconfig
 │

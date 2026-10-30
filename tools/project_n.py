@@ -60,7 +60,8 @@ NATIVE_PRESET = {"linux": "linux-clang", "windows": "windows-msvc", "macos": "ma
 # forbids redistribution.
 IMAGES = {
     "linux": {"file": "containers/linux.Containerfile", "base": None, "push": True},
-    "msvc": {"file": "containers/msvc.Containerfile", "base": "linux", "push": False},
+    "wine": {"file": "containers/wine.Containerfile", "base": "linux", "push": True},
+    "msvc": {"file": "containers/msvc.Containerfile", "base": "wine", "push": False},
 }
 IMAGE_INPUTS = ("pixi.toml", "pixi.lock", "tools/env/activate.sh")
 CACHE_VOLUME = "project_n-xmake-cache"  # PROJECT_N_XMAKE_CACHE=<dir> bind-mounts a directory instead (CI caches it)

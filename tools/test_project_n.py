@@ -151,6 +151,7 @@ class HelpersTest(unittest.TestCase):
 
     def test_msvc_image_is_never_pushed(self):
         self.assertFalse(project_n.IMAGES["msvc"]["push"])
+        self.assertTrue(project_n.IMAGES["wine"]["push"])
 
     def test_container_command_mounts_repo_and_cache(self):
         cmd = project_n.container_cmd("img", ["pixi", "run", "project_n", "build"])

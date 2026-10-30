@@ -1,7 +1,7 @@
 # containers/: artefact images
 
 ## Scope
-`linux.Containerfile` (Linux artefacts, container checks), `msvc.Containerfile` (windows-msvc via msvc-wine, layered on linux), `windows/buildtools.vsconfig` (native Windows MSVC).
+`linux.Containerfile` (Linux artefacts, container checks), `wine.Containerfile` (linux + Wine; open source, so CI caches it in GHCR), `msvc.Containerfile` (windows-msvc via msvc-wine, layered on wine; never pushed), `windows/buildtools.vsconfig` (native Windows MSVC).
 
 ## Rules
 - Images are tagged by a hash of their inputs (`IMAGES`/`IMAGE_INPUTS` in tools/project_n.py); `project_n` builds them on first use. Add any new file an image copies to `IMAGE_INPUTS` and `.containerignore`.

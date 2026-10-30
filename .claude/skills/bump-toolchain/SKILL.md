@@ -17,7 +17,8 @@ Owned by: containers/AGENTS.md. Rationale: docs/design/0001 §6.1 (pinning polic
 | glibc baseline | `sysroot_linux-64`. Changing it changes which distros can run the game: ask the user first and update design doc §5.2 |
 | XMake | `xmake` in `pixi.toml` and `set_xmakever()` in `xmake.lua` |
 | Ubuntu base | The digest in `containers/linux.Containerfile` `FROM` |
-| apt snapshot | `APT_SNAPSHOT` in both Containerfiles (keep them equal) |
+| apt snapshot | `APT_SNAPSHOT` in `linux.Containerfile` and `wine.Containerfile` (keep them equal) |
+| XMake on macOS | `XMAKE_MACOS_SHA256` in tools/project_n.py: the checksum of `xmake-v<version>.tar.gz`, built from source because conda-forge has no osx-arm64 XMake |
 | Pixi in the image | `PIXI_VERSION` and `PIXI_SHA256` in `containers/linux.Containerfile`; raise `requires-pixi` in `pixi.toml` only if the project needs a newer Pixi feature |
 | msvc-wine | `MSVC_WINE_COMMIT` in `containers/msvc.Containerfile` |
 | MSVC / Windows SDK | `MSVC_VERSION` and `SDK_VERSION` in `containers/msvc.Containerfile`, the matching components in `containers/windows/buildtools.vsconfig`, and `VS_TOOLSET` in tools/project_n.py: all three name the same toolset |
