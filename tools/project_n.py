@@ -459,26 +459,26 @@ def cmd_artifact(args):
         leaked = [line for line in capture(["otool", "-L", binary]).splitlines()[1:] if not line.strip().startswith(shipped)]
         if leaked:
             raise Fail("artefact links libraries macOS doesn't ship:\n" + "\n".join(leaked))
-    dist = ROOT / "dist" / args.preset
-    shutil.rmtree(dist, ignore_errors=True)
-    dist.mkdir(parents=True)
+    dist, syms = ROOT / "dist" / args.preset, ROOT / "dist" / f"{args.preset}-symbols"
+    for d in (dist, syms):
+        shutil.rmtree(d, ignore_errors=True)
+        d.mkdir(parents=True)
     shutil.copy2(ROOT / binary, dist)
     for notice in ("LICENSE", "THIRD_PARTY_NOTICES.md"):  # AGPL and the bundled libraries' licences
         shutil.copy2(ROOT / notice, dist)
     if PRESETS[args.preset]["plat"] == "macosx":
         shutil.copy2(Path(os.environ["CONDA_PREFIX"], "lib", "libc++.1.dylib"), dist)
-    # Debug info XMake split off the release binary: kept for crash reports, never shipped to players.
+    # Debug info XMake split off the release binary: kept with the release for crash reports, never shipped.
     symbols = ROOT / binary.with_suffix({"linux": ".sym", "windows": ".pdb", "macosx": ".dSYM"}[PRESETS[args.preset]["plat"]])
-    (dist / "symbols").mkdir()
-    (shutil.copytree if symbols.is_dir() else shutil.copy2)(symbols, dist / "symbols" / symbols.name)
+    (shutil.copytree if symbols.is_dir() else shutil.copy2)(symbols, syms / symbols.name)
     manifest = {
         "version": read_version(),
         "commit": capture(["git", "rev-parse", "HEAD"]).strip(),
         "preset": args.preset,
         "image": os.environ.get("PROJECT_N_IMAGE", "unknown"),
         "pixi_lock_sha256": sha256("pixi.lock"),
-        "files": {p.relative_to(dist).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
-                  for p in sorted(dist.rglob("*")) if p.is_file()},
+        "files": {p.relative_to(dist.parent).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                  for p in sorted([*dist.rglob("*"), *syms.rglob("*")]) if p.is_file()},
     }
     # Toolchain parts pixi.lock doesn't pin.
     if PRESETS[args.preset]["toolchain"] == "msvc":
@@ -486,7 +486,11 @@ def cmd_artifact(args):
     elif PRESETS[args.preset]["plat"] == "macosx":
         manifest["macos_sdk"] = capture(["xcrun", "--show-sdk-version"]).strip()
     (dist / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    print(f"artifact: {dist.relative_to(ROOT)}")
+    # Upload-ready archives for a hosted release: the game, and its symbols separately.
+    stem = f"{ROOT / 'dist' / APP}-{manifest['version']}-{args.preset}"
+    shutil.make_archive(stem, "zip", dist)
+    shutil.make_archive(f"{stem}-symbols", "zip", syms)
+    print(f"artifact: {dist.relative_to(ROOT)}, {Path(stem).name}.zip and -symbols.zip")
 
 
 def cmd_selftest(args):

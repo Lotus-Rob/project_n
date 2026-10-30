@@ -12,7 +12,7 @@
 
 ## Commands
 - `pixi run project_n image` builds missing images · `pixi run project_n shell --preset <p>` debugs inside one
-- `pixi run project_n artifact --preset <p>` builds into `dist/<preset>/` with `manifest.json`
+- `pixi run project_n artifact --preset <p>` builds into `dist/<preset>/` with `manifest.json`, symbols in `dist/<preset>-symbols/`, and a zip of each
 
 ## Skills
 - bump-toolchain: every pin location and the update order
