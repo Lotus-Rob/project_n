@@ -22,8 +22,8 @@ cmake = "==4.4.5"
 ninja = "==1.13.2"
 meson = "==1.12.1"
 
-# XMake per platform: conda-forge has no osx-arm64 build, so project_n.py builds the
-# upstream release there (XMAKE_MACOS_SHA256). Keep the version equal to set_xmakever().
+# XMake per platform: conda-forge has no osx-arm64 build, so project_n.py downloads the
+# upstream bundle there (XMAKE_MACOS_SHA256). Keep the version equal to set_xmakever().
 [target.win-64.dependencies]
 xmake = "==3.1.2"
 
