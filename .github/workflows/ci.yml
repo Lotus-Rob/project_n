@@ -19,13 +19,20 @@ env:
   # PRs check out their head commit, not GitHub's merge commit: history is linear (§11.2).
   CHECKOUT_REF: ${{ github.event.pull_request.head.sha || github.sha }}
 
+# XMake package caches are keyed on the toolchain, the dependencies and the package overrides.
 jobs:
   linux:
     # Merge gate in clean containers (all presets, windows-msvc under msvc-wine), then artefacts.
     runs-on: ubuntu-26.04
     timeout-minutes: 240
+    permissions:
+      contents: read
+      packages: write # the linux image cache in GHCR
     env:
       PROJECT_N_ACCEPT_MSVC_LICENSE: "1" # confirmed to fit the project (design doc O3); image stays on the runner
+      PROJECT_N_REGISTRY: ghcr.io/lotus-rob
+      PROJECT_N_PUSH_IMAGES: ${{ github.event_name == 'push' && '1' || '0' }}
+      PROJECT_N_XMAKE_CACHE: /home/runner/xmake-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -43,6 +50,14 @@ jobs:
       - name: Free disk space
         # The images and XMake packages need ~25 GB; the runner keeps preinstalled SDKs we never use.
         run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache && df -h /
+      - name: Log in to the image cache
+        # Fork PRs have no write token; project_n then builds the image instead of pulling it.
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin || true
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /home/runner/xmake-cache
+          key: xmake-linux-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
+          restore-keys: xmake-linux-
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
@@ -63,11 +78,23 @@ jobs:
     # Native MSVC: the authoritative Windows build, and the only place MSVC's ASan can run.
     runs-on: windows-2025-vs2026
     timeout-minutes: 180
+    env:
+      XMAKE_PKG_INSTALLDIR: C:\xmake-packages
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.CHECKOUT_REF }}
+      - name: Cached MSVC toolset
+        id: msvc
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # What the versioned VC.14.50 component adds to the image's VS install.
+          path: |
+            C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.50.*
+            C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\14.50
+          key: msvc-${{ hashFiles('containers/windows/buildtools.vsconfig') }}
       - name: Pinned MSVC toolset (containers/windows/buildtools.vsconfig)
+        if: steps.msvc.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer"
@@ -76,6 +103,11 @@ jobs:
             'modify', '--installPath', "`"$vs`"", '--config', "`"$PWD\containers\windows\buildtools.vsconfig`"",
             '--quiet', '--norestart', '--nocache')
           if ($proc.ExitCode -notin 0, 3010) { throw "VS installer failed: $($proc.ExitCode)" }
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: C:\xmake-packages
+          key: xmake-windows-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
+          restore-keys: xmake-windows-
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
@@ -93,6 +125,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.CHECKOUT_REF }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.xmake/project_n # XMAKE_PKG_INSTALLDIR from tools/env/activate.sh
+          key: xmake-macos-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
+          restore-keys: xmake-macos-
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
