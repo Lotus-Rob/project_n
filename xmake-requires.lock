@@ -344,6 +344,54 @@
             version = "v1.3.2"
         }
     },
+    ["macosx|arm64"] = {
+        ["cmake#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "6d79f3da17af7ef03a7062d18d8ef598214cb0ae",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "4.3.4"
+        },
+        ["doctest 2.5.3#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "6d79f3da17af7ef03a7062d18d8ef598214cb0ae",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "2.5.3"
+        },
+        ["egl-headers#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "6d79f3da17af7ef03a7062d18d8ef598214cb0ae",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "2023.12.16"
+        },
+        ["libsdl3-wayland 3.4.16#f56260b5"] = {
+            repo = {
+                url = "xmake/repo"
+            },
+            version = "3.4.16"
+        },
+        ["ninja#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "6d79f3da17af7ef03a7062d18d8ef598214cb0ae",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "v1.13.2"
+        },
+        ["opengl-headers#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "6d79f3da17af7ef03a7062d18d8ef598214cb0ae",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "2024.01.04"
+        }
+    },
     ["windows|x64"] = {
         ["cmake#f56260b5"] = {
             repo = {
