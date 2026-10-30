@@ -85,7 +85,6 @@ jobs:
       packages: write # the linux image cache in GHCR
     env:
       PROJECT_N_ACCEPT_MSVC_LICENSE: "1" # confirmed to fit the project (design doc O3); image stays on the runner
-      PROJECT_N_MSVC_CACHE: /home/runner/msvc-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -104,21 +103,22 @@ jobs:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
           cache: true
-      - name: Restore MSVC download
-        id: msvc-download
+      - name: Restore MSVC install
+        id: msvc-install
         if: matrix.preset == 'windows-msvc'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: /home/runner/msvc-cache
-          key: msvc-download-${{ hashFiles('containers/msvc.Containerfile') }}
-      - run: pixi run project_n artifact --preset ${{ matrix.preset }}
-      - name: Save MSVC download
-        # The download finished once the msvc image exists, whatever happened after it.
-        if: always() && matrix.preset == 'windows-msvc' && steps.msvc-download.outputs.cache-hit != 'true'
+          path: ~/.xmake/project_n-tools/msvc-*
+          key: msvc-install-${{ hashFiles('containers/msvc.Containerfile') }}
+      # Setup: pull or build the image, and install MSVC for windows-msvc.
+      - run: pixi run project_n image --preset ${{ matrix.preset }}
+      - name: Save MSVC install
+        if: matrix.preset == 'windows-msvc' && steps.msvc-install.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: /home/runner/msvc-cache
-          key: msvc-download-${{ hashFiles('containers/msvc.Containerfile') }}
+          path: ~/.xmake/project_n-tools/msvc-*
+          key: msvc-install-${{ hashFiles('containers/msvc.Containerfile') }}
+      - run: pixi run project_n artifact --preset ${{ matrix.preset }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist-${{ matrix.preset }}-${{ env.CHECKOUT_REF }}

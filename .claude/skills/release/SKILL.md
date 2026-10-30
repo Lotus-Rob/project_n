@@ -34,6 +34,6 @@ From 1.0, "breaking" means incompatible save files, config or mod/content format
 
 - `CHANGELOG.md` is generated; never edit it by hand. Fix a wrong entry by fixing the next commit message, not the file.
 - The tag `vX.Y.Z` and `set_version()` always match; only `release` changes either.
-- Never push the msvc image or anything from `/opt/msvc` alongside artefacts (licence).
+- Never publish Microsoft's files (the MSVC install, anything from `/opt/msvc`) alongside artefacts (licence).
 
 ## Gotchas

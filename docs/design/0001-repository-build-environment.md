@@ -42,7 +42,7 @@
 | D2 | **Podman (rootless)** is the container engine, used **only for artefact builds** and container-based checks. Containerfiles follow the OCI format. | Open source and daemonless. Runs on Windows through `podman machine` (WSL2). |
 | D3 | **Linux artefacts are built in `project_n-linux`**: Ubuntu LTS pinned by digest, plus `pixi install --locked`. The image has no distro compilers. The glibc baseline comes from the conda-forge sysroot pinned in `pixi.toml`. The C++ runtime is linked statically (`-static-libstdc++` for GCC, static libc++ for Clang). | Artefacts use exactly the development compilers. The container's job is isolation, not providing tools. Ubuntu is the most common base image. |
 | D4 | **All images use Ubuntu LTS**, pinned by digest, with apt pinned to a snapshot date for the few distro packages (Wine). | One base to pin and update. |
-| D5 | **MSVC artefacts are built under Wine** ([msvc-wine](https://github.com/mstorsjo/msvc-wine)) in a **local-only** image layered on `project_n-linux`. | Podman can't run Windows containers, and conda-forge can't ship MSVC. The MSVC licence forbids redistribution, so the image is never pushed. |
+| D5 | **MSVC artefacts are built under Wine** ([msvc-wine](https://github.com/mstorsjo/msvc-wine)) in an image layered on `project_n-linux`. MSVC itself is installed outside the image and mounted in. | Podman can't run Windows containers, and conda-forge can't ship MSVC. The MSVC licence forbids redistribution, so no image contains it and images can be cached in a registry. |
 | D6 | **On native Windows, MSVC comes from pinned Build Tools**: a versioned `.vsconfig` component, selected through XMake's `--vs_toolset`. Everything else comes from the Pixi environment. | MSVC is the one tool Pixi can't provide, so it is pinned separately. |
 | D7 | **XMake** owns the build graph, dependencies (`xmake-repo` packages with a committed lock file) and tests (`add_tests`, `xmake test`). | Avoids duplicating XMake features in scripts. |
 | D8 | **`tools/project_n.py` is the one entry point.** It is stdlib-only Python, exposed as the Pixi task `project_n`, so you run `pixi run project_n <command>`. | It hides Podman, the per-preset XMake config and the release steps. `pixi run` guarantees the pinned tools are on PATH. |
@@ -122,8 +122,7 @@ project_n/
 ├── containers/
 │   ├── AGENTS.md
 │   ├── linux.Containerfile   # Ubuntu LTS (digest) + pixi + `pixi install --locked`
-│   ├── wine.Containerfile    # FROM project_n-linux + Wine (cached in GHCR by CI)
-│   ├── msvc.Containerfile    # FROM project_n-wine + msvc-wine (local-only)
+│   ├── msvc.Containerfile    # FROM project_n-linux + Wine + msvc-wine; MSVC mounted at /opt/msvc
 │   └── windows/
 │       └── buildtools.vsconfig
 │
@@ -203,10 +202,11 @@ Everything else comes from `pixi install`: compilers, XMake, debuggers, clang to
 ### 5.3 `project_n-msvc` image (Windows artefacts on Linux)
 
 - **Base:** `FROM project_n-linux`, which provides the Pixi environment with XMake and Python (`vsdownload.py` runs with Pixi's Python).
-- **Contents:** Wine 10.0, winbind and msitools from the same apt snapshot. msvc-wine is pinned by commit, and `vsdownload.py --msvc-version 18.0 --sdk-version 10.0.26100 --architecture x64` installs to `/opt/msvc`.
+- **Contents:** Wine 10.0, winbind and msitools from the same apt snapshot, and msvc-wine pinned by commit. No Microsoft files.
+- **MSVC:** `project_n image` installs it once with `vsdownload.py --msvc-version 18.0 --sdk-version 10.0.26100 --architecture x64` plus msvc-wine's `install.sh`, run in the image, into `~/.xmake/project_n-tools/msvc-<hash of msvc.Containerfile>` on the host. Every windows-msvc container mounts that directory at `/opt/msvc`. Until phase 4 MSVC lived inside the image, which therefore couldn't be cached in a registry and was rebuilt (unpacking 3.9 GB) on every CI run.
 - **XMake:** `xmake f -p windows -a x64 --toolchain=msvc --sdk=/opt/msvc`. XMake's msvc toolchain supports msvc-wine directly, so no custom toolchain is needed.
-- **Wine prefix:** recreated as the image's last step with `wineboot -i`, then `wineserver -w`. Wine writes its registry only when `wineserver` exits, and the `RUN` step that ran msvc-wine's `install.sh` ended first. That left a prefix without `HKCU\Environment`, so `%TEMP%` was undefined and every `cl.exe` call failed with D8037 "cannot create temporary il file" (S1). Ubuntu keeps `wineserver` in `/usr/lib/x86_64-linux-gnu/wine`, which the image adds to `PATH`.
-- **Licence:** building it requires accepting the MSVC licence (`ACCEPT_MSVC_LICENSE=1`), and the image is **never pushed** to a registry. The Build Tools licence terms have been confirmed to fit the project, for both the container and native installs.
+- **Wine prefix:** recreated as the image's last step with `wineboot -i`, then `wineserver -w`. Wine writes its registry only when `wineserver` exits, and an earlier `RUN` step that ran Wine ended first. That left a prefix without `HKCU\Environment`, so `%TEMP%` was undefined and every `cl.exe` call failed with D8037 "cannot create temporary il file" (S1). Ubuntu keeps `wineserver` in `/usr/lib/x86_64-linux-gnu/wine`, which the image adds to `PATH`.
+- **Licence:** installing MSVC requires accepting its licence (`PROJECT_N_ACCEPT_MSVC_LICENSE=1`), and it never enters an image, so the image can be pushed (a unit test checks that no pushed image runs `vsdownload.py`). The Build Tools licence terms have been confirmed to fit the project, for both the container and native installs.
 - **Tests:** Windows test binaries run under Wine.
 
 ### 5.4 Native Windows
@@ -612,9 +612,9 @@ GitHub Actions (`.github/workflows/ci.yml`, since phase 4) runs on every push, t
 | `macos` | macos-26 | native `macos-clang` tests in release and under ASan, then `artifact` |
 
 - **Caches**, in two layers:
-  - Setup, saved as soon as its step finishes: the Pixi environments (setup-pixi), the `linux` and `wine` images in GHCR by content tag (`PROJECT_N_REGISTRY`), the MSVC 14.50 toolset on Windows, the macOS XMake bundle, and Microsoft's MSVC download for the `msvc` image (`PROJECT_N_MSVC_CACHE`).
+  - Setup, saved as soon as its step finishes: the Pixi environments (setup-pixi), the `linux` and `msvc` images in GHCR by content tag (`PROJECT_N_REGISTRY`), the MSVC install for msvc-wine (after `project_n image`), the MSVC 14.50 toolset on Windows, and the macOS XMake bundle.
   - XMake packages per job, saved at job end even after a failure.
-- **Licence:** the `msvc` image is never pushed (`IMAGES[...]["push"]`). Microsoft's files do sit in Actions caches; fork PRs of a public repository can read those, which was accepted on the basis that the repository goes private once setup is done.
+- **Licence:** no image contains Microsoft's files. They do sit in Actions caches (the MSVC install and the Windows toolset); fork PRs of a public repository can read those, which was accepted on the basis that the repository goes private once setup is done.
 - **Branch protection** on `main` requires the jobs above and linear history (§11.2).
 
 ---

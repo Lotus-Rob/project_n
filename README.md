@@ -41,7 +41,7 @@ use this machine's native preset: `linux-clang` on Linux, `windows-msvc` on Wind
 ```
 
 Native builds land in `build/<preset>/<mode>/`. `windows-msvc` builds in a container on Linux, using the real MSVC under Wine.
-Building that image downloads Microsoft's Build Tools: set `PROJECT_N_ACCEPT_MSVC_LICENSE=1` to accept their licence.
+Its first use installs Microsoft's Build Tools under `~/.xmake/project_n-tools/`: set `PROJECT_N_ACCEPT_MSVC_LICENSE=1` to accept their licence.
 `macos-clang` builds only on a Mac (Apple's licences); elsewhere CI's macOS job covers it, and `check` skips it.
 
 ## Release
