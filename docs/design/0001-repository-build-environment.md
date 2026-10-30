@@ -610,11 +610,11 @@ chore(release): v0.2.0
 
 ## 12. CI
 
-GitHub Actions (`.github/workflows/ci.yml`, since phase 4) only runs `project_n` commands, split into parallel jobs (`check` stays the local gate). The repository is private on GitHub Free, so minutes are metered (Windows 2x, macOS 10x): branch pushes run the Linux jobs, while pushes to `main` and tags run the Windows and macOS jobs. `main` only receives commits that already passed the Linux jobs on their branch. A manual run (`workflow_dispatch`) runs everything on any branch.
+GitHub Actions (`.github/workflows/ci.yml`, since phase 4) only runs `project_n` commands, split into parallel jobs (`check` stays the local gate). The repository is private on GitHub Free, so minutes are metered (Windows 2x, macOS 10x): every push runs the Linux jobs (on `main` too, since GitHub Free doesn't enforce that a branch was up to date before merging), and pushes to `main`, tags and manual runs (`workflow_dispatch`) add the Windows and macOS jobs. Dependabot updates the SHA-pinned actions weekly.
 
 | Job | Runner | Runs |
 |---|---|---|
-| `lint` | ubuntu-26.04 | `commit-check --range`, `doctor --docs`, `fmt --check`, `lint --container` |
+| `lint` | ubuntu-26.04 | `selftest`, `commit-check --range`, `doctor --docs`, `fmt --check`, `lint --container` |
 | `container (<preset>)` | ubuntu-26.04 | `artifact` for `linux-gcc`, `linux-clang` and `windows-msvc` (msvc-wine): clean-container build, tests, dependency check, `dist/` upload |
 | `windows` | windows-2025-vs2026 | native `windows-msvc` tests in release and under ASan, after adding the pinned toolset from `buildtools.vsconfig` |
 | `macos` | macos-26 | native `macos-clang` tests in release and under ASan, then `artifact` |

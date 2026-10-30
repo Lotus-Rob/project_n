@@ -5,7 +5,7 @@ description: Write commit messages and shape commits for project_n. Use whenever
 
 # Committing in project_n
 
-Owned by: root AGENTS.md. Enforced by `.githooks/commit-msg` and `pixi run project_n commit-check` (CI checks every commit in a PR).
+Owned by: root AGENTS.md. Enforced by `.githooks/commit-msg` and `pixi run project_n commit-check` (CI checks every pushed commit).
 
 ## Format
 

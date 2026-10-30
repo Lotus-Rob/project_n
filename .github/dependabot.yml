@@ -1,0 +1,10 @@
+# Weekly updates of the actions pinned by SHA in workflows/ci.yml. The prefix keeps the
+# commit messages valid for `project_n commit-check` (Conventional Commits).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci

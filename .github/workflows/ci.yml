@@ -1,9 +1,9 @@
 # CI only runs project_n commands (docs/design/0001 §12); see .github/AGENTS.md.
 name: ci
 
-# Minutes are metered on a private repo (Windows 2x, macOS 10x): branch pushes run the Linux jobs,
-# main and tags run Windows and macOS (main's commits already passed the Linux jobs on their
-# branch). Run the workflow by hand on a branch to get everything before merging.
+# Minutes are metered on a private repo (Windows 2x, macOS 10x): every push runs the Linux jobs;
+# main, tags and manual runs add Windows and macOS. Run the workflow by hand on a branch to get
+# everything before merging.
 on:
   push:
     branches: ["**"]
@@ -27,7 +27,6 @@ env:
 jobs:
   lint:
     # The non-build half of `check`: commit messages, quoted commands, formatting, clang-tidy.
-    if: github.ref != 'refs/heads/main'
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
@@ -59,6 +58,7 @@ jobs:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
           cache: true
+      - run: pixi run project_n selftest
       - run: pixi run project_n commit-check --range "$RANGE"
       - run: pixi run project_n doctor --docs
       - run: pixi run project_n fmt --check
@@ -72,7 +72,6 @@ jobs:
           key: xmake-lint-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
 
   container:
-    if: github.ref != 'refs/heads/main'
     # One clean-container build per preset (`project_n artifact`): build, tests, runtime-dependency check, dist/.
     strategy:
       fail-fast: false
@@ -195,7 +194,7 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: XMake source checksum
+      - name: XMake bundle checksum
         run: echo "XMAKE_TOOL=$(grep -o 'XMAKE_MACOS_SHA256 = "[0-9a-f]*"' tools/project_n.py | cut -d'"' -f2)" >> "$GITHUB_ENV"
       - name: Restore XMake
         id: xmake-tool
@@ -216,7 +215,7 @@ jobs:
           locked: true
           cache: true
       # Report only: CI needs no commit hook or podman. Exit code 3 means problems found; anything else is a bug.
-      - run: pixi run project_n doctor || [ $? -eq 3 ] # also builds XMake on a cache miss
+      - run: pixi run project_n doctor || [ $? -eq 3 ] # also downloads XMake on a cache miss
       - name: Save XMake
         if: steps.xmake-tool.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
