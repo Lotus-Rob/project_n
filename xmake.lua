@@ -59,6 +59,10 @@ if is_plat("windows") then
     -- debug directory, the only bytes that differed between two machines' builds.
     add_cxflags("/Brepro", {force = true})
     add_ldflags("/Brepro", {force = true})
+    -- LTCG (/GL, /LTCG) reorders .rdata constants from run to run without this. The .pdb's bytes
+    -- still vary; it matches its binary by the content-derived GUID /Brepro writes.
+    add_cxflags("/experimental:deterministic", {force = true})
+    add_ldflags("/experimental:deterministic", {force = true})
     -- Library headers (<...>) are external: no warnings from code we don't own. XMake's own
     -- /external:I paths don't match under msvc-wine, so classify by include style instead.
     -- Forced: XMake probes each flag alone, and cl rejects /external:anglebrackets without
