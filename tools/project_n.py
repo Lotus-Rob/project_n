@@ -139,9 +139,17 @@ def build_dir(preset, mode, sanitizer="none"):
     return Path("build", "container", preset, leaf) if IN_CONTAINER else Path("build", preset, leaf)
 
 
+def packages_dir():
+    """XMake keys its package cache on the toolchain name, not the compiler version, so each
+    environment gets its own: a toolchain bump never reuses stale builds. pixi.toml counts too,
+    because activation variables (build flags, pkg-config paths) aren't in the lock."""
+    return Path.home() / ".xmake" / "project_n" / sha256("pixi.toml", "pixi.lock")[:12] / "packages"
+
+
 def xmake_env(bdir):
     # Per-build config dir: native and container builds of one preset never share XMake state.
-    return dict(os.environ, XMAKE_CONFIGDIR=str(ROOT / bdir / ".xmake"), **SANITIZER_ENV)
+    return dict(os.environ, XMAKE_CONFIGDIR=str(ROOT / bdir / ".xmake"), XMAKE_PKG_INSTALLDIR=str(packages_dir()),
+                **SANITIZER_ENV)
 
 
 def check_sanitizer(preset, sanitizer):
@@ -601,11 +609,15 @@ def cmd_clean(args):
     for preset in [args.preset] if args.preset else PRESETS:
         for d in (ROOT / "build" / preset, ROOT / "build" / "container" / preset):
             shutil.rmtree(d, ignore_errors=True)
+    if args.images:
+        current = {image_tag(name).split(":")[1] for name in IMAGES}
+        listed = capture(["podman", "images", "--format", "{{.Repository}}:{{.Tag}}"]).split()
+        # Only this project's images (any registry), and only stale tags of them.
+        stale = [ref for ref in listed if re.search(r"/project_n-[a-z]+:", ref) and ref.rsplit(":", 1)[1] not in current]
+        if stale:
+            run(["podman", "rmi", *stale])
     if args.packages:
-        current = os.environ.get("XMAKE_PKG_INSTALLDIR")
-        if not current:
-            raise Fail("XMAKE_PKG_INSTALLDIR is unset: run through `pixi run project_n`")
-        current = Path(current).parent
+        current = packages_dir().parent
         for d in current.parent.iterdir():
             if d != current:
                 print(f"removing {d}")
@@ -678,6 +690,7 @@ def make_parser():
     add("shell", cmd_shell, "open a shell in a preset's container (to debug container failures)", preset="required")
     p = add("clean", cmd_clean, "remove build directories", preset="optional")
     p.add_argument("--packages", action="store_true", help="also remove XMake package dirs of other environments")
+    p.add_argument("--images", action="store_true", help="also remove this project's container images other than the current tags")
     return parser
 
 

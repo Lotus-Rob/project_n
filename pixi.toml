@@ -59,9 +59,6 @@ lldb = "==22.1.8"
 pkg-config = "==0.29.2"
 make = "==4.4.1"
 
-[target.osx-arm64.activation]
-scripts = ["tools/env/activate.sh"]
-
 [target.osx-arm64.activation.env]
 # As on Linux, all flags come from xmake.lua. The SDK comes from sdkroot_env (SDKROOT via xcrun).
 CFLAGS = ""
