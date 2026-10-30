@@ -416,8 +416,6 @@ def cmd_check(args):
     rng = commit_range()
     if rng and cmd_commit_check(argparse.Namespace(range=rng, message_file=None)):
         raise Fail("commit-check failed")
-    if cmd_doctor(argparse.Namespace(docs=True)):
-        raise Fail("agent docs quote commands that don't exist (agent-docs skill, contract rule 5)")
     cmd_fmt(argparse.Namespace(check=True))
     cmd_lint(argparse.Namespace(container=args.container, fix=False))
     skipped = [p for p in PRESETS if not buildable_here(p) or (args.container and not PRESETS[p]["image"])]
@@ -439,9 +437,15 @@ def msvc_versions(env_sh):
     return {"msvc": found.get("MSVCVER"), "windows_sdk": found.get("SDKVER")}
 
 
+def tree_dirty():
+    """Uncommitted changes, except xmake-requires.lock: builds rewrite its order without changing it
+    (tools/AGENTS.md). A real lock change comes with xmake.lua or xmake/repo changes, which count."""
+    return capture(["git", "status", "--porcelain", "--", ".", ":!xmake-requires.lock"]).strip()
+
+
 def cmd_artifact(args):
     # Release artefacts come from committed sources only; the container sees the whole checkout.
-    if capture(["git", "status", "--porcelain"]).strip():
+    if tree_dirty():
         raise Fail("artifact builds committed sources only: commit or stash first (`check --container` tests uncommitted work)")
     if not IN_CONTAINER and (PRESETS[args.preset]["image"] or needs_container(args.preset)):
         return reenter(args.preset, ["artifact", "--preset", args.preset])
@@ -472,6 +476,8 @@ def cmd_artifact(args):
         shutil.copy2(Path(os.environ["CONDA_PREFIX"], "lib", "libc++.1.dylib"), dist)
     # Debug info XMake split off the release binary: kept with the release for crash reports, never shipped.
     symbols = ROOT / binary.with_suffix({"linux": ".sym", "windows": ".pdb", "macosx": ".dSYM"}[PRESETS[args.preset]["plat"]])
+    if not symbols.exists():
+        raise Fail(f"no debug symbols at {symbols}: XMake skips the split when its tool (objcopy, dsymutil) is missing")
     (shutil.copytree if symbols.is_dir() else shutil.copy2)(symbols, syms / symbols.name)
     manifest = {
         "version": read_version(),
@@ -502,7 +508,7 @@ def cmd_selftest(args):
 def cmd_release(args):
     if capture(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip() != "main":
         raise Fail("release runs on main")
-    if capture(["git", "status", "--porcelain"]).strip():
+    if tree_dirty():
         raise Fail("working tree is not clean")
     run(["git", "fetch", "--quiet"])
     if capture(["git", "rev-list", "--count", "HEAD..@{upstream}"], check=False).strip() not in ("", "0"):
@@ -674,7 +680,7 @@ def ensure_macos_xmake():
     if not exe.exists():
         url = f"https://github.com/xmake-io/xmake/releases/download/v{version}/xmake-bundle-v{version}.macos.arm64"
         print(f"+ download {url}", flush=True)
-        data = urllib.request.urlopen(url).read()
+        data = urllib.request.urlopen(url, timeout=60).read()
         if hashlib.sha256(data).hexdigest() != XMAKE_MACOS_SHA256:
             raise Fail(f"checksum mismatch for {url}: update XMAKE_MACOS_SHA256 only on purpose (bump-toolchain skill)")
         exe.parent.mkdir(parents=True, exist_ok=True)
@@ -743,8 +749,8 @@ def make_parser():
 def main(argv=None):
     args = make_parser().parse_args(argv)
     try:
-        if HOST == "macos":
-            ensure_macos_xmake()
+        if HOST == "macos" and args.func not in (cmd_commit_check, cmd_selftest, cmd_fmt, cmd_release):
+            ensure_macos_xmake()  # not for commands without XMake: the commit hook must work offline
         return args.func(args) or 0
     except Fail as e:
         print(f"project_n: {e}", file=sys.stderr)

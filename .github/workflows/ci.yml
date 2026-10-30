@@ -60,7 +60,6 @@ jobs:
           cache: true
       - run: pixi run project_n selftest
       - run: pixi run project_n commit-check --range "$RANGE"
-      - run: pixi run project_n doctor --docs
       - run: pixi run project_n fmt --check
       - run: pixi run project_n lint --container
       - name: Save XMake packages

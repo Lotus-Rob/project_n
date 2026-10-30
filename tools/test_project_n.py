@@ -2,7 +2,10 @@
 
 import contextlib
 import io
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
 import project_n
 
@@ -102,6 +105,28 @@ class BuildAllTest(unittest.TestCase):
             project_n.cmd_build = saved
         self.assertEqual(built, [p for p in project_n.PRESETS if project_n.buildable_here(p)])
         self.assertEqual(result, 1)
+
+
+class DirtyTreeTest(unittest.TestCase):
+    def test_lock_reorders_dont_block_releases(self):
+        saved = project_n.ROOT
+        with tempfile.TemporaryDirectory() as d:
+            root = project_n.ROOT = Path(d)
+            try:
+                def git(*args):
+                    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", *args],
+                                   cwd=root, check=True, capture_output=True)
+                git("init", "-q")
+                for name in ("xmake-requires.lock", "xmake.lua"):
+                    (root / name).write_text("a")
+                git("add", ".")
+                git("commit", "-q", "--no-verify", "-m", "init")
+                (root / "xmake-requires.lock").write_text("b")
+                self.assertFalse(project_n.tree_dirty())
+                (root / "xmake.lua").write_text("b")
+                self.assertTrue(project_n.tree_dirty())
+            finally:
+                project_n.ROOT = saved
 
 
 class DocsTest(unittest.TestCase):

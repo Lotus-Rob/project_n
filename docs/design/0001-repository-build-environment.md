@@ -227,7 +227,7 @@ Implemented 2026-10-30 and verified on GitHub's `macos-26` (Apple Silicon) runne
 - **Target:** Apple Silicon (`osx-arm64`) only. Intel Macs stop getting new macOS releases, so no universal binaries.
 - **Toolchain:** the same LLVM 22.1.8 packages as Linux from the `osx-arm64` section of `pixi.lock` (`clangxx_osx-arm64` carries the full version there, Linux's only major.minor). The `pixi-clang` XMake toolchain picks the `arm64-apple-darwin20.0.0-` prefix on macOS hosts. lldb is the debugger; gdb doesn't support Apple Silicon.
 - **SDK:** from the Xcode Command Line Tools (`xcode-select --install`, §5.0). conda's `sdkroot_env` package sets `SDKROOT` through `xcrun`. The SDK can't be pinned like a package, so `doctor` reports its version. `MACOSX_DEPLOYMENT_TARGET=13.0` (Pixi activation) sets the oldest supported macOS for clang and CMake alike.
-- **XMake:** conda-forge has no `osx-arm64` build, so `project_n` downloads the upstream `xmake-bundle-v<version>.macos.arm64` for `set_xmakever()`'s version, checked against `XMAKE_MACOS_SHA256`, into `~/.xmake/project_n-tools/`. Adding `osx-arm64` to the conda-forge xmake feedstock would let the lock cover it again.
+- **XMake:** conda-forge has no `osx-arm64` build, so `project_n` downloads, for commands that use XMake, the upstream `xmake-bundle-v<version>.macos.arm64` for `set_xmakever()`'s version, checked against `XMAKE_MACOS_SHA256`, into `~/.xmake/project_n-tools/`. Adding `osx-arm64` to the conda-forge xmake feedstock would let the lock cover it again.
 - **C++ runtime:** conda's libc++ as a **dylib**, shipped next to the binary (`artifact` copies `libc++.1.dylib`, removes the rpath into `.pixi` and re-signs, since arm64 refuses binaries whose ad-hoc signature broke). Linked statically, as on Linux, it aborted every program at exit: libSystem loads the system libc++ anyway (through libobjc), and the two copies freed each other's memory. libc++abi is the system's, as for conda's own libc++. Only libc++ is linked from the env, by path: a `-L` into it let conda's libiconv shadow the SDK's.
 - **Availability markers:** libc++ marks features by the macOS release whose *system* libc++ has them (`std::to_chars` needs 13.3). We always run conda's libc++, so `_LIBCPP_DISABLE_AVAILABILITY` turns the markers off.
 - **Location rule:** `macos-clang` builds natively only on a macOS host; on Linux and Windows hosts, `project_n` refuses it with a pointer to CI, rather than falling back to a container. `check` and `build --preset all` skip it there and say so, so the gate stays runnable on every host; CI's macOS runner covers it.
@@ -604,7 +604,7 @@ GitHub Actions (`.github/workflows/ci.yml`, since phase 4) only runs `project_n`
 
 | Job | Runner | Runs |
 |---|---|---|
-| `lint` | ubuntu-26.04 | `selftest`, `commit-check --range`, `doctor --docs`, `fmt --check`, `lint --container` |
+| `lint` | ubuntu-26.04 | `selftest` (includes `doctor --docs`), `commit-check --range`, `fmt --check`, `lint --container` |
 | `container (<preset>)` | ubuntu-26.04 | `artifact` for `linux-gcc`, `linux-clang` and `windows-msvc` (msvc-wine): clean-container build, tests, dependency check, `dist/` upload |
 | `windows` | windows-2025-vs2026 | native `windows-msvc` tests in release and under ASan, after adding the pinned toolset from `buildtools.vsconfig` |
 | `macos` | macos-26 | native `macos-clang` tests in release and under ASan, then `artifact` |
