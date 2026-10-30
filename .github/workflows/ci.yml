@@ -66,8 +66,8 @@ jobs:
       - run: pixi run project_n fmt --check
       - run: pixi run project_n lint --container
 
-  artifact:
-    # One clean-container build per preset: build, tests, runtime-dependency check, dist/.
+  container:
+    # One clean-container build per preset (`project_n artifact`): build, tests, runtime-dependency check, dist/.
     strategy:
       fail-fast: false
       matrix:
