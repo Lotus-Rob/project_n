@@ -48,7 +48,9 @@ jobs:
       - name: Log in to the image cache
         # Fork PRs have no write token; project_n then builds the image instead of pulling it.
         run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin || true
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore XMake packages
+        id: xmake-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /home/runner/xmake-cache
           key: xmake-lint-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
@@ -62,6 +64,13 @@ jobs:
       - run: pixi run project_n doctor --docs
       - run: pixi run project_n fmt --check
       - run: pixi run project_n lint --container
+      - name: Save XMake packages
+        # Even when a later step failed: packages that built are still valid.
+        if: always() && steps.xmake-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /home/runner/xmake-cache
+          key: xmake-lint-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
 
   container:
     # One clean-container build per preset (`project_n artifact`): build, tests, runtime-dependency check, dist/.
@@ -82,7 +91,9 @@ jobs:
           ref: ${{ env.CHECKOUT_REF }}
       - name: Log in to the image cache
         run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin || true
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore XMake packages
+        id: xmake-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /home/runner/xmake-cache
           key: xmake-${{ matrix.preset }}-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
@@ -97,6 +108,13 @@ jobs:
         with:
           name: dist-${{ matrix.preset }}-${{ env.CHECKOUT_REF }}
           path: dist/
+      - name: Save XMake packages
+        # Even when a later step failed: packages that built are still valid.
+        if: always() && steps.xmake-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /home/runner/xmake-cache
+          key: xmake-${{ matrix.preset }}-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
 
   windows:
     # Native MSVC: the authoritative Windows build, and the only place MSVC's ASan can run.
@@ -127,7 +145,9 @@ jobs:
             'modify', '--installPath', "`"$vs`"", '--config', "`"$PWD\containers\windows\buildtools.vsconfig`"",
             '--quiet', '--norestart', '--nocache')
           if ($proc.ExitCode -notin 0, 3010) { throw "VS installer failed: $($proc.ExitCode)" }
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore XMake packages
+        id: xmake-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: C:\xmake-packages
           key: xmake-windows-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
@@ -141,6 +161,13 @@ jobs:
       - run: pixi run project_n doctor; if ($LASTEXITCODE -notin 0, 3) { exit 1 }; exit 0
       - run: pixi run project_n test --preset windows-msvc --mode release
       - run: pixi run project_n test --preset windows-msvc --sanitizer address
+      - name: Save XMake packages
+        # Even when a later step failed: packages that built are still valid.
+        if: always() && steps.xmake-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: C:\xmake-packages
+          key: xmake-windows-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
 
   macos:
     # Native macos-clang on Apple Silicon: the only place it can build (docs/design/0001 §5.7).
@@ -150,7 +177,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.CHECKOUT_REF }}
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore XMake packages
+        id: xmake-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # XMAKE_PKG_INSTALLDIR (tools/env/activate.sh) and the XMake that project_n builds.
           path: |
@@ -183,3 +212,13 @@ jobs:
           path: |
             dist/
             xmake-requires.lock
+      - name: Save XMake packages
+        # Even when a later step failed: packages that built are still valid.
+        if: always() && steps.xmake-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # XMAKE_PKG_INSTALLDIR (tools/env/activate.sh) and the XMake that project_n builds.
+          path: |
+            ~/.xmake/project_n
+            ~/.xmake/project_n-tools
+          key: xmake-macos-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}

@@ -14,6 +14,7 @@
 - `gh run list --branch <branch>` · `gh run watch <id>` · `gh run view <id> --log-failed`
 
 ## Gotchas
+- `actions/cache` saves only when the job succeeds, so a failing job rebuilt everything every run. XMake package caches use separate `cache/restore` and `cache/save` steps, saving even after a failure.
 - No disk cleanup step: ubuntu-26.04 runners have ~90 GB free, and the images plus packages need ~25 GB. Deleting the preinstalled SDKs cost ~2 minutes per job.
 
 ## Skill candidates
