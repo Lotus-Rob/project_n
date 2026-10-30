@@ -171,21 +171,13 @@ jobs:
       # Report only: CI needs no commit hook or podman. Exit code 3 means problems found; anything else is a bug.
       - run: pixi run project_n doctor || [ $? -eq 3 ]
       - run: pixi run project_n test --preset macos-clang --mode release
-      - name: Diagnose xmake test (temporary)
+      - name: Diagnose the abort at exit (temporary)
         if: failure()
         run: |
           bin=build/macos-clang/release/macosx/arm64/release/core_tests
-          "$bin" > /dev/null; echo "direct exit=$?"
-          cat > "$RUNNER_TEMP/probe.lua" <<EOF
-          function main()
-              local bin = path.absolute("$bin")
-              print("plain", os.execv(bin, {}, {try = true}))
-              print("stdout", os.execv(bin, {}, {try = true, stdout = os.tmpfile()}))
-              print("curdir", os.execv(bin, {}, {try = true, curdir = path.directory(bin)}))
-              print("envs", os.execv(bin, {}, {try = true, envs = {PATH = os.getenv("PATH")}}))
-          end
-          EOF
-          PATH="$HOME/.xmake/project_n-tools/xmake-3.1.2/bin:$PATH" pixi run xmake lua "$RUNNER_TEMP/probe.lua"
+          otool -L "$bin"
+          pixi run lldb --batch -o run -o "thread backtrace all" -- "$bin" || true
+          pixi run project_n test --preset macos-clang --sanitizer address || true
       - run: pixi run project_n test --preset macos-clang --sanitizer address
       - run: pixi run project_n artifact --preset macos-clang
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
