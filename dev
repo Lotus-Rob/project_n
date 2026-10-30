@@ -1,0 +1,3 @@
+#!/bin/sh
+# Shorthand for `pixi run project_n`, from any directory: ./dev build | test | run | check ...
+exec pixi run --manifest-path "$(dirname "$0")/pixi.toml" project_n "$@"

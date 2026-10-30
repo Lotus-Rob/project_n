@@ -1,4 +1,6 @@
 # LF everywhere, including Windows checkouts: shell scripts and hooks must keep LF to run.
 * text=auto eol=lf
+# cmd.exe misparses LF-only batch files (labels, long lines).
+*.cmd text eol=crlf
 *.png binary
 *.jpg binary

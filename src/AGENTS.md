@@ -11,7 +11,7 @@ All game and engine code. Its structure comes from the architecture design doc (
 - New subsystems add their commit scope to `SCOPES` in tools/project_n.py.
 
 ## Commands
-- `pixi run project_n run --preset linux-clang [--debug]`
+- `./dev run [--debug]` (native preset; `--preset` picks another)
 
 ## Gotchas
 - SDL 3 silently falls back to XWayland when the compositor lacks `fifo-v1` (niri does), even with the Wayland driver compiled in. `main.cpp` hints `wayland,x11`; `SDL_VIDEO_DRIVER` still overrides it.

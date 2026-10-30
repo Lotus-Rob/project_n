@@ -27,12 +27,15 @@ Every native build writes `build/compile_commands.json`, which `.clangd` reads.
 
 ## Build, test, run
 
+`./dev` (Windows: `dev`) is shorthand for `pixi run project_n`. Without `--preset`, `build`, `test` and `run`
+use this machine's native preset: `linux-clang` on Linux, `windows-msvc` on Windows.
+
 ```sh
-pixi run project_n build --preset linux-clang         # presets: linux-gcc, linux-clang, windows-msvc
-pixi run project_n test  --preset linux-gcc
-pixi run project_n run   --preset linux-clang --debug # launch under gdb
-pixi run project_n check                              # the merge gate: commits, format, lint, all presets
-pixi run project_n test  --preset linux-clang --sanitizer address   # on request: address, undefined, thread, leak
+./dev build                              # presets: linux-gcc, linux-clang, windows-msvc
+./dev test --preset linux-gcc
+./dev run                                # --debug launches under gdb
+./dev check                              # the merge gate: commits, format, lint, all presets
+./dev test --sanitizer address           # on request: address, undefined, thread, leak
 ```
 
 Native builds land in `build/<preset>/<mode>/`. `windows-msvc` builds in a container on Linux, using the real MSVC under Wine.

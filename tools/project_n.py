@@ -40,6 +40,8 @@ PRESETS = {
     "linux-clang": {"host": "linux", "plat": "linux", "arch": "x86_64", "toolchain": "pixi-clang", "image": "linux"},
     "windows-msvc": {"host": "windows", "plat": "windows", "arch": "x64", "toolchain": "msvc", "image": "msvc"},
 }
+# build, test and run use this preset when --preset is left out.
+NATIVE_PRESET = {"linux": "linux-clang", "windows": "windows-msvc"}[HOST]
 
 # Images are tagged by a hash of everything they copy in, so changing any of it rebuilds them.
 IMAGES = {
@@ -452,7 +454,8 @@ def main(argv=None):
     def add(name, func, help, preset=None, mode=False, container=False):
         p = sub.add_parser(name, help=help)
         if preset is not None:
-            p.add_argument("--preset", choices=PRESETS, required=preset == "required", default=None)
+            p.add_argument("--preset", choices=PRESETS, required=preset == "required",
+                           default=NATIVE_PRESET if preset == "native" else None)
         if mode:
             p.add_argument("--mode", choices=MODES, default="debug")
         if container:
@@ -467,12 +470,12 @@ def main(argv=None):
                        help="build with a sanitizer (support per preset: see SANITIZERS)")
 
     add("doctor", cmd_doctor, "check the environment; prints how to fix problems, installs nothing")
-    add_sanitizer(add("build", cmd_build, "build a preset", preset="required", mode=True, container=True))
-    p = add("test", cmd_test, "build and run the tests of a preset", preset="required", mode=True, container=True)
+    add_sanitizer(add("build", cmd_build, "build a preset", preset="native", mode=True, container=True))
+    p = add("test", cmd_test, "build and run the tests of a preset", preset="native", mode=True, container=True)
     add_sanitizer(p)
     p.add_argument("--target", help="run one test target, forwarding the arguments after --")
     p.add_argument("args", nargs=argparse.REMAINDER, help="-- <doctest arguments>, e.g. -- --test-case='*physics*'")
-    p = add("run", cmd_run, "build and launch the game natively", preset="required", mode=True)
+    p = add("run", cmd_run, "build and launch the game natively", preset="native", mode=True)
     p.add_argument("--debug", action="store_true", help="launch under the debugger (xmake run -d)")
     add_sanitizer(p)
     p = add("check", cmd_check, "the merge gate: commits, fmt, lint, build and test every preset", container=True)

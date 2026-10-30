@@ -65,6 +65,11 @@ class LocationRuleTest(unittest.TestCase):
         self.assertEqual(project_n.build_dir("linux-gcc", "release").parts, ("build", "container", "linux-gcc", "release"))
 
 
+class NativePresetTest(unittest.TestCase):
+    def test_native_preset_builds_without_a_container(self):
+        self.assertFalse(project_n.needs_container(project_n.NATIVE_PRESET))
+
+
 class SanitizerTest(unittest.TestCase):
     def test_each_sanitizer_gets_its_own_build_dir(self):
         self.assertEqual(project_n.build_dir("linux-gcc", "debug").name, "debug")
