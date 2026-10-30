@@ -18,21 +18,19 @@ env:
   PIXI_VERSION: v0.83.0
   # PRs check out their head commit, not GitHub's merge commit: history is linear (§11.2).
   CHECKOUT_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+  PROJECT_N_REGISTRY: ghcr.io/lotus-rob
+  PROJECT_N_PUSH_IMAGES: ${{ github.event_name == 'push' && '1' || '0' }}
+  PROJECT_N_XMAKE_CACHE: /home/runner/xmake-cache
 
 # XMake package caches are keyed on the toolchain, the dependencies and the package overrides.
 jobs:
-  linux:
-    # Merge gate in clean containers (all presets, windows-msvc under msvc-wine), then artefacts.
+  lint:
+    # The non-build half of `check`: commit messages, quoted commands, formatting, clang-tidy.
     runs-on: ubuntu-26.04
-    timeout-minutes: 240
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: write # the linux image cache in GHCR
-    env:
-      PROJECT_N_ACCEPT_MSVC_LICENSE: "1" # confirmed to fit the project (design doc O3); image stays on the runner
-      PROJECT_N_REGISTRY: ghcr.io/lotus-rob
-      PROJECT_N_PUSH_IMAGES: ${{ github.event_name == 'push' && '1' || '0' }}
-      PROJECT_N_XMAKE_CACHE: /home/runner/xmake-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -41,14 +39,14 @@ jobs:
       - name: Commit range
         run: |
           if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
-            echo "PROJECT_N_COMMIT_RANGE=${{ github.event.pull_request.base.sha }}..HEAD" >> "$GITHUB_ENV"
+            echo "RANGE=${{ github.event.pull_request.base.sha }}..HEAD" >> "$GITHUB_ENV"
           elif [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ] && [ -n "${{ github.event.before }}" ]; then
-            echo "PROJECT_N_COMMIT_RANGE=${{ github.event.before }}..HEAD" >> "$GITHUB_ENV"
+            echo "RANGE=${{ github.event.before }}..HEAD" >> "$GITHUB_ENV"
           else
-            echo "PROJECT_N_COMMIT_RANGE=origin/main..HEAD" >> "$GITHUB_ENV"
+            echo "RANGE=origin/main..HEAD" >> "$GITHUB_ENV"
           fi
       - name: Free disk space
-        # The images and XMake packages need ~25 GB; the runner keeps preinstalled SDKs we never use.
+        # The linux image needs ~10 GB; the runner keeps preinstalled SDKs we never use.
         run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache && df -h /
       - name: Log in to the image cache
         # Fork PRs have no write token; project_n then builds the image instead of pulling it.
@@ -56,23 +54,53 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /home/runner/xmake-cache
-          key: xmake-linux-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
-          restore-keys: xmake-linux-
+          key: xmake-lint-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
+          restore-keys: xmake-lint-
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
           cache: true
-      # Report only: CI needs no commit hook. Exit code 3 means problems found; anything else is a bug.
-      - run: pixi run project_n doctor || [ $? -eq 3 ]
-      - run: pixi run project_n check --container
-      - run: |
-          pixi run project_n artifact --preset linux-gcc
-          pixi run project_n artifact --preset linux-clang
-          pixi run project_n artifact --preset windows-msvc
+      - run: pixi run project_n commit-check --range "$RANGE"
+      - run: pixi run project_n doctor --docs
+      - run: pixi run project_n fmt --check
+      - run: pixi run project_n lint --container
+
+  artifact:
+    # One clean-container build per preset: build, tests, runtime-dependency check, dist/.
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [linux-gcc, linux-clang, windows-msvc]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write # the linux image cache in GHCR
+    env:
+      PROJECT_N_ACCEPT_MSVC_LICENSE: "1" # confirmed to fit the project (design doc O3); image stays on the runner
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Free disk space
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache && df -h /
+      - name: Log in to the image cache
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin || true
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /home/runner/xmake-cache
+          key: xmake-${{ matrix.preset }}-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
+          restore-keys: xmake-${{ matrix.preset }}-
+      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+        with:
+          pixi-version: ${{ env.PIXI_VERSION }}
+          locked: true
+          cache: true
+      - run: pixi run project_n artifact --preset ${{ matrix.preset }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: dist-linux-${{ env.CHECKOUT_REF }}
+          name: dist-${{ matrix.preset }}-${{ env.CHECKOUT_REF }}
           path: dist/
 
   windows:
@@ -143,6 +171,21 @@ jobs:
       # Report only: CI needs no commit hook or podman. Exit code 3 means problems found; anything else is a bug.
       - run: pixi run project_n doctor || [ $? -eq 3 ]
       - run: pixi run project_n test --preset macos-clang --mode release
+      - name: Diagnose xmake test (temporary)
+        if: failure()
+        run: |
+          bin=build/macos-clang/release/macosx/arm64/release/core_tests
+          "$bin" > /dev/null; echo "direct exit=$?"
+          cat > "$RUNNER_TEMP/probe.lua" <<EOF
+          function main()
+              local bin = path.absolute("$bin")
+              print("plain", os.execv(bin, {}, {try = true}))
+              print("stdout", os.execv(bin, {}, {try = true, stdout = os.tmpfile()}))
+              print("curdir", os.execv(bin, {}, {try = true, curdir = path.directory(bin)}))
+              print("envs", os.execv(bin, {}, {try = true, envs = {PATH = os.getenv("PATH")}}))
+          end
+          EOF
+          PATH="$HOME/.xmake/project_n-tools/xmake-3.1.2/bin:$PATH" pixi run xmake lua "$RUNNER_TEMP/probe.lua"
       - run: pixi run project_n test --preset macos-clang --sanitizer address
       - run: pixi run project_n artifact --preset macos-clang
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
