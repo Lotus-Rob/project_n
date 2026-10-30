@@ -423,9 +423,19 @@ def cmd_check(args):
           + (f" (skipped {', '.join(skipped)}: not buildable on this host)" if skipped else ""))
 
 
+def msvc_versions(env_sh):
+    """The MSVC and SDK versions msvc-wine's wrappers use: the patch levels follow Microsoft's manifest."""
+    found = dict(re.findall(r"^(MSVCVER|SDKVER)=(\S+)$", env_sh, re.MULTILINE))
+    return {"msvc": found.get("MSVCVER"), "windows_sdk": found.get("SDKVER")}
+
+
 def cmd_artifact(args):
+    # Release artefacts come from committed sources only; the container sees the whole checkout.
+    if capture(["git", "status", "--porcelain"]).strip():
+        raise Fail("artifact builds committed sources only: commit or stash first (`check --container` tests uncommitted work)")
     if not IN_CONTAINER and (PRESETS[args.preset]["image"] or needs_container(args.preset)):
         return reenter(args.preset, ["artifact", "--preset", args.preset])
+    shutil.rmtree(ROOT / build_dir(args.preset, "release"), ignore_errors=True)  # clean room: nothing from earlier builds
     bdir = build(args.preset, "release")
     run(["xmake", "test", "--output-on-failure"], env=xmake_env(bdir))
     binary = binary_path(args.preset, "release")
@@ -450,11 +460,16 @@ def cmd_artifact(args):
     manifest = {
         "version": read_version(),
         "commit": capture(["git", "rev-parse", "HEAD"]).strip(),
-        "dirty": bool(capture(["git", "status", "--porcelain"]).strip()),
         "preset": args.preset,
         "image": os.environ.get("PROJECT_N_IMAGE", "unknown"),
         "pixi_lock_sha256": sha256("pixi.lock"),
+        "files": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(dist.iterdir())},
     }
+    # Toolchain parts pixi.lock doesn't pin.
+    if PRESETS[args.preset]["toolchain"] == "msvc":
+        manifest |= msvc_versions(Path("/opt/msvc/bin/x64/msvcenv.sh").read_text(encoding="utf-8"))
+    elif PRESETS[args.preset]["plat"] == "macosx":
+        manifest["macos_sdk"] = capture(["xcrun", "--show-sdk-version"]).strip()
     (dist / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(f"artifact: {dist.relative_to(ROOT)}")
 

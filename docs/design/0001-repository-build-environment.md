@@ -255,7 +255,7 @@ Implemented 2026-10-30 and verified on GitHub's `macos-26` (Apple Silicon) runne
 | C++ dependencies | `xmake-requires.lock`; `add_requires` with exact versions |
 | Image identity | tag = hash of Containerfile + `pixi.lock` |
 | Version | `set_version()` in `xmake.lua` + annotated git tag `vX.Y.Z`, both written by `release` |
-| Artefact provenance | `dist/<preset>/manifest.json`: version, commit, image tag, `pixi.lock` hash, MSVC/SDK versions |
+| Artefact provenance | `dist/<preset>/manifest.json`: version, commit, image tag, `pixi.lock` hash, each file's sha256, and what `pixi.lock` doesn't pin: the MSVC/SDK versions msvc-wine used, or the macOS SDK. `artifact` refuses uncommitted changes and starts from an empty build directory |
 
 ### 6.1 Pinning policy
 
@@ -387,7 +387,7 @@ Constraints:
 | `test --preset P [--mode M] [--target T] [-- <doctest args>]` | Runs `xmake test`. With `--target`, runs that test executable and forwards the doctest arguments, for example `--test-case=*physics*`. |
 | `run --preset P [--mode M] [--debug]` | Builds and launches the game natively. `--debug` launches it under gdb or lldb (`xmake run -d`). |
 | `check [--container]` | The merge gate: `commit-check` on unpushed commits, `fmt --check`, `lint`, then build and test for every preset. It runs natively where possible, and `--container` runs everything in the images. |
-| `artifact --preset P` | Clean-room release build in the preset's container, plus the Linux dependency check (§5.2). Writes `dist/<preset>/` and `manifest.json`. |
+| `artifact --preset P` | Clean-room release build in the preset's container (committed sources only, empty build directory), plus the Linux dependency check (§5.2). Writes `dist/<preset>/` and `manifest.json`. |
 | `release [--dry-run]` | Requires a clean `main` that is up to date. Runs `git cliff --bumped-version`, writes `set_version()`, regenerates `CHANGELOG.md`, commits `chore(release): vX.Y.Z` and creates the annotated tag `vX.Y.Z`. Never pushes. |
 | `commit-check <msg-file> \| --range A..B` | Validates commit messages (§11). |
 | `fmt [--check]` / `lint [--fix]` | Runs clang-format and clang-tidy from the Pixi environment. `lint` always passes `--warnings-as-errors=*`, so any finding fails `check`. `--fix` applies clang-tidy's fixes and reformats; whatever remains is fixed by hand before a branch is finished (root AGENTS.md). |

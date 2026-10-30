@@ -155,6 +155,10 @@ class HelpersTest(unittest.TestCase):
             if spec["push"]:
                 self.assertNotIn("vsdownload.py", (project_n.ROOT / spec["file"]).read_text(), name)
 
+    def test_manifest_reads_msvc_wine_versions(self):
+        env_sh = 'BASE=z:x\nMSVCVER=14.50.35717\nSDKVER=10.0.26100.0\nMSVCDIR="$MSVCBASE\\\\tools"\n'
+        self.assertEqual(project_n.msvc_versions(env_sh), {"msvc": "14.50.35717", "windows_sdk": "10.0.26100.0"})
+
     def test_msvc_install_follows_only_its_containerfile(self):
         self.assertRegex(project_n.msvc_dir().name, r"^msvc-[0-9a-f]{12}$")
 
