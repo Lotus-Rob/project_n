@@ -28,6 +28,7 @@ int Run() {
         SDL_Quit();
         return 1;
     }
+    SDL_SetRenderVSync(renderer, 1); // SDL3 defaults to off: the loop would spin a core and the GPU at 100%
     std::println("video driver: {}, renderer: {}", SDL_GetCurrentVideoDriver(), SDL_GetRendererName(renderer));
 
     for (bool running = true; running;) {
