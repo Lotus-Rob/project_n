@@ -18,10 +18,11 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 - `pixi run project_n check --container`: the same in clean containers. Run it for any build, environment or dependency change: only a clean container catches host leaks.
 
 ## Finishing a branch
-1. `pixi run project_n fmt`, then `pixi run project_n lint --fix`; fix every remaining finding by hand. Don't silence a check without the user's agreement.
+1. `pixi run project_n fmt`, then `pixi run project_n lint --fix`; fix every remaining finding by hand in the code.
 2. `pixi run project_n check` (plus `--container` for build, environment or dependency changes) until it passes.
 
 ## Rules
+- Fix lint and warnings properly. Suppress only as the last resort, when no proper fix exists, and as narrowly as possible with the reason: `// NOLINT(check-name): why` (`lint` rejects bare ones), a commented pragma, or a nested `.clang-tidy` with a `#` reason. The root `.clang-tidy` and `.clangd` are the user's: never remove, disable or relax a check or option in them. `cppcoreguidelines-*` enforces the C++ Core Guidelines.
 - Commits: Conventional Commits; `feat`/`fix` only for game code; scopes from `SCOPES` in tools/project_n.py → git-commit skill
 - History is linear: rebase, never merge commits.
 - Pins are exact (`==` in pixi.toml, exact `add_requires` versions). Change one only on purpose, with its lock file in the same commit.

@@ -29,9 +29,10 @@ Owned by: containers/AGENTS.md. Rationale: docs/design/0001 §6.1 (pinning polic
 3. `pixi run project_n check`. A new Pixi environment gets its own XMake package directory automatically (tools/env/activate.sh), so packages rebuild with the new compiler on the first build.
 4. `pixi run project_n check --container`: the image tag is a hash of its inputs, so changed pins rebuild the image. For MSVC changes this needs `PROJECT_N_ACCEPT_MSVC_LICENSE=1`.
 5. Compiler, runtime or sysroot changes also need `pixi run project_n check --sanitizers` and `pixi run project_n artifact --preset <p>` for each affected preset (artifact checks the binary's runtime dependencies).
-6. An XMake bump: check whether the overrides in `xmake/repo/` are still needed, and whether `xmake-requires.lock` changed.
-7. Update the versions quoted in design doc §5 and in README's install table if they changed, then commit with the lock: `build(env): bump <tool> to X.Y.Z` (Pixi) or `build(containers): ...` (images, msvc-wine, `.vsconfig`).
-8. `pixi run project_n clean --packages` frees the old package directories once the bump is committed.
+6. An LLVM bump can add clang-tidy checks or findings: fix the code; never disable the new checks in `.clang-tidy`, and suppress a single finding only as the last resort (root AGENTS.md).
+7. An XMake bump: check whether the overrides in `xmake/repo/` are still needed, and whether `xmake-requires.lock` changed.
+8. Update the versions quoted in design doc §5 and in README's install table if they changed, then commit with the lock: `build(env): bump <tool> to X.Y.Z` (Pixi) or `build(containers): ...` (images, msvc-wine, `.vsconfig`).
+9. `pixi run project_n clean --packages` frees the old package directories once the bump is committed.
 
 ## Gotchas
 - `check --container` covers MSVC under msvc-wine only. After an MSVC or SDK bump, tell the user the native Windows build still needs verifying.

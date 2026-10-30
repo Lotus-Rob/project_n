@@ -4,8 +4,14 @@
 
 #include <expected>
 
+namespace {
+
+constexpr int EXPECTED_VALUE = 42;
+
 TEST_CASE("the toolchain provides C++23 library features") {
-    std::expected<int, const char*> value = 42;
+    std::expected<int, const char*> value = EXPECTED_VALUE;
     CHECK(value.has_value());
-    CHECK(*value == 42);
+    CHECK(*value == EXPECTED_VALUE);
 }
+
+} // namespace

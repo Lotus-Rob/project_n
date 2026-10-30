@@ -5,6 +5,7 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
 
 ## Rules
 - Layout mirrors `src/`: `tests/unit/<area>/`, one test executable per area (`<area>_tests`) to keep link times down.
+- Test code passes the same lint as `src/` (no test exemptions): put `TEST_CASE`s inside an anonymous namespace and name test values as `constexpr` constants.
 - Each executable has exactly one `main.cpp` with `DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN`; test files include `<doctest/doctest.h>` only.
 - A new area adds a target to `tests/xmake.lua` with `add_tests("default")`, plus the `on_test(test_under_wine)` block from `core_tests` so its Windows build runs under Wine on Linux.
 - Sanitizers run on request, never in plain `check`. Supported per preset: `SANITIZERS` in tools/project_n.py (GCC/Clang: address, undefined, thread, leak; MSVC: address). Any finding fails the run.

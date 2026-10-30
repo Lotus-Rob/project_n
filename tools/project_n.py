@@ -294,6 +294,36 @@ def source_files():
     return sorted(str(p.relative_to(ROOT)) for d in ("src", "tests") for p in (ROOT / d).rglob("*") if p.suffix in (".cpp", ".hpp"))
 
 
+# Findings are fixed properly first; a suppression is the last resort (root AGENTS.md). One that
+# remains must be narrow and explained: NOLINT names its checks and gives a reason
+# (`// NOLINT(check-name): why`), a diagnostic pragma carries a comment, a nested .clang-tidy
+# says why in a `#` comment.
+NOLINT_RE = re.compile(r"NOLINT(?P<kind>NEXTLINE|BEGIN|END)?(?:\((?P<checks>[^)]*)\))?(?P<rest>.*)")
+PRAGMA_RE = re.compile(r"#\s*pragma\s+(?:(?:clang|GCC)\s+diagnostic\s+ignored|warning\s*\(\s*disable)")
+
+
+def nolint_explained(line):
+    m = NOLINT_RE.search(line)
+    return not m or m["kind"] == "END" or bool(m["checks"] and re.match(r"\s*:\s*\S", m["rest"]))
+
+
+def unexplained_suppressions():
+    found = []
+    for f in source_files():
+        lines = (ROOT / f).read_text(encoding="utf-8").splitlines()
+        for n, line in enumerate(lines, 1):
+            if not nolint_explained(line):
+                found.append(f"{f}:{n}: name the check(s) and the reason: // NOLINT(check-name): why")
+            previous = lines[n - 2].strip() if n > 1 else ""
+            if PRAGMA_RE.search(line) and not (re.search(r"//\s*\S", line) or previous.startswith("//")):
+                found.append(f"{f}:{n}: explain the pragma in a comment on it or the line above")
+    for d in ("src", "tests"):
+        for p in (ROOT / d).rglob(".clang-tidy"):
+            if not any(line.lstrip().startswith("#") for line in p.read_text(encoding="utf-8").splitlines()):
+                found.append(f"{p.relative_to(ROOT)}: explain in a # comment why these checks can't be met")
+    return found
+
+
 def cmd_fmt(args):
     run(["clang-format", *(["--dry-run", "-Werror"] if args.check else ["-i"]), *source_files()])
 
@@ -301,6 +331,9 @@ def cmd_fmt(args):
 def cmd_lint(args):
     if needs_container(LINT_PRESET, args.container):
         return reenter(LINT_PRESET, ["lint", *(["--fix"] if args.fix else [])])
+    found = unexplained_suppressions()
+    if found:
+        raise Fail("fix findings properly; a suppression is the last resort and must be narrow and explained:\n" + "\n".join(found))
     bdir = configure(LINT_PRESET, "debug")
     run(["xmake", "build"], env=xmake_env(bdir))
     run(["xmake", "project", "-k", "compile_commands", bdir], env=xmake_env(bdir))

@@ -106,6 +106,24 @@ class DocsTest(unittest.TestCase):
         self.assertEqual(project_n.stale_doc_commands(), [])
 
 
+class SuppressionTest(unittest.TestCase):
+    def test_sources_have_no_unexplained_suppressions(self):
+        self.assertEqual(project_n.unexplained_suppressions(), [])
+
+    def test_nolint_needs_checks_and_a_reason(self):
+        explained = project_n.nolint_explained
+        self.assertTrue(explained("f(); // NOLINT(cppcoreguidelines-pro-type-vararg): C API takes varargs"))
+        self.assertTrue(explained("// NOLINTEND(bugprone-macro-parentheses)"))
+        self.assertFalse(explained("f(); // NOLINT"))
+        self.assertFalse(explained("// NOLINTNEXTLINE(readability-magic-numbers)"))
+
+    def test_recognises_diagnostic_pragmas(self):
+        for line in ("#pragma clang diagnostic ignored \"-Wshadow\"", "#  pragma GCC diagnostic ignored \"-Wconversion\"",
+                     "#pragma warning(disable: 4996)"):
+            self.assertRegex(line, project_n.PRAGMA_RE)
+        self.assertNotRegex("#pragma clang diagnostic push", project_n.PRAGMA_RE)
+
+
 class SanitizerTest(unittest.TestCase):
     def test_each_sanitizer_gets_its_own_build_dir(self):
         self.assertEqual(project_n.build_dir("linux-gcc", "debug").name, "debug")
