@@ -6,12 +6,14 @@ Standard library only. See tools/AGENTS.md and docs/design/0001.
 
 import argparse
 import hashlib
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import urllib.request
 from pathlib import Path
 
@@ -22,9 +24,10 @@ IN_CONTAINER = os.environ.get("PROJECT_N_IN_CONTAINER") == "1"
 APP = "project_n"
 MODES = ("debug", "release", "releasedbg")
 VS_TOOLSET = "14.50"  # native Windows MSVC; must match containers/windows/buildtools.vsconfig
-# conda-forge has no osx-arm64 XMake, so macOS uses the upstream bundle of set_xmakever()'s
-# version (docs/design/0001 §5.7). Checksum of xmake-bundle-v<version>.macos.arm64.
-XMAKE_MACOS_SHA256 = "e719121c56cd34f5f0c0731954a154c1df1b0915f303e5c82dfb6c6cb9e3ef9e"
+# conda-forge has no osx-arm64 XMake, so macOS builds set_xmakever()'s release from source
+# (docs/design/0001 §5.7); the prebuilt bundle reports exit code -1 for every test. Checksum of
+# xmake-v<version>.tar.gz.
+XMAKE_MACOS_SHA256 = "0e068e76c66dddd87573a31b77f37c8c4ebe7d50b0fb48d507dcb902c77e6cc4"
 LINT_PRESET = "linux-clang"
 
 # Sanitizers each preset supports (on request only, never in plain `check`). MSVC has only
@@ -568,19 +571,26 @@ def cmd_clean(args):
 
 
 def ensure_macos_xmake():
-    """Download the pinned XMake bundle once into .pixi/ and put it first on PATH."""
+    """Build the pinned XMake release once per version and put it first on PATH."""
     version = re.search(r'set_xmakever\("([^"]+)"\)', (ROOT / "xmake.lua").read_text(encoding="utf-8"))[1]
-    exe = ROOT / ".pixi" / "xmake-bundle" / version / "xmake"
-    if not exe.exists():
-        url = f"https://github.com/xmake-io/xmake/releases/download/v{version}/xmake-bundle-v{version}.macos.arm64"
+    prefix = Path.home() / ".xmake" / "project_n-tools" / f"xmake-{version}"  # outside clean --packages' reach
+    if not (prefix / "bin" / "xmake").exists():
+        url = f"https://github.com/xmake-io/xmake/releases/download/v{version}/xmake-v{version}.tar.gz"
         print(f"+ download {url}", flush=True)
         data = urllib.request.urlopen(url).read()
         if hashlib.sha256(data).hexdigest() != XMAKE_MACOS_SHA256:
             raise Fail(f"checksum mismatch for {url}: update XMAKE_MACOS_SHA256 only on purpose (bump-toolchain skill)")
-        exe.parent.mkdir(parents=True, exist_ok=True)
-        exe.write_bytes(data)
-        exe.chmod(0o755)
-    os.environ["PATH"] = f"{exe.parent}{os.pathsep}{os.environ['PATH']}"
+        work = prefix.parent / f"xmake-{version}-src"
+        shutil.rmtree(work, ignore_errors=True)
+        work.mkdir(parents=True)
+        with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+            tar.extractall(work, filter="data")
+        src = work / f"xmake-{version}"
+        subprocess.run(["./configure", f"--prefix={prefix}"], cwd=src, check=True)
+        subprocess.run(["make", f"-j{os.cpu_count()}"], cwd=src, check=True)
+        subprocess.run(["make", "install"], cwd=src, check=True)
+        shutil.rmtree(work)
+    os.environ["PATH"] = f"{prefix / 'bin'}{os.pathsep}{os.environ['PATH']}"
 
 
 def make_parser():
