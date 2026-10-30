@@ -86,14 +86,19 @@ class Fail(Exception):
 # --- helpers -----------------------------------------------------------------
 
 
+def resolve(cmd):
+    """Look the program up on PATH: Windows' CreateProcess only finds .exe files, and conda's xmake is xmake.cmd."""
+    return [shutil.which(str(cmd[0])) or str(cmd[0]), *(str(c) for c in cmd[1:])]
+
+
 def run(cmd, env=None, **kwargs):
     """Run a command from the repo root, echoing it; raise on failure. Output is never piped."""
     print("+", " ".join(str(c) for c in cmd), flush=True)
-    return subprocess.run([str(c) for c in cmd], cwd=ROOT, check=True, env=env, **kwargs)
+    return subprocess.run(resolve(cmd), cwd=ROOT, check=True, env=env, **kwargs)
 
 
 def capture(cmd, check=True):
-    return subprocess.run([str(c) for c in cmd], cwd=ROOT, check=check, capture_output=True, text=True).stdout
+    return subprocess.run(resolve(cmd), cwd=ROOT, check=check, capture_output=True, text=True).stdout
 
 
 def sha256(*paths):
