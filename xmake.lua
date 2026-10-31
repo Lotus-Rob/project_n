@@ -122,6 +122,7 @@ local function pixi_toolchain(name, cc, cxx, flags)
         set_toolset("ar", triplet .. "ar")
         set_toolset("strip", triplet .. "strip")
         set_toolset("objcopy", triplet .. "objcopy") -- splits release debug info into a .sym
+        set_toolset("dsymutil", "dsymutil") -- the same on macOS into a .dSYM (llvm-tools, unprefixed)
         on_load(function (tc)
             local prefix = os.getenv("CONDA_PREFIX")
             assert(prefix, "run through `pixi run project_n`: CONDA_PREFIX is not set")
