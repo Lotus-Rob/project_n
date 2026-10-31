@@ -19,7 +19,9 @@
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 // IWYU pragma: end_keep

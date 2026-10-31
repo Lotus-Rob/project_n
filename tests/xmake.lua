@@ -12,10 +12,10 @@ end
 local function unit_tests(name, files)
     target(name)
         set_kind("binary")
-        add_files(files, "$(projectdir)/src/core/log.cpp")
+        add_files(files, "$(projectdir)/src/core/log.cpp", "$(projectdir)/src/core/sdl_log.cpp")
         add_includedirs("$(projectdir)/src")
         set_pcxxheader("unit/pch.hpp")
-        add_packages("doctest", "quill-wine")
+        add_packages("doctest", "quill-wine", "libsdl3-wayland")
         add_tests("default")
         if is_plat("windows") and not is_host("windows") then
             on_test(test_under_wine)
