@@ -22,24 +22,11 @@ void Start();
 // NOLINTBEGIN(cppcoreguidelines-macro-usage): each call site needs its own file, line and format
 // string in a static, which only a macro can hand to Quill.
 
-#ifndef __clang_analyzer__
 /// Logs progress worth seeing in a normal run: `PN_LOG_INFO("loaded {} in {} ms", name, ms)`.
 #define PN_LOG_INFO(...) QUILL_LOG_INFO(::core::log::Root(), __VA_ARGS__)
 /// Logs something unexpected that the program recovers from.
 #define PN_LOG_WARNING(...) QUILL_LOG_WARNING(::core::log::Root(), __VA_ARGS__)
 /// Logs a failure: what failed and why.
 #define PN_LOG_ERROR(...) QUILL_LOG_ERROR(::core::log::Root(), __VA_ARGS__)
-#else
-namespace core::log::detail {
-template<typename... Args>
-constexpr void Check(const char* /*format*/, const Args&... /*args*/) {
-}
-} // namespace core::log::detail
-// clang-tidy only: its analyzer reports a false positive inside Quill's InlinedVector, which no
-// suppression comment of ours can reach. The arguments are still analysed.
-#define PN_LOG_INFO(...) ::core::log::detail::Check(__VA_ARGS__)
-#define PN_LOG_WARNING(...) ::core::log::detail::Check(__VA_ARGS__)
-#define PN_LOG_ERROR(...) ::core::log::detail::Check(__VA_ARGS__)
-#endif
 
 // NOLINTEND(cppcoreguidelines-macro-usage)

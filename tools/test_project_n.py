@@ -351,6 +351,34 @@ class FacadeTest(unittest.TestCase):
         self.assertEqual(self.bypassed('void F() { std::println("hi"); }\n', "tests/unit/game_tests.cpp"), [])
 
 
+class TidyVerdictTest(unittest.TestCase):
+    QUILL = "/home/dev/.xmake/packages/q/quill/include/quill/core/InlinedVector.h"
+
+    def test_a_finding_in_our_code_fails(self):
+        out = f"{project_n.ROOT}/src/main.cpp:34:48: error: repeated branch body [bugprone-branch-clone]\n"
+        self.assertEqual(project_n.tidy_verdict(out, 1), (True, 0))
+
+    def test_a_listed_finding_in_library_code_is_ignored(self):
+        out = (f"{self.QUILL}:132:7: error: Out of bound access [clang-analyzer-security.ArrayBound,-warnings-as-errors]\n"
+               f"{project_n.ROOT}/src/main.cpp:22:9: note: Calling 'Run'\n")
+        self.assertEqual(project_n.tidy_verdict(out, 1), (False, 1))
+
+    def test_another_check_in_a_listed_file_fails(self):
+        out = f"{self.QUILL}:140:3: error: Null dereference [clang-analyzer-core.NullDereference]\n"
+        self.assertEqual(project_n.tidy_verdict(out, 1), (True, 0))
+
+    def test_a_finding_in_a_toolchain_header_fails(self):
+        out = f"{project_n.ROOT}/.pixi/envs/default/include/c++/v1/vector:10:1: error: Null dereference [clang-analyzer-core.NullDereference]\n"
+        self.assertEqual(project_n.tidy_verdict(out, 1), (True, 0))
+
+    def test_a_crash_after_a_listed_finding_fails(self):
+        out = f"{self.QUILL}:132:7: error: Out of bound access [clang-analyzer-security.ArrayBound]\n"
+        self.assertEqual(project_n.tidy_verdict(out, -11), (True, 1))
+
+    def test_a_failure_without_findings_fails(self):
+        self.assertEqual(project_n.tidy_verdict("", 1), (True, 0))
+
+
 class ApiDocsTest(unittest.TestCase):
     DOXYFILE = (project_n.ROOT / "docs" / "Doxyfile").read_text()
 

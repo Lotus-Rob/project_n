@@ -466,6 +466,28 @@ def bypassed_facades(sources):
     return found
 
 
+# A clang-tidy finding's first line: "<path>:<line>:<col>: error: <message> [<check>]".
+TIDY_FINDING_RE = re.compile(r"^(.+?):\d+:\d+: (?:error|warning): .*\[([^\]]+)\]$", re.MULTILINE)
+
+
+# clang-tidy findings located in library code that lint ignores, as (path suffix, check): each
+# can't be fixed in our code. Any other finding fails, wherever it is.
+IGNORED_FINDINGS = {
+    # A false positive inside Quill, reached through every PN_LOG_* call.
+    ("quill/core/InlinedVector.h", "clang-analyzer-security.ArrayBound"),
+}
+
+
+def tidy_verdict(output, returncode):
+    """Whether a clang-tidy run fails lint, and how many listed findings (IGNORED_FINDINGS) it
+    ignored. clang-tidy keeps an analyzer finding located in a library when its path starts in our
+    code: usually our misuse, which fails; only the listed ones don't. A crash always fails."""
+    findings = TIDY_FINDING_RE.findall(output)
+    ignored = [f for f in findings if any(f[0].endswith(path) and f[1].split(",")[0] == check for path, check in IGNORED_FINDINGS)]
+    failed = len(ignored) < len(findings) or returncode not in (0, 1) or (returncode == 1 and not findings)
+    return failed, len(ignored)
+
+
 def check_api_docs(sources):
     """Doxygen (docs/Doxyfile) over the src/ headers among these: an undocumented public class,
     function or member, or a broken doc comment, fails."""
@@ -551,10 +573,17 @@ def cmd_lint(args):
     bdir = configure(LINT_PRESET, "debug")
     run(["xmake", "build"], env=xmake_env(bdir))
     run([*COMPDB, bdir], env=xmake_env(bdir))
-    # Lint is a gate: .clang-tidy's WarningsAsErrors: '*' makes any finding fail `check`.
-    tidy = ["clang-tidy", "--quiet", "-p", bdir, *(["--fix"] if args.fix else [])]
+    # Lint is a gate: any finding in our own files fails `check`.
+    tidy = ["clang-tidy", "--quiet", "-p", bdir, *(["--fix"] if args.fix else []), *units]
     try:
-        run(tidy + units)
+        print("+", " ".join(str(c) for c in tidy), flush=True)
+        result = subprocess.run(resolve(tidy), check=False, cwd=ROOT, stdout=subprocess.PIPE, encoding="utf-8", errors="replace")
+        print(result.stdout, end="", flush=True)
+        failed, ignored = tidy_verdict(result.stdout, result.returncode)
+        if failed:
+            raise Fail("clang-tidy failed: findings in our code, a compiler error or a crash (above)")
+        if ignored:
+            print(f"lint: ignored {ignored} listed finding(s) in library code (IGNORED_FINDINGS)")
     finally:
         if args.fix:  # clang-tidy's fixes don't follow .clang-format
             cmd_fmt(argparse.Namespace(check=False, staged=False, all=args.all, range=args.range))
