@@ -279,6 +279,16 @@ class CheckTest(unittest.TestCase):
             project_n.cmd_check(project_n.argparse.Namespace(container=False, sanitizers=False))
         self.assertEqual(ran, [])  # refused before running anything
 
+    def test_container_check_runs_unity_once_on_a_preset_with_an_image(self):
+        calls = []
+        with mock.patch.multiple(project_n, hooks_enabled=lambda: True, cmd_selftest=lambda args: None,
+                                 commit_range=lambda: None, cmd_fmt=lambda args: None, cmd_lint=lambda args: None,
+                                 cmd_test=calls.append), contextlib.redirect_stdout(io.StringIO()):
+            project_n.cmd_check(project_n.argparse.Namespace(container=True, sanitizers=False))
+        unity = [args for args in calls if args.unity]
+        self.assertEqual(len(unity), 1)
+        self.assertTrue(project_n.PRESETS[unity[0].preset]["image"], unity[0].preset)
+
 
 class DependencyTest(unittest.TestCase):
     def test_a_third_party_include_in_a_header_is_reported(self):
@@ -401,6 +411,17 @@ class SanitizerTest(unittest.TestCase):
     def test_each_sanitizer_gets_its_own_build_dir(self):
         self.assertEqual(project_n.build_dir("linux-gcc", "debug").name, "debug")
         self.assertEqual(project_n.build_dir("linux-gcc", "debug", "address").name, "debug-address")
+
+    def test_unity_builds_get_their_own_build_dir(self):
+        self.assertEqual(project_n.build_dir("linux-gcc", "debug", unity=True).name, "debug-unity")
+
+    def test_a_container_unity_run_passes_the_flag_on(self):
+        argvs = []
+        with mock.patch.object(project_n, "reenter", lambda preset, argv: argvs.append(argv)), \
+             mock.patch.object(project_n, "IN_CONTAINER", False):
+            project_n.cmd_test(project_n.argparse.Namespace(preset="linux-gcc", mode="debug", sanitizer="none", container=True,
+                                                            target=None, args=[], unity=True))
+        self.assertIn("--unity", argvs[0])
 
     def test_support_matrix_is_enforced(self):
         project_n.check_sanitizer("linux-clang", "thread")

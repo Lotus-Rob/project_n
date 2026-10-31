@@ -138,8 +138,8 @@ def buildable_here(preset):
     return bool(PRESETS[preset]["image"]) or (PRESETS[preset]["host"] == HOST and not IN_CONTAINER)
 
 
-def build_dir(preset, mode, sanitizer="none"):
-    leaf = mode if sanitizer == "none" else f"{mode}-{sanitizer}"
+def build_dir(preset, mode, sanitizer="none", unity=False):
+    leaf = (mode if sanitizer == "none" else f"{mode}-{sanitizer}") + ("-unity" if unity else "")
     return Path("build", "container", preset, leaf) if IN_CONTAINER else Path("build", preset, leaf)
 
 
@@ -256,24 +256,24 @@ def reenter(preset, argv, interactive=False):
 # --- xmake ---------------------------------------------------------------------
 
 
-def configure(preset, mode, sanitizer="none"):
+def configure(preset, mode, sanitizer="none", unity=False):
     check_sanitizer(preset, sanitizer)
-    p, bdir = PRESETS[preset], build_dir(preset, mode, sanitizer)
+    p, bdir = PRESETS[preset], build_dir(preset, mode, sanitizer, unity)
     # -v makes XMake install packages one at a time (else 4 in parallel). shortcut: XMake installs
     # duplicate variants with the same build hash (libxcb, libx11 for SDL3) concurrently into one
     # directory and they corrupt each other; drop -v once that's fixed upstream.
     cmd = ["xmake", "f", "-y", "-v", "-p", p["plat"], "-a", p["arch"], f"--toolchain={p['toolchain']}", "-m", mode,
-           "-o", bdir, f"--sanitizer={sanitizer}"]
+           "-o", bdir, f"--sanitizer={sanitizer}", *(["--unity_build=y"] if unity else [])]
     if p["toolchain"] == "msvc":
         cmd.append("--sdk=/opt/msvc" if IN_CONTAINER else f"--vs_toolset={VS_TOOLSET}")
     run(cmd, env=xmake_env(bdir))
     return bdir
 
 
-def build(preset, mode, sanitizer="none"):
-    bdir = configure(preset, mode, sanitizer)
+def build(preset, mode, sanitizer="none", unity=False):
+    bdir = configure(preset, mode, sanitizer, unity)
     run(["xmake", "build"], env=xmake_env(bdir))
-    if not IN_CONTAINER and sanitizer == "none":
+    if not IN_CONTAINER and sanitizer == "none" and not unity:  # unity's generated sources would confuse clangd
         # Native builds keep clangd current (.clangd reads build/; container paths would be wrong).
         run(["xmake", "project", "-k", "compile_commands", ROOT / "build"], env=xmake_env(bdir))
     return bdir
@@ -323,10 +323,10 @@ def cmd_test(args):
         raise Fail("pass --target <test target> to forward doctest arguments")
     check_sanitizer(args.preset, args.sanitizer)
     if needs_container(args.preset, args.container):
-        argv = ["test", "--preset", args.preset, "--mode", args.mode, "--sanitizer", args.sanitizer]
+        argv = ["test", "--preset", args.preset, "--mode", args.mode, "--sanitizer", args.sanitizer, *(["--unity"] if args.unity else [])]
         argv += (["--target", args.target] if args.target else []) + (["--", *extra] if extra else [])
         return reenter(args.preset, argv)
-    bdir = build(args.preset, args.mode, args.sanitizer)
+    bdir = build(args.preset, args.mode, args.sanitizer, args.unity)
     if PRESETS[args.preset]["plat"] == "windows" and args.sanitizer != "none" and HOST != "windows":
         # MSVC's ASan hot-patches system DLLs; Wine's (CET endbr64 prologues) can't be patched.
         print(f"test: built with {args.sanitizer} sanitizer; MSVC sanitizer runs need native Windows, not Wine")
@@ -556,12 +556,16 @@ def cmd_check(args):
     skipped = [p for p in PRESETS if not buildable_here(p) or (args.container and not PRESETS[p]["image"])]
     for preset in [p for p in PRESETS if p not in skipped]:
         cmd_test(argparse.Namespace(preset=preset, mode="release", sanitizer="none", container=args.container,
-                                    target=None, args=[]))
+                                    target=None, args=[], unity=False))
+    # Unity builds are off (xmake.lua) but kept working: one test run with them on.
+    unity_preset = NATIVE_PRESET if NATIVE_PRESET not in skipped else next(p for p in PRESETS if p not in skipped)
+    cmd_test(argparse.Namespace(preset=unity_preset, mode="debug", sanitizer="none", container=args.container,
+                                target=None, args=[], unity=True))
     if args.sanitizers:
         for preset, sanitizers in SANITIZERS.items():
             for sanitizer in sanitizers if preset not in skipped else ():
                 cmd_test(argparse.Namespace(preset=preset, mode="debug", sanitizer=sanitizer, container=args.container,
-                                            target=None, args=[]))
+                                            target=None, args=[], unity=False))
     print("check: all presets passed" + (" with every supported sanitizer" if args.sanitizers else "")
           + (f" (skipped {', '.join(skipped)}: not buildable on this host)" if skipped else ""))
 
@@ -665,7 +669,8 @@ def cmd_coverage(args):
         return reenter(preset, ["coverage"])
     for stale in (ROOT / build_dir(preset, "coverage")).rglob("*.gcda"):  # counts add up across runs
         stale.unlink()
-    cmd_test(argparse.Namespace(preset=preset, mode="coverage", sanitizer="none", container=False, target=None, args=[]))
+    cmd_test(argparse.Namespace(preset=preset, mode="coverage", sanitizer="none", container=False, target=None, args=[],
+                                unity=False))
     out = ROOT / "build" / "coverage"
     out.mkdir(parents=True, exist_ok=True)
     run(["gcovr", "--root", ROOT, "--filter", "src/", "--gcov-executable", "x86_64-conda-linux-gnu-gcov",
@@ -921,6 +926,7 @@ def make_parser():
     p = add("test", cmd_test, "build and run the tests of a preset", preset="native", mode=True, container=True)
     add_sanitizer(p)
     p.add_argument("--target", help="run one test target, forwarding the arguments after --")
+    p.add_argument("--unity", action="store_true", help="with unity builds on (off by default; check runs this once)")
     p.add_argument("args", nargs=argparse.REMAINDER, help="-- <doctest arguments>, e.g. -- --test-case='*physics*'")
     p = add("run", cmd_run, "build and launch the game natively", preset="native", mode=True)
     p.add_argument("--debug", action="store_true", help="launch under the debugger (xmake run -d)")

@@ -12,7 +12,7 @@ All game and engine code. Its structure comes from the architecture design doc (
 - Profiling: Tracy's macros from `<tracy/Tracy.hpp>` (`ZoneScoped`, `FrameMark`). They collect only in `releasedbg` and compile to nothing elsewhere: `./dev run --mode releasedbg`, then `./dev profiler`.
 - Every header starts with a `/// @file` comment, and every public class, function, member, variable and enum it declares has a Doxygen comment (`///`): what it does and promises, not how. `lint` fails on a missing or broken one.
 - Comments in `.cpp` files only explain why, or a complexity the code can't show; never restate what the code does.
-- Unity builds are configured but off (`unity_build` in xmake.lua). They put several sources in one translation unit, so keep names in anonymous namespaces unique across files.
+- Unity builds are configured but off (`unity_build` in xmake.lua); `check` builds and tests the native preset with them once to keep them working. They put several sources in one translation unit, so keep names in anonymous namespaces unique across files.
 - Third-party code comes from xmake-repo packages with exact versions; nothing is vendored into `src/`.
 - New subsystems add their commit scope to `SCOPES` in tools/project_n.py.
 
