@@ -553,6 +553,12 @@ def cmd_fuzz(args):
          f"-max_total_time={args.time}", f"-artifact_prefix={work}/"], env=xmake_env(bdir))
 
 
+def cmd_docs(args):
+    (ROOT / "build" / "docs").mkdir(parents=True, exist_ok=True)  # Doxygen creates only the last directory
+    run(["doxygen", "docs/Doxyfile"])
+    print(f"docs: {ROOT / 'build' / 'docs' / 'html' / 'index.html'}")
+
+
 def cmd_profiler(args):
     # The viewer lives in its own Pixi environment (pixi.toml: feature.profiler).
     run([os.environ.get("PIXI_EXE", "pixi"), "run", "-e", "profiler", "tracy-profiler"])
@@ -794,6 +800,7 @@ def make_parser():
     p = add("fuzz", cmd_fuzz, "fuzz a libFuzzer target from tests/fuzz/ (linux-clang, AddressSanitizer)", container=True)
     p.add_argument("target", choices=sorted(f.stem for f in (ROOT / "tests" / "fuzz").glob("*.cpp")))
     p.add_argument("--time", type=int, default=60, help="seconds to fuzz (default 60)")
+    add("docs", cmd_docs, "API reference from doc comments with Doxygen: build/docs/html/")
     add("profiler", cmd_profiler, "start the Tracy viewer; profile a `run --mode releasedbg` build")
     add("selftest", cmd_selftest, "run project_n.py's own unit tests (tools/test_project_n.py)")
     p = add("fmt", cmd_fmt, "format sources with the pinned clang-format")
@@ -811,7 +818,7 @@ def make_parser():
 def main(argv=None):
     args = make_parser().parse_args(argv)
     try:
-        if HOST == "macos" and args.func not in (cmd_commit_check, cmd_selftest, cmd_fmt, cmd_release, cmd_profiler):
+        if HOST == "macos" and args.func not in (cmd_commit_check, cmd_selftest, cmd_fmt, cmd_release, cmd_docs, cmd_profiler):
             ensure_macos_xmake()  # not for commands without XMake: the commit hook must work offline
         return args.func(args) or 0
     except Fail as e:

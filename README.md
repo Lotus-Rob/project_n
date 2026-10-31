@@ -40,6 +40,7 @@ use this machine's native preset: `linux-clang` on Linux, `windows-msvc` on Wind
 ./dev test --sanitizer address           # on request: address, undefined, thread, leak
 ./dev coverage                           # test coverage of src/: build/coverage/index.html
 ./dev fuzz smoke --time 60               # libFuzzer targets in tests/fuzz/
+./dev docs                               # API reference (Doxygen): build/docs/html/
 ./dev run --mode releasedbg              # profiling build; ./dev profiler opens the Tracy viewer
 ```
 

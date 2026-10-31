@@ -1,0 +1,17 @@
+# API reference (`project_n docs`): Doxygen's defaults except these. project_n runs it from the
+# repository root, so paths are relative to it.
+PROJECT_NAME          = "Project N"
+OUTPUT_DIRECTORY      = build/docs
+# When src/ splits into layers (platform, engine, sdk, game), list each directory here and give
+# each one a \defgroup, so the reference is grouped by layer.
+INPUT                 = src
+RECURSIVE             = YES
+FILE_PATTERNS         = *.hpp *.cpp
+EXCLUDE_PATTERNS      = */pch.hpp
+STRIP_FROM_PATH       = src
+STRIP_FROM_INC_PATH   = src
+GENERATE_LATEX        = NO
+QUIET                 = YES
+# Broken doc comments fail the run; undocumented code doesn't (no documentation policy yet).
+WARN_IF_UNDOCUMENTED  = NO
+WARN_AS_ERROR         = FAIL_ON_WARNINGS

@@ -81,7 +81,7 @@ Possible later additions, not part of the initial setup:
 | `ruff` / `actionlint` | 0.17.3 / 1.7.12 | `lint` checks project_n.py and the CI workflow |
 | `python` (+ `pip`, `setuptools`, `wheel`) | 3.14.x | XMake only accepts a build-tool Python that has all three |
 | `wayland` | 1.26 | Provides only the build-machine `wayland-scanner` (§7.1) |
-| `gcovr` | 8.8 | `coverage` (Linux only) |
+| `doxygen` / `gcovr` | 1.18.0 / 8.8 | `docs` and `coverage` (gcovr on Linux only) |
 | `tracy-profiler-gui` | 0.14.1 | The Tracy viewer, in its own `profiler` environment (rule 22). Equal to the `tracy` client from xmake-repo |
 | `patchelf` | 0.19.2 | Used by `artifact` to strip the rpath that conda's GCC hard-codes |
 | `doctest` / `libsdl3` | 2.5.3 / 3.4.16 | Come from `xmake-repo`, not Pixi. Listed for reference |
@@ -127,7 +127,7 @@ project_n/
 │   └── AGENTS.md
 ├── tests/                    # xmake.lua, unit/<area>/, unit/pch.hpp, fuzz/<target>.cpp + fuzz/corpus/
 │   └── AGENTS.md
-└── docs/design/              # numbered design docs (rationale tier)
+└── docs/                     # design/: numbered design docs (rationale tier); Doxyfile (`docs`)
 ```
 
 Other notes:
@@ -373,6 +373,7 @@ Each rule below fixed a concrete failure or host leak (most found in S4) or reco
 22. **Profiling with Tracy:** the `tracy-libdl` package (xmake-repo's `tracy` plus `libdl`, rule 7) collects in `releasedbg` (optimised, with symbols) and compiles to empty macros and an empty library everywhere else, so shipped builds contain none of it. It listens on localhost only. Both variants (`tracy_on`, `tracy_off`) are required in every mode and the target picks one: with one mode-dependent requirement, `xmake-requires.lock` held only the variant of the mode configured last. The viewer must speak the client's protocol, so `pixi.toml` pins `tracy-profiler-gui` to the same version, in a separate `profiler` environment: its GUI libraries (X11, EGL, dbus) in the default environment would be visible to package builds. Its Linux and macOS builds need `libcapstone` 6, which conda-forge publishes only under the `capstone_dev` label (2026-10-30).
 23. **Coverage:** XMake's `mode.coverage` (GCC's `--coverage`) on `linux-gcc`, run by the tests, reported by `gcovr` for `src/` only into `build/coverage/`. Counts from earlier runs are deleted first.
 24. **Fuzzing:** libFuzzer targets in `tests/fuzz/`, built only for `linux-clang` with AddressSanitizer (fuzzing needs a sanitizer to catch memory errors, and sanitizer builds already link the C++ runtime dynamically, rule 17). There each target replays its committed seeds as a test, so `check --sanitizers` keeps them building and passing. `fuzz` writes new inputs and crash files to `build/fuzz/<target>/`.
+25. **API reference:** Doxygen from `docs/Doxyfile` into `build/docs/`. Broken doc comments fail it; undocumented code doesn't yet. When `src/` splits into layers (platform, engine, sdk, game), `INPUT` lists each one and each gets a `\defgroup`.
 
 ---
 
@@ -395,7 +396,7 @@ Constraints:
 | `release [--dry-run]` | Requires a clean `main` that is up to date (it fetches, then refuses if `main` is behind). Runs `git cliff --bumped-version`, writes `set_version()`, regenerates `CHANGELOG.md`, commits `chore(release): vX.Y.Z` and creates the annotated tag `vX.Y.Z`. Never pushes. |
 | `selftest` | Runs `tools/test_project_n.py`; first step of `check`. |
 | `coverage` / `fuzz <target> [--time S]` | Test coverage of `src/` (rule 23) / one libFuzzer target (rule 24). Both run in the Linux image on other hosts. |
-| `profiler` | The Tracy viewer from the `profiler` environment (rule 22). |
+| `docs` / `profiler` | The Doxygen API reference in `build/docs/` (rule 25) / the Tracy viewer from the `profiler` environment (rule 22). |
 | `commit-check <msg-file> \| --range A..B` | Validates commit messages (§11). |
 | `fmt [--check]` / `lint [--fix]` | Runs clang-format and clang-tidy from the Pixi environment; `lint` first runs ruff on `tools/` and actionlint on the workflow. `lint` always passes `--warnings-as-errors=*`, so any finding fails `check`. `--fix` applies clang-tidy's fixes and reformats; whatever remains is fixed by hand before a branch is finished (root AGENTS.md). |
 | `image [--preset P]` / `shell --preset P` / `clean [--preset P] [--packages]` | Builds an image if missing / opens a debugging shell in a container / removes build directories (`--packages` also removes XMake package directories for locks other than the current one). |
