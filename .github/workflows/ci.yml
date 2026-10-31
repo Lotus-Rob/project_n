@@ -1,9 +1,8 @@
 # CI only runs project_n commands (docs/design/0001 §12); see .github/AGENTS.md.
 name: ci
 
-# Minutes are metered on a private repo (Windows 2x, macOS 10x): every push runs the Linux jobs;
-# main, tags and manual runs add Windows and macOS. Run the workflow by hand on a branch to get
-# everything before merging.
+# Every push runs every job: main's ruleset requires all six on each pull request, and a skipped
+# job would count as passed (.github/rulesets/main.json).
 on:
   push:
     branches: ["**"]
@@ -133,7 +132,6 @@ jobs:
           key: xmake-${{ matrix.preset }}-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
 
   windows:
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     # Native MSVC: the authoritative Windows build, and the only place MSVC's ASan can run.
     runs-on: windows-2025-vs2026
     timeout-minutes: 180
@@ -193,7 +191,6 @@ jobs:
           key: xmake-windows-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
 
   macos:
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     # Native macos-clang on Apple Silicon: the only place it can build (docs/design/0001 §5.7).
     runs-on: macos-26
     timeout-minutes: 180

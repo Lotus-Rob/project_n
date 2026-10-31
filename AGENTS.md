@@ -19,10 +19,11 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 - `pixi run project_n check --container`: the same in clean containers. Run it for any build, environment or dependency change: only a clean container catches host leaks.
 
 ## Finishing a branch
-Work happens on a branch; it merges into main only after step 3.
+Work happens on a branch; it merges into main only through a pull request, after step 3.
 1. `pixi run project_n lint --fix` (it covers the diff; `--all` for every file); fix every remaining finding by hand in the code. The pre-commit hook checks formatting at every commit: when it rejects one, `pixi run project_n fmt`, stage again and commit.
 2. `pixi run project_n check` (plus `--container` for build, environment or dependency changes) until it passes.
 3. Review: a fresh `branch-reviewer` subagent reviews the branch. Fix every finding (none is non-blocking), commit, and review again with a new subagent until it ends `REVIEW: CLEAN`, at most 5 rounds; after round 5's fixes the user decides on the merge → review-branch skill
+4. Merge through a pull request; main accepts nothing else, the user included (ruleset: .github/AGENTS.md). Push the branch and `pixi run gh pr create --fill`; when CI's six checks are green on a branch up to date with main, `pixi run gh pr merge --rebase` (GitHub deletes the merged branch). Then `git switch main && git pull --ff-only`.
 
 ## Rules
 - Fix lint and warnings properly. Suppress only as the last resort, when no proper fix exists, and as narrowly as possible with the reason: `// NOLINT(check-name): why` (`lint` rejects bare ones), a commented pragma, or a nested `.clang-tidy` with a `#` reason. The root `.clang-tidy` and `.clangd` are the user's: never remove, disable or relax a check or option in them. `cppcoreguidelines-*` enforces the C++ Core Guidelines.
