@@ -5,7 +5,7 @@
 | Status | **Accepted**: phases 1–4 implemented, review fixes applied; S3 (Podman on Windows) and the cross-machine Windows S2 check open |
 | Author | Rob G |
 | Created | 2026-10-29 |
-| Revised | 2026-10-31, logging: Quill and Tracy each behind one facade header, six log levels to the console and a rotating file in the per-user data folder (§7.1 rule 28); standard headers only through the precompiled headers (rule 19); sized number types (rule 29); `lint` ignores only listed false positives in library code (rule 16). Earlier the same day, development tooling: Tracy profiling in `releasedbg`, coverage, libFuzzer, Doxygen with enforced header docs, unity builds configured but off, and no dependency in a header (§7.1 rules 22–27); `fmt` and `lint` cover the diff, and a pre-commit hook checks formatting (§8); agent briefs as a kind of agent knowledge (D10, §10.1); every branch reviewed by a fresh subagent before merge. Earlier, 2026-10-30, review: LTO, PCH, split debug info and hardening (§7.1 rules 18–21); clean-room `artifact` with release zips; `selftest`, ruff and actionlint in the gate; Linux CI jobs on `main`; AGPL-3.0-or-later with third-party notices; large assets deferred (O5). Earlier, phase 4: GitHub Actions CI on Linux, Windows and macOS runners (§12); `macos-clang` implemented (§5.7, S7 passed); S5 passed in CI. Earlier the same day: macOS planned as a native `macos-clang` preset (D13). 2026-10-29: development runs natively in a portable Pixi environment; containers only produce artefacts; headers only (no C++ modules); Conventional Commits + git-cliff + SemVer; open questions Q1–Q10 resolved (Appendix B); knowledge split across AGENTS.md, skills and design docs (§10); Steam Runtime dropped, so Linux artefacts are built in an Ubuntu + Pixi image with the glibc baseline set by the conda-forge sysroot |
+| Revised | 2026-10-31, releases: a `vX.Y.Z` tag makes CI draft the GitHub release with every preset's archives, the macOS app included, unsigned until O6 (§12). Earlier the same day, logging: Quill and Tracy each behind one facade header, six log levels to the console and a rotating file in the per-user data folder (§7.1 rule 28); standard headers only through the precompiled headers (rule 19); sized number types (rule 29); `lint` ignores only listed false positives in library code (rule 16). Earlier the same day, development tooling: Tracy profiling in `releasedbg`, coverage, libFuzzer, Doxygen with enforced header docs, unity builds configured but off, and no dependency in a header (§7.1 rules 22–27); `fmt` and `lint` cover the diff, and a pre-commit hook checks formatting (§8); agent briefs as a kind of agent knowledge (D10, §10.1); every branch reviewed by a fresh subagent before merge. Earlier, 2026-10-30, review: LTO, PCH, split debug info and hardening (§7.1 rules 18–21); clean-room `artifact` with release zips; `selftest`, ruff and actionlint in the gate; Linux CI jobs on `main`; AGPL-3.0-or-later with third-party notices; large assets deferred (O5). Earlier, phase 4: GitHub Actions CI on Linux, Windows and macOS runners (§12); `macos-clang` implemented (§5.7, S7 passed); S5 passed in CI. Earlier the same day: macOS planned as a native `macos-clang` preset (D13). 2026-10-29: development runs natively in a portable Pixi environment; containers only produce artefacts; headers only (no C++ modules); Conventional Commits + git-cliff + SemVer; open questions Q1–Q10 resolved (Appendix B); knowledge split across AGENTS.md, skills and design docs (§10); Steam Runtime dropped, so Linux artefacts are built in an Ubuntu + Pixi image with the glibc baseline set by the conda-forge sysroot |
 | Scope | Repository layout, development environment, artefact containers, toolchain pinning, testing, build tooling, commits and versioning, agent knowledge (AGENTS.md and skills) |
 
 ---
@@ -389,7 +389,7 @@ Each rule below fixed a concrete failure or host leak (most found in S4) or reco
 Constraints:
 
 - **Single file, stdlib only.** It is run through the Pixi task `project_n`.
-- **Thin.** It orchestrates XMake, Podman, git, git-cliff and the tools pinned in the Pixi environment (gcovr, Doxygen, clang-format), and anything those tools already do stays there.
+- **Thin.** It orchestrates XMake, Podman, git, git-cliff, gh (`publish`) and the tools pinned in the Pixi environment (gcovr, Doxygen, clang-format), and anything those tools already do stays there.
 - **Mechanical steps live here.** Skills call these commands instead of embedding shell sequences (§10.4).
 
 | Command | Does |
@@ -628,9 +628,10 @@ GitHub Actions (`.github/workflows/ci.yml`, since phase 4) only runs `project_n`
 | Job | Runner | Runs |
 |---|---|---|
 | `lint` | ubuntu-26.04 | `selftest` (includes `doctor --docs`), `commit-check --range`, `fmt --check` and `lint --container` over a branch's commits since `main` (on `main` the pushed ones, from `PROJECT_N_COMMIT_RANGE`) |
-| `container (<preset>)` | ubuntu-26.04 | `artifact` for `linux-gcc`, `linux-clang` and `windows-msvc` (msvc-wine): clean-container build, tests, dependency check, `dist/` upload |
+| `container (<preset>)` | ubuntu-26.04 | `artifact` for `linux-gcc`, `linux-clang` and `windows-msvc` (msvc-wine): clean-container build, tests, dependency check, upload of the archives as `project_n-<version>-<preset>` (plus `-<commit>` unless a tag is built) |
 | `windows` | windows-2025-vs2026 | `selftest`, then native `windows-msvc` tests in release and under ASan, after adding the pinned toolset from `buildtools.vsconfig` |
 | `macos` | macos-26 | native `macos-clang` tests in release and under ASan, then `artifact` |
+| `release` | ubuntu-26.04 | on a `vX.Y.Z` tag, after every other job passed: `publish` drafts the GitHub release with every preset's game and symbols archives and the changelog section; the user checks the draft and publishes it |
 
 - **Caches**, in two layers:
   - Setup, saved as soon as its step finishes: the Pixi environments (setup-pixi), the `linux` and `msvc` images in GHCR by content tag (`PROJECT_N_REGISTRY`), the MSVC install for msvc-wine (after `project_n image`), the MSVC 14.50 toolset on Windows, and the macOS XMake bundle.
@@ -717,7 +718,7 @@ None open. Deferred to the architecture doc:
 
 - **O5:** how large binary assets are stored: Git LFS (GitHub Free includes 1 GB of storage), another store, or a separate asset repository. Decide before the first real asset lands.
 
-- **O6:** code signing before the first public build. Artefacts are unsigned (macOS: ad-hoc only), so Gatekeeper blocks the macOS build on other Macs and SmartScreen warns on Windows. macOS needs an Apple Developer account and notarisation (`rcodesign` works from Linux); Windows needs a code-signing certificate or Azure Trusted Signing.
+- **O6:** code signing before the first public build. Artefacts are unsigned (macOS: ad-hoc only), so Gatekeeper blocks the macOS build on other Macs and SmartScreen warns on Windows. Until it is decided, releases go out unsigned with instructions in their notes (`publish`; the user's call, 2026-10-31). macOS needs an Apple Developer account and notarisation (`rcodesign` works from Linux); Windows needs a code-signing certificate or Azure Trusted Signing.
 
 - **O2:** which Linux libraries are bundled (xmake-built static libraries such as SDL) and which are expected from the system (GPU drivers, Vulkan and GL loaders, audio). The SDL3 build in S4 bundles SDL statically and dlopens X11, Wayland, xkbcommon, EGL and GL from the system at runtime. The doc should also decide whether to prefer native Wayland over XWayland (§13.1).
 
