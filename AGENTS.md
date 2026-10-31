@@ -42,7 +42,11 @@ Work happens on a branch; it merges into main only after step 3.
 - add-dependency: adding, bumping or removing a C++ library (`add_requires`, licence record, lock)
 - fix-xmake-package: a package that needs host files or drops a feature; overrides in `xmake/repo/` and their upstream fixes
 - fix-bug: fixing any bug in `src/` test-first
-- review-branch: the pre-merge review; the reviewer is the `branch-reviewer` agent (.claude/agents/)
+- review-branch: the pre-merge review and acting on its findings
+
+## Agents (.claude/agents): subagents with a fresh context
+- branch-reviewer: the pre-merge reviewer, a new one per round (review-branch skill)
+- log-triage: the root cause of a long build, test or CI log; hand it logs instead of reading them in the main session
 
 ## Keeping this true
 Update AGENTS.md files and skills in the same commit as the change that affects them. Log non-obvious fixes under Gotchas.

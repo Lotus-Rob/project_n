@@ -16,7 +16,7 @@ Owned by: root AGENTS.md. Rationale: docs/design/0001 §7.1 rules 5–7. The exi
 ## Diagnose
 
 1. Reproduce in a clean container: `pixi run project_n test --preset <preset> --container`, or `pixi run project_n shell --preset <preset>` to look around. A native-only failure is not a reproduction.
-2. Read the package's configure output. `project_n` runs `xmake f -v`, so it's in the build log: look for "not found", "Could NOT find", "disabled" and feature summaries.
+2. Read the package's configure output. `project_n` runs `xmake f -v`, so it's in the build log; hand long logs to the `log-triage` agent. Look for "not found", "Could NOT find", "disabled" and feature summaries.
 3. Compare what the library's own build needs (its CMake or meson options for the feature) with `add_deps` in xmake-repo's `packages/<letter>/<name>/xmake.lua`, at the xmake-repo commit recorded in `xmake-requires.lock`. The gap is the missing dependency.
 4. For a feature that may have been dropped silently, check the result, not the build: the library's feature report, `strings` on the binary, or running it (SDL reports `SDL_GetCurrentVideoDriver()`).
 
