@@ -414,6 +414,27 @@ def scoped_sources(args):
     return [f for f in source_files() if f in changed], changed
 
 
+INCLUDE_RE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]')
+
+
+def leaked_dependencies(sources):
+    """Includes in the src/ headers among these that are neither the standard library nor ours:
+    third-party and platform headers belong in .cpp files, behind our own types."""
+    found = []
+    for header in [f for f in sources if f.startswith("src/") and f.endswith(".hpp")]:
+        for n, line in enumerate((ROOT / header).read_text(encoding="utf-8").splitlines(), 1):
+            m = INCLUDE_RE.match(line)
+            if not m:
+                continue
+            bracket, name = m.groups()
+            # Standard headers are the only bracketed names with neither a directory nor an extension.
+            standard = bracket == "<" and re.fullmatch(r"[a-z0-9_]+", name)
+            ours = bracket == '"' and (((ROOT / header).parent / name).is_file() or (ROOT / "src" / name).is_file())
+            if not (standard or ours):
+                found.append(f"{header}:{n}: {line.strip()}")
+    return found
+
+
 def check_api_docs(sources):
     """Doxygen (docs/Doxyfile) over the src/ headers among these: an undocumented public class,
     function or member, or a broken doc comment, fails."""
@@ -455,6 +476,10 @@ def cmd_lint(args):
     found = unexplained_suppressions(sources)
     if found:
         raise Fail("fix findings properly; a suppression is the last resort and must be narrow and explained:\n" + "\n".join(found))
+    leaked = leaked_dependencies(sources)
+    if leaked:
+        raise Fail("third-party and platform headers belong in .cpp files, behind our own types (src/AGENTS.md):\n"
+                   + "\n".join(leaked))
     check_api_docs(sources)
     if changed is None or any(f.startswith("tools/") and f.endswith(".py") for f in changed):
         run(["ruff", "check", "tools"])

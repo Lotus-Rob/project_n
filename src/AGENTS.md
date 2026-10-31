@@ -7,7 +7,8 @@ All game and engine code. Its structure comes from the architecture design doc (
 - C++23 with conventional headers (no modules). Every translation unit's includes lead to `core/cxx23.hpp`, which fails the build below C++23; include it with `// IWYU pragma: keep` (it declares nothing).
 - Include order: project headers, then library headers (`<SDL3/...>`), then the standard library, as blank-line-separated blocks. clang-format sorts within a block but doesn't regroup.
 - Formatting and lint come from the pinned tools: `pixi run project_n fmt` and `pixi run project_n lint` (warnings are errors).
-- `pch.hpp` is the game's precompiled header: add headers that are slow to parse and used widely. Sources still include what they use (lint, and builds without the PCH, rely on it).
+- Headers include only the standard library and our own headers. Third-party and platform code (SDL, Tracy, `<windows.h>`) stays in `.cpp` files behind our own types (a pimpl or an opaque handle); a header doesn't forward-declare its types either. `lint` fails on a third-party include in a header.
+- `pch.hpp` is the game's precompiled header: add standard headers that are slow to parse and used widely (it is a header too: no third-party ones). Sources still include what they use (lint, and builds without the PCH, rely on it).
 - Profiling: Tracy's macros from `<tracy/Tracy.hpp>` (`ZoneScoped`, `FrameMark`). They collect only in `releasedbg` and compile to nothing elsewhere: `./dev run --mode releasedbg`, then `./dev profiler`.
 - Every header starts with a `/// @file` comment, and every public class, function, member, variable and enum it declares has a Doxygen comment (`///`): what it does and promises, not how. `lint` fails on a missing or broken one.
 - Comments in `.cpp` files only explain why, or a complexity the code can't show; never restate what the code does.

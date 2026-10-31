@@ -226,6 +226,25 @@ class ScopeTest(unittest.TestCase):
             self.assertEqual(project_n.lint_units(["src/a.cpp"]), ["src/a.cpp"])
 
 
+class DependencyTest(unittest.TestCase):
+    def test_a_third_party_include_in_a_header_is_reported(self):
+        with temp_repo({"src/window.hpp": "#pragma once\n#include <SDL3/SDL.h>\n"}):
+            self.assertEqual(project_n.leaked_dependencies(["src/window.hpp"]), ["src/window.hpp:2: #include <SDL3/SDL.h>"])
+
+    def test_a_platform_header_is_reported(self):
+        with temp_repo({"src/window.hpp": "#pragma once\n#include <windows.h>\n"}):
+            self.assertEqual(project_n.leaked_dependencies(["src/window.hpp"]), ["src/window.hpp:2: #include <windows.h>"])
+
+    def test_a_quoted_third_party_include_is_reported(self):
+        with temp_repo({"src/window.hpp": '#pragma once\n#include "SDL3/SDL.h"\n'}):
+            self.assertEqual(project_n.leaked_dependencies(["src/window.hpp"]), ['src/window.hpp:2: #include "SDL3/SDL.h"'])
+
+    def test_standard_and_own_headers_pass(self):
+        with temp_repo({"src/core/a.hpp": "#pragma once\n",
+                        "src/core/b.hpp": '#pragma once\n#include "core/a.hpp"\n#include "a.hpp"\n#include <cstdint>\n#include <print>\n'}):
+            self.assertEqual(project_n.leaked_dependencies(["src/core/b.hpp"]), [])
+
+
 class ApiDocsTest(unittest.TestCase):
     DOXYFILE = (project_n.ROOT / "docs" / "Doxyfile").read_text()
 
