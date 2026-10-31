@@ -327,6 +327,29 @@ class StandardIncludeTest(unittest.TestCase):
             self.assertEqual(project_n.standard_includes_in_sources(["src/game.hpp", "tests/unit/a.cpp"]), [])
 
 
+class SizedTypesTest(unittest.TestCase):
+    def unsized(self, code, path="src/game.cpp"):
+        with temp_repo({path: code}):
+            return project_n.unsized_types([path])
+
+    def test_built_in_and_std_number_types_are_reported(self):
+        self.assertEqual(self.unsized("int a = 0;\ni32 b = 0;\nunsigned long c = 0;\nfloat d = 0;\nstd::uint32_t e = 0;\n"),
+                         ["src/game.cpp:1: int a = 0;", "src/game.cpp:3: unsigned long c = 0;", "src/game.cpp:4: float d = 0;",
+                          "src/game.cpp:5: std::uint32_t e = 0;"])
+
+    def test_a_comment_naming_a_type_passes(self):
+        self.assertEqual(self.unsized("i32 a = 0; // not an int\n"), [])
+
+    def test_a_string_naming_a_type_passes(self):
+        self.assertEqual(self.unsized('PN_LOG_INFO("an int: {}", a);\n'), [])
+
+    def test_main_keeps_its_standard_signature(self):
+        self.assertEqual(self.unsized("int main(int argc, char** argv) {}\n"), [])
+
+    def test_the_types_header_itself_passes(self):
+        self.assertEqual(self.unsized("using i32 = std::int32_t;\n", "src/core/types.hpp"), [])
+
+
 class FacadeTest(unittest.TestCase):
     def bypassed(self, code, path="src/game.cpp"):
         with temp_repo({path: code}):

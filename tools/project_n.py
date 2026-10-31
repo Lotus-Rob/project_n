@@ -443,6 +443,22 @@ def standard_includes_in_sources(sources):
     return found
 
 
+# Built-in number types and the std:: fixed-width names; core/types.hpp's i32, u8, f32... replace them.
+UNSIZED_RE = re.compile(r"\b(?:unsigned|signed|short|long|int|float|double)\b|\b(?:std::)?u?int(?:8|16|32|64)_t\b")
+
+
+def unsized_types(sources):
+    """Lines in src/ and tests/ that name a number type other than core/types.hpp's sized ones.
+    `int main(int, char**)` is exempt: the standard fixes that signature."""
+    found = []
+    for f in [f for f in sources if f.startswith(("src/", "tests/")) and f.endswith((".cpp", ".hpp")) and f != "src/core/types.hpp"]:
+        for n, line in enumerate((ROOT / f).read_text(encoding="utf-8").splitlines(), 1):
+            code = re.sub(r'"(?:\\.|[^"\\])*"', '""', line).split("//")[0]
+            if UNSIZED_RE.search(code) and not re.match(r"\s*int main\(", code):
+                found.append(f"{f}:{n}: {line.strip()}")
+    return found
+
+
 def leaked_dependencies(sources):
     """Includes in the src/ headers among these that are neither the standard library nor ours:
     third-party and platform headers belong in .cpp files, behind our own types. A facade header
@@ -577,6 +593,9 @@ def cmd_lint(args):
     if standard:
         raise Fail("standard headers come from the precompiled header, not from .cpp files (src/AGENTS.md):\n"
                    + "\n".join(standard))
+    unsized = unsized_types(sources)
+    if unsized:
+        raise Fail("use core/types.hpp's sized types (i32, u8, f32...) (src/AGENTS.md):\n" + "\n".join(unsized))
     bypassed = bypassed_facades(sources)
     if bypassed:
         raise Fail("log through PN_LOG_* (core/log.hpp) and profile through PN_PROFILE_* (core/profile.hpp) (src/AGENTS.md):\n"
