@@ -1,6 +1,6 @@
 ---
 name: agent-docs
-description: Maintain project_n's agent knowledge. Use when creating or editing any AGENTS.md or CLAUDE.md, adding a Gotchas entry, writing or changing a skill under .claude/skills, proposing a new skill, or when an AGENTS.md has grown past its size limit or contradicts the code.
+description: Maintain project_n's agent knowledge. Use when creating or editing any AGENTS.md or CLAUDE.md, adding a Gotchas entry, writing or changing a skill under .claude/skills or an agent under .claude/agents, proposing a new skill or agent, or when an AGENTS.md has grown past its size limit or contradicts the code.
 ---
 
 # Maintaining AGENTS.md files and skills
@@ -14,6 +14,7 @@ Owned by: root AGENTS.md. Rationale: docs/design/0001 §10.
 | `AGENTS.md` | Facts needed for *any* task in that directory: map, commands, one-line rules, skill pointers, gotchas | Always | ~100 lines, one line per rule |
 | Skills (`.claude/skills/<name>/SKILL.md`) | *How* to do one job: steps, decisions, examples | When the task matches the `description` | ~200 lines; longer material in `references/` |
 | Design docs (`docs/design/`) | *Why*; alternatives rejected | When changing the design | none |
+| Agent briefs (`.claude/agents/<name>.md`) | A subagent's role, what it may touch, what it reports | When spawned, in a fresh context | ~60 lines |
 
 Other tiers link to a fact instead of repeating it. When an AGENTS.md rule needs more than one line, move the explanation to a skill and leave `<rule> → <skill>`.
 
@@ -37,6 +38,15 @@ Write a skill so it loads exactly when needed:
 6. No secrets, no machine-specific paths.
 
 Templates for AGENTS.md and SKILL.md: [references/templates.md](references/templates.md).
+
+## Agents
+
+An agent brief gives a subagent what it needs in a fresh context and nothing it can read elsewhere:
+
+1. **Role, limits, report.** Who it is, what it may and may not change, and the exact shape of its report.
+2. **Point, don't copy.** For a procedure or a definition that a skill holds, name the skill section to read; a copy drifts.
+3. **One owner.** Root AGENTS.md lists every agent under Agents, and the skill that spawns it names it. Add or remove them in the same commit; the contract above applies to briefs too.
+4. **Proposed like a skill:** created only after the user agrees (below).
 
 ## Proposing a skill (needs user approval)
 

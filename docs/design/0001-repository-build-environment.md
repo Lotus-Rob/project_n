@@ -46,7 +46,7 @@
 | D7 | **XMake** owns the build graph, dependencies (`xmake-repo` packages with a committed lock file) and tests (`add_tests`, `xmake test`). | Avoids duplicating XMake features in scripts. |
 | D8 | **`tools/project_n.py` is the one entry point.** It is stdlib-only Python, exposed as the Pixi task `project_n`, so you run `pixi run project_n <command>`. | It hides Podman, the per-preset XMake config and the release steps. `pixi run` guarantees the pinned tools are on PATH. |
 | D9 | **Native is the default for every command except `artifact`.** `windows-msvc` falls back to its container on Linux hosts. | Development and testing happen in the Pixi environment, and containers are used only when needed. |
-| D10 | **Knowledge has three tiers.** AGENTS.md holds short facts and pointers and is always loaded. Skills hold procedures and detail and are loaded on demand. Design docs hold rationale. Each fact lives in exactly one tier (§10). | Keeps agent context small and procedures complete, with no duplicated text that can drift. |
+| D10 | **Knowledge has three tiers, plus subagent briefs.** AGENTS.md holds short facts and pointers and is always loaded. Skills hold procedures and detail and are loaded on demand. Design docs hold rationale. Agent briefs (`.claude/agents/`) give a subagent its role and report format and point to skills for procedure. Each fact lives in exactly one place (§10). | Keeps agent context small and procedures complete, with no duplicated text that can drift. |
 | D11 | **Conventional Commits 1.0.0**, checked by `project_n commit-check` through a committed `commit-msg` hook. **Linear history**: rebase only, no merge commits. | Rules and enforcement from day one, with no extra dependency. |
 | D12 | **git-cliff** generates `CHANGELOG.md` and the next **SemVer** version from commits. `project_n release` applies both atomically. | One command per release, and the version is always derived from history. |
 | D13 | **macOS is a native-only preset, `macos-clang`** (Apple Silicon), built in the Pixi environment on a Mac or a CI macOS runner. No cross-compiling, VM or compatibility layer on Linux. | osxcross needs the Xcode SDK and a macOS VM needs macOS itself; both licences allow use only on Apple hardware. Neither could run the game either: no Metal outside real Macs. |
@@ -108,8 +108,9 @@ project_n/
 ├── .githooks/commit-msg      # POSIX sh: `pixi run project_n commit-check "$1"`
 ├── .github/                  # CI (§12): workflows/ci.yml, dependabot.yml, actionlint.yaml, AGENTS.md
 ├── .claude/CLAUDE.md         # "@../AGENTS.md": Claude Code reads it here, keeping the root shorter
+├── .claude/agents/           # branch-reviewer: the pre-merge reviewer, a fresh subagent per review
 ├── .claude/skills/           # on-demand procedures (§10.4): git-commit, agent-docs, release,
-│                             # bump-toolchain, add-dependency, fix-xmake-package, fix-bug
+│                             # bump-toolchain, add-dependency, fix-xmake-package, fix-bug, review-branch
 ├── tools/
 │   ├── AGENTS.md
 │   ├── project_n.py          # the single entry point (§8)
@@ -443,6 +444,7 @@ Rejected alternatives:
 | **AGENTS.md** | Facts an agent needs for *any* task in the area: map, commands, one-line rules, pointers to skills | Always, when working in that directory | ≤ ~100 lines; one line per rule |
 | **Skills** (`.claude/skills/<name>/SKILL.md`) | *How* to do a specific job: steps, checklists, examples, detailed rules, gotchas for that job | On demand, when the task matches the skill's `description` | SKILL.md ≤ ~200 lines; longer reference material goes in a `references/` file inside the skill |
 | **Design docs** (`docs/design/`) | *Why* something is the way it is; alternatives rejected | When changing the design | No limit; superseded rather than edited once accepted |
+| **Agent briefs** (`.claude/agents/<name>.md`) | A subagent's role, what it may touch, and what it reports. Procedures and definitions stay in the skill it points to | When spawned, in a fresh context | ≤ ~60 lines; listed in root AGENTS.md under Agents |
 
 **Rule:** a fact lives in exactly one tier. The other tiers link to it instead of restating it. When a rule in AGENTS.md needs more than one line of explanation, the explanation moves to a skill and AGENTS.md keeps the one-line rule plus `→ <skill>`.
 
@@ -533,6 +535,7 @@ The `agent-docs` skill encodes these rules:
 |---|---|---|
 | `fix-xmake-package` | root | ✅ **Created 2026-10-30** (trigger met in S4: two overrides). Covers: diagnosing a package that only builds with host files (find the hidden dependency in the failed build's log, check SDL-style silent feature drops), writing a `set_base` override in `xmake/repo/`, and preparing the upstream xmake-repo change. Propose for creation in phase 2 |
 | `fix-bug` | root | ✅ **Created 2026-10-30** on the user's request: every `src/` bug is fixed test-first, with a small, contained, explicit test of that bug alone; tests are never deleted or loosened to go green |
+| `review-branch` | root | ✅ **Created 2026-10-30** on the user's request: the pre-merge review by a fresh `branch-reviewer` subagent (`.claude/agents/`), a new one for every round; every finding blocks the merge; at most 5 rounds, after which the user decides on the merge |
 | `add-unit-test` | tests | The first area with more than a handful of tests |
 | `design-doc` | root | The second design doc (template, numbering, status lifecycle) |
 | `new-subsystem` | src | After the architecture doc |

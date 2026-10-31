@@ -19,8 +19,10 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 - `pixi run project_n check --container`: the same in clean containers. Run it for any build, environment or dependency change: only a clean container catches host leaks.
 
 ## Finishing a branch
+Work happens on a branch; it merges into main only after step 3.
 1. `pixi run project_n fmt`, then `pixi run project_n lint --fix` (both cover the diff; `--all` for every file); fix every remaining finding by hand in the code.
 2. `pixi run project_n check` (plus `--container` for build, environment or dependency changes) until it passes.
+3. Review: a fresh `branch-reviewer` subagent reviews the branch. Fix every finding (none is non-blocking), commit, and review again with a new subagent until it ends `REVIEW: CLEAN`, at most 5 rounds; after round 5's fixes the user decides on the merge → review-branch skill
 
 ## Rules
 - Fix lint and warnings properly. Suppress only as the last resort, when no proper fix exists, and as narrowly as possible with the reason: `// NOLINT(check-name): why` (`lint` rejects bare ones), a commented pragma, or a nested `.clang-tidy` with a `#` reason. The root `.clang-tidy` and `.clangd` are the user's: never remove, disable or relax a check or option in them. `cppcoreguidelines-*` enforces the C++ Core Guidelines.
@@ -40,6 +42,7 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 - add-dependency: adding, bumping or removing a C++ library (`add_requires`, licence record, lock)
 - fix-xmake-package: a package that needs host files or drops a feature; overrides in `xmake/repo/` and their upstream fixes
 - fix-bug: fixing any bug in `src/` test-first
+- review-branch: the pre-merge review; the reviewer is the `branch-reviewer` agent (.claude/agents/)
 
 ## Keeping this true
 Update AGENTS.md files and skills in the same commit as the change that affects them. Log non-obvious fixes under Gotchas.
