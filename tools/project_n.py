@@ -1,6 +1,6 @@
 """project_n: the single build entry point. Run as `pixi run project_n <command>`.
 
-Thin by design: every command reduces to calls of XMake, Podman, git, git-cliff and the pinned tools.
+Thin by design: every command reduces to calls of XMake, Podman, git, git-cliff, gh and the pinned tools.
 Standard library only. See tools/AGENTS.md and docs/design/0001.
 """
 
@@ -714,10 +714,27 @@ def macos_bundle(dist, binary):
     run(["codesign", "--verify", "--strict", contents.parent])
 
 
+def ci_artifact_name(preset):
+    """The name CI uploads a preset's archives under: the version and preset, as in the archives'
+    names, plus the commit unless CI is building a tag (a dev build isn't that version yet)."""
+    name = f"{APP}-{read_version()}-{preset}"
+    if not os.environ.get("GITHUB_REF", "").startswith("refs/tags/"):
+        name += "-" + capture(["git", "rev-parse", "--short=7", "HEAD"]).strip()
+    return name
+
+
+def write_ci_artifact_name(preset):
+    """Hands CI's upload step its artifact name (steps.artifact.outputs.archive in ci.yml)."""
+    with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+        out.write(f"archive={ci_artifact_name(preset)}\n")
+
+
 def cmd_artifact(args):
     # Release artefacts come from committed sources only; the container sees the whole checkout.
     if tree_dirty():
         raise Fail("artifact builds committed sources only: commit or stash first (`check --container` tests uncommitted work)")
+    if "GITHUB_OUTPUT" in os.environ and not IN_CONTAINER:
+        write_ci_artifact_name(args.preset)
     if not IN_CONTAINER and (PRESETS[args.preset]["image"] or needs_container(args.preset)):
         return reenter(args.preset, ["artifact", "--preset", args.preset])
     shutil.rmtree(ROOT / build_dir(args.preset, "release"), ignore_errors=True)  # clean room: nothing from earlier builds
@@ -834,6 +851,43 @@ def cmd_release(args):
     run(["git", "commit", "-m", f"chore(release): v{version}"])
     run(["git", "tag", "-a", f"v{version}", "-m", f"v{version}"])
     print(f"release: tagged v{version}; push with: git push --follow-tags")
+
+
+UNSIGNED_NOTE = """These builds aren't code-signed yet. On macOS, open project_n.app once; when macOS refuses, go to
+System Settings > Privacy & Security and choose Open Anyway. On Windows, if SmartScreen warns,
+choose More info, then Run anyway.
+
+Each `-symbols` zip holds debug symbols for reading crash reports; players don't need it. The source
+code of this release is attached below."""
+
+
+def release_notes(changelog, version):
+    """CHANGELOG.md's section for `version`, then what players need to know about these builds."""
+    m = re.search(rf"^## {re.escape(version)} [^\n]*\n(.*?)(?=^## |\Z)", changelog, re.MULTILINE | re.DOTALL)
+    if not m:
+        raise Fail(f"CHANGELOG.md has no section for {version}")
+    return f"{m[1].strip()}\n\n{UNSIGNED_NOTE}\n"
+
+
+def release_archives(version):
+    """Every preset's game and symbols archive for `version` in dist/; fails naming any missing."""
+    wanted = [ROOT / "dist" / f"{APP}-{version}-{preset}{part}.zip" for preset in PRESETS for part in ("", "-symbols")]
+    missing = [a.name for a in wanted if not a.is_file()]
+    if missing:
+        raise Fail("missing release archives:\n" + "\n".join(missing))
+    return wanted
+
+
+def cmd_publish(args):
+    version = read_version()
+    tag = f"v{version}"
+    if tag not in capture(["git", "tag", "--points-at", "HEAD"]).split():
+        raise Fail(f"publish runs on the commit tagged {tag}")
+    archives = release_archives(version)
+    notes = ROOT / "build" / "release-notes.md"
+    notes.parent.mkdir(exist_ok=True)
+    notes.write_text(release_notes((ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), version), encoding="utf-8")
+    run(["gh", "release", "create", tag, "--verify-tag", "--draft", "--title", f"{APP} {version}", "--notes-file", notes, *archives])
 
 
 def cmd_commit_check(args):
@@ -1046,6 +1100,7 @@ def make_parser():
     add("artifact", cmd_artifact, "clean-room release build in the preset's container, into dist/", preset="required")
     p = add("release", cmd_release, "bump the version with git-cliff, write CHANGELOG.md, commit and tag")
     p.add_argument("--dry-run", action="store_true")
+    add("publish", cmd_publish, "draft the tagged version's GitHub release with every preset's archives from dist/ (CI runs it)")
     p = add("commit-check", cmd_commit_check, "validate commit messages (Conventional Commits)")
     group = p.add_mutually_exclusive_group(required=True)
     group.add_argument("message_file", nargs="?", help="a commit message file (used by the commit-msg hook)")

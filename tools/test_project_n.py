@@ -290,6 +290,59 @@ class CheckTest(unittest.TestCase):
         self.assertTrue(project_n.PRESETS[unity[0].preset]["image"], unity[0].preset)
 
 
+class ReleaseTest(unittest.TestCase):
+    CHANGELOG = "# Changelog\n\n## 0.2.0 - 2026-11-01\n\n### Features\n\n- Log at six levels\n\n## 0.1.0 - 2026-10-30\n\n- Older\n"
+
+    def test_the_notes_hold_only_that_versions_section(self):
+        notes = project_n.release_notes(self.CHANGELOG, "0.2.0")
+        self.assertTrue(notes.startswith("### Features\n\n- Log at six levels\n\n"))
+        self.assertNotIn("Older", notes)
+
+    def test_the_notes_say_the_builds_are_unsigned(self):
+        self.assertIn(project_n.UNSIGNED_NOTE, project_n.release_notes(self.CHANGELOG, "0.1.0"))
+
+    def test_a_version_without_a_section_fails(self):
+        with self.assertRaisesRegex(project_n.Fail, "0.3.0"):
+            project_n.release_notes(self.CHANGELOG, "0.3.0")
+
+    def test_a_missing_archive_is_named(self):
+        files = {f"dist/project_n-0.2.0-{p}{part}.zip": "" for p in project_n.PRESETS for part in ("", "-symbols")}
+        del files["dist/project_n-0.2.0-macos-clang.zip"]
+        with temp_repo(files), self.assertRaisesRegex(project_n.Fail, r"missing release archives:\nproject_n-0.2.0-macos-clang.zip$"):
+            project_n.release_archives("0.2.0")
+
+    def test_publish_refuses_a_commit_without_the_versions_tag(self):
+        with temp_repo({"xmake.lua": 'set_version("0.2.0")\n'}), mock.patch.object(project_n, "run") as run, \
+                self.assertRaisesRegex(project_n.Fail, "v0.2.0"):
+            project_n.cmd_publish(None)
+        run.assert_not_called()
+
+    def test_publish_drafts_the_release_with_every_archive(self):
+        archives = [f"dist/project_n-0.2.0-{p}{part}.zip" for p in project_n.PRESETS for part in ("", "-symbols")]
+        files = {"xmake.lua": 'set_version("0.2.0")\n', "CHANGELOG.md": self.CHANGELOG, **dict.fromkeys(archives, "")}
+        with temp_repo(files) as root, mock.patch.object(project_n, "run") as run:
+            git(root, "tag", "v0.2.0")
+            project_n.cmd_publish(None)
+        cmd = run.call_args.args[0]
+        self.assertEqual(cmd[:6], ["gh", "release", "create", "v0.2.0", "--verify-tag", "--draft"])
+        self.assertEqual([Path(a).relative_to(root).as_posix() for a in cmd[-len(archives):]], archives)
+
+    def test_ci_gets_the_artifact_name_as_a_step_output(self):
+        with temp_repo({"xmake.lua": 'set_version("0.2.0")\n'}) as root, \
+                mock.patch.dict(project_n.os.environ, {"GITHUB_REF": "refs/tags/v0.2.0", "GITHUB_OUTPUT": str(root / "out")}):
+            project_n.write_ci_artifact_name("linux-gcc")
+            self.assertEqual((root / "out").read_text(), "archive=project_n-0.2.0-linux-gcc\n")
+
+    def test_ci_names_a_tag_build_after_its_version(self):
+        with temp_repo({"xmake.lua": 'set_version("0.2.0")\n'}), mock.patch.dict(project_n.os.environ, {"GITHUB_REF": "refs/tags/v0.2.0"}):
+            self.assertEqual(project_n.ci_artifact_name("linux-gcc"), "project_n-0.2.0-linux-gcc")
+
+    def test_ci_names_a_dev_build_after_its_version_and_commit(self):
+        with temp_repo({"xmake.lua": 'set_version("0.2.0")\n'}) as root, mock.patch.dict(project_n.os.environ, {"GITHUB_REF": "refs/heads/main"}):
+            sha = subprocess.run(["git", "rev-parse", "--short=7", "HEAD"], cwd=root, capture_output=True, text=True, check=True).stdout.strip()
+            self.assertEqual(project_n.ci_artifact_name("linux-gcc"), f"project_n-0.2.0-linux-gcc-{sha}")
+
+
 class PinnedXmakeTest(unittest.TestCase):
     def test_a_missing_set_xmakever_is_reported(self):
         with temp_repo({"xmake.lua": 'set_version("0.1.0")\n'}), self.assertRaisesRegex(project_n.Fail, "set_xmakever"):

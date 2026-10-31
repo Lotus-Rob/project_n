@@ -4,7 +4,7 @@
 `project_n.py` (the entry point, run as `pixi run project_n` or the root `dev`/`dev.cmd` wrappers), its tests, the Pixi activation script and the gdb init file.
 
 ## Rules
-- `project_n.py` is one file, standard library only, and thin: commands call XMake, Podman, git, git-cliff and the pinned tools; anything those tools do stays there.
+- `project_n.py` is one file, standard library only, and thin: commands call XMake, Podman, git, git-cliff, gh and the pinned tools; anything those tools do stays there.
 - `dev` and `dev.cmd` only forward to `pixi run project_n`; behaviour belongs in project_n.py.
 - `PRESETS`, `IMAGES` and `SCOPES` at the top of the file are the single source of truth. Changing a preset or scope updates design doc §3/§11 and any AGENTS.md that names it.
 - Containers re-enter the same script (`reenter`): add behaviour once, not per environment.

@@ -78,6 +78,7 @@ Possible later additions, not part of the initial setup:
 | `xmake` | 3.1.2 | |
 | `gdb` | 18.1 | Linux only |
 | `git-cliff` | 2.14.2 | |
+| `gh` | 2.102.0 | GitHub CLI for `publish` |
 | `ruff` / `actionlint` | 0.17.3 / 1.7.12 | `lint` checks project_n.py and the CI workflow |
 | `python` (+ `pip`, `setuptools`, `wheel`) | 3.14.x | XMake only accepts a build-tool Python that has all three |
 | `wayland` | 1.26 | Provides only the build-machine `wayland-scanner` (§7.1) |
@@ -400,6 +401,7 @@ Constraints:
 | `check [--container]` | The merge gate: `selftest`, `commit-check` on unpushed commits, `fmt --check` and `lint` of the diff, then build and test for every preset, plus one native build and test with unity builds on (rule 26). The pre-commit hook checks formatting at each commit, which also reaches people who never run `check`, so `check` refuses to run without the hooks enabled. `check`'s own format check covers commits the hook never sees: git runs no pre-commit hook for `rebase --continue` or `cherry-pick`. It runs natively where possible, and `--container` runs everything in the images. |
 | `artifact --preset P` | Clean-room release build in the preset's container (committed sources only, empty build directory), plus the Linux dependency check (§5.2). Writes `dist/<preset>/` and `manifest.json`. |
 | `release [--dry-run]` | Requires a clean `main` that is up to date (it fetches, then refuses if `main` is behind). Runs `git cliff --bumped-version`, writes `set_version()`, regenerates `CHANGELOG.md`, commits `chore(release): vX.Y.Z` and creates the annotated tag `vX.Y.Z`. Never pushes. |
+| `publish` | Requires HEAD tagged `vX.Y.Z` (the version in `set_version()`) and all eight archives in `dist/` (each preset's game and `-symbols` zip), else refuses. Creates a draft GitHub release from them with the version's `CHANGELOG.md` section and the unsigned-build note; never publishes. CI's `release` job runs it on a tag. |
 | `selftest` | Runs `tools/test_project_n.py`; first step of `check`. |
 | `coverage` / `fuzz <target> [--time S]` | Test coverage of `src/` (rule 23) / one libFuzzer target (rule 24). Both run in the Linux image on other hosts. |
 | `docs` / `profiler` | The Doxygen API reference in `build/docs/` (rule 25) / the Tracy viewer from the `profiler` environment (rule 22). |
