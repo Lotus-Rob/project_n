@@ -17,6 +17,7 @@ wheel = "==0.48.0"
 clang-format = "==22.1.8"
 clang-tools = "==22.1.8"
 git-cliff = "==2.14.2"
+gh = "==2.102.0"  # `publish`: drafts the GitHub release
 # `lint` also checks the tooling: project_n.py (ruff) and the CI workflow (actionlint).
 ruff = "==0.17.3"
 actionlint = "==1.7.12"
