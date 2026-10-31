@@ -2,8 +2,8 @@
 # repository root, so paths are relative to it.
 PROJECT_NAME          = "Project N"
 OUTPUT_DIRECTORY      = build/docs
-# When src/ splits into layers (platform, engine, sdk, game), list each directory here and give
-# each one a \defgroup, so the reference is grouped by layer.
+# When src/ splits into modules (design doc 0002 §4), list each directory here and give
+# each one a \defgroup, so the reference is grouped by module.
 INPUT                 = src
 RECURSIVE             = YES
 # Headers only: they carry the API documentation; .cpp comments explain why, not what.

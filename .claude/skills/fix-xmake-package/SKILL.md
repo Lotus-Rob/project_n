@@ -37,7 +37,7 @@ Owned by: root AGENTS.md. Rationale: docs/design/0001 §7.1 rules 5–7. The exi
 2. In `xmake.lua`, require the override in place of the original, with the exact version and the licence comment (add-dependency skill).
 3. A dependency that is a build tool comes pinned from `pixi.toml` and joins the `add_requireconfs("**|...", {system = false})` exceptions.
 4. `pixi run project_n check --container`; both platforms' entries in `xmake-requires.lock` follow. Commit `xmake/repo/`, `xmake.lua` and the lock as `build(deps): ...`.
-5. Add the override to design doc §7.1 rule 7.
+5. Add the override to design doc 0001 §7.1 rule 7.
 
 ## Upstream
 

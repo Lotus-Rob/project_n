@@ -6,7 +6,7 @@
 ## Rules
 - `project_n.py` is one file, standard library only, and thin: commands call XMake, Podman, git, git-cliff, gh and the pinned tools; anything those tools do stays there.
 - `dev` and `dev.cmd` only forward to `pixi run project_n`; behaviour belongs in project_n.py.
-- `PRESETS`, `IMAGES` and `SCOPES` at the top of the file are the single source of truth. Changing a preset or scope updates design doc §3/§11 and any AGENTS.md that names it.
+- `PRESETS`, `IMAGES` and `SCOPES` at the top of the file are the single source of truth. Changing a preset or scope updates design doc 0001 §3/§11 and any AGENTS.md that names it.
 - Containers re-enter the same script (`reenter`): add behaviour once, not per environment.
 - Never pipe XMake's output through filters; it stalled twice that way in spike S4.
 - `env/activate.sh` runs on every `pixi run`: keep it fast and idempotent.

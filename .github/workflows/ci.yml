@@ -86,7 +86,7 @@ jobs:
       contents: read
       packages: write # the linux image cache in GHCR
     env:
-      PROJECT_N_ACCEPT_MSVC_LICENSE: "1" # confirmed to fit the project (design doc O3); image stays on the runner
+      PROJECT_N_ACCEPT_MSVC_LICENSE: "1" # confirmed to fit the project (design doc 0001 O3); image stays on the runner
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Log in to the image cache

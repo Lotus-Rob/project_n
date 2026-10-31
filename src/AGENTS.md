@@ -1,7 +1,7 @@
 # src/: game and engine
 
 ## Scope
-All game and engine code. Its structure comes from the architecture design doc (not written yet); until then, `main.cpp` is a minimal SDL3 window.
+All game and engine code. Its structure comes from docs/design/0002-engine-architecture.md (draft, not implemented yet); until then, `main.cpp` is a minimal SDL3 window.
 
 ## Rules
 - C++23 with conventional headers (no modules). Every translation unit's includes lead to `core/cxx23.hpp`, which fails the build below C++23; include it with `// IWYU pragma: keep` (it declares nothing).
