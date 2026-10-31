@@ -26,6 +26,8 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 - Fix lint and warnings properly. Suppress only as the last resort, when no proper fix exists, and as narrowly as possible with the reason: `// NOLINT(check-name): why` (`lint` rejects bare ones), a commented pragma, or a nested `.clang-tidy` with a `#` reason. The root `.clang-tidy` and `.clangd` are the user's: never remove, disable or relax a check or option in them. `cppcoreguidelines-*` enforces the C++ Core Guidelines.
 - Commits: Conventional Commits; `feat`/`fix` only for game code; scopes from `SCOPES` in tools/project_n.py → git-commit skill
 - History is linear: rebase, never merge commits.
+- Bugs in `src/` are fixed test-first: a small test that fails because of the bug, committed with the fix → fix-bug skill
+- Never delete, skip or loosen a test case to make a run go green.
 - Pins are exact (`==` in pixi.toml, exact `add_requires` versions). Change one only on purpose, with its lock file in the same commit.
 - Don't call podman, xmake or git-cliff directly in docs or scripts; go through project_n.py.
 - Only ever stop or remove containers this project started (`project_n-*` images), never all containers.
@@ -37,6 +39,7 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 - release: cutting a release, versions, changelog, artefacts
 - add-dependency: adding, bumping or removing a C++ library (`add_requires`, licence record, lock)
 - fix-xmake-package: a package that needs host files or drops a feature; overrides in `xmake/repo/` and their upstream fixes
+- fix-bug: fixing any bug in `src/` test-first
 
 ## Keeping this true
 Update AGENTS.md files and skills in the same commit as the change that affects them. Log non-obvious fixes under Gotchas.

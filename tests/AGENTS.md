@@ -4,6 +4,7 @@
 doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every preset (Windows tests run under Wine in the container).
 
 ## Rules
+- A test is small, contained and explicit, and tests one behaviour. Never delete, skip or loosen one to go green (fix-bug skill).
 - Layout mirrors `src/`: `tests/unit/<area>/`, one test executable per area (`<area>_tests`) to keep link times down.
 - Test code passes the same lint as `src/` (no test exemptions): put `TEST_CASE`s inside an anonymous namespace and name test values as `constexpr` constants.
 - Each executable has exactly one `main.cpp` defining `DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN` and `DOCTEST_CONFIG_IMPLEMENT` (the precompiled `unit/pch.hpp` already included doctest, so the first no longer implies the second); test files include `<doctest/doctest.h>` only.
