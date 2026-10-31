@@ -38,6 +38,14 @@ rule("lto")
 rule_end()
 add_rules("lto")
 
+-- Unity builds merge sources into batches: faster full builds, but sources then share one
+-- translation unit (names in anonymous namespaces can clash). Off until the code base is large
+-- enough to gain from it; enabling them means flipping this default.
+option("unity_build", {default = false, description = "Merge sources into unity batches (c++.unity_build)"})
+if has_config("unity_build") then
+    add_rules("c++.unity_build", {batchsize = 8})
+end
+
 -- Release builds keep debug info, split off by XMake into a .sym, .dSYM or .pdb next to the
 -- stripped binary, so player crash reports can be symbolised. Only the binary ships.
 if is_mode("release") then

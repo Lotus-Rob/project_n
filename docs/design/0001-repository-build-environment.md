@@ -374,6 +374,7 @@ Each rule below fixed a concrete failure or host leak (most found in S4) or reco
 23. **Coverage:** XMake's `mode.coverage` (GCC's `--coverage`) on `linux-gcc`, run by the tests, reported by `gcovr` for `src/` only into `build/coverage/`. Counts from earlier runs are deleted first.
 24. **Fuzzing:** libFuzzer targets in `tests/fuzz/`, built only for `linux-clang` with AddressSanitizer (fuzzing needs a sanitizer to catch memory errors, and sanitizer builds already link the C++ runtime dynamically, rule 17). There each target replays its committed seeds as a test, so `check --sanitizers` keeps them building and passing. `fuzz` writes new inputs and crash files to `build/fuzz/<target>/`.
 25. **API reference:** Doxygen from `docs/Doxyfile` into `build/docs/`. Broken doc comments fail it; undocumented code doesn't yet. When `src/` splits into layers (platform, engine, sdk, game), `INPUT` lists each one and each gets a `\defgroup`.
+26. **Unity builds are configured but off:** option `unity_build` (default false) adds XMake's `c++.unity_build` rule with batches of 8 to every target. Turn it on once full builds are slow enough to gain; it requires names in anonymous namespaces to be unique across files.
 
 ---
 

@@ -10,6 +10,7 @@ All game and engine code. Its structure comes from the architecture design doc (
 - `pch.hpp` is the game's precompiled header: add headers that are slow to parse and used widely. Sources still include what they use (lint, and builds without the PCH, rely on it).
 - Profiling: Tracy's macros from `<tracy/Tracy.hpp>` (`ZoneScoped`, `FrameMark`). They collect only in `releasedbg` and compile to nothing elsewhere: `./dev run --mode releasedbg`, then `./dev profiler`.
 - Doc comments are Doxygen (`///`); `pixi run project_n docs` fails on broken ones.
+- Unity builds are configured but off (`unity_build` in xmake.lua). They put several sources in one translation unit, so keep names in anonymous namespaces unique across files.
 - Third-party code comes from xmake-repo packages with exact versions; nothing is vendored into `src/`.
 - New subsystems add their commit scope to `SCOPES` in tools/project_n.py.
 
