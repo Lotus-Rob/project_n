@@ -37,10 +37,10 @@ jobs:
         with:
           fetch-depth: 0
       - name: Commit range
-        # The pushed commits: commit-check's range, and on main what fmt and lint diff against
-        # (PROJECT_N_COMMIT_RANGE; on a branch they diff against main by themselves).
+        # commit-check's range, and what fmt and lint diff against (PROJECT_N_COMMIT_RANGE): on main the
+        # pushed commits, on a branch all of them since main, which survives a force push that drops `before`.
         run: |
-          if [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ] && [ -n "${{ github.event.before }}" ]; then
+          if [ "${{ github.ref }}" = refs/heads/main ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ] && [ -n "${{ github.event.before }}" ]; then
             range="${{ github.event.before }}..HEAD"
           else
             range="origin/main..HEAD"
