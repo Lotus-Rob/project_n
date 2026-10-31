@@ -344,9 +344,13 @@ def cmd_run(args):
     run(["xmake", "run", *(["-d"] if args.debug else []), APP], env=xmake_env(bdir))
 
 
+def is_source(path):
+    return path.startswith(("src/", "tests/")) and path.endswith((".cpp", ".hpp"))
+
+
 def source_files():
     # Forward slashes on every host, as git prints them: fmt and lint match these against git's paths.
-    return sorted(p.relative_to(ROOT).as_posix() for d in ("src", "tests") for p in (ROOT / d).rglob("*") if p.suffix in (".cpp", ".hpp"))
+    return sorted(f for f in (p.relative_to(ROOT).as_posix() for d in ("src", "tests") for p in (ROOT / d).rglob("*")) if is_source(f))
 
 
 # Findings are fixed properly first; a suppression is the last resort (root AGENTS.md). One that
@@ -459,7 +463,31 @@ def lint_units(sources):
     return [f for f in source_files() if f.endswith(".cpp") and (header_changed or f in sources)]
 
 
+def hooks_enabled():
+    return capture(["git", "config", "core.hooksPath"], check=False).strip() == ".githooks"
+
+
+def check_staged_format():
+    """The pre-commit hook: the staged content of each staged source, as it will be committed. A staged
+    .clang-format (at any depth) or pixi.lock (the clang-format version) checks every source."""
+    staged = capture(["git", "diff", "--cached", "--name-only", "--no-renames"]).splitlines()
+    indexed = capture(["git", "ls-files"]).splitlines()  # the index, not the disk: a staged file may be gone
+    every = any(Path(f).name == ".clang-format" or f == "pixi.lock" for f in staged)
+    files = sorted(f for f in (indexed if every else set(staged) & set(indexed)) if is_source(f))
+    bad = []
+    for f in files:
+        r = subprocess.run(resolve(["clang-format", "--dry-run", "-Werror", f"--assume-filename={f}"]), cwd=ROOT, check=False,
+                           input=capture(["git", "show", f":{f}"]), capture_output=True, encoding="utf-8")
+        if r.returncode:
+            print(r.stderr, end="")
+            bad.append(f)
+    if bad:
+        raise Fail("not formatted: " + ", ".join(bad) + "\nrun `./dev fmt` (Windows: `dev fmt`), stage the result and commit again")
+
+
 def cmd_fmt(args):
+    if args.staged:
+        return check_staged_format()
     files, _ = scoped_sources(args)
     if not files:
         print("fmt: no changed sources (--all covers every file)")
@@ -498,7 +526,7 @@ def cmd_lint(args):
         run(tidy + units)
     finally:
         if args.fix:  # clang-tidy's fixes don't follow .clang-format
-            cmd_fmt(argparse.Namespace(check=False, all=args.all, range=args.range))
+            cmd_fmt(argparse.Namespace(check=False, staged=False, all=args.all, range=args.range))
 
 
 def commit_range():
@@ -514,12 +542,16 @@ def commit_range():
 
 
 def cmd_check(args):
-    """The merge gate: commit messages, formatting, lint, then build and test every preset."""
+    """The merge gate: commit messages, formatting and lint of the diff, then build and test every
+    preset. The pre-commit hook checks formatting at each commit, so the hooks must be on; this
+    format check covers what it misses (rebases and cherry-picks don't run it)."""
+    if not hooks_enabled():
+        raise Fail("enable the commit hooks, which check messages and formatting: git config core.hooksPath .githooks")
     cmd_selftest(args)
     rng = commit_range()
     if rng and cmd_commit_check(argparse.Namespace(range=rng, message_file=None)):
         raise Fail("commit-check failed")
-    cmd_fmt(argparse.Namespace(check=True, all=False, range=None))  # the diff only: `fmt --all`, `lint --all` for everything
+    cmd_fmt(argparse.Namespace(check=True, staged=False, all=False, range=None))
     cmd_lint(argparse.Namespace(container=args.container, fix=False, all=False, range=None))
     skipped = [p for p in PRESETS if not buildable_here(p) or (args.container and not PRESETS[p]["image"])]
     for preset in [p for p in PRESETS if p not in skipped]:
@@ -781,8 +813,7 @@ def cmd_doctor(args):
     pinned = re.search(r'set_xmakever\("([^"]+)"\)', (ROOT / "xmake.lua").read_text(encoding="utf-8"))[1]
     xmake = capture(["xmake", "--version"], check=False) if shutil.which("xmake") else ""
     report(pinned in xmake, f"xmake {pinned} from the Pixi env", "pixi install")
-    hooks = capture(["git", "config", "core.hooksPath"], check=False).strip()
-    report(hooks == ".githooks", "commit-msg hook enabled", "git config core.hooksPath .githooks")
+    report(hooks_enabled(), "commit hooks enabled (message and format checks)", "git config core.hooksPath .githooks")
     podman = shutil.which("podman")
     report(bool(podman), "podman (artefacts, container checks" + (", windows-msvc)" if HOST == "linux" else ")"),
            INSTALL_HINTS["podman"][HOST])
@@ -894,7 +925,7 @@ def make_parser():
     p = add("run", cmd_run, "build and launch the game natively", preset="native", mode=True)
     p.add_argument("--debug", action="store_true", help="launch under the debugger (xmake run -d)")
     add_sanitizer(p)
-    p = add("check", cmd_check, "the merge gate: commits, fmt, lint, build and test every preset", container=True)
+    p = add("check", cmd_check, "the merge gate: commits, format and lint of the diff, build and test every preset", container=True)
     p.add_argument("--sanitizers", action="store_true", help="also test every preset under each supported sanitizer")
     add("artifact", cmd_artifact, "clean-room release build in the preset's container, into dist/", preset="required")
     p = add("release", cmd_release, "bump the version with git-cliff, write CHANGELOG.md, commit and tag")
@@ -912,6 +943,7 @@ def make_parser():
     add("selftest", cmd_selftest, "run project_n.py's own unit tests (tools/test_project_n.py)")
     p = add("fmt", cmd_fmt, "format changed sources with the pinned clang-format (--all: every source)")
     p.add_argument("--check", action="store_true", help="fail instead of rewriting files")
+    p.add_argument("--staged", action="store_true", help="check what is staged, as committed (the pre-commit hook)")
     add_scope(p)
     p = add("lint", cmd_lint, "run the pinned clang-tidy over changed sources (--all: every source); any finding fails",
             container=True)

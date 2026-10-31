@@ -105,7 +105,7 @@ project_n/
 ├── xmake-requires.lock       # committed package lock
 ├── xmake/repo/               # local xmake package overrides (§7.1 rule 7)
 ├── .clang-format  .clang-tidy  .clangd  .editorconfig  .gitattributes  .gitignore
-├── .githooks/commit-msg      # POSIX sh: `pixi run project_n commit-check "$1"`
+├── .githooks/               # POSIX sh: commit-msg (`commit-check`), pre-commit (`fmt --staged`)
 ├── .github/                  # CI (§12): workflows/ci.yml, dependabot.yml, actionlint.yaml, AGENTS.md
 ├── .claude/CLAUDE.md         # "@../AGENTS.md": Claude Code reads it here, keeping the root shorter
 ├── .claude/agents/           # subagents with a fresh context: branch-reviewer (pre-merge review), log-triage, bug-reproducer
@@ -165,7 +165,7 @@ Everything else comes from `pixi install`: compilers, XMake, debuggers, clang to
 **Setup:**
 
 1. `pixi install` creates `.pixi/envs/default` from `pixi.lock`.
-2. `git config core.hooksPath .githooks` enables the commit hook. `doctor` reminds you if it's missing.
+2. `git config core.hooksPath .githooks` enables the commit hooks (message and format checks). `doctor` reminds you if it's missing.
 
 **Daily loop:**
 
@@ -394,14 +394,14 @@ Constraints:
 | `build --preset P [--mode M]` | Native build and refreshes `build/compile_commands.json`. |
 | `test --preset P [--mode M] [--target T] [-- <doctest args>]` | Runs `xmake test`. With `--target`, runs that test executable and forwards the doctest arguments, for example `--test-case=*physics*`. |
 | `run --preset P [--mode M] [--debug]` | Builds and launches the game natively. `--debug` launches it under gdb or lldb (`xmake run -d`). |
-| `check [--container]` | The merge gate: `selftest`, `commit-check` on unpushed commits, `fmt --check`, `lint`, then build and test for every preset. It runs natively where possible, and `--container` runs everything in the images. |
+| `check [--container]` | The merge gate: `selftest`, `commit-check` on unpushed commits, `fmt --check` and `lint` of the diff, then build and test for every preset. The pre-commit hook checks formatting at each commit, which also reaches people who never run `check`, so `check` refuses to run without the hooks enabled. `check`'s own format check covers commits the hook never sees: git runs no pre-commit hook for `rebase --continue` or `cherry-pick`. It runs natively where possible, and `--container` runs everything in the images. |
 | `artifact --preset P` | Clean-room release build in the preset's container (committed sources only, empty build directory), plus the Linux dependency check (§5.2). Writes `dist/<preset>/` and `manifest.json`. |
 | `release [--dry-run]` | Requires a clean `main` that is up to date (it fetches, then refuses if `main` is behind). Runs `git cliff --bumped-version`, writes `set_version()`, regenerates `CHANGELOG.md`, commits `chore(release): vX.Y.Z` and creates the annotated tag `vX.Y.Z`. Never pushes. |
 | `selftest` | Runs `tools/test_project_n.py`; first step of `check`. |
 | `coverage` / `fuzz <target> [--time S]` | Test coverage of `src/` (rule 23) / one libFuzzer target (rule 24). Both run in the Linux image on other hosts. |
 | `docs` / `profiler` | The Doxygen API reference in `build/docs/` (rule 25) / the Tracy viewer from the `profiler` environment (rule 22). |
 | `commit-check <msg-file> \| --range A..B` | Validates commit messages (§11). |
-| `fmt [--check]` / `lint [--fix]` (`--all`, `--range R`) | Runs clang-format and clang-tidy from the Pixi environment over the diff: on a branch every commit since it left `main`, pushed or not (a pushed commit isn't a checked one), on `main` the unpushed commits, plus uncommitted and new files. CI gets the same scope from the same code: a clone without a local `main` diffs against `origin/main`, and on `main` CI passes its pushed range in `PROJECT_N_COMMIT_RANGE`. A changed header lints every `.cpp`, since header findings surface through the files that include it, and a change that can alter any file's result widens both to every file: `.clang-format`, `.clang-tidy` or `.clangd` at any depth, any `xmake.lua`, `xmake/repo/`, `pixi.lock`, `docs/Doxyfile`, or `project_n.py` itself (it holds the suppression rules). `--all` covers every file on request. `lint` also checks the changed `src/` headers' includes (rule 27) and runs Doxygen over them (rule 25), ruff when `tools/` changed and actionlint when the workflow changed. `lint` always passes `--warnings-as-errors=*`, so any finding fails `check`. `--fix` applies clang-tidy's fixes and reformats; whatever remains is fixed by hand before a branch is finished (root AGENTS.md). |
+| `fmt [--check \| --staged]` / `lint [--fix]` (`--all`, `--range R`) | Runs clang-format and clang-tidy from the Pixi environment over the diff: on a branch every commit since it left `main`, pushed or not (a pushed commit isn't a checked one), on `main` the unpushed commits, plus uncommitted and new files. CI gets the same scope from the same code: a clone without a local `main` diffs against `origin/main`, and on `main` CI passes its pushed range in `PROJECT_N_COMMIT_RANGE`. A changed header lints every `.cpp`, since header findings surface through the files that include it, and a change that can alter any file's result widens both to every file: `.clang-format`, `.clang-tidy` or `.clangd` at any depth, any `xmake.lua`, `xmake/repo/`, `pixi.lock`, `docs/Doxyfile`, or `project_n.py` itself (it holds the suppression rules). `--all` covers every file on request. `lint` also checks the changed `src/` headers' includes (rule 27) and runs Doxygen over them (rule 25), ruff when `tools/` changed and actionlint when the workflow changed. `lint` always passes `--warnings-as-errors=*`, so any finding fails `check`. `--fix` applies clang-tidy's fixes and reformats; whatever remains is fixed by hand before a branch is finished (root AGENTS.md). `fmt --staged` is the pre-commit hook: it checks the staged content of each staged source, as committed (a staged `.clang-format` at any depth, or `pixi.lock`, checks every source). |
 | `image [--preset P]` / `shell --preset P` / `clean [--preset P] [--packages]` | Builds an image if missing / opens a debugging shell in a container / removes build directories (`--packages` also removes XMake package directories for locks other than the current one). |
 
 Behaviour:

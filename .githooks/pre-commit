@@ -1,0 +1,4 @@
+#!/bin/sh
+# Enable once per clone: git config core.hooksPath .githooks
+# Formatting of what is being committed; lint stays in `check` and CI (too slow for every commit).
+exec pixi run --quiet project_n fmt --staged

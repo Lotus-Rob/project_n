@@ -19,7 +19,7 @@ Install each tool when you first need it. Everything else (compilers, XMake, deb
 
 ```sh
 pixi install                            # create .pixi/ from pixi.lock
-git config core.hooksPath .githooks     # enable the commit-message check
+git config core.hooksPath .githooks     # enable the commit hooks: message and format checks
 pixi run project_n doctor               # check everything; prints fixes, installs nothing
 ```
 

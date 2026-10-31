@@ -226,6 +226,60 @@ class ScopeTest(unittest.TestCase):
             self.assertEqual(project_n.lint_units(["src/a.cpp"]), ["src/a.cpp"])
 
 
+class StagedFormatTest(unittest.TestCase):
+    CLANG_FORMAT = (project_n.ROOT / ".clang-format").read_text()
+
+    def check(self):
+        with contextlib.redirect_stdout(io.StringIO()):  # clang-format's report of the expected failure
+            project_n.check_staged_format()
+
+    def test_a_badly_formatted_staged_file_fails(self):
+        with temp_repo({".clang-format": self.CLANG_FORMAT, "src/a.cpp": "int x = 0;\n"}) as root:
+            (root / "src" / "a.cpp").write_text("int   x=0;\n")
+            git(root, "add", "src/a.cpp")
+            with self.assertRaises(project_n.Fail):
+                self.check()
+
+    def test_a_formatted_staged_file_passes(self):
+        with temp_repo({".clang-format": self.CLANG_FORMAT, "src/a.cpp": "int x = 0;\n"}) as root:
+            (root / "src" / "a.cpp").write_text("int y = 0;\n")
+            git(root, "add", "src/a.cpp")
+            self.check()
+
+    def test_a_staged_nested_clang_format_checks_every_source(self):
+        with temp_repo({".clang-format": self.CLANG_FORMAT, "src/core/a.cpp": "int   x=0;\n"}) as root:
+            (root / "src" / "core" / ".clang-format").write_text("BasedOnStyle: InheritParentConfig\n")
+            git(root, "add", "src/core/.clang-format")
+            with self.assertRaises(project_n.Fail):  # a.cpp isn't staged, but its format rules changed
+                self.check()
+
+    def test_a_staged_file_deleted_from_disk_is_still_checked(self):
+        with temp_repo({".clang-format": self.CLANG_FORMAT, "src/a.cpp": "int x = 0;\n"}) as root:
+            (root / "src" / "new.cpp").write_text("int   y=0;\n")
+            git(root, "add", "src/new.cpp")
+            (root / "src" / "new.cpp").unlink()  # only the index has it now, and it would be committed
+            with self.assertRaises(project_n.Fail):
+                self.check()
+
+    def test_the_staged_content_is_checked_not_the_working_tree(self):
+        with temp_repo({".clang-format": self.CLANG_FORMAT, "src/a.cpp": "int x = 0;\n"}) as root:
+            (root / "src" / "a.cpp").write_text("int   x=0;\n")
+            git(root, "add", "src/a.cpp")
+            (root / "src" / "a.cpp").write_text("int x = 0;\n")  # fixed, but not staged
+            with self.assertRaises(project_n.Fail):
+                self.check()
+
+
+class CheckTest(unittest.TestCase):
+    def test_check_refuses_without_the_hooks(self):
+        ran = []
+        with mock.patch.object(project_n, "hooks_enabled", lambda: False), \
+             mock.patch.object(project_n, "cmd_selftest", lambda args: ran.append("selftest")), \
+             self.assertRaises(project_n.Fail):
+            project_n.cmd_check(project_n.argparse.Namespace(container=False, sanitizers=False))
+        self.assertEqual(ran, [])  # refused before running anything
+
+
 class DependencyTest(unittest.TestCase):
     def test_a_third_party_include_in_a_header_is_reported(self):
         with temp_repo({"src/window.hpp": "#pragma once\n#include <SDL3/SDL.h>\n"}):

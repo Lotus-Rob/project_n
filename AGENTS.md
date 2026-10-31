@@ -13,14 +13,14 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 ## Commands
 - `./dev <command>` (Windows `dev`) is shorthand for `pixi run project_n <command>`; either works from anywhere.
 - `pixi run project_n doctor [--docs]` · `build|test|run [--preset linux-gcc|linux-clang|windows-msvc|macos-clang] [--mode debug|release|releasedbg]` (releasedbg: profiling with Tracy; default preset: the host's native one, `NATIVE_PRESET`; `build --preset all` builds every preset and summarises)
-- `pixi run project_n check`: the merge gate (self-tests, commits, fmt and lint of the diff, build + test every preset). A change is done when it passes.
+- `pixi run project_n check`: the merge gate (self-tests, commits, format and lint of the diff, build + test every preset). A change is done when it passes.
 - `pixi run project_n coverage` (HTML in build/coverage/) · `fuzz <target> [--time S]` · `docs` (Doxygen, build/docs/) · `profiler` (Tracy viewer for a `run --mode releasedbg` build)
 - `pixi run project_n check --sanitizers`: also every supported sanitizer; on request only, not part of the gate.
 - `pixi run project_n check --container`: the same in clean containers. Run it for any build, environment or dependency change: only a clean container catches host leaks.
 
 ## Finishing a branch
 Work happens on a branch; it merges into main only after step 3.
-1. `pixi run project_n fmt`, then `pixi run project_n lint --fix` (both cover the diff; `--all` for every file); fix every remaining finding by hand in the code.
+1. `pixi run project_n lint --fix` (it covers the diff; `--all` for every file); fix every remaining finding by hand in the code. The pre-commit hook checks formatting at every commit: when it rejects one, `pixi run project_n fmt`, stage again and commit.
 2. `pixi run project_n check` (plus `--container` for build, environment or dependency changes) until it passes.
 3. Review: a fresh `branch-reviewer` subagent reviews the branch. Fix every finding (none is non-blocking), commit, and review again with a new subagent until it ends `REVIEW: CLEAN`, at most 5 rounds; after round 5's fixes the user decides on the merge → review-branch skill
 

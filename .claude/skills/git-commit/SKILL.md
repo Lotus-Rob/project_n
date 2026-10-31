@@ -5,7 +5,7 @@ description: Write commit messages and shape commits for project_n. Use whenever
 
 # Committing in project_n
 
-Owned by: root AGENTS.md. Enforced by `.githooks/commit-msg` and `pixi run project_n commit-check` (CI checks every pushed commit).
+Owned by: root AGENTS.md. Enforced by `.githooks/commit-msg` and `pixi run project_n commit-check` (CI checks every pushed commit). `.githooks/pre-commit` checks the formatting of what is staged.
 
 ## Format
 
@@ -67,5 +67,7 @@ docs(agents): add gotcha for wine prefix flushing
 ## When the hook rejects a message
 
 Read its message (it names the rule), fix the header, and commit again. Don't use `--no-verify`: CI runs the same check.
+
+When the pre-commit hook rejects formatting, run `pixi run project_n fmt`, stage the files it changed, and commit again.
 
 ## Gotchas
