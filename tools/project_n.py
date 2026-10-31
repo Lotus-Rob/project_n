@@ -383,7 +383,7 @@ def widens_scope(path):
     """A change here can change any file's format or lint result: the tools' config (at any depth),
     the build (flags, packages), the tool versions, or lint's own rules in this file."""
     return (Path(path).name in (".clang-format", ".clang-tidy", ".clangd", "xmake.lua")
-            or path in ("pixi.lock", "tools/project_n.py") or path.startswith("xmake/repo/"))
+            or path in ("pixi.lock", "tools/project_n.py", "docs/Doxyfile") or path.startswith("xmake/repo/"))
 
 
 def scope_range():
@@ -414,6 +414,23 @@ def scoped_sources(args):
     return [f for f in source_files() if f in changed], changed
 
 
+def check_api_docs(sources):
+    """Doxygen (docs/Doxyfile) over the src/ headers among these: an undocumented public class,
+    function or member, or a broken doc comment, fails."""
+    headers = [f for f in sources if f.startswith("src/") and f.endswith(".hpp")]
+    if not headers:
+        return
+    # Doxygen reports undocumented free functions, variables and enums only in a documented file.
+    missing = [h for h in headers if not re.search(r"^\s*///\s*[@\\]file\b", (ROOT / h).read_text(encoding="utf-8"), re.MULTILINE)]
+    if missing:
+        raise Fail("every src/ header needs a `/// @file` comment saying what it provides:\n" + "\n".join(missing))
+    out = ROOT / "build" / "doxygen-lint"
+    out.mkdir(parents=True, exist_ok=True)  # Doxygen creates only the last directory of the path
+    config = (ROOT / "docs" / "Doxyfile").read_text(encoding="utf-8")
+    config += f'\nOUTPUT_DIRECTORY = "{out.as_posix()}"\nINPUT = {" ".join(f'"{h}"' for h in headers)}\n'
+    run(["doxygen", "-"], input=config, text=True)
+
+
 def lint_units(sources):
     """The .cpp files clang-tidy runs on: a header's findings surface through the files that include
     it, so a changed header lints them all."""
@@ -438,6 +455,7 @@ def cmd_lint(args):
     found = unexplained_suppressions(sources)
     if found:
         raise Fail("fix findings properly; a suppression is the last resort and must be narrow and explained:\n" + "\n".join(found))
+    check_api_docs(sources)
     if changed is None or any(f.startswith("tools/") and f.endswith(".py") for f in changed):
         run(["ruff", "check", "tools"])
     if changed is None or any(f.startswith(".github/") for f in changed):

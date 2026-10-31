@@ -1,6 +1,7 @@
 """Self-checks for project_n.py. Run: pixi run python -m unittest discover -s tools"""
 
 import contextlib
+import functools
 import io
 import subprocess
 import tempfile
@@ -208,7 +209,7 @@ class ScopeTest(unittest.TestCase):
 
     def test_lint_config_build_and_rules_widen_the_scope(self):
         for path in (".clang-tidy", "src/core/.clang-tidy", ".clang-format", ".clangd", "xmake.lua", "tests/xmake.lua",
-                     "xmake/repo/packages/t/tracy-libdl/xmake.lua", "pixi.lock", "tools/project_n.py"):
+                     "xmake/repo/packages/t/tracy-libdl/xmake.lua", "pixi.lock", "tools/project_n.py", "docs/Doxyfile"):
             self.assertTrue(project_n.widens_scope(path), path)
         self.assertFalse(project_n.widens_scope("src/main.cpp"))
 
@@ -223,6 +224,34 @@ class ScopeTest(unittest.TestCase):
     def test_a_changed_source_file_lints_only_itself(self):
         with temp_repo({"src/a.cpp": "a", "src/b.cpp": "b"}):
             self.assertEqual(project_n.lint_units(["src/a.cpp"]), ["src/a.cpp"])
+
+
+class ApiDocsTest(unittest.TestCase):
+    DOXYFILE = (project_n.ROOT / "docs" / "Doxyfile").read_text()
+
+    def lint_docs(self, header):
+        with temp_repo({"docs/Doxyfile": self.DOXYFILE, "src/clock.hpp": header}):
+            quiet = functools.partial(subprocess.run, capture_output=True)  # Doxygen's error is the expected result
+            with mock.patch.object(project_n.subprocess, "run", quiet), contextlib.redirect_stdout(io.StringIO()):
+                project_n.check_api_docs(["src/clock.hpp"])
+
+    FILE_DOC = "#pragma once\n/// @file\n/// Clocks.\n\n"  # a blank line ends the file comment
+
+    def test_a_header_without_a_file_comment_fails(self):
+        with self.assertRaises(project_n.Fail):
+            self.lint_docs("#pragma once\n/// Starts counting from zero again.\nvoid Reset();\n")
+
+    def test_an_undocumented_public_member_fails(self):
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.lint_docs(self.FILE_DOC + "/// A clock.\nclass Clock {\npublic:\n    void Reset();\n};\n")
+
+    def test_an_undocumented_free_function_fails(self):
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.lint_docs(self.FILE_DOC + "namespace game {\nint Add(int a, int b);\n}\n")
+
+    def test_a_documented_header_passes(self):
+        self.lint_docs(self.FILE_DOC + "/// A clock.\nclass Clock {\npublic:\n    /// Starts counting from zero again.\n"
+                       "    void Reset();\n\nprivate:\n    int ticks_ = 0;\n};\n")
 
 
 class CoverageTest(unittest.TestCase):
