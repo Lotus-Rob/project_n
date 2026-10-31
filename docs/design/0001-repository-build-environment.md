@@ -5,7 +5,7 @@
 | Status | **Accepted**: phases 1–4 implemented, review fixes applied; S3 (Podman on Windows) and the cross-machine Windows S2 check open |
 | Author | Rob G |
 | Created | 2026-10-29 |
-| Revised | 2026-10-31, releases: a `vX.Y.Z` tag makes CI draft the GitHub release with every preset's archives, the macOS app included, unsigned until O6 (§12). Earlier the same day, logging: Quill and Tracy each behind one facade header, six log levels to the console and a rotating file in the per-user data folder (§7.1 rule 28); standard headers only through the precompiled headers (rule 19); sized number types (rule 29); `lint` ignores only listed false positives in library code (rule 16). Earlier the same day, development tooling: Tracy profiling in `releasedbg`, coverage, libFuzzer, Doxygen with enforced header docs, unity builds configured but off, and no dependency in a header (§7.1 rules 22–27); `fmt` and `lint` cover the diff, and a pre-commit hook checks formatting (§8); agent briefs as a kind of agent knowledge (D10, §10.1); every branch reviewed by a fresh subagent before merge. Earlier, 2026-10-30, review: LTO, PCH, split debug info and hardening (§7.1 rules 18–21); clean-room `artifact` with release zips; `selftest`, ruff and actionlint in the gate; Linux CI jobs on `main`; AGPL-3.0-or-later with third-party notices; large assets deferred (O5). Earlier, phase 4: GitHub Actions CI on Linux, Windows and macOS runners (§12); `macos-clang` implemented (§5.7, S7 passed); S5 passed in CI. Earlier the same day: macOS planned as a native `macos-clang` preset (D13). 2026-10-29: development runs natively in a portable Pixi environment; containers only produce artefacts; headers only (no C++ modules); Conventional Commits + git-cliff + SemVer; open questions Q1–Q10 resolved (Appendix B); knowledge split across AGENTS.md, skills and design docs (§10); Steam Runtime dropped, so Linux artefacts are built in an Ubuntu + Pixi image with the glibc baseline set by the conda-forge sysroot |
+| Revised | 2026-10-31, `main` only through pull requests with green CI, by ruleset (§11.2, §12). Earlier the same day, releases: a `vX.Y.Z` tag makes CI draft the GitHub release with every preset's archives, the macOS app included, unsigned until O6 (§12). Earlier the same day, logging: Quill and Tracy each behind one facade header, six log levels to the console and a rotating file in the per-user data folder (§7.1 rule 28); standard headers only through the precompiled headers (rule 19); sized number types (rule 29); `lint` ignores only listed false positives in library code (rule 16). Earlier the same day, development tooling: Tracy profiling in `releasedbg`, coverage, libFuzzer, Doxygen with enforced header docs, unity builds configured but off, and no dependency in a header (§7.1 rules 22–27); `fmt` and `lint` cover the diff, and a pre-commit hook checks formatting (§8); agent briefs as a kind of agent knowledge (D10, §10.1); every branch reviewed by a fresh subagent before merge. Earlier, 2026-10-30, review: LTO, PCH, split debug info and hardening (§7.1 rules 18–21); clean-room `artifact` with release zips; `selftest`, ruff and actionlint in the gate; Linux CI jobs on `main`; AGPL-3.0-or-later with third-party notices; large assets deferred (O5). Earlier, phase 4: GitHub Actions CI on Linux, Windows and macOS runners (§12); `macos-clang` implemented (§5.7, S7 passed); S5 passed in CI. Earlier the same day: macOS planned as a native `macos-clang` preset (D13). 2026-10-29: development runs natively in a portable Pixi environment; containers only produce artefacts; headers only (no C++ modules); Conventional Commits + git-cliff + SemVer; open questions Q1–Q10 resolved (Appendix B); knowledge split across AGENTS.md, skills and design docs (§10); Steam Runtime dropped, so Linux artefacts are built in an Ubuntu + Pixi image with the glibc baseline set by the conda-forge sysroot |
 | Scope | Repository layout, development environment, artefact containers, toolchain pinning, testing, build tooling, commits and versioning, agent knowledge (AGENTS.md and skills) |
 
 ---
@@ -589,9 +589,9 @@ This section is the specification for the `git-commit` and `release` skills. Onc
 ### 11.2 History
 
 - Linear history.
-- Feature branches rebase onto `main` and merge fast-forward, or by rebase-merge on GitHub.
+- Feature branches rebase onto `main` and merge only by GitHub's rebase merge of a pull request.
 - Use `git commit --fixup` plus `git rebase --autosquash` to tidy a branch before merging.
-- Once GitHub hosts the repository, branch protection on `main` requires linear history and allows only rebase merging.
+- `main` takes changes only through pull requests with green CI, merged by rebase: a ruleset (`.github/rulesets/main.json`, the user's call, 2026-10-31) requires all six CI checks on a branch up to date with `main`, linear history, and no force push or deletion, with no bypass, the admin included.
 
 ### 11.3 Versioning
 
@@ -623,7 +623,7 @@ chore(release): v0.2.0
 
 ## 12. CI
 
-GitHub Actions (`.github/workflows/ci.yml`, since phase 4) only runs `project_n` commands, split into parallel jobs (`check` stays the local gate). The repository is private on GitHub Free, so minutes are metered (Windows 2x, macOS 10x): every push runs the Linux jobs (on `main` too, since GitHub Free doesn't enforce that a branch was up to date before merging), and pushes to `main`, tags and manual runs (`workflow_dispatch`) add the Windows and macOS jobs. Dependabot updates the SHA-pinned actions weekly.
+GitHub Actions (`.github/workflows/ci.yml`, since phase 4) only runs `project_n` commands, split into parallel jobs (`check` stays the local gate). Every push runs every job (the user's call, 2026-10-31; the public repository's minutes are free): `main`'s ruleset requires all six on each pull request, and GitHub counts a skipped job as passed, so no required job may be conditional. Pushes to `main` run them again: the rebase merge writes new commits. Dependabot updates the SHA-pinned actions weekly.
 
 | Job | Runner | Runs |
 |---|---|---|
@@ -636,8 +636,8 @@ GitHub Actions (`.github/workflows/ci.yml`, since phase 4) only runs `project_n`
 - **Caches**, in two layers:
   - Setup, saved as soon as its step finishes: the Pixi environments (setup-pixi), the `linux` and `msvc` images in GHCR by content tag (`PROJECT_N_REGISTRY`), the MSVC install for msvc-wine (after `project_n image`), the MSVC 14.50 toolset on Windows, and the macOS XMake bundle.
   - XMake packages per job, saved at job end even after a failure.
-- **Licence:** no image contains Microsoft's files. They do sit in Actions caches (the MSVC install and the Windows toolset); fork PRs of a public repository can read those, which was accepted on the basis that the repository goes private once setup is done.
-- **Branch protection** on `main` is configured for linear history (§11.2) and the Linux jobs, but GitHub Free doesn't enforce it on private repositories; the local `check` and CI results are the gate. Upgrading to GitHub Pro would enforce it.
+- **Licence:** no image contains Microsoft's files. They do sit in Actions caches (the MSVC install and the Windows toolset). The repository is public again (2026-10-31), so this relies on `ci.yml` having no `pull_request` trigger: a fork's pull request never runs with this repository's caches. Adding such a trigger needs those caches kept out of it first.
+- **Branch protection:** the ruleset in `.github/rulesets/main.json` (§11.2). All six jobs are required checks, and every push runs them. Pull requests from forks can't go green (no `pull_request` trigger, see Licence), so only branches pushed to this repository can merge; Dependabot's are.
 
 ---
 

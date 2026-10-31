@@ -49,7 +49,7 @@ Mark with `!` after the type/scope and explain in a `BREAKING CHANGE:` footer. "
 
 - One logical change per commit. AGENTS.md and skill updates go in the same commit as the change that makes them necessary.
 - Split a mixed working tree with `git add -p` or by path; commit the enabling change (e.g. a new dependency) before the change that uses it.
-- History is linear: never merge. Tidy a branch with `git commit --fixup=<sha>`, then squash non-interactively: `GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash main`.
+- History is linear: never merge. Branches reach main by pull request, merged by rebase (GitHub's only allowed method). Tidy a branch with `git commit --fixup=<sha>`, then squash non-interactively: `GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash main`.
 - `fixup!`/`squash!` commits pass the hook locally but fail `check`: squash them before merging.
 
 ## Examples
