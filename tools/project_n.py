@@ -379,7 +379,7 @@ def unexplained_suppressions(files):
     for d in ("src", "tests"):
         for p in (ROOT / d).rglob(".clang-tidy"):
             if not any(line.lstrip().startswith("#") for line in p.read_text(encoding="utf-8").splitlines()):
-                found.append(f"{p.relative_to(ROOT)}: explain in a # comment why these checks can't be met")
+                found.append(f"{p.relative_to(ROOT).as_posix()}: explain in a # comment why these checks can't be met")
     return found
 
 

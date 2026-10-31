@@ -479,7 +479,9 @@ class HelpersTest(unittest.TestCase):
         self.assertRegex(project_n.msvc_dir().name, r"^msvc-[0-9a-f]{12}$")
 
     def test_container_command_mounts_repo_and_cache(self):
-        cmd = project_n.container_cmd("img", ["pixi", "run", "project_n", "build"])
+        with mock.patch.dict(project_n.os.environ):
+            project_n.os.environ.pop("PROJECT_N_XMAKE_CACHE", None)  # CI sets it
+            cmd = project_n.container_cmd("img", ["pixi", "run", "project_n", "build"])
         self.assertIn(f"{project_n.ROOT}:/src:Z", cmd)
         self.assertIn(f"{project_n.CACHE_VOLUME}:/home/dev/.xmake", cmd)
         self.assertEqual(cmd[-5:], ["img", "pixi", "run", "project_n", "build"])
