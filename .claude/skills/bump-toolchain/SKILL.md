@@ -14,7 +14,7 @@ Owned by: containers/AGENTS.md. Rationale: docs/design/0001 §6.1 (pinning polic
 | Any Pixi package | `==X.Y.Z` in `pixi.toml`, then `pixi.lock` |
 | LLVM | Every LLVM package in `pixi.toml` at one version: `clang-format`, `clang-tools`, `clangxx_linux-64` (major.minor only), `lld`, `libcxx`, `libcxx-devel`, `lldb`. lldb's libc++ formatters only match their own release, so wait until conda-forge ships all of them |
 | GCC | `gxx_linux-64` in `pixi.toml`; the libstdc++ pretty-printers follow automatically (tools/debug/gdbinit) |
-| glibc baseline | `sysroot_linux-64`. Changing it changes which distros can run the game: ask the user first and update design doc §5.2 |
+| glibc baseline | `sysroot_linux-64`. Changing it changes which distros can run the game: ask the user first and update design doc 0001 §5.2 |
 | XMake | `xmake` in `pixi.toml` and `set_xmakever()` in `xmake.lua` |
 | Tracy | `tracy-profiler-gui` (`feature.profiler` in `pixi.toml`) and both `add_requires("tracy-libdl ...")` lines in `xmake.lua`: one version, as the viewer only reads its own protocol. Its Linux and macOS builds need `libcapstone` from conda-forge's `capstone_dev` label; drop that pin once the main channel has it |
 | Ubuntu base | The digest in `containers/linux.Containerfile` `FROM` |
@@ -33,7 +33,7 @@ Owned by: containers/AGENTS.md. Rationale: docs/design/0001 §6.1 (pinning polic
 5. Compiler, runtime or sysroot changes also need `pixi run project_n check --sanitizers` and `pixi run project_n artifact --preset <p>` for each affected preset (artifact checks the binary's runtime dependencies).
 6. An LLVM bump can add clang-tidy checks or findings: fix the code; never disable the new checks in `.clang-tidy`, and suppress a single finding only as the last resort (root AGENTS.md).
 7. An XMake bump: check whether the overrides in `xmake/repo/` are still needed, and whether `xmake-requires.lock` changed.
-8. Update the versions quoted in design doc §5 and in README's install table if they changed, then commit with the lock: `build(env): bump <tool> to X.Y.Z` (Pixi) or `build(containers): ...` (images, msvc-wine, `.vsconfig`).
+8. Update the versions quoted in design doc 0001 §5 and in README's install table if they changed, then commit with the lock: `build(env): bump <tool> to X.Y.Z` (Pixi) or `build(containers): ...` (images, msvc-wine, `.vsconfig`).
 9. `pixi run project_n clean --packages` frees the old package directories once the bump is committed.
 
 ## Gotchas
