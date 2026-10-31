@@ -75,6 +75,9 @@ if is_plat("windows") then
         -- bytes still vary; it matches its binary by the content-derived GUID /Brepro writes.
         add_cxflags("/experimental:deterministic", {force = true})
         add_ldflags("/experimental:deterministic", {force = true})
+        -- Native cl embeds the PCH's absolute path in each object, which deterministic mode
+        -- rejects (C5049); mapping the project directory makes it relative.
+        add_cxflags("/pathmap:" .. os.projectdir() .. "=.", {force = true})
     end
     -- Library headers (<...>) are external: no warnings from code we don't own. XMake's own
     -- /external:I paths don't match under msvc-wine, so classify by include style instead.
