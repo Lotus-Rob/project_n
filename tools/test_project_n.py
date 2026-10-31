@@ -383,6 +383,16 @@ class FacadeTest(unittest.TestCase):
     def test_a_facade_source_printing_is_reported(self):
         self.assertEqual(self.bypassed('std::println("hi");\n', "src/core/log.cpp"), ['src/core/log.cpp:1: std::println("hi");'])
 
+    def test_output_after_a_url_in_a_string_is_reported(self):
+        self.assertEqual(self.bypassed('PN_LOG_INFO("see https://x"); std::println("y");\n'),
+                         ['src/game.cpp:1: PN_LOG_INFO("see https://x"); std::println("y");'])
+
+    def test_a_string_naming_an_output_function_passes(self):
+        self.assertEqual(self.bypassed('PN_LOG_INFO("call puts(x) failed");\n'), [])
+
+    def test_a_quoted_library_include_is_reported(self):
+        self.assertEqual(self.bypassed('#include "quill/Logger.h"\n'), ['src/game.cpp:1: #include "quill/Logger.h"'])
+
     def test_a_comment_naming_an_output_function_passes(self):
         self.assertEqual(self.bypassed('PN_LOG_INFO("x"); // not std::println\n'), [])
 

@@ -461,7 +461,7 @@ def unsized_types(sources):
     found = []
     for f in [f for f in sources if f.startswith(("src/", "tests/")) and f.endswith((".cpp", ".hpp")) and f != "src/core/types.hpp"]:
         for n, line in enumerate((ROOT / f).read_text(encoding="utf-8").splitlines(), 1):
-            code = re.sub(r'"(?:\\.|[^"\\])*"', '""', line).split("//")[0]
+            code = code_of(line)
             if UNSIZED_RE.search(code) and not re.match(r"\s*int main\(", code):
                 found.append(f"{f}:{n}: {line.strip()}")
     return found
@@ -486,9 +486,13 @@ def leaked_dependencies(sources):
     return found
 
 
-# Output and profiling that go around core/log.hpp and core/profile.hpp. Comments are cut off first.
-BYPASS_RE = re.compile(r'#\s*include\s*[<"](?:quill|tracy)/|\bstd::(?:print|println|cout|cerr|clog)\b'
-                       r'|\b(?:printf|fprintf|puts|SDL_Log\w*)\s*\(')
+# Output that goes around core/log.hpp, searched in code_of() a line.
+OUTPUT_RE = re.compile(r"\bstd::(?:print|println|cout|cerr|clog)\b|\b(?:printf|fprintf|puts|SDL_Log\w*)\s*\(")
+
+
+def code_of(line):
+    """A source line without its string literals' contents and its // comment."""
+    return re.sub(r'"(?:\\.|[^"\\])*"', '""', line).split("//")[0]
 
 
 def bypassed_facades(sources):
@@ -499,9 +503,8 @@ def bypassed_facades(sources):
         own = FACADES.get(f.rsplit(".", 1)[0] + ".hpp")  # a facade's header and .cpp include its library
         for n, line in enumerate((ROOT / f).read_text(encoding="utf-8").splitlines(), 1):
             m = INCLUDE_RE.match(line)
-            if own and m and m[2].startswith(own):
-                continue
-            if BYPASS_RE.search(line.split("//")[0]):
+            library = m and next((lib for lib in FACADES.values() if m[2].startswith(lib)), None)
+            if (library and library != own) or OUTPUT_RE.search(code_of(line)):
                 found.append(f"{f}:{n}: {line.strip()}")
     return found
 
