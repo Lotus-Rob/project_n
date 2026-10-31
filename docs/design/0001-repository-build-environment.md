@@ -400,7 +400,7 @@ Constraints:
 | `run --preset P [--mode M] [--debug]` | Builds and launches the game natively. `--debug` launches it under gdb or lldb (`xmake run -d`). |
 | `check [--container]` | The merge gate: `selftest`, `commit-check` on unpushed commits, `fmt --check` and `lint` of the diff, then build and test for every preset, plus one native build and test with unity builds on (rule 26). The pre-commit hook checks formatting at each commit, which also reaches people who never run `check`, so `check` refuses to run without the hooks enabled. `check`'s own format check covers commits the hook never sees: git runs no pre-commit hook for `rebase --continue` or `cherry-pick`. It runs natively where possible, and `--container` runs everything in the images. |
 | `artifact --preset P` | Clean-room release build in the preset's container (committed sources only, empty build directory), plus the Linux dependency check (§5.2). Writes `dist/<preset>/` and `manifest.json`. |
-| `release [--dry-run]` | Requires a clean `main` that is up to date (it fetches, then refuses if `main` is behind). Runs `git cliff --bumped-version`, writes `set_version()`, regenerates `CHANGELOG.md`, commits `chore(release): vX.Y.Z` and creates the annotated tag `vX.Y.Z`. Never pushes. |
+| `release [--dry-run \| --tag]` | Requires a clean `main` that is up to date (it fetches, then refuses if `main` is behind). Runs `git cliff --bumped-version`, then on a new branch `release/vX.Y.Z` writes `set_version()`, regenerates `CHANGELOG.md` and commits `chore(release): vX.Y.Z`, for a pull request (§11.2). `--tag`, after that merged: refuses unless main's last commit is that release commit, then creates the annotated tag. `--dry-run` prints the changelog section and the version. |
 | `publish` | Requires HEAD tagged `vX.Y.Z` (the version in `set_version()`) and all eight archives in `dist/` (each preset's game and `-symbols` zip), else refuses. Creates a draft GitHub release from them with the version's `CHANGELOG.md` section and the unsigned-build note; never publishes. CI's `release` job runs it on a tag. |
 | `selftest` | Runs `tools/test_project_n.py`; first step of `check`. |
 | `coverage` / `fuzz <target> [--time S]` | Test coverage of `src/` (rule 23) / one libFuzzer target (rule 24). Both run in the Linux image on other hosts. |
@@ -591,7 +591,7 @@ This section is the specification for the `git-commit` and `release` skills. Onc
 - Linear history.
 - Feature branches rebase onto `main` and merge only by GitHub's rebase merge of a pull request.
 - Use `git commit --fixup` plus `git rebase --autosquash` to tidy a branch before merging.
-- `main` takes changes only through pull requests with green CI, merged by rebase: a ruleset (`.github/rulesets/main.json`, the user's call, 2026-10-31) requires all six CI checks on a branch up to date with `main`, linear history, and no force push or deletion, with no bypass, the admin included.
+- `main` takes changes only through pull requests with green CI, merged by rebase: a ruleset (`.github/rulesets/main.json`, the user's call, 2026-10-31) requires all six CI checks on a branch up to date with `main`, linear history, and no force push or deletion, with no bypass, the admin included. Releases follow it too: `release` commits on `release/vX.Y.Z`, and `release --tag` tags the merged commit.
 
 ### 11.3 Versioning
 

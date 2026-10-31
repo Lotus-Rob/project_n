@@ -5,6 +5,7 @@ Standard library only. See tools/AGENTS.md and docs/design/0001.
 """
 
 import argparse
+import functools
 import hashlib
 import json
 import os
@@ -831,26 +832,55 @@ def cmd_selftest(args):
     run([sys.executable, "-m", "unittest", "discover", "-q", "-s", "tools"])
 
 
-def cmd_release(args):
+def require_current_main(what):
     if capture(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip() != "main":
-        raise Fail("release runs on main")
+        raise Fail(f"{what} runs on main")
     if tree_dirty():
         raise Fail("working tree is not clean")
     run(["git", "fetch", "--quiet"])
     if capture(["git", "rev-list", "--count", "HEAD..@{upstream}"], check=False).strip() not in ("", "0"):
         raise Fail("main is behind its upstream: pull first")
+
+
+def cmd_release(args):
+    if args.tag:
+        return tag_release()
+    require_current_main("release")
     version = capture([*CLIFF, "--bumped-version"]).strip().removeprefix("v")
     if args.dry_run:
         run([*CLIFF, "--unreleased", "--tag", f"v{version}"])
         print(f"release --dry-run: would release v{version} (current {read_version()})")
         return
+    # main takes changes only through pull requests (.github/rulesets/main.json), the release commit too.
+    branch = f"release/v{version}"
+    if capture(["git", "branch", "--list", branch]).strip():
+        raise Fail(f"{branch} already exists, from an earlier attempt at this version: once it is merged or "
+                   f"abandoned, delete it (git branch -D {branch}) and run release again")
+    run(["git", "switch", "-c", branch])
     xmake_lua = ROOT / "xmake.lua"
     xmake_lua.write_text(with_version(xmake_lua.read_text(encoding="utf-8"), version), encoding="utf-8")
     run([*CLIFF, "--tag", f"v{version}", "-o", "CHANGELOG.md"])
     run(["git", "add", "xmake.lua", "CHANGELOG.md"])
     run(["git", "commit", "-m", f"chore(release): v{version}"])
+    print(f"release: committed v{version} on release/v{version}; merge it through a pull request, "
+          "then on main: project_n release --tag")
+
+
+def tag_release():
+    """Tags main's merged release commit: a rebase merge rewrites commits, so the tag comes after it."""
+    require_current_main("release --tag")
+    version = read_version()
+    subject = capture(["git", "log", "-1", "--format=%s"]).strip()
+    if subject != f"chore(release): v{version}":
+        raise Fail(f"main's last commit is '{subject}', not 'chore(release): v{version}': merge the release pull request and pull first")
+    # The pull request may have been rebased onto commits that arrived after `release` wrote the changelog.
+    # git-cliff dates the new heading today, so headings are compared without their dates.
+    undated = functools.partial(re.sub, r"(?m)^(## \S+) - \d{4}-\d{2}-\d{2}$", r"\1")
+    if undated(capture([*CLIFF, "--tag", f"v{version}"])) != undated((ROOT / "CHANGELOG.md").read_text(encoding="utf-8")):
+        raise Fail(f"CHANGELOG.md no longer matches the commits since the last release (main moved on after `release`): "
+                   f"don't tag this commit; delete the merged local release/v{version} branch and run `release` again: it commits the next version, which the newer commits may have changed (check it with --dry-run)")
     run(["git", "tag", "-a", f"v{version}", "-m", f"v{version}"])
-    print(f"release: tagged v{version}; push with: git push --follow-tags")
+    print(f"release: tagged v{version}; push the tag with: git push origin v{version}")
 
 
 UNSIGNED_NOTE = """These builds aren't code-signed yet. On macOS, open project_n.app once; when macOS refuses, go to
@@ -1098,8 +1128,10 @@ def make_parser():
     p = add("check", cmd_check, "the merge gate: commits, format and lint of the diff, build and test every preset", container=True)
     p.add_argument("--sanitizers", action="store_true", help="also test every preset under each supported sanitizer")
     add("artifact", cmd_artifact, "clean-room release build in the preset's container, into dist/", preset="required")
-    p = add("release", cmd_release, "bump the version with git-cliff, write CHANGELOG.md, commit and tag")
-    p.add_argument("--dry-run", action="store_true")
+    p = add("release", cmd_release, "bump the version with git-cliff, write CHANGELOG.md and commit it on a release/ branch")
+    group = p.add_mutually_exclusive_group()
+    group.add_argument("--dry-run", action="store_true")
+    group.add_argument("--tag", action="store_true", help="after the release pull request merged: tag main's release commit")
     add("publish", cmd_publish, "draft the tagged version's GitHub release with every preset's archives from dist/ (CI runs it)")
     p = add("commit-check", cmd_commit_check, "validate commit messages (Conventional Commits)")
     group = p.add_mutually_exclusive_group(required=True)
