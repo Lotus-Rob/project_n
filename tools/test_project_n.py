@@ -290,6 +290,12 @@ class CheckTest(unittest.TestCase):
         self.assertTrue(project_n.PRESETS[unity[0].preset]["image"], unity[0].preset)
 
 
+class PinnedXmakeTest(unittest.TestCase):
+    def test_a_missing_set_xmakever_is_reported(self):
+        with temp_repo({"xmake.lua": 'set_version("0.1.0")\n'}), self.assertRaisesRegex(project_n.Fail, "set_xmakever"):
+            project_n.pinned_xmake()
+
+
 class DependencyTest(unittest.TestCase):
     def test_a_third_party_include_in_a_header_is_reported(self):
         with temp_repo({"src/window.hpp": "#pragma once\n#include <SDL3/SDL.h>\n"}):

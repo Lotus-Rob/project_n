@@ -75,6 +75,7 @@ SCOPES = ("repo", "env", "containers", "tools", "xmake", "deps", "tests", "desig
 HEADER_RE = re.compile(r"^(?P<type>[a-z]+)(?:\((?P<scope>[a-z0-9-]+)\))?(?P<breaking>!)?: (?P<desc>.+)$")
 MAX_HEADER = 72
 VERSION_RE = re.compile(r'set_version\("([^"]+)"\)')
+XMAKEVER_RE = re.compile(r'set_xmakever\("([^"]+)"\)')
 CLIFF = ["git", "cliff", "--config", "tools/cliff.toml"]
 # --lsp=clangd keeps packages' -isystem: otherwise XMake writes -I, and clangd and clang-tidy then
 # report warnings in third-party headers and in their macros as if they were ours.
@@ -164,6 +165,13 @@ def xmake_env(bdir):
 def check_sanitizer(preset, sanitizer):
     if sanitizer != "none" and sanitizer not in SANITIZERS[preset]:
         raise Fail(f"{preset} supports sanitizers: {', '.join(SANITIZERS[preset])}")
+
+
+def pinned_xmake():
+    m = XMAKEVER_RE.search((ROOT / "xmake.lua").read_text(encoding="utf-8"))
+    if not m:
+        raise Fail("set_xmakever(...) not found in xmake.lua")
+    return m[1]
 
 
 def read_version():
@@ -914,7 +922,7 @@ def cmd_doctor(args):
 
     report(sys.version_info >= (3, 11), f"python {sys.version.split()[0]} (>= 3.11)")
     report("CONDA_PREFIX" in os.environ, "running inside the Pixi environment", "run through: pixi run project_n doctor")
-    pinned = re.search(r'set_xmakever\("([^"]+)"\)', (ROOT / "xmake.lua").read_text(encoding="utf-8"))[1]
+    pinned = pinned_xmake()
     xmake = capture(["xmake", "--version"], check=False) if shutil.which("xmake") else ""
     report(pinned in xmake, f"xmake {pinned} from the Pixi env", "pixi install")
     report(hooks_enabled(), "commit hooks enabled (message and format checks)", "git config core.hooksPath .githooks")
@@ -976,7 +984,7 @@ def cmd_clean(args):
 
 def ensure_macos_xmake():
     """Download the pinned XMake bundle once per version and put it first on PATH."""
-    version = re.search(r'set_xmakever\("([^"]+)"\)', (ROOT / "xmake.lua").read_text(encoding="utf-8"))[1]
+    version = pinned_xmake()
     exe = Path.home() / ".xmake" / "project_n-tools" / f"xmake-{version}" / "bin" / "xmake"  # outside clean --packages' reach
     if not exe.exists():
         url = f"https://github.com/xmake-io/xmake/releases/download/v{version}/xmake-bundle-v{version}.macos.arm64"
