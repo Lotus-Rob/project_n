@@ -188,7 +188,7 @@ end
 add_requireconfs("**|python|cmake|ninja|meson|autoconf|automake|libtool|m4|bison|flex|gperf|nasm|pkg-config|pkgconf", {system = false})
 add_requires("doctest 2.5.3") -- MIT; tests only
 add_requires("libsdl3-wayland 3.4.16") -- zlib; xmake/repo: libsdl3 plus its Wayland build deps
-add_requires("quill 13.1.0") -- MIT; header-only
+add_requires("quill-wine 13.1.0") -- MIT; header-only; xmake/repo: quill plus Wine support
 -- xmake/repo: tracy plus libdl for glibc 2.28. It collects
 -- in releasedbg; everywhere else its macros are empty and the library compiles to nothing.
 -- Localhost only: no profile data on the network. Keep the version equal to the viewer's in
@@ -203,6 +203,6 @@ target("project_n")
     add_files("src/**.cpp")
     add_includedirs("src")
     set_pcxxheader("src/pch.hpp")
-    add_packages("libsdl3-wayland", "quill", is_mode("releasedbg") and "tracy_on" or "tracy_off")
+    add_packages("libsdl3-wayland", "quill-wine", is_mode("releasedbg") and "tracy_on" or "tracy_off")
 
 includes("tests")

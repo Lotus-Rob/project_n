@@ -326,6 +326,7 @@ Each rule below fixed a concrete failure or host leak (most found in S4) or reco
    - `libsdl3-wayland` inherits `libsdl3` and adds `libxkbcommon` and `libglvnd` (for `egl.pc`). Without them SDL **silently** builds without Wayland.
    - `libxkbcommon-fixed` inherits `libxkbcommon` and adds `libxml2`.
    - `tracy-libdl` inherits `tracy` and links `libdl` on Linux: its client calls `dladdr`, which glibc keeps in libdl before 2.34, so the link failed against the 2.28 sysroot.
+   - `quill-wine` inherits `quill` and also accepts `ERROR_CALL_NOT_IMPLEMENTED` when Quill asks Windows whether a log file's directory is case-sensitive: Wine (and so Proton) answers that, and Quill refused to create the file sink.
 
 **Debuggers**
 

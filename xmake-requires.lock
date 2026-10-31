@@ -295,11 +295,9 @@
             },
             version = "3.14.3"
         },
-        ["quill 13.1.0#f56260b5"] = {
+        ["quill-wine 13.1.0#f56260b5"] = {
             repo = {
-                branch = "master",
-                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
-                url = "https://github.com/xmake-io/xmake-repo.git"
+                url = "xmake/repo"
             },
             version = "v13.1.0"
         },
@@ -411,11 +409,9 @@
             },
             version = "2024.01.04"
         },
-        ["quill 13.1.0#f56260b5"] = {
+        ["quill-wine 13.1.0#f56260b5"] = {
             repo = {
-                branch = "master",
-                commit = "6d79f3da17af7ef03a7062d18d8ef598214cb0ae",
-                url = "https://github.com/xmake-io/xmake-repo.git"
+                url = "xmake/repo"
             },
             version = "v13.1.0"
         },
@@ -463,11 +459,9 @@
             },
             version = "v1.13.2"
         },
-        ["quill 13.1.0#f56260b5"] = {
+        ["quill-wine 13.1.0#f56260b5"] = {
             repo = {
-                branch = "master",
-                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
-                url = "https://gitlab.com/tboox/xmake-repo.git"
+                url = "xmake/repo"
             },
             version = "v13.1.0"
         },
