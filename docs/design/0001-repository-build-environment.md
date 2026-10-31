@@ -125,7 +125,7 @@ project_n/
 │   └── windows/buildtools.vsconfig
 ├── src/                      # structure decided by the architecture doc; pch.hpp
 │   └── AGENTS.md
-├── tests/                    # xmake.lua, unit/<area>/, unit/pch.hpp
+├── tests/                    # xmake.lua, unit/<area>/, unit/pch.hpp, fuzz/<target>.cpp + fuzz/corpus/
 │   └── AGENTS.md
 └── docs/design/              # numbered design docs (rationale tier)
 ```
@@ -372,6 +372,7 @@ Each rule below fixed a concrete failure or host leak (most found in S4) or reco
 21. **Hardening:** shipped Linux binaries are PIE with full RELRO (`-z relro -z now`), `-fstack-protector-strong` and `_FORTIFY_SOURCE=2` (3 needs glibc 2.33 headers; the baseline is 2.28); MSVC adds Control Flow Guard (`/guard:cf`, not in sanitizer builds). Debug builds bounds-check the standard library: `_GLIBCXX_ASSERTIONS`, libc++'s extensive hardening mode, `_MSVC_STL_HARDENING`. None changes the ABI, so packages need no rebuild.
 22. **Profiling with Tracy:** the `tracy-libdl` package (xmake-repo's `tracy` plus `libdl`, rule 7) collects in `releasedbg` (optimised, with symbols) and compiles to empty macros and an empty library everywhere else, so shipped builds contain none of it. It listens on localhost only. Both variants (`tracy_on`, `tracy_off`) are required in every mode and the target picks one: with one mode-dependent requirement, `xmake-requires.lock` held only the variant of the mode configured last. The viewer must speak the client's protocol, so `pixi.toml` pins `tracy-profiler-gui` to the same version, in a separate `profiler` environment: its GUI libraries (X11, EGL, dbus) in the default environment would be visible to package builds. Its Linux and macOS builds need `libcapstone` 6, which conda-forge publishes only under the `capstone_dev` label (2026-10-30).
 23. **Coverage:** XMake's `mode.coverage` (GCC's `--coverage`) on `linux-gcc`, run by the tests, reported by `gcovr` for `src/` only into `build/coverage/`. Counts from earlier runs are deleted first.
+24. **Fuzzing:** libFuzzer targets in `tests/fuzz/`, built only for `linux-clang` with AddressSanitizer (fuzzing needs a sanitizer to catch memory errors, and sanitizer builds already link the C++ runtime dynamically, rule 17). There each target replays its committed seeds as a test, so `check --sanitizers` keeps them building and passing. `fuzz` writes new inputs and crash files to `build/fuzz/<target>/`.
 
 ---
 
@@ -393,7 +394,7 @@ Constraints:
 | `artifact --preset P` | Clean-room release build in the preset's container (committed sources only, empty build directory), plus the Linux dependency check (§5.2). Writes `dist/<preset>/` and `manifest.json`. |
 | `release [--dry-run]` | Requires a clean `main` that is up to date (it fetches, then refuses if `main` is behind). Runs `git cliff --bumped-version`, writes `set_version()`, regenerates `CHANGELOG.md`, commits `chore(release): vX.Y.Z` and creates the annotated tag `vX.Y.Z`. Never pushes. |
 | `selftest` | Runs `tools/test_project_n.py`; first step of `check`. |
-| `coverage` | Test coverage of `src/` (rule 23). Runs in the Linux image on other hosts. |
+| `coverage` / `fuzz <target> [--time S]` | Test coverage of `src/` (rule 23) / one libFuzzer target (rule 24). Both run in the Linux image on other hosts. |
 | `profiler` | The Tracy viewer from the `profiler` environment (rule 22). |
 | `commit-check <msg-file> \| --range A..B` | Validates commit messages (§11). |
 | `fmt [--check]` / `lint [--fix]` | Runs clang-format and clang-tidy from the Pixi environment; `lint` first runs ruff on `tools/` and actionlint on the workflow. `lint` always passes `--warnings-as-errors=*`, so any finding fails `check`. `--fix` applies clang-tidy's fixes and reformats; whatever remains is fixed by hand before a branch is finished (root AGENTS.md). |

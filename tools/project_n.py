@@ -541,6 +541,18 @@ def cmd_coverage(args):
          "--html-details", out / "index.html", "--print-summary", build_dir(preset, "coverage")])
 
 
+def cmd_fuzz(args):
+    """Fuzz one libFuzzer target (tests/fuzz/<name>.cpp): linux-clang with AddressSanitizer."""
+    preset = "linux-clang"
+    if needs_container(preset, args.container):
+        return reenter(preset, ["fuzz", args.target, "--time", str(args.time)])
+    bdir = build(preset, "debug", "address")
+    work = ROOT / "build" / "fuzz" / args.target  # new inputs and crash files; seeds stay in tests/fuzz/corpus/
+    (work / "corpus").mkdir(parents=True, exist_ok=True)
+    run(["xmake", "run", f"fuzz_{args.target}", work / "corpus", ROOT / "tests" / "fuzz" / "corpus" / args.target,
+         f"-max_total_time={args.time}", f"-artifact_prefix={work}/"], env=xmake_env(bdir))
+
+
 def cmd_profiler(args):
     # The viewer lives in its own Pixi environment (pixi.toml: feature.profiler).
     run([os.environ.get("PIXI_EXE", "pixi"), "run", "-e", "profiler", "tracy-profiler"])
@@ -779,6 +791,9 @@ def make_parser():
     group.add_argument("message_file", nargs="?", help="a commit message file (used by the commit-msg hook)")
     group.add_argument("--range", help="validate every commit in a git range, e.g. main..HEAD")
     add("coverage", cmd_coverage, "test coverage of src/ (linux-gcc, gcovr): build/coverage/index.html", container=True)
+    p = add("fuzz", cmd_fuzz, "fuzz a libFuzzer target from tests/fuzz/ (linux-clang, AddressSanitizer)", container=True)
+    p.add_argument("target", choices=sorted(f.stem for f in (ROOT / "tests" / "fuzz").glob("*.cpp")))
+    p.add_argument("--time", type=int, default=60, help="seconds to fuzz (default 60)")
     add("profiler", cmd_profiler, "start the Tracy viewer; profile a `run --mode releasedbg` build")
     add("selftest", cmd_selftest, "run project_n.py's own unit tests (tools/test_project_n.py)")
     p = add("fmt", cmd_fmt, "format sources with the pinned clang-format")

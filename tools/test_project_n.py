@@ -147,6 +147,15 @@ class CoverageTest(unittest.TestCase):
                 project_n.ROOT = saved
 
 
+class FuzzTest(unittest.TestCase):
+    def test_a_container_run_passes_the_target_and_time_on(self):
+        argvs = []
+        with mock.patch.object(project_n, "reenter", lambda preset, argv: argvs.append(argv)), \
+             mock.patch.object(project_n, "IN_CONTAINER", False):
+            project_n.cmd_fuzz(project_n.argparse.Namespace(target="smoke", time=5, container=True))
+        self.assertEqual(argvs[0], ["fuzz", "smoke", "--time", "5"])
+
+
 class DocsTest(unittest.TestCase):
     def test_agent_docs_quote_only_real_commands(self):
         self.assertEqual(project_n.stale_doc_commands(), [])

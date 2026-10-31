@@ -9,12 +9,14 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
 - Each executable has exactly one `main.cpp` defining `DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN` and `DOCTEST_CONFIG_IMPLEMENT` (the precompiled `unit/pch.hpp` already included doctest, so the first no longer implies the second); test files include `<doctest/doctest.h>` only.
 - A new test target also gets `set_pcxxheader("unit/pch.hpp")`.
 - A new area adds a target to `tests/xmake.lua` with `add_tests("default")`, plus the `on_test(test_under_wine)` block from `core_tests` so its Windows build runs under Wine on Linux.
+- Fuzz targets: `tests/fuzz/<name>.cpp` defines `LLVMFuzzerTestOneInput`, with at least one seed in `tests/fuzz/corpus/<name>/`. They build only for linux-clang with AddressSanitizer, where each replays its seeds as a test, so `check --sanitizers` covers them. Commit every input that found a bug as a seed.
 - Coverage counts `src/` only, from the tests (linux-gcc's gcov data, reported by gcovr).
 - Sanitizers run on request, never in plain `check`. Supported per preset: `SANITIZERS` in tools/project_n.py (GCC/Clang: address, undefined, thread, leak; MSVC: address). Any finding fails the run.
 
 ## Commands
 - `pixi run project_n test --preset linux-clang --sanitizer address` (also `run --sanitizer ...` for the game)
 - `pixi run project_n check --sanitizers`: every preset under every supported sanitizer
+- `pixi run project_n fuzz <name> [--time 60]`: new inputs and crash files land in `build/fuzz/<name>/`
 - `pixi run project_n coverage`: `build/coverage/index.html` and a summary
 - `pixi run project_n test --preset linux-clang` · one target with doctest arguments:
   `pixi run project_n test --preset linux-clang --target core_tests -- --test-case='*expected*'`

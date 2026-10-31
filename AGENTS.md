@@ -14,7 +14,7 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 - `./dev <command>` (Windows `dev`) is shorthand for `pixi run project_n <command>`; either works from anywhere.
 - `pixi run project_n doctor [--docs]` · `build|test|run [--preset linux-gcc|linux-clang|windows-msvc|macos-clang] [--mode debug|release|releasedbg]` (releasedbg: profiling with Tracy; default preset: the host's native one, `NATIVE_PRESET`; `build --preset all` builds every preset and summarises)
 - `pixi run project_n check`: the merge gate (self-tests, commits, fmt, lint, build + test every preset). A change is done when it passes.
-- `pixi run project_n coverage` (HTML in build/coverage/) · `profiler` (Tracy viewer for a `run --mode releasedbg` build)
+- `pixi run project_n coverage` (HTML in build/coverage/) · `fuzz <target> [--time S]` · `profiler` (Tracy viewer for a `run --mode releasedbg` build)
 - `pixi run project_n check --sanitizers`: also every supported sanitizer; on request only, not part of the gate.
 - `pixi run project_n check --container`: the same in clean containers. Run it for any build, environment or dependency change: only a clean container catches host leaks.
 
