@@ -1,5 +1,6 @@
 """Self-checks for project_n.py. Run: pixi run python -m unittest discover -s tools"""
 
+import argparse
 import contextlib
 import functools
 import io
@@ -316,6 +317,60 @@ class ReleaseTest(unittest.TestCase):
                 self.assertRaisesRegex(project_n.Fail, "v0.2.0"):
             project_n.cmd_publish(None)
         run.assert_not_called()
+
+    def test_tagging_refuses_a_main_without_the_release_commit(self):
+        with temp_repo({"xmake.lua": 'set_version("0.2.0")\n'}), mock.patch.object(project_n, "run") as run, \
+                self.assertRaisesRegex(project_n.Fail, r"not 'chore\(release\): v0.2.0'"):
+            project_n.cmd_release(argparse.Namespace(tag=True, dry_run=False))
+        run.assert_called_once_with(["git", "fetch", "--quiet"])
+
+    @contextlib.contextmanager
+    def release_commit(self, changelog, cliff_output):
+        """A repository whose last commit is v0.2.0's release, with git-cliff answering cliff_output."""
+        real = project_n.capture
+        fake = lambda cmd, check=True: cliff_output if cmd[:2] == ["git", "cliff"] else real(cmd, check)
+        with temp_repo({"xmake.lua": 'set_version("0.2.0")\n', "CHANGELOG.md": changelog}) as root, \
+                mock.patch.object(project_n, "capture", fake), mock.patch.object(project_n, "run") as run:
+            git(root, "commit", "-q", "--allow-empty", "--no-verify", "-m", "chore(release): v0.2.0")
+            yield run
+
+    def test_tagging_tags_the_release_commit(self):
+        with self.release_commit("## 0.2.0\n", "## 0.2.0\n") as run, contextlib.redirect_stdout(io.StringIO()):
+            project_n.cmd_release(argparse.Namespace(tag=True, dry_run=False))
+        run.assert_called_with(["git", "tag", "-a", "v0.2.0", "-m", "v0.2.0"])
+
+    def test_tagging_refuses_a_changelog_behind_the_commits(self):
+        with self.release_commit("## 0.2.0\n", "## 0.2.0\n- A feature merged after release\n") as run, \
+                self.assertRaisesRegex(project_n.Fail, "CHANGELOG.md no longer matches"):
+            project_n.cmd_release(argparse.Namespace(tag=True, dry_run=False))
+        self.assertNotIn(mock.call(["git", "tag", "-a", "v0.2.0", "-m", "v0.2.0"]), run.call_args_list)
+
+    def test_tagging_ignores_the_date_git_cliff_puts_on_today(self):
+        with self.release_commit("## 0.2.0 - 2026-10-31\n", "## 0.2.0 - 2026-11-01\n") as run, contextlib.redirect_stdout(io.StringIO()):
+            project_n.cmd_release(argparse.Namespace(tag=True, dry_run=False))
+        run.assert_called_with(["git", "tag", "-a", "v0.2.0", "-m", "v0.2.0"])
+
+    def test_release_rejects_tag_with_dry_run(self):
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            project_n.make_parser().parse_args(["release", "--tag", "--dry-run"])
+
+    def test_release_refuses_a_leftover_release_branch(self):
+        real = project_n.capture
+        fake = lambda cmd, check=True: "v0.2.0" if "--bumped-version" in cmd else real(cmd, check)
+        with temp_repo({"xmake.lua": 'set_version("0.1.0")\n'}) as root, mock.patch.object(project_n, "capture", fake), \
+                mock.patch.object(project_n, "run") as run, self.assertRaisesRegex(project_n.Fail, "release/v0.2.0 already exists"):
+            git(root, "branch", "release/v0.2.0")
+            project_n.cmd_release(argparse.Namespace(tag=False, dry_run=False))
+        run.assert_called_once_with(["git", "fetch", "--quiet"])
+
+    def test_release_commits_on_its_own_branch(self):
+        real = project_n.capture
+        fake = lambda cmd, check=True: "v0.2.0" if "--bumped-version" in cmd else real(cmd, check)
+        with temp_repo({"xmake.lua": 'set_version("0.1.0")\n'}), mock.patch.object(project_n, "capture", fake), \
+                mock.patch.object(project_n, "run") as run, contextlib.redirect_stdout(io.StringIO()):
+            project_n.cmd_release(argparse.Namespace(tag=False, dry_run=False))
+        calls = [c.args[0] for c in run.call_args_list]
+        self.assertLess(calls.index(["git", "switch", "-c", "release/v0.2.0"]), calls.index(["git", "commit", "-m", "chore(release): v0.2.0"]))
 
     def test_publish_drafts_the_release_with_every_archive(self):
         archives = [f"dist/project_n-0.2.0-{p}{part}.zip" for p in project_n.PRESETS for part in ("", "-symbols")]
