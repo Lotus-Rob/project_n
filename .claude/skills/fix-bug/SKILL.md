@@ -9,7 +9,7 @@ Owned by: root AGENTS.md. Every bug in `src/` is fixed through test-driven devel
 
 ## Steps
 
-1. **Reproduce the bug as one test** in `tests/unit/<area>/` (a new area: tests/AGENTS.md). The test is:
+1. **Reproduce the bug as one test** in `tests/unit/<area>/` (a new area: tests/AGENTS.md). Spawn a `bug-reproducer` subagent to write it, giving it the symptoms and never your idea of the fix, so the test describes the bug rather than the fix; check its test against the rules below. The test is:
    - **small:** the fewest lines that reach the faulty code;
    - **contained:** no files, network, window, clock or shared state it doesn't need, and independent of other tests;
    - **explicit:** named after the behaviour (`TEST_CASE("save header rejects a truncated file")`), with literal inputs and the exact expected value in each `CHECK`;

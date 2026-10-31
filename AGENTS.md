@@ -47,6 +47,7 @@ Work happens on a branch; it merges into main only after step 3.
 ## Agents (.claude/agents): subagents with a fresh context
 - branch-reviewer: the pre-merge reviewer, a new one per round (review-branch skill)
 - log-triage: the root cause of a long build, test or CI log; hand it logs instead of reading them in the main session
+- bug-reproducer: writes the failing test for a `src/` bug from its symptoms, before the fix (fix-bug skill)
 
 ## Keeping this true
 Update AGENTS.md files and skills in the same commit as the change that affects them. Log non-obvious fixes under Gotchas.

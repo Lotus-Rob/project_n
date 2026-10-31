@@ -108,7 +108,7 @@ project_n/
 ├── .githooks/commit-msg      # POSIX sh: `pixi run project_n commit-check "$1"`
 ├── .github/                  # CI (§12): workflows/ci.yml, dependabot.yml, actionlint.yaml, AGENTS.md
 ├── .claude/CLAUDE.md         # "@../AGENTS.md": Claude Code reads it here, keeping the root shorter
-├── .claude/agents/           # subagents with a fresh context: branch-reviewer (pre-merge review), log-triage
+├── .claude/agents/           # subagents with a fresh context: branch-reviewer (pre-merge review), log-triage, bug-reproducer
 ├── .claude/skills/           # on-demand procedures (§10.4): git-commit, agent-docs, release,
 │                             # bump-toolchain, add-dependency, fix-xmake-package, fix-bug, review-branch
 ├── tools/
@@ -537,6 +537,7 @@ The `agent-docs` skill encodes these rules:
 | `fix-bug` | root | ✅ **Created 2026-10-30** on the user's request: every `src/` bug is fixed test-first, with a small, contained, explicit test of that bug alone; tests are never deleted or loosened to go green |
 | `review-branch` | root | ✅ **Created 2026-10-30** on the user's request: the pre-merge review by a fresh `branch-reviewer` subagent (`.claude/agents/`), a new one for every round; every finding blocks the merge; at most 5 rounds, after which the user decides on the merge |
 | `log-triage` (agent) | root | ✅ **Created 2026-10-30** on the user's request: finds the first real error in a long build, test or CI log and returns only the decisive lines, keeping XMake's package logs out of the main session (diagnosed by hand six times on 2026-10-30) |
+| `bug-reproducer` (agent) | root | ✅ **Created 2026-10-30** on the user's request: writes the failing test for a `src/` bug from its symptoms alone, so the test describes the bug rather than the author's fix; it never edits `src/` |
 | `add-unit-test` | tests | The first area with more than a handful of tests |
 | `design-doc` | root | The second design doc (template, numbering, status lifecycle) |
 | `new-subsystem` | src | After the architecture doc |
