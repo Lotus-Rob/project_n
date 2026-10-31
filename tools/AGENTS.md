@@ -25,6 +25,7 @@
 
 - On Windows, `subprocess` decodes output with the locale (cp1252) and crashes on XMake's UTF-8; `capture()` forces UTF-8. Running a program by bare name finds only `.exe` files (conda's xmake is `xmake.cmd`); `run()`/`capture()` resolve it through `shutil.which`. For xmake they skip the shim entirely: its trailing `endlocal` turns every exit code into 0, so failed tests passed CI.
 - MSVC `C1382` ("the PCH file has been rebuilt since ...obj") after a package's include paths change: XMake rebuilt the PCH but not the objects using it. `pixi run project_n clean --preset windows-msvc` and build again.
+- XMake's compile database export turns packages' `-isystem` into `-I` unless given `--lsp=clangd` (`COMPDB`); without it clangd and `lint` report warnings in third-party headers and their macros as ours.
 - `doctor` exits 3 for "problems found", so CI can report them without hiding real errors (exit 1).
 
 ## Skill candidates

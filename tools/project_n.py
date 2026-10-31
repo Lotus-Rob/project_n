@@ -76,6 +76,9 @@ HEADER_RE = re.compile(r"^(?P<type>[a-z]+)(?:\((?P<scope>[a-z0-9-]+)\))?(?P<brea
 MAX_HEADER = 72
 VERSION_RE = re.compile(r'set_version\("([^"]+)"\)')
 CLIFF = ["git", "cliff", "--config", "tools/cliff.toml"]
+# --lsp=clangd keeps packages' -isystem: otherwise XMake writes -I, and clangd and clang-tidy then
+# report warnings in third-party headers and in their macros as if they were ours.
+COMPDB = ["xmake", "project", "-k", "compile_commands", "--lsp=clangd"]
 
 # Host prerequisites (docs/design/0001 §5.0): printed by `doctor`, never installed by it.
 INSTALL_HINTS = {
@@ -275,7 +278,7 @@ def build(preset, mode, sanitizer="none", unity=False):
     run(["xmake", "build"], env=xmake_env(bdir))
     if not IN_CONTAINER and sanitizer == "none" and not unity:  # unity's generated sources would confuse clangd
         # Native builds keep clangd current (.clangd reads build/; container paths would be wrong).
-        run(["xmake", "project", "-k", "compile_commands", ROOT / "build"], env=xmake_env(bdir))
+        run([*COMPDB, ROOT / "build"], env=xmake_env(bdir))
     return bdir
 
 
@@ -523,7 +526,7 @@ def cmd_lint(args):
         return
     bdir = configure(LINT_PRESET, "debug")
     run(["xmake", "build"], env=xmake_env(bdir))
-    run(["xmake", "project", "-k", "compile_commands", bdir], env=xmake_env(bdir))
+    run([*COMPDB, bdir], env=xmake_env(bdir))
     # Lint is a gate: .clang-tidy's WarningsAsErrors: '*' makes any finding fail `check`.
     tidy = ["clang-tidy", "--quiet", "-p", bdir, *(["--fix"] if args.fix else [])]
     try:
