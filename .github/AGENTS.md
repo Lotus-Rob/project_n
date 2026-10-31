@@ -18,6 +18,7 @@
 ## Gotchas
 - `actions/cache` saves only when the job succeeds, so a failing job rebuilt everything every run. XMake package caches use separate `cache/restore` and `cache/save` steps, saving even after a failure.
 - No disk cleanup step: ubuntu-26.04 runners have ~90 GB free, and the images plus packages need ~25 GB. Deleting the preinstalled SDKs cost ~2 minutes per job.
+- Dependabot's push runs get a read-only token, so pushing a missing image to GHCR failed them, and with every check required its pull requests could never merge: `PROJECT_N_PUSH_IMAGES` is 0 for `dependabot[bot]` (ci.yml). Keep that condition when touching the expression.
 
 ## Skill candidates
 | Workflow | Evidence | Proposed skill |

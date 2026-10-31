@@ -19,7 +19,8 @@ permissions:
 env:
   PIXI_VERSION: v0.83.0
   PROJECT_N_REGISTRY: ghcr.io/lotus-rob
-  PROJECT_N_PUSH_IMAGES: ${{ github.event_name == 'push' && '1' || '0' }}
+  # Dependabot's runs get a read-only token, so they use the cache without pushing to it.
+  PROJECT_N_PUSH_IMAGES: ${{ github.event_name == 'push' && github.actor != 'dependabot[bot]' && '1' || '0' }}
   PROJECT_N_XMAKE_CACHE: /home/runner/xmake-cache
 
 # XMake package caches are keyed on the toolchain, the dependencies and the package overrides.
