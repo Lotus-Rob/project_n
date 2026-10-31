@@ -29,11 +29,6 @@ std::filesystem::path StartedDirectory() {
     return directory;
 }
 
-// First in the file: it has to run before StartedDirectory() calls Start().
-TEST_CASE("a log call before Start has a logger to write to") {
-    CHECK(core::log::Root() != nullptr);
-}
-
 TEST_CASE("Start keeps the previous run's log as project_n.1.log") {
     CHECK(Read(StartedDirectory() / "project_n.1.log") == "run 0");
 }

@@ -9,16 +9,23 @@ local function test_under_wine(target, opt)
     return os.execv(wine.program, args, {try = true, curdir = target:rundir()}) == 0
 end
 
-target("core_tests")
-    set_kind("binary")
-    add_files("unit/core/*.cpp", "$(projectdir)/src/core/log.cpp")
-    add_includedirs("$(projectdir)/src")
-    set_pcxxheader("unit/pch.hpp")
-    add_packages("doctest", "quill-wine")
-    add_tests("default")
-    if is_plat("windows") and not is_host("windows") then
-        on_test(test_under_wine)
-    end
+local function unit_tests(name, files)
+    target(name)
+        set_kind("binary")
+        add_files(files, "$(projectdir)/src/core/log.cpp")
+        add_includedirs("$(projectdir)/src")
+        set_pcxxheader("unit/pch.hpp")
+        add_packages("doctest", "quill-wine")
+        add_tests("default")
+        if is_plat("windows") and not is_host("windows") then
+            on_test(test_under_wine)
+        end
+end
+
+unit_tests("core_tests", "unit/core/*.cpp")
+-- Logging start-up states: Quill's loggers live for the whole process, so each test needs its own.
+unit_tests("log_early_tests", {"unit/log_startup/main.cpp", "unit/log_startup/early_tests.cpp"})
+unit_tests("log_fallback_tests", {"unit/log_startup/main.cpp", "unit/log_startup/fallback_tests.cpp"})
 
 -- libFuzzer targets, one per tests/fuzz/<name>.cpp: linux-clang with AddressSanitizer only
 -- (`project_n fuzz <name>`). There each also replays its seed corpus (tests/fuzz/corpus/<name>/)

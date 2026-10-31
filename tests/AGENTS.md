@@ -6,10 +6,11 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
 ## Rules
 - A test is small, contained and explicit, and tests one behaviour. Never delete, skip or loosen one to go green (fix-bug skill).
 - Layout mirrors `src/`: `tests/unit/<area>/`, one test executable per area (`<area>_tests`) to keep link times down.
+- Exception: a test of process-wide state that can only be set once (logging start-up: Quill's loggers live for the whole process) gets its own executable, as in `tests/unit/log_startup/`.
 - Test code passes the same lint as `src/` (no test exemptions): put `TEST_CASE`s inside an anonymous namespace and name test values as `constexpr` constants.
 - Each executable has exactly one `main.cpp` defining `DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN` and `DOCTEST_CONFIG_IMPLEMENT` (the precompiled `unit/pch.hpp` already included doctest, so the first no longer implies the second); test files include `<doctest/doctest.h>` only.
-- A new test or fuzz target also gets `set_pcxxheader("unit/pch.hpp")`, which holds every standard header the tests use: test `.cpp` files never include standard headers themselves (`lint` fails on one).
-- A new area adds a target to `tests/xmake.lua` with `add_tests("default")`, plus the `on_test(test_under_wine)` block from `core_tests` so its Windows build runs under Wine on Linux.
+- `unit/pch.hpp` holds every standard header the tests use: test `.cpp` files never include standard headers themselves (`lint` fails on one). Unit targets get it from `unit_tests()`; a fuzz target sets it with `set_pcxxheader("unit/pch.hpp")`.
+- A new area is one line in `tests/xmake.lua`: `unit_tests("<area>_tests", "unit/<area>/*.cpp")`. The helper adds the precompiled header, `src/core/log.cpp` and its packages, registers the test and runs Windows builds under Wine on Linux.
 - Fuzz targets: `tests/fuzz/<name>.cpp` defines `LLVMFuzzerTestOneInput`, with at least one seed in `tests/fuzz/corpus/<name>/`. They build only for linux-clang with AddressSanitizer, where each replays its seeds as a test, so `check --sanitizers` covers them. Commit every input that found a bug as a seed.
 - Coverage counts `src/` only, from the tests (linux-gcc's gcov data, reported by gcovr).
 - Sanitizers run on request, never in plain `check`. Supported per preset: `SANITIZERS` in tools/project_n.py (GCC/Clang: address, undefined, thread, leak; MSVC: address). Any finding fails the run.
