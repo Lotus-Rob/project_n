@@ -308,6 +308,14 @@ class DependencyTest(unittest.TestCase):
                         "src/core/b.hpp": '#pragma once\n#include "core/a.hpp"\n#include "a.hpp"\n#include <cstdint>\n#include <print>\n'}):
             self.assertEqual(project_n.leaked_dependencies(["src/core/b.hpp"]), [])
 
+    def test_a_facade_includes_its_library(self):
+        with temp_repo({"src/core/log.hpp": "#pragma once\n#include <quill/Logger.h>\n"}):
+            self.assertEqual(project_n.leaked_dependencies(["src/core/log.hpp"]), [])
+
+    def test_a_facade_including_another_library_is_reported(self):
+        with temp_repo({"src/core/log.hpp": "#pragma once\n#include <tracy/Tracy.hpp>\n"}):
+            self.assertEqual(project_n.leaked_dependencies(["src/core/log.hpp"]), ["src/core/log.hpp:2: #include <tracy/Tracy.hpp>"])
+
 
 class ApiDocsTest(unittest.TestCase):
     DOXYFILE = (project_n.ROOT / "docs" / "Doxyfile").read_text()

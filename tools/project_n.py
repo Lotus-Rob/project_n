@@ -419,11 +419,14 @@ def scoped_sources(args):
 
 
 INCLUDE_RE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]')
+# The only src/ headers that may include a library: one facade each, which all code goes through.
+FACADES = {"src/core/log.hpp": "quill/", "src/core/profile.hpp": "tracy/"}
 
 
 def leaked_dependencies(sources):
     """Includes in the src/ headers among these that are neither the standard library nor ours:
-    third-party and platform headers belong in .cpp files, behind our own types."""
+    third-party and platform headers belong in .cpp files, behind our own types. A facade header
+    (FACADES) may include its own library."""
     found = []
     for header in [f for f in sources if f.startswith("src/") and f.endswith(".hpp")]:
         for n, line in enumerate((ROOT / header).read_text(encoding="utf-8").splitlines(), 1):
@@ -434,7 +437,8 @@ def leaked_dependencies(sources):
             # Standard headers are the only bracketed names with neither a directory nor an extension.
             standard = bracket == "<" and re.fullmatch(r"[a-z0-9_]+", name)
             ours = bracket == '"' and (((ROOT / header).parent / name).is_file() or (ROOT / "src" / name).is_file())
-            if not (standard or ours):
+            facade = header in FACADES and name.startswith(FACADES[header])
+            if not (standard or ours or facade):
                 found.append(f"{header}:{n}: {line.strip()}")
     return found
 
