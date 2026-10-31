@@ -5,7 +5,7 @@
 
 namespace {
 
-constexpr int EARLIER_RUNS = 10; // one more than Start keeps
+constexpr i32 EARLIER_RUNS = 10; // one more than Start keeps
 
 std::string Read(const std::filesystem::path& file) {
     std::ifstream stream{ file };
@@ -20,7 +20,7 @@ std::filesystem::path StartedDirectory() {
         std::filesystem::remove_all(directory);
         std::filesystem::create_directories(directory);
         std::ofstream{ directory / "project_n.log" } << "run 0";
-        for (int run = 1; run < EARLIER_RUNS; ++run) {
+        for (i32 run = 1; run < EARLIER_RUNS; ++run) {
             std::ofstream{ directory / std::format("project_n.{}.log", run) } << std::format("run {}", run);
         }
         core::log::Start(directory);

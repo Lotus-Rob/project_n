@@ -22,7 +22,7 @@ namespace {
 
 constexpr const char* LOGGER_NAME = "root";
 constexpr const char* EARLY_LOGGER_NAME = "early";
-constexpr std::uint32_t KEPT_FILES = 10; // this run's and the 9 before it
+constexpr u32 KEPT_FILES = 10; // this run's and the 9 before it
 
 // The logger Start() created; null before it.
 std::atomic<quill::Logger*>& Started() {

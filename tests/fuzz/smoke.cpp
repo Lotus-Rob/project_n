@@ -3,8 +3,8 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 
 // Declared first: libFuzzer ships no header for it, and -Wmissing-prototypes requires one.
-extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size);
+extern "C" i32 LLVMFuzzerTestOneInput(const u8* data, std::size_t size);
 
-extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* /*data*/, std::size_t /*size*/) {
+extern "C" i32 LLVMFuzzerTestOneInput(const u8* /*data*/, std::size_t /*size*/) {
     return 0;
 }

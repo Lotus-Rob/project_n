@@ -6,8 +6,8 @@
 
 namespace {
 
-constexpr int WINDOW_WIDTH = 1280;
-constexpr int WINDOW_HEIGHT = 720;
+constexpr i32 WINDOW_WIDTH = 1280;
+constexpr i32 WINDOW_HEIGHT = 720;
 constexpr SDL_FColor CLEAR_COLOR{ .r = 0.08F, .g = 0.10F, .b = 0.14F, .a = 1.0F };
 
 // The per-user data folder, so a game installed in a read-only folder can still write its logs.
@@ -25,7 +25,7 @@ std::filesystem::path LogDirectory() {
 
 // A switch over SDL_LogPriority can't satisfy both -Wswitch-default and -Wcovered-switch-default;
 // the priorities are ordered, so compare instead.
-void SDLCALL LogFromSdl(void* /*userdata*/, int /*category*/, SDL_LogPriority priority, const char* message) noexcept {
+void SDLCALL LogFromSdl(void* /*userdata*/, i32 /*category*/, SDL_LogPriority priority, const char* message) noexcept {
     if (priority >= SDL_LOG_PRIORITY_CRITICAL) {
         PN_LOG_CRITICAL("SDL: {}", message);
     }
@@ -43,10 +43,10 @@ void SDLCALL LogFromSdl(void* /*userdata*/, int /*category*/, SDL_LogPriority pr
     }
 }
 
-int Run() {
+i32 Run() {
     SDL_SetLogOutputFunction(LogFromSdl, nullptr);
     SDL_SetLogPriorities(SDL_LOG_PRIORITY_DEBUG);
-    const int version = SDL_GetVersion();
+    const i32 version = SDL_GetVersion();
     PN_LOG_INFO(
         "SDL {}.{}.{} on {}",
         SDL_VERSIONNUM_MAJOR(version),
@@ -119,7 +119,7 @@ int main(int /*argc*/, char** /*argv*/) {
     }
     PN_LOG_NOTICE("project_n starting");
     try {
-        const int status = Run();
+        const i32 status = Run();
         PN_LOG_NOTICE("project_n stopped with status {}", status);
         return status;
     }
