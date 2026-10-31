@@ -30,6 +30,8 @@ if is_plat("linux") and get_config("toolchain") == "pixi-clang" and get_config("
             set_kind("binary")
             add_files(file)
             add_includedirs("$(projectdir)/src")
+            set_pcxxheader("unit/pch.hpp")
+            add_packages("doctest") -- the precompiled header includes it
             add_cxflags("-fsanitize=fuzzer", {force = true})
             -- conda-forge builds the libFuzzer runtime against libstdc++ (upstream bundles a private
             -- libc++); its std::__cxx11 symbols don't clash with our libc++'s std::__1. no-as-needed:

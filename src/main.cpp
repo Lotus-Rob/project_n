@@ -4,11 +4,6 @@
 
 #include <SDL3/SDL.h>
 
-#include <exception>
-#include <filesystem>
-#include <string>
-#include <string_view>
-
 namespace {
 
 constexpr int WINDOW_WIDTH = 1280;

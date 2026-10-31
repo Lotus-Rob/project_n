@@ -2,8 +2,6 @@
 
 #include <doctest/doctest.h>
 
-#include <expected>
-
 namespace {
 
 constexpr int EXPECTED_VALUE = 42;

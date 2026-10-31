@@ -16,15 +16,6 @@
 #pragma warning(pop)
 #endif
 
-#include <atomic>
-#include <cstdint>
-#include <exception>
-#include <filesystem>
-#include <memory>
-#include <string>
-#include <utility>
-#include <vector>
-
 namespace core::log {
 
 namespace {

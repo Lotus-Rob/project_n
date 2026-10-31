@@ -317,6 +317,16 @@ class DependencyTest(unittest.TestCase):
             self.assertEqual(project_n.leaked_dependencies(["src/core/log.hpp"]), ["src/core/log.hpp:2: #include <tracy/Tracy.hpp>"])
 
 
+class StandardIncludeTest(unittest.TestCase):
+    def test_a_standard_include_in_a_source_is_reported(self):
+        with temp_repo({"src/game.cpp": '#include "core/log.hpp"\n#include <vector>\n'}):
+            self.assertEqual(project_n.standard_includes_in_sources(["src/game.cpp"]), ["src/game.cpp:2: #include <vector>"])
+
+    def test_headers_and_library_includes_pass(self):
+        with temp_repo({"src/game.hpp": "#pragma once\n#include <vector>\n", "tests/unit/a.cpp": "#include <doctest/doctest.h>\n"}):
+            self.assertEqual(project_n.standard_includes_in_sources(["src/game.hpp", "tests/unit/a.cpp"]), [])
+
+
 class FacadeTest(unittest.TestCase):
     def bypassed(self, code, path="src/game.cpp"):
         with temp_repo({path: code}):

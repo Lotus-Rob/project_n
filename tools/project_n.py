@@ -426,6 +426,23 @@ INCLUDE_RE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]')
 FACADES = {"src/core/log.hpp": "quill/", "src/core/profile.hpp": "tracy/"}
 
 
+def is_standard(bracket, name):
+    """Standard headers are the only bracketed names with neither a directory nor an extension."""
+    return bracket == "<" and bool(re.fullmatch(r"[a-z0-9_]+", name))
+
+
+def standard_includes_in_sources(sources):
+    """Standard headers that a .cpp among these includes itself: each target's precompiled header
+    provides them (src/pch.hpp, tests/unit/pch.hpp). Headers still include what they use."""
+    found = []
+    for f in [f for f in sources if f.startswith(("src/", "tests/")) and f.endswith(".cpp")]:
+        for n, line in enumerate((ROOT / f).read_text(encoding="utf-8").splitlines(), 1):
+            m = INCLUDE_RE.match(line)
+            if m and is_standard(*m.groups()):
+                found.append(f"{f}:{n}: {line.strip()}")
+    return found
+
+
 def leaked_dependencies(sources):
     """Includes in the src/ headers among these that are neither the standard library nor ours:
     third-party and platform headers belong in .cpp files, behind our own types. A facade header
@@ -437,8 +454,7 @@ def leaked_dependencies(sources):
             if not m:
                 continue
             bracket, name = m.groups()
-            # Standard headers are the only bracketed names with neither a directory nor an extension.
-            standard = bracket == "<" and re.fullmatch(r"[a-z0-9_]+", name)
+            standard = is_standard(bracket, name)
             ours = bracket == '"' and (((ROOT / header).parent / name).is_file() or (ROOT / "src" / name).is_file())
             facade = header in FACADES and name.startswith(FACADES[header])
             if not (standard or ours or facade):
@@ -557,6 +573,10 @@ def cmd_lint(args):
     if leaked:
         raise Fail("third-party and platform headers belong in .cpp files, behind our own types (src/AGENTS.md):\n"
                    + "\n".join(leaked))
+    standard = standard_includes_in_sources(sources)
+    if standard:
+        raise Fail("standard headers come from the precompiled header, not from .cpp files (src/AGENTS.md):\n"
+                   + "\n".join(standard))
     bypassed = bypassed_facades(sources)
     if bypassed:
         raise Fail("log through PN_LOG_* (core/log.hpp) and profile through PN_PROFILE_* (core/profile.hpp) (src/AGENTS.md):\n"

@@ -3,12 +3,6 @@
 
 #include <doctest/doctest.h>
 
-#include <filesystem>
-#include <format>
-#include <fstream>
-#include <iterator>
-#include <string>
-
 namespace {
 
 constexpr int EARLIER_RUNS = 10; // one more than Start keeps
