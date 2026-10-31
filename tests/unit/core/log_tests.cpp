@@ -15,9 +15,10 @@ std::string Read(const std::filesystem::path& file) {
 }
 
 // Quill's loggers live for the whole process, so Start() runs once, here, for every test that
-// needs it: in a directory seeded with logs from EARLIER_RUNS runs, project_n.log the newest.
+// needs it: in a directory seeded with logs from EARLIER_RUNS runs, project_n.log the newest. It
+// sits in the working directory (the build's), not the shared temp folder another run could own.
 std::filesystem::path StartedDirectory() {
-    const std::filesystem::path directory = std::filesystem::temp_directory_path() / "project_n_log_tests";
+    const std::filesystem::path directory = std::filesystem::current_path() / "project_n_log_tests";
     [[maybe_unused]] static const bool started = [&directory] {
         std::filesystem::remove_all(directory);
         std::filesystem::create_directories(directory);
@@ -68,6 +69,42 @@ TEST_CASE("SDL errors are logged as errors") {
 
     const std::string line = LoggedLine(directory, "an SDL error");
     CHECK(line.find("LOG_ERROR") != std::string::npos);
+}
+
+TEST_CASE("SDL critical messages are logged as critical") {
+    const std::filesystem::path directory = StartedDirectory();
+    core::log::RouteSdlLogs();
+    SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "an SDL critical message");
+
+    const std::string line = LoggedLine(directory, "an SDL critical message");
+    CHECK(line.find("LOG_CRITICAL") != std::string::npos);
+}
+
+TEST_CASE("SDL info messages are logged as info") {
+    const std::filesystem::path directory = StartedDirectory();
+    core::log::RouteSdlLogs();
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "an SDL info message");
+
+    const std::string line = LoggedLine(directory, "an SDL info message");
+    CHECK(line.find("LOG_INFO") != std::string::npos);
+}
+
+TEST_CASE("SDL debug messages are logged as debug") {
+    const std::filesystem::path directory = StartedDirectory();
+    core::log::RouteSdlLogs();
+    SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "an SDL debug message");
+
+    const std::string line = LoggedLine(directory, "an SDL debug message");
+    CHECK(line.find("LOG_DEBUG") != std::string::npos);
+}
+
+TEST_CASE("SDL verbose messages are not logged") {
+    const std::filesystem::path directory = StartedDirectory();
+    core::log::RouteSdlLogs();
+    SDL_LogVerbose(SDL_LOG_CATEGORY_APPLICATION, "an SDL verbose message");
+
+    const std::string line = LoggedLine(directory, "an SDL verbose message");
+    CHECK(line.empty());
 }
 
 TEST_CASE("debug messages reach the log file") {
