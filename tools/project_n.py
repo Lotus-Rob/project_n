@@ -446,6 +446,26 @@ def leaked_dependencies(sources):
     return found
 
 
+# Output and profiling that go around core/log.hpp and core/profile.hpp. Comments are cut off first.
+BYPASS_RE = re.compile(r'#\s*include\s*[<"](?:quill|tracy)/|\bstd::(?:print|println|cout|cerr|clog)\b'
+                       r'|\b(?:printf|fprintf|puts|SDL_Log\w*)\s*\(')
+
+
+def bypassed_facades(sources):
+    """Lines in src/ that log or profile without the facades: all output goes through PN_LOG_* and
+    all profiling through PN_PROFILE_*, so each library is used the same way everywhere."""
+    found = []
+    for f in [f for f in sources if f.startswith("src/") and f.endswith((".cpp", ".hpp"))]:
+        own = FACADES.get(f.rsplit(".", 1)[0] + ".hpp")  # a facade's header and .cpp include its library
+        for n, line in enumerate((ROOT / f).read_text(encoding="utf-8").splitlines(), 1):
+            m = INCLUDE_RE.match(line)
+            if own and m and m[2].startswith(own):
+                continue
+            if BYPASS_RE.search(line.split("//")[0]):
+                found.append(f"{f}:{n}: {line.strip()}")
+    return found
+
+
 def check_api_docs(sources):
     """Doxygen (docs/Doxyfile) over the src/ headers among these: an undocumented public class,
     function or member, or a broken doc comment, fails."""
@@ -515,6 +535,10 @@ def cmd_lint(args):
     if leaked:
         raise Fail("third-party and platform headers belong in .cpp files, behind our own types (src/AGENTS.md):\n"
                    + "\n".join(leaked))
+    bypassed = bypassed_facades(sources)
+    if bypassed:
+        raise Fail("log through PN_LOG_* (core/log.hpp) and profile through PN_PROFILE_* (core/profile.hpp) (src/AGENTS.md):\n"
+                   + "\n".join(bypassed))
     check_api_docs(sources)
     if changed is None or any(f.startswith("tools/") and f.endswith(".py") for f in changed):
         run(["ruff", "check", "tools"])

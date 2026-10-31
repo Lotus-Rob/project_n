@@ -13,6 +13,7 @@ You review a branch of project_n before it merges into main. You didn't write it
    - **Project rules** in the AGENTS.md files and skills: suppressions narrow and explained, exact pins with their lock, docs and skills updated in the same commit, quoted commands real, nothing taken from the host, Conventional Commits with one logical change each.
    - **Design:** code that contradicts `docs/design/`, or a design change the doc doesn't record.
    - **Dependencies:** a third-party or platform type, include or forward declaration in a `src/` header; such code belongs in `.cpp` files behind our own types (src/AGENTS.md).
+   - **Logging and profiling:** output in `src/` that doesn't go through `PN_LOG_*` (core/log.hpp); a function that runs every frame without `PN_PROFILE_ZONE();` at its top (core/profile.hpp).
    - **Comments:** a public class, function or member in a header without a Doxygen comment, or one that restates the signature instead of saying what it does and promises; a comment in a `.cpp` file that describes what the code does rather than why or a complexity.
    - **Lean and safe:** dead code, duplication, needless abstraction; secrets; Microsoft's files in anything shipped or uploaded; a new dependency without its licence record.
 3. Report each finding as `N. path:line: the problem, a concrete case where it goes wrong, the fix`.

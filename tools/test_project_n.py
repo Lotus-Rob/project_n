@@ -317,6 +317,40 @@ class DependencyTest(unittest.TestCase):
             self.assertEqual(project_n.leaked_dependencies(["src/core/log.hpp"]), ["src/core/log.hpp:2: #include <tracy/Tracy.hpp>"])
 
 
+class FacadeTest(unittest.TestCase):
+    def bypassed(self, code, path="src/game.cpp"):
+        with temp_repo({path: code}):
+            return project_n.bypassed_facades([path])
+
+    def test_printing_is_reported(self):
+        self.assertEqual(self.bypassed('void F() {\n    std::println("hi");\n}\n'), ['src/game.cpp:2: std::println("hi");'])
+
+    def test_c_and_sdl_output_is_reported(self):
+        self.assertEqual(self.bypassed('void F() {\n    printf("a");\n    SDL_Log("b");\n}\n'),
+                         ['src/game.cpp:2: printf("a");', 'src/game.cpp:3: SDL_Log("b");'])
+
+    def test_a_direct_library_include_is_reported(self):
+        self.assertEqual(self.bypassed("#include <tracy/Tracy.hpp>\n"), ["src/game.cpp:1: #include <tracy/Tracy.hpp>"])
+
+    def test_a_facade_header_includes_its_library(self):
+        self.assertEqual(self.bypassed("#include <quill/Logger.h>\n", "src/core/log.hpp"), [])
+
+    def test_a_facade_source_includes_its_library(self):
+        self.assertEqual(self.bypassed("#include <quill/Backend.h>\n", "src/core/log.cpp"), [])
+
+    def test_a_facade_source_including_another_library_is_reported(self):
+        self.assertEqual(self.bypassed("#include <tracy/Tracy.hpp>\n", "src/core/log.cpp"), ["src/core/log.cpp:1: #include <tracy/Tracy.hpp>"])
+
+    def test_a_facade_source_printing_is_reported(self):
+        self.assertEqual(self.bypassed('std::println("hi");\n', "src/core/log.cpp"), ['src/core/log.cpp:1: std::println("hi");'])
+
+    def test_a_comment_naming_an_output_function_passes(self):
+        self.assertEqual(self.bypassed('PN_LOG_INFO("x"); // not std::println\n'), [])
+
+    def test_tests_may_print(self):
+        self.assertEqual(self.bypassed('void F() { std::println("hi"); }\n', "tests/unit/game_tests.cpp"), [])
+
+
 class ApiDocsTest(unittest.TestCase):
     DOXYFILE = (project_n.ROOT / "docs" / "Doxyfile").read_text()
 
