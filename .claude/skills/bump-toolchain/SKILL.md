@@ -16,6 +16,7 @@ Owned by: containers/AGENTS.md. Rationale: docs/design/0001 §6.1 (pinning polic
 | GCC | `gxx_linux-64` in `pixi.toml`; the libstdc++ pretty-printers follow automatically (tools/debug/gdbinit) |
 | glibc baseline | `sysroot_linux-64`. Changing it changes which distros can run the game: ask the user first and update design doc §5.2 |
 | XMake | `xmake` in `pixi.toml` and `set_xmakever()` in `xmake.lua` |
+| Tracy | `tracy-profiler-gui` (`feature.profiler` in `pixi.toml`) and both `add_requires("tracy-libdl ...")` lines in `xmake.lua`: one version, as the viewer only reads its own protocol. Its Linux and macOS builds need `libcapstone` from conda-forge's `capstone_dev` label; drop that pin once the main channel has it |
 | Ubuntu base | The digest in `containers/linux.Containerfile` `FROM` |
 | apt snapshot | `APT_SNAPSHOT` in `linux.Containerfile` and `msvc.Containerfile` (keep them equal) |
 | XMake on macOS | `XMAKE_MACOS_SHA256` in tools/project_n.py: the checksum of the upstream `xmake-bundle-v<version>.macos.arm64`, used because conda-forge has no osx-arm64 XMake |

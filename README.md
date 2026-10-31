@@ -38,6 +38,7 @@ use this machine's native preset: `linux-clang` on Linux, `windows-msvc` on Wind
 ./dev run                                # --debug launches under gdb
 ./dev check                              # the merge gate: commits, format, lint, all presets
 ./dev test --sanitizer address           # on request: address, undefined, thread, leak
+./dev run --mode releasedbg              # profiling build; ./dev profiler opens the Tracy viewer
 ```
 
 Native builds land in `build/<preset>/<mode>/`. `windows-msvc` builds in a container on Linux, using the real MSVC under Wine.

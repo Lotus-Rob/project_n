@@ -24,6 +24,7 @@
 - XMake sometimes rewrites `xmake-requires.lock` with only the `__meta__` block moved (Lua table order). The content is unchanged: `git checkout xmake-requires.lock`; commit the lock only when versions or hashes change. `artifact` and `release` ignore it in their clean-tree check.
 
 - On Windows, `subprocess` decodes output with the locale (cp1252) and crashes on XMake's UTF-8; `capture()` forces UTF-8. Running a program by bare name finds only `.exe` files (conda's xmake is `xmake.cmd`); `run()`/`capture()` resolve it through `shutil.which`. For xmake they skip the shim entirely: its trailing `endlocal` turns every exit code into 0, so failed tests passed CI.
+- MSVC `C1382` ("the PCH file has been rebuilt since ...obj") after a package's include paths change: XMake rebuilt the PCH but not the objects using it. `pixi run project_n clean --preset windows-msvc` and build again.
 - `doctor` exits 3 for "problems found", so CI can report them without hiding real errors (exit 1).
 
 ## Skill candidates

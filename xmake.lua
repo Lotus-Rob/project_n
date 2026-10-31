@@ -2,6 +2,7 @@ set_project("project_n")
 set_version("0.1.0")
 set_xmakever("3.1.2")
 set_policy("package.requires_lock", true)
+-- releasedbg is the profiling build (Tracy, below).
 add_rules("mode.debug", "mode.release", "mode.releasedbg")
 add_repositories("project_n-repo xmake/repo")
 
@@ -55,14 +56,18 @@ if is_plat("windows") then
     add_cxxflags("/std:c++23preview")
     -- Static C++ runtime, like Linux: players need no Visual C++ Redistributable.
     set_runtimes("MT")
-    -- Reproducible binaries (S2): the linker otherwise stamps the link time into the PE header and
-    -- debug directory, the only bytes that differed between two machines' builds.
-    add_cxflags("/Brepro", {force = true})
-    add_ldflags("/Brepro", {force = true})
-    -- LTCG (/GL, /LTCG) reorders .rdata constants from run to run without this. The .pdb's bytes
-    -- still vary; it matches its binary by the content-derived GUID /Brepro writes.
-    add_cxflags("/experimental:deterministic", {force = true})
-    add_ldflags("/experimental:deterministic", {force = true})
+    -- Reproducible binaries (S2), except in releasedbg: profiling builds never ship, and enabled
+    -- Tracy embeds full source paths, which /experimental:deterministic rejects (C5049).
+    if not is_mode("releasedbg") then
+        -- The linker otherwise stamps the link time into the PE header and debug directory, the
+        -- only bytes that differed between two machines' builds.
+        add_cxflags("/Brepro", {force = true})
+        add_ldflags("/Brepro", {force = true})
+        -- LTCG (/GL, /LTCG) reorders .rdata constants from run to run without this. The .pdb's
+        -- bytes still vary; it matches its binary by the content-derived GUID /Brepro writes.
+        add_cxflags("/experimental:deterministic", {force = true})
+        add_ldflags("/experimental:deterministic", {force = true})
+    end
     -- Library headers (<...>) are external: no warnings from code we don't own. XMake's own
     -- /external:I paths don't match under msvc-wine, so classify by include style instead.
     -- Forced: XMake probes each flag alone, and cl rejects /external:anglebrackets without
@@ -167,12 +172,20 @@ end
 add_requireconfs("**|python|cmake|ninja|meson|autoconf|automake|libtool|m4|bison|flex|gperf|nasm|pkg-config|pkgconf", {system = false})
 add_requires("doctest 2.5.3") -- MIT; tests only
 add_requires("libsdl3-wayland 3.4.16") -- zlib; xmake/repo: libsdl3 plus its Wayland build deps
+-- xmake/repo: tracy plus libdl for glibc 2.28. It collects
+-- in releasedbg; everywhere else its macros are empty and the library compiles to nothing.
+-- Localhost only: no profile data on the network. Keep the version equal to the viewer's in
+-- pixi.toml (feature.profiler): the protocol must match. Both variants are required in every
+-- mode, so xmake-requires.lock always holds both instead of whichever mode was configured last.
+-- XMake keys requirements by their string, so the two spell the one exact version differently.
+add_requires("tracy-libdl v0.14.1", {alias = "tracy_on", configs = {tracy_enable = true, only_localhost = true}}) -- BSD-3-Clause; profiling builds only
+add_requires("tracy-libdl 0.14.1", {alias = "tracy_off", configs = {tracy_enable = false, only_localhost = true}}) -- BSD-3-Clause; profiling builds only
 
 target("project_n")
     set_kind("binary")
     add_files("src/**.cpp")
     add_includedirs("src")
     set_pcxxheader("src/pch.hpp")
-    add_packages("libsdl3-wayland")
+    add_packages("libsdl3-wayland", is_mode("releasedbg") and "tracy_on" or "tracy_off")
 
 includes("tests")

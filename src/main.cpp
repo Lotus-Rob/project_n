@@ -1,6 +1,7 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 
 #include <SDL3/SDL.h>
+#include <tracy/Tracy.hpp>
 
 #include <exception>
 #include <print>
@@ -40,6 +41,7 @@ int Run() {
         SDL_SetRenderDrawColorFloat(renderer, CLEAR_COLOR.r, CLEAR_COLOR.g, CLEAR_COLOR.b, CLEAR_COLOR.a);
         SDL_RenderClear(renderer);
         SDL_RenderPresent(renderer);
+        FrameMark;
     }
 
     SDL_DestroyRenderer(renderer);

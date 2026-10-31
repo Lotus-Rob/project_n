@@ -81,6 +81,7 @@ Possible later additions, not part of the initial setup:
 | `ruff` / `actionlint` | 0.17.3 / 1.7.12 | `lint` checks project_n.py and the CI workflow |
 | `python` (+ `pip`, `setuptools`, `wheel`) | 3.14.x | XMake only accepts a build-tool Python that has all three |
 | `wayland` | 1.26 | Provides only the build-machine `wayland-scanner` (§7.1) |
+| `tracy-profiler-gui` | 0.14.1 | The Tracy viewer, in its own `profiler` environment (rule 22). Equal to the `tracy` client from xmake-repo |
 | `patchelf` | 0.19.2 | Used by `artifact` to strip the rpath that conda's GCC hard-codes |
 | `doctest` / `libsdl3` | 2.5.3 / 3.4.16 | Come from `xmake-repo`, not Pixi. Listed for reference |
 
@@ -322,6 +323,7 @@ Each rule below fixed a concrete failure or host leak (most found in S4) or reco
 7. **Local package overrides fix xmake-repo packages that only build because the host fills a gap.** Phase 2 moves them into an in-repository package repository (`xmake/repo/`, registered with `add_repositories`), and each one is offered upstream:
    - `libsdl3-wayland` inherits `libsdl3` and adds `libxkbcommon` and `libglvnd` (for `egl.pc`). Without them SDL **silently** builds without Wayland.
    - `libxkbcommon-fixed` inherits `libxkbcommon` and adds `libxml2`.
+   - `tracy-libdl` inherits `tracy` and links `libdl` on Linux: its client calls `dladdr`, which glibc keeps in libdl before 2.34, so the link failed against the 2.28 sysroot.
 
 **Debuggers**
 
@@ -367,6 +369,7 @@ Each rule below fixed a concrete failure or host leak (most found in S4) or reco
 19. **Precompiled headers:** `src/pch.hpp` for the game, `tests/unit/pch.hpp` for tests (`set_pcxxheader`). Sources still include what they use, so lint stays honest and nothing depends on the PCH. doctest's `main.cpp` defines `DOCTEST_CONFIG_IMPLEMENT` itself, because `DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN` implies it only on doctest.h's first inclusion, and the PCH has already included it.
 20. **Release builds keep debug info**, split off by XMake (`objcopy --only-keep-debug` into `.sym`, `dsymutil` into `.dSYM`, MSVC's `.pdb`) next to the stripped binary. `.sym` files are bit-identical between builds; an MSVC `.pdb`'s bytes are not (its internal layout varies), but it still matches its binary through the content-derived GUID `/Brepro` writes. `artifact` copies it to `dist/<preset>-symbols/`, which is kept with the release for crash reports and never shipped. It also zips both directories (`dist/project_n-<version>-<preset>[-symbols].zip`) for the GitHub release.
 21. **Hardening:** shipped Linux binaries are PIE with full RELRO (`-z relro -z now`), `-fstack-protector-strong` and `_FORTIFY_SOURCE=2` (3 needs glibc 2.33 headers; the baseline is 2.28); MSVC adds Control Flow Guard (`/guard:cf`, not in sanitizer builds). Debug builds bounds-check the standard library: `_GLIBCXX_ASSERTIONS`, libc++'s extensive hardening mode, `_MSVC_STL_HARDENING`. None changes the ABI, so packages need no rebuild.
+22. **Profiling with Tracy:** the `tracy-libdl` package (xmake-repo's `tracy` plus `libdl`, rule 7) collects in `releasedbg` (optimised, with symbols) and compiles to empty macros and an empty library everywhere else, so shipped builds contain none of it. It listens on localhost only. Both variants (`tracy_on`, `tracy_off`) are required in every mode and the target picks one: with one mode-dependent requirement, `xmake-requires.lock` held only the variant of the mode configured last. The viewer must speak the client's protocol, so `pixi.toml` pins `tracy-profiler-gui` to the same version, in a separate `profiler` environment: its GUI libraries (X11, EGL, dbus) in the default environment would be visible to package builds. Its Linux and macOS builds need `libcapstone` 6, which conda-forge publishes only under the `capstone_dev` label (2026-10-30).
 
 ---
 
@@ -388,6 +391,7 @@ Constraints:
 | `artifact --preset P` | Clean-room release build in the preset's container (committed sources only, empty build directory), plus the Linux dependency check (§5.2). Writes `dist/<preset>/` and `manifest.json`. |
 | `release [--dry-run]` | Requires a clean `main` that is up to date (it fetches, then refuses if `main` is behind). Runs `git cliff --bumped-version`, writes `set_version()`, regenerates `CHANGELOG.md`, commits `chore(release): vX.Y.Z` and creates the annotated tag `vX.Y.Z`. Never pushes. |
 | `selftest` | Runs `tools/test_project_n.py`; first step of `check`. |
+| `profiler` | The Tracy viewer from the `profiler` environment (rule 22). |
 | `commit-check <msg-file> \| --range A..B` | Validates commit messages (§11). |
 | `fmt [--check]` / `lint [--fix]` | Runs clang-format and clang-tidy from the Pixi environment; `lint` first runs ruff on `tools/` and actionlint on the workflow. `lint` always passes `--warnings-as-errors=*`, so any finding fails `check`. `--fix` applies clang-tidy's fixes and reformats; whatever remains is fixed by hand before a branch is finished (root AGENTS.md). |
 | `image [--preset P]` / `shell --preset P` / `clean [--preset P] [--packages]` | Builds an image if missing / opens a debugging shell in a container / removes build directories (`--packages` also removes XMake package directories for locks other than the current one). |

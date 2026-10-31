@@ -101,3 +101,22 @@ PKG_CONFIG_PATH_FOR_BUILD = "$CONDA_PREFIX/share/pkgconfig:$CONDA_PREFIX/lib/pkg
 CC_FOR_BUILD = "x86_64-conda-linux-gnu-cc"
 CXX_FOR_BUILD = "x86_64-conda-linux-gnu-c++"
 AR_FOR_BUILD = "x86_64-conda-linux-gnu-ar"
+
+# The Tracy viewer (`project_n profiler`), in an environment of its own: its GUI libraries (X11,
+# EGL, dbus) would otherwise be visible to package builds, which take libraries only from XMake.
+# Its protocol must match the client: keep it equal to add_requires("tracy-libdl ...") in xmake.lua.
+[feature.profiler]
+channels = ["conda-forge", "conda-forge/label/capstone_dev"]
+
+[feature.profiler.dependencies]
+tracy-profiler-gui = "==0.14.1"
+
+# Its Linux and macOS builds need libcapstone 6, published only under this label (Windows' doesn't).
+[feature.profiler.target.linux-64.dependencies]
+libcapstone = { version = "==6.0.0a4", channel = "conda-forge/label/capstone_dev" }
+
+[feature.profiler.target.osx-arm64.dependencies]
+libcapstone = { version = "==6.0.0a4", channel = "conda-forge/label/capstone_dev" }
+
+[environments]
+profiler = { features = ["profiler"], no-default-feature = true }

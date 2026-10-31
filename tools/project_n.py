@@ -527,6 +527,11 @@ def cmd_artifact(args):
     print(f"artifact: {dist.relative_to(ROOT)}, {Path(stem).name}.zip and -symbols.zip")
 
 
+def cmd_profiler(args):
+    # The viewer lives in its own Pixi environment (pixi.toml: feature.profiler).
+    run([os.environ.get("PIXI_EXE", "pixi"), "run", "-e", "profiler", "tracy-profiler"])
+
+
 def cmd_selftest(args):
     run([sys.executable, "-m", "unittest", "discover", "-q", "-s", "tools"])
 
@@ -759,6 +764,7 @@ def make_parser():
     group = p.add_mutually_exclusive_group(required=True)
     group.add_argument("message_file", nargs="?", help="a commit message file (used by the commit-msg hook)")
     group.add_argument("--range", help="validate every commit in a git range, e.g. main..HEAD")
+    add("profiler", cmd_profiler, "start the Tracy viewer; profile a `run --mode releasedbg` build")
     add("selftest", cmd_selftest, "run project_n.py's own unit tests (tools/test_project_n.py)")
     p = add("fmt", cmd_fmt, "format sources with the pinned clang-format")
     p.add_argument("--check", action="store_true", help="fail instead of rewriting files")
@@ -775,7 +781,7 @@ def make_parser():
 def main(argv=None):
     args = make_parser().parse_args(argv)
     try:
-        if HOST == "macos" and args.func not in (cmd_commit_check, cmd_selftest, cmd_fmt, cmd_release):
+        if HOST == "macos" and args.func not in (cmd_commit_check, cmd_selftest, cmd_fmt, cmd_release, cmd_profiler):
             ensure_macos_xmake()  # not for commands without XMake: the commit hook must work offline
         return args.func(args) or 0
     except Fail as e:
