@@ -402,6 +402,18 @@
                 url = "https://github.com/xmake-io/xmake-repo.git"
             },
             version = "2024.01.04"
+        },
+        ["tracy-libdl 0.14.1#c33f0634"] = {
+            repo = {
+                url = "xmake/repo"
+            },
+            version = "v0.14.1"
+        },
+        ["tracy-libdl v0.14.1#f3e9eb11"] = {
+            repo = {
+                url = "xmake/repo"
+            },
+            version = "v0.14.1"
         }
     },
     ["windows|x64"] = {
