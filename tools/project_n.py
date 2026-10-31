@@ -1,6 +1,6 @@
 """project_n: the single build entry point. Run as `pixi run project_n <command>`.
 
-Thin by design: every command reduces to XMake, Podman, git or git-cliff calls.
+Thin by design: every command reduces to calls of XMake, Podman, git, git-cliff and the pinned tools.
 Standard library only. See tools/AGENTS.md and docs/design/0001.
 """
 
@@ -527,6 +527,20 @@ def cmd_artifact(args):
     print(f"artifact: {dist.relative_to(ROOT)}, {Path(stem).name}.zip and -symbols.zip")
 
 
+def cmd_coverage(args):
+    """Line coverage of src/ by the tests: GCC's gcov data, reported by gcovr into build/coverage/."""
+    preset = "linux-gcc"
+    if needs_container(preset, args.container):
+        return reenter(preset, ["coverage"])
+    for stale in (ROOT / build_dir(preset, "coverage")).rglob("*.gcda"):  # counts add up across runs
+        stale.unlink()
+    cmd_test(argparse.Namespace(preset=preset, mode="coverage", sanitizer="none", container=False, target=None, args=[]))
+    out = ROOT / "build" / "coverage"
+    out.mkdir(parents=True, exist_ok=True)
+    run(["gcovr", "--root", ROOT, "--filter", "src/", "--gcov-executable", "x86_64-conda-linux-gnu-gcov",
+         "--html-details", out / "index.html", "--print-summary", build_dir(preset, "coverage")])
+
+
 def cmd_profiler(args):
     # The viewer lives in its own Pixi environment (pixi.toml: feature.profiler).
     run([os.environ.get("PIXI_EXE", "pixi"), "run", "-e", "profiler", "tracy-profiler"])
@@ -764,6 +778,7 @@ def make_parser():
     group = p.add_mutually_exclusive_group(required=True)
     group.add_argument("message_file", nargs="?", help="a commit message file (used by the commit-msg hook)")
     group.add_argument("--range", help="validate every commit in a git range, e.g. main..HEAD")
+    add("coverage", cmd_coverage, "test coverage of src/ (linux-gcc, gcovr): build/coverage/index.html", container=True)
     add("profiler", cmd_profiler, "start the Tracy viewer; profile a `run --mode releasedbg` build")
     add("selftest", cmd_selftest, "run project_n.py's own unit tests (tools/test_project_n.py)")
     p = add("fmt", cmd_fmt, "format sources with the pinned clang-format")

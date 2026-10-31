@@ -81,6 +81,7 @@ Possible later additions, not part of the initial setup:
 | `ruff` / `actionlint` | 0.17.3 / 1.7.12 | `lint` checks project_n.py and the CI workflow |
 | `python` (+ `pip`, `setuptools`, `wheel`) | 3.14.x | XMake only accepts a build-tool Python that has all three |
 | `wayland` | 1.26 | Provides only the build-machine `wayland-scanner` (§7.1) |
+| `gcovr` | 8.8 | `coverage` (Linux only) |
 | `tracy-profiler-gui` | 0.14.1 | The Tracy viewer, in its own `profiler` environment (rule 22). Equal to the `tracy` client from xmake-repo |
 | `patchelf` | 0.19.2 | Used by `artifact` to strip the rpath that conda's GCC hard-codes |
 | `doctest` / `libsdl3` | 2.5.3 / 3.4.16 | Come from `xmake-repo`, not Pixi. Listed for reference |
@@ -370,6 +371,7 @@ Each rule below fixed a concrete failure or host leak (most found in S4) or reco
 20. **Release builds keep debug info**, split off by XMake (`objcopy --only-keep-debug` into `.sym`, `dsymutil` into `.dSYM`, MSVC's `.pdb`) next to the stripped binary. `.sym` files are bit-identical between builds; an MSVC `.pdb`'s bytes are not (its internal layout varies), but it still matches its binary through the content-derived GUID `/Brepro` writes. `artifact` copies it to `dist/<preset>-symbols/`, which is kept with the release for crash reports and never shipped. It also zips both directories (`dist/project_n-<version>-<preset>[-symbols].zip`) for the GitHub release.
 21. **Hardening:** shipped Linux binaries are PIE with full RELRO (`-z relro -z now`), `-fstack-protector-strong` and `_FORTIFY_SOURCE=2` (3 needs glibc 2.33 headers; the baseline is 2.28); MSVC adds Control Flow Guard (`/guard:cf`, not in sanitizer builds). Debug builds bounds-check the standard library: `_GLIBCXX_ASSERTIONS`, libc++'s extensive hardening mode, `_MSVC_STL_HARDENING`. None changes the ABI, so packages need no rebuild.
 22. **Profiling with Tracy:** the `tracy-libdl` package (xmake-repo's `tracy` plus `libdl`, rule 7) collects in `releasedbg` (optimised, with symbols) and compiles to empty macros and an empty library everywhere else, so shipped builds contain none of it. It listens on localhost only. Both variants (`tracy_on`, `tracy_off`) are required in every mode and the target picks one: with one mode-dependent requirement, `xmake-requires.lock` held only the variant of the mode configured last. The viewer must speak the client's protocol, so `pixi.toml` pins `tracy-profiler-gui` to the same version, in a separate `profiler` environment: its GUI libraries (X11, EGL, dbus) in the default environment would be visible to package builds. Its Linux and macOS builds need `libcapstone` 6, which conda-forge publishes only under the `capstone_dev` label (2026-10-30).
+23. **Coverage:** XMake's `mode.coverage` (GCC's `--coverage`) on `linux-gcc`, run by the tests, reported by `gcovr` for `src/` only into `build/coverage/`. Counts from earlier runs are deleted first.
 
 ---
 
@@ -378,7 +380,7 @@ Each rule below fixed a concrete failure or host leak (most found in S4) or reco
 Constraints:
 
 - **Single file, stdlib only.** It is run through the Pixi task `project_n`.
-- **Thin.** It orchestrates XMake, Podman, git and git-cliff, and anything those tools already do stays there.
+- **Thin.** It orchestrates XMake, Podman, git, git-cliff and the tools pinned in the Pixi environment (gcovr, Doxygen, clang-format), and anything those tools already do stays there.
 - **Mechanical steps live here.** Skills call these commands instead of embedding shell sequences (§10.4).
 
 | Command | Does |
@@ -391,6 +393,7 @@ Constraints:
 | `artifact --preset P` | Clean-room release build in the preset's container (committed sources only, empty build directory), plus the Linux dependency check (§5.2). Writes `dist/<preset>/` and `manifest.json`. |
 | `release [--dry-run]` | Requires a clean `main` that is up to date (it fetches, then refuses if `main` is behind). Runs `git cliff --bumped-version`, writes `set_version()`, regenerates `CHANGELOG.md`, commits `chore(release): vX.Y.Z` and creates the annotated tag `vX.Y.Z`. Never pushes. |
 | `selftest` | Runs `tools/test_project_n.py`; first step of `check`. |
+| `coverage` | Test coverage of `src/` (rule 23). Runs in the Linux image on other hosts. |
 | `profiler` | The Tracy viewer from the `profiler` environment (rule 22). |
 | `commit-check <msg-file> \| --range A..B` | Validates commit messages (§11). |
 | `fmt [--check]` / `lint [--fix]` | Runs clang-format and clang-tidy from the Pixi environment; `lint` first runs ruff on `tools/` and actionlint on the workflow. `lint` always passes `--warnings-as-errors=*`, so any finding fails `check`. `--fix` applies clang-tidy's fixes and reformats; whatever remains is fixed by hand before a branch is finished (root AGENTS.md). |

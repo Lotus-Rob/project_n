@@ -42,6 +42,7 @@ libcxx = "==22.1.8"
 gdb = "==18.1"
 lldb = "==22.1.8"
 patchelf = "==0.19.2"
+gcovr = "==8.8"  # `coverage` report (linux-gcc; other hosts run it in the container)
 # Build tools for autotools-based packages.
 pkg-config = "==0.29.2"
 make = "==4.4.1"

@@ -130,6 +130,23 @@ class DirtyTreeTest(unittest.TestCase):
                 project_n.ROOT = saved
 
 
+class CoverageTest(unittest.TestCase):
+    def test_counts_from_earlier_runs_are_deleted(self):
+        saved = project_n.ROOT
+        with tempfile.TemporaryDirectory() as d:
+            project_n.ROOT = Path(d)
+            try:
+                stale = project_n.ROOT / project_n.build_dir("linux-gcc", "coverage") / "obj" / "main.gcda"
+                stale.parent.mkdir(parents=True)
+                stale.write_bytes(b"counts")
+                with mock.patch.multiple(project_n, needs_container=lambda *a: False, cmd_test=lambda args: None,
+                                         run=lambda cmd, **kw: None):
+                    project_n.cmd_coverage(project_n.argparse.Namespace(container=False))
+                self.assertFalse(stale.exists())
+            finally:
+                project_n.ROOT = saved
+
+
 class DocsTest(unittest.TestCase):
     def test_agent_docs_quote_only_real_commands(self):
         self.assertEqual(project_n.stale_doc_commands(), [])

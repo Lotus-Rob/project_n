@@ -2,8 +2,8 @@ set_project("project_n")
 set_version("0.1.0")
 set_xmakever("3.1.2")
 set_policy("package.requires_lock", true)
--- releasedbg is the profiling build (Tracy, below).
-add_rules("mode.debug", "mode.release", "mode.releasedbg")
+-- releasedbg is the profiling build (Tracy, below); coverage is `project_n coverage` (gcov flags).
+add_rules("mode.debug", "mode.release", "mode.releasedbg", "mode.coverage")
 add_repositories("project_n-repo xmake/repo")
 
 -- Sanitizers only on request (`project_n test --sanitizer <name>`), never in the default gate.
