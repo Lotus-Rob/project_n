@@ -699,16 +699,20 @@ def check_message(message, allow_fixup=True):
     return problems
 
 
+# A quoted command, not prose that names the project ("a project_n branch").
+DOC_COMMAND_RE = re.compile(r"(?:pixi run project_n|`project_n|\./dev) +([a-z][a-z-]*)")
+
+
 def stale_doc_commands():
-    """`project_n <cmd>` and `./dev <cmd>` quoted in AGENTS.md, CLAUDE.md, skills and README that don't exist."""
+    """`project_n <cmd>` and `./dev <cmd>` quoted in AGENTS.md, CLAUDE.md, skills, agents and README that don't exist."""
     commands = set(make_parser()._subparsers._group_actions[0].choices)
     # Ours only (tracked or new): build/ holds xmake-repo's own AGENTS.md.
     docs = capture(["git", "ls-files", "--cached", "--others", "--exclude-standard", "--",
-                    "*AGENTS.md", "*CLAUDE.md", ".claude/skills/*.md", "README.md"]).splitlines()
+                    "*AGENTS.md", "*CLAUDE.md", ".claude/skills/*.md", ".claude/agents/*.md", "README.md"]).splitlines()
     stale = []
     for doc in [d for d in docs if (ROOT / d).is_file()]:  # is_file: deleted but not yet committed
         for n, line in enumerate((ROOT / doc).read_text(encoding="utf-8").splitlines(), 1):
-            for cmd in re.findall(r"(?:project_n|\./dev) +([a-z][a-z-]*)", line):
+            for cmd in DOC_COMMAND_RE.findall(line):
                 if cmd not in commands:
                     stale.append(f"{doc}:{n}: unknown command {cmd!r}")
     return stale

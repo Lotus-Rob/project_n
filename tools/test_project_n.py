@@ -252,6 +252,10 @@ class FuzzTest(unittest.TestCase):
 
 
 class DocsTest(unittest.TestCase):
+    def test_only_quoted_commands_count(self):
+        line = "Reviews a project_n branch: run `pixi run project_n test`, `project_n release` or ./dev fmt."
+        self.assertEqual(project_n.DOC_COMMAND_RE.findall(line), ["test", "release", "fmt"])
+
     def test_agent_docs_quote_only_real_commands(self):
         self.assertEqual(project_n.stale_doc_commands(), [])
 
