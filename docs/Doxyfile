@@ -18,3 +18,5 @@ QUIET                 = YES
 # Doxygen's defaults to skip.
 WARN_IF_UNDOCUMENTED  = YES
 WARN_AS_ERROR         = FAIL_ON_WARNINGS
+# Document what profiling builds compile: core/profile.hpp's other branch only stubs the macros.
+PREDEFINED            = TRACY_ENABLE

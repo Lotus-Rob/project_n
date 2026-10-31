@@ -1,10 +1,10 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/log.hpp"
+#include "core/profile.hpp"
 
 #include <SDL3/SDL.h>
-#include <tracy/Tracy.hpp>
 
 #include <exception>
-#include <print>
 
 namespace {
 
@@ -19,18 +19,18 @@ int Run() {
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "wayland,x11");
 #endif
     if (!SDL_Init(SDL_INIT_VIDEO)) {
-        std::println(stderr, "SDL_Init failed: {}", SDL_GetError());
+        PN_LOG_ERROR("SDL_Init failed: {}", SDL_GetError());
         return 1;
     }
     SDL_Window* window = nullptr;
     SDL_Renderer* renderer = nullptr;
     if (!SDL_CreateWindowAndRenderer("project_n", WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_RESIZABLE, &window, &renderer)) {
-        std::println(stderr, "SDL_CreateWindowAndRenderer failed: {}", SDL_GetError());
+        PN_LOG_ERROR("SDL_CreateWindowAndRenderer failed: {}", SDL_GetError());
         SDL_Quit();
         return 1;
     }
     SDL_SetRenderVSync(renderer, 1); // SDL3 defaults to off: the loop would spin a core and the GPU at 100%
-    std::println("video driver: {}, renderer: {}", SDL_GetCurrentVideoDriver(), SDL_GetRendererName(renderer));
+    PN_LOG_INFO("video driver: {}, renderer: {}", SDL_GetCurrentVideoDriver(), SDL_GetRendererName(renderer));
 
     for (bool running = true; running;) {
         for (SDL_Event event; SDL_PollEvent(&event);) {
@@ -41,7 +41,7 @@ int Run() {
         SDL_SetRenderDrawColorFloat(renderer, CLEAR_COLOR.r, CLEAR_COLOR.g, CLEAR_COLOR.b, CLEAR_COLOR.a);
         SDL_RenderClear(renderer);
         SDL_RenderPresent(renderer);
-        FrameMark;
+        PN_PROFILE_FRAME();
     }
 
     SDL_DestroyRenderer(renderer);
@@ -53,11 +53,12 @@ int Run() {
 } // namespace
 
 int main(int /*argc*/, char** /*argv*/) {
+    core::log::Start();
     try {
         return Run();
     }
     catch (const std::exception& e) {
-        std::println(stderr, "fatal: {}", e.what());
+        PN_LOG_ERROR("fatal: {}", e.what());
         return 1;
     }
 }

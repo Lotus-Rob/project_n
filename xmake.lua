@@ -62,6 +62,9 @@ if is_plat("windows") then
     -- MSVC 14.50 has no /std:c++23: it warns (D9002, not fatal even with /WX), ignores it and
     -- compiles as C++14. Its C++23 mode is /std:c++23preview; src/core/cxx23.hpp guards the rest.
     add_cxxflags("/std:c++23preview")
+    -- The standard preprocessor: the traditional one passes a forwarded __VA_ARGS__ on as one
+    -- argument, which broke core/log.hpp's macros (C2440 inside Quill's).
+    add_cxxflags("/Zc:preprocessor")
     -- Static C++ runtime, like Linux: players need no Visual C++ Redistributable.
     set_runtimes("MT")
     -- Reproducible binaries (S2), except in releasedbg: profiling builds never ship, and enabled

@@ -8,5 +8,4 @@
 #include "core/cxx23.hpp"
 
 #include <exception>
-#include <print>
 // IWYU pragma: end_keep
