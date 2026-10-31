@@ -345,7 +345,8 @@ def cmd_run(args):
 
 
 def source_files():
-    return sorted(str(p.relative_to(ROOT)) for d in ("src", "tests") for p in (ROOT / d).rglob("*") if p.suffix in (".cpp", ".hpp"))
+    # Forward slashes on every host, as git prints them: fmt and lint match these against git's paths.
+    return sorted(p.relative_to(ROOT).as_posix() for d in ("src", "tests") for p in (ROOT / d).rglob("*") if p.suffix in (".cpp", ".hpp"))
 
 
 # Findings are fixed properly first; a suppression is the last resort (root AGENTS.md). One that
@@ -361,9 +362,9 @@ def nolint_explained(line):
     return not m or m["kind"] == "END" or bool(m["checks"] and re.match(r"\s*:\s*\S", m["rest"]))
 
 
-def unexplained_suppressions():
+def unexplained_suppressions(files):
     found = []
-    for f in source_files():
+    for f in files:
         lines = (ROOT / f).read_text(encoding="utf-8").splitlines()
         for n, line in enumerate(lines, 1):
             if not nolint_explained(line):
@@ -378,28 +379,83 @@ def unexplained_suppressions():
     return found
 
 
+def widens_scope(path):
+    """A change here can change any file's format or lint result: the tools' config (at any depth),
+    the build (flags, packages), the tool versions, or lint's own rules in this file."""
+    return (Path(path).name in (".clang-format", ".clang-tidy", ".clangd", "xmake.lua")
+            or path in ("pixi.lock", "tools/project_n.py") or path.startswith("xmake/repo/"))
+
+
+def scope_range():
+    """fmt and lint's default diff: every commit of a branch since it left main, pushed or not (a
+    pushed commit isn't a checked one), or main's unpushed commits."""
+    if capture(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip() == "main":
+        return commit_range()
+    has_main = capture(["git", "rev-parse", "--verify", "--quiet", "refs/heads/main"], check=False).strip()
+    return "main..HEAD" if has_main else "origin/main..HEAD"  # CI's clones have no local main
+
+
+def changed_files(rng):
+    """Files changed since the range's base (none: the working tree only), plus uncommitted and new ones."""
+    base = capture(["git", "merge-base", *rng.split("..")], check=False).strip() if rng else "HEAD"
+    if not base:
+        return None  # the base isn't in this clone (a force-pushed CI range): cover everything
+    # Deleted and renamed-away paths count: deleting a nested .clang-tidy changes other files' results.
+    return set(capture(["git", "diff", "--name-only", "--no-renames", base]).splitlines()
+               + capture(["git", "ls-files", "--others", "--exclude-standard"]).splitlines())
+
+
+def scoped_sources(args):
+    """(sources, changed files) for fmt and lint: the diff against scope_range(), or with --all or a
+    change that widens_scope() every source and None."""
+    changed = None if args.all else changed_files(args.range or scope_range())
+    if changed is None or any(widens_scope(f) for f in changed):
+        return source_files(), None
+    return [f for f in source_files() if f in changed], changed
+
+
+def lint_units(sources):
+    """The .cpp files clang-tidy runs on: a header's findings surface through the files that include
+    it, so a changed header lints them all."""
+    header_changed = any(f.endswith(".hpp") for f in sources)
+    return [f for f in source_files() if f.endswith(".cpp") and (header_changed or f in sources)]
+
+
 def cmd_fmt(args):
-    run(["clang-format", *(["--dry-run", "-Werror"] if args.check else ["-i"]), *source_files()])
+    files, _ = scoped_sources(args)
+    if not files:
+        print("fmt: no changed sources (--all covers every file)")
+        return
+    run(["clang-format", *(["--dry-run", "-Werror"] if args.check else ["-i"]), *files])
 
 
 def cmd_lint(args):
     if needs_container(LINT_PRESET, args.container):
-        return reenter(LINT_PRESET, ["lint", *(["--fix"] if args.fix else [])])
-    found = unexplained_suppressions()
+        rng = args.range or scope_range()  # resolved here: the container may see another upstream
+        return reenter(LINT_PRESET, ["lint", *(["--fix"] if args.fix else []), *(["--all"] if args.all else []),
+                                     *(["--range", rng] if rng else [])])
+    sources, changed = scoped_sources(args)
+    found = unexplained_suppressions(sources)
     if found:
         raise Fail("fix findings properly; a suppression is the last resort and must be narrow and explained:\n" + "\n".join(found))
-    run(["ruff", "check", "tools"])
-    run(["actionlint"])
+    if changed is None or any(f.startswith("tools/") and f.endswith(".py") for f in changed):
+        run(["ruff", "check", "tools"])
+    if changed is None or any(f.startswith(".github/") for f in changed):
+        run(["actionlint"])
+    units = lint_units(sources)
+    if not units:
+        print("lint: no changed C++ sources (--all covers every file)")
+        return
     bdir = configure(LINT_PRESET, "debug")
     run(["xmake", "build"], env=xmake_env(bdir))
     run(["xmake", "project", "-k", "compile_commands", bdir], env=xmake_env(bdir))
     # Lint is a gate: .clang-tidy's WarningsAsErrors: '*' makes any finding fail `check`.
     tidy = ["clang-tidy", "--quiet", "-p", bdir, *(["--fix"] if args.fix else [])]
     try:
-        run(tidy + [f for f in source_files() if f.endswith(".cpp")])
+        run(tidy + units)
     finally:
-        if args.fix:
-            cmd_fmt(argparse.Namespace(check=False))  # clang-tidy's fixes don't follow .clang-format
+        if args.fix:  # clang-tidy's fixes don't follow .clang-format
+            cmd_fmt(argparse.Namespace(check=False, all=args.all, range=args.range))
 
 
 def commit_range():
@@ -420,8 +476,8 @@ def cmd_check(args):
     rng = commit_range()
     if rng and cmd_commit_check(argparse.Namespace(range=rng, message_file=None)):
         raise Fail("commit-check failed")
-    cmd_fmt(argparse.Namespace(check=True))
-    cmd_lint(argparse.Namespace(container=args.container, fix=False))
+    cmd_fmt(argparse.Namespace(check=True, all=False, range=None))  # the diff only: `fmt --all`, `lint --all` for everything
+    cmd_lint(argparse.Namespace(container=args.container, fix=False, all=False, range=None))
     skipped = [p for p in PRESETS if not buildable_here(p) or (args.container and not PRESETS[p]["image"])]
     for preset in [p for p in PRESETS if p not in skipped]:
         cmd_test(argparse.Namespace(preset=preset, mode="release", sanitizer="none", container=args.container,
@@ -776,6 +832,10 @@ def make_parser():
         p.add_argument("--sanitizer", choices=["none", *all_sanitizers], default="none",
                        help="build with a sanitizer (support per preset: see SANITIZERS)")
 
+    def add_scope(p):
+        p.add_argument("--all", action="store_true", help="cover every source, not only the diff")
+        p.add_argument("--range", help="diff against this commit range's base (default: a branch's commits since main, or main's unpushed ones)")
+
     p = add("doctor", cmd_doctor, "check the environment; prints how to fix problems, installs nothing")
     p.add_argument("--docs", action="store_true", help="only check that commands quoted in agent docs and README exist")
     add_sanitizer(add("build", cmd_build, "build a preset, or all of them", preset="native", mode=True, container=True,
@@ -803,10 +863,13 @@ def make_parser():
     add("docs", cmd_docs, "API reference from doc comments with Doxygen: build/docs/html/")
     add("profiler", cmd_profiler, "start the Tracy viewer; profile a `run --mode releasedbg` build")
     add("selftest", cmd_selftest, "run project_n.py's own unit tests (tools/test_project_n.py)")
-    p = add("fmt", cmd_fmt, "format sources with the pinned clang-format")
+    p = add("fmt", cmd_fmt, "format changed sources with the pinned clang-format (--all: every source)")
     p.add_argument("--check", action="store_true", help="fail instead of rewriting files")
-    p = add("lint", cmd_lint, "run the pinned clang-tidy over the sources (any finding fails)", container=True)
+    add_scope(p)
+    p = add("lint", cmd_lint, "run the pinned clang-tidy over changed sources (--all: every source); any finding fails",
+            container=True)
     p.add_argument("--fix", action="store_true", help="apply clang-tidy's fixes, then reformat")
+    add_scope(p)
     add("image", cmd_image, "build or pull container images if missing, and install MSVC for windows-msvc", preset="optional")
     add("shell", cmd_shell, "open a shell in a preset's container (to debug container failures)", preset="required")
     p = add("clean", cmd_clean, "remove build directories", preset="optional")

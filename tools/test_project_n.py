@@ -108,26 +108,121 @@ class BuildAllTest(unittest.TestCase):
         self.assertEqual(result, 1)
 
 
+def git(root, *args):
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", *args],
+                   cwd=root, check=True, capture_output=True)
+
+
+@contextlib.contextmanager
+def temp_repo(files):
+    """A throwaway git repository on main with `files` committed, standing in for project_n.ROOT. The
+    host's PROJECT_N_COMMIT_RANGE (CI sets one) names commits this repository doesn't have."""
+    saved = project_n.ROOT
+    with tempfile.TemporaryDirectory() as d, mock.patch.dict(project_n.os.environ):
+        project_n.os.environ.pop("PROJECT_N_COMMIT_RANGE", None)
+        root = project_n.ROOT = Path(d)
+        try:
+            git(root, "init", "-q", "-b", "main")
+            for name, text in files.items():
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
+                (root / name).write_text(text)
+            git(root, "add", ".")
+            git(root, "commit", "-q", "--no-verify", "-m", "init")
+            yield root
+        finally:
+            project_n.ROOT = saved
+
+
 class DirtyTreeTest(unittest.TestCase):
     def test_lock_reorders_dont_block_releases(self):
-        saved = project_n.ROOT
-        with tempfile.TemporaryDirectory() as d:
-            root = project_n.ROOT = Path(d)
-            try:
-                def git(*args):
-                    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", *args],
-                                   cwd=root, check=True, capture_output=True)
-                git("init", "-q")
-                for name in ("xmake-requires.lock", "xmake.lua"):
-                    (root / name).write_text("a")
-                git("add", ".")
-                git("commit", "-q", "--no-verify", "-m", "init")
-                (root / "xmake-requires.lock").write_text("b")
-                self.assertFalse(project_n.tree_dirty())
-                (root / "xmake.lua").write_text("b")
-                self.assertTrue(project_n.tree_dirty())
-            finally:
-                project_n.ROOT = saved
+        with temp_repo({"xmake-requires.lock": "a", "xmake.lua": "a"}) as root:
+            (root / "xmake-requires.lock").write_text("b")
+            self.assertFalse(project_n.tree_dirty())
+            (root / "xmake.lua").write_text("b")
+            self.assertTrue(project_n.tree_dirty())
+
+
+class ScopeTest(unittest.TestCase):
+    DIFF = project_n.argparse.Namespace(all=False, range=None)
+
+    def test_diff_covers_changed_and_new_sources_only(self):
+        with temp_repo({"src/a.cpp": "a", "src/b.cpp": "b"}) as root:
+            (root / "src" / "a.cpp").write_text("changed")
+            (root / "src" / "c.cpp").write_text("new")
+            self.assertEqual(project_n.scoped_sources(self.DIFF)[0], ["src/a.cpp", "src/c.cpp"])
+
+    def test_a_branch_covers_its_committed_changes(self):
+        with temp_repo({"src/a.cpp": "a", "src/b.cpp": "b"}) as root:
+            git(root, "switch", "-q", "-c", "topic")
+            (root / "src" / "a.cpp").write_text("committed on the branch")
+            git(root, "commit", "-q", "--no-verify", "-am", "change a")
+            self.assertEqual(project_n.scoped_sources(self.DIFF)[0], ["src/a.cpp"])
+
+    def test_source_paths_use_gits_forward_slashes(self):
+        with temp_repo({"src/core/a.cpp": "a"}):
+            self.assertEqual(project_n.source_files(), ["src/core/a.cpp"])
+
+    def test_a_clone_without_local_main_diffs_against_origin_main(self):
+        with temp_repo({"src/a.cpp": "a"}) as root:
+            git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
+            git(root, "switch", "-q", "-c", "topic")
+            git(root, "branch", "-q", "-D", "main")
+            self.assertEqual(project_n.scope_range(), "origin/main..HEAD")
+
+    def test_main_diffs_against_its_commit_range(self):
+        with temp_repo({"src/a.cpp": "a", "src/b.cpp": "b"}) as root:
+            base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, check=True).stdout.strip()
+            (root / "src" / "a.cpp").write_text("pushed")
+            git(root, "commit", "-q", "--no-verify", "-am", "change a")
+            project_n.os.environ["PROJECT_N_COMMIT_RANGE"] = f"{base}..HEAD"  # what CI sets on main
+            self.assertEqual(project_n.scoped_sources(self.DIFF)[0], ["src/a.cpp"])
+
+    def test_container_lint_gets_the_range(self):
+        argvs = []
+        with mock.patch.object(project_n, "reenter", lambda preset, argv: argvs.append(argv)), \
+             mock.patch.object(project_n, "IN_CONTAINER", False):
+            project_n.cmd_lint(project_n.argparse.Namespace(container=True, fix=False, all=False, range="a..b"))
+        self.assertEqual(argvs[0][-2:], ["--range", "a..b"])
+
+    def test_container_lint_gets_all(self):
+        argvs = []
+        with mock.patch.object(project_n, "reenter", lambda preset, argv: argvs.append(argv)), \
+             mock.patch.object(project_n, "IN_CONTAINER", False):
+            project_n.cmd_lint(project_n.argparse.Namespace(container=True, fix=False, all=True, range="a..b"))
+        self.assertIn("--all", argvs[0])
+
+    def test_all_covers_every_source(self):
+        with temp_repo({"src/a.cpp": "a", "src/b.cpp": "b"}):
+            everything = project_n.argparse.Namespace(all=True, range=None)
+            self.assertEqual(project_n.scoped_sources(everything), (["src/a.cpp", "src/b.cpp"], None))
+
+    def test_a_widening_change_covers_every_source(self):
+        with temp_repo({"src/a.cpp": "a", "src/b.cpp": "b", ".clang-tidy": "x"}) as root:
+            (root / ".clang-tidy").write_text("y")
+            self.assertEqual(project_n.scoped_sources(self.DIFF), (["src/a.cpp", "src/b.cpp"], None))
+
+    def test_deleting_a_nested_lint_config_covers_every_source(self):
+        with temp_repo({"src/a.cpp": "a", "src/core/b.cpp": "b", "src/core/.clang-tidy": "# x"}) as root:
+            (root / "src" / "core" / ".clang-tidy").unlink()
+            self.assertEqual(project_n.scoped_sources(self.DIFF), (["src/a.cpp", "src/core/b.cpp"], None))
+
+    def test_lint_config_build_and_rules_widen_the_scope(self):
+        for path in (".clang-tidy", "src/core/.clang-tidy", ".clang-format", ".clangd", "xmake.lua", "tests/xmake.lua",
+                     "xmake/repo/packages/t/tracy-libdl/xmake.lua", "pixi.lock", "tools/project_n.py"):
+            self.assertTrue(project_n.widens_scope(path), path)
+        self.assertFalse(project_n.widens_scope("src/main.cpp"))
+
+    def test_a_base_missing_from_the_clone_covers_everything(self):
+        with temp_repo({"src/a.cpp": "a"}):
+            self.assertIsNone(project_n.changed_files("0123456789abcdef0123456789abcdef01234567..HEAD"))
+
+    def test_a_changed_header_lints_every_source_file(self):
+        with temp_repo({"src/a.cpp": "a", "src/b.cpp": "b", "src/a.hpp": "h"}):
+            self.assertEqual(project_n.lint_units(["src/a.hpp"]), ["src/a.cpp", "src/b.cpp"])
+
+    def test_a_changed_source_file_lints_only_itself(self):
+        with temp_repo({"src/a.cpp": "a", "src/b.cpp": "b"}):
+            self.assertEqual(project_n.lint_units(["src/a.cpp"]), ["src/a.cpp"])
 
 
 class CoverageTest(unittest.TestCase):
@@ -163,7 +258,7 @@ class DocsTest(unittest.TestCase):
 
 class SuppressionTest(unittest.TestCase):
     def test_sources_have_no_unexplained_suppressions(self):
-        self.assertEqual(project_n.unexplained_suppressions(), [])
+        self.assertEqual(project_n.unexplained_suppressions(project_n.source_files()), [])
 
     def test_nolint_needs_checks_and_a_reason(self):
         explained = project_n.nolint_explained
@@ -171,6 +266,23 @@ class SuppressionTest(unittest.TestCase):
         self.assertTrue(explained("// NOLINTEND(bugprone-macro-parentheses)"))
         self.assertFalse(explained("f(); // NOLINT"))
         self.assertFalse(explained("// NOLINTNEXTLINE(readability-magic-numbers)"))
+
+    def test_a_bare_nolint_is_reported(self):
+        with temp_repo({"src/a.cpp": "int x = 0; // NOLINT\n"}):
+            self.assertEqual(len(project_n.unexplained_suppressions(["src/a.cpp"])), 1)
+
+    def test_an_uncommented_pragma_is_reported(self):
+        with temp_repo({"src/a.cpp": '#pragma clang diagnostic ignored "-Wshadow"\n'}):
+            self.assertEqual(len(project_n.unexplained_suppressions(["src/a.cpp"])), 1)
+
+    def test_a_pragma_explained_on_the_line_above_passes(self):
+        with temp_repo({"src/a.cpp": '// the SDL header shadows a name we cannot rename\n#pragma clang diagnostic ignored "-Wshadow"\n'}):
+            self.assertEqual(project_n.unexplained_suppressions(["src/a.cpp"]), [])
+
+    def test_a_nested_clang_tidy_without_a_reason_is_reported(self):
+        with temp_repo({"src/core/.clang-tidy": "Checks: '-readability-magic-numbers'\n"}):
+            self.assertEqual(project_n.unexplained_suppressions([]),
+                             ["src/core/.clang-tidy: explain in a # comment why these checks can't be met"])
 
     def test_recognises_diagnostic_pragmas(self):
         for line in ("#pragma clang diagnostic ignored \"-Wshadow\"", "#  pragma GCC diagnostic ignored \"-Wconversion\"",

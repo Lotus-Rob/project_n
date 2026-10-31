@@ -37,12 +37,16 @@ jobs:
         with:
           fetch-depth: 0
       - name: Commit range
+        # The pushed commits: commit-check's range, and on main what fmt and lint diff against
+        # (PROJECT_N_COMMIT_RANGE; on a branch they diff against main by themselves).
         run: |
           if [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ] && [ -n "${{ github.event.before }}" ]; then
-            echo "RANGE=${{ github.event.before }}..HEAD" >> "$GITHUB_ENV"
+            range="${{ github.event.before }}..HEAD"
           else
-            echo "RANGE=origin/main..HEAD" >> "$GITHUB_ENV"
+            range="origin/main..HEAD"
           fi
+          echo "RANGE=$range" >> "$GITHUB_ENV"
+          echo "PROJECT_N_COMMIT_RANGE=$range" >> "$GITHUB_ENV"
       - name: Log in to the image cache
         # Fork PRs have no write token; project_n then builds the image instead of pulling it.
         run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin || true
@@ -174,6 +178,7 @@ jobs:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
           cache: true
+      - run: pixi run project_n selftest  # the only place it runs on Windows (paths, shims)
       # Report only: CI needs no commit hook or podman. Exit code 3 means problems found; anything else is a bug.
       - run: pixi run project_n doctor; if ($LASTEXITCODE -notin 0, 3) { exit 1 }; exit 0
       - run: pixi run project_n test --preset windows-msvc --mode release

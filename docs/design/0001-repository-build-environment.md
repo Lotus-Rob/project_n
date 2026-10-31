@@ -399,7 +399,7 @@ Constraints:
 | `coverage` / `fuzz <target> [--time S]` | Test coverage of `src/` (rule 23) / one libFuzzer target (rule 24). Both run in the Linux image on other hosts. |
 | `docs` / `profiler` | The Doxygen API reference in `build/docs/` (rule 25) / the Tracy viewer from the `profiler` environment (rule 22). |
 | `commit-check <msg-file> \| --range A..B` | Validates commit messages (§11). |
-| `fmt [--check]` / `lint [--fix]` | Runs clang-format and clang-tidy from the Pixi environment; `lint` first runs ruff on `tools/` and actionlint on the workflow. `lint` always passes `--warnings-as-errors=*`, so any finding fails `check`. `--fix` applies clang-tidy's fixes and reformats; whatever remains is fixed by hand before a branch is finished (root AGENTS.md). |
+| `fmt [--check]` / `lint [--fix]` (`--all`, `--range R`) | Runs clang-format and clang-tidy from the Pixi environment over the diff: on a branch every commit since it left `main`, pushed or not (a pushed commit isn't a checked one), on `main` the unpushed commits, plus uncommitted and new files. CI gets the same scope from the same code: a clone without a local `main` diffs against `origin/main`, and on `main` CI passes its pushed range in `PROJECT_N_COMMIT_RANGE`. A changed header lints every `.cpp`, since header findings surface through the files that include it, and a change that can alter any file's result widens both to every file: `.clang-format`, `.clang-tidy` or `.clangd` at any depth, any `xmake.lua`, `xmake/repo/`, `pixi.lock`, or `project_n.py` itself (it holds the suppression rules). `--all` covers every file on request. `lint` also runs ruff when `tools/` changed and actionlint when the workflow changed. `lint` always passes `--warnings-as-errors=*`, so any finding fails `check`. `--fix` applies clang-tidy's fixes and reformats; whatever remains is fixed by hand before a branch is finished (root AGENTS.md). |
 | `image [--preset P]` / `shell --preset P` / `clean [--preset P] [--packages]` | Builds an image if missing / opens a debugging shell in a container / removes build directories (`--packages` also removes XMake package directories for locks other than the current one). |
 
 Behaviour:
@@ -615,9 +615,9 @@ GitHub Actions (`.github/workflows/ci.yml`, since phase 4) only runs `project_n`
 
 | Job | Runner | Runs |
 |---|---|---|
-| `lint` | ubuntu-26.04 | `selftest` (includes `doctor --docs`), `commit-check --range`, `fmt --check`, `lint --container` |
+| `lint` | ubuntu-26.04 | `selftest` (includes `doctor --docs`), `commit-check --range`, `fmt --check` and `lint --container` over a branch's commits since `main` (on `main` the pushed ones, from `PROJECT_N_COMMIT_RANGE`) |
 | `container (<preset>)` | ubuntu-26.04 | `artifact` for `linux-gcc`, `linux-clang` and `windows-msvc` (msvc-wine): clean-container build, tests, dependency check, `dist/` upload |
-| `windows` | windows-2025-vs2026 | native `windows-msvc` tests in release and under ASan, after adding the pinned toolset from `buildtools.vsconfig` |
+| `windows` | windows-2025-vs2026 | `selftest`, then native `windows-msvc` tests in release and under ASan, after adding the pinned toolset from `buildtools.vsconfig` |
 | `macos` | macos-26 | native `macos-clang` tests in release and under ASan, then `artifact` |
 
 - **Caches**, in two layers:
