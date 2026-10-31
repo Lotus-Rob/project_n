@@ -11,10 +11,10 @@ end
 
 target("core_tests")
     set_kind("binary")
-    add_files("unit/core/*.cpp")
+    add_files("unit/core/*.cpp", "$(projectdir)/src/core/log.cpp")
     add_includedirs("$(projectdir)/src")
     set_pcxxheader("unit/pch.hpp")
-    add_packages("doctest")
+    add_packages("doctest", "quill-wine")
     add_tests("default")
     if is_plat("windows") and not is_host("windows") then
         on_test(test_under_wine)

@@ -10,5 +10,9 @@
 build/
 dist/
 
+# Logs: the game writes its own to the per-user data folder, never here (src/AGENTS.md)
+logs/
+*.log
+
 # Python bytecode (tools/)
 __pycache__/
