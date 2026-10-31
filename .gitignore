@@ -5,6 +5,8 @@
 .ruff_cache/
 .vs/
 .DS_Store
+# Per-developer spell-checker dictionary (typos-lsp)
+typos.toml
 
 # Build outputs
 build/
