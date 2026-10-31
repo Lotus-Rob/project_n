@@ -1,4 +1,5 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/frame.hpp"
 #include "core/log.hpp"
 #include "core/profile.hpp"
 
@@ -9,6 +10,8 @@ namespace {
 constexpr i32 WINDOW_WIDTH = 1280;
 constexpr i32 WINDOW_HEIGHT = 720;
 constexpr SDL_FColor CLEAR_COLOR{ .r = 0.08F, .g = 0.10F, .b = 0.14F, .a = 1.0F };
+constexpr u64 NS_PER_SECOND = 1'000'000'000;
+constexpr u64 FALLBACK_FRAMES_PER_SECOND = 60; // without vsync
 
 // The per-user data folder, so a game installed in a read-only folder can still write its logs.
 std::filesystem::path LogDirectory() {
@@ -78,14 +81,18 @@ i32 Run() {
         SDL_GetRendererName(renderer)
     );
     // SDL3 defaults to off: the loop would spin a core and the GPU at 100%.
-    if (SDL_SetRenderVSync(renderer, 1)) {
+    const bool vsync = SDL_SetRenderVSync(renderer, 1);
+    if (vsync) {
         PN_LOG_DEBUG("vsync on");
     }
     else {
-        PN_LOG_WARNING("vsync unavailable, so the frame rate is uncapped: {}", SDL_GetError());
+        PN_LOG_WARNING(
+            "vsync unavailable, so frames are capped at {} per second: {}", FALLBACK_FRAMES_PER_SECOND, SDL_GetError()
+        );
     }
 
     for (bool running = true; running;) {
+        const u64 frameStart = SDL_GetTicksNS();
         for (SDL_Event event; SDL_PollEvent(&event);) {
             if (event.type == SDL_EVENT_QUIT) {
                 PN_LOG_DEBUG("quit requested");
@@ -99,6 +106,9 @@ i32 Run() {
         SDL_SetRenderDrawColorFloat(renderer, CLEAR_COLOR.r, CLEAR_COLOR.g, CLEAR_COLOR.b, CLEAR_COLOR.a);
         SDL_RenderClear(renderer);
         SDL_RenderPresent(renderer);
+        if (!vsync) {
+            SDL_DelayPrecise(core::FrameWait(SDL_GetTicksNS() - frameStart, NS_PER_SECOND / FALLBACK_FRAMES_PER_SECOND));
+        }
         PN_PROFILE_FRAME();
     }
 
