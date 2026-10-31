@@ -12,3 +12,10 @@ CompileFlags:
     - -Wno-unknown-warning-option
 Diagnostics:
   UnusedIncludes: Strict
+---
+# clangd analyses an open header as the file being compiled, so -Wunused-macros flags macros
+# meant for the files that include it. Real builds and lint never compile a header on its own.
+If:
+  PathMatch: .*\.hpp
+CompileFlags:
+  Add: [-Wno-unused-macros]
