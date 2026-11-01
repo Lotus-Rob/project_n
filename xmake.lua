@@ -100,8 +100,9 @@ if is_plat("windows") then
     -- /external:W, so the probe silently dropped it on native Windows.
     add_cxflags("/external:anglebrackets", "/external:W0", {force = true})
     -- /Wall's codegen notes rather than code issues: padding (4820), inlining decisions (4710,
-    -- 4711), removed unused inlines (4514), Spectre mitigation points (5045).
-    add_cxflags("/wd4820", "/wd4710", "/wd4711", "/wd4514", "/wd5045")
+    -- 4711), removed unused inlines (4514), Spectre mitigation points (5045), and copy or move
+    -- members implicitly deleted (4625, 4626, 5026, 5027): move-only aggregates stay aggregates.
+    add_cxflags("/wd4820", "/wd4710", "/wd4711", "/wd4514", "/wd5045", "/wd4625", "/wd4626", "/wd5026", "/wd5027")
     if not sanitized then
         add_cxflags("/guard:cf") -- Control Flow Guard for shipped builds
         add_ldflags("/guard:cf")
