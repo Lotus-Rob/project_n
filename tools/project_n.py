@@ -359,7 +359,8 @@ def cmd_run(args):
 
 
 def is_source(path):
-    return path.startswith(("src/", "tests/")) and path.endswith((".cpp", ".hpp"))
+    """Our C++ sources: what fmt and lint cover. Headers in a generated/ folder are written by `shaders` and `atlas`."""
+    return path.startswith(("src/", "tests/")) and path.endswith((".cpp", ".hpp")) and "/generated/" not in path
 
 
 def source_files():
@@ -595,7 +596,7 @@ def check_api_docs(sources):
 # Shaders (design doc 0002 §8.8): HLSL in shaders/, compiled by `shaders` into committed binaries.
 SHADER_BIN = "shaders/bin"
 SHADER_MANIFEST = f"{SHADER_BIN}/sources.sha256"  # every source and output with its hash: `lint` finds stale binaries
-SHADER_HEADER = f"{SHADER_BIN}/shaders.hpp"
+SHADER_HEADER = "src/gfx/generated/shaders.hpp"  # with the code that includes it; fmt and lint skip generated/
 # Per stage (a source is <name>.<stage>.hlsl): its entry point, DXC's profile (shader model 6.0) and the register space SDL_GPU reads
 # its resources from; its uniform buffers are in the next space.
 SHADER_STAGES = {"vert": ("VertexMain", "vs_6_0", 0), "frag": ("FragmentMain", "ps_6_0", 2)}
@@ -657,7 +658,8 @@ def shader_hashes():
     """The manifest's content: the shader tools' pins, then each shader source and committed output
     with its SHA-256. A bumped tool makes the binaries stale, as a changed source does."""
     pins = "".join(f"# {tool} ==" + " ==".join(versions) + "\n" for tool, versions in shader_tool_pins().items())
-    files = sorted(p for p in [*(ROOT / "shaders").glob("*.hlsl*"), *(ROOT / SHADER_BIN).glob("*")] if p.relative_to(ROOT).as_posix() != SHADER_MANIFEST)
+    files = sorted(p for p in [*(ROOT / "shaders").glob("*.hlsl*"), *(ROOT / SHADER_BIN).glob("*"), ROOT / SHADER_HEADER]
+                   if p.is_file() and p.relative_to(ROOT).as_posix() != SHADER_MANIFEST)
     return pins + "".join(f"{sha256(p)}  {p.relative_to(ROOT).as_posix()}\n" for p in files)
 
 
@@ -695,14 +697,17 @@ def shaders_header(stages):
             size = (ROOT / SHADER_BIN / f"{stem}.{stage}.{ext}").stat().st_size
             lines += [f"/// shaders/bin/{stem}.{stage}.{ext}, embedded by XMake's utils.bin2c.",
                       f"inline constexpr std::array<u8, {size}> {name}_{fmt}{{{{", f'#include "{stem}.{stage}.{ext}.h"', "}};"]
-        lines += [f"/// shaders/{stem}.{stage}.hlsl.", (f'inline constexpr Stage {name}{{ "{stem}.{stage}", "{entry}", {name}_SPIRV, {name}_DXIL, {name}_MSL, '
-                   f'{counts["textures"]}, {counts["images"]}, {counts["ssbos"]}, {counts["ubos"]} }};'), ""]
+        lines += [f"/// shaders/{stem}.{stage}.hlsl.", f"inline constexpr Stage {name}{{",
+                  f'    .name = "{stem}.{stage}",', f'    .entryPoint = "{entry}",', f"    .spirv = {name}_SPIRV,",
+                  f"    .dxil = {name}_DXIL,", f"    .msl = {name}_MSL,", f'    .samplers = {counts["textures"]},',
+                  f'    .storageTextures = {counts["images"]},', f'    .storageBuffers = {counts["ssbos"]},',
+                  f'    .uniformBuffers = {counts["ubos"]},', "};", ""]
     return "\n".join([*lines, "} // namespace gfx::shaders", ""])
 
 
 def cmd_shaders(args):
     """Compile shaders/<name>.<stage>.hlsl with DXC to SPIR-V and DXIL, then SPIRV-Cross to MSL, into shaders/bin/
-    with the generated header and the manifest. The outputs are committed with their sources."""
+    with the manifest, and the generated header into src/gfx/generated/. The outputs are committed with their sources."""
     if HOST == "macos":
         raise Fail("conda-forge has no DXC or SPIRV-Cross for macOS: run `shaders` on Linux or Windows (design doc 0002 §8.8)")
     if unequal_shader_pins():
@@ -732,18 +737,18 @@ def cmd_shaders(args):
                  "--entry", entry, "--stage", stage, "--output", f"{base}.msl"])
             lf_endings(ROOT / f"{base}.msl")
             stages.append((stem, stage, entry, counts))
+    (ROOT / SHADER_HEADER).parent.mkdir(parents=True, exist_ok=True)
     (ROOT / SHADER_HEADER).write_text(shaders_header(stages), encoding="utf-8", newline="\n")
     (ROOT / SHADER_MANIFEST).write_text(shader_hashes(), encoding="utf-8", newline="\n")
-    print(f"shaders: {len(stages)} stage(s) in {SHADER_BIN}/; commit them with their sources")
+    print(f"shaders: {len(stages)} stage(s) in {SHADER_BIN}/ and {SHADER_HEADER}; commit them with their sources")
 
 
 # The atlas step (design doc 0002 §8.7, §9): assigns every sprite in art/sprites.toml a page of the
 # texture array and a region on it; the game uploads each image from assets/sprites/ there at load.
 SPRITES_DIR = "assets/sprites"
 SPRITE_LIST = "art/sprites.toml"
-ATLAS_BIN = "art/bin"
-ATLAS_HEADER = f"{ATLAS_BIN}/atlas.hpp"
-ATLAS_MANIFEST = f"{ATLAS_BIN}/sources.sha256"  # the inputs and the header with their hashes: `lint` finds a stale header
+ATLAS_HEADER = "src/core/generated/atlas.hpp"  # core's frame contract, which game and gfx read; fmt and lint skip generated/
+ATLAS_MANIFEST = "art/atlas.sha256"  # the inputs and the header with their hashes: `lint` finds a stale header
 ATLAS_PAGE = 2048  # every page of the array is this square
 ATLAS_MIPS = 5  # mip levels the game generates for the array
 ATLAS_GUTTER = 1 << (ATLAS_MIPS - 1)  # transparent pixels around each sprite: neighbours don't bleed in down to the last mip
@@ -829,21 +834,23 @@ def atlas_header(sprites, places):
              "/// The number of pages (array layers).", f"inline constexpr u32 PAGES = {max((p for p, _, _ in places), default=-1) + 1};",
              "/// The mip levels to generate; the gutters between sprites keep them apart down to the last.",
              f"inline constexpr u32 MIP_LEVELS = {ATLAS_MIPS};", "",
-             "/// A sprite's stable ID: its place in art/sprites.toml.", "enum class SpriteId : u16 {",
+             "/// A sprite's stable ID: its place in art/sprites.toml.",
+             "enum class SpriteId : u16 { // NOLINT(performance-enum-size): stable IDs outgrow a byte as sprites are added",
              *[f"    {c}, ///< assets/sprites/{name}.png" for c, (name, *_) in zip(camel, sprites)], "};", "",
              "/// Every sprite, indexed by SpriteId.", f"inline constexpr std::array<Sprite, {len(sprites)}> SPRITES{{ {{"]
-    lines += [f'    {{ "sprites/{name}.png", {p}, {x}, {y}, {w}, {h}, {fx}, {fy} }},'
+    lines += [f'    {{ .file = "sprites/{name}.png", .page = {p}, .x = {x}, .y = {y}, .width = {w}, .height = {h}, '
+              f".footX = {fx}, .footY = {fy} }},"
               for (name, w, h, fx, fy), (p, x, y) in zip(sprites, places)]
     return "\n".join([*lines, "} };", "", "} // namespace core::atlas", ""])
 
 
 def cmd_atlas(args):
-    """Pack the sprites of art/sprites.toml into texture-array pages: art/bin/atlas.hpp and its manifest."""
+    """Pack the sprites of art/sprites.toml into texture-array pages: the generated header and its manifest."""
     if args.placeholders:
         run([sys.executable, "art/placeholders.py"])
     sprites = read_sprites()
     places = pack_atlas([(w, h) for _, w, h, _, _ in sprites])
-    (ROOT / ATLAS_BIN).mkdir(parents=True, exist_ok=True)
+    (ROOT / ATLAS_HEADER).parent.mkdir(parents=True, exist_ok=True)
     (ROOT / ATLAS_HEADER).write_text(atlas_header(sprites, places), encoding="utf-8", newline="\n")
     (ROOT / ATLAS_MANIFEST).write_text(atlas_hashes(), encoding="utf-8", newline="\n")
     print(f"atlas: {len(sprites)} sprite(s) on {max(p for p, _, _ in places) + 1} page(s) in {ATLAS_HEADER}; commit it with them")
@@ -1461,7 +1468,7 @@ def make_parser():
     p.add_argument("--time", type=int, default=60, help="seconds to fuzz (default 60)")
     add("docs", cmd_docs, "API reference from doc comments with Doxygen: build/docs/html/")
     add("profiler", cmd_profiler, "start the Tracy viewer; profile a `run --mode releasedbg` build")
-    p = add("atlas", cmd_atlas, "assign the sprites of art/sprites.toml their texture-array pages: art/bin/atlas.hpp")
+    p = add("atlas", cmd_atlas, "assign the sprites of art/sprites.toml their texture-array pages (src/core/generated/atlas.hpp)")
     p.add_argument("--placeholders", action="store_true", help="first redraw the procedural placeholders (every image in PLACEHOLDERS in art/placeholders.py)")
     add("shaders", cmd_shaders, "compile shaders/*.hlsl into shaders/bin/ (SPIR-V, DXIL, MSL); Linux and Windows only")
     add("selftest", cmd_selftest, "run project_n.py's own unit tests (tools/test_project_n.py)")

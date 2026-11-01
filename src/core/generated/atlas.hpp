@@ -35,7 +35,7 @@ inline constexpr u32 PAGES = 1;
 inline constexpr u32 MIP_LEVELS = 5;
 
 /// A sprite's stable ID: its place in art/sprites.toml.
-enum class SpriteId : u16 {
+enum class SpriteId : u16 { // NOLINT(performance-enum-size): stable IDs outgrow a byte as sprites are added
     Ground, ///< assets/sprites/ground.png
     RockLarge, ///< assets/sprites/rock_large.png
     RockSmall, ///< assets/sprites/rock_small.png
@@ -54,20 +54,20 @@ enum class SpriteId : u16 {
 
 /// Every sprite, indexed by SpriteId.
 inline constexpr std::array<Sprite, 14> SPRITES{ {
-    { "sprites/ground.png", 0, 16, 16, 1920, 1080, 0, 0 },
-    { "sprites/rock_large.png", 0, 1596, 1112, 180, 128, 90, 112 },
-    { "sprites/rock_small.png", 0, 16, 1508, 92, 68, 46, 60 },
-    { "sprites/pine.png", 0, 16, 1112, 240, 380, 120, 372 },
-    { "sprites/shrine.png", 0, 1360, 1112, 220, 250, 110, 244 },
-    { "sprites/fox.png", 0, 1880, 1112, 112, 72, 54, 68 },
-    { "sprites/cultivator.png", 0, 1792, 1112, 72, 128, 36, 122 },
-    { "sprites/orb_blue.png", 0, 124, 1508, 32, 32, 16, 16 },
-    { "sprites/orb_red.png", 0, 252, 1508, 16, 16, 8, 8 },
-    { "sprites/shadow.png", 0, 172, 1508, 64, 24, 32, 12 },
-    { "sprites/cell_plain.png", 0, 272, 1112, 256, 256, 0, 0 },
-    { "sprites/cell_mountain.png", 0, 544, 1112, 256, 256, 0, 0 },
-    { "sprites/cell_forest.png", 0, 816, 1112, 256, 256, 0, 0 },
-    { "sprites/cell_city.png", 0, 1088, 1112, 256, 256, 0, 0 },
+    { .file = "sprites/ground.png", .page = 0, .x = 16, .y = 16, .width = 1920, .height = 1080, .footX = 0, .footY = 0 },
+    { .file = "sprites/rock_large.png", .page = 0, .x = 1596, .y = 1112, .width = 180, .height = 128, .footX = 90, .footY = 112 },
+    { .file = "sprites/rock_small.png", .page = 0, .x = 16, .y = 1508, .width = 92, .height = 68, .footX = 46, .footY = 60 },
+    { .file = "sprites/pine.png", .page = 0, .x = 16, .y = 1112, .width = 240, .height = 380, .footX = 120, .footY = 372 },
+    { .file = "sprites/shrine.png", .page = 0, .x = 1360, .y = 1112, .width = 220, .height = 250, .footX = 110, .footY = 244 },
+    { .file = "sprites/fox.png", .page = 0, .x = 1880, .y = 1112, .width = 112, .height = 72, .footX = 54, .footY = 68 },
+    { .file = "sprites/cultivator.png", .page = 0, .x = 1792, .y = 1112, .width = 72, .height = 128, .footX = 36, .footY = 122 },
+    { .file = "sprites/orb_blue.png", .page = 0, .x = 124, .y = 1508, .width = 32, .height = 32, .footX = 16, .footY = 16 },
+    { .file = "sprites/orb_red.png", .page = 0, .x = 252, .y = 1508, .width = 16, .height = 16, .footX = 8, .footY = 8 },
+    { .file = "sprites/shadow.png", .page = 0, .x = 172, .y = 1508, .width = 64, .height = 24, .footX = 32, .footY = 12 },
+    { .file = "sprites/cell_plain.png", .page = 0, .x = 272, .y = 1112, .width = 256, .height = 256, .footX = 0, .footY = 0 },
+    { .file = "sprites/cell_mountain.png", .page = 0, .x = 544, .y = 1112, .width = 256, .height = 256, .footX = 0, .footY = 0 },
+    { .file = "sprites/cell_forest.png", .page = 0, .x = 816, .y = 1112, .width = 256, .height = 256, .footX = 0, .footY = 0 },
+    { .file = "sprites/cell_city.png", .page = 0, .x = 1088, .y = 1112, .width = 256, .height = 256, .footX = 0, .footY = 0 },
 } };
 
 } // namespace core::atlas

@@ -3,7 +3,7 @@
 Where every image in this folder came from. Replacing one (an AI-generated image, a painting)
 updates its row in the same commit (what made it, when, and who) and takes it out of
 `PLACEHOLDERS` in `art/placeholders.py`, so `./dev atlas --placeholders` never paints over it. The pipeline's contract is in
-`art/sprites.toml`; after any change, `./dev atlas` and commit `art/bin/` with the images.
+`art/sprites.toml`; after any change, `./dev atlas` and commit what it writes with the images.
 
 | Image | Made by | Date | Notes |
 |---|---|---|---|

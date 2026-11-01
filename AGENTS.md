@@ -7,15 +7,15 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 ## Map
 - `src/` game and engine (src/AGENTS.md) · `tests/` doctest suites (tests/AGENTS.md)
 - `tools/project_n.py` the only entry point (tools/AGENTS.md) · `containers/` artefact images (containers/AGENTS.md)
-- `shaders/` HLSL, one file per stage; `bin/`: the committed binaries `shaders` writes · `assets/` what the game loads at runtime (`sprites/`: images, with `PROVENANCE.md`) · `art/` `sprites.toml` (sprite list, foot points), `placeholders.py` (procedural art), `bin/`: the atlas `atlas` writes · `xmake/repo/` local fixes to xmake-repo packages · `docs/design/` rationale: read before redesigning anything
+- `shaders/` HLSL, one file per stage; `bin/`: the committed binaries `shaders` writes · `assets/` what the game loads at runtime (`sprites/`: images, with `PROVENANCE.md`) · `art/` `sprites.toml` (sprite list, foot points), `placeholders.py` (procedural art) · `src/*/generated/`: headers `shaders` and `atlas` write (fmt and lint skip them) · `xmake/repo/` local fixes to xmake-repo packages · `docs/design/` rationale: read before redesigning anything
 - `.github/` CI workflows (.github/AGENTS.md)
 
 ## Commands
 - `./dev <command>` (Windows `dev`) is shorthand for `pixi run project_n <command>`; either works from anywhere.
 - `pixi run project_n doctor [--docs]` · `build|test|run [--preset linux-gcc|linux-clang|windows-msvc|macos-clang] [--mode debug|release|releasedbg]` (releasedbg: profiling with Tracy; default preset: the host's native one, `NATIVE_PRESET`; `build --preset all` builds every preset and summarises)
 - `pixi run project_n check`: the merge gate (self-tests, commits, format and lint of the diff, build + test every preset). A change is done when it passes.
-- `pixi run project_n shaders` (Linux or Windows): compile `shaders/` after changing it, and commit `shaders/bin/` with it; `lint` fails on stale binaries
-- `pixi run project_n atlas [--placeholders]`: after changing `art/sprites.toml` or `assets/sprites/`, commit `art/bin/` with them; `lint` fails on a stale atlas
+- `pixi run project_n shaders` (Linux or Windows): compile `shaders/` after changing it, and commit `shaders/bin/` and `src/gfx/generated/` with it; `lint` fails on stale binaries
+- `pixi run project_n atlas [--placeholders]`: after changing `art/sprites.toml` or `assets/sprites/`, commit `src/core/generated/atlas.hpp` and `art/atlas.sha256` with them; `lint` fails on a stale atlas
 - `pixi run project_n coverage` (HTML in build/coverage/) · `fuzz <target> [--time S]` · `docs` (Doxygen, build/docs/) · `profiler` (Tracy viewer for a `run --mode releasedbg` build)
 - `pixi run project_n check --sanitizers`: also every supported sanitizer; on request only, not part of the gate.
 - `pixi run project_n check --container`: the same in clean containers. Run it for any build, environment or dependency change: only a clean container catches host leaks.

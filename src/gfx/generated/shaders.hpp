@@ -43,7 +43,17 @@ inline constexpr std::array<u8, 494> SPRITE_FRAG_MSL{{
 #include "sprite.frag.msl.h"
 }};
 /// shaders/sprite.frag.hlsl.
-inline constexpr Stage SPRITE_FRAG{ "sprite.frag", "FragmentMain", SPRITE_FRAG_SPIRV, SPRITE_FRAG_DXIL, SPRITE_FRAG_MSL, 1, 0, 0, 0 };
+inline constexpr Stage SPRITE_FRAG{
+    .name = "sprite.frag",
+    .entryPoint = "FragmentMain",
+    .spirv = SPRITE_FRAG_SPIRV,
+    .dxil = SPRITE_FRAG_DXIL,
+    .msl = SPRITE_FRAG_MSL,
+    .samplers = 1,
+    .storageTextures = 0,
+    .storageBuffers = 0,
+    .uniformBuffers = 0,
+};
 
 /// shaders/bin/sprite.vert.spv, embedded by XMake's utils.bin2c.
 inline constexpr std::array<u8, 2336> SPRITE_VERT_SPIRV{{
@@ -58,6 +68,16 @@ inline constexpr std::array<u8, 1409> SPRITE_VERT_MSL{{
 #include "sprite.vert.msl.h"
 }};
 /// shaders/sprite.vert.hlsl.
-inline constexpr Stage SPRITE_VERT{ "sprite.vert", "VertexMain", SPRITE_VERT_SPIRV, SPRITE_VERT_DXIL, SPRITE_VERT_MSL, 0, 0, 1, 1 };
+inline constexpr Stage SPRITE_VERT{
+    .name = "sprite.vert",
+    .entryPoint = "VertexMain",
+    .spirv = SPRITE_VERT_SPIRV,
+    .dxil = SPRITE_VERT_DXIL,
+    .msl = SPRITE_VERT_MSL,
+    .samplers = 0,
+    .storageTextures = 0,
+    .storageBuffers = 1,
+    .uniformBuffers = 1,
+};
 
 } // namespace gfx::shaders
