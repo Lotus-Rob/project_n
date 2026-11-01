@@ -14,7 +14,9 @@ local function unit_tests(name, files, module)
     target(name)
         set_kind("binary")
         add_deps(module or "core")
-        add_files(files)
+        -- Out of unity batches: doctest names test cases by __LINE__ under Clang 22 (__COUNTER__ is a
+        -- C2y extension there), so two files' cases on one line would clash. src/ stays in them.
+        add_files(files, {unity_ignored = true})
         set_pcxxheader("unit/pch.hpp")
         add_packages("doctest")
         add_tests("default")
