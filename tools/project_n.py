@@ -355,7 +355,8 @@ def cmd_run(args):
     if PRESETS[args.preset]["host"] != HOST:
         raise Fail(f"`run` is native only; {args.preset} needs a {PRESETS[args.preset]['host']} host")
     bdir = build(args.preset, args.mode, args.sanitizer)
-    run(["xmake", "run", *(["-d"] if args.debug else []), APP], env=xmake_env(bdir))
+    extra = args.args[1:] if args.args[:1] == ["--"] else args.args
+    run(["xmake", "run", *(["-d"] if args.debug else []), APP, *extra], env=xmake_env(bdir))
 
 
 def is_source(path):
@@ -1453,6 +1454,7 @@ def make_parser():
     p = add("run", cmd_run, "build and launch the game natively", preset="native", mode=True)
     p.add_argument("--debug", action="store_true", help="launch under the debugger (xmake run -d)")
     add_sanitizer(p)
+    p.add_argument("args", nargs=argparse.REMAINDER, help="-- <game arguments>, e.g. -- --stress")
     p = add("check", cmd_check, "the merge gate: commits, format and lint of the diff, build and test every preset", container=True)
     p.add_argument("--sanitizers", action="store_true", help="also test every preset under each supported sanitizer")
     add("artifact", cmd_artifact, "clean-room release build in the preset's container, into dist/", preset="required")
