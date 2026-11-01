@@ -1,6 +1,7 @@
 #pragma once
 
 /// @file
+/// @ingroup core
 /// Sized number types for all game and engine code. Use them instead of `int`, `unsigned`,
 /// `float` and the like, so a value's size is the same on every platform and visible where it is
 /// declared. The precompiled headers include this file; other headers include it themselves.

@@ -1,6 +1,7 @@
 #pragma once
 
 /// @file
+/// @ingroup core
 /// Profiling for game and engine code: the `PN_PROFILE_*` macros. They collect only in
 /// `releasedbg` builds, for the Tracy viewer (`./dev profiler`), and do nothing everywhere else.
 /// The only header that includes Tracy.
