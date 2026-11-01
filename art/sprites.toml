@@ -1,0 +1,50 @@
+# The sprites the atlas step packs (design doc 0002 §9): each one's image is assets/sprites/<name>.png.
+# A sprite's place in this list is its stable ID: add new ones at the end, never reorder or remove.
+#
+# Images: transparent 8-bit PNGs with straight alpha (premultiplied at load), painted for the
+# 1920x1080 reference resolution, at most PAGE_SIZE minus two gutters on a side.
+# foot: the point, in pixels from the image's top-left, that stands on the ground: the y-sort
+# position for props and units, and the point an instance's position places. Default: the
+# bottom centre. Ground layers use [0, 0] so their position is their top-left corner.
+
+[ground]
+foot = [0, 0]
+
+[rock_large]
+foot = [90, 112]
+
+[rock_small]
+foot = [46, 60]
+
+[pine]
+foot = [120, 372]
+
+[shrine]
+foot = [110, 244]
+
+[fox]
+foot = [54, 68]
+
+[cultivator]
+foot = [36, 122]
+
+[orb_blue]
+foot = [16, 16]
+
+[orb_red]
+foot = [8, 8]
+
+[shadow]
+foot = [32, 12]
+
+[cell_plain]
+foot = [0, 0]
+
+[cell_mountain]
+foot = [0, 0]
+
+[cell_forest]
+foot = [0, 0]
+
+[cell_city]
+foot = [0, 0]
