@@ -836,5 +836,55 @@ class ShaderTest(unittest.TestCase):
             self.assertEqual(msl.read_bytes(), b"one\ntwo\n")
 
 
+def png_header(width, height):
+    return b"\x89PNG\r\n\x1a\n" + (13).to_bytes(4, "big") + b"IHDR" + width.to_bytes(4, "big") + height.to_bytes(4, "big")
+
+
+class AtlasTest(unittest.TestCase):
+    def test_sprites_keep_their_gutters_and_never_overlap(self):
+        sizes = [(100, 40), (30, 60), (90, 50), (60, 60), (20, 10)]
+        places = project_n.pack_atlas(sizes, page=200, gutter=8)
+        rects = [(p, x, y, x + w, y + h) for (p, x, y), (w, h) in zip(places, sizes)]
+        for p, x0, y0, x1, y1 in rects:
+            self.assertTrue(x0 >= 8 and y0 >= 8 and x1 <= 192 and y1 <= 192, (x0, y0, x1, y1))
+        for i, a in enumerate(rects):
+            for b in rects[i + 1:]:
+                apart = a[0] != b[0] or a[3] + 8 <= b[1] or b[3] + 8 <= a[1] or a[4] + 8 <= b[2] or b[4] + 8 <= a[2]
+                self.assertTrue(apart, (a, b))
+
+    def test_a_full_page_opens_the_next(self):
+        self.assertEqual([p for p, _, _ in project_n.pack_atlas([(80, 80)] * 3, page=100, gutter=4)], [0, 1, 2])
+
+    def test_a_sprite_too_large_for_a_page_fails(self):
+        with self.assertRaisesRegex(project_n.Fail, "larger than"):
+            project_n.pack_atlas([(95, 10)], page=100, gutter=4)
+
+    def test_the_list_and_the_images_must_agree(self):
+        with temp_repo({"art/sprites.toml": "[a]\n[b]\n"}) as root:
+            (root / "assets" / "sprites").mkdir(parents=True)
+            (root / "assets" / "sprites" / "a.png").write_bytes(png_header(10, 20))
+            with self.assertRaisesRegex(project_n.Fail, r"only in the list: \['b'\]"):
+                project_n.read_sprites()
+            (root / "assets" / "sprites" / "b.png").write_bytes(png_header(4, 4))
+            self.assertEqual(project_n.read_sprites(), [("a", 10, 20, 5, 20), ("b", 4, 4, 2, 4)])
+
+    def test_a_foot_outside_its_image_fails(self):
+        with temp_repo({"art/sprites.toml": "[a]\nfoot = [11, 0]\n"}) as root:
+            (root / "assets" / "sprites").mkdir(parents=True)
+            (root / "assets" / "sprites" / "a.png").write_bytes(png_header(10, 20))
+            with self.assertRaisesRegex(project_n.Fail, "outside"):
+                project_n.read_sprites()
+
+    def test_the_header_is_stale_until_the_manifest_matches(self):
+        with temp_repo({"art/sprites.toml": "[a]\n"}) as root:
+            (root / "assets" / "sprites").mkdir(parents=True)
+            (root / "assets" / "sprites" / "a.png").write_bytes(png_header(10, 20))
+            self.assertTrue(project_n.stale_atlas())
+            project_n.cmd_atlas(mock.Mock(placeholders=False))
+            self.assertFalse(project_n.stale_atlas())
+            (root / "assets" / "sprites" / "a.png").write_bytes(png_header(12, 20))
+            self.assertTrue(project_n.stale_atlas())
+
+
 if __name__ == "__main__":
     unittest.main()
