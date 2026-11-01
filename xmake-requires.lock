@@ -51,6 +51,14 @@
             },
             version = "2.5.3"
         },
+        ["enkits v1.12#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "v1.12"
+        },
         ["entt v4.0.0#f56260b5"] = {
             repo = {
                 branch = "master",
@@ -452,6 +460,14 @@
                 url = "https://gitlab.com/tboox/xmake-repo.git"
             },
             version = "2.5.3"
+        },
+        ["enkits v1.12#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "v1.12"
         },
         ["entt v4.0.0#f56260b5"] = {
             repo = {
