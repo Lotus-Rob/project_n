@@ -52,6 +52,11 @@ if is_mode("release") then
     set_symbols("debug")
 end
 
+-- PN_ASSERT (src/core/assert.hpp) checks in every build but release.
+if not is_mode("release") then
+    add_defines("PN_ASSERTS")
+end
+
 -- The highest warning level on every compiler, always as errors. Packages are unaffected:
 -- they're built separately, and their headers are system/external includes for our code.
 set_warnings("everything", "pedantic", "error")

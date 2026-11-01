@@ -10,12 +10,20 @@
 #include "core/cxx23.hpp"
 #include "core/types.hpp"
 
+#include <algorithm>
+#include <array>
 #include <atomic>
+#include <cstddef>
+#include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <memory>
+#include <mutex>
+#include <optional>
+#include <source_location>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 // IWYU pragma: end_keep
