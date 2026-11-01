@@ -99,6 +99,19 @@ TEST_CASE("the world draws in foot-y order, and the additive orbs over it in the
     }
 }
 
+TEST_CASE("the stress arena publishes 100,000 instances, its 10,000 bullets last and additive") {
+    constexpr std::size_t INSTANCES = 100'000;
+    constexpr u32 BULLETS = 10'000;
+    game::Arena arena{ game::Scene::Stress };
+    const core::Snapshot snapshot = Published(arena);
+    CHECK(snapshot.instances.size() >= INSTANCES);
+    REQUIRE_FALSE(snapshot.batches.empty());
+    const core::Batch& effects = snapshot.batches.back();
+    CHECK(effects.pipeline == core::Pipeline::Additive);
+    CHECK(effects.count >= BULLETS);
+    CHECK(effects.first + effects.count == snapshot.instances.size());
+}
+
 TEST_CASE("two arenas ticked alike publish the same bytes") {
     constexpr u64 TICKS = 120;
     game::Arena first;

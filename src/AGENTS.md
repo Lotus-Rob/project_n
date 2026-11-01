@@ -1,7 +1,7 @@
 # src/: game and engine
 
 ## Scope
-All game and engine code, structured by docs/design/0002-engine-architecture.md (being implemented, phases 1 to 3 of §16). Modules are XMake static libraries in `src/<module>/` (`core`, `platform`, `gfx`, `game` so far); each links and includes only the modules below it (`MODULES` in tools/project_n.py; `lint` checks the includes), and `game` links only `core`. `main.cpp` opens the window, creates the renderer, starts the logic thread (a `std::jthread`, ticking `game::Arena` through `core::Simulation`) and runs the main loop; the threads share only `core::GameHandover` (`core/frame.hpp`).
+All game and engine code, structured by docs/design/0002-engine-architecture.md (being implemented, phases 1 to 3 of §16). Modules are XMake static libraries in `src/<module>/` (`core`, `platform`, `gfx`, `game` so far); each links and includes only the modules below it (`MODULES` in tools/project_n.py; `lint` checks the includes), and `game` links only `core`. `main.cpp` opens the window, creates the renderer, starts the logic thread (a `std::jthread`, ticking `game::Arena`, or with `--stress` its stress variant, through `core::Simulation`) and runs the main loop; the threads share only `core::GameHandover` (`core/frame.hpp`).
 
 ## Rules
 - C++23 with conventional headers (no modules). Every translation unit's includes lead to `core/cxx23.hpp`, which fails the build below C++23; include it with `// IWYU pragma: keep` (it declares nothing).
@@ -24,7 +24,7 @@ All game and engine code, structured by docs/design/0002-engine-architecture.md 
 - A new module adds its directory's `module.dox`, an XMake target with `add_deps` on the modules below it, and its commit scope to `SCOPES` in tools/project_n.py.
 
 ## Commands
-- `./dev run [--debug]` (native preset; `--preset` picks another)
+- `./dev run [--debug] [-- --stress]` (native preset; `--preset` picks another; `--stress`: the stress arena, about 100,000 instances)
 
 ## Gotchas
 - A `///` comment right after the `/// @file` block joins it, leaving the next declaration undocumented: put a blank line after the file comment.

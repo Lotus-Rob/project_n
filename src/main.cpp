@@ -17,12 +17,12 @@ namespace {
 constexpr i32 WINDOW_WIDTH = 1280;
 constexpr i32 WINDOW_HEIGHT = 720;
 // The logic thread's loop (design doc 0002 §6): runs the ticks due, then publishes the burst's last.
-void Tick(const std::stop_token& stop, core::GameHandover& handover, u64 startNs) {
+void Tick(const std::stop_token& stop, core::GameHandover& handover, u64 startNs, game::Scene scene) {
     core::math::SetFloatingPointEnvironment();
     PN_LOG_INFO("logic thread ticking {} times a second", core::TICKS_PER_SECOND);
     core::TickClock clock{ startNs };
     core::Logic logic;
-    game::Arena arena;
+    game::Arena arena{ scene };
     bool overloaded = false;
     while (!stop.stop_requested()) {
         platform::WaitUntilNs(clock.NextNs());
@@ -48,9 +48,15 @@ void Tick(const std::stop_token& stop, core::GameHandover& handover, u64 startNs
 }
 
 // The logic thread's entry: an exception that escapes is logged and stops the game (§12).
-void RunLogic(const std::stop_token& stop, core::GameHandover& handover, u64 startNs, std::atomic<bool>& failed) {
+void RunLogic(
+    const std::stop_token& stop,
+    core::GameHandover& handover,
+    u64 startNs,
+    game::Scene scene,
+    std::atomic<bool>& failed
+) {
     try {
-        Tick(stop, handover, startNs);
+        Tick(stop, handover, startNs, scene);
     }
     catch (const std::exception& e) {
         PN_LOG_CRITICAL("logic thread failed: {}", e.what());
@@ -62,7 +68,7 @@ void RunLogic(const std::stop_token& stop, core::GameHandover& handover, u64 sta
     }
 }
 
-i32 Run() {
+i32 Run(game::Scene scene) {
     platform::RouteSdlLogs();
     std::expected<platform::Window, core::Error> window = platform::Window::Open("project_n", WINDOW_WIDTH, WINDOW_HEIGHT);
     if (!window) {
@@ -83,7 +89,7 @@ i32 Run() {
     core::GameHandover handover;
     core::GameDisplay display;
     std::atomic<bool> logicFailed = false;
-    std::jthread logic{ RunLogic, std::ref(handover), platform::NowNs(), std::ref(logicFailed) };
+    std::jthread logic{ RunLogic, std::ref(handover), platform::NowNs(), scene, std::ref(logicFailed) };
     bool focused = true;
     const gfx::Camera camera{}; // shortcut: the arena's fixed view; the camera follows input and the snapshot from phase 5
     std::vector<core::Event> incoming;
@@ -130,15 +136,26 @@ i32 Run() {
 
 } // namespace
 
-int main(int /*argc*/, char** /*argv*/) {
+int main(int argc, char** argv) {
     const std::expected<std::filesystem::path, core::Error> userData = platform::UserDataDirectory();
     core::log::Start(userData ? *userData / "logs" : std::filesystem::path{});
     if (!userData) {
         PN_LOG_WARNING("logs go to the console only: {}", userData.error().message);
     }
     PN_LOG_NOTICE("project_n starting");
+#ifdef __clang__
+#pragma clang diagnostic push
+// The C runtime hands the arguments over as a pointer and a count: nothing can check them.
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-container"
+#endif
+    const std::span<char*> args{ argv, static_cast<std::size_t>(argc) };
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+    const bool stress = std::ranges::contains(args, std::string_view{ "--stress" });
+    PN_LOG_INFO("scene: {}", stress ? "the stress arena" : "the arena");
     try {
-        const i32 status = Run();
+        const i32 status = Run(stress ? game::Scene::Stress : game::Scene::Arena);
         PN_LOG_NOTICE("project_n stopped with status {}", status);
         return status;
     }

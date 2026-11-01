@@ -37,7 +37,7 @@ unit_tests("log_fallback_tests", {"unit/log_startup/main.cpp", "unit/log_startup
 -- with the tests and run on request: `project_n test --mode release --target headless_bench`.
 target("headless_bench")
     set_kind("binary")
-    add_deps("core")
+    add_deps("game")
     add_files("bench/headless.cpp")
     set_pcxxheader("$(projectdir)/src/pch.hpp") -- not a doctest suite: the game's, without doctest
 
