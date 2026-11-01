@@ -13,6 +13,7 @@ Owned by: containers/AGENTS.md. Rationale: docs/design/0001 §6.1 (pinning polic
 |---|---|
 | Any Pixi package | `==X.Y.Z` in `pixi.toml`, then `pixi.lock` |
 | LLVM | Every LLVM package in `pixi.toml` at one version: `clang-format`, `clang-tools`, `clangxx_linux-64` (major.minor only), `lld`, `libcxx`, `libcxx-devel`, `lldb`. lldb's libc++ formatters only match their own release, so wait until conda-forge ships all of them |
+| Shader tools | `directx-shader-compiler`, `spirv-cross`, `spirv-tools` in `pixi.toml` (linux-64 and win-64 equal). Then `./dev shaders` on Linux or Windows and commit `shaders/bin/` with the lock: `lint` fails until the manifest records the new pins |
 | GCC | `gxx_linux-64` in `pixi.toml`; the libstdc++ pretty-printers follow automatically (tools/debug/gdbinit) |
 | glibc baseline | `sysroot_linux-64`. Changing it changes which distros can run the game: ask the user first and update design doc 0001 §5.2 |
 | XMake | `xmake` in `pixi.toml` and `set_xmakever()` in `xmake.lua` |
