@@ -117,6 +117,9 @@ else
     if get_config("toolchain") == "pixi-clang" then
         -- -Weverything includes compatibility warnings for standards older than C++23.
         add_cxflags("-Wno-c++98-compat", "-Wno-c++98-compat-pedantic", "-Wno-pre-c++20-compat-pedantic")
+        -- Padding is a codegen note, not a code issue, as MSVC's 4820 above: structs are laid out
+        -- for reading, and a bool beside u64s shouldn't need hand-written padding.
+        add_cxflags("-Wno-padded")
     end
 end
 
