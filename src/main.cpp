@@ -5,6 +5,7 @@
 #include "core/math.hpp"
 #include "core/profile.hpp"
 #include "core/tick_clock.hpp"
+#include "game/arena.hpp"
 #include "gfx/renderer.hpp"
 #include "platform/clock.hpp"
 #include "platform/paths.hpp"
@@ -15,27 +16,13 @@ namespace {
 
 constexpr i32 WINDOW_WIDTH = 1280;
 constexpr i32 WINDOW_HEIGHT = 720;
-// The clear colour breathes between these over BREATH_TICKS of the render clock: until there is
-// anything to draw, it shows the snapshots arriving, interpolating, and freezing while paused.
-constexpr gfx::Colour DARK{ .red = 0.08F, .green = 0.10F, .blue = 0.14F };
-constexpr gfx::Colour LIGHT{ .red = 0.14F, .green = 0.17F, .blue = 0.23F };
-constexpr f64 BREATH_TICKS = 4.0 * core::TICKS_PER_SECOND;
-
-gfx::Colour Breathe(f64 renderTick) {
-    PN_PROFILE_ZONE();
-    // fmod keeps Cos's argument in its range however long the game runs.
-    const f64 phase = std::fmod(renderTick, BREATH_TICKS) * 2.0 * std::numbers::pi / BREATH_TICKS;
-    const auto amount = static_cast<f32>(0.5 - (0.5 * core::math::Cos(phase)));
-    const auto mix = [amount](f32 from, f32 into) { return from + ((into - from) * amount); };
-    return { .red = mix(DARK.red, LIGHT.red), .green = mix(DARK.green, LIGHT.green), .blue = mix(DARK.blue, LIGHT.blue) };
-}
-
 // The logic thread's loop (design doc 0002 §6): runs the ticks due, then publishes the burst's last.
 void Tick(const std::stop_token& stop, core::GameHandover& handover, u64 startNs) {
     core::math::SetFloatingPointEnvironment();
     PN_LOG_INFO("logic thread ticking {} times a second", core::TICKS_PER_SECOND);
     core::TickClock clock{ startNs };
     core::Logic logic;
+    game::Arena arena;
     bool overloaded = false;
     while (!stop.stop_requested()) {
         platform::WaitUntilNs(clock.NextNs());
@@ -54,7 +41,7 @@ void Tick(const std::stop_token& stop, core::GameHandover& handover, u64 startNs
                 PN_LOG_INFO("ticks are on time again");
             }
         }
-        logic.RunBurst(burst, handover, platform::NowNs);
+        logic.RunBurst(burst, handover, arena, platform::NowNs);
     }
     const core::TickCounters& counters = logic.Counters();
     PN_LOG_INFO("logic thread stopped after {} ticks, {} simulated", counters.wall, counters.simulation);
@@ -82,7 +69,12 @@ i32 Run() {
         PN_LOG_ERROR("no window: {}", window.error().message);
         return 1;
     }
-    std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(*window);
+    const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
+    if (!assets) {
+        PN_LOG_ERROR("no assets: {}", assets.error().message);
+        return 1;
+    }
+    std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(*window, *assets);
     if (!renderer) {
         PN_LOG_ERROR("no renderer: {}", renderer.error().message);
         return 1;
@@ -93,6 +85,7 @@ i32 Run() {
     std::atomic<bool> logicFailed = false;
     std::jthread logic{ RunLogic, std::ref(handover), platform::NowNs(), std::ref(logicFailed) };
     bool focused = true;
+    const gfx::Camera camera{}; // shortcut: the arena's fixed view; the camera follows input and the snapshot from phase 5
     std::vector<core::Event> incoming;
     std::vector<core::Event> pending; // taken, waiting for the render clock
     for (;;) {
@@ -125,7 +118,7 @@ i32 Run() {
         if (!state.visible) {
             continue;
         }
-        renderer->Draw(Breathe(renderTick));
+        renderer->Draw(*drawn, alpha, camera);
         PN_PROFILE_FRAME();
     }
 

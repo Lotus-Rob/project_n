@@ -225,6 +225,12 @@ target("core")
     -- Public: the log, profile and ECS facades' headers include their libraries.
     add_packages("quill-wine", "entt", is_mode("releasedbg") and "tracy_on" or "tracy_off", {public = true})
 
+target("game")
+    set_kind("static")
+    add_deps("core")
+    add_files("src/game/**.cpp")
+    set_pcxxheader("src/pch.hpp")
+
 target("platform")
     set_kind("static")
     add_deps("core")
@@ -245,8 +251,15 @@ target("gfx")
 
 target("project_n")
     set_kind("binary")
-    add_deps("gfx")
+    add_deps("gfx", "game")
     add_files("src/main.cpp")
     set_pcxxheader("src/pch.hpp")
+    -- The runtime assets beside the binary, where the game looks for them (platform::AssetsDirectory);
+    -- replaced whole, so a deleted asset doesn't linger. `artifact` ships them the same way.
+    after_build(function (target)
+        local assets = path.join(target:targetdir(), "assets")
+        os.tryrm(assets)
+        os.cp(path.join(os.projectdir(), "assets"), assets)
+    end)
 
 includes("tests")

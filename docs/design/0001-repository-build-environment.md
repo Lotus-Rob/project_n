@@ -291,7 +291,7 @@ Known gaps, to be closed later if they matter:
   - `set_policy("package.requires_lock", true)`
   - `set_xmakever(...)`
   - the toolchain definitions and the host lockdown described in §7.1
-- **Build directories:** native builds use `build/<preset>/<mode>`, and every container build (container checks and `artifact`) uses `build/container/<preset>/<mode>`. `artifact` then copies the binary to `dist/<preset>/`.
+- **Build directories:** native builds use `build/<preset>/<mode>`, and every container build (container checks and `artifact`) uses `build/container/<preset>/<mode>`. `artifact` then copies the binary to `dist/<preset>/`, with `assets/` beside it (in the macOS bundle, `Contents/Resources/assets/`; 0002 §9); every build copies `assets/` next to its binary too.
 - **Config isolation:** `XMAKE_CONFIGDIR` sits next to each build directory, so native and container configurations never overwrite each other.
 - **Package cache:** native builds use `~/.xmake`, and container builds use the named volume `project_n-xmake-cache`, or the directory `PROJECT_N_XMAKE_CACHE` names (CI caches it).
 - **IDE integration:** each native build refreshes `build/compile_commands.json`, which `.clangd` (`CompilationDatabase: build`) reads.

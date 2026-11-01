@@ -4,8 +4,7 @@
 /// @ingroup core
 /// The logic thread's work for each burst of ticks (design doc 0002 §6): taking input, running the
 /// ticks, frozen while paused, and publishing the last one's snapshot. The thread around it only
-/// waits for the clock and logs. Phase 1's simulation is the tick counters and pausing; the game
-/// module's systems run here from phase 4.
+/// waits for the clock and logs. The game module's simulation runs here through core::Simulation.
 
 #include "core/frame.hpp"
 #include "core/tick_clock.hpp"
@@ -15,13 +14,34 @@
 
 namespace core {
 
+/// The game's simulation as the logic thread drives it: implemented by the game module, which
+/// links only core.
+class Simulation {
+public:
+    Simulation() = default;
+    Simulation(const Simulation&) = delete;
+    Simulation& operator=(const Simulation&) = delete;
+    Simulation(Simulation&&) = delete;
+    Simulation& operator=(Simulation&&) = delete;
+    virtual ~Simulation();
+
+    /// Advances the game state by one simulation tick, `simulationTick` (counting from 1). Frozen
+    /// ticks don't call it.
+    virtual void Tick(u64 simulationTick) = 0;
+
+    /// Writes what the state looks like now into `snapshot`'s drawing data: its instances arrive
+    /// empty, with their capacity kept. Called once per burst, after its last tick.
+    virtual void Publish(Snapshot& snapshot) = 0;
+};
+
 /// The game state the logic thread owns, and the scratch it reuses between bursts.
 class Logic {
 public:
     /// Runs `burst.ticks` ticks back to back. Each takes the input sent since the one before (the
-    /// last Pause or Resume wins) and counts itself, frozen while paused. Then publishes the
-    /// snapshot of the burst's last tick, stamped with `now()` at publishing.
-    void RunBurst(const TickBurst& burst, GameHandover& handover, u64 (*now)());
+    /// last Pause or Resume wins) and counts itself, frozen while paused, and ticks `simulation`
+    /// unless frozen. Then publishes the snapshot of the burst's last tick, filled by
+    /// `simulation` and stamped with `now()` at publishing.
+    void RunBurst(const TickBurst& burst, GameHandover& handover, Simulation& simulation, u64 (*now)());
 
     /// The tick counters so far.
     [[nodiscard]] const TickCounters& Counters() const {
