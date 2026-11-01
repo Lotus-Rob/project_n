@@ -115,7 +115,7 @@ void SpriteRenderer::Draw(
     }
     SDL_BindGPUGraphicsPipeline(pass, m_pipeline.get());
     const std::array<SDL_GPUBuffer*, 1> storage{ m_instances.get() };
-    SDL_BindGPUVertexStorageBuffers(pass, 0, storage.data(), storage.size());
+    SDL_BindGPUVertexStorageBuffers(pass, 0, storage.data(), static_cast<u32>(storage.size()));
     SDL_GPUTextureSamplerBinding atlas{};
     atlas.texture = sprites.texture.get();
     atlas.sampler = sprites.sampler.get();
