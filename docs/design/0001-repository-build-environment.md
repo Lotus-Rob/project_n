@@ -330,6 +330,7 @@ Each rule below fixed a concrete failure or host leak (most found in S4) or reco
    - `libsdl3-wayland` inherits `libsdl3` and adds `libxkbcommon` and `libglvnd` (for `egl.pc`). Without them SDL **silently** builds without Wayland.
    - `libxkbcommon-fixed` inherits `libxkbcommon` and adds `libxml2`.
    - `tracy-libdl` inherits `tracy` and links `libdl` on Linux: its client calls `dladdr`, which glibc keeps in libdl before 2.34, so the link failed against the 2.28 sysroot.
+   - `libsdl3_image-stb` inherits `libsdl3_image`, builds against `libsdl3-wayland` instead of a second `libsdl3`, and decodes PNG only, with the stb_image it bundles. By default it looks for libpng, libtiff, libwebp and libavif wherever CMake finds them, dlopens them at runtime, and **silently** drops a format whose library is missing; it is built strict, with nothing loaded at runtime, and with no ImageIO or WIC, so every platform decodes alike.
    - `quill-wine` inherits `quill` and also accepts `ERROR_CALL_NOT_IMPLEMENTED` when Quill asks Windows whether a log file's directory is case-sensitive: Wine (and so Proton) answers that, and Quill refused to create the file sink.
 
 **Debuggers**
