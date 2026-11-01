@@ -42,6 +42,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/cmake-4.4.5-hff7ac6b_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/compiler-rt-22.1.8-ha770c72_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/compiler-rt22-22.1.8-h7148c6a_2.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/directx-shader-compiler-1.10.2605.37-h60be90b_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/doxygen-1.18.0-py310hb664d3d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/flex-2.6.4-h58526e2_1004.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/linux-64/gcc_impl_linux-64-16.2.0-h9891192_7.conda
@@ -118,6 +119,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/readline-8.3-hd6e31c0_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/rhash-1.4.6-hb03c661_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/ruff-0.17.3-hf19af3b_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/spirv-cross-1.4.363.0-h4dbf13b_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/spirv-tools-2026.4-h7148c6a_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/tbox-1.8.2-hee9eb32_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/tk-8.6.13-noxft_h1df4ec4_4.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/wayland-1.26.0-hc1c935e_2.conda
@@ -244,6 +247,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/clang-format-22.1.8-default_hacd6ee9_11.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/clang-tools-22.1.8-default_h940401a_11.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/cmake-4.4.5-hde52c71_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/win-64/directx-shader-compiler-1.10.2605.37-h0c178e1_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/doxygen-1.18.0-py312pl5321h3ecd741_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/gh-2.102.0-h11686cb_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/git-cliff-2.14.2-h9165e7a_1.conda
@@ -272,6 +276,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/openssl-3.6.5-hf411b9b_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/python-3.14.10-h53f6dd8_100_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/ruff-0.17.3-h18a1a76_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/win-64/spirv-cross-1.4.363.0-h477610d_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/win-64/spirv-tools-2026.4-h49e36cd_2.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/tbox-1.8.2-hb87d2c3_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/tk-8.6.13-h967ab96_4.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/ucrt-10.0.26100.0-h57928b3_0.conda
@@ -760,6 +766,19 @@ packages:
     - dbus >=1.16.2,<2.0a0
   size: 449564
   timestamp: 1788197922783
+- conda: https://conda.anaconda.org/conda-forge/linux-64/directx-shader-compiler-1.10.2605.37-h60be90b_0.conda
+  sha256: 9cd9f87551bd854324292ffbf3db703b6571d652df1e2052bd5f057f3286bb14
+  md5: d85b03471b3f6a67aa4f7291762788b0
+  depends:
+  - __glibc >=2.17,<3.0.a0
+  - libgcc >=15
+  - libstdcxx >=15
+  - spirv-tools >=2026,<2027.0a0
+  - libzlib >=1.3.2,<2.0a0
+  license: NCSA
+  run_exports: {}
+  size: 11573986
+  timestamp: 1786872687427
 - conda: https://conda.anaconda.org/conda-forge/linux-64/doxygen-1.18.0-py310hb664d3d_0.conda
   sha256: aa8efe84767d1f628f439749df5bd1d369cad6ef1a6cc2922ffc75238e62f07a
   md5: 13974bf5357b9bb5ecab0a09fd06d144
@@ -2040,6 +2059,36 @@ packages:
   run_exports: {}
   size: 8920954
   timestamp: 1793090814487
+- conda: https://conda.anaconda.org/conda-forge/linux-64/spirv-cross-1.4.363.0-h4dbf13b_0.conda
+  sha256: 42b6f89f33064353081a9b9a87860b5ea6f9004485f7ce46e9ef851865f77d43
+  md5: b2f08040d6cd00665f817fd8deb72b77
+  depends:
+  - libstdcxx >=15
+  - libgcc >=15
+  - __glibc >=2.17,<3.0.a0
+  license: Apache-2.0
+  license_family: APACHE
+  run_exports:
+    weak:
+    - spirv-cross >=1.4.363.0,<2.0a0
+  size: 2533788
+  timestamp: 1790634740899
+- conda: https://conda.anaconda.org/conda-forge/linux-64/spirv-tools-2026.4-h7148c6a_2.conda
+  sha256: e8791349946b2c98ffa5cc67cf1525931e066aef8a01800d6f7c151444a3f052
+  md5: fc2ca55e76d0a4cc1b9f19b2d067b4d7
+  depends:
+  - __glibc >=2.17,<3.0.a0
+  - libgcc >=15
+  - libstdcxx >=15
+  constrains:
+  - spirv-headers >=1.4.363.0,<1.4.363.1.0a0
+  license: Apache-2.0
+  license_family: APACHE
+  run_exports:
+    weak:
+    - spirv-tools >=2026,<2027.0a0
+  size: 2433353
+  timestamp: 1792238119949
 - conda: https://conda.anaconda.org/conda-forge/linux-64/tbb-2023.1.0-haa8c3ee_2.conda
   sha256: 5e47c01ea6c2bea041b78b4e45b3135b80bfc015533ec44e4c2d2326a755f8ba
   md5: f805909f478c179e230baf7bd5878e26
@@ -3762,6 +3811,19 @@ packages:
   run_exports: {}
   size: 17933425
   timestamp: 1793157037107
+- conda: https://conda.anaconda.org/conda-forge/win-64/directx-shader-compiler-1.10.2605.37-h0c178e1_0.conda
+  sha256: 546f77ea9019e8b525ecfef714c2da746c67f362029f017c73ecfc39c4e7c1cd
+  md5: 100e469943b15d22b725a7d58b638abb
+  depends:
+  - vc >=14.3,<15
+  - vc14_runtime >=14.44.35208
+  - ucrt >=10.0.20348.0
+  - libzlib >=1.3.2,<2.0a0
+  - spirv-tools >=2026,<2027.0a0
+  license: NCSA
+  run_exports: {}
+  size: 8265636
+  timestamp: 1786872696033
 - conda: https://conda.anaconda.org/conda-forge/win-64/doxygen-1.18.0-py312pl5321h3ecd741_0.conda
   sha256: de32cca941f0561791996493c096a7c6f83e4dda455f49e82e26d5558a3c83ce
   md5: 83e3876323688448ceb5761c2303e79b
@@ -4268,6 +4330,36 @@ packages:
   run_exports: {}
   size: 9309252
   timestamp: 1793090827794
+- conda: https://conda.anaconda.org/conda-forge/win-64/spirv-cross-1.4.363.0-h477610d_0.conda
+  sha256: 213c6a76ce3723060a0fae7b3534d667f205f43e1b988488269973a7a02ad355
+  md5: c869adfa298881c746d19fdddea998bd
+  depends:
+  - vc >=14.3,<15
+  - vc14_runtime >=14.44.35208
+  - ucrt >=10.0.20348.0
+  license: Apache-2.0
+  license_family: APACHE
+  run_exports:
+    weak:
+    - spirv-cross >=1.4.363.0,<2.0a0
+  size: 1283232
+  timestamp: 1790634750246
+- conda: https://conda.anaconda.org/conda-forge/win-64/spirv-tools-2026.4-h49e36cd_2.conda
+  sha256: 933e40fe9ca887a63ef742260f0ed801cda317354806504d864764a4ed9749e1
+  md5: 35603f200ea4990c64121894996eaf02
+  depends:
+  - ucrt >=10.0.20348.0
+  - vc >=14.3,<15
+  - vc14_runtime >=14.44.35208
+  constrains:
+  - spirv-headers >=1.4.363.0,<1.4.363.1.0a0
+  license: Apache-2.0
+  license_family: APACHE
+  run_exports:
+    weak:
+    - spirv-tools >=2026,<2027.0a0
+  size: 1605988
+  timestamp: 1792238709428
 - conda: https://conda.anaconda.org/conda-forge/win-64/tbb-2023.1.0-h272cf33_2.conda
   sha256: 65f5a52eb5250ca0d627e6958e703583dca008988695284fc2181b3a0a790efd
   md5: 83371bd3f796b3c2d3f0436692d3ea73

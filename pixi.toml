@@ -31,6 +31,9 @@ meson = "==1.12.1"
 # upstream bundle there (XMAKE_MACOS_SHA256). Keep the version equal to set_xmakever().
 [target.win-64.dependencies]
 xmake = "==3.1.2"
+directx-shader-compiler = "==1.10.2605.37"  # `shaders`: HLSL to SPIR-V and DXIL (none for osx-arm64)
+spirv-cross = "==1.4.363.0"  # `shaders`: SPIR-V to MSL (none for osx-arm64)
+spirv-tools = "==2026.4"  # `shaders`: spirv-val checks the SPIR-V (none for osx-arm64)
 
 # All LLVM packages share one version: lldb's libc++ formatters only match their own release.
 [target.linux-64.dependencies]
@@ -56,6 +59,9 @@ bison = "==3.8.2"
 flex = "==2.6.4"
 gperf = "==3.3"
 wayland = "==1.26.0"  # provides the build-machine wayland-scanner
+directx-shader-compiler = "==1.10.2605.37"  # `shaders`: HLSL to SPIR-V and DXIL (none for osx-arm64)
+spirv-cross = "==1.4.363.0"  # `shaders`: SPIR-V to MSL (none for osx-arm64)
+spirv-tools = "==2026.4"  # `shaders`: spirv-val checks the SPIR-V (none for osx-arm64)
 
 [target.osx-arm64.dependencies]
 clangxx_osx-arm64 = "==22.1.8"  # full version on macOS (Linux's is major.minor)
