@@ -1,7 +1,7 @@
 # src/: game and engine
 
 ## Scope
-All game and engine code, structured by docs/design/0002-engine-architecture.md (being implemented, phase 1 of §16). Modules are XMake static libraries in `src/<module>/` (`core`, `platform` so far); each links and includes only the modules below it (`MODULES` in tools/project_n.py; `lint` checks the includes), and `game` links only `core`. `main.cpp` opens the window, starts the logic thread (a `std::jthread`) and runs the main loop; the threads share only `core::GameHandover` (`core/frame.hpp`).
+All game and engine code, structured by docs/design/0002-engine-architecture.md (being implemented, phases 1 and 2 of §16). Modules are XMake static libraries in `src/<module>/` (`core`, `platform`, `gfx` so far); each links and includes only the modules below it (`MODULES` in tools/project_n.py; `lint` checks the includes), and `game` links only `core`. `main.cpp` opens the window, creates the renderer, starts the logic thread (a `std::jthread`) and runs the main loop; the threads share only `core::GameHandover` (`core/frame.hpp`).
 
 ## Rules
 - C++23 with conventional headers (no modules). Every translation unit's includes lead to `core/cxx23.hpp`, which fails the build below C++23; include it with `// IWYU pragma: keep` (it declares nothing).
@@ -18,6 +18,7 @@ All game and engine code, structured by docs/design/0002-engine-architecture.md 
 - Simulation code (`core`, `game`) is deterministic within one binary (design doc 0002 §7.4): transcendental maths through `core/math.hpp` (`lint` fails on `std::sin` and the like there), random numbers through `core/random.hpp` keyed on the state counter, never `std::*_distribution`, never a clock.
 - Comments in `.cpp` files only explain why, or a complexity the code can't show; never restate what the code does.
 - Unity builds are configured but off (`unity_build` in xmake.lua); `check` builds and tests the native preset with them once to keep them working. They put several sources in one translation unit, so keep names in anonymous namespaces unique across files (test files stay out of the batches: doctest's names would clash).
+- Rendering: nothing outside `gfx` calls SDL_GPU. Shaders are HLSL in `shaders/<name>.<stage>.hlsl`; after changing one, `./dev shaders` (Linux or Windows) and commit `shaders/bin/` with it (`lint` fails on stale binaries). `gfx` reaches them through the generated `shaders.hpp`.
 - Third-party code comes from xmake-repo packages with exact versions; nothing is vendored into `src/`.
 - A new module adds its directory's `module.dox`, an XMake target with `add_deps` on the modules below it, and its commit scope to `SCOPES` in tools/project_n.py.
 
@@ -27,6 +28,7 @@ All game and engine code, structured by docs/design/0002-engine-architecture.md 
 ## Gotchas
 - A `///` comment right after the `/// @file` block joins it, leaving the next declaration undocumented: put a blank line after the file comment.
 - SDL 3 silently falls back to XWayland when the compositor lacks `fifo-v1` (niri does), even with the Wayland driver compiled in. `platform/window.cpp` hints `wayland,x11`; `SDL_VIDEO_DRIVER` still overrides it.
+- A `switch` over every value of an enum fails either way under Clang's `-Weverything`: `-Wswitch-default` wants a `default`, `-Wcovered-switch-default` rejects one. Use `if`s.
 - A member whose type's default constructor is defaulted (`std::unordered_map`, EnTT's registry, `core::Mutex`): GCC's `-Weffc++` demands an initializer, clang-tidy calls `{}` redundant. Keep `{}` with `// NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer`, or use a value tidy accepts (`= std::nullopt`).
 
 ## Skill candidates

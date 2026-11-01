@@ -15,9 +15,6 @@ struct Window::Impl {
     Impl(Impl&&) = delete;
     Impl& operator=(Impl&&) = delete;
     ~Impl() {
-        if (renderer != nullptr) {
-            SDL_DestroyRenderer(renderer);
-        }
         if (window != nullptr) {
             SDL_DestroyWindow(window);
         }
@@ -26,7 +23,6 @@ struct Window::Impl {
     }
 
     SDL_Window* window = nullptr;
-    SDL_Renderer* renderer = nullptr;
     WindowState state{};
 };
 
@@ -49,24 +45,11 @@ std::expected<Window, core::Error> Window::Open(std::string_view title, i32 widt
     }
     auto impl = std::make_unique<Impl>(); // from here on, its destructor calls SDL_Quit
     const std::string name{ title };
-    if (!SDL_CreateWindowAndRenderer(name.c_str(), width, height, SDL_WINDOW_RESIZABLE, &impl->window, &impl->renderer)) {
-        return std::unexpected{ core::Error{ std::format("SDL_CreateWindowAndRenderer failed: {}", SDL_GetError()) } };
+    impl->window = SDL_CreateWindow(name.c_str(), width, height, SDL_WINDOW_RESIZABLE);
+    if (impl->window == nullptr) {
+        return std::unexpected{ core::Error{ std::format("SDL_CreateWindow failed: {}", SDL_GetError()) } };
     }
-    // Rendering is uncapped (design doc 0002 §6); SDL3's default, made explicit.
-    const bool uncapped = SDL_SetRenderVSync(impl->renderer, 0);
-    PN_LOG_INFO(
-        "window {}x{}, video driver: {}, renderer: {}",
-        width,
-        height,
-        SDL_GetCurrentVideoDriver(),
-        SDL_GetRendererName(impl->renderer)
-    );
-    if (uncapped) {
-        PN_LOG_INFO("rendering uncapped");
-    }
-    else {
-        PN_LOG_WARNING("vsync couldn't be turned off, so frames follow the display: {}", SDL_GetError());
-    }
+    PN_LOG_INFO("window {}x{}, video driver: {}", width, height, SDL_GetCurrentVideoDriver());
     return Window{ std::move(impl) };
 }
 
@@ -113,11 +96,8 @@ const WindowState& Window::Poll(u64 hiddenWaitNs) {
     return state;
 }
 
-void Window::Clear(Colour colour) {
-    PN_PROFILE_ZONE();
-    SDL_SetRenderDrawColorFloat(m_impl->renderer, colour.red, colour.green, colour.blue, 1.0F);
-    SDL_RenderClear(m_impl->renderer);
-    SDL_RenderPresent(m_impl->renderer);
+void* Window::Handle() const {
+    return m_impl->window;
 }
 
 } // namespace platform

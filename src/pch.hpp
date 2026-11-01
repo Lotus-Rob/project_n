@@ -30,6 +30,7 @@
 #include <numeric>
 #include <optional>
 #include <source_location>
+#include <span>
 #include <stop_token>
 #include <string>
 #include <string_view>

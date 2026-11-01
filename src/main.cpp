@@ -5,6 +5,7 @@
 #include "core/math.hpp"
 #include "core/profile.hpp"
 #include "core/tick_clock.hpp"
+#include "gfx/renderer.hpp"
 #include "platform/clock.hpp"
 #include "platform/paths.hpp"
 #include "platform/sdl_log.hpp"
@@ -16,11 +17,11 @@ constexpr i32 WINDOW_WIDTH = 1280;
 constexpr i32 WINDOW_HEIGHT = 720;
 // The clear colour breathes between these over BREATH_TICKS of the render clock: until there is
 // anything to draw, it shows the snapshots arriving, interpolating, and freezing while paused.
-constexpr platform::Colour DARK{ .red = 0.08F, .green = 0.10F, .blue = 0.14F };
-constexpr platform::Colour LIGHT{ .red = 0.14F, .green = 0.17F, .blue = 0.23F };
+constexpr gfx::Colour DARK{ .red = 0.08F, .green = 0.10F, .blue = 0.14F };
+constexpr gfx::Colour LIGHT{ .red = 0.14F, .green = 0.17F, .blue = 0.23F };
 constexpr f64 BREATH_TICKS = 4.0 * core::TICKS_PER_SECOND;
 
-platform::Colour Breathe(f64 renderTick) {
+gfx::Colour Breathe(f64 renderTick) {
     PN_PROFILE_ZONE();
     // fmod keeps Cos's argument in its range however long the game runs.
     const f64 phase = std::fmod(renderTick, BREATH_TICKS) * 2.0 * std::numbers::pi / BREATH_TICKS;
@@ -81,6 +82,11 @@ i32 Run() {
         PN_LOG_ERROR("no window: {}", window.error().message);
         return 1;
     }
+    std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(*window);
+    if (!renderer) {
+        PN_LOG_ERROR("no renderer: {}", renderer.error().message);
+        return 1;
+    }
 
     core::GameHandover handover;
     core::GameDisplay display;
@@ -119,7 +125,7 @@ i32 Run() {
         if (!state.visible) {
             continue;
         }
-        window->Clear(Breathe(renderTick));
+        renderer->Draw(Breathe(renderTick));
         PN_PROFILE_FRAME();
     }
 
