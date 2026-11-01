@@ -15,7 +15,7 @@ All game and engine code, structured by docs/design/0002-engine-architecture.md 
 - Every header starts with a `/// @file` comment followed by `/// @ingroup <module>` (the group is in `src/<module>/module.dox`), and every public class, function, member, variable and enum it declares has a Doxygen comment (`///`): what it does and promises, not how. `lint` fails on a missing or broken one.
 - Errors: an expected failure returns `std::expected<T, core::Error>` (`core/error.hpp`); a broken invariant is `PN_ASSERT(condition, message)` (`core/assert.hpp`: on in debug and releasedbg). Our code throws nothing.
 - Comments in `.cpp` files only explain why, or a complexity the code can't show; never restate what the code does.
-- Unity builds are configured but off (`unity_build` in xmake.lua); `check` builds and tests the native preset with them once to keep them working. They put several sources in one translation unit, so keep names in anonymous namespaces unique across files.
+- Unity builds are configured but off (`unity_build` in xmake.lua); `check` builds and tests the native preset with them once to keep them working. They put several sources in one translation unit, so keep names in anonymous namespaces unique across files (test files stay out of the batches: doctest's names would clash).
 - Third-party code comes from xmake-repo packages with exact versions; nothing is vendored into `src/`.
 - A new module adds its directory's `module.dox`, an XMake target with `add_deps` on the modules below it, and its commit scope to `SCOPES` in tools/project_n.py.
 
