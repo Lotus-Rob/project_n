@@ -10,6 +10,8 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <exception>
@@ -19,9 +21,13 @@
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <mutex>
+#include <optional>
+#include <source_location>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 // IWYU pragma: end_keep
