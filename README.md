@@ -23,7 +23,7 @@ git config core.hooksPath .githooks     # enable the commit hooks: message and f
 pixi run project_n doctor               # check everything; prints fixes, installs nothing
 ```
 
-Point your editor's clangd, clang-format and debugger at `.pixi/envs/default/bin/` (or start the editor from `pixi shell`).
+VS Code picks up the committed `.vscode/settings.json`, which points the clangd extension (and with it formatting and clang-tidy) at the pinned clangd; on Windows, adjust its path as `docs/design/0001` §4 notes describe. Point the debugger, and other editors' clangd and clang-format, at `.pixi/envs/default/bin/` (or start the editor from `pixi shell`).
 Every native build writes `build/compile_commands.json`, which `.clangd` reads.
 
 ## Build, test, run
