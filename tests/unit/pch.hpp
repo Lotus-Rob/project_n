@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <bit>
 #include <cfenv>
 #include <cmath>
 #include <cstddef>
@@ -26,6 +27,7 @@
 #include <memory>
 #include <mutex>
 #include <numbers>
+#include <numeric>
 #include <optional>
 #include <source_location>
 #include <span>
