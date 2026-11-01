@@ -13,6 +13,8 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cfenv>
+#include <cmath>
 #include <cstddef>
 #include <exception>
 #include <expected>
@@ -20,8 +22,10 @@
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <mutex>
+#include <numbers>
 #include <optional>
 #include <source_location>
 #include <sstream>
