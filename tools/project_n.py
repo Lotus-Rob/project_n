@@ -511,6 +511,21 @@ def crossed_modules(sources):
     return found
 
 
+# The platform maths library's transcendental functions, whose results differ between machines.
+PLATFORM_MATHS_RE = re.compile(r"(?:\bstd::|(?<![\w:])::|(?<![\w.:>]))(?:a?sinh?|a?cosh?|a?tanh?|atan2|exp2?|expm1|log(?:2|10|1p)?|pow|cbrt|hypot|erfc?|[lt]gamma)[fl]?\s*\(")
+
+
+def platform_maths(sources):
+    """Lines in src/core/ and src/game/ that call the platform's transcendental functions: the
+    simulation uses core/math.hpp's, which give the same results on every machine (design doc 0002 §7.4)."""
+    found = []
+    for f in [f for f in sources if f.startswith(("src/core/", "src/game/")) and f.endswith((".cpp", ".hpp"))]:
+        for n, line in enumerate((ROOT / f).read_text(encoding="utf-8").splitlines(), 1):
+            if PLATFORM_MATHS_RE.search(code_of(line)):
+                found.append(f"{f}:{n}: {line.strip()}")
+    return found
+
+
 # Output that goes around core/log.hpp, searched in code_of() a line.
 OUTPUT_RE = re.compile(r"\bstd::(?:print|println|cout|cerr|clog)\b|\b(?:printf|fprintf|puts|SDL_Log\w*)\s*\(")
 
@@ -641,6 +656,10 @@ def cmd_lint(args):
     if bypassed:
         raise Fail("log through PN_LOG_* (core/log.hpp) and profile through PN_PROFILE_* (core/profile.hpp) (src/AGENTS.md):\n"
                    + "\n".join(bypassed))
+    maths = platform_maths(sources)
+    if maths:
+        raise Fail("the simulation uses core::math (core/math.hpp), not the platform's maths functions (design doc 0002 §7.4):\n"
+                   + "\n".join(maths))
     check_api_docs(sources)
     if changed is None or any(f.startswith("tools/") and f.endswith(".py") for f in changed):
         run(["ruff", "check", "tools"])

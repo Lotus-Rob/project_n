@@ -463,6 +463,19 @@ class ModuleTest(unittest.TestCase):
             self.assertEqual(project_n.crossed_modules(["src/main.cpp", "tests/unit/game/a.cpp"]), [])
 
 
+class PlatformMathsTest(unittest.TestCase):
+    def test_platform_maths_in_core_and_game_are_reported(self):
+        with temp_repo({"src/core/a.cpp": "f64 a = std::sin(x);\nf64 c = ::exp(x);\n", "src/game/b.hpp": "f32 b = powf(x, y);\n"}):
+            self.assertEqual(project_n.platform_maths(["src/core/a.cpp", "src/game/b.hpp"]),
+                             ["src/core/a.cpp:1: f64 a = std::sin(x);", "src/core/a.cpp:2: f64 c = ::exp(x);",
+                              "src/game/b.hpp:1: f32 b = powf(x, y);"])
+
+    def test_our_maths_logging_and_other_modules_pass(self):
+        with temp_repo({"src/core/a.cpp": 'f64 a = math::Sin(x) + std::sqrt(y);\nPN_LOG_INFO("log(x)");\ncore::log::Start(d);\n',
+                        "src/gfx/b.cpp": "f32 b = std::sin(x);\n"}):
+            self.assertEqual(project_n.platform_maths(["src/core/a.cpp", "src/gfx/b.cpp"]), [])
+
+
 class StandardIncludeTest(unittest.TestCase):
     def test_a_standard_include_in_a_source_is_reported(self):
         with temp_repo({"src/game.cpp": '#include "core/log.hpp"\n#include <vector>\n'}):

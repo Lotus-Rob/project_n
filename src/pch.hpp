@@ -13,12 +13,16 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cfenv>
+#include <cmath>
 #include <cstddef>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <mutex>
+#include <numbers>
 #include <optional>
 #include <source_location>
 #include <string>
