@@ -84,6 +84,7 @@ Possible later additions, not part of the initial setup:
 | `wayland` | 1.26 | Provides only the build-machine `wayland-scanner` (§7.1) |
 | `doxygen` / `gcovr` | 1.18.0 / 8.8 | `docs` and `lint`'s header doc check (rule 25) / `coverage` (Linux only) |
 | `tracy-profiler-gui` | 0.14.1 | The Tracy viewer, in its own `profiler` environment (rule 22). Equal to the `tracy` client from xmake-repo |
+| `directx-shader-compiler` / `spirv-cross` / `spirv-tools` | 1.10.2605.37 / 1.4.363.0 / 2026.4 | `shaders`: HLSL to SPIR-V and DXIL, SPIR-V to MSL, `spirv-val` on the SPIR-V (0002 §8.8). Linux and Windows only: conda-forge has no osx-arm64 build, and macOS uses the committed binaries |
 | `patchelf` | 0.19.2 | Used by `artifact` to strip the rpath that conda's GCC hard-codes |
 | `doctest` / `libsdl3` | 2.5.3 / 3.4.16 | Come from `xmake-repo`, not Pixi. Listed for reference |
 
