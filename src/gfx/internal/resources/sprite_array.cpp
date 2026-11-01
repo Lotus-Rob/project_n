@@ -5,8 +5,6 @@
 #include "core/log.hpp"
 #include "platform/clock.hpp"
 
-#include <SDL3_image/SDL_image.h>
-
 namespace gfx::internal {
 
 namespace {
@@ -20,7 +18,7 @@ struct Decoded {
 
 std::expected<Surface, core::Error> Decode(const std::filesystem::path& file, const core::atlas::Sprite& sprite) {
     const std::u8string utf8 = file.u8string(); // SDL's paths are UTF-8
-    const Surface loaded{ IMG_Load(std::string{ utf8.begin(), utf8.end() }.c_str()) };
+    const Surface loaded{ SDL_LoadPNG(std::string{ utf8.begin(), utf8.end() }.c_str()) };
     if (loaded == nullptr) {
         return std::unexpected{ core::Error{ std::format("{} wasn't loaded: {}", sprite.file, SDL_GetError()) } };
     }

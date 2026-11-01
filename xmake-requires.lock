@@ -105,12 +105,6 @@
             },
             version = "3.4.16"
         },
-        ["libsdl3_image-stb 3.4.0#f56260b5"] = {
-            repo = {
-                url = "xmake/repo"
-            },
-            version = "3.4.0"
-        },
         ["libtool#f56260b5"] = {
             repo = {
                 branch = "master",
@@ -472,12 +466,6 @@
                 url = "xmake/repo"
             },
             version = "3.4.16"
-        },
-        ["libsdl3_image-stb 3.4.0#f56260b5"] = {
-            repo = {
-                url = "xmake/repo"
-            },
-            version = "3.4.0"
         },
         ["ninja#f56260b5"] = {
             repo = {
