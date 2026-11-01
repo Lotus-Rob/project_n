@@ -431,6 +431,38 @@ class DependencyTest(unittest.TestCase):
             self.assertEqual(project_n.leaked_dependencies(["src/core/log.hpp"]), ["src/core/log.hpp:2: #include <tracy/Tracy.hpp>"])
 
 
+    def test_an_internal_header_includes_its_library(self):
+        with temp_repo({"src/gfx/internal/sdl.hpp": "#pragma once\n#include <SDL3/SDL.h>\n"}):
+            self.assertEqual(project_n.leaked_dependencies(["src/gfx/internal/sdl.hpp"]), [])
+
+
+class ModuleTest(unittest.TestCase):
+    def test_a_module_includes_a_module_below_it(self):
+        with temp_repo({"src/platform/window.cpp": '#include "core/log.hpp"\n#include "platform/window.hpp"\n'}):
+            self.assertEqual(project_n.crossed_modules(["src/platform/window.cpp"]), [])
+
+    def test_a_module_including_one_above_it_is_reported(self):
+        with temp_repo({"src/core/a.cpp": '#include "platform/window.hpp"\n'}):
+            self.assertEqual(project_n.crossed_modules(["src/core/a.cpp"]), ['src/core/a.cpp:1: #include "platform/window.hpp"'])
+
+    def test_game_including_platform_is_reported(self):
+        with temp_repo({"src/game/a.hpp": '#pragma once\n#include "platform/window.hpp"\n'}):
+            self.assertEqual(project_n.crossed_modules(["src/game/a.hpp"]), ['src/game/a.hpp:2: #include "platform/window.hpp"'])
+
+    def test_another_modules_internal_header_is_reported(self):
+        with temp_repo({"src/main.cpp": '#include "gfx/internal/sdl.hpp"\n', "tests/unit/gfx/a.cpp": '#include "gfx/internal/sdl.hpp"\n'}):
+            self.assertEqual(project_n.crossed_modules(["src/main.cpp", "tests/unit/gfx/a.cpp"]),
+                             ['src/main.cpp:1: #include "gfx/internal/sdl.hpp"', 'tests/unit/gfx/a.cpp:1: #include "gfx/internal/sdl.hpp"'])
+
+    def test_a_modules_own_internal_header_passes(self):
+        with temp_repo({"src/gfx/device.cpp": '#include "gfx/internal/sdl.hpp"\n#include "internal/sdl.hpp"\n'}):
+            self.assertEqual(project_n.crossed_modules(["src/gfx/device.cpp"]), [])
+
+    def test_main_and_tests_include_any_public_header(self):
+        with temp_repo({"src/main.cpp": '#include "gfx/renderer.hpp"\n', "tests/unit/game/a.cpp": '#include "platform/window.hpp"\n'}):
+            self.assertEqual(project_n.crossed_modules(["src/main.cpp", "tests/unit/game/a.cpp"]), [])
+
+
 class StandardIncludeTest(unittest.TestCase):
     def test_a_standard_include_in_a_source_is_reported(self):
         with temp_repo({"src/game.cpp": '#include "core/log.hpp"\n#include <vector>\n'}):
