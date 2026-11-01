@@ -25,6 +25,7 @@ All game and engine code, structured by docs/design/0002-engine-architecture.md 
 ## Gotchas
 - A `///` comment right after the `/// @file` block joins it, leaving the next declaration undocumented: put a blank line after the file comment.
 - SDL 3 silently falls back to XWayland when the compositor lacks `fifo-v1` (niri does), even with the Wayland driver compiled in. `main.cpp` hints `wayland,x11`; `SDL_VIDEO_DRIVER` still overrides it.
+- A member whose type's default constructor is defaulted (`std::unordered_map`, EnTT's registry, `core::Mutex`): GCC's `-Weffc++` demands an initializer, clang-tidy calls `{}` redundant. Keep `{}` with `// NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer`, or use a value tidy accepts (`= std::nullopt`).
 
 ## Skill candidates
 | Workflow | Evidence | Proposed skill |
