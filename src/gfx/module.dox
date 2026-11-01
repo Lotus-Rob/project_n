@@ -1,0 +1,2 @@
+/// @defgroup gfx gfx
+/// Drawing with SDL_GPU: the device, the swapchain, pipelines and frames (design doc 0002 §8).

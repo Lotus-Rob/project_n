@@ -23,16 +23,6 @@ struct WindowState {
     bool focused = true;
 };
 
-/// An opaque colour in the window's colour space.
-struct Colour {
-    /// The red channel, from 0 (none) to 1 (full).
-    f32 red = 0.0F;
-    /// The green channel, from 0 (none) to 1 (full).
-    f32 green = 0.0F;
-    /// The blue channel, from 0 (none) to 1 (full).
-    f32 blue = 0.0F;
-};
-
 /// The game's one window. Opening it starts SDL's video; closing it (destruction) stops SDL.
 class Window {
 public:
@@ -54,10 +44,8 @@ public:
     /// next Poll() updates it in place.
     const WindowState& Poll(u64 hiddenWaitNs);
 
-    /// Fills the window with `colour` and shows it, without waiting for vsync.
-    // shortcut: draws through SDL_Renderer; the gfx module replaces it with SDL_GPU in phase 2 of
-    // design doc 0002 §16.
-    void Clear(Colour colour);
+    /// The window's SDL_Window, for gfx to present to; opaque so SDL stays out of headers.
+    [[nodiscard]] void* Handle() const;
 
 private:
     struct Impl;
