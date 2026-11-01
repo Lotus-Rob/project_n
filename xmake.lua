@@ -28,6 +28,12 @@ rule("lto")
         local sanitizer = get_config("sanitizer")
         if is_mode("release", "releasedbg") and (not sanitizer or sanitizer == "none") then
             target:set("policy", "build.optimization.lto", true)
+            if get_config("toolchain") == "pixi-gcc" then
+                -- gcc-ar: plain ar doesn't index LTO bytecode, so a release link found nothing in
+                -- the module libraries. Ours only: XMake gives autotools packages no ARFLAGS for
+                -- gcc-ar, and libtool then runs it without operation flags (libx11 failed).
+                target:set("toolset", "ar", "x86_64-conda-linux-gnu-gcc-ar")
+            end
             if target:is_plat("linux") and get_config("toolchain") == "pixi-clang" then
                 -- The env's ld has no LLVMgold plugin, so link with lld. Forced: XMake probes
                 -- -flto=thin alone, with the default ld, and silently drops it.
@@ -126,7 +132,7 @@ end
 -- conda-forge compilers from the Pixi env; names are triplet-prefixed, so XMake's
 -- built-in gcc/clang toolchains would silently pick the host compilers instead.
 local triplet = is_host("macosx") and "arm64-apple-darwin20.0.0-" or "x86_64-conda-linux-gnu-"
-local function pixi_toolchain(name, cc, cxx, ar, flags)
+local function pixi_toolchain(name, cc, cxx, flags)
     toolchain(name)
         set_kind("standalone")
         set_toolset("cc", triplet .. cc)
@@ -134,7 +140,7 @@ local function pixi_toolchain(name, cc, cxx, ar, flags)
         set_toolset("cxx", triplet .. cxx)
         set_toolset("ld", triplet .. cxx)
         set_toolset("sh", triplet .. cxx)
-        set_toolset("ar", triplet .. ar)
+        set_toolset("ar", triplet .. "ar")
         set_toolset("strip", triplet .. "strip")
         set_toolset("objcopy", triplet .. "objcopy") -- splits release debug info into a .sym
         set_toolset("dsymutil", "dsymutil") -- the same on macOS into a .dSYM (llvm-tools, unprefixed)
@@ -146,12 +152,10 @@ local function pixi_toolchain(name, cc, cxx, ar, flags)
     toolchain_end()
 end
 
--- gcc-ar: plain ar doesn't index LTO bytecode, so a release link found nothing in the module
--- libraries (undefined references to everything in core and platform).
-pixi_toolchain("pixi-gcc", "gcc", "g++", "gcc-ar", function (tc, prefix) end)
+pixi_toolchain("pixi-gcc", "gcc", "g++", function (tc, prefix) end)
 
 -- libc++ (and its static archives) live in the env's lib/, outside the sysroot search path.
-pixi_toolchain("pixi-clang", "clang", "clang++", "ar", function (tc, prefix)
+pixi_toolchain("pixi-clang", "clang", "clang++", function (tc, prefix)
     tc:add("cxxflags", "-stdlib=libc++")
     if is_host("macosx") then
         -- Exactly the env's libc++, by path: a -L into the env let its other libraries shadow
