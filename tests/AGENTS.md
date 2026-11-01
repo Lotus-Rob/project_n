@@ -11,11 +11,13 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
 - Each executable has exactly one `main.cpp` defining `DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN` and `DOCTEST_CONFIG_IMPLEMENT` (the precompiled `unit/pch.hpp` already included doctest, so the first no longer implies the second); test files include `<doctest/doctest.h>` only.
 - `unit/pch.hpp` holds every standard header the tests use: test `.cpp` files never include standard headers themselves (`lint` fails on one). Unit targets get it from `unit_tests()`; a fuzz target sets it with `set_pcxxheader("unit/pch.hpp")`.
 - A new area is one line in `tests/xmake.lua`: `unit_tests("<area>_tests", "unit/<area>/*.cpp", "<module>")`. The helper links the module under test (default `core`) with the modules below it and their packages, adds the precompiled header, registers the test and runs Windows builds under Wine on Linux.
+- `tests/bench/headless.cpp` is the headless benchmark (`headless_bench`, design doc 0002 §16): it ticks a large world without a window, is built with the tests but not registered as one, and takes the game's precompiled header (it isn't a doctest suite).
 - Fuzz targets: `tests/fuzz/<name>.cpp` defines `LLVMFuzzerTestOneInput`, with at least one seed in `tests/fuzz/corpus/<name>/`. They build only for linux-clang with AddressSanitizer, where each replays its seeds as a test, so `check --sanitizers` covers them. Commit every input that found a bug as a seed.
 - Coverage counts `src/` only, from the tests (linux-gcc's gcov data, reported by gcovr).
 - Sanitizers run on request, never in plain `check`. Supported per preset: `SANITIZERS` in tools/project_n.py (GCC/Clang: address, undefined, thread, leak; MSVC: address). Any finding fails the run.
 
 ## Commands
+- `pixi run project_n test --mode release --target headless_bench`: tick times of the headless world
 - `pixi run project_n test --preset linux-clang --sanitizer address` (also `run --sanitizer ...` for the game)
 - `pixi run project_n check --sanitizers`: every preset under every supported sanitizer
 - `pixi run project_n fuzz <name> [--time 60]`: new inputs and crash files land in `build/fuzz/<name>/`

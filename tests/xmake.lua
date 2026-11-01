@@ -31,6 +31,14 @@ unit_tests("platform_tests", "unit/platform/*.cpp", "platform")
 unit_tests("log_early_tests", {"unit/log_startup/main.cpp", "unit/log_startup/early_tests.cpp"})
 unit_tests("log_fallback_tests", {"unit/log_startup/main.cpp", "unit/log_startup/fallback_tests.cpp"})
 
+-- The headless benchmark (design doc 0002 §16): ticks a large world without a window or a GPU. Built
+-- with the tests and run on request: `project_n test --mode release --target headless_bench`.
+target("headless_bench")
+    set_kind("binary")
+    add_deps("core")
+    add_files("bench/headless.cpp")
+    set_pcxxheader("$(projectdir)/src/pch.hpp") -- not a doctest suite: the game's, without doctest
+
 -- libFuzzer targets, one per tests/fuzz/<name>.cpp: linux-clang with AddressSanitizer only
 -- (`project_n fuzz <name>`). There each also replays its seed corpus (tests/fuzz/corpus/<name>/)
 -- as a test, so `check --sanitizers` keeps them building and passing.
