@@ -59,5 +59,5 @@ Propose a skill when a workflow repeats → agent-docs skill
 |---|---|---|
 
 ## Gotchas
-- GCC release (LTO) links failing with undefined references into `core` or `platform`: the module libraries need `gcc-ar`, which indexes LTO bytecode (the `pixi-gcc` toolchain's `ar` in xmake.lua).
+- GCC release (LTO) links failing with undefined references into a module library: our libraries need `gcc-ar`, which indexes LTO bytecode. xmake.lua's `lto` rule sets it per target, never in the toolchain: XMake hands autotools packages no `ARFLAGS` for `gcc-ar`, so their static archives fail (`ar: invalid option -- '.'`).
 - A build that passes natively can still fail in the container: hidden host files (headers, `/usr/bin/ar`, pkg-config paths) fill gaps on a dev machine. Trust `check --container`.
