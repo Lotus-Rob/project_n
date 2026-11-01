@@ -33,6 +33,9 @@ constexpr u32 FOXES = 12;
 constexpr f32 FOX_RADIUS = 300.0F;
 constexpr f32 FOX_WOBBLE = 40.0F; // in and out of the circle, world units
 constexpr f32 FOX_SPEED = 0.006F; // radians per tick: a lap in about 17 seconds
+constexpr u32 ORBS = 8;
+constexpr f32 ORB_RADIUS = 150.0F;
+constexpr f32 ORB_SPEED = -0.02F; // anticlockwise, about three times the foxes' pace
 constexpr f32 TURN = 2.0F * std::numbers::pi_v<f32>;
 constexpr f32 WOBBLES_PER_LAP = 3.0F;
 constexpr f32 VIEW_TILT = 0.6F; // circles on the ground look flattened: the view looks down at an angle
@@ -50,9 +53,9 @@ core::Vec2 OrbitPoint(const Orbit& orbit, u64 tick) {
 
 Arena::Arena() {
     for (const Prop& prop : PROPS) {
-        Spawn(prop.sprite, prop.foot, false);
+        Spawn(prop.foot, { .sprite = prop.sprite });
     }
-    Spawn(SpriteId::Cultivator, CULTIVATOR, true);
+    Spawn(CULTIVATOR, { .sprite = SpriteId::Cultivator, .shadow = true });
     for (u32 fox = 0; fox < FOXES; ++fox) {
         const Orbit orbit{
             .centre = CULTIVATOR,
@@ -60,14 +63,28 @@ Arena::Arena() {
             .phase = TURN * static_cast<f32>(fox) / static_cast<f32>(FOXES),
             .speed = FOX_SPEED,
         };
-        m_domain.Entities().emplace<Orbit>(Spawn(SpriteId::Fox, OrbitPoint(orbit, 0), true), orbit);
+        m_domain.Entities().emplace<Orbit>(Spawn(OrbitPoint(orbit, 0), { .sprite = SpriteId::Fox, .shadow = true }), orbit);
+    }
+    for (u32 orb = 0; orb < ORBS; ++orb) {
+        const Orbit orbit{
+            .centre = CULTIVATOR,
+            .radius = ORB_RADIUS,
+            .phase = TURN * static_cast<f32>(orb) / static_cast<f32>(ORBS),
+            .speed = ORB_SPEED,
+        };
+        const Look look{
+            .sprite = orb % 2 == 0 ? SpriteId::OrbBlue : SpriteId::OrbRed,
+            .layer = core::Layer::Effects,
+            .pipeline = core::Pipeline::Additive,
+        };
+        m_domain.Entities().emplace<Orbit>(Spawn(OrbitPoint(orbit, 0), look), orbit);
     }
 }
 
-core::Entity Arena::Spawn(SpriteId sprite, core::Vec2 foot, bool shadow) {
+core::Entity Arena::Spawn(core::Vec2 foot, const Look& look) {
     const core::Entity entity = m_domain.Create(m_ids.Allocate());
     m_domain.Entities().emplace<Body>(entity, foot, foot);
-    m_domain.Entities().emplace<Look>(entity, sprite, shadow);
+    m_domain.Entities().emplace<Look>(entity, look);
     return entity;
 }
 
@@ -81,21 +98,26 @@ void Arena::Tick(u64 simulationTick) {
 
 void Arena::Publish(core::Snapshot& snapshot) {
     PN_PROFILE_ZONE();
-    snapshot.instances.push_back(core::MakeInstance({ .sprite = SpriteId::Ground }));
-    const auto drawn = m_domain.Entities().view<const Body, const Look>();
-    for (auto [entity, body, look] : drawn.each()) {
+    m_drawList.Begin(
+        0.0F
+    ); // shortcut: the camera shows the whole ground, so nothing is culled yet; the job-system chunk culls.
+    m_drawList.Add(core::Layer::Ground, core::Pipeline::Normal, core::MakeInstance({ .sprite = SpriteId::Ground }));
+    for (auto [entity, body, look] : m_domain.Entities().view<const Body, const Look>().each()) {
         if (look.shadow) {
-            snapshot.instances.push_back(
+            m_drawList.Add(
+                core::Layer::Decals,
+                core::Pipeline::Normal,
                 core::MakeInstance({ .sprite = SpriteId::Shadow, .previous = body.previous, .current = body.current })
             );
         }
-    }
-    // shortcut: drawn in creation order, so a fox can cover a pine it walks behind; sorting by foot y comes next.
-    for (auto [entity, body, look] : drawn.each()) {
-        snapshot.instances.push_back(
-            core::MakeInstance({ .sprite = look.sprite, .previous = body.previous, .current = body.current })
+        m_drawList.Add(
+            look.layer,
+            look.pipeline,
+            core::MakeInstance({ .sprite = look.sprite, .previous = body.previous, .current = body.current }),
+            body.current.y
         );
     }
+    m_drawList.Publish(snapshot);
 }
 
 } // namespace game
