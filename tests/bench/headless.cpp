@@ -1,64 +1,59 @@
 // The headless benchmark (design doc 0002 §16): ticks a large world without a window or a GPU and
-// reports tick times. Phase 1's world is entities moving in a domain, published through the
-// handover each tick; phase 4 adds the real systems and fails the run over its budgets. Run it
-// optimised: `pixi run project_n test --mode release --target headless_bench`.
+// reports tick and publish times. Phase 3's world is the stress arena (about 100,000 instances,
+// §8.1), published through the handover each tick; phase 4 adds the real systems and fails the run
+// over its budgets. Run it optimised: `pixi run project_n test --mode release --target headless_bench`.
 #include "core/cxx23.hpp" // IWYU pragma: keep
-#include "core/ecs.hpp"
 #include "core/frame.hpp"
 #include "core/log.hpp"
 #include "core/math.hpp"
-#include "core/tick_clock.hpp"
+#include "game/arena.hpp"
 
 namespace {
 
-constexpr u64 ENTITIES = 100'000;
 constexpr u64 TICKS = 600;
-constexpr f32 STEP = 1.0F / core::TICKS_PER_SECOND;
 
-struct Position {
-    f32 x = 0.0F;
-    f32 y = 0.0F;
-};
+f64 MsSince(std::chrono::steady_clock::time_point start) {
+    return std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - start).count();
+}
 
-struct Velocity {
-    f32 dx = 0.0F;
-    f32 dy = 0.0F;
-};
+void Report(std::string_view what, std::vector<f64>& times, std::size_t instances) {
+    std::ranges::sort(times);
+    const f64 mean = std::accumulate(times.begin(), times.end(), 0.0) / static_cast<f64>(times.size());
+    const f64 p99 = times[(times.size() * 99) / 100];
+    PN_LOG_INFO(
+        "{} of {} instances, {} times: mean {:.3f} ms, 99th percentile {:.3f} ms", what, instances, times.size(), mean, p99
+    );
+}
 
 } // namespace
 
 int main(int /*argc*/, char** /*argv*/) {
     core::math::SetFloatingPointEnvironment();
-    core::Domain world;
-    core::StableIdCounter ids;
-    for (u64 i = 0; i < ENTITIES; ++i) {
-        const core::Entity entity = world.Create(ids.Allocate());
-        const auto angle = static_cast<f32>(i);
-        world.Entities().emplace<Position>(entity);
-        world.Entities().emplace<Velocity>(entity, core::math::Cos(angle), core::math::Sin(angle));
-    }
-    world.SortCanonical();
-
+    game::Arena arena{ game::Scene::Stress };
     core::GameHandover handover;
-    core::TickCounters counters;
     std::vector<core::Event> events;
     std::vector<f64> tickMs;
+    std::vector<f64> publishMs;
     tickMs.reserve(TICKS);
-    for (u64 tick = 0; tick < TICKS; ++tick) {
+    publishMs.reserve(TICKS);
+    std::size_t instances = 0;
+    for (u64 tick = 1; tick <= TICKS; ++tick) {
         const auto start = std::chrono::steady_clock::now();
-        counters.Count(false, false);
-        for (auto [entity, position, velocity] : world.Entities().view<Position, const Velocity>().each()) {
-            position.x += velocity.dx * STEP;
-            position.y += velocity.dy * STEP;
-        }
-        handover.Writing() = { .wallTick = counters.wall, .simulationTick = counters.simulation, .advanced = true };
-        handover.Publish(events);
-        tickMs.push_back(std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - start).count());
-    }
+        arena.Tick(tick);
+        tickMs.push_back(MsSince(start));
 
-    std::ranges::sort(tickMs);
-    const f64 mean = std::accumulate(tickMs.begin(), tickMs.end(), 0.0) / static_cast<f64>(TICKS);
-    const f64 p99 = tickMs[(TICKS * 99) / 100];
-    PN_LOG_INFO("{} ticks of {} entities: mean {:.3f} ms, 99th percentile {:.3f} ms", TICKS, ENTITIES, mean, p99);
+        // As core::Logic publishes: the buffers are cleared, keeping their capacity.
+        core::Snapshot& snapshot = handover.Writing();
+        snapshot.simulationTick = tick;
+        snapshot.instances.clear();
+        snapshot.batches.clear();
+        const auto publishStart = std::chrono::steady_clock::now();
+        arena.Publish(snapshot);
+        publishMs.push_back(MsSince(publishStart));
+        instances = snapshot.instances.size();
+        handover.Publish(events);
+    }
+    Report("ticks", tickMs, instances);
+    Report("publishes", publishMs, instances);
     return 0;
 }
