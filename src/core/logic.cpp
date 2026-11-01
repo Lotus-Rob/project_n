@@ -22,13 +22,14 @@ void Logic::RunBurst(const TickBurst& burst, GameHandover& handover, Simulation&
         }
         PN_ASSERT(math::FloatingPointEnvironmentIsSet(), "a library changed the floating-point environment");
     }
-    // Field by field: assigning a whole Snapshot would free the instance buffer's capacity.
+    // Field by field: assigning a whole Snapshot would free the instance and batch buffers' capacity.
     Snapshot& snapshot = handover.Writing();
     snapshot.wallTick = m_counters.wall;
     snapshot.simulationTick = m_counters.simulation;
     snapshot.scheduledNs = burst.scheduledNs;
     snapshot.advanced = !m_paused;
     snapshot.instances.clear();
+    snapshot.batches.clear();
     simulation.Publish(snapshot);
     snapshot.publishedNs = now();
     handover.Publish(m_events);
