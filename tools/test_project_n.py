@@ -524,6 +524,14 @@ class FacadeTest(unittest.TestCase):
     def test_a_direct_library_include_is_reported(self):
         self.assertEqual(self.bypassed("#include <tracy/Tracy.hpp>\n"), ["src/game.cpp:1: #include <tracy/Tracy.hpp>"])
 
+    def test_an_entt_include_outside_the_ecs_facade_is_reported(self):
+        self.assertEqual(self.bypassed("#include <entt/entity/view.hpp>\n", "src/game/ai.cpp"),
+                         ["src/game/ai.cpp:1: #include <entt/entity/view.hpp>"])
+
+    def test_the_ecs_facade_and_its_source_include_entt(self):
+        self.assertEqual(self.bypassed("#include <entt/entity/registry.hpp>\n", "src/core/ecs.hpp"), [])
+        self.assertEqual(self.bypassed("#include <entt/entity/registry.hpp>\n", "src/core/ecs.cpp"), [])
+
     def test_a_facade_header_includes_its_library(self):
         self.assertEqual(self.bypassed("#include <quill/Logger.h>\n", "src/core/log.hpp"), [])
 

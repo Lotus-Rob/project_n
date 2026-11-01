@@ -432,7 +432,7 @@ def scoped_sources(args):
 
 INCLUDE_RE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]')
 # The only src/ headers that may include a library: one facade each, which all code goes through.
-FACADES = {"src/core/log.hpp": "quill/", "src/core/profile.hpp": "tracy/"}
+FACADES = {"src/core/log.hpp": "quill/", "src/core/profile.hpp": "tracy/", "src/core/ecs.hpp": "entt/"}
 # The src/ modules (design doc 0002 §4) and the modules each one's code may include: those below it.
 MODULES = {"core": (), "data": ("core",), "platform": ("core",), "gfx": ("core", "platform"),
            "ui": ("core", "gfx", "platform"), "audio": ("core",), "game": ("core",)}
@@ -536,8 +536,9 @@ def code_of(line):
 
 
 def bypassed_facades(sources):
-    """Lines in src/ that log or profile without the facades: all output goes through PN_LOG_* and
-    all profiling through PN_PROFILE_*, so each library is used the same way everywhere."""
+    """Lines in src/ that go around a facade: all output goes through PN_LOG_*, and Quill, Tracy and
+    EnTT are included only by their facade (FACADES) and its .cpp, so each library is used the same
+    way everywhere."""
     found = []
     for f in [f for f in sources if f.startswith("src/") and f.endswith((".cpp", ".hpp"))]:
         own = FACADES.get(f.rsplit(".", 1)[0] + ".hpp")  # a facade's header and .cpp include its library
@@ -654,7 +655,8 @@ def cmd_lint(args):
         raise Fail("use core/types.hpp's sized types (i32, u8, f32...) (src/AGENTS.md):\n" + "\n".join(unsized))
     bypassed = bypassed_facades(sources)
     if bypassed:
-        raise Fail("log through PN_LOG_* (core/log.hpp) and profile through PN_PROFILE_* (core/profile.hpp) (src/AGENTS.md):\n"
+        raise Fail("use the facades: log through PN_LOG_* (core/log.hpp), profile through PN_PROFILE_* (core/profile.hpp), "
+                   "and reach EnTT through core/ecs.hpp (FACADES, src/AGENTS.md):\n"
                    + "\n".join(bypassed))
     maths = platform_maths(sources)
     if maths:
