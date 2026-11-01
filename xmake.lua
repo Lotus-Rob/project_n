@@ -203,6 +203,7 @@ end
 add_requireconfs("**|python|cmake|ninja|meson|autoconf|automake|libtool|m4|bison|flex|gperf|nasm|pkg-config|pkgconf", {system = false})
 add_requires("doctest 2.5.3") -- MIT; tests only
 add_requires("entt v4.0.0") -- MIT; header-only
+add_requires("enkits v1.12") -- zlib; behind core/jobs.hpp
 add_requires("libsdl3-wayland 3.4.16") -- zlib; xmake/repo: libsdl3 plus its Wayland build deps
 add_requires("quill-wine 13.1.0") -- MIT; header-only; xmake/repo: quill plus Wine support
 -- xmake/repo: tracy plus libdl for glibc 2.28. It collects
@@ -223,6 +224,7 @@ target("core")
     set_pcxxheader("src/pch.hpp")
     -- Public: the log, profile and ECS facades' headers include their libraries.
     add_packages("quill-wine", "entt", is_mode("releasedbg") and "tracy_on" or "tracy_off", {public = true})
+    add_packages("enkits") -- private: core/jobs.hpp hides it behind a pimpl
 
 target("game")
     set_kind("static")
