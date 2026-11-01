@@ -4,3 +4,6 @@
 *.cmd text eol=crlf
 *.png binary
 *.jpg binary
+# Compiled shaders: hashed byte for byte (shaders/bin/sources.sha256).
+*.spv binary
+*.dxil binary

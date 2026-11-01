@@ -1,0 +1,13 @@
+# directx-shader-compiler ==1.10.2605.37
+# spirv-cross ==1.4.363.0
+# spirv-tools ==2026.4
+999ced2ac6c0b8e0ff72134fc4479836f1ddfd8299739f92154749dfd266be91  shaders/bin/shaders.hpp
+33a5cdd8b56807828692440dcc114e59df103553a60e6a27915dda087bfe2b77  shaders/bin/sprite.frag.dxil
+78d5564531a38da03fb6441974768f062b7f267ddedfd39e2041ed233ddd8709  shaders/bin/sprite.frag.msl
+65e67e876c36d099cf83e14f582dff0a6fc7d136433bc09c5ae930b5b0208fed  shaders/bin/sprite.frag.spv
+ca0589b968e44ee1e6c8e140ea8e5f4d629c5c8c557acffe2c59f4298b91db3b  shaders/bin/sprite.vert.dxil
+e346a53be5f3a417aeec30d8aa03a2003a309ada1f6e4b1226db7edf925180fe  shaders/bin/sprite.vert.msl
+eab0f67ae86e6fc3879c3ab6d65ddb7f0c2e446e2fa65172cb4ca38f3d3c328b  shaders/bin/sprite.vert.spv
+4e50ecc8d5045c500d71e7954abba4712d3a3d0f310e2d482108798919234683  shaders/sprite.frag.hlsl
+b1258010ae9308d380a7a9a8c21d817e49d4e3417e27cebe5c2604e8e62325eb  shaders/sprite.hlsli
+7fee2e980bc14f820c2f60e7c238d12f4c13cd35a0636c797ee17a2ea8fa32e1  shaders/sprite.vert.hlsl

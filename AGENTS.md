@@ -7,13 +7,14 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 ## Map
 - `src/` game and engine (src/AGENTS.md) · `tests/` doctest suites (tests/AGENTS.md)
 - `tools/project_n.py` the only entry point (tools/AGENTS.md) · `containers/` artefact images (containers/AGENTS.md)
-- `xmake/repo/` local fixes to xmake-repo packages · `docs/design/` rationale: read before redesigning anything
+- `shaders/` HLSL, one file per stage; `bin/`: the committed binaries `shaders` writes · `xmake/repo/` local fixes to xmake-repo packages · `docs/design/` rationale: read before redesigning anything
 - `.github/` CI workflows (.github/AGENTS.md)
 
 ## Commands
 - `./dev <command>` (Windows `dev`) is shorthand for `pixi run project_n <command>`; either works from anywhere.
 - `pixi run project_n doctor [--docs]` · `build|test|run [--preset linux-gcc|linux-clang|windows-msvc|macos-clang] [--mode debug|release|releasedbg]` (releasedbg: profiling with Tracy; default preset: the host's native one, `NATIVE_PRESET`; `build --preset all` builds every preset and summarises)
 - `pixi run project_n check`: the merge gate (self-tests, commits, format and lint of the diff, build + test every preset). A change is done when it passes.
+- `pixi run project_n shaders` (Linux or Windows): compile `shaders/` after changing it, and commit `shaders/bin/` with it; `lint` fails on stale binaries
 - `pixi run project_n coverage` (HTML in build/coverage/) · `fuzz <target> [--time S]` · `docs` (Doxygen, build/docs/) · `profiler` (Tracy viewer for a `run --mode releasedbg` build)
 - `pixi run project_n check --sanitizers`: also every supported sanitizer; on request only, not part of the gate.
 - `pixi run project_n check --container`: the same in clean containers. Run it for any build, environment or dependency change: only a clean container catches host leaks.

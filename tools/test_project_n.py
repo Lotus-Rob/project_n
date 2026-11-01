@@ -767,5 +767,74 @@ class HelpersTest(unittest.TestCase):
         self.assertEqual(cmd[-5:], ["img", "pixi", "run", "project_n", "build"])
 
 
+class ShaderTest(unittest.TestCase):
+    def resource(self, name, space, binding, readonly=True):
+        return {"name": name, "set": space, "binding": binding, "readonly": readonly}
+
+    def test_resources_in_sdl_order_are_counted(self):
+        reflection = {"textures": [self.resource("atlas", 2, 0)], "images": [self.resource("noise", 2, 1)],
+                      "ssbos": [self.resource("lights", 2, 2)], "ubos": [self.resource("post", 3, 0)]}
+        self.assertEqual(project_n.shader_resources(reflection, 2, "x"), {"textures": 1, "images": 1, "ssbos": 1, "ubos": 1})
+
+    def test_a_storage_buffer_before_a_texture_is_rejected(self):
+        reflection = {"textures": [self.resource("atlas", 0, 1)], "ssbos": [self.resource("instances", 0, 0)]}
+        with self.assertRaisesRegex(project_n.Fail, "SDL_GPU expects"):
+            project_n.shader_resources(reflection, 0, "x")
+
+    def test_a_uniform_buffer_in_the_resource_space_is_rejected(self):
+        with self.assertRaisesRegex(project_n.Fail, "SDL_GPU expects"):
+            project_n.shader_resources({"ubos": [self.resource("camera", 0, 0)]}, 0, "x")
+
+    def test_separate_samplers_are_rejected(self):
+        with self.assertRaisesRegex(project_n.Fail, "combined image samplers"):
+            project_n.shader_resources({"separate_samplers": [self.resource("s", 2, 0)]}, 2, "x")
+
+    def test_read_write_storage_is_rejected(self):
+        with self.assertRaisesRegex(project_n.Fail, "read-write"):
+            project_n.shader_resources({"ssbos": [self.resource("out", 0, 0, readonly=False)]}, 0, "x")
+
+    def test_metal_numbers_storage_buffers_after_uniform_buffers(self):
+        reflection = {"textures": [self.resource("atlas", 0, 0)], "ssbos": [self.resource("instances", 0, 1)],
+                      "ubos": [self.resource("camera", 1, 0), self.resource("clock", 1, 1)]}
+        options = project_n.msl_bindings(reflection, 0)
+        mapped = [tuple(options[i + 1:i + 5]) for i in range(0, len(options), 5)]
+        self.assertEqual(mapped, [("t0", "0", "0", "4"), ("s0", "0", "0", "4"), ("b0", "1", "0", "5"),
+                                  ("b1", "1", "1", "5"), ("t1", "0", "2", "6")])
+
+    def test_binaries_are_stale_until_the_manifest_matches(self):
+        with temp_repo({"shaders/a.vert.hlsl": "x", "shaders/bin/a.vert.spv": "y"}) as root:
+            self.assertTrue(project_n.stale_shaders())
+            (root / project_n.SHADER_MANIFEST).write_text(project_n.shader_hashes())
+            self.assertFalse(project_n.stale_shaders())
+            (root / "shaders" / "a.vert.hlsl").write_text("changed")
+            self.assertTrue(project_n.stale_shaders())
+
+    def test_binaries_are_stale_after_a_shader_tool_bump(self):
+        with temp_repo({"pixi.toml": 'spirv-cross = "==1.4.363.0"\n', "shaders/a.vert.hlsl": "x"}) as root:
+            (root / project_n.SHADER_MANIFEST).parent.mkdir(parents=True, exist_ok=True)
+            (root / project_n.SHADER_MANIFEST).write_text(project_n.shader_hashes())
+            self.assertFalse(project_n.stale_shaders())
+            (root / "pixi.toml").write_text('spirv-cross = "==1.4.364.0"\n')
+            self.assertTrue(project_n.stale_shaders())
+
+    def test_a_tool_bumped_for_one_platform_only_is_reported_and_stale(self):
+        both = '[target.win-64.dependencies]\nspirv-cross = "==1.4.363.0"\n[target.linux-64.dependencies]\nspirv-cross = "==1.4.363.0"\n'
+        with temp_repo({"pixi.toml": both, "shaders/a.vert.hlsl": "x"}) as root:
+            (root / project_n.SHADER_MANIFEST).parent.mkdir(parents=True, exist_ok=True)
+            (root / project_n.SHADER_MANIFEST).write_text(project_n.shader_hashes())
+            self.assertEqual(project_n.unequal_shader_pins(), [])
+            (root / "pixi.toml").write_text(both.replace('[target.linux-64.dependencies]\nspirv-cross = "==1.4.363.0"',
+                                                          '[target.linux-64.dependencies]\nspirv-cross = "==1.4.999.0"'))
+            self.assertEqual(project_n.unequal_shader_pins(), ["spirv-cross"])
+            self.assertTrue(project_n.stale_shaders())
+
+    def test_text_outputs_get_lf_endings(self):
+        with tempfile.TemporaryDirectory() as d:
+            msl = Path(d, "a.vert.msl")
+            msl.write_bytes(b"one\r\ntwo\r\n")
+            project_n.lf_endings(msl)
+            self.assertEqual(msl.read_bytes(), b"one\ntwo\n")
+
+
 if __name__ == "__main__":
     unittest.main()

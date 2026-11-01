@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.request
 from pathlib import Path
 
@@ -590,6 +591,151 @@ def check_api_docs(sources):
     run(["doxygen", "-"], input=config, text=True)
 
 
+# Shaders (design doc 0002 §8.8): HLSL in shaders/, compiled by `shaders` into committed binaries.
+SHADER_BIN = "shaders/bin"
+SHADER_MANIFEST = f"{SHADER_BIN}/sources.sha256"  # every source and output with its hash: `lint` finds stale binaries
+SHADER_HEADER = f"{SHADER_BIN}/shaders.hpp"
+# Per stage (a source is <name>.<stage>.hlsl): its entry point, DXC's profile (shader model 6.0) and the register space SDL_GPU reads
+# its resources from; its uniform buffers are in the next space.
+SHADER_STAGES = {"vert": ("VertexMain", "vs_6_0", 0), "frag": ("FragmentMain", "ps_6_0", 2)}
+SHADER_TOOLS = ("directx-shader-compiler", "spirv-cross", "spirv-tools")  # pixi.toml packages `shaders` runs
+MSL_VERSION = "20100"  # MSL 2.1: macOS 10.14, SDL_GPU's minimum for Metal
+
+
+def shader_resources(reflection, space, name):
+    """What a stage binds, counted from SPIRV-Cross's reflection of its SPIR-V, after checking it
+    follows SDL_GPU's layout (SDL_CreateGPUShader): in `space`, sampled textures, then storage
+    textures, then storage buffers, numbered from 0; uniform buffers from 0 in `space + 1`."""
+    if reflection.get("separate_images") or reflection.get("separate_samplers"):
+        raise Fail(f"{name}: SDL_GPU's SPIR-V takes combined image samplers: give the texture and its sampler "
+                   "[[vk::combinedImageSampler]] and one [[vk::binding]] (design doc 0002 §8.8)")
+    # shortcut: read-only storage only; read-write ones (u registers) need DXIL's separate numbering mapped too.
+    writable = [r["name"] for kind in ("images", "ssbos") for r in reflection.get(kind, []) if not r.get("readonly")]
+    if writable:
+        raise Fail(f"{name}: read-write storage isn't supported by `shaders` yet: {', '.join(writable)}")
+    expected = [(kind, space, i) for i, kind in enumerate(k for k in ("textures", "images", "ssbos") for _ in reflection.get(k, []))]
+    expected += [("ubos", space + 1, i) for i in range(len(reflection.get("ubos", [])))]
+    found = [(kind, r["set"], r["binding"]) for kind in ("textures", "images", "ssbos") for r in sorted(reflection.get(kind, []), key=lambda r: r["binding"])]
+    found += [("ubos", r["set"], r["binding"]) for r in sorted(reflection.get("ubos", []), key=lambda r: r["binding"])]
+    if found != expected:
+        raise Fail(f"{name}: resources at (kind, space, register) {found}, but SDL_GPU expects {expected}: sampled textures, "
+                   f"storage textures and storage buffers in space{space} from register 0, uniform buffers in space{space + 1} "
+                   "(design doc 0002 §8.8)")
+    return {kind: len(reflection.get(kind, [])) for kind in ("textures", "images", "ssbos", "ubos")}
+
+
+def msl_bindings(reflection, space):
+    """DXC options numbering each resource as SDL_GPU's Metal backend does, for SPIRV-Cross to take
+    each binding as the Metal index: [[texture]]s and their [[sampler]]s as registered, [[buffer]]s
+    uniform buffers first, then storage buffers. DXC wants every resource mapped once one is."""
+    def sort(kind):
+        return sorted(reflection.get(kind, []), key=lambda r: r["binding"])
+    # Each kind in a set of its own (unused by SDL), so no binding clashes in the SPIR-V.
+    textures = [(reg, r["binding"], r["binding"], space + 4) for r in sort("textures") for reg in "ts"]
+    textures += [("t", r["binding"], r["binding"], space + 4) for r in sort("images")]
+    uniforms = [("b", r["binding"], r["binding"], space + 5) for r in sort("ubos")]
+    storage = [("t", r["binding"], len(uniforms) + i, space + 6) for i, r in enumerate(sort("ssbos"))]
+    return [a for reg, register, binding, metal in textures + uniforms + storage
+            for a in ("-fvk-bind-register", f"{reg}{register}", str(space + (reg == "b")), str(binding), str(metal))]
+
+
+def shader_tool_pins():
+    """Each shader tool's pins in pixi.toml, linux-64's and win-64's: one version when they agree."""
+    toml = ROOT / "pixi.toml"
+    text = toml.read_text(encoding="utf-8") if toml.is_file() else ""
+    return {tool: sorted(set(re.findall(rf'^{re.escape(tool)} = "==([^"]+)"', text, re.MULTILINE))) or ["unpinned"]
+            for tool in SHADER_TOOLS}
+
+
+def unequal_shader_pins():
+    """The shader tools pinned to different versions for Linux and Windows, which would build different binaries."""
+    return [tool for tool, versions in shader_tool_pins().items() if len(versions) > 1]
+
+
+def shader_hashes():
+    """The manifest's content: the shader tools' pins, then each shader source and committed output
+    with its SHA-256. A bumped tool makes the binaries stale, as a changed source does."""
+    pins = "".join(f"# {tool} ==" + " ==".join(versions) + "\n" for tool, versions in shader_tool_pins().items())
+    files = sorted(p for p in [*(ROOT / "shaders").glob("*.hlsl*"), *(ROOT / SHADER_BIN).glob("*")] if p.relative_to(ROOT).as_posix() != SHADER_MANIFEST)
+    return pins + "".join(f"{sha256(p)}  {p.relative_to(ROOT).as_posix()}\n" for p in files)
+
+
+def stale_shaders():
+    """Whether shaders/ and its binaries disagree with the manifest `shaders` wrote with them."""
+    manifest = ROOT / SHADER_MANIFEST
+    if not (ROOT / "shaders").is_dir():
+        return False
+    return not manifest.is_file() or manifest.read_text(encoding="utf-8") != shader_hashes()
+
+
+def lf_endings(path):
+    """Rewrite a text file with LF line endings: SPIRV-Cross writes CRLF on Windows, which git would
+    store as LF (.gitattributes) and the manifest would then no longer match anywhere."""
+    path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+
+
+def shaders_header(stages):
+    """The generated header: each stage's binaries (embedded by XMake's utils.bin2c) and resource counts."""
+    lines = ["// Generated by `project_n shaders` from shaders/*.hlsl (design doc 0002 §8.8); don't edit.", "#pragma once", "",
+             '#include "core/types.hpp"', "", "#include <array>", "#include <span>", "", "namespace gfx::shaders {", "",
+             "/// One shader stage in every format SDL_GPU takes, with what it binds.", "struct Stage {",
+             "    /// The stage's name in GPU captures (RenderDoc, PIX, Xcode): <name>.<stage>.", "    const char* name;",
+             "    /// The HLSL entry point, which keeps its name in every format.", "    const char* entryPoint;",
+             "    /// SPIR-V, for Vulkan; no terminating zero, like the other two.", "    std::span<const u8> spirv;",
+             "    /// DXIL (shader model 6.0), for D3D12.", "    std::span<const u8> dxil;",
+             "    /// MSL source (2.1), for Metal.", "    std::span<const u8> msl;",
+             "    /// Combined texture-sampler pairs.", "    u32 samplers;",
+             "    /// Read-only storage textures.", "    u32 storageTextures;",
+             "    /// Read-only storage buffers.", "    u32 storageBuffers;",
+             "    /// Uniform buffers.", "    u32 uniformBuffers;", "};", ""]
+    for stem, stage, entry, counts in stages:
+        name = f"{stem}_{stage}".upper()
+        for fmt, ext in (("SPIRV", "spv"), ("DXIL", "dxil"), ("MSL", "msl")):
+            size = (ROOT / SHADER_BIN / f"{stem}.{stage}.{ext}").stat().st_size
+            lines += [f"/// shaders/bin/{stem}.{stage}.{ext}, embedded by XMake's utils.bin2c.",
+                      f"inline constexpr std::array<u8, {size}> {name}_{fmt}{{{{", f'#include "{stem}.{stage}.{ext}.h"', "}};"]
+        lines += [f"/// shaders/{stem}.{stage}.hlsl.", (f'inline constexpr Stage {name}{{ "{stem}.{stage}", "{entry}", {name}_SPIRV, {name}_DXIL, {name}_MSL, '
+                   f'{counts["textures"]}, {counts["images"]}, {counts["ssbos"]}, {counts["ubos"]} }};'), ""]
+    return "\n".join([*lines, "} // namespace gfx::shaders", ""])
+
+
+def cmd_shaders(args):
+    """Compile shaders/<name>.<stage>.hlsl with DXC to SPIR-V and DXIL, then SPIRV-Cross to MSL, into shaders/bin/
+    with the generated header and the manifest. The outputs are committed with their sources."""
+    if HOST == "macos":
+        raise Fail("conda-forge has no DXC or SPIRV-Cross for macOS: run `shaders` on Linux or Windows (design doc 0002 §8.8)")
+    if unequal_shader_pins():
+        raise Fail(f"pin {', '.join(unequal_shader_pins())} to one version for linux-64 and win-64 in pixi.toml")
+    out = ROOT / SHADER_BIN
+    shutil.rmtree(out, ignore_errors=True)
+    out.mkdir(parents=True)
+    stages = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for source in sorted((ROOT / "shaders").glob("*.hlsl")):
+            rel = source.relative_to(ROOT).as_posix()
+            stem, _, stage = source.stem.rpartition(".")
+            if stage not in SHADER_STAGES:
+                raise Fail(f"{rel}: name shaders <name>.<stage>.hlsl, the stage one of {', '.join(SHADER_STAGES)}")
+            entry, profile, space = SHADER_STAGES[stage]
+            base = f"{SHADER_BIN}/{stem}.{stage}"
+            dxc = ["dxc", "-T", profile, "-E", entry, rel]
+            spirv = [*dxc, "-spirv", "-fspv-target-env=vulkan1.0"]
+            run([*spirv, "-Fo", f"{base}.spv"])
+            run(["spirv-val", f"{base}.spv"])
+            run([*dxc, "-Wno-ignored-attributes", "-Fo", f"{base}.dxil"])  # the [[vk::...]] attributes are SPIR-V's
+            reflection = json.loads(capture(["spirv-cross", f"{base}.spv", "--reflect"]))
+            counts = shader_resources(reflection, space, f"{rel} ({entry})")
+            metal = Path(tmp, f"{stem}.{stage}.spv")
+            run([*spirv, *msl_bindings(reflection, space), "-Fo", metal])
+            run(["spirv-cross", metal, "--msl", "--msl-version", MSL_VERSION, "--msl-decoration-binding",
+                 "--entry", entry, "--stage", stage, "--output", f"{base}.msl"])
+            lf_endings(ROOT / f"{base}.msl")
+            stages.append((stem, stage, entry, counts))
+    (ROOT / SHADER_HEADER).write_text(shaders_header(stages), encoding="utf-8", newline="\n")
+    (ROOT / SHADER_MANIFEST).write_text(shader_hashes(), encoding="utf-8", newline="\n")
+    print(f"shaders: {len(stages)} stage(s) in {SHADER_BIN}/; commit them with their sources")
+
+
 def lint_units(sources):
     """The .cpp files clang-tidy runs on: a header's findings surface through the files that include
     it, so a changed header lints them all."""
@@ -663,6 +809,12 @@ def cmd_lint(args):
         raise Fail("the simulation uses core::math (core/math.hpp), not the platform's maths functions (design doc 0002 §7.4):\n"
                    + "\n".join(maths))
     check_api_docs(sources)
+    if unequal_shader_pins():
+        raise Fail(f"pin {', '.join(unequal_shader_pins())} to one version for linux-64 and win-64 in pixi.toml: "
+                   "both build the committed shader binaries")
+    if stale_shaders():
+        raise Fail(f"shaders/ changed but its binaries didn't, or they were edited ({SHADER_MANIFEST}): run `./dev shaders` "
+                   "on Linux or Windows and commit the result")
     if changed is None or any(f.startswith("tools/") and f.endswith(".py") for f in changed):
         run(["ruff", "check", "tools"])
     if changed is None or any(f.startswith(".github/") for f in changed):
@@ -1193,6 +1345,7 @@ def make_parser():
     p.add_argument("--time", type=int, default=60, help="seconds to fuzz (default 60)")
     add("docs", cmd_docs, "API reference from doc comments with Doxygen: build/docs/html/")
     add("profiler", cmd_profiler, "start the Tracy viewer; profile a `run --mode releasedbg` build")
+    add("shaders", cmd_shaders, "compile shaders/*.hlsl into shaders/bin/ (SPIR-V, DXIL, MSL); Linux and Windows only")
     add("selftest", cmd_selftest, "run project_n.py's own unit tests (tools/test_project_n.py)")
     p = add("fmt", cmd_fmt, "format changed sources with the pinned clang-format (--all: every source)")
     p.add_argument("--check", action="store_true", help="fail instead of rewriting files")
@@ -1213,7 +1366,7 @@ def make_parser():
 def main(argv=None):
     args = make_parser().parse_args(argv)
     try:
-        if HOST == "macos" and args.func not in (cmd_commit_check, cmd_selftest, cmd_fmt, cmd_release, cmd_docs, cmd_profiler):
+        if HOST == "macos" and args.func not in (cmd_commit_check, cmd_selftest, cmd_fmt, cmd_release, cmd_docs, cmd_profiler, cmd_shaders):
             ensure_macos_xmake()  # not for commands without XMake: the commit hook must work offline
         return args.func(args) or 0
     except Fail as e:
