@@ -29,8 +29,8 @@ public:
     /// ticks don't call it.
     virtual void Tick(u64 simulationTick) = 0;
 
-    /// Writes what the state looks like now into `snapshot`'s drawing data: its instances arrive
-    /// empty, with their capacity kept. Called once per burst, after its last tick.
+    /// Writes what the state looks like now into `snapshot`'s drawing data: its instances and batches
+    /// arrive empty, with their capacity kept. Called once per burst, after its last tick.
     virtual void Publish(Snapshot& snapshot) = 0;
 };
 

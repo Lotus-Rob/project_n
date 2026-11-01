@@ -42,6 +42,25 @@ struct Instance {
 inline constexpr std::size_t INSTANCE_BYTES = 40;
 static_assert(sizeof(Instance) == INSTANCE_BYTES, "the shader reads instances as 40 bytes");
 
+/// How a batch of instances blends onto what is drawn under it (design doc 0002 §8.8): one
+/// pipeline each.
+enum class Pipeline : u8 {
+    Normal,   ///< Premultiplied alpha over: ONE, ONE_MINUS_SRC_ALPHA.
+    Additive, ///< Light added to what's under it: ONE, ONE.
+};
+/// How many pipelines Pipeline names.
+inline constexpr std::size_t PIPELINES = 2;
+
+/// A run of consecutive instances drawn with one pipeline: one draw call.
+struct Batch {
+    /// Its first instance in Snapshot::instances.
+    u32 first = 0;
+    /// How many instances it draws.
+    u32 count = 0;
+    /// The pipeline it draws with.
+    Pipeline pipeline = Pipeline::Normal;
+};
+
 /// One published snapshot of the game state: what the main thread draws until the next is due.
 struct Snapshot {
     /// The wall tick of the last tick in the burst that published it.
@@ -60,6 +79,8 @@ struct Snapshot {
     /// The sprites to draw, in drawing order. The buffer keeps its capacity from publish to
     /// publish: the publisher clears and refills it, never assigns a new one.
     std::vector<Instance> instances{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    /// The instances' batches, in drawing order, covering them all; refilled in place likewise.
+    std::vector<Batch> batches{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
 };
 
 /// Something a tick started that the main thread plays at the render clock (sounds, particle
