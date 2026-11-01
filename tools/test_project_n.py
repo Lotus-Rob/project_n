@@ -532,6 +532,11 @@ class FacadeTest(unittest.TestCase):
         self.assertEqual(self.bypassed("#include <entt/entity/registry.hpp>\n", "src/core/ecs.hpp"), [])
         self.assertEqual(self.bypassed("#include <entt/entity/registry.hpp>\n", "src/core/ecs.cpp"), [])
 
+    def test_enkits_is_included_only_by_the_jobs_facade_source(self):
+        self.assertEqual(self.bypassed("#include <enkiTS/TaskScheduler.h>\n", "src/game/arena.cpp"),
+                         ["src/game/arena.cpp:1: #include <enkiTS/TaskScheduler.h>"])
+        self.assertEqual(self.bypassed("#include <enkiTS/TaskScheduler.h>\n", "src/core/jobs.cpp"), [])
+
     def test_a_facade_header_includes_its_library(self):
         self.assertEqual(self.bypassed("#include <quill/Logger.h>\n", "src/core/log.hpp"), [])
 

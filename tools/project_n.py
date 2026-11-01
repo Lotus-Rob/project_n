@@ -435,7 +435,7 @@ def scoped_sources(args):
 
 INCLUDE_RE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]')
 # The only src/ headers that may include a library: one facade each, which all code goes through.
-FACADES = {"src/core/log.hpp": "quill/", "src/core/profile.hpp": "tracy/", "src/core/ecs.hpp": "entt/"}
+FACADES = {"src/core/log.hpp": "quill/", "src/core/profile.hpp": "tracy/", "src/core/ecs.hpp": "entt/", "src/core/jobs.hpp": "enkiTS/"}
 # The src/ modules (design doc 0002 §4) and the modules each one's code may include: those below it.
 MODULES = {"core": (), "data": ("core",), "platform": ("core",), "gfx": ("core", "platform"),
            "ui": ("core", "gfx", "platform"), "audio": ("core",), "game": ("core",)}
@@ -539,9 +539,9 @@ def code_of(line):
 
 
 def bypassed_facades(sources):
-    """Lines in src/ that go around a facade: all output goes through PN_LOG_*, and Quill, Tracy and
-    EnTT are included only by their facade (FACADES) and its .cpp, so each library is used the same
-    way everywhere."""
+    """Lines in src/ that go around a facade: all output goes through PN_LOG_*, and Quill, Tracy,
+    EnTT and enkiTS are included only by their facade (FACADES) and its .cpp, so each library is
+    used the same way everywhere."""
     found = []
     for f in [f for f in sources if f.startswith("src/") and f.endswith((".cpp", ".hpp"))]:
         own = FACADES.get(f.rsplit(".", 1)[0] + ".hpp")  # a facade's header and .cpp include its library
