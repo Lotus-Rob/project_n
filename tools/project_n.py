@@ -433,6 +433,9 @@ def scoped_sources(args):
 INCLUDE_RE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]')
 # The only src/ headers that may include a library: one facade each, which all code goes through.
 FACADES = {"src/core/log.hpp": "quill/", "src/core/profile.hpp": "tracy/"}
+# The src/ modules (design doc 0002 §4) and the modules each one's code may include: those below it.
+MODULES = {"core": (), "data": ("core",), "platform": ("core",), "gfx": ("core", "platform"),
+           "ui": ("core", "gfx", "platform"), "audio": ("core",), "game": ("core",)}
 
 
 def is_standard(bracket, name):
@@ -471,7 +474,7 @@ def unsized_types(sources):
 def leaked_dependencies(sources):
     """Includes in the src/ headers among these that are neither the standard library nor ours:
     third-party and platform headers belong in .cpp files, behind our own types. A facade header
-    (FACADES) may include its own library."""
+    (FACADES) may include its own library, and a module's internal/ headers its libraries."""
     found = []
     for header in [f for f in sources if f.startswith("src/") and f.endswith(".hpp")]:
         for n, line in enumerate((ROOT / header).read_text(encoding="utf-8").splitlines(), 1):
@@ -482,8 +485,29 @@ def leaked_dependencies(sources):
             standard = is_standard(bracket, name)
             ours = bracket == '"' and (((ROOT / header).parent / name).is_file() or (ROOT / "src" / name).is_file())
             facade = header in FACADES and name.startswith(FACADES[header])
-            if not (standard or ours or facade):
+            internal = "/internal/" in header  # a module's private headers may include its libraries
+            if not (standard or ours or facade or internal):
                 found.append(f"{header}:{n}: {line.strip()}")
+    return found
+
+
+def crossed_modules(sources):
+    """Includes in src/ and tests/ among these that go against the module direction (MODULES): a
+    module's code includes only its own headers and those of the modules below it, and a module's
+    internal/ headers only from inside it. main.cpp and the tests may include any public header."""
+    found = []
+    for f in [f for f in sources if f.startswith(("src/", "tests/")) and f.endswith((".cpp", ".hpp"))]:
+        parts = f.split("/")
+        own = parts[1] if parts[0] == "src" and len(parts) > 2 else None
+        for n, line in enumerate((ROOT / f).read_text(encoding="utf-8").splitlines(), 1):
+            m = INCLUDE_RE.match(line)
+            if not m or m[1] != '"':
+                continue
+            module, _, rest = m[2].partition("/")
+            if module not in MODULES or module == own:
+                continue
+            if rest.startswith("internal/") or (own and module not in MODULES.get(own, ())):
+                found.append(f"{f}:{n}: {line.strip()}")
     return found
 
 
@@ -545,7 +569,8 @@ def check_api_docs(sources):
     out = ROOT / "build" / "doxygen-lint"
     out.mkdir(parents=True, exist_ok=True)  # Doxygen creates only the last directory of the path
     config = (ROOT / "docs" / "Doxyfile").read_text(encoding="utf-8")
-    config += f'\nOUTPUT_DIRECTORY = "{out.as_posix()}"\nINPUT = {" ".join(f'"{h}"' for h in headers)}\n'
+    groups = [p.relative_to(ROOT).as_posix() for p in sorted((ROOT / "src").glob("*/module.dox"))]  # the @ingroup targets
+    config += f'\nOUTPUT_DIRECTORY = "{out.as_posix()}"\nINPUT = {" ".join(f'"{h}"' for h in headers + groups)}\n'
     run(["doxygen", "-"], input=config, text=True)
 
 
@@ -601,6 +626,10 @@ def cmd_lint(args):
     if leaked:
         raise Fail("third-party and platform headers belong in .cpp files, behind our own types (src/AGENTS.md):\n"
                    + "\n".join(leaked))
+    crossed = crossed_modules(sources)
+    if crossed:
+        raise Fail("a module includes only its own headers and those of the modules below it, and its internal/ headers "
+                   "stay inside it (design doc 0002 §4, MODULES in tools/project_n.py):\n" + "\n".join(crossed))
     standard = standard_includes_in_sources(sources)
     if standard:
         raise Fail("standard headers come from the precompiled header, not from .cpp files (src/AGENTS.md):\n"
