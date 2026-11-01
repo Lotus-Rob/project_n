@@ -5,7 +5,7 @@
 | Status | **Accepted**: phases 1–4 implemented, review fixes applied; S3 (Podman on Windows) and the cross-machine Windows S2 check open |
 | Author | Rob G |
 | Created | 2026-10-29 |
-| Revised | 2026-11-01, O2 answered by the architecture doc (0002 §12.1; proposed while 0002 is a draft), which also carries O5 and O6 (its §15). 2026-10-31, `main` only through pull requests with green CI, by ruleset (§11.2, §12). Earlier the same day, releases: a `vX.Y.Z` tag makes CI draft the GitHub release with every preset's archives, the macOS app included, unsigned until O6 (§12). Earlier the same day, logging: Quill and Tracy each behind one facade header, six log levels to the console and a rotating file in the per-user data folder (§7.1 rule 28); standard headers only through the precompiled headers (rule 19); sized number types (rule 29); `lint` ignores only listed false positives in library code (rule 16). Earlier the same day, development tooling: Tracy profiling in `releasedbg`, coverage, libFuzzer, Doxygen with enforced header docs, unity builds configured but off, and no dependency in a header (§7.1 rules 22–27); `fmt` and `lint` cover the diff, and a pre-commit hook checks formatting (§8); agent briefs as a kind of agent knowledge (D10, §10.1); every branch reviewed by a fresh subagent before merge. Earlier, 2026-10-30, review: LTO, PCH, split debug info and hardening (§7.1 rules 18–21); clean-room `artifact` with release zips; `selftest`, ruff and actionlint in the gate; Linux CI jobs on `main`; AGPL-3.0-or-later with third-party notices; large assets deferred (O5). Earlier, phase 4: GitHub Actions CI on Linux, Windows and macOS runners (§12); `macos-clang` implemented (§5.7, S7 passed); S5 passed in CI. Earlier the same day: macOS planned as a native `macos-clang` preset (D13). 2026-10-29: development runs natively in a portable Pixi environment; containers only produce artefacts; headers only (no C++ modules); Conventional Commits + git-cliff + SemVer; open questions Q1–Q10 resolved (Appendix B); knowledge split across AGENTS.md, skills and design docs (§10); Steam Runtime dropped, so Linux artefacts are built in an Ubuntu + Pixi image with the glibc baseline set by the conda-forge sysroot |
+| Revised | 2026-11-01, editor configuration: the committed `.vscode/settings.json` points VS Code's clangd at the pinned clangd (§4 notes, Q6). Earlier the same day, O2 answered by the architecture doc (0002 §12.1; proposed while 0002 is a draft), which also carries O5 and O6 (its §15). 2026-10-31, `main` only through pull requests with green CI, by ruleset (§11.2, §12). Earlier the same day, releases: a `vX.Y.Z` tag makes CI draft the GitHub release with every preset's archives, the macOS app included, unsigned until O6 (§12). Earlier the same day, logging: Quill and Tracy each behind one facade header, six log levels to the console and a rotating file in the per-user data folder (§7.1 rule 28); standard headers only through the precompiled headers (rule 19); sized number types (rule 29); `lint` ignores only listed false positives in library code (rule 16). Earlier the same day, development tooling: Tracy profiling in `releasedbg`, coverage, libFuzzer, Doxygen with enforced header docs, unity builds configured but off, and no dependency in a header (§7.1 rules 22–27); `fmt` and `lint` cover the diff, and a pre-commit hook checks formatting (§8); agent briefs as a kind of agent knowledge (D10, §10.1); every branch reviewed by a fresh subagent before merge. Earlier, 2026-10-30, review: LTO, PCH, split debug info and hardening (§7.1 rules 18–21); clean-room `artifact` with release zips; `selftest`, ruff and actionlint in the gate; Linux CI jobs on `main`; AGPL-3.0-or-later with third-party notices; large assets deferred (O5). Earlier, phase 4: GitHub Actions CI on Linux, Windows and macOS runners (§12); `macos-clang` implemented (§5.7, S7 passed); S5 passed in CI. Earlier the same day: macOS planned as a native `macos-clang` preset (D13). 2026-10-29: development runs natively in a portable Pixi environment; containers only produce artefacts; headers only (no C++ modules); Conventional Commits + git-cliff + SemVer; open questions Q1–Q10 resolved (Appendix B); knowledge split across AGENTS.md, skills and design docs (§10); Steam Runtime dropped, so Linux artefacts are built in an Ubuntu + Pixi image with the glibc baseline set by the conda-forge sysroot |
 | Scope | Repository layout, development environment, artefact containers, toolchain pinning, testing, build tooling, commits and versioning, agent knowledge (AGENTS.md and skills) |
 
 ---
@@ -106,6 +106,7 @@ project_n/
 ├── xmake-requires.lock       # committed package lock
 ├── xmake/repo/               # local xmake package overrides (§7.1 rule 7)
 ├── .clang-format  .clang-tidy  .clangd  .editorconfig  .gitattributes  .gitignore
+├── .vscode/                  # settings.json: the clangd extension uses the pinned clangd; extensions.json
 ├── .githooks/               # POSIX sh: commit-msg (`commit-check`), pre-commit (`fmt --staged`)
 ├── .github/                  # CI (§12): workflows/ci.yml, dependabot.yml, actionlint.yaml, AGENTS.md
 ├── .claude/CLAUDE.md         # "@../AGENTS.md": Claude Code reads it here, keeping the root shorter
@@ -134,7 +135,7 @@ project_n/
 
 Other notes:
 
-- Editor configuration is not committed.
+- Editor configuration is committed only where it pins a tool: `.vscode/settings.json` points VS Code's clangd extension at the Pixi environment's clangd, whose built-in formatting and clang-tidy then match the pinned clang-format and clang-tidy (2026-11-01: the host's newer clangd reported warnings the pinned builds never see). Its path is Linux's and macOS's; on Windows the env keeps clangd at `.pixi/envs/default/Library/bin/clangd.exe`, so a Windows host edits that line and keeps the edit local with `git update-index --skip-worktree .vscode/settings.json`.
 - Nested AGENTS.md files exist only where an area has rules that differ from its parent's.
 - Skills beyond the initial two were added as described in §10.5.
 
@@ -170,7 +171,7 @@ Everything else comes from `pixi install`: compilers, XMake, debuggers, clang to
 
 **Daily loop:**
 
-1. Open the folder in your editor. Point its clangd, clang-format and debugger at `.pixi/envs/default/bin/`, or start the editor from `pixi shell`.
+1. Open the folder in your editor. VS Code reads the committed `.vscode/settings.json`, which points the clangd extension at the pinned `.pixi/envs/default/bin/clangd` (its formatting and clang-tidy checks are built in at the same version; Windows hosts adjust the path, §4 notes); point the debugger, and other editors' clangd and clang-format, there, or start the editor from `pixi shell`.
 2. `pixi run project_n build --preset linux-clang` builds into `build/<preset>/<mode>/` and writes `build/compile_commands.json`, which `.clangd` reads.
 3. Run or debug the game from its stable path, `build/<preset>/<mode>/bin/<target>`, or use `pixi run project_n run --preset linux-clang --debug`.
 4. `pixi run project_n test --preset linux-gcc` runs the tests.
@@ -776,7 +777,7 @@ Each phase lists the host tools from §5.0 that must be installed before it star
 | Q3 | Test framework | doctest |
 | Q4 | Hosting / CI | GitHub eventually; workflows deferred |
 | Q5 | Linux baseline | Steam Runtime SDK at first, later dropped in favour of the Pixi/conda-forge sysroot (see O1) |
-| Q6 | Editor config | Nothing committed at first |
+| Q6 | Editor config | Nothing committed at first; since 2026-11-01, VS Code settings that pin clangd (§4 notes) |
 | Q7 | Accept conda-forge compiler lag | Yes |
 | Q8 | Entry point name | `project_n` |
 | Q9 | Changelog / versioning | git-cliff, SemVer |

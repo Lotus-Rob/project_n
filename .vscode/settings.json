@@ -1,0 +1,13 @@
+{
+  // The pinned LLVM tools from the Pixi environment (pixi.toml), never the host's: a newer host
+  // clangd reports warnings our builds can't see (clangd 23's -Wlifetime-safety-* through
+  // -Weverything). clangd's formatting and clang-tidy checks are built in at its own version,
+  // so this one path pins clang-format and clang-tidy in the editor too. `pixi install` first.
+  // Linux and macOS only: on Windows the env keeps it at .pixi/envs/default/Library/bin/clangd.exe.
+  // A Windows host edits this line to that path and keeps the edit local with
+  // `git update-index --skip-worktree .vscode/settings.json` (docs/design/0001 §4 notes).
+  "clangd.path": "${workspaceFolder}/.pixi/envs/default/bin/clangd",
+  "[cpp]": {
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
+  }
+}
