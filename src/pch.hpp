@@ -14,6 +14,7 @@
 #include <array>
 #include <atomic>
 #include <cfenv>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
@@ -21,12 +22,15 @@
 #include <expected>
 #include <filesystem>
 #include <format>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <mutex>
 #include <numbers>
+#include <numeric>
 #include <optional>
 #include <source_location>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <thread>
