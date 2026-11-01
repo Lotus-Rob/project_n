@@ -4,8 +4,8 @@
 #include "core/log.hpp"
 #include "core/profile.hpp"
 #include "core/repeated_failure.hpp"
+#include "gfx/generated/shaders.hpp" // by `project_n shaders`
 #include "gfx/internal/gpu.hpp"
-#include "shaders.hpp" // generated in shaders/bin/ by `project_n shaders`
 
 #include <SDL3/SDL.h>
 

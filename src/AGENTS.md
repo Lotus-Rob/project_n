@@ -18,8 +18,9 @@ All game and engine code, structured by docs/design/0002-engine-architecture.md 
 - Simulation code (`core`, `game`) is deterministic within one binary (design doc 0002 §7.4): transcendental maths through `core/math.hpp` (`lint` fails on `std::sin` and the like there), random numbers through `core/random.hpp` keyed on the state counter, never `std::*_distribution`, never a clock.
 - Comments in `.cpp` files only explain why, or a complexity the code can't show; never restate what the code does.
 - Unity builds are configured but off (`unity_build` in xmake.lua); `check` builds and tests the native preset with them once to keep them working. They put several sources in one translation unit, so keep names in anonymous namespaces unique across files (test files stay out of the batches: doctest's names would clash).
-- Rendering: nothing outside `gfx` calls SDL_GPU. Shaders are HLSL in `shaders/<name>.<stage>.hlsl`; after changing one, `./dev shaders` (Linux or Windows) and commit `shaders/bin/` with it (`lint` fails on stale binaries). `gfx` reaches them through the generated `shaders.hpp`.
+- Rendering: nothing outside `gfx` calls SDL_GPU. Shaders are HLSL in `shaders/<name>.<stage>.hlsl`; after changing one, `./dev shaders` (Linux or Windows) and commit `shaders/bin/` and `src/gfx/generated/` with it (`lint` fails on stale binaries). `gfx` reaches them through the generated `gfx/generated/shaders.hpp`.
 - Third-party code comes from xmake-repo packages with exact versions; nothing is vendored into `src/`.
+- `src/<module>/generated/` holds headers that `shaders` and `atlas` write (shader binaries, the atlas manifest): never edit them by hand; `fmt` and `lint` skip them, and `lint` fails when they are stale.
 - A new module adds its directory's `module.dox`, an XMake target with `add_deps` on the modules below it, and its commit scope to `SCOPES` in tools/project_n.py.
 
 ## Commands

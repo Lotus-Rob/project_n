@@ -238,10 +238,9 @@ target("gfx")
     add_files("src/gfx/**.cpp")
     set_pcxxheader("src/pch.hpp")
     -- The committed shader binaries (`project_n shaders`), embedded through the header generated
-    -- with them; no terminating zero, as SDL_GPU takes each one's size.
+    -- with them (src/gfx/generated/shaders.hpp); no terminating zero, as SDL_GPU takes each one's size.
     add_rules("utils.bin2c", {extensions = {".spv", ".dxil", ".msl"}, nozeroend = true})
     add_files("shaders/bin/*.spv", "shaders/bin/*.dxil", "shaders/bin/*.msl")
-    add_includedirs("shaders/bin")
     add_packages("libsdl3_image-stb")
 
 target("project_n")
