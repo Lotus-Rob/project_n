@@ -203,8 +203,6 @@ add_requireconfs("**|python|cmake|ninja|meson|autoconf|automake|libtool|m4|bison
 add_requires("doctest 2.5.3") -- MIT; tests only
 add_requires("entt v4.0.0") -- MIT; header-only
 add_requires("libsdl3-wayland 3.4.16") -- zlib; xmake/repo: libsdl3 plus its Wayland build deps
-add_requires("libsdl3_image-stb 3.4.0") -- zlib (stb_image: MIT or public domain); xmake/repo: PNG only, on our SDL
-add_requireconfs("libsdl3_image-stb.libsdl3-wayland", {version = "3.4.16"}) -- the one SDL above, never a second
 add_requires("quill-wine 13.1.0") -- MIT; header-only; xmake/repo: quill plus Wine support
 -- xmake/repo: tracy plus libdl for glibc 2.28. It collects
 -- in releasedbg; everywhere else its macros are empty and the library compiles to nothing.
@@ -247,7 +245,6 @@ target("gfx")
     -- with them (src/gfx/generated/shaders.hpp); no terminating zero, as SDL_GPU takes each one's size.
     add_rules("utils.bin2c", {extensions = {".spv", ".dxil", ".msl"}, nozeroend = true})
     add_files("shaders/bin/*.spv", "shaders/bin/*.dxil", "shaders/bin/*.msl")
-    add_packages("libsdl3_image-stb")
 
 target("project_n")
     set_kind("binary")
