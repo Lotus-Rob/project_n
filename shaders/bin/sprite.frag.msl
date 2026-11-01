@@ -11,12 +11,15 @@ struct FragmentMain_out
 struct FragmentMain_in
 {
     float2 in_var_TEXCOORD0 [[user(locn0)]];
+    uint in_var_TEXCOORD1 [[user(locn1)]];
+    float4 in_var_TEXCOORD2 [[user(locn2)]];
 };
 
-fragment FragmentMain_out FragmentMain(FragmentMain_in in [[stage_in]], texture2d<float> atlas [[texture(0)]], sampler atlasSmplr [[sampler(0)]])
+fragment FragmentMain_out FragmentMain(FragmentMain_in in [[stage_in]], texture2d_array<float> atlas [[texture(0)]], sampler atlasSmplr [[sampler(0)]])
 {
     FragmentMain_out out = {};
-    out.out_var_SV_Target0 = atlas.sample(atlasSmplr, in.in_var_TEXCOORD0);
+    float3 _29 = float3(in.in_var_TEXCOORD0, float(in.in_var_TEXCOORD1));
+    out.out_var_SV_Target0 = atlas.sample(atlasSmplr, _29.xy, uint(rint(_29.z))) * in.in_var_TEXCOORD2;
     return out;
 }
 

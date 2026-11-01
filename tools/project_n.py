@@ -73,7 +73,7 @@ CACHE_VOLUME = "project_n-xmake-cache"  # PROJECT_N_XMAKE_CACHE=<dir> bind-mount
 
 # Conventional Commits (docs/design/0001 §11.1). Add a scope in the commit that first uses it.
 TYPES = ("feat", "fix", "perf", "refactor", "test", "build", "ci", "docs", "style", "chore", "revert")
-SCOPES = ("repo", "env", "containers", "tools", "xmake", "deps", "tests", "design", "agents", "release", "core", "platform", "gfx")
+SCOPES = ("repo", "env", "containers", "tools", "xmake", "deps", "tests", "design", "agents", "release", "core", "platform", "gfx", "game")
 
 HEADER_RE = re.compile(r"^(?P<type>[a-z]+)(?:\((?P<scope>[a-z0-9-]+)\))?(?P<breaking>!)?: (?P<desc>.+)$")
 MAX_HEADER = 72
@@ -1026,11 +1026,13 @@ def info_plist(version):
 
 
 def macos_bundle(dist, binary):
-    """dist/<APP>.app: the binary, conda's libc++ in Frameworks (the rpath in xmake.lua) and Info.plist."""
+    """dist/<APP>.app: the binary, conda's libc++ in Frameworks (the rpath in xmake.lua), the assets in
+    Resources (where SDL_GetBasePath points in a bundle) and Info.plist."""
     contents = dist / f"{APP}.app" / "Contents"
-    for d in ("MacOS", "Frameworks"):
+    for d in ("MacOS", "Frameworks", "Resources"):
         (contents / d).mkdir(parents=True)
     shutil.copy2(binary, contents / "MacOS")
+    shutil.copytree(ROOT / "assets", contents / "Resources" / "assets")
     shutil.copy2(Path(os.environ["CONDA_PREFIX"], "lib", "libc++.1.dylib"), contents / "Frameworks")
     (contents / "Info.plist").write_bytes(plistlib.dumps(info_plist(read_version())))
     # Ad-hoc signature (O6), nested code first: Apple's order, as --deep is deprecated. arm64 refuses
@@ -1086,6 +1088,7 @@ def cmd_artifact(args):
         macos_bundle(dist, ROOT / binary)
     else:
         shutil.copy2(ROOT / binary, dist)
+        shutil.copytree(ROOT / "assets", dist / "assets")  # beside the binary: platform::AssetsDirectory
     for notice in ("LICENSE", "THIRD_PARTY_NOTICES.md"):  # AGPL and the bundled libraries' licences
         shutil.copy2(ROOT / notice, dist)
     # Debug info XMake split off the release binary: kept with the release for crash reports, never shipped.

@@ -1,0 +1,68 @@
+#pragma once
+
+/// @file
+/// @ingroup game
+/// The demonstration arena (design doc 0002 §2, §16 phase 3): a painted ground with rocks, pines
+/// and a shrine, a cultivator, and a pack of foxes circling it, drawn through the sprite pipeline.
+
+#include "core/ecs.hpp"
+#include "core/frame.hpp"
+#include "core/logic.hpp"
+#include "core/types.hpp"
+#include "core/vec2.hpp"
+
+#include "core/generated/atlas.hpp" // by `project_n atlas`
+
+namespace game {
+
+/// Where an entity stands: its foot point at the previous tick and at this one, in world units.
+struct Body {
+    /// The foot point at the previous tick.
+    core::Vec2 previous{};
+    /// The foot point at this tick.
+    core::Vec2 current{};
+};
+
+/// How an entity is drawn.
+struct Look {
+    /// Its sprite in the atlas manifest.
+    core::atlas::SpriteId sprite = core::atlas::SpriteId{};
+    /// Whether a blob shadow lies under its feet.
+    bool shadow = false;
+};
+
+/// A path around a point: the entity's foot circles `centre` at `radius`, a little in and out.
+struct Orbit {
+    /// The point circled.
+    core::Vec2 centre{};
+    /// The mean distance from it.
+    f32 radius = 0.0F;
+    /// The angle at tick 0, in radians.
+    f32 phase = 0.0F;
+    /// Radians per tick; negative goes anticlockwise.
+    f32 speed = 0.0F;
+};
+
+/// The arena scene as a simulation: it moves its creatures each tick and publishes every sprite.
+class Arena final : public core::Simulation {
+public:
+    /// Builds the scene: the same entities, in the same places, every time.
+    Arena();
+
+    /// Moves every entity on an Orbit to where it is at `simulationTick`.
+    void Tick(u64 simulationTick) override;
+
+    /// Publishes the ground, then a shadow under each entity that casts one, then the entities.
+    void Publish(core::Snapshot& snapshot) override;
+
+private:
+    core::Entity Spawn(core::atlas::SpriteId sprite, core::Vec2 foot, bool shadow);
+
+    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for
+    // members whose default constructor is defaulted.
+    core::Domain m_domain{};
+    core::StableIdCounter m_ids{};
+    // NOLINTEND(readability-redundant-member-init)
+};
+
+} // namespace game

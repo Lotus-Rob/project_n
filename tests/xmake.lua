@@ -26,7 +26,9 @@ local function unit_tests(name, files, module)
 end
 
 unit_tests("core_tests", "unit/core/*.cpp")
+unit_tests("game_tests", "unit/game/*.cpp", "game")
 unit_tests("platform_tests", "unit/platform/*.cpp", "platform")
+unit_tests("gfx_tests", "unit/gfx/*.cpp", "gfx")
 -- Logging start-up states: Quill's loggers live for the whole process, so each test needs its own.
 unit_tests("log_early_tests", {"unit/log_startup/main.cpp", "unit/log_startup/early_tests.cpp"})
 unit_tests("log_fallback_tests", {"unit/log_startup/main.cpp", "unit/log_startup/fallback_tests.cpp"})

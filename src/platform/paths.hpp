@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup platform
-/// Where the game may write.
+/// Where the game reads its assets and may write.
 
 #include "core/error.hpp"
 
@@ -14,5 +14,9 @@ namespace platform {
 /// The per-user data folder (created if missing), writable even when the game is installed in a
 /// read-only folder: logs and saves go here.
 [[nodiscard]] std::expected<std::filesystem::path, core::Error> UserDataDirectory();
+
+/// The folder of the game's runtime assets: `assets/` beside the executable (in the macOS bundle,
+/// `Contents/Resources/assets/`), which the build and `artifact` put there (design doc 0002 §9).
+[[nodiscard]] std::expected<std::filesystem::path, core::Error> AssetsDirectory();
 
 } // namespace platform

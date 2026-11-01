@@ -1,0 +1,4 @@
+/// @defgroup game game
+/// The game itself: components, systems and the scenes they make up, run by the logic thread
+/// through core::Simulation and published as core's frame contract. Links only core (design doc
+/// 0002 §4), so its tests link no SDL.

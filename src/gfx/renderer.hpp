@@ -5,31 +5,27 @@
 /// Drawing frames into the window with SDL_GPU.
 
 #include "core/error.hpp"
+#include "core/frame.hpp"
 #include "core/types.hpp"
+#include "gfx/camera.hpp"
 #include "platform/window.hpp"
 
 #include <expected>
+#include <filesystem>
 #include <memory>
 
 namespace gfx {
 
-/// An opaque colour in the window's colour space.
-struct Colour {
-    /// The red channel, from 0 (none) to 1 (full).
-    f32 red = 0.0F;
-    /// The green channel, from 0 (none) to 1 (full).
-    f32 green = 0.0F;
-    /// The blue channel, from 0 (none) to 1 (full).
-    f32 blue = 0.0F;
-};
-
 /// Draws into the game's window with SDL_GPU (design doc 0002 §8). The device, the window's
-/// swapchain and the pipelines are all made when it's created.
+/// swapchain, the pipelines and the sprite atlas are all made when it's created.
 class Renderer {
 public:
-    /// Creates a GPU device for `window` and presents to it, or says why it couldn't. The window
-    /// must outlive the renderer.
-    [[nodiscard]] static std::expected<Renderer, core::Error> Create(platform::Window& window);
+    /// Creates a GPU device for `window` and presents to it, with the sprite atlas loaded from
+    /// `assets`, or says why it couldn't. The window must outlive the renderer.
+    [[nodiscard]] static std::expected<Renderer, core::Error> Create(
+        platform::Window& window,
+        const std::filesystem::path& assets
+    );
 
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
@@ -38,9 +34,10 @@ public:
     Renderer& operator=(Renderer&& other) = delete;
     ~Renderer();
 
-    /// Draws a frame cleared to `colour` and presents it. Waits while the GPU has its two frames in
-    /// flight and, when presenting with vsync, for the display.
-    void Draw(Colour colour);
+    /// Draws `snapshot` as `camera` sees it, interpolated by `alpha` (0: its previous tick, 1: its
+    /// own), and presents it. Uploads its instances only when it isn't the snapshot drawn last
+    /// (§8.3). Waits while the GPU has its two frames in flight and, with vsync, for the display.
+    void Draw(const core::Snapshot& snapshot, f64 alpha, const Camera& camera);
 
 private:
     struct Impl;

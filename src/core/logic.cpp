@@ -7,7 +7,9 @@
 
 namespace core {
 
-void Logic::RunBurst(const TickBurst& burst, GameHandover& handover, u64 (*now)()) {
+Simulation::~Simulation() = default;
+
+void Logic::RunBurst(const TickBurst& burst, GameHandover& handover, Simulation& simulation, u64 (*now)()) {
     PN_PROFILE_ZONE();
     for (u64 tick = 0; tick < burst.ticks; ++tick) {
         handover.TakeInput(m_input);
@@ -15,15 +17,20 @@ void Logic::RunBurst(const TickBurst& burst, GameHandover& handover, u64 (*now)(
             m_paused = action.kind == ActionKind::Pause;
         }
         m_counters.Count(m_paused, false);
+        if (!m_paused) {
+            simulation.Tick(m_counters.simulation);
+        }
         PN_ASSERT(math::FloatingPointEnvironmentIsSet(), "a library changed the floating-point environment");
     }
-    handover.Writing() = {
-        .wallTick = m_counters.wall,
-        .simulationTick = m_counters.simulation,
-        .scheduledNs = burst.scheduledNs,
-        .publishedNs = now(),
-        .advanced = !m_paused,
-    };
+    // Field by field: assigning a whole Snapshot would free the instance buffer's capacity.
+    Snapshot& snapshot = handover.Writing();
+    snapshot.wallTick = m_counters.wall;
+    snapshot.simulationTick = m_counters.simulation;
+    snapshot.scheduledNs = burst.scheduledNs;
+    snapshot.advanced = !m_paused;
+    snapshot.instances.clear();
+    simulation.Publish(snapshot);
+    snapshot.publishedNs = now();
     handover.Publish(m_events);
 }
 

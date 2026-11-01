@@ -4,8 +4,10 @@
 #include "core/log.hpp"
 #include "core/profile.hpp"
 #include "core/repeated_failure.hpp"
-#include "gfx/generated/shaders.hpp" // by `project_n shaders`
+#include "gfx/internal/features/sprites.hpp"
+#include "gfx/internal/frame/frame.hpp"
 #include "gfx/internal/gpu.hpp"
+#include "gfx/internal/resources/sprite_array.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -19,69 +21,14 @@ constexpr bool DEBUG_MODE = false;
 constexpr bool DEBUG_MODE = true; // SDL_GPU's validation, in debug builds only (§8.9)
 #endif
 
+// Ink on dark paper, behind the scene where a window wider or taller than the reference shows past it.
+constexpr SDL_FColor BACKDROP{ .r = 0.08F, .g = 0.08F, .b = 0.09F, .a = 1.0F };
+
 std::string_view PresentModeName(SDL_GPUPresentMode mode) {
     if (mode == SDL_GPU_PRESENTMODE_MAILBOX) {
         return "mailbox";
     }
     return mode == SDL_GPU_PRESENTMODE_IMMEDIATE ? "immediate" : "vsync";
-}
-
-// The device's shader in the first format it takes; it was created for exactly these three.
-internal::Gpu<SDL_GPUShader> CreateShader(SDL_GPUDevice* device, const shaders::Stage& stage, SDL_GPUShaderStage kind) {
-    const SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(device);
-    SDL_GPUShaderCreateInfo info{};
-    std::span<const u8> code = stage.msl;
-    info.format = SDL_GPU_SHADERFORMAT_MSL;
-    if ((formats & SDL_GPU_SHADERFORMAT_SPIRV) != 0) {
-        code = stage.spirv;
-        info.format = SDL_GPU_SHADERFORMAT_SPIRV;
-    }
-    else if ((formats & SDL_GPU_SHADERFORMAT_DXIL) != 0) {
-        code = stage.dxil;
-        info.format = SDL_GPU_SHADERFORMAT_DXIL;
-    }
-    info.code_size = code.size();
-    info.code = code.data();
-    info.entrypoint = stage.entryPoint;
-    info.stage = kind;
-    info.num_samplers = stage.samplers;
-    info.num_storage_textures = stage.storageTextures;
-    info.num_storage_buffers = stage.storageBuffers;
-    info.num_uniform_buffers = stage.uniformBuffers;
-    info.props = SDL_CreateProperties();
-    SDL_SetStringProperty(info.props, SDL_PROP_GPU_SHADER_CREATE_NAME_STRING, stage.name);
-    internal::Gpu<SDL_GPUShader> shader{ SDL_CreateGPUShader(device, &info), { device } };
-    SDL_DestroyProperties(info.props);
-    return shader;
-}
-
-std::expected<void, core::Error> SubmitFrame(SDL_GPUDevice* device, SDL_Window* window, Colour colour) {
-    PN_PROFILE_ZONE();
-    SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(device);
-    if (commands == nullptr) {
-        return std::unexpected{ core::Error{ std::format("no command buffer: {}", SDL_GetError()) } };
-    }
-    SDL_GPUTexture* swapchain = nullptr;
-    if (!SDL_WaitAndAcquireGPUSwapchainTexture(commands, window, &swapchain, nullptr, nullptr)) {
-        core::Error error{ std::format("no swapchain texture: {}", SDL_GetError()) };
-        SDL_CancelGPUCommandBuffer(commands); // allowed: no swapchain texture was acquired (§8.3)
-        return std::unexpected{ std::move(error) };
-    }
-    // Without a swapchain texture (the window can't be shown), the command buffer goes in empty (§8.3).
-    if (swapchain != nullptr) {
-        SDL_PushGPUDebugGroup(commands, "clear");
-        SDL_GPUColorTargetInfo target{};
-        target.texture = swapchain;
-        target.clear_color = { .r = colour.red, .g = colour.green, .b = colour.blue, .a = 1.0F };
-        target.load_op = SDL_GPU_LOADOP_CLEAR;
-        target.store_op = SDL_GPU_STOREOP_STORE;
-        SDL_EndGPURenderPass(SDL_BeginGPURenderPass(commands, &target, 1, nullptr));
-        SDL_PopGPUDebugGroup(commands);
-    }
-    if (!SDL_SubmitGPUCommandBuffer(commands)) {
-        return std::unexpected{ core::Error{ std::format("the frame wasn't submitted: {}", SDL_GetError()) } };
-    }
-    return {};
 }
 
 } // namespace
@@ -94,14 +41,68 @@ struct Renderer::Impl {
     Impl& operator=(Impl&&) = delete;
     ~Impl() = default;
 
+    // Which snapshot's instances are in the storage buffer: wall ticks never repeat within an epoch.
+    struct SnapshotId {
+        u64 epoch = 0;
+        u64 wallTick = 0;
+
+        friend bool operator==(const SnapshotId&, const SnapshotId&) = default;
+    };
+
+    // Records and submits one frame; errors leave the frame unsubmitted only before a swapchain texture is acquired.
+    std::expected<void, core::Error> Frame(const core::Snapshot& snapshot, f32 alpha, const Camera& camera);
+
     SDL_Window* window = nullptr;
     internal::Device device = nullptr; // first: destroyed after everything it made
     internal::Gpu<SDL_Window> claim = nullptr;
-    internal::Gpu<SDL_GPUGraphicsPipeline> sprites = nullptr;
-    core::RepeatedFailure failures{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    internal::SpriteArray sprites{};
+    internal::SpriteRenderer instances{};
+    std::optional<SnapshotId> uploaded = std::nullopt;
+    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    core::RepeatedFailure failures{};
+    core::RepeatedFailure overflows{};
+    // NOLINTEND(readability-redundant-member-init)
 };
 
-std::expected<Renderer, core::Error> Renderer::Create(platform::Window& window) {
+std::expected<void, core::Error> Renderer::Impl::Frame(const core::Snapshot& snapshot, f32 alpha, const Camera& camera) {
+    const std::expected<internal::Frame, core::Error> frame = internal::AcquireFrame(device.get(), window);
+    if (!frame) {
+        return std::unexpected{ frame.error() };
+    }
+    const SnapshotId shown{ .epoch = snapshot.epoch, .wallTick = snapshot.wallTick };
+    if (uploaded != shown) {
+        SDL_PushGPUDebugGroup(frame->commands, "upload");
+        SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(frame->commands);
+        const std::size_t dropped = instances.Upload(copy, snapshot.instances);
+        SDL_EndGPUCopyPass(copy);
+        SDL_PopGPUDebugGroup(frame->commands);
+        uploaded = shown;
+        if (dropped > 0) {
+            if (overflows.Fail()) {
+                PN_LOG_WARNING("{} sprite instances past the buffer's {} aren't drawn", dropped, internal::MAX_INSTANCES);
+            }
+        }
+        else if (const u64 overflowed = overflows.Succeed(); overflowed > 0) {
+            PN_LOG_INFO("every sprite instance fits again, after {} snapshots that didn't", overflowed);
+        }
+    }
+    // Without a swapchain texture (the window can't be shown), the copy still runs and nothing is drawn (§8.3).
+    if (frame->swapchain != nullptr) {
+        SDL_PushGPUDebugGroup(frame->commands, "world");
+        SDL_GPUColorTargetInfo target{};
+        target.texture = frame->swapchain;
+        target.clear_color = BACKDROP;
+        target.load_op = SDL_GPU_LOADOP_CLEAR;
+        target.store_op = SDL_GPU_STOREOP_STORE;
+        SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(frame->commands, &target, 1, nullptr);
+        instances.Draw(frame->commands, pass, sprites, WorldToClip(camera, frame->width, frame->height), alpha);
+        SDL_EndGPURenderPass(pass);
+        SDL_PopGPUDebugGroup(frame->commands);
+    }
+    return internal::SubmitFrame(*frame);
+}
+
+std::expected<Renderer, core::Error> Renderer::Create(platform::Window& window, const std::filesystem::path& assets) {
     auto impl = std::make_unique<Impl>();
     impl->window = static_cast<SDL_Window*>(window.Handle());
     const SDL_PropertiesID properties = SDL_CreateProperties();
@@ -141,37 +142,18 @@ std::expected<Renderer, core::Error> Renderer::Create(platform::Window& window) 
         PN_LOG_WARNING("neither mailbox nor immediate presentation is available, so frames follow the display");
     }
 
-    // Made at start-up like every pipeline (§8.8), so each backend checks the shaders when the game
-    // starts (spike S8); the instanced sprites of phase 3 draw with it. The shaders are released
-    // here: the pipeline keeps what it needs.
-    const internal::Gpu<SDL_GPUShader> vertex = CreateShader(device, shaders::SPRITE_VERT, SDL_GPU_SHADERSTAGE_VERTEX);
-    const internal::Gpu<SDL_GPUShader> fragment = CreateShader(device, shaders::SPRITE_FRAG, SDL_GPU_SHADERSTAGE_FRAGMENT);
-    if (vertex == nullptr || fragment == nullptr) {
-        return std::unexpected{ core::Error{ std::format("a sprite shader was rejected: {}", SDL_GetError()) } };
+    // Pipelines are made at start-up (§8.8), so each backend checks the shaders when the game starts.
+    std::expected<internal::SpriteRenderer, core::Error> instances =
+        internal::SpriteRenderer::Create(device, SDL_GetGPUSwapchainTextureFormat(device, impl->window));
+    if (!instances) {
+        return std::unexpected{ std::move(instances.error()) };
     }
-    SDL_GPUColorTargetDescription target{};
-    target.format = SDL_GetGPUSwapchainTextureFormat(device, impl->window);
-    // Premultiplied alpha's normal blend (§8.8).
-    target.blend_state.enable_blend = true;
-    target.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
-    target.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
-    target.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
-    target.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
-    target.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
-    target.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
-    SDL_GPUGraphicsPipelineCreateInfo info{};
-    info.vertex_shader = vertex.get();
-    info.fragment_shader = fragment.get();
-    info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLESTRIP;
-    info.target_info.color_target_descriptions = &target;
-    info.target_info.num_color_targets = 1;
-    info.props = SDL_CreateProperties();
-    SDL_SetStringProperty(info.props, SDL_PROP_GPU_GRAPHICSPIPELINE_CREATE_NAME_STRING, "sprites");
-    impl->sprites = internal::Gpu<SDL_GPUGraphicsPipeline>{ SDL_CreateGPUGraphicsPipeline(device, &info), { device } };
-    SDL_DestroyProperties(info.props);
-    if (impl->sprites == nullptr) {
-        return std::unexpected{ core::Error{ std::format("the sprite pipeline was rejected: {}", SDL_GetError()) } };
+    impl->instances = std::move(*instances);
+    std::expected<internal::SpriteArray, core::Error> sprites = internal::LoadSpriteArray(device, assets);
+    if (!sprites) {
+        return std::unexpected{ std::move(sprites.error()) };
     }
+    impl->sprites = std::move(*sprites);
     return Renderer{ std::move(impl) };
 }
 
@@ -181,12 +163,12 @@ Renderer::Renderer(std::unique_ptr<Impl> impl)
 Renderer::Renderer(Renderer&& other) noexcept = default;
 Renderer::~Renderer() = default;
 
-void Renderer::Draw(Colour colour) {
+void Renderer::Draw(const core::Snapshot& snapshot, f64 alpha, const Camera& camera) {
     PN_PROFILE_ZONE();
-    const std::expected<void, core::Error> submitted = SubmitFrame(m_impl->device.get(), m_impl->window, colour);
-    if (!submitted) {
+    const std::expected<void, core::Error> drawn = m_impl->Frame(snapshot, static_cast<f32>(alpha), camera);
+    if (!drawn) {
         if (m_impl->failures.Fail()) {
-            PN_LOG_ERROR("frames are failing: {}", submitted.error().message);
+            PN_LOG_ERROR("frames are failing: {}", drawn.error().message);
         }
     }
     else if (const u64 failed = m_impl->failures.Succeed(); failed > 0) {
