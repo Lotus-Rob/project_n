@@ -95,7 +95,9 @@ std::expected<void, core::Error> Renderer::Impl::Frame(const core::Snapshot& sna
         target.load_op = SDL_GPU_LOADOP_CLEAR;
         target.store_op = SDL_GPU_STOREOP_STORE;
         SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(frame->commands, &target, 1, nullptr);
-        instances.Draw(frame->commands, pass, sprites, WorldToClip(camera, frame->width, frame->height), alpha);
+        instances.Draw(
+            frame->commands, pass, snapshot.batches, sprites, WorldToClip(camera, frame->width, frame->height), alpha
+        );
         SDL_EndGPURenderPass(pass);
         SDL_PopGPUDebugGroup(frame->commands);
     }
