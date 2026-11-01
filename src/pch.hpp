@@ -18,7 +18,9 @@
 #include <cstddef>
 #include <cstdlib>
 #include <exception>
+#include <expected>
 #include <filesystem>
+#include <format>
 #include <limits>
 #include <memory>
 #include <mutex>
