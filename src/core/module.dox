@@ -1,0 +1,3 @@
+/// @defgroup core core
+/// Value types, pure functions and the facades every other module builds on: the frame contract,
+/// timing, the handover between threads, logging and profiling. Links no SDL (design doc 0002 §4).

@@ -118,7 +118,7 @@ end
 -- conda-forge compilers from the Pixi env; names are triplet-prefixed, so XMake's
 -- built-in gcc/clang toolchains would silently pick the host compilers instead.
 local triplet = is_host("macosx") and "arm64-apple-darwin20.0.0-" or "x86_64-conda-linux-gnu-"
-local function pixi_toolchain(name, cc, cxx, flags)
+local function pixi_toolchain(name, cc, cxx, ar, flags)
     toolchain(name)
         set_kind("standalone")
         set_toolset("cc", triplet .. cc)
@@ -126,7 +126,7 @@ local function pixi_toolchain(name, cc, cxx, flags)
         set_toolset("cxx", triplet .. cxx)
         set_toolset("ld", triplet .. cxx)
         set_toolset("sh", triplet .. cxx)
-        set_toolset("ar", triplet .. "ar")
+        set_toolset("ar", triplet .. ar)
         set_toolset("strip", triplet .. "strip")
         set_toolset("objcopy", triplet .. "objcopy") -- splits release debug info into a .sym
         set_toolset("dsymutil", "dsymutil") -- the same on macOS into a .dSYM (llvm-tools, unprefixed)
@@ -138,10 +138,12 @@ local function pixi_toolchain(name, cc, cxx, flags)
     toolchain_end()
 end
 
-pixi_toolchain("pixi-gcc", "gcc", "g++", function (tc, prefix) end)
+-- gcc-ar: plain ar doesn't index LTO bytecode, so a release link found nothing in the module
+-- libraries (undefined references to everything in core and platform).
+pixi_toolchain("pixi-gcc", "gcc", "g++", "gcc-ar", function (tc, prefix) end)
 
 -- libc++ (and its static archives) live in the env's lib/, outside the sysroot search path.
-pixi_toolchain("pixi-clang", "clang", "clang++", function (tc, prefix)
+pixi_toolchain("pixi-clang", "clang", "clang++", "ar", function (tc, prefix)
     tc:add("cxxflags", "-stdlib=libc++")
     if is_host("macosx") then
         -- Exactly the env's libc++, by path: a -L into the env let its other libraries shadow
@@ -198,11 +200,27 @@ add_requires("quill-wine 13.1.0") -- MIT; header-only; xmake/repo: quill plus Wi
 add_requires("tracy-libdl v0.14.1", {alias = "tracy_on", configs = {tracy_enable = true, only_localhost = true}}) -- BSD-3-Clause; profiling builds only
 add_requires("tracy-libdl 0.14.1", {alias = "tracy_off", configs = {tracy_enable = false, only_localhost = true}}) -- BSD-3-Clause; profiling builds only
 
+-- Modules (design doc 0002 §4): static libraries, each linking only the modules below it, so a
+-- module that doesn't link a library can't use it. They share the game's precompiled header.
+target("core")
+    set_kind("static")
+    add_files("src/core/**.cpp")
+    add_includedirs("src", {public = true})
+    set_pcxxheader("src/pch.hpp")
+    -- Public: the log and profile facades' headers include their libraries.
+    add_packages("quill-wine", is_mode("releasedbg") and "tracy_on" or "tracy_off", {public = true})
+
+target("platform")
+    set_kind("static")
+    add_deps("core")
+    add_files("src/platform/**.cpp")
+    set_pcxxheader("src/pch.hpp")
+    add_packages("libsdl3-wayland", {public = true})
+
 target("project_n")
     set_kind("binary")
-    add_files("src/**.cpp")
-    add_includedirs("src")
+    add_deps("platform")
+    add_files("src/main.cpp")
     set_pcxxheader("src/pch.hpp")
-    add_packages("libsdl3-wayland", "quill-wine", is_mode("releasedbg") and "tracy_on" or "tracy_off")
 
 includes("tests")

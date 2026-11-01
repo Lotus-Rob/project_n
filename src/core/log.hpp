@@ -1,6 +1,7 @@
 #pragma once
 
 /// @file
+/// @ingroup core
 /// Logging for game and engine code: the `PN_LOG_*` macros, which take a format string and its
 /// arguments like `std::format`. Formatting and writing happen on a background thread, so a call
 /// costs little more than copying its arguments. The only header that includes Quill.

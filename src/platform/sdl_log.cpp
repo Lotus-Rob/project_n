@@ -1,11 +1,11 @@
-#include "core/sdl_log.hpp"
+#include "platform/sdl_log.hpp"
 
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
 
 #include <SDL3/SDL.h>
 
-namespace core::log {
+namespace platform {
 
 namespace {
 
@@ -36,4 +36,4 @@ void RouteSdlLogs() {
     SDL_SetLogPriorities(SDL_LOG_PRIORITY_DEBUG);
 }
 
-} // namespace core::log
+} // namespace platform

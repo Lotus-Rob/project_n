@@ -1,0 +1,2 @@
+/// @defgroup platform platform
+/// The window, events, time and paths, over SDL (design doc 0002 §4).

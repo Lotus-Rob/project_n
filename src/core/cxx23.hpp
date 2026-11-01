@@ -1,6 +1,7 @@
 #pragma once
 
 /// @file
+/// @ingroup core
 /// Stops the build when the compiler isn't in C++23 mode. It declares nothing; include it with
 /// `// IWYU pragma: keep`.
 

@@ -1,6 +1,7 @@
 #pragma once
 
 /// @file
+/// @ingroup core
 /// Frame pacing for when vsync isn't available to pace frames.
 
 #include "core/types.hpp"

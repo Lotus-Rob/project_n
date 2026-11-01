@@ -2,7 +2,7 @@
 #include "core/frame.hpp"
 #include "core/log.hpp"
 #include "core/profile.hpp"
-#include "core/sdl_log.hpp"
+#include "platform/sdl_log.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -28,7 +28,7 @@ std::filesystem::path LogDirectory() {
 }
 
 i32 Run() {
-    core::log::RouteSdlLogs();
+    platform::RouteSdlLogs();
     const i32 version = SDL_GetVersion();
     PN_LOG_INFO(
         "SDL {}.{}.{} on {}",

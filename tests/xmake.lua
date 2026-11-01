@@ -9,13 +9,14 @@ local function test_under_wine(target, opt)
     return os.execv(wine.program, args, {try = true, curdir = target:rundir()}) == 0
 end
 
-local function unit_tests(name, files)
+-- `module` is the src/ module under test (default core); it brings the modules below it.
+local function unit_tests(name, files, module)
     target(name)
         set_kind("binary")
-        add_files(files, "$(projectdir)/src/core/log.cpp", "$(projectdir)/src/core/sdl_log.cpp")
-        add_includedirs("$(projectdir)/src")
+        add_deps(module or "core")
+        add_files(files)
         set_pcxxheader("unit/pch.hpp")
-        add_packages("doctest", "quill-wine", "libsdl3-wayland")
+        add_packages("doctest")
         add_tests("default")
         if is_plat("windows") and not is_host("windows") then
             on_test(test_under_wine)
@@ -23,6 +24,7 @@ local function unit_tests(name, files)
 end
 
 unit_tests("core_tests", "unit/core/*.cpp")
+unit_tests("platform_tests", "unit/platform/*.cpp", "platform")
 -- Logging start-up states: Quill's loggers live for the whole process, so each test needs its own.
 unit_tests("log_early_tests", {"unit/log_startup/main.cpp", "unit/log_startup/early_tests.cpp"})
 unit_tests("log_fallback_tests", {"unit/log_startup/main.cpp", "unit/log_startup/fallback_tests.cpp"})
