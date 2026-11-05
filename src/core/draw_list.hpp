@@ -2,12 +2,14 @@
 
 /// @file
 /// @ingroup core
-/// Putting a tick's sprites in drawing order (design doc 0002 §8.5): sort keys by layer, then
-/// depth, then pipeline; a stable radix sort of (key, index) pairs; and the batch ranges the
-/// renderer draws, one per run of a pipeline.
+/// Putting a tick's sprites in drawing order (design doc 0002 §8.5): culling to the view, sort keys
+/// by layer, then depth, then pipeline; a stable radix sort of (key, index) pairs; and the batch
+/// ranges the renderer draws, one per run of a pipeline. Filled in parts on the job system.
 
 #include "core/frame.hpp"
+#include "core/jobs.hpp"
 #include "core/types.hpp"
+#include "core/vec2.hpp"
 
 #include <span>
 #include <vector>
@@ -63,24 +65,65 @@ void RadixSort(std::vector<SortEntry>& entries, std::vector<SortEntry>& scratch)
 /// Appends to `batches` one Batch per run of `sorted` with the same pipeline.
 void AppendBatches(std::span<const SortEntry> sorted, std::vector<Batch>& batches);
 
-/// A tick's sprites as they're published: added in any order, written to the snapshot sorted and
-/// batched. Its buffers keep their capacity from publish to publish.
+/// An axis-aligned rectangle of the world, in world units.
+struct Rect {
+    /// The top-left corner.
+    Vec2 min{};
+    /// The bottom-right corner.
+    Vec2 max{};
+};
+
+/// A tick's sprites as they're published: added in any order, culled to the view, written to the
+/// snapshot sorted and batched. It fills in parts, each from one job chunk at a time, so a publish
+/// can pack its instances in parallel; the parts in order, each in the order its instances were
+/// added, are the submission order. Its buffers keep their capacity from publish to publish.
 class DrawList {
 public:
-    /// Empties the list for a publish whose view starts at world y `viewTop`.
-    void Begin(f32 viewTop);
+    /// How far outside the view an instance's position may lie and still be drawn, in world units:
+    /// more than half the diagonal of the largest moving sprite, plus a tick's movement.
+    /// shortcut: one margin for every sprite, not each one's size; a sprite scaled past it pops at the
+    /// view's edge, so compare its own extent if one ever does.
+    static constexpr f32 CULL_MARGIN = 512.0F;
 
-    /// Adds `instance` in `layer`, drawn with `pipeline`. `footY` orders it within the world layer;
-    /// elsewhere instances keep the order they're added in.
-    void Add(Layer layer, Pipeline pipeline, const Instance& instance, f32 footY = 0.0F);
+    /// Empties the list for a publish showing `view`, filled in `parts` parts (at least one).
+    void Begin(Rect view, u32 parts = 1);
 
-    /// Appends the instances in drawing order to `snapshot`'s, and their batches to its batches.
-    void Publish(Snapshot& snapshot);
+    /// Adds `instance` to part `part`, in `layer`, drawn with `pipeline`, unless its current position
+    /// lies more than CULL_MARGIN outside the view. `footY` orders it within the world layer;
+    /// elsewhere instances keep the submission order. Different parts may be added to at once.
+    void Add(u32 part, Layer layer, Pipeline pipeline, const Instance& instance, f32 footY = 0.0F);
+
+    /// Appends the instances in drawing order to `snapshot`'s, and their batches to its batches,
+    /// gathering in chunks on `jobs`: the bytes are the same whatever its worker count.
+    void Publish(Snapshot& snapshot, Jobs& jobs);
 
 private:
-    f32 m_viewTop = 0.0F;
+    static constexpr std::size_t CACHE_LINE_BYTES = 64;
+
+#ifdef _MSC_VER
+#pragma warning(push)
+// C4324 (padded due to an alignment specifier): the padding is the point.
+#pragma warning(disable : 4324)
+#endif
+    // On its own cache line: chunks push to their parts at once, and the vectors' ends change each
+    // time. Worth about 13% of a publish at 30 workers.
+    struct alignas(CACHE_LINE_BYTES) Part {
+        // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+        // for members whose default constructor is defaulted.
+        std::vector<Instance> instances{};
+        std::vector<SortEntry> entries{}; // indices into this part's instances
+        // NOLINTEND(readability-redundant-member-init)
+    };
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
+    Rect m_view{};
+    u32 m_partCount = 0;
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for
     // members whose default constructor is defaulted.
+    std::vector<Part> m_parts{}; // grows to the most parts asked for; only the first m_partCount are in use
+    std::vector<std::size_t> m_offsets{};
     std::vector<Instance> m_instances{};
     std::vector<SortEntry> m_entries{};
     std::vector<SortEntry> m_scratch{};

@@ -9,8 +9,9 @@ namespace {
 using core::atlas::SpriteId;
 
 core::Snapshot Published(game::Arena& arena) {
+    core::Jobs jobs{ 1 };
     core::Snapshot snapshot;
-    arena.Publish(snapshot);
+    arena.Publish(snapshot, jobs);
     return snapshot;
 }
 
@@ -110,6 +111,22 @@ TEST_CASE("the stress arena publishes 100,000 instances, its 10,000 bullets last
     CHECK(effects.pipeline == core::Pipeline::Additive);
     CHECK(effects.count >= BULLETS);
     CHECK(effects.first + effects.count == snapshot.instances.size());
+}
+
+TEST_CASE("the stress arena publishes the same bytes with one worker and with many") {
+    constexpr u64 TICK = 7;
+    constexpr u32 MANY_WORKERS = 7;
+    std::vector<std::vector<core::Instance>> published;
+    for (const u32 workers : { 1U, MANY_WORKERS }) {
+        game::Arena arena{ game::Scene::Stress };
+        arena.Tick(TICK);
+        core::Jobs jobs{ workers };
+        core::Snapshot snapshot;
+        arena.Publish(snapshot, jobs);
+        published.push_back(std::move(snapshot.instances));
+    }
+    REQUIRE_FALSE(published[0].empty());
+    CHECK(std::ranges::equal(std::as_bytes(std::span{ published[0] }), std::as_bytes(std::span{ published[1] })));
 }
 
 TEST_CASE("two arenas ticked alike publish the same bytes") {
