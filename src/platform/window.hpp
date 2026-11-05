@@ -21,9 +21,16 @@ struct WindowState {
     bool visible = true;
     /// The window has the keyboard focus.
     bool focused = true;
+    /// The window is minimised (unlike `visible`, not merely covered by another window).
+    bool minimised = false;
     /// How far the mouse wheel turned during the last Poll(), in notches; positive is away from the player.
     f32 wheelNotches = 0.0F;
 };
+
+/// Whether the window's state pauses the game (design doc 0002 §6): it lost the focus or was minimised.
+[[nodiscard]] constexpr bool PausesGame(const WindowState& state) {
+    return !state.focused || state.minimised;
+}
 
 /// The game's one window. Opening it starts SDL's video; closing it (destruction) stops SDL.
 class Window {

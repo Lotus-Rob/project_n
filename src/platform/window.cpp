@@ -77,13 +77,19 @@ const WindowState& Window::Poll(u64 hiddenWaitNs) {
             case SDL_EVENT_MOUSE_WHEEL:
                 state.wheelNotches += event.wheel.y;
                 break;
-            case SDL_EVENT_WINDOW_HIDDEN:
             case SDL_EVENT_WINDOW_MINIMIZED:
+                state.minimised = true;
+                state.visible = false;
+                break;
+            case SDL_EVENT_WINDOW_RESTORED:
+                state.minimised = false;
+                state.visible = true;
+                break;
+            case SDL_EVENT_WINDOW_HIDDEN:
             case SDL_EVENT_WINDOW_OCCLUDED:
                 state.visible = false;
                 break;
             case SDL_EVENT_WINDOW_SHOWN:
-            case SDL_EVENT_WINDOW_RESTORED:
             case SDL_EVENT_WINDOW_EXPOSED:
                 state.visible = true;
                 break;
