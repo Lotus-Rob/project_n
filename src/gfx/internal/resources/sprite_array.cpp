@@ -3,13 +3,12 @@
 #include "core/cxx23.hpp"           // IWYU pragma: keep
 #include "core/generated/atlas.hpp" // by `project_n atlas`
 #include "core/log.hpp"
+#include "gfx/sprite_block.hpp"
 #include "platform/clock.hpp"
 
 namespace gfx::internal {
 
 namespace {
-
-constexpr u32 BYTES_PER_PIXEL = 4; // R8G8B8A8
 
 struct Decoded {
     Surface surface = nullptr;
@@ -102,7 +101,8 @@ std::expected<SpriteArray, core::Error> LoadSpriteArray(SDL_GPUDevice* device, c
             return std::unexpected{ std::move(surface.error()) };
         }
         decoded.push_back({ .surface = std::move(*surface), .offset = bytes });
-        bytes += static_cast<u32>(sprite.width) * sprite.height * BYTES_PER_PIXEL;
+        const SpriteBlock block = BlockOf(sprite);
+        bytes += block.width * block.height * static_cast<u32>(BYTES_PER_TEXEL);
     }
 
     SpriteArray array{ .texture = CreateArray(device), .sampler = CreateSampler(device) };
@@ -120,13 +120,16 @@ std::expected<SpriteArray, core::Error> LoadSpriteArray(SDL_GPUDevice* device, c
     const std::span<std::byte> staging = BytesAt(mapped, bytes);
     for (std::size_t i = 0; i < decoded.size(); ++i) {
         const SDL_Surface& surface = *decoded[i].surface;
+        const core::atlas::Sprite& sprite = core::atlas::SPRITES.at(i);
+        const SpriteBlock block = BlockOf(sprite);
         const auto pitch = static_cast<std::size_t>(surface.pitch);
-        const auto rows = static_cast<std::size_t>(surface.h);
-        const std::size_t row = core::atlas::SPRITES.at(i).width * std::size_t{ BYTES_PER_PIXEL };
-        const std::span<const std::byte> pixels = BytesAt(surface.pixels, pitch * rows);
-        for (std::size_t line = 0; line < rows; ++line) {
-            std::ranges::copy(pixels.subspan(line * pitch, row), staging.subspan(decoded[i].offset + (line * row)).begin());
-        }
+        const std::size_t size = std::size_t{ block.width } * block.height * BYTES_PER_TEXEL;
+        WriteBlock(
+            sprite,
+            BytesAt(surface.pixels, pitch * static_cast<std::size_t>(surface.h)),
+            pitch,
+            staging.subspan(decoded[i].offset, size)
+        );
     }
     SDL_UnmapGPUTransferBuffer(device, transfer.get());
 
@@ -138,19 +141,19 @@ std::expected<SpriteArray, core::Error> LoadSpriteArray(SDL_GPUDevice* device, c
     ClearPages(commands, array.texture.get());
     SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
     for (std::size_t i = 0; i < decoded.size(); ++i) {
-        const core::atlas::Sprite& sprite = core::atlas::SPRITES.at(i);
+        const SpriteBlock block = BlockOf(core::atlas::SPRITES.at(i));
         SDL_GPUTextureTransferInfo source{};
         source.transfer_buffer = transfer.get();
         source.offset = decoded[i].offset;
-        source.pixels_per_row = sprite.width;
-        source.rows_per_layer = sprite.height;
+        source.pixels_per_row = block.width;
+        source.rows_per_layer = block.height;
         SDL_GPUTextureRegion region{};
         region.texture = array.texture.get();
-        region.layer = sprite.page;
-        region.x = sprite.x;
-        region.y = sprite.y;
-        region.w = sprite.width;
-        region.h = sprite.height;
+        region.layer = core::atlas::SPRITES.at(i).page;
+        region.x = block.x;
+        region.y = block.y;
+        region.w = block.width;
+        region.h = block.height;
         region.d = 1;
         SDL_UploadToGPUTexture(copy, &source, &region, false); // never cycled: the whole array would be (§8.7)
     }
