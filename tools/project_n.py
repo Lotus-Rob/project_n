@@ -474,6 +474,8 @@ def scoped_sources(args):
 INCLUDE_RE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]')
 # The only src/ headers that may include a library: one facade each, which all code goes through.
 FACADES = {"src/core/log.hpp": "quill/", "src/core/profile.hpp": "tracy/", "src/core/ecs.hpp": "entt/", "src/core/jobs.hpp": "enkiTS/"}
+# Facades whose header hides the library behind a pimpl: only their .cpp includes it.
+HIDDEN_FACADES = {"src/core/jobs.hpp"}
 # The src/ modules (design doc 0002 §4) and the modules each one's code may include: those below it.
 MODULES = {"core": (), "data": ("core",), "platform": ("core",), "gfx": ("core", "platform"),
            "ui": ("core", "gfx", "platform"), "audio": ("core",), "game": ("core",)}
@@ -515,7 +517,7 @@ def unsized_types(sources):
 def leaked_dependencies(sources):
     """Includes in the src/ headers among these that are neither the standard library nor ours:
     third-party and platform headers belong in .cpp files, behind our own types. A facade header
-    (FACADES) may include its own library, and a module's internal/ headers its libraries."""
+    (FACADES, but not HIDDEN_FACADES) may include its own library, and a module's internal/ headers its libraries."""
     found = []
     for header in [f for f in sources if f.startswith("src/") and f.endswith(".hpp")]:
         for n, line in enumerate((ROOT / header).read_text(encoding="utf-8").splitlines(), 1):
@@ -525,7 +527,7 @@ def leaked_dependencies(sources):
             bracket, name = m.groups()
             standard = is_standard(bracket, name)
             ours = bracket == '"' and (((ROOT / header).parent / name).is_file() or (ROOT / "src" / name).is_file())
-            facade = header in FACADES and name.startswith(FACADES[header])
+            facade = header in FACADES and header not in HIDDEN_FACADES and name.startswith(FACADES[header])
             internal = "/internal/" in header  # a module's private headers may include its libraries
             if not (standard or ours or facade or internal):
                 found.append(f"{header}:{n}: {line.strip()}")
