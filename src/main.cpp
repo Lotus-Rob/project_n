@@ -70,6 +70,21 @@ void RunLogic(
     }
 }
 
+struct SceneChoice {
+    game::Scene scene = game::Scene::Arena;
+    std::string_view name = "the arena";
+};
+
+SceneChoice ChooseScene(std::span<char*> args) {
+    if (std::ranges::contains(args, std::string_view{ "--painted" })) {
+        return { .scene = game::Scene::Painted, .name = "the painted test scene" };
+    }
+    if (std::ranges::contains(args, std::string_view{ "--stress" })) {
+        return { .scene = game::Scene::Stress, .name = "the stress arena" };
+    }
+    return {};
+}
+
 i32 Run(game::Scene scene, gfx::ColourSpace colourSpace) {
     platform::RouteSdlLogs();
     std::expected<platform::Window, core::Error> window = platform::Window::Open("project_n", WINDOW_WIDTH, WINDOW_HEIGHT);
@@ -154,13 +169,11 @@ int main(int argc, char** argv) {
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
-    const bool stress = std::ranges::contains(args, std::string_view{ "--stress" });
-    PN_LOG_INFO("scene: {}", stress ? "the stress arena" : "the arena");
+    const SceneChoice choice = ChooseScene(args);
+    const bool linear = std::ranges::contains(args, std::string_view{ "--linear" });
+    PN_LOG_INFO("scene: {}", choice.name);
     try {
-        const i32 status =
-            Run(stress ? game::Scene::Stress : game::Scene::Arena,
-                std::ranges::contains(args, std::string_view{ "--linear" }) ? gfx::ColourSpace::Linear
-                                                                            : gfx::ColourSpace::Gamma);
+        const i32 status = Run(choice.scene, linear ? gfx::ColourSpace::Linear : gfx::ColourSpace::Gamma);
         PN_LOG_NOTICE("project_n stopped with status {}", status);
         return status;
     }

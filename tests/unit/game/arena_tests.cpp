@@ -113,6 +113,19 @@ TEST_CASE("the stress arena publishes 100,000 instances, its 10,000 bullets last
     CHECK(effects.first + effects.count == snapshot.instances.size());
 }
 
+TEST_CASE("the painted scene holds still, its glows last and additive") {
+    constexpr u64 TICK = 7;
+    constexpr u32 GLOWS = 5;
+    game::Arena arena{ game::Scene::Painted };
+    const core::Snapshot before = Published(arena);
+    arena.Tick(TICK);
+    const core::Snapshot after = Published(arena);
+    REQUIRE_FALSE(before.batches.empty());
+    CHECK(before.batches.back().pipeline == core::Pipeline::Additive);
+    CHECK(before.batches.back().count == GLOWS);
+    CHECK(std::ranges::equal(std::as_bytes(std::span{ before.instances }), std::as_bytes(std::span{ after.instances })));
+}
+
 TEST_CASE("the stress arena publishes the same bytes with one worker and with many") {
     constexpr u64 TICK = 7;
     constexpr u32 MANY_WORKERS = 7;
