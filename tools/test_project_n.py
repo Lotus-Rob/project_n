@@ -281,13 +281,18 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(ran, [])  # refused before running anything
 
     def container_check(self):
-        tests, builds = [], []
+        tests, builds, references = [], [], []
         with mock.patch.multiple(project_n, hooks_enabled=lambda: True, cmd_selftest=lambda args: None,
                                  commit_range=lambda: None, cmd_fmt=lambda args: None, cmd_lint=lambda args: None,
-                                 cmd_reference=lambda args: None, cmd_test=tests.append, cmd_build=builds.append), \
+                                 cmd_reference=references.append, cmd_test=tests.append, cmd_build=builds.append), \
              contextlib.redirect_stdout(io.StringIO()):
             project_n.cmd_check(project_n.argparse.Namespace(container=True, sanitizers=False))
-        return tests, builds
+        return tests, builds, references
+
+    def test_check_compares_the_reference_pictures_once_on_linux(self):
+        references = self.container_check()[2]
+        self.assertEqual(len(references), 1)
+        self.assertEqual(project_n.PRESETS[references[0].preset]["plat"], "linux")
 
     def test_container_check_runs_unity_once_on_a_preset_with_an_image(self):
         unity = [args for args in self.container_check()[0] if args.unity]
@@ -298,6 +303,83 @@ class CheckTest(unittest.TestCase):
         builds = self.container_check()[1]
         self.assertEqual([args.mode for args in builds], ["releasedbg"])
         self.assertTrue(project_n.PRESETS[builds[0].preset]["image"], builds[0].preset)
+
+
+class ReferenceTest(unittest.TestCase):
+    def references(self, update, committed=()):
+        """Runs `run_references` in a temporary root holding the `committed` pictures, where the test
+        run draws a.png and then fails."""
+        def draw_and_fail(argv, env=None):
+            if str(argv[0]) != "reference_tests":
+                return  # pixi install
+            (root / "build" / "reference" / "a.png").write_bytes(b"drawn")
+            raise subprocess.CalledProcessError(1, argv)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "tests" / "reference").mkdir(parents=True)
+            for name in committed:
+                (root / "tests" / "reference" / name).write_bytes(b"committed")
+            with mock.patch.multiple(project_n, ROOT=root, capture=lambda argv: '{"environments_info": [{"name": "lavapipe", "prefix": "/lavapipe"}]}',
+                                     run=draw_and_fail,
+                                     binary_path=lambda *args: Path("reference_tests")), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                project_n.run_references("linux-gcc", update)
+            return (root / "tests" / "reference" / "a.png").read_bytes()
+
+    def test_a_failing_comparison_fails(self):
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.references(update=False)
+
+    def test_update_takes_the_pictures_of_a_failing_run(self):
+        self.assertEqual(self.references(update=True), b"drawn")
+
+    def test_update_refuses_a_run_that_didnt_draw_every_view(self):
+        with self.assertRaises(project_n.Fail):
+            self.references(update=True, committed=["a.png", "b.png"])
+
+    def test_reference_refuses_a_preset_that_isnt_linux(self):
+        with self.assertRaises(project_n.Fail):
+            project_n.cmd_reference(project_n.argparse.Namespace(preset="windows-msvc", container=False, update=False))
+
+
+class ArtifactReferenceTest(unittest.TestCase):
+    def references_in_artifact(self, preset):
+        """The presets `artifact` compares pictures for, stopped at the step after the comparison."""
+        class Stop(Exception):
+            pass
+
+        def stop(*args):
+            raise Stop
+
+        compared = []
+        with mock.patch.multiple(project_n, IN_CONTAINER=True, tree_dirty=lambda: "", build=lambda *args: Path("build"),
+                                 run=lambda *args, **kwargs: None, xmake_env=lambda bdir: {},
+                                 run_references=compared.append, binary_path=stop), \
+             mock.patch.object(project_n.shutil, "rmtree"), self.assertRaises(Stop):
+            project_n.cmd_artifact(project_n.argparse.Namespace(preset=preset))
+        return compared
+
+    def test_a_linux_artefact_compares_the_reference_pictures(self):
+        self.assertEqual(self.references_in_artifact("linux-gcc"), ["linux-gcc"])
+
+    def test_a_windows_artefact_doesnt(self):
+        self.assertEqual(self.references_in_artifact("windows-msvc"), [])
+
+
+class RunTest(unittest.TestCase):
+    def test_run_hands_the_arguments_after_the_separator_to_the_game(self):
+        ran = []
+        with mock.patch.multiple(project_n, build=lambda *args: Path("build"), xmake_env=lambda bdir: {},
+                                 run=lambda argv, env: ran.append(argv)):
+            project_n.cmd_run(project_n.argparse.Namespace(preset=project_n.NATIVE_PRESET, mode="debug", sanitizer="none",
+                                                           debug=False, args=["--", "--painted"]))
+        self.assertEqual(ran, [["xmake", "run", project_n.APP, "--painted"]])
+
+
+class SourceTest(unittest.TestCase):
+    def test_generated_headers_arent_sources(self):
+        self.assertTrue(project_n.is_source("src/core/log.hpp"))
+        self.assertFalse(project_n.is_source("src/core/generated/atlas.hpp"))
 
 
 class ReleaseTest(unittest.TestCase):
@@ -894,7 +976,8 @@ class AtlasTest(unittest.TestCase):
             (root / "assets" / "sprites").mkdir(parents=True)
             (root / "assets" / "sprites" / "a.png").write_bytes(png_header(10, 20))
             self.assertTrue(project_n.stale_atlas())
-            project_n.cmd_atlas(mock.Mock(placeholders=False))
+            with contextlib.redirect_stdout(io.StringIO()):
+                project_n.cmd_atlas(mock.Mock(placeholders=False))
             self.assertFalse(project_n.stale_atlas())
             (root / "assets" / "sprites" / "a.png").write_bytes(png_header(12, 20))
             self.assertTrue(project_n.stale_atlas())
