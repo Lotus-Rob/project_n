@@ -30,6 +30,10 @@ All game and engine code, structured by docs/design/0002-engine-architecture.md 
 ## Commands
 - `./dev run [--debug] [-- --stress | --painted | --cells]` (native preset; `--preset` picks another; `--stress`: the stress arena, about 100,000 instances; `--painted`: the still painted test scene; `--cells`: a map cell grid the mouse wheel zooms, to judge the mips)
 
+## Skills
+- look-at-the-game: seeing what the game draws (reference pictures, screenshots of the window, picture diffs)
+- fix-bug: fixing any bug here test-first
+
 ## Gotchas
 - A `///` comment right after the `/// @file` block joins it, leaving the next declaration undocumented: put a blank line after the file comment.
 - SDL 3 silently falls back to XWayland when the compositor lacks `fifo-v1` (niri does), even with the Wayland driver compiled in. `platform/window.cpp` hints `wayland,x11`; `SDL_VIDEO_DRIVER` still overrides it.
