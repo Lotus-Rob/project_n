@@ -198,4 +198,12 @@ TEST_CASE("subnormal results survive once the environment is set") {
     CHECK(subnormal > 0.0);
 }
 
+TEST_CASE("Atan2 with both coordinates infinite is a diagonal as in std::atan2") {
+    constexpr f64 QUARTER_PI = std::numbers::pi / 4;
+    CHECK(core::math::Atan2(INF, INF) == doctest::Approx(QUARTER_PI));
+    CHECK(core::math::Atan2(INF, -INF) == doctest::Approx(3 * QUARTER_PI));
+    CHECK(core::math::Atan2(-INF, INF) == doctest::Approx(-QUARTER_PI));
+    CHECK(core::math::Atan2(-INF, -INF) == doctest::Approx(-3 * QUARTER_PI));
+}
+
 } // namespace
