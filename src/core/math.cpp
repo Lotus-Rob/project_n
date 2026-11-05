@@ -173,8 +173,10 @@ f64 Atan2(f64 pointY, f64 pointX) {
     if (pointX == 0.0 && pointY == 0.0) {
         return 0.0;
     }
-    const f64 run = std::abs(pointX);
-    const f64 rise = std::abs(pointY);
+    // Both infinite: the quadrant's diagonal, as from any equal pair.
+    const bool diagonal = std::isinf(pointX) && std::isinf(pointY);
+    const f64 run = diagonal ? 1.0 : std::abs(pointX);
+    const f64 rise = diagonal ? 1.0 : std::abs(pointY);
     const f64 angle = rise <= run ? AtanUnit(rise / run) : (std::numbers::pi / 2) - AtanUnit(run / rise);
     const f64 halfTurn = pointX < 0.0 ? std::numbers::pi - angle : angle;
     return pointY < 0.0 ? -halfTurn : halfTurn;
