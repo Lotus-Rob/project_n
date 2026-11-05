@@ -16,6 +16,11 @@ inline constexpr core::Vec2 REFERENCE_SIZE{ .x = 1920.0F, .y = 1080.0F };
 /// The middle of the reference area, where a scene laid out in it is centred.
 inline constexpr core::Vec2 REFERENCE_CENTRE{ .x = 960.0F, .y = 540.0F };
 
+/// The zoom range. shortcut: wider than §8.10's proposed 0.75 to 1.5 to show every mip level; narrow it with the map.
+inline constexpr f32 MIN_ZOOM = 0.25F;
+/// The largest zoom.
+inline constexpr f32 MAX_ZOOM = 2.0F;
+
 /// What the window shows: the world around `centre`, at `zoom`.
 struct Camera {
     /// The world point at the window's centre.
@@ -23,6 +28,10 @@ struct Camera {
     /// How much larger than at the reference fit the world is drawn: above 1 shows less of it.
     f32 zoom = 1.0F;
 };
+
+/// `zoom` after `notches` of the mouse wheel: each one multiplies it by the same factor, and the
+/// result stays within MIN_ZOOM and MAX_ZOOM.
+[[nodiscard]] f32 ZoomedBy(f32 zoom, f32 notches);
 
 /// Clip-space position = world position × scale + offset, per axis. The shader's camera uniform.
 struct ClipTransform {

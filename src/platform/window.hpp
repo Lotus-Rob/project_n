@@ -21,6 +21,8 @@ struct WindowState {
     bool visible = true;
     /// The window has the keyboard focus.
     bool focused = true;
+    /// How far the mouse wheel turned during the last Poll(), in notches; positive is away from the player.
+    f32 wheelNotches = 0.0F;
 };
 
 /// The game's one window. Opening it starts SDL's video; closing it (destruction) stops SDL.

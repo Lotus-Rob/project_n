@@ -28,7 +28,7 @@ constexpr std::array PROPS{
     Prop{ .sprite = SpriteId::RockSmall, .foot = { .x = 1180.0F, .y = 300.0F } },
 };
 
-// The painted test scene: nothing moves, so two runs show the same picture.
+// Nothing in it moves: the reference pictures need every run to draw the same.
 constexpr std::array PAINTED{
     Prop{ .sprite = SpriteId::TreeDead, .foot = { .x = 260.0F, .y = 460.0F } },
     Prop{ .sprite = SpriteId::Crane, .foot = { .x = 620.0F, .y = 280.0F } },
@@ -83,6 +83,19 @@ constexpr u32 PUBLISH_CHUNK = 4'096; // entities packed per job chunk
 // shortcut: the camera shows the whole ground, and lives on the main thread; the view follows it from phase 5.
 constexpr core::Rect GROUND_VIEW{ .min = {}, .max = CROWD_AREA };
 
+// A grid around the reference area's middle, wider than the view at the smallest zoom (gfx::MIN_ZOOM).
+constexpr u32 CELL_COLUMNS = 32;
+constexpr u32 CELL_ROWS = 20;
+constexpr f32 CELL_SIZE = 256.0F;
+constexpr core::Vec2 CELLS_MIN{ .x = 960.0F - (CELL_COLUMNS * CELL_SIZE / 2.0F), .y = 540.0F - (CELL_ROWS * CELL_SIZE / 2.0F) };
+constexpr core::Rect CELLS_VIEW{
+    .min = CELLS_MIN,
+    .max = { .x = CELLS_MIN.x + (CELL_COLUMNS * CELL_SIZE), .y = CELLS_MIN.y + (CELL_ROWS * CELL_SIZE) },
+};
+constexpr std::array<SpriteId, 5> CELLS{
+    { SpriteId::CellPlain, SpriteId::CellForest, SpriteId::CellMountain, SpriteId::CellSnow, SpriteId::CellCity }
+};
+
 } // namespace
 
 core::Vec2 OrbitPoint(const Orbit& orbit, u64 tick) {
@@ -94,7 +107,12 @@ core::Vec2 OrbitPoint(const Orbit& orbit, u64 tick) {
     };
 }
 
-Arena::Arena(Scene scene) {
+Arena::Arena(Scene scene)
+  : m_view{ scene == Scene::Cells ? CELLS_VIEW : GROUND_VIEW } {
+    if (scene == Scene::Cells) {
+        SpawnCells();
+        return;
+    }
     if (scene == Scene::Painted) {
         SpawnPainted();
         return;
@@ -175,6 +193,18 @@ void Arena::SpawnPainted() {
     }
 }
 
+void Arena::SpawnCells() {
+    for (u32 row = 0; row < CELL_ROWS; ++row) {
+        for (u32 column = 0; column < CELL_COLUMNS; ++column) {
+            const core::Vec2 corner{ .x = CELLS_MIN.x + (static_cast<f32>(column) * CELL_SIZE),
+                                     .y = CELLS_MIN.y + (static_cast<f32>(row) * CELL_SIZE) };
+            // Steps of 2 by row keep equal cells from lining up in columns.
+            const SpriteId sprite = CELLS.at((column + (2 * row)) % CELLS.size());
+            Spawn(corner, { .sprite = sprite, .layer = core::Layer::Ground });
+        }
+    }
+}
+
 core::Entity Arena::Spawn(core::Vec2 foot, const Look& look) {
     const core::Entity entity = m_domain.Create(m_ids.Allocate());
     m_domain.Entities().emplace<Body>(entity, foot, foot);
@@ -195,7 +225,7 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
     const auto& bodies = m_domain.Entities().storage<Body>();
     const auto& looks = m_domain.Entities().storage<Look>();
     const u32 chunks = core::ChunkCount(looks.size(), PUBLISH_CHUNK);
-    m_drawList.Begin(GROUND_VIEW, std::max(chunks, 1U));
+    m_drawList.Begin(m_view, std::max(chunks, 1U));
     m_drawList.Add(0, core::Layer::Ground, core::Pipeline::Normal, core::MakeInstance({ .sprite = SpriteId::Ground }));
     jobs.ParallelFor(chunks, [&](u32 chunk) {
         const std::size_t begin = std::size_t{ chunk } * PUBLISH_CHUNK;

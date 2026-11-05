@@ -20,11 +20,16 @@ bool Draws(const core::Instance& instance, SpriteId sprite) {
     return instance.regionMin == core::MakeInstance({ .sprite = sprite }).regionMin;
 }
 
-TEST_CASE("the ground is drawn first, and shadows before what casts them") {
+TEST_CASE("the ground is drawn first") {
     game::Arena arena;
     const core::Snapshot snapshot = Published(arena);
     REQUIRE_FALSE(snapshot.instances.empty());
     CHECK(Draws(snapshot.instances.front(), SpriteId::Ground));
+}
+
+TEST_CASE("shadows are drawn before what casts them") {
+    game::Arena arena;
+    const core::Snapshot snapshot = Published(arena);
     const auto firstShadow =
         std::ranges::find_if(snapshot.instances, [](const auto& instance) { return Draws(instance, SpriteId::Shadow); });
     const auto firstFox =
@@ -67,20 +72,30 @@ std::optional<std::pair<SpriteId, f32>> SpriteAndFootY(const core::Instance& ins
     return std::nullopt;
 }
 
-TEST_CASE("the world draws in foot-y order, and the additive orbs over it in their own batch") {
-    constexpr u64 TICKS = 90; // far enough that foxes have moved in front of and behind things
+// The arena after enough ticks that foxes have moved in front of and behind things.
+core::Snapshot MovedArena() {
+    constexpr u64 TICKS = 90;
     game::Arena arena;
     for (u64 tick = 1; tick <= TICKS; ++tick) {
         arena.Tick(tick);
     }
-    const core::Snapshot snapshot = Published(arena);
+    return Published(arena);
+}
+
+TEST_CASE("the arena publishes a normal batch, then an additive one that ends the snapshot") {
+    const core::Snapshot snapshot = MovedArena();
     REQUIRE(snapshot.batches.size() == 2);
     CHECK(snapshot.batches[0].pipeline == core::Pipeline::Normal);
     CHECK(snapshot.batches[1].pipeline == core::Pipeline::Additive);
     CHECK(snapshot.batches[1].first + snapshot.batches[1].count == snapshot.instances.size());
+}
+
+TEST_CASE("the world draws in foot-y order, after the ground and its decals") {
+    const core::Snapshot snapshot = MovedArena();
+    REQUIRE_FALSE(snapshot.batches.empty());
     f32 lastFoot = -std::numeric_limits<f32>::infinity();
     std::size_t world = 0;
-    for (u32 i = 0; i < snapshot.batches[1].first; ++i) {
+    for (u32 i = 0; i < snapshot.batches.back().first; ++i) {
         const auto drawn = SpriteAndFootY(snapshot.instances[i]);
         if (!drawn) {
             FAIL("an instance draws no sprite of the manifest");
@@ -95,17 +110,26 @@ TEST_CASE("the world draws in foot-y order, and the additive orbs over it in the
         lastFoot = drawn->second;
     }
     CHECK(world > 0);
-    for (u32 i = snapshot.batches[1].first; i < snapshot.instances.size(); ++i) {
+}
+
+TEST_CASE("the additive batch holds only the orbs") {
+    const core::Snapshot snapshot = MovedArena();
+    REQUIRE_FALSE(snapshot.batches.empty());
+    for (u32 i = snapshot.batches.back().first; i < snapshot.instances.size(); ++i) {
         CHECK((Draws(snapshot.instances[i], SpriteId::OrbBlue) || Draws(snapshot.instances[i], SpriteId::OrbRed)));
     }
 }
 
-TEST_CASE("the stress arena publishes 100,000 instances, its 10,000 bullets last and additive") {
+TEST_CASE("the stress arena publishes 100,000 instances") {
     constexpr std::size_t INSTANCES = 100'000;
+    game::Arena arena{ game::Scene::Stress };
+    CHECK(Published(arena).instances.size() >= INSTANCES);
+}
+
+TEST_CASE("the stress arena's 10,000 bullets draw last, in an additive batch") {
     constexpr u32 BULLETS = 10'000;
     game::Arena arena{ game::Scene::Stress };
     const core::Snapshot snapshot = Published(arena);
-    CHECK(snapshot.instances.size() >= INSTANCES);
     REQUIRE_FALSE(snapshot.batches.empty());
     const core::Batch& effects = snapshot.batches.back();
     CHECK(effects.pipeline == core::Pipeline::Additive);
@@ -113,17 +137,29 @@ TEST_CASE("the stress arena publishes 100,000 instances, its 10,000 bullets last
     CHECK(effects.first + effects.count == snapshot.instances.size());
 }
 
-TEST_CASE("the painted scene holds still, its glows last and additive") {
-    constexpr u64 TICK = 7;
+TEST_CASE("the painted scene's glows draw last, in an additive batch") {
     constexpr u32 GLOWS = 5;
+    game::Arena arena{ game::Scene::Painted };
+    const core::Snapshot snapshot = Published(arena);
+    REQUIRE_FALSE(snapshot.batches.empty());
+    CHECK(snapshot.batches.back().pipeline == core::Pipeline::Additive);
+    CHECK(snapshot.batches.back().count == GLOWS);
+}
+
+TEST_CASE("the painted scene holds still") {
+    constexpr u64 TICK = 7;
     game::Arena arena{ game::Scene::Painted };
     const core::Snapshot before = Published(arena);
     arena.Tick(TICK);
     const core::Snapshot after = Published(arena);
-    REQUIRE_FALSE(before.batches.empty());
-    CHECK(before.batches.back().pipeline == core::Pipeline::Additive);
-    CHECK(before.batches.back().count == GLOWS);
     CHECK(std::ranges::equal(std::as_bytes(std::span{ before.instances }), std::as_bytes(std::span{ after.instances })));
+}
+
+TEST_CASE("the cell grid publishes every cell, with none culled at its far corners") {
+    constexpr std::size_t CELLS = 640;
+    game::Arena arena{ game::Scene::Cells };
+    const core::Snapshot snapshot = Published(arena);
+    CHECK(snapshot.instances.size() == CELLS + 1); // and the ground, hidden beneath them
 }
 
 TEST_CASE("the stress arena publishes the same bytes with one worker and with many") {
