@@ -157,6 +157,36 @@ TEST_CASE("cosmetic events far behind the render clock are dropped; others still
     CHECK(pending.empty());
 }
 
+TEST_CASE("undrained cosmetic events too far behind the newest to be played are dropped; others are kept") {
+    Handover handover;
+    // The render clock reaches at least a published tick minus one, so an event STALE_EVENT_TICKS + 1 behind the
+    // newest may still play; one further behind can't.
+    constexpr u64 NEWEST = 3 + static_cast<u64>(core::STALE_EVENT_TICKS);
+    std::vector<Event> first{ { .tick = 1, .cosmetic = true }, { .tick = 1 }, { .tick = 2, .cosmetic = true } };
+    handover.Publish(first);
+    std::vector<Event> second{ { .tick = NEWEST, .cosmetic = true } };
+    handover.Publish(second); // the main thread hasn't taken the first ones
+    std::vector<Event> taken;
+    handover.TakeEvents(taken);
+    REQUIRE(taken.size() == 3);
+    CHECK_FALSE(taken[0].cosmetic);
+    CHECK(taken[1].tick == 2);
+    CHECK(taken[2].tick == NEWEST);
+}
+
+TEST_CASE("undrained cosmetic events of an older epoch are kept: its snapshot may still be drawn") {
+    Handover handover;
+    std::vector<Event> first{ { .tick = 1, .epoch = 0, .cosmetic = true } };
+    handover.Publish(first);
+    std::vector<Event> second{ { .tick = 1, .epoch = 1, .cosmetic = true } };
+    handover.Publish(second); // a new timeline began before the main thread took the first ones
+    std::vector<Event> taken;
+    handover.TakeEvents(taken);
+    REQUIRE(taken.size() == 2);
+    CHECK(taken[0].epoch == 0);
+    CHECK(taken[1].epoch == 1);
+}
+
 struct NamedEvent {
     u64 tick = 0;
     u64 epoch = 0;
