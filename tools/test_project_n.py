@@ -1060,6 +1060,25 @@ class AtlasTest(unittest.TestCase):
             with self.assertRaisesRegex(project_n.Fail, "outside"):
                 project_n.read_sprites()
 
+    def sprites(self, listing, images=("a",)):
+        root = self.enterContext(temp_repo({"art/sprites.toml": listing}))
+        (root / "assets" / "sprites").mkdir(parents=True)
+        for name in images:
+            (root / "assets" / "sprites" / f"{name}.png").write_bytes(png_header(10, 20))
+        return root
+
+    def test_a_foot_that_isnt_two_integers_fails(self):
+        for foot in ("[1.5, 2]", "[true, false]", "[1]", "[1, 2, 3]", '"x"'):
+            with self.subTest(foot=foot):
+                self.sprites(f"[a]\nfoot = {foot}\n")
+                with self.assertRaisesRegex(project_n.Fail, "a's foot"):
+                    project_n.read_sprites()
+
+    def test_a_sprite_that_isnt_a_table_fails(self):
+        self.sprites("a = 1\n")
+        with self.assertRaisesRegex(project_n.Fail, "a must be a table"):
+            project_n.read_sprites()
+
     def test_the_header_is_stale_until_the_manifest_matches(self):
         with temp_repo({"art/sprites.toml": "[a]\n"}) as root:
             (root / "assets" / "sprites").mkdir(parents=True)
