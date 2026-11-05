@@ -1079,6 +1079,11 @@ class AtlasTest(unittest.TestCase):
         with self.assertRaisesRegex(project_n.Fail, "a must be a table"):
             project_n.read_sprites()
 
+    def test_names_that_make_one_enum_member_fail(self):
+        self.sprites("[foo]\n[foo_]\n", images=("foo", "foo_"))
+        with self.assertRaisesRegex(project_n.Fail, "foo_ and foo are both SpriteId::Foo"):
+            project_n.read_sprites()
+
     def test_the_header_is_stale_until_the_manifest_matches(self):
         with temp_repo({"art/sprites.toml": "[a]\n"}) as root:
             (root / "assets" / "sprites").mkdir(parents=True)
