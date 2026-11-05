@@ -14,7 +14,8 @@
 
 /// Measures the enclosing scope as a zone named after its function: `PN_PROFILE_ZONE();` at the
 /// top of every function that runs each frame.
-#define PN_PROFILE_ZONE() ZoneScoped
+// Not ZoneScoped: it ends in its own `;`, which leaves ours an empty statement (-Wextra-semi-stmt).
+#define PN_PROFILE_ZONE() ZoneNamed(pn_profile_zone, true)
 /// Ends a frame in the profiler's timeline: `PN_PROFILE_FRAME();` once per frame, after presenting.
 #define PN_PROFILE_FRAME() FrameMark
 #else

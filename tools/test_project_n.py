@@ -280,15 +280,24 @@ class CheckTest(unittest.TestCase):
             project_n.cmd_check(project_n.argparse.Namespace(container=False, sanitizers=False))
         self.assertEqual(ran, [])  # refused before running anything
 
-    def test_container_check_runs_unity_once_on_a_preset_with_an_image(self):
-        calls = []
+    def container_check(self):
+        tests, builds = [], []
         with mock.patch.multiple(project_n, hooks_enabled=lambda: True, cmd_selftest=lambda args: None,
                                  commit_range=lambda: None, cmd_fmt=lambda args: None, cmd_lint=lambda args: None,
-                                 cmd_test=calls.append), contextlib.redirect_stdout(io.StringIO()):
+                                 cmd_test=tests.append, cmd_build=builds.append), \
+             contextlib.redirect_stdout(io.StringIO()):
             project_n.cmd_check(project_n.argparse.Namespace(container=True, sanitizers=False))
-        unity = [args for args in calls if args.unity]
+        return tests, builds
+
+    def test_container_check_runs_unity_once_on_a_preset_with_an_image(self):
+        unity = [args for args in self.container_check()[0] if args.unity]
         self.assertEqual(len(unity), 1)
         self.assertTrue(project_n.PRESETS[unity[0].preset]["image"], unity[0].preset)
+
+    def test_check_builds_releasedbg_once(self):
+        builds = self.container_check()[1]
+        self.assertEqual([args.mode for args in builds], ["releasedbg"])
+        self.assertTrue(project_n.PRESETS[builds[0].preset]["image"], builds[0].preset)
 
 
 class ReleaseTest(unittest.TestCase):

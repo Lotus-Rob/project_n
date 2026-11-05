@@ -998,6 +998,8 @@ def cmd_check(args):
     unity_preset = NATIVE_PRESET if NATIVE_PRESET not in skipped else next(p for p in PRESETS if p not in skipped)
     cmd_test(argparse.Namespace(preset=unity_preset, mode="debug", sanitizer="none", container=args.container,
                                 target=None, args=[], unity=True))
+    # Profiling builds turn Tracy's zones on, code no other mode compiles: one build keeps it compiling.
+    cmd_build(argparse.Namespace(preset=unity_preset, mode="releasedbg", sanitizer="none", container=args.container))
     if args.sanitizers:
         for preset, sanitizers in SANITIZERS.items():
             for sanitizer in sanitizers if preset not in skipped else ():
