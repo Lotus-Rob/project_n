@@ -1,5 +1,6 @@
 #include "gfx/renderer.hpp"
 
+#include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
 #include "core/profile.hpp"
@@ -45,10 +46,16 @@ struct Renderer::Impl {
     ~Impl() = default;
 
     // Once a swapchain texture is acquired, the frame is submitted even on an error: SDL requires it.
-    std::expected<void, core::Error> Frame(const core::Snapshot& snapshot, f32 alpha, const Camera& camera);
+    std::expected<void, core::Error> Frame(
+        const internal::Frame& acquired,
+        const core::Snapshot& snapshot,
+        f32 alpha,
+        const Camera& camera
+    );
     // A recorded copy counts as uploaded only once its commands are submitted (`uploaded.Submitted`): a dropped buffer
     // must upload again.
     std::expected<void, core::Error> Upload(SDL_GPUCommandBuffer* commands, const core::Snapshot& snapshot);
+    void Report(const std::expected<void, core::Error>& drawn);
     void DrawWorld(
         SDL_GPUCommandBuffer* commands,
         SDL_GPUTexture* texture,
@@ -64,6 +71,7 @@ struct Renderer::Impl {
     internal::Gpu<SDL_Window> claim = nullptr;
     internal::SpriteArray sprites{};
     internal::SpriteRenderer instances{};
+    std::optional<internal::Frame> frame = std::nullopt; // acquired by Acquire(), submitted by Draw()
     UploadedSnapshot uploaded{};
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     core::RepeatedFailure failures{};
@@ -120,14 +128,15 @@ void Renderer::Impl::DrawWorld(
     SDL_PopGPUDebugGroup(commands);
 }
 
-std::expected<void, core::Error> Renderer::Impl::Frame(const core::Snapshot& snapshot, f32 alpha, const Camera& camera) {
+std::expected<void, core::Error> Renderer::Impl::Frame(
+    const internal::Frame& acquired,
+    const core::Snapshot& snapshot,
+    f32 alpha,
+    const Camera& camera
+) {
     PN_PROFILE_ZONE();
-    const std::expected<internal::Frame, core::Error> frame = internal::AcquireFrame(device.get(), window);
-    if (!frame) {
-        return std::unexpected{ frame.error() };
-    }
     // A failed upload draws no sprites, but the frame is still submitted, as SDL requires.
-    if (const std::expected<void, core::Error> copied = Upload(frame->commands, snapshot); !copied) {
+    if (const std::expected<void, core::Error> copied = Upload(acquired.commands, snapshot); !copied) {
         if (uploadFailures.Fail()) {
             PN_LOG_ERROR("{}; no sprites are drawn until an upload succeeds", copied.error().message);
         }
@@ -136,12 +145,24 @@ std::expected<void, core::Error> Renderer::Impl::Frame(const core::Snapshot& sna
         PN_LOG_INFO("sprite instances uploaded again, after {} failed uploads", failed);
     }
     // Without a swapchain texture (the window can't be shown), the copy still runs and nothing is drawn (§8.3).
-    if (frame->swapchain != nullptr) {
-        DrawWorld(frame->commands, frame->swapchain, frame->width, frame->height, snapshot, alpha, camera);
+    if (acquired.swapchain != nullptr) {
+        DrawWorld(acquired.commands, acquired.swapchain, acquired.width, acquired.height, snapshot, alpha, camera);
     }
-    std::expected<void, core::Error> submitted = internal::SubmitFrame(*frame);
+    std::expected<void, core::Error> submitted = internal::SubmitFrame(acquired);
     uploaded.Submitted(submitted.has_value());
     return submitted;
+}
+
+void Renderer::Impl::Report(const std::expected<void, core::Error>& drawn) {
+    PN_PROFILE_ZONE();
+    if (!drawn) {
+        if (failures.Fail()) {
+            PN_LOG_ERROR("frames are failing: {}", drawn.error().message);
+        }
+    }
+    else if (const u64 failed = failures.Succeed(); failed > 0) {
+        PN_LOG_WARNING("frames are drawn again after {} failed", failed);
+    }
 }
 
 std::expected<Renderer, core::Error> Renderer::Create(platform::Window& window, const std::filesystem::path& assets) {
@@ -209,17 +230,25 @@ Renderer::Renderer(std::unique_ptr<Impl> impl)
 Renderer::Renderer(Renderer&& other) noexcept = default;
 Renderer::~Renderer() = default;
 
+void Renderer::Acquire() {
+    PN_PROFILE_ZONE();
+    PN_ASSERT(!m_impl->frame, "Acquire() twice without a Draw() between");
+    std::expected<internal::Frame, core::Error> acquired = internal::AcquireFrame(m_impl->device.get(), m_impl->window);
+    if (!acquired) {
+        m_impl->Report(std::unexpected{ std::move(acquired.error()) });
+        return;
+    }
+    m_impl->frame = *acquired;
+}
+
 void Renderer::Draw(const core::Snapshot& snapshot, f64 alpha, const Camera& camera) {
     PN_PROFILE_ZONE();
-    const std::expected<void, core::Error> drawn = m_impl->Frame(snapshot, static_cast<f32>(alpha), camera);
-    if (!drawn) {
-        if (m_impl->failures.Fail()) {
-            PN_LOG_ERROR("frames are failing: {}", drawn.error().message);
-        }
+    if (!m_impl->frame) {
+        return; // the acquire failed, and said so
     }
-    else if (const u64 failed = m_impl->failures.Succeed(); failed > 0) {
-        PN_LOG_WARNING("frames are drawn again after {} failed", failed);
-    }
+    const internal::Frame acquired = *m_impl->frame;
+    m_impl->frame.reset();
+    m_impl->Report(m_impl->Frame(acquired, snapshot, static_cast<f32>(alpha), camera));
 }
 
 std::expected<Image, core::Error> Renderer::Capture(

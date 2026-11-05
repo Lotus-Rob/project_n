@@ -337,7 +337,8 @@ Measured in phase 3 with the stress arena (100,043 instances, linux-clang, on an
 ### 8.2 Layers inside `gfx`
 
 ```
-Renderer::Draw(...)              the only entry point: the drawn snapshot, alpha, the render clock, UI draw data, the camera
+Renderer::Acquire()              the frame to draw into; may block, so the time for alpha is read after it (§6)
+Renderer::Draw(...)              then the drawn snapshot, alpha, the render clock, UI draw data, the camera
   features/                      instances, meshes (DragonBones, strokes, trails), text, GPU particles, post, UI drawing
     each: Upload (when its data changed) -> Draw (render pass)
   frame/                         command buffer, pass plan, submission, statistics
