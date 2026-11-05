@@ -70,7 +70,7 @@ void RunLogic(
     }
 }
 
-i32 Run(game::Scene scene) {
+i32 Run(game::Scene scene, gfx::ColourSpace colourSpace) {
     platform::RouteSdlLogs();
     std::expected<platform::Window, core::Error> window = platform::Window::Open("project_n", WINDOW_WIDTH, WINDOW_HEIGHT);
     if (!window) {
@@ -82,7 +82,7 @@ i32 Run(game::Scene scene) {
         PN_LOG_ERROR("no assets: {}", assets.error().message);
         return 1;
     }
-    std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(*window, *assets);
+    std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(*window, *assets, colourSpace);
     if (!renderer) {
         PN_LOG_ERROR("no renderer: {}", renderer.error().message);
         return 1;
@@ -157,7 +157,10 @@ int main(int argc, char** argv) {
     const bool stress = std::ranges::contains(args, std::string_view{ "--stress" });
     PN_LOG_INFO("scene: {}", stress ? "the stress arena" : "the arena");
     try {
-        const i32 status = Run(stress ? game::Scene::Stress : game::Scene::Arena);
+        const i32 status =
+            Run(stress ? game::Scene::Stress : game::Scene::Arena,
+                std::ranges::contains(args, std::string_view{ "--linear" }) ? gfx::ColourSpace::Linear
+                                                                            : gfx::ColourSpace::Gamma);
         PN_LOG_NOTICE("project_n stopped with status {}", status);
         return status;
     }
