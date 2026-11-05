@@ -1,3 +1,4 @@
+#include "core/command_line.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
 #include "core/log.hpp"
@@ -91,7 +92,18 @@ SceneChoice ChooseScene(std::span<char*> args) {
     return {};
 }
 
-i32 Run(game::Scene scene) {
+// `--quit-after SECONDS`: quit by itself, as on a quit request, so `project_n profile` records with no click into a
+// window that would take the focus. 0: never.
+std::expected<u64, core::Error> QuitAfterNs(std::span<char*> args) {
+    const auto flag = std::ranges::find(args, std::string_view{ "--quit-after" });
+    if (flag == args.end()) {
+        return 0;
+    }
+    return core::SecondsToNs(std::next(flag) == args.end() ? std::string_view{} : std::string_view{ *std::next(flag) })
+        .transform_error([](const core::Error& error) { return core::Error{ "--quit-after: " + error.message }; });
+}
+
+i32 Run(game::Scene scene, u64 quitAfterNs) {
     platform::RouteSdlLogs();
     std::expected<platform::Window, core::Error> window = platform::Window::Open("project_n", WINDOW_WIDTH, WINDOW_HEIGHT);
     if (!window) {
@@ -112,7 +124,8 @@ i32 Run(game::Scene scene) {
     core::GameHandover handover;
     core::GameDisplay display;
     std::atomic<bool> logicFailed = false;
-    std::jthread logic{ RunLogic, std::ref(handover), platform::NowNs(), scene, std::ref(logicFailed) };
+    const u64 startNs = platform::NowNs();
+    std::jthread logic{ RunLogic, std::ref(handover), startNs, scene, std::ref(logicFailed) };
     bool focused = true;
     gfx::Camera camera{}; // shortcut: a fixed view, but for the cell grid's zoom; the camera follows input and the snapshot
                           // from phase 5
@@ -123,6 +136,10 @@ i32 Run(game::Scene scene) {
         const platform::WindowState& state = window->Poll(core::TICK_NS);
         if (state.quitRequested) {
             PN_LOG_DEBUG("quit requested");
+            break;
+        }
+        if (quitAfterNs != 0 && platform::NowNs() - startNs >= quitAfterNs) {
+            PN_LOG_INFO("quitting after {} seconds, as --quit-after asked", quitAfterNs / core::NS_PER_SECOND);
             break;
         }
         if (logicFailed) {
@@ -181,8 +198,13 @@ int main(int argc, char** argv) {
 #endif
     const SceneChoice choice = ChooseScene(args);
     PN_LOG_INFO("scene: {}", choice.name);
+    const std::expected<u64, core::Error> quitAfterNs = QuitAfterNs(args);
+    if (!quitAfterNs) {
+        PN_LOG_ERROR("{}", quitAfterNs.error().message);
+        return 1;
+    }
     try {
-        const i32 status = Run(choice.scene);
+        const i32 status = Run(choice.scene, *quitAfterNs);
         PN_LOG_NOTICE("project_n stopped with status {}", status);
         return status;
     }
