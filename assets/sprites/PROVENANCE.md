@@ -21,3 +21,25 @@ updates its row in the same commit (what made it, when, and who) and takes it ou
 | cell_mountain.png | `art/placeholders.py` (procedural placeholder) | 2026-11-01 | as above |
 | cell_forest.png | `art/placeholders.py` (procedural placeholder) | 2026-11-01 | as above |
 | cell_city.png | `art/placeholders.py` (procedural placeholder) | 2026-11-01 | as above |
+| treant_blighted.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | test sprite, Tale of Immortal-inspired ink wash; generated on plain white, keyed to straight alpha and resized; not in `PLACEHOLDERS` |
+| wisp_red.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | as above |
+| crane.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | as above |
+| tree_dead.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | as above |
+| fox_spirit.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | as above |
+| fox_yellow.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | as above |
+| hut.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | as above |
+| stele.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | as above |
+| crystal_ice.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | as above |
+| cell_snow.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | as above; opaque terrain tile, no keying |
+| orb_gold.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | as above |
+| fox_yellow_2x.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | 2x of `fox_yellow.png`, same source render; as above |
+| fox_spirit_2x.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | 2x of `fox_spirit.png`, same source render; as above |
+| treant_blighted_2x.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | 2x of `treant_blighted.png`, same source render; as above |
+| wisp_red_2x.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | 2x of `wisp_red.png`, same source render; as above |
+| crane_2x.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | 2x of `crane.png`, same source render; as above |
+| tree_dead_2x.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | 2x of `tree_dead.png`, same source render; as above |
+| hut_2x.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | 2x of `hut.png`, same source render; as above |
+| stele_2x.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | 2x of `stele.png`, same source render; as above |
+| crystal_ice_2x.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | 2x of `crystal_ice.png`, same source render; as above |
+| cell_snow_2x.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | 2x of `cell_snow.png`, same source render; as above; opaque terrain tile |
+| orb_gold_2x.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | 2x of `orb_gold.png`, same source render; as above |

@@ -30,7 +30,7 @@ struct Sprite {
 /// The width and height of every page.
 inline constexpr u32 PAGE_SIZE = 2048;
 /// The number of pages (array layers).
-inline constexpr u32 PAGES = 1;
+inline constexpr u32 PAGES = 2;
 /// The mip levels to generate; the gutters between sprites keep them apart down to the last.
 inline constexpr u32 MIP_LEVELS = 5;
 
@@ -50,24 +50,68 @@ enum class SpriteId : u16 { // NOLINT(performance-enum-size): stable IDs outgrow
     CellMountain, ///< assets/sprites/cell_mountain.png
     CellForest, ///< assets/sprites/cell_forest.png
     CellCity, ///< assets/sprites/cell_city.png
+    TreantBlighted, ///< assets/sprites/treant_blighted.png
+    WispRed, ///< assets/sprites/wisp_red.png
+    Crane, ///< assets/sprites/crane.png
+    TreeDead, ///< assets/sprites/tree_dead.png
+    FoxSpirit, ///< assets/sprites/fox_spirit.png
+    FoxYellow, ///< assets/sprites/fox_yellow.png
+    Hut, ///< assets/sprites/hut.png
+    Stele, ///< assets/sprites/stele.png
+    CrystalIce, ///< assets/sprites/crystal_ice.png
+    CellSnow, ///< assets/sprites/cell_snow.png
+    OrbGold, ///< assets/sprites/orb_gold.png
+    FoxYellow2X, ///< assets/sprites/fox_yellow_2x.png
+    FoxSpirit2X, ///< assets/sprites/fox_spirit_2x.png
+    TreantBlighted2X, ///< assets/sprites/treant_blighted_2x.png
+    WispRed2X, ///< assets/sprites/wisp_red_2x.png
+    Crane2X, ///< assets/sprites/crane_2x.png
+    TreeDead2X, ///< assets/sprites/tree_dead_2x.png
+    Hut2X, ///< assets/sprites/hut_2x.png
+    Stele2X, ///< assets/sprites/stele_2x.png
+    CrystalIce2X, ///< assets/sprites/crystal_ice_2x.png
+    CellSnow2X, ///< assets/sprites/cell_snow_2x.png
+    OrbGold2X, ///< assets/sprites/orb_gold_2x.png
 };
 
 /// Every sprite, indexed by SpriteId.
-inline constexpr std::array<Sprite, 14> SPRITES{ {
+inline constexpr std::array<Sprite, 36> SPRITES{ {
     { .file = "sprites/ground.png", .page = 0, .x = 16, .y = 16, .width = 1920, .height = 1080, .footX = 0, .footY = 0 },
-    { .file = "sprites/rock_large.png", .page = 0, .x = 1596, .y = 1112, .width = 180, .height = 128, .footX = 90, .footY = 112 },
-    { .file = "sprites/rock_small.png", .page = 0, .x = 16, .y = 1508, .width = 92, .height = 68, .footX = 46, .footY = 60 },
-    { .file = "sprites/pine.png", .page = 0, .x = 16, .y = 1112, .width = 240, .height = 380, .footX = 120, .footY = 372 },
-    { .file = "sprites/shrine.png", .page = 0, .x = 1360, .y = 1112, .width = 220, .height = 250, .footX = 110, .footY = 244 },
-    { .file = "sprites/fox.png", .page = 0, .x = 1880, .y = 1112, .width = 112, .height = 72, .footX = 54, .footY = 68 },
-    { .file = "sprites/cultivator.png", .page = 0, .x = 1792, .y = 1112, .width = 72, .height = 128, .footX = 36, .footY = 122 },
-    { .file = "sprites/orb_blue.png", .page = 0, .x = 124, .y = 1508, .width = 32, .height = 32, .footX = 16, .footY = 16 },
-    { .file = "sprites/orb_red.png", .page = 0, .x = 252, .y = 1508, .width = 16, .height = 16, .footX = 8, .footY = 8 },
-    { .file = "sprites/shadow.png", .page = 0, .x = 172, .y = 1508, .width = 64, .height = 24, .footX = 32, .footY = 12 },
-    { .file = "sprites/cell_plain.png", .page = 0, .x = 272, .y = 1112, .width = 256, .height = 256, .footX = 0, .footY = 0 },
-    { .file = "sprites/cell_mountain.png", .page = 0, .x = 544, .y = 1112, .width = 256, .height = 256, .footX = 0, .footY = 0 },
-    { .file = "sprites/cell_forest.png", .page = 0, .x = 816, .y = 1112, .width = 256, .height = 256, .footX = 0, .footY = 0 },
-    { .file = "sprites/cell_city.png", .page = 0, .x = 1088, .y = 1112, .width = 256, .height = 256, .footX = 0, .footY = 0 },
+    { .file = "sprites/rock_large.png", .page = 0, .x = 976, .y = 1848, .width = 180, .height = 128, .footX = 90, .footY = 112 },
+    { .file = "sprites/rock_small.png", .page = 0, .x = 1514, .y = 1848, .width = 92, .height = 68, .footX = 46, .footY = 60 },
+    { .file = "sprites/pine.png", .page = 1, .x = 232, .y = 16, .width = 240, .height = 380, .footX = 120, .footY = 372 },
+    { .file = "sprites/shrine.png", .page = 1, .x = 16, .y = 768, .width = 220, .height = 250, .footX = 110, .footY = 244 },
+    { .file = "sprites/fox.png", .page = 0, .x = 1260, .y = 1848, .width = 112, .height = 72, .footX = 54, .footY = 68 },
+    { .file = "sprites/cultivator.png", .page = 0, .x = 1172, .y = 1848, .width = 72, .height = 128, .footX = 36, .footY = 122 },
+    { .file = "sprites/orb_blue.png", .page = 0, .x = 1702, .y = 1848, .width = 32, .height = 32, .footX = 16, .footY = 16 },
+    { .file = "sprites/orb_red.png", .page = 0, .x = 1878, .y = 1848, .width = 16, .height = 16, .footX = 8, .footY = 8 },
+    { .file = "sprites/shadow.png", .page = 0, .x = 1798, .y = 1848, .width = 64, .height = 24, .footX = 32, .footY = 12 },
+    { .file = "sprites/cell_plain.png", .page = 1, .x = 684, .y = 472, .width = 256, .height = 256, .footX = 0, .footY = 0 },
+    { .file = "sprites/cell_mountain.png", .page = 1, .x = 956, .y = 472, .width = 256, .height = 256, .footX = 0, .footY = 0 },
+    { .file = "sprites/cell_forest.png", .page = 1, .x = 1228, .y = 472, .width = 256, .height = 256, .footX = 0, .footY = 0 },
+    { .file = "sprites/cell_city.png", .page = 1, .x = 1500, .y = 472, .width = 256, .height = 256, .footX = 0, .footY = 0 },
+    { .file = "sprites/treant_blighted.png", .page = 1, .x = 904, .y = 16, .width = 300, .height = 360, .footX = 150, .footY = 360 },
+    { .file = "sprites/wisp_red.png", .page = 0, .x = 860, .y = 1848, .width = 100, .height = 140, .footX = 49, .footY = 140 },
+    { .file = "sprites/crane.png", .page = 0, .x = 388, .y = 1848, .width = 220, .height = 150, .footX = 110, .footY = 150 },
+    { .file = "sprites/tree_dead.png", .page = 1, .x = 16, .y = 472, .width = 220, .height = 280, .footX = 110, .footY = 280 },
+    { .file = "sprites/fox_spirit.png", .page = 1, .x = 468, .y = 472, .width = 200, .height = 260, .footX = 100, .footY = 260 },
+    { .file = "sprites/fox_yellow.png", .page = 0, .x = 1388, .y = 1848, .width = 110, .height = 72, .footX = 55, .footY = 72 },
+    { .file = "sprites/hut.png", .page = 0, .x = 16, .y = 1848, .width = 200, .height = 180, .footX = 100, .footY = 180 },
+    { .file = "sprites/stele.png", .page = 1, .x = 252, .y = 768, .width = 100, .height = 220, .footX = 50, .footY = 220 },
+    { .file = "sprites/crystal_ice.png", .page = 0, .x = 232, .y = 1848, .width = 140, .height = 170, .footX = 70, .footY = 170 },
+    { .file = "sprites/cell_snow.png", .page = 1, .x = 1772, .y = 472, .width = 256, .height = 256, .footX = 0, .footY = 0 },
+    { .file = "sprites/orb_gold.png", .page = 0, .x = 1750, .y = 1848, .width = 32, .height = 32, .footX = 16, .footY = 16 },
+    { .file = "sprites/fox_yellow_2x.png", .page = 0, .x = 624, .y = 1848, .width = 220, .height = 144, .footX = 110, .footY = 144 },
+    { .file = "sprites/fox_spirit_2x.png", .page = 0, .x = 1088, .y = 1112, .width = 400, .height = 520, .footX = 200, .footY = 520 },
+    { .file = "sprites/treant_blighted_2x.png", .page = 0, .x = 16, .y = 1112, .width = 600, .height = 720, .footX = 300, .footY = 720 },
+    { .file = "sprites/wisp_red_2x.png", .page = 1, .x = 252, .y = 472, .width = 200, .height = 280, .footX = 99, .footY = 280 },
+    { .file = "sprites/crane_2x.png", .page = 1, .x = 1516, .y = 16, .width = 440, .height = 300, .footX = 220, .footY = 300 },
+    { .file = "sprites/tree_dead_2x.png", .page = 0, .x = 632, .y = 1112, .width = 440, .height = 560, .footX = 219, .footY = 560 },
+    { .file = "sprites/hut_2x.png", .page = 1, .x = 488, .y = 16, .width = 400, .height = 360, .footX = 200, .footY = 360 },
+    { .file = "sprites/stele_2x.png", .page = 1, .x = 16, .y = 16, .width = 200, .height = 440, .footX = 100, .footY = 440 },
+    { .file = "sprites/crystal_ice_2x.png", .page = 1, .x = 1220, .y = 16, .width = 280, .height = 340, .footX = 140, .footY = 340 },
+    { .file = "sprites/cell_snow_2x.png", .page = 0, .x = 1504, .y = 1112, .width = 512, .height = 512, .footX = 0, .footY = 0 },
+    { .file = "sprites/orb_gold_2x.png", .page = 0, .x = 1622, .y = 1848, .width = 64, .height = 64, .footX = 32, .footY = 32 },
 } };
 
 } // namespace core::atlas

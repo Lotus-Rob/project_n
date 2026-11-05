@@ -48,3 +48,69 @@ foot = [0, 0]
 
 [cell_city]
 foot = [0, 0]
+
+[treant_blighted]
+foot = [150, 360]
+
+[wisp_red]
+foot = [49, 140]
+
+[crane]
+foot = [110, 150]
+
+[tree_dead]
+foot = [110, 280]
+
+[fox_spirit]
+foot = [100, 260]
+
+[fox_yellow]
+foot = [55, 72]
+
+[hut]
+foot = [100, 180]
+
+[stele]
+foot = [50, 220]
+
+[crystal_ice]
+foot = [70, 170]
+
+[cell_snow]
+foot = [0, 0]
+
+[orb_gold]
+foot = [16, 16]
+
+[fox_yellow_2x]
+foot = [110, 144]
+
+[fox_spirit_2x]
+foot = [200, 520]
+
+[treant_blighted_2x]
+foot = [300, 720]
+
+[wisp_red_2x]
+foot = [99, 280]
+
+[crane_2x]
+foot = [220, 300]
+
+[tree_dead_2x]
+foot = [219, 560]
+
+[hut_2x]
+foot = [200, 360]
+
+[stele_2x]
+foot = [100, 440]
+
+[crystal_ice_2x]
+foot = [140, 340]
+
+[cell_snow_2x]
+foot = [0, 0]
+
+[orb_gold_2x]
+foot = [32, 32]
