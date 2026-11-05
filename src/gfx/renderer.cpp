@@ -9,6 +9,7 @@
 #include "gfx/internal/gpu.hpp"
 #include "gfx/internal/resources/sprite_array.hpp"
 #include "gfx/sprite_block.hpp"
+#include "gfx/uploads.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -43,14 +44,6 @@ struct Renderer::Impl {
     Impl& operator=(Impl&&) = delete;
     ~Impl() = default;
 
-    // Which snapshot's instances are in the storage buffer: wall ticks never repeat within an epoch.
-    struct SnapshotId {
-        u64 epoch = 0;
-        u64 wallTick = 0;
-
-        friend bool operator==(const SnapshotId&, const SnapshotId&) = default;
-    };
-
     // Once a swapchain texture is acquired, the frame is submitted even on an error: SDL requires it.
     std::expected<void, core::Error> Frame(const core::Snapshot& snapshot, f32 alpha, const Camera& camera);
     void Upload(SDL_GPUCommandBuffer* commands, const core::Snapshot& snapshot);
@@ -69,7 +62,7 @@ struct Renderer::Impl {
     internal::Gpu<SDL_Window> claim = nullptr;
     internal::SpriteArray sprites{};
     internal::SpriteRenderer instances{};
-    std::optional<SnapshotId> uploaded = std::nullopt;
+    UploadedSnapshot uploaded{};
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     core::RepeatedFailure failures{};
     core::RepeatedFailure overflows{};
@@ -80,7 +73,7 @@ struct Renderer::Impl {
 void Renderer::Impl::Upload(SDL_GPUCommandBuffer* commands, const core::Snapshot& snapshot) {
     PN_PROFILE_ZONE();
     const SnapshotId shown{ .epoch = snapshot.epoch, .wallTick = snapshot.wallTick };
-    if (uploaded == shown) {
+    if (uploaded.Holds(shown)) {
         return;
     }
     SDL_PushGPUDebugGroup(commands, "upload");
@@ -97,7 +90,7 @@ void Renderer::Impl::Upload(SDL_GPUCommandBuffer* commands, const core::Snapshot
     if (const u64 failed = uploadFailures.Succeed(); failed > 0) {
         PN_LOG_INFO("sprite instances uploaded again, after {} failed uploads", failed);
     }
-    uploaded = shown;
+    uploaded.Recorded(shown);
     if (*dropped > 0) {
         if (overflows.Fail()) {
             PN_LOG_WARNING("{} sprite instances past the buffer's {} aren't drawn", *dropped, internal::MAX_INSTANCES);
@@ -141,7 +134,9 @@ std::expected<void, core::Error> Renderer::Impl::Frame(const core::Snapshot& sna
     if (frame->swapchain != nullptr) {
         DrawWorld(frame->commands, frame->swapchain, frame->width, frame->height, snapshot, alpha, camera);
     }
-    return internal::SubmitFrame(*frame);
+    std::expected<void, core::Error> submitted = internal::SubmitFrame(*frame);
+    uploaded.Submitted(submitted.has_value());
+    return submitted;
 }
 
 std::expected<Renderer, core::Error> Renderer::Create(platform::Window& window, const std::filesystem::path& assets) {
@@ -262,7 +257,9 @@ std::expected<Image, core::Error> Renderer::Capture(
     destination.transfer_buffer = transfer.get();
     SDL_DownloadFromGPUTexture(copy, &region, &destination);
     SDL_EndGPUCopyPass(copy);
-    if (!SDL_SubmitGPUCommandBuffer(commands)) {
+    const bool submitted = SDL_SubmitGPUCommandBuffer(commands);
+    m_impl->uploaded.Submitted(submitted);
+    if (!submitted) {
         return std::unexpected{ core::Error{ std::format("the capture wasn't submitted: {}", SDL_GetError()) } };
     }
     if (!SDL_WaitForGPUIdle(device)) {
