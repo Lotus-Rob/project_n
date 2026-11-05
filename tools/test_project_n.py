@@ -1013,6 +1013,13 @@ class ShaderTest(unittest.TestCase):
             self.assertEqual(project_n.unequal_shader_pins(), ["spirv-cross"])
             self.assertTrue(project_n.stale_shaders())
 
+    def test_a_shader_name_that_isnt_an_identifier_fails_before_any_output_is_removed(self):
+        with temp_repo({"shaders/bad-name.vert.hlsl": "x", "shaders/bin/a.vert.spv": "y"}) as root:
+            with mock.patch.multiple(project_n, HOST="linux", unequal_shader_pins=list), \
+                    self.assertRaisesRegex(project_n.Fail, "bad-name.vert.hlsl: name shaders"):
+                project_n.cmd_shaders(mock.Mock())
+            self.assertTrue((root / "shaders" / "bin" / "a.vert.spv").is_file())
+
     def test_text_outputs_get_lf_endings(self):
         with tempfile.TemporaryDirectory() as d:
             msl = Path(d, "a.vert.msl")
