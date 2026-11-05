@@ -58,6 +58,10 @@ constexpr f32 SPIRAL_TWIST = 0.004F; // radians per bullet along an arm: an arm 
 constexpr f32 SPIRAL_SPEED = 0.01F;
 constexpr f32 BULLET_SCALE = 0.5F;
 
+constexpr u32 PUBLISH_CHUNK = 4'096; // entities packed per job chunk
+// shortcut: the camera shows the whole ground, and lives on the main thread; the view follows it from phase 5.
+constexpr core::Rect GROUND_VIEW{ .min = {}, .max = CROWD_AREA };
+
 } // namespace
 
 core::Vec2 OrbitPoint(const Orbit& orbit, u64 tick) {
@@ -152,30 +156,40 @@ void Arena::Tick(u64 simulationTick) {
     }
 }
 
-void Arena::Publish(core::Snapshot& snapshot) {
+void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
     PN_PROFILE_ZONE();
-    m_drawList.Begin(
-        0.0F
-    ); // shortcut: the camera shows the whole ground, so nothing is culled yet; the job-system chunk culls.
-    m_drawList.Add(core::Layer::Ground, core::Pipeline::Normal, core::MakeInstance({ .sprite = SpriteId::Ground }));
-    for (auto [entity, body, look] : m_domain.Entities().view<const Body, const Look>().each()) {
-        if (look.shadow) {
+    const auto& bodies = m_domain.Entities().storage<Body>();
+    const auto& looks = m_domain.Entities().storage<Look>();
+    const u32 chunks = core::ChunkCount(looks.size(), PUBLISH_CHUNK);
+    m_drawList.Begin(GROUND_VIEW, std::max(chunks, 1U));
+    m_drawList.Add(0, core::Layer::Ground, core::Pipeline::Normal, core::MakeInstance({ .sprite = SpriteId::Ground }));
+    jobs.ParallelFor(chunks, [&](u32 chunk) {
+        const std::size_t begin = std::size_t{ chunk } * PUBLISH_CHUNK;
+        const std::size_t end = std::min(looks.size(), begin + PUBLISH_CHUNK);
+        for (std::size_t i = begin; i < end; ++i) {
+            const core::Entity entity = looks[i];
+            const Body& body = bodies.get(entity);
+            const Look& look = looks.get(entity);
+            if (look.shadow) {
+                m_drawList.Add(
+                    chunk,
+                    core::Layer::Decals,
+                    core::Pipeline::Normal,
+                    core::MakeInstance({ .sprite = SpriteId::Shadow, .previous = body.previous, .current = body.current })
+                );
+            }
             m_drawList.Add(
-                core::Layer::Decals,
-                core::Pipeline::Normal,
-                core::MakeInstance({ .sprite = SpriteId::Shadow, .previous = body.previous, .current = body.current })
+                chunk,
+                look.layer,
+                look.pipeline,
+                core::MakeInstance(
+                    { .sprite = look.sprite, .previous = body.previous, .current = body.current, .scale = look.scale }
+                ),
+                body.current.y
             );
         }
-        m_drawList.Add(
-            look.layer,
-            look.pipeline,
-            core::MakeInstance(
-                { .sprite = look.sprite, .previous = body.previous, .current = body.current, .scale = look.scale }
-            ),
-            body.current.y
-        );
-    }
-    m_drawList.Publish(snapshot);
+    });
+    m_drawList.Publish(snapshot, jobs);
 }
 
 } // namespace game

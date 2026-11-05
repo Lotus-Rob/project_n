@@ -112,6 +112,8 @@ TEST_CASE("batches cover the sorted entries, one per run of a pipeline") {
     CHECK(batches.empty());
 }
 
+constexpr core::Rect VIEW{ .max = { .x = 1920.0F, .y = 1080.0F } };
+
 struct Added {
     Layer layer = Layer::World;
     Pipeline pipeline = Pipeline::Normal;
@@ -135,13 +137,14 @@ constexpr std::array<f32, 9> PUBLISHED{ { 1.0F, 2.0F, 2.5F, 3.0F, 4.0F, 5.0F, 6.
 constexpr u32 NORMAL_RUN = 6; // ground, decals and the normal world sprites; then the additive ones
 
 TEST_CASE("a draw list publishes by layer, the world by foot y, the rest in the order added") {
+    core::Jobs jobs{ 1 };
     core::DrawList list;
-    list.Begin(0.0F);
+    list.Begin(VIEW);
     for (const Added& added : ADDED) {
-        list.Add(added.layer, added.pipeline, Marked(added.mark), added.footY);
+        list.Add(0, added.layer, added.pipeline, Marked(added.mark), added.footY);
     }
     core::Snapshot snapshot;
-    list.Publish(snapshot);
+    list.Publish(snapshot, jobs);
     CHECK(std::ranges::equal(Marks(snapshot), PUBLISHED));
     REQUIRE(snapshot.batches.size() == 2);
     CHECK(snapshot.batches[0].first == 0);
@@ -151,21 +154,68 @@ TEST_CASE("a draw list publishes by layer, the world by foot y, the rest in the 
     CHECK(snapshot.batches[1].count == ADDED.size() - NORMAL_RUN);
 }
 
-TEST_CASE("a draw list starts empty at each Begin and appends after what the snapshot holds") {
+TEST_CASE("a draw list starts empty at each Begin") {
+    core::Jobs jobs{ 1 };
     core::DrawList list;
-    list.Begin(0.0F);
+    list.Begin(VIEW);
     constexpr f32 DROPPED = 2.0F;
-    list.Add(Layer::World, Pipeline::Normal, Marked(DROPPED));
-    list.Begin(0.0F);
-    list.Add(Layer::World, Pipeline::Additive, Marked(1.0F));
+    list.Add(0, Layer::World, Pipeline::Normal, Marked(DROPPED));
+    list.Begin(VIEW);
+    list.Add(0, Layer::World, Pipeline::Normal, Marked(1.0F));
+    core::Snapshot snapshot;
+    list.Publish(snapshot, jobs);
+    CHECK(Marks(snapshot) == std::vector{ 1.0F });
+}
+
+TEST_CASE("a draw list appends its instances and batches after what the snapshot holds") {
+    core::Jobs jobs{ 1 };
+    core::DrawList list;
+    list.Begin(VIEW);
+    list.Add(0, Layer::World, Pipeline::Additive, Marked(1.0F));
     core::Snapshot snapshot;
     snapshot.instances.push_back(Marked(0.0F));
     snapshot.batches.push_back({ .first = 0, .count = 1, .pipeline = Pipeline::Normal });
-    list.Publish(snapshot);
+    list.Publish(snapshot, jobs);
     CHECK(Marks(snapshot) == std::vector{ 0.0F, 1.0F });
     REQUIRE(snapshot.batches.size() == 2);
     CHECK(snapshot.batches[1].first == 1);
     CHECK(snapshot.batches[1].count == 1);
+}
+
+TEST_CASE("a draw list drops what lies past the cull margin, on every side") {
+    constexpr f32 PAST = core::DrawList::CULL_MARGIN + 1.0F;
+    constexpr f32 WITHIN = core::DrawList::CULL_MARGIN - 1.0F;
+    constexpr f32 KEPT_LEFT = -WITHIN;
+    constexpr f32 KEPT_RIGHT = VIEW.max.x + WITHIN;
+    core::Jobs jobs{ 1 };
+    core::DrawList list;
+    list.Begin(VIEW);
+    list.Add(0, Layer::Ground, Pipeline::Normal, Marked(KEPT_LEFT));
+    list.Add(0, Layer::Ground, Pipeline::Normal, Marked(KEPT_RIGHT));
+    list.Add(0, Layer::Ground, Pipeline::Normal, Marked(-PAST));
+    list.Add(0, Layer::Ground, Pipeline::Normal, Marked(VIEW.max.x + PAST));
+    list.Add(0, Layer::Ground, Pipeline::Normal, { .current = { .x = 1.0F, .y = -PAST } });
+    list.Add(0, Layer::Ground, Pipeline::Normal, { .current = { .x = 1.0F, .y = VIEW.max.y + PAST } });
+    core::Snapshot snapshot;
+    list.Publish(snapshot, jobs);
+    CHECK(Marks(snapshot) == std::vector{ KEPT_LEFT, KEPT_RIGHT });
+}
+
+TEST_CASE("a draw list's submission order is its parts in order, each as it was added") {
+    constexpr u32 PARTS = 3;
+    constexpr f32 SECOND = 2.0F;
+    constexpr f32 THIRD = 3.0F;
+    constexpr f32 FOURTH = 4.0F;
+    core::Jobs jobs{ 1 };
+    core::DrawList list;
+    list.Begin(VIEW, PARTS);
+    list.Add(2, Layer::Ground, Pipeline::Normal, Marked(FOURTH));
+    list.Add(0, Layer::Ground, Pipeline::Normal, Marked(1.0F));
+    list.Add(1, Layer::Ground, Pipeline::Normal, Marked(THIRD));
+    list.Add(0, Layer::Ground, Pipeline::Normal, Marked(SECOND));
+    core::Snapshot snapshot;
+    list.Publish(snapshot, jobs);
+    CHECK(Marks(snapshot) == std::vector{ 1.0F, SECOND, THIRD, FOURTH });
 }
 
 } // namespace

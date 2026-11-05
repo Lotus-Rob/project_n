@@ -9,7 +9,7 @@ namespace core {
 
 Simulation::~Simulation() = default;
 
-void Logic::RunBurst(const TickBurst& burst, GameHandover& handover, Simulation& simulation, u64 (*now)()) {
+void Logic::RunBurst(const TickBurst& burst, GameHandover& handover, Simulation& simulation, Jobs& jobs, u64 (*now)()) {
     PN_PROFILE_ZONE();
     for (u64 tick = 0; tick < burst.ticks; ++tick) {
         handover.TakeInput(m_input);
@@ -30,7 +30,7 @@ void Logic::RunBurst(const TickBurst& burst, GameHandover& handover, Simulation&
     snapshot.advanced = !m_paused;
     snapshot.instances.clear();
     snapshot.batches.clear();
-    simulation.Publish(snapshot);
+    simulation.Publish(snapshot, jobs);
     snapshot.publishedNs = now();
     handover.Publish(m_events);
 }

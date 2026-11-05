@@ -21,6 +21,8 @@ void Tick(const std::stop_token& stop, core::GameHandover& handover, u64 startNs
     core::math::SetFloatingPointEnvironment();
     PN_LOG_INFO("logic thread ticking {} times a second", core::TICKS_PER_SECOND);
     core::TickClock clock{ startNs };
+    core::Jobs jobs;
+    PN_LOG_INFO("job system running {} workers", jobs.Workers());
     core::Logic logic;
     game::Arena arena{ scene };
     bool overloaded = false;
@@ -41,7 +43,7 @@ void Tick(const std::stop_token& stop, core::GameHandover& handover, u64 startNs
                 PN_LOG_INFO("ticks are on time again");
             }
         }
-        logic.RunBurst(burst, handover, arena, platform::NowNs);
+        logic.RunBurst(burst, handover, arena, jobs, platform::NowNs);
     }
     const core::TickCounters& counters = logic.Counters();
     PN_LOG_INFO("logic thread stopped after {} ticks, {} simulated", counters.wall, counters.simulation);

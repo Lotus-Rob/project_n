@@ -7,6 +7,7 @@
 /// waits for the clock and logs. The game module's simulation runs here through core::Simulation.
 
 #include "core/frame.hpp"
+#include "core/jobs.hpp"
 #include "core/tick_clock.hpp"
 #include "core/types.hpp"
 
@@ -30,8 +31,9 @@ public:
     virtual void Tick(u64 simulationTick) = 0;
 
     /// Writes what the state looks like now into `snapshot`'s drawing data: its instances and batches
-    /// arrive empty, with their capacity kept. Called once per burst, after its last tick.
-    virtual void Publish(Snapshot& snapshot) = 0;
+    /// arrive empty, with their capacity kept. Called once per burst, after its last tick, on the
+    /// thread that created `jobs`, whose workers it may fork.
+    virtual void Publish(Snapshot& snapshot, Jobs& jobs) = 0;
 };
 
 /// The game state the logic thread owns, and the scratch it reuses between bursts.
@@ -40,8 +42,8 @@ public:
     /// Runs `burst.ticks` ticks back to back. Each takes the input sent since the one before (the
     /// last Pause or Resume wins) and counts itself, frozen while paused, and ticks `simulation`
     /// unless frozen. Then publishes the snapshot of the burst's last tick, filled by
-    /// `simulation` and stamped with `now()` at publishing.
-    void RunBurst(const TickBurst& burst, GameHandover& handover, Simulation& simulation, u64 (*now)());
+    /// `simulation` on `jobs` and stamped with `now()` at publishing.
+    void RunBurst(const TickBurst& burst, GameHandover& handover, Simulation& simulation, Jobs& jobs, u64 (*now)());
 
     /// The tick counters so far.
     [[nodiscard]] const TickCounters& Counters() const {

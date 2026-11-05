@@ -12,19 +12,23 @@ u64 PublishedClock() {
     return PUBLISHED_NS;
 }
 
-// Records the ticks it ran, and publishes one instance per tick so far.
+// Records the ticks it ran and its publishes, and publishes one instance per tick so far.
 class Recorder final : public core::Simulation {
 public:
     void Tick(u64 simulationTick) override {
         ticks.push_back(simulationTick);
     }
-    void Publish(core::Snapshot& snapshot) override {
+    void Publish(core::Snapshot& snapshot, core::Jobs& /*jobs*/) override {
+        ++publishes;
+        ticksAtPublish = ticks.size();
         capacityAtPublish = snapshot.instances.capacity();
         sizeAtPublish = snapshot.instances.size();
         snapshot.instances.resize(ticks.size());
     }
 
     std::vector<u64> ticks{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::size_t publishes = 0;
+    std::size_t ticksAtPublish = 0;
     std::size_t capacityAtPublish = 0;
     std::size_t sizeAtPublish = 0;
 };
@@ -32,7 +36,8 @@ public:
 // The snapshot RunBurst published for a burst of `ticks`.
 core::Snapshot Burst(core::Logic& logic, core::GameHandover& handover, u64 ticks) {
     Recorder simulation;
-    logic.RunBurst({ .ticks = ticks, .scheduledNs = SCHEDULED_NS }, handover, simulation, PublishedClock);
+    core::Jobs jobs{ 1 };
+    logic.RunBurst({ .ticks = ticks, .scheduledNs = SCHEDULED_NS }, handover, simulation, jobs, PublishedClock);
     core::Snapshot* published = handover.TakeState();
     REQUIRE(published != nullptr);
     const core::Snapshot snapshot = *published;
@@ -87,25 +92,46 @@ TEST_CASE("pausing lasts across bursts until resumed") {
     CHECK(Burst(logic, handover, 1).advanced);
 }
 
-TEST_CASE("the simulation ticks on advancing ticks only, then publishes") {
+TEST_CASE("the simulation ticks once per advancing tick, in order") {
     constexpr u64 TICKS = 3;
     core::Logic logic;
     core::GameHandover handover;
     Recorder simulation;
-    logic.RunBurst({ .ticks = TICKS, .scheduledNs = SCHEDULED_NS }, handover, simulation, PublishedClock);
+    core::Jobs jobs{ 1 };
+    logic.RunBurst({ .ticks = TICKS, .scheduledNs = SCHEDULED_NS }, handover, simulation, jobs, PublishedClock);
     CHECK(simulation.ticks == std::vector<u64>{ 1, 2, 3 });
+}
+
+TEST_CASE("paused ticks don't tick the simulation") {
+    constexpr u64 TICKS = 3;
+    core::Logic logic;
+    core::GameHandover handover;
+    Recorder simulation;
+    core::Jobs jobs{ 1 };
     handover.SendInput({ .kind = core::ActionKind::Pause });
-    logic.RunBurst({ .ticks = TICKS, .scheduledNs = SCHEDULED_NS }, handover, simulation, PublishedClock);
-    CHECK(simulation.ticks.size() == TICKS);
+    logic.RunBurst({ .ticks = TICKS, .scheduledNs = SCHEDULED_NS }, handover, simulation, jobs, PublishedClock);
+    CHECK(simulation.ticks.empty());
+}
+
+TEST_CASE("a burst publishes once, after its ticks") {
+    constexpr u64 TICKS = 3;
+    core::Logic logic;
+    core::GameHandover handover;
+    Recorder simulation;
+    core::Jobs jobs{ 1 };
+    logic.RunBurst({ .ticks = TICKS, .scheduledNs = SCHEDULED_NS }, handover, simulation, jobs, PublishedClock);
+    CHECK(simulation.publishes == 1);
+    CHECK(simulation.ticksAtPublish == TICKS);
 }
 
 TEST_CASE("each publish starts from empty instances that keep their capacity") {
     core::Logic logic;
     core::GameHandover handover;
     Recorder simulation;
+    core::Jobs jobs{ 1 };
     // By the time there have been more bursts than buffers, every write reuses a buffer filled before.
     for (u64 burst = 0; burst < 2 * core::GameHandover::BUFFERS; ++burst) {
-        logic.RunBurst({ .ticks = 1, .scheduledNs = SCHEDULED_NS }, handover, simulation, PublishedClock);
+        logic.RunBurst({ .ticks = 1, .scheduledNs = SCHEDULED_NS }, handover, simulation, jobs, PublishedClock);
         CHECK(simulation.sizeAtPublish == 0);
         if (burst >= core::GameHandover::BUFFERS) {
             CHECK(simulation.capacityAtPublish >= burst + 1 - core::GameHandover::BUFFERS);

@@ -4,6 +4,7 @@
 // over its budgets. Run it optimised: `pixi run project_n test --mode release --target headless_bench`.
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
+#include "core/jobs.hpp"
 #include "core/log.hpp"
 #include "core/math.hpp"
 #include "game/arena.hpp"
@@ -25,10 +26,10 @@ void Report(std::string_view what, std::vector<f64>& times, std::size_t instance
     );
 }
 
-} // namespace
-
-int main(int /*argc*/, char** /*argv*/) {
-    core::math::SetFloatingPointEnvironment();
+// Ticks and publishes the stress arena on a job system of `workers`, as core::Logic does: the
+// buffers are cleared, keeping their capacity.
+void Measure(u32 workers) {
+    core::Jobs jobs{ workers };
     game::Arena arena{ game::Scene::Stress };
     core::GameHandover handover;
     std::vector<core::Event> events;
@@ -42,18 +43,26 @@ int main(int /*argc*/, char** /*argv*/) {
         arena.Tick(tick);
         tickMs.push_back(MsSince(start));
 
-        // As core::Logic publishes: the buffers are cleared, keeping their capacity.
         core::Snapshot& snapshot = handover.Writing();
         snapshot.simulationTick = tick;
         snapshot.instances.clear();
         snapshot.batches.clear();
         const auto publishStart = std::chrono::steady_clock::now();
-        arena.Publish(snapshot);
+        arena.Publish(snapshot, jobs);
         publishMs.push_back(MsSince(publishStart));
         instances = snapshot.instances.size();
         handover.Publish(events);
     }
+    PN_LOG_INFO("with {} workers:", workers);
     Report("ticks", tickMs, instances);
     Report("publishes", publishMs, instances);
+}
+
+} // namespace
+
+int main(int /*argc*/, char** /*argv*/) {
+    core::math::SetFloatingPointEnvironment();
+    Measure(1);
+    Measure(core::Jobs::DefaultWorkers());
     return 0;
 }

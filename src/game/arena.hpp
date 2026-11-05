@@ -72,8 +72,9 @@ public:
     void Tick(u64 simulationTick) override;
 
     /// Publishes the ground, then a shadow under each entity that casts one, then the world's
-    /// entities in foot-y order, then the effects.
-    void Publish(core::Snapshot& snapshot) override;
+    /// entities in foot-y order, then the effects, packed in fixed chunks on `jobs`: the bytes are
+    /// the same whatever its worker count.
+    void Publish(core::Snapshot& snapshot, core::Jobs& jobs) override;
 
 private:
     core::Entity Spawn(core::Vec2 foot, const Look& look);

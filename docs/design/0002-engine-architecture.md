@@ -323,6 +323,8 @@ Every SDL_GPU behaviour cited here is from `SDL_gpu.h` of SDL 3.4.16, the versio
 | Overdraw | at most about 15× the screen at 1080p (about 31 million blended pixels a frame, a few milliseconds of fill on a GTX 960-class GPU); 100,000 sprites of 32×32 pixels would be about 50×, so crowds that large are mostly small sprites (8–16 px bullets) and the stress test says how many fit |
 | Frame rate | 60 at 1080p at high settings on the minimum spec; uncapped above that on anything faster |
 
+Measured in phase 3 with the stress arena (100,043 instances, `headless_bench`, release, linux-clang, on an i9-13900K, not the minimum spec): cull, sort and pack took 3.7 ms on one thread before chunking, 2.3 ms with the logic thread and one worker, and 1.4 ms with 30 workers. Parallelising the pack and the copy gave most of the gain; the sort stays serial, and is most of what's left. The worker count doesn't change the published bytes (a test compares them).
+
 ### 8.2 Layers inside `gfx`
 
 ```
