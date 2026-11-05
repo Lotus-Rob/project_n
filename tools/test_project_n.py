@@ -1084,6 +1084,11 @@ class AtlasTest(unittest.TestCase):
         with self.assertRaisesRegex(project_n.Fail, "foo_ and foo are both SpriteId::Foo"):
             project_n.read_sprites()
 
+    def test_an_empty_sprite_list_fails(self):
+        self.sprites("", images=())
+        with self.assertRaisesRegex(project_n.Fail, "lists no sprites"):
+            project_n.read_sprites()
+
     def test_the_header_is_stale_until_the_manifest_matches(self):
         with temp_repo({"art/sprites.toml": "[a]\n"}) as root:
             (root / "assets" / "sprites").mkdir(parents=True)
