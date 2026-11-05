@@ -66,11 +66,17 @@ Instance MakeInstance(const SpriteDraw& draw) {
     const Vec2 foot{ .x = static_cast<f32>(sprite.footX), .y = static_cast<f32>(sprite.footY) };
     const Vec2 toCentre = ((size * 0.5F) - foot) * draw.scale;
     constexpr auto PAGE = static_cast<f32>(atlas::PAGE_SIZE);
+    // Within half a turn of zero, and the previous within half a turn of it: the shader's lerp then takes the shorter
+    // arc, and the halves keep their precision.
+    constexpr f64 TURN = 2 * std::numbers::pi;
+    const f64 current = std::remainder(static_cast<f64>(draw.currentRotation), TURN);
+    const f64 previous =
+        current - std::remainder(static_cast<f64>(draw.currentRotation) - static_cast<f64>(draw.previousRotation), TURN);
     return {
         .previous = draw.previous + toCentre,
         .current = draw.current + toCentre,
         .size = PackPair(PackHalf(size.x * draw.scale), PackHalf(size.y * draw.scale)),
-        .rotation = PackPair(PackHalf(draw.previousRotation), PackHalf(draw.currentRotation)),
+        .rotation = PackPair(PackHalf(static_cast<f32>(previous)), PackHalf(static_cast<f32>(current))),
         .regionMin = PackPair(PackUnorm16(static_cast<f32>(sprite.x) / PAGE), PackUnorm16(static_cast<f32>(sprite.y) / PAGE)),
         .regionMax = PackPair(
             PackUnorm16(static_cast<f32>(sprite.x + sprite.width) / PAGE),
