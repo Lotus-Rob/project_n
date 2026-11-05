@@ -3,6 +3,7 @@
 #include "core/cxx23.hpp"           // IWYU pragma: keep
 #include "core/generated/atlas.hpp" // by `project_n atlas`
 #include "core/log.hpp"
+#include "gfx/internal/resources/png.hpp"
 #include "gfx/sprite_block.hpp"
 #include "platform/clock.hpp"
 
@@ -16,16 +17,12 @@ struct Decoded {
 };
 
 std::expected<Surface, core::Error> Decode(const std::filesystem::path& file, const core::atlas::Sprite& sprite) {
-    const std::u8string utf8 = file.u8string(); // SDL's paths are UTF-8
-    const Surface loaded{ SDL_LoadPNG(std::string{ utf8.begin(), utf8.end() }.c_str()) };
-    if (loaded == nullptr) {
-        return std::unexpected{ core::Error{ std::format("{} wasn't loaded: {}", sprite.file, SDL_GetError()) } };
-    }
     // Byte order R, G, B, A on every platform: SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB.
-    Surface rgba{ SDL_ConvertSurface(loaded.get(), SDL_PIXELFORMAT_RGBA32) };
-    if (rgba == nullptr) {
-        return std::unexpected{ core::Error{ std::format("{} wasn't converted to RGBA: {}", sprite.file, SDL_GetError()) } };
+    std::expected<Surface, core::Error> decoded = DecodePng(file);
+    if (!decoded) {
+        return std::unexpected{ std::move(decoded.error()) };
     }
+    Surface rgba = std::move(*decoded);
     if (std::cmp_not_equal(rgba->w, sprite.width) || std::cmp_not_equal(rgba->h, sprite.height)) {
         return std::unexpected{ core::Error{ std::format(
             "{} is {}x{}, but the atlas expects {}x{}: run `./dev atlas`",

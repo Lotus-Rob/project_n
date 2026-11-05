@@ -8,7 +8,7 @@ namespace gfx::internal {
 
 namespace {
 
-constexpr u32 INSTANCE_BYTES = MAX_INSTANCES * sizeof(core::Instance);
+constexpr u32 BUFFER_BYTES = MAX_INSTANCES * core::INSTANCE_BYTES;
 constexpr u32 VERTICES_PER_QUAD = 4; // a triangle strip
 
 // `Draw` in shaders/sprite.vert.hlsl: a float4, a float and a uint, padded to 16 bytes.
@@ -71,14 +71,14 @@ std::expected<SpriteRenderer, core::Error> SpriteRenderer::Create(SDL_GPUDevice*
     }
     SDL_GPUBufferCreateInfo bufferInfo{};
     bufferInfo.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
-    bufferInfo.size = INSTANCE_BYTES;
+    bufferInfo.size = BUFFER_BYTES;
     bufferInfo.props = SDL_CreateProperties();
     SDL_SetStringProperty(bufferInfo.props, SDL_PROP_GPU_BUFFER_CREATE_NAME_STRING, "sprite instances");
     renderer.m_instances = Gpu<SDL_GPUBuffer>{ SDL_CreateGPUBuffer(device, &bufferInfo), { device } };
     SDL_DestroyProperties(bufferInfo.props);
     SDL_GPUTransferBufferCreateInfo transferInfo{};
     transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-    transferInfo.size = INSTANCE_BYTES;
+    transferInfo.size = BUFFER_BYTES;
     renderer.m_transfer = Gpu<SDL_GPUTransferBuffer>{ SDL_CreateGPUTransferBuffer(device, &transferInfo), { device } };
     if (renderer.m_instances == nullptr || renderer.m_transfer == nullptr) {
         return std::unexpected{ core::Error{ std::format("the sprite instance buffers weren't created: {}", SDL_GetError()) } };
@@ -86,7 +86,10 @@ std::expected<SpriteRenderer, core::Error> SpriteRenderer::Create(SDL_GPUDevice*
     return renderer;
 }
 
-std::size_t SpriteRenderer::Upload(SDL_GPUCopyPass* copy, std::span<const core::Instance> instances) {
+std::expected<std::size_t, core::Error> SpriteRenderer::Upload(
+    SDL_GPUCopyPass* copy,
+    std::span<const core::Instance> instances
+) {
     PN_PROFILE_ZONE();
     const std::span<const core::Instance> fitting = instances.first(std::min<std::size_t>(instances.size(), MAX_INSTANCES));
     m_count = static_cast<u32>(fitting.size());
@@ -98,7 +101,7 @@ std::size_t SpriteRenderer::Upload(SDL_GPUCopyPass* copy, std::span<const core::
     void* mapped = SDL_MapGPUTransferBuffer(m_device, m_transfer.get(), true);
     if (mapped == nullptr) {
         m_count = 0;
-        return instances.size();
+        return std::unexpected{ core::Error{ std::format("the sprite instances weren't uploaded: {}", SDL_GetError()) } };
     }
     std::ranges::copy(bytes, BytesAt(mapped, bytes.size()).begin());
     SDL_UnmapGPUTransferBuffer(m_device, m_transfer.get());
