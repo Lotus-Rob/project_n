@@ -103,22 +103,25 @@ std::expected<u64, core::Error> QuitAfterNs(std::span<char*> args) {
         .transform_error([](const core::Error& error) { return core::Error{ "--quit-after: " + error.message }; });
 }
 
+// A start-up failure: reported (logged and shown), and the game's exit status.
+i32 FailToStart(std::string_view what, const core::Error& error) {
+    platform::ReportStartFailure(what, error);
+    return 1;
+}
+
 i32 Run(game::Scene scene, u64 quitAfterNs) {
     platform::RouteSdlLogs();
     std::expected<platform::Window, core::Error> window = platform::Window::Open("project_n", WINDOW_WIDTH, WINDOW_HEIGHT);
     if (!window) {
-        PN_LOG_ERROR("no window: {}", window.error().message);
-        return 1;
+        return FailToStart("the window couldn't be opened", window.error());
     }
     const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
     if (!assets) {
-        PN_LOG_ERROR("no assets: {}", assets.error().message);
-        return 1;
+        return FailToStart("the game's files weren't found", assets.error());
     }
     std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(*window, *assets);
     if (!renderer) {
-        PN_LOG_ERROR("no renderer: {}", renderer.error().message);
-        return 1;
+        return FailToStart("the graphics card couldn't be used", renderer.error());
     }
 
     core::GameHandover handover;
