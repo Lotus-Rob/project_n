@@ -8,6 +8,7 @@
 #include "core/frame.hpp"
 #include "core/types.hpp"
 #include "gfx/camera.hpp"
+#include "gfx/image.hpp"
 #include "platform/window.hpp"
 
 #include <expected>
@@ -39,6 +40,16 @@ public:
     /// own), and presents it. Uploads its instances only when it isn't the snapshot drawn last
     /// (§8.3). Waits while the GPU has its two frames in flight and, with vsync, for the display.
     void Draw(const core::Snapshot& snapshot, f64 alpha, const Camera& camera);
+
+    /// Draws as Draw() does, but into a picture `width` by `height` pixels instead of the window,
+    /// waits for the GPU and returns the picture, or says why it couldn't. Stalls: for tests.
+    [[nodiscard]] std::expected<Image, core::Error> Capture(
+        const core::Snapshot& snapshot,
+        f64 alpha,
+        const Camera& camera,
+        u32 width,
+        u32 height
+    );
 
 private:
     struct Impl;

@@ -30,7 +30,11 @@ public:
 
     /// Copies `instances` into the storage buffer in `copy`, cycling it, so frames in flight keep
     /// the previous contents. Returns how many didn't fit (past MAX_INSTANCES) and aren't drawn.
-    [[nodiscard]] std::size_t Upload(SDL_GPUCopyPass* copy, std::span<const core::Instance> instances);
+    /// Fails when the transfer buffer can't be mapped; then nothing is drawn until an upload succeeds.
+    [[nodiscard]] std::expected<std::size_t, core::Error> Upload(
+        SDL_GPUCopyPass* copy,
+        std::span<const core::Instance> instances
+    );
 
     /// Draws the uploaded instances in `pass`, a draw per batch of `batches` (the uploaded
     /// snapshot's), textured from `sprites`, placed by `transform` and interpolated by `alpha` (0:
