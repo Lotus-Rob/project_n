@@ -851,6 +851,8 @@ def read_sprites():
     if set(listed) != images:
         raise Fail(f"{SPRITE_LIST} and {SPRITES_DIR}/ must list the same sprites; only in the list: "
                    f"{sorted(set(listed) - images) or 'none'}, only images: {sorted(images - set(listed)) or 'none'}")
+    if not listed:
+        raise Fail(f"{SPRITE_LIST} lists no sprites")
     sprites = []
     members = {}
     for name, entry in listed.items():
