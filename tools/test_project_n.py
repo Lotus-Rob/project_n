@@ -517,6 +517,11 @@ class DependencyTest(unittest.TestCase):
         with temp_repo({"src/core/log.hpp": "#pragma once\n#include <quill/Logger.h>\n"}):
             self.assertEqual(project_n.leaked_dependencies(["src/core/log.hpp"]), [])
 
+    def test_a_hidden_facade_header_including_its_library_is_reported(self):
+        with temp_repo({"src/core/jobs.hpp": "#pragma once\n#include <enkiTS/TaskScheduler.h>\n"}):
+            self.assertEqual(project_n.leaked_dependencies(["src/core/jobs.hpp"]),
+                             ["src/core/jobs.hpp:2: #include <enkiTS/TaskScheduler.h>"])
+
     def test_a_facade_including_another_library_is_reported(self):
         with temp_repo({"src/core/log.hpp": "#pragma once\n#include <tracy/Tracy.hpp>\n"}):
             self.assertEqual(project_n.leaked_dependencies(["src/core/log.hpp"]), ["src/core/log.hpp:2: #include <tracy/Tracy.hpp>"])
