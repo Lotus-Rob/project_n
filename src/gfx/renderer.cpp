@@ -46,7 +46,9 @@ struct Renderer::Impl {
 
     // Once a swapchain texture is acquired, the frame is submitted even on an error: SDL requires it.
     std::expected<void, core::Error> Frame(const core::Snapshot& snapshot, f32 alpha, const Camera& camera);
-    void Upload(SDL_GPUCommandBuffer* commands, const core::Snapshot& snapshot);
+    // A recorded copy counts as uploaded only once its commands are submitted (`uploaded.Submitted`): a dropped buffer
+    // must upload again.
+    std::expected<void, core::Error> Upload(SDL_GPUCommandBuffer* commands, const core::Snapshot& snapshot);
     void DrawWorld(
         SDL_GPUCommandBuffer* commands,
         SDL_GPUTexture* texture,
@@ -70,11 +72,11 @@ struct Renderer::Impl {
     // NOLINTEND(readability-redundant-member-init)
 };
 
-void Renderer::Impl::Upload(SDL_GPUCommandBuffer* commands, const core::Snapshot& snapshot) {
+std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* commands, const core::Snapshot& snapshot) {
     PN_PROFILE_ZONE();
     const SnapshotId shown{ .epoch = snapshot.epoch, .wallTick = snapshot.wallTick };
     if (uploaded.Holds(shown)) {
-        return;
+        return {};
     }
     SDL_PushGPUDebugGroup(commands, "upload");
     SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
@@ -82,13 +84,7 @@ void Renderer::Impl::Upload(SDL_GPUCommandBuffer* commands, const core::Snapshot
     SDL_EndGPUCopyPass(copy);
     SDL_PopGPUDebugGroup(commands);
     if (!dropped) {
-        if (uploadFailures.Fail()) {
-            PN_LOG_ERROR("{}; no sprites are drawn until an upload succeeds", dropped.error().message);
-        }
-        return; // not marked uploaded: the next frame tries again
-    }
-    if (const u64 failed = uploadFailures.Succeed(); failed > 0) {
-        PN_LOG_INFO("sprite instances uploaded again, after {} failed uploads", failed);
+        return std::unexpected{ dropped.error() }; // not marked uploaded: the next frame tries again
     }
     uploaded.Recorded(shown);
     if (*dropped > 0) {
@@ -99,6 +95,7 @@ void Renderer::Impl::Upload(SDL_GPUCommandBuffer* commands, const core::Snapshot
     else if (const u64 overflowed = overflows.Succeed(); overflowed > 0) {
         PN_LOG_INFO("every sprite instance fits again, after {} snapshots that didn't", overflowed);
     }
+    return {};
 }
 
 void Renderer::Impl::DrawWorld(
@@ -129,7 +126,15 @@ std::expected<void, core::Error> Renderer::Impl::Frame(const core::Snapshot& sna
     if (!frame) {
         return std::unexpected{ frame.error() };
     }
-    Upload(frame->commands, snapshot);
+    // A failed upload draws no sprites, but the frame is still submitted, as SDL requires.
+    if (const std::expected<void, core::Error> copied = Upload(frame->commands, snapshot); !copied) {
+        if (uploadFailures.Fail()) {
+            PN_LOG_ERROR("{}; no sprites are drawn until an upload succeeds", copied.error().message);
+        }
+    }
+    else if (const u64 failed = uploadFailures.Succeed(); failed > 0) {
+        PN_LOG_INFO("sprite instances uploaded again, after {} failed uploads", failed);
+    }
     // Without a swapchain texture (the window can't be shown), the copy still runs and nothing is drawn (§8.3).
     if (frame->swapchain != nullptr) {
         DrawWorld(frame->commands, frame->swapchain, frame->width, frame->height, snapshot, alpha, camera);
@@ -245,39 +250,44 @@ std::expected<Image, core::Error> Renderer::Capture(
     if (commands == nullptr) {
         return std::unexpected{ core::Error{ std::format("nothing to capture into: {}", SDL_GetError()) } };
     }
-    m_impl->Upload(commands, snapshot);
-    m_impl->DrawWorld(commands, texture.get(), width, height, snapshot, static_cast<f32>(alpha), camera);
-    SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
-    SDL_GPUTextureRegion region{};
-    region.texture = texture.get();
-    region.w = width;
-    region.h = height;
-    region.d = 1;
-    SDL_GPUTextureTransferInfo destination{};
-    destination.transfer_buffer = transfer.get();
-    SDL_DownloadFromGPUTexture(copy, &region, &destination);
-    SDL_EndGPUCopyPass(copy);
-    const bool submitted = SDL_SubmitGPUCommandBuffer(commands);
-    m_impl->uploaded.Submitted(submitted);
-    if (!submitted) {
-        return std::unexpected{ core::Error{ std::format("the capture wasn't submitted: {}", SDL_GetError()) } };
-    }
-    if (!SDL_WaitForGPUIdle(device)) {
-        return std::unexpected{ core::Error{ std::format("the capture didn't finish: {}", SDL_GetError()) } };
-    }
-    void* mapped = SDL_MapGPUTransferBuffer(device, transfer.get(), false);
-    if (mapped == nullptr) {
-        return std::unexpected{ core::Error{ std::format("the capture wasn't read back: {}", SDL_GetError()) } };
-    }
-    const std::span<const std::byte> pixels = internal::BytesAt(mapped, bytes);
-    Image image{ .width = width, .height = height, .rgba = { pixels.begin(), pixels.end() } };
-    SDL_UnmapGPUTransferBuffer(device, transfer.get());
-    if (format == SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB) {
-        for (std::size_t blue = 0; blue + 2 < image.rgba.size(); blue += BYTES_PER_TEXEL) {
-            std::swap(image.rgba[blue], image.rgba[blue + 2]);
+    return AfterUpload(
+        m_impl->Upload(commands, snapshot),
+        [commands] { SDL_CancelGPUCommandBuffer(commands); }, // allowed: no swapchain texture is acquired
+        [&]() -> std::expected<Image, core::Error> {
+            m_impl->DrawWorld(commands, texture.get(), width, height, snapshot, static_cast<f32>(alpha), camera);
+            SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
+            SDL_GPUTextureRegion region{};
+            region.texture = texture.get();
+            region.w = width;
+            region.h = height;
+            region.d = 1;
+            SDL_GPUTextureTransferInfo destination{};
+            destination.transfer_buffer = transfer.get();
+            SDL_DownloadFromGPUTexture(copy, &region, &destination);
+            SDL_EndGPUCopyPass(copy);
+            const bool submitted = SDL_SubmitGPUCommandBuffer(commands);
+            m_impl->uploaded.Submitted(submitted);
+            if (!submitted) {
+                return std::unexpected{ core::Error{ std::format("the capture wasn't submitted: {}", SDL_GetError()) } };
+            }
+            if (!SDL_WaitForGPUIdle(device)) {
+                return std::unexpected{ core::Error{ std::format("the capture didn't finish: {}", SDL_GetError()) } };
+            }
+            void* mapped = SDL_MapGPUTransferBuffer(device, transfer.get(), false);
+            if (mapped == nullptr) {
+                return std::unexpected{ core::Error{ std::format("the capture wasn't read back: {}", SDL_GetError()) } };
+            }
+            const std::span<const std::byte> pixels = internal::BytesAt(mapped, bytes);
+            Image image{ .width = width, .height = height, .rgba = { pixels.begin(), pixels.end() } };
+            SDL_UnmapGPUTransferBuffer(device, transfer.get());
+            if (format == SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB) {
+                for (std::size_t blue = 0; blue + 2 < image.rgba.size(); blue += BYTES_PER_TEXEL) {
+                    std::swap(image.rgba[blue], image.rgba[blue + 2]);
+                }
+            }
+            return image;
         }
-    }
-    return image;
+    );
 }
 
 } // namespace gfx
