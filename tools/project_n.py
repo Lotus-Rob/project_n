@@ -758,16 +758,20 @@ def cmd_shaders(args):
         raise Fail("conda-forge has no DXC or SPIRV-Cross for macOS: run `shaders` on Linux or Windows (design doc 0002 §8.8)")
     if unequal_shader_pins():
         raise Fail(f"pin {', '.join(unequal_shader_pins())} to one version for linux-64 and win-64 in pixi.toml")
+    sources = sorted((ROOT / "shaders").glob("*.hlsl"))
+    for source in sources:  # all checked before any output is removed
+        stem, _, stage = source.stem.rpartition(".")
+        if stage not in SHADER_STAGES or not re.fullmatch(r"[a-z][a-z0-9_]*", stem):
+            raise Fail(f"{source.relative_to(ROOT).as_posix()}: name shaders <name>.<stage>.hlsl, the name in snake_case, "
+                       f"the stage one of {', '.join(SHADER_STAGES)}")
     out = ROOT / SHADER_BIN
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True)
     stages = []
     with tempfile.TemporaryDirectory() as tmp:
-        for source in sorted((ROOT / "shaders").glob("*.hlsl")):
+        for source in sources:
             rel = source.relative_to(ROOT).as_posix()
             stem, _, stage = source.stem.rpartition(".")
-            if stage not in SHADER_STAGES:
-                raise Fail(f"{rel}: name shaders <name>.<stage>.hlsl, the stage one of {', '.join(SHADER_STAGES)}")
             entry, profile, space = SHADER_STAGES[stage]
             base = f"{SHADER_BIN}/{stem}.{stage}"
             dxc = ["dxc", "-T", profile, "-E", entry, rel]
