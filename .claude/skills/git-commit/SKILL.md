@@ -71,3 +71,5 @@ Read its message (it names the rule), fix the header, and commit again. Don't us
 When the pre-commit hook rejects formatting, run `pixi run project_n fmt`, stage the files it changed, and commit again.
 
 ## Gotchas
+- A commit chained after `lint` with `;` happens even when lint fails: chain with `&&`.
+- A heredoc message (`git commit -F - <<'EOF'`) followed by `&& \` lost its header line, and the hook rejected the commit: write the message to a file in the scratchpad and `git commit -F <file>`.

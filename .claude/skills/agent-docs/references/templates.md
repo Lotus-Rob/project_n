@@ -19,10 +19,6 @@ What lives here, in one or two sentences.
 
 ## Gotchas
 - <symptom>: <fix>
-
-## Skill candidates
-| Workflow | Evidence | Proposed skill |
-|---|---|---|
 ```
 
 Its sibling `CLAUDE.md` contains exactly one line: `@AGENTS.md`.

@@ -47,6 +47,7 @@ Work happens on a branch; it merges into main only through a pull request, after
 - fix-xmake-package: a package that needs host files or drops a feature; overrides in `xmake/repo/` and their upstream fixes
 - fix-bug: fixing any bug in `src/` test-first
 - review-branch: the pre-merge review and acting on its findings
+- bump-toolchain: changing a pinned tool, toolchain, base image or MSVC version (containers/AGENTS.md)
 
 ## Agents (.claude/agents): subagents with a fresh context
 - branch-reviewer: the pre-merge reviewer, a new one per round (review-branch skill)
@@ -58,9 +59,8 @@ Update AGENTS.md files and skills in the same commit as the change that affects 
 Propose a skill when a workflow repeats → agent-docs skill
 
 ## Skill candidates
-| Workflow | Evidence | Proposed skill |
-|---|---|---|
+| Workflow | Evidence | Proposed skill | Owner |
+|---|---|---|---|
 
 ## Gotchas
 - GCC release (LTO) links failing with undefined references into a module library: our libraries need `gcc-ar`, which indexes LTO bytecode. xmake.lua's `lto` rule sets it per target, never in the toolchain: XMake hands autotools packages no `ARFLAGS` for `gcc-ar`, so their static archives fail (`ar: invalid option -- '.'`).
-- A build that passes natively can still fail in the container: hidden host files (headers, `/usr/bin/ar`, pkg-config paths) fill gaps on a dev machine. Trust `check --container`.

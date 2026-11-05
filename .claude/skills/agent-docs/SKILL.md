@@ -52,7 +52,7 @@ An agent brief gives a subagent what it needs in a fresh context and nothing it 
 
 Propose when a multi-step workflow has been done by hand **twice**, or an area's Gotchas reach **5+ entries** about one workflow:
 
-1. Add a row to the owning AGENTS.md's **Skill candidates** table: workflow, evidence, proposed name.
+1. Add a row to root AGENTS.md's **Skill candidates** table (the only one): workflow, evidence, proposed name, and the AGENTS.md that would own it.
 2. Tell the user what it would cover and why now. Create it only after they agree; then remove the candidate row and add the skill to the Skills list.
 
 ## Gotchas

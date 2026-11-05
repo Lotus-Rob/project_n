@@ -130,7 +130,7 @@ project_n/
 ├── src/                      # structure decided by the architecture doc; pch.hpp
 │   └── AGENTS.md
 ├── shaders/                  # HLSL, <name>.<stage>.hlsl; bin/: the committed binaries `shaders` writes (0002 §8.8)
-├── tests/                    # xmake.lua, unit/<area>/, unit/pch.hpp, fuzz/<target>.cpp + fuzz/corpus/
+├── tests/                    # xmake.lua, unit/<area>/, unit/pch.hpp, fuzz/<target>.cpp + fuzz/corpus/, bench/, reference/ (pictures, 0002 §8.9)
 │   └── AGENTS.md
 └── docs/                     # design/: numbered design docs (rationale tier); Doxyfile (`docs`)
 ```
@@ -508,7 +508,7 @@ Log non-obvious fixes under Gotchas. Propose a skill when a workflow repeats →
 ## Gotchas
 ```
 
-Nested AGENTS.md files use the same skeleton (Scope, Rules, Commands, Skills, Gotchas, Skill candidates). They are written in phase 2 with the code they describe.
+Nested AGENTS.md files use the same skeleton without Skill candidates (Scope, Rules, Commands, Skills, Gotchas): root's table is the only one, so a proposal is found in one place. They are written in phase 2 with the code they describe.
 
 ### 10.4 Using skills well
 
