@@ -20,6 +20,21 @@ TEST_CASE("a minimised window pauses the game even with the focus") {
     CHECK_FALSE(platform::PausesGame({ .focused = true, .minimised = false }));
 }
 
+TEST_CASE("a start-up failure is shown with what failed and why") {
+    std::string shownTitle;
+    std::string shownMessage;
+    platform::ReportStartFailure(
+        "the window couldn't be opened",
+        core::Error{ "no display" },
+        [&shownTitle, &shownMessage](std::string_view title, std::string_view message) {
+            shownTitle = title;
+            shownMessage = message;
+        }
+    );
+    CHECK(shownTitle == "project_n can't start");
+    CHECK(shownMessage == "the window couldn't be opened:\nno display");
+}
+
 TEST_CASE("the window is minimised from a minimise until a restore") {
     REQUIRE(SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, "offscreen", SDL_HINT_OVERRIDE));
     std::expected<platform::Window, core::Error> window = platform::Window::Open("window_tests", SIZE, SIZE);

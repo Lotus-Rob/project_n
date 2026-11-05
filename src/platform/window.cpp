@@ -106,6 +106,23 @@ const WindowState& Window::Poll(u64 hiddenWaitNs) {
     return state;
 }
 
+void ShowError(std::string_view title, std::string_view message) {
+    const std::string titleText{ title };
+    const std::string messageText{ message };
+    if (!SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, titleText.c_str(), messageText.c_str(), nullptr)) {
+        PN_LOG_WARNING("the error couldn't be shown in a message box: {}", SDL_GetError());
+    }
+}
+
+void ReportStartFailure(
+    std::string_view what,
+    const core::Error& error,
+    const std::function<void(std::string_view, std::string_view)>& show
+) {
+    PN_LOG_CRITICAL("{}: {}", what, error.message);
+    show("project_n can't start", std::format("{}:\n{}", what, error.message));
+}
+
 void* Window::Handle() const {
     return m_impl->window;
 }

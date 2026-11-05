@@ -8,6 +8,7 @@
 #include "core/types.hpp"
 
 #include <expected>
+#include <functional>
 #include <memory>
 #include <string_view>
 
@@ -31,6 +32,20 @@ struct WindowState {
 [[nodiscard]] constexpr bool PausesGame(const WindowState& state) {
     return !state.focused || state.minimised;
 }
+
+/// Shows `message` in a message box titled `title` and returns once the player closes it: for a
+/// failure a player who started the game from the desktop would otherwise never see. Logs why if
+/// it can't be shown (with no display, say).
+void ShowError(std::string_view title, std::string_view message);
+
+/// Reports that the game can't start because `what` failed for `error`: logs it at Critical and
+/// shows it with `show` (a title, then the message), since a player who started the game from the
+/// desktop sees no console (design doc 0002 §12).
+void ReportStartFailure(
+    std::string_view what,
+    const core::Error& error,
+    const std::function<void(std::string_view, std::string_view)>& show = ShowError
+);
 
 /// The game's one window. Opening it starts SDL's video; closing it (destruction) stops SDL.
 class Window {
