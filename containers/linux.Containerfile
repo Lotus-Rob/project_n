@@ -30,4 +30,4 @@ WORKDIR /src
 COPY --chown=dev:dev pixi.toml pixi.lock /src/
 COPY --chown=dev:dev tools/env/activate.sh /src/tools/env/
 # Drop Pixi's download cache: the installed environment is all the image needs.
-RUN pixi install --locked && rm -rf /home/dev/.cache/rattler
+RUN pixi install --locked && pixi install --locked -e lavapipe && rm -rf /home/dev/.cache/rattler
