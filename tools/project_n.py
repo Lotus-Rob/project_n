@@ -752,7 +752,7 @@ ATLAS_HEADER = "src/core/generated/atlas.hpp"  # core's frame contract, which ga
 ATLAS_MANIFEST = "art/atlas.sha256"  # the inputs and the header with their hashes: `lint` finds a stale header
 ATLAS_PAGE = 2048  # every page of the array is this square
 ATLAS_MIPS = 5  # mip levels the game generates for the array
-ATLAS_GUTTER = 1 << (ATLAS_MIPS - 1)  # transparent pixels around each sprite: neighbours don't bleed in down to the last mip
+ATLAS_GUTTER = 1 << (ATLAS_MIPS - 1)  # empty pixels around each sprite, half of them filled with its edges at load: neighbours don't bleed in down to the last mip
 
 
 def png_size(path):

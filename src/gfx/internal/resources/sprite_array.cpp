@@ -76,7 +76,7 @@ Gpu<SDL_GPUSampler> CreateSampler(SDL_GPUDevice* device) {
     return sampler;
 }
 
-// The gutters around the sprites must be transparent: a fresh texture's contents are undefined.
+// What the sprites' blocks don't cover must be transparent: a fresh texture's contents are undefined.
 void ClearPages(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* texture) {
     for (u32 page = 0; page < core::atlas::PAGES; ++page) {
         SDL_GPUColorTargetInfo target{};
