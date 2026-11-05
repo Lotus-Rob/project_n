@@ -191,4 +191,20 @@ TEST_CASE("two arenas ticked alike publish the same bytes") {
     CHECK(std::ranges::equal(std::as_bytes(std::span{ mine }), std::as_bytes(std::span{ theirs })));
 }
 
+TEST_CASE("an orbit stays on its circle after many ticks") {
+    constexpr f64 RADIUS = 150.0;
+    constexpr f32 SPEED = -0.02F;
+    constexpr game::Orbit ORBIT{ .radius = static_cast<f32>(RADIUS), .speed = SPEED };
+    constexpr f64 VIEW_TILT = 0.6;                                     // arena.cpp's: the circle is drawn flattened in y
+    constexpr f64 TOLERANCE = 0.01;                                    // world units
+    constexpr std::array<u64, 2> TICKS{ { 16'777'217, 100'000'000 } }; // 2^24 + 1, and about 19 days at 60 Hz
+    for (const u64 tick : TICKS) {
+        CAPTURE(tick);
+        const f64 angle = static_cast<f64>(SPEED) * static_cast<f64>(tick); // exact in f64
+        const core::Vec2 point = game::OrbitPoint(ORBIT, tick);
+        CHECK(std::abs(static_cast<f64>(point.x) - (RADIUS * std::cos(angle))) < TOLERANCE);
+        CHECK(std::abs(static_cast<f64>(point.y) - (RADIUS * std::sin(angle) * VIEW_TILT)) < TOLERANCE);
+    }
+}
+
 } // namespace
