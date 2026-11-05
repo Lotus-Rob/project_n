@@ -14,6 +14,28 @@ Clip Apply(const gfx::ClipTransform& transform, core::Vec2 world) {
     return { .x = (world.x * transform.scaleX) + transform.offsetX, .y = (world.y * transform.scaleY) + transform.offsetY };
 }
 
+constexpr f32 LARGE_TURN = 1000.0F;
+
+TEST_CASE("turning the wheel forward zooms in") {
+    CHECK(gfx::ZoomedBy(1.0F, 1.0F) > 1.0F);
+}
+
+TEST_CASE("turning the wheel back by the same notches returns to the zoom before") {
+    CHECK(gfx::ZoomedBy(gfx::ZoomedBy(1.0F, 1.0F), -1.0F) == doctest::Approx(1.0F));
+}
+
+TEST_CASE("no turn keeps the zoom") {
+    CHECK(gfx::ZoomedBy(1.0F, 0.0F) == doctest::Approx(1.0F));
+}
+
+TEST_CASE("the zoom stops at MAX_ZOOM") {
+    CHECK(gfx::ZoomedBy(1.0F, LARGE_TURN) == doctest::Approx(gfx::MAX_ZOOM));
+}
+
+TEST_CASE("the zoom stops at MIN_ZOOM") {
+    CHECK(gfx::ZoomedBy(1.0F, -LARGE_TURN) == doctest::Approx(gfx::MIN_ZOOM));
+}
+
 TEST_CASE("at the reference size, the reference area fills the target") {
     const gfx::ClipTransform transform = gfx::WorldToClip({}, 1920, 1080);
     CHECK(Apply(transform, { .x = 0.0F, .y = 0.0F }).x == doctest::Approx(-1.0F));

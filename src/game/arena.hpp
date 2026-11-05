@@ -61,6 +61,7 @@ enum class Scene : u8 {
     Arena,   ///< The demonstration arena.
     Stress,  ///< The arena with a crowd of 90,000 and a spiral of 10,000 bullets, for profiling.
     Painted, ///< A still scene of painted sprites and overlapping glows, for judging art and blending (§8.4).
+    Cells,   ///< A still grid of 640 map cells, for judging the mips as the view zooms out (§16 phase 3).
 };
 
 /// The arena scene as a simulation: it moves its creatures each tick and publishes every sprite.
@@ -80,6 +81,7 @@ public:
 private:
     core::Entity Spawn(core::Vec2 foot, const Look& look);
     void SpawnPainted();
+    void SpawnCells();
 
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for
     // members whose default constructor is defaulted.
@@ -87,6 +89,7 @@ private:
     core::StableIdCounter m_ids{};
     core::DrawList m_drawList{};
     // NOLINTEND(readability-redundant-member-init)
+    core::Rect m_view{}; // what a publish culls to
 };
 
 } // namespace game

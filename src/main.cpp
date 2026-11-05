@@ -21,30 +21,33 @@ void Tick(const std::stop_token& stop, core::GameHandover& handover, u64 startNs
     core::math::SetFloatingPointEnvironment();
     PN_LOG_INFO("logic thread ticking {} times a second", core::TICKS_PER_SECOND);
     core::TickClock clock{ startNs };
-    core::Jobs jobs;
-    PN_LOG_INFO("job system running {} workers", jobs.Workers());
     core::Logic logic;
-    game::Arena arena{ scene };
-    bool overloaded = false;
-    while (!stop.stop_requested()) {
-        platform::WaitUntilNs(clock.NextNs());
-        PN_PROFILE_ZONE();
-        const u64 now = platform::NowNs();
-        const core::TickBurst burst = clock.Advance(now);
-        if (burst.droppedTicks > 0) {
-            PN_LOG_DEBUG("{} ticks dropped after a hitch: the game slowed down", burst.droppedTicks);
-        }
-        if (clock.Overloaded(now) != overloaded) {
-            overloaded = !overloaded;
-            if (overloaded) {
-                PN_LOG_WARNING("ticks have run late for over a second: the machine can't keep up");
+    {
+        core::Jobs jobs;
+        PN_LOG_INFO("job system running {} workers", jobs.Workers());
+        game::Arena arena{ scene };
+        bool overloaded = false;
+        while (!stop.stop_requested()) {
+            platform::WaitUntilNs(clock.NextNs());
+            PN_PROFILE_ZONE();
+            const u64 now = platform::NowNs();
+            const core::TickBurst burst = clock.Advance(now);
+            if (burst.droppedTicks > 0) {
+                PN_LOG_DEBUG("{} ticks dropped after a hitch: the game slowed down", burst.droppedTicks);
             }
-            else {
-                PN_LOG_INFO("ticks are on time again");
+            if (clock.Overloaded(now) != overloaded) {
+                overloaded = !overloaded;
+                if (overloaded) {
+                    PN_LOG_WARNING("ticks have run late for over a second: the machine can't keep up");
+                }
+                else {
+                    PN_LOG_INFO("ticks are on time again");
+                }
             }
+            logic.RunBurst(burst, handover, arena, jobs, platform::NowNs);
         }
-        logic.RunBurst(burst, handover, arena, jobs, platform::NowNs);
-    }
+    } // the workers join here: a hang at shutdown shows as no "stopped" line
+    PN_LOG_INFO("job system stopped");
     const core::TickCounters& counters = logic.Counters();
     PN_LOG_INFO("logic thread stopped after {} ticks, {} simulated", counters.wall, counters.simulation);
 }
@@ -79,6 +82,9 @@ SceneChoice ChooseScene(std::span<char*> args) {
     if (std::ranges::contains(args, std::string_view{ "--painted" })) {
         return { .scene = game::Scene::Painted, .name = "the painted test scene" };
     }
+    if (std::ranges::contains(args, std::string_view{ "--cells" })) {
+        return { .scene = game::Scene::Cells, .name = "the map cell grid" };
+    }
     if (std::ranges::contains(args, std::string_view{ "--stress" })) {
         return { .scene = game::Scene::Stress, .name = "the stress arena" };
     }
@@ -108,7 +114,8 @@ i32 Run(game::Scene scene) {
     std::atomic<bool> logicFailed = false;
     std::jthread logic{ RunLogic, std::ref(handover), platform::NowNs(), scene, std::ref(logicFailed) };
     bool focused = true;
-    const gfx::Camera camera{}; // shortcut: the arena's fixed view; the camera follows input and the snapshot from phase 5
+    gfx::Camera camera{}; // shortcut: a fixed view, but for the cell grid's zoom; the camera follows input and the snapshot
+                          // from phase 5
     std::vector<core::Event> incoming;
     std::vector<core::Event> pending; // taken, waiting for the render clock
     for (;;) {
@@ -120,6 +127,9 @@ i32 Run(game::Scene scene) {
         }
         if (logicFailed) {
             return 1;
+        }
+        if (scene == game::Scene::Cells) {
+            camera.zoom = gfx::ZoomedBy(camera.zoom, state.wheelNotches);
         }
         if (state.focused != focused) {
             focused = state.focused;
