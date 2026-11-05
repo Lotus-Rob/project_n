@@ -16,7 +16,7 @@ inline constexpr core::Vec2 REFERENCE_SIZE{ .x = 1920.0F, .y = 1080.0F };
 /// The middle of the reference area, where a scene laid out in it is centred.
 inline constexpr core::Vec2 REFERENCE_CENTRE{ .x = 960.0F, .y = 540.0F };
 
-/// The zoom range. shortcut: wider than §8.10's proposed 0.75 to 1.5 to show every mip level; narrow it with the map.
+/// The smallest zoom of the range §8.10 sets, wide enough to show every mip level.
 inline constexpr f32 MIN_ZOOM = 0.25F;
 /// The largest zoom.
 inline constexpr f32 MAX_ZOOM = 2.0F;
