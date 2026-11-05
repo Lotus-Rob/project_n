@@ -1,10 +1,10 @@
-# tests/: unit tests
+# tests/: unit, fuzz, benchmark and reference tests
 
 ## Scope
-doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every preset (Windows tests run under Wine in the container).
+doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every preset (Windows tests run under Wine in the container); fuzz targets, the headless benchmark and the reference pictures, built with them.
 
 ## Rules
-- A test is small, contained and explicit, and tests one behaviour. Never delete, skip or loosen one to go green (fix-bug skill).
+- A test is small, contained and explicit, and tests one behaviour.
 - Layout mirrors `src/`: `tests/unit/<area>/`, one test executable per area (`<area>_tests`) to keep link times down.
 - Exception: a test of process-wide state that can only be set once (logging start-up: Quill's loggers live for the whole process) gets its own executable, as in `tests/unit/log_startup/`.
 - Test code passes the same lint as `src/` (no test exemptions): put `TEST_CASE`s inside an anonymous namespace and name test values as `constexpr` constants.
@@ -20,10 +20,8 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
 ## Commands
 - `pixi run project_n test --mode release --target headless_bench`: tick and publish times of the stress arena
 - `pixi run project_n test --preset linux-clang --sanitizer address` (also `run --sanitizer ...` for the game)
-- `pixi run project_n check --sanitizers`: every preset under every supported sanitizer
 - `pixi run project_n reference` · `pixi run project_n reference --update`: take this run's pictures as the references
 - `pixi run project_n fuzz <name> [--time 60]`: new inputs and crash files land in `build/fuzz/<name>/`
-- `pixi run project_n coverage`: `build/coverage/index.html` and a summary
 - `pixi run project_n test --preset linux-clang` · one target with doctest arguments:
   `pixi run project_n test --preset linux-clang --target core_tests -- --test-case='*expected*'`
 
@@ -31,7 +29,4 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
 - `xmake test` runs a Windows `.exe` directly on Linux; it only worked on a dev machine whose kernel hands `.exe` files to Wine (binfmt_misc). The test targets call Wine themselves (`test_under_wine`).
 - MSVC sanitizer builds compile and link in the container, but only *run* on native Windows: MSVC's ASan can't hot-patch Wine's system DLLs.
 - Sanitizer builds link the C++ runtime dynamically (static libc++abi collides with TSan) and don't instrument dependencies.
-
-## Skill candidates
-| Workflow | Evidence | Proposed skill |
-|---|---|---|
+- MSVC C4866 (shown only by `check`'s windows-msvc build): a temporary `std::string` inside `CHECK`. Name the value first.

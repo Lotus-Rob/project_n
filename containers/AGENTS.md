@@ -23,7 +23,3 @@
 - msvc-wine's install includes an empty servicing stub of Microsoft's newest toolset (`VC/Tools/MSVC/14.51.*`), which XMake took for the toolset. `ensure_msvc` deletes toolset folders without `bin/`.
 - MSVC 14.50 ignores `/std:c++23` (warning D9002, compiles as C++14). xmake.lua uses `/std:c++23preview`; src/core/cxx23.hpp catches any fallback.
 - Podman on Windows: bind-mounting an NTFS checkout into WSL is slow; keep a clone inside WSL for container builds.
-
-## Skill candidates
-| Workflow | Evidence | Proposed skill |
-|---|---|---|
