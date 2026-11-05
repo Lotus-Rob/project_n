@@ -12,6 +12,7 @@
 namespace {
 
 constexpr u64 TICKS = 600;
+constexpr u32 MIN_SPEC_WORKERS = 2; // design doc 0002 §13, on whatever CPU this runs
 
 f64 MsSince(std::chrono::steady_clock::time_point start) {
     return std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - start).count();
@@ -63,6 +64,7 @@ void Measure(u32 workers) {
 int main(int /*argc*/, char** /*argv*/) {
     core::math::SetFloatingPointEnvironment();
     Measure(1);
+    Measure(MIN_SPEC_WORKERS);
     Measure(core::Jobs::DefaultWorkers());
     return 0;
 }
