@@ -364,7 +364,9 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/openssl-3.6.5-h781a0a9_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pcre2-10.47-h8b3dc9c_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pthread-stubs-0.4-h7cc23a3_1004.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/pugixml-1.15-h3f63f65_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/tbb-2023.1.0-haa8c3ee_2.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/tracy-profiler-capture-0.14.1-h3e73199_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/tracy-profiler-gui-0.14.1-h4eb8b74_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/wayland-1.26.0-hc1c935e_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/xkeyboard-config-2.48-hebe6cf0_1.conda
@@ -405,7 +407,9 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/libzlib-1.3.2-h8088a28_3.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/ncurses-6.6-he64c551_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/openssl-3.6.5-h55eecbc_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/pugixml-1.15-hd3d436d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tbb-2023.1.0-h81c76ee_2.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tracy-profiler-capture-0.14.1-h06b183b_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tracy-profiler-gui-0.14.1-hbeebd52_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
       win-64:
@@ -427,7 +431,9 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/libxml2-2.15.4-he095d88_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/libzlib-1.3.2-hfd05255_3.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/openssl-3.6.5-hf411b9b_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/win-64/pugixml-1.15-h372dad0_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/tbb-2023.1.0-h272cf33_2.conda
+      - conda: https://conda.anaconda.org/conda-forge/win-64/tracy-profiler-capture-0.14.1-h057d317_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/tracy-profiler-gui-0.14.1-h7462320_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/ucrt-10.0.26100.0-h57928b3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/vc-14.5-ha367084_42.conda
@@ -2123,6 +2129,20 @@ packages:
   run_exports: {}
   size: 9630
   timestamp: 1788381877753
+- conda: https://conda.anaconda.org/conda-forge/linux-64/pugixml-1.15-h3f63f65_0.conda
+  sha256: 23c98a5000356e173568dc5c5770b53393879f946f3ace716bbdefac2a8b23d2
+  md5: b11a4c6bf6f6f44e5e143f759ffa2087
+  depends:
+  - __glibc >=2.17,<3.0.a0
+  - libgcc >=13
+  - libstdcxx >=13
+  license: MIT
+  license_family: MIT
+  run_exports:
+    weak:
+    - pugixml >=1.15,<1.16.0a0
+  size: 118488
+  timestamp: 1736601364156
 - conda: https://conda.anaconda.org/conda-forge/linux-64/python-3.14.10-hcd007b5_100_cp314.conda
   build_number: 100
   sha256: bb457298c776d0edd30d727d96629e57df63e9a4ba2dd11553019267b61ef5f4
@@ -2269,6 +2289,29 @@ packages:
     - tk >=8.6.13,<8.7.0a0
   size: 3566806
   timestamp: 1787272857910
+- conda: https://conda.anaconda.org/conda-forge/linux-64/tracy-profiler-capture-0.14.1-h3e73199_0.conda
+  sha256: da61b0e13ce304ac51984b7584830ccae9e8d26e460270d077a8882d9c729805
+  md5: 021a72d0864c231feab0b53d59c84486
+  depends:
+  - libstdcxx >=15
+  - libgcc >=15
+  - __glibc >=2.17,<3.0.a0
+  - libcurl >=8.21.0,<9.0a0
+  - pugixml >=1.15,<1.16.0a0
+  - libegl >=1.7.0,<2.0a0
+  - libfreetype >=2.14.3
+  - libfreetype6 >=2.14.3
+  - dbus >=1.16.2,<2.0a0
+  - glfw >=3.5.1,<4.0a0
+  - tbb >=2023.0.0
+  - libcapstone >=6.0.0a.4,<6.0.1a
+  - xorg-libx11 >=1.8.13,<2.0a0
+  - libzlib >=1.3.2,<2.0a0
+  license: BSD-3-Clause
+  license_family: BSD
+  run_exports: {}
+  size: 809445
+  timestamp: 1787909925817
 - conda: https://conda.anaconda.org/conda-forge/linux-64/tracy-profiler-gui-0.14.1-h4eb8b74_0.conda
   sha256: 0dd31ed3d546c50db384b327a0ab9246cf33e7e0f88262b37ac9d95a5e8cd0ef
   md5: aa47e40fc786cb86b89b0beda620fff7
@@ -3733,6 +3776,19 @@ packages:
   run_exports: {}
   size: 273899
   timestamp: 1788677388168
+- conda: https://conda.anaconda.org/conda-forge/osx-arm64/pugixml-1.15-hd3d436d_0.conda
+  sha256: 5ad8d036040b095f85d23c70624d3e5e1e4c00bc5cea97831542f2dcae294ec9
+  md5: b9a4004e46de7aeb005304a13b35cb94
+  depends:
+  - __osx >=11.0
+  - libcxx >=18
+  license: MIT
+  license_family: MIT
+  run_exports:
+    weak:
+    - pugixml >=1.15,<1.16.0a0
+  size: 91283
+  timestamp: 1736601509593
 - conda: https://conda.anaconda.org/conda-forge/osx-arm64/python-3.14.10-h0ae1c2c_100_cp314.conda
   build_number: 100
   sha256: 484750a2bbf65e2446a90731c6ab65a68dfc6f0e5761321e85bf5e23bfad7401
@@ -3847,6 +3903,25 @@ packages:
     - tk >=8.6.13,<8.7.0a0
   size: 3342183
   timestamp: 1787272852357
+- conda: https://conda.anaconda.org/conda-forge/osx-arm64/tracy-profiler-capture-0.14.1-h06b183b_0.conda
+  sha256: 2f1c37d08f9042c79c09a4ec9e95504b84aa955a1eff4b6ab66a338b5984fb96
+  md5: 69575f1cb4d61785219ea49858039533
+  depends:
+  - __osx >=11.0
+  - libcxx >=21
+  - glfw >=3.5.1,<4.0a0
+  - libcapstone >=6.0.0a.4,<6.0.1a
+  - tbb >=2023.0.0
+  - libfreetype >=2.14.3
+  - libfreetype6 >=2.14.3
+  - pugixml >=1.15,<1.16.0a0
+  - libzlib >=1.3.2,<2.0a0
+  - libcurl >=8.21.0,<9.0a0
+  license: BSD-3-Clause
+  license_family: BSD
+  run_exports: {}
+  size: 567013
+  timestamp: 1787909948517
 - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tracy-profiler-gui-0.14.1-hbeebd52_0.conda
   sha256: bbe45cf0c2fbe6d32df04f5b9958fcec34e34b30196a171f64c5222716b64c7a
   md5: b46b50d3741e6c6e3dce0dc892fc4be3
@@ -4438,6 +4513,20 @@ packages:
     - openssl >=3.6.5,<4.0a0
   size: 9402647
   timestamp: 1791099870810
+- conda: https://conda.anaconda.org/conda-forge/win-64/pugixml-1.15-h372dad0_0.conda
+  sha256: 97b34ed73b6f559fcf5e706d4c8435923ba95cfed478d3fd50b475f94f60dc6e
+  md5: cadea4c6edb512e979edbf793bf979ac
+  depends:
+  - ucrt >=10.0.20348.0
+  - vc >=14.2,<15
+  - vc14_runtime >=14.29.30139
+  license: MIT
+  license_family: MIT
+  run_exports:
+    weak:
+    - pugixml >=1.15,<1.16.0a0
+  size: 113967
+  timestamp: 1736601565527
 - conda: https://conda.anaconda.org/conda-forge/win-64/python-3.14.10-h53f6dd8_100_cp314.conda
   build_number: 100
   sha256: c9f74f58f15bcd7571869903e43fa1e1bc3b60d9faf959f71979415f360a8281
@@ -4550,6 +4639,25 @@ packages:
     - tk >=8.6.13,<8.7.0a0
   size: 3782376
   timestamp: 1787272860855
+- conda: https://conda.anaconda.org/conda-forge/win-64/tracy-profiler-capture-0.14.1-h057d317_0.conda
+  sha256: 7b5f80e4d316546049be9bce1225365e351aa7e05bbdcab31d2b9092ca7ebd92
+  md5: 4534eda7ee85cc5ace6ef05582a701cd
+  depends:
+  - vc >=14.3,<15
+  - vc14_runtime >=14.44.35208
+  - ucrt >=10.0.20348.0
+  - libzlib >=1.3.2,<2.0a0
+  - pugixml >=1.15,<1.16.0a0
+  - libfreetype >=2.14.3
+  - libfreetype6 >=2.14.3
+  - glfw >=3.5.1,<4.0a0
+  - tbb >=2023.0.0
+  - libcurl >=8.21.0,<9.0a0
+  license: BSD-3-Clause
+  license_family: BSD
+  run_exports: {}
+  size: 2132742
+  timestamp: 1787909939528
 - conda: https://conda.anaconda.org/conda-forge/win-64/tracy-profiler-gui-0.14.1-h7462320_0.conda
   sha256: d9040a084a08ddd7f5231b9741e38aba446fd567fe7237d005e77c2549c35907
   md5: b6b8aec20aebf921525337dfb6f6576a
