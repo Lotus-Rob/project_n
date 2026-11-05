@@ -22,8 +22,8 @@ constexpr bool DEBUG_MODE = true; // SDL_GPU's validation, in debug builds only 
 #endif
 
 // Ink on dark paper, behind the scene where a window wider or taller than the reference shows past it.
-constexpr SDL_FColor BACKDROP{ .r = 0.08F, .g = 0.08F, .b = 0.09F, .a = 1.0F };
-constexpr SDL_FColor BACKDROP_LINEAR{ .r = 0.0072F, .g = 0.0072F, .b = 0.0085F, .a = 1.0F }; // the same colour, decoded
+// Linear values, which the sRGB swapchain encodes to about (0.08, 0.08, 0.09).
+constexpr SDL_FColor BACKDROP{ .r = 0.0072F, .g = 0.0072F, .b = 0.0085F, .a = 1.0F };
 
 std::string_view PresentModeName(SDL_GPUPresentMode mode) {
     if (mode == SDL_GPU_PRESENTMODE_MAILBOX) {
@@ -58,7 +58,6 @@ struct Renderer::Impl {
     internal::Gpu<SDL_Window> claim = nullptr;
     internal::SpriteArray sprites{};
     internal::SpriteRenderer instances{};
-    SDL_FColor backdrop = BACKDROP;
     std::optional<SnapshotId> uploaded = std::nullopt;
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     core::RepeatedFailure failures{};
@@ -93,7 +92,7 @@ std::expected<void, core::Error> Renderer::Impl::Frame(const core::Snapshot& sna
         SDL_PushGPUDebugGroup(frame->commands, "world");
         SDL_GPUColorTargetInfo target{};
         target.texture = frame->swapchain;
-        target.clear_color = backdrop;
+        target.clear_color = BACKDROP;
         target.load_op = SDL_GPU_LOADOP_CLEAR;
         target.store_op = SDL_GPU_STOREOP_STORE;
         SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(frame->commands, &target, 1, nullptr);
@@ -106,11 +105,7 @@ std::expected<void, core::Error> Renderer::Impl::Frame(const core::Snapshot& sna
     return internal::SubmitFrame(*frame);
 }
 
-std::expected<Renderer, core::Error> Renderer::Create(
-    platform::Window& window,
-    const std::filesystem::path& assets,
-    ColourSpace colourSpace
-) {
+std::expected<Renderer, core::Error> Renderer::Create(platform::Window& window, const std::filesystem::path& assets) {
     auto impl = std::make_unique<Impl>();
     impl->window = static_cast<SDL_Window*>(window.Handle());
     const SDL_PropertiesID properties = SDL_CreateProperties();
@@ -137,21 +132,17 @@ std::expected<Renderer, core::Error> Renderer::Create(
             break;
         }
     }
-    const bool linear = colourSpace == ColourSpace::Linear;
-    const SDL_GPUSwapchainComposition composition =
-        linear ? SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR : SDL_GPU_SWAPCHAINCOMPOSITION_SDR;
-    if (!SDL_WindowSupportsGPUSwapchainComposition(device, impl->window, composition)) {
-        return std::unexpected{ core::Error{ std::format("the window can't present {} colour", linear ? "linear" : "gamma") } };
+    // shortcut: SDL guarantees only SDR, so a window without an sRGB swapchain can't run; the scene target (§8.4) lifts this.
+    if (!SDL_WindowSupportsGPUSwapchainComposition(device, impl->window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR)) {
+        return std::unexpected{ core::Error{ "the window has no sRGB swapchain, which linear blending needs" } };
     }
-    impl->backdrop = linear ? BACKDROP_LINEAR : BACKDROP;
-    if (!SDL_SetGPUSwapchainParameters(device, impl->window, composition, mode)) {
+    if (!SDL_SetGPUSwapchainParameters(device, impl->window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR, mode)) {
         return std::unexpected{ core::Error{ std::format("SDL_SetGPUSwapchainParameters failed: {}", SDL_GetError()) } };
     }
     PN_LOG_INFO(
-        "GPU driver: {}, presenting with {}, blending in {} space{}",
+        "GPU driver: {}, presenting with {}{}",
         SDL_GetGPUDeviceDriver(device),
         PresentModeName(mode),
-        linear ? "linear" : "gamma",
         DEBUG_MODE ? ", debug mode" : ""
     );
     if (mode == SDL_GPU_PRESENTMODE_VSYNC) {
@@ -165,7 +156,7 @@ std::expected<Renderer, core::Error> Renderer::Create(
         return std::unexpected{ std::move(instances.error()) };
     }
     impl->instances = std::move(*instances);
-    std::expected<internal::SpriteArray, core::Error> sprites = internal::LoadSpriteArray(device, assets, colourSpace);
+    std::expected<internal::SpriteArray, core::Error> sprites = internal::LoadSpriteArray(device, assets);
     if (!sprites) {
         return std::unexpected{ std::move(sprites.error()) };
     }
