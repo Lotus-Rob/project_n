@@ -1,7 +1,4 @@
 {
-    __meta__ = {
-        version = "1.0"
-    },
     ["linux|x86_64"] = {
         ["autoconf#f56260b5"] = {
             repo = {
@@ -443,6 +440,9 @@
             },
             version = "v0.14.1"
         }
+    },
+    __meta__ = {
+        version = "1.0"
     },
     ["windows|x64"] = {
         ["cmake#f56260b5"] = {
