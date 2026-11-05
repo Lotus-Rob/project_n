@@ -127,5 +127,12 @@ libcapstone = { version = "==6.0.0a4", channel = "conda-forge/label/capstone_dev
 [feature.profiler.target.osx-arm64.dependencies]
 libcapstone = { version = "==6.0.0a4", channel = "conda-forge/label/capstone_dev" }
 
+# Mesa's software Vulkan (`project_n reference`, design doc 0002 S11), in an environment of its own: the game
+# never ships with it, and its LLVM stays out of the package builds.
+[feature.lavapipe.target.linux-64.dependencies]
+mesa-lavapipe = "==26.2.6"
+libvulkan-loader = "==1.4.357.0"
+
 [environments]
 profiler = { features = ["profiler"], no-default-feature = true }
+lavapipe = { features = ["lavapipe"], no-default-feature = true }
