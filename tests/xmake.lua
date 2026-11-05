@@ -41,6 +41,16 @@ target("headless_bench")
     add_files("bench/headless.cpp")
     set_pcxxheader("$(projectdir)/src/pch.hpp") -- not a doctest suite: the game's, without doctest
 
+-- Pictures of fixed scenes compared with tests/reference/ (design doc 0002 §8.9). Built with the tests
+-- but not registered as one, as it needs a GPU: `project_n reference` runs it on Mesa's software Vulkan.
+target("reference_tests")
+    set_kind("binary")
+    add_deps("gfx", "game")
+    add_files("unit/gfx/main.cpp", "reference/*.cpp", {unity_ignored = true})
+    set_pcxxheader("unit/pch.hpp")
+    add_packages("doctest")
+    add_rules("assets")
+
 -- libFuzzer targets, one per tests/fuzz/<name>.cpp: linux-clang with AddressSanitizer only
 -- (`project_n fuzz <name>`). There each also replays its seed corpus (tests/fuzz/corpus/<name>/)
 -- as a test, so `check --sanitizers` keeps them building and passing.

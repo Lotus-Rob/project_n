@@ -293,9 +293,9 @@ def build(preset, mode, sanitizer="none", unity=False):
     return bdir
 
 
-def binary_path(preset, mode):
+def binary_path(preset, mode, name=APP):
     p = PRESETS[preset]
-    exe = APP + (".exe" if p["plat"] == "windows" else "")
+    exe = name + (".exe" if p["plat"] == "windows" else "")
     return build_dir(preset, mode) / p["plat"] / p["arch"] / mode / exe
 
 
@@ -349,6 +349,43 @@ def cmd_test(args):
         run(["xmake", "run", args.target, *extra], env=xmake_env(bdir))
     else:
         run(["xmake", "test", "--output-on-failure"], env=xmake_env(bdir))
+
+
+def run_references(preset, update=False):
+    """Compare a built release's pictures of fixed scenes with tests/reference/, on Mesa's software
+    Vulkan (Pixi's lavapipe environment) and without a display: every machine draws the same."""
+    pixi = os.environ.get("PIXI_EXE", "pixi")
+    # The environment holds only Mesa and the loader, no printenv: Pixi itself names its prefix.
+    run([pixi, "install", "--locked", "-e", "lavapipe"])
+    envs = json.loads(capture([pixi, "info", "--json"]))["environments_info"]
+    lavapipe = Path(next(e["prefix"] for e in envs if e["name"] == "lavapipe"))
+    env = {**os.environ, "SDL_VIDEO_DRIVER": "offscreen", "SDL_VULKAN_LIBRARY": str(lavapipe / "lib" / "libvulkan.so.1"),
+           "VK_DRIVER_FILES": str(lavapipe / "share" / "vulkan" / "icd.d" / "lvp_icd.x86_64.json")}
+    drawn = ROOT / "build" / "reference"
+    shutil.rmtree(drawn, ignore_errors=True)
+    drawn.mkdir(parents=True)
+    try:
+        run([binary_path(preset, "release", "reference_tests")], env=env)
+    except subprocess.CalledProcessError:
+        if not update:
+            raise
+    if update:
+        # Every committed view must be redrawn: a run that crashed part-way would update only some.
+        missing = sorted({p.name for p in (ROOT / "tests" / "reference").glob("*.png")} - {p.name for p in drawn.glob("*.png")})
+        if missing:
+            raise Fail(f"reference: nothing updated; the run didn't draw {', '.join(missing)}")
+        for picture in drawn.glob("*.png"):
+            shutil.copy(picture, ROOT / "tests" / "reference" / picture.name)
+        print("reference: tests/reference/ updated; look at the pictures before committing them")
+
+
+def cmd_reference(args):
+    if PRESETS[args.preset]["plat"] != "linux":
+        raise Fail("`reference` runs on Linux only (lavapipe here is linux-64's): pass --preset linux-gcc or linux-clang")
+    if needs_container(args.preset, args.container):
+        return reenter(args.preset, ["reference", "--preset", args.preset, *(["--update"] if args.update else [])])
+    build(args.preset, "release")
+    run_references(args.preset, args.update)
 
 
 def cmd_run(args):
@@ -994,6 +1031,9 @@ def cmd_check(args):
     for preset in [p for p in PRESETS if p not in skipped]:
         cmd_test(argparse.Namespace(preset=preset, mode="release", sanitizer="none", container=args.container,
                                     target=None, args=[], unity=False))
+    linux = next((p for p in PRESETS if PRESETS[p]["plat"] == "linux" and p not in skipped), None)
+    if linux:
+        cmd_reference(argparse.Namespace(preset=linux, container=args.container, update=False))
     # Unity builds are off (xmake.lua) but kept working: one test run with them on.
     unity_preset = NATIVE_PRESET if NATIVE_PRESET not in skipped else next(p for p in PRESETS if p not in skipped)
     cmd_test(argparse.Namespace(preset=unity_preset, mode="debug", sanitizer="none", container=args.container,
@@ -1071,6 +1111,8 @@ def cmd_artifact(args):
     shutil.rmtree(ROOT / build_dir(args.preset, "release"), ignore_errors=True)  # clean room: nothing from earlier builds
     bdir = build(args.preset, "release")
     run(["xmake", "test", "--output-on-failure"], env=xmake_env(bdir))
+    if PRESETS[args.preset]["plat"] == "linux":
+        run_references(args.preset)
     binary = binary_path(args.preset, "release")
     if PRESETS[args.preset]["plat"] == "linux":
         run(["patchelf", "--remove-rpath", binary])  # conda's GCC hard-codes an rpath into .pixi
@@ -1474,6 +1516,9 @@ def make_parser():
     p.add_argument("target", choices=sorted(f.stem for f in (ROOT / "tests" / "fuzz").glob("*.cpp")))
     p.add_argument("--time", type=int, default=60, help="seconds to fuzz (default 60)")
     add("docs", cmd_docs, "API reference from doc comments with Doxygen: build/docs/html/")
+    p = add("reference", cmd_reference, "compare pictures of fixed scenes with tests/reference/ on software Vulkan (Linux)",
+            preset="native", container=True)
+    p.add_argument("--update", action="store_true", help="take this run's pictures as the new references")
     add("profiler", cmd_profiler, "start the Tracy viewer; profile a `run --mode releasedbg` build")
     p = add("atlas", cmd_atlas, "assign the sprites of art/sprites.toml their texture-array pages (src/core/generated/atlas.hpp)")
     p.add_argument("--placeholders", action="store_true", help="first redraw the procedural placeholders (every image in PLACEHOLDERS in art/placeholders.py)")

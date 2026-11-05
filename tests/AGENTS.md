@@ -12,6 +12,7 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
 - `unit/pch.hpp` holds every standard header the tests use: test `.cpp` files never include standard headers themselves (`lint` fails on one). Unit targets get it from `unit_tests()`; a fuzz target sets it with `set_pcxxheader("unit/pch.hpp")`.
 - A new area is one line in `tests/xmake.lua`: `unit_tests("<area>_tests", "unit/<area>/*.cpp", "<module>")`. The helper links the module under test (default `core`) with the modules below it and their packages, adds the precompiled header, registers the test and runs Windows builds under Wine on Linux.
 - `tests/bench/headless.cpp` is the headless benchmark (`headless_bench`, design doc 0002 §16): it ticks the stress arena without a window, is built with the tests but not registered as one, and takes the game's precompiled header (it isn't a doctest suite).
+- `tests/reference/` compares pictures of fixed scenes with the committed PNGs beside it (design doc 0002 §8.9): `reference_tests`, built with the tests but not registered as one, as it needs a GPU. `project_n reference` runs it on Mesa's software Vulkan (Pixi's `lavapipe` environment) with SDL's offscreen video driver, so it needs no display and draws the same on every machine. A change to shaders, sprites or a scene's layout that moves pixels needs `reference --update`, a look at the new pictures (`build/reference/` holds the failing run's), and the PNGs in the same commit.
 - Fuzz targets: `tests/fuzz/<name>.cpp` defines `LLVMFuzzerTestOneInput`, with at least one seed in `tests/fuzz/corpus/<name>/`. They build only for linux-clang with AddressSanitizer, where each replays its seeds as a test, so `check --sanitizers` covers them. Commit every input that found a bug as a seed.
 - Coverage counts `src/` only, from the tests (linux-gcc's gcov data, reported by gcovr).
 - Sanitizers run on request, never in plain `check`. Supported per preset: `SANITIZERS` in tools/project_n.py (GCC/Clang: address, undefined, thread, leak; MSVC: address). Any finding fails the run.
@@ -20,6 +21,7 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
 - `pixi run project_n test --mode release --target headless_bench`: tick and publish times of the stress arena
 - `pixi run project_n test --preset linux-clang --sanitizer address` (also `run --sanitizer ...` for the game)
 - `pixi run project_n check --sanitizers`: every preset under every supported sanitizer
+- `pixi run project_n reference` · `pixi run project_n reference --update`: take this run's pictures as the references
 - `pixi run project_n fuzz <name> [--time 60]`: new inputs and crash files land in `build/fuzz/<name>/`
 - `pixi run project_n coverage`: `build/coverage/index.html` and a summary
 - `pixi run project_n test --preset linux-clang` · one target with doctest arguments:

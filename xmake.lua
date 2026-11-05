@@ -44,6 +44,16 @@ rule("lto")
 rule_end()
 add_rules("lto")
 
+-- The runtime assets beside a binary that loads them (platform::AssetsDirectory): the game and
+-- reference_tests. Replaced whole, so a deleted asset doesn't linger. `artifact` ships them the same way.
+rule("assets")
+    after_build(function (target)
+        local assets = path.join(target:targetdir(), "assets")
+        os.tryrm(assets)
+        os.cp(path.join(os.projectdir(), "assets"), assets)
+    end)
+rule_end()
+
 -- Unity builds merge sources into batches: faster full builds, but sources then share one
 -- translation unit (names in anonymous namespaces can clash). Off until the code base is large
 -- enough to gain from it; enabling them means flipping this default.
@@ -254,12 +264,6 @@ target("project_n")
     add_deps("gfx", "game")
     add_files("src/main.cpp")
     set_pcxxheader("src/pch.hpp")
-    -- The runtime assets beside the binary, where the game looks for them (platform::AssetsDirectory);
-    -- replaced whole, so a deleted asset doesn't linger. `artifact` ships them the same way.
-    after_build(function (target)
-        local assets = path.join(target:targetdir(), "assets")
-        os.tryrm(assets)
-        os.cp(path.join(os.projectdir(), "assets"), assets)
-    end)
+    add_rules("assets")
 
 includes("tests")
