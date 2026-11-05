@@ -2,6 +2,7 @@
 
 #include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/math.hpp"
 #include "core/profile.hpp"
 
 #include <enkiTS/TaskScheduler.h>
@@ -12,8 +13,8 @@ namespace {
 
 constexpr u32 OTHER_THREADS = 2; // the main thread and the logic thread
 
-// A parallel-for's chunks as an enkiTS task set: one item per chunk, so enkiTS splits the set by its
-// thread count but never splits a chunk.
+// One item per chunk: enkiTS divides a set by its thread count, so chunk boundaries, and with them the
+// results, would otherwise depend on how many workers run.
 class ChunkTask final : public enki::ITaskSet {
 public:
     ChunkTask(u32 chunks, void (*call)(const void*, u32), const void* callable)
@@ -62,6 +63,7 @@ Jobs::Jobs(u32 workers)
   : m_impl(std::make_unique<Impl>()) {
     enki::TaskSchedulerConfig config{};
     config.numTaskThreadsToCreate = std::max(workers, 1U);
+    config.profilerCallbacks.threadStart = [](u32 /*thread*/) { math::SetFloatingPointEnvironment(); };
     m_impl->workers = config.numTaskThreadsToCreate;
     m_impl->scheduler.Initialize(config);
 }
