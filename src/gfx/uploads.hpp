@@ -4,9 +4,12 @@
 /// @ingroup gfx
 /// Which snapshot's instances the GPU holds, so a snapshot drawn again isn't uploaded again.
 
+#include "core/error.hpp"
 #include "core/types.hpp"
 
+#include <expected>
 #include <optional>
+#include <utility>
 
 namespace gfx {
 
@@ -47,5 +50,16 @@ private:
     std::optional<SnapshotId> m_held = std::nullopt;
     std::optional<SnapshotId> m_recorded = std::nullopt;
 };
+
+/// A capture's steps after recording its upload: `rest()` only if the upload was `copied`; otherwise `cancel()`s the
+/// capture's command buffer and returns the upload's error, not a picture of the backdrop alone.
+template<typename Cancel, typename Rest>
+auto AfterUpload(std::expected<void, core::Error> copied, Cancel cancel, Rest rest) -> decltype(rest()) {
+    if (!copied) {
+        cancel();
+        return std::unexpected{ std::move(copied.error()) };
+    }
+    return rest();
+}
 
 } // namespace gfx
