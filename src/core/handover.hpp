@@ -20,6 +20,9 @@
 
 namespace core {
 
+/// How far behind the render clock a cosmetic event may fall before it is dropped, not played.
+inline constexpr f64 STALE_EVENT_TICKS = 30.0;
+
 /// The three channels between the threads. State (logic to main) is newest-wins: a snapshot may be
 /// skipped, since each one is complete. Events (logic to main) and input (main to logic)
 /// accumulate: none is lost or delivered twice, and each arrives in the order sent.
@@ -52,7 +55,9 @@ public:
     }
 
     /// Logic thread: makes Writing() the newest snapshot, replacing one the main thread hasn't
-    /// taken, and appends `events` to the event channel, leaving `events` empty.
+    /// taken, and appends `events` to the event channel, leaving `events` empty. While the main thread hasn't taken
+    /// the earlier events, drops the cosmetic ones of the newest epoch PlayDue() would drop anyway: more than
+    /// STALE_EVENT_TICKS + 1 behind the newest, since the render clock reaches at least the newest tick minus one.
     void Publish(std::vector<Event>& events) PN_REQUIRES(!m_mutex) {
         PN_PROFILE_ZONE();
         const std::scoped_lock lock{ m_mutex };
@@ -64,9 +69,19 @@ public:
             std::swap(m_events, events);
         }
         else {
-            // The main thread hasn't drained the last ones: the rare path that copies under the lock.
+            // The main thread hasn't drained the last ones: the rare path that copies under the lock. Cosmetic events
+            // PlayDue() would drop are dropped here, so a stalled main thread doesn't grow the queue (§5): the render
+            // clock (RenderTick()) reaches at least the newest tick minus one, so those more than STALE_EVENT_TICKS + 1
+            // behind it can't play. An older epoch's are kept: its snapshot may still be drawn, and nothing adds to
+            // them once a newer epoch has begun. shortcut: other events still accumulate; their coalescing arrives
+            // with their kinds (phase 7).
             m_events.insert(m_events.end(), events.begin(), events.end());
             events.clear();
+            const u64 epoch = m_events.back().epoch;
+            const auto tick = static_cast<f64>(m_events.back().tick);
+            std::erase_if(m_events, [epoch, tick](const Event& event) {
+                return event.cosmetic && event.epoch == epoch && tick - static_cast<f64>(event.tick) > STALE_EVENT_TICKS + 1.0;
+            });
         }
     }
 
@@ -175,9 +190,6 @@ private:
     State* m_held = nullptr;
     u64 m_lateAdoptions = 0;
 };
-
-/// How far behind the render clock a cosmetic event may fall before it is dropped, not played.
-inline constexpr f64 STALE_EVENT_TICKS = 30.0;
 
 /// Plays, in order, the `pending` events of the drawn snapshot's `epoch` whose tick the render
 /// clock has reached (RenderTick()), and removes them; drops events of older epochs, and cosmetic
