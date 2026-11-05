@@ -161,15 +161,19 @@ i32 Run(game::Scene scene, u64 quitAfterNs) {
         if (drawn == nullptr) {
             continue;
         }
-        const f64 alpha = core::Alpha(drawn->scheduledNs, platform::NowNs(), core::DEFAULT_DISPLAY_DELAY_NS, drawn->advanced);
-        const f64 renderTick = core::RenderTick(drawn->simulationTick, alpha);
-        // shortcut: nothing plays events yet; audio and particles (phase 7) replace the empty player.
-        core::PlayDue(pending, drawn->epoch, renderTick, [](const core::Event& /*event*/) {});
-        if (!state.visible) {
-            continue;
-        }
-        renderer->Draw(*drawn, alpha, camera);
-        PN_PROFILE_FRAME();
+        core::PresentFrame(
+            *drawn,
+            pending,
+            state.visible,
+            [&renderer] { renderer->Acquire(); },
+            platform::NowNs,
+            // shortcut: nothing plays events yet; audio and particles (phase 7) replace the empty player.
+            [](const core::Event& /*event*/) {},
+            [&renderer, drawn, &camera](f64 alpha) {
+                renderer->Draw(*drawn, alpha, camera);
+                PN_PROFILE_FRAME();
+            }
+        );
     }
 
     PN_LOG_INFO("shutting down; {} snapshots were published after they were due", display.LateAdoptions());

@@ -36,9 +36,13 @@ public:
     Renderer& operator=(Renderer&& other) = delete;
     ~Renderer();
 
-    /// Draws `snapshot` as `camera` sees it, interpolated by `alpha` (0: its previous tick, 1: its
-    /// own), and presents it. Uploads its instances only when it isn't the snapshot drawn last
-    /// (§8.3). Waits while the GPU has its two frames in flight and, with vsync, for the display.
+    /// Acquires the window's next frame to draw into: waits while the GPU has its two frames in
+    /// flight and, with vsync, for the display. The time for alpha is read after it (§6); Draw()
+    /// follows before the next Acquire(). A failure is logged, and the Draw() after it does nothing.
+    void Acquire();
+    /// Draws `snapshot` into the frame Acquire() acquired as `camera` sees it, interpolated by
+    /// `alpha` (0: its previous tick, 1: its own), and presents it. Uploads its instances only when
+    /// it isn't the snapshot drawn last (§8.3).
     void Draw(const core::Snapshot& snapshot, f64 alpha, const Camera& camera);
 
     /// Draws as Draw() does, but into a picture `width` by `height` pixels instead of the window,

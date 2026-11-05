@@ -7,6 +7,7 @@
 /// (instances, view models and events in phase 3 onwards); phase 1 carries timing and pausing.
 
 #include "core/handover.hpp"
+#include "core/profile.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 
@@ -110,5 +111,29 @@ struct Action {
 using GameHandover = Handover<Snapshot, Event, Action>;
 /// The main thread's side of GameHandover's state channel.
 using GameDisplay = Display<Snapshot, Event, Action>;
+
+/// The main loop's frame once `drawn` is chosen (design doc 0002 §6): while `visible`, `acquire()`s the swapchain
+/// texture, which may block; then reads `now()` (ns) once for alpha and the render clock, plays the `pending` events due
+/// by it (PlayDue()) and, while `visible`, calls `draw(alpha)`. Hidden, the clock and events still advance.
+template<typename Acquire, typename Now, typename Play, typename Draw>
+void PresentFrame(
+    const Snapshot& drawn,
+    std::vector<Event>& pending,
+    bool visible,
+    Acquire acquire,
+    Now now,
+    Play play,
+    Draw draw
+) {
+    PN_PROFILE_ZONE();
+    if (visible) {
+        acquire();
+    }
+    const f64 alpha = Alpha(drawn.scheduledNs, now(), DEFAULT_DISPLAY_DELAY_NS, drawn.advanced);
+    PlayDue(pending, drawn.epoch, RenderTick(drawn.simulationTick, alpha), play);
+    if (visible) {
+        draw(alpha);
+    }
+}
 
 } // namespace core
