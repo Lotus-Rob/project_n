@@ -284,7 +284,7 @@ class CheckTest(unittest.TestCase):
         tests, builds = [], []
         with mock.patch.multiple(project_n, hooks_enabled=lambda: True, cmd_selftest=lambda args: None,
                                  commit_range=lambda: None, cmd_fmt=lambda args: None, cmd_lint=lambda args: None,
-                                 cmd_test=tests.append, cmd_build=builds.append), \
+                                 cmd_reference=lambda args: None, cmd_test=tests.append, cmd_build=builds.append), \
              contextlib.redirect_stdout(io.StringIO()):
             project_n.cmd_check(project_n.argparse.Namespace(container=True, sanitizers=False))
         return tests, builds

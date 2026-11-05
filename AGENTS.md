@@ -16,6 +16,7 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 - `pixi run project_n check`: the merge gate (self-tests, commits, format and lint of the diff, build + test every preset, one releasedbg build). A change is done when it passes.
 - `pixi run project_n shaders` (Linux or Windows): compile `shaders/` after changing it, and commit `shaders/bin/` and `src/gfx/generated/` with it; `lint` fails on stale binaries
 - `pixi run project_n atlas [--placeholders]`: after changing `art/sprites.toml` or `assets/sprites/`, commit `src/core/generated/atlas.hpp` and `art/atlas.sha256` with them; `lint` fails on a stale atlas
+- `pixi run project_n reference [--preset linux-gcc|linux-clang] [--update]`: pictures of fixed scenes against `tests/reference/` on software Vulkan (Linux; part of `check` and `artifact`) → tests/AGENTS.md
 - `pixi run project_n coverage` (HTML in build/coverage/) · `fuzz <target> [--time S]` · `docs` (Doxygen, build/docs/) · `profiler` (Tracy viewer for a `run --mode releasedbg` build)
 - `pixi run project_n check --sanitizers`: also every supported sanitizer; on request only, not part of the gate.
 - `pixi run project_n check --container`: the same in clean containers. Run it for any build, environment or dependency change: only a clean container catches host leaks.
