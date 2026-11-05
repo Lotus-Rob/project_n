@@ -28,6 +28,27 @@ constexpr std::array PROPS{
     Prop{ .sprite = SpriteId::RockSmall, .foot = { .x = 1180.0F, .y = 300.0F } },
 };
 
+// The painted test scene: nothing moves, so two runs show the same picture.
+constexpr std::array PAINTED{
+    Prop{ .sprite = SpriteId::TreeDead, .foot = { .x = 260.0F, .y = 460.0F } },
+    Prop{ .sprite = SpriteId::Crane, .foot = { .x = 620.0F, .y = 280.0F } },
+    Prop{ .sprite = SpriteId::Hut, .foot = { .x = 1640.0F, .y = 420.0F } },
+    Prop{ .sprite = SpriteId::Stele, .foot = { .x = 500.0F, .y = 720.0F } },
+    Prop{ .sprite = SpriteId::TreantBlighted, .foot = { .x = 960.0F, .y = 640.0F } },
+    Prop{ .sprite = SpriteId::CrystalIce, .foot = { .x = 1380.0F, .y = 680.0F } },
+    Prop{ .sprite = SpriteId::FoxSpirit, .foot = { .x = 1640.0F, .y = 900.0F } },
+    Prop{ .sprite = SpriteId::WispRed, .foot = { .x = 240.0F, .y = 960.0F } },
+    Prop{ .sprite = SpriteId::WispRed, .foot = { .x = 300.0F, .y = 980.0F } }, // overlaps: semi-transparent ink over ink
+    Prop{ .sprite = SpriteId::FoxYellow, .foot = { .x = 740.0F, .y = 930.0F } },
+};
+constexpr std::array PAINTED_GLOWS{
+    Prop{ .sprite = SpriteId::OrbGold, .foot = { .x = 960.0F, .y = 430.0F } }, // over the treant's dark branches
+    Prop{ .sprite = SpriteId::OrbBlue, .foot = { .x = 1120.0F, .y = 900.0F } },
+    Prop{ .sprite = SpriteId::OrbRed, .foot = { .x = 1160.0F, .y = 900.0F } }, // overlaps: glows add
+    Prop{ .sprite = SpriteId::OrbGold, .foot = { .x = 1140.0F, .y = 930.0F } },
+    Prop{ .sprite = SpriteId::OrbBlue, .foot = { .x = 1380.0F, .y = 600.0F } }, // over the ice
+};
+
 constexpr core::Vec2 CULTIVATOR{ .x = 960.0F, .y = 620.0F };
 constexpr u32 FOXES = 12;
 constexpr f32 FOX_RADIUS = 300.0F;
@@ -74,6 +95,10 @@ core::Vec2 OrbitPoint(const Orbit& orbit, u64 tick) {
 }
 
 Arena::Arena(Scene scene) {
+    if (scene == Scene::Painted) {
+        SpawnPainted();
+        return;
+    }
     for (const Prop& prop : PROPS) {
         Spawn(prop.foot, { .sprite = prop.sprite });
     }
@@ -138,6 +163,15 @@ Arena::Arena(Scene scene) {
             };
             m_domain.Entities().emplace<Orbit>(Spawn(OrbitPoint(orbit, 0), look), orbit);
         }
+    }
+}
+
+void Arena::SpawnPainted() {
+    for (const Prop& prop : PAINTED) {
+        Spawn(prop.foot, { .sprite = prop.sprite, .shadow = true });
+    }
+    for (const Prop& glow : PAINTED_GLOWS) {
+        Spawn(glow.foot, { .sprite = glow.sprite, .layer = core::Layer::Effects, .pipeline = core::Pipeline::Additive });
     }
 }
 

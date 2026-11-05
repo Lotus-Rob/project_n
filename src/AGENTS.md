@@ -24,7 +24,7 @@ All game and engine code, structured by docs/design/0002-engine-architecture.md 
 - A new module adds its directory's `module.dox`, an XMake target with `add_deps` on the modules below it, and its commit scope to `SCOPES` in tools/project_n.py.
 
 ## Commands
-- `./dev run [--debug] [-- --stress --linear]` (native preset; `--preset` picks another; `--stress`: the stress arena, about 100,000 instances; `--linear`: blend in linear space, §8.4)
+- `./dev run [--debug] [-- --stress --painted --linear]` (native preset; `--preset` picks another; `--stress`: the stress arena, about 100,000 instances; `--painted`: the still painted test scene; `--linear`: blend in linear space, §8.4)
 
 ## Gotchas
 - A `///` comment right after the `/// @file` block joins it, leaving the next declaration undocumented: put a blank line after the file comment.
