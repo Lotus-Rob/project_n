@@ -48,6 +48,8 @@ Work happens on a branch; it merges into main only through a pull request, after
 - fix-bug: fixing any bug in `src/` test-first
 - review-branch: the pre-merge review and acting on its findings
 - bump-toolchain: changing a pinned tool, toolchain, base image or MSVC version (containers/AGENTS.md)
+- look-at-the-game: seeing what the game draws, screenshots and picture diffs (src/AGENTS.md)
+- handover: writing a handover for the next session, and when to stop for one
 
 ## Agents (.claude/agents): subagents with a fresh context
 - branch-reviewer: the pre-merge reviewer, a new one per round (review-branch skill)
