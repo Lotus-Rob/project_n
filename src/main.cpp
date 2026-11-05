@@ -85,7 +85,7 @@ SceneChoice ChooseScene(std::span<char*> args) {
     return {};
 }
 
-i32 Run(game::Scene scene, gfx::ColourSpace colourSpace) {
+i32 Run(game::Scene scene) {
     platform::RouteSdlLogs();
     std::expected<platform::Window, core::Error> window = platform::Window::Open("project_n", WINDOW_WIDTH, WINDOW_HEIGHT);
     if (!window) {
@@ -97,7 +97,7 @@ i32 Run(game::Scene scene, gfx::ColourSpace colourSpace) {
         PN_LOG_ERROR("no assets: {}", assets.error().message);
         return 1;
     }
-    std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(*window, *assets, colourSpace);
+    std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(*window, *assets);
     if (!renderer) {
         PN_LOG_ERROR("no renderer: {}", renderer.error().message);
         return 1;
@@ -170,10 +170,9 @@ int main(int argc, char** argv) {
 #pragma clang diagnostic pop
 #endif
     const SceneChoice choice = ChooseScene(args);
-    const bool linear = std::ranges::contains(args, std::string_view{ "--linear" });
     PN_LOG_INFO("scene: {}", choice.name);
     try {
-        const i32 status = Run(choice.scene, linear ? gfx::ColourSpace::Linear : gfx::ColourSpace::Gamma);
+        const i32 status = Run(choice.scene);
         PN_LOG_NOTICE("project_n stopped with status {}", status);
         return status;
     }

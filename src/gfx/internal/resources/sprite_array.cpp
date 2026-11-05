@@ -10,25 +10,19 @@ namespace gfx::internal {
 namespace {
 
 constexpr u32 BYTES_PER_PIXEL = 4; // R8G8B8A8
-// A colour target too: SDL_GenerateMipmapsForGPUTexture blits into it, and its layers are cleared by render passes.
-constexpr SDL_GPUTextureUsageFlags ARRAY_USAGE = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
 
 struct Decoded {
     Surface surface = nullptr;
     u32 offset = 0; // where its pixels start in the transfer buffer
 };
 
-std::expected<Surface, core::Error> Decode(
-    const std::filesystem::path& file,
-    const core::atlas::Sprite& sprite,
-    ColourSpace colourSpace
-) {
+std::expected<Surface, core::Error> Decode(const std::filesystem::path& file, const core::atlas::Sprite& sprite) {
     const std::u8string utf8 = file.u8string(); // SDL's paths are UTF-8
     const Surface loaded{ SDL_LoadPNG(std::string{ utf8.begin(), utf8.end() }.c_str()) };
     if (loaded == nullptr) {
         return std::unexpected{ core::Error{ std::format("{} wasn't loaded: {}", sprite.file, SDL_GetError()) } };
     }
-    // Byte order R, G, B, A on every platform: SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, or its _SRGB form.
+    // Byte order R, G, B, A on every platform: SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB.
     Surface rgba{ SDL_ConvertSurface(loaded.get(), SDL_PIXELFORMAT_RGBA32) };
     if (rgba == nullptr) {
         return std::unexpected{ core::Error{ std::format("{} wasn't converted to RGBA: {}", sprite.file, SDL_GetError()) } };
@@ -43,17 +37,18 @@ std::expected<Surface, core::Error> Decode(
             sprite.height
         ) } };
     }
-    if (!SDL_PremultiplySurfaceAlpha(rgba.get(), colourSpace == ColourSpace::Linear)) {
+    if (!SDL_PremultiplySurfaceAlpha(rgba.get(), true)) { // in linear space, where the blending happens (§8.4)
         return std::unexpected{ core::Error{ std::format("{} wasn't premultiplied: {}", sprite.file, SDL_GetError()) } };
     }
     return rgba;
 }
 
-Gpu<SDL_GPUTexture> CreateArray(SDL_GPUDevice* device, SDL_GPUTextureFormat format) {
+Gpu<SDL_GPUTexture> CreateArray(SDL_GPUDevice* device) {
     SDL_GPUTextureCreateInfo info{};
     info.type = SDL_GPU_TEXTURETYPE_2D_ARRAY;
-    info.format = format;
-    info.usage = ARRAY_USAGE;
+    info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB;
+    // A colour target too: SDL_GenerateMipmapsForGPUTexture blits into it, and its layers are cleared by render passes.
+    info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
     info.width = core::atlas::PAGE_SIZE;
     info.height = core::atlas::PAGE_SIZE;
     info.layer_count_or_depth = core::atlas::PAGES;
@@ -96,22 +91,13 @@ void ClearPages(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* texture) {
 
 } // namespace
 
-std::expected<SpriteArray, core::Error> LoadSpriteArray(
-    SDL_GPUDevice* device,
-    const std::filesystem::path& assets,
-    ColourSpace colourSpace
-) {
-    const SDL_GPUTextureFormat format =
-        colourSpace == ColourSpace::Linear ? SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-    if (!SDL_GPUTextureSupportsFormat(device, format, SDL_GPU_TEXTURETYPE_2D_ARRAY, ARRAY_USAGE)) {
-        return std::unexpected{ core::Error{ "the device has no texture format for the sprite atlas" } };
-    }
+std::expected<SpriteArray, core::Error> LoadSpriteArray(SDL_GPUDevice* device, const std::filesystem::path& assets) {
     const u64 startNs = platform::NowNs();
     std::vector<Decoded> decoded;
     decoded.reserve(core::atlas::SPRITES.size());
     u32 bytes = 0;
     for (const core::atlas::Sprite& sprite : core::atlas::SPRITES) {
-        std::expected<Surface, core::Error> surface = Decode(assets / sprite.file, sprite, colourSpace);
+        std::expected<Surface, core::Error> surface = Decode(assets / sprite.file, sprite);
         if (!surface) {
             return std::unexpected{ std::move(surface.error()) };
         }
@@ -119,7 +105,7 @@ std::expected<SpriteArray, core::Error> LoadSpriteArray(
         bytes += static_cast<u32>(sprite.width) * sprite.height * BYTES_PER_PIXEL;
     }
 
-    SpriteArray array{ .texture = CreateArray(device, format), .sampler = CreateSampler(device) };
+    SpriteArray array{ .texture = CreateArray(device), .sampler = CreateSampler(device) };
     if (array.texture == nullptr || array.sampler == nullptr) {
         return std::unexpected{ core::Error{ std::format("the sprite atlas texture wasn't created: {}", SDL_GetError()) } };
     }

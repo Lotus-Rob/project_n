@@ -61,11 +61,6 @@ TEST_CASE("a pair packs its first value in the low half") {
     CHECK(core::PackPair(0x1234, 0xABCD) == 0xABCD'1234U);
 }
 
-TEST_CASE("a colour packs premultiplied by its alpha") {
-    CHECK(core::PackColour(1.0F, 1.0F, 1.0F, 1.0F) == core::OPAQUE_WHITE);
-    CHECK(core::PackColour(1.0F, 0.0F, HALF, HALF) == 0x8040'0080U); // (128, 0, 64, 128)
-}
-
 TEST_CASE("an instance puts its sprite's foot point on its position") {
     using core::atlas::SpriteId;
     const core::atlas::Sprite& sprite = core::atlas::SPRITES.at(static_cast<std::size_t>(SpriteId::Fox));

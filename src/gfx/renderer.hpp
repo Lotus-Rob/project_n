@@ -16,23 +16,16 @@
 
 namespace gfx {
 
-/// The space sprites blend in (design doc 0002 §8.4).
-enum class ColourSpace : u8 {
-    Gamma,  ///< Blends the sRGB-encoded values, as the painting tools the art is made in do.
-    Linear, ///< Blends light: sRGB textures and an sRGB swapchain.
-};
-
-/// Draws into the game's window with SDL_GPU (design doc 0002 §8). The device, the window's
+/// Draws into the game's window with SDL_GPU (design doc 0002 §8), blending in linear space (§8.4). The device, the window's
 /// swapchain, the pipelines and the sprite atlas are all made when it's created.
 class Renderer {
 public:
     /// Creates a GPU device for `window` and presents to it, with the sprite atlas loaded from
-    /// `assets`, blending in `colourSpace`, or says why it couldn't (the device may not offer
-    /// linear). The window must outlive the renderer.
+    /// `assets`, or says why it couldn't (SDL doesn't guarantee an sRGB swapchain). The window must
+    /// outlive the renderer.
     [[nodiscard]] static std::expected<Renderer, core::Error> Create(
         platform::Window& window,
-        const std::filesystem::path& assets,
-        ColourSpace colourSpace
+        const std::filesystem::path& assets
     );
 
     Renderer(const Renderer&) = delete;

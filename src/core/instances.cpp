@@ -23,9 +23,7 @@ constexpr u32 FLOAT_MANTISSA = 0x007F'FFFFU;
 constexpr u32 IMPLICIT_ONE = 0x0080'0000U;
 constexpr u32 FLOAT_EXPONENT_SHIFT = 23;
 constexpr u32 SUBNORMAL_BIAS = 126; // a float of biased exponent e is M * 2^(e - 126) smallest subnormals
-constexpr u32 BYTE = 8;
 constexpr u32 UNORM16_MAX = 0xFFFFU;
-constexpr f32 UNORM8_MAX = 255.0F;
 
 // Ties to even, IEEE 754's default: a half packed here has the bits a hardware f32-to-f16 conversion gives.
 constexpr u32 RoundShift(u32 value, u32 shift) {
@@ -33,10 +31,6 @@ constexpr u32 RoundShift(u32 value, u32 shift) {
     const u32 rest = value & ((1U << shift) - 1U);
     const u32 halfway = 1U << (shift - 1U);
     return kept + static_cast<u32>(rest > halfway || (rest == halfway && (kept & 1U) != 0));
-}
-
-u32 PackUnorm8(f32 value) {
-    return static_cast<u32>(std::lround(std::clamp(value, 0.0F, 1.0F) * UNORM8_MAX));
 }
 
 } // namespace
@@ -64,11 +58,6 @@ u16 PackHalf(f32 value) {
 
 u16 PackUnorm16(f32 value) {
     return static_cast<u16>(std::lround(std::clamp(value, 0.0F, 1.0F) * static_cast<f32>(UNORM16_MAX)));
-}
-
-u32 PackColour(f32 red, f32 green, f32 blue, f32 alpha) {
-    return PackUnorm8(red * alpha) | (PackUnorm8(green * alpha) << BYTE) | (PackUnorm8(blue * alpha) << (2 * BYTE)) |
-           (PackUnorm8(alpha) << (3 * BYTE));
 }
 
 Instance MakeInstance(const SpriteDraw& draw) {

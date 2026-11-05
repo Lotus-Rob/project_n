@@ -29,10 +29,6 @@ inline constexpr u32 OPAQUE_WHITE = 0xFFFF'FFFFU;
     return static_cast<u32>(low) | (static_cast<u32>(high) << HIGH_HALF);
 }
 
-/// A straight colour and opacity, each channel from 0 to 1, as Instance::colour: premultiplied
-/// and rounded to 8 bits.
-[[nodiscard]] u32 PackColour(f32 red, f32 green, f32 blue, f32 alpha);
-
 /// One sprite to draw this tick, as the publisher sees it.
 struct SpriteDraw {
     /// Which sprite of the atlas manifest.
@@ -47,7 +43,7 @@ struct SpriteDraw {
     f32 previousRotation = 0.0F;
     /// Clockwise rotation at this tick.
     f32 currentRotation = 0.0F;
-    /// Premultiplied colour (PackColour()) the image is multiplied by.
+    /// Premultiplied RGBA8 colour the image is multiplied by (red in the low byte).
     u32 colour = OPAQUE_WHITE;
 };
 
