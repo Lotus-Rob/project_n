@@ -376,6 +376,90 @@ class RunTest(unittest.TestCase):
         self.assertEqual(ran, [["xmake", "run", project_n.APP, "--painted"]])
 
 
+class ProfileTest(unittest.TestCase):
+    class Recorder:
+        """A tracy-capture that writes part of its file at once and, as `behaviour` says, finishes it
+        ("saves"), exits 1 ("fails") or never exits ("hangs") once the game has quit."""
+        def __init__(self, argv, behaviour):
+            self.argv, self.behaviour, self.returncode, self.terminated = argv, behaviour, None, False
+            Path(argv[-1]).write_bytes(b"partial")
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout=None):
+            if self.terminated:
+                return
+            if self.behaviour == "hangs":
+                raise subprocess.TimeoutExpired(self.argv, timeout)
+            self.returncode = 0 if self.behaviour == "saves" else 1
+
+        def terminate(self):
+            self.terminated, self.returncode = True, -15
+
+    def profile(self, game=lambda argv: None, seconds=10, behaviour="saves"):
+        """Runs `profile` with `game` in place of `run`; keeps the recorders, the game's command lines
+        and the captures left in build/profiles/."""
+        self.ran, self.recorders, self.left = [], [], []
+
+        def recorder(argv, cwd):
+            self.recorders.append(self.Recorder(argv, behaviour))
+            return self.recorders[-1]
+
+        def run(argv, env):
+            self.ran.append(argv)
+            game(argv)
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.multiple(project_n, ROOT=Path(tmp), build=lambda *args: Path("build"), xmake_env=lambda bdir: {}, run=run,
+                                 pixi_prefix=lambda name: Path("/profiler")), \
+             mock.patch.object(project_n.shutil, "which", lambda name, path: "/profiler/bin/tracy-capture"), \
+             mock.patch.object(project_n.subprocess, "Popen", recorder), contextlib.redirect_stdout(io.StringIO()):
+            try:
+                project_n.cmd_profile(project_n.argparse.Namespace(preset=project_n.NATIVE_PRESET, seconds=seconds,
+                                                                   args=["--", "--stress"]))
+            finally:
+                self.left = [p.name for p in (Path(tmp) / "build" / "profiles").glob("*")]
+
+    def test_the_game_quits_by_itself_and_the_recorder_saves_into_build_profiles(self):
+        self.profile(seconds=5)
+        self.assertEqual(self.ran, [["xmake", "run", project_n.APP, "--quit-after", "5", "--stress"]])
+        recorded = Path(self.recorders[0].argv[-1])
+        self.assertEqual((self.recorders[0].argv[:2], recorded.parent.parts[-2:], recorded.suffix),
+                         (["/profiler/bin/tracy-capture", "-o"], ("build", "profiles"), ".tracy"))
+        self.assertEqual(self.left, [recorded.name])
+
+    def test_a_game_that_fails_stops_the_recorder_and_leaves_no_capture(self):
+        def fail(argv):
+            raise subprocess.CalledProcessError(1, argv)
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.profile(fail)
+        self.assertTrue(self.recorders[0].terminated)
+        self.assertEqual(self.left, [])
+
+    def test_a_recorder_that_fails_leaves_no_capture(self):
+        with self.assertRaisesRegex(project_n.Fail, "status 1"):
+            self.profile(behaviour="fails")
+        self.assertEqual(self.left, [])
+
+    def test_a_recorder_that_doesnt_finish_is_stopped_and_leaves_no_capture(self):
+        with self.assertRaisesRegex(project_n.Fail, "within 60 s"):
+            self.profile(behaviour="hangs")
+        self.assertTrue(self.recorders[0].terminated)
+        self.assertEqual(self.left, [])
+
+    def test_seconds_below_one_are_refused_before_the_build(self):
+        with self.assertRaises(project_n.Fail):
+            self.profile(seconds=0)
+        self.assertEqual(self.recorders, [])
+
+    def test_profiler_opens_a_saved_capture_by_its_full_path(self):
+        ran = []
+        with mock.patch.object(project_n, "run", ran.append):
+            project_n.cmd_profiler(project_n.argparse.Namespace(file=None))
+            project_n.cmd_profiler(project_n.argparse.Namespace(file="a.tracy"))
+        self.assertEqual([argv[4:] for argv in ran], [["tracy-profiler"], ["tracy-profiler", Path("a.tracy").resolve()]])
+
+
 class SourceTest(unittest.TestCase):
     def test_generated_headers_arent_sources(self):
         self.assertTrue(project_n.is_source("src/core/log.hpp"))

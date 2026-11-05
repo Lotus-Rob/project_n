@@ -42,7 +42,7 @@ use this machine's native preset: `linux-clang` on Linux, `windows-msvc` on Wind
 ./dev reference                          # pictures of fixed scenes against tests/reference/ (Linux, software Vulkan)
 ./dev fuzz smoke --time 60               # libFuzzer targets in tests/fuzz/
 ./dev docs                               # API reference (Doxygen): build/docs/html/
-./dev run --mode releasedbg              # profiling build; ./dev profiler opens the Tracy viewer
+./dev profile -- --stress                # record 10 s with Tracy: build/profiles/; ./dev profiler <file> opens it
 ```
 
 Native builds land in `build/<preset>/<mode>/`. `windows-msvc` builds in a container on Linux, using the real MSVC under Wine.

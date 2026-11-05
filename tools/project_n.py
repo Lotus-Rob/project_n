@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 import urllib.request
 from pathlib import Path
@@ -351,14 +352,19 @@ def cmd_test(args):
         run(["xmake", "test", "--output-on-failure"], env=xmake_env(bdir))
 
 
+def pixi_prefix(name):
+    """Install one of pixi.toml's environments and return its prefix. Pixi itself names it: the
+    lavapipe environment holds only Mesa and the loader, no printenv."""
+    pixi = os.environ.get("PIXI_EXE", "pixi")
+    run([pixi, "install", "--locked", "-e", name])
+    envs = json.loads(capture([pixi, "info", "--json"]))["environments_info"]
+    return Path(next(e["prefix"] for e in envs if e["name"] == name))
+
+
 def run_references(preset, update=False):
     """Compare a built release's pictures of fixed scenes with tests/reference/, on Mesa's software
     Vulkan (Pixi's lavapipe environment) and without a display: every machine draws the same."""
-    pixi = os.environ.get("PIXI_EXE", "pixi")
-    # The environment holds only Mesa and the loader, no printenv: Pixi itself names its prefix.
-    run([pixi, "install", "--locked", "-e", "lavapipe"])
-    envs = json.loads(capture([pixi, "info", "--json"]))["environments_info"]
-    lavapipe = Path(next(e["prefix"] for e in envs if e["name"] == "lavapipe"))
+    lavapipe = pixi_prefix("lavapipe")
     env = {**os.environ, "SDL_VIDEO_DRIVER": "offscreen", "SDL_VULKAN_LIBRARY": str(lavapipe / "lib" / "libvulkan.so.1"),
            "VK_DRIVER_FILES": str(lavapipe / "share" / "vulkan" / "icd.d" / "lvp_icd.x86_64.json")}
     drawn = ROOT / "build" / "reference"
@@ -1200,7 +1206,41 @@ def cmd_docs(args):
 
 def cmd_profiler(args):
     # The viewer lives in its own Pixi environment (pixi.toml: feature.profiler).
-    run([os.environ.get("PIXI_EXE", "pixi"), "run", "-e", "profiler", "tracy-profiler"])
+    run([os.environ.get("PIXI_EXE", "pixi"), "run", "-e", "profiler", "tracy-profiler", *([Path(args.file).resolve()] if args.file else [])])
+
+
+def cmd_profile(args):
+    if PRESETS[args.preset]["host"] != HOST:
+        raise Fail(f"`profile` is native only; {args.preset} needs a {PRESETS[args.preset]['host']} host")
+    if args.seconds < 1:
+        raise Fail("--seconds takes a whole number above 0")
+    bdir = build(args.preset, "releasedbg")
+    prefix = pixi_prefix("profiler")
+    # Windows' conda packages put programs in Library/bin.
+    recorder = shutil.which("tracy-capture", path=os.pathsep.join(str(prefix / d) for d in ("bin", "Library/bin")))
+    if not recorder:
+        raise Fail(f"no tracy-capture in {prefix}: is tracy-profiler-capture still in pixi.toml's profiler feature?")
+    out = ROOT / "build" / "profiles" / f"{time.strftime('%Y%m%d-%H%M%S')}.tracy"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    extra = args.args[1:] if args.args[:1] == ["--"] else args.args
+    # Nothing is clicked, so the game keeps the focus and never pauses itself (0002 §6). It quits by
+    # itself; the recorder stops when the game disconnects, after Tracy has sent the rest.
+    print("+", recorder, "-o", out, flush=True)
+    recording = subprocess.Popen([recorder, "-o", str(out)], cwd=ROOT)
+    try:
+        run(["xmake", "run", APP, "--quit-after", str(args.seconds), *extra], env=xmake_env(bdir))
+        recording.wait(timeout=60)
+        if recording.returncode != 0 or not out.exists():
+            raise Fail(f"tracy-capture failed with status {recording.returncode}; nothing recorded")
+    except BaseException as e:
+        if recording.poll() is None:
+            recording.terminate()
+            recording.wait()
+        out.unlink(missing_ok=True)  # a half-written capture isn't offered to `profiler`
+        if isinstance(e, subprocess.TimeoutExpired):
+            raise Fail("tracy-capture didn't finish within 60 s of the game quitting; nothing recorded") from None
+        raise
+    print(f"profile: {out} (open it with `project_n profiler {out.relative_to(ROOT).as_posix()}`)")
 
 
 def cmd_selftest(args):
@@ -1521,7 +1561,12 @@ def make_parser():
     p = add("reference", cmd_reference, "compare pictures of fixed scenes with tests/reference/ on software Vulkan (Linux)",
             preset="native", container=True)
     p.add_argument("--update", action="store_true", help="take this run's pictures as the new references")
-    add("profiler", cmd_profiler, "start the Tracy viewer; profile a `run --mode releasedbg` build")
+    p = add("profiler", cmd_profiler, "start the Tracy viewer, live on a `run --mode releasedbg` build or on a saved capture")
+    p.add_argument("file", nargs="?", help="a capture to open, e.g. one `profile` saved")
+    p = add("profile", cmd_profile, "record a releasedbg run with Tracy into build/profiles/, without a click that pauses the game",
+            preset="native")
+    p.add_argument("--seconds", type=int, default=10, help="how long the game runs before it quits (default 10)")
+    p.add_argument("args", nargs=argparse.REMAINDER, help="-- <game arguments>, e.g. -- --stress")
     p = add("atlas", cmd_atlas, "assign the sprites of art/sprites.toml their texture-array pages (src/core/generated/atlas.hpp)")
     p.add_argument("--placeholders", action="store_true", help="first redraw the procedural placeholders (every image in PLACEHOLDERS in art/placeholders.py)")
     add("shaders", cmd_shaders, "compile shaders/*.hlsl into shaders/bin/ (SPIR-V, DXIL, MSL); Linux and Windows only")
