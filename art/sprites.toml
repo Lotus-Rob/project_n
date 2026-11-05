@@ -81,36 +81,3 @@ foot = [0, 0]
 
 [orb_gold]
 foot = [16, 16]
-
-[fox_yellow_2x]
-foot = [110, 144]
-
-[fox_spirit_2x]
-foot = [200, 520]
-
-[treant_blighted_2x]
-foot = [300, 720]
-
-[wisp_red_2x]
-foot = [99, 280]
-
-[crane_2x]
-foot = [220, 300]
-
-[tree_dead_2x]
-foot = [219, 560]
-
-[hut_2x]
-foot = [200, 360]
-
-[stele_2x]
-foot = [100, 440]
-
-[crystal_ice_2x]
-foot = [140, 340]
-
-[cell_snow_2x]
-foot = [0, 0]
-
-[orb_gold_2x]
-foot = [32, 32]
