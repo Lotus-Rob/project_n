@@ -1,5 +1,6 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/jobs.hpp"
+#include "core/math.hpp"
 #include "core/random.hpp"
 
 #include <doctest/doctest.h>
@@ -72,6 +73,31 @@ TEST_CASE("results are identical with one worker and with many") {
     }();
     core::Jobs many{ MANY_WORKERS };
     CHECK(std::bit_cast<u32>(ChunkedSum(many, values)) == std::bit_cast<u32>(alone));
+}
+
+TEST_CASE("every parallel-for chunk runs in the simulation's floating-point environment") {
+    constexpr u32 CHUNKS = 10'000;
+    // A new thread may inherit its creator's environment, which would hide a worker that never sets its own.
+    std::fesetround(FE_UPWARD);
+    core::Jobs jobs{ MANY_WORKERS };
+    core::math::SetFloatingPointEnvironment();
+
+    const std::thread::id forker = std::this_thread::get_id();
+    std::atomic<bool> workerRan = false;
+    std::atomic<u32> chunksWithoutIt = 0;
+    jobs.ParallelFor(CHUNKS, [&](u32 /*chunk*/) {
+        if (!core::math::FloatingPointEnvironmentIsSet()) {
+            chunksWithoutIt.fetch_add(1, std::memory_order_relaxed);
+        }
+        if (std::this_thread::get_id() != forker) {
+            workerRan.store(true, std::memory_order_relaxed);
+        }
+        // The forking thread could otherwise finish every chunk before a worker wakes.
+        while (!workerRan.load(std::memory_order_relaxed)) {
+            std::this_thread::yield();
+        }
+    });
+    CHECK(chunksWithoutIt.load() == 0);
 }
 
 } // namespace
