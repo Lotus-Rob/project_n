@@ -126,7 +126,7 @@ i32 Run(game::Scene scene, u64 quitAfterNs) {
     std::atomic<bool> logicFailed = false;
     const u64 startNs = platform::NowNs();
     std::jthread logic{ RunLogic, std::ref(handover), startNs, scene, std::ref(logicFailed) };
-    bool focused = true;
+    bool paused = false;
     gfx::Camera camera{}; // shortcut: a fixed view, but for the cell grid's zoom; the camera follows input and the snapshot
                           // from phase 5
     std::vector<core::Event> incoming;
@@ -148,10 +148,10 @@ i32 Run(game::Scene scene, u64 quitAfterNs) {
         if (scene == game::Scene::Cells) {
             camera.zoom = gfx::ZoomedBy(camera.zoom, state.wheelNotches);
         }
-        if (state.focused != focused) {
-            focused = state.focused;
-            PN_LOG_INFO("{}: the window {} focus", focused ? "resumed" : "paused", focused ? "has" : "lost");
-            handover.SendInput({ .kind = focused ? core::ActionKind::Resume : core::ActionKind::Pause });
+        if (platform::PausesGame(state) != paused) {
+            paused = !paused;
+            PN_LOG_INFO("{}: the window is {}", paused ? "paused" : "resumed", paused ? "unfocused or minimised" : "back");
+            handover.SendInput({ .kind = paused ? core::ActionKind::Pause : core::ActionKind::Resume });
         }
         // Events are drained every iteration, drawing or not, so the queue never grows (§5).
         handover.TakeEvents(incoming);
