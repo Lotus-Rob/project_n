@@ -855,8 +855,13 @@ def read_sprites():
     for name, entry in listed.items():
         if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
             raise Fail(f"{SPRITE_LIST}: name sprites in snake_case: {name}")
+        if not isinstance(entry, dict):
+            raise Fail(f"{SPRITE_LIST}: {name} must be a table ([{name}])")
         w, h = png_size(ROOT / SPRITES_DIR / f"{name}.png")
-        fx, fy = entry.get("foot", [w // 2, h])
+        foot = entry.get("foot", [w // 2, h])
+        if not (isinstance(foot, list) and len(foot) == 2 and all(type(c) is int for c in foot)):
+            raise Fail(f"{SPRITE_LIST}: {name}'s foot must be two integers, [x, y], not {foot!r}")
+        fx, fy = foot
         if not (0 <= fx <= w and 0 <= fy <= h):
             raise Fail(f"{SPRITE_LIST}: {name}'s foot {[fx, fy]} is outside its {w}x{h} image")
         sprites.append((name, w, h, fx, fy))
