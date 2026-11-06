@@ -8,6 +8,7 @@
 #include "core/types.hpp"
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 
 namespace core {
@@ -45,6 +46,15 @@ public:
     void ParallelFor(u32 chunks, const Body& body) {
         Run(chunks, [](const void* callable, u32 chunk) { (*static_cast<const Body*>(callable))(chunk); }, &body);
     }
+
+    /// Starts `work` on a worker at low priority and returns at once: for work that takes long and
+    /// must never hold up a parallel-for's join (writing a save). One runs at a time: starting
+    /// another waits for the last first. The destructor waits for one still running. Only the
+    /// thread that created the job system starts or waits for one.
+    void Background(std::function<void()> work);
+
+    /// Waits until the background job started last has finished; returns at once when none runs.
+    void WaitForBackground();
 
 private:
     void Run(u32 chunks, void (*call)(const void* callable, u32 chunk), const void* callable);
