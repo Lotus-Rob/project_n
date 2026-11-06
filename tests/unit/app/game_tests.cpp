@@ -34,7 +34,7 @@ TEST_CASE("a step at a tick's time runs it and publishes its snapshot") {
     core::math::SetFloatingPointEnvironment();
     FakeTime() = START_NS;
     core::GameHandover handover;
-    app::Game game(handover, game::Scene::Arena, {}, START_NS, FakeNow);
+    app::Game game(handover, game::Scene::Arena, {}, {}, START_NS, FakeNow);
     game.Step(START_NS);
     const core::Snapshot snapshot = Taken(handover);
     CHECK(snapshot.wallTick == 1);
@@ -48,7 +48,7 @@ TEST_CASE("after a calendar step, the clock restarts when the step ended instead
     core::math::SetFloatingPointEnvironment();
     FakeTime() = START_NS;
     core::GameHandover handover;
-    app::Game game(handover, game::Scene::Arena, {}, START_NS, FakeNow);
+    app::Game game(handover, game::Scene::Arena, {}, {}, START_NS, FakeNow);
     handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
     game.Step(START_NS);
     CHECK(Taken(handover).transition);

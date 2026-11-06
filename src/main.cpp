@@ -99,6 +99,7 @@ int main(int argc, char** argv) {
                 .scene = choice.scene,
                 .quitAfterNs = *quitAfterNs,
                 .saveSlot = userData ? *userData / "saves" / "quicksave.pns" : std::filesystem::path{},
+                .replaySlot = userData ? *userData / "saves" / "replay.pnr" : std::filesystem::path{},
             });
         PN_LOG_NOTICE("project_n stopped with status {}", status);
         return status;

@@ -66,6 +66,8 @@ const WindowState& Window::Poll(u64 hiddenWaitNs) {
     state.monthRequested = false;
     state.saveRequested = false;
     state.loadRequested = false;
+    state.recordRequested = false;
+    state.replayRequested = false;
     SDL_Event event;
     bool pending =
         state.visible ? SDL_PollEvent(&event) : SDL_WaitEventTimeout(&event, static_cast<i32>(hiddenWaitNs / SDL_NS_PER_MS));
@@ -79,6 +81,8 @@ const WindowState& Window::Poll(u64 hiddenWaitNs) {
                 state.monthRequested = state.monthRequested || (event.key.key == SDLK_M && !event.key.repeat);
                 state.saveRequested = state.saveRequested || (event.key.key == SDLK_F5 && !event.key.repeat);
                 state.loadRequested = state.loadRequested || (event.key.key == SDLK_F9 && !event.key.repeat);
+                state.recordRequested = state.recordRequested || (event.key.key == SDLK_F6 && !event.key.repeat);
+                state.replayRequested = state.replayRequested || (event.key.key == SDLK_F10 && !event.key.repeat);
                 break;
             case SDL_EVENT_MOUSE_WHEEL:
                 state.wheelNotches += event.wheel.y;

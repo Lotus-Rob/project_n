@@ -1,7 +1,7 @@
 # src/: game and engine
 
 ## Scope
-All game and engine code, structured by docs/design/0002-engine-architecture.md (being implemented, phases 1 to 4 of §16). Modules are XMake static libraries in `src/<module>/` (`core`, `platform`, `gfx`, `game`, `app` so far); each links and includes only the modules below it (`MODULES` in tools/project_n.py; `lint` checks the includes), and `game` links only `core`. `app` puts the program together (0002.1): `app::App` owns the main thread's systems (window, renderer, display) and runs the main loop; it starts the logic thread, which builds an `app::Game` owning that thread's systems (jobs, saves, `game::Arena` through `core::Simulation`, `core::Logic`, the tick clock). The threads share only `core::GameHandover` (`core/frame.hpp`). `main.cpp` only parses the command line, opens the window and renderer, and runs an `App`. A new system is owned by `App` or `Game`, never passed in as loose arguments.
+All game and engine code, structured by docs/design/0002-engine-architecture.md (phases 1 to 4 of §16 implemented). Modules are XMake static libraries in `src/<module>/` (`core`, `platform`, `gfx`, `game`, `app` so far); each links and includes only the modules below it (`MODULES` in tools/project_n.py; `lint` checks the includes), and `game` links only `core`. `app` puts the program together (0002.1): `app::App` owns the main thread's systems (window, renderer, display) and runs the main loop; it starts the logic thread, which builds an `app::Game` owning that thread's systems (jobs, saves, `game::Arena` through `core::Simulation`, `core::Logic`, the tick clock). The threads share only `core::GameHandover` (`core/frame.hpp`). `main.cpp` only parses the command line, opens the window and renderer, and runs an `App`. A new system is owned by `App` or `Game`, never passed in as loose arguments.
 
 ## Rules
 - C++23 with conventional headers (no modules). Every translation unit's includes lead to `core/cxx23.hpp`, which fails the build below C++23; include it with `// IWYU pragma: keep` (it declares nothing).
@@ -28,7 +28,7 @@ All game and engine code, structured by docs/design/0002-engine-architecture.md 
 - A new module adds its directory's `module.dox`, an XMake target with `add_deps` on the modules below it, and its commit scope to `SCOPES` in tools/project_n.py.
 
 ## Commands
-- `./dev run [--debug] [-- --stress | --painted | --cells]` (native preset; `--preset` picks another; `--stress`: the stress arena, about 100,000 instances; `--painted`: the still painted test scene; `--cells`: a map cell grid the mouse wheel zooms, to judge the mips; `--quit-after SECONDS`: quit by itself)
+- `./dev run [--debug] [-- --stress | --painted | --cells]` (native preset; `--preset` picks another; `--stress`: the stress arena, about 100,000 instances; `--painted`: the still painted test scene; `--cells`: a map cell grid the mouse wheel zooms, to judge the mips; `--quit-after SECONDS`: quit by itself). In the game, until bindings arrive in phase 5: M lets a month pass, F5 saves, F9 loads, F6 starts or finishes recording a replay, F10 plays or stops it; saves and the replay go to the per-user data folder's `saves/`
 
 ## Skills
 - look-at-the-game: seeing what the game draws (reference pictures, screenshots of the window, picture diffs)

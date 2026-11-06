@@ -18,35 +18,10 @@ Simulation::~Simulation() = default;
 
 bool Logic::RunBurst(const TickBurst& burst, const std::stop_token& stop) {
     PN_PROFILE_ZONE();
-    bool advanced = false;
-    bool stalled = false;
-    bool ended = false; // by a calendar request: the transition is published at once
-    for (u64 tick = 0; tick < burst.ticks && !stalled && !ended; ++tick) {
-        advanced = false;
-        stalled = true;
-        if (m_calendar == Calendar::Published) {
-            m_counters.Count(true, true);
-            m_simulation->AdvanceCalendar(m_counters, *m_jobs, stop);
-            m_calendar = Calendar::None;
-        }
-        else if (const Requests requests = TakeInput(); requests.load) {
-            if (!Load()) {
-                m_counters.Count(true, false);
-            }
-        }
-        else if (requests.save) {
-            m_counters.Count(true, false);
-            Save();
-        }
-        else {
-            stalled = false;
-            advanced = !m_paused && m_calendar == Calendar::None;
-            m_counters.Count(!advanced, false);
-            if (advanced) {
-                m_simulation->Tick(m_counters);
-            }
-            ended = m_calendar == Calendar::Requested;
-        }
+    TickEnd end = TickEnd::Continue;
+    for (u64 tick = 0; tick < burst.ticks && end == TickEnd::Continue; ++tick) {
+        end = RunTick(stop);
+        CheckReplay();
         PN_ASSERT(math::FloatingPointEnvironmentIsSet(), "a library changed the floating-point environment");
     }
     if (m_calendar == Calendar::Requested) {
@@ -58,19 +33,79 @@ bool Logic::RunBurst(const TickBurst& burst, const std::stop_token& stop) {
     snapshot.simulationTick = m_counters.simulation;
     snapshot.epoch = m_epoch;
     snapshot.scheduledNs = burst.scheduledNs;
-    snapshot.advanced = advanced;
+    snapshot.advanced = m_advanced;
     snapshot.transition = m_calendar == Calendar::Published;
     snapshot.instances.clear();
     snapshot.batches.clear();
     m_simulation->Publish(snapshot, *m_jobs);
     snapshot.publishedNs = m_now();
     m_handover->Publish(m_events);
-    return stalled;
+    return end == TickEnd::Stall;
+}
+
+Logic::TickEnd Logic::RunTick(const std::stop_token& stop) {
+    PN_PROFILE_ZONE();
+    m_advanced = false;
+    if (m_calendar == Calendar::Published) {
+        m_counters.Count(true, true);
+        m_simulation->AdvanceCalendar(m_counters, *m_jobs, stop);
+        m_calendar = Calendar::None;
+        return TickEnd::Stall;
+    }
+    const Requests requests = TakeInput();
+    if (requests.play) {
+        if (!TogglePlayback()) {
+            m_counters.Count(true, false);
+        }
+        return TickEnd::Stall;
+    }
+    if (requests.load) {
+        if (!Load()) {
+            m_counters.Count(true, false);
+        }
+        return TickEnd::Stall;
+    }
+    if (requests.record || requests.save) {
+        m_counters.Count(true, false);
+        if (requests.save) {
+            Save(); // first: a recording starting here begins after it
+        }
+        if (requests.record) {
+            ToggleRecording();
+        }
+        return TickEnd::Stall;
+    }
+    m_advanced = !m_paused && m_calendar == Calendar::None;
+    m_counters.Count(!m_advanced, false);
+    if (m_advanced) {
+        m_simulation->Tick(m_counters);
+    }
+    return m_calendar == Calendar::Requested ? TickEnd::EndBurst : TickEnd::Continue;
 }
 
 Logic::Requests Logic::TakeInput() {
+    PN_PROFILE_ZONE();
     m_handover->TakeInput(m_input);
+    for (const Action& action : m_input) {
+        if (action.kind == ActionKind::Pause || action.kind == ActionKind::Resume) {
+            m_windowPaused = action.kind == ActionKind::Pause;
+        }
+    }
     Requests requests;
+    if (m_replay->Playing()) {
+        // Live input is dropped while a replay plays, but for the request to stop it.
+        if (std::ranges::any_of(m_input, [](const Action& action) { return action.kind == ActionKind::PlayReplay; })) {
+            requests.play = true;
+            return requests;
+        }
+        if (m_replay->AtEnd()) {
+            StopPlaying("it finished");
+        }
+        else {
+            const std::span<const Action> played = m_replay->Next();
+            m_input.assign(played.begin(), played.end());
+        }
+    }
     for (const Action& action : m_input) {
         if (action.kind == ActionKind::AdvanceCalendar) {
             m_calendar = Calendar::Requested;
@@ -81,43 +116,154 @@ Logic::Requests Logic::TakeInput() {
         else if (action.kind == ActionKind::Load) {
             requests.load = true;
         }
+        else if (action.kind == ActionKind::ToggleRecording) {
+            requests.record = true;
+        }
+        else if (action.kind == ActionKind::PlayReplay) {
+            requests.play = true;
+        }
         else {
             m_paused = action.kind == ActionKind::Pause;
         }
     }
+    if (m_replay->Recording() && !requests.record && !requests.play && !requests.load) {
+        m_replay->Record(m_input);
+    }
     return requests;
+}
+
+u64 Logic::Hash() const {
+    Hasher hasher;
+    hasher(m_counters.wall, m_counters.simulation, m_counters.state, m_paused, m_calendar, m_simulation->StateHash());
+    return hasher.Value();
+}
+
+void Logic::CheckReplay() {
+    PN_PROFILE_ZONE();
+    if (m_counters.wall % REPLAY_HASH_TICKS != 0) {
+        return;
+    }
+    if (m_replay->Recording()) {
+        m_replay->RecordHash(m_counters.wall, Hash());
+    }
+    else if (m_replay->Playing() && m_replay->CheckHash(m_counters.wall, Hash()) == HashCheck::Diverged) {
+        PN_LOG_ERROR("the replay diverged from its recording at wall tick {}", m_counters.wall);
+        StopPlaying("it diverged");
+    }
+}
+
+std::vector<std::byte> Logic::Serialise(bool withLogicState) {
+    std::vector<std::byte> state;
+    Writer archive{ state };
+    if (withLogicState) {
+        archive(m_paused, m_calendar);
+    }
+    archive(SAVE_FORMAT, m_counters.wall, m_counters.simulation, m_counters.state);
+    m_simulation->Save(archive);
+    return state;
+}
+
+bool Logic::Restore(std::span<const std::byte> state, bool withLogicState) {
+    Reader archive{ state };
+    bool paused = m_paused;
+    Calendar calendar = Calendar::None;
+    if (withLogicState) {
+        archive(paused, calendar);
+        if (calendar > Calendar::Published) {
+            archive.Fail();
+        }
+    }
+    u32 format = 0;
+    TickCounters counters;
+    archive(format, counters.wall, counters.simulation, counters.state);
+    if (archive.Failed() || format != SAVE_FORMAT || !m_simulation->Load(archive)) {
+        return false;
+    }
+    m_counters = counters;
+    m_paused = paused;
+    m_calendar = calendar;
+    ++m_epoch;
+    return true;
 }
 
 void Logic::Save() {
     PN_PROFILE_ZONE();
-    std::vector<std::byte> state;
-    Writer archive{ state };
-    archive(SAVE_FORMAT, m_counters.wall, m_counters.simulation, m_counters.state);
-    m_simulation->Save(archive);
+    std::vector<std::byte> state = Serialise(false);
+    if (m_replay->Playing()) {
+        PN_LOG_DEBUG("a replayed save at tick {}: the state is sorted, as it was, and no file written", m_counters.wall);
+        return;
+    }
     PN_LOG_INFO("saving the game at tick {}: {} bytes of state", m_counters.wall, state.size());
     m_saves->Write(std::move(state));
 }
 
 bool Logic::Load() {
     PN_PROFILE_ZONE();
+    if (m_replay->Recording()) {
+        FinishRecording(); // a load starts a new timeline
+    }
+    PN_ASSERT(!m_replay->Playing(), "a load during playback: live input is dropped, and replays hold no loads");
     const std::expected<std::vector<std::byte>, Error> state = m_saves->Read();
     if (!state) {
         PN_LOG_ERROR("not loaded: {}", state.error().message);
         return false;
     }
-    Reader archive{ *state };
-    u32 format = 0;
-    TickCounters counters;
-    archive(format, counters.wall, counters.simulation, counters.state);
-    if (archive.Failed() || format != SAVE_FORMAT || !m_simulation->Load(archive)) {
+    if (!Restore(*state, false)) {
         PN_LOG_ERROR("not loaded: {} is malformed or from another version of the game", m_saves->Slot().string());
         return false;
     }
-    m_counters = counters;
-    m_calendar = Calendar::None;
-    ++m_epoch;
     PN_LOG_INFO("loaded the game from {} at tick {}; timeline {} begins", m_saves->Slot().string(), m_counters.wall, m_epoch);
     return true;
+}
+
+void Logic::ToggleRecording() {
+    PN_PROFILE_ZONE();
+    if (m_replay->Recording()) {
+        FinishRecording();
+        return;
+    }
+    m_replay->StartRecording(Serialise(true));
+    PN_LOG_INFO("recording a replay from tick {}", m_counters.wall);
+}
+
+void Logic::FinishRecording() {
+    std::vector<std::byte> replay = m_replay->FinishRecording();
+    PN_LOG_INFO("finished recording a replay at tick {}: {} bytes", m_counters.wall, replay.size());
+    m_replays->Write(std::move(replay));
+}
+
+bool Logic::TogglePlayback() {
+    PN_PROFILE_ZONE();
+    if (m_replay->Playing()) {
+        StopPlaying("the player stopped it");
+        return false;
+    }
+    if (m_replay->Recording()) {
+        FinishRecording(); // the replay just recorded is the one to play
+    }
+    std::expected<std::vector<std::byte>, Error> replay = m_replays->Read();
+    if (!replay) {
+        PN_LOG_ERROR("no replay played: {}", replay.error().message);
+        return false;
+    }
+    const std::expected<std::span<const std::byte>, Error> start = m_replay->StartPlaying(std::move(*replay));
+    if (!start) {
+        PN_LOG_ERROR("no replay played: {}", start.error().message);
+        return false;
+    }
+    if (!Restore(*start, true)) {
+        m_replay->StopPlaying();
+        PN_LOG_ERROR("no replay played: its start state is malformed");
+        return false;
+    }
+    PN_LOG_INFO("playing the replay from tick {}; timeline {} begins", m_counters.wall, m_epoch);
+    return true;
+}
+
+void Logic::StopPlaying(std::string_view why) {
+    PN_LOG_INFO("replay stopped at tick {} because {}; {} hash checks matched", m_counters.wall, why, m_replay->Matched());
+    m_replay->StopPlaying();
+    m_paused = m_windowPaused; // the window's focus changed, perhaps, while the replay's input ruled
 }
 
 } // namespace core

@@ -8,6 +8,7 @@
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
 #include "core/logic.hpp"
+#include "core/replay.hpp"
 #include "core/saves.hpp"
 #include "core/tick_clock.hpp"
 #include "core/types.hpp"
@@ -18,15 +19,24 @@
 
 namespace app {
 
-/// The logic thread's systems: the job system, the save system, the simulation (the arena), the
-/// logic that drives it and the tick clock, built in that order and destroyed in reverse.
+/// The logic thread's systems: the job system, the save slot, the replay file's slot, the replay,
+/// the simulation (the arena), the logic that drives them and the tick clock, built in that order
+/// and destroyed in reverse.
 class Game {
 public:
-    /// Builds the systems for `scene`, publishing through `handover`, saving to `saveSlot` (none
-    /// when empty), its first tick due at `startNs` on the clock `now()` reads. The calling thread
-    /// becomes the job system's forking thread, so it must be the thread that runs Step() and
-    /// Run(), with its floating-point environment set (core::math::SetFloatingPointEnvironment).
-    Game(core::GameHandover& handover, game::Scene scene, std::filesystem::path saveSlot, u64 startNs, u64 (*now)());
+    /// Builds the systems for `scene`, publishing through `handover`, saving to `saveSlot` and
+    /// writing replays to `replaySlot` (none when empty), its first tick due at `startNs` on the
+    /// clock `now()` reads. The calling thread becomes the job system's forking thread, so it must
+    /// be the thread that runs Step() and Run(), with its floating-point environment set
+    /// (core::math::SetFloatingPointEnvironment).
+    Game(
+        core::GameHandover& handover,
+        game::Scene scene,
+        std::filesystem::path saveSlot,
+        std::filesystem::path replaySlot,
+        u64 startNs,
+        u64 (*now)()
+    );
     Game(const Game&) = delete;
     Game& operator=(const Game&) = delete;
     Game(Game&&) = delete;
@@ -56,6 +66,8 @@ private:
     u64 (*m_now)();
     core::Jobs m_jobs;
     core::Saves m_saves;
+    core::Saves m_replays;
+    core::Replay m_replay{};
     game::Arena m_arena;
     core::Logic m_logic;
     core::TickClock m_clock;

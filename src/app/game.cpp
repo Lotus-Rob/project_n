@@ -13,12 +13,20 @@ constexpr u64 NS_PER_MS = core::NS_PER_SECOND / 1'000;
 
 } // namespace
 
-Game::Game(core::GameHandover& handover, game::Scene scene, std::filesystem::path saveSlot, u64 startNs, u64 (*now)())
+Game::Game(
+    core::GameHandover& handover,
+    game::Scene scene,
+    std::filesystem::path saveSlot,
+    std::filesystem::path replaySlot,
+    u64 startNs,
+    u64 (*now)()
+)
   : m_now{ now }
   , m_jobs{ core::Jobs::DefaultWorkers() }
   , m_saves(std::move(saveSlot), m_jobs)
+  , m_replays(std::move(replaySlot), m_jobs)
   , m_arena{ scene }
-  , m_logic(handover, m_arena, m_jobs, m_saves, now)
+  , m_logic(handover, m_arena, m_jobs, m_saves, m_replays, m_replay, now)
   , m_clock{ startNs } {
     PN_LOG_INFO(
         "logic thread ticking {} times a second, job system running {} workers", core::TICKS_PER_SECOND, m_jobs.Workers()

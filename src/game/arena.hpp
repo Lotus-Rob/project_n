@@ -58,6 +58,7 @@ enum class Scene : u8 {
     Stress,  ///< The arena with a crowd of 90,000, a spiral of 10,000 bullets and 50,000 world NPCs, for profiling.
     Painted, ///< A still scene of painted sprites and overlapping glows, for judging art and blending (§8.4).
     Cells,   ///< A still grid of 640 map cells, for judging the mips as the view zooms out (§16 phase 3).
+    Npcs,    ///< The arena with the stress scene's NPCs but a world of 5,000: every NPC system, cheaply, for tests.
 };
 
 /// The arena scene as a simulation: it moves its creatures each tick and publishes every sprite.
@@ -110,6 +111,7 @@ private:
 
     core::Entity Spawn(core::Vec2 foot, const Look& look);
     void SpawnStress();
+    void SpawnNpcs(u32 worldNpcs);
     void SpawnPainted();
     void SpawnCells();
 

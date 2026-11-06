@@ -12,6 +12,7 @@
 #include "core/vec2.hpp"
 
 #include <cstddef>
+#include <utility>
 #include <vector>
 
 namespace core {
@@ -105,7 +106,12 @@ enum class ActionKind : u8 {
     AdvanceCalendar, ///< Let a month of world time pass: a calendar step behind a transition.
     Save,            ///< Save the game to the save file.
     Load,            ///< Load the game from the save file: a new timeline.
+    ToggleRecording, ///< Start recording a replay, or finish and write the one being recorded.
+    PlayReplay,      ///< Play the replay file back from its start (a new timeline), or stop playing it.
 };
+/// How many kinds ActionKind names (PlayReplay is the last): a replay read from disk holds only
+/// kinds below this.
+inline constexpr u8 ACTION_KINDS = static_cast<u8>(std::to_underlying(ActionKind::PlayReplay) + 1U);
 
 /// A player's or the main thread's request to the simulation, sent as input.
 struct Action {

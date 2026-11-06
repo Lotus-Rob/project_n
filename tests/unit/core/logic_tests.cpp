@@ -1,5 +1,6 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/logic.hpp"
+#include "core/save_file.hpp"
 
 #include <doctest/doctest.h>
 
@@ -36,7 +37,7 @@ public:
         return true;
     }
     [[nodiscard]] u64 StateHash() const override {
-        return ticks.size();
+        return ticks.size() + hashSalt;
     }
     void Publish(core::Snapshot& snapshot, core::Jobs& /*jobs*/) override {
         ++publishes;
@@ -52,6 +53,7 @@ public:
     std::vector<u64> steps{};  // the state counter at each calendar step
     // NOLINTEND(readability-redundant-member-init)
     bool rejectLoads = false;
+    u64 hashSalt = 0; // set to make its state hash differ from another's with the same ticks
     std::size_t publishes = 0;
     std::size_t ticksAtPublish = 0;
     std::size_t capacityAtPublish = 0;
@@ -63,10 +65,12 @@ struct BurstResult {
     core::Snapshot snapshot{};
 };
 
-// The logic and the systems it drives, held as a game holds them; saves go to `slot` (none by default).
+// The logic and the systems it drives, held as a game holds them; saves go to `slot` and replays to
+// `replaySlot` (none by default).
 struct Rig {
-    explicit Rig(std::filesystem::path slot = {})
-      : saves(std::move(slot), jobs) {
+    explicit Rig(std::filesystem::path slot = {}, std::filesystem::path replaySlot = {})
+      : saves(std::move(slot), jobs)
+      , replays(std::move(replaySlot), jobs) {
     }
 
     // Runs a burst of `ticks` and returns what RunBurst said and published.
@@ -85,7 +89,9 @@ struct Rig {
     // NOLINTEND(readability-redundant-member-init)
     core::Jobs jobs{ 1 };
     core::Saves saves;
-    core::Logic logic{ handover, simulation, jobs, saves, PublishedClock };
+    core::Saves replays;
+    core::Replay replay{};
+    core::Logic logic{ handover, simulation, jobs, saves, replays, replay, PublishedClock };
 };
 
 TEST_CASE("a burst runs and publishes its ticks") {
@@ -235,7 +241,7 @@ TEST_CASE("a save then a load restore the counters and the state, and start a ne
     constexpr u64 BEFORE = 3;
     constexpr u64 AFTER = 2;
     const SaveSlot slot{ "round_trip" };
-    Rig rig{ slot.File() };
+    Rig rig(slot.File());
     static_cast<void>(rig.Burst(BEFORE));
     rig.handover.SendInput({ .kind = core::ActionKind::Save });
     CHECK(rig.Burst(1).stalled);
@@ -258,7 +264,7 @@ TEST_CASE("a save then a load restore the counters and the state, and start a ne
 
 TEST_CASE("a load with no save changes nothing but the tick count") {
     const SaveSlot slot{ "no_save" };
-    Rig rig{ slot.File() };
+    Rig rig(slot.File());
     rig.handover.SendInput({ .kind = core::ActionKind::Load });
     CHECK(rig.Burst(1).stalled);
     CHECK(rig.logic.Epoch() == 0);
@@ -269,7 +275,7 @@ TEST_CASE("a load with no save changes nothing but the tick count") {
 TEST_CASE("a load the simulation rejects changes nothing but the tick count") {
     constexpr u64 TICKS = 2;
     const SaveSlot slot{ "rejected" };
-    Rig rig{ slot.File() };
+    Rig rig(slot.File());
     rig.handover.SendInput({ .kind = core::ActionKind::Save });
     static_cast<void>(rig.Burst(1));
     static_cast<void>(rig.Burst(TICKS));
@@ -303,6 +309,219 @@ TEST_CASE("the step's wall tick doesn't depend on how the clock split the ticks 
     CHECK(longBursts.simulation.steps == shortBursts.simulation.steps);
     CHECK(longBursts.logic.Counters().wall == shortBursts.logic.Counters().wall);
     CHECK(longBursts.logic.Counters().state == shortBursts.logic.Counters().state);
+}
+
+// Records a replay into `replaySlot`: some ticks, a pause, a calendar step and a save, in bursts of
+// `burst`, ending right after a hash tick so the last recorded state is checked. Returns the logic's
+// hash at the end of the recording.
+u64 Record(const std::filesystem::path& slot, const std::filesystem::path& replaySlot, u64 burst) {
+    constexpr u64 TICKS = 70;
+    Rig rig(slot, replaySlot);
+    rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
+    static_cast<void>(rig.Burst(1));
+    static_cast<void>(rig.Burst(TICKS));
+    rig.handover.SendInput({ .kind = core::ActionKind::Pause });
+    static_cast<void>(rig.Burst(burst));
+    rig.handover.SendInput({ .kind = core::ActionKind::Resume });
+    rig.handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
+    static_cast<void>(rig.Burst(burst));
+    static_cast<void>(rig.Burst(burst));
+    rig.handover.SendInput({ .kind = core::ActionKind::Save });
+    static_cast<void>(rig.Burst(burst));
+    while (rig.logic.Counters().wall % core::REPLAY_HASH_TICKS != 0) {
+        static_cast<void>(rig.Burst(1));
+    }
+    const u64 hash = rig.logic.Hash();
+    rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
+    static_cast<void>(rig.Burst(1));
+    return hash;
+}
+
+// Starts playing the replay in `rig`'s replay slot.
+void StartPlaying(Rig& rig) {
+    rig.handover.SendInput({ .kind = core::ActionKind::PlayReplay });
+    static_cast<void>(rig.Burst(1));
+    REQUIRE(rig.replay.Playing());
+}
+
+// Plays the replay in `rig`'s replay slot, a tick per burst so it stops exactly at the replay's end.
+void Play(Rig& rig) {
+    constexpr u32 MAX_BURSTS = 1'000;
+    StartPlaying(rig);
+    for (u32 bursts = 0; bursts < MAX_BURSTS && rig.replay.Playing() && !rig.replay.AtEnd(); ++bursts) {
+        static_cast<void>(rig.Burst(1));
+    }
+}
+
+// A save slot and a replay recorded beside it in bursts of 3, and a rig over both.
+struct Recorded {
+    explicit Recorded(std::string_view name)
+      : slot{ name }
+      , hash{ Record(slot.File(), ReplayFile(), RECORD_BURSTS) }
+      , rig(slot.File(), ReplayFile()) {
+    }
+
+    [[nodiscard]] std::filesystem::path ReplayFile() const {
+        return slot.File().parent_path() / "replay.pnr";
+    }
+
+    static constexpr u64 RECORD_BURSTS = 3;
+    SaveSlot slot;
+    u64 hash;
+    Rig rig;
+};
+
+TEST_CASE("a replay recorded in bursts of 3 plays to its end in bursts of 1") {
+    Recorded recorded{ "replay_to_end" };
+    Play(recorded.rig);
+    CHECK(recorded.rig.replay.AtEnd());
+}
+
+TEST_CASE("every hash of a replay played back matches its recording") {
+    Recorded recorded{ "replay_hashes" };
+    Play(recorded.rig);
+    CHECK(recorded.rig.replay.HashCount() == 2);
+    CHECK(recorded.rig.replay.Matched() == 2);
+}
+
+TEST_CASE("a replay played back ends in the state it was recorded to") {
+    Recorded recorded{ "replay_end_state" };
+    Play(recorded.rig);
+    CHECK(recorded.rig.logic.Hash() == recorded.hash);
+}
+
+TEST_CASE("a replay plays its calendar step back") {
+    Recorded recorded{ "replay_step" };
+    Play(recorded.rig);
+    CHECK(recorded.rig.simulation.steps.size() == 1);
+}
+
+TEST_CASE("playing a replay starts a new timeline") {
+    Recorded recorded{ "replay_epoch" };
+    StartPlaying(recorded.rig);
+    CHECK(recorded.rig.logic.Epoch() == 1);
+}
+
+TEST_CASE("a replay that diverges from its recording stops at the next hash check") {
+    constexpr u64 SALT = 1'000;
+    Recorded recorded{ "replay_divergence" };
+    recorded.rig.simulation.hashSalt = SALT;
+    Play(recorded.rig);
+    CHECK_FALSE(recorded.rig.replay.Playing());
+    CHECK_FALSE(recorded.rig.replay.AtEnd());
+}
+
+TEST_CASE("after its last tick, a replay stops by itself and live input takes over") {
+    Recorded recorded{ "replay_live_after" };
+    Play(recorded.rig);
+    recorded.rig.handover.SendInput({ .kind = core::ActionKind::Pause });
+    const BurstResult result = recorded.rig.Burst(1);
+    CHECK_FALSE(recorded.rig.replay.Playing());
+    CHECK_FALSE(result.snapshot.advanced);
+}
+
+TEST_CASE("PlayReplay sent while a replay plays stops it") {
+    Recorded recorded{ "replay_stop" };
+    StartPlaying(recorded.rig);
+    recorded.rig.handover.SendInput({ .kind = core::ActionKind::PlayReplay });
+    static_cast<void>(recorded.rig.Burst(1));
+    CHECK_FALSE(recorded.rig.replay.Playing());
+    CHECK_FALSE(recorded.rig.replay.AtEnd());
+}
+
+TEST_CASE("live input sent while a replay plays, a Load or a recording included, is dropped") {
+    Recorded recorded{ "replay_drops_input" };
+    StartPlaying(recorded.rig);
+    recorded.rig.handover.SendInput({ .kind = core::ActionKind::Load });
+    recorded.rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
+    static_cast<void>(recorded.rig.Burst(1));
+    CHECK(recorded.rig.replay.Playing());
+    CHECK_FALSE(recorded.rig.replay.Recording());
+    CHECK(recorded.rig.logic.Epoch() == 1);
+}
+
+TEST_CASE("a Pause sent while a replay plays holds once the replay ends by itself") {
+    constexpr u32 MAX_BURSTS = 1'000;
+    Recorded recorded{ "replay_pause_holds" };
+    StartPlaying(recorded.rig);
+    recorded.rig.handover.SendInput({ .kind = core::ActionKind::Pause });
+    for (u32 bursts = 0; bursts < MAX_BURSTS && recorded.rig.replay.Playing() && !recorded.rig.replay.AtEnd(); ++bursts) {
+        static_cast<void>(recorded.rig.Burst(1));
+    }
+    REQUIRE(recorded.rig.replay.AtEnd());
+    const BurstResult result = recorded.rig.Burst(1);
+    CHECK_FALSE(recorded.rig.replay.Playing());
+    CHECK_FALSE(result.snapshot.advanced);
+}
+
+TEST_CASE("a Save arriving in the same tick as ToggleRecording still writes the save file") {
+    const SaveSlot slot{ "save_with_recording" };
+    Rig rig(slot.File(), slot.File().parent_path() / "replay.pnr");
+    rig.handover.SendInput({ .kind = core::ActionKind::Save });
+    rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
+    static_cast<void>(rig.Burst(1));
+    rig.jobs.WaitForBackground();
+    const bool saved = std::filesystem::exists(slot.File());
+    CHECK(saved);
+}
+
+TEST_CASE("a load while recording finishes the recording and writes it") {
+    const SaveSlot slot{ "replay_load_finishes" };
+    const std::filesystem::path replayFile = slot.File().parent_path() / "replay.pnr";
+    Rig rig(slot.File(), replayFile);
+    rig.handover.SendInput({ .kind = core::ActionKind::Save });
+    static_cast<void>(rig.Burst(1));
+    rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
+    static_cast<void>(rig.Burst(1));
+    rig.handover.SendInput({ .kind = core::ActionKind::Load });
+    static_cast<void>(rig.Burst(1));
+    rig.jobs.WaitForBackground();
+    CHECK_FALSE(rig.replay.Recording());
+    CHECK(std::filesystem::exists(replayFile));
+}
+
+TEST_CASE("with no replay file, playing is refused") {
+    const SaveSlot slot{ "no_replay" };
+    Rig rig(slot.File(), slot.File().parent_path() / "replay.pnr");
+    rig.handover.SendInput({ .kind = core::ActionKind::PlayReplay });
+    CHECK(rig.Burst(1).stalled);
+    CHECK_FALSE(rig.replay.Playing());
+    CHECK(rig.logic.Epoch() == 0);
+}
+
+TEST_CASE("a replay whose start state the logic rejects doesn't play, and nothing changes") {
+    constexpr u8 NO_SUCH_CALENDAR_PHASE = 7;
+    const SaveSlot slot{ "replay_bad_start" };
+    const std::filesystem::path replayFile = slot.File().parent_path() / "replay.pnr";
+    std::vector<std::byte> start;
+    core::Writer writer{ start };
+    writer(false, NO_SUCH_CALENDAR_PHASE);
+    core::Replay recording;
+    recording.StartRecording(std::move(start));
+    const auto written = core::WriteSaveFile(replayFile, recording.FinishRecording());
+    REQUIRE(written.has_value());
+
+    Rig rig(slot.File(), replayFile);
+    rig.handover.SendInput({ .kind = core::ActionKind::PlayReplay });
+    static_cast<void>(rig.Burst(1));
+    CHECK_FALSE(rig.replay.Playing());
+    CHECK(rig.logic.Epoch() == 0);
+    CHECK(rig.logic.Counters().wall == 1);
+    CHECK(rig.logic.Counters().simulation == 0);
+}
+
+TEST_CASE("PlayReplay sent while recording finishes the recording and plays it") {
+    constexpr u64 TICKS = 5;
+    const SaveSlot slot{ "replay_play_while_recording" };
+    Rig rig(slot.File(), slot.File().parent_path() / "replay.pnr");
+    rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
+    static_cast<void>(rig.Burst(1));
+    static_cast<void>(rig.Burst(TICKS));
+    rig.handover.SendInput({ .kind = core::ActionKind::PlayReplay });
+    static_cast<void>(rig.Burst(1));
+    CHECK_FALSE(rig.replay.Recording());
+    CHECK(rig.replay.Playing());
+    CHECK(rig.logic.Epoch() == 1);
 }
 
 } // namespace

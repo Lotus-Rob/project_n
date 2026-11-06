@@ -36,7 +36,7 @@ void App::RunLogic(const std::stop_token& stop) {
     try {
         core::math::SetFloatingPointEnvironment();
         {
-            Game game(m_handover, m_options.scene, m_options.saveSlot, m_startNs, platform::NowNs);
+            Game game(m_handover, m_options.scene, m_options.saveSlot, m_options.replaySlot, m_startNs, platform::NowNs);
             game.Run(stop);
         } // the workers join here: a hang at shutdown shows as no "stopped" line
         PN_LOG_INFO("logic thread and job system stopped");
@@ -90,6 +90,14 @@ void App::SendInput(const platform::WindowState& state) {
     if (state.loadRequested) {
         PN_LOG_INFO("a load asked for");
         m_handover.SendInput({ .kind = core::ActionKind::Load });
+    }
+    if (state.recordRequested) {
+        PN_LOG_INFO("a replay recording started or finished");
+        m_handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
+    }
+    if (state.replayRequested) {
+        PN_LOG_INFO("the replay asked to play or stop");
+        m_handover.SendInput({ .kind = core::ActionKind::PlayReplay });
     }
     if (state.monthRequested) {
         PN_LOG_INFO("a month asked to pass");

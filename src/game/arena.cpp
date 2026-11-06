@@ -85,6 +85,7 @@ constexpr std::array<u32, 6> ACTIVE_CELLS{
     { MAP_COLUMNS + 1, MAP_COLUMNS + 4, MAP_COLUMNS + 6, (3 * MAP_COLUMNS) + 2, (3 * MAP_COLUMNS) + 3, (3 * MAP_COLUMNS) + 5 }
 };
 constexpr u32 WORLD_NPCS = 50'000;
+constexpr u32 SMALL_WORLD_NPCS = 5'000;
 constexpr u32 WORLD_CELLS = 4'096;
 constexpr u64 SEED = 0x5eed;
 
@@ -199,6 +200,9 @@ Arena::Arena(Scene scene)
     if (scene == Scene::Stress) {
         SpawnStress();
     }
+    if (scene == Scene::Npcs) {
+        SpawnNpcs(SMALL_WORLD_NPCS);
+    }
 }
 
 void Arena::SpawnStress() {
@@ -235,10 +239,14 @@ void Arena::SpawnStress() {
             m_state[ACTIVE].Entities().emplace<Orbit>(Spawn(OrbitPoint(orbit, 0), look), orbit);
         }
     }
+    SpawnNpcs(WORLD_NPCS);
+}
+
+void Arena::SpawnNpcs(u32 worldNpcs) {
     for (const u32 cell : ACTIVE_CELLS) {
         Activate(m_state, SpawnNpc(m_state, cell));
     }
-    for (u32 npc = 0; npc < WORLD_NPCS; ++npc) {
+    for (u32 npc = 0; npc < worldNpcs; ++npc) {
         SpawnNpc(m_state, npc % WORLD_CELLS);
     }
 }
@@ -318,7 +326,7 @@ bool Arena::Load(core::Reader& archive) {
     u64 next = 0;
     u64 months = 0;
     archive(format, scene, seed, next, months);
-    if (format != ARENA_FORMAT || scene > Scene::Cells) {
+    if (format != ARENA_FORMAT || scene > Scene::Npcs) {
         archive.Fail();
     }
     core::State state{ DOMAINS, seed, core::StableIdCounter{ .next = next } };
