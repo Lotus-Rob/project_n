@@ -103,6 +103,8 @@ enum class ActionKind : u8 {
     Pause,           ///< Freeze the simulation tick.
     Resume,          ///< Run the simulation tick again.
     AdvanceCalendar, ///< Let a month of world time pass: a calendar step behind a transition.
+    Save,            ///< Save the game to the save file.
+    Load,            ///< Load the game from the save file: a new timeline.
 };
 
 /// A player's or the main thread's request to the simulation, sent as input.

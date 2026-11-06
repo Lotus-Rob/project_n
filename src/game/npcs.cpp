@@ -140,6 +140,31 @@ void Relationships::Forget(core::StableId npc) {
     std::erase_if(m_edges, [npc](const Relationship& edge) { return edge.holder == npc || edge.subject == npc; });
 }
 
+void Relationships::Load(core::Reader& archive, const core::State& state) {
+    constexpr std::size_t EDGE_BYTES = (2 * sizeof(core::StableId)) + sizeof(f32);
+    u64 count = 0;
+    archive(count);
+    if (count > archive.Remaining() / EDGE_BYTES) {
+        archive.Fail();
+    }
+    std::vector<Relationship> edges;
+    edges.reserve(archive.Failed() ? 0 : static_cast<std::size_t>(count));
+    for (u64 i = 0; i < count && !archive.Failed(); ++i) {
+        Relationship edge;
+        archive(edge);
+        const bool ordered =
+            edges.empty() || std::pair{ edges.back().holder, edges.back().subject } < std::pair{ edge.holder, edge.subject };
+        if (!ordered || edge.holder == edge.subject || !state.DomainOf(edge.holder) || !state.DomainOf(edge.subject) ||
+            !std::isfinite(edge.opinion)) {
+            archive.Fail();
+        }
+        edges.push_back(edge);
+    }
+    if (!archive.Failed()) {
+        m_edges = std::move(edges);
+    }
+}
+
 core::StableId SpawnNpc(core::State& state, u32 cell) {
     const auto [stableId, entity] = state.Create(WORLD);
     state[WORLD].Entities().emplace<Npc>(entity, cell);

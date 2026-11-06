@@ -6,11 +6,13 @@
 /// ticks, frozen while paused, and publishing the last one's snapshot. The thread around it only
 /// waits for the clock and logs. The game module's simulation runs here through core::Simulation.
 
+#include "core/archive.hpp"
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
 #include "core/tick_clock.hpp"
 #include "core/types.hpp"
 
+#include <filesystem>
 #include <stop_token>
 #include <vector>
 
@@ -36,6 +38,17 @@ public:
     /// leaving the step unfinished, once `stop` is requested (the game is closing).
     virtual void AdvanceCalendar(const TickCounters& counters, Jobs& jobs, const std::stop_token& stop) = 0;
 
+    /// Sorts the state into canonical order (design doc 0002 §7.1), which is part of the timeline,
+    /// and writes all of it into `archive`.
+    virtual void Save(Writer& archive) = 0;
+
+    /// Replaces the state with the one Save() wrote, read from `archive` to its end. Returns false,
+    /// changing nothing, when the bytes are malformed or of another version.
+    [[nodiscard]] virtual bool Load(Reader& archive) = 0;
+
+    /// A hash of the whole state as it is, order included: two runs that agree hash alike (§7.4).
+    [[nodiscard]] virtual u64 StateHash() const = 0;
+
     /// Writes what the state looks like now into `snapshot`'s drawing data: its instances and batches
     /// arrive empty, with their capacity kept. Called once per burst, after its last tick, on the
     /// thread that created `jobs`, whose workers it may fork.
@@ -45,14 +58,23 @@ public:
 /// The game state the logic thread owns, and the scratch it reuses between bursts.
 class Logic {
 public:
+    /// The logic of a game that saves to and loads from `saveFile`; with none, Save and Load are
+    /// refused with a warning.
+    explicit Logic(std::filesystem::path saveFile = {})
+      : m_saveFile{ std::move(saveFile) } {
+    }
+
     /// Runs `burst.ticks` ticks back to back. Each takes the input sent since the one before (the
     /// last Pause or Resume wins) and counts itself, frozen while paused or while a calendar step
     /// is asked for, and ticks `simulation` unless frozen. Then publishes the snapshot of the
     /// burst's last tick, filled by `simulation` on `jobs` and stamped with `now()` at publishing.
     /// A burst that takes AdvanceCalendar publishes the transition; the first tick of the next
     /// runs the step instead of taking input, which waits in the handover, and ends its burst.
-    /// Returns whether it ran a step: a stall the caller expected, so its clock restarts rather
-    /// than catching up (TickClock::Restart). `stop` cuts a step short.
+    /// A tick that takes Save (frozen) sorts and serialises the state and has a background job
+    /// write it; one that takes Load (which wins over Save) waits for that job, reads the save
+    /// and, when it is sound, replaces the state and the counters and starts a new timeline epoch.
+    /// Either ends its burst. Returns whether the burst ended so: a stall the caller expected, so
+    /// its clock restarts rather than catching up (TickClock::Restart). `stop` cuts a step short.
     bool RunBurst(
         const TickBurst& burst,
         GameHandover& handover,
@@ -67,14 +89,30 @@ public:
         return m_counters;
     }
 
+    /// The timeline epoch: 0 at the start, one more at each load (design doc 0002 §5).
+    [[nodiscard]] u64 Epoch() const {
+        return m_epoch;
+    }
+
 private:
+    struct Requests {
+        bool save = false;
+        bool load = false;
+    };
+
+    Requests TakeInput(GameHandover& handover);
+    void Save(Simulation& simulation, Jobs& jobs);
+    bool Load(Simulation& simulation, Jobs& jobs);
+
     enum class Calendar : u8 {
         None,      // no step asked for
         Requested, // asked for: the burst publishes the transition
         Published, // the transition is out: the next tick runs the step
     };
 
+    std::filesystem::path m_saveFile;
     TickCounters m_counters{};
+    u64 m_epoch = 0;
     bool m_paused = false;
     Calendar m_calendar = Calendar::None;
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for

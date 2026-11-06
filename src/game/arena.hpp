@@ -18,6 +18,7 @@
 #include "game/components.hpp"
 #include "game/npcs.hpp"
 
+#include <cmath>
 #include <stop_token>
 
 namespace game {
@@ -34,6 +35,18 @@ struct Orbit {
     f32 phase = 0.0F;
     /// Radians per tick; negative goes anticlockwise.
     f32 speed = 0.0F;
+
+    /// Lists its fields for an archive (core/archive.hpp).
+    template<typename Self, typename Archive>
+    void Fields(this Self& self, Archive& archive) {
+        archive(self.centre, self.radius, self.wobble, self.phase, self.speed);
+    }
+
+    /// Whether a value read from a save can be used: finite numbers.
+    [[nodiscard]] bool Valid() const {
+        return core::IsFinite(centre) && std::isfinite(radius) && std::isfinite(wobble) && std::isfinite(phase) &&
+               std::isfinite(speed);
+    }
 };
 
 /// Where an Orbit puts its entity's foot at `tick`.
@@ -60,6 +73,22 @@ public:
     /// Lets a month pass for the world NPCs (MonthStep).
     void AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs, const std::stop_token& stop) override;
 
+    /// Sorts the state into canonical order and writes it, with the scene, the months passed and
+    /// the relationships, into `archive`.
+    void Save(core::Writer& archive) override;
+
+    /// Replaces the state with the one Save() wrote; false, changing nothing, when the bytes are
+    /// malformed, of another version, or don't end where the state does.
+    [[nodiscard]] bool Load(core::Reader& archive) override;
+
+    /// A hash of everything Save() writes, in the state's current order.
+    [[nodiscard]] u64 StateHash() const override;
+
+    /// How many months have passed.
+    [[nodiscard]] u64 Months() const {
+        return m_months;
+    }
+
     /// The game state: the arena's entities in the active domain, NPCs in the world domain.
     [[nodiscard]] const core::State& State() const {
         return m_state;
@@ -76,6 +105,9 @@ public:
     void Publish(core::Snapshot& snapshot, core::Jobs& jobs) override;
 
 private:
+    template<typename Archive>
+    void Write(Archive& archive) const;
+
     core::Entity Spawn(core::Vec2 foot, const Look& look);
     void SpawnStress();
     void SpawnPainted();
@@ -88,6 +120,8 @@ private:
     MonthStep m_monthStep{};
     // NOLINTEND(readability-redundant-member-init)
     core::State m_state;
+    Scene m_scene;
+    u64 m_months = 0;    // the calendar: months passed
     core::Rect m_view{}; // what a publish culls to
 };
 
