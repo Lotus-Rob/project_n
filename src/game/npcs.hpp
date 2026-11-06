@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <span>
+#include <stop_token>
 #include <utility>
 #include <vector>
 
@@ -149,8 +150,16 @@ public:
     static constexpr u32 CHUNK = 1'024;
 
     /// Runs one month for every world NPC on `jobs`, from random numbers keyed on the state's seed
-    /// and `stateCounter`. On the thread that created `jobs`.
-    void Run(core::State& state, Relationships& relationships, core::Jobs& jobs, u64 stateCounter);
+    /// and `stateCounter`. On the thread that created `jobs`. Once `stop` is requested, chunks not
+    /// yet started are skipped and nothing is merged: the month is left half done, for a game
+    /// that is closing.
+    void Run(
+        core::State& state,
+        Relationships& relationships,
+        core::Jobs& jobs,
+        u64 stateCounter,
+        const std::stop_token& stop = {}
+    );
 
 private:
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer

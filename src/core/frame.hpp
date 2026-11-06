@@ -77,6 +77,9 @@ struct Snapshot {
     /// Whether the simulation ran in its tick: false on frozen ticks (paused, loading), whose
     /// snapshots show current transforms only.
     bool advanced = false;
+    /// Whether a calendar step runs next (design doc 0002 §7.3): the main thread shows the transition
+    /// and caps its frame rate, leaving the cores to the step, until a snapshot without it arrives.
+    bool transition = false;
     /// The sprites to draw, in drawing order. The buffer keeps its capacity from publish to
     /// publish: the publisher clears and refills it, never assigns a new one.
     std::vector<Instance> instances{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
@@ -97,8 +100,9 @@ struct Event {
 
 /// What an action asks the simulation to do.
 enum class ActionKind : u8 {
-    Pause,  ///< Freeze the simulation tick.
-    Resume, ///< Run the simulation tick again.
+    Pause,           ///< Freeze the simulation tick.
+    Resume,          ///< Run the simulation tick again.
+    AdvanceCalendar, ///< Let a month of world time pass: a calendar step behind a transition.
 };
 
 /// A player's or the main thread's request to the simulation, sent as input.

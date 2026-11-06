@@ -32,6 +32,7 @@
 #include <source_location>
 #include <span>
 #include <sstream>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <thread>

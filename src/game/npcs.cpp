@@ -35,6 +35,60 @@ f32 Clamped(f32 need) {
     return std::clamp(need, 0.0F, 1.0F);
 }
 
+struct Month {
+    u64 seed = 0;
+    u64 stateCounter = 0;
+    std::span<const std::pair<u32, core::StableId>> byCell; // every world NPC by (cell, stable ID)
+};
+
+// One NPC's month: it scores its actions, takes the best and changes itself; a meeting it starts goes into `met` as
+// (met, by).
+void LiveMonth(
+    Npc& person,
+    Needs& want,
+    core::StableId self,
+    const Month& month,
+    std::vector<std::pair<core::StableId, core::StableId>>& met
+) {
+    const u64 key = std::to_underlying(self);
+    const auto chance = [&](Action action) {
+        return JITTER * Unit(core::Random(month.seed, month.stateCounter, key, PURPOSE_CHOICE, std::to_underlying(action)));
+    };
+    const std::array<std::pair<f32, Action>, 3> scores{ {
+        { want.rest + chance(Action::Rest), Action::Rest },
+        { (CULTIVATION_DRIVE * (1.0F - want.rest)) + chance(Action::Cultivate), Action::Cultivate },
+        { want.company + chance(Action::Socialise), Action::Socialise },
+    } };
+    person.action = std::ranges::max(scores, {}, &std::pair<f32, Action>::first).second;
+
+    if (person.action == Action::Socialise) {
+        // Everyone else in its cell: the cell's range of month.byCell without itself.
+        const auto [first, last] =
+            std::ranges::equal_range(month.byCell, person.cell, {}, &std::pair<u32, core::StableId>::first);
+        const auto others = static_cast<u32>(last - first) - 1;
+        if (others == 0) {
+            person.action = Action::Rest;
+        }
+        else {
+            auto partner = first + core::ToBelow(core::Random(month.seed, month.stateCounter, key, PURPOSE_PARTNER, 0), others);
+            if (partner->second >= self) {
+                ++partner; // skips itself: the range is sorted by stable ID within the cell
+            }
+            met.emplace_back(partner->second, self);
+            want.company = 0.0F;
+        }
+    }
+    if (person.action == Action::Rest) {
+        want.rest = 0.0F;
+    }
+    if (person.action == Action::Cultivate) {
+        person.power += 1.0F;
+        want.rest += CULTIVATION_FATIGUE;
+    }
+    want.rest = Clamped(want.rest + MONTHLY_FATIGUE);
+    want.company = Clamped(want.company + MONTHLY_LONELINESS);
+}
+
 } // namespace
 
 core::Vec2 CellCentre(u32 cell) {
@@ -168,7 +222,13 @@ void WalkActive(core::Domain& active) {
     }
 }
 
-void MonthStep::Run(core::State& state, Relationships& relationships, core::Jobs& jobs, u64 stateCounter) {
+void MonthStep::Run(
+    core::State& state,
+    Relationships& relationships,
+    core::Jobs& jobs,
+    u64 stateCounter,
+    const std::stop_token& stop
+) {
     PN_PROFILE_ZONE();
     core::Registry& world = state[WORLD].Entities();
     auto& npcs = world.storage<Npc>();
@@ -187,53 +247,27 @@ void MonthStep::Run(core::State& state, Relationships& relationships, core::Jobs
     jobs.ParallelFor(chunks, [&](u32 chunk) {
         std::vector<std::pair<core::StableId, core::StableId>>& met = m_met[chunk];
         met.clear();
+        if (stop.stop_requested()) {
+            return;
+        }
         const std::size_t begin = std::size_t{ chunk } * CHUNK;
         const std::size_t end = std::min(npcs.size(), begin + CHUNK);
         for (std::size_t i = begin; i < end; ++i) {
             const core::Entity entity = npcs[i];
-            Npc& person = npcs.get(entity);
-            Needs& want = needs.get(entity);
-            const core::StableId self = ids.get(entity);
-            const u64 key = std::to_underlying(self);
-            const auto chance = [&](Action action) {
-                return JITTER * Unit(core::Random(seed, stateCounter, key, PURPOSE_CHOICE, std::to_underlying(action)));
-            };
-            const std::array<std::pair<f32, Action>, 3> scores{ {
-                { want.rest + chance(Action::Rest), Action::Rest },
-                { (CULTIVATION_DRIVE * (1.0F - want.rest)) + chance(Action::Cultivate), Action::Cultivate },
-                { want.company + chance(Action::Socialise), Action::Socialise },
-            } };
-            person.action = std::ranges::max(scores, {}, &std::pair<f32, Action>::first).second;
-
-            if (person.action == Action::Socialise) {
-                // Everyone else in its cell: the cell's range of m_byCell without itself.
-                const auto [first, last] =
-                    std::ranges::equal_range(m_byCell, person.cell, {}, &std::pair<u32, core::StableId>::first);
-                const auto others = static_cast<u32>(last - first) - 1;
-                if (others == 0) {
-                    person.action = Action::Rest;
-                }
-                else {
-                    auto partner = first + core::ToBelow(core::Random(seed, stateCounter, key, PURPOSE_PARTNER, 0), others);
-                    if (partner->second >= self) {
-                        ++partner; // skips itself: the range is sorted by stable ID within the cell
-                    }
-                    met.emplace_back(partner->second, self);
-                    want.company = 0.0F;
-                }
-            }
-            if (person.action == Action::Rest) {
-                want.rest = 0.0F;
-            }
-            if (person.action == Action::Cultivate) {
-                person.power += 1.0F;
-                want.rest += CULTIVATION_FATIGUE;
-            }
-            want.rest = Clamped(want.rest + MONTHLY_FATIGUE);
-            want.company = Clamped(want.company + MONTHLY_LONELINESS);
+            LiveMonth(
+                npcs.get(entity),
+                needs.get(entity),
+                ids.get(entity),
+                { .seed = seed, .stateCounter = stateCounter, .byCell = m_byCell },
+                met
+            );
         }
     });
 
+    if (stop.stop_requested()) {
+        PN_LOG_INFO("month step cut short: the game is closing");
+        return;
+    }
     // Chunks in order, then a stable sort by target and source: emission order breaks ties.
     m_merged.clear();
     for (u32 chunk = 0; chunk < chunks; ++chunk) {

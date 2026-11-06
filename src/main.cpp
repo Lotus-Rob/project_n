@@ -17,6 +17,8 @@ namespace {
 
 constexpr i32 WINDOW_WIDTH = 1280;
 constexpr i32 WINDOW_HEIGHT = 720;
+// Frames during a calendar step's transition: few, leaving the cores to the step (design doc 0002 §7.3).
+constexpr u64 TRANSITION_FRAME_NS = core::NS_PER_SECOND / 20;
 // The logic thread's loop (design doc 0002 §6): runs the ticks due, then publishes the burst's last.
 void Tick(const std::stop_token& stop, core::GameHandover& handover, u64 startNs, game::Scene scene) {
     core::math::SetFloatingPointEnvironment();
@@ -45,7 +47,11 @@ void Tick(const std::stop_token& stop, core::GameHandover& handover, u64 startNs
                     PN_LOG_INFO("ticks are on time again");
                 }
             }
-            logic.RunBurst(burst, handover, arena, jobs, platform::NowNs);
+            if (logic.RunBurst(burst, handover, arena, jobs, platform::NowNs, stop)) {
+                const u64 steppedNs = platform::NowNs();
+                PN_LOG_INFO("a month passed in {} ms", (steppedNs - now) / (core::NS_PER_SECOND / 1'000));
+                clock.Restart(steppedNs);
+            }
         }
     } // the workers join here: a hang at shutdown shows as no "stopped" line
     PN_LOG_INFO("job system stopped");
@@ -156,6 +162,10 @@ i32 Run(game::Scene scene, u64 quitAfterNs) {
             PN_LOG_INFO("{}: the window is {}", paused ? "paused" : "resumed", paused ? "unfocused or minimised" : "back");
             handover.SendInput({ .kind = paused ? core::ActionKind::Pause : core::ActionKind::Resume });
         }
+        if (state.monthRequested) {
+            PN_LOG_INFO("a month asked to pass");
+            handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
+        }
         // Events are drained every iteration, drawing or not, so the queue never grows (§5).
         handover.TakeEvents(incoming);
         pending.insert(pending.end(), incoming.begin(), incoming.end());
@@ -177,6 +187,10 @@ i32 Run(game::Scene scene, u64 quitAfterNs) {
                 PN_PROFILE_FRAME();
             }
         );
+        if (drawn->transition) {
+            // shortcut: nothing draws the transition itself yet; its view model and screen come with the UI (phase 6).
+            platform::WaitUntilNs(platform::NowNs() + TRANSITION_FRAME_NS);
+        }
     }
 
     PN_LOG_INFO("shutting down; {} snapshots were published after they were due", display.LateAdoptions());

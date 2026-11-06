@@ -79,6 +79,15 @@ constexpr f32 SPIRAL_TWIST = 0.004F; // radians per bullet along an arm: an arm 
 constexpr f32 SPIRAL_SPEED = 0.01F;
 constexpr f32 BULLET_SCALE = 0.5F;
 
+// The stress scene's NPCs: a few walking about the arena, each in its own map cell, and a world of them living over
+// the map, a dozen to a cell.
+constexpr std::array<u32, 6> ACTIVE_CELLS{
+    { MAP_COLUMNS + 1, MAP_COLUMNS + 4, MAP_COLUMNS + 6, (3 * MAP_COLUMNS) + 2, (3 * MAP_COLUMNS) + 3, (3 * MAP_COLUMNS) + 5 }
+};
+constexpr u32 WORLD_NPCS = 50'000;
+constexpr u32 WORLD_CELLS = 4'096;
+constexpr u64 SEED = 0x5eed;
+
 constexpr u32 PUBLISH_CHUNK = 4'096; // entities packed per job chunk
 // shortcut: the camera shows the whole ground, and lives on the main thread; the view follows it from phase 5.
 constexpr core::Rect GROUND_VIEW{ .min = {}, .max = CROWD_AREA };
@@ -86,11 +95,12 @@ constexpr core::Rect GROUND_VIEW{ .min = {}, .max = CROWD_AREA };
 // A grid around the reference area's middle, wider than the view at the smallest zoom (gfx::MIN_ZOOM).
 constexpr u32 CELL_COLUMNS = 32;
 constexpr u32 CELL_ROWS = 20;
-constexpr f32 CELL_SIZE = 256.0F;
-constexpr core::Vec2 CELLS_MIN{ .x = 960.0F - (CELL_COLUMNS * CELL_SIZE / 2.0F), .y = 540.0F - (CELL_ROWS * CELL_SIZE / 2.0F) };
+constexpr f32 GRID_CELL_SIZE = 256.0F;
+constexpr core::Vec2 CELLS_MIN{ .x = 960.0F - (CELL_COLUMNS * GRID_CELL_SIZE / 2.0F),
+                                .y = 540.0F - (CELL_ROWS * GRID_CELL_SIZE / 2.0F) };
 constexpr core::Rect CELLS_VIEW{
     .min = CELLS_MIN,
-    .max = { .x = CELLS_MIN.x + (CELL_COLUMNS * CELL_SIZE), .y = CELLS_MIN.y + (CELL_ROWS * CELL_SIZE) },
+    .max = { .x = CELLS_MIN.x + (CELL_COLUMNS * GRID_CELL_SIZE), .y = CELLS_MIN.y + (CELL_ROWS * GRID_CELL_SIZE) },
 };
 constexpr std::array<SpriteId, 5> CELLS{
     { SpriteId::CellPlain, SpriteId::CellForest, SpriteId::CellMountain, SpriteId::CellSnow, SpriteId::CellCity }
@@ -113,7 +123,8 @@ core::Vec2 OrbitPoint(const Orbit& orbit, u64 tick) {
 }
 
 Arena::Arena(Scene scene)
-  : m_view{ scene == Scene::Cells ? CELLS_VIEW : GROUND_VIEW } {
+  : m_state{ DOMAINS, SEED }
+  , m_view{ scene == Scene::Cells ? CELLS_VIEW : GROUND_VIEW } {
     if (scene == Scene::Cells) {
         SpawnCells();
         return;
@@ -134,7 +145,9 @@ Arena::Arena(Scene scene)
             .phase = TURN * static_cast<f32>(fox) / static_cast<f32>(FOXES),
             .speed = FOX_SPEED,
         };
-        m_domain.Entities().emplace<Orbit>(Spawn(OrbitPoint(orbit, 0), { .sprite = SpriteId::Fox, .shadow = true }), orbit);
+        m_state[ACTIVE].Entities().emplace<Orbit>(
+            Spawn(OrbitPoint(orbit, 0), { .sprite = SpriteId::Fox, .shadow = true }), orbit
+        );
     }
     for (u32 orb = 0; orb < ORBS; ++orb) {
         const Orbit orbit{
@@ -149,11 +162,14 @@ Arena::Arena(Scene scene)
             .layer = core::Layer::Effects,
             .pipeline = core::Pipeline::Additive,
         };
-        m_domain.Entities().emplace<Orbit>(Spawn(OrbitPoint(orbit, 0), look), orbit);
+        m_state[ACTIVE].Entities().emplace<Orbit>(Spawn(OrbitPoint(orbit, 0), look), orbit);
     }
-    if (scene != Scene::Stress) {
-        return;
+    if (scene == Scene::Stress) {
+        SpawnStress();
     }
+}
+
+void Arena::SpawnStress() {
     for (u32 row = 0; row < CROWD_ROWS; ++row) {
         for (u32 column = 0; column < CROWD_COLUMNS; ++column) {
             const u32 member = (row * CROWD_COLUMNS) + column;
@@ -166,7 +182,7 @@ Arena::Arena(Scene scene)
                 .speed = member % 2 == 0 ? CROWD_SPEED : -CROWD_SPEED,
             };
             const Look look{ .sprite = member % 2 == 0 ? SpriteId::Fox : SpriteId::Cultivator, .scale = CROWD_SCALE };
-            m_domain.Entities().emplace<Orbit>(Spawn(OrbitPoint(orbit, 0), look), orbit);
+            m_state[ACTIVE].Entities().emplace<Orbit>(Spawn(OrbitPoint(orbit, 0), look), orbit);
         }
     }
     for (u32 arm = 0; arm < SPIRAL_ARMS; ++arm) {
@@ -184,8 +200,14 @@ Arena::Arena(Scene scene)
                 .pipeline = core::Pipeline::Additive,
                 .scale = BULLET_SCALE,
             };
-            m_domain.Entities().emplace<Orbit>(Spawn(OrbitPoint(orbit, 0), look), orbit);
+            m_state[ACTIVE].Entities().emplace<Orbit>(Spawn(OrbitPoint(orbit, 0), look), orbit);
         }
+    }
+    for (const u32 cell : ACTIVE_CELLS) {
+        Activate(m_state, SpawnNpc(m_state, cell));
+    }
+    for (u32 npc = 0; npc < WORLD_NPCS; ++npc) {
+        SpawnNpc(m_state, npc % WORLD_CELLS);
     }
 }
 
@@ -201,8 +223,8 @@ void Arena::SpawnPainted() {
 void Arena::SpawnCells() {
     for (u32 row = 0; row < CELL_ROWS; ++row) {
         for (u32 column = 0; column < CELL_COLUMNS; ++column) {
-            const core::Vec2 corner{ .x = CELLS_MIN.x + (static_cast<f32>(column) * CELL_SIZE),
-                                     .y = CELLS_MIN.y + (static_cast<f32>(row) * CELL_SIZE) };
+            const core::Vec2 corner{ .x = CELLS_MIN.x + (static_cast<f32>(column) * GRID_CELL_SIZE),
+                                     .y = CELLS_MIN.y + (static_cast<f32>(row) * GRID_CELL_SIZE) };
             // Steps of 2 by row keep equal cells from lining up in columns.
             const SpriteId sprite = CELLS.at((column + (2 * row)) % CELLS.size());
             Spawn(corner, { .sprite = sprite, .layer = core::Layer::Ground });
@@ -211,24 +233,31 @@ void Arena::SpawnCells() {
 }
 
 core::Entity Arena::Spawn(core::Vec2 foot, const Look& look) {
-    const core::Entity entity = m_domain.Create(m_ids.Allocate());
-    m_domain.Entities().emplace<Body>(entity, foot, foot);
-    m_domain.Entities().emplace<Look>(entity, look);
+    const core::Entity entity = m_state.Create(ACTIVE).second;
+    m_state[ACTIVE].Entities().emplace<Body>(entity, foot, foot);
+    m_state[ACTIVE].Entities().emplace<Look>(entity, look);
     return entity;
 }
 
-void Arena::Tick(u64 simulationTick) {
+void Arena::Tick(const core::TickCounters& counters) {
     PN_PROFILE_ZONE();
-    for (auto [entity, body, orbit] : m_domain.Entities().view<Body, const Orbit>().each()) {
+    core::Domain& active = m_state[ACTIVE];
+    for (auto [entity, body, orbit] : active.Entities().view<Body, const Orbit>().each()) {
         body.previous = body.current;
-        body.current = OrbitPoint(orbit, simulationTick);
+        body.current = OrbitPoint(orbit, counters.simulation);
     }
+    DecideActive(active, m_state.Seed(), counters.state, counters.simulation);
+    WalkActive(active);
+}
+
+void Arena::AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs, const std::stop_token& stop) {
+    m_monthStep.Run(m_state, m_relationships, jobs, counters.state, stop);
 }
 
 void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
     PN_PROFILE_ZONE();
-    const auto& bodies = m_domain.Entities().storage<Body>();
-    const auto& looks = m_domain.Entities().storage<Look>();
+    const auto& bodies = m_state[ACTIVE].Entities().storage<Body>();
+    const auto& looks = m_state[ACTIVE].Entities().storage<Look>();
     const u32 chunks = core::ChunkCount(looks.size(), PUBLISH_CHUNK);
     m_drawList.Begin(m_view, std::max(chunks, 1U));
     m_drawList.Add(0, core::Layer::Ground, core::Pipeline::Normal, core::MakeInstance({ .sprite = SpriteId::Ground }));

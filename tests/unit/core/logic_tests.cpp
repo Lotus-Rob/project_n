@@ -15,8 +15,12 @@ u64 PublishedClock() {
 // Records the ticks it ran and its publishes, and publishes one instance per tick so far.
 class Recorder final : public core::Simulation {
 public:
-    void Tick(u64 simulationTick) override {
-        ticks.push_back(simulationTick);
+    void Tick(const core::TickCounters& counters) override {
+        ticks.push_back(counters.simulation);
+        states.push_back(counters.state);
+    }
+    void AdvanceCalendar(const core::TickCounters& counters, core::Jobs& /*jobs*/, const std::stop_token& /*stop*/) override {
+        steps.push_back(counters.state);
     }
     void Publish(core::Snapshot& snapshot, core::Jobs& /*jobs*/) override {
         ++publishes;
@@ -26,7 +30,11 @@ public:
         snapshot.instances.resize(ticks.size());
     }
 
-    std::vector<u64> ticks{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::vector<u64> ticks{};
+    std::vector<u64> states{}; // the state counter at each tick
+    std::vector<u64> steps{};  // the state counter at each calendar step
+    // NOLINTEND(readability-redundant-member-init)
     std::size_t publishes = 0;
     std::size_t ticksAtPublish = 0;
     std::size_t capacityAtPublish = 0;
@@ -138,6 +146,74 @@ TEST_CASE("each publish starts from empty instances that keep their capacity") {
         }
         handover.ReturnState(handover.TakeState());
     }
+}
+
+} // namespace
+
+namespace {
+
+struct BurstResult {
+    bool stepped = false;
+    core::Snapshot snapshot{};
+};
+
+// Runs a burst of `ticks` on `simulation` and returns what RunBurst said and published.
+BurstResult Run(core::Logic& logic, core::GameHandover& handover, Recorder& simulation, u64 ticks) {
+    core::Jobs jobs{ 1 };
+    const bool stepped =
+        logic.RunBurst({ .ticks = ticks, .scheduledNs = SCHEDULED_NS }, handover, simulation, jobs, PublishedClock);
+    core::Snapshot* published = handover.TakeState();
+    REQUIRE(published != nullptr);
+    BurstResult result{ .stepped = stepped, .snapshot = *published };
+    handover.ReturnState(published);
+    return result;
+}
+
+TEST_CASE("a calendar step asked for freezes the burst and publishes the transition first") {
+    constexpr u64 TICKS = 2;
+    core::Logic logic;
+    core::GameHandover handover;
+    Recorder simulation;
+    handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
+    const BurstResult result = Run(logic, handover, simulation, TICKS);
+    CHECK_FALSE(result.stepped);
+    CHECK(result.snapshot.transition);
+    CHECK_FALSE(result.snapshot.advanced);
+    CHECK(result.snapshot.simulationTick == 0);
+    CHECK(simulation.steps.empty());
+}
+
+TEST_CASE("the tick after the transition runs the step, changing the state, and ends its burst") {
+    constexpr u64 TICKS = 3;
+    core::Logic logic;
+    core::GameHandover handover;
+    Recorder simulation;
+    handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
+    static_cast<void>(Run(logic, handover, simulation, 1));
+
+    const BurstResult result = Run(logic, handover, simulation, TICKS);
+    CHECK(result.stepped);
+    CHECK(simulation.steps == std::vector<u64>{ 1 });
+    CHECK(simulation.ticks.empty());
+    CHECK(result.snapshot.wallTick == 2);
+    CHECK_FALSE(result.snapshot.transition);
+    CHECK_FALSE(result.snapshot.advanced);
+
+    static_cast<void>(Run(logic, handover, simulation, 1));
+    CHECK(simulation.ticks == std::vector<u64>{ 1 });
+    CHECK(simulation.states == std::vector<u64>{ 2 }); // the step counted as a change of state
+}
+
+TEST_CASE("input sent during the transition waits until after the step") {
+    core::Logic logic;
+    core::GameHandover handover;
+    Recorder simulation;
+    handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
+    static_cast<void>(Run(logic, handover, simulation, 1));
+    handover.SendInput({ .kind = core::ActionKind::Pause });
+    CHECK(Run(logic, handover, simulation, 1).stepped);
+    CHECK_FALSE(Run(logic, handover, simulation, 1).snapshot.advanced);
+    CHECK(simulation.ticks.empty());
 }
 
 } // namespace
