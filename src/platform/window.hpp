@@ -33,6 +33,10 @@ struct WindowState {
     bool saveRequested = false;
     /// The player pressed F9 during the last Poll(), asking to load the save (the same shortcut as M).
     bool loadRequested = false;
+    /// The player pressed F6 during the last Poll(), asking to start or finish recording a replay (the same shortcut as M).
+    bool recordRequested = false;
+    /// The player pressed F10 during the last Poll(), asking to play the replay or stop it (the same shortcut as M).
+    bool replayRequested = false;
 };
 
 /// Whether the window's state pauses the game (design doc 0002 §6): it lost the focus or was minimised.

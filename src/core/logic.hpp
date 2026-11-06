@@ -9,11 +9,15 @@
 #include "core/archive.hpp"
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
+#include "core/replay.hpp"
 #include "core/saves.hpp"
 #include "core/tick_clock.hpp"
 #include "core/types.hpp"
 
+#include <cstddef>
+#include <span>
 #include <stop_token>
+#include <string_view>
 #include <vector>
 
 namespace core {
@@ -60,13 +64,24 @@ public:
 /// doesn't own.
 class Logic {
 public:
-    /// Drives `simulation`, publishing through `handover`, forking on `jobs`, saving to and
-    /// loading from `saves`, and stamping snapshots with `now()`. All must outlive it.
-    Logic(GameHandover& handover, Simulation& simulation, Jobs& jobs, Saves& saves, u64 (*now)())
+    /// Drives `simulation`, publishing through `handover`, forking on `jobs`, saving to and loading
+    /// from `saves`, recording into and playing from `replay`, whose file is `replays`, and
+    /// stamping snapshots with `now()`. All must outlive it.
+    Logic(
+        GameHandover& handover,
+        Simulation& simulation,
+        Jobs& jobs,
+        Saves& saves,
+        Saves& replays,
+        Replay& replay,
+        u64 (*now)()
+    )
       : m_handover{ &handover }
       , m_simulation{ &simulation }
       , m_jobs{ &jobs }
       , m_saves{ &saves }
+      , m_replays{ &replays }
+      , m_replay{ &replay }
       , m_now{ now } {
     }
     Logic(const Logic&) = delete;
@@ -75,19 +90,25 @@ public:
     Logic& operator=(Logic&&) = delete;
     ~Logic() = default;
 
-    /// Runs `burst.ticks` ticks back to back. Each takes the input sent since the one before (the
-    /// last Pause or Resume wins) and counts itself, frozen while paused or while a calendar step
-    /// is asked for, and ticks `simulation` unless frozen. Then publishes the snapshot of the
-    /// burst's last tick, filled by the simulation and stamped with `now()` at publishing.
-    /// A tick that takes AdvanceCalendar ends its burst, publishing the transition at once, so the
-    /// step's wall tick doesn't depend on how the clock split ticks into bursts (design doc 0002.2
-    /// §2); the first tick of the next runs the step instead of taking input, which waits in the
-    /// handover, and ends its burst too.
-    /// A tick that takes Save (frozen) sorts and serialises the state and hands it to the save
-    /// system; one that takes Load (which wins over Save) reads the save and, when it is sound,
-    /// replaces the state and the counters and starts a new timeline epoch.
-    /// Either ends its burst. Returns whether the burst ended so: a stall the caller expected, so
-    /// its clock restarts rather than catching up (TickClock::Restart). `stop` cuts a step short.
+    /// Runs up to `burst.ticks` ticks back to back, then publishes the snapshot of the last one run,
+    /// filled by the simulation and stamped with `now()`. Each tick takes the input sent since the
+    /// one before (the last Pause or Resume wins; while a replay plays, the recorded input instead),
+    /// counts itself, frozen while paused or while a calendar step is asked for, and ticks the
+    /// simulation unless frozen. Ticks that change what comes next end the burst after them, so every
+    /// change sits at a fixed wall tick whatever the burst sizes (design doc 0002.2 §2):
+    /// - AdvanceCalendar: the burst publishes the transition, and the next tick runs the step
+    ///   instead of taking input (input waits in the handover);
+    /// - Save (frozen): the state is sorted, serialised and handed to the save system (before a
+    ///   ToggleRecording in the same tick takes effect);
+    /// - Load (wins over Save): the save is read and, when sound, replaces the state and the
+    ///   counters and starts a new timeline epoch;
+    /// - ToggleRecording, PlayReplay: a replay starts or finishes recording, or starts or stops
+    ///   playing (a new epoch); every REPLAY_HASH_TICKS wall ticks the state's hash is recorded or
+    ///   checked, and a divergence stops playback with an error. While a replay plays, live Pause and
+    ///   Resume (the window's focus) are kept aside and take effect when it stops.
+    /// Returns whether the burst ended on a stall the caller expected (a step, a save, a load, a
+    /// replay starting or finishing), so its clock restarts rather than catching up
+    /// (TickClock::Restart). `stop` cuts a step short.
     bool RunBurst(const TickBurst& burst, const std::stop_token& stop = {});
 
     /// The tick counters so far.
@@ -100,30 +121,53 @@ public:
         return m_epoch;
     }
 
+    /// A hash of the logic's state and the simulation's: what replays record and check.
+    [[nodiscard]] u64 Hash() const;
+
 private:
-    struct Requests {
-        bool save = false;
-        bool load = false;
-    };
-
-    Requests TakeInput();
-    void Save();
-    bool Load();
-
     enum class Calendar : u8 {
         None,      // no step asked for
         Requested, // asked for: the burst publishes the transition
         Published, // the transition is out: the next tick runs the step
     };
 
+    enum class TickEnd : u8 {
+        Continue, // the burst goes on
+        EndBurst, // the burst ends here, on time
+        Stall,    // the burst ends after a stall the caller expected
+    };
+
+    struct Requests {
+        bool save = false;
+        bool load = false;
+        bool record = false;
+        bool play = false;
+    };
+
+    TickEnd RunTick(const std::stop_token& stop);
+    Requests TakeInput();
+    void CheckReplay();
+    [[nodiscard]] std::vector<std::byte> Serialise(bool withLogicState);
+    [[nodiscard]] bool Restore(std::span<const std::byte> state, bool withLogicState);
+    void Save();
+    bool Load();
+    void ToggleRecording();
+    void FinishRecording();
+    bool TogglePlayback();
+    void StopPlaying(std::string_view why);
+
     GameHandover* m_handover;
     Simulation* m_simulation;
     Jobs* m_jobs;
     Saves* m_saves;
+    Saves* m_replays;
+    Replay* m_replay;
     u64 (*m_now)();
     TickCounters m_counters{};
     u64 m_epoch = 0;
-    bool m_paused = false;
+    bool m_paused = false;       // the simulation's pausing: live input's, or the replay's while one plays
+    bool m_windowPaused = false; // the last Pause or Resume live input sent, also while a replay plays
+    bool m_advanced = false;     // whether the simulation ran in the last tick
     Calendar m_calendar = Calendar::None;
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for
     // members whose default constructor is defaulted.

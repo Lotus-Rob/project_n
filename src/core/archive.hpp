@@ -111,6 +111,15 @@ public:
         (Get(values), ...);
     }
 
+    /// Steps over the next `bytes` bytes, unread; fails when fewer are left.
+    void Skip(std::size_t bytes) {
+        if (m_failed || Remaining() < bytes) {
+            Fail();
+            return;
+        }
+        m_offset += bytes;
+    }
+
     /// Marks the bytes as malformed: a check of a value read (an unknown version, a duplicate ID)
     /// failed. Every read after it fails.
     void Fail() {

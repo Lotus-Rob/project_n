@@ -27,8 +27,12 @@ struct Options {
     game::Scene scene = game::Scene::Arena;
     /// Quit by itself after this long (`--quit-after`); 0 never does.
     u64 quitAfterNs = 0;
+    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The save slot; empty when no folder for saves was found.
-    std::filesystem::path saveSlot{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::filesystem::path saveSlot{};
+    /// The replay file; empty when no folder for saves was found.
+    std::filesystem::path replaySlot{};
+    // NOLINTEND(readability-redundant-member-init)
 };
 
 /// The main thread's systems (the window, the renderer, the handover and its display side, the
