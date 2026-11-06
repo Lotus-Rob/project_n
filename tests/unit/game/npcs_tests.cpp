@@ -187,4 +187,23 @@ TEST_CASE("a month step gives the same world with one worker and with many") {
     }));
 }
 
+TEST_CASE("a month step stopped before it starts changes nothing") {
+    constexpr u32 NPCS = 64;
+    core::State state{ game::DOMAINS, SEED };
+    for (u32 npc = 0; npc < NPCS; ++npc) {
+        game::SpawnNpc(state, 0);
+    }
+    game::Relationships relationships;
+    game::MonthStep step;
+    core::Jobs jobs{ 1 };
+    std::stop_source stop;
+    stop.request_stop();
+    step.Run(state, relationships, jobs, 1, stop.get_token());
+    CHECK(relationships.All().empty());
+    for (const auto [entity, want] : state[game::WORLD].Entities().view<const game::Needs>().each()) {
+        CHECK(want.company == 0.0F);
+        CHECK(want.rest == 0.0F);
+    }
+}
+
 } // namespace

@@ -26,6 +26,9 @@ struct WindowState {
     bool minimised = false;
     /// How far the mouse wheel turned during the last Poll(), in notches; positive is away from the player.
     f32 wheelNotches = 0.0F;
+    /// The player pressed M during the last Poll(), asking for a month to pass. shortcut: a fixed
+    /// key; bindings and actions replace it in phase 5 (design doc 0002 §16).
+    bool monthRequested = false;
 };
 
 /// Whether the window's state pauses the game (design doc 0002 §6): it lost the focus or was minimised.

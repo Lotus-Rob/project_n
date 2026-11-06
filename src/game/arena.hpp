@@ -4,15 +4,21 @@
 /// @ingroup game
 /// The demonstration arena (design doc 0002 §2, §16 phase 3): a painted ground with rocks, pines
 /// and a shrine, a cultivator, a pack of foxes circling it and glowing orbs circling closer, drawn through the sprite pipeline.
-/// Its stress variant adds a crowd and a bullet spiral, about 100,000 instances in all (§8.1).
+/// Its stress variant adds a crowd and a bullet spiral, about 100,000 instances in all (§8.1), a few
+/// NPCs walking in the active tier and 50,000 more in the world tier, whose months pass on request (§7.7).
 
 #include "core/draw_list.hpp"
 #include "core/ecs.hpp"
 #include "core/frame.hpp"
 #include "core/logic.hpp"
+#include "core/state.hpp"
+#include "core/tick_clock.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 #include "game/components.hpp"
+#include "game/npcs.hpp"
+
+#include <stop_token>
 
 namespace game {
 
@@ -36,7 +42,7 @@ struct Orbit {
 /// Which arena to build.
 enum class Scene : u8 {
     Arena,   ///< The demonstration arena.
-    Stress,  ///< The arena with a crowd of 90,000 and a spiral of 10,000 bullets, for profiling.
+    Stress,  ///< The arena with a crowd of 90,000, a spiral of 10,000 bullets and 50,000 world NPCs, for profiling.
     Painted, ///< A still scene of painted sprites and overlapping glows, for judging art and blending (§8.4).
     Cells,   ///< A still grid of 640 map cells, for judging the mips as the view zooms out (§16 phase 3).
 };
@@ -47,8 +53,22 @@ public:
     /// Builds `scene`: the same entities, in the same places, every time.
     explicit Arena(Scene scene = Scene::Arena);
 
-    /// Moves every entity on an Orbit to where it is at `simulationTick`.
-    void Tick(u64 simulationTick) override;
+    /// Moves every entity on an Orbit to where it is at `counters.simulation`, and walks the
+    /// active NPCs, whose decisions draw random numbers keyed on `counters.state`.
+    void Tick(const core::TickCounters& counters) override;
+
+    /// Lets a month pass for the world NPCs (MonthStep).
+    void AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs, const std::stop_token& stop) override;
+
+    /// The game state: the arena's entities in the active domain, NPCs in the world domain.
+    [[nodiscard]] const core::State& State() const {
+        return m_state;
+    }
+
+    /// What the NPCs think of each other.
+    [[nodiscard]] const Relationships& NpcRelationships() const {
+        return m_relationships;
+    }
 
     /// Publishes the ground, then a shadow under each entity that casts one, then the world's
     /// entities in foot-y order, then the effects, packed in fixed chunks on `jobs`: the bytes are
@@ -57,15 +77,17 @@ public:
 
 private:
     core::Entity Spawn(core::Vec2 foot, const Look& look);
+    void SpawnStress();
     void SpawnPainted();
     void SpawnCells();
 
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for
     // members whose default constructor is defaulted.
-    core::Domain m_domain{};
-    core::StableIdCounter m_ids{};
     core::DrawList m_drawList{};
+    Relationships m_relationships{};
+    MonthStep m_monthStep{};
     // NOLINTEND(readability-redundant-member-init)
+    core::State m_state;
     core::Rect m_view{}; // what a publish culls to
 };
 
