@@ -38,7 +38,8 @@ TEST_CASE("a start-up failure is shown with what failed and why") {
 TEST_CASE("the window is minimised from a minimise until a restore") {
     REQUIRE(SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, "offscreen", SDL_HINT_OVERRIDE));
     std::expected<platform::Window, core::Error> window = platform::Window::Open("window_tests", SIZE, SIZE);
-    REQUIRE(window);
+    const std::string why = window.error_or(core::Error{}).message;
+    REQUIRE_MESSAGE(window, why);
     Push(SDL_EVENT_WINDOW_MINIMIZED);
     CHECK(window->Poll(0).minimised);
     Push(SDL_EVENT_WINDOW_RESTORED);
