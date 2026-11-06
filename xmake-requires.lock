@@ -260,6 +260,14 @@
             },
             version = "1.2.5"
         },
+        ["lz4 v1.10.0#3ef3fffc"] = {
+            repo = {
+                branch = "master",
+                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "v1.10.0"
+        },
         ["m4#f56260b5"] = {
             repo = {
                 branch = "master",
@@ -482,6 +490,14 @@
                 url = "xmake/repo"
             },
             version = "3.4.16"
+        },
+        ["lz4 v1.10.0#3ef3fffc"] = {
+            repo = {
+                branch = "master",
+                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "v1.10.0"
         },
         ["ninja#f56260b5"] = {
             repo = {
