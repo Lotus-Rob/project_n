@@ -30,4 +30,4 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
 - MSVC sanitizer builds compile and link in the container, but only *run* on native Windows: MSVC's ASan can't hot-patch Wine's system DLLs.
 - Sanitizer builds link the C++ runtime dynamically (static libc++abi collides with TSan) and don't instrument dependencies.
 - A test that opens a window but draws nothing uses SDL's `dummy` video driver, not `offscreen`: on macOS SDL gives a new window OpenGL whenever its driver has it, and offscreen's comes through EGL, which macOS lacks ("Could not initialize OpenGL / GLES library"; `platform/window_tests.cpp`).
-- MSVC C4866 (shown only by `check`'s windows-msvc build): a temporary `std::string` inside `CHECK`. Name the value first.
+- MSVC C4866 (shown only by `check`'s windows-msvc build): a temporary with a destructor inside `CHECK` (a `std::string`, a returned `std::expected`, a vector passed where a span is expected). Name the value first.

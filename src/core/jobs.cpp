@@ -55,9 +55,43 @@ private:
 } // namespace
 
 struct Jobs::Impl {
+    // A background job: one item, low priority, so a join at high priority never waits on it.
+    class BackgroundTask final : public enki::ITaskSet {
+    public:
+        explicit BackgroundTask(std::function<void()> work)
+          : enki::ITaskSet(1, 1)
+          , m_work(std::move(work)) {
+            m_Priority = enki::TASK_PRIORITY_LOW;
+        }
+        BackgroundTask(const BackgroundTask&) = delete;
+        BackgroundTask& operator=(const BackgroundTask&) = delete;
+        BackgroundTask(BackgroundTask&&) = delete;
+        BackgroundTask& operator=(BackgroundTask&&) = delete;
+        ~BackgroundTask() override = default;
+
+        // Whether it finished, as an edge ThreadSanitizer sees (enkiTS isn't instrumented).
+        [[nodiscard]] bool Done() const {
+            return m_done.load(std::memory_order_acquire);
+        }
+
+        void ExecuteRange(enki::TaskSetPartition range, u32 threadnum) override;
+
+    private:
+        std::function<void()> m_work;
+        std::atomic<bool> m_done = false;
+    };
+
     enki::TaskScheduler scheduler{};
     u32 workers = 0;
+    std::unique_ptr<BackgroundTask> background = nullptr; // the last one started, until the next
 };
+
+// Out of line: the class has external linkage, and its vtable needs one translation unit to live in.
+void Jobs::Impl::BackgroundTask::ExecuteRange(enki::TaskSetPartition /*range*/, u32 /*threadnum*/) {
+    PN_PROFILE_ZONE();
+    m_work();
+    m_done.store(true, std::memory_order_release);
+}
 
 Jobs::Jobs(u32 workers)
   : m_impl(std::make_unique<Impl>()) {
@@ -79,6 +113,21 @@ u32 Jobs::DefaultWorkers() {
 
 u32 Jobs::Workers() const {
     return m_impl->workers;
+}
+
+void Jobs::Background(std::function<void()> work) {
+    WaitForBackground();
+    m_impl->background = std::make_unique<Impl::BackgroundTask>(std::move(work));
+    m_impl->scheduler.AddTaskSetToPipe(m_impl->background.get());
+}
+
+void Jobs::WaitForBackground() {
+    PN_PROFILE_ZONE();
+    PN_ASSERT(m_impl->scheduler.GetThreadNum() == 0, "only the thread that created the job system waits on it");
+    if (m_impl->background) {
+        m_impl->scheduler.WaitforTask(m_impl->background.get());
+        PN_ASSERT(m_impl->background->Done(), "a background job's wait returned before it finished");
+    }
 }
 
 void Jobs::Run(u32 chunks, void (*call)(const void*, u32), const void* callable) {

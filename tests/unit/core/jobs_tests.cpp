@@ -100,4 +100,27 @@ TEST_CASE("every parallel-for chunk runs in the simulation's floating-point envi
     CHECK(chunksWithoutIt.load() == 0);
 }
 
+TEST_CASE("a background job runs once, and waiting for it sees what it did") {
+    core::Jobs jobs{ MANY_WORKERS };
+    u32 runs = 0;
+    jobs.Background([&runs] { ++runs; });
+    jobs.WaitForBackground();
+    CHECK(runs == 1);
+}
+
+TEST_CASE("starting a background job waits for the last one first") {
+    core::Jobs jobs{ MANY_WORKERS };
+    std::vector<u32> order;
+    jobs.Background([&order] { order.push_back(1); });
+    jobs.Background([&order] { order.push_back(2); });
+    jobs.WaitForBackground();
+    CHECK(order == std::vector<u32>{ 1, 2 });
+}
+
+TEST_CASE("waiting with no background job returns at once") {
+    core::Jobs jobs{ 1 };
+    jobs.WaitForBackground();
+    CHECK(jobs.Workers() == 1);
+}
+
 } // namespace
