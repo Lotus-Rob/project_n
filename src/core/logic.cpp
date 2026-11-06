@@ -20,7 +20,8 @@ bool Logic::RunBurst(const TickBurst& burst, const std::stop_token& stop) {
     PN_PROFILE_ZONE();
     bool advanced = false;
     bool stalled = false;
-    for (u64 tick = 0; tick < burst.ticks && !stalled; ++tick) {
+    bool ended = false; // by a calendar request: the transition is published at once
+    for (u64 tick = 0; tick < burst.ticks && !stalled && !ended; ++tick) {
         advanced = false;
         stalled = true;
         if (m_calendar == Calendar::Published) {
@@ -44,6 +45,7 @@ bool Logic::RunBurst(const TickBurst& burst, const std::stop_token& stop) {
             if (advanced) {
                 m_simulation->Tick(m_counters);
             }
+            ended = m_calendar == Calendar::Requested;
         }
         PN_ASSERT(math::FloatingPointEnvironmentIsSet(), "a library changed the floating-point environment");
     }

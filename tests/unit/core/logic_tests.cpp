@@ -165,12 +165,13 @@ TEST_CASE("each publish starts from empty instances that keep their capacity") {
     }
 }
 
-TEST_CASE("a calendar step asked for freezes the burst and publishes the transition first") {
-    constexpr u64 TICKS = 2;
+TEST_CASE("a calendar step asked for ends the burst at once and publishes the transition first") {
+    constexpr u64 TICKS = 3;
     Rig rig;
     rig.handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
     const BurstResult result = rig.Burst(TICKS);
     CHECK_FALSE(result.stalled);
+    CHECK(result.snapshot.wallTick == 1);
     CHECK(result.snapshot.transition);
     CHECK_FALSE(result.snapshot.advanced);
     CHECK(result.snapshot.simulationTick == 0);
@@ -287,6 +288,21 @@ TEST_CASE("with no save slot, Save and Load are refused") {
     rig.handover.SendInput({ .kind = core::ActionKind::Load });
     CHECK(rig.Burst(1).stalled);
     CHECK(rig.logic.Epoch() == 0);
+}
+
+TEST_CASE("the step's wall tick doesn't depend on how the clock split the ticks into bursts") {
+    constexpr u64 LONG_BURSTS = 3;
+    Rig longBursts;
+    Rig shortBursts;
+    longBursts.handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
+    shortBursts.handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
+    static_cast<void>(longBursts.Burst(LONG_BURSTS));
+    static_cast<void>(longBursts.Burst(LONG_BURSTS));
+    static_cast<void>(shortBursts.Burst(1));
+    static_cast<void>(shortBursts.Burst(1));
+    CHECK(longBursts.simulation.steps == shortBursts.simulation.steps);
+    CHECK(longBursts.logic.Counters().wall == shortBursts.logic.Counters().wall);
+    CHECK(longBursts.logic.Counters().state == shortBursts.logic.Counters().state);
 }
 
 } // namespace

@@ -79,8 +79,10 @@ public:
     /// last Pause or Resume wins) and counts itself, frozen while paused or while a calendar step
     /// is asked for, and ticks `simulation` unless frozen. Then publishes the snapshot of the
     /// burst's last tick, filled by the simulation and stamped with `now()` at publishing.
-    /// A burst that takes AdvanceCalendar publishes the transition; the first tick of the next
-    /// runs the step instead of taking input, which waits in the handover, and ends its burst.
+    /// A tick that takes AdvanceCalendar ends its burst, publishing the transition at once, so the
+    /// step's wall tick doesn't depend on how the clock split ticks into bursts (design doc 0002.2
+    /// §2); the first tick of the next runs the step instead of taking input, which waits in the
+    /// handover, and ends its burst too.
     /// A tick that takes Save (frozen) sorts and serialises the state and hands it to the save
     /// system; one that takes Load (which wins over Save) reads the save and, when it is sound,
     /// replaces the state and the counters and starts a new timeline epoch.
