@@ -8,12 +8,14 @@
 /// nobody has met yet. Moving between tiers keeps an NPC's stable ID. The needs and actions here
 /// are placeholders for the engine's machinery until the gameplay doc names the real ones.
 
+#include "core/archive.hpp"
 #include "core/ecs.hpp"
 #include "core/jobs.hpp"
 #include "core/state.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 
+#include <cmath>
 #include <cstddef>
 #include <span>
 #include <stop_token>
@@ -33,6 +35,8 @@ inline constexpr std::size_t DOMAINS = 2;
 inline constexpr u32 MAP_COLUMNS = 64;
 /// A map cell's width and height, in world units.
 inline constexpr f32 CELL_SIZE = 256.0F;
+/// The most people an aggregate Group stands for: materialising it makes one NPC each.
+inline constexpr u32 MAX_GROUP_MEMBERS = 1'000'000;
 /// An active NPC decides once every this many simulation ticks: about 10 times a second.
 inline constexpr u32 DECISION_TICKS = 6;
 
@@ -56,6 +60,17 @@ struct Npc {
     Action action = Action::Rest;
     /// How far its cultivation has come.
     f32 power = 0.0F;
+
+    /// Lists its fields for an archive (core/archive.hpp).
+    template<typename Self, typename Archive>
+    void Fields(this Self& self, Archive& archive) {
+        archive(self.cell, self.action, self.power);
+    }
+
+    /// Whether a value read from a save can be used: an action that exists and a finite power.
+    [[nodiscard]] bool Valid() const {
+        return action <= Action::Socialise && std::isfinite(power);
+    }
 };
 
 /// How much an NPC wants each thing, from 0 (content) to 1 (desperate).
@@ -64,6 +79,17 @@ struct Needs {
     f32 rest = 0.0F;
     /// Loneliness.
     f32 company = 0.0F;
+
+    /// Lists its fields for an archive (core/archive.hpp).
+    template<typename Self, typename Archive>
+    void Fields(this Self& self, Archive& archive) {
+        archive(self.rest, self.company);
+    }
+
+    /// Whether a value read from a save can be used: each need from 0 to 1 (NaN fails).
+    [[nodiscard]] bool Valid() const {
+        return rest >= 0.0F && rest <= 1.0F && company >= 0.0F && company <= 1.0F;
+    }
 };
 
 /// A tag: the player has met this NPC, so it never folds back into a group.
@@ -75,12 +101,34 @@ struct Group {
     u32 cell = 0;
     /// How many people it stands for.
     u32 members = 0;
+
+    /// Lists its fields for an archive (core/archive.hpp).
+    template<typename Self, typename Archive>
+    void Fields(this Self& self, Archive& archive) {
+        archive(self.cell, self.members);
+    }
+
+    /// Whether a value read from a save can be used: at most MAX_GROUP_MEMBERS members, as materialising makes one NPC each.
+    [[nodiscard]] bool Valid() const {
+        return members <= MAX_GROUP_MEMBERS;
+    }
 };
 
 /// Where an active NPC is walking to.
 struct Wander {
     /// The point it walks towards, in world units.
     core::Vec2 target{};
+
+    /// Lists its fields for an archive (core/archive.hpp).
+    template<typename Self, typename Archive>
+    void Fields(this Self& self, Archive& archive) {
+        archive(self.target);
+    }
+
+    /// Whether a value read from a save can be used: a finite target.
+    [[nodiscard]] bool Valid() const {
+        return core::IsFinite(target);
+    }
 };
 
 /// What `holder` thinks of `subject`: one edge of the relationship table.
@@ -91,6 +139,12 @@ struct Relationship {
     core::StableId subject{};
     /// How much `holder` likes `subject`.
     f32 opinion = 0.0F;
+
+    /// Lists its fields for an archive (core/archive.hpp).
+    template<typename Self, typename Archive>
+    void Fields(this Self& self, Archive& archive) {
+        archive(self.holder, self.subject, self.opinion);
+    }
 };
 
 /// Every relationship as one edge table, sorted by holder then subject, so one NPC's
@@ -111,6 +165,20 @@ public:
 
     /// Drops every edge holding or naming `npc`, which is leaving the state.
     void Forget(core::StableId npc);
+
+    /// Writes every edge into `archive` (a Writer or a Hasher).
+    template<typename Archive>
+    void Save(Archive& archive) const {
+        archive(u64{ m_edges.size() });
+        for (const Relationship& edge : m_edges) {
+            archive(edge);
+        }
+    }
+
+    /// Replaces the edges with those Save() wrote, read from `archive`, whose NPCs must all be in
+    /// `state`. Fails `archive`, changing nothing, on a malformed table: out of order, repeated,
+    /// an NPC about itself, a stable ID not in `state`, or an opinion that isn't finite.
+    void Load(core::Reader& archive, const core::State& state);
 
 private:
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer

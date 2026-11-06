@@ -20,11 +20,17 @@ constexpr i32 WINDOW_HEIGHT = 720;
 // Frames during a calendar step's transition: few, leaving the cores to the step (design doc 0002 §7.3).
 constexpr u64 TRANSITION_FRAME_NS = core::NS_PER_SECOND / 20;
 // The logic thread's loop (design doc 0002 §6): runs the ticks due, then publishes the burst's last.
-void Tick(const std::stop_token& stop, core::GameHandover& handover, u64 startNs, game::Scene scene) {
+void Tick(
+    const std::stop_token& stop,
+    core::GameHandover& handover,
+    u64 startNs,
+    game::Scene scene,
+    const std::filesystem::path& saveFile
+) {
     core::math::SetFloatingPointEnvironment();
     PN_LOG_INFO("logic thread ticking {} times a second", core::TICKS_PER_SECOND);
     core::TickClock clock{ startNs };
-    core::Logic logic;
+    core::Logic logic{ saveFile };
     {
         core::Jobs jobs;
         PN_LOG_INFO("job system running {} workers", jobs.Workers());
@@ -48,9 +54,12 @@ void Tick(const std::stop_token& stop, core::GameHandover& handover, u64 startNs
                 }
             }
             if (logic.RunBurst(burst, handover, arena, jobs, platform::NowNs, stop)) {
-                const u64 steppedNs = platform::NowNs();
-                PN_LOG_INFO("a month passed in {} ms", (steppedNs - now) / (core::NS_PER_SECOND / 1'000));
-                clock.Restart(steppedNs);
+                const u64 stalledNs = platform::NowNs();
+                PN_LOG_INFO(
+                    "an expected stall (a month, a save or a load) took {} ms",
+                    (stalledNs - now) / (core::NS_PER_SECOND / 1'000)
+                );
+                clock.Restart(stalledNs);
             }
         }
     } // the workers join here: a hang at shutdown shows as no "stopped" line
@@ -65,10 +74,11 @@ void RunLogic(
     core::GameHandover& handover,
     u64 startNs,
     game::Scene scene,
+    const std::filesystem::path& saveFile,
     std::atomic<bool>& failed
 ) {
     try {
-        Tick(stop, handover, startNs, scene);
+        Tick(stop, handover, startNs, scene, saveFile);
     }
     catch (const std::exception& e) {
         PN_LOG_CRITICAL("logic thread failed: {}", e.what());
@@ -115,7 +125,29 @@ i32 FailToStart(std::string_view what, const core::Error& error) {
     return 1;
 }
 
-i32 Run(game::Scene scene, u64 quitAfterNs) {
+// Turns what the player did in the window into the logic's input. `paused` is whether the window pauses the game, as
+// last sent.
+void SendInput(const platform::WindowState& state, core::GameHandover& handover, bool& paused) {
+    if (platform::PausesGame(state) != paused) {
+        paused = !paused;
+        PN_LOG_INFO("{}: the window is {}", paused ? "paused" : "resumed", paused ? "unfocused or minimised" : "back");
+        handover.SendInput({ .kind = paused ? core::ActionKind::Pause : core::ActionKind::Resume });
+    }
+    if (state.saveRequested) {
+        PN_LOG_INFO("a save asked for");
+        handover.SendInput({ .kind = core::ActionKind::Save });
+    }
+    if (state.loadRequested) {
+        PN_LOG_INFO("a load asked for");
+        handover.SendInput({ .kind = core::ActionKind::Load });
+    }
+    if (state.monthRequested) {
+        PN_LOG_INFO("a month asked to pass");
+        handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
+    }
+}
+
+i32 Run(game::Scene scene, u64 quitAfterNs, const std::filesystem::path& saveFile) {
     platform::RouteSdlLogs();
     std::expected<platform::Window, core::Error> window = platform::Window::Open("project_n", WINDOW_WIDTH, WINDOW_HEIGHT);
     if (!window) {
@@ -134,7 +166,7 @@ i32 Run(game::Scene scene, u64 quitAfterNs) {
     core::GameDisplay display;
     std::atomic<bool> logicFailed = false;
     const u64 startNs = platform::NowNs();
-    std::jthread logic{ RunLogic, std::ref(handover), startNs, scene, std::ref(logicFailed) };
+    std::jthread logic{ RunLogic, std::ref(handover), startNs, scene, saveFile, std::ref(logicFailed) };
     bool paused = false;
     gfx::Camera camera{}; // shortcut: a fixed view, but for the cell grid's zoom; the camera follows input and the snapshot
                           // from phase 5
@@ -157,15 +189,7 @@ i32 Run(game::Scene scene, u64 quitAfterNs) {
         if (scene == game::Scene::Cells) {
             camera.zoom = gfx::ZoomedBy(camera.zoom, state.wheelNotches);
         }
-        if (platform::PausesGame(state) != paused) {
-            paused = !paused;
-            PN_LOG_INFO("{}: the window is {}", paused ? "paused" : "resumed", paused ? "unfocused or minimised" : "back");
-            handover.SendInput({ .kind = paused ? core::ActionKind::Pause : core::ActionKind::Resume });
-        }
-        if (state.monthRequested) {
-            PN_LOG_INFO("a month asked to pass");
-            handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
-        }
+        SendInput(state, handover, paused);
         // Events are drained every iteration, drawing or not, so the queue never grows (§5).
         handover.TakeEvents(incoming);
         pending.insert(pending.end(), incoming.begin(), incoming.end());
@@ -225,7 +249,9 @@ int main(int argc, char** argv) {
         return 1;
     }
     try {
-        const i32 status = Run(choice.scene, *quitAfterNs);
+        // shortcut: one save slot; slots and their screen come with the UI (phase 6).
+        const i32 status =
+            Run(choice.scene, *quitAfterNs, userData ? *userData / "saves" / "quicksave.pns" : std::filesystem::path{});
         PN_LOG_NOTICE("project_n stopped with status {}", status);
         return status;
     }

@@ -88,6 +88,13 @@ constexpr u32 WORLD_NPCS = 50'000;
 constexpr u32 WORLD_CELLS = 4'096;
 constexpr u64 SEED = 0x5eed;
 
+// The arena's part of a save: its format, then a version per domain, each changed with what its components save.
+constexpr u32 ARENA_FORMAT = 1;
+constexpr u32 ACTIVE_VERSION = 1;
+constexpr u32 WORLD_VERSION = 1;
+using ActiveComponents = core::ComponentList<Body, Look, Orbit, Npc, Needs, Met, Wander>;
+using WorldComponents = core::ComponentList<Npc, Needs, Met, Group>;
+
 constexpr u32 PUBLISH_CHUNK = 4'096; // entities packed per job chunk
 // shortcut: the camera shows the whole ground, and lives on the main thread; the view follows it from phase 5.
 constexpr core::Rect GROUND_VIEW{ .min = {}, .max = CROWD_AREA };
@@ -105,6 +112,30 @@ constexpr core::Rect CELLS_VIEW{
 constexpr std::array<SpriteId, 5> CELLS{
     { SpriteId::CellPlain, SpriteId::CellForest, SpriteId::CellMountain, SpriteId::CellSnow, SpriteId::CellCity }
 };
+
+// Whether every entity has the components that code reads together with the ones it has: a save can
+// hold any mix, and a missing partner would be read anyway (the month step reads an Npc's Needs,
+// publishing a Look's Body, deactivating an active Npc's Body).
+bool Consistent(const core::State& state) {
+    for (const core::DomainIndex domain : { ACTIVE, WORLD }) {
+        const core::Registry& entities = state[domain].Entities();
+        for (const core::Entity entity : entities.view<const Npc>()) {
+            if (!entities.all_of<Needs>(entity) || (domain == ACTIVE && !entities.all_of<Body>(entity))) {
+                return false;
+            }
+        }
+        for (const core::Entity entity : entities.view<const Look>()) {
+            if (!entities.all_of<Body>(entity)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+core::Rect ViewOf(Scene scene) {
+    return scene == Scene::Cells ? CELLS_VIEW : GROUND_VIEW;
+}
 
 } // namespace
 
@@ -124,7 +155,8 @@ core::Vec2 OrbitPoint(const Orbit& orbit, u64 tick) {
 
 Arena::Arena(Scene scene)
   : m_state{ DOMAINS, SEED }
-  , m_view{ scene == Scene::Cells ? CELLS_VIEW : GROUND_VIEW } {
+  , m_scene{ scene }
+  , m_view{ ViewOf(scene) } {
     if (scene == Scene::Cells) {
         SpawnCells();
         return;
@@ -252,6 +284,66 @@ void Arena::Tick(const core::TickCounters& counters) {
 
 void Arena::AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs, const std::stop_token& stop) {
     m_monthStep.Run(m_state, m_relationships, jobs, counters.state, stop);
+    ++m_months;
+}
+
+template<typename Archive>
+void Arena::Write(Archive& archive) const {
+    archive(ARENA_FORMAT, m_scene, m_state.Seed(), m_state.Ids().next, m_months);
+    archive(ACTIVE_VERSION);
+    core::SaveDomain(archive, m_state[ACTIVE], ActiveComponents{});
+    archive(WORLD_VERSION);
+    core::SaveDomain(archive, m_state[WORLD], WorldComponents{});
+    m_relationships.Save(archive);
+}
+
+void Arena::Save(core::Writer& archive) {
+    PN_PROFILE_ZONE();
+    m_state.SortCanonical();
+    Write(archive);
+}
+
+u64 Arena::StateHash() const {
+    PN_PROFILE_ZONE();
+    core::Hasher hasher;
+    Write(hasher);
+    return hasher.Value();
+}
+
+bool Arena::Load(core::Reader& archive) {
+    PN_PROFILE_ZONE();
+    u32 format = 0;
+    Scene scene = Scene::Arena;
+    u64 seed = 0;
+    u64 next = 0;
+    u64 months = 0;
+    archive(format, scene, seed, next, months);
+    if (format != ARENA_FORMAT || scene > Scene::Cells) {
+        archive.Fail();
+    }
+    core::State state{ DOMAINS, seed, core::StableIdCounter{ .next = next } };
+    u32 version = 0;
+    archive(version);
+    if (version != ACTIVE_VERSION) {
+        archive.Fail();
+    }
+    core::LoadDomain(archive, state, ACTIVE, ActiveComponents{});
+    archive(version);
+    if (version != WORLD_VERSION) {
+        archive.Fail();
+    }
+    core::LoadDomain(archive, state, WORLD, WorldComponents{});
+    Relationships relationships;
+    relationships.Load(archive, state);
+    if (archive.Failed() || archive.Remaining() != 0 || !Consistent(state)) {
+        return false;
+    }
+    m_state = std::move(state);
+    m_relationships = std::move(relationships);
+    m_scene = scene;
+    m_months = months;
+    m_view = ViewOf(scene);
+    return true;
 }
 
 void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {

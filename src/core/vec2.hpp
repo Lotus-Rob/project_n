@@ -7,6 +7,8 @@
 
 #include "core/types.hpp"
 
+#include <cmath>
+
 namespace core {
 
 /// A 2D vector in world units.
@@ -15,6 +17,12 @@ struct Vec2 {
     f32 x = 0.0F;
     /// The vertical component, growing downwards.
     f32 y = 0.0F;
+
+    /// Lists its fields for an archive (core/archive.hpp).
+    template<typename Self, typename Archive>
+    void Fields(this Self& self, Archive& archive) {
+        archive(self.x, self.y);
+    }
 
     /// The component-wise sum.
     [[nodiscard]] friend constexpr Vec2 operator+(Vec2 lhs, Vec2 rhs) {
@@ -29,5 +37,10 @@ struct Vec2 {
         return { .x = vec.x * factor, .y = vec.y * factor };
     }
 };
+
+/// Whether both of `vec`'s components are finite: neither NaN nor infinite.
+[[nodiscard]] inline bool IsFinite(Vec2 vec) {
+    return std::isfinite(vec.x) && std::isfinite(vec.y);
+}
 
 } // namespace core

@@ -29,6 +29,10 @@ struct WindowState {
     /// The player pressed M during the last Poll(), asking for a month to pass. shortcut: a fixed
     /// key; bindings and actions replace it in phase 5 (design doc 0002 §16).
     bool monthRequested = false;
+    /// The player pressed F5 during the last Poll(), asking to save (the same shortcut as M).
+    bool saveRequested = false;
+    /// The player pressed F9 during the last Poll(), asking to load the save (the same shortcut as M).
+    bool loadRequested = false;
 };
 
 /// Whether the window's state pauses the game (design doc 0002 §6): it lost the focus or was minimised.

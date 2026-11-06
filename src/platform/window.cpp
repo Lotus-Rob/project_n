@@ -64,6 +64,8 @@ const WindowState& Window::Poll(u64 hiddenWaitNs) {
     WindowState& state = m_impl->state;
     state.wheelNotches = 0.0F;
     state.monthRequested = false;
+    state.saveRequested = false;
+    state.loadRequested = false;
     SDL_Event event;
     bool pending =
         state.visible ? SDL_PollEvent(&event) : SDL_WaitEventTimeout(&event, static_cast<i32>(hiddenWaitNs / SDL_NS_PER_MS));
@@ -75,6 +77,8 @@ const WindowState& Window::Poll(u64 hiddenWaitNs) {
             case SDL_EVENT_KEY_DOWN:
                 state.quitRequested = state.quitRequested || event.key.key == SDLK_ESCAPE;
                 state.monthRequested = state.monthRequested || (event.key.key == SDLK_M && !event.key.repeat);
+                state.saveRequested = state.saveRequested || (event.key.key == SDLK_F5 && !event.key.repeat);
+                state.loadRequested = state.loadRequested || (event.key.key == SDLK_F9 && !event.key.repeat);
                 break;
             case SDL_EVENT_MOUSE_WHEEL:
                 state.wheelNotches += event.wheel.y;
