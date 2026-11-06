@@ -7,7 +7,7 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 ## Map
 - `src/` game and engine (src/AGENTS.md) · `tests/` doctest suites (tests/AGENTS.md)
 - `tools/project_n.py` the only entry point (tools/AGENTS.md) · `containers/` artefact images (containers/AGENTS.md)
-- `shaders/` HLSL, one file per stage; `bin/`: the committed binaries `shaders` writes · `assets/` what the game loads at runtime (`sprites/`: images, with `PROVENANCE.md`) · `art/` `sprites.toml` (sprite list, foot points), `placeholders.py` (procedural art) · `src/*/generated/`: headers `shaders` and `atlas` write (fmt and lint skip them) · `xmake/repo/` local fixes to xmake-repo packages · `docs/design/` rationale: read before redesigning anything
+- `shaders/` HLSL, one file per stage; `bin/`: the committed binaries `shaders` writes · `assets/` what the game loads at runtime (`sprites/`: images, with `PROVENANCE.md`) · `art/` `sprites.toml` (sprite list, foot points), `placeholders.py` (procedural art) · `src/*/generated/`: headers `shaders` and `atlas` write (fmt and lint skip them) · `xmake/repo/` local fixes to xmake-repo packages · `docs/design/` rationale: read before redesigning anything; a deeper design is a numbered sub-doc of the one it details (`0002.1-<topic>.md`), written and approved before its code
 - `.github/` CI workflows (.github/AGENTS.md)
 
 ## Commands

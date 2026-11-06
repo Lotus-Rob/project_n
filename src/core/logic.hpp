@@ -9,10 +9,10 @@
 #include "core/archive.hpp"
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
+#include "core/saves.hpp"
 #include "core/tick_clock.hpp"
 #include "core/types.hpp"
 
-#include <filesystem>
 #include <stop_token>
 #include <vector>
 
@@ -55,34 +55,38 @@ public:
     virtual void Publish(Snapshot& snapshot, Jobs& jobs) = 0;
 };
 
-/// The game state the logic thread owns, and the scratch it reuses between bursts.
+/// What the logic thread keeps between bursts (the tick counters, pausing, the calendar step's
+/// phase, the timeline epoch, scratch buffers), and the systems it drives, which it holds but
+/// doesn't own.
 class Logic {
 public:
-    /// The logic of a game that saves to and loads from `saveFile`; with none, Save and Load are
-    /// refused with a warning.
-    explicit Logic(std::filesystem::path saveFile = {})
-      : m_saveFile{ std::move(saveFile) } {
+    /// Drives `simulation`, publishing through `handover`, forking on `jobs`, saving to and
+    /// loading from `saves`, and stamping snapshots with `now()`. All must outlive it.
+    Logic(GameHandover& handover, Simulation& simulation, Jobs& jobs, Saves& saves, u64 (*now)())
+      : m_handover{ &handover }
+      , m_simulation{ &simulation }
+      , m_jobs{ &jobs }
+      , m_saves{ &saves }
+      , m_now{ now } {
     }
+    Logic(const Logic&) = delete;
+    Logic& operator=(const Logic&) = delete;
+    Logic(Logic&&) = delete;
+    Logic& operator=(Logic&&) = delete;
+    ~Logic() = default;
 
     /// Runs `burst.ticks` ticks back to back. Each takes the input sent since the one before (the
     /// last Pause or Resume wins) and counts itself, frozen while paused or while a calendar step
     /// is asked for, and ticks `simulation` unless frozen. Then publishes the snapshot of the
-    /// burst's last tick, filled by `simulation` on `jobs` and stamped with `now()` at publishing.
+    /// burst's last tick, filled by the simulation and stamped with `now()` at publishing.
     /// A burst that takes AdvanceCalendar publishes the transition; the first tick of the next
     /// runs the step instead of taking input, which waits in the handover, and ends its burst.
-    /// A tick that takes Save (frozen) sorts and serialises the state and has a background job
-    /// write it; one that takes Load (which wins over Save) waits for that job, reads the save
-    /// and, when it is sound, replaces the state and the counters and starts a new timeline epoch.
+    /// A tick that takes Save (frozen) sorts and serialises the state and hands it to the save
+    /// system; one that takes Load (which wins over Save) reads the save and, when it is sound,
+    /// replaces the state and the counters and starts a new timeline epoch.
     /// Either ends its burst. Returns whether the burst ended so: a stall the caller expected, so
     /// its clock restarts rather than catching up (TickClock::Restart). `stop` cuts a step short.
-    bool RunBurst(
-        const TickBurst& burst,
-        GameHandover& handover,
-        Simulation& simulation,
-        Jobs& jobs,
-        u64 (*now)(),
-        const std::stop_token& stop = {}
-    );
+    bool RunBurst(const TickBurst& burst, const std::stop_token& stop = {});
 
     /// The tick counters so far.
     [[nodiscard]] const TickCounters& Counters() const {
@@ -100,9 +104,9 @@ private:
         bool load = false;
     };
 
-    Requests TakeInput(GameHandover& handover);
-    void Save(Simulation& simulation, Jobs& jobs);
-    bool Load(Simulation& simulation, Jobs& jobs);
+    Requests TakeInput();
+    void Save();
+    bool Load();
 
     enum class Calendar : u8 {
         None,      // no step asked for
@@ -110,7 +114,11 @@ private:
         Published, // the transition is out: the next tick runs the step
     };
 
-    std::filesystem::path m_saveFile;
+    GameHandover* m_handover;
+    Simulation* m_simulation;
+    Jobs* m_jobs;
+    Saves* m_saves;
+    u64 (*m_now)();
     TickCounters m_counters{};
     u64 m_epoch = 0;
     bool m_paused = false;
