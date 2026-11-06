@@ -120,6 +120,10 @@ jobs:
           key: msvc-install-${{ hashFiles('containers/msvc.Containerfile') }}
       - id: artifact
         run: pixi run project_n artifact --preset ${{ matrix.preset }}
+      - name: Build releasedbg
+        # The only mode that compiles Tracy's zones (0001 rule 22), once, in the fastest job.
+        if: matrix.preset == 'linux-clang'
+        run: pixi run project_n build --preset linux-clang --mode releasedbg --container
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ steps.artifact.outputs.archive }}
