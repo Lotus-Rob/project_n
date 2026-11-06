@@ -1,0 +1,4 @@
+/// @defgroup app app
+/// The program put together (design doc 0002 §4, §5): App owns the main thread's systems (window,
+/// renderer, display) and starts the logic thread, where Game owns the logic thread's (jobs, saves,
+/// the simulation, the logic, the tick clock). The only module that uses every other one.

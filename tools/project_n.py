@@ -74,7 +74,7 @@ CACHE_VOLUME = "project_n-xmake-cache"  # PROJECT_N_XMAKE_CACHE=<dir> bind-mount
 
 # Conventional Commits (docs/design/0001 §11.1). Add a scope in the commit that first uses it.
 TYPES = ("feat", "fix", "perf", "refactor", "test", "build", "ci", "docs", "style", "chore", "revert")
-SCOPES = ("repo", "env", "containers", "tools", "xmake", "deps", "tests", "design", "agents", "release", "core", "platform", "gfx", "game")
+SCOPES = ("repo", "env", "containers", "tools", "xmake", "deps", "tests", "design", "agents", "release", "core", "platform", "gfx", "game", "app")
 
 HEADER_RE = re.compile(r"^(?P<type>[a-z]+)(?:\((?P<scope>[a-z0-9-]+)\))?(?P<breaking>!)?: (?P<desc>.+)$")
 MAX_HEADER = 72
@@ -484,7 +484,8 @@ FACADES = {"src/core/log.hpp": "quill/", "src/core/profile.hpp": "tracy/", "src/
 HIDDEN_FACADES = {"src/core/jobs.hpp"}
 # The src/ modules (design doc 0002 §4) and the modules each one's code may include: those below it.
 MODULES = {"core": (), "data": ("core",), "platform": ("core",), "gfx": ("core", "platform"),
-           "ui": ("core", "gfx", "platform"), "audio": ("core",), "game": ("core",)}
+           "ui": ("core", "gfx", "platform"), "audio": ("core",), "game": ("core",),
+           "app": ("core", "data", "platform", "gfx", "ui", "audio", "game")}
 
 
 def is_standard(bracket, name):

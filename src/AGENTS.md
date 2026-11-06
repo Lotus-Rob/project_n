@@ -1,7 +1,7 @@
 # src/: game and engine
 
 ## Scope
-All game and engine code, structured by docs/design/0002-engine-architecture.md (being implemented, phases 1 to 3 of §16). Modules are XMake static libraries in `src/<module>/` (`core`, `platform`, `gfx`, `game` so far); each links and includes only the modules below it (`MODULES` in tools/project_n.py; `lint` checks the includes), and `game` links only `core`. `main.cpp` opens the window, creates the renderer, starts the logic thread (a `std::jthread`, ticking `game::Arena` in the scene the command line picks, through `core::Simulation`) and runs the main loop; the threads share only `core::GameHandover` (`core/frame.hpp`).
+All game and engine code, structured by docs/design/0002-engine-architecture.md (being implemented, phases 1 to 4 of §16). Modules are XMake static libraries in `src/<module>/` (`core`, `platform`, `gfx`, `game`, `app` so far); each links and includes only the modules below it (`MODULES` in tools/project_n.py; `lint` checks the includes), and `game` links only `core`. `app` puts the program together (0002.1): `app::App` owns the main thread's systems (window, renderer, display) and runs the main loop; it starts the logic thread, which builds an `app::Game` owning that thread's systems (jobs, saves, `game::Arena` through `core::Simulation`, `core::Logic`, the tick clock). The threads share only `core::GameHandover` (`core/frame.hpp`). `main.cpp` only parses the command line, opens the window and renderer, and runs an `App`. A new system is owned by `App` or `Game`, never passed in as loose arguments.
 
 ## Rules
 - C++23 with conventional headers (no modules). Every translation unit's includes lead to `core/cxx23.hpp`, which fails the build below C++23; include it with `// IWYU pragma: keep` (it declares nothing).
@@ -40,3 +40,4 @@ All game and engine code, structured by docs/design/0002-engine-architecture.md 
 - A `switch` over every value of an enum fails either way under Clang's `-Weverything`: `-Wswitch-default` wants a `default`, `-Wcovered-switch-default` rejects one. Use `if`s.
 - A member whose type's default constructor is defaulted (`std::unordered_map`, EnTT's registry, `core::Mutex`): GCC's `-Weffc++` demands an initializer, clang-tidy calls `{}` redundant. Keep `{}` with `// NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer`, or use a value tidy accepts (`= std::nullopt`).
 - MSVC's warnings don't show in native Linux builds, only in `check`: `std::array` needs double braces (C5246), also with CTAD.
+- MSVC C4868 (only in `check`): braces around constructor arguments that build a temporary with a destructor (a `std::filesystem::path` copied into a by-value parameter, a `std::move`d one). Use parentheses for such constructor calls.

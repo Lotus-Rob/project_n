@@ -58,186 +58,155 @@ public:
     std::size_t sizeAtPublish = 0;
 };
 
-// The snapshot RunBurst published for a burst of `ticks`.
-core::Snapshot Burst(core::Logic& logic, core::GameHandover& handover, u64 ticks) {
-    Recorder simulation;
+struct BurstResult {
+    bool stalled = false;
+    core::Snapshot snapshot{};
+};
+
+// The logic and the systems it drives, held as a game holds them; saves go to `slot` (none by default).
+struct Rig {
+    explicit Rig(std::filesystem::path slot = {})
+      : saves(std::move(slot), jobs) {
+    }
+
+    // Runs a burst of `ticks` and returns what RunBurst said and published.
+    BurstResult Burst(u64 ticks) {
+        const bool stalled = logic.RunBurst({ .ticks = ticks, .scheduledNs = SCHEDULED_NS });
+        core::Snapshot* published = handover.TakeState();
+        REQUIRE(published != nullptr);
+        BurstResult result{ .stalled = stalled, .snapshot = *published };
+        handover.ReturnState(published);
+        return result;
+    }
+
+    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    core::GameHandover handover{};
+    Recorder simulation{};
+    // NOLINTEND(readability-redundant-member-init)
     core::Jobs jobs{ 1 };
-    logic.RunBurst({ .ticks = ticks, .scheduledNs = SCHEDULED_NS }, handover, simulation, jobs, PublishedClock);
-    core::Snapshot* published = handover.TakeState();
-    REQUIRE(published != nullptr);
-    const core::Snapshot snapshot = *published;
-    handover.ReturnState(published);
-    return snapshot;
-}
+    core::Saves saves;
+    core::Logic logic{ handover, simulation, jobs, saves, PublishedClock };
+};
 
 TEST_CASE("a burst runs and publishes its ticks") {
     constexpr u64 TICKS = 3;
-    core::Logic logic;
-    core::GameHandover handover;
-    const core::Snapshot snapshot = Burst(logic, handover, TICKS);
+    Rig rig;
+    const core::Snapshot snapshot = rig.Burst(TICKS).snapshot;
     CHECK(snapshot.wallTick == TICKS);
     CHECK(snapshot.simulationTick == TICKS);
     CHECK(snapshot.advanced);
 }
 
 TEST_CASE("the snapshot carries the burst's scheduled time and when it was published") {
-    core::Logic logic;
-    core::GameHandover handover;
-    const core::Snapshot snapshot = Burst(logic, handover, 1);
+    Rig rig;
+    const core::Snapshot snapshot = rig.Burst(1).snapshot;
     CHECK(snapshot.scheduledNs == SCHEDULED_NS);
     CHECK(snapshot.publishedNs == PUBLISHED_NS);
 }
 
 TEST_CASE("paused ticks are frozen: wall ticks only, and the snapshot didn't advance") {
     constexpr u64 TICKS = 2;
-    core::Logic logic;
-    core::GameHandover handover;
-    handover.SendInput({ .kind = core::ActionKind::Pause });
-    const core::Snapshot snapshot = Burst(logic, handover, TICKS);
+    Rig rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::Pause });
+    const core::Snapshot snapshot = rig.Burst(TICKS).snapshot;
     CHECK(snapshot.wallTick == TICKS);
     CHECK(snapshot.simulationTick == 0);
     CHECK_FALSE(snapshot.advanced);
 }
 
 TEST_CASE("the last of several actions in one tick wins") {
-    core::Logic logic;
-    core::GameHandover handover;
-    handover.SendInput({ .kind = core::ActionKind::Pause });
-    handover.SendInput({ .kind = core::ActionKind::Resume });
-    CHECK(Burst(logic, handover, 1).advanced);
+    Rig rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::Pause });
+    rig.handover.SendInput({ .kind = core::ActionKind::Resume });
+    CHECK(rig.Burst(1).snapshot.advanced);
 }
 
 TEST_CASE("pausing lasts across bursts until resumed") {
-    core::Logic logic;
-    core::GameHandover handover;
-    handover.SendInput({ .kind = core::ActionKind::Pause });
-    static_cast<void>(Burst(logic, handover, 1));
-    CHECK_FALSE(Burst(logic, handover, 1).advanced);
-    handover.SendInput({ .kind = core::ActionKind::Resume });
-    CHECK(Burst(logic, handover, 1).advanced);
+    Rig rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::Pause });
+    static_cast<void>(rig.Burst(1));
+    CHECK_FALSE(rig.Burst(1).snapshot.advanced);
+    rig.handover.SendInput({ .kind = core::ActionKind::Resume });
+    CHECK(rig.Burst(1).snapshot.advanced);
 }
 
 TEST_CASE("the simulation ticks once per advancing tick, in order") {
     constexpr u64 TICKS = 3;
-    core::Logic logic;
-    core::GameHandover handover;
-    Recorder simulation;
-    core::Jobs jobs{ 1 };
-    logic.RunBurst({ .ticks = TICKS, .scheduledNs = SCHEDULED_NS }, handover, simulation, jobs, PublishedClock);
-    CHECK(simulation.ticks == std::vector<u64>{ 1, 2, 3 });
+    Rig rig;
+    static_cast<void>(rig.Burst(TICKS));
+    CHECK(rig.simulation.ticks == std::vector<u64>{ 1, 2, 3 });
 }
 
 TEST_CASE("paused ticks don't tick the simulation") {
     constexpr u64 TICKS = 3;
-    core::Logic logic;
-    core::GameHandover handover;
-    Recorder simulation;
-    core::Jobs jobs{ 1 };
-    handover.SendInput({ .kind = core::ActionKind::Pause });
-    logic.RunBurst({ .ticks = TICKS, .scheduledNs = SCHEDULED_NS }, handover, simulation, jobs, PublishedClock);
-    CHECK(simulation.ticks.empty());
+    Rig rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::Pause });
+    static_cast<void>(rig.Burst(TICKS));
+    CHECK(rig.simulation.ticks.empty());
 }
 
 TEST_CASE("a burst publishes once, after its ticks") {
     constexpr u64 TICKS = 3;
-    core::Logic logic;
-    core::GameHandover handover;
-    Recorder simulation;
-    core::Jobs jobs{ 1 };
-    logic.RunBurst({ .ticks = TICKS, .scheduledNs = SCHEDULED_NS }, handover, simulation, jobs, PublishedClock);
-    CHECK(simulation.publishes == 1);
-    CHECK(simulation.ticksAtPublish == TICKS);
+    Rig rig;
+    static_cast<void>(rig.Burst(TICKS));
+    CHECK(rig.simulation.publishes == 1);
+    CHECK(rig.simulation.ticksAtPublish == TICKS);
 }
 
 TEST_CASE("each publish starts from empty instances that keep their capacity") {
-    core::Logic logic;
-    core::GameHandover handover;
-    Recorder simulation;
-    core::Jobs jobs{ 1 };
+    Rig rig;
     // By the time there have been more bursts than buffers, every write reuses a buffer filled before.
     for (u64 burst = 0; burst < 2 * core::GameHandover::BUFFERS; ++burst) {
-        logic.RunBurst({ .ticks = 1, .scheduledNs = SCHEDULED_NS }, handover, simulation, jobs, PublishedClock);
-        CHECK(simulation.sizeAtPublish == 0);
+        static_cast<void>(rig.Burst(1));
+        CHECK(rig.simulation.sizeAtPublish == 0);
         if (burst >= core::GameHandover::BUFFERS) {
-            CHECK(simulation.capacityAtPublish >= burst + 1 - core::GameHandover::BUFFERS);
+            CHECK(rig.simulation.capacityAtPublish >= burst + 1 - core::GameHandover::BUFFERS);
         }
-        handover.ReturnState(handover.TakeState());
     }
-}
-
-} // namespace
-
-namespace {
-
-struct BurstResult {
-    bool stepped = false;
-    core::Snapshot snapshot{};
-};
-
-// Runs a burst of `ticks` on `simulation` and returns what RunBurst said and published.
-BurstResult Run(core::Logic& logic, core::GameHandover& handover, Recorder& simulation, u64 ticks) {
-    core::Jobs jobs{ 1 };
-    const bool stepped =
-        logic.RunBurst({ .ticks = ticks, .scheduledNs = SCHEDULED_NS }, handover, simulation, jobs, PublishedClock);
-    core::Snapshot* published = handover.TakeState();
-    REQUIRE(published != nullptr);
-    BurstResult result{ .stepped = stepped, .snapshot = *published };
-    handover.ReturnState(published);
-    return result;
 }
 
 TEST_CASE("a calendar step asked for freezes the burst and publishes the transition first") {
     constexpr u64 TICKS = 2;
-    core::Logic logic;
-    core::GameHandover handover;
-    Recorder simulation;
-    handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
-    const BurstResult result = Run(logic, handover, simulation, TICKS);
-    CHECK_FALSE(result.stepped);
+    Rig rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
+    const BurstResult result = rig.Burst(TICKS);
+    CHECK_FALSE(result.stalled);
     CHECK(result.snapshot.transition);
     CHECK_FALSE(result.snapshot.advanced);
     CHECK(result.snapshot.simulationTick == 0);
-    CHECK(simulation.steps.empty());
+    CHECK(rig.simulation.steps.empty());
 }
 
 TEST_CASE("the tick after the transition runs the step, changing the state, and ends its burst") {
     constexpr u64 TICKS = 3;
-    core::Logic logic;
-    core::GameHandover handover;
-    Recorder simulation;
-    handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
-    static_cast<void>(Run(logic, handover, simulation, 1));
+    Rig rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
+    static_cast<void>(rig.Burst(1));
 
-    const BurstResult result = Run(logic, handover, simulation, TICKS);
-    CHECK(result.stepped);
-    CHECK(simulation.steps == std::vector<u64>{ 1 });
-    CHECK(simulation.ticks.empty());
+    const BurstResult result = rig.Burst(TICKS);
+    CHECK(result.stalled);
+    CHECK(rig.simulation.steps == std::vector<u64>{ 1 });
+    CHECK(rig.simulation.ticks.empty());
     CHECK(result.snapshot.wallTick == 2);
     CHECK_FALSE(result.snapshot.transition);
     CHECK_FALSE(result.snapshot.advanced);
 
-    static_cast<void>(Run(logic, handover, simulation, 1));
-    CHECK(simulation.ticks == std::vector<u64>{ 1 });
-    CHECK(simulation.states == std::vector<u64>{ 2 }); // the step counted as a change of state
+    static_cast<void>(rig.Burst(1));
+    CHECK(rig.simulation.ticks == std::vector<u64>{ 1 });
+    CHECK(rig.simulation.states == std::vector<u64>{ 2 }); // the step counted as a change of state
 }
 
 TEST_CASE("input sent during the transition waits until after the step") {
-    core::Logic logic;
-    core::GameHandover handover;
-    Recorder simulation;
-    handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
-    static_cast<void>(Run(logic, handover, simulation, 1));
-    handover.SendInput({ .kind = core::ActionKind::Pause });
-    CHECK(Run(logic, handover, simulation, 1).stepped);
-    CHECK_FALSE(Run(logic, handover, simulation, 1).snapshot.advanced);
-    CHECK(simulation.ticks.empty());
+    Rig rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
+    static_cast<void>(rig.Burst(1));
+    rig.handover.SendInput({ .kind = core::ActionKind::Pause });
+    CHECK(rig.Burst(1).stalled);
+    CHECK_FALSE(rig.Burst(1).snapshot.advanced);
+    CHECK(rig.simulation.ticks.empty());
 }
 
-} // namespace
-
-namespace {
-
-// A save file path in a folder of its own, removed when the test ends.
+// A save slot in a folder of its own, removed when the test ends.
 class SaveSlot {
 public:
     explicit SaveSlot(std::string_view name)
@@ -265,66 +234,59 @@ TEST_CASE("a save then a load restore the counters and the state, and start a ne
     constexpr u64 BEFORE = 3;
     constexpr u64 AFTER = 2;
     const SaveSlot slot{ "round_trip" };
-    core::Logic logic{ slot.File() };
-    core::GameHandover handover;
-    Recorder simulation;
-    static_cast<void>(Run(logic, handover, simulation, BEFORE));
-    handover.SendInput({ .kind = core::ActionKind::Save });
-    CHECK(Run(logic, handover, simulation, 1).stepped);
+    Rig rig{ slot.File() };
+    static_cast<void>(rig.Burst(BEFORE));
+    rig.handover.SendInput({ .kind = core::ActionKind::Save });
+    CHECK(rig.Burst(1).stalled);
+    rig.jobs.WaitForBackground();
     REQUIRE(std::filesystem::exists(slot.File()));
-    const core::TickCounters saved = logic.Counters();
+    const core::TickCounters saved = rig.logic.Counters();
     CHECK(saved.wall == BEFORE + 1);
 
-    static_cast<void>(Run(logic, handover, simulation, AFTER));
-    handover.SendInput({ .kind = core::ActionKind::Load });
-    const BurstResult loaded = Run(logic, handover, simulation, 1);
-    CHECK(loaded.stepped);
-    CHECK(logic.Counters().wall == saved.wall);
-    CHECK(logic.Counters().simulation == saved.simulation);
-    CHECK(logic.Counters().state == saved.state);
-    CHECK(simulation.ticks.size() == BEFORE);
-    CHECK(logic.Epoch() == 1);
+    static_cast<void>(rig.Burst(AFTER));
+    rig.handover.SendInput({ .kind = core::ActionKind::Load });
+    const BurstResult loaded = rig.Burst(1);
+    CHECK(loaded.stalled);
+    CHECK(rig.logic.Counters().wall == saved.wall);
+    CHECK(rig.logic.Counters().simulation == saved.simulation);
+    CHECK(rig.logic.Counters().state == saved.state);
+    CHECK(rig.simulation.ticks.size() == BEFORE);
+    CHECK(rig.logic.Epoch() == 1);
     CHECK(loaded.snapshot.epoch == 1);
 }
 
 TEST_CASE("a load with no save changes nothing but the tick count") {
     const SaveSlot slot{ "no_save" };
-    core::Logic logic{ slot.File() };
-    core::GameHandover handover;
-    Recorder simulation;
-    handover.SendInput({ .kind = core::ActionKind::Load });
-    CHECK(Run(logic, handover, simulation, 1).stepped);
-    CHECK(logic.Epoch() == 0);
-    CHECK(logic.Counters().wall == 1);
-    CHECK(logic.Counters().simulation == 0);
+    Rig rig{ slot.File() };
+    rig.handover.SendInput({ .kind = core::ActionKind::Load });
+    CHECK(rig.Burst(1).stalled);
+    CHECK(rig.logic.Epoch() == 0);
+    CHECK(rig.logic.Counters().wall == 1);
+    CHECK(rig.logic.Counters().simulation == 0);
 }
 
 TEST_CASE("a load the simulation rejects changes nothing but the tick count") {
     constexpr u64 TICKS = 2;
     const SaveSlot slot{ "rejected" };
-    core::Logic logic{ slot.File() };
-    core::GameHandover handover;
-    Recorder simulation;
-    handover.SendInput({ .kind = core::ActionKind::Save });
-    static_cast<void>(Run(logic, handover, simulation, 1));
-    static_cast<void>(Run(logic, handover, simulation, TICKS));
-    simulation.rejectLoads = true;
-    handover.SendInput({ .kind = core::ActionKind::Load });
-    static_cast<void>(Run(logic, handover, simulation, 1));
-    CHECK(logic.Epoch() == 0);
-    CHECK(logic.Counters().wall == TICKS + 2);
-    CHECK(simulation.ticks.size() == TICKS);
+    Rig rig{ slot.File() };
+    rig.handover.SendInput({ .kind = core::ActionKind::Save });
+    static_cast<void>(rig.Burst(1));
+    static_cast<void>(rig.Burst(TICKS));
+    rig.simulation.rejectLoads = true;
+    rig.handover.SendInput({ .kind = core::ActionKind::Load });
+    static_cast<void>(rig.Burst(1));
+    CHECK(rig.logic.Epoch() == 0);
+    CHECK(rig.logic.Counters().wall == TICKS + 2);
+    CHECK(rig.simulation.ticks.size() == TICKS);
 }
 
-TEST_CASE("with no save file, Save and Load are refused") {
-    core::Logic logic;
-    core::GameHandover handover;
-    Recorder simulation;
-    handover.SendInput({ .kind = core::ActionKind::Save });
-    CHECK(Run(logic, handover, simulation, 1).stepped);
-    handover.SendInput({ .kind = core::ActionKind::Load });
-    CHECK(Run(logic, handover, simulation, 1).stepped);
-    CHECK(logic.Epoch() == 0);
+TEST_CASE("with no save slot, Save and Load are refused") {
+    Rig rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::Save });
+    CHECK(rig.Burst(1).stalled);
+    rig.handover.SendInput({ .kind = core::ActionKind::Load });
+    CHECK(rig.Burst(1).stalled);
+    CHECK(rig.logic.Epoch() == 0);
 }
 
 } // namespace
