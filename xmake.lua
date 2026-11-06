@@ -237,6 +237,11 @@ target("core")
     add_packages("quill-wine", "entt", is_mode("releasedbg") and "tracy_on" or "tracy_off", {public = true})
     add_packages("enkits") -- private: core/jobs.hpp hides it behind a pimpl
     add_packages("lz4") -- private: compresses saves in core/save_file.cpp
+    -- The game's version, stamped into replays (core/replay.cpp), which play back only in the build that made them.
+    on_load(function (target)
+        import("core.project.project")
+        target:add("defines", "PN_GAME_VERSION=\"" .. project.version() .. "\"")
+    end)
 
 target("game")
     set_kind("static")
