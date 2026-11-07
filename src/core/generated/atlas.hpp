@@ -61,20 +61,21 @@ enum class SpriteId : u16 { // NOLINT(performance-enum-size): stable IDs outgrow
     CrystalIce, ///< assets/sprites/crystal_ice.png
     CellSnow, ///< assets/sprites/cell_snow.png
     OrbGold, ///< assets/sprites/orb_gold.png
+    Villager, ///< assets/sprites/villager.png
 };
 
 /// Every sprite, indexed by SpriteId.
-inline constexpr std::array<Sprite, 25> SPRITES{ {
+inline constexpr std::array<Sprite, 26> SPRITES{ {
     { .file = "sprites/ground.png", .page = 0, .x = 16, .y = 16, .width = 1920, .height = 1080, .footX = 0, .footY = 0 },
     { .file = "sprites/rock_large.png", .page = 0, .x = 1636, .y = 1508, .width = 180, .height = 128, .footX = 90, .footY = 112 },
-    { .file = "sprites/rock_small.png", .page = 0, .x = 142, .y = 1780, .width = 92, .height = 68, .footX = 46, .footY = 60 },
+    { .file = "sprites/rock_small.png", .page = 0, .x = 270, .y = 1780, .width = 92, .height = 68, .footX = 46, .footY = 60 },
     { .file = "sprites/pine.png", .page = 0, .x = 16, .y = 1112, .width = 240, .height = 380, .footX = 120, .footY = 372 },
     { .file = "sprites/shrine.png", .page = 0, .x = 560, .y = 1508, .width = 220, .height = 250, .footX = 110, .footY = 244 },
-    { .file = "sprites/fox.png", .page = 0, .x = 1920, .y = 1508, .width = 112, .height = 72, .footX = 54, .footY = 68 },
+    { .file = "sprites/fox.png", .page = 0, .x = 16, .y = 1780, .width = 112, .height = 72, .footX = 54, .footY = 68 },
     { .file = "sprites/cultivator.png", .page = 0, .x = 1832, .y = 1508, .width = 72, .height = 128, .footX = 36, .footY = 122 },
-    { .file = "sprites/orb_blue.png", .page = 0, .x = 250, .y = 1780, .width = 32, .height = 32, .footX = 16, .footY = 16 },
-    { .file = "sprites/orb_red.png", .page = 0, .x = 426, .y = 1780, .width = 16, .height = 16, .footX = 8, .footY = 8 },
-    { .file = "sprites/shadow.png", .page = 0, .x = 346, .y = 1780, .width = 64, .height = 24, .footX = 32, .footY = 12 },
+    { .file = "sprites/orb_blue.png", .page = 0, .x = 378, .y = 1780, .width = 32, .height = 32, .footX = 16, .footY = 16 },
+    { .file = "sprites/orb_red.png", .page = 0, .x = 554, .y = 1780, .width = 16, .height = 16, .footX = 8, .footY = 8 },
+    { .file = "sprites/shadow.png", .page = 0, .x = 474, .y = 1780, .width = 64, .height = 24, .footX = 32, .footY = 12 },
     { .file = "sprites/cell_plain.png", .page = 0, .x = 1040, .y = 1112, .width = 256, .height = 256, .footX = 0, .footY = 0 },
     { .file = "sprites/cell_mountain.png", .page = 0, .x = 1312, .y = 1112, .width = 256, .height = 256, .footX = 0, .footY = 0 },
     { .file = "sprites/cell_forest.png", .page = 0, .x = 1584, .y = 1112, .width = 256, .height = 256, .footX = 0, .footY = 0 },
@@ -84,12 +85,13 @@ inline constexpr std::array<Sprite, 25> SPRITES{ {
     { .file = "sprites/crane.png", .page = 0, .x = 1284, .y = 1508, .width = 220, .height = 150, .footX = 110, .footY = 150 },
     { .file = "sprites/tree_dead.png", .page = 0, .x = 588, .y = 1112, .width = 220, .height = 280, .footX = 110, .footY = 280 },
     { .file = "sprites/fox_spirit.png", .page = 0, .x = 824, .y = 1112, .width = 200, .height = 260, .footX = 100, .footY = 260 },
-    { .file = "sprites/fox_yellow.png", .page = 0, .x = 16, .y = 1780, .width = 110, .height = 72, .footX = 55, .footY = 72 },
+    { .file = "sprites/fox_yellow.png", .page = 0, .x = 144, .y = 1780, .width = 110, .height = 72, .footX = 55, .footY = 72 },
     { .file = "sprites/hut.png", .page = 0, .x = 912, .y = 1508, .width = 200, .height = 180, .footX = 100, .footY = 180 },
     { .file = "sprites/stele.png", .page = 0, .x = 796, .y = 1508, .width = 100, .height = 220, .footX = 50, .footY = 220 },
     { .file = "sprites/crystal_ice.png", .page = 0, .x = 1128, .y = 1508, .width = 140, .height = 170, .footX = 70, .footY = 170 },
     { .file = "sprites/cell_snow.png", .page = 0, .x = 288, .y = 1508, .width = 256, .height = 256, .footX = 0, .footY = 0 },
-    { .file = "sprites/orb_gold.png", .page = 0, .x = 298, .y = 1780, .width = 32, .height = 32, .footX = 16, .footY = 16 },
+    { .file = "sprites/orb_gold.png", .page = 0, .x = 426, .y = 1780, .width = 32, .height = 32, .footX = 16, .footY = 16 },
+    { .file = "sprites/villager.png", .page = 0, .x = 1920, .y = 1508, .width = 64, .height = 116, .footX = 32, .footY = 112 },
 } };
 
 } // namespace core::atlas
