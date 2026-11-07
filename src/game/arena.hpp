@@ -2,10 +2,17 @@
 
 /// @file
 /// @ingroup game
-/// The demonstration arena (design doc 0002 §2, §16 phase 3): a painted ground with rocks, pines
-/// and a shrine, a cultivator, a pack of foxes circling it and glowing orbs circling closer, drawn through the sprite pipeline.
-/// Its stress variant adds a crowd and a bullet spiral, about 100,000 instances in all (§8.1), a few
-/// NPCs walking in the active tier and 50,000 more in the world tier, whose months pass on request (§7.7).
+/// The demonstration arena (design doc 0002 §2, 0002.3 §2): the growing demo scene, which shows every feature of the
+/// game and engine. Each new feature adds itself here. So far:
+/// - a painted ground with props and the painted art, in foot-y order, some drawn larger or smaller (scale) and one
+///   turning (rotation), with blob shadows;
+/// - the player's cultivator, walked by held input, which the camera follows and the logic culls around;
+/// - a pack of foxes circling it and glowing orbs circling closer (orbits, the additive pipeline), the foxes and the
+///   cultivator from the creatures data table (hot reload in debug builds);
+/// - click-to-select, drawn tinted;
+/// - NPCs walking in the active tier and 5,000 in the world tier, whose months pass on request (§7.7);
+/// - saves, loads and replays of all of it.
+/// Its stress variant adds a crowd and a bullet spiral, about 100,000 instances in all (§8.1), and a world tier of 50,000.
 
 #include "core/draw_list.hpp"
 #include "core/ecs.hpp"
@@ -63,7 +70,6 @@ enum class Scene : u8 {
     Stress,  ///< The arena with a crowd of 90,000, a spiral of 10,000 bullets and 50,000 world NPCs, for profiling.
     Painted, ///< A still scene of painted sprites and overlapping glows, for judging art and blending (§8.4).
     Cells,   ///< A still grid of 640 map cells, for judging the mips as the view zooms out (§16 phase 3).
-    Npcs,    ///< The arena with the stress scene's NPCs but a world of 5,000: every NPC system, cheaply, for tests.
 };
 
 /// The arena scene as a simulation: it moves its creatures each tick and publishes every sprite.

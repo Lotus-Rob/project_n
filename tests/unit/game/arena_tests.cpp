@@ -63,6 +63,25 @@ TEST_CASE("a tick moves the foxes, and their previous position is where they wer
     CHECK(Positions(after, &core::Instance::current) != Positions(before, &core::Instance::current));
 }
 
+// The packed rotation (previous half low, current half high) of the first instance drawing `sprite`.
+u32 RotationOf(const core::Snapshot& snapshot, SpriteId sprite) {
+    const auto found =
+        std::ranges::find_if(snapshot.instances, [sprite](const core::Instance& instance) { return Draws(instance, sprite); });
+    REQUIRE(found != snapshot.instances.end());
+    return found->rotation;
+}
+
+TEST_CASE("the ice crystal turns each tick, from where it was") {
+    constexpr u32 HALF_BITS = 16;
+    game::Arena arena;
+    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, {});
+    const u32 before = RotationOf(Published(arena), SpriteId::CrystalIce);
+    arena.Tick({ .wall = 2, .simulation = 2, .state = 2 }, {});
+    const u32 after = RotationOf(Published(arena), SpriteId::CrystalIce);
+    CHECK((after & 0xFFFFU) == (before >> HALF_BITS)); // its previous rotation is the last tick's current one
+    CHECK((after >> HALF_BITS) != (after & 0xFFFFU));
+}
+
 // The current position of the instance drawing `entity`, or NaN when none does.
 core::Vec2 PositionOf(const core::Snapshot& snapshot, core::StableId entity) {
     const auto found = std::ranges::find(snapshot.ids, entity);
@@ -180,12 +199,16 @@ TEST_CASE("the still scenes have no player and follow nothing") {
 }
 
 // The sprite an instance draws, and where its foot stands: MakeInstance offsets the quad's
-// centre from the foot by a fixed amount per sprite.
+// centre from the foot by a fixed amount per sprite, times the scale the instance's size shows.
 std::optional<std::pair<SpriteId, f32>> SpriteAndFootY(const core::Instance& instance) {
+    constexpr u32 LOW_HALF = 0xFFFFU;
     for (std::size_t id = 0; id < core::atlas::SPRITES.size(); ++id) {
         const auto sprite = static_cast<SpriteId>(id);
         if (Draws(instance, sprite)) {
-            return std::pair{ sprite, instance.current.y - core::MakeInstance({ .sprite = sprite }).current.y };
+            const core::Instance unscaled = core::MakeInstance({ .sprite = sprite });
+            const f32 scale = core::UnpackHalf(static_cast<u16>(instance.size & LOW_HALF)) /
+                              core::UnpackHalf(static_cast<u16>(unscaled.size & LOW_HALF));
+            return std::pair{ sprite, instance.current.y - (unscaled.current.y * scale) };
         }
     }
     return std::nullopt;
@@ -235,7 +258,10 @@ TEST_CASE("the additive batch holds only the orbs") {
     const core::Snapshot snapshot = MovedArena();
     REQUIRE_FALSE(snapshot.batches.empty());
     for (u32 i = snapshot.batches.back().first; i < snapshot.instances.size(); ++i) {
-        CHECK((Draws(snapshot.instances[i], SpriteId::OrbBlue) || Draws(snapshot.instances[i], SpriteId::OrbRed)));
+        CHECK(
+            (Draws(snapshot.instances[i], SpriteId::OrbBlue) || Draws(snapshot.instances[i], SpriteId::OrbRed) ||
+             Draws(snapshot.instances[i], SpriteId::OrbGold))
+        );
     }
 }
 

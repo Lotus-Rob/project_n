@@ -25,6 +25,7 @@ All game and engine code, structured by docs/design/0002-engine-architecture.md 
 - Rendering: nothing outside `gfx` calls SDL_GPU. Shaders are HLSL in `shaders/<name>.<stage>.hlsl`; after changing one, `./dev shaders` (Linux or Windows) and commit `shaders/bin/` and `src/gfx/generated/` with it (`lint` fails on stale binaries). `gfx` reaches them through the generated `gfx/generated/shaders.hpp`.
 - Third-party code comes from xmake-repo packages with exact versions; nothing is vendored into `src/`.
 - `src/<module>/generated/` holds headers that `shaders` and `atlas` write (shader binaries, the atlas manifest): never edit them by hand; `fmt` and `lint` skip them, and `lint` fails when they are stale.
+- The arena (`game/arena.hpp`) is the growing demo scene: a new feature of the game or engine shows up in it, in the same branch, and is added to the header's list.
 - A new module adds its directory's `module.dox`, an XMake target with `add_deps` on the modules below it, and its commit scope to `SCOPES` in tools/project_n.py.
 
 ## Commands
