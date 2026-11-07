@@ -65,6 +65,14 @@ TEST_CASE("the creatures parse") {
     CHECK(data->fox.orbitRadius == PARSED.fox.orbitRadius);
     CHECK(data->fox.orbitWobble == PARSED.fox.orbitWobble);
     CHECK(data->fox.orbitSpeed == PARSED.fox.orbitSpeed);
+    CHECK_FALSE(data->fox.orbitsPlayer); // around the start unless it says otherwise
+}
+
+TEST_CASE("an orbit goes around the player when it says so") {
+    const std::expected<core::GameData, core::Error> data =
+        data::ParseGameData(With("speed: -0.006 }", "speed: -0.006, around: player }"));
+    REQUIRE(data.has_value());
+    CHECK(data->fox.orbitsPlayer);
 }
 
 TEST_CASE("game data that differs hashes differently") {
@@ -86,7 +94,7 @@ struct Broken {
 };
 
 TEST_CASE("malformed creatures are errors naming the line") {
-    constexpr std::array<Broken, 7> CASES{ {
+    constexpr std::array<Broken, 8> CASES{ {
         Broken{ .from = "walk_speed: 4.0", .replacement = "walk_speed: [4.0", .says = "line" },
         Broken{ .from = "  walk_speed: 4.0\n", .replacement = "", .says = "creatures line 2: cultivator has no walk_speed" },
         Broken{ .from = "walk_speed: 0.5", .replacement = "walk_speed: fast", .says = "line 6" },
@@ -98,6 +106,9 @@ TEST_CASE("malformed creatures are errors naming the line") {
                 .says = "creatures line 5: fox's sprite dragon isn't in the atlas" },
         Broken{ .from = "radius: 300.0, ", .replacement = "", .says = "fox's orbit has no radius" },
         Broken{ .from = "fox:", .replacement = "wolf:", .says = "no creature fox" },
+        Broken{ .from = "speed: -0.006 }",
+                .replacement = "speed: -0.006, around: moon }",
+                .says = "line 7: fox's orbit goes around moon, not the player or the start" },
     } };
     for (const Broken& broken : CASES) {
         CAPTURE(broken.says);
