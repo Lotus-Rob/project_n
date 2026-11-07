@@ -67,8 +67,9 @@ public:
     /// Builds `scene`: the same entities, in the same places, every time.
     explicit Arena(Scene scene = Scene::Arena);
 
-    /// Moves every entity on an Orbit to where it is at `counters.simulation`, and walks the
-    /// active NPCs, whose decisions draw random numbers keyed on `counters.state`.
+    /// Walks the player's cultivator where `input`'s held movement points, selects what its Select
+    /// actions name, moves every entity on an Orbit to where it is at `counters.simulation`, and
+    /// walks the active NPCs, whose decisions draw random numbers keyed on `counters.state`.
     void Tick(const core::TickCounters& counters, const core::TickInput& input) override;
 
     /// Lets a month pass for the world NPCs (MonthStep).
@@ -95,14 +96,25 @@ public:
         return m_state;
     }
 
+    /// The cultivator the player walks, or zero in a scene without one (the painted scene, the cells).
+    [[nodiscard]] core::StableId Player() const {
+        return m_player;
+    }
+
+    /// The entity the player selected last, or zero for none.
+    [[nodiscard]] core::StableId Selected() const {
+        return m_selected;
+    }
+
     /// What the NPCs think of each other.
     [[nodiscard]] const Relationships& NpcRelationships() const {
         return m_relationships;
     }
 
     /// Publishes the ground, then a shadow under each entity that casts one, then the world's
-    /// entities in foot-y order, then the effects, packed in fixed chunks on `jobs`: the bytes are
-    /// the same whatever its worker count.
+    /// entities in foot-y order (the selected one tinted), then the effects, packed in fixed chunks
+    /// on `jobs`: the bytes are the same whatever its worker count. Each entity's instance carries
+    /// its ID, and the player's cultivator is the one to follow, with what is drawn culled around it.
     void Publish(core::Snapshot& snapshot, core::Jobs& jobs) override;
 
 private:
@@ -110,6 +122,8 @@ private:
     void Write(Archive& archive) const;
 
     core::Entity Spawn(core::Vec2 foot, const Look& look);
+    void Walk(core::Vec2 move);
+    void Select(core::StableId target);
     void SpawnStress();
     void SpawnNpcs(u32 worldNpcs);
     void SpawnPainted();
@@ -123,8 +137,10 @@ private:
     // NOLINTEND(readability-redundant-member-init)
     core::State m_state;
     Scene m_scene;
-    u64 m_months = 0;    // the calendar: months passed
-    core::Rect m_view{}; // what a publish culls to
+    u64 m_months = 0;            // the calendar: months passed
+    core::Rect m_view{};         // what a publish culls to without a player
+    core::StableId m_player{};   // the cultivator the player walks; zero for none
+    core::StableId m_selected{}; // zero for none
 };
 
 } // namespace game
