@@ -56,6 +56,25 @@ u16 PackHalf(f32 value) {
     return static_cast<u16>(sign | RoundShift(mantissa, SUBNORMAL_BIAS - (magnitude >> FLOAT_EXPONENT_SHIFT)));
 }
 
+f32 UnpackHalf(u16 half) {
+    constexpr u32 HALF_SIGN = 0x8000U;
+    constexpr u32 HALF_EXPONENT_SHIFT = 10;
+    constexpr u32 HALF_EXPONENT_MAX = 0x1FU;
+    constexpr u32 HALF_MANTISSA = 0x3FFU;
+    constexpr i32 SUBNORMAL_EXPONENT = -24; // a subnormal half is its mantissa times 2^-24
+    const u32 sign = (half & HALF_SIGN) << 16U;
+    const u32 exponent = (half >> HALF_EXPONENT_SHIFT) & HALF_EXPONENT_MAX;
+    const u32 mantissa = half & HALF_MANTISSA;
+    if (exponent == 0) {
+        const f32 magnitude = std::ldexp(static_cast<f32>(mantissa), SUBNORMAL_EXPONENT);
+        return sign != 0 ? -magnitude : magnitude;
+    }
+    if (exponent == HALF_EXPONENT_MAX) {
+        return std::bit_cast<f32>(sign | INFINITY_BITS | (mantissa << MANTISSA_SHIFT));
+    }
+    return std::bit_cast<f32>(sign | ((exponent << FLOAT_EXPONENT_SHIFT) + EXPONENT_REBIAS) | (mantissa << MANTISSA_SHIFT));
+}
+
 u16 PackUnorm16(f32 value) {
     return static_cast<u16>(std::lround(std::clamp(value, 0.0F, 1.0F) * static_cast<f32>(UNORM16_MAX)));
 }

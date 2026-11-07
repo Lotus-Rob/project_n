@@ -86,17 +86,6 @@ TEST_CASE("a scaled instance grows about its foot point") {
     CHECK(instance.size == core::PackPair(core::PackHalf(DOUBLE * sprite.width), core::PackHalf(DOUBLE * sprite.height)));
 }
 
-// A normal half's value: enough for the angles below.
-f32 UnpackNormalHalf(u32 bits) {
-    constexpr f32 MANTISSA_STEPS = 1024.0F;
-    constexpr i32 EXPONENT_BIAS = 15;
-    constexpr u32 SIGN = 0x8000U;
-    const f32 magnitude = std::ldexp(
-        1.0F + (static_cast<f32>(bits & 0x3FFU) / MANTISSA_STEPS), static_cast<i32>((bits >> 10U) & 0x1FU) - EXPONENT_BIAS
-    );
-    return (bits & SIGN) != 0 ? -magnitude : magnitude;
-}
-
 TEST_CASE("a rotation across the full turn interpolates along the shorter arc") {
     constexpr f32 DEGREE = std::numbers::pi_v<f32> / 180.0F;
     constexpr f32 PREVIOUS = 350.0F * DEGREE;
@@ -105,9 +94,23 @@ TEST_CASE("a rotation across the full turn interpolates along the shorter arc") 
     constexpr f32 HALF_PRECISION = 0.01F; // radians: a half's step near 2π is about 0.004
     const core::Instance instance =
         core::MakeInstance({ .sprite = core::atlas::SpriteId::Fox, .previousRotation = PREVIOUS, .currentRotation = CURRENT });
-    const f32 previous = UnpackNormalHalf(instance.rotation & 0xFFFFU);
-    const f32 current = UnpackNormalHalf(instance.rotation >> 16U);
+    const f32 previous = core::UnpackHalf(static_cast<u16>(instance.rotation & 0xFFFFU));
+    const f32 current = core::UnpackHalf(static_cast<u16>(instance.rotation >> 16U));
     CHECK(current - previous == doctest::Approx(SHORTER_ARC).epsilon(HALF_PRECISION / SHORTER_ARC));
+}
+
+TEST_CASE("every half but NaN unpacks to the f32 that packs back to it") {
+    constexpr u32 ALL_BITS = 0x1'0000U;
+    u32 mismatches = 0;
+    for (u32 bits = 0; bits < ALL_BITS; ++bits) {
+        const f32 value = core::UnpackHalf(static_cast<u16>(bits));
+        if (!std::isnan(value) && core::PackHalf(value) != bits) {
+            ++mismatches;
+        }
+    }
+    CHECK(mismatches == 0);
+    constexpr f32 EXACT = 1.5F;
+    CHECK(core::UnpackHalf(core::PackHalf(EXACT)) == EXACT);
 }
 
 } // namespace
