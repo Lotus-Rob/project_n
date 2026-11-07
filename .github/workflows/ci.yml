@@ -57,7 +57,7 @@ jobs:
           path: /home/runner/xmake-cache
           key: xmake-lint-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
           restore-keys: xmake-lint-
-      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
@@ -98,7 +98,7 @@ jobs:
           path: /home/runner/xmake-cache
           key: xmake-${{ matrix.preset }}-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
           restore-keys: xmake-${{ matrix.preset }}-
-      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
@@ -177,7 +177,7 @@ jobs:
           path: ~/.xmake/project_n # packages_dir() in tools/project_n.py
           key: xmake-windows-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
           restore-keys: xmake-windows-
-      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
@@ -216,7 +216,7 @@ jobs:
           path: ~/.xmake/project_n # packages_dir() in tools/project_n.py
           key: xmake-macos-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
           restore-keys: xmake-macos-
-      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
@@ -260,7 +260,7 @@ jobs:
           pattern: project_n-*
           path: dist
           merge-multiple: true
-      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
