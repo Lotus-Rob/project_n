@@ -73,4 +73,24 @@ TEST_CASE("a zero-sized target (a minimised window) gives a finite transform") {
     CHECK(std::isfinite(transform.scaleY));
 }
 
+TEST_CASE("ClipToWorld inverts WorldToClip at several sizes and zooms") {
+    struct Case {
+        u32 width = 0;
+        u32 height = 0;
+        f32 zoom = 1.0F;
+    };
+    constexpr std::array CASES{ Case{ .width = 1920, .height = 1080, .zoom = 1.0F },
+                                Case{ .width = 1280, .height = 1024, .zoom = gfx::MIN_ZOOM },
+                                Case{ .width = 3440, .height = 1440, .zoom = gfx::MAX_ZOOM } };
+    constexpr core::Vec2 CENTRE{ .x = 300.0F, .y = -120.0F };
+    constexpr core::Vec2 POINT{ .x = 410.0F, .y = 75.0F };
+    for (const Case& size : CASES) {
+        const gfx::ClipTransform transform = gfx::WorldToClip({ .centre = CENTRE, .zoom = size.zoom }, size.width, size.height);
+        const Clip clip = Apply(transform, POINT);
+        const core::Vec2 world = gfx::ClipToWorld(transform, { .x = clip.x, .y = clip.y });
+        CHECK(world.x == doctest::Approx(POINT.x));
+        CHECK(world.y == doctest::Approx(POINT.y));
+    }
+}
+
 } // namespace
