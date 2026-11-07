@@ -65,4 +65,21 @@ TEST_CASE("picking hits a moving instance where alpha draws it") {
     CHECK(app::Pick(snapshot, 1.0, MOVED) == MOVING);
 }
 
+TEST_CASE("picking turns with a rotated instance, as alpha draws it") {
+    constexpr core::StableId TURNING{ 1 };
+    constexpr f32 LENGTH = 100.0F;
+    constexpr f32 THICKNESS = 10.0F;
+    constexpr f32 QUARTER_TURN = std::numbers::pi_v<f32> / 2.0F;
+    constexpr core::Vec2 ALONG_X{ .x = 40.0F, .y = 0.0F };
+    constexpr core::Vec2 ALONG_Y{ .x = 0.0F, .y = 40.0F };
+    core::Snapshot snapshot;
+    snapshot.instances = { { .size = core::PackPair(core::PackHalf(LENGTH), core::PackHalf(THICKNESS)),
+                             .rotation = core::PackPair(core::PackHalf(0.0F), core::PackHalf(QUARTER_TURN)) } };
+    snapshot.ids = { TURNING };
+    CHECK(app::Pick(snapshot, 0.0, ALONG_X) == TURNING); // not turned yet: lying along x
+    CHECK(app::Pick(snapshot, 0.0, ALONG_Y) == core::StableId{});
+    CHECK(app::Pick(snapshot, 1.0, ALONG_Y) == TURNING); // a quarter turn: standing along y
+    CHECK(app::Pick(snapshot, 1.0, ALONG_X) == core::StableId{});
+}
+
 } // namespace

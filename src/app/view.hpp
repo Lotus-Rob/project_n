@@ -20,9 +20,9 @@ namespace app {
 [[nodiscard]] core::Vec2 WindowToWorld(const gfx::Camera& camera, core::Vec2 position, i32 width, i32 height);
 
 /// The entity drawn on top at `world` in `snapshot` interpolated by `alpha`: the last instance in
-/// drawing order with an ID whose quad contains the point, or zero for none. shortcut: the quad's
-/// axis-aligned box, ignoring rotation and counting transparent pixels as hits, until something
-/// small and rotated needs better.
+/// drawing order with an ID whose quad, turned by its interpolated rotation, contains the point, or
+/// zero for none. shortcut: transparent pixels count as hits, until sprites with much empty space
+/// overlap enough to matter.
 [[nodiscard]] core::StableId Pick(const core::Snapshot& snapshot, f64 alpha, core::Vec2 world);
 
 } // namespace app
