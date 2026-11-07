@@ -277,9 +277,16 @@ target("gfx")
     add_rules("utils.bin2c", {extensions = {".spv", ".dxil", ".msl"}, nozeroend = true})
     add_files("shaders/bin/*.spv", "shaders/bin/*.dxil", "shaders/bin/*.msl")
 
+target("data")
+    set_kind("static")
+    add_deps("core")
+    add_files("src/data/**.cpp")
+    set_pcxxheader("src/pch.hpp")
+    add_packages("yaml-cpp") -- private: only src/data/ reads YAML
+
 target("app")
     set_kind("static")
-    add_deps("gfx", "game")
+    add_deps("data", "gfx", "game")
     add_files("src/app/**.cpp")
     set_pcxxheader("src/pch.hpp")
 

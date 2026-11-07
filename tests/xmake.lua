@@ -30,6 +30,7 @@ unit_tests("game_tests", "unit/game/*.cpp", "game")
 unit_tests("platform_tests", "unit/platform/*.cpp", "platform")
 unit_tests("gfx_tests", "unit/gfx/*.cpp", "gfx")
 unit_tests("app_tests", "unit/app/*.cpp", "app")
+unit_tests("data_tests", "unit/data/*.cpp", "data")
 -- Logging start-up states: Quill's loggers live for the whole process, so each test needs its own.
 unit_tests("log_early_tests", {"unit/log_startup/main.cpp", "unit/log_startup/early_tests.cpp"})
 unit_tests("log_fallback_tests", {"unit/log_startup/main.cpp", "unit/log_startup/fallback_tests.cpp"})
@@ -60,7 +61,7 @@ if is_plat("linux") and get_config("toolchain") == "pixi-clang" and get_config("
         local name = path.basename(file)
         target("fuzz_" .. name)
             set_kind("binary")
-            add_deps("game") -- the readers under test, and core below them
+            add_deps("game", "data") -- the readers under test, and core below them
             add_files(file)
             set_pcxxheader("$(projectdir)/src/pch.hpp") -- not a doctest suite: the game's, without doctest
             add_cxflags("-fsanitize=fuzzer", {force = true})

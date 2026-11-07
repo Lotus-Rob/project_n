@@ -2,6 +2,7 @@
 #include "core/command_line.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
+#include "data/settings.hpp"
 #include "game/arena.hpp"
 #include "gfx/renderer.hpp"
 #include "platform/paths.hpp"
@@ -9,9 +10,6 @@
 #include "platform/window.hpp"
 
 namespace {
-
-constexpr i32 WINDOW_WIDTH = 1280;
-constexpr i32 WINDOW_HEIGHT = 720;
 
 struct SceneChoice {
     game::Scene scene = game::Scene::Arena;
@@ -48,10 +46,12 @@ i32 FailToStart(std::string_view what, const core::Error& error) {
     return 1;
 }
 
-// Opens the window and the renderer, then hands them to the app; a failure to start is reported, not thrown.
-i32 Run(const app::Options& options) {
+// Opens the window (as `settings` say) and the renderer, then hands them to the app; a failure to start is reported, not
+// thrown.
+i32 Run(const core::Settings& settings, const app::Options& options) {
     platform::RouteSdlLogs();
-    std::expected<platform::Window, core::Error> window = platform::Window::Open("project_n", WINDOW_WIDTH, WINDOW_HEIGHT);
+    std::expected<platform::Window, core::Error> window =
+        platform::Window::Open("project_n", settings.windowWidth, settings.windowHeight, settings.fullscreen);
     if (!window) {
         return FailToStart("the window couldn't be opened", window.error());
     }
@@ -95,12 +95,13 @@ int main(int argc, char** argv) {
     try {
         // shortcut: one save slot; slots and their screen come with the UI (phase 6).
         const i32 status =
-            Run({
-                .scene = choice.scene,
-                .quitAfterNs = *quitAfterNs,
-                .saveSlot = userData ? *userData / "saves" / "quicksave.pns" : std::filesystem::path{},
-                .replaySlot = userData ? *userData / "saves" / "replay.pnr" : std::filesystem::path{},
-            });
+            Run(userData ? data::LoadSettings(*userData / "settings.yaml") : core::Settings{},
+                {
+                    .scene = choice.scene,
+                    .quitAfterNs = *quitAfterNs,
+                    .saveSlot = userData ? *userData / "saves" / "quicksave.pns" : std::filesystem::path{},
+                    .replaySlot = userData ? *userData / "saves" / "replay.pnr" : std::filesystem::path{},
+                });
         PN_LOG_NOTICE("project_n stopped with status {}", status);
         return status;
     }
