@@ -8,6 +8,7 @@
 
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
+#include "core/stable_id.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 
@@ -88,13 +89,15 @@ public:
     /// Empties the list for a publish showing `view`, filled in `parts` parts (at least one).
     void Begin(Rect view, u32 parts = 1);
 
-    /// Adds `instance` to part `part`, in `layer`, drawn with `pipeline`, unless its current position
-    /// lies more than CULL_MARGIN outside the view. `footY` orders it within the world layer;
-    /// elsewhere instances keep the submission order. Different parts may be added to at once.
-    void Add(u32 part, Layer layer, Pipeline pipeline, const Instance& instance, f32 footY = 0.0F);
+    /// Adds `instance`, drawing `entity` (zero for none), to part `part`, in `layer`, drawn with
+    /// `pipeline`, unless its current position lies more than CULL_MARGIN outside the view. `footY`
+    /// orders it within the world layer; elsewhere instances keep the submission order. Different
+    /// parts may be added to at once.
+    void Add(u32 part, Layer layer, Pipeline pipeline, const Instance& instance, f32 footY = 0.0F, StableId entity = {});
 
-    /// Appends the instances in drawing order to `snapshot`'s, and their batches to its batches,
-    /// gathering in chunks on `jobs`: the bytes are the same whatever its worker count.
+    /// Appends the instances in drawing order to `snapshot`'s, their IDs to its IDs and their
+    /// batches to its batches, gathering in chunks on `jobs`: the bytes are the same whatever its
+    /// worker count.
     void Publish(Snapshot& snapshot, Jobs& jobs);
 
 private:
@@ -112,6 +115,7 @@ private:
         // for members whose default constructor is defaulted.
         std::vector<Instance> instances{};
         std::vector<SortEntry> entries{}; // indices into this part's instances
+        std::vector<StableId> ids{};      // parallel to instances
         // NOLINTEND(readability-redundant-member-init)
     };
 #ifdef _MSC_VER
@@ -125,6 +129,7 @@ private:
     std::vector<Part> m_parts{}; // grows to the most parts asked for; only the first m_partCount are in use
     std::vector<std::size_t> m_offsets{};
     std::vector<Instance> m_instances{};
+    std::vector<StableId> m_ids{};
     std::vector<SortEntry> m_entries{};
     std::vector<SortEntry> m_scratch{};
     // NOLINTEND(readability-redundant-member-init)

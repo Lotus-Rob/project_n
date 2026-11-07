@@ -14,6 +14,7 @@
 
 #include <bit>
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -66,6 +67,14 @@ struct Batch {
     Pipeline pipeline = Pipeline::Normal;
 };
 
+/// The entity the camera follows (design doc 0002 §8.10): its foot at the previous and this tick.
+struct Follow {
+    /// The foot point at the previous tick, in world units.
+    Vec2 previous{};
+    /// The foot point at this tick.
+    Vec2 current{};
+};
+
 /// One published snapshot of the game state: what the main thread draws until the next is due.
 struct Snapshot {
     /// The wall tick of the last tick in the burst that published it.
@@ -89,6 +98,11 @@ struct Snapshot {
     std::vector<Instance> instances{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The instances' batches, in drawing order, covering them all; refilled in place likewise.
     std::vector<Batch> batches{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    /// The entity each instance draws, parallel to `instances` (zero for one that is no entity's:
+    /// the ground, a shadow), for picking; refilled in place likewise.
+    std::vector<StableId> ids{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    /// What the camera follows, if anything.
+    std::optional<Follow> follow = std::nullopt;
 };
 
 /// Something a tick started that the main thread plays at the render clock (sounds, particle

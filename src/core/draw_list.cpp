@@ -76,10 +76,11 @@ void DrawList::Begin(Rect view, u32 parts) {
     for (Part& part : std::span{ m_parts }.first(parts)) {
         part.instances.clear();
         part.entries.clear();
+        part.ids.clear();
     }
 }
 
-void DrawList::Add(u32 part, Layer layer, Pipeline pipeline, const Instance& instance, f32 footY) {
+void DrawList::Add(u32 part, Layer layer, Pipeline pipeline, const Instance& instance, f32 footY, StableId entity) {
     PN_ASSERT(part < m_partCount, "a draw list part past those Begin asked for");
     const Vec2 position = instance.current;
     if (position.x < m_view.min.x - CULL_MARGIN || position.x > m_view.max.x + CULL_MARGIN ||
@@ -90,6 +91,7 @@ void DrawList::Add(u32 part, Layer layer, Pipeline pipeline, const Instance& ins
     const u32 depth = layer == Layer::World ? QuantiseDepth(footY, m_view.min.y) : 0;
     into.entries.push_back({ .key = MakeSortKey(layer, depth, pipeline), .index = static_cast<u32>(into.instances.size()) });
     into.instances.push_back(instance);
+    into.ids.push_back(entity);
 }
 
 void DrawList::Publish(Snapshot& snapshot, Jobs& jobs) {
@@ -100,10 +102,12 @@ void DrawList::Publish(Snapshot& snapshot, Jobs& jobs) {
     }
     const std::size_t total = m_offsets.back();
     m_instances.resize(total);
+    m_ids.resize(total);
     m_entries.resize(total);
     jobs.ParallelFor(m_partCount, [this](u32 part) {
         const std::size_t offset = m_offsets[part];
         std::ranges::copy(m_parts[part].instances, std::span{ m_instances }.subspan(offset).begin());
+        std::ranges::copy(m_parts[part].ids, std::span{ m_ids }.subspan(offset).begin());
         std::ranges::transform(
             m_parts[part].entries, std::span{ m_entries }.subspan(offset).begin(), [offset](SortEntry entry) {
                 entry.index += static_cast<u32>(offset);
@@ -116,12 +120,15 @@ void DrawList::Publish(Snapshot& snapshot, Jobs& jobs) {
     const std::size_t first = snapshot.instances.size();
     const std::size_t firstBatch = snapshot.batches.size();
     snapshot.instances.resize(first + total);
+    snapshot.ids.resize(first + total); // instances added without IDs before these get zero
     const std::span<Instance> sorted = std::span{ snapshot.instances }.subspan(first);
+    const std::span<StableId> sortedIds = std::span{ snapshot.ids }.subspan(first);
     jobs.ParallelFor(ChunkCount(total, GATHER_CHUNK), [&](u32 chunk) {
         const std::size_t begin = std::size_t{ chunk } * GATHER_CHUNK;
         const std::size_t end = std::min(total, begin + GATHER_CHUNK);
         for (std::size_t i = begin; i < end; ++i) {
             sorted[i] = m_instances[m_entries[i].index];
+            sortedIds[i] = m_ids[m_entries[i].index];
         }
     });
     AppendBatches(m_entries, snapshot.batches);
