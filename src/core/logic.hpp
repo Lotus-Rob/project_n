@@ -137,15 +137,12 @@ private:
         Stall,    // the burst ends after a stall the caller expected
     };
 
-    struct Requests {
-        bool save = false;
-        bool load = false;
-        bool record = false;
-        bool play = false;
-    };
+    // The kinds of action a tick took, a bit per ActionKind.
+    using ActionSet = u32;
+    static_assert(ACTION_KINDS <= 32, "an ActionSet holds a bit per kind");
 
     TickEnd RunTick(const std::stop_token& stop);
-    Requests TakeInput();
+    ActionSet TakeInput();
     void CheckReplay();
     [[nodiscard]] std::vector<std::byte> Serialise(bool withLogicState);
     [[nodiscard]] bool Restore(std::span<const std::byte> state, bool withLogicState);
