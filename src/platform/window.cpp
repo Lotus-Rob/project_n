@@ -162,7 +162,7 @@ struct Window::Impl {
     }
 };
 
-std::expected<Window, core::Error> Window::Open(std::string_view title, i32 width, i32 height) {
+std::expected<Window, core::Error> Window::Open(std::string_view title, i32 width, i32 height, bool fullscreen) {
     const i32 version = SDL_GetVersion();
     PN_LOG_INFO(
         "SDL {}.{}.{} on {}",
@@ -184,13 +184,16 @@ std::expected<Window, core::Error> Window::Open(std::string_view title, i32 widt
         PN_LOG_WARNING("no gamepads: SDL's gamepad support didn't start: {}", SDL_GetError());
     }
     const std::string name{ title };
-    impl->window = SDL_CreateWindow(name.c_str(), width, height, SDL_WINDOW_RESIZABLE);
+    impl->window =
+        SDL_CreateWindow(name.c_str(), width, height, SDL_WINDOW_RESIZABLE | (fullscreen ? SDL_WINDOW_FULLSCREEN : 0));
     if (impl->window == nullptr) {
         return std::unexpected{ core::Error{ std::format("SDL_CreateWindow failed: {}", SDL_GetError()) } };
     }
-    PN_LOG_INFO("window {}x{}, video driver: {}", width, height, SDL_GetCurrentVideoDriver());
-    impl->state.width = width;
-    impl->state.height = height;
+    PN_LOG_INFO(
+        "window {}x{}{}, video driver: {}", width, height, fullscreen ? " (fullscreen)" : "", SDL_GetCurrentVideoDriver()
+    );
+    // Fullscreen takes the screen's size, not the one asked for.
+    SDL_GetWindowSize(impl->window, &impl->state.width, &impl->state.height);
     return Window{ std::move(impl) };
 }
 

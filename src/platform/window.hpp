@@ -112,8 +112,14 @@ void ReportStartFailure(
 /// The game's one window. Opening it starts SDL's video; closing it (destruction) stops SDL.
 class Window {
 public:
-    /// Opens a resizable window of `width` by `height` titled `title`, or says why it couldn't.
-    [[nodiscard]] static std::expected<Window, core::Error> Open(std::string_view title, i32 width, i32 height);
+    /// Opens a resizable window of `width` by `height` titled `title`, covering the screen when
+    /// `fullscreen`, or says why it couldn't.
+    [[nodiscard]] static std::expected<Window, core::Error> Open(
+        std::string_view title,
+        i32 width,
+        i32 height,
+        bool fullscreen = false
+    );
 
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;

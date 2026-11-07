@@ -1,0 +1,4 @@
+/// @defgroup data data
+/// The game's data files (design doc 0002.3 §7): the player's settings and the data tables, read
+/// from YAML into core's types. yaml-cpp stays inside this module; its readers return errors with
+/// the line they were found on and never throw.
