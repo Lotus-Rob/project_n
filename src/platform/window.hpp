@@ -6,17 +6,19 @@
 
 #include "core/error.hpp"
 #include "core/types.hpp"
+#include "core/vec2.hpp"
 
 #include <expected>
 #include <functional>
 #include <memory>
 #include <string_view>
+#include <vector>
 
 namespace platform {
 
 /// What the window's events have said so far.
 struct WindowState {
-    /// The player asked to quit (closed the window or pressed Escape).
+    /// The player asked to quit (closed the window).
     bool quitRequested = false;
     /// The window can be seen: neither hidden nor minimised. Nothing is drawn while it can't.
     bool visible = true;
@@ -24,19 +26,68 @@ struct WindowState {
     bool focused = true;
     /// The window is minimised (unlike `visible`, not merely covered by another window).
     bool minimised = false;
-    /// How far the mouse wheel turned during the last Poll(), in notches; positive is away from the player.
-    f32 wheelNotches = 0.0F;
-    /// The player pressed M during the last Poll(), asking for a month to pass. shortcut: a fixed
-    /// key; bindings and actions replace it in phase 5 (design doc 0002 §16).
-    bool monthRequested = false;
-    /// The player pressed F5 during the last Poll(), asking to save (the same shortcut as M).
-    bool saveRequested = false;
-    /// The player pressed F9 during the last Poll(), asking to load the save (the same shortcut as M).
-    bool loadRequested = false;
-    /// The player pressed F6 during the last Poll(), asking to start or finish recording a replay (the same shortcut as M).
-    bool recordRequested = false;
-    /// The player pressed F10 during the last Poll(), asking to play the replay or stop it (the same shortcut as M).
-    bool replayRequested = false;
+    /// The window's width in window coordinates, the ones InputEvent::position uses.
+    i32 width = 0;
+    /// Its height, likewise.
+    i32 height = 0;
+};
+
+/// The kind of device an input came from.
+enum class Device : u8 {
+    Keyboard, ///< A key.
+    Mouse,    ///< A mouse button or the wheel.
+    Gamepad,  ///< A gamepad's button or stick.
+};
+
+/// The family a gamepad belongs to, which decides how its buttons are drawn in prompts.
+enum class GamepadFamily : u8 {
+    Other,       ///< Not a gamepad, or one of no known family: the Xbox layout's names.
+    Xbox,        ///< Xbox controllers and their copies.
+    PlayStation, ///< PlayStation controllers.
+    Nintendo,    ///< Nintendo controllers.
+};
+
+/// A physical input the game knows. SDL's standard gamepad layout gives every controller the same
+/// buttons and sticks. shortcut: only the inputs the default bindings use; rebinding (design doc
+/// 0002 §10) adds the rest.
+enum class InputCode : u8 {
+    KeyW,
+    KeyA,
+    KeyS,
+    KeyD,
+    KeyUp,
+    KeyLeft,
+    KeyDown,
+    KeyRight,
+    KeyEscape,
+    KeyM,
+    KeyF5,
+    KeyF6,
+    KeyF9,
+    KeyF10,
+    MouseLeft,
+    MouseWheel,       ///< `value`: notches turned, positive away from the player.
+    PadLeftX,         ///< `value`: -1 (left) to 1 (right).
+    PadLeftY,         ///< `value`: -1 (up) to 1 (down).
+    PadLeftShoulder,  ///< The left bumper.
+    PadRightShoulder, ///< The right bumper.
+};
+
+/// One input from the player: a button pressed or released, a stick moved, the wheel turned. Key
+/// repeats are dropped.
+struct InputEvent {
+    /// The device it came from.
+    Device device = Device::Keyboard;
+    /// For a gamepad, its family; Other for the rest.
+    GamepadFamily family = GamepadFamily::Other;
+    /// Which input.
+    InputCode code = InputCode::KeyW;
+    /// Whether a button went down (false: up). Unused for sticks and the wheel.
+    bool pressed = false;
+    /// A stick's position or the wheel's notches; 1 for a pressed button, 0 for a released one.
+    f32 value = 0.0F;
+    /// For a mouse event, the pointer in window coordinates (WindowState's width and height).
+    core::Vec2 position{};
 };
 
 /// Whether the window's state pauses the game (design doc 0002 §6): it lost the focus or was minimised.
@@ -72,12 +123,13 @@ public:
     Window& operator=(Window&& other) = delete;
     ~Window();
 
-    /// Handles the events that arrived since the last call. While the window can't be seen, waits
-    /// up to `hiddenWaitNs` for the first one instead of returning at once, so a hidden game
-    /// doesn't spin. Returns the window's state from every event so far, not only this call's
-    /// (`quitRequested` stays set); the reference stays valid while this Window exists, and the
-    /// next Poll() updates it in place.
-    const WindowState& Poll(u64 hiddenWaitNs);
+    /// Handles the events that arrived since the last call, replacing `inputs` with the player's
+    /// input among them, in order. While the window can't be seen, waits up to `hiddenWaitNs` for
+    /// the first one instead of returning at once, so a hidden game doesn't spin. Returns the
+    /// window's state from every event so far, not only this call's (`quitRequested` stays set);
+    /// the reference stays valid while this Window exists, and the next Poll() updates it in place.
+    /// Gamepads open as they are connected and close as they go.
+    const WindowState& Poll(u64 hiddenWaitNs, std::vector<InputEvent>& inputs);
 
     /// The window's SDL_Window, for gfx to present to; opaque so SDL stays out of headers.
     [[nodiscard]] void* Handle() const;

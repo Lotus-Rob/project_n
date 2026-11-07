@@ -1,0 +1,119 @@
+#include "app/bindings.hpp"
+#include "core/cxx23.hpp" // IWYU pragma: keep
+#include "platform/window.hpp"
+
+#include <doctest/doctest.h>
+
+namespace {
+
+using platform::InputCode;
+
+platform::InputEvent Key(InputCode code, bool pressed) {
+    return { .code = code, .pressed = pressed, .value = pressed ? 1.0F : 0.0F };
+}
+
+platform::InputEvent Stick(InputCode axis, f32 value) {
+    return { .device = platform::Device::Gamepad, .code = axis, .value = value };
+}
+
+TEST_CASE("a debug key gives its control, pressed and then released") {
+    app::Bindings bindings;
+    const std::optional<app::ControlEvent> down = bindings.Handle(Key(InputCode::KeyF5, true));
+    const std::optional<app::ControlEvent> released = bindings.Handle(Key(InputCode::KeyF5, false));
+    REQUIRE(down.has_value());
+    REQUIRE(released.has_value());
+    CHECK(down.value_or(app::ControlEvent{}).control == app::Control::Save);
+    CHECK(down.value_or(app::ControlEvent{}).pressed);
+    CHECK_FALSE(released.value_or(app::ControlEvent{ .pressed = true }).pressed);
+}
+
+TEST_CASE("a held movement key moves until released") {
+    app::Bindings bindings;
+    static_cast<void>(bindings.Handle(Key(InputCode::KeyD, true)));
+    CHECK(bindings.Move().x == doctest::Approx(1.0F));
+    static_cast<void>(bindings.Handle(Key(InputCode::KeyD, false)));
+    CHECK(bindings.Move().x == 0.0F);
+}
+
+TEST_CASE("two movement keys held move diagonally, no faster than one") {
+    app::Bindings bindings;
+    static_cast<void>(bindings.Handle(Key(InputCode::KeyD, true)));
+    static_cast<void>(bindings.Handle(Key(InputCode::KeyW, true)));
+    const core::Vec2 move = bindings.Move();
+    CHECK(std::hypot(move.x, move.y) == doctest::Approx(1.0F));
+    CHECK(move.x > 0.0F);
+    CHECK(move.y < 0.0F);
+}
+
+TEST_CASE("a movement key pressed and released in one frame leaves movement at rest") {
+    app::Bindings bindings;
+    CHECK_FALSE(bindings.Handle(Key(InputCode::KeyLeft, true)).has_value());
+    CHECK_FALSE(bindings.Handle(Key(InputCode::KeyLeft, false)).has_value());
+    CHECK(bindings.Move().x == 0.0F);
+}
+
+TEST_CASE("the stick inside its dead zone is at rest") {
+    constexpr f32 INSIDE = app::STICK_DEAD_ZONE * 0.9F;
+    app::Bindings bindings;
+    static_cast<void>(bindings.Handle(Stick(InputCode::PadLeftX, INSIDE)));
+    CHECK(bindings.Move().x == 0.0F);
+}
+
+TEST_CASE("the stick just past its dead zone moves slowly, from zero") {
+    constexpr f32 JUST_PAST = app::STICK_DEAD_ZONE + 0.01F;
+    app::Bindings bindings;
+    static_cast<void>(bindings.Handle(Stick(InputCode::PadLeftX, JUST_PAST)));
+    CHECK(bindings.Move().x > 0.0F);
+    CHECK(bindings.Move().x < JUST_PAST);
+}
+
+TEST_CASE("the stick pushed all the way moves at full speed") {
+    app::Bindings bindings;
+    static_cast<void>(bindings.Handle(Stick(InputCode::PadLeftX, 1.0F)));
+    CHECK(bindings.Move().x == doctest::Approx(1.0F));
+}
+
+TEST_CASE("the wheel zooms by its notches") {
+    constexpr f32 NOTCHES = 2.0F;
+    app::Bindings bindings;
+    const app::ControlEvent wheel =
+        bindings.Handle({ .device = platform::Device::Mouse, .code = InputCode::MouseWheel, .value = NOTCHES })
+            .value_or(app::ControlEvent{});
+    CHECK(wheel.control == app::Control::Zoom);
+    CHECK(wheel.value == NOTCHES);
+}
+
+TEST_CASE("the left shoulder button zooms out") {
+    app::Bindings bindings;
+    const app::ControlEvent shoulder = bindings.Handle(Key(InputCode::PadLeftShoulder, true)).value_or(app::ControlEvent{});
+    CHECK(shoulder.control == app::Control::Zoom);
+    CHECK(shoulder.value < 0.0F);
+}
+
+TEST_CASE("the left button selects where it was clicked") {
+    constexpr core::Vec2 WHERE{ .x = 10.0F, .y = 20.0F };
+    app::Bindings bindings;
+    const app::ControlEvent click = bindings
+                                        .Handle(
+                                            { .device = platform::Device::Mouse,
+                                              .code = InputCode::MouseLeft,
+                                              .pressed = true,
+                                              .value = 1.0F,
+                                              .position = WHERE }
+                                        )
+                                        .value_or(app::ControlEvent{});
+    CHECK(click.control == app::Control::Select);
+    CHECK(click.position.x == WHERE.x);
+    CHECK(click.position.y == WHERE.y);
+}
+
+TEST_CASE("a stick drifting inside its dead zone leaves the keyboard and mouse in use") {
+    constexpr f32 DRIFT = 0.05F;
+    app::DeviceInUse device;
+    static_cast<void>(device.Take({ .device = platform::Device::Mouse, .code = InputCode::MouseLeft, .pressed = true }));
+    const bool changed = device.Take(Stick(InputCode::PadLeftX, DRIFT));
+    CHECK_FALSE(changed);
+    CHECK(device.Used() == platform::Device::Mouse);
+}
+
+} // namespace
