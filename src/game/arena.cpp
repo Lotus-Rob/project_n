@@ -72,7 +72,8 @@ constexpr core::Vec2 CULTIVATOR{ .x = 960.0F, .y = 620.0F };
 constexpr u32 SELECTED_TINT = 0xFF78'DCFFU; // a warm gold, premultiplied RGBA8 (red in the low byte)
 // Half the view around the player: the world shown at the smallest zoom (0.25) in a window up to 32:9 wide or about
 // square, so the logic culls without the main thread's camera (design doc 0002.3 §4).
-// shortcut: a fixed size; send the camera's view rectangle when a window shape or zoom outgrows it.
+// shortcut: a fixed size; cull relative to the window (the camera's view rectangle) or the world's size when a window
+// shape or zoom outgrows it.
 constexpr core::Vec2 FOLLOW_HALF_VIEW{ .x = 7'680.0F, .y = 4'320.0F };
 constexpr u32 FOXES = 12;
 constexpr u32 ORBS = 8;
