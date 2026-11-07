@@ -296,5 +296,10 @@ target("project_n")
     add_files("src/main.cpp")
     set_pcxxheader("src/pch.hpp")
     add_rules("assets")
+    if is_mode("debug") then
+        -- Debug builds read and watch the game data in the source tree, so an edit there reloads in
+        -- the running game (design doc 0002.3 §7); never in a build that ships.
+        add_defines('PN_SOURCE_DATA="' .. path.join(os.projectdir(), "assets", "data"):gsub("\\", "/") .. '"')
+    end
 
 includes("tests")

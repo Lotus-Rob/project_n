@@ -35,6 +35,8 @@ struct Options {
     std::filesystem::path saveSlot{};
     /// The replay file; empty when no folder for saves was found.
     std::filesystem::path replaySlot{};
+    /// The folder the game data was read from, which debug builds watch to reload it; empty for none.
+    std::filesystem::path dataFolder{};
     // NOLINTEND(readability-redundant-member-init)
 };
 
@@ -63,6 +65,7 @@ private:
     void Select(const platform::WindowState& state, core::Vec2 position);
     void Pan(u64 nowNs);
     void Present(bool visible);
+    void WatchData(u64 nowNs);
 
     platform::Window m_window;
     gfx::Renderer m_renderer;
@@ -77,8 +80,11 @@ private:
     Bindings m_bindings{};
     // NOLINTEND(readability-redundant-member-init)
     gfx::Camera m_camera{};
-    core::HeldInput m_held{};                               // as last sent
-    u64 m_frameNs = 0;                                      // when the last frame began, for panning
+    core::HeldInput m_held{}; // as last sent
+    u64 m_frameNs = 0;        // when the last frame began, for panning
+    u64 m_dataCheckNs = 0;    // when the data folder is looked at next
+    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::filesystem::file_time_type m_dataChanged{};        // the newest change in the data folder seen
     platform::Device m_device = platform::Device::Keyboard; // used last, for prompts (phase 6's UI draws them)
     platform::GamepadFamily m_family = platform::GamepadFamily::Other;
     bool m_quit = false;

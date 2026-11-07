@@ -41,6 +41,17 @@ std::expected<u64, core::Error> QuitAfterNs(std::span<char*> args) {
         .transform_error([](const core::Error& error) { return core::Error{ "--quit-after: " + error.message }; });
 }
 
+// The game data's folder: `assets/data/`, or in debug builds the source tree's while it exists.
+std::filesystem::path DataFolder(const std::filesystem::path& assets) {
+#ifdef PN_SOURCE_DATA
+    std::error_code error;
+    if (const std::filesystem::path source{ PN_SOURCE_DATA }; std::filesystem::is_directory(source, error)) {
+        return source;
+    }
+#endif
+    return assets / "data";
+}
+
 // A start-up failure: reported (logged and shown), and the game's exit status.
 i32 FailToStart(std::string_view what, const core::Error& error) {
     platform::ReportStartFailure(what, error);
@@ -60,12 +71,14 @@ i32 Run(const core::Settings& settings, app::Options options) {
     if (!assets) {
         return FailToStart("the game's files weren't found", assets.error());
     }
-    const std::expected<core::GameData, core::Error> gameData = data::LoadGameData(*assets / "data");
+    const std::filesystem::path dataFolder = DataFolder(*assets);
+    const std::expected<core::GameData, core::Error> gameData = data::LoadGameData(dataFolder);
     if (!gameData) {
         return FailToStart("the game's data couldn't be read", gameData.error());
     }
-    PN_LOG_INFO("game data read from {}", (*assets / "data").string());
+    PN_LOG_INFO("game data read from {}", dataFolder.string());
     options.data = *gameData;
+    options.dataFolder = dataFolder;
     std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(*window, *assets);
     if (!renderer) {
         return FailToStart("the graphics card couldn't be used", renderer.error());

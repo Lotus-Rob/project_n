@@ -56,6 +56,13 @@ public:
     /// A hash of the whole state as it is, order included: two runs that agree hash alike (§7.4).
     [[nodiscard]] virtual u64 StateHash() const = 0;
 
+    /// Swaps in new game data (design doc 0002.3 §7), which takes effect at once: what the data
+    /// decides for entities that exist (a creature's sprite, its orbit) changes with it.
+    virtual void SetData(const GameData& data) = 0;
+
+    /// A hash of the game data in use (GameData::Hash): a replay plays only under the data it was recorded with.
+    [[nodiscard]] virtual u64 DataHash() const = 0;
+
     /// Writes what the state looks like now into `snapshot`'s drawing data: its instances, batches
     /// and IDs arrive empty, with their capacity kept, and it follows nothing until set. Called once per burst, after its last
     /// tick, on the thread that created `jobs`, whose workers it may fork.
@@ -106,6 +113,8 @@ public:
     ///   ToggleRecording in the same tick takes effect);
     /// - Load (wins over Save): the save is read and, when sound, replaces the state and the
     ///   counters and starts a new timeline epoch;
+    /// - ReloadData (frozen, first): the simulation takes the new game data; a recording finishes
+    ///   and a replay playing stops, as the timeline's rules changed;
     /// - ToggleRecording, PlayReplay: a replay starts or finishes recording, or starts or stops
     ///   playing (a new epoch); every REPLAY_HASH_TICKS wall ticks the state's hash is recorded or
     ///   checked, and a divergence stops playback with an error. While a replay plays, live Pause and
@@ -156,6 +165,7 @@ private:
     void FinishRecording();
     bool TogglePlayback();
     void StopPlaying(std::string_view why);
+    void ReloadData();
 
     GameHandover* m_handover;
     Simulation* m_simulation;

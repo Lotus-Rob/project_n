@@ -59,6 +59,9 @@ Logic::TickEnd Logic::RunTick(const std::stop_token& stop) {
         return TickEnd::Stall;
     }
     const ActionSet asked = TakeInput();
+    if ((asked & Bit(ActionKind::ReloadData)) != 0) {
+        ReloadData(); // first: whatever else this tick does, it does under the new data
+    }
     if ((asked & Bit(ActionKind::PlayReplay)) != 0) {
         if (!TogglePlayback()) {
             m_counters.Count(true, false);
@@ -81,6 +84,10 @@ Logic::TickEnd Logic::RunTick(const std::stop_token& stop) {
         }
         return TickEnd::Stall;
     }
+    if ((asked & Bit(ActionKind::ReloadData)) != 0) {
+        m_counters.Count(true, false);
+        return TickEnd::EndBurst;
+    }
     m_advanced = !m_paused && m_calendar == Calendar::None;
     m_counters.Count(!m_advanced, false);
     if (m_advanced) {
@@ -99,11 +106,14 @@ Logic::ActionSet Logic::TakeInput() {
         }
     }
     if (m_replay->Playing()) {
-        // Live input is dropped while a replay plays, but for the request to stop it.
-        if (std::ranges::any_of(m_input, [](const Action& action) { return action.kind == ActionKind::PlayReplay; })) {
+        // Live input is dropped while a replay plays, but for new game data, which stops it, and the request to stop it.
+        if (std::ranges::any_of(m_input, [](const Action& action) { return action.kind == ActionKind::ReloadData; })) {
+            StopPlaying("the game data changed");
+        }
+        else if (std::ranges::any_of(m_input, [](const Action& action) { return action.kind == ActionKind::PlayReplay; })) {
             return Bit(ActionKind::PlayReplay);
         }
-        if (m_replay->AtEnd()) {
+        else if (m_replay->AtEnd()) {
             StopPlaying("it finished");
         }
         else {
@@ -122,7 +132,8 @@ Logic::ActionSet Logic::TakeInput() {
     if ((asked & Bit(ActionKind::AdvanceCalendar)) != 0) {
         m_calendar = Calendar::Requested;
     }
-    constexpr ActionSet ENDS_TIMELINE = Bit(ActionKind::ToggleRecording) | Bit(ActionKind::PlayReplay) | Bit(ActionKind::Load);
+    constexpr ActionSet ENDS_TIMELINE =
+        Bit(ActionKind::ToggleRecording) | Bit(ActionKind::PlayReplay) | Bit(ActionKind::Load) | Bit(ActionKind::ReloadData);
     if (m_replay->Recording() && (asked & ENDS_TIMELINE) == 0) {
         m_replay->Record({ .actions = m_input, .held = m_held });
     }
@@ -219,7 +230,7 @@ void Logic::ToggleRecording() {
         FinishRecording();
         return;
     }
-    m_replay->StartRecording(Serialise(true));
+    m_replay->StartRecording(Serialise(true), m_simulation->DataHash());
     PN_LOG_INFO("recording a replay from tick {}", m_counters.wall);
 }
 
@@ -243,7 +254,8 @@ bool Logic::TogglePlayback() {
         PN_LOG_ERROR("no replay played: {}", replay.error().message);
         return false;
     }
-    const std::expected<std::span<const std::byte>, Error> start = m_replay->StartPlaying(std::move(*replay));
+    const std::expected<std::span<const std::byte>, Error> start =
+        m_replay->StartPlaying(std::move(*replay), m_simulation->DataHash());
     if (!start) {
         PN_LOG_ERROR("no replay played: {}", start.error().message);
         return false;
@@ -255,6 +267,18 @@ bool Logic::TogglePlayback() {
     }
     PN_LOG_INFO("playing the replay from tick {}; timeline {} begins", m_counters.wall, m_epoch);
     return true;
+}
+
+void Logic::ReloadData() {
+    PN_PROFILE_ZONE();
+    const auto last = std::ranges::find_last(m_input, ActionKind::ReloadData, &Action::kind).begin();
+    PN_ASSERT(last != m_input.end() && last->data != nullptr, "ReloadData sent without its data");
+    if (m_replay->Recording()) {
+        PN_LOG_INFO("the game data changed: the replay being recorded ends here");
+        FinishRecording();
+    }
+    m_simulation->SetData(*last->data);
+    PN_LOG_INFO("new game data at tick {}", m_counters.wall);
 }
 
 void Logic::StopPlaying(std::string_view why) {

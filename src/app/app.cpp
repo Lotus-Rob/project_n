@@ -7,6 +7,7 @@
 #include "core/math.hpp"
 #include "core/profile.hpp"
 #include "core/tick_clock.hpp"
+#include "data/game_data.hpp"
 #include "platform/clock.hpp"
 
 namespace app {
@@ -16,6 +17,12 @@ namespace {
 // Frames during a calendar step's transition: few, leaving the cores to the step (design doc 0002 §7.3).
 constexpr u64 TRANSITION_FRAME_NS = core::NS_PER_SECOND / 20;
 constexpr f32 PAN_SPEED = 900.0F; // world units a second at full movement, at zoom 1
+constexpr u64 DATA_CHECK_NS = core::NS_PER_SECOND / 2;
+#ifdef NDEBUG
+constexpr bool HOT_RELOAD = false;
+#else
+constexpr bool HOT_RELOAD = true; // debug builds reload the game data when its files change (design doc 0002.3 §7)
+#endif
 
 // The controls that are simply an action for the logic, and what the log says when one is asked for.
 struct ActionControl {
@@ -36,6 +43,16 @@ constexpr std::array ACTION_CONTROLS{
                    .kind = core::ActionKind::PlayReplay,
                    .asked = "the replay asked to play or stop" },
 };
+
+// When a file in `folder` last changed; the oldest time when none can be read.
+std::filesystem::file_time_type NewestChange(const std::filesystem::path& folder) {
+    std::filesystem::file_time_type newest{};
+    std::error_code error;
+    for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator{ folder, error }) {
+        newest = std::max(newest, entry.last_write_time(error));
+    }
+    return newest;
+}
 
 std::string_view DeviceName(platform::Device device, platform::GamepadFamily family) {
     if (device == platform::Device::Keyboard || device == platform::Device::Mouse) {
@@ -61,6 +78,10 @@ App::App(platform::Window window, gfx::Renderer renderer, Options options)
   , m_options{ std::move(options) }
   , m_startNs{ platform::NowNs() }
   , m_frameNs{ m_startNs } {
+    if (HOT_RELOAD && !m_options.dataFolder.empty()) {
+        m_dataChanged = NewestChange(m_options.dataFolder);
+        PN_LOG_INFO("watching {} to reload the game data", m_options.dataFolder.string());
+    }
     // Started here, not in the initializer list: every member it uses is built by now.
     m_logic = std::jthread{ [this](const std::stop_token& stop) { RunLogic(stop); } };
 }
@@ -115,10 +136,32 @@ i32 App::Run() {
             return 1;
         }
         Pan(platform::NowNs());
+        WatchData(platform::NowNs());
         Present(state.visible);
     }
     PN_LOG_INFO("shutting down; {} snapshots were published after they were due", m_display.LateAdoptions());
     return 0;
+}
+
+void App::WatchData(u64 nowNs) {
+    PN_PROFILE_ZONE();
+    if (!HOT_RELOAD || m_options.dataFolder.empty() || nowNs < m_dataCheckNs) {
+        return;
+    }
+    m_dataCheckNs = nowNs + DATA_CHECK_NS;
+    const std::filesystem::file_time_type changed = NewestChange(m_options.dataFolder);
+    if (changed == m_dataChanged) {
+        return;
+    }
+    m_dataChanged = changed;
+    // On this thread: the files are small. A worker parses them once they aren't.
+    const std::expected<core::GameData, core::Error> reloaded = data::LoadGameData(m_options.dataFolder);
+    if (!reloaded) {
+        PN_LOG_ERROR("the game data changed but wasn't reloaded; the old data stays: {}", reloaded.error().message);
+        return;
+    }
+    PN_LOG_INFO("the game data changed: reloading it");
+    m_handover.SendInput({ .kind = core::ActionKind::ReloadData, .data = std::make_shared<const core::GameData>(*reloaded) });
 }
 
 void App::HandleInput(const platform::WindowState& state) {

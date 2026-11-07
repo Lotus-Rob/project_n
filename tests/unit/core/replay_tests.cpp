@@ -157,19 +157,42 @@ TEST_CASE("a replay writes held input only on the ticks it changes") {
     CHECK(RecordedHeld().size() == unchanged.FinishRecording().size() + (CHANGES * HELD_BYTES) + SELECT_BYTES);
 }
 
-TEST_CASE("a replay holding a load, which is never recorded, is refused") {
+// Recorded() with its first action's kind changed to `kind`.
+std::vector<std::byte> RecordedWithFirstKind(core::ActionKind kind) {
     std::vector<std::byte> replay = Recorded();
     core::Reader reader{ replay };
     u32 format = 0;
     u8 versionLength = 0;
     reader(format, versionLength);
+    // The header, the data hash, the start state's size and bytes, the tick count, the first tick's action count.
     const std::size_t firstKindAt =
-        sizeof(u32) + sizeof(u8) + versionLength + sizeof(u64) + Start().size() + sizeof(u64) + sizeof(u8);
+        sizeof(u32) + sizeof(u8) + versionLength + (2 * sizeof(u64)) + Start().size() + sizeof(u64) + sizeof(u8);
     REQUIRE(replay.at(firstKindAt) == std::byte{ std::to_underlying(core::ActionKind::Pause) });
-    replay.at(firstKindAt) = std::byte{ std::to_underlying(core::ActionKind::Load) };
-    core::Replay player;
-    const auto started = player.StartPlaying(std::move(replay));
-    CHECK_FALSE(started.has_value());
+    replay.at(firstKindAt) = std::byte{ std::to_underlying(kind) };
+    return replay;
+}
+
+TEST_CASE("a replay holding a load or new game data, which are never recorded, is refused") {
+    for (const core::ActionKind kind : { core::ActionKind::Load, core::ActionKind::ReloadData }) {
+        core::Replay player;
+        const auto started = player.StartPlaying(RecordedWithFirstKind(kind));
+        CHECK_FALSE(started.has_value());
+    }
+}
+
+TEST_CASE("a replay plays only under the game data it was recorded with") {
+    constexpr u64 DATA_HASH = 0x1234;
+    core::Replay recording;
+    recording.StartRecording(Start(), DATA_HASH);
+    recording.Record({});
+    const std::vector<std::byte> replay = recording.FinishRecording();
+    core::Replay other;
+    const auto underOtherData = other.StartPlaying(replay, DATA_HASH + 1);
+    REQUIRE_FALSE(underOtherData.has_value());
+    CHECK(underOtherData.error().message.contains("other game data"));
+    core::Replay same;
+    const auto underSameData = same.StartPlaying(replay, DATA_HASH);
+    CHECK(underSameData.has_value());
 }
 
 // Where Recorded()'s fields lie in its bytes.
@@ -185,7 +208,7 @@ Layout Locate(std::span<const std::byte> replay) {
     constexpr std::size_t HASH_BYTES = 2 * sizeof(u64);
     const auto versionLength = std::to_integer<std::size_t>(replay[sizeof(u32)]);
     Layout layout;
-    layout.startSize = sizeof(u32) + sizeof(u8) + versionLength;
+    layout.startSize = sizeof(u32) + sizeof(u8) + versionLength + sizeof(u64); // after the data hash
     layout.tickCount = layout.startSize + sizeof(u64) + Start().size();
     layout.hashCount = layout.tickCount + sizeof(u64) + TICK_BYTES;
     layout.secondHashTick = layout.hashCount + sizeof(u64) + HASH_BYTES;
@@ -245,9 +268,9 @@ TEST_CASE("a replay with bytes after its hashes is refused") {
 TEST_CASE("a replay holding held input out of range is refused") {
     std::vector<std::byte> replay = RecordedHeld();
     const auto versionLength = std::to_integer<std::size_t>(replay[sizeof(u32)]);
-    // The first tick: no actions, the change flag, then x.
+    // After the data hash and the start state, the first tick: no actions, the change flag, then x.
     const std::size_t firstX =
-        sizeof(u32) + sizeof(u8) + versionLength + sizeof(u64) + Start().size() + sizeof(u64) + sizeof(u8) + sizeof(u8);
+        sizeof(u32) + sizeof(u8) + versionLength + (2 * sizeof(u64)) + Start().size() + sizeof(u64) + sizeof(u8) + sizeof(u8);
     const auto raw = std::bit_cast<std::array<std::byte, sizeof(f32)>>(std::numeric_limits<f32>::quiet_NaN());
     f32 recordedX = 0.0F;
     core::Reader reader{ std::span{ replay }.subspan(firstX) };
