@@ -50,4 +50,9 @@ struct ClipTransform {
 /// window shows more of the world (§8.10); the camera's centre lands at the target's centre.
 [[nodiscard]] ClipTransform WorldToClip(const Camera& camera, u32 width, u32 height);
 
+/// The world point `transform` puts at clip-space position `clip`: WorldToClip()'s inverse.
+[[nodiscard]] constexpr core::Vec2 ClipToWorld(const ClipTransform& transform, core::Vec2 clip) {
+    return { .x = (clip.x - transform.offsetX) / transform.scaleX, .y = (clip.y - transform.offsetY) / transform.scaleY };
+}
+
 } // namespace gfx
