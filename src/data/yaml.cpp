@@ -32,4 +32,26 @@ core::Error ErrorOf(std::string_view what, const YAML::Exception& error) {
     return { std::format("{} line {}: {}", what, error.mark.line + 1, error.msg) };
 }
 
+void NoteUnknownKeys(
+    std::string_view what,
+    const YAML::Node& map,
+    std::string_view owner,
+    std::string_view kind,
+    std::initializer_list<std::string_view> known,
+    std::vector<std::string>* warnings
+) {
+    if (warnings == nullptr || !map.IsMap()) {
+        return;
+    }
+    for (const auto& entry : map) {
+        const auto key = entry.first.as<std::string>();
+        if (std::ranges::contains(known, std::string_view{ key })) {
+            continue;
+        }
+        const std::string where =
+            owner.empty() ? std::format("there is no {} {}", kind, key) : std::format("{} has no {} {}", owner, kind, key);
+        warnings->push_back(std::format("{} line {}: {}; it is ignored", what, entry.first.Mark().line + 1, where));
+    }
+}
+
 } // namespace data::internal

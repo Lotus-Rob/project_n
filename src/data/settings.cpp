@@ -22,7 +22,7 @@ void ReadIfPresent(const YAML::Node& map, const char* key, T& value) {
 
 } // namespace
 
-std::expected<core::Settings, core::Error> ParseSettings(std::string_view yaml) {
+std::expected<core::Settings, core::Error> ParseSettings(std::string_view yaml, std::vector<std::string>* warnings) {
     core::Settings settings;
     try {
         const YAML::Node root = YAML::Load(std::string{ yaml });
@@ -33,7 +33,9 @@ std::expected<core::Settings, core::Error> ParseSettings(std::string_view yaml) 
             return std::unexpected{ core::Error{
                 std::format("settings line {}: not a map of settings", root.Mark().line + 1) } };
         }
+        internal::NoteUnknownKeys("settings", root, "", "setting", { "window" }, warnings);
         if (const YAML::Node window = root["window"]) {
+            internal::NoteUnknownKeys("settings", window, "window", "setting", { "width", "height", "fullscreen" }, warnings);
             ReadIfPresent(window, "width", settings.windowWidth);
             ReadIfPresent(window, "height", settings.windowHeight);
             ReadIfPresent(window, "fullscreen", settings.fullscreen);
@@ -87,8 +89,12 @@ core::Settings LoadSettings(const std::filesystem::path& path) {
         }
         return defaults;
     }
+    std::vector<std::string> warnings;
     const std::expected<core::Settings, core::Error> settings =
-        internal::ReadText(path).and_then([](const std::string& text) { return ParseSettings(text); });
+        internal::ReadText(path).and_then([&warnings](const std::string& text) { return ParseSettings(text, &warnings); });
+    for (const std::string& warning : warnings) {
+        PN_LOG_WARNING("{}", warning);
+    }
     if (!settings) {
         PN_LOG_WARNING("using the default settings, {} left as it is: {}", path.string(), settings.error().message);
         return {};

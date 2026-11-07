@@ -1,6 +1,7 @@
 #include "data/game_data.hpp"
 
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/log.hpp"
 #include "data/internal/yaml.hpp"
 
 namespace data {
@@ -37,11 +38,16 @@ std::expected<f32, core::Error> Number(const YAML::Node& map, std::string_view n
     return value;
 }
 
-std::expected<core::CreatureData, core::Error> Creature(const YAML::Node& root, const char* name) {
+std::expected<core::CreatureData, core::Error> Creature(
+    const YAML::Node& root,
+    const char* name,
+    std::vector<std::string>* warnings
+) {
     const YAML::Node node = root[name];
     if (!node || !node.IsMap()) {
         return Fail(node ? node : root, std::format("no creature {}", name));
     }
+    internal::NoteUnknownKeys("creatures", node, name, "key", { "sprite", "walk_speed", "orbit" }, warnings);
     const YAML::Node spriteNode = node["sprite"];
     if (!spriteNode) {
         return Fail(node, std::format("{} has no sprite", name));
@@ -59,6 +65,7 @@ std::expected<core::CreatureData, core::Error> Creature(const YAML::Node& root, 
     creature.walkSpeed = *walkSpeed;
     if (const YAML::Node orbit = node["orbit"]) {
         const std::string orbitName = std::format("{}'s orbit", name);
+        internal::NoteUnknownKeys("creatures", orbit, orbitName, "key", { "radius", "wobble", "speed" }, warnings);
         for (const auto& [key, value] : { std::pair{ "radius", &creature.orbitRadius },
                                           std::pair{ "wobble", &creature.orbitWobble },
                                           std::pair{ "speed", &creature.orbitSpeed } }) {
@@ -74,14 +81,15 @@ std::expected<core::CreatureData, core::Error> Creature(const YAML::Node& root, 
 
 } // namespace
 
-std::expected<core::GameData, core::Error> ParseGameData(std::string_view creatures) {
+std::expected<core::GameData, core::Error> ParseGameData(std::string_view creatures, std::vector<std::string>* warnings) {
     try {
         const YAML::Node root = YAML::Load(std::string{ creatures });
         if (!root.IsMap()) {
             return Fail(root, "not a map of creatures");
         }
-        return Creature(root, "cultivator").and_then([&](const core::CreatureData& cultivator) {
-            return Creature(root, "fox").transform([&](const core::CreatureData& fox) {
+        internal::NoteUnknownKeys("creatures", root, "", "creature", { "cultivator", "fox" }, warnings);
+        return Creature(root, "cultivator", warnings).and_then([&](const core::CreatureData& cultivator) {
+            return Creature(root, "fox", warnings).transform([&](const core::CreatureData& fox) {
                 return core::GameData{ .cultivator = cultivator, .fox = fox };
             });
         });
@@ -92,7 +100,15 @@ std::expected<core::GameData, core::Error> ParseGameData(std::string_view creatu
 }
 
 std::expected<core::GameData, core::Error> LoadGameData(const std::filesystem::path& folder) {
-    return internal::ReadText(folder / "creatures.yaml").and_then([](const std::string& text) { return ParseGameData(text); });
+    std::vector<std::string> warnings;
+    std::expected<core::GameData, core::Error> data =
+        internal::ReadText(folder / "creatures.yaml").and_then([&warnings](const std::string& text) {
+            return ParseGameData(text, &warnings);
+        });
+    for (const std::string& warning : warnings) {
+        PN_LOG_WARNING("{}", warning);
+    }
+    return data;
 }
 
 } // namespace data

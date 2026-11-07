@@ -16,8 +16,9 @@ extern "C" i32 LLVMFuzzerTestOneInput(const u8* bytes, std::size_t size) {
 #pragma clang diagnostic pop
     std::string text(size, '\0');
     std::ranges::transform(input, text.begin(), [](u8 byte) { return static_cast<char>(byte); });
-    const std::expected<core::GameData, core::Error> gameData = data::ParseGameData(text);
-    const std::expected<core::Settings, core::Error> settings = data::ParseSettings(text);
+    std::vector<std::string> warnings; // collected, so the unknown-key path runs too
+    const std::expected<core::GameData, core::Error> gameData = data::ParseGameData(text, &warnings);
+    const std::expected<core::Settings, core::Error> settings = data::ParseSettings(text, &warnings);
     if ((!gameData && gameData.error().message.empty()) || (!settings && settings.error().message.empty())) {
         std::abort(); // a refusal always says why
     }
