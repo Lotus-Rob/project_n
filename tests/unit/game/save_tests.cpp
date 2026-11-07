@@ -68,6 +68,23 @@ TEST_CASE("a game loaded from a save goes on exactly as the game that saved") {
     CHECK(same);
 }
 
+TEST_CASE("the player, where it walked, and the selection survive a save") {
+    constexpr core::HeldInput RIGHT{ .move = { .x = 1.0F, .y = 0.0F } };
+    game::Arena saved;
+    const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = saved.Player() } } };
+    saved.Tick(At(1), { .actions = select, .held = RIGHT });
+    const std::vector<std::byte> bytes = Saved(saved);
+
+    game::Arena loaded{ game::Scene::Cells };
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader));
+    CHECK(loaded.Player() == saved.Player());
+    CHECK(loaded.Selected() == saved.Player());
+    loaded.Tick(At(2), { .actions = {}, .held = RIGHT });
+    saved.Tick(At(2), { .actions = {}, .held = RIGHT });
+    CHECK(loaded.StateHash() == saved.StateHash());
+}
+
 TEST_CASE("a truncated save is refused, and the game is unchanged") {
     constexpr std::size_t CUT = 4;
     game::Arena saved{ game::Scene::Stress };

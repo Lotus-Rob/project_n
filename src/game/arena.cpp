@@ -2,6 +2,7 @@
 
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/instances.hpp"
+#include "core/log.hpp"
 #include "core/math.hpp"
 #include "core/profile.hpp"
 
@@ -50,6 +51,12 @@ constexpr std::array PAINTED_GLOWS{
 };
 
 constexpr core::Vec2 CULTIVATOR{ .x = 960.0F, .y = 620.0F };
+constexpr f32 PLAYER_SPEED = 4.0F;          // world units per tick at full stick: 240 a second
+constexpr u32 SELECTED_TINT = 0xFF78'DCFFU; // a warm gold, premultiplied RGBA8 (red in the low byte)
+// Half the view around the player: the world shown at the smallest zoom (0.25) in a window up to 32:9 wide or about
+// square, so the logic culls without the main thread's camera (design doc 0002.3 §4).
+// shortcut: a fixed size; send the camera's view rectangle when a window shape or zoom outgrows it.
+constexpr core::Vec2 FOLLOW_HALF_VIEW{ .x = 7'680.0F, .y = 4'320.0F };
 constexpr u32 FOXES = 12;
 constexpr f32 FOX_RADIUS = 300.0F;
 constexpr f32 FOX_WOBBLE = 40.0F; // in and out of the circle, world units
@@ -90,14 +97,14 @@ constexpr u32 WORLD_CELLS = 4'096;
 constexpr u64 SEED = 0x5eed;
 
 // The arena's part of a save: its format, then a version per domain, each changed with what its components save.
-constexpr u32 ARENA_FORMAT = 1;
+constexpr u32 ARENA_FORMAT = 2; // 2: the player and the selection
 constexpr u32 ACTIVE_VERSION = 1;
 constexpr u32 WORLD_VERSION = 1;
 using ActiveComponents = core::ComponentList<Body, Look, Orbit, Npc, Needs, Met, Wander>;
 using WorldComponents = core::ComponentList<Npc, Needs, Met, Group>;
 
 constexpr u32 PUBLISH_CHUNK = 4'096; // entities packed per job chunk
-// shortcut: the camera shows the whole ground, and lives on the main thread; the view follows it from phase 5.
+// The still scenes' view: the camera starts on the whole ground.
 constexpr core::Rect GROUND_VIEW{ .min = {}, .max = CROWD_AREA };
 
 // A grid around the reference area's middle, wider than the view at the smallest zoom (gfx::MIN_ZOOM).
@@ -169,7 +176,8 @@ Arena::Arena(Scene scene)
     for (const Prop& prop : PROPS) {
         Spawn(prop.foot, { .sprite = prop.sprite });
     }
-    Spawn(CULTIVATOR, { .sprite = SpriteId::Cultivator, .shadow = true });
+    m_player =
+        m_state[ACTIVE].Entities().get<core::StableId>(Spawn(CULTIVATOR, { .sprite = SpriteId::Cultivator, .shadow = true }));
     for (u32 fox = 0; fox < FOXES; ++fox) {
         const Orbit orbit{
             .centre = CULTIVATOR,
@@ -279,8 +287,14 @@ core::Entity Arena::Spawn(core::Vec2 foot, const Look& look) {
     return entity;
 }
 
-void Arena::Tick(const core::TickCounters& counters, const core::TickInput& /*input*/) {
+void Arena::Tick(const core::TickCounters& counters, const core::TickInput& input) {
     PN_PROFILE_ZONE();
+    for (const core::Action& action : input.actions) {
+        if (action.kind == core::ActionKind::Select) {
+            Select(action.target);
+        }
+    }
+    Walk(input.held.move);
     core::Domain& active = m_state[ACTIVE];
     for (auto [entity, body, orbit] : active.Entities().view<Body, const Orbit>().each()) {
         body.previous = body.current;
@@ -290,6 +304,23 @@ void Arena::Tick(const core::TickCounters& counters, const core::TickInput& /*in
     WalkActive(active);
 }
 
+void Arena::Walk(core::Vec2 move) {
+    if (m_player == core::StableId{}) {
+        return;
+    }
+    core::Domain& active = m_state[ACTIVE];
+    Body& body = active.Entities().get<Body>(active.Find(m_player));
+    body.previous = body.current; // every tick, so a cultivator standing still draws still
+    body.current = body.current + (move * PLAYER_SPEED);
+}
+
+void Arena::Select(core::StableId target) {
+    m_selected = m_state.DomainOf(target) ? target : core::StableId{};
+    PN_LOG_INFO(
+        "selected {}", m_selected == core::StableId{} ? "nothing" : std::format("entity {}", std::to_underlying(target))
+    );
+}
+
 void Arena::AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs, const std::stop_token& stop) {
     m_monthStep.Run(m_state, m_relationships, jobs, counters.state, stop);
     ++m_months;
@@ -297,7 +328,7 @@ void Arena::AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs
 
 template<typename Archive>
 void Arena::Write(Archive& archive) const {
-    archive(ARENA_FORMAT, m_scene, m_state.Seed(), m_state.Ids().next, m_months);
+    archive(ARENA_FORMAT, m_scene, m_state.Seed(), m_state.Ids().next, m_months, m_player, m_selected);
     archive(ACTIVE_VERSION);
     core::SaveDomain(archive, m_state[ACTIVE], ActiveComponents{});
     archive(WORLD_VERSION);
@@ -325,7 +356,9 @@ bool Arena::Load(core::Reader& archive) {
     u64 seed = 0;
     u64 next = 0;
     u64 months = 0;
-    archive(format, scene, seed, next, months);
+    core::StableId player{};
+    core::StableId selected{};
+    archive(format, scene, seed, next, months, player, selected);
     if (format != ARENA_FORMAT || scene > Scene::Npcs) {
         archive.Fail();
     }
@@ -343,7 +376,9 @@ bool Arena::Load(core::Reader& archive) {
     core::LoadDomain(archive, state, WORLD, WorldComponents{});
     Relationships relationships;
     relationships.Load(archive, state);
-    if (archive.Failed() || archive.Remaining() != 0 || !Consistent(state)) {
+    const bool playerFound = player == core::StableId{} || (state.DomainOf(player) == ACTIVE &&
+                                                            state[ACTIVE].Entities().all_of<Body>(state[ACTIVE].Find(player)));
+    if (archive.Failed() || archive.Remaining() != 0 || !Consistent(state) || !playerFound) {
         return false;
     }
     m_state = std::move(state);
@@ -351,6 +386,8 @@ bool Arena::Load(core::Reader& archive) {
     m_scene = scene;
     m_months = months;
     m_view = ViewOf(scene);
+    m_player = player;
+    m_selected = selected;
     return true;
 }
 
@@ -358,8 +395,15 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
     PN_PROFILE_ZONE();
     const auto& bodies = m_state[ACTIVE].Entities().storage<Body>();
     const auto& looks = m_state[ACTIVE].Entities().storage<Look>();
+    const auto& ids = m_state[ACTIVE].Entities().storage<core::StableId>();
     const u32 chunks = core::ChunkCount(looks.size(), PUBLISH_CHUNK);
-    m_drawList.Begin(m_view, std::max(chunks, 1U));
+    core::Rect view = m_view;
+    if (m_player != core::StableId{}) {
+        const Body& body = bodies.get(m_state[ACTIVE].Find(m_player));
+        snapshot.follow = core::Follow{ .previous = body.previous, .current = body.current };
+        view = { .min = body.current - FOLLOW_HALF_VIEW, .max = body.current + FOLLOW_HALF_VIEW };
+    }
+    m_drawList.Begin(view, std::max(chunks, 1U));
     m_drawList.Add(0, core::Layer::Ground, core::Pipeline::Normal, core::MakeInstance({ .sprite = SpriteId::Ground }));
     jobs.ParallelFor(chunks, [&](u32 chunk) {
         const std::size_t begin = std::size_t{ chunk } * PUBLISH_CHUNK;
@@ -368,6 +412,7 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
             const core::Entity entity = looks[i];
             const Body& body = bodies.get(entity);
             const Look& look = looks.get(entity);
+            const core::StableId stableId = ids.get(entity);
             if (look.shadow) {
                 m_drawList.Add(
                     chunk,
@@ -381,9 +426,14 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
                 look.layer,
                 look.pipeline,
                 core::MakeInstance(
-                    { .sprite = look.sprite, .previous = body.previous, .current = body.current, .scale = look.scale }
+                    { .sprite = look.sprite,
+                      .previous = body.previous,
+                      .current = body.current,
+                      .scale = look.scale,
+                      .colour = stableId == m_selected ? SELECTED_TINT : core::OPAQUE_WHITE }
                 ),
-                body.current.y
+                body.current.y,
+                stableId
             );
         }
     });

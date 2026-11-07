@@ -63,6 +63,80 @@ TEST_CASE("a tick moves the foxes, and their previous position is where they wer
     CHECK(Positions(after, &core::Instance::current) != Positions(before, &core::Instance::current));
 }
 
+// The current position of the instance drawing `entity`, or NaN when none does.
+core::Vec2 PositionOf(const core::Snapshot& snapshot, core::StableId entity) {
+    const auto found = std::ranges::find(snapshot.ids, entity);
+    if (found == snapshot.ids.end()) {
+        return { .x = std::numeric_limits<f32>::quiet_NaN(), .y = std::numeric_limits<f32>::quiet_NaN() };
+    }
+    return snapshot.instances.at(static_cast<std::size_t>(found - snapshot.ids.begin())).current;
+}
+
+constexpr core::HeldInput HELD_RIGHT{ .move = { .x = 1.0F, .y = 0.0F } };
+
+TEST_CASE("the cultivator walks where the held input points, and the camera follows it") {
+    game::Arena arena;
+    REQUIRE(arena.Player() != core::StableId{});
+    const core::Snapshot before = Published(arena);
+    REQUIRE(before.follow.has_value());
+    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
+    const core::Snapshot after = Published(arena);
+    REQUIRE(after.follow.has_value());
+    const core::Follow from = before.follow.value_or(core::Follow{});
+    const core::Follow onto = after.follow.value_or(core::Follow{});
+    CHECK(onto.previous.x == from.current.x);
+    CHECK(onto.current.x > from.current.x);
+    CHECK(onto.current.y == from.current.y);
+    CHECK(PositionOf(after, arena.Player()).x - PositionOf(before, arena.Player()).x == onto.current.x - from.current.x);
+}
+
+TEST_CASE("standing still, the cultivator draws still") {
+    game::Arena arena;
+    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
+    arena.Tick({ .wall = 2, .simulation = 2, .state = 2 }, {});
+    const core::Snapshot snapshot = Published(arena);
+    REQUIRE(snapshot.follow.has_value());
+    const core::Follow follow = snapshot.follow.value_or(core::Follow{});
+    CHECK(follow.previous.x == follow.current.x);
+}
+
+TEST_CASE("each entity's instance carries its ID; the ground and shadows carry none") {
+    game::Arena arena;
+    const core::Snapshot snapshot = Published(arena);
+    REQUIRE(snapshot.ids.size() == snapshot.instances.size());
+    CHECK(snapshot.ids.front() == core::StableId{});
+    CHECK(std::ranges::contains(snapshot.ids, arena.Player()));
+}
+
+TEST_CASE("the selected entity is drawn tinted; selecting nothing clears it") {
+    game::Arena arena;
+    const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = arena.Player() } } };
+    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
+    CHECK(arena.Selected() == arena.Player());
+    const core::Snapshot snapshot = Published(arena);
+    const auto drawn = std::ranges::find(snapshot.ids, arena.Player());
+    REQUIRE(drawn != snapshot.ids.end());
+    CHECK(snapshot.instances.at(static_cast<std::size_t>(drawn - snapshot.ids.begin())).colour != core::OPAQUE_WHITE);
+
+    const std::array<core::Action, 1> none{ { { .kind = core::ActionKind::Select } } };
+    arena.Tick({ .wall = 2, .simulation = 2, .state = 2 }, { .actions = none, .held = {} });
+    CHECK(arena.Selected() == core::StableId{});
+}
+
+TEST_CASE("a stale ID selects nothing") {
+    constexpr core::StableId NEVER_HANDED_OUT{ 1'000'000 };
+    game::Arena arena;
+    const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = NEVER_HANDED_OUT } } };
+    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
+    CHECK(arena.Selected() == core::StableId{});
+}
+
+TEST_CASE("the still scenes have no player and follow nothing") {
+    game::Arena arena{ game::Scene::Painted };
+    CHECK(arena.Player() == core::StableId{});
+    CHECK_FALSE(Published(arena).follow.has_value());
+}
+
 // The sprite an instance draws, and where its foot stands: MakeInstance offsets the quad's
 // centre from the foot by a fixed amount per sprite.
 std::optional<std::pair<SpriteId, f32>> SpriteAndFootY(const core::Instance& instance) {
