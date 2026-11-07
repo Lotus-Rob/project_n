@@ -15,6 +15,7 @@ using core::atlas::SpriteId;
 struct Prop {
     SpriteId sprite = SpriteId{};
     core::Vec2 foot{};
+    f32 scale = 1.0F;
 };
 
 // Laid out on the 1920x1080 ground, which the camera shows whole.
@@ -28,6 +29,23 @@ constexpr std::array PROPS{
     Prop{ .sprite = SpriteId::RockSmall, .foot = { .x = 220.0F, .y = 960.0F } },
     Prop{ .sprite = SpriteId::RockSmall, .foot = { .x = 1180.0F, .y = 300.0F } },
 };
+
+// The painted art around the arena's edges, some larger or smaller than painted (design doc 0002.3 §2: every feature
+// shows in the arena).
+constexpr std::array ARENA_PAINTED{
+    Prop{ .sprite = SpriteId::TreantBlighted, .foot = { .x = 1720.0F, .y = 720.0F }, .scale = 1.25F },
+    Prop{ .sprite = SpriteId::TreeDead, .foot = { .x = 110.0F, .y = 700.0F }, .scale = 0.7F },
+    Prop{ .sprite = SpriteId::Hut, .foot = { .x = 480.0F, .y = 250.0F } },
+    Prop{ .sprite = SpriteId::Crane, .foot = { .x = 1250.0F, .y = 960.0F } },
+    Prop{ .sprite = SpriteId::Stele, .foot = { .x = 760.0F, .y = 980.0F } },
+    Prop{ .sprite = SpriteId::FoxSpirit, .foot = { .x = 1450.0F, .y = 260.0F }, .scale = 0.8F },
+    Prop{ .sprite = SpriteId::FoxYellow, .foot = { .x = 1000.0F, .y = 1010.0F } },
+    Prop{ .sprite = SpriteId::WispRed, .foot = { .x = 130.0F, .y = 320.0F }, .scale = 0.6F },
+    Prop{ .sprite = SpriteId::WispRed, .foot = { .x = 175.0F, .y = 345.0F }, .scale = 0.6F },
+};
+constexpr Prop ARENA_GLOW{ .sprite = SpriteId::OrbGold, .foot = { .x = 1720.0F, .y = 420.0F } }; // in the treant's branches
+constexpr Prop CRYSTAL{ .sprite = SpriteId::CrystalIce, .foot = { .x = 420.0F, .y = 620.0F }, .scale = 0.8F };
+constexpr f32 CRYSTAL_SPIN = 0.02F; // radians per tick: a turn in about five seconds
 
 // Nothing in it moves: the reference pictures need every run to draw the same.
 constexpr std::array PAINTED{
@@ -95,9 +113,9 @@ constexpr u64 SEED = 0x5eed;
 
 // The arena's part of a save: its format, then a version per domain, each changed with what its components save.
 constexpr u32 ARENA_FORMAT = 2;   // 2: the player and the selection
-constexpr u32 ACTIVE_VERSION = 2; // 2: creatures
+constexpr u32 ACTIVE_VERSION = 3; // 2: creatures; 3: spin
 constexpr u32 WORLD_VERSION = 1;
-using ActiveComponents = core::ComponentList<Body, Look, Orbit, Creature, Npc, Needs, Met, Wander>;
+using ActiveComponents = core::ComponentList<Body, Look, Orbit, Spin, Creature, Npc, Needs, Met, Wander>;
 using WorldComponents = core::ComponentList<Npc, Needs, Met, Group>;
 
 constexpr u32 PUBLISH_CHUNK = 4'096; // entities packed per job chunk
@@ -190,6 +208,15 @@ Arena::Arena(Scene scene, const core::GameData& data)
     for (const Prop& prop : PROPS) {
         Spawn(prop.foot, { .sprite = prop.sprite });
     }
+    for (const Prop& prop : ARENA_PAINTED) {
+        Spawn(prop.foot, { .sprite = prop.sprite, .shadow = true, .scale = prop.scale });
+    }
+    Spawn(
+        ARENA_GLOW.foot, { .sprite = ARENA_GLOW.sprite, .layer = core::Layer::Effects, .pipeline = core::Pipeline::Additive }
+    );
+    m_state[ACTIVE].Entities().emplace<Spin>(
+        Spawn(CRYSTAL.foot, { .sprite = CRYSTAL.sprite, .shadow = true, .scale = CRYSTAL.scale }), Spin{ .speed = CRYSTAL_SPIN }
+    );
     core::Registry& entities = m_state[ACTIVE].Entities();
     const core::Entity cultivator = Spawn(CULTIVATOR, { .sprite = data.cultivator.sprite, .shadow = true });
     entities.emplace<Creature>(cultivator, CreatureKind::Cultivator);
@@ -224,9 +251,7 @@ Arena::Arena(Scene scene, const core::GameData& data)
     if (scene == Scene::Stress) {
         SpawnStress();
     }
-    if (scene == Scene::Npcs) {
-        SpawnNpcs(SMALL_WORLD_NPCS);
-    }
+    SpawnNpcs(scene == Scene::Stress ? WORLD_NPCS : SMALL_WORLD_NPCS);
 }
 
 void Arena::SpawnStress() {
@@ -263,7 +288,6 @@ void Arena::SpawnStress() {
             m_state[ACTIVE].Entities().emplace<Orbit>(Spawn(OrbitPoint(orbit, 0), look), orbit);
         }
     }
-    SpawnNpcs(WORLD_NPCS);
 }
 
 void Arena::SpawnNpcs(u32 worldNpcs) {
@@ -315,6 +339,10 @@ void Arena::Tick(const core::TickCounters& counters, const core::TickInput& inpu
     for (auto [entity, body, orbit] : active.Entities().view<Body, const Orbit>().each()) {
         body.previous = body.current;
         body.current = OrbitPoint(orbit, counters.simulation);
+    }
+    for (auto [entity, spin] : active.Entities().view<Spin>().each()) {
+        spin.previous = spin.current;
+        spin.current = std::remainder(spin.current + spin.speed, TURN); // stays precise however long it turns
     }
     DecideActive(active, m_state.Seed(), counters.state, counters.simulation);
     WalkActive(active);
@@ -375,7 +403,7 @@ bool Arena::Load(core::Reader& archive) {
     core::StableId player{};
     core::StableId selected{};
     archive(format, scene, seed, next, months, player, selected);
-    if (format != ARENA_FORMAT || scene > Scene::Npcs) {
+    if (format != ARENA_FORMAT || scene > Scene::Cells) {
         archive.Fail();
     }
     core::State state{ DOMAINS, seed, core::StableIdCounter{ .next = next } };
@@ -431,6 +459,7 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
     const auto& bodies = m_state[ACTIVE].Entities().storage<Body>();
     const auto& looks = m_state[ACTIVE].Entities().storage<Look>();
     const auto& ids = m_state[ACTIVE].Entities().storage<core::StableId>();
+    const auto& spins = m_state[ACTIVE].Entities().storage<Spin>();
     const u32 chunks = core::ChunkCount(looks.size(), PUBLISH_CHUNK);
     core::Rect view = m_view;
     if (m_player != core::StableId{}) {
@@ -448,6 +477,7 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
             const Body& body = bodies.get(entity);
             const Look& look = looks.get(entity);
             const core::StableId stableId = ids.get(entity);
+            const Spin spin = spins.contains(entity) ? spins.get(entity) : Spin{};
             if (look.shadow) {
                 m_drawList.Add(
                     chunk,
@@ -465,6 +495,8 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
                       .previous = body.previous,
                       .current = body.current,
                       .scale = look.scale,
+                      .previousRotation = spin.previous,
+                      .currentRotation = spin.current,
                       .colour = stableId == m_selected ? SELECTED_TINT : core::OPAQUE_WHITE }
                 ),
                 body.current.y,

@@ -48,7 +48,7 @@ struct Session {
     core::Saves saves;
     core::Saves replays;
     core::Replay replay{};
-    game::Arena arena{ game::Scene::Npcs };
+    game::Arena arena{ game::Scene::Arena };
     core::Logic logic{ handover, arena, jobs, saves, replays, replay, NoClock };
 };
 

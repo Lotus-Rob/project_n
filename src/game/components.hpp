@@ -11,6 +11,7 @@
 
 #include "core/generated/atlas.hpp" // by `project_n atlas`
 
+#include <cmath>
 #include <utility>
 
 namespace game {
@@ -58,6 +59,27 @@ struct Look {
     [[nodiscard]] bool Valid() const {
         return std::to_underlying(sprite) < core::atlas::SPRITES.size() && layer <= core::Layer::Effects &&
                std::to_underlying(pipeline) < core::PIPELINES && std::isfinite(scale) && scale > 0.0F;
+    }
+};
+
+/// Turns an entity about its centre at a steady rate.
+struct Spin {
+    /// Its clockwise rotation at the previous tick, in radians.
+    f32 previous = 0.0F;
+    /// Its rotation at this tick, within half a turn of zero.
+    f32 current = 0.0F;
+    /// Radians per tick; negative turns anticlockwise.
+    f32 speed = 0.0F;
+
+    /// Lists its fields for an archive (core/archive.hpp).
+    template<typename Self, typename Archive>
+    void Fields(this Self& self, Archive& archive) {
+        archive(self.previous, self.current, self.speed);
+    }
+
+    /// Whether a value read from a save can be used: finite angles and speed.
+    [[nodiscard]] bool Valid() const {
+        return std::isfinite(previous) && std::isfinite(current) && std::isfinite(speed);
     }
 };
 
