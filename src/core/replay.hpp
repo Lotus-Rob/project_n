@@ -48,10 +48,10 @@ public:
     /// following wall tick. Drops a recording or playback under way.
     void StartRecording(std::vector<std::byte> start);
 
-    /// Records the actions of the next wall tick, in order: at most 255, and any more are dropped
-    /// with a warning (playback diverges from there). Never a Load, ToggleRecording or PlayReplay:
-    /// they end or replace the recorded timeline.
-    void Record(std::span<const Action> actions);
+    /// Records the input of the next wall tick: its actions, in order, at most 255 (any more are
+    /// dropped with a warning, and playback diverges from there), and its held input. Never a Load,
+    /// ToggleRecording or PlayReplay: they end or replace the recorded timeline.
+    void Record(const TickInput& input);
 
     /// Records `hash`, the state's hash after wall tick `wallTick`, which must be after the last one recorded.
     void RecordHash(u64 wallTick, u64 hash);
@@ -61,7 +61,8 @@ public:
 
     /// Starts playing `replay` (bytes FinishRecording() made) and returns its start state, valid
     /// until playback stops. Fails, changing nothing, on bytes that are malformed (an action that is
-    /// never recorded included), of another format, or from another version of the game.
+    /// never recorded, or held input out of range, included), of another format, or from another
+    /// version of the game.
     [[nodiscard]] std::expected<std::span<const std::byte>, Error> StartPlaying(std::vector<std::byte> replay);
 
     /// Whether playback has fed every recorded tick.
@@ -69,8 +70,9 @@ public:
         return m_next >= m_tickStarts.size();
     }
 
-    /// The next recorded tick's actions; only while playing and not AtEnd().
-    [[nodiscard]] std::span<const Action> Next();
+    /// The next recorded tick's input; only while playing and not AtEnd(). Its actions stay valid
+    /// until the next call.
+    [[nodiscard]] TickInput Next();
 
     /// Compares `hash`, the state's hash after wall tick `wallTick`, with the one recorded there,
     /// if any. Wall ticks checked must increase.
@@ -101,6 +103,7 @@ private:
     std::vector<std::byte> m_bytes{};            // playing: the whole replay; recording: the start state
     std::vector<Action> m_actions{};             // every tick's actions, one after another
     std::vector<std::size_t> m_tickStarts{};     // each tick's first action in m_actions
+    std::vector<HeldInput> m_held{};             // each tick's held input
     std::vector<std::pair<u64, u64>> m_hashes{}; // (wall tick, hash), by wall tick
     std::span<const std::byte> m_start{};        // playing: the start state, inside m_bytes
     // NOLINTEND(readability-redundant-member-init)

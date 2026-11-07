@@ -69,7 +69,7 @@ public:
 
     /// Moves every entity on an Orbit to where it is at `counters.simulation`, and walks the
     /// active NPCs, whose decisions draw random numbers keyed on `counters.state`.
-    void Tick(const core::TickCounters& counters) override;
+    void Tick(const core::TickCounters& counters, const core::TickInput& input) override;
 
     /// Lets a month pass for the world NPCs (MonthStep).
     void AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs, const std::stop_token& stop) override;

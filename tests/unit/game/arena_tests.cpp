@@ -56,7 +56,7 @@ std::vector<std::pair<f32, f32>> Positions(const core::Snapshot& snapshot, core:
 TEST_CASE("a tick moves the foxes, and their previous position is where they were") {
     game::Arena arena;
     const core::Snapshot before = Published(arena);
-    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 });
+    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, {});
     const core::Snapshot after = Published(arena);
     // Copied, not recomputed: the previous positions are the same floats.
     CHECK(Positions(after, &core::Instance::previous) == Positions(before, &core::Instance::current));
@@ -80,7 +80,7 @@ core::Snapshot MovedArena() {
     constexpr u64 TICKS = 90;
     game::Arena arena;
     for (u64 tick = 1; tick <= TICKS; ++tick) {
-        arena.Tick({ .wall = tick, .simulation = tick, .state = tick });
+        arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, {});
     }
     return Published(arena);
 }
@@ -153,7 +153,7 @@ TEST_CASE("the painted scene holds still") {
     constexpr u64 TICK = 7;
     game::Arena arena{ game::Scene::Painted };
     const core::Snapshot before = Published(arena);
-    arena.Tick({ .wall = TICK, .simulation = TICK, .state = TICK });
+    arena.Tick({ .wall = TICK, .simulation = TICK, .state = TICK }, {});
     const core::Snapshot after = Published(arena);
     CHECK(std::ranges::equal(std::as_bytes(std::span{ before.instances }), std::as_bytes(std::span{ after.instances })));
 }
@@ -171,7 +171,7 @@ TEST_CASE("the stress arena publishes the same bytes with one worker and with ma
     std::vector<std::vector<core::Instance>> published;
     for (const u32 workers : { 1U, MANY_WORKERS }) {
         game::Arena arena{ game::Scene::Stress };
-        arena.Tick({ .wall = TICK, .simulation = TICK, .state = TICK });
+        arena.Tick({ .wall = TICK, .simulation = TICK, .state = TICK }, {});
         core::Jobs jobs{ workers };
         core::Snapshot snapshot;
         arena.Publish(snapshot, jobs);
@@ -186,8 +186,8 @@ TEST_CASE("two arenas ticked alike publish the same bytes") {
     game::Arena first;
     game::Arena second;
     for (u64 tick = 1; tick <= TICKS; ++tick) {
-        first.Tick({ .wall = tick, .simulation = tick, .state = tick });
-        second.Tick({ .wall = tick, .simulation = tick, .state = tick });
+        first.Tick({ .wall = tick, .simulation = tick, .state = tick }, {});
+        second.Tick({ .wall = tick, .simulation = tick, .state = tick }, {});
     }
     const std::vector<core::Instance> mine = Published(first).instances;
     const std::vector<core::Instance> theirs = Published(second).instances;

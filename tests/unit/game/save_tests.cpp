@@ -22,7 +22,7 @@ core::TickCounters At(u64 tick) {
 // The stress arena after some ticks and months: every component and the relationships in use.
 void Play(game::Arena& arena, core::Jobs& jobs, u64 from) {
     for (u64 tick = from; tick < from + TICKS; ++tick) {
-        arena.Tick(At(tick));
+        arena.Tick(At(tick), {});
     }
     for (u64 month = 0; month < MONTHS; ++month) {
         arena.AdvanceCalendar(At(from + TICKS + month), jobs, {});

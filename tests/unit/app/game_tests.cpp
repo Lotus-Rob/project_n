@@ -3,7 +3,6 @@
 #include "core/frame.hpp"
 #include "core/math.hpp"
 #include "core/tick_clock.hpp"
-#include "game/arena.hpp"
 
 #include <doctest/doctest.h>
 

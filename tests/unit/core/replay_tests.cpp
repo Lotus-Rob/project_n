@@ -25,9 +25,9 @@ std::vector<std::byte> Recorded() {
     const std::array<core::Action, 1> pause{ { { .kind = core::ActionKind::Pause } } };
     const std::array<core::Action, 2> resumeAndSave{ { { .kind = core::ActionKind::Resume },
                                                        { .kind = core::ActionKind::Save } } };
-    replay.Record(pause);
+    replay.Record({ .actions = pause });
     replay.Record({});
-    replay.Record(resumeAndSave);
+    replay.Record({ .actions = resumeAndSave });
     replay.RecordHash(core::REPLAY_HASH_TICKS, FIRST_HASH);
     replay.RecordHash(SECOND_HASH_TICK, SECOND_HASH);
     return replay.FinishRecording();
@@ -49,9 +49,9 @@ TEST_CASE("a replay plays back its start state and each tick's actions in order"
     const std::vector<std::byte> expected = Start();
     const bool sameStart = std::ranges::equal(*start, expected);
     CHECK(sameStart);
-    CHECK(Kinds(replay.Next()) == std::vector{ core::ActionKind::Pause });
-    CHECK(replay.Next().empty());
-    CHECK(Kinds(replay.Next()) == std::vector{ core::ActionKind::Resume, core::ActionKind::Save });
+    CHECK(Kinds(replay.Next().actions) == std::vector{ core::ActionKind::Pause });
+    CHECK(replay.Next().actions.empty());
+    CHECK(Kinds(replay.Next().actions) == std::vector{ core::ActionKind::Resume, core::ActionKind::Save });
     CHECK(replay.AtEnd());
 }
 
@@ -108,11 +108,53 @@ TEST_CASE("a replay records at most 255 actions a tick") {
     core::Replay recording;
     recording.StartRecording(Start());
     const std::vector<core::Action> many(SENT, core::Action{ .kind = core::ActionKind::Pause });
-    recording.Record(many);
+    recording.Record({ .actions = many });
     core::Replay player;
     const auto started = player.StartPlaying(recording.FinishRecording());
     REQUIRE(started.has_value());
-    CHECK(player.Next().size() == KEPT);
+    CHECK(player.Next().actions.size() == KEPT);
+}
+
+constexpr core::HeldInput HELD_RIGHT{ .move = { .x = 1.0F, .y = 0.0F } };
+constexpr core::HeldInput HELD_UP{ .move = { .x = 0.0F, .y = -0.5F } };
+
+// A recording of held input over four ticks (right, right, up, nothing) and a select in the second.
+std::vector<std::byte> RecordedHeld() {
+    constexpr core::StableId TARGET{ 7 };
+    core::Replay replay;
+    replay.StartRecording(Start());
+    const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = TARGET } } };
+    replay.Record({ .actions = {}, .held = HELD_RIGHT });
+    replay.Record({ .actions = select, .held = HELD_RIGHT });
+    replay.Record({ .actions = {}, .held = HELD_UP });
+    replay.Record({});
+    return replay.FinishRecording();
+}
+
+TEST_CASE("a replay plays back each tick's held input and a select's target") {
+    constexpr core::StableId TARGET{ 7 };
+    core::Replay replay;
+    const bool started = replay.StartPlaying(RecordedHeld()).has_value();
+    REQUIRE(started);
+    CHECK(replay.Next().held == HELD_RIGHT);
+    const core::TickInput second = replay.Next();
+    CHECK(second.held == HELD_RIGHT);
+    REQUIRE(second.actions.size() == 1);
+    CHECK(second.actions[0].target == TARGET);
+    CHECK(replay.Next().held == HELD_UP);
+    CHECK(replay.Next().held == core::HeldInput{});
+}
+
+TEST_CASE("a replay writes held input only on the ticks it changes") {
+    constexpr std::size_t CHANGES = 3; // right, up, nothing
+    constexpr std::size_t HELD_BYTES = sizeof(core::HeldInput);
+    core::Replay unchanged;
+    unchanged.StartRecording(Start());
+    for (u32 tick = 0; tick < 4; ++tick) {
+        unchanged.Record({});
+    }
+    constexpr std::size_t SELECT_BYTES = sizeof(u8) + sizeof(core::StableId);
+    CHECK(RecordedHeld().size() == unchanged.FinishRecording().size() + (CHANGES * HELD_BYTES) + SELECT_BYTES);
 }
 
 TEST_CASE("a replay holding a load, which is never recorded, is refused") {
@@ -139,7 +181,7 @@ struct Layout {
 };
 
 Layout Locate(std::span<const std::byte> replay) {
-    constexpr std::size_t TICK_BYTES = 6; // Recorded()'s ticks: 1 + 1 action, 1 + 0, 1 + 2
+    constexpr std::size_t TICK_BYTES = 9; // Recorded()'s ticks: 1 + 1 action + 1, 1 + 0 + 1, 1 + 2 + 1
     constexpr std::size_t HASH_BYTES = 2 * sizeof(u64);
     const auto versionLength = std::to_integer<std::size_t>(replay[sizeof(u32)]);
     Layout layout;
@@ -197,6 +239,31 @@ TEST_CASE("a replay with bytes after its hashes is refused") {
     std::vector<std::byte> replay = Recorded();
     replay.push_back(EXTRA);
     const bool refused = Refused(std::move(replay));
+    CHECK(refused);
+}
+
+TEST_CASE("a replay holding held input out of range is refused") {
+    std::vector<std::byte> replay = RecordedHeld();
+    const auto versionLength = std::to_integer<std::size_t>(replay[sizeof(u32)]);
+    // The first tick: no actions, the change flag, then x.
+    const std::size_t firstX =
+        sizeof(u32) + sizeof(u8) + versionLength + sizeof(u64) + Start().size() + sizeof(u64) + sizeof(u8) + sizeof(u8);
+    const auto raw = std::bit_cast<std::array<std::byte, sizeof(f32)>>(std::numeric_limits<f32>::quiet_NaN());
+    f32 recordedX = 0.0F;
+    core::Reader reader{ std::span{ replay }.subspan(firstX) };
+    reader(recordedX);
+    REQUIRE(recordedX == HELD_RIGHT.move.x);
+    std::ranges::copy(raw, replay.begin() + static_cast<std::ptrdiff_t>(firstX));
+    const bool refused = Refused(std::move(replay));
+    CHECK(refused);
+}
+
+TEST_CASE("a replay holding a move longer than 1 is refused") {
+    constexpr core::HeldInput DIAGONAL{ .move = { .x = 1.0F, .y = 1.0F } }; // each component in range, 1.41 long
+    core::Replay recorder;
+    recorder.StartRecording(Start());
+    recorder.Record({ .actions = {}, .held = DIAGONAL });
+    const bool refused = Refused(recorder.FinishRecording());
     CHECK(refused);
 }
 

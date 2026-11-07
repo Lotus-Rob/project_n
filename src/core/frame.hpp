@@ -8,10 +8,13 @@
 
 #include "core/handover.hpp"
 #include "core/profile.hpp"
+#include "core/stable_id.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 
+#include <bit>
 #include <cstddef>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -108,21 +111,44 @@ enum class ActionKind : u8 {
     Load,            ///< Load the game from the save file: a new timeline.
     ToggleRecording, ///< Start recording a replay, or finish and write the one being recorded.
     PlayReplay,      ///< Play the replay file back from its start (a new timeline), or stop playing it.
+    Select,          ///< Select the entity `target` names (a stale or zero ID selects nothing).
 };
-/// How many kinds ActionKind names (PlayReplay is the last): a replay read from disk holds only
+/// How many kinds ActionKind names (Select is the last): a replay read from disk holds only
 /// kinds below this.
-inline constexpr u8 ACTION_KINDS = static_cast<u8>(std::to_underlying(ActionKind::PlayReplay) + 1U);
+inline constexpr u8 ACTION_KINDS = static_cast<u8>(std::to_underlying(ActionKind::Select) + 1U);
 
-/// A player's or the main thread's request to the simulation, sent as input.
+/// A player's or the main thread's request to the simulation, sent as input: a press, taken once.
 struct Action {
     /// What it asks for.
     ActionKind kind = ActionKind::Pause;
+    /// The entity it is about (Select); zero otherwise.
+    StableId target{};
+};
+
+/// What the player holds down, as the main thread last sent it (design doc 0002 §10): every tick of
+/// a burst gets the newest, so movement goes on through a catch-up burst.
+struct HeldInput {
+    /// Where the movement controls point: each component in [-1, 1], at most 1 long; zero at rest.
+    Vec2 move{};
+
+    /// Whether two are bit for bit the same, as a replay must play them back.
+    [[nodiscard]] friend constexpr bool operator==(const HeldInput& lhs, const HeldInput& rhs) {
+        return std::bit_cast<u64>(lhs.move) == std::bit_cast<u64>(rhs.move);
+    }
+};
+
+/// One tick's input: the presses it takes and what is held down.
+struct TickInput {
+    /// The actions, in the order sent.
+    std::span<const Action> actions;
+    /// The held input.
+    HeldInput held{};
 };
 
 /// The handover the game's two threads share.
-using GameHandover = Handover<Snapshot, Event, Action>;
+using GameHandover = Handover<Snapshot, Event, Action, HeldInput>;
 /// The main thread's side of GameHandover's state channel.
-using GameDisplay = Display<Snapshot, Event, Action>;
+using GameDisplay = Display<Snapshot, Event, Action, HeldInput>;
 
 /// The main loop's frame once `drawn` is chosen (design doc 0002 §6): while `visible`, `acquire()`s the swapchain
 /// texture, which may block; then reads `now()` (ns) once for alpha and the render clock, plays the `pending` events due

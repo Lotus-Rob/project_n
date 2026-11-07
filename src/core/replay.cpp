@@ -10,7 +10,7 @@ namespace core {
 
 namespace {
 
-constexpr u32 REPLAY_FORMAT = 1;
+constexpr u32 REPLAY_FORMAT = 2;                      // 2: actions carry their target, ticks their held input
 constexpr std::string_view VERSION = PN_GAME_VERSION; // from xmake.lua's set_version
 constexpr std::size_t MAX_ACTIONS_PER_TICK = 255;     // a tick's count is a byte
 
@@ -19,15 +19,38 @@ bool NeverRecorded(ActionKind kind) {
     return kind == ActionKind::Load || kind == ActionKind::ToggleRecording || kind == ActionKind::PlayReplay;
 }
 
-// Reads the recorded ticks into `actions`, one after another, and each tick's first action's index into
-// `tickStarts`; fails `archive` on a tick that doesn't fit or an action that can't be in a replay.
-void ReadTicks(Reader& archive, std::vector<Action>& actions, std::vector<std::size_t>& tickStarts) {
+// Whether held input read from a replay could have been sent: finite, each axis within [-1, 1], at most 1 long
+// (with room for live input's rounding).
+bool Valid(const HeldInput& held) {
+    constexpr f32 MAX_LENGTH_SQUARED = 1.0F + 1e-5F;
+    const Vec2 move = held.move;
+    return IsFinite(move) && std::abs(move.x) <= 1.0F && std::abs(move.y) <= 1.0F &&
+           (move.x * move.x) + (move.y * move.y) <= MAX_LENGTH_SQUARED;
+}
+
+// A tick's held input is written only when it changed since the tick before: a flag byte, then the input.
+enum class HeldChange : u8 {
+    Same,
+    Changed,
+};
+
+// Reads the recorded ticks into `actions`, one after another, each tick's first action's index into
+// `tickStarts` and its held input into `held`; fails `archive` on a tick that doesn't fit, an action
+// that can't be in a replay or held input that couldn't be sent.
+void ReadTicks(
+    Reader& archive,
+    std::vector<Action>& actions,
+    std::vector<std::size_t>& tickStarts,
+    std::vector<HeldInput>& held
+) {
     u64 ticks = 0;
     archive(ticks);
     if (ticks > archive.Remaining()) {
         archive.Fail();
     }
     tickStarts.reserve(archive.Failed() ? 0 : static_cast<std::size_t>(ticks));
+    held.reserve(tickStarts.capacity());
+    HeldInput last{};
     for (u64 tick = 0; tick < ticks && !archive.Failed(); ++tick) {
         tickStarts.push_back(actions.size());
         u8 count = 0;
@@ -38,8 +61,21 @@ void ReadTicks(Reader& archive, std::vector<Action>& actions, std::vector<std::s
             if (kind >= ACTION_KINDS || NeverRecorded(static_cast<ActionKind>(kind))) {
                 archive.Fail();
             }
-            actions.push_back({ .kind = static_cast<ActionKind>(kind) });
+            Action read{ .kind = static_cast<ActionKind>(kind) };
+            if (read.kind == ActionKind::Select) {
+                archive(read.target);
+            }
+            actions.push_back(read);
         }
+        HeldChange change = HeldChange::Same;
+        archive(change);
+        if (change == HeldChange::Changed) {
+            archive(last.move);
+        }
+        if (change > HeldChange::Changed || !Valid(last)) {
+            archive.Fail();
+        }
+        held.push_back(last);
     }
 }
 
@@ -50,11 +86,13 @@ void Replay::StartRecording(std::vector<std::byte> start) {
     m_bytes = std::move(start);
     m_actions.clear();
     m_tickStarts.clear();
+    m_held.clear();
     m_hashes.clear();
 }
 
-void Replay::Record(std::span<const Action> actions) {
+void Replay::Record(const TickInput& input) {
     PN_PROFILE_ZONE();
+    const std::span<const Action> actions = input.actions;
     PN_ASSERT(Recording(), "a tick recorded with no recording under way");
     PN_ASSERT(
         std::ranges::none_of(actions, [](const Action& action) { return NeverRecorded(action.kind); }),
@@ -69,6 +107,7 @@ void Replay::Record(std::span<const Action> actions) {
         );
     }
     m_actions.insert(m_actions.end(), actions.begin(), actions.begin() + static_cast<std::ptrdiff_t>(count));
+    m_held.push_back(input.held);
 }
 
 void Replay::RecordHash(u64 wallTick, u64 hash) {
@@ -88,11 +127,22 @@ std::vector<std::byte> Replay::FinishRecording() {
     archive(u64{ m_bytes.size() });
     replay.insert(replay.end(), m_bytes.begin(), m_bytes.end());
     archive(u64{ m_tickStarts.size() });
+    HeldInput last{};
     for (std::size_t tick = 0; tick < m_tickStarts.size(); ++tick) {
         const std::size_t end = tick + 1 < m_tickStarts.size() ? m_tickStarts[tick + 1] : m_actions.size();
         archive(static_cast<u8>(end - m_tickStarts[tick]));
         for (std::size_t action = m_tickStarts[tick]; action < end; ++action) {
             archive(m_actions[action].kind);
+            if (m_actions[action].kind == ActionKind::Select) {
+                archive(m_actions[action].target);
+            }
+        }
+        if (m_held[tick] == last) {
+            archive(HeldChange::Same);
+        }
+        else {
+            last = m_held[tick];
+            archive(HeldChange::Changed, last.move);
         }
     }
     archive(u64{ m_hashes.size() });
@@ -129,7 +179,8 @@ std::expected<std::span<const std::byte>, Error> Replay::StartPlaying(std::vecto
 
     std::vector<Action> actions;
     std::vector<std::size_t> tickStarts;
-    ReadTicks(archive, actions, tickStarts);
+    std::vector<HeldInput> held;
+    ReadTicks(archive, actions, tickStarts, held);
     std::vector<std::pair<u64, u64>> hashes;
     u64 hashCount = 0;
     archive(hashCount);
@@ -154,6 +205,7 @@ std::expected<std::span<const std::byte>, Error> Replay::StartPlaying(std::vecto
     m_start = std::span<const std::byte>{ m_bytes }.subspan(startOffset, static_cast<std::size_t>(startBytes));
     m_actions = std::move(actions);
     m_tickStarts = std::move(tickStarts);
+    m_held = std::move(held);
     m_hashes = std::move(hashes);
     m_next = 0;
     m_nextHash = 0;
@@ -161,13 +213,12 @@ std::expected<std::span<const std::byte>, Error> Replay::StartPlaying(std::vecto
     return m_start;
 }
 
-std::span<const Action> Replay::Next() {
+TickInput Replay::Next() {
     PN_PROFILE_ZONE();
     PN_ASSERT(Playing() && !AtEnd(), "a replay tick fed with none left");
     const std::size_t begin = m_tickStarts[m_next];
     const std::size_t end = m_next + 1 < m_tickStarts.size() ? m_tickStarts[m_next + 1] : m_actions.size();
-    ++m_next;
-    return std::span<const Action>{ m_actions }.subspan(begin, end - begin);
+    return { .actions = std::span<const Action>{ m_actions }.subspan(begin, end - begin), .held = m_held[m_next++] };
 }
 
 HashCheck Replay::CheckHash(u64 wallTick, u64 hash) {

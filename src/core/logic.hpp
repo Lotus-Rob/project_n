@@ -15,6 +15,7 @@
 #include "core/types.hpp"
 
 #include <cstddef>
+#include <limits>
 #include <span>
 #include <stop_token>
 #include <string_view>
@@ -34,8 +35,10 @@ public:
     virtual ~Simulation();
 
     /// Advances the game state by one simulation tick, `counters.simulation` (counting from 1),
-    /// drawing random numbers keyed on `counters.state`. Frozen ticks don't call it.
-    virtual void Tick(const TickCounters& counters) = 0;
+    /// drawing random numbers keyed on `counters.state`, under the tick's `input`: the actions the
+    /// simulation acts on (Select) and the held input. Frozen ticks don't call it, so their actions
+    /// do nothing.
+    virtual void Tick(const TickCounters& counters, const TickInput& input) = 0;
 
     /// Runs a calendar step (design doc 0002 §7.3) on a frozen tick that changes the state, keyed
     /// on `counters.state`: forks over `jobs` from the thread that created it, and returns early,
@@ -92,7 +95,8 @@ public:
 
     /// Runs up to `burst.ticks` ticks back to back, then publishes the snapshot of the last one run,
     /// filled by the simulation and stamped with `now()`. Each tick takes the input sent since the
-    /// one before (the last Pause or Resume wins; while a replay plays, the recorded input instead),
+    /// one before (the last Pause or Resume wins; while a replay plays, the recorded input instead)
+    /// and the newest held input, which every tick of a burst gets,
     /// counts itself, frozen while paused or while a calendar step is asked for, and ticks the
     /// simulation unless frozen. Ticks that change what comes next end the burst after them, so every
     /// change sits at a fixed wall tick whatever the burst sizes (design doc 0002.2 §2):
@@ -139,7 +143,7 @@ private:
 
     // The kinds of action a tick took, a bit per ActionKind.
     using ActionSet = u32;
-    static_assert(ACTION_KINDS <= 32, "an ActionSet holds a bit per kind");
+    static_assert(ACTION_KINDS <= std::numeric_limits<ActionSet>::digits, "an ActionSet holds a bit per kind");
 
     TickEnd RunTick(const std::stop_token& stop);
     ActionSet TakeInput();
@@ -171,6 +175,7 @@ private:
     std::vector<Action> m_input{};
     std::vector<Event> m_events{};
     // NOLINTEND(readability-redundant-member-init)
+    HeldInput m_held{}; // the tick's held input: live, or the replay's while one plays
 };
 
 } // namespace core
