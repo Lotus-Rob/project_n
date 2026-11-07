@@ -12,6 +12,10 @@ namespace {
 
 constexpr u32 SAVE_FORMAT = 1; // a save's start: this, the tick counters, then the simulation's state
 
+constexpr u32 Bit(ActionKind kind) {
+    return 1U << std::to_underlying(kind);
+}
+
 } // namespace
 
 Simulation::~Simulation() = default;
@@ -52,25 +56,25 @@ Logic::TickEnd Logic::RunTick(const std::stop_token& stop) {
         m_calendar = Calendar::None;
         return TickEnd::Stall;
     }
-    const Requests requests = TakeInput();
-    if (requests.play) {
+    const ActionSet asked = TakeInput();
+    if ((asked & Bit(ActionKind::PlayReplay)) != 0) {
         if (!TogglePlayback()) {
             m_counters.Count(true, false);
         }
         return TickEnd::Stall;
     }
-    if (requests.load) {
+    if ((asked & Bit(ActionKind::Load)) != 0) {
         if (!Load()) {
             m_counters.Count(true, false);
         }
         return TickEnd::Stall;
     }
-    if (requests.record || requests.save) {
+    if ((asked & (Bit(ActionKind::ToggleRecording) | Bit(ActionKind::Save))) != 0) {
         m_counters.Count(true, false);
-        if (requests.save) {
+        if ((asked & Bit(ActionKind::Save)) != 0) {
             Save(); // first: a recording starting here begins after it
         }
-        if (requests.record) {
+        if ((asked & Bit(ActionKind::ToggleRecording)) != 0) {
             ToggleRecording();
         }
         return TickEnd::Stall;
@@ -83,7 +87,7 @@ Logic::TickEnd Logic::RunTick(const std::stop_token& stop) {
     return m_calendar == Calendar::Requested ? TickEnd::EndBurst : TickEnd::Continue;
 }
 
-Logic::Requests Logic::TakeInput() {
+Logic::ActionSet Logic::TakeInput() {
     PN_PROFILE_ZONE();
     m_handover->TakeInput(m_input);
     for (const Action& action : m_input) {
@@ -91,12 +95,10 @@ Logic::Requests Logic::TakeInput() {
             m_windowPaused = action.kind == ActionKind::Pause;
         }
     }
-    Requests requests;
     if (m_replay->Playing()) {
         // Live input is dropped while a replay plays, but for the request to stop it.
         if (std::ranges::any_of(m_input, [](const Action& action) { return action.kind == ActionKind::PlayReplay; })) {
-            requests.play = true;
-            return requests;
+            return Bit(ActionKind::PlayReplay);
         }
         if (m_replay->AtEnd()) {
             StopPlaying("it finished");
@@ -106,30 +108,21 @@ Logic::Requests Logic::TakeInput() {
             m_input.assign(played.begin(), played.end());
         }
     }
+    ActionSet asked = 0;
     for (const Action& action : m_input) {
-        if (action.kind == ActionKind::AdvanceCalendar) {
-            m_calendar = Calendar::Requested;
-        }
-        else if (action.kind == ActionKind::Save) {
-            requests.save = true;
-        }
-        else if (action.kind == ActionKind::Load) {
-            requests.load = true;
-        }
-        else if (action.kind == ActionKind::ToggleRecording) {
-            requests.record = true;
-        }
-        else if (action.kind == ActionKind::PlayReplay) {
-            requests.play = true;
-        }
-        else {
-            m_paused = action.kind == ActionKind::Pause;
+        asked |= Bit(action.kind);
+        if (action.kind == ActionKind::Pause || action.kind == ActionKind::Resume) {
+            m_paused = action.kind == ActionKind::Pause; // the last one wins
         }
     }
-    if (m_replay->Recording() && !requests.record && !requests.play && !requests.load) {
+    if ((asked & Bit(ActionKind::AdvanceCalendar)) != 0) {
+        m_calendar = Calendar::Requested;
+    }
+    constexpr ActionSet ENDS_TIMELINE = Bit(ActionKind::ToggleRecording) | Bit(ActionKind::PlayReplay) | Bit(ActionKind::Load);
+    if (m_replay->Recording() && (asked & ENDS_TIMELINE) == 0) {
         m_replay->Record(m_input);
     }
-    return requests;
+    return asked;
 }
 
 u64 Logic::Hash() const {
