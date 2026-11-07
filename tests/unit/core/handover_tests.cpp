@@ -17,8 +17,8 @@ struct Event {
     bool cosmetic = false;
 };
 
-using Handover = core::Handover<State, Event, u64>;
-using Display = core::Display<State, Event, u64>;
+using Handover = core::Handover<State, Event, u64, i32>;
+using Display = core::Display<State, Event, u64, i32>;
 
 constexpr u64 HANDOVER_DELAY_NS = 10;
 constexpr u64 FIRST_NS = 100; // scheduled times
@@ -72,6 +72,17 @@ TEST_CASE("input accumulates until taken, in order") {
     CHECK(taken == std::vector<u64>{ 1, 2 });
     handover.TakeInput(taken);
     CHECK(taken.empty());
+}
+
+TEST_CASE("held input is newest-wins, and reading it doesn't consume it") {
+    constexpr i32 FIRST = 1;
+    constexpr i32 SECOND = 2;
+    Handover handover;
+    CHECK(handover.ReadHeld() == 0);
+    handover.SendHeld(FIRST);
+    handover.SendHeld(SECOND);
+    CHECK(handover.ReadHeld() == SECOND);
+    CHECK(handover.ReadHeld() == SECOND);
 }
 
 TEST_CASE("nothing is drawn until the first snapshot is due") {

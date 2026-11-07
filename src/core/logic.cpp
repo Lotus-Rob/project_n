@@ -82,7 +82,7 @@ Logic::TickEnd Logic::RunTick(const std::stop_token& stop) {
     m_advanced = !m_paused && m_calendar == Calendar::None;
     m_counters.Count(!m_advanced, false);
     if (m_advanced) {
-        m_simulation->Tick(m_counters);
+        m_simulation->Tick(m_counters, { .actions = m_input, .held = m_held });
     }
     return m_calendar == Calendar::Requested ? TickEnd::EndBurst : TickEnd::Continue;
 }
@@ -90,6 +90,7 @@ Logic::TickEnd Logic::RunTick(const std::stop_token& stop) {
 Logic::ActionSet Logic::TakeInput() {
     PN_PROFILE_ZONE();
     m_handover->TakeInput(m_input);
+    m_held = m_handover->ReadHeld();
     for (const Action& action : m_input) {
         if (action.kind == ActionKind::Pause || action.kind == ActionKind::Resume) {
             m_windowPaused = action.kind == ActionKind::Pause;
@@ -104,8 +105,9 @@ Logic::ActionSet Logic::TakeInput() {
             StopPlaying("it finished");
         }
         else {
-            const std::span<const Action> played = m_replay->Next();
-            m_input.assign(played.begin(), played.end());
+            const TickInput played = m_replay->Next();
+            m_input.assign(played.actions.begin(), played.actions.end());
+            m_held = played.held;
         }
     }
     ActionSet asked = 0;
@@ -120,7 +122,7 @@ Logic::ActionSet Logic::TakeInput() {
     }
     constexpr ActionSet ENDS_TIMELINE = Bit(ActionKind::ToggleRecording) | Bit(ActionKind::PlayReplay) | Bit(ActionKind::Load);
     if (m_replay->Recording() && (asked & ENDS_TIMELINE) == 0) {
-        m_replay->Record(m_input);
+        m_replay->Record({ .actions = m_input, .held = m_held });
     }
     return asked;
 }

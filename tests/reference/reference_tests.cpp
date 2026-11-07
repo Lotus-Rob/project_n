@@ -39,7 +39,7 @@ void CheckAgainstReference(const View& view) {
     core::Jobs jobs;
     game::Arena arena{ view.scene };
     for (u64 tick = 1; tick <= view.ticks; ++tick) {
-        arena.Tick({ .wall = tick, .simulation = tick, .state = tick });
+        arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, {});
     }
     core::Snapshot snapshot;
     arena.Publish(snapshot, jobs);

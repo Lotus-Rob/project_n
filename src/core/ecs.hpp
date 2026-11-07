@@ -6,6 +6,7 @@
 /// domains that map one to the other and sort into canonical order. The only header that
 /// includes EnTT.
 
+#include "core/stable_id.hpp" // IWYU pragma: export
 #include "core/types.hpp"
 
 #ifdef _MSC_VER
@@ -23,23 +24,6 @@
 #include <utility>
 
 namespace core {
-
-/// An entity's game ID, and a component every entity in the state carries: from a counter in the
-/// state, never reused, saved with it. Saves, input, view models, relationships, commands, random
-/// numbers and time slicing refer to entities by it; EnTT handles never leave a domain or a tick.
-enum class StableId : u64 {
-};
-
-/// Hands out stable IDs; its count is saved with the state.
-struct StableIdCounter {
-    /// The ID the next Allocate() returns; 0 is never used, so it can mean "none".
-    u64 next = 1;
-
-    /// A new stable ID, never handed out before.
-    [[nodiscard]] constexpr StableId Allocate() {
-        return StableId{ next++ };
-    }
-};
 
 /// EnTT's registry: components as plain structs, iterated through views.
 using Registry = entt::registry;

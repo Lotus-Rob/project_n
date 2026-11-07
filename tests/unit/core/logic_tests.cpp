@@ -16,9 +16,11 @@ u64 PublishedClock() {
 // Records the ticks it ran and its publishes, and publishes one instance per tick so far.
 class Recorder final : public core::Simulation {
 public:
-    void Tick(const core::TickCounters& counters) override {
+    void Tick(const core::TickCounters& counters, const core::TickInput& input) override {
         ticks.push_back(counters.simulation);
         states.push_back(counters.state);
+        held.push_back(input.held);
+        actions.push_back(input.actions.size());
     }
     void AdvanceCalendar(const core::TickCounters& counters, core::Jobs& /*jobs*/, const std::stop_token& /*stop*/) override {
         steps.push_back(counters.state);
@@ -49,8 +51,10 @@ public:
 
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::vector<u64> ticks{};
-    std::vector<u64> states{}; // the state counter at each tick
-    std::vector<u64> steps{};  // the state counter at each calendar step
+    std::vector<u64> states{};           // the state counter at each tick
+    std::vector<u64> steps{};            // the state counter at each calendar step
+    std::vector<core::HeldInput> held{}; // the held input at each tick
+    std::vector<std::size_t> actions{};  // how many actions each tick took
     // NOLINTEND(readability-redundant-member-init)
     bool rejectLoads = false;
     u64 hashSalt = 0; // set to make its state hash differ from another's with the same ticks
@@ -125,6 +129,17 @@ TEST_CASE("the last of several actions in one tick wins") {
     rig.handover.SendInput({ .kind = core::ActionKind::Pause });
     rig.handover.SendInput({ .kind = core::ActionKind::Resume });
     CHECK(rig.Burst(1).snapshot.advanced);
+}
+
+TEST_CASE("a burst's presses go to its first tick, its held input to every tick") {
+    constexpr u64 TICKS = 3;
+    constexpr core::HeldInput HELD{ .move = { .x = 1.0F, .y = 0.0F } };
+    Rig rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::Select, .target = core::StableId{ 1 } });
+    rig.handover.SendHeld(HELD);
+    static_cast<void>(rig.Burst(TICKS));
+    CHECK(rig.simulation.actions == std::vector<std::size_t>{ 1, 0, 0 });
+    CHECK(rig.simulation.held == std::vector{ HELD, HELD, HELD });
 }
 
 TEST_CASE("pausing lasts across bursts until resumed") {

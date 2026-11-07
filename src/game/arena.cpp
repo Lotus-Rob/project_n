@@ -279,7 +279,7 @@ core::Entity Arena::Spawn(core::Vec2 foot, const Look& look) {
     return entity;
 }
 
-void Arena::Tick(const core::TickCounters& counters) {
+void Arena::Tick(const core::TickCounters& counters, const core::TickInput& /*input*/) {
     PN_PROFILE_ZONE();
     core::Domain& active = m_state[ACTIVE];
     for (auto [entity, body, orbit] : active.Entities().view<Body, const Orbit>().each()) {
