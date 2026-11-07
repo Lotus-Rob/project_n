@@ -49,6 +49,26 @@ TEST_CASE("settings parse, and a setting left out keeps its default") {
     CHECK(settings->fullscreen);
 }
 
+TEST_CASE("an unknown setting is reported with its line, and the rest still parse") {
+    constexpr std::string_view YAML = "window:\n  widht: 800\n  height: 600\nsound: loud\n";
+    std::vector<std::string> warnings;
+    const std::expected<core::Settings, core::Error> settings = data::ParseSettings(YAML, &warnings);
+    REQUIRE(settings.has_value());
+    CHECK(settings->windowHeight == 600);
+    REQUIRE(warnings.size() == 2);
+    CHECK(warnings[0] == "settings line 4: there is no setting sound; it is ignored");
+    CHECK(warnings[1] == "settings line 2: window has no setting widht; it is ignored");
+}
+
+TEST_CASE("the settings SaveSettings writes hold no unknown key") {
+    const Scratch scratch{ "known" };
+    REQUIRE(data::SaveSettings(scratch.File(), {}).has_value());
+    std::vector<std::string> warnings;
+    const std::expected<core::Settings, core::Error> settings = data::ParseSettings(Contents(scratch.File()), &warnings);
+    REQUIRE(settings.has_value());
+    CHECK(warnings.empty());
+}
+
 TEST_CASE("empty settings are the defaults") {
     const std::expected<core::Settings, core::Error> settings = data::ParseSettings("");
     REQUIRE(settings.has_value());

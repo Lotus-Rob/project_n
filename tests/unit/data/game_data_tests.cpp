@@ -28,6 +28,22 @@ core::Error ErrorFor(const std::string& creatures) {
     return data.error();
 }
 
+TEST_CASE("an unknown key in the creatures is reported with its line, and the rest still parse") {
+    std::vector<std::string> warnings;
+    const std::expected<core::GameData, core::Error> data =
+        data::ParseGameData(With("walk_speed: 0.5", "walk_speed: 0.5\n  walk_sped: 9.0"), &warnings);
+    REQUIRE(data.has_value());
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0] == "creatures line 7: fox has no key walk_sped; it is ignored");
+}
+
+TEST_CASE("creatures that use only known keys report nothing") {
+    std::vector<std::string> warnings;
+    const std::expected<core::GameData, core::Error> data = data::ParseGameData(CREATURES, &warnings);
+    REQUIRE(data.has_value());
+    CHECK(warnings.empty());
+}
+
 // What CREATURES holds.
 constexpr core::GameData PARSED{
     .cultivator = { .sprite = core::atlas::SpriteId::Cultivator, .walkSpeed = 4.0F },
