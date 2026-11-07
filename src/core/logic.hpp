@@ -56,9 +56,9 @@ public:
     /// A hash of the whole state as it is, order included: two runs that agree hash alike (§7.4).
     [[nodiscard]] virtual u64 StateHash() const = 0;
 
-    /// Writes what the state looks like now into `snapshot`'s drawing data: its instances and batches
-    /// arrive empty, with their capacity kept. Called once per burst, after its last tick, on the
-    /// thread that created `jobs`, whose workers it may fork.
+    /// Writes what the state looks like now into `snapshot`'s drawing data: its instances, batches
+    /// and IDs arrive empty, with their capacity kept, and it follows nothing until set. Called once per burst, after its last
+    /// tick, on the thread that created `jobs`, whose workers it may fork.
     virtual void Publish(Snapshot& snapshot, Jobs& jobs) = 0;
 };
 

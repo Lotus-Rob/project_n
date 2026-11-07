@@ -154,6 +154,23 @@ TEST_CASE("a draw list publishes by layer, the world by foot y, the rest in the 
     CHECK(snapshot.batches[1].count == ADDED.size() - NORMAL_RUN);
 }
 
+TEST_CASE("a draw list's IDs follow their instances into drawing order") {
+    constexpr core::StableId BACK{ 1 };
+    constexpr core::StableId FRONT{ 2 };
+    constexpr f32 LOWER = 10.0F;
+    constexpr f32 SECOND = 2.0F;
+    constexpr f32 THIRD = 3.0F;
+    core::Jobs jobs{ 1 };
+    core::DrawList list;
+    list.Begin(VIEW);
+    list.Add(0, Layer::World, Pipeline::Normal, Marked(1.0F), LOWER, FRONT);
+    list.Add(0, Layer::World, Pipeline::Normal, Marked(SECOND), 0.0F, BACK);
+    list.Add(0, Layer::Ground, Pipeline::Normal, Marked(THIRD));
+    core::Snapshot snapshot;
+    list.Publish(snapshot, jobs);
+    CHECK(snapshot.ids == std::vector{ core::StableId{}, BACK, FRONT });
+}
+
 TEST_CASE("a draw list starts empty at each Begin") {
     core::Jobs jobs{ 1 };
     core::DrawList list;

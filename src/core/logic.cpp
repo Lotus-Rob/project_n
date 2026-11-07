@@ -41,6 +41,8 @@ bool Logic::RunBurst(const TickBurst& burst, const std::stop_token& stop) {
     snapshot.transition = m_calendar == Calendar::Published;
     snapshot.instances.clear();
     snapshot.batches.clear();
+    snapshot.ids.clear();
+    snapshot.follow.reset();
     m_simulation->Publish(snapshot, *m_jobs);
     snapshot.publishedNs = m_now();
     m_handover->Publish(m_events);
