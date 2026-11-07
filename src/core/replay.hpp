@@ -45,12 +45,13 @@ public:
 
     /// Starts a recording from `start`, the state as its owner serialised it at this tick (core::Logic
     /// writes its own state, the tick counters and the simulation's); the next Record() is the
-    /// following wall tick. Drops a recording or playback under way.
-    void StartRecording(std::vector<std::byte> start);
+    /// following wall tick, under game data hashing to `dataHash` (GameData::Hash). Drops a
+    /// recording or playback under way.
+    void StartRecording(std::vector<std::byte> start, u64 dataHash = 0);
 
     /// Records the input of the next wall tick: its actions, in order, at most 255 (any more are
     /// dropped with a warning, and playback diverges from there), and its held input. Never a Load,
-    /// ToggleRecording or PlayReplay: they end or replace the recorded timeline.
+    /// ToggleRecording, PlayReplay or ReloadData: they end or replace the recorded timeline.
     void Record(const TickInput& input);
 
     /// Records `hash`, the state's hash after wall tick `wallTick`, which must be after the last one recorded.
@@ -61,9 +62,12 @@ public:
 
     /// Starts playing `replay` (bytes FinishRecording() made) and returns its start state, valid
     /// until playback stops. Fails, changing nothing, on bytes that are malformed (an action that is
-    /// never recorded, or held input out of range, included), of another format, or from another
-    /// version of the game.
-    [[nodiscard]] std::expected<std::span<const std::byte>, Error> StartPlaying(std::vector<std::byte> replay);
+    /// never recorded, or held input out of range, included), of another format, from another
+    /// version of the game, or recorded under game data that doesn't hash to `dataHash`.
+    [[nodiscard]] std::expected<std::span<const std::byte>, Error> StartPlaying(
+        std::vector<std::byte> replay,
+        u64 dataHash = 0
+    );
 
     /// Whether playback has fed every recorded tick.
     [[nodiscard]] bool AtEnd() const {
@@ -107,6 +111,7 @@ private:
     std::vector<std::pair<u64, u64>> m_hashes{}; // (wall tick, hash), by wall tick
     std::span<const std::byte> m_start{};        // playing: the start state, inside m_bytes
     // NOLINTEND(readability-redundant-member-init)
+    u64 m_dataHash = 0;         // recording: the game data's hash
     std::size_t m_next = 0;     // playing: the next tick to feed
     std::size_t m_nextHash = 0; // playing: the next hash to check
     u64 m_matched = 0;

@@ -404,7 +404,26 @@ bool Arena::Load(core::Reader& archive) {
     m_view = ViewOf(scene);
     m_player = player;
     m_selected = selected;
+    ApplyData();
     return true;
+}
+
+void Arena::SetData(const core::GameData& data) {
+    m_data = data;
+    ApplyData();
+}
+
+void Arena::ApplyData() {
+    core::Registry& entities = m_state[ACTIVE].Entities();
+    for (auto [entity, creature, look] : entities.view<const Creature, Look>().each()) {
+        const core::CreatureData& kind = creature.kind == CreatureKind::Fox ? m_data.fox : m_data.cultivator;
+        look.sprite = kind.sprite;
+        if (Orbit* const orbit = entities.try_get<Orbit>(entity)) {
+            orbit->radius = kind.orbitRadius;
+            orbit->wobble = kind.orbitWobble;
+            orbit->speed = kind.orbitSpeed;
+        }
+    }
 }
 
 void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {

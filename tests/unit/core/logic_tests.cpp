@@ -41,6 +41,12 @@ public:
     [[nodiscard]] u64 StateHash() const override {
         return ticks.size() + hashSalt;
     }
+    void SetData(const core::GameData& data) override {
+        dataHash = data.Hash();
+    }
+    [[nodiscard]] u64 DataHash() const override {
+        return dataHash;
+    }
     void Publish(core::Snapshot& snapshot, core::Jobs& /*jobs*/) override {
         ++publishes;
         ticksAtPublish = ticks.size();
@@ -58,6 +64,7 @@ public:
     // NOLINTEND(readability-redundant-member-init)
     bool rejectLoads = false;
     u64 hashSalt = 0; // set to make its state hash differ from another's with the same ticks
+    u64 dataHash = 0; // the hash of the game data it was given last
     std::size_t publishes = 0;
     std::size_t ticksAtPublish = 0;
     std::size_t capacityAtPublish = 0;
@@ -493,6 +500,56 @@ TEST_CASE("a load while recording finishes the recording and writes it") {
     rig.jobs.WaitForBackground();
     CHECK_FALSE(rig.replay.Recording());
     CHECK(std::filesystem::exists(replayFile));
+}
+
+// New game data, unlike the default.
+std::shared_ptr<const core::GameData> NewData() {
+    constexpr core::GameData DATA{ .cultivator = { .walkSpeed = 1.0F } };
+    return std::make_shared<const core::GameData>(DATA);
+}
+
+TEST_CASE("ReloadData gives the simulation the data on a frozen tick that ends the burst") {
+    constexpr u64 TICKS = 3;
+    Rig rig;
+    const std::shared_ptr<const core::GameData> data = NewData();
+    rig.handover.SendInput({ .kind = core::ActionKind::ReloadData, .data = data });
+    const BurstResult result = rig.Burst(TICKS);
+    CHECK(rig.simulation.dataHash == data->Hash());
+    CHECK_FALSE(result.stalled);
+    CHECK(result.snapshot.wallTick == 1);
+    CHECK(result.snapshot.simulationTick == 0);
+}
+
+TEST_CASE("ReloadData while recording finishes the recording and writes it") {
+    const SaveSlot slot{ "replay_reload_finishes" };
+    const std::filesystem::path replayFile = slot.File().parent_path() / "replay.pnr";
+    Rig rig(slot.File(), replayFile);
+    rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
+    static_cast<void>(rig.Burst(1));
+    rig.handover.SendInput({ .kind = core::ActionKind::ReloadData, .data = NewData() });
+    static_cast<void>(rig.Burst(1));
+    rig.jobs.WaitForBackground();
+    CHECK_FALSE(rig.replay.Recording());
+    CHECK(std::filesystem::exists(replayFile));
+}
+
+TEST_CASE("ReloadData while a replay plays stops it, and the data is taken") {
+    Recorded recorded{ "replay_reload_stops" };
+    StartPlaying(recorded.rig);
+    const std::shared_ptr<const core::GameData> data = NewData();
+    recorded.rig.handover.SendInput({ .kind = core::ActionKind::ReloadData, .data = data });
+    static_cast<void>(recorded.rig.Burst(1));
+    CHECK_FALSE(recorded.rig.replay.Playing());
+    CHECK(recorded.rig.simulation.dataHash == data->Hash());
+}
+
+TEST_CASE("a replay recorded under other game data doesn't play") {
+    Recorded recorded{ "replay_other_data" };
+    recorded.rig.simulation.SetData(*NewData());
+    recorded.rig.handover.SendInput({ .kind = core::ActionKind::PlayReplay });
+    static_cast<void>(recorded.rig.Burst(1));
+    CHECK_FALSE(recorded.rig.replay.Playing());
+    CHECK(recorded.rig.logic.Epoch() == 0);
 }
 
 TEST_CASE("with no replay file, playing is refused") {

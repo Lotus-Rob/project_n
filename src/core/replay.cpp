@@ -10,13 +10,14 @@ namespace core {
 
 namespace {
 
-constexpr u32 REPLAY_FORMAT = 2;                      // 2: actions carry their target, ticks their held input
+constexpr u32 REPLAY_FORMAT = 3; // 2: actions carry their target, ticks their held input; 3: the game data's hash
 constexpr std::string_view VERSION = PN_GAME_VERSION; // from xmake.lua's set_version
 constexpr std::size_t MAX_ACTIONS_PER_TICK = 255;     // a tick's count is a byte
 
 // Actions that end or replace a recording's timeline, so none is ever recorded.
 bool NeverRecorded(ActionKind kind) {
-    return kind == ActionKind::Load || kind == ActionKind::ToggleRecording || kind == ActionKind::PlayReplay;
+    return kind == ActionKind::Load || kind == ActionKind::ToggleRecording || kind == ActionKind::PlayReplay ||
+           kind == ActionKind::ReloadData;
 }
 
 // Whether held input read from a replay could have been sent: finite, each axis within [-1, 1], at most 1 long
@@ -60,6 +61,7 @@ void ReadTicks(
             archive(kind);
             if (kind >= ACTION_KINDS || NeverRecorded(static_cast<ActionKind>(kind))) {
                 archive.Fail();
+                break;
             }
             Action read{ .kind = static_cast<ActionKind>(kind) };
             if (read.kind == ActionKind::Select) {
@@ -81,9 +83,10 @@ void ReadTicks(
 
 } // namespace
 
-void Replay::StartRecording(std::vector<std::byte> start) {
+void Replay::StartRecording(std::vector<std::byte> start, u64 dataHash) {
     m_mode = Mode::Recording;
     m_bytes = std::move(start);
+    m_dataHash = dataHash;
     m_actions.clear();
     m_tickStarts.clear();
     m_held.clear();
@@ -124,7 +127,7 @@ std::vector<std::byte> Replay::FinishRecording() {
     for (const char letter : VERSION) {
         archive(letter);
     }
-    archive(u64{ m_bytes.size() });
+    archive(m_dataHash, u64{ m_bytes.size() });
     replay.insert(replay.end(), m_bytes.begin(), m_bytes.end());
     archive(u64{ m_tickStarts.size() });
     HeldInput last{};
@@ -153,7 +156,7 @@ std::vector<std::byte> Replay::FinishRecording() {
     return replay;
 }
 
-std::expected<std::span<const std::byte>, Error> Replay::StartPlaying(std::vector<std::byte> replay) {
+std::expected<std::span<const std::byte>, Error> Replay::StartPlaying(std::vector<std::byte> replay, u64 dataHash) {
     Reader archive{ replay };
     u32 format = 0;
     u8 versionLength = 0;
@@ -168,6 +171,11 @@ std::expected<std::span<const std::byte>, Error> Replay::StartPlaying(std::vecto
     if (!archive.Failed() && version != VERSION) {
         return std::unexpected{ Error{ .message =
                                            std::format("recorded by version {} of the game, not {}", version, VERSION) } };
+    }
+    u64 recordedDataHash = 0;
+    archive(recordedDataHash);
+    if (!archive.Failed() && recordedDataHash != dataHash) {
+        return std::unexpected{ Error{ .message = "recorded under other game data (assets/data/ changed since)" } };
     }
     u64 startBytes = 0;
     archive(startBytes);

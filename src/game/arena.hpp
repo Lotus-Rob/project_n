@@ -84,12 +84,21 @@ public:
     /// the relationships, into `archive`.
     void Save(core::Writer& archive) override;
 
-    /// Replaces the state with the one Save() wrote; false, changing nothing, when the bytes are
-    /// malformed, of another version, or don't end where the state does.
+    /// Replaces the state with the one Save() wrote, its creatures taking the game data in use; false,
+    /// changing nothing, when the bytes are malformed, of another version, or don't end where the state does.
     [[nodiscard]] bool Load(core::Reader& archive) override;
 
     /// A hash of everything Save() writes, in the state's current order.
     [[nodiscard]] u64 StateHash() const override;
+
+    /// Takes `data` for the cultivator's walk speed from the next tick, and gives every creature its
+    /// kind's sprite and orbit (radius, wobble, speed) at once; a fox may jump to its new orbit.
+    void SetData(const core::GameData& data) override;
+
+    /// The hash of the game data in use.
+    [[nodiscard]] u64 DataHash() const override {
+        return m_data.Hash();
+    }
 
     /// How many months have passed.
     [[nodiscard]] u64 Months() const {
@@ -129,6 +138,7 @@ private:
     core::Entity Spawn(core::Vec2 foot, const Look& look);
     void Walk(core::Vec2 move);
     void Select(core::StableId target);
+    void ApplyData();
     void SpawnStress();
     void SpawnNpcs(u32 worldNpcs);
     void SpawnPainted();

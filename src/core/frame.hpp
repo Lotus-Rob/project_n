@@ -6,6 +6,7 @@
 /// thread through core::Handover, and the input it gets back. It grows with each phase of §16
 /// (instances, view models and events in phase 3 onwards); phase 1 carries timing and pausing.
 
+#include "core/game_data.hpp"
 #include "core/handover.hpp"
 #include "core/profile.hpp"
 #include "core/stable_id.hpp"
@@ -14,6 +15,7 @@
 
 #include <bit>
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <span>
 #include <utility>
@@ -126,10 +128,11 @@ enum class ActionKind : u8 {
     ToggleRecording, ///< Start recording a replay, or finish and write the one being recorded.
     PlayReplay,      ///< Play the replay file back from its start (a new timeline), or stop playing it.
     Select,          ///< Select the entity `target` names (a stale or zero ID selects nothing).
+    ReloadData,      ///< Swap in the game data `data` (debug builds' hot reload): never in a replay.
 };
-/// How many kinds ActionKind names (Select is the last): a replay read from disk holds only
+/// How many kinds ActionKind names (ReloadData is the last): a replay read from disk holds only
 /// kinds below this.
-inline constexpr u8 ACTION_KINDS = static_cast<u8>(std::to_underlying(ActionKind::Select) + 1U);
+inline constexpr u8 ACTION_KINDS = static_cast<u8>(std::to_underlying(ActionKind::ReloadData) + 1U);
 
 /// A player's or the main thread's request to the simulation, sent as input: a press, taken once.
 struct Action {
@@ -137,6 +140,8 @@ struct Action {
     ActionKind kind = ActionKind::Pause;
     /// The entity it is about (Select); zero otherwise.
     StableId target{};
+    /// The game data to swap in (ReloadData); empty otherwise.
+    std::shared_ptr<const GameData> data{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
 };
 
 /// What the player holds down, as the main thread last sent it (design doc 0002 §10): every tick of

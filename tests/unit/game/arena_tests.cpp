@@ -101,6 +101,37 @@ TEST_CASE("the cultivator walks at the game data's speed") {
     CHECK(after.x - before.x == doctest::Approx(SPEED));
 }
 
+// How far apart, left to right, the instances drawing `sprite` lie.
+f32 Spread(const core::Snapshot& snapshot, SpriteId sprite) {
+    f32 left = std::numeric_limits<f32>::max();
+    f32 right = std::numeric_limits<f32>::lowest();
+    for (const core::Instance& instance : snapshot.instances) {
+        if (Draws(instance, sprite)) {
+            left = std::min(left, instance.current.x);
+            right = std::max(right, instance.current.x);
+        }
+    }
+    return right - left;
+}
+
+TEST_CASE("new game data changes the foxes' sprite and orbit at once") {
+    constexpr f32 WIDER = 2.0F;
+    constexpr f32 CLEARLY_WIDER = 1.5F; // the foxes' foot offsets blur the doubling
+    game::Arena arena;
+    core::GameData data = game::BuiltInData();
+    data.fox.sprite = SpriteId::FoxYellow;
+    data.fox.orbitRadius *= WIDER;
+    const u64 before = arena.DataHash();
+    const f32 builtInSpread = Spread(Published(arena), SpriteId::Fox);
+    arena.SetData(data);
+    CHECK(arena.DataHash() == data.Hash());
+    CHECK(arena.DataHash() != before);
+    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, {});
+    const core::Snapshot snapshot = Published(arena);
+    CHECK(std::ranges::none_of(snapshot.instances, [](const auto& instance) { return Draws(instance, SpriteId::Fox); }));
+    CHECK(Spread(snapshot, SpriteId::FoxYellow) > builtInSpread * CLEARLY_WIDER);
+}
+
 TEST_CASE("standing still, the cultivator draws still") {
     game::Arena arena;
     arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
