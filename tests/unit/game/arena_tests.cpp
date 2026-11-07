@@ -133,6 +133,34 @@ f32 Spread(const core::Snapshot& snapshot, SpriteId sprite) {
     return right - left;
 }
 
+// Where the leftmost instance drawing `sprite` stands, left to right, after `ticks` ticks of `held` under `data`.
+f32 LeftmostAfter(const core::GameData& data, u64 ticks, core::HeldInput held, SpriteId sprite) {
+    game::Arena arena{ game::Scene::Arena, data };
+    for (u64 tick = 1; tick <= ticks; ++tick) {
+        arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, { .actions = {}, .held = held });
+    }
+    f32 left = std::numeric_limits<f32>::max();
+    for (const core::Instance& instance : Published(arena).instances) {
+        if (Draws(instance, sprite)) {
+            left = std::min(left, instance.current.x);
+        }
+    }
+    return left;
+}
+
+TEST_CASE("foxes that orbit the player follow where it walks; others keep circling its start") {
+    constexpr u64 TICKS = 30;
+    core::GameData data = game::BuiltInData();
+    data.fox.orbitsPlayer = true;
+    const f32 walked = static_cast<f32>(TICKS) * data.cultivator.walkSpeed;
+    CHECK(
+        LeftmostAfter(data, TICKS, HELD_RIGHT, SpriteId::Fox) - LeftmostAfter(data, TICKS, {}, SpriteId::Fox) ==
+        doctest::Approx(walked)
+    );
+    data.fox.orbitsPlayer = false;
+    CHECK(LeftmostAfter(data, TICKS, HELD_RIGHT, SpriteId::Fox) == LeftmostAfter(data, TICKS, {}, SpriteId::Fox));
+}
+
 TEST_CASE("new game data changes the foxes' sprite and orbit at once") {
     constexpr f32 WIDER = 2.0F;
     constexpr f32 CLEARLY_WIDER = 1.5F; // the foxes' foot offsets blur the doubling

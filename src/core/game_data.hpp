@@ -25,11 +25,13 @@ struct CreatureData {
     f32 orbitWobble = 0.0F;
     /// Radians per tick around its orbit; negative goes anticlockwise.
     f32 orbitSpeed = 0.0F;
+    /// Whether its orbit circles the player, wherever the player walks, rather than the player's starting point.
+    bool orbitsPlayer = false;
 
     /// Lists its fields for an archive (core/archive.hpp).
     template<typename Self, typename Archive>
     void Fields(this Self& self, Archive& archive) {
-        archive(self.sprite, self.walkSpeed, self.orbitRadius, self.orbitWobble, self.orbitSpeed);
+        archive(self.sprite, self.walkSpeed, self.orbitRadius, self.orbitWobble, self.orbitSpeed, self.orbitsPlayer);
     }
 };
 

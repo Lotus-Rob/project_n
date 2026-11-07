@@ -65,7 +65,14 @@ std::expected<core::CreatureData, core::Error> Creature(
     creature.walkSpeed = *walkSpeed;
     if (const YAML::Node orbit = node["orbit"]) {
         const std::string orbitName = std::format("{}'s orbit", name);
-        internal::NoteUnknownKeys("creatures", orbit, orbitName, "key", { "radius", "wobble", "speed" }, warnings);
+        internal::NoteUnknownKeys("creatures", orbit, orbitName, "key", { "radius", "wobble", "speed", "around" }, warnings);
+        if (const YAML::Node around = orbit["around"]) {
+            const auto centre = around.as<std::string>();
+            if (centre != "player" && centre != "start") {
+                return Fail(around, std::format("{} goes around {}, not the player or the start", orbitName, centre));
+            }
+            creature.orbitsPlayer = centre == "player";
+        }
         for (const auto& [key, value] : { std::pair{ "radius", &creature.orbitRadius },
                                           std::pair{ "wobble", &creature.orbitWobble },
                                           std::pair{ "speed", &creature.orbitSpeed } }) {

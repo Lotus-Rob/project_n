@@ -7,7 +7,8 @@
 /// - a painted ground with props and the painted art, in foot-y order, some drawn larger or smaller (scale) and one
 ///   turning (rotation), with blob shadows;
 /// - the player's cultivator, walked by held input, which the camera follows and the logic culls around;
-/// - a pack of foxes circling it and glowing orbs circling closer (orbits, the additive pipeline), the foxes and the
+/// - a pack of foxes circling it wherever it walks and glowing orbs circling its start (orbits, the additive pipeline), the
+/// foxes and the
 ///   cultivator from the creatures data table (hot reload in debug builds);
 /// - click-to-select, drawn tinted;
 /// - NPCs walking in the active tier and 5,000 in the world tier, whose months pass on request (§7.7);
@@ -145,6 +146,9 @@ private:
     void Walk(core::Vec2 move);
     void Select(core::StableId target);
     void ApplyData();
+    [[nodiscard]] const core::CreatureData& DataOf(CreatureKind kind) const {
+        return kind == CreatureKind::Fox ? m_data.fox : m_data.cultivator;
+    }
     void SpawnStress();
     void SpawnNpcs(u32 worldNpcs);
     void SpawnPainted();

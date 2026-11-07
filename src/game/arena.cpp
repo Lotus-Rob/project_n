@@ -169,7 +169,7 @@ core::Rect ViewOf(Scene scene) {
 constexpr core::GameData BUILT_IN_DATA{
     .cultivator = { .sprite = SpriteId::Cultivator, .walkSpeed = 4.0F }, // 240 world units a second at full stick
     // A lap in about 17 seconds.
-    .fox = { .sprite = SpriteId::Fox, .orbitRadius = 300.0F, .orbitWobble = 40.0F, .orbitSpeed = 0.006F },
+    .fox = { .sprite = SpriteId::Fox, .orbitRadius = 300.0F, .orbitWobble = 40.0F, .orbitSpeed = 0.006F, .orbitsPlayer = true },
 };
 
 } // namespace
@@ -336,6 +336,14 @@ void Arena::Tick(const core::TickCounters& counters, const core::TickInput& inpu
     }
     Walk(input.held.move);
     core::Domain& active = m_state[ACTIVE];
+    if (m_player != core::StableId{}) {
+        const core::Vec2 player = active.Entities().get<Body>(active.Find(m_player)).current;
+        for (auto [entity, creature, orbit] : active.Entities().view<const Creature, Orbit>().each()) {
+            if (DataOf(creature.kind).orbitsPlayer) {
+                orbit.centre = player;
+            }
+        }
+    }
     for (auto [entity, body, orbit] : active.Entities().view<Body, const Orbit>().each()) {
         body.previous = body.current;
         body.current = OrbitPoint(orbit, counters.simulation);
@@ -444,9 +452,12 @@ void Arena::SetData(const core::GameData& data) {
 void Arena::ApplyData() {
     core::Registry& entities = m_state[ACTIVE].Entities();
     for (auto [entity, creature, look] : entities.view<const Creature, Look>().each()) {
-        const core::CreatureData& kind = creature.kind == CreatureKind::Fox ? m_data.fox : m_data.cultivator;
+        const core::CreatureData& kind = DataOf(creature.kind);
         look.sprite = kind.sprite;
         if (Orbit* const orbit = entities.try_get<Orbit>(entity)) {
+            if (!kind.orbitsPlayer) {
+                orbit->centre = CULTIVATOR; // back from wherever the player led it
+            }
             orbit->radius = kind.orbitRadius;
             orbit->wobble = kind.orbitWobble;
             orbit->speed = kind.orbitSpeed;
