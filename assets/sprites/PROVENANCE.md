@@ -32,3 +32,4 @@ updates its row in the same commit (what made it, when, and who) and takes it ou
 | crystal_ice.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | as above |
 | cell_snow.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | as above; opaque terrain tile, no keying |
 | orb_gold.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | as above |
+| villager.png | `art/placeholders.py` (procedural placeholder) | 2026-11-07 | the NPCs' sprite; `./dev atlas --placeholders` redraws it byte for byte |

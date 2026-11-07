@@ -187,7 +187,7 @@ void Activate(core::State& state, core::StableId npc) {
         }
         const core::Vec2 foot = CellCentre(person.cell);
         into.emplace<Body>(moved, foot, foot);
-        into.emplace<Look>(moved, Look{ .sprite = core::atlas::SpriteId::Cultivator, .shadow = true });
+        into.emplace<Look>(moved, Look{ .sprite = core::atlas::SpriteId::Villager, .shadow = true });
         into.emplace<Wander>(moved, foot);
     });
 }

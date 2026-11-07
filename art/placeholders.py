@@ -1,7 +1,7 @@
 """Procedural placeholder art for the sprite pipeline (design doc 0002 §2, §9): ink wash on paper.
 
 Writes assets/sprites/<name>.png for every placeholder sprite in art/sprites.toml: a painted
-ground, rocks, a pine, a shrine, a fox, a cultivator, glowing orbs, a blob shadow and four world-map
+ground, rocks, a pine, a shrine, a fox, a cultivator, a villager, glowing orbs, a blob shadow and four world-map
 cells. Each is original and drawn from code. Reproducible byte for byte: the drawing uses only
 arithmetic and square roots (correctly rounded everywhere), integer hashing, and seeded
 random.Random, never a transcendental function. Run through `./dev atlas --placeholders`.
@@ -349,27 +349,44 @@ def fox():
     return canvas
 
 
+def trapezoid(canvas, y0, y1, half0, half1, colour, shade, cx):
+    """Cloth from `half0` wide at `y0` to `half1` at `y1` about `cx`, shaded towards its right edge."""
+    def inside(x, y):
+        t = (y - y0) / (y1 - y0)
+        half = half0 + (half1 - half0) * t
+        if abs(x - cx) > half:
+            return None
+        return mix(colour, shade, smoothstep(-half, half, x - cx) * 0.6), 1.0
+    canvas.shape((cx - max(half0, half1), y0, cx + max(half0, half1), y1), inside)
+
+
 def cultivator():
     canvas = Canvas(72, 128)
     robe, shade = (222, 228, 232), (150, 166, 186)
-
-    def trapezoid(y0, y1, half0, half1, colour, cx=36.0):
-        def inside(x, y):
-            t = (y - y0) / (y1 - y0)
-            half = half0 + (half1 - half0) * t
-            if abs(x - cx) > half:
-                return None
-            return mix(colour, shade, smoothstep(-half, half, x - cx) * 0.6), 1.0
-        canvas.shape((cx - max(half0, half1), y0, cx + max(half0, half1), y1), inside)
-
-    trapezoid(44, 122, 13, 26, robe)                  # robe
-    trapezoid(46, 84, 8, 20, robe, 18)                # sleeves
-    trapezoid(46, 84, 8, 20, robe, 54)
+    trapezoid(canvas, 44, 122, 13, 26, robe, shade, 36.0)  # robe
+    trapezoid(canvas, 46, 84, 8, 20, robe, shade, 18)      # sleeves
+    trapezoid(canvas, 46, 84, 8, 20, robe, shade, 54)
     canvas.shape((22, 70, 50, 77), lambda x, y: (VERMILION, 1.0))  # sash
     canvas.stroke([(36, 46), (36, 120)], 1.5, 1.5, shade, 0.8)     # the robe's fold
     canvas.dab(36, 30, 11, (228, 202, 172), 1.0, soft=0.15)        # head
     canvas.dab(36, 22, 10, (34, 34, 40), 1.0, soft=0.15)           # hair
     canvas.dab(36, 11, 6, (34, 34, 40), 1.0, soft=0.2)             # bun
+    canvas.outline(INK)
+    return canvas
+
+
+def villager():
+    """An NPC: a short indigo tunic over dark trousers and a wide straw hat, unlike the player's white robe."""
+    canvas = Canvas(64, 116)
+    tunic, shade = (70, 92, 128), (36, 46, 70)
+    for x in (25, 39):                                                             # trousers
+        canvas.stroke([(x, 80), (x, 110)], 6, 5, (52, 48, 52), 1.0)
+    trapezoid(canvas, 42, 86, 10, 18, tunic, shade, 32.0)                          # tunic
+    trapezoid(canvas, 44, 74, 6, 11, tunic, shade, 16)                             # sleeves
+    trapezoid(canvas, 44, 74, 6, 11, tunic, shade, 48)
+    canvas.shape((19, 62, 45, 67), lambda x, y: ((120, 86, 52), 1.0))             # belt
+    canvas.dab(32, 34, 9, (214, 184, 150), 1.0, soft=0.15)                         # head
+    trapezoid(canvas, 10, 28, 2, 28, (200, 172, 108), (150, 120, 70), 32.0)        # straw hat
     canvas.outline(INK)
     return canvas
 
@@ -475,6 +492,7 @@ PLACEHOLDERS = {
     "shrine": (shrine, False),
     "fox": (fox, False),
     "cultivator": (cultivator, False),
+    "villager": (villager, False),
     "orb_blue": (lambda: orb(32, (80, 196, 255)), False),
     "orb_red": (lambda: orb(16, (255, 96, 64)), False),
     "shadow": (shadow, False),
