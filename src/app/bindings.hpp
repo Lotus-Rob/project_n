@@ -1,0 +1,100 @@
+#pragma once
+
+/// @file
+/// @ingroup app
+/// Bindings (design doc 0002 §10): the table from the player's physical inputs to the game's
+/// controls, and the held movement they add up to. Pure: tested with constructed input events.
+
+#include "core/types.hpp"
+#include "core/vec2.hpp"
+#include "platform/window.hpp"
+
+#include <optional>
+#include <vector>
+
+namespace app {
+
+/// What the player can ask for, whatever the device.
+enum class Control : u8 {
+    Move,            ///< Walk, or pan without a follow target: an axis pair, held.
+    Select,          ///< Select what is under the pointer.
+    Zoom,            ///< Zoom the camera by `value` notches.
+    Quit,            ///< Leave the game.
+    AdvanceCalendar, ///< Let a month pass (a debug key).
+    Save,            ///< Save the game (a debug key).
+    Load,            ///< Load the save (a debug key).
+    ToggleRecording, ///< Start or finish recording a replay (a debug key).
+    PlayReplay,      ///< Play the replay or stop it (a debug key).
+};
+
+/// A control pressed or released.
+struct ControlEvent {
+    /// Which control.
+    Control control = Control::Quit;
+    /// Whether it went down (false: up). Zoom only ever goes down.
+    bool pressed = false;
+    /// Zoom's notches; 1 for a pressed button, 0 for a released one.
+    f32 value = 0.0F;
+    /// For Select, the pointer in window coordinates.
+    core::Vec2 position{};
+};
+
+/// One entry of the table.
+struct Binding {
+    /// The physical input.
+    platform::InputCode code = platform::InputCode::KeyW;
+    /// The control it drives.
+    Control control = Control::Quit;
+    /// For a Move key, the way it points; for a Zoom button, its notches in `x`.
+    core::Vec2 direction{};
+};
+
+/// The stick's radial dead zone: a stick pushed less far than this, of its full travel, is at rest.
+inline constexpr f32 STICK_DEAD_ZONE = 0.2F;
+
+/// The device the player used last: what prompts show (phase 6), and whether the mouse cursor hovers.
+class DeviceInUse {
+public:
+    /// Notes the device `input` came from; true when what prompts show changed (a gamepad after the
+    /// keyboard or mouse, or the other way, or a gamepad of another family). A stick inside its dead
+    /// zone counts as no use.
+    [[nodiscard]] bool Take(const platform::InputEvent& input);
+
+    /// The device used last: the keyboard at the start.
+    [[nodiscard]] platform::Device Used() const {
+        return m_device;
+    }
+
+    /// The family of the gamepad used last; Other while the keyboard or mouse is in use.
+    [[nodiscard]] platform::GamepadFamily Family() const {
+        return m_family;
+    }
+
+private:
+    platform::Device m_device = platform::Device::Keyboard;
+    platform::GamepadFamily m_family = platform::GamepadFamily::Other;
+};
+
+/// The bindings in use, and the held state of the inputs that drive Move.
+class Bindings {
+public:
+    /// The default bindings: WASD, the arrow keys and the left stick move; the left button selects;
+    /// the wheel and the shoulder buttons zoom; Escape quits; M, F5, F9, F6 and F10 are the debug
+    /// keys. shortcut: code, not data; rebinding and saving it to the settings file come later (§10).
+    Bindings();
+
+    /// The control `input` presses or releases, if any. Movement inputs update Move() instead and
+    /// give none, so a key pressed and released between two frames still gives both events but
+    /// leaves Move() as it was.
+    [[nodiscard]] std::optional<ControlEvent> Handle(const platform::InputEvent& input);
+
+    /// Where the held movement points: the keys held, else the stick past its dead zone, at most 1 long.
+    [[nodiscard]] core::Vec2 Move() const;
+
+private:
+    std::vector<Binding> m_table;
+    u32 m_heldKeys = 0; // a bit per InputCode of a Move key held down
+    core::Vec2 m_stick{};
+};
+
+} // namespace app

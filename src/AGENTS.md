@@ -28,7 +28,7 @@ All game and engine code, structured by docs/design/0002-engine-architecture.md 
 - A new module adds its directory's `module.dox`, an XMake target with `add_deps` on the modules below it, and its commit scope to `SCOPES` in tools/project_n.py.
 
 ## Commands
-- `./dev run [--debug] [-- --stress | --painted | --cells]` (native preset; `--preset` picks another; `--stress`: the stress arena, about 100,000 instances; `--painted`: the still painted test scene; `--cells`: a map cell grid the mouse wheel zooms, to judge the mips; `--quit-after SECONDS`: quit by itself). In the game, until bindings arrive in phase 5: M lets a month pass, F5 saves, F9 loads, F6 starts or finishes recording a replay, F10 plays or stops it; saves and the replay go to the per-user data folder's `saves/`
+- `./dev run [--debug] [-- --stress | --painted | --cells]` (native preset; `--preset` picks another; `--stress`: the stress arena, about 100,000 instances; `--painted`: the still painted test scene; `--cells`: a map cell grid, to judge the mips as the view zooms; `--quit-after SECONDS`: quit by itself). In the game (default bindings, `app/bindings.cpp`): WASD, the arrows or the left stick walk the cultivator (pan the still scenes), a left click selects, the wheel or the shoulder buttons zoom, Escape quits; debug keys: M lets a month pass, F5 saves, F9 loads, F6 starts or finishes recording a replay, F10 plays or stops it; saves and the replay go to the per-user data folder's `saves/`
 
 ## Skills
 - look-at-the-game: seeing what the game draws (reference pictures, screenshots of the window, picture diffs)

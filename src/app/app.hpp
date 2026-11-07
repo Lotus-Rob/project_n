@@ -6,6 +6,7 @@
 /// thread it starts, and the main loop that turns the window's input into actions and draws the
 /// snapshots the logic thread publishes.
 
+#include "app/bindings.hpp"
 #include "core/frame.hpp"
 #include "core/types.hpp"
 #include "game/arena.hpp"
@@ -55,7 +56,10 @@ public:
 
 private:
     void RunLogic(const std::stop_token& stop);
-    void SendInput(const platform::WindowState& state);
+    void HandleInput(const platform::WindowState& state);
+    void NoteDevice(const platform::InputEvent& input);
+    void Select(const platform::WindowState& state, core::Vec2 position);
+    void Pan(u64 nowNs);
     void Present(bool visible);
 
     platform::Window m_window;
@@ -67,9 +71,15 @@ private:
     core::GameDisplay m_display{};
     std::vector<core::Event> m_incoming{};
     std::vector<core::Event> m_pending{}; // taken, waiting for the render clock
+    std::vector<platform::InputEvent> m_inputs{};
+    Bindings m_bindings{};
     // NOLINTEND(readability-redundant-member-init)
-    gfx::Camera
-        m_camera{}; // shortcut: a fixed view, but for the cell grid's zoom; it follows input and the snapshot from phase 5
+    gfx::Camera m_camera{};
+    core::HeldInput m_held{};                               // as last sent
+    u64 m_frameNs = 0;                                      // when the last frame began, for panning
+    platform::Device m_device = platform::Device::Keyboard; // used last, for prompts (phase 6's UI draws them)
+    platform::GamepadFamily m_family = platform::GamepadFamily::Other;
+    bool m_quit = false;
     bool m_paused = false;
     std::atomic<bool> m_logicFailed = false;
     std::jthread m_logic{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer; last, so it
