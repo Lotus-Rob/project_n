@@ -28,6 +28,6 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
 ## Gotchas
 - `xmake test` runs a Windows `.exe` directly on Linux; it only worked on a dev machine whose kernel hands `.exe` files to Wine (binfmt_misc). The test targets call Wine themselves (`test_under_wine`).
 - MSVC sanitizer builds compile and link in the container, but only *run* on native Windows: MSVC's ASan can't hot-patch Wine's system DLLs.
-- Sanitizer builds link the C++ runtime dynamically (static libc++abi collides with TSan) and don't instrument dependencies.
+- Sanitizer builds link the C++ runtime dynamically (static libc++abi collides with TSan) and don't instrument dependencies. MSVC's ASan therefore turns off its std::string/std::vector annotations (the sanitizer rule in xmake.lua): the linker refuses to mix them with uninstrumented C++ packages (LNK2038 'annotate_string').
 - A test that opens a window but draws nothing uses SDL's `dummy` video driver, not `offscreen`: on macOS SDL gives a new window OpenGL whenever its driver has it, and offscreen's comes through EGL, which macOS lacks ("Could not initialize OpenGL / GLES library"; `platform/window_tests.cpp`). It also turns off SDL's gamepad backends: macOS's GameController and IOKit leak under LeakSanitizer.
 - MSVC C4866 (shown only by `check`'s windows-msvc build): a temporary with a destructor inside `CHECK` (a `std::string`, a returned `std::expected`, a vector passed where a span is expected). Name the value first.

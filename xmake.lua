@@ -22,6 +22,11 @@ rule("sanitizer")
         if sanitizer == "address" and is_plat("linux") and get_config("toolchain") == "pixi-clang" then
             target:add("cxflags", "-fsanitize=fuzzer-no-link", {force = true})
         end
+        -- MSVC's ASan annotates std::string and std::vector, and the linker refuses to mix annotated
+        -- objects with uninstrumented C++ packages (yaml-cpp: LNK2038 'annotate_string').
+        if sanitizer == "address" and is_plat("windows") then
+            target:add("defines", "_DISABLE_STRING_ANNOTATION", "_DISABLE_VECTOR_ANNOTATION")
+        end
     end)
 rule_end()
 add_rules("sanitizer")
@@ -222,6 +227,7 @@ add_requires("enkits v1.12") -- zlib; behind core/jobs.hpp
 add_requires("lz4 v1.10.0", {configs = {cmake = false}}) -- BSD-2-Clause; behind core/save_file.cpp
 add_requires("libsdl3-wayland 3.4.16") -- zlib; xmake/repo: libsdl3 plus its Wayland build deps
 add_requires("quill-wine 13.1.0") -- MIT; header-only; xmake/repo: quill plus Wine support
+add_requires("yaml-cpp 0.9.0") -- MIT; behind src/data/
 -- xmake/repo: tracy plus libdl for glibc 2.28. It collects
 -- in releasedbg; everywhere else its macros are empty and the library compiles to nothing.
 -- Localhost only: no profile data on the network. Keep the version equal to the viewer's in
