@@ -18,7 +18,7 @@ Game::Game(core::GameHandover& handover, GameSetup setup)
   , m_jobs{ core::Jobs::DefaultWorkers() }
   , m_saves(std::move(setup.saveSlot), m_jobs)
   , m_replays(std::move(setup.replaySlot), m_jobs)
-  , m_arena{ setup.scene }
+  , m_arena{ setup.scene, setup.data }
   , m_logic(handover, m_arena, m_jobs, m_saves, m_replays, m_replay, setup.now)
   , m_clock{ setup.startNs } {
     PN_LOG_INFO(

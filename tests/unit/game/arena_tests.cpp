@@ -90,6 +90,17 @@ TEST_CASE("the cultivator walks where the held input points, and the camera foll
     CHECK(PositionOf(after, arena.Player()).x - PositionOf(before, arena.Player()).x == onto.current.x - from.current.x);
 }
 
+TEST_CASE("the cultivator walks at the game data's speed") {
+    constexpr f32 SPEED = 7.0F;
+    core::GameData data = game::BuiltInData();
+    data.cultivator.walkSpeed = SPEED;
+    game::Arena arena{ game::Scene::Arena, data };
+    const core::Vec2 before = PositionOf(Published(arena), arena.Player());
+    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
+    const core::Vec2 after = PositionOf(Published(arena), arena.Player());
+    CHECK(after.x - before.x == doctest::Approx(SPEED));
+}
+
 TEST_CASE("standing still, the cultivator draws still") {
     game::Arena arena;
     arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });

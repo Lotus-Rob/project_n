@@ -26,6 +26,8 @@ namespace app {
 struct Options {
     /// The scene the logic thread builds.
     game::Scene scene = game::Scene::Arena;
+    /// The game data, read from `assets/data/`.
+    core::GameData data = game::BuiltInData();
     /// Quit by itself after this long (`--quit-after`); 0 never does.
     u64 quitAfterNs = 0;
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer

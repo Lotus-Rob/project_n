@@ -2,6 +2,7 @@
 #include "core/command_line.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
+#include "data/game_data.hpp"
 #include "data/settings.hpp"
 #include "game/arena.hpp"
 #include "gfx/renderer.hpp"
@@ -48,7 +49,7 @@ i32 FailToStart(std::string_view what, const core::Error& error) {
 
 // Opens the window (as `settings` say) and the renderer, then hands them to the app; a failure to start is reported, not
 // thrown.
-i32 Run(const core::Settings& settings, const app::Options& options) {
+i32 Run(const core::Settings& settings, app::Options options) {
     platform::RouteSdlLogs();
     std::expected<platform::Window, core::Error> window =
         platform::Window::Open("project_n", settings.windowWidth, settings.windowHeight, settings.fullscreen);
@@ -59,11 +60,17 @@ i32 Run(const core::Settings& settings, const app::Options& options) {
     if (!assets) {
         return FailToStart("the game's files weren't found", assets.error());
     }
+    const std::expected<core::GameData, core::Error> gameData = data::LoadGameData(*assets / "data");
+    if (!gameData) {
+        return FailToStart("the game's data couldn't be read", gameData.error());
+    }
+    PN_LOG_INFO("game data read from {}", (*assets / "data").string());
+    options.data = *gameData;
     std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(*window, *assets);
     if (!renderer) {
         return FailToStart("the graphics card couldn't be used", renderer.error());
     }
-    app::App app(std::move(*window), std::move(*renderer), options);
+    app::App app(std::move(*window), std::move(*renderer), std::move(options));
     return app.Run();
 }
 

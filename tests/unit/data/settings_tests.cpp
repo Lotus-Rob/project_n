@@ -89,7 +89,8 @@ TEST_CASE("missing settings give the defaults and write them out") {
     const core::Settings settings = data::LoadSettings(scratch.File());
     CHECK(settings.windowWidth == core::Settings{}.windowWidth);
     REQUIRE(std::filesystem::exists(scratch.File()));
-    CHECK(data::ParseSettings(Contents(scratch.File())).has_value());
+    const std::expected<core::Settings, core::Error> written = data::ParseSettings(Contents(scratch.File()));
+    CHECK(written.has_value());
 }
 
 TEST_CASE("a malformed settings file gives the defaults and is left alone") {
@@ -98,7 +99,8 @@ TEST_CASE("a malformed settings file gives the defaults and is left alone") {
     Write(scratch.File(), BROKEN);
     const core::Settings settings = data::LoadSettings(scratch.File());
     CHECK(settings.windowWidth == core::Settings{}.windowWidth);
-    CHECK(Contents(scratch.File()) == BROKEN);
+    const std::string contents = Contents(scratch.File());
+    CHECK(contents == BROKEN);
 }
 
 } // namespace

@@ -10,6 +10,7 @@
 #include "core/draw_list.hpp"
 #include "core/ecs.hpp"
 #include "core/frame.hpp"
+#include "core/game_data.hpp"
 #include "core/logic.hpp"
 #include "core/state.hpp"
 #include "core/tick_clock.hpp"
@@ -52,6 +53,10 @@ struct Orbit {
 /// Where an Orbit puts its entity's foot at `tick`.
 [[nodiscard]] core::Vec2 OrbitPoint(const Orbit& orbit, u64 tick);
 
+/// The test bed's game data as built in: what `assets/data/creatures.yaml` ships, for runs that read
+/// no data files (tests, tools).
+[[nodiscard]] core::GameData BuiltInData();
+
 /// Which arena to build.
 enum class Scene : u8 {
     Arena,   ///< The demonstration arena.
@@ -64,8 +69,8 @@ enum class Scene : u8 {
 /// The arena scene as a simulation: it moves its creatures each tick and publishes every sprite.
 class Arena final : public core::Simulation {
 public:
-    /// Builds `scene`: the same entities, in the same places, every time.
-    explicit Arena(Scene scene = Scene::Arena);
+    /// Builds `scene` with `data`'s creatures: the same entities, in the same places, every time.
+    explicit Arena(Scene scene = Scene::Arena, const core::GameData& data = BuiltInData());
 
     /// Walks the player's cultivator where `input`'s held movement points, selects what its Select
     /// actions name, moves every entity on an Orbit to where it is at `counters.simulation`, and
@@ -136,6 +141,7 @@ private:
     MonthStep m_monthStep{};
     // NOLINTEND(readability-redundant-member-init)
     core::State m_state;
+    core::GameData m_data;
     Scene m_scene;
     u64 m_months = 0;            // the calendar: months passed
     core::Rect m_view{};         // what a publish culls to without a player
