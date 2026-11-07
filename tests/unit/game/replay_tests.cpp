@@ -1,7 +1,7 @@
-// The phase 4 gate for replays (design doc 0002 §16, 0002.2): an arena with every NPC system (walking
-// active NPCs, a world of NPCs living months) recorded through the real logic, with a pause, a calendar
-// step and a save in it, plays back in a fresh game with every hash matching, the last one on the
-// recording's final tick.
+// The phase 4 gate for replays (design doc 0002 §16, 0002.2), extended in phase 5 (0002.3 §9): an arena with
+// every NPC system (walking active NPCs, a world of NPCs living months) recorded through the real logic, with
+// the player walking and selecting, a pause, a calendar step and a save in it, plays back in a fresh game with every hash
+// matching, the last one on the recording's final tick.
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
@@ -33,8 +33,12 @@ struct Session {
         handover.ReturnState(handover.TakeState());
     }
 
-    void Send(core::ActionKind kind) {
-        handover.SendInput({ .kind = kind });
+    void Send(core::ActionKind kind, core::StableId target = {}) {
+        handover.SendInput({ .kind = kind, .target = target });
+    }
+
+    void Hold(core::Vec2 move) {
+        handover.SendHeld({ .move = move });
     }
 
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
@@ -77,12 +81,20 @@ TEST_CASE("an arena with NPCs plays its replay back with every hash matching") {
     constexpr u64 PAUSED = 10;
     constexpr u64 BURST = 7;
     constexpr u32 MAX_BURSTS = 100;
+    constexpr core::Vec2 RIGHT{ .x = 1.0F, .y = 0.0F };
+    constexpr core::Vec2 UP_LEFT{ .x = -0.6F, .y = -0.8F };
     const Folder folder{ "npcs" };
+    core::StableId selected{};
     {
         Session recording(folder.Path());
         recording.Send(core::ActionKind::ToggleRecording);
         recording.Burst(1);
+        recording.Hold(RIGHT);
         recording.Burst(WALK);
+        selected = recording.arena.Player();
+        recording.Send(core::ActionKind::Select, selected);
+        recording.Hold(UP_LEFT);
+        recording.Burst(1); // before the pause: a frozen tick's actions do nothing
         recording.Send(core::ActionKind::Pause);
         recording.Burst(PAUSED);
         recording.Send(core::ActionKind::Resume);
@@ -90,12 +102,14 @@ TEST_CASE("an arena with NPCs plays its replay back with every hash matching") {
         recording.Burst(BURST); // ends at the request
         recording.Burst(BURST); // the month step
         recording.Burst(WALK);
+        recording.Hold({});
         recording.Send(core::ActionKind::Save);
         recording.Burst(BURST);
         // To a hash tick, so the recording's last state is checked.
         recording.Burst(core::REPLAY_HASH_TICKS - (recording.logic.Counters().wall % core::REPLAY_HASH_TICKS));
         REQUIRE(recording.logic.Counters().wall % core::REPLAY_HASH_TICKS == 0);
         REQUIRE(recording.arena.Months() == 1);
+        REQUIRE(recording.arena.Selected() == selected);
         recording.Send(core::ActionKind::ToggleRecording);
         recording.Burst(1);
     } // its job system finishes writing the replay
@@ -111,6 +125,7 @@ TEST_CASE("an arena with NPCs plays its replay back with every hash matching") {
     CHECK(playing.replay.HashCount() == 2);
     CHECK(playing.replay.Matched() == playing.replay.HashCount());
     CHECK(playing.arena.Months() == 1);
+    CHECK(playing.arena.Selected() == selected);
     CHECK(playing.logic.Epoch() == 1);
 }
 
