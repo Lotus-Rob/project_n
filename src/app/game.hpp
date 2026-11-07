@@ -19,24 +19,31 @@
 
 namespace app {
 
+/// What a Game is built for.
+struct GameSetup {
+    /// The scene the arena is built as.
+    game::Scene scene = game::Scene::Arena;
+    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    /// The save slot; no saves when empty.
+    std::filesystem::path saveSlot{};
+    /// The replay file; no replays when empty.
+    std::filesystem::path replaySlot{};
+    // NOLINTEND(readability-redundant-member-init)
+    /// When the first tick is due, on the clock `now` reads.
+    u64 startNs = 0;
+    /// The clock.
+    u64 (*now)() = nullptr;
+};
+
 /// The logic thread's systems: the job system, the save slot, the replay file's slot, the replay,
 /// the simulation (the arena), the logic that drives them and the tick clock, built in that order
 /// and destroyed in reverse.
 class Game {
 public:
-    /// Builds the systems for `scene`, publishing through `handover`, saving to `saveSlot` and
-    /// writing replays to `replaySlot` (none when empty), its first tick due at `startNs` on the
-    /// clock `now()` reads. The calling thread becomes the job system's forking thread, so it must
-    /// be the thread that runs Step() and Run(), with its floating-point environment set
+    /// Builds the systems for `setup`, publishing through `handover`. The calling thread becomes the job system's forking
+    /// thread, so it must be the thread that runs Step() and Run(), with its floating-point environment set
     /// (core::math::SetFloatingPointEnvironment).
-    Game(
-        core::GameHandover& handover,
-        game::Scene scene,
-        std::filesystem::path saveSlot,
-        std::filesystem::path replaySlot,
-        u64 startNs,
-        u64 (*now)()
-    );
+    Game(core::GameHandover& handover, GameSetup setup);
     Game(const Game&) = delete;
     Game& operator=(const Game&) = delete;
     Game(Game&&) = delete;
