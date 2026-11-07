@@ -17,6 +17,11 @@ rule("sanitizer")
         if sanitizer and sanitizer ~= "none" then
             target:set("policy", "build.sanitizer." .. sanitizer, true)
         end
+        -- The build the fuzz targets exist in (tests/xmake.lua): coverage hooks in our code too, so
+        -- libFuzzer is guided through the readers it fuzzes, not only through the target's own file.
+        if sanitizer == "address" and is_plat("linux") and get_config("toolchain") == "pixi-clang" then
+            target:add("cxflags", "-fsanitize=fuzzer-no-link", {force = true})
+        end
     end)
 rule_end()
 add_rules("sanitizer")
