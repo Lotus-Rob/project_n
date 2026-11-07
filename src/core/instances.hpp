@@ -20,6 +20,9 @@ inline constexpr u32 OPAQUE_WHITE = 0xFFFF'FFFFU;
 /// becomes infinity, NaN stays NaN, and below the smallest half becomes a subnormal or zero.
 [[nodiscard]] u16 PackHalf(f32 value);
 
+/// The f32 the IEEE 754 half-precision float `half` stands for, exactly (every half is an f32).
+[[nodiscard]] f32 UnpackHalf(u16 half);
+
 /// `value` clamped to [0, 1] as a 16-bit unsigned normalised integer, rounded to nearest.
 [[nodiscard]] u16 PackUnorm16(f32 value);
 
