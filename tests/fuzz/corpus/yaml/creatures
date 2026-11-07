@@ -1,0 +1,14 @@
+# The test bed's creatures (design doc 0002.3 §7). In debug builds the running game reloads this
+# file when it changes. Distances are world units (1920 across the arena), speeds per tick (60 a
+# second). sprite: an image in assets/sprites/, by name. orbit: the circle a creature walks around
+# the cultivator's starting point, if any.
+cultivator:
+  sprite: cultivator
+  walk_speed: 4.0 # at full stick
+fox:
+  sprite: fox
+  walk_speed: 0.0
+  orbit:
+    radius: 300.0
+    wobble: 40.0 # in and out of the circle, three times a lap
+    speed: 0.006 # radians per tick; negative goes anticlockwise
