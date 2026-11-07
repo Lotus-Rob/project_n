@@ -51,18 +51,15 @@ constexpr std::array PAINTED_GLOWS{
 };
 
 constexpr core::Vec2 CULTIVATOR{ .x = 960.0F, .y = 620.0F };
-constexpr f32 PLAYER_SPEED = 4.0F;          // world units per tick at full stick: 240 a second
 constexpr u32 SELECTED_TINT = 0xFF78'DCFFU; // a warm gold, premultiplied RGBA8 (red in the low byte)
 // Half the view around the player: the world shown at the smallest zoom (0.25) in a window up to 32:9 wide or about
 // square, so the logic culls without the main thread's camera (design doc 0002.3 §4).
 // shortcut: a fixed size; send the camera's view rectangle when a window shape or zoom outgrows it.
 constexpr core::Vec2 FOLLOW_HALF_VIEW{ .x = 7'680.0F, .y = 4'320.0F };
 constexpr u32 FOXES = 12;
-constexpr f32 FOX_RADIUS = 300.0F;
-constexpr f32 FOX_WOBBLE = 40.0F; // in and out of the circle, world units
-constexpr f32 FOX_SPEED = 0.006F; // radians per tick: a lap in about 17 seconds
 constexpr u32 ORBS = 8;
 constexpr f32 ORB_RADIUS = 150.0F;
+constexpr f32 ORB_WOBBLE = 40.0F; // in and out of the circle, world units
 constexpr f32 ORB_SPEED = -0.02F; // anticlockwise, about three times the foxes' pace
 constexpr f32 TURN = 2.0F * std::numbers::pi_v<f32>;
 constexpr f32 WOBBLES_PER_LAP = 3.0F;
@@ -97,10 +94,10 @@ constexpr u32 WORLD_CELLS = 4'096;
 constexpr u64 SEED = 0x5eed;
 
 // The arena's part of a save: its format, then a version per domain, each changed with what its components save.
-constexpr u32 ARENA_FORMAT = 2; // 2: the player and the selection
-constexpr u32 ACTIVE_VERSION = 1;
+constexpr u32 ARENA_FORMAT = 2;   // 2: the player and the selection
+constexpr u32 ACTIVE_VERSION = 2; // 2: creatures
 constexpr u32 WORLD_VERSION = 1;
-using ActiveComponents = core::ComponentList<Body, Look, Orbit, Npc, Needs, Met, Wander>;
+using ActiveComponents = core::ComponentList<Body, Look, Orbit, Creature, Npc, Needs, Met, Wander>;
 using WorldComponents = core::ComponentList<Npc, Needs, Met, Group>;
 
 constexpr u32 PUBLISH_CHUNK = 4'096; // entities packed per job chunk
@@ -123,7 +120,7 @@ constexpr std::array<SpriteId, 5> CELLS{
 
 // Whether every entity has the components that code reads together with the ones it has: a save can
 // hold any mix, and a missing partner would be read anyway (the month step reads an Npc's Needs,
-// publishing a Look's Body, deactivating an active Npc's Body).
+// publishing a Look's Body, applying the game data a Creature's Look, deactivating an active Npc's Body).
 bool Consistent(const core::State& state) {
     for (const core::DomainIndex domain : { ACTIVE, WORLD }) {
         const core::Registry& entities = state[domain].Entities();
@@ -137,6 +134,11 @@ bool Consistent(const core::State& state) {
                 return false;
             }
         }
+        for (const core::Entity entity : entities.view<const Creature>()) {
+            if (!entities.all_of<Look>(entity)) {
+                return false;
+            }
+        }
     }
     return true;
 }
@@ -145,7 +147,18 @@ core::Rect ViewOf(Scene scene) {
     return scene == Scene::Cells ? CELLS_VIEW : GROUND_VIEW;
 }
 
+// What assets/data/creatures.yaml ships.
+constexpr core::GameData BUILT_IN_DATA{
+    .cultivator = { .sprite = SpriteId::Cultivator, .walkSpeed = 4.0F }, // 240 world units a second at full stick
+    // A lap in about 17 seconds.
+    .fox = { .sprite = SpriteId::Fox, .orbitRadius = 300.0F, .orbitWobble = 40.0F, .orbitSpeed = 0.006F },
+};
+
 } // namespace
+
+core::GameData BuiltInData() {
+    return BUILT_IN_DATA;
+}
 
 core::Vec2 OrbitPoint(const Orbit& orbit, u64 tick) {
     // In f64 and reduced to one turn: an f32 angle loses whole ticks within hours, and Sin and Cos are NaN past 2^20
@@ -161,8 +174,9 @@ core::Vec2 OrbitPoint(const Orbit& orbit, u64 tick) {
     };
 }
 
-Arena::Arena(Scene scene)
+Arena::Arena(Scene scene, const core::GameData& data)
   : m_state{ DOMAINS, SEED }
+  , m_data{ data }
   , m_scene{ scene }
   , m_view{ ViewOf(scene) } {
     if (scene == Scene::Cells) {
@@ -176,25 +190,27 @@ Arena::Arena(Scene scene)
     for (const Prop& prop : PROPS) {
         Spawn(prop.foot, { .sprite = prop.sprite });
     }
-    m_player =
-        m_state[ACTIVE].Entities().get<core::StableId>(Spawn(CULTIVATOR, { .sprite = SpriteId::Cultivator, .shadow = true }));
+    core::Registry& entities = m_state[ACTIVE].Entities();
+    const core::Entity cultivator = Spawn(CULTIVATOR, { .sprite = data.cultivator.sprite, .shadow = true });
+    entities.emplace<Creature>(cultivator, CreatureKind::Cultivator);
+    m_player = entities.get<core::StableId>(cultivator);
     for (u32 fox = 0; fox < FOXES; ++fox) {
         const Orbit orbit{
             .centre = CULTIVATOR,
-            .radius = FOX_RADIUS,
-            .wobble = FOX_WOBBLE,
+            .radius = data.fox.orbitRadius,
+            .wobble = data.fox.orbitWobble,
             .phase = TURN * static_cast<f32>(fox) / static_cast<f32>(FOXES),
-            .speed = FOX_SPEED,
+            .speed = data.fox.orbitSpeed,
         };
-        m_state[ACTIVE].Entities().emplace<Orbit>(
-            Spawn(OrbitPoint(orbit, 0), { .sprite = SpriteId::Fox, .shadow = true }), orbit
-        );
+        const core::Entity entity = Spawn(OrbitPoint(orbit, 0), { .sprite = data.fox.sprite, .shadow = true });
+        entities.emplace<Orbit>(entity, orbit);
+        entities.emplace<Creature>(entity, CreatureKind::Fox);
     }
     for (u32 orb = 0; orb < ORBS; ++orb) {
         const Orbit orbit{
             .centre = CULTIVATOR,
             .radius = ORB_RADIUS,
-            .wobble = FOX_WOBBLE,
+            .wobble = ORB_WOBBLE,
             .phase = TURN * static_cast<f32>(orb) / static_cast<f32>(ORBS),
             .speed = ORB_SPEED,
         };
@@ -311,7 +327,7 @@ void Arena::Walk(core::Vec2 move) {
     core::Domain& active = m_state[ACTIVE];
     Body& body = active.Entities().get<Body>(active.Find(m_player));
     body.previous = body.current; // every tick, so a cultivator standing still draws still
-    body.current = body.current + (move * PLAYER_SPEED);
+    body.current = body.current + (move * m_data.cultivator.walkSpeed);
 }
 
 void Arena::Select(core::StableId target) {

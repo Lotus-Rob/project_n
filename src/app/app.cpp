@@ -78,6 +78,7 @@ void App::RunLogic(const std::stop_token& stop) {
             Game game(
                 m_handover,
                 { .scene = m_options.scene,
+                  .data = m_options.data,
                   .saveSlot = m_options.saveSlot,
                   .replaySlot = m_options.replaySlot,
                   .startNs = m_startNs,

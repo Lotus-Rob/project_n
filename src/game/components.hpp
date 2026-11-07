@@ -61,4 +61,28 @@ struct Look {
     }
 };
 
+/// Which kind of creature in the game data (core::GameData) an entity is: its sprite and, when it
+/// has an Orbit, its orbit's radius, wobble and speed come from there.
+enum class CreatureKind : u8 {
+    Cultivator, ///< core::GameData::cultivator
+    Fox,        ///< core::GameData::fox
+};
+
+/// Marks an entity as a creature of the game data.
+struct Creature {
+    /// Its kind.
+    CreatureKind kind = CreatureKind::Cultivator;
+
+    /// Lists its fields for an archive (core/archive.hpp).
+    template<typename Self, typename Archive>
+    void Fields(this Self& self, Archive& archive) {
+        archive(self.kind);
+    }
+
+    /// Whether a value read from a save can be used: a kind that exists.
+    [[nodiscard]] bool Valid() const {
+        return kind <= CreatureKind::Fox;
+    }
+};
+
 } // namespace game

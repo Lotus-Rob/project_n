@@ -23,6 +23,8 @@ namespace app {
 struct GameSetup {
     /// The scene the arena is built as.
     game::Scene scene = game::Scene::Arena;
+    /// The game data the arena starts with.
+    core::GameData data = game::BuiltInData();
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The save slot; no saves when empty.
     std::filesystem::path saveSlot{};
