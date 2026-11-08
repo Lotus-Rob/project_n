@@ -11,6 +11,7 @@
 #include <expected>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -136,6 +137,10 @@ public:
     /// the reference stays valid while this Window exists, and the next Poll() updates it in place.
     /// Gamepads open as they are connected and close as they go.
     const WindowState& Poll(u64 hiddenWaitNs, std::vector<InputEvent>& inputs);
+
+    /// Where the mouse cursor is over the window, in the coordinates of WindowState's size and of
+    /// InputEvent::position; empty while the cursor is elsewhere.
+    [[nodiscard]] std::optional<core::Vec2> Cursor() const;
 
     /// The window's SDL_Window, for gfx to present to; opaque so SDL stays out of headers.
     [[nodiscard]] void* Handle() const;

@@ -275,6 +275,16 @@ void ReportStartFailure(
     show("project_n can't start", std::format("{}:\n{}", what, error.message));
 }
 
+std::optional<core::Vec2> Window::Cursor() const {
+    PN_PROFILE_ZONE();
+    if (SDL_GetMouseFocus() != m_impl->window) {
+        return std::nullopt;
+    }
+    core::Vec2 cursor{};
+    static_cast<void>(SDL_GetMouseState(&cursor.x, &cursor.y));
+    return cursor;
+}
+
 void* Window::Handle() const {
     return m_impl->window;
 }

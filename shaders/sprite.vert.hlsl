@@ -17,6 +17,8 @@ struct Draw {
     float4 worldToClip;  // clip = world * xy + zw (gfx::ClipTransform)
     float alpha;         // the render clock's progress from previous to current
     uint firstInstance;  // this batch's first instance: SV_InstanceID counts from 0 in every draw
+    uint outlineColour;  // an outline draw's premultiplied RGBA8; 0 for sprites
+    float ring;          // an outline draw's ring width in UV, its quad grown by as much on every side
 };
 
 StructuredBuffer<Instance> instances : register(t0, space0);
@@ -37,16 +39,21 @@ VertexOut VertexMain(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceI
     const float angle = lerp(rotation.x, rotation.y, draw.alpha);
     float sine, cosine;
     sincos(angle, sine, cosine);
-    const float2 offset = (corner - 0.5) * UnpackHalves(instance.size);
+    const float2 regionMin = UnpackUnorm16(instance.regionMin);
+    const float2 regionMax = UnpackUnorm16(instance.regionMax);
+    const float2 size = UnpackHalves(instance.size);
+    // An outline grows its quad past the sprite's edge, by the ring in world units and in UV alike.
+    const float2 grownSize = size * (1.0 + 2.0 * draw.ring / max(regionMax - regionMin, 1e-6));
+    const float2 offset = (corner - 0.5) * grownSize;
     // Clockwise on screen: world y grows downwards.
     const float2 turned = float2(offset.x * cosine - offset.y * sine, offset.x * sine + offset.y * cosine);
     const float2 world = lerp(instance.previous, instance.current, draw.alpha) + turned;
-    const float2 regionMin = UnpackUnorm16(instance.regionMin);
-    const float2 regionMax = UnpackUnorm16(instance.regionMax);
-    const uint colour = instance.colour;
+    const uint colour = draw.outlineColour != 0 ? draw.outlineColour : instance.colour;
     VertexOut output;
     output.position = float4(world * draw.worldToClip.xy + draw.worldToClip.zw, 0, 1);
-    output.uv = lerp(regionMin, regionMax, corner);
+    output.uv = lerp(regionMin - draw.ring, regionMax + draw.ring, corner);
+    output.region = float4(regionMin, regionMax);
+    output.ring = draw.ring;
     output.layer = instance.layerFlags & 0xFFFF;
     output.colour = float4(colour & 0xFF, (colour >> 8) & 0xFF, (colour >> 16) & 0xFF, colour >> 24) / 255.0;
     return output;

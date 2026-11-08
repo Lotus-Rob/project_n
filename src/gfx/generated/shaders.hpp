@@ -31,15 +31,15 @@ struct Stage {
 };
 
 /// shaders/bin/sprite.frag.spv, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 964> SPRITE_FRAG_SPIRV{{
+inline constexpr std::array<u8, 19864> SPRITE_FRAG_SPIRV{{
 #include "sprite.frag.spv.h"
 }};
 /// shaders/bin/sprite.frag.dxil, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 4332> SPRITE_FRAG_DXIL{{
+inline constexpr std::array<u8, 8808> SPRITE_FRAG_DXIL{{
 #include "sprite.frag.dxil.h"
 }};
 /// shaders/bin/sprite.frag.msl, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 690> SPRITE_FRAG_MSL{{
+inline constexpr std::array<u8, 24060> SPRITE_FRAG_MSL{{
 #include "sprite.frag.msl.h"
 }};
 /// shaders/sprite.frag.hlsl.
@@ -56,15 +56,15 @@ inline constexpr Stage SPRITE_FRAG{
 };
 
 /// shaders/bin/sprite.vert.spv, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 3896> SPRITE_VERT_SPIRV{{
+inline constexpr std::array<u8, 4728> SPRITE_VERT_SPIRV{{
 #include "sprite.vert.spv.h"
 }};
 /// shaders/bin/sprite.vert.dxil, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 5760> SPRITE_VERT_DXIL{{
+inline constexpr std::array<u8, 6296> SPRITE_VERT_DXIL{{
 #include "sprite.vert.dxil.h"
 }};
 /// shaders/bin/sprite.vert.msl, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 2331> SPRITE_VERT_MSL{{
+inline constexpr std::array<u8, 2787> SPRITE_VERT_MSL{{
 #include "sprite.vert.msl.h"
 }};
 /// shaders/sprite.vert.hlsl.

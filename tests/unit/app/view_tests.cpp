@@ -43,6 +43,7 @@ TEST_CASE("picking takes the instance drawn on top") {
     snapshot.instances = { Quad(ORIGIN, ORIGIN), Quad(ORIGIN, ORIGIN) };
     snapshot.ids = { UNDER, OVER };
     CHECK(app::Pick(snapshot, 1.0, ORIGIN) == OVER);
+    CHECK(app::PickInstance(snapshot, 1.0, ORIGIN) == std::optional<std::size_t>{ 1 }); // what hover outlines
 }
 
 TEST_CASE("picking skips instances without an ID, and misses where nothing is drawn") {

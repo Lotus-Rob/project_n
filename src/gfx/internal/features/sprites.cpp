@@ -11,13 +11,14 @@ namespace {
 constexpr u32 BUFFER_BYTES = MAX_INSTANCES * core::INSTANCE_BYTES;
 constexpr u32 VERTICES_PER_QUAD = 4; // a triangle strip
 
-// `Draw` in shaders/sprite.vert.hlsl: a float4, a float and a uint, padded to 16 bytes.
+// `Draw` in shaders/sprite.vert.hlsl: a float4, then a float, two uints and a float.
 constexpr std::size_t DRAW_UNIFORM_BYTES = 32;
 struct DrawUniforms {
     std::array<f32, 4> worldToClip{};
     f32 alpha = 0.0F;
     u32 firstInstance = 0;
-    std::array<u32, 2> padding{};
+    u32 outlineColour = 0; // 0: an ordinary sprite
+    f32 ring = 0.0F;       // the outline's width in UV; 0 for an ordinary sprite
 };
 static_assert(sizeof(DrawUniforms) == DRAW_UNIFORM_BYTES, "the shader's constant buffer is 32 bytes");
 
@@ -147,6 +148,36 @@ void SpriteRenderer::Draw(
         // first_vertex and first_instance stay 0: SDL warns they don't reach SV_VertexID and SV_InstanceID (§8.5).
         SDL_DrawGPUPrimitives(pass, VERTICES_PER_QUAD, std::min(batch.count, m_count - batch.first), 0, 0);
     }
+}
+
+void SpriteRenderer::DrawOutline(
+    SDL_GPUCommandBuffer* commands,
+    SDL_GPURenderPass* pass,
+    const Outline& outline,
+    const SpriteArray& sprites,
+    const ClipTransform& transform,
+    f32 alpha
+) const {
+    PN_PROFILE_ZONE();
+    if (outline.instance >= m_count) {
+        return;
+    }
+    const std::array<SDL_GPUBuffer*, 1> storage{ m_instances.get() };
+    SDL_BindGPUVertexStorageBuffers(pass, 0, storage.data(), static_cast<u32>(storage.size()));
+    SDL_GPUTextureSamplerBinding atlas{};
+    atlas.texture = sprites.texture.get();
+    atlas.sampler = sprites.sampler.get();
+    SDL_BindGPUFragmentSamplers(pass, 0, &atlas, 1);
+    SDL_BindGPUGraphicsPipeline(pass, m_pipelines.at(static_cast<std::size_t>(core::Pipeline::Normal)).get());
+    const DrawUniforms uniforms{
+        .worldToClip = { transform.scaleX, transform.scaleY, transform.offsetX, transform.offsetY },
+        .alpha = alpha,
+        .firstInstance = outline.instance,
+        .outlineColour = outline.colour,
+        .ring = outline.ring,
+    };
+    SDL_PushGPUVertexUniformData(commands, 0, &uniforms, sizeof(uniforms));
+    SDL_DrawGPUPrimitives(pass, VERTICES_PER_QUAD, 1, 0, 0);
 }
 
 } // namespace gfx::internal

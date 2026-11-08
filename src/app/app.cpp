@@ -137,7 +137,7 @@ i32 App::Run() {
         }
         Pan(platform::NowNs());
         WatchData(platform::NowNs());
-        Present(state.visible);
+        Present(state);
     }
     PN_LOG_INFO("shutting down; {} snapshots were published after they were due", m_display.LateAdoptions());
     return 0;
@@ -224,7 +224,17 @@ void App::Select(const platform::WindowState& state, core::Vec2 position) {
     m_handover.SendInput({ .kind = core::ActionKind::Select, .target = target });
 }
 
+std::optional<std::size_t> App::Hovered(const platform::WindowState& state, const core::Snapshot& drawn, f64 alpha) const {
+    PN_PROFILE_ZONE();
+    const std::optional<core::Vec2> cursor = m_window.Cursor();
+    if (!cursor || m_device == platform::Device::Gamepad) {
+        return std::nullopt; // a gamepad has no cursor to hover with
+    }
+    return PickInstance(drawn, alpha, WindowToWorld(m_camera, *cursor, state.width, state.height));
+}
+
 void App::Pan(u64 nowNs) {
+    PN_PROFILE_ZONE();
     const u64 elapsedNs = nowNs - std::exchange(m_frameNs, nowNs);
     const core::Snapshot* drawn = m_display.Drawn();
     if (drawn == nullptr || drawn->follow) {
@@ -234,7 +244,7 @@ void App::Pan(u64 nowNs) {
     m_camera.centre = m_camera.centre + (m_held.move * (PAN_SPEED * seconds / m_camera.zoom));
 }
 
-void App::Present(bool visible) {
+void App::Present(const platform::WindowState& state) {
     PN_PROFILE_ZONE();
     // Events are drained every iteration, drawing or not, so the queue never grows (§5).
     m_handover.TakeEvents(m_incoming);
@@ -247,16 +257,16 @@ void App::Present(bool visible) {
     core::PresentFrame(
         *drawn,
         m_pending,
-        visible,
+        state.visible,
         [this] { m_renderer.Acquire(); },
         platform::NowNs,
         // shortcut: nothing plays events yet; audio and particles (phase 7) replace the empty player.
         [](const core::Event& /*event*/) {},
-        [this, drawn](f64 alpha) {
+        [this, drawn, &state](f64 alpha) {
             if (drawn->follow) {
                 m_camera.centre = FollowedCentre(*drawn->follow, alpha);
             }
-            m_renderer.Draw(*drawn, alpha, m_camera);
+            m_renderer.Draw(*drawn, alpha, m_camera, Hovered(state, *drawn, alpha));
             PN_PROFILE_FRAME();
         }
     );
