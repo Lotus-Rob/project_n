@@ -32,7 +32,7 @@ struct View {
     u64 ticks = 0;
     f64 alpha = 1.0;
     f32 zoom = 1.0F;
-    bool hoverPlayer = false; // centred on the player's cultivator, outlined as the hovered entity
+    bool outlines = false; // centred on the player's cultivator, hovered, with the first fox selected
 };
 
 void CheckAgainstReference(const View& view) {
@@ -41,6 +41,21 @@ void CheckAgainstReference(const View& view) {
     game::Arena arena{ view.scene };
     for (u64 tick = 1; tick <= view.ticks; ++tick) {
         arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, {});
+    }
+    if (view.outlines) {
+        // The fox spawned first: the lowest ID among them.
+        core::StableId fox{ std::numeric_limits<u64>::max() };
+        const core::Registry& entities = arena.State()[game::ACTIVE].Entities();
+        for (auto [entity, creature, stableId] : entities.view<const game::Creature, const core::StableId>().each()) {
+            if (creature.kind == game::CreatureKind::Fox && std::to_underlying(stableId) < std::to_underlying(fox)) {
+                fox = stableId;
+            }
+        }
+        const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = fox } } };
+        arena.Tick(
+            { .wall = view.ticks + 1, .simulation = view.ticks + 1, .state = view.ticks + 1 }, { .actions = select, .held = {} }
+        );
+        REQUIRE(arena.Selected() == fox);
     }
     core::Snapshot snapshot;
     arena.Publish(snapshot, jobs);
@@ -53,7 +68,7 @@ void CheckAgainstReference(const View& view) {
     REQUIRE_MESSAGE(renderer.has_value(), renderer.error().message);
     gfx::Camera camera{ .zoom = view.zoom };
     std::optional<std::size_t> outlined;
-    if (view.hoverPlayer) {
+    if (view.outlines) {
         const auto player = std::ranges::find(snapshot.ids, arena.Player());
         REQUIRE(player != snapshot.ids.end());
         outlined = static_cast<std::size_t>(player - snapshot.ids.begin());
@@ -89,8 +104,8 @@ TEST_CASE("the arena halfway between two ticks: interpolation and foot-y order")
     CheckAgainstReference({ .name = "arena_halfway", .scene = game::Scene::Arena, .ticks = TWO_SECONDS, .alpha = HALFWAY });
 }
 
-TEST_CASE("the hovered entity's outline, close up") {
-    CheckAgainstReference({ .name = "hover_outline", .scene = game::Scene::Arena, .zoom = gfx::MAX_ZOOM, .hoverPlayer = true });
+TEST_CASE("the hovered entity's pale outline and the selected one's gold, close up") {
+    CheckAgainstReference({ .name = "outlines", .scene = game::Scene::Arena, .zoom = gfx::MAX_ZOOM, .outlines = true });
 }
 
 } // namespace

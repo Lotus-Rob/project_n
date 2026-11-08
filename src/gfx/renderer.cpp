@@ -31,8 +31,10 @@ constexpr bool DEBUG_MODE = true; // SDL_GPU's validation, in debug builds only 
 // Linear values, which the sRGB swapchain encodes to about (0.08, 0.08, 0.09).
 constexpr SDL_FColor BACKDROP{ .r = 0.0072F, .g = 0.0072F, .b = 0.0085F, .a = 1.0F };
 
-// The hover outline (design doc 0002.3 §3): pale and opaque, unlike the selection's gold tint, three texels wide.
-constexpr u32 OUTLINE_COLOUR = 0xFFF0'F4F4U; // premultiplied RGBA8, red in the low byte
+// The outlines (design doc 0002.3 §3), three texels wide: the hovered entity's pale, the selected one's gold.
+// Premultiplied RGBA8, red in the low byte.
+constexpr u32 HOVER_COLOUR = 0xFFF0'F4F4U;
+constexpr u32 SELECTED_COLOUR = 0xFF30'C0FFU;
 constexpr f32 OUTLINE_TEXELS = 3.0F;
 
 std::string_view PresentModeName(SDL_GPUPresentMode mode) {
@@ -135,11 +137,27 @@ void Renderer::Impl::DrawWorld(
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &target, 1, nullptr);
     const ClipTransform transform = WorldToClip(camera, width, height);
     instances.Draw(commands, pass, snapshot.batches, sprites, transform, alpha);
-    if (outlined && *outlined < snapshot.instances.size()) {
-        const internal::Outline outline{ .instance = static_cast<u32>(*outlined),
-                                         .colour = OUTLINE_COLOUR,
-                                         .ring = OUTLINE_TEXELS / static_cast<f32>(core::atlas::PAGE_SIZE) };
-        instances.DrawOutline(commands, pass, outline, sprites, transform, alpha);
+    const f32 ring = OUTLINE_TEXELS / static_cast<f32>(core::atlas::PAGE_SIZE);
+    if (snapshot.selected) {
+        instances.DrawOutline(
+            commands,
+            pass,
+            { .instance = *snapshot.selected, .colour = SELECTED_COLOUR, .ring = ring },
+            sprites,
+            transform,
+            alpha
+        );
+    }
+    // Hovering the selected entity keeps its gold: the selection is what a click changed.
+    if (outlined && *outlined < snapshot.instances.size() && *outlined != snapshot.selected) {
+        instances.DrawOutline(
+            commands,
+            pass,
+            { .instance = static_cast<u32>(*outlined), .colour = HOVER_COLOUR, .ring = ring },
+            sprites,
+            transform,
+            alpha
+        );
     }
     SDL_EndGPURenderPass(pass);
     SDL_PopGPUDebugGroup(commands);
