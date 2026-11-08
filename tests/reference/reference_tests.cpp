@@ -11,6 +11,7 @@
 #include "gfx/renderer.hpp"
 #include "platform/paths.hpp"
 #include "platform/window.hpp"
+#include "support/manifest.hpp"
 
 #include <doctest/doctest.h>
 
@@ -38,7 +39,7 @@ struct View {
 void CheckAgainstReference(const View& view) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
-    game::Arena arena{ view.scene };
+    game::Arena arena(test::TestManifest(), view.scene);
     for (u64 tick = 1; tick <= view.ticks; ++tick) {
         arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, {});
     }
@@ -64,7 +65,7 @@ void CheckAgainstReference(const View& view) {
     REQUIRE_MESSAGE(window.has_value(), window.error().message);
     const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
     REQUIRE_MESSAGE(assets.has_value(), assets.error().message);
-    std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(*window, *assets);
+    std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(*window, *assets, test::TestManifest());
     REQUIRE_MESSAGE(renderer.has_value(), renderer.error().message);
     gfx::Camera camera{ .zoom = view.zoom };
     std::optional<std::size_t> outlined;

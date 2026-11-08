@@ -9,6 +9,7 @@
 #include "app/bindings.hpp"
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
+#include "core/manifest.hpp"
 #include "core/types.hpp"
 #include "game/arena.hpp"
 #include "gfx/camera.hpp"
@@ -18,6 +19,7 @@
 #include <atomic>
 #include <cstddef>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <stop_token>
 #include <thread>
@@ -27,6 +29,8 @@ namespace app {
 
 /// What the command line and the platform chose for a run.
 struct Options {
+    /// The atlas manifest, read from `assets/manifest.yaml`; never null.
+    std::shared_ptr<const core::Manifest> manifest = nullptr;
     /// The scene the logic thread builds.
     game::Scene scene = game::Scene::Arena;
     /// The game data, read from `assets/data/`.

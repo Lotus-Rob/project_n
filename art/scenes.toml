@@ -1,0 +1,27 @@
+# The scenes the game loads one at a time (design doc 0002.3 §6, 0002.3.1 §2), in the order F2 cycles through
+# them: a scene's place here is its SceneId. Each lists every sprite it draws, the creatures' data-table sprites
+# included; the renderer uploads only those before the scene runs. Names are art/sprites.toml's.
+
+[arena]
+sprites = [
+    "ground", "shadow", "rock_large", "rock_small", "pine", "shrine", "treant_blighted", "tree_dead", "hut", "crane",
+    "stele", "fox_spirit", "fox_yellow", "wisp_red", "orb_gold", "crystal_ice", "cultivator", "fox", "orb_blue",
+    "orb_red", "villager",
+]
+
+# The arena with a crowd and bullet spirals, for the benchmark: the same sprites.
+[stress]
+sprites = [
+    "ground", "shadow", "rock_large", "rock_small", "pine", "shrine", "treant_blighted", "tree_dead", "hut", "crane",
+    "stele", "fox_spirit", "fox_yellow", "wisp_red", "orb_gold", "crystal_ice", "cultivator", "fox", "orb_blue",
+    "orb_red", "villager",
+]
+
+[painted]
+sprites = [
+    "ground", "shadow", "tree_dead", "crane", "hut", "stele", "treant_blighted", "crystal_ice", "fox_spirit", "wisp_red",
+    "fox_yellow", "orb_gold", "orb_blue", "orb_red",
+]
+
+[cells]
+sprites = ["ground", "cell_plain", "cell_forest", "cell_mountain", "cell_snow", "cell_city"]

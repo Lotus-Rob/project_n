@@ -6,6 +6,7 @@
 
 #include "core/error.hpp"
 #include "core/frame.hpp"
+#include "core/manifest.hpp"
 #include "core/types.hpp"
 #include "gfx/camera.hpp"
 #include "gfx/image.hpp"
@@ -22,12 +23,13 @@ namespace gfx {
 /// swapchain, the pipelines and the sprite atlas are all made when it's created.
 class Renderer {
 public:
-    /// Creates a GPU device for `window` and presents to it, with the sprite atlas loaded from
-    /// `assets`, or says why it couldn't (SDL doesn't guarantee an sRGB swapchain). The window must
-    /// outlive the renderer.
+    /// Creates a GPU device for `window` and presents to it, with the sprite atlas `manifest`
+    /// describes loaded from `assets`, or says why it couldn't (SDL doesn't guarantee an sRGB
+    /// swapchain). The window must outlive the renderer.
     [[nodiscard]] static std::expected<Renderer, core::Error> Create(
         platform::Window& window,
-        const std::filesystem::path& assets
+        const std::filesystem::path& assets,
+        std::shared_ptr<const core::Manifest> manifest
     );
 
     Renderer(const Renderer&) = delete;

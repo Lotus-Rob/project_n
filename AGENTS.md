@@ -7,7 +7,7 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 ## Map
 - `src/` game and engine (src/AGENTS.md) · `tests/` doctest suites (tests/AGENTS.md)
 - `tools/project_n.py` the only entry point (tools/AGENTS.md) · `containers/` artefact images (containers/AGENTS.md)
-- `shaders/` HLSL, one file per stage; `bin/`: the committed binaries `shaders` writes · `assets/` what the game loads at runtime (`sprites/`: images, with `PROVENANCE.md`; `data/`: YAML data tables, which `game::BuiltInData()` mirrors) · `art/` `sprites.toml` (sprite list, foot points), `placeholders.py` (procedural art) · `src/*/generated/`: headers `shaders` and `atlas` write (fmt and lint skip them) · `xmake/repo/` local fixes to xmake-repo packages · `docs/design/` rationale: read before redesigning anything; a deeper design is a numbered sub-doc of the one it details (`0002.1-<topic>.md`), written and approved before its code
+- `shaders/` HLSL, one file per stage; `bin/`: the committed binaries `shaders` writes · `assets/` what the game loads at runtime (`sprites/`: images, with `PROVENANCE.md`; `data/`: YAML data tables, which `game::BuiltInData()` mirrors; `manifest.yaml`: the atlas, which `atlas` writes) · `art/` `sprites.toml` (sprite list, foot points), `scenes.toml` (each scene's sprites), `placeholders.py` (procedural art) · `src/*/generated/`: headers `shaders` and `atlas` write (fmt and lint skip them) · `xmake/repo/` local fixes to xmake-repo packages · `docs/design/` rationale: read before redesigning anything; a deeper design is a numbered sub-doc of the one it details (`0002.1-<topic>.md`), written and approved before its code
 - `.github/` CI workflows (.github/AGENTS.md)
 
 ## Commands
@@ -15,7 +15,7 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 - `pixi run project_n doctor [--docs]` · `build|test|run [--preset linux-gcc|linux-clang|windows-msvc|macos-clang] [--mode debug|release|releasedbg]` (releasedbg: profiling with Tracy; default preset: the host's native one, `NATIVE_PRESET`; `build --preset all` builds every preset and summarises)
 - `pixi run project_n check`: the merge gate (self-tests, commits, format and lint of the diff, build + test every preset, one releasedbg build). A change is done when it passes.
 - `pixi run project_n shaders` (Linux or Windows): compile `shaders/` after changing it, and commit `shaders/bin/` and `src/gfx/generated/` with it; `lint` fails on stale binaries
-- `pixi run project_n atlas [--placeholders]`: after changing `art/sprites.toml` or `assets/sprites/`, commit `src/core/generated/atlas.hpp` and `art/atlas.sha256` with them; `lint` fails on a stale atlas
+- `pixi run project_n atlas [--placeholders]`: after changing `art/sprites.toml`, `art/scenes.toml` or `assets/sprites/`, commit `assets/manifest.yaml`, `src/core/generated/atlas.hpp` and `art/atlas.sha256` with them; `lint` fails on a stale atlas
 - `pixi run project_n reference [--preset linux-gcc|linux-clang] [--update]`: pictures of fixed scenes against `tests/reference/` on software Vulkan (Linux; part of `check` and `artifact`) → tests/AGENTS.md
 - `pixi run project_n coverage` (HTML in build/coverage/) · `fuzz <target> [--time S]` · `docs` (Doxygen, build/docs/) · `profile [--seconds N] [-- <game args>]` (records a releasedbg run with Tracy into build/profiles/; nothing takes the game's focus) · `profiler [file]` (Tracy viewer, live or on a saved capture)
 - `pixi run project_n check --sanitizers`: also every supported sanitizer; on request only, not part of the gate.

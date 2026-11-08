@@ -10,6 +10,7 @@
 #include "core/saves.hpp"
 #include "core/tick_clock.hpp"
 #include "game/arena.hpp"
+#include "support/manifest.hpp"
 
 #include <doctest/doctest.h>
 
@@ -48,7 +49,7 @@ struct Session {
     core::Saves saves;
     core::Saves replays;
     core::Replay replay{};
-    game::Arena arena{ game::Scene::Arena };
+    game::Arena arena{ test::TestManifest(), game::Scene::Arena };
     core::Logic logic{ handover, arena, jobs, saves, replays, replay, NoClock };
 };
 

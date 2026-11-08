@@ -2,6 +2,7 @@
 
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
+#include "core/manifest.hpp"
 #include "data/internal/yaml.hpp"
 
 namespace data {
@@ -12,17 +13,6 @@ using core::atlas::SpriteId;
 
 std::unexpected<core::Error> Fail(const YAML::Node& node, std::string_view why) {
     return std::unexpected{ core::Error{ std::format("creatures line {}: {}", node.Mark().line + 1, why) } };
-}
-
-// shortcut: sprites by the atlas's file names; chunk 3's manifest names them (design doc 0002.3 §6).
-std::optional<SpriteId> SpriteNamed(std::string_view name) {
-    const std::string file = std::format("sprites/{}.png", name);
-    for (std::size_t i = 0; i < core::atlas::SPRITES.size(); ++i) {
-        if (file == core::atlas::SPRITES.at(i).file) {
-            return static_cast<SpriteId>(i);
-        }
-    }
-    return std::nullopt;
 }
 
 // `map`'s finite number at `key`, which `name` names in errors; yaml-cpp throws on one that isn't a number.
@@ -53,7 +43,7 @@ std::expected<core::CreatureData, core::Error> Creature(
         return Fail(node, std::format("{} has no sprite", name));
     }
     const auto spriteName = spriteNode.as<std::string>();
-    const std::optional<SpriteId> sprite = SpriteNamed(spriteName);
+    const std::optional<SpriteId> sprite = core::SpriteNamed(spriteName);
     if (!sprite) {
         return Fail(spriteNode, std::format("{}'s sprite {} isn't in the atlas", name, spriteName));
     }

@@ -1,7 +1,6 @@
 #include "gfx/internal/resources/sprite_array.hpp"
 
-#include "core/cxx23.hpp"           // IWYU pragma: keep
-#include "core/generated/atlas.hpp" // by `project_n atlas`
+#include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
 #include "gfx/internal/resources/png.hpp"
 #include "gfx/sprite_block.hpp"
@@ -16,7 +15,7 @@ struct Decoded {
     u32 offset = 0; // where its pixels start in the transfer buffer
 };
 
-std::expected<Surface, core::Error> Decode(const std::filesystem::path& file, const core::atlas::Sprite& sprite) {
+std::expected<Surface, core::Error> Decode(const std::filesystem::path& file, const core::SpriteInfo& sprite) {
     // Byte order R, G, B, A on every platform: SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB.
     std::expected<Surface, core::Error> decoded = DecodePng(file);
     if (!decoded) {
@@ -39,16 +38,16 @@ std::expected<Surface, core::Error> Decode(const std::filesystem::path& file, co
     return rgba;
 }
 
-Gpu<SDL_GPUTexture> CreateArray(SDL_GPUDevice* device) {
+Gpu<SDL_GPUTexture> CreateArray(SDL_GPUDevice* device, const core::Manifest& manifest) {
     SDL_GPUTextureCreateInfo info{};
     info.type = SDL_GPU_TEXTURETYPE_2D_ARRAY;
     info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB;
     // A colour target too: SDL_GenerateMipmapsForGPUTexture blits into it, and its layers are cleared by render passes.
     info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
-    info.width = core::atlas::PAGE_SIZE;
-    info.height = core::atlas::PAGE_SIZE;
-    info.layer_count_or_depth = core::atlas::PAGES;
-    info.num_levels = core::atlas::MIP_LEVELS;
+    info.width = manifest.pageSize;
+    info.height = manifest.pageSize;
+    info.layer_count_or_depth = manifest.pages;
+    info.num_levels = manifest.mipLevels;
     info.sample_count = SDL_GPU_SAMPLECOUNT_1;
     info.props = SDL_CreateProperties();
     SDL_SetStringProperty(info.props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING, "sprite atlas");
@@ -57,7 +56,7 @@ Gpu<SDL_GPUTexture> CreateArray(SDL_GPUDevice* device) {
     return texture;
 }
 
-Gpu<SDL_GPUSampler> CreateSampler(SDL_GPUDevice* device) {
+Gpu<SDL_GPUSampler> CreateSampler(SDL_GPUDevice* device, u32 mipLevels) {
     SDL_GPUSamplerCreateInfo info{};
     info.min_filter = SDL_GPU_FILTER_LINEAR;
     info.mag_filter = SDL_GPU_FILTER_LINEAR;
@@ -65,7 +64,7 @@ Gpu<SDL_GPUSampler> CreateSampler(SDL_GPUDevice* device) {
     info.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     info.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     info.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    info.max_lod = static_cast<f32>(core::atlas::MIP_LEVELS - 1); // 0 by default, which would read the top mip only
+    info.max_lod = static_cast<f32>(mipLevels - 1); // 0 by default, which would read the top mip only
     info.props = SDL_CreateProperties();
     SDL_SetStringProperty(info.props, SDL_PROP_GPU_SAMPLER_CREATE_NAME_STRING, "sprite atlas");
     Gpu<SDL_GPUSampler> sampler{ SDL_CreateGPUSampler(device, &info), { device } };
@@ -74,8 +73,8 @@ Gpu<SDL_GPUSampler> CreateSampler(SDL_GPUDevice* device) {
 }
 
 // What the sprites' blocks don't cover must be transparent: a fresh texture's contents are undefined.
-void ClearPages(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* texture) {
-    for (u32 page = 0; page < core::atlas::PAGES; ++page) {
+void ClearPages(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* texture, u32 pages) {
+    for (u32 page = 0; page < pages; ++page) {
         SDL_GPUColorTargetInfo target{};
         target.texture = texture;
         target.layer_or_depth_plane = page;
@@ -87,22 +86,26 @@ void ClearPages(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* texture) {
 
 } // namespace
 
-std::expected<SpriteArray, core::Error> LoadSpriteArray(SDL_GPUDevice* device, const std::filesystem::path& assets) {
+std::expected<SpriteArray, core::Error> LoadSpriteArray(
+    SDL_GPUDevice* device,
+    const std::filesystem::path& assets,
+    const core::Manifest& manifest
+) {
     const u64 startNs = platform::NowNs();
     std::vector<Decoded> decoded;
-    decoded.reserve(core::atlas::SPRITES.size());
+    decoded.reserve(manifest.sprites.size());
     u32 bytes = 0;
-    for (const core::atlas::Sprite& sprite : core::atlas::SPRITES) {
+    for (const core::SpriteInfo& sprite : manifest.sprites) {
         std::expected<Surface, core::Error> surface = Decode(assets / sprite.file, sprite);
         if (!surface) {
             return std::unexpected{ std::move(surface.error()) };
         }
         decoded.push_back({ .surface = std::move(*surface), .offset = bytes });
-        const SpriteBlock block = BlockOf(sprite);
+        const SpriteBlock block = BlockOf(sprite, manifest.mipLevels);
         bytes += block.width * block.height * static_cast<u32>(BYTES_PER_TEXEL);
     }
 
-    SpriteArray array{ .texture = CreateArray(device), .sampler = CreateSampler(device) };
+    SpriteArray array{ .texture = CreateArray(device, manifest), .sampler = CreateSampler(device, manifest.mipLevels) };
     if (array.texture == nullptr || array.sampler == nullptr) {
         return std::unexpected{ core::Error{ std::format("the sprite atlas texture wasn't created: {}", SDL_GetError()) } };
     }
@@ -117,12 +120,13 @@ std::expected<SpriteArray, core::Error> LoadSpriteArray(SDL_GPUDevice* device, c
     const std::span<std::byte> staging = BytesAt(mapped, bytes);
     for (std::size_t i = 0; i < decoded.size(); ++i) {
         const SDL_Surface& surface = *decoded[i].surface;
-        const core::atlas::Sprite& sprite = core::atlas::SPRITES.at(i);
-        const SpriteBlock block = BlockOf(sprite);
+        const core::SpriteInfo& sprite = manifest.sprites.at(i);
+        const SpriteBlock block = BlockOf(sprite, manifest.mipLevels);
         const auto pitch = static_cast<std::size_t>(surface.pitch);
         const std::size_t size = std::size_t{ block.width } * block.height * BYTES_PER_TEXEL;
         WriteBlock(
             sprite,
+            manifest.mipLevels,
             BytesAt(surface.pixels, pitch * static_cast<std::size_t>(surface.h)),
             pitch,
             staging.subspan(decoded[i].offset, size)
@@ -135,10 +139,10 @@ std::expected<SpriteArray, core::Error> LoadSpriteArray(SDL_GPUDevice* device, c
         return std::unexpected{ core::Error{ std::format("no command buffer for the sprite atlas: {}", SDL_GetError()) } };
     }
     SDL_PushGPUDebugGroup(commands, "load sprite atlas");
-    ClearPages(commands, array.texture.get());
+    ClearPages(commands, array.texture.get(), manifest.pages);
     SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
     for (std::size_t i = 0; i < decoded.size(); ++i) {
-        const SpriteBlock block = BlockOf(core::atlas::SPRITES.at(i));
+        const SpriteBlock block = BlockOf(manifest.sprites.at(i), manifest.mipLevels);
         SDL_GPUTextureTransferInfo source{};
         source.transfer_buffer = transfer.get();
         source.offset = decoded[i].offset;
@@ -146,7 +150,7 @@ std::expected<SpriteArray, core::Error> LoadSpriteArray(SDL_GPUDevice* device, c
         source.rows_per_layer = block.height;
         SDL_GPUTextureRegion region{};
         region.texture = array.texture.get();
-        region.layer = core::atlas::SPRITES.at(i).page;
+        region.layer = manifest.sprites.at(i).page;
         region.x = block.x;
         region.y = block.y;
         region.w = block.width;
@@ -162,10 +166,10 @@ std::expected<SpriteArray, core::Error> LoadSpriteArray(SDL_GPUDevice* device, c
     }
     PN_LOG_INFO(
         "sprite atlas: {} sprites on {} pages of {}x{}, {} MiB of images, decoded and uploaded in {} ms",
-        core::atlas::SPRITES.size(),
-        core::atlas::PAGES,
-        core::atlas::PAGE_SIZE,
-        core::atlas::PAGE_SIZE,
+        manifest.sprites.size(),
+        manifest.pages,
+        manifest.pageSize,
+        manifest.pageSize,
         bytes >> 20U,
         (platform::NowNs() - startNs) / 1'000'000
     );

@@ -57,7 +57,7 @@ struct Look {
     /// Whether a value read from a save can be used: a sprite, layer and pipeline that exist, and a
     /// finite, positive scale.
     [[nodiscard]] bool Valid() const {
-        return std::to_underlying(sprite) < core::atlas::SPRITES.size() && layer <= core::Layer::Effects &&
+        return std::to_underlying(sprite) < core::atlas::SPRITE_NAMES.size() && layer <= core::Layer::Effects &&
                std::to_underlying(pipeline) < core::PIPELINES && std::isfinite(scale) && scale > 0.0F;
     }
 };

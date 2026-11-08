@@ -192,8 +192,9 @@ core::Vec2 OrbitPoint(const Orbit& orbit, u64 tick) {
     };
 }
 
-Arena::Arena(Scene scene, const core::GameData& data)
-  : m_state{ DOMAINS, SEED }
+Arena::Arena(std::shared_ptr<const core::Manifest> manifest, Scene scene, const core::GameData& data)
+  : m_manifest{ std::move(manifest) }
+  , m_state{ DOMAINS, SEED }
   , m_data{ data }
   , m_scene{ scene }
   , m_view{ ViewOf(scene) } {
@@ -479,7 +480,9 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
         view = { .min = body.current - FOLLOW_HALF_VIEW, .max = body.current + FOLLOW_HALF_VIEW };
     }
     m_drawList.Begin(view, std::max(chunks, 1U));
-    m_drawList.Add(0, core::Layer::Ground, core::Pipeline::Normal, core::MakeInstance({ .sprite = SpriteId::Ground }));
+    m_drawList.Add(
+        0, core::Layer::Ground, core::Pipeline::Normal, core::MakeInstance(*m_manifest, { .sprite = SpriteId::Ground })
+    );
     jobs.ParallelFor(chunks, [&](u32 chunk) {
         const std::size_t begin = std::size_t{ chunk } * PUBLISH_CHUNK;
         const std::size_t end = std::min(looks.size(), begin + PUBLISH_CHUNK);
@@ -494,7 +497,9 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
                     chunk,
                     core::Layer::Decals,
                     core::Pipeline::Normal,
-                    core::MakeInstance({ .sprite = SpriteId::Shadow, .previous = body.previous, .current = body.current })
+                    core::MakeInstance(
+                        *m_manifest, { .sprite = SpriteId::Shadow, .previous = body.previous, .current = body.current }
+                    )
                 );
             }
             m_drawList.Add(
@@ -502,6 +507,7 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
                 look.layer,
                 look.pipeline,
                 core::MakeInstance(
+                    *m_manifest,
                     { .sprite = look.sprite,
                       .previous = body.previous,
                       .current = body.current,

@@ -5,9 +5,6 @@
 #include "core/log.hpp"
 #include "core/profile.hpp"
 #include "core/repeated_failure.hpp"
-
-#include "core/generated/atlas.hpp" // by `project_n atlas`
-
 #include "gfx/internal/features/sprites.hpp"
 #include "gfx/internal/frame/frame.hpp"
 #include "gfx/internal/gpu.hpp"
@@ -81,6 +78,7 @@ struct Renderer::Impl {
     internal::Device device = nullptr; // first: destroyed after everything it made
     internal::Gpu<SDL_Window> claim = nullptr;
     internal::SpriteArray sprites{};
+    std::shared_ptr<const core::Manifest> manifest = nullptr;
     internal::SpriteRenderer instances{};
     std::optional<internal::Frame> frame = std::nullopt; // acquired by Acquire(), submitted by Draw()
     UploadedSnapshot uploaded{};
@@ -137,7 +135,7 @@ void Renderer::Impl::DrawWorld(
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &target, 1, nullptr);
     const ClipTransform transform = WorldToClip(camera, width, height);
     instances.Draw(commands, pass, snapshot.batches, sprites, transform, alpha);
-    const f32 ring = OUTLINE_TEXELS / static_cast<f32>(core::atlas::PAGE_SIZE);
+    const f32 ring = OUTLINE_TEXELS / static_cast<f32>(manifest->pageSize);
     if (snapshot.selected) {
         instances.DrawOutline(
             commands,
@@ -201,8 +199,13 @@ void Renderer::Impl::Report(const std::expected<void, core::Error>& drawn) {
     }
 }
 
-std::expected<Renderer, core::Error> Renderer::Create(platform::Window& window, const std::filesystem::path& assets) {
+std::expected<Renderer, core::Error> Renderer::Create(
+    platform::Window& window,
+    const std::filesystem::path& assets,
+    std::shared_ptr<const core::Manifest> manifest
+) {
     auto impl = std::make_unique<Impl>();
+    impl->manifest = std::move(manifest);
     impl->window = static_cast<SDL_Window*>(window.Handle());
     const SDL_PropertiesID properties = SDL_CreateProperties();
     SDL_SetBooleanProperty(properties, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_SPIRV_BOOLEAN, true);
@@ -252,7 +255,7 @@ std::expected<Renderer, core::Error> Renderer::Create(platform::Window& window, 
         return std::unexpected{ std::move(instances.error()) };
     }
     impl->instances = std::move(*instances);
-    std::expected<internal::SpriteArray, core::Error> sprites = internal::LoadSpriteArray(device, assets);
+    std::expected<internal::SpriteArray, core::Error> sprites = internal::LoadSpriteArray(device, assets, *impl->manifest);
     if (!sprites) {
         return std::unexpected{ std::move(sprites.error()) };
     }

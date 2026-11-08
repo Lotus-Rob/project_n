@@ -1096,16 +1096,36 @@ class AtlasTest(unittest.TestCase):
         with self.assertRaisesRegex(project_n.Fail, "lists no sprites"):
             project_n.read_sprites()
 
-    def test_the_header_is_stale_until_the_manifest_matches(self):
-        with temp_repo({"art/sprites.toml": "[a]\n"}) as root:
+    def test_the_atlas_is_stale_until_the_hashes_match(self):
+        with temp_repo({"art/sprites.toml": "[a]\n", "art/scenes.toml": '[one]\nsprites = ["a"]\n'}) as root:
             (root / "assets" / "sprites").mkdir(parents=True)
             (root / "assets" / "sprites" / "a.png").write_bytes(png_header(10, 20))
             self.assertTrue(project_n.stale_atlas())
             with contextlib.redirect_stdout(io.StringIO()):
                 project_n.cmd_atlas(mock.Mock(placeholders=False))
             self.assertFalse(project_n.stale_atlas())
-            (root / "assets" / "sprites" / "a.png").write_bytes(png_header(12, 20))
+            manifest = (root / "assets" / "manifest.yaml").read_text(encoding="utf-8")
+            self.assertIn("  - { name: a, file: sprites/a.png, page: 0, region: [16, 16, 10, 20], foot: [5, 20] }", manifest)
+            self.assertIn("  - { name: one, sprites: [a] }", manifest)
+            self.assertIn('    "a",', (root / "src" / "core" / "generated" / "atlas.hpp").read_text(encoding="utf-8"))
+            (root / "assets" / "manifest.yaml").write_text(manifest + "# edited\n", encoding="utf-8")
             self.assertTrue(project_n.stale_atlas())
+            with contextlib.redirect_stdout(io.StringIO()):
+                project_n.cmd_atlas(mock.Mock(placeholders=False))
+            (root / "art" / "scenes.toml").write_text('[two]\nsprites = ["a"]\n', encoding="utf-8")
+            self.assertTrue(project_n.stale_atlas())
+
+    def test_scenes_must_list_known_sprites_once(self):
+        sprites = [("a", 10, 20, 5, 20), ("b", 4, 4, 2, 4)]
+        for listing, error in (("", "lists no scenes"), ("[one]\n", "one must list its sprites"),
+                               ("[one]\nsprites = []\n", "one must list its sprites"),
+                               ('[one]\nsprites = ["a", "c"]\n', r"one names sprites .* doesn't have: \['c'\]"),
+                               ('[one]\nsprites = ["a", "a"]\n', "one names a sprite twice")):
+            with (self.subTest(listing=listing), temp_repo({"art/scenes.toml": listing}),
+                  self.assertRaisesRegex(project_n.Fail, error)):
+                project_n.read_scenes(sprites)
+        with temp_repo({"art/scenes.toml": '[one]\nsprites = ["b"]\n[two]\nsprites = ["a", "b"]\n'}):
+            self.assertEqual(project_n.read_scenes(sprites), [("one", ["b"]), ("two", ["a", "b"])])
 
 
 if __name__ == "__main__":

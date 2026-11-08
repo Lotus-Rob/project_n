@@ -6,6 +6,7 @@
 /// the shader unpacks, and an Instance from a sprite of the atlas manifest and its transform.
 
 #include "core/frame.hpp"
+#include "core/manifest.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 
@@ -51,7 +52,7 @@ struct SpriteDraw {
 };
 
 /// The instance that draws `draw`: its quad placed so the sprite's foot point lands on its
-/// position, with the sprite's page and region from the manifest.
-[[nodiscard]] Instance MakeInstance(const SpriteDraw& draw);
+/// position, with the sprite's page and region from `manifest`.
+[[nodiscard]] Instance MakeInstance(const Manifest& manifest, const SpriteDraw& draw);
 
 } // namespace core
