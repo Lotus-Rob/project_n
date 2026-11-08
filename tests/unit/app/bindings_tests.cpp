@@ -116,4 +116,38 @@ TEST_CASE("a stick drifting inside its dead zone leaves the keyboard and mouse i
     CHECK(device.Used() == platform::Device::Mouse);
 }
 
+TEST_CASE("a stick held diagonally past its dead zone with each axis inside it puts the gamepad in use") {
+    constexpr f32 DIAGONAL = 0.19F; // each axis under 0.2; the pair's length about 0.27, past it
+    app::DeviceInUse device;
+    static_cast<void>(device.Take({ .device = platform::Device::Mouse, .code = InputCode::MouseLeft, .pressed = true }));
+    static_cast<void>(device.Take(Stick(InputCode::PadLeftX, DIAGONAL)));
+    static_cast<void>(device.Take(Stick(InputCode::PadLeftY, DIAGONAL)));
+    CHECK(device.Used() == platform::Device::Gamepad);
+}
+
+TEST_CASE("the cursor moving after a gamepad press puts the mouse in use") {
+    constexpr core::Vec2 HERE{ .x = 10.0F, .y = 20.0F };
+    constexpr core::Vec2 THERE{ .x = 11.0F, .y = 20.0F };
+    app::DeviceInUse device;
+    static_cast<void>(device.TakeCursor(HERE));
+    static_cast<void>(
+        device.Take({ .device = platform::Device::Gamepad, .code = InputCode::PadLeftShoulder, .pressed = true })
+    );
+    const bool changed = device.TakeCursor(THERE);
+    CHECK(changed);
+    CHECK(device.Used() == platform::Device::Mouse);
+}
+
+TEST_CASE("the cursor standing still leaves the gamepad in use") {
+    constexpr core::Vec2 HERE{ .x = 10.0F, .y = 20.0F };
+    app::DeviceInUse device;
+    static_cast<void>(device.TakeCursor(HERE));
+    static_cast<void>(
+        device.Take({ .device = platform::Device::Gamepad, .code = InputCode::PadLeftShoulder, .pressed = true })
+    );
+    const bool changed = device.TakeCursor(HERE);
+    CHECK_FALSE(changed);
+    CHECK(device.Used() == platform::Device::Gamepad);
+}
+
 } // namespace

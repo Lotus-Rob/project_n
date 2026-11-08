@@ -46,16 +46,6 @@ constexpr std::array ACTION_CONTROLS{
     ActionControl{ .control = Control::CycleScene, .kind = core::ActionKind::CycleScene, .asked = "the next scene asked for" },
 };
 
-// When a file in `folder` last changed; the oldest time when none can be read.
-std::filesystem::file_time_type NewestChange(const std::filesystem::path& folder) {
-    std::filesystem::file_time_type newest{};
-    std::error_code error;
-    for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator{ folder, error }) {
-        newest = std::max(newest, entry.last_write_time(error));
-    }
-    return newest;
-}
-
 std::string_view DeviceName(platform::Device device, platform::GamepadFamily family) {
     if (device == platform::Device::Keyboard || device == platform::Device::Mouse) {
         return "keyboard and mouse";
@@ -74,6 +64,44 @@ std::string_view DeviceName(platform::Device device, platform::GamepadFamily fam
 
 } // namespace
 
+DataWatch::DataWatch(std::filesystem::path folder)
+  : m_folder{ std::move(folder) }
+  , m_seen{ [](const std::filesystem::path& watched) {
+      std::error_code unreadable; // logged by the first Changed(), which finds it so again
+      return List(watched, unreadable);
+  }(m_folder) } {
+}
+
+bool DataWatch::Changed() {
+    PN_PROFILE_ZONE();
+    std::error_code error;
+    Listing listing = List(m_folder, error);
+    if (error && !std::exchange(m_unreadable, true)) {
+        PN_LOG_WARNING("the data folder {} can't be read: {}", m_folder.string(), error.message());
+    }
+    else if (!error && std::exchange(m_unreadable, false)) {
+        PN_LOG_INFO("the data folder {} can be read again", m_folder.string());
+    }
+    if (listing == m_seen) {
+        return false;
+    }
+    m_seen = std::move(listing);
+    return true;
+}
+
+DataWatch::Listing DataWatch::List(const std::filesystem::path& folder, std::error_code& error) {
+    Listing listing;
+    for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator{ folder, error }) {
+        std::error_code unreadable;
+        listing.emplace_back(entry.path().filename(), entry.last_write_time(unreadable));
+        if (unreadable && !error) {
+            error = unreadable; // the first file that couldn't be read says why
+        }
+    }
+    std::ranges::sort(listing);
+    return listing;
+}
+
 App::App(platform::Window window, gfx::Renderer renderer, Options options)
   : m_window{ std::move(window) }
   , m_renderer{ std::move(renderer) }
@@ -85,7 +113,7 @@ App::App(platform::Window window, gfx::Renderer renderer, Options options)
     core::math::SetFloatingPointEnvironment();
     PN_LOG_INFO("job system running {} workers", m_jobs.Workers());
     if (HOT_RELOAD && !m_options.dataFolder.empty()) {
-        m_dataChanged = NewestChange(m_options.dataFolder);
+        m_dataWatch = DataWatch{ m_options.dataFolder };
         PN_LOG_INFO("watching {} to reload the game data", m_options.dataFolder.string());
     }
     // Started here, not in the initializer list: every member it uses is built by now.
@@ -160,11 +188,9 @@ void App::WatchData(u64 nowNs) {
         return;
     }
     m_dataCheckNs = nowNs + DATA_CHECK_NS;
-    const std::filesystem::file_time_type changed = NewestChange(m_options.dataFolder);
-    if (changed == m_dataChanged) {
+    if (!m_dataWatch.Changed()) {
         return;
     }
-    m_dataChanged = changed;
     // On this thread: the files are small. A worker parses them once they aren't.
     const std::expected<core::GameData, core::Error> reloaded = data::LoadGameData(m_options.dataFolder);
     if (const std::expected<void, core::Error> runs =
@@ -183,6 +209,9 @@ void App::HandleInput(const platform::WindowState& state) {
         m_paused = !m_paused;
         PN_LOG_INFO("{}: the window is {}", m_paused ? "paused" : "resumed", m_paused ? "unfocused or minimised" : "back");
         m_handover.SendInput({ .kind = m_paused ? core::ActionKind::Pause : core::ActionKind::Resume });
+    }
+    if (m_device.TakeCursor(m_window.Cursor())) {
+        PN_LOG_INFO("prompts for {}", DeviceName(m_device.Used(), m_device.Family()));
     }
     const std::span actionControls{ ACTION_CONTROLS }; // a span's iterator is a class everywhere, unlike std::array's
     for (const platform::InputEvent& input : m_inputs) {
@@ -216,13 +245,9 @@ void App::HandleInput(const platform::WindowState& state) {
 }
 
 void App::NoteDevice(const platform::InputEvent& input) {
-    const bool keyboardOrMouse = input.device != platform::Device::Gamepad;
-    if (keyboardOrMouse == (m_device != platform::Device::Gamepad) && (keyboardOrMouse || input.family == m_family)) {
-        return;
+    if (m_device.Take(input)) {
+        PN_LOG_INFO("prompts for {}", DeviceName(m_device.Used(), m_device.Family()));
     }
-    m_device = input.device;
-    m_family = input.family;
-    PN_LOG_INFO("prompts for {}", DeviceName(m_device, m_family));
 }
 
 void App::Select(const platform::WindowState& state, core::Vec2 position) {
@@ -240,7 +265,7 @@ void App::Select(const platform::WindowState& state, core::Vec2 position) {
 std::optional<std::size_t> App::Hovered(const platform::WindowState& state, const core::Snapshot& drawn, f64 alpha) const {
     PN_PROFILE_ZONE();
     const std::optional<core::Vec2> cursor = m_window.Cursor();
-    if (!cursor || m_device == platform::Device::Gamepad) {
+    if (!cursor || m_device.Used() == platform::Device::Gamepad) {
         return std::nullopt; // a gamepad has no cursor to hover with
     }
     return PickInstance(drawn, alpha, WindowToWorld(m_camera, *cursor, state.width, state.height));

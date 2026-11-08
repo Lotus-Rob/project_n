@@ -93,9 +93,11 @@ std::optional<ControlEvent> Bindings::Handle(const platform::InputEvent& input) 
 
 bool DeviceInUse::Take(const platform::InputEvent& input) {
     PN_PROFILE_ZONE();
-    const bool stick = input.code == InputCode::PadLeftX || input.code == InputCode::PadLeftY;
-    if (stick && std::abs(input.value) <= STICK_DEAD_ZONE) {
-        return false; // a stick at rest, or drifting: not the player's hand
+    if (input.code == InputCode::PadLeftX || input.code == InputCode::PadLeftY) {
+        (input.code == InputCode::PadLeftX ? m_stick.x : m_stick.y) = input.value;
+        if (Length(m_stick) <= STICK_DEAD_ZONE) {
+            return false; // a stick at rest, or drifting: not the player's hand
+        }
     }
     const bool keyboardOrMouse = input.device != platform::Device::Gamepad;
     const bool same =
@@ -103,6 +105,14 @@ bool DeviceInUse::Take(const platform::InputEvent& input) {
     m_device = input.device;
     m_family = input.family;
     return !same;
+}
+
+bool DeviceInUse::TakeCursor(std::optional<core::Vec2> cursor) {
+    PN_PROFILE_ZONE();
+    // Bit for bit, as HeldInput compares: any change of position is a move (-Wfloat-equal rules out ==).
+    const bool moved = cursor && (!m_cursor || std::bit_cast<u64>(*cursor) != std::bit_cast<u64>(*m_cursor));
+    m_cursor = cursor;
+    return moved && Take({ .device = platform::Device::Mouse });
 }
 
 core::Vec2 Bindings::Move() const {
