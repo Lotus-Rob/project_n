@@ -32,6 +32,7 @@ struct View {
     u64 ticks = 0;
     f64 alpha = 1.0;
     f32 zoom = 1.0F;
+    bool hoverPlayer = false; // centred on the player's cultivator, outlined as the hovered entity
 };
 
 void CheckAgainstReference(const View& view) {
@@ -50,8 +51,16 @@ void CheckAgainstReference(const View& view) {
     REQUIRE_MESSAGE(assets.has_value(), assets.error().message);
     std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(*window, *assets);
     REQUIRE_MESSAGE(renderer.has_value(), renderer.error().message);
+    gfx::Camera camera{ .zoom = view.zoom };
+    std::optional<std::size_t> outlined;
+    if (view.hoverPlayer) {
+        const auto player = std::ranges::find(snapshot.ids, arena.Player());
+        REQUIRE(player != snapshot.ids.end());
+        outlined = static_cast<std::size_t>(player - snapshot.ids.begin());
+        camera.centre = snapshot.follow.value_or(core::Follow{}).current;
+    }
     const std::expected<gfx::Image, core::Error> drawn =
-        renderer->Capture(snapshot, view.alpha, gfx::Camera{ .zoom = view.zoom }, WIDTH, HEIGHT);
+        renderer->Capture(snapshot, view.alpha, camera, WIDTH, HEIGHT, outlined);
     REQUIRE_MESSAGE(drawn.has_value(), drawn.error().message);
 
     const std::string file = std::format("{}.png", view.name);
@@ -78,6 +87,10 @@ TEST_CASE("the map cells at the smallest zoom: the low mips") {
 
 TEST_CASE("the arena halfway between two ticks: interpolation and foot-y order") {
     CheckAgainstReference({ .name = "arena_halfway", .scene = game::Scene::Arena, .ticks = TWO_SECONDS, .alpha = HALFWAY });
+}
+
+TEST_CASE("the hovered entity's outline, close up") {
+    CheckAgainstReference({ .name = "hover_outline", .scene = game::Scene::Arena, .zoom = gfx::MAX_ZOOM, .hoverPlayer = true });
 }
 
 } // namespace

@@ -5,6 +5,9 @@
 #include "core/log.hpp"
 #include "core/profile.hpp"
 #include "core/repeated_failure.hpp"
+
+#include "core/generated/atlas.hpp" // by `project_n atlas`
+
 #include "gfx/internal/features/sprites.hpp"
 #include "gfx/internal/frame/frame.hpp"
 #include "gfx/internal/gpu.hpp"
@@ -28,6 +31,10 @@ constexpr bool DEBUG_MODE = true; // SDL_GPU's validation, in debug builds only 
 // Linear values, which the sRGB swapchain encodes to about (0.08, 0.08, 0.09).
 constexpr SDL_FColor BACKDROP{ .r = 0.0072F, .g = 0.0072F, .b = 0.0085F, .a = 1.0F };
 
+// The hover outline (design doc 0002.3 §3): pale and opaque, unlike the selection's gold tint, three texels wide.
+constexpr u32 OUTLINE_COLOUR = 0xFFF0'F4F4U; // premultiplied RGBA8, red in the low byte
+constexpr f32 OUTLINE_TEXELS = 3.0F;
+
 std::string_view PresentModeName(SDL_GPUPresentMode mode) {
     if (mode == SDL_GPU_PRESENTMODE_MAILBOX) {
         return "mailbox";
@@ -50,7 +57,8 @@ struct Renderer::Impl {
         const internal::Frame& acquired,
         const core::Snapshot& snapshot,
         f32 alpha,
-        const Camera& camera
+        const Camera& camera,
+        std::optional<std::size_t> outlined
     );
     // A recorded copy counts as uploaded only once its commands are submitted (`uploaded.Submitted`): a dropped buffer
     // must upload again.
@@ -63,7 +71,8 @@ struct Renderer::Impl {
         u32 height,
         const core::Snapshot& snapshot,
         f32 alpha,
-        const Camera& camera
+        const Camera& camera,
+        std::optional<std::size_t> outlined
     ) const;
 
     SDL_Window* window = nullptr;
@@ -113,7 +122,8 @@ void Renderer::Impl::DrawWorld(
     u32 height,
     const core::Snapshot& snapshot,
     f32 alpha,
-    const Camera& camera
+    const Camera& camera,
+    std::optional<std::size_t> outlined
 ) const {
     PN_PROFILE_ZONE();
     SDL_PushGPUDebugGroup(commands, "world");
@@ -123,7 +133,14 @@ void Renderer::Impl::DrawWorld(
     target.load_op = SDL_GPU_LOADOP_CLEAR;
     target.store_op = SDL_GPU_STOREOP_STORE;
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &target, 1, nullptr);
-    instances.Draw(commands, pass, snapshot.batches, sprites, WorldToClip(camera, width, height), alpha);
+    const ClipTransform transform = WorldToClip(camera, width, height);
+    instances.Draw(commands, pass, snapshot.batches, sprites, transform, alpha);
+    if (outlined && *outlined < snapshot.instances.size()) {
+        const internal::Outline outline{ .instance = static_cast<u32>(*outlined),
+                                         .colour = OUTLINE_COLOUR,
+                                         .ring = OUTLINE_TEXELS / static_cast<f32>(core::atlas::PAGE_SIZE) };
+        instances.DrawOutline(commands, pass, outline, sprites, transform, alpha);
+    }
     SDL_EndGPURenderPass(pass);
     SDL_PopGPUDebugGroup(commands);
 }
@@ -132,7 +149,8 @@ std::expected<void, core::Error> Renderer::Impl::Frame(
     const internal::Frame& acquired,
     const core::Snapshot& snapshot,
     f32 alpha,
-    const Camera& camera
+    const Camera& camera,
+    std::optional<std::size_t> outlined
 ) {
     PN_PROFILE_ZONE();
     // A failed upload draws no sprites, but the frame is still submitted, as SDL requires.
@@ -146,7 +164,7 @@ std::expected<void, core::Error> Renderer::Impl::Frame(
     }
     // Without a swapchain texture (the window can't be shown), the copy still runs and nothing is drawn (§8.3).
     if (acquired.swapchain != nullptr) {
-        DrawWorld(acquired.commands, acquired.swapchain, acquired.width, acquired.height, snapshot, alpha, camera);
+        DrawWorld(acquired.commands, acquired.swapchain, acquired.width, acquired.height, snapshot, alpha, camera, outlined);
     }
     std::expected<void, core::Error> submitted = internal::SubmitFrame(acquired);
     uploaded.Submitted(submitted.has_value());
@@ -241,14 +259,14 @@ void Renderer::Acquire() {
     m_impl->frame = *acquired;
 }
 
-void Renderer::Draw(const core::Snapshot& snapshot, f64 alpha, const Camera& camera) {
+void Renderer::Draw(const core::Snapshot& snapshot, f64 alpha, const Camera& camera, std::optional<std::size_t> outlined) {
     PN_PROFILE_ZONE();
     if (!m_impl->frame) {
         return; // the acquire failed, and said so
     }
     const internal::Frame acquired = *m_impl->frame;
     m_impl->frame.reset();
-    m_impl->Report(m_impl->Frame(acquired, snapshot, static_cast<f32>(alpha), camera));
+    m_impl->Report(m_impl->Frame(acquired, snapshot, static_cast<f32>(alpha), camera, outlined));
 }
 
 std::expected<Image, core::Error> Renderer::Capture(
@@ -256,7 +274,8 @@ std::expected<Image, core::Error> Renderer::Capture(
     f64 alpha,
     const Camera& camera,
     u32 width,
-    u32 height
+    u32 height,
+    std::optional<std::size_t> outlined
 ) {
     SDL_GPUDevice* device = m_impl->device.get();
     // The pipelines are made for the swapchain's format, so the picture is drawn in it too.
@@ -283,7 +302,7 @@ std::expected<Image, core::Error> Renderer::Capture(
         m_impl->Upload(commands, snapshot),
         [commands] { SDL_CancelGPUCommandBuffer(commands); }, // allowed: no swapchain texture is acquired
         [&]() -> std::expected<Image, core::Error> {
-            m_impl->DrawWorld(commands, texture.get(), width, height, snapshot, static_cast<f32>(alpha), camera);
+            m_impl->DrawWorld(commands, texture.get(), width, height, snapshot, static_cast<f32>(alpha), camera, outlined);
             SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
             SDL_GPUTextureRegion region{};
             region.texture = texture.get();

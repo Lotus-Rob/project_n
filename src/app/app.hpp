@@ -15,7 +15,9 @@
 #include "platform/window.hpp"
 
 #include <atomic>
+#include <cstddef>
 #include <filesystem>
+#include <optional>
 #include <stop_token>
 #include <thread>
 #include <vector>
@@ -64,7 +66,12 @@ private:
     void NoteDevice(const platform::InputEvent& input);
     void Select(const platform::WindowState& state, core::Vec2 position);
     void Pan(u64 nowNs);
-    void Present(bool visible);
+    void Present(const platform::WindowState& state);
+    [[nodiscard]] std::optional<std::size_t> Hovered(
+        const platform::WindowState& state,
+        const core::Snapshot& drawn,
+        f64 alpha
+    ) const;
     void WatchData(u64 nowNs);
 
     platform::Window m_window;

@@ -10,7 +10,7 @@
 /// - a pack of foxes circling it wherever it walks and glowing orbs circling its start (orbits, the additive pipeline), the
 /// foxes and the
 ///   cultivator from the creatures data table (hot reload in debug builds);
-/// - click-to-select, drawn tinted;
+/// - click-to-select, drawn tinted, and the hovered entity outlined (the renderer's hover outline);
 /// - NPCs walking in the active tier and 5,000 in the world tier, whose months pass on request (§7.7);
 /// - saves, loads and replays of all of it.
 /// Its stress variant adds a crowd and a bullet spiral, about 100,000 instances in all (§8.1), and a world tier of 50,000.

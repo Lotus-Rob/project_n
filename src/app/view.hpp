@@ -11,6 +11,9 @@
 #include "core/vec2.hpp"
 #include "gfx/camera.hpp"
 
+#include <cstddef>
+#include <optional>
+
 namespace app {
 
 /// The followed entity's foot at the render clock: `follow` interpolated by `alpha`, as its sprite is drawn.
@@ -19,10 +22,13 @@ namespace app {
 /// The world point `camera` shows at `position`, in the coordinates of a window `width` by `height`.
 [[nodiscard]] core::Vec2 WindowToWorld(const gfx::Camera& camera, core::Vec2 position, i32 width, i32 height);
 
-/// The entity drawn on top at `world` in `snapshot` interpolated by `alpha`: the last instance in
-/// drawing order with an ID whose quad, turned by its interpolated rotation, contains the point, or
-/// zero for none. shortcut: transparent pixels count as hits, until sprites with much empty space
-/// overlap enough to matter.
+/// The index of the instance drawn on top at `world` in `snapshot` interpolated by `alpha`: the last
+/// in drawing order with an ID whose quad, turned by its interpolated rotation, contains the point, or
+/// none. shortcut: transparent pixels count as hits, until sprites with much empty space overlap
+/// enough to matter.
+[[nodiscard]] std::optional<std::size_t> PickInstance(const core::Snapshot& snapshot, f64 alpha, core::Vec2 world);
+
+/// The entity of PickInstance()'s instance, or zero for none.
 [[nodiscard]] core::StableId Pick(const core::Snapshot& snapshot, f64 alpha, core::Vec2 world);
 
 } // namespace app

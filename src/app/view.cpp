@@ -29,7 +29,7 @@ core::Vec2 WindowToWorld(const gfx::Camera& camera, core::Vec2 position, i32 wid
     );
 }
 
-core::StableId Pick(const core::Snapshot& snapshot, f64 alpha, core::Vec2 world) {
+std::optional<std::size_t> PickInstance(const core::Snapshot& snapshot, f64 alpha, core::Vec2 world) {
     PN_PROFILE_ZONE();
     constexpr u32 LOW_HALF = 0xFFFFU;
     constexpr u32 HIGH_SHIFT = 16;
@@ -44,18 +44,24 @@ core::StableId Pick(const core::Snapshot& snapshot, f64 alpha, core::Vec2 world)
         const f32 angle =
             previousAngle +
             ((core::UnpackHalf(static_cast<u16>(instance.rotation >> HIGH_SHIFT)) - previousAngle) * static_cast<f32>(alpha));
-        // Turned back by the angle the shader turns the quad by, the point lands in the unturned quad.
-        const f32 sine = std::sin(angle);
-        const f32 cosine = std::cos(angle);
+        // Turned back by the angle the shader turns the quad by, the point lands in the unturned quad. Most sprites
+        // don't turn, and hover picks every frame: they skip the trigonometry.
+        const f32 sine = instance.rotation == 0 ? 0.0F : std::sin(angle);
+        const f32 cosine = instance.rotation == 0 ? 1.0F : std::cos(angle);
         const f32 alongWidth = (offset.x * cosine) + (offset.y * sine);
         const f32 alongHeight = (offset.y * cosine) - (offset.x * sine);
         const f32 halfWidth = core::UnpackHalf(static_cast<u16>(instance.size & LOW_HALF)) / 2.0F;
         const f32 halfHeight = core::UnpackHalf(static_cast<u16>(instance.size >> HIGH_SHIFT)) / 2.0F;
         if (std::abs(alongWidth) <= halfWidth && std::abs(alongHeight) <= halfHeight) {
-            return snapshot.ids[i];
+            return i;
         }
     }
-    return {};
+    return std::nullopt;
+}
+
+core::StableId Pick(const core::Snapshot& snapshot, f64 alpha, core::Vec2 world) {
+    const std::optional<std::size_t> picked = PickInstance(snapshot, alpha, world);
+    return picked ? snapshot.ids[*picked] : core::StableId{};
 }
 
 } // namespace app

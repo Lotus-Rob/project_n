@@ -7,4 +7,8 @@ struct VertexOut {
     float2 uv : TEXCOORD0;
     nointerpolation uint layer : TEXCOORD1;
     float4 colour : TEXCOORD2; // premultiplied
+    // An outline draw only: the region on the page, beyond which the sprite is transparent, and the
+    // ring's width in UV (zero for an ordinary sprite).
+    nointerpolation float4 region : TEXCOORD3;
+    nointerpolation float ring : TEXCOORD4;
 };

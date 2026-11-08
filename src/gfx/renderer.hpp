@@ -14,6 +14,7 @@
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <optional>
 
 namespace gfx {
 
@@ -42,8 +43,14 @@ public:
     void Acquire();
     /// Draws `snapshot` into the frame Acquire() acquired as `camera` sees it, interpolated by
     /// `alpha` (0: its previous tick, 1: its own), and presents it. Uploads its instances only when
-    /// it isn't the snapshot drawn last (§8.3).
-    void Draw(const core::Snapshot& snapshot, f64 alpha, const Camera& camera);
+    /// it isn't the snapshot drawn last (§8.3). The instance at index `outlined`, when given, gets a pale
+    /// outline drawn over everything (the hovered entity, design doc 0002.3 §3).
+    void Draw(
+        const core::Snapshot& snapshot,
+        f64 alpha,
+        const Camera& camera,
+        std::optional<std::size_t> outlined = std::nullopt
+    );
 
     /// Draws as Draw() does, but into a picture `width` by `height` pixels instead of the window,
     /// waits for the GPU and returns the picture, or says why it couldn't. Stalls: for tests.
@@ -52,7 +59,8 @@ public:
         f64 alpha,
         const Camera& camera,
         u32 width,
-        u32 height
+        u32 height,
+        std::optional<std::size_t> outlined = std::nullopt
     );
 
 private:

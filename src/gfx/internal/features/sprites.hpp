@@ -22,6 +22,16 @@ namespace gfx::internal {
 /// The most instances the storage buffer holds: the stress arena's 100,000 and some room (§8.1).
 inline constexpr u32 MAX_INSTANCES = 1U << 17U;
 
+/// A ring drawn around one uploaded instance's sprite, over everything (the hovered entity).
+struct Outline {
+    /// The instance, by its index in the uploaded snapshot.
+    u32 instance = 0;
+    /// The ring's premultiplied RGBA8 colour (red in the low byte); never 0.
+    u32 colour = 0;
+    /// The ring's width in UV on the atlas page.
+    f32 ring = 0.0F;
+};
+
 /// The sprite pipelines (one per core::Pipeline) and their instance buffer.
 class SpriteRenderer {
 public:
@@ -43,6 +53,18 @@ public:
         SDL_GPUCommandBuffer* commands,
         SDL_GPURenderPass* pass,
         std::span<const core::Batch> batches,
+        const SpriteArray& sprites,
+        const ClipTransform& transform,
+        f32 alpha
+    ) const;
+
+    /// Draws `outline` in `pass` after Draw(), with the same `sprites`, `transform` and `alpha`: the
+    /// transparent pixels within the ring's width of its instance's sprite take the ring's colour.
+    /// Nothing when the instance wasn't uploaded.
+    void DrawOutline(
+        SDL_GPUCommandBuffer* commands,
+        SDL_GPURenderPass* pass,
+        const Outline& outline,
         const SpriteArray& sprites,
         const ClipTransform& transform,
         f32 alpha
