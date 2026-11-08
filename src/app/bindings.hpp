@@ -57,9 +57,13 @@ inline constexpr f32 STICK_DEAD_ZONE = 0.2F;
 class DeviceInUse {
 public:
     /// Notes the device `input` came from; true when what prompts show changed (a gamepad after the
-    /// keyboard or mouse, or the other way, or a gamepad of another family). A stick inside its dead
-    /// zone counts as no use.
+    /// keyboard or mouse, or the other way, or a gamepad of another family). The stick counts as
+    /// used only past its dead zone, judged on both axes as Bindings::Move() judges it.
     [[nodiscard]] bool Take(const platform::InputEvent& input);
+
+    /// Notes where the mouse cursor is over the window (none when it isn't): its moving is the mouse
+    /// in use, though no input event says so. True when what prompts show changed, as Take().
+    [[nodiscard]] bool TakeCursor(std::optional<core::Vec2> cursor);
 
     /// The device used last: the keyboard at the start.
     [[nodiscard]] platform::Device Used() const {
@@ -74,6 +78,8 @@ public:
 private:
     platform::Device m_device = platform::Device::Keyboard;
     platform::GamepadFamily m_family = platform::GamepadFamily::Other;
+    core::Vec2 m_stick{};                              // the stick's position as its axis events last put it
+    std::optional<core::Vec2> m_cursor = std::nullopt; // where TakeCursor() saw the cursor last
 };
 
 /// The bindings in use, and the held state of the inputs that drive Move.

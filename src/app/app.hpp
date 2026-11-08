@@ -23,6 +23,7 @@
 #include <optional>
 #include <stop_token>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace app {
@@ -45,6 +46,27 @@ struct Options {
     /// The folder the game data was read from, which debug builds watch to reload it; empty for none.
     std::filesystem::path dataFolder{};
     // NOLINTEND(readability-redundant-member-init)
+};
+
+/// Watches a folder of files for changes (the game data, design doc 0002.3 §7).
+class DataWatch {
+public:
+    /// Watches `folder` (none when empty) from its state now.
+    explicit DataWatch(std::filesystem::path folder = {});
+
+    /// Whether a file in the folder was added, removed or written since it was built or last asked.
+    [[nodiscard]] bool Changed();
+
+private:
+    // Each file's name and last write, sorted by name.
+    using Listing = std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>>;
+
+    // `folder`'s listing; `error` says why when it, or a file in it, couldn't be read.
+    [[nodiscard]] static Listing List(const std::filesystem::path& folder, std::error_code& error);
+
+    std::filesystem::path m_folder;
+    Listing m_seen;
+    bool m_unreadable = false; // whether the last look failed, which was logged
 };
 
 /// The main thread's systems (the job system, the window, the renderer, the handover and its display
@@ -101,11 +123,9 @@ private:
     u64 m_loadStartNs = 0;                                  // when the scene loading began
     std::optional<core::SceneId> m_loading = std::nullopt;  // the scene the renderer loads
     std::optional<core::SceneId> m_reported = std::nullopt; // the scene the logic was told is resident, last
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::filesystem::file_time_type m_dataChanged{};        // the newest change in the data folder seen
-    platform::Device m_device = platform::Device::Keyboard; // used last, for prompts (phase 6's UI draws them)
-    platform::GamepadFamily m_family = platform::GamepadFamily::Other;
     std::optional<core::SceneId> m_shown = std::nullopt;    // the scene of the snapshot drawn last
+    DataWatch m_dataWatch{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    DeviceInUse m_device{};
     bool m_quit = false;
     bool m_paused = false;
     std::atomic<bool> m_logicFailed = false;
