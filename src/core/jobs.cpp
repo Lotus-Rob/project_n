@@ -54,6 +54,34 @@ private:
 
 } // namespace
 
+// Low-priority chunks: one item per chunk, as ChunkTask, so a join at high priority never waits on them.
+struct Jobs::Pending::Task final : public enki::ITaskSet {
+    Task(u32 chunks, std::function<void(u32)> work)
+      : enki::ITaskSet(chunks, 1)
+      , body(std::move(work)) {
+        m_Priority = enki::TASK_PRIORITY_LOW;
+    }
+    Task(const Task&) = delete;
+    Task& operator=(const Task&) = delete;
+    Task(Task&&) = delete;
+    Task& operator=(Task&&) = delete;
+    ~Task() override = default;
+
+    void ExecuteRange(enki::TaskSetPartition range, u32 threadnum) override;
+
+    std::function<void(u32)> body;
+    std::atomic<u32> ran = 0; // an edge ThreadSanitizer sees (enkiTS isn't instrumented)
+};
+
+// Out of line: the class has external linkage, and its vtable needs one translation unit to live in.
+void Jobs::Pending::Task::ExecuteRange(enki::TaskSetPartition range, u32 /*threadnum*/) {
+    PN_PROFILE_ZONE();
+    for (u32 chunk = range.start; chunk < range.end; ++chunk) {
+        body(chunk);
+    }
+    ran.fetch_add(range.end - range.start, std::memory_order_release);
+}
+
 struct Jobs::Impl {
     // A background job: one item, low priority, so a join at high priority never waits on it.
     class BackgroundTask final : public enki::ITaskSet {
@@ -83,6 +111,7 @@ struct Jobs::Impl {
 
     enki::TaskScheduler scheduler{};
     u32 workers = 0;
+    u32 externalThreads = 0;
     std::unique_ptr<BackgroundTask> background = nullptr; // the last one started, until the next
 };
 
@@ -93,10 +122,42 @@ void Jobs::Impl::BackgroundTask::ExecuteRange(enki::TaskSetPartition /*range*/, 
     m_done.store(true, std::memory_order_release);
 }
 
-Jobs::Jobs(u32 workers)
+Jobs::Pending::Pending()
+  : m_task{ nullptr } {
+}
+
+Jobs::Pending::Pending(Pending&& other) noexcept
+  : m_jobs{ std::exchange(other.m_jobs, nullptr) }
+  , m_task{ std::move(other.m_task) } {
+}
+
+Jobs::Pending::~Pending() {
+    if (m_task) {
+        m_jobs->m_impl->scheduler.WaitforTask(m_task.get());
+        PN_ASSERT(Done(), "a pending job's wait returned before its chunks ran");
+    }
+}
+
+bool Jobs::Pending::Done() const {
+    return !m_task || m_task->ran.load(std::memory_order_acquire) == m_task->m_SetSize;
+}
+
+Jobs::ThreadRegistration::ThreadRegistration(Jobs& jobs)
+  : m_jobs{ &jobs } {
+    const bool registered = m_jobs->m_impl->scheduler.RegisterExternalTaskThread();
+    PN_ASSERT(registered, "more threads registered with the job system than it was built for");
+}
+
+Jobs::ThreadRegistration::~ThreadRegistration() {
+    m_jobs->m_impl->scheduler.DeRegisterExternalTaskThread();
+}
+
+Jobs::Jobs(u32 workers, u32 externalThreads)
   : m_impl(std::make_unique<Impl>()) {
     enki::TaskSchedulerConfig config{};
     config.numTaskThreadsToCreate = std::max(workers, 1U);
+    config.numExternalTaskThreads = externalThreads;
+    m_impl->externalThreads = externalThreads;
     config.profilerCallbacks.threadStart = [](u32 /*thread*/) { math::SetFloatingPointEnvironment(); };
     m_impl->workers = config.numTaskThreadsToCreate;
     m_impl->scheduler.Initialize(config);
@@ -115,6 +176,24 @@ u32 Jobs::Workers() const {
     return m_impl->workers;
 }
 
+void Jobs::AssertMayFork() const {
+    // enkiTS numbers the creating thread 0 and registered ones 1 to externalThreads; a worker or an
+    // unregistered thread forking would race them.
+    const u32 thread = m_impl->scheduler.GetThreadNum();
+    PN_ASSERT(thread <= m_impl->externalThreads, "only the creating thread or a registered one forks");
+}
+
+Jobs::Pending Jobs::Start(u32 chunks, std::function<void(u32)> body) {
+    AssertMayFork();
+    Pending pending;
+    if (chunks > 0) {
+        pending.m_jobs = this;
+        pending.m_task = std::make_unique<Pending::Task>(chunks, std::move(body));
+        m_impl->scheduler.AddTaskSetToPipe(pending.m_task.get());
+    }
+    return pending;
+}
+
 void Jobs::Background(std::function<void()> work) {
     WaitForBackground();
     m_impl->background = std::make_unique<Impl::BackgroundTask>(std::move(work));
@@ -123,7 +202,7 @@ void Jobs::Background(std::function<void()> work) {
 
 void Jobs::WaitForBackground() {
     PN_PROFILE_ZONE();
-    PN_ASSERT(m_impl->scheduler.GetThreadNum() == 0, "only the thread that created the job system waits on it");
+    AssertMayFork();
     if (m_impl->background) {
         m_impl->scheduler.WaitforTask(m_impl->background.get());
         PN_ASSERT(m_impl->background->Done(), "a background job's wait returned before it finished");
@@ -132,8 +211,7 @@ void Jobs::WaitForBackground() {
 
 void Jobs::Run(u32 chunks, void (*call)(const void*, u32), const void* callable) {
     PN_PROFILE_ZONE();
-    // enkiTS numbers the thread that initialised it 0; any other thread forking would race it.
-    PN_ASSERT(m_impl->scheduler.GetThreadNum() == 0, "only the thread that created the job system forks");
+    AssertMayFork();
     if (chunks == 0) {
         return;
     }

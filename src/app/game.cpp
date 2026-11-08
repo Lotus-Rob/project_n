@@ -13,20 +13,19 @@ constexpr u64 NS_PER_MS = core::NS_PER_SECOND / 1'000;
 
 } // namespace
 
-Game::Game(core::GameHandover& handover, GameSetup setup)
+Game::Game(core::GameHandover& handover, core::Jobs& jobs, GameSetup setup)
   : m_now{ setup.now }
-  , m_jobs{ core::Jobs::DefaultWorkers() }
-  , m_saves(std::move(setup.saveSlot), m_jobs)
-  , m_replays(std::move(setup.replaySlot), m_jobs)
+  , m_jobs{ &jobs }
+  , m_saves(std::move(setup.saveSlot), jobs)
+  , m_replays(std::move(setup.replaySlot), jobs)
   , m_arena{ setup.scene, setup.data }
-  , m_logic(handover, m_arena, m_jobs, m_saves, m_replays, m_replay, setup.now)
+  , m_logic(handover, m_arena, jobs, m_saves, m_replays, m_replay, setup.now)
   , m_clock{ setup.startNs } {
-    PN_LOG_INFO(
-        "logic thread ticking {} times a second, job system running {} workers", core::TICKS_PER_SECOND, m_jobs.Workers()
-    );
+    PN_LOG_INFO("logic thread ticking {} times a second", core::TICKS_PER_SECOND);
 }
 
 Game::~Game() {
+    m_jobs->WaitForBackground();
     const core::TickCounters& counters = m_logic.Counters();
     PN_LOG_INFO("logic thread stopping after {} ticks, {} simulated", counters.wall, counters.simulation);
 }
