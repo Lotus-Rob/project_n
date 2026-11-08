@@ -1,8 +1,9 @@
-// The data module's YAML readers (data::ParseGameData, data::ParseSettings): a data or settings file is
-// edited by hand, so any text is refused with an error or read, never a crash or an exception escaping.
-// Seeded with the shipped creatures table and a settings file.
+// The data module's YAML readers (data::ParseGameData, data::ParseSettings, data::ParseManifest): a data or
+// settings file is edited by hand and the manifest may be damaged, so any text is refused with an error or read,
+// never a crash or an exception escaping. Seeded with the shipped creatures table, a settings file and the manifest.
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "data/game_data.hpp"
+#include "data/manifest.hpp"
 #include "data/settings.hpp"
 
 // Declared first: libFuzzer ships no header for it, and -Wmissing-prototypes requires one.
@@ -19,7 +20,9 @@ extern "C" i32 LLVMFuzzerTestOneInput(const u8* bytes, std::size_t size) {
     std::vector<std::string> warnings; // collected, so the unknown-key path runs too
     const std::expected<core::GameData, core::Error> gameData = data::ParseGameData(text, &warnings);
     const std::expected<core::Settings, core::Error> settings = data::ParseSettings(text, &warnings);
-    if ((!gameData && gameData.error().message.empty()) || (!settings && settings.error().message.empty())) {
+    const std::expected<core::Manifest, core::Error> manifest = data::ParseManifest(text);
+    if ((!gameData && gameData.error().message.empty()) || (!settings && settings.error().message.empty()) ||
+        (!manifest && manifest.error().message.empty())) {
         std::abort(); // a refusal always says why
     }
     return 0;
