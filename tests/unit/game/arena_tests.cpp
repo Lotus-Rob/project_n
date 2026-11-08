@@ -197,7 +197,7 @@ TEST_CASE("each entity's instance carries its ID; the ground and shadows carry n
     CHECK(std::ranges::contains(snapshot.ids, arena.Player()));
 }
 
-TEST_CASE("the selected entity is drawn tinted; selecting nothing clears it") {
+TEST_CASE("the snapshot names the selected entity's instance; selecting nothing clears it") {
     game::Arena arena;
     const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = arena.Player() } } };
     arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
@@ -205,11 +205,12 @@ TEST_CASE("the selected entity is drawn tinted; selecting nothing clears it") {
     const core::Snapshot snapshot = Published(arena);
     const auto drawn = std::ranges::find(snapshot.ids, arena.Player());
     REQUIRE(drawn != snapshot.ids.end());
-    CHECK(snapshot.instances.at(static_cast<std::size_t>(drawn - snapshot.ids.begin())).colour != core::OPAQUE_WHITE);
+    CHECK(snapshot.selected == std::optional<u32>{ static_cast<u32>(drawn - snapshot.ids.begin()) });
 
     const std::array<core::Action, 1> none{ { { .kind = core::ActionKind::Select } } };
     arena.Tick({ .wall = 2, .simulation = 2, .state = 2 }, { .actions = none, .held = {} });
     CHECK(arena.Selected() == core::StableId{});
+    CHECK_FALSE(Published(arena).selected.has_value());
 }
 
 TEST_CASE("a stale ID selects nothing") {

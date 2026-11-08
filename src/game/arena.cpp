@@ -69,7 +69,6 @@ constexpr std::array PAINTED_GLOWS{
 };
 
 constexpr core::Vec2 CULTIVATOR{ .x = 960.0F, .y = 620.0F };
-constexpr u32 SELECTED_TINT = 0xFF78'DCFFU; // a warm gold, premultiplied RGBA8 (red in the low byte)
 // Half the view around the player: the world shown at the smallest zoom (0.25) in a window up to 32:9 wide or about
 // square, so the logic culls without the main thread's camera (design doc 0002.3 §4).
 // shortcut: a fixed size; cull relative to the window (the camera's view rectangle) or the world's size when a window
@@ -508,8 +507,7 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
                       .current = body.current,
                       .scale = look.scale,
                       .previousRotation = spin.previous,
-                      .currentRotation = spin.current,
-                      .colour = stableId == m_selected ? SELECTED_TINT : core::OPAQUE_WHITE }
+                      .currentRotation = spin.current }
                 ),
                 body.current.y,
                 stableId
@@ -517,6 +515,11 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
         }
     });
     m_drawList.Publish(snapshot, jobs);
+    if (m_selected != core::StableId{}) {
+        if (const auto drawn = std::ranges::find(snapshot.ids, m_selected); drawn != snapshot.ids.end()) {
+            snapshot.selected = static_cast<u32>(drawn - snapshot.ids.begin());
+        }
+    }
 }
 
 } // namespace game

@@ -44,7 +44,8 @@ public:
     /// Draws `snapshot` into the frame Acquire() acquired as `camera` sees it, interpolated by
     /// `alpha` (0: its previous tick, 1: its own), and presents it. Uploads its instances only when
     /// it isn't the snapshot drawn last (§8.3). The instance at index `outlined`, when given, gets a pale
-    /// outline drawn over everything (the hovered entity, design doc 0002.3 §3).
+    /// outline drawn over everything (the hovered entity, design doc 0002.3 §3), and the snapshot's
+    /// selected instance a gold one; the gold wins where both fall on one.
     void Draw(
         const core::Snapshot& snapshot,
         f64 alpha,

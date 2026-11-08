@@ -105,6 +105,9 @@ struct Snapshot {
     std::vector<StableId> ids{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// What the camera follows, if anything.
     std::optional<Follow> follow = std::nullopt;
+    /// The index in `instances` of the selected entity's instance, which the renderer outlines; none
+    /// when nothing is selected or it isn't drawn.
+    std::optional<u32> selected = std::nullopt;
 };
 
 /// Something a tick started that the main thread plays at the render clock (sounds, particle
