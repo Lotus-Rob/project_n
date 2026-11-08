@@ -31,12 +31,36 @@ core::Snapshot Taken(core::GameHandover& handover) {
     return snapshot;
 }
 
+// Reports the arena's scene resident, as App does once the renderer holds it: the step taking it stalls, and the
+// clock restarts at now().
+void MakeResident(core::GameHandover& handover, app::Game& game) {
+    // A manifest without the scene fails the ticks the tests expect next.
+    const core::SceneId arena = test::TestManifest()->SceneNamed("arena").value_or(core::SceneId{});
+    handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = arena });
+    game.Step(FakeNow());
+    REQUIRE(game.Logic().Counters().wall == 0);
+}
+
+TEST_CASE("a step before the scene is resident runs no tick but publishes the scene it waits for") {
+    core::math::SetFloatingPointEnvironment();
+    FakeTime() = START_NS;
+    core::GameHandover handover;
+    core::Jobs jobs{ 1 };
+    app::Game game(handover, jobs, { .manifest = test::TestManifest(), .startNs = START_NS, .now = FakeNow });
+    game.Step(START_NS);
+    const core::Snapshot snapshot = Taken(handover);
+    CHECK(snapshot.wallTick == 0);
+    const std::optional<core::SceneId> arena = test::TestManifest()->SceneNamed("arena");
+    CHECK(snapshot.scene == arena);
+}
+
 TEST_CASE("a step at a tick's time runs it and publishes its snapshot") {
     core::math::SetFloatingPointEnvironment();
     FakeTime() = START_NS;
     core::GameHandover handover;
     core::Jobs jobs{ 1 };
     app::Game game(handover, jobs, { .manifest = test::TestManifest(), .startNs = START_NS, .now = FakeNow });
+    MakeResident(handover, game);
     game.Step(START_NS);
     const core::Snapshot snapshot = Taken(handover);
     CHECK(snapshot.wallTick == 1);
@@ -52,6 +76,7 @@ TEST_CASE("after a calendar step, the clock restarts when the step ended instead
     core::GameHandover handover;
     core::Jobs jobs{ 1 };
     app::Game game(handover, jobs, { .manifest = test::TestManifest(), .startNs = START_NS, .now = FakeNow });
+    MakeResident(handover, game);
     handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
     game.Step(START_NS);
     CHECK(Taken(handover).transition);

@@ -9,6 +9,7 @@
 #include "core/archive.hpp"
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
+#include "core/manifest.hpp"
 #include "core/replay.hpp"
 #include "core/saves.hpp"
 #include "core/tick_clock.hpp"
@@ -16,6 +17,7 @@
 
 #include <cstddef>
 #include <limits>
+#include <optional>
 #include <span>
 #include <stop_token>
 #include <string_view>
@@ -63,6 +65,9 @@ public:
     /// A hash of the game data in use (GameData::Hash): a replay plays only under the data it was recorded with.
     [[nodiscard]] virtual u64 DataHash() const = 0;
 
+    /// The scene its state needs drawn (design doc 0002.3.1 §3): it ticks only while the main thread holds it.
+    [[nodiscard]] virtual SceneId Scene() const = 0;
+
     /// Writes what the state looks like now into `snapshot`'s drawing data: its instances, batches
     /// and IDs arrive empty, with their capacity kept, and it follows nothing until set. Called once per burst, after its last
     /// tick, on the thread that created `jobs`, whose workers it may fork.
@@ -101,7 +106,12 @@ public:
     ~Logic() = default;
 
     /// Runs up to `burst.ticks` ticks back to back, then publishes the snapshot of the last one run,
-    /// filled by the simulation and stamped with `now()`. Each tick takes the input sent since the
+    /// filled by the simulation, naming its scene and stamped with `now()`. While the simulation's
+    /// scene isn't resident (no SceneResident has named it since it changed: at the start, after a
+    /// load or a replay starting in another scene), the burst runs no tick but waits (design doc
+    /// 0002.3.1 §4): it takes live input only, records nothing and moves no counter; Pause and
+    /// Resume still apply, SceneResident and ReloadData are taken, everything else is dropped. Each tick takes the
+    /// input sent since the
     /// one before (the last Pause or Resume wins; while a replay plays, the recorded input instead)
     /// and the newest held input, which every tick of a burst gets,
     /// counts itself, frozen while paused or while a calendar step is asked for, and ticks the
@@ -119,8 +129,9 @@ public:
     ///   playing (a new epoch); every REPLAY_HASH_TICKS wall ticks the state's hash is recorded or
     ///   checked, and a divergence stops playback with an error. While a replay plays, live Pause and
     ///   Resume (the window's focus) are kept aside and take effect when it stops.
+    /// A SceneResident taken on a running tick is applied and never recorded.
     /// Returns whether the burst ended on a stall the caller expected (a step, a save, a load, a
-    /// replay starting or finishing), so its clock restarts rather than catching up
+    /// replay starting or finishing, the scene waited for becoming resident), so its clock restarts rather than catching up
     /// (TickClock::Restart). `stop` cuts a step short.
     bool RunBurst(const TickBurst& burst, const std::stop_token& stop = {});
 
@@ -155,6 +166,7 @@ private:
     static_assert(ACTION_KINDS <= std::numeric_limits<ActionSet>::digits, "an ActionSet holds a bit per kind");
 
     TickEnd RunTick(const std::stop_token& stop);
+    bool Wait();
     ActionSet TakeInput();
     void CheckReplay();
     [[nodiscard]] std::vector<std::byte> Serialise(bool withLogicState);
@@ -180,6 +192,7 @@ private:
     bool m_windowPaused = false; // the last Pause or Resume live input sent, also while a replay plays
     bool m_advanced = false;     // whether the simulation ran in the last tick
     Calendar m_calendar = Calendar::None;
+    std::optional<SceneId> m_resident = std::nullopt; // the scene the main thread said it holds last
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for
     // members whose default constructor is defaulted.
     std::vector<Action> m_input{};

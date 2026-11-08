@@ -17,6 +17,8 @@ namespace core {
 inline constexpr u64 TICKS_PER_SECOND = 60;
 /// Nanoseconds in a second.
 inline constexpr u64 NS_PER_SECOND = 1'000'000'000;
+/// Nanoseconds in a millisecond.
+inline constexpr u64 NS_PER_MS = NS_PER_SECOND / 1'000;
 /// One tick's length in nanoseconds, rounded down; schedules use TickTime(), which doesn't drift.
 inline constexpr u64 TICK_NS = NS_PER_SECOND / TICKS_PER_SECOND;
 /// The most ticks run back to back after a hitch; beyond that, wall time is dropped.

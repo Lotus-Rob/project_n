@@ -59,6 +59,7 @@ TEST_CASE("a game loaded from a save goes on exactly as the game that saved") {
     REQUIRE(loaded.Load(reader));
     CHECK(loaded.StateHash() == saved.StateHash());
     CHECK(loaded.Months() == saved.Months());
+    CHECK(loaded.Scene() == saved.Scene());
 
     Play(saved, jobs, 1 + TICKS + MONTHS);
     Play(loaded, jobs, 1 + TICKS + MONTHS);

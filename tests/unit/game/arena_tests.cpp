@@ -399,4 +399,34 @@ TEST_CASE("months pass for the stress arena's world NPCs, and its active NPCs st
     CHECK(state[game::ACTIVE].Entities().storage<game::Npc>()->size() == ACTIVE_NPCS);
 }
 
+TEST_CASE("an arena needs the manifest's scene of its own name") {
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    const core::SceneId arena = game::Arena(manifest).Scene();
+    const core::SceneId painted = game::Arena(manifest, game::Scene::Painted).Scene();
+    CHECK(arena == manifest->SceneNamed("arena"));
+    CHECK(painted == manifest->SceneNamed("painted"));
+}
+
+TEST_CASE("the shipped manifest runs every scene with the built-in data") {
+    const std::expected<void, core::Error> checked = game::CheckScenes(*test::TestManifest(), game::BuiltInData());
+    CHECK(checked.has_value());
+}
+
+TEST_CASE("a manifest without one of the scenes is refused") {
+    core::Manifest manifest = *test::TestManifest();
+    std::erase_if(manifest.scenes, [](const core::SceneInfo& scene) { return scene.name == "cells"; });
+    const std::expected<void, core::Error> checked = game::CheckScenes(manifest, game::BuiltInData());
+    REQUIRE_FALSE(checked.has_value());
+    CHECK(checked.error().message.contains("cells"));
+}
+
+TEST_CASE("a scene with creatures that doesn't load their data's sprites is refused") {
+    const core::Manifest manifest = *test::TestManifest();
+    core::GameData data = game::BuiltInData();
+    data.fox.sprite = SpriteId::CellCity; // which only the cells load
+    const std::expected<void, core::Error> checked = game::CheckScenes(manifest, data);
+    REQUIRE_FALSE(checked.has_value());
+    CHECK(checked.error().message.contains("cell_city"));
+}
+
 } // namespace

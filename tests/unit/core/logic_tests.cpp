@@ -47,6 +47,9 @@ public:
     [[nodiscard]] u64 DataHash() const override {
         return dataHash;
     }
+    [[nodiscard]] core::SceneId Scene() const override {
+        return scene;
+    }
     void Publish(core::Snapshot& snapshot, core::Jobs& /*jobs*/) override {
         ++publishes;
         ticksAtPublish = ticks.size();
@@ -65,6 +68,7 @@ public:
     bool rejectLoads = false;
     u64 hashSalt = 0; // set to make its state hash differ from another's with the same ticks
     u64 dataHash = 0; // the hash of the game data it was given last
+    core::SceneId scene{};
     std::size_t publishes = 0;
     std::size_t ticksAtPublish = 0;
     std::size_t capacityAtPublish = 0;
@@ -76,12 +80,15 @@ struct BurstResult {
     core::Snapshot snapshot{};
 };
 
-// The logic and the systems it drives, held as a game holds them; saves go to `slot` and replays to
-// `replaySlot` (none by default).
+// The logic and the systems it drives, held as a game holds them, its scene reported resident as the main thread
+// does once it holds it; saves go to `slot` and replays to `replaySlot` (none by default).
 struct Rig {
     explicit Rig(std::filesystem::path slot = {}, std::filesystem::path replaySlot = {})
       : saves(std::move(slot), jobs)
       , replays(std::move(replaySlot), jobs) {
+        handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = simulation.scene });
+        REQUIRE(Burst(1).stalled);
+        simulation.publishes = 0;
     }
 
     // Runs a burst of `ticks` and returns what RunBurst said and published.
@@ -233,6 +240,65 @@ TEST_CASE("input sent during the transition waits until after the step") {
     CHECK(rig.Burst(1).stalled);
     CHECK_FALSE(rig.Burst(1).snapshot.advanced);
     CHECK(rig.simulation.ticks.empty());
+}
+
+constexpr core::SceneId OTHER_SCENE{ 1 };
+
+// A rig whose simulation now needs a scene the main thread hasn't reported resident.
+struct WaitingRig : Rig {
+    WaitingRig() {
+        simulation.scene = OTHER_SCENE;
+    }
+};
+
+TEST_CASE("until its scene is resident, a burst runs no tick and publishes the scene it waits for") {
+    constexpr u64 TICKS = 3;
+    WaitingRig rig;
+    const BurstResult result = rig.Burst(TICKS);
+    CHECK_FALSE(result.stalled);
+    CHECK(result.snapshot.wallTick == 0);
+    CHECK_FALSE(result.snapshot.advanced);
+    CHECK(result.snapshot.scene == OTHER_SCENE);
+    CHECK(rig.simulation.ticks.empty());
+    CHECK(rig.simulation.publishes == 1);
+}
+
+TEST_CASE("the burst that takes the scene's SceneResident stalls, and the next one ticks") {
+    WaitingRig rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = OTHER_SCENE });
+    CHECK(rig.Burst(1).stalled);
+    CHECK(rig.Burst(1).snapshot.simulationTick == 1);
+}
+
+TEST_CASE("a SceneResident naming another scene leaves the burst waiting") {
+    WaitingRig rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = core::SceneId{} });
+    CHECK_FALSE(rig.Burst(1).stalled);
+    CHECK(rig.Burst(1).snapshot.wallTick == 0);
+}
+
+TEST_CASE("a Pause sent while the scene loads holds once it is resident") {
+    WaitingRig rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::Pause });
+    static_cast<void>(rig.Burst(1));
+    rig.handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = OTHER_SCENE });
+    static_cast<void>(rig.Burst(1));
+    const core::Snapshot snapshot = rig.Burst(1).snapshot;
+    CHECK(snapshot.wallTick == 1);
+    CHECK(snapshot.simulationTick == 0);
+}
+
+TEST_CASE("other actions sent while the scene loads are dropped") {
+    WaitingRig rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::Select });
+    rig.handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
+    static_cast<void>(rig.Burst(1));
+    rig.handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = OTHER_SCENE });
+    static_cast<void>(rig.Burst(1));
+    const core::Snapshot snapshot = rig.Burst(1).snapshot;
+    CHECK_FALSE(snapshot.transition);
+    REQUIRE(rig.simulation.actions.size() == 1);
+    CHECK(rig.simulation.actions.front() == 0);
 }
 
 // A save slot in a folder of its own, removed when the test ends.
@@ -476,6 +542,19 @@ TEST_CASE("a Pause sent while a replay plays holds once the replay ends by itsel
     CHECK_FALSE(result.snapshot.advanced);
 }
 
+TEST_CASE("a SceneResident on a running tick reaches neither the simulation nor the replay") {
+    const SaveSlot slot{ "scene_resident_unrecorded" };
+    Rig rig(slot.File(), slot.File().parent_path() / "replay.pnr");
+    rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
+    static_cast<void>(rig.Burst(1));
+    rig.handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = rig.simulation.scene });
+    static_cast<void>(rig.Burst(1));
+    CHECK(rig.simulation.actions.back() == 0);
+    rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
+    static_cast<void>(rig.Burst(1));
+    StartPlaying(rig); // the replay reader refuses a SceneResident
+}
+
 TEST_CASE("a Save arriving in the same tick as ToggleRecording still writes the save file") {
     const SaveSlot slot{ "save_with_recording" };
     Rig rig(slot.File(), slot.File().parent_path() / "replay.pnr");
@@ -518,6 +597,17 @@ TEST_CASE("ReloadData gives the simulation the data on a frozen tick that ends t
     CHECK_FALSE(result.stalled);
     CHECK(result.snapshot.wallTick == 1);
     CHECK(result.snapshot.simulationTick == 0);
+}
+
+TEST_CASE("ReloadData sent while the scene loads reaches the simulation once the scene is resident") {
+    WaitingRig rig;
+    const std::shared_ptr<const core::GameData> data = NewData();
+    rig.handover.SendInput({ .kind = core::ActionKind::ReloadData, .data = data });
+    static_cast<void>(rig.Burst(1));
+    rig.handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = OTHER_SCENE });
+    static_cast<void>(rig.Burst(1));
+    static_cast<void>(rig.Burst(1));
+    CHECK(rig.simulation.dataHash == data->Hash());
 }
 
 TEST_CASE("ReloadData while recording finishes the recording and writes it") {

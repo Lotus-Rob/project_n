@@ -1,5 +1,6 @@
 #include "game/arena.hpp"
 
+#include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/instances.hpp"
 #include "core/log.hpp"
@@ -165,6 +166,24 @@ core::Rect ViewOf(Scene scene) {
     return scene == Scene::Cells ? CELLS_VIEW : GROUND_VIEW;
 }
 
+// Each Scene's name in the manifest, in Scene's order, and whether it has creatures, which draw the data's sprites.
+struct SceneEntry {
+    std::string_view name;
+    bool creatures = false;
+};
+constexpr std::array<SceneEntry, 4> SCENES{ {
+    { .name = "arena", .creatures = true },
+    { .name = "stress", .creatures = true },
+    { .name = "painted", .creatures = false },
+    { .name = "cells", .creatures = false },
+} };
+
+core::SceneId SceneIdOf(const core::Manifest& manifest, Scene scene) {
+    const std::optional<core::SceneId> found = manifest.SceneNamed(SceneName(scene));
+    PN_ASSERT(found.has_value(), "the manifest lacks a scene: main checks it at start");
+    return found.value_or(core::SceneId{});
+}
+
 // What assets/data/creatures.yaml ships.
 constexpr core::GameData BUILT_IN_DATA{
     .cultivator = { .sprite = SpriteId::Cultivator, .walkSpeed = 4.0F }, // 240 world units a second at full stick
@@ -176,6 +195,31 @@ constexpr core::GameData BUILT_IN_DATA{
 
 core::GameData BuiltInData() {
     return BUILT_IN_DATA;
+}
+
+std::string_view SceneName(Scene scene) {
+    return SCENES.at(std::to_underlying(scene)).name;
+}
+
+std::expected<void, core::Error> CheckScenes(const core::Manifest& manifest, const core::GameData& data) {
+    for (const SceneEntry& entry : SCENES) {
+        const std::optional<core::SceneId> scene = manifest.SceneNamed(entry.name);
+        if (!scene) {
+            return std::unexpected{ core::Error{ std::format("the atlas has no scene {}: run `./dev atlas`", entry.name) } };
+        }
+        const std::vector<SpriteId>& sprites = manifest.Scene(*scene).sprites;
+        for (const SpriteId sprite : { data.cultivator.sprite, data.fox.sprite }) {
+            if (entry.creatures && !std::ranges::contains(sprites, sprite)) {
+                return std::unexpected{ core::Error{ std::format(
+                    "the scene {} doesn't load {}, which the creatures data draws: add it to art/scenes.toml and run "
+                    "`./dev atlas`",
+                    entry.name,
+                    core::atlas::SPRITE_NAMES.at(std::to_underlying(sprite))
+                ) } };
+            }
+        }
+    }
+    return {};
 }
 
 core::Vec2 OrbitPoint(const Orbit& orbit, u64 tick) {
@@ -192,17 +236,18 @@ core::Vec2 OrbitPoint(const Orbit& orbit, u64 tick) {
     };
 }
 
-Arena::Arena(std::shared_ptr<const core::Manifest> manifest, Scene scene, const core::GameData& data)
+Arena::Arena(std::shared_ptr<const core::Manifest> manifest, game::Scene scene, const core::GameData& data)
   : m_manifest{ std::move(manifest) }
   , m_state{ DOMAINS, SEED }
   , m_data{ data }
   , m_scene{ scene }
+  , m_sceneId{ SceneIdOf(*m_manifest, scene) }
   , m_view{ ViewOf(scene) } {
-    if (scene == Scene::Cells) {
+    if (scene == game::Scene::Cells) {
         SpawnCells();
         return;
     }
-    if (scene == Scene::Painted) {
+    if (scene == game::Scene::Painted) {
         SpawnPainted();
         return;
     }
@@ -249,10 +294,10 @@ Arena::Arena(std::shared_ptr<const core::Manifest> manifest, Scene scene, const 
         };
         m_state[ACTIVE].Entities().emplace<Orbit>(Spawn(OrbitPoint(orbit, 0), look), orbit);
     }
-    if (scene == Scene::Stress) {
+    if (scene == game::Scene::Stress) {
         SpawnStress();
     }
-    SpawnNpcs(scene == Scene::Stress ? WORLD_NPCS : SMALL_WORLD_NPCS);
+    SpawnNpcs(scene == game::Scene::Stress ? WORLD_NPCS : SMALL_WORLD_NPCS);
 }
 
 void Arena::SpawnStress() {
@@ -405,14 +450,14 @@ u64 Arena::StateHash() const {
 bool Arena::Load(core::Reader& archive) {
     PN_PROFILE_ZONE();
     u32 format = 0;
-    Scene scene = Scene::Arena;
+    game::Scene scene = game::Scene::Arena;
     u64 seed = 0;
     u64 next = 0;
     u64 months = 0;
     core::StableId player{};
     core::StableId selected{};
     archive(format, scene, seed, next, months, player, selected);
-    if (format != ARENA_FORMAT || scene > Scene::Cells) {
+    if (format != ARENA_FORMAT || scene > game::Scene::Cells) {
         archive.Fail();
     }
     core::State state{ DOMAINS, seed, core::StableIdCounter{ .next = next } };
@@ -437,6 +482,7 @@ bool Arena::Load(core::Reader& archive) {
     m_state = std::move(state);
     m_relationships = std::move(relationships);
     m_scene = scene;
+    m_sceneId = SceneIdOf(*m_manifest, scene);
     m_months = months;
     m_view = ViewOf(scene);
     m_player = player;

@@ -62,7 +62,7 @@ public:
     ~App();
 
     /// Runs the main loop until the player quits or `--quit-after` runs out (0), or the logic
-    /// thread fails (1).
+    /// thread fails or a scene can't be loaded (1).
     [[nodiscard]] i32 Run();
 
 private:
@@ -71,7 +71,8 @@ private:
     void NoteDevice(const platform::InputEvent& input);
     void Select(const platform::WindowState& state, core::Vec2 position);
     void Pan(u64 nowNs);
-    void Present(const platform::WindowState& state);
+    [[nodiscard]] bool Present(const platform::WindowState& state);
+    [[nodiscard]] bool LoadScene(core::SceneId wanted);
     [[nodiscard]] std::optional<std::size_t> Hovered(
         const platform::WindowState& state,
         const core::Snapshot& drawn,
@@ -94,9 +95,12 @@ private:
     Bindings m_bindings{};
     // NOLINTEND(readability-redundant-member-init)
     gfx::Camera m_camera{};
-    core::HeldInput m_held{}; // as last sent
-    u64 m_frameNs = 0;        // when the last frame began, for panning
-    u64 m_dataCheckNs = 0;    // when the data folder is looked at next
+    core::HeldInput m_held{};                               // as last sent
+    u64 m_frameNs = 0;                                      // when the last frame began, for panning
+    u64 m_dataCheckNs = 0;                                  // when the data folder is looked at next
+    u64 m_loadStartNs = 0;                                  // when the scene loading began
+    std::optional<core::SceneId> m_loading = std::nullopt;  // the scene the renderer loads
+    std::optional<core::SceneId> m_reported = std::nullopt; // the scene the logic was told is resident, last
     // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::filesystem::file_time_type m_dataChanged{};        // the newest change in the data folder seen
     platform::Device m_device = platform::Device::Keyboard; // used last, for prompts (phase 6's UI draws them)

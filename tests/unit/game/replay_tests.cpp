@@ -22,11 +22,14 @@ u64 NoClock() {
     return 0;
 }
 
-// A game as app::Game holds one, without its clock: the tests choose the bursts.
+// A game as app::Game holds one, without its clock: the tests choose the bursts. Its scene is resident, as the
+// main thread reports once it holds it.
 struct Session {
     explicit Session(const std::filesystem::path& folder)
       : saves(folder / "slot.pns", jobs)
       , replays(folder / "replay.pnr", jobs) {
+        handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = arena.Scene() });
+        Burst(1);
     }
 
     void Burst(u64 ticks) {

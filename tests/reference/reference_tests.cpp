@@ -60,6 +60,7 @@ void CheckAgainstReference(const View& view) {
     }
     core::Snapshot snapshot;
     arena.Publish(snapshot, jobs);
+    snapshot.scene = arena.Scene(); // as core::Logic names it
 
     std::expected<platform::Window, core::Error> window = platform::Window::Open("reference", WIDTH, HEIGHT);
     REQUIRE_MESSAGE(window.has_value(), window.error().message);
@@ -67,6 +68,12 @@ void CheckAgainstReference(const View& view) {
     REQUIRE_MESSAGE(assets.has_value(), assets.error().message);
     std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(*window, *assets, test::TestManifest());
     REQUIRE_MESSAGE(renderer.has_value(), renderer.error().message);
+    renderer->BeginScene(snapshot.scene, jobs);
+    std::expected<bool, core::Error> held = false;
+    while (held && !*held) {
+        held = renderer->ContinueScene(std::numeric_limits<u64>::max());
+    }
+    REQUIRE_MESSAGE(held.has_value(), held.error().message);
     gfx::Camera camera{ .zoom = view.zoom };
     std::optional<std::size_t> outlined;
     if (view.outlines) {
