@@ -105,6 +105,7 @@ private:
     std::filesystem::file_time_type m_dataChanged{};        // the newest change in the data folder seen
     platform::Device m_device = platform::Device::Keyboard; // used last, for prompts (phase 6's UI draws them)
     platform::GamepadFamily m_family = platform::GamepadFamily::Other;
+    std::optional<core::SceneId> m_shown = std::nullopt;    // the scene of the snapshot drawn last
     bool m_quit = false;
     bool m_paused = false;
     std::atomic<bool> m_logicFailed = false;

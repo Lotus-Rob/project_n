@@ -197,6 +197,15 @@ core::GameData BuiltInData() {
     return BUILT_IN_DATA;
 }
 
+std::optional<Scene> SceneNamed(std::string_view name) {
+    const std::span<const SceneEntry> scenes{ SCENES };
+    const auto found = std::ranges::find(scenes, name, &SceneEntry::name);
+    if (found == scenes.end()) {
+        return std::nullopt;
+    }
+    return static_cast<Scene>(found - scenes.begin());
+}
+
 std::string_view SceneName(Scene scene) {
     return SCENES.at(std::to_underlying(scene)).name;
 }
@@ -243,6 +252,19 @@ Arena::Arena(std::shared_ptr<const core::Manifest> manifest, game::Scene scene, 
   , m_scene{ scene }
   , m_sceneId{ SceneIdOf(*m_manifest, scene) }
   , m_view{ ViewOf(scene) } {
+    Build(scene);
+}
+
+// Everything but the calendar and the game data starts afresh: the entities, their IDs, the relationships, the
+// selection.
+void Arena::Build(game::Scene scene) {
+    m_state = core::State{ DOMAINS, SEED };
+    m_relationships = Relationships{};
+    m_scene = scene;
+    m_sceneId = SceneIdOf(*m_manifest, scene);
+    m_view = ViewOf(scene);
+    m_player = {};
+    m_selected = {};
     if (scene == game::Scene::Cells) {
         SpawnCells();
         return;
@@ -264,18 +286,18 @@ Arena::Arena(std::shared_ptr<const core::Manifest> manifest, game::Scene scene, 
         Spawn(CRYSTAL.foot, { .sprite = CRYSTAL.sprite, .shadow = true, .scale = CRYSTAL.scale }), Spin{ .speed = CRYSTAL_SPIN }
     );
     core::Registry& entities = m_state[ACTIVE].Entities();
-    const core::Entity cultivator = Spawn(CULTIVATOR, { .sprite = data.cultivator.sprite, .shadow = true });
+    const core::Entity cultivator = Spawn(CULTIVATOR, { .sprite = m_data.cultivator.sprite, .shadow = true });
     entities.emplace<Creature>(cultivator, CreatureKind::Cultivator);
     m_player = entities.get<core::StableId>(cultivator);
     for (u32 fox = 0; fox < FOXES; ++fox) {
         const Orbit orbit{
             .centre = CULTIVATOR,
-            .radius = data.fox.orbitRadius,
-            .wobble = data.fox.orbitWobble,
+            .radius = m_data.fox.orbitRadius,
+            .wobble = m_data.fox.orbitWobble,
             .phase = TURN * static_cast<f32>(fox) / static_cast<f32>(FOXES),
-            .speed = data.fox.orbitSpeed,
+            .speed = m_data.fox.orbitSpeed,
         };
-        const core::Entity entity = Spawn(OrbitPoint(orbit, 0), { .sprite = data.fox.sprite, .shadow = true });
+        const core::Entity entity = Spawn(OrbitPoint(orbit, 0), { .sprite = m_data.fox.sprite, .shadow = true });
         entities.emplace<Orbit>(entity, orbit);
         entities.emplace<Creature>(entity, CreatureKind::Fox);
     }
@@ -375,6 +397,12 @@ core::Entity Arena::Spawn(core::Vec2 foot, const Look& look) {
 
 void Arena::Tick(const core::TickCounters& counters, const core::TickInput& input) {
     PN_PROFILE_ZONE();
+    if (std::ranges::contains(input.actions, core::ActionKind::CycleScene, &core::Action::kind)) {
+        const auto next = static_cast<game::Scene>((std::to_underlying(m_scene) + 1U) % SCENES.size());
+        PN_LOG_INFO("tick {}: the scene changes to {}", counters.simulation, SceneName(next));
+        Build(next); // the new scene's first tick is the next one
+        return;
+    }
     for (const core::Action& action : input.actions) {
         if (action.kind == core::ActionKind::Select) {
             Select(action.target);

@@ -1,7 +1,8 @@
 // The phase 4 gate for replays (design doc 0002 §16, 0002.2), extended in phase 5 (0002.3 §9): an arena with
-// every NPC system (walking active NPCs, a world of NPCs living months) recorded through the real logic, with
-// the player walking and selecting, a pause, a calendar step and a save in it, plays back in a fresh game with every hash
-// matching, the last one on the recording's final tick.
+// every NPC system (walking active NPCs, a world of NPCs living months) recorded through the real logic, from the
+// cells and changed to with F2, with the player walking and selecting, a pause, a calendar step and a save in it, plays
+// back in a fresh game in another scene (a load across scenes, waiting for each) with every hash matching, the last
+// one on the recording's final tick.
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
@@ -22,19 +23,25 @@ u64 NoClock() {
     return 0;
 }
 
-// A game as app::Game holds one, without its clock: the tests choose the bursts. Its scene is resident, as the
-// main thread reports once it holds it.
+// A game as app::Game holds one, built as `scene`, without its clock: the tests choose the bursts. As App does, it
+// reports each scene a snapshot needs resident, at once.
 struct Session {
-    explicit Session(const std::filesystem::path& folder)
+    explicit Session(const std::filesystem::path& folder, game::Scene scene = game::Scene::Arena)
       : saves(folder / "slot.pns", jobs)
-      , replays(folder / "replay.pnr", jobs) {
-        handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = arena.Scene() });
-        Burst(1);
+      , replays(folder / "replay.pnr", jobs)
+      , arena{ test::TestManifest(), scene } {
+        Burst(1); // waits, and reports the scene
+        Burst(1); // takes the report
     }
 
     void Burst(u64 ticks) {
         static_cast<void>(logic.RunBurst({ .ticks = ticks }));
-        handover.ReturnState(handover.TakeState());
+        core::Snapshot* published = handover.TakeState();
+        if (published->scene != reported) {
+            reported = published->scene;
+            handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = published->scene });
+        }
+        handover.ReturnState(published);
     }
 
     void Send(core::ActionKind kind, core::StableId target = {}) {
@@ -52,8 +59,9 @@ struct Session {
     core::Saves saves;
     core::Saves replays;
     core::Replay replay{};
-    game::Arena arena{ test::TestManifest(), game::Scene::Arena };
+    game::Arena arena;
     core::Logic logic{ handover, arena, jobs, saves, replays, replay, NoClock };
+    std::optional<core::SceneId> reported = std::nullopt;
 };
 
 // A folder of its own, removed when the test ends.
@@ -90,9 +98,14 @@ TEST_CASE("an arena with NPCs plays its replay back with every hash matching") {
     const Folder folder{ "npcs" };
     core::StableId selected{};
     {
-        Session recording(folder.Path());
+        Session recording(folder.Path(), game::Scene::Cells);
         recording.Send(core::ActionKind::ToggleRecording);
         recording.Burst(1);
+        recording.Send(core::ActionKind::CycleScene); // to the arena
+        recording.Burst(BURST);                       // ends after the change
+        recording.Burst(BURST);                       // waits for the arena, which the session reports
+        recording.Burst(BURST);                       // takes the report
+        REQUIRE(recording.arena.Player() != core::StableId{});
         recording.Hold(RIGHT);
         recording.Burst(WALK);
         selected = recording.arena.Player();
@@ -118,7 +131,7 @@ TEST_CASE("an arena with NPCs plays its replay back with every hash matching") {
         recording.Burst(1);
     } // its job system finishes writing the replay
 
-    Session playing(folder.Path());
+    Session playing(folder.Path()); // in the arena: playback starts in the cells, and changes to the arena
     playing.Send(core::ActionKind::PlayReplay);
     playing.Burst(1);
     REQUIRE(playing.replay.Playing());

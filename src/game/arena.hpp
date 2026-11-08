@@ -12,7 +12,8 @@
 ///   cultivator from the creatures data table (hot reload in debug builds);
 /// - click-to-select, the selected entity outlined in gold and the hovered one in pale white;
 /// - NPCs walking in the active tier and 5,000 in the world tier, whose months pass on request (§7.7);
-/// - saves, loads and replays of all of it.
+/// - saves, loads and replays of all of it;
+/// - F2 cycling through the scenes, each loaded on demand while the ticks wait for it.
 /// Its stress variant adds a crowd and a bullet spiral, about 100,000 instances in all (§8.1), and a world tier of 50,000.
 
 #include "core/draw_list.hpp"
@@ -32,6 +33,7 @@
 #include <cmath>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <stop_token>
 #include <string_view>
 
@@ -78,6 +80,9 @@ enum class Scene : u8 {
     Cells,   ///< A still grid of 640 map cells, for judging the mips as the view zooms out (§16 phase 3).
 };
 
+/// The scene called `name` (SceneName()), if there is one.
+[[nodiscard]] std::optional<Scene> SceneNamed(std::string_view name);
+
 /// The name of `scene`'s sprites in the atlas manifest (art/scenes.toml): `arena`, `stress`, `painted`, `cells`.
 [[nodiscard]] std::string_view SceneName(Scene scene);
 
@@ -97,9 +102,10 @@ public:
         const core::GameData& data = BuiltInData()
     );
 
-    /// Walks the player's cultivator where `input`'s held movement points, selects what its Select
-    /// actions name, moves every entity on an Orbit to where it is at `counters.simulation`, and
-    /// walks the active NPCs, whose decisions draw random numbers keyed on `counters.state`.
+    /// Rebuilds itself as the next scene in Scene's order (arena, stress, painted, cells, then the arena again) when
+    /// `input` holds a CycleScene, the selection cleared; walks the player's cultivator where `input`'s held
+    /// movement points, selects what its Select actions name, moves every entity on an Orbit to where it is at
+    /// `counters.simulation`, and walks the active NPCs, whose decisions draw random numbers keyed on `counters.state`.
     void Tick(const core::TickCounters& counters, const core::TickInput& input) override;
 
     /// Lets a month pass for the world NPCs (MonthStep).
@@ -165,6 +171,7 @@ private:
     template<typename Archive>
     void Write(Archive& archive) const;
 
+    void Build(game::Scene scene);
     core::Entity Spawn(core::Vec2 foot, const Look& look);
     void Walk(core::Vec2 move);
     void Select(core::StableId target);

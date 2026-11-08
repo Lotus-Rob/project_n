@@ -407,6 +407,33 @@ TEST_CASE("an arena needs the manifest's scene of its own name") {
     CHECK(painted == manifest->SceneNamed("painted"));
 }
 
+TEST_CASE("each scene is found by its name") {
+    for (const game::Scene scene : { game::Scene::Arena, game::Scene::Stress, game::Scene::Painted, game::Scene::Cells }) {
+        const std::optional<game::Scene> found = game::SceneNamed(game::SceneName(scene));
+        CHECK(found == scene);
+    }
+    const std::optional<game::Scene> unknown = game::SceneNamed("nowhere");
+    CHECK_FALSE(unknown.has_value());
+}
+
+TEST_CASE("F2's CycleScene visits every scene in order and back, clearing the selection") {
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    game::Arena arena(manifest);
+    const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = arena.Player() } } };
+    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
+    REQUIRE(arena.Selected() == arena.Player());
+    const std::array<core::Action, 1> cycle{ { { .kind = core::ActionKind::CycleScene } } };
+    u64 tick = 1;
+    for (const std::string_view name : { "stress", "painted", "cells", "arena" }) {
+        ++tick;
+        arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, { .actions = cycle, .held = {} });
+        const std::optional<core::SceneId> expected = manifest->SceneNamed(name);
+        CHECK(arena.Scene() == expected);
+    }
+    CHECK(arena.Selected() == core::StableId{});
+    CHECK(arena.Player() != core::StableId{});
+}
+
 TEST_CASE("the shipped manifest runs every scene with the built-in data") {
     const std::expected<void, core::Error> checked = game::CheckScenes(*test::TestManifest(), game::BuiltInData());
     CHECK(checked.has_value());

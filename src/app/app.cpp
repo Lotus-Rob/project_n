@@ -43,6 +43,7 @@ constexpr std::array ACTION_CONTROLS{
     ActionControl{ .control = Control::PlayReplay,
                    .kind = core::ActionKind::PlayReplay,
                    .asked = "the replay asked to play or stop" },
+    ActionControl{ .control = Control::CycleScene, .kind = core::ActionKind::CycleScene, .asked = "the next scene asked for" },
 };
 
 // When a file in `folder` last changed; the oldest time when none can be read.
@@ -296,6 +297,7 @@ bool App::Present(const platform::WindowState& state) {
     if (!LoadScene(drawn->scene)) {
         return false;
     }
+    ShowScene(m_camera, m_shown, drawn->scene);
     core::PresentFrame(
         *drawn,
         m_pending,

@@ -25,6 +25,7 @@ enum class Control : u8 {
     Load,            ///< Load the save (a debug key).
     ToggleRecording, ///< Start or finish recording a replay (a debug key).
     PlayReplay,      ///< Play the replay or stop it (a debug key).
+    CycleScene,      ///< Switch to the next scene (a debug key).
 };
 
 /// A control pressed or released.
@@ -79,7 +80,7 @@ private:
 class Bindings {
 public:
     /// The default bindings: WASD, the arrow keys and the left stick move; the left button selects;
-    /// the wheel and the shoulder buttons zoom; Escape quits; M, F5, F9, F6 and F10 are the debug
+    /// the wheel and the shoulder buttons zoom; Escape quits; M, F2, F5, F9, F6 and F10 are the debug
     /// keys. shortcut: code, not data; bindings become data (a YAML table
     /// the player's rebinds save over) when rebinding lands with the settings screen (§10, §11).
     Bindings();

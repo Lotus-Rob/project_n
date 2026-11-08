@@ -28,6 +28,9 @@ bool Logic::RunBurst(const TickBurst& burst, const std::stop_token& stop) {
     }
     for (u64 tick = 0; tick < burst.ticks && end == TickEnd::Continue; ++tick) {
         end = RunTick(stop);
+        if (end == TickEnd::Continue && m_simulation->Scene() != m_resident) {
+            end = TickEnd::EndBurst; // the next burst waits for the new scene
+        }
         CheckReplay();
         PN_ASSERT(math::FloatingPointEnvironmentIsSet(), "a library changed the floating-point environment");
     }

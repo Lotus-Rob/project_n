@@ -13,7 +13,10 @@ u64 PublishedClock() {
     return PUBLISHED_NS;
 }
 
-// Records the ticks it ran and its publishes, and publishes one instance per tick so far.
+constexpr core::SceneId OTHER_SCENE{ 1 };
+
+// Records the ticks it ran and its publishes, and publishes one instance per tick so far; a CycleScene moves it to
+// OTHER_SCENE.
 class Recorder final : public core::Simulation {
 public:
     void Tick(const core::TickCounters& counters, const core::TickInput& input) override {
@@ -21,6 +24,9 @@ public:
         states.push_back(counters.state);
         held.push_back(input.held);
         actions.push_back(input.actions.size());
+        if (std::ranges::contains(input.actions, core::ActionKind::CycleScene, &core::Action::kind)) {
+            scene = OTHER_SCENE;
+        }
     }
     void AdvanceCalendar(const core::TickCounters& counters, core::Jobs& /*jobs*/, const std::stop_token& /*stop*/) override {
         steps.push_back(counters.state);
@@ -242,8 +248,6 @@ TEST_CASE("input sent during the transition waits until after the step") {
     CHECK(rig.simulation.ticks.empty());
 }
 
-constexpr core::SceneId OTHER_SCENE{ 1 };
-
 // A rig whose simulation now needs a scene the main thread hasn't reported resident.
 struct WaitingRig : Rig {
     WaitingRig() {
@@ -275,6 +279,16 @@ TEST_CASE("a SceneResident naming another scene leaves the burst waiting") {
     rig.handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = core::SceneId{} });
     CHECK_FALSE(rig.Burst(1).stalled);
     CHECK(rig.Burst(1).snapshot.wallTick == 0);
+}
+
+TEST_CASE("a tick that changes the scene ends its burst, and the next burst waits for the scene") {
+    constexpr u64 TICKS = 3;
+    Rig rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::CycleScene });
+    const core::Snapshot changed = rig.Burst(TICKS).snapshot;
+    CHECK(changed.wallTick == 1);
+    CHECK(changed.scene == OTHER_SCENE);
+    CHECK(rig.Burst(TICKS).snapshot.wallTick == 1);
 }
 
 TEST_CASE("a Pause sent while the scene loads holds once it is resident") {
