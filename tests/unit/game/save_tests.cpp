@@ -116,21 +116,32 @@ TEST_CASE("a save with bytes after the state, or of another format, is refused")
     CHECK_FALSE(game.Load(otherReader));
 }
 
-// An arena save of `state`, laid out as Arena::Save writes one: format, scene, seed, stable-ID
-// counter, months, then each domain after its version, then no relationships.
-std::vector<std::byte> ArenaSave(const core::State& state) {
-    constexpr u32 FORMAT = 1;
-    constexpr u32 VERSION = 1;
+// An arena save of `state` with `player`, laid out as Arena::Save writes one: format, scene, seed,
+// stable-ID counter, months, the player and the selection (none), then each domain after its version,
+// then no relationships. Its versions must follow arena.cpp's, or every refusal below is the version's.
+std::vector<std::byte> ArenaSave(const core::State& state, core::StableId player = {}) {
+    constexpr u32 FORMAT = 2;
+    constexpr u32 ACTIVE_VERSION = 3;
+    constexpr u32 WORLD_VERSION = 1;
     constexpr u64 MONTHS_PASSED = 0;
     constexpr u64 RELATIONSHIPS = 0;
-    using Active = core::ComponentList<game::Body, game::Look, game::Orbit, game::Npc, game::Needs, game::Met, game::Wander>;
+    using Active = core::ComponentList<
+        game::Body,
+        game::Look,
+        game::Orbit,
+        game::Spin,
+        game::Creature,
+        game::Npc,
+        game::Needs,
+        game::Met,
+        game::Wander>;
     using World = core::ComponentList<game::Npc, game::Needs, game::Met, game::Group>;
     std::vector<std::byte> bytes;
     core::Writer writer{ bytes };
-    writer(FORMAT, game::Scene::Arena, state.Seed(), state.Ids().next, MONTHS_PASSED);
-    writer(VERSION);
+    writer(FORMAT, game::Scene::Arena, state.Seed(), state.Ids().next, MONTHS_PASSED, player, core::StableId{});
+    writer(ACTIVE_VERSION);
     core::SaveDomain(writer, state[game::ACTIVE], Active{});
-    writer(VERSION);
+    writer(WORLD_VERSION);
     core::SaveDomain(writer, state[game::WORLD], World{});
     writer(RELATIONSHIPS);
     return bytes;
@@ -149,6 +160,40 @@ bool Loads(const std::vector<std::byte>& bytes) {
 
 constexpr u64 STATE_SEED = 7;
 constexpr u32 NPC_CELL = 3;
+
+TEST_CASE("a sound save built as the refusals below build theirs is loaded") {
+    core::State state{ game::DOMAINS, STATE_SEED };
+    static_cast<void>(game::SpawnNpc(state, NPC_CELL));
+    const core::Entity player = state.Create(game::ACTIVE).second;
+    state[game::ACTIVE].Entities().emplace<game::Body>(player);
+    game::Arena game(test::TestManifest(), game::Scene::Arena);
+    const std::vector<std::byte> bytes = ArenaSave(state, state[game::ACTIVE].Entities().get<core::StableId>(player));
+    core::Reader reader{ bytes };
+    CHECK(game.Load(reader));
+}
+
+TEST_CASE("a save whose player doesn't exist is refused, and the game is unchanged") {
+    constexpr core::StableId NOBODY{ 12'345 };
+    const core::State state{ game::DOMAINS, STATE_SEED };
+    const bool loaded = Loads(ArenaSave(state, NOBODY));
+    CHECK_FALSE(loaded);
+}
+
+TEST_CASE("a save whose player has no body is refused, and the game is unchanged") {
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::StableId player = state.Create(game::ACTIVE).first;
+    const bool loaded = Loads(ArenaSave(state, player));
+    CHECK_FALSE(loaded);
+}
+
+TEST_CASE("a save with a creature that has no look is refused, and the game is unchanged") {
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::Entity entity = state.Create(game::ACTIVE).second;
+    state[game::ACTIVE].Entities().emplace<game::Body>(entity);
+    state[game::ACTIVE].Entities().emplace<game::Creature>(entity);
+    const bool loaded = Loads(ArenaSave(state));
+    CHECK_FALSE(loaded);
+}
 
 TEST_CASE("a save with a world NPC that has no needs is refused, and the game is unchanged") {
     core::State state{ game::DOMAINS, STATE_SEED };

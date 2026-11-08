@@ -2,8 +2,10 @@
 #include "core/instances.hpp"
 #include "core/jobs.hpp"
 #include "core/state.hpp"
+#include "data/game_data.hpp"
 #include "game/arena.hpp"
 #include "game/npcs.hpp"
+#include "platform/paths.hpp"
 #include "support/manifest.hpp"
 
 #include <doctest/doctest.h>
@@ -432,6 +434,17 @@ TEST_CASE("F2's CycleScene visits every scene in order and back, clearing the se
     }
     CHECK(arena.Selected() == core::StableId{});
     CHECK(arena.Player() != core::StableId{});
+}
+
+TEST_CASE("the shipped creatures table is the built-in data") {
+    const std::expected<core::GameData, core::Error> shipped =
+        platform::AssetsDirectory().and_then([](const std::filesystem::path& assets) {
+            return data::LoadGameData(assets / "data");
+        });
+    REQUIRE_MESSAGE(shipped.has_value(), shipped.error().message);
+    const u64 shippedHash = shipped->Hash();
+    const u64 builtInHash = game::BuiltInData().Hash();
+    CHECK(shippedHash == builtInHash);
 }
 
 TEST_CASE("the shipped manifest runs every scene with the built-in data") {
