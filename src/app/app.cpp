@@ -78,6 +78,10 @@ App::App(platform::Window window, gfx::Renderer renderer, Options options)
   , m_options{ std::move(options) }
   , m_startNs{ platform::NowNs() }
   , m_frameNs{ m_startNs } {
+    // The main thread is the job system's thread 0: waiting on its low-priority work, it may run the
+    // logic's chunks, which need the simulation's environment.
+    core::math::SetFloatingPointEnvironment();
+    PN_LOG_INFO("job system running {} workers", m_jobs.Workers());
     if (HOT_RELOAD && !m_options.dataFolder.empty()) {
         m_dataChanged = NewestChange(m_options.dataFolder);
         PN_LOG_INFO("watching {} to reload the game data", m_options.dataFolder.string());
@@ -95,9 +99,11 @@ void App::RunLogic(const std::stop_token& stop) {
     // An exception that escapes is logged and stops the game (§12).
     try {
         core::math::SetFloatingPointEnvironment();
+        const core::Jobs::ThreadRegistration registration{ m_jobs };
         {
             Game game(
                 m_handover,
+                m_jobs,
                 { .scene = m_options.scene,
                   .data = m_options.data,
                   .saveSlot = m_options.saveSlot,
@@ -106,8 +112,8 @@ void App::RunLogic(const std::stop_token& stop) {
                   .now = platform::NowNs }
             );
             game.Run(stop);
-        } // the workers join here: a hang at shutdown shows as no "stopped" line
-        PN_LOG_INFO("logic thread and job system stopped");
+        } // a save in progress finishes here: a hang at shutdown shows as no "stopped" line
+        PN_LOG_INFO("logic thread stopped");
     }
     catch (const std::exception& e) {
         PN_LOG_CRITICAL("logic thread failed: {}", e.what());

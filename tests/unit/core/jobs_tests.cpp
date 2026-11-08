@@ -123,4 +123,51 @@ TEST_CASE("waiting with no background job returns at once") {
     CHECK(jobs.Workers() == 1);
 }
 
+TEST_CASE("started chunks all run, and Done turns true once they have") {
+    constexpr u32 CHUNKS = 1'000;
+    core::Jobs jobs{ MANY_WORKERS };
+    std::vector<u32> runs(CHUNKS);
+    const core::Jobs::Pending pending = jobs.Start(CHUNKS, [&runs](u32 chunk) { ++runs[chunk]; });
+    while (!pending.Done()) {
+        std::this_thread::yield();
+    }
+    CHECK(std::ranges::all_of(runs, [](u32 count) { return count == 1; }));
+}
+
+TEST_CASE("starting no chunks is done at once") {
+    core::Jobs jobs{ 1 };
+    const core::Jobs::Pending pending = jobs.Start(0, [](u32 /*chunk*/) {});
+    CHECK(pending.Done());
+}
+
+TEST_CASE("a parallel-for returns while started low-priority work is still blocked") {
+    core::Jobs jobs{ 1 };
+    std::atomic<bool> release = false;
+    const core::Jobs::Pending pending = jobs.Start(1, [&release](u32 /*chunk*/) {
+        while (!release.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+    });
+    std::atomic<u32> ran = 0;
+    jobs.ParallelFor(4, [&ran](u32 /*chunk*/) { ran.fetch_add(1, std::memory_order_relaxed); });
+    CHECK(ran.load() == 4);
+    CHECK_FALSE(pending.Done());
+    release.store(true, std::memory_order_release);
+}
+
+TEST_CASE("a registered thread forks, joins and runs background jobs") {
+    constexpr u32 CHUNKS = 1'000;
+    core::Jobs jobs{ MANY_WORKERS, /*externalThreads=*/1 };
+    std::vector<u32> runs(CHUNKS);
+    u32 background = 0;
+    std::thread{ [&] {
+        const core::Jobs::ThreadRegistration registration{ jobs };
+        jobs.ParallelFor(CHUNKS, [&runs](u32 chunk) { ++runs[chunk]; });
+        jobs.Background([&background] { ++background; });
+        jobs.WaitForBackground();
+    } }.join();
+    CHECK(std::ranges::all_of(runs, [](u32 count) { return count == 1; }));
+    CHECK(background == 1);
+}
+
 } // namespace

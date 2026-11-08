@@ -8,6 +8,7 @@
 
 #include "app/bindings.hpp"
 #include "core/frame.hpp"
+#include "core/jobs.hpp"
 #include "core/types.hpp"
 #include "game/arena.hpp"
 #include "gfx/camera.hpp"
@@ -42,8 +43,8 @@ struct Options {
     // NOLINTEND(readability-redundant-member-init)
 };
 
-/// The main thread's systems (the window, the renderer, the handover and its display side, the
-/// camera) and the logic thread, which builds and runs a Game.
+/// The main thread's systems (the job system, the window, the renderer, the handover and its display
+/// side, the camera) and the logic thread, which builds and runs a Game on the job system.
 class App {
 public:
     /// Takes over `window` and `renderer` (made for that window) and starts the logic thread for
@@ -74,6 +75,8 @@ private:
     ) const;
     void WatchData(u64 nowNs);
 
+    // First, so it goes last: the logic thread registers with it, the renderer's loads run on it.
+    core::Jobs m_jobs{ core::Jobs::DefaultWorkers(), /*externalThreads=*/1 };
     platform::Window m_window;
     gfx::Renderer m_renderer;
     Options m_options;
