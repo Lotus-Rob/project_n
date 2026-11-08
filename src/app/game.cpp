@@ -7,12 +7,6 @@
 
 namespace app {
 
-namespace {
-
-constexpr u64 NS_PER_MS = core::NS_PER_SECOND / 1'000;
-
-} // namespace
-
 Game::Game(core::GameHandover& handover, core::Jobs& jobs, GameSetup setup)
   : m_now{ setup.now }
   , m_jobs{ &jobs }
@@ -47,7 +41,10 @@ void Game::Step(u64 nowNs, const std::stop_token& stop) {
     }
     if (m_logic.RunBurst(burst, stop)) {
         const u64 stalledNs = m_now();
-        PN_LOG_INFO("an expected stall (a month, a save or a load) took {} ms", (stalledNs - nowNs) / NS_PER_MS);
+        PN_LOG_INFO(
+            "an expected stall (a month, a save, a load, a replay or a scene becoming resident) took {} ms",
+            (stalledNs - nowNs) / core::NS_PER_MS
+        );
         m_clock.Restart(stalledNs);
     }
 }

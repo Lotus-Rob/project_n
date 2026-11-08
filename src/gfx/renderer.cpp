@@ -11,6 +11,7 @@
 #include "gfx/internal/resources/sprite_array.hpp"
 #include "gfx/sprite_block.hpp"
 #include "gfx/uploads.hpp"
+#include "platform/clock.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -41,6 +42,33 @@ std::string_view PresentModeName(SDL_GPUPresentMode mode) {
     return mode == SDL_GPU_PRESENTMODE_IMMEDIATE ? "immediate" : "vsync";
 }
 
+// A scene loading (design doc 0002.3.1 §5): its sprites decode on the job system, then upload a few each frame.
+struct SceneLoad {
+    SceneLoad(
+        core::SceneId loading,
+        std::vector<core::atlas::SpriteId> missing,
+        const std::filesystem::path& assets,
+        const std::shared_ptr<const core::Manifest>& manifest,
+        core::Jobs& jobs
+    )
+      : scene{ loading }
+      , sprites{ std::move(missing) }
+      , decoded(sprites.size())
+      , decoding{ jobs.Start(
+            static_cast<u32>(sprites.size()),
+            [assets, manifest, names = std::span<const core::atlas::SpriteId>{ sprites }, slots = std::span{ decoded }](
+                u32 chunk
+            ) { slots[chunk] = internal::DecodeSprite(assets, manifest->Sprite(names[chunk])); }
+        ) } {
+    }
+
+    core::SceneId scene;
+    std::vector<core::atlas::SpriteId> sprites;                         // those not in the atlas when it began
+    std::vector<std::expected<internal::Surface, core::Error>> decoded; // a slot per sprite
+    std::size_t uploaded = 0;
+    core::Jobs::Pending decoding; // last: destroyed first, waiting for the decodes before their slots go
+};
+
 } // namespace
 
 struct Renderer::Impl {
@@ -63,6 +91,7 @@ struct Renderer::Impl {
     // must upload again.
     std::expected<void, core::Error> Upload(SDL_GPUCommandBuffer* commands, const core::Snapshot& snapshot);
     void Report(const std::expected<void, core::Error>& drawn);
+    [[nodiscard]] bool Holds(core::SceneId scene) const;
     void DrawWorld(
         SDL_GPUCommandBuffer* commands,
         SDL_GPUTexture* texture,
@@ -79,6 +108,9 @@ struct Renderer::Impl {
     internal::Gpu<SDL_Window> claim = nullptr;
     internal::SpriteArray sprites{};
     std::shared_ptr<const core::Manifest> manifest = nullptr;
+    std::filesystem::path assets{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::vector<bool> resident{};   // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::optional<SceneLoad> load = std::nullopt;
     internal::SpriteRenderer instances{};
     std::optional<internal::Frame> frame = std::nullopt; // acquired by Acquire(), submitted by Draw()
     UploadedSnapshot uploaded{};
@@ -92,7 +124,7 @@ struct Renderer::Impl {
 std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* commands, const core::Snapshot& snapshot) {
     PN_PROFILE_ZONE();
     const SnapshotId shown{ .epoch = snapshot.epoch, .wallTick = snapshot.wallTick };
-    if (uploaded.Holds(shown)) {
+    if (uploaded.Holds(shown) || !Holds(snapshot.scene)) {
         return {};
     }
     SDL_PushGPUDebugGroup(commands, "upload");
@@ -133,6 +165,11 @@ void Renderer::Impl::DrawWorld(
     target.load_op = SDL_GPU_LOADOP_CLEAR;
     target.store_op = SDL_GPU_STOREOP_STORE;
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &target, 1, nullptr);
+    if (!Holds(snapshot.scene)) {
+        SDL_EndGPURenderPass(pass);
+        SDL_PopGPUDebugGroup(commands);
+        return;
+    }
     const ClipTransform transform = WorldToClip(camera, width, height);
     instances.Draw(commands, pass, snapshot.batches, sprites, transform, alpha);
     const f32 ring = OUTLINE_TEXELS / static_cast<f32>(manifest->pageSize);
@@ -199,6 +236,13 @@ void Renderer::Impl::Report(const std::expected<void, core::Error>& drawn) {
     }
 }
 
+bool Renderer::Impl::Holds(core::SceneId scene) const {
+    PN_PROFILE_ZONE();
+    return std::ranges::all_of(manifest->Scene(scene).sprites, [this](core::atlas::SpriteId sprite) {
+        return resident.at(std::to_underlying(sprite));
+    });
+}
+
 std::expected<Renderer, core::Error> Renderer::Create(
     platform::Window& window,
     const std::filesystem::path& assets,
@@ -206,6 +250,8 @@ std::expected<Renderer, core::Error> Renderer::Create(
 ) {
     auto impl = std::make_unique<Impl>();
     impl->manifest = std::move(manifest);
+    impl->assets = assets;
+    impl->resident.resize(impl->manifest->sprites.size());
     impl->window = static_cast<SDL_Window*>(window.Handle());
     const SDL_PropertiesID properties = SDL_CreateProperties();
     SDL_SetBooleanProperty(properties, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_SPIRV_BOOLEAN, true);
@@ -255,7 +301,7 @@ std::expected<Renderer, core::Error> Renderer::Create(
         return std::unexpected{ std::move(instances.error()) };
     }
     impl->instances = std::move(*instances);
-    std::expected<internal::SpriteArray, core::Error> sprites = internal::LoadSpriteArray(device, assets, *impl->manifest);
+    std::expected<internal::SpriteArray, core::Error> sprites = internal::CreateSpriteArray(device, *impl->manifest);
     if (!sprites) {
         return std::unexpected{ std::move(sprites.error()) };
     }
@@ -268,6 +314,65 @@ Renderer::Renderer(std::unique_ptr<Impl> impl)
 }
 Renderer::Renderer(Renderer&& other) noexcept = default;
 Renderer::~Renderer() = default;
+
+void Renderer::BeginScene(core::SceneId scene, core::Jobs& jobs) {
+    PN_ASSERT(!m_impl->load, "a scene began loading while another loads");
+    std::vector<core::atlas::SpriteId> missing;
+    for (const core::atlas::SpriteId sprite : m_impl->manifest->Scene(scene).sprites) {
+        if (!m_impl->resident.at(std::to_underlying(sprite))) {
+            missing.push_back(sprite);
+        }
+    }
+    if (!missing.empty()) {
+        m_impl->load.emplace(scene, std::move(missing), m_impl->assets, m_impl->manifest, jobs);
+    }
+}
+
+std::expected<bool, core::Error> Renderer::ContinueScene(u64 budgetNs) {
+    PN_PROFILE_ZONE();
+    Impl& impl = *m_impl;
+    if (!impl.load) {
+        return true;
+    }
+    SceneLoad& load = *impl.load;
+    if (!load.decoding.Done()) {
+        return false;
+    }
+    const u64 startNs = platform::NowNs();
+    const std::size_t first = load.uploaded;
+    while (load.uploaded < load.sprites.size() && (load.uploaded == first || platform::NowNs() - startNs < budgetNs)) {
+        const std::expected<internal::Surface, core::Error>& image = load.decoded.at(load.uploaded);
+        const std::expected<void, core::Error> uploaded = image.and_then([&](const internal::Surface& surface) {
+            return internal::UploadSprite(
+                impl.device.get(),
+                impl.sprites,
+                impl.manifest->Sprite(load.sprites.at(load.uploaded)),
+                impl.manifest->mipLevels,
+                *surface
+            );
+        });
+        if (!uploaded) {
+            core::Error error = uploaded.error();
+            impl.load.reset();
+            return std::unexpected{ std::move(error) };
+        }
+        load.decoded.at(load.uploaded) = internal::Surface{}; // its pixels are on the GPU now
+        ++load.uploaded;
+    }
+    if (load.uploaded < load.sprites.size()) {
+        return false;
+    }
+    if (const std::expected<void, core::Error> mips = internal::GenerateMips(impl.device.get(), impl.sprites); !mips) {
+        impl.load.reset();
+        return std::unexpected{ mips.error() };
+    }
+    for (const core::atlas::SpriteId sprite : load.sprites) {
+        impl.resident.at(std::to_underlying(sprite)) = true;
+    }
+    PN_LOG_DEBUG("{} sprites of scene {} decoded and uploaded", load.sprites.size(), impl.manifest->Scene(load.scene).name);
+    impl.load.reset();
+    return true;
+}
 
 void Renderer::Acquire() {
     PN_PROFILE_ZONE();

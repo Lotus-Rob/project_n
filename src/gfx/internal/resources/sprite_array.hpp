@@ -3,10 +3,11 @@
 /// @file
 /// @ingroup gfx
 /// The sprites' texture array (design doc 0002 §8.7): every page of the atlas manifest as one layer
-/// of an SDL_GPU 2D array texture, filled from the sprite images at load.
+/// of an SDL_GPU 2D array texture, filled a sprite at a time as scenes load (0002.3.1 §5).
 
 #include "core/error.hpp"
 #include "core/manifest.hpp"
+#include "core/types.hpp"
 #include "gfx/internal/gpu.hpp"
 
 #include <SDL3/SDL.h>
@@ -24,14 +25,28 @@ struct SpriteArray {
     Gpu<SDL_GPUSampler> sampler = nullptr;
 };
 
-/// Decodes every sprite of `manifest` from `assets` (its `sprites/` PNGs), premultiplies
-/// its alpha in linear space, uploads it into its region of its page, and generates the mips. The commands are
-/// submitted before it returns. Fails when an image is missing, unreadable, or not the size the
-/// manifest says (the atlas is stale: `./dev atlas`).
-[[nodiscard]] std::expected<SpriteArray, core::Error> LoadSpriteArray(
-    SDL_GPUDevice* device,
+/// Creates the texture array for every page of `manifest`, cleared to transparent, and its sampler; the clears are
+/// submitted before it returns. No sprite is in it yet.
+[[nodiscard]] std::expected<SpriteArray, core::Error> CreateSpriteArray(SDL_GPUDevice* device, const core::Manifest& manifest);
+
+/// Decodes `sprite`'s image from `assets` and premultiplies its alpha in linear space, on any thread. Fails when the
+/// image is missing, unreadable, or not the size the manifest says (the atlas is stale: `./dev atlas`).
+[[nodiscard]] std::expected<Surface, core::Error> DecodeSprite(
     const std::filesystem::path& assets,
-    const core::Manifest& manifest
+    const core::SpriteInfo& sprite
 );
+
+/// Uploads `image`, `sprite` as DecodeSprite() made it, into its block of `array` (with its gutters, for
+/// `mipLevels` mips), submitted before it returns. The mips stay stale until GenerateMips().
+[[nodiscard]] std::expected<void, core::Error> UploadSprite(
+    SDL_GPUDevice* device,
+    const SpriteArray& array,
+    const core::SpriteInfo& sprite,
+    u32 mipLevels,
+    const SDL_Surface& image
+);
+
+/// Generates every mip of `array` from its top level, submitted before it returns.
+[[nodiscard]] std::expected<void, core::Error> GenerateMips(SDL_GPUDevice* device, const SpriteArray& array);
 
 } // namespace gfx::internal

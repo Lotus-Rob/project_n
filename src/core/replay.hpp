@@ -51,7 +51,8 @@ public:
 
     /// Records the input of the next wall tick: its actions, in order, at most 255 (any more are
     /// dropped with a warning, and playback diverges from there), and its held input. Never a Load,
-    /// ToggleRecording, PlayReplay or ReloadData: they end or replace the recorded timeline.
+    /// ToggleRecording, PlayReplay or ReloadData, which end or replace the recorded timeline, nor a
+    /// SceneResident, which is the main thread's and no tick's.
     void Record(const TickInput& input);
 
     /// Records `hash`, the state's hash after wall tick `wallTick`, which must be after the last one recorded.

@@ -8,6 +8,7 @@
 
 #include "core/game_data.hpp"
 #include "core/handover.hpp"
+#include "core/manifest.hpp"
 #include "core/profile.hpp"
 #include "core/stable_id.hpp"
 #include "core/types.hpp"
@@ -95,6 +96,9 @@ struct Snapshot {
     /// Whether a calendar step runs next (design doc 0002 §7.3): the main thread shows the transition
     /// and caps its frame rate, leaving the cores to the step, until a snapshot without it arrives.
     bool transition = false;
+    /// The scene its state needs (Simulation::Scene()): drawn only once the main thread holds it, and the ticks
+    /// wait until it says so (design doc 0002.3.1 §4).
+    SceneId scene{};
     /// The sprites to draw, in drawing order. The buffer keeps its capacity from publish to
     /// publish: the publisher clears and refills it, never assigns a new one.
     std::vector<Instance> instances{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
@@ -132,10 +136,11 @@ enum class ActionKind : u8 {
     PlayReplay,      ///< Play the replay file back from its start (a new timeline), or stop playing it.
     Select,          ///< Select the entity `target` names (a stale or zero ID selects nothing).
     ReloadData,      ///< Swap in the game data `data` (debug builds' hot reload): never in a replay.
+    SceneResident,   ///< The main thread holds the scene `scene` and can draw it: never in a replay.
 };
-/// How many kinds ActionKind names (ReloadData is the last): a replay read from disk holds only
+/// How many kinds ActionKind names (SceneResident is the last): a replay read from disk holds only
 /// kinds below this.
-inline constexpr u8 ACTION_KINDS = static_cast<u8>(std::to_underlying(ActionKind::ReloadData) + 1U);
+inline constexpr u8 ACTION_KINDS = static_cast<u8>(std::to_underlying(ActionKind::SceneResident) + 1U);
 
 /// A player's or the main thread's request to the simulation, sent as input: a press, taken once.
 struct Action {
@@ -145,6 +150,8 @@ struct Action {
     StableId target{};
     /// The game data to swap in (ReloadData); empty otherwise.
     std::shared_ptr<const GameData> data{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    /// The scene now resident (SceneResident); zero otherwise.
+    SceneId scene{};
 };
 
 /// What the player holds down, as the main thread last sent it (design doc 0002 §10): every tick of

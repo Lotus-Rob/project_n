@@ -17,6 +17,7 @@
 
 #include "core/draw_list.hpp"
 #include "core/ecs.hpp"
+#include "core/error.hpp"
 #include "core/frame.hpp"
 #include "core/game_data.hpp"
 #include "core/logic.hpp"
@@ -29,8 +30,10 @@
 #include "game/npcs.hpp"
 
 #include <cmath>
+#include <expected>
 #include <memory>
 #include <stop_token>
+#include <string_view>
 
 namespace game {
 
@@ -75,14 +78,22 @@ enum class Scene : u8 {
     Cells,   ///< A still grid of 640 map cells, for judging the mips as the view zooms out (§16 phase 3).
 };
 
+/// The name of `scene`'s sprites in the atlas manifest (art/scenes.toml): `arena`, `stress`, `painted`, `cells`.
+[[nodiscard]] std::string_view SceneName(Scene scene);
+
+/// Whether every scene can run from `manifest` with `data` (design doc 0002.3.1 §3): the manifest names each,
+/// and the scenes with creatures load the sprites `data` gives them, without which they would be invisible.
+/// Otherwise, which scene is short of what.
+[[nodiscard]] std::expected<void, core::Error> CheckScenes(const core::Manifest& manifest, const core::GameData& data);
+
 /// The arena scene as a simulation: it moves its creatures each tick and publishes every sprite.
 class Arena final : public core::Simulation {
 public:
     /// Builds `scene` with `data`'s creatures: the same entities, in the same places, every time. It
-    /// draws its sprites where `manifest` puts them.
+    /// draws its sprites where `manifest` puts them; `manifest` must pass CheckScenes().
     explicit Arena(
         std::shared_ptr<const core::Manifest> manifest,
-        Scene scene = Scene::Arena,
+        game::Scene scene = game::Scene::Arena,
         const core::GameData& data = BuiltInData()
     );
 
@@ -112,6 +123,11 @@ public:
     /// The hash of the game data in use.
     [[nodiscard]] u64 DataHash() const override {
         return m_data.Hash();
+    }
+
+    /// The manifest's scene for the scene it is: the one it was built as, or the one a load brought.
+    [[nodiscard]] core::SceneId Scene() const override {
+        return m_sceneId;
     }
 
     /// How many months have passed.
@@ -170,7 +186,8 @@ private:
     std::shared_ptr<const core::Manifest> m_manifest;
     core::State m_state;
     core::GameData m_data;
-    Scene m_scene;
+    game::Scene m_scene;
+    core::SceneId m_sceneId;     // m_scene's in the manifest
     u64 m_months = 0;            // the calendar: months passed
     core::Rect m_view{};         // what a publish culls to without a player
     core::StableId m_player{};   // the cultivator the player walks; zero for none

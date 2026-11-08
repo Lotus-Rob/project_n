@@ -83,6 +83,9 @@ i32 Run(const core::Settings& settings, app::Options options) {
     if (!gameData) {
         return FailToStart("the game's data couldn't be read", gameData.error());
     }
+    if (const std::expected<void, core::Error> runs = game::CheckScenes(*options.manifest, *gameData); !runs) {
+        return FailToStart("the game's files are damaged", runs.error());
+    }
     PN_LOG_INFO("game data read from {}", dataFolder.string());
     options.data = *gameData;
     options.dataFolder = dataFolder;

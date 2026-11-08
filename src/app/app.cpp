@@ -18,6 +18,7 @@ namespace {
 constexpr u64 TRANSITION_FRAME_NS = core::NS_PER_SECOND / 20;
 constexpr f32 PAN_SPEED = 900.0F; // world units a second at full movement, at zoom 1
 constexpr u64 DATA_CHECK_NS = core::NS_PER_SECOND / 2;
+constexpr u64 LOAD_BUDGET_NS = 2 * core::NS_PER_MS; // a scene's uploads each frame: the window never freezes while one loads
 #ifdef NDEBUG
 constexpr bool HOT_RELOAD = false;
 #else
@@ -144,7 +145,9 @@ i32 App::Run() {
         }
         Pan(platform::NowNs());
         WatchData(platform::NowNs());
-        Present(state);
+        if (!Present(state)) {
+            return 1;
+        }
     }
     PN_LOG_INFO("shutting down; {} snapshots were published after they were due", m_display.LateAdoptions());
     return 0;
@@ -163,8 +166,10 @@ void App::WatchData(u64 nowNs) {
     m_dataChanged = changed;
     // On this thread: the files are small. A worker parses them once they aren't.
     const std::expected<core::GameData, core::Error> reloaded = data::LoadGameData(m_options.dataFolder);
-    if (!reloaded) {
-        PN_LOG_ERROR("the game data changed but wasn't reloaded; the old data stays: {}", reloaded.error().message);
+    if (const std::expected<void, core::Error> runs =
+            reloaded.and_then([this](const core::GameData& data) { return game::CheckScenes(*m_options.manifest, data); });
+        !runs) {
+        PN_LOG_ERROR("the game data changed but wasn't reloaded; the old data stays: {}", runs.error().message);
         return;
     }
     PN_LOG_INFO("the game data changed: reloading it");
@@ -251,7 +256,34 @@ void App::Pan(u64 nowNs) {
     m_camera.centre = m_camera.centre + (m_held.move * (PAN_SPEED * seconds / m_camera.zoom));
 }
 
-void App::Present(const platform::WindowState& state) {
+bool App::LoadScene(core::SceneId wanted) {
+    PN_PROFILE_ZONE();
+    if (wanted == m_reported) {
+        return true;
+    }
+    // A load begun finishes first, wanted or not: the renderer loads one scene at a time.
+    const core::SceneId scene = m_loading.value_or(wanted);
+    if (!m_loading) {
+        m_loading = scene;
+        m_loadStartNs = platform::NowNs();
+        m_renderer.BeginScene(scene, m_jobs);
+    }
+    const std::string& name = m_options.manifest->Scene(scene).name;
+    const std::expected<bool, core::Error> held = m_renderer.ContinueScene(LOAD_BUDGET_NS);
+    if (!held) {
+        PN_LOG_CRITICAL("the scene {} couldn't be loaded: {}", name, held.error().message);
+        return false;
+    }
+    if (*held) {
+        m_loading.reset();
+        m_reported = scene;
+        m_handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = scene });
+        PN_LOG_INFO("scene {} resident in {} ms", name, (platform::NowNs() - m_loadStartNs) / core::NS_PER_MS);
+    }
+    return true;
+}
+
+bool App::Present(const platform::WindowState& state) {
     PN_PROFILE_ZONE();
     // Events are drained every iteration, drawing or not, so the queue never grows (§5).
     m_handover.TakeEvents(m_incoming);
@@ -259,7 +291,10 @@ void App::Present(const platform::WindowState& state) {
     static_cast<void>(m_display.Update(m_handover, platform::NowNs(), core::DEFAULT_DISPLAY_DELAY_NS));
     const core::Snapshot* drawn = m_display.Drawn();
     if (drawn == nullptr) {
-        return;
+        return true;
+    }
+    if (!LoadScene(drawn->scene)) {
+        return false;
     }
     core::PresentFrame(
         *drawn,
@@ -281,6 +316,7 @@ void App::Present(const platform::WindowState& state) {
         // shortcut: nothing draws the transition itself yet; its view model and screen come with the UI (phase 6).
         platform::WaitUntilNs(platform::NowNs() + TRANSITION_FRAME_NS);
     }
+    return true;
 }
 
 } // namespace app

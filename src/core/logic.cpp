@@ -23,6 +23,9 @@ Simulation::~Simulation() = default;
 bool Logic::RunBurst(const TickBurst& burst, const std::stop_token& stop) {
     PN_PROFILE_ZONE();
     TickEnd end = TickEnd::Continue;
+    if (burst.ticks > 0 && m_simulation->Scene() != m_resident) {
+        end = Wait() ? TickEnd::Stall : TickEnd::EndBurst;
+    }
     for (u64 tick = 0; tick < burst.ticks && end == TickEnd::Continue; ++tick) {
         end = RunTick(stop);
         CheckReplay();
@@ -39,6 +42,7 @@ bool Logic::RunBurst(const TickBurst& burst, const std::stop_token& stop) {
     snapshot.scheduledNs = burst.scheduledNs;
     snapshot.advanced = m_advanced;
     snapshot.transition = m_calendar == Calendar::Published;
+    snapshot.scene = m_simulation->Scene();
     snapshot.instances.clear();
     snapshot.batches.clear();
     snapshot.ids.clear();
@@ -97,9 +101,47 @@ Logic::TickEnd Logic::RunTick(const std::stop_token& stop) {
     return m_calendar == Calendar::Requested ? TickEnd::EndBurst : TickEnd::Continue;
 }
 
+bool Logic::Wait() {
+    PN_PROFILE_ZONE();
+    m_advanced = false;
+    m_handover->TakeInput(m_input);
+    // New game data isn't the tick's to wait for: the edit would be lost until the next one.
+    if (std::ranges::contains(m_input, ActionKind::ReloadData, &Action::kind)) {
+        if (m_replay->Playing()) {
+            StopPlaying("the game data changed");
+        }
+        ReloadData();
+    }
+    std::size_t dropped = 0;
+    for (const Action& action : m_input) {
+        if (action.kind == ActionKind::SceneResident) {
+            m_resident = action.scene;
+        }
+        else if (action.kind == ActionKind::Pause || action.kind == ActionKind::Resume) {
+            m_windowPaused = action.kind == ActionKind::Pause;
+            if (!m_replay->Playing()) {
+                m_paused = m_windowPaused;
+            }
+        }
+        else if (action.kind != ActionKind::ReloadData) {
+            ++dropped;
+        }
+    }
+    if (dropped > 0) {
+        PN_LOG_DEBUG("{} actions dropped at tick {}: the scene is loading", dropped, m_counters.wall);
+    }
+    return m_simulation->Scene() == m_resident;
+}
+
 Logic::ActionSet Logic::TakeInput() {
     PN_PROFILE_ZONE();
     m_handover->TakeInput(m_input);
+    for (const Action& action : m_input) {
+        if (action.kind == ActionKind::SceneResident) {
+            m_resident = action.scene; // the main thread's news, not the tick's input: never recorded
+        }
+    }
+    std::erase_if(m_input, [](const Action& action) { return action.kind == ActionKind::SceneResident; });
     m_held = m_handover->ReadHeld();
     for (const Action& action : m_input) {
         if (action.kind == ActionKind::Pause || action.kind == ActionKind::Resume) {

@@ -17,7 +17,7 @@ constexpr std::size_t MAX_ACTIONS_PER_TICK = 255;     // a tick's count is a byt
 // Actions that end or replace a recording's timeline, so none is ever recorded.
 bool NeverRecorded(ActionKind kind) {
     return kind == ActionKind::Load || kind == ActionKind::ToggleRecording || kind == ActionKind::PlayReplay ||
-           kind == ActionKind::ReloadData;
+           kind == ActionKind::ReloadData || kind == ActionKind::SceneResident;
 }
 
 // Whether held input read from a replay could have been sent: finite, each axis within [-1, 1], at most 1 long
