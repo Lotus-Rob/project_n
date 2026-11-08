@@ -27,6 +27,7 @@ constexpr std::array KEYS{
     KeyCode{ .key = SDL_SCANCODE_RIGHT, .code = InputCode::KeyRight },
     KeyCode{ .key = SDL_SCANCODE_ESCAPE, .code = InputCode::KeyEscape },
     KeyCode{ .key = SDL_SCANCODE_M, .code = InputCode::KeyM },
+    KeyCode{ .key = SDL_SCANCODE_F2, .code = InputCode::KeyF2 },
     KeyCode{ .key = SDL_SCANCODE_F5, .code = InputCode::KeyF5 },
     KeyCode{ .key = SDL_SCANCODE_F6, .code = InputCode::KeyF6 },
     KeyCode{ .key = SDL_SCANCODE_F9, .code = InputCode::KeyF9 },

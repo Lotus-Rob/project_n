@@ -14,6 +14,13 @@ core::Vec2 Interpolated(core::Vec2 previous, core::Vec2 current, f64 alpha) {
 
 } // namespace
 
+void ShowScene(gfx::Camera& camera, std::optional<core::SceneId>& shown, core::SceneId scene) {
+    if (shown != scene) {
+        camera = gfx::Camera{}; // each scene is laid out for the reference view; a followed one re-centres it
+    }
+    shown = scene;
+}
+
 core::Vec2 FollowedCentre(const core::Follow& follow, f64 alpha) {
     PN_PROFILE_ZONE();
     return Interpolated(follow.previous, follow.current, alpha);

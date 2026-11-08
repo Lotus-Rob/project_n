@@ -136,6 +136,7 @@ enum class ActionKind : u8 {
     PlayReplay,      ///< Play the replay file back from its start (a new timeline), or stop playing it.
     Select,          ///< Select the entity `target` names (a stale or zero ID selects nothing).
     ReloadData,      ///< Swap in the game data `data` (debug builds' hot reload): never in a replay.
+    CycleScene,      ///< Switch to the next scene (a debug key): the simulation rebuilds itself as it.
     SceneResident,   ///< The main thread holds the scene `scene` and can draw it: never in a replay.
 };
 /// How many kinds ActionKind names (SceneResident is the last): a replay read from disk holds only

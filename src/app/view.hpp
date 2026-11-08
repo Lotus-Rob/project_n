@@ -16,6 +16,11 @@
 
 namespace app {
 
+/// Notes that a snapshot of `scene` is drawn with `camera`, `shown` naming the scene drawn before (none at first),
+/// which becomes `scene`: a scene other than `shown` starts at the reference view (gfx::Camera's defaults), the
+/// same one keeps the camera where the player panned and zoomed it.
+void ShowScene(gfx::Camera& camera, std::optional<core::SceneId>& shown, core::SceneId scene);
+
 /// The followed entity's foot at the render clock: `follow` interpolated by `alpha`, as its sprite is drawn.
 [[nodiscard]] core::Vec2 FollowedCentre(const core::Follow& follow, f64 alpha);
 

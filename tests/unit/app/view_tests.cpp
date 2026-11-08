@@ -83,4 +83,26 @@ TEST_CASE("picking turns with a rotated instance, as alpha draws it") {
     CHECK(app::Pick(snapshot, 1.0, ALONG_X) == core::StableId{});
 }
 
+TEST_CASE("showing another scene puts the camera back at the reference view") {
+    constexpr auto FIRST = core::SceneId{ 0 };
+    constexpr auto SECOND = core::SceneId{ 1 };
+    constexpr f32 ZOOMED = 2.0F;
+    gfx::Camera camera{ .centre = MOVED, .zoom = ZOOMED };
+    std::optional<core::SceneId> shown = FIRST;
+    app::ShowScene(camera, shown, SECOND);
+    CHECK(camera.centre.x == gfx::REFERENCE_CENTRE.x);
+    CHECK(camera.centre.y == gfx::REFERENCE_CENTRE.y);
+    CHECK(camera.zoom == 1.0F);
+}
+
+TEST_CASE("showing the same scene again leaves the camera where the player put it") {
+    constexpr auto FIRST = core::SceneId{ 0 };
+    constexpr f32 ZOOMED = 2.0F;
+    gfx::Camera camera{ .centre = MOVED, .zoom = ZOOMED };
+    std::optional<core::SceneId> shown = FIRST;
+    app::ShowScene(camera, shown, FIRST);
+    CHECK(camera.centre.x == MOVED.x);
+    CHECK(camera.zoom == ZOOMED);
+}
+
 } // namespace

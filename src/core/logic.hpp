@@ -110,8 +110,8 @@ public:
     /// scene isn't resident (no SceneResident has named it since it changed: at the start, after a
     /// load or a replay starting in another scene), the burst runs no tick but waits (design doc
     /// 0002.3.1 §4): it takes live input only, records nothing and moves no counter; Pause and
-    /// Resume still apply, SceneResident and ReloadData are taken, everything else is dropped. Each tick takes the
-    /// input sent since the
+    /// Resume still apply, SceneResident and ReloadData are taken, everything else is dropped; a tick
+    /// that changes the scene (CycleScene) ends its burst. Each tick takes the input sent since the
     /// one before (the last Pause or Resume wins; while a replay plays, the recorded input instead)
     /// and the newest held input, which every tick of a burst gets,
     /// counts itself, frozen while paused or while a calendar step is asked for, and ticks the

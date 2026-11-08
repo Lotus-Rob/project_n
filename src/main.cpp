@@ -13,22 +13,15 @@
 
 namespace {
 
-struct SceneChoice {
-    game::Scene scene = game::Scene::Arena;
-    std::string_view name = "the arena";
-};
-
-SceneChoice ChooseScene(std::span<char*> args) {
-    if (std::ranges::contains(args, std::string_view{ "--painted" })) {
-        return { .scene = game::Scene::Painted, .name = "the painted test scene" };
+// `--<name>` for any scene of the atlas (art/scenes.toml) the game knows: `--stress`, `--painted`, `--cells`; the
+// arena by default.
+game::Scene ChooseScene(std::span<char*> args) {
+    for (const std::string_view arg : args) {
+        if (const std::optional<game::Scene> scene = arg.starts_with("--") ? game::SceneNamed(arg.substr(2)) : std::nullopt) {
+            return *scene;
+        }
     }
-    if (std::ranges::contains(args, std::string_view{ "--cells" })) {
-        return { .scene = game::Scene::Cells, .name = "the map cell grid" };
-    }
-    if (std::ranges::contains(args, std::string_view{ "--stress" })) {
-        return { .scene = game::Scene::Stress, .name = "the stress arena" };
-    }
-    return {};
+    return game::Scene::Arena;
 }
 
 // `--quit-after SECONDS`: quit by itself, as on a quit request, so `project_n profile` records with no click into a
@@ -115,8 +108,8 @@ int main(int argc, char** argv) {
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
-    const SceneChoice choice = ChooseScene(args);
-    PN_LOG_INFO("scene: {}", choice.name);
+    const game::Scene scene = ChooseScene(args);
+    PN_LOG_INFO("scene: {}", game::SceneName(scene));
     const std::expected<u64, core::Error> quitAfterNs = QuitAfterNs(args);
     if (!quitAfterNs) {
         PN_LOG_ERROR("{}", quitAfterNs.error().message);
@@ -127,7 +120,7 @@ int main(int argc, char** argv) {
         const i32 status =
             Run(userData ? data::LoadSettings(*userData / "settings.yaml") : core::Settings{},
                 {
-                    .scene = choice.scene,
+                    .scene = scene,
                     .quitAfterNs = *quitAfterNs,
                     .saveSlot = userData ? *userData / "saves" / "quicksave.pns" : std::filesystem::path{},
                     .replaySlot = userData ? *userData / "saves" / "replay.pnr" : std::filesystem::path{},
