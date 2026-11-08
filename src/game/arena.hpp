@@ -20,6 +20,7 @@
 #include "core/frame.hpp"
 #include "core/game_data.hpp"
 #include "core/logic.hpp"
+#include "core/manifest.hpp"
 #include "core/state.hpp"
 #include "core/tick_clock.hpp"
 #include "core/types.hpp"
@@ -28,6 +29,7 @@
 #include "game/npcs.hpp"
 
 #include <cmath>
+#include <memory>
 #include <stop_token>
 
 namespace game {
@@ -76,8 +78,13 @@ enum class Scene : u8 {
 /// The arena scene as a simulation: it moves its creatures each tick and publishes every sprite.
 class Arena final : public core::Simulation {
 public:
-    /// Builds `scene` with `data`'s creatures: the same entities, in the same places, every time.
-    explicit Arena(Scene scene = Scene::Arena, const core::GameData& data = BuiltInData());
+    /// Builds `scene` with `data`'s creatures: the same entities, in the same places, every time. It
+    /// draws its sprites where `manifest` puts them.
+    explicit Arena(
+        std::shared_ptr<const core::Manifest> manifest,
+        Scene scene = Scene::Arena,
+        const core::GameData& data = BuiltInData()
+    );
 
     /// Walks the player's cultivator where `input`'s held movement points, selects what its Select
     /// actions name, moves every entity on an Orbit to where it is at `counters.simulation`, and
@@ -160,6 +167,7 @@ private:
     Relationships m_relationships{};
     MonthStep m_monthStep{};
     // NOLINTEND(readability-redundant-member-init)
+    std::shared_ptr<const core::Manifest> m_manifest;
     core::State m_state;
     core::GameData m_data;
     Scene m_scene;

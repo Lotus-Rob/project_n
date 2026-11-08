@@ -18,7 +18,7 @@ Game::Game(core::GameHandover& handover, core::Jobs& jobs, GameSetup setup)
   , m_jobs{ &jobs }
   , m_saves(std::move(setup.saveSlot), jobs)
   , m_replays(std::move(setup.replaySlot), jobs)
-  , m_arena{ setup.scene, setup.data }
+  , m_arena(std::move(setup.manifest), setup.scene, setup.data)
   , m_logic(handover, m_arena, jobs, m_saves, m_replays, m_replay, setup.now)
   , m_clock{ setup.startNs } {
     PN_LOG_INFO("logic thread ticking {} times a second", core::TICKS_PER_SECOND);

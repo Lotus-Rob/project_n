@@ -104,7 +104,8 @@ void App::RunLogic(const std::stop_token& stop) {
             Game game(
                 m_handover,
                 m_jobs,
-                { .scene = m_options.scene,
+                { .manifest = m_options.manifest,
+                  .scene = m_options.scene,
                   .data = m_options.data,
                   .saveSlot = m_options.saveSlot,
                   .replaySlot = m_options.replaySlot,

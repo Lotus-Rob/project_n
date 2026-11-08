@@ -4,6 +4,7 @@
 #include "core/jobs.hpp"
 #include "core/math.hpp"
 #include "core/tick_clock.hpp"
+#include "support/manifest.hpp"
 
 #include <doctest/doctest.h>
 
@@ -35,7 +36,7 @@ TEST_CASE("a step at a tick's time runs it and publishes its snapshot") {
     FakeTime() = START_NS;
     core::GameHandover handover;
     core::Jobs jobs{ 1 };
-    app::Game game(handover, jobs, { .startNs = START_NS, .now = FakeNow });
+    app::Game game(handover, jobs, { .manifest = test::TestManifest(), .startNs = START_NS, .now = FakeNow });
     game.Step(START_NS);
     const core::Snapshot snapshot = Taken(handover);
     CHECK(snapshot.wallTick == 1);
@@ -50,7 +51,7 @@ TEST_CASE("after a calendar step, the clock restarts when the step ended instead
     FakeTime() = START_NS;
     core::GameHandover handover;
     core::Jobs jobs{ 1 };
-    app::Game game(handover, jobs, { .startNs = START_NS, .now = FakeNow });
+    app::Game game(handover, jobs, { .manifest = test::TestManifest(), .startNs = START_NS, .now = FakeNow });
     handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
     game.Step(START_NS);
     CHECK(Taken(handover).transition);

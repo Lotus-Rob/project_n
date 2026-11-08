@@ -10,6 +10,7 @@
 #include "core/log.hpp"
 #include "core/math.hpp"
 #include "game/arena.hpp"
+#include "support/manifest.hpp"
 
 namespace {
 
@@ -41,7 +42,7 @@ struct Worst {
 // keeping their capacity), then lets months pass for its world NPCs.
 Worst Measure(u32 workers) {
     core::Jobs jobs{ workers };
-    game::Arena arena{ game::Scene::Stress };
+    game::Arena arena(test::TestManifest(), game::Scene::Stress);
     core::GameHandover handover;
     std::vector<core::Event> events;
     std::vector<f64> tickMs;

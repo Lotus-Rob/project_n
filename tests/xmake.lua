@@ -9,11 +9,21 @@ local function test_under_wine(target, opt)
     return os.execv(wine.program, args, {try = true, curdir = target:rundir()}) == 0
 end
 
--- `module` is the src/ module under test (default core); it brings the modules below it.
-local function unit_tests(name, files, module)
+-- What a target that builds an arena needs: the shipped manifest (support/manifest.hpp) and its reader.
+local function with_manifest()
+    add_deps("data", "platform")
+    add_includedirs(os.scriptdir())
+    add_rules("assets")
+end
+
+-- `module` is the src/ module under test (default core); it brings the modules below it. `arena`: it builds arenas.
+local function unit_tests(name, files, module, arena)
     target(name)
         set_kind("binary")
         add_deps(module or "core")
+        if arena then
+            with_manifest()
+        end
         -- Out of unity batches: doctest names test cases by __LINE__ under Clang 22 (__COUNTER__ is a
         -- C2y extension there), so two files' cases on one line would clash. src/ stays in them.
         add_files(files, {unity_ignored = true})
@@ -26,11 +36,11 @@ local function unit_tests(name, files, module)
 end
 
 unit_tests("core_tests", "unit/core/*.cpp")
-unit_tests("game_tests", "unit/game/*.cpp", "game")
+unit_tests("game_tests", "unit/game/*.cpp", "game", true)
 unit_tests("platform_tests", "unit/platform/*.cpp", "platform")
 unit_tests("gfx_tests", "unit/gfx/*.cpp", "gfx")
-unit_tests("app_tests", "unit/app/*.cpp", "app")
-unit_tests("data_tests", "unit/data/*.cpp", "data")
+unit_tests("app_tests", "unit/app/*.cpp", "app", true)
+unit_tests("data_tests", "unit/data/*.cpp", "data", true)
 -- Logging start-up states: Quill's loggers live for the whole process, so each test needs its own.
 unit_tests("log_early_tests", {"unit/log_startup/main.cpp", "unit/log_startup/early_tests.cpp"})
 unit_tests("log_fallback_tests", {"unit/log_startup/main.cpp", "unit/log_startup/fallback_tests.cpp"})
@@ -40,6 +50,7 @@ unit_tests("log_fallback_tests", {"unit/log_startup/main.cpp", "unit/log_startup
 target("headless_bench")
     set_kind("binary")
     add_deps("game")
+    with_manifest()
     add_files("bench/headless.cpp")
     set_pcxxheader("$(projectdir)/src/pch.hpp") -- not a doctest suite: the game's, without doctest
 
@@ -48,10 +59,10 @@ target("headless_bench")
 target("reference_tests")
     set_kind("binary")
     add_deps("gfx", "game")
+    with_manifest()
     add_files("unit/gfx/main.cpp", "reference/*.cpp", {unity_ignored = true})
     set_pcxxheader("unit/pch.hpp")
     add_packages("doctest")
-    add_rules("assets")
 
 -- libFuzzer targets, one per tests/fuzz/<name>.cpp: linux-clang with AddressSanitizer only
 -- (`project_n fuzz <name>`). There each also replays its seed corpus (tests/fuzz/corpus/<name>/)
@@ -62,6 +73,7 @@ if is_plat("linux") and get_config("toolchain") == "pixi-clang" and get_config("
         target("fuzz_" .. name)
             set_kind("binary")
             add_deps("game", "data") -- the readers under test, and core below them
+            with_manifest()
             add_files(file)
             set_pcxxheader("$(projectdir)/src/pch.hpp") -- not a doctest suite: the game's, without doctest
             add_cxflags("-fsanitize=fuzzer", {force = true})

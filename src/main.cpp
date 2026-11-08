@@ -3,6 +3,7 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
 #include "data/game_data.hpp"
+#include "data/manifest.hpp"
 #include "data/settings.hpp"
 #include "game/arena.hpp"
 #include "gfx/renderer.hpp"
@@ -71,6 +72,12 @@ i32 Run(const core::Settings& settings, app::Options options) {
     if (!assets) {
         return FailToStart("the game's files weren't found", assets.error());
     }
+    std::expected<core::Manifest, core::Error> manifest = data::LoadManifest(*assets / "manifest.yaml");
+    if (!manifest) {
+        return FailToStart("the game's files are damaged", manifest.error());
+    }
+    options.manifest = std::make_shared<const core::Manifest>(std::move(*manifest));
+    PN_LOG_INFO("manifest: {} sprites and {} scenes", options.manifest->sprites.size(), options.manifest->scenes.size());
     const std::filesystem::path dataFolder = DataFolder(*assets);
     const std::expected<core::GameData, core::Error> gameData = data::LoadGameData(dataFolder);
     if (!gameData) {
@@ -79,7 +86,7 @@ i32 Run(const core::Settings& settings, app::Options options) {
     PN_LOG_INFO("game data read from {}", dataFolder.string());
     options.data = *gameData;
     options.dataFolder = dataFolder;
-    std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(*window, *assets);
+    std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(*window, *assets, options.manifest);
     if (!renderer) {
         return FailToStart("the graphics card couldn't be used", renderer.error());
     }

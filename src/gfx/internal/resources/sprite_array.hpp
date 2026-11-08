@@ -6,6 +6,7 @@
 /// of an SDL_GPU 2D array texture, filled from the sprite images at load.
 
 #include "core/error.hpp"
+#include "core/manifest.hpp"
 #include "gfx/internal/gpu.hpp"
 
 #include <SDL3/SDL.h>
@@ -23,13 +24,14 @@ struct SpriteArray {
     Gpu<SDL_GPUSampler> sampler = nullptr;
 };
 
-/// Decodes every sprite of the atlas manifest from `assets` (its `sprites/` PNGs), premultiplies
+/// Decodes every sprite of `manifest` from `assets` (its `sprites/` PNGs), premultiplies
 /// its alpha in linear space, uploads it into its region of its page, and generates the mips. The commands are
 /// submitted before it returns. Fails when an image is missing, unreadable, or not the size the
 /// manifest says (the atlas is stale: `./dev atlas`).
 [[nodiscard]] std::expected<SpriteArray, core::Error> LoadSpriteArray(
     SDL_GPUDevice* device,
-    const std::filesystem::path& assets
+    const std::filesystem::path& assets,
+    const core::Manifest& manifest
 );
 
 } // namespace gfx::internal

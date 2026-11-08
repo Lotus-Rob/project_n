@@ -79,12 +79,12 @@ u16 PackUnorm16(f32 value) {
     return static_cast<u16>(std::lround(std::clamp(value, 0.0F, 1.0F) * static_cast<f32>(UNORM16_MAX)));
 }
 
-Instance MakeInstance(const SpriteDraw& draw) {
-    const atlas::Sprite& sprite = atlas::SPRITES.at(static_cast<std::size_t>(draw.sprite));
+Instance MakeInstance(const Manifest& manifest, const SpriteDraw& draw) {
+    const SpriteInfo& sprite = manifest.Sprite(draw.sprite);
     const Vec2 size{ .x = static_cast<f32>(sprite.width), .y = static_cast<f32>(sprite.height) };
     const Vec2 foot{ .x = static_cast<f32>(sprite.footX), .y = static_cast<f32>(sprite.footY) };
     const Vec2 toCentre = ((size * 0.5F) - foot) * draw.scale;
-    constexpr auto PAGE = static_cast<f32>(atlas::PAGE_SIZE);
+    const auto page = static_cast<f32>(manifest.pageSize);
     // Within half a turn of zero, and the previous within half a turn of it: the shader's lerp then takes the shorter
     // arc, and the halves keep their precision.
     constexpr f64 TURN = 2 * std::numbers::pi;
@@ -96,10 +96,10 @@ Instance MakeInstance(const SpriteDraw& draw) {
         .current = draw.current + toCentre,
         .size = PackPair(PackHalf(size.x * draw.scale), PackHalf(size.y * draw.scale)),
         .rotation = PackPair(PackHalf(static_cast<f32>(previous)), PackHalf(static_cast<f32>(current))),
-        .regionMin = PackPair(PackUnorm16(static_cast<f32>(sprite.x) / PAGE), PackUnorm16(static_cast<f32>(sprite.y) / PAGE)),
+        .regionMin = PackPair(PackUnorm16(static_cast<f32>(sprite.x) / page), PackUnorm16(static_cast<f32>(sprite.y) / page)),
         .regionMax = PackPair(
-            PackUnorm16(static_cast<f32>(sprite.x + sprite.width) / PAGE),
-            PackUnorm16(static_cast<f32>(sprite.y + sprite.height) / PAGE)
+            PackUnorm16(static_cast<f32>(sprite.x + sprite.width) / page),
+            PackUnorm16(static_cast<f32>(sprite.y + sprite.height) / page)
         ),
         .layerFlags = PackPair(sprite.page, 0),
         .colour = draw.colour,

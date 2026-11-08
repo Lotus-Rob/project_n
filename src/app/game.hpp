@@ -8,6 +8,7 @@
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
 #include "core/logic.hpp"
+#include "core/manifest.hpp"
 #include "core/replay.hpp"
 #include "core/saves.hpp"
 #include "core/tick_clock.hpp"
@@ -15,12 +16,15 @@
 #include "game/arena.hpp"
 
 #include <filesystem>
+#include <memory>
 #include <stop_token>
 
 namespace app {
 
 /// What a Game is built for.
 struct GameSetup {
+    /// The atlas manifest the arena draws with; never null.
+    std::shared_ptr<const core::Manifest> manifest = nullptr;
     /// The scene the arena is built as.
     game::Scene scene = game::Scene::Arena;
     /// The game data the arena starts with.

@@ -4,6 +4,7 @@
 #include "core/state.hpp"
 #include "game/arena.hpp"
 #include "game/npcs.hpp"
+#include "support/manifest.hpp"
 
 #include <doctest/doctest.h>
 
@@ -20,18 +21,18 @@ core::Snapshot Published(game::Arena& arena) {
 
 // Whether an instance draws `sprite`: its region starts where the sprite's does.
 bool Draws(const core::Instance& instance, SpriteId sprite) {
-    return instance.regionMin == core::MakeInstance({ .sprite = sprite }).regionMin;
+    return instance.regionMin == core::MakeInstance(*test::TestManifest(), { .sprite = sprite }).regionMin;
 }
 
 TEST_CASE("the ground is drawn first") {
-    game::Arena arena;
+    game::Arena arena(test::TestManifest());
     const core::Snapshot snapshot = Published(arena);
     REQUIRE_FALSE(snapshot.instances.empty());
     CHECK(Draws(snapshot.instances.front(), SpriteId::Ground));
 }
 
 TEST_CASE("shadows are drawn before what casts them") {
-    game::Arena arena;
+    game::Arena arena(test::TestManifest());
     const core::Snapshot snapshot = Published(arena);
     const auto firstShadow =
         std::ranges::find_if(snapshot.instances, [](const auto& instance) { return Draws(instance, SpriteId::Shadow); });
@@ -54,7 +55,7 @@ std::vector<std::pair<f32, f32>> Positions(const core::Snapshot& snapshot, core:
 }
 
 TEST_CASE("a tick moves the foxes, and their previous position is where they were") {
-    game::Arena arena;
+    game::Arena arena(test::TestManifest());
     const core::Snapshot before = Published(arena);
     arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, {});
     const core::Snapshot after = Published(arena);
@@ -73,7 +74,7 @@ u32 RotationOf(const core::Snapshot& snapshot, SpriteId sprite) {
 
 TEST_CASE("the ice crystal turns each tick, from where it was") {
     constexpr u32 HALF_BITS = 16;
-    game::Arena arena;
+    game::Arena arena(test::TestManifest());
     arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, {});
     const u32 before = RotationOf(Published(arena), SpriteId::CrystalIce);
     arena.Tick({ .wall = 2, .simulation = 2, .state = 2 }, {});
@@ -94,7 +95,7 @@ core::Vec2 PositionOf(const core::Snapshot& snapshot, core::StableId entity) {
 constexpr core::HeldInput HELD_RIGHT{ .move = { .x = 1.0F, .y = 0.0F } };
 
 TEST_CASE("the cultivator walks where the held input points, and the camera follows it") {
-    game::Arena arena;
+    game::Arena arena(test::TestManifest());
     REQUIRE(arena.Player() != core::StableId{});
     const core::Snapshot before = Published(arena);
     REQUIRE(before.follow.has_value());
@@ -113,7 +114,7 @@ TEST_CASE("the cultivator walks at the game data's speed") {
     constexpr f32 SPEED = 7.0F;
     core::GameData data = game::BuiltInData();
     data.cultivator.walkSpeed = SPEED;
-    game::Arena arena{ game::Scene::Arena, data };
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
     const core::Vec2 before = PositionOf(Published(arena), arena.Player());
     arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
     const core::Vec2 after = PositionOf(Published(arena), arena.Player());
@@ -135,7 +136,7 @@ f32 Spread(const core::Snapshot& snapshot, SpriteId sprite) {
 
 // Where the leftmost instance drawing `sprite` stands, left to right, after `ticks` ticks of `held` under `data`.
 f32 LeftmostAfter(const core::GameData& data, u64 ticks, core::HeldInput held, SpriteId sprite) {
-    game::Arena arena{ game::Scene::Arena, data };
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
     for (u64 tick = 1; tick <= ticks; ++tick) {
         arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, { .actions = {}, .held = held });
     }
@@ -164,7 +165,7 @@ TEST_CASE("foxes that orbit the player follow where it walks; others keep circli
 TEST_CASE("new game data changes the foxes' sprite and orbit at once") {
     constexpr f32 WIDER = 2.0F;
     constexpr f32 CLEARLY_WIDER = 1.5F; // the foxes' foot offsets blur the doubling
-    game::Arena arena;
+    game::Arena arena(test::TestManifest());
     core::GameData data = game::BuiltInData();
     data.fox.sprite = SpriteId::FoxYellow;
     data.fox.orbitRadius *= WIDER;
@@ -180,7 +181,7 @@ TEST_CASE("new game data changes the foxes' sprite and orbit at once") {
 }
 
 TEST_CASE("standing still, the cultivator draws still") {
-    game::Arena arena;
+    game::Arena arena(test::TestManifest());
     arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
     arena.Tick({ .wall = 2, .simulation = 2, .state = 2 }, {});
     const core::Snapshot snapshot = Published(arena);
@@ -190,7 +191,7 @@ TEST_CASE("standing still, the cultivator draws still") {
 }
 
 TEST_CASE("each entity's instance carries its ID; the ground and shadows carry none") {
-    game::Arena arena;
+    game::Arena arena(test::TestManifest());
     const core::Snapshot snapshot = Published(arena);
     REQUIRE(snapshot.ids.size() == snapshot.instances.size());
     CHECK(snapshot.ids.front() == core::StableId{});
@@ -198,7 +199,7 @@ TEST_CASE("each entity's instance carries its ID; the ground and shadows carry n
 }
 
 TEST_CASE("the snapshot names the selected entity's instance; selecting nothing clears it") {
-    game::Arena arena;
+    game::Arena arena(test::TestManifest());
     const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = arena.Player() } } };
     arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
     CHECK(arena.Selected() == arena.Player());
@@ -215,14 +216,14 @@ TEST_CASE("the snapshot names the selected entity's instance; selecting nothing 
 
 TEST_CASE("a stale ID selects nothing") {
     constexpr core::StableId NEVER_HANDED_OUT{ 1'000'000 };
-    game::Arena arena;
+    game::Arena arena(test::TestManifest());
     const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = NEVER_HANDED_OUT } } };
     arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
     CHECK(arena.Selected() == core::StableId{});
 }
 
 TEST_CASE("the still scenes have no player and follow nothing") {
-    game::Arena arena{ game::Scene::Painted };
+    game::Arena arena(test::TestManifest(), game::Scene::Painted);
     CHECK(arena.Player() == core::StableId{});
     CHECK_FALSE(Published(arena).follow.has_value());
 }
@@ -231,10 +232,10 @@ TEST_CASE("the still scenes have no player and follow nothing") {
 // centre from the foot by a fixed amount per sprite, times the scale the instance's size shows.
 std::optional<std::pair<SpriteId, f32>> SpriteAndFootY(const core::Instance& instance) {
     constexpr u32 LOW_HALF = 0xFFFFU;
-    for (std::size_t id = 0; id < core::atlas::SPRITES.size(); ++id) {
+    for (std::size_t id = 0; id < core::atlas::SPRITE_NAMES.size(); ++id) {
         const auto sprite = static_cast<SpriteId>(id);
         if (Draws(instance, sprite)) {
-            const core::Instance unscaled = core::MakeInstance({ .sprite = sprite });
+            const core::Instance unscaled = core::MakeInstance(*test::TestManifest(), { .sprite = sprite });
             const f32 scale = core::UnpackHalf(static_cast<u16>(instance.size & LOW_HALF)) /
                               core::UnpackHalf(static_cast<u16>(unscaled.size & LOW_HALF));
             return std::pair{ sprite, instance.current.y - (unscaled.current.y * scale) };
@@ -246,7 +247,7 @@ std::optional<std::pair<SpriteId, f32>> SpriteAndFootY(const core::Instance& ins
 // The arena after enough ticks that foxes have moved in front of and behind things.
 core::Snapshot MovedArena() {
     constexpr u64 TICKS = 90;
-    game::Arena arena;
+    game::Arena arena(test::TestManifest());
     for (u64 tick = 1; tick <= TICKS; ++tick) {
         arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, {});
     }
@@ -296,13 +297,13 @@ TEST_CASE("the additive batch holds only the orbs") {
 
 TEST_CASE("the stress arena publishes 100,000 instances") {
     constexpr std::size_t INSTANCES = 100'000;
-    game::Arena arena{ game::Scene::Stress };
+    game::Arena arena(test::TestManifest(), game::Scene::Stress);
     CHECK(Published(arena).instances.size() >= INSTANCES);
 }
 
 TEST_CASE("the stress arena's 10,000 bullets draw last, in an additive batch") {
     constexpr u32 BULLETS = 10'000;
-    game::Arena arena{ game::Scene::Stress };
+    game::Arena arena(test::TestManifest(), game::Scene::Stress);
     const core::Snapshot snapshot = Published(arena);
     REQUIRE_FALSE(snapshot.batches.empty());
     const core::Batch& effects = snapshot.batches.back();
@@ -313,7 +314,7 @@ TEST_CASE("the stress arena's 10,000 bullets draw last, in an additive batch") {
 
 TEST_CASE("the painted scene's glows draw last, in an additive batch") {
     constexpr u32 GLOWS = 5;
-    game::Arena arena{ game::Scene::Painted };
+    game::Arena arena(test::TestManifest(), game::Scene::Painted);
     const core::Snapshot snapshot = Published(arena);
     REQUIRE_FALSE(snapshot.batches.empty());
     CHECK(snapshot.batches.back().pipeline == core::Pipeline::Additive);
@@ -322,7 +323,7 @@ TEST_CASE("the painted scene's glows draw last, in an additive batch") {
 
 TEST_CASE("the painted scene holds still") {
     constexpr u64 TICK = 7;
-    game::Arena arena{ game::Scene::Painted };
+    game::Arena arena(test::TestManifest(), game::Scene::Painted);
     const core::Snapshot before = Published(arena);
     arena.Tick({ .wall = TICK, .simulation = TICK, .state = TICK }, {});
     const core::Snapshot after = Published(arena);
@@ -331,7 +332,7 @@ TEST_CASE("the painted scene holds still") {
 
 TEST_CASE("the cell grid publishes every cell, with none culled at its far corners") {
     constexpr std::size_t CELLS = 640;
-    game::Arena arena{ game::Scene::Cells };
+    game::Arena arena(test::TestManifest(), game::Scene::Cells);
     const core::Snapshot snapshot = Published(arena);
     CHECK(snapshot.instances.size() == CELLS + 1); // and the ground, hidden beneath them
 }
@@ -341,7 +342,7 @@ TEST_CASE("the stress arena publishes the same bytes with one worker and with ma
     constexpr u32 MANY_WORKERS = 7;
     std::vector<std::vector<core::Instance>> published;
     for (const u32 workers : { 1U, MANY_WORKERS }) {
-        game::Arena arena{ game::Scene::Stress };
+        game::Arena arena(test::TestManifest(), game::Scene::Stress);
         arena.Tick({ .wall = TICK, .simulation = TICK, .state = TICK }, {});
         core::Jobs jobs{ workers };
         core::Snapshot snapshot;
@@ -354,8 +355,8 @@ TEST_CASE("the stress arena publishes the same bytes with one worker and with ma
 
 TEST_CASE("two arenas ticked alike publish the same bytes") {
     constexpr u64 TICKS = 120;
-    game::Arena first;
-    game::Arena second;
+    game::Arena first(test::TestManifest());
+    game::Arena second(test::TestManifest());
     for (u64 tick = 1; tick <= TICKS; ++tick) {
         first.Tick({ .wall = tick, .simulation = tick, .state = tick }, {});
         second.Tick({ .wall = tick, .simulation = tick, .state = tick }, {});
@@ -384,7 +385,7 @@ TEST_CASE("an orbit stays on its circle after many ticks") {
 TEST_CASE("months pass for the stress arena's world NPCs, and its active NPCs stay put") {
     constexpr u32 WORLD_NPCS = 50'000;
     constexpr std::size_t ACTIVE_NPCS = 6;
-    game::Arena arena{ game::Scene::Stress };
+    game::Arena arena(test::TestManifest(), game::Scene::Stress);
     core::Jobs jobs{ 1 };
     const core::State& state = arena.State();
     CHECK(state[game::WORLD].Entities().storage<game::Npc>()->size() == WORLD_NPCS);

@@ -61,11 +61,27 @@ TEST_CASE("a pair packs its first value in the low half") {
     CHECK(core::PackPair(0x1234, 0xABCD) == 0xABCD'1234U);
 }
 
+// A manifest of one 1024-texel page whose every sprite is a 100x60 image at (200, 300), its foot at (40, 50).
+core::Manifest TestManifest() {
+    constexpr u32 PAGE_SIZE = 1'024;
+    constexpr u32 MIP_LEVELS = 5;
+    const core::SpriteInfo sprite{
+        .file = "sprites/test.png", .page = 0, .x = 200, .y = 300, .width = 100, .height = 60, .footX = 40, .footY = 50
+    };
+    return { .pageSize = PAGE_SIZE,
+             .pages = 1,
+             .mipLevels = MIP_LEVELS,
+             .sprites = std::vector<core::SpriteInfo>(core::atlas::SPRITE_NAMES.size(), sprite),
+             .scenes = {} };
+}
+
 TEST_CASE("an instance puts its sprite's foot point on its position") {
     using core::atlas::SpriteId;
-    const core::atlas::Sprite& sprite = core::atlas::SPRITES.at(static_cast<std::size_t>(SpriteId::Fox));
+    const core::Manifest manifest = TestManifest();
+    const core::SpriteInfo& sprite = manifest.Sprite(SpriteId::Fox);
     constexpr core::Vec2 FOOT{ .x = 500.0F, .y = 300.0F };
-    const core::Instance instance = core::MakeInstance({ .sprite = SpriteId::Fox, .previous = FOOT, .current = FOOT });
+    const core::Instance instance =
+        core::MakeInstance(manifest, { .sprite = SpriteId::Fox, .previous = FOOT, .current = FOOT });
     const core::Vec2 centre{ .x = FOOT.x + (static_cast<f32>(sprite.width) * HALF) - static_cast<f32>(sprite.footX),
                              .y = FOOT.y + (static_cast<f32>(sprite.height) * HALF) - static_cast<f32>(sprite.footY) };
     CHECK(instance.current.x == doctest::Approx(centre.x));
@@ -74,14 +90,17 @@ TEST_CASE("an instance puts its sprite's foot point on its position") {
     CHECK(instance.previous.y == doctest::Approx(centre.y));
     CHECK(instance.size == core::PackPair(core::PackHalf(sprite.width), core::PackHalf(sprite.height)));
     CHECK((instance.layerFlags & 0xFFFFU) == sprite.page);
-    CHECK((instance.regionMin & 0xFFFFU) == core::PackUnorm16(static_cast<f32>(sprite.x) / core::atlas::PAGE_SIZE));
+    CHECK(
+        (instance.regionMin & 0xFFFFU) == core::PackUnorm16(static_cast<f32>(sprite.x) / static_cast<f32>(manifest.pageSize))
+    );
     CHECK(instance.colour == core::OPAQUE_WHITE);
 }
 
 TEST_CASE("a scaled instance grows about its foot point") {
     using core::atlas::SpriteId;
-    const core::atlas::Sprite& sprite = core::atlas::SPRITES.at(static_cast<std::size_t>(SpriteId::Pine));
-    const core::Instance instance = core::MakeInstance({ .sprite = SpriteId::Pine, .scale = DOUBLE });
+    const core::Manifest manifest = TestManifest();
+    const core::SpriteInfo& sprite = manifest.Sprite(SpriteId::Pine);
+    const core::Instance instance = core::MakeInstance(manifest, { .sprite = SpriteId::Pine, .scale = DOUBLE });
     CHECK(instance.current.y == doctest::Approx(static_cast<f32>(sprite.height) - (DOUBLE * static_cast<f32>(sprite.footY))));
     CHECK(instance.size == core::PackPair(core::PackHalf(DOUBLE * sprite.width), core::PackHalf(DOUBLE * sprite.height)));
 }
@@ -92,8 +111,9 @@ TEST_CASE("a rotation across the full turn interpolates along the shorter arc") 
     constexpr f32 CURRENT = 10.0F * DEGREE;
     constexpr f32 SHORTER_ARC = 20.0F * DEGREE;
     constexpr f32 HALF_PRECISION = 0.01F; // radians: a half's step near 2π is about 0.004
-    const core::Instance instance =
-        core::MakeInstance({ .sprite = core::atlas::SpriteId::Fox, .previousRotation = PREVIOUS, .currentRotation = CURRENT });
+    const core::Instance instance = core::MakeInstance(
+        TestManifest(), { .sprite = core::atlas::SpriteId::Fox, .previousRotation = PREVIOUS, .currentRotation = CURRENT }
+    );
     const f32 previous = core::UnpackHalf(static_cast<u16>(instance.rotation & 0xFFFFU));
     const f32 current = core::UnpackHalf(static_cast<u16>(instance.rotation >> 16U));
     CHECK(current - previous == doctest::Approx(SHORTER_ARC).epsilon(HALF_PRECISION / SHORTER_ARC));

@@ -7,6 +7,7 @@
 #include "game/arena.hpp"
 #include "game/components.hpp"
 #include "game/npcs.hpp"
+#include "support/manifest.hpp"
 
 #include <doctest/doctest.h>
 
@@ -48,12 +49,12 @@ bool SameBytes(std::span<const core::Instance> lhs, std::span<const core::Instan
 
 TEST_CASE("a game loaded from a save goes on exactly as the game that saved") {
     core::Jobs jobs{ 1 };
-    game::Arena saved{ game::Scene::Stress };
+    game::Arena saved(test::TestManifest(), game::Scene::Stress);
     Play(saved, jobs, 1);
     const std::vector<std::byte> bytes = Saved(saved);
     REQUIRE_FALSE(saved.NpcRelationships().All().empty());
 
-    game::Arena loaded{ game::Scene::Arena };
+    game::Arena loaded(test::TestManifest(), game::Scene::Arena);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader));
     CHECK(loaded.StateHash() == saved.StateHash());
@@ -70,12 +71,12 @@ TEST_CASE("a game loaded from a save goes on exactly as the game that saved") {
 
 TEST_CASE("the player, where it walked, and the selection survive a save") {
     constexpr core::HeldInput RIGHT{ .move = { .x = 1.0F, .y = 0.0F } };
-    game::Arena saved;
+    game::Arena saved(test::TestManifest());
     const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = saved.Player() } } };
     saved.Tick(At(1), { .actions = select, .held = RIGHT });
     const std::vector<std::byte> bytes = Saved(saved);
 
-    game::Arena loaded{ game::Scene::Cells };
+    game::Arena loaded(test::TestManifest(), game::Scene::Cells);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader));
     CHECK(loaded.Player() == saved.Player());
@@ -87,10 +88,10 @@ TEST_CASE("the player, where it walked, and the selection survive a save") {
 
 TEST_CASE("a truncated save is refused, and the game is unchanged") {
     constexpr std::size_t CUT = 4;
-    game::Arena saved{ game::Scene::Stress };
+    game::Arena saved(test::TestManifest(), game::Scene::Stress);
     const std::vector<std::byte> bytes = Saved(saved);
 
-    game::Arena game{ game::Scene::Arena };
+    game::Arena game(test::TestManifest(), game::Scene::Arena);
     const u64 before = game.StateHash();
     core::Reader reader{ std::span{ bytes }.first(bytes.size() - CUT) };
     CHECK_FALSE(game.Load(reader));
@@ -100,10 +101,10 @@ TEST_CASE("a truncated save is refused, and the game is unchanged") {
 TEST_CASE("a save with bytes after the state, or of another format, is refused") {
     constexpr std::byte EXTRA{ 1 };
     constexpr u32 OTHER_FORMAT = 99;
-    game::Arena saved{ game::Scene::Arena };
+    game::Arena saved(test::TestManifest(), game::Scene::Arena);
     std::vector<std::byte> longer = Saved(saved);
     longer.push_back(EXTRA);
-    game::Arena game{ game::Scene::Arena };
+    game::Arena game(test::TestManifest(), game::Scene::Arena);
     core::Reader longReader{ longer };
     CHECK_FALSE(game.Load(longReader));
 
@@ -136,7 +137,7 @@ std::vector<std::byte> ArenaSave(const core::State& state) {
 
 // Whether a fresh arena loads `bytes`; CHECKs that its state hash is the same afterwards.
 bool Loads(const std::vector<std::byte>& bytes) {
-    game::Arena game{ game::Scene::Arena };
+    game::Arena game(test::TestManifest(), game::Scene::Arena);
     const u64 before = game.StateHash();
     core::Reader reader{ bytes };
     const bool loaded = game.Load(reader);
