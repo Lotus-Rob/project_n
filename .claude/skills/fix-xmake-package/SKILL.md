@@ -46,4 +46,5 @@ Owned by: root AGENTS.md. Rationale: docs/design/0001 §7.1 rules 5–7. The exi
 
 ## Gotchas
 
+- A meson package for windows-msvc from Linux (msvc-wine) builds, then fails XMake's link check: XMake's cross file names no archiver for Windows, so meson archives with `$AR`, conda's GNU `ar` that Pixi exports (MSVC: LNK4003 invalid library format), and XMake renames `lib*.a` to `*.lib` only for backslash paths. `harfbuzz-msvcwine` is the worked fix; meson's log (in the `project_n-xmake-cache` volume: `podman unshare`) shows the archiver under "Detecting archiver".
 - Duplicate variants of one package with the same build hash corrupt each other when installed in parallel; `xmake f -v` serialises installs (tools/AGENTS.md). Don't drop `-v` while debugging a package.
