@@ -118,7 +118,7 @@ src/
   app/       App (the main thread's systems and loop) and Game (the logic thread's), 0002.1
   main.cpp   parses the command line, opens the window and renderer, runs an App
 shaders/     HLSL sources and their committed compiled binaries (A10)
-assets/      runtime assets and their manifest (storage: O5)
+assets/      runtime assets and their manifest (large files in Git LFS: 0001.1)
 ```
 
 | Module | May use | Exposes |
@@ -465,7 +465,7 @@ Asked 2026-10-31 whether these would help or are needed for this look:
 - **Location:** `SDL_GetBasePath()` + `assets/`; `artifact` copies the folder next to the binary (into `Contents/Resources` in the macOS bundle).
 - **Images:** core SDL's `SDL_LoadPNG` (SDL 3.4, decoded by the stb_image SDL bundles; the user's call, 2026-11-01, replacing SDL3_image: one dependency and override fewer for PNG only), in `gfx`'s `.cpp` files only; PNG until the offline asset step (§8.7) produces packed, compressed atlases. SDL documents it for trusted files, which ours are: we ship them.
 - **YAML (A17):** settings in the per-user data folder; game data (sects, techniques, items, regions, NPC actions) in `assets/`, parsed by the `data` module into plain structs once at load. yaml-cpp 0.9.0 (MIT, in xmake-repo) reports parse errors by throwing (`YAML::ParserException`), so the `data` module's parse functions catch them and return `std::expected`; nothing else sees an exception. rapidyaml (MIT, "exception-agnostic", error callbacks) would avoid that but isn't in xmake-repo.
-- **Storage** of large binary assets in Git is 0001's O5, still open; with painted art it matters early.
+- **Storage:** large binary assets (fonts, and the PNGs in `assets/` and `tests/reference/`) are in Git LFS, run through Pixi ([0001.1](0001.1-git-lfs.md); answers O5, the user's call, 2026-11-09).
 
 ## 10. Input, camera and picking
 
@@ -542,10 +542,9 @@ The statistics (§8.9) report each, so a broken budget shows up in Tracy before 
 
 | # | Question | Default if unanswered |
 |---|---|---|
-| O5 | From 0001: where large binary assets are stored (Git LFS or elsewhere). Painted art makes this early. | decide before the first real asset |
 | O6 | From 0001: code signing before the first public build (Apple notarisation, a Windows code-signing certificate or Azure Trusted Signing). A release question rather than an engine one, carried here because 0001 deferred it to this doc. | releases unsigned, with instructions in their notes (`publish`; the user's call, 2026-10-31) |
 
-Resolved (the user): Tale of Immortal's look; ticks at 60 a second with rendering uncapped (confirmed after the first review, against lockstep at 60 or 120); the threading model; DragonBones for heroes and bosses with baked hordes (was AQ1); RmlUi (was AQ2); the map zooms over a small range (was AQ4); linear blending, chosen side by side against gamma in a test scene (was AQ5); source art at 1080p for sprites and props and up to 2× for full-screen paintings and portraits (was AQ6); EnTT; determinism within one binary; world time in calendar steps; a fork-join job system from phase 3; SDL3_mixer; SDL3_image (2026-10-31; replaced by core SDL's `SDL_LoadPNG` on 2026-11-01); YAML (all 2026-10-31); a discrete GPU of the GTX 960 or RX 470 class as the minimum spec, and module-private headers for library wrappers (2026-11-01).
+Resolved (the user): O5, large binary assets in Git LFS ([0001.1](0001.1-git-lfs.md), 2026-11-09); Tale of Immortal's look; ticks at 60 a second with rendering uncapped (confirmed after the first review, against lockstep at 60 or 120); the threading model; DragonBones for heroes and bosses with baked hordes (was AQ1); RmlUi (was AQ2); the map zooms over a small range (was AQ4); linear blending, chosen side by side against gamma in a test scene (was AQ5); source art at 1080p for sprites and props and up to 2× for full-screen paintings and portraits (was AQ6); EnTT; determinism within one binary; world time in calendar steps; a fork-join job system from phase 3; SDL3_mixer; SDL3_image (2026-10-31; replaced by core SDL's `SDL_LoadPNG` on 2026-11-01); YAML (all 2026-10-31); a discrete GPU of the GTX 960 or RX 470 class as the minimum spec, and module-private headers for library wrappers (2026-11-01).
 
 ## 16. Implementation phases (after go-ahead)
 
