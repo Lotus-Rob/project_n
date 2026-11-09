@@ -8,6 +8,9 @@
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 
+#include <cstddef>
+#include <optional>
+
 namespace gfx {
 
 /// The reference resolution art is painted for: at zoom 1 the window shows this much of the
@@ -27,6 +30,17 @@ struct Camera {
     core::Vec2 centre = REFERENCE_CENTRE;
     /// How much larger than at the reference fit the world is drawn: above 1 shows less of it.
     f32 zoom = 1.0F;
+};
+
+/// How a frame shows a snapshot: the camera, the render clock's progress and what the pointer hovers.
+struct View {
+    /// The render clock's progress from the snapshot's previous tick (0) to its own (1).
+    f64 alpha = 1.0;
+    /// What part of the world it shows.
+    Camera camera{};
+    /// The index in the snapshot's instances of the hovered entity's instance, which gets a pale
+    /// outline (design doc 0002.3 §3); none when nothing is hovered.
+    std::optional<std::size_t> outlined = std::nullopt;
 };
 
 /// `zoom` after `notches` of the mouse wheel: each one multiplies it by the same factor, and the
