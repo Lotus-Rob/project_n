@@ -26,8 +26,8 @@ namespace gfx {
 class Renderer {
 public:
     /// Creates a GPU device for `window` and presents to it, with the empty sprite atlas `manifest`
-    /// describes, whose scenes load from `assets`, or says why it couldn't (SDL doesn't guarantee an
-    /// sRGB swapchain). The window must outlive the renderer.
+    /// describes, whose scenes load from `assets`, or says why it couldn't. The window must outlive
+    /// the renderer.
     [[nodiscard]] static std::expected<Renderer, core::Error> Create(
         platform::Window& window,
         const std::filesystem::path& assets,

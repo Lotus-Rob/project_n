@@ -34,6 +34,7 @@ struct View {
     f64 alpha = 1.0;
     f32 zoom = 1.0F;
     bool outlines = false; // centred on the player's cultivator, hovered, with the first fox selected
+    bool refit = false;    // a smaller picture first, so a scene target that isn't refitted shows
 };
 
 void CheckAgainstReference(const View& view) {
@@ -81,6 +82,10 @@ void CheckAgainstReference(const View& view) {
         shown.outlined = static_cast<std::size_t>(player - snapshot.ids.begin());
         shown.camera.centre = snapshot.follow.value_or(core::Follow{}).current;
     }
+    if (view.refit) {
+        const std::expected<gfx::Image, core::Error> smaller = renderer->Capture(snapshot, shown, WIDTH / 2, HEIGHT / 3);
+        REQUIRE_MESSAGE(smaller.has_value(), smaller.error().message);
+    }
     const std::expected<gfx::Image, core::Error> drawn = renderer->Capture(snapshot, shown, WIDTH, HEIGHT);
     REQUIRE_MESSAGE(drawn.has_value(), drawn.error().message);
 
@@ -94,8 +99,8 @@ void CheckAgainstReference(const View& view) {
     CHECK(differing <= ALLOWED_PIXELS);
 }
 
-TEST_CASE("the painted scene: sprites, shadows and overlapping glows") {
-    CheckAgainstReference({ .name = "painted", .scene = game::Scene::Painted });
+TEST_CASE("the painted scene: sprites, shadows and overlapping glows, after a smaller picture") {
+    CheckAgainstReference({ .name = "painted", .scene = game::Scene::Painted, .refit = true });
 }
 
 TEST_CASE("the map cells at zoom 1") {

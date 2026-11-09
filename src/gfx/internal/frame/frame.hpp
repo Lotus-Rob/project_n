@@ -32,5 +32,4 @@ struct Frame {
 
 /// Submits `frame`'s commands; presentation follows.
 [[nodiscard]] std::expected<void, core::Error> SubmitFrame(const Frame& frame);
-
 } // namespace gfx::internal

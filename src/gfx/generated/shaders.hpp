@@ -30,6 +30,56 @@ struct Stage {
     u32 uniformBuffers;
 };
 
+/// shaders/bin/composite.frag.spv, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 1196> COMPOSITE_FRAG_SPIRV{{
+#include "composite.frag.spv.h"
+}};
+/// shaders/bin/composite.frag.dxil, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 4168> COMPOSITE_FRAG_DXIL{{
+#include "composite.frag.dxil.h"
+}};
+/// shaders/bin/composite.frag.msl, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 773> COMPOSITE_FRAG_MSL{{
+#include "composite.frag.msl.h"
+}};
+/// shaders/composite.frag.hlsl.
+inline constexpr Stage COMPOSITE_FRAG{
+    .name = "composite.frag",
+    .entryPoint = "FragmentMain",
+    .spirv = COMPOSITE_FRAG_SPIRV,
+    .dxil = COMPOSITE_FRAG_DXIL,
+    .msl = COMPOSITE_FRAG_MSL,
+    .samplers = 1,
+    .storageTextures = 0,
+    .storageBuffers = 0,
+    .uniformBuffers = 0,
+};
+
+/// shaders/bin/composite.vert.spv, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 808> COMPOSITE_VERT_SPIRV{{
+#include "composite.vert.spv.h"
+}};
+/// shaders/bin/composite.vert.dxil, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 3024> COMPOSITE_VERT_DXIL{{
+#include "composite.vert.dxil.h"
+}};
+/// shaders/bin/composite.vert.msl, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 510> COMPOSITE_VERT_MSL{{
+#include "composite.vert.msl.h"
+}};
+/// shaders/composite.vert.hlsl.
+inline constexpr Stage COMPOSITE_VERT{
+    .name = "composite.vert",
+    .entryPoint = "VertexMain",
+    .spirv = COMPOSITE_VERT_SPIRV,
+    .dxil = COMPOSITE_VERT_DXIL,
+    .msl = COMPOSITE_VERT_MSL,
+    .samplers = 0,
+    .storageTextures = 0,
+    .storageBuffers = 0,
+    .uniformBuffers = 0,
+};
+
 /// shaders/bin/sprite.frag.spv, embedded by XMake's utils.bin2c.
 inline constexpr std::array<u8, 19864> SPRITE_FRAG_SPIRV{{
 #include "sprite.frag.spv.h"
