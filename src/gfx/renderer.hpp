@@ -54,28 +54,19 @@ public:
     /// flight and, with vsync, for the display. The time for alpha is read after it (§6); Draw()
     /// follows before the next Acquire(). A failure is logged, and the Draw() after it does nothing.
     void Acquire();
-    /// Draws `snapshot` into the frame Acquire() acquired as `camera` sees it, interpolated by
-    /// `alpha` (0: its previous tick, 1: its own), and presents it. Uploads its instances only when
+    /// Draws `snapshot` into the frame Acquire() acquired as `view` shows it, and presents it. Uploads its instances only when
     /// it isn't the snapshot drawn last (§8.3); a snapshot of a scene it doesn't hold draws the backdrop only.
-    /// The instance at index `outlined`, when given, gets a pale
-    /// outline drawn over everything (the hovered entity, design doc 0002.3 §3), and the snapshot's
+    /// The view's outlined instance gets a pale outline drawn over everything, and the snapshot's
     /// selected instance a gold one; the gold wins where both fall on one.
-    void Draw(
-        const core::Snapshot& snapshot,
-        f64 alpha,
-        const Camera& camera,
-        std::optional<std::size_t> outlined = std::nullopt
-    );
+    void Draw(const core::Snapshot& snapshot, const View& view);
 
     /// Draws as Draw() does, but into a picture `width` by `height` pixels instead of the window,
     /// waits for the GPU and returns the picture, or says why it couldn't. Stalls: for tests.
     [[nodiscard]] std::expected<Image, core::Error> Capture(
         const core::Snapshot& snapshot,
-        f64 alpha,
-        const Camera& camera,
+        const View& view,
         u32 width,
-        u32 height,
-        std::optional<std::size_t> outlined = std::nullopt
+        u32 height
     );
 
 private:

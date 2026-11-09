@@ -80,13 +80,7 @@ struct Renderer::Impl {
     ~Impl() = default;
 
     // Once a swapchain texture is acquired, the frame is submitted even on an error: SDL requires it.
-    std::expected<void, core::Error> Frame(
-        const internal::Frame& acquired,
-        const core::Snapshot& snapshot,
-        f32 alpha,
-        const Camera& camera,
-        std::optional<std::size_t> outlined
-    );
+    std::expected<void, core::Error> Frame(const internal::Frame& acquired, const core::Snapshot& snapshot, const View& view);
     // A recorded copy counts as uploaded only once its commands are submitted (`uploaded.Submitted`): a dropped buffer
     // must upload again.
     std::expected<void, core::Error> Upload(SDL_GPUCommandBuffer* commands, const core::Snapshot& snapshot);
@@ -98,9 +92,7 @@ struct Renderer::Impl {
         u32 width,
         u32 height,
         const core::Snapshot& snapshot,
-        f32 alpha,
-        const Camera& camera,
-        std::optional<std::size_t> outlined
+        const View& view
     ) const;
 
     SDL_Window* window = nullptr;
@@ -153,11 +145,11 @@ void Renderer::Impl::DrawWorld(
     u32 width,
     u32 height,
     const core::Snapshot& snapshot,
-    f32 alpha,
-    const Camera& camera,
-    std::optional<std::size_t> outlined
+    const View& view
 ) const {
     PN_PROFILE_ZONE();
+    const auto alpha = static_cast<f32>(view.alpha);
+    const std::optional<std::size_t> outlined = view.outlined;
     SDL_PushGPUDebugGroup(commands, "world");
     SDL_GPUColorTargetInfo target{};
     target.texture = texture;
@@ -170,7 +162,7 @@ void Renderer::Impl::DrawWorld(
         SDL_PopGPUDebugGroup(commands);
         return;
     }
-    const ClipTransform transform = WorldToClip(camera, width, height);
+    const ClipTransform transform = WorldToClip(view.camera, width, height);
     instances.Draw(commands, pass, snapshot.batches, sprites, transform, alpha);
     const f32 ring = OUTLINE_TEXELS / static_cast<f32>(manifest->pageSize);
     if (snapshot.selected) {
@@ -201,9 +193,7 @@ void Renderer::Impl::DrawWorld(
 std::expected<void, core::Error> Renderer::Impl::Frame(
     const internal::Frame& acquired,
     const core::Snapshot& snapshot,
-    f32 alpha,
-    const Camera& camera,
-    std::optional<std::size_t> outlined
+    const View& view
 ) {
     PN_PROFILE_ZONE();
     // A failed upload draws no sprites, but the frame is still submitted, as SDL requires.
@@ -217,7 +207,7 @@ std::expected<void, core::Error> Renderer::Impl::Frame(
     }
     // Without a swapchain texture (the window can't be shown), the copy still runs and nothing is drawn (§8.3).
     if (acquired.swapchain != nullptr) {
-        DrawWorld(acquired.commands, acquired.swapchain, acquired.width, acquired.height, snapshot, alpha, camera, outlined);
+        DrawWorld(acquired.commands, acquired.swapchain, acquired.width, acquired.height, snapshot, view);
     }
     std::expected<void, core::Error> submitted = internal::SubmitFrame(acquired);
     uploaded.Submitted(submitted.has_value());
@@ -385,24 +375,17 @@ void Renderer::Acquire() {
     m_impl->frame = *acquired;
 }
 
-void Renderer::Draw(const core::Snapshot& snapshot, f64 alpha, const Camera& camera, std::optional<std::size_t> outlined) {
+void Renderer::Draw(const core::Snapshot& snapshot, const View& view) {
     PN_PROFILE_ZONE();
     if (!m_impl->frame) {
         return; // the acquire failed, and said so
     }
     const internal::Frame acquired = *m_impl->frame;
     m_impl->frame.reset();
-    m_impl->Report(m_impl->Frame(acquired, snapshot, static_cast<f32>(alpha), camera, outlined));
+    m_impl->Report(m_impl->Frame(acquired, snapshot, view));
 }
 
-std::expected<Image, core::Error> Renderer::Capture(
-    const core::Snapshot& snapshot,
-    f64 alpha,
-    const Camera& camera,
-    u32 width,
-    u32 height,
-    std::optional<std::size_t> outlined
-) {
+std::expected<Image, core::Error> Renderer::Capture(const core::Snapshot& snapshot, const View& view, u32 width, u32 height) {
     SDL_GPUDevice* device = m_impl->device.get();
     // The pipelines are made for the swapchain's format, so the picture is drawn in it too.
     const SDL_GPUTextureFormat format = SDL_GetGPUSwapchainTextureFormat(device, m_impl->window);
@@ -428,7 +411,7 @@ std::expected<Image, core::Error> Renderer::Capture(
         m_impl->Upload(commands, snapshot),
         [commands] { SDL_CancelGPUCommandBuffer(commands); }, // allowed: no swapchain texture is acquired
         [&]() -> std::expected<Image, core::Error> {
-            m_impl->DrawWorld(commands, texture.get(), width, height, snapshot, static_cast<f32>(alpha), camera, outlined);
+            m_impl->DrawWorld(commands, texture.get(), width, height, snapshot, view);
             SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
             SDL_GPUTextureRegion region{};
             region.texture = texture.get();

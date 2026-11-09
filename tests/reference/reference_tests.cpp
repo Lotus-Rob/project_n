@@ -74,16 +74,14 @@ void CheckAgainstReference(const View& view) {
         held = renderer->ContinueScene(std::numeric_limits<u64>::max());
     }
     REQUIRE_MESSAGE(held.has_value(), held.error().message);
-    gfx::Camera camera{ .zoom = view.zoom };
-    std::optional<std::size_t> outlined;
+    gfx::View shown{ .alpha = view.alpha, .camera = { .zoom = view.zoom } };
     if (view.outlines) {
         const auto player = std::ranges::find(snapshot.ids, arena.Player());
         REQUIRE(player != snapshot.ids.end());
-        outlined = static_cast<std::size_t>(player - snapshot.ids.begin());
-        camera.centre = snapshot.follow.value_or(core::Follow{}).current;
+        shown.outlined = static_cast<std::size_t>(player - snapshot.ids.begin());
+        shown.camera.centre = snapshot.follow.value_or(core::Follow{}).current;
     }
-    const std::expected<gfx::Image, core::Error> drawn =
-        renderer->Capture(snapshot, view.alpha, camera, WIDTH, HEIGHT, outlined);
+    const std::expected<gfx::Image, core::Error> drawn = renderer->Capture(snapshot, shown, WIDTH, HEIGHT);
     REQUIRE_MESSAGE(drawn.has_value(), drawn.error().message);
 
     const std::string file = std::format("{}.png", view.name);
