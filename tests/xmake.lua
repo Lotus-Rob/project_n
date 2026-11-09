@@ -39,6 +39,8 @@ unit_tests("core_tests", "unit/core/*.cpp")
 unit_tests("game_tests", "unit/game/*.cpp", "game", true)
 unit_tests("platform_tests", "unit/platform/*.cpp", "platform")
 unit_tests("gfx_tests", "unit/gfx/*.cpp", "gfx")
+    add_rules("assets") -- the font (ttf_tests.cpp)
+    add_packages("libsdl3_ttf-wayland") -- private to gfx; its test reaches SDL3_ttf directly
 unit_tests("app_tests", "unit/app/*.cpp", "app", true)
 unit_tests("data_tests", "unit/data/*.cpp", "data", true)
 -- Logging start-up states: Quill's loggers live for the whole process, so each test needs its own.
