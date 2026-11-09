@@ -13,6 +13,7 @@
 
 ## Commands
 - `pixi run project_n selftest` runs the self-checks in `test_project_n.py` (no Podman needed); `check` runs them first.
+- `pixi run project_n setup`: once per clone, writes `CLONE_CONFIG` (the commit hooks, Git LFS's filters through `pixi run git-lfs`) into the local git config and fetches the LFS files (design doc 0001.1); `check` refuses a clone without it (`clone_set_up`).
 
 ## Skills
 - git-commit (for `SCOPES` changes)
@@ -26,4 +27,5 @@
 - On Windows, `subprocess` decodes output with the locale (cp1252) and crashes on XMake's UTF-8; `capture()` forces UTF-8. Running a program by bare name finds only `.exe` files (conda's xmake is `xmake.cmd`); `run()`/`capture()` resolve it through `shutil.which`. For xmake they skip the shim entirely: its trailing `endlocal` turns every exit code into 0, so failed tests passed CI.
 - MSVC `C1382` ("the PCH file has been rebuilt since ...obj") after a package's include paths change: XMake rebuilt the PCH but not the objects using it. `pixi run project_n clean --preset windows-msvc` and build again.
 - XMake's compile database export turns packages' `-isystem` into `-I` unless given `--lsp=clangd` (`COMPDB`); without it clangd and `lint` report warnings in third-party headers and their macros as ours.
+- Git LFS runs from git itself, in any git (an editor's, a container's), so its filters must name `pixi run git-lfs`, never a bare `git-lfs` the host may lack or have at another version. `lint` checks committed pointers (`check_lfs_pointers`, `git lfs fsck --pointers`); `artifact` refuses pointer files in `assets/` (`lfs_pointers`).
 - `doctor` exits 3 for "problems found", so CI can report them without hiding real errors (exit 1).

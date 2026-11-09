@@ -272,9 +272,9 @@ class StagedFormatTest(unittest.TestCase):
 
 
 class CheckTest(unittest.TestCase):
-    def test_check_refuses_without_the_hooks(self):
+    def test_check_refuses_a_clone_not_set_up(self):
         ran = []
-        with mock.patch.object(project_n, "hooks_enabled", lambda: False), \
+        with mock.patch.object(project_n, "clone_set_up", lambda: False), \
              mock.patch.object(project_n, "cmd_selftest", lambda args: ran.append("selftest")), \
              self.assertRaises(project_n.Fail):
             project_n.cmd_check(project_n.argparse.Namespace(container=False, sanitizers=False))
@@ -282,7 +282,7 @@ class CheckTest(unittest.TestCase):
 
     def container_check(self):
         tests, builds, references = [], [], []
-        with mock.patch.multiple(project_n, hooks_enabled=lambda: True, cmd_selftest=lambda args: None,
+        with mock.patch.multiple(project_n, clone_set_up=lambda: True, cmd_selftest=lambda args: None,
                                  commit_range=lambda: None, cmd_fmt=lambda args: None, cmd_lint=lambda args: None,
                                  cmd_reference=references.append, cmd_test=tests.append, cmd_build=builds.append), \
              contextlib.redirect_stdout(io.StringIO()):
@@ -1126,6 +1126,76 @@ class AtlasTest(unittest.TestCase):
                 project_n.read_scenes(sprites)
         with temp_repo({"art/scenes.toml": '[one]\nsprites = ["b"]\n[two]\nsprites = ["a", "b"]\n'}):
             self.assertEqual(project_n.read_scenes(sprites), [("one", ["b"]), ("two", ["a", "b"])])
+
+
+class GitLfsTest(unittest.TestCase):
+    def test_a_clone_is_set_up_only_with_every_value(self):
+        config = dict(project_n.CLONE_CONFIG)
+
+        def capture(cmd, check=True):
+            return config.get(cmd[-1], "") + "\n"
+        with mock.patch.object(project_n, "capture", capture):
+            self.assertTrue(project_n.clone_set_up())
+            config["filter.lfs.process"] = "git-lfs filter-process"  # the host's git-lfs, not Pixi's
+            self.assertFalse(project_n.clone_set_up())
+
+    def test_setup_writes_local_config_and_fetches(self):
+        ran = []
+        with mock.patch.object(project_n, "run", ran.append):
+            project_n.cmd_setup(argparse.Namespace())
+        self.assertTrue(all(cmd[:3] == ["git", "config", "--local"] for cmd in ran[:-1]))
+        self.assertEqual({cmd[3] for cmd in ran[:-1]}, set(project_n.CLONE_CONFIG))
+        self.assertEqual(ran[-1], ["git", "lfs", "pull"])
+
+    def test_missing_files_are_the_ones_marked_with_a_minus(self):
+        listing = "4d7a2146b5 * assets/sprites/a - b.png\n9c1e00aa71 - assets/fonts/b otf.otf\n"
+        with mock.patch.object(project_n, "capture", lambda cmd, check=True: listing), \
+             mock.patch.object(project_n.shutil, "which", lambda name: "/env/bin/git-lfs"):
+            self.assertEqual(project_n.lfs_missing(), ["assets/fonts/b otf.otf"])
+
+    def test_missing_files_cant_be_told_without_git_lfs(self):
+        with mock.patch.object(project_n.shutil, "which", lambda name: None):
+            self.assertEqual(project_n.lfs_missing(), ["(git-lfs isn't in the environment)"])
+
+    def test_pointers_are_found_and_content_is_not(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "fonts").mkdir()
+            (Path(tmp) / "fonts" / "a.otf").write_bytes(project_n.LFS_POINTER + b"oid sha256:00\nsize 1\n")
+            (Path(tmp) / "b.png").write_bytes(b"\x89PNG\r\n")
+            self.assertEqual(project_n.lfs_pointers(tmp), ["fonts/a.otf"])
+
+    def test_setup_twice_changes_nothing(self):
+        config = {}
+
+        def run(cmd):
+            if cmd[:3] == ["git", "config", "--local"]:
+                config[cmd[3]] = cmd[4]
+        with mock.patch.object(project_n, "run", run):
+            project_n.cmd_setup(argparse.Namespace())
+            first = dict(config)
+            project_n.cmd_setup(argparse.Namespace())
+        self.assertEqual(config, first)
+        self.assertEqual(config, project_n.CLONE_CONFIG)
+
+    def test_lint_checks_the_range_or_head(self):
+        ran = []
+        with mock.patch.object(project_n, "run", ran.append):
+            project_n.check_lfs_pointers("main..HEAD")
+            project_n.check_lfs_pointers(None)
+        self.assertEqual(ran, [["git", "lfs", "fsck", "--pointers", "main..HEAD"], ["git", "lfs", "fsck", "--pointers"]])
+
+    def test_a_plain_blob_fails_lint(self):
+        def run(cmd):
+            raise subprocess.CalledProcessError(1, cmd)
+        with mock.patch.object(project_n, "run", run), self.assertRaises(project_n.Fail):
+            project_n.check_lfs_pointers("main..HEAD")
+
+    def test_artifact_refuses_pointers_before_anything_else(self):
+        with mock.patch.multiple(project_n, tree_dirty=lambda: "", lfs_pointers=lambda folder: ["fonts/a.otf"],
+                                 reenter=mock.Mock(side_effect=AssertionError("built anyway")),
+                                 build=mock.Mock(side_effect=AssertionError("built anyway"))), \
+             self.assertRaises(project_n.Fail):
+            project_n.cmd_artifact(argparse.Namespace(preset="linux-gcc"))
 
 
 if __name__ == "__main__":

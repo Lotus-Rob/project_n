@@ -956,8 +956,64 @@ def lint_units(sources):
     return [f for f in source_files() if f.endswith(".cpp") and (header_changed or f in sources)]
 
 
-def hooks_enabled():
-    return capture(["git", "config", "core.hooksPath"], check=False).strip() == ".githooks"
+# The clone's own git config (design doc 0001.1): the commit hooks, and Git LFS's filters run through Pixi, as any git
+# (an editor's, a container's) runs them on large binary assets, not only ours.
+CLONE_CONFIG = {
+    "core.hooksPath": ".githooks",
+    "filter.lfs.process": "pixi run --quiet git-lfs filter-process",
+    "filter.lfs.clean": "pixi run --quiet git-lfs clean -- %f",
+    "filter.lfs.smudge": "pixi run --quiet git-lfs smudge -- %f",
+    "filter.lfs.required": "true",  # a failing filter stops git instead of committing the raw file
+}
+LFS_POINTER = b"version https://git-lfs.github.com/spec/v1\n"  # how every Git LFS pointer file starts
+
+
+def clone_set_up():
+    return all(capture(["git", "config", "--local", key], check=False).strip() == value for key, value in CLONE_CONFIG.items())
+
+
+def lfs_listing(listing):
+    """(object ID, downloaded, path) for each line of `git lfs ls-files [--long]`: '*' marks a file whose content is
+    here, '-' one that is only its pointer. The path is the rest of the line, spaces and dashes included."""
+    entries = []
+    for line in listing.splitlines():
+        oid, marker, path = line.split(" ", 2)
+        entries.append((oid, marker == "*", path))
+    return entries
+
+
+def lfs_missing():
+    """Git LFS files whose content isn't here, only their pointers, or why that can't be told."""
+    if not shutil.which("git-lfs"):
+        return ["(git-lfs isn't in the environment)"]
+    return [path for _, downloaded, path in lfs_listing(capture(["git", "lfs", "ls-files"])) if not downloaded]
+
+
+def lfs_pointers(folder):
+    """Files under `folder` that are Git LFS pointers rather than their content, relative to it."""
+    folder = Path(folder)
+    found = []
+    for path in sorted(folder.rglob("*")):
+        if path.is_file():
+            with path.open("rb") as f:
+                if f.read(len(LFS_POINTER)) == LFS_POINTER:
+                    found.append(path.relative_to(folder).as_posix())
+    return found
+
+
+def check_lfs_pointers(rng):
+    """Fails on a commit in `rng` (none: HEAD) that stores a file .gitattributes puts in Git LFS as a plain blob."""
+    try:
+        run(["git", "lfs", "fsck", "--pointers", *([rng] if rng else [])])
+    except subprocess.CalledProcessError:
+        raise Fail("a file .gitattributes stores in Git LFS was committed as a plain blob, or a pointer is malformed (above): "
+                   "run `pixi run project_n setup`, then `git add --renormalize <file>` and amend") from None
+
+
+def cmd_setup(args):
+    for key, value in CLONE_CONFIG.items():
+        run(["git", "config", "--local", key, value])
+    run(["git", "lfs", "pull"])  # replaces the pointers a clone without the filters checked out
 
 
 def check_staged_format():
@@ -1031,6 +1087,7 @@ def cmd_lint(args):
     if stale_atlas():
         raise Fail(f"art/sprites.toml, art/scenes.toml or assets/sprites/ changed but the atlas didn't, or it was edited ({ATLAS_HASHES}): "
                    "run `./dev atlas` and commit the result")
+    check_lfs_pointers(args.range or scope_range())
     if changed is None or any(f.startswith(("tools/", "art/")) and f.endswith(".py") for f in changed):
         run(["ruff", "check", "tools", "art"])
     if changed is None or any(f.startswith(".github/") for f in changed):
@@ -1074,8 +1131,8 @@ def cmd_check(args):
     """The merge gate: commit messages, formatting and lint of the diff, then build and test every
     preset. The pre-commit hook checks formatting at each commit, so the hooks must be on; this
     format check covers what it misses (rebases and cherry-picks don't run it)."""
-    if not hooks_enabled():
-        raise Fail("enable the commit hooks, which check messages and formatting: git config core.hooksPath .githooks")
+    if not clone_set_up():
+        raise Fail("set the clone up first (the commit hooks, Git LFS's filters): pixi run project_n setup")
     cmd_selftest(args)
     rng = commit_range()
     if rng and cmd_commit_check(argparse.Namespace(range=rng, message_file=None)):
@@ -1159,6 +1216,9 @@ def cmd_artifact(args):
     # Release artefacts come from committed sources only; the container sees the whole checkout.
     if tree_dirty():
         raise Fail("artifact builds committed sources only: commit or stash first (`check --container` tests uncommitted work)")
+    pointers = lfs_pointers(ROOT / "assets")
+    if pointers:
+        raise Fail("assets/ holds Git LFS pointers, not the files: run `pixi run project_n setup`\n" + "\n".join(pointers))
     if "GITHUB_OUTPUT" in os.environ and not IN_CONTAINER:
         write_ci_artifact_name(args.preset)
     if not IN_CONTAINER and (PRESETS[args.preset]["image"] or needs_container(args.preset)):
@@ -1474,7 +1534,10 @@ def cmd_doctor(args):
     pinned = pinned_xmake()
     xmake = capture(["xmake", "--version"], check=False) if shutil.which("xmake") else ""
     report(pinned in xmake, f"xmake {pinned} from the Pixi env", "pixi install")
-    report(hooks_enabled(), "commit hooks enabled (message and format checks)", "git config core.hooksPath .githooks")
+    report(clone_set_up(), "clone set up (commit hooks, Git LFS filters through Pixi)", "pixi run project_n setup")
+    missing = lfs_missing()
+    report(not missing, "Git LFS files downloaded" + (f" (missing: {', '.join(missing)})" if missing else ""),
+           "pixi run project_n setup")
     podman = shutil.which("podman")
     report(bool(podman), "podman (artefacts, container checks" + (", windows-msvc)" if HOST == "linux" else ")"),
            INSTALL_HINTS["podman"][HOST])
@@ -1575,6 +1638,7 @@ def make_parser():
         p.add_argument("--all", action="store_true", help="cover every source, not only the diff")
         p.add_argument("--range", help="diff against this commit range's base (default: a branch's commits since main, or main's unpushed ones)")
 
+    add("setup", cmd_setup, "set up a clone once: the commit hooks and Git LFS's filters (local config), then fetch LFS files")
     p = add("doctor", cmd_doctor, "check the environment; prints how to fix problems, installs nothing")
     p.add_argument("--docs", action="store_true", help="only check that commands quoted in agent docs and README exist")
     add_sanitizer(add("build", cmd_build, "build a preset, or all of them", preset="native", mode=True, container=True,
@@ -1637,7 +1701,7 @@ def make_parser():
 def main(argv=None):
     args = make_parser().parse_args(argv)
     try:
-        if HOST == "macos" and args.func not in (cmd_commit_check, cmd_selftest, cmd_fmt, cmd_release, cmd_docs, cmd_profiler, cmd_shaders, cmd_atlas):
+        if HOST == "macos" and args.func not in (cmd_setup, cmd_commit_check, cmd_selftest, cmd_fmt, cmd_release, cmd_docs, cmd_profiler, cmd_shaders, cmd_atlas):
             ensure_macos_xmake()  # not for commands without XMake: the commit hook must work offline
         return args.func(args) or 0
     except Fail as e:
