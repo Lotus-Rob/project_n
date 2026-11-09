@@ -12,7 +12,7 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 
 ## Commands
 - `./dev <command>` (Windows `dev`) is shorthand for `pixi run project_n <command>`; either works from anywhere.
-- `pixi run project_n doctor [--docs]` · `build|test|run [--preset linux-gcc|linux-clang|windows-msvc|macos-clang] [--mode debug|release|releasedbg]` (releasedbg: profiling with Tracy; default preset: the host's native one, `NATIVE_PRESET`; `build --preset all` builds every preset and summarises)
+- `pixi run project_n setup`: once per clone (commit hooks, Git LFS's filters through Pixi, LFS files; design doc 0001.1) · `pixi run project_n doctor [--docs]` · `build|test|run [--preset linux-gcc|linux-clang|windows-msvc|macos-clang] [--mode debug|release|releasedbg]` (releasedbg: profiling with Tracy; default preset: the host's native one, `NATIVE_PRESET`; `build --preset all` builds every preset and summarises)
 - `pixi run project_n check`: the merge gate (self-tests, commits, format and lint of the diff, build + test every preset, one releasedbg build). A change is done when it passes.
 - `pixi run project_n shaders` (Linux or Windows): compile `shaders/` after changing it, and commit `shaders/bin/` and `src/gfx/generated/` with it; `lint` fails on stale binaries
 - `pixi run project_n atlas [--placeholders]`: after changing `art/sprites.toml`, `art/scenes.toml` or `assets/sprites/`, commit `assets/manifest.yaml`, `src/core/generated/atlas.hpp` and `art/atlas.sha256` with them; `lint` fails on a stale atlas

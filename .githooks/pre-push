@@ -1,0 +1,4 @@
+#!/bin/sh
+# Enable once per clone: pixi run project_n setup
+# Uploads Git LFS objects before the push that refers to them (design doc 0001.1).
+exec pixi run --quiet git-lfs pre-push "$@"

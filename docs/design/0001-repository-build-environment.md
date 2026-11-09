@@ -5,7 +5,7 @@
 | Status | **Accepted**: phases 1–4 implemented, review fixes applied; S3 (Podman on Windows) and the cross-machine Windows S2 check open |
 | Author | Rob G |
 | Created | 2026-10-29 |
-| Revised | 2026-11-08, `atlas` also writes the manifest `assets/manifest.yaml` from `art/scenes.toml` (§4, §8). 2026-11-06, CI's `container (linux-clang)` builds `releasedbg` (§12). 2026-11-05, `profile` records with `tracy-capture` (rule 22, §8); review rounds capped at 3 (§10); `atlas`, `assets/`, `art/` and generated headers in `src/<module>/generated/` recorded (§4, §8); `check` builds `releasedbg` once (§8); rule 15's `-Wpadded` exclusion kept (the user's call). 2026-11-01, rule 15 also excludes Clang's `-Wpadded`; rule 25: each module's Doxygen group in `src/<module>/module.dox`; rule 27: headers under `src/<module>/internal/` may include their module's libraries, and `lint` checks the module direction (`MODULES`; 0002 §4). Earlier the same day, editor configuration: the committed `.vscode/settings.json` points VS Code's clangd at the pinned clangd (§4 notes, Q6). Earlier the same day, O2 answered by the architecture doc (0002 §12.1; proposed while 0002 is a draft), which also carries O5 and O6 (its §15). 2026-10-31, `main` only through pull requests with green CI, by ruleset (§11.2, §12). Earlier the same day, releases: a `vX.Y.Z` tag makes CI draft the GitHub release with every preset's archives, the macOS app included, unsigned until O6 (§12). Earlier the same day, logging: Quill and Tracy each behind one facade header, six log levels to the console and a rotating file in the per-user data folder (§7.1 rule 28); standard headers only through the precompiled headers (rule 19); sized number types (rule 29); `lint` ignores only listed false positives in library code (rule 16). Earlier the same day, development tooling: Tracy profiling in `releasedbg`, coverage, libFuzzer, Doxygen with enforced header docs, unity builds configured but off, and no dependency in a header (§7.1 rules 22–27); `fmt` and `lint` cover the diff, and a pre-commit hook checks formatting (§8); agent briefs as a kind of agent knowledge (D10, §10.1); every branch reviewed by a fresh subagent before merge. Earlier, 2026-10-30, review: LTO, PCH, split debug info and hardening (§7.1 rules 18–21); clean-room `artifact` with release zips; `selftest`, ruff and actionlint in the gate; Linux CI jobs on `main`; AGPL-3.0-or-later with third-party notices; large assets deferred (O5). Earlier, phase 4: GitHub Actions CI on Linux, Windows and macOS runners (§12); `macos-clang` implemented (§5.7, S7 passed); S5 passed in CI. Earlier the same day: macOS planned as a native `macos-clang` preset (D13). 2026-10-29: development runs natively in a portable Pixi environment; containers only produce artefacts; headers only (no C++ modules); Conventional Commits + git-cliff + SemVer; open questions Q1–Q10 resolved (Appendix B); knowledge split across AGENTS.md, skills and design docs (§10); Steam Runtime dropped, so Linux artefacts are built in an Ubuntu + Pixi image with the glibc baseline set by the conda-forge sysroot |
+| Revised | 2026-11-09, large binary assets in Git LFS through Pixi, set up by `setup` ([0001.1](0001.1-git-lfs.md); D14 in §2, §4, §5.1, §6.1, §8, §12). 2026-11-08, `atlas` also writes the manifest `assets/manifest.yaml` from `art/scenes.toml` (§4, §8). 2026-11-06, CI's `container (linux-clang)` builds `releasedbg` (§12). 2026-11-05, `profile` records with `tracy-capture` (rule 22, §8); review rounds capped at 3 (§10); `atlas`, `assets/`, `art/` and generated headers in `src/<module>/generated/` recorded (§4, §8); `check` builds `releasedbg` once (§8); rule 15's `-Wpadded` exclusion kept (the user's call). 2026-11-01, rule 15 also excludes Clang's `-Wpadded`; rule 25: each module's Doxygen group in `src/<module>/module.dox`; rule 27: headers under `src/<module>/internal/` may include their module's libraries, and `lint` checks the module direction (`MODULES`; 0002 §4). Earlier the same day, editor configuration: the committed `.vscode/settings.json` points VS Code's clangd at the pinned clangd (§4 notes, Q6). Earlier the same day, O2 answered by the architecture doc (0002 §12.1; proposed while 0002 is a draft), which also carries O5 and O6 (its §15). 2026-10-31, `main` only through pull requests with green CI, by ruleset (§11.2, §12). Earlier the same day, releases: a `vX.Y.Z` tag makes CI draft the GitHub release with every preset's archives, the macOS app included, unsigned until O6 (§12). Earlier the same day, logging: Quill and Tracy each behind one facade header, six log levels to the console and a rotating file in the per-user data folder (§7.1 rule 28); standard headers only through the precompiled headers (rule 19); sized number types (rule 29); `lint` ignores only listed false positives in library code (rule 16). Earlier the same day, development tooling: Tracy profiling in `releasedbg`, coverage, libFuzzer, Doxygen with enforced header docs, unity builds configured but off, and no dependency in a header (§7.1 rules 22–27); `fmt` and `lint` cover the diff, and a pre-commit hook checks formatting (§8); agent briefs as a kind of agent knowledge (D10, §10.1); every branch reviewed by a fresh subagent before merge. Earlier, 2026-10-30, review: LTO, PCH, split debug info and hardening (§7.1 rules 18–21); clean-room `artifact` with release zips; `selftest`, ruff and actionlint in the gate; Linux CI jobs on `main`; AGPL-3.0-or-later with third-party notices; large assets deferred (O5). Earlier, phase 4: GitHub Actions CI on Linux, Windows and macOS runners (§12); `macos-clang` implemented (§5.7, S7 passed); S5 passed in CI. Earlier the same day: macOS planned as a native `macos-clang` preset (D13). 2026-10-29: development runs natively in a portable Pixi environment; containers only produce artefacts; headers only (no C++ modules); Conventional Commits + git-cliff + SemVer; open questions Q1–Q10 resolved (Appendix B); knowledge split across AGENTS.md, skills and design docs (§10); Steam Runtime dropped, so Linux artefacts are built in an Ubuntu + Pixi image with the glibc baseline set by the conda-forge sysroot |
 | Scope | Repository layout, development environment, artefact containers, toolchain pinning, testing, build tooling, commits and versioning, agent knowledge (AGENTS.md and skills) |
 
 ---
@@ -50,6 +50,7 @@
 | D11 | **Conventional Commits 1.0.0**, checked by `project_n commit-check` through a committed `commit-msg` hook. **Linear history**: rebase only, no merge commits. | Rules and enforcement from day one, with no extra dependency. |
 | D12 | **git-cliff** generates `CHANGELOG.md` and the next **SemVer** version from commits. `project_n release` applies both atomically. | One command per release, and the version is always derived from history. |
 | D13 | **macOS is a native-only preset, `macos-clang`** (Apple Silicon), built in the Pixi environment on a Mac or a CI macOS runner. No cross-compiling, VM or compatibility layer on Linux. | osxcross needs the Xcode SDK and a macOS VM needs macOS itself; both licences allow use only on Apple hardware. Neither could run the game either: no Metal outside real Macs. |
+| D14 | **Large binary assets are in Git LFS** (fonts, and the PNGs in `assets/` and `tests/reference/`), with `git-lfs` a Pixi package that git runs through filters `project_n setup` writes into the clone's local config ([0001.1](0001.1-git-lfs.md)). | Answers O5: history stays small as painted art grows, and no host `git-lfs` is needed, nor trusted. |
 
 ---
 
@@ -109,8 +110,8 @@ project_n/
 ├── xmake/repo/               # local xmake package overrides (§7.1 rule 7)
 ├── .clang-format  .clang-tidy  .clangd  .editorconfig  .gitattributes  .gitignore
 ├── .vscode/                  # settings.json: the clangd extension uses the pinned clangd; extensions.json
-├── .githooks/               # POSIX sh: commit-msg (`commit-check`), pre-commit (`fmt --staged`)
-├── .github/                  # CI (§12): workflows/ci.yml, dependabot.yml, actionlint.yaml, AGENTS.md
+├── .githooks/               # POSIX sh: commit-msg (`commit-check`), pre-commit (`fmt --staged`), pre-push (Git LFS uploads)
+├── .github/                  # CI (§12): workflows/ci.yml, actions/lfs/ (Git LFS, cached), dependabot.yml, actionlint.yaml, AGENTS.md
 ├── .claude/CLAUDE.md         # "@../AGENTS.md": Claude Code reads it here, keeping the root shorter
 ├── .claude/agents/           # subagents with a fresh context: branch-reviewer (pre-merge review), log-triage, bug-reproducer
 ├── .claude/skills/           # on-demand procedures (§10.4): git-commit, agent-docs, release,
@@ -131,7 +132,7 @@ project_n/
 │   └── windows/buildtools.vsconfig
 ├── src/                      # structure decided by the architecture doc; pch.hpp; <module>/generated/: headers `shaders` and `atlas` write
 │   └── AGENTS.md
-├── assets/                   # what the game loads at runtime, shipped beside it: sprites/ (PNGs, PROVENANCE.md)
+├── assets/                   # what the game loads at runtime, shipped beside it: sprites/ (PNGs, PROVENANCE.md), fonts/ (fonts, OFL.txt, PROVENANCE.md); large files in Git LFS
 ├── art/                      # sprites.toml (sprite list, foot points), scenes.toml (each scene's sprites), placeholders.py (procedural art), atlas.sha256
 ├── shaders/                  # HLSL, <name>.<stage>.hlsl; bin/: the committed binaries `shaders` writes (0002 §8.8)
 ├── tests/                    # xmake.lua, unit/<area>/, unit/pch.hpp, fuzz/<target>.cpp + fuzz/corpus/, bench/, reference/ (pictures, 0002 §8.9)
@@ -173,7 +174,7 @@ Everything else comes from `pixi install`: compilers, XMake, debuggers, clang to
 **Setup:**
 
 1. `pixi install` creates `.pixi/envs/default` from `pixi.lock`.
-2. `git config core.hooksPath .githooks` enables the commit hooks (message and format checks). `doctor` reminds you if it's missing.
+2. `pixi run project_n setup` sets the clone up once: the commit hooks (message and format checks) and Git LFS's filters, run through Pixi, in the clone's local config, then fetches the LFS files ([0001.1](0001.1-git-lfs.md)). `doctor` reminds you if it's missing.
 
 **Daily loop:**
 
@@ -278,6 +279,8 @@ Everything that affects build output is pinned exactly. Changing a pin is a deli
 **Not pinned exactly, on purpose:**
 - **Host tools** (Pixi, Podman, Git) come from the host's package manager and update with it. `pixi.toml` sets `requires-pixi = ">=0.83"`, which Pixi checks itself; Podman and Git have no minimum yet. Exact pins would break on every system update.
 - **GPU drivers and the display stack** belong to the host at runtime.
+
+Git LFS isn't a host tool: `git-lfs ==3.8.1` is a Pixi package like the others, and git reaches it only through the filters and hook `setup` writes ([0001.1](0001.1-git-lfs.md)), so a host's own `git-lfs` is never used.
 
 Known gaps, to be closed later if they matter:
 
@@ -401,7 +404,8 @@ Constraints:
 
 | Command | Does |
 |---|---|
-| `doctor` | Checks Python and the Pixi environment's XMake, the hook path, Podman, images and the MSVC install, the Windows toolset, the macOS SDK and the WSL path gotcha. Pixi itself syncs the environment to `pixi.lock` on every `pixi run`, and CI's `locked: true` rejects a lock that doesn't match `pixi.toml`. For each missing tool, prints the §5.0 install command for the current OS. Never installs anything. |
+| `setup` | Once per clone: sets `core.hooksPath` and Git LFS's filters (through `pixi run git-lfs`) in the local config, then `git lfs pull` ([0001.1](0001.1-git-lfs.md)). `check` refuses a clone without them. |
+| `doctor` | Checks Python and the Pixi environment's XMake, the clone's setup (hooks, LFS filters, LFS files downloaded), Podman, images and the MSVC install, the Windows toolset, the macOS SDK and the WSL path gotcha. Pixi itself syncs the environment to `pixi.lock` on every `pixi run`, and CI's `locked: true` rejects a lock that doesn't match `pixi.toml`. For each missing tool, prints the §5.0 install command for the current OS. Never installs anything. |
 | `build --preset P [--mode M]` | Native build and refreshes `build/compile_commands.json`. |
 | `test --preset P [--mode M] [--unity] [--target T] [-- <doctest args>]` | Runs `xmake test` (`--unity`: with unity builds on, rule 26). With `--target`, runs that test executable and forwards the doctest arguments, for example `--test-case=*physics*`. |
 | `run --preset P [--mode M] [--debug]` | Builds and launches the game natively. `--debug` launches it under gdb or lldb (`xmake run -d`). |
@@ -724,7 +728,7 @@ Built in `project_n-msvc` (the spike's `containers/msvc.Containerfile`) from the
 
 ## 14. Open questions
 
-None open here. Deferred to the architecture doc: O2 (its answer proposed in 0002 §12.1, A19), O5 and O6 (carried in 0002 §15, where their text and defaults now live).
+None open here. Deferred to the architecture doc: O2 (its answer proposed in 0002 §12.1, A19) and O6 (carried in 0002 §15, where its text and default now live). O5 is answered: Git LFS ([0001.1](0001.1-git-lfs.md), D14).
 
 ---
 
