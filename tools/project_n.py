@@ -1001,6 +1001,27 @@ def lfs_pointers(folder):
     return found
 
 
+def lfs_key(listing):
+    """CI's cache key for the Git LFS objects of `git lfs ls-files --long`'s `listing`: what this commit needs, whether
+    or not they are downloaded yet."""
+    objects = "".join(f"{oid} {path}\n" for oid, _, path in lfs_listing(listing))
+    return "lfs-" + hashlib.sha256(objects.encode("utf-8")).hexdigest()[:16]
+
+
+def cmd_lfs_key(args):
+    print(lfs_key(capture(["git", "lfs", "ls-files", "--long"])))
+
+
+# git-lfs keeps objects of "recent" refs and commits too; with every window at zero, prune keeps only the checkout's
+# (and unpushed commits', which CI has none of), so CI's cache holds what its key says and no old versions.
+LFS_PRUNE = ["git", "-c", "lfs.fetchrecentrefsdays=0", "-c", "lfs.fetchrecentcommitsdays=0",
+             "-c", "lfs.fetchrecentremoterefs=false", "-c", "lfs.pruneoffsetdays=0", "lfs", "prune"]
+
+
+def cmd_lfs_prune(args):
+    run(LFS_PRUNE)
+
+
 def check_lfs_pointers(rng):
     """Fails on a commit in `rng` (none: HEAD) that stores a file .gitattributes puts in Git LFS as a plain blob."""
     try:
@@ -1639,6 +1660,8 @@ def make_parser():
         p.add_argument("--range", help="diff against this commit range's base (default: a branch's commits since main, or main's unpushed ones)")
 
     add("setup", cmd_setup, "set up a clone once: the commit hooks and Git LFS's filters (local config), then fetch LFS files")
+    add("lfs-key", cmd_lfs_key, "print the cache key of this commit's Git LFS objects (CI's LFS action)")
+    add("lfs-prune", cmd_lfs_prune, "delete Git LFS objects the checkout doesn't use, before CI caches them (frees disk locally too)")
     p = add("doctor", cmd_doctor, "check the environment; prints how to fix problems, installs nothing")
     p.add_argument("--docs", action="store_true", help="only check that commands quoted in agent docs and README exist")
     add_sanitizer(add("build", cmd_build, "build a preset, or all of them", preset="native", mode=True, container=True,
@@ -1701,7 +1724,7 @@ def make_parser():
 def main(argv=None):
     args = make_parser().parse_args(argv)
     try:
-        if HOST == "macos" and args.func not in (cmd_setup, cmd_commit_check, cmd_selftest, cmd_fmt, cmd_release, cmd_docs, cmd_profiler, cmd_shaders, cmd_atlas):
+        if HOST == "macos" and args.func not in (cmd_setup, cmd_lfs_key, cmd_lfs_prune, cmd_commit_check, cmd_selftest, cmd_fmt, cmd_release, cmd_docs, cmd_profiler, cmd_shaders, cmd_atlas):
             ensure_macos_xmake()  # not for commands without XMake: the commit hook must work offline
         return args.func(args) or 0
     except Fail as e:

@@ -34,6 +34,8 @@ jobs:
       packages: write # the linux image cache in GHCR
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        env:
+          GIT_LFS_SKIP_SMUDGE: "1" # pointers only: the LFS action fetches through Pixi, cached
         with:
           fetch-depth: 0
       - name: Commit range
@@ -62,6 +64,7 @@ jobs:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
           cache: true
+      - uses: ./.github/actions/lfs
       - run: pixi run project_n selftest
       - run: pixi run project_n commit-check --range "$RANGE"
       - run: pixi run project_n fmt --check
@@ -89,6 +92,8 @@ jobs:
       PROJECT_N_ACCEPT_MSVC_LICENSE: "1" # confirmed to fit the project (design doc 0001 O3); image stays on the runner
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        env:
+          GIT_LFS_SKIP_SMUDGE: "1" # pointers only: the LFS action fetches through Pixi, cached
       - name: Log in to the image cache
         run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin || true
       - name: Restore XMake packages
@@ -103,6 +108,7 @@ jobs:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
           cache: true
+      - uses: ./.github/actions/lfs
       - name: Restore MSVC install
         id: msvc-install
         if: matrix.preset == 'windows-msvc'
@@ -142,6 +148,8 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        env:
+          GIT_LFS_SKIP_SMUDGE: "1" # pointers only: the LFS action fetches through Pixi, cached
       - name: Restore MSVC toolset
         id: msvc
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -182,6 +190,7 @@ jobs:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
           cache: true
+      - uses: ./.github/actions/lfs
       - run: pixi run project_n selftest  # the only place it runs on Windows (paths, shims)
       # Report only: CI needs no commit hook or podman. Exit code 3 means problems found; anything else is a bug.
       - run: pixi run project_n doctor; if ($LASTEXITCODE -notin 0, 3) { exit 1 }; exit 0
@@ -201,6 +210,8 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        env:
+          GIT_LFS_SKIP_SMUDGE: "1" # pointers only: the LFS action fetches through Pixi, cached
       - name: XMake bundle checksum
         run: echo "XMAKE_TOOL=$(grep -o 'XMAKE_MACOS_SHA256 = "[0-9a-f]*"' tools/project_n.py | cut -d'"' -f2)" >> "$GITHUB_ENV"
       - name: Restore XMake
@@ -221,6 +232,7 @@ jobs:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
           cache: true
+      - uses: ./.github/actions/lfs
       # Report only: CI needs no commit hook or podman. Exit code 3 means problems found; anything else is a bug.
       - run: pixi run project_n doctor || [ $? -eq 3 ] # also downloads XMake on a cache miss
       - name: Save XMake
@@ -255,6 +267,8 @@ jobs:
       contents: write # the draft release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        env:
+          GIT_LFS_SKIP_SMUDGE: "1" # pointers only: the LFS action fetches through Pixi, cached
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: project_n-*
