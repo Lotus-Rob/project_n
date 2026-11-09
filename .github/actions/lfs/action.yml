@@ -1,0 +1,32 @@
+# Git LFS files through Pixi's git-lfs, not the runner's (docs/design/0001.1 §5). Every LFS download
+# counts against the account's monthly bandwidth, so the objects are cached on what they are.
+name: Git LFS files
+description: Set the clone up (project_n setup) and fetch its Git LFS files, with the objects cached
+runs:
+  using: composite
+  steps:
+    - name: LFS objects key
+      id: key
+      shell: bash
+      # Every tracked file's object ID: what this commit needs (lfs-prune drops the rest before a save).
+      run: echo "key=$(pixi run --quiet project_n lfs-key)" >> "$GITHUB_OUTPUT"
+    - name: Restore LFS objects
+      id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .git/lfs/objects
+        key: ${{ steps.key.outputs.key }}
+        restore-keys: lfs-
+    - shell: bash
+      run: pixi run project_n setup
+    - name: Prune LFS objects
+      # A miss restored an older cache (restore-keys), so only changed objects downloaded; drop the old ones.
+      if: steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      run: pixi run project_n lfs-prune
+    - name: Save LFS objects
+      if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .git/lfs/objects
+        key: ${{ steps.key.outputs.key }}

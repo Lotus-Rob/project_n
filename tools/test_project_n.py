@@ -1157,12 +1157,31 @@ class GitLfsTest(unittest.TestCase):
         with mock.patch.object(project_n.shutil, "which", lambda name: None):
             self.assertEqual(project_n.lfs_missing(), ["(git-lfs isn't in the environment)"])
 
+    def test_the_cache_key_ignores_whether_objects_are_downloaded(self):
+        listing = "faa6c9df65 - assets/fonts/a.otf\n"
+        self.assertEqual(project_n.lfs_key(listing), project_n.lfs_key(listing.replace(" - ", " * ")))
+
     def test_pointers_are_found_and_content_is_not(self):
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "fonts").mkdir()
             (Path(tmp) / "fonts" / "a.otf").write_bytes(project_n.LFS_POINTER + b"oid sha256:00\nsize 1\n")
             (Path(tmp) / "b.png").write_bytes(b"\x89PNG\r\n")
             self.assertEqual(project_n.lfs_pointers(tmp), ["fonts/a.otf"])
+
+    def test_the_cache_key_follows_the_objects(self):
+        one = "faa6c9df652116dde789d351359f3d7e5d2285a2b2a1f04a2d7244df706d5ea9 * assets/fonts/a.otf\n"
+        other = one.replace("faa6", "0aa6")
+        self.assertEqual(project_n.lfs_key(one), project_n.lfs_key(one))
+        self.assertNotEqual(project_n.lfs_key(one), project_n.lfs_key(other))
+        self.assertRegex(project_n.lfs_key(one), r"^lfs-[0-9a-f]{16}$")
+
+    def test_prune_keeps_only_the_checkouts_objects(self):
+        ran = []
+        with mock.patch.object(project_n, "run", ran.append):
+            project_n.cmd_lfs_prune(argparse.Namespace())
+        self.assertEqual(ran[0][-2:], ["lfs", "prune"])
+        for window in ("lfs.fetchrecentrefsdays=0", "lfs.fetchrecentcommitsdays=0", "lfs.pruneoffsetdays=0"):
+            self.assertIn(window, ran[0])
 
     def test_setup_twice_changes_nothing(self):
         config = {}
