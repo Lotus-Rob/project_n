@@ -5,9 +5,11 @@
 #include "core/log.hpp"
 #include "core/profile.hpp"
 #include "core/repeated_failure.hpp"
+#include "gfx/internal/features/composite.hpp"
 #include "gfx/internal/features/sprites.hpp"
 #include "gfx/internal/frame/frame.hpp"
 #include "gfx/internal/gpu.hpp"
+#include "gfx/internal/resources/scene_target.hpp"
 #include "gfx/internal/resources/sprite_array.hpp"
 #include "gfx/sprite_block.hpp"
 #include "gfx/uploads.hpp"
@@ -26,7 +28,7 @@ constexpr bool DEBUG_MODE = true; // SDL_GPU's validation, in debug builds only 
 #endif
 
 // Ink on dark paper, behind the scene where a window wider or taller than the reference shows past it.
-// Linear values, which the sRGB swapchain encodes to about (0.08, 0.08, 0.09).
+// Linear values, which the composite encodes to about (0.08, 0.08, 0.09).
 constexpr SDL_FColor BACKDROP{ .r = 0.0072F, .g = 0.0072F, .b = 0.0085F, .a = 1.0F };
 
 // The outlines (design doc 0002.3 §3), three texels wide: the hovered entity's pale, the selected one's gold.
@@ -86,14 +88,17 @@ struct Renderer::Impl {
     std::expected<void, core::Error> Upload(SDL_GPUCommandBuffer* commands, const core::Snapshot& snapshot);
     void Report(const std::expected<void, core::Error>& drawn);
     [[nodiscard]] bool Holds(core::SceneId scene) const;
-    void DrawWorld(
+    // The world pass into the scene target, fitted to `width` by `height`, then the final pass into `target`.
+    std::expected<void, core::Error> DrawPasses(
         SDL_GPUCommandBuffer* commands,
-        SDL_GPUTexture* texture,
+        SDL_GPUTexture* target,
         u32 width,
         u32 height,
         const core::Snapshot& snapshot,
         const View& view
-    ) const;
+    );
+    void DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snapshot& snapshot, const View& view) const;
+    void DrawFinal(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target) const;
 
     SDL_Window* window = nullptr;
     internal::Device device = nullptr; // first: destroyed after everything it made
@@ -104,6 +109,8 @@ struct Renderer::Impl {
     std::vector<bool> resident{};   // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::optional<SceneLoad> load = std::nullopt;
     internal::SpriteRenderer instances{};
+    internal::Compositor compositor{};
+    internal::SceneTarget sceneTarget{};
     std::optional<internal::Frame> frame = std::nullopt; // acquired by Acquire(), submitted by Draw()
     UploadedSnapshot uploaded{};
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
@@ -139,30 +146,54 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     return {};
 }
 
-void Renderer::Impl::DrawWorld(
+std::expected<void, core::Error> Renderer::Impl::DrawPasses(
     SDL_GPUCommandBuffer* commands,
-    SDL_GPUTexture* texture,
+    SDL_GPUTexture* target,
     u32 width,
     u32 height,
     const core::Snapshot& snapshot,
     const View& view
-) const {
+) {
+    PN_PROFILE_ZONE();
+    if (std::expected<void, core::Error> fitted = internal::FitSceneTarget(device.get(), sceneTarget, width, height); !fitted) {
+        return fitted;
+    }
+    DrawWorld(commands, snapshot, view);
+    DrawFinal(commands, target);
+    return {};
+}
+
+void Renderer::Impl::DrawFinal(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target) const {
+    PN_PROFILE_ZONE();
+    SDL_PushGPUDebugGroup(commands, "final");
+    SDL_GPUColorTargetInfo info{};
+    info.texture = target;
+    info.load_op = SDL_GPU_LOADOP_DONT_CARE; // the composite covers every pixel
+    info.store_op = SDL_GPU_STOREOP_STORE;
+    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &info, 1, nullptr);
+    compositor.Draw(pass, sceneTarget.texture.get());
+    SDL_EndGPURenderPass(pass);
+    SDL_PopGPUDebugGroup(commands);
+}
+
+void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snapshot& snapshot, const View& view) const {
     PN_PROFILE_ZONE();
     const auto alpha = static_cast<f32>(view.alpha);
     const std::optional<std::size_t> outlined = view.outlined;
     SDL_PushGPUDebugGroup(commands, "world");
     SDL_GPUColorTargetInfo target{};
-    target.texture = texture;
+    target.texture = sceneTarget.texture.get();
     target.clear_color = BACKDROP;
     target.load_op = SDL_GPU_LOADOP_CLEAR;
     target.store_op = SDL_GPU_STOREOP_STORE;
+    target.cycle = true; // nothing loads the old contents (0002 §8.7)
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &target, 1, nullptr);
     if (!Holds(snapshot.scene)) {
         SDL_EndGPURenderPass(pass);
         SDL_PopGPUDebugGroup(commands);
         return;
     }
-    const ClipTransform transform = WorldToClip(view.camera, width, height);
+    const ClipTransform transform = WorldToClip(view.camera, sceneTarget.width, sceneTarget.height);
     instances.Draw(commands, pass, snapshot.batches, sprites, transform, alpha);
     const f32 ring = OUTLINE_TEXELS / static_cast<f32>(manifest->pageSize);
     if (snapshot.selected) {
@@ -206,12 +237,13 @@ std::expected<void, core::Error> Renderer::Impl::Frame(
         PN_LOG_INFO("sprite instances uploaded again, after {} failed uploads", failed);
     }
     // Without a swapchain texture (the window can't be shown), the copy still runs and nothing is drawn (§8.3).
+    std::expected<void, core::Error> drawn{};
     if (acquired.swapchain != nullptr) {
-        DrawWorld(acquired.commands, acquired.swapchain, acquired.width, acquired.height, snapshot, view);
+        drawn = DrawPasses(acquired.commands, acquired.swapchain, acquired.width, acquired.height, snapshot, view);
     }
-    std::expected<void, core::Error> submitted = internal::SubmitFrame(acquired);
+    const std::expected<void, core::Error> submitted = internal::SubmitFrame(acquired);
     uploaded.Submitted(submitted.has_value());
-    return submitted;
+    return core::Combine(drawn, submitted);
 }
 
 void Renderer::Impl::Report(const std::expected<void, core::Error>& drawn) {
@@ -267,11 +299,8 @@ std::expected<Renderer, core::Error> Renderer::Create(
             break;
         }
     }
-    // shortcut: SDL guarantees only SDR, so a window without an sRGB swapchain can't run; the scene target (§8.4) lifts this.
-    if (!SDL_WindowSupportsGPUSwapchainComposition(device, impl->window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR)) {
-        return std::unexpected{ core::Error{ "the window has no sRGB swapchain, which linear blending needs" } };
-    }
-    if (!SDL_SetGPUSwapchainParameters(device, impl->window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR, mode)) {
+    // Always plain SDR, which SDL guarantees: the composite encodes sRGB itself (design doc 0002.4.1 §3).
+    if (!SDL_SetGPUSwapchainParameters(device, impl->window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode)) {
         return std::unexpected{ core::Error{ std::format("SDL_SetGPUSwapchainParameters failed: {}", SDL_GetError()) } };
     }
     PN_LOG_INFO(
@@ -286,11 +315,17 @@ std::expected<Renderer, core::Error> Renderer::Create(
 
     // Pipelines are made at start-up (§8.8), so each backend checks the shaders when the game starts.
     std::expected<internal::SpriteRenderer, core::Error> instances =
-        internal::SpriteRenderer::Create(device, SDL_GetGPUSwapchainTextureFormat(device, impl->window));
+        internal::SpriteRenderer::Create(device, internal::SCENE_FORMAT);
     if (!instances) {
         return std::unexpected{ std::move(instances.error()) };
     }
     impl->instances = std::move(*instances);
+    std::expected<internal::Compositor, core::Error> compositor =
+        internal::Compositor::Create(device, SDL_GetGPUSwapchainTextureFormat(device, impl->window));
+    if (!compositor) {
+        return std::unexpected{ std::move(compositor.error()) };
+    }
+    impl->compositor = std::move(*compositor);
     std::expected<internal::SpriteArray, core::Error> sprites = internal::CreateSpriteArray(device, *impl->manifest);
     if (!sprites) {
         return std::unexpected{ std::move(sprites.error()) };
@@ -387,7 +422,7 @@ void Renderer::Draw(const core::Snapshot& snapshot, const View& view) {
 
 std::expected<Image, core::Error> Renderer::Capture(const core::Snapshot& snapshot, const View& view, u32 width, u32 height) {
     SDL_GPUDevice* device = m_impl->device.get();
-    // The pipelines are made for the swapchain's format, so the picture is drawn in it too.
+    // The composite's pipeline is made for the swapchain's format, so the picture is drawn in it too.
     const SDL_GPUTextureFormat format = SDL_GetGPUSwapchainTextureFormat(device, m_impl->window);
     SDL_GPUTextureCreateInfo textureInfo{};
     textureInfo.type = SDL_GPU_TEXTURETYPE_2D;
@@ -411,7 +446,13 @@ std::expected<Image, core::Error> Renderer::Capture(const core::Snapshot& snapsh
         m_impl->Upload(commands, snapshot),
         [commands] { SDL_CancelGPUCommandBuffer(commands); }, // allowed: no swapchain texture is acquired
         [&]() -> std::expected<Image, core::Error> {
-            m_impl->DrawWorld(commands, texture.get(), width, height, snapshot, view);
+            if (std::expected<void, core::Error> drawn =
+                    m_impl->DrawPasses(commands, texture.get(), width, height, snapshot, view);
+                !drawn) {
+                SDL_CancelGPUCommandBuffer(commands);
+                m_impl->uploaded.Submitted(false);
+                return std::unexpected{ std::move(drawn.error()) };
+            }
             SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
             SDL_GPUTextureRegion region{};
             region.texture = texture.get();
@@ -437,7 +478,7 @@ std::expected<Image, core::Error> Renderer::Capture(const core::Snapshot& snapsh
             const std::span<const std::byte> pixels = internal::BytesAt(mapped, bytes);
             Image image{ .width = width, .height = height, .rgba = { pixels.begin(), pixels.end() } };
             SDL_UnmapGPUTransferBuffer(device, transfer.get());
-            if (format == SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB) {
+            if (format == SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM) {
                 for (std::size_t blue = 0; blue + 2 < image.rgba.size(); blue += BYTES_PER_TEXEL) {
                     std::swap(image.rgba[blue], image.rgba[blue + 2]);
                 }
