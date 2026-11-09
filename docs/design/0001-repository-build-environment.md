@@ -337,6 +337,8 @@ Each rule below fixed a concrete failure or host leak (most found in S4) or reco
    - `libsdl3-wayland` inherits `libsdl3` and adds `libxkbcommon` and `libglvnd` (for `egl.pc`). Without them SDL **silently** builds without Wayland.
    - `libxkbcommon-fixed` inherits `libxkbcommon` and adds `libxml2`.
    - `tracy-libdl` inherits `tracy` and links `libdl` on Linux: its client calls `dladdr`, which glibc keeps in libdl before 2.34, so the link failed against the 2.28 sysroot.
+   - `libsdl3_ttf-wayland` inherits `libsdl3_ttf` and depends on `libsdl3-wayland` instead of `libsdl3`: the original would build and link a second SDL beside the game's ([0002.4](0002.4-ui-and-text.md) §3). Its load script replaces the base's, as a dependency can't be taken back; `xmake.lua` pins the nested SDL to the game's version.
+   - `harfbuzz-msvcwine` inherits `harfbuzz` and fixes its meson build for windows-msvc from a Linux host (msvc-wine): XMake's cross file names no archiver for Windows, so meson took `$AR`, conda's GNU `ar` (Pixi's activation sets it), whose archives MSVC's linker rejects (LNK4003); the override points `AR` at msvc-wine's `lib.exe`. And XMake renames meson's static `lib*.a` to `*.lib` only for backslash paths, so the override renames them itself.
    - `quill-wine` inherits `quill` and also accepts `ERROR_CALL_NOT_IMPLEMENTED` when Quill asks Windows whether a log file's directory is case-sensitive: Wine (and so Proton) answers that, and Quill refused to create the file sink.
 
 **Debuggers**

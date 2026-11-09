@@ -226,6 +226,8 @@ add_requires("entt v4.0.0") -- MIT; header-only
 add_requires("enkits v1.12") -- zlib; behind core/jobs.hpp
 add_requires("lz4 v1.10.0", {configs = {cmake = false}}) -- BSD-2-Clause; behind core/save_file.cpp
 add_requires("libsdl3-wayland 3.4.16") -- zlib; xmake/repo: libsdl3 plus its Wayland build deps
+add_requires("libsdl3_ttf-wayland 3.2.2", {configs = {harfbuzz = true}}) -- zlib (FreeType: FTL; HarfBuzz: Old MIT); behind gfx; xmake/repo: on our SDL
+add_requireconfs("libsdl3_ttf-wayland.libsdl3-wayland", {version = "3.4.16", override = true}) -- the game's one SDL
 add_requires("quill-wine 13.1.0") -- MIT; header-only; xmake/repo: quill plus Wine support
 add_requires("yaml-cpp 0.9.0") -- MIT; behind src/data/
 -- xmake/repo: tracy plus libdl for glibc 2.28. It collects
@@ -272,6 +274,7 @@ target("gfx")
     add_deps("platform")
     add_files("src/gfx/**.cpp")
     set_pcxxheader("src/pch.hpp")
+    add_packages("libsdl3_ttf-wayland") -- private: text shaping and glyphs, in gfx's .cpp files only
     -- The committed shader binaries (`project_n shaders`), embedded through the header generated
     -- with them (src/gfx/generated/shaders.hpp); no terminating zero, as SDL_GPU takes each one's size.
     add_rules("utils.bin2c", {extensions = {".spv", ".dxil", ".msl"}, nozeroend = true})
