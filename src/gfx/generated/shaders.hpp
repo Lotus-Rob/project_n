@@ -80,6 +80,56 @@ inline constexpr Stage COMPOSITE_VERT{
     .uniformBuffers = 0,
 };
 
+/// shaders/bin/mesh.frag.spv, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 760> MESH_FRAG_SPIRV{{
+#include "mesh.frag.spv.h"
+}};
+/// shaders/bin/mesh.frag.dxil, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 3940> MESH_FRAG_DXIL{{
+#include "mesh.frag.dxil.h"
+}};
+/// shaders/bin/mesh.frag.msl, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 559> MESH_FRAG_MSL{{
+#include "mesh.frag.msl.h"
+}};
+/// shaders/mesh.frag.hlsl.
+inline constexpr Stage MESH_FRAG{
+    .name = "mesh.frag",
+    .entryPoint = "FragmentMain",
+    .spirv = MESH_FRAG_SPIRV,
+    .dxil = MESH_FRAG_DXIL,
+    .msl = MESH_FRAG_MSL,
+    .samplers = 1,
+    .storageTextures = 0,
+    .storageBuffers = 0,
+    .uniformBuffers = 0,
+};
+
+/// shaders/bin/mesh.vert.spv, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 1168> MESH_VERT_SPIRV{{
+#include "mesh.vert.spv.h"
+}};
+/// shaders/bin/mesh.vert.dxil, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 4040> MESH_VERT_DXIL{{
+#include "mesh.vert.dxil.h"
+}};
+/// shaders/bin/mesh.vert.msl, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 833> MESH_VERT_MSL{{
+#include "mesh.vert.msl.h"
+}};
+/// shaders/mesh.vert.hlsl.
+inline constexpr Stage MESH_VERT{
+    .name = "mesh.vert",
+    .entryPoint = "VertexMain",
+    .spirv = MESH_VERT_SPIRV,
+    .dxil = MESH_VERT_DXIL,
+    .msl = MESH_VERT_MSL,
+    .samplers = 0,
+    .storageTextures = 0,
+    .storageBuffers = 0,
+    .uniformBuffers = 1,
+};
+
 /// shaders/bin/sprite.frag.spv, embedded by XMake's utils.bin2c.
 inline constexpr std::array<u8, 19864> SPRITE_FRAG_SPIRV{{
 #include "sprite.frag.spv.h"
