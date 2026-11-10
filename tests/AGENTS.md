@@ -4,7 +4,7 @@
 doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every preset (Windows tests run under Wine in the container); fuzz targets, the headless benchmark and the reference pictures, built with them.
 
 ## Rules
-- A test is small, contained and explicit, and tests one behaviour.
+- A test is small (the fewest lines that reach the code), contained (no file, network, window, clock or shared state it doesn't need; independent of other tests), explicit (named after the behaviour, `TEST_CASE("save header rejects a truncated file")`, with literal inputs and exact expected values) and tests one behaviour. Logic only reachable through `main.cpp` or SDL moves into a `src/` function first, without changing behaviour. A sanitizer finding's test fails under that sanitizer (`--sanitizer <name>`).
 - Layout mirrors `src/`: `tests/unit/<area>/`, one test executable per area (`<area>_tests`) to keep link times down.
 - Exception: a test of process-wide state that can only be set once (logging start-up: Quill's loggers live for the whole process) gets its own executable, as in `tests/unit/log_startup/`.
 - Test code passes the same lint as `src/` (no test exemptions): put `TEST_CASE`s inside an anonymous namespace and name test values as `constexpr` constants.

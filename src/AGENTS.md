@@ -33,7 +33,6 @@ All game and engine code, structured by docs/design/0002-engine-architecture.md 
 
 ## Skills
 - look-at-the-game: seeing what the game draws (reference pictures, screenshots of the window, picture diffs)
-- fix-bug: fixing any bug here test-first
 
 ## Gotchas
 - A `///` comment right after the `/// @file` block joins it, leaving the next declaration undocumented: put a blank line after the file comment.
