@@ -14,7 +14,7 @@
 
 ## Commands
 - `pixi run project_n selftest` runs the self-checks in `test_project_n.py` (no Podman needed); `check` runs them first.
-- `pixi run project_n prune-worktrees`: removes worktrees under `.worktrees/` and `.claude/worktrees/` whose branch is gone from origin and whose changes are all in origin/main (`git cherry`, as a rebase merge rewrites commits), with their branches; keeps locked, detached or dirty ones, and ones without commits of their own yet (just made, never pushed), and says why.
+- `pixi run project_n prune-worktrees`: removes worktrees under `.worktrees/` and `.claude/worktrees/` whose branch is gone from origin and whose changes are all in origin/main (`git cherry`, as a rebase merge rewrites commits), with their branches; keeps locked, detached or dirty ones, ones without commits of their own yet (just made, never pushed) and the checkout it runs in, and says why; a folder deleted by hand is left to its closing `git worktree prune`.
 - `pixi run project_n setup`: once per clone (and per worktree), writes `CLONE_CONFIG` (the commit hooks, Git LFS's filters through `pixi run git-lfs`) into the local git config and fetches the LFS files (design doc 0001.1); `check` refuses a clone without it (`clone_set_up`).
 
 ## Skills
