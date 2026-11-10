@@ -183,6 +183,7 @@ What was built differs from the design where measurement or review showed it sho
   per preset and a releasedbg build) are the container gate.
 - **The docs commit isn't marked breaking.** Removing agent skills is not a breaking change as the git-commit skill
   defines it (saves, config, content formats, the build interface), and a `!` would bump the next release.
-- **Left to check after a Claude Code restart:** that the repo's clangd plugin starts (and, in a worktree, which
-  checkout's clangd and compile database it uses), and that ponytail is really off: a subagent still received its hook
-  in the session that built this, likely settings cached at session start.
+- **Checked after a Claude Code restart (2026-11-10):** ponytail was off (no SessionStart banner), and the repo's
+  plugin started Pixi's clangd (`.pixi/envs/default/bin/clangd --background-index`), answering LSP queries. Still to
+  be seen: which checkout's clangd and compile database the LSP uses inside a worktree. The plugin has since moved to
+  `pixi run` (see the faster-check spec's Outcome).
