@@ -27,6 +27,7 @@ Superpowers runs the process (brainstorming, spec, plan, test-first work, verifi
 - Worktrees go inside the repo (Claude Code's `.claude/worktrees/` or `.worktrees/`), never outside it: Git LFS's filter needs Pixi to find `pixi.toml` further up during the checkout. Project setup there is `pixi run project_n setup`, the baseline `pixi run project_n test`; run XMake only through `project_n`.
 - Verification after each task: `pixi run project_n test` and `pixi run project_n lint` (native preset); before a PR: `pixi run project_n check`. Containers can't see a worktree's shared `.git`, so container gates (`check --container`, `lint --container`) run only from a main checkout; from a worktree, CI's `lint` and `container` jobs on the PR are that gate, and the PR waits for them.
 - Code review: the reviewer also checks the diff against the AGENTS.md of every directory it touches, and finds callers of changed C++ symbols with the `LSP` tool (`findReferences`, `incomingCalls`) rather than grep, which misses overloads and templates.
+- Rationale outlives the ledger: superpowers' plan ledger (`.superpowers/sdd/`) is gitignored and deleted when the work is done, so before the PR copy its rulings, with the measurements behind them, into an **Outcome** section of the spec, and mark the spec implemented.
 - Finishing a branch: never "merge locally"; always the pull request below.
 
 ## Finishing a branch
