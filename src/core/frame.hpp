@@ -78,6 +78,12 @@ struct Follow {
     Vec2 current{};
 };
 
+/// Which way a text's characters run.
+enum class TextDirection : u8 {
+    LeftToRight, ///< In lines across.
+    TopToBottom, ///< In a column down, as a vertical caption.
+};
+
 /// One published snapshot of the game state: what the main thread draws until the next is due.
 struct Snapshot {
     /// The wall tick of the last tick in the burst that published it.
