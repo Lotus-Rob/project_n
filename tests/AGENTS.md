@@ -22,6 +22,7 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
 - `pixi run project_n test --preset linux-clang --sanitizer address` (also `run --sanitizer ...` for the game)
 - `pixi run project_n reference` · `pixi run project_n reference --update`: take this run's pictures as the references
 - `pixi run project_n fuzz <name> [--time 60]`: new inputs and crash files land in `build/fuzz/<name>/`
+- `pixi run project_n test --suite app_tests [--test data_watch]`: one test target (`--target` is the same); `--test` keeps the cases of the test file it names, else the cases with it in their name
 - `pixi run project_n test --preset linux-clang` · one target with doctest arguments:
   `pixi run project_n test --preset linux-clang --target core_tests -- --test-case='*expected*'`
 

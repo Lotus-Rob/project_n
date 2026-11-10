@@ -10,6 +10,7 @@
 - Containers re-enter the same script (`reenter`): add behaviour once, not per environment.
 - Never pipe XMake's output through filters; it stalled twice that way in spike S4.
 - `env/activate.sh` runs on every `pixi run`: keep it fast and idempotent.
+- `--help` is read by shell completers (lig): an option with choices opens its help with `[possible values: a, b]`, on one line because `help_format` doesn't wrap piped output; `test --list-tests [--suite S]` prints what `--test` takes.
 
 ## Commands
 - `pixi run project_n selftest` runs the self-checks in `test_project_n.py` (no Podman needed); `check` runs them first.
