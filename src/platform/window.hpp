@@ -49,7 +49,7 @@ enum class GamepadFamily : u8 {
 };
 
 /// A physical input the game knows. SDL's standard gamepad layout gives every controller the same
-/// buttons and sticks. shortcut: only the inputs the default bindings use; rebinding (design doc
+/// buttons and sticks. Only the inputs the default bindings use; rebinding (design doc
 /// 0002 §10) adds the rest.
 enum class InputCode : u8 {
     KeyW,

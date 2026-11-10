@@ -27,7 +27,7 @@ inline constexpr std::size_t MAX_SAVE_BYTES = std::size_t{ 1 } << 30U;
 /// Writes `state` (at most MAX_SAVE_BYTES) compressed to `path`, creating its folder: into a
 /// temporary file beside it first, flushed and closed, then renamed over `path`, so a crash leaves
 /// either the old save or the new one, never part of one. On failure the old save is untouched.
-/// shortcut: safe against the game crashing, not against the machine losing power (no fsync);
+/// Safe against the game crashing, not against the machine losing power (no fsync);
 /// add a platform flush once saves matter to players.
 [[nodiscard]] std::expected<void, Error> WriteSaveFile(const std::filesystem::path& path, std::span<const std::byte> state);
 

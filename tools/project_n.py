@@ -25,13 +25,13 @@ HOST = "windows" if os.name == "nt" else "macos" if sys.platform == "darwin" els
 IN_CONTAINER = os.environ.get("PROJECT_N_IN_CONTAINER") == "1"
 
 APP = "project_n"
-BUNDLE_ID = "dev.projectn.project-n"  # shortcut: placeholder macOS bundle id, fix it for good before signing (O6)
+BUNDLE_ID = "dev.projectn.project-n"  # placeholder macOS bundle id, fix it for good before signing (O6)
 MODES = ("debug", "release", "releasedbg")
 VS_TOOLSET = "14.50"  # native Windows MSVC; must match containers/windows/buildtools.vsconfig
 # conda-forge has no osx-arm64 XMake, so macOS uses the upstream bundle of set_xmakever()'s
 # version (docs/design/0001 §5.7). Checksum of xmake-bundle-v<version>.macos.arm64.
 XMAKE_MACOS_SHA256 = "e719121c56cd34f5f0c0731954a154c1df1b0915f303e5c82dfb6c6cb9e3ef9e"
-LINT_PRESET = "linux-clang"  # shortcut: #ifdef'd Windows/macOS code isn't linted; lint each native preset once some exists
+LINT_PRESET = "linux-clang"  # #ifdef'd Windows/macOS code isn't linted; lint each native preset once some exists
 
 # Sanitizers each preset supports (on request only, never in plain `check`). MSVC has only
 # AddressSanitizer. MemorySanitizer is left out: it needs every library instrumented,
@@ -279,7 +279,7 @@ def reenter(preset, argv, interactive=False):
 def configure(preset, mode, sanitizer="none", unity=False):
     check_sanitizer(preset, sanitizer)
     p, bdir = PRESETS[preset], build_dir(preset, mode, sanitizer, unity)
-    # -v makes XMake install packages one at a time (else 4 in parallel). shortcut: XMake installs
+    # -v makes XMake install packages one at a time (else 4 in parallel). XMake installs
     # duplicate variants with the same build hash (libxcb, libx11 for SDL3) concurrently into one
     # directory and they corrupt each other; drop -v once that's fixed upstream.
     cmd = ["xmake", "f", "-y", "-v", "-p", p["plat"], "-a", p["arch"], f"--toolchain={p['toolchain']}", "-m", mode,
@@ -341,7 +341,7 @@ def test_names():
     """What `test --suite` and `--test` take, for shell completion (--help and --list-tests): each
     target tests/xmake.lua registers, with its test files without their `_tests` suffix."""
     suites = {}
-    # shortcut: reads only one-line unit_tests(...) calls; a multi-line one drops out of --test, so widen the regex then.
+    # Reads only one-line unit_tests(...) calls; a multi-line one drops out of --test, so widen the regex then.
     for name, files in re.findall(r'^unit_tests\("(\w+)", (\{[^}]*\}|"[^"]*")', (ROOT / "tests" / "xmake.lua").read_text(), re.MULTILINE):
         paths = (f for pattern in re.findall(r'"([^"]+)"', files) for f in (ROOT / "tests").glob(pattern))
         suites[name] = sorted(f.stem.removesuffix("_tests") for f in paths if f.stem.endswith("_tests"))
@@ -695,7 +695,7 @@ def shader_resources(reflection, space, name):
     if reflection.get("separate_images") or reflection.get("separate_samplers"):
         raise Fail(f"{name}: SDL_GPU's SPIR-V takes combined image samplers: give the texture and its sampler "
                    "[[vk::combinedImageSampler]] and one [[vk::binding]] (design doc 0002 §8.8)")
-    # shortcut: read-only storage only; read-write ones (u registers) need DXIL's separate numbering mapped too.
+    # Read-only storage only; read-write ones (u registers) need DXIL's separate numbering mapped too.
     writable = [r["name"] for kind in ("images", "ssbos") for r in reflection.get(kind, []) if not r.get("readonly")]
     if writable:
         raise Fail(f"{name}: read-write storage isn't supported by `shaders` yet: {', '.join(writable)}")

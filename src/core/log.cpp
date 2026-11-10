@@ -47,7 +47,7 @@ void Start(const std::filesystem::path& directory) {
     if (!directory.empty()) {
         try {
             std::filesystem::create_directories(directory);
-            // shortcut: Quill takes the file name as a std::string, so on Windows a path outside the
+            // Quill takes the file name as a std::string, so on Windows a path outside the
             // ANSI code page throws here and logging stays on the console; a UTF-8 code page
             // manifest would lift it.
             file = (directory / "project_n.log").string();

@@ -87,7 +87,7 @@ class Bindings {
 public:
     /// The default bindings: WASD, the arrow keys and the left stick move; the left button selects;
     /// the wheel and the shoulder buttons zoom; Escape quits; M, F2, F5, F9, F6 and F10 are the debug
-    /// keys. shortcut: code, not data; bindings become data (a YAML table
+    /// keys. Code, not data; bindings become data (a YAML table
     /// the player's rebinds save over) when rebinding lands with the settings screen (§10, §11).
     Bindings();
 

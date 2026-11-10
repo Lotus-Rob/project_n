@@ -26,7 +26,7 @@ enum class Layer : u8 {
 };
 
 /// A sort key: layer, then depth, then pipeline, high bits first. The low 16 bits are kept for the
-/// texture binding (shortcut: one texture array per scene, so none yet; add it with the second binding).
+/// texture binding (one texture array per scene, so none yet; add it with the second binding).
 using SortKey = u64;
 
 /// The key of an instance in `layer` at `depth` (QuantiseDepth() in the world layer; 0 elsewhere,
@@ -82,7 +82,7 @@ class DrawList {
 public:
     /// How far outside the view an instance's position may lie and still be drawn, in world units:
     /// more than half the diagonal of the largest moving sprite, plus a tick's movement.
-    /// shortcut: one margin for every sprite, not each one's size; a sprite scaled past it pops at the
+    /// One margin for every sprite, not each one's size; a sprite scaled past it pops at the
     /// view's edge, so compare its own extent if one ever does.
     static constexpr f32 CULL_MARGIN = 512.0F;
 

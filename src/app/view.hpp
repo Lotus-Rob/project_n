@@ -29,7 +29,7 @@ void ShowScene(gfx::Camera& camera, std::optional<core::SceneId>& shown, core::S
 
 /// The index of the instance drawn on top at `world` in `snapshot` interpolated by `alpha`: the last
 /// in drawing order with an ID whose quad, turned by its interpolated rotation, contains the point, or
-/// none. shortcut: transparent pixels count as hits, until sprites with much empty space overlap
+/// none. Transparent pixels count as hits, until sprites with much empty space overlap
 /// enough to matter.
 [[nodiscard]] std::optional<std::size_t> PickInstance(const core::Snapshot& snapshot, f64 alpha, core::Vec2 world);
 
