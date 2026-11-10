@@ -1,6 +1,6 @@
 # Switch project_n's agent workflow from ponytail to superpowers
 
-Date: 2026-11-10 · Status: awaiting approval
+Date: 2026-11-10 · Status: approved 2026-11-10, implemented with the changes in **Outcome** (end of this document)
 
 ## Intent
 
@@ -153,3 +153,36 @@ never links an object from the other checkout. If it reuses stale objects it is 
 - Exact ccache settings, cache location and size limit; how XMake is told to use it.
 - Whether the LSP fix for worktrees needs a change to `.claude/marketplace/` or only to `worktree setup`.
 - Wording of every AGENTS.md line within the existing size limits.
+
+## Outcome (2026-11-10)
+
+What was built differs from the design where measurement or review showed it should. Each change, and why:
+
+- **No shared compiler cache (decision 6, item 1, dropped).** XMake compiles our sources through its built-in cache, per
+  build directory and keyed on paths; it hands only package builds to an installed ccache, so a pinned ccache saw almost
+  nothing. Pointing the built-in cache at one shared folder (`--ccachedir`) missed from a second checkout: 10.7 s, then
+  11.7 s, the cache growing 139 MB → 277 MB; the same path rebuilt in 2.7 s. The premise was wrong too: a cold build of
+  our sources is ~10 s per preset and mode (109 files, linux-clang debug), and the slow part, the packages, is already
+  shared through `packages_dir()`. Recorded in tools/AGENTS.md Gotchas.
+- **No copy-on-write `build/` snapshot (decision 6, item 2, dropped).** A reflinked copy of the main checkout's `build/`
+  (38 GB in 2.2 s) is safe but useless: XMake recompiled all 109 files (10.8 s, the same as cold), since its cache and
+  dependency records key on the other checkout's paths; nothing stale was linked.
+- **No `worktree setup`.** Without the snapshot it would only repeat `project_n setup`, which works in a worktree;
+  AGENTS.md maps superpowers' project setup to `setup`.
+- **Cleanup is `project_n prune-worktrees`, not `worktree clean` or `clean --worktrees`.** `clean` always deletes the
+  checkout's build directories, so pruning after every merge would wipe the main checkout's builds. It keeps locked,
+  detached and dirty worktrees, and ones with no commits of their own yet (just made, never pushed: their untracked
+  `build/` and plan ledger would go).
+- **Found on the way: XMake built the main checkout from a worktree.** XMake takes an ancestor folder holding a project
+  (one with `.xmake/`) over the current directory, so every build, test and lint in `.claude/worktrees/<name>` ran on the
+  main checkout's sources. `resolve()` now passes `-P <ROOT>` to every XMake task (`XMAKE_PROJECT_DIR` doesn't work).
+- **Worktrees go inside the repo.** One outside it fails to check out: Git LFS's filter runs `pixi run git-lfs` in the
+  new folder before its `pixi.toml` exists. Inside, Pixi finds the main checkout's `pixi.toml` further up.
+- **Container gates from a worktree are CI's.** Containers mount only the checkout and can't see a worktree's shared
+  `.git`; from a worktree, the PR's `lint` and `container` CI jobs (which run `lint --container`, a clean-room `artifact`
+  per preset and a releasedbg build) are the container gate.
+- **The docs commit isn't marked breaking.** Removing agent skills is not a breaking change as the git-commit skill
+  defines it (saves, config, content formats, the build interface), and a `!` would bump the next release.
+- **Left to check after a Claude Code restart:** that the repo's clangd plugin starts (and, in a worktree, which
+  checkout's clangd and compile database it uses), and that ponytail is really off: a subagent still received its hook
+  in the session that built this, likely settings cached at session start.
