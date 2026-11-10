@@ -885,8 +885,59 @@ class SanitizerTest(unittest.TestCase):
         with mock.patch.object(project_n, "reenter", lambda preset, argv: argvs.append(argv)), \
              mock.patch.object(project_n, "IN_CONTAINER", False):
             project_n.cmd_test(project_n.argparse.Namespace(preset="linux-gcc", mode="debug", sanitizer="none", container=True,
-                                                            target=None, args=[], unity=True))
+                                                            target=None, test=None, args=[], unity=True))
         self.assertIn("--unity", argvs[0])
+
+    def test_a_test_name_filters_by_file_or_else_by_case_name(self):
+        self.assertEqual(project_n.test_filter("data_watch", "app_tests"), "--source-file=*data_watch_tests.cpp")
+        self.assertEqual(project_n.test_filter("log", "core_tests"), "--source-file=*log_tests.cpp")  # not logic_tests.cpp
+        self.assertEqual(project_n.test_filter("game", "app_tests"), "--source-file=*game_tests.cpp")  # not all of unit/game/
+        self.assertEqual(project_n.test_filter("no such file", "app_tests"), "--test-case=*no such file*")
+
+    def test_a_test_file_of_another_suite_is_refused(self):  # doctest would pass the empty run
+        with self.assertRaises(project_n.Fail):
+            project_n.test_filter("data_watch", "core_tests")
+
+    def test_names_group_test_files_by_suite(self):
+        suites = project_n.test_names()
+        self.assertIn("data_watch", suites["app_tests"])
+        self.assertNotIn("archive", suites["app_tests"])
+        self.assertEqual(suites["log_early_tests"], ["early"])  # a file list, not a glob; main.cpp isn't a test file
+
+    @staticmethod
+    def list_tests(target):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            project_n.cmd_test(project_n.argparse.Namespace(list_tests=True, target=target))
+        return out.getvalue().split()
+
+    def test_list_tests_with_a_suite_prints_its_test_files(self):
+        self.assertEqual(self.list_tests("log_early_tests"), ["early"])
+
+    def test_list_tests_without_a_suite_prints_every_suites_test_files(self):
+        names = self.list_tests(None)
+        self.assertLessEqual({"data_watch", "early", "log"}, set(names))
+
+    def test_a_test_without_a_suite_is_refused(self):
+        with self.assertRaises(project_n.Fail):
+            project_n.cmd_test(project_n.argparse.Namespace(preset="linux-gcc", mode="debug", sanitizer="none", container=False,
+                                                            target=None, test="data_watch", args=[], unity=False))
+
+    def test_piped_help_opens_each_options_help_with_its_choices_once(self):  # shell completers read the first line
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            project_n.make_parser().parse_args(["test", "--help"])
+        lines = out.getvalue().splitlines()
+        for option in ("--preset", "--suite"):
+            i = next(i for i, line in enumerate(lines) if line.lstrip().startswith(option))
+            # argparse starts the help on the option's line, after two spaces, or on the next when the option is long
+            help_line = lines[i].strip().split("  ", 1)[1] if "  " in lines[i].strip() else lines[i + 1].strip()
+            self.assertTrue(help_line.startswith("[possible values: "), help_line)
+            self.assertEqual(help_line.count("[possible values: "), 1, help_line)
+
+    def test_suite_and_test_select_one_target_and_filter(self):
+        args = project_n.make_parser().parse_args(["test", "--suite", "app_tests", "--test", "data_watch"])
+        self.assertEqual((args.target, args.test), ("app_tests", "data_watch"))
 
     def test_support_matrix_is_enforced(self):
         project_n.check_sanitizer("linux-clang", "thread")

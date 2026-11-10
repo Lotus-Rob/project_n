@@ -332,10 +332,42 @@ def build_all(args):
     return 1 if any(r.startswith("FAILED") for r in results.values()) else 0
 
 
+def test_names():
+    """What `test --suite` and `--test` take, for shell completion (--help and --list-tests): each
+    target tests/xmake.lua registers, with its test files without their `_tests` suffix."""
+    suites = {}
+    # shortcut: reads only one-line unit_tests(...) calls; a multi-line one drops out of --test, so widen the regex then.
+    for name, files in re.findall(r'^unit_tests\("(\w+)", (\{[^}]*\}|"[^"]*")', (ROOT / "tests" / "xmake.lua").read_text(), re.MULTILINE):
+        paths = (f for pattern in re.findall(r'"([^"]+)"', files) for f in (ROOT / "tests").glob(pattern))
+        suites[name] = sorted(f.stem.removesuffix("_tests") for f in paths if f.stem.endswith("_tests"))
+    return suites
+
+
+def all_test_files(suites):
+    return sorted({n for names in suites.values() for n in names})
+
+
+def test_filter(name, suite):
+    """doctest's filter for `test --suite SUITE --test NAME`: the cases of the test file NAME names, else the cases with
+    NAME in their name. A file of another suite fails: doctest passes a run whose filter selects nothing."""
+    suites = test_names()
+    if name not in all_test_files(suites):
+        return f"--test-case=*{name}*"
+    if name not in suites.get(suite, ()):
+        raise Fail(f"{name}_tests.cpp is in {', '.join(s for s, files in suites.items() if name in files)}, not {suite}")
+    # The whole file name: `*log*` would also match logic_tests.cpp, and `*game*` every file under unit/game/.
+    return f"--source-file=*{name}_tests.cpp"
+
+
 def cmd_test(args):
+    if getattr(args, "list_tests", False):  # internal callers build their own Namespace
+        suites = test_names()
+        print("\n".join(suites.get(args.target, ()) if args.target else all_test_files(suites)))
+        return
     extra = args.args[1:] if args.args[:1] == ["--"] else args.args
-    if extra and not args.target:
-        raise Fail("pass --target <test target> to forward doctest arguments")
+    if (extra or args.test) and not args.target:
+        raise Fail("pass --suite <test target> with --test or doctest arguments")
+    extra = ([test_filter(args.test, args.target)] if args.test else []) + extra
     check_sanitizer(args.preset, args.sanitizer)
     if needs_container(args.preset, args.container):
         argv = ["test", "--preset", args.preset, "--mode", args.mode, "--sanitizer", args.sanitizer, *(["--unity"] if args.unity else [])]
@@ -1163,21 +1195,21 @@ def cmd_check(args):
     skipped = [p for p in PRESETS if not buildable_here(p) or (args.container and not PRESETS[p]["image"])]
     for preset in [p for p in PRESETS if p not in skipped]:
         cmd_test(argparse.Namespace(preset=preset, mode="release", sanitizer="none", container=args.container,
-                                    target=None, args=[], unity=False))
+                                    target=None, test=None, args=[], unity=False))
     linux = next((p for p in PRESETS if PRESETS[p]["plat"] == "linux" and p not in skipped), None)
     if linux:
         cmd_reference(argparse.Namespace(preset=linux, container=args.container, update=False))
     # Unity builds are off (xmake.lua) but kept working: one test run with them on.
     unity_preset = NATIVE_PRESET if NATIVE_PRESET not in skipped else next(p for p in PRESETS if p not in skipped)
     cmd_test(argparse.Namespace(preset=unity_preset, mode="debug", sanitizer="none", container=args.container,
-                                target=None, args=[], unity=True))
+                                target=None, test=None, args=[], unity=True))
     # Profiling builds turn Tracy's zones on, code no other mode compiles: one build keeps it compiling.
     cmd_build(argparse.Namespace(preset=unity_preset, mode="releasedbg", sanitizer="none", container=args.container))
     if args.sanitizers:
         for preset, sanitizers in SANITIZERS.items():
             for sanitizer in sanitizers if preset not in skipped else ():
                 cmd_test(argparse.Namespace(preset=preset, mode="debug", sanitizer=sanitizer, container=args.container,
-                                            target=None, args=[], unity=False))
+                                            target=None, test=None, args=[], unity=False))
     print("check: all presets passed" + (" with every supported sanitizer" if args.sanitizers else "")
           + (f" (skipped {', '.join(skipped)}: not buildable on this host)" if skipped else ""))
 
@@ -1306,7 +1338,7 @@ def cmd_coverage(args):
         return reenter(preset, ["coverage"])
     for stale in (ROOT / build_dir(preset, "coverage")).rglob("*.gcda"):  # counts add up across runs
         stale.unlink()
-    cmd_test(argparse.Namespace(preset=preset, mode="coverage", sanitizer="none", container=False, target=None, args=[],
+    cmd_test(argparse.Namespace(preset=preset, mode="coverage", sanitizer="none", container=False, target=None, test=None, args=[],
                                 unity=False))
     out = ROOT / "build" / "coverage"
     out.mkdir(parents=True, exist_ok=True)
@@ -1633,12 +1665,17 @@ def ensure_macos_xmake():
     os.environ["PATH"] = f"{exe.parent}{os.pathsep}{os.environ['PATH']}"
 
 
+def help_format(prog):
+    """Piped help isn't wrapped: shell completers (lig) read an option's values from the first line of its help."""
+    return argparse.HelpFormatter(prog, width=None if sys.stdout.isatty() else 10_000)
+
+
 def make_parser():
-    parser = argparse.ArgumentParser(prog="project_n", description=__doc__.splitlines()[0])
-    sub = parser.add_subparsers(dest="command", required=True)
+    parser = argparse.ArgumentParser(prog="project_n", description=__doc__.splitlines()[0], formatter_class=help_format)
+    sub = parser.add_subparsers(dest="command", required=True, title="commands", metavar="<command>")
 
     def add(name, func, help, preset=None, mode=False, container=False, choices=tuple(PRESETS)):
-        p = sub.add_parser(name, help=help)
+        p = sub.add_parser(name, help=help, formatter_class=help_format)
         if preset is not None:
             p.add_argument("--preset", choices=choices, required=preset == "required",
                            default=NATIVE_PRESET if preset == "native" else None)
@@ -1668,7 +1705,12 @@ def make_parser():
                       choices=(*PRESETS, "all")))
     p = add("test", cmd_test, "build and run the tests of a preset", preset="native", mode=True, container=True)
     add_sanitizer(p)
-    p.add_argument("--target", help="run one test target, forwarding the arguments after --")
+    suites = test_names()  # in the help only, not `choices`: any target and any case name are valid
+    test_files = all_test_files(suites)
+    p.add_argument("--suite", "--target", dest="target",
+                   help=f"[possible values: {', '.join(suites)}] run one test target, forwarding the arguments after --")
+    p.add_argument("--test", help=f"[possible values: {', '.join(test_files)}] with --suite: only the cases of a test file, or with this in their name")
+    p.add_argument("--list-tests", action="store_true", help="print what --test takes (of --suite's files, or of every suite's) and exit: shell completion calls it")
     p.add_argument("--unity", action="store_true", help="with unity builds on (off by default; check runs this once)")
     p.add_argument("args", nargs=argparse.REMAINDER, help="-- <doctest arguments>, e.g. -- --test-case='*physics*'")
     p = add("run", cmd_run, "build and launch the game natively", preset="native", mode=True)
@@ -1718,6 +1760,12 @@ def make_parser():
     p = add("clean", cmd_clean, "remove build directories", preset="optional")
     p.add_argument("--packages", action="store_true", help="also remove XMake package dirs of other environments")
     p.add_argument("--images", action="store_true", help="also remove this project's container images other than the current tags")
+    # List choices in clap's `[possible values: …]` form, which shell completers (lig) read from --help.
+    # First, so argparse's wrapping can't split the marker across lines.
+    for p in sub.choices.values():
+        for a in p._actions:
+            if a.choices and a.option_strings:
+                a.help = f"[possible values: {', '.join(map(str, a.choices))}] {a.help or ''}".rstrip()
     return parser
 
 
