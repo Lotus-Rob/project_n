@@ -1,4 +1,7 @@
 # Local environments and tool state
+# Worktrees: superpowers' fallback folder and Claude Code's own
+.worktrees/
+.claude/worktrees/
 .pixi/
 .xmake/
 .cache/
