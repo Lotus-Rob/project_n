@@ -15,6 +15,7 @@
 #include <atomic>
 #include <bit>
 #include <cfenv>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <exception>

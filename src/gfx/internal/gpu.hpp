@@ -82,18 +82,24 @@ struct SdlDeleter {
     }
 };
 
-/// The `size` bytes at `data`: memory SDL hands out as a pointer and a size (a mapped transfer
-/// buffer, a surface's pixels), viewed as a bounds-checked span from then on.
-[[nodiscard]] inline std::span<std::byte> BytesAt(void* data, std::size_t size) {
+/// The `count` objects at `data`: memory SDL hands out as a pointer and a count (a mapped transfer buffer, a surface's
+/// pixels, a text's draw operations), viewed as a bounds-checked span from then on.
+template<typename Object>
+[[nodiscard]] std::span<Object> SpanAt(Object* data, std::size_t count) {
 #ifdef __clang__
 #pragma clang diagnostic push
 // The one place a pointer from a C API becomes a span: no constructor checks what SDL allocated.
 #pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-container"
 #endif
-    return { static_cast<std::byte*>(data), size };
+    return { data, count };
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
+}
+
+/// The `size` bytes at `data`, as SpanAt() views them.
+[[nodiscard]] inline std::span<std::byte> BytesAt(void* data, std::size_t size) {
+    return SpanAt(static_cast<std::byte*>(data), size);
 }
 
 /// Owns an SDL surface (a decoded image).
