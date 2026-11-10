@@ -35,7 +35,7 @@ Superpowers runs the process (brainstorming, spec, plan, test-first work, verifi
 Work happens on a branch; it merges into main only through a pull request, which the user merges.
 1. `pixi run project_n lint --fix` (it covers the diff; `--all` for every file); fix every remaining finding by hand in the code. The pre-commit hook checks formatting at every commit: when it rejects one, `pixi run project_n fmt`, stage again and commit.
 2. `pixi run project_n check` (plus `--container` for build, environment or dependency changes, or CI's container jobs from a worktree: above) until it passes.
-3. Review: superpowers requesting-code-review on `main..HEAD`, acted on with receiving-code-review; `check` again after the fixes.
+3. Review: superpowers requesting-code-review on `main..HEAD`, acted on with receiving-code-review. Fix every finding, Minor included (the user's rule, overriding superpowers' "Minor → ledger"); one judged wrong is a ruling with its reason. `check` again after the fixes.
 4. Main accepts nothing but a pull request, the user included (ruleset: .github/AGENTS.md). Push the branch and `pixi run gh pr create --fill`; when CI's six checks are green on a branch up to date with main, stop and tell the user: the user merges (GitHub deletes the merged branch).
 5. After the merge: delete the branch's section of `in-flight.md`; from the main checkout run `pixi run project_n prune-worktrees` (it fetches and checks `origin/main` itself; never forced), and `git switch main && git pull --ff-only` only if no other branch's work is open there.
 
