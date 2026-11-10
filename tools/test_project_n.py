@@ -1286,7 +1286,7 @@ class XmakeProjectTest(unittest.TestCase):
         self.assertEqual(project_n.resolve(["git", "status"])[1:], ["status"])
 
 
-class CleanWorktreesTest(unittest.TestCase):
+class PruneWorktreesTest(unittest.TestCase):
     MAIN = Path("/repo")
     PORCELAIN = ("worktree /repo\nHEAD 1111\nbranch refs/heads/main\n\n"
                  "worktree /repo/.worktrees/done\nHEAD 2222\nbranch refs/heads/done\n\n"
@@ -1296,11 +1296,37 @@ class CleanWorktreesTest(unittest.TestCase):
 
     def test_owns_only_worktrees_under_the_project_folders(self):
         owned = project_n.owned_worktrees(self.PORCELAIN, self.MAIN)
-        self.assertEqual([w["path"] for w in owned],
-                         [Path("/repo/.worktrees/done"), Path("/repo/.claude/worktrees/busy"), Path("/repo/.claude/worktrees/loose")])
+        self.assertEqual([(w["path"], w["branch"], w["locked"], w["prunable"]) for w in owned],
+                         [(Path("/repo/.worktrees/done"), "done", False, False),
+                          (Path("/repo/.claude/worktrees/busy"), "worktree-busy", True, False),
+                          (Path("/repo/.claude/worktrees/loose"), None, False, False)])
+
+    def test_a_folder_deleted_by_hand_is_prunable(self):
+        porcelain = "worktree /repo/.worktrees/gone\nHEAD 6666\nbranch refs/heads/gone\nprunable gitdir file points to non-existent location\n"
+        self.assertTrue(project_n.owned_worktrees(porcelain, self.MAIN)[0]["prunable"])
+
+    def test_skips_prunable_worktrees(self):
+        gone = self.worktree(path=Path("/repo/.worktrees/gone"), prunable=True)
+
+        def capture(cmd, check=True):
+            self.assertNotIn("-C", cmd)  # its folder is gone: asking git about it would fail
+            return self.PORCELAIN
+
+        with mock.patch.object(project_n, "main_checkout", lambda: self.MAIN), mock.patch.object(project_n, "capture", capture), \
+                mock.patch.object(project_n, "owned_worktrees", lambda porcelain, main: [gone]), \
+                mock.patch.object(project_n, "run") as run, contextlib.redirect_stdout(io.StringIO()):
+            project_n.prune_worktrees(argparse.Namespace())
+        self.assertEqual(run.call_args_list[-1].args[0], ["git", "worktree", "prune"])
+        self.assertFalse([c for c in run.call_args_list if "remove" in c.args[0]])
+
+    def test_keeps_this_checkout(self):
+        self.assertIn("this checkout", self.reason(self.worktree(path=project_n.ROOT)))
+
+    def test_locked_says_how_to_unlock(self):
+        self.assertIn("git worktree unlock", self.reason(self.worktree(locked=True)))
 
     def worktree(self, **fields):
-        return {"path": Path("/repo/.worktrees/done"), "branch": "done", "locked": False, **fields}
+        return {"path": Path("/repo/.worktrees/done"), "branch": "done", "locked": False, "prunable": False, **fields}
 
     def reason(self, worktree, status="", remote="", cherry="- 2222\n"):
         answers = {"status": status, "ls-remote": remote, "cherry": cherry}
@@ -1337,7 +1363,7 @@ class CleanWorktreesTest(unittest.TestCase):
                 mock.patch.object(project_n, "owned_worktrees", lambda porcelain, main: [done]), \
                 mock.patch.object(project_n, "worktree_unremovable", lambda w: None), \
                 mock.patch.object(project_n, "run") as run, contextlib.redirect_stdout(io.StringIO()):
-            project_n.clean_worktrees()
+            project_n.prune_worktrees(argparse.Namespace())
         ran = [c.args[0] for c in run.call_args_list]
         self.assertIn(["git", "worktree", "remove", Path("/repo/.worktrees/done")], ran)
         self.assertIn(["git", "branch", "-D", "done"], ran)
@@ -1349,7 +1375,7 @@ class CleanWorktreesTest(unittest.TestCase):
                 mock.patch.object(project_n, "owned_worktrees", lambda porcelain, main: [self.worktree()]), \
                 mock.patch.object(project_n, "worktree_unremovable", lambda w: "uncommitted changes"), \
                 mock.patch.object(project_n, "run") as run, contextlib.redirect_stdout(io.StringIO()) as out:
-            project_n.clean_worktrees()
+            project_n.prune_worktrees(argparse.Namespace())
         self.assertFalse([c for c in run.call_args_list if "remove" in c.args[0]])
         self.assertIn("uncommitted changes", out.getvalue())
 

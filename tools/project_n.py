@@ -1719,15 +1719,17 @@ def owned_worktrees(porcelain, main):
         path = Path(fields["worktree"])
         if any(path.is_relative_to(main / d) for d in WORKTREE_DIRS):
             branch = fields.get("branch", "").removeprefix("refs/heads/") or None
-            owned.append({"path": path, "branch": branch, "locked": "locked" in fields})
+            owned.append({"path": path, "branch": branch, "locked": "locked" in fields, "prunable": "prunable" in fields})
     return owned
 
 
 def worktree_unremovable(worktree):
     """Why `worktree` must stay, or None once its work is in origin/main. A rebase merge rewrites the commits, so
     "merged" means GitHub deleted the branch and every commit's change is in origin/main (`git cherry`)."""
+    if worktree["path"] == ROOT:
+        return "this checkout (run it from another)"
     if worktree["locked"]:
-        return "locked (a session is using it)"
+        return f"locked (a session is using it; once none is, git worktree unlock {worktree['path']})"
     if not worktree["branch"]:
         return "no branch (detached)"
     if capture(["git", "-C", worktree["path"], "status", "--porcelain"]).strip():
@@ -1742,11 +1744,13 @@ def worktree_unremovable(worktree):
     return None
 
 
-def clean_worktrees():
+def prune_worktrees(args):
     """Remove this project's worktrees whose work is merged, with their branches; never forced."""
     main = main_checkout()
     run(["git", "fetch", "--quiet", "--prune", "origin"])
     for worktree in owned_worktrees(capture(["git", "worktree", "list", "--porcelain"]), main):
+        if worktree["prunable"]:  # its folder is gone: the `git worktree prune` below clears it
+            continue
         reason = worktree_unremovable(worktree)
         if reason:
             print(f"keeping {worktree['path']}: {reason}")
@@ -1755,9 +1759,6 @@ def clean_worktrees():
         run(["git", "branch", "-D", worktree["branch"]])  # -D: a rebase merge leaves it unmerged by ancestry
     run(["git", "worktree", "prune"])
 
-
-def cmd_prune_worktrees(args):
-    clean_worktrees()
 
 
 def ensure_macos_xmake():
@@ -1873,7 +1874,7 @@ def make_parser():
     p = add("clean", cmd_clean, "remove build directories", preset="optional")
     p.add_argument("--packages", action="store_true", help="also remove XMake package dirs of other environments")
     p.add_argument("--images", action="store_true", help="also remove this project's container images other than the current tags")
-    add("prune-worktrees", cmd_prune_worktrees,
+    add("prune-worktrees", prune_worktrees,
         "remove this project's worktrees (.worktrees/, .claude/worktrees/) whose work is merged into origin/main, with their branches")
     # List choices in clap's `[possible values: …]` form, which shell completers (lig) read from --help.
     # First, so argparse's wrapping can't split the marker across lines.
@@ -1887,7 +1888,7 @@ def make_parser():
 def main(argv=None):
     args = make_parser().parse_args(argv)
     try:
-        if HOST == "macos" and args.func not in (cmd_setup, cmd_lfs_key, cmd_lfs_prune, cmd_commit_check, cmd_selftest, cmd_fmt, cmd_release, cmd_docs, cmd_profiler, cmd_shaders, cmd_atlas, cmd_prune_worktrees):
+        if HOST == "macos" and args.func not in (cmd_setup, cmd_lfs_key, cmd_lfs_prune, cmd_commit_check, cmd_selftest, cmd_fmt, cmd_release, cmd_docs, cmd_profiler, cmd_shaders, cmd_atlas, prune_worktrees):
             ensure_macos_xmake()  # not for commands without XMake: the commit hook must work offline
         return args.func(args) or 0
     except Fail as e:
