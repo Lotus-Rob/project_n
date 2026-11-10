@@ -41,8 +41,9 @@ void CheckAgainstReference(const View& view) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
     game::Arena arena(test::TestManifest(), view.scene);
+    std::vector<core::Event> events; // the hits the ticks start, which no picture shows
     for (u64 tick = 1; tick <= view.ticks; ++tick) {
-        arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, {});
+        arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, {}, events);
     }
     if (view.outlines) {
         // The fox spawned first: the lowest ID among them.
@@ -55,7 +56,9 @@ void CheckAgainstReference(const View& view) {
         }
         const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = fox } } };
         arena.Tick(
-            { .wall = view.ticks + 1, .simulation = view.ticks + 1, .state = view.ticks + 1 }, { .actions = select, .held = {} }
+            { .wall = view.ticks + 1, .simulation = view.ticks + 1, .state = view.ticks + 1 },
+            { .actions = select, .held = {} },
+            events
         );
         REQUIRE(arena.Selected() == fox);
     }

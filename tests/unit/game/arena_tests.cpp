@@ -14,6 +14,12 @@ namespace {
 
 using core::atlas::SpriteId;
 
+// Ticks `arena`, which the tests below that look at no events do.
+void Tick(game::Arena& arena, const core::TickCounters& counters, const core::TickInput& input) {
+    std::vector<core::Event> events;
+    arena.Tick(counters, input, events);
+}
+
 core::Snapshot Published(game::Arena& arena) {
     core::Jobs jobs{ 1 };
     core::Snapshot snapshot;
@@ -59,7 +65,7 @@ std::vector<std::pair<f32, f32>> Positions(const core::Snapshot& snapshot, core:
 TEST_CASE("a tick moves the foxes, and their previous position is where they were") {
     game::Arena arena(test::TestManifest());
     const core::Snapshot before = Published(arena);
-    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, {});
+    Tick(arena, { .wall = 1, .simulation = 1, .state = 1 }, {});
     const core::Snapshot after = Published(arena);
     // Copied, not recomputed: the previous positions are the same floats.
     CHECK(Positions(after, &core::Instance::previous) == Positions(before, &core::Instance::current));
@@ -77,9 +83,9 @@ u32 RotationOf(const core::Snapshot& snapshot, SpriteId sprite) {
 TEST_CASE("the ice crystal turns each tick, from where it was") {
     constexpr u32 HALF_BITS = 16;
     game::Arena arena(test::TestManifest());
-    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, {});
+    Tick(arena, { .wall = 1, .simulation = 1, .state = 1 }, {});
     const u32 before = RotationOf(Published(arena), SpriteId::CrystalIce);
-    arena.Tick({ .wall = 2, .simulation = 2, .state = 2 }, {});
+    Tick(arena, { .wall = 2, .simulation = 2, .state = 2 }, {});
     const u32 after = RotationOf(Published(arena), SpriteId::CrystalIce);
     CHECK((after & 0xFFFFU) == (before >> HALF_BITS)); // its previous rotation is the last tick's current one
     CHECK((after >> HALF_BITS) != (after & 0xFFFFU));
@@ -101,7 +107,7 @@ TEST_CASE("the cultivator walks where the held input points, and the camera foll
     REQUIRE(arena.Player() != core::StableId{});
     const core::Snapshot before = Published(arena);
     REQUIRE(before.follow.has_value());
-    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
+    Tick(arena, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
     const core::Snapshot after = Published(arena);
     REQUIRE(after.follow.has_value());
     const core::Follow from = before.follow.value_or(core::Follow{});
@@ -118,7 +124,7 @@ TEST_CASE("the cultivator walks at the game data's speed") {
     data.cultivator.walkSpeed = SPEED;
     game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
     const core::Vec2 before = PositionOf(Published(arena), arena.Player());
-    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
+    Tick(arena, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
     const core::Vec2 after = PositionOf(Published(arena), arena.Player());
     CHECK(after.x - before.x == doctest::Approx(SPEED));
 }
@@ -140,7 +146,7 @@ f32 Spread(const core::Snapshot& snapshot, SpriteId sprite) {
 f32 LeftmostAfter(const core::GameData& data, u64 ticks, core::HeldInput held, SpriteId sprite) {
     game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
     for (u64 tick = 1; tick <= ticks; ++tick) {
-        arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, { .actions = {}, .held = held });
+        Tick(arena, { .wall = tick, .simulation = tick, .state = tick }, { .actions = {}, .held = held });
     }
     f32 left = std::numeric_limits<f32>::max();
     for (const core::Instance& instance : Published(arena).instances) {
@@ -176,7 +182,7 @@ TEST_CASE("new game data changes the foxes' sprite and orbit at once") {
     arena.SetData(data);
     CHECK(arena.DataHash() == data.Hash());
     CHECK(arena.DataHash() != before);
-    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, {});
+    Tick(arena, { .wall = 1, .simulation = 1, .state = 1 }, {});
     const core::Snapshot snapshot = Published(arena);
     CHECK(std::ranges::none_of(snapshot.instances, [](const auto& instance) { return Draws(instance, SpriteId::Fox); }));
     CHECK(Spread(snapshot, SpriteId::FoxYellow) > builtInSpread * CLEARLY_WIDER);
@@ -184,8 +190,8 @@ TEST_CASE("new game data changes the foxes' sprite and orbit at once") {
 
 TEST_CASE("standing still, the cultivator draws still") {
     game::Arena arena(test::TestManifest());
-    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
-    arena.Tick({ .wall = 2, .simulation = 2, .state = 2 }, {});
+    Tick(arena, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
+    Tick(arena, { .wall = 2, .simulation = 2, .state = 2 }, {});
     const core::Snapshot snapshot = Published(arena);
     REQUIRE(snapshot.follow.has_value());
     const core::Follow follow = snapshot.follow.value_or(core::Follow{});
@@ -203,7 +209,7 @@ TEST_CASE("each entity's instance carries its ID; the ground and shadows carry n
 TEST_CASE("the snapshot names the selected entity's instance; selecting nothing clears it") {
     game::Arena arena(test::TestManifest());
     const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = arena.Player() } } };
-    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
+    Tick(arena, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
     CHECK(arena.Selected() == arena.Player());
     const core::Snapshot snapshot = Published(arena);
     const auto drawn = std::ranges::find(snapshot.ids, arena.Player());
@@ -211,7 +217,7 @@ TEST_CASE("the snapshot names the selected entity's instance; selecting nothing 
     CHECK(snapshot.selected == std::optional<u32>{ static_cast<u32>(drawn - snapshot.ids.begin()) });
 
     const std::array<core::Action, 1> none{ { { .kind = core::ActionKind::Select } } };
-    arena.Tick({ .wall = 2, .simulation = 2, .state = 2 }, { .actions = none, .held = {} });
+    Tick(arena, { .wall = 2, .simulation = 2, .state = 2 }, { .actions = none, .held = {} });
     CHECK(arena.Selected() == core::StableId{});
     CHECK_FALSE(Published(arena).selected.has_value());
 }
@@ -220,7 +226,7 @@ TEST_CASE("a stale ID selects nothing") {
     constexpr core::StableId NEVER_HANDED_OUT{ 1'000'000 };
     game::Arena arena(test::TestManifest());
     const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = NEVER_HANDED_OUT } } };
-    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
+    Tick(arena, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
     CHECK(arena.Selected() == core::StableId{});
 }
 
@@ -251,7 +257,7 @@ core::Snapshot MovedArena() {
     constexpr u64 TICKS = 90;
     game::Arena arena(test::TestManifest());
     for (u64 tick = 1; tick <= TICKS; ++tick) {
-        arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, {});
+        Tick(arena, { .wall = tick, .simulation = tick, .state = tick }, {});
     }
     return Published(arena);
 }
@@ -327,7 +333,7 @@ TEST_CASE("the painted scene holds still") {
     constexpr u64 TICK = 7;
     game::Arena arena(test::TestManifest(), game::Scene::Painted);
     const core::Snapshot before = Published(arena);
-    arena.Tick({ .wall = TICK, .simulation = TICK, .state = TICK }, {});
+    Tick(arena, { .wall = TICK, .simulation = TICK, .state = TICK }, {});
     const core::Snapshot after = Published(arena);
     CHECK(std::ranges::equal(std::as_bytes(std::span{ before.instances }), std::as_bytes(std::span{ after.instances })));
 }
@@ -345,7 +351,7 @@ TEST_CASE("the stress arena publishes the same bytes with one worker and with ma
     std::vector<std::vector<core::Instance>> published;
     for (const u32 workers : { 1U, MANY_WORKERS }) {
         game::Arena arena(test::TestManifest(), game::Scene::Stress);
-        arena.Tick({ .wall = TICK, .simulation = TICK, .state = TICK }, {});
+        Tick(arena, { .wall = TICK, .simulation = TICK, .state = TICK }, {});
         core::Jobs jobs{ workers };
         core::Snapshot snapshot;
         arena.Publish(snapshot, jobs);
@@ -360,8 +366,8 @@ TEST_CASE("two arenas ticked alike publish the same bytes") {
     game::Arena first(test::TestManifest());
     game::Arena second(test::TestManifest());
     for (u64 tick = 1; tick <= TICKS; ++tick) {
-        first.Tick({ .wall = tick, .simulation = tick, .state = tick }, {});
-        second.Tick({ .wall = tick, .simulation = tick, .state = tick }, {});
+        Tick(first, { .wall = tick, .simulation = tick, .state = tick }, {});
+        Tick(second, { .wall = tick, .simulation = tick, .state = tick }, {});
     }
     const std::vector<core::Instance> mine = Published(first).instances;
     const std::vector<core::Instance> theirs = Published(second).instances;
@@ -422,13 +428,13 @@ TEST_CASE("F2's CycleScene visits every scene in order and back, clearing the se
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     game::Arena arena(manifest);
     const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = arena.Player() } } };
-    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
+    Tick(arena, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
     REQUIRE(arena.Selected() == arena.Player());
     const std::array<core::Action, 1> cycle{ { { .kind = core::ActionKind::CycleScene } } };
     u64 tick = 1;
     for (const std::string_view name : { "stress", "painted", "cells", "arena" }) {
         ++tick;
-        arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, { .actions = cycle, .held = {} });
+        Tick(arena, { .wall = tick, .simulation = tick, .state = tick }, { .actions = cycle, .held = {} });
         const std::optional<core::SceneId> expected = manifest->SceneNamed(name);
         CHECK(arena.Scene() == expected);
     }
@@ -467,6 +473,227 @@ TEST_CASE("a scene with creatures that doesn't load their data's sprites is refu
     const std::expected<void, core::Error> checked = game::CheckScenes(manifest, data);
     REQUIRE_FALSE(checked.has_value());
     CHECK(checked.error().message.contains("cell_city"));
+}
+
+// Hits: the aura and the debug burst.
+
+constexpr u64 AURA_TICK = 60;
+constexpr u64 BURST_TICK = 1;
+constexpr i32 AURA_DAMAGE_MIN = 5;
+constexpr i32 AURA_DAMAGE_MAX = 40;
+constexpr i32 AURA_HEALING_MIN = 5;
+constexpr i32 AURA_HEALING_MAX = 20;
+constexpr i32 BURST_MIN = 1;
+constexpr i32 BURST_MAX = 99;
+constexpr u32 USE_AURA = 1;
+constexpr u32 USE_DEBUG_BURST = 2;
+constexpr f32 AURA_REACH = 320.0F;
+constexpr core::Vec2 CRYSTAL_FOOT{ .x = 420.0F, .y = 620.0F };
+constexpr core::HeldInput HELD_LEFT{ .move = { .x = -1.0F, .y = 0.0F } };
+
+// Game data that walks the cultivator to 100 units from the crystal in one tick and circles the foxes 300 units round
+// it, which puts some of them in the aura's reach and some out.
+core::GameData NearCrystalData() {
+    constexpr f32 WALK_SPEED = 440.0F;
+    constexpr f32 FOX_ORBIT = 300.0F;
+    core::GameData data = game::BuiltInData();
+    data.cultivator.walkSpeed = WALK_SPEED;
+    data.fox.orbitRadius = FOX_ORBIT;
+    data.fox.orbitWobble = 0.0F;
+    return data;
+}
+
+core::TickCounters At(u64 tick) {
+    return { .wall = tick, .simulation = tick, .state = tick };
+}
+
+// Ticks `arena` from tick 1 to `last`, the first tick walking left, and returns every event of them.
+std::vector<core::Event> TickAll(game::Arena& arena, u64 last) {
+    std::vector<core::Event> events;
+    for (u64 tick = 1; tick <= last; ++tick) {
+        const core::HeldInput held = tick == 1 ? HELD_LEFT : core::HeldInput{};
+        arena.Tick(At(tick), { .actions = {}, .held = held }, events);
+    }
+    return events;
+}
+
+// The same, returning the events of the last tick alone.
+std::vector<core::Event> TickTo(game::Arena& arena, u64 last) {
+    std::vector<core::Event> events = TickAll(arena, last - 1);
+    events.clear();
+    arena.Tick(At(last), {}, events);
+    return events;
+}
+
+core::Vec2 FootOf(const game::Arena& arena, core::StableId entity) {
+    const core::Domain& active = arena.State()[game::ACTIVE];
+    return active.Entities().get<game::Body>(active.Find(entity)).current;
+}
+
+std::vector<core::StableId> Foxes(const game::Arena& arena) {
+    std::vector<core::StableId> foxes;
+    const core::Registry& entities = arena.State()[game::ACTIVE].Entities();
+    for (auto [entity, creature, stable] : entities.view<const game::Creature, const core::StableId>().each()) {
+        if (creature.kind == game::CreatureKind::Fox) {
+            foxes.push_back(stable);
+        }
+    }
+    return foxes;
+}
+
+bool InReach(core::Vec2 foot) {
+    return std::hypot(foot.x - CRYSTAL_FOOT.x, foot.y - CRYSTAL_FOOT.y) <= AURA_REACH;
+}
+
+std::vector<core::Event> HitsOf(const std::vector<core::Event>& events) {
+    std::vector<core::Event> hits;
+    std::ranges::copy_if(events, std::back_inserter(hits), [](const core::Event& event) {
+        return event.kind == core::EventKind::Hit;
+    });
+    return hits;
+}
+
+TEST_CASE("the aura hits a fox in reach once a second and none between") {
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, NearCrystalData());
+    CHECK(TickAll(arena, AURA_TICK - 1).empty());
+    std::vector<core::Event> events;
+    arena.Tick(At(AURA_TICK), {}, events);
+    REQUIRE_FALSE(events.empty());
+    CHECK(events.back().kind == core::EventKind::UseEnded);
+    CHECK(events.back().use == core::AbilityUse(AURA_TICK, USE_AURA));
+    std::size_t damaged = 0;
+    for (const core::StableId fox : Foxes(arena)) {
+        const bool reached = InReach(FootOf(arena, fox));
+        const auto hit = std::ranges::find_if(events, [fox](const core::Event& event) {
+            return event.kind == core::EventKind::Hit && event.target == fox;
+        });
+        CHECK((hit != events.end()) == reached);
+        if (hit != events.end()) {
+            ++damaged;
+            CHECK(hit->hit == core::HitKind::Damage);
+            CHECK(hit->value >= AURA_DAMAGE_MIN);
+            CHECK(hit->value <= AURA_DAMAGE_MAX);
+            CHECK(hit->use == events.back().use);
+        }
+    }
+    CHECK(damaged > 0);
+    CHECK(damaged < Foxes(arena).size());
+}
+
+TEST_CASE("the aura misses a fox out of reach") {
+    constexpr f32 FAR_ORBIT = 1'000.0F; // round the cultivator, 540 units from the crystal: no fox comes within reach
+    core::GameData data = game::BuiltInData();
+    data.fox.orbitRadius = FAR_ORBIT;
+    data.fox.orbitWobble = 0.0F;
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
+    const std::vector<core::Event> events = TickTo(arena, AURA_TICK);
+    for (const core::StableId fox : Foxes(arena)) {
+        REQUIRE_FALSE(InReach(FootOf(arena, fox)));
+    }
+    REQUIRE(events.size() == 1);
+    CHECK(events.front().kind == core::EventKind::UseEnded);
+}
+
+TEST_CASE("the aura heals the player in reach") {
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, NearCrystalData());
+    const std::vector<core::Event> events = TickTo(arena, AURA_TICK);
+    const auto heal = std::ranges::find(events, arena.Player(), &core::Event::target);
+    REQUIRE(heal != events.end());
+    CHECK(heal->kind == core::EventKind::Hit);
+    CHECK(heal->hit == core::HitKind::Healing);
+    CHECK(heal->value >= AURA_HEALING_MIN);
+    CHECK(heal->value <= AURA_HEALING_MAX);
+}
+
+TEST_CASE("the aura's hits are the same on a rerun") {
+    game::Arena first(test::TestManifest(), game::Scene::Arena, NearCrystalData());
+    game::Arena second(test::TestManifest(), game::Scene::Arena, NearCrystalData());
+    const std::vector<core::Event> one = TickTo(first, AURA_TICK);
+    const std::vector<core::Event> two = TickTo(second, AURA_TICK);
+    REQUIRE(one.size() == two.size());
+    for (std::size_t index = 0; index < one.size(); ++index) {
+        CHECK(one.at(index).kind == two.at(index).kind);
+        CHECK(one.at(index).hit == two.at(index).hit);
+        CHECK(one.at(index).target == two.at(index).target);
+        CHECK(one.at(index).value == two.at(index).value);
+        CHECK(one.at(index).use == two.at(index).use);
+        CHECK(std::bit_cast<u64>(one.at(index).position) == std::bit_cast<u64>(two.at(index).position));
+    }
+}
+
+TEST_CASE("the aura hits at a fox's head") {
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, NearCrystalData());
+    const std::vector<core::Event> events = TickTo(arena, AURA_TICK);
+    const std::vector<core::Event> hits = HitsOf(events);
+    REQUIRE_FALSE(hits.empty());
+    const core::Vec2 foot = FootOf(arena, hits.front().target);
+    CHECK(hits.front().position.x == doctest::Approx(foot.x));
+    CHECK(hits.front().position.y < foot.y);
+}
+
+TEST_CASE("the debug burst leaves the state hash alone") {
+    game::Arena burst(test::TestManifest());
+    game::Arena plain(test::TestManifest());
+    const std::array<core::Action, 1> actions{ { { .kind = core::ActionKind::DebugBurst } } };
+    std::vector<core::Event> events;
+    burst.Tick(At(BURST_TICK), { .actions = actions, .held = {} }, events);
+    plain.Tick(At(BURST_TICK), {}, events);
+    CHECK(burst.StateHash() == plain.StateHash());
+}
+
+TEST_CASE("the debug burst hits every fox with all four kinds") {
+    constexpr std::size_t HITS = 4'000;
+    constexpr std::size_t KINDS = 4;
+    game::Arena arena(test::TestManifest());
+    const std::array<core::Action, 1> actions{ { { .kind = core::ActionKind::DebugBurst } } };
+    std::vector<core::Event> events;
+    arena.Tick(At(BURST_TICK), { .actions = actions, .held = {} }, events);
+    REQUIRE(events.size() == HITS + 1);
+    CHECK(events.back().kind == core::EventKind::UseEnded);
+    CHECK(events.back().use == core::AbilityUse(BURST_TICK, USE_DEBUG_BURST));
+    const std::vector<core::StableId> foxes = Foxes(arena);
+    std::unordered_map<core::StableId, std::size_t> perFox;
+    std::unordered_map<core::StableId, std::array<std::size_t, KINDS>> kindsPerFox;
+    std::array<std::size_t, KINDS> perKind{};
+    for (std::size_t index = 0; index < HITS; ++index) {
+        const core::Event& event = events.at(index);
+        REQUIRE(event.kind == core::EventKind::Hit);
+        CHECK(event.use == events.back().use);
+        CHECK(event.value >= BURST_MIN);
+        CHECK(event.value <= BURST_MAX);
+        ++perFox[event.target];
+        ++kindsPerFox[event.target].at(std::to_underlying(event.hit));
+        ++perKind.at(std::to_underlying(event.hit));
+    }
+    CHECK(perFox.size() == foxes.size());
+    for (const auto& [fox, count] : perFox) {
+        CHECK(count >= HITS / foxes.size());
+        CHECK(count <= (HITS / foxes.size()) + 1);
+    }
+    for (const auto& [fox, kinds] : kindsPerFox) {
+        INFO("fox ", std::to_underlying(fox));
+        for (const std::size_t count : kinds) {
+            CHECK(count > 0); // every fox gets every kind, whatever the number of foxes
+        }
+    }
+    // The kinds take turns by round over the foxes, so the totals depend on the fox count: with the arena's 12, of the
+    // 333 full rounds of 12 hits damage takes 84 and each other kind 83, and the last 4 hits are healing.
+    constexpr std::size_t ARENA_FOXES = 12;
+    constexpr std::array<std::size_t, KINDS> TOTALS{ { 1'008, 1'000, 996, 996 } }; // damage, healing, poison, burn
+    REQUIRE(foxes.size() == ARENA_FOXES);
+    for (std::size_t kind = 0; kind < KINDS; ++kind) {
+        INFO("kind ", kind);
+        CHECK(perKind.at(kind) == TOTALS.at(kind));
+    }
+}
+
+TEST_CASE("the debug burst hits nothing in a scene without foxes") {
+    game::Arena arena(test::TestManifest(), game::Scene::Painted);
+    const std::array<core::Action, 1> actions{ { { .kind = core::ActionKind::DebugBurst } } };
+    std::vector<core::Event> events;
+    arena.Tick(At(BURST_TICK), { .actions = actions, .held = {} }, events);
+    REQUIRE(events.size() == 1);
+    CHECK(events.front().kind == core::EventKind::UseEnded);
 }
 
 } // namespace

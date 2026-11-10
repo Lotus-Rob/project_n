@@ -54,7 +54,8 @@ Worst Measure(u32 workers) {
     std::size_t instances = 0;
     for (u64 tick = 1; tick <= TICKS; ++tick) {
         const auto start = std::chrono::steady_clock::now();
-        arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, {});
+        events.clear();
+        arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, {}, events);
         tickMs.push_back(MsSince(start));
 
         core::Snapshot& snapshot = handover.Writing();

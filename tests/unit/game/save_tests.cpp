@@ -20,10 +20,16 @@ core::TickCounters At(u64 tick) {
     return { .wall = tick, .simulation = tick, .state = tick };
 }
 
+// Ticks `arena`, ignoring its events.
+void Tick(game::Arena& arena, const core::TickCounters& counters, const core::TickInput& input) {
+    std::vector<core::Event> events;
+    arena.Tick(counters, input, events);
+}
+
 // The stress arena after some ticks and months: every component and the relationships in use.
 void Play(game::Arena& arena, core::Jobs& jobs, u64 from) {
     for (u64 tick = from; tick < from + TICKS; ++tick) {
-        arena.Tick(At(tick), {});
+        Tick(arena, At(tick), {});
     }
     for (u64 month = 0; month < MONTHS; ++month) {
         arena.AdvanceCalendar(At(from + TICKS + month), jobs, {});
@@ -74,7 +80,7 @@ TEST_CASE("the player, where it walked, and the selection survive a save") {
     constexpr core::HeldInput RIGHT{ .move = { .x = 1.0F, .y = 0.0F } };
     game::Arena saved(test::TestManifest());
     const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = saved.Player() } } };
-    saved.Tick(At(1), { .actions = select, .held = RIGHT });
+    Tick(saved, At(1), { .actions = select, .held = RIGHT });
     const std::vector<std::byte> bytes = Saved(saved);
 
     game::Arena loaded(test::TestManifest(), game::Scene::Cells);
@@ -82,8 +88,8 @@ TEST_CASE("the player, where it walked, and the selection survive a save") {
     REQUIRE(loaded.Load(reader));
     CHECK(loaded.Player() == saved.Player());
     CHECK(loaded.Selected() == saved.Player());
-    loaded.Tick(At(2), { .actions = {}, .held = RIGHT });
-    saved.Tick(At(2), { .actions = {}, .held = RIGHT });
+    Tick(loaded, At(2), { .actions = {}, .held = RIGHT });
+    Tick(saved, At(2), { .actions = {}, .held = RIGHT });
     CHECK(loaded.StateHash() == saved.StateHash());
 }
 

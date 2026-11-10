@@ -114,15 +114,50 @@ struct Snapshot {
     std::optional<u32> selected = std::nullopt;
 };
 
+/// What an Event says happened.
+enum class EventKind : u8 {
+    Hit,      ///< A hit on `target`: its `hit` kind and `value`, at `position`, from the ability use `use`.
+    UseEnded, ///< The ability use `use` has emitted all its hits.
+};
+
+/// The kind of a hit, which decides how its damage number reads.
+enum class HitKind : u8 {
+    Damage,  ///< Harm.
+    Healing, ///< Health restored.
+    Poison,  ///< Harm over time from poison.
+    Burn,    ///< Harm over time from fire.
+};
+/// How many kinds HitKind names.
+inline constexpr std::size_t HIT_KINDS = 4;
+
+/// The ID of one use of an ability: `tick` is the simulation tick it happens at and `source` says which ability it is
+/// (below 256), so two uses on one tick differ and a use's hits and its end share the ID.
+[[nodiscard]] constexpr u64 AbilityUse(u64 tick, u32 source) {
+    constexpr u32 SOURCE_BITS = 8;
+    return (tick << SOURCE_BITS) | source;
+}
+
 /// Something a tick started that the main thread plays at the render clock (sounds, particle
-/// bursts, damage numbers). The kinds of event arrive with the phases that play them.
+/// bursts, damage numbers). So far: hits, and the end of the use that dealt them. Neither is cosmetic: none is dropped.
 struct Event {
-    /// The simulation tick it happens at.
+    /// The simulation tick it happens at; the logic stamps it.
     u64 tick = 0;
-    /// The timeline it belongs to.
+    /// The timeline it belongs to; the logic stamps it.
     u64 epoch = 0;
     /// Whether it may be dropped when it falls far behind (a sound may; a residency hint may not).
     bool cosmetic = false;
+    /// What happened.
+    EventKind kind = EventKind::Hit;
+    /// Of a Hit: its kind.
+    HitKind hit = HitKind::Damage;
+    /// The ability use it belongs to (AbilityUse()).
+    u64 use = 0;
+    /// Of a Hit: the entity hit.
+    StableId target{};
+    /// Of a Hit: where it lands, in world units.
+    Vec2 position{};
+    /// Of a Hit: the amount.
+    i32 value = 0;
 };
 
 /// What an action asks the simulation to do.
@@ -138,10 +173,11 @@ enum class ActionKind : u8 {
     ReloadData,      ///< Swap in the game data `data` (debug builds' hot reload): never in a replay.
     CycleScene,      ///< Switch to the next scene (a debug key): the simulation rebuilds itself as it.
     SceneResident,   ///< The main thread holds the scene `scene` and can draw it: never in a replay.
+    DebugBurst,      ///< Hit every fox thousands of times (a debug key), for the damage numbers' stress.
 };
-/// How many kinds ActionKind names (SceneResident is the last): a replay read from disk holds only
+/// How many kinds ActionKind names (DebugBurst is the last): a replay read from disk holds only
 /// kinds below this.
-inline constexpr u8 ACTION_KINDS = static_cast<u8>(std::to_underlying(ActionKind::SceneResident) + 1U);
+inline constexpr u8 ACTION_KINDS = static_cast<u8>(std::to_underlying(ActionKind::DebugBurst) + 1U);
 
 /// A player's or the main thread's request to the simulation, sent as input: a press, taken once.
 struct Action {

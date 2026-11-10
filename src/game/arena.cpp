@@ -6,6 +6,8 @@
 #include "core/log.hpp"
 #include "core/math.hpp"
 #include "core/profile.hpp"
+#include "core/random.hpp"
+#include "game/random_purposes.hpp"
 
 namespace game {
 
@@ -47,6 +49,20 @@ constexpr std::array ARENA_PAINTED{
 constexpr Prop ARENA_GLOW{ .sprite = SpriteId::OrbGold, .foot = { .x = 1720.0F, .y = 420.0F } }; // in the treant's branches
 constexpr Prop CRYSTAL{ .sprite = SpriteId::CrystalIce, .foot = { .x = 420.0F, .y = 620.0F }, .scale = 0.8F };
 constexpr f32 CRYSTAL_SPIN = 0.02F; // radians per tick: a turn in about five seconds
+
+// The crystal's aura: every AURA_PERIOD simulation ticks it hits what is within AURA_REACH world units of its foot.
+constexpr u64 AURA_PERIOD = 60;
+constexpr f32 AURA_REACH = 320.0F;
+constexpr u32 AURA_DAMAGE_MIN = 5;
+constexpr u32 AURA_DAMAGE_MAX = 40;
+constexpr u32 AURA_HEALING_MIN = 5;
+constexpr u32 AURA_HEALING_MAX = 20;
+// The debug burst: DEBUG_BURST_HITS hits round the foxes, values from 1 to DEBUG_BURST_MAX.
+constexpr u32 DEBUG_BURST_HITS = 4'000;
+constexpr u32 DEBUG_BURST_MAX = 99;
+// Ability use sources (core::AbilityUse).
+constexpr u32 USE_AURA = 1;
+constexpr u32 USE_DEBUG_BURST = 2;
 
 // Nothing in it moves: the reference pictures need every run to draw the same.
 constexpr std::array PAINTED{
@@ -395,7 +411,7 @@ core::Entity Arena::Spawn(core::Vec2 foot, const Look& look) {
     return entity;
 }
 
-void Arena::Tick(const core::TickCounters& counters, const core::TickInput& input) {
+void Arena::Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) {
     PN_PROFILE_ZONE();
     if (std::ranges::contains(input.actions, core::ActionKind::CycleScene, &core::Action::kind)) {
         const auto next = static_cast<game::Scene>((std::to_underlying(m_scene) + 1U) % SCENES.size());
@@ -428,6 +444,84 @@ void Arena::Tick(const core::TickCounters& counters, const core::TickInput& inpu
     }
     DecideActive(active, m_state.Seed(), counters.state, counters.simulation);
     WalkActive(active);
+    if (m_scene == game::Scene::Arena && counters.simulation % AURA_PERIOD == 0) {
+        Aura(counters, events);
+    }
+    if (std::ranges::contains(input.actions, core::ActionKind::DebugBurst, &core::Action::kind)) {
+        DebugBurst(counters, events);
+    }
+}
+
+core::Vec2 Arena::HeadOf(core::Entity entity) const {
+    const core::Registry& entities = m_state[ACTIVE].Entities();
+    const core::Vec2 foot = entities.get<Body>(entity).current;
+    const f32 footY = static_cast<f32>(m_manifest->Sprite(entities.get<Look>(entity).sprite).footY);
+    return { .x = foot.x, .y = foot.y - (footY * entities.get<Look>(entity).scale) };
+}
+
+void Arena::Aura(const core::TickCounters& counters, std::vector<core::Event>& events) const {
+    PN_PROFILE_ZONE();
+    const u64 use = core::AbilityUse(counters.simulation, USE_AURA);
+    const core::Registry& entities = m_state[ACTIVE].Entities();
+    for (auto [entity, body, creature, target] : entities.view<const Body, const Creature, const core::StableId>().each()) {
+        const core::Vec2 away = body.current - CRYSTAL.foot;
+        if ((away.x * away.x) + (away.y * away.y) > AURA_REACH * AURA_REACH) {
+            continue;
+        }
+        const bool healing = creature.kind == CreatureKind::Cultivator;
+        if (!healing && creature.kind != CreatureKind::Fox) {
+            continue;
+        }
+        const u32 low = healing ? AURA_HEALING_MIN : AURA_DAMAGE_MIN;
+        const u32 high = healing ? AURA_HEALING_MAX : AURA_DAMAGE_MAX;
+        const u64 random = core::Random(m_state.Seed(), counters.state, std::to_underlying(target), PURPOSE_AURA, 0);
+        events.push_back(
+            {
+                .kind = core::EventKind::Hit,
+                .hit = healing ? core::HitKind::Healing : core::HitKind::Damage,
+                .use = use,
+                .target = target,
+                .position = HeadOf(entity),
+                .value = static_cast<i32>(low + core::ToBelow(random, high - low + 1)),
+            }
+        );
+    }
+    events.push_back({ .kind = core::EventKind::UseEnded, .use = use });
+}
+
+void Arena::DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const {
+    PN_PROFILE_ZONE();
+    const u64 use = core::AbilityUse(counters.simulation, USE_DEBUG_BURST);
+    const core::Registry& entities = m_state[ACTIVE].Entities();
+    std::vector<core::Entity> foxes;
+    for (auto [entity, creature] : entities.view<const Creature>().each()) {
+        if (creature.kind == CreatureKind::Fox) {
+            foxes.push_back(entity);
+        }
+    }
+    if (foxes.empty()) {
+        PN_LOG_INFO("tick {}: the debug burst has no foxes to hit in this scene", counters.simulation);
+    }
+    else {
+        events.reserve(events.size() + DEBUG_BURST_HITS + 1);
+    }
+    for (u32 index = 0; !foxes.empty() && index < DEBUG_BURST_HITS; ++index) {
+        const core::Entity fox = foxes.at(index % foxes.size());
+        const core::StableId target = entities.get<core::StableId>(fox);
+        const u64 random = core::Random(m_state.Seed(), counters.state, std::to_underlying(target), PURPOSE_BURST, index);
+        events.push_back(
+            {
+                .kind = core::EventKind::Hit,
+                // The kinds take turns by round over the foxes, so each fox gets every kind whatever their number.
+                .hit = static_cast<core::HitKind>((index / foxes.size()) % core::HIT_KINDS),
+                .use = use,
+                .target = target,
+                .position = HeadOf(fox),
+                .value = static_cast<i32>(1 + core::ToBelow(random, DEBUG_BURST_MAX)),
+            }
+        );
+    }
+    events.push_back({ .kind = core::EventKind::UseEnded, .use = use });
 }
 
 void Arena::Walk(core::Vec2 move) {

@@ -39,8 +39,8 @@ public:
     /// Advances the game state by one simulation tick, `counters.simulation` (counting from 1),
     /// drawing random numbers keyed on `counters.state`, under the tick's `input`: the actions the
     /// simulation acts on (Select) and the held input. Frozen ticks don't call it, so their actions
-    /// do nothing.
-    virtual void Tick(const TickCounters& counters, const TickInput& input) = 0;
+    /// do nothing. It appends the events the tick starts to `events`; the logic stamps their tick and epoch.
+    virtual void Tick(const TickCounters& counters, const TickInput& input, std::vector<Event>& events) = 0;
 
     /// Runs a calendar step (design doc 0002 §7.3) on a frozen tick that changes the state, keyed
     /// on `counters.state`: forks over `jobs` from the thread that created it, and returns early,

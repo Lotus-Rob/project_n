@@ -7,15 +7,11 @@
 #include "core/random.hpp"
 #include "core/schedule.hpp"
 #include "game/components.hpp"
+#include "game/random_purposes.hpp"
 
 namespace game {
 
 namespace {
-
-// Random-number purposes (core::Random): one per use, so no two uses share numbers.
-constexpr u32 PURPOSE_WANDER = 1;
-constexpr u32 PURPOSE_CHOICE = 2;
-constexpr u32 PURPOSE_PARTNER = 3;
 
 constexpr f32 WALK_SPEED = 1.5F;  // world units per tick
 constexpr f32 WANDER_SPAN = 0.8F; // of a cell: active NPCs pick points this far across their cell
