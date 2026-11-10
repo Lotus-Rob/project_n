@@ -5,8 +5,10 @@ Standard library only. See tools/AGENTS.md and docs/design/0001.
 """
 
 import argparse
+import concurrent.futures
 import functools
 import hashlib
+import itertools
 import json
 import os
 import plistlib
@@ -659,6 +661,57 @@ def tidy_verdict(output, returncode):
     return failed, len(ignored)
 
 
+def tidy_command(bdir, unit):
+    """clang-tidy on one unit, judging only: fixes come from the serial pass in tidy_fix."""
+    return ["clang-tidy", "--quiet", "-p", bdir, unit]
+
+
+def tidy_one(bdir, unit):
+    """(output, return code) of clang-tidy on one unit, its diagnostics and errors together."""
+    result = subprocess.run(resolve(tidy_command(bdir, unit)), check=False, cwd=ROOT, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, encoding="utf-8", errors="replace")
+    return result.stdout, result.returncode
+
+
+def tidy_fix(bdir, units):
+    """clang-tidy --fix over `units` in one serial process, as lint ran it before the pool: exported fixes applied with
+    clang-apply-replacements would also apply note fix-its that only silence a warning, and one process never writes a
+    shared header twice."""
+    fix = ["clang-tidy", "--quiet", "-p", bdir, "--fix", *units]
+    print("+", " ".join(str(c) for c in fix), flush=True)
+    subprocess.run(resolve(fix), check=False, cwd=ROOT)
+
+
+def tidy_blocks(output):
+    """`output` cut into (text, is_finding): the text before the first finding, then each finding with its notes and
+    code lines. A shared header's finding repeats in every unit that reaches it; printing each once keeps it readable."""
+    starts = [m.start() for m in TIDY_FINDING_RE.finditer(output)]
+    bounds = [0, *starts, len(output)]
+    return [(output[a:b], a in starts) for a, b in itertools.pairwise(bounds) if a < b]
+
+
+def tidy_units(bdir, units, fix):
+    """(failed, ignored findings) of clang-tidy over `units`, one process per unit across all cores, each judged by
+    tidy_verdict: run together, one unit's ignored finding would hide another's error. A finding prints once however
+    many units report it. With `fix`, the units that failed get one serial clang-tidy --fix afterwards."""
+    with concurrent.futures.ThreadPoolExecutor(os.cpu_count() or 1) as pool:
+        results = list(pool.map(lambda unit: tidy_one(bdir, unit), units))
+    printed = set()
+    for output, _ in results:
+        for text, is_finding in tidy_blocks(output):
+            # A shared header is named by the include path each unit reached it through: compare resolved paths.
+            path = TIDY_FINDING_RE.match(text).group(1) if is_finding else ""
+            key = text.replace(path, os.path.normpath(os.path.join(ROOT, path))) if path else text
+            if not (is_finding and key in printed):
+                printed.add(key)
+                print(text, end="", flush=True)
+    verdicts = [tidy_verdict(output, returncode) for output, returncode in results]
+    failing = [unit for unit, (failed, _) in zip(units, verdicts) if failed]
+    if fix and failing:
+        tidy_fix(bdir, failing)
+    return any(failed for failed, _ in verdicts), sum(ignored for _, ignored in verdicts)
+
+
 def check_api_docs(sources):
     """Doxygen (docs/Doxyfile) over the src/ headers among these: an undocumented public class,
     function or member, or a broken doc comment, fails."""
@@ -1158,12 +1211,10 @@ def cmd_lint(args):
     run(["xmake", "build"], env=xmake_env(bdir))
     run([*COMPDB, bdir], env=xmake_env(bdir))
     # Lint is a gate: any finding in our own files fails `check`.
-    tidy = ["clang-tidy", "--quiet", "-p", bdir, *(["--fix"] if args.fix else []), *units]
     try:
-        print("+", " ".join(str(c) for c in tidy), flush=True)
-        result = subprocess.run(resolve(tidy), check=False, cwd=ROOT, stdout=subprocess.PIPE, encoding="utf-8", errors="replace")
-        print(result.stdout, end="", flush=True)
-        failed, ignored = tidy_verdict(result.stdout, result.returncode)
+        print(f"+ clang-tidy --quiet -p {bdir} on {len(units)} unit(s), {os.cpu_count() or 1} at a time"
+              + (", then --fix on the units that fail" if args.fix else ""), flush=True)
+        failed, ignored = tidy_units(bdir, units, args.fix)
         if failed:
             raise Fail("clang-tidy failed: findings in our code, a compiler error or a crash (above)")
         if ignored:

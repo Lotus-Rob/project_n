@@ -1354,5 +1354,103 @@ class CleanWorktreesTest(unittest.TestCase):
         self.assertIn("uncommitted changes", out.getvalue())
 
 
+class ParallelTidyTest(unittest.TestCase):
+    """lint runs one clang-tidy per unit across all cores and judges each unit as tidy_verdict judges one run."""
+
+    QUILL = "/home/dev/.xmake/packages/q/quill/include/quill/core/InlinedVector.h"
+    IGNORED = f"{QUILL}:132:7: error: Out of bound access [clang-analyzer-security.ArrayBound,-warnings-as-errors]\n"
+
+    def tidy(self, results, fix=False):
+        """tidy_units over the units in `results` ({unit: (output, returncode)}): (verdict, units run, units the serial
+        fix pass got or None, what was printed)."""
+        ran, fixed = [], []
+
+        def one(bdir, unit):
+            ran.append(unit)
+            return results[unit]
+
+        with mock.patch.object(project_n, "tidy_one", one), \
+                mock.patch.object(project_n, "tidy_fix", lambda bdir, units: fixed.append(units)), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            verdict = project_n.tidy_units(Path("build/linux-clang/debug"), list(results), fix)
+        return verdict, ran, fixed, out.getvalue()
+
+    def test_clean_units_pass(self):
+        verdict, _, _, _ = self.tidy({"src/a.cpp": ("", 0), "src/b.cpp": ("", 0)})
+        self.assertEqual(verdict, (False, 0))
+
+    def test_crash_in_one_file_fails_beside_ignored_findings(self):
+        verdict, _, _, _ = self.tidy({"src/a.cpp": (self.IGNORED, 1), "src/b.cpp": (self.IGNORED, -11)})
+        self.assertTrue(verdict[0])
+
+    def test_error_without_a_finding_fails_beside_ignored_findings(self):
+        # "Error while processing" with no finding: today's single run fails it; one unit's ignored finding mustn't hide it.
+        verdict, _, _, _ = self.tidy({"src/a.cpp": (self.IGNORED, 1), "src/b.cpp": ("Error while processing src/b.cpp.\n", 1)})
+        self.assertTrue(verdict[0])
+
+    def test_compiler_error_fails(self):
+        out = f"{project_n.ROOT}/src/a.cpp:3:10: error: 'x.hpp' file not found [clang-diagnostic-error]\n"
+        verdict, _, _, _ = self.tidy({"src/a.cpp": (out, 1)})
+        self.assertTrue(verdict[0])
+
+    def test_ignored_count_sums_files(self):
+        verdict, _, _, _ = self.tidy({"src/a.cpp": (self.IGNORED, 1), "src/b.cpp": (self.IGNORED, 1)})
+        self.assertEqual(verdict, (False, 2))
+
+    def test_every_unit_checked_once(self):
+        units = {f"src/{n}.cpp": ("", 0) for n in "abcdef"}
+        _, ran, _, _ = self.tidy(units)
+        self.assertEqual(sorted(ran), sorted(units))
+
+    FINDING = "{root}/src/core/types.hpp:37:1: error: use 'using' instead of 'typedef' [modernize-use-using]\n   37 | typedef int X;\n"
+
+    def test_fix_reruns_only_failing_units_in_one_serial_pass(self):
+        # clang-tidy --fix, as before the pool: exported fixes plus clang-apply-replacements would also apply note
+        # fix-its that only silence a warning; one serial process never writes a shared header twice.
+        failing = self.FINDING.format(root=project_n.ROOT)
+        _, _, fixed, _ = self.tidy({"src/a.cpp": (failing, 1), "src/b.cpp": ("", 0), "src/c.cpp": (failing, 1)}, fix=True)
+        self.assertEqual(fixed, [["src/a.cpp", "src/c.cpp"]])
+
+    def test_no_fix_pass_when_nothing_failed(self):
+        _, _, fixed, _ = self.tidy({"src/a.cpp": (self.IGNORED, 1), "src/b.cpp": ("", 0)}, fix=True)
+        self.assertEqual(fixed, [])
+
+    def test_no_fix_pass_without_fix(self):
+        _, _, fixed, _ = self.tidy({"src/a.cpp": (self.FINDING.format(root=project_n.ROOT), 1)})
+        self.assertEqual(fixed, [])
+
+    def test_a_parallel_unit_never_fixes(self):
+        cmd = project_n.tidy_command(Path("build/x"), "src/a.cpp")
+        self.assertFalse([a for a in cmd if str(a).startswith(("--fix", "--export-fixes"))])
+        self.assertEqual(cmd[-1], "src/a.cpp")
+
+    def test_a_shared_header_finding_prints_once(self):
+        finding = self.FINDING.format(root=project_n.ROOT)
+        _, _, _, out = self.tidy({"src/a.cpp": (finding, 1), "src/b.cpp": (finding, 1)})
+        self.assertEqual(out.count("modernize-use-using"), 1)
+
+    def test_a_finding_prints_once_however_its_path_is_spelled(self):
+        # clang-tidy names a shared header by the include path a unit reached it through.
+        def finding(path):  # a note naming the same header, as the widening check's "make conversion explicit" does
+            return (f"{path}:39:49: error: implicit widening [bugprone-implicit-widening-of-multiplication-result]\n"
+                    f"{path}:39:49: note: make conversion explicit to silence this warning\n")
+        spellings = ["./src/core/types.hpp", "src/core/types.hpp", f"{project_n.ROOT}/src/core/types.hpp"]
+        _, _, _, out = self.tidy({f"src/{n}.cpp": (finding(path), 1) for n, path in zip("abc", spellings)})
+        self.assertEqual(out.count("implicit-widening"), 1)
+
+    def test_distinct_findings_all_print(self):
+        a = f"{project_n.ROOT}/src/a.cpp:1:1: error: one [bugprone-x]\n"
+        b = f"{project_n.ROOT}/src/b.cpp:2:2: error: two [bugprone-y]\n"
+        _, _, _, out = self.tidy({"src/a.cpp": (a, 1), "src/b.cpp": (b, 1)})
+        self.assertIn("bugprone-x", out)
+        self.assertIn("bugprone-y", out)
+
+    def test_text_outside_findings_always_prints(self):
+        _, _, _, out = self.tidy({"src/a.cpp": ("Error while processing src/a.cpp.\n", 1),
+                                  "src/b.cpp": ("Error while processing src/b.cpp.\n", 1)})
+        self.assertIn("src/a.cpp.", out)
+        self.assertIn("src/b.cpp.", out)
+
+
 if __name__ == "__main__":
     unittest.main()
