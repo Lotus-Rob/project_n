@@ -62,7 +62,9 @@ public:
         ticksAtPublish = ticks.size();
         capacityAtPublish = snapshot.instances.capacity();
         sizeAtPublish = snapshot.instances.size();
+        textsAtPublish = snapshot.texts.size();
         snapshot.instances.resize(ticks.size());
+        snapshot.texts.push_back({});
     }
 
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
@@ -78,6 +80,7 @@ public:
     core::SceneId scene{};
     std::size_t publishes = 0;
     std::size_t ticksAtPublish = 0;
+    std::size_t textsAtPublish = 0;
     std::size_t capacityAtPublish = 0;
     std::size_t sizeAtPublish = 0;
 };
@@ -195,12 +198,13 @@ TEST_CASE("a burst publishes once, after its ticks") {
     CHECK(rig.simulation.ticksAtPublish == TICKS);
 }
 
-TEST_CASE("each publish starts from empty instances that keep their capacity") {
+TEST_CASE("each publish starts from empty instances and texts, the instances keeping their capacity") {
     Rig rig;
     // By the time there have been more bursts than buffers, every write reuses a buffer filled before.
     for (u64 burst = 0; burst < 2 * core::GameHandover::BUFFERS; ++burst) {
         static_cast<void>(rig.Burst(1));
         CHECK(rig.simulation.sizeAtPublish == 0);
+        CHECK(rig.simulation.textsAtPublish == 0);
         if (burst >= core::GameHandover::BUFFERS) {
             CHECK(rig.simulation.capacityAtPublish >= burst + 1 - core::GameHandover::BUFFERS);
         }

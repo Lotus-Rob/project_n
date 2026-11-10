@@ -696,4 +696,57 @@ TEST_CASE("the debug burst hits nothing in a scene without foxes") {
     CHECK(events.front().kind == core::EventKind::UseEnded);
 }
 
+TEST_CASE("the arena labels the player and every fox, and captions the tablet") {
+    constexpr std::size_t FOXES = 12;
+    game::Arena arena(test::TestManifest());
+    const core::Snapshot snapshot = Published(arena);
+    const auto labels = [&](core::LabelPriority priority) {
+        return std::ranges::count_if(snapshot.texts, [priority](const core::TextItem& text) {
+            return text.kind == core::TextKind::Label && text.priority == priority;
+        });
+    };
+    CHECK(labels(core::LabelPriority::Player) == 1);
+    CHECK(labels(core::LabelPriority::Rest) == FOXES);
+    std::vector<core::StableId> foxes;
+    std::vector<u32> foxKeys;
+    for (const core::TextItem& text : snapshot.texts) {
+        if (text.kind == core::TextKind::Label && text.priority == core::LabelPriority::Rest) {
+            CHECK(text.string == core::StringId::FoxName);
+            foxes.push_back(text.entity);
+            foxKeys.push_back(text.nameKey);
+        }
+    }
+    std::vector<core::StableId> expected = Foxes(arena);
+    std::ranges::sort(foxes);
+    std::ranges::sort(expected);
+    CHECK(foxes == expected);
+    CHECK(std::ranges::adjacent_find(foxKeys, std::ranges::not_equal_to{}) == foxKeys.end());
+    const auto captions = std::ranges::count_if(snapshot.texts, [](const core::TextItem& text) {
+        return text.kind == core::TextKind::Caption && text.string == core::StringId::TabletCaption &&
+               text.direction == core::TextDirection::TopToBottom;
+    });
+    CHECK(captions == 1);
+}
+
+TEST_CASE("the player's label stands a little over its head") {
+    constexpr f32 CULTIVATOR_FOOT_Y = 122.0F; // assets/manifest.yaml
+    game::Arena arena(test::TestManifest());
+    const core::Snapshot snapshot = Published(arena);
+    const auto label = std::ranges::find(snapshot.texts, core::LabelPriority::Player, &core::TextItem::priority);
+    REQUIRE(label != snapshot.texts.end());
+    const core::Vec2 foot = FootOf(arena, arena.Player());
+    CHECK(label->entity == arena.Player());
+    CHECK(label->string == core::StringId::CultivatorName);
+    CHECK(label->nameKey == std::to_underlying(core::StringId::CultivatorName));
+    CHECK(label->current.x == foot.x);
+    CHECK(label->current.y == foot.y - CULTIVATOR_FOOT_Y);
+    CHECK(label->height == CULTIVATOR_FOOT_Y);
+    CHECK(label->offset.y < 0.0F);
+}
+
+TEST_CASE("the still scenes publish no texts") {
+    game::Arena arena(test::TestManifest(), game::Scene::Painted);
+    CHECK(Published(arena).texts.empty());
+}
+
 } // namespace

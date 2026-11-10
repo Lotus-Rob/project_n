@@ -93,4 +93,22 @@ TEST_CASE("ClipToWorld inverts WorldToClip at several sizes and zooms") {
     }
 }
 
+TEST_CASE("a world unit is a pixel at the reference size and zoom 1, and scales with the fit and the zoom") {
+    constexpr f32 TWO_THIRDS = 2.0F / 3.0F; // 1280x720 fits the reference at two thirds
+    constexpr f32 ZOOMED = 2.0F;
+    CHECK(gfx::PixelsPerUnit({}, 1920, 1080) == doctest::Approx(1.0F));
+    CHECK(gfx::PixelsPerUnit({}, 1280, 720) == doctest::Approx(TWO_THIRDS));
+    CHECK(gfx::PixelsPerUnit({ .zoom = ZOOMED }, 1280, 720) == doctest::Approx(TWO_THIRDS * ZOOMED));
+    CHECK(gfx::PixelsPerUnit({}, 3840, 1080) == doctest::Approx(1.0F)); // wider shows more, at the same scale
+}
+
+TEST_CASE("PixelsPerUnit is WorldToClip's scale in pixels") {
+    constexpr gfx::Camera CAMERA{ .centre = { .x = 300.0F, .y = 200.0F }, .zoom = 1.5F };
+    constexpr u32 WIDE = 1600;
+    constexpr u32 SHORT = 700;
+    const gfx::ClipTransform clip = gfx::WorldToClip(CAMERA, WIDE, SHORT);
+    constexpr f32 CLIP_PER_TARGET = 2.0F; // clip space spans 2 across the target
+    CHECK(gfx::PixelsPerUnit(CAMERA, WIDE, SHORT) == doctest::Approx(clip.scaleX / CLIP_PER_TARGET * static_cast<f32>(WIDE)));
+}
+
 } // namespace

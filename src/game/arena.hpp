@@ -15,7 +15,8 @@
 /// - saves, loads and replays of all of it;
 /// - F2 cycling through the scenes, each loaded on demand while the ticks wait for it;
 /// - the ice crystal's aura, which hits the foxes in its reach (and heals the player) once a second, and F7's debug burst
-///   of 4,000 hits: both emit hit events (core::Event), which change no state.
+///   of 4,000 hits: both emit hit events (core::Event), which change no state;
+/// - game text over the world: name labels over the player and every fox, and the tablet's vertical caption.
 /// Its stress variant adds a crowd and a bullet spiral, about 100,000 instances in all (§8.1), and a world tier of 50,000.
 
 #include "core/draw_list.hpp"
@@ -170,7 +171,8 @@ public:
     /// Publishes the ground, then a shadow under each entity that casts one, then the world's
     /// entities in foot-y order, then the effects, packed in fixed chunks
     /// on `jobs`: the bytes are the same whatever its worker count. Each entity's instance carries
-    /// its ID, and the player's cultivator is the one to follow, with what is drawn culled around it.
+    /// its ID, and the player's cultivator is the one to follow, with what is drawn culled around it. A scene with a
+    /// player adds its texts: the player's and each fox's name label over its head, and the tablet's caption.
     void Publish(core::Snapshot& snapshot, core::Jobs& jobs) override;
 
 private:
@@ -184,6 +186,7 @@ private:
     void Aura(const core::TickCounters& counters, std::vector<core::Event>& events) const;
     void DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const;
     [[nodiscard]] core::Vec2 HeadOf(core::Entity entity) const;
+    void PublishTexts(core::Snapshot& snapshot) const;
     void ApplyData();
     [[nodiscard]] const core::CreatureData& DataOf(CreatureKind kind) const {
         return kind == CreatureKind::Fox ? m_data.fox : m_data.cultivator;

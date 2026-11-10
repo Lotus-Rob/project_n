@@ -338,7 +338,14 @@ bool App::Present(const platform::WindowState& state) {
             if (drawn->follow) {
                 m_camera.centre = FollowedCentre(*drawn->follow, alpha);
             }
-            m_renderer.Draw(*drawn, { .alpha = alpha, .camera = m_camera, .outlined = Hovered(state, *drawn, alpha) });
+            m_renderer.Draw(
+                *drawn,
+                { .alpha = alpha,
+                  .camera = m_camera,
+                  .outlined = Hovered(state, *drawn, alpha),
+                  .clock = core::RenderTick(drawn->simulationTick, alpha) / static_cast<f64>(core::TICKS_PER_SECOND) },
+                m_jobs
+            );
             PN_PROFILE_FRAME();
         }
     );

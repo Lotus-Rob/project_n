@@ -8,11 +8,10 @@ namespace gfx::internal {
 
 namespace {
 
-constexpr u32 MAX_QUADS = MAX_MESH_VERTICES / QUAD_VERTICES;
 constexpr u32 QUAD_INDICES = 6;
-constexpr std::array<u16, QUAD_INDICES> QUAD_CORNERS{ { 0, 1, 2, 2, 1, 3 } }; // two triangles, both clockwise on screen
-constexpr u32 VERTEX_BYTES = MAX_MESH_VERTICES * MESH_VERTEX_BYTES;
-constexpr u32 INDEX_BYTES = MAX_QUADS * QUAD_INDICES * static_cast<u32>(sizeof(u16));
+constexpr std::array<u32, QUAD_INDICES> QUAD_CORNERS{ { 0, 1, 2, 2, 1, 3 } }; // two triangles, both clockwise on screen
+constexpr u32 VERTEX_BYTES = MAX_MESH_QUADS * QUAD_VERTICES * static_cast<u32>(MESH_VERTEX_BYTES);
+constexpr u32 INDEX_BYTES = MAX_MESH_QUADS * QUAD_INDICES * static_cast<u32>(sizeof(u32));
 
 Gpu<SDL_GPUGraphicsPipeline> CreateMeshPipeline(SDL_GPUDevice* device, SDL_GPUTextureFormat format) {
     const Gpu<SDL_GPUShader> vertex = CreateShader(device, shaders::MESH_VERT, SDL_GPU_SHADERSTAGE_VERTEX);
@@ -105,7 +104,7 @@ std::expected<MeshRenderer, core::Error> MeshRenderer::Create(SDL_GPUDevice* dev
     if (renderer.m_pipeline == nullptr) {
         return std::unexpected{ core::Error{ std::format("the mesh pipeline was rejected: {}", SDL_GetError()) } };
     }
-    // Linear: glyphs are placed on whole pixels, so their texels land on pixels; between them it smooths a zoomed page.
+    // Linear: a distance field interpolates into the distance between its texels, which keeps edges smooth at any scale.
     SDL_GPUSamplerCreateInfo sampler{};
     sampler.min_filter = SDL_GPU_FILTER_LINEAR;
     sampler.mag_filter = SDL_GPU_FILTER_LINEAR;
@@ -130,9 +129,9 @@ std::expected<MeshRenderer, core::Error> MeshRenderer::Create(SDL_GPUDevice* dev
 std::expected<std::size_t, core::Error> MeshRenderer::Upload(SDL_GPUCopyPass* copy, std::span<const MeshVertex> vertices) {
     PN_PROFILE_ZONE();
     if (!m_indicesUploaded) {
-        std::vector<u16> indices(static_cast<std::size_t>(MAX_QUADS) * QUAD_INDICES);
+        std::vector<u32> indices(static_cast<std::size_t>(MAX_MESH_QUADS) * QUAD_INDICES);
         for (std::size_t index = 0; index < indices.size(); ++index) {
-            indices[index] = static_cast<u16>(((index / QUAD_INDICES) * QUAD_VERTICES) + QUAD_CORNERS.at(index % QUAD_INDICES));
+            indices[index] = static_cast<u32>(((index / QUAD_INDICES) * QUAD_VERTICES) + QUAD_CORNERS.at(index % QUAD_INDICES));
         }
         SDL_GPUTransferBufferCreateInfo info{};
         info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
@@ -145,24 +144,26 @@ std::expected<std::size_t, core::Error> MeshRenderer::Upload(SDL_GPUCopyPass* co
         }
         m_indicesUploaded = true;
     }
-    const std::size_t fitting = std::min<std::size_t>(vertices.size(), MAX_MESH_VERTICES) / QUAD_VERTICES * QUAD_VERTICES;
-    m_quads = static_cast<u32>(fitting / QUAD_VERTICES);
+    const std::size_t dropped = MeshQuadsDropped(vertices.size());
+    m_quads = static_cast<u32>((vertices.size() / QUAD_VERTICES) - dropped);
+    const std::size_t fitting = std::size_t{ m_quads } * QUAD_VERTICES;
     if (fitting == 0) {
-        return vertices.size();
+        return dropped;
     }
     // Cycled: a frame in flight may still read what the transfer buffer and the vertex buffer held (§8.7).
     if (!CopyToBuffer(m_device, copy, m_transfer.get(), m_vertices.get(), std::as_bytes(vertices.first(fitting)), true)) {
         m_quads = 0;
         return std::unexpected{ core::Error{ std::format("the mesh vertices weren't uploaded: {}", SDL_GetError()) } };
     }
-    return vertices.size() - fitting;
+    return dropped;
 }
 
 void MeshRenderer::Draw(
     SDL_GPUCommandBuffer* commands,
     SDL_GPURenderPass* pass,
     std::span<const MeshRun> runs,
-    const ClipTransform& pixelsToClip
+    const ClipTransform& pixelsToClip,
+    const TextStyle& style
 ) const {
     PN_PROFILE_ZONE();
     if (m_quads == 0) {
@@ -172,9 +173,10 @@ void MeshRenderer::Draw(
     const SDL_GPUBufferBinding vertices{ .buffer = m_vertices.get(), .offset = 0 };
     SDL_BindGPUVertexBuffers(pass, 0, &vertices, 1);
     const SDL_GPUBufferBinding indices{ .buffer = m_indices.get(), .offset = 0 };
-    SDL_BindGPUIndexBuffer(pass, &indices, SDL_GPU_INDEXELEMENTSIZE_16BIT);
+    SDL_BindGPUIndexBuffer(pass, &indices, SDL_GPU_INDEXELEMENTSIZE_32BIT);
     const std::array<f32, 4> uniforms{ pixelsToClip.scaleX, pixelsToClip.scaleY, pixelsToClip.offsetX, pixelsToClip.offsetY };
     SDL_PushGPUVertexUniformData(commands, 0, uniforms.data(), sizeof(uniforms));
+    SDL_PushGPUFragmentUniformData(commands, 0, &style, sizeof(style));
     for (const MeshRun& run : runs) {
         if (run.firstQuad >= m_quads) {
             break;

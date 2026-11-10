@@ -11,6 +11,7 @@
 #include "core/manifest.hpp"
 #include "core/profile.hpp"
 #include "core/stable_id.hpp"
+#include "core/strings.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 
@@ -84,6 +85,75 @@ enum class TextDirection : u8 {
     TopToBottom, ///< In a column down, as a vertical caption.
 };
 
+/// What a text is, which sets its size in world units and how it behaves.
+enum class TextKind : u8 {
+    Label,   ///< A name over a creature's head.
+    Caption, ///< A caption on the scenery.
+    Number,  ///< A damage or healing number.
+};
+
+/// Which of two overlapping labels is shown: the higher.
+enum class LabelPriority : u8 {
+    Rest,     ///< Any other creature.
+    Named,    ///< A creature with its own name.
+    Player,   ///< The player's.
+    Hovered,  ///< The hovered entity's.
+    Selected, ///< The selected entity's.
+};
+
+/// Whether a number shows its sign.
+enum class NumberSign : u8 {
+    Plain, ///< No sign: damage.
+    Plus,  ///< A "+" before it: healing.
+};
+
+/// Where a text's anchor sits on its box.
+enum class TextAlign : u8 {
+    BottomCentre, ///< The text stands on its anchor: a label over a head.
+    TopCentre,    ///< The text hangs from its anchor: a vertical caption.
+};
+
+/// Opaque white, premultiplied and packed as TextItem::colour: a text's colour unless it names another.
+inline constexpr u32 TEXT_WHITE = 0xFFFF'FFFFU;
+
+/// A text the main thread draws over the world (the phase 6 chunk 3 spec, "Labels: placement, stacking and
+/// priority"): its size in world units scales with the zoom, and its anchor interpolates by the render clock's alpha,
+/// as instances do.
+struct TextItem {
+    /// What it is.
+    TextKind kind = TextKind::Label;
+    /// What it says (Label, Caption), in the language the renderer shows.
+    StringId string = StringId::CultivatorName;
+    /// Of a Number: its value.
+    i32 value = 0;
+    /// Of a Number: whether it shows a "+".
+    NumberSign sign = NumberSign::Plain;
+    /// The anchor at the previous tick, in world units.
+    Vec2 previous{};
+    /// The anchor at this tick.
+    Vec2 current{};
+    /// Moves it from the anchor, in world units.
+    Vec2 offset{};
+    /// Of a Number: how far above its anchor it has risen, in ems of its size.
+    f32 lift = 0.0F;
+    /// How much of it shows, from 0 (none) to 1 (all).
+    f32 opacity = 1.0F;
+    /// The entity it names or belongs to; zero for none (a caption).
+    StableId entity{};
+    /// Of a Label: the named entity's height, in world units.
+    f32 height = 0.0F;
+    /// Which labels may stack: those with the same key.
+    u32 nameKey = 0;
+    /// Of a Label: which wins where labels overlap.
+    LabelPriority priority = LabelPriority::Rest;
+    /// Premultiplied linear colour (the scene is drawn in linear space): red in the low byte, then green, blue and alpha.
+    u32 colour = TEXT_WHITE;
+    /// Where the anchor sits on it.
+    TextAlign align = TextAlign::BottomCentre;
+    /// Which way its characters run.
+    TextDirection direction = TextDirection::LeftToRight;
+};
+
 /// One published snapshot of the game state: what the main thread draws until the next is due.
 struct Snapshot {
     /// The wall tick of the last tick in the burst that published it.
@@ -113,6 +183,8 @@ struct Snapshot {
     /// The entity each instance draws, parallel to `instances` (zero for one that is no entity's:
     /// the ground, a shadow), for picking; refilled in place likewise.
     std::vector<StableId> ids{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    /// The texts drawn over the world, in drawing order; refilled in place likewise.
+    std::vector<TextItem> texts{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// What the camera follows, if anything.
     std::optional<Follow> follow = std::nullopt;
     /// The index in `instances` of the selected entity's instance, which the renderer outlines; none

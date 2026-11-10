@@ -33,6 +33,16 @@ constexpr std::array PROPS{
     Prop{ .sprite = SpriteId::RockSmall, .foot = { .x = 1180.0F, .y = 300.0F } },
 };
 
+// The stone tablet, with its vertical caption beside it (design doc 0002.4 §2).
+constexpr Prop STELE{ .sprite = SpriteId::Stele, .foot = { .x = 760.0F, .y = 980.0F } };
+// Game text (the phase 6 chunk 3 spec): offsets in world units, so they scale with the zoom as the text does.
+constexpr core::Vec2 LABEL_OFFSET{ .x = 0.0F, .y = -6.0F };   // a little clear of the head
+constexpr core::Vec2 CAPTION_OFFSET{ .x = 24.0F, .y = 0.0F }; // clear of the tablet's right edge
+// Linear, as the scene is drawn: light #F4EFE6 for names and pale gold #F2D9A0 for the caption, in sRGB, read over the
+// renderer's dark outline and shadow (it turns them to dark ink when both are off).
+constexpr u32 LABEL_COLOUR = 0xFFCA'DCE7U;
+constexpr u32 CAPTION_COLOUR = 0xFF5A'B1E2U;
+
 // The painted art around the arena's edges, some larger or smaller than painted (design doc 0002.3 §2: every feature
 // shows in the arena).
 constexpr std::array ARENA_PAINTED{
@@ -40,7 +50,7 @@ constexpr std::array ARENA_PAINTED{
     Prop{ .sprite = SpriteId::TreeDead, .foot = { .x = 110.0F, .y = 700.0F }, .scale = 0.7F },
     Prop{ .sprite = SpriteId::Hut, .foot = { .x = 480.0F, .y = 250.0F } },
     Prop{ .sprite = SpriteId::Crane, .foot = { .x = 1250.0F, .y = 960.0F } },
-    Prop{ .sprite = SpriteId::Stele, .foot = { .x = 760.0F, .y = 980.0F } },
+    STELE,
     Prop{ .sprite = SpriteId::FoxSpirit, .foot = { .x = 1450.0F, .y = 260.0F }, .scale = 0.8F },
     Prop{ .sprite = SpriteId::FoxYellow, .foot = { .x = 1000.0F, .y = 1010.0F } },
     Prop{ .sprite = SpriteId::WispRed, .foot = { .x = 130.0F, .y = 320.0F }, .scale = 0.6F },
@@ -88,7 +98,7 @@ constexpr std::array PAINTED_GLOWS{
 constexpr core::Vec2 CULTIVATOR{ .x = 960.0F, .y = 620.0F };
 // Half the view around the player: the world shown at the smallest zoom (0.25) in a window up to 32:9 wide or about
 // square, so the logic culls without the main thread's camera (design doc 0002.3 §4).
-// shortcut: a fixed size; cull relative to the window (the camera's view rectangle) or the world's size when a window
+// A fixed size; cull relative to the window (the camera's view rectangle) or the world's size when a window
 // shape or zoom outgrows it.
 constexpr core::Vec2 FOLLOW_HALF_VIEW{ .x = 7'680.0F, .y = 4'320.0F };
 constexpr u32 FOXES = 12;
@@ -459,6 +469,53 @@ core::Vec2 Arena::HeadOf(core::Entity entity) const {
     return { .x = foot.x, .y = foot.y - (footY * entities.get<Look>(entity).scale) };
 }
 
+void Arena::PublishTexts(core::Snapshot& snapshot) const {
+    PN_PROFILE_ZONE();
+    if (m_player == core::StableId{}) {
+        return;
+    }
+    const core::Registry& entities = m_state[ACTIVE].Entities();
+    for (auto [entity, creature, body, look, stableId] :
+         entities.view<const Creature, const Body, const Look, const core::StableId>().each()) {
+        const bool player = stableId == m_player;
+        if (!player && creature.kind != CreatureKind::Fox) {
+            continue;
+        }
+        const core::StringId name = player ? core::StringId::CultivatorName : core::StringId::FoxName;
+        const f32 height = static_cast<f32>(m_manifest->Sprite(look.sprite).footY) * look.scale;
+        const core::Vec2 head{ .x = 0.0F, .y = -height };
+        snapshot.texts.push_back(
+            {
+                .kind = core::TextKind::Label,
+                .string = name,
+                .previous = body.previous + head,
+                .current = body.current + head,
+                .offset = LABEL_OFFSET,
+                .entity = stableId,
+                .height = height,
+                .nameKey = std::to_underlying(name),
+                .priority = player ? core::LabelPriority::Player : core::LabelPriority::Rest,
+                .colour = LABEL_COLOUR,
+            }
+        );
+    }
+    const core::SpriteInfo& stele = m_manifest->Sprite(STELE.sprite);
+    const core::Vec2 topRight{ .x = STELE.foot.x + static_cast<f32>(stele.width) - static_cast<f32>(stele.footX),
+                               .y = STELE.foot.y - static_cast<f32>(stele.footY) };
+    snapshot.texts.push_back(
+        {
+            .kind = core::TextKind::Caption,
+            .string = core::StringId::TabletCaption,
+            .previous = topRight,
+            .current = topRight,
+            .offset = CAPTION_OFFSET,
+            .colour = CAPTION_COLOUR,
+            .align = core::TextAlign::TopCentre,
+            .direction = core::TextDirection::TopToBottom,
+        }
+    );
+}
+
 void Arena::Aura(const core::TickCounters& counters, std::vector<core::Event>& events) const {
     PN_PROFILE_ZONE();
     const u64 use = core::AbilityUse(counters.simulation, USE_AURA);
@@ -689,6 +746,7 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
         }
     });
     m_drawList.Publish(snapshot, jobs);
+    PublishTexts(snapshot);
     if (m_selected != core::StableId{}) {
         if (const auto drawn = std::ranges::find(snapshot.ids, m_selected); drawn != snapshot.ids.end()) {
             snapshot.selected = static_cast<u32>(drawn - snapshot.ids.begin());
