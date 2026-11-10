@@ -105,11 +105,92 @@ TEST_CASE("the language setting picks a language, and an unknown one gives Engli
     CHECK(warnings[0] == "settings line 1: there is no language klingon; English is used");
 }
 
+TEST_CASE("the text settings default to every hit, bouncing, outlined and shadowed") {
+    const std::expected<core::Settings, core::Error> settings = data::ParseSettings("{}\n");
+    REQUIRE(settings.has_value());
+    CHECK_FALSE(settings->combinedDamageNumbers);
+    CHECK(settings->damageNumberMotion == core::NumberMotion::Bounce);
+    CHECK(settings->textOutline);
+    CHECK(settings->textShadow);
+}
+
+TEST_CASE("the text settings are read") {
+    const std::expected<core::Settings, core::Error> settings = data::ParseSettings(
+        "combined_damage_numbers: true\ndamage_number_motion: rise\ntext_outline: false\ntext_shadow: false\n"
+    );
+    REQUIRE(settings.has_value());
+    CHECK(settings->combinedDamageNumbers);
+    CHECK(settings->damageNumberMotion == core::NumberMotion::Rise);
+    CHECK_FALSE(settings->textOutline);
+    CHECK_FALSE(settings->textShadow);
+}
+
+TEST_CASE("an unknown number motion gives bounce with a warning") {
+    std::vector<std::string> warnings;
+    const std::expected<core::Settings, core::Error> settings =
+        data::ParseSettings("damage_number_motion: wobble\n", &warnings);
+    REQUIRE(settings.has_value());
+    CHECK(settings->damageNumberMotion == core::NumberMotion::Bounce);
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0] == "settings line 1: there is no number motion wobble; bounce is used");
+}
+
+TEST_CASE("a text setting that isn't a boolean keeps its default with a warning") {
+    std::vector<std::string> warnings;
+    const std::expected<core::Settings, core::Error> settings = data::ParseSettings("text_outline: maybe\n", &warnings);
+    REQUIRE(settings.has_value());
+    CHECK(settings->textOutline);
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0] == "settings line 1: text_outline is true or false, not maybe; true is used");
+}
+
+TEST_CASE("a text setting with no value keeps its default with a warning") {
+    std::vector<std::string> warnings;
+    const std::expected<core::Settings, core::Error> settings = data::ParseSettings("text_outline:\n", &warnings);
+    REQUIRE(settings.has_value());
+    CHECK(settings->textOutline);
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0] == "settings line 1: text_outline isn't true or false; true is used");
+}
+
+// The one warning that parsing `yaml` gives; the parse itself must succeed.
+std::string SingleWarning(const std::string& yaml) {
+    std::vector<std::string> warnings;
+    const std::expected<core::Settings, core::Error> settings = data::ParseSettings(yaml, &warnings);
+    REQUIRE(settings.has_value());
+    REQUIRE(warnings.size() == 1);
+    return warnings[0];
+}
+
+TEST_CASE("an empty language or number motion keeps its default with a warning") {
+    const std::string language = SingleWarning("language:\n");
+    const std::string motion = SingleWarning("damage_number_motion: \"\"\n");
+    CHECK(language == "settings line 1: language has no language to read; English is used");
+    CHECK(motion == "settings line 1: damage_number_motion has no number motion to read; bounce is used");
+}
+
+TEST_CASE("a text setting that is empty text or a list keeps its default with a warning") {
+    const std::string empty = SingleWarning("text_outline: \"\"\n");
+    const std::string list = SingleWarning("text_outline: [a]\n");
+    CHECK(empty == "settings line 1: text_outline isn't true or false; true is used");
+    CHECK(list == "settings line 1: text_outline isn't true or false; true is used");
+}
+
+TEST_CASE("a warning names the key's line when the value is below it") {
+    const std::string warning = SingleWarning("text_outline:\n  maybe\n");
+    CHECK(warning == "settings line 1: text_outline is true or false, not maybe; true is used");
+}
+
 TEST_CASE("saved settings read back the same") {
     const Scratch scratch{ "round_trip" };
-    constexpr core::Settings SETTINGS{
-        .windowWidth = 2560, .windowHeight = 1440, .fullscreen = true, .language = core::Language::Chinese
-    };
+    constexpr core::Settings SETTINGS{ .windowWidth = 2560,
+                                       .windowHeight = 1440,
+                                       .fullscreen = true,
+                                       .language = core::Language::Chinese,
+                                       .combinedDamageNumbers = true,
+                                       .damageNumberMotion = core::NumberMotion::Rise,
+                                       .textOutline = false,
+                                       .textShadow = false };
     REQUIRE(data::SaveSettings(scratch.File(), SETTINGS).has_value());
     const std::expected<core::Settings, core::Error> read = data::ParseSettings(Contents(scratch.File()));
     REQUIRE(read.has_value());
@@ -117,6 +198,10 @@ TEST_CASE("saved settings read back the same") {
     CHECK(read->windowHeight == SETTINGS.windowHeight);
     CHECK(read->fullscreen == SETTINGS.fullscreen);
     CHECK(read->language == SETTINGS.language);
+    CHECK(read->combinedDamageNumbers == SETTINGS.combinedDamageNumbers);
+    CHECK(read->damageNumberMotion == SETTINGS.damageNumberMotion);
+    CHECK(read->textOutline == SETTINGS.textOutline);
+    CHECK(read->textShadow == SETTINGS.textShadow);
 }
 
 TEST_CASE("missing settings give the defaults and write them out") {

@@ -6,13 +6,19 @@
 
 namespace {
 
-constexpr std::string_view STRINGS = R"(cultivator_name:
+constexpr std::string_view STRINGS = R"yaml(cultivator_name:
   en: Cultivator
   zh: 修士
 tablet_caption:
   en: Ask the Way
   zh: 问道
-)";
+fox_name:
+  en: Fox
+  zh: 狐
+label_stack:
+  en: "{name} (+{count})"
+  zh: "{name}（+{count}）"
+)yaml";
 
 // STRINGS with `from` replaced by `replacement`.
 std::string With(std::string_view from, std::string_view replacement) {
@@ -59,7 +65,7 @@ TEST_CASE("a string missing a language is an error naming its line") {
 
 TEST_CASE("a string given twice is an error naming the second") {
     const std::string error = ErrorFor(std::string{ STRINGS } + "cultivator_name:\n  en: Again\n  zh: 再\n");
-    CHECK(error == "strings line 7: cultivator_name is there twice");
+    CHECK(error == "strings line 13: cultivator_name is there twice");
 }
 
 TEST_CASE("a string's text that is empty or not text is an error naming its line") {
@@ -69,14 +75,28 @@ TEST_CASE("a string's text that is empty or not text is an error naming its line
     CHECK(list == "strings line 2: cultivator_name's en isn't text");
 }
 
+TEST_CASE("the strings table has the fox's name and the stack label in both languages") {
+    const std::expected<core::Strings, core::Error> strings = data::ParseStrings(STRINGS);
+    REQUIRE(strings.has_value());
+    CHECK(strings->Text(core::StringId::FoxName, core::Language::English) == "Fox");
+    CHECK(strings->Text(core::StringId::FoxName, core::Language::Chinese) == "狐");
+    CHECK(strings->Text(core::StringId::LabelStack, core::Language::English) == "{name} (+{count})");
+    CHECK(strings->Text(core::StringId::LabelStack, core::Language::Chinese) == "{name}（+{count}）");
+}
+
 TEST_CASE("the shipped strings table parses with no warning") {
     const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
     REQUIRE(assets.has_value());
     std::vector<std::string> warnings;
     std::ifstream input{ *assets / "data" / "strings.yaml", std::ios::binary };
     const std::string text{ std::istreambuf_iterator<char>{ input }, std::istreambuf_iterator<char>{} };
-    CHECK(data::ParseStrings(text, &warnings).has_value());
+    const std::expected<core::Strings, core::Error> strings = data::ParseStrings(text, &warnings);
+    REQUIRE(strings.has_value());
     CHECK(warnings.empty());
+    CHECK(strings->Text(core::StringId::FoxName, core::Language::English) == "Fox");
+    CHECK(strings->Text(core::StringId::FoxName, core::Language::Chinese) == "狐");
+    CHECK(strings->Text(core::StringId::LabelStack, core::Language::English) == "{name} (+{count})");
+    CHECK(strings->Text(core::StringId::LabelStack, core::Language::Chinese) == "{name}（+{count}）");
 }
 
 } // namespace

@@ -20,6 +20,78 @@ void ReadIfPresent(const YAML::Node& map, const char* key, T& value) {
     }
 }
 
+// The line (from 1) of `key` in `root`: a null value's own mark lies after its key's line, and a scalar may sit below.
+i32 KeyLine(const YAML::Node& root, std::string_view key) {
+    for (const auto& entry : root) {
+        if (entry.first.as<std::string>() == key) {
+            return entry.first.Mark().line + 1;
+        }
+    }
+    return root.Mark().line + 1;
+}
+
+// Whether `node` holds some text to read (not nothing, an empty string or a list or map).
+bool HasText(const YAML::Node& node) {
+    return node.IsScalar() && !node.Scalar().empty();
+}
+
+// The index in `names` of the text of `root`'s `key`; none, with a warning, for a name that isn't there (`what` names
+// the kind of name, `fallback` the choice used instead).
+template<std::size_t N>
+std::optional<std::size_t> ReadName(
+    const YAML::Node& root,
+    const char* key,
+    const std::array<std::string_view, N>& names,
+    std::string_view what,
+    std::string_view fallback,
+    std::vector<std::string>* warnings
+) {
+    const YAML::Node node = root[key];
+    if (HasText(node)) {
+        const std::string& text = node.Scalar();
+        if (const auto known = std::ranges::find(names, text); known != names.end()) {
+            return static_cast<std::size_t>(known - names.begin());
+        }
+        if (warnings != nullptr) {
+            warnings->push_back(
+                std::format("settings line {}: there is no {} {}; {} is used", KeyLine(root, key), what, text, fallback)
+            );
+        }
+    }
+    else if (warnings != nullptr) {
+        warnings->push_back(
+            std::format("settings line {}: {} has no {} to read; {} is used", KeyLine(root, key), key, what, fallback)
+        );
+    }
+    return std::nullopt;
+}
+
+// Reads a boolean setting; one that isn't a boolean keeps its default, with a warning.
+void ReadBoolean(const YAML::Node& root, const char* key, bool& value, std::vector<std::string>* warnings) {
+    const YAML::Node node = root[key];
+    if (!node) {
+        return;
+    }
+    bool read = false;
+    if (YAML::convert<bool>::decode(node, read)) {
+        value = read;
+    }
+    else if (warnings != nullptr) {
+        if (HasText(node)) {
+            warnings->push_back(
+                std::format(
+                    "settings line {}: {} is true or false, not {}; {} is used", KeyLine(root, key), key, node.Scalar(), value
+                )
+            );
+        }
+        else {
+            warnings->push_back(
+                std::format("settings line {}: {} isn't true or false; {} is used", KeyLine(root, key), key, value)
+            );
+        }
+    }
+}
+
 } // namespace
 
 std::expected<core::Settings, core::Error> ParseSettings(std::string_view yaml, std::vector<std::string>* warnings) {
@@ -33,19 +105,29 @@ std::expected<core::Settings, core::Error> ParseSettings(std::string_view yaml, 
             return std::unexpected{ core::Error{
                 std::format("settings line {}: not a map of settings", root.Mark().line + 1) } };
         }
-        internal::NoteUnknownKeys("settings", root, "", "setting", { "window", "language" }, warnings);
-        if (const YAML::Node language = root["language"]) {
-            const auto code = language.as<std::string>();
-            const std::span<const std::string_view> codes{ core::LANGUAGE_CODES };
-            if (const auto known = std::ranges::find(codes, code); known != codes.end()) {
-                settings.language = static_cast<core::Language>(known - codes.begin());
-            }
-            else if (warnings != nullptr) {
-                warnings->push_back(
-                    std::format("settings line {}: there is no language {}; English is used", language.Mark().line + 1, code)
-                );
+        internal::NoteUnknownKeys(
+            "settings",
+            root,
+            "",
+            "setting",
+            { "window", "language", "combined_damage_numbers", "damage_number_motion", "text_outline", "text_shadow" },
+            warnings
+        );
+        if (root["language"]) {
+            if (const std::optional<std::size_t> known =
+                    ReadName(root, "language", core::LANGUAGE_CODES, "language", "English", warnings)) {
+                settings.language = static_cast<core::Language>(*known);
             }
         }
+        if (root["damage_number_motion"]) {
+            if (const std::optional<std::size_t> known =
+                    ReadName(root, "damage_number_motion", core::NUMBER_MOTION_NAMES, "number motion", "bounce", warnings)) {
+                settings.damageNumberMotion = static_cast<core::NumberMotion>(*known);
+            }
+        }
+        ReadBoolean(root, "combined_damage_numbers", settings.combinedDamageNumbers, warnings);
+        ReadBoolean(root, "text_outline", settings.textOutline, warnings);
+        ReadBoolean(root, "text_shadow", settings.textShadow, warnings);
         if (const YAML::Node window = root["window"]) {
             internal::NoteUnknownKeys("settings", window, "window", "setting", { "width", "height", "fullscreen" }, warnings);
             ReadIfPresent(window, "width", settings.windowWidth);
@@ -81,11 +163,19 @@ std::expected<void, core::Error> SaveSettings(const std::filesystem::path& path,
             "  width: {}  # pixels, when not fullscreen\n"
             "  height: {}\n"
             "  fullscreen: {}  # true or false\n"
-            "language: {}  # en (English) or zh (Simplified Chinese)\n",
+            "language: {}  # en (English) or zh (Simplified Chinese)\n"
+            "combined_damage_numbers: {}  # true: one summed number per creature and moment; false: one per hit\n"
+            "damage_number_motion: {}  # bounce or rise\n"
+            "text_outline: {}  # true or false\n"
+            "text_shadow: {}  # true or false\n",
             settings.windowWidth,
             settings.windowHeight,
             settings.fullscreen,
-            core::LANGUAGE_CODES.at(std::to_underlying(settings.language))
+            core::LANGUAGE_CODES.at(std::to_underlying(settings.language)),
+            settings.combinedDamageNumbers,
+            core::NUMBER_MOTION_NAMES.at(std::to_underlying(settings.damageNumberMotion)),
+            settings.textOutline,
+            settings.textShadow
         )
     );
 }
