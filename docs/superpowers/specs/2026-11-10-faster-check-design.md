@@ -1,6 +1,6 @@
 # A faster `project_n check`, and loose ends from the superpowers switch
 
-Date: 2026-11-10 · Status: approved 2026-11-10
+Date: 2026-11-10 · Status: approved 2026-11-10, implemented with the changes in **Outcome** (end of this document)
 
 ## Intent
 
@@ -128,3 +128,53 @@ Same per-step timing, cold and warm; numbers into this spec's Outcome.
   the units).
 - Job count (default: all cores).
 - The exact wording of every doc line, within the size limits.
+
+## Outcome (2026-11-10)
+
+**Goal met:** warm `check` 471 s → **174 s (2.9 min)**, cold 586 s → 278 s (4.6 min), with everything `check` did before.
+Measured as above, at this branch's head:
+
+| step | cold | warm |
+|---|---|---|
+| selftest + fmt | 1 | 2 |
+| **lint** | **51** | **31** |
+| test linux-gcc release | 58 | 31 |
+| test linux-clang release | 30 | 12 |
+| test windows-msvc release (container, Wine) | 80 | 73 |
+| reference pictures | 4 | 3 |
+| unity test | 26 | 10 |
+| releasedbg build | 29 | 11 |
+| **total** | **278** | **174** |
+
+`lint --all` on its own: 329 s serial → 33 s (93 units, 32 at a time). windows-msvc is now the largest step; the non-goals
+stay non-goals while `check` is under 5 minutes.
+
+What changed against the design, and why:
+- **A per-file pool, not `run-clang-tidy`.** Its source (22.1.8, main loop) gives one exit code: 1 if any file returned
+  non-zero for any reason. A file erroring without a finding ("Error while processing") beside files with only the
+  ignored quill finding would look like a clean run with ignored findings, which lint fails today. `tidy_units` runs
+  one clang-tidy per unit on every core and judges each with `tidy_verdict`.
+- **`--fix` stays serial, on the failing units only** (changed after the final review). The first version exported each
+  unit's fixes and applied them once with `clang-apply-replacements`; the reviewer showed on 22.1.8 that this also
+  applies note fix-its that only silence a warning (a `static_cast<long>` around a widening multiply, plus an added
+  `#include <cstddef>`), which `clang-tidy --fix` never does. Now the parallel run only judges, and `--fix` runs one
+  serial `clang-tidy --fix` over the units that failed. Checked for real with a `typedef` and a widening multiply in
+  `src/core/types.hpp`: the `typedef` became `using`, the multiply was left alone.
+- **Every review finding was fixed, Minor included** (the user's rule, now in AGENTS.md "Finishing a branch" step 3).
+- **A finding prints once** however many units report it (also from the review: one `typedef` in a header printed 93
+  times). Findings are compared by resolved path, since clang-tidy names a shared header `./src/…`, `src/…` or by its
+  absolute path depending on the unit.
+- **The ignored count stays per finding.** One process per unit reports a shared header's finding once per unit that
+  reaches it; findings are counted, like printed, once by resolved path, so `--all` still reports the same two quill
+  `InlinedVector.h` findings (a first version summed them per unit: 5).
+- **Job count:** `jobs()`, the CPUs this process may use (`os.process_cpu_count()`: affinity and cgroup cpusets), not
+  the machine's.
+- **clangd through `pixi run`** (`--manifest-path ${CLAUDE_PROJECT_DIR}/pixi.toml --frozen --quiet`): an LSP `initialize`
+  request gets `Content-Length:` as the first bytes on stdout, as with the direct binary, both with the configured
+  `--background-index`; it starts in 0.04 s instead of 0.02 s. **Untested on Windows** (no Windows host here); it loads at the next session start.
+- **The handover skill**, tested with superpowers writing-skills: the old skill wrote a seven-section file to the
+  session scratchpad and left `in-flight.md` stale; with the new one, two runs each rewrote only their own branch's
+  section, with the other section and the header unchanged byte for byte.
+- **`prune-worktrees`:** a folder deleted by hand is left to the closing `git worktree prune`; the checkout it runs in is
+  kept; a stale lock says how to release it; `clean_worktrees` became `prune_worktrees`, registered directly. From the
+  final review: a deleted folder is reported, and its branch deleted after the prune when its work is merged.
