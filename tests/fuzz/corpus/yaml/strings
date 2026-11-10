@@ -1,0 +1,8 @@
+# The game's strings (design doc 0002.4.2 §5), each by the name the code knows it by (core/strings.hpp), with its
+# text in English (en) and Simplified Chinese (zh). Every string needs both. settings.yaml's `language` picks one.
+cultivator_name:
+  en: Cultivator
+  zh: 修士
+tablet_caption:
+  en: 问道 # the caption is the same in both
+  zh: 问道

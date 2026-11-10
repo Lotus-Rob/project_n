@@ -93,15 +93,30 @@ TEST_CASE("malformed settings are an error naming the line") {
     CHECK(notAMap.error().message.contains("line 1"));
 }
 
+TEST_CASE("the language setting picks a language, and an unknown one gives English with a warning") {
+    const std::expected<core::Settings, core::Error> chinese = data::ParseSettings("language: zh\n");
+    REQUIRE(chinese.has_value());
+    CHECK(chinese->language == core::Language::Chinese);
+    std::vector<std::string> warnings;
+    const std::expected<core::Settings, core::Error> unknown = data::ParseSettings("language: klingon\n", &warnings);
+    REQUIRE(unknown.has_value());
+    CHECK(unknown->language == core::Language::English);
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0] == "settings line 1: there is no language klingon; English is used");
+}
+
 TEST_CASE("saved settings read back the same") {
     const Scratch scratch{ "round_trip" };
-    constexpr core::Settings SETTINGS{ .windowWidth = 2560, .windowHeight = 1440, .fullscreen = true };
+    constexpr core::Settings SETTINGS{
+        .windowWidth = 2560, .windowHeight = 1440, .fullscreen = true, .language = core::Language::Chinese
+    };
     REQUIRE(data::SaveSettings(scratch.File(), SETTINGS).has_value());
     const std::expected<core::Settings, core::Error> read = data::ParseSettings(Contents(scratch.File()));
     REQUIRE(read.has_value());
     CHECK(read->windowWidth == SETTINGS.windowWidth);
     CHECK(read->windowHeight == SETTINGS.windowHeight);
     CHECK(read->fullscreen == SETTINGS.fullscreen);
+    CHECK(read->language == SETTINGS.language);
 }
 
 TEST_CASE("missing settings give the defaults and write them out") {

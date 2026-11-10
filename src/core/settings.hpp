@@ -4,6 +4,7 @@
 /// @ingroup core
 /// The player's settings (design doc 0002.3 §7): what `settings.yaml` in the per-user data folder holds.
 
+#include "core/strings.hpp"
 #include "core/types.hpp"
 
 namespace core {
@@ -21,6 +22,8 @@ struct Settings {
     i32 windowHeight = DEFAULT_WINDOW_HEIGHT;
     /// Whether the window covers the whole screen.
     bool fullscreen = false;
+    /// The language the game's strings show in.
+    Language language = Language::English;
 };
 
 } // namespace core

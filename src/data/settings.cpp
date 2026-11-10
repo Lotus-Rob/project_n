@@ -33,7 +33,19 @@ std::expected<core::Settings, core::Error> ParseSettings(std::string_view yaml, 
             return std::unexpected{ core::Error{
                 std::format("settings line {}: not a map of settings", root.Mark().line + 1) } };
         }
-        internal::NoteUnknownKeys("settings", root, "", "setting", { "window" }, warnings);
+        internal::NoteUnknownKeys("settings", root, "", "setting", { "window", "language" }, warnings);
+        if (const YAML::Node language = root["language"]) {
+            const auto code = language.as<std::string>();
+            const std::span<const std::string_view> codes{ core::LANGUAGE_CODES };
+            if (const auto known = std::ranges::find(codes, code); known != codes.end()) {
+                settings.language = static_cast<core::Language>(known - codes.begin());
+            }
+            else if (warnings != nullptr) {
+                warnings->push_back(
+                    std::format("settings line {}: there is no language {}; English is used", language.Mark().line + 1, code)
+                );
+            }
+        }
         if (const YAML::Node window = root["window"]) {
             internal::NoteUnknownKeys("settings", window, "window", "setting", { "width", "height", "fullscreen" }, warnings);
             ReadIfPresent(window, "width", settings.windowWidth);
@@ -68,10 +80,12 @@ std::expected<void, core::Error> SaveSettings(const std::filesystem::path& path,
             "window:\n"
             "  width: {}  # pixels, when not fullscreen\n"
             "  height: {}\n"
-            "  fullscreen: {}  # true or false\n",
+            "  fullscreen: {}  # true or false\n"
+            "language: {}  # en (English) or zh (Simplified Chinese)\n",
             settings.windowWidth,
             settings.windowHeight,
-            settings.fullscreen
+            settings.fullscreen,
+            core::LANGUAGE_CODES.at(std::to_underlying(settings.language))
         )
     );
 }
@@ -100,11 +114,12 @@ core::Settings LoadSettings(const std::filesystem::path& path) {
         return {};
     }
     PN_LOG_INFO(
-        "settings from {}: window {}x{}{}",
+        "settings from {}: window {}x{}{}, language {}",
         path.string(),
         settings->windowWidth,
         settings->windowHeight,
-        settings->fullscreen ? ", fullscreen" : ""
+        settings->fullscreen ? ", fullscreen" : "",
+        core::LANGUAGE_CODES.at(std::to_underlying(settings->language))
     );
     return *settings;
 }
