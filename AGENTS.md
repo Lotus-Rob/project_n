@@ -9,7 +9,7 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 - `tools/project_n.py` the only entry point (tools/AGENTS.md) · `containers/` artefact images (containers/AGENTS.md)
 - `shaders/` HLSL, one file per stage; `bin/`: the committed binaries `shaders` writes · `assets/` what the game loads at runtime (`sprites/`: images, with `PROVENANCE.md`; `data/`: YAML data tables, which `game::BuiltInData()` mirrors; `manifest.yaml`: the atlas, which `atlas` writes) · `art/` `sprites.toml` (sprite list, foot points), `scenes.toml` (each scene's sprites), `placeholders.py` (procedural art) · `src/*/generated/`: headers `shaders` and `atlas` write (fmt and lint skip them) · `xmake/repo/` local fixes to xmake-repo packages · `docs/design/` past designs and their rationale: read before redesigning anything · `docs/superpowers/`: `specs/` (designs, `YYYY-MM-DD-<topic>-design.md`) and `plans/` (`YYYY-MM-DD-<feature>.md`), each approved before its code
 - `.github/` CI workflows (.github/AGENTS.md)
-- `.claude/settings.json` turns superpowers on and ponytail off, and swaps the global clangd plugin for `.claude/marketplace/`'s, which runs Pixi's clangd; the `LSP` tool reads `build/compile_commands.json`, which native builds refresh
+- `.claude/settings.json` turns superpowers on and ponytail off, and swaps the global clangd plugin for `.claude/marketplace/`'s, which starts Pixi's clangd through `pixi run` on every host; the `LSP` tool reads `build/compile_commands.json`, which native builds refresh
 
 ## Commands
 - `./dev <command>` (Windows `dev`) is shorthand for `pixi run project_n <command>`; either works from anywhere.
