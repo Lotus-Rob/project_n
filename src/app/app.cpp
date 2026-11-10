@@ -329,7 +329,7 @@ bool App::Present(const platform::WindowState& state) {
         state.visible,
         [this] { m_renderer.Acquire(); },
         platform::NowNs,
-        // shortcut: nothing plays events yet; audio and particles (phase 7) replace the empty player.
+        // Nothing plays events yet; audio and particles (phase 7) replace the empty player.
         [](const core::Event& /*event*/) {},
         [this, drawn, &state](f64 alpha) {
             if (drawn->follow) {
@@ -340,7 +340,7 @@ bool App::Present(const platform::WindowState& state) {
         }
     );
     if (drawn->transition) {
-        // shortcut: nothing draws the transition itself yet; its view model and screen come with the UI (phase 6).
+        // Nothing draws the transition itself yet; its view model and screen come with the UI (phase 6).
         platform::WaitUntilNs(platform::NowNs() + TRANSITION_FRAME_NS);
     }
     return true;

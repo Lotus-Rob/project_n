@@ -74,7 +74,7 @@ public:
             // PlayDue() would drop are dropped here, so a stalled main thread doesn't grow the queue (§5): the render
             // clock (RenderTick()) reaches at least the newest tick minus one, so those more than STALE_EVENT_TICKS + 1
             // behind it can't play. An older epoch's are kept: its snapshot may still be drawn, and nothing adds to
-            // them once a newer epoch has begun. shortcut: other events still accumulate; their coalescing arrives
+            // them once a newer epoch has begun. Other events still accumulate; their coalescing arrives
             // with their kinds (phase 7).
             m_events.insert(m_events.end(), events.begin(), events.end());
             events.clear();
