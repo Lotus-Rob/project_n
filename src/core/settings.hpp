@@ -7,12 +7,26 @@
 #include "core/strings.hpp"
 #include "core/types.hpp"
 
+#include <array>
+#include <cstddef>
+#include <string_view>
+
 namespace core {
 
 /// The window's width when no settings say otherwise.
 inline constexpr i32 DEFAULT_WINDOW_WIDTH = 1280;
 /// The window's height when no settings say otherwise.
 inline constexpr i32 DEFAULT_WINDOW_HEIGHT = 720;
+
+/// How a damage number moves after it appears.
+enum class NumberMotion : u8 {
+    Bounce, ///< It hops up and settles back.
+    Rise,   ///< It drifts steadily upward.
+};
+/// How many motions NumberMotion names.
+inline constexpr std::size_t NUMBER_MOTIONS = 2;
+/// Each NumberMotion's name in settings.yaml, in NumberMotion's order.
+inline constexpr std::array<std::string_view, NUMBER_MOTIONS> NUMBER_MOTION_NAMES{ { "bounce", "rise" } };
 
 /// The player's settings; a default-built one holds the defaults.
 struct Settings {
@@ -24,6 +38,14 @@ struct Settings {
     bool fullscreen = false;
     /// The language the game's strings show in.
     Language language = Language::English;
+    /// Whether the hits on one creature in a moment show as one summed number instead of one each.
+    bool combinedDamageNumbers = false;
+    /// How damage numbers move.
+    NumberMotion damageNumberMotion = NumberMotion::Bounce;
+    /// Whether game text has an outline.
+    bool textOutline = true;
+    /// Whether game text has a shadow.
+    bool textShadow = true;
 };
 
 } // namespace core

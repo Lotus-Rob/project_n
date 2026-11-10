@@ -19,11 +19,15 @@ namespace core {
 enum class StringId : u8 {
     CultivatorName, ///< The player's name label.
     TabletCaption,  ///< The vertical caption beside the stone tablet.
+    FoxName,        ///< The fox's name label.
+    LabelStack,     ///< A name label for several creatures in one place: `{name}` and `{count}` are filled in.
 };
 /// How many strings StringId names.
-inline constexpr std::size_t STRINGS = 2;
+inline constexpr std::size_t STRINGS = 4;
 /// Each StringId's name in strings.yaml, in StringId's order.
-inline constexpr std::array<std::string_view, STRINGS> STRING_NAMES{ { "cultivator_name", "tablet_caption" } };
+inline constexpr std::array<std::string_view, STRINGS> STRING_NAMES{
+    { "cultivator_name", "tablet_caption", "fox_name", "label_stack" }
+};
 
 /// A language the strings come in.
 enum class Language : u8 {
