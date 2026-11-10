@@ -1,14 +1,22 @@
 // Renders fixed views offscreen and compares them with the committed pictures in tests/reference/
 // (design doc 0002 §8.9). Run through `project_n reference`, which picks Mesa's software Vulkan and
 // the working directory: each view's picture lands in build/reference/, where `--update` takes it from.
+// Game text is also measured on the pictures (the phase 6 chunk 3 spec, "Testing"): a label's ink must not shimmer at
+// sub-pixel camera offsets, nor step while its creature moves.
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
+#include "core/instances.hpp"
 #include "core/jobs.hpp"
 #include "core/math.hpp"
+#include "core/strings.hpp"
+#include "data/strings.hpp"
 #include "game/arena.hpp"
 #include "gfx/camera.hpp"
 #include "gfx/image.hpp"
 #include "gfx/renderer.hpp"
+#include "gfx/sprite_block.hpp"
+#include "gfx/text_layout.hpp"
+#include "gfx/text_place.hpp"
 #include "platform/paths.hpp"
 #include "platform/window.hpp"
 #include "support/manifest.hpp"
@@ -26,6 +34,8 @@ constexpr std::size_t ALLOWED_PIXELS = std::size_t{ WIDTH } * HEIGHT / 10'000;
 
 constexpr u64 TWO_SECONDS = 120; // of ticks: the foxes and orbs have moved off their starting places
 constexpr f64 HALFWAY = 0.5;
+// Between the tablet and the player, so both and their texts show at the largest zoom; at the others the whole ground does.
+constexpr core::Vec2 TABLET_AND_PLAYER{ .x = 880.0F, .y = 690.0F };
 
 struct View {
     std::string_view name;
@@ -35,7 +45,76 @@ struct View {
     f32 zoom = 1.0F;
     bool outlines = false; // centred on the player's cultivator, hovered, with the first fox selected
     bool refit = false;    // a smaller picture first, so a scene target that isn't refitted shows
+    std::optional<core::Vec2> centre = std::nullopt;
 };
+
+std::filesystem::path Assets() {
+    const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
+    const std::string assetsWhy = assets.error_or(core::Error{}).message;
+    REQUIRE_MESSAGE(assets.has_value(), assetsWhy);
+    return *assets;
+}
+
+platform::Window OpenWindow() {
+    std::expected<platform::Window, core::Error> window = platform::Window::Open("reference", WIDTH, HEIGHT);
+    const std::string windowWhy = window.error_or(core::Error{}).message;
+    REQUIRE_MESSAGE(window.has_value(), windowWhy);
+    return std::move(*window);
+}
+
+// A renderer for `window` holding `scene`'s sprites, its texts in English with outline and shadow.
+gfx::Renderer RendererFor(platform::Window& window, core::SceneId scene, core::Jobs& jobs) {
+    std::expected<core::Strings, core::Error> strings = data::LoadStrings(Assets() / "data");
+    const std::string stringsWhy = strings.error_or(core::Error{}).message;
+    REQUIRE_MESSAGE(strings.has_value(), stringsWhy);
+    std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(
+        window, Assets(), test::TestManifest(), std::make_shared<const core::Strings>(std::move(*strings)), {}
+    );
+    const std::string rendererWhy = renderer.error_or(core::Error{}).message;
+    REQUIRE_MESSAGE(renderer.has_value(), rendererWhy);
+    renderer->BeginScene(scene, jobs);
+    std::expected<bool, core::Error> held = false;
+    while (held && !*held) {
+        held = renderer->ContinueScene(std::numeric_limits<u64>::max());
+    }
+    const std::string heldWhy = held.error_or(core::Error{}).message;
+    REQUIRE_MESSAGE(held.has_value(), heldWhy);
+    return std::move(*renderer);
+}
+
+core::Snapshot Published(game::Arena& arena, core::Jobs& jobs) {
+    core::Snapshot snapshot;
+    arena.Publish(snapshot, jobs);
+    snapshot.scene = arena.Scene(); // as core::Logic names it
+    return snapshot;
+}
+
+gfx::Image Captured(
+    gfx::Renderer& renderer,
+    const core::Snapshot& snapshot,
+    const gfx::View& view,
+    core::Jobs& jobs,
+    u32 width = WIDTH,
+    u32 height = HEIGHT
+) {
+    std::expected<gfx::Image, core::Error> drawn = renderer.Capture(snapshot, view, jobs, width, height);
+    const std::string drawnWhy = drawn.error_or(core::Error{}).message;
+    REQUIRE_MESSAGE(drawn.has_value(), drawnWhy);
+    return std::move(*drawn);
+}
+
+void CompareWithReference(const gfx::Image& drawn, std::string_view name) {
+    const std::string file = std::format("{}.png", name);
+    const std::expected<void, core::Error> saved = gfx::SavePng(drawn, std::filesystem::path{ "build/reference" } / file);
+    const std::string savedWhy = saved.error_or(core::Error{}).message;
+    REQUIRE_MESSAGE(saved.has_value(), savedWhy);
+    const std::expected<gfx::Image, core::Error> reference = gfx::LoadPng(std::filesystem::path{ "tests/reference" } / file);
+    const std::string referenceWhy = reference.error_or(core::Error{}).message;
+    REQUIRE_MESSAGE(reference.has_value(), referenceWhy);
+    const std::size_t differing = gfx::DifferingPixels(drawn, *reference, TOLERANCE);
+    INFO("compare build/reference/", file, " with tests/reference/", file);
+    CHECK(differing <= ALLOWED_PIXELS);
+}
 
 void CheckAgainstReference(const View& view) {
     core::math::SetFloatingPointEnvironment();
@@ -62,22 +141,10 @@ void CheckAgainstReference(const View& view) {
         );
         REQUIRE(arena.Selected() == fox);
     }
-    core::Snapshot snapshot;
-    arena.Publish(snapshot, jobs);
-    snapshot.scene = arena.Scene(); // as core::Logic names it
+    const core::Snapshot snapshot = Published(arena, jobs);
 
-    std::expected<platform::Window, core::Error> window = platform::Window::Open("reference", WIDTH, HEIGHT);
-    REQUIRE_MESSAGE(window.has_value(), window.error().message);
-    const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
-    REQUIRE_MESSAGE(assets.has_value(), assets.error().message);
-    std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(*window, *assets, test::TestManifest());
-    REQUIRE_MESSAGE(renderer.has_value(), renderer.error().message);
-    renderer->BeginScene(snapshot.scene, jobs);
-    std::expected<bool, core::Error> held = false;
-    while (held && !*held) {
-        held = renderer->ContinueScene(std::numeric_limits<u64>::max());
-    }
-    REQUIRE_MESSAGE(held.has_value(), held.error().message);
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
     gfx::View shown{ .alpha = view.alpha, .camera = { .zoom = view.zoom } };
     if (view.outlines) {
         const auto player = std::ranges::find(snapshot.ids, arena.Player());
@@ -85,21 +152,13 @@ void CheckAgainstReference(const View& view) {
         shown.outlined = static_cast<std::size_t>(player - snapshot.ids.begin());
         shown.camera.centre = snapshot.follow.value_or(core::Follow{}).current;
     }
-    if (view.refit) {
-        const std::expected<gfx::Image, core::Error> smaller = renderer->Capture(snapshot, shown, WIDTH / 2, HEIGHT / 3);
-        REQUIRE_MESSAGE(smaller.has_value(), smaller.error().message);
+    if (view.centre) {
+        shown.camera.centre = *view.centre;
     }
-    const std::expected<gfx::Image, core::Error> drawn = renderer->Capture(snapshot, shown, WIDTH, HEIGHT);
-    REQUIRE_MESSAGE(drawn.has_value(), drawn.error().message);
-
-    const std::string file = std::format("{}.png", view.name);
-    const std::expected<void, core::Error> saved = gfx::SavePng(*drawn, std::filesystem::path{ "build/reference" } / file);
-    REQUIRE_MESSAGE(saved.has_value(), saved.error().message);
-    const std::expected<gfx::Image, core::Error> reference = gfx::LoadPng(std::filesystem::path{ "tests/reference" } / file);
-    REQUIRE_MESSAGE(reference.has_value(), reference.error().message);
-    const std::size_t differing = gfx::DifferingPixels(*drawn, *reference, TOLERANCE);
-    INFO("compare build/reference/", file, " with tests/reference/", file);
-    CHECK(differing <= ALLOWED_PIXELS);
+    if (view.refit) {
+        static_cast<void>(Captured(renderer, snapshot, shown, jobs, WIDTH / 2, HEIGHT / 3));
+    }
+    CompareWithReference(Captured(renderer, snapshot, shown, jobs), view.name);
 }
 
 TEST_CASE("the painted scene: sprites, shadows and overlapping glows, after a smaller picture") {
@@ -120,6 +179,205 @@ TEST_CASE("the arena halfway between two ticks: interpolation and foot-y order")
 
 TEST_CASE("the hovered entity's pale outline and the selected one's gold, close up") {
     CheckAgainstReference({ .name = "outlines", .scene = game::Scene::Arena, .zoom = gfx::MAX_ZOOM, .outlines = true });
+}
+
+TEST_CASE("labels and the tablet's caption at the smallest zoom") {
+    CheckAgainstReference({ .name = "text_zoom_quarter", .zoom = gfx::MIN_ZOOM });
+}
+
+TEST_CASE("labels and the tablet's caption at zoom one half") {
+    constexpr f32 HALF_ZOOM = 0.5F;
+    CheckAgainstReference({ .name = "text_zoom_half", .zoom = HALF_ZOOM });
+}
+
+TEST_CASE("labels and the tablet's caption at zoom 1") {
+    CheckAgainstReference({ .name = "text_zoom_one", .zoom = 1.0F });
+}
+
+TEST_CASE("labels and the tablet's caption at the largest zoom") {
+    CheckAgainstReference({ .name = "text_zoom_two", .zoom = gfx::MAX_ZOOM, .centre = TABLET_AND_PLAYER });
+}
+
+// What a label is measured over: the backdrop's flat dark, where its light fill is most of its ink, or a flat pale
+// ground like the painted paper, where its dark outline and shadow are.
+enum class Ground : u8 {
+    Backdrop,
+    Pale,
+};
+constexpr std::array<Ground, 2> GROUNDS{ { Ground::Backdrop, Ground::Pale } };
+
+std::string_view Over(Ground ground) {
+    return ground == Ground::Pale ? "over the pale ground" : "over the backdrop";
+}
+
+// The player's label in a snapshot of the arena at rest, the label's measures and the snapshot without it, so a
+// picture's difference from the other is that label's ink alone. Both leave out the arena's sprites: over one flat
+// colour, the ink is the text's own, not the ground's grass resampled at another phase or an orb passing under it.
+struct LabelScene {
+    core::Snapshot with{};
+    core::Snapshot without{};
+    core::TextItem label{};
+    gfx::Layout layout{};
+};
+
+// The manifest's arena scene, whose sprites the label measurements' renderer holds.
+core::SceneId ArenaScene() {
+    const std::optional<core::SceneId> arena = test::TestManifest()->SceneNamed(game::SceneName(game::Scene::Arena));
+    REQUIRE(arena.has_value());
+    return arena.value_or(core::SceneId{});
+}
+
+// The painted ground with its region shrunk to one texel at its middle: the whole ground in one flat pale colour.
+core::Instance FlatPaleGround() {
+    constexpr u32 HALF_BITS = 16;
+    constexpr u32 LOW_HALF = 0xFFFFU;
+    core::Instance ground = core::MakeInstance(*test::TestManifest(), { .sprite = core::atlas::SpriteId::Ground });
+    const auto middle = [&](u32 shift) {
+        return static_cast<u16>((((ground.regionMin >> shift) & LOW_HALF) + ((ground.regionMax >> shift) & LOW_HALF)) / 2);
+    };
+    ground.regionMin = core::PackPair(middle(0), middle(HALF_BITS));
+    ground.regionMax = ground.regionMin;
+    return ground;
+}
+
+LabelScene PlayerLabel(core::Jobs& jobs, Ground ground) {
+    game::Arena arena(test::TestManifest());
+    LabelScene scene{ .with = Published(arena, jobs) };
+    const auto label = std::ranges::find(scene.with.texts, core::LabelPriority::Player, &core::TextItem::priority);
+    REQUIRE(label != scene.with.texts.end());
+    scene.label = *label;
+    scene.with.instances.clear();
+    scene.with.batches.clear();
+    scene.with.ids.clear();
+    if (ground == Ground::Pale) {
+        scene.with.instances.push_back(FlatPaleGround());
+        scene.with.batches.push_back({ .first = 0, .count = 1, .pipeline = core::Pipeline::Normal });
+        scene.with.ids.emplace_back();
+    }
+    scene.with.wallTick = u64{ std::to_underlying(ground) } + 1U; // each ground's instances are uploaded
+    scene.without = scene.with;
+    scene.without.texts.erase(scene.without.texts.begin() + (label - scene.with.texts.begin()));
+    std::expected<gfx::TextLayout, core::Error> layout = gfx::TextLayout::Open(Assets() / "fonts");
+    const std::string layoutWhy = layout.error_or(core::Error{}).message;
+    REQUIRE_MESSAGE(layout.has_value(), layoutWhy);
+    std::expected<core::Strings, core::Error> strings = data::LoadStrings(Assets() / "data");
+    const std::string stringsWhy = strings.error_or(core::Error{}).message;
+    REQUIRE_MESSAGE(strings.has_value(), stringsWhy);
+    scene.layout = layout->Lay(strings->Text(scene.label.string, core::Language::English), scene.label.direction);
+    return scene;
+}
+
+// The ink a label adds: its pixels' darkness (1 − luminance) less the picture's without it, summed. Signed, as light
+// adds: a pixel half fill and half outline counts both, where an absolute difference would cancel them.
+struct Ink {
+    f64 total = 0.0;   // its size, whichever way it goes (a light label on the dark backdrop lightens)
+    f64 centreX = 0.0; // the ink-weighted mean x, in pixels
+};
+
+f64 Luminance(const gfx::Image& image, std::size_t pixel) {
+    constexpr f64 RED = 0.2126;
+    constexpr f64 GREEN = 0.7152;
+    constexpr f64 BLUE = 0.0722;
+    constexpr f64 LEVELS = 255.0;
+    const std::size_t first = pixel * gfx::BYTES_PER_TEXEL;
+    // Linear, as the scene is blended: a pixel's ink then grows in proportion to how much of it a glyph covers.
+    const auto channel = [&](std::size_t offset) {
+        constexpr f64 KNEE = 0.04045;
+        constexpr f64 SLOPE = 12.92;
+        constexpr f64 SHIFT = 0.055;
+        constexpr f64 GAMMA = 2.4;
+        const f64 encoded = static_cast<f64>(std::to_integer<u8>(image.rgba.at(first + offset))) / LEVELS;
+        return encoded <= KNEE ? encoded / SLOPE : std::pow((encoded + SHIFT) / (1.0 + SHIFT), GAMMA);
+    };
+    return (RED * channel(0)) + (GREEN * channel(1)) + (BLUE * channel(2));
+}
+
+// The label's ink between two pictures, inside the label's box as the renderer places it for `view`: the box holds
+// its glyphs' fields whole, with the outline and the shadow.
+Ink InkOf(const LabelScene& scene, const gfx::View& view, const gfx::Image& with, const gfx::Image& without) {
+    const f32 pixels = gfx::TextPixels(scene.label.kind, gfx::PixelsPerUnit(view.camera, WIDTH, HEIGHT), 1.0F);
+    const f32 scale = pixels / gfx::SDF_BASE_PIXELS;
+    const core::Vec2 size{ .x = scene.layout.width * scale, .y = scene.layout.height * scale };
+    const core::Vec2 topLeft = gfx::TextTopLeft(gfx::TextAnchor(scene.label, view, WIDTH, HEIGHT), size, scene.label.align);
+    const auto left = static_cast<u32>(std::floor(topLeft.x));
+    const auto top = static_cast<u32>(std::floor(topLeft.y));
+    const auto right = static_cast<u32>(std::ceil(topLeft.x + size.x));
+    const auto bottom = static_cast<u32>(std::ceil(topLeft.y + size.y));
+    REQUIRE(right < WIDTH);
+    REQUIRE(bottom < HEIGHT);
+    f64 sum = 0.0;
+    f64 weightedX = 0.0;
+    for (u32 row = top; row <= bottom; ++row) {
+        for (u32 column = left; column <= right; ++column) {
+            const std::size_t pixel = (std::size_t{ row } * WIDTH) + column;
+            const f64 added = Luminance(without, pixel) - Luminance(with, pixel);
+            sum += added;
+            constexpr f64 PIXEL_CENTRE = 0.5;
+            weightedX += added * (static_cast<f64>(column) + PIXEL_CENTRE);
+        }
+    }
+    REQUIRE(sum != 0.0);
+    return { .total = std::abs(sum), .centreX = weightedX / sum };
+}
+
+TEST_CASE("a label's ink is the same at sub-pixel camera offsets, over a dark and a pale ground") {
+    constexpr std::array<f32, 3> OFFSETS{ { 0.0F, 1.0F / 3.0F, 2.0F / 3.0F } }; // in pixels
+    constexpr f64 MOST_CHANGE = 0.02;
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, ArenaScene(), jobs);
+    for (const Ground ground : GROUNDS) {
+        const LabelScene scene = PlayerLabel(jobs, ground);
+        const gfx::Camera centred{ .centre = scene.label.current, .zoom = 1.0F };
+        const f32 worldPerPixel = 1.0F / gfx::PixelsPerUnit(centred, WIDTH, HEIGHT);
+        std::vector<f64> totals;
+        for (const f32 offsetX : OFFSETS) {
+            for (const f32 offsetY : OFFSETS) {
+                gfx::View view{ .camera = centred };
+                view.camera.centre = view.camera.centre + (core::Vec2{ .x = offsetX, .y = offsetY } * worldPerPixel);
+                const gfx::Image with = Captured(renderer, scene.with, view, jobs);
+                const gfx::Image without = Captured(renderer, scene.without, view, jobs);
+                totals.push_back(InkOf(scene, view, with, without).total);
+            }
+        }
+        const auto [least, most] = std::ranges::minmax(totals);
+        INFO(Over(ground), ", the label's ink from ", least, " to ", most);
+        CHECK((most / least) - 1.0 < MOST_CHANGE);
+    }
+}
+
+TEST_CASE("a label following its creature doesn't step, over a dark and a pale ground") {
+    constexpr std::array<f64, 5> ALPHAS{ { 0.0, 0.25, 0.5, 0.75, 1.0 } };
+    constexpr f32 MOVED = 8.0F; // world units in x between the two ticks
+    constexpr f64 MOST_ERROR = 0.15;
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, ArenaScene(), jobs);
+    for (const Ground ground : GROUNDS) {
+        LabelScene scene = PlayerLabel(jobs, ground);
+        scene.label.previous = scene.label.current - core::Vec2{ .x = MOVED, .y = 0.0F };
+        std::ranges::find(scene.with.texts, core::LabelPriority::Player, &core::TextItem::priority)->previous =
+            scene.label.previous;
+        const gfx::Camera camera{ .centre = scene.label.current, .zoom = 1.0F };
+        // A step's pixels: not a whole number here, so a label snapped to whole pixels would step unevenly.
+        const f64 step = static_cast<f64>(MOVED) / static_cast<f64>(ALPHAS.size() - 1) *
+                         static_cast<f64>(gfx::PixelsPerUnit(camera, WIDTH, HEIGHT));
+        std::vector<f64> centres;
+        for (const f64 alpha : ALPHAS) {
+            const gfx::View view{ .alpha = alpha, .camera = camera };
+            const gfx::Image with = Captured(renderer, scene.with, view, jobs);
+            const gfx::Image without = Captured(renderer, scene.without, view, jobs);
+            centres.push_back(InkOf(scene, view, with, without).centreX);
+        }
+        for (std::size_t index = 1; index < centres.size(); ++index) {
+            INFO(
+                Over(ground), ", from alpha ", ALPHAS.at(index - 1), " to ", ALPHAS.at(index), ", expecting ", step, " pixels"
+            );
+            CHECK(std::abs(centres.at(index) - centres.at(index - 1) - step) < MOST_ERROR);
+        }
+    }
 }
 
 } // namespace

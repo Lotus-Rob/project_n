@@ -32,7 +32,7 @@ struct Camera {
     f32 zoom = 1.0F;
 };
 
-/// How a frame shows a snapshot: the camera, the render clock's progress and what the pointer hovers.
+/// How a frame shows a snapshot: the camera, the render clock and what the pointer hovers.
 struct View {
     /// The render clock's progress from the snapshot's previous tick (0) to its own (1).
     f64 alpha = 1.0;
@@ -41,6 +41,9 @@ struct View {
     /// The index in the snapshot's instances of the hovered entity's instance, which gets a pale
     /// outline (design doc 0002.3 §3); none when nothing is hovered.
     std::optional<std::size_t> outlined = std::nullopt;
+    /// The render clock in seconds: its tick (core::RenderTick()) over core::TICKS_PER_SECOND. What fades and moves on
+    /// screen alone (labels, damage numbers) times itself by it.
+    f64 clock = 0.0;
 };
 
 /// `zoom` after `notches` of the mouse wheel: each one multiplies it by the same factor, and the
@@ -58,6 +61,10 @@ struct ClipTransform {
     /// Clip y at world y 0.
     f32 offsetY = 0.0F;
 };
+
+/// How many target pixels a world unit covers with `camera` on a target `width` by `height` pixels: the fit of
+/// REFERENCE_SIZE to the target (the smaller of the two axis ratios) times the zoom, as WorldToClip() places the world.
+[[nodiscard]] f32 PixelsPerUnit(const Camera& camera, u32 width, u32 height);
 
 /// The transform for `camera` on a target `width` by `height` pixels: REFERENCE_SIZE scaled by
 /// the smaller of the two axis ratios fits the target, so the aspect ratio holds and a wider

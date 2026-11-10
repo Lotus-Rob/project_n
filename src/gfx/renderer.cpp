@@ -13,6 +13,8 @@
 #include "gfx/internal/resources/scene_target.hpp"
 #include "gfx/internal/resources/sprite_array.hpp"
 #include "gfx/sprite_block.hpp"
+#include "gfx/text_layout.hpp"
+#include "gfx/text_place.hpp"
 #include "gfx/uploads.hpp"
 #include "platform/clock.hpp"
 
@@ -38,11 +40,60 @@ constexpr u32 HOVER_COLOUR = 0xFFF0'F4F4U;
 constexpr u32 SELECTED_COLOUR = 0xFF30'C0FFU;
 constexpr f32 OUTLINE_TEXELS = 3.0F;
 
+// A text's shadow falls this many base pixels down and right of it, scaling with the text.
+constexpr f32 TEXT_SHADOW_BASE_PIXELS = 2.0F;
+// Clip space spans this much across either axis.
+constexpr f32 CLIP_SPAN = 2.0F;
+
 std::string_view PresentModeName(SDL_GPUPresentMode mode) {
     if (mode == SDL_GPU_PRESENTMODE_MAILBOX) {
         return "mailbox";
     }
     return mode == SDL_GPU_PRESENTMODE_IMMEDIATE ? "immediate" : "vsync";
+}
+
+// Logs the first of a run of uploads that left `dropped` of `what` out, past the buffer's `limit`, and the first after
+// such a run that fitted.
+void ReportOverflow(core::RepeatedFailure& overflows, std::size_t dropped, std::string_view what, u32 limit) {
+    PN_PROFILE_ZONE();
+    if (dropped > 0) {
+        if (overflows.Fail()) {
+            PN_LOG_WARNING("{} {} past the buffer's {} aren't drawn", dropped, what, limit);
+        }
+    }
+    else if (const u64 overflowed = overflows.Succeed(); overflowed > 0) {
+        PN_LOG_INFO("the {} fit again, after {} uploads that didn't", what, overflowed);
+    }
+}
+
+// A glyph page: R8 distance fields, cleared to 0 (far outside any glyph) in a command buffer of its own, submitted at
+// once, so the padding around its fields reads as nothing whatever happens to the frame that needed it.
+std::expected<internal::Gpu<SDL_GPUTexture>, core::Error> CreateGlyphPage(SDL_GPUDevice* device) {
+    SDL_GPUTextureCreateInfo info{};
+    info.type = SDL_GPU_TEXTURETYPE_2D;
+    info.format = SDL_GPU_TEXTUREFORMAT_R8_UNORM;
+    info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET; // a target only to be cleared
+    info.width = GLYPH_PAGE_SIZE;
+    info.height = GLYPH_PAGE_SIZE;
+    info.layer_count_or_depth = 1;
+    info.num_levels = 1;
+    info.props = SDL_CreateProperties();
+    SDL_SetStringProperty(info.props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING, "glyph page");
+    internal::Gpu<SDL_GPUTexture> page{ SDL_CreateGPUTexture(device, &info), { device } };
+    SDL_DestroyProperties(info.props);
+    SDL_GPUCommandBuffer* commands = page == nullptr ? nullptr : SDL_AcquireGPUCommandBuffer(device);
+    if (commands == nullptr) {
+        return std::unexpected{ core::Error{ std::format("a glyph page wasn't created: {}", SDL_GetError()) } };
+    }
+    SDL_GPUColorTargetInfo target{};
+    target.texture = page.get();
+    target.load_op = SDL_GPU_LOADOP_CLEAR;
+    target.store_op = SDL_GPU_STOREOP_STORE;
+    SDL_EndGPURenderPass(SDL_BeginGPURenderPass(commands, &target, 1, nullptr));
+    if (!SDL_SubmitGPUCommandBuffer(commands)) {
+        return std::unexpected{ core::Error{ std::format("a glyph page wasn't cleared: {}", SDL_GetError()) } };
+    }
+    return page;
 }
 
 // A scene loading (design doc 0002.3.1 §5): its sprites decode on the job system, then upload a few each frame.
@@ -82,11 +133,31 @@ struct Renderer::Impl {
     Impl& operator=(Impl&&) = delete;
     ~Impl() = default;
 
+    // What a frame or a capture shows, and on a target how large.
+    struct Shown {
+        const core::Snapshot* snapshot = nullptr;
+        std::span<const core::TextItem> extra; // the main thread's texts, drawn after the snapshot's
+        const View* view = nullptr;
+        u32 width = 0;
+        u32 height = 0;
+    };
+
     // Once a swapchain texture is acquired, the frame is submitted even on an error: SDL requires it.
-    std::expected<void, core::Error> Frame(const internal::Frame& acquired, const core::Snapshot& snapshot, const View& view);
-    // A recorded copy counts as uploaded only once its commands are submitted (`uploaded.Submitted`): a dropped buffer
-    // must upload again.
-    std::expected<void, core::Error> Upload(SDL_GPUCommandBuffer* commands, const core::Snapshot& snapshot);
+    std::expected<void, core::Error> Frame(const internal::Frame& acquired, const Shown& shown, core::Jobs& jobs);
+    // Uploads the snapshot's instances when they're new, and every frame the texts' quads and the glyph fields they
+    // need; then ends the glyph cache's frame. A recorded copy counts as uploaded only once its commands are submitted
+    // (Submitted()): a dropped buffer must upload again.
+    std::expected<void, core::Error> Upload(SDL_GPUCommandBuffer* commands, const Shown& shown, core::Jobs& jobs);
+    // Makes the glyph pages the cache's fields are on.
+    std::expected<void, core::Error> MakeGlyphPages();
+    // What `item` says, in the language shown.
+    std::string_view TextOf(const core::TextItem& item);
+    // Lays out the texts into meshVertices and meshRuns, in target pixels, unrounded.
+    void PlaceTexts(const Shown& shown);
+    void PlaceText(const core::TextItem& item, const Shown& shown);
+    std::expected<void, core::Error> UploadGlyphs(SDL_GPUCopyPass* copy);
+    // The command buffer holding the last Upload() was submitted, or failed to be, or was cancelled.
+    void Submitted(bool submitted);
     void Report(const std::expected<void, core::Error>& drawn);
     [[nodiscard]] bool Holds(core::SceneId scene) const;
     // The world pass into the scene target, fitted to `width` by `height`, then the final pass into `target`.
@@ -101,51 +172,187 @@ struct Renderer::Impl {
     void DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snapshot& snapshot, const View& view) const;
     void DrawFinal(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target) const;
 
+    // Resources: the device and what lasts as long as it.
     SDL_Window* window = nullptr;
     internal::Device device = nullptr; // first: destroyed after everything it made
     internal::Gpu<SDL_Window> claim = nullptr;
     internal::SpriteArray sprites{};
+    std::vector<internal::Gpu<SDL_GPUTexture>>
+        glyphPages{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::unique_ptr<TextLayout> text = nullptr; // made by Create(): never null after
     std::shared_ptr<const core::Manifest> manifest = nullptr;
+    std::shared_ptr<const core::Strings> strings = nullptr;
+    TextOptions textOptions{};
     std::filesystem::path assets{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::vector<bool> resident{};   // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::optional<SceneLoad> load = std::nullopt;
+    // Features: what draws, each with its pipelines and buffers.
     internal::SpriteRenderer instances{};
-    internal::MeshRenderer meshes{}; // shortcut: made at start-up, unused until text draws through it (0002.4.2 §10, commit 4)
+    internal::MeshRenderer meshes{};
     internal::Compositor compositor{};
     internal::SceneTarget sceneTarget{};
+    // Per-frame state: the frame in flight, what its uploads hold, and the failures being counted.
     std::optional<internal::Frame> frame = std::nullopt; // acquired by Acquire(), submitted by Draw()
     UploadedSnapshot uploaded{};
+    std::size_t glyphsRecorded = 0; // of the cache's pending fields, in the command buffer not yet submitted
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::string number{}; // a number's text, made again for each
+    std::vector<MeshVertex> meshVertices{};
+    std::vector<internal::MeshRun> meshRuns{};
     core::RepeatedFailure failures{};
     core::RepeatedFailure overflows{};
+    core::RepeatedFailure meshOverflows{};
     core::RepeatedFailure uploadFailures{};
     // NOLINTEND(readability-redundant-member-init)
 };
 
-std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* commands, const core::Snapshot& snapshot) {
+std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* commands, const Shown& shown, core::Jobs& jobs) {
     PN_PROFILE_ZONE();
-    const SnapshotId shown{ .epoch = snapshot.epoch, .wallTick = snapshot.wallTick };
-    if (uploaded.Holds(shown) || !Holds(snapshot.scene)) {
-        return {};
+    const core::Snapshot& snapshot = *shown.snapshot;
+    const SnapshotId shownId{ .epoch = snapshot.epoch, .wallTick = snapshot.wallTick };
+    const bool newInstances = !uploaded.Holds(shownId) && Holds(snapshot.scene);
+    std::expected<void, core::Error> glyphs = MakeGlyphPages();
+    meshVertices.clear();
+    meshRuns.clear();
+    if (glyphs) {
+        PlaceTexts(shown);
     }
     SDL_PushGPUDebugGroup(commands, "upload");
     SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
-    const std::expected<std::size_t, core::Error> dropped = instances.Upload(copy, snapshot.instances);
+    const std::expected<std::size_t, core::Error> dropped =
+        newInstances ? instances.Upload(copy, snapshot.instances) : std::expected<std::size_t, core::Error>{ 0 };
+    if (glyphs) {
+        glyphs = UploadGlyphs(copy);
+    }
+    // Every frame: texts move with the camera and the render clock, unlike the instances.
+    const std::expected<std::size_t, core::Error> quadsDropped =
+        meshes.Upload(copy, glyphs ? std::span<const MeshVertex>{ meshVertices } : std::span<const MeshVertex>{});
     SDL_EndGPUCopyPass(copy);
     SDL_PopGPUDebugGroup(commands);
-    if (!dropped) {
-        return std::unexpected{ dropped.error() }; // not marked uploaded: the next frame tries again
+    text->EndFrame(jobs);
+    if (quadsDropped) {
+        ReportOverflow(meshOverflows, *quadsDropped, "text quads", MAX_MESH_QUADS);
     }
-    uploaded.Recorded(shown);
-    if (*dropped > 0) {
-        if (overflows.Fail()) {
-            PN_LOG_WARNING("{} sprite instances past the buffer's {} aren't drawn", *dropped, internal::MAX_INSTANCES);
+    std::expected<void, core::Error> instancesCopied{};
+    if (newInstances && dropped) {
+        uploaded.Recorded(shownId);
+        ReportOverflow(overflows, *dropped, "sprite instances", internal::MAX_INSTANCES);
+    }
+    else if (newInstances) {
+        instancesCopied = std::unexpected{ dropped.error() }; // not marked uploaded: the next frame tries again
+    }
+    return core::Combine(core::Combine(instancesCopied, glyphs), quadsDropped.transform([](std::size_t /*dropped*/) {}));
+}
+
+std::expected<void, core::Error> Renderer::Impl::MakeGlyphPages() {
+    PN_PROFILE_ZONE();
+    while (glyphPages.size() < text->Pages()) {
+        std::expected<internal::Gpu<SDL_GPUTexture>, core::Error> made = CreateGlyphPage(device.get());
+        if (!made) {
+            return std::unexpected{ std::move(made.error()) };
         }
-    }
-    else if (const u64 overflowed = overflows.Succeed(); overflowed > 0) {
-        PN_LOG_INFO("every sprite instance fits again, after {} snapshots that didn't", overflowed);
+        glyphPages.push_back(std::move(*made));
     }
     return {};
+}
+
+std::string_view Renderer::Impl::TextOf(const core::TextItem& item) {
+    PN_PROFILE_ZONE();
+    if (item.kind != core::TextKind::Number) {
+        return strings->Text(item.string, textOptions.language);
+    }
+    number.clear();
+    std::format_to(std::back_inserter(number), "{}{}", item.sign == core::NumberSign::Plus ? "+" : "", item.value);
+    return number;
+}
+
+void Renderer::Impl::PlaceTexts(const Shown& shown) {
+    PN_PROFILE_ZONE();
+    for (const core::TextItem& item : shown.snapshot->texts) {
+        PlaceText(item, shown);
+    }
+    for (const core::TextItem& item : shown.extra) {
+        PlaceText(item, shown);
+    }
+}
+
+void Renderer::Impl::PlaceText(const core::TextItem& item, const Shown& shown) {
+    PN_PROFILE_ZONE();
+    const Layout& layout = text->Lay(TextOf(item), item.direction);
+    const f32 pixels = TextPixels(item.kind, PixelsPerUnit(shown.view->camera, shown.width, shown.height), textOptions.scale);
+    const f32 scale = pixels / SDF_BASE_PIXELS;
+    const core::Vec2 topLeft = TextTopLeft(
+        TextAnchor(item, *shown.view, shown.width, shown.height),
+        { .x = layout.width * scale, .y = layout.height * scale },
+        item.align
+    );
+    auto quad = static_cast<u32>(meshVertices.size() / QUAD_VERTICES);
+    PlaceGlyphs(layout, topLeft, pixels, TextColour(item, textOptions.outline, textOptions.shadow), meshVertices);
+    for (const PlacedGlyph& glyph : layout.glyphs) {
+        SDL_GPUTexture* const page = glyphPages.at(glyph.page).get();
+        if (meshRuns.empty() || meshRuns.back().page != page) {
+            meshRuns.push_back({ .page = page, .firstQuad = quad, .quads = 0 });
+        }
+        ++meshRuns.back().quads;
+        ++quad;
+    }
+}
+
+std::expected<void, core::Error> Renderer::Impl::UploadGlyphs(SDL_GPUCopyPass* copy) {
+    PN_PROFILE_ZONE();
+    const std::span<const GlyphUpload> pending = text->Pending();
+    if (pending.empty()) {
+        return {};
+    }
+    std::size_t bytes = 0;
+    for (const GlyphUpload& glyph : pending) {
+        bytes += glyph.field.size();
+    }
+    SDL_GPUTransferBufferCreateInfo info{};
+    info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    info.size = static_cast<u32>(bytes);
+    // Released once recorded: SDL keeps it until the copy has run.
+    const internal::Gpu<SDL_GPUTransferBuffer> transfer{ SDL_CreateGPUTransferBuffer(device.get(), &info), { device.get() } };
+    void* mapped = transfer == nullptr ? nullptr : SDL_MapGPUTransferBuffer(device.get(), transfer.get(), false);
+    if (mapped == nullptr) {
+        return std::unexpected{ core::Error{
+            std::format("no transfer buffer for {} new glyph fields: {}", pending.size(), SDL_GetError()) } };
+    }
+    const std::span<std::byte> staging = internal::BytesAt(mapped, bytes);
+    std::size_t offset = 0;
+    for (const GlyphUpload& glyph : pending) {
+        std::ranges::copy(std::as_bytes(std::span{ glyph.field }), staging.subspan(offset).begin());
+        offset += glyph.field.size();
+    }
+    SDL_UnmapGPUTransferBuffer(device.get(), transfer.get());
+    offset = 0;
+    for (const GlyphUpload& glyph : pending) {
+        SDL_GPUTextureTransferInfo source{};
+        source.transfer_buffer = transfer.get();
+        source.offset = static_cast<u32>(offset);
+        source.pixels_per_row = glyph.width;
+        source.rows_per_layer = glyph.height;
+        SDL_GPUTextureRegion region{};
+        region.texture = glyphPages.at(glyph.page).get();
+        region.x = glyph.x;
+        region.y = glyph.y;
+        region.w = glyph.width;
+        region.h = glyph.height;
+        region.d = 1;
+        SDL_UploadToGPUTexture(copy, &source, &region, false); // never cycled: the page's other fields stay
+        offset += glyph.field.size();
+    }
+    glyphsRecorded = pending.size();
+    return {};
+}
+
+void Renderer::Impl::Submitted(bool submitted) {
+    PN_PROFILE_ZONE();
+    uploaded.Submitted(submitted);
+    if (submitted) {
+        text->Uploaded(glyphsRecorded);
+    }
+    glyphsRecorded = 0;
 }
 
 std::expected<void, core::Error> Renderer::Impl::DrawPasses(
@@ -219,32 +426,44 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
             alpha
         );
     }
+    // Game text over the world and its outlines (the phase 6 chunk 3 spec), placed in target pixels.
+    const f32 shadowShift = TEXT_SHADOW_BASE_PIXELS / static_cast<f32>(GLYPH_PAGE_SIZE); // a texel a base pixel
+    meshes.Draw(
+        commands,
+        pass,
+        meshRuns,
+        { .scaleX = CLIP_SPAN / static_cast<f32>(sceneTarget.width),
+          .scaleY = -CLIP_SPAN / static_cast<f32>(sceneTarget.height),
+          .offsetX = -1.0F,
+          .offsetY = 1.0F },
+        { .outline = textOptions.outline ? 1.0F : 0.0F,
+          .shadow = textOptions.shadow ? 1.0F : 0.0F,
+          .shadowOffsetU = shadowShift,
+          .shadowOffsetV = shadowShift }
+    );
     SDL_EndGPURenderPass(pass);
     SDL_PopGPUDebugGroup(commands);
 }
 
-std::expected<void, core::Error> Renderer::Impl::Frame(
-    const internal::Frame& acquired,
-    const core::Snapshot& snapshot,
-    const View& view
-) {
+std::expected<void, core::Error> Renderer::Impl::Frame(const internal::Frame& acquired, const Shown& shown, core::Jobs& jobs) {
     PN_PROFILE_ZONE();
-    // A failed upload draws no sprites, but the frame is still submitted, as SDL requires.
-    if (const std::expected<void, core::Error> copied = Upload(acquired.commands, snapshot); !copied) {
+    // A failed upload draws without what it held, but the frame is still submitted, as SDL requires.
+    if (const std::expected<void, core::Error> copied = Upload(acquired.commands, shown, jobs); !copied) {
         if (uploadFailures.Fail()) {
-            PN_LOG_ERROR("{}; no sprites are drawn until an upload succeeds", copied.error().message);
+            PN_LOG_ERROR("{}; what it held isn't drawn until an upload succeeds", copied.error().message);
         }
     }
     else if (const u64 failed = uploadFailures.Succeed(); failed > 0) {
-        PN_LOG_INFO("sprite instances uploaded again, after {} failed uploads", failed);
+        PN_LOG_INFO("uploads succeed again, after {} that failed", failed);
     }
     // Without a swapchain texture (the window can't be shown), the copy still runs and nothing is drawn (§8.3).
     std::expected<void, core::Error> drawn{};
     if (acquired.swapchain != nullptr) {
-        drawn = DrawPasses(acquired.commands, acquired.swapchain, acquired.width, acquired.height, snapshot, view);
+        drawn =
+            DrawPasses(acquired.commands, acquired.swapchain, acquired.width, acquired.height, *shown.snapshot, *shown.view);
     }
     const std::expected<void, core::Error> submitted = internal::SubmitFrame(acquired);
-    uploaded.Submitted(submitted.has_value());
+    Submitted(submitted.has_value());
     return core::Combine(drawn, submitted);
 }
 
@@ -270,10 +489,14 @@ bool Renderer::Impl::Holds(core::SceneId scene) const {
 std::expected<Renderer, core::Error> Renderer::Create(
     platform::Window& window,
     const std::filesystem::path& assets,
-    std::shared_ptr<const core::Manifest> manifest
+    std::shared_ptr<const core::Manifest> manifest,
+    std::shared_ptr<const core::Strings> strings,
+    const TextOptions& text
 ) {
     auto impl = std::make_unique<Impl>();
     impl->manifest = std::move(manifest);
+    impl->strings = std::move(strings);
+    impl->textOptions = text;
     impl->assets = assets;
     impl->resident.resize(impl->manifest->sprites.size());
     impl->window = static_cast<SDL_Window*>(window.Handle());
@@ -338,6 +561,12 @@ std::expected<Renderer, core::Error> Renderer::Create(
         return std::unexpected{ std::move(sprites.error()) };
     }
     impl->sprites = std::move(*sprites);
+    std::expected<TextLayout, core::Error> layout = TextLayout::Open(assets / "fonts");
+    if (!layout) {
+        return std::unexpected{ std::move(layout.error()) };
+    }
+    impl->text = std::make_unique<TextLayout>(std::move(*layout));
+    impl->text->Prewarm(*impl->strings);
     return Renderer{ std::move(impl) };
 }
 
@@ -417,17 +646,40 @@ void Renderer::Acquire() {
     m_impl->frame = *acquired;
 }
 
-void Renderer::Draw(const core::Snapshot& snapshot, const View& view) {
+void Renderer::Draw(const core::Snapshot& snapshot, const View& view, core::Jobs& jobs, std::span<const core::TextItem> extra) {
     PN_PROFILE_ZONE();
     if (!m_impl->frame) {
         return; // the acquire failed, and said so
     }
     const internal::Frame acquired = *m_impl->frame;
     m_impl->frame.reset();
-    m_impl->Report(m_impl->Frame(acquired, snapshot, view));
+    m_impl->Report(m_impl->Frame(
+        acquired,
+        { .snapshot = &snapshot, .extra = extra, .view = &view, .width = acquired.width, .height = acquired.height },
+        jobs
+    ));
 }
 
-std::expected<Image, core::Error> Renderer::Capture(const core::Snapshot& snapshot, const View& view, u32 width, u32 height) {
+void Renderer::SetTextOptions(const TextOptions& text) {
+    m_impl->textOptions = text;
+}
+
+std::expected<Image, core::Error> Renderer::Capture(
+    const core::Snapshot& snapshot,
+    const View& view,
+    core::Jobs& jobs,
+    u32 width,
+    u32 height,
+    std::span<const core::TextItem> extra
+) {
+    // Every glyph the texts need is asked for, then waited for: a picture never misses one.
+    const auto ask = [this](const core::TextItem& item) {
+        static_cast<void>(m_impl->text->Lay(m_impl->TextOf(item), item.direction));
+    };
+    std::ranges::for_each(snapshot.texts, ask);
+    std::ranges::for_each(extra, ask);
+    m_impl->text->Flush(jobs);
+    const Impl::Shown shown{ .snapshot = &snapshot, .extra = extra, .view = &view, .width = width, .height = height };
     SDL_GPUDevice* device = m_impl->device.get();
     // The composite's pipeline is made for the swapchain's format, so the picture is drawn in it too.
     const SDL_GPUTextureFormat format = SDL_GetGPUSwapchainTextureFormat(device, m_impl->window);
@@ -450,14 +702,17 @@ std::expected<Image, core::Error> Renderer::Capture(const core::Snapshot& snapsh
         return std::unexpected{ core::Error{ std::format("nothing to capture into: {}", SDL_GetError()) } };
     }
     return AfterUpload(
-        m_impl->Upload(commands, snapshot),
-        [commands] { SDL_CancelGPUCommandBuffer(commands); }, // allowed: no swapchain texture is acquired
+        m_impl->Upload(commands, shown, jobs),
+        [this, commands] {
+            SDL_CancelGPUCommandBuffer(commands); // allowed: no swapchain texture is acquired
+            m_impl->Submitted(false);
+        },
         [&]() -> std::expected<Image, core::Error> {
             if (std::expected<void, core::Error> drawn =
                     m_impl->DrawPasses(commands, texture.get(), width, height, snapshot, view);
                 !drawn) {
                 SDL_CancelGPUCommandBuffer(commands);
-                m_impl->uploaded.Submitted(false);
+                m_impl->Submitted(false);
                 return std::unexpected{ std::move(drawn.error()) };
             }
             SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
@@ -471,7 +726,7 @@ std::expected<Image, core::Error> Renderer::Capture(const core::Snapshot& snapsh
             SDL_DownloadFromGPUTexture(copy, &region, &destination);
             SDL_EndGPUCopyPass(copy);
             const bool submitted = SDL_SubmitGPUCommandBuffer(commands);
-            m_impl->uploaded.Submitted(submitted);
+            m_impl->Submitted(submitted);
             if (!submitted) {
                 return std::unexpected{ core::Error{ std::format("the capture wasn't submitted: {}", SDL_GetError()) } };
             }

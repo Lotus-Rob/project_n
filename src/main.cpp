@@ -5,6 +5,7 @@
 #include "data/game_data.hpp"
 #include "data/manifest.hpp"
 #include "data/settings.hpp"
+#include "data/strings.hpp"
 #include "game/arena.hpp"
 #include "gfx/renderer.hpp"
 #include "platform/paths.hpp"
@@ -82,7 +83,17 @@ i32 Run(const core::Settings& settings, app::Options options) {
     PN_LOG_INFO("game data read from {}", dataFolder.string());
     options.data = *gameData;
     options.dataFolder = dataFolder;
-    std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(*window, *assets, options.manifest);
+    std::expected<core::Strings, core::Error> strings = data::LoadStrings(dataFolder);
+    if (!strings) {
+        return FailToStart("the game's data couldn't be read", strings.error());
+    }
+    std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(
+        *window,
+        *assets,
+        options.manifest,
+        std::make_shared<const core::Strings>(std::move(*strings)),
+        { .language = settings.language, .outline = settings.textOutline, .shadow = settings.textShadow }
+    );
     if (!renderer) {
         return FailToStart("the graphics card couldn't be used", renderer.error());
     }
@@ -116,7 +127,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     try {
-        // shortcut: one save slot; slots and their screen come with the UI (phase 6).
+        // One save slot; slots and their screen come with the UI (phase 6).
         const i32 status =
             Run(userData ? data::LoadSettings(*userData / "settings.yaml") : core::Settings{},
                 {
