@@ -6,6 +6,7 @@
 #include "core/profile.hpp"
 #include "core/repeated_failure.hpp"
 #include "gfx/internal/features/composite.hpp"
+#include "gfx/internal/features/meshes.hpp"
 #include "gfx/internal/features/sprites.hpp"
 #include "gfx/internal/frame/frame.hpp"
 #include "gfx/internal/gpu.hpp"
@@ -109,6 +110,7 @@ struct Renderer::Impl {
     std::vector<bool> resident{};   // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::optional<SceneLoad> load = std::nullopt;
     internal::SpriteRenderer instances{};
+    internal::MeshRenderer meshes{}; // shortcut: made at start-up, unused until text draws through it (0002.4.2 §10, commit 4)
     internal::Compositor compositor{};
     internal::SceneTarget sceneTarget{};
     std::optional<internal::Frame> frame = std::nullopt; // acquired by Acquire(), submitted by Draw()
@@ -320,6 +322,11 @@ std::expected<Renderer, core::Error> Renderer::Create(
         return std::unexpected{ std::move(instances.error()) };
     }
     impl->instances = std::move(*instances);
+    std::expected<internal::MeshRenderer, core::Error> meshes = internal::MeshRenderer::Create(device, internal::SCENE_FORMAT);
+    if (!meshes) {
+        return std::unexpected{ std::move(meshes.error()) };
+    }
+    impl->meshes = std::move(*meshes);
     std::expected<internal::Compositor, core::Error> compositor =
         internal::Compositor::Create(device, SDL_GetGPUSwapchainTextureFormat(device, impl->window));
     if (!compositor) {
