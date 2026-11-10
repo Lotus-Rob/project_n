@@ -24,6 +24,7 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 
 ## Working with superpowers
 Superpowers runs the process (brainstorming, spec, plan, test-first work, verification, review, finishing). These lines are where it meets this repo, and they win over its skills:
+- Worktrees go inside the repo (Claude Code's `.claude/worktrees/` or `.worktrees/`), never outside it: Git LFS's filter needs Pixi to find `pixi.toml` further up during the checkout. Project setup there is `pixi run project_n setup`, the baseline `pixi run project_n test`; run XMake only through `project_n`.
 - Verification after each task: `pixi run project_n test` and `pixi run project_n lint` (native preset); before a PR: `pixi run project_n check`. Containers can't see a worktree's shared `.git`, so container gates (`check --container`, `lint --container`) run only from a main checkout; from a worktree, CI's `lint` and `container` jobs on the PR are that gate, and the PR waits for them.
 - Code review: the reviewer also checks the diff against the AGENTS.md of every directory it touches, and finds callers of changed C++ symbols with the `LSP` tool (`findReferences`, `incomingCalls`) rather than grep, which misses overloads and templates.
 - Finishing a branch: never "merge locally"; always the pull request below.
@@ -34,7 +35,7 @@ Work happens on a branch; it merges into main only through a pull request, which
 2. `pixi run project_n check` (plus `--container` for build, environment or dependency changes, or CI's container jobs from a worktree: above) until it passes.
 3. Review: superpowers requesting-code-review on `main..HEAD`, acted on with receiving-code-review; `check` again after the fixes.
 4. Main accepts nothing but a pull request, the user included (ruleset: .github/AGENTS.md). Push the branch and `pixi run gh pr create --fill`; when CI's six checks are green on a branch up to date with main, stop and tell the user: the user merges (GitHub deletes the merged branch).
-5. After the merge, from the main checkout: `git switch main && git pull --ff-only`.
+5. After the merge, from the main checkout: `git switch main && git pull --ff-only`, then `pixi run project_n prune-worktrees` (removes this project's worktrees whose work is in origin/main; never forced).
 
 ## Rules
 - Fix lint and warnings properly. Suppress only as the last resort, when no proper fix exists, and as narrowly as possible with the reason: `// NOLINT(check-name): why` (`lint` rejects bare ones), a commented pragma, or a nested `.clang-tidy` with a `#` reason. The root `.clang-tidy` and `.clangd` are the user's: never remove, disable or relax a check or option in them. `cppcoreguidelines-*` enforces the C++ Core Guidelines.

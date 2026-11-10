@@ -14,7 +14,8 @@
 
 ## Commands
 - `pixi run project_n selftest` runs the self-checks in `test_project_n.py` (no Podman needed); `check` runs them first.
-- `pixi run project_n setup`: once per clone, writes `CLONE_CONFIG` (the commit hooks, Git LFS's filters through `pixi run git-lfs`) into the local git config and fetches the LFS files (design doc 0001.1); `check` refuses a clone without it (`clone_set_up`).
+- `pixi run project_n prune-worktrees`: removes worktrees under `.worktrees/` and `.claude/worktrees/` whose branch is gone from origin and whose changes are all in origin/main (`git cherry`, as a rebase merge rewrites commits), with their branches; keeps locked, detached or dirty ones, and ones without commits of their own yet (just made, never pushed), and says why.
+- `pixi run project_n setup`: once per clone (and per worktree), writes `CLONE_CONFIG` (the commit hooks, Git LFS's filters through `pixi run git-lfs`) into the local git config and fetches the LFS files (design doc 0001.1); `check` refuses a clone without it (`clone_set_up`).
 
 ## Skills
 - git-commit (for `SCOPES` changes)
@@ -30,5 +31,6 @@
 - XMake's compile database export turns packages' `-isystem` into `-I` unless given `--lsp=clangd` (`COMPDB`); without it clangd and `lint` report warnings in third-party headers and their macros as ours.
 - Git LFS runs from git itself, in any git (an editor's, a container's), so its filters must name `pixi run git-lfs`, never a bare `git-lfs` the host may lack or have at another version. `lint` checks committed pointers (`check_lfs_pointers`, `git lfs fsck --pointers`); `artifact` refuses pointer files in `assets/` (`lfs_pointers`).
 - XMake takes an ancestor folder holding a project (one with `.xmake/`) over the current directory, so in a worktree under `.claude/worktrees/` it built the main checkout ("You are working in the project directory(...)"). `resolve()` passes `-P <ROOT>` to every XMake task; `XMAKE_PROJECT_DIR` doesn't work. Run XMake through `project_n`, never bare, in a worktree.
+- A worktree outside the repo fails to check out ("smudge filter lfs failed": the filter runs `pixi run git-lfs` in the new folder before its `pixi.toml` exists; `GIT_LFS_SKIP_SMUDGE` doesn't help, the filter process can't start). Inside the repo Pixi finds the main checkout's `pixi.toml` further up.
 - No compile cache is shared between checkouts, on purpose: XMake compiles our sources through its built-in cache (per build directory, keyed on paths, so even a shared `--ccachedir` misses from another checkout) and hands only package builds to an installed ccache. Measured 2026-11-10: a cold build of our sources is ~10 s per preset and mode (109 files, linux-clang debug), a same-path rebuild 2.7 s; the slow part, the packages, is already shared through `packages_dir()`.
 - `doctor` exits 3 for "problems found", so CI can report them without hiding real errors (exit 1).

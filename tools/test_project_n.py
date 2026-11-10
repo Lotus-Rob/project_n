@@ -1286,5 +1286,73 @@ class XmakeProjectTest(unittest.TestCase):
         self.assertEqual(project_n.resolve(["git", "status"])[1:], ["status"])
 
 
+class CleanWorktreesTest(unittest.TestCase):
+    MAIN = Path("/repo")
+    PORCELAIN = ("worktree /repo\nHEAD 1111\nbranch refs/heads/main\n\n"
+                 "worktree /repo/.worktrees/done\nHEAD 2222\nbranch refs/heads/done\n\n"
+                 "worktree /repo/.claude/worktrees/busy\nHEAD 3333\nbranch refs/heads/worktree-busy\nlocked claude session\n\n"
+                 "worktree /repo/.claude/worktrees/loose\nHEAD 4444\ndetached\n\n"
+                 "worktree /tmp/elsewhere\nHEAD 5555\nbranch refs/heads/elsewhere\n")
+
+    def test_owns_only_worktrees_under_the_project_folders(self):
+        owned = project_n.owned_worktrees(self.PORCELAIN, self.MAIN)
+        self.assertEqual([w["path"] for w in owned],
+                         [Path("/repo/.worktrees/done"), Path("/repo/.claude/worktrees/busy"), Path("/repo/.claude/worktrees/loose")])
+
+    def worktree(self, **fields):
+        return {"path": Path("/repo/.worktrees/done"), "branch": "done", "locked": False, **fields}
+
+    def reason(self, worktree, status="", remote="", cherry="- 2222\n"):
+        answers = {"status": status, "ls-remote": remote, "cherry": cherry}
+        fake = lambda cmd, check=True: next(v for k, v in answers.items() if k in cmd)
+        with mock.patch.object(project_n, "capture", fake):
+            return project_n.worktree_unremovable(worktree)
+
+    def test_refuses_uncommitted_changes(self):
+        self.assertIn("uncommitted", self.reason(self.worktree(), status=" M src/main.cpp\n"))
+
+    def test_refuses_a_branch_still_on_origin(self):
+        self.assertIn("still on origin", self.reason(self.worktree(), remote="2222\trefs/heads/done\n"))
+
+    def test_refuses_commits_missing_from_main(self):
+        self.assertIn("not in origin/main", self.reason(self.worktree(), cherry="- 2222\n+ 2223\n"))
+
+    def test_refuses_a_locked_worktree(self):
+        self.assertIn("locked", self.reason(self.worktree(locked=True)))
+
+    def test_refuses_a_detached_worktree(self):
+        self.assertIn("no branch", self.reason(self.worktree(branch=None)))
+
+    def test_keeps_a_branch_with_no_commits_of_its_own(self):
+        # Never pushed and nothing committed yet: a session may have just made it; its build/ and ledger aren't tracked.
+        self.assertIn("no commits", self.reason(self.worktree(), cherry=""))
+
+    def test_merged_worktree_is_removable(self):
+        self.assertIsNone(self.reason(self.worktree()))
+
+    def test_removes_merged_worktrees_without_force(self):
+        done = self.worktree()
+        with mock.patch.object(project_n, "main_checkout", lambda: self.MAIN), \
+                mock.patch.object(project_n, "capture", lambda cmd, check=True: self.PORCELAIN), \
+                mock.patch.object(project_n, "owned_worktrees", lambda porcelain, main: [done]), \
+                mock.patch.object(project_n, "worktree_unremovable", lambda w: None), \
+                mock.patch.object(project_n, "run") as run, contextlib.redirect_stdout(io.StringIO()):
+            project_n.clean_worktrees()
+        ran = [c.args[0] for c in run.call_args_list]
+        self.assertIn(["git", "worktree", "remove", Path("/repo/.worktrees/done")], ran)
+        self.assertIn(["git", "branch", "-D", "done"], ran)
+        self.assertFalse([c for c in ran if "--force" in c or "-f" in c])
+
+    def test_keeps_unremovable_worktrees(self):
+        with mock.patch.object(project_n, "main_checkout", lambda: self.MAIN), \
+                mock.patch.object(project_n, "capture", lambda cmd, check=True: self.PORCELAIN), \
+                mock.patch.object(project_n, "owned_worktrees", lambda porcelain, main: [self.worktree()]), \
+                mock.patch.object(project_n, "worktree_unremovable", lambda w: "uncommitted changes"), \
+                mock.patch.object(project_n, "run") as run, contextlib.redirect_stdout(io.StringIO()) as out:
+            project_n.clean_worktrees()
+        self.assertFalse([c for c in run.call_args_list if "remove" in c.args[0]])
+        self.assertIn("uncommitted changes", out.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

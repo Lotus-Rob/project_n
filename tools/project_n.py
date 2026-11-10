@@ -1652,6 +1652,63 @@ def cmd_clean(args):
                 shutil.rmtree(d)
 
 
+# Where worktrees of this project are made: superpowers' fallback and Claude Code's own.
+WORKTREE_DIRS = (".worktrees", ".claude/worktrees")
+
+
+def main_checkout():
+    return Path(capture(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"]).strip()).parent
+
+
+def owned_worktrees(porcelain, main):
+    """The worktrees in `git worktree list --porcelain` output that this project made: those under WORKTREE_DIRS."""
+    owned = []
+    for block in porcelain.strip().split("\n\n"):
+        fields = dict((line.split(" ", 1) + [""])[:2] for line in block.splitlines())
+        path = Path(fields["worktree"])
+        if any(path.is_relative_to(main / d) for d in WORKTREE_DIRS):
+            branch = fields.get("branch", "").removeprefix("refs/heads/") or None
+            owned.append({"path": path, "branch": branch, "locked": "locked" in fields})
+    return owned
+
+
+def worktree_unremovable(worktree):
+    """Why `worktree` must stay, or None once its work is in origin/main. A rebase merge rewrites the commits, so
+    "merged" means GitHub deleted the branch and every commit's change is in origin/main (`git cherry`)."""
+    if worktree["locked"]:
+        return "locked (a session is using it)"
+    if not worktree["branch"]:
+        return "no branch (detached)"
+    if capture(["git", "-C", worktree["path"], "status", "--porcelain"]).strip():
+        return "uncommitted changes"
+    if capture(["git", "ls-remote", "--heads", "origin", worktree["branch"]]).strip():
+        return f"{worktree['branch']} is still on origin (its pull request isn't merged)"
+    cherry = capture(["git", "cherry", "origin/main", worktree["branch"]]).splitlines()
+    if not cherry:  # never pushed either: a worktree just made, whose untracked build/ and plan ledger would go
+        return f"{worktree['branch']} has no commits of its own yet"
+    if any(line.startswith("+") for line in cherry):
+        return f"{worktree['branch']} has commits not in origin/main"
+    return None
+
+
+def clean_worktrees():
+    """Remove this project's worktrees whose work is merged, with their branches; never forced."""
+    main = main_checkout()
+    run(["git", "fetch", "--quiet", "--prune", "origin"])
+    for worktree in owned_worktrees(capture(["git", "worktree", "list", "--porcelain"]), main):
+        reason = worktree_unremovable(worktree)
+        if reason:
+            print(f"keeping {worktree['path']}: {reason}")
+            continue
+        run(["git", "worktree", "remove", worktree["path"]])
+        run(["git", "branch", "-D", worktree["branch"]])  # -D: a rebase merge leaves it unmerged by ancestry
+    run(["git", "worktree", "prune"])
+
+
+def cmd_prune_worktrees(args):
+    clean_worktrees()
+
+
 def ensure_macos_xmake():
     """Download the pinned XMake bundle once per version and put it first on PATH."""
     version = pinned_xmake()
@@ -1765,6 +1822,8 @@ def make_parser():
     p = add("clean", cmd_clean, "remove build directories", preset="optional")
     p.add_argument("--packages", action="store_true", help="also remove XMake package dirs of other environments")
     p.add_argument("--images", action="store_true", help="also remove this project's container images other than the current tags")
+    add("prune-worktrees", cmd_prune_worktrees,
+        "remove this project's worktrees (.worktrees/, .claude/worktrees/) whose work is merged into origin/main, with their branches")
     # List choices in clap's `[possible values: …]` form, which shell completers (lig) read from --help.
     # First, so argparse's wrapping can't split the marker across lines.
     for p in sub.choices.values():
@@ -1777,7 +1836,7 @@ def make_parser():
 def main(argv=None):
     args = make_parser().parse_args(argv)
     try:
-        if HOST == "macos" and args.func not in (cmd_setup, cmd_lfs_key, cmd_lfs_prune, cmd_commit_check, cmd_selftest, cmd_fmt, cmd_release, cmd_docs, cmd_profiler, cmd_shaders, cmd_atlas):
+        if HOST == "macos" and args.func not in (cmd_setup, cmd_lfs_key, cmd_lfs_prune, cmd_commit_check, cmd_selftest, cmd_fmt, cmd_release, cmd_docs, cmd_profiler, cmd_shaders, cmd_atlas, cmd_prune_worktrees):
             ensure_macos_xmake()  # not for commands without XMake: the commit hook must work offline
         return args.func(args) or 0
     except Fail as e:
