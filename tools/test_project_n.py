@@ -1268,5 +1268,23 @@ class GitLfsTest(unittest.TestCase):
             project_n.cmd_artifact(argparse.Namespace(preset="linux-gcc"))
 
 
+class XmakeProjectTest(unittest.TestCase):
+    """XMake takes an ancestor folder holding a project over the current one, so a worktree inside the main checkout
+    would build the main checkout's sources: every XMake task names this checkout as its project."""
+
+    def test_task_names_this_checkout(self):
+        self.assertEqual(project_n.resolve(["xmake", "build"])[1:], ["build", "-P", str(project_n.ROOT)])
+
+    def test_project_comes_before_program_arguments(self):
+        self.assertEqual(project_n.resolve(["xmake", "run", "game", "--quit-after", "5"])[1:],
+                         ["run", "-P", str(project_n.ROOT), "game", "--quit-after", "5"])
+
+    def test_global_options_untouched(self):
+        self.assertEqual(project_n.resolve(["xmake", "--version"])[1:], ["--version"])
+
+    def test_other_programs_untouched(self):
+        self.assertEqual(project_n.resolve(["git", "status"])[1:], ["status"])
+
+
 if __name__ == "__main__":
     unittest.main()

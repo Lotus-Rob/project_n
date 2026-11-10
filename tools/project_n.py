@@ -113,7 +113,12 @@ def resolve(cmd):
         # conda's xmake.cmd ends with `endlocal`, which replaces xmake's exit code with 0: failed
         # builds and tests looked green. Run the xmake.exe it wraps.
         exe = str(Path(os.environ["CONDA_PREFIX"], "Library", "share", "xmake", "xmake.exe"))
-    return [exe, *(str(c) for c in cmd[1:])]
+    args = list(cmd[1:])
+    if cmd[0] == "xmake" and args and not str(args[0]).startswith("-"):
+        # XMake takes an ancestor folder holding a project over the current one: a worktree inside the main
+        # checkout would build the main checkout's sources.
+        args[1:1] = ["-P", ROOT]
+    return [exe, *(str(c) for c in args)]
 
 
 def run(cmd, env=None, **kwargs):
