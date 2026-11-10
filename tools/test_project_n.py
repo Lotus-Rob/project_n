@@ -1319,6 +1319,27 @@ class PruneWorktreesTest(unittest.TestCase):
         self.assertEqual(run.call_args_list[-1].args[0], ["git", "worktree", "prune"])
         self.assertFalse([c for c in run.call_args_list if "remove" in c.args[0]])
 
+    def prune_gone(self, remote, cherry):
+        """prune_worktrees over one worktree whose folder was deleted by hand: (run calls, printed text)."""
+        gone = self.worktree(path=Path("/repo/.worktrees/gone"), branch="gone", prunable=True)
+        answers = {"list": self.PORCELAIN, "ls-remote": remote, "cherry": cherry}
+        fake = lambda cmd, check=True: next(v for k, v in answers.items() if k in cmd)
+        with mock.patch.object(project_n, "main_checkout", lambda: self.MAIN), mock.patch.object(project_n, "capture", fake), \
+                mock.patch.object(project_n, "owned_worktrees", lambda porcelain, main: [gone]), \
+                mock.patch.object(project_n, "run") as run, contextlib.redirect_stdout(io.StringIO()) as out:
+            project_n.prune_worktrees(argparse.Namespace())
+        return [c.args[0] for c in run.call_args_list], out.getvalue()
+
+    def test_a_deleted_folder_is_reported_and_its_merged_branch_deleted(self):
+        ran, out = self.prune_gone(remote="", cherry="- 6666\n")
+        self.assertIn("folder deleted", out)
+        self.assertEqual(ran[-2:], [["git", "worktree", "prune"], ["git", "branch", "-D", "gone"]])
+
+    def test_a_deleted_folder_keeps_an_unmerged_branch(self):
+        ran, out = self.prune_gone(remote="", cherry="+ 6666\n")
+        self.assertIn("not in origin/main", out)
+        self.assertNotIn(["git", "branch", "-D", "gone"], ran)
+
     def test_keeps_this_checkout(self):
         self.assertIn("this checkout", self.reason(self.worktree(path=project_n.ROOT)))
 
@@ -1419,9 +1440,24 @@ class ParallelTidyTest(unittest.TestCase):
         verdict, _, _, _ = self.tidy({"src/a.cpp": (out, 1)})
         self.assertTrue(verdict[0])
 
-    def test_ignored_count_sums_files(self):
-        verdict, _, _, _ = self.tidy({"src/a.cpp": (self.IGNORED, 1), "src/b.cpp": (self.IGNORED, 1)})
+    def test_ignored_count_counts_each_finding_once(self):
+        # The same library finding reached through two units, and spelled two ways, is one ignored finding.
+        other = self.IGNORED.replace(":132:7:", ":156:14:")
+        verdict, _, _, _ = self.tidy({"src/a.cpp": (self.IGNORED, 1), "src/b.cpp": (self.IGNORED + other, 1),
+                                      "src/c.cpp": (self.IGNORED.replace(self.QUILL, self.QUILL.replace("/q/", "/./q/")), 1)})
         self.assertEqual(verdict, (False, 2))
+
+    def test_tidy_one_keeps_errors_with_findings(self):
+        with mock.patch.object(project_n.subprocess, "run",
+                               return_value=subprocess.CompletedProcess([], 1, stdout="out and err\n")) as sub:
+            self.assertEqual(project_n.tidy_one(Path("build/x"), "src/a.cpp"), ("out and err\n", 1))
+        self.assertEqual(sub.call_args.kwargs["stderr"], subprocess.STDOUT)
+
+    def test_jobs_follow_the_cpus_this_process_may_use(self):
+        with mock.patch.object(project_n.os, "process_cpu_count", return_value=3):
+            self.assertEqual(project_n.jobs(), 3)
+        with mock.patch.object(project_n.os, "process_cpu_count", return_value=None):
+            self.assertEqual(project_n.jobs(), 1)
 
     def test_every_unit_checked_once(self):
         units = {f"src/{n}.cpp": ("", 0) for n in "abcdef"}

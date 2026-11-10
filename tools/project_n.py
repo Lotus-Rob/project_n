@@ -651,12 +651,28 @@ IGNORED_FINDINGS = {
 }
 
 
+def listed_finding(path, checks):
+    """Whether a finding at `path` with clang-tidy's `checks` label is one IGNORED_FINDINGS lists."""
+    return any(path.endswith(listed) and checks.split(",")[0] == check for listed, check in IGNORED_FINDINGS)
+
+
+def finding_key(text, path):
+    """`text` with the finding's `path` resolved: clang-tidy spells one header `./src/…`, `src/…` or absolutely,
+    depending on the unit that reached it."""
+    return text.replace(path, os.path.normpath(os.path.join(ROOT, path))) if path else text
+
+
+def jobs():
+    """How many processes to run at once: the CPUs this process may use (affinity, cgroup cpusets), not the machine's."""
+    return os.process_cpu_count() or 1
+
+
 def tidy_verdict(output, returncode):
     """Whether a clang-tidy run fails lint, and how many listed findings (IGNORED_FINDINGS) it
     ignored. clang-tidy keeps an analyzer finding located in a library when its path starts in our
     code: usually our misuse, which fails; only the listed ones don't. A crash always fails."""
     findings = TIDY_FINDING_RE.findall(output)
-    ignored = [f for f in findings if any(f[0].endswith(path) and f[1].split(",")[0] == check for path, check in IGNORED_FINDINGS)]
+    ignored = [f for f in findings if listed_finding(*f)]
     failed = len(ignored) < len(findings) or returncode not in (0, 1) or (returncode == 1 and not findings)
     return failed, len(ignored)
 
@@ -692,16 +708,14 @@ def tidy_blocks(output):
 
 def tidy_units(bdir, units, fix):
     """(failed, ignored findings) of clang-tidy over `units`, one process per unit across all cores, each judged by
-    tidy_verdict: run together, one unit's ignored finding would hide another's error. A finding prints once however
-    many units report it. With `fix`, the units that failed get one serial clang-tidy --fix afterwards."""
-    with concurrent.futures.ThreadPoolExecutor(os.cpu_count() or 1) as pool:
+    tidy_verdict: run together, one unit's ignored finding would hide another's error. A finding prints, and an ignored
+    one counts, once however many units report it. With `fix`, the units that failed get one serial clang-tidy --fix afterwards."""
+    with concurrent.futures.ThreadPoolExecutor(jobs()) as pool:
         results = list(pool.map(lambda unit: tidy_one(bdir, unit), units))
     printed = set()
     for output, _ in results:
         for text, is_finding in tidy_blocks(output):
-            # A shared header is named by the include path each unit reached it through: compare resolved paths.
-            path = TIDY_FINDING_RE.match(text).group(1) if is_finding else ""
-            key = text.replace(path, os.path.normpath(os.path.join(ROOT, path))) if path else text
+            key = finding_key(text, TIDY_FINDING_RE.match(text).group(1) if is_finding else "")
             if not (is_finding and key in printed):
                 printed.add(key)
                 print(text, end="", flush=True)
@@ -709,7 +723,9 @@ def tidy_units(bdir, units, fix):
     failing = [unit for unit, (failed, _) in zip(units, verdicts) if failed]
     if fix and failing:
         tidy_fix(bdir, failing)
-    return any(failed for failed, _ in verdicts), sum(ignored for _, ignored in verdicts)
+    ignored = {finding_key(m.group(0), m.group(1)) for output, _ in results for m in TIDY_FINDING_RE.finditer(output)
+               if listed_finding(m.group(1), m.group(2))}
+    return any(failed for failed, _ in verdicts), len(ignored)
 
 
 def check_api_docs(sources):
@@ -1212,7 +1228,7 @@ def cmd_lint(args):
     run([*COMPDB, bdir], env=xmake_env(bdir))
     # Lint is a gate: any finding in our own files fails `check`.
     try:
-        print(f"+ clang-tidy --quiet -p {bdir} on {len(units)} unit(s), {os.cpu_count() or 1} at a time"
+        print(f"+ clang-tidy --quiet -p {bdir} on {len(units)} unit(s), {jobs()} at a time"
               + (", then --fix on the units that fail" if args.fix else ""), flush=True)
         failed, ignored = tidy_units(bdir, units, args.fix)
         if failed:
@@ -1734,13 +1750,19 @@ def worktree_unremovable(worktree):
         return "no branch (detached)"
     if capture(["git", "-C", worktree["path"], "status", "--porcelain"]).strip():
         return "uncommitted changes"
-    if capture(["git", "ls-remote", "--heads", "origin", worktree["branch"]]).strip():
-        return f"{worktree['branch']} is still on origin (its pull request isn't merged)"
-    cherry = capture(["git", "cherry", "origin/main", worktree["branch"]]).splitlines()
+    return branch_unmerged(worktree["branch"])
+
+
+def branch_unmerged(branch):
+    """Why `branch`'s work isn't in origin/main yet, or None. A rebase merge rewrites the commits, so "merged" means
+    GitHub deleted the branch and every commit's change is in origin/main (`git cherry`)."""
+    if capture(["git", "ls-remote", "--heads", "origin", branch]).strip():
+        return f"{branch} is still on origin (its pull request isn't merged)"
+    cherry = capture(["git", "cherry", "origin/main", branch]).splitlines()
     if not cherry:  # never pushed either: a worktree just made, whose untracked build/ and plan ledger would go
-        return f"{worktree['branch']} has no commits of its own yet"
+        return f"{branch} has no commits of its own yet"
     if any(line.startswith("+") for line in cherry):
-        return f"{worktree['branch']} has commits not in origin/main"
+        return f"{branch} has commits not in origin/main"
     return None
 
 
@@ -1748,8 +1770,13 @@ def prune_worktrees(args):
     """Remove this project's worktrees whose work is merged, with their branches; never forced."""
     main = main_checkout()
     run(["git", "fetch", "--quiet", "--prune", "origin"])
+    merged_gone = []
     for worktree in owned_worktrees(capture(["git", "worktree", "list", "--porcelain"]), main):
-        if worktree["prunable"]:  # its folder is gone: the `git worktree prune` below clears it
+        if worktree["prunable"]:  # its folder is gone: the `git worktree prune` below clears it, then its merged branch
+            reason = branch_unmerged(worktree["branch"]) if worktree["branch"] else "no branch (detached)"
+            print(f"pruning {worktree['path']}: folder deleted" + (f"; keeping its branch: {reason}" if reason else ""))
+            if not reason:
+                merged_gone.append(worktree["branch"])
             continue
         reason = worktree_unremovable(worktree)
         if reason:
@@ -1758,6 +1785,8 @@ def prune_worktrees(args):
         run(["git", "worktree", "remove", worktree["path"]])
         run(["git", "branch", "-D", worktree["branch"]])  # -D: a rebase merge leaves it unmerged by ancestry
     run(["git", "worktree", "prune"])
+    for branch in merged_gone:  # only once pruned: git won't delete a branch a registered worktree has checked out
+        run(["git", "branch", "-D", branch])
 
 
 
