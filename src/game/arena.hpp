@@ -13,7 +13,9 @@
 /// - click-to-select, the selected entity outlined in gold and the hovered one in pale white;
 /// - NPCs walking in the active tier and 5,000 in the world tier, whose months pass on request (§7.7);
 /// - saves, loads and replays of all of it;
-/// - F2 cycling through the scenes, each loaded on demand while the ticks wait for it.
+/// - F2 cycling through the scenes, each loaded on demand while the ticks wait for it;
+/// - the ice crystal's aura, which hits the foxes in its reach (and heals the player) once a second, and F7's debug burst
+///   of 4,000 hits: both emit hit events (core::Event), which change no state.
 /// Its stress variant adds a crowd and a bullet spiral, about 100,000 instances in all (§8.1), and a world tier of 50,000.
 
 #include "core/draw_list.hpp"
@@ -36,6 +38,7 @@
 #include <optional>
 #include <stop_token>
 #include <string_view>
+#include <vector>
 
 namespace game {
 
@@ -106,7 +109,10 @@ public:
     /// `input` holds a CycleScene, the selection cleared; walks the player's cultivator where `input`'s held
     /// movement points, selects what its Select actions name, moves every entity on an Orbit to where it is at
     /// `counters.simulation`, and walks the active NPCs, whose decisions draw random numbers keyed on `counters.state`.
-    void Tick(const core::TickCounters& counters, const core::TickInput& input) override;
+    /// In the arena scene, every 60th simulation tick the crystal's aura appends a hit per fox in reach and one for
+    /// the player if in reach; a DebugBurst action appends 4,000 hits round the foxes. Each use ends with a
+    /// UseEnded event. The events change nothing in the state.
+    void Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) override;
 
     /// Lets a month pass for the world NPCs (MonthStep).
     void AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs, const std::stop_token& stop) override;
@@ -175,6 +181,9 @@ private:
     core::Entity Spawn(core::Vec2 foot, const Look& look);
     void Walk(core::Vec2 move);
     void Select(core::StableId target);
+    void Aura(const core::TickCounters& counters, std::vector<core::Event>& events) const;
+    void DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const;
+    [[nodiscard]] core::Vec2 HeadOf(core::Entity entity) const;
     void ApplyData();
     [[nodiscard]] const core::CreatureData& DataOf(CreatureKind kind) const {
         return kind == CreatureKind::Fox ? m_data.fox : m_data.cultivator;

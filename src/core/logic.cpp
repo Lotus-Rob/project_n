@@ -99,7 +99,12 @@ Logic::TickEnd Logic::RunTick(const std::stop_token& stop) {
     m_advanced = !m_paused && m_calendar == Calendar::None;
     m_counters.Count(!m_advanced, false);
     if (m_advanced) {
-        m_simulation->Tick(m_counters, { .actions = m_input, .held = m_held });
+        const std::size_t before = m_events.size();
+        m_simulation->Tick(m_counters, { .actions = m_input, .held = m_held }, m_events);
+        for (Event& event : std::span{ m_events }.subspan(before)) {
+            event.tick = m_counters.simulation;
+            event.epoch = m_epoch;
+        }
     }
     return m_calendar == Calendar::Requested ? TickEnd::EndBurst : TickEnd::Continue;
 }

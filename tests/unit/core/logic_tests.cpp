@@ -19,7 +19,8 @@ constexpr core::SceneId OTHER_SCENE{ 1 };
 // OTHER_SCENE.
 class Recorder final : public core::Simulation {
 public:
-    void Tick(const core::TickCounters& counters, const core::TickInput& input) override {
+    void Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) override {
+        events.push_back({ .kind = core::EventKind::UseEnded, .use = counters.simulation });
         ticks.push_back(counters.simulation);
         states.push_back(counters.state);
         held.push_back(input.held);
@@ -698,6 +699,30 @@ TEST_CASE("PlayReplay sent while recording finishes the recording and plays it")
     CHECK_FALSE(rig.replay.Recording());
     CHECK(rig.replay.Playing());
     CHECK(rig.logic.Epoch() == 1);
+}
+
+TEST_CASE("logic stamps and publishes a tick's events") {
+    constexpr u64 TICKS = 3;
+    constexpr u64 EPOCH = 1;
+    const SaveSlot slot{ "stamped_events" };
+    Rig rig(slot.File());
+    rig.handover.SendInput({ .kind = core::ActionKind::Save });
+    static_cast<void>(rig.Burst(1));
+    rig.jobs.WaitForBackground();
+    rig.handover.SendInput({ .kind = core::ActionKind::Load });
+    static_cast<void>(rig.Burst(1)); // a new timeline: its epoch is not the events' default
+    REQUIRE(rig.logic.Epoch() == EPOCH);
+    std::vector<core::Event> events;
+    rig.handover.TakeEvents(events); // those of the earlier ticks
+    const u64 first = rig.logic.Counters().simulation + 1;
+    static_cast<void>(rig.Burst(TICKS));
+    rig.handover.TakeEvents(events);
+    REQUIRE(events.size() == TICKS);
+    for (u64 index = 0; index < TICKS; ++index) {
+        CHECK(events.at(index).tick == first + index);
+        CHECK(events.at(index).use == first + index);
+        CHECK(events.at(index).epoch == EPOCH);
+    }
 }
 
 } // namespace

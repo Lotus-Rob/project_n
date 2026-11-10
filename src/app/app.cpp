@@ -44,6 +44,9 @@ constexpr std::array ACTION_CONTROLS{
                    .kind = core::ActionKind::PlayReplay,
                    .asked = "the replay asked to play or stop" },
     ActionControl{ .control = Control::CycleScene, .kind = core::ActionKind::CycleScene, .asked = "the next scene asked for" },
+    ActionControl{ .control = Control::DebugBurst,
+                   .kind = core::ActionKind::DebugBurst,
+                   .asked = "a debug burst of hits asked for" },
 };
 
 std::string_view DeviceName(platform::Device device, platform::GamepadFamily family) {

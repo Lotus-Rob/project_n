@@ -26,6 +26,7 @@ enum class Control : u8 {
     ToggleRecording, ///< Start or finish recording a replay (a debug key).
     PlayReplay,      ///< Play the replay or stop it (a debug key).
     CycleScene,      ///< Switch to the next scene (a debug key).
+    DebugBurst,      ///< Hit every fox thousands of times (a debug key).
 };
 
 /// A control pressed or released.

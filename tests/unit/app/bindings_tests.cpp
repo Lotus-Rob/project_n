@@ -150,4 +150,12 @@ TEST_CASE("the cursor standing still leaves the gamepad in use") {
     CHECK(device.Used() == platform::Device::Gamepad);
 }
 
+TEST_CASE("F7 sends the debug burst") {
+    app::Bindings bindings;
+    const std::optional<app::ControlEvent> down = bindings.Handle(Key(InputCode::KeyF7, true));
+    REQUIRE(down.has_value());
+    CHECK(down.value_or(app::ControlEvent{}).control == app::Control::DebugBurst);
+    CHECK(down.value_or(app::ControlEvent{}).pressed);
+}
+
 } // namespace
