@@ -17,7 +17,8 @@ namespace data {
 
 /// The settings `yaml` holds; a setting it leaves out keeps its default. Fails on YAML that doesn't
 /// parse, a setting of the wrong type, or a window size outside 320x200 to 16384x16384, naming the line.
-/// A setting it doesn't know is ignored, with a line naming it added to `warnings` when given.
+/// A setting it doesn't know is ignored, and a language it doesn't know gives English, each with a line naming it
+/// added to `warnings` when given.
 [[nodiscard]] std::expected<core::Settings, core::Error> ParseSettings(
     std::string_view yaml,
     std::vector<std::string>* warnings = nullptr
