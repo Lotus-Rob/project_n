@@ -1,0 +1,16 @@
+{
+  "enabledPlugins": {
+    "clangd-lsp@claude-plugins-official": false,
+    "clangd@project-n-tools": true,
+    "superpowers@claude-plugins-official": true,
+    "ponytail@ponytail": false
+  },
+  "extraKnownMarketplaces": {
+    "project-n-tools": {
+      "source": {
+        "source": "directory",
+        "path": ".claude/marketplace"
+      }
+    }
+  }
+}

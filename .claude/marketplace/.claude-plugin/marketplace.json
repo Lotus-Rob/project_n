@@ -1,0 +1,11 @@
+{
+  "name": "project-n-tools",
+  "owner": { "name": "project_n" },
+  "plugins": [
+    {
+      "name": "clangd",
+      "description": "C++ code intelligence through the Pixi-pinned clangd",
+      "source": "./plugins/clangd"
+    }
+  ]
+}
