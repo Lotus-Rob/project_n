@@ -12,8 +12,11 @@ namespace {
 
 // The volley's own random numbers' purposes. They key on the volley's seed, not the game's, so they share no numbers with
 // game/random_purposes.hpp's.
+// A sword's launch within its wave's stagger.
 constexpr u32 PURPOSE_LAUNCH = 1;
+// How far a sword's place round its ring strays from an even spacing (VolleyShape::angleJitter).
 constexpr u32 PURPOSE_RING = 2;
+// A sword's share of the sweep (VolleyShape::sweepJitter).
 constexpr u32 PURPOSE_BEND = 3;
 // Its draws put a target's index in the volley's targets where core::Random takes a stable ID: the order is fixed at
 // the cast, so the index is stable for the volley's life. Never an entity's ID there.
@@ -21,13 +24,11 @@ constexpr u32 PURPOSE_SPREAD = 4;
 // Where on its target a sword aims (AimOffset()): the way from the target's middle, then how far.
 constexpr u32 PURPOSE_SCATTER_ANGLE = 5;
 constexpr u32 PURPOSE_SCATTER_REACH = 6;
+// How far in or out of its ring a sword's place lies (VolleyShape::scatter).
+constexpr u32 PURPOSE_BAND = 7;
+// Keyed on the wave, not a sword: how far round each ring's even spacing starts, so no two rings line up.
+constexpr u32 PURPOSE_WAVE_TURN = 8;
 
-// How far a sword's place on the ring may stray from an even spacing, in spacings from one side to the other: the ring
-// looks hand-thrown, and its widest gap stays under one and a half spacings.
-constexpr f64 RING_SPREAD = 0.5;
-// How much a sword's bend may differ from the rest's, as a fraction from least to most, so 1,000 swords fly as a swarm
-// rather than one family of nested curves.
-constexpr f64 BEND_SPREAD = 0.4;
 // The bend of a short flight, as a fraction of its chord. Long flights approach the shape's sweep instead.
 constexpr f64 SHORT_BEND = 0.5;
 // The fraction of the out phase after which a sword starts turning from its burst to facing its flight.
@@ -129,29 +130,66 @@ f64 Centred(u64 random) {
     return ToUnit(random) - HALF;
 }
 
+// A random number's value in [-1, 1): a jitter's share of its reach, either way.
+f64 Either(u64 random) {
+    const f64 centred = Centred(random);
+    return centred + centred;
+}
+
 // What a sword's path depends on besides the time and the aim: drawn from the volley's seed, the same on every call.
 struct SwordPlan {
     u64 launch = 0;
     VolleyVector outwards{}; // unit
+    f64 radius = 0.0;        // how far from the origin its place on its ring lies
     f64 bend = 1.0;          // this sword's share of the sweep
 };
+
+// A sword's wave and its place among that wave's swords.
+struct WavePlace {
+    u32 wave = 0;
+    u32 index = 0;
+    u32 size = 1;
+};
+
+// The swords split over the waves in order of index, the first `count % waves` waves taking one more than the rest. A
+// wave takes a run of indices rather than every `waves`th one, so each still holds every target's swords in turn
+// (SwordTarget() starts a sword at `sword` modulo the targets).
+WavePlace PlaceInWave(const VolleyShape& shape, u32 sword) {
+    PN_ASSERT(sword < shape.count, "a sword beyond its volley's count");
+    PN_ASSERT(shape.waves >= 1, "a volley of no waves");
+    const u32 fewer = shape.count / shape.waves;
+    const u32 more = fewer + 1;
+    const u32 inLarger = (shape.count % shape.waves) * more; // the swords of the waves holding one more
+    if (sword < inLarger) {
+        return { .wave = sword / more, .index = sword % more, .size = more };
+    }
+    const u32 rest = sword - inLarger;
+    return { .wave = (shape.count % shape.waves) + (rest / fewer), .index = rest % fewer, .size = fewer };
+}
 
 u64 VolleyDraw(const Volley& volley, u32 sword, u32 purpose) {
     PN_ASSERT(sword < volley.shape.count, "a sword beyond its volley's count");
     return Random(volley.seed, 0, 0, purpose, sword);
 }
 
-u64 Launch(const Volley& volley, u32 sword) {
-    return volley.startTick + ToBelow(VolleyDraw(volley, sword, PURPOSE_LAUNCH), volley.shape.staggerTicks);
+u64 Launch(const Volley& volley, u32 sword, u32 wave) {
+    const u64 waveStart = volley.startTick + (static_cast<u64>(wave) * volley.shape.waveGapTicks);
+    return waveStart + ToBelow(VolleyDraw(volley, sword, PURPOSE_LAUNCH), volley.shape.staggerTicks);
 }
 
 SwordPlan Plan(const Volley& volley, u32 sword) {
-    const f64 place = static_cast<f64>(sword) + (RING_SPREAD * Centred(VolleyDraw(volley, sword, PURPOSE_RING)));
-    const f64 angle = FULL_TURN * place / static_cast<f64>(volley.shape.count);
+    const VolleyShape& shape = volley.shape;
+    const WavePlace place = PlaceInWave(shape, sword);
+    const f64 waveTurn = ToUnit(Random(volley.seed, 0, 0, PURPOSE_WAVE_TURN, place.wave));
+    const f64 even = FULL_TURN * (static_cast<f64>(place.index) + waveTurn) / static_cast<f64>(place.size);
+    const f64 angle = even + (static_cast<f64>(shape.angleJitter) * Either(VolleyDraw(volley, sword, PURPOSE_RING)));
+    const f64 ring = static_cast<f64>(shape.ringRadius) + (static_cast<f64>(place.wave) * static_cast<f64>(shape.ringStep));
+    const f64 band = static_cast<f64>(shape.scatter) * Either(VolleyDraw(volley, sword, PURPOSE_BAND));
     return {
-        .launch = Launch(volley, sword),
+        .launch = Launch(volley, sword, place.wave),
         .outwards = { .x = math::Cos(angle), .y = math::Sin(angle) },
-        .bend = 1.0 + (BEND_SPREAD * Centred(VolleyDraw(volley, sword, PURPOSE_BEND))),
+        .radius = ring * (1.0 + band),
+        .bend = 1.0 + (static_cast<f64>(shape.sweepJitter) * Either(VolleyDraw(volley, sword, PURPOSE_BEND))),
     };
 }
 
@@ -279,8 +317,12 @@ FlightPoint Along(const SwordFlight& flight, f64 progress) {
 
 } // namespace
 
+u32 WaveOf(const Volley& volley, u32 sword) {
+    return PlaceInWave(volley.shape, sword).wave;
+}
+
 u64 LaunchTick(const Volley& volley, u32 sword) {
-    return Launch(volley, sword);
+    return Launch(volley, sword, WaveOf(volley, sword));
 }
 
 u64 ArrivalTick(const Volley& volley, u32 sword) {
@@ -298,7 +340,7 @@ u64 LastArrival(const Volley& volley) {
 SwordPose SwordAt(const Volley& volley, u32 sword, f64 tick, Vec2 aim) {
     const VolleyShape& shape = volley.shape;
     const SwordPlan plan = Plan(volley, sword);
-    const f64 radius = static_cast<f64>(shape.ringRadius);
+    const f64 radius = plan.radius;
     const f64 sweep = static_cast<f64>(shape.sweep);
     const f64 outTicks = static_cast<f64>(shape.outTicks);
     const f64 flightTicks = static_cast<f64>(shape.flightTicks);

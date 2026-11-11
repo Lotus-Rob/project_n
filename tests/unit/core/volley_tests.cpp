@@ -14,11 +14,17 @@ constexpr f32 SWORDS_RADIUS = 260.0F; // the shipped swords' tag radius
 // The shipped swords (assets/data/abilities.yaml) in ticks, as their cast resolves them.
 constexpr core::VolleyShape SWORDS{
     .count = 1'000,
-    .ringRadius = 180.0F,
-    .staggerTicks = 18,
+    .waves = 5,
+    .ringRadius = 160.0F,
+    .ringStep = 100.0F,
+    .scatter = 0.25F,
+    .angleJitter = 0.5F,
+    .staggerTicks = 9,
+    .waveGapTicks = 12,
     .outTicks = 15,
     .flightTicks = 66,
     .sweep = 420.0F,
+    .sweepJitter = 0.6F,
     .fadeTicks = 18,
     .commitTicks = core::CommitTicksFor(SWORDS_RADIUS),
 };
@@ -177,22 +183,157 @@ core::Vec2 AimAt(u32 sword, f64 time, std::span<const core::VolleyTarget> target
     return core::SwordAim(VOLLEY, sword, static_cast<u64>(snapshot), static_cast<f32>(time - snapshot + 1.0), targets);
 }
 
-// Mid-flight for every sword, and the commit window before the earliest arrival (681), so every sword can move on.
+// Mid-flight for the first wave's swords, and the commit window before the earliest arrival (681), so every sword can
+// move on.
 constexpr u64 FIRST_DEATH = 645;
 // Mid-flight, near the end of some swings from the first death, and within the commit window of some arrivals.
 constexpr u64 SECOND_DEATH = 660;
 
-TEST_CASE("every sword launches within the stagger and arrives after it") {
-    std::array<bool, SWORDS.staggerTicks> launched{};
+// The tick `sword`'s wave starts: the volley's start, then a wave gap for each wave before it.
+u64 WaveStart(const core::Volley& volley, u32 sword) {
+    return volley.startTick + (static_cast<u64>(core::WaveOf(volley, sword)) * volley.shape.waveGapTicks);
+}
+
+// The radius of `sword`'s ring: the first ring's, then a ring step further for each wave before its own.
+f64 RingOf(const core::Volley& volley, u32 sword) {
+    return static_cast<f64>(volley.shape.ringRadius) +
+           (static_cast<f64>(core::WaveOf(volley, sword)) * static_cast<f64>(volley.shape.ringStep));
+}
+
+// Where `sword` comes to rest on its ring, at the end of its burst out.
+core::Vec2 RingPoint(const core::Volley& volley, u32 sword) {
+    const u64 ring = core::LaunchTick(volley, sword) + volley.shape.outTicks;
+    return core::SwordAt(volley, sword, static_cast<f64>(ring), POINT).position;
+}
+
+f64 Mean(std::span<const f64> values) {
+    return std::accumulate(values.begin(), values.end(), 0.0) / static_cast<f64>(values.size());
+}
+
+f64 StandardDeviation(std::span<const f64> values) {
+    const f64 mean = Mean(values);
+    const f64 squares = std::accumulate(values.begin(), values.end(), 0.0, [mean](f64 sum, f64 value) {
+        return sum + ((value - mean) * (value - mean));
+    });
+    return std::sqrt(squares / static_cast<f64>(values.size()));
+}
+
+TEST_CASE("the swords form in waves, inner first") {
+    std::array<u32, SWORDS.waves> sizes{};
+    std::array<u64, SWORDS.waves> earliest{};
+    earliest.fill(std::numeric_limits<u64>::max());
+    std::array<std::array<bool, SWORDS.staggerTicks>, SWORDS.waves> launched{};
     for (u32 sword = 0; sword < SWORDS.count; ++sword) {
+        CAPTURE(sword);
+        const u32 wave = core::WaveOf(VOLLEY, sword);
+        REQUIRE(wave < SWORDS.waves);
+        ++sizes.at(wave);
+        // Every sword launches within its wave's stagger, and arrives after it.
         const u64 launch = core::LaunchTick(VOLLEY, sword);
-        REQUIRE(launch >= START);
-        REQUIRE(launch < START + SWORDS.staggerTicks);
-        launched.at(launch - START) = true;
+        const u64 start = WaveStart(VOLLEY, sword);
+        REQUIRE(launch >= start);
+        REQUIRE(launch < start + SWORDS.staggerTicks);
+        launched.at(wave).at(launch - start) = true;
+        earliest.at(wave) = std::min(earliest.at(wave), launch);
         CHECK(core::ArrivalTick(VOLLEY, sword) == launch + SWORDS.outTicks + SWORDS.flightTicks);
     }
-    // They stream out over the whole stagger, not all at once.
-    CHECK(std::ranges::all_of(launched, [](bool some) { return some; }));
+    // As even as can be.
+    CHECK(std::ranges::max(sizes) - std::ranges::min(sizes) <= 1);
+    // Each wave starts a wave gap after the one before, and streams out over its whole stagger, not all at once.
+    CHECK(earliest.front() == START);
+    for (std::size_t wave = 0; wave < SWORDS.waves; ++wave) {
+        CAPTURE(wave);
+        if (wave > 0) {
+            CHECK(earliest.at(wave) == earliest.at(wave - 1) + SWORDS.waveGapTicks);
+        }
+        CHECK(std::ranges::all_of(launched.at(wave), [](bool some) { return some; }));
+    }
+}
+
+TEST_CASE("each wave forms further out, in a scattered band") {
+    constexpr f64 SLACK = 1e-3; // world units: the position is rounded to f32
+    // A band of ±scatter evenly filled has a standard deviation of scatter / √3 of the ring's radius; a line has none.
+    constexpr f64 LEAST_BAND = 0.4;
+    // Across the volley, the distances spread over the rings, not round one circle.
+    constexpr f64 LEAST_SPREAD = 1.0; // of a ring step
+    std::array<std::vector<f64>, SWORDS.waves> bands{};
+    std::vector<f64> all;
+    for (u32 sword = 0; sword < SWORDS.count; ++sword) {
+        CAPTURE(sword);
+        const f64 ring = RingOf(VOLLEY, sword);
+        const f64 away = Distance(ORIGIN, RingPoint(VOLLEY, sword));
+        CHECK(std::abs(away - ring) <= (static_cast<f64>(SWORDS.scatter) * ring) + SLACK);
+        bands.at(core::WaveOf(VOLLEY, sword)).push_back(away);
+        all.push_back(away);
+    }
+    for (std::size_t wave = 0; wave < SWORDS.waves; ++wave) {
+        CAPTURE(wave);
+        const f64 ring = static_cast<f64>(SWORDS.ringRadius) + (static_cast<f64>(wave) * static_cast<f64>(SWORDS.ringStep));
+        const f64 band = StandardDeviation(bands.at(wave)); // named: MSVC's C4866 (tests/AGENTS.md)
+        CHECK(band >= LEAST_BAND * static_cast<f64>(SWORDS.scatter) * ring);
+        if (wave > 0) {
+            const f64 mean = Mean(bands.at(wave));
+            const f64 inner = Mean(bands.at(wave - 1));
+            CHECK(mean > inner);
+        }
+    }
+    const f64 spread = StandardDeviation(all);
+    CHECK(spread >= LEAST_SPREAD * static_cast<f64>(SWORDS.ringStep));
+}
+
+TEST_CASE("places on a ring are jittered, not evenly spaced") {
+    // Each wave still goes all the way round: its widest gap is a twelfth of a turn at most.
+    constexpr f64 WIDEST_GAP = FULL_TURN / 12.0;
+    // The gaps between neighbours differ by at least this much of the even spacing; evenly spaced, they wouldn't at all.
+    constexpr f64 LEAST_UNEVEN = 0.5;
+    std::array<std::vector<f64>, SWORDS.waves> angles{};
+    for (u32 sword = 0; sword < SWORDS.count; ++sword) {
+        const core::Vec2 out = RingPoint(VOLLEY, sword) - ORIGIN;
+        angles.at(core::WaveOf(VOLLEY, sword)).push_back(core::math::Atan2(static_cast<f64>(out.y), static_cast<f64>(out.x)));
+    }
+    for (std::vector<f64>& wave : angles) {
+        CAPTURE(wave.size());
+        REQUIRE(wave.size() > 1);
+        std::ranges::sort(wave);
+        std::vector<f64> gaps{ wave.front() + FULL_TURN - wave.back() };
+        for (std::size_t index = 1; index < wave.size(); ++index) {
+            gaps.push_back(wave[index] - wave[index - 1]);
+        }
+        CHECK(std::ranges::max(gaps) < WIDEST_GAP);
+        const f64 spacing = FULL_TURN / static_cast<f64>(wave.size());
+        const f64 uneven = StandardDeviation(gaps);
+        CHECK(uneven >= LEAST_UNEVEN * spacing);
+    }
+}
+
+TEST_CASE("flights bend by different amounts") {
+    // Each first-wave sword's widest bend, as a fraction of its chord, from its ring point to a still aim at the point:
+    // the first ring lies well inside the point's distance, so the chords are alike. With the same share of the sweep
+    // for every sword, the fractions differ only as the chords' lengths do (by less than SAME_SHARE from least to most);
+    // with the shipped jitter, by at least LEAST_RANGE.
+    constexpr f64 SAME_SHARE = 1.5;
+    constexpr f64 LEAST_RANGE = 2.5;
+    const auto range = [](const core::Volley& volley) {
+        std::vector<f64> bends;
+        for (u32 sword = 0; sword < volley.shape.count; ++sword) {
+            if (core::WaveOf(volley, sword) != 0) {
+                continue;
+            }
+            const u64 ring = core::LaunchTick(volley, sword) + volley.shape.outTicks;
+            const core::Vec2 ringPoint = RingPoint(volley, sword);
+            f64 farthest = 0.0;
+            for (u32 tick = 0; tick <= volley.shape.flightTicks; ++tick) {
+                const core::Vec2 position = core::SwordAt(volley, sword, static_cast<f64>(ring + tick), POINT).position;
+                farthest = std::max(farthest, OffLine(position, ringPoint, POINT));
+            }
+            bends.push_back(farthest / Distance(ringPoint, POINT));
+        }
+        return std::ranges::max(bends) / std::ranges::min(bends);
+    };
+    core::Volley same = VOLLEY;
+    same.shape.sweepJitter = 0.0F;
+    CHECK(range(same) < SAME_SHARE);
+    CHECK(range(VOLLEY) >= LEAST_RANGE);
 }
 
 TEST_CASE("the path is smooth") {
@@ -232,30 +373,34 @@ TEST_CASE("a sword turns on the ring without flipping while its target moves off
 }
 
 TEST_CASE("the path curves") {
-    constexpr f64 LEAST_BEND = static_cast<f64>(SWORDS.sweep) / 4.0;
+    // Every sword bends at least 5/16 of the least share of the sweep (1 − sweepJitter), the margin this test held at a
+    // quarter of the sweep when the least share was 0.8 and every chord was longer than the sweep. A flight shorter than
+    // the sweep (an outer ring's sword forming near the point) bends by a share of its chord instead, so the floor is a
+    // share of the shorter of the two.
+    constexpr f64 LEAST_SHARE = (1.0 - static_cast<f64>(SWORDS.sweepJitter)) * 5.0 / 16.0;
     for (u32 sword = 0; sword < SWORDS.count; ++sword) {
         CAPTURE(sword);
         const u64 ring = core::LaunchTick(VOLLEY, sword) + SWORDS.outTicks;
-        const core::Vec2 ringPoint = core::SwordAt(VOLLEY, sword, static_cast<f64>(ring), POINT).position;
+        const core::Vec2 ringPoint = RingPoint(VOLLEY, sword);
         f64 farthest = 0.0;
         for (u32 tick = 0; tick <= SWORDS.flightTicks; ++tick) {
             const core::Vec2 position = core::SwordAt(VOLLEY, sword, static_cast<f64>(ring + tick), POINT).position;
             farthest = std::max(farthest, OffLine(position, ringPoint, POINT));
         }
-        CHECK(farthest >= LEAST_BEND);
+        CHECK(farthest >= LEAST_SHARE * std::min(Distance(ringPoint, POINT), static_cast<f64>(SWORDS.sweep)));
     }
 }
 
 TEST_CASE("the swords spiral out to the ring, turning the way their flight bends") {
-    // Out of the straight line from the caster to its place on the ring by at least this much of the ring's radius: a
-    // straight burst is a spoke. The spiral's widest bulge is about a quarter of the radius.
+    // Out of the straight line from the caster to its place on its ring by at least this much of its distance out: a
+    // straight burst is a spoke. The spiral's widest bulge is about a quarter of that distance.
     constexpr f64 LEAST_BULGE = 0.15;
     constexpr u64 OUT_SAMPLES = SWORDS.outTicks * SUBSTEPS;
     for (u32 sword = 0; sword < SWORDS.count; ++sword) {
         CAPTURE(sword);
         const u64 launch = core::LaunchTick(VOLLEY, sword);
         const u64 ring = launch + SWORDS.outTicks;
-        const core::Vec2 ringPoint = core::SwordAt(VOLLEY, sword, static_cast<f64>(ring), POINT).position;
+        const core::Vec2 ringPoint = RingPoint(VOLLEY, sword);
         f64 farthest = 0.0;
         f64 burstSide = 0.0;
         for (u64 sample = 1; sample < OUT_SAMPLES; ++sample) {
@@ -267,7 +412,7 @@ TEST_CASE("the swords spiral out to the ring, turning the way their flight bends
                 burstSide = Cross(ringPoint - ORIGIN, position - ORIGIN);
             }
         }
-        CHECK(farthest >= LEAST_BULGE * static_cast<f64>(SWORDS.ringRadius));
+        CHECK(farthest >= LEAST_BULGE * Distance(ORIGIN, ringPoint));
         // Mid-flight it bulges to the same side of its chord as the burst did of its own: one sense of turn throughout.
         const core::Vec2 midFlight =
             core::SwordAt(VOLLEY, sword, static_cast<f64>(ring) + (static_cast<f64>(SWORDS.flightTicks) * 0.5), POINT).position;
@@ -324,23 +469,30 @@ TEST_CASE("each sword aims at its own spot a little off its target's middle, the
     CHECK(end - last < MOST_SHARED);
 }
 
-TEST_CASE("the swords burst out in a ring") {
+TEST_CASE("with no jitter or scatter, each wave is an even ring") {
+    // The shipped shape with its randomness turned off: every sword exactly on its ring, the neighbours evenly spaced.
     constexpr f64 SLACK = 1e-3;
-    constexpr f64 WIDEST_GAP = 3.0 * FULL_TURN / static_cast<f64>(SWORDS.count);
-    std::vector<f64> angles{};
+    constexpr f64 WIDEST_GAP = 1.01; // even spacings
+    core::Volley even = VOLLEY;
+    even.shape.scatter = 0.0F;
+    even.shape.angleJitter = 0.0F;
+    std::array<std::vector<f64>, SWORDS.waves> angles{};
     for (u32 sword = 0; sword < SWORDS.count; ++sword) {
-        const u64 ring = core::LaunchTick(VOLLEY, sword) + SWORDS.outTicks;
-        const core::Vec2 position = core::SwordAt(VOLLEY, sword, static_cast<f64>(ring), POINT).position;
-        CHECK(std::abs(Distance(ORIGIN, position) - static_cast<f64>(SWORDS.ringRadius)) < SLACK);
+        CAPTURE(sword);
+        const core::Vec2 position = RingPoint(even, sword);
+        CHECK(std::abs(Distance(ORIGIN, position) - RingOf(even, sword)) < SLACK);
         const core::Vec2 out = position - ORIGIN;
-        angles.push_back(core::math::Atan2(static_cast<f64>(out.y), static_cast<f64>(out.x)));
+        angles.at(core::WaveOf(even, sword)).push_back(core::math::Atan2(static_cast<f64>(out.y), static_cast<f64>(out.x)));
     }
-    std::ranges::sort(angles);
-    f64 widestGap = angles.front() + FULL_TURN - angles.back();
-    for (std::size_t index = 1; index < angles.size(); ++index) {
-        widestGap = std::max(widestGap, angles[index] - angles[index - 1]);
+    for (std::vector<f64>& wave : angles) {
+        REQUIRE(wave.size() > 1);
+        std::ranges::sort(wave);
+        f64 widestGap = wave.front() + FULL_TURN - wave.back();
+        for (std::size_t index = 1; index < wave.size(); ++index) {
+            widestGap = std::max(widestGap, wave[index] - wave[index - 1]);
+        }
+        CHECK(widestGap < WIDEST_GAP * FULL_TURN / static_cast<f64>(wave.size()));
     }
-    CHECK(widestGap < WIDEST_GAP);
 }
 
 TEST_CASE("the end follows a moving aim") {
@@ -550,15 +702,25 @@ TEST_CASE("a sword's aim and position never jump when its target dies") {
     targets[1].diedTick = FIRST_DEATH;
     targets[2].diedTick = SECOND_DEATH;
     const std::span<const core::VolleyTarget> view = targets;
-    constexpr std::array<u32, 6> SAMPLED{ { 1, 5, 9, 13, 17, 21 } };
-    // The chained swing is checked only if a sampled sword moves twice: first to 2, then on from it.
-    const bool movesTwice = std::ranges::any_of(SAMPLED, [view](u32 sword) {
-        return core::SwordTarget(VOLLEY, sword, FIRST_DEATH, view) == 2 &&
-               core::SwordTarget(VOLLEY, sword, SECOND_DEATH, view) != 2;
-    });
-    REQUIRE(movesTwice);
-    // Swords of target 1, which move once, or twice when they first moved to 2.
-    for (const u32 sword : SAMPLED) {
+    // Swords of target 1, which move once, or twice when they first moved to 2: two of the first wave's, one of each later
+    // wave's (a run of count / waves swords each, a multiple of the four targets), and the first that moves twice, for
+    // the chained swing. A first-wave sword arrives too soon after the second death to move again.
+    constexpr u32 PER_WAVE = SWORDS.count / SWORDS.waves;
+    static_assert(PER_WAVE % 4 == 0);
+    constexpr u32 NEXT_OF_TARGET_ONE = 1 + 4;
+    std::vector<u32> sampled{ 1, NEXT_OF_TARGET_ONE };
+    for (u32 wave = 1; wave < SWORDS.waves; ++wave) {
+        sampled.push_back(1 + (wave * PER_WAVE));
+    }
+    u32 twice = 1;
+    while (twice < SWORDS.count && (core::SwordTarget(VOLLEY, twice, FIRST_DEATH, view) != 2 ||
+                                    core::SwordTarget(VOLLEY, twice, SECOND_DEATH, view) == 2)) {
+        twice += 4;
+    }
+    REQUIRE(twice < SWORDS.count);
+    sampled.push_back(twice);
+    for (const u32 sword : sampled) {
+        REQUIRE(sword % 4 == 1);
         CAPTURE(sword);
         CheckSmooth(VOLLEY, sword, [view, sword](f64 tick) { return AimAt(sword, tick, view); });
     }
@@ -771,6 +933,38 @@ TEST_CASE("a volley is valid with a valid shape and finite points") {
     broken.shape.commitTicks = 0;
     CHECK(broken.shape.Valid());
     CHECK_FALSE(broken.Valid());
+}
+
+constexpr f32 NOT_A_NUMBER = std::numeric_limits<f32>::quiet_NaN();
+constexpr f32 INFINITE = std::numeric_limits<f32>::infinity();
+constexpr f32 NEGATIVE = -1.0F;
+constexpr f32 WHOLE = 1.0F;
+constexpr f32 ALMOST_WHOLE = 0.999F;
+
+// Whether SWORDS is valid with `change` made to it.
+template<typename Change>
+bool ValidWith(const Change& change) {
+    core::VolleyShape shape = SWORDS;
+    change(shape);
+    return shape.Valid();
+}
+
+TEST_CASE("a volley shape needs a wave, rings and jitters that are numbers, and a scatter and sweep jitter below 1") {
+    CHECK(SWORDS.Valid());
+    CHECK_FALSE(ValidWith([](core::VolleyShape& shape) { shape.waves = 0; }));
+    CHECK_FALSE(ValidWith([](core::VolleyShape& shape) { shape.waves = core::MAX_VOLLEY_COUNT + 1; }));
+    CHECK(ValidWith([](core::VolleyShape& shape) { shape.waves = core::MAX_VOLLEY_COUNT; }));
+    CHECK_FALSE(ValidWith([](core::VolleyShape& shape) { shape.ringStep = NEGATIVE; }));
+    CHECK_FALSE(ValidWith([](core::VolleyShape& shape) { shape.ringStep = INFINITE; }));
+    CHECK_FALSE(ValidWith([](core::VolleyShape& shape) { shape.scatter = NOT_A_NUMBER; }));
+    CHECK_FALSE(ValidWith([](core::VolleyShape& shape) { shape.scatter = NEGATIVE; }));
+    CHECK_FALSE(ValidWith([](core::VolleyShape& shape) { shape.scatter = WHOLE; }));
+    CHECK(ValidWith([](core::VolleyShape& shape) { shape.scatter = ALMOST_WHOLE; }));
+    CHECK_FALSE(ValidWith([](core::VolleyShape& shape) { shape.angleJitter = NEGATIVE; }));
+    CHECK_FALSE(ValidWith([](core::VolleyShape& shape) { shape.angleJitter = INFINITE; }));
+    CHECK_FALSE(ValidWith([](core::VolleyShape& shape) { shape.sweepJitter = NOT_A_NUMBER; }));
+    CHECK_FALSE(ValidWith([](core::VolleyShape& shape) { shape.sweepJitter = WHOLE; }));
+    CHECK(ValidWith([](core::VolleyShape& shape) { shape.sweepJitter = ALMOST_WHOLE; }));
 }
 
 TEST_CASE("a cast volley's commit window is valid from the floor up") {

@@ -23,11 +23,17 @@ constexpr core::StableId FOX{ 9 };
 // The shipped swords (assets/data/abilities.yaml) in ticks, as their cast resolves them.
 constexpr core::VolleyShape SWORDS{
     .count = 1'000,
-    .ringRadius = 180.0F,
-    .staggerTicks = 18,
+    .waves = 5,
+    .ringRadius = 160.0F,
+    .ringStep = 100.0F,
+    .scatter = 0.25F,
+    .angleJitter = 0.5F,
+    .staggerTicks = 9,
+    .waveGapTicks = 12,
     .outTicks = 15,
     .flightTicks = 66,
     .sweep = 420.0F,
+    .sweepJitter = 0.6F,
     .fadeTicks = 18,
     .commitTicks = core::CommitTicksFor(260.0F),
 };
@@ -40,9 +46,12 @@ constexpr core::Volley BOLT{ .use = 8,
                              .point = POINT,
                              .shape = { .count = 1, .flightTicks = 60, .commitTicks = core::MIN_COMMIT_TICKS } };
 constexpr std::array<u32, 4> SAMPLED_SWORDS{ { 0, 1, 499, 999 } };
-constexpr u64 MID_FLIGHT = START + 50; // every sword launched, none arrived
-constexpr f32 CLOSE = 1e-4F;           // relative
-constexpr f32 HALFWAY = 0.5F;          // of a tick, as the frame's alpha
+// Every sword launched a whole trail ago (the last wave starts last and staggers its launches), and none arrived.
+constexpr u64 MID_FLIGHT =
+    START + (u64{ SWORDS.waves - 1 } * SWORDS.waveGapTicks) + SWORDS.staggerTicks + static_cast<u64>(gfx::TRAIL_TICKS);
+static_assert(MID_FLIGHT < START + SWORDS.outTicks + SWORDS.flightTicks);
+constexpr f32 CLOSE = 1e-4F;  // relative
+constexpr f32 HALFWAY = 0.5F; // of a tick, as the frame's alpha
 constexpr f32 HALF = 0.5F;
 
 // A manifest whose sprites are 16 by 16 with their foot at their centre, but for the sizes the drawing reads: the sword's,

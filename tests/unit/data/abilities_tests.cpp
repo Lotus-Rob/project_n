@@ -14,9 +14,13 @@ abilities:
                    poison: { ticks: 4, damage: 60 } }
   dash:          { slot: movement, cooldown: 1.0, distance: 260, duration: 0.15 }
   flying_swords: { slot: special, cooldown: 6, qi_cost: 60, damage: 20, radius: 260,
-                   swords: { count: 1000, ring_radius: 140, stagger: 0.5, out: 0.2, flight: 1.1, sweep: 420, fade: 0.3 } }
+                   swords: { count: 1000, waves: 5, wave_gap: 0.2, ring_radius: 160, ring_step: 100, scatter: 0.25,
+                             angle_jitter: 0.5, stagger: 0.15, out: 0.25, flight: 1.1, sweep: 420, sweep_jitter: 0.6,
+                             fade: 0.3 } }
 loadout: { generator: fire_bolt, spender: poison_lance, movement: dash, special_1: flying_swords }
 )";
+// The line of the loadout in ABILITIES.
+constexpr std::string_view LOADOUT_LINE = "line 12";
 
 // ABILITIES with `from` replaced by `to`.
 std::string With(std::string_view from, std::string_view replacement) {
@@ -54,19 +58,68 @@ TEST_CASE("the abilities parse") {
     CHECK(abilities->Valid());
 }
 
+TEST_CASE("the swords' waves, rings and jitters parse") {
+    constexpr f32 RING_STEP = 100.0F;
+    constexpr f32 SCATTER = 0.25F;
+    constexpr f32 ANGLE_JITTER = 0.5F;
+    constexpr f32 SWEEP_JITTER = 0.6F;
+    const std::expected<core::Abilities, core::Error> abilities = data::ParseAbilities(ABILITIES);
+    REQUIRE(abilities.has_value());
+    const core::VolleyShape& swords = abilities->Of(core::AbilityKind::FlyingSwords).volley;
+    CHECK(swords.waves == 5);
+    CHECK(swords.waveGapTicks == 12); // 0.2 s
+    CHECK(swords.staggerTicks == 9);  // 0.15 s, within a wave
+    CHECK(swords.ringStep == RING_STEP);
+    CHECK(swords.scatter == SCATTER);
+    CHECK(swords.angleJitter == ANGLE_JITTER);
+    CHECK(swords.sweepJitter == SWEEP_JITTER);
+}
+
+TEST_CASE("the swords' waves, rings and jitters are refused out of range or missing, naming the key") {
+    struct Broken {
+        std::string_view from;
+        std::string_view replacement;
+        std::string_view says;
+    };
+    constexpr std::array<Broken, 13> CASES{ {
+        Broken{ .from = "waves: 5", .replacement = "waves: 0", .says = "flying_swords's swords's waves" },
+        Broken{ .from = "waves: 5", .replacement = "waves: -1", .says = "flying_swords's swords's waves" },
+        Broken{ .from = "waves: 5, ", .replacement = "", .says = "flying_swords's swords has no waves" },
+        Broken{ .from = "wave_gap: 0.2", .replacement = "wave_gap: -0.1", .says = "flying_swords's swords's wave_gap" },
+        Broken{ .from = "wave_gap: 0.2, ", .replacement = "", .says = "flying_swords's swords has no wave_gap" },
+        Broken{ .from = "ring_step: 100", .replacement = "ring_step: .inf", .says = "flying_swords's swords's ring_step" },
+        Broken{ .from = "ring_step: 100, ", .replacement = "", .says = "flying_swords's swords has no ring_step" },
+        Broken{ .from = "scatter: 0.25", .replacement = "scatter: 1", .says = "flying_swords's swords's scatter" },
+        Broken{ .from = "scatter: 0.25", .replacement = "scatter: .nan", .says = "flying_swords's swords's scatter" },
+        Broken{
+            .from = "angle_jitter: 0.5", .replacement = "angle_jitter: -0.5", .says = "flying_swords's swords's angle_jitter" },
+        Broken{ .from = "angle_jitter: 0.5, ", .replacement = "", .says = "flying_swords's swords has no angle_jitter" },
+        Broken{
+            .from = "sweep_jitter: 0.6", .replacement = "sweep_jitter: 1.5", .says = "flying_swords's swords's sweep_jitter" },
+        Broken{ .from = "sweep_jitter: 0.6,", .replacement = "", .says = "flying_swords's swords has no sweep_jitter" },
+    } };
+    for (const Broken& broken : CASES) {
+        CAPTURE(broken.from);
+        CAPTURE(broken.replacement);
+        const core::Error error = ErrorFor(With(broken.from, broken.replacement));
+        CHECK(error.message.contains(broken.says));
+        CHECK(error.message.contains("abilities line"));
+    }
+}
+
 TEST_CASE("an ability in a slot of another kind is refused") {
     const core::Error error = ErrorFor(With("spender: poison_lance", "spender: dash"));
-    CHECK(error.message.contains("line 10"));
+    CHECK(error.message.contains(LOADOUT_LINE));
     CHECK(error.message.contains("spender"));
     CHECK(error.message.contains("dash"));
 }
 
 TEST_CASE("an unknown ability or slot is refused, naming the line") {
     const core::Error ability = ErrorFor(With("generator: fire_bolt", "generator: ice_bolt"));
-    CHECK(ability.message.contains("line 10"));
+    CHECK(ability.message.contains(LOADOUT_LINE));
     CHECK(ability.message.contains("ice_bolt"));
     const core::Error slot = ErrorFor(With("special_1: flying_swords", "special_9: flying_swords"));
-    CHECK(slot.message.contains("line 10"));
+    CHECK(slot.message.contains(LOADOUT_LINE));
     CHECK(slot.message.contains("special_9"));
     const core::Error unknown = ErrorFor(With("  dash:", "  leap:"));
     CHECK(unknown.message.contains("leap isn't an ability"));
@@ -99,7 +152,7 @@ TEST_CASE("a negative, non-finite or missing number is refused, naming the abili
 TEST_CASE("a loadout entry for an ability the abilities don't define is refused") {
     const core::Error error =
         ErrorFor(With("  dash:          { slot: movement, cooldown: 1.0, distance: 260, duration: 0.15 }\n", ""));
-    CHECK(error.message.contains("line 9"));
+    CHECK(error.message.contains("line 11")); // the loadout's, one up
     CHECK(error.message.contains("dash in the loadout isn't defined"));
 }
 

@@ -325,10 +325,16 @@ void Combat::Launch(
             tagged = { nearest };
         }
         shape.count = 1;
+        shape.waves = 1;
         shape.ringRadius = 0.0F;
+        shape.ringStep = 0.0F;
+        shape.scatter = 0.0F;
+        shape.angleJitter = 0.0F;
         shape.staggerTicks = 0;
+        shape.waveGapTicks = 0;
         shape.outTicks = 0;
         shape.sweep = 0.0F;
+        shape.sweepJitter = 0.0F;
         shape.flightTicks = FlightTicks(origin, tagged.empty() ? cast.point : tagged.front().chest, ability.speed);
     }
     Flight flight{

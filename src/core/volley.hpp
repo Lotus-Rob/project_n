@@ -54,20 +54,39 @@ inline constexpr u32 MIN_COMMIT_TICKS = 2 * static_cast<u32>(RETARGET_TICKS);
 }
 
 /// How a volley is laid out and flies, from `abilities.yaml`. All times are simulation ticks.
+///
+/// The swords form in waves: rings one after another, the innermost first, each further out than the one before. A
+/// sword's place round its ring, how far in or out of the ring it lies, its launch within its wave and how much its
+/// flight bends are each drawn from the volley's seed, so the rings are loose bands and the flights a swarm.
 struct VolleyShape {
     /// How many swords (or bolts) the volley has, at most MAX_VOLLEY_COUNT.
     u32 count = 0;
-    /// The radius of the ring they burst out in, in world units.
+    /// How many rings the swords form, one after another (WaveOf()): at least 1, at most MAX_VOLLEY_COUNT. A volley of
+    /// one (the bolt) has 1.
+    u32 waves = 1;
+    /// The radius of the first, innermost ring, in world units.
     f32 ringRadius = 0.0F;
-    /// Ticks between the first sword leaving the ring and the last.
+    /// How much further out each ring forms than the one before, in world units.
+    f32 ringStep = 0.0F;
+    /// How far a sword's place may stray in or out from its ring, as a fraction of the ring's radius, from 0 (a line) to
+    /// below 1 (0.3 is a band of ±30%).
+    f32 scatter = 0.0F;
+    /// How far a sword's place may stray round its ring from an even spacing, either way, in radians.
+    f32 angleJitter = 0.0F;
+    /// Ticks between the first sword of a wave leaving the caster and the last.
     u32 staggerTicks = 0;
-    /// Ticks a sword takes to move from the caster to its place on the ring.
+    /// Ticks between one wave's start and the next's.
+    u32 waveGapTicks = 0;
+    /// Ticks a sword takes to move from the caster to its place on its ring.
     u32 outTicks = 0;
-    /// Ticks a sword flies from the ring to its target; 0 means "from the distance and AbilityData::speed" (the bolt).
+    /// Ticks a sword flies from its ring to its target; 0 means "from the distance and AbilityData::speed" (the bolt).
     u32 flightTicks = 0;
-    /// How far a sword's path bends sideways at most, in world units: a long flight bends nearly this far, a short one
-    /// less (SwordAt()). 0 flies straight (the bolt).
+    /// How far a sword's path bends sideways, in world units: a long flight bends nearly this far, a short one less
+    /// (SwordAt()), each sword by its own share of it (`sweepJitter`). 0 flies straight (the bolt).
     f32 sweep = 0.0F;
+    /// How much a sword's bend may differ from the sweep, either way, as a fraction of it, from 0 to below 1: each sword
+    /// bends by a share of the sweep from 1 − sweepJitter to 1 + sweepJitter, always to the same side.
+    f32 sweepJitter = 0.0F;
     /// Ticks a sword takes to fade after its hit.
     u32 fadeTicks = 0;
     /// How many ticks before its arrival a sword's target must die for the sword to move on to another (SwordTarget()):
@@ -80,21 +99,30 @@ struct VolleyShape {
     void Fields(this Self& self, Archive& archive) {
         archive(
             self.count,
+            self.waves,
             self.ringRadius,
+            self.ringStep,
+            self.scatter,
+            self.angleJitter,
             self.staggerTicks,
+            self.waveGapTicks,
             self.outTicks,
             self.flightTicks,
             self.sweep,
+            self.sweepJitter,
             self.fadeTicks,
             self.commitTicks
         );
     }
 
-    /// Whether the count is within the limit and every distance is finite and not negative; what a shape read from the data
-    /// must satisfy. The times the cast resolves, `flightTicks` and `commitTicks`, are checked on the cast (Volley::Valid()).
+    /// Whether the count and the waves are within the limit with at least one wave, every distance and angle is finite and
+    /// not negative, and the scatter and the sweep's jitter are below 1; what a shape read from the data must satisfy. The
+    /// times the cast resolves, `flightTicks` and `commitTicks`, are checked on the cast (Volley::Valid()).
     [[nodiscard]] bool Valid() const {
-        return count <= MAX_VOLLEY_COUNT && std::isfinite(ringRadius) && ringRadius >= 0.0F && std::isfinite(sweep) &&
-               sweep >= 0.0F;
+        const auto distance = [](f32 value) { return std::isfinite(value) && value >= 0.0F; };
+        const auto fraction = [&distance](f32 value) { return distance(value) && value < 1.0F; };
+        return count <= MAX_VOLLEY_COUNT && waves >= 1 && waves <= MAX_VOLLEY_COUNT && distance(ringRadius) &&
+               distance(ringStep) && fraction(scatter) && distance(angleJitter) && distance(sweep) && fraction(sweepJitter);
     }
 };
 
@@ -104,7 +132,7 @@ struct Volley {
     u64 use = 0;
     /// The tick it was cast on: the first sword launches then at the earliest.
     u64 startTick = 0;
-    /// Its own random numbers' seed (core::Random): each sword's launch, place on the ring and bend. The cast draws it from
+    /// Its own random numbers' seed (core::Random): each sword's launch, place on its ring and bend. The cast draws it from
     /// core::Random with a purpose of its own and the state counter, so the volley's draws, which key on this seed with
     /// purposes local to the path, share no numbers with the game's.
     u64 seed = 0;
@@ -174,8 +202,14 @@ struct SwordPose {
     f32 shown = 0.0F;
 };
 
-/// The tick `sword` (below the shape's count) leaves the caster: the swords stream out over the shape's `staggerTicks`
-/// from the volley's start, in an order drawn from its seed.
+/// The wave `sword` (below the shape's count) forms in, from 0 (the first, innermost ring) to below the shape's `waves`.
+/// The swords split over the waves by index, in order, as evenly as possible: the first `count % waves` waves hold one
+/// more than the rest.
+[[nodiscard]] u32 WaveOf(const Volley& volley, u32 sword);
+
+/// The tick `sword` (below the shape's count) leaves the caster: its wave (WaveOf()) starts `waveGapTicks` after the one
+/// before, the first on the volley's start tick, and the wave's swords stream out over the shape's `staggerTicks` from
+/// then, in an order drawn from the seed.
 [[nodiscard]] u64 LaunchTick(const Volley& volley, u32 sword);
 
 /// The tick `sword` (below the shape's count) reaches its target: its launch, then `outTicks` to the ring and
@@ -188,11 +222,12 @@ struct SwordPose {
 
 /// Where `sword` (below the shape's count) is at `tick`, a simulation tick or a render time between two, flying at `aim`
 /// (SwordAim()). Before its launch it waits unseen at the origin. For `outTicks` it spirals out, facing the way it moves
-/// and slowing, to its place on a ring of `ringRadius` round the origin, sweeping round the origin the way its flight
-/// bends, and turns there to face its flight. For
-/// `flightTicks` it flies a curve that bends to the same side for every sword (so the ring swirls) and ends at `aim`,
-/// wherever that moves, speeding up and then slowing a little. After its arrival it stays at `aim` and fades. A volley of
-/// no ring and no sweep (the bolt) flies straight. A pure function: the same inputs give the same bits on every thread.
+/// and slowing, to its place on its wave's ring round the origin (`ringRadius`, a `ringStep` further for each wave before
+/// it, strayed in or out by up to `scatter` of that and round by up to `angleJitter`), sweeping round the origin the way
+/// its flight bends, and turns there to face its flight. For `flightTicks` it flies a curve that bends to the same side
+/// for every sword (so the rings swirl), by its own share of the sweep (`sweepJitter`), and ends at `aim`, wherever that
+/// moves, speeding up and then slowing a little. After its arrival it stays at `aim` and fades. A volley of no ring and
+/// no sweep (the bolt) flies straight. A pure function: the same inputs give the same bits on every thread.
 ///
 /// Its position never jumps while the aim moves continuously. Its heading turns at a bounded rate too, but no rule that
 /// depends only on the present aim can promise that everywhere, and it can flip: in flight, when the aim passes over

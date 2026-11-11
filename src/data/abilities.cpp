@@ -67,8 +67,18 @@ std::expected<u32, core::Error> Count(const YAML::Node& map, std::string_view na
     });
 }
 
-std::expected<f32, core::Error> Distance(const YAML::Node& map, std::string_view name, const char* key) {
-    return Number(map, name, key, false).transform([](f64 value) { return static_cast<f32>(value); });
+std::expected<f32, core::Error> Distance(const YAML::Node& map, std::string_view name, const char* key, bool required = false) {
+    return Number(map, name, key, required).transform([](f64 value) { return static_cast<f32>(value); });
+}
+
+// A required fraction from 0 to below 1.
+std::expected<f32, core::Error> Fraction(const YAML::Node& map, std::string_view name, const char* key) {
+    return Distance(map, name, key, true).and_then([&](f32 value) -> std::expected<f32, core::Error> {
+        if (value >= 1.0F) {
+            return RefuseAbilities(map[key], std::format("{}'s {} isn't below 1", name, key));
+        }
+        return value;
+    });
 }
 
 // Seconds as ticks: rounded, at least one where above zero.
@@ -115,24 +125,61 @@ std::expected<core::VolleyShape, core::Error> Swords(
         return RefuseAbilities(node, std::format("{} isn't a map", name));
     }
     internal::NoteUnknownKeys(
-        "abilities", node, name, "key", { "count", "ring_radius", "stagger", "out", "flight", "sweep", "fade" }, warnings
+        "abilities",
+        node,
+        name,
+        "key",
+        { "count",
+          "waves",
+          "wave_gap",
+          "ring_radius",
+          "ring_step",
+          "scatter",
+          "angle_jitter",
+          "stagger",
+          "out",
+          "flight",
+          "sweep",
+          "sweep_jitter",
+          "fade" },
+        warnings
     );
     const std::expected<u32, core::Error> count = Count(node, name, "count", true, core::MAX_VOLLEY_COUNT);
+    const std::expected<u32, core::Error> waves =
+        Count(node, name, "waves", true, core::MAX_VOLLEY_COUNT).and_then([&](u32 value) -> std::expected<u32, core::Error> {
+            if (value == 0) {
+                return RefuseAbilities(node["waves"], std::format("{}'s waves is 0; a volley forms at least one", name));
+            }
+            return value;
+        });
+    const std::expected<u32, core::Error> waveGap = Seconds(node, name, "wave_gap", true);
     const std::expected<f32, core::Error> ring = Distance(node, name, "ring_radius");
+    const std::expected<f32, core::Error> ringStep = Distance(node, name, "ring_step", true);
+    const std::expected<f32, core::Error> scatter = Fraction(node, name, "scatter");
+    const std::expected<f32, core::Error> angleJitter = Distance(node, name, "angle_jitter", true);
     const std::expected<u32, core::Error> stagger = Seconds(node, name, "stagger", true);
     const std::expected<u32, core::Error> out = Seconds(node, name, "out", true);
     const std::expected<u32, core::Error> flight = Seconds(node, name, "flight", true);
     const std::expected<f32, core::Error> sweep = Distance(node, name, "sweep");
+    const std::expected<f32, core::Error> sweepJitter = Fraction(node, name, "sweep_jitter");
     const std::expected<u32, core::Error> fade = Seconds(node, name, "fade", true);
-    if (const std::optional<core::Error> error = FirstError(count, ring, stagger, out, flight, sweep, fade)) {
+    if (const std::optional<core::Error> error = FirstError(
+            count, waves, waveGap, ring, ringStep, scatter, angleJitter, stagger, out, flight, sweep, sweepJitter, fade
+        )) {
         return std::unexpected{ *error };
     }
     return core::VolleyShape{ .count = *count,
+                              .waves = *waves,
                               .ringRadius = *ring,
+                              .ringStep = *ringStep,
+                              .scatter = *scatter,
+                              .angleJitter = *angleJitter,
                               .staggerTicks = *stagger,
+                              .waveGapTicks = *waveGap,
                               .outTicks = *out,
                               .flightTicks = *flight,
                               .sweep = *sweep,
+                              .sweepJitter = *sweepJitter,
                               .fadeTicks = *fade };
 }
 
