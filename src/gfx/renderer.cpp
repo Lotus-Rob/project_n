@@ -354,7 +354,6 @@ void Renderer::Impl::PlaceTexts(const Shown& shown, core::Jobs& jobs) {
                                      .pixels = textFrame.numberPixels,
                                      .outline = textOptions.outline,
                                      .shadow = textOptions.shadow,
-                                     .colours = uiColours,
                                      .origins = numberOrigins };
     const auto firstQuad = static_cast<u32>(meshVertices.size() / QUAD_VERTICES);
     numberPages.clear();

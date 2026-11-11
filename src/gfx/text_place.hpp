@@ -139,8 +139,6 @@ struct NumberPlacement {
     bool outline = true;
     /// Whether text casts its shadow (TextColour()).
     bool shadow = true;
-    /// The colours text is drawn in (TextColour()).
-    core::UiColours colours{};
     /// The creatures whose numbers start elsewhere, sorted by entity.
     std::span<const NumberOrigin> origins;
 };
