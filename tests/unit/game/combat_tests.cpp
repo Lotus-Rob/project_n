@@ -1363,7 +1363,7 @@ TEST_CASE("the lance's flash survives a save") {
 
     game::Arena loaded(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
     core::Reader reader{ bytes };
-    REQUIRE(loaded.Load(reader));
+    REQUIRE(loaded.Load(reader, SAVED_AT));
     CHECK(loaded.StateHash() == arena.StateHash());
     const core::Snapshot snapshot = Published(loaded, SAVED_AT);
     REQUIRE(snapshot.flashes.size() == 1);

@@ -304,12 +304,16 @@ public:
     /// look.
     [[nodiscard]] bool AimsAtCreatures(const core::State& state) const;
 
+    /// Whether every flash showing starts at `tick` or before: what loaded flashes must satisfy with the simulation tick
+    /// their save was made at, as a flash is never dated after the tick it showed in.
+    [[nodiscard]] bool FlashesStartBy(u64 tick) const;
+
     /// Reads what Save() wrote, failing `archive` and changing nothing on a count past what is left, ticks out of order,
     /// a volley that can't be used (invalid (core::Volley::Valid()), of an unknown ability or element, a negative
     /// amount, more swords arrived than it has, no targets, a target at a point that isn't finite, or the point target
-    /// (zero) not dead), or a flash at a point that isn't finite or of an unknown element. A living target is checked
-    /// against the state loaded beside it by Arena::Load(), which refuses the save when one isn't a creature in its
-    /// active domain (AimsAtCreatures()).
+    /// (zero) not dead), or a flash at a point that isn't finite or of an unknown element. Arena::Load() checks the rest
+    /// against what it loads beside them, refusing the save when a living target isn't a creature in its active domain
+    /// (AimsAtCreatures()) or a flash starts after the save's tick (FlashesStartBy()).
     void Load(core::Reader& archive);
 
 private:

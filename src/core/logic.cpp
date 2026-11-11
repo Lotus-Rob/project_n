@@ -241,7 +241,7 @@ bool Logic::Restore(std::span<const std::byte> state, bool withLogicState) {
     u32 format = 0;
     TickCounters counters;
     archive(format, counters.wall, counters.simulation, counters.state);
-    if (archive.Failed() || format != SAVE_FORMAT || !m_simulation->Load(archive)) {
+    if (archive.Failed() || format != SAVE_FORMAT || !m_simulation->Load(archive, counters.simulation)) {
         return false;
     }
     m_counters = counters;

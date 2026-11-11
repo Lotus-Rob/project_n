@@ -592,10 +592,8 @@ void Combat::Strike(core::State& state, const core::Manifest& manifest, u64 tick
     std::erase_if(m_flights, [tick](const Flight& flight) {
         return !flight.Pending() && tick > flight.lastArrival + flight.volley.shape.fadeTicks;
     });
-    // A flash from a later tick (only a crafted save holds one) waits for its start.
-    std::erase_if(m_flashes, [tick](const core::Flash& flash) {
-        return tick >= flash.startTick && tick - flash.startTick >= core::FLASH_TICKS;
-    });
+    // None starts after `tick`: a cast starts it at its tick, and Arena::Load() refuses one from a later tick.
+    std::erase_if(m_flashes, [tick](const core::Flash& flash) { return tick - flash.startTick >= core::FLASH_TICKS; });
 }
 
 void Combat::EndReleased(const core::State& state, std::vector<u64>& ending, u64 tick, std::vector<core::Event>& events) const {
@@ -678,6 +676,10 @@ void Combat::Publish(core::Snapshot& snapshot) const {
         snapshot.volleyTargets.insert(snapshot.volleyTargets.end(), flight.targets.begin(), flight.targets.end());
     }
     snapshot.flashes.insert(snapshot.flashes.end(), m_flashes.begin(), m_flashes.end());
+}
+
+bool Combat::FlashesStartBy(u64 tick) const {
+    return std::ranges::all_of(m_flashes, [tick](const core::Flash& flash) { return flash.startTick <= tick; });
 }
 
 bool Combat::AimsAtCreatures(const core::State& state) const {
