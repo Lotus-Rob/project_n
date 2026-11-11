@@ -6,6 +6,7 @@
 /// thread through core::Handover, and the input it gets back. It grows with each phase of §16
 /// (instances, view models and events in phase 3 onwards); phase 1 carries timing and pausing.
 
+#include "core/abilities.hpp"
 #include "core/game_data.hpp"
 #include "core/handover.hpp"
 #include "core/hit.hpp"
@@ -206,6 +207,8 @@ struct Snapshot {
     std::vector<TextItem> texts{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The health of each living enemy in a combat scene; refilled in place likewise.
     std::vector<HealthBar> healthBars{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    /// Whether the scene is a combat scene, where casts act.
+    bool combat = false;
     /// What the camera follows, if anything.
     std::optional<Follow> follow = std::nullopt;
     /// The index in `instances` of the selected entity's instance, which the renderer outlines; none
@@ -264,10 +267,11 @@ enum class ActionKind : u8 {
     CycleScene,      ///< Switch to the next scene (a debug key): the simulation rebuilds itself as it.
     SceneResident,   ///< The main thread holds the scene `scene` and can draw it: never in a replay.
     DebugBurst,      ///< Hit every fox thousands of times (a debug key), for the damage numbers' stress.
+    Cast,            ///< Use the ability in the slot `slot` at the world point `point`: one per press, in a combat scene.
 };
-/// How many kinds ActionKind names (DebugBurst is the last): a replay read from disk holds only
+/// How many kinds ActionKind names (Cast is the last): a replay read from disk holds only
 /// kinds below this.
-inline constexpr u8 ACTION_KINDS = static_cast<u8>(std::to_underlying(ActionKind::DebugBurst) + 1U);
+inline constexpr u8 ACTION_KINDS = static_cast<u8>(std::to_underlying(ActionKind::Cast) + 1U);
 
 /// A player's or the main thread's request to the simulation, sent as input: a press, taken once.
 struct Action {
@@ -279,6 +283,10 @@ struct Action {
     std::shared_ptr<const GameData> data{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The scene now resident (SceneResident); zero otherwise.
     SceneId scene{};
+    /// The slot whose ability is cast (Cast); the first slot otherwise.
+    Slot slot = Slot::Generator;
+    /// Where it is cast, in world units (Cast); the origin otherwise.
+    Vec2 point{};
 };
 
 /// What the player holds down, as the main thread last sent it (design doc 0002 §10): every tick of

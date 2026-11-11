@@ -113,13 +113,13 @@ public:
 
     /// Rebuilds itself as the next scene in Scene's order (arena, stress, painted, cells, then the arena again) when
     /// `input` holds a CycleScene, the selection cleared; walks the player's cultivator where `input`'s held
-    /// movement points, selects what its Select actions name (nothing for a dying one), moves every entity on an Orbit to where
-    /// it is at `counters.simulation`, advances combat (Combat::Tick(): arrivals, removing the dead, which clears their
-    /// selection, and spawning the foxes due at the ground's edge), and walks the active NPCs, whose decisions draw
-    /// random numbers keyed on `counters.state`. In the arena scene, every 60th simulation tick the crystal's aura hits
-    /// each living fox in reach and heals the player if in reach, appending a hit event for each; a DebugBurst action
-    /// appends 4,000 hits round the foxes, which change nothing. Each use ends with a UseEnded event. The events
-    /// themselves change nothing in the state.
+    /// movement points, selects what its Select actions name (nothing for a dying one), ignores Cast actions outside a combat
+    /// scene, moves every entity on an Orbit to where it is at `counters.simulation`, advances combat (Combat::Tick():
+    /// arrivals, removing the dead, which clears their selection, and spawning the foxes due at the ground's edge), and walks
+    /// the active NPCs, whose decisions draw random numbers keyed on `counters.state`. In the arena scene, every 60th
+    /// simulation tick the crystal's aura hits each living fox in reach and heals the player if in reach, appending a hit event
+    /// for each; a DebugBurst action appends 4,000 hits round the foxes, which change nothing. Each use ends with a UseEnded
+    /// event. The events themselves change nothing in the state.
     void Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) override;
 
     /// Lets a month pass for the world NPCs (MonthStep).
@@ -160,6 +160,9 @@ public:
     [[nodiscard]] const core::State& State() const {
         return m_state;
     }
+
+    /// Whether the scene is a combat scene, where fights happen and casts act: the arena only.
+    [[nodiscard]] bool IsCombatScene() const;
 
     /// The cultivator the player walks, or zero in a scene without one (the painted scene, the cells).
     [[nodiscard]] core::StableId Player() const {

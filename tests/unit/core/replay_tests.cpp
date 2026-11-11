@@ -300,4 +300,55 @@ TEST_CASE("the layout these tests edit is Recorded()'s") {
     CHECK(secondTick == SECOND_HASH_TICK);
 }
 
+// A recording of one tick holding a cast of `slot` at `point`.
+std::vector<std::byte> RecordedCast(core::Slot slot, core::Vec2 point) {
+    core::Replay replay;
+    replay.StartRecording(Start());
+    const std::array<core::Action, 1> cast{ { { .kind = core::ActionKind::Cast, .slot = slot, .point = point } } };
+    replay.Record({ .actions = cast });
+    return replay.FinishRecording();
+}
+
+TEST_CASE("a cast's slot and point play back bit for bit") {
+    constexpr core::Vec2 POINT{ .x = -123.456F, .y = 0.1F };
+    core::Replay player;
+    const auto started = player.StartPlaying(RecordedCast(core::Slot::Special3, POINT));
+    REQUIRE(started.has_value());
+    const core::TickInput tick = player.Next();
+    REQUIRE(tick.actions.size() == 1);
+    CHECK(tick.actions[0].kind == core::ActionKind::Cast);
+    CHECK(tick.actions[0].slot == core::Slot::Special3);
+    CHECK(std::bit_cast<u64>(tick.actions[0].point) == std::bit_cast<u64>(POINT));
+}
+
+TEST_CASE("a replay with a cast in a slot past the last, or at a non-finite point, is refused") {
+    constexpr core::Vec2 POINT{ .x = 1.0F, .y = 2.0F };
+    // The slot byte follows the cast's kind, which is the first tick's first action.
+    std::vector<std::byte> past = RecordedCast(core::Slot::Generator, POINT);
+    core::Reader reader{ past };
+    u32 format = 0;
+    u8 versionLength = 0;
+    reader(format, versionLength);
+    const std::size_t startSizeAt = sizeof(u32) + sizeof(u8) + versionLength;
+    // After the version: the data hash, the start state's size and bytes, the tick count and the first count.
+    const std::size_t kindAt = startSizeAt + (2 * sizeof(u64)) + Start().size() + sizeof(u64) + sizeof(u8);
+    REQUIRE(past.at(kindAt) == std::byte{ std::to_underlying(core::ActionKind::Cast) });
+    past.at(kindAt + 1) = std::byte{ core::SLOTS };
+    core::Replay pastPlayer;
+    const bool pastPlays = pastPlayer.StartPlaying(std::move(past)).has_value(); // named: MSVC's C4866
+    CHECK_FALSE(pastPlays);
+    core::Replay nanPlayer;
+    const f32 nan = std::numeric_limits<f32>::quiet_NaN();
+    const bool nanPlays = nanPlayer.StartPlaying(RecordedCast(core::Slot::Generator, { .x = nan, .y = 0.0F })).has_value();
+    CHECK_FALSE(nanPlays);
+    core::Replay infinitePlayer;
+    const f32 infinity = std::numeric_limits<f32>::infinity();
+    const bool infinitePlays =
+        infinitePlayer.StartPlaying(RecordedCast(core::Slot::Generator, { .x = 0.0F, .y = infinity })).has_value();
+    CHECK_FALSE(infinitePlays);
+    core::Replay lastPlayer;
+    const bool lastPlays = lastPlayer.StartPlaying(RecordedCast(core::Slot::Ultimate, POINT)).has_value();
+    CHECK(lastPlays);
+}
+
 } // namespace

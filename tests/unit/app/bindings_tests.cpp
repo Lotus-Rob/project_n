@@ -90,7 +90,7 @@ TEST_CASE("the left shoulder button zooms out") {
     CHECK(shoulder.value < 0.0F);
 }
 
-TEST_CASE("the left button selects where it was clicked") {
+TEST_CASE("the left button is Primary and carries Alt") {
     constexpr core::Vec2 WHERE{ .x = 10.0F, .y = 20.0F };
     app::Bindings bindings;
     const app::ControlEvent click = bindings
@@ -99,12 +99,40 @@ TEST_CASE("the left button selects where it was clicked") {
                                               .code = InputCode::MouseLeft,
                                               .pressed = true,
                                               .value = 1.0F,
-                                              .position = WHERE }
+                                              .position = WHERE,
+                                              .alt = true }
                                         )
                                         .value_or(app::ControlEvent{});
-    CHECK(click.control == app::Control::Select);
+    CHECK(click.control == app::Control::Primary);
     CHECK(click.position.x == WHERE.x);
     CHECK(click.position.y == WHERE.y);
+    CHECK(click.alt);
+}
+
+TEST_CASE("the right button, Space and 1 to 5 drive their controls") {
+    struct Pair {
+        InputCode code;
+        app::Control control;
+    };
+    constexpr std::array PAIRS{
+        Pair{ .code = InputCode::MouseRight, .control = app::Control::Secondary },
+        Pair{ .code = InputCode::KeySpace, .control = app::Control::Movement },
+        Pair{ .code = InputCode::Key1, .control = app::Control::Special1 },
+        Pair{ .code = InputCode::Key2, .control = app::Control::Special2 },
+        Pair{ .code = InputCode::Key3, .control = app::Control::Special3 },
+        Pair{ .code = InputCode::Key4, .control = app::Control::Special4 },
+        Pair{ .code = InputCode::Key5, .control = app::Control::Ultimate },
+    };
+    app::Bindings bindings;
+    for (const Pair& pair : PAIRS) {
+        const std::optional<app::ControlEvent> down = bindings.Handle(Key(pair.code, true));
+        const std::optional<app::ControlEvent> released = bindings.Handle(Key(pair.code, false));
+        REQUIRE(down.has_value());
+        REQUIRE(released.has_value());
+        CHECK(down.value_or(app::ControlEvent{}).control == pair.control);
+        CHECK(down.value_or(app::ControlEvent{}).pressed);
+        CHECK_FALSE(released.value_or(app::ControlEvent{ .pressed = true }).pressed);
+    }
 }
 
 TEST_CASE("a stick drifting inside its dead zone leaves the keyboard and mouse in use") {

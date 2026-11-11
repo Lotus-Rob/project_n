@@ -1,5 +1,6 @@
 #include "app/app.hpp"
 
+#include "app/cast.hpp"
 #include "app/damage_numbers.hpp"
 #include "app/game.hpp"
 #include "app/view.hpp"
@@ -247,8 +248,13 @@ void App::HandleInput(const platform::WindowState& state) {
         else if (control->control == Control::Zoom) {
             m_camera.zoom = gfx::ZoomedBy(m_camera.zoom, control->value);
         }
-        else if (control->control == Control::Select) {
-            Select(state, control->position);
+        else if (const core::Snapshot* drawn = m_display.Drawn(); SlotOf(control->control) && drawn != nullptr) {
+            if (SelectsInstead(control->control, drawn->combat, control->alt)) {
+                Select(state, control->position);
+            }
+            else {
+                Cast(state, *control, input.device, drawn->combat);
+            }
         }
         else if (
             const auto action = std::ranges::find(actionControls, control->control, &ActionControl::control);
@@ -269,6 +275,27 @@ void App::NoteDevice(const platform::InputEvent& input) {
     if (m_device.Take(input)) {
         PN_LOG_INFO("prompts for {}", DeviceName(m_device.Used(), m_device.Family()));
     }
+}
+
+void App::Cast(const platform::WindowState& state, const ControlEvent& control, platform::Device device, bool combat) {
+    // The clicked position for a mouse button; the cursor for a key, unless the gamepad is the device in use.
+    std::optional<core::Vec2> cursor;
+    if (device == platform::Device::Mouse) {
+        cursor = control.position;
+    }
+    else if (m_device.Used() != platform::Device::Gamepad) {
+        cursor = m_window.Cursor();
+    }
+    const std::optional<core::Vec2> point =
+        cursor.transform([&](core::Vec2 window) { return WindowToWorld(m_camera, window, state.width, state.height); });
+    const std::optional<core::Action> cast = CastAction(control.control, control.pressed, combat, control.alt, point);
+    if (!cast) {
+        if (combat && !point) {
+            PN_LOG_DEBUG("a cast sent nothing: the cursor isn't over the window, or the gamepad is in use");
+        }
+        return;
+    }
+    m_handover.SendInput(*cast);
 }
 
 void App::Select(const platform::WindowState& state, core::Vec2 position) {

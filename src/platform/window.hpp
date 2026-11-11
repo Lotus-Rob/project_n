@@ -74,6 +74,13 @@ enum class InputCode : u8 {
     PadLeftY,         ///< `value`: -1 (up) to 1 (down).
     PadLeftShoulder,  ///< The left bumper.
     PadRightShoulder, ///< The right bumper.
+    MouseRight,
+    KeySpace,
+    Key1,
+    Key2,
+    Key3,
+    Key4,
+    Key5,
 };
 
 /// One input from the player: a button pressed or released, a stick moved, the wheel turned. Key
@@ -91,6 +98,8 @@ struct InputEvent {
     f32 value = 0.0F;
     /// For a mouse event, the pointer in window coordinates (WindowState's width and height).
     core::Vec2 position{};
+    /// For a mouse button, whether Alt was held as it was pressed or released.
+    bool alt = false;
 };
 
 /// Whether the window's state pauses the game (design doc 0002 §6): it lost the focus or was minimised.
