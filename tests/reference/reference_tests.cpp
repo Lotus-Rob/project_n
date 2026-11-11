@@ -235,6 +235,41 @@ TEST_CASE("a fox dissolving, at half its progress") {
     CompareWithReference(Captured(renderer, snapshot, view, jobs), "fox_dissolving");
 }
 
+// The flying swords, special 1, cast at CAST_TICK among the foxes to the player's lower left, drawn `after` ticks later.
+constexpr u64 CAST_TICK = 120;
+constexpr core::Vec2 AMONG_THE_FOXES{ .x = 690.0F, .y = 700.0F };
+
+void CheckVolley(std::string_view name, u64 after) {
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    core::GameData data = game::BuiltInData();
+    data.abilities.qiStart = data.abilities.qiMax; // enough Qi for the swords at once
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
+    std::vector<core::Event> events;
+    const std::array<core::Action, 1> cast{
+        { { .kind = core::ActionKind::Cast, .slot = core::Slot::Special1, .point = AMONG_THE_FOXES } }
+    };
+    const u64 shownAt = CAST_TICK + after;
+    for (u64 tick = 1; tick <= shownAt; ++tick) {
+        const core::TickInput input = tick == CAST_TICK ? core::TickInput{ .actions = cast, .held = {} } : core::TickInput{};
+        arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, input, events);
+    }
+    const core::Snapshot snapshot = Published(arena, jobs, shownAt);
+    REQUIRE(snapshot.volleys.size() == 1);
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
+    CompareWithReference(Captured(renderer, snapshot, {}, jobs), name);
+}
+
+TEST_CASE("the flying swords mid-volley: the ring and the converging paths") {
+    // A copy: the game data BuiltInData() returns is a temporary, gone at the end of this line.
+    const core::VolleyShape swords = game::BuiltInData().abilities.Of(core::AbilityKind::FlyingSwords).volley;
+    // The middle of the stagger's swords just on the ring, then halfway through their flight.
+    const u64 ring = (swords.staggerTicks / 2) + swords.outTicks;
+    CheckVolley("volley_ring", ring);
+    CheckVolley("volley_converging", ring + (swords.flightTicks / 2));
+}
+
 TEST_CASE("the hovered entity's pale outline and the selected one's gold, close up") {
     CheckAgainstReference({ .name = "outlines", .scene = game::Scene::Arena, .zoom = gfx::MAX_ZOOM, .outlines = true });
 }

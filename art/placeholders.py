@@ -1,8 +1,8 @@
 """Procedural placeholder art for the sprite pipeline (design doc 0002 §2, §9): ink wash on paper.
 
 Writes assets/sprites/<name>.png for every placeholder sprite in art/sprites.toml: a painted
-ground, rocks, a pine, a shrine, a fox, a cultivator, a villager, glowing orbs, a blob shadow and four world-map
-cells. Each is original and drawn from code. Reproducible byte for byte: the drawing uses only
+ground, rocks, a pine, a shrine, a fox, a cultivator, a villager, glowing orbs, a blob shadow, four world-map
+cells, and the abilities' effects: a sword, a halo, a fire bolt, the lance's burst and the bars' solid square. Each is original and drawn from code. Reproducible byte for byte: the drawing uses only
 arithmetic and square roots (correctly rounded everywhere), integer hashing, and seeded
 random.Random, never a transcendental function. Run through `./dev atlas --placeholders`.
 
@@ -418,6 +418,90 @@ def shadow():
     return canvas
 
 
+# The abilities' effects. All but the sword are white, so the colour table's element colour tints them.
+
+STEEL = (148, 160, 176)
+EDGE = (236, 242, 248)
+
+
+def sword():
+    """A straight jian pointing up, its foot at its centre: a steel blade with a pale edge, a guard, a grip."""
+    canvas = Canvas(10, 40)
+
+    def blade(x, y):
+        if not 1.0 <= y <= 29.0:
+            return None
+        half = 2.2 * math.sqrt(min(1.0, (y - 1.0) / 6.0))  # a point that widens to the blade over its first 6 pixels
+        offset = x - 5.0
+        if abs(offset) > half + 0.5:
+            return None
+        cover = max(0.0, min(1.0, half + 0.5 - abs(offset)))
+        colour = mix(STEEL, EDGE, smoothstep(-0.5, half, offset))  # the right edge catches the light
+        return mix(colour, INK, 0.25 * smoothstep(0.6, 0.0, abs(offset))), cover  # the ridge down its middle
+    canvas.shape((0, 0, 10, 30), blade)
+    canvas.shape((0, 29, 10, 32), lambda x, y: ((96, 84, 66), 1.0) if 0.5 <= x <= 9.5 else None)  # the guard
+    canvas.shape((3, 32, 7, 38), lambda x, y: ((60, 44, 40), 1.0) if 3.8 <= x <= 6.2 else None)  # the grip
+    canvas.dab(5.0, 38.0, 1.8, (96, 84, 66), 1.0, soft=0.3)  # the pommel
+    canvas.outline(INK, 0.6)
+    return canvas
+
+
+def halo():
+    """A soft round glow, white: drawn additively in its element's colour."""
+    canvas = Canvas(48, 48)
+
+    def glow(x, y):
+        d = math.sqrt((x - 24.0) ** 2 + (y - 24.0) ** 2) / 24.0
+        return ((255, 255, 255), 0.2 * (1.0 - d) * (1.0 - d)) if d < 1.0 else None
+    canvas.shape((0, 0, 48, 48), glow)
+    return canvas
+
+
+def fire_bolt():
+    """A teardrop pointing up, white with a denser core, its foot at its centre: tinted by its element."""
+    canvas = Canvas(24, 48)
+
+    def drop(x, y):
+        dx = x - 12.0
+        below = math.sqrt(dx * dx + (y - 34.0) ** 2) / 10.0  # the round head at the bottom
+        if y < 34.0:
+            half = 10.0 * math.sqrt(max(0.0, (y - 2.0) / 32.0))  # narrowing to the point at the top
+            across = abs(dx) / half if half > 0.0 else 2.0
+            d = max(across, 0.0) if y >= 2.0 else 2.0
+        else:
+            d = below
+        if d >= 1.0:
+            return None
+        return (255, 255, 255), smoothstep(1.0, 0.55, d) * (0.65 + 0.35 * smoothstep(0.7, 0.0, d))
+    canvas.shape((0, 0, 24, 48), drop)
+    return canvas
+
+
+def lance_strike():
+    """A burst, white: a bright core, a ring and eight rays fading outwards; tinted by its element."""
+    canvas = Canvas(96, 96)
+
+    def burst(x, y):
+        dx, dy = x - 48.0, y - 48.0
+        r = math.sqrt(dx * dx + dy * dy) / 48.0
+        if r >= 1.0:
+            return None
+        core = smoothstep(0.35, 0.0, r)
+        ring = smoothstep(0.12, 0.0, abs(r - 0.62)) * 0.7
+        line = min(abs(dx), abs(dy), abs(dx - dy) * 0.7071, abs(dx + dy) * 0.7071)
+        rays = smoothstep(3.0, 0.0, line) * (1.0 - r) * 0.8
+        return (255, 255, 255), min(1.0, core + ring + rays)
+    canvas.shape((0, 0, 96, 96), burst)
+    return canvas
+
+
+def solid():
+    """An opaque white square: the health bars tint and stretch it."""
+    canvas = Canvas(8, 8)
+    canvas.shape((0, 0, 8, 8), lambda x, y: ((255, 255, 255), 1.0))
+    return canvas
+
+
 # World-map cells: opaque 256-pixel squares inked at the border, for the zoomable grid (mipmapping).
 
 def cell(seed):
@@ -500,6 +584,11 @@ PLACEHOLDERS = {
     "cell_mountain": (cell_mountain, True),
     "cell_forest": (cell_forest, True),
     "cell_city": (cell_city, True),
+    "sword": (sword, False),
+    "halo": (halo, False),
+    "fire_bolt": (fire_bolt, False),
+    "lance_strike": (lance_strike, False),
+    "solid": (solid, False),
 }
 
 

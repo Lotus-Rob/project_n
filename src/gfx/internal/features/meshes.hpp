@@ -39,6 +39,32 @@ struct TextStyle {
 /// `packed` (a core::UiColours value: linear, premultiplied, red in the low byte) as TextStyle::ink.
 [[nodiscard]] std::array<f32, 4> InkOf(u32 packed);
 
+/// The indices of a quad: two triangles over its QUAD_VERTICES corners, both clockwise on screen.
+inline constexpr u32 QUAD_INDICES = 6;
+
+/// A GPU buffer of `bytes` for `usage`, named `name` for graphics debuggers; null when it can't be made.
+[[nodiscard]] Gpu<SDL_GPUBuffer> CreateMeshBuffer(
+    SDL_GPUDevice* device,
+    SDL_GPUBufferUsageFlags usage,
+    u32 bytes,
+    const char* name
+);
+
+/// Records copying `bytes` through `transfer` (mapped `cycle`d) into the start of `buffer` in `copy`; false when the
+/// transfer buffer can't be mapped.
+[[nodiscard]] bool CopyToBuffer(
+    SDL_GPUDevice* device,
+    SDL_GPUCopyPass* copy,
+    SDL_GPUTransferBuffer* transfer,
+    SDL_GPUBuffer* buffer,
+    std::span<const std::byte> bytes,
+    bool cycle
+);
+
+/// Records filling `indices` with QUAD_INDICES indices for each of `quads` quads, QUAD_VERTICES vertices apart, in
+/// `copy`; false when its transfer buffer can't be made or mapped.
+[[nodiscard]] bool UploadQuadIndices(SDL_GPUDevice* device, SDL_GPUCopyPass* copy, SDL_GPUBuffer* indices, u32 quads);
+
 /// A run of consecutive uploaded quads on one page: one draw.
 struct MeshRun {
     /// The R8 page of distance fields its quads sample.

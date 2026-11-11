@@ -453,8 +453,8 @@ void Combat::Arrive(
 ) {
     // At its arrival tick (`tick`), and from then on, the target a sword flies at is the one it strikes.
     const core::VolleyTarget& target = flight.targets.at(core::SwordTarget(flight.volley, sword, tick, flight.targets));
-    // A target dead before this tick, or the point, takes nothing: the sword plunges.
-    if (target.entity == core::StableId{} || target.diedTick != 0 || state.DomainOf(target.entity) != ACTIVE) {
+    // A target dead before this tick, or the point, takes nothing: the sword plunges. The renderer asks the same.
+    if (!target.Struck(tick) || state.DomainOf(target.entity) != ACTIVE) {
         return;
     }
     core::Registry& entities = state[ACTIVE].Entities();

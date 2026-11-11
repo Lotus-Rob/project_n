@@ -23,7 +23,8 @@
 /// - Qi and cooldowns (game/combat.hpp): a cast spends or gains the player's Qi and cools its slot down; the dash moves
 ///   the player;
 /// - the flying swords and the fire bolt (game/combat.hpp): volleys that tag the foxes round the point, follow them,
-///   move on from the dead and strike at their scheduled ticks; the bolt's hit leaves a burn that ticks;
+///   move on from the dead and strike at their scheduled ticks; the bolt's hit leaves a burn that ticks; the main
+///   thread draws them at the render time with halos and trails, and the foxes' health bars (gfx/volley_draw.hpp);
 /// - game text over the world: name labels over the player and every fox, and the tablet's vertical caption.
 /// Its stress variant adds a crowd and a bullet spiral, about 100,000 instances in all (§8.1), and a world tier of 50,000.
 

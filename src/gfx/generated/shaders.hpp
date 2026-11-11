@@ -130,6 +130,31 @@ inline constexpr Stage MESH_VERT{
     .uniformBuffers = 1,
 };
 
+/// shaders/bin/ribbon.frag.spv, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 808> RIBBON_FRAG_SPIRV{{
+#include "ribbon.frag.spv.h"
+}};
+/// shaders/bin/ribbon.frag.dxil, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 3308> RIBBON_FRAG_DXIL{{
+#include "ribbon.frag.dxil.h"
+}};
+/// shaders/bin/ribbon.frag.msl, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 571> RIBBON_FRAG_MSL{{
+#include "ribbon.frag.msl.h"
+}};
+/// shaders/ribbon.frag.hlsl.
+inline constexpr Stage RIBBON_FRAG{
+    .name = "ribbon.frag",
+    .entryPoint = "FragmentMain",
+    .spirv = RIBBON_FRAG_SPIRV,
+    .dxil = RIBBON_FRAG_DXIL,
+    .msl = RIBBON_FRAG_MSL,
+    .samplers = 0,
+    .storageTextures = 0,
+    .storageBuffers = 0,
+    .uniformBuffers = 0,
+};
+
 /// shaders/bin/sprite.frag.spv, embedded by XMake's utils.bin2c.
 inline constexpr std::array<u8, 21000> SPRITE_FRAG_SPIRV{{
 #include "sprite.frag.spv.h"

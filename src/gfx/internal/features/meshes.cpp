@@ -8,8 +8,6 @@ namespace gfx::internal {
 
 namespace {
 
-constexpr u32 QUAD_INDICES = 6;
-constexpr std::array<u32, QUAD_INDICES> QUAD_CORNERS{ { 0, 1, 2, 2, 1, 3 } }; // two triangles, both clockwise on screen
 constexpr u32 VERTEX_BYTES = MAX_MESH_QUADS * QUAD_VERTICES * static_cast<u32>(MESH_VERTEX_BYTES);
 constexpr u32 INDEX_BYTES = MAX_MESH_QUADS * QUAD_INDICES * static_cast<u32>(sizeof(u32));
 
@@ -64,6 +62,8 @@ Gpu<SDL_GPUGraphicsPipeline> CreateMeshPipeline(SDL_GPUDevice* device, SDL_GPUTe
     return pipeline;
 }
 
+} // namespace
+
 Gpu<SDL_GPUBuffer> CreateMeshBuffer(SDL_GPUDevice* device, SDL_GPUBufferUsageFlags usage, u32 bytes, const char* name) {
     SDL_GPUBufferCreateInfo info{};
     info.usage = usage;
@@ -75,7 +75,6 @@ Gpu<SDL_GPUBuffer> CreateMeshBuffer(SDL_GPUDevice* device, SDL_GPUBufferUsageFla
     return buffer;
 }
 
-// Records copying `bytes` through `transfer` (mapped `cycle`d) into the start of `buffer`; false when it can't be mapped.
 bool CopyToBuffer(
     SDL_GPUDevice* device,
     SDL_GPUCopyPass* copy,
@@ -99,7 +98,20 @@ bool CopyToBuffer(
     return true;
 }
 
-} // namespace
+bool UploadQuadIndices(SDL_GPUDevice* device, SDL_GPUCopyPass* copy, SDL_GPUBuffer* indices, u32 quads) {
+    constexpr std::array<u32, QUAD_INDICES> QUAD_CORNERS{ { 0, 1, 2, 2, 1, 3 } }; // two triangles, both clockwise on screen
+    std::vector<u32> values(static_cast<std::size_t>(quads) * QUAD_INDICES);
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        values[index] = static_cast<u32>(((index / QUAD_INDICES) * QUAD_VERTICES) + QUAD_CORNERS.at(index % QUAD_INDICES));
+    }
+    SDL_GPUTransferBufferCreateInfo info{};
+    info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    info.size = static_cast<u32>(values.size() * sizeof(u32));
+    // Released once recorded: SDL keeps it until the copy has run.
+    const Gpu<SDL_GPUTransferBuffer> transfer{ SDL_CreateGPUTransferBuffer(device, &info), { device } };
+    return transfer != nullptr &&
+           CopyToBuffer(device, copy, transfer.get(), indices, std::as_bytes(std::span{ values }), false);
+}
 
 std::array<f32, 4> InkOf(u32 packed) {
     std::array<f32, 4> ink{};
@@ -141,17 +153,7 @@ std::expected<MeshRenderer, core::Error> MeshRenderer::Create(SDL_GPUDevice* dev
 std::expected<std::size_t, core::Error> MeshRenderer::Upload(SDL_GPUCopyPass* copy, std::span<const MeshVertex> vertices) {
     PN_PROFILE_ZONE();
     if (!m_indicesUploaded) {
-        std::vector<u32> indices(static_cast<std::size_t>(MAX_MESH_QUADS) * QUAD_INDICES);
-        for (std::size_t index = 0; index < indices.size(); ++index) {
-            indices[index] = static_cast<u32>(((index / QUAD_INDICES) * QUAD_VERTICES) + QUAD_CORNERS.at(index % QUAD_INDICES));
-        }
-        SDL_GPUTransferBufferCreateInfo info{};
-        info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        info.size = INDEX_BYTES;
-        // Released once recorded: SDL keeps it until the copy has run.
-        const Gpu<SDL_GPUTransferBuffer> transfer{ SDL_CreateGPUTransferBuffer(m_device, &info), { m_device } };
-        if (transfer == nullptr ||
-            !CopyToBuffer(m_device, copy, transfer.get(), m_indices.get(), std::as_bytes(std::span{ indices }), false)) {
+        if (!UploadQuadIndices(m_device, copy, m_indices.get(), MAX_MESH_QUADS)) {
             return std::unexpected{ core::Error{ std::format("the mesh quad indices weren't uploaded: {}", SDL_GetError()) } };
         }
         m_indicesUploaded = true;
