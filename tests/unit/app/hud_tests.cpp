@@ -324,4 +324,17 @@ TEST_CASE("with the outline and the shadow off, the slot lines take the ink, a c
     CHECK(outlined.lines.at(SPENDER_LINE).colour == HudColours(OTHERS).Of(core::UiColour::HudCooling));
 }
 
+TEST_CASE("with the outline and the shadow off, the slot lines' ink is as opaque as the HUD's text, as a label's is") {
+    constexpr u32 FIRST = 0xFF00'0001U;
+    constexpr u32 HALF_OPAQUE_TEXT = 0x8080'8080U;
+    core::UiColours colours = HudColours(FIRST);
+    colours.Set(core::UiColour::HudText, HALF_OPAQUE_TEXT);
+    app::Hud hud(HudStrings(), { .language = core::Language::English, .outline = false, .shadow = false }, colours);
+    const Built built = Build(hud, SpenderCooling());
+    const u32 ink = core::ScaledColour(colours.Of(core::UiColour::TextInk), core::OpacityOf(HALF_OPAQUE_TEXT));
+    CHECK(built.lines.at(FIRST_SLOT_LINE).colour == ink);
+    CHECK(built.lines.at(SPENDER_LINE).colour == core::ScaledColour(ink, app::HUD_COOLING_INK_OPACITY));
+    CHECK(built.lines.at(HEALTH_LINE).colour == HALF_OPAQUE_TEXT); // on its bar, the text's own colour
+}
+
 } // namespace

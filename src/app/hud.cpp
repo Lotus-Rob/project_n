@@ -100,9 +100,9 @@ void Hud::Build(
     PN_PROFILE_ZONE();
     const u32 text = m_colours.Of(core::UiColour::HudText);
     // Over the ground, light text needs its dark edge to read on the pale ground; without one the slots turn to the ink,
-    // as the labels do. The bars' words stay light, on their bars.
+    // as opaque as the text was, as the labels do. The bars' words stay light, on their bars.
     const bool inked = !m_text.outline && !m_text.shadow;
-    const u32 ink = m_colours.Of(core::UiColour::TextInk);
+    const u32 ink = core::ScaledColour(m_colours.Of(core::UiColour::TextInk), core::OpacityOf(text));
     const u32 slotText = inked ? ink : text;
     const u32 coolingText = inked ? core::ScaledColour(ink, HUD_COOLING_INK_OPACITY) : m_colours.Of(core::UiColour::HudCooling);
     const f32 lineHeight = HUD_LINE_HEIGHT * m_text.scale;
