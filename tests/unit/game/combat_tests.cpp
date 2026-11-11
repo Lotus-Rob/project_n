@@ -929,6 +929,36 @@ TEST_CASE("each tick's hits are the swords arriving then whose target was alive 
     CHECK(deaths.at(1) > 0);
 }
 
+TEST_CASE("two volleys on the same targets each end once, at their own last arrival") {
+    constexpr u64 SECOND = CAST + 5;
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
+    Run(arena, 1, CAST - 1);
+    const core::Vec2 point = ChestOf(arena, Foxes(arena).front()) + OFF_AXIS;
+    core::GameData data = WithSwords(Gathered(AMPLE), Nearest(arena, point, 2).radius);
+    data.abilities.table.at(FLYING_SWORDS).cooldownTicks = 0; // free and ready, so the second overlaps the first
+    data.abilities.table.at(FLYING_SWORDS).qiCost = 0;
+    arena.SetData(data);
+    std::vector<core::Event> events = StampedCast(arena, CAST, core::Slot::Special1, point);
+    std::ranges::move(Play(arena, CAST + 1, SECOND - 1), std::back_inserter(events));
+    std::ranges::move(StampedCast(arena, SECOND, core::Slot::Special1, point), std::back_inserter(events));
+    const core::Snapshot snapshot = Published(arena, SECOND);
+    REQUIRE(snapshot.volleys.size() == 2);
+    REQUIRE(snapshot.volleys.front().volley.use != snapshot.volleys.back().volley.use);
+    const u64 firstLast = core::LastArrival(snapshot.volleys.front().volley);
+    const u64 secondLast = core::LastArrival(snapshot.volleys.back().volley);
+    REQUIRE(core::LaunchTick(snapshot.volleys.back().volley, 0) < firstLast); // in flight together
+    std::ranges::move(Play(arena, SECOND + 1, secondLast + 1), std::back_inserter(events));
+    for (const core::VolleyView& view : snapshot.volleys) {
+        CAPTURE(view.volley.use);
+        const std::vector<core::Event> used = OfUse(events, view.volley.use);
+        CHECK(CountKind(used, core::EventKind::Hit) == SWORDS);
+        REQUIRE(CountKind(used, core::EventKind::UseEnded) == 1);
+        CHECK(used.back().kind == core::EventKind::UseEnded);
+        CHECK(used.back().tick == core::LastArrival(view.volley));
+    }
+    CHECK(firstLast != secondLast);
+}
+
 TEST_CASE("with none tagged, the swords strike the point and emit nothing but the end") {
     constexpr core::Vec2 NOWHERE{ .x = 960.0F, .y = 1'100.0F }; // 260 below the lowest fox's chest
     game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
