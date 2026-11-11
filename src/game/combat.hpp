@@ -111,8 +111,8 @@ struct Caster {
     }
 };
 
-/// A creature in a dash: its foot goes from `from` to `to`, eased in and out, over `ticks` ticks from `startTick`, held
-/// movement ignored meanwhile.
+/// A creature in a dash: its foot goes from `from` to `to`, eased in and out, over `ticks` ticks from `startTick` (the
+/// first step on that tick, the last on `startTick + ticks - 1`), held movement ignored meanwhile.
 struct Dashing {
     /// Where the dash started.
     core::Vec2 from{};
@@ -155,10 +155,10 @@ public:
     static void Damage(core::State& state, core::StableId target, i64 amount, u64 tick);
 
     /// Casts the ability in `cast.slot` for `player` at `tick`, if it can: its slot holds one, the slot's cooldown is over, the
-    /// point is finite and the player is alive and not dashing. Order: the cooldown, then the Qi (too little appends a
-    /// NotEnoughQi event with the slot as its value and changes nothing), then the ability's effect; a cast that goes off
-    /// gains `qiGain` (never past the most), spends `qiCost` and starts the slot's cooldown. Does nothing for a `player`
-    /// that isn't in `state` or has no Caster.
+    /// point is finite and the player is alive. A cast during a dash is ignored, by design (logged at debug level). Order: the
+    /// cooldown, then the Qi (too little appends a NotEnoughQi event with the slot as its value and changes nothing), then the
+    /// ability's effect; a cast that goes off gains `qiGain` (never past the most), spends `qiCost` and starts the slot's
+    /// cooldown. Does nothing for a `player` that isn't in `state` or has no Caster.
     static void Cast(
         core::State& state,
         const core::Abilities& abilities,
@@ -168,8 +168,8 @@ public:
         std::vector<core::Event>& events
     );
 
-    /// Moves `player`, if it is dashing, to where its dash puts it at `tick`, ending the dash at its last tick; whether it is
-    /// dashing, which means the caller doesn't walk it.
+    /// Moves `player`, if it is dashing, to where its dash puts it at `tick` (a dash cast this tick takes its first step now),
+    /// ending the dash at its last tick; whether it is dashing, which means the caller doesn't walk it.
     [[nodiscard]] static bool Dash(core::State& state, core::StableId player, u64 tick);
 
     /// Advances combat in the active domain of `state` to `tick`, after the orbits have moved: eases each Arriving

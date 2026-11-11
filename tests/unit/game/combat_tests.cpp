@@ -428,6 +428,7 @@ constexpr i64 LANCE_COST = 25;
 constexpr i64 SWORDS_COST = 60;
 constexpr f32 DASH_DISTANCE = 260.0F;
 constexpr u64 DASH_TICKS = 9;
+constexpr u64 DASH_COOLDOWN = 60;
 constexpr core::Vec2 FAR_RIGHT{ .x = 5'000.0F, .y = 0.0F };
 
 // Ticks `arena` once at `tick`, casting the ability in `slot` at `point` and holding `held`; the tick's events.
@@ -525,39 +526,42 @@ TEST_CASE("an empty slot casts nothing") {
     Run(idle, 1, 1);
     CHECK(events.empty());
     CHECK(casting.StateHash() == idle.StateHash());
+    CHECK(CasterOf(casting).readyTick.at(std::to_underlying(core::Slot::Special2)) == 0); // no cooldown started
 }
 
 TEST_CASE("the dash moves the player toward the point, by its distance, over its duration") {
     constexpr core::HeldInput LEFT{ .move = { .x = -1.0F, .y = 0.0F } };
     constexpr u64 START = 1;
+    constexpr u64 LAST = START + DASH_TICKS - 1;
     game::Arena arena(test::TestManifest());
     const core::StableId player = arena.Player();
     const core::Vec2 from = FootOf(arena, player);
     CastAt(arena, START, core::Slot::Movement, from + FAR_RIGHT, LEFT);
-    CHECK(FootOf(arena, player).x == from.x);
-    const u64 half = START + (DASH_TICKS / 2);
-    for (u64 tick = START + 1; tick < half; ++tick) {
-        Run(arena, tick, tick);
-    }
-    const f32 progress = (FootOf(arena, player).x - from.x) / DASH_DISTANCE;
-    CHECK(progress > 0.0F);
-    Run(arena, half, half);
-    constexpr f32 LINEAR = 0.5F;
-    CHECK(FootOf(arena, player).x - from.x < LINEAR * DASH_DISTANCE); // eased: slow at the start
-    for (u64 tick = half + 1; tick <= START + DASH_TICKS; ++tick) {
+    // The cast's own tick takes the first step, eased: less than a linear ninth of the way.
+    const f32 first = FootOf(arena, player).x - from.x;
+    CHECK(first > 0.0F);
+    CHECK(first < DASH_DISTANCE / static_cast<f32>(DASH_TICKS));
+    f32 previous = first;
+    for (u64 tick = START + 1; tick < LAST; ++tick) {
         std::vector<core::Event> events;
         arena.Tick(At(tick), { .actions = {}, .held = LEFT }, events);
+        const f32 moved = FootOf(arena, player).x - from.x;
+        CHECK(moved > previous);
+        CHECK(moved < DASH_DISTANCE);
+        previous = moved;
     }
+    CHECK(Entities(arena).all_of<game::Dashing>(EntityOf(arena, player)));
+    std::vector<core::Event> events;
+    arena.Tick(At(LAST), { .actions = {}, .held = LEFT }, events);
     CHECK(FootOf(arena, player).x == from.x + DASH_DISTANCE);
     CHECK(FootOf(arena, player).y == from.y);
+    CHECK_FALSE(Entities(arena).all_of<game::Dashing>(EntityOf(arena, player)));
     for (const core::StableId fox : Foxes(arena)) {
         const core::Vec2 centre = Entities(arena).get<game::Orbit>(EntityOf(arena, fox)).centre;
         CHECK(centre.x == FootOf(arena, player).x);
         CHECK(centre.y == FootOf(arena, player).y);
     }
-    CHECK_FALSE(Entities(arena).all_of<game::Dashing>(EntityOf(arena, player)));
-    std::vector<core::Event> events;
-    arena.Tick(At(START + DASH_TICKS + 1), { .actions = {}, .held = LEFT }, events);
+    arena.Tick(At(LAST + 1), { .actions = {}, .held = LEFT }, events);
     CHECK(FootOf(arena, player).x < from.x + DASH_DISTANCE); // walking again
 }
 
@@ -566,9 +570,71 @@ TEST_CASE("the dash stops at a point nearer than its distance") {
     game::Arena arena(test::TestManifest());
     const core::Vec2 from = FootOf(arena, arena.Player());
     CastAt(arena, 1, core::Slot::Movement, from + core::Vec2{ .x = 0.0F, .y = NEAR_BY });
-    Run(arena, 2, 1 + DASH_TICKS);
+    Run(arena, 2, DASH_TICKS);
     CHECK(FootOf(arena, arena.Player()).x == from.x);
     CHECK(FootOf(arena, arena.Player()).y == from.y + NEAR_BY);
+}
+
+TEST_CASE("a dash toward the player's own foot goes nowhere, finite, and ends on time") {
+    constexpr u64 START = 1;
+    game::Arena arena(test::TestManifest());
+    const core::Vec2 from = FootOf(arena, arena.Player());
+    CastAt(arena, START, core::Slot::Movement, from);
+    CHECK(FootOf(arena, arena.Player()).x == from.x);
+    CHECK(FootOf(arena, arena.Player()).y == from.y);
+    Run(arena, START + 1, START + DASH_TICKS - 1);
+    CHECK(FootOf(arena, arena.Player()).x == from.x);
+    CHECK(FootOf(arena, arena.Player()).y == from.y);
+    CHECK_FALSE(Entities(arena).all_of<game::Dashing>(EntityOf(arena, arena.Player())));
+    CHECK(CasterOf(arena).readyTick.at(std::to_underlying(core::Slot::Movement)) == START + DASH_COOLDOWN);
+}
+
+TEST_CASE("a cast during a dash is ignored") {
+    game::Arena arena(test::TestManifest());
+    CastAt(arena, 1, core::Slot::Movement, FAR_RIGHT);
+    const std::vector<core::Event> events = CastAt(arena, 2, core::Slot::Generator);
+    CHECK(events.empty());
+    CHECK(CasterOf(arena).qi == QI_START);
+    CHECK(CasterOf(arena).readyTick.at(std::to_underlying(core::Slot::Generator)) == 0);
+}
+
+TEST_CASE("a cast by a dying player is ignored") {
+    game::Arena arena(test::TestManifest());
+    Run(arena, 1, 1);
+    arena.Damage(arena.Player(), CULTIVATOR_HEALTH, 1);
+    REQUIRE(Entities(arena).all_of<game::Dying>(EntityOf(arena, arena.Player())));
+    CastAt(arena, 2, core::Slot::Generator);
+    CHECK(CasterOf(arena).qi == QI_START);
+    CHECK(CasterOf(arena).readyTick.at(std::to_underlying(core::Slot::Generator)) == 0);
+}
+
+TEST_CASE("a cast at a point that isn't finite is ignored") {
+    constexpr f32 NOT_A_NUMBER = std::numeric_limits<f32>::quiet_NaN();
+    constexpr f32 INFINITE = std::numeric_limits<f32>::infinity();
+    game::Arena arena(test::TestManifest());
+    CastAt(arena, 1, core::Slot::Generator, { .x = NOT_A_NUMBER, .y = 0.0F });
+    CastAt(arena, 2, core::Slot::Movement, { .x = 0.0F, .y = INFINITE });
+    CHECK(CasterOf(arena).qi == QI_START);
+    CHECK(CasterOf(arena).readyTick == std::array<u64, core::SLOTS>{});
+    CHECK_FALSE(Entities(arena).all_of<game::Dashing>(EntityOf(arena, arena.Player())));
+}
+
+TEST_CASE("a cast of a slot out of range is ignored") {
+    game::Arena casting(test::TestManifest());
+    game::Arena idle(test::TestManifest());
+    const std::vector<core::Event> events = CastAt(casting, 1, static_cast<core::Slot>(core::SLOTS));
+    Run(idle, 1, 1);
+    CHECK(events.empty());
+    CHECK(casting.StateHash() == idle.StateHash());
+}
+
+TEST_CASE("new game data with a lower most Qi lowers the Qi held to it") {
+    constexpr i64 LOWER = 20;
+    game::Arena arena(test::TestManifest());
+    core::GameData data = game::BuiltInData();
+    data.abilities.qiMax = LOWER;
+    arena.SetData(data);
+    CHECK(CasterOf(arena).qi == LOWER);
 }
 
 TEST_CASE("a casting player's state is published in a combat scene only") {

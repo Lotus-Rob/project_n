@@ -910,7 +910,6 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
     const auto& dyings = m_state[ACTIVE].Entities().storage<Dying>();
     const u64 tick = snapshot.simulationTick;
     snapshot.combat = IsCombatScene();
-    snapshot.caster.reset();
     const u32 chunks = core::ChunkCount(looks.size(), PUBLISH_CHUNK);
     core::Rect view = m_view;
     if (m_player != core::StableId{}) {

@@ -59,6 +59,18 @@ TEST_CASE("every hit of a burst is played") {
     CHECK(numbers.Live() == 0);
 }
 
+TEST_CASE("a refused cast's event draws no number, every hit or combined") {
+    constexpr i64 SLOT = 1;
+    for (const core::Settings& settings : { EVERY_HIT, COMBINED }) {
+        app::DamageNumbers numbers(settings);
+        numbers.Play({ .tick = 0, .kind = core::EventKind::NotEnoughQi, .use = 0, .value = SLOT });
+        CHECK(numbers.Live() == 0);
+        numbers.Play({ .tick = 0, .kind = core::EventKind::UseEnded, .use = 0 });
+        CHECK(numbers.Live() == 0);
+        CHECK(TextsAt(numbers, STARTED).empty());
+    }
+}
+
 TEST_CASE("a number is gone a second after it starts") {
     constexpr f64 SECOND = 60.0;
     const core::Event hit = Hit(0, FOX_A, VALUE);
