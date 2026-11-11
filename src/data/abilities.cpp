@@ -67,13 +67,20 @@ std::expected<u32, core::Error> Count(const YAML::Node& map, std::string_view na
     });
 }
 
-std::expected<f32, core::Error> Distance(const YAML::Node& map, std::string_view name, const char* key, bool required = false) {
+// `name`'s number at `key` as an f32 (a distance, a speed or an angle), finite and not negative; 0 when absent and not
+// `required`.
+std::expected<f32, core::Error> NonNegative(
+    const YAML::Node& map,
+    std::string_view name,
+    const char* key,
+    bool required = false
+) {
     return Number(map, name, key, required).transform([](f64 value) { return static_cast<f32>(value); });
 }
 
 // A required fraction from 0 to below 1.
 std::expected<f32, core::Error> Fraction(const YAML::Node& map, std::string_view name, const char* key) {
-    return Distance(map, name, key, true).and_then([&](f32 value) -> std::expected<f32, core::Error> {
+    return NonNegative(map, name, key, true).and_then([&](f32 value) -> std::expected<f32, core::Error> {
         if (value >= 1.0F) {
             return RefuseAbilities(map[key], std::format("{}'s {} isn't below 1", name, key));
         }
@@ -153,14 +160,14 @@ std::expected<core::VolleyShape, core::Error> Swords(
             return value;
         });
     const std::expected<u32, core::Error> waveGap = Seconds(node, name, "wave_gap", true);
-    const std::expected<f32, core::Error> ring = Distance(node, name, "ring_radius");
-    const std::expected<f32, core::Error> ringStep = Distance(node, name, "ring_step", true);
+    const std::expected<f32, core::Error> ring = NonNegative(node, name, "ring_radius");
+    const std::expected<f32, core::Error> ringStep = NonNegative(node, name, "ring_step", true);
     const std::expected<f32, core::Error> scatter = Fraction(node, name, "scatter");
-    const std::expected<f32, core::Error> angleJitter = Distance(node, name, "angle_jitter", true);
+    const std::expected<f32, core::Error> angleJitter = NonNegative(node, name, "angle_jitter", true);
     const std::expected<u32, core::Error> stagger = Seconds(node, name, "stagger", true);
     const std::expected<u32, core::Error> out = Seconds(node, name, "out", true);
     const std::expected<u32, core::Error> flight = Seconds(node, name, "flight", true);
-    const std::expected<f32, core::Error> sweep = Distance(node, name, "sweep");
+    const std::expected<f32, core::Error> sweep = NonNegative(node, name, "sweep");
     const std::expected<f32, core::Error> sweepJitter = Fraction(node, name, "sweep_jitter");
     const std::expected<u32, core::Error> fade = Seconds(node, name, "fade", true);
     if (const std::optional<core::Error> error = FirstError(
@@ -239,9 +246,9 @@ std::expected<core::AbilityData, core::Error> Ability(
     const std::expected<i64, core::Error> qiCost = Amount(node, name, "qi_cost", false);
     const std::expected<i64, core::Error> qiGain = Amount(node, name, "qi_gain", false);
     const std::expected<i64, core::Error> damage = Amount(node, name, "damage", false);
-    const std::expected<f32, core::Error> radius = Distance(node, name, "radius");
-    const std::expected<f32, core::Error> distance = Distance(node, name, "distance");
-    const std::expected<f32, core::Error> speed = Distance(node, name, "speed");
+    const std::expected<f32, core::Error> radius = NonNegative(node, name, "radius");
+    const std::expected<f32, core::Error> distance = NonNegative(node, name, "distance");
+    const std::expected<f32, core::Error> speed = NonNegative(node, name, "speed");
     if (const std::optional<core::Error> error =
             FirstError(cooldown, duration, qiCost, qiGain, damage, radius, distance, speed)) {
         return std::unexpected{ *error };
