@@ -42,8 +42,9 @@ inline constexpr f32 HUD_COOLING_INK_OPACITY = 0.55F;
 /// name or "—", and while it cools down its seconds left, rounded up. Every value shows as a number as well as a length;
 /// a slot cooling down is drawn in HudCooling and shows its seconds; for NOT_ENOUGH_QI_SECONDS after a NotEnoughQi event,
 /// the Qi bar's text reads "Not enough Qi" in HudWarning. Every colour comes from the table, the text from the strings.
-/// With the text's outline and shadow both off, the slots' lines, over the ground, take TextInk as the labels do (a cooling
-/// one at HUD_COOLING_INK_OPACITY), so they read on the pale ground; the bars' words, on their bars, keep theirs.
+/// With the text's outline and shadow both off, the slots' lines, over the ground, take TextInk as the labels do, as opaque
+/// as HudText is (a cooling one at HUD_COOLING_INK_OPACITY of that), so they read on the pale ground; the bars' words, on
+/// their bars, keep theirs.
 class Hud {
 public:
     /// A HUD showing `strings` as `text` says, the renderer's text options: in its language, its sizes its scale times
