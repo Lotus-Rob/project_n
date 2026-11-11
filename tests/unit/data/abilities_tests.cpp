@@ -137,6 +137,17 @@ TEST_CASE("a volley of more swords than the limit is refused, naming the limit")
     CHECK(most.has_value());
 }
 
+TEST_CASE("an affliction of more ticks than the limit is refused, naming the limit") {
+    constexpr std::string_view LIMIT = "1000000";
+    const std::expected<core::Abilities, core::Error> most = data::ParseAbilities(With("ticks: 3", "ticks: 1000000"));
+    REQUIRE(most.has_value());
+    CHECK(most->Of(core::AbilityKind::FireBolt).affliction.ticks == 1'000'000);
+    const core::Error error = ErrorFor(With("ticks: 3", "ticks: 1000001"));
+    CHECK(error.message.contains("line 4"));
+    CHECK(error.message.contains("fire_bolt's burn's ticks"));
+    CHECK(error.message.contains(LIMIT));
+}
+
 TEST_CASE("a volley shape above the limit is not valid") {
     core::VolleyShape shape{ .count = core::MAX_VOLLEY_COUNT };
     CHECK(shape.Valid());
