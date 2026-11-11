@@ -101,3 +101,6 @@ foot = [48, 48]
 
 [solid]
 foot = [0, 4]
+
+[glow_core]
+foot = [8, 8]

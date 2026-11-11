@@ -16,6 +16,10 @@ constexpr u32 SWORD_CHUNK = 256;
 constexpr f32 SWORD_SCALE = 0.6F;
 // How much larger than its image a halo is drawn: a glow round the blade a little longer than it.
 constexpr f32 HALO_SCALE = 0.75F;
+// How much larger than its image (16 world units across) a sword's tinted core is drawn: under the middle of the blade,
+// smaller than its halo. The bolt's is twice as large, as the bolt is.
+constexpr f32 CORE_SCALE = 1.0F;
+constexpr f32 BOLT_CORE_SCALE = 2.0F;
 // A trail's width at the sword, in world units: about the drawn blade's.
 constexpr f32 TRAIL_WIDTH = 5.0F;
 // How much of that width its tail loses, so it narrows as it fades.
@@ -58,8 +62,9 @@ struct SwordFrame {
     f64 renderTick = 0.0;
 };
 
-// Where one sword's halo, sprite and trail go.
+// Where one sword's core, halo, sprite and trail go.
 struct SwordSlots {
+    core::Instance* core = nullptr;
     core::Instance* halo = nullptr;
     core::Instance* sword = nullptr;
     std::span<RibbonVertex> trail;
@@ -122,6 +127,7 @@ void DrawSword(
     const SwordSlots& slots
 ) {
     const core::Volley& volley = view.volley;
+    *slots.core = {};
     *slots.halo = {};
     *slots.sword = {};
     std::ranges::fill(slots.trail, RibbonVertex{});
@@ -140,15 +146,24 @@ void DrawSword(
     const bool gone = struck && frame.renderTick > static_cast<f64>(arrival);
     if (!gone && head.shown > 0.0F) {
         const f32 rotation = RotationTo(head.heading);
+        const bool bolt = view.ability == core::AbilityKind::FireBolt;
+        *slots.core = core::MakeInstance(
+            *frame.manifest,
+            { .sprite = core::atlas::SpriteId::GlowCore,
+              .previous = head.position,
+              .current = head.position,
+              .scale = bolt ? BOLT_CORE_SCALE : CORE_SCALE,
+              .colour = Scaled(effect, CORE_OPACITY * head.shown) }
+        );
+        // The glow goes before the blade, as the square of what shows: a plunged sword doesn't flash as it fades.
         *slots.halo = core::MakeInstance(
             *frame.manifest,
             { .sprite = core::atlas::SpriteId::Halo,
               .previous = head.position,
               .current = head.position,
               .scale = HALO_SCALE,
-              .colour = Scaled(effect, HALO_INTENSITY * head.shown) }
+              .colour = Scaled(effect, HALO_INTENSITY * head.shown * head.shown) }
         );
-        const bool bolt = view.ability == core::AbilityKind::FireBolt;
         *slots.sword = core::MakeInstance(
             *frame.manifest,
             { .sprite = bolt ? core::atlas::SpriteId::FireBolt : core::atlas::SpriteId::Sword,
@@ -162,7 +177,7 @@ void DrawSword(
     }
     const f64 tailTick = std::max(frame.renderTick - static_cast<f64>(TRAIL_TICKS), launch);
     if (headTick > tailTick && head.shown > 0.0F) {
-        DrawTrail(volley, sword, aim, headTick, tailTick, head, Scaled(effect, head.shown), slots.trail);
+        DrawTrail(volley, sword, aim, headTick, tailTick, head, Scaled(effect, HALO_INTENSITY * head.shown), slots.trail);
     }
 }
 
@@ -172,10 +187,18 @@ void VolleyDrawing::Clear() {
     instances.clear();
     batches.clear();
     ribbons.clear();
+    droppedSwords = 0;
+}
+
+f32 BarOpacity(const PlacedLabel& label) {
+    // The share of the cross-fade showing the name alone: its new count's, its old count's, or both.
+    const f32 alone = (label.count == 0 ? label.change : 0.0F) + (label.previous == 0 ? 1.0F - label.change : 0.0F);
+    return label.opacity * alone;
 }
 
 void DrawHealthBars(
     std::span<const core::HealthBar> bars,
+    std::span<const BarShown> shown,
     f32 alpha,
     const core::Manifest& manifest,
     const core::UiColours& colours,
@@ -192,6 +215,11 @@ void DrawHealthBars(
     const u32 fillColour = colours.Of(core::UiColour::EnemyHealthBar);
     const auto first = static_cast<u32>(out.instances.size());
     for (const core::HealthBar& bar : bars) {
+        const auto label = std::ranges::lower_bound(shown, bar.entity, {}, &BarShown::entity);
+        const f32 opacity = label != shown.end() && label->entity == bar.entity ? label->opacity : 0.0F;
+        if (!(opacity > 0.0F)) {
+            continue;
+        }
         const core::Vec2 head = bar.previous + ((bar.current - bar.previous) * alpha);
         const core::Vec2 middle{ .x = head.x, .y = head.y - HEALTH_BAR_RISE };
         // The square's foot is its left middle: a bar `full` long at most stands on its left end, `length` long.
@@ -210,14 +238,16 @@ void DrawHealthBars(
                 )
             );
         };
-        add(HEALTH_BAR_WIDTH, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT, backColour);
+        add(HEALTH_BAR_WIDTH, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT, Scaled(backColour, std::min(opacity, 1.0F)));
         // The fill starts where a full one would, so it shrinks towards the left as health falls.
         const f32 fraction = bar.fraction > 0.0F ? std::min(bar.fraction, 1.0F) : 0.0F;
-        add(HEALTH_FILL_WIDTH, HEALTH_FILL_WIDTH * fraction, HEALTH_FILL_HEIGHT, fillColour);
+        add(HEALTH_FILL_WIDTH, HEALTH_FILL_WIDTH * fraction, HEALTH_FILL_HEIGHT, Scaled(fillColour, std::min(opacity, 1.0F)));
     }
-    out.batches.push_back(
-        { .first = first, .count = static_cast<u32>(out.instances.size()) - first, .pipeline = core::Pipeline::Normal }
-    );
+    if (out.instances.size() > first) {
+        out.batches.push_back(
+            { .first = first, .count = static_cast<u32>(out.instances.size()) - first, .pipeline = core::Pipeline::Normal }
+        );
+    }
 }
 
 void DrawVolleys(
@@ -231,19 +261,31 @@ void DrawVolleys(
     VolleyDrawing& out
 ) {
     PN_PROFILE_ZONE();
-    u32 total = 0;
+    std::size_t all = 0;
     for (const core::VolleyView& view : volleys) {
-        total += view.volley.shape.count;
+        all += view.volley.shape.count;
     }
+    // Whole swords only: those past the overlay's room are left out, core, halo, blade and trail.
+    const std::size_t room =
+        (MAX_OVERLAY_INSTANCES - std::min<std::size_t>(out.instances.size(), MAX_OVERLAY_INSTANCES)) / SWORD_INSTANCES;
+    const auto total = static_cast<u32>(std::min(all, room));
+    out.droppedSwords += all - total;
     if (total == 0) {
         return;
     }
-    const auto halos = static_cast<u32>(out.instances.size());
+    const auto cores = static_cast<u32>(out.instances.size());
+    const u32 halos = cores + total;
     const u32 swords = halos + total;
     out.instances.resize(std::size_t{ swords } + total);
     const std::size_t firstVertex = out.ribbons.size();
     out.ribbons.resize(firstVertex + (std::size_t{ total } * TRAIL_VERTICES));
-    out.batches.push_back({ .first = halos, .count = total, .pipeline = core::Pipeline::Additive });
+    // The cores and halos under everything already there (the health bars, which the halos would wash out); the swords
+    // over all.
+    const std::array<core::Batch, 2> under{ {
+        { .first = cores, .count = total, .pipeline = core::Pipeline::Normal },
+        { .first = halos, .count = total, .pipeline = core::Pipeline::Additive },
+    } };
+    out.batches.insert(out.batches.begin(), under.begin(), under.end());
     out.batches.push_back({ .first = swords, .count = total, .pipeline = core::Pipeline::Normal });
     const SwordFrame frame{ .manifest = &manifest,
                             .colours = &colours,
@@ -269,7 +311,8 @@ void DrawVolleys(
                 view,
                 targets.subspan(view.firstTarget, view.targets),
                 index - volleyFirst,
-                { .halo = &instances[halos + index],
+                { .core = &instances[cores + index],
+                  .halo = &instances[halos + index],
                   .sword = &instances[swords + index],
                   .trail = ribbons.subspan(std::size_t{ index } * TRAIL_VERTICES, TRAIL_VERTICES) }
             );

@@ -2,7 +2,8 @@
 
 Writes assets/sprites/<name>.png for every placeholder sprite in art/sprites.toml: a painted
 ground, rocks, a pine, a shrine, a fox, a cultivator, a villager, glowing orbs, a blob shadow, four world-map
-cells, and the abilities' effects: a sword, a halo, a fire bolt, the lance's burst and the bars' solid square. Each is original and drawn from code. Reproducible byte for byte: the drawing uses only
+cells, and the abilities' effects: a sword, a halo and its tinted core, a fire bolt, the lance's burst and the bars' solid
+square. Each is original and drawn from code. Reproducible byte for byte: the drawing uses only
 arithmetic and square roots (correctly rounded everywhere), integer hashing, and seeded
 random.Random, never a transcendental function. Run through `./dev atlas --placeholders`.
 
@@ -457,6 +458,17 @@ def halo():
     return canvas
 
 
+def glow_core():
+    """A small soft dot, white: drawn under a sword's halo in its element's colour, so the hue shows on pale ground."""
+    canvas = Canvas(16, 16)
+
+    def dot(x, y):
+        d = math.sqrt((x - 8.0) ** 2 + (y - 8.0) ** 2) / 8.0
+        return ((255, 255, 255), smoothstep(1.0, 0.35, d)) if d < 1.0 else None
+    canvas.shape((0, 0, 16, 16), dot)
+    return canvas
+
+
 def fire_bolt():
     """A teardrop pointing up, white with a denser core, its foot at its centre: tinted by its element."""
     canvas = Canvas(24, 48)
@@ -589,6 +601,7 @@ PLACEHOLDERS = {
     "fire_bolt": (fire_bolt, False),
     "lance_strike": (lance_strike, False),
     "solid": (solid, False),
+    "glow_core": (glow_core, False),
 }
 
 

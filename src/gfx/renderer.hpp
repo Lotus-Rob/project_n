@@ -78,10 +78,10 @@ public:
     /// it isn't the snapshot drawn last (§8.3); a snapshot of a scene it doesn't hold draws the backdrop only.
     /// The view's outlined instance gets a pale outline drawn over everything, and the snapshot's
     /// selected instance a gold one; the gold wins where both fall on one. Over them go the swords' trails and the
-    /// overlay, placed every frame at the render time (gfx/volley_draw.hpp): the enemies' health bars, the halos and the
-    /// swords. Over all of it go the snapshot's texts, then `extra` (the main thread's own, such as damage numbers). A glyph
-    /// seen for the first time is rasterised on `jobs`, which must outlive the renderer, and drawn from the frame its field is
-    /// uploaded: no frame waits for one.
+    /// overlay, placed every frame at the render time (gfx/volley_draw.hpp): the swords' tinted cores and halos, the enemies'
+    /// health bars, shown as their labels are, and the swords. Over all of it go the snapshot's texts, then `extra` (the main
+    /// thread's own, such as damage numbers). A glyph seen for the first time is rasterised on `jobs`, which must outlive the
+    /// renderer, and drawn from the frame its field is uploaded: no frame waits for one.
     void Draw(const core::Snapshot& snapshot, const View& view, core::Jobs& jobs, std::span<const core::TextItem> extra = {});
 
     /// Draws `text` from the next frame on.
