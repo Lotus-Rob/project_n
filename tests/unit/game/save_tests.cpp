@@ -372,6 +372,34 @@ TEST_CASE("a save with a creature at no health that isn't dying, or dying with h
     CHECK_FALSE(dyingLoaded);
 }
 
+TEST_CASE("a save with a caster that has no health, or a dash that has no body, is refused") {
+    core::State caster{ game::DOMAINS, STATE_SEED };
+    caster[game::ACTIVE].Entities().emplace<game::Caster>(caster.Create(game::ACTIVE).second);
+    const bool casterLoaded = Loads(ArenaSave(caster));
+    CHECK_FALSE(casterLoaded);
+
+    core::State dashing{ game::DOMAINS, STATE_SEED };
+    dashing[game::ACTIVE].Entities().emplace<game::Dashing>(
+        dashing.Create(game::ACTIVE).second, game::Dashing{ .from = {}, .to = {}, .startTick = 0, .ticks = 1 }
+    );
+    const bool dashingLoaded = Loads(ArenaSave(dashing));
+    CHECK_FALSE(dashingLoaded);
+}
+
+TEST_CASE("a save's Qi above the loading game's most is lowered to it") {
+    constexpr i64 LOWER = 20;
+    game::Arena saved(test::TestManifest());
+    Tick(saved, At(1), {});
+    const std::vector<std::byte> bytes = Saved(saved);
+    core::GameData data = game::BuiltInData();
+    data.abilities.qiMax = LOWER;
+    game::Arena loaded(test::TestManifest(), game::Scene::Arena, data);
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader));
+    const core::Registry& entities = loaded.State()[game::ACTIVE].Entities();
+    CHECK(entities.get<game::Caster>(loaded.State()[game::ACTIVE].Find(loaded.Player())).qi == LOWER);
+}
+
 // A save of one fox easing in from `arriving`.
 std::vector<std::byte> ArrivingSave(game::Arriving arriving) {
     core::State state{ game::DOMAINS, STATE_SEED };

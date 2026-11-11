@@ -57,7 +57,11 @@ void Combat::Cast(
     core::Registry& entities = state[ACTIVE].Entities();
     const core::Entity entity = state[ACTIVE].Find(player);
     Caster* const caster = entities.try_get<Caster>(entity);
-    if (caster == nullptr || entities.any_of<Dying, Dashing>(entity)) {
+    if (caster == nullptr || entities.all_of<Dying>(entity)) {
+        return;
+    }
+    if (entities.all_of<Dashing>(entity)) {
+        PN_LOG_DEBUG("tick {}: a cast in slot {} is ignored: the player is dashing", tick, std::to_underlying(cast.slot));
         return;
     }
     const auto slot = std::to_underlying(cast.slot);
@@ -93,14 +97,14 @@ bool Combat::Dash(core::State& state, core::StableId player, u64 tick) {
     }
     Body& body = entities.get<Body>(entity);
     body.previous = body.current;
-    if (tick >= dashing->startTick + dashing->ticks) {
+    // The cast's own tick takes the first step, so a dash has no tick of lag: it ends on its tick `ticks - 1` after the cast.
+    const u64 step = tick + 1 - std::min(tick + 1, dashing->startTick);
+    if (step >= dashing->ticks) {
         body.current = dashing->to;
         entities.remove<Dashing>(entity);
         return true;
     }
-    const f64 progress =
-        tick <= dashing->startTick ? 0.0 : static_cast<f64>(tick - dashing->startTick) / static_cast<f64>(dashing->ticks);
-    const f64 eased = EaseInOut(progress);
+    const f64 eased = EaseInOut(static_cast<f64>(step) / static_cast<f64>(dashing->ticks));
     body.current = {
         .x = static_cast<f32>(
             static_cast<f64>(dashing->from.x) + ((static_cast<f64>(dashing->to.x) - static_cast<f64>(dashing->from.x)) * eased)
