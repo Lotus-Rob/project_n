@@ -20,5 +20,7 @@ inline constexpr u32 PURPOSE_AURA = 4;
 inline constexpr u32 PURPOSE_BURST = 5;
 /// A respawned fox picking where on the ground's edge it appears.
 inline constexpr u32 PURPOSE_RESPAWN = 6;
+/// A cast drawing its volley's seed (core::Volley::seed), from which the volley draws its own numbers.
+inline constexpr u32 PURPOSE_VOLLEY = 7;
 
 } // namespace game

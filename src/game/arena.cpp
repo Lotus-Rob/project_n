@@ -136,11 +136,25 @@ constexpr u32 WORLD_CELLS = 4'096;
 constexpr u64 SEED = 0x5eed;
 
 // The arena's part of a save: its format, then a version per domain, each changed with what its components save.
-constexpr u32 ARENA_FORMAT = 3;   // 2: the player and the selection; 3: the respawns waiting
-constexpr u32 ACTIVE_VERSION = 4; // 2: creatures; 3: spin; 4: health, dying, arriving, caster, dashing
+constexpr u32 ARENA_FORMAT = 3;   // 2: the player and the selection; 3: the respawns waiting and the volleys in flight
+constexpr u32 ACTIVE_VERSION = 4; // 2: creatures; 3: spin; 4: health, dying, arriving, caster, dashing, afflictions
 constexpr u32 WORLD_VERSION = 1;
-using ActiveComponents =
-    core::ComponentList<Body, Look, Orbit, Spin, Creature, Npc, Needs, Met, Wander, Health, Dying, Arriving, Caster, Dashing>;
+using ActiveComponents = core::ComponentList<
+    Body,
+    Look,
+    Orbit,
+    Spin,
+    Creature,
+    Npc,
+    Needs,
+    Met,
+    Wander,
+    Health,
+    Dying,
+    Arriving,
+    Caster,
+    Dashing,
+    Afflictions>;
 using WorldComponents = core::ComponentList<Npc, Needs, Met, Group>;
 
 constexpr u32 PUBLISH_CHUNK = 4'096; // entities packed per job chunk
@@ -162,8 +176,8 @@ constexpr std::array<SpriteId, 5> CELLS{
 };
 
 // Whether the active domain's combat components come as combat reads them: every creature has health and only
-// creatures do, a creature is dying exactly when its health is out, and an arriving one has the body and orbit it
-// eases between.
+// creatures do, a creature is dying exactly when its health is out, an arriving one has the body and orbit it
+// eases between, and only something with health is afflicted.
 bool CombatConsistent(const core::Registry& entities) {
     const auto hasHealth = [&entities](core::Entity entity) { return entities.all_of<Health>(entity); };
     const auto livesOrDies = [&entities](core::Entity entity) {
@@ -177,7 +191,8 @@ bool CombatConsistent(const core::Registry& entities) {
            std::ranges::all_of(entities.view<const Dying>(), hasHealth) &&
            std::ranges::all_of(entities.view<const Arriving>(), bodyAndOrbit) &&
            std::ranges::all_of(entities.view<const Caster>(), hasHealth) &&
-           std::ranges::all_of(entities.view<const Dashing>(), hasBody);
+           std::ranges::all_of(entities.view<const Dashing>(), hasBody) &&
+           std::ranges::all_of(entities.view<const Afflictions>(), hasHealth);
 }
 
 // Whether every entity has the components that code reads together with the ones it has: a save can
@@ -558,7 +573,7 @@ void Arena::Respawn(const core::TickCounters& counters, u32 index) {
 
 void Arena::CastAction(const core::Action& action, const core::TickCounters& counters, std::vector<core::Event>& events) {
     if (IsCombatScene()) {
-        Combat::Cast(m_state, m_data.abilities, m_player, action, counters.simulation, events);
+        m_combat.Cast(m_state, *m_manifest, m_data.abilities, m_player, action, counters, events);
         return;
     }
     PN_LOG_DEBUG("tick {}: a cast is ignored: the scene {} is no combat scene", counters.simulation, SceneName(m_scene));
@@ -569,7 +584,8 @@ void Arena::Tick(const core::TickCounters& counters, const core::TickInput& inpu
     if (std::ranges::contains(input.actions, core::ActionKind::CycleScene, &core::Action::kind)) {
         const auto next = static_cast<game::Scene>((std::to_underlying(m_scene) + 1U) % SCENES.size());
         PN_LOG_INFO("tick {}: the scene changes to {}", counters.simulation, SceneName(next));
-        Build(next); // the new scene's first tick is the next one
+        m_combat.EndUses(m_state, events); // nothing of this scene's goes on to hit
+        Build(next);                       // the new scene's first tick is the next one
         return;
     }
     for (const core::Action& action : input.actions) {
@@ -621,6 +637,8 @@ void Arena::Tick(const core::TickCounters& counters, const core::TickInput& inpu
     if (std::ranges::contains(input.actions, core::ActionKind::DebugBurst, &core::Action::kind)) {
         DebugBurst(counters, events);
     }
+    // Last, once everything that moves or kills this tick has.
+    m_combat.Strike(m_state, *m_manifest, counters.simulation, events);
 }
 
 core::Vec2 Arena::HeadOf(core::Entity entity) const {
@@ -966,6 +984,7 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
     m_drawList.Publish(snapshot, jobs);
     PublishOverhead(snapshot);
     PublishCaster(snapshot);
+    m_combat.Publish(snapshot);
     if (m_selected != core::StableId{}) {
         if (const auto drawn = std::ranges::find(snapshot.ids, m_selected); drawn != snapshot.ids.end()) {
             snapshot.selected = static_cast<u32>(drawn - snapshot.ids.begin());
