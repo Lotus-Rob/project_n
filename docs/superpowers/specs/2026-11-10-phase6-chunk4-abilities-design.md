@@ -6,8 +6,8 @@ Date: 2026-11-10 · Status: approved 2026-11-10 · Phase spec: `2026-11-10-phase
 
 - **An ability loadout:** generator (left click), spender (right click), movement (Space), four specials (1–4, each a
   cooldown and a resource cost), an ultimate (5, a very long cooldown). Set in data for now; the UI to equip comes later.
-- **The flying swords** (special 1): **1,000 swords burst out of the player in a ring and flow, on curving paths, into
-  the area under the mouse**, striking every enemy tagged there. Bright trails and a soft glow on each sword.
+- **The flying swords** (special 1): **1,000 swords form round the player in waves of wide, scattered rings, one after
+  another, and flow, on curving paths, into the area under the mouse**, striking every enemy tagged there. Bright trails and a soft glow on each sword.
 - **Two basic elemental attacks:** a fire bolt that burns (generator) and a poison lance that poisons (spender); a dash
   toward the mouse (movement).
 - **Enemies have health and die** in a pixelated dissolve, then respawn at the arena's edge. They don't fight back yet.
@@ -32,7 +32,9 @@ and dungeons the player enters, never in the open world or towns.
 3. **Targeting:** every cast aims at the **world point under the mouse**; a **hit area** around that point tags the
    enemies in it when the cast starts. **One cast per click** (a held button doesn't repeat).
 4. **The flying swords** (special 1, plain damage only):
-   - on the key press, 1,000 swords **burst out of the player in a ring**, staggered so they stream out like particles;
+   - on the key press, 1,000 swords **form in waves of wide, scattered rings, one after another** (the user's decision
+     of 2026-11-11, decision 11; it was "burst out of the player in a ring"), staggered so they stream out like
+     particles;
    - each then flies on a **curved path** that sweeps round and **converges into the target area**, flowing into it;
    - **homing:** the swords split among the enemies tagged in the area and **follow each one as it moves**; when an
      enemy dies, its swords turn to the tagged enemies still alive; **once every tagged enemy is dead, the remaining
@@ -186,6 +188,14 @@ The user's, 2026-11-10:
 10. **One cast per click;** melee combos (one per click within a short window) come later, and the input leaves room
     for them.
 
+The user's, 2026-11-11, after seeing the swords form a single ring ("Can we make the sword spread much wider so the 1000
+swords don't just end up looking like a circle? Much wider, much more spread, much more randomness in the creation? Make
+the creation semi-sequenced with rings of swords one after each other"):
+
+11. **The swords form in waves of wide, scattered rings, one after another,** the innermost first, each further out than
+    the one before and each a loose band: a sword's place in and out of its ring and round it, its launch within its
+    wave and how much its flight bends are drawn at random. This replaces decision 2's and Goal 4's single ring.
+
 ## Calls made here (not the user's; check them)
 
 - **The main thread draws swords** from volley records at the exact render time; the logic only schedules hits.
@@ -223,6 +233,6 @@ The user's, 2026-11-10:
 
 ## Left to the builder
 
-The path's exact curve and timings (within "burst into a ring, then sweep and converge"); the stagger; the hit-area
+The path's exact curve and timings (within "form in waves of rings, then sweep and converge"); the stagger; the hit-area
 radius; the abilities' numbers; the dissolve's block size; the trail length and how its ribbon is built; the HUD's
 layout; commit split and order.
