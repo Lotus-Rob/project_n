@@ -8,6 +8,7 @@
 
 #include "app/bindings.hpp"
 #include "app/damage_numbers.hpp"
+#include "app/view.hpp"
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
 #include "core/manifest.hpp"
@@ -131,6 +132,7 @@ private:
     Bindings m_bindings{};
     // NOLINTEND(readability-redundant-member-init)
     gfx::Camera m_camera{};
+    FrameClock m_frameClock{};                              // what labels fade by
     core::HeldInput m_held{};                               // as last sent
     u64 m_frameNs = 0;                                      // when the last frame began, for panning
     u64 m_dataCheckNs = 0;                                  // when the data folder is looked at next

@@ -160,14 +160,15 @@ struct Renderer::Impl {
     void FindNumberOrigins();
     // Each quad of numberPages from meshVertices' quad `firstQuad` on, into meshRuns.
     void AddNumberRuns(u32 firstQuad);
-    // `item`'s layout at its own anchor and size, its colour scaled by `opacity`.
-    void PlaceText(const core::TextItem& item, const Shown& shown, f32 opacity);
+    // `item`, laid out as `layout`, at its own anchor and size, its colour scaled by `opacity`.
+    void PlaceText(const core::TextItem& item, const Layout& layout, const Shown& shown, f32 opacity);
     // `item`, a number running top to bottom, shaped and drawn at `pixels`, moved by its scatter and risen by its lift
     // from its anchor, or from its creature's NumberOrigin. Numbers across are composed instead (PlaceNumbers()).
     void PlaceNumber(const core::TextItem& item, const Shown& shown, f32 pixels);
     // The label pass's input for `item`, a label, raised to the hovered or selected priority when it names those.
     LabelInput LabelOf(const core::TextItem& item, const Shown& shown, core::StableId hovered, core::StableId selected);
-    // Each label's stackWidth: its name as a stack with as many digits as the frame's count can have.
+    // Each label's stackWidth: its name as a stack with as many digits as the frame's count can have; a label whose stack
+    // text isn't complete isn't either.
     void MeasureStacks();
     // A label, `item`, showing `count` (its name, or the stack with that count) at `opacity` of its colour, its box's
     // bottom middle at `anchor`, drawn at `pixels`.
@@ -218,10 +219,10 @@ struct Renderer::Impl {
     std::string number{};  // a number's text, made again for each
     std::string stacked{}; // a label stack's text, likewise
     LabelPass labels{};
+    CaptionFades captionFades{};
     std::vector<LabelInput> labelInputs{};
-    std::vector<const core::TextItem*> labelItems{}; // the item of each of labelInputs
-    std::vector<NumberOrigin> numberOrigins{};       // by entity: where this frame's tiny creatures' numbers start
-    std::vector<u32> numberPages{};                  // the glyph page of each quad PlaceNumbers() placed this frame
+    std::vector<NumberOrigin> numberOrigins{}; // by entity: where this frame's tiny creatures' numbers start
+    std::vector<u32> numberPages{};            // the glyph page of each quad PlaceNumbers() placed this frame
     std::vector<MeshVertex> meshVertices{};
     std::vector<internal::MeshRun> meshRuns{};
     core::RepeatedFailure failures{};
@@ -304,23 +305,24 @@ void Renderer::Impl::PlaceTexts(const Shown& shown, core::Jobs& jobs) {
         textOptions.scale
     );
     labelInputs.clear();
-    labelItems.clear();
+    captionFades.Begin(shown.view->frameClock);
     for (const std::span<const core::TextItem> texts : { std::span<const core::TextItem>{ snapshot.texts }, shown.extra }) {
         for (const core::TextItem& item : texts) {
             if (item.kind == core::TextKind::Caption) {
-                PlaceText(item, shown, captionOpacity);
+                const Layout& layout = text->Lay(TextOf(item), item.direction);
+                PlaceText(item, layout, shown, captionOpacity * captionFades.Opacity(item.string, layout.complete));
             }
             else if (item.kind == core::TextKind::Label) {
                 labelInputs.push_back(LabelOf(item, shown, hovered, selected));
-                labelItems.push_back(&item);
             }
         }
     }
     MeasureStacks();
+    // A label whose item has gone draws as the pass kept it, fading out.
     for (const PlacedLabel& placed :
-         labels.Place(labelInputs, shown.width, shown.height, shown.view->clock, textOptions.scale)) {
-        const core::TextItem& item = *labelItems[placed.input];
-        const f32 pixels = labelInputs[placed.input].pixels;
+         labels.Place(labelInputs, shown.width, shown.height, shown.view->frameClock, textOptions.scale)) {
+        const core::TextItem& item = placed.label->item;
+        const f32 pixels = placed.label->pixels;
         PlaceLabel(item, placed.previous, placed.opacity * (1.0F - placed.change), placed.anchor, pixels);
         PlaceLabel(item, placed.count, placed.opacity * placed.change, placed.anchor, pixels);
     }
@@ -406,19 +408,21 @@ void Renderer::Impl::MeasureStacks() {
     // the font's digits are tabular (Noto Sans SC's '0' to '9' are all 555 units wide), so the digits' number decides.
     const auto most = static_cast<u32>(labelInputs.size());
     const std::string& stack = strings->Text(core::StringId::LabelStack, textOptions.language);
-    constexpr f32 UNMEASURED = -1.0F;
-    std::array<std::array<f32, 2>, core::STRINGS> widths{};
-    for (std::array<f32, 2>& byDirection : widths) {
-        byDirection.fill(UNMEASURED);
-    }
-    for (std::size_t index = 0; index < labelInputs.size(); ++index) {
-        const core::TextItem& item = *labelItems[index];
-        f32& width = widths.at(std::to_underlying(item.string)).at(std::to_underlying(item.direction));
-        if (width < 0.0F) {
+    struct Measured {
+        f32 width = -1.0F; // unmeasured
+        bool complete = false;
+    };
+    std::array<std::array<Measured, 2>, core::STRINGS> measured{};
+    for (LabelInput& label : labelInputs) {
+        const core::TextItem& item = label.item;
+        Measured& stackText = measured.at(std::to_underlying(item.string)).at(std::to_underlying(item.direction));
+        if (stackText.width < 0.0F) {
             StackText(stacked, stack, TextOf(item), most);
-            width = text->Lay(stacked, item.direction).width * (labelInputs[index].pixels / SDF_BASE_PIXELS);
+            const Layout& layout = text->Lay(stacked, item.direction);
+            stackText = { .width = layout.width * (label.pixels / SDF_BASE_PIXELS), .complete = layout.complete };
         }
-        labelInputs[index].stackWidth = width;
+        label.stackWidth = stackText.width;
+        label.complete = label.complete && stackText.complete;
     }
 }
 
@@ -473,10 +477,12 @@ LabelInput Renderer::Impl::LabelOf(
              .width = layout.width * scale,
              .height = height,
              .pixels = pixels,
-             .entityPixels = item.height * perUnit };
+             .entityPixels = item.height * perUnit,
+             .complete = layout.complete,
+             .item = item };
 }
 
-void Renderer::Impl::PlaceText(const core::TextItem& item, const Shown& shown, f32 opacity) {
+void Renderer::Impl::PlaceText(const core::TextItem& item, const Layout& layout, const Shown& shown, f32 opacity) {
     PN_PROFILE_ZONE();
     if (opacity <= 0.0F) {
         return;
@@ -484,7 +490,7 @@ void Renderer::Impl::PlaceText(const core::TextItem& item, const Shown& shown, f
     core::TextItem faded = item;
     faded.opacity *= opacity;
     PlaceLayout(
-        text->Lay(TextOf(item), item.direction),
+        layout,
         TextAnchor(item, *shown.view, shown.width, shown.height),
         item.align,
         TextPixels(item.kind, PixelsPerUnit(shown.view->camera, shown.width, shown.height), textOptions.scale),
@@ -889,6 +895,9 @@ std::expected<Image, core::Error> Renderer::Capture(
     std::ranges::for_each(snapshot.texts, ask);
     std::ranges::for_each(extra, ask);
     m_impl->text->Flush(jobs);
+    // A picture stands alone: its labels and captions start at their targets, not fading from the picture before.
+    m_impl->labels = LabelPass{};
+    m_impl->captionFades = CaptionFades{};
     const Impl::Shown shown{ .snapshot = &snapshot, .extra = extra, .view = &view, .width = width, .height = height };
     SDL_GPUDevice* device = m_impl->device.get();
     // The composite's pipeline is made for the swapchain's format, so the picture is drawn in it too.

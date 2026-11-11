@@ -8,6 +8,8 @@
 
 #include "core/frame.hpp"
 #include "core/stable_id.hpp"
+#include "core/tick_clock.hpp"
+#include "core/types.hpp"
 #include "core/vec2.hpp"
 #include "gfx/camera.hpp"
 
@@ -15,6 +17,28 @@
 #include <optional>
 
 namespace app {
+
+/// The most the frame clock moves on from one frame to the next, in nanoseconds: a tenth of a second.
+inline constexpr u64 FRAME_STEP_LIMIT_NS = core::NS_PER_SECOND / 10;
+
+/// The main thread's frame clock (gfx::View::frameClock): seconds of wall time from its first frame, which runs on
+/// while the game is paused, unlike the render clock. A gap longer than FRAME_STEP_LIMIT_NS between frames (a hidden
+/// window, a stall) moves it on by that limit only, so what times itself by it resumes where it was rather than jumping
+/// to its end.
+class FrameClock {
+public:
+    /// Moves the clock on to wall time `nowNs` (platform::NowNs()) and gives its time in seconds: 0 on the first call,
+    /// then the time since the last call added, at most FRAME_STEP_LIMIT_NS of it.
+    f64 Advance(u64 nowNs);
+
+private:
+    std::optional<u64> m_lastNs = std::nullopt;
+    u64 m_elapsedNs = 0;
+};
+
+/// How a frame draws a snapshot: `camera`, the render clock's `alpha` between the snapshot's ticks, the hovered
+/// instance `outlined`, and the frame clock's `frameSeconds` (FrameClock::Advance()).
+[[nodiscard]] gfx::View FrameView(const gfx::Camera& camera, f64 alpha, std::optional<std::size_t> outlined, f64 frameSeconds);
 
 /// Notes that a snapshot of `scene` is drawn with `camera`, `shown` naming the scene drawn before (none at first),
 /// which becomes `scene`: a scene other than `shown` starts at the reference view (gfx::Camera's defaults), the

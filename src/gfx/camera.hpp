@@ -32,7 +32,7 @@ struct Camera {
     f32 zoom = 1.0F;
 };
 
-/// How a frame shows a snapshot: the camera, the render clock and what the pointer hovers.
+/// How a frame shows a snapshot: the camera, the render clock, the frame clock and what the pointer hovers.
 struct View {
     /// The render clock's progress from the snapshot's previous tick (0) to its own (1).
     f64 alpha = 1.0;
@@ -41,9 +41,11 @@ struct View {
     /// The index in the snapshot's instances of the hovered entity's instance, which gets a pale
     /// outline (design doc 0002.3 §3); none when nothing is hovered.
     std::optional<std::size_t> outlined = std::nullopt;
-    /// The render clock in seconds: its tick (core::RenderTick()) over core::TICKS_PER_SECOND. What fades and moves on
-    /// screen alone (labels, damage numbers) times itself by it.
-    f64 clock = 0.0;
+    /// The main thread's frame clock in seconds (app::FrameClock): wall time, which runs on while the game is paused,
+    /// unfocused or loading a scene, when the render clock holds. Labels fade, cross-fade and glide by it, so they settle
+    /// while the player zooms or hovers a paused game; damage numbers are timed by the render clock before they reach the
+    /// renderer, and freeze with the game.
+    f64 frameClock = 0.0;
 };
 
 /// `zoom` after `notches` of the mouse wheel: each one multiplies it by the same factor, and the

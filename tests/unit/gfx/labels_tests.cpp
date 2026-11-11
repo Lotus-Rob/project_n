@@ -616,27 +616,90 @@ TEST_CASE("a stack its text's room reaches needs room over its own label too") {
     }
 }
 
-TEST_CASE("a label seen for the first time doesn't fade in") {
-    constexpr f64 LATER = 5.0;
+TEST_CASE("on the pass's first frame a label starts at its target") {
     const std::array<gfx::LabelInput, 1> labels{ { Fox(1, AT_100) } };
     gfx::LabelPass pass;
-    static_cast<void>(Place(pass, {}, 0.0));
-    const std::span<const gfx::PlacedLabel> placed = Place(pass, labels, LATER);
+    const std::span<const gfx::PlacedLabel> placed = Place(pass, labels, 0.0);
     REQUIRE(placed.size() == 1);
     CHECK(placed[0].opacity == 1.0F);
 }
 
-TEST_CASE("a label missing for a frame is forgotten, and comes back without fading in") {
-    std::array<gfx::LabelInput, 1> labels{ { Fox(1, AT_100) } };
-    labels[0].pixels = TOO_SMALL;
+TEST_CASE("a label new to a running pass fades in") {
+    const std::array<gfx::LabelInput, 1> labels{ { Fox(1, AT_100) } };
     gfx::LabelPass pass;
-    static_cast<void>(Place(pass, labels, 0.0)); // faded out
-    static_cast<void>(Place(pass, {}, FRAME_SECONDS));
+    static_cast<void>(Place(pass, {}, 0.0));
+    const std::span<const gfx::PlacedLabel> appearing = Place(pass, labels, FRAME_SECONDS);
+    REQUIRE(appearing.size() == 1);
+    CHECK(appearing[0].opacity == doctest::Approx(FRAME_STEP));
+    const std::span<const gfx::PlacedLabel> shown = Place(pass, labels, FRAME_SECONDS + WHOLE_FADE);
+    REQUIRE(shown.size() == 1);
+    CHECK(shown[0].opacity == 1.0F);
+}
+
+TEST_CASE("a label whose item goes fades out where it was drawn, showing what it showed") {
+    const std::array<gfx::LabelInput, 3> labels{ { Fox(1, AT_100), Fox(2, AT_110), Fox(3, AT_120) } };
+    gfx::LabelPass pass;
+    static_cast<void>(Place(pass, labels, 0.0)); // "Fox (+2)" over the fox at 110
+    const std::span<const gfx::PlacedLabel> going = Place(pass, {}, HALF_FADE);
+    REQUIRE(going.size() == 1);
+    CHECK(going[0].input == gfx::LABEL_GONE);
+    REQUIRE(going[0].label != nullptr);
+    CHECK(going[0].label->entity == core::StableId{ 1 });
+    CHECK(going[0].anchor.x == AT_110);
+    CHECK(going[0].count == 2);
+    CHECK(going[0].opacity == doctest::Approx(HALF));
     CHECK_FALSE(pass.Anchor(core::StableId{ 1 }).has_value());
-    labels[0].pixels = READABLE;
-    const std::span<const gfx::PlacedLabel> back = Place(pass, labels, 2 * FRAME_SECONDS);
+    const bool empty = Place(pass, {}, WHOLE_FADE).empty();
+    CHECK(empty);
+}
+
+TEST_CASE("a label coming back while it fades out fades in from where it got to") {
+    std::array<gfx::LabelInput, 1> labels{ { Fox(1, AT_100) } };
+    gfx::LabelPass pass;
+    static_cast<void>(Place(pass, labels, 0.0));
+    static_cast<void>(Place(pass, {}, HALF_FADE));
+    const std::span<const gfx::PlacedLabel> back = Place(pass, labels, THREE_QUARTER_FADE);
     REQUIRE(back.size() == 1);
-    CHECK(back[0].opacity == 1.0F);
+    CHECK(back[0].input == 0);
+    CHECK(back[0].opacity == doctest::Approx(THREE_QUARTERS));
+}
+
+TEST_CASE("a label gone and faded out is forgotten: back, it fades in afresh") {
+    const std::array<gfx::LabelInput, 1> labels{ { Fox(1, AT_100) } };
+    gfx::LabelPass pass;
+    static_cast<void>(Place(pass, labels, 0.0));
+    static_cast<void>(Place(pass, {}, WHOLE_FADE));
+    const bool empty = Place(pass, {}, 2 * WHOLE_FADE).empty();
+    CHECK(empty);
+    const std::span<const gfx::PlacedLabel> back = Place(pass, labels, (2 * WHOLE_FADE) + FRAME_SECONDS);
+    REQUIRE(back.size() == 1);
+    CHECK(back[0].opacity == doctest::Approx(FRAME_STEP));
+}
+
+TEST_CASE("a label whose glyphs aren't all rasterised shows nothing until they are, then fades in") {
+    std::array<gfx::LabelInput, 1> labels{ { Fox(1, AT_100) } };
+    labels[0].complete = false;
+    gfx::LabelPass pass;
+    const std::span<const gfx::PlacedLabel> waiting = Place(pass, labels, 0.0);
+    REQUIRE(waiting.size() == 1);
+    CHECK(waiting[0].opacity == 0.0F);
+    CHECK(pass.Anchor(core::StableId{ 1 }).value_or(core::Vec2{}).x == AT_100);
+    labels[0].complete = true;
+    const std::span<const gfx::PlacedLabel> landed = Place(pass, labels, FRAME_SECONDS);
+    REQUIRE(landed.size() == 1);
+    CHECK(landed[0].opacity == doctest::Approx(FRAME_STEP));
+}
+
+TEST_CASE("a placed label points at the label it draws, kept by the pass") {
+    std::array<gfx::LabelInput, 1> labels{ { Fox(1, AT_100) } };
+    labels[0].item.string = core::StringId::FoxName;
+    gfx::LabelPass pass;
+    const std::span<const gfx::PlacedLabel> placed = Place(pass, labels, 0.0);
+    REQUIRE(placed.size() == 1);
+    REQUIRE(placed[0].label != nullptr);
+    CHECK(placed[0].label != labels.data());
+    CHECK(placed[0].label->item.string == core::StringId::FoxName);
+    CHECK(placed[0].label->pixels == READABLE);
 }
 
 TEST_CASE("a label gone off the screen, once faded out, isn't drawn but keeps its anchor") {
@@ -674,6 +737,24 @@ TEST_CASE("a stack label written into a string replaces what it held") {
     std::string text = "a longer text from before";
     gfx::StackText(text, "{name} (+{count})", "Fox", FOUR);
     CHECK(text == "Fox (+4)");
+}
+
+TEST_CASE("a caption whose glyphs aren't all rasterised shows nothing until they are, then fades in") {
+    constexpr core::StringId TABLET = core::StringId::TabletCaption;
+    gfx::CaptionFades fades;
+    fades.Begin(0.0);
+    CHECK(fades.Opacity(TABLET, false) == 0.0F);
+    fades.Begin(FRAME_SECONDS);
+    CHECK(fades.Opacity(TABLET, true) == doctest::Approx(FRAME_STEP));
+    fades.Begin(FRAME_SECONDS + WHOLE_FADE);
+    CHECK(fades.Opacity(TABLET, true) == 1.0F);
+}
+
+TEST_CASE("a caption whose glyphs are all there shows at once") {
+    gfx::CaptionFades fades;
+    fades.Begin(0.0);
+    fades.Begin(FRAME_SECONDS);
+    CHECK(fades.Opacity(core::StringId::TabletCaption, true) == 1.0F);
 }
 
 TEST_CASE("a caption fades out with its size below the readable size") {
