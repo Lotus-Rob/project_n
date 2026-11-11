@@ -198,4 +198,12 @@ struct Srgb {
 /// named colours). Several sRGB bytes share one linear byte in the dark, and the bright linear bytes aren't all reachable.
 [[nodiscard]] Srgb ToSrgb(u32 packed);
 
+/// `packed` (premultiplied, packed as DEFAULT_UI_COLOURS' are) with every channel, alpha too, times `factor`: below 1 it
+/// fades as a premultiplied colour does, above 1 each channel brightens until it saturates at 255; below 0 it is 0. Each
+/// channel rounds to nearest.
+[[nodiscard]] u32 ScaledColour(u32 packed, f32 factor);
+
+/// How opaque `packed` is: its alpha byte over 255, from 0 to 1.
+[[nodiscard]] f32 OpacityOf(u32 packed);
+
 } // namespace core

@@ -52,22 +52,6 @@ core::StringId NameOf(core::AbilityKind ability) {
     return core::StringId::SlotEmpty;
 }
 
-constexpr u32 CHANNEL_BITS = 8;
-constexpr u32 CHANNEL_MASK = 0xFFU;
-constexpr f32 CHANNEL_MAX = 255.0F;
-constexpr u32 CHANNELS = 4;
-
-// `colour` (premultiplied RGBA8) times `factor` in [0, 1]: fainter, as premultiplied colours fade.
-u32 Faded(u32 colour, f32 factor) {
-    u32 faded = 0;
-    for (u32 channel = 0; channel < CHANNELS; ++channel) {
-        const auto value = static_cast<f32>((colour >> (channel * CHANNEL_BITS)) & CHANNEL_MASK);
-        const auto rounded = static_cast<u32>(std::lround(std::clamp(value * factor, 0.0F, CHANNEL_MAX)));
-        faded |= rounded << (channel * CHANNEL_BITS);
-    }
-    return faded;
-}
-
 // `value` over `most`, within 0 to 1; 0 with no most.
 f32 FractionOf(i64 value, i64 most) {
     if (most <= 0) {
@@ -120,7 +104,7 @@ void Hud::Build(
     const bool inked = !m_text.outline && !m_text.shadow;
     const u32 ink = m_colours.Of(core::UiColour::TextInk);
     const u32 slotText = inked ? ink : text;
-    const u32 coolingText = inked ? Faded(ink, HUD_COOLING_INK_OPACITY) : m_colours.Of(core::UiColour::HudCooling);
+    const u32 coolingText = inked ? core::ScaledColour(ink, HUD_COOLING_INK_OPACITY) : m_colours.Of(core::UiColour::HudCooling);
     const f32 lineHeight = HUD_LINE_HEIGHT * m_text.scale;
     const core::Vec2 barSize{ .x = HUD_BAR_WIDTH * m_text.scale, .y = HUD_BAR_HEIGHT * m_text.scale };
     // From the bottom up: the slots' lines, then the Qi bar over them, then the health bar over it.

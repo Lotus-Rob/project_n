@@ -29,21 +29,6 @@ constexpr f32 SHORTEST_TANGENT = 1e-4F;
 constexpr u32 TRAIL_POINTS = TRAIL_SEGMENTS + 1;
 // A bar's middle, down from its top as a fraction of its height: where the solid square's foot goes.
 constexpr f32 BAR_MIDDLE = 0.5F;
-constexpr u32 CHANNEL_BITS = 8;
-constexpr u32 CHANNEL_MASK = 0xFFU;
-constexpr f32 CHANNEL_MAX = 255.0F;
-constexpr u32 CHANNELS = 4;
-
-// `colour` (premultiplied RGBA8) times `factor` in [0, 1]: fainter, as premultiplied colours fade.
-u32 Scaled(u32 colour, f32 factor) {
-    u32 scaled = 0;
-    for (u32 channel = 0; channel < CHANNELS; ++channel) {
-        const auto value = static_cast<f32>((colour >> (channel * CHANNEL_BITS)) & CHANNEL_MASK);
-        const auto rounded = static_cast<u32>(std::lround(std::clamp(value * factor, 0.0F, CHANNEL_MAX)));
-        scaled |= rounded << (channel * CHANNEL_BITS);
-    }
-    return scaled;
-}
 
 f32 Length(core::Vec2 vec) {
     return std::hypot(vec.x, vec.y);
@@ -154,7 +139,7 @@ void DrawSword(
               .previous = head.position,
               .current = head.position,
               .scale = bolt ? BOLT_CORE_SCALE : CORE_SCALE,
-              .colour = Scaled(effect, CORE_OPACITY * head.shown) }
+              .colour = core::ScaledColour(effect, CORE_OPACITY * head.shown) }
         );
         // The glow goes before the blade, as the square of what shows: a plunged sword doesn't flash as it fades.
         *slots.halo = core::MakeInstance(
@@ -163,7 +148,7 @@ void DrawSword(
               .previous = head.position,
               .current = head.position,
               .scale = HALO_SCALE,
-              .colour = Scaled(effect, HALO_INTENSITY * head.shown * head.shown) }
+              .colour = core::ScaledColour(effect, HALO_INTENSITY * head.shown * head.shown) }
         );
         *slots.sword = core::MakeInstance(
             *frame.manifest,
@@ -173,12 +158,14 @@ void DrawSword(
               .scale = bolt ? 1.0F : SWORD_SCALE,
               .previousRotation = rotation,
               .currentRotation = rotation,
-              .colour = Scaled(bolt ? effect : core::OPAQUE_WHITE, head.shown) }
+              .colour = core::ScaledColour(bolt ? effect : core::OPAQUE_WHITE, head.shown) }
         );
     }
     const f64 tailTick = std::max(frame.renderTick - static_cast<f64>(TRAIL_TICKS), launch);
     if (headTick > tailTick && head.shown > 0.0F) {
-        DrawTrail(volley, sword, aim, headTick, tailTick, head, Scaled(effect, HALO_INTENSITY * head.shown), slots.trail);
+        DrawTrail(
+            volley, sword, aim, headTick, tailTick, head, core::ScaledColour(effect, HALO_INTENSITY * head.shown), slots.trail
+        );
     }
 }
 
@@ -240,10 +227,13 @@ void DrawHealthBars(
                 )
             );
         };
-        add(HEALTH_BAR_WIDTH, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT, Scaled(backColour, std::min(opacity, 1.0F)));
+        add(HEALTH_BAR_WIDTH, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT, core::ScaledColour(backColour, std::min(opacity, 1.0F)));
         // The fill starts where a full one would, so it shrinks towards the left as health falls.
         const f32 fraction = bar.fraction > 0.0F ? std::min(bar.fraction, 1.0F) : 0.0F;
-        add(HEALTH_FILL_WIDTH, HEALTH_FILL_WIDTH * fraction, HEALTH_FILL_HEIGHT, Scaled(fillColour, std::min(opacity, 1.0F)));
+        add(HEALTH_FILL_WIDTH,
+            HEALTH_FILL_WIDTH * fraction,
+            HEALTH_FILL_HEIGHT,
+            core::ScaledColour(fillColour, std::min(opacity, 1.0F)));
     }
     if (out.instances.size() > first) {
         out.batches.push_back(
@@ -312,7 +302,8 @@ void DrawFlashes(
                   .previous = flash.point,
                   .current = flash.point,
                   .scale = FLASH_START_SCALE + ((FLASH_END_SCALE - FLASH_START_SCALE) * grown),
-                  .colour = Scaled(colours.Of(core::EffectColour(flash.element)), FLASH_INTENSITY * (1.0F - shown)) }
+                  .colour =
+                      core::ScaledColour(colours.Of(core::EffectColour(flash.element)), FLASH_INTENSITY * (1.0F - shown)) }
             )
         );
     }

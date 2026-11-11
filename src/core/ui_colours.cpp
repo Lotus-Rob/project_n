@@ -57,4 +57,21 @@ Srgb ToSrgb(u32 packed) {
     };
 }
 
+u32 ScaledColour(u32 packed, f32 factor) {
+    constexpr u32 CHANNEL_BITS = 8;
+    constexpr u32 CHANNELS = 4;
+    constexpr auto BYTE_MAX = static_cast<f32>(CHANNEL_MAX);
+    u32 scaled = 0;
+    for (u32 channel = 0; channel < CHANNELS; ++channel) {
+        const u32 shift = channel * CHANNEL_BITS;
+        const auto value = static_cast<f32>((packed >> shift) & CHANNEL_MASK);
+        scaled |= static_cast<u32>(std::lround(std::clamp(value * factor, 0.0F, BYTE_MAX))) << shift;
+    }
+    return scaled;
+}
+
+f32 OpacityOf(u32 packed) {
+    return static_cast<f32>(packed >> ALPHA_SHIFT) / static_cast<f32>(CHANNEL_MAX);
+}
+
 } // namespace core
