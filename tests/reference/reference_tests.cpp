@@ -12,6 +12,8 @@
 #include "core/math.hpp"
 #include "core/settings.hpp"
 #include "core/strings.hpp"
+#include "core/tick_clock.hpp"
+#include "core/volley.hpp"
 #include "data/strings.hpp"
 #include "game/arena.hpp"
 #include "game/combat.hpp"
@@ -235,30 +237,35 @@ TEST_CASE("a fox dissolving, at half its progress") {
     CompareWithReference(Captured(renderer, snapshot, view, jobs), "fox_dissolving");
 }
 
-// The flying swords, special 1, cast at CAST_TICK among the foxes to the player's lower left, drawn `after` ticks later.
+// An ability cast at CAST_TICK among the foxes to the player's lower left, drawn some ticks later.
 constexpr u64 CAST_TICK = 120;
 constexpr core::Vec2 AMONG_THE_FOXES{ .x = 690.0F, .y = 700.0F };
 
-void CheckVolley(std::string_view name, u64 after) {
-    core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+// The arena with `slot`'s ability cast at AMONG_THE_FOXES on CAST_TICK, published `after` ticks later, with Qi enough
+// for any cast.
+core::Snapshot CastAndWait(core::Slot slot, u64 after, core::Jobs& jobs) {
     core::GameData data = game::BuiltInData();
-    data.abilities.qiStart = data.abilities.qiMax; // enough Qi for the swords at once
+    data.abilities.qiStart = data.abilities.qiMax;
     game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
     std::vector<core::Event> events;
-    const std::array<core::Action, 1> cast{
-        { { .kind = core::ActionKind::Cast, .slot = core::Slot::Special1, .point = AMONG_THE_FOXES } }
-    };
+    const std::array<core::Action, 1> cast{ { { .kind = core::ActionKind::Cast, .slot = slot, .point = AMONG_THE_FOXES } } };
     const u64 shownAt = CAST_TICK + after;
     for (u64 tick = 1; tick <= shownAt; ++tick) {
         const core::TickInput input = tick == CAST_TICK ? core::TickInput{ .actions = cast, .held = {} } : core::TickInput{};
         arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, input, events);
     }
-    const core::Snapshot snapshot = Published(arena, jobs, shownAt);
+    core::Snapshot snapshot = Published(arena, jobs, shownAt);
     REQUIRE(snapshot.volleys.size() == 1);
+    return snapshot;
+}
+
+void CheckVolley(std::string_view name, u64 after, const gfx::View& view = {}) {
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    const core::Snapshot snapshot = CastAndWait(core::Slot::Special1, after, jobs);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
-    CompareWithReference(Captured(renderer, snapshot, {}, jobs), name);
+    CompareWithReference(Captured(renderer, snapshot, view, jobs), name);
 }
 
 TEST_CASE("the flying swords mid-volley: the ring and the converging paths") {
@@ -268,6 +275,39 @@ TEST_CASE("the flying swords mid-volley: the ring and the converging paths") {
     const u64 ring = (swords.staggerTicks / 2) + swords.outTicks;
     CheckVolley("volley_ring", ring);
     CheckVolley("volley_converging", ring + (swords.flightTicks / 2));
+}
+
+TEST_CASE("the flying swords plunging, close up: the foxes they flew at died, so they stay where they fell and fade") {
+    // A copy: the game data BuiltInData() returns is a temporary, gone at the end of this line.
+    const core::VolleyShape swords = game::BuiltInData().abilities.Of(core::AbilityKind::FlyingSwords).volley;
+    // The middle of the stagger's swords arrived a few ticks ago, into foxes the first swords killed.
+    constexpr u64 SINCE_ARRIVAL = 4;
+    const u64 after = (swords.staggerTicks / 2) + swords.outTicks + swords.flightTicks + SINCE_ARRIVAL;
+    {
+        core::Jobs jobs;
+        const core::Snapshot snapshot = CastAndWait(core::Slot::Special1, after, jobs);
+        const auto dead = [](const core::VolleyTarget& target) { return target.diedTick != 0; };
+        REQUIRE(std::ranges::all_of(snapshot.volleyTargets, dead));
+    }
+    CheckVolley("volley_plunge", after, { .camera = { .centre = AMONG_THE_FOXES, .zoom = gfx::MAX_ZOOM } });
+}
+
+TEST_CASE("a fire bolt in flight, close up: its burn's colour shows on the pale ground") {
+    constexpr u64 IN_FLIGHT = 6; // of about a dozen ticks to the foxes
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    const core::Snapshot snapshot = CastAndWait(core::Slot::Generator, IN_FLIGHT, jobs);
+    const core::VolleyView& bolt = snapshot.volleys.front();
+    REQUIRE(bolt.ability == core::AbilityKind::FireBolt);
+    const std::span<const core::VolleyTarget> targets =
+        std::span{ snapshot.volleyTargets }.subspan(bolt.firstTarget, bolt.targets);
+    const core::Vec2 aim = core::SwordAim(bolt.volley, 0, snapshot.simulationTick, 1.0F, targets);
+    const core::SwordPose pose = core::SwordAt(bolt.volley, 0, core::RenderTick(snapshot.simulationTick, 1.0), aim);
+    REQUIRE(pose.shown > 0.0F);
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
+    const gfx::View view{ .camera = { .centre = pose.position, .zoom = gfx::MAX_ZOOM } };
+    CompareWithReference(Captured(renderer, snapshot, view, jobs), "bolt_burn");
 }
 
 TEST_CASE("the hovered entity's pale outline and the selected one's gold, close up") {

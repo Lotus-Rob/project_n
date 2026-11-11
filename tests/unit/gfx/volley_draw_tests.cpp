@@ -117,18 +117,53 @@ gfx::VolleyDrawing Drawn(
     return drawing;
 }
 
-// The halo and the sword instances of the `index`th sword across the volleys.
-const core::Instance& HaloOf(const gfx::VolleyDrawing& drawing, u32 index) {
-    REQUIRE(drawing.batches.size() >= 2);
-    const std::size_t instance = drawing.batches.at(drawing.batches.size() - 2).first + index;
+// The `index`th sword's instance in `batch`, across the volleys.
+const core::Instance& InBatch(const gfx::VolleyDrawing& drawing, std::size_t batch, u32 index) {
+    REQUIRE(batch < drawing.batches.size());
+    const std::size_t instance = drawing.batches.at(batch).first + index;
     REQUIRE(instance < drawing.instances.size());
     return drawing.instances.at(instance);
 }
+
+// The core, the halo and the sword instances of the `index`th sword: their batches come first, second and last.
+const core::Instance& CoreOf(const gfx::VolleyDrawing& drawing, u32 index) {
+    return InBatch(drawing, 0, index);
+}
+const core::Instance& HaloOf(const gfx::VolleyDrawing& drawing, u32 index) {
+    return InBatch(drawing, 1, index);
+}
 const core::Instance& SwordOf(const gfx::VolleyDrawing& drawing, u32 index) {
     REQUIRE(!drawing.batches.empty());
-    const std::size_t instance = drawing.batches.back().first + index;
-    REQUIRE(instance < drawing.instances.size());
-    return drawing.instances.at(instance);
+    return InBatch(drawing, drawing.batches.size() - 1, index);
+}
+
+// Every bar of `bars` shown whole, as a label that reads alone would show it.
+std::vector<gfx::BarShown> Whole(std::span<const core::HealthBar> bars) {
+    std::vector<gfx::BarShown> shown;
+    for (const core::HealthBar& bar : bars) {
+        shown.push_back({ .entity = bar.entity, .opacity = 1.0F });
+    }
+    std::ranges::sort(shown, {}, [](const gfx::BarShown& one) { return std::to_underlying(one.entity); });
+    return shown;
+}
+
+constexpr u32 ALPHA_SHIFT = 24;
+constexpr u32 CHANNEL_BITS = 8;
+constexpr u32 CHANNEL_MASK = 0xFFU;
+constexpr u32 CHANNELS = 4;
+
+// `colour` with each premultiplied channel times `factor`, rounded to nearest.
+u32 Times(u32 colour, f32 factor) {
+    u32 scaled = 0;
+    for (u32 channel = 0; channel < CHANNELS; ++channel) {
+        const auto value = static_cast<f32>((colour >> (channel * CHANNEL_BITS)) & CHANNEL_MASK);
+        scaled |= static_cast<u32>(std::lround(value * factor)) << (channel * CHANNEL_BITS);
+    }
+    return scaled;
+}
+
+std::span<const std::byte> BytesOf(std::span<const core::Instance> instances) {
+    return std::as_bytes(instances);
 }
 
 // The `corner`th vertex of the `quad`th quad of the `index`th sword's trail.
@@ -226,27 +261,61 @@ TEST_CASE("the trail is sampled from the same path a little back in time") {
     }
 }
 
-TEST_CASE("the halos draw additive, before the swords") {
+TEST_CASE("the cores draw under the halos, the halos under the bars, and the swords over all") {
     const std::array<core::VolleyTarget, 2> targets{ { { .entity = FOX, .previous = POINT, .current = POINT },
                                                        { .entity = FOX, .previous = POINT, .current = POINT } } };
     const std::array<core::VolleyView, 2> volleys{ { SwordsView(), BoltView(1) } };
     const std::array<core::HealthBar, 1> bars{ { { .entity = FOX, .previous = POINT, .current = POINT, .fraction = HALF } } };
     constexpr u32 SWORDS_DRAWN = 1'001;
+    constexpr u32 BAR_INSTANCES = 2;
     core::Jobs jobs{ 1 };
     gfx::VolleyDrawing drawing;
-    gfx::DrawHealthBars(bars, 1.0F, TestManifest(), {}, drawing);
+    gfx::DrawHealthBars(bars, Whole(bars), 1.0F, TestManifest(), {}, drawing);
     gfx::DrawVolleys(volleys, targets, MID_FLIGHT, 1.0F, TestManifest(), {}, jobs, drawing);
-    REQUIRE(drawing.batches.size() == 3);
-    CHECK(drawing.batches[0].pipeline == core::Pipeline::Normal); // the bars
-    CHECK(drawing.batches[0].count == 2);
-    CHECK(drawing.batches[1].pipeline == core::Pipeline::Additive);
-    CHECK(drawing.batches[1].first == 2);
-    CHECK(drawing.batches[1].count == SWORDS_DRAWN);
-    CHECK(drawing.batches[2].pipeline == core::Pipeline::Normal);
-    CHECK(drawing.batches[2].first == 2 + SWORDS_DRAWN);
-    CHECK(drawing.batches[2].count == SWORDS_DRAWN);
-    CHECK(drawing.instances.size() == 2 + (2 * SWORDS_DRAWN));
+    REQUIRE(drawing.batches.size() == 4);
+    const core::Batch& cores = drawing.batches[0];
+    const core::Batch& halos = drawing.batches[1];
+    const core::Batch& bar = drawing.batches[2];
+    const core::Batch& swords = drawing.batches[3];
+    CHECK(cores.pipeline == core::Pipeline::Normal);
+    CHECK(cores.first == BAR_INSTANCES);
+    CHECK(cores.count == SWORDS_DRAWN);
+    CHECK(halos.pipeline == core::Pipeline::Additive);
+    CHECK(halos.first == BAR_INSTANCES + SWORDS_DRAWN);
+    CHECK(halos.count == SWORDS_DRAWN);
+    CHECK(bar.pipeline == core::Pipeline::Normal);
+    CHECK(bar.first == 0);
+    CHECK(bar.count == BAR_INSTANCES);
+    CHECK(swords.pipeline == core::Pipeline::Normal);
+    CHECK(swords.first == BAR_INSTANCES + (2 * SWORDS_DRAWN));
+    CHECK(swords.count == SWORDS_DRAWN);
+    CHECK(drawing.instances.size() == BAR_INSTANCES + (gfx::SWORD_INSTANCES * SWORDS_DRAWN));
     CHECK(drawing.ribbons.size() == std::size_t{ SWORDS_DRAWN } * gfx::TRAIL_SEGMENTS * gfx::QUAD_VERTICES);
+    CHECK(drawing.droppedSwords == 0);
+}
+
+TEST_CASE("swords past the overlay's room are left out whole, never a halo or a core without its sword") {
+    // Two of the largest volleys: more swords than the overlay holds three instances of.
+    core::VolleyView largest = SwordsView();
+    largest.volley.shape.count = core::MAX_VOLLEY_COUNT;
+    const std::array<core::VolleyView, 2> volleys{ { largest, largest } };
+    const std::array<core::VolleyTarget, 1> targets{ { { .entity = FOX, .previous = POINT, .current = POINT } } };
+    const std::array<core::HealthBar, 1> bars{ { { .entity = FOX, .previous = POINT, .current = POINT, .fraction = HALF } } };
+    constexpr u32 BAR_INSTANCES = 2;
+    constexpr u32 FITTING = (gfx::MAX_OVERLAY_INSTANCES - BAR_INSTANCES) / gfx::SWORD_INSTANCES;
+    core::Jobs jobs{ 1 };
+    gfx::VolleyDrawing drawing;
+    gfx::DrawHealthBars(bars, Whole(bars), 1.0F, TestManifest(), {}, drawing);
+    gfx::DrawVolleys(volleys, targets, MID_FLIGHT, 1.0F, TestManifest(), {}, jobs, drawing);
+    CHECK(drawing.instances.size() <= gfx::MAX_OVERLAY_INSTANCES);
+    REQUIRE(drawing.batches.size() == 4);
+    CHECK(drawing.batches[0].count == FITTING);
+    CHECK(drawing.batches[1].count == FITTING);
+    CHECK(drawing.batches[3].count == FITTING);
+    CHECK(drawing.droppedSwords == (2 * core::MAX_VOLLEY_COUNT) - FITTING);
+    CHECK(drawing.ribbons.size() == std::size_t{ FITTING } * gfx::TRAIL_SEGMENTS * gfx::QUAD_VERTICES);
+    drawing.Clear();
+    CHECK(drawing.droppedSwords == 0);
 }
 
 TEST_CASE("the same input gives the same bytes with one worker and with many") {
@@ -324,9 +393,31 @@ TEST_CASE("a sword that struck its target is gone after its arrival; one that pl
         core::SwordAt(VOLLEY, SWORD, core::RenderTick(tick, static_cast<f64>(HALFWAY)), Spot(DEAD_AT, SWORD)).shown;
     REQUIRE(shown > 0.0F);
     REQUIRE(shown < 1.0F);
-    constexpr u32 ALPHA_SHIFT = 24;
     CHECK((plunged.colour >> ALPHA_SHIFT) < 0xFFU);
     CHECK((plunged.colour >> ALPHA_SHIFT) > 0U);
+    // Its glow goes before its blade.
+    CHECK((HaloOf(drawing, SWORDS.count + SWORD).colour >> ALPHA_SHIFT) < (plunged.colour >> ALPHA_SHIFT));
+}
+
+TEST_CASE("a sword whose target dies too near its arrival to move on plunges at its spot where the target died") {
+    constexpr core::Vec2 DEAD_AT{ .x = 640.0F, .y = -90.0F };
+    constexpr u32 SWORD = 0;
+    const u64 arrival = core::ArrivalTick(VOLLEY, SWORD);
+    const u64 died = arrival - (SWORDS.commitTicks / 2); // inside the commit window: it keeps its target
+    // Two foxes, sword 0's the first (its index modulo two); the second lives on.
+    const std::array<core::VolleyTarget, 2> targets{ {
+        { .entity = FOX, .previous = DEAD_AT, .current = DEAD_AT, .diedTick = died },
+        { .entity = core::StableId{ 10 }, .previous = POINT, .current = POINT },
+    } };
+    core::VolleyView volley = SwordsView();
+    volley.targets = 2;
+    const std::array<core::VolleyView, 1> volleys{ { volley } };
+    constexpr u64 AFTER_TICKS = 4;
+    const gfx::VolleyDrawing drawing = Drawn(volleys, targets, arrival + AFTER_TICKS, HALFWAY);
+    const core::Instance& plunged = SwordOf(drawing, SWORD);
+    REQUIRE_FALSE(IsZero(plunged));
+    CheckAt(plunged.current, Spot(DEAD_AT, SWORD));
+    CHECK((plunged.colour >> ALPHA_SHIFT) < 0xFFU);
 }
 
 TEST_CASE("a health bar's fill is as long as its health and takes the table's colours") {
@@ -339,7 +430,7 @@ TEST_CASE("a health bar's fill is as long as its health and takes the table's co
     };
     const core::Manifest manifest = TestManifest();
     gfx::VolleyDrawing drawing;
-    gfx::DrawHealthBars(bars, HALFWAY, manifest, {}, drawing);
+    gfx::DrawHealthBars(bars, Whole(bars), HALFWAY, manifest, {}, drawing);
     REQUIRE(drawing.instances.size() == 2);
     const core::Instance& background = drawing.instances[0];
     const core::Instance& fill = drawing.instances[1];
@@ -359,13 +450,59 @@ TEST_CASE("a health bar's fill is as long as its health and takes the table's co
     recoloured.Set(core::UiColour::EnemyHealthBar, RECOLOURED_FILL);
     recoloured.Set(core::UiColour::BarBackground, RECOLOURED_BACK);
     drawing.Clear();
-    gfx::DrawHealthBars(bars, HALFWAY, manifest, recoloured, drawing);
+    gfx::DrawHealthBars(bars, Whole(bars), HALFWAY, manifest, recoloured, drawing);
     REQUIRE(drawing.instances.size() == 2);
     CHECK(drawing.instances[0].colour == RECOLOURED_BACK);
     CHECK(drawing.instances[1].colour == RECOLOURED_FILL);
 }
 
-TEST_CASE("halos and trails take their element's colour, not their ability's") {
+TEST_CASE("a health bar's fill stops at full and shows nothing for a health that isn't a number") {
+    constexpr f32 OVER_FULL = 1.5F;
+    const std::array<core::HealthBar, 2> bars{ {
+        { .entity = FOX, .previous = POINT, .current = POINT, .fraction = OVER_FULL },
+        { .entity = core::StableId{ 10 },
+          .previous = POINT,
+          .current = POINT,
+          .fraction = std::numeric_limits<f32>::quiet_NaN() },
+    } };
+    gfx::VolleyDrawing drawing;
+    gfx::DrawHealthBars(bars, Whole(bars), 1.0F, TestManifest(), {}, drawing);
+    REQUIRE(drawing.instances.size() == 4);
+    const u32 full = core::PackPair(core::PackHalf(gfx::HEALTH_FILL_WIDTH), core::PackHalf(gfx::HEALTH_FILL_HEIGHT));
+    const u32 empty = core::PackPair(core::PackHalf(0.0F), core::PackHalf(gfx::HEALTH_FILL_HEIGHT));
+    CHECK(drawing.instances[1].size == full);
+    CHECK(drawing.instances[3].size == empty);
+}
+
+TEST_CASE("a health bar shows as its creature's label does: faded with it, and not at all while it heads a stack") {
+    constexpr f32 FADING = 0.4F;
+    constexpr f32 CROSSING = 0.25F;
+    // Alone and readable; fading out (too small to read, or hidden); heading a stack; leaving a stack, and joining one.
+    CHECK(gfx::BarOpacity({ .count = 0, .previous = 0, .change = 1.0F, .opacity = 1.0F }) == doctest::Approx(1.0F));
+    CHECK(gfx::BarOpacity({ .count = 0, .previous = 0, .change = 1.0F, .opacity = FADING }) == doctest::Approx(FADING));
+    CHECK(gfx::BarOpacity({ .count = 3, .previous = 3, .change = 1.0F, .opacity = 1.0F }) == doctest::Approx(0.0F));
+    CHECK(gfx::BarOpacity({ .count = 0, .previous = 2, .change = CROSSING, .opacity = 1.0F }) == doctest::Approx(CROSSING));
+    CHECK(
+        gfx::BarOpacity({ .count = 2, .previous = 0, .change = CROSSING, .opacity = 1.0F }) == doctest::Approx(1.0F - CROSSING)
+    );
+
+    constexpr core::StableId FADED{ 10 };
+    constexpr core::StableId UNLABELLED{ 11 };
+    const std::array<core::HealthBar, 3> bars{ {
+        { .entity = FOX, .previous = POINT, .current = POINT, .fraction = HALF },
+        { .entity = FADED, .previous = POINT, .current = POINT, .fraction = HALF },
+        { .entity = UNLABELLED, .previous = POINT, .current = POINT, .fraction = HALF },
+    } };
+    const std::array<gfx::BarShown, 2> shown{ { { .entity = FOX, .opacity = FADING }, { .entity = FADED, .opacity = 0.0F } } };
+    gfx::VolleyDrawing drawing;
+    gfx::DrawHealthBars(bars, shown, 1.0F, TestManifest(), {}, drawing);
+    REQUIRE(drawing.instances.size() == 2); // only the first's
+    const core::UiColours defaults{};
+    CHECK(drawing.instances[0].colour == Times(defaults.Of(core::UiColour::BarBackground), FADING));
+    CHECK(drawing.instances[1].colour == Times(defaults.Of(core::UiColour::EnemyHealthBar), FADING));
+}
+
+TEST_CASE("cores, halos and trails take their element's colour, not their ability's") {
     const std::array<core::VolleyTarget, 2> targets{ { { .entity = FOX, .previous = POINT, .current = POINT },
                                                        { .entity = FOX, .previous = POINT, .current = POINT } } };
     const std::array<core::VolleyView, 2> volleys{ { SwordsView(), BoltView(1) } };
@@ -380,15 +517,18 @@ TEST_CASE("halos and trails take their element's colour, not their ability's") {
         const gfx::VolleyDrawing drawing = Drawn(volleys, targets, TICK, 1.0F, colours);
         const u32 damage = colours.Of(core::UiColour::DamageEffect);
         const u32 burn = colours.Of(core::UiColour::BurnEffect);
-        CHECK(HaloOf(drawing, SWORD).colour == damage);
-        CHECK(TrailVertex(drawing, SWORD, 0, 0).colour == damage);
+        CHECK(CoreOf(drawing, SWORD).colour == Times(damage, gfx::CORE_OPACITY));
+        CHECK(HaloOf(drawing, SWORD).colour == Times(damage, gfx::HALO_INTENSITY));
+        CHECK(TrailVertex(drawing, SWORD, 0, 0).colour == Times(damage, gfx::HALO_INTENSITY));
         CHECK(SwordOf(drawing, SWORD).colour == core::OPAQUE_WHITE); // its own steel
-        CHECK(HaloOf(drawing, THE_BOLT).colour == burn);
-        CHECK(TrailVertex(drawing, THE_BOLT, 0, 0).colour == burn);
+        CHECK(CoreOf(drawing, THE_BOLT).colour == Times(burn, gfx::CORE_OPACITY));
+        CHECK(HaloOf(drawing, THE_BOLT).colour == Times(burn, gfx::HALO_INTENSITY));
+        CHECK(TrailVertex(drawing, THE_BOLT, 0, 0).colour == Times(burn, gfx::HALO_INTENSITY));
         CHECK(SwordOf(drawing, THE_BOLT).colour == burn); // white art, tinted
-        // The ability picks the sprite.
+        // The ability picks the sword's sprite; every core is the same dot.
         CHECK(SwordOf(drawing, SWORD).regionMin == core::MakeInstance(manifest, { .sprite = SpriteId::Sword }).regionMin);
         CHECK(SwordOf(drawing, THE_BOLT).regionMin == core::MakeInstance(manifest, { .sprite = SpriteId::FireBolt }).regionMin);
+        CHECK(CoreOf(drawing, SWORD).regionMin == core::MakeInstance(manifest, { .sprite = SpriteId::GlowCore }).regionMin);
         return drawing;
     };
     const gfx::VolleyDrawing before = check({});
@@ -396,10 +536,21 @@ TEST_CASE("halos and trails take their element's colour, not their ability's") {
     constexpr u32 GREEN = 0xFF00'FF00U;
     recoloured.Set(core::UiColour::BurnEffect, GREEN);
     const gfx::VolleyDrawing after = check(recoloured);
-    // Only the bolt changed.
-    for (u32 sword = 0; sword < SWORDS.count; ++sword) {
-        CHECK(HaloOf(before, sword).colour == HaloOf(after, sword).colour);
+    // Only the bolt changed: the swords' cores, halos, blades and trails are the same bytes.
+    REQUIRE(before.batches.size() == after.batches.size());
+    for (std::size_t batch = 0; batch < before.batches.size(); ++batch) {
+        CAPTURE(batch);
+        const std::span<const core::Instance> swordsBefore =
+            std::span{ before.instances }.subspan(before.batches[batch].first, SWORDS.count);
+        const std::span<const core::Instance> swordsAfter =
+            std::span{ after.instances }.subspan(after.batches[batch].first, SWORDS.count);
+        CHECK(std::ranges::equal(BytesOf(swordsBefore), BytesOf(swordsAfter)));
     }
+    const std::size_t swordVertices = std::size_t{ SWORDS.count } * gfx::TRAIL_SEGMENTS * gfx::QUAD_VERTICES;
+    const std::span<const gfx::RibbonVertex> trailsBefore = std::span{ before.ribbons }.first(swordVertices);
+    const std::span<const gfx::RibbonVertex> trailsAfter = std::span{ after.ribbons }.first(swordVertices);
+    CHECK(std::ranges::equal(std::as_bytes(trailsBefore), std::as_bytes(trailsAfter)));
+    CHECK(CoreOf(after, THE_BOLT).colour == Times(GREEN, gfx::CORE_OPACITY));
     CHECK(HaloOf(after, THE_BOLT).colour == GREEN);
 }
 

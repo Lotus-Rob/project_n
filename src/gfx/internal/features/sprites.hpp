@@ -52,8 +52,8 @@ public:
         std::span<const core::Instance> instances
     );
 
-    /// Draws the uploaded instances in `pass`, a draw per batch of `batches` (the uploaded
-    /// snapshot's), textured from `sprites`, placed by `transform` and interpolated by `alpha` (0:
+    /// Draws the uploaded instances in `pass`, a draw per batch of `batches` (the uploaded instances' batches, in any order
+    /// of their instances), textured from `sprites`, placed by `transform` and interpolated by `alpha` (0:
     /// previous tick, 1: this tick). Instances past what fitted aren't drawn.
     void Draw(
         SDL_GPUCommandBuffer* commands,

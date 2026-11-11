@@ -244,7 +244,8 @@ struct Renderer::Impl {
     std::vector<std::size_t> numberQuads{};    // PlaceNumbers()' scratch: each chunk's first quad
     std::vector<MeshVertex> meshVertices{};
     std::vector<internal::MeshRun> meshRuns{};
-    VolleyDrawing volleyDrawing{}; // this frame's health bars and swords, placed at the render time
+    VolleyDrawing volleyDrawing{};     // this frame's health bars and swords, placed at the render time
+    std::vector<BarShown> barsShown{}; // by entity: how much of each creature's health bar shows, from its label
     core::RepeatedFailure failures{};
     core::RepeatedFailure overflows{};
     core::RepeatedFailure meshOverflows{};
@@ -262,13 +263,14 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     std::expected<void, core::Error> glyphs = MakeGlyphPages();
     meshVertices.clear();
     meshRuns.clear();
+    barsShown.clear();
     if (glyphs) {
         PlaceTexts(shown, jobs);
     }
     volleyDrawing.Clear();
     if (Holds(snapshot.scene)) {
         const auto alpha = static_cast<f32>(shown.view->alpha);
-        DrawHealthBars(snapshot.healthBars, alpha, *manifest, uiColours, volleyDrawing);
+        DrawHealthBars(snapshot.healthBars, barsShown, alpha, *manifest, uiColours, volleyDrawing);
         DrawVolleys(
             snapshot.volleys, snapshot.volleyTargets, snapshot.simulationTick, alpha, *manifest, uiColours, jobs, volleyDrawing
         );
@@ -292,7 +294,12 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
         ReportOverflow(meshOverflows, *quadsDropped, "text quads", MAX_MESH_QUADS);
     }
     if (overlayDropped) {
-        ReportOverflow(overlayOverflows, *overlayDropped, "overlay instances", MAX_OVERLAY_INSTANCES);
+        ReportOverflow(
+            overlayOverflows,
+            *overlayDropped + (volleyDrawing.droppedSwords * SWORD_INSTANCES),
+            "overlay instances",
+            MAX_OVERLAY_INSTANCES
+        );
     }
     if (ribbonsDropped) {
         ReportOverflow(ribbonOverflows, *ribbonsDropped, "ribbon quads", MAX_RIBBON_QUADS);
@@ -372,7 +379,9 @@ void Renderer::Impl::PlaceTexts(const Shown& shown, core::Jobs& jobs) {
         const f32 pixels = placed.label->pixels;
         PlaceLabel(item, placed.previous, placed.opacity * (1.0F - placed.change), placed.anchor, pixels);
         PlaceLabel(item, placed.count, placed.opacity * placed.change, placed.anchor, pixels);
+        barsShown.push_back({ .entity = placed.label->entity, .opacity = BarOpacity(placed) });
     }
+    std::ranges::sort(barsShown, {}, [](const BarShown& bar) { return std::to_underlying(bar.entity); });
     FindNumberOrigins();
     const NumberPlacement placement{ .face = NumberFaceOf(*text),
                                      .clip = textFrame.clip,
@@ -676,8 +685,8 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
             alpha
         );
     }
-    // The trails, then the overlay: health bars, the halos (additive) and the swords, at the render time; their instances
-    // hold no motion between ticks, so the overlay's alpha changes nothing.
+    // The trails, then the overlay: the swords' tinted cores, their halos (additive), the health bars and the swords, at
+    // the render time; their instances hold no motion between ticks, so the overlay's alpha changes nothing.
     ribbons.Draw(commands, pass, transform);
     overlay.Draw(commands, pass, volleyDrawing.batches, sprites, transform, alpha);
     // Game text over the world, its outlines and the overlay (the phase 6 chunk 3 spec), placed in target pixels.

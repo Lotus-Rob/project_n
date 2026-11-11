@@ -18,7 +18,7 @@
 
 namespace core {
 
-/// The most swords a volley has: the overlay buffer holds two instances a sword.
+/// The most swords a volley has: the overlay buffer holds three instances a sword (its core, halo and blade).
 inline constexpr u32 MAX_VOLLEY_COUNT = 2'000;
 
 /// The fewest ticks a sword takes to swing its aim from a target that died to the one it moves on to, so it turns

@@ -145,7 +145,7 @@ void SpriteRenderer::Draw(
     };
     for (const core::Batch& batch : batches) {
         if (batch.first >= m_count) {
-            break;
+            continue; // batches may come in any order of their instances (the overlay's do)
         }
         // Bindings outlive a pipeline change within the pass, so only the pipeline is rebound.
         SDL_BindGPUGraphicsPipeline(pass, m_pipelines.at(static_cast<std::size_t>(batch.pipeline)).get());

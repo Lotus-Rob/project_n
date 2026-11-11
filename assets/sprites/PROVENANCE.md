@@ -38,3 +38,4 @@ updates its row in the same commit (what made it, when, and who) and takes it ou
 | fire_bolt.png | `art/placeholders.py` (procedural placeholder) | 2026-11-11 | white, tinted by its element's colour; as above |
 | lance_strike.png | `art/placeholders.py` (procedural placeholder) | 2026-11-11 | white, tinted by its element's colour; as above |
 | solid.png | `art/placeholders.py` (procedural placeholder) | 2026-11-11 | the bars' white square; as above |
+| glow_core.png | `art/placeholders.py` (procedural placeholder) | 2026-11-11 | white, drawn under a sword's halo in its element's colour; as above |
