@@ -3,6 +3,7 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
 #include "core/manifest.hpp"
+#include "data/abilities.hpp"
 #include "data/internal/yaml.hpp"
 
 namespace data {
@@ -10,6 +11,9 @@ namespace data {
 namespace {
 
 using core::atlas::SpriteId;
+
+// Every whole number up to this is exact in an f64.
+constexpr f64 MAX_HEALTH = 9'007'199'254'740'992.0;
 
 std::unexpected<core::Error> Fail(const YAML::Node& node, std::string_view why) {
     return std::unexpected{ core::Error{ std::format("creatures line {}: {}", node.Mark().line + 1, why) } };
@@ -28,6 +32,22 @@ std::expected<f32, core::Error> Number(const YAML::Node& map, std::string_view n
     return value;
 }
 
+// `name`'s health: a whole number from 0 to MAX_HEALTH, read as f64 since yaml-cpp throws on text that isn't a number.
+std::expected<i64, core::Error> Health(const YAML::Node& map, std::string_view name) {
+    const YAML::Node node = map["health"];
+    if (!node) {
+        return Fail(map, std::format("{} has no health", name));
+    }
+    const auto value = node.as<f64>();
+    if (!std::isfinite(value) || value < 0.0 || value != std::floor(value) || value > MAX_HEALTH) {
+        return Fail(node, std::format("{}'s health isn't a whole number from 0 to {}", name, MAX_HEALTH));
+    }
+    if (value < 1.0) {
+        return Fail(node, std::format("{}'s health is below 1", name)); // it would be born dying
+    }
+    return static_cast<i64>(value);
+}
+
 std::expected<core::CreatureData, core::Error> Creature(
     const YAML::Node& root,
     const char* name,
@@ -37,7 +57,7 @@ std::expected<core::CreatureData, core::Error> Creature(
     if (!node || !node.IsMap()) {
         return Fail(node ? node : root, std::format("no creature {}", name));
     }
-    internal::NoteUnknownKeys("creatures", node, name, "key", { "sprite", "walk_speed", "orbit" }, warnings);
+    internal::NoteUnknownKeys("creatures", node, name, "key", { "sprite", "health", "walk_speed", "orbit" }, warnings);
     const YAML::Node spriteNode = node["sprite"];
     if (!spriteNode) {
         return Fail(node, std::format("{} has no sprite", name));
@@ -53,6 +73,11 @@ std::expected<core::CreatureData, core::Error> Creature(
         return std::unexpected{ walkSpeed.error() };
     }
     creature.walkSpeed = *walkSpeed;
+    const std::expected<i64, core::Error> health = Health(node, name);
+    if (!health) {
+        return std::unexpected{ health.error() };
+    }
+    creature.health = *health;
     if (const YAML::Node orbit = node["orbit"]) {
         const std::string orbitName = std::format("{}'s orbit", name);
         internal::NoteUnknownKeys("creatures", orbit, orbitName, "key", { "radius", "wobble", "speed", "around" }, warnings);
@@ -78,17 +103,27 @@ std::expected<core::CreatureData, core::Error> Creature(
 
 } // namespace
 
-std::expected<core::GameData, core::Error> ParseGameData(std::string_view creatures, std::vector<std::string>* warnings) {
+std::expected<core::GameData, core::Error> ParseGameData(
+    std::string_view creatures,
+    std::string_view abilities,
+    std::vector<std::string>* warnings
+) {
     try {
         const YAML::Node root = YAML::Load(std::string{ creatures });
         if (!root.IsMap()) {
             return Fail(root, "not a map of creatures");
         }
         internal::NoteUnknownKeys("creatures", root, "", "creature", { "cultivator", "fox" }, warnings);
-        return Creature(root, "cultivator", warnings).and_then([&](const core::CreatureData& cultivator) {
-            return Creature(root, "fox", warnings).transform([&](const core::CreatureData& fox) {
-                return core::GameData{ .cultivator = cultivator, .fox = fox };
-            });
+        const std::expected<core::CreatureData, core::Error> cultivator = Creature(root, "cultivator", warnings);
+        if (!cultivator) {
+            return std::unexpected{ cultivator.error() };
+        }
+        const std::expected<core::CreatureData, core::Error> fox = Creature(root, "fox", warnings);
+        if (!fox) {
+            return std::unexpected{ fox.error() };
+        }
+        return ParseAbilities(abilities, warnings).transform([&](const core::Abilities& table) {
+            return core::GameData{ .cultivator = *cultivator, .fox = *fox, .abilities = table };
         });
     }
     catch (const YAML::Exception& error) {
@@ -99,8 +134,10 @@ std::expected<core::GameData, core::Error> ParseGameData(std::string_view creatu
 std::expected<core::GameData, core::Error> LoadGameData(const std::filesystem::path& folder) {
     std::vector<std::string> warnings;
     std::expected<core::GameData, core::Error> data =
-        internal::ReadText(folder / "creatures.yaml").and_then([&warnings](const std::string& text) {
-            return ParseGameData(text, &warnings);
+        internal::ReadText(folder / "creatures.yaml").and_then([&](const std::string& creatures) {
+            return internal::ReadText(folder / "abilities.yaml").and_then([&](const std::string& abilities) {
+                return ParseGameData(creatures, abilities, &warnings);
+            });
         });
     for (const std::string& warning : warnings) {
         PN_LOG_WARNING("{}", warning);

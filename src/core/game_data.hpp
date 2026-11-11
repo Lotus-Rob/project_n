@@ -5,6 +5,7 @@
 /// The game data (design doc 0002.3 §7): what the data tables in `assets/data/` say, read by the
 /// data module and used by the simulation. A replay records its hash and plays only under the same.
 
+#include "core/abilities.hpp"
 #include "core/archive.hpp"
 #include "core/types.hpp"
 
@@ -17,6 +18,8 @@ namespace core {
 struct CreatureData {
     /// Its sprite.
     atlas::SpriteId sprite = atlas::SpriteId{};
+    /// Its health at full.
+    i64 health = 0;
     /// World units per tick at full movement.
     f32 walkSpeed = 0.0F;
     /// The mean distance of its orbit from the point circled, in world units.
@@ -31,21 +34,25 @@ struct CreatureData {
     /// Lists its fields for an archive (core/archive.hpp).
     template<typename Self, typename Archive>
     void Fields(this Self& self, Archive& archive) {
-        archive(self.sprite, self.walkSpeed, self.orbitRadius, self.orbitWobble, self.orbitSpeed, self.orbitsPlayer);
+        archive(
+            self.sprite, self.health, self.walkSpeed, self.orbitRadius, self.orbitWobble, self.orbitSpeed, self.orbitsPlayer
+        );
     }
 };
 
-/// Every data table: for now the test bed's creatures (`assets/data/creatures.yaml`).
+/// Every data table: the test bed's creatures (`assets/data/creatures.yaml`) and the abilities (`abilities.yaml`).
 struct GameData {
     /// The cultivator the player walks.
     CreatureData cultivator{};
     /// The foxes circling the cultivator.
     CreatureData fox{};
+    /// The player's abilities and loadout.
+    Abilities abilities{};
 
     /// Lists its fields for an archive (core/archive.hpp).
     template<typename Self, typename Archive>
     void Fields(this Self& self, Archive& archive) {
-        archive(self.cultivator, self.fox);
+        archive(self.cultivator, self.fox, self.abilities);
     }
 
     /// A hash of every value: two GameData hash alike when every value has the same bits.

@@ -1,0 +1,17 @@
+# The abilities (design doc 0002.3 §7). In debug builds the running game reloads this file when it changes.
+# qi: the most Qi the player holds, and what they start with. abilities: each one's slot kind (generator, spender,
+# movement, special or ultimate), cooldown (seconds), qi_cost, qi_gain, damage, element (damage, healing, poison or
+# burn), radius (world units), and by kind: speed (world units a second, the bolt), distance and duration (the dash),
+# burn or poison { ticks, damage } (damage over time, once a second), swords { count, ring_radius, stagger, out,
+# flight, sweep, fade } (the volley; times in seconds). loadout: which ability sits in each slot (generator, spender,
+# movement, special_1..special_4, ultimate); a slot left out is empty.
+qi: { max: 100, start: 50 }
+abilities:
+  fire_bolt:     { slot: generator, cooldown: 0.25, qi_gain: 10, damage: 140, element: burn, radius: 120, speed: 1500,
+                   burn: { ticks: 3, damage: 40 } }
+  poison_lance:  { slot: spender, cooldown: 0.5, qi_cost: 25, damage: 360, element: poison, radius: 90,
+                   poison: { ticks: 4, damage: 60 } }
+  dash:          { slot: movement, cooldown: 1.0, distance: 260, duration: 0.15 }
+  flying_swords: { slot: special, cooldown: 6, qi_cost: 60, damage: 20, radius: 260,
+                   swords: { count: 1000, ring_radius: 140, stagger: 0.5, out: 0.2, flight: 1.1, sweep: 420, fade: 0.3 } }
+loadout: { generator: fire_bolt, spender: poison_lance, movement: dash, special_1: flying_swords }

@@ -1,8 +1,9 @@
-// The data module's YAML readers (data::ParseGameData, data::ParseSettings, data::ParseManifest, data::ParseStrings): a data or
-// settings file is edited by hand and the manifest may be damaged, so any text is refused with an error or read,
-// never a crash or an exception escaping. Seeded with the shipped creatures and strings tables, a settings file and the
-// manifest.
+// The data module's YAML readers (data::ParseGameData, data::ParseAbilities, data::ParseSettings, data::ParseManifest,
+// data::ParseStrings): a data or settings file is edited by hand and the manifest may be damaged, so any text is refused with
+// an error or read, never a crash or an exception escaping. Seeded with the shipped creatures, abilities and strings tables, a
+// settings file and the manifest.
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "data/abilities.hpp"
 #include "data/game_data.hpp"
 #include "data/manifest.hpp"
 #include "data/settings.hpp"
@@ -20,12 +21,14 @@ extern "C" i32 LLVMFuzzerTestOneInput(const u8* bytes, std::size_t size) {
     std::string text(size, '\0');
     std::ranges::transform(input, text.begin(), [](u8 byte) { return static_cast<char>(byte); });
     std::vector<std::string> warnings; // collected, so the unknown-key path runs too
-    const std::expected<core::GameData, core::Error> gameData = data::ParseGameData(text, &warnings);
+    const std::expected<core::GameData, core::Error> gameData = data::ParseGameData(text, text, &warnings);
+    const std::expected<core::Abilities, core::Error> abilities = data::ParseAbilities(text, &warnings);
     const std::expected<core::Settings, core::Error> settings = data::ParseSettings(text, &warnings);
     const std::expected<core::Manifest, core::Error> manifest = data::ParseManifest(text);
     const std::expected<core::Strings, core::Error> strings = data::ParseStrings(text, &warnings);
-    if ((!gameData && gameData.error().message.empty()) || (!settings && settings.error().message.empty()) ||
-        (!manifest && manifest.error().message.empty()) || (!strings && strings.error().message.empty())) {
+    if ((!gameData && gameData.error().message.empty()) || (!abilities && abilities.error().message.empty()) ||
+        (!settings && settings.error().message.empty()) || (!manifest && manifest.error().message.empty()) ||
+        (!strings && strings.error().message.empty())) {
         std::abort(); // a refusal always says why
     }
     return 0;

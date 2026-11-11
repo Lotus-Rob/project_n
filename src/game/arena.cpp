@@ -210,11 +210,61 @@ core::SceneId SceneIdOf(const core::Manifest& manifest, Scene scene) {
     return found.value_or(core::SceneId{});
 }
 
-// What assets/data/creatures.yaml ships.
+// What assets/data/creatures.yaml and abilities.yaml ship.
 constexpr core::GameData BUILT_IN_DATA{
-    .cultivator = { .sprite = SpriteId::Cultivator, .walkSpeed = 4.0F }, // 240 world units a second at full stick
+    .cultivator = { .sprite = SpriteId::Cultivator, .health = 1'000, .walkSpeed = 4.0F }, // 240 world units a second at full stick
     // A lap in about 17 seconds.
-    .fox = { .sprite = SpriteId::Fox, .orbitRadius = 300.0F, .orbitWobble = 40.0F, .orbitSpeed = 0.006F, .orbitsPlayer = true },
+    .fox = { .sprite = SpriteId::Fox,
+             .health = 1'200,
+             .orbitRadius = 300.0F,
+             .orbitWobble = 40.0F,
+             .orbitSpeed = 0.006F,
+             .orbitsPlayer = true },
+    .abilities = {
+        .qiMax = 100,
+        .qiStart = 50,
+        .table = { {
+            {},
+            { .slot = core::SlotKind::Generator,
+              .cooldownTicks = 15,
+              .qiGain = 10,
+              .damage = 140,
+              .hit = core::HitKind::Burn,
+              .radius = 120.0F,
+              .affliction = { .ticks = 3, .damage = 40 },
+              .speed = 25.0F },
+            { .slot = core::SlotKind::Spender,
+              .cooldownTicks = 30,
+              .qiCost = 25,
+              .damage = 360,
+              .hit = core::HitKind::Poison,
+              .radius = 90.0F,
+              .affliction = { .ticks = 4, .damage = 60 } },
+            { .slot = core::SlotKind::Movement, .cooldownTicks = 60, .distance = 260.0F, .durationTicks = 9 },
+            { .slot = core::SlotKind::Special,
+              .cooldownTicks = 360,
+              .qiCost = 60,
+              .damage = 20,
+              .radius = 260.0F,
+              .volley = { .count = 1'000,
+                          .ringRadius = 140.0F,
+                          .staggerTicks = 30,
+                          .outTicks = 12,
+                          .flightTicks = 66,
+                          .sweep = 420.0F,
+                          .fadeTicks = 18 } },
+        } },
+        .loadout = { {
+            core::AbilityKind::FireBolt,
+            core::AbilityKind::PoisonLance,
+            core::AbilityKind::Dash,
+            core::AbilityKind::FlyingSwords,
+            core::AbilityKind::None,
+            core::AbilityKind::None,
+            core::AbilityKind::None,
+            core::AbilityKind::None,
+        } },
+    },
 };
 
 } // namespace
