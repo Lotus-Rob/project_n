@@ -218,6 +218,7 @@ struct TextLayout::Impl {
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::unordered_map<u32, CachedGlyph> glyphs{};           // by glyph index
     std::unordered_map<std::string, CachedLayout> layouts{}; // by direction and text
+    std::string key{}; // Lay()'s lookup key, kept so a lookup allocates nothing once it has grown
     std::vector<GlyphUpload> pending{};
     std::vector<u32> wanted{};   // requested glyphs not yet handed to the worker
     std::vector<Field> landed{}; // the worker's fields, taken from it
@@ -299,6 +300,7 @@ void TextLayout::Impl::WarnMissing(std::string_view text) {
 }
 
 Layout TextLayout::Impl::Make(std::string_view text, core::TextDirection direction) {
+    PN_PROFILE_ZONE();
     std::vector<PlacedGlyph> placed;
     bool complete = true;
     // A field is its glyph with SDF_SPREAD around it, and the box has SDF_SPREAD around the shaped text: the field's
@@ -438,13 +440,14 @@ void TextLayout::Prewarm(const core::Strings& strings) {
     PN_LOG_INFO("glyphs rasterised ahead of time as distance fields: {}, in {:.0f} ms", unseen.size(), took.count());
 }
 
+// No zone: it runs once per text, tens of times a frame, and a zone costs more than a hit; a miss's Make() has one.
 const Layout& TextLayout::Lay(std::string_view text, core::TextDirection direction) {
-    PN_PROFILE_ZONE();
-    std::string key{ static_cast<char>(direction) };
+    std::string& key = m_impl->key;
+    key.assign(1, static_cast<char>(direction));
     key += text;
     auto cached = m_impl->layouts.find(key);
     if (cached == m_impl->layouts.end()) {
-        cached = m_impl->layouts.emplace(std::move(key), CachedLayout{ .layout = m_impl->Make(text, direction) }).first;
+        cached = m_impl->layouts.emplace(key, CachedLayout{ .layout = m_impl->Make(text, direction) }).first;
         cached->second.landings = m_impl->landings;
     }
     else if (!cached->second.layout.complete && cached->second.landings != m_impl->landings) {

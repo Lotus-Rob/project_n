@@ -173,7 +173,8 @@ TEST_CASE("a number is placed where its shaped layout would be drawn") {
     core::Jobs jobs{ SEVERAL };
     std::vector<gfx::MeshVertex> placed;
     std::vector<u32> pages;
-    gfx::PlaceNumbers(texts, Placement(face), jobs, placed, pages);
+    std::vector<std::size_t> scratch;
+    gfx::PlaceNumbers(texts, Placement(face), jobs, placed, pages, scratch);
     REQUIRE(placed.size() == expected.size());
     CHECK(pages == expectedPages);
     for (std::size_t vertex = 0; vertex < expected.size(); ++vertex) {
@@ -185,7 +186,8 @@ TEST_CASE("a number is placed where its shaped layout would be drawn") {
     }
 }
 
-// The vertices and pages `texts` are placed into on `workers` workers, after what was there.
+// The vertices and pages `texts` are placed into on `workers` workers, after what was there, with scratch left over from
+// an earlier call.
 std::pair<std::vector<gfx::MeshVertex>, std::vector<u32>> PlacedOn(
     u32 workers,
     std::span<const core::TextItem> texts,
@@ -194,7 +196,9 @@ std::pair<std::vector<gfx::MeshVertex>, std::vector<u32>> PlacedOn(
     core::Jobs jobs{ workers };
     std::vector<gfx::MeshVertex> vertices(gfx::QUAD_VERTICES, EARLIER);
     std::vector<u32> pages{ EARLIER_PAGE };
-    gfx::PlaceNumbers(texts, Placement(face), jobs, vertices, pages);
+    constexpr std::size_t STALE = 99;
+    std::vector<std::size_t> scratch(3, STALE);
+    gfx::PlaceNumbers(texts, Placement(face), jobs, vertices, pages, scratch);
     return { std::move(vertices), std::move(pages) };
 }
 

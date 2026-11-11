@@ -166,8 +166,9 @@ void ForEachChunk(core::Jobs& jobs, u32 chunks, const Body& body) {
 
 } // namespace
 
+// The public functions up to PlaceGlyphs() run once per text and have no zones, as the helpers above: their callers'
+// zones measure them.
 f32 TextPixels(core::TextKind kind, f32 pixelsPerUnit, f32 scale) {
-    PN_PROFILE_ZONE();
     if (kind == core::TextKind::Number) {
         return std::max(NUMBER_WORLD_SIZE * pixelsPerUnit, NUMBER_MIN_PIXELS) * scale;
     }
@@ -179,22 +180,22 @@ bool TooSmallToSee(f32 entityPixels) {
 }
 
 u32 TextColour(const core::TextItem& item, bool outline, bool shadow) {
-    PN_PROFILE_ZONE();
     return ColourOfText(item, outline, shadow);
 }
 
 core::Vec2 TextAnchor(const core::TextItem& item, const View& view, u32 width, u32 height) {
-    PN_PROFILE_ZONE();
     return AnchorOfText(item, WorldToClip(view.camera, width, height), static_cast<f32>(view.alpha), width, height);
 }
 
+core::Vec2 TextAnchor(const core::TextItem& item, const ClipTransform& clip, f32 alpha, u32 width, u32 height) {
+    return AnchorOfText(item, clip, alpha, width, height);
+}
+
 core::Vec2 TextTopLeft(core::Vec2 anchor, core::Vec2 size, core::TextAlign align) {
-    PN_PROFILE_ZONE();
     return TopLeftOfText(anchor, size, align);
 }
 
 void PlaceGlyphs(const Layout& layout, core::Vec2 topLeft, f32 pixels, u32 colour, std::vector<MeshVertex>& out) {
-    PN_PROFILE_ZONE();
     const f32 scale = pixels / SDF_BASE_PIXELS;
     std::size_t first = out.size();
     out.resize(first + (layout.glyphs.size() * QUAD_VERTICES));
@@ -240,7 +241,8 @@ void PlaceNumbers(
     const NumberPlacement& placement,
     core::Jobs& jobs,
     std::vector<MeshVertex>& vertices,
-    std::vector<u32>& pages
+    std::vector<u32>& pages,
+    std::vector<std::size_t>& firstQuads
 ) {
     PN_PROFILE_ZONE();
     const u32 chunks = core::ChunkCount(texts.size(), NUMBER_CHUNK);
@@ -249,7 +251,7 @@ void PlaceNumbers(
         return texts.subspan(begin, std::min<std::size_t>(NUMBER_CHUNK, texts.size() - begin));
     };
     // Counted first, so each chunk writes its own part of output sized for it.
-    std::vector<std::size_t> firstQuads(std::size_t{ chunks } + 1);
+    firstQuads.assign(std::size_t{ chunks } + 1, 0);
     ForEachChunk(jobs, chunks, [&](u32 chunk) { CountNumberChunk(placement.face, chunkOf(chunk), firstQuads[chunk + 1]); });
     std::partial_sum(firstQuads.begin(), firstQuads.end(), firstQuads.begin());
     const std::size_t vertexBase = vertices.size();
