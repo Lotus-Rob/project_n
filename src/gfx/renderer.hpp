@@ -10,6 +10,7 @@
 #include "core/manifest.hpp"
 #include "core/strings.hpp"
 #include "core/types.hpp"
+#include "core/ui_colours.hpp"
 #include "gfx/camera.hpp"
 #include "gfx/image.hpp"
 #include "platform/window.hpp"
@@ -42,14 +43,15 @@ class Renderer {
 public:
     /// Creates a GPU device for `window` and presents to it, with the empty sprite atlas `manifest` describes, whose
     /// scenes load from `assets`, and the glyph cache, its font from `assets/fonts/`, or says why it couldn't. Texts show
-    /// `strings`, drawn as `text` says; every glyph `strings` uses, in every language, is rasterised now
+    /// `strings`, drawn as `text` says, in `colours`; every glyph `strings` uses, in every language, is rasterised now
     /// (TextLayout::Prewarm()), so the game's own text never waits for one. The window must outlive the renderer.
     [[nodiscard]] static std::expected<Renderer, core::Error> Create(
         platform::Window& window,
         const std::filesystem::path& assets,
         std::shared_ptr<const core::Manifest> manifest,
         std::shared_ptr<const core::Strings> strings,
-        const TextOptions& text
+        const TextOptions& text,
+        const core::UiColours& colours
     );
 
     Renderer(const Renderer&) = delete;
@@ -82,6 +84,10 @@ public:
 
     /// Draws `text` from the next frame on.
     void SetTextOptions(const TextOptions& text);
+
+    /// Draws labels, captions, the outlines of the hovered and selected entity and the ink of text's outlines and shadows
+    /// in `colours` from the next frame on, with no restart.
+    void SetUiColours(const core::UiColours& colours);
 
     /// Draws as Draw() does, but into a picture `width` by `height` pixels instead of the window, waits for the GPU and
     /// returns the picture, or says why it couldn't. Every glyph its texts need is rasterised on `jobs` first, waiting for

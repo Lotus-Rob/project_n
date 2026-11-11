@@ -6,6 +6,7 @@
 
 #include "core/strings.hpp"
 #include "core/types.hpp"
+#include "core/ui_colours.hpp"
 
 #include <array>
 #include <cstddef>
@@ -46,6 +47,8 @@ struct Settings {
     bool textOutline = true;
     /// Whether game text has a shadow.
     bool textShadow = true;
+    /// Every colour of the interface (`settings.yaml` doesn't read it until the accessibility menu, chunk 11).
+    UiColours uiColours{};
 };
 
 } // namespace core

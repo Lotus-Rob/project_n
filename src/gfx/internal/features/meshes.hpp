@@ -14,6 +14,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <array>
 #include <cstddef>
 #include <expected>
 #include <span>
@@ -30,7 +31,13 @@ struct TextStyle {
     f32 shadowOffsetU = 0.0F;
     /// How far down the shadow falls, as a fraction of the page.
     f32 shadowOffsetV = 0.0F;
+    /// The ink of the outline and the shadow: linear, red, green, blue and alpha, each 0 to 1 (the colour table's
+    /// core::UiColour::TextInk, see InkOf()).
+    std::array<f32, 4> ink{};
 };
+
+/// `packed` (a core::UiColours value: linear, premultiplied, red in the low byte) as TextStyle::ink.
+[[nodiscard]] std::array<f32, 4> InkOf(u32 packed);
 
 /// A run of consecutive uploaded quads on one page: one draw.
 struct MeshRun {

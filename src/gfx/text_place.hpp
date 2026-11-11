@@ -12,6 +12,7 @@
 #include "core/jobs.hpp"
 #include "core/stable_id.hpp"
 #include "core/types.hpp"
+#include "core/ui_colours.hpp"
 #include "core/vec2.hpp"
 #include "gfx/camera.hpp"
 #include "gfx/mesh_vertex.hpp"
@@ -39,11 +40,6 @@ inline constexpr f32 NUMBER_MIN_PIXELS = 12.0F;
 /// start from where its label, or the stack it joined, is placed (faded out or not) instead of their own anchors.
 inline constexpr f32 VISIBLE_CREATURE_PIXELS = 8.0F;
 
-/// The dark ink of labels and captions when the outline and the shadow are both off: sRGB #20242A, linear
-/// (0.0144, 0.0176, 0.0232), premultiplied and packed as TextItem::colour. The same ink as the outlines and shadows the
-/// field shader draws (`INK` in shaders/mesh.frag.hlsl): change both together.
-inline constexpr u32 TEXT_INK = 0xFF06'0404U;
-
 /// The pixel size a text of `kind` is drawn at where a world unit covers `pixelsPerUnit` target pixels
 /// (PixelsPerUnit()) and the text is scaled by `scale` (the text size setting, 1 by default): its world size ×
 /// pixelsPerUnit × scale. A number never goes below NUMBER_MIN_PIXELS × scale; labels and captions don't stop shrinking
@@ -54,10 +50,11 @@ inline constexpr u32 TEXT_INK = 0xFF06'0404U;
 /// VISIBLE_CREATURE_PIXELS, and not 0, which says its height is unknown (core::TextItem::height unset).
 [[nodiscard]] bool TooSmallToSee(f32 entityPixels);
 
-/// The colour `item` is drawn in: its colour scaled by its opacity (premultiplied, so every channel), and, for a label
-/// or a caption when the outline and the shadow are both off, TEXT_INK instead, so it reads on the pale ground. A number
-/// keeps its colour: its kind's, which the damage numbers already make dark when both are off (app::DARK_KIND_COLOURS).
-[[nodiscard]] u32 TextColour(const core::TextItem& item, bool outline, bool shadow);
+/// The colour `item` is drawn in, scaled by its opacity (premultiplied, so every channel): a label's and a caption's
+/// from `colours` (core::UiColour::Label, Caption), and, when the outline and the shadow are both off, core::UiColour::
+/// TextInk as opaque as that colour, so it reads on the pale ground. A number keeps its own colour: its kind's, which the
+/// damage numbers take from the table, the dark one when both are off.
+[[nodiscard]] u32 TextColour(const core::TextItem& item, const core::UiColours& colours, bool outline, bool shadow);
 
 /// Where `item`'s anchor, moved by its offset, falls on a target `width` by `height` pixels as `view` shows it, in
 /// target pixels from the top left: interpolated by the view's alpha and never rounded.
@@ -142,6 +139,8 @@ struct NumberPlacement {
     bool outline = true;
     /// Whether text casts its shadow (TextColour()).
     bool shadow = true;
+    /// The colours text is drawn in (TextColour()).
+    core::UiColours colours{};
     /// The creatures whose numbers start elsewhere, sorted by entity.
     std::span<const NumberOrigin> origins;
 };

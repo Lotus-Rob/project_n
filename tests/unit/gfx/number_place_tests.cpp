@@ -164,7 +164,7 @@ TEST_CASE("a number is placed where its shaped layout would be drawn") {
         const f32 scale = PIXELS / gfx::SDF_BASE_PIXELS;
         const core::Vec2 topLeft =
             gfx::TextTopLeft(start, { .x = shaped.width * scale, .y = shaped.height * scale }, item.align);
-        gfx::PlaceGlyphs(shaped, topLeft, PIXELS, gfx::TextColour(item, true, false), expected);
+        gfx::PlaceGlyphs(shaped, topLeft, PIXELS, gfx::TextColour(item, core::UiColours{}, true, false), expected);
         for (const gfx::PlacedGlyph& glyph : shaped.glyphs) {
             expectedPages.push_back(glyph.page);
         }

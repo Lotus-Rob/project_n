@@ -13,6 +13,10 @@ constexpr std::array<u32, QUAD_INDICES> QUAD_CORNERS{ { 0, 1, 2, 2, 1, 3 } }; //
 constexpr u32 VERTEX_BYTES = MAX_MESH_QUADS * QUAD_VERTICES * static_cast<u32>(MESH_VERTEX_BYTES);
 constexpr u32 INDEX_BYTES = MAX_MESH_QUADS * QUAD_INDICES * static_cast<u32>(sizeof(u32));
 
+constexpr u32 CHANNEL_MASK = 0xFFU;
+constexpr u32 CHANNEL_BITS = 8;
+constexpr f32 CHANNEL_MAX = 255.0F;
+
 Gpu<SDL_GPUGraphicsPipeline> CreateMeshPipeline(SDL_GPUDevice* device, SDL_GPUTextureFormat format) {
     const Gpu<SDL_GPUShader> vertex = CreateShader(device, shaders::MESH_VERT, SDL_GPU_SHADERSTAGE_VERTEX);
     const Gpu<SDL_GPUShader> fragment = CreateShader(device, shaders::MESH_FRAG, SDL_GPU_SHADERSTAGE_FRAGMENT);
@@ -96,6 +100,14 @@ bool CopyToBuffer(
 }
 
 } // namespace
+
+std::array<f32, 4> InkOf(u32 packed) {
+    std::array<f32, 4> ink{};
+    for (std::size_t channel = 0; channel < ink.size(); ++channel) {
+        ink.at(channel) = static_cast<f32>((packed >> (channel * CHANNEL_BITS)) & CHANNEL_MASK) / CHANNEL_MAX;
+    }
+    return ink;
+}
 
 std::expected<MeshRenderer, core::Error> MeshRenderer::Create(SDL_GPUDevice* device, SDL_GPUTextureFormat format) {
     MeshRenderer renderer;

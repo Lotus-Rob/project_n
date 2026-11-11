@@ -9,6 +9,7 @@ struct TextStyle {
     float outline;      // 1: draw the dark outline; 0: don't
     float shadow;       // 1: draw the soft shadow; 0: don't
     float2 shadowShift; // how far down and right the shadow falls, in page fractions
+    float4 ink;         // the outline and shadow's ink: linear, from the colour table (core::UiColour::TextInk)
 };
 
 ConstantBuffer<TextStyle> style : register(b0, space3);
@@ -27,9 +28,6 @@ static const float2 GRID[SAMPLES] = { float2(-0.125, -0.375), float2(0.375, -0.1
 // Each sample's edge ramp, in screen pixels, a little wider than the samples are apart: measured on the reference
 // captures, it keeps a label's ink within 1% at sub-pixel offsets on pale ground (0.5 px: 2%) while edges stay crisp.
 static const float RAMP_PIXELS = 0.75;
-// The outline and shadow's dark ink: sRGB #20242A, linear. The same ink as gfx::TEXT_INK (src/gfx/text_place.hpp),
-// which dark labels are drawn in: change both together.
-static const float3 INK = float3(0.0144, 0.0176, 0.0232);
 
 // How much of a sample's share of the pixel lies inside `edge`, where the field is `distance` and changes by
 // `perPixel` across a screen pixel: a linear ramp RAMP_PIXELS wide.
@@ -60,7 +58,7 @@ float4 FragmentMain(VertexOut input) : SV_Target0 {
     const float perPixel = max(0.5 * (texels.x + texels.y) * BASE_PIXEL, 1e-4);
     const float2 acrossX = ddx(input.uv);
     const float2 acrossY = ddy(input.uv);
-    const float4 ink = float4(INK, 1.0) * input.colour.a;
+    const float4 ink = float4(style.ink.rgb, 1.0) * input.colour.a;
     float4 under = float4(0.0, 0.0, 0.0, 0.0);
     if (style.shadow > 0.5) {
         const float shadow = page.SampleLevel(pageSampler, input.uv - style.shadowShift, 0);

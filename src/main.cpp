@@ -92,7 +92,8 @@ i32 Run(const core::Settings& settings, app::Options options) {
         *assets,
         options.manifest,
         std::make_shared<const core::Strings>(std::move(*strings)),
-        { .language = settings.language, .outline = settings.textOutline, .shadow = settings.textShadow }
+        { .language = settings.language, .outline = settings.textOutline, .shadow = settings.textShadow },
+        settings.uiColours
     );
     if (!renderer) {
         return FailToStart("the graphics card couldn't be used", renderer.error());

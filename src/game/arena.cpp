@@ -38,10 +38,6 @@ constexpr Prop STELE{ .sprite = SpriteId::Stele, .foot = { .x = 760.0F, .y = 980
 // Game text (the phase 6 chunk 3 spec): offsets in world units, so they scale with the zoom as the text does.
 constexpr core::Vec2 LABEL_OFFSET{ .x = 0.0F, .y = -6.0F };   // a little clear of the head
 constexpr core::Vec2 CAPTION_OFFSET{ .x = 24.0F, .y = 0.0F }; // clear of the tablet's right edge
-// Linear, as the scene is drawn: light #F4EFE6 for names and pale gold #F2D9A0 for the caption, in sRGB, read over the
-// renderer's dark outline and shadow (it turns them to dark ink when both are off).
-constexpr u32 LABEL_COLOUR = 0xFFCA'DCE7U;
-constexpr u32 CAPTION_COLOUR = 0xFF5A'B1E2U;
 
 // The painted art around the arena's edges, some larger or smaller than painted (design doc 0002.3 §2: every feature
 // shows in the arena).
@@ -545,7 +541,6 @@ void Arena::PublishTexts(core::Snapshot& snapshot) const {
                 .height = height,
                 .nameKey = std::to_underlying(name),
                 .priority = player ? core::LabelPriority::Player : core::LabelPriority::Rest,
-                .colour = LABEL_COLOUR,
             }
         );
     }
@@ -559,7 +554,6 @@ void Arena::PublishTexts(core::Snapshot& snapshot) const {
             .previous = topRight,
             .current = topRight,
             .offset = CAPTION_OFFSET,
-            .colour = CAPTION_COLOUR,
             .align = core::TextAlign::TopCentre,
             .direction = core::TextDirection::TopToBottom,
         }

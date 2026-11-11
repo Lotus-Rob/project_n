@@ -150,7 +150,8 @@ struct TextItem {
     u32 nameKey = 0;
     /// Of a Label: which wins where labels overlap.
     LabelPriority priority = LabelPriority::Rest;
-    /// Premultiplied linear colour (the scene is drawn in linear space): red in the low byte, then green, blue and alpha.
+    /// Of a Number: its premultiplied linear colour (the scene is drawn in linear space): red in the low byte, then green,
+    /// blue and alpha. A Label and a Caption leave it alone: the renderer draws them in core::UiColours' colours.
     u32 colour = TEXT_WHITE;
     /// Where the anchor sits on it.
     TextAlign align = TextAlign::BottomCentre;
