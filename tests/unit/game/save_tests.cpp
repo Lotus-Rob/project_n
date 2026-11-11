@@ -251,6 +251,65 @@ TEST_CASE("the save round-trips mid-volley") {
     CHECK(hits > 0);
 }
 
+TEST_CASE("the save round-trips mid-burn") {
+    constexpr u64 CAST = 2;
+    constexpr u64 BETWEEN = 30;        // after the bolt's hit, before the burn's first tick
+    constexpr u32 BURN_TICKS = 3;      // the bolt's burn, all still to come
+    constexpr f32 NEAR_ORBIT = 150.0F; // the foxes out of the crystal aura's reach
+    core::GameData data = game::BuiltInData();
+    data.fox.orbitRadius = NEAR_ORBIT;
+    data.fox.orbitWobble = 0.0F;
+    game::Arena saved(test::TestManifest(), game::Scene::Arena, data);
+    Tick(saved, At(1), {});
+    const core::StableId fox = Foxes(saved).front();
+    const core::Vec2 foot =
+        saved.State()[game::ACTIVE].Entities().get<game::Body>(saved.State()[game::ACTIVE].Find(fox)).current;
+    constexpr f32 HALF = 0.5F;
+    const f32 height = static_cast<f32>(test::TestManifest()->Sprite(data.fox.sprite).footY);
+    const core::Vec2 chest{ .x = foot.x, .y = foot.y - (height * HALF) }; // where the bolt aims: nearest this fox
+    const std::array<core::Action, 1> cast{
+        { { .kind = core::ActionKind::Cast, .slot = core::Slot::Generator, .point = chest } }
+    };
+    Tick(saved, At(CAST), { .actions = cast, .held = {} });
+    core::Jobs jobs{ 1 };
+    core::Snapshot snapshot;
+    saved.Publish(snapshot, jobs);
+    REQUIRE(snapshot.volleys.size() == 1);
+    const core::Volley bolt = snapshot.volleys.front().volley;
+    const u64 savedAt = core::ArrivalTick(bolt, 0) + BETWEEN;
+    for (u64 tick = CAST + 1; tick <= savedAt; ++tick) {
+        Tick(saved, At(tick), {});
+    }
+    REQUIRE(saved.State()[game::ACTIVE].Entities().all_of<game::Afflictions>(saved.State()[game::ACTIVE].Find(fox)));
+    const std::vector<std::byte> bytes = Saved(saved);
+
+    game::Arena loaded(test::TestManifest(), game::Scene::Cells, data);
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader));
+    CHECK(loaded.StateHash() == saved.StateHash());
+    std::vector<core::Event> used;
+    for (u64 tick = savedAt + 1; tick <= savedAt + (BURN_TICKS * game::AFFLICTION_PERIOD) + 1; ++tick) {
+        std::vector<core::Event> savedEvents;
+        std::vector<core::Event> loadedEvents;
+        saved.Tick(At(tick), {}, savedEvents);
+        loaded.Tick(At(tick), {}, loadedEvents);
+        CAPTURE(tick);
+        const bool same = SameEvents(loadedEvents, savedEvents);
+        CHECK(same);
+        CHECK(loaded.StateHash() == saved.StateHash());
+        std::ranges::copy_if(loadedEvents, std::back_inserter(used), [&bolt](const core::Event& event) {
+            return event.use == bolt.use;
+        });
+    }
+    REQUIRE(used.size() == BURN_TICKS + 1);
+    for (std::size_t index = 0; index < BURN_TICKS; ++index) {
+        CHECK(used.at(index).kind == core::EventKind::Hit);
+        CHECK(used.at(index).hit == core::HitKind::Burn);
+        CHECK(used.at(index).target == fox);
+    }
+    CHECK(used.back().kind == core::EventKind::UseEnded);
+}
+
 TEST_CASE("a truncated save is refused, and the game is unchanged") {
     constexpr std::size_t CUT = 4;
     game::Arena saved(test::TestManifest(), game::Scene::Stress);
