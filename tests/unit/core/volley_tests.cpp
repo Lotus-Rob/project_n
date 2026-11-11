@@ -300,7 +300,24 @@ TEST_CASE("each sword aims at its own spot a little off its target's middle, the
         CHECK(plunge.y == DEAD_AT.y + offset.y);
         spots.emplace_back(offset.x, offset.y);
     }
-    // Spread over the creature, not piled on one point.
+    // Spread evenly over the disc: spots evenly spread over a disc lie 2/3 of its radius from its middle on average, and
+    // few lie on its rim (1 − 0.99² ≈ 2% beyond 99% of the radius).
+    constexpr f64 EVEN_MEAN = 2.0 / 3.0;
+    constexpr f64 MEAN_SLACK = 0.1;
+    constexpr f64 RIM = 0.99;
+    constexpr f64 MOST_ON_RIM = 0.05;
+    const auto scatter = static_cast<f64>(core::AIM_SCATTER);
+    f64 sum = 0.0;
+    std::size_t onRim = 0;
+    for (const auto& [across, down] : spots) {
+        const f64 reach = Distance({}, { .x = across, .y = down });
+        sum += reach;
+        onRim += reach >= RIM * scatter ? 1U : 0U;
+    }
+    const f64 mean = sum / static_cast<f64>(spots.size());
+    CHECK(std::abs(mean - (EVEN_MEAN * scatter)) <= MEAN_SLACK * EVEN_MEAN * scatter);
+    CHECK(static_cast<f64>(onRim) <= MOST_ON_RIM * static_cast<f64>(spots.size()));
+    // Not piled on one point.
     std::ranges::sort(spots);
     const auto [last, end] = std::ranges::unique(spots);
     constexpr std::ptrdiff_t MOST_SHARED = 10;
