@@ -142,7 +142,9 @@ chunk 5 checks from then on.
     in its own direction; no chunk copies it for its own sake.
 17. **Accessibility is always the top priority** (chunk 11): every chunk's spec has an Accessibility section saying
     how its features honour reduce motion, reduce flashing, the colour-blind palettes and text size; colour is never
-    the only signal.
+    the only signal. Every UI colour, and every combat effect's colour by element (never by ability), can be changed
+    in Accessibility → Colours, organised by area (Combat Text, Effects, Names and Captions, Selection, HUD) then
+    element; colours live in one table the main thread reads, never in the simulation (amended 2026-11-11, the user).
 18. **Every UI is gamepad friendly** (the user, 2026-11-10): every window, screen, dialog, popup and panel in every
     chunk is fully and fluidly usable with a gamepad (and with the keyboard alone): every control reachable by the d-pad
     or stick, focus always visible, A to act and B to back out, the device's prompts shown. Each chunk's spec says how
