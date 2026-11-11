@@ -81,7 +81,7 @@ TEST_CASE("the swords' waves, rings and jitters are refused out of range or miss
         std::string_view replacement;
         std::string_view says;
     };
-    constexpr std::array<Broken, 13> CASES{ {
+    constexpr std::array<Broken, 16> CASES{ {
         Broken{ .from = "waves: 5", .replacement = "waves: 0", .says = "flying_swords's swords's waves" },
         Broken{ .from = "waves: 5", .replacement = "waves: -1", .says = "flying_swords's swords's waves" },
         Broken{ .from = "waves: 5, ", .replacement = "", .says = "flying_swords's swords has no waves" },
@@ -91,11 +91,15 @@ TEST_CASE("the swords' waves, rings and jitters are refused out of range or miss
         Broken{ .from = "ring_step: 100, ", .replacement = "", .says = "flying_swords's swords has no ring_step" },
         Broken{ .from = "scatter: 0.25", .replacement = "scatter: 1", .says = "flying_swords's swords's scatter" },
         Broken{ .from = "scatter: 0.25", .replacement = "scatter: .nan", .says = "flying_swords's swords's scatter" },
+        Broken{ .from = "scatter: 0.25", .replacement = "scatter: -0.1", .says = "flying_swords's swords's scatter" },
+        Broken{ .from = "scatter: 0.25,", .replacement = "", .says = "flying_swords's swords has no scatter" },
         Broken{
             .from = "angle_jitter: 0.5", .replacement = "angle_jitter: -0.5", .says = "flying_swords's swords's angle_jitter" },
         Broken{ .from = "angle_jitter: 0.5, ", .replacement = "", .says = "flying_swords's swords has no angle_jitter" },
         Broken{
             .from = "sweep_jitter: 0.6", .replacement = "sweep_jitter: 1.5", .says = "flying_swords's swords's sweep_jitter" },
+        Broken{
+            .from = "sweep_jitter: 0.6", .replacement = "sweep_jitter: -0.2", .says = "flying_swords's swords's sweep_jitter" },
         Broken{ .from = "sweep_jitter: 0.6,", .replacement = "", .says = "flying_swords's swords has no sweep_jitter" },
     } };
     for (const Broken& broken : CASES) {
