@@ -117,6 +117,7 @@ App::App(platform::Window window, gfx::Renderer renderer, Options options)
   , m_options{ std::move(options) }
   , m_startNs{ platform::NowNs() }
   , m_nextBurstNs{ m_startNs + core::NS_PER_SECOND } // the scene is resident by the first burst
+  , m_nextCastNs{ m_startNs + core::NS_PER_SECOND }  // likewise by the first cast
   , m_numbers{ m_options.settings }
   , m_hud( // parentheses: the strings' pointer is copied into a parameter (MSVC C4868)
         m_options.strings,
@@ -194,6 +195,7 @@ i32 App::Run() {
         Pan(platform::NowNs());
         WatchData(platform::NowNs());
         RepeatBurst(platform::NowNs());
+        CastOnTimer(platform::NowNs());
         if (!Present(state)) {
             return 1;
         }
@@ -209,6 +211,39 @@ void App::RepeatBurst(u64 nowNs) {
     }
     m_nextBurstNs = nowNs + core::NS_PER_SECOND;
     m_handover.SendInput({ .kind = core::ActionKind::DebugBurst });
+}
+
+void App::CastOnTimer(u64 nowNs) {
+    PN_PROFILE_ZONE();
+    const core::Snapshot* drawn = m_display.Drawn();
+    if (!m_options.castSwords || nowNs < m_nextCastNs || drawn == nullptr || !drawn->combat || !drawn->caster ||
+        !drawn->follow) {
+        return;
+    }
+    const core::CasterView& caster = *drawn->caster;
+    const std::optional<core::Action> cast =
+        TimedCast(caster, m_options.data.abilities, drawn->simulationTick, drawn->follow->current + CAST_SWORDS_OFFSET);
+    if (!cast) {
+        return;
+    }
+    m_handover.SendInput(*cast);
+    if (cast->slot == core::Slot::Special1) {
+        m_swordsLatency.Pressed(nowNs);
+        m_nextCastNs = nowNs + CAST_SWORDS_NS;
+        return;
+    }
+    // The generator again once its cooldown is over and a snapshot shows it: never a cast its cooldown refuses.
+    const core::AbilityKind generator = caster.loadout.at(std::to_underlying(core::Slot::Generator));
+    m_nextCastNs = nowNs + (m_options.data.abilities.Of(generator).cooldownTicks * core::TICK_NS);
+}
+
+void App::MeasureLatency(const core::Snapshot& drawn) {
+    PN_PROFILE_ZONE();
+    if (const std::optional<u64> latency = m_swordsLatency.Drawn(drawn.volleys, platform::NowNs())) {
+        PN_LOG_DEBUG(
+            "swords first drawn {:.1f} ms after the press", static_cast<f64>(*latency) / static_cast<f64>(core::NS_PER_MS)
+        );
+    }
 }
 
 void App::WatchData(u64 nowNs) {
@@ -229,6 +264,7 @@ void App::WatchData(u64 nowNs) {
         return;
     }
     PN_LOG_INFO("the game data changed: reloading it");
+    m_options.data = *reloaded; // what `--cast-swords` reads the costs from
     m_handover.SendInput({ .kind = core::ActionKind::ReloadData, .data = std::make_shared<const core::GameData>(*reloaded) });
 }
 
@@ -298,6 +334,9 @@ void App::Cast(const platform::WindowState& state, const ControlEvent& control, 
         return;
     }
     m_handover.SendInput(*cast);
+    if (cast->slot == core::Slot::Special1) {
+        m_swordsLatency.Pressed(platform::NowNs());
+    }
 }
 
 void App::Select(const platform::WindowState& state, core::Vec2 position) {
@@ -410,6 +449,7 @@ bool App::Present(const platform::WindowState& state) {
                 m_numberTexts,
                 { .lines = m_hudLines, .bars = m_hudBars }
             );
+            MeasureLatency(*drawn);
             PN_PROFILE_FRAME();
         }
     );

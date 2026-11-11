@@ -7,6 +7,7 @@
 /// snapshots the logic thread publishes.
 
 #include "app/bindings.hpp"
+#include "app/cast.hpp"
 #include "app/damage_numbers.hpp"
 #include "app/hud.hpp"
 #include "app/view.hpp"
@@ -15,7 +16,9 @@
 #include "core/manifest.hpp"
 #include "core/settings.hpp"
 #include "core/strings.hpp"
+#include "core/tick_clock.hpp"
 #include "core/types.hpp"
+#include "core/vec2.hpp"
 #include "game/arena.hpp"
 #include "gfx/camera.hpp"
 #include "gfx/renderer.hpp"
@@ -33,6 +36,12 @@
 
 namespace app {
 
+/// How long `--cast-swords` waits after casting the swords before it casts them again, or as soon after as they are
+/// ready and the Qi covers them.
+inline constexpr u64 CAST_SWORDS_NS = 4 * core::NS_PER_SECOND;
+/// Where `--cast-swords` casts, from the followed player's foot, in world units.
+inline constexpr core::Vec2 CAST_SWORDS_OFFSET{ .x = 300.0F, .y = 0.0F };
+
 /// What the command line and the platform chose for a run.
 struct Options {
     /// The atlas manifest, read from `assets/manifest.yaml`; never null.
@@ -48,6 +57,10 @@ struct Options {
     /// Send a debug burst of hits once a second (`--burst`), so a profile run sees the damage numbers' stress without a key
     /// press.
     bool burst = false;
+    /// Cast the flying swords CAST_SWORDS_NS after the last cast, or as soon after as they are ready (about every 6 s),
+    /// at the followed player's foot plus CAST_SWORDS_OFFSET (`--cast-swords`), topping the Qi up with the generator first when
+    /// it is short (TimedCast()), so a profile run sees volleys without key presses.
+    bool castSwords = false;
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The player's settings, read from `settings.yaml`: the main thread's systems take theirs from it.
     core::Settings settings{};
@@ -118,6 +131,8 @@ private:
     ) const;
     void WatchData(u64 nowNs);
     void RepeatBurst(u64 nowNs);
+    void CastOnTimer(u64 nowNs);
+    void MeasureLatency(const core::Snapshot& drawn);
 
     // First, so it goes last: the logic thread registers with it, the renderer's loads run on it.
     core::Jobs m_jobs{ core::Jobs::DefaultWorkers(), /*externalThreads=*/1 };
@@ -126,8 +141,10 @@ private:
     Options m_options;
     u64 m_startNs;
     u64 m_nextBurstNs;       // when `--burst`'s next burst is sent, in wall time (platform::NowNs())
+    u64 m_nextCastNs;        // when `--cast-swords` next casts, at the earliest, likewise
     DamageNumbers m_numbers; // as m_options.settings say
     Hud m_hud;               // likewise
+    CastLatency m_swordsLatency{ core::AbilityKind::FlyingSwords };
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     core::GameHandover m_handover{};
     core::GameDisplay m_display{};
