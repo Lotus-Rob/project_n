@@ -98,7 +98,7 @@ measured in it.
 |---|---|---|---|
 | 1 | The libraries and the font (SDL3_ttf, Noto Sans SC through Git LFS) | **Done** (PR #15–16) | `docs/design/0002.4-ui-and-text.md` §3 |
 | 2 | The scene target and the composite (sRGB encoded by the final pass) | **Done** (PR #16) | `docs/design/0002.4.1-scene-target-and-composite.md` |
-| 3 | Game text and damage numbers: distance-field glyphs, labels that scale and declutter, numbers by kind | **Half built** (branch `phase6-text-chunk3`; re-specified by its new spec) | `2026-11-10-phase6-chunk3-text-design.md` |
+| 3 | Game text and damage numbers: distance-field glyphs, labels that scale and declutter, numbers by kind | **Done** (branch `phase6-text-chunk3`; see its spec's Outcome) | `2026-11-10-phase6-chunk3-text-design.md` |
 | 4 | **Abilities:** flying swords, basic single-element attacks, health | To do | `2026-11-10-phase6-chunk4-abilities-design.md` |
 | 5 | **The world map** and travel between scenes: the large tiled map with fog of war, NPCs travelling between cities, culling by the view, labels at scale, entering tiles, the performance and shimmer measurements | To do | `2026-11-10-phase6-chunk5-world-map-design.md` |
 | 6 | **Towns:** a town, a small city and a large city, full of NPCs; move, select, inspect, talk | To do | `2026-11-10-phase6-chunk6-towns-design.md` |

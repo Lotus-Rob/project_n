@@ -236,9 +236,8 @@ struct Renderer::Impl {
     CaptionFades captionFades{};
     std::vector<LabelInput> labelInputs{};
     std::vector<NumberOrigin> numberOrigins{}; // by entity: where this frame's tiny creatures' numbers start
-    std::vector<u32> numberPages{};
-    std::vector<std::size_t>
-        numberQuads{}; // PlaceNumbers()' scratch            // the glyph page of each quad PlaceNumbers() placed this frame
+    std::vector<u32> numberPages{};            // the glyph page of each quad PlaceNumbers() placed this frame
+    std::vector<std::size_t> numberQuads{};    // PlaceNumbers()' scratch: each chunk's first quad
     std::vector<MeshVertex> meshVertices{};
     std::vector<internal::MeshRun> meshRuns{};
     core::RepeatedFailure failures{};

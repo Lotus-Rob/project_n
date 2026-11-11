@@ -23,8 +23,8 @@ inline constexpr u64 FRAME_STEP_LIMIT_NS = core::NS_PER_SECOND / 10;
 
 /// The main thread's frame clock (gfx::View::frameClock): seconds of wall time from its first frame, which runs on
 /// while the game is paused, unlike the render clock. A gap longer than FRAME_STEP_LIMIT_NS between frames (a hidden
-/// window, a stall) moves it on by that limit only, so what times itself by it resumes where it was rather than jumping
-/// to its end.
+/// window, a stall) moves it on by that limit only: the first frame after it moves a label's fade by two thirds of
+/// gfx::LABEL_FADE_SECONDS at most, so a fade under way still shows its last third rather than being skipped whole.
 class FrameClock {
 public:
     /// Moves the clock on to wall time `nowNs` (platform::NowNs()) and gives its time in seconds: 0 on the first call,

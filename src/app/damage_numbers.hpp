@@ -112,7 +112,7 @@ inline constexpr std::array<u32, core::HIT_KINDS> KIND_COLOURS{ {
 /// about 1.3:1 on the pale parchment, so each kind turns to a dark variant of its colour, each 4.6:1 or more against the
 /// arena's bare ground (relative luminance 0.53 to 0.73) and still apart from the others. In sRGB: damage ink `#20242A`
 /// (gfx::TEXT_INK, the labels' ink), healing green `#145A22`, poison violet `#5E2A9E`, burn orange `#823200`. Chunk 11's
-/// palettes replace this table with KIND_COLOURS.
+/// palettes replace both colour tables, this one and KIND_COLOURS.
 inline constexpr std::array<u32, core::HIT_KINDS> DARK_KIND_COLOURS{ {
     0xFF06'0404U, // damage: linear (0.0144, 0.0176, 0.0232)
     0xFF04'1A02U, // healing: linear (0.0070, 0.1022, 0.0160)
