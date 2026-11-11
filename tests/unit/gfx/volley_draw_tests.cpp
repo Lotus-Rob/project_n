@@ -138,6 +138,11 @@ const gfx::RibbonVertex& TrailVertex(const gfx::VolleyDrawing& drawing, u32 inde
     return drawing.ribbons.at(vertex);
 }
 
+// Where `sword` of VOLLEY aims on a target whose middle is at `middle` (core::AimOffset()).
+core::Vec2 Spot(core::Vec2 middle, u32 sword) {
+    return middle + core::AimOffset(VOLLEY, sword);
+}
+
 core::Vec2 Lerp(core::Vec2 from, core::Vec2 towards, f32 alpha) {
     return from + ((towards - from) * alpha);
 }
@@ -167,7 +172,7 @@ TEST_CASE("each sword is drawn where the shared path puts it at the render time"
         const f64 renderTick = core::RenderTick(MID_FLIGHT, static_cast<f64>(alpha));
         for (const u32 sword : SAMPLED_SWORDS) {
             CAPTURE(sword);
-            const core::SwordPose pose = core::SwordAt(VOLLEY, sword, renderTick, Lerp(BEFORE, AFTER, alpha));
+            const core::SwordPose pose = core::SwordAt(VOLLEY, sword, renderTick, Spot(Lerp(BEFORE, AFTER, alpha), sword));
             const core::Instance& drawn = SwordOf(drawing, sword);
             CheckAt(drawn.current, pose.position);
             CheckAt(drawn.previous, pose.position);
@@ -207,8 +212,9 @@ TEST_CASE("the trail is sampled from the same path a little back in time") {
     constexpr u32 LAST = gfx::TRAIL_SEGMENTS - 1;
     for (const u32 sword : SAMPLED_SWORDS) {
         CAPTURE(sword);
-        const core::SwordPose head = core::SwordAt(VOLLEY, sword, renderTick, POINT);
-        const core::SwordPose tail = core::SwordAt(VOLLEY, sword, renderTick - static_cast<f64>(gfx::TRAIL_TICKS), POINT);
+        const core::SwordPose head = core::SwordAt(VOLLEY, sword, renderTick, Spot(POINT, sword));
+        const core::SwordPose tail =
+            core::SwordAt(VOLLEY, sword, renderTick - static_cast<f64>(gfx::TRAIL_TICKS), Spot(POINT, sword));
         // The first quad's first pair is at the sword, the last quad's last pair at the tail, one on either side.
         CheckAt(Middle(TrailVertex(drawing, sword, 0, 0), TrailVertex(drawing, sword, 0, 1)), head.position);
         const gfx::RibbonVertex& left = TrailVertex(drawing, sword, LAST, 2);
@@ -283,13 +289,13 @@ TEST_CASE("a volley's swords follow a moving target between ticks") {
         const f32 alpha = ALPHAS.at(index);
         CAPTURE(alpha);
         const gfx::VolleyDrawing drawing = Drawn(volleys, targets, tick, alpha);
-        const core::Vec2 aim = Lerp(BEFORE, AFTER, alpha);
         for (const u32 sword : arriving) {
             CAPTURE(sword);
+            const core::Vec2 aim = Spot(Lerp(BEFORE, AFTER, alpha), sword);
             const core::Vec2 drawn = SwordOf(drawing, sword).current;
             CheckAt(drawn, core::SwordAt(VOLLEY, sword, core::RenderTick(tick, static_cast<f64>(alpha)), aim).position);
             if (index + 1 == ALPHAS.size()) {
-                CheckAt(drawn, AFTER); // at its arrival, on the target where this tick left it
+                CheckAt(drawn, Spot(AFTER, sword)); // at its arrival, on the target where this tick left it
             }
         }
     }
@@ -313,8 +319,9 @@ TEST_CASE("a sword that struck its target is gone after its arrival; one that pl
     CHECK(IsZero(SwordOf(drawing, SWORD)));
     CHECK(IsZero(HaloOf(drawing, SWORD)));
     const core::Instance& plunged = SwordOf(drawing, SWORDS.count + SWORD);
-    CheckAt(plunged.current, DEAD_AT);
-    const f32 shown = core::SwordAt(VOLLEY, SWORD, core::RenderTick(tick, static_cast<f64>(HALFWAY)), DEAD_AT).shown;
+    CheckAt(plunged.current, Spot(DEAD_AT, SWORD));
+    const f32 shown =
+        core::SwordAt(VOLLEY, SWORD, core::RenderTick(tick, static_cast<f64>(HALFWAY)), Spot(DEAD_AT, SWORD)).shown;
     REQUIRE(shown > 0.0F);
     REQUIRE(shown < 1.0F);
     constexpr u32 ALPHA_SHIFT = 24;
