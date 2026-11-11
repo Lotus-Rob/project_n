@@ -11,6 +11,7 @@
 #include "core/strings.hpp"
 #include "core/types.hpp"
 #include "core/ui_colours.hpp"
+#include "core/vec2.hpp"
 #include "gfx/camera.hpp"
 #include "gfx/image.hpp"
 #include "platform/window.hpp"
@@ -20,6 +21,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string_view>
 
 namespace gfx {
 
@@ -33,6 +35,43 @@ struct TextOptions {
     bool shadow = true;
     /// How much larger than its world size all game text is drawn, minimum sizes included: the text size setting.
     f32 scale = 1.0F;
+};
+
+/// How tall the HUD's text is drawn, in target pixels at text scale 1: TextOptions::scale multiplies it.
+inline constexpr f32 HUD_PIXELS = 18.0F;
+
+/// One line of the HUD's text, in target pixels: drawn after every other text, left to right, HUD_PIXELS tall times the
+/// text scale.
+struct HudLine {
+    /// What it says; it must stay valid until the Draw() or Capture() it is passed to returns.
+    std::string_view text;
+    /// Its box's top-left corner, in target pixels from the target's top left.
+    core::Vec2 topLeft{};
+    /// Its colour, premultiplied and packed as core::UiColours' are.
+    u32 colour = 0;
+};
+
+/// One of the HUD's bars, in target pixels: its background, and over it from its left a fill `fraction` of its length,
+/// drawn over the world and its texts and under the HUD's text.
+struct HudBar {
+    /// Its top-left corner, in target pixels from the target's top left.
+    core::Vec2 topLeft{};
+    /// Its width and height, in target pixels.
+    core::Vec2 size{};
+    /// How much of it the fill covers, from 0 to 1 (clamped; NaN as 0).
+    f32 fraction = 0.0F;
+    /// The fill's colour, premultiplied and packed as core::UiColours' are.
+    u32 fill = 0;
+    /// The background's colour, likewise.
+    u32 background = 0;
+};
+
+/// What the HUD draws in a frame, over everything else: its bars, then its lines.
+struct HudDraw {
+    /// Its lines of text.
+    std::span<const HudLine> lines;
+    /// Its bars.
+    std::span<const HudBar> bars;
 };
 
 /// Draws into the game's window with SDL_GPU (design doc 0002 §8), blending in linear space (§8.4). The device, the window's
@@ -78,11 +117,18 @@ public:
     /// it isn't the snapshot drawn last (§8.3); a snapshot of a scene it doesn't hold draws the backdrop only.
     /// The view's outlined instance gets a pale outline drawn over everything, and the snapshot's
     /// selected instance a gold one; the gold wins where both fall on one. Over them go the swords' trails and the
-    /// overlay, placed every frame at the render time (gfx/volley_draw.hpp): the swords' tinted cores and halos, the enemies'
-    /// health bars, shown as their labels are, and the swords. Over all of it go the snapshot's texts, then `extra` (the main
-    /// thread's own, such as damage numbers). A glyph seen for the first time is rasterised on `jobs`, which must outlive the
-    /// renderer, and drawn from the frame its field is uploaded: no frame waits for one.
-    void Draw(const core::Snapshot& snapshot, const View& view, core::Jobs& jobs, std::span<const core::TextItem> extra = {});
+    /// overlay, placed every frame at the render time (gfx/volley_draw.hpp): the swords' tinted cores and halos, the poison
+    /// lance's bursts, the enemies' health bars, shown as their labels are, and the swords. Over all of it go the snapshot's
+    /// texts, then `extra` (the main thread's own, such as damage numbers), then `hud` in target pixels: its bars, then its
+    /// lines. A glyph seen for the first time is rasterised on `jobs`, which must outlive the renderer, and drawn from the
+    /// frame its field is uploaded: no frame waits for one.
+    void Draw(
+        const core::Snapshot& snapshot,
+        const View& view,
+        core::Jobs& jobs,
+        std::span<const core::TextItem> extra = {},
+        const HudDraw& hud = {}
+    );
 
     /// Draws `text` from the next frame on.
     void SetTextOptions(const TextOptions& text);
@@ -92,16 +138,17 @@ public:
     void SetUiColours(const core::UiColours& colours);
 
     /// Draws as Draw() does, but into a picture `width` by `height` pixels instead of the window, waits for the GPU and
-    /// returns the picture, or says why it couldn't. Every glyph its texts need is rasterised on `jobs` first, waiting for
-    /// them, so the picture never misses one. A picture stands alone: its labels and captions start at their targets, with
-    /// no fade from a picture or frame before it. Stalls: for tests.
+    /// returns the picture, or says why it couldn't. Every glyph its texts and the HUD's lines need is rasterised on `jobs`
+    /// first, waiting for them, so the picture never misses one. A picture stands alone: its labels and captions start at
+    /// their targets, with no fade from a picture or frame before it. Stalls: for tests.
     [[nodiscard]] std::expected<Image, core::Error> Capture(
         const core::Snapshot& snapshot,
         const View& view,
         core::Jobs& jobs,
         u32 width,
         u32 height,
-        std::span<const core::TextItem> extra = {}
+        std::span<const core::TextItem> extra = {},
+        const HudDraw& hud = {}
     );
 
 private:

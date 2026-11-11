@@ -27,7 +27,6 @@ constexpr f32 TRAIL_TAPER = 0.6F;
 // A tangent shorter than this, in world units, is too short to say which way the trail runs there.
 constexpr f32 SHORTEST_TANGENT = 1e-4F;
 constexpr u32 TRAIL_POINTS = TRAIL_SEGMENTS + 1;
-constexpr u32 TRAIL_VERTICES = TRAIL_SEGMENTS * QUAD_VERTICES;
 constexpr u32 CHANNEL_BITS = 8;
 constexpr u32 CHANNEL_MASK = 0xFFU;
 constexpr f32 CHANNEL_MAX = 255.0F;
@@ -250,6 +249,42 @@ void DrawHealthBars(
     }
 }
 
+void DrawFlashes(
+    std::span<const core::Flash> flashes,
+    f64 renderTick,
+    const core::Manifest& manifest,
+    const core::UiColours& colours,
+    VolleyDrawing& out
+) {
+    PN_PROFILE_ZONE();
+    const auto first = static_cast<u32>(out.instances.size());
+    for (const core::Flash& flash : flashes) {
+        const f64 progress = (renderTick - static_cast<f64>(flash.startTick)) / static_cast<f64>(core::FLASH_TICKS);
+        // False for a NaN render tick too, so nothing is drawn then.
+        const bool showing = progress >= 0.0 && progress < 1.0;
+        if (!showing) {
+            continue;
+        }
+        const auto shown = static_cast<f32>(progress);
+        const f32 grown = 1.0F - ((1.0F - shown) * (1.0F - shown)); // fast at first, slowing to its full size
+        out.instances.push_back(
+            core::MakeInstance(
+                manifest,
+                { .sprite = core::atlas::SpriteId::LanceStrike,
+                  .previous = flash.point,
+                  .current = flash.point,
+                  .scale = FLASH_START_SCALE + ((FLASH_END_SCALE - FLASH_START_SCALE) * grown),
+                  .colour = Scaled(colours.Of(core::EffectColour(flash.element)), FLASH_INTENSITY * (1.0F - shown)) }
+            )
+        );
+    }
+    if (out.instances.size() > first) {
+        out.batches.push_back(
+            { .first = first, .count = static_cast<u32>(out.instances.size()) - first, .pipeline = core::Pipeline::Additive }
+        );
+    }
+}
+
 void DrawVolleys(
     std::span<const core::VolleyView> volleys,
     std::span<const core::VolleyTarget> targets,
@@ -266,12 +301,7 @@ void DrawVolleys(
         all += view.volley.shape.count;
     }
     // Whole swords only: those past the overlay's room or the trails' are left out, core, halo, blade and trail.
-    const std::size_t overlayRoom =
-        (MAX_OVERLAY_INSTANCES - std::min<std::size_t>(out.instances.size(), MAX_OVERLAY_INSTANCES)) / SWORD_INSTANCES;
-    constexpr std::size_t RIBBON_VERTICES = std::size_t{ MAX_RIBBON_QUADS } * QUAD_VERTICES;
-    const std::size_t trailRoom = (RIBBON_VERTICES - std::min(out.ribbons.size(), RIBBON_VERTICES)) / TRAIL_VERTICES;
-    const std::size_t room = std::min(overlayRoom, trailRoom);
-    const auto total = static_cast<u32>(std::min(all, room));
+    const auto total = static_cast<u32>(std::min(all, SwordRoom(out.instances.size(), out.ribbons.size())));
     out.droppedSwords += all - total;
     if (total == 0) {
         return;

@@ -87,11 +87,12 @@ i32 Run(const core::Settings& settings, app::Options options) {
     if (!strings) {
         return FailToStart("the game's data couldn't be read", strings.error());
     }
+    options.strings = std::make_shared<const core::Strings>(std::move(*strings));
     std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(
         *window,
         *assets,
         options.manifest,
-        std::make_shared<const core::Strings>(std::move(*strings)),
+        options.strings,
         { .language = settings.language, .outline = settings.textOutline, .shadow = settings.textShadow },
         settings.uiColours
     );

@@ -102,3 +102,41 @@ colour_hud_cooling:
 colour_hud_warning:
   en: Warning
   zh: 警告
+
+# The temporary HUD (app/hud.hpp). {value} and {max} are filled in with numbers.
+health:
+  en: "Health {value}/{max}"
+  zh: "生命 {value}/{max}"
+qi:
+  en: "Qi {value}/{max}"
+  zh: "气 {value}/{max}"
+not_enough_qi:
+  en: Not enough Qi
+  zh: 气不足
+cooldown:
+  en: "{value}s" # a slot's seconds left on cooldown
+  zh: "{value}秒"
+slot_empty:
+  en: "—"
+  zh: "—"
+key_left_click:
+  en: Left click
+  zh: 左键
+key_right_click:
+  en: Right click
+  zh: 右键
+key_space:
+  en: Space
+  zh: 空格
+fire_bolt:
+  en: Fire Bolt
+  zh: 火弹
+poison_lance:
+  en: Poison Lance
+  zh: 毒枪
+dash:
+  en: Dash
+  zh: 疾步
+flying_swords:
+  en: Flying Swords
+  zh: 飞剑

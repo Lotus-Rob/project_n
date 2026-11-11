@@ -320,6 +320,55 @@ TEST_CASE("swords past the overlay's or the trails' room are left out whole, nev
     CHECK(drawing.ribbons.size() <= std::size_t{ gfx::MAX_RIBBON_QUADS } * gfx::QUAD_VERTICES);
     drawing.Clear();
     CHECK(drawing.droppedSwords == 0);
+    // The one room rule, which the renderer's overflow report names too.
+    CHECK(gfx::SwordRoom(BAR_INSTANCES, 0) == FITTING);
+    CHECK(gfx::MAX_DRAWN_SWORDS == gfx::MAX_RIBBON_QUADS / gfx::TRAIL_SEGMENTS);
+}
+
+TEST_CASE("the lance's burst grows and fades in its element's colour, from its start to its end") {
+    constexpr u64 SIX_TICKS = 6;
+    constexpr f32 SIDE = 16.0F; // the test manifest's burst
+    const std::array<core::Flash, 1> flashes{ { { .point = POINT, .startTick = START, .element = core::HitKind::Poison } } };
+    const core::Manifest manifest = TestManifest();
+    const auto drawn = [&](f64 renderTick, const core::UiColours& colours = {}) {
+        gfx::VolleyDrawing drawing;
+        gfx::DrawFlashes(flashes, renderTick, manifest, colours, drawing);
+        return drawing;
+    };
+    const auto sized = [](f32 scale) { return core::PackPair(core::PackHalf(SIDE * scale), core::PackHalf(SIDE * scale)); };
+    const u32 poison = core::UiColours{}.Of(core::UiColour::PoisonEffect);
+
+    constexpr f64 HALF_A_TICK = 0.5;
+    const gfx::VolleyDrawing before = drawn(static_cast<f64>(START) - HALF_A_TICK);
+    CHECK(before.instances.empty());
+    CHECK(before.batches.empty());
+
+    const gfx::VolleyDrawing start = drawn(static_cast<f64>(START));
+    REQUIRE(start.instances.size() == 1);
+    REQUIRE(start.batches.size() == 1);
+    CHECK(start.batches[0].pipeline == core::Pipeline::Additive);
+    CheckAt(start.instances[0].current, POINT);
+    CHECK(start.instances[0].size == sized(gfx::FLASH_START_SCALE));
+    CHECK(start.instances[0].colour == Times(poison, gfx::FLASH_INTENSITY));
+    CHECK(start.instances[0].regionMin == core::MakeInstance(manifest, { .sprite = SpriteId::LanceStrike }).regionMin);
+
+    // Halfway: half as bright, three quarters of the way to its full size.
+    const gfx::VolleyDrawing half = drawn(static_cast<f64>(START + SIX_TICKS));
+    REQUIRE(half.instances.size() == 1);
+    constexpr f32 THREE_QUARTERS = 0.75F;
+    CHECK(
+        half.instances[0].size ==
+        sized(gfx::FLASH_START_SCALE + ((gfx::FLASH_END_SCALE - gfx::FLASH_START_SCALE) * THREE_QUARTERS))
+    );
+    CHECK(half.instances[0].colour == Times(poison, gfx::FLASH_INTENSITY * HALF));
+
+    const gfx::VolleyDrawing end = drawn(static_cast<f64>(START + core::FLASH_TICKS));
+    CHECK(end.instances.empty());
+
+    constexpr u32 GREEN = 0xFF00'FF00U;
+    core::UiColours recoloured;
+    recoloured.Set(core::UiColour::PoisonEffect, GREEN);
+    CHECK(drawn(static_cast<f64>(START), recoloured).instances.at(0).colour == GREEN);
 }
 
 TEST_CASE("the same input gives the same bytes with one worker and with many") {

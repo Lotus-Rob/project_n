@@ -209,6 +209,26 @@ struct VolleyView {
     u32 targets = 0;
 };
 
+/// How many ticks a Flash lasts: the simulation reports it from its start tick to the tick before this many after it.
+inline constexpr u64 FLASH_TICKS = 12;
+
+/// A burst at a point as the simulation reports it (the poison lance's strike), for the main thread to draw at the render
+/// time in its element's colour (core::UiColours): the simulation never colours it.
+struct Flash {
+    /// Where it bursts, in world units.
+    Vec2 point{};
+    /// The simulation tick it starts at; it lasts FLASH_TICKS.
+    u64 startTick = 0;
+    /// The kind of the hits it came with: it picks the colour, never the ability.
+    HitKind element = HitKind::Damage;
+
+    /// Lists its fields for an archive (core/archive.hpp).
+    template<typename Self, typename Archive>
+    void Fields(this Self& self, Archive& archive) {
+        archive(self.point, self.startTick, self.element);
+    }
+};
+
 /// One published snapshot of the game state: what the main thread draws until the next is due.
 struct Snapshot {
     /// The wall tick of the last tick in the burst that published it.
@@ -247,6 +267,8 @@ struct Snapshot {
     /// Every volley's targets, each volley's together (VolleyView::firstTarget); refilled in place likewise.
     std::vector<VolleyTarget>
         volleyTargets{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    /// The bursts showing, each for FLASH_TICKS from its start; refilled in place likewise.
+    std::vector<Flash> flashes{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// Whether the scene is a combat scene, where casts act.
     bool combat = false;
     /// The player's Qi, health and cooldowns in a combat scene with a player; none otherwise.

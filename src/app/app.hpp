@@ -8,11 +8,13 @@
 
 #include "app/bindings.hpp"
 #include "app/damage_numbers.hpp"
+#include "app/hud.hpp"
 #include "app/view.hpp"
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
 #include "core/manifest.hpp"
 #include "core/settings.hpp"
+#include "core/strings.hpp"
 #include "core/types.hpp"
 #include "game/arena.hpp"
 #include "gfx/camera.hpp"
@@ -35,6 +37,8 @@ namespace app {
 struct Options {
     /// The atlas manifest, read from `assets/manifest.yaml`; never null.
     std::shared_ptr<const core::Manifest> manifest = nullptr;
+    /// The strings table, read from `assets/data/strings.yaml`, which the HUD shows; never null.
+    std::shared_ptr<const core::Strings> strings = nullptr;
     /// The scene the logic thread builds.
     game::Scene scene = game::Scene::Arena;
     /// The game data, read from `assets/data/`.
@@ -81,7 +85,7 @@ private:
 };
 
 /// The main thread's systems (the job system, the window, the renderer, the handover and its display
-/// side, the camera, the damage numbers) and the logic thread, which builds and runs a Game on the job system.
+/// side, the camera, the damage numbers, the HUD) and the logic thread, which builds and runs a Game on the job system.
 class App {
 public:
     /// Takes over `window` and `renderer` (made for that window) and starts the logic thread for
@@ -123,12 +127,15 @@ private:
     u64 m_startNs;
     u64 m_nextBurstNs;       // when `--burst`'s next burst is sent, in wall time (platform::NowNs())
     DamageNumbers m_numbers; // as m_options.settings say
+    Hud m_hud;               // likewise
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     core::GameHandover m_handover{};
     core::GameDisplay m_display{};
     std::vector<core::Event> m_incoming{};
     std::vector<core::Event> m_pending{};        // taken, waiting for the render clock
     std::vector<core::TextItem> m_numberTexts{}; // the damage numbers drawn this frame
+    std::vector<gfx::HudLine> m_hudLines{};      // the HUD drawn this frame
+    std::vector<gfx::HudBar> m_hudBars{};
     std::vector<platform::InputEvent> m_inputs{};
     Bindings m_bindings{};
     // NOLINTEND(readability-redundant-member-init)
