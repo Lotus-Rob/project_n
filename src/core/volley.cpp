@@ -4,6 +4,7 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/math.hpp"
 #include "core/random.hpp"
+#include "core/tick_clock.hpp"
 
 namespace core {
 
@@ -14,6 +15,7 @@ namespace {
 constexpr u32 PURPOSE_LAUNCH = 1;
 constexpr u32 PURPOSE_RING = 2;
 constexpr u32 PURPOSE_BEND = 3;
+constexpr u32 PURPOSE_SPREAD = 4;
 
 // How far a sword's place on the ring may stray from an even spacing, in spacings from one side to the other: the ring
 // looks hand-thrown, and its widest gap stays under one and a half spacings.
@@ -144,21 +146,32 @@ SwordPlan Plan(const Volley& volley, u32 sword) {
     };
 }
 
-// A sword's chain of targets: it starts at its own, `sword` modulo their count. When the one it flies at dies, it moves
-// on to one of those alive at that tick, picked by the sword's spread index, which is then divided by how many there
-// were, so the swords that moved together spread again at the next death (mixed-radix digits of `sword / count`). Each
-// move is to a target that outlives the last, so the chain ends within `count` links. Calls `moved(tick, from, to)` at
-// each move up to `time`, in order, and returns the target in force at `time`.
+// A sword's chain of targets: it starts at its own, `sword` modulo their count. When the one it flies at dies at least
+// COMMIT_TICKS before the sword's `arrival`, it moves on to one of those alive at that tick; otherwise, or when none is
+// alive, the chain ends there. Each move is to a target that outlives the last, so the chain ends within `count` links.
+//
+// The pick spreads the swords that move together evenly: they share their chain so far, and their spread indices (the
+// mixed-radix digits of `sword / count`, one used per move) count up through the group, so `index mod living` deals
+// them out in turn. An offset drawn from the target left and the move number starts each group's deal at a different
+// living target, so many small groups (many targets, few swords each, whose digits run out) don't all pile onto the
+// first living one. Calls `moved(tick, from)` at each move up to `time`, in order, and returns the target in force then.
 template<typename Moved>
-u32 WalkTargets(u32 sword, f64 time, std::span<const VolleyTarget> targets, const Moved& moved) {
+u32 WalkTargets(
+    const Volley& volley,
+    u32 sword,
+    u64 arrival,
+    f64 time,
+    std::span<const VolleyTarget> targets,
+    const Moved& moved
+) {
     PN_ASSERT(!targets.empty(), "a volley with no targets");
     const std::size_t count = targets.size();
     std::size_t link = sword % count;
     std::size_t spread = sword / count;
-    for (std::size_t step = 0; step < count; ++step) {
+    for (u32 move = 0; move < count; ++move) {
         const VolleyTarget& current = targets[link];
-        if (current.AliveAt(time)) {
-            break;
+        if (current.AliveAt(time) || current.diedTick + COMMIT_TICKS > arrival) {
+            break; // alive, or dead too close to the arrival: it plunges where this one died
         }
         const auto died = static_cast<f64>(current.diedTick);
         const auto living = static_cast<std::size_t>(std::ranges::count_if(targets, [died](const VolleyTarget& target) {
@@ -167,7 +180,8 @@ u32 WalkTargets(u32 sword, f64 time, std::span<const VolleyTarget> targets, cons
         if (living == 0) {
             break; // it plunges where this one died
         }
-        std::size_t skip = spread % living;
+        const u32 offset = ToBelow(Random(volley.seed, 0, link, PURPOSE_SPREAD, move), static_cast<u32>(living));
+        std::size_t skip = (spread + offset) % living;
         spread /= living;
         std::size_t next = 0;
         for (; next < count; ++next) {
@@ -178,7 +192,7 @@ u32 WalkTargets(u32 sword, f64 time, std::span<const VolleyTarget> targets, cons
                 --skip;
             }
         }
-        moved(died, link, next);
+        moved(died, link);
         link = next;
     }
     return static_cast<u32>(link);
@@ -189,11 +203,13 @@ VolleyVector Interpolated(const VolleyTarget& target, f32 alpha) {
     return previous + ((Widen(target.current) - previous) * static_cast<f64>(alpha));
 }
 
-// Where a swing that started at `swingStart` from `from` towards `towards` is at `time`: exactly `towards` once it's over.
-// Its length follows the way to `towards`, so a target that moves while the swing is under way changes it smoothly, and
-// slowly next to the swing, which keeps its progress rising.
-VolleyVector Swing(VolleyVector from, VolleyVector towards, f64 swingStart, f64 time) {
-    const f64 ticks = std::max(RETARGET_TICKS, Length(towards - from) / RETARGET_SPEED);
+// Where a swing that started at `swingStart` from `from` towards `towards` is at `time`: exactly `towards` once it's over,
+// which is by `arrival` at the latest (a move needs COMMIT_TICKS before it, so the swing has time). Its length follows
+// the way to `towards`, so a target that moves while the swing is under way changes it smoothly; its progress keeps
+// rising while that target moves slower than RETARGET_SPEED.
+VolleyVector Swing(VolleyVector from, VolleyVector towards, f64 swingStart, f64 time, u64 arrival) {
+    const f64 ticks =
+        std::min(std::max(RETARGET_TICKS, Length(towards - from) / RETARGET_SPEED), static_cast<f64>(arrival) - swingStart);
     const f64 progress = (time - swingStart) / ticks;
     return progress >= 1.0 ? towards : Lerp(from, towards, Ease(progress, 0.0, 0.0));
 }
@@ -328,24 +344,26 @@ SwordPose SwordAt(const Volley& volley, u32 sword, f64 tick, Vec2 aim) {
     return pose;
 }
 
-u32 SwordTarget(u32 sword, u64 tick, std::span<const VolleyTarget> targets) {
-    return WalkTargets(sword, static_cast<f64>(tick), targets, [](f64, std::size_t, std::size_t) {});
+u32 SwordTarget(const Volley& volley, u32 sword, u64 tick, std::span<const VolleyTarget> targets) {
+    return WalkTargets(volley, sword, ArrivalTick(volley, sword), static_cast<f64>(tick), targets, [](f64, std::size_t) {});
 }
 
-Vec2 SwordAim(u32 sword, f64 tick, std::span<const VolleyTarget> targets, f32 alpha) {
+Vec2 SwordAim(const Volley& volley, u32 sword, u64 simulationTick, f32 alpha, std::span<const VolleyTarget> targets) {
+    const f64 time = RenderTick(simulationTick, static_cast<f64>(alpha));
+    const u64 arrival = ArrivalTick(volley, sword);
     // The aim when the latest move began: where the swing before it had reached, from the frozen point of the target it
     // left. Every target it left is dead and frozen, so this needs no history.
     bool swinging = false;
     VolleyVector swingFrom{};
     f64 swingStart = 0.0;
-    const u32 target = WalkTargets(sword, tick, targets, [&](f64 died, std::size_t from, std::size_t /*to*/) {
+    const u32 target = WalkTargets(volley, sword, arrival, time, targets, [&](f64 died, std::size_t from) {
         const VolleyVector left = Widen(targets[from].current);
-        swingFrom = swinging ? Swing(swingFrom, left, swingStart, died) : left;
+        swingFrom = swinging ? Swing(swingFrom, left, swingStart, died, arrival) : left;
         swingStart = died;
         swinging = true;
     });
     const VolleyVector towards = Interpolated(targets[target], alpha);
-    return Narrow(swinging ? Swing(swingFrom, towards, swingStart, tick) : towards);
+    return Narrow(swinging ? Swing(swingFrom, towards, swingStart, time, arrival) : towards);
 }
 
 } // namespace core
