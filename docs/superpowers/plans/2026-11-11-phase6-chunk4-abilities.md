@@ -726,6 +726,68 @@ Drawing rules:
   look at the pictures, then run `reference`: PASS.
 - [ ] **Step 5: Commit** `feat(app): strike with the poison lance and show a temporary HUD`.
 
+### Task 9b: The swords form in waves of wide, scattered rings
+
+Added 2026-11-11 at the user's request, after seeing the single ring:
+
+> "Can we make the sword spread much wider so the 1000 swords don't just end up looking like a circle? Much wider, much
+> more spread, much more randomness in the creation? Make the creation semi-sequenced with rings of swords one after each
+> other"
+
+The spec's "burst out of the player in a ring" becomes **a sequence of rings**. Record this as the user's decision in the
+spec's Outcome.
+
+**Files:**
+- Modify: `src/core/volley.{hpp,cpp}`, `src/core/abilities.hpp` (only if a field moves), `src/data/abilities.cpp`,
+  `assets/data/abilities.yaml`, `src/game/arena.cpp` (`BUILT_IN_DATA`), `tests/unit/core/volley_tests.cpp`,
+  `tests/unit/data/abilities_tests.cpp`, `tests/fuzz/corpus/yaml/abilities`, `tests/reference/` (the volley pictures),
+  `docs/superpowers/specs/2026-11-10-phase6-chunk4-abilities-design.md` (Goal 4's wording)
+
+**Interfaces:**
+- `VolleyShape` gains these fields, in `Fields()`, `Valid()` and the YAML under `swords:`:
+  - `u32 waves`: how many rings, at least 1. A volley of 1 (the bolt) has 1.
+  - `u32 waveGapTicks`: the delay between one ring's launch and the next's.
+  - `f32 ringStep`: how much further out each ring forms than the one before, in world units.
+  - `f32 scatter`: the fraction of a sword's ring radius it may stray in and out (0 = a line, 0.3 = a band of ±30%).
+  - `f32 angleJitter`: radians a sword's place on its ring may stray from even spacing.
+  - `f32 sweepJitter`: the fraction by which each sword's flight bend may vary (±).
+  The existing `staggerTicks` becomes the launch spread **within** a wave, and `ringRadius` the **first** ring's radius.
+- Shipped swords, starting numbers to tune by eye:
+  - waves 5, wave_gap 0.12 s, ring_radius 160, ring_step 80 (the rings reach about 480);
+  - scatter 0.3, angle_jitter 0.5 rad, sweep_jitter 0.6;
+  - stagger 0.15 s (within a wave).
+  The bolt's shape keeps 1 wave and zero jitter.
+- `count` swords split over the waves as evenly as possible, inner ring first. A sword's wave, ring radius, place,
+  launch and bend are all drawn from `volley.seed` with documented local purposes. They stay stateless, deterministic
+  and allocation-free.
+- Every one of Task 6's rules holds unchanged: the burst spirals out (no straight spokes), continuous position and heading
+  into the ring turn and the flight, the commit window (`CommitTicksFor(radius)` uses the tag radius, unchanged), and the
+  arrival bit-exact on the struck target.
+
+- [ ] **Step 1: Write the failing tests:**
+  - `the swords form in waves, inner first`: every sword's wave is in `[0, waves)`; the waves' sizes differ by at most 1;
+    each wave's earliest launch is `waveGapTicks` after the previous wave's.
+  - `each wave forms further out, in a scattered band`: at the end of its out phase, each sword's distance from the origin
+    lies within `ringRadius + wave × ringStep`, ± `scatter` of that radius. A wave's mean radius rises with its index.
+    Across the volley, the distances' standard deviation is at least a set fraction of `ringStep` (not one circle).
+  - `places on a ring are jittered, not evenly spaced`: the angular gaps within a wave vary, but each wave still covers the
+    circle (largest gap under a bound).
+  - `flights bend by different amounts`: the swords' bends vary by at least a set spread.
+  - The existing smoothness, ring-turn, retarget, commit-window and arrival tests pass **at their current bounds**.
+    Re-anchor any test written against a single ring to its sword's wave, and don't loosen it.
+  - data: the new keys parse, are refused when out of range (waves 0, negative or non-finite numbers, scatter ≥ 1), and
+    a missing key is refused like the others. The shipped table still equals `BuiltInData()`.
+- [ ] **Step 2: Run them to see them fail.**
+- [ ] **Step 3: Implement** in core/volley.cpp (the burst and the flight's bend) and the data reader.
+- [ ] **Step 4: Pictures.** Run `pixi run project_n reference --update` and look at `volley_ring` (now the rings forming:
+  capture it when the third wave is forming, so earlier rings show in flight), `volley_converging` and `volley_plunge`. Do
+  the rings read as rings one after another, wide and loose, not one disc? Tune the numbers by eye, keeping
+  abilities.yaml and `BUILT_IN_DATA` in step. Measure `DrawVolleys` again (mean and worst, 1 worker and all) against
+  the last numbers (201/469 µs, 328/758 µs).
+- [ ] **Step 5: Run** `pixi run project_n test`, `pixi run project_n lint`, `pixi run project_n reference`: PASS.
+- [ ] **Step 6: Commit** `feat(core): form the flying swords in waves of wide, scattered rings`, plus the spec's Goal 4
+  wording as `docs(design): ...`.
+
 ### Task 10: A recorded fight, the measurements, the docs
 
 **Files:**
