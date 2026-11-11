@@ -21,6 +21,10 @@ constexpr std::string_view FONT_FILE = "NotoSansSC-Regular.otf";
 constexpr std::string_view NUMBER_CHARACTERS = "0123456789+-（）() ";
 // Every digit a label stack's count can show.
 constexpr std::string_view DIGITS = "0123456789";
+// Every digit, as a number the HUD's strings are filled in with (core::FillValue()).
+constexpr i64 ALL_DIGITS = 1'234'567'890;
+// The HUD's strings that are filled in with numbers: its bars' words and a slot's seconds.
+constexpr std::array<core::StringId, 3> HUD_FILLED{ { core::StringId::Health, core::StringId::Qi, core::StringId::Cooldown } };
 // The label stack's placeholders (core::StringId::LabelStack).
 constexpr std::string_view NAME_PLACEHOLDER = "{name}";
 constexpr std::string_view COUNT_PLACEHOLDER = "{count}";
@@ -62,9 +66,10 @@ std::string Filled(std::string stack, std::string_view name, std::string_view co
     return stack;
 }
 
-// What Prewarm() rasterises: the number characters; every string in each language; and the label stack without its
+// What Prewarm() rasterises: the number characters; every string in each language; the label stack without its
 // placeholders and filled with each of its language's strings and every digit, as HarfBuzz shapes a digit after Latin
-// letters into another glyph than a digit on its own.
+// letters into another glyph than a digit on its own; and the HUD's strings filled with every digit likewise, each slot's
+// seconds also after each string, as the HUD writes them after its control and ability.
 std::vector<std::string> PrewarmTexts(const core::Strings& strings) {
     std::vector<std::string> texts{ std::string{ NUMBER_CHARACTERS } };
     for (std::size_t language = 0; language < core::LANGUAGES; ++language) {
@@ -76,6 +81,15 @@ std::vector<std::string> PrewarmTexts(const core::Strings& strings) {
                 texts.push_back(text);
                 texts.push_back(Filled(stack, text, DIGITS));
             }
+        }
+        std::string filled;
+        for (const core::StringId string : HUD_FILLED) {
+            core::FillValue(filled, strings.text.at(std::to_underlying(string)).at(language), ALL_DIGITS, ALL_DIGITS);
+            texts.push_back(filled);
+        }
+        // `filled` is the seconds now, the last of HUD_FILLED.
+        for (std::size_t string = 0; string < core::STRINGS; ++string) {
+            texts.push_back(std::format("{}  {}", strings.text.at(string).at(language), filled));
         }
     }
     return texts;
