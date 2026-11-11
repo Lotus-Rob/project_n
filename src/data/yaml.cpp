@@ -32,6 +32,38 @@ core::Error ErrorOf(std::string_view what, const YAML::Exception& error) {
     return { std::format("{} line {}: {}", what, error.mark.line + 1, error.msg) };
 }
 
+std::expected<i64, core::Error> WholeNumber(
+    std::string_view what,
+    const YAML::Node& map,
+    std::string_view name,
+    const char* key,
+    bool required,
+    i64 limit
+) {
+    const auto fail = [&](const YAML::Node& node, std::string_view why) {
+        return std::unexpected{ core::Error{ std::format("{} line {}: {}", what, node.Mark().line + 1, why) } };
+    };
+    const YAML::Node node = map[key];
+    if (!node) {
+        if (required) {
+            return fail(map, std::format("{} has no {}", name, key));
+        }
+        return 0;
+    }
+    f64 value = 0.0;
+    try {
+        value = node.as<f64>();
+    }
+    catch (const YAML::Exception&) {
+        return fail(node, std::format("{}'s {} isn't a number", name, key));
+    }
+    // An f64 holds every whole number up to 2^53 exactly; `limit` is below it.
+    if (!std::isfinite(value) || value < 0.0 || value != std::floor(value) || value > static_cast<f64>(limit)) {
+        return fail(node, std::format("{}'s {} isn't a whole number from 0 to {}", name, key, limit));
+    }
+    return static_cast<i64>(value);
+}
+
 void NoteUnknownKeys(
     std::string_view what,
     const YAML::Node& map,

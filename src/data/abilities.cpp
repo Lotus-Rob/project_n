@@ -10,9 +10,9 @@ namespace {
 
 constexpr std::array<std::string_view, core::HIT_KINDS> ELEMENT_NAMES{ { "damage", "healing", "poison", "burn" } };
 // Every whole number below this is exact in an f64.
-constexpr f64 MAX_WHOLE = 9'007'199'254'740'992.0;
+constexpr i64 MAX_WHOLE = 9'007'199'254'740'992;
 constexpr f64 MAX_SECONDS = 1'000'000.0;
-constexpr f64 MAX_COUNT = 4'000'000'000.0;
+constexpr i64 MAX_AFFLICTION_TICKS = 1'000'000;
 constexpr f64 TICKS = static_cast<f64>(core::TICKS_PER_SECOND);
 
 // Named for its file: game_data.cpp and manifest.cpp have their own, and a unity build puts them in one translation
@@ -57,22 +57,14 @@ std::expected<f64, core::Error> Number(const YAML::Node& map, std::string_view n
     return value;
 }
 
-// A whole number of at most `limit`.
-std::expected<f64, core::Error> Whole(const YAML::Node& map, std::string_view name, const char* key, bool required, f64 limit) {
-    return Number(map, name, key, required).and_then([&](f64 value) -> std::expected<f64, core::Error> {
-        if (value != std::floor(value) || value > limit) {
-            return RefuseAbilities(map[key], std::format("{}'s {} isn't a whole number of at most {}", name, key, limit));
-        }
-        return value;
-    });
-}
-
 std::expected<i64, core::Error> Amount(const YAML::Node& map, std::string_view name, const char* key, bool required) {
-    return Whole(map, name, key, required, MAX_WHOLE).transform([](f64 value) { return static_cast<i64>(value); });
+    return internal::WholeNumber("abilities", map, name, key, required, MAX_WHOLE);
 }
 
-std::expected<u32, core::Error> Count(const YAML::Node& map, std::string_view name, const char* key, bool required) {
-    return Whole(map, name, key, required, MAX_COUNT).transform([](f64 value) { return static_cast<u32>(value); });
+std::expected<u32, core::Error> Count(const YAML::Node& map, std::string_view name, const char* key, bool required, i64 limit) {
+    return internal::WholeNumber("abilities", map, name, key, required, limit).transform([](i64 value) {
+        return static_cast<u32>(value);
+    });
 }
 
 std::expected<f32, core::Error> Distance(const YAML::Node& map, std::string_view name, const char* key) {
@@ -106,7 +98,7 @@ std::expected<core::Affliction, core::Error> AfflictionAt(
         return RefuseAbilities(node, std::format("{} isn't a map", name));
     }
     internal::NoteUnknownKeys("abilities", node, name, "key", { "ticks", "damage" }, warnings);
-    const std::expected<u32, core::Error> ticks = Count(node, name, "ticks", true);
+    const std::expected<u32, core::Error> ticks = Count(node, name, "ticks", true, MAX_AFFLICTION_TICKS);
     const std::expected<i64, core::Error> damage = Amount(node, name, "damage", true);
     if (const std::optional<core::Error> error = FirstError(ticks, damage)) {
         return std::unexpected{ *error };
@@ -125,7 +117,7 @@ std::expected<core::VolleyShape, core::Error> Swords(
     internal::NoteUnknownKeys(
         "abilities", node, name, "key", { "count", "ring_radius", "stagger", "out", "flight", "sweep", "fade" }, warnings
     );
-    const std::expected<u32, core::Error> count = Count(node, name, "count", true);
+    const std::expected<u32, core::Error> count = Count(node, name, "count", true, core::MAX_VOLLEY_COUNT);
     const std::expected<f32, core::Error> ring = Distance(node, name, "ring_radius");
     const std::expected<u32, core::Error> stagger = Seconds(node, name, "stagger", true);
     const std::expected<u32, core::Error> out = Seconds(node, name, "out", true);
@@ -214,6 +206,9 @@ std::expected<core::AbilityData, core::Error> Ability(
     data.damage = *damage;
     data.radius = *radius;
     data.distance = *distance;
+    if (data.slot == core::SlotKind::Movement && (data.distance <= 0.0F || data.durationTicks == 0)) {
+        return RefuseAbilities(node, std::format("{} is a movement ability and needs a distance and a duration above 0", name));
+    }
     data.speed = *speed / static_cast<f32>(core::TICKS_PER_SECOND);
     const YAML::Node burn = node["burn"];
     const YAML::Node poison = node["poison"];
