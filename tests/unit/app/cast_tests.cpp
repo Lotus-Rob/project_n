@@ -133,4 +133,137 @@ TEST_CASE("a control without a slot casts nothing") {
     CHECK_FALSE(casts11);
 }
 
+constexpr u64 PRESSED_NS = 10'000'000;
+constexpr u64 LATER_NS = 20'000'000;  // 10 ms after the press
+constexpr u64 LATEST_NS = 45'000'000; // 35 ms after it
+
+// A volley of `ability` cast as use `use`, as the snapshot reports one.
+core::VolleyView VolleyOf(core::AbilityKind ability, u64 use) {
+    return { .volley = { .use = use }, .ability = ability };
+}
+
+TEST_CASE("the latency runs from the press to the first frame drawing its volley") {
+    constexpr u64 USE = 7;
+    const std::array swords{ VolleyOf(core::AbilityKind::FlyingSwords, USE) };
+    app::CastLatency latency{ core::AbilityKind::FlyingSwords };
+    latency.Pressed(PRESSED_NS);
+    const std::optional<u64> drawn1 = latency.Drawn({}, LATER_NS); // not drawn yet
+    CHECK_FALSE(drawn1.has_value());
+    const std::optional<u64> drawn2 = latency.Drawn(swords, LATEST_NS);
+    CHECK(drawn2 == LATEST_NS - PRESSED_NS);
+}
+
+TEST_CASE("a volley drawn twice counts once") {
+    constexpr u64 USE = 7;
+    constexpr u64 PRESSED_AGAIN_NS = 50'000'000;
+    constexpr u64 LAST_NS = 60'000'000;
+    const std::array swords{ VolleyOf(core::AbilityKind::FlyingSwords, USE) };
+    app::CastLatency latency{ core::AbilityKind::FlyingSwords };
+    latency.Pressed(PRESSED_NS);
+    const std::optional<u64> drawn3 = latency.Drawn(swords, LATER_NS);
+    CHECK(drawn3 == LATER_NS - PRESSED_NS);
+    const std::optional<u64> drawn4 = latency.Drawn(swords, LATEST_NS);
+    CHECK_FALSE(drawn4.has_value());
+    latency.Pressed(PRESSED_AGAIN_NS); // waits for a volley of its own: the one still drawn isn't it
+    const std::optional<u64> drawn5 = latency.Drawn(swords, LAST_NS);
+    CHECK_FALSE(drawn5.has_value());
+}
+
+TEST_CASE("a volley of another ability, or with no press waiting, gives no latency") {
+    constexpr u64 BOLT_USE = 3;
+    constexpr u64 SWORDS_USE = 4;
+    constexpr u64 BEFORE_NS = 5'000'000;
+    const std::array bolt{ VolleyOf(core::AbilityKind::FireBolt, BOLT_USE) };
+    const std::array both{ VolleyOf(core::AbilityKind::FireBolt, BOLT_USE),
+                           VolleyOf(core::AbilityKind::FlyingSwords, SWORDS_USE) };
+    app::CastLatency latency{ core::AbilityKind::FlyingSwords };
+    const std::optional<u64> drawn6 = latency.Drawn(both, BEFORE_NS); // nothing pressed
+    CHECK_FALSE(drawn6.has_value());
+    latency.Pressed(PRESSED_NS);
+    const std::optional<u64> drawn7 = latency.Drawn(bolt, LATER_NS);
+    CHECK_FALSE(drawn7.has_value());
+    const std::array later{ VolleyOf(core::AbilityKind::FireBolt, BOLT_USE),
+                            VolleyOf(core::AbilityKind::FlyingSwords, SWORDS_USE + 1) };
+    const std::optional<u64> drawn8 = latency.Drawn(later, LATEST_NS);
+    CHECK(drawn8 == LATEST_NS - PRESSED_NS);
+}
+
+TEST_CASE("a press no volley answers within the limit is forgotten") {
+    constexpr u64 USE = 9;
+    constexpr u64 WAITED_NS = 30'000'000;
+    const std::array swords{ VolleyOf(core::AbilityKind::FlyingSwords, USE) };
+    app::CastLatency latency{ core::AbilityKind::FlyingSwords };
+    latency.Pressed(0); // refused, say: on cooldown
+    const std::optional<u64> drawn9 = latency.Drawn({}, app::CAST_LATENCY_LIMIT_NS + 1);
+    CHECK_FALSE(drawn9.has_value());
+    const u64 pressed = app::CAST_LATENCY_LIMIT_NS + PRESSED_NS;
+    latency.Pressed(pressed);
+    const std::optional<u64> drawn10 = latency.Drawn(swords, pressed + WAITED_NS);
+    CHECK(drawn10 == WAITED_NS);
+}
+
+constexpr i64 QI_MAX = 100;
+
+// A caster with the shipped loadout, `held` Qi of QI_MAX and every slot ready at tick 0.
+core::CasterView CasterWith(i64 held) {
+    return { .qi = held,
+             .qiMax = QI_MAX,
+             .health = 1,
+             .healthMax = 1,
+             .readyTick = {},
+             .loadout = { {
+                 core::AbilityKind::FireBolt,
+                 core::AbilityKind::PoisonLance,
+                 core::AbilityKind::Dash,
+                 core::AbilityKind::FlyingSwords,
+                 core::AbilityKind::None,
+                 core::AbilityKind::None,
+                 core::AbilityKind::None,
+                 core::AbilityKind::None,
+             } } };
+}
+
+// Abilities whose swords cost SWORDS_COST.
+constexpr i64 SWORDS_COST = 60;
+core::Abilities Costed() {
+    core::Abilities abilities;
+    abilities.qiMax = QI_MAX;
+    abilities.table.at(std::to_underlying(core::AbilityKind::FlyingSwords)).qiCost = SWORDS_COST;
+    return abilities;
+}
+
+constexpr u64 NOW_TICK = 500;
+
+TEST_CASE("the timed cast sends the swords at the point when they are ready and the Qi covers them") {
+    const std::optional<core::Action> cast = app::TimedCast(CasterWith(SWORDS_COST), Costed(), NOW_TICK, HERE);
+    REQUIRE(cast.has_value());
+    CHECK(cast.value_or(core::Action{}).kind == core::ActionKind::Cast);
+    CHECK(cast.value_or(core::Action{}).slot == core::Slot::Special1);
+    CHECK(cast.value_or(core::Action{}).point.x == HERE.x);
+}
+
+TEST_CASE("short of Qi for the swords, the timed cast sends the generator") {
+    const std::optional<core::Action> cast = app::TimedCast(CasterWith(SWORDS_COST - 1), Costed(), NOW_TICK, HERE);
+    REQUIRE(cast.has_value());
+    CHECK(cast.value_or(core::Action{}).slot == core::Slot::Generator);
+    CHECK(cast.value_or(core::Action{}).point.y == HERE.y);
+}
+
+TEST_CASE("the timed cast waits while the slot it would cast cools down") {
+    core::CasterView swordsCooling = CasterWith(SWORDS_COST);
+    swordsCooling.readyTick.at(std::to_underlying(core::Slot::Special1)) = NOW_TICK + 1;
+    CHECK_FALSE(app::TimedCast(swordsCooling, Costed(), NOW_TICK, HERE).has_value());
+    core::CasterView generatorCooling = CasterWith(0);
+    generatorCooling.readyTick.at(std::to_underlying(core::Slot::Generator)) = NOW_TICK + 1;
+    CHECK_FALSE(app::TimedCast(generatorCooling, Costed(), NOW_TICK, HERE).has_value());
+    swordsCooling.readyTick.at(std::to_underlying(core::Slot::Special1)) = NOW_TICK; // ready from this tick on
+    CHECK(app::TimedCast(swordsCooling, Costed(), NOW_TICK, HERE).has_value());
+}
+
+TEST_CASE("the timed cast sends nothing without swords in the first special's slot") {
+    core::CasterView empty = CasterWith(SWORDS_COST);
+    empty.loadout.at(std::to_underlying(core::Slot::Special1)) = core::AbilityKind::None;
+    CHECK_FALSE(app::TimedCast(empty, Costed(), NOW_TICK, HERE).has_value());
+}
+
 } // namespace
