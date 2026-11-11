@@ -4,32 +4,32 @@
 
 namespace app {
 
+namespace {
+
+struct SlotControl {
+    Control control = Control::Primary;
+    core::Slot slot = core::Slot::Generator;
+};
+constexpr std::array SLOT_CONTROLS{
+    SlotControl{ .control = Control::Primary, .slot = core::Slot::Generator },
+    SlotControl{ .control = Control::Secondary, .slot = core::Slot::Spender },
+    SlotControl{ .control = Control::Movement, .slot = core::Slot::Movement },
+    SlotControl{ .control = Control::Special1, .slot = core::Slot::Special1 },
+    SlotControl{ .control = Control::Special2, .slot = core::Slot::Special2 },
+    SlotControl{ .control = Control::Special3, .slot = core::Slot::Special3 },
+    SlotControl{ .control = Control::Special4, .slot = core::Slot::Special4 },
+    SlotControl{ .control = Control::Ultimate, .slot = core::Slot::Ultimate },
+};
+
+} // namespace
+
 std::optional<core::Slot> SlotOf(Control control) {
-    if (control == Control::Primary) {
-        return core::Slot::Generator;
+    const std::span controls{ SLOT_CONTROLS }; // a span's iterator is a class everywhere, unlike std::array's
+    const auto found = std::ranges::find(controls, control, &SlotControl::control);
+    if (found == controls.end()) {
+        return std::nullopt;
     }
-    if (control == Control::Secondary) {
-        return core::Slot::Spender;
-    }
-    if (control == Control::Movement) {
-        return core::Slot::Movement;
-    }
-    if (control == Control::Special1) {
-        return core::Slot::Special1;
-    }
-    if (control == Control::Special2) {
-        return core::Slot::Special2;
-    }
-    if (control == Control::Special3) {
-        return core::Slot::Special3;
-    }
-    if (control == Control::Special4) {
-        return core::Slot::Special4;
-    }
-    if (control == Control::Ultimate) {
-        return core::Slot::Ultimate;
-    }
-    return std::nullopt;
+    return found->slot;
 }
 
 bool SelectsInstead(Control control, bool combat, bool alt) {
