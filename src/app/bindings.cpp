@@ -14,9 +14,9 @@ constexpr core::Vec2 MOVE_DOWN{ .x = 0.0F, .y = 1.0F };
 constexpr core::Vec2 MOVE_LEFT{ .x = -1.0F, .y = 0.0F };
 constexpr core::Vec2 MOVE_RIGHT{ .x = 1.0F, .y = 0.0F };
 
-// PadRightShoulder is the last code: a code added after it goes here too.
+// Key5 is the last code: a code added after it goes here too.
 static_assert(
-    std::to_underlying(InputCode::PadRightShoulder) < std::numeric_limits<u32>::digits,
+    std::to_underlying(InputCode::Key5) < std::numeric_limits<u32>::digits,
     "Bit() gives each input code a bit of a u32"
 );
 
@@ -42,7 +42,14 @@ Bindings::Bindings()
       { .code = InputCode::KeyRight, .control = Control::Move, .direction = MOVE_RIGHT },
       { .code = InputCode::PadLeftX, .control = Control::Move, .direction = MOVE_RIGHT },
       { .code = InputCode::PadLeftY, .control = Control::Move, .direction = MOVE_DOWN },
-      { .code = InputCode::MouseLeft, .control = Control::Select },
+      { .code = InputCode::MouseLeft, .control = Control::Primary },
+      { .code = InputCode::MouseRight, .control = Control::Secondary },
+      { .code = InputCode::KeySpace, .control = Control::Movement },
+      { .code = InputCode::Key1, .control = Control::Special1 },
+      { .code = InputCode::Key2, .control = Control::Special2 },
+      { .code = InputCode::Key3, .control = Control::Special3 },
+      { .code = InputCode::Key4, .control = Control::Special4 },
+      { .code = InputCode::Key5, .control = Control::Ultimate },
       { .code = InputCode::MouseWheel, .control = Control::Zoom },
       { .code = InputCode::PadLeftShoulder, .control = Control::Zoom, .direction = MOVE_LEFT },
       { .code = InputCode::PadRightShoulder, .control = Control::Zoom, .direction = MOVE_RIGHT },
@@ -88,7 +95,7 @@ std::optional<ControlEvent> Bindings::Handle(const platform::InputEvent& input) 
         return ControlEvent{ .control = Control::Zoom, .pressed = true, .value = found->direction.x };
     }
     return ControlEvent{
-        .control = found->control, .pressed = input.pressed, .value = input.value, .position = input.position
+        .control = found->control, .pressed = input.pressed, .value = input.value, .position = input.position, .alt = input.alt
     };
 }
 

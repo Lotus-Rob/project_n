@@ -25,6 +25,7 @@ public:
         states.push_back(counters.state);
         held.push_back(input.held);
         actions.push_back(input.actions.size());
+        casts += static_cast<std::size_t>(std::ranges::count(input.actions, core::ActionKind::Cast, &core::Action::kind));
         if (std::ranges::contains(input.actions, core::ActionKind::CycleScene, &core::Action::kind)) {
             scene = OTHER_SCENE;
         }
@@ -74,6 +75,7 @@ public:
     std::vector<core::HeldInput> held{}; // the held input at each tick
     std::vector<std::size_t> actions{};  // how many actions each tick took
     // NOLINTEND(readability-redundant-member-init)
+    std::size_t casts = 0; // how many Cast actions it was given
     bool rejectLoads = false;
     u64 hashSalt = 0; // set to make its state hash differ from another's with the same ticks
     u64 dataHash = 0; // the hash of the game data it was given last
@@ -164,6 +166,19 @@ TEST_CASE("a burst's presses go to its first tick, its held input to every tick"
     static_cast<void>(rig.Burst(TICKS));
     CHECK(rig.simulation.actions == std::vector<std::size_t>{ 1, 0, 0 });
     CHECK(rig.simulation.held == std::vector{ HELD, HELD, HELD });
+}
+
+TEST_CASE("a cast sent while paused does nothing") {
+    constexpr core::Vec2 POINT{ .x = 1.0F, .y = 2.0F };
+    Rig rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::Pause });
+    static_cast<void>(rig.Burst(1));
+    rig.handover.SendInput({ .kind = core::ActionKind::Cast, .slot = core::Slot::Spender, .point = POINT });
+    static_cast<void>(rig.Burst(1));
+    rig.handover.SendInput({ .kind = core::ActionKind::Resume });
+    static_cast<void>(rig.Burst(2));
+    CHECK(rig.simulation.casts == 0);
+    CHECK(rig.simulation.ticks.size() == 2);
 }
 
 TEST_CASE("pausing lasts across bursts until resumed") {

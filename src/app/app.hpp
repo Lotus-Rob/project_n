@@ -103,6 +103,7 @@ private:
     void HandleInput(const platform::WindowState& state);
     void NoteDevice(const platform::InputEvent& input);
     void Select(const platform::WindowState& state, core::Vec2 position);
+    void Cast(const platform::WindowState& state, const ControlEvent& control, platform::Device device, bool combat);
     void Pan(u64 nowNs);
     [[nodiscard]] bool Present(const platform::WindowState& state);
     [[nodiscard]] bool LoadScene(core::SceneId wanted);

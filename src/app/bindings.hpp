@@ -17,7 +17,14 @@ namespace app {
 /// What the player can ask for, whatever the device.
 enum class Control : u8 {
     Move,            ///< Walk, or pan without a follow target: an axis pair, held.
-    Select,          ///< Select what is under the pointer.
+    Primary,         ///< The left button: casts the generator, or selects what is under the pointer.
+    Secondary,       ///< The right button: casts the spender.
+    Movement,        ///< Space: casts the movement ability.
+    Special1,        ///< Key 1.
+    Special2,        ///< Key 2.
+    Special3,        ///< Key 3.
+    Special4,        ///< Key 4.
+    Ultimate,        ///< Key 5.
     Zoom,            ///< Zoom the camera by `value` notches.
     Quit,            ///< Leave the game.
     AdvanceCalendar, ///< Let a month pass (a debug key).
@@ -37,8 +44,10 @@ struct ControlEvent {
     bool pressed = false;
     /// Zoom's notches; 1 for a pressed button, 0 for a released one.
     f32 value = 0.0F;
-    /// For Select, the pointer in window coordinates.
+    /// For a mouse button, the pointer in window coordinates.
     core::Vec2 position{};
+    /// For a mouse button, whether Alt was held.
+    bool alt = false;
 };
 
 /// One entry of the table.
@@ -86,8 +95,8 @@ private:
 /// The bindings in use, and the held state of the inputs that drive Move.
 class Bindings {
 public:
-    /// The default bindings: WASD, the arrow keys and the left stick move; the left button selects;
-    /// the wheel and the shoulder buttons zoom; Escape quits; M, F2, F5, F9, F6 and F10 are the debug
+    /// The default bindings: WASD, the arrow keys and the left stick move; the left button casts or selects, the right casts,
+    /// Space and 1 to 5 cast; the wheel and the shoulder buttons zoom; Escape quits; M, F2, F5, F9, F6 and F10 are the debug
     /// keys. Code, not data; bindings become data (a YAML table
     /// the player's rebinds save over) when rebinding lands with the settings screen (§10, §11).
     Bindings();

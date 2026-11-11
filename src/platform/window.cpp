@@ -33,6 +33,12 @@ constexpr std::array KEYS{
     KeyCode{ .key = SDL_SCANCODE_F7, .code = InputCode::KeyF7 },
     KeyCode{ .key = SDL_SCANCODE_F9, .code = InputCode::KeyF9 },
     KeyCode{ .key = SDL_SCANCODE_F10, .code = InputCode::KeyF10 },
+    KeyCode{ .key = SDL_SCANCODE_SPACE, .code = InputCode::KeySpace },
+    KeyCode{ .key = SDL_SCANCODE_1, .code = InputCode::Key1 },
+    KeyCode{ .key = SDL_SCANCODE_2, .code = InputCode::Key2 },
+    KeyCode{ .key = SDL_SCANCODE_3, .code = InputCode::Key3 },
+    KeyCode{ .key = SDL_SCANCODE_4, .code = InputCode::Key4 },
+    KeyCode{ .key = SDL_SCANCODE_5, .code = InputCode::Key5 },
 };
 
 GamepadFamily FamilyOf(SDL_JoystickID gamepad) {
@@ -60,14 +66,15 @@ std::optional<InputEvent> KeyInput(const SDL_KeyboardEvent& key) {
 }
 
 std::optional<InputEvent> MouseButtonInput(const SDL_MouseButtonEvent& button) {
-    if (button.button != SDL_BUTTON_LEFT) {
+    if (button.button != SDL_BUTTON_LEFT && button.button != SDL_BUTTON_RIGHT) {
         return std::nullopt;
     }
     return InputEvent{ .device = Device::Mouse,
-                       .code = InputCode::MouseLeft,
+                       .code = button.button == SDL_BUTTON_LEFT ? InputCode::MouseLeft : InputCode::MouseRight,
                        .pressed = button.down,
                        .value = button.down ? 1.0F : 0.0F,
-                       .position = { .x = button.x, .y = button.y } };
+                       .position = { .x = button.x, .y = button.y },
+                       .alt = (SDL_GetModState() & SDL_KMOD_ALT) != 0 };
 }
 
 InputEvent WheelInput(const SDL_MouseWheelEvent& wheel) {

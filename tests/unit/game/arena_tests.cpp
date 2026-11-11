@@ -222,6 +222,31 @@ TEST_CASE("the snapshot names the selected entity's instance; selecting nothing 
     CHECK_FALSE(Published(arena).selected.has_value());
 }
 
+TEST_CASE("a cast outside a combat scene is ignored") {
+    constexpr core::TickCounters COUNTERS{ .wall = 1, .simulation = 1, .state = 1 };
+    const std::array<core::Action, 1> cast{
+        { { .kind = core::ActionKind::Cast, .slot = core::Slot::Generator, .point = { .x = 50.0F, .y = 60.0F } } }
+    };
+    for (const game::Scene scene : { game::Scene::Stress, game::Scene::Painted, game::Scene::Cells }) {
+        game::Arena casting(test::TestManifest(), scene);
+        game::Arena idle(test::TestManifest(), scene);
+        std::vector<core::Event> events;
+        casting.Tick(COUNTERS, { .actions = cast, .held = {} }, events);
+        Tick(idle, COUNTERS, { .actions = {}, .held = {} });
+        CHECK(events.empty());
+        CHECK(casting.StateHash() == idle.StateHash());
+    }
+}
+
+TEST_CASE("the arena is a combat scene and the others aren't") {
+    for (const game::Scene scene : { game::Scene::Arena, game::Scene::Stress, game::Scene::Painted, game::Scene::Cells }) {
+        game::Arena arena(test::TestManifest(), scene);
+        const bool combat = scene == game::Scene::Arena;
+        CHECK(arena.IsCombatScene() == combat);
+        CHECK(Published(arena).combat == combat);
+    }
+}
+
 TEST_CASE("a stale ID selects nothing") {
     constexpr core::StableId NEVER_HANDED_OUT{ 1'000'000 };
     game::Arena arena(test::TestManifest());

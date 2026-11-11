@@ -223,22 +223,19 @@ core::Vec2 EdgePoint(const core::Rect& ground, f64 unit) {
     return { .x = ground.min.x, .y = ground.max.y - static_cast<f32>(std::min(along, height)) };
 }
 
-// Whether `scene` is one fights happen in: the aura hits there, and its foxes have health bars.
-bool IsCombatScene(Scene scene) {
-    return scene == Scene::Arena;
-}
-
 core::Rect ViewOf(Scene scene) {
     return scene == Scene::Cells ? CELLS_VIEW : GROUND_VIEW;
 }
 
-// Each Scene's name in the manifest, in Scene's order, and whether it has creatures, which draw the data's sprites.
+// Each Scene's name in the manifest, in Scene's order, whether it has creatures, which draw the data's sprites, and
+// whether it is a combat scene: fights happen there, the aura hits, its foxes have health bars and casts act.
 struct SceneEntry {
     std::string_view name;
     bool creatures = false;
+    bool combat = false;
 };
 constexpr std::array<SceneEntry, 4> SCENES{ {
-    { .name = "arena", .creatures = true },
+    { .name = "arena", .creatures = true, .combat = true },
     { .name = "stress", .creatures = true },
     { .name = "painted", .creatures = false },
     { .name = "cells", .creatures = false },
@@ -311,6 +308,10 @@ constexpr core::GameData BUILT_IN_DATA{
 
 core::GameData BuiltInData() {
     return BUILT_IN_DATA;
+}
+
+bool Arena::IsCombatScene() const {
+    return SCENES.at(std::to_underlying(m_scene)).combat;
 }
 
 std::optional<Scene> SceneNamed(std::string_view name) {
@@ -563,6 +564,12 @@ void Arena::Tick(const core::TickCounters& counters, const core::TickInput& inpu
         if (action.kind == core::ActionKind::Select) {
             Select(action.target);
         }
+        else if (action.kind == core::ActionKind::Cast && !IsCombatScene()) {
+            PN_LOG_DEBUG(
+                "tick {}: a cast is ignored: the scene {} is no combat scene", counters.simulation, SceneName(m_scene)
+            );
+        }
+        // In a combat scene a cast does nothing yet: the abilities act on it.
     }
     Walk(input.held.move);
     core::Domain& active = m_state[ACTIVE];
@@ -597,7 +604,7 @@ void Arena::Tick(const core::TickCounters& counters, const core::TickInput& inpu
     }
     DecideActive(active, m_state.Seed(), counters.state, counters.simulation);
     WalkActive(active);
-    if (IsCombatScene(m_scene) && counters.simulation % AURA_PERIOD == 0) {
+    if (IsCombatScene() && counters.simulation % AURA_PERIOD == 0) {
         Aura(counters, events);
     }
     if (std::ranges::contains(input.actions, core::ActionKind::DebugBurst, &core::Action::kind)) {
@@ -618,7 +625,7 @@ void Arena::PublishOverhead(core::Snapshot& snapshot) const {
         return;
     }
     const core::Registry& entities = m_state[ACTIVE].Entities();
-    const bool combat = IsCombatScene(m_scene);
+    const bool combat = IsCombatScene();
     for (auto [entity, creature, body, look, stableId, health] :
          entities.view<const Creature, const Body, const Look, const core::StableId, const Health>().each()) {
         const bool player = stableId == m_player;
@@ -867,6 +874,7 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
     const auto& spins = m_state[ACTIVE].Entities().storage<Spin>();
     const auto& dyings = m_state[ACTIVE].Entities().storage<Dying>();
     const u64 tick = snapshot.simulationTick;
+    snapshot.combat = IsCombatScene();
     const u32 chunks = core::ChunkCount(looks.size(), PUBLISH_CHUNK);
     core::Rect view = m_view;
     if (m_player != core::StableId{}) {

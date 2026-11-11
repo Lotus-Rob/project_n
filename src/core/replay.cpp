@@ -10,7 +10,7 @@ namespace core {
 
 namespace {
 
-constexpr u32 REPLAY_FORMAT = 3; // 2: actions carry their target, ticks their held input; 3: the game data's hash
+constexpr u32 REPLAY_FORMAT = 4; // 2: actions carry their target, ticks their held input; 3: the game data's hash; 4: casts
 constexpr std::string_view VERSION = PN_GAME_VERSION; // from xmake.lua's set_version
 constexpr std::size_t MAX_ACTIONS_PER_TICK = 255;     // a tick's count is a byte
 
@@ -66,6 +66,12 @@ void ReadTicks(
             Action read{ .kind = static_cast<ActionKind>(kind) };
             if (read.kind == ActionKind::Select) {
                 archive(read.target);
+            }
+            else if (read.kind == ActionKind::Cast) {
+                archive(read.slot, read.point);
+                if (std::to_underlying(read.slot) >= SLOTS || !IsFinite(read.point)) {
+                    archive.Fail();
+                }
             }
             actions.push_back(read);
         }
@@ -138,6 +144,9 @@ std::vector<std::byte> Replay::FinishRecording() {
             archive(m_actions[action].kind);
             if (m_actions[action].kind == ActionKind::Select) {
                 archive(m_actions[action].target);
+            }
+            else if (m_actions[action].kind == ActionKind::Cast) {
+                archive(m_actions[action].slot, m_actions[action].point);
             }
         }
         if (m_held[tick] == last) {
