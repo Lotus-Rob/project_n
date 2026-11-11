@@ -15,7 +15,7 @@ abilities:
   dash:          { slot: movement, cooldown: 1.0, distance: 260, duration: 0.15 }
   flying_swords: { slot: special, cooldown: 6, qi_cost: 60, damage: 20, radius: 260,
                    swords: { count: 1000, waves: 5, wave_gap: 0.2, ring_radius: 160, ring_step: 100, scatter: 0.25,
-                             angle_jitter: 0.5, stagger: 0.15, out: 0.25, flight: 1.1, sweep: 420, sweep_jitter: 0.6,
+                             angle_jitter: 0.5, stagger: 0.15, out: 0.35, flight: 1.7, sweep: 420, sweep_jitter: 0.6,
                              fade: 0.3 } }
 loadout: { generator: fire_bolt, spender: poison_lance, movement: dash, special_1: flying_swords }
 )";
@@ -54,7 +54,7 @@ TEST_CASE("the abilities parse") {
     CHECK(abilities->Of(core::AbilityKind::FireBolt).affliction.damage == 40);
     CHECK(abilities->Of(core::AbilityKind::FireBolt).speed == doctest::Approx(BOLT_SPEED));
     CHECK(abilities->Of(core::AbilityKind::Dash).durationTicks == 9);
-    CHECK(abilities->Of(core::AbilityKind::FlyingSwords).volley.flightTicks == 66);
+    CHECK(abilities->Of(core::AbilityKind::FlyingSwords).volley.flightTicks == 102); // 1.7 s
     CHECK(abilities->Valid());
 }
 
