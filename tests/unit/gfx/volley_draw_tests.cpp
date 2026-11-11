@@ -325,6 +325,48 @@ TEST_CASE("swords past the overlay's or the trails' room are left out whole, nev
     CHECK(gfx::MAX_DRAWN_SWORDS == gfx::MAX_RIBBON_QUADS / gfx::TRAIL_SEGMENTS);
 }
 
+TEST_CASE("the HUD's bars are placed first and keep their room: the largest volleys leave them whole") {
+    constexpr core::Vec2 TOP_LEFT{ .x = 16.0F, .y = 600.0F };
+    constexpr core::Vec2 SIZE{ .x = 240.0F, .y = 18.0F };
+    constexpr u32 FILL = 0xFF00'00FFU;
+    constexpr u32 BACKGROUND = 0xFF40'2010U;
+    constexpr u32 HUD_INSTANCES = 4; // two bars, each a background and a fill
+    const std::array<gfx::HudBar, 2> bars{ {
+        { .topLeft = TOP_LEFT, .size = SIZE, .fraction = HALF, .fill = FILL, .background = BACKGROUND },
+        { .topLeft = TOP_LEFT + SIZE, .size = SIZE, .fraction = 1.0F, .fill = FILL, .background = BACKGROUND },
+    } };
+    core::VolleyView largest = SwordsView();
+    largest.volley.shape.count = core::MAX_VOLLEY_COUNT;
+    const std::array<core::VolleyView, 2> volleys{ { largest, largest } };
+    const std::array<core::VolleyTarget, 1> targets{ { { .entity = FOX, .previous = POINT, .current = POINT } } };
+    const core::Manifest manifest = TestManifest();
+    core::Jobs jobs{ 1 };
+    gfx::VolleyDrawing drawing;
+    gfx::DrawHudBars(bars, manifest, drawing);
+    REQUIRE(drawing.hud.size() == 1);
+    CHECK(drawing.hud[0].first == 0);
+    CHECK(drawing.hud[0].count == HUD_INSTANCES);
+    CHECK(drawing.hud[0].pipeline == core::Pipeline::Normal);
+    const std::vector<core::Instance> placed = drawing.instances;
+    REQUIRE(placed.size() == HUD_INSTANCES);
+    // The background over the whole bar, the fill from its left over the fraction, in their colours.
+    CHECK(placed[0].size == core::PackPair(core::PackHalf(SIZE.x), core::PackHalf(SIZE.y)));
+    CHECK(placed[1].size == core::PackPair(core::PackHalf(SIZE.x * HALF), core::PackHalf(SIZE.y)));
+    CheckAt(placed[0].current, TOP_LEFT + (SIZE * HALF));
+    CheckAt(placed[1].current, { .x = TOP_LEFT.x + (SIZE.x * HALF * HALF), .y = TOP_LEFT.y + (SIZE.y * HALF) });
+    CHECK(placed[0].colour == BACKGROUND);
+    CHECK(placed[1].colour == FILL);
+
+    gfx::DrawVolleys(volleys, targets, MID_FLIGHT, 1.0F, manifest, {}, jobs, drawing);
+    CHECK(drawing.instances.size() <= gfx::MAX_OVERLAY_INSTANCES);
+    CHECK(drawing.batches.back().count == gfx::SwordRoom(HUD_INSTANCES, 0));
+    const bool whole = std::ranges::equal(BytesOf(placed), BytesOf(std::span{ drawing.instances }.first(HUD_INSTANCES)));
+    CHECK(whole);
+    REQUIRE(drawing.hud.size() == 1); // the swords' batches are the world's
+    drawing.Clear();
+    CHECK(drawing.hud.empty());
+}
+
 TEST_CASE("the lance's burst grows and fades in its element's colour, from its start to its end") {
     constexpr u64 SIX_TICKS = 6;
     constexpr f32 SIDE = 16.0F; // the test manifest's burst

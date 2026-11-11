@@ -2,7 +2,6 @@
 
 #include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
-#include "core/instances.hpp"
 #include "core/log.hpp"
 #include "core/profile.hpp"
 #include "core/repeated_failure.hpp"
@@ -74,49 +73,6 @@ ClipTransform PixelsToClip(u32 width, u32 height) {
              .scaleY = -CLIP_SPAN / static_cast<f32>(height),
              .offsetX = -1.0F,
              .offsetY = 1.0F };
-}
-
-// Adds each of `bars` to `out` in target pixels, as one batch of normal instances appended to `batches`: `solid` (an 8 by 8
-// white square, its foot at its left middle) stretched over the bar in its background's colour, then over its left
-// part, as long as its fraction says, in its fill's.
-void PlaceHudBars(
-    std::span<const HudBar> bars,
-    const core::Manifest& manifest,
-    VolleyDrawing& out,
-    std::vector<core::Batch>& batches
-) {
-    PN_PROFILE_ZONE();
-    const core::SpriteInfo& solid = manifest.Sprite(core::atlas::SpriteId::Solid);
-    const auto width = static_cast<f32>(solid.width);
-    const auto height = static_cast<f32>(solid.height);
-    const auto first = static_cast<u32>(out.instances.size());
-    for (const HudBar& bar : bars) {
-        const core::Vec2 foot{ .x = bar.topLeft.x, .y = bar.topLeft.y + (bar.size.y * 0.5F) };
-        const f32 scale = bar.size.y / height;
-        const auto add = [&](f32 length, u32 colour) {
-            out.instances.push_back(
-                core::MakeInstance(
-                    manifest,
-                    { .sprite = core::atlas::SpriteId::Solid,
-                      .previous = foot,
-                      .current = foot,
-                      .scale = scale,
-                      .colour = colour,
-                      .widthScale = length / (width * scale) }
-                )
-            );
-        };
-        add(bar.size.x, bar.background);
-        const f32 fraction = bar.fraction > 0.0F ? std::min(bar.fraction, 1.0F) : 0.0F;
-        if (fraction > 0.0F) {
-            add(bar.size.x * fraction, bar.fill);
-        }
-    }
-    if (out.instances.size() > first) {
-        batches.push_back(
-            { .first = first, .count = static_cast<u32>(out.instances.size()) - first, .pipeline = core::Pipeline::Normal }
-        );
-    }
 }
 
 // A glyph page: R8 distance fields, cleared to 0 (far outside any glyph) in a command buffer of its own, submitted at
@@ -199,9 +155,9 @@ struct Renderer::Impl {
     // Once a swapchain texture is acquired, the frame is submitted even on an error: SDL requires it.
     std::expected<void, core::Error> Frame(const internal::Frame& acquired, const Shown& shown, core::Jobs& jobs);
     // Uploads the snapshot's instances when they're new, and every frame the overlay's sprites and the trails (the
-    // bursts, health bars and swords at the render time, and the HUD's bars), the texts' quads (the HUD's lines last) and
-    // the glyph fields they need; then ends the glyph cache's frame. A recorded copy counts as uploaded only once its
-    // commands are submitted (Submitted()): a dropped buffer must upload again.
+    // HUD's bars first, then the bursts, health bars and swords at the render time), the texts' quads (the HUD's lines
+    // first, drawn last) and the glyph fields they need; then ends the glyph cache's frame. A recorded copy counts as
+    // uploaded only once its commands are submitted (Submitted()): a dropped buffer must upload again.
     std::expected<void, core::Error> Upload(SDL_GPUCommandBuffer* commands, const Shown& shown, core::Jobs& jobs);
     // Makes the glyph pages the cache's fields are on.
     std::expected<void, core::Error> MakeGlyphPages();
@@ -230,9 +186,10 @@ struct Renderer::Impl {
     // `layout` drawn at `pixels` with its `align` point at `anchor`, in `colour`.
     void PlaceLayout(const Layout& layout, core::Vec2 anchor, core::TextAlign align, f32 pixels, u32 colour);
     // `layout` drawn at `pixels` with its box's top left at `topLeft`, in `colour`, its quads added to the last run when
-    // they share its page and it is `firstOpenRun` or later.
-    void PlaceAt(const Layout& layout, core::Vec2 topLeft, f32 pixels, u32 colour, std::size_t firstOpenRun);
-    // The HUD's lines, after every other text, in runs of their own from hudFirstRun.
+    // they share its page and it is openRun or later.
+    void PlaceAt(const Layout& layout, core::Vec2 topLeft, f32 pixels, u32 colour);
+    // The HUD's lines, placed first, so the quads' room is theirs before the world's texts take any: the runs before
+    // hudRuns, drawn after every other text.
     void PlaceHudLines(std::span<const HudLine> lines);
     std::expected<void, core::Error> UploadGlyphs(SDL_GPUCopyPass* copy);
     // The command buffer holding the last Upload() was submitted, or failed to be, or was cancelled.
@@ -302,10 +259,10 @@ struct Renderer::Impl {
     std::vector<std::size_t> numberQuads{};    // PlaceNumbers()' scratch: each chunk's first quad
     std::vector<MeshVertex> meshVertices{};
     std::vector<internal::MeshRun> meshRuns{};
-    VolleyDrawing volleyDrawing{};         // this frame's health bars and swords, placed at the render time, and the HUD's bars
-    std::vector<core::Batch> hudBatches{}; // the HUD's bars among volleyDrawing's instances, drawn in target pixels
-    std::size_t hudFirstRun = 0;           // the first of meshRuns that draws the HUD's lines
-    std::vector<BarShown> barsShown{};     // by entity: how much of each creature's health bar shows, from its label
+    VolleyDrawing volleyDrawing{};     // this frame's health bars and swords, placed at the render time, and the HUD's bars
+    std::size_t hudRuns = 0;           // meshRuns' first runs, which draw the HUD's lines
+    std::size_t openRun = 0;           // the first of meshRuns a quad may join: none of the HUD's takes the world's texts
+    std::vector<BarShown> barsShown{}; // by entity: how much of each creature's health bar shows, from its label
     core::RepeatedFailure failures{};
     core::RepeatedFailure overflows{};
     core::RepeatedFailure meshOverflows{};
@@ -325,24 +282,26 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     meshVertices.clear();
     meshRuns.clear();
     barsShown.clear();
-    if (glyphs) {
-        PlaceTexts(shown, jobs);
-    }
-    hudFirstRun = meshRuns.size();
+    // The HUD first in both buffers, so an overflow drops the world's texts and effects, never it.
+    openRun = 0;
     if (glyphs) {
         PlaceHudLines(shown.hud.lines);
     }
+    hudRuns = meshRuns.size();
+    openRun = hudRuns;
+    if (glyphs) {
+        PlaceTexts(shown, jobs);
+    }
     volleyDrawing.Clear();
-    hudBatches.clear();
     if (Holds(snapshot.scene)) {
         const auto alpha = static_cast<f32>(shown.view->alpha);
         const f64 renderTick = core::RenderTick(snapshot.simulationTick, shown.view->alpha);
+        DrawHudBars(shown.hud.bars, *manifest, volleyDrawing);
         DrawFlashes(snapshot.flashes, renderTick, *manifest, uiColours, volleyDrawing);
         DrawHealthBars(snapshot.healthBars, barsShown, alpha, *manifest, uiColours, volleyDrawing);
         DrawVolleys(
             snapshot.volleys, snapshot.volleyTargets, snapshot.simulationTick, alpha, *manifest, uiColours, jobs, volleyDrawing
         );
-        PlaceHudBars(shown.hud.bars, *manifest, volleyDrawing, hudBatches);
     }
     SDL_PushGPUDebugGroup(commands, "upload");
     SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
@@ -492,7 +451,7 @@ void Renderer::Impl::AddNumberRuns(u32 firstQuad) {
     u32 quad = firstQuad;
     for (const u32 pageIndex : numberPages) {
         SDL_GPUTexture* const page = glyphPages.at(pageIndex).get();
-        if (meshRuns.empty() || meshRuns.back().page != page) {
+        if (meshRuns.size() <= openRun || meshRuns.back().page != page) {
             meshRuns.push_back({ .page = page, .firstQuad = quad, .quads = 0 });
         }
         ++meshRuns.back().quads;
@@ -610,15 +569,15 @@ void Renderer::Impl::PlaceText(const core::TextItem& item, const Layout& layout,
 
 void Renderer::Impl::PlaceLayout(const Layout& layout, core::Vec2 anchor, core::TextAlign align, f32 pixels, u32 colour) {
     const f32 scale = pixels / SDF_BASE_PIXELS;
-    PlaceAt(layout, TextTopLeft(anchor, { .x = layout.width * scale, .y = layout.height * scale }, align), pixels, colour, 0);
+    PlaceAt(layout, TextTopLeft(anchor, { .x = layout.width * scale, .y = layout.height * scale }, align), pixels, colour);
 }
 
-void Renderer::Impl::PlaceAt(const Layout& layout, core::Vec2 topLeft, f32 pixels, u32 colour, std::size_t firstOpenRun) {
+void Renderer::Impl::PlaceAt(const Layout& layout, core::Vec2 topLeft, f32 pixels, u32 colour) {
     auto quad = static_cast<u32>(meshVertices.size() / QUAD_VERTICES);
     PlaceGlyphs(layout, topLeft, pixels, colour, meshVertices);
     for (const PlacedGlyph& glyph : layout.glyphs) {
         SDL_GPUTexture* const page = glyphPages.at(glyph.page).get();
-        if (meshRuns.size() <= firstOpenRun || meshRuns.back().page != page) {
+        if (meshRuns.size() <= openRun || meshRuns.back().page != page) {
             meshRuns.push_back({ .page = page, .firstQuad = quad, .quads = 0 });
         }
         ++meshRuns.back().quads;
@@ -630,7 +589,7 @@ void Renderer::Impl::PlaceHudLines(std::span<const HudLine> lines) {
     PN_PROFILE_ZONE();
     const f32 pixels = HUD_PIXELS * textOptions.scale;
     for (const HudLine& line : lines) {
-        PlaceAt(text->Lay(line.text, core::TextDirection::LeftToRight), line.topLeft, pixels, line.colour, hudFirstRun);
+        PlaceAt(text->Lay(line.text, core::TextDirection::LeftToRight), line.topLeft, pixels, line.colour);
     }
 }
 
@@ -777,10 +736,10 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
                                      .shadowOffsetV = shadowShift,
                                      .ink = internal::InkOf(uiColours.Of(core::UiColour::TextInk)) };
     const std::span<const internal::MeshRun> runs{ meshRuns };
-    const std::size_t hudRun = std::min(hudFirstRun, runs.size());
-    meshes.Draw(commands, pass, runs.first(hudRun), pixels, style);
-    overlay.Draw(commands, pass, hudBatches, sprites, pixels, alpha);
+    const std::size_t hudRun = std::min(hudRuns, runs.size());
     meshes.Draw(commands, pass, runs.subspan(hudRun), pixels, style);
+    overlay.Draw(commands, pass, volleyDrawing.hud, sprites, pixels, alpha);
+    meshes.Draw(commands, pass, runs.first(hudRun), pixels, style);
     SDL_EndGPURenderPass(pass);
     SDL_PopGPUDebugGroup(commands);
 }

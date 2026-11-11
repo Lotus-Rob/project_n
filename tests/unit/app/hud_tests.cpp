@@ -4,7 +4,7 @@
 #include "core/frame.hpp"
 #include "core/strings.hpp"
 #include "core/ui_colours.hpp"
-#include "gfx/renderer.hpp"
+#include "gfx/hud_draw.hpp"
 
 #include <doctest/doctest.h>
 

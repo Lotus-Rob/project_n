@@ -13,6 +13,7 @@
 #include "core/types.hpp"
 #include "core/ui_colours.hpp"
 #include "core/volley.hpp"
+#include "gfx/hud_draw.hpp"
 #include "gfx/labels.hpp"
 #include "gfx/mesh_vertex.hpp"
 
@@ -88,10 +89,11 @@ struct RibbonVertex {
 };
 static_assert(sizeof(RibbonVertex) == MESH_VERTEX_BYTES, "the ribbon pipeline reads vertices as the mesh path's");
 
-/// What one frame draws over the snapshot: the overlay's sprite instances and their batches, and the trails' quads
-/// (QUAD_VERTICES corners each, in MeshVertex's corner order). The batches draw every sword's core, then every halo, then
-/// the bursts, then the health bars, then every sword. The renderer keeps one and clears it each frame, so its buffers keep
-/// their capacity.
+/// What one frame draws over the snapshot: the overlay's sprite instances and their batches, the HUD's batches among the
+/// same instances, and the trails' quads (QUAD_VERTICES corners each, in MeshVertex's corner order). The batches draw
+/// every sword's core, then every halo, then the bursts, then the health bars, then every sword, in world units; the HUD's
+/// draw its bars in target pixels, over the world's texts. The renderer keeps one and clears it each frame, so its buffers
+/// keep their capacity.
 struct VolleyDrawing {
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The overlay's sprites, drawn as the batches say, with the overlay's alpha a no-op: each has `previous == current`.
@@ -100,6 +102,8 @@ struct VolleyDrawing {
     std::vector<core::Batch> batches{};
     /// The trails' vertices, TRAIL_SEGMENTS quads a sword, in sword order: drawn additively before the instances.
     std::vector<RibbonVertex> ribbons{};
+    /// The HUD's batches (DrawHudBars()), placed in target pixels: not among `batches`.
+    std::vector<core::Batch> hud{};
     // NOLINTEND(readability-redundant-member-init)
     /// Swords left out, core, halo, blade and trail, as the overlay or the trails had no room for them.
     std::size_t droppedSwords = 0;
@@ -136,6 +140,12 @@ void DrawHealthBars(
     const core::UiColours& colours,
     VolleyDrawing& out
 );
+
+/// Adds each of `bars` to `out` in target pixels, as one batch of normal instances in `out.hud`: `manifest`'s `solid`
+/// sprite (an 8 by 8 white square, its foot at its left middle) stretched over the bar in its background colour, then
+/// over its left part, as long as its fraction says (clamped to [0, 1], NaN as 0; none at 0), in its fill colour. Called
+/// first in a frame, so the HUD's room is taken before the world's effects take theirs (SwordRoom() counts it).
+void DrawHudBars(std::span<const HudBar> bars, const core::Manifest& manifest, VolleyDrawing& out);
 
 /// How large the poison lance's burst is drawn, as a multiple of its sprite (96 world units across), at its start.
 inline constexpr f32 FLASH_START_SCALE = 0.5F;
