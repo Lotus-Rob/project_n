@@ -509,11 +509,14 @@ void Combat::Strike(core::State& state, const core::Manifest& manifest, u64 tick
     // Every arrival resolves before this tick's deaths are marked, so a target dying on this tick still takes the hits
     // that arrive on it, as core::SwordTarget() promises.
     for (Flight& flight : m_flights) {
+        // Its use may end on the Strike that resolves its last sword, whatever the tick (a loaded volley's arrivals may be
+        // overdue), or on its cast for a volley of none.
+        const bool pending = flight.Pending() || flight.volley.startTick == tick;
         while (flight.Pending() && flight.arrivals.at(flight.resolved) <= tick) {
             Arrive(state, manifest, flight, flight.order.at(flight.resolved), tick, events, ending);
             ++flight.resolved;
         }
-        if (!flight.Pending() && flight.lastArrival == tick) {
+        if (pending && !flight.Pending()) {
             ending.push_back(flight.volley.use);
         }
     }

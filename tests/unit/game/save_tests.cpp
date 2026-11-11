@@ -527,6 +527,23 @@ TEST_CASE("a save with a volley aiming at a living target that is no creature he
     game.Tick(At(1), {}, events); // follows the fox's chest
 }
 
+TEST_CASE("a loaded volley whose arrivals are all overdue still ends its use, once") {
+    constexpr u64 LATER = 100; // past every arrival: the volley starts at 3 and flies for 20
+    const core::State state{ game::DOMAINS, STATE_SEED };
+    const SavedVolley volley = PointVolley();
+    const std::vector<std::byte> bytes = ArenaSave(state, {}, volley);
+    core::Reader reader{ bytes };
+    game::Arena game(test::TestManifest(), game::Scene::Arena);
+    REQUIRE(game.Load(reader));
+    std::vector<core::Event> events;
+    game.Tick(At(LATER), {}, events);
+    game.Tick(At(LATER + 1), {}, events);
+    const auto ended = [&volley](const core::Event& event) {
+        return event.kind == core::EventKind::UseEnded && event.use == volley.volley.use;
+    };
+    CHECK(std::ranges::count_if(events, ended) == 1);
+}
+
 TEST_CASE("a save's Qi above the loading game's most is lowered to it") {
     constexpr i64 LOWER = 20;
     game::Arena saved(test::TestManifest());
