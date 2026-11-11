@@ -303,6 +303,41 @@ TEST_CASE("the selection clears when the selected fox is removed") {
     CHECK(arena.Selected() == core::StableId{});
 }
 
+TEST_CASE("a dying fox can't be selected") {
+    constexpr u64 DEATH = 1;
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, FarFromTheCrystal());
+    const core::StableId fox = Foxes(arena).front();
+    arena.Damage(fox, FOX_HEALTH, 0);
+    const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = fox } } };
+    std::vector<core::Event> events;
+    arena.Tick(At(DEATH), { .actions = select, .held = {} }, events);
+    CHECK(arena.Selected() == core::StableId{});
+}
+
+TEST_CASE("the player removed on the tick a fox respawns leaves no player, and the fox circles the start") {
+    constexpr u64 FOX_DEATH = 1;
+    constexpr u64 PLAYER_DEATH = FOX_DEATH + game::RESPAWN_TICKS; // both removed on the respawn's tick
+    constexpr core::Vec2 START{ .x = 960.0F, .y = 620.0F };       // where the cultivator starts
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, FarFromTheCrystal());
+    const std::vector<core::StableId> before = Foxes(arena);
+    const core::StableId player = arena.Player();
+    Run(arena, 1, FOX_DEATH);
+    arena.Damage(before.front(), FOX_HEALTH, FOX_DEATH);
+    Run(arena, FOX_DEATH + 1, PLAYER_DEATH);
+    arena.Damage(player, CULTIVATOR_HEALTH, PLAYER_DEATH);
+    const u64 respawn = FOX_DEATH + game::DYING_TICKS + game::RESPAWN_TICKS;
+    REQUIRE(respawn == PLAYER_DEATH + game::DYING_TICKS);
+    Run(arena, PLAYER_DEATH + 1, respawn);
+    CHECK(arena.Player() == core::StableId{});
+    CHECK_FALSE(arena.State().DomainOf(player).has_value());
+    std::vector<core::StableId> added;
+    std::ranges::set_difference(Foxes(arena), before, std::back_inserter(added));
+    REQUIRE(added.size() == 1);
+    const game::Orbit orbit = Entities(arena).get<game::Orbit>(EntityOf(arena, added.front()));
+    CHECK(orbit.centre.x == START.x);
+    CHECK(orbit.centre.y == START.y);
+}
+
 TEST_CASE("each living enemy in a combat scene reports its health over its head") {
     constexpr i64 WOUND = 300;
     constexpr f32 THREE_QUARTERS = 0.75F;

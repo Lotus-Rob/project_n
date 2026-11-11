@@ -113,8 +113,8 @@ public:
 
     /// Rebuilds itself as the next scene in Scene's order (arena, stress, painted, cells, then the arena again) when
     /// `input` holds a CycleScene, the selection cleared; walks the player's cultivator where `input`'s held
-    /// movement points, selects what its Select actions name, moves every entity on an Orbit to where it is at
-    /// `counters.simulation`, advances combat (Combat::Tick(): arrivals, removing the dead, which clears their
+    /// movement points, selects what its Select actions name (nothing for a dying one), moves every entity on an Orbit to where
+    /// it is at `counters.simulation`, advances combat (Combat::Tick(): arrivals, removing the dead, which clears their
     /// selection, and spawning the foxes due at the ground's edge), and walks the active NPCs, whose decisions draw
     /// random numbers keyed on `counters.state`. In the arena scene, every 60th simulation tick the crystal's aura hits
     /// each living fox in reach and heals the player if in reach, appending a hit event for each; a DebugBurst action

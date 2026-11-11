@@ -223,7 +223,7 @@ core::Vec2 EdgePoint(const core::Rect& ground, f64 unit) {
     return { .x = ground.min.x, .y = ground.max.y - static_cast<f32>(std::min(along, height)) };
 }
 
-// Whether `scene` is one fights happen in: its foxes have health bars.
+// Whether `scene` is one fights happen in: the aura hits there, and its foxes have health bars.
 bool IsCombatScene(Scene scene) {
     return scene == Scene::Arena;
 }
@@ -583,20 +583,21 @@ void Arena::Tick(const core::TickCounters& counters, const core::TickInput& inpu
         spin.current = std::remainder(spin.current + spin.speed, TURN); // stays precise however long it turns
     }
     const u32 respawns = m_combat.Tick(m_state, counters.simulation);
-    for (u32 index = 0; index < respawns; ++index) {
-        Respawn(counters, index);
-    }
+    // Before the respawns, which circle the player if there still is one.
     if (m_selected != core::StableId{} && !m_state.DomainOf(m_selected)) {
         PN_LOG_INFO("tick {}: the selected entity {} is gone", counters.simulation, std::to_underlying(m_selected));
         m_selected = {};
     }
     if (m_player != core::StableId{} && !m_state.DomainOf(m_player)) {
-        PN_LOG_INFO("tick {}: the player's cultivator is gone", counters.simulation);
+        PN_LOG_INFO("tick {}: the player's cultivator died and is gone", counters.simulation);
         m_player = {};
+    }
+    for (u32 index = 0; index < respawns; ++index) {
+        Respawn(counters, index);
     }
     DecideActive(active, m_state.Seed(), counters.state, counters.simulation);
     WalkActive(active);
-    if (m_scene == game::Scene::Arena && counters.simulation % AURA_PERIOD == 0) {
+    if (IsCombatScene(m_scene) && counters.simulation % AURA_PERIOD == 0) {
         Aura(counters, events);
     }
     if (std::ranges::contains(input.actions, core::ActionKind::DebugBurst, &core::Action::kind)) {
@@ -748,7 +749,10 @@ void Arena::Walk(core::Vec2 move) {
 }
 
 void Arena::Select(core::StableId target) {
-    m_selected = m_state.DomainOf(target) ? target : core::StableId{};
+    // A dying creature can't be picked, as its instance names none.
+    const bool dying =
+        m_state.DomainOf(target) == ACTIVE && m_state[ACTIVE].Entities().all_of<Dying>(m_state[ACTIVE].Find(target));
+    m_selected = m_state.DomainOf(target) && !dying ? target : core::StableId{};
     PN_LOG_INFO(
         "selected {}", m_selected == core::StableId{} ? "nothing" : std::format("entity {}", std::to_underlying(target))
     );
