@@ -56,13 +56,17 @@ struct Volley {
     u64 use = 0;
     /// The tick it was cast on: the first sword launches then at the earliest.
     u64 startTick = 0;
-    /// Its own random numbers' seed (core::Random): each sword's launch, place on the ring and bend.
+    /// Its own random numbers' seed (core::Random): each sword's launch, place on the ring and bend. The cast draws it from
+    /// core::Random with a purpose of its own and the state counter, so the volley's draws, which key on this seed with
+    /// purposes local to the path, share no numbers with the game's.
     u64 seed = 0;
     /// Where the swords burst out from: the caster, in world units.
     Vec2 origin{};
     /// The point it was cast at: on the ring, each sword turns to face its flight towards it.
     Vec2 point{};
-    /// Its shape as it was cast: new game data never changes a volley in flight.
+    /// Its shape as it was cast: new game data never changes a volley in flight. The cast resolves `flightTicks` (for the
+    /// bolt, ⌈distance / speed⌉), so here it is always the flight's length in ticks: 0 means it arrives on reaching the
+    /// ring, never "from the speed".
     VolleyShape shape{};
 
     /// Lists its fields for an archive (core/archive.hpp).
@@ -83,17 +87,30 @@ struct VolleyTarget {
     StableId entity{};
     /// Where the swords aim at it at the previous tick, in world units.
     Vec2 previous{};
-    /// Where the swords aim at it at this tick; frozen where it died.
+    /// Where the swords aim at it at this tick. From its death on, both stay where it died.
     Vec2 current{};
-    /// Whether it can still be hit; never for the point.
-    bool alive = false;
+    /// The tick it stopped being a target (it died, or for the point, the cast's tick); 0 while it lives. No target dies
+    /// on tick 0, which runs before any cast.
+    u64 diedTick = 0;
 
     /// Lists its fields for an archive (core/archive.hpp).
     template<typename Self, typename Archive>
     void Fields(this Self& self, Archive& archive) {
-        archive(self.entity, self.previous, self.current, self.alive);
+        archive(self.entity, self.previous, self.current, self.diedTick);
+    }
+
+    /// Whether it can still be hit at `tick`, a simulation tick or a render time: it hasn't died by then.
+    [[nodiscard]] constexpr bool AliveAt(f64 tick) const {
+        return diedTick == 0 || static_cast<f64>(diedTick) > tick;
     }
 };
+
+/// The fewest ticks a sword takes to swing its aim from a target that died to the one it moves on to, so it turns
+/// visibly rather than jumping: about an eighth of a second.
+inline constexpr f64 RETARGET_TICKS = 8.0;
+/// The fastest a swing moves the aim on average, in world units a tick (about a sword's speed in flight): a swing over a
+/// longer way takes longer than RETARGET_TICKS, so the sword never darts.
+inline constexpr f64 RETARGET_SPEED = 16.0;
 
 /// Where a sword is at a moment, and how to draw it.
 struct SwordPose {
@@ -114,21 +131,35 @@ struct SwordPose {
 /// `flightTicks` to the target.
 [[nodiscard]] u64 ArrivalTick(const Volley& volley, u32 sword);
 
-/// The tick the volley's last sword arrives: the latest ArrivalTick(), or the start for a volley of no swords.
+/// The tick the volley's last sword arrives: the latest ArrivalTick(), or the start for a volley of no swords. It draws
+/// every sword's launch, so it costs O(count): call it once per volley, not every tick.
 [[nodiscard]] u64 LastArrival(const Volley& volley);
 
-/// Where `sword` (below the shape's count) is at `tick`, a simulation tick or a render time between two, flying at `aim`,
-/// its target's position at that moment. Before its launch it waits unseen at the origin. For `outTicks` it bursts out,
-/// pointing outwards and slowing, to its place on a ring of `ringRadius` round the origin, and turns there to face its
-/// flight. For `flightTicks` it flies a curve that bends to the same side for every sword (so the ring swirls) and ends
-/// at `aim`, wherever that moves, speeding up and then slowing a little. After its arrival it stays at `aim` and fades.
-/// Neither position nor heading jumps while the aim moves smoothly. A volley of no ring and no sweep (the bolt) flies
-/// straight. A pure function: the same inputs give the same bits on every thread.
+/// Where `sword` (below the shape's count) is at `tick`, a simulation tick or a render time between two, flying at `aim`
+/// (SwordAim()). Before its launch it waits unseen at the origin. For `outTicks` it bursts out, pointing outwards and
+/// slowing, to its place on a ring of `ringRadius` round the origin, and turns there to face its flight. For
+/// `flightTicks` it flies a curve that bends to the same side for every sword (so the ring swirls) and ends at `aim`,
+/// wherever that moves, speeding up and then slowing a little. After its arrival it stays at `aim` and fades. A volley of
+/// no ring and no sweep (the bolt) flies straight. A pure function: the same inputs give the same bits on every thread.
+///
+/// Its position never jumps while the aim moves continuously. Its heading turns at a bounded rate too, but no rule that
+/// depends only on the present aim can promise that everywhere, and it can flip: in flight, when the aim passes over
+/// the point it flew from on the ring (the target is then behind it); on the ring, while it turns, when the aim moves
+/// to the far side of that point from the volley's `point`.
 [[nodiscard]] SwordPose SwordAt(const Volley& volley, u32 sword, f64 tick, Vec2 aim);
 
-/// Which of a volley's `targets` (not empty) `sword` flies at: its own, `sword` modulo their count, while that's alive;
-/// when it's dead, one of the living ones, spread evenly over them, so only a dead target's swords move; when none is
-/// alive, its own (frozen where it died), where the sword plunges into the ground.
-[[nodiscard]] u32 SwordTarget(u32 sword, std::span<const VolleyTarget> targets);
+/// Which of a volley's `targets` (not empty) `sword` flies at, at `tick`. It starts at its own, `sword` modulo their
+/// count. When the one it flies at dies, it moves on to one of the targets alive at that tick, chosen from the sword so
+/// the swords that move spread evenly over them; the others keep theirs. It repeats at each later death of the one it
+/// flies at. When none is alive at such a death, it keeps the dead one, where it plunges into the ground at its frozen
+/// position. Where it hits at its arrival tick, as the logic sees it.
+[[nodiscard]] u32 SwordTarget(u32 sword, u64 tick, std::span<const VolleyTarget> targets);
+
+/// The aim `sword` flies at at `tick`, a simulation tick or a render time, for SwordAt(): the position of its target
+/// (SwordTarget()), between the target's `previous` and `current` by `alpha` (1 for the logic at a tick; the frame's
+/// alpha for the renderer). When the sword moves on from a dead target, its aim eases from where it was then to the new
+/// target, over RETARGET_TICKS or the way's length at RETARGET_SPEED, whichever is longer, so the aim, and with it the
+/// sword, never jumps. A swing still under way at the sword's arrival leaves it short of its target, where the hit lands.
+[[nodiscard]] Vec2 SwordAim(u32 sword, f64 tick, std::span<const VolleyTarget> targets, f32 alpha);
 
 } // namespace core
