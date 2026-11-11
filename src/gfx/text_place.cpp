@@ -14,6 +14,7 @@ constexpr u32 CHANNELS = 4;
 constexpr f32 HALF = 0.5F;
 
 u32 Scaled(u32 colour, f32 opacity) {
+    PN_PROFILE_ZONE();
     u32 scaled = 0;
     for (u32 channel = 0; channel < CHANNELS; ++channel) {
         const u32 shift = channel * CHANNEL_BITS;

@@ -5,6 +5,7 @@
 // sub-pixel camera offsets, nor step while its creature moves.
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
+#include "core/game_data.hpp"
 #include "core/instances.hpp"
 #include "core/jobs.hpp"
 #include "core/math.hpp"
@@ -36,6 +37,11 @@ constexpr u64 TWO_SECONDS = 120; // of ticks: the foxes and orbs have moved off 
 constexpr f64 HALFWAY = 0.5;
 // Between the tablet and the player, so both and their texts show at the largest zoom; at the others the whole ground does.
 constexpr core::Vec2 TABLET_AND_PLAYER{ .x = 880.0F, .y = 690.0F };
+// The foxes' orbit round the player in the crowd picture, in world units: close enough that their labels overlap.
+constexpr f32 CROWD_ORBIT = 50.0F;
+constexpr f32 CROWD_WOBBLE = 10.0F;
+// Zoomed out as far as a label still reads on the pictures' 1280 by 720 (10 pixels: 20 world units × 2/3 × 0.75).
+constexpr f32 CROWD_ZOOM = 0.75F;
 
 struct View {
     std::string_view name;
@@ -45,6 +51,7 @@ struct View {
     f32 zoom = 1.0F;
     bool outlines = false; // centred on the player's cultivator, hovered, with the first fox selected
     bool refit = false;    // a smaller picture first, so a scene target that isn't refitted shows
+    bool crowd = false;    // the foxes bunched round the player's cultivator, centred on it
     std::optional<core::Vec2> centre = std::nullopt;
 };
 
@@ -119,7 +126,12 @@ void CompareWithReference(const gfx::Image& drawn, std::string_view name) {
 void CheckAgainstReference(const View& view) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
-    game::Arena arena(test::TestManifest(), view.scene);
+    core::GameData data = game::BuiltInData();
+    if (view.crowd) {
+        data.fox.orbitRadius = CROWD_ORBIT;
+        data.fox.orbitWobble = CROWD_WOBBLE;
+    }
+    game::Arena arena(test::TestManifest(), view.scene, data);
     std::vector<core::Event> events; // the hits the ticks start, which no picture shows
     for (u64 tick = 1; tick <= view.ticks; ++tick) {
         arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, {}, events);
@@ -152,6 +164,9 @@ void CheckAgainstReference(const View& view) {
         shown.outlined = static_cast<std::size_t>(player - snapshot.ids.begin());
         shown.camera.centre = snapshot.follow.value_or(core::Follow{}).current;
     }
+    if (view.crowd) {
+        shown.camera.centre = snapshot.follow.value_or(core::Follow{}).current;
+    }
     if (view.centre) {
         shown.camera.centre = *view.centre;
     }
@@ -181,17 +196,21 @@ TEST_CASE("the hovered entity's pale outline and the selected one's gold, close 
     CheckAgainstReference({ .name = "outlines", .scene = game::Scene::Arena, .zoom = gfx::MAX_ZOOM, .outlines = true });
 }
 
-TEST_CASE("labels and the tablet's caption at the smallest zoom") {
+TEST_CASE("at the smallest zoom the labels and the tablet's caption, too small to read, are faded out") {
     CheckAgainstReference({ .name = "text_zoom_quarter", .zoom = gfx::MIN_ZOOM });
 }
 
-TEST_CASE("labels and the tablet's caption at zoom one half") {
+TEST_CASE("at zoom one half the labels, too small to read, are faded out and the tablet's caption shows") {
     constexpr f32 HALF_ZOOM = 0.5F;
     CheckAgainstReference({ .name = "text_zoom_half", .zoom = HALF_ZOOM });
 }
 
 TEST_CASE("labels and the tablet's caption at zoom 1") {
     CheckAgainstReference({ .name = "text_zoom_one", .zoom = 1.0F });
+}
+
+TEST_CASE("crowded labels: the foxes' names stack into one, the player's shows") {
+    CheckAgainstReference({ .name = "labels_crowd", .zoom = CROWD_ZOOM, .crowd = true });
 }
 
 TEST_CASE("labels and the tablet's caption at the largest zoom") {

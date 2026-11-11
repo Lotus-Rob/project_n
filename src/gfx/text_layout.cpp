@@ -26,8 +26,11 @@ constexpr std::string_view NAME_PLACEHOLDER = "{name}";
 constexpr std::string_view COUNT_PLACEHOLDER = "{count}";
 constexpr std::array<core::TextDirection, 2> DIRECTIONS{ { core::TextDirection::LeftToRight,
                                                            core::TextDirection::TopToBottom } };
-// Fields packed this far apart are never read into each other: bilinear filtering reads half a texel beyond a field,
-// and the outline and shadow samples up to SDF_SPREAD beyond it, so they read padding, never a neighbour's field.
+// Fields packed this far apart are never read into each other. Past a quad's edge the field shader reads half a texel
+// (bilinear filtering) beyond the further of its shadow sample (shifted 2 texels) and its supersampling grid (0.375
+// screen pixels, each SDF_BASE_PIXELS / pixels texels): within the padding for text drawn at about 2 pixels or more
+// (at 2.2, 8.7 texels), and smaller text is faded out or never drawn that small (LABEL_MIN_PIXELS, NUMBER_MIN_PIXELS,
+// CaptionOpacity()). The outline is sampled with the fill, at the same points.
 constexpr u32 GLYPH_PADDING = SDF_SPREAD + 1;
 
 using Font = std::unique_ptr<TTF_Font, internal::SdlDeleter<TTF_CloseFont>>;
