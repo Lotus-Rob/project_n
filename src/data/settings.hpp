@@ -16,9 +16,11 @@
 namespace data {
 
 /// The settings `yaml` holds; a setting it leaves out keeps its default. Fails on YAML that doesn't
-/// parse, a setting of the wrong type, or a window size outside 320x200 to 16384x16384, naming the line.
-/// A setting it doesn't know is ignored, and a language it doesn't know gives English, each with a line naming it
-/// added to `warnings` when given.
+/// parse, a document that isn't a map of settings, a window setting of the wrong type, or a window size outside
+/// 320x200 to 16384x16384, naming the line.
+/// A setting it doesn't know is ignored, and a language or damage number motion it doesn't know, or a
+/// `combined_damage_numbers`, `text_outline` or `text_shadow` that isn't a boolean, keeps its default (English, bounce,
+/// off, on, on), each with a line naming it added to `warnings` when given.
 [[nodiscard]] std::expected<core::Settings, core::Error> ParseSettings(
     std::string_view yaml,
     std::vector<std::string>* warnings = nullptr

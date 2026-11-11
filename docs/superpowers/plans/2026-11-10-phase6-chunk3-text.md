@@ -62,23 +62,8 @@ outline and shadow in one pass.
 
 ## Accessibility
 
-Phase decision 17 (accessibility first) and chunk 11's spec, which wires the settings into what this chunk builds. This
-chunk builds the hooks, so chunk 11 adds settings without reworking text:
-
-- **Text size:** every size goes through one `gfx::TextOptions::scale` (default 1), which multiplies the world sizes
-  *and* the minimum readable sizes; chunk 11's "game text size" sets it. Labels and the label minimum size and the
-  damage-number minimum size are named constants chunk 11 turns into settings (`LABEL_MIN_PIXELS`,
-  `NUMBER_MIN_PIXELS`).
-- **Colour is never the only signal:** healing numbers carry a "+" sign; damage carries none. Poison and burn differ
-  only by colour in this chunk (they appear only in the debug burst); chunk 11 adds the damage-kind icons it owns. The
-  kind colours sit in one table (`app/damage_numbers.cpp`, `KIND_COLOURS`) so chunk 11's palettes replace one table.
-- **Reduce motion:** number motion is one pure function, `app::NumberMotionAt(NumberMotion, f32 seconds)`; chunk 11
-  adds a still variant for reduce motion there. Label fades change opacity only, never position.
-- **Reduce flashing:** nothing in this chunk flashes: fades take `LABEL_FADE_SECONDS` (0.15 s) at least, numbers fade
-  out, never blink.
-- **High contrast:** the outline and shadow settings (on by default) keep light text readable on any ground; with both
-  off, labels switch to dark ink.
-- **Keyboard and gamepad:** the debug burst is a debug key (F7) like F2/F5/F9; no new player-facing control.
+Moved, corrected, into the spec's Accessibility section (phase decision 17 asks the spec for it): the stack glide moves
+position, so reduce motion needs a hook there too.
 
 ## File Structure
 

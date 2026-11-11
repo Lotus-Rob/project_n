@@ -120,7 +120,7 @@ private:
     gfx::Renderer m_renderer;
     Options m_options;
     u64 m_startNs;
-    u64 m_nextBurstNs;       // the render clock's time for `--burst`'s next burst
+    u64 m_nextBurstNs;       // when `--burst`'s next burst is sent, in wall time (platform::NowNs())
     DamageNumbers m_numbers; // as m_options.settings say
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     core::GameHandover m_handover{};
