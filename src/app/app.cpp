@@ -106,11 +106,16 @@ DataWatch::Listing DataWatch::List(const std::filesystem::path& folder, std::err
     return listing;
 }
 
+bool HasFlag(std::span<const char* const> args, std::string_view flag) {
+    return std::ranges::any_of(args, [flag](const char* arg) { return std::string_view{ arg } == flag; });
+}
+
 App::App(platform::Window window, gfx::Renderer renderer, Options options)
   : m_window{ std::move(window) }
   , m_renderer{ std::move(renderer) }
   , m_options{ std::move(options) }
   , m_startNs{ platform::NowNs() }
+  , m_nextBurstNs{ m_startNs + core::NS_PER_SECOND } // the scene is resident by the first burst
   , m_numbers{ m_options.settings }
   , m_frameNs{ m_startNs } {
     m_numberTexts.reserve(NUMBER_RESERVE);
@@ -180,12 +185,22 @@ i32 App::Run() {
         }
         Pan(platform::NowNs());
         WatchData(platform::NowNs());
+        RepeatBurst(platform::NowNs());
         if (!Present(state)) {
             return 1;
         }
     }
     PN_LOG_INFO("shutting down; {} snapshots were published after they were due", m_display.LateAdoptions());
     return 0;
+}
+
+void App::RepeatBurst(u64 nowNs) {
+    PN_PROFILE_ZONE();
+    if (!m_options.burst || nowNs < m_nextBurstNs) {
+        return;
+    }
+    m_nextBurstNs = nowNs + core::NS_PER_SECOND;
+    m_handover.SendInput({ .kind = core::ActionKind::DebugBurst });
 }
 
 void App::WatchData(u64 nowNs) {
