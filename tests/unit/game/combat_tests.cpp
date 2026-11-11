@@ -839,9 +839,14 @@ TEST_CASE("a dead enemy's swords move to the living") {
     StampedCast(arena, CAST, core::Slot::Special1, ready.point);
     const u64 last = core::LastArrival(OnlyVolley(arena, CAST).volley);
     const std::vector<core::Event> used = OfUse(Play(arena, CAST + 1, last), game::CastUse(CAST, core::Slot::Special1));
-    const game::Dying* const dying = Entities(arena).try_get<game::Dying>(EntityOf(arena, frail));
-    REQUIRE(dying != nullptr);
-    const u64 death = dying == nullptr ? 0 : dying->startTick;
+    // It dies on the tick of its third hit (swords arriving on that tick still strike it); the volley outlasts its
+    // dissolve, so by now it is gone.
+    std::vector<core::Event> frailHits;
+    std::ranges::copy_if(used, std::back_inserter(frailHits), [frail](const core::Event& event) {
+        return event.target == frail;
+    });
+    REQUIRE(frailHits.size() >= static_cast<std::size_t>(FRAIL));
+    const u64 death = frailHits.at(static_cast<std::size_t>(FRAIL) - 1).tick;
     for (const core::Event& event : used) {
         if (event.kind == core::EventKind::Hit && event.tick > death) {
             CHECK(event.target == other);

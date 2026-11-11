@@ -278,8 +278,10 @@ void CheckVolley(std::string_view name, u64 after, const gfx::View& view = {}) {
 TEST_CASE("the flying swords mid-volley: the ring and the converging paths") {
     // A copy: the game data BuiltInData() returns is a temporary, gone at the end of this line.
     const core::VolleyShape swords = game::BuiltInData().abilities.Of(core::AbilityKind::FlyingSwords).volley;
-    // The middle of the stagger's swords just on the ring, then halfway through their flight.
-    const u64 ring = (swords.staggerTicks / 2) + swords.outTicks;
+    // The third wave's middle swords just on their ring, the first two rings already in flight and the outer ones still
+    // bursting out; then those swords halfway through their flight.
+    constexpr u64 THIRD_WAVE = 2;
+    const u64 ring = (THIRD_WAVE * swords.waveGapTicks) + (swords.staggerTicks / 2) + swords.outTicks;
     CheckVolley("volley_ring", ring);
     CheckVolley("volley_converging", ring + (swords.flightTicks / 2));
 }
@@ -287,9 +289,11 @@ TEST_CASE("the flying swords mid-volley: the ring and the converging paths") {
 TEST_CASE("the flying swords plunging, close up: the foxes they flew at died, so they stay where they fell and fade") {
     // A copy: the game data BuiltInData() returns is a temporary, gone at the end of this line.
     const core::VolleyShape swords = game::BuiltInData().abilities.Of(core::AbilityKind::FlyingSwords).volley;
-    // The middle of the stagger's swords arrived a few ticks ago, into foxes the first swords killed.
+    // The middle wave's middle swords arrived a few ticks ago, into foxes the first swords killed.
     constexpr u64 SINCE_ARRIVAL = 4;
-    const u64 after = (swords.staggerTicks / 2) + swords.outTicks + swords.flightTicks + SINCE_ARRIVAL;
+    const u64 middleWave = swords.waves / 2;
+    const u64 after =
+        (middleWave * swords.waveGapTicks) + (swords.staggerTicks / 2) + swords.outTicks + swords.flightTicks + SINCE_ARRIVAL;
     {
         core::Jobs jobs;
         const core::Snapshot snapshot = CastAndWait(core::Slot::Special1, after, jobs);
