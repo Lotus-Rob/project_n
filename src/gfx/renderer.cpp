@@ -37,8 +37,6 @@ constexpr SDL_FColor BACKDROP{ .r = 0.0072F, .g = 0.0072F, .b = 0.0085F, .a = 1.
 
 // The outlines (design doc 0002.3 §3), three texels wide: the hovered entity's pale, the selected one's gold.
 // Premultiplied RGBA8, red in the low byte.
-constexpr u32 HOVER_COLOUR = 0xFFF0'F4F4U;
-constexpr u32 SELECTED_COLOUR = 0xFF30'C0FFU;
 constexpr f32 OUTLINE_TEXELS = 3.0F;
 
 // A text's shadow falls this many base pixels down and right of it, scaling with the text.
@@ -203,6 +201,7 @@ struct Renderer::Impl {
     std::shared_ptr<const core::Manifest> manifest = nullptr;
     std::shared_ptr<const core::Strings> strings = nullptr;
     TextOptions textOptions{};
+    core::UiColours uiColours{};
     std::filesystem::path assets{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::vector<bool> resident{};   // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::optional<SceneLoad> load = std::nullopt;
@@ -355,6 +354,7 @@ void Renderer::Impl::PlaceTexts(const Shown& shown, core::Jobs& jobs) {
                                      .pixels = textFrame.numberPixels,
                                      .outline = textOptions.outline,
                                      .shadow = textOptions.shadow,
+                                     .colours = uiColours,
                                      .origins = numberOrigins };
     const auto firstQuad = static_cast<u32>(meshVertices.size() / QUAD_VERTICES);
     numberPages.clear();
@@ -416,7 +416,7 @@ void Renderer::Impl::PlaceNumber(const core::TextItem& item) {
         start,
         item.align,
         pixels,
-        TextColour(item, textOptions.outline, textOptions.shadow)
+        TextColour(item, uiColours, textOptions.outline, textOptions.shadow)
     );
 }
 
@@ -460,7 +460,7 @@ void Renderer::Impl::PlaceLabel(const core::TextItem& item, u32 count, f32 opaci
         anchor,
         core::TextAlign::BottomCentre,
         pixels,
-        TextColour(faded, textOptions.outline, textOptions.shadow)
+        TextColour(faded, uiColours, textOptions.outline, textOptions.shadow)
     );
 }
 
@@ -504,7 +504,7 @@ void Renderer::Impl::PlaceText(const core::TextItem& item, const Layout& layout,
         TextAnchor(item, textFrame.clip, textFrame.alpha, textFrame.width, textFrame.height),
         item.align,
         TextPixels(item.kind, textFrame.perUnit, textOptions.scale),
-        TextColour(faded, textOptions.outline, textOptions.shadow)
+        TextColour(faded, uiColours, textOptions.outline, textOptions.shadow)
     );
 }
 
@@ -634,7 +634,7 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
         instances.DrawOutline(
             commands,
             pass,
-            { .instance = *snapshot.selected, .colour = SELECTED_COLOUR, .ring = ring },
+            { .instance = *snapshot.selected, .colour = uiColours.Of(core::UiColour::SelectedOutline), .ring = ring },
             sprites,
             transform,
             alpha
@@ -645,7 +645,7 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
         instances.DrawOutline(
             commands,
             pass,
-            { .instance = static_cast<u32>(*outlined), .colour = HOVER_COLOUR, .ring = ring },
+            { .instance = static_cast<u32>(*outlined), .colour = uiColours.Of(core::UiColour::HoverOutline), .ring = ring },
             sprites,
             transform,
             alpha
@@ -664,7 +664,8 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
         { .outline = textOptions.outline ? 1.0F : 0.0F,
           .shadow = textOptions.shadow ? 1.0F : 0.0F,
           .shadowOffsetU = shadowShift,
-          .shadowOffsetV = shadowShift }
+          .shadowOffsetV = shadowShift,
+          .ink = internal::InkOf(uiColours.Of(core::UiColour::TextInk)) }
     );
     SDL_EndGPURenderPass(pass);
     SDL_PopGPUDebugGroup(commands);
@@ -716,12 +717,14 @@ std::expected<Renderer, core::Error> Renderer::Create(
     const std::filesystem::path& assets,
     std::shared_ptr<const core::Manifest> manifest,
     std::shared_ptr<const core::Strings> strings,
-    const TextOptions& text
+    const TextOptions& text,
+    const core::UiColours& colours
 ) {
     auto impl = std::make_unique<Impl>();
     impl->manifest = std::move(manifest);
     impl->strings = std::move(strings);
     impl->textOptions = text;
+    impl->uiColours = colours;
     impl->assets = assets;
     impl->resident.resize(impl->manifest->sprites.size());
     impl->window = static_cast<SDL_Window*>(window.Handle());
@@ -887,6 +890,10 @@ void Renderer::Draw(const core::Snapshot& snapshot, const View& view, core::Jobs
 
 void Renderer::SetTextOptions(const TextOptions& text) {
     m_impl->textOptions = text;
+}
+
+void Renderer::SetUiColours(const core::UiColours& colours) {
+    m_impl->uiColours = colours;
 }
 
 std::expected<Image, core::Error> Renderer::Capture(

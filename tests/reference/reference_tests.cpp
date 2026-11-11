@@ -77,7 +77,12 @@ gfx::Renderer RendererFor(platform::Window& window, core::SceneId scene, core::J
     const std::string stringsWhy = strings.error_or(core::Error{}).message;
     REQUIRE_MESSAGE(strings.has_value(), stringsWhy);
     std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(
-        window, Assets(), test::TestManifest(), std::make_shared<const core::Strings>(std::move(*strings)), {}
+        window,
+        Assets(),
+        test::TestManifest(),
+        std::make_shared<const core::Strings>(std::move(*strings)),
+        {},
+        core::UiColours{}
     );
     const std::string rendererWhy = renderer.error_or(core::Error{}).message;
     REQUIRE_MESSAGE(renderer.has_value(), rendererWhy);
@@ -232,11 +237,13 @@ constexpr core::Vec2 NUMBERS_ORIGIN{ .x = 600.0F, .y = 160.0F };
 constexpr core::Vec2 NUMBERS_SPACING{ .x = 240.0F, .y = 160.0F };
 
 // With `bare`, the outline and the shadow are off, and the numbers take their dark colours.
-std::vector<core::TextItem> NumberGrid(bool bare) {
+std::vector<core::TextItem> NumberGrid(bool bare, const core::UiColours& colours = {}) {
     std::vector<core::TextItem> texts;
     f32 row = 0.0F;
     for (const core::NumberMotion motion : { core::NumberMotion::Bounce, core::NumberMotion::Rise }) {
-        app::DamageNumbers numbers({ .damageNumberMotion = motion, .textOutline = !bare, .textShadow = !bare });
+        app::DamageNumbers numbers(
+            { .damageNumberMotion = motion, .textOutline = !bare, .textShadow = !bare, .uiColours = colours }
+        );
         for (const u64 age : NUMBER_AGES) {
             for (std::size_t kind = 0; kind < core::HIT_KINDS; ++kind) {
                 // Each kind on a target of its own, alone in its tick, so each stagger window is the narrowest.
@@ -282,6 +289,52 @@ TEST_CASE("damage numbers at the smallest zoom keep their minimum size") {
 
 TEST_CASE("with the outline and the shadow off, damage numbers turn dark, as labels do") {
     CheckNumbers("numbers_bare", 1.0F, /*bare=*/true);
+}
+
+// A table of 24 distinct, garish colours: six saturated hues, each a little dimmer than the one 6 before it.
+core::UiColours GarishColours() {
+    constexpr std::array<std::array<u8, 3>, 6> HUES{
+        { { 1, 0, 1 }, { 0, 1, 0 }, { 1, 1, 0 }, { 0, 1, 1 }, { 1, 0, 0 }, { 0, 0, 1 } }
+    };
+    constexpr u8 FULL = 255;
+    constexpr u8 STEP = 30;
+    core::UiColours colours;
+    for (std::size_t colour = 0; colour < core::UI_COLOURS; ++colour) {
+        const std::array<u8, 3>& hue = HUES.at(colour % HUES.size());
+        const auto level = static_cast<u8>(FULL - (STEP * (colour / HUES.size())));
+        colours.colours.at(colour) = core::FromSrgb(
+            static_cast<u8>(hue[0] * level), static_cast<u8>(hue[1] * level), static_cast<u8>(hue[2] * level), FULL
+        );
+    }
+    return colours;
+}
+
+TEST_CASE("labels, the caption, outlines and numbers in a recoloured table") {
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    game::Arena arena(test::TestManifest());
+    std::vector<core::Event> events;
+    // The fox spawned first: the lowest ID among them, as the outlines picture selects.
+    core::StableId fox{ std::numeric_limits<u64>::max() };
+    const core::Registry& entities = arena.State()[game::ACTIVE].Entities();
+    for (auto [entity, creature, stableId] : entities.view<const game::Creature, const core::StableId>().each()) {
+        if (creature.kind == game::CreatureKind::Fox && std::to_underlying(stableId) < std::to_underlying(fox)) {
+            fox = stableId;
+        }
+    }
+    const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = fox } } };
+    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} }, events);
+    REQUIRE(arena.Selected() == fox);
+    const core::Snapshot snapshot = Published(arena, jobs);
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
+    const core::UiColours garish = GarishColours();
+    renderer.SetUiColours(garish);
+    const auto player = std::ranges::find(snapshot.ids, arena.Player());
+    REQUIRE(player != snapshot.ids.end());
+    const gfx::View view{ .outlined = static_cast<std::size_t>(player - snapshot.ids.begin()) };
+    const std::vector<core::TextItem> numbers = NumberGrid(false, garish);
+    CompareWithReference(Captured(renderer, snapshot, view, jobs, WIDTH, HEIGHT, numbers), "recoloured");
 }
 
 TEST_CASE("a number on a creature too small to see starts from its label") {

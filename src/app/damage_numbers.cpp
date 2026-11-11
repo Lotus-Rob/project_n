@@ -92,7 +92,8 @@ NumberScatter ScatterOf(const core::Event& hit, u32 ordinal, u32 hits) {
 DamageNumbers::DamageNumbers(const core::Settings& settings)
   : m_combined(settings.combinedDamageNumbers)
   , m_motion(settings.damageNumberMotion)
-  , m_dark(!settings.textOutline && !settings.textShadow) {
+  , m_dark(!settings.textOutline && !settings.textShadow)
+  , m_colours(settings.uiColours) {
     m_playing.reserve(NUMBER_RESERVE);
 }
 
@@ -143,6 +144,10 @@ void DamageNumbers::Play(const core::Event& event) {
     else {
         m_waiting[found->second].value += event.value;
     }
+}
+
+void DamageNumbers::SetColours(const core::UiColours& colours) {
+    m_colours = colours;
 }
 
 void DamageNumbers::Clear() {
@@ -217,7 +222,7 @@ core::TextItem DamageNumbers::TextOf(const Number& number, NumberPose pose) cons
              .lift = pose.lift,
              .opacity = pose.opacity,
              .entity = number.target,
-             .colour = (m_dark ? DARK_KIND_COLOURS : KIND_COLOURS).at(std::to_underlying(number.kind)) };
+             .colour = m_colours.Of(NumberColour(number.kind, m_dark)) };
 }
 
 std::size_t DamageNumbers::KeyHash::operator()(const Key& key) const {

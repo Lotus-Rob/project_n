@@ -728,6 +728,15 @@ TEST_CASE("the arena labels the player and every fox, and captions the tablet") 
     CHECK(captions == 1);
 }
 
+TEST_CASE("labels and the caption leave their colour to the table") {
+    game::Arena arena(test::TestManifest());
+    const core::Snapshot snapshot = Published(arena);
+    REQUIRE_FALSE(snapshot.texts.empty());
+    for (const core::TextItem& text : snapshot.texts) {
+        CHECK(text.colour == core::TextItem{}.colour);
+    }
+}
+
 TEST_CASE("the player's label stands a little over its head") {
     constexpr f32 CULTIVATOR_FOOT_Y = 122.0F; // assets/manifest.yaml
     game::Arena arena(test::TestManifest());

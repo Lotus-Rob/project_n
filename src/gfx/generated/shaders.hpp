@@ -81,15 +81,15 @@ inline constexpr Stage COMPOSITE_VERT{
 };
 
 /// shaders/bin/mesh.frag.spv, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 4500> MESH_FRAG_SPIRV{{
+inline constexpr std::array<u8, 4604> MESH_FRAG_SPIRV{{
 #include "mesh.frag.spv.h"
 }};
 /// shaders/bin/mesh.frag.dxil, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 6112> MESH_FRAG_DXIL{{
+inline constexpr std::array<u8, 6140> MESH_FRAG_DXIL{{
 #include "mesh.frag.dxil.h"
 }};
 /// shaders/bin/mesh.frag.msl, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 3341> MESH_FRAG_MSL{{
+inline constexpr std::array<u8, 3283> MESH_FRAG_MSL{{
 #include "mesh.frag.msl.h"
 }};
 /// shaders/mesh.frag.hlsl.

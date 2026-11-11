@@ -1,6 +1,7 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
 #include "core/instances.hpp"
+#include "core/ui_colours.hpp"
 #include "gfx/text_layout.hpp"
 #include "gfx/text_place.hpp"
 
@@ -127,16 +128,36 @@ TEST_CASE("a label stands on its anchor and a caption hangs from it") {
     CHECK(caption.y == ANCHOR.y);
 }
 
-TEST_CASE("with the outline and the shadow both off, labels and captions turn to dark ink; numbers keep their colour") {
-    const core::TextItem label{ .kind = core::TextKind::Label, .colour = LIGHT };
-    const core::TextItem caption{ .kind = core::TextKind::Caption, .colour = LIGHT };
+TEST_CASE("a label and a caption take their colour from the table") {
+    constexpr u32 LABEL_IN_TABLE = 0xFF11'2233U;
+    constexpr u32 CAPTION_IN_TABLE = 0xFF44'5566U;
+    core::UiColours table;
+    table.Set(core::UiColour::Label, LABEL_IN_TABLE);
+    table.Set(core::UiColour::Caption, CAPTION_IN_TABLE);
+    // The item's own colour is ignored: what the simulation publishes is white.
+    const core::TextItem label{ .kind = core::TextKind::Label };
+    const core::TextItem caption{ .kind = core::TextKind::Caption };
+    CHECK(gfx::TextColour(label, table, true, true) == LABEL_IN_TABLE);
+    CHECK(gfx::TextColour(caption, table, true, true) == CAPTION_IN_TABLE);
+    CHECK(gfx::TextColour(label, table, false, true) == LABEL_IN_TABLE);
+    CHECK(gfx::TextColour(caption, table, true, false) == CAPTION_IN_TABLE);
+}
+
+TEST_CASE("with the outline and the shadow off they take the table's ink") {
+    constexpr u32 INK_IN_TABLE = 0xFF01'0203U;
+    constexpr u32 HALF_OPAQUE_LABEL = 0x8040'4040U;
+    constexpr u32 INK_AT_HALF = 0x8001'0102U; // each channel halved, premultiplied
+    core::UiColours table;
+    table.Set(core::UiColour::TextInk, INK_IN_TABLE);
+    const core::TextItem label{ .kind = core::TextKind::Label };
+    const core::TextItem caption{ .kind = core::TextKind::Caption };
     const core::TextItem number{ .kind = core::TextKind::Number, .colour = LIGHT };
-    CHECK(gfx::TextColour(label, true, true) == LIGHT);
-    CHECK(gfx::TextColour(label, false, true) == LIGHT);
-    CHECK(gfx::TextColour(label, true, false) == LIGHT);
-    CHECK(gfx::TextColour(label, false, false) == gfx::TEXT_INK);
-    CHECK(gfx::TextColour(caption, false, false) == gfx::TEXT_INK);
-    CHECK(gfx::TextColour(number, false, false) == LIGHT);
+    CHECK(gfx::TextColour(label, table, false, false) == INK_IN_TABLE);
+    CHECK(gfx::TextColour(caption, table, false, false) == INK_IN_TABLE);
+    CHECK(gfx::TextColour(number, table, false, false) == LIGHT);
+    // As opaque as the label's own colour was.
+    table.Set(core::UiColour::Label, HALF_OPAQUE_LABEL);
+    CHECK(gfx::TextColour(label, table, false, false) == INK_AT_HALF);
 }
 
 TEST_CASE("a creature under eight pixels tall is too small to see, but one of unknown height never is") {
@@ -149,10 +170,10 @@ TEST_CASE("a creature under eight pixels tall is too small to see, but one of un
 }
 
 TEST_CASE("a text's opacity scales every channel of its premultiplied colour") {
-    const core::TextItem half{ .opacity = HALF, .colour = SOME_COLOUR };
-    CHECK(gfx::TextColour(half, true, true) == SOME_COLOUR_AT_HALF);
-    const core::TextItem gone{ .opacity = 0.0F, .colour = SOME_COLOUR };
-    CHECK(gfx::TextColour(gone, true, true) == 0U);
+    const core::TextItem half{ .kind = core::TextKind::Number, .opacity = HALF, .colour = SOME_COLOUR };
+    CHECK(gfx::TextColour(half, core::UiColours{}, true, true) == SOME_COLOUR_AT_HALF);
+    const core::TextItem gone{ .kind = core::TextKind::Number, .opacity = 0.0F, .colour = SOME_COLOUR };
+    CHECK(gfx::TextColour(gone, core::UiColours{}, true, true) == 0U);
 }
 
 } // namespace

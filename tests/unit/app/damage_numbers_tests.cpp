@@ -3,6 +3,7 @@
 #include "core/frame.hpp"
 #include "core/settings.hpp"
 #include "core/tick_clock.hpp"
+#include "core/ui_colours.hpp"
 
 #include <doctest/doctest.h>
 
@@ -83,7 +84,7 @@ TEST_CASE("a number shows its hit's value over its target, in its kind's colour"
     CHECK(texts[0].entity == FOX_A);
     CHECK(texts[0].previous.x == HEAD.x);
     CHECK(texts[0].current.y == HEAD.y);
-    CHECK(texts[0].colour == app::KIND_COLOURS.at(std::to_underlying(core::HitKind::Burn)));
+    CHECK(texts[0].colour == core::DEFAULT_UI_COLOURS.at(std::to_underlying(core::NumberColour(core::HitKind::Burn, false))));
 }
 
 TEST_CASE("combined numbers add one use's hits per target") {
@@ -121,8 +122,8 @@ TEST_CASE("combined numbers keep kinds apart") {
     const auto burn = std::ranges::find(texts, BURN, &core::TextItem::value);
     REQUIRE(damage != texts.end());
     REQUIRE(burn != texts.end());
-    CHECK(damage->colour == app::KIND_COLOURS.at(std::to_underlying(core::HitKind::Damage)));
-    CHECK(burn->colour == app::KIND_COLOURS.at(std::to_underlying(core::HitKind::Burn)));
+    CHECK(damage->colour == core::DEFAULT_UI_COLOURS.at(std::to_underlying(core::NumberColour(core::HitKind::Damage, false))));
+    CHECK(burn->colour == core::DEFAULT_UI_COLOURS.at(std::to_underlying(core::NumberColour(core::HitKind::Burn, false))));
 }
 
 TEST_CASE("combined numbers keep uses apart") {
@@ -165,7 +166,9 @@ TEST_CASE("healing is signed and coloured apart from damage") {
     REQUIRE(healing != texts.end());
     REQUIRE(damage != texts.end());
     CHECK(healing->sign == core::NumberSign::Plus);
-    CHECK(healing->colour == app::KIND_COLOURS.at(std::to_underlying(core::HitKind::Healing)));
+    CHECK(
+        healing->colour == core::DEFAULT_UI_COLOURS.at(std::to_underlying(core::NumberColour(core::HitKind::Healing, false)))
+    );
     CHECK(damage->sign == core::NumberSign::Plain);
     CHECK(healing->colour != damage->colour);
 }
@@ -436,10 +439,10 @@ TEST_CASE("with the outline and the shadow both off, each kind's numbers take it
         }
         const std::vector<core::TextItem> texts = TextsAt(numbers, STARTED);
         REQUIRE(texts.size() == core::HIT_KINDS);
-        const auto& colours = settings.textOutline ? app::KIND_COLOURS : app::DARK_KIND_COLOURS;
         for (std::size_t kind = 0; kind < core::HIT_KINDS; ++kind) {
             INFO("kind ", kind, settings.textOutline ? ", outlined" : ", bare");
-            CHECK(texts.at(kind).colour == colours.at(kind));
+            const core::UiColour colour = core::NumberColour(static_cast<core::HitKind>(kind), !settings.textOutline);
+            CHECK(texts.at(kind).colour == core::DEFAULT_UI_COLOURS.at(std::to_underlying(colour)));
         }
     }
 }
@@ -455,7 +458,8 @@ TEST_CASE("each dark number colour reads at 4.5:1 or more on the parchment groun
     constexpr u32 BITS = 8;
     for (std::size_t kind = 0; kind < core::HIT_KINDS; ++kind) {
         // Opaque and premultiplied linear: each channel is the linear value itself.
-        const u32 colour = app::DARK_KIND_COLOURS.at(kind);
+        const u32 colour =
+            core::DEFAULT_UI_COLOURS.at(std::to_underlying(core::NumberColour(static_cast<core::HitKind>(kind), true)));
         f64 luminance = 0.0;
         for (std::size_t channel = 0; channel < WEIGHTS.size(); ++channel) {
             const u32 value = (colour >> (channel * BITS)) & CHANNEL;
@@ -466,6 +470,46 @@ TEST_CASE("each dark number colour reads at 4.5:1 or more on the parchment groun
             CHECK((ground + FLARE) / (luminance + FLARE) >= LEAST);
         }
     }
+}
+
+TEST_CASE("a number takes its kind's colour from the table, the dark one without outline and shadow") {
+    constexpr std::array<u32, core::HIT_KINDS> LIT{ { 0xFF01'0101U, 0xFF02'0202U, 0xFF03'0303U, 0xFF04'0404U } };
+    constexpr std::array<u32, core::HIT_KINDS> DARK{ { 0xFF05'0505U, 0xFF06'0606U, 0xFF07'0707U, 0xFF08'0808U } };
+    core::Settings outlined;
+    core::Settings bare{ .textOutline = false, .textShadow = false };
+    for (std::size_t kind = 0; kind < core::HIT_KINDS; ++kind) {
+        const auto hit = static_cast<core::HitKind>(kind);
+        outlined.uiColours.Set(core::NumberColour(hit, false), LIT.at(kind));
+        outlined.uiColours.Set(core::NumberColour(hit, true), DARK.at(kind));
+        bare.uiColours = outlined.uiColours;
+    }
+    for (const core::Settings& settings : { outlined, bare }) {
+        app::DamageNumbers numbers(settings);
+        for (std::size_t kind = 0; kind < core::HIT_KINDS; ++kind) {
+            numbers.Play(Hit(0, core::StableId{ kind + 1 }, VALUE, static_cast<core::HitKind>(kind)));
+        }
+        const std::vector<core::TextItem> texts = TextsAt(numbers, STARTED);
+        REQUIRE(texts.size() == core::HIT_KINDS);
+        for (std::size_t kind = 0; kind < core::HIT_KINDS; ++kind) {
+            INFO("kind ", kind);
+            CHECK(texts.at(kind).colour == (settings.textOutline ? LIT : DARK).at(kind));
+        }
+    }
+}
+
+TEST_CASE("a new table recolours the numbers already showing") {
+    constexpr u32 RECOLOURED = 0xFF12'3456U;
+    app::DamageNumbers numbers(EVERY_HIT);
+    numbers.Play(Hit(0, FOX_A, VALUE, core::HitKind::Poison));
+    const std::vector<core::TextItem> before = TextsAt(numbers, STARTED);
+    REQUIRE(before.size() == 1);
+    CHECK(before[0].colour == core::DEFAULT_UI_COLOURS.at(std::to_underlying(core::UiColour::PoisonNumber)));
+    core::UiColours table;
+    table.Set(core::UiColour::PoisonNumber, RECOLOURED);
+    numbers.SetColours(table);
+    const std::vector<core::TextItem> after = TextsAt(numbers, STARTED);
+    REQUIRE(after.size() == 1);
+    CHECK(after[0].colour == RECOLOURED);
 }
 
 } // namespace

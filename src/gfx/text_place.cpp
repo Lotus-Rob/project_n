@@ -31,13 +31,18 @@ u32 Scaled(u32 colour, f32 opacity) {
     return scaled;
 }
 
-u32 ColourOfText(const core::TextItem& item, bool outline, bool shadow) {
+u32 ColourOfText(const core::TextItem& item, const core::UiColours& colours, bool outline, bool shadow) {
+    // A number's colour tells its kind: the damage numbers take it from the table, the dark one when both are off.
     u32 colour = item.colour;
-    // A number's colour tells its kind: the damage numbers choose a dark one of their own when both are off.
-    if (!outline && !shadow && item.kind != core::TextKind::Number) {
-        // Light text needs the dark edge to read on the pale ground; without one it turns dark, as opaque as it was.
-        constexpr u32 ALPHA_SHIFT = 24;
-        colour = Scaled(TEXT_INK, static_cast<f32>(colour >> ALPHA_SHIFT) / static_cast<f32>(CHANNEL_MASK));
+    if (item.kind != core::TextKind::Number) {
+        colour = colours.Of(item.kind == core::TextKind::Caption ? core::UiColour::Caption : core::UiColour::Label);
+        if (!outline && !shadow) {
+            // Light text needs the dark edge to read on the pale ground; without one it turns dark, as opaque as it was.
+            constexpr u32 ALPHA_SHIFT = 24;
+            colour = Scaled(
+                colours.Of(core::UiColour::TextInk), static_cast<f32>(colour >> ALPHA_SHIFT) / static_cast<f32>(CHANNEL_MASK)
+            );
+        }
     }
     return item.opacity >= 1.0F ? colour : Scaled(colour, item.opacity);
 }
@@ -143,7 +148,7 @@ void PlaceNumberChunk(
         start.y += (item.scatter.y - item.lift) * pixels;
         const ComposedNumber number = ComposeNumber(placement.face, item.value, item.sign);
         const core::Vec2 topLeft = TopLeftOfText(start, { .x = number.width * scale, .y = number.height * scale }, item.align);
-        const u32 colour = ColourOfText(item, placement.outline, placement.shadow);
+        const u32 colour = ColourOfText(item, placement.colours, placement.outline, placement.shadow);
         for (const PlacedGlyph& glyph : std::span{ number.glyphs }.first(number.count)) {
             WriteGlyphQuad(glyph, topLeft, scale, colour, vertices.subspan(quad * QUAD_VERTICES, QUAD_VERTICES));
             pages[quad] = glyph.page;
@@ -179,8 +184,8 @@ bool TooSmallToSee(f32 entityPixels) {
     return entityPixels > 0.0F && entityPixels < VISIBLE_CREATURE_PIXELS;
 }
 
-u32 TextColour(const core::TextItem& item, bool outline, bool shadow) {
-    return ColourOfText(item, outline, shadow);
+u32 TextColour(const core::TextItem& item, const core::UiColours& colours, bool outline, bool shadow) {
+    return ColourOfText(item, colours, outline, shadow);
 }
 
 core::Vec2 TextAnchor(const core::TextItem& item, const View& view, u32 width, u32 height) {

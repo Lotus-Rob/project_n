@@ -12,3 +12,93 @@ fox_name:
 label_stack:
   en: "{name} (+{count})" # {name} and {count} are filled in; the stack is a creature's name and how many more share its place
   zh: "{name}（+{count}）"
+
+# What the accessibility menu calls each colour area and colour (core/ui_colours.hpp). A colour's name is read under its
+# area's, so "Damage" appears in several areas.
+colour_area_combat_text:
+  en: Combat Text
+  zh: 战斗文字
+colour_area_effects:
+  en: Effects
+  zh: 特效
+colour_area_names_and_captions:
+  en: Names and Captions
+  zh: 名称与标题
+colour_area_selection:
+  en: Selection
+  zh: 选中
+colour_area_hud:
+  en: HUD
+  zh: 界面
+colour_damage_number:
+  en: Damage
+  zh: 伤害
+colour_healing_number:
+  en: Healing
+  zh: 治疗
+colour_poison_number:
+  en: Poison
+  zh: 中毒
+colour_burn_number:
+  en: Burn
+  zh: 灼烧
+colour_dark_damage_number:
+  en: Damage, no outline
+  zh: 伤害（无描边）
+colour_dark_healing_number:
+  en: Healing, no outline
+  zh: 治疗（无描边）
+colour_dark_poison_number:
+  en: Poison, no outline
+  zh: 中毒（无描边）
+colour_dark_burn_number:
+  en: Burn, no outline
+  zh: 灼烧（无描边）
+colour_damage_effect:
+  en: Damage
+  zh: 伤害
+colour_healing_effect:
+  en: Healing
+  zh: 治疗
+colour_poison_effect:
+  en: Poison
+  zh: 中毒
+colour_burn_effect:
+  en: Burn
+  zh: 灼烧
+colour_label:
+  en: Names
+  zh: 名称
+colour_caption:
+  en: Caption
+  zh: 标题
+colour_text_ink:
+  en: Outline and shadow
+  zh: 描边与阴影
+colour_hover:
+  en: Hover outline
+  zh: 悬停描边
+colour_selected:
+  en: Selection outline
+  zh: 选中描边
+colour_health_bar:
+  en: Health bar
+  zh: 生命条
+colour_qi_bar:
+  en: Qi bar
+  zh: 灵气条
+colour_enemy_health_bar:
+  en: Enemy health bar
+  zh: 敌方生命条
+colour_bar_background:
+  en: Bar background
+  zh: 条的背景
+colour_hud_text:
+  en: Text
+  zh: 文字
+colour_hud_cooling:
+  en: Cooling
+  zh: 冷却
+colour_hud_warning:
+  en: Warning
+  zh: 警告

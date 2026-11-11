@@ -1,4 +1,5 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/ui_colours.hpp"
 #include "data/strings.hpp"
 #include "platform/paths.hpp"
 
@@ -20,9 +21,18 @@ label_stack:
   zh: "{name}（+{count}）"
 )yaml";
 
-// STRINGS with `from` replaced by `replacement`.
-std::string With(std::string_view from, std::string_view replacement) {
+// STRINGS and every string the code names beyond them, each "x" in both languages: a table to which nothing is missing.
+std::string Everything() {
     std::string text{ STRINGS };
+    for (std::size_t string = 4; string < core::STRINGS; ++string) {
+        text += std::format("{}:\n  en: x\n  zh: x\n", core::STRING_NAMES.at(string));
+    }
+    return text;
+}
+
+// Everything() with `from` replaced by `replacement`.
+std::string With(std::string_view from, std::string_view replacement) {
+    std::string text = Everything();
     const std::size_t where = text.find(from);
     REQUIRE(where != std::string::npos);
     return text.replace(where, from.size(), replacement);
@@ -35,7 +45,7 @@ std::string ErrorFor(const std::string& strings) {
 }
 
 TEST_CASE("strings parse into each language") {
-    const std::expected<core::Strings, core::Error> strings = data::ParseStrings(STRINGS);
+    const std::expected<core::Strings, core::Error> strings = data::ParseStrings(Everything());
     REQUIRE(strings.has_value());
     CHECK(strings->Text(core::StringId::CultivatorName, core::Language::English) == "Cultivator");
     CHECK(strings->Text(core::StringId::CultivatorName, core::Language::Chinese) == "修士");
@@ -64,8 +74,8 @@ TEST_CASE("a string missing a language is an error naming its line") {
 }
 
 TEST_CASE("a string given twice is an error naming the second") {
-    const std::string error = ErrorFor(std::string{ STRINGS } + "cultivator_name:\n  en: Again\n  zh: 再\n");
-    CHECK(error == "strings line 13: cultivator_name is there twice");
+    const std::string error = ErrorFor(Everything() + "cultivator_name:\n  en: Again\n  zh: 再\n");
+    CHECK(error == std::format("strings line {}: cultivator_name is there twice", 13 + (3 * (core::STRINGS - 4))));
 }
 
 TEST_CASE("a string's text that is empty or not text is an error naming its line") {
@@ -76,7 +86,7 @@ TEST_CASE("a string's text that is empty or not text is an error naming its line
 }
 
 TEST_CASE("the strings table has the fox's name and the stack label in both languages") {
-    const std::expected<core::Strings, core::Error> strings = data::ParseStrings(STRINGS);
+    const std::expected<core::Strings, core::Error> strings = data::ParseStrings(Everything());
     REQUIRE(strings.has_value());
     CHECK(strings->Text(core::StringId::FoxName, core::Language::English) == "Fox");
     CHECK(strings->Text(core::StringId::FoxName, core::Language::Chinese) == "狐");
@@ -97,6 +107,25 @@ TEST_CASE("the shipped strings table parses with no warning") {
     CHECK(strings->Text(core::StringId::FoxName, core::Language::Chinese) == "狐");
     CHECK(strings->Text(core::StringId::LabelStack, core::Language::English) == "{name} (+{count})");
     CHECK(strings->Text(core::StringId::LabelStack, core::Language::Chinese) == "{name}（+{count}）");
+}
+
+TEST_CASE("every area and colour name reads in both languages") {
+    const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
+    REQUIRE(assets.has_value());
+    std::ifstream input{ *assets / "data" / "strings.yaml", std::ios::binary };
+    const std::string text{ std::istreambuf_iterator<char>{ input }, std::istreambuf_iterator<char>{} };
+    const std::expected<core::Strings, core::Error> strings = data::ParseStrings(text);
+    REQUIRE(strings.has_value());
+    for (const core::Language language : { core::Language::English, core::Language::Chinese }) {
+        for (const core::ColourAreaInfo& area : core::COLOUR_AREA_INFO) {
+            CHECK_FALSE(strings->Text(area.name, language).empty());
+        }
+        for (const core::UiColourInfo& colour : core::UI_COLOUR_INFO) {
+            CHECK_FALSE(strings->Text(colour.name, language).empty());
+        }
+    }
+    CHECK(strings->Text(core::StringId::ColourAreaHud, core::Language::English) == "HUD");
+    CHECK(strings->Text(core::StringId::ColourQiBar, core::Language::Chinese) == "灵气条");
 }
 
 } // namespace
