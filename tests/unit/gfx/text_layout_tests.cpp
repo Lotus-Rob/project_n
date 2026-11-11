@@ -180,6 +180,39 @@ TEST_CASE("pre-warm covers every string in both languages and the digits") {
     CHECK(text.Pending().size() == warmed);
 }
 
+TEST_CASE("pre-warm covers the HUD's texts as they are filled in with numbers") {
+    constexpr i64 QI_HELD = 75;
+    constexpr i64 QI_MOST = 100;
+    constexpr i64 HEALTH = 1'000;
+    constexpr i64 SECONDS = 2;
+    constexpr std::string_view GAP = "  "; // between a slot's control, ability and seconds, as the HUD joins them
+    gfx::TextLayout text = OpenFonts();
+    const std::expected<core::Strings, core::Error> strings = data::LoadStrings(Assets() / "data");
+    const std::string why = strings.error_or(core::Error{}).message;
+    REQUIRE_MESSAGE(strings, why);
+    text.Prewarm(*strings);
+    const std::size_t warmed = text.Pending().size();
+    std::vector<std::string> shown;
+    for (const core::Language language : { core::Language::English, core::Language::Chinese }) {
+        const auto said = [&strings, language](core::StringId string) { return strings->Text(string, language); };
+        std::string filled;
+        core::FillValue(filled, said(core::StringId::Health), HEALTH, HEALTH);
+        shown.push_back(filled);
+        core::FillValue(filled, said(core::StringId::Qi), QI_HELD, QI_MOST);
+        shown.push_back(filled);
+        core::FillValue(filled, said(core::StringId::Cooldown), SECONDS, 0);
+        for (const core::StringId name :
+             { core::StringId::FireBolt, core::StringId::PoisonLance, core::StringId::Dash, core::StringId::FlyingSwords }) {
+            shown.push_back(std::format("{}{}{}{}{}", said(core::StringId::KeyRightClick), GAP, said(name), GAP, filled));
+        }
+    }
+    for (const std::string& entry : shown) {
+        const bool complete = text.Lay(entry, ACROSS).complete;
+        CHECK_MESSAGE(complete, entry);
+    }
+    CHECK(text.Pending().size() == warmed);
+}
+
 TEST_CASE("a glyph not pre-warmed is drawn once the worker has rasterised it") {
     constexpr std::string_view CRANE = "鹤";
     core::Jobs jobs{ 1 };
