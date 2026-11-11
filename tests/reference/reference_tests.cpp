@@ -309,7 +309,9 @@ core::UiColours GarishColours() {
     return colours;
 }
 
-TEST_CASE("labels, the caption, outlines and numbers in a recoloured table") {
+// The arena at rest with the first fox selected and the player hovered, in the garish table, and the numbers grid; with
+// `bare`, the outline and the shadow are off, so labels, the caption and the numbers take the table's ink and dark colours.
+void CheckRecoloured(std::string_view name, bool bare) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
     game::Arena arena(test::TestManifest());
@@ -330,11 +332,22 @@ TEST_CASE("labels, the caption, outlines and numbers in a recoloured table") {
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
     const core::UiColours garish = GarishColours();
     renderer.SetUiColours(garish);
+    if (bare) {
+        renderer.SetTextOptions({ .outline = false, .shadow = false });
+    }
     const auto player = std::ranges::find(snapshot.ids, arena.Player());
     REQUIRE(player != snapshot.ids.end());
     const gfx::View view{ .outlined = static_cast<std::size_t>(player - snapshot.ids.begin()) };
-    const std::vector<core::TextItem> numbers = NumberGrid(false, garish);
-    CompareWithReference(Captured(renderer, snapshot, view, jobs, WIDTH, HEIGHT, numbers), "recoloured");
+    const std::vector<core::TextItem> numbers = NumberGrid(bare, garish);
+    CompareWithReference(Captured(renderer, snapshot, view, jobs, WIDTH, HEIGHT, numbers), name);
+}
+
+TEST_CASE("labels, the caption, outlines and numbers in a recoloured table") {
+    CheckRecoloured("recoloured", false);
+}
+
+TEST_CASE("with the outline and the shadow off, a recoloured table's ink and dark number colours show") {
+    CheckRecoloured("recoloured_bare", true);
 }
 
 TEST_CASE("a number on a creature too small to see starts from its label") {

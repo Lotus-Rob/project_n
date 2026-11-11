@@ -192,7 +192,10 @@ struct Srgb {
 /// The table's packed value (linear, premultiplied) of the sRGB colour (`red`, `green`, `blue`) at opacity `alpha`.
 [[nodiscard]] u32 FromSrgb(u8 red, u8 green, u8 blue, u8 alpha);
 
-/// The sRGB colour of a packed table value: FromSrgb()'s inverse, exact on every default.
+/// The sRGB colour of a packed table value, as the menu shows it. The table holds 8-bit linear, so this inverts FromSrgb()
+/// only up to a step: FromSrgb() of the result is within one linear step per channel of `packed` on every default, and
+/// exactly `packed` only where an sRGB colour makes it, as for the new elements' defaults (which are FromSrgb() of their
+/// named colours). Several sRGB bytes share one linear byte in the dark, and the bright linear bytes aren't all reachable.
 [[nodiscard]] Srgb ToSrgb(u32 packed);
 
 } // namespace core
