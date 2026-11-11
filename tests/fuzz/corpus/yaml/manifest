@@ -5,14 +5,14 @@ mip_levels: 5
 sprites:  # in art/sprites.toml order: a sprite's index is its SpriteId
   - { name: ground, file: sprites/ground.png, page: 0, region: [16, 16, 1920, 1080], foot: [0, 0] }
   - { name: rock_large, file: sprites/rock_large.png, page: 0, region: [1636, 1508, 180, 128], foot: [90, 112] }
-  - { name: rock_small, file: sprites/rock_small.png, page: 0, region: [270, 1780, 92, 68], foot: [46, 60] }
+  - { name: rock_small, file: sprites/rock_small.png, page: 0, region: [382, 1780, 92, 68], foot: [46, 60] }
   - { name: pine, file: sprites/pine.png, page: 0, region: [16, 1112, 240, 380], foot: [120, 372] }
   - { name: shrine, file: sprites/shrine.png, page: 0, region: [560, 1508, 220, 250], foot: [110, 244] }
-  - { name: fox, file: sprites/fox.png, page: 0, region: [16, 1780, 112, 72], foot: [54, 68] }
+  - { name: fox, file: sprites/fox.png, page: 0, region: [128, 1780, 112, 72], foot: [54, 68] }
   - { name: cultivator, file: sprites/cultivator.png, page: 0, region: [1832, 1508, 72, 128], foot: [36, 122] }
-  - { name: orb_blue, file: sprites/orb_blue.png, page: 0, region: [378, 1780, 32, 32], foot: [16, 16] }
-  - { name: orb_red, file: sprites/orb_red.png, page: 0, region: [554, 1780, 16, 16], foot: [8, 8] }
-  - { name: shadow, file: sprites/shadow.png, page: 0, region: [474, 1780, 64, 24], foot: [32, 12] }
+  - { name: orb_blue, file: sprites/orb_blue.png, page: 0, region: [620, 1780, 32, 32], foot: [16, 16] }
+  - { name: orb_red, file: sprites/orb_red.png, page: 0, region: [796, 1780, 16, 16], foot: [8, 8] }
+  - { name: shadow, file: sprites/shadow.png, page: 0, region: [716, 1780, 64, 24], foot: [32, 12] }
   - { name: cell_plain, file: sprites/cell_plain.png, page: 0, region: [1040, 1112, 256, 256], foot: [0, 0] }
   - { name: cell_mountain, file: sprites/cell_mountain.png, page: 0, region: [1312, 1112, 256, 256], foot: [0, 0] }
   - { name: cell_forest, file: sprites/cell_forest.png, page: 0, region: [1584, 1112, 256, 256], foot: [0, 0] }
@@ -22,15 +22,21 @@ sprites:  # in art/sprites.toml order: a sprite's index is its SpriteId
   - { name: crane, file: sprites/crane.png, page: 0, region: [1284, 1508, 220, 150], foot: [110, 150] }
   - { name: tree_dead, file: sprites/tree_dead.png, page: 0, region: [588, 1112, 220, 280], foot: [110, 280] }
   - { name: fox_spirit, file: sprites/fox_spirit.png, page: 0, region: [824, 1112, 200, 260], foot: [100, 260] }
-  - { name: fox_yellow, file: sprites/fox_yellow.png, page: 0, region: [144, 1780, 110, 72], foot: [55, 72] }
+  - { name: fox_yellow, file: sprites/fox_yellow.png, page: 0, region: [256, 1780, 110, 72], foot: [55, 72] }
   - { name: hut, file: sprites/hut.png, page: 0, region: [912, 1508, 200, 180], foot: [100, 180] }
   - { name: stele, file: sprites/stele.png, page: 0, region: [796, 1508, 100, 220], foot: [50, 220] }
   - { name: crystal_ice, file: sprites/crystal_ice.png, page: 0, region: [1128, 1508, 140, 170], foot: [70, 170] }
   - { name: cell_snow, file: sprites/cell_snow.png, page: 0, region: [288, 1508, 256, 256], foot: [0, 0] }
-  - { name: orb_gold, file: sprites/orb_gold.png, page: 0, region: [426, 1780, 32, 32], foot: [16, 16] }
+  - { name: orb_gold, file: sprites/orb_gold.png, page: 0, region: [668, 1780, 32, 32], foot: [16, 16] }
   - { name: villager, file: sprites/villager.png, page: 0, region: [1920, 1508, 64, 116], foot: [32, 112] }
+  - { name: sword, file: sprites/sword.png, page: 0, region: [594, 1780, 10, 40], foot: [5, 20] }
+  - { name: halo, file: sprites/halo.png, page: 0, region: [490, 1780, 48, 48], foot: [24, 24] }
+  - { name: fire_bolt, file: sprites/fire_bolt.png, page: 0, region: [554, 1780, 24, 48], foot: [12, 24] }
+  - { name: lance_strike, file: sprites/lance_strike.png, page: 0, region: [16, 1780, 96, 96], foot: [48, 48] }
+  - { name: solid, file: sprites/solid.png, page: 0, region: [860, 1780, 8, 8], foot: [0, 4] }
+  - { name: glow_core, file: sprites/glow_core.png, page: 0, region: [828, 1780, 16, 16], foot: [8, 8] }
 scenes:  # in art/scenes.toml order: a scene's index is its SceneId
-  - { name: arena, sprites: [ground, shadow, rock_large, rock_small, pine, shrine, treant_blighted, tree_dead, hut, crane, stele, fox_spirit, fox_yellow, wisp_red, orb_gold, crystal_ice, cultivator, fox, orb_blue, orb_red, villager] }
+  - { name: arena, sprites: [ground, shadow, rock_large, rock_small, pine, shrine, treant_blighted, tree_dead, hut, crane, stele, fox_spirit, fox_yellow, wisp_red, orb_gold, crystal_ice, cultivator, fox, orb_blue, orb_red, villager, sword, halo, fire_bolt, lance_strike, solid, glow_core] }
   - { name: stress, sprites: [ground, shadow, rock_large, rock_small, pine, shrine, treant_blighted, tree_dead, hut, crane, stele, fox_spirit, fox_yellow, wisp_red, orb_gold, crystal_ice, cultivator, fox, orb_blue, orb_red, villager] }
   - { name: painted, sprites: [ground, shadow, tree_dead, crane, hut, stele, treant_blighted, crystal_ice, fox_spirit, wisp_red, fox_yellow, orb_gold, orb_blue, orb_red] }
   - { name: cells, sprites: [ground, cell_plain, cell_forest, cell_mountain, cell_snow, cell_city] }
