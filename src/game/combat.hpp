@@ -9,6 +9,7 @@
 
 #include "core/abilities.hpp"
 #include "core/archive.hpp"
+#include "core/assert.hpp"
 #include "core/frame.hpp"
 #include "core/manifest.hpp"
 #include "core/stable_id.hpp"
@@ -218,10 +219,12 @@ public:
     /// none tagged, the volley's one target is the point itself. Either volley keeps its shape, damage and affliction as
     /// cast (each amount through HitAmount()), so new game data never changes it, and its commit window is the ability
     /// radius's (core::CommitTicksFor()). Its seed is drawn from core::Random with the state counter. The poison lance
-    /// strikes at once: every living enemy whose chest is within its radius of the point, in stable ID order, takes its
-    /// damage as a hit of its element (Poison) at its head and, unless the hit killed it, gains its affliction (as a
-    /// sword's hit leaves one, refreshing one there); a Flash of its element starts at the point. Its use ends then, with
-    /// a UseEnded after its hits, unless an affliction it left holds it, and then after that affliction's last tick.
+    /// strikes in this tick's Strike(), after the afflictions due: every living enemy whose chest is then within its
+    /// radius of the point, in stable ID order, takes its damage (as cast) as a hit of its element (Poison) at its head
+    /// and, unless the hit killed it, gains its affliction (as a sword's hit leaves one, refreshing one there); a Flash of
+    /// its element starts at the point. Its use ends then, with a UseEnded after its hits, unless an affliction it left
+    /// holds it, and then after that affliction's last tick. The strike waits only from the cast to the Strike() of the
+    /// same tick, so no save or hash ever holds it.
     void Cast(
         core::State& state,
         const core::Manifest& manifest,
@@ -246,6 +249,7 @@ public:
     /// In order:
     /// - each living target's aim follows its creature's chest; a dead one's stays where it died;
     /// - each affliction due ticks: a hit of its element (Burn or Poison) and its use, at the creature's head;
+    /// - each poison lance cast this tick strikes (Cast());
     /// - each sword arriving at `tick`, in sword order, strikes the target it flies at (core::SwordTarget()) if that is
     ///   alive as the tick began: a hit of the volley's element and use at the creature's head, and the volley's
     ///   affliction, refreshing one already there (whose use ends then if nothing else holds it). Otherwise it plunges,
@@ -276,6 +280,7 @@ public:
     /// each one).
     template<typename Archive>
     void Save(Archive& archive) const {
+        PN_ASSERT(m_strikes.empty(), "a lance's strike outlived its tick's Strike()");
         archive(static_cast<u64>(m_respawns.size()));
         for (const u64 due : m_respawns) {
             archive(due);
@@ -340,16 +345,26 @@ private:
         const core::AbilityData& ability,
         core::AbilityKind kind,
         const core::Action& cast,
-        const core::TickCounters& counters,
-        std::vector<core::Event>& events
+        const core::TickCounters& counters
     );
-    void Lance(
+    // A poison lance cast this tick, which this tick's Strike() deals: the cast's record, its amounts as cast.
+    struct LanceStrike {
+        u64 use = 0;
+        core::Vec2 point{};
+        f32 radius = 0.0F;
+        core::HitKind element = core::HitKind::Poison;
+        i64 damage = 0;
+        core::Affliction affliction{};
+    };
+
+    void Lance(const core::AbilityData& ability, const core::Action& cast, u64 tick);
+    void DealStrike(
         core::State& state,
         const core::Manifest& manifest,
-        const core::AbilityData& ability,
-        const core::Action& cast,
+        const LanceStrike& strike,
         u64 tick,
-        std::vector<core::Event>& events
+        std::vector<core::Event>& events,
+        std::vector<u64>& ending
     );
     void Launch(
         core::State& state,
@@ -382,6 +397,9 @@ private:
     std::vector<Flight> m_flights{};
     // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::vector<core::Flash> m_flashes{};
+    // Cast this tick, struck by its Strike(): empty between ticks, so never saved.
+    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::vector<LanceStrike> m_strikes{};
 };
 
 } // namespace game

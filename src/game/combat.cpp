@@ -232,7 +232,7 @@ void Combat::Cast(
     const i64 room = std::max<i64>(0, abilities.qiMax - caster->qi);
     caster->qi += std::min(ability.qiGain, room) - ability.qiCost;
     caster->readyTick.at(slot) = tick + ability.cooldownTicks;
-    Start(state, manifest, entity, ability, kind, cast, counters, events);
+    Start(state, manifest, entity, ability, kind, cast, counters);
 }
 
 void Combat::Start(
@@ -242,8 +242,7 @@ void Combat::Start(
     const core::AbilityData& ability,
     core::AbilityKind kind,
     const core::Action& cast,
-    const core::TickCounters& counters,
-    std::vector<core::Event>& events
+    const core::TickCounters& counters
 ) {
     if (kind == core::AbilityKind::Dash) {
         StartDash(state[ACTIVE].Entities(), caster, ability, cast.point, counters.simulation);
@@ -252,48 +251,56 @@ void Combat::Start(
         Launch(state, manifest, caster, ability, kind, cast, counters);
     }
     else if (kind == core::AbilityKind::PoisonLance) {
-        Lance(state, manifest, ability, cast, counters.simulation, events);
+        Lance(ability, cast, counters.simulation);
     }
 }
 
-void Combat::Lance(
+void Combat::Lance(const core::AbilityData& ability, const core::Action& cast, u64 tick) {
+    m_strikes.push_back(
+        {
+            .use = CastUse(tick, cast.slot),
+            .point = cast.point,
+            .radius = ability.radius,
+            .element = ability.hit,
+            .damage = HitAmount(ability, ability.damage),
+            .affliction = { .ticks = ability.affliction.ticks, .damage = HitAmount(ability, ability.affliction.damage) },
+        }
+    );
+}
+
+void Combat::DealStrike(
     core::State& state,
     const core::Manifest& manifest,
-    const core::AbilityData& ability,
-    const core::Action& cast,
+    const LanceStrike& strike,
     u64 tick,
-    std::vector<core::Event>& events
+    std::vector<core::Event>& events,
+    std::vector<u64>& ending
 ) {
     core::Registry& entities = state[ACTIVE].Entities();
-    const u64 use = CastUse(tick, cast.slot);
-    const i64 damage = HitAmount(ability, ability.damage);
-    const core::Affliction affliction{ .ticks = ability.affliction.ticks,
-                                       .damage = HitAmount(ability, ability.affliction.damage) };
-    // The lance's own use ends at once unless an affliction it leaves holds it.
-    std::vector<u64> ending{ use };
-    const std::vector<Tagged> tagged = Tag(entities, manifest, cast.point, ability.radius);
+    // The lance's own use ends this tick unless an affliction it leaves holds it.
+    ending.push_back(strike.use);
+    const std::vector<Tagged> tagged = Tag(entities, manifest, strike.point, strike.radius);
     for (const Tagged& enemy : tagged) {
         const core::Entity entity = state[ACTIVE].Find(enemy.entity);
         events.push_back(
             {
                 .kind = core::EventKind::Hit,
-                .hit = ability.hit,
-                .use = use,
+                .hit = strike.element,
+                .use = strike.use,
                 .target = enemy.entity,
                 .position = HeadOf(entities, manifest, entity),
-                .value = damage,
+                .value = strike.damage,
             }
         );
-        Damage(state, enemy.entity, damage, tick);
+        Damage(state, enemy.entity, strike.damage, tick);
         if (!entities.all_of<Dying>(entity)) {
-            Afflict(entities, entity, ability.hit, affliction, use, tick, ending);
+            Afflict(entities, entity, strike.element, strike.affliction, strike.use, tick, ending);
         }
     }
-    m_flashes.push_back({ .point = cast.point, .startTick = tick, .element = ability.hit });
+    m_flashes.push_back({ .point = strike.point, .startTick = tick, .element = strike.element });
     PN_LOG_DEBUG(
-        "tick {}: the poison lance strikes at ({}, {}): {} enemies hit", tick, cast.point.x, cast.point.y, tagged.size()
+        "tick {}: the poison lance strikes at ({}, {}): {} enemies hit", tick, strike.point.x, strike.point.y, tagged.size()
     );
-    EndReleased(state, ending, tick, events);
 }
 
 void Combat::Launch(
@@ -560,6 +567,11 @@ void Combat::Strike(core::State& state, const core::Manifest& manifest, u64 tick
     std::vector<u64> ending; // uses whose holds may have ended this tick
     FollowTargets(state, manifest);
     TickAfflictions(state, manifest, tick, events, ending);
+    // After the afflictions due, as a sword's arrival is: a strike refreshing one due now deals that tick first.
+    for (const LanceStrike& strike : m_strikes) {
+        DealStrike(state, manifest, strike, tick, events, ending);
+    }
+    m_strikes.clear();
     // Every arrival resolves before this tick's deaths are marked, so a target dying on this tick still takes the hits
     // that arrive on it, as core::SwordTarget() promises.
     for (Flight& flight : m_flights) {

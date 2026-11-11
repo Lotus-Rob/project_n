@@ -1305,6 +1305,34 @@ TEST_CASE("a second lance refreshes the poison; its later ticks belong to the la
     CHECK(second.back().tick == lastTick);
 }
 
+TEST_CASE("a lance on the tick an earlier poison is due deals that tick first, then refreshes it") {
+    constexpr u64 DUE = CAST + game::AFFLICTION_PERIOD;
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
+    const Aimed ready = ReadyLance(arena, 1);
+    const core::StableId fox = ready.tagged.front();
+    StampedCast(arena, CAST, core::Slot::Spender, ready.point);
+    Run(arena, CAST + 1, DUE - 1);
+    const std::vector<core::Event> due = StampedCast(arena, DUE, core::Slot::Spender, ChestOf(arena, fox));
+
+    constexpr u64 FIRST = game::CastUse(CAST, core::Slot::Spender);
+    constexpr u64 SECOND = game::CastUse(DUE, core::Slot::Spender);
+    const auto ticked = std::ranges::find_if(due, [](const core::Event& event) {
+        return event.kind == core::EventKind::Hit && event.use == FIRST;
+    });
+    const auto struck = std::ranges::find_if(due, [](const core::Event& event) {
+        return event.kind == core::EventKind::Hit && event.use == SECOND;
+    });
+    REQUIRE(ticked != due.end());
+    REQUIRE(struck != due.end());
+    CHECK(ticked->hit == core::HitKind::Poison);
+    CHECK(ticked->value == POISON_DAMAGE);
+    CHECK(ticked < struck); // the due tick first, then the new strike
+    const std::vector<core::Event> ended = OfUse(due, FIRST);
+    REQUIRE_FALSE(ended.empty());
+    CHECK(ended.back().kind == core::EventKind::UseEnded); // refreshed after its tick
+    CHECK(HealthOf(arena, fox).current == AMPLE - (2 * LANCE_DAMAGE) - POISON_DAMAGE);
+}
+
 TEST_CASE("the lance's flash carries its element and fades after its ticks") {
     game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
     const Aimed ready = ReadyLance(arena, 1);
