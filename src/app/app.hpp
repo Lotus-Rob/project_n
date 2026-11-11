@@ -40,6 +40,9 @@ struct Options {
     core::GameData data = game::BuiltInData();
     /// Quit by itself after this long (`--quit-after`); 0 never does.
     u64 quitAfterNs = 0;
+    /// Send a debug burst of hits once a second (`--burst`), so a profile run sees the damage numbers' stress without a key
+    /// press.
+    bool burst = false;
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The player's settings, read from `settings.yaml`: the main thread's systems take theirs from it.
     core::Settings settings{};
@@ -51,6 +54,9 @@ struct Options {
     std::filesystem::path dataFolder{};
     // NOLINTEND(readability-redundant-member-init)
 };
+
+/// Whether the command line `args` holds `flag` (as in `--burst`) as one of its arguments.
+[[nodiscard]] bool HasFlag(std::span<const char* const> args, std::string_view flag);
 
 /// Watches a folder of files for changes (the game data, design doc 0002.3 §7).
 class DataWatch {
@@ -105,6 +111,7 @@ private:
         f64 alpha
     ) const;
     void WatchData(u64 nowNs);
+    void RepeatBurst(u64 nowNs);
 
     // First, so it goes last: the logic thread registers with it, the renderer's loads run on it.
     core::Jobs m_jobs{ core::Jobs::DefaultWorkers(), /*externalThreads=*/1 };
@@ -112,6 +119,7 @@ private:
     gfx::Renderer m_renderer;
     Options m_options;
     u64 m_startNs;
+    u64 m_nextBurstNs;       // the render clock's time for `--burst`'s next burst
     DamageNumbers m_numbers; // as m_options.settings say
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     core::GameHandover m_handover{};

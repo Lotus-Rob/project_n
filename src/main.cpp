@@ -134,6 +134,7 @@ int main(int argc, char** argv) {
                 {
                     .scene = scene,
                     .quitAfterNs = *quitAfterNs,
+                    .burst = app::HasFlag(args, "--burst"),
                     .saveSlot = userData ? *userData / "saves" / "quicksave.pns" : std::filesystem::path{},
                     .replaySlot = userData ? *userData / "saves" / "replay.pnr" : std::filesystem::path{},
                 });
