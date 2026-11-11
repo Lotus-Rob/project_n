@@ -71,7 +71,29 @@ Built Build(app::Hud& hud, const core::CasterView& caster = CASTER, f64 renderTi
 }
 
 app::Hud English(const core::UiColours& colours = {}) {
-    return app::Hud(HudStrings(), core::Language::English, colours);
+    return app::Hud(HudStrings(), { .language = core::Language::English }, colours);
+}
+
+constexpr u32 CHANNEL_BITS = 8;
+constexpr u32 CHANNEL_MASK = 0xFFU;
+constexpr u32 CHANNELS = 4;
+
+// `colour` with each premultiplied channel times `factor`, rounded to nearest.
+u32 Times(u32 colour, f32 factor) {
+    u32 scaled = 0;
+    for (u32 channel = 0; channel < CHANNELS; ++channel) {
+        const auto value = static_cast<f32>((colour >> (channel * CHANNEL_BITS)) & CHANNEL_MASK);
+        scaled |= static_cast<u32>(std::lround(value * factor)) << (channel * CHANNEL_BITS);
+    }
+    return scaled;
+}
+
+// CASTER with its spender cooling down for a few seconds more.
+core::CasterView SpenderCooling() {
+    constexpr u64 SECONDS = 180;
+    core::CasterView cooling = CASTER;
+    cooling.readyTick.at(std::to_underlying(core::Slot::Spender)) = static_cast<u64>(NOW) + SECONDS;
+    return cooling;
 }
 
 // The texts of `lines`, copied out.
@@ -196,7 +218,7 @@ TEST_CASE("too little Qi shows the words for a second") {
 
 TEST_CASE("the HUD reads in Chinese with the language set") {
     constexpr u64 TWO_SECONDS = 120;
-    app::Hud hud(HudStrings(), core::Language::Chinese, core::UiColours{});
+    app::Hud hud(HudStrings(), { .language = core::Language::Chinese }, core::UiColours{});
     core::CasterView cooling = CASTER;
     cooling.readyTick.at(std::to_underlying(core::Slot::Generator)) = static_cast<u64>(NOW) + TWO_SECONDS;
     const Built built = Build(hud, cooling);
@@ -211,7 +233,7 @@ TEST_CASE("the HUD reads in Chinese with the language set") {
 
 TEST_CASE("the HUD grows with the text size, 16 pixels in from the edges") {
     constexpr f32 DOUBLE = 2.0F;
-    app::Hud hud(HudStrings(), core::Language::English, core::UiColours{}, DOUBLE);
+    app::Hud hud(HudStrings(), { .language = core::Language::English, .scale = DOUBLE }, core::UiColours{});
     const Built built = Build(hud);
     CHECK(built.bars.at(HEALTH_BAR).topLeft.x == app::HUD_MARGIN);
     CHECK(built.bars.at(HEALTH_BAR).size.x == app::HUD_BAR_WIDTH * DOUBLE);
@@ -219,31 +241,101 @@ TEST_CASE("the HUD grows with the text size, 16 pixels in from the edges") {
     CHECK(built.lines.back().topLeft.y + (app::HUD_LINE_HEIGHT * DOUBLE) == static_cast<f32>(HEIGHT) - app::HUD_MARGIN);
 }
 
-TEST_CASE("the HUD's lines and bars take the table's colours, and a new table recolours them at once") {
-    constexpr u32 HEALTH = 0xFF00'0001U;
-    constexpr u32 QI_FILL = 0xFF00'0002U;
-    constexpr u32 BACKGROUND = 0xFF00'0003U;
-    constexpr u32 TEXT = 0xFF00'0004U;
-    constexpr u32 OTHER_TEXT = 0xFF00'0005U;
+TEST_CASE("the HUD follows the target's height: the same layout, moved down with its bottom") {
+    constexpr u32 TALLER = 1'080;
+    constexpr f32 DOWN = static_cast<f32>(TALLER - HEIGHT);
+    app::Hud hud = English();
+    const Built shorter = Build(hud);
+    Built taller;
+    hud.Build(CASTER, NOW, TALLER, taller.lines, taller.bars);
+    REQUIRE(taller.lines.size() == shorter.lines.size());
+    REQUIRE(taller.bars.size() == shorter.bars.size());
+    for (std::size_t line = 0; line < taller.lines.size(); ++line) {
+        CAPTURE(line);
+        CHECK(taller.lines.at(line).topLeft.x == shorter.lines.at(line).topLeft.x);
+        CHECK(taller.lines.at(line).topLeft.y == shorter.lines.at(line).topLeft.y + DOWN);
+    }
+    for (std::size_t bar = 0; bar < taller.bars.size(); ++bar) {
+        CAPTURE(bar);
+        CHECK(taller.bars.at(bar).topLeft.x == app::HUD_MARGIN);
+        CHECK(taller.bars.at(bar).topLeft.y == shorter.bars.at(bar).topLeft.y + DOWN);
+    }
+    CHECK(taller.lines.back().topLeft.y + app::HUD_LINE_HEIGHT == static_cast<f32>(TALLER) - app::HUD_MARGIN);
+}
+
+// A HUD table: each colour the HUD reads, distinct, starting from `first`.
+core::UiColours HudColours(u32 first) {
     core::UiColours colours;
-    colours.Set(core::UiColour::HealthBar, HEALTH);
-    colours.Set(core::UiColour::QiBar, QI_FILL);
-    colours.Set(core::UiColour::BarBackground, BACKGROUND);
-    colours.Set(core::UiColour::HudText, TEXT);
+    u32 next = first;
+    for (const core::UiColour colour : { core::UiColour::HealthBar,
+                                         core::UiColour::QiBar,
+                                         core::UiColour::BarBackground,
+                                         core::UiColour::HudText,
+                                         core::UiColour::HudCooling,
+                                         core::UiColour::HudWarning,
+                                         core::UiColour::TextInk }) {
+        colours.Set(colour, next++);
+    }
+    return colours;
+}
+
+// CHECKs that `built`, a HUD with its spender cooling and the Qi warning showing, wears `colours`.
+void CheckWears(const Built& built, const core::UiColours& colours) {
+    CHECK(built.bars.at(HEALTH_BAR).fill == colours.Of(core::UiColour::HealthBar));
+    CHECK(built.bars.at(QI_BAR).fill == colours.Of(core::UiColour::QiBar));
+    CHECK(built.bars.at(HEALTH_BAR).background == colours.Of(core::UiColour::BarBackground));
+    CHECK(built.bars.at(QI_BAR).background == colours.Of(core::UiColour::BarBackground));
+    CHECK(built.lines.at(HEALTH_LINE).colour == colours.Of(core::UiColour::HudText));
+    CHECK(built.lines.at(QI_LINE).colour == colours.Of(core::UiColour::HudWarning));
+    CHECK(built.lines.at(SPENDER_LINE).colour == colours.Of(core::UiColour::HudCooling));
+    for (std::size_t line = FIRST_SLOT_LINE; line < built.lines.size(); ++line) {
+        if (line != SPENDER_LINE) {
+            CAPTURE(line);
+            CHECK(built.lines.at(line).colour == colours.Of(core::UiColour::HudText));
+        }
+    }
+}
+
+TEST_CASE("the HUD's lines and bars take the table's colours, and a new table recolours them at once") {
+    constexpr u32 FIRST = 0xFF00'0001U;
+    constexpr u32 OTHERS = 0xFF00'0101U;
+    const core::UiColours colours = HudColours(FIRST);
+    const core::UiColours others = HudColours(OTHERS);
     app::Hud hud = English(colours);
-    const Built built = Build(hud);
-    CHECK(built.bars.at(HEALTH_BAR).fill == HEALTH);
-    CHECK(built.bars.at(QI_BAR).fill == QI_FILL);
-    CHECK(built.bars.at(HEALTH_BAR).background == BACKGROUND);
-    CHECK(built.bars.at(QI_BAR).background == BACKGROUND);
-    for (const gfx::HudLine& line : built.lines) {
-        CHECK(line.colour == TEXT);
-    }
-    colours.Set(core::UiColour::HudText, OTHER_TEXT);
-    hud.SetColours(colours);
-    for (const gfx::HudLine& line : Build(hud).lines) {
-        CHECK(line.colour == OTHER_TEXT);
-    }
+    hud.Play({ .kind = core::EventKind::NotEnoughQi }, NOW);
+    CheckWears(Build(hud, SpenderCooling()), colours);
+    hud.SetColours(others);
+    CheckWears(Build(hud, SpenderCooling()), others);
+}
+
+TEST_CASE("with the outline and the shadow off, the slot lines take the ink, a cooling one faded; the bars' words don't") {
+    constexpr u32 FIRST = 0xFF00'0001U;
+    constexpr u32 OTHERS = 0xFF00'0101U;
+    const core::UiColours colours = HudColours(FIRST);
+    app::Hud hud(HudStrings(), { .language = core::Language::English, .outline = false, .shadow = false }, colours);
+    const auto check = [&hud](const core::UiColours& table) {
+        const Built built = Build(hud, SpenderCooling());
+        const u32 ink = table.Of(core::UiColour::TextInk);
+        CHECK(built.lines.at(HEALTH_LINE).colour == table.Of(core::UiColour::HudText)); // on its bar
+        CHECK(built.lines.at(QI_LINE).colour == table.Of(core::UiColour::HudText));
+        CHECK(built.lines.at(SPENDER_LINE).colour == Times(ink, app::HUD_COOLING_INK_OPACITY));
+        CHECK(built.lines.at(SPENDER_LINE).text == "Right click  Poison Lance  3s"); // still its seconds
+        for (std::size_t line = FIRST_SLOT_LINE; line < built.lines.size(); ++line) {
+            if (line != SPENDER_LINE) {
+                CAPTURE(line);
+                CHECK(built.lines.at(line).colour == ink);
+            }
+        }
+    };
+    check(colours);
+    hud.SetColours(HudColours(OTHERS));
+    check(HudColours(OTHERS));
+
+    // Either one on, the light colours stay, as the labels' do.
+    hud.SetTextOptions({ .language = core::Language::English, .outline = true, .shadow = false });
+    const Built outlined = Build(hud, SpenderCooling());
+    CHECK(outlined.lines.at(FIRST_SLOT_LINE).colour == HudColours(OTHERS).Of(core::UiColour::HudText));
+    CHECK(outlined.lines.at(SPENDER_LINE).colour == HudColours(OTHERS).Of(core::UiColour::HudCooling));
 }
 
 } // namespace

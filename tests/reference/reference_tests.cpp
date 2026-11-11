@@ -339,9 +339,7 @@ TEST_CASE("the HUD at zoom 1, one slot cooling down") {
     std::expected<core::Strings, core::Error> strings = data::LoadStrings(Assets() / "data");
     const std::string stringsWhy = strings.error_or(core::Error{}).message;
     REQUIRE_MESSAGE(strings.has_value(), stringsWhy);
-    app::Hud hud(
-        std::make_shared<const core::Strings>(std::move(*strings)), core::Language::English, core::UiColours{}
-    ); // parentheses: MSVC C4868
+    app::Hud hud(std::make_shared<const core::Strings>(std::move(*strings)), {}, core::UiColours{}); // parentheses: MSVC C4868
     std::vector<gfx::HudLine> lines;
     std::vector<gfx::HudBar> bars;
     hud.Build(

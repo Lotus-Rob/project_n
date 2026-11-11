@@ -120,7 +120,9 @@ App::App(platform::Window window, gfx::Renderer renderer, Options options)
   , m_numbers{ m_options.settings }
   , m_hud( // parentheses: the strings' pointer is copied into a parameter (MSVC C4868)
         m_options.strings,
-        m_options.settings.language,
+        { .language = m_options.settings.language,
+          .outline = m_options.settings.textOutline,
+          .shadow = m_options.settings.textShadow },
         m_options.settings.uiColours
     )
   , m_frameNs{ m_startNs } {

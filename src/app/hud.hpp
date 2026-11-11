@@ -31,6 +31,9 @@ inline constexpr f32 HUD_BAR_HEIGHT = 18.0F;
 inline constexpr f32 HUD_LINE_HEIGHT = 24.0F;
 /// How long the Qi bar reads "Not enough Qi" after a cast was refused for want of it, in seconds.
 inline constexpr f64 NOT_ENOUGH_QI_SECONDS = 1.0;
+/// How opaque a cooling slot's line is, in core::UiColour::TextInk, when the text has neither outline nor shadow: fainter
+/// than the other slots' ink, beside the seconds it shows.
+inline constexpr f32 HUD_COOLING_INK_OPACITY = 0.55F;
 
 /// Lays out the temporary HUD each frame from the player's casting state (core::CasterView). At the bottom left, top to
 /// bottom: the health bar (core::UiColour::HealthBar on BarBackground) with "Health {value}/{max}" on it, the Qi bar (QiBar on
@@ -38,17 +41,20 @@ inline constexpr f64 NOT_ENOUGH_QI_SECONDS = 1.0;
 /// name or "—", and while it cools down its seconds left, rounded up. Every value shows as a number as well as a length;
 /// a slot cooling down is drawn in HudCooling and shows its seconds; for NOT_ENOUGH_QI_SECONDS after a NotEnoughQi event,
 /// the Qi bar's text reads "Not enough Qi" in HudWarning. Every colour comes from the table, the text from the strings.
+/// With the text's outline and shadow both off, the slots' lines, over the ground, take TextInk as the labels do (a cooling
+/// one at HUD_COOLING_INK_OPACITY), so they read on the pale ground; the bars' words, on their bars, keep theirs.
 class Hud {
 public:
-    /// A HUD showing `strings` in `language`, in `colours`, its sizes `scale` times those at text scale 1 (the text size
-    /// setting, gfx::TextOptions::scale, which the renderer draws its lines at).
-    Hud(std::shared_ptr<const core::Strings> strings,
-        core::Language language,
-        const core::UiColours& colours,
-        f32 scale = 1.0F);
+    /// A HUD showing `strings` as `text` says, the renderer's text options: in its language, its sizes its scale times
+    /// those at text scale 1 (the renderer draws the lines at that scale too), its slots' colours following its outline
+    /// and shadow; in `colours`.
+    Hud(std::shared_ptr<const core::Strings> strings, const gfx::TextOptions& text, const core::UiColours& colours);
 
     /// Draws in `colours` from the next Build() on.
     void SetColours(const core::UiColours& colours);
+
+    /// Lays out as `text` says from the next Build() on.
+    void SetTextOptions(const gfx::TextOptions& text);
 
     /// Plays `event` at render tick `renderTick`: a NotEnoughQi makes the Qi bar read "Not enough Qi" for
     /// NOT_ENOUGH_QI_SECONDS from then. Any other event changes nothing.
@@ -74,9 +80,8 @@ private:
     [[nodiscard]] const std::string& Text(core::StringId string) const;
 
     std::shared_ptr<const core::Strings> m_strings;
-    core::Language m_language;
+    gfx::TextOptions m_text;
     core::UiColours m_colours;
-    f32 m_scale;
     std::optional<f64> m_warnedUntil = std::nullopt; // the render tick the warning ends at
     // Each line's text, the bars' first: kept from frame to frame, so a frame allocates nothing once they have grown.
     std::array<std::string, 2 + core::SLOTS> m_texts{};

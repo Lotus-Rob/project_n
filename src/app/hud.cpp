@@ -52,6 +52,22 @@ core::StringId NameOf(core::AbilityKind ability) {
     return core::StringId::SlotEmpty;
 }
 
+constexpr u32 CHANNEL_BITS = 8;
+constexpr u32 CHANNEL_MASK = 0xFFU;
+constexpr f32 CHANNEL_MAX = 255.0F;
+constexpr u32 CHANNELS = 4;
+
+// `colour` (premultiplied RGBA8) times `factor` in [0, 1]: fainter, as premultiplied colours fade.
+u32 Faded(u32 colour, f32 factor) {
+    u32 faded = 0;
+    for (u32 channel = 0; channel < CHANNELS; ++channel) {
+        const auto value = static_cast<f32>((colour >> (channel * CHANNEL_BITS)) & CHANNEL_MASK);
+        const auto rounded = static_cast<u32>(std::lround(std::clamp(value * factor, 0.0F, CHANNEL_MAX)));
+        faded |= rounded << (channel * CHANNEL_BITS);
+    }
+    return faded;
+}
+
 // `value` over `most`, within 0 to 1; 0 with no most.
 f32 FractionOf(i64 value, i64 most) {
     if (most <= 0) {
@@ -62,15 +78,18 @@ f32 FractionOf(i64 value, i64 most) {
 
 } // namespace
 
-Hud::Hud(std::shared_ptr<const core::Strings> strings, core::Language language, const core::UiColours& colours, f32 scale)
+Hud::Hud(std::shared_ptr<const core::Strings> strings, const gfx::TextOptions& text, const core::UiColours& colours)
   : m_strings{ std::move(strings) }
-  , m_language{ language }
-  , m_colours{ colours }
-  , m_scale{ scale } {
+  , m_text{ text }
+  , m_colours{ colours } {
 }
 
 void Hud::SetColours(const core::UiColours& colours) {
     m_colours = colours;
+}
+
+void Hud::SetTextOptions(const gfx::TextOptions& text) {
+    m_text = text;
 }
 
 void Hud::Play(const core::Event& event, f64 renderTick) {
@@ -84,7 +103,7 @@ void Hud::Clear() {
 }
 
 const std::string& Hud::Text(core::StringId string) const {
-    return m_strings->Text(string, m_language);
+    return m_strings->Text(string, m_text.language);
 }
 
 void Hud::Build(
@@ -96,12 +115,18 @@ void Hud::Build(
 ) {
     PN_PROFILE_ZONE();
     const u32 text = m_colours.Of(core::UiColour::HudText);
-    const f32 lineHeight = HUD_LINE_HEIGHT * m_scale;
-    const core::Vec2 barSize{ .x = HUD_BAR_WIDTH * m_scale, .y = HUD_BAR_HEIGHT * m_scale };
+    // Over the ground, light text needs its dark edge to read on the pale ground; without one the slots turn to the ink,
+    // as the labels do. The bars' words stay light, on their bars.
+    const bool inked = !m_text.outline && !m_text.shadow;
+    const u32 ink = m_colours.Of(core::UiColour::TextInk);
+    const u32 slotText = inked ? ink : text;
+    const u32 coolingText = inked ? Faded(ink, HUD_COOLING_INK_OPACITY) : m_colours.Of(core::UiColour::HudCooling);
+    const f32 lineHeight = HUD_LINE_HEIGHT * m_text.scale;
+    const core::Vec2 barSize{ .x = HUD_BAR_WIDTH * m_text.scale, .y = HUD_BAR_HEIGHT * m_text.scale };
     // From the bottom up: the slots' lines, then the Qi bar over them, then the health bar over it.
     const f32 firstSlot = static_cast<f32>(height) - HUD_MARGIN - (lineHeight * static_cast<f32>(core::SLOTS));
-    const f32 qiTop = firstSlot - ((BAR_GAP * m_scale) + barSize.y);
-    const f32 healthTop = qiTop - ((BAR_GAP * m_scale) + barSize.y);
+    const f32 qiTop = firstSlot - ((BAR_GAP * m_text.scale) + barSize.y);
+    const f32 healthTop = qiTop - ((BAR_GAP * m_text.scale) + barSize.y);
 
     const bool warned = m_warnedUntil && renderTick < *m_warnedUntil;
     std::string& healthText = m_texts.at(0);
@@ -116,7 +141,7 @@ void Hud::Build(
     const auto barText = [&](const std::string& says, f32 top, u32 colour) {
         lines.push_back(
             { .text = says,
-              .topLeft = { .x = HUD_MARGIN + (BAR_TEXT_INSET * m_scale), .y = top - (BAR_TEXT_RISE * m_scale) },
+              .topLeft = { .x = HUD_MARGIN + (BAR_TEXT_INSET * m_text.scale), .y = top - (BAR_TEXT_RISE * m_text.scale) },
               .colour = colour }
         );
     };
@@ -141,7 +166,7 @@ void Hud::Build(
         lines.push_back(
             { .text = line,
               .topLeft = { .x = HUD_MARGIN, .y = firstSlot + (lineHeight * static_cast<f32>(index)) },
-              .colour = cooling ? m_colours.Of(core::UiColour::HudCooling) : text }
+              .colour = cooling ? coolingText : slotText }
         );
     }
 
