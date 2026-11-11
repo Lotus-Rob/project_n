@@ -363,7 +363,7 @@ TEST_CASE("the stagger window grows with the hits on a target in a tick") {
     CHECK(app::NUMBER_STAGGER_MAX_SECONDS == doctest::Approx(WIDEST_SECONDS));
 }
 
-TEST_CASE("combined numbers have no scatter or delay") {
+TEST_CASE("a combined number starts at once, scattered as one hit's number is") {
     constexpr u64 TICK = 10;
     app::DamageNumbers numbers(COMBINED);
     numbers.Play(Hit(TICK, FOX_A, VALUE));
@@ -371,10 +371,35 @@ TEST_CASE("combined numbers have no scatter or delay") {
     numbers.Play(UseEnded(TICK));
     const std::vector<core::TextItem> texts = TextsAt(numbers, static_cast<f64>(TICK));
     REQUIRE(texts.size() == 1);
-    CHECK(texts[0].scatter.x == 0.0F);
-    CHECK(texts[0].scatter.y == 0.0F);
+    const app::NumberScatter alone = app::ScatterOf(Hit(TICK, FOX_A, VALUE), 0, 1);
+    CHECK(texts[0].scatter.x == alone.offset.x);
+    CHECK(texts[0].scatter.y == alone.offset.y);
     CHECK(texts[0].lift == 0.0F);
     CHECK(texts[0].opacity == 1.0F);
+}
+
+TEST_CASE("combined numbers starting on one target in one tick scatter apart, with no stagger") {
+    constexpr u64 TICK = 10;
+    app::DamageNumbers numbers(COMBINED);
+    numbers.Play(Hit(TICK, FOX_A, VALUE, core::HitKind::Damage));
+    numbers.Play(Hit(TICK, FOX_A, VALUE, core::HitKind::Burn));
+    core::Event other = Hit(TICK, FOX_A, VALUE);
+    other.use = USE + 1;
+    numbers.Play(other);
+    numbers.Play(UseEnded(TICK));
+    core::Event otherEnded = UseEnded(TICK);
+    otherEnded.use = USE + 1;
+    numbers.Play(otherEnded);
+    const std::vector<core::TextItem> texts = TextsAt(numbers, static_cast<f64>(TICK));
+    REQUIRE(texts.size() == 3);
+    for (std::size_t first = 0; first < texts.size(); ++first) {
+        CHECK(texts[first].opacity == 1.0F); // started at its tick: no delay
+        for (std::size_t second = first + 1; second < texts.size(); ++second) {
+            INFO("numbers ", first, " and ", second);
+            const core::Vec2 apart = texts[first].scatter - texts[second].scatter;
+            CHECK((apart.x * apart.x) + (apart.y * apart.y) > 0.0F);
+        }
+    }
 }
 
 TEST_CASE("forgetting ages numbers out as drawing them does, drawing nothing") {
@@ -399,6 +424,48 @@ TEST_CASE("a new epoch clears the live numbers") {
     numbers.Clear();
     CHECK(TextsAt(numbers, 0.0).empty());
     CHECK(numbers.Live() == 0);
+}
+
+TEST_CASE("with the outline and the shadow both off, each kind's numbers take its dark colour") {
+    constexpr core::Settings BARE{ .textOutline = false, .textShadow = false };
+    constexpr core::Settings OUTLINED{ .textShadow = false };
+    for (const core::Settings& settings : { BARE, OUTLINED }) {
+        app::DamageNumbers numbers(settings);
+        for (std::size_t kind = 0; kind < core::HIT_KINDS; ++kind) {
+            numbers.Play(Hit(0, core::StableId{ kind + 1 }, VALUE, static_cast<core::HitKind>(kind)));
+        }
+        const std::vector<core::TextItem> texts = TextsAt(numbers, STARTED);
+        REQUIRE(texts.size() == core::HIT_KINDS);
+        const auto& colours = settings.textOutline ? app::KIND_COLOURS : app::DARK_KIND_COLOURS;
+        for (std::size_t kind = 0; kind < core::HIT_KINDS; ++kind) {
+            INFO("kind ", kind, settings.textOutline ? ", outlined" : ", bare");
+            CHECK(texts.at(kind).colour == colours.at(kind));
+        }
+    }
+}
+
+TEST_CASE("each dark number colour reads at 4.5:1 or more on the parchment ground, bright or dim") {
+    // The ground's relative luminance on the arena's bare parchment (tests/reference/numbers_one.png): the brightest
+    // patch's 90th percentile and the dimmest patch's median.
+    constexpr std::array<f64, 2> GROUNDS{ { 0.7264, 0.5291 } };
+    constexpr f64 FLARE = 0.05; // WCAG's contrast ratio adds it to both sides
+    constexpr f64 LEAST = 4.5;
+    constexpr std::array<f64, 3> WEIGHTS{ { 0.2126, 0.7152, 0.0722 } }; // linear red, green and blue
+    constexpr u32 CHANNEL = 0xFFU;
+    constexpr u32 BITS = 8;
+    for (std::size_t kind = 0; kind < core::HIT_KINDS; ++kind) {
+        // Opaque and premultiplied linear: each channel is the linear value itself.
+        const u32 colour = app::DARK_KIND_COLOURS.at(kind);
+        f64 luminance = 0.0;
+        for (std::size_t channel = 0; channel < WEIGHTS.size(); ++channel) {
+            const u32 value = (colour >> (channel * BITS)) & CHANNEL;
+            luminance += WEIGHTS.at(channel) * static_cast<f64>(value) / static_cast<f64>(CHANNEL);
+        }
+        for (const f64 ground : GROUNDS) {
+            INFO("kind ", kind, " on ground of luminance ", ground);
+            CHECK((ground + FLARE) / (luminance + FLARE) >= LEAST);
+        }
+    }
 }
 
 } // namespace
