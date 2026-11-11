@@ -8,11 +8,13 @@
 
 #include "core/abilities.hpp"
 #include "core/archive.hpp"
+#include "core/frame.hpp"
 #include "core/stable_id.hpp"
 #include "core/state.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 
+#include <array>
 #include <vector>
 
 namespace game {
@@ -23,6 +25,15 @@ inline constexpr u64 DYING_TICKS = 30;
 inline constexpr u64 RESPAWN_TICKS = 180;
 /// How many ticks a respawned fox takes to ease from the ground's edge into its orbit: about three seconds.
 inline constexpr u32 ARRIVE_TICKS = 180;
+
+/// The first of the source numbers (core::AbilityUse()) of the ability uses a cast starts, one per slot: the source of the
+/// use of slot `s` is CAST_SOURCE + `s`. Below it are the aura's and the burst's.
+inline constexpr u32 CAST_SOURCE = 16;
+
+/// The ID of the use of the ability in `slot` that a cast at `tick` starts.
+[[nodiscard]] constexpr u64 CastUse(u64 tick, core::Slot slot) {
+    return core::AbilityUse(tick, CAST_SOURCE + static_cast<u32>(std::to_underlying(slot)));
+}
 
 /// A creature's health.
 struct Health {
@@ -78,6 +89,52 @@ struct Arriving {
     }
 };
 
+/// What the player casts with: the Qi it holds and when each slot can next be cast.
+struct Caster {
+    /// The Qi held, from nothing to the most the game data gives.
+    i64 qi = 0;
+    /// The simulation tick each slot can next be cast at (core::Slot's order): a slot casts at a tick from this one on.
+    std::array<u64, core::SLOTS> readyTick{};
+
+    /// Lists its fields for an archive (core/archive.hpp).
+    template<typename Self, typename Archive>
+    void Fields(this Self& self, Archive& archive) {
+        archive(self.qi);
+        for (auto& ready : self.readyTick) {
+            archive(ready);
+        }
+    }
+
+    /// Whether a value read from a save can be used: no negative Qi.
+    [[nodiscard]] bool Valid() const {
+        return qi >= 0;
+    }
+};
+
+/// A creature in a dash: its foot goes from `from` to `to`, eased in and out, over `ticks` ticks from `startTick`, held
+/// movement ignored meanwhile.
+struct Dashing {
+    /// Where the dash started.
+    core::Vec2 from{};
+    /// Where it ends.
+    core::Vec2 to{};
+    /// The simulation tick it started.
+    u64 startTick = 0;
+    /// How many ticks it takes.
+    u32 ticks = 0;
+
+    /// Lists its fields for an archive (core/archive.hpp).
+    template<typename Self, typename Archive>
+    void Fields(this Self& self, Archive& archive) {
+        archive(self.from, self.to, self.startTick, self.ticks);
+    }
+
+    /// Whether a value read from a save can be used: finite ends and at least one tick.
+    [[nodiscard]] bool Valid() const {
+        return core::IsFinite(from) && core::IsFinite(to) && ticks > 0;
+    }
+};
+
 /// The amount a hit of `base` deals or heals, before anything else: the one place every amount passes through, so
 /// stats and levels plug in here later. Today it is `base`.
 [[nodiscard]] i64 HitAmount(i64 base);
@@ -96,6 +153,24 @@ public:
     /// Takes `amount` from `target`'s health (a negative amount heals, never past its most) at `tick`; health running
     /// out makes it Dying at `tick`. Does nothing to a target that isn't in `state`, has no Health, or is dying.
     static void Damage(core::State& state, core::StableId target, i64 amount, u64 tick);
+
+    /// Casts the ability in `cast.slot` for `player` at `tick`, if it can: its slot holds one, the slot's cooldown is over, the
+    /// point is finite and the player is alive and not dashing. Order: the cooldown, then the Qi (too little appends a
+    /// NotEnoughQi event with the slot as its value and changes nothing), then the ability's effect; a cast that goes off
+    /// gains `qiGain` (never past the most), spends `qiCost` and starts the slot's cooldown. Does nothing for a `player`
+    /// that isn't in `state` or has no Caster.
+    static void Cast(
+        core::State& state,
+        const core::Abilities& abilities,
+        core::StableId player,
+        const core::Action& cast,
+        u64 tick,
+        std::vector<core::Event>& events
+    );
+
+    /// Moves `player`, if it is dashing, to where its dash puts it at `tick`, ending the dash at its last tick; whether it is
+    /// dashing, which means the caller doesn't walk it.
+    [[nodiscard]] static bool Dash(core::State& state, core::StableId player, u64 tick);
 
     /// Advances combat in the active domain of `state` to `tick`, after the orbits have moved: eases each Arriving
     /// creature from where it appeared towards where its orbit put it (which it reaches, ending its arrival, at its last

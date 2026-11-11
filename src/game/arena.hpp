@@ -20,6 +20,8 @@
 /// - health (game/combat.hpp): a fox whose health runs out dissolves in blocky pixels, is removed, and another
 ///   appears at the ground's edge a few seconds later, easing into its orbit; each living fox reports its health
 ///   over its head (core::HealthBar);
+/// - Qi and cooldowns (game/combat.hpp): a cast spends or gains the player's Qi and cools its slot down; the dash moves
+///   the player;
 /// - game text over the world: name labels over the player and every fox, and the tablet's vertical caption.
 /// Its stress variant adds a crowd and a bullet spiral, about 100,000 instances in all (§8.1), and a world tier of 50,000.
 
@@ -114,7 +116,8 @@ public:
     /// Rebuilds itself as the next scene in Scene's order (arena, stress, painted, cells, then the arena again) when
     /// `input` holds a CycleScene, the selection cleared; walks the player's cultivator where `input`'s held
     /// movement points, selects what its Select actions name (nothing for a dying one), ignores Cast actions outside a combat
-    /// scene, moves every entity on an Orbit to where it is at `counters.simulation`, advances combat (Combat::Tick():
+    /// scene (in one a Cast is Combat::Cast(): Qi, cooldown, the ability's effect; a dash moves the player in place of held
+    /// movement), moves every entity on an Orbit to where it is at `counters.simulation`, advances combat (Combat::Tick():
     /// arrivals, removing the dead, which clears their selection, and spawning the foxes due at the ground's edge), and walks
     /// the active NPCs, whose decisions draw random numbers keyed on `counters.state`. In the arena scene, every 60th
     /// simulation tick the crystal's aura hits each living fox in reach and heals the player if in reach, appending a hit event
@@ -190,7 +193,8 @@ public:
     /// its ID, but a dying one's carries none and dissolves (core::SpriteDraw::dissolve, DissolveAt() at
     /// `snapshot.simulationTick`), its shadow with it. The player's cultivator is the one to follow, with what is drawn
     /// culled around it. A scene with a player adds its texts: the player's and each living fox's name label over its
-    /// head, and the tablet's caption; the arena scene adds each living fox's health bar at its head.
+    /// head, and the tablet's caption; the arena scene adds each living fox's health bar at its head and the player's casting
+    /// state (core::Snapshot::caster).
     void Publish(core::Snapshot& snapshot, core::Jobs& jobs) override;
 
 private:
@@ -201,10 +205,12 @@ private:
     core::Entity Spawn(core::Vec2 foot, const Look& look);
     void Walk(core::Vec2 move);
     void Select(core::StableId target);
+    void CastAction(const core::Action& action, const core::TickCounters& counters, std::vector<core::Event>& events);
     void Aura(const core::TickCounters& counters, std::vector<core::Event>& events);
     void DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const;
     [[nodiscard]] core::Vec2 HeadOf(core::Entity entity) const;
     void PublishOverhead(core::Snapshot& snapshot) const;
+    void PublishCaster(core::Snapshot& snapshot) const;
     core::Entity SpawnFox(const Orbit& orbit, core::Vec2 foot);
     void Respawn(const core::TickCounters& counters, u32 index);
     void ApplyData();

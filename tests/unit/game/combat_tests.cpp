@@ -420,4 +420,186 @@ TEST_CASE("health is valid from nothing to its most") {
     CHECK_FALSE(game::Health{ .current = 0, .max = 0 }.Valid());
 }
 
+constexpr i64 QI_START = 50;
+constexpr i64 QI_MAX = 100;
+constexpr i64 BOLT_GAIN = 10;
+constexpr u64 BOLT_COOLDOWN = 15;
+constexpr i64 LANCE_COST = 25;
+constexpr i64 SWORDS_COST = 60;
+constexpr f32 DASH_DISTANCE = 260.0F;
+constexpr u64 DASH_TICKS = 9;
+constexpr core::Vec2 FAR_RIGHT{ .x = 5'000.0F, .y = 0.0F };
+
+// Ticks `arena` once at `tick`, casting the ability in `slot` at `point` and holding `held`; the tick's events.
+std::vector<core::Event> CastAt(
+    game::Arena& arena,
+    u64 tick,
+    core::Slot slot,
+    core::Vec2 point = {},
+    core::HeldInput held = {}
+) {
+    const std::array<core::Action, 1> cast{ { { .kind = core::ActionKind::Cast, .slot = slot, .point = point } } };
+    std::vector<core::Event> events;
+    arena.Tick(At(tick), { .actions = cast, .held = held }, events);
+    return events;
+}
+
+const game::Caster& CasterOf(const game::Arena& arena) {
+    return Entities(arena).get<game::Caster>(EntityOf(arena, arena.Player()));
+}
+
+TEST_CASE("the player starts with the data's starting Qi") {
+    const game::Arena arena(test::TestManifest());
+    CHECK(CasterOf(arena).qi == QI_START);
+    CHECK(CasterOf(arena).qi == game::BuiltInData().abilities.qiStart);
+}
+
+TEST_CASE("a cast in the combat scene has an effect: Qi changes and the slot's cooldown starts") {
+    constexpr u64 TICK = 7;
+    game::Arena casting(test::TestManifest());
+    game::Arena idle(test::TestManifest());
+    CastAt(casting, TICK, core::Slot::Generator);
+    Run(idle, TICK, TICK);
+    CHECK(CasterOf(casting).qi == QI_START + BOLT_GAIN);
+    CHECK(CasterOf(casting).readyTick.at(std::to_underlying(core::Slot::Generator)) == TICK + BOLT_COOLDOWN);
+    CHECK(casting.StateHash() != idle.StateHash());
+}
+
+TEST_CASE("the generator gains Qi up to the most; the spender and a special cost it") {
+    game::Arena arena(test::TestManifest());
+    u64 tick = 1;
+    for (i64 expected = QI_START + BOLT_GAIN; expected < QI_MAX; expected += BOLT_GAIN) {
+        CastAt(arena, tick, core::Slot::Generator);
+        CHECK(CasterOf(arena).qi == expected);
+        tick += BOLT_COOLDOWN;
+    }
+    CastAt(arena, tick, core::Slot::Generator);
+    CHECK(CasterOf(arena).qi == QI_MAX);
+    tick += BOLT_COOLDOWN;
+    CastAt(arena, tick, core::Slot::Generator);
+    CHECK(CasterOf(arena).qi == QI_MAX);
+
+    CastAt(arena, tick, core::Slot::Spender);
+    CHECK(CasterOf(arena).qi == QI_MAX - LANCE_COST);
+    CastAt(arena, tick, core::Slot::Special1);
+    CHECK(CasterOf(arena).qi == QI_MAX - LANCE_COST - SWORDS_COST);
+}
+
+TEST_CASE("a cooldown blocks a recast until it's over") {
+    constexpr u64 FIRST = 10;
+    game::Arena arena(test::TestManifest());
+    CastAt(arena, FIRST, core::Slot::Generator);
+    CastAt(arena, FIRST + BOLT_COOLDOWN - 1, core::Slot::Generator);
+    CHECK(CasterOf(arena).qi == QI_START + BOLT_GAIN);
+    Run(arena, FIRST + BOLT_COOLDOWN, FIRST + (2 * BOLT_COOLDOWN));
+    CHECK(CasterOf(arena).qi == QI_START + BOLT_GAIN); // the refused cast wasn't queued
+    CastAt(arena, FIRST + (2 * BOLT_COOLDOWN), core::Slot::Generator);
+    CHECK(CasterOf(arena).qi == QI_START + (2 * BOLT_GAIN));
+}
+
+TEST_CASE("a cast at the tick the cooldown ends goes off") {
+    constexpr u64 FIRST = 10;
+    game::Arena arena(test::TestManifest());
+    CastAt(arena, FIRST, core::Slot::Generator);
+    CastAt(arena, FIRST + BOLT_COOLDOWN, core::Slot::Generator);
+    CHECK(CasterOf(arena).qi == QI_START + (2 * BOLT_GAIN));
+}
+
+TEST_CASE("a cast without enough Qi does nothing but report it") {
+    constexpr i64 SHORT = 10;
+    core::GameData data = game::BuiltInData();
+    data.abilities.qiStart = SHORT;
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
+    const std::vector<core::Event> events = CastAt(arena, 1, core::Slot::Spender);
+    REQUIRE(events.size() == 1);
+    CHECK(events.front().kind == core::EventKind::NotEnoughQi);
+    CHECK(events.front().value == static_cast<i64>(std::to_underlying(core::Slot::Spender)));
+    CHECK(CasterOf(arena).qi == SHORT);
+    CHECK(CasterOf(arena).readyTick.at(std::to_underlying(core::Slot::Spender)) == 0);
+}
+
+TEST_CASE("an empty slot casts nothing") {
+    game::Arena casting(test::TestManifest());
+    game::Arena idle(test::TestManifest());
+    const std::vector<core::Event> events = CastAt(casting, 1, core::Slot::Special2);
+    Run(idle, 1, 1);
+    CHECK(events.empty());
+    CHECK(casting.StateHash() == idle.StateHash());
+}
+
+TEST_CASE("the dash moves the player toward the point, by its distance, over its duration") {
+    constexpr core::HeldInput LEFT{ .move = { .x = -1.0F, .y = 0.0F } };
+    constexpr u64 START = 1;
+    game::Arena arena(test::TestManifest());
+    const core::StableId player = arena.Player();
+    const core::Vec2 from = FootOf(arena, player);
+    CastAt(arena, START, core::Slot::Movement, from + FAR_RIGHT, LEFT);
+    CHECK(FootOf(arena, player).x == from.x);
+    const u64 half = START + (DASH_TICKS / 2);
+    for (u64 tick = START + 1; tick < half; ++tick) {
+        Run(arena, tick, tick);
+    }
+    const f32 progress = (FootOf(arena, player).x - from.x) / DASH_DISTANCE;
+    CHECK(progress > 0.0F);
+    Run(arena, half, half);
+    constexpr f32 LINEAR = 0.5F;
+    CHECK(FootOf(arena, player).x - from.x < LINEAR * DASH_DISTANCE); // eased: slow at the start
+    for (u64 tick = half + 1; tick <= START + DASH_TICKS; ++tick) {
+        std::vector<core::Event> events;
+        arena.Tick(At(tick), { .actions = {}, .held = LEFT }, events);
+    }
+    CHECK(FootOf(arena, player).x == from.x + DASH_DISTANCE);
+    CHECK(FootOf(arena, player).y == from.y);
+    for (const core::StableId fox : Foxes(arena)) {
+        const core::Vec2 centre = Entities(arena).get<game::Orbit>(EntityOf(arena, fox)).centre;
+        CHECK(centre.x == FootOf(arena, player).x);
+        CHECK(centre.y == FootOf(arena, player).y);
+    }
+    CHECK_FALSE(Entities(arena).all_of<game::Dashing>(EntityOf(arena, player)));
+    std::vector<core::Event> events;
+    arena.Tick(At(START + DASH_TICKS + 1), { .actions = {}, .held = LEFT }, events);
+    CHECK(FootOf(arena, player).x < from.x + DASH_DISTANCE); // walking again
+}
+
+TEST_CASE("the dash stops at a point nearer than its distance") {
+    constexpr f32 NEAR_BY = 100.0F;
+    game::Arena arena(test::TestManifest());
+    const core::Vec2 from = FootOf(arena, arena.Player());
+    CastAt(arena, 1, core::Slot::Movement, from + core::Vec2{ .x = 0.0F, .y = NEAR_BY });
+    Run(arena, 2, 1 + DASH_TICKS);
+    CHECK(FootOf(arena, arena.Player()).x == from.x);
+    CHECK(FootOf(arena, arena.Player()).y == from.y + NEAR_BY);
+}
+
+TEST_CASE("a casting player's state is published in a combat scene only") {
+    game::Arena arena(test::TestManifest());
+    CastAt(arena, 1, core::Slot::Generator);
+    const core::Snapshot snapshot = Published(arena, 1);
+    REQUIRE(snapshot.caster.has_value());
+    const core::CasterView view = snapshot.caster.value_or(core::CasterView{});
+    CHECK(view.qi == QI_START + BOLT_GAIN);
+    CHECK(view.qiMax == QI_MAX);
+    CHECK(view.health == CULTIVATOR_HEALTH);
+    CHECK(view.healthMax == CULTIVATOR_HEALTH);
+    CHECK(view.readyTick.at(std::to_underlying(core::Slot::Generator)) == 1 + BOLT_COOLDOWN);
+    CHECK(view.loadout.at(std::to_underlying(core::Slot::Spender)) == core::AbilityKind::PoisonLance);
+    game::Arena painted(test::TestManifest(), game::Scene::Painted);
+    CHECK_FALSE(Published(painted, 1).caster.has_value());
+}
+
+TEST_CASE("a cast's use ID carries the slot") {
+    constexpr u64 TICK = 9;
+    CHECK(game::CastUse(TICK, core::Slot::Generator) == core::AbilityUse(TICK, game::CAST_SOURCE));
+    CHECK(game::CastUse(TICK, core::Slot::Movement) == core::AbilityUse(TICK, game::CAST_SOURCE + 2));
+}
+
+TEST_CASE("a caster's Qi and a dash are valid when not negative, finite and at least a tick long") {
+    CHECK(game::Caster{ .qi = 0 }.Valid());
+    CHECK_FALSE(game::Caster{ .qi = -1 }.Valid());
+    constexpr f32 NOT_A_NUMBER = std::numeric_limits<f32>::quiet_NaN();
+    CHECK(game::Dashing{ .from = {}, .to = {}, .startTick = 0, .ticks = 1 }.Valid());
+    CHECK_FALSE(game::Dashing{ .from = {}, .to = {}, .startTick = 0, .ticks = 0 }.Valid());
+    CHECK_FALSE(game::Dashing{ .from = {}, .to = { .x = NOT_A_NUMBER, .y = 0.0F }, .startTick = 0, .ticks = 1 }.Valid());
+}
+
 } // namespace

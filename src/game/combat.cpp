@@ -17,7 +17,100 @@ f64 EaseInOut(f64 progress) {
     return progress * progress * (THREE - (TWO * progress));
 }
 
+// Starts what the ability `kind` does once its cost is paid: the one place each ability's effect goes.
+void StartEffect(
+    core::Registry& entities,
+    core::Entity caster,
+    const core::AbilityData& ability,
+    core::AbilityKind kind,
+    const core::Action& cast,
+    u64 tick
+) {
+    if (kind == core::AbilityKind::Dash) {
+        const core::Vec2 from = entities.get<Body>(caster).current;
+        const f64 toX = static_cast<f64>(cast.point.x) - static_cast<f64>(from.x);
+        const f64 toY = static_cast<f64>(cast.point.y) - static_cast<f64>(from.y);
+        const f64 away = std::sqrt((toX * toX) + (toY * toY));
+        const f64 reach = std::min(away, static_cast<f64>(ability.distance));
+        const f64 scale = away > 0.0 ? reach / away : 0.0;
+        const core::Vec2 end{ .x = static_cast<f32>(static_cast<f64>(from.x) + (toX * scale)),
+                              .y = static_cast<f32>(static_cast<f64>(from.y) + (toY * scale)) };
+        entities.emplace<Dashing>(caster, from, end, tick, std::max(ability.durationTicks, 1U));
+        PN_LOG_DEBUG("tick {}: the player dashes from ({}, {}) to ({}, {})", tick, from.x, from.y, end.x, end.y);
+    }
+    // The fire bolt, the poison lance and the flying swords start their records here once they have them.
+}
+
 } // namespace
+
+void Combat::Cast(
+    core::State& state,
+    const core::Abilities& abilities,
+    core::StableId player,
+    const core::Action& cast,
+    u64 tick,
+    std::vector<core::Event>& events
+) {
+    if (state.DomainOf(player) != ACTIVE || !core::IsFinite(cast.point)) {
+        return;
+    }
+    core::Registry& entities = state[ACTIVE].Entities();
+    const core::Entity entity = state[ACTIVE].Find(player);
+    Caster* const caster = entities.try_get<Caster>(entity);
+    if (caster == nullptr || entities.any_of<Dying, Dashing>(entity)) {
+        return;
+    }
+    const auto slot = std::to_underlying(cast.slot);
+    if (slot >= core::SLOTS) {
+        return;
+    }
+    const core::AbilityKind kind = abilities.In(cast.slot);
+    if (kind == core::AbilityKind::None || tick < caster->readyTick.at(slot)) {
+        return;
+    }
+    const core::AbilityData& ability = abilities.Of(kind);
+    if (caster->qi < ability.qiCost) {
+        events.push_back({ .kind = core::EventKind::NotEnoughQi, .value = static_cast<i64>(slot) });
+        PN_LOG_DEBUG("tick {}: slot {} needs {} Qi, the player has {}", tick, slot, ability.qiCost, caster->qi);
+        return;
+    }
+    // The gain is capped before the cost is taken, so a cast never loses Qi to the cap.
+    const i64 room = std::max<i64>(0, abilities.qiMax - caster->qi);
+    caster->qi += std::min(ability.qiGain, room) - ability.qiCost;
+    caster->readyTick.at(slot) = tick + ability.cooldownTicks;
+    StartEffect(entities, entity, ability, kind, cast, tick);
+}
+
+bool Combat::Dash(core::State& state, core::StableId player, u64 tick) {
+    if (state.DomainOf(player) != ACTIVE) {
+        return false;
+    }
+    core::Registry& entities = state[ACTIVE].Entities();
+    const core::Entity entity = state[ACTIVE].Find(player);
+    const Dashing* const dashing = entities.try_get<Dashing>(entity);
+    if (dashing == nullptr) {
+        return false;
+    }
+    Body& body = entities.get<Body>(entity);
+    body.previous = body.current;
+    if (tick >= dashing->startTick + dashing->ticks) {
+        body.current = dashing->to;
+        entities.remove<Dashing>(entity);
+        return true;
+    }
+    const f64 progress =
+        tick <= dashing->startTick ? 0.0 : static_cast<f64>(tick - dashing->startTick) / static_cast<f64>(dashing->ticks);
+    const f64 eased = EaseInOut(progress);
+    body.current = {
+        .x = static_cast<f32>(
+            static_cast<f64>(dashing->from.x) + ((static_cast<f64>(dashing->to.x) - static_cast<f64>(dashing->from.x)) * eased)
+        ),
+        .y = static_cast<f32>(
+            static_cast<f64>(dashing->from.y) + ((static_cast<f64>(dashing->to.y) - static_cast<f64>(dashing->from.y)) * eased)
+        ),
+    };
+    return true;
+}
 
 i64 HitAmount(i64 base) {
     return base;

@@ -111,6 +111,9 @@ DamageNumbers::DamageNumbers(const core::Settings& settings)
 }
 
 void DamageNumbers::Play(const core::Event& event) {
+    if (event.kind == core::EventKind::NotEnoughQi) {
+        return; // no hit: the HUD says it
+    }
     if (event.kind == core::EventKind::UseEnded) {
         if (m_waiting.empty()) {
             return;
