@@ -139,7 +139,9 @@ Jobs::Pending::~Pending() {
 }
 
 bool Jobs::Pending::Done() const {
-    return !m_task || m_task->ran.load(std::memory_order_acquire) == m_task->m_SetSize;
+    // Both: `ran` is the edge ThreadSanitizer sees, but enkiTS marks the task complete only after the last chunk returns,
+    // and until then the destructor's wait would run other low-priority work (a scene's decode) on this thread.
+    return !m_task || (m_task->ran.load(std::memory_order_acquire) == m_task->m_SetSize && m_task->GetIsComplete());
 }
 
 Jobs::ThreadRegistration::ThreadRegistration(Jobs& jobs)

@@ -38,7 +38,8 @@ public:
         /// Waits for every chunk, working on chunks meanwhile.
         ~Pending();
 
-        /// Whether every chunk has run; what they wrote is then visible to the caller.
+        /// Whether every chunk has run and the job system is finished with them: what they wrote is then visible to the
+        /// caller, and the destructor returns at once, running no other work.
         [[nodiscard]] bool Done() const;
 
     private:
