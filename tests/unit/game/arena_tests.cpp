@@ -442,7 +442,7 @@ TEST_CASE("F2's CycleScene visits every scene in order and back, clearing the se
     CHECK(arena.Player() != core::StableId{});
 }
 
-TEST_CASE("the shipped creatures table is the built-in data") {
+TEST_CASE("the shipped creatures and abilities tables are the built-in data") {
     const std::expected<core::GameData, core::Error> shipped =
         platform::AssetsDirectory().and_then([](const std::filesystem::path& assets) {
             return data::LoadGameData(assets / "data");

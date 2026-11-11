@@ -8,6 +8,7 @@
 
 #include "core/game_data.hpp"
 #include "core/handover.hpp"
+#include "core/hit.hpp"
 #include "core/manifest.hpp"
 #include "core/profile.hpp"
 #include "core/stable_id.hpp"
@@ -201,16 +202,6 @@ enum class EventKind : u8 {
     UseEnded, ///< The ability use `use` has emitted all its hits. Every use emits exactly one, after its last hit, even
               ///< one cut short (its user's death, a scene change): combined damage numbers wait for it.
 };
-
-/// The kind of a hit, which decides how its damage number reads.
-enum class HitKind : u8 {
-    Damage,  ///< Harm.
-    Healing, ///< Health restored.
-    Poison,  ///< Harm over time from poison.
-    Burn,    ///< Harm over time from fire.
-};
-/// How many kinds HitKind names.
-inline constexpr std::size_t HIT_KINDS = 4;
 
 /// The ID of one use of an ability: `tick` is the simulation tick it happens at and `source` says which ability it is
 /// (below 256), so two uses on one tick differ and a use's hits and its end share the ID.
