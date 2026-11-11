@@ -250,6 +250,32 @@ TEST_CASE("the swords form in waves, inner first") {
     }
 }
 
+TEST_CASE("swords that don't split evenly over the waves go one more to each of the first waves") {
+    constexpr u32 UNEVEN = 1'003; // 3 more than 5 waves of 200
+    core::Volley volley = VOLLEY;
+    volley.shape.count = UNEVEN;
+    std::array<u32, SWORDS.waves> sizes{};
+    std::array<u64, SWORDS.waves> earliest{};
+    earliest.fill(std::numeric_limits<u64>::max());
+    u32 last = 0;
+    for (u32 sword = 0; sword < UNEVEN; ++sword) {
+        CAPTURE(sword);
+        const u32 wave = core::WaveOf(volley, sword);
+        REQUIRE(wave < SWORDS.waves);
+        // Each wave a run of indices, in order.
+        CHECK(wave >= last);
+        CHECK(wave <= last + 1);
+        last = wave;
+        ++sizes.at(wave);
+        earliest.at(wave) = std::min(earliest.at(wave), core::LaunchTick(volley, sword));
+    }
+    CHECK(sizes == std::array<u32, SWORDS.waves>{ { 201, 201, 201, 200, 200 } });
+    for (std::size_t wave = 0; wave < SWORDS.waves; ++wave) {
+        CAPTURE(wave);
+        CHECK(earliest.at(wave) == START + (wave * SWORDS.waveGapTicks));
+    }
+}
+
 TEST_CASE("each wave forms further out, in a scattered band") {
     constexpr f64 SLACK = 1e-3; // world units: the position is rounded to f32
     // A band of ±scatter evenly filled has a standard deviation of scatter / √3 of the ring's radius; a line has none.
@@ -352,6 +378,21 @@ TEST_CASE("the path is smooth") {
         aim = "inside the ring";
         CheckSmooth(CLOSE, sword, insideAim);
     }
+    // The sword whose ring point lies nearest the point: an outer ring's, with the shortest flight and the tightest bend.
+    u32 nearest = 0;
+    for (u32 sword = 1; sword < SWORDS.count; ++sword) {
+        if (Distance(RingPoint(VOLLEY, sword), POINT) < Distance(RingPoint(VOLLEY, nearest), POINT)) {
+            nearest = sword;
+        }
+    }
+    CAPTURE(nearest);
+    const f64 shortest = Distance(RingPoint(VOLLEY, nearest), POINT);
+    CAPTURE(shortest);
+    const char* nearestAim = "still";
+    CAPTURE(nearestAim);
+    CheckSmooth(VOLLEY, nearest, StillAim);
+    nearestAim = "moving";
+    CheckSmooth(VOLLEY, nearest, MovingAim);
 }
 
 TEST_CASE("a sword turns on the ring without flipping while its target moves off the point") {
