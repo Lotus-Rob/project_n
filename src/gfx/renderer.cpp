@@ -134,12 +134,6 @@ struct Renderer::Impl {
     Impl& operator=(Impl&&) = delete;
     ~Impl() = default;
 
-    // A labelled creature too small to see (TooSmallToSee()), whose numbers start over its label: its label's height.
-    struct TinyCreature {
-        core::StableId entity{};
-        f32 labelHeight = 0.0F; // in target pixels
-    };
-
     // What a frame or a capture shows, and on a target how large.
     struct Shown {
         const core::Snapshot* snapshot = nullptr;
@@ -160,12 +154,16 @@ struct Renderer::Impl {
     // What `item` says, in the language shown.
     std::string_view TextOf(const core::TextItem& item);
     // Lays out the texts into meshVertices and meshRuns, in target pixels, unrounded: captions, then the labels as the
-    // label pass places them, then numbers, so each draws over the one before.
-    void PlaceTexts(const Shown& shown);
+    // label pass places them, then numbers (on `jobs`), so each draws over the one before.
+    void PlaceTexts(const Shown& shown, core::Jobs& jobs);
+    // The numbers that start from their creature's label (NumberOrigin), from this frame's labels as placed.
+    void FindNumberOrigins();
+    // Each quad of numberPages from meshVertices' quad `firstQuad` on, into meshRuns.
+    void AddNumberRuns(u32 firstQuad);
     // `item`'s layout at its own anchor and size, its colour scaled by `opacity`.
     void PlaceText(const core::TextItem& item, const Shown& shown, f32 opacity);
-    // `item`, a number, drawn at `pixels`, moved by its scatter and risen by its lift from its anchor, or from the top of
-    // its creature's label, where it is placed, when that creature is too small to see.
+    // `item`, a number running top to bottom, shaped and drawn at `pixels`, moved by its scatter and risen by its lift
+    // from its anchor, or from its creature's NumberOrigin. Numbers across are composed instead (PlaceNumbers()).
     void PlaceNumber(const core::TextItem& item, const Shown& shown, f32 pixels);
     // The label pass's input for `item`, a label, raised to the hovered or selected priority when it names those.
     LabelInput LabelOf(const core::TextItem& item, const Shown& shown, core::StableId hovered, core::StableId selected);
@@ -222,7 +220,8 @@ struct Renderer::Impl {
     LabelPass labels{};
     std::vector<LabelInput> labelInputs{};
     std::vector<const core::TextItem*> labelItems{}; // the item of each of labelInputs
-    std::vector<TinyCreature> tinyCreatures{};       // by entity: the labelled creatures too small to see this frame
+    std::vector<NumberOrigin> numberOrigins{};       // by entity: where this frame's tiny creatures' numbers start
+    std::vector<u32> numberPages{};                  // the glyph page of each quad PlaceNumbers() placed this frame
     std::vector<MeshVertex> meshVertices{};
     std::vector<internal::MeshRun> meshRuns{};
     core::RepeatedFailure failures{};
@@ -241,7 +240,7 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     meshVertices.clear();
     meshRuns.clear();
     if (glyphs) {
-        PlaceTexts(shown);
+        PlaceTexts(shown, jobs);
     }
     SDL_PushGPUDebugGroup(commands, "upload");
     SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
@@ -292,7 +291,7 @@ std::string_view Renderer::Impl::TextOf(const core::TextItem& item) {
     return number;
 }
 
-void Renderer::Impl::PlaceTexts(const Shown& shown) {
+void Renderer::Impl::PlaceTexts(const Shown& shown, core::Jobs& jobs) {
     PN_PROFILE_ZONE();
     const core::Snapshot& snapshot = *shown.snapshot;
     const auto idOf = [&snapshot](std::optional<std::size_t> instance) {
@@ -325,21 +324,59 @@ void Renderer::Impl::PlaceTexts(const Shown& shown) {
         PlaceLabel(item, placed.previous, placed.opacity * (1.0F - placed.change), placed.anchor, pixels);
         PlaceLabel(item, placed.count, placed.opacity * placed.change, placed.anchor, pixels);
     }
-    tinyCreatures.clear();
-    for (const LabelInput& label : labelInputs) {
-        if (TooSmallToSee(label.entityPixels)) {
-            tinyCreatures.push_back({ .entity = label.entity, .labelHeight = label.height });
-        }
-    }
-    std::ranges::sort(tinyCreatures, {}, &TinyCreature::entity);
+    FindNumberOrigins();
     const f32 numberPixels =
         TextPixels(core::TextKind::Number, PixelsPerUnit(shown.view->camera, shown.width, shown.height), textOptions.scale);
-    for (const std::span<const core::TextItem> texts : { std::span<const core::TextItem>{ snapshot.texts }, shown.extra }) {
+    const NumberPlacement placement{ .face = NumberFaceOf(*text),
+                                     .clip = WorldToClip(shown.view->camera, shown.width, shown.height),
+                                     .alpha = static_cast<f32>(shown.view->alpha),
+                                     .width = shown.width,
+                                     .height = shown.height,
+                                     .pixels = numberPixels,
+                                     .outline = textOptions.outline,
+                                     .shadow = textOptions.shadow,
+                                     .origins = numberOrigins };
+    const auto firstQuad = static_cast<u32>(meshVertices.size() / QUAD_VERTICES);
+    numberPages.clear();
+    const std::array<std::span<const core::TextItem>, 2> sources{ { snapshot.texts, shown.extra } };
+    for (const std::span<const core::TextItem> texts : sources) {
+        PlaceNumbers(texts, placement, jobs, meshVertices, numberPages);
+    }
+    AddNumberRuns(firstQuad);
+    // No number runs down so far; one that does is shaped, after those across.
+    for (const std::span<const core::TextItem> texts : sources) {
         for (const core::TextItem& item : texts) {
-            if (item.kind == core::TextKind::Number) {
+            if (item.kind == core::TextKind::Number && item.direction != core::TextDirection::LeftToRight) {
                 PlaceNumber(item, shown, numberPixels);
             }
         }
+    }
+}
+
+void Renderer::Impl::FindNumberOrigins() {
+    PN_PROFILE_ZONE();
+    numberOrigins.clear();
+    for (const LabelInput& label : labelInputs) {
+        if (TooSmallToSee(label.entityPixels)) {
+            // From the top of its label's box, so its numbers rise off the label rather than over its text.
+            if (const std::optional<core::Vec2> bottom = labels.Anchor(label.entity)) {
+                numberOrigins.push_back({ .entity = label.entity, .start = { .x = bottom->x, .y = bottom->y - label.height } });
+            }
+        }
+    }
+    std::ranges::sort(numberOrigins, {}, &NumberOrigin::entity);
+}
+
+void Renderer::Impl::AddNumberRuns(u32 firstQuad) {
+    PN_PROFILE_ZONE();
+    u32 quad = firstQuad;
+    for (const u32 pageIndex : numberPages) {
+        SDL_GPUTexture* const page = glyphPages.at(pageIndex).get();
+        if (meshRuns.empty() || meshRuns.back().page != page) {
+            meshRuns.push_back({ .page = page, .firstQuad = quad, .quads = 0 });
+        }
+        ++meshRuns.back().quads;
+        ++quad;
     }
 }
 
@@ -348,15 +385,10 @@ void Renderer::Impl::PlaceNumber(const core::TextItem& item, const Shown& shown,
     if (item.opacity <= 0.0F) {
         return;
     }
-    std::optional<core::Vec2> anchor = std::nullopt;
-    const auto tiny = std::ranges::lower_bound(tinyCreatures, item.entity, {}, &TinyCreature::entity);
-    if (tiny != tinyCreatures.end() && tiny->entity == item.entity) {
-        // From the top of its label's box, so it rises off the label rather than over its text.
-        anchor = labels.Anchor(item.entity).transform([&](core::Vec2 bottom) {
-            return core::Vec2{ .x = bottom.x, .y = bottom.y - tiny->labelHeight };
-        });
-    }
-    core::Vec2 start = anchor.value_or(TextAnchor(item, *shown.view, shown.width, shown.height));
+    const auto origin = std::ranges::lower_bound(numberOrigins, item.entity, {}, &NumberOrigin::entity);
+    core::Vec2 start = origin != numberOrigins.end() && origin->entity == item.entity
+                           ? origin->start
+                           : TextAnchor(item, *shown.view, shown.width, shown.height);
     start.x += item.scatter.x * pixels;
     start.y += (item.scatter.y - item.lift) * pixels;
     PlaceLayout(
