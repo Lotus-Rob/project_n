@@ -16,6 +16,9 @@ namespace {
 
 constexpr u64 TICKS = 5;
 constexpr u64 MONTHS = 12; // enough for relationships to form
+// The simulation tick every save here is loaded as made at: past any tick they played to, so only a flash dated after it
+// is refused.
+constexpr u64 SAVED_TICK = 1'000;
 
 core::TickCounters At(u64 tick) {
     return { .wall = tick, .simulation = tick, .state = tick };
@@ -78,7 +81,7 @@ TEST_CASE("a game loaded from a save goes on exactly as the game that saved") {
 
     game::Arena loaded(test::TestManifest(), game::Scene::Arena);
     core::Reader reader{ bytes };
-    REQUIRE(loaded.Load(reader));
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
     CHECK(loaded.StateHash() == saved.StateHash());
     CHECK(loaded.Months() == saved.Months());
     CHECK(loaded.Scene() == saved.Scene());
@@ -101,7 +104,7 @@ TEST_CASE("the player, where it walked, and the selection survive a save") {
 
     game::Arena loaded(test::TestManifest(), game::Scene::Cells);
     core::Reader reader{ bytes };
-    REQUIRE(loaded.Load(reader));
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
     CHECK(loaded.Player() == saved.Player());
     CHECK(loaded.Selected() == saved.Player());
     Tick(loaded, At(2), { .actions = {}, .held = RIGHT });
@@ -128,7 +131,7 @@ TEST_CASE("health, the dying and the respawns survive a save") {
 
     game::Arena loaded(test::TestManifest(), game::Scene::Cells);
     core::Reader reader{ bytes };
-    REQUIRE(loaded.Load(reader));
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
     CHECK(loaded.StateHash() == saved.StateHash());
     for (u64 tick = SAVED_AT + 1; tick <= PLAYED_TO; ++tick) {
         Tick(saved, At(tick), {});
@@ -158,7 +161,7 @@ TEST_CASE("Qi, cooldowns and a dash under way survive a save") {
 
     game::Arena loaded(test::TestManifest(), game::Scene::Cells);
     core::Reader reader{ bytes };
-    REQUIRE(loaded.Load(reader));
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
     CHECK(loaded.StateHash() == saved.StateHash());
     const game::Caster& caster =
         loaded.State()[game::ACTIVE].Entities().get<game::Caster>(loaded.State()[game::ACTIVE].Find(loaded.Player()));
@@ -194,7 +197,7 @@ TEST_CASE("a save mid-arrival goes on as the game that saved, with the same even
 
     game::Arena loaded(test::TestManifest(), game::Scene::Cells);
     core::Reader reader{ bytes };
-    REQUIRE(loaded.Load(reader));
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
     CHECK(loaded.StateHash() == saved.StateHash());
     std::vector<core::Event> savedEvents;
     std::vector<core::Event> loadedEvents;
@@ -234,7 +237,7 @@ TEST_CASE("the save round-trips mid-volley") {
 
     game::Arena loaded(test::TestManifest(), game::Scene::Cells, data);
     core::Reader reader{ bytes };
-    REQUIRE(loaded.Load(reader));
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
     CHECK(loaded.StateHash() == saved.StateHash());
     std::size_t hits = 0;
     for (u64 tick = savedAt + 1; tick <= last + volley.shape.fadeTicks + 2; ++tick) {
@@ -285,7 +288,7 @@ TEST_CASE("the save round-trips mid-burn") {
 
     game::Arena loaded(test::TestManifest(), game::Scene::Cells, data);
     core::Reader reader{ bytes };
-    REQUIRE(loaded.Load(reader));
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
     CHECK(loaded.StateHash() == saved.StateHash());
     std::vector<core::Event> used;
     for (u64 tick = savedAt + 1; tick <= savedAt + (BURN_TICKS * game::AFFLICTION_PERIOD) + 1; ++tick) {
@@ -318,7 +321,7 @@ TEST_CASE("a truncated save is refused, and the game is unchanged") {
     game::Arena game(test::TestManifest(), game::Scene::Arena);
     const u64 before = game.StateHash();
     core::Reader reader{ std::span{ bytes }.first(bytes.size() - CUT) };
-    CHECK_FALSE(game.Load(reader));
+    CHECK_FALSE(game.Load(reader, SAVED_TICK));
     CHECK(game.StateHash() == before);
 }
 
@@ -330,13 +333,13 @@ TEST_CASE("a save with bytes after the state, or of another format, is refused")
     longer.push_back(EXTRA);
     game::Arena game(test::TestManifest(), game::Scene::Arena);
     core::Reader longReader{ longer };
-    CHECK_FALSE(game.Load(longReader));
+    CHECK_FALSE(game.Load(longReader, SAVED_TICK));
 
     std::vector<std::byte> other = Saved(saved);
     const auto format = std::bit_cast<std::array<std::byte, sizeof(u32)>>(OTHER_FORMAT);
     std::ranges::copy(format, other.begin());
     core::Reader otherReader{ other };
-    CHECK_FALSE(game.Load(otherReader));
+    CHECK_FALSE(game.Load(otherReader, SAVED_TICK));
 }
 
 // A volley as game::Combat saves one: the cast, then its targets.
@@ -348,12 +351,13 @@ struct SavedVolley {
 // An arena save of `state` with `player`, laid out as Arena::Save writes one: format, scene, seed,
 // stable-ID counter, months, the player and the selection (none), then each domain after its version,
 // then no relationships, no respawns waiting, `volley` if any (the flying swords' hits of 20, none resolved yet) and
-// no flashes.
+// `flash` if any.
 // Its versions must follow arena.cpp's, or every refusal below is the version's.
 std::vector<std::byte> ArenaSave(
     const core::State& state,
     core::StableId player = {},
-    const std::optional<SavedVolley>& volley = std::nullopt
+    const std::optional<SavedVolley>& volley = std::nullopt,
+    const std::optional<core::Flash>& flash = std::nullopt
 ) {
     constexpr u32 FORMAT = 3;
     constexpr u32 ACTIVE_VERSION = 4;
@@ -361,7 +365,6 @@ std::vector<std::byte> ArenaSave(
     constexpr u64 MONTHS_PASSED = 0;
     constexpr u64 RELATIONSHIPS = 0;
     constexpr u64 RESPAWNS = 0;
-    constexpr u64 FLASHES = 0;
     using Active = core::ComponentList<
         game::Body,
         game::Look,
@@ -398,16 +401,19 @@ std::vector<std::byte> ArenaSave(
             writer(target);
         }
     }
-    writer(FLASHES);
+    writer(static_cast<u64>(flash ? 1 : 0));
+    if (flash) {
+        writer(*flash);
+    }
     return bytes;
 }
 
-// Whether a fresh arena loads `bytes`; CHECKs that its state hash is the same afterwards.
-bool Loads(const std::vector<std::byte>& bytes) {
+// Whether a fresh arena loads `bytes`, saved at `savedTick`; CHECKs that its state hash is the same afterwards.
+bool Loads(const std::vector<std::byte>& bytes, u64 savedTick = SAVED_TICK) {
     game::Arena game(test::TestManifest(), game::Scene::Arena);
     const u64 before = game.StateHash();
     core::Reader reader{ bytes };
-    const bool loaded = game.Load(reader);
+    const bool loaded = game.Load(reader, savedTick);
     const u64 after = game.StateHash();
     CHECK(after == before);
     return loaded;
@@ -424,7 +430,7 @@ TEST_CASE("a sound save built as the refusals below build theirs is loaded") {
     game::Arena game(test::TestManifest(), game::Scene::Arena);
     const std::vector<std::byte> bytes = ArenaSave(state, state[game::ACTIVE].Entities().get<core::StableId>(player));
     core::Reader reader{ bytes };
-    CHECK(game.Load(reader));
+    CHECK(game.Load(reader, SAVED_TICK));
 }
 
 TEST_CASE("a save whose player doesn't exist is refused, and the game is unchanged") {
@@ -466,7 +472,7 @@ TEST_CASE("a save with a fox as the arena makes one is loaded") {
     const std::vector<std::byte> bytes = ArenaSave(state);
     core::Reader reader{ bytes };
     game::Arena game(test::TestManifest(), game::Scene::Arena);
-    CHECK(game.Load(reader));
+    CHECK(game.Load(reader, SAVED_TICK));
 }
 
 TEST_CASE("a save with health above its most is refused, and the game is unchanged") {
@@ -534,7 +540,7 @@ TEST_CASE("a save with a volley as a cast makes one is loaded") {
     const std::vector<std::byte> bytes = ArenaSave(state, {}, PointVolley());
     core::Reader reader{ bytes };
     game::Arena game(test::TestManifest(), game::Scene::Arena);
-    CHECK(game.Load(reader));
+    CHECK(game.Load(reader, SAVED_TICK));
 }
 
 TEST_CASE("a save with a volley whose commit window is unresolved, with no targets, or aiming at a living point, is refused") {
@@ -584,7 +590,7 @@ TEST_CASE("a save with a volley aiming at a living target that is no creature he
     const std::vector<std::byte> bytes = ArenaSave(state, {}, AimedAt(state[game::ACTIVE].Entities().get<core::StableId>(fox)));
     core::Reader reader{ bytes };
     game::Arena game(test::TestManifest(), game::Scene::Arena);
-    REQUIRE(game.Load(reader));
+    REQUIRE(game.Load(reader, SAVED_TICK));
     std::vector<core::Event> events;
     game.Tick(At(1), {}, events); // follows the fox's chest
 }
@@ -596,7 +602,7 @@ TEST_CASE("a loaded volley whose arrivals are all overdue still ends its use, on
     const std::vector<std::byte> bytes = ArenaSave(state, {}, volley);
     core::Reader reader{ bytes };
     game::Arena game(test::TestManifest(), game::Scene::Arena);
-    REQUIRE(game.Load(reader));
+    REQUIRE(game.Load(reader, SAVED_TICK));
     std::vector<core::Event> events;
     game.Tick(At(LATER), {}, events);
     game.Tick(At(LATER + 1), {}, events);
@@ -615,7 +621,7 @@ TEST_CASE("a save's Qi above the loading game's most is lowered to it") {
     data.abilities.qiMax = LOWER;
     game::Arena loaded(test::TestManifest(), game::Scene::Arena, data);
     core::Reader reader{ bytes };
-    REQUIRE(loaded.Load(reader));
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
     const core::Registry& entities = loaded.State()[game::ACTIVE].Entities();
     CHECK(entities.get<game::Caster>(loaded.State()[game::ACTIVE].Find(loaded.Player())).qi == LOWER);
 }
@@ -635,7 +641,7 @@ TEST_CASE("a save with an arrival of no ticks, or from NaN, is refused, and the 
     const std::vector<std::byte> sound = ArrivingSave({ .from = {}, .startTick = 0, .ticks = ARRIVAL });
     core::Reader reader{ sound };
     game::Arena game(test::TestManifest(), game::Scene::Arena);
-    CHECK(game.Load(reader));
+    CHECK(game.Load(reader, SAVED_TICK));
     const bool noTicks = Loads(ArrivingSave({ .from = {}, .startTick = 0, .ticks = 0 }));
     CHECK_FALSE(noTicks);
     const bool fromNowhere =
@@ -701,6 +707,20 @@ TEST_CASE("a save with something drawn but standing nowhere is refused, and the 
 
     const bool loaded = Loads(ArenaSave(state));
     CHECK_FALSE(loaded);
+}
+
+TEST_CASE("a save with a flash that starts after the save's tick is refused") {
+    constexpr u64 STARTED = 40;
+    constexpr core::Vec2 POINT{ .x = 100.0F, .y = 50.0F };
+    const core::State state{ game::DOMAINS, STATE_SEED };
+    const std::vector<std::byte> bytes = ArenaSave(
+        state, {}, std::nullopt, core::Flash{ .point = POINT, .startTick = STARTED, .element = core::HitKind::Poison }
+    );
+    game::Arena game(test::TestManifest(), game::Scene::Arena);
+    core::Reader reader{ bytes };
+    CHECK(game.Load(reader, STARTED));
+    const bool before = Loads(bytes, STARTED - 1);
+    CHECK_FALSE(before);
 }
 
 } // namespace

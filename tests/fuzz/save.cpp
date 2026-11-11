@@ -29,7 +29,7 @@ extern "C" i32 LLVMFuzzerTestOneInput(const u8* data, std::size_t size) {
     std::vector<std::byte> bytes = Bytes(data, size);
     game::Arena arena(test::TestManifest(), game::Scene::Painted);
     core::Reader reader{ bytes };
-    if (arena.Load(reader)) {
+    if (arena.Load(reader, 0)) { // saved at tick 0, as the tick after it is 1
         std::vector<core::Event> events;
         arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, {}, events);
         core::Jobs jobs{ 1 }; // here, not static: only inputs that load pay for its thread

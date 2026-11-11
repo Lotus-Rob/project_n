@@ -51,9 +51,10 @@ public:
     /// and writes all of it into `archive`.
     virtual void Save(Writer& archive) = 0;
 
-    /// Replaces the state with the one Save() wrote, read from `archive` to its end. Returns false,
-    /// changing nothing, when the bytes are malformed or of another version.
-    [[nodiscard]] virtual bool Load(Reader& archive) = 0;
+    /// Replaces the state with the one Save() wrote, read from `archive` to its end, saved at simulation tick
+    /// `simulationTick` (the save's counters, which the logic reads before it). Returns false, changing nothing, when the
+    /// bytes are malformed or of another version, or don't fit that tick.
+    [[nodiscard]] virtual bool Load(Reader& archive, u64 simulationTick) = 0;
 
     /// A hash of the whole state as it is, order included: two runs that agree hash alike (§7.4).
     [[nodiscard]] virtual u64 StateHash() const = 0;

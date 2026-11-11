@@ -844,7 +844,7 @@ u64 Arena::StateHash() const {
     return hasher.Value();
 }
 
-bool Arena::Load(core::Reader& archive) {
+bool Arena::Load(core::Reader& archive, u64 simulationTick) {
     PN_PROFILE_ZONE();
     u32 format = 0;
     game::Scene scene = game::Scene::Arena;
@@ -875,7 +875,8 @@ bool Arena::Load(core::Reader& archive) {
     combat.Load(archive);
     const bool playerFound = player == core::StableId{} || (state.DomainOf(player) == ACTIVE &&
                                                             state[ACTIVE].Entities().all_of<Body>(state[ACTIVE].Find(player)));
-    if (archive.Failed() || archive.Remaining() != 0 || !Consistent(state) || !playerFound || !combat.AimsAtCreatures(state)) {
+    if (archive.Failed() || archive.Remaining() != 0 || !Consistent(state) || !playerFound || !combat.AimsAtCreatures(state) ||
+        !combat.FlashesStartBy(simulationTick)) {
         return false;
     }
     m_state = std::move(state);

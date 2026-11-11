@@ -37,7 +37,7 @@ public:
     void Save(core::Writer& archive) override {
         archive(u64{ ticks.size() });
     }
-    bool Load(core::Reader& archive) override {
+    bool Load(core::Reader& archive, u64 /*simulationTick*/) override {
         u64 count = 0;
         archive(count);
         if (archive.Failed() || archive.Remaining() != 0 || rejectLoads) {
