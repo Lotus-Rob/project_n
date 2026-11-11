@@ -7,6 +7,7 @@
 #include "core/repeated_failure.hpp"
 #include "gfx/internal/features/composite.hpp"
 #include "gfx/internal/features/meshes.hpp"
+#include "gfx/internal/features/ribbons.hpp"
 #include "gfx/internal/features/sprites.hpp"
 #include "gfx/internal/frame/frame.hpp"
 #include "gfx/internal/gpu.hpp"
@@ -17,6 +18,7 @@
 #include "gfx/text_layout.hpp"
 #include "gfx/text_place.hpp"
 #include "gfx/uploads.hpp"
+#include "gfx/volley_draw.hpp"
 #include "platform/clock.hpp"
 
 #include <SDL3/SDL.h>
@@ -143,8 +145,9 @@ struct Renderer::Impl {
 
     // Once a swapchain texture is acquired, the frame is submitted even on an error: SDL requires it.
     std::expected<void, core::Error> Frame(const internal::Frame& acquired, const Shown& shown, core::Jobs& jobs);
-    // Uploads the snapshot's instances when they're new, and every frame the texts' quads and the glyph fields they
-    // need; then ends the glyph cache's frame. A recorded copy counts as uploaded only once its commands are submitted
+    // Uploads the snapshot's instances when they're new, and every frame the overlay's sprites and the trails (the
+    // health bars and the swords at the render time), the texts' quads and the glyph fields they need; then ends the
+    // glyph cache's frame. A recorded copy counts as uploaded only once its commands are submitted
     // (Submitted()): a dropped buffer must upload again.
     std::expected<void, core::Error> Upload(SDL_GPUCommandBuffer* commands, const Shown& shown, core::Jobs& jobs);
     // Makes the glyph pages the cache's fields are on.
@@ -208,6 +211,8 @@ struct Renderer::Impl {
     // Features: what draws, each with its pipelines and buffers.
     internal::SpriteRenderer instances{};
     internal::MeshRenderer meshes{};
+    internal::SpriteRenderer overlay{}; // the per-frame sprites: health bars, halos and swords (VolleyDrawing)
+    internal::RibbonRenderer ribbons{};
     internal::Compositor compositor{};
     internal::SceneTarget sceneTarget{};
     // What every text of a frame shares, worked out once a frame by PlaceTexts(): the functions it calls for each text
@@ -239,9 +244,12 @@ struct Renderer::Impl {
     std::vector<std::size_t> numberQuads{};    // PlaceNumbers()' scratch: each chunk's first quad
     std::vector<MeshVertex> meshVertices{};
     std::vector<internal::MeshRun> meshRuns{};
+    VolleyDrawing volleyDrawing{}; // this frame's health bars and swords, placed at the render time
     core::RepeatedFailure failures{};
     core::RepeatedFailure overflows{};
     core::RepeatedFailure meshOverflows{};
+    core::RepeatedFailure overlayOverflows{};
+    core::RepeatedFailure ribbonOverflows{};
     core::RepeatedFailure uploadFailures{};
     // NOLINTEND(readability-redundant-member-init)
 };
@@ -257,6 +265,14 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     if (glyphs) {
         PlaceTexts(shown, jobs);
     }
+    volleyDrawing.Clear();
+    if (Holds(snapshot.scene)) {
+        const auto alpha = static_cast<f32>(shown.view->alpha);
+        DrawHealthBars(snapshot.healthBars, alpha, *manifest, uiColours, volleyDrawing);
+        DrawVolleys(
+            snapshot.volleys, snapshot.volleyTargets, snapshot.simulationTick, alpha, *manifest, uiColours, jobs, volleyDrawing
+        );
+    }
     SDL_PushGPUDebugGroup(commands, "upload");
     SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
     const std::expected<std::size_t, core::Error> dropped =
@@ -267,11 +283,19 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     // Every frame: texts move with the camera and the render clock, unlike the instances.
     const std::expected<std::size_t, core::Error> quadsDropped =
         meshes.Upload(copy, glyphs ? std::span<const MeshVertex>{ meshVertices } : std::span<const MeshVertex>{});
+    const std::expected<std::size_t, core::Error> overlayDropped = overlay.Upload(copy, volleyDrawing.instances);
+    const std::expected<std::size_t, core::Error> ribbonsDropped = ribbons.Upload(copy, volleyDrawing.ribbons);
     SDL_EndGPUCopyPass(copy);
     SDL_PopGPUDebugGroup(commands);
     text->EndFrame(jobs);
     if (quadsDropped) {
         ReportOverflow(meshOverflows, *quadsDropped, "text quads", MAX_MESH_QUADS);
+    }
+    if (overlayDropped) {
+        ReportOverflow(overlayOverflows, *overlayDropped, "overlay instances", MAX_OVERLAY_INSTANCES);
+    }
+    if (ribbonsDropped) {
+        ReportOverflow(ribbonOverflows, *ribbonsDropped, "ribbon quads", MAX_RIBBON_QUADS);
     }
     std::expected<void, core::Error> instancesCopied{};
     if (newInstances && dropped) {
@@ -281,7 +305,11 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     else if (newInstances) {
         instancesCopied = std::unexpected{ dropped.error() }; // not marked uploaded: the next frame tries again
     }
-    return core::Combine(core::Combine(instancesCopied, glyphs), quadsDropped.transform([](std::size_t /*dropped*/) {}));
+    const auto copied = [](std::size_t /*dropped*/) {};
+    return core::Combine(
+        core::Combine(core::Combine(instancesCopied, glyphs), quadsDropped.transform(copied)),
+        core::Combine(overlayDropped.transform(copied), ribbonsDropped.transform(copied))
+    );
 }
 
 std::expected<void, core::Error> Renderer::Impl::MakeGlyphPages() {
@@ -648,7 +676,11 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
             alpha
         );
     }
-    // Game text over the world and its outlines (the phase 6 chunk 3 spec), placed in target pixels.
+    // The trails, then the overlay: health bars, the halos (additive) and the swords, at the render time; their instances
+    // hold no motion between ticks, so the overlay's alpha changes nothing.
+    ribbons.Draw(commands, pass, transform);
+    overlay.Draw(commands, pass, volleyDrawing.batches, sprites, transform, alpha);
+    // Game text over the world, its outlines and the overlay (the phase 6 chunk 3 spec), placed in target pixels.
     const f32 shadowShift = TEXT_SHADOW_BASE_PIXELS / static_cast<f32>(GLYPH_PAGE_SIZE); // a texel a base pixel
     meshes.Draw(
         commands,
@@ -775,6 +807,18 @@ std::expected<Renderer, core::Error> Renderer::Create(
         return std::unexpected{ std::move(meshes.error()) };
     }
     impl->meshes = std::move(*meshes);
+    std::expected<internal::SpriteRenderer, core::Error> overlay =
+        internal::SpriteRenderer::Create(device, internal::SCENE_FORMAT, MAX_OVERLAY_INSTANCES, "overlay instances");
+    if (!overlay) {
+        return std::unexpected{ std::move(overlay.error()) };
+    }
+    impl->overlay = std::move(*overlay);
+    std::expected<internal::RibbonRenderer, core::Error> ribbons =
+        internal::RibbonRenderer::Create(device, internal::SCENE_FORMAT);
+    if (!ribbons) {
+        return std::unexpected{ std::move(ribbons.error()) };
+    }
+    impl->ribbons = std::move(*ribbons);
     std::expected<internal::Compositor, core::Error> compositor =
         internal::Compositor::Create(device, SDL_GetGPUSwapchainTextureFormat(device, impl->window));
     if (!compositor) {

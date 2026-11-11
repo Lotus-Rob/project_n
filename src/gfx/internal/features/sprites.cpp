@@ -8,7 +8,6 @@ namespace gfx::internal {
 
 namespace {
 
-constexpr u32 BUFFER_BYTES = MAX_INSTANCES * core::INSTANCE_BYTES;
 constexpr u32 VERTICES_PER_QUAD = 4; // a triangle strip
 
 // `Draw` in shaders/sprite.vert.hlsl: a float4, then a float, two uints and a float.
@@ -60,9 +59,16 @@ Gpu<SDL_GPUGraphicsPipeline> CreatePipeline(SDL_GPUDevice* device, SDL_GPUTextur
 
 } // namespace
 
-std::expected<SpriteRenderer, core::Error> SpriteRenderer::Create(SDL_GPUDevice* device, SDL_GPUTextureFormat format) {
+std::expected<SpriteRenderer, core::Error> SpriteRenderer::Create(
+    SDL_GPUDevice* device,
+    SDL_GPUTextureFormat format,
+    u32 capacity,
+    const char* name
+) {
     SpriteRenderer renderer;
     renderer.m_device = device;
+    renderer.m_capacity = capacity;
+    const u32 bytes = capacity * static_cast<u32>(core::INSTANCE_BYTES);
     for (const core::Pipeline blend : { core::Pipeline::Normal, core::Pipeline::Additive }) {
         Gpu<SDL_GPUGraphicsPipeline>& pipeline = renderer.m_pipelines.at(static_cast<std::size_t>(blend));
         pipeline = CreatePipeline(device, format, blend);
@@ -72,14 +78,14 @@ std::expected<SpriteRenderer, core::Error> SpriteRenderer::Create(SDL_GPUDevice*
     }
     SDL_GPUBufferCreateInfo bufferInfo{};
     bufferInfo.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
-    bufferInfo.size = BUFFER_BYTES;
+    bufferInfo.size = bytes;
     bufferInfo.props = SDL_CreateProperties();
-    SDL_SetStringProperty(bufferInfo.props, SDL_PROP_GPU_BUFFER_CREATE_NAME_STRING, "sprite instances");
+    SDL_SetStringProperty(bufferInfo.props, SDL_PROP_GPU_BUFFER_CREATE_NAME_STRING, name);
     renderer.m_instances = Gpu<SDL_GPUBuffer>{ SDL_CreateGPUBuffer(device, &bufferInfo), { device } };
     SDL_DestroyProperties(bufferInfo.props);
     SDL_GPUTransferBufferCreateInfo transferInfo{};
     transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-    transferInfo.size = BUFFER_BYTES;
+    transferInfo.size = bytes;
     renderer.m_transfer = Gpu<SDL_GPUTransferBuffer>{ SDL_CreateGPUTransferBuffer(device, &transferInfo), { device } };
     if (renderer.m_instances == nullptr || renderer.m_transfer == nullptr) {
         return std::unexpected{ core::Error{ std::format("the sprite instance buffers weren't created: {}", SDL_GetError()) } };
@@ -92,7 +98,7 @@ std::expected<std::size_t, core::Error> SpriteRenderer::Upload(
     std::span<const core::Instance> instances
 ) {
     PN_PROFILE_ZONE();
-    const std::span<const core::Instance> fitting = instances.first(std::min<std::size_t>(instances.size(), MAX_INSTANCES));
+    const std::span<const core::Instance> fitting = instances.first(std::min<std::size_t>(instances.size(), m_capacity));
     m_count = static_cast<u32>(fitting.size());
     if (fitting.empty()) {
         return instances.size();

@@ -13,5 +13,5 @@ abilities:
                    poison: { ticks: 4, damage: 60 } }
   dash:          { slot: movement, cooldown: 1.0, distance: 260, duration: 0.15 }
   flying_swords: { slot: special, cooldown: 6, qi_cost: 60, damage: 20, radius: 260,
-                   swords: { count: 1000, ring_radius: 140, stagger: 0.5, out: 0.2, flight: 1.1, sweep: 420, fade: 0.3 } }
+                   swords: { count: 1000, ring_radius: 180, stagger: 0.3, out: 0.25, flight: 1.1, sweep: 420, fade: 0.3 } }
 loadout: { generator: fire_bolt, spender: poison_lance, movement: dash, special_1: flying_swords }

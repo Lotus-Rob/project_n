@@ -150,6 +150,13 @@ struct VolleyTarget {
     [[nodiscard]] constexpr bool AliveAt(f64 tick) const {
         return diedTick == 0 || static_cast<f64>(diedTick) > tick;
     }
+
+    /// Whether a sword arriving at the tick `arrival`, flying at it then (SwordTarget()), strikes it: it is a creature,
+    /// not the point, and it was alive as that tick's arrivals resolved, which is before the tick's deaths. Otherwise
+    /// the sword plunges. The logic asks it on the arrival tick, the renderer on any snapshot from then on.
+    [[nodiscard]] constexpr bool Struck(u64 arrival) const {
+        return entity != StableId{} && (diedTick == 0 || diedTick >= arrival);
+    }
 };
 
 /// Where a sword is at a moment, and how to draw it.

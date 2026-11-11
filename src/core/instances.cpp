@@ -83,7 +83,8 @@ Instance MakeInstance(const Manifest& manifest, const SpriteDraw& draw) {
     const SpriteInfo& sprite = manifest.Sprite(draw.sprite);
     const Vec2 size{ .x = static_cast<f32>(sprite.width), .y = static_cast<f32>(sprite.height) };
     const Vec2 foot{ .x = static_cast<f32>(sprite.footX), .y = static_cast<f32>(sprite.footY) };
-    const Vec2 toCentre = ((size * 0.5F) - foot) * draw.scale;
+    const Vec2 stretch{ .x = draw.scale * draw.widthScale, .y = draw.scale };
+    const Vec2 toCentre{ .x = ((size.x * 0.5F) - foot.x) * stretch.x, .y = ((size.y * 0.5F) - foot.y) * stretch.y };
     const auto page = static_cast<f32>(manifest.pageSize);
     // Within half a turn of zero, and the previous within half a turn of it: the shader's lerp then takes the shorter
     // arc, and the halves keep their precision.
@@ -94,7 +95,7 @@ Instance MakeInstance(const Manifest& manifest, const SpriteDraw& draw) {
     return {
         .previous = draw.previous + toCentre,
         .current = draw.current + toCentre,
-        .size = PackPair(PackHalf(size.x * draw.scale), PackHalf(size.y * draw.scale)),
+        .size = PackPair(PackHalf(size.x * stretch.x), PackHalf(size.y * stretch.y)),
         .rotation = PackPair(PackHalf(static_cast<f32>(previous)), PackHalf(static_cast<f32>(current))),
         .regionMin = PackPair(PackUnorm16(static_cast<f32>(sprite.x) / page), PackUnorm16(static_cast<f32>(sprite.y) / page)),
         .regionMax = PackPair(

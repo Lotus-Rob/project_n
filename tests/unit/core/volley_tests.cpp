@@ -14,9 +14,9 @@ constexpr f32 SWORDS_RADIUS = 260.0F; // the shipped swords' tag radius
 // The shipped swords (assets/data/abilities.yaml) in ticks, as their cast resolves them.
 constexpr core::VolleyShape SWORDS{
     .count = 1'000,
-    .ringRadius = 140.0F,
-    .staggerTicks = 30,
-    .outTicks = 12,
+    .ringRadius = 180.0F,
+    .staggerTicks = 18,
+    .outTicks = 15,
     .flightTicks = 66,
     .sweep = 420.0F,
     .fadeTicks = 18,
@@ -653,6 +653,21 @@ TEST_CASE("with no target tagged, every sword plunges at the point") {
         CHECK(aim.x == POINT.x);
         CHECK(aim.y == POINT.y);
     }
+}
+
+TEST_CASE("a sword strikes a creature alive as its arrival's tick began, and plunges into the dead and the point") {
+    constexpr u64 ARRIVAL = 700;
+    constexpr core::StableId FOX{ 9 };
+    constexpr core::VolleyTarget LIVING{ .entity = FOX };
+    constexpr core::VolleyTarget DIED_THAT_TICK{ .entity = FOX, .diedTick = ARRIVAL }; // after the tick's arrivals
+    constexpr core::VolleyTarget DIED_LATER{ .entity = FOX, .diedTick = ARRIVAL + 1 };
+    constexpr core::VolleyTarget DIED_BEFORE{ .entity = FOX, .diedTick = ARRIVAL - 1 };
+    constexpr core::VolleyTarget THE_POINT{ .diedTick = START };
+    CHECK(LIVING.Struck(ARRIVAL));
+    CHECK(DIED_THAT_TICK.Struck(ARRIVAL));
+    CHECK(DIED_LATER.Struck(ARRIVAL));
+    CHECK_FALSE(DIED_BEFORE.Struck(ARRIVAL));
+    CHECK_FALSE(THE_POINT.Struck(ARRIVAL));
 }
 
 TEST_CASE("a volley is valid with a valid shape and finite points") {

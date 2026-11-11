@@ -35,11 +35,17 @@ struct Outline {
 /// The sprite pipelines (one per core::Pipeline) and their instance buffer.
 class SpriteRenderer {
 public:
-    /// Creates the pipelines for colour targets of `format` and a storage buffer of MAX_INSTANCES.
-    [[nodiscard]] static std::expected<SpriteRenderer, core::Error> Create(SDL_GPUDevice* device, SDL_GPUTextureFormat format);
+    /// Creates the pipelines for colour targets of `format` and a storage buffer of `capacity` instances, named `name`
+    /// for graphics debuggers: the snapshot's MAX_INSTANCES, or the overlay's fewer.
+    [[nodiscard]] static std::expected<SpriteRenderer, core::Error> Create(
+        SDL_GPUDevice* device,
+        SDL_GPUTextureFormat format,
+        u32 capacity = MAX_INSTANCES,
+        const char* name = "sprite instances"
+    );
 
     /// Copies `instances` into the storage buffer in `copy`, cycling it, so frames in flight keep
-    /// the previous contents. Returns how many didn't fit (past MAX_INSTANCES) and aren't drawn.
+    /// the previous contents. Returns how many didn't fit (past its capacity) and aren't drawn.
     /// Fails when the transfer buffer can't be mapped; then nothing is drawn until an upload succeeds.
     [[nodiscard]] std::expected<std::size_t, core::Error> Upload(
         SDL_GPUCopyPass* copy,
@@ -75,6 +81,7 @@ private:
     std::array<Gpu<SDL_GPUGraphicsPipeline>, core::PIPELINES> m_pipelines{};
     Gpu<SDL_GPUBuffer> m_instances = nullptr;
     Gpu<SDL_GPUTransferBuffer> m_transfer = nullptr;
+    u32 m_capacity = 0;
     u32 m_count = 0;
 };
 

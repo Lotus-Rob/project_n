@@ -6,10 +6,10 @@
 sprites = [
     "ground", "shadow", "rock_large", "rock_small", "pine", "shrine", "treant_blighted", "tree_dead", "hut", "crane",
     "stele", "fox_spirit", "fox_yellow", "wisp_red", "orb_gold", "crystal_ice", "cultivator", "fox", "orb_blue",
-    "orb_red", "villager",
+    "orb_red", "villager", "sword", "halo", "fire_bolt", "lance_strike", "solid",
 ]
 
-# The arena with a crowd and bullet spirals, for the benchmark: the same sprites.
+# The arena with a crowd and bullet spirals, for the benchmark: the same sprites but the effects, as nothing casts there.
 [stress]
 sprites = [
     "ground", "shadow", "rock_large", "rock_small", "pine", "shrine", "treant_blighted", "tree_dead", "hut", "crane",

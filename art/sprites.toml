@@ -84,3 +84,20 @@ foot = [16, 16]
 
 [villager]
 foot = [32, 112]
+
+# The abilities' effects (phase 6 chunk 4). All but the sword are white, tinted by their element's colour. Each one's
+# foot is its centre, where the path puts it, but the bars' square's: its left middle, so a bar grows from its left.
+[sword]
+foot = [5, 20]
+
+[halo]
+foot = [24, 24]
+
+[fire_bolt]
+foot = [12, 24]
+
+[lance_strike]
+foot = [48, 48]
+
+[solid]
+foot = [0, 4]

@@ -33,3 +33,8 @@ updates its row in the same commit (what made it, when, and who) and takes it ou
 | cell_snow.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | as above; opaque terrain tile, no keying |
 | orb_gold.png | AI image generation (`openrouter/sourceful/riverflow-v2.6-pro`) via Claude | 2026-11-02 | as above |
 | villager.png | `art/placeholders.py` (procedural placeholder) | 2026-11-07 | the NPCs' sprite; `./dev atlas --placeholders` redraws it byte for byte |
+| sword.png | `art/placeholders.py` (procedural placeholder) | 2026-11-11 | the flying swords; `./dev atlas --placeholders` redraws it byte for byte |
+| halo.png | `art/placeholders.py` (procedural placeholder) | 2026-11-11 | white, drawn additively in its element's colour; as above |
+| fire_bolt.png | `art/placeholders.py` (procedural placeholder) | 2026-11-11 | white, tinted by its element's colour; as above |
+| lance_strike.png | `art/placeholders.py` (procedural placeholder) | 2026-11-11 | white, tinted by its element's colour; as above |
+| solid.png | `art/placeholders.py` (procedural placeholder) | 2026-11-11 | the bars' white square; as above |

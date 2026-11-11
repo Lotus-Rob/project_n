@@ -52,6 +52,9 @@ struct SpriteDraw {
     /// How far it has dissolved, from 0 (whole) to 1 (gone): the sprite shader drops more of its blocks of pixels and
     /// fades the rest as it rises. Outlines ignore it.
     f32 dissolve = 0.0F;
+    /// How much wider than `scale` makes it it is drawn, about its foot point: a health bar's fill is as long as its
+    /// health. Meant for unrotated sprites.
+    f32 widthScale = 1.0F;
 };
 
 /// The instance that draws `draw`: its quad placed so the sprite's foot point lands on its
