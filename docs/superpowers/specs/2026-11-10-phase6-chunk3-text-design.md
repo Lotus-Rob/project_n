@@ -416,6 +416,19 @@ should look at.
     declined to judge it; aesthetic) and stay so. If wrong, numbers offset above labels.
 49. **Builds rewriting `xmake-requires.lock` stays out of this branch** (sweep-up backlog); the PR carries no rewritten
     lock. Costs nothing here.
+50. **The ThreadSanitizer fork edges (`88574b1`) stay in this branch** rather than a branch of their own: they were found
+    while verifying ruling 47's race fix, which needs `core_tests` clean under TSan to be believed, and `core_tests`
+    already failed there before this branch. If wrong, a core fix that could have been reviewed on its own.
+51. **The dark number colours live in `app::DamageNumbers`** (`DARK_KIND_COLOURS` beside `KIND_COLOURS`, chosen when
+    the numbers are built), not in `gfx::TextColour`'s dark-ink fallback: a number's colour comes from app's kind
+    table, so the dark variants sit with it. If wrong, chunk 11's live text-option changes must reach `DamageNumbers`
+    as well as the renderer.
+52. **One more small fix batch after the final review's fix wave**, though superpowers allows one wave: AGENTS.md's
+    rule that every finding is fixed, Minor included, overrides it. It fixed three comment errors, made the race test
+    yield (it spun on one worker, slow on a one-core runner), and corrected the frame clock's doc. Two observations
+    stayed as they are: a gone label fades at its last screen position, so for 0.15 s it doesn't follow a pan
+    (ruling 44 accepts it), and `Capture` resets the live label pass (only tests call it). If wrong, one more short
+    review round than the process asks for.
 
 Not ledger rulings, but calls made in measuring: the run is unpinned (see Measurements), and Tracy's CSV exporter
 (`tracy-profiler-csvexport` 0.14.1) isn't in Pixi's `profiler` environment, so it was read from Pixi's package cache with
