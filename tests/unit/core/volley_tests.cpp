@@ -466,8 +466,15 @@ TEST_CASE("a sword's aim and position never jump when its target dies") {
     targets[1].diedTick = FIRST_DEATH;
     targets[2].diedTick = SECOND_DEATH;
     const std::span<const core::VolleyTarget> view = targets;
+    constexpr std::array<u32, 6> SAMPLED{ { 1, 5, 9, 13, 17, 21 } };
+    // The chained swing is checked only if a sampled sword moves twice: first to 2, then on from it.
+    const bool movesTwice = std::ranges::any_of(SAMPLED, [view](u32 sword) {
+        return core::SwordTarget(VOLLEY, sword, FIRST_DEATH, view) == 2 &&
+               core::SwordTarget(VOLLEY, sword, SECOND_DEATH, view) != 2;
+    });
+    REQUIRE(movesTwice);
     // Swords of target 1, which move once, or twice when they first moved to 2.
-    for (const u32 sword : { 1U, 5U, 9U, 13U, 17U, 21U }) {
+    for (const u32 sword : SAMPLED) {
         CAPTURE(sword);
         CheckSmooth(VOLLEY, sword, [view, sword](f64 tick) { return AimAt(sword, tick, view); });
     }
@@ -664,6 +671,14 @@ TEST_CASE("a volley is valid with a valid shape and finite points") {
     broken.shape.commitTicks = 0;
     CHECK(broken.shape.Valid());
     CHECK_FALSE(broken.Valid());
+}
+
+TEST_CASE("a cast volley's commit window is valid from the floor up") {
+    core::Volley volley = VOLLEY;
+    volley.shape.commitTicks = core::MIN_COMMIT_TICKS - 1;
+    CHECK_FALSE(volley.Valid());
+    volley.shape.commitTicks = core::MIN_COMMIT_TICKS;
+    CHECK(volley.Valid());
 }
 
 } // namespace
