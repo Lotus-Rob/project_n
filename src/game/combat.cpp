@@ -602,6 +602,19 @@ void Combat::Publish(core::Snapshot& snapshot) const {
     }
 }
 
+bool Combat::AimsAtCreatures(const core::State& state) const {
+    for (const Flight& flight : m_flights) {
+        for (const core::VolleyTarget& target : flight.targets) {
+            // Dead ones, the point among them (Load() refuses a living point), are never read again.
+            if (target.diedTick == 0 && (state.DomainOf(target.entity) != ACTIVE ||
+                                         !state[ACTIVE].Entities().all_of<Creature>(state[ACTIVE].Find(target.entity)))) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 void Combat::Load(core::Reader& archive) {
     u64 count = 0;
     archive(count);

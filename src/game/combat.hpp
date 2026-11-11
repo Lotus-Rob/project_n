@@ -283,6 +283,11 @@ public:
         }
     }
 
+    /// Whether every living target of the volleys in flight (`diedTick` 0) names a creature in `state`'s active domain:
+    /// what loaded volleys must satisfy with the state loaded beside them, as each tick reads a living target's body and
+    /// look.
+    [[nodiscard]] bool AimsAtCreatures(const core::State& state) const;
+
     /// Reads what Save() wrote, failing `archive` and changing nothing on a count past what is left, ticks out of order,
     /// or a volley that can't be used: invalid (core::Volley::Valid()), of an unknown ability or element, a negative
     /// amount, more swords arrived than it has, no targets, a target at a point that isn't finite, or the point target
