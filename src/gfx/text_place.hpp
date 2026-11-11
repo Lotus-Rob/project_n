@@ -74,8 +74,8 @@ void PlaceGlyphs(const Layout& layout, core::Vec2 topLeft, f32 pixels, u32 colou
 
 /// The characters numbers are composed from (ComposeNumber()), in NumberFace's order: the digits, then the signs.
 inline constexpr std::string_view NUMBER_FACE_CHARACTERS = "0123456789+-";
-/// The most characters a number shows: a "+", a "-" and the ten digits of the largest i32.
-inline constexpr std::size_t NUMBER_MAX_CHARACTERS = 12;
+/// The most characters a number shows: a "+", a "-" and the nineteen digits of the largest i64.
+inline constexpr std::size_t NUMBER_MAX_CHARACTERS = 21;
 /// How many texts each job chunk of PlaceNumbers() places. Fixed, so the vertices are the same bytes whatever the
 /// worker count.
 inline constexpr u32 NUMBER_CHUNK = 256;
@@ -110,7 +110,7 @@ struct ComposedNumber {
 /// decimal, a "-" first when it's negative. Each character's glyph is its layout's, moved right by the advances of the
 /// characters before it (each layout's width less its margins); the box is as tall as theirs. The layout
 /// TextLayout::Lay() shapes from that text, glyph for glyph.
-[[nodiscard]] ComposedNumber ComposeNumber(const NumberFace& face, i32 value, core::NumberSign sign);
+[[nodiscard]] ComposedNumber ComposeNumber(const NumberFace& face, i64 value, core::NumberSign sign);
 
 /// Where the numbers of a labelled creature too small to see (TooSmallToSee()) start instead of their own anchors: the
 /// middle of its label's box's top edge, where the label pass placed it.

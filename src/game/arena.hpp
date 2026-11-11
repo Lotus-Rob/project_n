@@ -15,8 +15,11 @@
 /// - saves, loads and replays of all of it;
 /// - F2 cycling through the scenes, each loaded on demand while the ticks wait for it;
 /// - the ice crystal's aura, which hits the foxes in its reach (and heals the player) once a second, and F7's debug burst
-///   of 4,000 hits: both emit hit events (core::Event), which change no state and the main thread shows as damage
-///   numbers;
+///   of 4,000 hits: both emit hit events (core::Event), which the main thread shows as damage numbers; the aura's also
+///   take the foxes' health (and heal the player's), while the burst's are numbers only;
+/// - health (game/combat.hpp): a fox whose health runs out dissolves in blocky pixels, is removed, and another
+///   appears at the ground's edge a few seconds later, easing into its orbit; each living fox reports its health
+///   over its head (core::HealthBar);
 /// - game text over the world: name labels over the player and every fox, and the tablet's vertical caption.
 /// Its stress variant adds a crowd and a bullet spiral, about 100,000 instances in all (§8.1), and a world tier of 50,000.
 
@@ -31,6 +34,7 @@
 #include "core/tick_clock.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
+#include "game/combat.hpp"
 #include "game/components.hpp"
 #include "game/npcs.hpp"
 
@@ -110,10 +114,12 @@ public:
     /// Rebuilds itself as the next scene in Scene's order (arena, stress, painted, cells, then the arena again) when
     /// `input` holds a CycleScene, the selection cleared; walks the player's cultivator where `input`'s held
     /// movement points, selects what its Select actions name, moves every entity on an Orbit to where it is at
-    /// `counters.simulation`, and walks the active NPCs, whose decisions draw random numbers keyed on `counters.state`.
-    /// In the arena scene, every 60th simulation tick the crystal's aura appends a hit per fox in reach and one for
-    /// the player if in reach; a DebugBurst action appends 4,000 hits round the foxes. Each use ends with a
-    /// UseEnded event. The events change nothing in the state.
+    /// `counters.simulation`, advances combat (Combat::Tick(): arrivals, removing the dead, which clears their
+    /// selection, and spawning the foxes due at the ground's edge), and walks the active NPCs, whose decisions draw
+    /// random numbers keyed on `counters.state`. In the arena scene, every 60th simulation tick the crystal's aura hits
+    /// each living fox in reach and heals the player if in reach, appending a hit event for each; a DebugBurst action
+    /// appends 4,000 hits round the foxes, which change nothing. Each use ends with a UseEnded event. The events
+    /// themselves change nothing in the state.
     void Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) override;
 
     /// Lets a month pass for the world NPCs (MonthStep).
@@ -131,7 +137,8 @@ public:
     [[nodiscard]] u64 StateHash() const override;
 
     /// Takes `data` for the cultivator's walk speed from the next tick, and gives every creature its
-    /// kind's sprite and orbit (radius, wobble, speed) at once; a fox may jump to its new orbit.
+    /// kind's sprite, orbit (radius, wobble, speed) and most health (its health kept, but never above it) at once; a fox
+    /// may jump to its new orbit.
     void SetData(const core::GameData& data) override;
 
     /// The hash of the game data in use.
@@ -164,6 +171,11 @@ public:
         return m_selected;
     }
 
+    /// Deals `amount` to `target` at simulation tick `tick` (Combat::Damage()): a negative amount heals.
+    void Damage(core::StableId target, i64 amount, u64 tick) {
+        Combat::Damage(m_state, target, amount, tick);
+    }
+
     /// What the NPCs think of each other.
     [[nodiscard]] const Relationships& NpcRelationships() const {
         return m_relationships;
@@ -172,8 +184,10 @@ public:
     /// Publishes the ground, then a shadow under each entity that casts one, then the world's
     /// entities in foot-y order, then the effects, packed in fixed chunks
     /// on `jobs`: the bytes are the same whatever its worker count. Each entity's instance carries
-    /// its ID, and the player's cultivator is the one to follow, with what is drawn culled around it. A scene with a
-    /// player adds its texts: the player's and each fox's name label over its head, and the tablet's caption.
+    /// its ID, but a dying one's carries none and dissolves (core::SpriteDraw::dissolve, DissolveAt() at
+    /// `snapshot.simulationTick`), its shadow with it. The player's cultivator is the one to follow, with what is drawn
+    /// culled around it. A scene with a player adds its texts: the player's and each living fox's name label over its
+    /// head, and the tablet's caption; the arena scene adds each living fox's health bar at its head.
     void Publish(core::Snapshot& snapshot, core::Jobs& jobs) override;
 
 private:
@@ -184,10 +198,12 @@ private:
     core::Entity Spawn(core::Vec2 foot, const Look& look);
     void Walk(core::Vec2 move);
     void Select(core::StableId target);
-    void Aura(const core::TickCounters& counters, std::vector<core::Event>& events) const;
+    void Aura(const core::TickCounters& counters, std::vector<core::Event>& events);
     void DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const;
     [[nodiscard]] core::Vec2 HeadOf(core::Entity entity) const;
-    void PublishTexts(core::Snapshot& snapshot) const;
+    void PublishOverhead(core::Snapshot& snapshot) const;
+    core::Entity SpawnFox(const Orbit& orbit, core::Vec2 foot);
+    void Respawn(const core::TickCounters& counters, u32 index);
     void ApplyData();
     [[nodiscard]] const core::CreatureData& DataOf(CreatureKind kind) const {
         return kind == CreatureKind::Fox ? m_data.fox : m_data.cultivator;
@@ -202,6 +218,7 @@ private:
     core::DrawList m_drawList{};
     Relationships m_relationships{};
     MonthStep m_monthStep{};
+    Combat m_combat{};
     // NOLINTEND(readability-redundant-member-init)
     std::shared_ptr<const core::Manifest> m_manifest;
     core::State m_state;

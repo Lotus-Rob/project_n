@@ -11,4 +11,6 @@ struct VertexOut {
     // ring's width in UV (zero for an ordinary sprite).
     nointerpolation float4 region : TEXCOORD3;
     nointerpolation float ring : TEXCOORD4;
+    // How far the sprite has dissolved, from 0 (whole) to 1 (gone): core::SpriteDraw::dissolve.
+    nointerpolation float dissolve : TEXCOORD5;
 };

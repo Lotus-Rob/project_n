@@ -18,5 +18,7 @@ inline constexpr u32 PURPOSE_PARTNER = 3;
 inline constexpr u32 PURPOSE_AURA = 4;
 /// The debug burst rolling a hit's value.
 inline constexpr u32 PURPOSE_BURST = 5;
+/// A respawned fox picking where on the ground's edge it appears.
+inline constexpr u32 PURPOSE_RESPAWN = 6;
 
 } // namespace game

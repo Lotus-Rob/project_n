@@ -96,6 +96,23 @@ TEST_CASE("an instance puts its sprite's foot point on its position") {
     CHECK(instance.colour == core::OPAQUE_WHITE);
 }
 
+TEST_CASE("a sprite's dissolve fills the high half of its layer and flags as unorm16, its page the low") {
+    using core::atlas::SpriteId;
+    constexpr u32 HIGH_HALF = 16;
+    constexpr f32 HALFWAY = 0.5F;
+    constexpr u32 HALFWAY_UNORM16 = 32'768; // 0.5 × 65535, rounded to nearest
+    constexpr u32 WHOLE_UNORM16 = 65'535;
+    const core::Manifest manifest = TestManifest();
+    const core::SpriteInfo& sprite = manifest.Sprite(SpriteId::Fox);
+    const core::Instance whole = core::MakeInstance(manifest, { .sprite = SpriteId::Fox });
+    const core::Instance halfway = core::MakeInstance(manifest, { .sprite = SpriteId::Fox, .dissolve = HALFWAY });
+    const core::Instance gone = core::MakeInstance(manifest, { .sprite = SpriteId::Fox, .dissolve = 1.0F });
+    CHECK((whole.layerFlags >> HIGH_HALF) == 0);
+    CHECK((halfway.layerFlags >> HIGH_HALF) == HALFWAY_UNORM16);
+    CHECK((gone.layerFlags >> HIGH_HALF) == WHOLE_UNORM16);
+    CHECK((gone.layerFlags & 0xFFFFU) == sprite.page);
+}
+
 TEST_CASE("a scaled instance grows about its foot point") {
     using core::atlas::SpriteId;
     const core::Manifest manifest = TestManifest();

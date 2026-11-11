@@ -12,11 +12,11 @@ namespace {
 constexpr core::StableId FOX_A{ 1 };
 constexpr core::StableId FOX_B{ 2 };
 constexpr u64 USE = 7;
-constexpr i32 VALUE = 5; // a hit's, where any does
+constexpr i64 VALUE = 5; // a hit's, where any does
 constexpr core::Settings EVERY_HIT{};
 constexpr core::Settings COMBINED{ .combinedDamageNumbers = true };
 
-core::Event Hit(u64 tick, core::StableId target, i32 value, core::HitKind kind = core::HitKind::Damage) {
+core::Event Hit(u64 tick, core::StableId target, i64 value, core::HitKind kind = core::HitKind::Damage) {
     return { .tick = tick, .kind = core::EventKind::Hit, .hit = kind, .use = USE, .target = target, .value = value };
 }
 
@@ -41,15 +41,15 @@ constexpr f64 STARTED = 6.0;
 TEST_CASE("every hit of a burst is played") {
     // Each hit's value is its own, so the numbers drawn over the burst's whole life can be told apart.
     constexpr u64 TICK = 100;
-    constexpr i32 BURST = 4'000;
+    constexpr i64 BURST = 4'000;
     constexpr u64 LIFE = 156; // ticks: NUMBER_SECONDS and the longest stagger, and some
     app::DamageNumbers numbers(EVERY_HIT);
-    for (i32 value = 1; value <= BURST; ++value) {
+    for (i64 value = 1; value <= BURST; ++value) {
         numbers.Play(Hit(TICK, value % 2 == 0 ? FOX_A : FOX_B, value));
     }
     numbers.Play(UseEnded(TICK));
     CHECK(numbers.Live() == BURST);
-    std::unordered_set<i32> drawn;
+    std::unordered_set<i64> drawn;
     for (u64 tick = TICK; tick <= TICK + LIFE; ++tick) {
         for (const core::TextItem& text : TextsAt(numbers, static_cast<f64>(tick))) {
             drawn.insert(text.value);
@@ -71,7 +71,7 @@ TEST_CASE("a number is gone a second after it starts") {
 }
 
 TEST_CASE("a number shows its hit's value over its target, in its kind's colour") {
-    constexpr i32 SHOWN = 42;
+    constexpr i64 SHOWN = 42;
     constexpr core::Vec2 HEAD{ .x = 300.0F, .y = 200.0F };
     app::DamageNumbers numbers(EVERY_HIT);
     core::Event hit = Hit(0, FOX_A, SHOWN, core::HitKind::Burn);
@@ -87,13 +87,45 @@ TEST_CASE("a number shows its hit's value over its target, in its kind's colour"
     CHECK(texts[0].colour == core::DEFAULT_UI_COLOURS.at(std::to_underlying(core::NumberColour(core::HitKind::Burn, false))));
 }
 
+TEST_CASE("a hit of three billion is shown and summed whole") {
+    constexpr i64 THREE_BILLION = 3'000'000'000;
+    constexpr i64 SIX_BILLION = 6'000'000'000;
+    constexpr u64 TICK = 10;
+    app::DamageNumbers apart(EVERY_HIT);
+    apart.Play(Hit(TICK, FOX_A, THREE_BILLION));
+    const std::vector<core::TextItem> shown = TextsAt(apart, static_cast<f64>(TICK) + STARTED);
+    REQUIRE(shown.size() == 1);
+    const std::string written = std::format("{}", shown[0].value);
+    CHECK(written == "3000000000");
+
+    app::DamageNumbers combined(COMBINED);
+    combined.Play(Hit(TICK, FOX_A, THREE_BILLION));
+    combined.Play(Hit(TICK, FOX_A, THREE_BILLION));
+    combined.Play(UseEnded(TICK));
+    const std::vector<core::TextItem> summed = TextsAt(combined, static_cast<f64>(TICK));
+    REQUIRE(summed.size() == 1);
+    CHECK(summed[0].value == SIX_BILLION);
+}
+
+TEST_CASE("a combined sum past i64's most holds there rather than wrapping") {
+    constexpr i64 MOST = std::numeric_limits<i64>::max();
+    constexpr u64 TICK = 10;
+    app::DamageNumbers numbers(COMBINED);
+    numbers.Play(Hit(TICK, FOX_A, MOST));
+    numbers.Play(Hit(TICK, FOX_A, VALUE));
+    numbers.Play(UseEnded(TICK));
+    const std::vector<core::TextItem> texts = TextsAt(numbers, static_cast<f64>(TICK));
+    REQUIRE(texts.size() == 1);
+    CHECK(texts[0].value == MOST);
+}
+
 TEST_CASE("combined numbers add one use's hits per target") {
     constexpr u64 TICK = 10;
     app::DamageNumbers numbers(COMBINED);
-    constexpr i32 FIRST_ON_A = 5;
-    constexpr i32 SECOND_ON_A = 7;
-    constexpr i32 ON_B = 3;
-    constexpr i32 SUM_ON_A = 12;
+    constexpr i64 FIRST_ON_A = 5;
+    constexpr i64 SECOND_ON_A = 7;
+    constexpr i64 ON_B = 3;
+    constexpr i64 SUM_ON_A = 12;
     numbers.Play(Hit(TICK, FOX_A, FIRST_ON_A));
     numbers.Play(Hit(TICK, FOX_A, SECOND_ON_A));
     numbers.Play(Hit(TICK, FOX_B, ON_B));
@@ -111,8 +143,8 @@ TEST_CASE("combined numbers add one use's hits per target") {
 TEST_CASE("combined numbers keep kinds apart") {
     constexpr u64 TICK = 10;
     app::DamageNumbers numbers(COMBINED);
-    constexpr i32 DAMAGE = 5;
-    constexpr i32 BURN = 4;
+    constexpr i64 DAMAGE = 5;
+    constexpr i64 BURN = 4;
     numbers.Play(Hit(TICK, FOX_A, DAMAGE, core::HitKind::Damage));
     numbers.Play(Hit(TICK, FOX_A, BURN, core::HitKind::Burn));
     numbers.Play(UseEnded(TICK));
@@ -237,7 +269,7 @@ std::vector<core::Vec2> ScattersOf(u32 hits) {
     constexpr u64 LIFE = 156; // ticks: NUMBER_SECONDS and the longest stagger, and some
     app::DamageNumbers numbers(EVERY_HIT);
     for (u32 hit = 0; hit < hits; ++hit) {
-        numbers.Play(Hit(0, FOX_A, static_cast<i32>(hit)));
+        numbers.Play(Hit(0, FOX_A, static_cast<i64>(hit)));
     }
     std::vector<core::Vec2> scatters(hits);
     std::vector<bool> seen(hits);
@@ -331,12 +363,12 @@ TEST_CASE("a number isn't drawn before its delay, then starts at the start of it
     REQUIRE(start > 1.0);
     app::DamageNumbers numbers(EVERY_HIT);
     for (u32 ordinal = 0; ordinal < HITS; ++ordinal) {
-        numbers.Play(Hit(0, FOX_A, static_cast<i32>(ordinal)));
+        numbers.Play(Hit(0, FOX_A, static_cast<i64>(ordinal)));
     }
     const std::vector<core::TextItem> before = TextsAt(numbers, start - MOMENT);
-    CHECK(std::ranges::find(before, static_cast<i32>(latest), &core::TextItem::value) == before.end());
+    CHECK(std::ranges::find(before, static_cast<i64>(latest), &core::TextItem::value) == before.end());
     const std::vector<core::TextItem> after = TextsAt(numbers, start + MOMENT);
-    const auto started = std::ranges::find(after, static_cast<i32>(latest), &core::TextItem::value);
+    const auto started = std::ranges::find(after, static_cast<i64>(latest), &core::TextItem::value);
     REQUIRE(started != after.end());
     CHECK(started->opacity == 1.0F);
     CHECK(started->lift < STILL);

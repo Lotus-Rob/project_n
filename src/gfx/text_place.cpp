@@ -83,7 +83,7 @@ void WriteGlyphQuad(const PlacedGlyph& glyph, core::Vec2 topLeft, f32 scale, u32
 }
 
 // The characters `value` signed by `sign` shows, as indices into NUMBER_FACE_CHARACTERS, into `out`; returns how many.
-std::size_t NumberCharacters(i32 value, core::NumberSign sign, std::array<u8, NUMBER_MAX_CHARACTERS>& out) {
+std::size_t NumberCharacters(i64 value, core::NumberSign sign, std::array<u8, NUMBER_MAX_CHARACTERS>& out) {
     std::size_t count = 0;
     if (sign == core::NumberSign::Plus) {
         out.at(count++) = PLUS_CHARACTER;
@@ -91,8 +91,8 @@ std::size_t NumberCharacters(i32 value, core::NumberSign sign, std::array<u8, NU
     if (value < 0) {
         out.at(count++) = MINUS_CHARACTER;
     }
-    // In u32, where the magnitude of the smallest i32 fits.
-    u32 magnitude = value < 0 ? 0U - static_cast<u32>(value) : static_cast<u32>(value);
+    // In u64, where the magnitude of the smallest i64 fits.
+    u64 magnitude = value < 0 ? u64{ 0 } - static_cast<u64>(value) : static_cast<u64>(value);
     const std::size_t first = count;
     for (bool more = true; more; more = magnitude > 0) { // 0 is a digit too
         out.at(count++) = static_cast<u8>(magnitude % DECIMAL);
@@ -225,7 +225,7 @@ NumberFace NumberFaceOf(TextLayout& layout) {
     return face;
 }
 
-ComposedNumber ComposeNumber(const NumberFace& face, i32 value, core::NumberSign sign) {
+ComposedNumber ComposeNumber(const NumberFace& face, i64 value, core::NumberSign sign) {
     std::array<u8, NUMBER_MAX_CHARACTERS> characters{};
     const std::size_t count = NumberCharacters(value, sign, characters);
     ComposedNumber number{};

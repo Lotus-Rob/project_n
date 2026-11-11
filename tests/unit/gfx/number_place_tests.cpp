@@ -15,17 +15,20 @@ namespace {
 
 constexpr core::TextDirection ACROSS = core::TextDirection::LeftToRight;
 constexpr std::array<core::NumberSign, 2> SIGNS{ { core::NumberSign::Plain, core::NumberSign::Plus } };
-constexpr std::array<i32, 11> VALUES{ { 0,
+constexpr std::array<i64, 14> VALUES{ { 0,
                                         7,
                                         12,
                                         105,
                                         9'999,
                                         40'321,
                                         1'234'567'890,
+                                        3'000'000'000,
                                         -5,
                                         -1'200,
                                         std::numeric_limits<i32>::max(),
-                                        std::numeric_limits<i32>::min() } };
+                                        std::numeric_limits<i32>::min(),
+                                        std::numeric_limits<i64>::max(),
+                                        std::numeric_limits<i64>::min() } };
 
 constexpr u32 WIDTH = 1280;
 constexpr u32 HEIGHT = 720;
@@ -54,7 +57,7 @@ gfx::TextLayout Warmed() {
 }
 
 // What the renderer writes for a number.
-std::string Written(i32 value, core::NumberSign sign) {
+std::string Written(i64 value, core::NumberSign sign) {
     return std::format("{}{}", sign == core::NumberSign::Plus ? "+" : "", value);
 }
 
@@ -62,7 +65,7 @@ TEST_CASE("a number composed from its characters is the layout its text shapes i
     gfx::TextLayout text = Warmed();
     const gfx::NumberFace face = gfx::NumberFaceOf(text);
     for (const core::NumberSign sign : SIGNS) {
-        for (const i32 value : VALUES) {
+        for (const i64 value : VALUES) {
             const std::string written = Written(value, sign);
             CAPTURE(written);
             const gfx::Layout& shaped = text.Lay(written, ACROSS);

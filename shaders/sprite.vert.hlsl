@@ -9,7 +9,7 @@ struct Instance {
     uint rotation;    // two f16: clockwise radians at the previous tick, then at this one
     uint regionMin;   // two unorm16: the region's top-left on its page
     uint regionMax;   // two unorm16: its bottom-right
-    uint layerFlags;  // u16 layer (page), then u16 flags
+    uint layerFlags;  // u16 layer (page), then the dissolve as unorm16
     uint colour;      // premultiplied RGBA8, red in the low byte
 };
 
@@ -55,6 +55,7 @@ VertexOut VertexMain(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceI
     output.region = float4(regionMin, regionMax);
     output.ring = draw.ring;
     output.layer = instance.layerFlags & 0xFFFF;
+    output.dissolve = (instance.layerFlags >> 16) / 65535.0;
     output.colour = float4(colour & 0xFF, (colour >> 8) & 0xFF, (colour >> 16) & 0xFF, colour >> 24) / 255.0;
     return output;
 }

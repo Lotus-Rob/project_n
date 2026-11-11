@@ -101,7 +101,7 @@ Instance MakeInstance(const Manifest& manifest, const SpriteDraw& draw) {
             PackUnorm16(static_cast<f32>(sprite.x + sprite.width) / page),
             PackUnorm16(static_cast<f32>(sprite.y + sprite.height) / page)
         ),
-        .layerFlags = PackPair(sprite.page, 0),
+        .layerFlags = PackPair(sprite.page, PackUnorm16(draw.dissolve)),
         .colour = draw.colour,
     };
 }

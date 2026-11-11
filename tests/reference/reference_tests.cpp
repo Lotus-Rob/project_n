@@ -14,6 +14,7 @@
 #include "core/strings.hpp"
 #include "data/strings.hpp"
 #include "game/arena.hpp"
+#include "game/combat.hpp"
 #include "gfx/camera.hpp"
 #include "gfx/image.hpp"
 #include "gfx/renderer.hpp"
@@ -96,8 +97,10 @@ gfx::Renderer RendererFor(platform::Window& window, core::SceneId scene, core::J
     return std::move(*renderer);
 }
 
-core::Snapshot Published(game::Arena& arena, core::Jobs& jobs) {
+// What `arena` publishes at simulation tick `tick`.
+core::Snapshot Published(game::Arena& arena, core::Jobs& jobs, u64 tick = 0) {
     core::Snapshot snapshot;
+    snapshot.simulationTick = tick; // as core::Logic stamps it
     arena.Publish(snapshot, jobs);
     snapshot.scene = arena.Scene(); // as core::Logic names it
     return snapshot;
@@ -198,6 +201,38 @@ TEST_CASE("the map cells at the smallest zoom: the low mips") {
 
 TEST_CASE("the arena halfway between two ticks: interpolation and foot-y order") {
     CheckAgainstReference({ .name = "arena_halfway", .scene = game::Scene::Arena, .ticks = TWO_SECONDS, .alpha = HALFWAY });
+}
+
+TEST_CASE("a fox dissolving, at half its progress") {
+    constexpr u64 AURA_TICK = 60; // the aura's first hit, which kills every fox in its reach
+    constexpr u64 SHOWN_AT = AURA_TICK + (game::DYING_TICKS / 2);
+    constexpr core::Vec2 CRYSTAL_FOOT{ .x = 420.0F, .y = 620.0F };
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    core::GameData data = game::BuiltInData();
+    data.fox.health = 1;
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
+    std::vector<core::Event> events;
+    for (u64 tick = 1; tick <= SHOWN_AT; ++tick) {
+        arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, {}, events);
+    }
+    // The dying fox nearest the crystal, centred: the middle of its sprite, half its foot's height over its foot.
+    const core::Registry& entities = arena.State()[game::ACTIVE].Entities();
+    std::optional<core::Vec2> nearest;
+    for (auto [entity, body, dying] : entities.view<const game::Body, const game::Dying>().each()) {
+        const auto distance = [](core::Vec2 foot) { return std::hypot(foot.x - CRYSTAL_FOOT.x, foot.y - CRYSTAL_FOOT.y); };
+        if (!nearest || distance(body.current) < distance(*nearest)) {
+            nearest = body.current;
+        }
+    }
+    REQUIRE(nearest.has_value());
+    const f32 footY = static_cast<f32>(test::TestManifest()->Sprite(core::atlas::SpriteId::Fox).footY);
+    const core::Vec2 centre = nearest.value_or(core::Vec2{}) - core::Vec2{ .x = 0.0F, .y = footY / 2.0F };
+    const core::Snapshot snapshot = Published(arena, jobs, SHOWN_AT);
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
+    const gfx::View view{ .camera = { .centre = centre, .zoom = gfx::MAX_ZOOM } };
+    CompareWithReference(Captured(renderer, snapshot, view, jobs), "fox_dissolving");
 }
 
 TEST_CASE("the hovered entity's pale outline and the selected one's gold, close up") {

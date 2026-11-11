@@ -479,12 +479,12 @@ TEST_CASE("a scene with creatures that doesn't load their data's sprites is refu
 
 constexpr u64 AURA_TICK = 60;
 constexpr u64 BURST_TICK = 1;
-constexpr i32 AURA_DAMAGE_MIN = 5;
-constexpr i32 AURA_DAMAGE_MAX = 40;
-constexpr i32 AURA_HEALING_MIN = 5;
-constexpr i32 AURA_HEALING_MAX = 20;
-constexpr i32 BURST_MIN = 1;
-constexpr i32 BURST_MAX = 99;
+constexpr i64 AURA_DAMAGE_MIN = 50;
+constexpr i64 AURA_DAMAGE_MAX = 400;
+constexpr i64 AURA_HEALING_MIN = 50;
+constexpr i64 AURA_HEALING_MAX = 200;
+constexpr i64 BURST_MIN = 1;
+constexpr i64 BURST_MAX = 99;
 constexpr u32 USE_AURA = 1;
 constexpr u32 USE_DEBUG_BURST = 2;
 constexpr f32 AURA_REACH = 320.0F;
