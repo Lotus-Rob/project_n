@@ -45,8 +45,9 @@ f32 Progress(f32 age, f32 begin, f32 end) {
 
 } // namespace
 
+// NumberMotionAt(), ScatterOf() and Play() run once per number (thousands a frame in a debug burst) and have no zones:
+// their callers' zones measure them, and a zone costs more than their work.
 NumberPose NumberMotionAt(core::NumberMotion motion, f32 seconds) {
-    PN_PROFILE_ZONE();
     const f32 age = std::clamp(seconds, 0.0F, NUMBER_SECONDS);
     f32 lift = 0.0F;
     if (motion == core::NumberMotion::Rise) {
@@ -75,7 +76,6 @@ f32 ScatterGrowth(u32 hits) {
 }
 
 NumberScatter ScatterOf(const core::Event& hit, u32 ordinal, u32 hits) {
-    PN_PROFILE_ZONE();
     // The use as the key: it already names the tick and the ability, and stays the same in a replay.
     const auto unit = [&](Draw draw) {
         return static_cast<f32>(
@@ -96,7 +96,6 @@ DamageNumbers::DamageNumbers(const core::Settings& settings)
 }
 
 void DamageNumbers::Play(const core::Event& event) {
-    PN_PROFILE_ZONE();
     if (event.kind == core::EventKind::UseEnded) {
         if (m_waiting.empty()) {
             return;
