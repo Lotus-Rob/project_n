@@ -89,8 +89,9 @@ struct VolleyTarget {
     Vec2 previous{};
     /// Where the swords aim at it at this tick. From its death on, both stay where it died.
     Vec2 current{};
-    /// The tick it stopped being a target (it died, or for the point, the cast's tick); 0 while it lives. No target dies
-    /// on tick 0, which runs before any cast.
+    /// The tick it stopped being a target (it died, or for the point, the cast's tick); 0 while it lives. Simulation ticks
+    /// count from 1 (core::Simulation::Tick), so 0 is free to mean alive. The logic sets it after that tick's arrivals
+    /// have resolved: a target dying on a tick still takes the hits that arrive on it.
     u64 diedTick = 0;
 
     /// Lists its fields for an archive (core/archive.hpp).
@@ -109,8 +110,12 @@ struct VolleyTarget {
 /// visibly rather than jumping: about an eighth of a second.
 inline constexpr f64 RETARGET_TICKS = 8.0;
 /// The fastest a swing moves the aim on average, in world units a tick (about a sword's speed in flight): a swing over a
-/// longer way takes longer than RETARGET_TICKS, so the sword never darts.
+/// longer way takes longer than RETARGET_TICKS, so the sword never darts, though never past the sword's arrival.
 inline constexpr f64 RETARGET_SPEED = 16.0;
+/// How many ticks before its arrival a sword's target must die for the sword to move on to another. A later death leaves
+/// it on the dead one, where it plunges: too close to arrival to turn visibly, and a sword that has arrived never moves.
+inline constexpr u64 COMMIT_TICKS = 16;
+static_assert(COMMIT_TICKS == 2 * static_cast<u64>(RETARGET_TICKS), "a sword that moves on has two swings' time to turn");
 
 /// Where a sword is at a moment, and how to draw it.
 struct SwordPose {
@@ -148,18 +153,30 @@ struct SwordPose {
 /// to the far side of that point from the volley's `point`.
 [[nodiscard]] SwordPose SwordAt(const Volley& volley, u32 sword, f64 tick, Vec2 aim);
 
-/// Which of a volley's `targets` (not empty) `sword` flies at, at `tick`. It starts at its own, `sword` modulo their
-/// count. When the one it flies at dies, it moves on to one of the targets alive at that tick, chosen from the sword so
-/// the swords that move spread evenly over them; the others keep theirs. It repeats at each later death of the one it
-/// flies at. When none is alive at such a death, it keeps the dead one, where it plunges into the ground at its frozen
-/// position. Where it hits at its arrival tick, as the logic sees it.
-[[nodiscard]] u32 SwordTarget(u32 sword, u64 tick, std::span<const VolleyTarget> targets);
+/// Which of a volley's `targets` (not empty, as tagged at its cast) `sword` flies at, at `tick`. It starts at its own,
+/// `sword` modulo their count. When the one it flies at dies at least COMMIT_TICKS before the sword's arrival, it moves
+/// on to one of the targets alive at that tick, chosen so the swords that move together spread evenly over them; the
+/// others keep theirs. It repeats at each such death of the one it flies at. When the one it flies at dies later than
+/// that, or none is alive at its death, it keeps the dead one and plunges into the ground at its frozen position. So the
+/// target in force at the arrival tick is the one the sword strikes, and it never changes after.
+///
+/// At the arrival tick the logic hits that target if it was alive when the tick's arrivals resolved: arrivals resolve
+/// before the tick's deaths, so a target dying on that tick still takes the hit (VolleyTarget::diedTick).
+[[nodiscard]] u32 SwordTarget(const Volley& volley, u32 sword, u64 tick, std::span<const VolleyTarget> targets);
 
-/// The aim `sword` flies at at `tick`, a simulation tick or a render time, for SwordAt(): the position of its target
-/// (SwordTarget()), between the target's `previous` and `current` by `alpha` (1 for the logic at a tick; the frame's
-/// alpha for the renderer). When the sword moves on from a dead target, its aim eases from where it was then to the new
-/// target, over RETARGET_TICKS or the way's length at RETARGET_SPEED, whichever is longer, so the aim, and with it the
-/// sword, never jumps. A swing still under way at the sword's arrival leaves it short of its target, where the hit lands.
-[[nodiscard]] Vec2 SwordAim(u32 sword, f64 tick, std::span<const VolleyTarget> targets, f32 alpha);
+/// The aim `sword` flies at, for SwordAt() at the same moment: the moment `RenderTick(simulationTick, alpha)`, with the
+/// targets as `simulationTick` left them (the logic passes its tick and 1; the renderer the drawn snapshot's tick and the
+/// frame's alpha, so the two can't disagree). It is the position of its target (SwordTarget()), between the target's
+/// `previous` and `current` by `alpha`. When the sword moves on from a dead target, its aim eases from where it was then
+/// to the new target, over RETARGET_TICKS or the way's length at RETARGET_SPEED, whichever is longer, but always ending
+/// by the sword's arrival: the aim, and with it the sword, never jumps, and at the arrival tick it is exactly on the
+/// target it strikes.
+[[nodiscard]] Vec2 SwordAim(
+    const Volley& volley,
+    u32 sword,
+    u64 simulationTick,
+    f32 alpha,
+    std::span<const VolleyTarget> targets
+);
 
 } // namespace core
