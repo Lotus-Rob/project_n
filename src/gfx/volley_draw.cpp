@@ -27,6 +27,8 @@ constexpr f32 TRAIL_TAPER = 0.6F;
 // A tangent shorter than this, in world units, is too short to say which way the trail runs there.
 constexpr f32 SHORTEST_TANGENT = 1e-4F;
 constexpr u32 TRAIL_POINTS = TRAIL_SEGMENTS + 1;
+// A bar's middle, down from its top as a fraction of its height: where the solid square's foot goes.
+constexpr f32 BAR_MIDDLE = 0.5F;
 constexpr u32 CHANNEL_BITS = 8;
 constexpr u32 CHANNEL_MASK = 0xFFU;
 constexpr f32 CHANNEL_MAX = 255.0F;
@@ -186,6 +188,7 @@ void VolleyDrawing::Clear() {
     instances.clear();
     batches.clear();
     ribbons.clear();
+    hud.clear();
     droppedSwords = 0;
 }
 
@@ -244,6 +247,41 @@ void DrawHealthBars(
     }
     if (out.instances.size() > first) {
         out.batches.push_back(
+            { .first = first, .count = static_cast<u32>(out.instances.size()) - first, .pipeline = core::Pipeline::Normal }
+        );
+    }
+}
+
+void DrawHudBars(std::span<const HudBar> bars, const core::Manifest& manifest, VolleyDrawing& out) {
+    PN_PROFILE_ZONE();
+    const core::SpriteInfo& solid = manifest.Sprite(core::atlas::SpriteId::Solid);
+    const auto width = static_cast<f32>(solid.width);
+    const auto height = static_cast<f32>(solid.height);
+    const auto first = static_cast<u32>(out.instances.size());
+    for (const HudBar& bar : bars) {
+        const core::Vec2 foot{ .x = bar.topLeft.x, .y = bar.topLeft.y + (bar.size.y * BAR_MIDDLE) };
+        const f32 scale = bar.size.y / height;
+        const auto add = [&](f32 length, u32 colour) {
+            out.instances.push_back(
+                core::MakeInstance(
+                    manifest,
+                    { .sprite = core::atlas::SpriteId::Solid,
+                      .previous = foot,
+                      .current = foot,
+                      .scale = scale,
+                      .colour = colour,
+                      .widthScale = length / (width * scale) }
+                )
+            );
+        };
+        add(bar.size.x, bar.background);
+        const f32 fraction = bar.fraction > 0.0F ? std::min(bar.fraction, 1.0F) : 0.0F;
+        if (fraction > 0.0F) {
+            add(bar.size.x * fraction, bar.fill);
+        }
+    }
+    if (out.instances.size() > first) {
+        out.hud.push_back(
             { .first = first, .count = static_cast<u32>(out.instances.size()) - first, .pipeline = core::Pipeline::Normal }
         );
     }

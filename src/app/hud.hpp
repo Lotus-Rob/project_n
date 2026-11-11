@@ -10,6 +10,7 @@
 #include "core/strings.hpp"
 #include "core/types.hpp"
 #include "core/ui_colours.hpp"
+#include "gfx/hud_draw.hpp"
 #include "gfx/renderer.hpp"
 
 #include <array>
