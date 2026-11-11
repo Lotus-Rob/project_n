@@ -347,7 +347,8 @@ struct SavedVolley {
 
 // An arena save of `state` with `player`, laid out as Arena::Save writes one: format, scene, seed,
 // stable-ID counter, months, the player and the selection (none), then each domain after its version,
-// then no relationships, no respawns waiting and `volley` if any (the flying swords' hits of 20, none resolved yet).
+// then no relationships, no respawns waiting, `volley` if any (the flying swords' hits of 20, none resolved yet) and
+// no flashes.
 // Its versions must follow arena.cpp's, or every refusal below is the version's.
 std::vector<std::byte> ArenaSave(
     const core::State& state,
@@ -360,6 +361,7 @@ std::vector<std::byte> ArenaSave(
     constexpr u64 MONTHS_PASSED = 0;
     constexpr u64 RELATIONSHIPS = 0;
     constexpr u64 RESPAWNS = 0;
+    constexpr u64 FLASHES = 0;
     using Active = core::ComponentList<
         game::Body,
         game::Look,
@@ -396,6 +398,7 @@ std::vector<std::byte> ArenaSave(
             writer(target);
         }
     }
+    writer(FLASHES);
     return bytes;
 }
 

@@ -136,7 +136,7 @@ constexpr u32 WORLD_CELLS = 4'096;
 constexpr u64 SEED = 0x5eed;
 
 // The arena's part of a save: its format, then a version per domain, each changed with what its components save.
-constexpr u32 ARENA_FORMAT = 3;   // 2: the player and the selection; 3: the respawns waiting and the volleys in flight
+constexpr u32 ARENA_FORMAT = 3;   // 2: the player and the selection; 3: the respawns waiting, the volleys and the flashes
 constexpr u32 ACTIVE_VERSION = 4; // 2: creatures; 3: spin; 4: health, dying, arriving, caster, dashing, afflictions
 constexpr u32 WORLD_VERSION = 1;
 using ActiveComponents = core::ComponentList<

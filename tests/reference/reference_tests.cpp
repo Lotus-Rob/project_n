@@ -4,6 +4,7 @@
 // Game text is also measured on the pictures (the phase 6 chunk 3 spec, "Testing"): a label's ink must not shimmer at
 // sub-pixel camera offsets, nor step while its creature moves.
 #include "app/damage_numbers.hpp"
+#include "app/hud.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
 #include "core/game_data.hpp"
@@ -115,9 +116,10 @@ gfx::Image Captured(
     core::Jobs& jobs,
     u32 width = WIDTH,
     u32 height = HEIGHT,
-    std::span<const core::TextItem> extra = {}
+    std::span<const core::TextItem> extra = {},
+    const gfx::HudDraw& hud = {}
 ) {
-    std::expected<gfx::Image, core::Error> drawn = renderer.Capture(snapshot, view, jobs, width, height, extra);
+    std::expected<gfx::Image, core::Error> drawn = renderer.Capture(snapshot, view, jobs, width, height, extra, hud);
     const std::string drawnWhy = drawn.error_or(core::Error{}).message;
     REQUIRE_MESSAGE(drawn.has_value(), drawnWhy);
     return std::move(*drawn);
@@ -243,7 +245,7 @@ constexpr core::Vec2 AMONG_THE_FOXES{ .x = 690.0F, .y = 700.0F };
 
 // The arena with `slot`'s ability cast at AMONG_THE_FOXES on CAST_TICK, published `after` ticks later, with Qi enough
 // for any cast.
-core::Snapshot CastAndWait(core::Slot slot, u64 after, core::Jobs& jobs) {
+core::Snapshot CastThenPublish(core::Slot slot, u64 after, core::Jobs& jobs) {
     core::GameData data = game::BuiltInData();
     data.abilities.qiStart = data.abilities.qiMax;
     game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
@@ -254,7 +256,12 @@ core::Snapshot CastAndWait(core::Slot slot, u64 after, core::Jobs& jobs) {
         const core::TickInput input = tick == CAST_TICK ? core::TickInput{ .actions = cast, .held = {} } : core::TickInput{};
         arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, input, events);
     }
-    core::Snapshot snapshot = Published(arena, jobs, shownAt);
+    return Published(arena, jobs, shownAt);
+}
+
+// CastThenPublish() of a volley: one in flight.
+core::Snapshot CastAndWait(core::Slot slot, u64 after, core::Jobs& jobs) {
+    core::Snapshot snapshot = CastThenPublish(slot, after, jobs);
     REQUIRE(snapshot.volleys.size() == 1);
     return snapshot;
 }
@@ -308,6 +315,42 @@ TEST_CASE("a fire bolt in flight, close up: its burn's colour shows on the pale 
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
     const gfx::View view{ .camera = { .centre = pose.position, .zoom = gfx::MAX_ZOOM } };
     CompareWithReference(Captured(renderer, snapshot, view, jobs), "bolt_burn");
+}
+
+// The poison lance cast this many ticks before the picture: its burst a third of the way through, its slot cooling.
+constexpr u64 SINCE_LANCE = 4;
+
+TEST_CASE("the poison lance's burst, close up: a flash at the point in the poison's colour") {
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    const core::Snapshot snapshot = CastThenPublish(core::Slot::Spender, SINCE_LANCE, jobs);
+    REQUIRE(snapshot.flashes.size() == 1);
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
+    const gfx::View view{ .camera = { .centre = AMONG_THE_FOXES, .zoom = gfx::MAX_ZOOM } };
+    CompareWithReference(Captured(renderer, snapshot, view, jobs), "lance_burst");
+}
+
+TEST_CASE("the HUD at zoom 1, one slot cooling down") {
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    const core::Snapshot snapshot = CastThenPublish(core::Slot::Spender, SINCE_LANCE, jobs);
+    REQUIRE(snapshot.caster.has_value());
+    std::expected<core::Strings, core::Error> strings = data::LoadStrings(Assets() / "data");
+    const std::string stringsWhy = strings.error_or(core::Error{}).message;
+    REQUIRE_MESSAGE(strings.has_value(), stringsWhy);
+    app::Hud hud(
+        std::make_shared<const core::Strings>(std::move(*strings)), core::Language::English, core::UiColours{}
+    ); // parentheses: MSVC C4868
+    std::vector<gfx::HudLine> lines;
+    std::vector<gfx::HudBar> bars;
+    hud.Build(
+        snapshot.caster.value_or(core::CasterView{}), core::RenderTick(snapshot.simulationTick, 1.0), HEIGHT, lines, bars
+    );
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
+    const gfx::Image drawn = Captured(renderer, snapshot, {}, jobs, WIDTH, HEIGHT, {}, { .lines = lines, .bars = bars });
+    CompareWithReference(drawn, "hud_zoom_one");
 }
 
 TEST_CASE("the hovered entity's pale outline and the selected one's gold, close up") {

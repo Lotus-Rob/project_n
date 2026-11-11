@@ -128,4 +128,36 @@ TEST_CASE("every area and colour name reads in both languages") {
     CHECK(strings->Text(core::StringId::ColourQiBar, core::Language::Chinese) == "灵气条");
 }
 
+TEST_CASE("the HUD strings fill their value") {
+    constexpr i64 HEALTH = 300;
+    constexpr i64 MOST = 400;
+    constexpr i64 SECONDS = 2;
+    const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
+    REQUIRE(assets.has_value());
+    std::ifstream input{ *assets / "data" / "strings.yaml", std::ios::binary };
+    const std::string text{ std::istreambuf_iterator<char>{ input }, std::istreambuf_iterator<char>{} };
+    const std::expected<core::Strings, core::Error> strings = data::ParseStrings(text);
+    REQUIRE(strings.has_value());
+    const auto filled = [&strings](core::StringId string, core::Language language, i64 value, i64 most) {
+        std::string into = "left over";
+        core::FillValue(into, strings->Text(string, language), value, most);
+        return into;
+    };
+    const std::string health = filled(core::StringId::Health, core::Language::English, HEALTH, MOST);
+    const std::string healthZh = filled(core::StringId::Health, core::Language::Chinese, HEALTH, MOST);
+    const std::string qiText = filled(core::StringId::Qi, core::Language::English, HEALTH, MOST);
+    const std::string qiZh = filled(core::StringId::Qi, core::Language::Chinese, HEALTH, MOST);
+    const std::string cooldown = filled(core::StringId::Cooldown, core::Language::English, SECONDS, 0);
+    const std::string cooldownZh = filled(core::StringId::Cooldown, core::Language::Chinese, SECONDS, 0);
+    CHECK(health == "Health 300/400");
+    CHECK(healthZh == "生命 300/400");
+    CHECK(qiText == "Qi 300/400");
+    CHECK(qiZh == "气 300/400");
+    CHECK(cooldown == "2s");
+    CHECK(cooldownZh == "2秒");
+    CHECK(strings->Text(core::StringId::NotEnoughQi, core::Language::Chinese) == "气不足");
+    CHECK(strings->Text(core::StringId::KeyRightClick, core::Language::English) == "Right click");
+    CHECK(strings->Text(core::StringId::FlyingSwords, core::Language::Chinese) == "飞剑");
+}
+
 } // namespace

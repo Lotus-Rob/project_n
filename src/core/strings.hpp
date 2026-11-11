@@ -50,9 +50,21 @@ enum class StringId : u8 {
     ColourHudText,              ///< The HUD's text.
     ColourHudCooling,           ///< The HUD's cooling slots.
     ColourHudWarning,           ///< The HUD's warnings.
+    Health,                     ///< The HUD's health bar: `{value}` and `{max}` are filled in (FillValue()).
+    Qi,                         ///< The HUD's Qi bar: `{value}` and `{max}` are filled in.
+    NotEnoughQi,                ///< The Qi bar's warning after a cast was refused for want of Qi.
+    Cooldown,                   ///< A slot's seconds left on cooldown: `{value}` is filled in.
+    SlotEmpty,                  ///< An empty slot in the HUD.
+    KeyLeftClick,               ///< The left mouse button, the generator's control.
+    KeyRightClick,              ///< The right mouse button, the spender's control.
+    KeySpace,                   ///< The space bar, the movement's control.
+    FireBolt,                   ///< The fire bolt's name.
+    PoisonLance,                ///< The poison lance's name.
+    Dash,                       ///< The dash's name.
+    FlyingSwords,               ///< The flying swords' name.
 };
 /// How many strings StringId names.
-inline constexpr std::size_t STRINGS = 33;
+inline constexpr std::size_t STRINGS = 45;
 /// Each StringId's name in strings.yaml, in StringId's order.
 inline constexpr std::array<std::string_view, STRINGS> STRING_NAMES{ { "cultivator_name",
                                                                        "tablet_caption",
@@ -86,7 +98,19 @@ inline constexpr std::array<std::string_view, STRINGS> STRING_NAMES{ { "cultivat
                                                                        "colour_bar_background",
                                                                        "colour_hud_text",
                                                                        "colour_hud_cooling",
-                                                                       "colour_hud_warning" } };
+                                                                       "colour_hud_warning",
+                                                                       "health",
+                                                                       "qi",
+                                                                       "not_enough_qi",
+                                                                       "cooldown",
+                                                                       "slot_empty",
+                                                                       "key_left_click",
+                                                                       "key_right_click",
+                                                                       "key_space",
+                                                                       "fire_bolt",
+                                                                       "poison_lance",
+                                                                       "dash",
+                                                                       "flying_swords" } };
 
 /// A language the strings come in.
 enum class Language : u8 {
@@ -108,5 +132,9 @@ struct Strings {
         return text.at(std::to_underlying(string)).at(std::to_underlying(language));
     }
 };
+
+/// Writes `text` into `into` (replacing what it held, keeping its capacity) with `value` in place of each `{value}` and
+/// `most` in place of each `{max}`, both as plain decimal numbers: the HUD's strings (StringId::Health, Qi, Cooldown).
+void FillValue(std::string& into, std::string_view text, i64 value, i64 most);
 
 } // namespace core

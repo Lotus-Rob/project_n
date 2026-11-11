@@ -118,6 +118,11 @@ App::App(platform::Window window, gfx::Renderer renderer, Options options)
   , m_startNs{ platform::NowNs() }
   , m_nextBurstNs{ m_startNs + core::NS_PER_SECOND } // the scene is resident by the first burst
   , m_numbers{ m_options.settings }
+  , m_hud( // parentheses: the strings' pointer is copied into a parameter (MSVC C4868)
+        m_options.strings,
+        m_options.settings.language,
+        m_options.settings.uiColours
+    )
   , m_frameNs{ m_startNs } {
     m_numberTexts.reserve(NUMBER_RESERVE);
     // The main thread is the job system's thread 0: waiting on its low-priority work, it may run the
@@ -368,6 +373,7 @@ bool App::Present(const platform::WindowState& state) {
     ShowScene(m_camera, m_shown, drawn->scene);
     if (m_numbersEpoch != drawn->epoch) {
         m_numbers.Clear(); // a new timeline: none of the old one's hits happened in it
+        m_hud.Clear();     // nor its refused casts
         m_numbersEpoch = drawn->epoch;
     }
     core::PresentFrame(
@@ -377,7 +383,10 @@ bool App::Present(const platform::WindowState& state) {
         [this] { m_renderer.Acquire(); },
         platform::NowNs,
         // Audio and particles (phase 7) play the events too.
-        [this](const core::Event& event) { m_numbers.Play(event); },
+        [this](const core::Event& event) {
+            m_numbers.Play(event);
+            m_hud.Play(event, static_cast<f64>(event.tick));
+        },
         [this, drawn, &state](f64 alpha) {
             if (drawn->follow) {
                 m_camera.centre = FollowedCentre(*drawn->follow, alpha);
@@ -385,12 +394,19 @@ bool App::Present(const platform::WindowState& state) {
             const f64 renderTick = core::RenderTick(drawn->simulationTick, alpha);
             m_numberTexts.clear();
             m_numbers.Texts(renderTick, m_numberTexts);
+            m_hudLines.clear();
+            m_hudBars.clear();
+            if (drawn->caster) {
+                // The window isn't made high-density, so its size in window coordinates is its size in pixels.
+                m_hud.Build(*drawn->caster, renderTick, static_cast<u32>(std::max(state.height, 0)), m_hudLines, m_hudBars);
+            }
             // Labels on the frame clock, which runs while the game is paused; numbers on the render clock, which holds.
             m_renderer.Draw(
                 *drawn,
                 FrameView(m_camera, alpha, Hovered(state, *drawn, alpha), m_frameClock.Advance(platform::NowNs())),
                 m_jobs,
-                m_numberTexts
+                m_numberTexts,
+                { .lines = m_hudLines, .bars = m_hudBars }
             );
             PN_PROFILE_FRAME();
         }

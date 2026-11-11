@@ -1206,6 +1206,149 @@ TEST_CASE("new game data leaves a volley in flight as it was cast") {
     CHECK(hits.front().value == NEW_DAMAGE);
 }
 
+// The poison lance: a strike at the point.
+
+constexpr i64 LANCE_DAMAGE = 360;
+constexpr i64 POISON_DAMAGE = 60;
+constexpr u32 POISON_TICKS = 4;
+constexpr u64 LANCE_COOLDOWN = 30;
+constexpr std::size_t POISON_LANCE = std::to_underlying(core::AbilityKind::PoisonLance);
+
+// Ticks `arena`, whose foxes have AMPLE health, to before CAST and gives its lance a radius that tags the `count` foxes
+// nearest the first fox's chest; those foxes and that chest.
+Aimed ReadyLance(game::Arena& arena, std::size_t count) {
+    Run(arena, 1, CAST - 1);
+    const core::Vec2 point = ChestOf(arena, Foxes(arena).front()) + OFF_AXIS;
+    const Tagging tagging = Nearest(arena, point, count);
+    core::GameData data = Gathered(AMPLE);
+    data.abilities.table.at(POISON_LANCE).radius = tagging.radius;
+    arena.SetData(data);
+    return { .tagged = tagging.foxes, .point = point };
+}
+
+TEST_CASE("the lance strikes every enemy in its area with poison and ends after its last tick") {
+    constexpr std::size_t TAGGED = 3;
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
+    const Aimed ready = ReadyLance(arena, TAGGED);
+    const u64 use = game::CastUse(CAST, core::Slot::Spender);
+    std::vector<core::Event> events = StampedCast(arena, CAST, core::Slot::Spender, ready.point);
+
+    const std::vector<core::Event> struck = OfUse(events, use);
+    REQUIRE(struck.size() == TAGGED);
+    for (std::size_t index = 0; index < TAGGED; ++index) {
+        CAPTURE(index);
+        CHECK(struck.at(index).kind == core::EventKind::Hit);
+        CHECK(struck.at(index).hit == core::HitKind::Poison);
+        CHECK(struck.at(index).target == ready.tagged.at(index));
+        CHECK(struck.at(index).value == LANCE_DAMAGE);
+    }
+
+    const u64 lastTick = CAST + (POISON_TICKS * game::AFFLICTION_PERIOD);
+    std::ranges::move(Play(arena, CAST + 1, lastTick + 1), std::back_inserter(events));
+    const std::vector<core::Event> used = OfUse(events, use);
+    REQUIRE(used.size() == TAGGED + (TAGGED * POISON_TICKS) + 1);
+    for (u32 tick = 1; tick <= POISON_TICKS; ++tick) {
+        CAPTURE(tick);
+        std::vector<core::StableId> targets;
+        for (std::size_t index = 0; index < TAGGED; ++index) {
+            const core::Event& hit = used.at((tick * TAGGED) + index);
+            CHECK(hit.kind == core::EventKind::Hit);
+            CHECK(hit.hit == core::HitKind::Poison);
+            CHECK(hit.tick == CAST + (tick * game::AFFLICTION_PERIOD));
+            CHECK(hit.value == POISON_DAMAGE);
+            targets.push_back(hit.target);
+        }
+        std::ranges::sort(targets);
+        CHECK(targets == ready.tagged);
+    }
+    CHECK(used.back().kind == core::EventKind::UseEnded);
+    CHECK(used.back().tick == lastTick);
+    for (const core::StableId fox : ready.tagged) {
+        CHECK(HealthOf(arena, fox).current == AMPLE - LANCE_DAMAGE - (POISON_TICKS * POISON_DAMAGE));
+    }
+    for (const core::StableId fox : Foxes(arena)) {
+        if (!std::ranges::contains(ready.tagged, fox)) {
+            CHECK(HealthOf(arena, fox).current == AMPLE);
+        }
+    }
+}
+
+TEST_CASE("a lance with no enemy in its area ends its use at once") {
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
+    Run(arena, 1, CAST - 1);
+    const std::vector<core::Event> events = StampedCast(arena, CAST, core::Slot::Spender, FAR_RIGHT);
+    const std::vector<core::Event> used = OfUse(events, game::CastUse(CAST, core::Slot::Spender));
+    REQUIRE(used.size() == 1);
+    CHECK(used.front().kind == core::EventKind::UseEnded);
+}
+
+TEST_CASE("a second lance refreshes the poison; its later ticks belong to the latest use, and the first use ends") {
+    constexpr u64 SECOND = CAST + LANCE_COOLDOWN;
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
+    const Aimed ready = ReadyLance(arena, 1);
+    std::vector<core::Event> events = StampedCast(arena, CAST, core::Slot::Spender, ready.point);
+    std::ranges::move(Play(arena, CAST + 1, SECOND - 1), std::back_inserter(events));
+    const core::Vec2 again = ChestOf(arena, ready.tagged.front());
+    std::ranges::move(StampedCast(arena, SECOND, core::Slot::Spender, again), std::back_inserter(events));
+    const u64 lastTick = SECOND + (POISON_TICKS * game::AFFLICTION_PERIOD);
+    std::ranges::move(Play(arena, SECOND + 1, lastTick + 1), std::back_inserter(events));
+
+    const std::vector<core::Event> first = OfUse(events, game::CastUse(CAST, core::Slot::Spender));
+    REQUIRE(first.size() == 2);
+    CHECK(first.front().kind == core::EventKind::Hit);
+    CHECK(first.back().kind == core::EventKind::UseEnded);
+    CHECK(first.back().tick == SECOND);
+
+    const std::vector<core::Event> second = OfUse(events, game::CastUse(SECOND, core::Slot::Spender));
+    REQUIRE(second.size() == 1 + POISON_TICKS + 1);
+    CHECK(second.back().kind == core::EventKind::UseEnded);
+    CHECK(second.back().tick == lastTick);
+}
+
+TEST_CASE("the lance's flash carries its element and fades after its ticks") {
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
+    const Aimed ready = ReadyLance(arena, 1);
+    StampedCast(arena, CAST, core::Slot::Spender, ready.point);
+    const core::Snapshot cast = Published(arena, CAST);
+    REQUIRE(cast.flashes.size() == 1);
+    CHECK(cast.flashes.front().point.x == ready.point.x);
+    CHECK(cast.flashes.front().point.y == ready.point.y);
+    CHECK(cast.flashes.front().startTick == CAST);
+    CHECK(cast.flashes.front().element == core::HitKind::Poison);
+    CHECK(cast.volleys.empty()); // a strike, not a volley
+
+    Run(arena, CAST + 1, CAST + core::FLASH_TICKS - 1);
+    CHECK(Published(arena, CAST + core::FLASH_TICKS - 1).flashes.size() == 1);
+    Run(arena, CAST + core::FLASH_TICKS, CAST + core::FLASH_TICKS);
+    CHECK(Published(arena, CAST + core::FLASH_TICKS).flashes.empty());
+}
+
+TEST_CASE("the lance's flash survives a save") {
+    constexpr u64 SAVED_AT = CAST + 3;
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
+    const Aimed ready = ReadyLance(arena, 1);
+    StampedCast(arena, CAST, core::Slot::Spender, ready.point);
+    Run(arena, CAST + 1, SAVED_AT);
+    std::vector<std::byte> bytes;
+    core::Writer writer{ bytes };
+    arena.Save(writer);
+
+    game::Arena loaded(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader));
+    CHECK(loaded.StateHash() == arena.StateHash());
+    const core::Snapshot snapshot = Published(loaded, SAVED_AT);
+    REQUIRE(snapshot.flashes.size() == 1);
+    CHECK(snapshot.flashes.front().point.x == ready.point.x);
+    CHECK(snapshot.flashes.front().point.y == ready.point.y);
+    CHECK(snapshot.flashes.front().startTick == CAST);
+    CHECK(snapshot.flashes.front().element == core::HitKind::Poison);
+    Run(arena, SAVED_AT + 1, CAST + core::FLASH_TICKS);
+    Run(loaded, SAVED_AT + 1, CAST + core::FLASH_TICKS);
+    CHECK(loaded.StateHash() == arena.StateHash());
+    CHECK(Published(loaded, CAST + core::FLASH_TICKS).flashes.empty());
+}
+
 TEST_CASE("afflictions are valid with no negative damage") {
     constexpr i64 HARM = 40;
     CHECK(game::Afflictions{ .burn = { .damage = HARM, .ticksLeft = 1, .use = 1, .nextTick = 1 }, .poison = {} }.Valid());

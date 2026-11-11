@@ -53,6 +53,7 @@ bool Logic::RunBurst(const TickBurst& burst, const std::stop_token& stop) {
     snapshot.healthBars.clear();
     snapshot.volleys.clear();
     snapshot.volleyTargets.clear();
+    snapshot.flashes.clear();
     snapshot.caster.reset();
     snapshot.follow.reset();
     snapshot.selected.reset();

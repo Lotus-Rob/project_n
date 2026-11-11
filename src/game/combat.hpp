@@ -3,8 +3,9 @@
 /// @file
 /// @ingroup game
 /// Combat (the phase 6 chunk 4 spec): creatures' health, the amount every hit deals, the volleys in flight (the flying
-/// swords and the fire bolt), the burns and poisons their hits leave, dying, and the respawns a death queues. Health, damage
-/// and healing are i64, so long-term progression can grow amounts without bound while a fight stays fast.
+/// swords and the fire bolt), the poison lance's strikes and their flashes, the burns and poisons hits leave, dying, and
+/// the respawns a death queues. Health, damage and healing are i64, so long-term progression can grow amounts without
+/// bound while a fight stays fast.
 
 #include "core/abilities.hpp"
 #include "core/archive.hpp"
@@ -196,8 +197,8 @@ struct Afflictions {
 /// (its last tick drawn, the one before its removal).
 [[nodiscard]] f32 DissolveAt(const Dying& dying, u64 tick);
 
-/// The arena's combat state beyond its components: the volleys in flight (the flying swords and the fire bolts) and the
-/// respawns waiting.
+/// The arena's combat state beyond its components: the volleys in flight (the flying swords and the fire bolts), the
+/// flashes showing (the poison lance's) and the respawns waiting.
 class Combat {
 public:
     /// Takes `amount` from `target`'s health (a negative amount heals, never past its most) at `tick`; health running
@@ -216,7 +217,11 @@ public:
     /// of one at the tagged enemy nearest the point, its flight ⌈distance / speed⌉ ticks, with no ring and no sweep. With
     /// none tagged, the volley's one target is the point itself. Either volley keeps its shape, damage and affliction as
     /// cast (each amount through HitAmount()), so new game data never changes it, and its commit window is the ability
-    /// radius's (core::CommitTicksFor()). Its seed is drawn from core::Random with the state counter.
+    /// radius's (core::CommitTicksFor()). Its seed is drawn from core::Random with the state counter. The poison lance
+    /// strikes at once: every living enemy whose chest is within its radius of the point, in stable ID order, takes its
+    /// damage as a hit of its element (Poison) at its head and, unless the hit killed it, gains its affliction (as a
+    /// sword's hit leaves one, refreshing one there); a Flash of its element starts at the point. Its use ends then, with
+    /// a UseEnded after its hits, unless an affliction it left holds it, and then after that affliction's last tick.
     void Cast(
         core::State& state,
         const core::Manifest& manifest,
@@ -249,14 +254,15 @@ public:
     ///   and a dying creature's afflictions end;
     /// - each use whose last hit is behind it ends with a UseEnded event: a volley's at its last arrival unless it left an
     ///   affliction, else after that affliction's last tick, its creature's death or its refresh;
-    /// - a volley whose last sword has faded is dropped.
+    /// - a volley whose last sword has faded is dropped, and a flash core::FLASH_TICKS after its start.
     void Strike(core::State& state, const core::Manifest& manifest, u64 tick, std::vector<core::Event>& events);
 
     /// Appends a UseEnded event for each use still open in `state`'s active domain (a volley with swords still to
     /// arrive, an affliction with ticks left), in use order: before a scene change throws them away.
     void EndUses(const core::State& state, std::vector<core::Event>& events) const;
 
-    /// Adds each volley in flight, and its targets, to `snapshot`'s volleys and volley targets.
+    /// Adds each volley in flight, and its targets, to `snapshot`'s volleys and volley targets, and each flash showing
+    /// to its flashes.
     void Publish(core::Snapshot& snapshot) const;
 
     /// The respawns waiting: the tick each is due, earliest first.
@@ -266,7 +272,8 @@ public:
 
     /// Writes the combat state into `archive` (a Writer or a Hasher): the respawns waiting (their count, then each one's
     /// tick), then the volleys in flight (their count, then each one's cast, ability, element, damage, affliction, how
-    /// many of its swords have arrived, and its targets' count and targets).
+    /// many of its swords have arrived, and its targets' count and targets), then the flashes showing (their count, then
+    /// each one).
     template<typename Archive>
     void Save(Archive& archive) const {
         archive(static_cast<u64>(m_respawns.size()));
@@ -281,6 +288,10 @@ public:
                 archive(target);
             }
         }
+        archive(static_cast<u64>(m_flashes.size()));
+        for (const core::Flash& flash : m_flashes) {
+            archive(flash);
+        }
     }
 
     /// Whether every living target of the volleys in flight (`diedTick` 0) names a creature in `state`'s active domain:
@@ -289,9 +300,11 @@ public:
     [[nodiscard]] bool AimsAtCreatures(const core::State& state) const;
 
     /// Reads what Save() wrote, failing `archive` and changing nothing on a count past what is left, ticks out of order,
-    /// or a volley that can't be used: invalid (core::Volley::Valid()), of an unknown ability or element, a negative
+    /// a volley that can't be used (invalid (core::Volley::Valid()), of an unknown ability or element, a negative
     /// amount, more swords arrived than it has, no targets, a target at a point that isn't finite, or the point target
-    /// (zero) not dead.
+    /// (zero) not dead), or a flash at a point that isn't finite or of an unknown element. A living target is checked
+    /// against the state loaded beside it by Arena::Load(), which refuses the save when one isn't a creature in its
+    /// active domain (AimsAtCreatures()).
     void Load(core::Reader& archive);
 
 private:
@@ -327,7 +340,16 @@ private:
         const core::AbilityData& ability,
         core::AbilityKind kind,
         const core::Action& cast,
-        const core::TickCounters& counters
+        const core::TickCounters& counters,
+        std::vector<core::Event>& events
+    );
+    void Lance(
+        core::State& state,
+        const core::Manifest& manifest,
+        const core::AbilityData& ability,
+        const core::Action& cast,
+        u64 tick,
+        std::vector<core::Event>& events
     );
     void Launch(
         core::State& state,
@@ -350,11 +372,16 @@ private:
     void FollowTargets(core::State& state, const core::Manifest& manifest);
     void MarkDeaths(const core::State& state, u64 tick);
     [[nodiscard]] bool Holds(const core::State& state, u64 use) const;
+    // Ends each use in `ending` (sorted and made unique in place) that nothing holds any more (Holds()), with a UseEnded
+    // event: the one queue every use's end goes through.
+    void EndReleased(const core::State& state, std::vector<u64>& ending, u64 tick, std::vector<core::Event>& events) const;
 
     // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::vector<u64> m_respawns{};
     // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::vector<Flight> m_flights{};
+    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::vector<core::Flash> m_flashes{};
 };
 
 } // namespace game
