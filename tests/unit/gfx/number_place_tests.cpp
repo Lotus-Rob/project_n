@@ -142,8 +142,6 @@ gfx::NumberPlacement Placement(const gfx::NumberFace& face) {
              .width = WIDTH,
              .height = HEIGHT,
              .pixels = PIXELS,
-             .outline = true,
-             .shadow = false,
              .origins = ORIGINS };
 }
 

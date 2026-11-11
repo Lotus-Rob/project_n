@@ -135,10 +135,6 @@ struct NumberPlacement {
     u32 height = 0;
     /// The size numbers are drawn at, in pixels (TextPixels()).
     f32 pixels = 0.0F;
-    /// Whether text has its outline (TextColour()).
-    bool outline = true;
-    /// Whether text casts its shadow (TextColour()).
-    bool shadow = true;
     /// The creatures whose numbers start elsewhere, sorted by entity.
     std::span<const NumberOrigin> origins;
 };
