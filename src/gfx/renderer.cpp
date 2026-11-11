@@ -12,6 +12,7 @@
 #include "gfx/internal/gpu.hpp"
 #include "gfx/internal/resources/scene_target.hpp"
 #include "gfx/internal/resources/sprite_array.hpp"
+#include "gfx/labels.hpp"
 #include "gfx/sprite_block.hpp"
 #include "gfx/text_layout.hpp"
 #include "gfx/text_place.hpp"
@@ -152,9 +153,20 @@ struct Renderer::Impl {
     std::expected<void, core::Error> MakeGlyphPages();
     // What `item` says, in the language shown.
     std::string_view TextOf(const core::TextItem& item);
-    // Lays out the texts into meshVertices and meshRuns, in target pixels, unrounded.
+    // Lays out the texts into meshVertices and meshRuns, in target pixels, unrounded: captions, then the labels as the
+    // label pass places them, then numbers, so each draws over the one before.
     void PlaceTexts(const Shown& shown);
-    void PlaceText(const core::TextItem& item, const Shown& shown);
+    // `item`'s layout at its own anchor and size, its colour scaled by `opacity`.
+    void PlaceText(const core::TextItem& item, const Shown& shown, f32 opacity);
+    // The label pass's input for `item`, a label, raised to the hovered or selected priority when it names those.
+    LabelInput LabelOf(const core::TextItem& item, const Shown& shown, core::StableId hovered, core::StableId selected);
+    // Each label's stackWidth: its name as a stack with as many digits as the frame's count can have.
+    void MeasureStacks();
+    // A label, `item`, showing `count` (its name, or the stack with that count) at `opacity` of its colour, its box's
+    // bottom middle at `anchor`, drawn at `pixels`.
+    void PlaceLabel(const core::TextItem& item, u32 count, f32 opacity, core::Vec2 anchor, f32 pixels);
+    // `layout` drawn at `pixels` with its `align` point at `anchor`, in `colour`.
+    void PlaceLayout(const Layout& layout, core::Vec2 anchor, core::TextAlign align, f32 pixels, u32 colour);
     std::expected<void, core::Error> UploadGlyphs(SDL_GPUCopyPass* copy);
     // The command buffer holding the last Upload() was submitted, or failed to be, or was cancelled.
     void Submitted(bool submitted);
@@ -196,7 +208,11 @@ struct Renderer::Impl {
     UploadedSnapshot uploaded{};
     std::size_t glyphsRecorded = 0; // of the cache's pending fields, in the command buffer not yet submitted
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::string number{}; // a number's text, made again for each
+    std::string number{};  // a number's text, made again for each
+    std::string stacked{}; // a label stack's text, likewise
+    LabelPass labels{};
+    std::vector<LabelInput> labelInputs{};
+    std::vector<const core::TextItem*> labelItems{}; // the item of each of labelInputs
     std::vector<MeshVertex> meshVertices{};
     std::vector<internal::MeshRun> meshRuns{};
     core::RepeatedFailure failures{};
@@ -268,26 +284,144 @@ std::string_view Renderer::Impl::TextOf(const core::TextItem& item) {
 
 void Renderer::Impl::PlaceTexts(const Shown& shown) {
     PN_PROFILE_ZONE();
-    for (const core::TextItem& item : shown.snapshot->texts) {
-        PlaceText(item, shown);
+    const core::Snapshot& snapshot = *shown.snapshot;
+    const auto idOf = [&snapshot](std::optional<std::size_t> instance) {
+        return instance && *instance < snapshot.ids.size() ? snapshot.ids[*instance] : core::StableId{};
+    };
+    const core::StableId hovered = idOf(shown.view->outlined);
+    const core::StableId selected = idOf(snapshot.selected);
+    const f32 captionOpacity = CaptionOpacity(
+        TextPixels(core::TextKind::Caption, PixelsPerUnit(shown.view->camera, shown.width, shown.height), textOptions.scale),
+        textOptions.scale
+    );
+    labelInputs.clear();
+    labelItems.clear();
+    for (const std::span<const core::TextItem> texts : { std::span<const core::TextItem>{ snapshot.texts }, shown.extra }) {
+        for (const core::TextItem& item : texts) {
+            if (item.kind == core::TextKind::Caption) {
+                PlaceText(item, shown, captionOpacity);
+            }
+            else if (item.kind == core::TextKind::Label) {
+                labelInputs.push_back(LabelOf(item, shown, hovered, selected));
+                labelItems.push_back(&item);
+            }
+        }
     }
-    for (const core::TextItem& item : shown.extra) {
-        PlaceText(item, shown);
+    MeasureStacks();
+    for (const PlacedLabel& placed :
+         labels.Place(labelInputs, shown.width, shown.height, shown.view->clock, textOptions.scale)) {
+        const core::TextItem& item = *labelItems[placed.input];
+        const f32 pixels = labelInputs[placed.input].pixels;
+        PlaceLabel(item, placed.previous, placed.opacity * (1.0F - placed.change), placed.anchor, pixels);
+        PlaceLabel(item, placed.count, placed.opacity * placed.change, placed.anchor, pixels);
+    }
+    for (const std::span<const core::TextItem> texts : { std::span<const core::TextItem>{ snapshot.texts }, shown.extra }) {
+        for (const core::TextItem& item : texts) {
+            if (item.kind == core::TextKind::Number) {
+                PlaceText(item, shown, 1.0F);
+            }
+        }
     }
 }
 
-void Renderer::Impl::PlaceText(const core::TextItem& item, const Shown& shown) {
+void Renderer::Impl::MeasureStacks() {
     PN_PROFILE_ZONE();
-    const Layout& layout = text->Lay(TextOf(item), item.direction);
-    const f32 pixels = TextPixels(item.kind, PixelsPerUnit(shown.view->camera, shown.width, shown.height), textOptions.scale);
-    const f32 scale = pixels / SDF_BASE_PIXELS;
-    const core::Vec2 topLeft = TextTopLeft(
-        TextAnchor(item, *shown.view, shown.width, shown.height),
-        { .x = layout.width * scale, .y = layout.height * scale },
-        item.align
+    // A stack's count is below the number of labels, so the stack text with that many digits is as wide as any can be:
+    // the font's digits are tabular (Noto Sans SC's '0' to '9' are all 555 units wide), so the digits' number decides.
+    const auto most = static_cast<u32>(labelInputs.size());
+    const std::string& stack = strings->Text(core::StringId::LabelStack, textOptions.language);
+    constexpr f32 UNMEASURED = -1.0F;
+    std::array<std::array<f32, 2>, core::STRINGS> widths{};
+    for (std::array<f32, 2>& byDirection : widths) {
+        byDirection.fill(UNMEASURED);
+    }
+    for (std::size_t index = 0; index < labelInputs.size(); ++index) {
+        const core::TextItem& item = *labelItems[index];
+        f32& width = widths.at(std::to_underlying(item.string)).at(std::to_underlying(item.direction));
+        if (width < 0.0F) {
+            StackText(stacked, stack, TextOf(item), most);
+            width = text->Lay(stacked, item.direction).width * (labelInputs[index].pixels / SDF_BASE_PIXELS);
+        }
+        labelInputs[index].stackWidth = width;
+    }
+}
+
+void Renderer::Impl::PlaceLabel(const core::TextItem& item, u32 count, f32 opacity, core::Vec2 anchor, f32 pixels) {
+    PN_PROFILE_ZONE();
+    if (opacity <= 0.0F) {
+        return;
+    }
+    core::TextItem faded = item;
+    faded.opacity *= opacity;
+    std::string_view says = TextOf(item);
+    if (count > 0) {
+        StackText(stacked, strings->Text(core::StringId::LabelStack, textOptions.language), says, count);
+        says = stacked;
+    }
+    PlaceLayout(
+        text->Lay(says, item.direction),
+        anchor,
+        core::TextAlign::BottomCentre,
+        pixels,
+        TextColour(faded, textOptions.outline, textOptions.shadow)
     );
+}
+
+LabelInput Renderer::Impl::LabelOf(
+    const core::TextItem& item,
+    const Shown& shown,
+    core::StableId hovered,
+    core::StableId selected
+) {
+    PN_PROFILE_ZONE();
+    const f32 perUnit = PixelsPerUnit(shown.view->camera, shown.width, shown.height);
+    const f32 pixels = TextPixels(item.kind, perUnit, textOptions.scale);
+    const Layout& layout = text->Lay(TextOf(item), item.direction);
+    const f32 scale = pixels / SDF_BASE_PIXELS;
+    core::LabelPriority priority = item.priority;
+    if (item.entity != core::StableId{} && item.entity == selected) {
+        priority = core::LabelPriority::Selected;
+    }
+    else if (item.entity != core::StableId{} && item.entity == hovered) {
+        priority = std::max(priority, core::LabelPriority::Hovered);
+    }
+    const f32 height = layout.height * scale;
+    core::Vec2 anchor = TextAnchor(item, *shown.view, shown.width, shown.height);
+    if (item.align == core::TextAlign::TopCentre) {
+        anchor.y += height; // the pass takes the middle of a box's bottom edge
+    }
+    return { .entity = item.entity,
+             .nameKey = item.nameKey,
+             .priority = priority,
+             .anchor = anchor,
+             .width = layout.width * scale,
+             .height = height,
+             .pixels = pixels,
+             .entityPixels = item.height * perUnit };
+}
+
+void Renderer::Impl::PlaceText(const core::TextItem& item, const Shown& shown, f32 opacity) {
+    PN_PROFILE_ZONE();
+    if (opacity <= 0.0F) {
+        return;
+    }
+    core::TextItem faded = item;
+    faded.opacity *= opacity;
+    PlaceLayout(
+        text->Lay(TextOf(item), item.direction),
+        TextAnchor(item, *shown.view, shown.width, shown.height),
+        item.align,
+        TextPixels(item.kind, PixelsPerUnit(shown.view->camera, shown.width, shown.height), textOptions.scale),
+        TextColour(faded, textOptions.outline, textOptions.shadow)
+    );
+}
+
+void Renderer::Impl::PlaceLayout(const Layout& layout, core::Vec2 anchor, core::TextAlign align, f32 pixels, u32 colour) {
+    PN_PROFILE_ZONE();
+    const f32 scale = pixels / SDF_BASE_PIXELS;
+    const core::Vec2 topLeft = TextTopLeft(anchor, { .x = layout.width * scale, .y = layout.height * scale }, align);
     auto quad = static_cast<u32>(meshVertices.size() / QUAD_VERTICES);
-    PlaceGlyphs(layout, topLeft, pixels, TextColour(item, textOptions.outline, textOptions.shadow), meshVertices);
+    PlaceGlyphs(layout, topLeft, pixels, colour, meshVertices);
     for (const PlacedGlyph& glyph : layout.glyphs) {
         SDL_GPUTexture* const page = glyphPages.at(glyph.page).get();
         if (meshRuns.empty() || meshRuns.back().page != page) {

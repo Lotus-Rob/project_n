@@ -8,7 +8,7 @@ description: See what project_n actually draws, to check a rendering change by e
 Owned by: src/AGENTS.md.
 
 ## Pick the way to look
-- **A fixed scene, no display needed (preferred):** `pixi run project_n reference`. Each run writes its pictures to `build/reference/<view>.png` (views: `painted`, `cells`, `cells_far`, `arena_halfway`, `outlines`, and the game text at each zoom, `text_zoom_quarter`, `text_zoom_half`, `text_zoom_one`, `text_zoom_two`; tests/reference/reference_tests.cpp). Open them with the Read tool. They come from software Vulkan, so they match CI, not necessarily the user's GPU.
+- **A fixed scene, no display needed (preferred):** `pixi run project_n reference`. Each run writes its pictures to `build/reference/<view>.png` (views: `painted`, `cells`, `cells_far`, `arena_halfway`, `outlines`, and the game text at each zoom, `text_zoom_quarter`, `text_zoom_half`, `text_zoom_one`, `text_zoom_two`, and `labels_crowd`, the foxes bunched round the player so their labels stack; tests/reference/reference_tests.cpp). Open them with the Read tool. They come from software Vulkan, so they match CI, not necessarily the user's GPU.
 - **The real window, on the user's GPU:** when the change concerns presentation, input, zoom or the live loop, or the user asks to see it running.
 
 ## The real window
