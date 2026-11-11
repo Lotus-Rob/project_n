@@ -3,12 +3,14 @@
 // the working directory: each view's picture lands in build/reference/, where `--update` takes it from.
 // Game text is also measured on the pictures (the phase 6 chunk 3 spec, "Testing"): a label's ink must not shimmer at
 // sub-pixel camera offsets, nor step while its creature moves.
+#include "app/damage_numbers.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
 #include "core/game_data.hpp"
 #include "core/instances.hpp"
 #include "core/jobs.hpp"
 #include "core/math.hpp"
+#include "core/settings.hpp"
 #include "core/strings.hpp"
 #include "data/strings.hpp"
 #include "game/arena.hpp"
@@ -102,9 +104,10 @@ gfx::Image Captured(
     const gfx::View& view,
     core::Jobs& jobs,
     u32 width = WIDTH,
-    u32 height = HEIGHT
+    u32 height = HEIGHT,
+    std::span<const core::TextItem> extra = {}
 ) {
-    std::expected<gfx::Image, core::Error> drawn = renderer.Capture(snapshot, view, jobs, width, height);
+    std::expected<gfx::Image, core::Error> drawn = renderer.Capture(snapshot, view, jobs, width, height, extra);
     const std::string drawnWhy = drawn.error_or(core::Error{}).message;
     REQUIRE_MESSAGE(drawn.has_value(), drawnWhy);
     return std::move(*drawn);
@@ -215,6 +218,100 @@ TEST_CASE("crowded labels: the foxes' names stack into one, the player's shows")
 
 TEST_CASE("labels and the tablet's caption at the largest zoom") {
     CheckAgainstReference({ .name = "text_zoom_two", .zoom = gfx::MAX_ZOOM, .centre = TABLET_AND_PLAYER });
+}
+
+// Damage numbers in a grid over the arena at rest, as app::DamageNumbers plays them at NUMBERS_TICK: a column per
+// kind, a row per motion and age since the hit (0.1 and 0.5 s, and 0.8 s, fading), less each number's stagger delay
+// (under NUMBER_STAGGER_MIN_SECONDS: each hits its own target, alone in its tick).
+constexpr u64 NUMBERS_TICK = 600;
+constexpr std::array<u64, 3> NUMBER_AGES{ { 6, 30, 48 } }; // in ticks
+constexpr std::array<i32, core::HIT_KINDS> NUMBER_VALUES{ { 7, 23, 58, 140 } };
+constexpr u64 NUMBER_TARGETS = 1'000'000; // the first of the grid's targets: no entity in the arena
+// The grid's top-left number and the space between numbers, in world units: apart at the smallest zoom too.
+constexpr core::Vec2 NUMBERS_ORIGIN{ .x = 600.0F, .y = 160.0F };
+constexpr core::Vec2 NUMBERS_SPACING{ .x = 240.0F, .y = 160.0F };
+
+std::vector<core::TextItem> NumberGrid() {
+    std::vector<core::TextItem> texts;
+    f32 row = 0.0F;
+    for (const core::NumberMotion motion : { core::NumberMotion::Bounce, core::NumberMotion::Rise }) {
+        app::DamageNumbers numbers({ .damageNumberMotion = motion });
+        for (const u64 age : NUMBER_AGES) {
+            for (std::size_t kind = 0; kind < core::HIT_KINDS; ++kind) {
+                // Each kind on a target of its own, alone in its tick, so each stagger window is the narrowest.
+                numbers.Play(
+                    { .tick = NUMBERS_TICK - age,
+                      .hit = static_cast<core::HitKind>(kind),
+                      .target = core::StableId{ NUMBER_TARGETS + kind },
+                      .position = NUMBERS_ORIGIN +
+                                  core::Vec2{ .x = NUMBERS_SPACING.x * static_cast<f32>(kind), .y = NUMBERS_SPACING.y * row },
+                      .value = NUMBER_VALUES.at(kind) }
+                );
+            }
+            ++row;
+        }
+        numbers.Texts(static_cast<f64>(NUMBERS_TICK), texts);
+    }
+    return texts;
+}
+
+// The grid of numbers over the arena at rest, at `zoom`.
+void CheckNumbers(std::string_view name, f32 zoom) {
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    game::Arena arena(test::TestManifest());
+    const core::Snapshot snapshot = Published(arena, jobs);
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
+    const std::vector<core::TextItem> numbers = NumberGrid();
+    const gfx::View view{ .camera = { .zoom = zoom } };
+    CompareWithReference(Captured(renderer, snapshot, view, jobs, WIDTH, HEIGHT, numbers), name);
+}
+
+TEST_CASE("damage numbers of every kind, bouncing and rising, at zoom 1") {
+    CheckNumbers("numbers_one", 1.0F);
+}
+
+TEST_CASE("damage numbers at the smallest zoom keep their minimum size") {
+    CheckNumbers("numbers_quarter", gfx::MIN_ZOOM);
+}
+
+TEST_CASE("a number on a creature too small to see starts from its label") {
+    // Two foxes' numbers, both anchored far from them on bare ground: the one whose label says its fox is
+    // under gfx::VISIBLE_CREATURE_PIXELS stands on that label instead; the other stays at its own anchor.
+    constexpr f32 TINY = 6.0F;                                   // world units: 4 pixels at zoom 1 on the 1280-wide picture
+    constexpr core::Vec2 FAR_ANCHOR{ .x = 330.0F, .y = 900.0F }; // on bare ground, bottom left
+    constexpr core::Vec2 NEXT_TO_IT{ .x = 120.0F, .y = 0.0F };
+    constexpr i32 ON_TINY = 77;
+    constexpr i32 ON_SEEN = 33;
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    game::Arena arena(test::TestManifest());
+    core::Snapshot snapshot = Published(arena, jobs);
+    std::vector<core::TextItem*> foxes;
+    for (core::TextItem& text : snapshot.texts) {
+        if (text.kind == core::TextKind::Label && text.priority == core::LabelPriority::Rest) {
+            foxes.push_back(&text);
+        }
+    }
+    REQUIRE(foxes.size() >= 2);
+    foxes[0]->height = TINY;
+    REQUIRE(TINY * gfx::PixelsPerUnit({}, WIDTH, HEIGHT) < gfx::VISIBLE_CREATURE_PIXELS);
+    const std::array<core::TextItem, 2> numbers{ {
+        { .kind = core::TextKind::Number,
+          .value = ON_TINY,
+          .previous = FAR_ANCHOR,
+          .current = FAR_ANCHOR,
+          .entity = foxes[0]->entity },
+        { .kind = core::TextKind::Number,
+          .value = ON_SEEN,
+          .previous = FAR_ANCHOR + NEXT_TO_IT,
+          .current = FAR_ANCHOR + NEXT_TO_IT,
+          .entity = foxes[1]->entity },
+    } };
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
+    CompareWithReference(Captured(renderer, snapshot, {}, jobs, WIDTH, HEIGHT, numbers), "numbers_label");
 }
 
 // What a label is measured over: the backdrop's flat dark, where its light fill is most of its ink, or a flat pale

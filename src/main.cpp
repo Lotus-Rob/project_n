@@ -97,6 +97,7 @@ i32 Run(const core::Settings& settings, app::Options options) {
     if (!renderer) {
         return FailToStart("the graphics card couldn't be used", renderer.error());
     }
+    options.settings = settings;
     app::App app(std::move(*window), std::move(*renderer), std::move(options));
     return app.Run();
 }

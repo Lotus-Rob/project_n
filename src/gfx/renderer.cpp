@@ -134,6 +134,12 @@ struct Renderer::Impl {
     Impl& operator=(Impl&&) = delete;
     ~Impl() = default;
 
+    // A labelled creature too small to see (TooSmallToSee()), whose numbers start over its label: its label's height.
+    struct TinyCreature {
+        core::StableId entity{};
+        f32 labelHeight = 0.0F; // in target pixels
+    };
+
     // What a frame or a capture shows, and on a target how large.
     struct Shown {
         const core::Snapshot* snapshot = nullptr;
@@ -158,6 +164,9 @@ struct Renderer::Impl {
     void PlaceTexts(const Shown& shown);
     // `item`'s layout at its own anchor and size, its colour scaled by `opacity`.
     void PlaceText(const core::TextItem& item, const Shown& shown, f32 opacity);
+    // `item`, a number, drawn at `pixels`, moved by its scatter and risen by its lift from its anchor, or from the top of
+    // its creature's label, where it is placed, when that creature is too small to see.
+    void PlaceNumber(const core::TextItem& item, const Shown& shown, f32 pixels);
     // The label pass's input for `item`, a label, raised to the hovered or selected priority when it names those.
     LabelInput LabelOf(const core::TextItem& item, const Shown& shown, core::StableId hovered, core::StableId selected);
     // Each label's stackWidth: its name as a stack with as many digits as the frame's count can have.
@@ -213,6 +222,7 @@ struct Renderer::Impl {
     LabelPass labels{};
     std::vector<LabelInput> labelInputs{};
     std::vector<const core::TextItem*> labelItems{}; // the item of each of labelInputs
+    std::vector<TinyCreature> tinyCreatures{};       // by entity: the labelled creatures too small to see this frame
     std::vector<MeshVertex> meshVertices{};
     std::vector<internal::MeshRun> meshRuns{};
     core::RepeatedFailure failures{};
@@ -315,13 +325,47 @@ void Renderer::Impl::PlaceTexts(const Shown& shown) {
         PlaceLabel(item, placed.previous, placed.opacity * (1.0F - placed.change), placed.anchor, pixels);
         PlaceLabel(item, placed.count, placed.opacity * placed.change, placed.anchor, pixels);
     }
+    tinyCreatures.clear();
+    for (const LabelInput& label : labelInputs) {
+        if (TooSmallToSee(label.entityPixels)) {
+            tinyCreatures.push_back({ .entity = label.entity, .labelHeight = label.height });
+        }
+    }
+    std::ranges::sort(tinyCreatures, {}, &TinyCreature::entity);
+    const f32 numberPixels =
+        TextPixels(core::TextKind::Number, PixelsPerUnit(shown.view->camera, shown.width, shown.height), textOptions.scale);
     for (const std::span<const core::TextItem> texts : { std::span<const core::TextItem>{ snapshot.texts }, shown.extra }) {
         for (const core::TextItem& item : texts) {
             if (item.kind == core::TextKind::Number) {
-                PlaceText(item, shown, 1.0F);
+                PlaceNumber(item, shown, numberPixels);
             }
         }
     }
+}
+
+void Renderer::Impl::PlaceNumber(const core::TextItem& item, const Shown& shown, f32 pixels) {
+    PN_PROFILE_ZONE();
+    if (item.opacity <= 0.0F) {
+        return;
+    }
+    std::optional<core::Vec2> anchor = std::nullopt;
+    const auto tiny = std::ranges::lower_bound(tinyCreatures, item.entity, {}, &TinyCreature::entity);
+    if (tiny != tinyCreatures.end() && tiny->entity == item.entity) {
+        // From the top of its label's box, so it rises off the label rather than over its text.
+        anchor = labels.Anchor(item.entity).transform([&](core::Vec2 bottom) {
+            return core::Vec2{ .x = bottom.x, .y = bottom.y - tiny->labelHeight };
+        });
+    }
+    core::Vec2 start = anchor.value_or(TextAnchor(item, *shown.view, shown.width, shown.height));
+    start.x += item.scatter.x * pixels;
+    start.y += (item.scatter.y - item.lift) * pixels;
+    PlaceLayout(
+        text->Lay(TextOf(item), item.direction),
+        start,
+        item.align,
+        pixels,
+        TextColour(item, textOptions.outline, textOptions.shadow)
+    );
 }
 
 void Renderer::Impl::MeasureStacks() {

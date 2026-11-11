@@ -61,7 +61,7 @@ target("headless_bench")
 -- but not registered as one, as it needs a GPU: `project_n reference` runs it on Mesa's software Vulkan.
 target("reference_tests")
     set_kind("binary")
-    add_deps("gfx", "game")
+    add_deps("app") -- the damage numbers it draws; it brings gfx and game
     with_manifest()
     add_files("unit/gfx/main.cpp", "reference/*.cpp", {unity_ignored = true})
     set_pcxxheader("unit/pch.hpp")

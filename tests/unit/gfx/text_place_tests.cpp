@@ -139,6 +139,15 @@ TEST_CASE("with the outline and the shadow both off, labels and captions turn to
     CHECK(gfx::TextColour(number, false, false) == LIGHT);
 }
 
+TEST_CASE("a creature under eight pixels tall is too small to see, but one of unknown height never is") {
+    constexpr f32 TINY = 4.0F;
+    constexpr f32 SEEN = 20.0F;
+    CHECK(gfx::TooSmallToSee(TINY));
+    CHECK_FALSE(gfx::TooSmallToSee(gfx::VISIBLE_CREATURE_PIXELS));
+    CHECK_FALSE(gfx::TooSmallToSee(SEEN));
+    CHECK_FALSE(gfx::TooSmallToSee(0.0F));
+}
+
 TEST_CASE("a text's opacity scales every channel of its premultiplied colour") {
     const core::TextItem half{ .opacity = HALF, .colour = SOME_COLOUR };
     CHECK(gfx::TextColour(half, true, true) == SOME_COLOUR_AT_HALF);

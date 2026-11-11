@@ -15,7 +15,8 @@
 /// - saves, loads and replays of all of it;
 /// - F2 cycling through the scenes, each loaded on demand while the ticks wait for it;
 /// - the ice crystal's aura, which hits the foxes in its reach (and heals the player) once a second, and F7's debug burst
-///   of 4,000 hits: both emit hit events (core::Event), which change no state;
+///   of 4,000 hits: both emit hit events (core::Event), which change no state and the main thread shows as damage
+///   numbers;
 /// - game text over the world: name labels over the player and every fox, and the tablet's vertical caption.
 /// Its stress variant adds a crowd and a bullet spiral, about 100,000 instances in all (§8.1), and a world tier of 50,000.
 

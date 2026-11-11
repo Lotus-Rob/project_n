@@ -134,13 +134,16 @@ struct TextItem {
     Vec2 current{};
     /// Moves it from the anchor, in world units.
     Vec2 offset{};
-    /// Of a Number: how far above its anchor it has risen, in ems of its size.
+    /// Of a Number: how far its start is moved from its anchor, in ems of its size (x right, y down), so numbers on one
+    /// creature at once don't print over each other.
+    Vec2 scatter{};
+    /// Of a Number: how far above its anchor (moved by `scatter`) it has risen, in ems of its size.
     f32 lift = 0.0F;
     /// How much of it shows, from 0 (none) to 1 (all).
     f32 opacity = 1.0F;
     /// The entity it names or belongs to; zero for none (a caption).
     StableId entity{};
-    /// Of a Label: the named entity's height, in world units.
+    /// Of a Label: the named entity's height, in world units; 0 when unknown, which never counts as too small to see.
     f32 height = 0.0F;
     /// Which labels may stack: those with the same key.
     u32 nameKey = 0;
@@ -195,7 +198,8 @@ struct Snapshot {
 /// What an Event says happened.
 enum class EventKind : u8 {
     Hit,      ///< A hit on `target`: its `hit` kind and `value`, at `position`, from the ability use `use`.
-    UseEnded, ///< The ability use `use` has emitted all its hits.
+    UseEnded, ///< The ability use `use` has emitted all its hits. Every use emits exactly one, after its last hit, even
+              ///< one cut short (its user's death, a scene change): combined damage numbers wait for it.
 };
 
 /// The kind of a hit, which decides how its damage number reads.
