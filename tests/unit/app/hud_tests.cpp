@@ -74,20 +74,6 @@ app::Hud English(const core::UiColours& colours = {}) {
     return app::Hud(HudStrings(), { .language = core::Language::English }, colours);
 }
 
-constexpr u32 CHANNEL_BITS = 8;
-constexpr u32 CHANNEL_MASK = 0xFFU;
-constexpr u32 CHANNELS = 4;
-
-// `colour` with each premultiplied channel times `factor`, rounded to nearest.
-u32 Times(u32 colour, f32 factor) {
-    u32 scaled = 0;
-    for (u32 channel = 0; channel < CHANNELS; ++channel) {
-        const auto value = static_cast<f32>((colour >> (channel * CHANNEL_BITS)) & CHANNEL_MASK);
-        scaled |= static_cast<u32>(std::lround(value * factor)) << (channel * CHANNEL_BITS);
-    }
-    return scaled;
-}
-
 // CASTER with its spender cooling down for a few seconds more.
 core::CasterView SpenderCooling() {
     constexpr u64 SECONDS = 180;
@@ -318,7 +304,7 @@ TEST_CASE("with the outline and the shadow off, the slot lines take the ink, a c
         const u32 ink = table.Of(core::UiColour::TextInk);
         CHECK(built.lines.at(HEALTH_LINE).colour == table.Of(core::UiColour::HudText)); // on its bar
         CHECK(built.lines.at(QI_LINE).colour == table.Of(core::UiColour::HudText));
-        CHECK(built.lines.at(SPENDER_LINE).colour == Times(ink, app::HUD_COOLING_INK_OPACITY));
+        CHECK(built.lines.at(SPENDER_LINE).colour == core::ScaledColour(ink, app::HUD_COOLING_INK_OPACITY));
         CHECK(built.lines.at(SPENDER_LINE).text == "Right click  Poison Lance  3s"); // still its seconds
         for (std::size_t line = FIRST_SLOT_LINE; line < built.lines.size(); ++line) {
             if (line != SPENDER_LINE) {

@@ -378,7 +378,8 @@ TEST_CASE("the path is smooth") {
         aim = "inside the ring";
         CheckSmooth(CLOSE, sword, insideAim);
     }
-    // The sword whose ring point lies nearest the point: an outer ring's, with the shortest flight and the tightest bend.
+    // The sword whose ring point lies nearest the point: an outer ring's, with the shortest flight and the tightest
+    // bend.
     u32 nearest = 0;
     for (u32 sword = 1; sword < SWORDS.count; ++sword) {
         if (Distance(RingPoint(VOLLEY, sword), POINT) < Distance(RingPoint(VOLLEY, nearest), POINT)) {

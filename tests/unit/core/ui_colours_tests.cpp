@@ -116,4 +116,23 @@ TEST_CASE("a half-transparent sRGB colour is premultiplied in linear space") {
     CHECK(core::ToSrgb(0x8000'0080U).red == 0xFF);
 }
 
+TEST_CASE("a scaled colour multiplies every channel, alpha too, rounded to nearest and kept within a byte") {
+    constexpr u32 COLOUR = 0xFF80'4001U; // alpha 255, blue 128, green 64, red 1
+    constexpr f32 HALF = 0.5F;
+    constexpr f32 TWICE = 2.0F;
+    constexpr f32 BELOW_NOTHING = -1.0F;
+    CHECK(core::ScaledColour(COLOUR, 1.0F) == COLOUR);
+    CHECK(core::ScaledColour(COLOUR, HALF) == 0x8040'2001U); // 127.5 and 0.5 round away from zero
+    CHECK(core::ScaledColour(COLOUR, 0.0F) == 0U);
+    CHECK(core::ScaledColour(COLOUR, BELOW_NOTHING) == 0U);
+    CHECK(core::ScaledColour(COLOUR, TWICE) == 0xFFFF'8002U); // each channel saturates on its own
+}
+
+TEST_CASE("a colour's opacity is its alpha byte over 255") {
+    constexpr f32 FIFTH = 0.2F; // 51 of 255
+    CHECK(core::OpacityOf(0xFF12'3456U) == 1.0F);
+    CHECK(core::OpacityOf(0x0012'3456U) == 0.0F);
+    CHECK(core::OpacityOf(0x3300'0000U) == FIFTH);
+}
+
 } // namespace

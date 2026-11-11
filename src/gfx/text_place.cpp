@@ -9,9 +9,6 @@ namespace gfx {
 
 namespace {
 
-constexpr u32 CHANNEL_BITS = 8;
-constexpr u32 CHANNEL_MASK = 0xFFU;
-constexpr u32 CHANNELS = 4;
 constexpr f32 HALF = 0.5F;
 constexpr u32 DECIMAL = 10;
 constexpr u8 PLUS_CHARACTER = 10;  // in NUMBER_FACE_CHARACTERS
@@ -21,19 +18,9 @@ constexpr auto TEXT_MARGINS = static_cast<f32>(2 * SDF_SPREAD);
 // The helpers below are what the public functions and each number in PlaceNumbers() share, so both compute the same
 // bits. They have no zones: a number's are measured by its chunk's, and a zone costs more than their work.
 
-u32 Scaled(u32 colour, f32 opacity) {
-    u32 scaled = 0;
-    for (u32 channel = 0; channel < CHANNELS; ++channel) {
-        const u32 shift = channel * CHANNEL_BITS;
-        const auto value = static_cast<f32>((colour >> shift) & CHANNEL_MASK) * std::clamp(opacity, 0.0F, 1.0F);
-        scaled |= static_cast<u32>(std::lround(value)) << shift;
-    }
-    return scaled;
-}
-
 // A number's colour tells its kind: the damage numbers take it from the table, the dark one when both are off.
 u32 ColourOfNumber(const core::TextItem& item) {
-    return item.opacity >= 1.0F ? item.colour : Scaled(item.colour, item.opacity);
+    return item.opacity >= 1.0F ? item.colour : core::ScaledColour(item.colour, item.opacity);
 }
 
 u32 ColourOfText(const core::TextItem& item, const core::UiColours& colours, bool outline, bool shadow) {
@@ -43,12 +30,9 @@ u32 ColourOfText(const core::TextItem& item, const core::UiColours& colours, boo
     u32 colour = colours.Of(item.kind == core::TextKind::Caption ? core::UiColour::Caption : core::UiColour::Label);
     if (!outline && !shadow) {
         // Light text needs the dark edge to read on the pale ground; without one it turns dark, as opaque as it was.
-        constexpr u32 ALPHA_SHIFT = 24;
-        colour = Scaled(
-            colours.Of(core::UiColour::TextInk), static_cast<f32>(colour >> ALPHA_SHIFT) / static_cast<f32>(CHANNEL_MASK)
-        );
+        colour = core::ScaledColour(colours.Of(core::UiColour::TextInk), core::OpacityOf(colour));
     }
-    return item.opacity >= 1.0F ? colour : Scaled(colour, item.opacity);
+    return item.opacity >= 1.0F ? colour : core::ScaledColour(colour, item.opacity);
 }
 
 core::Vec2 AnchorOfText(const core::TextItem& item, const ClipTransform& clip, f32 alpha, u32 width, u32 height) {
