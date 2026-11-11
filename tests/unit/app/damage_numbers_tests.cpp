@@ -87,6 +87,7 @@ TEST_CASE("a number shows its hit's value over its target, in its kind's colour"
     CHECK(texts[0].colour == core::DEFAULT_UI_COLOURS.at(std::to_underlying(core::NumberColour(core::HitKind::Burn, false))));
 }
 
+// The digits drawn are number_place_tests' (a number composed from its characters, three billion among them).
 TEST_CASE("a hit of three billion is shown and summed whole") {
     constexpr i64 THREE_BILLION = 3'000'000'000;
     constexpr i64 SIX_BILLION = 6'000'000'000;
@@ -95,8 +96,7 @@ TEST_CASE("a hit of three billion is shown and summed whole") {
     apart.Play(Hit(TICK, FOX_A, THREE_BILLION));
     const std::vector<core::TextItem> shown = TextsAt(apart, static_cast<f64>(TICK) + STARTED);
     REQUIRE(shown.size() == 1);
-    const std::string written = std::format("{}", shown[0].value);
-    CHECK(written == "3000000000");
+    CHECK(shown[0].value == THREE_BILLION);
 
     app::DamageNumbers combined(COMBINED);
     combined.Play(Hit(TICK, FOX_A, THREE_BILLION));
