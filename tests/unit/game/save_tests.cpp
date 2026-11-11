@@ -208,6 +208,49 @@ TEST_CASE("a save mid-arrival goes on as the game that saved, with the same even
     CHECK(loaded.StateHash() == saved.StateHash());
 }
 
+TEST_CASE("the save round-trips mid-volley") {
+    constexpr u64 CAST = 2;
+    core::GameData data = game::BuiltInData();
+    data.abilities.qiStart = data.abilities.qiMax; // enough for the swords
+    game::Arena saved(test::TestManifest(), game::Scene::Arena, data);
+    Tick(saved, At(1), {});
+    const core::Vec2 point =
+        saved.State()[game::ACTIVE].Entities().get<game::Body>(saved.State()[game::ACTIVE].Find(Foxes(saved).front())).current;
+    const std::array<core::Action, 1> cast{
+        { { .kind = core::ActionKind::Cast, .slot = core::Slot::Special1, .point = point } }
+    };
+    Tick(saved, At(CAST), { .actions = cast, .held = {} });
+    core::Jobs jobs{ 1 };
+    core::Snapshot snapshot;
+    saved.Publish(snapshot, jobs);
+    REQUIRE(snapshot.volleys.size() == 1);
+    const core::Volley volley = snapshot.volleys.front().volley;
+    const u64 last = core::LastArrival(volley);
+    const u64 savedAt = CAST + ((last - CAST) / 2);
+    for (u64 tick = CAST + 1; tick <= savedAt; ++tick) {
+        Tick(saved, At(tick), {});
+    }
+    const std::vector<std::byte> bytes = Saved(saved);
+
+    game::Arena loaded(test::TestManifest(), game::Scene::Cells, data);
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader));
+    CHECK(loaded.StateHash() == saved.StateHash());
+    std::size_t hits = 0;
+    for (u64 tick = savedAt + 1; tick <= last + volley.shape.fadeTicks + 2; ++tick) {
+        std::vector<core::Event> savedEvents;
+        std::vector<core::Event> loadedEvents;
+        saved.Tick(At(tick), {}, savedEvents);
+        loaded.Tick(At(tick), {}, loadedEvents);
+        CAPTURE(tick);
+        const bool same = SameEvents(loadedEvents, savedEvents);
+        CHECK(same);
+        CHECK(loaded.StateHash() == saved.StateHash());
+        hits += static_cast<std::size_t>(std::ranges::count(savedEvents, volley.use, &core::Event::use));
+    }
+    CHECK(hits > 0);
+}
+
 TEST_CASE("a truncated save is refused, and the game is unchanged") {
     constexpr std::size_t CUT = 4;
     game::Arena saved(test::TestManifest(), game::Scene::Stress);
@@ -237,11 +280,21 @@ TEST_CASE("a save with bytes after the state, or of another format, is refused")
     CHECK_FALSE(game.Load(otherReader));
 }
 
+// A volley as game::Combat saves one: the cast, then its targets.
+struct SavedVolley {
+    core::Volley volley{};
+    std::vector<core::VolleyTarget> targets;
+};
+
 // An arena save of `state` with `player`, laid out as Arena::Save writes one: format, scene, seed,
 // stable-ID counter, months, the player and the selection (none), then each domain after its version,
-// then no relationships and no respawns waiting. Its versions must follow arena.cpp's, or every refusal below is the
-// version's.
-std::vector<std::byte> ArenaSave(const core::State& state, core::StableId player = {}) {
+// then no relationships, no respawns waiting and `volley` if any (the flying swords' hits of 20, none resolved yet).
+// Its versions must follow arena.cpp's, or every refusal below is the version's.
+std::vector<std::byte> ArenaSave(
+    const core::State& state,
+    core::StableId player = {},
+    const std::optional<SavedVolley>& volley = std::nullopt
+) {
     constexpr u32 FORMAT = 3;
     constexpr u32 ACTIVE_VERSION = 4;
     constexpr u32 WORLD_VERSION = 1;
@@ -262,7 +315,8 @@ std::vector<std::byte> ArenaSave(const core::State& state, core::StableId player
         game::Dying,
         game::Arriving,
         game::Caster,
-        game::Dashing>;
+        game::Dashing,
+        game::Afflictions>;
     using World = core::ComponentList<game::Npc, game::Needs, game::Met, game::Group>;
     std::vector<std::byte> bytes;
     core::Writer writer{ bytes };
@@ -273,6 +327,16 @@ std::vector<std::byte> ArenaSave(const core::State& state, core::StableId player
     core::SaveDomain(writer, state[game::WORLD], World{});
     writer(RELATIONSHIPS);
     writer(RESPAWNS);
+    writer(static_cast<u64>(volley ? 1 : 0));
+    if (volley) {
+        constexpr i64 DAMAGE = 20;
+        constexpr u32 RESOLVED = 0;
+        writer(volley->volley, core::AbilityKind::FlyingSwords, core::HitKind::Damage, DAMAGE, core::Affliction{}, RESOLVED);
+        writer(static_cast<u64>(volley->targets.size()));
+        for (const core::VolleyTarget& target : volley->targets) {
+            writer(target);
+        }
+    }
     return bytes;
 }
 
@@ -384,6 +448,56 @@ TEST_CASE("a save with a caster that has no health, or a dash that has no body, 
     );
     const bool dashingLoaded = Loads(ArenaSave(dashing));
     CHECK_FALSE(dashingLoaded);
+}
+
+// A volley of ten swords at the point, as a cast resolves one.
+SavedVolley PointVolley() {
+    constexpr u64 START = 3;
+    constexpr u32 COUNT = 10;
+    constexpr u32 FLIGHT = 20;
+    constexpr core::Vec2 POINT{ .x = 100.0F, .y = 50.0F };
+    return {
+        .volley = { .use = 1,
+                    .startTick = START,
+                    .seed = 1,
+                    .origin = {},
+                    .point = POINT,
+                    .shape = { .count = COUNT, .flightTicks = FLIGHT, .commitTicks = core::MIN_COMMIT_TICKS } },
+        .targets = { { .entity = {}, .previous = POINT, .current = POINT, .diedTick = START } },
+    };
+}
+
+TEST_CASE("a save with a volley as a cast makes one is loaded") {
+    const core::State state{ game::DOMAINS, STATE_SEED };
+    const std::vector<std::byte> bytes = ArenaSave(state, {}, PointVolley());
+    core::Reader reader{ bytes };
+    game::Arena game(test::TestManifest(), game::Scene::Arena);
+    CHECK(game.Load(reader));
+}
+
+TEST_CASE("a save with a volley whose commit window is unresolved, with no targets, or aiming at a living point, is refused") {
+    const core::State state{ game::DOMAINS, STATE_SEED };
+    SavedVolley unresolved = PointVolley();
+    unresolved.volley.shape.commitTicks = 0;
+    const bool unresolvedLoaded = Loads(ArenaSave(state, {}, unresolved));
+    CHECK_FALSE(unresolvedLoaded);
+
+    SavedVolley untargeted = PointVolley();
+    untargeted.targets.clear();
+    const bool untargetedLoaded = Loads(ArenaSave(state, {}, untargeted));
+    CHECK_FALSE(untargetedLoaded);
+
+    SavedVolley living = PointVolley();
+    living.targets.front().diedTick = 0;
+    const bool livingLoaded = Loads(ArenaSave(state, {}, living));
+    CHECK_FALSE(livingLoaded);
+}
+
+TEST_CASE("a save with afflictions on something with no health is refused") {
+    core::State state{ game::DOMAINS, STATE_SEED };
+    state[game::ACTIVE].Entities().emplace<game::Afflictions>(state.Create(game::ACTIVE).second);
+    const bool loaded = Loads(ArenaSave(state));
+    CHECK_FALSE(loaded);
 }
 
 TEST_CASE("a save's Qi above the loading game's most is lowered to it") {

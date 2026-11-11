@@ -16,6 +16,7 @@
 #include "core/strings.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
+#include "core/volley.hpp"
 
 #include <array>
 #include <bit>
@@ -192,6 +193,22 @@ struct CasterView {
     std::array<AbilityKind, SLOTS> loadout{};
 };
 
+/// A volley in flight as the simulation reports it (core/volley.hpp), for the main thread to draw at the render time:
+/// its targets are `targets` entries of Snapshot::volleyTargets from `firstTarget`, which SwordTarget() and SwordAim()
+/// take as they are.
+struct VolleyView {
+    /// The volley as it was cast.
+    Volley volley{};
+    /// The ability that cast it: it picks only the sprite.
+    AbilityKind ability = AbilityKind::None;
+    /// The kind of its hits: it picks the effects' colour (core::UiColours), never the ability.
+    HitKind element = HitKind::Damage;
+    /// Its first target in Snapshot::volleyTargets.
+    u32 firstTarget = 0;
+    /// How many targets it has there, at least one.
+    u32 targets = 0;
+};
+
 /// One published snapshot of the game state: what the main thread draws until the next is due.
 struct Snapshot {
     /// The wall tick of the last tick in the burst that published it.
@@ -225,6 +242,11 @@ struct Snapshot {
     std::vector<TextItem> texts{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The health of each living enemy in a combat scene; refilled in place likewise.
     std::vector<HealthBar> healthBars{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    /// The volleys in flight, the bolts among them, until their last sword has faded; refilled in place likewise.
+    std::vector<VolleyView> volleys{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    /// Every volley's targets, each volley's together (VolleyView::firstTarget); refilled in place likewise.
+    std::vector<VolleyTarget>
+        volleyTargets{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// Whether the scene is a combat scene, where casts act.
     bool combat = false;
     /// The player's Qi, health and cooldowns in a combat scene with a player; none otherwise.

@@ -22,6 +22,8 @@
 ///   over its head (core::HealthBar);
 /// - Qi and cooldowns (game/combat.hpp): a cast spends or gains the player's Qi and cools its slot down; the dash moves
 ///   the player;
+/// - the flying swords and the fire bolt (game/combat.hpp): volleys that tag the foxes round the point, follow them,
+///   move on from the dead and strike at their scheduled ticks; the bolt's hit leaves a burn that ticks;
 /// - game text over the world: name labels over the player and every fox, and the tablet's vertical caption.
 /// Its stress variant adds a crowd and a bullet spiral, about 100,000 instances in all (§8.1), and a world tier of 50,000.
 
@@ -121,8 +123,9 @@ public:
     /// arrivals, removing the dead, which clears their selection, and spawning the foxes due at the ground's edge), and walks
     /// the active NPCs, whose decisions draw random numbers keyed on `counters.state`. In the arena scene, every 60th
     /// simulation tick the crystal's aura hits each living fox in reach and heals the player if in reach, appending a hit event
-    /// for each; a DebugBurst action appends 4,000 hits round the foxes, which change nothing. Each use ends with a UseEnded
-    /// event. The events themselves change nothing in the state.
+    /// for each; a DebugBurst action appends 4,000 hits round the foxes, which change nothing. Last, the volleys and
+    /// afflictions strike (Combat::Strike()), appending their hits. Each use ends with a UseEnded event; a scene change ends
+    /// every use still open first (Combat::EndUses()). The events themselves change nothing in the state.
     void Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) override;
 
     /// Lets a month pass for the world NPCs (MonthStep).
@@ -193,8 +196,8 @@ public:
     /// its ID, but a dying one's carries none and dissolves (core::SpriteDraw::dissolve, DissolveAt() at
     /// `snapshot.simulationTick`), its shadow with it. The player's cultivator is the one to follow, with what is drawn
     /// culled around it. A scene with a player adds its texts: the player's and each living fox's name label over its
-    /// head, and the tablet's caption; the arena scene adds each living fox's health bar at its head and the player's casting
-    /// state (core::Snapshot::caster).
+    /// head, and the tablet's caption; the arena scene adds each living fox's health bar at its head, the player's casting
+    /// state (core::Snapshot::caster) and the volleys in flight with their targets (Combat::Publish()).
     void Publish(core::Snapshot& snapshot, core::Jobs& jobs) override;
 
 private:

@@ -1,10 +1,13 @@
 #include "game/combat.hpp"
 
+#include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
 #include "core/profile.hpp"
+#include "core/random.hpp"
 #include "game/components.hpp"
 #include "game/npcs.hpp"
+#include "game/random_purposes.hpp"
 
 namespace game {
 
@@ -17,40 +20,166 @@ f64 EaseInOut(f64 progress) {
     return progress * progress * (THREE - (TWO * progress));
 }
 
-// Starts what the ability `kind` does once its cost is paid: the one place each ability's effect goes.
-void StartEffect(
-    core::Registry& entities,
-    core::Entity caster,
-    const core::AbilityData& ability,
-    core::AbilityKind kind,
-    const core::Action& cast,
-    u64 tick
-) {
-    if (kind == core::AbilityKind::Dash) {
-        const core::Vec2 from = entities.get<Body>(caster).current;
-        const f64 toX = static_cast<f64>(cast.point.x) - static_cast<f64>(from.x);
-        const f64 toY = static_cast<f64>(cast.point.y) - static_cast<f64>(from.y);
-        const f64 away = std::sqrt((toX * toX) + (toY * toY));
-        const f64 reach = std::min(away, static_cast<f64>(ability.distance));
-        const f64 scale = away > 0.0 ? reach / away : 0.0;
-        const core::Vec2 end{ .x = static_cast<f32>(static_cast<f64>(from.x) + (toX * scale)),
-                              .y = static_cast<f32>(static_cast<f64>(from.y) + (toY * scale)) };
-        entities.emplace<Dashing>(caster, from, end, tick, std::max(ability.durationTicks, 1U));
-        PN_LOG_DEBUG("tick {}: the player dashes from ({}, {}) to ({}, {})", tick, from.x, from.y, end.x, end.y);
+void StartDash(core::Registry& entities, core::Entity caster, const core::AbilityData& ability, core::Vec2 point, u64 tick) {
+    const core::Vec2 from = entities.get<Body>(caster).current;
+    const f64 toX = static_cast<f64>(point.x) - static_cast<f64>(from.x);
+    const f64 toY = static_cast<f64>(point.y) - static_cast<f64>(from.y);
+    const f64 away = std::sqrt((toX * toX) + (toY * toY));
+    const f64 reach = std::min(away, static_cast<f64>(ability.distance));
+    const f64 scale = away > 0.0 ? reach / away : 0.0;
+    const core::Vec2 end{ .x = static_cast<f32>(static_cast<f64>(from.x) + (toX * scale)),
+                          .y = static_cast<f32>(static_cast<f64>(from.y) + (toY * scale)) };
+    entities.emplace<Dashing>(caster, from, end, tick, std::max(ability.durationTicks, 1U));
+    PN_LOG_DEBUG("tick {}: the player dashes from ({}, {}) to ({}, {})", tick, from.x, from.y, end.x, end.y);
+}
+
+f64 SquaredDistance(core::Vec2 start, core::Vec2 end) {
+    const f64 across = static_cast<f64>(end.x) - static_cast<f64>(start.x);
+    const f64 down = static_cast<f64>(end.y) - static_cast<f64>(start.y);
+    return (across * across) + (down * down);
+}
+
+// How far above its foot `entity`'s sprite reaches, in world units.
+f32 HeightOf(const core::Registry& entities, const core::Manifest& manifest, core::Entity entity) {
+    const Look& look = entities.get<Look>(entity);
+    return static_cast<f32>(manifest.Sprite(look.sprite).footY) * look.scale;
+}
+
+core::Vec2 Raised(core::Vec2 foot, f32 height) {
+    return { .x = foot.x, .y = foot.y - height };
+}
+
+// Where a hit on `entity` shows: its head.
+core::Vec2 HeadOf(const core::Registry& entities, const core::Manifest& manifest, core::Entity entity) {
+    return Raised(entities.get<Body>(entity).current, HeightOf(entities, manifest, entity));
+}
+
+// Where the volleys aim at `entity`, its chest, at the previous tick and this one.
+struct Chest {
+    core::Vec2 previous{};
+    core::Vec2 current{};
+};
+
+Chest ChestOf(const core::Registry& entities, const core::Manifest& manifest, core::Entity entity) {
+    const f32 half = HeightOf(entities, manifest, entity) / 2.0F;
+    const Body& body = entities.get<Body>(entity);
+    return { .previous = Raised(body.previous, half), .current = Raised(body.current, half) };
+}
+
+// An enemy a cast tagged: the foxes are the only enemies so far.
+struct Tagged {
+    core::StableId entity{};
+    core::Vec2 chest{};
+    f64 away = 0.0; // squared, from the point
+};
+
+// Every living enemy whose chest is within `radius` of `point`, in stable ID order.
+std::vector<Tagged> Tag(const core::Registry& entities, const core::Manifest& manifest, core::Vec2 point, f32 radius) {
+    const f64 reach = static_cast<f64>(radius) * static_cast<f64>(radius);
+    std::vector<Tagged> tagged;
+    for (const core::Entity entity : entities.view<const Creature, const Health, const core::StableId>()) {
+        if (entities.get<Creature>(entity).kind != CreatureKind::Fox || entities.all_of<Dying>(entity)) {
+            continue;
+        }
+        const core::Vec2 chest = ChestOf(entities, manifest, entity).current;
+        const f64 away = SquaredDistance(point, chest);
+        if (away <= reach) {
+            tagged.push_back({ .entity = entities.get<core::StableId>(entity), .chest = chest, .away = away });
+        }
     }
-    // The fire bolt, the poison lance and the flying swords start their records here once they have them.
+    std::ranges::sort(tagged, {}, &Tagged::entity);
+    return tagged;
+}
+
+// The ticks a bolt at `speed` world units a tick takes from `start` to `end`, ⌈distance / speed⌉: none at no speed.
+u32 FlightTicks(core::Vec2 start, core::Vec2 end, f32 speed) {
+    if (!(speed > 0.0F)) {
+        return 0;
+    }
+    const f64 ticks = std::ceil(std::sqrt(SquaredDistance(start, end)) / static_cast<f64>(speed));
+    constexpr auto MOST = static_cast<f64>(std::numeric_limits<u32>::max());
+    return ticks < MOST ? static_cast<u32>(ticks) : std::numeric_limits<u32>::max();
+}
+
+// The affliction a hit of `element` leaves: a poison's ticks are Poison hits, any other's a burn's.
+AfflictionState& AfflictionOf(Afflictions& afflictions, core::HitKind element) {
+    return element == core::HitKind::Poison ? afflictions.poison : afflictions.burn;
+}
+
+// Deals each affliction due at `tick` on a living creature: a hit of its element and use at the creature's head. An
+// affliction's last tick adds its use to `ending`.
+void TickAfflictions(
+    core::State& state,
+    const core::Manifest& manifest,
+    u64 tick,
+    std::vector<core::Event>& events,
+    std::vector<u64>& ending
+) {
+    core::Registry& entities = state[ACTIVE].Entities();
+    // Copied first: a tick's damage may make the creature Dying, adding to the pools the view is built on.
+    const auto view = entities.view<const Afflictions>();
+    const std::vector<core::Entity> afflicted(view.begin(), view.end());
+    for (const core::Entity entity : afflicted) {
+        if (entities.all_of<Dying>(entity)) {
+            continue;
+        }
+        for (const core::HitKind element : { core::HitKind::Burn, core::HitKind::Poison }) {
+            AfflictionState& affliction = AfflictionOf(entities.get<Afflictions>(entity), element);
+            if (affliction.ticksLeft == 0 || affliction.nextTick > tick) {
+                continue;
+            }
+            const core::StableId target = entities.get<core::StableId>(entity);
+            events.push_back(
+                {
+                    .kind = core::EventKind::Hit,
+                    .hit = element,
+                    .use = affliction.use,
+                    .target = target,
+                    .position = HeadOf(entities, manifest, entity),
+                    .value = affliction.damage,
+                }
+            );
+            --affliction.ticksLeft;
+            affliction.nextTick += AFFLICTION_PERIOD;
+            if (affliction.ticksLeft == 0) {
+                ending.push_back(affliction.use);
+            }
+            Combat::Damage(state, target, affliction.damage, tick);
+        }
+    }
+}
+
+// Ends the afflictions of every dying creature, adding their uses to `ending`, and removes the spent ones.
+void EndDyingAfflictions(core::Registry& entities, std::vector<u64>& ending) {
+    std::vector<core::Entity> cured;
+    for (auto [entity, afflictions] : entities.view<Afflictions>().each()) {
+        if (entities.all_of<Dying>(entity)) {
+            for (AfflictionState* const affliction : { &afflictions.burn, &afflictions.poison }) {
+                if (affliction->ticksLeft > 0) {
+                    ending.push_back(affliction->use);
+                    affliction->ticksLeft = 0;
+                }
+            }
+        }
+        if (afflictions.burn.ticksLeft == 0 && afflictions.poison.ticksLeft == 0) {
+            cured.push_back(entity);
+        }
+    }
+    entities.remove<Afflictions>(cured.begin(), cured.end());
 }
 
 } // namespace
 
 void Combat::Cast(
     core::State& state,
+    const core::Manifest& manifest,
     const core::Abilities& abilities,
     core::StableId player,
     const core::Action& cast,
-    u64 tick,
+    const core::TickCounters& counters,
     std::vector<core::Event>& events
 ) {
+    const u64 tick = counters.simulation;
     if (state.DomainOf(player) != ACTIVE || !core::IsFinite(cast.point)) {
         return;
     }
@@ -82,7 +211,95 @@ void Combat::Cast(
     const i64 room = std::max<i64>(0, abilities.qiMax - caster->qi);
     caster->qi += std::min(ability.qiGain, room) - ability.qiCost;
     caster->readyTick.at(slot) = tick + ability.cooldownTicks;
-    StartEffect(entities, entity, ability, kind, cast, tick);
+    Start(state, manifest, entity, ability, kind, cast, counters);
+}
+
+void Combat::Start(
+    core::State& state,
+    const core::Manifest& manifest,
+    core::Entity caster,
+    const core::AbilityData& ability,
+    core::AbilityKind kind,
+    const core::Action& cast,
+    const core::TickCounters& counters
+) {
+    if (kind == core::AbilityKind::Dash) {
+        StartDash(state[ACTIVE].Entities(), caster, ability, cast.point, counters.simulation);
+    }
+    else if (kind == core::AbilityKind::FireBolt || kind == core::AbilityKind::FlyingSwords) {
+        Launch(state, manifest, caster, ability, kind, cast, counters);
+    }
+    // The poison lance starts its strike here once it has one.
+}
+
+void Combat::Launch(
+    core::State& state,
+    const core::Manifest& manifest,
+    core::Entity caster,
+    const core::AbilityData& ability,
+    core::AbilityKind kind,
+    const core::Action& cast,
+    const core::TickCounters& counters
+) {
+    const core::Registry& entities = state[ACTIVE].Entities();
+    const u64 tick = counters.simulation;
+    std::vector<Tagged> tagged = Tag(entities, manifest, cast.point, ability.radius);
+    const core::Vec2 origin = ChestOf(entities, manifest, caster).current;
+    core::VolleyShape shape = ability.volley;
+    shape.commitTicks = core::CommitTicksFor(ability.radius);
+    if (kind == core::AbilityKind::FireBolt) {
+        if (!tagged.empty()) {
+            // Ties go to the first in stable ID order, as min_element keeps the first of equals.
+            const Tagged nearest = *std::ranges::min_element(tagged, {}, &Tagged::away);
+            tagged = { nearest };
+        }
+        shape.count = 1;
+        shape.ringRadius = 0.0F;
+        shape.staggerTicks = 0;
+        shape.outTicks = 0;
+        shape.sweep = 0.0F;
+        shape.flightTicks = FlightTicks(origin, tagged.empty() ? cast.point : tagged.front().chest, ability.speed);
+    }
+    Flight flight{
+        .volley = { .use = CastUse(tick, cast.slot),
+                    .startTick = tick,
+                    .seed = core::Random(
+                        state.Seed(),
+                        counters.state,
+                        std::to_underlying(entities.get<core::StableId>(caster)),
+                        PURPOSE_VOLLEY,
+                        std::to_underlying(cast.slot)
+                    ),
+                    .origin = origin,
+                    .point = cast.point,
+                    .shape = shape },
+        .ability = kind,
+        .element = ability.hit,
+        .damage = HitAmount(ability, ability.damage),
+        .affliction = { .ticks = ability.affliction.ticks, .damage = HitAmount(ability, ability.affliction.damage) },
+    };
+    for (const Tagged& enemy : tagged) {
+        flight.targets.push_back({ .entity = enemy.entity, .previous = enemy.chest, .current = enemy.chest });
+    }
+    if (flight.targets.empty()) {
+        // Dead from the cast, so every sword plunges there. Simulation ticks count from 1, as `diedTick` 0 means alive.
+        flight.targets.push_back(
+            { .entity = {}, .previous = cast.point, .current = cast.point, .diedTick = std::max<u64>(tick, 1) }
+        );
+    }
+    PN_ASSERT(flight.volley.Valid(), "a cast resolved an invalid volley");
+    flight.Prepare();
+    PN_LOG_DEBUG(
+        "tick {}: {} cast at ({}, {}): {} enemies tagged, {} launched, the last arriving at tick {}",
+        tick,
+        core::ABILITY_NAMES.at(std::to_underlying(kind)),
+        cast.point.x,
+        cast.point.y,
+        tagged.size(),
+        shape.count,
+        flight.lastArrival
+    );
+    m_flights.push_back(std::move(flight));
 }
 
 bool Combat::Dash(core::State& state, core::StableId player, u64 tick) {
@@ -206,6 +423,185 @@ u32 Combat::Tick(core::State& state, u64 tick) {
     return count;
 }
 
+void Combat::Flight::Prepare() {
+    const u32 count = volley.shape.count;
+    std::vector<std::pair<u64, u32>> arriving;
+    arriving.reserve(count);
+    for (u32 sword = 0; sword < count; ++sword) {
+        arriving.emplace_back(core::ArrivalTick(volley, sword), sword);
+    }
+    std::ranges::sort(arriving); // swords landing on one tick land in sword order
+    order.clear();
+    arrivals.clear();
+    order.reserve(count);
+    arrivals.reserve(count);
+    for (const auto& [arrival, sword] : arriving) {
+        arrivals.push_back(arrival);
+        order.push_back(sword);
+    }
+    lastArrival = arrivals.empty() ? volley.startTick : arrivals.back();
+}
+
+void Combat::Arrive(
+    core::State& state,
+    const core::Manifest& manifest,
+    const Flight& flight,
+    u32 sword,
+    u64 tick,
+    std::vector<core::Event>& events,
+    std::vector<u64>& ending
+) {
+    // At its arrival tick (`tick`), and from then on, the target a sword flies at is the one it strikes.
+    const core::VolleyTarget& target = flight.targets.at(core::SwordTarget(flight.volley, sword, tick, flight.targets));
+    // A target dead before this tick, or the point, takes nothing: the sword plunges.
+    if (target.entity == core::StableId{} || target.diedTick != 0 || state.DomainOf(target.entity) != ACTIVE) {
+        return;
+    }
+    core::Registry& entities = state[ACTIVE].Entities();
+    const core::Entity entity = state[ACTIVE].Find(target.entity);
+    const u64 use = flight.volley.use;
+    events.push_back(
+        {
+            .kind = core::EventKind::Hit,
+            .hit = flight.element,
+            .use = use,
+            .target = target.entity,
+            .position = HeadOf(entities, manifest, entity),
+            .value = flight.damage,
+        }
+    );
+    Damage(state, target.entity, flight.damage, tick);
+    if (flight.affliction.ticks == 0 || entities.all_of<Dying>(entity)) {
+        return;
+    }
+    AfflictionState& affliction = AfflictionOf(entities.get_or_emplace<Afflictions>(entity), flight.element);
+    if (affliction.ticksLeft > 0 && affliction.use != use) {
+        ending.push_back(affliction.use); // refreshed: its ticks are the new use's now
+    }
+    affliction = {
+        .damage = flight.affliction.damage,
+        .ticksLeft = flight.affliction.ticks,
+        .use = use,
+        .nextTick = tick + AFFLICTION_PERIOD,
+    };
+}
+
+bool Combat::Holds(const core::State& state, u64 use) const {
+    const auto pending = [use](const Flight& flight) { return flight.volley.use == use && flight.Pending(); };
+    if (std::ranges::any_of(m_flights, pending)) {
+        return true;
+    }
+    const auto afflicts = [use](const Afflictions& afflictions) {
+        return (afflictions.burn.ticksLeft > 0 && afflictions.burn.use == use) ||
+               (afflictions.poison.ticksLeft > 0 && afflictions.poison.use == use);
+    };
+    const core::Registry& entities = state[ACTIVE].Entities();
+    return std::ranges::any_of(entities.view<const Afflictions>(), [&](core::Entity entity) {
+        return afflicts(entities.get<Afflictions>(entity));
+    });
+}
+
+void Combat::Strike(core::State& state, const core::Manifest& manifest, u64 tick, std::vector<core::Event>& events) {
+    PN_PROFILE_ZONE();
+    std::vector<u64> ending; // uses whose holds may have ended this tick
+    FollowTargets(state, manifest);
+    TickAfflictions(state, manifest, tick, events, ending);
+    // Every arrival resolves before this tick's deaths are marked, so a target dying on this tick still takes the hits
+    // that arrive on it, as core::SwordTarget() promises.
+    for (Flight& flight : m_flights) {
+        while (flight.Pending() && flight.arrivals.at(flight.resolved) <= tick) {
+            Arrive(state, manifest, flight, flight.order.at(flight.resolved), tick, events, ending);
+            ++flight.resolved;
+        }
+        if (!flight.Pending() && flight.lastArrival == tick) {
+            ending.push_back(flight.volley.use);
+        }
+    }
+    MarkDeaths(state, tick);
+    EndDyingAfflictions(state[ACTIVE].Entities(), ending);
+
+    std::ranges::sort(ending);
+    const auto [last, end] = std::ranges::unique(ending);
+    ending.erase(last, end);
+    for (const u64 use : ending) {
+        if (!Holds(state, use)) {
+            events.push_back({ .kind = core::EventKind::UseEnded, .use = use });
+            PN_LOG_DEBUG("tick {}: ability use {:#x} ends", tick, use);
+        }
+    }
+    std::erase_if(m_flights, [tick](const Flight& flight) {
+        return !flight.Pending() && tick > flight.lastArrival + flight.volley.shape.fadeTicks;
+    });
+}
+
+void Combat::FollowTargets(core::State& state, const core::Manifest& manifest) {
+    core::Domain& active = state[ACTIVE];
+    for (Flight& flight : m_flights) {
+        for (core::VolleyTarget& target : flight.targets) {
+            if (target.diedTick != 0) {
+                target.previous = target.current; // still where it died, between ticks too
+            }
+            else if (state.DomainOf(target.entity) == ACTIVE) {
+                const Chest chest = ChestOf(active.Entities(), manifest, active.Find(target.entity));
+                target.previous = chest.previous;
+                target.current = chest.current;
+            }
+        }
+    }
+}
+
+void Combat::MarkDeaths(const core::State& state, u64 tick) {
+    const core::Domain& active = state[ACTIVE];
+    for (Flight& flight : m_flights) {
+        for (core::VolleyTarget& target : flight.targets) {
+            if (target.diedTick == 0 &&
+                (state.DomainOf(target.entity) != ACTIVE || active.Entities().all_of<Dying>(active.Find(target.entity)))) {
+                target.diedTick = tick;
+            }
+        }
+    }
+}
+
+void Combat::EndUses(const core::State& state, std::vector<core::Event>& events) const {
+    std::vector<u64> open;
+    for (const Flight& flight : m_flights) {
+        if (flight.Pending()) {
+            open.push_back(flight.volley.use);
+        }
+    }
+    for (const auto [entity, afflictions] : state[ACTIVE].Entities().view<const Afflictions>().each()) {
+        for (const AfflictionState* const affliction : { &afflictions.burn, &afflictions.poison }) {
+            if (affliction->ticksLeft > 0) {
+                open.push_back(affliction->use);
+            }
+        }
+    }
+    std::ranges::sort(open);
+    const auto [last, end] = std::ranges::unique(open);
+    open.erase(last, end);
+    for (const u64 use : open) {
+        events.push_back({ .kind = core::EventKind::UseEnded, .use = use });
+    }
+    if (!open.empty()) {
+        PN_LOG_DEBUG("{} open ability uses end with the scene", open.size());
+    }
+}
+
+void Combat::Publish(core::Snapshot& snapshot) const {
+    for (const Flight& flight : m_flights) {
+        snapshot.volleys.push_back(
+            {
+                .volley = flight.volley,
+                .ability = flight.ability,
+                .element = flight.element,
+                .firstTarget = static_cast<u32>(snapshot.volleyTargets.size()),
+                .targets = static_cast<u32>(flight.targets.size()),
+            }
+        );
+        snapshot.volleyTargets.insert(snapshot.volleyTargets.end(), flight.targets.begin(), flight.targets.end());
+    }
+}
+
 void Combat::Load(core::Reader& archive) {
     u64 count = 0;
     archive(count);
@@ -222,8 +618,42 @@ void Combat::Load(core::Reader& archive) {
         }
         respawns.push_back(due);
     }
+
+    // Each volley and each target takes more than a u64, so a count past this is malformed.
+    archive(count);
+    if (count > archive.Remaining() / sizeof(u64)) {
+        archive.Fail();
+    }
+    std::vector<Flight> flights;
+    flights.reserve(archive.Failed() ? 0 : static_cast<std::size_t>(count));
+    for (u64 i = 0; i < count && !archive.Failed(); ++i) {
+        Flight flight;
+        archive(flight.volley, flight.ability, flight.element, flight.damage, flight.affliction, flight.resolved);
+        u64 targets = 0;
+        archive(targets);
+        if (archive.Failed() || targets == 0 || targets > archive.Remaining() / sizeof(u64) || !flight.volley.Valid() ||
+            flight.ability == core::AbilityKind::None || std::to_underlying(flight.ability) >= core::ABILITY_KINDS ||
+            std::to_underlying(flight.element) >= core::HIT_KINDS || flight.damage < 0 || !flight.affliction.Valid() ||
+            flight.resolved > flight.volley.shape.count) {
+            archive.Fail();
+            break;
+        }
+        flight.targets.resize(static_cast<std::size_t>(targets));
+        for (core::VolleyTarget& target : flight.targets) {
+            archive(target);
+            if (!core::IsFinite(target.previous) || !core::IsFinite(target.current) ||
+                (target.entity == core::StableId{} && target.diedTick == 0)) {
+                archive.Fail();
+            }
+        }
+        if (!archive.Failed()) {
+            flight.Prepare();
+            flights.push_back(std::move(flight));
+        }
+    }
     if (!archive.Failed()) {
         m_respawns = std::move(respawns);
+        m_flights = std::move(flights);
     }
 }
 
