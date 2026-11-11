@@ -100,7 +100,7 @@ struct Broken {
 };
 
 TEST_CASE("malformed creatures are errors naming the line") {
-    constexpr std::array<Broken, 9> CASES{ {
+    constexpr std::array<Broken, 12> CASES{ {
         Broken{ .from = "walk_speed: 4.0", .replacement = "walk_speed: [4.0", .says = "line" },
         Broken{ .from = "  walk_speed: 4.0\n", .replacement = "", .says = "creatures line 2: cultivator has no walk_speed" },
         Broken{ .from = "walk_speed: 0.5", .replacement = "walk_speed: fast", .says = "line 8" },
@@ -111,6 +111,9 @@ TEST_CASE("malformed creatures are errors naming the line") {
                 .replacement = "sprite: dragon",
                 .says = "creatures line 6: fox's sprite dragon isn't in the atlas" },
         Broken{ .from = "radius: 300.0, ", .replacement = "", .says = "fox's orbit has no radius" },
+        Broken{ .from = "  health: 1200\n", .replacement = "", .says = "fox has no health" },
+        Broken{ .from = "health: 1000", .replacement = "health: -5", .says = "cultivator's health isn't a whole number" },
+        Broken{ .from = "health: 1200", .replacement = "health: 12.5", .says = "fox's health isn't a whole number" },
         Broken{ .from = "health: 1200", .replacement = "health: 0", .says = "creatures line 7: fox's health is below 1" },
         Broken{ .from = "fox:", .replacement = "wolf:", .says = "no creature fox" },
         Broken{ .from = "speed: -0.006 }",

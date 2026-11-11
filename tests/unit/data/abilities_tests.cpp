@@ -68,8 +68,8 @@ TEST_CASE("an unknown ability or slot is refused, naming the line") {
     const core::Error slot = ErrorFor(With("special_1: flying_swords", "special_9: flying_swords"));
     CHECK(slot.message.contains("line 10"));
     CHECK(slot.message.contains("special_9"));
-    const core::Error defined = ErrorFor(With("  dash:", "  leap:"));
-    CHECK(defined.message.contains("leap"));
+    const core::Error unknown = ErrorFor(With("  dash:", "  leap:"));
+    CHECK(unknown.message.contains("leap isn't an ability"));
     const core::Error kind = ErrorFor(With("slot: movement", "slot: flying"));
     CHECK(kind.message.contains("flying"));
 }
@@ -94,6 +94,54 @@ TEST_CASE("a negative, non-finite or missing number is refused, naming the abili
         CHECK(error.message.contains(broken.says));
         CHECK(error.message.contains("abilities line"));
     }
+}
+
+TEST_CASE("a loadout entry for an ability the abilities don't define is refused") {
+    const core::Error error =
+        ErrorFor(With("  dash:          { slot: movement, cooldown: 1.0, distance: 260, duration: 0.15 }\n", ""));
+    CHECK(error.message.contains("line 9"));
+    CHECK(error.message.contains("dash in the loadout isn't defined"));
+}
+
+TEST_CASE("an ability with both burn and poison is refused") {
+    const core::Error error =
+        ErrorFor(With("burn: { ticks: 3, damage: 40 }", "burn: { ticks: 3, damage: 40 }, poison: { ticks: 1, damage: 1 }"));
+    CHECK(error.message.contains("fire_bolt has both burn and poison"));
+}
+
+TEST_CASE("a starting Qi above the maximum is refused") {
+    const core::Error error = ErrorFor(With("start: 50", "start: 150"));
+    CHECK(error.message.contains("line 1"));
+    CHECK(error.message.contains("qi's start is more than its max"));
+}
+
+TEST_CASE("a dash without a distance or a duration is refused") {
+    constexpr std::string_view DASH = "dash:          { slot: movement, cooldown: 1.0, distance: 260, duration: 0.15 }";
+    for (const std::string_view broken : { "dash:          { slot: movement, cooldown: 1.0, distance: 0, duration: 0.15 }",
+                                           "dash:          { slot: movement, cooldown: 1.0, distance: 260 }",
+                                           "dash:          { slot: movement, cooldown: 1.0 }" }) {
+        CAPTURE(broken);
+        const core::Error error = ErrorFor(With(DASH, broken));
+        CHECK(error.message.contains("line 7"));
+        CHECK(error.message.contains("dash is a movement ability and needs a distance and a duration"));
+    }
+}
+
+TEST_CASE("a volley of more swords than the limit is refused, naming the limit") {
+    constexpr std::string_view LIMIT = "2000";
+    const core::Error error = ErrorFor(With("count: 1000", "count: 2001"));
+    CHECK(error.message.contains("line 9"));
+    CHECK(error.message.contains("flying_swords's swords's count"));
+    CHECK(error.message.contains(LIMIT));
+    const std::expected<core::Abilities, core::Error> most = data::ParseAbilities(With("count: 1000", "count: 2000"));
+    CHECK(most.has_value());
+}
+
+TEST_CASE("a volley shape above the limit is not valid") {
+    core::VolleyShape shape{ .count = core::MAX_VOLLEY_COUNT };
+    CHECK(shape.Valid());
+    shape.count = core::MAX_VOLLEY_COUNT + 1;
+    CHECK_FALSE(shape.Valid());
 }
 
 TEST_CASE("an unknown key is a warning with its line, and the rest still parse") {

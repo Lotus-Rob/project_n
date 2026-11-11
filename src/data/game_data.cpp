@@ -12,8 +12,8 @@ namespace {
 
 using core::atlas::SpriteId;
 
-// Every whole number up to this is exact in an f64.
-constexpr f64 MAX_HEALTH = 9'007'199'254'740'992.0;
+// The most health a creature has: below 2^53, which an f64 holds exactly.
+constexpr i64 MAX_HEALTH = 9'007'199'254'740'992;
 
 std::unexpected<core::Error> Fail(const YAML::Node& node, std::string_view why) {
     return std::unexpected{ core::Error{ std::format("creatures line {}: {}", node.Mark().line + 1, why) } };
@@ -30,22 +30,6 @@ std::expected<f32, core::Error> Number(const YAML::Node& map, std::string_view n
         return Fail(node, std::format("{}'s {} isn't a finite number", name, key));
     }
     return value;
-}
-
-// `name`'s health: a whole number from 0 to MAX_HEALTH, read as f64 since yaml-cpp throws on text that isn't a number.
-std::expected<i64, core::Error> Health(const YAML::Node& map, std::string_view name) {
-    const YAML::Node node = map["health"];
-    if (!node) {
-        return Fail(map, std::format("{} has no health", name));
-    }
-    const auto value = node.as<f64>();
-    if (!std::isfinite(value) || value < 0.0 || value != std::floor(value) || value > MAX_HEALTH) {
-        return Fail(node, std::format("{}'s health isn't a whole number from 0 to {}", name, MAX_HEALTH));
-    }
-    if (value < 1.0) {
-        return Fail(node, std::format("{}'s health is below 1", name)); // it would be born dying
-    }
-    return static_cast<i64>(value);
 }
 
 std::expected<core::CreatureData, core::Error> Creature(
@@ -73,9 +57,12 @@ std::expected<core::CreatureData, core::Error> Creature(
         return std::unexpected{ walkSpeed.error() };
     }
     creature.walkSpeed = *walkSpeed;
-    const std::expected<i64, core::Error> health = Health(node, name);
+    const std::expected<i64, core::Error> health = internal::WholeNumber("creatures", node, name, "health", true, MAX_HEALTH);
     if (!health) {
         return std::unexpected{ health.error() };
+    }
+    if (*health < 1) {
+        return Fail(node["health"], std::format("{}'s health is below 1", name)); // it would be born dying
     }
     creature.health = *health;
     if (const YAML::Node orbit = node["orbit"]) {

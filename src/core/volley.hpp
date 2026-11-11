@@ -11,9 +11,12 @@
 
 namespace core {
 
+/// The most swords a volley has: the overlay buffer holds two instances a sword.
+inline constexpr u32 MAX_VOLLEY_COUNT = 2'000;
+
 /// How a volley is laid out and flies, from `abilities.yaml`. All times are simulation ticks.
 struct VolleyShape {
-    /// How many swords (or bolts) the volley has.
+    /// How many swords (or bolts) the volley has, at most MAX_VOLLEY_COUNT.
     u32 count = 0;
     /// The radius of the ring they burst out in, in world units.
     f32 ringRadius = 0.0F;
@@ -34,9 +37,10 @@ struct VolleyShape {
         archive(self.count, self.ringRadius, self.staggerTicks, self.outTicks, self.flightTicks, self.sweep, self.fadeTicks);
     }
 
-    /// Whether every distance is finite and not negative; what a loaded shape must satisfy.
+    /// Whether the count is within the limit and every distance is finite and not negative; what a loaded shape must satisfy.
     [[nodiscard]] bool Valid() const {
-        return std::isfinite(ringRadius) && ringRadius >= 0.0F && std::isfinite(sweep) && sweep >= 0.0F;
+        return count <= MAX_VOLLEY_COUNT && std::isfinite(ringRadius) && ringRadius >= 0.0F && std::isfinite(sweep) &&
+               sweep >= 0.0F;
     }
 };
 
