@@ -6,8 +6,9 @@
 /// its target, coloured by its kind, that bounces or rises (the motion setting) and fades over NUMBER_SECONDS of the
 /// render clock; with the combined setting, one use's hits on one target of one kind add into one number, which plays
 /// once that use ends. Numbers hitting one target in one tick each start apart and later (ScatterOf()), the more so
-/// the more hits it took, so they rise as a fountain rather than print over each other; from a hash of the hit, so
-/// every run and replay draws them the same. None is ever dropped or cut short: the pool has no cap. Pure, tested
+/// the more hits it took, so they rise as a fountain rather than print over each other; combined numbers starting on
+/// one target together start apart likewise, but at once. From a hash of the hit, so every run and replay draws them the
+/// same. None is ever dropped or cut short: the pool has no cap. Pure, tested
 /// without a device.
 
 #include "core/frame.hpp"
@@ -106,20 +107,35 @@ inline constexpr std::array<u32, core::HIT_KINDS> KIND_COLOURS{ {
     0xFF0C'52FFU, // burn: linear (1, 0.3231, 0.0452)
 } };
 
+/// The colour of each kind's numbers with the outline and the shadow both off (core::Settings::textOutline and
+/// textShadow), in core::HitKind's order and KIND_COLOURS' packing: without a dark edge, light numbers would read at
+/// about 1.3:1 on the pale parchment, so each kind turns to a dark variant of its colour, each 4.6:1 or more against the
+/// arena's bare ground (relative luminance 0.53 to 0.73) and still apart from the others. In sRGB: damage ink `#20242A`
+/// (gfx::TEXT_INK, the labels' ink), healing green `#145A22`, poison violet `#5E2A9E`, burn orange `#823200`. Chunk 11's
+/// palettes replace this table with KIND_COLOURS.
+inline constexpr std::array<u32, core::HIT_KINDS> DARK_KIND_COLOURS{ {
+    0xFF06'0404U, // damage: linear (0.0144, 0.0176, 0.0232)
+    0xFF04'1A02U, // healing: linear (0.0070, 0.1022, 0.0160)
+    0xFF57'061DU, // poison: linear (0.1119, 0.0232, 0.3419)
+    0xFF00'0839U, // burn: linear (0.2232, 0.0319, 0)
+} };
+
 /// The main thread's live damage numbers: what the played events started, as texts at the render clock. Main thread
 /// only.
 class DamageNumbers {
 public:
-    /// Plays numbers as `settings` say: each hit apart or combined per use (combinedDamageNumbers), and how they move
-    /// (damageNumberMotion). The settings are read here, once.
+    /// Plays numbers as `settings` say: each hit apart or combined per use (combinedDamageNumbers), how they move
+    /// (damageNumberMotion), and in KIND_COLOURS or, with textOutline and textShadow both off, DARK_KIND_COLOURS, as the
+    /// renderer's text options are read from the same settings. The settings are read here, once.
     explicit DamageNumbers(const core::Settings& settings);
 
     /// Plays `event`, at its tick. A Hit starts a number of its value over its target at its position, in its kind's
-    /// colour (KIND_COLOURS) and signed "+" if it heals, moved and delayed by its scatter (ScatterOf()) among its
+    /// colour and signed "+" if it heals, moved and delayed by its scatter (ScatterOf()) among its
     /// target's hits in that tick; a tick's hits are played together, before the next Forget() or Texts(). With the combined
     /// setting it adds into the number of its use, target and kind instead, which waits at the start of its motion,
     /// unscattered, until the use ends: every use emits one UseEnded (core::EventKind::UseEnded), or its numbers wait until
-    /// Clear(). A UseEnded starts the motion of its use's waiting numbers at its tick, at once.
+    /// Clear(). A UseEnded starts the motion of its use's waiting numbers at its tick, at once: scattered among the
+    /// combined numbers starting on their target in that tick as hits are among theirs, but never delayed.
     void Play(const core::Event& event);
 
     /// Forgets every number, waiting or not: a new timeline began.
@@ -146,10 +162,11 @@ private:
         core::HitKind kind = core::HitKind::Damage;
         core::Vec2 position{};
         i32 value = 0;
-        u64 start = 0;        // the tick it was hit or, combined, its use ended
-        u32 ordinal = 0;      // among its target's hits in its tick
-        core::Vec2 scatter{}; // ScatterOf()'s, from Settle(); none when combined
-        f32 delay = 0.0F;     // likewise: seconds after `start` its motion starts
+        u64 start = 0;         // the tick it was hit or, combined, its use ended
+        u32 ordinal = 0;       // among its target's hits in its tick, or combined numbers starting then
+        core::Vec2 scatter{};  // ScatterOf()'s, from Settle(); none while combined and waiting
+        f32 delay = 0.0F;      // likewise: seconds after `start` its motion starts; none when combined
+        bool combined = false; // added up from its use's hits, started when the use ended
     };
     // What a waiting number adds the hits of.
     struct Key {
@@ -174,22 +191,23 @@ private:
     };
 
     // Gives each number played since the last call its scatter and delay, now that every hit in its tick has played (a
-    // tick's events are played together), from how many hits its target took in it.
+    // tick's events are played together), from how many hits its target took in it (or combined numbers started on it).
     void Settle();
 
     // How old `number` is at render tick `renderTick`, in seconds from the start of its motion.
     [[nodiscard]] static f32 AgeOf(const Number& number, f64 renderTick);
     // `number` as a text at `pose`.
-    [[nodiscard]] static core::TextItem TextOf(const Number& number, NumberPose pose);
+    [[nodiscard]] core::TextItem TextOf(const Number& number, NumberPose pose) const;
 
     bool m_combined = false;
     core::NumberMotion m_motion = core::NumberMotion::Bounce;
+    bool m_dark = false;         // read KIND_COLOURS or, when true, DARK_KIND_COLOURS
     std::size_t m_unsettled = 0; // the first of m_playing that Settle() hasn't given its scatter
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::vector<Number> m_playing{};                             // in the order they were played
     std::vector<Number> m_waiting{};                             // combined, until their use ends
     std::unordered_map<Key, std::size_t, KeyHash> m_waitingOf{}; // each waiting number's index in m_waiting
-    std::unordered_map<Moment, u32, MomentHash> m_hitsIn{};      // the hits played since Settle(), per target and tick
+    std::unordered_map<Moment, u32, MomentHash> m_hitsIn{};      // the numbers started since Settle(), per target and tick
     // NOLINTEND(readability-redundant-member-init)
 };
 

@@ -33,6 +33,7 @@ u32 Scaled(u32 colour, f32 opacity) {
 
 u32 ColourOfText(const core::TextItem& item, bool outline, bool shadow) {
     u32 colour = item.colour;
+    // A number's colour tells its kind: the damage numbers choose a dark one of their own when both are off.
     if (!outline && !shadow && item.kind != core::TextKind::Number) {
         // Light text needs the dark edge to read on the pale ground; without one it turns dark, as opaque as it was.
         constexpr u32 ALPHA_SHIFT = 24;

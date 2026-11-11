@@ -55,7 +55,8 @@ inline constexpr u32 TEXT_INK = 0xFF06'0404U;
 [[nodiscard]] bool TooSmallToSee(f32 entityPixels);
 
 /// The colour `item` is drawn in: its colour scaled by its opacity (premultiplied, so every channel), and, for a label
-/// or a caption when the outline and the shadow are both off, TEXT_INK instead, so it reads on the pale ground.
+/// or a caption when the outline and the shadow are both off, TEXT_INK instead, so it reads on the pale ground. A number
+/// keeps its colour: its kind's, which the damage numbers already make dark when both are off (app::DARK_KIND_COLOURS).
 [[nodiscard]] u32 TextColour(const core::TextItem& item, bool outline, bool shadow);
 
 /// Where `item`'s anchor, moved by its offset, falls on a target `width` by `height` pixels as `view` shows it, in

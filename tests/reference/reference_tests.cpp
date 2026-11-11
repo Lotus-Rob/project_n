@@ -231,11 +231,12 @@ constexpr u64 NUMBER_TARGETS = 1'000'000; // the first of the grid's targets: no
 constexpr core::Vec2 NUMBERS_ORIGIN{ .x = 600.0F, .y = 160.0F };
 constexpr core::Vec2 NUMBERS_SPACING{ .x = 240.0F, .y = 160.0F };
 
-std::vector<core::TextItem> NumberGrid() {
+// With `bare`, the outline and the shadow are off, and the numbers take their dark colours.
+std::vector<core::TextItem> NumberGrid(bool bare) {
     std::vector<core::TextItem> texts;
     f32 row = 0.0F;
     for (const core::NumberMotion motion : { core::NumberMotion::Bounce, core::NumberMotion::Rise }) {
-        app::DamageNumbers numbers({ .damageNumberMotion = motion });
+        app::DamageNumbers numbers({ .damageNumberMotion = motion, .textOutline = !bare, .textShadow = !bare });
         for (const u64 age : NUMBER_AGES) {
             for (std::size_t kind = 0; kind < core::HIT_KINDS; ++kind) {
                 // Each kind on a target of its own, alone in its tick, so each stagger window is the narrowest.
@@ -255,15 +256,18 @@ std::vector<core::TextItem> NumberGrid() {
     return texts;
 }
 
-// The grid of numbers over the arena at rest, at `zoom`.
-void CheckNumbers(std::string_view name, f32 zoom) {
+// The grid of numbers over the arena at rest, at `zoom`; with `bare`, the outline and the shadow off.
+void CheckNumbers(std::string_view name, f32 zoom, bool bare = false) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
     game::Arena arena(test::TestManifest());
     const core::Snapshot snapshot = Published(arena, jobs);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
-    const std::vector<core::TextItem> numbers = NumberGrid();
+    if (bare) {
+        renderer.SetTextOptions({ .outline = false, .shadow = false });
+    }
+    const std::vector<core::TextItem> numbers = NumberGrid(bare);
     const gfx::View view{ .camera = { .zoom = zoom } };
     CompareWithReference(Captured(renderer, snapshot, view, jobs, WIDTH, HEIGHT, numbers), name);
 }
@@ -274,6 +278,10 @@ TEST_CASE("damage numbers of every kind, bouncing and rising, at zoom 1") {
 
 TEST_CASE("damage numbers at the smallest zoom keep their minimum size") {
     CheckNumbers("numbers_quarter", gfx::MIN_ZOOM);
+}
+
+TEST_CASE("with the outline and the shadow off, damage numbers turn dark, as labels do") {
+    CheckNumbers("numbers_bare", 1.0F, /*bare=*/true);
 }
 
 TEST_CASE("a number on a creature too small to see starts from its label") {

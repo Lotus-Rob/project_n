@@ -91,7 +91,8 @@ NumberScatter ScatterOf(const core::Event& hit, u32 ordinal, u32 hits) {
 
 DamageNumbers::DamageNumbers(const core::Settings& settings)
   : m_combined(settings.combinedDamageNumbers)
-  , m_motion(settings.damageNumberMotion) {
+  , m_motion(settings.damageNumberMotion)
+  , m_dark(!settings.textOutline && !settings.textShadow) {
     m_playing.reserve(NUMBER_RESERVE);
 }
 
@@ -104,7 +105,11 @@ void DamageNumbers::Play(const core::Event& event) {
         std::size_t kept = 0;
         for (Number& number : m_waiting) {
             if (number.use == event.use) {
+                // Counted as hits are, so numbers starting together on one target (a use's kinds, uses ending on one
+                // tick) scatter apart rather than print over each other.
                 number.start = event.tick;
+                number.ordinal = m_hitsIn[Moment{ .target = number.target, .tick = event.tick }]++;
+                number.combined = true;
                 m_playing.push_back(number);
             }
             else {
@@ -158,11 +163,12 @@ void DamageNumbers::Settle() {
     for (std::size_t index = m_unsettled; index < m_playing.size(); ++index) {
         Number& number = m_playing[index];
         const auto hits = m_hitsIn.find(Moment{ .target = number.target, .tick = number.start });
-        if (hits != m_hitsIn.end()) { // combined numbers aren't counted: they start at once, where they are
+        if (hits != m_hitsIn.end()) {
             const NumberScatter scatter =
                 ScatterOf({ .tick = number.start, .use = number.use, .target = number.target }, number.ordinal, hits->second);
             number.scatter = scatter.offset;
-            number.delay = scatter.delay;
+            // A combined number already waited for its use to end: it starts then, at once.
+            number.delay = number.combined ? 0.0F : scatter.delay;
         }
     }
     m_hitsIn.clear();
@@ -201,7 +207,7 @@ f32 DamageNumbers::AgeOf(const Number& number, f64 renderTick) {
            number.delay;
 }
 
-core::TextItem DamageNumbers::TextOf(const Number& number, NumberPose pose) {
+core::TextItem DamageNumbers::TextOf(const Number& number, NumberPose pose) const {
     return { .kind = core::TextKind::Number,
              .value = number.value,
              .sign = number.kind == core::HitKind::Healing ? core::NumberSign::Plus : core::NumberSign::Plain,
@@ -211,7 +217,7 @@ core::TextItem DamageNumbers::TextOf(const Number& number, NumberPose pose) {
              .lift = pose.lift,
              .opacity = pose.opacity,
              .entity = number.target,
-             .colour = KIND_COLOURS.at(std::to_underlying(number.kind)) };
+             .colour = (m_dark ? DARK_KIND_COLOURS : KIND_COLOURS).at(std::to_underlying(number.kind)) };
 }
 
 std::size_t DamageNumbers::KeyHash::operator()(const Key& key) const {
