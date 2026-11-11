@@ -1,5 +1,6 @@
 #include "app/app.hpp"
 
+#include "app/damage_numbers.hpp"
 #include "app/game.hpp"
 #include "app/view.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
@@ -110,7 +111,9 @@ App::App(platform::Window window, gfx::Renderer renderer, Options options)
   , m_renderer{ std::move(renderer) }
   , m_options{ std::move(options) }
   , m_startNs{ platform::NowNs() }
+  , m_numbers{ m_options.settings }
   , m_frameNs{ m_startNs } {
+    m_numberTexts.reserve(NUMBER_RESERVE);
     // The main thread is the job system's thread 0: waiting on its low-priority work, it may run the
     // logic's chunks, which need the simulation's environment.
     core::math::SetFloatingPointEnvironment();
@@ -326,29 +329,42 @@ bool App::Present(const platform::WindowState& state) {
         return false;
     }
     ShowScene(m_camera, m_shown, drawn->scene);
+    if (m_numbersEpoch != drawn->epoch) {
+        m_numbers.Clear(); // a new timeline: none of the old one's hits happened in it
+        m_numbersEpoch = drawn->epoch;
+    }
     core::PresentFrame(
         *drawn,
         m_pending,
         state.visible,
         [this] { m_renderer.Acquire(); },
         platform::NowNs,
-        // Nothing plays events yet; audio and particles (phase 7) replace the empty player.
-        [](const core::Event& /*event*/) {},
+        // Audio and particles (phase 7) play the events too.
+        [this](const core::Event& event) { m_numbers.Play(event); },
         [this, drawn, &state](f64 alpha) {
             if (drawn->follow) {
                 m_camera.centre = FollowedCentre(*drawn->follow, alpha);
             }
+            const f64 renderTick = core::RenderTick(drawn->simulationTick, alpha);
+            m_numberTexts.clear();
+            m_numbers.Texts(renderTick, m_numberTexts);
             m_renderer.Draw(
                 *drawn,
                 { .alpha = alpha,
                   .camera = m_camera,
                   .outlined = Hovered(state, *drawn, alpha),
-                  .clock = core::RenderTick(drawn->simulationTick, alpha) / static_cast<f64>(core::TICKS_PER_SECOND) },
-                m_jobs
+                  .clock = renderTick / static_cast<f64>(core::TICKS_PER_SECOND) },
+                m_jobs,
+                m_numberTexts
             );
             PN_PROFILE_FRAME();
         }
     );
+    if (!state.visible) {
+        // Hidden, numbers still age out, so the pool doesn't grow while nothing is drawn: by the earliest the render
+        // clock can be at for this snapshot, which is near enough for numbers no one sees.
+        m_numbers.Forget(core::RenderTick(drawn->simulationTick, 0.0));
+    }
     if (drawn->transition) {
         // Nothing draws the transition itself yet; its view model and screen come with the UI (phase 6).
         platform::WaitUntilNs(platform::NowNs() + TRANSITION_FRAME_NS);

@@ -34,6 +34,10 @@ f32 TextPixels(core::TextKind kind, f32 pixelsPerUnit, f32 scale) {
     return (kind == core::TextKind::Caption ? CAPTION_WORLD_SIZE : LABEL_WORLD_SIZE) * pixelsPerUnit * scale;
 }
 
+bool TooSmallToSee(f32 entityPixels) {
+    return entityPixels > 0.0F && entityPixels < VISIBLE_CREATURE_PIXELS;
+}
+
 u32 TextColour(const core::TextItem& item, bool outline, bool shadow) {
     PN_PROFILE_ZONE();
     u32 colour = item.colour;

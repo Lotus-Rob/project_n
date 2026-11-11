@@ -28,6 +28,9 @@ inline constexpr f32 NUMBER_WORLD_SIZE = 24.0F;
 inline constexpr f32 LABEL_MIN_PIXELS = 9.0F;
 /// The smallest a number is drawn, in screen pixels at text scale 1: zoomed further out, it stops shrinking.
 inline constexpr f32 NUMBER_MIN_PIXELS = 12.0F;
+/// The height on the screen, in pixels, below which a creature is too small to see (TooSmallToSee()): its damage numbers
+/// start from where its label, or the stack it joined, is placed (faded out or not) instead of their own anchors.
+inline constexpr f32 VISIBLE_CREATURE_PIXELS = 8.0F;
 
 /// The dark ink of labels and captions when the outline and the shadow are both off: sRGB #20242A, linear
 /// (0.0144, 0.0176, 0.0232), premultiplied and packed as TextItem::colour. The same ink as the outlines and shadows the
@@ -39,6 +42,10 @@ inline constexpr u32 TEXT_INK = 0xFF06'0404U;
 /// pixelsPerUnit × scale. A number never goes below NUMBER_MIN_PIXELS × scale; labels and captions don't stop shrinking
 /// (a label too small to read fades out instead).
 [[nodiscard]] f32 TextPixels(core::TextKind kind, f32 pixelsPerUnit, f32 scale);
+
+/// Whether a creature `entityPixels` tall on the screen (LabelInput::entityPixels) is too small to see: under
+/// VISIBLE_CREATURE_PIXELS, and not 0, which says its height is unknown (core::TextItem::height unset).
+[[nodiscard]] bool TooSmallToSee(f32 entityPixels);
 
 /// The colour `item` is drawn in: its colour scaled by its opacity (premultiplied, so every channel), and, for a label
 /// or a caption when the outline and the shadow are both off, TEXT_INK instead, so it reads on the pale ground.

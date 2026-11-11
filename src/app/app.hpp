@@ -7,9 +7,11 @@
 /// snapshots the logic thread publishes.
 
 #include "app/bindings.hpp"
+#include "app/damage_numbers.hpp"
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
 #include "core/manifest.hpp"
+#include "core/settings.hpp"
 #include "core/types.hpp"
 #include "game/arena.hpp"
 #include "gfx/camera.hpp"
@@ -39,6 +41,8 @@ struct Options {
     /// Quit by itself after this long (`--quit-after`); 0 never does.
     u64 quitAfterNs = 0;
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    /// The player's settings, read from `settings.yaml`: the main thread's systems take theirs from it.
+    core::Settings settings{};
     /// The save slot; empty when no folder for saves was found.
     std::filesystem::path saveSlot{};
     /// The replay file; empty when no folder for saves was found.
@@ -70,7 +74,7 @@ private:
 };
 
 /// The main thread's systems (the job system, the window, the renderer, the handover and its display
-/// side, the camera) and the logic thread, which builds and runs a Game on the job system.
+/// side, the camera, the damage numbers) and the logic thread, which builds and runs a Game on the job system.
 class App {
 public:
     /// Takes over `window` and `renderer` (made for that window) and starts the logic thread for
@@ -108,11 +112,13 @@ private:
     gfx::Renderer m_renderer;
     Options m_options;
     u64 m_startNs;
+    DamageNumbers m_numbers; // as m_options.settings say
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     core::GameHandover m_handover{};
     core::GameDisplay m_display{};
     std::vector<core::Event> m_incoming{};
-    std::vector<core::Event> m_pending{}; // taken, waiting for the render clock
+    std::vector<core::Event> m_pending{};        // taken, waiting for the render clock
+    std::vector<core::TextItem> m_numberTexts{}; // the damage numbers drawn this frame
     std::vector<platform::InputEvent> m_inputs{};
     Bindings m_bindings{};
     // NOLINTEND(readability-redundant-member-init)
@@ -124,6 +130,7 @@ private:
     std::optional<core::SceneId> m_loading = std::nullopt;  // the scene the renderer loads
     std::optional<core::SceneId> m_reported = std::nullopt; // the scene the logic was told is resident, last
     std::optional<core::SceneId> m_shown = std::nullopt;    // the scene of the snapshot drawn last
+    std::optional<u64> m_numbersEpoch = std::nullopt;       // the timeline the damage numbers belong to
     DataWatch m_dataWatch{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     DeviceInUse m_device{};
     bool m_quit = false;
