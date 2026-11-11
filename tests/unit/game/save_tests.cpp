@@ -138,6 +138,38 @@ TEST_CASE("health, the dying and the respawns survive a save") {
     CHECK(Foxes(loaded).size() == Foxes(saved).size());
 }
 
+TEST_CASE("Qi, cooldowns and a dash under way survive a save") {
+    constexpr u64 SAVED_AT = 4; // mid-dash
+    constexpr u64 PLAYED_TO = 30;
+    constexpr core::Vec2 FAR_RIGHT{ .x = 5'000.0F, .y = 0.0F };
+    game::Arena saved(test::TestManifest());
+    const std::array<core::Action, 2> casts{ {
+        { .kind = core::ActionKind::Cast, .slot = core::Slot::Generator },
+        { .kind = core::ActionKind::Cast, .slot = core::Slot::Movement, .point = FAR_RIGHT },
+    } };
+    Tick(saved, At(1), { .actions = casts, .held = {} });
+    for (u64 tick = 2; tick <= SAVED_AT; ++tick) {
+        Tick(saved, At(tick), {});
+    }
+    const core::Registry& entities = saved.State()[game::ACTIVE].Entities();
+    const core::Entity player = saved.State()[game::ACTIVE].Find(saved.Player());
+    REQUIRE(entities.all_of<game::Dashing>(player));
+    const std::vector<std::byte> bytes = Saved(saved);
+
+    game::Arena loaded(test::TestManifest(), game::Scene::Cells);
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader));
+    CHECK(loaded.StateHash() == saved.StateHash());
+    const game::Caster& caster =
+        loaded.State()[game::ACTIVE].Entities().get<game::Caster>(loaded.State()[game::ACTIVE].Find(loaded.Player()));
+    CHECK(caster.qi == entities.get<game::Caster>(player).qi);
+    for (u64 tick = SAVED_AT + 1; tick <= PLAYED_TO; ++tick) {
+        Tick(saved, At(tick), {});
+        Tick(loaded, At(tick), {});
+    }
+    CHECK(loaded.StateHash() == saved.StateHash());
+}
+
 // Whether two runs' events are the same, field by field.
 bool SameEvents(const std::vector<core::Event>& lhs, const std::vector<core::Event>& rhs) {
     return std::ranges::equal(lhs, rhs, [](const core::Event& one, const core::Event& two) {
@@ -228,7 +260,9 @@ std::vector<std::byte> ArenaSave(const core::State& state, core::StableId player
         game::Wander,
         game::Health,
         game::Dying,
-        game::Arriving>;
+        game::Arriving,
+        game::Caster,
+        game::Dashing>;
     using World = core::ComponentList<game::Npc, game::Needs, game::Met, game::Group>;
     std::vector<std::byte> bytes;
     core::Writer writer{ bytes };

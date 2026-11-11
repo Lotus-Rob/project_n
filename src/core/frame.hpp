@@ -17,6 +17,7 @@
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 
+#include <array>
 #include <bit>
 #include <cstddef>
 #include <memory>
@@ -174,6 +175,23 @@ struct HealthBar {
     f32 fraction = 1.0F;
 };
 
+/// The player's casting state as the simulation reports it, for the HUD: the main thread draws the bars and the cooldowns
+/// in core::UiColours' colours, as the simulation colours nothing.
+struct CasterView {
+    /// The Qi the player holds.
+    i64 qi = 0;
+    /// The most Qi it holds.
+    i64 qiMax = 0;
+    /// The player's health.
+    i64 health = 0;
+    /// The player's most health.
+    i64 healthMax = 0;
+    /// The simulation tick each slot can next be cast at: a slot is cooling down while this is past the snapshot's tick.
+    std::array<u64, SLOTS> readyTick{};
+    /// The ability in each slot.
+    std::array<AbilityKind, SLOTS> loadout{};
+};
+
 /// One published snapshot of the game state: what the main thread draws until the next is due.
 struct Snapshot {
     /// The wall tick of the last tick in the burst that published it.
@@ -209,6 +227,8 @@ struct Snapshot {
     std::vector<HealthBar> healthBars{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// Whether the scene is a combat scene, where casts act.
     bool combat = false;
+    /// The player's Qi, health and cooldowns in a combat scene with a player; none otherwise.
+    std::optional<CasterView> caster = std::nullopt;
     /// What the camera follows, if anything.
     std::optional<Follow> follow = std::nullopt;
     /// The index in `instances` of the selected entity's instance, which the renderer outlines; none
@@ -218,9 +238,10 @@ struct Snapshot {
 
 /// What an Event says happened.
 enum class EventKind : u8 {
-    Hit,      ///< A hit on `target`: its `hit` kind and `value`, at `position`, from the ability use `use`.
-    UseEnded, ///< The ability use `use` has emitted all its hits. Every use emits exactly one, after its last hit, even
-              ///< one cut short (its user's death, a scene change): combined damage numbers wait for it.
+    Hit,         ///< A hit on `target`: its `hit` kind and `value`, at `position`, from the ability use `use`.
+    NotEnoughQi, ///< A cast was refused for want of Qi: `value` is the slot (core::Slot) that was cast.
+    UseEnded,    ///< The ability use `use` has emitted all its hits. Every use emits exactly one, after its last hit, even
+                 ///< one cut short (its user's death, a scene change): combined damage numbers wait for it.
 };
 
 /// The ID of one use of an ability: `tick` is the simulation tick it happens at and `source` says which ability it is
@@ -249,7 +270,7 @@ struct Event {
     StableId target{};
     /// Of a Hit: where it lands, in world units.
     Vec2 position{};
-    /// Of a Hit: the amount (game::HitAmount()).
+    /// Of a Hit: the amount (game::HitAmount()). Of a NotEnoughQi: the slot cast.
     i64 value = 0;
 };
 

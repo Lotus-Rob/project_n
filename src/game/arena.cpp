@@ -137,10 +137,10 @@ constexpr u64 SEED = 0x5eed;
 
 // The arena's part of a save: its format, then a version per domain, each changed with what its components save.
 constexpr u32 ARENA_FORMAT = 3;   // 2: the player and the selection; 3: the respawns waiting
-constexpr u32 ACTIVE_VERSION = 4; // 2: creatures; 3: spin; 4: health, dying, arriving
+constexpr u32 ACTIVE_VERSION = 4; // 2: creatures; 3: spin; 4: health, dying, arriving, caster, dashing
 constexpr u32 WORLD_VERSION = 1;
 using ActiveComponents =
-    core::ComponentList<Body, Look, Orbit, Spin, Creature, Npc, Needs, Met, Wander, Health, Dying, Arriving>;
+    core::ComponentList<Body, Look, Orbit, Spin, Creature, Npc, Needs, Met, Wander, Health, Dying, Arriving, Caster, Dashing>;
 using WorldComponents = core::ComponentList<Npc, Needs, Met, Group>;
 
 constexpr u32 PUBLISH_CHUNK = 4'096; // entities packed per job chunk
@@ -170,11 +170,14 @@ bool CombatConsistent(const core::Registry& entities) {
         return entities.all_of<Creature>(entity) &&
                (entities.get<Health>(entity).current == 0) == entities.all_of<Dying>(entity);
     };
+    const auto hasBody = [&entities](core::Entity entity) { return entities.all_of<Body>(entity); };
     const auto bodyAndOrbit = [&entities](core::Entity entity) { return entities.all_of<Body, Orbit>(entity); };
     return std::ranges::all_of(entities.view<const Creature>(), hasHealth) &&
            std::ranges::all_of(entities.view<const Health>(), livesOrDies) &&
            std::ranges::all_of(entities.view<const Dying>(), hasHealth) &&
-           std::ranges::all_of(entities.view<const Arriving>(), bodyAndOrbit);
+           std::ranges::all_of(entities.view<const Arriving>(), bodyAndOrbit) &&
+           std::ranges::all_of(entities.view<const Caster>(), hasHealth) &&
+           std::ranges::all_of(entities.view<const Dashing>(), hasBody);
 }
 
 // Whether every entity has the components that code reads together with the ones it has: a save can
@@ -407,6 +410,7 @@ void Arena::Build(game::Scene scene) {
     const core::Entity cultivator = Spawn(CULTIVATOR, { .sprite = m_data.cultivator.sprite, .shadow = true });
     entities.emplace<Creature>(cultivator, CreatureKind::Cultivator);
     entities.emplace<Health>(cultivator, m_data.cultivator.health, m_data.cultivator.health);
+    entities.emplace<Caster>(cultivator, m_data.abilities.qiStart);
     m_player = entities.get<core::StableId>(cultivator);
     for (u32 fox = 0; fox < FOXES; ++fox) {
         const Orbit orbit{
@@ -552,6 +556,14 @@ void Arena::Respawn(const core::TickCounters& counters, u32 index) {
     );
 }
 
+void Arena::CastAction(const core::Action& action, const core::TickCounters& counters, std::vector<core::Event>& events) {
+    if (IsCombatScene()) {
+        Combat::Cast(m_state, m_data.abilities, m_player, action, counters.simulation, events);
+        return;
+    }
+    PN_LOG_DEBUG("tick {}: a cast is ignored: the scene {} is no combat scene", counters.simulation, SceneName(m_scene));
+}
+
 void Arena::Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) {
     PN_PROFILE_ZONE();
     if (std::ranges::contains(input.actions, core::ActionKind::CycleScene, &core::Action::kind)) {
@@ -564,14 +576,13 @@ void Arena::Tick(const core::TickCounters& counters, const core::TickInput& inpu
         if (action.kind == core::ActionKind::Select) {
             Select(action.target);
         }
-        else if (action.kind == core::ActionKind::Cast && !IsCombatScene()) {
-            PN_LOG_DEBUG(
-                "tick {}: a cast is ignored: the scene {} is no combat scene", counters.simulation, SceneName(m_scene)
-            );
+        else if (action.kind == core::ActionKind::Cast) {
+            CastAction(action, counters, events);
         }
-        // In a combat scene a cast does nothing yet: the abilities act on it.
     }
-    Walk(input.held.move);
+    if (!Combat::Dash(m_state, m_player, counters.simulation)) {
+        Walk(input.held.move);
+    }
     core::Domain& active = m_state[ACTIVE];
     if (m_player != core::StableId{}) {
         const core::Vec2 player = active.Entities().get<Body>(active.Find(m_player)).current;
@@ -673,6 +684,27 @@ void Arena::PublishOverhead(core::Snapshot& snapshot) const {
             .direction = core::TextDirection::TopToBottom,
         }
     );
+}
+
+void Arena::PublishCaster(core::Snapshot& snapshot) const {
+    if (m_player == core::StableId{} || !IsCombatScene()) {
+        return;
+    }
+    const core::Registry& entities = m_state[ACTIVE].Entities();
+    const core::Entity player = m_state[ACTIVE].Find(m_player);
+    const Caster* const caster = entities.try_get<Caster>(player);
+    const Health* const health = entities.try_get<Health>(player);
+    if (caster == nullptr || health == nullptr) {
+        return;
+    }
+    snapshot.caster = core::CasterView{
+        .qi = caster->qi,
+        .qiMax = m_data.abilities.qiMax,
+        .health = health->current,
+        .healthMax = health->max,
+        .readyTick = caster->readyTick,
+        .loadout = m_data.abilities.loadout,
+    };
 }
 
 void Arena::Aura(const core::TickCounters& counters, std::vector<core::Event>& events) {
@@ -855,6 +887,9 @@ void Arena::ApplyData() {
             health->max = kind.health;
             health->current = std::min(health->current, kind.health);
         }
+        if (Caster* const caster = entities.try_get<Caster>(entity)) {
+            caster->qi = std::min(caster->qi, m_data.abilities.qiMax);
+        }
         if (Orbit* const orbit = entities.try_get<Orbit>(entity)) {
             if (!kind.orbitsPlayer) {
                 orbit->centre = CULTIVATOR; // back from wherever the player led it
@@ -875,6 +910,7 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
     const auto& dyings = m_state[ACTIVE].Entities().storage<Dying>();
     const u64 tick = snapshot.simulationTick;
     snapshot.combat = IsCombatScene();
+    snapshot.caster.reset();
     const u32 chunks = core::ChunkCount(looks.size(), PUBLISH_CHUNK);
     core::Rect view = m_view;
     if (m_player != core::StableId{}) {
@@ -930,6 +966,7 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
     });
     m_drawList.Publish(snapshot, jobs);
     PublishOverhead(snapshot);
+    PublishCaster(snapshot);
     if (m_selected != core::StableId{}) {
         if (const auto drawn = std::ranges::find(snapshot.ids, m_selected); drawn != snapshot.ids.end()) {
             snapshot.selected = static_cast<u32>(drawn - snapshot.ids.begin());

@@ -51,6 +51,7 @@ bool Logic::RunBurst(const TickBurst& burst, const std::stop_token& stop) {
     snapshot.ids.clear();
     snapshot.texts.clear();
     snapshot.healthBars.clear();
+    snapshot.caster.reset();
     snapshot.follow.reset();
     snapshot.selected.reset();
     m_simulation->Publish(snapshot, *m_jobs);
