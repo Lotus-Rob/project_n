@@ -11,13 +11,43 @@
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 #include <span>
 
 namespace core {
 
 /// The most swords a volley has: the overlay buffer holds two instances a sword.
 inline constexpr u32 MAX_VOLLEY_COUNT = 2'000;
+
+/// The fewest ticks a sword takes to swing its aim from a target that died to the one it moves on to, so it turns
+/// visibly rather than jumping: about an eighth of a second.
+inline constexpr f64 RETARGET_TICKS = 8.0;
+/// The fastest a swing moves the aim on average, in world units a tick (about a sword's speed in flight): a swing over a
+/// longer way takes longer than RETARGET_TICKS, so the sword never darts, though never past the sword's arrival.
+inline constexpr f64 RETARGET_SPEED = 16.0;
+/// The fastest a swing at RETARGET_SPEED moves the aim, in world units a tick: its ease, 3u² − 2u³, peaks at 1.5 times
+/// its average speed, halfway through.
+inline constexpr f64 RETARGET_PEAK = 1.5 * RETARGET_SPEED;
+/// The fewest ticks a volley's commit window has (VolleyShape::commitTicks): two of the shortest swings.
+inline constexpr u32 MIN_COMMIT_TICKS = 2 * static_cast<u32>(RETARGET_TICKS);
+
+/// The commit window (VolleyShape::commitTicks) of a volley whose targets were tagged within `radius` world units (finite,
+/// not negative) of its point: the ticks a swing across the whole area takes at RETARGET_SPEED,
+/// ⌈2 × radius / RETARGET_SPEED⌉, and never fewer than MIN_COMMIT_TICKS. So a sword moving on from one tagged target to
+/// another never swings faster than RETARGET_SPEED to reach it by its arrival, unless the two have since moved further
+/// apart. The cast calls it. A radius too large for the ticks to count gives the most there are: no sword moves on.
+[[nodiscard]] constexpr u32 CommitTicksFor(f32 radius) {
+    const f64 diameter = static_cast<f64>(radius) + static_cast<f64>(radius);
+    const f64 ticks = diameter / RETARGET_SPEED;
+    constexpr u32 MOST = std::numeric_limits<u32>::max();
+    if (!(ticks < static_cast<f64>(MOST))) {
+        return MOST;
+    }
+    const u32 whole = ticks > 0.0 ? static_cast<u32>(ticks) : 0;
+    return std::max(MIN_COMMIT_TICKS, static_cast<f64>(whole) < ticks ? whole + 1 : whole);
+}
 
 /// How a volley is laid out and flies, from `abilities.yaml`. All times are simulation ticks.
 struct VolleyShape {
@@ -36,14 +66,28 @@ struct VolleyShape {
     f32 sweep = 0.0F;
     /// Ticks a sword takes to fade after its hit.
     u32 fadeTicks = 0;
+    /// How many ticks before its arrival a sword's target must die for the sword to move on to another (SwordTarget()):
+    /// long enough for a swing between any two of the volley's targets at RETARGET_SPEED. The cast resolves it from the
+    /// ability's radius (CommitTicksFor()); the data never sets it, so a shape read from the data has 0 here.
+    u32 commitTicks = 0;
 
     /// Lists its fields for an archive (core/archive.hpp).
     template<typename Self, typename Archive>
     void Fields(this Self& self, Archive& archive) {
-        archive(self.count, self.ringRadius, self.staggerTicks, self.outTicks, self.flightTicks, self.sweep, self.fadeTicks);
+        archive(
+            self.count,
+            self.ringRadius,
+            self.staggerTicks,
+            self.outTicks,
+            self.flightTicks,
+            self.sweep,
+            self.fadeTicks,
+            self.commitTicks
+        );
     }
 
-    /// Whether the count is within the limit and every distance is finite and not negative; what a loaded shape must satisfy.
+    /// Whether the count is within the limit and every distance is finite and not negative; what a shape read from the data
+    /// must satisfy. The times the cast resolves, `flightTicks` and `commitTicks`, are checked on the cast (Volley::Valid()).
     [[nodiscard]] bool Valid() const {
         return count <= MAX_VOLLEY_COUNT && std::isfinite(ringRadius) && ringRadius >= 0.0F && std::isfinite(sweep) &&
                sweep >= 0.0F;
@@ -66,7 +110,8 @@ struct Volley {
     Vec2 point{};
     /// Its shape as it was cast: new game data never changes a volley in flight. The cast resolves `flightTicks` (for the
     /// bolt, ⌈distance / speed⌉), so here it is always the flight's length in ticks: 0 means it arrives on reaching the
-    /// ring, never "from the speed".
+    /// ring, never "from the speed". It resolves `commitTicks` too, which the data never sets, as CommitTicksFor() the
+    /// ability's radius, so here it is at least MIN_COMMIT_TICKS.
     VolleyShape shape{};
 
     /// Lists its fields for an archive (core/archive.hpp).
@@ -75,9 +120,10 @@ struct Volley {
         archive(self.use, self.startTick, self.seed, self.origin, self.point, self.shape);
     }
 
-    /// Whether its shape is valid and its points finite; what a loaded volley must satisfy.
+    /// Whether its shape is valid with its commit window resolved (at least MIN_COMMIT_TICKS) and its points finite; what
+    /// a loaded volley must satisfy.
     [[nodiscard]] bool Valid() const {
-        return shape.Valid() && IsFinite(origin) && IsFinite(point);
+        return shape.Valid() && shape.commitTicks >= MIN_COMMIT_TICKS && IsFinite(origin) && IsFinite(point);
     }
 };
 
@@ -105,17 +151,6 @@ struct VolleyTarget {
         return diedTick == 0 || static_cast<f64>(diedTick) > tick;
     }
 };
-
-/// The fewest ticks a sword takes to swing its aim from a target that died to the one it moves on to, so it turns
-/// visibly rather than jumping: about an eighth of a second.
-inline constexpr f64 RETARGET_TICKS = 8.0;
-/// The fastest a swing moves the aim on average, in world units a tick (about a sword's speed in flight): a swing over a
-/// longer way takes longer than RETARGET_TICKS, so the sword never darts, though never past the sword's arrival.
-inline constexpr f64 RETARGET_SPEED = 16.0;
-/// How many ticks before its arrival a sword's target must die for the sword to move on to another. A later death leaves
-/// it on the dead one, where it plunges: too close to arrival to turn visibly, and a sword that has arrived never moves.
-inline constexpr u64 COMMIT_TICKS = 16;
-static_assert(COMMIT_TICKS == 2 * static_cast<u64>(RETARGET_TICKS), "a sword that moves on has two swings' time to turn");
 
 /// Where a sword is at a moment, and how to draw it.
 struct SwordPose {
@@ -154,11 +189,11 @@ struct SwordPose {
 [[nodiscard]] SwordPose SwordAt(const Volley& volley, u32 sword, f64 tick, Vec2 aim);
 
 /// Which of a volley's `targets` (not empty, as tagged at its cast) `sword` flies at, at `tick`. It starts at its own,
-/// `sword` modulo their count. When the one it flies at dies at least COMMIT_TICKS before the sword's arrival, it moves
-/// on to one of the targets alive at that tick, chosen so the swords that move together spread evenly over them; the
-/// others keep theirs. It repeats at each such death of the one it flies at. When the one it flies at dies later than
-/// that, or none is alive at its death, it keeps the dead one and plunges into the ground at its frozen position. So the
-/// target in force at the arrival tick is the one the sword strikes, and it never changes after.
+/// `sword` modulo their count. When the one it flies at dies at least the shape's `commitTicks` before the sword's
+/// arrival, it moves on to one of the targets alive at that tick, chosen so the swords that move together spread evenly
+/// over them; the others keep theirs. It repeats at each such death of the one it flies at. When the one it flies at
+/// dies later than that, or none is alive at its death, it keeps the dead one and plunges into the ground at its frozen
+/// position. So the target in force at the arrival tick is the one the sword strikes, and it never changes after.
 ///
 /// At the arrival tick the logic hits that target if it was alive when the tick's arrivals resolved: arrivals resolve
 /// before the tick's deaths, so a target dying on that tick still takes the hit (VolleyTarget::diedTick).
@@ -170,7 +205,10 @@ struct SwordPose {
 /// `previous` and `current` by `alpha`. When the sword moves on from a dead target, its aim eases from where it was then
 /// to the new target, over RETARGET_TICKS or the way's length at RETARGET_SPEED, whichever is longer, but always ending
 /// by the sword's arrival: the aim, and with it the sword, never jumps, and at the arrival tick it is exactly on the
-/// target it strikes.
+/// target it strikes. The commit window fits a swing across the tagged area, so the swing moves the aim at up to
+/// RETARGET_PEAK, on top of the sword's own flight; only targets that have since moved further apart than that area make
+/// it faster, to end by the arrival. RETARGET_PEAK can be several times a slow sword's own flight speed (a short flight):
+/// such a sword visibly speeds up through the swing, though smoothly.
 [[nodiscard]] Vec2 SwordAim(
     const Volley& volley,
     u32 sword,

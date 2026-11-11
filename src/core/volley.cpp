@@ -149,8 +149,9 @@ SwordPlan Plan(const Volley& volley, u32 sword) {
 }
 
 // A sword's chain of targets: it starts at its own, `sword` modulo their count. When the one it flies at dies at least
-// COMMIT_TICKS before the sword's `arrival`, it moves on to one of those alive at that tick; otherwise, or when none is
-// alive, the chain ends there. Each move is to a target that outlives the last, so the chain ends within `count` links.
+// the volley's commit window before the sword's `arrival`, it moves on to one of those alive at that tick; otherwise, or
+// when none is alive, the chain ends there. Each move is to a target that outlives the last, so the chain ends within
+// `count` links.
 //
 // The pick spreads the swords that move together evenly: they share their chain so far, and their spread indices (the
 // mixed-radix digits of `sword / count`, one used per move) count up through the group, so `index mod living` deals
@@ -167,12 +168,13 @@ u32 WalkTargets(
     const Moved& moved
 ) {
     PN_ASSERT(!targets.empty(), "a volley with no targets");
+    PN_ASSERT(volley.shape.commitTicks >= MIN_COMMIT_TICKS, "a volley whose cast left its commit window unresolved");
     const std::size_t count = targets.size();
     std::size_t link = sword % count;
     std::size_t spread = sword / count;
     for (u32 move = 0; move < count; ++move) {
         const VolleyTarget& current = targets[link];
-        if (current.AliveAt(time) || current.diedTick + COMMIT_TICKS > arrival) {
+        if (current.AliveAt(time) || current.diedTick + volley.shape.commitTicks > arrival) {
             break; // alive, or dead too close to the arrival: it plunges where this one died
         }
         const auto died = static_cast<f64>(current.diedTick);
@@ -206,9 +208,10 @@ VolleyVector Interpolated(const VolleyTarget& target, f32 alpha) {
 }
 
 // Where a swing that started at `swingStart` from `from` towards `towards` is at `time`: exactly `towards` once it's over,
-// which is by `arrival` at the latest (a move needs COMMIT_TICKS before it, so the swing has time). Its length follows
-// the way to `towards`, so a target that moves while the swing is under way changes it smoothly; its progress keeps
-// rising while that target moves slower than RETARGET_SPEED.
+// which is by `arrival` at the latest (a move needs the volley's commit window before it, so the swing has time, and at
+// RETARGET_SPEED when the targets are still within the tagged area). Its length follows the way to `towards`, so a
+// target that moves while the swing is under way changes it smoothly; its progress keeps rising while that target moves
+// slower than RETARGET_SPEED.
 VolleyVector Swing(VolleyVector from, VolleyVector towards, f64 swingStart, f64 time, u64 arrival) {
     const f64 ticks =
         std::min(std::max(RETARGET_TICKS, Length(towards - from) / RETARGET_SPEED), static_cast<f64>(arrival) - swingStart);

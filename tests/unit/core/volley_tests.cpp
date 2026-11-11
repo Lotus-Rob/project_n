@@ -10,7 +10,8 @@ constexpr u64 START = 600;
 constexpr u64 SEED = 0x5eed'0123'4567'89abULL;
 constexpr core::Vec2 ORIGIN{ .x = 100.0F, .y = 50.0F };
 constexpr core::Vec2 POINT{ .x = 700.0F, .y = -100.0F };
-// The shipped swords (assets/data/abilities.yaml) in ticks.
+constexpr f32 SWORDS_RADIUS = 260.0F; // the shipped swords' tag radius
+// The shipped swords (assets/data/abilities.yaml) in ticks, as their cast resolves them.
 constexpr core::VolleyShape SWORDS{
     .count = 1'000,
     .ringRadius = 140.0F,
@@ -19,6 +20,7 @@ constexpr core::VolleyShape SWORDS{
     .flightTicks = 66,
     .sweep = 420.0F,
     .fadeTicks = 18,
+    .commitTicks = core::CommitTicksFor(SWORDS_RADIUS),
 };
 constexpr core::Volley VOLLEY{ .use = 7, .startTick = START, .seed = SEED, .origin = ORIGIN, .point = POINT, .shape = SWORDS };
 constexpr u64 SUBSTEPS = 8; // render times a tick
@@ -69,25 +71,48 @@ constexpr f64 MOST_STEP = 3.0;
 // No heading turns more than this between samples, in radians.
 constexpr f64 MOST_TURN = 0.25;
 
-// Whether no step is longer than MOST_STEP times the median, plus `allowance`; all are 0 when both are.
-bool NoJump(std::vector<f64> steps, f64 allowance) {
+// A retarget swing a path is checked through: a retarget may move a slow sword at the designed swing pace, never faster.
+// While the swing is under way (render times `from` to `until`), a step may reach `peak`, the swing's designed fastest
+// step, on top of the sword's own median step, where MOST_STEP times that median alone would take a slow sword's swing
+// for a jump. With no swing (the default), every step keeps the plain bound.
+struct SwingBound {
+    f64 from = 0.0;
+    f64 until = 0.0;
+    f64 peak = 0.0; // world units a sample
+};
+
+// One step between samples, and whether a retarget swing was under way during it.
+struct Step {
+    f64 length = 0.0;
+    bool swinging = false;
+};
+
+// Whether no step is longer than MOST_STEP times the median or, during a swing, than the larger of that and the median
+// plus `swingPeak` (SwingBound).
+bool NoJump(const std::vector<Step>& steps, f64 swingPeak) {
     if (steps.empty()) {
         return true;
     }
-    const f64 longest = std::ranges::max(steps);
-    std::ranges::nth_element(steps, steps.begin() + static_cast<std::ptrdiff_t>(steps.size() / 2));
-    return longest <= (MOST_STEP * steps[steps.size() / 2]) + allowance;
+    std::vector<f64> lengths(steps.size());
+    std::ranges::transform(steps, lengths.begin(), &Step::length);
+    std::ranges::nth_element(lengths, lengths.begin() + static_cast<std::ptrdiff_t>(lengths.size() / 2));
+    const f64 median = lengths[lengths.size() / 2];
+    const f64 plain = MOST_STEP * median;
+    const f64 swing = std::max(plain, median + swingPeak);
+    return std::ranges::all_of(steps, [plain, swing](const Step& step) {
+        return step.length <= (step.swinging ? swing : plain);
+    });
 }
 
 // Checks one sword's path from its launch through its fade, sampled between ticks, for jumps in position and heading,
-// flying at `aimAt(tick)`. `allowance` is a step a known fast motion of the aim adds, beyond MOST_STEP times the median.
+// flying at `aimAt(tick)`, through the retarget swing `swing` if any.
 template<typename AimAt>
-void CheckSmooth(const core::Volley& volley, u32 sword, const AimAt& aimAt, f64 allowance = 0.0) {
+void CheckSmooth(const core::Volley& volley, u32 sword, const AimAt& aimAt, SwingBound swing = {}) {
     const u64 launch = core::LaunchTick(volley, sword);
     const u64 ring = launch + volley.shape.outTicks;
     const u64 arrival = core::ArrivalTick(volley, sword);
     const u64 samples = (arrival + volley.shape.fadeTicks - launch) * SUBSTEPS;
-    std::array<std::vector<f64>, 3> steps{}; // out, flight, fade
+    std::array<std::vector<Step>, 3> steps{}; // out, flight, fade
     core::SwordPose last = core::SwordAt(volley, sword, static_cast<f64>(launch), aimAt(static_cast<f64>(launch)));
     f64 mostTurn = 0.0;
     for (u64 sample = 1; sample <= samples; ++sample) {
@@ -103,13 +128,14 @@ void CheckSmooth(const core::Volley& volley, u32 sword, const AimAt& aimAt, f64 
         else if (tick <= static_cast<f64>(arrival)) {
             phase = 1;
         }
-        steps.at(phase).push_back(Distance(last.position, pose.position));
+        const bool swinging = tick > swing.from && tick - SUBSTEP < swing.until;
+        steps.at(phase).push_back({ .length = Distance(last.position, pose.position), .swinging = swinging });
         last = pose;
     }
     CHECK(mostTurn < MOST_TURN);
     REQUIRE_FALSE(steps[1].empty());
-    for (const std::vector<f64>& phase : steps) {
-        CHECK(NoJump(phase, allowance));
+    for (const std::vector<Step>& phase : steps) {
+        CHECK(NoJump(phase, swing.peak));
     }
 }
 
@@ -146,8 +172,10 @@ core::Vec2 AimAt(u32 sword, f64 time, std::span<const core::VolleyTarget> target
     return core::SwordAim(VOLLEY, sword, static_cast<u64>(snapshot), static_cast<f32>(time - snapshot + 1.0), targets);
 }
 
-constexpr u64 FIRST_DEATH = 650;  // mid-flight for every sword, more than COMMIT_TICKS before any arrival
-constexpr u64 SECOND_DEATH = 665; // mid-flight, near the end of some swings from the first death and some arrivals
+// Mid-flight for every sword, and the commit window before the earliest arrival (678), so every sword can move on.
+constexpr u64 FIRST_DEATH = 645;
+// Mid-flight, near the end of some swings from the first death, and within the commit window of some arrivals.
+constexpr u64 SECOND_DEATH = 660;
 
 TEST_CASE("every sword launches within the stagger and arrives after it") {
     std::array<bool, SWORDS.staggerTicks> launched{};
@@ -375,7 +403,7 @@ TEST_CASE("a sword moved by one death keeps its new target through the next whil
         if (first != 2) {
             CHECK(second == first);
         }
-        else if (SECOND_DEATH + core::COMMIT_TICKS <= core::ArrivalTick(VOLLEY, sword)) {
+        else if (SECOND_DEATH + SWORDS.commitTicks <= core::ArrivalTick(VOLLEY, sword)) {
             CHECK((second == 0 || second == 3));
         }
         else {
@@ -446,7 +474,7 @@ TEST_CASE("a sword's aim and position never jump when its target dies") {
 }
 
 TEST_CASE("SwordTarget and SwordAim agree on the target at every moment") {
-    constexpr u64 LATER_DEATH = 670; // a whole swing after the first, so each swing starts from a frozen point
+    constexpr u64 LATER_DEATH = 665; // a whole swing after the first, so each swing starts from a frozen point
     std::array<core::VolleyTarget, 4> targets = FourTargets();
     targets[1].diedTick = FIRST_DEATH;
     targets[2].diedTick = LATER_DEATH;
@@ -500,9 +528,9 @@ TEST_CASE("a target dying near a sword's arrival leaves the sword where it strik
     for (const u32 sword : SAMPLED_SWORDS) {
         const u64 arrival = core::ArrivalTick(VOLLEY, sword);
         const u32 own = sword % 4;
-        for (const u64 died : { arrival - core::COMMIT_TICKS - 1,
-                                arrival - core::COMMIT_TICKS,
-                                arrival - core::COMMIT_TICKS + 1,
+        for (const u64 died : { arrival - SWORDS.commitTicks - 1,
+                                arrival - SWORDS.commitTicks,
+                                arrival - SWORDS.commitTicks + 1,
                                 arrival,
                                 arrival + DURING_FADE }) {
             CAPTURE(sword);
@@ -510,9 +538,9 @@ TEST_CASE("a target dying near a sword's arrival leaves the sword where it strik
             std::array<core::VolleyTarget, 4> targets = FourTargets();
             targets.at(own).diedTick = died;
             const std::span<const core::VolleyTarget> view = targets;
-            // It moves on only when its target died at least COMMIT_TICKS before its arrival.
+            // It moves on only when its target died at least the volley's commit window before its arrival.
             const u32 struck = core::SwordTarget(VOLLEY, sword, arrival, view);
-            CHECK((struck != own) == (died + core::COMMIT_TICKS <= arrival));
+            CHECK((struck != own) == (died + SWORDS.commitTicks <= arrival));
             // At its arrival it is exactly on the target it strikes, or that one's frozen point.
             const core::Vec2 aim = core::SwordAim(VOLLEY, sword, arrival, 1.0F, view);
             const core::Vec2 position = core::SwordAt(VOLLEY, sword, static_cast<f64>(arrival), aim).position;
@@ -530,8 +558,9 @@ TEST_CASE("a target dying near a sword's arrival leaves the sword where it strik
     }
 }
 
-TEST_CASE("a swing too long for the time left still ends on the new target at the arrival") {
-    // Two targets 500 units apart: the way at RETARGET_SPEED takes about 31 ticks, more than the COMMIT_TICKS left.
+TEST_CASE("a swing across the whole tagged area at the last moment ends on the new target at the arrival, smoothly") {
+    // Two targets 500 units apart, nearly the tag's diameter, the first dying exactly the commit window before the
+    // arrival: the swing at RETARGET_SPEED fits in the window, so it moves the sword at the designed pace at most.
     constexpr f32 HALF_APART = 250.0F;
     constexpr core::Vec2 LEFT{ .x = POINT.x - HALF_APART, .y = POINT.y };
     constexpr core::Vec2 RIGHT{ .x = POINT.x + HALF_APART, .y = POINT.y };
@@ -539,23 +568,60 @@ TEST_CASE("a swing too long for the time left still ends on the new target at th
         CAPTURE(sword);
         const u64 arrival = core::ArrivalTick(VOLLEY, sword);
         const std::array<core::VolleyTarget, 2> targets{ {
-            { .entity = core::StableId{ 1 }, .previous = LEFT, .current = LEFT, .diedTick = arrival - core::COMMIT_TICKS },
+            { .entity = core::StableId{ 1 }, .previous = LEFT, .current = LEFT, .diedTick = arrival - SWORDS.commitTicks },
             { .entity = core::StableId{ 2 }, .previous = RIGHT, .current = RIGHT },
         } };
         const std::span<const core::VolleyTarget> view = targets;
-        REQUIRE(Distance(LEFT, RIGHT) / core::RETARGET_SPEED > static_cast<f64>(core::COMMIT_TICKS));
         CHECK(core::SwordTarget(VOLLEY, sword, arrival, view) == 1);
         const core::Vec2 aim = core::SwordAim(VOLLEY, sword, arrival, 1.0F, view);
         const core::Vec2 position = core::SwordAt(VOLLEY, sword, static_cast<f64>(arrival), aim).position;
         CHECK(position.x == RIGHT.x);
         CHECK(position.y == RIGHT.y);
-        // The swing covers the 500 units in the COMMIT_TICKS left, eased, so near the arrival the aim, and the sword
-        // with it, moves at up to 1.5 times that average: a fast but continuous turn, which the check allows on top
-        // of the usual bound (a jump would still fail it).
-        constexpr f64 SMOOTHSTEP_PEAK = 1.5;
-        const f64 swingStep = SMOOTHSTEP_PEAK * Distance(LEFT, RIGHT) / static_cast<f64>(core::COMMIT_TICKS * SUBSTEPS);
-        CheckSmooth(VOLLEY, sword, [view, sword](f64 tick) { return AimAt(sword, tick, view); }, swingStep);
+        const f64 swingTicks = Distance(LEFT, RIGHT) / core::RETARGET_SPEED;
+        CHECK(swingTicks <= static_cast<f64>(SWORDS.commitTicks));
+        const auto died = static_cast<f64>(targets[0].diedTick);
+        const SwingBound swing{ .from = died, .until = died + swingTicks, .peak = core::RETARGET_PEAK * SUBSTEP };
+        CheckSmooth(VOLLEY, sword, [view, sword](f64 tick) { return AimAt(sword, tick, view); }, swing);
     }
+}
+
+TEST_CASE("a swing too long for the time left still ends on the new target at the arrival") {
+    // The targets have walked apart, far beyond the tag's area: the way at RETARGET_SPEED takes longer than the commit
+    // window left, so the swing is cut short to end at the arrival, and moves the sword at that shorter swing's pace.
+    constexpr f32 HALF_APART = 400.0F;
+    constexpr core::Vec2 LEFT{ .x = POINT.x - HALF_APART, .y = POINT.y };
+    constexpr core::Vec2 RIGHT{ .x = POINT.x + HALF_APART, .y = POINT.y };
+    for (const u32 sword : { 0U, 498U }) { // both fly at target 0 first
+        CAPTURE(sword);
+        const u64 arrival = core::ArrivalTick(VOLLEY, sword);
+        const std::array<core::VolleyTarget, 2> targets{ {
+            { .entity = core::StableId{ 1 }, .previous = LEFT, .current = LEFT, .diedTick = arrival - SWORDS.commitTicks },
+            { .entity = core::StableId{ 2 }, .previous = RIGHT, .current = RIGHT },
+        } };
+        const std::span<const core::VolleyTarget> view = targets;
+        REQUIRE(Distance(LEFT, RIGHT) / core::RETARGET_SPEED > static_cast<f64>(SWORDS.commitTicks));
+        CHECK(core::SwordTarget(VOLLEY, sword, arrival, view) == 1);
+        const core::Vec2 aim = core::SwordAim(VOLLEY, sword, arrival, 1.0F, view);
+        const core::Vec2 position = core::SwordAt(VOLLEY, sword, static_cast<f64>(arrival), aim).position;
+        CHECK(position.x == RIGHT.x);
+        CHECK(position.y == RIGHT.y);
+        // The same ease over the commit window instead of the way at RETARGET_SPEED.
+        const f64 swingSpeed = Distance(LEFT, RIGHT) / static_cast<f64>(SWORDS.commitTicks);
+        const SwingBound swing{ .from = static_cast<f64>(targets[0].diedTick),
+                                .until = static_cast<f64>(arrival),
+                                .peak = swingSpeed * (core::RETARGET_PEAK / core::RETARGET_SPEED) * SUBSTEP };
+        CheckSmooth(VOLLEY, sword, [view, sword](f64 tick) { return AimAt(sword, tick, view); }, swing);
+    }
+}
+
+TEST_CASE("a volley's commit window fits a swing across its tagged area") {
+    // 2 × 260 / 16 = 32.5 ticks, rounded up.
+    CHECK(core::CommitTicksFor(SWORDS_RADIUS) == 33);
+    // Never shorter than two of the shortest swings.
+    constexpr f32 SMALL_RADIUS = 40.0F;
+    CHECK(core::CommitTicksFor(SMALL_RADIUS) == core::MIN_COMMIT_TICKS);
+    CHECK(core::CommitTicksFor(0.0F) == core::MIN_COMMIT_TICKS);
+    CHECK(core::MIN_COMMIT_TICKS == 16);
 }
 
 TEST_CASE("a living target's aim is interpolated by the frame's alpha") {
@@ -592,6 +658,11 @@ TEST_CASE("a volley is valid with a valid shape and finite points") {
     CHECK_FALSE(broken.Valid());
     broken = VOLLEY;
     broken.shape.count = core::MAX_VOLLEY_COUNT + 1;
+    CHECK_FALSE(broken.Valid());
+    // A shape read from the data has no commit window yet: valid as data, but not as a cast volley's.
+    broken = VOLLEY;
+    broken.shape.commitTicks = 0;
+    CHECK(broken.shape.Valid());
     CHECK_FALSE(broken.Valid());
 }
 
