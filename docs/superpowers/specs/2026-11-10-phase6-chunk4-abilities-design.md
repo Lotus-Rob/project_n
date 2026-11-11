@@ -7,7 +7,8 @@ Date: 2026-11-10 · Status: approved 2026-11-10 · Phase spec: `2026-11-10-phase
 - **An ability loadout:** generator (left click), spender (right click), movement (Space), four specials (1–4, each a
   cooldown and a resource cost), an ultimate (5, a very long cooldown). Set in data for now; the UI to equip comes later.
 - **The flying swords** (special 1): **1,000 swords form round the player in waves of wide, scattered rings, one after
-  another, and flow, on curving paths, into the area under the mouse**, striking every enemy tagged there. Bright trails and a soft glow on each sword.
+  another, and flow, on curving paths, into the area under the mouse**, striking every enemy tagged there. Bright
+  trails and a soft glow on each sword.
 - **Two basic elemental attacks:** a fire bolt that burns (generator) and a poison lance that poisons (spender); a dash
   toward the mouse (movement).
 - **Enemies have health and die** in a pixelated dissolve, then respawn at the arena's edge. They don't fight back yet.
