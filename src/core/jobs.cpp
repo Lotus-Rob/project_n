@@ -70,12 +70,13 @@ struct Jobs::Pending::Task final : public enki::ITaskSet {
     void ExecuteRange(enki::TaskSetPartition range, u32 threadnum) override;
 
     std::function<void(u32)> body;
-    std::atomic<u32> ran = 0; // an edge ThreadSanitizer sees (enkiTS isn't instrumented)
+    std::atomic<u32> ran = 0; // the fork and join as edges ThreadSanitizer sees (enkiTS isn't instrumented)
 };
 
 // Out of line: the class has external linkage, and its vtable needs one translation unit to live in.
 void Jobs::Pending::Task::ExecuteRange(enki::TaskSetPartition range, u32 /*threadnum*/) {
     PN_PROFILE_ZONE();
+    static_cast<void>(ran.load(std::memory_order_acquire)); // the fork: sees the body Start() moved in
     for (u32 chunk = range.start; chunk < range.end; ++chunk) {
         body(chunk);
     }
@@ -97,7 +98,11 @@ struct Jobs::Impl {
         BackgroundTask& operator=(BackgroundTask&&) = delete;
         ~BackgroundTask() override = default;
 
-        // Whether it finished, as an edge ThreadSanitizer sees (enkiTS isn't instrumented).
+        // The fork and join as edges ThreadSanitizer sees (enkiTS isn't instrumented): Fork() before it's started,
+        // Done() once it finished.
+        void Fork() {
+            m_done.store(false, std::memory_order_release);
+        }
         [[nodiscard]] bool Done() const {
             return m_done.load(std::memory_order_acquire);
         }
@@ -118,6 +123,7 @@ struct Jobs::Impl {
 // Out of line: the class has external linkage, and its vtable needs one translation unit to live in.
 void Jobs::Impl::BackgroundTask::ExecuteRange(enki::TaskSetPartition /*range*/, u32 /*threadnum*/) {
     PN_PROFILE_ZONE();
+    static_cast<void>(m_done.load(std::memory_order_acquire)); // the fork: sees the work Background() moved in
     m_work();
     m_done.store(true, std::memory_order_release);
 }
@@ -191,6 +197,7 @@ Jobs::Pending Jobs::Start(u32 chunks, std::function<void(u32)> body) {
     if (chunks > 0) {
         pending.m_jobs = this;
         pending.m_task = std::make_unique<Pending::Task>(chunks, std::move(body));
+        pending.m_task->ran.store(0, std::memory_order_release); // the fork
         m_impl->scheduler.AddTaskSetToPipe(pending.m_task.get());
     }
     return pending;
@@ -199,6 +206,7 @@ Jobs::Pending Jobs::Start(u32 chunks, std::function<void(u32)> body) {
 void Jobs::Background(std::function<void()> work) {
     WaitForBackground();
     m_impl->background = std::make_unique<Impl::BackgroundTask>(std::move(work));
+    m_impl->background->Fork();
     m_impl->scheduler.AddTaskSetToPipe(m_impl->background.get());
 }
 
