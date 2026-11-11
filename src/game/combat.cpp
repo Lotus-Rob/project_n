@@ -591,6 +591,7 @@ void Combat::EndUses(const core::State& state, std::vector<core::Event>& events)
 }
 
 void Combat::Publish(core::Snapshot& snapshot) const {
+    PN_PROFILE_ZONE();
     for (const Flight& flight : m_flights) {
         snapshot.volleys.push_back(
             {
