@@ -14,6 +14,18 @@ core::Vec2 Interpolated(core::Vec2 previous, core::Vec2 current, f64 alpha) {
 
 } // namespace
 
+f64 FrameClock::Advance(u64 nowNs) {
+    if (m_lastNs) {
+        m_elapsedNs += std::min(nowNs - std::min(nowNs, *m_lastNs), FRAME_STEP_LIMIT_NS);
+    }
+    m_lastNs = nowNs;
+    return static_cast<f64>(m_elapsedNs) / static_cast<f64>(core::NS_PER_SECOND);
+}
+
+gfx::View FrameView(const gfx::Camera& camera, f64 alpha, std::optional<std::size_t> outlined, f64 frameSeconds) {
+    return { .alpha = alpha, .camera = camera, .outlined = outlined, .frameClock = frameSeconds };
+}
+
 void ShowScene(gfx::Camera& camera, std::optional<core::SceneId>& shown, core::SceneId scene) {
     if (shown != scene) {
         camera = gfx::Camera{}; // each scene is laid out for the reference view; a followed one re-centres it

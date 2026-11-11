@@ -1,6 +1,8 @@
 #include "app/view.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/instances.hpp"
+#include "core/tick_clock.hpp"
+#include "gfx/labels.hpp"
 
 #include <doctest/doctest.h>
 
@@ -103,6 +105,57 @@ TEST_CASE("showing the same scene again leaves the camera where the player put i
     app::ShowScene(camera, shown, FIRST);
     CHECK(camera.centre.x == MOVED.x);
     CHECK(camera.zoom == ZOOMED);
+}
+
+TEST_CASE("labels fade while the frame clock runs and the render clock holds, as when the game is paused") {
+    constexpr u64 FRAME_NS = 50 * core::NS_PER_MS; // three frames make LABEL_FADE_SECONDS
+    constexpr f64 PAUSED_ALPHA = 0.25;             // the render clock's part in the view: held, as while paused
+    constexpr u32 SCREEN_WIDTH = 1280;
+    constexpr u32 SCREEN_HEIGHT = 720;
+    constexpr f32 READABLE = 13.0F;
+    constexpr f32 TOO_SMALL = 5.0F;
+    constexpr f32 ONE_THIRD = 1.0F / 3.0F;
+    constexpr f32 TWO_THIRDS = 2.0F / 3.0F;
+    constexpr core::Vec2 ANCHOR{ .x = 100.0F, .y = 300.0F };
+    constexpr f32 BOX_WIDTH = 40.0F;
+    constexpr f32 BOX_HEIGHT = 20.0F;
+    std::array<gfx::LabelInput, 1> labels{
+        { { .anchor = ANCHOR, .width = BOX_WIDTH, .height = BOX_HEIGHT, .pixels = READABLE } }
+    };
+    app::FrameClock frames;
+    gfx::LabelPass pass;
+    const auto place = [&](u64 nowNs) {
+        const gfx::View view = app::FrameView({}, PAUSED_ALPHA, std::nullopt, frames.Advance(nowNs));
+        const std::span<const gfx::PlacedLabel> placed = pass.Place(labels, SCREEN_WIDTH, SCREEN_HEIGHT, view.frameClock, 1.0F);
+        REQUIRE(placed.size() == 1);
+        return placed[0].opacity;
+    };
+    CHECK(place(0) == 1.0F);
+    labels[0].pixels = TOO_SMALL; // zoomed out while paused
+    CHECK(place(FRAME_NS) == doctest::Approx(TWO_THIRDS));
+    CHECK(place(2 * FRAME_NS) == doctest::Approx(ONE_THIRD));
+    CHECK(place(3 * FRAME_NS) == doctest::Approx(0.0F));
+}
+
+TEST_CASE("the frame clock starts at zero and moves on by wall time") {
+    constexpr u64 START_NS = 7 * core::NS_PER_SECOND;
+    constexpr u64 STEP_NS = 20 * core::NS_PER_MS;
+    constexpr f64 STEP_SECONDS = 0.02;
+    constexpr f64 TWO_STEPS_SECONDS = 0.04;
+    app::FrameClock frames;
+    CHECK(frames.Advance(START_NS) == 0.0);
+    CHECK(frames.Advance(START_NS + STEP_NS) == doctest::Approx(STEP_SECONDS));
+    CHECK(frames.Advance(START_NS + (2 * STEP_NS)) == doctest::Approx(TWO_STEPS_SECONDS));
+}
+
+TEST_CASE("a long gap moves the frame clock on by its step limit at most") {
+    constexpr u64 MINUTE_NS = 60 * core::NS_PER_SECOND;
+    constexpr f64 LIMIT_SECONDS = static_cast<f64>(app::FRAME_STEP_LIMIT_NS) / static_cast<f64>(core::NS_PER_SECOND);
+    constexpr f64 TENTH = 0.1;
+    app::FrameClock frames;
+    static_cast<void>(frames.Advance(0));
+    CHECK(frames.Advance(MINUTE_NS) == doctest::Approx(LIMIT_SECONDS));
+    CHECK(LIMIT_SECONDS == doctest::Approx(TENTH));
 }
 
 } // namespace

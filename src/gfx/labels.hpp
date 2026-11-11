@@ -6,15 +6,18 @@
 /// name label on the screen so they never crowd it. Overlapping labels of one name, chains of them included, stack
 /// into one "Name (+N)" over the creature nearest the group's middle, with room kept for that wider text; a label
 /// overlapping one of another name gives way to the higher priority (selected > hovered > player > named creatures >
-/// the rest); labels too small to read fade out, still placed. Every change fades over LABEL_FADE_SECONDS, never pops:
-/// opacity eases, a stack's count cross-fades and its place glides; and a label on the edge of overlapping keeps its
-/// state (LABEL_HYSTERESIS_PIXELS), so it doesn't flicker. Pure, tested without a device.
+/// the rest); labels too small to read, or whose glyphs aren't all rasterised, fade out, still placed. Every change fades
+/// over LABEL_FADE_SECONDS, never pops: a label coming or going fades in or out, a stack's count cross-fades and its place
+/// glides; and a label on the edge of overlapping keeps its state (LABEL_HYSTERESIS_PIXELS), so it doesn't flicker. Pure,
+/// tested without a device.
 
 #include "core/frame.hpp"
 #include "core/stable_id.hpp"
+#include "core/strings.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 
+#include <array>
 #include <cstddef>
 #include <optional>
 #include <span>
@@ -47,13 +50,25 @@ struct LabelInput {
     /// The named entity's height on the screen, in pixels (core::TextItem::height × PixelsPerUnit()). The placement
     /// doesn't read it; it travels with the label for what is decided by the creature's size on the screen.
     f32 entityPixels = 0.0F;
+    /// Whether every glyph of its text and its stack text is rasterised (Layout::complete): until they are, it is placed
+    /// but fades out, as one too small to read does, so it never draws with gaps; then it fades in.
+    bool complete = true;
+    /// The text it draws. The pass doesn't read it: it keeps it with the label, so a label whose item has gone draws as
+    /// it last did while it fades out.
+    core::TextItem item{};
 };
+
+/// PlacedLabel::input of a label whose item has gone, fading out.
+inline constexpr std::size_t LABEL_GONE = static_cast<std::size_t>(-1);
 
 /// A label the pass draws this frame: `count`'s text at `opacity` × `change` and, while a count change cross-fades,
 /// `previous`'s text at `opacity` × (1 − `change`), both at `anchor`.
 struct PlacedLabel {
-    /// Its index in the labels given to LabelPass::Place().
+    /// Its index in the labels given to LabelPass::Place(), or LABEL_GONE for a label whose item has gone, fading out.
     std::size_t input = 0;
+    /// The label it draws, as the pass keeps it: the one given at `input`, or the last given of a label whose item has
+    /// gone. It holds until the next Place().
+    const LabelInput* label = nullptr;
     /// Where it is drawn, the middle of its box's bottom edge: over its stack's member nearest the stack's middle, or
     /// its own anchor, and gliding between them over LABEL_FADE_SECONDS when that changes.
     core::Vec2 anchor{};
@@ -68,7 +83,7 @@ struct PlacedLabel {
 };
 
 /// How long a label takes to fade fully in or out, a stack's count to cross-fade and its place to glide, in seconds of
-/// the render clock.
+/// the frame clock (View::frameClock).
 inline constexpr f32 LABEL_FADE_SECONDS = 0.15F;
 /// How far a label's box shrinks on every side while it was placed last frame (no more than a quarter of its smaller
 /// side), and grows while it wasn't, in screen pixels: a label on the edge of overlapping keeps the state it had.
@@ -80,7 +95,7 @@ inline constexpr f32 LABEL_GRID_PIXELS = 64.0F;
 /// Places the frame's labels and keeps each one's opacity, count and place from frame to frame. Main thread only.
 class LabelPass {
 public:
-    /// Places `labels` on a screen `width` by `height` pixels, at render-clock time `clock` in seconds, with text
+    /// Places `labels` on a screen `width` by `height` pixels, at frame-clock time `clock` in seconds, with text
     /// scaled by `scale` (the text size setting, which scales the readable size too).
     ///
     /// In priority order, highest first, then by entity, each label is placed, joins a stack or is hidden. A stack
@@ -91,18 +106,22 @@ public:
     /// overlaps anything else. Any other is hidden. A label wholly off the screen is left out of all this.
     ///
     /// A stack is drawn over its member nearest the mean of its members' anchors, or over the one it was drawn over
-    /// last frame while that is within LABEL_HYSTERESIS_PIXELS as near. A placed label large enough to read shows;
-    /// every other fades out. Each label's opacity moves toward its target by the clock's step over
-    /// LABEL_FADE_SECONDS, its count cross-fades and its place glides over the same time, except that a label seen for
-    /// the first time (or again after a frame without it) starts at its target, and one not drawn moves at once.
+    /// last frame while that is within LABEL_HYSTERESIS_PIXELS as near. A placed label large enough to read whose text is
+    /// complete shows; every other fades out. Each label's opacity moves toward its target by the clock's step over
+    /// LABEL_FADE_SECONDS, its count cross-fades and its place glides over the same time, and one not drawn moves at
+    /// once. A label new to the pass fades in from nothing, except on the pass's first Place(), which has no frame
+    /// before it to fade from (a capture): its labels start at their targets. A label whose item has gone fades out
+    /// where it was last drawn, showing what it showed, and is forgotten once faded out; back before that, it fades in
+    /// from where it got to.
     ///
     /// Gives every placed label on the screen, faded out or not, and every other still fading out, in drawing order:
-    /// the lowest priority first, so the highest draws on top. The span holds until the next Place().
+    /// those whose items have gone first, then the lowest priority, so the highest draws on top. The span holds until the
+    /// next Place().
     std::span<const PlacedLabel> Place(std::span<const LabelInput> labels, u32 width, u32 height, f64 clock, f32 scale);
 
     /// Where `entity`'s label was put by the last Place(), as the middle of its box's bottom edge: where it or the
     /// stack it joined is drawn, even when faded out, or its own anchor when it was hidden or off the screen; none when
-    /// it wasn't given.
+    /// it wasn't given, fading out or not.
     [[nodiscard]] std::optional<core::Vec2> Anchor(core::StableId entity) const;
 
 private:
@@ -122,6 +141,8 @@ private:
         u32 previous = 0;
         f32 change = 1.0F;
         std::optional<core::Vec2> anchor = std::nullopt; // Anchor()
+        core::Vec2 drawn{};                              // where it was drawn last, where it fades out once its item has gone
+        LabelInput last{};                               // as last given
     };
     // A box on the screen, in pixels.
     struct Box {
@@ -190,8 +211,11 @@ private:
     // Step 4: what each stack is drawn over, at its member nearest the members' mean, unless the nearest member it was
     // drawn over last frame is within LABEL_HYSTERESIS_PIXELS as near.
     void Centre(std::span<const LabelInput> labels);
-    // Step 5: each label's opacity, count and place, `step` of the way toward their targets, and m_placed.
-    void Fade(std::span<const LabelInput> labels, f32 step, f32 scale);
+    // Step 5: each label's opacity, count and place, `step` of the way toward their targets, and m_placed; on the pass's
+    // `first` frame, labels new to it start at their targets.
+    void Fade(std::span<const LabelInput> labels, f32 step, f32 scale, bool first);
+    // Fades out, by `step`, the labels whose items have gone, into m_placed.
+    void FadeGone(f32 step);
     // Moves the cross-fade of the label whose state is `seen` toward showing `count` by `step`; `drawn` says whether it
     // was drawn last frame (if not, it shows `count` at once).
     static void Count(Seen& seen, u32 count, f32 step, bool drawn);
@@ -210,6 +234,7 @@ private:
     std::vector<std::size_t> m_joined{};
     std::vector<std::size_t> m_rooms{}; // the members whose room a joining label still has to check
     std::vector<PlacedLabel> m_placed{};
+    std::vector<Seen*> m_gone{}; // the labels whose items have gone, still fading out
     // NOLINTEND(readability-redundant-member-init)
     std::size_t m_columns = 0;
     std::size_t m_rows = 0;
@@ -224,6 +249,29 @@ void StackText(std::string& into, std::string_view stack, std::string_view name,
 
 /// StackText() into a new string.
 [[nodiscard]] std::string StackText(std::string_view stack, std::string_view name, u32 count);
+
+/// Holds each caption back while its glyphs aren't all rasterised, then fades it in over LABEL_FADE_SECONDS, so a caption
+/// never draws with gaps. Captions are told apart by what they say. Main thread only.
+class CaptionFades {
+public:
+    /// Starts a frame at frame-clock time `clock` in seconds (View::frameClock).
+    void Begin(f64 clock);
+
+    /// How much of a caption saying `string` shows this frame, from 0 to 1: none while its layout is incomplete
+    /// (`complete` false, Layout::complete), then rising to all over LABEL_FADE_SECONDS; all at once for one whose
+    /// glyphs were there from the first.
+    [[nodiscard]] f32 Opacity(core::StringId string, bool complete);
+
+private:
+    struct Fade {
+        f32 opacity = 1.0F;
+        u64 frame = 0; // the last Begin() it was stepped in
+    };
+    std::array<Fade, core::STRINGS> m_fades{};
+    std::optional<f64> m_clock = std::nullopt;
+    f32 m_step = 0.0F;
+    u64 m_frame = 0;
+};
 
 /// How much of a caption shows when drawn at `pixels` (TextPixels()) with text scaled by `scale`: all of it from
 /// LABEL_MIN_PIXELS × scale up, none below three quarters of that, and a smooth ramp between, so a caption too small to

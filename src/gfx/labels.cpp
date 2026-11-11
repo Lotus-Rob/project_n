@@ -40,21 +40,26 @@ std::size_t CellOf(f32 pixels, std::size_t cells) {
 std::span<const PlacedLabel> LabelPass::Place(std::span<const LabelInput> labels, u32 width, u32 height, f64 clock, f32 scale) {
     PN_PROFILE_ZONE();
     ++m_frame;
-    // A clock that went back (a load, a new timeline) holds every fade for a frame rather than running it backwards.
+    const bool first = !m_clock;
+    // A clock that went back holds every fade for a frame rather than running it backwards.
     const auto elapsed = static_cast<f32>(std::max(clock - m_clock.value_or(clock), 0.0));
     m_clock = clock;
+    const f32 step = elapsed / LABEL_FADE_SECONDS;
     Begin(labels, width, height);
     Resolve(labels, width, height);
     Centre(labels);
-    Fade(labels, elapsed / LABEL_FADE_SECONDS, scale);
-    std::erase_if(m_seen, [this](const auto& entry) { return entry.second.frame != m_frame; });
+    m_placed.clear();
+    FadeGone(step);
+    Fade(labels, step, scale, first);
+    // Once faded out, a gone label has nothing left to draw, so the pass holds only what is on the screen.
+    std::erase_if(m_seen, [this](const auto& entry) { return entry.second.frame != m_frame && entry.second.opacity <= 0.0F; });
     return m_placed;
 }
 
 std::optional<core::Vec2> LabelPass::Anchor(core::StableId entity) const {
     PN_PROFILE_ZONE();
     const auto seen = m_seen.find(entity);
-    return seen == m_seen.end() ? std::nullopt : seen->second.anchor;
+    return seen == m_seen.end() || seen->second.frame != m_frame ? std::nullopt : seen->second.anchor;
 }
 
 void LabelPass::Begin(std::span<const LabelInput> labels, u32 width, u32 height) {
@@ -65,6 +70,7 @@ void LabelPass::Begin(std::span<const LabelInput> labels, u32 width, u32 height)
         entry->second.fresh = created;
         entry->second.frame = m_frame;
         entry->second.index = index;
+        entry->second.last = labels[index];
         m_seenOf[index] = &entry->second;
     }
     // Only boxes on the screen go in: one past its edge is in the edge cells.
@@ -194,7 +200,41 @@ void LabelPass::Centre(std::span<const LabelInput> labels) {
     }
 }
 
-void LabelPass::Fade(std::span<const LabelInput> labels, f32 step, f32 scale) {
+void LabelPass::FadeGone(f32 step) {
+    PN_PROFILE_ZONE();
+    m_gone.clear();
+    for (auto& [entity, seen] : m_seen) {
+        if (seen.frame != m_frame) {
+            m_gone.push_back(&seen);
+        }
+    }
+    // In drawing order, as the labels on the screen, so the frame is the same however the map holds them.
+    std::ranges::sort(m_gone, [](const Seen* first, const Seen* second) {
+        if (first->last.priority != second->last.priority) {
+            return first->last.priority < second->last.priority;
+        }
+        return std::to_underlying(first->last.entity) > std::to_underlying(second->last.entity);
+    });
+    for (Seen* seen : m_gone) {
+        seen->drawnOver = false;
+        seen->anchor = std::nullopt;
+        seen->opacity = Toward(seen->opacity, 0.0F, step);
+        Count(*seen, seen->count, step, true);
+        if (seen->opacity > 0.0F) {
+            m_placed.push_back(
+                { .input = LABEL_GONE,
+                  .label = &seen->last,
+                  .anchor = seen->drawn,
+                  .count = seen->count,
+                  .previous = seen->previous,
+                  .change = seen->change,
+                  .opacity = seen->opacity }
+            );
+        }
+    }
+}
+
+void LabelPass::Fade(std::span<const LabelInput> labels, f32 step, f32 scale, bool first) {
     PN_PROFILE_ZONE();
     const auto heads = [this](std::size_t index) {
         return m_role[index] < OFF_SCREEN && m_stacks[m_role[index]].head == index;
@@ -212,7 +252,6 @@ void LabelPass::Fade(std::span<const LabelInput> labels, f32 step, f32 scale) {
             m_seenOf[stack.over]->drawnOver = true;
         }
     }
-    m_placed.clear();
     // Lowest priority first, so the highest draws on top.
     for (std::size_t remaining = m_order.size(); remaining > 0; --remaining) {
         const std::size_t index = m_order[remaining - 1];
@@ -229,11 +268,13 @@ void LabelPass::Fade(std::span<const LabelInput> labels, f32 step, f32 scale) {
             drawnAt = Glide(seen, labels, index, step, drawn);
             Count(seen, seen.count, step, drawn);
         }
-        const f32 target = head && label.pixels >= LABEL_MIN_PIXELS * scale ? 1.0F : 0.0F;
-        seen.opacity = seen.fresh ? target : Toward(seen.opacity, target, step);
+        const f32 target = head && label.complete && label.pixels >= LABEL_MIN_PIXELS * scale ? 1.0F : 0.0F;
+        seen.opacity = seen.fresh && first ? target : Toward(seen.opacity, target, step);
+        seen.drawn = drawnAt;
         if (head || seen.opacity > 0.0F) {
             m_placed.push_back(
                 { .input = index,
+                  .label = &seen.last,
                   .anchor = drawnAt,
                   .count = seen.count,
                   .previous = seen.previous,
@@ -474,6 +515,24 @@ std::string StackText(std::string_view stack, std::string_view name, u32 count) 
     std::string text;
     StackText(text, stack, name, count);
     return text;
+}
+
+void CaptionFades::Begin(f64 clock) {
+    ++m_frame;
+    m_step = static_cast<f32>(std::max(clock - m_clock.value_or(clock), 0.0)) / LABEL_FADE_SECONDS;
+    m_clock = clock;
+}
+
+f32 CaptionFades::Opacity(core::StringId string, bool complete) {
+    Fade& fade = m_fades.at(std::to_underlying(string));
+    if (!complete) {
+        fade.opacity = 0.0F;
+    }
+    else if (fade.frame != m_frame) {
+        fade.opacity = Toward(fade.opacity, 1.0F, m_step);
+    }
+    fade.frame = m_frame;
+    return fade.opacity;
 }
 
 f32 CaptionOpacity(f32 pixels, f32 scale) {

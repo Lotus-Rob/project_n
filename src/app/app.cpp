@@ -363,12 +363,10 @@ bool App::Present(const platform::WindowState& state) {
             const f64 renderTick = core::RenderTick(drawn->simulationTick, alpha);
             m_numberTexts.clear();
             m_numbers.Texts(renderTick, m_numberTexts);
+            // Labels on the frame clock, which runs while the game is paused; numbers on the render clock, which holds.
             m_renderer.Draw(
                 *drawn,
-                { .alpha = alpha,
-                  .camera = m_camera,
-                  .outlined = Hovered(state, *drawn, alpha),
-                  .clock = renderTick / static_cast<f64>(core::TICKS_PER_SECOND) },
+                FrameView(m_camera, alpha, Hovered(state, *drawn, alpha), m_frameClock.Advance(platform::NowNs())),
                 m_jobs,
                 m_numberTexts
             );

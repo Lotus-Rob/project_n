@@ -85,7 +85,8 @@ public:
 
     /// Draws as Draw() does, but into a picture `width` by `height` pixels instead of the window, waits for the GPU and
     /// returns the picture, or says why it couldn't. Every glyph its texts need is rasterised on `jobs` first, waiting for
-    /// them, so the picture never misses one. Stalls: for tests.
+    /// them, so the picture never misses one. A picture stands alone: its labels and captions start at their targets, with
+    /// no fade from a picture or frame before it. Stalls: for tests.
     [[nodiscard]] std::expected<Image, core::Error> Capture(
         const core::Snapshot& snapshot,
         const View& view,
