@@ -142,7 +142,7 @@ private:
         core::StableId target{};
         core::HitKind kind = core::HitKind::Damage;
         core::Vec2 position{};
-        i32 value = 0;
+        i64 value = 0;         // whole, however large a sum grows
         u64 start = 0;         // the tick it was hit or, combined, its use ended
         u32 ordinal = 0;       // among its target's hits in its tick, or combined numbers starting then
         core::Vec2 scatter{};  // ScatterOf()'s, from Settle(); none while combined and waiting

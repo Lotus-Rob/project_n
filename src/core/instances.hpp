@@ -49,6 +49,9 @@ struct SpriteDraw {
     f32 currentRotation = 0.0F;
     /// Premultiplied RGBA8 colour the image is multiplied by (red in the low byte).
     u32 colour = OPAQUE_WHITE;
+    /// How far it has dissolved, from 0 (whole) to 1 (gone): the sprite shader drops more of its blocks of pixels and
+    /// fades the rest as it rises. Outlines ignore it.
+    f32 dissolve = 0.0F;
 };
 
 /// The instance that draws `draw`: its quad placed so the sprite's foot point lands on its

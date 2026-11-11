@@ -5,6 +5,7 @@
 #include "core/state.hpp"
 #include "core/tick_clock.hpp"
 #include "game/arena.hpp"
+#include "game/combat.hpp"
 #include "game/components.hpp"
 #include "game/npcs.hpp"
 #include "support/manifest.hpp"
@@ -34,6 +35,21 @@ void Play(game::Arena& arena, core::Jobs& jobs, u64 from) {
     for (u64 month = 0; month < MONTHS; ++month) {
         arena.AdvanceCalendar(At(from + TICKS + month), jobs, {});
     }
+}
+
+constexpr i64 FOX_HEALTH = 1'200;
+
+// The arena's foxes, in ID order.
+std::vector<core::StableId> Foxes(const game::Arena& arena) {
+    std::vector<core::StableId> foxes;
+    const core::Registry& entities = arena.State()[game::ACTIVE].Entities();
+    for (auto [entity, creature, stable] : entities.view<const game::Creature, const core::StableId>().each()) {
+        if (creature.kind == game::CreatureKind::Fox) {
+            foxes.push_back(stable);
+        }
+    }
+    std::ranges::sort(foxes);
+    return foxes;
 }
 
 std::vector<std::byte> Saved(game::Arena& arena) {
@@ -93,6 +109,35 @@ TEST_CASE("the player, where it walked, and the selection survive a save") {
     CHECK(loaded.StateHash() == saved.StateHash());
 }
 
+TEST_CASE("health, the dying and the respawns survive a save") {
+    constexpr u64 FIRST_DEATH = 5;
+    constexpr u64 SAVED_AT = 40;   // the first fox gone and its respawn waiting, the second mid-dissolve
+    constexpr u64 PLAYED_TO = 400; // past both respawns and into their arrivals
+    constexpr i64 WOUND = 300;
+    game::Arena saved(test::TestManifest());
+    for (u64 tick = 1; tick <= SAVED_AT; ++tick) {
+        Tick(saved, At(tick), {});
+        if (tick == FIRST_DEATH) {
+            saved.Damage(Foxes(saved).at(0), FOX_HEALTH, tick);
+        }
+    }
+    const std::vector<core::StableId> foxes = Foxes(saved);
+    saved.Damage(foxes.at(0), FOX_HEALTH, SAVED_AT);
+    saved.Damage(foxes.at(1), WOUND, SAVED_AT);
+    const std::vector<std::byte> bytes = Saved(saved);
+
+    game::Arena loaded(test::TestManifest(), game::Scene::Cells);
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader));
+    CHECK(loaded.StateHash() == saved.StateHash());
+    for (u64 tick = SAVED_AT + 1; tick <= PLAYED_TO; ++tick) {
+        Tick(saved, At(tick), {});
+        Tick(loaded, At(tick), {});
+    }
+    CHECK(loaded.StateHash() == saved.StateHash());
+    CHECK(Foxes(loaded).size() == Foxes(saved).size());
+}
+
 TEST_CASE("a truncated save is refused, and the game is unchanged") {
     constexpr std::size_t CUT = 4;
     game::Arena saved(test::TestManifest(), game::Scene::Stress);
@@ -124,13 +169,15 @@ TEST_CASE("a save with bytes after the state, or of another format, is refused")
 
 // An arena save of `state` with `player`, laid out as Arena::Save writes one: format, scene, seed,
 // stable-ID counter, months, the player and the selection (none), then each domain after its version,
-// then no relationships. Its versions must follow arena.cpp's, or every refusal below is the version's.
+// then no relationships and no respawns waiting. Its versions must follow arena.cpp's, or every refusal below is the
+// version's.
 std::vector<std::byte> ArenaSave(const core::State& state, core::StableId player = {}) {
-    constexpr u32 FORMAT = 2;
-    constexpr u32 ACTIVE_VERSION = 3;
+    constexpr u32 FORMAT = 3;
+    constexpr u32 ACTIVE_VERSION = 4;
     constexpr u32 WORLD_VERSION = 1;
     constexpr u64 MONTHS_PASSED = 0;
     constexpr u64 RELATIONSHIPS = 0;
+    constexpr u64 RESPAWNS = 0;
     using Active = core::ComponentList<
         game::Body,
         game::Look,
@@ -140,7 +187,10 @@ std::vector<std::byte> ArenaSave(const core::State& state, core::StableId player
         game::Npc,
         game::Needs,
         game::Met,
-        game::Wander>;
+        game::Wander,
+        game::Health,
+        game::Dying,
+        game::Arriving>;
     using World = core::ComponentList<game::Npc, game::Needs, game::Met, game::Group>;
     std::vector<std::byte> bytes;
     core::Writer writer{ bytes };
@@ -150,6 +200,7 @@ std::vector<std::byte> ArenaSave(const core::State& state, core::StableId player
     writer(WORLD_VERSION);
     core::SaveDomain(writer, state[game::WORLD], World{});
     writer(RELATIONSHIPS);
+    writer(RESPAWNS);
     return bytes;
 }
 
@@ -199,6 +250,53 @@ TEST_CASE("a save with a creature that has no look is refused, and the game is u
     state[game::ACTIVE].Entities().emplace<game::Creature>(entity);
     const bool loaded = Loads(ArenaSave(state));
     CHECK_FALSE(loaded);
+}
+
+// A fox as the arena makes one, standing at the origin, with `health`.
+void SpawnFox(core::State& state, game::Health health) {
+    const core::Entity entity = state.Create(game::ACTIVE).second;
+    state[game::ACTIVE].Entities().emplace<game::Body>(entity);
+    state[game::ACTIVE].Entities().emplace<game::Look>(entity);
+    state[game::ACTIVE].Entities().emplace<game::Creature>(entity, game::CreatureKind::Fox);
+    state[game::ACTIVE].Entities().emplace<game::Health>(entity, health);
+}
+
+TEST_CASE("a save with a fox as the arena makes one is loaded") {
+    core::State state{ game::DOMAINS, STATE_SEED };
+    SpawnFox(state, { .current = FOX_HEALTH, .max = FOX_HEALTH });
+    const std::vector<std::byte> bytes = ArenaSave(state);
+    core::Reader reader{ bytes };
+    game::Arena game(test::TestManifest(), game::Scene::Arena);
+    CHECK(game.Load(reader));
+}
+
+TEST_CASE("a save with health above its most is refused, and the game is unchanged") {
+    core::State state{ game::DOMAINS, STATE_SEED };
+    SpawnFox(state, { .current = FOX_HEALTH + 1, .max = FOX_HEALTH });
+    const bool loaded = Loads(ArenaSave(state));
+    CHECK_FALSE(loaded);
+}
+
+TEST_CASE("a save with a creature that has no health is refused, and the game is unchanged") {
+    core::State state{ game::DOMAINS, STATE_SEED };
+    SpawnFox(state, { .current = FOX_HEALTH, .max = FOX_HEALTH });
+    state[game::ACTIVE].Entities().clear<game::Health>();
+    const bool loaded = Loads(ArenaSave(state));
+    CHECK_FALSE(loaded);
+}
+
+TEST_CASE("a save with a creature at no health that isn't dying, or dying with health left, is refused") {
+    core::State dead{ game::DOMAINS, STATE_SEED };
+    SpawnFox(dead, { .current = 0, .max = FOX_HEALTH });
+    const bool deadLoaded = Loads(ArenaSave(dead));
+    CHECK_FALSE(deadLoaded);
+
+    core::State dying{ game::DOMAINS, STATE_SEED };
+    SpawnFox(dying, { .current = FOX_HEALTH, .max = FOX_HEALTH });
+    core::Registry& entities = dying[game::ACTIVE].Entities();
+    entities.emplace<game::Dying>(entities.view<const game::Health>().front());
+    const bool dyingLoaded = Loads(ArenaSave(dying));
+    CHECK_FALSE(dyingLoaded);
 }
 
 TEST_CASE("a save with a world NPC that has no needs is refused, and the game is unchanged") {

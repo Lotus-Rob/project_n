@@ -44,7 +44,8 @@ struct Instance {
     u32 regionMin = 0;
     /// The region's bottom-right corner, likewise.
     u32 regionMax = 0;
-    /// The texture-array layer (the atlas page), then flags (none defined yet): two u16.
+    /// The texture-array layer (the atlas page), then how far it has dissolved (SpriteDraw::dissolve) as unorm16: 0
+    /// draws it whole, 65535 not at all.
     u32 layerFlags = 0;
     /// Premultiplied colour the texture is multiplied by: red in the low byte, then green, blue and alpha.
     u32 colour = 0;
@@ -125,8 +126,8 @@ struct TextItem {
     TextKind kind = TextKind::Label;
     /// What it says (Label, Caption), in the language the renderer shows.
     StringId string = StringId::CultivatorName;
-    /// Of a Number: its value.
-    i32 value = 0;
+    /// Of a Number: its value, its digits all shown however many.
+    i64 value = 0;
     /// Of a Number: whether it shows a "+".
     NumberSign sign = NumberSign::Plain;
     /// The anchor at the previous tick, in world units.
@@ -157,6 +158,19 @@ struct TextItem {
     TextAlign align = TextAlign::BottomCentre;
     /// Which way its characters run.
     TextDirection direction = TextDirection::LeftToRight;
+};
+
+/// A creature's health as the simulation reports it, for the main thread to draw as a bar over its head in
+/// core::UiColours' colours: the simulation never colours it.
+struct HealthBar {
+    /// The creature.
+    StableId entity{};
+    /// Its head at the previous tick, in world units (as its label's anchor).
+    Vec2 previous{};
+    /// Its head at this tick.
+    Vec2 current{};
+    /// Its health left as a fraction of its most, from 0 to 1.
+    f32 fraction = 1.0F;
 };
 
 /// One published snapshot of the game state: what the main thread draws until the next is due.
@@ -190,6 +204,8 @@ struct Snapshot {
     std::vector<StableId> ids{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The texts drawn over the world, in drawing order; refilled in place likewise.
     std::vector<TextItem> texts{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    /// The health of each living enemy in a combat scene; refilled in place likewise.
+    std::vector<HealthBar> healthBars{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// What the camera follows, if anything.
     std::optional<Follow> follow = std::nullopt;
     /// The index in `instances` of the selected entity's instance, which the renderer outlines; none
@@ -230,8 +246,8 @@ struct Event {
     StableId target{};
     /// Of a Hit: where it lands, in world units.
     Vec2 position{};
-    /// Of a Hit: the amount.
-    i32 value = 0;
+    /// Of a Hit: the amount (game::HitAmount()).
+    i64 value = 0;
 };
 
 /// What an action asks the simulation to do.
