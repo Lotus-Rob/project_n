@@ -294,15 +294,18 @@ TEST_CASE("the cores draw under the halos, the halos under the bars, and the swo
     CHECK(drawing.droppedSwords == 0);
 }
 
-TEST_CASE("swords past the overlay's room are left out whole, never a halo or a core without its sword") {
-    // Two of the largest volleys: more swords than the overlay holds three instances of.
+TEST_CASE("swords past the overlay's or the trails' room are left out whole, never a part without the rest") {
+    // Two of the largest volleys: more swords than the overlay holds three instances of, or the ribbons trails of.
     core::VolleyView largest = SwordsView();
     largest.volley.shape.count = core::MAX_VOLLEY_COUNT;
     const std::array<core::VolleyView, 2> volleys{ { largest, largest } };
     const std::array<core::VolleyTarget, 1> targets{ { { .entity = FOX, .previous = POINT, .current = POINT } } };
     const std::array<core::HealthBar, 1> bars{ { { .entity = FOX, .previous = POINT, .current = POINT, .fraction = HALF } } };
     constexpr u32 BAR_INSTANCES = 2;
-    constexpr u32 FITTING = (gfx::MAX_OVERLAY_INSTANCES - BAR_INSTANCES) / gfx::SWORD_INSTANCES;
+    // The trails are the tighter room: 16,384 quads hold 2,048 swords' trails, fewer than the overlay's 2,730.
+    constexpr u32 FITTING = std::min(
+        (gfx::MAX_OVERLAY_INSTANCES - BAR_INSTANCES) / gfx::SWORD_INSTANCES, gfx::MAX_RIBBON_QUADS / gfx::TRAIL_SEGMENTS
+    );
     core::Jobs jobs{ 1 };
     gfx::VolleyDrawing drawing;
     gfx::DrawHealthBars(bars, Whole(bars), 1.0F, TestManifest(), {}, drawing);
@@ -314,6 +317,7 @@ TEST_CASE("swords past the overlay's room are left out whole, never a halo or a 
     CHECK(drawing.batches[3].count == FITTING);
     CHECK(drawing.droppedSwords == (2 * core::MAX_VOLLEY_COUNT) - FITTING);
     CHECK(drawing.ribbons.size() == std::size_t{ FITTING } * gfx::TRAIL_SEGMENTS * gfx::QUAD_VERTICES);
+    CHECK(drawing.ribbons.size() <= std::size_t{ gfx::MAX_RIBBON_QUADS } * gfx::QUAD_VERTICES);
     drawing.Clear();
     CHECK(drawing.droppedSwords == 0);
 }

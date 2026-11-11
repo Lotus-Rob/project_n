@@ -251,6 +251,7 @@ struct Renderer::Impl {
     core::RepeatedFailure meshOverflows{};
     core::RepeatedFailure overlayOverflows{};
     core::RepeatedFailure ribbonOverflows{};
+    core::RepeatedFailure swordOverflows{};
     core::RepeatedFailure uploadFailures{};
     // NOLINTEND(readability-redundant-member-init)
 };
@@ -294,13 +295,15 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
         ReportOverflow(meshOverflows, *quadsDropped, "text quads", MAX_MESH_QUADS);
     }
     if (overlayDropped) {
-        ReportOverflow(
-            overlayOverflows,
-            *overlayDropped + (volleyDrawing.droppedSwords * SWORD_INSTANCES),
-            "overlay instances",
-            MAX_OVERLAY_INSTANCES
-        );
+        ReportOverflow(overlayOverflows, *overlayDropped, "overlay instances", MAX_OVERLAY_INSTANCES);
     }
+    // Swords left out whole by DrawVolleys(), where the overlay's or the trails' room ran out, whichever is less.
+    ReportOverflow(
+        swordOverflows,
+        volleyDrawing.droppedSwords,
+        "flying swords",
+        std::min(MAX_OVERLAY_INSTANCES / SWORD_INSTANCES, MAX_RIBBON_QUADS / TRAIL_SEGMENTS)
+    );
     if (ribbonsDropped) {
         ReportOverflow(ribbonOverflows, *ribbonsDropped, "ribbon quads", MAX_RIBBON_QUADS);
     }

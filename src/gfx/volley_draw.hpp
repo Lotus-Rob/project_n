@@ -81,7 +81,7 @@ struct VolleyDrawing {
     /// The trails' vertices, TRAIL_SEGMENTS quads a sword, in sword order: drawn additively before the instances.
     std::vector<RibbonVertex> ribbons{};
     // NOLINTEND(readability-redundant-member-init)
-    /// Swords left out, core, halo, trail and all, as the overlay had no room for their SWORD_INSTANCES.
+    /// Swords left out, core, halo, blade and trail, as the overlay or the trails had no room for them.
     std::size_t droppedSwords = 0;
 
     /// Empties it, keeping its buffers' capacity.
@@ -122,8 +122,8 @@ void DrawHealthBars(
 /// drawn where the simulation says it is, between ticks too. Every sword of every volley, in order, fills one core, one
 /// halo, one sword and TRAIL_SEGMENTS ribbon quads, whether it shows or not: one that doesn't (before its launch, after it
 /// struck a living target at its arrival, or faded) writes zero instances and quads, so the bytes never depend on the
-/// worker count. Swords that don't fit in MAX_OVERLAY_INSTANCES with what `out` holds are left out whole and counted in
-/// `droppedSwords`: a sword is never drawn without its core and halo, nor they without it.
+/// worker count. Swords that don't fit, in MAX_OVERLAY_INSTANCES or MAX_RIBBON_QUADS with what `out` holds, are left out whole
+/// and counted in `droppedSwords`: no core, halo, blade or trail is drawn without the rest of its sword.
 ///
 /// - The cores make one batch, normal, drawn before every batch already in `out`: a small soft dot in `colours`'
 ///   EffectColour() of the volley's element times CORE_OPACITY and how much of the sword shows (SwordPose::shown).

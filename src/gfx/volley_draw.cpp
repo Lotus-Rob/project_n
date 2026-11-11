@@ -265,9 +265,12 @@ void DrawVolleys(
     for (const core::VolleyView& view : volleys) {
         all += view.volley.shape.count;
     }
-    // Whole swords only: those past the overlay's room are left out, core, halo, blade and trail.
-    const std::size_t room =
+    // Whole swords only: those past the overlay's room or the trails' are left out, core, halo, blade and trail.
+    const std::size_t overlayRoom =
         (MAX_OVERLAY_INSTANCES - std::min<std::size_t>(out.instances.size(), MAX_OVERLAY_INSTANCES)) / SWORD_INSTANCES;
+    constexpr std::size_t RIBBON_VERTICES = std::size_t{ MAX_RIBBON_QUADS } * QUAD_VERTICES;
+    const std::size_t trailRoom = (RIBBON_VERTICES - std::min(out.ribbons.size(), RIBBON_VERTICES)) / TRAIL_VERTICES;
+    const std::size_t room = std::min(overlayRoom, trailRoom);
     const auto total = static_cast<u32>(std::min(all, room));
     out.droppedSwords += all - total;
     if (total == 0) {
