@@ -163,6 +163,9 @@ The user's:
   reduce flashing, the colour-blind palettes and text size. This chunk wires the settings into what chunks 3–10 built:
   numbers' bounce and the camera's easing calm under reduce motion; hit flashes and the sword halo tone down under
   reduce flashing; damage colours, attitude colours and selection outlines take the palette.
+- **The colour menu** (the user, 2026-11-11): the menu builds Accessibility → Colours → area → element from
+  `core::COLOUR_AREA_INFO` and `UI_COLOUR_INFO`, so every UI colour and every effect's colour by element can be edited.
+  The colour-blind palettes become presets of that table.
 
 ## Decisions
 

@@ -50,7 +50,8 @@ and dungeons the player enters, never in the open world or towns.
 9. **Combat only:** abilities work in combat scenes; in a combat scene left click is the generator, there's no
    click-to-select, and hovering an enemy raises its label to "hovered" priority (chunk 3).
 10. **A temporary HUD** until the UI chunks: a game-text readout in a screen corner (Qi and each slot's cooldown), and
-    thin health bars under enemies' labels, drawn as sprites.
+    thin health bars under enemies' labels, drawn as sprites, and the player's own health and Qi as two bars in the
+    HUD (the user, 2026-11-11).
 
 ## Non-goals
 
@@ -133,6 +134,36 @@ and dungeons the player enters, never in the open world or towns.
 
 Placeholder sprites from `art/placeholders.py`: a sword, a halo, a fire bolt, a poison lance's strike; through `./dev
 atlas` as usual.
+
+## Accessibility
+
+Phase decision 17 requires this section.
+
+- **Every UI colour can be changed** (the user, 2026-11-11: "we should be able to recolour basically any UI element in
+  the accessibility settings menu"). Every UI colour, chunk 3's and this chunk's, lives in one table of named colours
+  in the player's settings (`core::UiColours`), grouped by area as the menu shows them (**Accessibility → Colours →
+  area → element**):
+  - **Combat Text:** each damage-number kind, with its variant for text without outline and shadow.
+  - **Effects:** one colour per element (damage, healing, poison, burn), never per ability. Every ability's halos,
+    trails, glows and bursts take their element's colour.
+  - **Names and Captions:** labels, the caption, the text ink.
+  - **Selection:** the hover and selection outlines.
+  - **HUD:** the player's health bar, the Qi bar, enemies' health bars, the bars' background, and the HUD's text,
+    cooling and warning colours.
+
+  The main thread reads the table where each element is drawn, and a change shows from the next frame. The
+  simulation never colours anything. Chunk 11's menu edits the table, and its colour-blind palettes are presets of it.
+- **Text size:** the HUD's lines go through `gfx::TextOptions::scale`, as all game text does.
+- **Colour is never the only signal:** health bars show health by the fill's length. A slot on cooldown shows its
+  seconds left as a number, not just dimmed. Too little Qi shows the words "Not enough Qi", not just a red tint. The
+  fire bolt and the poison lance differ in shape as well as colour (a flying bolt with a trail; a burst at the point).
+- **Reduce flashing (chunk 11 wires it):** the halos and the bolt's glow take their brightness from one constant,
+  `gfx::HALO_INTENSITY`, and the lance's burst from `gfx::FLASH_INTENSITY`. Chunk 11 lowers both under reduce
+  flashing. The dissolve fades and never flashes.
+- **Reduce motion (chunk 11 wires it):** the trail length is one constant, `gfx::TRAIL_TICKS`, which chunk 11 shortens
+  under reduce motion. The swords' flight is the ability itself and stays. Nothing shakes the camera.
+- **Input:** every ability is on the mouse and keyboard. Playing with a gamepad is a phase non-goal (decision 18 covers
+  UI only), so casts have no gamepad bindings yet.
 
 ## Decisions
 
