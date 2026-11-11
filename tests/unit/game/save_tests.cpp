@@ -500,6 +500,33 @@ TEST_CASE("a save with afflictions on something with no health is refused") {
     CHECK_FALSE(loaded);
 }
 
+// PointVolley() aiming instead at the living `target`.
+SavedVolley AimedAt(core::StableId target) {
+    SavedVolley volley = PointVolley();
+    volley.targets.front() = {
+        .entity = target, .previous = volley.volley.point, .current = volley.volley.point, .diedTick = 0
+    };
+    return volley;
+}
+
+TEST_CASE("a save with a volley aiming at a living target that is no creature here is refused") {
+    constexpr core::StableId MISSING{ 12'345 };
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::StableId bare = state.Create(game::ACTIVE).first; // no body, no look: nothing to aim at
+    const bool bareLoaded = Loads(ArenaSave(state, {}, AimedAt(bare)));
+    CHECK_FALSE(bareLoaded);
+    const bool missingLoaded = Loads(ArenaSave(state, {}, AimedAt(MISSING)));
+    CHECK_FALSE(missingLoaded);
+
+    const core::Entity fox = SpawnFox(state, { .current = FOX_HEALTH, .max = FOX_HEALTH });
+    const std::vector<std::byte> bytes = ArenaSave(state, {}, AimedAt(state[game::ACTIVE].Entities().get<core::StableId>(fox)));
+    core::Reader reader{ bytes };
+    game::Arena game(test::TestManifest(), game::Scene::Arena);
+    REQUIRE(game.Load(reader));
+    std::vector<core::Event> events;
+    game.Tick(At(1), {}, events); // follows the fox's chest
+}
+
 TEST_CASE("a save's Qi above the loading game's most is lowered to it") {
     constexpr i64 LOWER = 20;
     game::Arena saved(test::TestManifest());

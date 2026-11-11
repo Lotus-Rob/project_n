@@ -875,7 +875,7 @@ bool Arena::Load(core::Reader& archive) {
     combat.Load(archive);
     const bool playerFound = player == core::StableId{} || (state.DomainOf(player) == ACTIVE &&
                                                             state[ACTIVE].Entities().all_of<Body>(state[ACTIVE].Find(player)));
-    if (archive.Failed() || archive.Remaining() != 0 || !Consistent(state) || !playerFound) {
+    if (archive.Failed() || archive.Remaining() != 0 || !Consistent(state) || !playerFound || !combat.AimsAtCreatures(state)) {
         return false;
     }
     m_state = std::move(state);
