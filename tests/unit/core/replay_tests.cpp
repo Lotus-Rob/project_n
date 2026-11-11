@@ -86,15 +86,20 @@ TEST_CASE("a replay from another version of the game is refused") {
     CHECK(started.error().message.find("version") != std::string::npos);
 }
 
-TEST_CASE("a replay naming an action that doesn't exist is refused") {
-    std::vector<std::byte> replay = Recorded();
-    // The first tick's one action: just after the start state and the tick count.
+// Where the first tick's first action's kind byte is in `replay`, one that Start() began: after the format, the
+// version (a length byte and its letters), the data hash (u64), the start state's size (u64) and bytes, the tick
+// count (u64) and the tick's action count (u8).
+std::size_t FirstKindAt(const std::vector<std::byte>& replay) {
     core::Reader reader{ replay };
     u32 format = 0;
     u8 versionLength = 0;
     reader(format, versionLength);
-    const std::size_t startSizeAt = sizeof(u32) + sizeof(u8) + versionLength;
-    const std::size_t firstKindAt = startSizeAt + sizeof(u64) + Start().size() + sizeof(u64) + sizeof(u8);
+    return sizeof(u32) + sizeof(u8) + versionLength + sizeof(u64) + sizeof(u64) + Start().size() + sizeof(u64) + sizeof(u8);
+}
+
+TEST_CASE("a replay naming an action that doesn't exist is refused") {
+    std::vector<std::byte> replay = Recorded();
+    const std::size_t firstKindAt = FirstKindAt(replay);
     REQUIRE(replay.at(firstKindAt) == std::byte{ std::to_underlying(core::ActionKind::Pause) });
     replay.at(firstKindAt) = std::byte{ core::ACTION_KINDS };
     core::Replay player;
@@ -325,13 +330,7 @@ TEST_CASE("a replay with a cast in a slot past the last, or at a non-finite poin
     constexpr core::Vec2 POINT{ .x = 1.0F, .y = 2.0F };
     // The slot byte follows the cast's kind, which is the first tick's first action.
     std::vector<std::byte> past = RecordedCast(core::Slot::Generator, POINT);
-    core::Reader reader{ past };
-    u32 format = 0;
-    u8 versionLength = 0;
-    reader(format, versionLength);
-    const std::size_t startSizeAt = sizeof(u32) + sizeof(u8) + versionLength;
-    // After the version: the data hash, the start state's size and bytes, the tick count and the first count.
-    const std::size_t kindAt = startSizeAt + (2 * sizeof(u64)) + Start().size() + sizeof(u64) + sizeof(u8);
+    const std::size_t kindAt = FirstKindAt(past);
     REQUIRE(past.at(kindAt) == std::byte{ std::to_underlying(core::ActionKind::Cast) });
     past.at(kindAt + 1) = std::byte{ core::SLOTS };
     core::Replay pastPlayer;
