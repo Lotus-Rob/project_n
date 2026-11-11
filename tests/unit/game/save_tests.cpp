@@ -138,6 +138,44 @@ TEST_CASE("health, the dying and the respawns survive a save") {
     CHECK(Foxes(loaded).size() == Foxes(saved).size());
 }
 
+// Whether two runs' events are the same, field by field.
+bool SameEvents(const std::vector<core::Event>& lhs, const std::vector<core::Event>& rhs) {
+    return std::ranges::equal(lhs, rhs, [](const core::Event& one, const core::Event& two) {
+        return one.kind == two.kind && one.hit == two.hit && one.use == two.use && one.target == two.target &&
+               one.value == two.value && std::bit_cast<u64>(one.position) == std::bit_cast<u64>(two.position);
+    });
+}
+
+TEST_CASE("a save mid-arrival goes on as the game that saved, with the same events") {
+    constexpr u64 DEATH = 5;
+    constexpr u64 SAVED_AT = 300;  // the fox that respawned at tick 215 is easing in until tick 395
+    constexpr u64 PLAYED_TO = 420; // past its arrival and two of the aura's hits
+    game::Arena saved(test::TestManifest());
+    for (u64 tick = 1; tick <= SAVED_AT; ++tick) {
+        Tick(saved, At(tick), {});
+        if (tick == DEATH) {
+            saved.Damage(Foxes(saved).at(0), FOX_HEALTH, tick);
+        }
+    }
+    REQUIRE_FALSE(saved.State()[game::ACTIVE].Entities().view<const game::Arriving>().empty());
+    const std::vector<std::byte> bytes = Saved(saved);
+
+    game::Arena loaded(test::TestManifest(), game::Scene::Cells);
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader));
+    CHECK(loaded.StateHash() == saved.StateHash());
+    std::vector<core::Event> savedEvents;
+    std::vector<core::Event> loadedEvents;
+    for (u64 tick = SAVED_AT + 1; tick <= PLAYED_TO; ++tick) {
+        saved.Tick(At(tick), {}, savedEvents);
+        loaded.Tick(At(tick), {}, loadedEvents);
+    }
+    CHECK_FALSE(savedEvents.empty());
+    const bool same = SameEvents(loadedEvents, savedEvents);
+    CHECK(same);
+    CHECK(loaded.StateHash() == saved.StateHash());
+}
+
 TEST_CASE("a truncated save is refused, and the game is unchanged") {
     constexpr std::size_t CUT = 4;
     game::Arena saved(test::TestManifest(), game::Scene::Stress);
@@ -253,12 +291,13 @@ TEST_CASE("a save with a creature that has no look is refused, and the game is u
 }
 
 // A fox as the arena makes one, standing at the origin, with `health`.
-void SpawnFox(core::State& state, game::Health health) {
+core::Entity SpawnFox(core::State& state, game::Health health) {
     const core::Entity entity = state.Create(game::ACTIVE).second;
     state[game::ACTIVE].Entities().emplace<game::Body>(entity);
     state[game::ACTIVE].Entities().emplace<game::Look>(entity);
     state[game::ACTIVE].Entities().emplace<game::Creature>(entity, game::CreatureKind::Fox);
     state[game::ACTIVE].Entities().emplace<game::Health>(entity, health);
+    return entity;
 }
 
 TEST_CASE("a save with a fox as the arena makes one is loaded") {
@@ -297,6 +336,29 @@ TEST_CASE("a save with a creature at no health that isn't dying, or dying with h
     entities.emplace<game::Dying>(entities.view<const game::Health>().front());
     const bool dyingLoaded = Loads(ArenaSave(dying));
     CHECK_FALSE(dyingLoaded);
+}
+
+// A save of one fox easing in from `arriving`.
+std::vector<std::byte> ArrivingSave(game::Arriving arriving) {
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::Entity fox = SpawnFox(state, { .current = FOX_HEALTH, .max = FOX_HEALTH });
+    state[game::ACTIVE].Entities().emplace<game::Orbit>(fox);
+    state[game::ACTIVE].Entities().emplace<game::Arriving>(fox, arriving);
+    return ArenaSave(state);
+}
+
+TEST_CASE("a save with an arrival of no ticks, or from NaN, is refused, and the game is unchanged") {
+    constexpr u32 ARRIVAL = 180;
+    constexpr f32 NOT_A_NUMBER = std::numeric_limits<f32>::quiet_NaN();
+    const std::vector<std::byte> sound = ArrivingSave({ .from = {}, .startTick = 0, .ticks = ARRIVAL });
+    core::Reader reader{ sound };
+    game::Arena game(test::TestManifest(), game::Scene::Arena);
+    CHECK(game.Load(reader));
+    const bool noTicks = Loads(ArrivingSave({ .from = {}, .startTick = 0, .ticks = 0 }));
+    CHECK_FALSE(noTicks);
+    const bool fromNowhere =
+        Loads(ArrivingSave({ .from = { .x = NOT_A_NUMBER, .y = 0.0F }, .startTick = 0, .ticks = ARRIVAL }));
+    CHECK_FALSE(fromNowhere);
 }
 
 TEST_CASE("a save with a world NPC that has no needs is refused, and the game is unchanged") {
