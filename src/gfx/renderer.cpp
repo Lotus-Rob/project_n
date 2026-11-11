@@ -161,12 +161,12 @@ struct Renderer::Impl {
     // Each quad of numberPages from meshVertices' quad `firstQuad` on, into meshRuns.
     void AddNumberRuns(u32 firstQuad);
     // `item`, laid out as `layout`, at its own anchor and size, its colour scaled by `opacity`.
-    void PlaceText(const core::TextItem& item, const Layout& layout, const Shown& shown, f32 opacity);
+    void PlaceText(const core::TextItem& item, const Layout& layout, f32 opacity);
     // `item`, a number running top to bottom, shaped and drawn at `pixels`, moved by its scatter and risen by its lift
     // from its anchor, or from its creature's NumberOrigin. Numbers across are composed instead (PlaceNumbers()).
-    void PlaceNumber(const core::TextItem& item, const Shown& shown, f32 pixels);
+    void PlaceNumber(const core::TextItem& item);
     // The label pass's input for `item`, a label, raised to the hovered or selected priority when it names those.
-    LabelInput LabelOf(const core::TextItem& item, const Shown& shown, core::StableId hovered, core::StableId selected);
+    LabelInput LabelOf(const core::TextItem& item, core::StableId hovered, core::StableId selected);
     // Each label's stackWidth: its name as a stack with as many digits as the frame's count can have; a label whose stack
     // text isn't complete isn't either.
     void MeasureStacks();
@@ -211,6 +211,20 @@ struct Renderer::Impl {
     internal::MeshRenderer meshes{};
     internal::Compositor compositor{};
     internal::SceneTarget sceneTarget{};
+    // What every text of a frame shares, worked out once a frame by PlaceTexts(): the functions it calls for each text
+    // (TextOf(), LabelOf(), PlaceText(), PlaceNumber(), PlaceLabel(), PlaceLayout()) read it and have no zones, as a
+    // zone costs more than one text's work (src/AGENTS.md); PlaceTexts()' zone measures them.
+    struct TextFrame {
+        ClipTransform clip{};
+        f32 alpha = 1.0F;
+        u32 width = 0;
+        u32 height = 0;
+        f32 perUnit = 0.0F; // PixelsPerUnit()
+        f32 labelPixels = 0.0F;
+        f32 captionPixels = 0.0F;
+        f32 numberPixels = 0.0F;
+    };
+    TextFrame textFrame{};
     // Per-frame state: the frame in flight, what its uploads hold, and the failures being counted.
     std::optional<internal::Frame> frame = std::nullopt; // acquired by Acquire(), submitted by Draw()
     UploadedSnapshot uploaded{};
@@ -222,7 +236,9 @@ struct Renderer::Impl {
     CaptionFades captionFades{};
     std::vector<LabelInput> labelInputs{};
     std::vector<NumberOrigin> numberOrigins{}; // by entity: where this frame's tiny creatures' numbers start
-    std::vector<u32> numberPages{};            // the glyph page of each quad PlaceNumbers() placed this frame
+    std::vector<u32> numberPages{};
+    std::vector<std::size_t>
+        numberQuads{}; // PlaceNumbers()' scratch            // the glyph page of each quad PlaceNumbers() placed this frame
     std::vector<MeshVertex> meshVertices{};
     std::vector<internal::MeshRun> meshRuns{};
     core::RepeatedFailure failures{};
@@ -283,7 +299,6 @@ std::expected<void, core::Error> Renderer::Impl::MakeGlyphPages() {
 }
 
 std::string_view Renderer::Impl::TextOf(const core::TextItem& item) {
-    PN_PROFILE_ZONE();
     if (item.kind != core::TextKind::Number) {
         return strings->Text(item.string, textOptions.language);
     }
@@ -300,20 +315,26 @@ void Renderer::Impl::PlaceTexts(const Shown& shown, core::Jobs& jobs) {
     };
     const core::StableId hovered = idOf(shown.view->outlined);
     const core::StableId selected = idOf(snapshot.selected);
-    const f32 captionOpacity = CaptionOpacity(
-        TextPixels(core::TextKind::Caption, PixelsPerUnit(shown.view->camera, shown.width, shown.height), textOptions.scale),
-        textOptions.scale
-    );
+    const f32 perUnit = PixelsPerUnit(shown.view->camera, shown.width, shown.height);
+    textFrame = { .clip = WorldToClip(shown.view->camera, shown.width, shown.height),
+                  .alpha = static_cast<f32>(shown.view->alpha),
+                  .width = shown.width,
+                  .height = shown.height,
+                  .perUnit = perUnit,
+                  .labelPixels = TextPixels(core::TextKind::Label, perUnit, textOptions.scale),
+                  .captionPixels = TextPixels(core::TextKind::Caption, perUnit, textOptions.scale),
+                  .numberPixels = TextPixels(core::TextKind::Number, perUnit, textOptions.scale) };
+    const f32 captionOpacity = CaptionOpacity(textFrame.captionPixels, textOptions.scale);
     labelInputs.clear();
     captionFades.Begin(shown.view->frameClock);
     for (const std::span<const core::TextItem> texts : { std::span<const core::TextItem>{ snapshot.texts }, shown.extra }) {
         for (const core::TextItem& item : texts) {
             if (item.kind == core::TextKind::Caption) {
                 const Layout& layout = text->Lay(TextOf(item), item.direction);
-                PlaceText(item, layout, shown, captionOpacity * captionFades.Opacity(item.string, layout.complete));
+                PlaceText(item, layout, captionOpacity * captionFades.Opacity(item.string, layout.complete));
             }
             else if (item.kind == core::TextKind::Label) {
-                labelInputs.push_back(LabelOf(item, shown, hovered, selected));
+                labelInputs.push_back(LabelOf(item, hovered, selected));
             }
         }
     }
@@ -327,14 +348,12 @@ void Renderer::Impl::PlaceTexts(const Shown& shown, core::Jobs& jobs) {
         PlaceLabel(item, placed.count, placed.opacity * placed.change, placed.anchor, pixels);
     }
     FindNumberOrigins();
-    const f32 numberPixels =
-        TextPixels(core::TextKind::Number, PixelsPerUnit(shown.view->camera, shown.width, shown.height), textOptions.scale);
     const NumberPlacement placement{ .face = NumberFaceOf(*text),
-                                     .clip = WorldToClip(shown.view->camera, shown.width, shown.height),
-                                     .alpha = static_cast<f32>(shown.view->alpha),
-                                     .width = shown.width,
-                                     .height = shown.height,
-                                     .pixels = numberPixels,
+                                     .clip = textFrame.clip,
+                                     .alpha = textFrame.alpha,
+                                     .width = textFrame.width,
+                                     .height = textFrame.height,
+                                     .pixels = textFrame.numberPixels,
                                      .outline = textOptions.outline,
                                      .shadow = textOptions.shadow,
                                      .origins = numberOrigins };
@@ -342,14 +361,14 @@ void Renderer::Impl::PlaceTexts(const Shown& shown, core::Jobs& jobs) {
     numberPages.clear();
     const std::array<std::span<const core::TextItem>, 2> sources{ { snapshot.texts, shown.extra } };
     for (const std::span<const core::TextItem> texts : sources) {
-        PlaceNumbers(texts, placement, jobs, meshVertices, numberPages);
+        PlaceNumbers(texts, placement, jobs, meshVertices, numberPages, numberQuads);
     }
     AddNumberRuns(firstQuad);
     // No number runs down so far; one that does is shaped, after those across.
     for (const std::span<const core::TextItem> texts : sources) {
         for (const core::TextItem& item : texts) {
             if (item.kind == core::TextKind::Number && item.direction != core::TextDirection::LeftToRight) {
-                PlaceNumber(item, shown, numberPixels);
+                PlaceNumber(item);
             }
         }
     }
@@ -382,15 +401,15 @@ void Renderer::Impl::AddNumberRuns(u32 firstQuad) {
     }
 }
 
-void Renderer::Impl::PlaceNumber(const core::TextItem& item, const Shown& shown, f32 pixels) {
-    PN_PROFILE_ZONE();
+void Renderer::Impl::PlaceNumber(const core::TextItem& item) {
     if (item.opacity <= 0.0F) {
         return;
     }
+    const f32 pixels = textFrame.numberPixels;
     const auto origin = std::ranges::lower_bound(numberOrigins, item.entity, {}, &NumberOrigin::entity);
     core::Vec2 start = origin != numberOrigins.end() && origin->entity == item.entity
                            ? origin->start
-                           : TextAnchor(item, *shown.view, shown.width, shown.height);
+                           : TextAnchor(item, textFrame.clip, textFrame.alpha, textFrame.width, textFrame.height);
     start.x += item.scatter.x * pixels;
     start.y += (item.scatter.y - item.lift) * pixels;
     PlaceLayout(
@@ -427,7 +446,6 @@ void Renderer::Impl::MeasureStacks() {
 }
 
 void Renderer::Impl::PlaceLabel(const core::TextItem& item, u32 count, f32 opacity, core::Vec2 anchor, f32 pixels) {
-    PN_PROFILE_ZONE();
     if (opacity <= 0.0F) {
         return;
     }
@@ -447,15 +465,9 @@ void Renderer::Impl::PlaceLabel(const core::TextItem& item, u32 count, f32 opaci
     );
 }
 
-LabelInput Renderer::Impl::LabelOf(
-    const core::TextItem& item,
-    const Shown& shown,
-    core::StableId hovered,
-    core::StableId selected
-) {
-    PN_PROFILE_ZONE();
-    const f32 perUnit = PixelsPerUnit(shown.view->camera, shown.width, shown.height);
-    const f32 pixels = TextPixels(item.kind, perUnit, textOptions.scale);
+LabelInput Renderer::Impl::LabelOf(const core::TextItem& item, core::StableId hovered, core::StableId selected) {
+    const f32 perUnit = textFrame.perUnit;
+    const f32 pixels = textFrame.labelPixels;
     const Layout& layout = text->Lay(TextOf(item), item.direction);
     const f32 scale = pixels / SDF_BASE_PIXELS;
     core::LabelPriority priority = item.priority;
@@ -466,7 +478,7 @@ LabelInput Renderer::Impl::LabelOf(
         priority = std::max(priority, core::LabelPriority::Hovered);
     }
     const f32 height = layout.height * scale;
-    core::Vec2 anchor = TextAnchor(item, *shown.view, shown.width, shown.height);
+    core::Vec2 anchor = TextAnchor(item, textFrame.clip, textFrame.alpha, textFrame.width, textFrame.height);
     if (item.align == core::TextAlign::TopCentre) {
         anchor.y += height; // the pass takes the middle of a box's bottom edge
     }
@@ -482,8 +494,7 @@ LabelInput Renderer::Impl::LabelOf(
              .item = item };
 }
 
-void Renderer::Impl::PlaceText(const core::TextItem& item, const Layout& layout, const Shown& shown, f32 opacity) {
-    PN_PROFILE_ZONE();
+void Renderer::Impl::PlaceText(const core::TextItem& item, const Layout& layout, f32 opacity) {
     if (opacity <= 0.0F) {
         return;
     }
@@ -491,15 +502,14 @@ void Renderer::Impl::PlaceText(const core::TextItem& item, const Layout& layout,
     faded.opacity *= opacity;
     PlaceLayout(
         layout,
-        TextAnchor(item, *shown.view, shown.width, shown.height),
+        TextAnchor(item, textFrame.clip, textFrame.alpha, textFrame.width, textFrame.height),
         item.align,
-        TextPixels(item.kind, PixelsPerUnit(shown.view->camera, shown.width, shown.height), textOptions.scale),
+        TextPixels(item.kind, textFrame.perUnit, textOptions.scale),
         TextColour(faded, textOptions.outline, textOptions.shadow)
     );
 }
 
 void Renderer::Impl::PlaceLayout(const Layout& layout, core::Vec2 anchor, core::TextAlign align, f32 pixels, u32 colour) {
-    PN_PROFILE_ZONE();
     const f32 scale = pixels / SDF_BASE_PIXELS;
     const core::Vec2 topLeft = TextTopLeft(anchor, { .x = layout.width * scale, .y = layout.height * scale }, align);
     auto quad = static_cast<u32>(meshVertices.size() / QUAD_VERTICES);

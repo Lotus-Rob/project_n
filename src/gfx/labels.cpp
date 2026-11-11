@@ -56,8 +56,9 @@ std::span<const PlacedLabel> LabelPass::Place(std::span<const LabelInput> labels
     return m_placed;
 }
 
+// Anchor() and StackText() run once per label and have no zones, as the pass's helpers: their callers' zones measure
+// them.
 std::optional<core::Vec2> LabelPass::Anchor(core::StableId entity) const {
-    PN_PROFILE_ZONE();
     const auto seen = m_seen.find(entity);
     return seen == m_seen.end() || seen->second.frame != m_frame ? std::nullopt : seen->second.anchor;
 }
@@ -480,7 +481,6 @@ void LabelPass::Cover(const Box& box, std::size_t stack, std::size_t member) {
 }
 
 void StackText(std::string& into, std::string_view stack, std::string_view name, u32 count) {
-    PN_PROFILE_ZONE();
     constexpr std::string_view NAME = "{name}";
     constexpr std::string_view COUNT = "{count}";
     // Both placeholders are found in the table's text, so a name that itself reads "{count}" stays as it is.
@@ -511,7 +511,6 @@ void StackText(std::string& into, std::string_view stack, std::string_view name,
 }
 
 std::string StackText(std::string_view stack, std::string_view name, u32 count) {
-    PN_PROFILE_ZONE();
     std::string text;
     StackText(text, stack, name, count);
     return text;

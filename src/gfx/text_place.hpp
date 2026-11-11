@@ -63,6 +63,10 @@ inline constexpr u32 TEXT_INK = 0xFF06'0404U;
 /// target pixels from the top left: interpolated by the view's alpha and never rounded.
 [[nodiscard]] core::Vec2 TextAnchor(const core::TextItem& item, const View& view, u32 width, u32 height);
 
+/// TextAnchor() with the view's world to clip transform `clip` (WorldToClip()) and alpha `alpha` already worked out: for
+/// a frame's texts, which share them.
+[[nodiscard]] core::Vec2 TextAnchor(const core::TextItem& item, const ClipTransform& clip, f32 alpha, u32 width, u32 height);
+
 /// The top-left corner, in target pixels, of a text box `size` pixels large whose `align` point is at `anchor`.
 [[nodiscard]] core::Vec2 TextTopLeft(core::Vec2 anchor, core::Vec2 size, core::TextAlign align);
 
@@ -147,13 +151,15 @@ struct NumberPlacement {
 /// (ComposeNumber()) and drawn at `placement.pixels` in its colour (TextColour()), its box's `align` point at its anchor
 /// (TextAnchor()), or its creature's origin when it has one, moved by its scatter and risen by its lift (both in ems):
 /// the quads PlaceGlyphs() gives for its shaped layout there (TextTopLeft()). Runs on `jobs` in chunks of NUMBER_CHUNK
-/// texts, each writing its own part of the output: the same bytes whatever the worker count.
+/// texts, each writing its own part of the output: the same bytes whatever the worker count. `firstQuads` is scratch the
+/// caller keeps from call to call (its contents are overwritten), so a frame allocates nothing once it has grown.
 void PlaceNumbers(
     std::span<const core::TextItem> texts,
     const NumberPlacement& placement,
     core::Jobs& jobs,
     std::vector<MeshVertex>& vertices,
-    std::vector<u32>& pages
+    std::vector<u32>& pages,
+    std::vector<std::size_t>& firstQuads
 );
 
 } // namespace gfx
