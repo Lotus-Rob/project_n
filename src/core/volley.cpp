@@ -15,6 +15,8 @@ namespace {
 constexpr u32 PURPOSE_LAUNCH = 1;
 constexpr u32 PURPOSE_RING = 2;
 constexpr u32 PURPOSE_BEND = 3;
+// Its draws put a target's index in the volley's targets where core::Random takes a stable ID: the order is fixed at
+// the cast, so the index is stable for the volley's life. Never an entity's ID there.
 constexpr u32 PURPOSE_SPREAD = 4;
 
 // How far a sword's place on the ring may stray from an even spacing, in spacings from one side to the other: the ring

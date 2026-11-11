@@ -69,20 +69,20 @@ constexpr f64 MOST_STEP = 3.0;
 // No heading turns more than this between samples, in radians.
 constexpr f64 MOST_TURN = 0.25;
 
-// Whether no step is longer than MOST_STEP times the median; all are 0 when the median is.
-bool NoJump(std::vector<f64> steps) {
+// Whether no step is longer than MOST_STEP times the median, plus `allowance`; all are 0 when both are.
+bool NoJump(std::vector<f64> steps, f64 allowance) {
     if (steps.empty()) {
         return true;
     }
     const f64 longest = std::ranges::max(steps);
     std::ranges::nth_element(steps, steps.begin() + static_cast<std::ptrdiff_t>(steps.size() / 2));
-    return longest <= MOST_STEP * steps[steps.size() / 2];
+    return longest <= (MOST_STEP * steps[steps.size() / 2]) + allowance;
 }
 
 // Checks one sword's path from its launch through its fade, sampled between ticks, for jumps in position and heading,
-// flying at `aimAt(tick)`.
+// flying at `aimAt(tick)`. `allowance` is a step a known fast motion of the aim adds, beyond MOST_STEP times the median.
 template<typename AimAt>
-void CheckSmooth(const core::Volley& volley, u32 sword, const AimAt& aimAt) {
+void CheckSmooth(const core::Volley& volley, u32 sword, const AimAt& aimAt, f64 allowance = 0.0) {
     const u64 launch = core::LaunchTick(volley, sword);
     const u64 ring = launch + volley.shape.outTicks;
     const u64 arrival = core::ArrivalTick(volley, sword);
@@ -109,7 +109,7 @@ void CheckSmooth(const core::Volley& volley, u32 sword, const AimAt& aimAt) {
     CHECK(mostTurn < MOST_TURN);
     REQUIRE_FALSE(steps[1].empty());
     for (const std::vector<f64>& phase : steps) {
-        CHECK(NoJump(phase));
+        CHECK(NoJump(phase, allowance));
     }
 }
 
@@ -500,8 +500,11 @@ TEST_CASE("a target dying near a sword's arrival leaves the sword where it strik
     for (const u32 sword : SAMPLED_SWORDS) {
         const u64 arrival = core::ArrivalTick(VOLLEY, sword);
         const u32 own = sword % 4;
-        for (const u64 died :
-             { arrival - core::COMMIT_TICKS - 1, arrival - core::COMMIT_TICKS + 1, arrival, arrival + DURING_FADE }) {
+        for (const u64 died : { arrival - core::COMMIT_TICKS - 1,
+                                arrival - core::COMMIT_TICKS,
+                                arrival - core::COMMIT_TICKS + 1,
+                                arrival,
+                                arrival + DURING_FADE }) {
             CAPTURE(sword);
             CAPTURE(died);
             std::array<core::VolleyTarget, 4> targets = FourTargets();
@@ -524,6 +527,34 @@ TEST_CASE("a target dying near a sword's arrival leaves the sword where it strik
                 CHECK(core::SwordTarget(VOLLEY, sword, arrival + (sample / SUBSTEPS), view) == struck);
             }
         }
+    }
+}
+
+TEST_CASE("a swing too long for the time left still ends on the new target at the arrival") {
+    // Two targets 500 units apart: the way at RETARGET_SPEED takes about 31 ticks, more than the COMMIT_TICKS left.
+    constexpr f32 HALF_APART = 250.0F;
+    constexpr core::Vec2 LEFT{ .x = POINT.x - HALF_APART, .y = POINT.y };
+    constexpr core::Vec2 RIGHT{ .x = POINT.x + HALF_APART, .y = POINT.y };
+    for (const u32 sword : { 0U, 498U }) { // both fly at target 0 first
+        CAPTURE(sword);
+        const u64 arrival = core::ArrivalTick(VOLLEY, sword);
+        const std::array<core::VolleyTarget, 2> targets{ {
+            { .entity = core::StableId{ 1 }, .previous = LEFT, .current = LEFT, .diedTick = arrival - core::COMMIT_TICKS },
+            { .entity = core::StableId{ 2 }, .previous = RIGHT, .current = RIGHT },
+        } };
+        const std::span<const core::VolleyTarget> view = targets;
+        REQUIRE(Distance(LEFT, RIGHT) / core::RETARGET_SPEED > static_cast<f64>(core::COMMIT_TICKS));
+        CHECK(core::SwordTarget(VOLLEY, sword, arrival, view) == 1);
+        const core::Vec2 aim = core::SwordAim(VOLLEY, sword, arrival, 1.0F, view);
+        const core::Vec2 position = core::SwordAt(VOLLEY, sword, static_cast<f64>(arrival), aim).position;
+        CHECK(position.x == RIGHT.x);
+        CHECK(position.y == RIGHT.y);
+        // The swing covers the 500 units in the COMMIT_TICKS left, eased, so near the arrival the aim, and the sword
+        // with it, moves at up to 1.5 times that average: a fast but continuous turn, which the check allows on top
+        // of the usual bound (a jump would still fail it).
+        constexpr f64 SMOOTHSTEP_PEAK = 1.5;
+        const f64 swingStep = SMOOTHSTEP_PEAK * Distance(LEFT, RIGHT) / static_cast<f64>(core::COMMIT_TICKS * SUBSTEPS);
+        CheckSmooth(VOLLEY, sword, [view, sword](f64 tick) { return AimAt(sword, tick, view); }, swingStep);
     }
 }
 
