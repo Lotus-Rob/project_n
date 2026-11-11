@@ -166,13 +166,18 @@ std::array<u32, 4> CountTargets(u64 tick, std::span<const core::VolleyTarget> ta
     return counts;
 }
 
+// Where `sword` aims on a target whose middle is at `middle`: its own spot (core::AimOffset()).
+core::Vec2 Spot(core::Vec2 middle, u32 sword) {
+    return middle + core::AimOffset(VOLLEY, sword);
+}
+
 // The aim at the render time `time`: the snapshot it leads to and the alpha that reaches it, as the renderer passes them.
 core::Vec2 AimAt(u32 sword, f64 time, std::span<const core::VolleyTarget> targets) {
     const f64 snapshot = std::ceil(time);
     return core::SwordAim(VOLLEY, sword, static_cast<u64>(snapshot), static_cast<f32>(time - snapshot + 1.0), targets);
 }
 
-// Mid-flight for every sword, and the commit window before the earliest arrival (678), so every sword can move on.
+// Mid-flight for every sword, and the commit window before the earliest arrival (681), so every sword can move on.
 constexpr u64 FIRST_DEATH = 645;
 // Mid-flight, near the end of some swings from the first death, and within the commit window of some arrivals.
 constexpr u64 SECOND_DEATH = 660;
@@ -239,6 +244,67 @@ TEST_CASE("the path curves") {
         }
         CHECK(farthest >= LEAST_BEND);
     }
+}
+
+TEST_CASE("the swords spiral out to the ring, turning the way their flight bends") {
+    // Out of the straight line from the caster to its place on the ring by at least this much of the ring's radius: a
+    // straight burst is a spoke. The spiral's widest bulge is about a quarter of the radius.
+    constexpr f64 LEAST_BULGE = 0.15;
+    constexpr u64 OUT_SAMPLES = SWORDS.outTicks * SUBSTEPS;
+    for (u32 sword = 0; sword < SWORDS.count; ++sword) {
+        CAPTURE(sword);
+        const u64 launch = core::LaunchTick(VOLLEY, sword);
+        const u64 ring = launch + SWORDS.outTicks;
+        const core::Vec2 ringPoint = core::SwordAt(VOLLEY, sword, static_cast<f64>(ring), POINT).position;
+        f64 farthest = 0.0;
+        f64 burstSide = 0.0;
+        for (u64 sample = 1; sample < OUT_SAMPLES; ++sample) {
+            const f64 tick = static_cast<f64>(launch) + (static_cast<f64>(sample) * SUBSTEP);
+            const core::Vec2 position = core::SwordAt(VOLLEY, sword, tick, POINT).position;
+            const f64 off = OffLine(position, ORIGIN, ringPoint);
+            if (off > farthest) {
+                farthest = off;
+                burstSide = Cross(ringPoint - ORIGIN, position - ORIGIN);
+            }
+        }
+        CHECK(farthest >= LEAST_BULGE * static_cast<f64>(SWORDS.ringRadius));
+        // Mid-flight it bulges to the same side of its chord as the burst did of its own: one sense of turn throughout.
+        const core::Vec2 midFlight =
+            core::SwordAt(VOLLEY, sword, static_cast<f64>(ring) + (static_cast<f64>(SWORDS.flightTicks) * 0.5), POINT).position;
+        const f64 flightSide = Cross(POINT - ringPoint, midFlight - ringPoint);
+        CHECK(burstSide * flightSide > 0.0);
+    }
+}
+
+TEST_CASE("each sword aims at its own spot a little off its target's middle, the same at every moment") {
+    constexpr core::Vec2 BEFORE{ .x = 600.0F, .y = 0.0F };
+    constexpr core::Vec2 AFTER{ .x = 640.0F, .y = 20.0F };
+    constexpr core::Vec2 DEAD_AT{ .x = 520.0F, .y = 40.0F };
+    const std::array<core::VolleyTarget, 1> living{
+        { { .entity = core::StableId{ 1 }, .previous = BEFORE, .current = AFTER } }
+    };
+    const std::array<core::VolleyTarget, 1> dead{
+        { { .entity = core::StableId{ 1 }, .previous = DEAD_AT, .current = DEAD_AT, .diedTick = START } }
+    };
+    std::vector<std::pair<f32, f32>> spots;
+    for (u32 sword = 0; sword < SWORDS.count; ++sword) {
+        CAPTURE(sword);
+        const core::Vec2 offset = core::AimOffset(VOLLEY, sword);
+        CHECK(Distance({}, offset) <= static_cast<f64>(core::AIM_SCATTER));
+        const core::Vec2 aim = core::SwordAim(VOLLEY, sword, START + 1, 1.0F, living);
+        CHECK(aim.x == AFTER.x + offset.x);
+        CHECK(aim.y == AFTER.y + offset.y);
+        // Where it plunges, too: never stepped on at a death.
+        const core::Vec2 plunge = core::SwordAim(VOLLEY, sword, START + SWORDS.flightTicks, 1.0F, dead);
+        CHECK(plunge.x == DEAD_AT.x + offset.x);
+        CHECK(plunge.y == DEAD_AT.y + offset.y);
+        spots.emplace_back(offset.x, offset.y);
+    }
+    // Spread over the creature, not piled on one point.
+    std::ranges::sort(spots);
+    const auto [last, end] = std::ranges::unique(spots);
+    constexpr std::ptrdiff_t MOST_SHARED = 10;
+    CHECK(end - last < MOST_SHARED);
 }
 
 TEST_CASE("the swords burst out in a ring") {
@@ -453,8 +519,9 @@ TEST_CASE("with every target dead, each sword plunges at the frozen point of the
         for (const u64 tick : { arrival, arrival + SWORDS.fadeTicks }) {
             const core::Vec2 aim = core::SwordAim(VOLLEY, sword, tick, 1.0F, view);
             const core::Vec2 position = core::SwordAt(VOLLEY, sword, static_cast<f64>(tick), aim).position;
-            CHECK(position.x == targets.at(last).current.x);
-            CHECK(position.y == targets.at(last).current.y);
+            const core::Vec2 spot = Spot(targets.at(last).current, sword);
+            CHECK(position.x == spot.x);
+            CHECK(position.y == spot.y);
         }
     }
     // The last to die, 2, ends every chain.
@@ -503,14 +570,14 @@ TEST_CASE("SwordTarget and SwordAim agree on the target at every moment") {
                 movedFrom = before;
             }
             const core::Vec2 aim = AimAt(sword, time, view);
-            const core::Vec2 towards = targets.at(target).current;
+            const core::Vec2 towards = Spot(targets.at(target).current, sword);
             if (moved == 0) {
                 CHECK(aim.x == towards.x);
                 CHECK(aim.y == towards.y);
                 continue;
             }
             // Swinging from the dead target's frozen point to the new one, eased, and over by the arrival.
-            const core::Vec2 from = targets.at(movedFrom).current;
+            const core::Vec2 from = Spot(targets.at(movedFrom).current, sword);
             const f64 length = std::min(
                 std::max(core::RETARGET_TICKS, Distance(from, towards) / core::RETARGET_SPEED),
                 static_cast<f64>(arrival - moved)
@@ -551,8 +618,9 @@ TEST_CASE("a target dying near a sword's arrival leaves the sword where it strik
             // At its arrival it is exactly on the target it strikes, or that one's frozen point.
             const core::Vec2 aim = core::SwordAim(VOLLEY, sword, arrival, 1.0F, view);
             const core::Vec2 position = core::SwordAt(VOLLEY, sword, static_cast<f64>(arrival), aim).position;
-            CHECK(position.x == targets.at(struck).current.x);
-            CHECK(position.y == targets.at(struck).current.y);
+            const core::Vec2 spot = Spot(targets.at(struck).current, sword);
+            CHECK(position.x == spot.x);
+            CHECK(position.y == spot.y);
             // Through its fade it stays there, on the same target, whatever dies.
             for (u64 sample = 1; sample <= (SWORDS.fadeTicks + PAST_FADE) * SUBSTEPS; ++sample) {
                 const f64 time = static_cast<f64>(arrival) + (static_cast<f64>(sample) * SUBSTEP);
@@ -582,8 +650,8 @@ TEST_CASE("a swing across the whole tagged area at the last moment ends on the n
         CHECK(core::SwordTarget(VOLLEY, sword, arrival, view) == 1);
         const core::Vec2 aim = core::SwordAim(VOLLEY, sword, arrival, 1.0F, view);
         const core::Vec2 position = core::SwordAt(VOLLEY, sword, static_cast<f64>(arrival), aim).position;
-        CHECK(position.x == RIGHT.x);
-        CHECK(position.y == RIGHT.y);
+        CHECK(position.x == Spot(RIGHT, sword).x);
+        CHECK(position.y == Spot(RIGHT, sword).y);
         const f64 swingTicks = Distance(LEFT, RIGHT) / core::RETARGET_SPEED;
         CHECK(swingTicks <= static_cast<f64>(SWORDS.commitTicks));
         const auto died = static_cast<f64>(targets[0].diedTick);
@@ -610,8 +678,8 @@ TEST_CASE("a swing too long for the time left still ends on the new target at th
         CHECK(core::SwordTarget(VOLLEY, sword, arrival, view) == 1);
         const core::Vec2 aim = core::SwordAim(VOLLEY, sword, arrival, 1.0F, view);
         const core::Vec2 position = core::SwordAt(VOLLEY, sword, static_cast<f64>(arrival), aim).position;
-        CHECK(position.x == RIGHT.x);
-        CHECK(position.y == RIGHT.y);
+        CHECK(position.x == Spot(RIGHT, sword).x);
+        CHECK(position.y == Spot(RIGHT, sword).y);
         // The same ease over the commit window instead of the way at RETARGET_SPEED.
         const f64 swingSpeed = Distance(LEFT, RIGHT) / static_cast<f64>(SWORDS.commitTicks);
         const SwingBound swing{ .from = static_cast<f64>(targets[0].diedTick),
@@ -640,8 +708,8 @@ TEST_CASE("a living target's aim is interpolated by the frame's alpha") {
     };
     constexpr core::Vec2 BETWEEN{ .x = 610.0F, .y = 5.0F }; // a quarter of the way
     const core::Vec2 aim = core::SwordAim(VOLLEY, 0, START + 1, ALPHA, targets);
-    CHECK(aim.x == doctest::Approx(BETWEEN.x));
-    CHECK(aim.y == doctest::Approx(BETWEEN.y));
+    CHECK(aim.x == doctest::Approx(Spot(BETWEEN, 0).x));
+    CHECK(aim.y == doctest::Approx(Spot(BETWEEN, 0).y));
 }
 
 TEST_CASE("with no target tagged, every sword plunges at the point") {
@@ -650,8 +718,8 @@ TEST_CASE("with no target tagged, every sword plunges at the point") {
         const u32 target = core::SwordTarget(VOLLEY, sword, START + SWORDS.flightTicks, targets);
         CHECK(target == 0);
         const core::Vec2 aim = core::SwordAim(VOLLEY, sword, START + SWORDS.flightTicks, 1.0F, targets);
-        CHECK(aim.x == POINT.x);
-        CHECK(aim.y == POINT.y);
+        CHECK(aim.x == Spot(POINT, sword).x);
+        CHECK(aim.y == Spot(POINT, sword).y);
     }
 }
 

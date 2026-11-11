@@ -18,6 +18,9 @@ constexpr u32 PURPOSE_BEND = 3;
 // Its draws put a target's index in the volley's targets where core::Random takes a stable ID: the order is fixed at
 // the cast, so the index is stable for the volley's life. Never an entity's ID there.
 constexpr u32 PURPOSE_SPREAD = 4;
+// Where on its target a sword aims (AimOffset()): the way from the target's middle, then how far.
+constexpr u32 PURPOSE_SCATTER_ANGLE = 5;
+constexpr u32 PURPOSE_SCATTER_REACH = 6;
 
 // How far a sword's place on the ring may stray from an even spacing, in spacings from one side to the other: the ring
 // looks hand-thrown, and its widest gap stays under one and a half spacings.
@@ -27,8 +30,12 @@ constexpr f64 RING_SPREAD = 0.5;
 constexpr f64 BEND_SPREAD = 0.4;
 // The bend of a short flight, as a fraction of its chord. Long flights approach the shape's sweep instead.
 constexpr f64 SHORT_BEND = 0.5;
-// The fraction of the out phase after which a sword starts turning from pointing outwards to facing its flight.
+// The fraction of the out phase after which a sword starts turning from its burst to facing its flight.
 constexpr f64 TURN_START = 0.5;
+// How far round the caster a sword's burst sweeps as it spirals out to its place on the ring, in radians: it starts this
+// far ahead of that place, the way the flight bends, and turns into it as it slows. Its path bulges about a quarter of
+// the ring's radius from the straight line, so the burst is a swirl, not spokes.
+constexpr f64 SPIRAL_TURN = 1.0;
 // A sword's speed as it leaves the caster, as a multiple of its average speed out to the ring: a burst.
 constexpr f64 BURST_SPEED = 1.5;
 // A sword's speed at its arrival, as a multiple of its average speed in flight: it still strikes rather than settles.
@@ -300,36 +307,41 @@ SwordPose SwordAt(const Volley& volley, u32 sword, f64 tick, Vec2 aim) {
     const VolleyVector ring = origin + (plan.outwards * radius);
     const f64 elapsed = tick - static_cast<f64>(plan.launch);
 
-    // Where the sword faces while it can't face where it moves: on the spot at the origin, or at rest on the ring. Planned
-    // from the cast's fixed point, then corrected to the moving aim, so its turn never flips side as the aim moves.
-    const auto facing = [&](f64 turned) -> VolleyVector {
+    // Where the sword faces while it can't face where it moves: on the spot at the origin, or at rest on the ring. It turns
+    // `turned` of the way from `burst` (an angle from pointing outwards: the way its spiral out runs) to its flight, as
+    // angles, never wrapped, so the turn never flips side as the burst's way changes. The flight's way is planned from
+    // the cast's fixed point, then corrected to the moving aim, so it never flips side as the aim moves either.
+    const auto facing = [&](f64 turned, f64 burst) -> VolleyVector {
         if (radius > 0.0 && turned <= 0.0) {
-            return plan.outwards;
+            return Rotate(plan.outwards, burst);
         }
         const VolleyVector planned = Unit(Departure(ring, Widen(volley.point), sweep, plan.bend), plan.outwards);
         const VolleyVector actual = Unit(Departure(ring, target, sweep, plan.bend), planned);
+        const f64 flight = AngleBetween(plan.outwards, planned) + AngleBetween(planned, actual);
         // With no ring to burst out to, it faces its flight from the start (the bolt).
-        return radius > 0.0
-                   ? Rotate(plan.outwards, turned * (AngleBetween(plan.outwards, planned) + AngleBetween(planned, actual)))
-                   : actual;
+        return radius > 0.0 ? Rotate(plan.outwards, burst + (turned * (flight - burst))) : actual;
     };
+    // The spiral out: `eased` of the way to the ring, still `SPIRAL_TURN × (1 − eased)` round from its place. The way it
+    // moves there is turned from its place's direction by the atan of SPIRAL_TURN × eased, back the way it sweeps.
+    const auto burstAngle = [](f64 eased) { return (SPIRAL_TURN * (1.0 - eased)) - math::Atan2(SPIRAL_TURN * eased, 1.0); };
 
     SwordPose pose{};
     if (elapsed < 0.0) {
         pose.position = volley.origin;
-        pose.heading = Narrow(facing(0.0));
+        pose.heading = Narrow(facing(0.0, burstAngle(0.0)));
         return pose;
     }
     pose.shown = 1.0F;
     if (elapsed < outTicks) {
         const f64 progress = elapsed / outTicks;
-        pose.position = Narrow(origin + (plan.outwards * (radius * Ease(progress, BURST_SPEED, 0.0))));
-        pose.heading = Narrow(facing(Ease((progress - TURN_START) / (1.0 - TURN_START), 0.0, 0.0)));
+        const f64 eased = Ease(progress, BURST_SPEED, 0.0);
+        pose.position = Narrow(origin + (Rotate(plan.outwards, SPIRAL_TURN * (1.0 - eased)) * (radius * eased)));
+        pose.heading = Narrow(facing(Ease((progress - TURN_START) / (1.0 - TURN_START), 0.0, 0.0), burstAngle(eased)));
         return pose;
     }
     // Only a flight of no length has no tangent; it faces as it did on the ring.
     const auto heading = [&facing](VolleyVector tangent) {
-        return Narrow(Length(tangent) > 0.0 ? Unit(tangent, {}) : facing(1.0));
+        return Narrow(Length(tangent) > 0.0 ? Unit(tangent, {}) : facing(1.0, 0.0));
     };
     const SwordFlight flight = FlightTo(ring, target, sweep, plan.bend);
     const f64 flown = elapsed - outTicks;
@@ -347,6 +359,13 @@ SwordPose SwordAt(const Volley& volley, u32 sword, f64 tick, Vec2 aim) {
         pose.shown = fadeTicks > 0.0 ? static_cast<f32>(std::max(0.0, 1.0 - (after / fadeTicks))) : 0.0F;
     }
     return pose;
+}
+
+Vec2 AimOffset(const Volley& volley, u32 sword) {
+    const f64 angle = FULL_TURN * ToUnit(VolleyDraw(volley, sword, PURPOSE_SCATTER_ANGLE));
+    // The square root spreads the spots evenly over the disc rather than crowding its middle.
+    const f64 reach = static_cast<f64>(AIM_SCATTER) * std::sqrt(ToUnit(VolleyDraw(volley, sword, PURPOSE_SCATTER_REACH)));
+    return { .x = static_cast<f32>(reach * math::Cos(angle)), .y = static_cast<f32>(reach * math::Sin(angle)) };
 }
 
 u32 SwordTarget(const Volley& volley, u32 sword, u64 tick, std::span<const VolleyTarget> targets) {
@@ -368,7 +387,7 @@ Vec2 SwordAim(const Volley& volley, u32 sword, u64 simulationTick, f32 alpha, st
         swinging = true;
     });
     const VolleyVector towards = Interpolated(targets[target], alpha);
-    return Narrow(swinging ? Swing(swingFrom, towards, swingStart, time, arrival) : towards);
+    return Narrow(swinging ? Swing(swingFrom, towards, swingStart, time, arrival) : towards) + AimOffset(volley, sword);
 }
 
 } // namespace core

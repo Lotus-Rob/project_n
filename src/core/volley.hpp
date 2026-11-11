@@ -30,6 +30,10 @@ inline constexpr f64 RETARGET_SPEED = 16.0;
 /// The fastest a swing at RETARGET_SPEED moves the aim, in world units a tick: its ease, 3u² − 2u³, peaks at 1.5 times
 /// its average speed, halfway through.
 inline constexpr f64 RETARGET_PEAK = 1.5 * RETARGET_SPEED;
+/// How far from its target's middle a sword's own aim lies at most, in world units (AimOffset()): about a quarter of a
+/// fox's height, so swords strike and plunge spread over a creature rather than piled on one point.
+inline constexpr f32 AIM_SCATTER = 18.0F;
+
 /// The fewest ticks a volley's commit window has (VolleyShape::commitTicks): two of the shortest swings.
 inline constexpr u32 MIN_COMMIT_TICKS = 2 * static_cast<u32>(RETARGET_TICKS);
 
@@ -183,8 +187,9 @@ struct SwordPose {
 [[nodiscard]] u64 LastArrival(const Volley& volley);
 
 /// Where `sword` (below the shape's count) is at `tick`, a simulation tick or a render time between two, flying at `aim`
-/// (SwordAim()). Before its launch it waits unseen at the origin. For `outTicks` it bursts out, pointing outwards and
-/// slowing, to its place on a ring of `ringRadius` round the origin, and turns there to face its flight. For
+/// (SwordAim()). Before its launch it waits unseen at the origin. For `outTicks` it spirals out, facing the way it moves
+/// and slowing, to its place on a ring of `ringRadius` round the origin, sweeping round the origin the way its flight
+/// bends, and turns there to face its flight. For
 /// `flightTicks` it flies a curve that bends to the same side for every sword (so the ring swirls) and ends at `aim`,
 /// wherever that moves, speeding up and then slowing a little. After its arrival it stays at `aim` and fades. A volley of
 /// no ring and no sweep (the bolt) flies straight. A pure function: the same inputs give the same bits on every thread.
@@ -206,16 +211,22 @@ struct SwordPose {
 /// before the tick's deaths, so a target dying on that tick still takes the hit (VolleyTarget::diedTick).
 [[nodiscard]] u32 SwordTarget(const Volley& volley, u32 sword, u64 tick, std::span<const VolleyTarget> targets);
 
+/// Where on its target `sword` (below the shape's count) aims, from the target's middle: a point within AIM_SCATTER,
+/// drawn from the volley's seed, spread evenly over that disc. The same at every moment, so SwordAim() always adds it and
+/// the aim never steps.
+[[nodiscard]] Vec2 AimOffset(const Volley& volley, u32 sword);
+
 /// The aim `sword` flies at, for SwordAt() at the same moment: the moment `RenderTick(simulationTick, alpha)`, with the
 /// targets as `simulationTick` left them (the logic passes its tick and 1; the renderer the drawn snapshot's tick and the
 /// frame's alpha, so the two can't disagree). It is the position of its target (SwordTarget()), between the target's
-/// `previous` and `current` by `alpha`. When the sword moves on from a dead target, its aim eases from where it was then
-/// to the new target, over RETARGET_TICKS or the way's length at RETARGET_SPEED, whichever is longer, but always ending
-/// by the sword's arrival: the aim, and with it the sword, never jumps, and at the arrival tick it is exactly on the
-/// target it strikes. The commit window fits a swing across the tagged area, so the swing moves the aim at up to
-/// RETARGET_PEAK, on top of the sword's own flight; only targets that have since moved further apart than that area make
-/// it faster, to end by the arrival. RETARGET_PEAK can be several times a slow sword's own flight speed (a short flight):
-/// such a sword visibly speeds up through the swing, though smoothly.
+/// `previous` and `current` by `alpha`, moved by the sword's own AimOffset(), always, the frozen point of a dead one too. When
+/// the sword moves on from a dead target, its aim eases from where it was then to the new target, over RETARGET_TICKS or the
+/// way's length at RETARGET_SPEED, whichever is longer, but always ending by the sword's arrival: the aim, and with it the
+/// sword, never jumps, and at the arrival tick it is exactly on its spot on the target it strikes. The commit window fits a
+/// swing across the tagged area, so the swing moves the aim at up to RETARGET_PEAK, on top of the sword's own flight; only
+/// targets that have since moved further apart than that area make it faster, to end by the arrival. RETARGET_PEAK can be
+/// several times a slow sword's own flight speed (a short flight): such a sword visibly speeds up through the swing, though
+/// smoothly.
 [[nodiscard]] Vec2 SwordAim(
     const Volley& volley,
     u32 sword,
