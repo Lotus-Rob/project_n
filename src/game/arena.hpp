@@ -8,8 +8,7 @@
 ///   turning (rotation), with blob shadows;
 /// - the player's cultivator, walked by held input, which the camera follows and the logic culls around;
 /// - a pack of foxes circling it wherever it walks and glowing orbs circling its start (orbits, the additive pipeline), the
-/// foxes and the
-///   cultivator from the creatures data table (hot reload in debug builds);
+///   foxes and the cultivator from the creatures data table (hot reload in debug builds);
 /// - click-to-select, the selected entity outlined in gold and the hovered one in pale white;
 /// - NPCs walking in the active tier and 5,000 in the world tier, whose months pass on request (§7.7);
 /// - saves, loads and replays of all of it;
@@ -22,9 +21,12 @@
 ///   over its head (core::HealthBar);
 /// - Qi and cooldowns (game/combat.hpp): a cast spends or gains the player's Qi and cools its slot down; the dash moves
 ///   the player;
-/// - the flying swords and the fire bolt (game/combat.hpp): volleys that tag the foxes round the point, follow them,
-///   move on from the dead and strike at their scheduled ticks; the bolt's hit leaves a burn that ticks; the main
-///   thread draws them at the render time with halos and trails, and the foxes' health bars (gfx/volley_draw.hpp);
+/// - the abilities, cast at the world point under the cursor in this combat scene (the loadout and every number from
+///   the abilities data table): the flying swords and the fire bolt (game/combat.hpp), volleys that tag the foxes
+///   round the point, follow them, move on from the dead and strike at their scheduled ticks, the swords formed in
+///   waves of wide, scattered rings; the bolt's hit leaves a burn that ticks; the main thread draws them at the render
+///   time with tinted cores, additive halos and trails, and the foxes' health bars (gfx/volley_draw.hpp);
+///   `--cast-swords` casts the swords on a timer for a profile run;
 /// - the poison lance (game/combat.hpp): a strike that hits and poisons every fox round the point at once, its burst a
 ///   flash the main thread draws in the poison's colour; and the temporary HUD (app/hud.hpp) of the player's health,
 ///   Qi and slots, from the caster state the arena publishes;
