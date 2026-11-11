@@ -170,4 +170,33 @@ TEST_CASE("a registered thread forks, joins and runs background jobs") {
     CHECK(background == 1);
 }
 
+TEST_CASE("a pending job found done runs no other work while it goes") {
+    // Done() once read a counter set before enkiTS marked the task complete, and the destructor's wait then ran the
+    // next low-priority task on this thread. The window is a few instructions wide: before the fix, these rounds lost it
+    // 18 to 103 times a run (six runs on a many-core machine, about 0.15 s each), so a run misses it about once in e^18;
+    // after it, none can. Both spins yield, so a runner with one core (where the race can't show) isn't held up.
+    constexpr u32 ROUNDS = 150'000;
+    core::Jobs jobs{ 1 };
+    const std::thread::id self = std::this_thread::get_id();
+    u32 intrusions = 0;
+    for (u32 round = 0; round < ROUNDS; ++round) {
+        std::atomic<bool> going = false;
+        std::atomic<bool> intruded = false;
+        std::optional<core::Jobs::Pending> first{ jobs.Start(1, [](u32 /*chunk*/) {}) };
+        const core::Jobs::Pending second =
+            jobs.Start(1, [&](u32 /*chunk*/) { intruded.store(going.load() && std::this_thread::get_id() == self); });
+        while (!first->Done()) {
+            std::this_thread::yield();
+        }
+        going.store(true);
+        first.reset();
+        going.store(false);
+        while (!second.Done()) {
+            std::this_thread::yield();
+        }
+        intrusions += intruded.load() ? 1 : 0;
+    }
+    CHECK(intrusions == 0);
+}
+
 } // namespace
