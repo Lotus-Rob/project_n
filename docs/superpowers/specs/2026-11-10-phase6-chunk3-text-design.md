@@ -226,30 +226,30 @@ measurements behind the chosen values, and what is left open for the user.
 
 ### What was built
 
-Commit hashes are after the squash (ruling 5): each task's review fix rounds are folded into its commit.
+Commit hashes are main's, after the rebase merge (PR #20); each task's review fix rounds are folded into its commit (ruling 5).
 
-- **Strings and the mesh path** (before this plan): `559d01b` the strings table and language setting; `72fa922` the mesh
+- **Strings and the mesh path** (before this plan): `a3b4943` the strings table and language setting; `4440e1a` the mesh
   path.
-- **Task 1, settings** (`315b7bd`): `combined_damage_numbers`, `damage_number_motion`,
+- **Task 1, settings** (`8714d27`): `combined_damage_numbers`, `damage_number_motion`,
   `text_outline`, `text_shadow`, each with its default; an unknown value is a warning and the default.
-- **Task 2, events** (`d3c6ddd`): the crystal's aura emits hit events (damage, and healing of the player), and
+- **Task 2, events** (`a2ab1e4`): the crystal's aura emits hit events (damage, and healing of the player), and
   F7's debug burst emits 4,000 hits; the game's random purposes live in one table.
-- **Task 3, the glyph cache** (`a9720c4`): glyphs as distance fields, rasterised on a worker as
+- **Task 3, the glyph cache** (`b54d7eb`): glyphs as distance fields, rasterised on a worker as
   low-priority work, after a start-up pre-warm.
-- **Task 4, drawing** (`1ed40cc`): the field shader, text sized by the window's fit, supersampled edges, and
+- **Task 4, drawing** (`9ddfa3d`): the field shader, text sized by the window's fit, supersampled edges, and
   the shimmer and jitter pictures.
-- **Task 5, labels** (`590a97d`): stacking, priority,
+- **Task 5, labels** (`aed2faf`): stacking, priority,
   fades and hysteresis.
-- **Task 6, damage numbers** (`2cca0a1`, `d3c6ddd`): every hit as text, by kind, in
+- **Task 6, damage numbers** (`d3dad39`, `a2ab1e4`): every hit as text, by kind, in
   bounce or rise motion, with the scatter and stagger below.
-- **Task 7, `--burst`** (`eb141b4`): `--burst` sends the debug burst once a second of wall time (`platform::NowNs`), so
+- **Task 7, `--burst`** (`a53f9b8`): `--burst` sends the debug burst once a second of wall time (`platform::NowNs`), so
   `project_n profile -- --burst` sees it with no key press; `app::HasFlag` reads the flag, so `main.cpp` has no logic of
   its own to test.
-- **Task 8, cheap damage numbers** (`db01c39`): a number is composed from its characters laid out alone
+- **Task 8, cheap damage numbers** (`d13b135`): a number is composed from its characters laid out alone
   (`gfx::NumberFace`, `ComposeNumber`), with no string and no layout lookup, and placed on the job system in fixed
   chunks of 256 texts (`gfx::PlaceNumbers`), each writing its own slice of the vertices; the per-number profiler zones
   are gone. Drawn pixels are unchanged.
-- **The final review's fixes** (`6c4bf6e`, `918c3bb`, `3af50c1`, `4914d5e`, `88574b1`, and this record):
+- **The final review's fixes** (`9b492fc`, `5cf5e28`, `5c9a3b8`, `d89c925`, `c3ec48f`, and this record):
   `core::Jobs::Pending` is done only once enkiTS is (ruling 47); labels fade on a frame clock that runs while the game is
   paused (43); labels never pop, and text still rasterising is held back, then faded in (44); damage numbers turn dark
   with the outline and shadow off (45); combined numbers starting on one target together scatter (46); the per-label
@@ -410,13 +410,13 @@ should look at.
     decode) inside a frame; `Done()` now also requires enkiTS's completion. A test runs the race 150,000 times, yielding
     while it waits (before the fix a run lost it 18 to 103 times). Checking it under ThreadSanitizer found `core_tests` already failing there
     (14 reports): `Start()` and `Background()` gave TSan no fork edge, as `ParallelFor` does, so they now do
-    (`88574b1`); `core_tests`, `gfx_tests` and `app_tests` pass under it. If wrong, a small core change outside the
+    (`c3ec48f`); `core_tests`, `gfx_tests` and `app_tests` pass under it. If wrong, a small core change outside the
     chunk's scope.
 48. **Flag to user: numbers on normally sized creatures start over that creature's own name label** (the reviewer
     declined to judge it; aesthetic) and stay so. If wrong, numbers offset above labels.
 49. **Builds rewriting `xmake-requires.lock` stays out of this branch** (sweep-up backlog); the PR carries no rewritten
     lock. Costs nothing here.
-50. **The ThreadSanitizer fork edges (`88574b1`) stay in this branch** rather than a branch of their own: they were found
+50. **The ThreadSanitizer fork edges (`c3ec48f`) stay in this branch** rather than a branch of their own: they were found
     while verifying ruling 47's race fix, which needs `core_tests` clean under TSan to be believed, and `core_tests`
     already failed there before this branch. If wrong, a core fix that could have been reviewed on its own.
 51. **The dark number colours live in `app::DamageNumbers`** (`DARK_KIND_COLOURS` beside `KIND_COLOURS`, chosen when
