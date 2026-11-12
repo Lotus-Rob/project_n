@@ -181,15 +181,15 @@ inline constexpr Stage SPRITE_FRAG{
 };
 
 /// shaders/bin/sprite.vert.spv, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 8332> SPRITE_VERT_SPIRV{{
+inline constexpr std::array<u8, 13360> SPRITE_VERT_SPIRV{{
 #include "sprite.vert.spv.h"
 }};
 /// shaders/bin/sprite.vert.dxil, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 8484> SPRITE_VERT_DXIL{{
+inline constexpr std::array<u8, 9612> SPRITE_VERT_DXIL{{
 #include "sprite.vert.dxil.h"
 }};
 /// shaders/bin/sprite.vert.msl, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 5258> SPRITE_VERT_MSL{{
+inline constexpr std::array<u8, 11885> SPRITE_VERT_MSL{{
 #include "sprite.vert.msl.h"
 }};
 /// shaders/sprite.vert.hlsl.
