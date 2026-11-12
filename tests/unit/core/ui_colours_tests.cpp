@@ -79,7 +79,7 @@ TEST_CASE("a colour set in the table reads back, and the others stay") {
 }
 
 TEST_CASE("the new elements' defaults are the sRGB colours they are named by") {
-    CHECK(core::FromSrgb(0xCF, 0xE3, 0xFF, 0xFF) == Default(core::UiColour::DamageEffect));
+    CHECK(core::FromSrgb(0x6F, 0xA8, 0xFF, 0xFF) == Default(core::UiColour::DamageEffect));
     CHECK(core::FromSrgb(0x8F, 0xE3, 0xA8, 0xFF) == Default(core::UiColour::HealingEffect));
     CHECK(core::FromSrgb(0x7C, 0xD9, 0x57, 0xFF) == Default(core::UiColour::PoisonEffect));
     CHECK(core::FromSrgb(0xFF, 0x8A, 0x3D, 0xFF) == Default(core::UiColour::BurnEffect));

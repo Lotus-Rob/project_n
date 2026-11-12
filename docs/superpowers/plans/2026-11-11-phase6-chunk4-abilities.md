@@ -284,9 +284,9 @@ by `gfx::TEXT_INK`), the renderer (`HOVER_COLOUR`, `SELECTED_COLOUR`) and the ap
   `struct UiColours { std::array<u32, UI_COLOURS> colours; u32 Of(UiColour) const; void Set(UiColour, u32); }`,
   default-built to `DEFAULT_UI_COLOURS`. Values are packed as drawn: linear, premultiplied, red in the low byte (as
   `TextItem::colour`). The defaults are **today's constants, bit for bit**, so no picture changes. The new elements'
-  defaults, in sRGB: effects damage #CFE3FF (pale steel blue), healing #8FE3A8, poison #7CD957, burn #FF8A3D; health
-  bar and enemy health bar #D8574A, Qi bar #5AA9E6, bar background #20242A; HUD text #F4EFE6, cooling #8A8F96,
-  warning #F08A5D.
+  defaults, in sRGB: effects damage #6FA8FF (azure; Task 10e, from the near-white #CFE3FF), healing #8FE3A8, poison
+  #7CD957, burn #FF8A3D; health bar and enemy health bar #D8574A, Qi bar #5AA9E6, bar background #20242A; HUD text
+  #F4EFE6, cooling #8A8F96, warning #F08A5D.
   `u32 FromSrgb(u8 r, u8 g, u8 b, u8 a)` and its inverse, for chunk 11's menu (exact round trip on every default).
 - Produces: `core::Settings::uiColours` (`core::UiColours`, defaults). `settings.yaml` doesn't read it until chunk 11.
 - Produces: `gfx::Renderer::Create(..., const TextOptions&, const core::UiColours&)` and
