@@ -36,14 +36,6 @@ float4 Dissolved(float4 colour, VertexOut input, float2 uvPerPixel) {
     return colour;
 }
 
-// The sprite's coverage at `uv`: transparent outside its region, where its neighbours on the page lie.
-float CoverageAt(float2 uv, VertexOut input) {
-    if (any(uv < input.region.xy) || any(uv > input.region.zw)) {
-        return 0.0;
-    }
-    return atlas.SampleLevel(atlasSampler, float3(uv, input.layer), 0).a;
-}
-
 // A sprite wearing a glow, its quad grown by the glow's reach: the sprite over its glow. The glow covers everything under
 // the sprite and fades out from its edge (the field's one half) between the shape's two distances, reaching nothing at the
 // reach; light's alpha is 0, so it adds to what is under it, while ink covers it.
@@ -52,7 +44,7 @@ float4 Glowing(VertexOut input, float2 uvPerPixel) {
     const bool inRegion = all(input.uv >= input.region.xy) && all(input.uv <= input.region.zw);
     const float4 sampled = atlas.Sample(atlasSampler, float3(input.uv, input.layer)) * input.colour;
     // Texels from the sprite's edge, negative inside. This sample's mip and fwidth() below take derivatives after
-    // FragmentMain()'s branches, which is sound: they test flat per-instance inputs (`ring`, `glowShape`), so every pixel
+    // FragmentMain()'s branches, which is sound: they test flat per-instance inputs (`glowOnly`, `glowShape`), so every pixel
     // of a primitive's 2x2 quads takes the same way.
     const float outside = (field.Sample(fieldSampler, float3(input.uv, input.layer)) - 0.5) * (2.0 * FIELD_REACH_TEXELS);
     // A screen pixel in texels: the fade is never sharper than that.
@@ -61,6 +53,10 @@ float4 Glowing(VertexOut input, float2 uvPerPixel) {
     // The fade ends at the reach itself, not a pixel past it: the quad ends there, and a reach of the field's whole 16
     // texels would otherwise cover every texel beyond the field, which reads 16.
     const float coverage = outside <= 0.0 ? 1.0 : 1.0 - smoothstep(shape.y - pixel, shape.x, outside);
+    if (input.glowOnly != 0) {
+        // Only the glow: no sprite colour, and none of it over the sprite's opaque pixels.
+        return input.glowColour * (coverage * (1.0 - (inRegion ? sampled.a : 0.0)));
+    }
     // The glow goes with the sprite's discarded blocks; it fades by the dissolve already (the vertex stage).
     const float4 sprite = Dissolved(inRegion ? sampled : 0.0, input, uvPerPixel);
     return sprite + input.glowColour * (coverage * (1.0 - sprite.a));
@@ -71,20 +67,11 @@ float4 FragmentMain(VertexOut input) : SV_Target0 {
     // inputs, the same for every pixel of a primitive's quads, so derivatives taken inside them (Glowing(), the samples)
     // stay defined.
     const float2 uvPerPixel = fwidth(input.uv);
-    if (input.ring == 0.0) {
-        if (input.glowShape.x > 0.0) {
-            return Glowing(input, uvPerPixel);
-        }
-        return Dissolved(atlas.Sample(atlasSampler, float3(input.uv, input.layer)) * input.colour, input, uvPerPixel);
+    if (input.glowShape.x > 0.0) {
+        return Glowing(input, uvPerPixel);
     }
-    // An outline: the ring of transparent pixels within the ring's width of the sprite's coverage.
-    const float inside = CoverageAt(input.uv, input);
-    float near = 0.0;
-    [unroll] for (uint i = 0; i < 16; ++i) {
-        float sine, cosine;
-        sincos(i * (6.28318530 / 16.0), sine, cosine);
-        near = max(near, CoverageAt(input.uv + float2(cosine, sine) * input.ring, input));
-        near = max(near, CoverageAt(input.uv + float2(cosine, sine) * (input.ring * 0.5), input));
+    if (input.glowOnly != 0) {
+        return 0.0; // a role that reaches nothing draws nothing
     }
-    return input.colour * saturate(near - inside);
+    return Dissolved(atlas.Sample(atlasSampler, float3(input.uv, input.layer)) * input.colour, input, uvPerPixel);
 }

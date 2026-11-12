@@ -60,8 +60,8 @@ struct Draw {
     float4 worldToClip;   // clip = world * xy + zw (gfx::ClipTransform)
     float alpha;          // the render clock's progress from previous to current
     uint firstInstance;   // this batch's first instance: SV_InstanceID counts from 0 in every draw
-    uint outlineColour;   // an outline draw's premultiplied RGBA8; 0 for sprites
-    float ring;           // an outline draw's ring width in UV, its quad grown by as much on every side
+    uint glowOnlyRole;    // a glow-only draw's role (core::GlowRole), drawn alone from the instance's own drive; 0 for sprites
+    float padding0;       // to the next row
     uint glowTick;        // the render clock's whole tick, low 32 bits (gfx::GlowTime)
     float glowFraction;   // how far past that tick the render clock is, 0 to 1
     float zoom;           // the camera's zoom: glows thin as it grows
@@ -105,13 +105,24 @@ float CurveAt(uint curve, float fraction) {
     return held;
 }
 
+// CurveMean() in src/core/glow.cpp, line for line: the mean of CurveAt(curve, t) over t from 0 to 1, a pulse's average.
+float CurveMean(uint curve) {
+    if (curve == CURVE_EASE_IN) {
+        return 1.0 / 3.0;
+    }
+    if (curve == CURVE_EASE_OUT) {
+        return 2.0 / 3.0;
+    }
+    return 0.5;
+}
+
 // core::GlowStrength() (src/core/glow.cpp), line for line: the drive's strength from 0 to 1. Its age is in ticks, as the
 // record's period and fade are. The C++ takes a pulse's phase in f64; here the age is the wrapping difference of 32-bit
 // ticks, whose whole ticks f32 holds exactly for 2^24 ticks (three days) after the start.
 float GlowStrength(GlowRecord glow, float value, float ageTicks, uint result, bool released, bool reduceFlashing) {
     if (glow.driveKind == DRIVE_PULSE) {
         if (reduceFlashing) {
-            return 1.0 - (glow.depth / 2.0);
+            return 1.0 - (glow.depth * (1.0 - CurveMean(glow.curve)));
         }
         const float beats = ageTicks / glow.periodTicks;
         const float phase = beats - floor(beats);
@@ -142,20 +153,23 @@ VertexOut VertexMain(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceI
     const float2 regionMin = UnpackUnorm16(instance.regionMin);
     const float2 regionMax = UnpackUnorm16(instance.regionMax);
     const float2 size = UnpackHalves(instance.size);
-    const float4 colour = UnpackColour(draw.outlineColour != 0 ? draw.outlineColour : instance.colour);
-    const float dissolve = (instance.layerFlags >> 16) / 65535.0;
-    // How far past the region the quad reaches, in UV: an outline's ring, or a glow's reach.
-    float grow = draw.ring;
+    // A glow-only draw wears the role it is told, whatever the instance wears, at full colour and whole.
+    const bool glowOnly = draw.glowOnlyRole != 0;
+    const float4 colour = glowOnly ? float4(1.0, 1.0, 1.0, 1.0) : UnpackColour(instance.colour);
+    const float dissolve = glowOnly ? 0.0 : (instance.layerFlags >> 16) / 65535.0;
+    // How far past the region the quad reaches, in UV: a glow's reach.
+    float grow = 0.0;
     float4 glowColour = 0.0;
     float2 glowShape = 0.0;
-    const uint role = instance.glow & 0xFF;
-    if (role != 0 && role < GLOW_ROLES && draw.ring == 0.0) {
+    const uint glowWord = glowOnly ? 0 : instance.glow;
+    const uint role = glowOnly ? draw.glowOnlyRole : (instance.glow & 0xFF);
+    if (role != 0 && role < GLOW_ROLES) {
         const GlowRecord glow = glows[role];
         // Thinner as the camera zooms in; zoomed out, it stops at the field's reach.
         const float reach = min(glow.size * pow(1.0 / draw.zoom, glow.zoomShrink), FIELD_REACH_TEXELS);
-        const uint element = min((instance.glow >> 16) & 0xFF, LAST_ELEMENT);
-        const uint result = (instance.glow >> 8) & 0xFF;
-        const bool released = ((instance.glow >> 24) & 1) != 0;
+        const uint element = min((glowWord >> 16) & 0xFF, LAST_ELEMENT);
+        const uint result = (glowWord >> 8) & 0xFF;
+        const bool released = ((glowWord >> 24) & 1) != 0;
         const bool reduceFlashing = draw.reduceFlashing != 0;
         // A progress with a result shows the result's colour.
         uint packedTint = glow.colour != 0 ? glow.colour : draw.elementColours[element];
@@ -168,7 +182,7 @@ VertexOut VertexMain(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceI
         const float age = float(int(draw.glowTick - instance.glowStart)) + draw.glowFraction;
         const float strength =
             GlowStrength(glow, lerp(values.x, values.y, draw.alpha), age, result, released, reduceFlashing);
-        // Reduce flashing dims light, never ink: an outline dimmed would read worse, and it doesn't flash.
+        // Reduce flashing dims light, never ink: a selection outline dimmed would read worse, and it doesn't flash.
         const float opacity = glow.opacity * (reduceFlashing && glow.blend != GLOW_BLEND_INK ? REDUCED_LIGHT_OPACITY : 1.0);
         // The instance's alpha already fades the sprite's premultiplied colour once; the glow fades with it again, so a
         // fading sprite's glow is gone before the sprite is.
@@ -179,7 +193,7 @@ VertexOut VertexMain(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceI
         glowShape = float2(reach, reach * (1.0 - glow.feather));
         grow = reach * draw.texelUv;
     }
-    // A ring or a glow grows the quad past the sprite's edge, by as much in world units as in UV.
+    // A glow grows the quad past the sprite's edge, by as much in world units as in UV.
     const float2 grownSize = size * (1.0 + 2.0 * grow / max(regionMax - regionMin, 1e-6));
     const float2 offset = (corner - 0.5) * grownSize;
     // Clockwise on screen: world y grows downwards.
@@ -189,7 +203,7 @@ VertexOut VertexMain(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceI
     output.position = float4(world * draw.worldToClip.xy + draw.worldToClip.zw, 0, 1);
     output.uv = lerp(regionMin - grow, regionMax + grow, corner);
     output.region = float4(regionMin, regionMax);
-    output.ring = draw.ring;
+    output.glowOnly = glowOnly ? 1 : 0;
     output.layer = instance.layerFlags & 0xFFFF;
     output.dissolve = dissolve;
     output.colour = colour;
