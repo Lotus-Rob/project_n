@@ -13,6 +13,10 @@ struct Instance
     uint regionMax;
     uint layerFlags;
     uint colour;
+    uint glow;
+    uint glowValue;
+    uint glowStart;
+    uint reserved;
 };
 
 struct type_StructuredBuffer_Instance

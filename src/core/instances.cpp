@@ -79,6 +79,20 @@ u16 PackUnorm16(f32 value) {
     return static_cast<u16>(std::lround(std::clamp(value, 0.0F, 1.0F) * static_cast<f32>(UNORM16_MAX)));
 }
 
+namespace {
+
+constexpr u32 GLOW_RESULT_SHIFT = 8;
+constexpr u32 GLOW_ELEMENT_SHIFT = 16;
+constexpr u32 GLOW_RELEASED_SHIFT = 24;
+
+u32 PackGlow(const GlowInput& glow) {
+    return static_cast<u32>(std::to_underlying(glow.role)) | (static_cast<u32>(glow.result) << GLOW_RESULT_SHIFT) |
+           (static_cast<u32>(std::to_underlying(glow.element)) << GLOW_ELEMENT_SHIFT) |
+           (static_cast<u32>(glow.released) << GLOW_RELEASED_SHIFT);
+}
+
+} // namespace
+
 Instance MakeInstance(const Manifest& manifest, const SpriteDraw& draw) {
     const SpriteInfo& sprite = manifest.Sprite(draw.sprite);
     const Vec2 size{ .x = static_cast<f32>(sprite.width), .y = static_cast<f32>(sprite.height) };
@@ -86,6 +100,8 @@ Instance MakeInstance(const Manifest& manifest, const SpriteDraw& draw) {
     const Vec2 stretch{ .x = draw.scale * draw.widthScale, .y = draw.scale };
     const Vec2 toCentre{ .x = ((size.x * 0.5F) - foot.x) * stretch.x, .y = ((size.y * 0.5F) - foot.y) * stretch.y };
     const auto page = static_cast<f32>(manifest.pageSize);
+    const GlowInput& glow = draw.glow;
+    const bool glowing = glow.role != GlowRole::None;
     // Within half a turn of zero, and the previous within half a turn of it: the shader's lerp then takes the shorter
     // arc, and the halves keep their precision.
     constexpr f64 TURN = 2 * std::numbers::pi;
@@ -104,6 +120,9 @@ Instance MakeInstance(const Manifest& manifest, const SpriteDraw& draw) {
         ),
         .layerFlags = PackPair(sprite.page, PackUnorm16(draw.dissolve)),
         .colour = draw.colour,
+        .glow = glowing ? PackGlow(glow) : 0U,
+        .glowValue = glowing ? PackPair(PackUnorm16(glow.previousValue), PackUnorm16(glow.currentValue)) : 0U,
+        .glowStart = glowing ? static_cast<u32>(glow.startTick) : 0U,
     };
 }
 

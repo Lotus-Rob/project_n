@@ -113,6 +113,51 @@ TEST_CASE("a sprite's dissolve fills the high half of its layer and flags as uno
     CHECK((gone.layerFlags & 0xFFFFU) == sprite.page);
 }
 
+TEST_CASE("a sprite without a glow packs zero glow words") {
+    const core::Instance instance = core::MakeInstance(TestManifest(), { .sprite = core::atlas::SpriteId::Fox });
+    CHECK(instance.glow == 0);
+    CHECK(instance.glowValue == 0);
+    CHECK(instance.glowStart == 0);
+}
+
+TEST_CASE("a glow of role none packs zero glow words whatever its other inputs") {
+    constexpr u64 START = 77;
+    const core::Instance instance = core::MakeInstance(
+        TestManifest(),
+        { .sprite = core::atlas::SpriteId::Fox,
+          .glow = { .role = core::GlowRole::None,
+                    .previousValue = 0.5F,
+                    .currentValue = 1.0F,
+                    .startTick = START,
+                    .result = 3,
+                    .element = core::HitKind::Poison,
+                    .released = true } }
+    );
+    CHECK(instance.glow == 0);
+    CHECK(instance.glowValue == 0);
+    CHECK(instance.glowStart == 0);
+}
+
+TEST_CASE("a glow's inputs pack into the instance") {
+    constexpr f32 PREVIOUS = 0.25F;
+    constexpr f32 CURRENT = 0.75F;
+    constexpr u64 START = 0x1'0000'0005ULL;
+    const core::Instance instance = core::MakeInstance(
+        TestManifest(),
+        { .sprite = core::atlas::SpriteId::Fox,
+          .glow = { .role = core::GlowRole::FireBolt,
+                    .previousValue = PREVIOUS,
+                    .currentValue = CURRENT,
+                    .startTick = START,
+                    .result = 2,
+                    .element = core::HitKind::Burn,
+                    .released = true } }
+    );
+    CHECK(instance.glow == 0x0103'0204U);
+    CHECK(instance.glowValue == core::PackPair(core::PackUnorm16(PREVIOUS), core::PackUnorm16(CURRENT)));
+    CHECK(instance.glowStart == 5);
+}
+
 TEST_CASE("a scaled instance grows about its foot point") {
     using core::atlas::SpriteId;
     const core::Manifest manifest = TestManifest();
