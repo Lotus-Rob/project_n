@@ -14,14 +14,14 @@ constexpr f32 SWORDS_RADIUS = 260.0F; // the shipped swords' tag radius
 // The shipped swords (assets/data/abilities.yaml) in ticks, as their cast resolves them.
 constexpr core::VolleyShape SWORDS{
     .count = 1'000,
-    .waves = 5,
+    .waves = 10,
     .ringRadius = 160.0F,
-    .ringStep = 100.0F,
+    .ringStep = 38.0F,
     .scatter = 0.0F,
     .angleJitter = 0.0F,
-    .staggerTicks = 6,
-    .waveGapTicks = 12,
-    .outTicks = 21,
+    .staggerTicks = 3,
+    .waveGapTicks = 9,
+    .outTicks = 7,
     .holdTicks = 18,
     .departJitterTicks = 15,
     .flightTicks = 102,
@@ -31,12 +31,17 @@ constexpr core::VolleyShape SWORDS{
     .commitTicks = core::CommitTicksFor(SWORDS_RADIUS),
 };
 constexpr core::Volley VOLLEY{ .use = 7, .startTick = START, .seed = SEED, .origin = ORIGIN, .point = POINT, .shape = SWORDS };
-// The swords with loose rings, as a shape may still set them: places strayed in and out by up to a quarter of the radius
-// and round their even spacing by up to half a radian.
+// The swords with loose rings, as a shape may still set them and as they shipped before the still rings: five rings a
+// hundred apart, about 200 swords to a ring, their places strayed in and out by up to a quarter of the radius and round
+// their even spacing by up to half a radian. A ring of fewer swords needs less jitter to keep going all the way round.
+constexpr u32 LOOSE_WAVES = 5;
+constexpr f32 LOOSE_RING_STEP = 100.0F;
 constexpr f32 LOOSE_SCATTER = 0.25F;
 constexpr f32 LOOSE_ANGLE_JITTER = 0.5F;
 constexpr core::Volley LOOSE = [] {
     core::Volley loose = VOLLEY;
+    loose.shape.waves = LOOSE_WAVES;
+    loose.shape.ringStep = LOOSE_RING_STEP;
     loose.shape.scatter = LOOSE_SCATTER;
     loose.shape.angleJitter = LOOSE_ANGLE_JITTER;
     return loose;
@@ -202,8 +207,8 @@ core::Vec2 AimAt(u32 sword, f64 time, std::span<const core::VolleyTarget> target
     return core::SwordAim(VOLLEY, sword, static_cast<u64>(snapshot), static_cast<f32>(time - snapshot + 1.0), targets);
 }
 
-// Every first-wave sword in flight (they leave their ring from 639 to 658), and more than the commit window (33) before
-// the earliest arrival (about 741), so every sword can move on.
+// Every first-wave sword in flight (they leave their ring from 625 to 641), and more than the commit window (33) before
+// the earliest arrival (about 727), so every sword can move on.
 constexpr u64 FIRST_DEATH = 680;
 // Within the commit window of the first wave's earliest arrivals, so those plunge, and well before the rest.
 constexpr u64 SECOND_DEATH = 715;
@@ -490,7 +495,7 @@ TEST_CASE("each wave forms further out, in a scattered band") {
     constexpr f64 LEAST_BAND = 0.4;
     // Across the volley, the distances spread over the rings, not round one circle.
     constexpr f64 LEAST_SPREAD = 1.0; // of a ring step
-    std::array<std::vector<f64>, SWORDS.waves> bands{};
+    std::array<std::vector<f64>, LOOSE_WAVES> bands{};
     std::vector<f64> all;
     for (u32 sword = 0; sword < SWORDS.count; ++sword) {
         CAPTURE(sword);
@@ -500,9 +505,9 @@ TEST_CASE("each wave forms further out, in a scattered band") {
         bands.at(core::WaveOf(LOOSE, sword)).push_back(away);
         all.push_back(away);
     }
-    for (std::size_t wave = 0; wave < SWORDS.waves; ++wave) {
+    for (std::size_t wave = 0; wave < LOOSE_WAVES; ++wave) {
         CAPTURE(wave);
-        const f64 ring = static_cast<f64>(SWORDS.ringRadius) + (static_cast<f64>(wave) * static_cast<f64>(SWORDS.ringStep));
+        const f64 ring = static_cast<f64>(SWORDS.ringRadius) + (static_cast<f64>(wave) * static_cast<f64>(LOOSE_RING_STEP));
         const f64 band = StandardDeviation(bands.at(wave)); // named: MSVC's C4866 (tests/AGENTS.md)
         CHECK(band >= LEAST_BAND * static_cast<f64>(LOOSE.shape.scatter) * ring);
         if (wave > 0) {
@@ -512,7 +517,7 @@ TEST_CASE("each wave forms further out, in a scattered band") {
         }
     }
     const f64 spread = StandardDeviation(all);
-    CHECK(spread >= LEAST_SPREAD * static_cast<f64>(SWORDS.ringStep));
+    CHECK(spread >= LEAST_SPREAD * static_cast<f64>(LOOSE_RING_STEP));
 }
 
 TEST_CASE("places on a ring are jittered, not evenly spaced") {
@@ -520,7 +525,7 @@ TEST_CASE("places on a ring are jittered, not evenly spaced") {
     constexpr f64 WIDEST_GAP = FULL_TURN / 12.0;
     // The gaps between neighbours differ by at least this much of the even spacing; evenly spaced, they wouldn't at all.
     constexpr f64 LEAST_UNEVEN = 0.5;
-    std::array<std::vector<f64>, SWORDS.waves> angles{};
+    std::array<std::vector<f64>, LOOSE_WAVES> angles{};
     for (u32 sword = 0; sword < SWORDS.count; ++sword) {
         const core::Vec2 out = RingPoint(LOOSE, sword) - ORIGIN;
         angles.at(core::WaveOf(LOOSE, sword)).push_back(core::math::Atan2(static_cast<f64>(out.y), static_cast<f64>(out.x)));

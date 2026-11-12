@@ -14,8 +14,8 @@ abilities:
                    poison: { ticks: 4, damage: 60 } }
   dash:          { slot: movement, cooldown: 1.0, distance: 260, duration: 0.15 }
   flying_swords: { slot: special, cooldown: 6, qi_cost: 60, damage: 20, radius: 260,
-                   swords: { count: 1000, waves: 5, wave_gap: 0.2, ring_radius: 160, ring_step: 100, scatter: 0,
-                             angle_jitter: 0, stagger: 0.1, out: 0.35, hold: 0.3, depart_jitter: 0.25, flight: 1.7,
+                   swords: { count: 1000, waves: 10, wave_gap: 0.15, ring_radius: 160, ring_step: 38, scatter: 0,
+                             angle_jitter: 0, stagger: 0.05, out: 0.12, hold: 0.3, depart_jitter: 0.25, flight: 1.7,
                              sweep: 420, sweep_jitter: 0.6, fade: 0.3 } }
 loadout: { generator: fire_bolt, spender: poison_lance, movement: dash, special_1: flying_swords }
 )";
@@ -59,14 +59,15 @@ TEST_CASE("the abilities parse") {
 }
 
 TEST_CASE("the swords' waves, rings, hold and jitters parse") {
-    constexpr f32 RING_STEP = 100.0F;
+    constexpr f32 RING_STEP = 38.0F;
     constexpr f32 SWEEP_JITTER = 0.6F;
     const std::expected<core::Abilities, core::Error> abilities = data::ParseAbilities(ABILITIES);
     REQUIRE(abilities.has_value());
     const core::VolleyShape& swords = abilities->Of(core::AbilityKind::FlyingSwords).volley;
-    CHECK(swords.waves == 5);
-    CHECK(swords.waveGapTicks == 12);      // 0.2 s
-    CHECK(swords.staggerTicks == 6);       // 0.1 s, within a wave
+    CHECK(swords.waves == 10);
+    CHECK(swords.waveGapTicks == 9);       // 0.15 s
+    CHECK(swords.staggerTicks == 3);       // 0.05 s, within a wave
+    CHECK(swords.outTicks == 7);           // 0.12 s, rounded
     CHECK(swords.holdTicks == 18);         // 0.3 s
     CHECK(swords.departJitterTicks == 15); // 0.25 s
     CHECK(swords.ringStep == RING_STEP);
@@ -82,13 +83,13 @@ TEST_CASE("the swords' waves, rings, hold and jitters are refused out of range o
         std::string_view says;
     };
     constexpr std::array<Broken, 20> CASES{ {
-        Broken{ .from = "waves: 5", .replacement = "waves: 0", .says = "flying_swords's swords's waves" },
-        Broken{ .from = "waves: 5", .replacement = "waves: -1", .says = "flying_swords's swords's waves" },
-        Broken{ .from = "waves: 5, ", .replacement = "", .says = "flying_swords's swords has no waves" },
-        Broken{ .from = "wave_gap: 0.2", .replacement = "wave_gap: -0.1", .says = "flying_swords's swords's wave_gap" },
-        Broken{ .from = "wave_gap: 0.2, ", .replacement = "", .says = "flying_swords's swords has no wave_gap" },
-        Broken{ .from = "ring_step: 100", .replacement = "ring_step: .inf", .says = "flying_swords's swords's ring_step" },
-        Broken{ .from = "ring_step: 100, ", .replacement = "", .says = "flying_swords's swords has no ring_step" },
+        Broken{ .from = "waves: 10", .replacement = "waves: 0", .says = "flying_swords's swords's waves" },
+        Broken{ .from = "waves: 10", .replacement = "waves: -1", .says = "flying_swords's swords's waves" },
+        Broken{ .from = "waves: 10, ", .replacement = "", .says = "flying_swords's swords has no waves" },
+        Broken{ .from = "wave_gap: 0.15", .replacement = "wave_gap: -0.1", .says = "flying_swords's swords's wave_gap" },
+        Broken{ .from = "wave_gap: 0.15, ", .replacement = "", .says = "flying_swords's swords has no wave_gap" },
+        Broken{ .from = "ring_step: 38", .replacement = "ring_step: .inf", .says = "flying_swords's swords's ring_step" },
+        Broken{ .from = "ring_step: 38, ", .replacement = "", .says = "flying_swords's swords has no ring_step" },
         Broken{ .from = "scatter: 0,", .replacement = "scatter: 1,", .says = "flying_swords's swords's scatter" },
         Broken{ .from = "scatter: 0,", .replacement = "scatter: .nan,", .says = "flying_swords's swords's scatter" },
         Broken{ .from = "scatter: 0,", .replacement = "scatter: -0.1,", .says = "flying_swords's swords's scatter" },
