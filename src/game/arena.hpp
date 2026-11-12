@@ -30,7 +30,9 @@
 /// - the poison lance (game/combat.hpp): a strike that hits and poisons every fox round the point at once, its burst a
 ///   flash the main thread draws in the poison's colour; and the temporary HUD (app/hud.hpp) of the player's health,
 ///   Qi and slots, from the caster state the arena publishes;
-/// - game text over the world: name labels over the player and every fox, and the tablet's vertical caption.
+/// - game text over the world: name labels over the player and every fox, and the tablet's vertical caption;
+/// - the glow drives (core/glow.hpp), one demo prop each: the shrine pulses, the stele charges and releases on a loop, the
+///   ice crystal fills and shows a result that changes each loop (DemoGlow()).
 /// Its stress variant adds a crowd and a bullet spiral, about 100,000 instances in all (§8.1), and a world tier of 50,000.
 
 #include "core/draw_list.hpp"
@@ -38,6 +40,7 @@
 #include "core/error.hpp"
 #include "core/frame.hpp"
 #include "core/game_data.hpp"
+#include "core/glow.hpp"
 #include "core/logic.hpp"
 #include "core/manifest.hpp"
 #include "core/state.hpp"
@@ -109,6 +112,11 @@ enum class Scene : u8 {
 /// and the scenes with creatures load the sprites `data` gives them, without which they would be invisible.
 /// Otherwise, which scene is short of what.
 [[nodiscard]] std::expected<void, core::Error> CheckScenes(const core::Manifest& manifest, const core::GameData& data);
+
+/// The input of the demo glow `role` at simulation `tick` (the shrine's pulse, the stele's charge on a 3.2 s loop that rises,
+/// holds and releases, the crystal's progress on a 5 s loop that fills and then shows a result): pure and presentation only.
+/// Its previous value is the one at `tick - 1` in the same loop, 0 at a loop's first tick. Any other role gives no glow.
+[[nodiscard]] core::GlowInput DemoGlow(core::GlowRole role, u64 tick);
 
 /// The arena scene as a simulation: it moves its creatures each tick and publishes every sprite.
 class Arena final : public core::Simulation {
