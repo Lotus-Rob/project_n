@@ -37,6 +37,8 @@ end
 
 unit_tests("core_tests", "unit/core/*.cpp")
 unit_tests("game_tests", "unit/game/*.cpp", "game", true)
+    -- Where the skipped "write the fight save seed" case writes (save_tests.cpp), whatever the working directory.
+    add_defines('PN_FUZZ_CORPUS="' .. path.join(os.projectdir(), "tests", "fuzz", "corpus"):gsub("\\", "/") .. '"')
 unit_tests("platform_tests", "unit/platform/*.cpp", "platform")
 unit_tests("gfx_tests", "unit/gfx/*.cpp", "gfx")
     add_rules("assets") -- the font (ttf_tests.cpp)
