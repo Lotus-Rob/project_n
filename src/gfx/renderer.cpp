@@ -39,10 +39,6 @@ constexpr bool DEBUG_MODE = true; // SDL_GPU's validation, in debug builds only 
 // Linear values, which the composite encodes to about (0.08, 0.08, 0.09).
 constexpr SDL_FColor BACKDROP{ .r = 0.0072F, .g = 0.0072F, .b = 0.0085F, .a = 1.0F };
 
-// The outlines (design doc 0002.3 §3), three texels wide: the hovered entity's pale, the selected one's gold.
-// Premultiplied RGBA8, red in the low byte.
-constexpr f32 OUTLINE_TEXELS = 3.0F;
-
 // A text's shadow falls this many base pixels down and right of it, scaling with the text.
 constexpr f32 TEXT_SHADOW_BASE_PIXELS = 2.0F;
 // Clip space spans this much across either axis.
@@ -731,28 +727,13 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
     const ClipTransform transform = WorldToClip(view.camera, sceneTarget.width, sceneTarget.height);
     const internal::GlowFrame glows = GlowFrameOf(snapshot, view);
     instances.Draw(commands, pass, snapshot.batches, sprites, transform, alpha, glows);
-    const f32 ring = OUTLINE_TEXELS / static_cast<f32>(manifest->pageSize);
     if (snapshot.selected) {
-        instances.DrawOutline(
-            commands,
-            pass,
-            { .instance = *snapshot.selected, .colour = uiColours.Of(core::UiColour::SelectedOutline), .ring = ring },
-            sprites,
-            transform,
-            alpha,
-            glows
-        );
+        instances.DrawGlowOnly(commands, pass, *snapshot.selected, core::GlowRole::Selected, sprites, transform, alpha, glows);
     }
     // Hovering the selected entity keeps its gold: the selection is what a click changed.
     if (outlined && *outlined < snapshot.instances.size() && *outlined != snapshot.selected) {
-        instances.DrawOutline(
-            commands,
-            pass,
-            { .instance = static_cast<u32>(*outlined), .colour = uiColours.Of(core::UiColour::HoverOutline), .ring = ring },
-            sprites,
-            transform,
-            alpha,
-            glows
+        instances.DrawGlowOnly(
+            commands, pass, static_cast<u32>(*outlined), core::GlowRole::Hover, sprites, transform, alpha, glows
         );
     }
     // The trails, then the overlay: the swords' tinted cores, their halos (additive), the lance's bursts (additive), the

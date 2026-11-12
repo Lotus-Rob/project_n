@@ -25,16 +25,6 @@ namespace gfx::internal {
 /// The most instances the storage buffer holds: the stress arena's 100,000 and some room (§8.1).
 inline constexpr u32 MAX_INSTANCES = 1U << 17U;
 
-/// A ring drawn around one uploaded instance's sprite, over everything (the hovered entity).
-struct Outline {
-    /// The instance, by its index in the uploaded snapshot.
-    u32 instance = 0;
-    /// The ring's premultiplied RGBA8 colour (red in the low byte); never 0.
-    u32 colour = 0;
-    /// The ring's width in UV on the atlas page.
-    f32 ring = 0.0F;
-};
-
 /// The glow table (gfx::BuildGlowTable()) in a storage buffer the sprite shaders read.
 class GlowTableBuffer {
 public:
@@ -115,13 +105,15 @@ public:
         const GlowFrame& glows
     ) const;
 
-    /// Draws `outline` in `pass` after Draw(), with the same `sprites`, `transform` and `alpha`: the
-    /// transparent pixels within the ring's width of its instance's sprite take the ring's colour. `glows` is bound as
-    /// Draw() binds it; the outline draws no glow. Nothing when the instance wasn't uploaded.
-    void DrawOutline(
+    /// Draws instance `instance` (by its index in the uploaded snapshot) again in `pass` after Draw(), with the same
+    /// `sprites`, `transform`, `alpha` and `glows`, as `role`'s glow alone: outside the sprite, from the instance's own
+    /// drive (its value and start), ignoring the instance's glow, colour alpha and dissolve, and drawing no sprite colour.
+    /// Nothing when the instance wasn't uploaded or `role` is None.
+    void DrawGlowOnly(
         SDL_GPUCommandBuffer* commands,
         SDL_GPURenderPass* pass,
-        const Outline& outline,
+        u32 instance,
+        core::GlowRole role,
         const SpriteArray& sprites,
         const ClipTransform& transform,
         f32 alpha,

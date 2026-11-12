@@ -16,8 +16,8 @@ struct DrawUniforms {
     std::array<f32, 4> worldToClip{};
     f32 alpha = 0.0F;
     u32 firstInstance = 0;
-    u32 outlineColour = 0; // 0: an ordinary sprite
-    f32 ring = 0.0F;       // the outline's width in UV; 0 for an ordinary sprite
+    u32 glowOnlyRole = 0; // a glow-only draw's core::GlowRole; 0: an ordinary sprite
+    f32 padding0 = 0.0F;  // to the next row
     u32 glowTick = 0;
     f32 glowFraction = 0.0F;
     f32 zoom = 1.0F;
@@ -272,25 +272,25 @@ void SpriteRenderer::Draw(
     }
 }
 
-void SpriteRenderer::DrawOutline(
+void SpriteRenderer::DrawGlowOnly(
     SDL_GPUCommandBuffer* commands,
     SDL_GPURenderPass* pass,
-    const Outline& outline,
+    u32 instance,
+    core::GlowRole role,
     const SpriteArray& sprites,
     const ClipTransform& transform,
     f32 alpha,
     const GlowFrame& glows
 ) const {
     PN_PROFILE_ZONE();
-    if (outline.instance >= m_count) {
+    if (instance >= m_count || role == core::GlowRole::None) {
         return;
     }
     Bind(pass, m_instances.get(), sprites, glows);
     SDL_BindGPUGraphicsPipeline(pass, m_pipelines.at(static_cast<std::size_t>(core::Pipeline::Normal)).get());
     DrawUniforms uniforms = UniformsOf(transform, alpha, glows);
-    uniforms.firstInstance = outline.instance;
-    uniforms.outlineColour = outline.colour;
-    uniforms.ring = outline.ring;
+    uniforms.firstInstance = instance;
+    uniforms.glowOnlyRole = std::to_underlying(role);
     SDL_PushGPUVertexUniformData(commands, 0, &uniforms, sizeof(uniforms));
     SDL_DrawGPUPrimitives(pass, VERTICES_PER_QUAD, 1, 0, 0);
 }
