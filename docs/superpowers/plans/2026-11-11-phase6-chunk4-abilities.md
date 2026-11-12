@@ -962,3 +962,21 @@ profiling." Runs after Task 10c (which writes its volley tests small from the st
   pictures), say what, and it becomes its own plan after this branch.
 - **Commits:** `test(tests): sample the volley's behaviour, not every sword and tick`, `docs(agents): keep unit tests to a
   handful of samples`.
+
+### Task 10e: A deeper damage colour
+
+Added 2026-11-12 at the user's decision ("Yes, make it deeper") on the open question in the spec's Outcome: the damage
+element's default colour, `#CFE3FF`, is near-white, so the swords' tinted cores add only a faint blue cast.
+
+- The damage effect's default in `core::UiColours` (`src/core/ui_colours.hpp`) becomes `#6FA8FF`, a clear azure in the
+  same hue family at about twice the saturation, converted to the table's packed form exactly as its neighbours are.
+  Every place that lists the defaults (the header's comment, the spec, this plan's Task 2, any test that names the old
+  value) says the new one; the Outcome's open question becomes a decision.
+- `pixi run project_n reference --update`: look at every changed picture (look-at-the-game skill) and check that the
+  swords' cores and anything else tinted by the damage element read clearly blue against the arena, with the halo still
+  glowing and no text or HUD ink that uses the damage colour losing contrast (accessibility first). If text drawn in the
+  damage colour drops below the contrast the HUD's other inks keep, stop and report it rather than choosing another
+  colour.
+- `pixi run project_n test`, `lint --range <BASE>..HEAD`, then the full `pixi run project_n check` (it also covers Task
+  10b's fix round, Ruling 71).
+- **Commit:** one, with the pictures; `feat(<scope>): deepen the damage effect's colour` (scope from `SCOPES`).
