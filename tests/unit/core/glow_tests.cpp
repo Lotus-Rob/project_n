@@ -24,6 +24,9 @@ constexpr f64 HALF_BEAT_TICKS = 48.0;
 constexpr f64 FULL_BEAT_TICKS = 96.0;
 constexpr f64 HALF_FADE_TICKS = 12.0;
 constexpr f64 PAST_FADE_TICKS = 30.0;
+// Half a tick: the render clock between the tick before a start and the start, where the age is negative.
+constexpr f64 HALF_TICK = 0.5;
+constexpr f32 NEARLY_FULL = 0.999F;
 constexpr f64 BEATS_IN_A_LONG_SESSION = 4'294'967'296.0;
 // 2^32 beats of the pulse's own period (as the f32 1.6 is stored) and a quarter beat: a long session's phase.
 constexpr f64 FAR_TICKS = (BEATS_IN_A_LONG_SESSION * static_cast<f64>(1.6F) * 60.0) + QUARTER_BEAT_TICKS;
@@ -81,6 +84,13 @@ TEST_CASE("a pulse far into a long session has the phase it would near tick 0") 
     CHECK(Strength(PULSE, 0.0F, FAR_TICKS) == doctest::Approx(PULSE_AT_QUARTER_BEAT));
 }
 
+TEST_CASE("half a tick before its start a pulse is where it is half a tick after: just short of full strength") {
+    const f32 before = Strength(PULSE, 0.0F, -HALF_TICK);
+    CHECK(before == doctest::Approx(Strength(PULSE, 0.0F, HALF_TICK)));
+    CHECK(before > NEARLY_FULL);
+    CHECK(before < 1.0F);
+}
+
 TEST_CASE("reducing flashing holds a pulse at its average strength at every age") {
     CHECK(Strength(PULSE, 0.0F, 0.0, 0, false, true) == doctest::Approx(PULSE_AT_QUARTER_BEAT));
     CHECK(Strength(PULSE, 0.0F, HALF_BEAT_TICKS, 0, false, true) == doctest::Approx(PULSE_AT_QUARTER_BEAT));
@@ -109,6 +119,10 @@ TEST_CASE("a charge while charging is the value through its curve, and at releas
 TEST_CASE("a charge fades to nothing over its fade after release") {
     CHECK(Strength(CHARGE, HALF, HALF_FADE_TICKS, 0, true) == doctest::Approx(CHARGE_FADING));
     CHECK(Strength(CHARGE, HALF, PAST_FADE_TICKS, 0, true) == doctest::Approx(0.0F));
+}
+
+TEST_CASE("half a tick before its release a released charge hasn't begun to fade") {
+    CHECK(Strength(CHARGE, HALF, -HALF_TICK, 0, true) == QUARTER);
 }
 
 TEST_CASE("a progress is the value through its curve until a result, then full strength") {

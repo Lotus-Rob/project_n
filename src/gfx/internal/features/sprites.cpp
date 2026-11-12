@@ -28,14 +28,39 @@ struct DrawUniforms {
 };
 static_assert(sizeof(DrawUniforms) == DRAW_UNIFORM_BYTES, "the shader's constant buffer is 80 bytes");
 // The constants the sprite shaders copy, as they hold them: each must equal what it copies.
-constexpr std::size_t SHADER_GLOW_ROLES = 8;  // sprite.vert.hlsl's GLOW_ROLES
-constexpr u8 SHADER_GLOW_BLEND_INK = 1;       // sprite.vert.hlsl's GLOW_BLEND_INK
-constexpr std::size_t SHADER_ELEMENTS = 4;    // sprite.vert.hlsl's LAST_ELEMENT + 1, and elementColours' uint4
-constexpr u32 SHADER_FIELD_REACH_TEXELS = 16; // sprite.hlsli's FIELD_REACH_TEXELS
+constexpr std::size_t SHADER_GLOW_ROLES = 8;       // sprite.vert.hlsl's GLOW_ROLES
+constexpr u8 SHADER_GLOW_BLEND_INK = 1;            // sprite.vert.hlsl's GLOW_BLEND_INK
+constexpr std::size_t SHADER_ELEMENTS = 4;         // sprite.vert.hlsl's LAST_ELEMENT + 1, and elementColours' uint4
+constexpr u32 SHADER_FIELD_REACH_TEXELS = 16;      // sprite.hlsli's FIELD_REACH_TEXELS
+constexpr u8 SHADER_DRIVE_PULSE = 1;               // sprite.vert.hlsl's DRIVE_PULSE
+constexpr u8 SHADER_DRIVE_CHARGE = 2;              // sprite.vert.hlsl's DRIVE_CHARGE
+constexpr u8 SHADER_DRIVE_PROGRESS = 3;            // sprite.vert.hlsl's DRIVE_PROGRESS
+constexpr u8 SHADER_CURVE_EASE_IN = 1;             // sprite.vert.hlsl's CURVE_EASE_IN
+constexpr u8 SHADER_CURVE_EASE_OUT = 2;            // sprite.vert.hlsl's CURVE_EASE_OUT
+constexpr u8 SHADER_CURVE_SMOOTH = 3;              // sprite.vert.hlsl's CURVE_SMOOTH
+constexpr u8 SHADER_CURVE_SINE = 4;                // sprite.vert.hlsl's CURVE_SINE
+constexpr f32 SHADER_REDUCED_LIGHT_OPACITY = 0.5F; // sprite.vert.hlsl's REDUCED_LIGHT_OPACITY
 static_assert(core::GLOW_ROLES == SHADER_GLOW_ROLES, "sprite.vert.hlsl's GLOW_ROLES is the glow table's length");
 static_assert(std::to_underlying(core::GlowBlend::Ink) == SHADER_GLOW_BLEND_INK, "sprite.vert.hlsl's GLOW_BLEND_INK is Ink");
 static_assert(core::HIT_KINDS == SHADER_ELEMENTS, "sprite.vert.hlsl's LAST_ELEMENT and elementColours hold every HitKind");
 static_assert(core::FIELD_REACH_TEXELS == SHADER_FIELD_REACH_TEXELS, "sprite.hlsli's FIELD_REACH_TEXELS is the fields' reach");
+static_assert(
+    std::to_underlying(core::DriveKind::Steady) == 0 && std::to_underlying(core::DriveKind::Pulse) == SHADER_DRIVE_PULSE &&
+        std::to_underlying(core::DriveKind::Charge) == SHADER_DRIVE_CHARGE &&
+        std::to_underlying(core::DriveKind::Progress) == SHADER_DRIVE_PROGRESS,
+    "sprite.vert.hlsl's DRIVE_ constants are core::DriveKind's values"
+);
+static_assert(
+    std::to_underlying(core::GlowCurve::Linear) == 0 && std::to_underlying(core::GlowCurve::EaseIn) == SHADER_CURVE_EASE_IN &&
+        std::to_underlying(core::GlowCurve::EaseOut) == SHADER_CURVE_EASE_OUT &&
+        std::to_underlying(core::GlowCurve::Smooth) == SHADER_CURVE_SMOOTH &&
+        std::to_underlying(core::GlowCurve::Sine) == SHADER_CURVE_SINE,
+    "sprite.vert.hlsl's CURVE_ constants are core::GlowCurve's values"
+);
+static_assert(
+    std::bit_cast<u32>(core::REDUCED_LIGHT_OPACITY) == std::bit_cast<u32>(SHADER_REDUCED_LIGHT_OPACITY),
+    "sprite.vert.hlsl's REDUCED_LIGHT_OPACITY is core's"
+);
 
 constexpr u32 GLOW_TABLE_BYTES = static_cast<u32>(GLOW_RECORD_BYTES * core::GLOW_ROLES);
 

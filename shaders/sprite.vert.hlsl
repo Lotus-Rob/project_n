@@ -42,6 +42,18 @@ static const uint GLOW_ROLES = 8;
 static const uint GLOW_BLEND_INK = 1;
 // The last core::HitKind (Burn): `elementColours` holds one colour for each.
 static const uint LAST_ELEMENT = 3;
+// core::DriveKind's values.
+static const uint DRIVE_PULSE = 1;
+static const uint DRIVE_CHARGE = 2;
+static const uint DRIVE_PROGRESS = 3;
+// core::GlowCurve's values (Linear is 0).
+static const uint CURVE_EASE_IN = 1;
+static const uint CURVE_EASE_OUT = 2;
+static const uint CURVE_SMOOTH = 3;
+static const uint CURVE_SINE = 4;
+// core::REDUCED_LIGHT_OPACITY: how far reduce flashing scales a light glow's opacity.
+static const float REDUCED_LIGHT_OPACITY = 0.5;
+static const float PI = 3.14159265;
 
 // DrawUniforms in src/gfx/internal/features/sprites.cpp, 80 bytes.
 struct Draw {
@@ -75,6 +87,51 @@ float4 UnpackColour(uint colour) {
     return float4(colour & 0xFF, (colour >> 8) & 0xFF, (colour >> 16) & 0xFF, colour >> 24) / 255.0;
 }
 
+// core::CurveAt() (src/core/glow.cpp), line for line: `fraction`, held to 0..1, through `curve`.
+float CurveAt(uint curve, float fraction) {
+    const float held = clamp(fraction, 0.0, 1.0);
+    if (curve == CURVE_EASE_IN) {
+        return held * held;
+    }
+    if (curve == CURVE_EASE_OUT) {
+        return 1.0 - ((1.0 - held) * (1.0 - held));
+    }
+    if (curve == CURVE_SMOOTH) {
+        return held * held * (3.0 - (2.0 * held));
+    }
+    if (curve == CURVE_SINE) {
+        return (1.0 - cos(PI * held)) * 0.5;
+    }
+    return held;
+}
+
+// core::GlowStrength() (src/core/glow.cpp), line for line: the drive's strength from 0 to 1. Its age is in ticks, as the
+// record's period and fade are. The C++ takes a pulse's phase in f64; here the age is the wrapping difference of 32-bit
+// ticks, whose whole ticks f32 holds exactly for 2^24 ticks (three days) after the start.
+float GlowStrength(GlowRecord glow, float value, float ageTicks, uint result, bool released, bool reduceFlashing) {
+    if (glow.driveKind == DRIVE_PULSE) {
+        if (reduceFlashing) {
+            return 1.0 - (glow.depth / 2.0);
+        }
+        const float beats = ageTicks / glow.periodTicks;
+        const float phase = beats - floor(beats);
+        const float away = abs((2.0 * phase) - 1.0);
+        return 1.0 - (glow.depth * (1.0 - CurveAt(glow.curve, away)));
+    }
+    if (glow.driveKind == DRIVE_CHARGE) {
+        const float charged = CurveAt(glow.curve, value);
+        if (!released) {
+            return charged;
+        }
+        const float faded = min(ageTicks / glow.fadeTicks, 1.0);
+        return charged * (1.0 - CurveAt(glow.fadeCurve, faded));
+    }
+    if (glow.driveKind == DRIVE_PROGRESS) {
+        return result == 0 ? CurveAt(glow.curve, value) : 1.0;
+    }
+    return 1.0;
+}
+
 VertexOut VertexMain(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID) {
     const Instance instance = instances[draw.firstInstance + instanceId];
     const float2 corner = float2(vertexId & 1, vertexId >> 1); // a strip of 4 vertices
@@ -97,10 +154,25 @@ VertexOut VertexMain(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceI
         // Thinner as the camera zooms in; zoomed out, it stops at the field's reach.
         const float reach = min(glow.size * pow(1.0 / draw.zoom, glow.zoomShrink), FIELD_REACH_TEXELS);
         const uint element = min((instance.glow >> 16) & 0xFF, LAST_ELEMENT);
-        const float4 tint = UnpackColour(glow.colour != 0 ? glow.colour : draw.elementColours[element]);
+        const uint result = (instance.glow >> 8) & 0xFF;
+        const bool released = ((instance.glow >> 24) & 1) != 0;
+        const bool reduceFlashing = draw.reduceFlashing != 0;
+        // A progress with a result shows the result's colour.
+        uint packedTint = glow.colour != 0 ? glow.colour : draw.elementColours[element];
+        if (glow.driveKind == DRIVE_PROGRESS && result != 0 && result <= glow.resultCount) {
+            packedTint = glow.results[result - 1];
+        }
+        const float4 tint = UnpackColour(packedTint);
+        const float2 values = UnpackUnorm16(instance.glowValue);
+        // Wrapping 32-bit ticks: exact across the low bits' wrap in a long session.
+        const float age = float(int(draw.glowTick - instance.glowStart)) + draw.glowFraction;
+        const float strength =
+            GlowStrength(glow, lerp(values.x, values.y, draw.alpha), age, result, released, reduceFlashing);
+        // Reduce flashing dims light, never ink: an outline dimmed would read worse, and it doesn't flash.
+        const float opacity = glow.opacity * (reduceFlashing && glow.blend != GLOW_BLEND_INK ? REDUCED_LIGHT_OPACITY : 1.0);
         // The instance's alpha already fades the sprite's premultiplied colour once; the glow fades with it again, so a
         // fading sprite's glow is gone before the sprite is.
-        glowColour = tint * (glow.opacity * colour.a * colour.a * (1.0 - dissolve));
+        glowColour = tint * (strength * opacity * colour.a * colour.a * (1.0 - dissolve));
         if (glow.blend != GLOW_BLEND_INK) {
             glowColour.a = 0.0; // light: premultiplied alpha's blend then adds it
         }

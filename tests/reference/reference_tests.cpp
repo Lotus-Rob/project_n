@@ -2,18 +2,22 @@
 // (design doc 0002 §8.9). Run through `project_n reference`, which picks Mesa's software Vulkan and
 // the working directory: each view's picture lands in build/reference/, where `--update` takes it from.
 // Game text is also measured on the pictures (the phase 6 chunk 3 spec, "Testing"): a label's ink must not shimmer at
-// sub-pixel camera offsets, nor step while its creature moves.
+// sub-pixel camera offsets, nor step while its creature moves. So are the glows' drives (the phase 6 glow spec): a demo
+// glow's drawn amount follows core::GlowStrength() from tick to tick, and reduce flashing holds and dims it.
 #include "app/damage_numbers.hpp"
 #include "app/hud.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/effects.hpp"
 #include "core/frame.hpp"
 #include "core/game_data.hpp"
+#include "core/glow.hpp"
 #include "core/instances.hpp"
 #include "core/jobs.hpp"
 #include "core/math.hpp"
 #include "core/settings.hpp"
 #include "core/strings.hpp"
 #include "core/tick_clock.hpp"
+#include "core/ui_colours.hpp"
 #include "core/volley.hpp"
 #include "data/strings.hpp"
 #include "game/arena.hpp"
@@ -399,9 +403,11 @@ TEST_CASE("the hovered entity's pale outline and the selected one's gold, close 
 }
 
 // The arena at tick GLOW_TICK, where the shrine, the stele and the ice crystal wear the demo glows (game::DemoGlow()), its
-// snapshot stamped with that tick as core::Logic stamps it, shown at `zoom` round `centre`.
+// snapshot stamped with that tick as core::Logic stamps it, shown at `zoom` round `centre`. Each glow is near its strongest
+// there: the pulse an eighth of a beat past its top (0.87), the charge just full and held (1), the progress showing its
+// second loop's result (1).
 void CheckGlows(std::string_view name, f32 zoom, core::Vec2 centre) {
-    constexpr u64 GLOW_TICK = 24;
+    constexpr u64 GLOW_TICK = 492;
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
     game::Arena arena(test::TestManifest(), game::Scene::Arena, game::BuiltInData());
@@ -692,22 +698,29 @@ struct Ink {
     f64 centreX = 0.0; // the ink-weighted mean x, in pixels
 };
 
+// A pixel's red, green and blue, linear, as the scene is blended: what a pixel gains then grows in proportion to how much
+// of it a glyph or a glow covers.
+std::array<f64, 3> LinearAt(const gfx::Image& image, std::size_t pixel) {
+    constexpr f64 LEVELS = 255.0;
+    constexpr f64 KNEE = 0.04045;
+    constexpr f64 SLOPE = 12.92;
+    constexpr f64 SHIFT = 0.055;
+    constexpr f64 GAMMA = 2.4;
+    const std::size_t first = pixel * gfx::BYTES_PER_TEXEL;
+    std::array<f64, 3> linear{};
+    for (std::size_t channel = 0; channel < linear.size(); ++channel) {
+        const f64 encoded = static_cast<f64>(std::to_integer<u8>(image.rgba.at(first + channel))) / LEVELS;
+        linear.at(channel) = encoded <= KNEE ? encoded / SLOPE : std::pow((encoded + SHIFT) / (1.0 + SHIFT), GAMMA);
+    }
+    return linear;
+}
+
 f64 Luminance(const gfx::Image& image, std::size_t pixel) {
     constexpr f64 RED = 0.2126;
     constexpr f64 GREEN = 0.7152;
     constexpr f64 BLUE = 0.0722;
-    constexpr f64 LEVELS = 255.0;
-    const std::size_t first = pixel * gfx::BYTES_PER_TEXEL;
-    // Linear, as the scene is blended: a pixel's ink then grows in proportion to how much of it a glyph covers.
-    const auto channel = [&](std::size_t offset) {
-        constexpr f64 KNEE = 0.04045;
-        constexpr f64 SLOPE = 12.92;
-        constexpr f64 SHIFT = 0.055;
-        constexpr f64 GAMMA = 2.4;
-        const f64 encoded = static_cast<f64>(std::to_integer<u8>(image.rgba.at(first + offset))) / LEVELS;
-        return encoded <= KNEE ? encoded / SLOPE : std::pow((encoded + SHIFT) / (1.0 + SHIFT), GAMMA);
-    };
-    return (RED * channel(0)) + (GREEN * channel(1)) + (BLUE * channel(2));
+    const std::array<f64, 3> linear = LinearAt(image, pixel);
+    return (RED * linear[0]) + (GREEN * linear[1]) + (BLUE * linear[2]);
 }
 
 // The label's ink between two pictures, inside the label's box as the renderer places it for `view`: the box holds
@@ -796,6 +809,224 @@ TEST_CASE("a label following its creature doesn't step, over a dark and a pale g
             CHECK(std::abs(centres.at(index) - centres.at(index - 1) - step) < MOST_ERROR);
         }
     }
+}
+
+// A demo glow drawn alone, to be measured (the phase 6 glow spec, "Testing"): its prop at simulation `tick`, the render
+// clock `alpha` of the way from the tick before, with nothing else but, if `ground`, the pale ground (else the dark
+// backdrop, where a light glow adds without saturating).
+struct GlowShot {
+    core::GlowRole role = core::GlowRole::None;
+    u64 tick = 0;
+    f64 alpha = 1.0;
+    bool ground = true;
+    // A start tick in place of the demo's, as core::MakeInstance keeps it: its low 32 bits.
+    std::optional<u64> start = std::nullopt;
+};
+
+// The prop wearing `shot`'s glow as the arena publishes it at the shot's tick, its start tick replaced if the shot gives one.
+core::Instance GlowingProp(game::Arena& arena, core::Jobs& jobs, const GlowShot& shot) {
+    constexpr u32 ROLE_BITS = 0xFFU;
+    const core::Snapshot published = Published(arena, jobs, shot.tick);
+    const auto prop = std::ranges::find_if(published.instances, [&](const core::Instance& instance) {
+        return (instance.glow & ROLE_BITS) == std::to_underlying(shot.role);
+    });
+    REQUIRE(prop != published.instances.end());
+    core::Instance found = *prop;
+    if (shot.start) {
+        found.glowStart = static_cast<u32>(*shot.start);
+    }
+    return found;
+}
+
+// A snapshot at `tick` of `instances` alone, in one batch; `wallTick` tells it apart, so the renderer uploads it.
+core::Snapshot SnapshotOf(std::span<const core::Instance> instances, u64 tick, u64 wallTick) {
+    core::Snapshot snapshot{ .wallTick = wallTick, .simulationTick = tick, .scene = ArenaScene() };
+    snapshot.instances.assign(instances.begin(), instances.end());
+    snapshot.ids.resize(instances.size());
+    snapshot.batches.push_back({ .first = 0, .count = static_cast<u32>(instances.size()), .pipeline = core::Pipeline::Normal });
+    return snapshot;
+}
+
+// A packed colour's channels from 0 to 1, as the shader unpacks them (linear, premultiplied).
+std::array<f64, 4> Unpacked(u32 packed) {
+    constexpr u32 BYTE = 0xFFU;
+    constexpr u32 BITS_PER_CHANNEL = 8;
+    constexpr f64 LEVELS = 255.0;
+    std::array<f64, 4> channels{};
+    for (std::size_t channel = 0; channel < channels.size(); ++channel) {
+        channels.at(channel) = static_cast<f64>((packed >> (BITS_PER_CHANNEL * channel)) & BYTE) / LEVELS;
+    }
+    return channels;
+}
+
+// What a glow measurement draws with: the renderer, the arena whose props wear the demo glows, the effects the renderer
+// holds, and a count of the snapshots shown, which tells each new one apart.
+struct GlowRig {
+    gfx::Renderer* renderer = nullptr;
+    game::Arena* arena = nullptr;
+    core::Jobs* jobs = nullptr;
+    core::Effects effects{};
+    u64 uploads = 0;
+};
+
+// How much glow `shot` draws: summed over the picture, each pixel's change from the prop without its glow, as a fraction
+// of the most the glow's colour can change it there (ink takes what is under it towards the colour, light adds the
+// colour). That is the glow's coverage times its drawn opacity, summed: the same shape at two strengths gives their ratio,
+// whatever the colour.
+f64 GlowAmount(GlowRig& rig, const GlowShot& shot) {
+    const core::GlowLook& look = rig.effects.glows.at(std::to_underlying(shot.role));
+    const core::GlowInput input = game::DemoGlow(shot.role, shot.tick);
+    // As the shader picks it: a result's colour, else the look's, which may be the element's effect colour.
+    const core::UiColour own = look.colour.element ? core::EffectColour(input.element) : look.colour.colour;
+    const core::UiColour colour = input.result == 0 ? own : look.drive.results.at(std::size_t{ input.result } - 1);
+    const std::array<f64, 4> tint = Unpacked(core::UiColours{}.Of(colour));
+    const core::Instance prop = GlowingProp(*rig.arena, *rig.jobs, shot);
+    core::Instance plain = prop;
+    plain.glow = 0;
+    std::vector<core::Instance> under;
+    if (shot.ground) {
+        under.push_back(core::MakeInstance(*test::TestManifest(), { .sprite = core::atlas::SpriteId::Ground }));
+    }
+    const gfx::View view{ .alpha = shot.alpha, .camera = { .centre = prop.current, .zoom = 1.0F } };
+    const auto capture = [&](std::optional<core::Instance> top) {
+        std::vector<core::Instance> drawn = under;
+        if (top) {
+            drawn.push_back(*top);
+        }
+        return Captured(*rig.renderer, SnapshotOf(drawn, shot.tick, ++rig.uploads), view, *rig.jobs);
+    };
+    const gfx::Image glowing = capture(prop);
+    const gfx::Image bare = capture(plain);
+    const gfx::Image beneath = capture(std::nullopt);
+    constexpr std::size_t ALPHA = 3;
+    f64 amount = 0.0;
+    for (std::size_t pixel = 0; pixel < std::size_t{ WIDTH } * HEIGHT; ++pixel) {
+        const std::array<f64, 3> with = LinearAt(glowing, pixel);
+        const std::array<f64, 3> without = LinearAt(bare, pixel);
+        const std::array<f64, 3> background = LinearAt(beneath, pixel);
+        f64 along = 0.0;
+        f64 most = 0.0;
+        for (std::size_t channel = 0; channel < with.size(); ++channel) {
+            const f64 full = look.blend == core::GlowBlend::Ink ? tint.at(channel) - (tint.at(ALPHA) * background.at(channel))
+                                                                : tint.at(channel);
+            along += (with.at(channel) - without.at(channel)) * full;
+            most += full * full;
+        }
+        if (most > 0.0) {
+            amount += along / most;
+        }
+    }
+    return amount;
+}
+
+// The glow `shot` should draw, up to its shape (GlowAmount() sums it over the shape): core::GlowStrength() of the demo's
+// inputs at the shot's render time (its value between the two ticks, its age from the start, negative before it), times
+// the look's opacity, which reduce flashing scales for light.
+f64 ExpectedGlow(const core::Effects& effects, const GlowShot& shot, bool reduceFlashing) {
+    const core::GlowLook& look = effects.glows.at(std::to_underlying(shot.role));
+    const core::GlowInput input = game::DemoGlow(shot.role, shot.tick);
+    const f64 age = core::RenderTick(shot.tick, shot.alpha) - static_cast<f64>(shot.start.value_or(input.startTick));
+    const auto value =
+        static_cast<f32>(std::lerp(static_cast<f64>(input.previousValue), static_cast<f64>(input.currentValue), shot.alpha));
+    const f32 strength = core::GlowStrength(look.drive, value, age, input.result, input.released, reduceFlashing);
+    const f32 dimmed = reduceFlashing && look.blend == core::GlowBlend::Light ? core::REDUCED_LIGHT_OPACITY : 1.0F;
+    return static_cast<f64>(strength * look.opacity * dimmed);
+}
+
+// Two shots of one glow, whose drawn amounts' ratio is checked against GlowStrength()'s.
+struct GlowPair {
+    std::string_view why;
+    GlowShot first{};
+    GlowShot second{};
+};
+
+TEST_CASE("each drive's drawn glow follows GlowStrength, also with start ticks across 2^32 and ahead of the clock") {
+    constexpr f64 MOST_ERROR = 0.05;
+    constexpr u64 PAST_32_BITS = u64{ 1 } << 32U;
+    // Just short of 2^32: the pulse's age crosses the wrap of the low 32 bits between the two shots.
+    constexpr u64 LATE_START = PAST_32_BITS - 10;
+    constexpr u64 HALF_BEAT = 48; // 0.8 s: the pulse at its lowest
+    constexpr u64 HELD = 120;
+    constexpr u64 HALF_FADED = 156;
+    constexpr u64 HALF_FILLED = 90;
+    constexpr u64 WITH_RESULT = 200;
+    constexpr u64 RELEASED = 150; // released at 144 when full: its release moved to this tick
+    using enum core::GlowRole;
+    const std::array<GlowPair, 5> pairs{ {
+        { .why = "the pulse at its beat's start and half",
+          .first = { .role = DemoPulse, .tick = 0 },
+          .second = { .role = DemoPulse, .tick = HALF_BEAT } },
+        { .why = "the charge held and half faded",
+          .first = { .role = DemoCharge, .tick = HELD },
+          .second = { .role = DemoCharge, .tick = HALF_FADED } },
+        { .why = "the progress at one half and with a result",
+          .first = { .role = DemoProgress, .tick = HALF_FILLED },
+          .second = { .role = DemoProgress, .tick = WITH_RESULT } },
+        { .why = "the pulse at its beat's start and half, its start tick near 2^32",
+          .first = { .role = DemoPulse, .tick = LATE_START, .start = LATE_START },
+          .second = { .role = DemoPulse, .tick = LATE_START + HALF_BEAT, .start = LATE_START } },
+        // The render clock half a tick short of the release: the age is -0.5, the wrapping difference read signed, and the
+        // charge hasn't begun to fade (read unsigned, the age would be 2^32 and the glow gone).
+        { .why = "the charge released a tick ahead of the clock's whole tick, and half faded",
+          .first = { .role = DemoCharge, .tick = RELEASED, .alpha = HALFWAY, .start = RELEASED },
+          .second = { .role = DemoCharge, .tick = HALF_FADED } },
+    } };
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, game::BuiltInData());
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, ArenaScene(), jobs);
+    GlowRig rig{ .renderer = &renderer, .arena = &arena, .jobs = &jobs };
+    for (const GlowPair& pair : pairs) {
+        const f64 drawn = GlowAmount(rig, pair.first) / GlowAmount(rig, pair.second);
+        const f64 expected = ExpectedGlow(rig.effects, pair.first, false) / ExpectedGlow(rig.effects, pair.second, false);
+        INFO(pair.why, ": drawn ", drawn, " to 1, GlowStrength ", expected, " to 1");
+        CHECK(std::abs((drawn / expected) - 1.0) < MOST_ERROR);
+    }
+}
+
+TEST_CASE("reduce flashing holds a pulse at its average and dims light glows, and leaves other ink glows alone") {
+    constexpr f64 MOST_ERROR = 0.05;
+    constexpr f64 MOST_FLICKER = 0.02;
+    constexpr u64 HALF_BEAT = 48;
+    constexpr u64 HALF_FILLED = 90;
+    using enum core::GlowRole;
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, game::BuiltInData());
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, ArenaScene(), jobs);
+    GlowRig rig{ .renderer = &renderer, .arena = &arena, .jobs = &jobs };
+    const GlowShot beat{ .role = DemoPulse, .tick = 0 };
+    const GlowShot halfBeat{ .role = DemoPulse, .tick = HALF_BEAT };
+    const GlowShot filling{ .role = DemoProgress, .tick = HALF_FILLED };
+    const f64 full = GlowAmount(rig, beat);
+    const f64 progress = GlowAmount(rig, filling);
+    renderer.SetReduceFlashing(true);
+    const f64 held = GlowAmount(rig, beat);
+    const f64 heldHalf = GlowAmount(rig, halfBeat);
+    const f64 progressReduced = GlowAmount(rig, filling);
+    const f64 average = ExpectedGlow(rig.effects, beat, true) / ExpectedGlow(rig.effects, beat, false);
+    {
+        INFO("an ink pulse held at ", held / full, " of its full strength at its beat's start, GlowStrength ", average);
+        INFO("and at ", heldHalf / full, " at its half");
+        CHECK(std::abs((heldHalf / held) - 1.0) < MOST_FLICKER);
+        CHECK(std::abs((held / full / average) - 1.0) < MOST_ERROR);
+    }
+    {
+        INFO("an ink progress: ", progressReduced / progress, " of its strength without reducing flashing");
+        CHECK(std::abs((progressReduced / progress) - 1.0) < MOST_FLICKER);
+    }
+    // The shrine's pulse as light, over the dark backdrop.
+    rig.effects.glows.at(std::to_underlying(DemoPulse)).blend = core::GlowBlend::Light;
+    renderer.SetEffects(rig.effects);
+    const GlowShot lit{ .role = DemoPulse, .tick = 0, .ground = false };
+    const f64 lightReduced = GlowAmount(rig, lit);
+    renderer.SetReduceFlashing(false);
+    const f64 lightFull = GlowAmount(rig, lit);
+    const f64 dimmed = ExpectedGlow(rig.effects, lit, true) / ExpectedGlow(rig.effects, lit, false);
+    INFO("a light pulse reducing flashing: ", lightReduced / lightFull, " of its full strength, GlowStrength ", dimmed);
+    CHECK(std::abs((lightReduced / lightFull / dimmed) - 1.0) < MOST_ERROR);
 }
 
 } // namespace
