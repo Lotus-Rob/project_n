@@ -156,15 +156,15 @@ inline constexpr Stage RIBBON_FRAG{
 };
 
 /// shaders/bin/sprite.frag.spv, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 21048> SPRITE_FRAG_SPIRV{{
+inline constexpr std::array<u8, 23328> SPRITE_FRAG_SPIRV{{
 #include "sprite.frag.spv.h"
 }};
 /// shaders/bin/sprite.frag.dxil, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 9372> SPRITE_FRAG_DXIL{{
+inline constexpr std::array<u8, 10744> SPRITE_FRAG_DXIL{{
 #include "sprite.frag.dxil.h"
 }};
 /// shaders/bin/sprite.frag.msl, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 25195> SPRITE_FRAG_MSL{{
+inline constexpr std::array<u8, 28105> SPRITE_FRAG_MSL{{
 #include "sprite.frag.msl.h"
 }};
 /// shaders/sprite.frag.hlsl.
@@ -174,22 +174,22 @@ inline constexpr Stage SPRITE_FRAG{
     .spirv = SPRITE_FRAG_SPIRV,
     .dxil = SPRITE_FRAG_DXIL,
     .msl = SPRITE_FRAG_MSL,
-    .samplers = 1,
+    .samplers = 2,
     .storageTextures = 0,
     .storageBuffers = 0,
     .uniformBuffers = 0,
 };
 
 /// shaders/bin/sprite.vert.spv, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 5060> SPRITE_VERT_SPIRV{{
+inline constexpr std::array<u8, 8332> SPRITE_VERT_SPIRV{{
 #include "sprite.vert.spv.h"
 }};
 /// shaders/bin/sprite.vert.dxil, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 6532> SPRITE_VERT_DXIL{{
+inline constexpr std::array<u8, 8484> SPRITE_VERT_DXIL{{
 #include "sprite.vert.dxil.h"
 }};
 /// shaders/bin/sprite.vert.msl, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 3015> SPRITE_VERT_MSL{{
+inline constexpr std::array<u8, 5258> SPRITE_VERT_MSL{{
 #include "sprite.vert.msl.h"
 }};
 /// shaders/sprite.vert.hlsl.
@@ -201,7 +201,7 @@ inline constexpr Stage SPRITE_VERT{
     .msl = SPRITE_VERT_MSL,
     .samplers = 0,
     .storageTextures = 0,
-    .storageBuffers = 1,
+    .storageBuffers = 2,
     .uniformBuffers = 1,
 };
 

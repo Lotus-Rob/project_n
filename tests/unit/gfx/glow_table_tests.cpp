@@ -66,4 +66,23 @@ TEST_CASE("a progress glow's later results follow in order") {
     CHECK(table.at(PROGRESS).results.at(SECOND) == colours.Of(core::UiColour::DamageEffect));
 }
 
+TEST_CASE("the glows' time is the render clock's whole tick, low 32 bits, and how far past it") {
+    constexpr u64 TICK = 100;
+    constexpr f64 QUARTER = 0.25;
+    constexpr u64 PAST_32_BITS = (u64{ 1 } << 32U) + 5;
+    constexpr u32 LAST_32_BIT = 0xFFFF'FFFFU;
+    // At the snapshot's own tick: alpha 1.
+    const gfx::GlowTime atTick = gfx::GlowTimeAt(TICK, 1.0);
+    CHECK(atTick.tick == TICK);
+    CHECK(atTick.fraction == 0.0F);
+    // A quarter of the way from the tick before.
+    const gfx::GlowTime between = gfx::GlowTimeAt(TICK, QUARTER);
+    CHECK(between.tick == TICK - 1);
+    CHECK(between.fraction == doctest::Approx(QUARTER));
+    // Past 2^32 ticks only the low bits are kept: the shader subtracts start ticks with wrapping.
+    CHECK(gfx::GlowTimeAt(PAST_32_BITS, 1.0).tick == 5);
+    // Before the first tick, the whole tick wraps too.
+    CHECK(gfx::GlowTimeAt(0, QUARTER).tick == LAST_32_BIT);
+}
+
 } // namespace

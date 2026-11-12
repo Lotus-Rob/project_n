@@ -7,7 +7,10 @@
 
 #include "core/error.hpp"
 #include "core/frame.hpp"
+#include "core/glow.hpp"
+#include "core/hit.hpp"
 #include "gfx/camera.hpp"
+#include "gfx/glow_table.hpp"
 #include "gfx/internal/gpu.hpp"
 #include "gfx/internal/resources/sprite_array.hpp"
 
@@ -32,6 +35,52 @@ struct Outline {
     f32 ring = 0.0F;
 };
 
+/// The glow table (gfx::BuildGlowTable()) in a storage buffer the sprite shaders read.
+class GlowTableBuffer {
+public:
+    /// Creates the buffer holding `table`, uploaded and submitted before it returns, or says why it couldn't.
+    [[nodiscard]] static std::expected<GlowTableBuffer, core::Error> Create(
+        SDL_GPUDevice* device,
+        const std::array<GlowRecord, core::GLOW_ROLES>& table
+    );
+
+    /// Copies `table` into the buffer in `copy`, cycling it, so frames in flight keep the previous table. Fails when the
+    /// transfer buffer can't be mapped; then the buffer keeps what it held.
+    [[nodiscard]] std::expected<void, core::Error> Upload(
+        SDL_GPUCopyPass* copy,
+        const std::array<GlowRecord, core::GLOW_ROLES>& table
+    );
+
+    /// The storage buffer, for GlowFrame::table.
+    [[nodiscard]] SDL_GPUBuffer* Buffer() const {
+        return m_buffer.get();
+    }
+
+private:
+    SDL_GPUDevice* m_device = nullptr;
+    Gpu<SDL_GPUBuffer> m_buffer = nullptr;
+    Gpu<SDL_GPUTransferBuffer> m_transfer = nullptr;
+};
+
+/// What every glow a frame draws shares (the phase 6 glow spec, "Drawing").
+struct GlowFrame {
+    /// The glow table's storage buffer (GlowTableBuffer::Buffer()); never null.
+    SDL_GPUBuffer* table = nullptr;
+    /// The render clock's whole tick, low 32 bits: drives count from an instance's start tick to it.
+    u32 tick = 0;
+    /// How far past `tick` the render clock is, from 0 to 1.
+    f32 fraction = 0.0F;
+    /// The camera's zoom: a glow's reach shrinks as it grows, by the glow's zoom shrink.
+    f32 zoom = 1.0F;
+    /// The reduce flashing setting.
+    bool reduceFlashing = false;
+    /// The palette's effect colour of each core::HitKind (core::EffectColour()), linear premultiplied RGBA8, for a glow
+    /// in its ability's element colour.
+    std::array<u32, core::HIT_KINDS> elementColours{};
+    /// One texel of an atlas page, in UV: 1 / the page size.
+    f32 texelUv = 0.0F;
+};
+
 /// The sprite pipelines (one per core::Pipeline) and their instance buffer.
 class SpriteRenderer {
 public:
@@ -54,26 +103,29 @@ public:
 
     /// Draws the uploaded instances in `pass`, a draw per batch of `batches` (the uploaded instances' batches, in any order
     /// of their instances), textured from `sprites`, placed by `transform` and interpolated by `alpha` (0:
-    /// previous tick, 1: this tick). Instances past what fitted aren't drawn.
+    /// previous tick, 1: this tick). An instance wearing a glow draws it under itself, its quad grown by the glow's reach,
+    /// as `glows` says; one without draws as before, reading no field. Instances past what fitted aren't drawn.
     void Draw(
         SDL_GPUCommandBuffer* commands,
         SDL_GPURenderPass* pass,
         std::span<const core::Batch> batches,
         const SpriteArray& sprites,
         const ClipTransform& transform,
-        f32 alpha
+        f32 alpha,
+        const GlowFrame& glows
     ) const;
 
     /// Draws `outline` in `pass` after Draw(), with the same `sprites`, `transform` and `alpha`: the
-    /// transparent pixels within the ring's width of its instance's sprite take the ring's colour.
-    /// Nothing when the instance wasn't uploaded.
+    /// transparent pixels within the ring's width of its instance's sprite take the ring's colour. `glows` is bound as
+    /// Draw() binds it; the outline draws no glow. Nothing when the instance wasn't uploaded.
     void DrawOutline(
         SDL_GPUCommandBuffer* commands,
         SDL_GPURenderPass* pass,
         const Outline& outline,
         const SpriteArray& sprites,
         const ClipTransform& transform,
-        f32 alpha
+        f32 alpha,
+        const GlowFrame& glows
     ) const;
 
 private:

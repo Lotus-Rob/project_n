@@ -6,6 +6,7 @@
 #include "core/profile.hpp"
 #include "core/repeated_failure.hpp"
 #include "core/tick_clock.hpp"
+#include "gfx/glow_table.hpp"
 #include "gfx/internal/features/composite.hpp"
 #include "gfx/internal/features/meshes.hpp"
 #include "gfx/internal/features/ribbons.hpp"
@@ -208,6 +209,10 @@ struct Renderer::Impl {
         const View& view
     );
     void DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snapshot& snapshot, const View& view) const;
+    // What every glow of the frame showing `snapshot` as `view` shows it shares.
+    [[nodiscard]] internal::GlowFrame GlowFrameOf(const core::Snapshot& snapshot, const View& view) const;
+    // The glow table changed (new effects or palette): the next Upload() copies it again.
+    void GlowsChanged();
     void DrawFinal(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target) const;
 
     // Resources: the device and what lasts as long as it.
@@ -230,6 +235,7 @@ struct Renderer::Impl {
     internal::SpriteRenderer instances{};
     internal::MeshRenderer meshes{};
     internal::SpriteRenderer overlay{}; // the per-frame sprites: health bars, halos and swords (VolleyDrawing)
+    internal::GlowTableBuffer glowTable{};
     internal::RibbonRenderer ribbons{};
     internal::Compositor compositor{};
     internal::SceneTarget sceneTarget{};
@@ -250,6 +256,11 @@ struct Renderer::Impl {
     // Per-frame state: the frame in flight, what its uploads hold, and the failures being counted.
     std::optional<internal::Frame> frame = std::nullopt; // acquired by Acquire(), submitted by Draw()
     UploadedSnapshot uploaded{};
+    // The glow table's versions: the latest (effects and palette), the one on the GPU, and one recorded but not yet submitted.
+    u64 glowVersion = 0;
+    u64 glowHeld = 0;
+    std::optional<u64> glowRecorded = std::nullopt;
+    bool reduceFlashing = false;
     std::size_t glyphsRecorded = 0; // of the cache's pending fields, in the command buffer not yet submitted
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::string number{};  // a number's text, made again for each
@@ -318,6 +329,13 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
     const std::expected<std::size_t, core::Error> dropped =
         newInstances ? instances.Upload(copy, snapshot.instances) : std::expected<std::size_t, core::Error>{ 0 };
+    std::expected<void, core::Error> glowsCopied{};
+    if (glowHeld != glowVersion) {
+        glowsCopied = glowTable.Upload(copy, BuildGlowTable(effects, uiColours));
+        if (glowsCopied) {
+            glowRecorded = glowVersion;
+        }
+    }
     if (glyphs) {
         glyphs = UploadGlyphs(copy);
     }
@@ -350,7 +368,7 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     }
     const auto copied = [](std::size_t /*dropped*/) {};
     return core::Combine(
-        core::Combine(core::Combine(instancesCopied, glyphs), quadsDropped.transform(copied)),
+        core::Combine(core::Combine(core::Combine(instancesCopied, glowsCopied), glyphs), quadsDropped.transform(copied)),
         core::Combine(overlayDropped.transform(copied), ribbonsDropped.transform(copied))
     );
 }
@@ -657,7 +675,9 @@ void Renderer::Impl::Submitted(bool submitted) {
     uploaded.Submitted(submitted);
     if (submitted) {
         text->Uploaded(glyphsRecorded);
+        glowHeld = glowRecorded.value_or(glowHeld);
     }
+    glowRecorded.reset();
     glyphsRecorded = 0;
 }
 
@@ -709,7 +729,8 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
         return;
     }
     const ClipTransform transform = WorldToClip(view.camera, sceneTarget.width, sceneTarget.height);
-    instances.Draw(commands, pass, snapshot.batches, sprites, transform, alpha);
+    const internal::GlowFrame glows = GlowFrameOf(snapshot, view);
+    instances.Draw(commands, pass, snapshot.batches, sprites, transform, alpha, glows);
     const f32 ring = OUTLINE_TEXELS / static_cast<f32>(manifest->pageSize);
     if (snapshot.selected) {
         instances.DrawOutline(
@@ -718,7 +739,8 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
             { .instance = *snapshot.selected, .colour = uiColours.Of(core::UiColour::SelectedOutline), .ring = ring },
             sprites,
             transform,
-            alpha
+            alpha,
+            glows
         );
     }
     // Hovering the selected entity keeps its gold: the selection is what a click changed.
@@ -729,14 +751,15 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
             { .instance = static_cast<u32>(*outlined), .colour = uiColours.Of(core::UiColour::HoverOutline), .ring = ring },
             sprites,
             transform,
-            alpha
+            alpha,
+            glows
         );
     }
     // The trails, then the overlay: the swords' tinted cores, their halos (additive), the lance's bursts (additive), the
     // health bars and the swords, at the render time; their instances hold no motion between ticks, so the overlay's alpha
     // changes nothing.
     ribbons.Draw(commands, pass, transform);
-    overlay.Draw(commands, pass, volleyDrawing.batches, sprites, transform, alpha);
+    overlay.Draw(commands, pass, volleyDrawing.batches, sprites, transform, alpha, glows);
     // Game text over the world, its outlines and the overlay (the phase 6 chunk 3 spec), placed in target pixels; then the
     // HUD over all of it: its bars, then its lines.
     const f32 shadowShift = TEXT_SHADOW_BASE_PIXELS / static_cast<f32>(GLYPH_PAGE_SIZE); // a texel a base pixel
@@ -749,10 +772,29 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
     const std::span<const internal::MeshRun> runs{ meshRuns };
     const std::size_t hudRun = std::min(hudRuns, runs.size());
     meshes.Draw(commands, pass, runs.subspan(hudRun), pixels, style);
-    overlay.Draw(commands, pass, volleyDrawing.hud, sprites, pixels, alpha);
+    overlay.Draw(commands, pass, volleyDrawing.hud, sprites, pixels, alpha, glows);
     meshes.Draw(commands, pass, runs.first(hudRun), pixels, style);
     SDL_EndGPURenderPass(pass);
     SDL_PopGPUDebugGroup(commands);
+}
+
+internal::GlowFrame Renderer::Impl::GlowFrameOf(const core::Snapshot& snapshot, const View& view) const {
+    PN_PROFILE_ZONE();
+    const GlowTime time = GlowTimeAt(snapshot.simulationTick, view.alpha);
+    internal::GlowFrame glows{ .table = glowTable.Buffer(),
+                               .tick = time.tick,
+                               .fraction = time.fraction,
+                               .zoom = view.camera.zoom,
+                               .reduceFlashing = reduceFlashing,
+                               .texelUv = 1.0F / static_cast<f32>(manifest->pageSize) };
+    for (std::size_t element = 0; element < core::HIT_KINDS; ++element) {
+        glows.elementColours.at(element) = uiColours.Of(core::EffectColour(static_cast<core::HitKind>(element)));
+    }
+    return glows;
+}
+
+void Renderer::Impl::GlowsChanged() {
+    ++glowVersion;
 }
 
 std::expected<void, core::Error> Renderer::Impl::Frame(const internal::Frame& acquired, const Shown& shown, core::Jobs& jobs) {
@@ -868,6 +910,12 @@ std::expected<Renderer, core::Error> Renderer::Create(
         return std::unexpected{ std::move(overlay.error()) };
     }
     impl->overlay = std::move(*overlay);
+    std::expected<internal::GlowTableBuffer, core::Error> glowTable =
+        internal::GlowTableBuffer::Create(device, BuildGlowTable(impl->effects, impl->uiColours));
+    if (!glowTable) {
+        return std::unexpected{ std::move(glowTable.error()) };
+    }
+    impl->glowTable = std::move(*glowTable);
     std::expected<internal::RibbonRenderer, core::Error> ribbons =
         internal::RibbonRenderer::Create(device, internal::SCENE_FORMAT);
     if (!ribbons) {
@@ -1010,10 +1058,16 @@ void Renderer::SetTextOptions(const TextOptions& text) {
 
 void Renderer::SetUiColours(const core::UiColours& colours) {
     m_impl->uiColours = colours;
+    m_impl->GlowsChanged();
 }
 
 void Renderer::SetEffects(const core::Effects& effects) {
     m_impl->effects = effects;
+    m_impl->GlowsChanged();
+}
+
+void Renderer::SetReduceFlashing(bool reduce) {
+    m_impl->reduceFlashing = reduce;
 }
 
 std::expected<Image, core::Error> Renderer::Capture(

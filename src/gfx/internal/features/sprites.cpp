@@ -10,16 +10,57 @@ namespace {
 
 constexpr u32 VERTICES_PER_QUAD = 4; // a triangle strip
 
-// `Draw` in shaders/sprite.vert.hlsl: a float4, then a float, two uints and a float.
-constexpr std::size_t DRAW_UNIFORM_BYTES = 32;
+// `Draw` in shaders/sprite.vert.hlsl: rows of 16 bytes, as HLSL packs a constant buffer.
+constexpr std::size_t DRAW_UNIFORM_BYTES = 80;
 struct DrawUniforms {
     std::array<f32, 4> worldToClip{};
     f32 alpha = 0.0F;
     u32 firstInstance = 0;
     u32 outlineColour = 0; // 0: an ordinary sprite
     f32 ring = 0.0F;       // the outline's width in UV; 0 for an ordinary sprite
+    u32 glowTick = 0;
+    f32 glowFraction = 0.0F;
+    f32 zoom = 1.0F;
+    u32 reduceFlashing = 0;
+    std::array<u32, core::HIT_KINDS> elementColours{};
+    f32 texelUv = 0.0F;
+    std::array<f32, 3> padding{};
 };
-static_assert(sizeof(DrawUniforms) == DRAW_UNIFORM_BYTES, "the shader's constant buffer is 32 bytes");
+static_assert(sizeof(DrawUniforms) == DRAW_UNIFORM_BYTES, "the shader's constant buffer is 80 bytes");
+// The constants the sprite shaders copy, as they hold them: each must equal what it copies.
+constexpr std::size_t SHADER_GLOW_ROLES = 8;  // sprite.vert.hlsl's GLOW_ROLES
+constexpr u8 SHADER_GLOW_BLEND_INK = 1;       // sprite.vert.hlsl's GLOW_BLEND_INK
+constexpr std::size_t SHADER_ELEMENTS = 4;    // sprite.vert.hlsl's LAST_ELEMENT + 1, and elementColours' uint4
+constexpr u32 SHADER_FIELD_REACH_TEXELS = 16; // sprite.hlsli's FIELD_REACH_TEXELS
+static_assert(core::GLOW_ROLES == SHADER_GLOW_ROLES, "sprite.vert.hlsl's GLOW_ROLES is the glow table's length");
+static_assert(std::to_underlying(core::GlowBlend::Ink) == SHADER_GLOW_BLEND_INK, "sprite.vert.hlsl's GLOW_BLEND_INK is Ink");
+static_assert(core::HIT_KINDS == SHADER_ELEMENTS, "sprite.vert.hlsl's LAST_ELEMENT and elementColours hold every HitKind");
+static_assert(core::FIELD_REACH_TEXELS == SHADER_FIELD_REACH_TEXELS, "sprite.hlsli's FIELD_REACH_TEXELS is the fields' reach");
+
+constexpr u32 GLOW_TABLE_BYTES = static_cast<u32>(GLOW_RECORD_BYTES * core::GLOW_ROLES);
+
+// What every draw of a frame pushes, before its batch's first instance.
+DrawUniforms UniformsOf(const ClipTransform& transform, f32 alpha, const GlowFrame& glows) {
+    return { .worldToClip = { transform.scaleX, transform.scaleY, transform.offsetX, transform.offsetY },
+             .alpha = alpha,
+             .glowTick = glows.tick,
+             .glowFraction = glows.fraction,
+             .zoom = glows.zoom,
+             .reduceFlashing = glows.reduceFlashing ? 1U : 0U,
+             .elementColours = glows.elementColours,
+             .texelUv = glows.texelUv };
+}
+
+// Binds the vertex stage's instances and glow table, and the fragment stage's atlas and distance fields.
+void Bind(SDL_GPURenderPass* pass, SDL_GPUBuffer* instances, const SpriteArray& sprites, const GlowFrame& glows) {
+    const std::array<SDL_GPUBuffer*, 2> storage{ instances, glows.table };
+    SDL_BindGPUVertexStorageBuffers(pass, 0, storage.data(), static_cast<u32>(storage.size()));
+    const std::array<SDL_GPUTextureSamplerBinding, 2> textures{ {
+        { .texture = sprites.texture.get(), .sampler = sprites.sampler.get() },
+        { .texture = sprites.field.get(), .sampler = sprites.fieldSampler.get() },
+    } };
+    SDL_BindGPUFragmentSamplers(pass, 0, textures.data(), static_cast<u32>(textures.size()));
+}
 
 Gpu<SDL_GPUGraphicsPipeline> CreatePipeline(SDL_GPUDevice* device, SDL_GPUTextureFormat format, core::Pipeline blend) {
     const Gpu<SDL_GPUShader> vertex = CreateShader(device, shaders::SPRITE_VERT, SDL_GPU_SHADERSTAGE_VERTEX);
@@ -58,6 +99,63 @@ Gpu<SDL_GPUGraphicsPipeline> CreatePipeline(SDL_GPUDevice* device, SDL_GPUTextur
 }
 
 } // namespace
+
+std::expected<GlowTableBuffer, core::Error> GlowTableBuffer::Create(
+    SDL_GPUDevice* device,
+    const std::array<GlowRecord, core::GLOW_ROLES>& table
+) {
+    GlowTableBuffer buffer;
+    buffer.m_device = device;
+    SDL_GPUBufferCreateInfo bufferInfo{};
+    bufferInfo.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
+    bufferInfo.size = GLOW_TABLE_BYTES;
+    bufferInfo.props = SDL_CreateProperties();
+    SDL_SetStringProperty(bufferInfo.props, SDL_PROP_GPU_BUFFER_CREATE_NAME_STRING, "glow table");
+    buffer.m_buffer = Gpu<SDL_GPUBuffer>{ SDL_CreateGPUBuffer(device, &bufferInfo), { device } };
+    SDL_DestroyProperties(bufferInfo.props);
+    SDL_GPUTransferBufferCreateInfo transferInfo{};
+    transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    transferInfo.size = GLOW_TABLE_BYTES;
+    buffer.m_transfer = Gpu<SDL_GPUTransferBuffer>{ SDL_CreateGPUTransferBuffer(device, &transferInfo), { device } };
+    SDL_GPUCommandBuffer* commands =
+        buffer.m_buffer == nullptr || buffer.m_transfer == nullptr ? nullptr : SDL_AcquireGPUCommandBuffer(device);
+    if (commands == nullptr) {
+        return std::unexpected{ core::Error{ std::format("the glow table wasn't created: {}", SDL_GetError()) } };
+    }
+    // Filled before any frame binds it, so no draw reads it empty.
+    SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
+    const std::expected<void, core::Error> uploaded = buffer.Upload(copy, table);
+    SDL_EndGPUCopyPass(copy);
+    if (!uploaded) {
+        SDL_CancelGPUCommandBuffer(commands);
+        return std::unexpected{ uploaded.error() };
+    }
+    if (!SDL_SubmitGPUCommandBuffer(commands)) {
+        return std::unexpected{ core::Error{ std::format("the glow table wasn't uploaded: {}", SDL_GetError()) } };
+    }
+    return buffer;
+}
+
+std::expected<void, core::Error> GlowTableBuffer::Upload(
+    SDL_GPUCopyPass* copy,
+    const std::array<GlowRecord, core::GLOW_ROLES>& table
+) {
+    PN_PROFILE_ZONE();
+    const std::span<const std::byte> bytes = std::as_bytes(std::span{ table });
+    void* mapped = SDL_MapGPUTransferBuffer(m_device, m_transfer.get(), true);
+    if (mapped == nullptr) {
+        return std::unexpected{ core::Error{ std::format("the glow table wasn't uploaded: {}", SDL_GetError()) } };
+    }
+    std::ranges::copy(bytes, BytesAt(mapped, bytes.size()).begin());
+    SDL_UnmapGPUTransferBuffer(m_device, m_transfer.get());
+    SDL_GPUTransferBufferLocation source{};
+    source.transfer_buffer = m_transfer.get();
+    SDL_GPUBufferRegion destination{};
+    destination.buffer = m_buffer.get();
+    destination.size = static_cast<u32>(bytes.size());
+    SDL_UploadToGPUBuffer(copy, &source, &destination, true);
+    return {};
+}
 
 std::expected<SpriteRenderer, core::Error> SpriteRenderer::Create(
     SDL_GPUDevice* device,
@@ -127,22 +225,15 @@ void SpriteRenderer::Draw(
     std::span<const core::Batch> batches,
     const SpriteArray& sprites,
     const ClipTransform& transform,
-    f32 alpha
+    f32 alpha,
+    const GlowFrame& glows
 ) const {
     PN_PROFILE_ZONE();
     if (m_count == 0) {
         return;
     }
-    const std::array<SDL_GPUBuffer*, 1> storage{ m_instances.get() };
-    SDL_BindGPUVertexStorageBuffers(pass, 0, storage.data(), static_cast<u32>(storage.size()));
-    SDL_GPUTextureSamplerBinding atlas{};
-    atlas.texture = sprites.texture.get();
-    atlas.sampler = sprites.sampler.get();
-    SDL_BindGPUFragmentSamplers(pass, 0, &atlas, 1);
-    DrawUniforms uniforms{
-        .worldToClip = { transform.scaleX, transform.scaleY, transform.offsetX, transform.offsetY },
-        .alpha = alpha,
-    };
+    Bind(pass, m_instances.get(), sprites, glows);
+    DrawUniforms uniforms = UniformsOf(transform, alpha, glows);
     for (const core::Batch& batch : batches) {
         if (batch.first >= m_count) {
             continue; // batches may come in any order of their instances (the overlay's do)
@@ -162,26 +253,19 @@ void SpriteRenderer::DrawOutline(
     const Outline& outline,
     const SpriteArray& sprites,
     const ClipTransform& transform,
-    f32 alpha
+    f32 alpha,
+    const GlowFrame& glows
 ) const {
     PN_PROFILE_ZONE();
     if (outline.instance >= m_count) {
         return;
     }
-    const std::array<SDL_GPUBuffer*, 1> storage{ m_instances.get() };
-    SDL_BindGPUVertexStorageBuffers(pass, 0, storage.data(), static_cast<u32>(storage.size()));
-    SDL_GPUTextureSamplerBinding atlas{};
-    atlas.texture = sprites.texture.get();
-    atlas.sampler = sprites.sampler.get();
-    SDL_BindGPUFragmentSamplers(pass, 0, &atlas, 1);
+    Bind(pass, m_instances.get(), sprites, glows);
     SDL_BindGPUGraphicsPipeline(pass, m_pipelines.at(static_cast<std::size_t>(core::Pipeline::Normal)).get());
-    const DrawUniforms uniforms{
-        .worldToClip = { transform.scaleX, transform.scaleY, transform.offsetX, transform.offsetY },
-        .alpha = alpha,
-        .firstInstance = outline.instance,
-        .outlineColour = outline.colour,
-        .ring = outline.ring,
-    };
+    DrawUniforms uniforms = UniformsOf(transform, alpha, glows);
+    uniforms.firstInstance = outline.instance;
+    uniforms.outlineColour = outline.colour;
+    uniforms.ring = outline.ring;
     SDL_PushGPUVertexUniformData(commands, 0, &uniforms, sizeof(uniforms));
     SDL_DrawGPUPrimitives(pass, VERTICES_PER_QUAD, 1, 0, 0);
 }
