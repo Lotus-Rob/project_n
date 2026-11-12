@@ -90,6 +90,12 @@ set_warnings("everything", "pedantic", "error")
 local sanitized = get_config("sanitizer") and get_config("sanitizer") ~= "none"
 
 if is_plat("windows") then
+    -- Off Windows (msvc-wine), XMake's build cache compiles the preprocessed file, whose /showIncludes
+    -- lists no headers, and /showIncludes is how XMake learns what each object depends on there
+    -- (CL_WRAPPER in tools/project_n.py): with the cache on, a changed header rebuilt nothing.
+    if not is_host("windows") then
+        set_policy("build.ccache", false)
+    end
     -- MSVC 14.50 has no /std:c++23: it warns (D9002, not fatal even with /WX), ignores it and
     -- compiles as C++14. Its C++23 mode is /std:c++23preview; src/core/cxx23.hpp guards the rest.
     add_cxxflags("/std:c++23preview")

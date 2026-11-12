@@ -4,6 +4,7 @@ import argparse
 import contextlib
 import functools
 import io
+import os
 import subprocess
 import tempfile
 import time
@@ -449,6 +450,35 @@ class ReferenceTest(unittest.TestCase):
     def test_reference_refuses_a_preset_that_isnt_linux(self):
         with self.assertRaises(project_n.Fail):
             project_n.cmd_reference(project_n.argparse.Namespace(preset="windows-msvc", container=False, update=False))
+
+
+class MsvcWrapperTest(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "bash script")
+    def test_the_wrapper_drops_source_dependencies_and_its_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, text in (("cl.exe", project_n.CL_WRAPPER), ("cl", "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\"\n")):
+                (Path(tmp) / name).write_text(text)
+                (Path(tmp) / name).chmod(0o755)
+            out = subprocess.run([Path(tmp) / "cl.exe", "-c", "/sourceDependencies", "dep.json", "a b.cpp",
+                                  "-Fosrc/sourceDependencies.obj", "-sourceDependencies", "x.json", "-nologo"],
+                                 check=True, capture_output=True, text=True).stdout
+        self.assertEqual(out.splitlines(), ["-c", "a b.cpp", "-Fosrc/sourceDependencies.obj", "-nologo"])
+
+    @unittest.skipIf(os.name == "nt", "symlinks")
+    def test_the_wrapper_is_installed_over_the_symlink_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = Path(tmp) / "bin" / "x64"
+            bin_dir.mkdir(parents=True)
+            (bin_dir / "cl").write_text("#!/usr/bin/env bash\n")
+            (bin_dir / "cl.exe").symlink_to("cl")
+            project_n.install_cl_wrapper(Path(tmp))
+            wrapper = bin_dir / "cl.exe"
+            self.assertFalse(wrapper.is_symlink())
+            self.assertEqual(wrapper.read_text(), project_n.CL_WRAPPER)
+            self.assertTrue(os.access(wrapper, os.X_OK))
+            os.utime(wrapper, (1, 1))
+            project_n.install_cl_wrapper(Path(tmp))
+            self.assertEqual(wrapper.stat().st_mtime, 1)
 
 
 class ArtifactReferenceTest(unittest.TestCase):

@@ -70,6 +70,21 @@ IMAGES = {
 # Runs in the msvc image with msvc_dir() at /opt/msvc. vsdownload.py uses the Pixi env's Python.
 MSVC_INSTALL = ('pixi run python /opt/msvc-wine/vsdownload.py --accept-license --msvc-version "$MSVC_VERSION" '
                 '--sdk-version "$SDK_VERSION" --architecture x64 --dest /opt/msvc && /opt/msvc-wine/install.sh /opt/msvc')
+# Installed over msvc-wine's bin/x64/cl.exe (a symlink to its `cl` script) by install_cl_wrapper. Under Wine, the
+# /sourceDependencies JSON XMake asks for names headers as lowercased z:\ paths XMake can't find, so every MSVC build
+# recompiled everything; without it XMake reads /showIncludes, which msvc-wine's `cl` turns into Linux paths.
+CL_WRAPPER = """#!/usr/bin/env bash
+# Written by project_n (CL_WRAPPER in tools/project_n.py): msvc-wine's cl without /sourceDependencies and its file.
+args=()
+while (($#)); do
+  case $1 in
+    [-/]sourceDependencies) shift ;;  # and its file, the next argument
+    *) args+=("$1") ;;
+  esac
+  (($#)) && shift
+done
+exec "$(dirname "$0")/cl" "${args[@]}"
+"""
 IMAGE_INPUTS = ("pixi.toml", "pixi.lock", "tools/env/activate.sh")
 IMAGE_IGNORE = "containers/.containerignore"  # the build context is the repo root; this admits only IMAGE_INPUTS
 CACHE_VOLUME = "project_n-xmake-cache"  # PROJECT_N_XMAKE_CACHE=<dir> bind-mounts a directory instead (CI caches it)
@@ -240,12 +255,22 @@ def ensure_msvc(image):
         dest.mkdir(parents=True)
         run(container_cmd(image, ["bash", "-c", MSVC_INSTALL], mounts=[f"{dest}:/opt/msvc:Z"]))
         (dest / ".installed").touch()
+    install_cl_wrapper(dest)
     # The install also holds an empty servicing stub of Microsoft's newest toolset (14.51), and
     # XMake (--vs_toolset is Windows-only) takes the newest folder as the toolset. Keep real ones.
     for toolset in (dest / "VC" / "Tools" / "MSVC").glob("*"):
         if not (toolset / "bin").is_dir():
             shutil.rmtree(toolset)
     return dest
+
+
+def install_cl_wrapper(dest):
+    """Put CL_WRAPPER at `dest`/bin/x64/cl.exe in place of msvc-wine's symlink; rewritten only when it differs."""
+    wrapper = dest / "bin" / "x64" / "cl.exe"
+    if wrapper.is_symlink() or not wrapper.exists() or wrapper.read_text(encoding="utf-8") != CL_WRAPPER:
+        wrapper.unlink(missing_ok=True)
+        wrapper.write_text(CL_WRAPPER, encoding="utf-8", newline="\n")
+    wrapper.chmod(0o755)
 
 
 def preset_container(preset):
