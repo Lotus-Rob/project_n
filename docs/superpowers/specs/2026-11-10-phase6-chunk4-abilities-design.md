@@ -860,8 +860,6 @@ volley pictures (`volley_ring` 22,000 pixels, `volley_converging` 123,000, `voll
 
 - **Player death is undefined** (ruling 12): nothing damages the player yet; if something did, the cultivator would be
   removed and the camera would stop following. What death does is a later chunk's design.
-- **The still rings in motion:** since Task 10c the swords were seen only in the reference pictures (tight rings tip
-  to heel, distinct blades; the outer rings standing as a sunburst while the inner ones swirl in). The clockwise sweep,
-  the hold and the uneven departure are motion that a still can't show; their frame time is now measured at both ends
-  of the zoom (Measurements), but nobody has judged them by eye. Every lever is data in `abilities.yaml` and
-  `effects.yaml`.
+
+The rings in motion, open until the PR, were judged live by the user on 2026-11-12: "the current sword rings look fine
+for the demo". Every lever stays data in `abilities.yaml` and `effects.yaml` for later tuning.
