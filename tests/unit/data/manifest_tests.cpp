@@ -111,7 +111,7 @@ TEST_CASE("each refusal names its line") {
 TEST_CASE("a manifest's gutter is read, and one under two fields' reach or the mips' gutter is refused") {
     const std::expected<core::Manifest, core::Error> odd = data::ParseManifest(With("gutter: 32", "gutter: 31"));
     CHECK_FALSE(odd.has_value());
-    // 6 mip levels need 2^5 = 32 texels apart; the 16-texel edge of a 32-texel gutter is not enough.
+    // 7 mip levels need 2^6 = 64 texels apart, which a 32-texel gutter can't give.
     const std::expected<core::Manifest, core::Error> deepMips = data::ParseManifest(With("mip_levels: 5", "mip_levels: 7"));
     REQUIRE_FALSE(deepMips.has_value());
     CHECK(deepMips.error().message.find("manifest line 4") != std::string::npos);
