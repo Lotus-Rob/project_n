@@ -424,21 +424,6 @@ bool Loads(const std::vector<std::byte>& bytes, u64 savedTick = SAVED_TICK) {
     return loaded;
 }
 
-// The file named by PN_FIGHT_SEED, or null.
-const char* FightSeedPath() {
-#ifdef _MSC_VER
-#pragma warning(push)
-// MSVC calls getenv unsafe (C4996); _dupenv_s is its own, and nothing here sets the variable while the test runs.
-#pragma warning(disable : 4996)
-#endif
-    // NOLINTNEXTLINE(concurrency-mt-unsafe): read once, before any thread but the test's runs
-    const char* const path = std::getenv("PN_FIGHT_SEED");
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
-    return path;
-}
-
 // What `write` writes to a core::Writer, as bytes.
 template<typename Write>
 std::vector<std::byte> Written(const Write& write) {
@@ -448,9 +433,17 @@ std::vector<std::byte> Written(const Write& write) {
     return part;
 }
 
-// The arena in the middle of a fight, as tests/fuzz/corpus/save/fight holds it: the arena scene has no world tier, so its
-// save is small. Casts are at the chest of one fox, whose tick-by-tick history the numbers below arrange.
-TEST_CASE("the mid-fight save loads, and writes the fuzz seed when PN_FIGHT_SEED names a file") {
+// The arena data of the mid-fight save: Qi full, enough for the swords and the lance.
+core::GameData FightData() {
+    core::GameData data = game::BuiltInData();
+    data.abilities.qiStart = data.abilities.qiMax;
+    return data;
+}
+
+// Plays `saved` (an arena scene made with FightData()) to the middle of a fight, as tests/fuzz/corpus/save/fight holds
+// it: the arena scene has no world tier, so its save is small. Casts are at the chest of one fox, whose tick-by-tick
+// history the numbers below arrange.
+void PlayFight(game::Arena& saved) {
     constexpr u64 FIRST_DEATH = 5;    // its fox respawns 210 ticks later and is still easing in at SAVED_AT
     constexpr u64 SECOND_DEATH = 150; // removed by SAVED_AT, its respawn still waiting
     constexpr u64 SWORDS_AT = 285;
@@ -459,9 +452,6 @@ TEST_CASE("the mid-fight save loads, and writes the fuzz seed when PN_FIGHT_SEED
     constexpr u64 DASH_AT = 298;
     constexpr u64 SAVED_AT = 300; // a third fox dies on this tick, so is still dissolving
     constexpr std::size_t DYING = 5;
-    core::GameData data = game::BuiltInData();
-    data.abilities.qiStart = data.abilities.qiMax; // enough for the swords and the lance
-    game::Arena saved(test::TestManifest(), game::Scene::Arena, data);
     constexpr core::Vec2 FAR_RIGHT{ .x = 5'000.0F, .y = 0.0F };
     const auto cast = [&saved](u64 tick, core::Slot slot, core::Vec2 point) {
         const std::array<core::Action, 1> actions{ { { .kind = core::ActionKind::Cast, .slot = slot, .point = point } } };
@@ -492,24 +482,12 @@ TEST_CASE("the mid-fight save loads, and writes the fuzz seed when PN_FIGHT_SEED
     }
     Tick(saved, At(SAVED_AT), {});
     saved.Damage(Foxes(saved).at(DYING), FOX_HEALTH, SAVED_AT);
-    const core::Registry& entities = saved.State()[game::ACTIVE].Entities();
-    core::Jobs jobs{ 1 };
-    core::Snapshot snapshot;
-    saved.Publish(snapshot, jobs);
-    REQUIRE(snapshot.volleys.size() >= 1);
-    REQUIRE(snapshot.flashes.size() >= 1);
-    CHECK_FALSE(entities.view<const game::Afflictions>().empty());
-    CHECK_FALSE(entities.view<const game::Dying>().empty());
-    CHECK_FALSE(entities.view<const game::Arriving>().empty());
-    CHECK_FALSE(entities.view<const game::Dashing>().empty());
-    const std::vector<std::byte> full = Saved(saved);
-    game::Arena loadedFull(test::TestManifest(), game::Scene::Cells, data);
-    core::Reader fullReader{ full };
-    CHECK(loadedFull.Load(fullReader, SAVED_TICK));
-    CHECK(loadedFull.StateHash() == saved.StateHash());
+}
 
-    // The seed is that save with the world tier and the relationships left out (about 200 KB of NPCs): the bytes before
-    // the world tier, an empty one, no relationships, and what follows the relationships, which is all combat.
+// `full`, the save of `saved`, with the world tier and the relationships left out (about 200 KB of NPCs): the bytes before
+// the world tier, an empty one, no relationships, and what follows the relationships, which is all combat. Empty if
+// `full` isn't laid out that way.
+std::vector<std::byte> WithoutWorldTier(const game::Arena& saved, const std::vector<std::byte>& full) {
     const core::State& state = saved.State();
     const core::State bare{ game::DOMAINS, state.Seed() };
     const auto head = Written([&](core::Writer& writer) {
@@ -529,28 +507,60 @@ TEST_CASE("the mid-fight save loads, and writes the fuzz seed when PN_FIGHT_SEED
     const std::vector<std::byte> fullWorld = world(state);
     const std::vector<std::byte> fullRelationships = relationships(saved.NpcRelationships());
     const std::size_t before = head.size() + fullWorld.size() + fullRelationships.size();
-    REQUIRE(full.size() > before);
-    REQUIRE(std::equal(head.begin(), head.end(), full.begin()));
+    if (full.size() <= before || !std::equal(head.begin(), head.end(), full.begin())) {
+        return {};
+    }
     std::vector<std::byte> bytes = head;
     const std::vector<std::byte> bareWorld = world(bare);
     const std::vector<std::byte> noRelationships = relationships(game::Relationships{});
     bytes.insert(bytes.end(), bareWorld.begin(), bareWorld.end());
     bytes.insert(bytes.end(), noRelationships.begin(), noRelationships.end());
     bytes.insert(bytes.end(), full.begin() + static_cast<std::ptrdiff_t>(before), full.end());
+    return bytes;
+}
+
+TEST_CASE("the mid-fight save loads, and so does the fuzz seed cut from it") {
+    const core::GameData data = FightData();
+    game::Arena saved(test::TestManifest(), game::Scene::Arena, data);
+    PlayFight(saved);
+    const core::Registry& entities = saved.State()[game::ACTIVE].Entities();
+    core::Jobs jobs{ 1 };
+    core::Snapshot snapshot;
+    saved.Publish(snapshot, jobs);
+    REQUIRE(snapshot.volleys.size() >= 1);
+    REQUIRE(snapshot.flashes.size() >= 1);
+    CHECK_FALSE(entities.view<const game::Afflictions>().empty());
+    CHECK_FALSE(entities.view<const game::Dying>().empty());
+    CHECK_FALSE(entities.view<const game::Arriving>().empty());
+    CHECK_FALSE(entities.view<const game::Dashing>().empty());
+    const std::vector<std::byte> full = Saved(saved);
+    game::Arena loadedFull(test::TestManifest(), game::Scene::Cells, data);
+    core::Reader fullReader{ full };
+    CHECK(loadedFull.Load(fullReader, SAVED_TICK));
+    CHECK(loadedFull.StateHash() == saved.StateHash());
+
+    const std::vector<std::byte> seed = WithoutWorldTier(saved, full);
     constexpr std::size_t SMALL = 16'384;
-    CHECK(bytes.size() < SMALL);
-
+    REQUIRE_FALSE(seed.empty());
+    CHECK(seed.size() < SMALL);
     game::Arena loaded(test::TestManifest(), game::Scene::Cells, data);
-    core::Reader reader{ bytes };
+    core::Reader reader{ seed };
     CHECK(loaded.Load(reader, SAVED_TICK));
+}
 
-    const char* const seed = FightSeedPath();
-    if (seed != nullptr) {
-        std::ofstream file{ seed, std::ios::binary };
-        std::ranges::transform(bytes, std::ostreambuf_iterator<char>{ file }, [](std::byte byte) {
-            return static_cast<char>(std::to_integer<u8>(byte));
-        });
-    }
+// Not part of a run: `--test-case='write the fight save seed' --no-skip` (tests/AGENTS.md) writes the fuzz seed.
+TEST_CASE("write the fight save seed" * doctest::skip()) {
+    game::Arena saved(test::TestManifest(), game::Scene::Arena, FightData());
+    PlayFight(saved);
+    const std::vector<std::byte> seed = WithoutWorldTier(saved, Saved(saved));
+    REQUIRE_FALSE(seed.empty());
+    const std::filesystem::path path = std::filesystem::path{ PN_FUZZ_CORPUS } / "save" / "fight";
+    std::ofstream file{ path, std::ios::binary };
+    std::ranges::transform(seed, std::ostreambuf_iterator<char>{ file }, [](std::byte byte) {
+        return static_cast<char>(std::to_integer<u8>(byte));
+    });
+    file.close();
+    CHECK(file.good());
 }
 
 constexpr u64 STATE_SEED = 7;
