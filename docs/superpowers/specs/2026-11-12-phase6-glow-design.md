@@ -1,6 +1,6 @@
 # Phase 6: data-driven glows
 
-Date: 2026-11-12 · Status: **draft** (awaiting the user's approval) · Phase spec: `2026-11-10-phase6-design.md` · Comes
+Date: 2026-11-12 · Status: **approved 2026-11-12** · Phase spec: `2026-11-10-phase6-design.md` · Comes
 after chunk 4 (`2026-11-10-phase6-chunk4-abilities-design.md`) and before the seals (chunk 4b,
 `2026-11-12-phase6-chunk4b-seals-design.md` on its own branch, revised after this lands)
 
