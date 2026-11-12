@@ -14,6 +14,7 @@
 
 #include <expected>
 #include <filesystem>
+#include <vector>
 
 namespace gfx::internal {
 
@@ -23,27 +24,51 @@ struct SpriteArray {
     Gpu<SDL_GPUTexture> texture = nullptr;
     /// Linear filtering with mipmaps, for smooth painted art at any zoom.
     Gpu<SDL_GPUSampler> sampler = nullptr;
+    /// The sprites' distance fields (R8_UNORM, 255: far outside), with `texture`'s layers, size and mips. A sprite's field
+    /// fills its region and core::FIELD_REACH_TEXELS around it (gfx::FieldBlockOf()), not its colour block (its region and
+    /// the manifest's gutter); the sprite fragment shader reads it for the glows.
+    Gpu<SDL_GPUTexture> field = nullptr;
+    /// Linear filtering with mipmaps, clamped, for reading `field`.
+    Gpu<SDL_GPUSampler> fieldSampler = nullptr;
 };
 
-/// Creates the texture array for every page of `manifest`, cleared to transparent, and its sampler; the clears are
-/// submitted before it returns. No sprite is in it yet.
+/// What DecodeSprite() makes of a sprite.
+struct DecodedSprite {
+    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    /// The image, premultiplied.
+    Surface image{};
+    /// The sprite's distance field (gfx::DistanceField()): its block of the field array, rows without gaps.
+    std::vector<u8> field{};
+    // NOLINTEND(readability-redundant-member-init)
+    /// How long computing the field took.
+    u64 fieldNs = 0;
+};
+
+/// The bytes the field array of `manifest` takes on the GPU, every mip level counted.
+[[nodiscard]] u64 FieldBytes(const core::Manifest& manifest);
+
+/// Creates the texture array for every page of `manifest`, cleared to transparent, and its sampler, and the field
+/// array cleared to far outside with its sampler; the clears are submitted before it returns. No sprite is in them
+/// yet. Fails when the device can't make R8_UNORM both a sampled texture and a colour target (the mips need it).
 [[nodiscard]] std::expected<SpriteArray, core::Error> CreateSpriteArray(SDL_GPUDevice* device, const core::Manifest& manifest);
 
-/// Decodes `sprite`'s image from `assets` and premultiplies its alpha in linear space, on any thread. Fails when the
-/// image is missing, unreadable, or not the size the manifest says (the atlas is stale: `./dev atlas`).
-[[nodiscard]] std::expected<Surface, core::Error> DecodeSprite(
+/// Decodes `sprite`'s image from `assets`, premultiplies its alpha in linear space and computes its distance field
+/// (the alpha stays as it is), on any thread. Fails when the image is missing, unreadable, or not the size the
+/// manifest says (the atlas is stale: `./dev atlas`).
+[[nodiscard]] std::expected<DecodedSprite, core::Error> DecodeSprite(
     const std::filesystem::path& assets,
     const core::SpriteInfo& sprite
 );
 
-/// Uploads `image`, `sprite` as DecodeSprite() made it, into its block of `array` (with `edge` texels
-/// around it), submitted before it returns. The mips stay stale until GenerateMips().
+/// Uploads `decoded`, `sprite` as DecodeSprite() made it, into its blocks of `array`'s colour texture (with `edge`
+/// texels around it) and field texture (gfx::FieldBlockOf()), in one submit before it returns. Fails when the field
+/// isn't that block's size. The mips stay stale until GenerateMips().
 [[nodiscard]] std::expected<void, core::Error> UploadSprite(
     SDL_GPUDevice* device,
     const SpriteArray& array,
     const core::SpriteInfo& sprite,
     u32 edge,
-    const SDL_Surface& image
+    const DecodedSprite& decoded
 );
 
 /// Generates every mip of `array` from its top level, submitted before it returns.

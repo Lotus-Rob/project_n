@@ -5,6 +5,7 @@
 #include "core/log.hpp"
 #include "core/profile.hpp"
 #include "core/repeated_failure.hpp"
+#include "core/tick_clock.hpp"
 #include "gfx/internal/features/composite.hpp"
 #include "gfx/internal/features/meshes.hpp"
 #include "gfx/internal/features/ribbons.hpp"
@@ -126,8 +127,9 @@ struct SceneLoad {
     }
 
     core::SceneId scene;
-    std::vector<core::atlas::SpriteId> sprites;                         // those not in the atlas when it began
-    std::vector<std::expected<internal::Surface, core::Error>> decoded; // a slot per sprite
+    std::vector<core::atlas::SpriteId> sprites;                               // those not in the atlas when it began
+    std::vector<std::expected<internal::DecodedSprite, core::Error>> decoded; // a slot per sprite
+    u64 transformNs = 0;                                                      // the fields' total time, summed as they upload
     std::size_t uploaded = 0;
     core::Jobs::Pending decoding; // last: destroyed first, waiting for the decodes before their slots go
 };
@@ -924,14 +926,17 @@ std::expected<bool, core::Error> Renderer::ContinueScene(u64 budgetNs) {
     const u64 startNs = platform::NowNs();
     const std::size_t first = load.uploaded;
     while (load.uploaded < load.sprites.size() && (load.uploaded == first || platform::NowNs() - startNs < budgetNs)) {
-        const std::expected<internal::Surface, core::Error>& image = load.decoded.at(load.uploaded);
-        const std::expected<void, core::Error> uploaded = image.and_then([&](const internal::Surface& surface) {
+        const std::expected<internal::DecodedSprite, core::Error>& image = load.decoded.at(load.uploaded);
+        if (image) {
+            load.transformNs += image->fieldNs;
+        }
+        const std::expected<void, core::Error> uploaded = image.and_then([&](const internal::DecodedSprite& decoded) {
             return internal::UploadSprite(
                 impl.device.get(),
                 impl.sprites,
                 impl.manifest->Sprite(load.sprites.at(load.uploaded)),
                 impl.manifest->Edge(),
-                *surface
+                decoded
             );
         });
         if (!uploaded) {
@@ -939,7 +944,7 @@ std::expected<bool, core::Error> Renderer::ContinueScene(u64 budgetNs) {
             impl.load.reset();
             return std::unexpected{ std::move(error) };
         }
-        load.decoded.at(load.uploaded) = internal::Surface{}; // its pixels are on the GPU now
+        load.decoded.at(load.uploaded) = internal::DecodedSprite{}; // its pixels are on the GPU now
         ++load.uploaded;
     }
     if (load.uploaded < load.sprites.size()) {
@@ -952,7 +957,13 @@ std::expected<bool, core::Error> Renderer::ContinueScene(u64 budgetNs) {
     for (const core::atlas::SpriteId sprite : load.sprites) {
         impl.resident.at(std::to_underlying(sprite)) = true;
     }
-    PN_LOG_DEBUG("{} sprites of scene {} decoded and uploaded", load.sprites.size(), impl.manifest->Scene(load.scene).name);
+    PN_LOG_DEBUG(
+        "{} sprites of scene {} decoded and uploaded; distance fields: {} bytes, {:.1f} ms to compute (all jobs)",
+        load.sprites.size(),
+        impl.manifest->Scene(load.scene).name,
+        internal::FieldBytes(*impl.manifest),
+        static_cast<f64>(load.transformNs) / static_cast<f64>(core::NS_PER_MS)
+    );
     impl.load.reset();
     return true;
 }

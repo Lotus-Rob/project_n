@@ -33,4 +33,8 @@ void WriteBlock(
     }
 }
 
+SpriteBlock FieldBlockOf(const core::SpriteInfo& sprite) {
+    return BlockOf(sprite, core::FIELD_REACH_TEXELS);
+}
+
 } // namespace gfx
