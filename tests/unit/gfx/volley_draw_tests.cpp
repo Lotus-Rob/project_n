@@ -235,9 +235,11 @@ TEST_CASE("a sword not yet launched shows nothing, nor any trail") {
     const gfx::VolleyDrawing drawing = Drawn(volleys, targets, TICK, HALFWAY);
     // The second wave's first sword (the next wave to start, nine ticks in), one from the middle and the volley's last:
     // all launch after the tick drawn, and the last launches last.
-    REQUIRE(core::WaveOf(VOLLEY, 48) == 1);
-    REQUIRE(core::WaveOf(VOLLEY, 47) == 0);
-    for (const u32 sword : { 48U, 499U, 999U }) {
+    u32 secondWave = 0; // the first sword of wave 1: the waves are runs of indices in order
+    while (core::WaveOf(VOLLEY, secondWave) < 1) {
+        ++secondWave;
+    }
+    for (const u32 sword : { secondWave, 499U, 999U }) {
         REQUIRE(static_cast<f64>(core::LaunchTick(VOLLEY, sword)) > core::RenderTick(TICK, static_cast<f64>(HALFWAY)));
         CAPTURE(sword);
         CHECK(IsZero(SwordOf(drawing, sword)));
