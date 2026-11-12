@@ -26,9 +26,9 @@ gfx::View FrameView(const gfx::Camera& camera, f64 alpha, std::optional<std::siz
     return { .alpha = alpha, .camera = camera, .outlined = outlined, .frameClock = frameSeconds };
 }
 
-void ShowScene(gfx::Camera& camera, std::optional<core::SceneId>& shown, core::SceneId scene) {
+void ShowScene(gfx::Camera& camera, std::optional<core::SceneId>& shown, core::SceneId scene, f32 zoom) {
     if (shown != scene) {
-        camera = gfx::Camera{}; // each scene is laid out for the reference view; a followed one re-centres it
+        camera = gfx::Camera{ .zoom = zoom }; // each scene is laid out for the reference view; a followed one re-centres it
     }
     shown = scene;
 }

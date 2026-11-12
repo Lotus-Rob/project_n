@@ -135,6 +135,14 @@ int main(int argc, char** argv) {
         PN_LOG_ERROR("{}", quitAfterNs.error().message);
         return 1;
     }
+    const std::expected<f32, core::Error> zoom = app::ZoomOf(args);
+    if (!zoom) {
+        PN_LOG_ERROR("{}", zoom.error().message);
+        return 1;
+    }
+    if (*zoom != 1.0F) {
+        PN_LOG_INFO("every scene starts at zoom {}", *zoom);
+    }
     try {
         // One save slot; slots and their screen come with the UI (phase 6).
         const i32 status =
@@ -143,6 +151,7 @@ int main(int argc, char** argv) {
                     .scene = scene,
                     .quitAfterNs = *quitAfterNs,
                     .burst = app::HasFlag(args, "--burst"),
+                    .zoom = *zoom,
                     .castSwords = app::HasFlag(args, "--cast-swords"),
                     .saveSlot = userData ? *userData / "saves" / "quicksave.pns" : std::filesystem::path{},
                     .replaySlot = userData ? *userData / "saves" / "replay.pnr" : std::filesystem::path{},

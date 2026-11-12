@@ -63,6 +63,9 @@ struct Options {
     /// Send a debug burst of hits once a second (`--burst`), so a profile run sees the damage numbers' stress without a key
     /// press.
     bool burst = false;
+    /// The zoom every scene starts at (`--zoom`), from gfx::MIN_ZOOM to gfx::MAX_ZOOM, so a profile run can draw at either
+    /// end; the wheel still changes it.
+    f32 zoom = 1.0F;
     /// Cast the flying swords CAST_SWORDS_NS after the last cast, or as soon after as they are ready (about every 6 s),
     /// at the followed player's foot plus CAST_SWORDS_OFFSET (`--cast-swords`), topping the Qi up with the generator first when
     /// it is short (TimedCast()), so a profile run sees volleys without key presses.
@@ -81,6 +84,10 @@ struct Options {
 
 /// Whether the command line `args` holds `flag` (as in `--burst`) as one of its arguments.
 [[nodiscard]] bool HasFlag(std::span<const char* const> args, std::string_view flag);
+
+/// The zoom `--zoom <value>` in the command line `args` asks every scene to start at, 1 without it; an error ("--zoom:
+/// ...") for a missing value, text that isn't a number, or a zoom outside gfx::MIN_ZOOM to gfx::MAX_ZOOM.
+[[nodiscard]] std::expected<f32, core::Error> ZoomOf(std::span<const char* const> args);
 
 /// Watches a folder of files for changes (the game data, design doc 0002.3 §7).
 class DataWatch {
