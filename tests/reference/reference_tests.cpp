@@ -290,12 +290,15 @@ void CheckVolley(std::string_view name, u64 after, const gfx::View& view = {}) {
 TEST_CASE("the flying swords mid-volley: the ring and the converging paths") {
     // A copy: the game data BuiltInData() returns is a temporary, gone at the end of this line.
     const core::VolleyShape swords = game::BuiltInData().abilities.Of(core::AbilityKind::FlyingSwords).volley;
-    // The third wave's middle swords just on their ring, the first two rings already in flight and the outer ones still
-    // bursting out; then those swords halfway through their flight.
+    // The third ring fading in round the first two, which stand still (none leaves before its appearing and hold are
+    // over), as the fourth is about to start: o then O. Then the third wave's middle swords halfway through their flight.
     constexpr u64 THIRD_WAVE = 2;
-    const u64 ring = (THIRD_WAVE * swords.waveGapTicks) + (swords.staggerTicks / 2) + swords.outTicks;
-    CheckVolley("volley_ring", ring);
-    CheckVolley("volley_converging", ring + (swords.flightTicks / 2));
+    const u64 appearing = (THIRD_WAVE + 1) * swords.waveGapTicks;
+    REQUIRE(appearing < swords.outTicks + swords.holdTicks);
+    CheckVolley("volley_ring", appearing);
+    const u64 leaving = (THIRD_WAVE * swords.waveGapTicks) + (swords.staggerTicks / 2) + swords.outTicks + swords.holdTicks +
+                        (swords.departJitterTicks / 2);
+    CheckVolley("volley_converging", leaving + (swords.flightTicks / 2));
 }
 
 TEST_CASE("the flying swords plunging, close up: the foxes they flew at died, so they stay where they fell and fade") {
@@ -304,8 +307,8 @@ TEST_CASE("the flying swords plunging, close up: the foxes they flew at died, so
     // The middle wave's middle swords arrived a few ticks ago, into foxes the first swords killed.
     constexpr u64 SINCE_ARRIVAL = 4;
     const u64 middleWave = swords.waves / 2;
-    const u64 after =
-        (middleWave * swords.waveGapTicks) + (swords.staggerTicks / 2) + swords.outTicks + swords.flightTicks + SINCE_ARRIVAL;
+    const u64 after = (middleWave * swords.waveGapTicks) + (swords.staggerTicks / 2) + swords.outTicks + swords.holdTicks +
+                      (swords.departJitterTicks / 2) + swords.flightTicks + SINCE_ARRIVAL;
     {
         core::Jobs jobs;
         const core::Snapshot snapshot = CastAndWait(core::Slot::Special1, after, jobs);

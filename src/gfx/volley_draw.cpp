@@ -161,7 +161,9 @@ void DrawSword(
               .colour = core::ScaledColour(bolt ? effect : core::OPAQUE_WHITE, head.shown) }
         );
     }
-    const f64 tailTick = std::max(frame.renderTick - static_cast<f64>(TRAIL_TICKS), launch);
+    // A sword still on its ring has not moved, so its trail starts where it left.
+    const f64 departure = static_cast<f64>(arrival - volley.shape.flightTicks);
+    const f64 tailTick = std::max(frame.renderTick - static_cast<f64>(TRAIL_TICKS), departure);
     if (headTick > tailTick && head.shown > 0.0F) {
         DrawTrail(
             volley, sword, aim, headTick, tailTick, head, core::ScaledColour(effect, HALO_INTENSITY * head.shown), slots.trail

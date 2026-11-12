@@ -26,11 +26,13 @@ constexpr core::VolleyShape SWORDS{
     .waves = 5,
     .ringRadius = 160.0F,
     .ringStep = 100.0F,
-    .scatter = 0.25F,
-    .angleJitter = 0.5F,
-    .staggerTicks = 9,
+    .scatter = 0.0F,
+    .angleJitter = 0.0F,
+    .staggerTicks = 6,
     .waveGapTicks = 12,
     .outTicks = 21,
+    .holdTicks = 18,
+    .departJitterTicks = 15,
     .flightTicks = 102,
     .sweep = 420.0F,
     .sweepJitter = 0.6F,
@@ -46,10 +48,12 @@ constexpr core::Volley BOLT{ .use = 8,
                              .point = POINT,
                              .shape = { .count = 1, .flightTicks = 60, .commitTicks = core::MIN_COMMIT_TICKS } };
 constexpr std::array<u32, 4> SAMPLED_SWORDS{ { 0, 1, 499, 999 } };
-// Every sword launched a whole trail ago (the last wave starts last and staggers its launches), and none arrived.
-constexpr u64 MID_FLIGHT =
-    START + (u64{ SWORDS.waves - 1 } * SWORDS.waveGapTicks) + SWORDS.staggerTicks + static_cast<u64>(gfx::TRAIL_TICKS);
-static_assert(MID_FLIGHT < START + SWORDS.outTicks + SWORDS.flightTicks);
+// Every sword left its ring a whole trail ago (the last wave starts last, its last sword appears last, and waits on its
+// ring the longest delay), and none arrived.
+constexpr u64 MID_FLIGHT = START + (u64{ SWORDS.waves - 1 } * SWORDS.waveGapTicks) + (SWORDS.staggerTicks - 1) +
+                           SWORDS.outTicks + SWORDS.holdTicks + (SWORDS.departJitterTicks - 1) +
+                           static_cast<u64>(gfx::TRAIL_TICKS);
+static_assert(MID_FLIGHT < START + SWORDS.outTicks + SWORDS.holdTicks + SWORDS.flightTicks);
 constexpr f32 CLOSE = 1e-4F;  // relative
 constexpr f32 HALFWAY = 0.5F; // of a tick, as the frame's alpha
 constexpr f32 HALF = 0.5F;
@@ -245,6 +249,29 @@ TEST_CASE("a sword not yet launched shows nothing, nor any trail") {
         }
     }
     CHECK(waiting > 0);
+}
+
+TEST_CASE("a sword still on its ring shows, but draws no trail") {
+    const std::array<core::VolleyTarget, 1> targets{ { { .entity = FOX, .previous = POINT, .current = POINT } } };
+    const std::array<core::VolleyView, 1> volleys{ { SwordsView() } };
+    // The first wave has appeared and holds still on its ring.
+    constexpr u64 TICK = START + SWORDS.outTicks + 2;
+    const gfx::VolleyDrawing drawing = Drawn(volleys, targets, TICK, HALFWAY);
+    // The first wave's first, middle and last swords.
+    constexpr std::array<u32, 3> HOLDING{ { 0, 100, 199 } };
+    bool shown = true;
+    bool trailed = false;
+    for (const u32 sword : HOLDING) {
+        REQUIRE(core::ArrivalTick(VOLLEY, sword) - SWORDS.flightTicks > TICK + 1); // still on its ring
+        shown = shown && !IsZero(SwordOf(drawing, sword));
+        for (u32 quad = 0; quad < gfx::TRAIL_SEGMENTS; ++quad) {
+            for (u32 corner = 0; corner < gfx::QUAD_VERTICES; ++corner) {
+                trailed = trailed || TrailVertex(drawing, sword, quad, corner).colour != 0;
+            }
+        }
+    }
+    CHECK(shown);
+    CHECK_FALSE(trailed);
 }
 
 TEST_CASE("the trail is sampled from the same path a little back in time") {
@@ -610,29 +637,31 @@ TEST_CASE("cores, halos and trails take their element's colour, not their abilit
     const std::array<core::VolleyTarget, 2> targets{ { { .entity = FOX, .previous = POINT, .current = POINT },
                                                        { .entity = FOX, .previous = POINT, .current = POINT } } };
     const std::array<core::VolleyView, 2> volleys{ { SwordsView(), BoltView(1) } };
-    constexpr u64 TICK = START + 40; // the bolt mid-flight, every sword shown with its whole trail
-    constexpr u32 SWORD = 0;
+    // The first sword to leave its ring, with its whole trail behind it, while the bolt is still in flight.
+    u32 sword = 0;
+    for (u32 other = 1; other < SWORDS.count; ++other) {
+        sword = core::ArrivalTick(VOLLEY, other) < core::ArrivalTick(VOLLEY, sword) ? other : sword;
+    }
     constexpr u32 THE_BOLT = SWORDS.count;
-    REQUIRE(
-        static_cast<f64>(core::LaunchTick(VOLLEY, SWORD)) < core::RenderTick(TICK, 1.0) - static_cast<f64>(gfx::TRAIL_TICKS)
-    );
+    const u64 tick = core::ArrivalTick(VOLLEY, sword) - SWORDS.flightTicks + static_cast<u64>(gfx::TRAIL_TICKS) + 1;
+    REQUIRE(tick < core::ArrivalTick(BOLT, 0));
     const core::Manifest manifest = TestManifest();
     const auto check = [&](const core::UiColours& colours) {
-        const gfx::VolleyDrawing drawing = Drawn(volleys, targets, TICK, 1.0F, colours);
+        const gfx::VolleyDrawing drawing = Drawn(volleys, targets, tick, 1.0F, colours);
         const u32 damage = colours.Of(core::UiColour::DamageEffect);
         const u32 burn = colours.Of(core::UiColour::BurnEffect);
-        CHECK(CoreOf(drawing, SWORD).colour == Times(damage, gfx::CORE_OPACITY));
-        CHECK(HaloOf(drawing, SWORD).colour == Times(damage, gfx::HALO_INTENSITY));
-        CHECK(TrailVertex(drawing, SWORD, 0, 0).colour == Times(damage, gfx::HALO_INTENSITY));
-        CHECK(SwordOf(drawing, SWORD).colour == core::OPAQUE_WHITE); // its own steel
+        CHECK(CoreOf(drawing, sword).colour == Times(damage, gfx::CORE_OPACITY));
+        CHECK(HaloOf(drawing, sword).colour == Times(damage, gfx::HALO_INTENSITY));
+        CHECK(TrailVertex(drawing, sword, 0, 0).colour == Times(damage, gfx::HALO_INTENSITY));
+        CHECK(SwordOf(drawing, sword).colour == core::OPAQUE_WHITE); // its own steel
         CHECK(CoreOf(drawing, THE_BOLT).colour == Times(burn, gfx::CORE_OPACITY));
         CHECK(HaloOf(drawing, THE_BOLT).colour == Times(burn, gfx::HALO_INTENSITY));
         CHECK(TrailVertex(drawing, THE_BOLT, 0, 0).colour == Times(burn, gfx::HALO_INTENSITY));
         CHECK(SwordOf(drawing, THE_BOLT).colour == burn); // white art, tinted
         // The ability picks the sword's sprite; every core is the same dot.
-        CHECK(SwordOf(drawing, SWORD).regionMin == core::MakeInstance(manifest, { .sprite = SpriteId::Sword }).regionMin);
+        CHECK(SwordOf(drawing, sword).regionMin == core::MakeInstance(manifest, { .sprite = SpriteId::Sword }).regionMin);
         CHECK(SwordOf(drawing, THE_BOLT).regionMin == core::MakeInstance(manifest, { .sprite = SpriteId::FireBolt }).regionMin);
-        CHECK(CoreOf(drawing, SWORD).regionMin == core::MakeInstance(manifest, { .sprite = SpriteId::GlowCore }).regionMin);
+        CHECK(CoreOf(drawing, sword).regionMin == core::MakeInstance(manifest, { .sprite = SpriteId::GlowCore }).regionMin);
         return drawing;
     };
     const gfx::VolleyDrawing before = check({});

@@ -180,9 +180,9 @@ void DrawFlashes(
 /// - The swords make one batch, normal, after everything: the ability picks only the sprite (`sword` in its own steel,
 ///   `fire_bolt` white tinted by the element's colour), faded as its pose says, turned to its heading (the sprites point
 ///   up).
-/// - A trail runs back along the same path from the sword to where it was TRAIL_TICKS earlier, or at its launch if later,
-///   in the element's colour times HALO_INTENSITY and how much shows, narrowing towards its tail. A sword that struck
-///   stops at its arrival and its trail drains into its target.
+/// - A trail runs back along the same path from the sword to where it was TRAIL_TICKS earlier, or where it left its ring
+///   if later (a sword still on its ring has none), in the element's colour times HALO_INTENSITY and how much shows, narrowing
+///   towards its tail. A sword that struck stops at its arrival and its trail drains into its target.
 ///
 /// A sword strikes when its target at its arrival (core::SwordTarget()) is a creature alive as that tick's arrivals
 /// resolved (core::VolleyTarget::Struck()), and vanishes then; any other plunges, staying at its aim while it fades over
