@@ -153,7 +153,8 @@ chunk 5 checks from then on.
 ## Constraints
 
 - The engine's rules stand: the simulation is deterministic and replayable, the UI and view models never change state,
-  every tool comes from Pixi, and `check` passes on every commit.
+  every tool comes from Pixi, and builds and `check` are verified at the end of each completed task, chunk or phase,
+  never commit by commit.
 - Each chunk's spec says what it adds to the demo world and which checks it must pass there.
 - Old design documents stay in `docs/design/` as history; their "as built" notes for chunks 1 and 2 are the record.
 
