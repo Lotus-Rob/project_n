@@ -56,10 +56,26 @@ static_assert(sizeof(GlowRecord) == GLOW_RECORD_BYTES, "the shaders read glow re
 inline constexpr std::size_t GLOW_RECORD_SIZE_UNIT = 16;
 static_assert(GLOW_RECORD_BYTES % GLOW_RECORD_SIZE_UNIT == 0, "a glow record's size is a multiple of 16 bytes");
 
-/// Every role's record, indexed by core::GlowRole (None's is zero), from `effects`' looks and `colours`' palette.
-[[nodiscard]] std::array<GlowRecord, core::GLOW_ROLES> BuildGlowTable(
-    const core::Effects& effects,
-    const core::UiColours& colours
-);
+/// The render clock as the glow shaders take it: an f32 can't hold a long session's tick, so its whole tick's low 32 bits
+/// and the fraction past it go apart, and a drive's age is their wrapping difference from its start tick's low bits.
+struct GlowTime {
+    /// The low 32 bits of the render clock's whole tick (core::RenderTick() rounded down).
+    u32 tick = 0;
+    /// How far past `tick` the render clock is, from 0 up to (not including) 1.
+    f32 fraction = 0.0F;
+};
+
+/// The render clock at `alpha` (0 to 1) of the way from the tick before `simulationTick` to it (core::RenderTick()), as
+/// GlowTime splits it.
+[[nodiscard]] GlowTime GlowTimeAt(u64 simulationTick, f64 alpha);
+
+/// Every role's record, indexed by core::GlowRole (None's is zero).
+using GlowTable = std::array<GlowRecord, core::GLOW_ROLES>;
+// MSVC warns (C4686) at a call of a function returning a specialisation that nothing has instantiated by its declaration:
+// the size check completes it here.
+static_assert(sizeof(GlowTable) == core::GLOW_ROLES * GLOW_RECORD_BYTES);
+
+/// The table of every role's record, from `effects`' looks and `colours`' palette.
+[[nodiscard]] GlowTable BuildGlowTable(const core::Effects& effects, const core::UiColours& colours);
 
 } // namespace gfx

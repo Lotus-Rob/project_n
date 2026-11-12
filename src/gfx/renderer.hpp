@@ -97,12 +97,16 @@ public:
     void SetTextOptions(const TextOptions& text);
 
     /// Draws labels, captions, the outlines of the hovered and selected entity, the ink of text's outlines and shadows,
-    /// the health bars and the effects in `colours` from the next frame on, with no restart.
+    /// the health bars, the effects and the glows in `colours` from the next frame on, with no restart.
     void SetUiColours(const core::UiColours& colours);
 
-    /// Draws the swords, bolts, bursts and health bars as `effects` says from the next frame on, with no restart and no new
-    /// timeline: the simulation never sees it.
+    /// Draws the swords, bolts, bursts, health bars and glows as `effects` says from the next frame on, with no restart and
+    /// no new timeline: the simulation never sees it.
     void SetEffects(const core::Effects& effects);
+
+    /// Draws glows for the reduce flashing setting from the next frame on (off until it is called): pulses hold still and
+    /// light glows dim (the phase 6 glow spec, "Accessibility").
+    void SetReduceFlashing(bool reduce);
 
     /// Draws as Draw() does, but into a picture `width` by `height` pixels instead of the window, waits for the GPU and
     /// returns the picture, or says why it couldn't. Every glyph its texts and the HUD's lines need is rasterised on `jobs`

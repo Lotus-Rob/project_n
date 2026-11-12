@@ -16,772 +16,832 @@ struct FragmentMain_in
     float4 in_var_TEXCOORD3 [[user(locn3), flat]];
     float in_var_TEXCOORD4 [[user(locn4), flat]];
     float in_var_TEXCOORD5 [[user(locn5), flat]];
+    float4 in_var_TEXCOORD6 [[user(locn6), flat]];
+    float2 in_var_TEXCOORD7 [[user(locn7), flat]];
 };
 
-fragment FragmentMain_out FragmentMain(FragmentMain_in in [[stage_in]], texture2d_array<float> atlas [[texture(0)]], sampler atlasSmplr [[sampler(0)]])
+fragment FragmentMain_out FragmentMain(FragmentMain_in in [[stage_in]], texture2d_array<float> atlas [[texture(0)]], texture2d_array<float> field [[texture(1)]], sampler atlasSmplr [[sampler(0)]], sampler fieldSmplr [[sampler(1)]])
 {
     FragmentMain_out out = {};
-    float4 _940;
+    float4 _1041;
     do
     {
-        float2 _95 = fwidth(in.in_var_TEXCOORD0);
+        float2 _106 = fwidth(in.in_var_TEXCOORD0);
         if (in.in_var_TEXCOORD4 == 0.0)
         {
-            float3 _103 = float3(in.in_var_TEXCOORD0, float(in.in_var_TEXCOORD1));
-            float4 _104 = atlas.sample(atlasSmplr, _103.xy, uint(rint(_103.z)));
-            float4 _105 = _104 * in.in_var_TEXCOORD2;
-            if (in.in_var_TEXCOORD5 > 0.0)
+            if (in.in_var_TEXCOORD7.x > 0.0)
             {
-                uint2 _118 = (uint2(int2(floor((in.in_var_TEXCOORD0 - in.in_var_TEXCOORD3.xy) / precise::max(_95 * 4.0, float2(1.0000000116860974230803549289703e-07))))) * uint2(1664525u)) + uint2(1013904223u);
-                uint _119 = _118.y;
-                uint _122 = _118.x + (_119 * 1664525u);
-                uint2 _125 = uint2(_122, _119 + (_122 * 1664525u));
-                uint2 _127 = _125 ^ (_125 >> uint2(16u));
-                uint _128 = _127.y;
-                uint _131 = _127.x + (_128 * 1664525u);
-                uint2 _134 = uint2(_131, _128 + (_131 * 1664525u));
-                if ((float((_134 ^ (_134 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08) < in.in_var_TEXCOORD5)
+                bool _123;
+                if (all(in.in_var_TEXCOORD0 >= in.in_var_TEXCOORD3.xy))
                 {
-                    discard_fragment();
+                    _123 = all(in.in_var_TEXCOORD0 <= in.in_var_TEXCOORD3.zw);
                 }
-                _940 = _105 * (1.0 - in.in_var_TEXCOORD5);
+                else
+                {
+                    _123 = false;
+                }
+                float3 _128 = float3(in.in_var_TEXCOORD0, float(in.in_var_TEXCOORD1));
+                float4 _129 = atlas.sample(atlasSmplr, _128.xy, uint(rint(_128.z)));
+                float4 _132 = field.sample(fieldSmplr, _128.xy, uint(rint(_128.z)));
+                float _135 = (_132.x - 0.5) * 32.0;
+                float _136 = fwidth(_135);
+                float _147;
+                if (_135 <= 0.0)
+                {
+                    _147 = 1.0;
+                }
+                else
+                {
+                    _147 = 1.0 - smoothstep(in.in_var_TEXCOORD7.y - precise::max(_136, 0.001000000047497451305389404296875), in.in_var_TEXCOORD7.x, _135);
+                }
+                float4 _149 = select(float4(0.0), _129 * in.in_var_TEXCOORD2, bool4(_123));
+                float4 _191;
+                do
+                {
+                    if (in.in_var_TEXCOORD5 > 0.0)
+                    {
+                        uint2 _163 = (uint2(int2(floor((in.in_var_TEXCOORD0 - in.in_var_TEXCOORD3.xy) / precise::max(_106 * 4.0, float2(1.0000000116860974230803549289703e-07))))) * uint2(1664525u)) + uint2(1013904223u);
+                        uint _164 = _163.y;
+                        uint _167 = _163.x + (_164 * 1664525u);
+                        uint2 _170 = uint2(_167, _164 + (_167 * 1664525u));
+                        uint2 _172 = _170 ^ (_170 >> uint2(16u));
+                        uint _173 = _172.y;
+                        uint _176 = _172.x + (_173 * 1664525u);
+                        uint2 _179 = uint2(_176, _173 + (_176 * 1664525u));
+                        if ((float((_179 ^ (_179 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08) < in.in_var_TEXCOORD5)
+                        {
+                            discard_fragment();
+                        }
+                        _191 = _149 * (1.0 - in.in_var_TEXCOORD5);
+                        break;
+                    }
+                    _191 = _149;
+                    break;
+                } while(false);
+                _1041 = _191 + (in.in_var_TEXCOORD6 * (_147 * (1.0 - _191.w)));
                 break;
             }
-            _940 = _105;
+            float3 _201 = float3(in.in_var_TEXCOORD0, float(in.in_var_TEXCOORD1));
+            float4 _202 = atlas.sample(atlasSmplr, _201.xy, uint(rint(_201.z)));
+            float4 _203 = _202 * in.in_var_TEXCOORD2;
+            float4 _246;
+            do
+            {
+                if (in.in_var_TEXCOORD5 > 0.0)
+                {
+                    uint2 _218 = (uint2(int2(floor((in.in_var_TEXCOORD0 - in.in_var_TEXCOORD3.xy) / precise::max(_106 * 4.0, float2(1.0000000116860974230803549289703e-07))))) * uint2(1664525u)) + uint2(1013904223u);
+                    uint _219 = _218.y;
+                    uint _222 = _218.x + (_219 * 1664525u);
+                    uint2 _225 = uint2(_222, _219 + (_222 * 1664525u));
+                    uint2 _227 = _225 ^ (_225 >> uint2(16u));
+                    uint _228 = _227.y;
+                    uint _231 = _227.x + (_228 * 1664525u);
+                    uint2 _234 = uint2(_231, _228 + (_231 * 1664525u));
+                    if ((float((_234 ^ (_234 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08) < in.in_var_TEXCOORD5)
+                    {
+                        discard_fragment();
+                    }
+                    _246 = _203 * (1.0 - in.in_var_TEXCOORD5);
+                    break;
+                }
+                _246 = _203;
+                break;
+            } while(false);
+            _1041 = _246;
             break;
         }
-        float2 _148;
-        float _167;
+        float2 _249;
+        float _268;
         do
         {
-            _148 = in.in_var_TEXCOORD3.xy;
-            bool _157;
-            if (!any(in.in_var_TEXCOORD0 < _148))
+            _249 = in.in_var_TEXCOORD3.xy;
+            bool _258;
+            if (!any(in.in_var_TEXCOORD0 < _249))
             {
-                _157 = any(in.in_var_TEXCOORD0 > in.in_var_TEXCOORD3.zw);
+                _258 = any(in.in_var_TEXCOORD0 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _157 = true;
+                _258 = true;
             }
-            if (_157)
+            if (_258)
             {
-                _167 = 0.0;
+                _268 = 0.0;
                 break;
             }
-            float3 _164 = float3(in.in_var_TEXCOORD0, float(in.in_var_TEXCOORD1));
-            _167 = atlas.sample(atlasSmplr, _164.xy, uint(rint(_164.z)), level(0.0)).w;
+            float3 _265 = float3(in.in_var_TEXCOORD0, float(in.in_var_TEXCOORD1));
+            _268 = atlas.sample(atlasSmplr, _265.xy, uint(rint(_265.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _169 = in.in_var_TEXCOORD0 + (float2(1.0, 0.0) * in.in_var_TEXCOORD4);
-        float _190;
+        float2 _270 = in.in_var_TEXCOORD0 + (float2(1.0, 0.0) * in.in_var_TEXCOORD4);
+        float _291;
         do
         {
-            bool _180;
-            if (!any(_169 < _148))
+            bool _281;
+            if (!any(_270 < _249))
             {
-                _180 = any(_169 > in.in_var_TEXCOORD3.zw);
+                _281 = any(_270 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _180 = true;
+                _281 = true;
             }
-            if (_180)
+            if (_281)
             {
-                _190 = 0.0;
+                _291 = 0.0;
                 break;
             }
-            float3 _187 = float3(_169, float(in.in_var_TEXCOORD1));
-            _190 = atlas.sample(atlasSmplr, _187.xy, uint(rint(_187.z)), level(0.0)).w;
+            float3 _288 = float3(_270, float(in.in_var_TEXCOORD1));
+            _291 = atlas.sample(atlasSmplr, _288.xy, uint(rint(_288.z)), level(0.0)).w;
             break;
         } while(false);
-        float _192 = in.in_var_TEXCOORD4 * 0.5;
-        float2 _194 = in.in_var_TEXCOORD0 + (float2(1.0, 0.0) * _192);
-        float _215;
+        float _293 = in.in_var_TEXCOORD4 * 0.5;
+        float2 _295 = in.in_var_TEXCOORD0 + (float2(1.0, 0.0) * _293);
+        float _316;
         do
         {
-            bool _205;
-            if (!any(_194 < _148))
+            bool _306;
+            if (!any(_295 < _249))
             {
-                _205 = any(_194 > in.in_var_TEXCOORD3.zw);
+                _306 = any(_295 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _205 = true;
+                _306 = true;
             }
-            if (_205)
+            if (_306)
             {
-                _215 = 0.0;
+                _316 = 0.0;
                 break;
             }
-            float3 _212 = float3(_194, float(in.in_var_TEXCOORD1));
-            _215 = atlas.sample(atlasSmplr, _212.xy, uint(rint(_212.z)), level(0.0)).w;
+            float3 _313 = float3(_295, float(in.in_var_TEXCOORD1));
+            _316 = atlas.sample(atlasSmplr, _313.xy, uint(rint(_313.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _218 = in.in_var_TEXCOORD0 + (float2(0.92387950420379638671875, 0.382683455944061279296875) * in.in_var_TEXCOORD4);
-        float _239;
+        float2 _319 = in.in_var_TEXCOORD0 + (float2(0.92387950420379638671875, 0.382683455944061279296875) * in.in_var_TEXCOORD4);
+        float _340;
         do
         {
-            bool _229;
-            if (!any(_218 < _148))
+            bool _330;
+            if (!any(_319 < _249))
             {
-                _229 = any(_218 > in.in_var_TEXCOORD3.zw);
+                _330 = any(_319 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _229 = true;
+                _330 = true;
             }
-            if (_229)
+            if (_330)
             {
-                _239 = 0.0;
+                _340 = 0.0;
                 break;
             }
-            float3 _236 = float3(_218, float(in.in_var_TEXCOORD1));
-            _239 = atlas.sample(atlasSmplr, _236.xy, uint(rint(_236.z)), level(0.0)).w;
+            float3 _337 = float3(_319, float(in.in_var_TEXCOORD1));
+            _340 = atlas.sample(atlasSmplr, _337.xy, uint(rint(_337.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _242 = in.in_var_TEXCOORD0 + (float2(0.92387950420379638671875, 0.382683455944061279296875) * _192);
-        float _263;
+        float2 _343 = in.in_var_TEXCOORD0 + (float2(0.92387950420379638671875, 0.382683455944061279296875) * _293);
+        float _364;
         do
         {
-            bool _253;
-            if (!any(_242 < _148))
+            bool _354;
+            if (!any(_343 < _249))
             {
-                _253 = any(_242 > in.in_var_TEXCOORD3.zw);
+                _354 = any(_343 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _253 = true;
+                _354 = true;
             }
-            if (_253)
+            if (_354)
             {
-                _263 = 0.0;
+                _364 = 0.0;
                 break;
             }
-            float3 _260 = float3(_242, float(in.in_var_TEXCOORD1));
-            _263 = atlas.sample(atlasSmplr, _260.xy, uint(rint(_260.z)), level(0.0)).w;
+            float3 _361 = float3(_343, float(in.in_var_TEXCOORD1));
+            _364 = atlas.sample(atlasSmplr, _361.xy, uint(rint(_361.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _266 = in.in_var_TEXCOORD0 + (float2(0.707106769084930419921875) * in.in_var_TEXCOORD4);
-        float _287;
+        float2 _367 = in.in_var_TEXCOORD0 + (float2(0.707106769084930419921875) * in.in_var_TEXCOORD4);
+        float _388;
         do
         {
-            bool _277;
-            if (!any(_266 < _148))
+            bool _378;
+            if (!any(_367 < _249))
             {
-                _277 = any(_266 > in.in_var_TEXCOORD3.zw);
+                _378 = any(_367 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _277 = true;
+                _378 = true;
             }
-            if (_277)
+            if (_378)
             {
-                _287 = 0.0;
+                _388 = 0.0;
                 break;
             }
-            float3 _284 = float3(_266, float(in.in_var_TEXCOORD1));
-            _287 = atlas.sample(atlasSmplr, _284.xy, uint(rint(_284.z)), level(0.0)).w;
+            float3 _385 = float3(_367, float(in.in_var_TEXCOORD1));
+            _388 = atlas.sample(atlasSmplr, _385.xy, uint(rint(_385.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _290 = in.in_var_TEXCOORD0 + (float2(0.707106769084930419921875) * _192);
-        float _311;
+        float2 _391 = in.in_var_TEXCOORD0 + (float2(0.707106769084930419921875) * _293);
+        float _412;
         do
         {
-            bool _301;
-            if (!any(_290 < _148))
+            bool _402;
+            if (!any(_391 < _249))
             {
-                _301 = any(_290 > in.in_var_TEXCOORD3.zw);
+                _402 = any(_391 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _301 = true;
+                _402 = true;
             }
-            if (_301)
+            if (_402)
             {
-                _311 = 0.0;
+                _412 = 0.0;
                 break;
             }
-            float3 _308 = float3(_290, float(in.in_var_TEXCOORD1));
-            _311 = atlas.sample(atlasSmplr, _308.xy, uint(rint(_308.z)), level(0.0)).w;
+            float3 _409 = float3(_391, float(in.in_var_TEXCOORD1));
+            _412 = atlas.sample(atlasSmplr, _409.xy, uint(rint(_409.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _314 = in.in_var_TEXCOORD0 + (float2(0.3826834261417388916015625, 0.92387950420379638671875) * in.in_var_TEXCOORD4);
-        float _335;
+        float2 _415 = in.in_var_TEXCOORD0 + (float2(0.3826834261417388916015625, 0.92387950420379638671875) * in.in_var_TEXCOORD4);
+        float _436;
         do
         {
-            bool _325;
-            if (!any(_314 < _148))
+            bool _426;
+            if (!any(_415 < _249))
             {
-                _325 = any(_314 > in.in_var_TEXCOORD3.zw);
+                _426 = any(_415 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _325 = true;
+                _426 = true;
             }
-            if (_325)
+            if (_426)
             {
-                _335 = 0.0;
+                _436 = 0.0;
                 break;
             }
-            float3 _332 = float3(_314, float(in.in_var_TEXCOORD1));
-            _335 = atlas.sample(atlasSmplr, _332.xy, uint(rint(_332.z)), level(0.0)).w;
+            float3 _433 = float3(_415, float(in.in_var_TEXCOORD1));
+            _436 = atlas.sample(atlasSmplr, _433.xy, uint(rint(_433.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _338 = in.in_var_TEXCOORD0 + (float2(0.3826834261417388916015625, 0.92387950420379638671875) * _192);
-        float _359;
+        float2 _439 = in.in_var_TEXCOORD0 + (float2(0.3826834261417388916015625, 0.92387950420379638671875) * _293);
+        float _460;
         do
         {
-            bool _349;
-            if (!any(_338 < _148))
+            bool _450;
+            if (!any(_439 < _249))
             {
-                _349 = any(_338 > in.in_var_TEXCOORD3.zw);
+                _450 = any(_439 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _349 = true;
+                _450 = true;
             }
-            if (_349)
+            if (_450)
             {
-                _359 = 0.0;
+                _460 = 0.0;
                 break;
             }
-            float3 _356 = float3(_338, float(in.in_var_TEXCOORD1));
-            _359 = atlas.sample(atlasSmplr, _356.xy, uint(rint(_356.z)), level(0.0)).w;
+            float3 _457 = float3(_439, float(in.in_var_TEXCOORD1));
+            _460 = atlas.sample(atlasSmplr, _457.xy, uint(rint(_457.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _362 = in.in_var_TEXCOORD0 + (float2(-4.3711388286737928865477442741394e-08, 1.0) * in.in_var_TEXCOORD4);
-        float _383;
+        float2 _463 = in.in_var_TEXCOORD0 + (float2(-4.3711388286737928865477442741394e-08, 1.0) * in.in_var_TEXCOORD4);
+        float _484;
         do
         {
-            bool _373;
-            if (!any(_362 < _148))
+            bool _474;
+            if (!any(_463 < _249))
             {
-                _373 = any(_362 > in.in_var_TEXCOORD3.zw);
+                _474 = any(_463 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _373 = true;
+                _474 = true;
             }
-            if (_373)
+            if (_474)
             {
-                _383 = 0.0;
+                _484 = 0.0;
                 break;
             }
-            float3 _380 = float3(_362, float(in.in_var_TEXCOORD1));
-            _383 = atlas.sample(atlasSmplr, _380.xy, uint(rint(_380.z)), level(0.0)).w;
+            float3 _481 = float3(_463, float(in.in_var_TEXCOORD1));
+            _484 = atlas.sample(atlasSmplr, _481.xy, uint(rint(_481.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _386 = in.in_var_TEXCOORD0 + (float2(-4.3711388286737928865477442741394e-08, 1.0) * _192);
-        float _407;
+        float2 _487 = in.in_var_TEXCOORD0 + (float2(-4.3711388286737928865477442741394e-08, 1.0) * _293);
+        float _508;
         do
         {
-            bool _397;
-            if (!any(_386 < _148))
+            bool _498;
+            if (!any(_487 < _249))
             {
-                _397 = any(_386 > in.in_var_TEXCOORD3.zw);
+                _498 = any(_487 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _397 = true;
+                _498 = true;
             }
-            if (_397)
+            if (_498)
             {
-                _407 = 0.0;
+                _508 = 0.0;
                 break;
             }
-            float3 _404 = float3(_386, float(in.in_var_TEXCOORD1));
-            _407 = atlas.sample(atlasSmplr, _404.xy, uint(rint(_404.z)), level(0.0)).w;
+            float3 _505 = float3(_487, float(in.in_var_TEXCOORD1));
+            _508 = atlas.sample(atlasSmplr, _505.xy, uint(rint(_505.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _410 = in.in_var_TEXCOORD0 + (float2(-0.3826835155487060546875, 0.92387950420379638671875) * in.in_var_TEXCOORD4);
-        float _431;
+        float2 _511 = in.in_var_TEXCOORD0 + (float2(-0.3826835155487060546875, 0.92387950420379638671875) * in.in_var_TEXCOORD4);
+        float _532;
         do
         {
-            bool _421;
-            if (!any(_410 < _148))
+            bool _522;
+            if (!any(_511 < _249))
             {
-                _421 = any(_410 > in.in_var_TEXCOORD3.zw);
+                _522 = any(_511 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _421 = true;
+                _522 = true;
             }
-            if (_421)
+            if (_522)
             {
-                _431 = 0.0;
+                _532 = 0.0;
                 break;
             }
-            float3 _428 = float3(_410, float(in.in_var_TEXCOORD1));
-            _431 = atlas.sample(atlasSmplr, _428.xy, uint(rint(_428.z)), level(0.0)).w;
+            float3 _529 = float3(_511, float(in.in_var_TEXCOORD1));
+            _532 = atlas.sample(atlasSmplr, _529.xy, uint(rint(_529.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _434 = in.in_var_TEXCOORD0 + (float2(-0.3826835155487060546875, 0.92387950420379638671875) * _192);
-        float _455;
+        float2 _535 = in.in_var_TEXCOORD0 + (float2(-0.3826835155487060546875, 0.92387950420379638671875) * _293);
+        float _556;
         do
         {
-            bool _445;
-            if (!any(_434 < _148))
+            bool _546;
+            if (!any(_535 < _249))
             {
-                _445 = any(_434 > in.in_var_TEXCOORD3.zw);
+                _546 = any(_535 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _445 = true;
+                _546 = true;
             }
-            if (_445)
+            if (_546)
             {
-                _455 = 0.0;
+                _556 = 0.0;
                 break;
             }
-            float3 _452 = float3(_434, float(in.in_var_TEXCOORD1));
-            _455 = atlas.sample(atlasSmplr, _452.xy, uint(rint(_452.z)), level(0.0)).w;
+            float3 _553 = float3(_535, float(in.in_var_TEXCOORD1));
+            _556 = atlas.sample(atlasSmplr, _553.xy, uint(rint(_553.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _458 = in.in_var_TEXCOORD0 + (float2(-0.707106769084930419921875, 0.707106769084930419921875) * in.in_var_TEXCOORD4);
-        float _479;
+        float2 _559 = in.in_var_TEXCOORD0 + (float2(-0.707106769084930419921875, 0.707106769084930419921875) * in.in_var_TEXCOORD4);
+        float _580;
         do
         {
-            bool _469;
-            if (!any(_458 < _148))
+            bool _570;
+            if (!any(_559 < _249))
             {
-                _469 = any(_458 > in.in_var_TEXCOORD3.zw);
+                _570 = any(_559 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _469 = true;
+                _570 = true;
             }
-            if (_469)
+            if (_570)
             {
-                _479 = 0.0;
+                _580 = 0.0;
                 break;
             }
-            float3 _476 = float3(_458, float(in.in_var_TEXCOORD1));
-            _479 = atlas.sample(atlasSmplr, _476.xy, uint(rint(_476.z)), level(0.0)).w;
+            float3 _577 = float3(_559, float(in.in_var_TEXCOORD1));
+            _580 = atlas.sample(atlasSmplr, _577.xy, uint(rint(_577.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _482 = in.in_var_TEXCOORD0 + (float2(-0.707106769084930419921875, 0.707106769084930419921875) * _192);
-        float _503;
+        float2 _583 = in.in_var_TEXCOORD0 + (float2(-0.707106769084930419921875, 0.707106769084930419921875) * _293);
+        float _604;
         do
         {
-            bool _493;
-            if (!any(_482 < _148))
+            bool _594;
+            if (!any(_583 < _249))
             {
-                _493 = any(_482 > in.in_var_TEXCOORD3.zw);
+                _594 = any(_583 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _493 = true;
+                _594 = true;
             }
-            if (_493)
+            if (_594)
             {
-                _503 = 0.0;
+                _604 = 0.0;
                 break;
             }
-            float3 _500 = float3(_482, float(in.in_var_TEXCOORD1));
-            _503 = atlas.sample(atlasSmplr, _500.xy, uint(rint(_500.z)), level(0.0)).w;
+            float3 _601 = float3(_583, float(in.in_var_TEXCOORD1));
+            _604 = atlas.sample(atlasSmplr, _601.xy, uint(rint(_601.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _506 = in.in_var_TEXCOORD0 + (float2(-0.9238796234130859375, 0.382683277130126953125) * in.in_var_TEXCOORD4);
-        float _527;
+        float2 _607 = in.in_var_TEXCOORD0 + (float2(-0.9238796234130859375, 0.382683277130126953125) * in.in_var_TEXCOORD4);
+        float _628;
         do
         {
-            bool _517;
-            if (!any(_506 < _148))
+            bool _618;
+            if (!any(_607 < _249))
             {
-                _517 = any(_506 > in.in_var_TEXCOORD3.zw);
+                _618 = any(_607 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _517 = true;
+                _618 = true;
             }
-            if (_517)
+            if (_618)
             {
-                _527 = 0.0;
+                _628 = 0.0;
                 break;
             }
-            float3 _524 = float3(_506, float(in.in_var_TEXCOORD1));
-            _527 = atlas.sample(atlasSmplr, _524.xy, uint(rint(_524.z)), level(0.0)).w;
+            float3 _625 = float3(_607, float(in.in_var_TEXCOORD1));
+            _628 = atlas.sample(atlasSmplr, _625.xy, uint(rint(_625.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _530 = in.in_var_TEXCOORD0 + (float2(-0.9238796234130859375, 0.382683277130126953125) * _192);
-        float _551;
+        float2 _631 = in.in_var_TEXCOORD0 + (float2(-0.9238796234130859375, 0.382683277130126953125) * _293);
+        float _652;
         do
         {
-            bool _541;
-            if (!any(_530 < _148))
+            bool _642;
+            if (!any(_631 < _249))
             {
-                _541 = any(_530 > in.in_var_TEXCOORD3.zw);
+                _642 = any(_631 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _541 = true;
+                _642 = true;
             }
-            if (_541)
+            if (_642)
             {
-                _551 = 0.0;
+                _652 = 0.0;
                 break;
             }
-            float3 _548 = float3(_530, float(in.in_var_TEXCOORD1));
-            _551 = atlas.sample(atlasSmplr, _548.xy, uint(rint(_548.z)), level(0.0)).w;
+            float3 _649 = float3(_631, float(in.in_var_TEXCOORD1));
+            _652 = atlas.sample(atlasSmplr, _649.xy, uint(rint(_649.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _554 = in.in_var_TEXCOORD0 + (float2(-1.0, -8.7422776573475857730954885482788e-08) * in.in_var_TEXCOORD4);
-        float _575;
+        float2 _655 = in.in_var_TEXCOORD0 + (float2(-1.0, -8.7422776573475857730954885482788e-08) * in.in_var_TEXCOORD4);
+        float _676;
         do
         {
-            bool _565;
-            if (!any(_554 < _148))
+            bool _666;
+            if (!any(_655 < _249))
             {
-                _565 = any(_554 > in.in_var_TEXCOORD3.zw);
+                _666 = any(_655 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _565 = true;
+                _666 = true;
             }
-            if (_565)
+            if (_666)
             {
-                _575 = 0.0;
+                _676 = 0.0;
                 break;
             }
-            float3 _572 = float3(_554, float(in.in_var_TEXCOORD1));
-            _575 = atlas.sample(atlasSmplr, _572.xy, uint(rint(_572.z)), level(0.0)).w;
+            float3 _673 = float3(_655, float(in.in_var_TEXCOORD1));
+            _676 = atlas.sample(atlasSmplr, _673.xy, uint(rint(_673.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _578 = in.in_var_TEXCOORD0 + (float2(-1.0, -8.7422776573475857730954885482788e-08) * _192);
-        float _599;
+        float2 _679 = in.in_var_TEXCOORD0 + (float2(-1.0, -8.7422776573475857730954885482788e-08) * _293);
+        float _700;
         do
         {
-            bool _589;
-            if (!any(_578 < _148))
+            bool _690;
+            if (!any(_679 < _249))
             {
-                _589 = any(_578 > in.in_var_TEXCOORD3.zw);
+                _690 = any(_679 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _589 = true;
+                _690 = true;
             }
-            if (_589)
+            if (_690)
             {
-                _599 = 0.0;
+                _700 = 0.0;
                 break;
             }
-            float3 _596 = float3(_578, float(in.in_var_TEXCOORD1));
-            _599 = atlas.sample(atlasSmplr, _596.xy, uint(rint(_596.z)), level(0.0)).w;
+            float3 _697 = float3(_679, float(in.in_var_TEXCOORD1));
+            _700 = atlas.sample(atlasSmplr, _697.xy, uint(rint(_697.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _602 = in.in_var_TEXCOORD0 + (float2(-0.92387950420379638671875, -0.3826834261417388916015625) * in.in_var_TEXCOORD4);
-        float _623;
+        float2 _703 = in.in_var_TEXCOORD0 + (float2(-0.92387950420379638671875, -0.3826834261417388916015625) * in.in_var_TEXCOORD4);
+        float _724;
         do
         {
-            bool _613;
-            if (!any(_602 < _148))
+            bool _714;
+            if (!any(_703 < _249))
             {
-                _613 = any(_602 > in.in_var_TEXCOORD3.zw);
+                _714 = any(_703 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _613 = true;
+                _714 = true;
             }
-            if (_613)
+            if (_714)
             {
-                _623 = 0.0;
+                _724 = 0.0;
                 break;
             }
-            float3 _620 = float3(_602, float(in.in_var_TEXCOORD1));
-            _623 = atlas.sample(atlasSmplr, _620.xy, uint(rint(_620.z)), level(0.0)).w;
+            float3 _721 = float3(_703, float(in.in_var_TEXCOORD1));
+            _724 = atlas.sample(atlasSmplr, _721.xy, uint(rint(_721.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _626 = in.in_var_TEXCOORD0 + (float2(-0.92387950420379638671875, -0.3826834261417388916015625) * _192);
-        float _647;
+        float2 _727 = in.in_var_TEXCOORD0 + (float2(-0.92387950420379638671875, -0.3826834261417388916015625) * _293);
+        float _748;
         do
         {
-            bool _637;
-            if (!any(_626 < _148))
+            bool _738;
+            if (!any(_727 < _249))
             {
-                _637 = any(_626 > in.in_var_TEXCOORD3.zw);
+                _738 = any(_727 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _637 = true;
+                _738 = true;
             }
-            if (_637)
+            if (_738)
             {
-                _647 = 0.0;
+                _748 = 0.0;
                 break;
             }
-            float3 _644 = float3(_626, float(in.in_var_TEXCOORD1));
-            _647 = atlas.sample(atlasSmplr, _644.xy, uint(rint(_644.z)), level(0.0)).w;
+            float3 _745 = float3(_727, float(in.in_var_TEXCOORD1));
+            _748 = atlas.sample(atlasSmplr, _745.xy, uint(rint(_745.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _650 = in.in_var_TEXCOORD0 + (float2(-0.707106649875640869140625, -0.707106888294219970703125) * in.in_var_TEXCOORD4);
-        float _671;
+        float2 _751 = in.in_var_TEXCOORD0 + (float2(-0.707106649875640869140625, -0.707106888294219970703125) * in.in_var_TEXCOORD4);
+        float _772;
         do
         {
-            bool _661;
-            if (!any(_650 < _148))
+            bool _762;
+            if (!any(_751 < _249))
             {
-                _661 = any(_650 > in.in_var_TEXCOORD3.zw);
+                _762 = any(_751 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _661 = true;
+                _762 = true;
             }
-            if (_661)
+            if (_762)
             {
-                _671 = 0.0;
+                _772 = 0.0;
                 break;
             }
-            float3 _668 = float3(_650, float(in.in_var_TEXCOORD1));
-            _671 = atlas.sample(atlasSmplr, _668.xy, uint(rint(_668.z)), level(0.0)).w;
+            float3 _769 = float3(_751, float(in.in_var_TEXCOORD1));
+            _772 = atlas.sample(atlasSmplr, _769.xy, uint(rint(_769.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _674 = in.in_var_TEXCOORD0 + (float2(-0.707106649875640869140625, -0.707106888294219970703125) * _192);
-        float _695;
+        float2 _775 = in.in_var_TEXCOORD0 + (float2(-0.707106649875640869140625, -0.707106888294219970703125) * _293);
+        float _796;
         do
         {
-            bool _685;
-            if (!any(_674 < _148))
+            bool _786;
+            if (!any(_775 < _249))
             {
-                _685 = any(_674 > in.in_var_TEXCOORD3.zw);
+                _786 = any(_775 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _685 = true;
+                _786 = true;
             }
-            if (_685)
+            if (_786)
             {
-                _695 = 0.0;
+                _796 = 0.0;
                 break;
             }
-            float3 _692 = float3(_674, float(in.in_var_TEXCOORD1));
-            _695 = atlas.sample(atlasSmplr, _692.xy, uint(rint(_692.z)), level(0.0)).w;
+            float3 _793 = float3(_775, float(in.in_var_TEXCOORD1));
+            _796 = atlas.sample(atlasSmplr, _793.xy, uint(rint(_793.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _698 = in.in_var_TEXCOORD0 + (float2(-0.3826831281185150146484375, -0.923879683017730712890625) * in.in_var_TEXCOORD4);
-        float _719;
+        float2 _799 = in.in_var_TEXCOORD0 + (float2(-0.3826831281185150146484375, -0.923879683017730712890625) * in.in_var_TEXCOORD4);
+        float _820;
         do
         {
-            bool _709;
-            if (!any(_698 < _148))
+            bool _810;
+            if (!any(_799 < _249))
             {
-                _709 = any(_698 > in.in_var_TEXCOORD3.zw);
+                _810 = any(_799 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _709 = true;
+                _810 = true;
             }
-            if (_709)
+            if (_810)
             {
-                _719 = 0.0;
+                _820 = 0.0;
                 break;
             }
-            float3 _716 = float3(_698, float(in.in_var_TEXCOORD1));
-            _719 = atlas.sample(atlasSmplr, _716.xy, uint(rint(_716.z)), level(0.0)).w;
+            float3 _817 = float3(_799, float(in.in_var_TEXCOORD1));
+            _820 = atlas.sample(atlasSmplr, _817.xy, uint(rint(_817.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _722 = in.in_var_TEXCOORD0 + (float2(-0.3826831281185150146484375, -0.923879683017730712890625) * _192);
-        float _743;
+        float2 _823 = in.in_var_TEXCOORD0 + (float2(-0.3826831281185150146484375, -0.923879683017730712890625) * _293);
+        float _844;
         do
         {
-            bool _733;
-            if (!any(_722 < _148))
+            bool _834;
+            if (!any(_823 < _249))
             {
-                _733 = any(_722 > in.in_var_TEXCOORD3.zw);
+                _834 = any(_823 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _733 = true;
+                _834 = true;
             }
-            if (_733)
+            if (_834)
             {
-                _743 = 0.0;
+                _844 = 0.0;
                 break;
             }
-            float3 _740 = float3(_722, float(in.in_var_TEXCOORD1));
-            _743 = atlas.sample(atlasSmplr, _740.xy, uint(rint(_740.z)), level(0.0)).w;
+            float3 _841 = float3(_823, float(in.in_var_TEXCOORD1));
+            _844 = atlas.sample(atlasSmplr, _841.xy, uint(rint(_841.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _746 = in.in_var_TEXCOORD0 + (float2(1.1924880638503054797183722257614e-08, -1.0) * in.in_var_TEXCOORD4);
-        float _767;
+        float2 _847 = in.in_var_TEXCOORD0 + (float2(1.1924880638503054797183722257614e-08, -1.0) * in.in_var_TEXCOORD4);
+        float _868;
         do
         {
-            bool _757;
-            if (!any(_746 < _148))
+            bool _858;
+            if (!any(_847 < _249))
             {
-                _757 = any(_746 > in.in_var_TEXCOORD3.zw);
+                _858 = any(_847 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _757 = true;
+                _858 = true;
             }
-            if (_757)
+            if (_858)
             {
-                _767 = 0.0;
+                _868 = 0.0;
                 break;
             }
-            float3 _764 = float3(_746, float(in.in_var_TEXCOORD1));
-            _767 = atlas.sample(atlasSmplr, _764.xy, uint(rint(_764.z)), level(0.0)).w;
+            float3 _865 = float3(_847, float(in.in_var_TEXCOORD1));
+            _868 = atlas.sample(atlasSmplr, _865.xy, uint(rint(_865.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _770 = in.in_var_TEXCOORD0 + (float2(1.1924880638503054797183722257614e-08, -1.0) * _192);
-        float _791;
+        float2 _871 = in.in_var_TEXCOORD0 + (float2(1.1924880638503054797183722257614e-08, -1.0) * _293);
+        float _892;
         do
         {
-            bool _781;
-            if (!any(_770 < _148))
+            bool _882;
+            if (!any(_871 < _249))
             {
-                _781 = any(_770 > in.in_var_TEXCOORD3.zw);
+                _882 = any(_871 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _781 = true;
+                _882 = true;
             }
-            if (_781)
+            if (_882)
             {
-                _791 = 0.0;
+                _892 = 0.0;
                 break;
             }
-            float3 _788 = float3(_770, float(in.in_var_TEXCOORD1));
-            _791 = atlas.sample(atlasSmplr, _788.xy, uint(rint(_788.z)), level(0.0)).w;
+            float3 _889 = float3(_871, float(in.in_var_TEXCOORD1));
+            _892 = atlas.sample(atlasSmplr, _889.xy, uint(rint(_889.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _794 = in.in_var_TEXCOORD0 + (float2(0.3826836049556732177734375, -0.923879444599151611328125) * in.in_var_TEXCOORD4);
-        float _815;
+        float2 _895 = in.in_var_TEXCOORD0 + (float2(0.3826836049556732177734375, -0.923879444599151611328125) * in.in_var_TEXCOORD4);
+        float _916;
         do
         {
-            bool _805;
-            if (!any(_794 < _148))
+            bool _906;
+            if (!any(_895 < _249))
             {
-                _805 = any(_794 > in.in_var_TEXCOORD3.zw);
+                _906 = any(_895 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _805 = true;
+                _906 = true;
             }
-            if (_805)
+            if (_906)
             {
-                _815 = 0.0;
+                _916 = 0.0;
                 break;
             }
-            float3 _812 = float3(_794, float(in.in_var_TEXCOORD1));
-            _815 = atlas.sample(atlasSmplr, _812.xy, uint(rint(_812.z)), level(0.0)).w;
+            float3 _913 = float3(_895, float(in.in_var_TEXCOORD1));
+            _916 = atlas.sample(atlasSmplr, _913.xy, uint(rint(_913.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _818 = in.in_var_TEXCOORD0 + (float2(0.3826836049556732177734375, -0.923879444599151611328125) * _192);
-        float _839;
+        float2 _919 = in.in_var_TEXCOORD0 + (float2(0.3826836049556732177734375, -0.923879444599151611328125) * _293);
+        float _940;
         do
         {
-            bool _829;
-            if (!any(_818 < _148))
+            bool _930;
+            if (!any(_919 < _249))
             {
-                _829 = any(_818 > in.in_var_TEXCOORD3.zw);
+                _930 = any(_919 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _829 = true;
+                _930 = true;
             }
-            if (_829)
+            if (_930)
             {
-                _839 = 0.0;
+                _940 = 0.0;
                 break;
             }
-            float3 _836 = float3(_818, float(in.in_var_TEXCOORD1));
-            _839 = atlas.sample(atlasSmplr, _836.xy, uint(rint(_836.z)), level(0.0)).w;
+            float3 _937 = float3(_919, float(in.in_var_TEXCOORD1));
+            _940 = atlas.sample(atlasSmplr, _937.xy, uint(rint(_937.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _842 = in.in_var_TEXCOORD0 + (float2(0.707107007503509521484375, -0.707106530666351318359375) * in.in_var_TEXCOORD4);
-        float _863;
+        float2 _943 = in.in_var_TEXCOORD0 + (float2(0.707107007503509521484375, -0.707106530666351318359375) * in.in_var_TEXCOORD4);
+        float _964;
         do
         {
-            bool _853;
-            if (!any(_842 < _148))
+            bool _954;
+            if (!any(_943 < _249))
             {
-                _853 = any(_842 > in.in_var_TEXCOORD3.zw);
+                _954 = any(_943 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _853 = true;
+                _954 = true;
             }
-            if (_853)
+            if (_954)
             {
-                _863 = 0.0;
+                _964 = 0.0;
                 break;
             }
-            float3 _860 = float3(_842, float(in.in_var_TEXCOORD1));
-            _863 = atlas.sample(atlasSmplr, _860.xy, uint(rint(_860.z)), level(0.0)).w;
+            float3 _961 = float3(_943, float(in.in_var_TEXCOORD1));
+            _964 = atlas.sample(atlasSmplr, _961.xy, uint(rint(_961.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _866 = in.in_var_TEXCOORD0 + (float2(0.707107007503509521484375, -0.707106530666351318359375) * _192);
-        float _887;
+        float2 _967 = in.in_var_TEXCOORD0 + (float2(0.707107007503509521484375, -0.707106530666351318359375) * _293);
+        float _988;
         do
         {
-            bool _877;
-            if (!any(_866 < _148))
+            bool _978;
+            if (!any(_967 < _249))
             {
-                _877 = any(_866 > in.in_var_TEXCOORD3.zw);
+                _978 = any(_967 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _877 = true;
+                _978 = true;
             }
-            if (_877)
+            if (_978)
             {
-                _887 = 0.0;
+                _988 = 0.0;
                 break;
             }
-            float3 _884 = float3(_866, float(in.in_var_TEXCOORD1));
-            _887 = atlas.sample(atlasSmplr, _884.xy, uint(rint(_884.z)), level(0.0)).w;
+            float3 _985 = float3(_967, float(in.in_var_TEXCOORD1));
+            _988 = atlas.sample(atlasSmplr, _985.xy, uint(rint(_985.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _890 = in.in_var_TEXCOORD0 + (float2(0.923879563808441162109375, -0.3826834261417388916015625) * in.in_var_TEXCOORD4);
-        float _911;
+        float2 _991 = in.in_var_TEXCOORD0 + (float2(0.923879563808441162109375, -0.3826834261417388916015625) * in.in_var_TEXCOORD4);
+        float _1012;
         do
         {
-            bool _901;
-            if (!any(_890 < _148))
+            bool _1002;
+            if (!any(_991 < _249))
             {
-                _901 = any(_890 > in.in_var_TEXCOORD3.zw);
+                _1002 = any(_991 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _901 = true;
+                _1002 = true;
             }
-            if (_901)
+            if (_1002)
             {
-                _911 = 0.0;
+                _1012 = 0.0;
                 break;
             }
-            float3 _908 = float3(_890, float(in.in_var_TEXCOORD1));
-            _911 = atlas.sample(atlasSmplr, _908.xy, uint(rint(_908.z)), level(0.0)).w;
+            float3 _1009 = float3(_991, float(in.in_var_TEXCOORD1));
+            _1012 = atlas.sample(atlasSmplr, _1009.xy, uint(rint(_1009.z)), level(0.0)).w;
             break;
         } while(false);
-        float2 _914 = in.in_var_TEXCOORD0 + (float2(0.923879563808441162109375, -0.3826834261417388916015625) * _192);
-        float _935;
+        float2 _1015 = in.in_var_TEXCOORD0 + (float2(0.923879563808441162109375, -0.3826834261417388916015625) * _293);
+        float _1036;
         do
         {
-            bool _925;
-            if (!any(_914 < _148))
+            bool _1026;
+            if (!any(_1015 < _249))
             {
-                _925 = any(_914 > in.in_var_TEXCOORD3.zw);
+                _1026 = any(_1015 > in.in_var_TEXCOORD3.zw);
             }
             else
             {
-                _925 = true;
+                _1026 = true;
             }
-            if (_925)
+            if (_1026)
             {
-                _935 = 0.0;
+                _1036 = 0.0;
                 break;
             }
-            float3 _932 = float3(_914, float(in.in_var_TEXCOORD1));
-            _935 = atlas.sample(atlasSmplr, _932.xy, uint(rint(_932.z)), level(0.0)).w;
+            float3 _1033 = float3(_1015, float(in.in_var_TEXCOORD1));
+            _1036 = atlas.sample(atlasSmplr, _1033.xy, uint(rint(_1033.z)), level(0.0)).w;
             break;
         } while(false);
-        _940 = in.in_var_TEXCOORD2 * fast::clamp(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(0.0, _190), _215), _239), _263), _287), _311), _335), _359), _383), _407), _431), _455), _479), _503), _527), _551), _575), _599), _623), _647), _671), _695), _719), _743), _767), _791), _815), _839), _863), _887), _911), _935) - _167, 0.0, 1.0);
+        _1041 = in.in_var_TEXCOORD2 * fast::clamp(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(precise::max(0.0, _291), _316), _340), _364), _388), _412), _436), _460), _484), _508), _532), _556), _580), _604), _628), _652), _676), _700), _724), _748), _772), _796), _820), _844), _868), _892), _916), _940), _964), _988), _1012), _1036) - _268, 0.0, 1.0);
         break;
     } while(false);
-    out.out_var_SV_Target0 = _940;
+    out.out_var_SV_Target0 = _1041;
     return out;
 }
 

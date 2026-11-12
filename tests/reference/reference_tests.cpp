@@ -398,6 +398,40 @@ TEST_CASE("the hovered entity's pale outline and the selected one's gold, close 
     CheckAgainstReference({ .name = "outlines", .scene = game::Scene::Arena, .zoom = gfx::MAX_ZOOM, .outlines = true });
 }
 
+// The arena at tick GLOW_TICK, where the shrine, the stele and the ice crystal wear the demo glows (game::DemoGlow()), its
+// snapshot stamped with that tick as core::Logic stamps it, shown at `zoom` round `centre`.
+void CheckGlows(std::string_view name, f32 zoom, core::Vec2 centre) {
+    constexpr u64 GLOW_TICK = 24;
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, game::BuiltInData());
+    std::vector<core::Event> events;
+    for (u64 tick = 1; tick <= GLOW_TICK; ++tick) {
+        arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, {}, events);
+    }
+    const core::Snapshot snapshot = Published(arena, jobs, GLOW_TICK);
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
+    const gfx::View view{ .camera = { .centre = centre, .zoom = zoom } };
+    CompareWithReference(Captured(renderer, snapshot, view, jobs), name);
+}
+
+TEST_CASE("the demo glows at zoom 1") {
+    // Among the shrine (its foot at 960, 330), the stele (760, 980) and the crystal (420, 620): all three in view.
+    constexpr core::Vec2 AMONG_THE_THREE{ .x = 720.0F, .y = 580.0F };
+    CheckGlows("glows_zoom_one", 1.0F, AMONG_THE_THREE);
+}
+
+TEST_CASE("at zoom 2 the glows thin") {
+    // Between the crystal and the stele, both in view.
+    constexpr core::Vec2 CRYSTAL_AND_STELE{ .x = 590.0F, .y = 740.0F };
+    CheckGlows("glows_zoom_two", gfx::MAX_ZOOM, CRYSTAL_AND_STELE);
+}
+
+TEST_CASE("at the smallest zoom the glows stop at the field's reach") {
+    CheckGlows("glows_zoom_quarter", gfx::MIN_ZOOM, gfx::REFERENCE_CENTRE);
+}
+
 TEST_CASE("at the smallest zoom the labels and the tablet's caption, too small to read, are faded out") {
     CheckAgainstReference({ .name = "text_zoom_quarter", .zoom = gfx::MIN_ZOOM });
 }

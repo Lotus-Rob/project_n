@@ -42,4 +42,12 @@ std::array<GlowRecord, core::GLOW_ROLES> BuildGlowTable(const core::Effects& eff
     return table;
 }
 
+GlowTime GlowTimeAt(u64 simulationTick, f64 alpha) {
+    // Whole ticks stay integers: RenderTick()'s f64 would lose them past 2^53.
+    if (alpha >= 1.0) {
+        return { .tick = static_cast<u32>(simulationTick), .fraction = 0.0F };
+    }
+    return { .tick = static_cast<u32>(simulationTick - 1), .fraction = static_cast<f32>(std::max(alpha, 0.0)) };
+}
+
 } // namespace gfx
