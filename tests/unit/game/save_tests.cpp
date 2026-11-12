@@ -240,17 +240,19 @@ TEST_CASE("the save round-trips mid-volley") {
     REQUIRE(loaded.Load(reader, SAVED_TICK));
     CHECK(loaded.StateHash() == saved.StateHash());
     std::size_t hits = 0;
+    u32 differentEvents = 0; // ticks whose events differ, counted so the test asserts the worst once
+    u32 differentStates = 0;
     for (u64 tick = savedAt + 1; tick <= last + volley.shape.fadeTicks + 2; ++tick) {
         std::vector<core::Event> savedEvents;
         std::vector<core::Event> loadedEvents;
         saved.Tick(At(tick), {}, savedEvents);
         loaded.Tick(At(tick), {}, loadedEvents);
-        CAPTURE(tick);
-        const bool same = SameEvents(loadedEvents, savedEvents);
-        CHECK(same);
-        CHECK(loaded.StateHash() == saved.StateHash());
+        differentEvents += SameEvents(loadedEvents, savedEvents) ? 0U : 1U;
+        differentStates += loaded.StateHash() == saved.StateHash() ? 0U : 1U;
         hits += static_cast<std::size_t>(std::ranges::count(savedEvents, volley.use, &core::Event::use));
     }
+    CHECK(differentEvents == 0);
+    CHECK(differentStates == 0);
     CHECK(hits > 0);
 }
 
@@ -291,21 +293,23 @@ TEST_CASE("the save round-trips mid-burn") {
     REQUIRE(loaded.Load(reader, SAVED_TICK));
     CHECK(loaded.StateHash() == saved.StateHash());
     std::vector<core::Event> used;
+    u32 differentEvents = 0; // ticks whose events differ, counted so the test asserts the worst once
+    u32 differentStates = 0;
     for (u64 tick = savedAt + 1; tick <= savedAt + (BURN_TICKS * game::AFFLICTION_PERIOD) + 1; ++tick) {
         std::vector<core::Event> savedEvents;
         std::vector<core::Event> loadedEvents;
         saved.Tick(At(tick), {}, savedEvents);
         loaded.Tick(At(tick), {}, loadedEvents);
-        CAPTURE(tick);
-        const bool same = SameEvents(loadedEvents, savedEvents);
-        CHECK(same);
-        CHECK(loaded.StateHash() == saved.StateHash());
+        differentEvents += SameEvents(loadedEvents, savedEvents) ? 0U : 1U;
+        differentStates += loaded.StateHash() == saved.StateHash() ? 0U : 1U;
         std::ranges::copy_if(loadedEvents, std::back_inserter(used), [&bolt](const core::Event& event) {
             return event.use == bolt.use;
         });
     }
+    CHECK(differentEvents == 0);
+    CHECK(differentStates == 0);
     REQUIRE(used.size() == BURN_TICKS + 1);
-    for (std::size_t index = 0; index < BURN_TICKS; ++index) {
+    for (std::size_t index = 0; index < BURN_TICKS; ++index) { // the burn's three ticks, one by one
         CHECK(used.at(index).kind == core::EventKind::Hit);
         CHECK(used.at(index).hit == core::HitKind::Burn);
         CHECK(used.at(index).target == fox);
@@ -342,6 +346,27 @@ TEST_CASE("a save with bytes after the state, or of another format, is refused")
     CHECK_FALSE(game.Load(otherReader, SAVED_TICK));
 }
 
+constexpr u32 FORMAT = 3;
+constexpr u32 ACTIVE_VERSION = 4;
+constexpr u32 WORLD_VERSION = 1;
+using Active = core::ComponentList<
+    game::Body,
+    game::Look,
+    game::Orbit,
+    game::Spin,
+    game::Creature,
+    game::Npc,
+    game::Needs,
+    game::Met,
+    game::Wander,
+    game::Health,
+    game::Dying,
+    game::Arriving,
+    game::Caster,
+    game::Dashing,
+    game::Afflictions>;
+using World = core::ComponentList<game::Npc, game::Needs, game::Met, game::Group>;
+
 // A volley as game::Combat saves one: the cast, then its targets.
 struct SavedVolley {
     core::Volley volley{};
@@ -359,29 +384,9 @@ std::vector<std::byte> ArenaSave(
     const std::optional<SavedVolley>& volley = std::nullopt,
     const std::optional<core::Flash>& flash = std::nullopt
 ) {
-    constexpr u32 FORMAT = 3;
-    constexpr u32 ACTIVE_VERSION = 4;
-    constexpr u32 WORLD_VERSION = 1;
     constexpr u64 MONTHS_PASSED = 0;
     constexpr u64 RELATIONSHIPS = 0;
     constexpr u64 RESPAWNS = 0;
-    using Active = core::ComponentList<
-        game::Body,
-        game::Look,
-        game::Orbit,
-        game::Spin,
-        game::Creature,
-        game::Npc,
-        game::Needs,
-        game::Met,
-        game::Wander,
-        game::Health,
-        game::Dying,
-        game::Arriving,
-        game::Caster,
-        game::Dashing,
-        game::Afflictions>;
-    using World = core::ComponentList<game::Npc, game::Needs, game::Met, game::Group>;
     std::vector<std::byte> bytes;
     core::Writer writer{ bytes };
     writer(FORMAT, game::Scene::Arena, state.Seed(), state.Ids().next, MONTHS_PASSED, player, core::StableId{});
@@ -417,6 +422,135 @@ bool Loads(const std::vector<std::byte>& bytes, u64 savedTick = SAVED_TICK) {
     const u64 after = game.StateHash();
     CHECK(after == before);
     return loaded;
+}
+
+// The file named by PN_FIGHT_SEED, or null.
+const char* FightSeedPath() {
+#ifdef _MSC_VER
+#pragma warning(push)
+// MSVC calls getenv unsafe (C4996); _dupenv_s is its own, and nothing here sets the variable while the test runs.
+#pragma warning(disable : 4996)
+#endif
+    // NOLINTNEXTLINE(concurrency-mt-unsafe): read once, before any thread but the test's runs
+    const char* const path = std::getenv("PN_FIGHT_SEED");
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+    return path;
+}
+
+// What `write` writes to a core::Writer, as bytes.
+template<typename Write>
+std::vector<std::byte> Written(const Write& write) {
+    std::vector<std::byte> part;
+    core::Writer writer{ part };
+    write(writer);
+    return part;
+}
+
+// The arena in the middle of a fight, as tests/fuzz/corpus/save/fight holds it: the arena scene has no world tier, so its
+// save is small. Casts are at the chest of one fox, whose tick-by-tick history the numbers below arrange.
+TEST_CASE("the mid-fight save loads, and writes the fuzz seed when PN_FIGHT_SEED names a file") {
+    constexpr u64 FIRST_DEATH = 5;    // its fox respawns 210 ticks later and is still easing in at SAVED_AT
+    constexpr u64 SECOND_DEATH = 150; // removed by SAVED_AT, its respawn still waiting
+    constexpr u64 SWORDS_AT = 285;
+    constexpr u64 BOLT_AT = 270;
+    constexpr u64 LANCE_AT = 295; // its flash is still showing
+    constexpr u64 DASH_AT = 298;
+    constexpr u64 SAVED_AT = 300; // a third fox dies on this tick, so is still dissolving
+    constexpr std::size_t DYING = 5;
+    core::GameData data = game::BuiltInData();
+    data.abilities.qiStart = data.abilities.qiMax; // enough for the swords and the lance
+    game::Arena saved(test::TestManifest(), game::Scene::Arena, data);
+    constexpr core::Vec2 FAR_RIGHT{ .x = 5'000.0F, .y = 0.0F };
+    const auto cast = [&saved](u64 tick, core::Slot slot, core::Vec2 point) {
+        const std::array<core::Action, 1> actions{ { { .kind = core::ActionKind::Cast, .slot = slot, .point = point } } };
+        Tick(saved, At(tick), { .actions = actions, .held = {} });
+    };
+    core::Vec2 chest{};
+    for (u64 tick = 1; tick < SAVED_AT; ++tick) {
+        if (tick == BOLT_AT) {
+            const core::Registry& entities = saved.State()[game::ACTIVE].Entities();
+            chest = entities.get<game::Body>(saved.State()[game::ACTIVE].Find(Foxes(saved).at(2))).current;
+            cast(tick, core::Slot::Generator, chest);
+        }
+        else if (tick == LANCE_AT) {
+            cast(tick, core::Slot::Spender, chest);
+        }
+        else if (tick == SWORDS_AT) {
+            cast(tick, core::Slot::Special1, chest);
+        }
+        else if (tick == DASH_AT) {
+            cast(tick, core::Slot::Movement, FAR_RIGHT);
+        }
+        else {
+            Tick(saved, At(tick), {});
+        }
+        if (tick == FIRST_DEATH || tick == SECOND_DEATH) {
+            saved.Damage(Foxes(saved).at(tick == FIRST_DEATH ? 0 : 1), FOX_HEALTH, tick);
+        }
+    }
+    Tick(saved, At(SAVED_AT), {});
+    saved.Damage(Foxes(saved).at(DYING), FOX_HEALTH, SAVED_AT);
+    const core::Registry& entities = saved.State()[game::ACTIVE].Entities();
+    core::Jobs jobs{ 1 };
+    core::Snapshot snapshot;
+    saved.Publish(snapshot, jobs);
+    REQUIRE(snapshot.volleys.size() >= 1);
+    REQUIRE(snapshot.flashes.size() >= 1);
+    CHECK_FALSE(entities.view<const game::Afflictions>().empty());
+    CHECK_FALSE(entities.view<const game::Dying>().empty());
+    CHECK_FALSE(entities.view<const game::Arriving>().empty());
+    CHECK_FALSE(entities.view<const game::Dashing>().empty());
+    const std::vector<std::byte> full = Saved(saved);
+    game::Arena loadedFull(test::TestManifest(), game::Scene::Cells, data);
+    core::Reader fullReader{ full };
+    CHECK(loadedFull.Load(fullReader, SAVED_TICK));
+    CHECK(loadedFull.StateHash() == saved.StateHash());
+
+    // The seed is that save with the world tier and the relationships left out (about 200 KB of NPCs): the bytes before
+    // the world tier, an empty one, no relationships, and what follows the relationships, which is all combat.
+    const core::State& state = saved.State();
+    const core::State bare{ game::DOMAINS, state.Seed() };
+    const auto head = Written([&](core::Writer& writer) {
+        writer(FORMAT, game::Scene::Arena, state.Seed(), state.Ids().next, saved.Months(), saved.Player(), saved.Selected());
+        writer(ACTIVE_VERSION);
+        core::SaveDomain(writer, state[game::ACTIVE], Active{});
+    });
+    const auto world = [](const core::State& source) {
+        return Written([&source](core::Writer& writer) {
+            writer(WORLD_VERSION);
+            core::SaveDomain(writer, source[game::WORLD], World{});
+        });
+    };
+    const auto relationships = [](const game::Relationships& source) {
+        return Written([&source](core::Writer& writer) { source.Save(writer); });
+    };
+    const std::vector<std::byte> fullWorld = world(state);
+    const std::vector<std::byte> fullRelationships = relationships(saved.NpcRelationships());
+    const std::size_t before = head.size() + fullWorld.size() + fullRelationships.size();
+    REQUIRE(full.size() > before);
+    REQUIRE(std::equal(head.begin(), head.end(), full.begin()));
+    std::vector<std::byte> bytes = head;
+    const std::vector<std::byte> bareWorld = world(bare);
+    const std::vector<std::byte> noRelationships = relationships(game::Relationships{});
+    bytes.insert(bytes.end(), bareWorld.begin(), bareWorld.end());
+    bytes.insert(bytes.end(), noRelationships.begin(), noRelationships.end());
+    bytes.insert(bytes.end(), full.begin() + static_cast<std::ptrdiff_t>(before), full.end());
+    constexpr std::size_t SMALL = 16'384;
+    CHECK(bytes.size() < SMALL);
+
+    game::Arena loaded(test::TestManifest(), game::Scene::Cells, data);
+    core::Reader reader{ bytes };
+    CHECK(loaded.Load(reader, SAVED_TICK));
+
+    const char* const seed = FightSeedPath();
+    if (seed != nullptr) {
+        std::ofstream file{ seed, std::ios::binary };
+        std::ranges::transform(bytes, std::ostreambuf_iterator<char>{ file }, [](std::byte byte) {
+            return static_cast<char>(std::to_integer<u8>(byte));
+        });
+    }
 }
 
 constexpr u64 STATE_SEED = 7;
