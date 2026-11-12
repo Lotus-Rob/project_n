@@ -148,10 +148,11 @@ what runs or in what order.
 Two steps grew most since 2026-11-10:
 
 - **Reference pictures, 3 s → 29 s warm**, with no build in it (linux-gcc release is already built by the test step
-  before): one `reference_tests` process draws all 23 pictures in turn on lavapipe. First measure whether lavapipe keeps
-  every core busy during a picture. If it leaves cores idle, `run_references` runs the pictures as a few processes at
-  once, each given a share of the test cases through doctest's `--test-case` filter, every picture still drawn and
-  compared, the failures of every shard reported.
+  before): one `reference_tests` process draws all 23 pictures in turn on lavapipe. Measured 2026-11-12: 28 s of wall
+  time on 38 s of CPU, so lavapipe keeps 1.4 of 32 cores busy; each of the 25 cases takes ~1 s, the slowest 2.1 s.
+  `run_references` runs one process per case (doctest's `--first`/`--last` by position: several case names hold
+  commas, which `--test-case` splits on), as many at once as `jobs()`, every picture still drawn and compared, every
+  failing case's output reported; expected a few seconds.
 - **windows-msvc, 107 s warm: every MSVC build recompiles everything, and `check` builds it twice.** Measured
   2026-11-12 (the user asked whether caching, copying or setting up ahead would help): the container starts in 0.1 s,
   Pixi in it in 0.3 s, Wine in 1.2 s, configure takes 0.1 s, and the 8 test suites run in parallel in 4 s. The rest is
