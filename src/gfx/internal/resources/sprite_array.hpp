@@ -36,13 +36,13 @@ struct SpriteArray {
     const core::SpriteInfo& sprite
 );
 
-/// Uploads `image`, `sprite` as DecodeSprite() made it, into its block of `array` (with its gutters, for
-/// `mipLevels` mips), submitted before it returns. The mips stay stale until GenerateMips().
+/// Uploads `image`, `sprite` as DecodeSprite() made it, into its block of `array` (with `edge` texels
+/// around it), submitted before it returns. The mips stay stale until GenerateMips().
 [[nodiscard]] std::expected<void, core::Error> UploadSprite(
     SDL_GPUDevice* device,
     const SpriteArray& array,
     const core::SpriteInfo& sprite,
-    u32 mipLevels,
+    u32 edge,
     const SDL_Surface& image
 );
 

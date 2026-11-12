@@ -13,7 +13,7 @@ constexpr std::size_t PAGE_HEIGHT = 40;
 // texels across a sprite's edge fit in a sprite's half of the 16-texel gutter.
 constexpr std::size_t LEVEL_3_TEXEL = 8;
 constexpr std::size_t SPRITE_SIZE = 8;
-constexpr u32 MIP_LEVELS = 5; // the 16-texel gutter's
+constexpr u32 EDGE = 8; // half of this page's 16-texel gutter
 
 // Writes a one-colour image of `sprite` onto the page, the way the atlas does.
 void Place(const core::SpriteInfo& sprite, const Colour& colour, std::span<std::byte> page) {
@@ -21,10 +21,10 @@ void Place(const core::SpriteInfo& sprite, const Colour& colour, std::span<std::
     for (std::size_t texel = 0; texel < SPRITE_SIZE * SPRITE_SIZE; ++texel) {
         image.insert(image.end(), colour.begin(), colour.end());
     }
-    const gfx::SpriteBlock block = gfx::BlockOf(sprite, MIP_LEVELS);
+    const gfx::SpriteBlock block = gfx::BlockOf(sprite, EDGE);
     const std::size_t row = block.width * gfx::BYTES_PER_TEXEL;
     std::vector<std::byte> written(row * block.height);
-    gfx::WriteBlock(sprite, MIP_LEVELS, image, SPRITE_SIZE * gfx::BYTES_PER_TEXEL, written);
+    gfx::WriteBlock(sprite, EDGE, image, SPRITE_SIZE * gfx::BYTES_PER_TEXEL, written);
     for (std::size_t line = 0; line < block.height; ++line) {
         const std::size_t start = (((block.y + line) * PAGE_WIDTH) + block.x) * gfx::BYTES_PER_TEXEL;
         std::ranges::copy(std::span{ written }.subspan(line * row, row), page.subspan(start).begin());
@@ -44,6 +44,17 @@ std::string Level3Texel(std::span<const std::byte> page, std::size_t left, std::
     }
     constexpr u32 TEXELS = LEVEL_3_TEXEL * LEVEL_3_TEXEL;
     return std::format("{},{},{},{}", sum[0] / TEXELS, sum[1] / TEXELS, sum[2] / TEXELS, sum[3] / TEXELS);
+}
+
+TEST_CASE("a sprite's block is its region and its edge on every side") {
+    const core::SpriteInfo sprite{
+        .file = "a.png", .page = 0, .x = 32, .y = 32, .width = 10, .height = 40, .footX = 0, .footY = 0
+    };
+    const gfx::SpriteBlock block = gfx::BlockOf(sprite, 16);
+    CHECK(block.x == 16);
+    CHECK(block.y == 16);
+    CHECK(block.width == 42);
+    CHECK(block.height == 72);
 }
 
 TEST_CASE("opaque neighbours stay opaque and their own colour across their edges at the low mips") {

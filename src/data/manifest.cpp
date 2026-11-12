@@ -10,7 +10,7 @@ namespace {
 using core::atlas::SPRITE_NAMES;
 using core::atlas::SpriteId;
 
-constexpr u32 MIN_MIP_LEVELS = 2;  // a sprite's gutter is 2^(mips - 2) texels
+constexpr u32 MIN_MIP_LEVELS = 2;  // the gutter is at least 2^(mips - 1) texels
 constexpr u32 MAX_MIP_LEVELS = 15; // a 16384-texel page's
 constexpr std::string_view STALE = "the atlas is stale: run `./dev atlas`";
 
@@ -90,13 +90,12 @@ std::expected<core::SpriteInfo, core::Error> Sprite(const YAML::Node& node, std:
     if (sprite.page >= manifest.pages) {
         return Refuse(node, std::format("{} is on page {}, past the last", *name, sprite.page));
     }
-    // The block uploaded around the region: the sprite's half of the gutter that keeps mips apart (gfx::BlockOf).
-    const u32 edge = 1U << (manifest.mipLevels - 2);
+    // The block uploaded around the region: the sprite's half of the gutter (gfx::BlockOf).
+    const u32 edge = manifest.Edge();
     if (sprite.x < edge || sprite.y < edge || u32{ sprite.x } + sprite.width + edge > manifest.pageSize ||
         u32{ sprite.y } + sprite.height + edge > manifest.pageSize) {
         return Refuse(
-            node,
-            std::format("{}'s region and its {}-texel gutter are outside its {}-texel page", *name, edge, manifest.pageSize)
+            node, std::format("{}'s region and its {}-texel edge are outside its {}-texel page", *name, edge, manifest.pageSize)
         );
     }
     if (sprite.footX > sprite.width || sprite.footY > sprite.height) {
@@ -150,6 +149,19 @@ std::expected<core::Manifest, core::Error> Parse(const YAML::Node& root) {
         return Refuse(
             root["mip_levels"], std::format("{} mip levels, not {} to {}", manifest.mipLevels, MIN_MIP_LEVELS, MAX_MIP_LEVELS)
         );
+    }
+    const std::expected<u32, core::Error> gutter = Field<u32>(root, "gutter");
+    if (!gutter) {
+        return std::unexpected{ gutter.error() };
+    }
+    manifest.gutter = *gutter;
+    // Two neighbours' fields reach FIELD_REACH_TEXELS each into it, and the last mip's texels span 2^(mips - 1).
+    const u32 leastGutter = std::max(2 * core::FIELD_REACH_TEXELS, u32{ 1 } << (manifest.mipLevels - 1));
+    if (manifest.gutter % 2 != 0) {
+        return Refuse(root["gutter"], std::format("a {}-texel gutter, which is odd", manifest.gutter));
+    }
+    if (manifest.gutter < leastGutter) {
+        return Refuse(root["gutter"], std::format("a {}-texel gutter, under {}", manifest.gutter, leastGutter));
     }
     const YAML::Node sprites = root["sprites"];
     if (!sprites || !sprites.IsSequence()) {

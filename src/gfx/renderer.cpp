@@ -930,7 +930,7 @@ std::expected<bool, core::Error> Renderer::ContinueScene(u64 budgetNs) {
                 impl.device.get(),
                 impl.sprites,
                 impl.manifest->Sprite(load.sprites.at(load.uploaded)),
-                impl.manifest->mipLevels,
+                impl.manifest->Edge(),
                 *surface
             );
         });
