@@ -1,7 +1,8 @@
 // The save reader (game::Arena::Load, behind the save file's checksum): a save is untrusted, so any bytes are
 // refused or loaded into a state the game can tick, publish and save again, never a crash. Seeded with the
 // painted scene's save and the arena's in the middle of a fight (a volley in flight, a lance's flash, burn and poison,
-// a fox dying, one easing in, a respawn waiting, the player dashing).
+// a fox dying, one easing in, a respawn waiting, the player dashing), its 5,000 world NPCs and their relationships
+// left out so each run is quick.
 #include "../support/manifest.hpp" // relative: lint has no compile flags for the fuzz targets, which only build with ASan
 #include "core/archive.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
