@@ -680,27 +680,38 @@ TEST_CASE("the debug burst hits every fox with all four kinds") {
     std::unordered_map<core::StableId, std::size_t> perFox;
     std::unordered_map<core::StableId, std::array<std::size_t, KINDS>> kindsPerFox;
     std::array<std::size_t, KINDS> perKind{};
+    bool allHits = true; // each of the burst's hits, with one check for what they have in common
+    bool ofTheUse = true;
+    i64 least = BURST_MAX;
+    i64 most = BURST_MIN;
     for (std::size_t index = 0; index < HITS; ++index) {
         const core::Event& event = events.at(index);
-        REQUIRE(event.kind == core::EventKind::Hit);
-        CHECK(event.use == events.back().use);
-        CHECK(event.value >= BURST_MIN);
-        CHECK(event.value <= BURST_MAX);
+        allHits = allHits && event.kind == core::EventKind::Hit;
+        ofTheUse = ofTheUse && event.use == events.back().use;
+        least = std::min(least, event.value);
+        most = std::max(most, event.value);
         ++perFox[event.target];
         ++kindsPerFox[event.target].at(std::to_underlying(event.hit));
         ++perKind.at(std::to_underlying(event.hit));
     }
+    REQUIRE(allHits);
+    CHECK(ofTheUse);
+    CHECK(least >= BURST_MIN);
+    CHECK(most <= BURST_MAX);
     CHECK(perFox.size() == foxes.size());
+    std::size_t fewest = HITS;
+    std::size_t mostOnOne = 0;
     for (const auto& [fox, count] : perFox) {
-        CHECK(count >= HITS / foxes.size());
-        CHECK(count <= (HITS / foxes.size()) + 1);
+        fewest = std::min(fewest, count);
+        mostOnOne = std::max(mostOnOne, count);
     }
+    CHECK(fewest >= HITS / foxes.size());
+    CHECK(mostOnOne <= (HITS / foxes.size()) + 1);
+    std::size_t fewestOfAKind = HITS; // every fox gets every kind, whatever the number of foxes
     for (const auto& [fox, kinds] : kindsPerFox) {
-        INFO("fox ", std::to_underlying(fox));
-        for (const std::size_t count : kinds) {
-            CHECK(count > 0); // every fox gets every kind, whatever the number of foxes
-        }
+        fewestOfAKind = std::min(fewestOfAKind, std::ranges::min(kinds));
     }
+    CHECK(fewestOfAKind > 0);
     // The kinds take turns by round over the foxes, so the totals depend on the fox count: with the arena's 12, of the
     // 333 full rounds of 12 hits damage takes 84 and each other kind 83, and the last 4 hits are healing.
     constexpr std::size_t ARENA_FOXES = 12;

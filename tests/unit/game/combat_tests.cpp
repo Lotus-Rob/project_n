@@ -805,12 +805,22 @@ TEST_CASE("every sword's hit is scheduled once and the use ends with the last") 
     REQUIRE(CountKind(used, core::EventKind::UseEnded) == 1);
     CHECK(used.back().kind == core::EventKind::UseEnded);
     CHECK(used.back().tick == last);
+    // Every event before the end is a hit of the sword's damage on a tagged enemy: the first, the last and the middle
+    // one are named (the first and last by the checks above and below), and the rest by one flag each.
+    bool allHits = true;
+    bool allDamage = true;
+    bool allSwordDamage = true;
+    bool allTagged = true;
     for (const core::Event& hit : std::span{ used }.first(used.size() - 1)) {
-        CHECK(hit.kind == core::EventKind::Hit);
-        CHECK(hit.hit == core::HitKind::Damage);
-        CHECK(hit.value == SWORD_DAMAGE);
-        CHECK(std::ranges::contains(ready.tagged, hit.target));
+        allHits = allHits && hit.kind == core::EventKind::Hit;
+        allDamage = allDamage && hit.hit == core::HitKind::Damage;
+        allSwordDamage = allSwordDamage && hit.value == SWORD_DAMAGE;
+        allTagged = allTagged && std::ranges::contains(ready.tagged, hit.target);
     }
+    CHECK(allHits);
+    CHECK(allDamage);
+    CHECK(allSwordDamage);
+    CHECK(allTagged);
 }
 
 TEST_CASE("hits split evenly over the tagged enemies") {
@@ -847,11 +857,13 @@ TEST_CASE("a dead enemy's swords move to the living") {
     });
     REQUIRE(frailHits.size() >= static_cast<std::size_t>(FRAIL));
     const u64 death = frailHits.at(static_cast<std::size_t>(FRAIL) - 1).tick;
+    bool onlyOther = true; // after the death, every hit is on the other
     for (const core::Event& event : used) {
         if (event.kind == core::EventKind::Hit && event.tick > death) {
-            CHECK(event.target == other);
+            onlyOther = onlyOther && event.target == other;
         }
     }
+    CHECK(onlyOther);
     // The other's own half, and swords moved from the frail one.
     CHECK(std::ranges::count(used, other, &core::Event::target) > SWORDS / 2);
 }
@@ -872,15 +884,22 @@ TEST_CASE("with all tagged enemies dead the rest plunge and emit nothing") {
         lastDeath = std::max(lastDeath, hits.at(static_cast<std::size_t>(FRAIL) - 1).tick);
     }
     REQUIRE(lastDeath < last);
+    bool noneAfterLastDeath = true;
     for (const core::Event& event : used) {
         if (event.kind == core::EventKind::Hit) {
-            CHECK(event.tick <= lastDeath);
+            noneAfterLastDeath = noneAfterLastDeath && event.tick <= lastDeath;
         }
     }
+    CHECK(noneAfterLastDeath);
     CHECK(CountKind(used, core::EventKind::Hit) < SWORDS);
     REQUIRE(CountKind(used, core::EventKind::UseEnded) == 1);
     CHECK(used.back().kind == core::EventKind::UseEnded);
     CHECK(used.back().tick == last);
+}
+
+// 0 when `holds`, else 1: to count what went wrong in a loop that asserts the count once.
+u32 Missed(bool holds) {
+    return holds ? 0U : 1U;
 }
 
 TEST_CASE("each tick's hits are the swords arriving then whose target was alive as the tick began") {
@@ -898,8 +917,13 @@ TEST_CASE("each tick's hits are the swords arriving then whose target was alive 
     }
     std::array<u64, 2> deaths{};
     std::array<i64, 2> hitsTaken{};
+    // Every tick from the cast to the last arrival is played (the swords strike over many), and the worst of each
+    // measure is asserted once: the ticks whose hits were not the expected ones, whose death tick was wrong, and whose
+    // dead target moved.
+    u32 wrongHits = 0;
+    u32 wrongDeath = 0;
+    u32 movedAfterDeath = 0;
     for (u64 tick = CAST + 1; tick <= last; ++tick) {
-        CAPTURE(tick);
         // The targets as the tick begins: as the last tick left them.
         const std::vector<core::VolleyTarget> targets = before.volleyTargets;
         std::array<i64, 2> expected{};
@@ -912,24 +936,30 @@ TEST_CASE("each tick's hits are the swords arriving then whose target was alive 
         const std::vector<core::Event> events = OfUse(Play(arena, tick, tick), volley.use);
         for (std::size_t index = 0; index < 2; ++index) {
             const i64 hits = std::ranges::count(events, ready.tagged.at(index), &core::Event::target);
-            CHECK(hits == expected.at(index));
+            wrongHits += Missed(hits == expected.at(index));
             if (hitsTaken.at(index) < FRAIL && hitsTaken.at(index) + hits >= FRAIL) {
                 deaths.at(index) = tick;
             }
             hitsTaken.at(index) += hits;
         }
         before = Published(arena, tick);
-        REQUIRE(before.volleyTargets.size() == 2);
+        if (before.volleyTargets.size() != 2) {
+            ++wrongDeath;
+            continue;
+        }
         for (std::size_t index = 0; index < 2; ++index) {
             // Dead from the tick its health ran out, even when swords struck it on that tick.
             const core::VolleyTarget& target = before.volleyTargets.at(index);
-            CHECK(target.diedTick == deaths.at(index));
+            wrongDeath += Missed(target.diedTick == deaths.at(index));
             if (target.diedTick != 0 && target.diedTick < tick) {
                 // Where it died, between ticks too, so the swords plunging there hold still.
-                CHECK(std::bit_cast<u64>(target.previous) == std::bit_cast<u64>(target.current));
+                movedAfterDeath += Missed(std::bit_cast<u64>(target.previous) == std::bit_cast<u64>(target.current));
             }
         }
     }
+    CHECK(wrongHits == 0);
+    CHECK(wrongDeath == 0);
+    CHECK(movedAfterDeath == 0);
     CHECK(deaths.at(0) > 0);
     CHECK(deaths.at(1) > 0);
 }

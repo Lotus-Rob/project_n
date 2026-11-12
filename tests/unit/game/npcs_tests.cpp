@@ -173,14 +173,17 @@ TEST_CASE("a month step gives the same world with one worker and with many") {
     const auto [many, manyRelationships] = Stepped(NPCS, MONTHS, MANY_WORKERS);
     const auto& oneWorld = one[game::WORLD].Entities();
     const auto& manyWorld = many[game::WORLD].Entities();
+    // All 5,000 are the equivalence being tested, so each is compared and the verdict asserted once.
+    bool same = true;
     for (const auto [entity, stableId, person, want] :
          oneWorld.view<const core::StableId, const game::Npc, const game::Needs>().each()) {
         const core::Entity other = many[game::WORLD].Find(stableId);
-        CHECK(manyWorld.get<game::Npc>(other).power == person.power);
-        CHECK(manyWorld.get<game::Npc>(other).action == person.action);
-        CHECK(manyWorld.get<game::Needs>(other).company == want.company);
-        CHECK(manyWorld.get<game::Needs>(other).rest == want.rest);
+        same = same && Same(manyWorld.get<game::Npc>(other).power, person.power) &&
+               manyWorld.get<game::Npc>(other).action == person.action &&
+               Same(manyWorld.get<game::Needs>(other).company, want.company) &&
+               Same(manyWorld.get<game::Needs>(other).rest, want.rest);
     }
+    CHECK(same);
     REQUIRE(oneRelationships.All().size() == manyRelationships.All().size());
     CHECK(std::ranges::equal(oneRelationships.All(), manyRelationships.All(), [](const auto& lhs, const auto& rhs) {
         return lhs.holder == rhs.holder && lhs.subject == rhs.subject && Same(lhs.opinion, rhs.opinion);
