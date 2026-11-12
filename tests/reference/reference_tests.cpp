@@ -24,6 +24,7 @@
 #include "gfx/sprite_block.hpp"
 #include "gfx/text_layout.hpp"
 #include "gfx/text_place.hpp"
+#include "platform/clock.hpp"
 #include "platform/paths.hpp"
 #include "platform/window.hpp"
 #include "support/manifest.hpp"
@@ -68,6 +69,10 @@ std::filesystem::path Assets() {
     return *assets;
 }
 
+// How long a scene's sprites may take to load: far past what a run takes, so a load that never finishes fails loudly
+// instead of hanging the suite.
+constexpr u64 SCENE_LOAD_LIMIT_NS = 60 * core::NS_PER_SECOND;
+
 platform::Window OpenWindow() {
     std::expected<platform::Window, core::Error> window = platform::Window::Open("reference", WIDTH, HEIGHT);
     const std::string windowWhy = window.error_or(core::Error{}).message;
@@ -92,7 +97,11 @@ gfx::Renderer RendererFor(platform::Window& window, core::SceneId scene, core::J
     REQUIRE_MESSAGE(renderer.has_value(), rendererWhy);
     renderer->BeginScene(scene, jobs);
     std::expected<bool, core::Error> held = false;
+    const u64 startedNs = platform::NowNs();
     while (held && !*held) {
+        if (platform::NowNs() - startedNs > SCENE_LOAD_LIMIT_NS) {
+            FAIL("the scene ", test::TestManifest()->Scene(scene).name, " wasn't resident within a minute");
+        }
         held = renderer->ContinueScene(std::numeric_limits<u64>::max());
     }
     const std::string heldWhy = held.error_or(core::Error{}).message;
@@ -246,6 +255,9 @@ constexpr core::Vec2 AMONG_THE_FOXES{ .x = 690.0F, .y = 700.0F };
 // The arena with `slot`'s ability cast at AMONG_THE_FOXES on CAST_TICK, published `after` ticks later, with Qi enough
 // for any cast.
 core::Snapshot CastThenPublish(core::Slot slot, u64 after, core::Jobs& jobs) {
+    // Well past any ability's end: a later picture is a broken computation, which fails here instead of ticking on.
+    constexpr u64 MOST_TICKS_AFTER_CAST = 600;
+    REQUIRE(after <= MOST_TICKS_AFTER_CAST);
     core::GameData data = game::BuiltInData();
     data.abilities.qiStart = data.abilities.qiMax;
     game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
