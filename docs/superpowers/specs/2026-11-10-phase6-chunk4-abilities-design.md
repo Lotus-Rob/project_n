@@ -298,6 +298,29 @@ measurements behind them, and what is left open. Commits are named by subject: t
   linux-gcc's release read garbage and ticked towards tick 2.9 billion, hanging `check` for an hour; every wait in the
   reference suite now fails loudly instead); "name the abilities reader's refusal for its file" (a unity-build clash).
 
+- **Task 10b, every tuning value as data** (the user's request, below): two tables. "read the abilities' motion and the
+  combat rules from data": the projectile abilities' motion joins `core::VolleyShape` (read from each ability's `motion:`
+  block in `abilities.yaml`, saved with the volley so a volley in flight keeps the motion it was cast with): `aim_scatter`,
+  `short_bend`, `turn`, `arrival_speed`, `retarget`, `retarget_speed`; `CommitTicksFor` takes the shape, and
+  `VolleyShape::RetargetPeak()` follows from `retargetSpeed`. A `combat:` section reads into the new `core::CombatRules`
+  in `GameData` (hashed): the dissolve, respawn, arrival and affliction times, the lance burst's length (`Flash::ticks`,
+  saved with the flash) and the crystal's aura (period, reach, damage and healing ranges). "read the effects' looks and the
+  HUD's layout from data": `assets/data/effects.yaml` into `core::Effects` (`data::ParseEffects`; not hashed or saved):
+  per ability by name the sword, halo and core sizes, the trail's reach, width and taper, the glow's intensity and the
+  core's opacity, the lance burst's growth and intensity; the health bars' sizes; the HUD's layout and its warning. The
+  data watch reloads it on the main thread and hands it to `gfx::Renderer::SetEffects` and `app::Hud::SetEffects`, so a
+  change shows the next frame with no new timeline. Every value keeps its number as the default (`core::VolleyShape{}`,
+  `core::CombatRules{}`, `core::Effects{}`, each checked against the shipped YAML), so no picture changed (`reference`,
+  no `--update`); the only hash change is the game data's, from the new fields. The `save` fight seed was regenerated (a
+  volley's shape and a flash gained fields; the arena format is this chunk's own 3, so no bump), and the `yaml` fuzz target
+  also parses `effects.yaml`, with its seed. Stays in code, each documented where declared: engine limits
+  (`MAX_VOLLEY_COUNT`, `MAX_OVERLAY_INSTANCES`, `MAX_RIBBON_QUADS`, `SWORD_INSTANCES`, `TRAIL_SEGMENTS`, which size
+  buffers; `MIN_COMMIT_TICKS`, a floor), maths (`THIRD`, `HALF`, `HERMITE_*`, `FULL_TURN`, `SIDE_ARM`), formats and
+  versions, random purposes, `CAST_SOURCE`, the debug burst and the arena's layout (scene data, chunk 7). The abilities'
+  other numbers were data already. Two rulings: a time in `effects.yaml` is seconds (`trail`, `not_enough_qi`) as
+  elsewhere, ticks in `core`; `MAX_ARRIVAL_SPEED` (3) bounds `arrival_speed`, past which the arrival's ease stops being
+  monotonic.
+
 ### The user's decisions while building it
 
 - **At the start (2026-11-11):** fast combat and slow long-term progression, so health, damage, Qi and every hit's value
@@ -321,8 +344,10 @@ measurements behind them, and what is left open. Commits are named by subject: t
   waves, their gap, the stagger, the rings, the jitters and the fire bolt unchanged. A volley now lasts about 3.3 s
   (was 2.3), inside the swords' 6 s cooldown. Every test and picture derives its ticks from the shape and passes as it
   was.
-- **Every tuning value as data** (2026-11-11, during Task 10, for a future ImGui tuning UI): planned as Task 10b, after
-  this record.
+- **Every tuning value as data** (2026-11-11, during Task 10, for a future ImGui tuning UI): "Maybe we could plan in a
+  debug UI with imgui in the future and all these values could be tweakable so we can tune it visually. Just ensure all
+  the values like the distance, speed, range, shape, convergence, everything etc is data-driven and able to be tuned."
+  Built as Task 10b, below; the ImGui UI itself is a later plan.
 
 ### Rulings
 
