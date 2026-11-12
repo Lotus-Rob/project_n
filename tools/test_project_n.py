@@ -4,6 +4,7 @@ import argparse
 import contextlib
 import functools
 import io
+import json
 import os
 import subprocess
 import tempfile
@@ -257,22 +258,38 @@ class LintUnitsTest(unittest.TestCase):
     def test_a_header_no_record_names_is_reported(self):
         self.assertEqual(project_n.unreached_headers(["src/new.hpp", "src/a.hpp", "src/a.cpp"], UNITS_DEPS), ["src/new.hpp"])
 
+    @staticmethod
+    def build_records(root, records, compiled):
+        """A lint build in root/bdir: XMake's dependency records (unit -> its Lua `depfiles` string, escapes included)
+        and a compile database listing `compiled`."""
+        for unit, depfiles in records.items():
+            record = root / "bdir/.deps/core/linux/x86_64/debug" / f"{unit}.o.d"
+            record.parent.mkdir(parents=True, exist_ok=True)
+            record.write_text(f'{{\n    depfiles = "{depfiles}",\n    values = {{ }}\n}}\n')
+        (root / "bdir/compile_commands.json").write_text(
+            json.dumps([{"directory": str(root), "arguments": ["clang++", unit], "file": unit} for unit in compiled]))
+        return root / "bdir"
+
     def test_records_spell_paths_relative_and_absolute(self):
         with temp_repo(UNITS_FILES) as root:
-            record = root / "bdir/.deps/core/linux/x86_64/debug/src/a.cpp.o.d"
-            record.parent.mkdir(parents=True)
-            record.write_text('{\n    depfiles = "bdir/.objs/core/linux/x86_64/debug/src/__cpp_a.cpp.cpp:   src/a.cpp   '
-                              f'{root}/src/b.hpp   /opt/pkg/include/x.h\\\n   src/c.hpp\\\n",\n    values = {{ }}\n}}\n')
-            self.assertEqual(project_n.unit_dependencies(root / "bdir"),
+            lua_root = str(root).replace("\\", "\\\\")  # as XMake writes a Windows path into a Lua string
+            bdir = self.build_records(root, {"src/a.cpp": "bdir/.objs/core/linux/x86_64/debug/src/__cpp_a.cpp.cpp:   "
+                                             f"src/a.cpp   {lua_root}/src/b.hpp   /opt/pkg/include/x.h\\\n   src/c.hpp\\\n"},
+                                      ["src/a.cpp"])
+            self.assertEqual(project_n.unit_dependencies(bdir),
                              {"src/a.cpp": frozenset({"src/a.cpp", "src/b.hpp", "src/c.hpp"})})
 
     def test_records_escape_spaces_in_paths(self):
         with temp_repo({"my src/a.cpp": "a"}) as root:
-            record = root / "bdir/.deps/a.cpp.o.d"
-            record.parent.mkdir(parents=True)
-            record.write_text('{ depfiles = "bdir/__cpp_a.cpp.cpp: my\\\\ src/a.cpp my\\\\ src/a.hpp" }')
-            self.assertEqual(project_n.unit_dependencies(root / "bdir"),
-                             {"my src/a.cpp": frozenset({"my src/a.cpp", "my src/a.hpp"})})
+            bdir = self.build_records(root, {"a.cpp": "bdir/__cpp_a.cpp.cpp: my\\\\ src/a.cpp my\\\\ src/a.hpp"},
+                                      ["my src/a.cpp"])
+            self.assertEqual(project_n.unit_dependencies(bdir), {"my src/a.cpp": frozenset({"my src/a.cpp", "my src/a.hpp"})})
+
+    def test_a_record_lints_build_no_longer_compiles_is_ignored(self):
+        with temp_repo(UNITS_FILES) as root:
+            bdir = self.build_records(root, {"src/a.cpp": "x.o: src/a.cpp", "src/b.cpp": "y.o: src/b.cpp src/a.hpp"},
+                                      ["src/a.cpp"])
+            self.assertEqual(project_n.unit_dependencies(bdir), {"src/a.cpp": frozenset({"src/a.cpp"})})
 
 
 class StagedFormatTest(unittest.TestCase):
@@ -453,16 +470,28 @@ class ReferenceTest(unittest.TestCase):
 
 
 class MsvcWrapperTest(unittest.TestCase):
-    @unittest.skipIf(os.name == "nt", "bash script")
-    def test_the_wrapper_drops_source_dependencies_and_its_file(self):
+    ARGS = ("-c", "/sourceDependencies", "dep.json", "a b.cpp", "-Fosrc/sourceDependencies.obj", "-sourceDependencies",
+            "x.json", "-nologo")
+
+    def wrapped(self, env):
+        """The arguments the wrapper hands msvc-wine's cl, run with ARGS in `env`."""
         with tempfile.TemporaryDirectory() as tmp:
             for name, text in (("cl.exe", project_n.CL_WRAPPER), ("cl", "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\"\n")):
                 (Path(tmp) / name).write_text(text)
                 (Path(tmp) / name).chmod(0o755)
-            out = subprocess.run([Path(tmp) / "cl.exe", "-c", "/sourceDependencies", "dep.json", "a b.cpp",
-                                  "-Fosrc/sourceDependencies.obj", "-sourceDependencies", "x.json", "-nologo"],
-                                 check=True, capture_output=True, text=True).stdout
-        self.assertEqual(out.splitlines(), ["-c", "a b.cpp", "-Fosrc/sourceDependencies.obj", "-nologo"])
+            return subprocess.run([Path(tmp) / "cl.exe", *self.ARGS], check=True, capture_output=True, text=True,
+                                  env=env).stdout.splitlines()
+
+    @unittest.skipIf(os.name == "nt", "bash script")
+    def test_the_wrapper_drops_source_dependencies_and_its_file(self):
+        self.assertEqual(self.wrapped(project_n.xmake_env(Path("build/x"))),
+                         ["-c", "a b.cpp", "-Fosrc/sourceDependencies.obj", "-nologo"])
+
+    @unittest.skipIf(os.name == "nt", "bash script")
+    def test_the_wrapper_passes_everything_through_for_a_checkout_without_it(self):
+        # The MSVC install is shared by every checkout; one whose xmake.lua keeps the build cache on needs the JSON.
+        env = {k: v for k, v in os.environ.items() if k != "PROJECT_N_CL_DROP_SOURCE_DEPENDENCIES"}
+        self.assertEqual(self.wrapped(env), list(self.ARGS))
 
     @unittest.skipIf(os.name == "nt", "symlinks")
     def test_the_wrapper_is_installed_over_the_symlink_once(self):

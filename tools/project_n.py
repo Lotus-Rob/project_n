@@ -74,7 +74,12 @@ MSVC_INSTALL = ('pixi run python /opt/msvc-wine/vsdownload.py --accept-license -
 # /sourceDependencies JSON XMake asks for names headers as lowercased z:\ paths XMake can't find, so every MSVC build
 # recompiled everything; without it XMake reads /showIncludes, which msvc-wine's `cl` turns into Linux paths.
 CL_WRAPPER = """#!/usr/bin/env bash
-# Written by project_n (CL_WRAPPER in tools/project_n.py): msvc-wine's cl without /sourceDependencies and its file.
+# Written by project_n (CL_WRAPPER in tools/project_n.py): msvc-wine's cl without /sourceDependencies and its file,
+# when project_n's builds ask for it (xmake_env). Every checkout shares this install, and one whose xmake.lua keeps
+# XMake's build cache on needs the option: its /showIncludes lists no headers.
+if [[ ${PROJECT_N_CL_DROP_SOURCE_DEPENDENCIES-} != 1 ]]; then
+  exec "$(dirname "$0")/cl" "$@"
+fi
 args=()
 while (($#)); do
   case $1 in
@@ -184,8 +189,9 @@ def xmake_env(bdir):
     # Per-build config dir: native and container builds of one preset never share XMake state.
     # The user's own sanitizer options go last: the last value of an option wins.
     sanitizer_env = {k: f"{v}:{os.environ[k]}" if os.environ.get(k) else v for k, v in SANITIZER_ENV.items()}
+    # CL_WRAPPER drops /sourceDependencies only when asked: xmake.lua's build cache is off for it here.
     return dict(os.environ, XMAKE_CONFIGDIR=str(ROOT / bdir / ".xmake"), XMAKE_PKG_INSTALLDIR=str(packages_dir()),
-                **sanitizer_env)
+                PROJECT_N_CL_DROP_SOURCE_DEPENDENCIES="1", **sanitizer_env)
 
 
 def check_sanitizer(preset, sanitizer):
@@ -1121,8 +1127,12 @@ DEPFILES_RE = re.compile(r'depfiles\s*=\s*"((?:[^"\\]|\\.)*)"', re.DOTALL)
 
 def unit_dependencies(bdir):
     """Each unit (a .cpp, repo-relative) to the repo files its XMake record (`.deps/**/*.o.d`, a Lua table holding a
-    Make rule) names, itself included. Paths are spelt relative to ROOT or absolute; files outside ROOT are dropped."""
+    Make rule) names, itself included. Paths are spelt relative to ROOT or absolute; files outside ROOT are dropped.
+    XMake never deletes a record, so only units in the build's fresh compile database count: any other is unrecorded."""
     root = os.path.normpath(ROOT)
+    compdb = Path(bdir) / "compile_commands.json"
+    compiled = {Path(os.path.relpath(os.path.normpath(os.path.join(root, e["directory"], e["file"])), root)).as_posix()
+                for e in (json.loads(compdb.read_text(encoding="utf-8")) if compdb.exists() else [])}
     dependencies = {}
     for record in Path(bdir).glob(".deps/**/*.o.d"):
         m = DEPFILES_RE.search(record.read_text(encoding="utf-8", errors="replace"))
@@ -1137,7 +1147,7 @@ def unit_dependencies(bdir):
             if path.startswith(root + os.sep):
                 names.append(Path(os.path.relpath(path, root)).as_posix())
         unit = next((n for n in names if n.endswith(".cpp")), None)
-        if unit:
+        if unit in compiled:
             dependencies[unit] = dependencies.get(unit, frozenset()) | frozenset(names)
     return dependencies
 
