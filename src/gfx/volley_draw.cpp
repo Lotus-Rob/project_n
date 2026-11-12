@@ -162,7 +162,7 @@ void DrawSword(
         );
     }
     // A sword still on its ring has not moved, so its trail starts where it left.
-    const f64 departure = static_cast<f64>(arrival - volley.shape.flightTicks);
+    const auto departure = static_cast<f64>(core::DepartureTick(volley, sword));
     const f64 tailTick = std::max(frame.renderTick - static_cast<f64>(TRAIL_TICKS), departure);
     if (headTick > tailTick && head.shown > 0.0F) {
         DrawTrail(

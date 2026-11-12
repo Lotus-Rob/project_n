@@ -223,8 +223,12 @@ struct SwordPose {
 /// ⌊staggerTicks × k / n⌋ ticks.
 [[nodiscard]] u64 LaunchTick(const Volley& volley, u32 sword);
 
-/// The tick `sword` (below the shape's count) reaches its target: its launch, then `outTicks` appearing, `holdTicks`
-/// still, its own delay (below `departJitterTicks`, drawn from the seed) and `flightTicks` to the target.
+/// The tick `sword` (below the shape's count) leaves its ring and its flight starts, from rest: its launch, then
+/// `outTicks` appearing, `holdTicks` still and its own delay, below `departJitterTicks`, drawn from the seed. Until then
+/// it stands still on its ring.
+[[nodiscard]] u64 DepartureTick(const Volley& volley, u32 sword);
+
+/// The tick `sword` (below the shape's count) reaches its target: its departure (DepartureTick()), then `flightTicks`.
 [[nodiscard]] u64 ArrivalTick(const Volley& volley, u32 sword);
 
 /// The tick the volley's last sword arrives: the latest ArrivalTick(), or the start for a volley of no swords. It draws

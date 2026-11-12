@@ -89,11 +89,6 @@ constexpr f64 MOST_STEP = 3.0;
 // No heading turns more than this between samples, in radians.
 constexpr f64 MOST_TURN = 0.25;
 
-// The tick `sword` leaves its ring: its flight's start, `flightTicks` before its arrival.
-u64 DepartureTick(const core::Volley& volley, u32 sword) {
-    return core::ArrivalTick(volley, sword) - volley.shape.flightTicks;
-}
-
 // A retarget swing a path is checked through: a retarget may move a slow sword at the designed swing pace, never faster.
 // While the swing is under way (render times `from` to `until`), a step may reach `peak`, the swing's designed fastest
 // step, on top of the sword's own median step, where MOST_STEP times that median alone would take a slow sword's swing
@@ -133,7 +128,7 @@ bool NoJump(const std::vector<Step>& steps, f64 swingPeak) {
 template<typename AimAt>
 void CheckSmooth(const core::Volley& volley, u32 sword, const AimAt& aimAt, SwingBound swing = {}) {
     const u64 launch = core::LaunchTick(volley, sword);
-    const u64 departure = DepartureTick(volley, sword);
+    const u64 departure = core::DepartureTick(volley, sword);
     const u64 arrival = core::ArrivalTick(volley, sword);
     const u64 samples = (arrival + volley.shape.fadeTicks - launch) * SUBSTEPS;
     std::array<std::vector<Step>, 2> steps{}; // flight, fade
@@ -218,7 +213,7 @@ f64 RingOf(const core::Volley& volley, u32 sword) {
 
 // Where `sword` stands on its ring, from its appearance until it leaves.
 core::Vec2 RingPoint(const core::Volley& volley, u32 sword) {
-    return core::SwordAt(volley, sword, static_cast<f64>(DepartureTick(volley, sword)), POINT).position;
+    return core::SwordAt(volley, sword, static_cast<f64>(core::DepartureTick(volley, sword)), POINT).position;
 }
 
 // The angle of `out` round the origin, in radians from -π to π. World y grows downwards, so a rising angle turns
@@ -285,7 +280,7 @@ TEST_CASE("a sword appears at its ring place and holds still") {
     f64 worstShown = 0.0;
     for (const u32 sword : SAMPLED) {
         const auto launch = static_cast<f64>(core::LaunchTick(VOLLEY, sword));
-        const auto departure = static_cast<f64>(DepartureTick(VOLLEY, sword));
+        const auto departure = static_cast<f64>(core::DepartureTick(VOLLEY, sword));
         const auto out = static_cast<f64>(SWORDS.outTicks);
         const auto hold = static_cast<f64>(SWORDS.holdTicks);
         const core::Vec2 ring = core::SwordAt(VOLLEY, sword, launch, MovingAim(launch)).position;
@@ -373,7 +368,8 @@ TEST_CASE("swords leave their ring at different times") {
     u32 pairs = 0;
     u64 previous = 0;
     for (u32 sword = 0; sword < SWORDS.count; ++sword) {
-        const u64 delay = DepartureTick(VOLLEY, sword) - core::LaunchTick(VOLLEY, sword) - SWORDS.outTicks - SWORDS.holdTicks;
+        const u64 delay =
+            core::DepartureTick(VOLLEY, sword) - core::LaunchTick(VOLLEY, sword) - SWORDS.outTicks - SWORDS.holdTicks;
         longest = std::max(longest, delay);
         if (delay < drawn.size()) {
             drawn[delay] = true;
@@ -484,7 +480,7 @@ TEST_CASE("flights bend by different amounts") {
             if (core::WaveOf(volley, sword) != 0) {
                 continue;
             }
-            const u64 ring = DepartureTick(volley, sword);
+            const u64 ring = core::DepartureTick(volley, sword);
             const core::Vec2 ringPoint = RingPoint(volley, sword);
             f64 farthest = 0.0;
             for (u32 tick = 0; tick <= volley.shape.flightTicks; ++tick) {
@@ -565,7 +561,7 @@ TEST_CASE("a sword turns from its ring to its flight without flipping while its 
     const auto timeOf = [](u64 sample) { return static_cast<f64>(sample) * SUBSTEP; };
     f64 mostTurn = 0.0;
     for (const u32 sword : sampled) {
-        const u64 departure = DepartureTick(VOLLEY, sword);
+        const u64 departure = core::DepartureTick(VOLLEY, sword);
         const u64 first = (departure - BEFORE) * SUBSTEPS;
         core::Vec2 last = core::SwordAt(VOLLEY, sword, timeOf(first), MovingAim(timeOf(first))).heading;
         for (u64 sample = first + 1; sample <= (departure + INTO_FLIGHT) * SUBSTEPS; ++sample) {
@@ -585,7 +581,7 @@ TEST_CASE("the path curves") {
     constexpr f64 LEAST_SHARE = (1.0 - static_cast<f64>(SWORDS.sweepJitter)) * 5.0 / 16.0;
     for (u32 sword = 0; sword < SWORDS.count; ++sword) {
         CAPTURE(sword);
-        const u64 departure = DepartureTick(VOLLEY, sword);
+        const u64 departure = core::DepartureTick(VOLLEY, sword);
         const core::Vec2 ringPoint = RingPoint(VOLLEY, sword);
         f64 farthest = 0.0;
         for (u32 tick = 0; tick <= SWORDS.flightTicks; ++tick) {
