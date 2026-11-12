@@ -96,6 +96,8 @@ constexpr f64 MOST_TURN = 0.25;
 struct SwingBound {
     f64 from = 0.0;
     f64 until = 0.0;
+    f64 thenFrom = 0.0; // a second swing, for a sword that moves on twice
+    f64 thenUntil = 0.0;
     f64 peak = 0.0; // world units a sample
 };
 
@@ -146,7 +148,8 @@ void CheckSmooth(const core::Volley& volley, u32 sword, const AimAt& aimAt, Swin
             mostOnRing = std::max(mostOnRing, length);
         }
         else {
-            const bool swinging = tick > swing.from && tick - SUBSTEP < swing.until;
+            const bool swinging = (tick > swing.from && tick - SUBSTEP < swing.until) ||
+                                  (tick > swing.thenFrom && tick - SUBSTEP < swing.thenUntil);
             steps.at(tick <= static_cast<f64>(arrival) ? 0 : 1).push_back({ .length = length, .swinging = swinging });
         }
         last = pose;
@@ -264,26 +267,16 @@ f64 StandardDeviation(std::span<const f64> values) {
 }
 
 TEST_CASE("a wave's ring forms before the next") {
-    std::array<u32, SWORDS.waves> sizes{};
-    std::array<u64, SWORDS.waves> earliest{};
-    std::array<u64, SWORDS.waves> latest{};
-    earliest.fill(std::numeric_limits<u64>::max());
-    for (u32 sword = 0; sword < SWORDS.count; ++sword) {
-        const u32 wave = core::WaveOf(VOLLEY, sword); // `at` refuses one past the waves
-        ++sizes.at(wave);
-        earliest.at(wave) = std::min(earliest.at(wave), core::LaunchTick(VOLLEY, sword));
-        latest.at(wave) = std::max(latest.at(wave), core::LaunchTick(VOLLEY, sword));
-    }
-    // As even as can be.
-    CHECK(std::ranges::max(sizes) - std::ranges::min(sizes) <= 1);
     // Each wave's first sword appears a wave gap after the one before's, the first at the cast, and the wave's last
     // within its stagger.
     u64 worstStart = 0;
     u64 worstSpread = 0;
-    for (std::size_t wave = 0; wave < SWORDS.waves; ++wave) {
-        const u64 start = START + (wave * SWORDS.waveGapTicks);
-        worstStart = std::max(worstStart, std::max(earliest.at(wave), start) - std::min(earliest.at(wave), start));
-        worstSpread = std::max(worstSpread, latest.at(wave) - earliest.at(wave));
+    for (u32 wave = 0; wave < SWORDS.waves; ++wave) {
+        const u64 start = START + (u64{ wave } * SWORDS.waveGapTicks);
+        const u64 first = core::LaunchTick(VOLLEY, FirstOfWave(VOLLEY, wave));
+        const u64 last = core::LaunchTick(VOLLEY, FirstOfWave(VOLLEY, wave) + WaveSize(VOLLEY, wave) - 1);
+        worstStart = std::max(worstStart, std::max(first, start) - std::min(first, start));
+        worstSpread = std::max(worstSpread, last - first);
     }
     CHECK(worstStart == 0);
     CHECK(worstSpread == SWORDS.staggerTicks - 1);
@@ -332,6 +325,7 @@ TEST_CASE("the rings are regular sunbursts") {
     constexpr f64 GAP_SLACK = 1e-6;     // radians
     constexpr f64 OUTWARD_SLACK = 1e-5; // radians
     constexpr u32 LAST_WAVE = SWORDS.waves - 1;
+    REQUIRE(WaveSize(VOLLEY, 0) != WaveSize(VOLLEY, LAST_WAVE));
     const auto holding = [](u32 sword) {
         constexpr f64 HALF_WAY = 0.5;
         const auto appeared = static_cast<f64>(core::LaunchTick(VOLLEY, sword) + SWORDS.outTicks);
@@ -433,30 +427,61 @@ TEST_CASE("swords leave their ring at different times") {
     CHECK(worstFlight == 0);
 }
 
-TEST_CASE("swords that don't split evenly over the waves go one more to each of the first waves") {
-    constexpr u32 UNEVEN = 1'003; // 3 more than 5 waves of 200
+// How many of `volley`'s swords each wave holds, and whether each wave is a run of indices, in order, inner first.
+template<std::size_t Waves>
+std::pair<std::array<u32, Waves>, bool> WaveSizes(const core::Volley& volley) {
+    std::array<u32, Waves> sizes{};
+    bool inOrder = true;
+    u32 last = 0;
+    for (u32 sword = 0; sword < volley.shape.count; ++sword) {
+        const u32 wave = core::WaveOf(volley, sword);
+        inOrder = inOrder && wave >= last && wave <= last + 1 && wave < Waves;
+        last = wave;
+        ++sizes.at(std::min<std::size_t>(wave, Waves - 1));
+    }
+    return { sizes, inOrder };
+}
+
+TEST_CASE("each ring holds swords in proportion to its circumference, so every ring is as closely packed") {
+    // A ring's size rounds by at most a sword, so its spacing strays from the mean by about one part in its size.
+    constexpr f64 SPACING_SLACK = 0.05; // of the volley's mean spacing
+    constexpr u32 UNEVEN = 1'003;
+    for (const u32 count : { SWORDS.count, UNEVEN }) {
+        CAPTURE(count);
+        core::Volley volley = VOLLEY;
+        volley.shape.count = count;
+        const auto [sizes, inOrder] = WaveSizes<SWORDS.waves>(volley);
+        CHECK(inOrder);
+        CHECK(std::accumulate(sizes.begin(), sizes.end(), 0U) == count);
+        f64 circumferences = 0.0;
+        for (u32 wave = 0; wave < SWORDS.waves; ++wave) {
+            circumferences += FULL_TURN * (static_cast<f64>(SWORDS.ringRadius) +
+                                           (static_cast<f64>(wave) * static_cast<f64>(SWORDS.ringStep)));
+        }
+        const f64 mean = circumferences / static_cast<f64>(count);
+        bool rising = true;
+        f64 worstSpacing = 0.0;
+        for (u32 wave = 0; wave < SWORDS.waves; ++wave) {
+            rising = rising && (wave == 0 || sizes.at(wave) > sizes.at(wave - 1));
+            const f64 ring = static_cast<f64>(SWORDS.ringRadius) + (static_cast<f64>(wave) * static_cast<f64>(SWORDS.ringStep));
+            const f64 spacing = FULL_TURN * ring / static_cast<f64>(sizes.at(wave));
+            worstSpacing = std::max(worstSpacing, std::abs(spacing - mean) / mean);
+        }
+        CHECK(rising);
+        CHECK(worstSpacing < SPACING_SLACK);
+    }
+}
+
+TEST_CASE("with no ring to size them by, the swords split evenly over the waves") {
+    constexpr u32 UNEVEN = 1'003;
     core::Volley volley = VOLLEY;
     volley.shape.count = UNEVEN;
-    std::array<u32, SWORDS.waves> sizes{};
-    std::array<u64, SWORDS.waves> earliest{};
-    earliest.fill(std::numeric_limits<u64>::max());
-    u32 last = 0;
-    for (u32 sword = 0; sword < UNEVEN; ++sword) {
-        CAPTURE(sword);
-        const u32 wave = core::WaveOf(volley, sword);
-        REQUIRE(wave < SWORDS.waves);
-        // Each wave a run of indices, in order.
-        CHECK(wave >= last);
-        CHECK(wave <= last + 1);
-        last = wave;
-        ++sizes.at(wave);
-        earliest.at(wave) = std::min(earliest.at(wave), core::LaunchTick(volley, sword));
-    }
-    CHECK(sizes == std::array<u32, SWORDS.waves>{ { 201, 201, 201, 200, 200 } });
-    for (std::size_t wave = 0; wave < SWORDS.waves; ++wave) {
-        CAPTURE(wave);
-        CHECK(earliest.at(wave) == START + (wave * SWORDS.waveGapTicks));
-    }
+    volley.shape.ringRadius = 0.0F;
+    volley.shape.ringStep = 0.0F;
+    const auto [sizes, inOrder] = WaveSizes<SWORDS.waves>(volley);
+    CHECK(inOrder);
+    CHECK(std::accumulate(sizes.begin(), sizes.end(), 0U) == UNEVEN);
+    CHECK(std::ranges::max(sizes) - std::ranges::min(sizes) <= 1);
 }
 
 TEST_CASE("each wave forms further out, in a scattered band") {
@@ -893,15 +918,26 @@ TEST_CASE("a sword's aim and position never jump when its target dies") {
     targets[1].diedTick = FIRST_DEATH;
     targets[2].diedTick = SECOND_DEATH;
     const std::span<const core::VolleyTarget> view = targets;
-    // Swords of target 1, which move once, or twice when they first moved to 2: two of the first wave's, one of each later
-    // wave's (a run of count / waves swords each, a multiple of the four targets), and the first that moves twice, for
-    // the chained swing. A first-wave sword arrives too soon after the second death to move again.
-    constexpr u32 PER_WAVE = SWORDS.count / SWORDS.waves;
-    static_assert(PER_WAVE % 4 == 0);
+    // Swords of target 1, which move once, or twice when they first moved to 2: two of the first wave's, the first of each
+    // later wave's, and the first that moves twice, for the chained swing. A first-wave sword arrives too soon after the
+    // second death to move again. While a swing is under way a step may reach the swing's designed pace on top of the
+    // sword's own (SwingBound), as in the swing tests: a slow sword in mid-flight visibly speeds up through it
+    // (core::SwordAim()). A swing between two corners of the square takes at most the diagonal at RETARGET_SPEED.
+    const f64 longestSwing =
+        std::max(core::RETARGET_TICKS, Distance(targets[0].current, targets[2].current) / core::RETARGET_SPEED);
+    const SwingBound swings{ .from = static_cast<f64>(FIRST_DEATH),
+                             .until = static_cast<f64>(FIRST_DEATH) + longestSwing,
+                             .thenFrom = static_cast<f64>(SECOND_DEATH),
+                             .thenUntil = static_cast<f64>(SECOND_DEATH) + longestSwing,
+                             .peak = core::RETARGET_PEAK * SUBSTEP };
     constexpr u32 NEXT_OF_TARGET_ONE = 1 + 4;
     std::vector<u32> sampled{ 1, NEXT_OF_TARGET_ONE };
     for (u32 wave = 1; wave < SWORDS.waves; ++wave) {
-        sampled.push_back(1 + (wave * PER_WAVE));
+        u32 sword = FirstOfWave(VOLLEY, wave);
+        while (sword % 4 != 1) { // the wave's first of target 1's
+            ++sword;
+        }
+        sampled.push_back(sword);
     }
     u32 twice = 1;
     while (twice < SWORDS.count && (core::SwordTarget(VOLLEY, twice, FIRST_DEATH, view) != 2 ||
@@ -913,7 +949,7 @@ TEST_CASE("a sword's aim and position never jump when its target dies") {
     for (const u32 sword : sampled) {
         REQUIRE(sword % 4 == 1);
         CAPTURE(sword);
-        CheckSmooth(VOLLEY, sword, [view, sword](f64 tick) { return AimAt(sword, tick, view); });
+        CheckSmooth(VOLLEY, sword, [view, sword](f64 tick) { return AimAt(sword, tick, view); }, swings);
     }
 }
 
