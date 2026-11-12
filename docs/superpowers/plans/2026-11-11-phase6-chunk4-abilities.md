@@ -47,6 +47,11 @@ decision 17), worded as in **Accessibility** below, once the user approves it.
   - Every amount an ability deals passes through **one function**, `game::HitAmount(const core::AbilityData&, i64 base)`
     in `game/combat.hpp` (today it returns `base`). A hit, an affliction tick and the aura all call it, so stats and
     levels plug in there later without touching the abilities.
+- **Small unit tests** (the user, 2026-11-12: "We should never have 1.9 million assertions in one suite, that is
+  ludicrous. Just 20 samples should be enough, its just a unit test. We have profiling for profiling."): a test checks
+  a behaviour on a handful of deliberately chosen samples, about 20 (first, last, a middle one, the edge case that
+  matters), never a sweep over every sword and fine time step. Never one `CHECK` per sample in a big loop: compute the
+  worst value and assert it once. Timing is profiling's job, breadth is fuzzing's.
 - **Nothing dropped silently:** overlay instances and ribbon quads past their buffers are reported through
   `ReportOverflow` / `core::RepeatedFailure`, as instances and text quads are.
 - **Formats:** `REPLAY_FORMAT` 3 → 4 (`Cast` carries a slot and a point); `ARENA_FORMAT` 2 → 3 (the combat state);
@@ -821,3 +826,139 @@ spec's Outcome.
 - [ ] **Step 6: Commits** `test(game): replay a recorded fight with every ability`,
   `feat(app): cast the swords on a timer for profiling and log their latency`,
   `docs(design): record what chunk 4 built`.
+
+### Task 10b: Every tuning value as data
+
+Added 2026-11-11 at the user's request: "Maybe we could plan in a debug UI with imgui in the future and all these values
+could be tweakable so we can tune it visually. Just ensure all the values like the distance, speed, range, shape,
+convergence, everything etc is data-driven and able to be tuned". The ImGui UI is a later plan (backlog). This task makes
+every tuning value data, in two tables, so that UI, and hand edits with hot reload today, can tune them:
+
+1. **`assets/data/abilities.yaml`, game data** (read into `core::GameData`, hashed, so saves and replays stay exact):
+   everything that changes what happens or how a sword moves.
+   - Each projectile ability's motion, added to `VolleyShape` (saved with the volley, so a volley in flight keeps the
+     shape it was cast with) and read under its `swords:`/shape block:
+     - the spiral's turn (`SPIRAL_TURN`), the burst and arrival speeds (`BURST_SPEED`, `ARRIVAL_SPEED`);
+     - when the ring turn starts (`TURN_START`), and the bend's shape (`SHORT_BEND`, `SIDE_ARM`);
+     - the aim scatter (`AIM_SCATTER`);
+     - the retarget pace (`RETARGET_TICKS`, `RETARGET_SPEED`; `CommitTicksFor` takes them, and `RETARGET_PEAK` follows
+       from them).
+   - A `combat:` section, into a new `core::CombatRules` in `GameData`:
+     - `dying` (`DYING_TICKS`), `respawn` (`RESPAWN_TICKS`), `arrive` (`ARRIVE_TICKS`), `affliction_period`
+       (`AFFLICTION_PERIOD`);
+     - the lance burst's length (`FLASH_TICKS`);
+     - the aura (`AURA_PERIOD`, `AURA_REACH`, `AURA_DAMAGE_MIN/MAX`, `AURA_HEALING_MIN/MAX`).
+     Times are in seconds in the YAML, ticks in core, as elsewhere.
+2. **`assets/data/effects.yaml`, presentation** (read by the `data` module into a new `core::Effects`; not hashed;
+   reloaded on the main thread by `App`'s existing data watch, and handed to the renderer and `app::Hud` with a setter,
+   so a change shows the next frame with no new timeline):
+   - per ability, by name: sword, halo and core sizes (`SWORD_SCALE`, `HALO_SCALE`, `CORE_SCALE`, `BOLT_CORE_SCALE`);
+     the trail's length, width and taper (`TRAIL_TICKS`, `TRAIL_WIDTH`, `TRAIL_TAPER`); the glow's intensity and the
+     core's opacity (`HALO_INTENSITY`, `CORE_OPACITY`, which chunk 11's accessibility settings scale); the flash's
+     growth and intensity (`FLASH_START_SCALE`, `FLASH_END_SCALE`, `FLASH_INTENSITY`);
+   - health bars: `HEALTH_BAR_RISE`, the bar's and fill's sizes;
+   - the HUD: `HUD_MARGIN`, `HUD_BAR_WIDTH`, `HUD_BAR_HEIGHT`, `HUD_LINE_HEIGHT`, `BAR_GAP`, `BAR_TEXT_INSET`,
+     `BAR_TEXT_RISE`, `NOT_ENOUGH_QI_SECONDS`, `HUD_COOLING_INK_OPACITY`.
+
+Stays in code, and why (documented where each is declared): engine limits (`MAX_VOLLEY_COUNT`, `MAX_OVERLAY_INSTANCES`,
+`MAX_RIBBON_QUADS`, `SWORD_INSTANCES`, `TRAIL_SEGMENTS` which sizes buffers, `MIN_COMMIT_TICKS` as a floor), maths
+(`THIRD`, `HALF`, `HERMITE_*`, `FULL_TURN`), formats and versions, random purposes, `CAST_SOURCE`, the debug burst, and the
+arena's layout (scene data, chunk 7).
+
+**Rules:**
+- Every value keeps its current number as the shipped default, so no behaviour, picture or hash changes beyond what
+  moving a value into `GameData` does to the hash itself. `BuiltInData()` and a new `game::BuiltInEffects()` (or
+  wherever the defaults live) mirror the YAML, with a test each, as the creatures and abilities do.
+- Each reader refuses out-of-range values with the line, like the existing readers (a scale ≤ 0, a negative time, a
+  speed of 0, `TURN_START` outside [0, 1)), and warns on unknown keys. The yaml fuzz target also parses `effects.yaml`,
+  with its seed.
+- The volley's smoothness, retarget, commit and arrival tests run against the shipped shape read from data, and every
+  bound stays at its value.
+- Hot reload: a test that a changed effects table reaches the renderer's and the HUD's next frame without touching the
+  simulation. Game data already reloads through `ReloadData`.
+- Docs: the data tables' comments say each value's unit and effect. src/AGENTS.md (and data's docs) name effects.yaml.
+
+- [ ] **Step 1:** the failing tests (readers and refusals, the defaults mirroring the YAML, the reload path).
+- [ ] **Step 2:** move the values: core types, data readers, call sites. Run `test`, `lint`, and `reference` with no
+  `--update` (nothing moves).
+- [ ] **Step 3:** the spec's Outcome gains this task (the user's request, the two tables, what stays in code and why);
+  then `pixi run project_n check`.
+- [ ] **Step 4: Commits** `feat(data): read the abilities' motion and the combat rules from data`,
+  `feat(data): read the effects' looks and the HUD's layout from data`, `docs(design): ...`.
+
+### Task 10c: The rings appear as still circles, o then O
+
+Added 2026-11-11 at the user's request, after seeing the waves: "Can we have it more of a static circle like o O than a
+spiral?" It runs **before Task 10b**, since it removes the spiral whose constants 10b would move into data. It replaces
+Ruling 41 (the spiral burst), whose only purpose was to avoid straight spokes. The user's decision is recorded in the
+spec's Outcome.
+
+**The user's reference** (2026-11-11, an image, "My vision was more like this … Not the spiral we're getting"): the
+caster at the centre of a sunburst of swords, each pointing straight out, hilts on the circle, evenly spaced and packed
+side by side, standing still as a formation. So the rings are **regular**: no scatter, no angle jitter. Each ring draws
+itself in one quick clockwise sweep, and the randomness moves to the departure (a random delay before each sword leaves
+its ring) and the flights' bends.
+
+**The new formation** (src/core/volley.cpp, one stateless rule for logic and renderer):
+- **No burst from the caster:** a sword **appears at its place on its ring**, fading in (`SwordPose::shown` 0→1 over
+  `outTicks`, which now means "appear") without moving, pointing outward (radially), so the ring forms with no spokes,
+  no swirl and no trail.
+- **Hold:** it stays still on the ring for a new `VolleyShape::holdTicks` (shipped 0.3 s). Then, over the turn window
+  (the existing ring turn, planned from the fixed point), it turns from outward to its flight's departure heading, and
+  sets off from rest. The flight, waves, bends, retarget chain, commit window and arrival rules are unchanged.
+- **Regular rings, as in the reference:** the shipped `scatter` 0.25 → 0 and `angle_jitter` 0.5 → 0, so each ring is a
+  perfect, evenly spaced sunburst. Within a wave, sword k of n appears at `stagger × k / n` going clockwise (a sweep;
+  `stagger` 0.1 s), not at a random time.
+- **Random departure:** a new `VolleyShape::departJitterTicks` (shipped 0.25 s) adds a per-sword random delay, drawn
+  from `volley.seed` with a new documented purpose, between the end of the hold and the start of the turn. A ring
+  dissolves into flight unevenly while it forms evenly. The flights keep their random bends. Waves stay 0.2 s apart,
+  inner ring first, at ring radius 160 + 100 per wave.
+- `LaunchTick` is when a sword appears; `ArrivalTick` adds `outTicks + holdTicks + its depart delay + flightTicks`.
+- **Arrival and commit:** the arrival tick moves later by the hold, so the swords still strike in step with the
+  pictures, and `commitTicks` is unchanged.
+- **Data:** `hold` is read under `swords:`, refused when negative, and mirrored in `BUILT_IN_DATA` and the yaml seed.
+  The bolt has hold 0 and appears at the caster as before. A volley of 1 with ring radius 0 keeps its straight eased
+  flight.
+
+**Tests** (RED first; every smoothness bound at its value):
+- `a sword appears at its ring place and holds still`: from its launch until the turn, its position is exactly its ring
+  point. Its `shown` rises over `outTicks`, and its heading points outward.
+- `the rings are regular sunbursts`: with the shipped shape, each wave's swords lie exactly on their wave's radius, evenly
+  spaced (every angular gap equal within 1e-6), each pointing outward during the hold.
+- `a ring draws itself clockwise`: within a wave, appearance times rise with the sword's angle.
+- `swords leave their ring at different times`: the depart delays spread over `departJitterTicks`.
+- `a wave's ring forms before the next`: each wave's first appearance is `waveGapTicks` after the previous wave's.
+- The existing smoothness tests now sample from appearance through the hold, the turn, the flight and the fade:
+  position is continuous (no motion during the hold), and heading is continuous through the turn.
+- Remove the spiral test, which tested Ruling 41's spiral; the user's decision replaces it.
+- data: `hold` and `depart_jitter` parse and are refused when negative or missing; the shipped table equals `BuiltInData()`.
+
+**Pictures:** retake `volley_ring` while the third wave appears, so two still rings and a third appearing show,
+o then O. Retake `volley_converging` and `volley_plunge`. Look at each: do the rings read as still circles, small to
+large? Measure `DrawVolleys` again.
+
+**Commits:** `feat(core): form the swords' rings as still circles that hold, then fly`, plus the spec's wording
+(Goal 4 and decision 11) as `docs(design): ...`.
+
+### Task 10d: Small tests, and `check` back to minutes
+
+Added 2026-11-12 at the user's direction. Task 10's `check` took about 30 minutes, about 10× the faster-check work's
+3–4.5 minutes, and the volley suite holds about 1.9 million assertions. The user: "We should never have 1.9 million
+assertions in one suite, that is ludicrous. Just 20 samples should be enough, its just a unit test. We have profiling for
+profiling." Runs after Task 10c (which writes its volley tests small from the start) and before Task 10b.
+
+- **Measure first:** read Task 10's `check` log for each step's time (which presets, which suites) and record it.
+- **Shrink every test this branch added or grew that sweeps:**
+  - volley_tests.cpp: smoothness, ring turn, retarget, spread, the shortest chord;
+  - volley_draw_tests.cpp;
+  - combat_tests.cpp and save_tests.cpp, wherever they loop over every sword or tick.
+  Use about 20 representative samples per check, and assert a loop's worst value once instead of one `CHECK` per
+  sample. Each test keeps the behaviour it pins: the same property and bound, on chosen cases. Name why each sample is
+  there (first, last, wave boundary, shortest chord, a death mid-swing).
+- **The rule in tests/AGENTS.md**, one line: unit tests use a handful of representative samples, never sweeps; timing is
+  profiling's (`profile`, `headless_bench`), breadth is fuzzing's.
+- **Re-measure:** `pixi run project_n check` with each step's time. Target: back near the faster-check numbers. Record
+  before and after in the spec's Outcome. If something other than tests dominates (builds, Wine, the reference
+  pictures), say what, and it becomes its own plan after this branch.
+- **Commits:** `test(tests): sample the volley's behaviour, not every sword and tick`, `docs(agents): keep unit tests to a
+  handful of samples`.
