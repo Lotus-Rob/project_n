@@ -44,7 +44,7 @@ Work happens on a branch; it merges into main only through a pull request, which
 - Fix lint and warnings properly. Suppress only as the last resort, when no proper fix exists, and as narrowly as possible with the reason: `// NOLINT(check-name): why` (`lint` rejects bare ones), a commented pragma, or a nested `.clang-tidy` with a `#` reason. The root `.clang-tidy` and `.clangd` are the user's: never remove, disable or relax a check or option in them. `cppcoreguidelines-*` enforces the C++ Core Guidelines.
 - Commits: Conventional Commits; `feat`/`fix` only for game code; scopes from `SCOPES` in tools/project_n.py → git-commit skill
 - History is linear: rebase, never merge commits.
-- Builds and `check` are verified at the end of each completed task, chunk or phase, never commit by commit.
+- Builds are verified at each gate (Working with superpowers): `test` and `lint` per task, `check` at the branch head; never commit by commit.
 - Docs written on a branch (specs, Outcomes, design docs, handovers) cite commits by subject, never by hash: the rebase merge rewrites every hash. A hash is stable only once it's on main.
 - Bugs in `src/` are fixed test-first: a test that fails because of the bug (what makes it good: tests/AGENTS.md), committed with the fix; a fuzzer crash also adds its input as a seed in `tests/fuzz/corpus/<target>/`.
 - Never delete, skip or loosen a test case to make a run go green.
