@@ -24,3 +24,33 @@ abilities:
 health_bar: { rise: 5, width: 44, height: 6, fill_width: 40, fill_height: 4 }
 hud: { margin: 16, bar_width: 240, bar_height: 18, line_height: 24, bar_gap: 6, bar_text_inset: 6, bar_text_rise: 7,
        not_enough_qi: 1, cooling_ink_opacity: 0.55 }
+# glows: named looks of the light or ink a sprite wears round its edge. Each takes colour (a palette colour as area.key, such as
+#   selection.selected or effects.damage, or `element`: the ability's element colour; never hex), blend (`light` adds light,
+#   best on dark ground; `ink` paints over, which reads on the pale paper), size (texels it reaches past the edge at zoom 1,
+#   above 0, at most 16), feather (0 a hard ring, 1 a soft fade from the edge), opacity (its strength at full drive, 0 to 1),
+#   zoom_shrink (0 grows with the sprite as the camera zooms in, 1 keeps its width on screen) and drive, what moves it:
+#   { kind: steady } is always full; { kind: pulse, period (seconds a beat, at least 1/3), depth (how far it dips, 0 to 1),
+#   curve }; { kind: charge, curve, fade (seconds to fade after release, above 0), fade_curve } follows the game's value;
+#   { kind: progress, curve, results: [up to 8 palette colours] } follows the value, then shows a result's colour. Curves:
+#   linear, ease_in, ease_out, smooth, sine. A key left out keeps its value: a glow named like a shipped one below changes only
+#   the keys it gives; a new name starts from the sword aura's look without its pulse, steady.
+# glow_roles: the glow each role of the code wears: selected, hover, flying_swords, fire_bolt, demo_pulse, demo_charge and
+#   demo_progress, all of them or none; each names a glow above.
+glows:
+  sword_aura:    { colour: element, blend: light, size: 8.5, feather: 0.75, opacity: 0.15, zoom_shrink: 0.6,
+                   drive: { kind: pulse, period: 1.6, depth: 0.9, curve: sine } }
+  bolt_aura:     { colour: element, blend: light, size: 8.5, feather: 0.75, opacity: 0.15, zoom_shrink: 0.6,
+                   drive: { kind: pulse, period: 1.6, depth: 0.9, curve: sine } }
+  selected:      { colour: selection.selected, blend: ink, size: 3, feather: 0, opacity: 1, zoom_shrink: 0,
+                   drive: { kind: steady } }
+  hover:         { colour: selection.hover, blend: ink, size: 3, feather: 0, opacity: 1, zoom_shrink: 0,
+                   drive: { kind: steady } }
+  demo_pulse:    { colour: effects.damage, blend: ink, size: 8.5, feather: 0.75, opacity: 0.6, zoom_shrink: 0.6,
+                   drive: { kind: pulse, period: 1.6, depth: 0.9, curve: sine } }
+  demo_charge:   { colour: effects.burn, blend: ink, size: 10, feather: 0.8, opacity: 0.7, zoom_shrink: 0.6,
+                   drive: { kind: charge, curve: ease_in, fade: 0.4, fade_curve: ease_out } }
+  demo_progress: { colour: names_and_captions.caption, blend: ink, size: 10, feather: 0.8, opacity: 0.7, zoom_shrink: 0.6,
+                   drive: { kind: progress, curve: linear,
+                            results: [effects.healing, effects.damage, effects.poison, effects.burn] } }
+glow_roles: { selected: selected, hover: hover, flying_swords: sword_aura, fire_bolt: bolt_aura, demo_pulse: demo_pulse,
+              demo_charge: demo_charge, demo_progress: demo_progress }
