@@ -263,7 +263,8 @@ u32 WaveSize(const core::Volley& volley, u32 wave) {
 }
 
 // About twenty swords that between them cover what differs from sword to sword: the first four (every residue of the four
-// targets), the first sword of each later wave and the last of the one before (each wave boundary), and the volley's last.
+// targets), the first sword of each later wave and the last of the one before (each wave boundary), and the volley's last:
+// 4 + 2 * (waves - 1) + 1 swords, 23 for 10 waves, with at least one sword of every wave.
 std::vector<u32> SpreadSwords() {
     std::vector<u32> swords{ 0, 1, 2, 3 };
     for (u32 wave = 1; wave < SWORDS.waves; ++wave) {
@@ -969,7 +970,7 @@ TEST_CASE("with every target dead, each sword plunges at the frozen point of the
         targets.at(index).diedTick = DEATHS.at(index);
     }
     const std::span<const core::VolleyTarget> view = targets;
-    // At the volley's first and last and each wave boundary (SpreadSwords()), the last to die, 2, ends every chain.
+    // At the swords SpreadSwords() names, which include a sword of every wave, the last to die, 2, ends every chain.
     bool endsOnLast = true;
     bool neverGoesBack = true;
     f64 worstOff = 0.0; // from the frozen point's spot
