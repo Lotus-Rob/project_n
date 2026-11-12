@@ -18,7 +18,7 @@
 
 namespace core {
 
-/// The most swords a volley has: the overlay buffer holds three instances a sword (its core, halo and blade).
+/// The most swords a volley has: the overlay buffer holds one instance a sword (its blade, wearing its glow).
 inline constexpr u32 MAX_VOLLEY_COUNT = 2'000;
 
 /// The most VolleyShape::arrivalSpeed can be: a cubic Hermite ease from rest stays monotonic up to three times its average

@@ -22,30 +22,20 @@ namespace shipped {
 
 /// The shipped `swordScale` of SwordLook.
 inline constexpr f32 SWORD_SCALE = 0.9F;
-/// The shipped `haloScale` of SwordLook.
-inline constexpr f32 HALO_SCALE = 1.125F;
-/// The shipped `coreScale` of SwordLook.
-inline constexpr f32 CORE_SCALE = 1.5F;
 /// The shipped `trailTicks` of SwordLook.
 inline constexpr f32 TRAIL_TICKS = 6.0F;
 /// The shipped `trailWidth` of SwordLook.
 inline constexpr f32 TRAIL_WIDTH = 5.0F;
 /// The shipped `trailTaper` of SwordLook.
 inline constexpr f32 TRAIL_TAPER = 0.6F;
-/// The shipped `coreOpacity` of SwordLook.
-inline constexpr f32 CORE_OPACITY = 0.6F;
-/// The shipped `haloIntensity` of SwordLook: the element's colour at full strength.
-inline constexpr f32 HALO_INTENSITY = 1.0F;
+/// The shipped `trailIntensity` of SwordLook: the element's colour at full strength.
+inline constexpr f32 TRAIL_INTENSITY = 1.0F;
 /// The shipped `intensity` of BurstLook.
 inline constexpr f32 FLASH_INTENSITY = 1.0F;
 /// The shipped `notEnoughQiSeconds` of HudLayout.
 inline constexpr f64 HUD_NOT_ENOUGH_QI_SECONDS = 1.0;
 /// The fire bolt's `swordScale`: its sprite at its own size.
 inline constexpr f32 BOLT_SWORD_SCALE = 1.0F;
-/// The fire bolt's `haloScale`: a smaller glow than the swords'.
-inline constexpr f32 BOLT_HALO_SCALE = 0.75F;
-/// The fire bolt's `coreScale`: a larger core than the swords'.
-inline constexpr f32 BOLT_CORE_SCALE = 2.0F;
 /// The shipped `startScale` of BurstLook.
 inline constexpr f32 FLASH_START_SCALE = 0.5F;
 /// The shipped `endScale` of BurstLook.
@@ -79,17 +69,12 @@ inline constexpr f32 HUD_COOLING_INK_OPACITY = 0.55F;
 
 } // namespace shipped
 
-/// How one projectile ability's swords (or its bolt) are drawn. Sizes are multiples of their sprites; the defaults are the
-/// flying swords'.
+/// How one projectile ability's swords (or its bolt) and their trails are drawn; each blade's glow is its role's
+/// (Effects::glows). Sizes are multiples of their sprites; the defaults are the flying swords'.
 struct SwordLook {
     /// How much larger than its image (10 by 40) a sword is drawn, above 0: 9 by 36 world units, so on rings a ring step
     /// (38) apart one ring's tips nearly touch the next ring's hilts.
     f32 swordScale = shipped::SWORD_SCALE;
-    /// How much larger than its image a halo is drawn, above 0: a glow round the blade a little longer than it.
-    f32 haloScale = shipped::HALO_SCALE;
-    /// How much larger than its image (16 world units across) the tinted core under the middle of the blade is drawn, above
-    /// 0: smaller than its halo.
-    f32 coreScale = shipped::CORE_SCALE;
     /// How far back in time a trail reaches, in simulation ticks, above 0: its tail is where the sword was then. Chunk 11's
     /// reduce motion shortens it.
     f32 trailTicks = shipped::TRAIL_TICKS;
@@ -97,36 +82,23 @@ struct SwordLook {
     f32 trailWidth = shipped::TRAIL_WIDTH;
     /// How much of that width its tail loses, from 0 (as wide as the head) to 1 (a point): it narrows as it fades.
     f32 trailTaper = shipped::TRAIL_TAPER;
-    /// How bright the halo and the trail are, as a fraction of their element's colour, 0 or more: additive light. Chunk 11's
-    /// reduce flashing lowers it.
-    f32 haloIntensity = shipped::HALO_INTENSITY;
-    /// How opaque the tinted core is, as a fraction of its element's colour, from 0 to 1: the hue that shows on pale ground,
-    /// where added light only whitens. Colour, not light, so reduce flashing leaves it alone.
-    f32 coreOpacity = shipped::CORE_OPACITY;
+    /// How bright the trail is, as a fraction of its element's colour, 0 or more: additive light. Chunk 11's reduce
+    /// flashing lowers it.
+    f32 trailIntensity = shipped::TRAIL_INTENSITY;
 
-    /// Whether every size, length and width is finite and above 0, the taper and the opacity are from 0 to 1 and the
-    /// intensity is finite and not negative; what a look read from the data must satisfy.
+    /// Whether every size, length and width is finite and above 0, the taper is from 0 to 1 and the intensity is finite and
+    /// not negative; what a look read from the data must satisfy.
     [[nodiscard]] bool Valid() const {
         const auto positive = [](f32 value) { return std::isfinite(value) && value > 0.0F; };
         const auto fraction = [](f32 value) { return std::isfinite(value) && value >= 0.0F && value <= 1.0F; };
-        return positive(swordScale) && positive(haloScale) && positive(coreScale) && positive(trailTicks) &&
-               positive(trailWidth) && fraction(trailTaper) && std::isfinite(haloIntensity) && haloIntensity >= 0.0F &&
-               fraction(coreOpacity);
+        return positive(swordScale) && positive(trailTicks) && positive(trailWidth) && fraction(trailTaper) &&
+               std::isfinite(trailIntensity) && trailIntensity >= 0.0F;
     }
 
     /// Lists its fields for an archive (core/archive.hpp), which hashes them (Effects::Hash()).
     template<typename Self, typename Archive>
     void Fields(this Self& self, Archive& archive) {
-        archive(
-            self.swordScale,
-            self.haloScale,
-            self.coreScale,
-            self.trailTicks,
-            self.trailWidth,
-            self.trailTaper,
-            self.haloIntensity,
-            self.coreOpacity
-        );
+        archive(self.swordScale, self.trailTicks, self.trailWidth, self.trailTaper, self.trailIntensity);
     }
 };
 
@@ -136,7 +108,7 @@ struct BurstLook {
     f32 startScale = shipped::FLASH_START_SCALE;
     /// How large it has grown at its end, above 0: about the lance's area across.
     f32 endScale = shipped::FLASH_END_SCALE;
-    /// How bright it is, as a fraction of its element's colour, 0 or more: additive light, like the halos. Chunk 11's reduce
+    /// How bright it is, as a fraction of its element's colour, 0 or more: additive light, like the trails. Chunk 11's reduce
     /// flashing lowers it.
     f32 intensity = shipped::FLASH_INTENSITY;
 
@@ -232,10 +204,8 @@ struct HudLayout {
 /// Every presentation number of the abilities, the health bars and the HUD: `effects.yaml`'s table, the defaults its
 /// shipped numbers.
 struct Effects {
-    /// The fire bolt's look: a bolt, so a larger core and a smaller halo than the swords'.
-    SwordLook fireBolt{ .swordScale = shipped::BOLT_SWORD_SCALE,
-                        .haloScale = shipped::BOLT_HALO_SCALE,
-                        .coreScale = shipped::BOLT_CORE_SCALE };
+    /// The fire bolt's look: its sprite at its own size.
+    SwordLook fireBolt{ .swordScale = shipped::BOLT_SWORD_SCALE };
     /// The flying swords' look.
     SwordLook flyingSwords{};
     /// The poison lance's burst.

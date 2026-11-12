@@ -62,8 +62,8 @@ constexpr f32 CLOSE = 1e-4F;  // relative
 constexpr f32 HALFWAY = 0.5F; // of a tick, as the frame's alpha
 constexpr f32 HALF = 0.5F;
 
-// A manifest whose sprites are 16 by 16 with their foot at their centre, but for the sizes the drawing reads: the sword's,
-// the halo's and the bars' square, whose foot is at its left middle. Each at its own place on the page.
+// A manifest whose sprites are 16 by 16 with their foot at their centre, but for the sizes the drawing reads: the sword's
+// and the bars' square, whose foot is at its left middle. Each at its own place on the page.
 core::Manifest TestManifest() {
     constexpr u32 PAGE_SIZE = 1'024;
     constexpr u32 MIP_LEVELS = 5;
@@ -89,9 +89,8 @@ core::Manifest TestManifest() {
         u16 footX = 0;
         u16 footY = 0;
     };
-    constexpr std::array<Sized, 3> SIZES{ {
+    constexpr std::array<Sized, 2> SIZES{ {
         { .sprite = SpriteId::Sword, .width = 10, .height = 40, .footX = 5, .footY = 20 },
-        { .sprite = SpriteId::Halo, .width = 48, .height = 48, .footX = 24, .footY = 24 },
         { .sprite = SpriteId::Solid, .width = 8, .height = 8, .footX = 0, .footY = 4 },
     } };
     for (const Sized& sized : SIZES) {
@@ -135,24 +134,18 @@ gfx::VolleyDrawing Drawn(
     return drawing;
 }
 
-// The `index`th sword's instance in `batch`, across the volleys.
-const core::Instance& InBatch(const gfx::VolleyDrawing& drawing, std::size_t batch, u32 index) {
-    REQUIRE(batch < drawing.batches.size());
-    const std::size_t instance = drawing.batches.at(batch).first + index;
+// The instance of the `index`th sword, across the volleys: the swords' batch comes first.
+const core::Instance& SwordOf(const gfx::VolleyDrawing& drawing, u32 index) {
+    REQUIRE(!drawing.batches.empty());
+    const std::size_t instance = drawing.batches.front().first + index;
     REQUIRE(instance < drawing.instances.size());
     return drawing.instances.at(instance);
 }
 
-// The core, the halo and the sword instances of the `index`th sword: their batches come first, second and last.
-const core::Instance& CoreOf(const gfx::VolleyDrawing& drawing, u32 index) {
-    return InBatch(drawing, 0, index);
-}
-const core::Instance& HaloOf(const gfx::VolleyDrawing& drawing, u32 index) {
-    return InBatch(drawing, 1, index);
-}
-const core::Instance& SwordOf(const gfx::VolleyDrawing& drawing, u32 index) {
-    REQUIRE(!drawing.batches.empty());
-    return InBatch(drawing, drawing.batches.size() - 1, index);
+// The glow word (core::Instance::glow) of `role` in `element`'s colour, with no result and not released.
+constexpr u32 GlowWord(core::GlowRole role, core::HitKind element) {
+    constexpr u32 ELEMENT_SHIFT = 16;
+    return static_cast<u32>(std::to_underlying(role)) | (static_cast<u32>(std::to_underlying(element)) << ELEMENT_SHIFT);
 }
 
 // Every bar of `bars` shown whole, as a label that reads alone would show it.
@@ -229,7 +222,6 @@ TEST_CASE("each sword is drawn where the shared path puts it at the render time"
             const core::Instance& drawn = SwordOf(drawing, sword);
             CheckAt(drawn.current, pose.position);
             CheckAt(drawn.previous, pose.position);
-            CheckAt(HaloOf(drawing, sword).current, pose.position);
         }
     }
 }
@@ -249,7 +241,6 @@ TEST_CASE("a sword not yet launched shows nothing, nor any trail") {
         REQUIRE(static_cast<f64>(core::LaunchTick(VOLLEY, sword)) > core::RenderTick(TICK, static_cast<f64>(HALFWAY)));
         CAPTURE(sword);
         CHECK(IsZero(SwordOf(drawing, sword)));
-        CHECK(IsZero(HaloOf(drawing, sword)));
         for (u32 quad = 0; quad < gfx::TRAIL_SEGMENTS; ++quad) {
             for (u32 corner = 0; corner < gfx::QUAD_VERTICES; ++corner) {
                 CHECK(TrailVertex(drawing, sword, quad, corner).colour == 0);
@@ -308,7 +299,42 @@ TEST_CASE("the trail is sampled from the same path a little back in time") {
     }
 }
 
-TEST_CASE("the cores draw under the halos, the halos under the bars, and the swords over all") {
+TEST_CASE("a sword is one instance wearing its role's glow, started at its launch") {
+    const std::array<core::VolleyTarget, 1> targets{ { { .entity = FOX, .previous = POINT, .current = POINT } } };
+    const std::array<core::VolleyView, 1> volleys{ { SwordsView() } };
+    const gfx::VolleyDrawing drawing = Drawn(volleys, targets, ALL_APPEARED, HALFWAY);
+    REQUIRE(drawing.batches.size() == 1);
+    CHECK(drawing.batches[0].pipeline == core::Pipeline::Normal);
+    CHECK(drawing.batches[0].count == SWORDS.count);
+    CHECK(drawing.instances.size() == SWORDS.count);
+    for (const u32 sword : SAMPLED_SWORDS) {
+        CAPTURE(sword);
+        const core::Instance& blade = SwordOf(drawing, sword);
+        CHECK(blade.glow == GlowWord(core::GlowRole::FlyingSwords, core::HitKind::Damage));
+        CHECK(blade.glowStart == static_cast<u32>(core::LaunchTick(VOLLEY, sword)));
+        CHECK(blade.glowValue == 0); // a pulse needs no value
+    }
+    // Each its own launch: the first wave's first sword and the last wave's last pulse from different ticks.
+    CHECK(SwordOf(drawing, 0).glowStart != SwordOf(drawing, SWORDS.count - 1).glowStart);
+    // The element is the volley's.
+    const std::array<core::VolleyView, 1> poisoned{ { SwordsView(core::HitKind::Poison) } };
+    const gfx::VolleyDrawing poison = Drawn(poisoned, targets, ALL_APPEARED, HALFWAY);
+    CHECK(SwordOf(poison, 0).glow == GlowWord(core::GlowRole::FlyingSwords, core::HitKind::Poison));
+}
+
+TEST_CASE("the bolt wears FireBolt in its element's colour, started at its cast") {
+    const std::array<core::VolleyTarget, 1> targets{ { { .entity = FOX, .previous = POINT, .current = POINT } } };
+    const std::array<core::VolleyView, 1> volleys{ { BoltView(0) } };
+    constexpr u64 IN_FLIGHT = START + 10;
+    const gfx::VolleyDrawing drawing = Drawn(volleys, targets, IN_FLIGHT, HALFWAY);
+    REQUIRE(drawing.instances.size() == 1);
+    const core::Instance& bolt = SwordOf(drawing, 0);
+    CHECK(bolt.glow == GlowWord(core::GlowRole::FireBolt, core::HitKind::Burn));
+    CHECK(bolt.glowStart == static_cast<u32>(core::LaunchTick(BOLT, 0)));
+    CHECK(bolt.glowValue == 0);
+}
+
+TEST_CASE("the swords draw before the health bars, which stay readable over them") {
     const std::array<core::VolleyTarget, 2> targets{ { { .entity = FOX, .previous = POINT, .current = POINT },
                                                        { .entity = FOX, .previous = POINT, .current = POINT } } };
     const std::array<core::VolleyView, 2> volleys{ { SwordsView(), BoltView(1) } };
@@ -319,37 +345,29 @@ TEST_CASE("the cores draw under the halos, the halos under the bars, and the swo
     gfx::VolleyDrawing drawing;
     gfx::DrawHealthBars(bars, Whole(bars), 1.0F, TestManifest(), {}, EFFECTS, drawing);
     gfx::DrawVolleys(volleys, targets, ALL_APPEARED, 1.0F, TestManifest(), {}, EFFECTS, jobs, drawing);
-    REQUIRE(drawing.batches.size() == 4);
-    const core::Batch& cores = drawing.batches[0];
-    const core::Batch& halos = drawing.batches[1];
-    const core::Batch& bar = drawing.batches[2];
-    const core::Batch& swords = drawing.batches[3];
-    CHECK(cores.pipeline == core::Pipeline::Normal);
-    CHECK(cores.first == BAR_INSTANCES);
-    CHECK(cores.count == SWORDS_DRAWN);
-    CHECK(halos.pipeline == core::Pipeline::Additive);
-    CHECK(halos.first == BAR_INSTANCES + SWORDS_DRAWN);
-    CHECK(halos.count == SWORDS_DRAWN);
+    REQUIRE(drawing.batches.size() == 2);
+    const core::Batch& swords = drawing.batches[0];
+    const core::Batch& bar = drawing.batches[1];
+    CHECK(swords.pipeline == core::Pipeline::Normal);
+    CHECK(swords.first == BAR_INSTANCES);
+    CHECK(swords.count == SWORDS_DRAWN);
     CHECK(bar.pipeline == core::Pipeline::Normal);
     CHECK(bar.first == 0);
     CHECK(bar.count == BAR_INSTANCES);
-    CHECK(swords.pipeline == core::Pipeline::Normal);
-    CHECK(swords.first == BAR_INSTANCES + (2 * SWORDS_DRAWN));
-    CHECK(swords.count == SWORDS_DRAWN);
-    CHECK(drawing.instances.size() == BAR_INSTANCES + (gfx::SWORD_INSTANCES * SWORDS_DRAWN));
+    CHECK(drawing.instances.size() == BAR_INSTANCES + SWORDS_DRAWN);
     CHECK(drawing.ribbons.size() == std::size_t{ SWORDS_DRAWN } * gfx::TRAIL_SEGMENTS * gfx::QUAD_VERTICES);
     CHECK(drawing.droppedSwords == 0);
 }
 
 TEST_CASE("swords past the overlay's or the trails' room are left out whole, never a part without the rest") {
-    // Two of the largest volleys: more swords than the overlay holds three instances of, or the ribbons trails of.
+    // Two of the largest volleys: more swords than the ribbons hold trails of.
     core::VolleyView largest = SwordsView();
     largest.volley.shape.count = core::MAX_VOLLEY_COUNT;
     const std::array<core::VolleyView, 2> volleys{ { largest, largest } };
     const std::array<core::VolleyTarget, 1> targets{ { { .entity = FOX, .previous = POINT, .current = POINT } } };
     const std::array<core::HealthBar, 1> bars{ { { .entity = FOX, .previous = POINT, .current = POINT, .fraction = HALF } } };
     constexpr u32 BAR_INSTANCES = 2;
-    // The trails are the tighter room: 16,384 quads hold 2,048 swords' trails, fewer than the overlay's 2,730.
+    // The trails are the tighter room: 16,384 quads hold 2,048 swords' trails, fewer than the overlay's 8,190.
     constexpr u32 FITTING = std::min(
         (gfx::MAX_OVERLAY_INSTANCES - BAR_INSTANCES) / gfx::SWORD_INSTANCES, gfx::MAX_RIBBON_QUADS / gfx::TRAIL_SEGMENTS
     );
@@ -358,10 +376,8 @@ TEST_CASE("swords past the overlay's or the trails' room are left out whole, nev
     gfx::DrawHealthBars(bars, Whole(bars), 1.0F, TestManifest(), {}, EFFECTS, drawing);
     gfx::DrawVolleys(volleys, targets, ALL_APPEARED, 1.0F, TestManifest(), {}, EFFECTS, jobs, drawing);
     CHECK(drawing.instances.size() <= gfx::MAX_OVERLAY_INSTANCES);
-    REQUIRE(drawing.batches.size() == 4);
+    REQUIRE(drawing.batches.size() == 2);
     CHECK(drawing.batches[0].count == FITTING);
-    CHECK(drawing.batches[1].count == FITTING);
-    CHECK(drawing.batches[3].count == FITTING);
     CHECK(drawing.droppedSwords == (2 * core::MAX_VOLLEY_COUNT) - FITTING);
     CHECK(drawing.ribbons.size() == std::size_t{ FITTING } * gfx::TRAIL_SEGMENTS * gfx::QUAD_VERTICES);
     CHECK(drawing.ribbons.size() <= std::size_t{ gfx::MAX_RIBBON_QUADS } * gfx::QUAD_VERTICES);
@@ -406,7 +422,7 @@ TEST_CASE("the HUD's bars are placed first and keep their room: the largest voll
 
     gfx::DrawVolleys(volleys, targets, ALL_APPEARED, 1.0F, manifest, {}, EFFECTS, jobs, drawing);
     CHECK(drawing.instances.size() <= gfx::MAX_OVERLAY_INSTANCES);
-    CHECK(drawing.batches.back().count == gfx::SwordRoom(HUD_INSTANCES, 0));
+    CHECK(drawing.batches.front().count == gfx::SwordRoom(HUD_INSTANCES, 0));
     const bool whole = std::ranges::equal(BytesOf(placed), BytesOf(std::span{ drawing.instances }.first(HUD_INSTANCES)));
     CHECK(whole);
     REQUIRE(drawing.hud.size() == 1); // the swords' batches are the world's
@@ -534,17 +550,16 @@ TEST_CASE("a sword that struck its target is gone after its arrival; one that pl
     const u64 tick = core::ArrivalTick(VOLLEY, SWORD) + AFTER_TICKS;
     const gfx::VolleyDrawing drawing = Drawn(volleys, targets, tick, HALFWAY);
     CHECK(IsZero(SwordOf(drawing, SWORD)));
-    CHECK(IsZero(HaloOf(drawing, SWORD)));
     const core::Instance& plunged = SwordOf(drawing, SWORDS.count + SWORD);
     CheckAt(plunged.current, Spot(DEAD_AT, SWORD));
     const f32 shown =
         core::SwordAt(VOLLEY, SWORD, core::RenderTick(tick, static_cast<f64>(HALFWAY)), Spot(DEAD_AT, SWORD)).shown;
     REQUIRE(shown > 0.0F);
     REQUIRE(shown < 1.0F);
+    // Fading by its colour's alpha, which fades its glow too (by its square, in the shader).
     CHECK((plunged.colour >> ALPHA_SHIFT) < 0xFFU);
     CHECK((plunged.colour >> ALPHA_SHIFT) > 0U);
-    // Its glow goes before its blade.
-    CHECK((HaloOf(drawing, SWORDS.count + SWORD).colour >> ALPHA_SHIFT) < (plunged.colour >> ALPHA_SHIFT));
+    CHECK(plunged.glow == GlowWord(core::GlowRole::FlyingSwords, core::HitKind::Damage));
 }
 
 TEST_CASE("a sword whose target dies too near its arrival to move on plunges at its spot where the target died") {
@@ -650,7 +665,7 @@ TEST_CASE("a health bar shows as its creature's label does: faded with it, and n
     CHECK(drawing.instances[1].colour == Times(defaults.Of(core::UiColour::EnemyHealthBar), FADING));
 }
 
-TEST_CASE("cores, halos and trails take their element's colour, not their ability's") {
+TEST_CASE("glows and trails take their element's colour, not their ability's") {
     const std::array<core::VolleyTarget, 2> targets{ { { .entity = FOX, .previous = POINT, .current = POINT },
                                                        { .entity = FOX, .previous = POINT, .current = POINT } } };
     const std::array<core::VolleyView, 2> volleys{ { SwordsView(), BoltView(1) } };
@@ -667,18 +682,15 @@ TEST_CASE("cores, halos and trails take their element's colour, not their abilit
         const gfx::VolleyDrawing drawing = Drawn(volleys, targets, tick, 1.0F, colours);
         const u32 damage = colours.Of(core::UiColour::DamageEffect);
         const u32 burn = colours.Of(core::UiColour::BurnEffect);
-        CHECK(CoreOf(drawing, sword).colour == Times(damage, EFFECTS.flyingSwords.coreOpacity));
-        CHECK(HaloOf(drawing, sword).colour == Times(damage, EFFECTS.flyingSwords.haloIntensity));
-        CHECK(TrailVertex(drawing, sword, 0, 0).colour == Times(damage, EFFECTS.flyingSwords.haloIntensity));
+        CHECK(TrailVertex(drawing, sword, 0, 0).colour == Times(damage, EFFECTS.flyingSwords.trailIntensity));
         CHECK(SwordOf(drawing, sword).colour == core::OPAQUE_WHITE); // its own steel
-        CHECK(CoreOf(drawing, THE_BOLT).colour == Times(burn, EFFECTS.flyingSwords.coreOpacity));
-        CHECK(HaloOf(drawing, THE_BOLT).colour == Times(burn, EFFECTS.flyingSwords.haloIntensity));
-        CHECK(TrailVertex(drawing, THE_BOLT, 0, 0).colour == Times(burn, EFFECTS.flyingSwords.haloIntensity));
+        CHECK(SwordOf(drawing, sword).glow == GlowWord(core::GlowRole::FlyingSwords, core::HitKind::Damage));
+        CHECK(TrailVertex(drawing, THE_BOLT, 0, 0).colour == Times(burn, EFFECTS.fireBolt.trailIntensity));
         CHECK(SwordOf(drawing, THE_BOLT).colour == burn); // white art, tinted
-        // The ability picks the sword's sprite; every core is the same dot.
+        CHECK(SwordOf(drawing, THE_BOLT).glow == GlowWord(core::GlowRole::FireBolt, core::HitKind::Burn));
+        // The ability picks the sprite.
         CHECK(SwordOf(drawing, sword).regionMin == core::MakeInstance(manifest, { .sprite = SpriteId::Sword }).regionMin);
         CHECK(SwordOf(drawing, THE_BOLT).regionMin == core::MakeInstance(manifest, { .sprite = SpriteId::FireBolt }).regionMin);
-        CHECK(CoreOf(drawing, sword).regionMin == core::MakeInstance(manifest, { .sprite = SpriteId::GlowCore }).regionMin);
         return drawing;
     };
     const gfx::VolleyDrawing before = check({});
@@ -686,7 +698,7 @@ TEST_CASE("cores, halos and trails take their element's colour, not their abilit
     constexpr u32 GREEN = 0xFF00'FF00U;
     recoloured.Set(core::UiColour::BurnEffect, GREEN);
     const gfx::VolleyDrawing after = check(recoloured);
-    // Only the bolt changed: the swords' cores, halos, blades and trails are the same bytes.
+    // Only the bolt changed: the swords' blades and trails are the same bytes.
     REQUIRE(before.batches.size() == after.batches.size());
     for (std::size_t batch = 0; batch < before.batches.size(); ++batch) {
         CAPTURE(batch);
@@ -700,8 +712,8 @@ TEST_CASE("cores, halos and trails take their element's colour, not their abilit
     const std::span<const gfx::RibbonVertex> trailsBefore = std::span{ before.ribbons }.first(swordVertices);
     const std::span<const gfx::RibbonVertex> trailsAfter = std::span{ after.ribbons }.first(swordVertices);
     CHECK(std::ranges::equal(std::as_bytes(trailsBefore), std::as_bytes(trailsAfter)));
-    CHECK(CoreOf(after, THE_BOLT).colour == Times(GREEN, EFFECTS.flyingSwords.coreOpacity));
-    CHECK(HaloOf(after, THE_BOLT).colour == GREEN);
+    CHECK(SwordOf(after, THE_BOLT).colour == GREEN);
+    CHECK(TrailVertex(after, THE_BOLT, 0, 0).colour == Times(GREEN, EFFECTS.fireBolt.trailIntensity));
 }
 
 TEST_CASE("each ability draws by its own look in the effects, and new effects show at the next draw") {
@@ -717,9 +729,8 @@ TEST_CASE("each ability draws by its own look in the effects, and new effects sh
     REQUIRE(tick < core::ArrivalTick(BOLT, 0));
     core::Effects tuned = EFFECTS;
     tuned.flyingSwords.swordScale = EFFECTS.flyingSwords.swordScale * DOUBLE;
-    tuned.flyingSwords.haloIntensity = DIM;
-    tuned.fireBolt.coreScale = EFFECTS.fireBolt.coreScale * DOUBLE;
-    tuned.fireBolt.haloScale = EFFECTS.fireBolt.haloScale * DOUBLE;
+    tuned.flyingSwords.trailIntensity = DIM;
+    tuned.fireBolt.swordScale = EFFECTS.fireBolt.swordScale * DOUBLE;
     const gfx::VolleyDrawing before = Drawn(volleys, targets, tick, 1.0F);
     const gfx::VolleyDrawing after = Drawn(volleys, targets, tick, 1.0F, {}, 1, tuned);
     const auto sizeOf = [&manifest](SpriteId sprite, f32 scale) {
@@ -727,13 +738,12 @@ TEST_CASE("each ability draws by its own look in the effects, and new effects sh
     };
     CHECK(SwordOf(before, SWORD).size == sizeOf(SpriteId::Sword, EFFECTS.flyingSwords.swordScale));
     CHECK(SwordOf(after, SWORD).size == sizeOf(SpriteId::Sword, tuned.flyingSwords.swordScale));
-    CHECK(CoreOf(after, THE_BOLT).size == sizeOf(SpriteId::GlowCore, tuned.fireBolt.coreScale));
-    CHECK(HaloOf(after, THE_BOLT).size == sizeOf(SpriteId::Halo, tuned.fireBolt.haloScale));
-    // The swords' core was left as it was; only their glow dimmed.
-    CHECK(CoreOf(after, SWORD).size == CoreOf(before, SWORD).size);
+    CHECK(SwordOf(after, THE_BOLT).size == sizeOf(SpriteId::FireBolt, tuned.fireBolt.swordScale));
+    // The bolt's trail was left as it was; only the swords' dimmed.
+    CHECK(TrailVertex(after, THE_BOLT, 0, 0).colour == TrailVertex(before, THE_BOLT, 0, 0).colour);
     const u32 damage = core::UiColours{}.Of(core::UiColour::DamageEffect);
-    CHECK(HaloOf(after, SWORD).colour == Times(damage, DIM));
-    CHECK(HaloOf(before, SWORD).colour == Times(damage, EFFECTS.flyingSwords.haloIntensity));
+    CHECK(TrailVertex(after, SWORD, 0, 0).colour == Times(damage, DIM));
+    CHECK(TrailVertex(before, SWORD, 0, 0).colour == Times(damage, EFFECTS.flyingSwords.trailIntensity));
 }
 
 TEST_CASE("a trail takes its reach, width and taper from the effects") {

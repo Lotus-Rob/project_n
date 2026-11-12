@@ -36,10 +36,8 @@ struct SwordFrame {
     f64 renderTick = 0.0;
 };
 
-// Where one sword's core, halo, sprite and trail go.
+// Where one sword's sprite and trail go.
 struct SwordSlots {
-    core::Instance* core = nullptr;
-    core::Instance* halo = nullptr;
     core::Instance* sword = nullptr;
     std::span<RibbonVertex> trail;
 };
@@ -92,8 +90,8 @@ void DrawTrail(
     }
 }
 
-// Fills `sword`'s slots: its halo and sprite where the path puts it at the frame's render time, and its trail; zeros
-// where nothing shows.
+// Fills `sword`'s slots: its sprite, wearing its glow, where the path puts it at the frame's render time, and its trail;
+// zeros where nothing shows.
 void DrawSword(
     const SwordFrame& frame,
     const core::VolleyView& view,
@@ -102,12 +100,10 @@ void DrawSword(
     const SwordSlots& slots
 ) {
     const core::Volley& volley = view.volley;
-    *slots.core = {};
-    *slots.halo = {};
     *slots.sword = {};
     std::ranges::fill(slots.trail, RibbonVertex{});
-    const auto launch = static_cast<f64>(core::LaunchTick(volley, sword));
-    if (frame.renderTick < launch) {
+    const u64 launch = core::LaunchTick(volley, sword);
+    if (frame.renderTick < static_cast<f64>(launch)) {
         return;
     }
     const u64 arrival = core::ArrivalTick(volley, sword);
@@ -123,23 +119,11 @@ void DrawSword(
         const f32 rotation = RotationTo(head.heading);
         const bool bolt = view.ability == core::AbilityKind::FireBolt;
         const core::SwordLook& look = frame.effects->LookOf(view.ability);
-        *slots.core = core::MakeInstance(
-            *frame.manifest,
-            { .sprite = core::atlas::SpriteId::GlowCore,
-              .previous = head.position,
-              .current = head.position,
-              .scale = look.coreScale,
-              .colour = core::ScaledColour(effect, look.coreOpacity * head.shown) }
-        );
-        // The glow goes before the blade, as the square of what shows: a plunged sword doesn't flash as it fades.
-        *slots.halo = core::MakeInstance(
-            *frame.manifest,
-            { .sprite = core::atlas::SpriteId::Halo,
-              .previous = head.position,
-              .current = head.position,
-              .scale = look.haloScale,
-              .colour = core::ScaledColour(effect, look.haloIntensity * head.shown * head.shown) }
-        );
+        // Each sword's pulse counts from its own launch, so the beat ripples through the rings as they form. The shader
+        // fades the glow by the square of the colour's alpha: a plunged sword's glow goes before its blade.
+        const core::GlowInput glow{ .role = bolt ? core::GlowRole::FireBolt : core::GlowRole::FlyingSwords,
+                                    .startTick = launch,
+                                    .element = view.element };
         *slots.sword = core::MakeInstance(
             *frame.manifest,
             { .sprite = bolt ? core::atlas::SpriteId::FireBolt : core::atlas::SpriteId::Sword,
@@ -148,7 +132,8 @@ void DrawSword(
               .scale = look.swordScale,
               .previousRotation = rotation,
               .currentRotation = rotation,
-              .colour = core::ScaledColour(bolt ? effect : core::OPAQUE_WHITE, head.shown) }
+              .colour = core::ScaledColour(bolt ? effect : core::OPAQUE_WHITE, head.shown),
+              .glow = glow }
         );
     }
     // A sword still on its ring has not moved, so its trail starts where it left.
@@ -164,7 +149,7 @@ void DrawSword(
             tailTick,
             head,
             look,
-            core::ScaledColour(effect, look.haloIntensity * head.shown),
+            core::ScaledColour(effect, look.trailIntensity * head.shown),
             slots.trail
         );
     }
@@ -333,26 +318,18 @@ void DrawVolleys(
     for (const core::VolleyView& view : volleys) {
         all += view.volley.shape.count;
     }
-    // Whole swords only: those past the overlay's room or the trails' are left out, core, halo, blade and trail.
+    // Whole swords only: those past the overlay's room or the trails' are left out, blade and trail.
     const auto total = static_cast<u32>(std::min(all, SwordRoom(out.instances.size(), out.ribbons.size())));
     out.droppedSwords += all - total;
     if (total == 0) {
         return;
     }
-    const auto cores = static_cast<u32>(out.instances.size());
-    const u32 halos = cores + total;
-    const u32 swords = halos + total;
+    const auto swords = static_cast<u32>(out.instances.size());
     out.instances.resize(std::size_t{ swords } + total);
     const std::size_t firstVertex = out.ribbons.size();
     out.ribbons.resize(firstVertex + (std::size_t{ total } * TRAIL_VERTICES));
-    // The cores and halos under everything already there (the health bars, which the halos would wash out); the swords
-    // over all.
-    const std::array<core::Batch, 2> under{ {
-        { .first = cores, .count = total, .pipeline = core::Pipeline::Normal },
-        { .first = halos, .count = total, .pipeline = core::Pipeline::Additive },
-    } };
-    out.batches.insert(out.batches.begin(), under.begin(), under.end());
-    out.batches.push_back({ .first = swords, .count = total, .pipeline = core::Pipeline::Normal });
+    // Under everything already there, so neither blades nor glows cover an enemy's health bar.
+    out.batches.insert(out.batches.begin(), core::Batch{ .first = swords, .count = total, .pipeline = core::Pipeline::Normal });
     const SwordFrame frame{ .manifest = &manifest,
                             .colours = &colours,
                             .effects = &effects,
@@ -378,9 +355,7 @@ void DrawVolleys(
                 view,
                 targets.subspan(view.firstTarget, view.targets),
                 index - volleyFirst,
-                { .core = &instances[cores + index],
-                  .halo = &instances[halos + index],
-                  .sword = &instances[swords + index],
+                { .sword = &instances[swords + index],
                   .trail = ribbons.subspan(std::size_t{ index } * TRAIL_VERTICES, TRAIL_VERTICES) }
             );
         }

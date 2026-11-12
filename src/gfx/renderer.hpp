@@ -77,14 +77,13 @@ public:
     /// follows before the next Acquire(). A failure is logged, and the Draw() after it does nothing.
     void Acquire();
     /// Draws `snapshot` into the frame Acquire() acquired as `view` shows it, and presents it. Uploads its instances only when
-    /// it isn't the snapshot drawn last (§8.3); a snapshot of a scene it doesn't hold draws the backdrop only.
-    /// The view's outlined instance gets a pale outline drawn over everything, and the snapshot's
-    /// selected instance a gold one; the gold wins where both fall on one. Over them go the swords' trails and the
-    /// overlay, placed every frame at the render time (gfx/volley_draw.hpp): the swords' tinted cores and halos, the poison
-    /// lance's bursts, the enemies' health bars, shown as their labels are, and the swords. Over all of it go the snapshot's
-    /// texts, then `extra` (the main thread's own, such as damage numbers), then `hud` in target pixels: its bars, then its
-    /// lines. A glyph seen for the first time is rasterised on `jobs`, which must outlive the renderer, and drawn from the
-    /// frame its field is uploaded: no frame waits for one.
+    /// it isn't the snapshot drawn last (§8.3); a snapshot of a scene it doesn't hold draws the backdrop only. The view's
+    /// outlined instance gets a pale outline drawn over everything, and the snapshot's selected instance a gold one; the gold
+    /// wins where both fall on one. Over them go the swords' trails and the overlay, placed every frame at the render time
+    /// (gfx/volley_draw.hpp): the swords, each wearing its glow, the poison lance's bursts and the enemies' health bars, shown
+    /// as their labels are. Over all of it go the snapshot's texts, then `extra` (the main thread's own, such as damage
+    /// numbers), then `hud` in target pixels: its bars, then its lines. A glyph seen for the first time is rasterised on
+    /// `jobs`, which must outlive the renderer, and drawn from the frame its field is uploaded: no frame waits for one.
     void Draw(
         const core::Snapshot& snapshot,
         const View& view,

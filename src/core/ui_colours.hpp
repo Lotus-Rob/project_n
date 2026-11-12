@@ -22,7 +22,7 @@ namespace core {
 /// A group of colours the accessibility menu shows together, in the menu's order.
 enum class ColourArea : u8 {
     CombatText,       ///< Damage numbers.
-    Effects,          ///< An ability's halo, trail, glow and burst, by element.
+    Effects,          ///< An ability's glow, trail and burst, by element.
     NamesAndCaptions, ///< Labels, the caption and the ink of text's outline and shadow.
     Selection,        ///< The hover and selection outlines.
     Hud,              ///< The health and Qi bars and the HUD's text.

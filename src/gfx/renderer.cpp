@@ -230,7 +230,7 @@ struct Renderer::Impl {
     // Features: what draws, each with its pipelines and buffers.
     internal::SpriteRenderer instances{};
     internal::MeshRenderer meshes{};
-    internal::SpriteRenderer overlay{}; // the per-frame sprites: health bars, halos and swords (VolleyDrawing)
+    internal::SpriteRenderer overlay{}; // the per-frame sprites: swords, bursts and health bars (VolleyDrawing)
     internal::GlowTableBuffer glowTable{};
     internal::RibbonRenderer ribbons{};
     internal::Compositor compositor{};
@@ -736,9 +736,8 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
             commands, pass, static_cast<u32>(*outlined), core::GlowRole::Hover, sprites, transform, alpha, glows
         );
     }
-    // The trails, then the overlay: the swords' tinted cores, their halos (additive), the lance's bursts (additive), the
-    // health bars and the swords, at the render time; their instances hold no motion between ticks, so the overlay's alpha
-    // changes nothing.
+    // The trails, then the overlay: the swords, each wearing its glow, the lance's bursts (additive) and the health bars, at
+    // the render time; their instances hold no motion between ticks, so the overlay's alpha changes nothing.
     ribbons.Draw(commands, pass, transform);
     overlay.Draw(commands, pass, volleyDrawing.batches, sprites, transform, alpha, glows);
     // Game text over the world, its outlines and the overlay (the phase 6 chunk 3 spec), placed in target pixels; then the
