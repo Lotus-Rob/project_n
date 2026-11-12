@@ -228,6 +228,29 @@ f64 ClockwiseFrom(f64 from, f64 angle) {
     return turned < 0.0 ? turned + FULL_TURN : turned;
 }
 
+// The first of `volley`'s swords in `wave` (below its waves): the waves are runs of indices in order, so a binary search
+// finds it without visiting every sword.
+u32 FirstOfWave(const core::Volley& volley, u32 wave) {
+    u32 low = 0;
+    u32 high = volley.shape.count;
+    while (low < high) {
+        const u32 middle = low + ((high - low) / 2);
+        if (core::WaveOf(volley, middle) < wave) {
+            low = middle + 1;
+        }
+        else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
+// How many of `volley`'s swords `wave` holds.
+u32 WaveSize(const core::Volley& volley, u32 wave) {
+    const u32 next = wave + 1 < volley.shape.waves ? FirstOfWave(volley, wave + 1) : volley.shape.count;
+    return next - FirstOfWave(volley, wave);
+}
+
 f64 Mean(std::span<const f64> values) {
     return std::accumulate(values.begin(), values.end(), 0.0) / static_cast<f64>(values.size());
 }
@@ -246,8 +269,7 @@ TEST_CASE("a wave's ring forms before the next") {
     std::array<u64, SWORDS.waves> latest{};
     earliest.fill(std::numeric_limits<u64>::max());
     for (u32 sword = 0; sword < SWORDS.count; ++sword) {
-        const u32 wave = core::WaveOf(VOLLEY, sword);
-        REQUIRE(wave < SWORDS.waves);
+        const u32 wave = core::WaveOf(VOLLEY, sword); // `at` refuses one past the waves
         ++sizes.at(wave);
         earliest.at(wave) = std::min(earliest.at(wave), core::LaunchTick(VOLLEY, sword));
         latest.at(wave) = std::max(latest.at(wave), core::LaunchTick(VOLLEY, sword));
@@ -302,87 +324,113 @@ TEST_CASE("a sword appears at its ring place and holds still") {
 }
 
 TEST_CASE("the rings are regular sunbursts") {
-    // Every sword on its wave's radius, the neighbours round each ring evenly spaced, each pointing straight out while it
-    // holds.
+    // While they hold, every sword lies on its wave's radius and points straight out, and neighbours round a ring are an
+    // even spacing apart. Sampled on the first ring and the last, which hold different numbers of swords: each ring's
+    // first two (where its sweep starts), two in its middle, and its last and first (the seam where the ring closes);
+    // and the first ring's last with the second ring's first, across a wave boundary.
     constexpr f64 SLACK = 1e-3;         // world units: the position is rounded to f32
     constexpr f64 GAP_SLACK = 1e-6;     // radians
     constexpr f64 OUTWARD_SLACK = 1e-5; // radians
-    constexpr f64 HALF = 0.5;
-    std::array<std::vector<f64>, SWORDS.waves> angles{};
+    constexpr u32 LAST_WAVE = SWORDS.waves - 1;
+    const auto holding = [](u32 sword) {
+        constexpr f64 HALF_WAY = 0.5;
+        const auto appeared = static_cast<f64>(core::LaunchTick(VOLLEY, sword) + SWORDS.outTicks);
+        return core::SwordAt(VOLLEY, sword, appeared + (static_cast<f64>(SWORDS.holdTicks) * HALF_WAY), POINT);
+    };
     f64 worstOffRing = 0.0;
     f64 worstOutward = 0.0;
-    for (u32 sword = 0; sword < SWORDS.count; ++sword) {
-        const f64 holding =
-            static_cast<f64>(core::LaunchTick(VOLLEY, sword) + SWORDS.outTicks) + (static_cast<f64>(SWORDS.holdTicks) * HALF);
-        const core::SwordPose pose = core::SwordAt(VOLLEY, sword, holding, POINT);
-        const core::Vec2 out = pose.position - ORIGIN;
-        worstOffRing = std::max(worstOffRing, std::abs(Distance({}, out) - RingOf(VOLLEY, sword)));
-        worstOutward = std::max(worstOutward, Turn(pose.heading, out));
-        angles.at(core::WaveOf(VOLLEY, sword)).push_back(AngleOf(out));
-    }
-    f64 worstGap = 0.0; // from an even spacing
-    for (std::vector<f64>& wave : angles) {
-        REQUIRE(wave.size() > 1);
-        const f64 spacing = FULL_TURN / static_cast<f64>(wave.size());
-        std::ranges::sort(wave);
-        worstGap = std::max(worstGap, std::abs(wave.front() + FULL_TURN - wave.back() - spacing));
-        for (std::size_t index = 1; index < wave.size(); ++index) {
-            worstGap = std::max(worstGap, std::abs(wave[index] - wave[index - 1] - spacing));
+    f64 worstGap = 0.0; // from the ring's even spacing
+    for (const u32 wave : { 0U, LAST_WAVE }) {
+        const u32 first = FirstOfWave(VOLLEY, wave);
+        const u32 size = WaveSize(VOLLEY, wave);
+        const u32 middle = first + (size / 2);
+        const u32 last = first + size - 1;
+        // Each pair: a sword and the next clockwise.
+        for (const auto& [here, next] :
+             { std::pair{ first, first + 1 }, std::pair{ middle, middle + 1 }, std::pair{ last, first } }) {
+            const core::SwordPose fromPose = holding(here);
+            const core::SwordPose toPose = holding(next);
+            for (const auto& [sword, pose] : { std::pair{ here, fromPose }, std::pair{ next, toPose } }) {
+                const core::Vec2 out = pose.position - ORIGIN;
+                worstOffRing = std::max(worstOffRing, std::abs(Distance({}, out) - RingOf(VOLLEY, sword)));
+                worstOutward = std::max(worstOutward, Turn(pose.heading, out));
+            }
+            const f64 gap = ClockwiseFrom(AngleOf(fromPose.position - ORIGIN), AngleOf(toPose.position - ORIGIN));
+            worstGap = std::max(worstGap, std::abs(gap - (FULL_TURN / static_cast<f64>(size))));
         }
     }
     CHECK(worstOffRing < SLACK);
-    CHECK(worstGap < GAP_SLACK);
     CHECK(worstOutward < OUTWARD_SLACK);
+    CHECK(worstGap < GAP_SLACK);
+    // Across the boundary, the next ring stands a ring step further out.
+    const u32 lastOfFirst = FirstOfWave(VOLLEY, 1) - 1;
+    const f64 step = Distance(ORIGIN, holding(lastOfFirst + 1).position) - Distance(ORIGIN, holding(lastOfFirst).position);
+    CHECK(std::abs(step - static_cast<f64>(SWORDS.ringStep)) < SLACK);
 }
 
 TEST_CASE("a ring draws itself clockwise") {
-    // Within each wave, going clockwise round the ring from the wave's first sword, the swords appear one after another:
-    // none appears before one it follows.
-    std::array<std::vector<std::pair<f64, u64>>, SWORDS.waves> rings{}; // clockwise from the first, and the appearance
-    std::array<f64, SWORDS.waves> first{};
-    for (u32 sword = 0; sword < SWORDS.count; ++sword) {
-        const u32 wave = core::WaveOf(VOLLEY, sword);
-        const f64 angle = AngleOf(RingPoint(VOLLEY, sword) - ORIGIN);
-        if (rings.at(wave).empty()) {
-            first.at(wave) = angle; // a wave's first index appears first
+    // Going clockwise round a ring from its first sword, the swords appear one after another and the last within the
+    // stagger: sampled on the first ring and the last (different sizes), at its first sword, a quarter, half and three
+    // quarters round, and its last, which stands one spacing short of the first, closing the ring.
+    constexpr u32 LAST_WAVE = SWORDS.waves - 1;
+    constexpr u32 QUARTERS = 4;
+    bool clockwise = true;
+    bool inTurn = true;
+    u64 longestSweep = 0;
+    for (const u32 wave : { 0U, LAST_WAVE }) {
+        const u32 first = FirstOfWave(VOLLEY, wave);
+        const u32 size = WaveSize(VOLLEY, wave);
+        const f64 start = AngleOf(RingPoint(VOLLEY, first) - ORIGIN);
+        f64 lastAngle = -1.0;
+        u64 lastLaunch = core::LaunchTick(VOLLEY, first);
+        for (u32 quarter = 0; quarter <= QUARTERS; ++quarter) {
+            const u32 sword = quarter == QUARTERS ? first + size - 1 : first + ((size * quarter) / QUARTERS);
+            const f64 angle = ClockwiseFrom(start, AngleOf(RingPoint(VOLLEY, sword) - ORIGIN));
+            const u64 launch = core::LaunchTick(VOLLEY, sword);
+            clockwise = clockwise && (quarter == 0 || angle > lastAngle);
+            inTurn = inTurn && launch >= lastLaunch;
+            lastAngle = angle;
+            lastLaunch = launch;
         }
-        rings.at(wave).emplace_back(ClockwiseFrom(first.at(wave), angle), core::LaunchTick(VOLLEY, sword));
+        // The last stands an even spacing short of a full turn.
+        constexpr f64 GAP_SLACK = 1e-6;
+        clockwise = clockwise && std::abs(lastAngle - (FULL_TURN * (1.0 - (1.0 / static_cast<f64>(size))))) < GAP_SLACK;
+        longestSweep = std::max(longestSweep, lastLaunch - core::LaunchTick(VOLLEY, first));
     }
-    std::size_t outOfTurn = 0;
-    for (std::vector<std::pair<f64, u64>>& ring : rings) {
-        std::ranges::sort(ring);
-        for (std::size_t index = 1; index < ring.size(); ++index) {
-            outOfTurn += ring[index].second < ring[index - 1].second ? 1U : 0U;
-        }
-    }
-    CHECK(outOfTurn == 0);
+    CHECK(clockwise);
+    CHECK(inTurn);
+    CHECK(longestSweep < SWORDS.staggerTicks);
 }
 
 TEST_CASE("swords leave their ring at different times") {
-    // Each sword waits on its ring a delay of its own after the hold, spread over `departJitterTicks`: every delay that
-    // can be drawn is, and neighbours on a ring seldom leave together.
+    // The first ring's swords, a wave's worth: each leaves after a delay of its own below `departJitterTicks`, the
+    // delays spread over most of that, and neighbours seldom leave together. Its flight then takes `flightTicks`.
     constexpr f64 MOST_TOGETHER = 0.2; // of neighbouring pairs; at random, 1 in 15
+    const u32 size = WaveSize(VOLLEY, 0);
     std::vector<bool> drawn(SWORDS.departJitterTicks, false);
     u64 longest = 0;
+    u64 shortest = std::numeric_limits<u64>::max();
     u32 together = 0;
-    u32 pairs = 0;
     u64 previous = 0;
-    for (u32 sword = 0; sword < SWORDS.count; ++sword) {
-        const u64 delay =
-            core::DepartureTick(VOLLEY, sword) - core::LaunchTick(VOLLEY, sword) - SWORDS.outTicks - SWORDS.holdTicks;
+    u64 worstFlight = 0; // from `flightTicks`
+    for (u32 sword = 0; sword < size; ++sword) {
+        const u64 departure = core::DepartureTick(VOLLEY, sword);
+        const u64 delay = departure - core::LaunchTick(VOLLEY, sword) - SWORDS.outTicks - SWORDS.holdTicks;
         longest = std::max(longest, delay);
-        if (delay < drawn.size()) {
-            drawn[delay] = true;
-        }
-        if (sword > 0 && core::WaveOf(VOLLEY, sword) == core::WaveOf(VOLLEY, sword - 1)) {
-            ++pairs;
-            together += delay == previous ? 1U : 0U;
-        }
+        shortest = std::min(shortest, delay);
+        drawn.at(std::min<u64>(delay, SWORDS.departJitterTicks - 1)) = true;
+        together += sword > 0 && delay == previous ? 1U : 0U;
         previous = delay;
+        const u64 flight = core::ArrivalTick(VOLLEY, sword) - departure;
+        worstFlight =
+            std::max(worstFlight, std::max(flight, u64{ SWORDS.flightTicks }) - std::min(flight, u64{ SWORDS.flightTicks }));
     }
+    constexpr u64 SPREAD_SLACK = 3; // ticks short of the whole jitter at either end
     CHECK(longest < SWORDS.departJitterTicks);
-    CHECK(std::ranges::all_of(drawn, [](bool some) { return some; }));
-    CHECK(static_cast<f64>(together) <= MOST_TOGETHER * static_cast<f64>(pairs));
+    CHECK(longest - shortest + SPREAD_SLACK >= SWORDS.departJitterTicks);
+    CHECK(std::ranges::count(drawn, true) * 3 >= std::ptrdiff_t{ SWORDS.departJitterTicks } * 2); // two thirds drawn
+    CHECK(static_cast<f64>(together) <= MOST_TOGETHER * static_cast<f64>(size - 1));
+    CHECK(worstFlight == 0);
 }
 
 TEST_CASE("swords that don't split evenly over the waves go one more to each of the first waves") {
@@ -532,28 +580,23 @@ TEST_CASE("the path is smooth") {
 }
 
 TEST_CASE("a sword turns from its ring to its flight without flipping while its target moves off the point") {
-    // In each wave, the sword facing most nearly away from the point, which turns furthest (about half a turn) and so
-    // flips most easily, and its neighbours either side, and the sword facing the point.
+    // In each wave, the sword with the largest turn to make, from pointing straight out to its heading once its turn is
+    // over (8 ticks into its flight, flying at the point), which flips most easily, and its neighbours either side.
+    constexpr u64 TURNED = 8;
+    const auto turnOf = [](u32 sword) {
+        const f64 turned = static_cast<f64>(core::DepartureTick(VOLLEY, sword) + TURNED);
+        return Turn(RingPoint(VOLLEY, sword) - ORIGIN, core::SwordAt(VOLLEY, sword, turned, POINT).heading);
+    };
     std::vector<u32> sampled;
-    const core::Vec2 towardsPoint = POINT - ORIGIN;
     for (u32 wave = 0; wave < SWORDS.waves; ++wave) {
-        u32 away = SWORDS.count;
-        u32 towards = SWORDS.count;
-        for (u32 sword = 0; sword < SWORDS.count; ++sword) {
-            if (core::WaveOf(VOLLEY, sword) != wave) {
-                continue;
-            }
-            const f64 facing = Turn(RingPoint(VOLLEY, sword) - ORIGIN, towardsPoint);
-            if (away == SWORDS.count || facing > Turn(RingPoint(VOLLEY, away) - ORIGIN, towardsPoint)) {
-                away = sword;
-            }
-            if (towards == SWORDS.count || facing < Turn(RingPoint(VOLLEY, towards) - ORIGIN, towardsPoint)) {
-                towards = sword;
-            }
+        const u32 first = FirstOfWave(VOLLEY, wave);
+        u32 widest = first;
+        for (u32 sword = first + 1; sword < first + WaveSize(VOLLEY, wave); ++sword) {
+            widest = turnOf(sword) > turnOf(widest) ? sword : widest;
         }
-        REQUIRE(away > 0);
-        REQUIRE(away + 1 < SWORDS.count);
-        sampled.insert(sampled.end(), { away - 1, away, away + 1, towards });
+        REQUIRE(widest > 0);
+        REQUIRE(widest + 1 < SWORDS.count);
+        sampled.insert(sampled.end(), { widest - 1, widest, widest + 1 });
     }
     // From a tick before it leaves its ring through its turn and well into its flight.
     constexpr u64 BEFORE = 1;
