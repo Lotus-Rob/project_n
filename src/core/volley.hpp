@@ -21,37 +21,35 @@ namespace core {
 /// The most swords a volley has: the overlay buffer holds three instances a sword (its core, halo and blade).
 inline constexpr u32 MAX_VOLLEY_COUNT = 2'000;
 
-/// The fewest ticks a sword takes to swing its aim from a target that died to the one it moves on to, so it turns
-/// visibly rather than jumping: about an eighth of a second.
-inline constexpr f64 RETARGET_TICKS = 8.0;
-/// The fastest a swing moves the aim on average, in world units a tick (about a sword's speed in flight): a swing over a
-/// longer way takes longer than RETARGET_TICKS, so the sword never darts, though never past the sword's arrival.
-inline constexpr f64 RETARGET_SPEED = 16.0;
-/// The fastest a swing at RETARGET_SPEED moves the aim, in world units a tick: its ease, 3u² − 2u³, peaks at 1.5 times
-/// its average speed, halfway through.
-inline constexpr f64 RETARGET_PEAK = 1.5 * RETARGET_SPEED;
-/// How far from its target's middle a sword's own aim lies at most, in world units (AimOffset()): about a quarter of a
-/// fox's height, so swords strike and plunge spread over a creature rather than piled on one point.
+/// The most VolleyShape::arrivalSpeed can be: a cubic Hermite ease from rest stays monotonic up to three times its average
+/// speed at its end.
+inline constexpr f32 MAX_ARRIVAL_SPEED = 3.0F;
+
+/// The shipped motion of a volley (VolleyShape's defaults, which abilities.yaml's `motion:` block spells out).
+namespace shipped {
+
+/// The shipped `aimScatter`, in world units.
 inline constexpr f32 AIM_SCATTER = 18.0F;
+/// The shipped `shortBend`, as a fraction of the chord.
+inline constexpr f32 SHORT_BEND = 0.5F;
+/// The shipped `turnTicks`: about an eighth of a second.
+inline constexpr u32 TURN_TICKS = 8;
+/// The shipped `arrivalSpeed`, as a multiple of the average speed.
+inline constexpr f32 ARRIVAL_SPEED = 0.5F;
+/// The shipped `retargetTicks`: about an eighth of a second.
+inline constexpr u32 RETARGET_TICKS = 8;
+/// The shipped `retargetSpeed`, in world units a tick.
+inline constexpr f32 RETARGET_SPEED = 16.0F;
+/// How many times its average speed a swing's ease, 3u² − 2u³, peaks at, halfway through: maths, not tuning.
+inline constexpr f64 SWING_PEAK = 1.5;
 
-/// The fewest ticks a volley's commit window has (VolleyShape::commitTicks): two of the shortest swings.
-inline constexpr u32 MIN_COMMIT_TICKS = 2 * static_cast<u32>(RETARGET_TICKS);
+} // namespace shipped
 
-/// The commit window (VolleyShape::commitTicks) of a volley whose targets were tagged within `radius` world units (finite,
-/// not negative) of its point: the ticks a swing across the whole area takes at RETARGET_SPEED,
-/// ⌈2 × radius / RETARGET_SPEED⌉, and never fewer than MIN_COMMIT_TICKS. So a sword moving on from one tagged target to
-/// another never swings faster than RETARGET_SPEED to reach it by its arrival, unless the two have since moved further
-/// apart. The cast calls it. A radius too large for the ticks to count gives the most there are: no sword moves on.
-[[nodiscard]] constexpr u32 CommitTicksFor(f32 radius) {
-    const f64 diameter = static_cast<f64>(radius) + static_cast<f64>(radius);
-    const f64 ticks = diameter / RETARGET_SPEED;
-    constexpr u32 MOST = std::numeric_limits<u32>::max();
-    if (!(ticks < static_cast<f64>(MOST))) {
-        return MOST;
-    }
-    const u32 whole = ticks > 0.0 ? static_cast<u32>(ticks) : 0;
-    return std::max(MIN_COMMIT_TICKS, static_cast<f64>(whole) < ticks ? whole + 1 : whole);
-}
+/// The fewest ticks a volley's commit window has (VolleyShape::commitTicks): two of the shortest swings at the shipped
+/// VolleyShape::retargetTicks (8). A floor in code, not data: it keeps the window long enough to resolve a cast, so a
+/// tuned shape can lengthen the window (a slower `retargetSpeed`) but never shorten it past this, however short its own
+/// `retargetTicks`: it follows the shipped value, never a tuned one.
+inline constexpr u32 MIN_COMMIT_TICKS = 2 * shipped::RETARGET_TICKS;
 
 /// How a volley is laid out and flies, from `abilities.yaml`. All times are simulation ticks.
 ///
@@ -98,9 +96,33 @@ struct VolleyShape {
     /// Ticks a sword takes to fade after its hit.
     u32 fadeTicks = 0;
     /// How many ticks before its arrival a sword's target must die for the sword to move on to another (SwordTarget()):
-    /// long enough for a swing between any two of the volley's targets at RETARGET_SPEED. The cast resolves it from the
+    /// long enough for a swing between any two of the volley's targets at `retargetSpeed`. The cast resolves it from the
     /// ability's radius (CommitTicksFor()); the data never sets it, so a shape read from the data has 0 here.
     u32 commitTicks = 0;
+
+    // The motion: how every sword (or bolt) of the volley flies, from the ability's `motion:` block in abilities.yaml. They
+    // default to the shipped numbers, which a block that leaves a key out keeps. Saved with the volley, so a volley in
+    // flight keeps the motion it was cast with.
+
+    /// How far from its target's middle a sword's own aim lies at most, in world units (AimOffset()): about a quarter of a
+    /// fox's height, so swords strike and plunge spread over a creature rather than piled on one point. 0 aims at the middle.
+    f32 aimScatter = shipped::AIM_SCATTER;
+    /// The bend of a short flight, as a fraction of its chord (long flights approach `sweep` instead): above 0.
+    f32 shortBend = shipped::SHORT_BEND;
+    /// Ticks a sword takes to turn from pointing out of its ring to facing its flight, as it sets off, its flight easing
+    /// from rest: long enough that even half a turn stays a visible swing. The turn overlaps the flight's start, so the
+    /// longer it is, the further a sword moves while it still points the wrong way. 0 faces its flight at once.
+    u32 turnTicks = shipped::TURN_TICKS;
+    /// A sword's speed at its arrival, as a multiple of its average speed in flight, from 0 to MAX_ARRIVAL_SPEED: at 0.5 it
+    /// still strikes rather than settles.
+    f32 arrivalSpeed = shipped::ARRIVAL_SPEED;
+    /// The fewest ticks a sword takes to swing its aim from a target that died to the one it moves on to, so it turns
+    /// visibly rather than jumping: at least 1, shipped as about an eighth of a second.
+    u32 retargetTicks = shipped::RETARGET_TICKS;
+    /// The fastest a swing moves the aim on average, in world units a tick (about a sword's speed in flight), above 0: a
+    /// swing over a longer way takes longer than `retargetTicks`, so the sword never darts, though never past the
+    /// sword's arrival.
+    f32 retargetSpeed = shipped::RETARGET_SPEED;
 
     /// Lists its fields for an archive (core/archive.hpp).
     template<typename Self, typename Archive>
@@ -121,20 +143,54 @@ struct VolleyShape {
             self.sweep,
             self.sweepJitter,
             self.fadeTicks,
-            self.commitTicks
+            self.commitTicks,
+            self.aimScatter,
+            self.shortBend,
+            self.turnTicks,
+            self.arrivalSpeed,
+            self.retargetTicks,
+            self.retargetSpeed
         );
     }
 
+    /// The fastest a swing at `retargetSpeed` moves the aim, in world units a tick: its ease, 3u² − 2u³, peaks at 1.5
+    /// times its average speed, halfway through.
+    [[nodiscard]] constexpr f64 RetargetPeak() const {
+        return shipped::SWING_PEAK * static_cast<f64>(retargetSpeed);
+    }
+
     /// Whether the count and the waves are within the limit with at least one wave, every distance and angle is finite and
-    /// not negative, and the scatter and the sweep's jitter are below 1; what a shape read from the data must satisfy. The
+    /// not negative, the scatter and the sweep's jitter are below 1, and the motion is in range (a short bend and a
+    /// retarget speed above 0, an arrival speed from 0 to MAX_ARRIVAL_SPEED, at least one retarget tick); what a shape read
+    /// from the data must satisfy. The
     /// times the cast resolves, `flightTicks` and `commitTicks`, are checked on the cast (Volley::Valid()).
     [[nodiscard]] bool Valid() const {
         const auto distance = [](f32 value) { return std::isfinite(value) && value >= 0.0F; };
         const auto fraction = [&distance](f32 value) { return distance(value) && value < 1.0F; };
+        const auto positive = [](f32 value) { return std::isfinite(value) && value > 0.0F; };
+        const bool motion = distance(aimScatter) && positive(shortBend) && distance(arrivalSpeed) &&
+                            arrivalSpeed <= MAX_ARRIVAL_SPEED && retargetTicks >= 1 && positive(retargetSpeed);
         return count <= MAX_VOLLEY_COUNT && waves >= 1 && waves <= MAX_VOLLEY_COUNT && distance(ringRadius) &&
-               distance(ringStep) && fraction(scatter) && distance(angleJitter) && distance(sweep) && fraction(sweepJitter);
+               distance(ringStep) && fraction(scatter) && distance(angleJitter) && distance(sweep) && fraction(sweepJitter) &&
+               motion;
     }
 };
+
+/// The commit window (VolleyShape::commitTicks) of a volley of `shape`'s motion whose targets were tagged within `radius`
+/// world units (finite, not negative) of its point: the ticks a swing across the whole area takes at its `retargetSpeed`,
+/// ⌈2 × radius / retargetSpeed⌉, and never fewer than MIN_COMMIT_TICKS. So a sword moving on from one tagged target to
+/// another never swings faster than `retargetSpeed` to reach it by its arrival, unless the two have since moved further
+/// apart. The cast calls it. A radius too large for the ticks to count gives the most there are: no sword moves on.
+[[nodiscard]] constexpr u32 CommitTicksFor(f32 radius, const VolleyShape& shape) {
+    const f64 diameter = static_cast<f64>(radius) + static_cast<f64>(radius);
+    const f64 ticks = diameter / static_cast<f64>(shape.retargetSpeed);
+    constexpr u32 MOST = std::numeric_limits<u32>::max();
+    if (!(ticks < static_cast<f64>(MOST))) {
+        return MOST;
+    }
+    const u32 whole = ticks > 0.0 ? static_cast<u32>(ticks) : 0;
+    return std::max(MIN_COMMIT_TICKS, static_cast<f64>(whole) < ticks ? whole + 1 : whole);
+}
 
 /// One cast of a volley: everything its swords' paths depend on but their targets, which move.
 struct Volley {
@@ -265,22 +321,22 @@ struct SwordPose {
 /// before the tick's deaths, so a target dying on that tick still takes the hit (VolleyTarget::diedTick).
 [[nodiscard]] u32 SwordTarget(const Volley& volley, u32 sword, u64 tick, std::span<const VolleyTarget> targets);
 
-/// Where on its target `sword` (below the shape's count) aims, from the target's middle: a point within AIM_SCATTER,
-/// drawn from the volley's seed, spread evenly over that disc. The same at every moment, so SwordAim() always adds it and
-/// the aim never steps.
+/// Where on its target `sword` (below the shape's count) aims, from the target's middle: a point within the shape's
+/// `aimScatter`, drawn from the volley's seed, spread evenly over that disc. The same at every moment, so SwordAim() always
+/// adds it and the aim never steps.
 [[nodiscard]] Vec2 AimOffset(const Volley& volley, u32 sword);
 
 /// The aim `sword` flies at, for SwordAt() at the same moment: the moment `RenderTick(simulationTick, alpha)`, with the
 /// targets as `simulationTick` left them (the logic passes its tick and 1; the renderer the drawn snapshot's tick and the
 /// frame's alpha, so the two can't disagree). It is the position of its target (SwordTarget()), between the target's
 /// `previous` and `current` by `alpha`, moved by the sword's own AimOffset(), always, the frozen point of a dead one too. When
-/// the sword moves on from a dead target, its aim eases from where it was then to the new target, over RETARGET_TICKS or the
-/// way's length at RETARGET_SPEED, whichever is longer, but always ending by the sword's arrival: the aim, and with it the
-/// sword, never jumps, and at the arrival tick it is exactly on its spot on the target it strikes. The commit window fits a
-/// swing across the tagged area, so the swing moves the aim at up to RETARGET_PEAK, on top of the sword's own flight; only
-/// targets that have since moved further apart than that area make it faster, to end by the arrival. RETARGET_PEAK can be
-/// several times a slow sword's own flight speed (a short flight): such a sword visibly speeds up through the swing, though
-/// smoothly.
+/// the sword moves on from a dead target, its aim eases from where it was then to the new target, over the shape's
+/// `retargetTicks` or the way's length at the shape's `retargetSpeed`, whichever is longer, but always ending by the sword's
+/// arrival: the aim, and with it the sword, never jumps, and at the arrival tick it is exactly on its spot on the target it
+/// strikes. The commit window fits a swing across the tagged area, so the swing moves the aim at up to RetargetPeak(), on top
+/// of the sword's own flight; only targets that have since moved further apart than that area make it faster, to end by the
+/// arrival. RetargetPeak() can be several times a slow sword's own flight speed (a short flight): such a sword visibly speeds
+/// up through the swing, though smoothly.
 [[nodiscard]] Vec2 SwordAim(
     const Volley& volley,
     u32 sword,

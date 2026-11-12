@@ -291,7 +291,7 @@ void DrawFlashes(
     PN_PROFILE_ZONE();
     const auto first = static_cast<u32>(out.instances.size());
     for (const core::Flash& flash : flashes) {
-        const f64 progress = (renderTick - static_cast<f64>(flash.startTick)) / static_cast<f64>(core::FLASH_TICKS);
+        const f64 progress = (renderTick - static_cast<f64>(flash.startTick)) / static_cast<f64>(flash.ticks);
         // False for a NaN render tick too, so nothing is drawn then.
         const bool showing = progress >= 0.0 && progress < 1.0;
         if (!showing) {

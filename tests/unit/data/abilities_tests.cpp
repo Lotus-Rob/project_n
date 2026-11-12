@@ -160,6 +160,13 @@ TEST_CASE("a negative, non-finite or missing number is refused, naming the abili
     }
 }
 
+TEST_CASE("a time over a million seconds is refused, naming the ability and the key") {
+    const core::Error cooldown = ErrorFor(With("cooldown: 1.0", "cooldown: 1000001"));
+    CHECK(cooldown.message.contains("dash's cooldown isn't a number from 0 to 1e+06"));
+    const core::Error flight = ErrorFor(With("flight: 1.7", "flight: 1e7"));
+    CHECK(flight.message.contains("flying_swords's swords's flight isn't a number from 0 to 1e+06"));
+}
+
 TEST_CASE("a loadout entry for an ability the abilities don't define is refused") {
     const core::Error error =
         ErrorFor(With("  dash:          { slot: movement, cooldown: 1.0, distance: 260, duration: 0.15 }\n", ""));
@@ -240,6 +247,184 @@ TEST_CASE("a loadout may leave slots empty") {
 TEST_CASE("a non-map or a broken file is refused with a reason") {
     CHECK(ErrorFor("- qi\n").message.contains("not a map"));
     CHECK_FALSE(ErrorFor("qi: [").message.empty());
+}
+
+// The swords' line in ABILITIES, ending where a motion block can follow.
+constexpr std::string_view SWORDS_END = "sweep: 420, sweep_jitter: 0.6, fade: 0.3 } }";
+// The shipped motion, spelled out as abilities.yaml has it (retarget_speed in world units a second).
+constexpr std::string_view SHIPPED_MOTION =
+    "aim_scatter: 18, short_bend: 0.5, turn: 0.1333, arrival_speed: 0.5, retarget: 0.1333, retarget_speed: 960";
+
+// ABILITIES with the swords given a motion block of `motion`.
+std::string WithMotion(std::string_view motion) {
+    return With(SWORDS_END, std::format("sweep: 420, sweep_jitter: 0.6, fade: 0.3 }}, motion: {{ {} }} }}", motion));
+}
+
+TEST_CASE("a motion block spelling out the shipped motion reads the shape's defaults") {
+    const std::expected<core::Abilities, core::Error> abilities = data::ParseAbilities(WithMotion(SHIPPED_MOTION));
+    REQUIRE(abilities.has_value());
+    const core::VolleyShape& swords = abilities->Of(core::AbilityKind::FlyingSwords).volley;
+    constexpr core::VolleyShape SHIPPED{};
+    CHECK(swords.aimScatter == SHIPPED.aimScatter);
+    CHECK(swords.shortBend == SHIPPED.shortBend);
+    CHECK(swords.turnTicks == SHIPPED.turnTicks);
+    CHECK(swords.arrivalSpeed == SHIPPED.arrivalSpeed);
+    CHECK(swords.retargetTicks == SHIPPED.retargetTicks);
+    CHECK(swords.retargetSpeed == SHIPPED.retargetSpeed);
+    CHECK(abilities->Valid());
+}
+
+TEST_CASE("a motion block sets the swords' motion in ticks and units a tick, and a key left out keeps its default") {
+    const std::expected<core::Abilities, core::Error> abilities =
+        data::ParseAbilities(WithMotion("aim_scatter: 30, turn: 0.25, arrival_speed: 1.5, retarget_speed: 1200"));
+    REQUIRE(abilities.has_value());
+    const core::VolleyShape& swords = abilities->Of(core::AbilityKind::FlyingSwords).volley;
+    constexpr f32 SCATTER = 30.0F;
+    constexpr u32 QUARTER_SECOND = 15;
+    constexpr f32 ARRIVAL = 1.5F;
+    constexpr f32 PER_TICK = 20.0F; // 1200 units a second
+    CHECK(swords.aimScatter == SCATTER);
+    CHECK(swords.turnTicks == QUARTER_SECOND);
+    CHECK(swords.arrivalSpeed == ARRIVAL);
+    CHECK(swords.retargetSpeed == PER_TICK);
+    CHECK(swords.shortBend == core::VolleyShape{}.shortBend);
+    CHECK(swords.retargetTicks == core::VolleyShape{}.retargetTicks);
+}
+
+TEST_CASE("the bolt takes a motion block too") {
+    const std::expected<core::Abilities, core::Error> abilities = data::ParseAbilities(
+        With("burn: { ticks: 3, damage: 40 } }", "burn: { ticks: 3, damage: 40 }, motion: { short_bend: 0.25 } }")
+    );
+    REQUIRE(abilities.has_value());
+    constexpr f32 QUARTER = 0.25F;
+    CHECK(abilities->Of(core::AbilityKind::FireBolt).volley.shortBend == QUARTER);
+}
+
+TEST_CASE("a motion value out of range is refused, naming the key") {
+    struct Broken {
+        std::string_view motion;
+        std::string_view says;
+    };
+    constexpr std::array<Broken, 8> CASES{ {
+        Broken{ .motion = "aim_scatter: -1", .says = "flying_swords's motion's aim_scatter" },
+        Broken{ .motion = "short_bend: 0", .says = "flying_swords's motion's short_bend" },
+        Broken{ .motion = "turn: -0.1", .says = "flying_swords's motion's turn" },
+        Broken{ .motion = "arrival_speed: 3.5", .says = "flying_swords's motion's arrival_speed" },
+        Broken{ .motion = "retarget: 0", .says = "flying_swords's motion's retarget is under 1 tick" },
+        Broken{ .motion = "retarget_speed: 0", .says = "flying_swords's motion's retarget_speed" },
+        Broken{ .motion = "retarget_speed: .inf", .says = "flying_swords's motion's retarget_speed" },
+        Broken{ .motion = "aim_scatter: wide", .says = "flying_swords's motion's aim_scatter isn't a number" },
+    } };
+    for (const Broken& broken : CASES) {
+        CAPTURE(broken.motion);
+        const core::Error error = ErrorFor(WithMotion(broken.motion));
+        CHECK(error.message.contains(broken.says));
+        CHECK(error.message.contains("abilities line"));
+    }
+}
+
+TEST_CASE("a motion block on an ability that flies nothing is refused with its line") {
+    const core::Error error = ErrorFor(With("duration: 0.15 }", "duration: 0.15, motion: { aim_scatter: 5 } }"));
+    CHECK(error.message.contains("dash has a motion but flies nothing"));
+    CHECK(error.message.contains("abilities line"));
+}
+
+TEST_CASE("an unknown motion key is a warning with its line") {
+    std::vector<std::string> warnings;
+    const std::expected<core::Abilities, core::Error> abilities = data::ParseAbilities(WithMotion("wobble: 3"), &warnings);
+    REQUIRE(abilities.has_value());
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0].contains("flying_swords's motion has no key wobble"));
+}
+
+TEST_CASE("a volley shape with a motion out of range is not valid") {
+    core::VolleyShape shape{};
+    CHECK(shape.Valid());
+    shape.retargetSpeed = 0.0F;
+    CHECK_FALSE(shape.Valid());
+    shape = {};
+    shape.arrivalSpeed = core::MAX_ARRIVAL_SPEED + 1.0F;
+    CHECK_FALSE(shape.Valid());
+    shape = {};
+    shape.retargetTicks = 0;
+    CHECK_FALSE(shape.Valid());
+}
+
+// ABILITIES with a combat section of `combat` after the loadout.
+std::string WithCombat(std::string_view combat) {
+    return std::format("{}combat:\n{}\n", ABILITIES, combat);
+}
+
+core::Error CombatErrorFor(const std::string& text) {
+    const std::expected<core::CombatRules, core::Error> rules = data::ParseCombatRules(text);
+    REQUIRE_FALSE(rules.has_value());
+    return rules.error();
+}
+
+TEST_CASE("a file without a combat section has the shipped rules") {
+    const std::expected<core::CombatRules, core::Error> rules = data::ParseCombatRules(ABILITIES);
+    REQUIRE(rules.has_value());
+    CHECK(rules->dyingTicks == core::CombatRules{}.dyingTicks);
+    CHECK(rules->Valid());
+}
+
+TEST_CASE("the combat rules read seconds as ticks, and the aura's reach and ranges") {
+    const std::expected<core::CombatRules, core::Error> rules = data::ParseCombatRules(WithCombat(
+        "  dying: 1\n  respawn: 0\n  arrive: 2\n  affliction_period: 0.5\n  flash: 0.25\n"
+        "  aura: { period: 2, reach: 100, damage_min: 1, damage_max: 2, healing_min: 3, healing_max: 4 }"
+    ));
+    REQUIRE(rules.has_value());
+    CHECK(rules->dyingTicks == 60);
+    CHECK(rules->respawnTicks == 0);
+    CHECK(rules->arriveTicks == 120);
+    CHECK(rules->afflictionPeriod == 30);
+    CHECK(rules->flashTicks == 15);
+    CHECK(rules->auraPeriod == 120);
+    CHECK(rules->auraReach == 100.0F);
+    CHECK(rules->auraDamageMin == 1);
+    CHECK(rules->auraDamageMax == 2);
+    CHECK(rules->auraHealingMin == 3);
+    CHECK(rules->auraHealingMax == 4);
+    CHECK(rules->Valid());
+}
+
+TEST_CASE("a combat value out of range is refused, naming the key") {
+    struct Broken {
+        std::string_view combat;
+        std::string_view says;
+    };
+    constexpr std::array<Broken, 8> CASES{ {
+        Broken{ .combat = "  dying: 0", .says = "combat's dying is under 1 tick" },
+        Broken{ .combat = "  respawn: -1", .says = "combat's respawn" },
+        Broken{ .combat = "  arrive: 0", .says = "combat's arrive is under 1 tick" },
+        Broken{ .combat = "  affliction_period: 0", .says = "combat's affliction_period is under 1 tick" },
+        Broken{ .combat = "  flash: 0", .says = "combat's flash is under 1 tick" },
+        Broken{ .combat = "  aura: { period: 0 }", .says = "combat's aura's period is under 1 tick" },
+        Broken{ .combat = "  aura: { reach: -5 }", .says = "combat's aura's reach" },
+        Broken{ .combat = "  aura: { damage_min: 500 }", .says = "damage_min above its damage_max" },
+    } };
+    for (const Broken& broken : CASES) {
+        CAPTURE(broken.combat);
+        const core::Error error = CombatErrorFor(WithCombat(broken.combat));
+        CHECK(error.message.contains(broken.says));
+        CHECK(error.message.contains("abilities line"));
+    }
+}
+
+TEST_CASE("an unknown combat key is a warning with its line") {
+    std::vector<std::string> warnings;
+    const std::expected<core::CombatRules, core::Error> rules =
+        data::ParseCombatRules(WithCombat("  dying: 1\n  mourning: 3"), &warnings);
+    REQUIRE(rules.has_value());
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0].contains("combat has no key mourning"));
+}
+
+TEST_CASE("the abilities reader leaves the combat section to the combat reader, without a warning") {
+    std::vector<std::string> warnings;
+    const std::expected<core::Abilities, core::Error> abilities = data::ParseAbilities(WithCombat("  dying: 1"), &warnings);
+    REQUIRE(abilities.has_value());
+    CHECK(warnings.empty());
 }
 
 } // namespace

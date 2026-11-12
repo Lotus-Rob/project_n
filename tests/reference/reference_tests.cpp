@@ -33,6 +33,9 @@
 
 namespace {
 
+// The shipped combat rules (assets/data/abilities.yaml's `combat:` section, which a data test checks).
+constexpr core::CombatRules RULES{};
+
 constexpr u32 WIDTH = 1280;
 constexpr u32 HEIGHT = 720;
 // Room for another CPU's rounding, not for a visible change: a missing orb must fail. Runs at other
@@ -218,7 +221,7 @@ TEST_CASE("the arena halfway between two ticks: interpolation and foot-y order")
 
 TEST_CASE("a fox dissolving, at half its progress") {
     constexpr u64 AURA_TICK = 60; // the aura's first hit, which kills every fox in its reach
-    constexpr u64 SHOWN_AT = AURA_TICK + (game::DYING_TICKS / 2);
+    constexpr u64 SHOWN_AT = AURA_TICK + (RULES.dyingTicks / 2);
     constexpr core::Vec2 CRYSTAL_FOOT{ .x = 420.0F, .y = 620.0F };
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;

@@ -209,23 +209,23 @@ struct VolleyView {
     u32 targets = 0;
 };
 
-/// How many ticks a Flash lasts: the simulation reports it from its start tick to the tick before this many after it.
-inline constexpr u64 FLASH_TICKS = 12;
-
 /// A burst at a point as the simulation reports it (the poison lance's strike), for the main thread to draw at the render
 /// time in its element's colour (core::UiColours): the simulation never colours it.
 struct Flash {
     /// Where it bursts, in world units.
     Vec2 point{};
-    /// The simulation tick it starts at; it lasts FLASH_TICKS.
+    /// The simulation tick it starts at.
     u64 startTick = 0;
+    /// How many ticks it lasts (CombatRules::flashTicks as it was cast), at least 1: it shows from its start tick to the
+    /// tick before this many after it.
+    u64 ticks = 1;
     /// The kind of the hits it came with: it picks the colour, never the ability.
     HitKind element = HitKind::Damage;
 
     /// Lists its fields for an archive (core/archive.hpp).
     template<typename Self, typename Archive>
     void Fields(this Self& self, Archive& archive) {
-        archive(self.point, self.startTick, self.element);
+        archive(self.point, self.startTick, self.ticks, self.element);
     }
 };
 
@@ -267,7 +267,7 @@ struct Snapshot {
     /// Every volley's targets, each volley's together (VolleyView::firstTarget); refilled in place likewise.
     std::vector<VolleyTarget>
         volleyTargets{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    /// The bursts showing, each for FLASH_TICKS from its start; refilled in place likewise.
+    /// The bursts showing, each for its `ticks` from its start; refilled in place likewise.
     std::vector<Flash> flashes{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// Whether the scene is a combat scene, where casts act.
     bool combat = false;
