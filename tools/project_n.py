@@ -1055,11 +1055,44 @@ def cmd_atlas(args):
           f"{MANIFEST} and {ATLAS_HEADER}; commit them with their inputs")
 
 
-def lint_units(sources):
-    """The .cpp files clang-tidy runs on: a header's findings surface through the files that include
-    it, so a changed header lints them all."""
-    header_changed = any(f.endswith(".hpp") for f in sources)
-    return [f for f in source_files() if f.endswith(".cpp") and (header_changed or f in sources)]
+DEPFILES_RE = re.compile(r'depfiles\s*=\s*"((?:[^"\\]|\\.)*)"', re.DOTALL)
+
+
+def unit_dependencies(bdir):
+    """Each unit (a .cpp, repo-relative) to the repo files its XMake record (`.deps/**/*.o.d`, a Lua table holding a
+    Make rule) names, itself included. Paths are spelt relative to ROOT or absolute; files outside ROOT are dropped."""
+    root = os.path.normpath(ROOT)
+    dependencies = {}
+    for record in Path(bdir).glob(".deps/**/*.o.d"):
+        m = DEPFILES_RE.search(record.read_text(encoding="utf-8", errors="replace"))
+        if not m:
+            continue
+        rule = re.sub(r"\\(.)", lambda e: {"n": "\n", "t": "\t"}.get(e[1], e[1]), m[1], flags=re.DOTALL)  # Lua's escapes
+        names = []
+        for token in (t.replace("\\ ", " ") for t in re.split(r"(?<!\\)\s+", rule) if t):  # Make's: `\ ` in a path
+            if token.endswith(":"):
+                continue  # the rule's target, the object
+            path = os.path.normpath(os.path.join(root, token))
+            if path.startswith(root + os.sep):
+                names.append(Path(os.path.relpath(path, root)).as_posix())
+        unit = next((n for n in names if n.endswith(".cpp")), None)
+        if unit:
+            dependencies[unit] = dependencies.get(unit, frozenset()) | frozenset(names)
+    return dependencies
+
+
+def lint_units(sources, dependencies):
+    """The .cpp files clang-tidy runs on: the changed ones, and those whose records name a changed file (a header's
+    findings surface through the units that include it). A unit without a record is always linted."""
+    changed = set(sources)
+    return [f for f in source_files() if f.endswith(".cpp")
+            and (f in changed or f not in dependencies or not dependencies[f].isdisjoint(changed))]
+
+
+def unreached_headers(sources, dependencies):
+    """Changed headers no unit's record names: no unit lints them."""
+    reached = set().union(*dependencies.values())
+    return sorted(f for f in sources if f.endswith(".hpp") and f not in reached)
 
 
 # The clone's own git config (design doc 0001.1): the commit hooks, and Git LFS's filters run through Pixi, as any git
@@ -1219,13 +1252,17 @@ def cmd_lint(args):
         run(["ruff", "check", "tools", "art"])
     if changed is None or any(f.startswith(".github/") for f in changed):
         run(["actionlint"])
-    units = lint_units(sources)
-    if not units:
+    if not any(f.endswith((".cpp", ".hpp")) for f in sources):
         print("lint: no changed C++ sources (--all covers every file)")
         return
     bdir = configure(LINT_PRESET, "debug")
     run(["xmake", "build"], env=xmake_env(bdir))
     run([*COMPDB, bdir], env=xmake_env(bdir))
+    # The build just refreshed every unit's record of what it includes: lint the units a change reaches.
+    dependencies = unit_dependencies(bdir)
+    units = lint_units(sources, dependencies)
+    for header in unreached_headers(sources, dependencies):
+        print(f"lint: {header} reaches no unit, not linted")
     # Lint is a gate: any finding in our own files fails `check`.
     try:
         print(f"+ clang-tidy --quiet -p {bdir} on {len(units)} unit(s), {jobs()} at a time"

@@ -218,13 +218,59 @@ class ScopeTest(unittest.TestCase):
         with temp_repo({"src/a.cpp": "a"}):
             self.assertIsNone(project_n.changed_files("0123456789abcdef0123456789abcdef01234567..HEAD"))
 
-    def test_a_changed_header_lints_every_source_file(self):
-        with temp_repo({"src/a.cpp": "a", "src/b.cpp": "b", "src/a.hpp": "h"}):
-            self.assertEqual(project_n.lint_units(["src/a.hpp"]), ["src/a.cpp", "src/b.cpp"])
+
+
+UNITS_FILES = {"src/a.cpp": "a", "src/b.cpp": "b", "src/a.hpp": "h"}
+UNITS_DEPS = {"src/a.cpp": frozenset({"src/a.cpp", "src/a.hpp"}), "src/b.cpp": frozenset({"src/b.cpp"})}
+
+
+class LintUnitsTest(unittest.TestCase):
+
+    def test_a_changed_header_lints_the_units_that_reach_it(self):
+        with temp_repo(UNITS_FILES):
+            self.assertEqual(project_n.lint_units(["src/a.hpp"], UNITS_DEPS), ["src/a.cpp"])
+
+    def test_a_header_every_unit_reaches_lints_every_unit(self):
+        deps = {unit: names | {"src/pch.hpp"} for unit, names in UNITS_DEPS.items()}
+        with temp_repo({**UNITS_FILES, "src/pch.hpp": "p"}):
+            self.assertEqual(project_n.lint_units(["src/pch.hpp"], deps), ["src/a.cpp", "src/b.cpp"])
+
+    def test_a_unit_without_a_record_is_always_linted(self):
+        with temp_repo(UNITS_FILES):
+            self.assertIn("src/b.cpp", project_n.lint_units(["src/a.hpp"], {"src/a.cpp": UNITS_DEPS["src/a.cpp"]}))
+
+    def test_a_record_for_a_deleted_unit_is_ignored(self):
+        deps = {**UNITS_DEPS, "src/gone.cpp": frozenset({"src/gone.cpp", "src/a.hpp"})}
+        with temp_repo(UNITS_FILES):
+            self.assertEqual(project_n.lint_units(["src/a.hpp"], deps), ["src/a.cpp"])
 
     def test_a_changed_source_file_lints_only_itself(self):
-        with temp_repo({"src/a.cpp": "a", "src/b.cpp": "b"}):
-            self.assertEqual(project_n.lint_units(["src/a.cpp"]), ["src/a.cpp"])
+        with temp_repo(UNITS_FILES):
+            self.assertEqual(project_n.lint_units(["src/a.cpp"], UNITS_DEPS), ["src/a.cpp"])
+
+    def test_every_source_lints_every_unit(self):
+        with temp_repo(UNITS_FILES):
+            self.assertEqual(project_n.lint_units(project_n.source_files(), {}), ["src/a.cpp", "src/b.cpp"])
+
+    def test_a_header_no_record_names_is_reported(self):
+        self.assertEqual(project_n.unreached_headers(["src/new.hpp", "src/a.hpp", "src/a.cpp"], UNITS_DEPS), ["src/new.hpp"])
+
+    def test_records_spell_paths_relative_and_absolute(self):
+        with temp_repo(UNITS_FILES) as root:
+            record = root / "bdir/.deps/core/linux/x86_64/debug/src/a.cpp.o.d"
+            record.parent.mkdir(parents=True)
+            record.write_text('{\n    depfiles = "bdir/.objs/core/linux/x86_64/debug/src/__cpp_a.cpp.cpp:   src/a.cpp   '
+                              f'{root}/src/b.hpp   /opt/pkg/include/x.h\\\n   src/c.hpp\\\n",\n    values = {{ }}\n}}\n')
+            self.assertEqual(project_n.unit_dependencies(root / "bdir"),
+                             {"src/a.cpp": frozenset({"src/a.cpp", "src/b.hpp", "src/c.hpp"})})
+
+    def test_records_escape_spaces_in_paths(self):
+        with temp_repo({"my src/a.cpp": "a"}) as root:
+            record = root / "bdir/.deps/a.cpp.o.d"
+            record.parent.mkdir(parents=True)
+            record.write_text('{ depfiles = "bdir/__cpp_a.cpp.cpp: my\\\\ src/a.cpp my\\\\ src/a.hpp" }')
+            self.assertEqual(project_n.unit_dependencies(root / "bdir"),
+                             {"my src/a.cpp": frozenset({"my src/a.cpp", "my src/a.hpp"})})
 
 
 class StagedFormatTest(unittest.TestCase):
