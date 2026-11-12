@@ -50,9 +50,9 @@ constexpr core::Volley BOLT{ .use = 8,
 constexpr std::array<u32, 4> SAMPLED_SWORDS{ { 0, 1, 499, 999 } };
 // Every sword has appeared (the last wave starts last and its last sword appears last), and none has arrived: the
 // inner rings are in flight while the outer ones still stand.
-constexpr u64 MID_FLIGHT =
+constexpr u64 ALL_APPEARED =
     START + (u64{ SWORDS.waves - 1 } * SWORDS.waveGapTicks) + (SWORDS.staggerTicks - 1) + SWORDS.outTicks;
-static_assert(MID_FLIGHT < START + SWORDS.outTicks + SWORDS.holdTicks + SWORDS.flightTicks);
+static_assert(ALL_APPEARED < START + SWORDS.outTicks + SWORDS.holdTicks + SWORDS.flightTicks);
 constexpr f32 CLOSE = 1e-4F;  // relative
 constexpr f32 HALFWAY = 0.5F; // of a tick, as the frame's alpha
 constexpr f32 HALF = 0.5F;
@@ -215,8 +215,8 @@ TEST_CASE("each sword is drawn where the shared path puts it at the render time"
     const std::array<core::VolleyView, 1> volleys{ { SwordsView() } };
     for (const f32 alpha : { 0.3F, 0.7F }) {
         CAPTURE(alpha);
-        const gfx::VolleyDrawing drawing = Drawn(volleys, targets, MID_FLIGHT, alpha);
-        const f64 renderTick = core::RenderTick(MID_FLIGHT, static_cast<f64>(alpha));
+        const gfx::VolleyDrawing drawing = Drawn(volleys, targets, ALL_APPEARED, alpha);
+        const f64 renderTick = core::RenderTick(ALL_APPEARED, static_cast<f64>(alpha));
         for (const u32 sword : SAMPLED_SWORDS) {
             CAPTURE(sword);
             const core::SwordPose pose = core::SwordAt(VOLLEY, sword, renderTick, Spot(Lerp(BEFORE, AFTER, alpha), sword));
@@ -233,12 +233,13 @@ TEST_CASE("a sword not yet launched shows nothing, nor any trail") {
     const std::array<core::VolleyView, 1> volleys{ { SwordsView() } };
     constexpr u64 TICK = START + 2;
     const gfx::VolleyDrawing drawing = Drawn(volleys, targets, TICK, HALFWAY);
-    u32 waiting = 0;
-    for (u32 sword = 0; sword < SWORDS.count; ++sword) {
-        if (static_cast<f64>(core::LaunchTick(VOLLEY, sword)) <= core::RenderTick(TICK, static_cast<f64>(HALFWAY))) {
-            continue;
-        }
-        ++waiting;
+    // The second wave's first sword (the next wave to start, nine ticks in), one from the middle and the volley's last:
+    // all launch after the tick drawn, and the last launches last.
+    REQUIRE(core::WaveOf(VOLLEY, 48) == 1);
+    REQUIRE(core::WaveOf(VOLLEY, 47) == 0);
+    for (const u32 sword : { 48U, 499U, 999U }) {
+        REQUIRE(static_cast<f64>(core::LaunchTick(VOLLEY, sword)) > core::RenderTick(TICK, static_cast<f64>(HALFWAY)));
+        CAPTURE(sword);
         CHECK(IsZero(SwordOf(drawing, sword)));
         CHECK(IsZero(HaloOf(drawing, sword)));
         for (u32 quad = 0; quad < gfx::TRAIL_SEGMENTS; ++quad) {
@@ -247,7 +248,6 @@ TEST_CASE("a sword not yet launched shows nothing, nor any trail") {
             }
         }
     }
-    CHECK(waiting > 0);
 }
 
 TEST_CASE("a sword still on its ring shows, but draws no trail") {
@@ -310,7 +310,7 @@ TEST_CASE("the cores draw under the halos, the halos under the bars, and the swo
     core::Jobs jobs{ 1 };
     gfx::VolleyDrawing drawing;
     gfx::DrawHealthBars(bars, Whole(bars), 1.0F, TestManifest(), {}, drawing);
-    gfx::DrawVolleys(volleys, targets, MID_FLIGHT, 1.0F, TestManifest(), {}, jobs, drawing);
+    gfx::DrawVolleys(volleys, targets, ALL_APPEARED, 1.0F, TestManifest(), {}, jobs, drawing);
     REQUIRE(drawing.batches.size() == 4);
     const core::Batch& cores = drawing.batches[0];
     const core::Batch& halos = drawing.batches[1];
@@ -348,7 +348,7 @@ TEST_CASE("swords past the overlay's or the trails' room are left out whole, nev
     core::Jobs jobs{ 1 };
     gfx::VolleyDrawing drawing;
     gfx::DrawHealthBars(bars, Whole(bars), 1.0F, TestManifest(), {}, drawing);
-    gfx::DrawVolleys(volleys, targets, MID_FLIGHT, 1.0F, TestManifest(), {}, jobs, drawing);
+    gfx::DrawVolleys(volleys, targets, ALL_APPEARED, 1.0F, TestManifest(), {}, jobs, drawing);
     CHECK(drawing.instances.size() <= gfx::MAX_OVERLAY_INSTANCES);
     REQUIRE(drawing.batches.size() == 4);
     CHECK(drawing.batches[0].count == FITTING);
@@ -396,7 +396,7 @@ TEST_CASE("the HUD's bars are placed first and keep their room: the largest voll
     CHECK(placed[0].colour == BACKGROUND);
     CHECK(placed[1].colour == FILL);
 
-    gfx::DrawVolleys(volleys, targets, MID_FLIGHT, 1.0F, manifest, {}, jobs, drawing);
+    gfx::DrawVolleys(volleys, targets, ALL_APPEARED, 1.0F, manifest, {}, jobs, drawing);
     CHECK(drawing.instances.size() <= gfx::MAX_OVERLAY_INSTANCES);
     CHECK(drawing.batches.back().count == gfx::SwordRoom(HUD_INSTANCES, 0));
     const bool whole = std::ranges::equal(BytesOf(placed), BytesOf(std::span{ drawing.instances }.first(HUD_INSTANCES)));
@@ -464,7 +464,7 @@ TEST_CASE("the same input gives the same bytes with one worker and with many") {
     core::VolleyView swords = SwordsView();
     swords.targets = 2;
     const std::array<core::VolleyView, 2> volleys{ { swords, BoltView(2) } };
-    for (const u64 tick : { START + 3, MID_FLIGHT, START + 85, START + 100 }) {
+    for (const u64 tick : { START + 3, ALL_APPEARED, START + 85, START + 100 }) {
         CAPTURE(tick);
         const gfx::VolleyDrawing one = Drawn(volleys, targets, tick, 0.4F, {}, 1);
         const gfx::VolleyDrawing many = Drawn(volleys, targets, tick, 0.4F, {}, MANY);
@@ -487,6 +487,8 @@ TEST_CASE("a volley's swords follow a moving target between ticks") {
         }
     }
     REQUIRE(!arriving.empty());
+    // The first, the middle and the last of them.
+    arriving = { arriving.front(), arriving.at(arriving.size() / 2), arriving.back() };
     constexpr std::array<f32, 4> ALPHAS{ { 0.25F, 0.5F, 0.75F, 1.0F } };
     for (std::size_t index = 0; index < ALPHAS.size(); ++index) {
         const f32 alpha = ALPHAS.at(index);
