@@ -57,13 +57,6 @@ constexpr Prop ARENA_GLOW{ .sprite = SpriteId::OrbGold, .foot = { .x = 1720.0F, 
 constexpr Prop CRYSTAL{ .sprite = SpriteId::CrystalIce, .foot = { .x = 420.0F, .y = 620.0F }, .scale = 0.8F };
 constexpr f32 CRYSTAL_SPIN = 0.02F; // radians per tick: a turn in about five seconds
 
-// The crystal's aura: every AURA_PERIOD simulation ticks it hits what is within AURA_REACH world units of its foot.
-constexpr u64 AURA_PERIOD = 60;
-constexpr f32 AURA_REACH = 320.0F;
-constexpr u32 AURA_DAMAGE_MIN = 50;
-constexpr u32 AURA_DAMAGE_MAX = 400;
-constexpr u32 AURA_HEALING_MIN = 50;
-constexpr u32 AURA_HEALING_MAX = 200;
 // The debug burst: DEBUG_BURST_HITS hits round the foxes, values from 1 to DEBUG_BURST_MAX.
 constexpr u32 DEBUG_BURST_HITS = 4'000;
 constexpr u32 DEBUG_BURST_MAX = 99;
@@ -328,6 +321,7 @@ constexpr core::GameData BUILT_IN_DATA{
             core::AbilityKind::None,
         } },
     },
+    .combat = core::CombatRules{}, // the shipped rules; a test checks that abilities.yaml says the same
 };
 
 } // namespace
@@ -404,6 +398,7 @@ void Arena::Build(game::Scene scene) {
     m_state = core::State{ DOMAINS, SEED };
     m_relationships = Relationships{};
     m_combat = Combat{};
+    m_combat.SetRules(m_data.combat);
     m_scene = scene;
     m_sceneId = SceneIdOf(*m_manifest, scene);
     m_view = ViewOf(scene);
@@ -569,7 +564,7 @@ void Arena::Respawn(const core::TickCounters& counters, u32 index) {
         .speed = m_data.fox.orbitSpeed,
     };
     const core::Entity entity = SpawnFox(orbit, edge);
-    m_state[ACTIVE].Entities().emplace<Arriving>(entity, edge, counters.simulation, ARRIVE_TICKS);
+    m_state[ACTIVE].Entities().emplace<Arriving>(entity, edge, counters.simulation, m_data.combat.arriveTicks);
     PN_LOG_DEBUG(
         "tick {}: a fox respawns as entity {} at ({}, {})",
         counters.simulation,
@@ -639,7 +634,7 @@ void Arena::Tick(const core::TickCounters& counters, const core::TickInput& inpu
     }
     DecideActive(active, m_state.Seed(), counters.state, counters.simulation);
     WalkActive(active);
-    if (IsCombatScene() && counters.simulation % AURA_PERIOD == 0) {
+    if (IsCombatScene() && counters.simulation % m_data.combat.auraPeriod == 0) {
         Aura(counters, events);
     }
     if (std::ranges::contains(input.actions, core::ActionKind::DebugBurst, &core::Action::kind)) {
@@ -738,17 +733,19 @@ void Arena::Aura(const core::TickCounters& counters, std::vector<core::Event>& e
     const u64 use = core::AbilityUse(counters.simulation, USE_AURA);
     const std::size_t first = events.size();
     const core::Registry& entities = m_state[ACTIVE].Entities();
+    const core::CombatRules& rules = m_data.combat;
+    const f32 reach = rules.auraReach;
     for (auto [entity, body, creature, target] : entities.view<const Body, const Creature, const core::StableId>().each()) {
         const core::Vec2 away = body.current - CRYSTAL.foot;
-        if ((away.x * away.x) + (away.y * away.y) > AURA_REACH * AURA_REACH || entities.all_of<Dying>(entity)) {
+        if ((away.x * away.x) + (away.y * away.y) > reach * reach || entities.all_of<Dying>(entity)) {
             continue;
         }
         const bool healing = creature.kind == CreatureKind::Cultivator;
         if (!healing && creature.kind != CreatureKind::Fox) {
             continue;
         }
-        const u32 low = healing ? AURA_HEALING_MIN : AURA_DAMAGE_MIN;
-        const u32 high = healing ? AURA_HEALING_MAX : AURA_DAMAGE_MAX;
+        const u32 low = healing ? rules.auraHealingMin : rules.auraDamageMin;
+        const u32 high = healing ? rules.auraHealingMax : rules.auraDamageMax;
         const u64 random = core::Random(m_state.Seed(), counters.state, std::to_underlying(target), PURPOSE_AURA, 0);
         events.push_back(
             {
@@ -906,6 +903,7 @@ void Arena::SetData(const core::GameData& data) {
 }
 
 void Arena::ApplyData() {
+    m_combat.SetRules(m_data.combat);
     core::Registry& entities = m_state[ACTIVE].Entities();
     for (auto [entity, creature, look] : entities.view<const Creature, Look>().each()) {
         const core::CreatureData& kind = DataOf(creature.kind);
@@ -959,7 +957,7 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
             const Spin spin = spins.contains(entity) ? spins.get(entity) : Spin{};
             // A dying entity can't be picked, hovered or outlined: its instance names none.
             const bool dying = dyings.contains(entity);
-            const f32 dissolve = dying ? DissolveAt(dyings.get(entity), tick) : 0.0F;
+            const f32 dissolve = dying ? DissolveAt(dyings.get(entity), tick, m_data.combat.dyingTicks) : 0.0F;
             if (look.shadow) {
                 m_drawList.Add(
                     chunk,

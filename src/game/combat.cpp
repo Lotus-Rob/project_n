@@ -106,7 +106,7 @@ AfflictionState& AfflictionOf(Afflictions& afflictions, core::HitKind element) {
     return element == core::HitKind::Poison ? afflictions.poison : afflictions.burn;
 }
 
-// Leaves `affliction` (its damage as cast) of `element` on `entity` for `use`, its first tick AFFLICTION_PERIOD after
+// Leaves `affliction` (its damage as cast) of `element` on `entity` for `use`, its first tick `period` after
 // `tick`: refreshing one there, whose use is added to `ending` if it was another's. Nothing for an affliction of no ticks.
 void Afflict(
     core::Registry& entities,
@@ -115,6 +115,7 @@ void Afflict(
     const core::Affliction& affliction,
     u64 use,
     u64 tick,
+    u64 period,
     std::vector<u64>& ending
 ) {
     if (affliction.ticks == 0) {
@@ -124,7 +125,7 @@ void Afflict(
     if (state.ticksLeft > 0 && state.use != use) {
         ending.push_back(state.use); // refreshed: its ticks are the new use's now
     }
-    state = { .damage = affliction.damage, .ticksLeft = affliction.ticks, .use = use, .nextTick = tick + AFFLICTION_PERIOD };
+    state = { .damage = affliction.damage, .ticksLeft = affliction.ticks, .use = use, .nextTick = tick + period };
 }
 
 // Deals each affliction due at `tick` on a living creature: a hit of its element and use at the creature's head. An
@@ -133,6 +134,7 @@ void TickAfflictions(
     core::State& state,
     const core::Manifest& manifest,
     u64 tick,
+    u64 period,
     std::vector<core::Event>& events,
     std::vector<u64>& ending
 ) {
@@ -161,7 +163,7 @@ void TickAfflictions(
                 }
             );
             --affliction.ticksLeft;
-            affliction.nextTick += AFFLICTION_PERIOD;
+            affliction.nextTick += period;
             if (affliction.ticksLeft == 0) {
                 ending.push_back(affliction.use);
             }
@@ -294,10 +296,10 @@ void Combat::DealStrike(
         );
         Damage(state, enemy.entity, strike.damage, tick);
         if (!entities.all_of<Dying>(entity)) {
-            Afflict(entities, entity, strike.element, strike.affliction, strike.use, tick, ending);
+            Afflict(entities, entity, strike.element, strike.affliction, strike.use, tick, m_rules.afflictionPeriod, ending);
         }
     }
-    m_flashes.push_back({ .point = strike.point, .startTick = tick, .element = strike.element });
+    m_flashes.push_back({ .point = strike.point, .startTick = tick, .ticks = m_rules.flashTicks, .element = strike.element });
     PN_LOG_DEBUG(
         "tick {}: the poison lance strikes at ({}, {}): {} enemies hit", tick, strike.point.x, strike.point.y, tagged.size()
     );
@@ -317,7 +319,7 @@ void Combat::Launch(
     std::vector<Tagged> tagged = Tag(entities, manifest, cast.point, ability.radius);
     const core::Vec2 origin = ChestOf(entities, manifest, caster).current;
     core::VolleyShape shape = ability.volley;
-    shape.commitTicks = core::CommitTicksFor(ability.radius);
+    shape.commitTicks = core::CommitTicksFor(ability.radius, shape);
     if (kind == core::AbilityKind::FireBolt) {
         if (!tagged.empty()) {
             // Ties go to the first in stable ID order, as min_element keeps the first of equals.
@@ -420,13 +422,19 @@ i64 HitAmount(const core::AbilityData& /*ability*/, i64 base) {
     return HitAmount(base);
 }
 
-f32 DissolveAt(const Dying& dying, u64 tick) {
-    // Over the ticks it is drawn, the last of them fully dissolved, so nothing is left to vanish at its removal.
-    constexpr u64 DRAWN_STEPS = DYING_TICKS - 1;
+f32 DissolveAt(const Dying& dying, u64 tick, u64 dyingTicks) {
+    // Over the ticks it is drawn, the last of them fully dissolved, so nothing is left to vanish at its removal. A
+    // dissolve of one tick is drawn in one step.
+    const u64 drawnSteps = std::max<u64>(dyingTicks, 2) - 1;
     if (tick <= dying.startTick) {
         return 0.0F;
     }
-    return static_cast<f32>(std::min(tick - dying.startTick, DRAWN_STEPS)) / static_cast<f32>(DRAWN_STEPS);
+    return static_cast<f32>(std::min(tick - dying.startTick, drawnSteps)) / static_cast<f32>(drawnSteps);
+}
+
+void Combat::SetRules(const core::CombatRules& rules) {
+    PN_ASSERT(rules.Valid(), "combat rules the data module should have refused");
+    m_rules = rules;
 }
 
 void Combat::Damage(core::State& state, core::StableId target, i64 amount, u64 tick) {
@@ -482,10 +490,12 @@ u32 Combat::Tick(core::State& state, u64 tick) {
 
     std::vector<core::StableId> dead;
     for (auto [entity, dying, creature, stableId] : entities.view<const Dying, const Creature, const core::StableId>().each()) {
-        if (tick >= dying.startTick + DYING_TICKS) {
+        if (tick >= dying.startTick + m_rules.dyingTicks) {
             dead.push_back(stableId);
             if (creature.kind == CreatureKind::Fox) {
-                m_respawns.push_back(tick + RESPAWN_TICKS);
+                // In order: new game data may have shortened the respawn since an earlier one was queued.
+                const u64 respawnAt = tick + m_rules.respawnTicks;
+                m_respawns.insert(std::ranges::upper_bound(m_respawns, respawnAt), respawnAt);
             }
         }
     }
@@ -529,7 +539,7 @@ void Combat::Arrive(
     u64 tick,
     std::vector<core::Event>& events,
     std::vector<u64>& ending
-) {
+) const {
     // At its arrival tick (`tick`), and from then on, the target a sword flies at is the one it strikes.
     const core::VolleyTarget& target = flight.targets.at(core::SwordTarget(flight.volley, sword, tick, flight.targets));
     // A target dead before this tick, or the point, takes nothing: the sword plunges. The renderer asks the same.
@@ -551,7 +561,7 @@ void Combat::Arrive(
     );
     Damage(state, target.entity, flight.damage, tick);
     if (!entities.all_of<Dying>(entity)) {
-        Afflict(entities, entity, flight.element, flight.affliction, use, tick, ending);
+        Afflict(entities, entity, flight.element, flight.affliction, use, tick, m_rules.afflictionPeriod, ending);
     }
 }
 
@@ -574,7 +584,7 @@ void Combat::Strike(core::State& state, const core::Manifest& manifest, u64 tick
     PN_PROFILE_ZONE();
     std::vector<u64> ending; // uses whose holds may have ended this tick
     FollowTargets(state, manifest);
-    TickAfflictions(state, manifest, tick, events, ending);
+    TickAfflictions(state, manifest, tick, m_rules.afflictionPeriod, events, ending);
     // After the afflictions due, as a sword's arrival is: a strike refreshing one due now deals that tick first.
     for (const LanceStrike& strike : m_strikes) {
         DealStrike(state, manifest, strike, tick, events, ending);
@@ -601,7 +611,7 @@ void Combat::Strike(core::State& state, const core::Manifest& manifest, u64 tick
         return !flight.Pending() && tick > flight.lastArrival + flight.volley.shape.fadeTicks;
     });
     // None starts after `tick`: a cast starts it at its tick, and Arena::Load() refuses one from a later tick.
-    std::erase_if(m_flashes, [tick](const core::Flash& flash) { return tick - flash.startTick >= core::FLASH_TICKS; });
+    std::erase_if(m_flashes, [tick](const core::Flash& flash) { return tick - flash.startTick >= flash.ticks; });
 }
 
 void Combat::EndReleased(const core::State& state, std::vector<u64>& ending, u64 tick, std::vector<core::Event>& events) const {
@@ -725,8 +735,8 @@ std::vector<u64> ReadRespawns(core::Reader& archive) {
     return respawns;
 }
 
-// The flashes Combat::Save() wrote, failing `archive` on a count past what is left, a point that isn't finite or an
-// unknown element.
+// The flashes Combat::Save() wrote, failing `archive` on a count past what is left, a point that isn't finite, no ticks
+// or an unknown element.
 std::vector<core::Flash> ReadFlashes(core::Reader& archive) {
     u64 count = 0;
     archive(count);
@@ -739,7 +749,7 @@ std::vector<core::Flash> ReadFlashes(core::Reader& archive) {
     for (u64 i = 0; i < count && !archive.Failed(); ++i) {
         core::Flash flash;
         archive(flash);
-        if (!core::IsFinite(flash.point) || std::to_underlying(flash.element) >= core::HIT_KINDS) {
+        if (!core::IsFinite(flash.point) || flash.ticks == 0 || std::to_underlying(flash.element) >= core::HIT_KINDS) {
             archive.Fail();
         }
         flashes.push_back(flash);

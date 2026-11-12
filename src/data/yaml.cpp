@@ -1,5 +1,6 @@
 #include "data/internal/yaml.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/tick_clock.hpp"
 
 namespace data::internal {
 
@@ -62,6 +63,118 @@ std::expected<i64, core::Error> WholeNumber(
         return fail(node, std::format("{}'s {} isn't a whole number from 0 to {}", name, key, limit));
     }
     return static_cast<i64>(value);
+}
+
+namespace {
+
+// The most seconds a time may be: well within a u32's ticks.
+constexpr f64 MOST_SECONDS = 1'000'000.0;
+
+std::unexpected<core::Error> Refuse(std::string_view what, const YAML::Node& node, std::string_view why) {
+    return std::unexpected{ core::Error{ std::format("{} line {}: {}", what, node.Mark().line + 1, why) } };
+}
+
+std::string Describe(const Range& range) {
+    const bool bounded = std::isfinite(range.high);
+    if (range.lowOpen) {
+        return bounded ? std::format("a number above {} and up to {}", range.low, range.high)
+                       : std::format("a number above {}", range.low);
+    }
+    return bounded ? std::format("a number from {} to {}", range.low, range.high)
+                   : std::format("a number of {} or more", range.low);
+}
+
+} // namespace
+
+std::expected<f64, core::Error> TunedNumber(
+    std::string_view what,
+    const YAML::Node& map,
+    std::string_view name,
+    const char* key,
+    f64 fallback,
+    const Range& range
+) {
+    const YAML::Node node = map[key];
+    if (!node) {
+        return fallback;
+    }
+    f64 value = 0.0;
+    try {
+        value = node.as<f64>();
+    }
+    catch (const YAML::Exception&) {
+        return Refuse(what, node, std::format("{}'s {} isn't a number", name, key));
+    }
+    const bool low = range.lowOpen ? value > range.low : value >= range.low;
+    if (!std::isfinite(value) || !low || value > range.high) {
+        return Refuse(what, node, std::format("{}'s {} isn't {}", name, key, Describe(range)));
+    }
+    return value;
+}
+
+std::expected<f64, core::Error> RequiredNumber(
+    std::string_view what,
+    const YAML::Node& map,
+    std::string_view name,
+    const char* key,
+    const Range& range
+) {
+    if (!map[key]) {
+        return Refuse(what, map, std::format("{} has no {}", name, key));
+    }
+    return TunedNumber(what, map, name, key, 0.0, range);
+}
+
+std::expected<i64, core::Error> TunedWhole(
+    std::string_view what,
+    const YAML::Node& map,
+    std::string_view name,
+    const char* key,
+    i64 fallback,
+    i64 limit
+) {
+    if (!map[key]) {
+        return fallback;
+    }
+    return WholeNumber(what, map, name, key, false, limit);
+}
+
+std::expected<u32, core::Error> TunedTicks(
+    std::string_view what,
+    const YAML::Node& map,
+    std::string_view name,
+    const char* key,
+    u32 fallback,
+    u32 least
+) {
+    if (!map[key]) {
+        return fallback;
+    }
+    return TunedNumber(what, map, name, key, 0.0, { .low = 0.0, .lowOpen = false, .high = MOST_SECONDS })
+        .and_then([&](f64 seconds) -> std::expected<u32, core::Error> {
+            const u32 ticks =
+                seconds > 0.0 ? static_cast<u32>(std::max(1.0, std::round(seconds * static_cast<f64>(core::TICKS_PER_SECOND))))
+                              : 0U;
+            if (ticks < least) {
+                return Refuse(
+                    what, map[key], std::format("{}'s {} is under {} tick{}", name, key, least, least == 1 ? "" : "s")
+                );
+            }
+            return ticks;
+        });
+}
+
+std::expected<u32, core::Error> RequiredTicks(
+    std::string_view what,
+    const YAML::Node& map,
+    std::string_view name,
+    const char* key,
+    u32 least
+) {
+    if (!map[key]) {
+        return Refuse(what, map, std::format("{} has no {}", name, key));
+    }
+    return TunedTicks(what, map, name, key, 0, least);
 }
 
 void NoteUnknownKeys(

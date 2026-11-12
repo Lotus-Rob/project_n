@@ -9,17 +9,39 @@
 # (a wave's swords appear one after another clockwise round its ring over this); out (each fades in at its place,
 # pointing out); hold (every sword stays still); depart_jitter (each then waits up to this more before it leaves);
 # flight; sweep (how far a flight bends) and sweep_jitter (how much each sword's bend differs, a fraction below 1); fade.
+# motion (any projectile ability, the bolt too; a key left out keeps its shipped number): aim_scatter (how far from its
+# target's middle a sword aims at most, world units: swords spread over a creature), short_bend (the bend of a short
+# flight as a fraction of its chord, above 0), turn (seconds a sword takes to turn from pointing out of its ring to
+# facing its flight), arrival_speed (its speed on arrival as a multiple of its average speed, 0 to 3), retarget (the
+# fewest seconds a swing to another target takes, above 0) and retarget_speed (the fastest average speed of that swing,
+# world units a second, above 0: it also sets how long before its arrival a target must die for a sword to move on).
 # loadout: which ability sits in each slot (generator, spender, movement, special_1..special_4, ultimate); a slot left
 # out is empty.
+# combat: the rules of the fight, times in seconds: dying (a death's dissolve, above 0), respawn (after a fox's removal
+# another takes its place), arrive (a respawned fox eases from the ground's edge into its orbit, above 0),
+# affliction_period (between a burn's or poison's ticks, above 0), flash (the poison lance's burst, above 0), and the
+# crystal's aura: period (between its hits, above 0), reach (world units), damage_min..damage_max (what a hit deals a
+# fox, drawn evenly) and healing_min..healing_max (what it heals the cultivator).
 qi: { max: 100, start: 50 }
 abilities:
   fire_bolt:     { slot: generator, cooldown: 0.25, qi_gain: 10, damage: 140, element: burn, radius: 120, speed: 1500,
-                   burn: { ticks: 3, damage: 40 } }
+                   burn: { ticks: 3, damage: 40 },
+                   motion: { aim_scatter: 18, short_bend: 0.5, turn: 0.1333, arrival_speed: 0.5, retarget: 0.1333,
+                             retarget_speed: 960 } }
   poison_lance:  { slot: spender, cooldown: 0.5, qi_cost: 25, damage: 360, element: poison, radius: 90,
                    poison: { ticks: 4, damage: 60 } }
   dash:          { slot: movement, cooldown: 1.0, distance: 260, duration: 0.15 }
   flying_swords: { slot: special, cooldown: 6, qi_cost: 60, damage: 20, radius: 260,
                    swords: { count: 1000, waves: 10, wave_gap: 0.15, ring_radius: 160, ring_step: 38, scatter: 0,
                              angle_jitter: 0, stagger: 0.05, out: 0.12, hold: 0.3, depart_jitter: 0.25, flight: 1.7,
-                             sweep: 420, sweep_jitter: 0.6, fade: 0.3 } }
+                             sweep: 420, sweep_jitter: 0.6, fade: 0.3 },
+                   motion: { aim_scatter: 18, short_bend: 0.5, turn: 0.1333, arrival_speed: 0.5, retarget: 0.1333,
+                             retarget_speed: 960 } }
 loadout: { generator: fire_bolt, spender: poison_lance, movement: dash, special_1: flying_swords }
+combat:
+  dying: 0.5
+  respawn: 3
+  arrive: 3
+  affliction_period: 1
+  flash: 0.2
+  aura: { period: 1, reach: 320, damage_min: 50, damage_max: 400, healing_min: 50, healing_max: 200 }

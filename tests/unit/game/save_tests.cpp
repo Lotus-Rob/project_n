@@ -14,6 +14,9 @@
 
 namespace {
 
+// The shipped combat rules (assets/data/abilities.yaml's `combat:` section, which a data test checks).
+constexpr core::CombatRules RULES{};
+
 constexpr u64 TICKS = 5;
 constexpr u64 MONTHS = 12; // enough for relationships to form
 // The simulation tick every save here is loaded as made at: past any tick they played to, so only a flash dated after it
@@ -295,7 +298,7 @@ TEST_CASE("the save round-trips mid-burn") {
     std::vector<core::Event> used;
     u32 differentEvents = 0; // ticks whose events differ, counted so the test asserts the worst once
     u32 differentStates = 0;
-    for (u64 tick = savedAt + 1; tick <= savedAt + (BURN_TICKS * game::AFFLICTION_PERIOD) + 1; ++tick) {
+    for (u64 tick = savedAt + 1; tick <= savedAt + (BURN_TICKS * RULES.afflictionPeriod) + 1; ++tick) {
         std::vector<core::Event> savedEvents;
         std::vector<core::Event> loadedEvents;
         saved.Tick(At(tick), {}, savedEvents);
@@ -858,7 +861,10 @@ TEST_CASE("a save with a flash that starts after the save's tick is refused") {
     constexpr core::Vec2 POINT{ .x = 100.0F, .y = 50.0F };
     const core::State state{ game::DOMAINS, STATE_SEED };
     const std::vector<std::byte> bytes = ArenaSave(
-        state, {}, std::nullopt, core::Flash{ .point = POINT, .startTick = STARTED, .element = core::HitKind::Poison }
+        state,
+        {},
+        std::nullopt,
+        core::Flash{ .point = POINT, .startTick = STARTED, .ticks = RULES.flashTicks, .element = core::HitKind::Poison }
     );
     game::Arena game(test::TestManifest(), game::Scene::Arena);
     core::Reader reader{ bytes };

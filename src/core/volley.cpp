@@ -29,25 +29,17 @@ constexpr u32 PURPOSE_BAND = 7;
 // Keyed on the wave, not a sword: how far round each ring's even spacing starts, so no two rings line up.
 constexpr u32 PURPOSE_WAVE_TURN = 8;
 
-// The bend of a short flight, as a fraction of its chord. Long flights approach the shape's sweep instead.
-constexpr f64 SHORT_BEND = 0.5;
-// Ticks a sword takes to turn from pointing out of its ring to facing its flight, as it sets off, its flight easing from
-// rest: long enough that even half a turn stays a visible swing (at most 0.6 rad a tick). The trade-off for the look:
-// the turn overlaps the flight's start, so by its end a sword has moved up to about 25 world units along its flight
-// (about 1.5% of it), under about 7 while it still points more than 90° off the way it moves.
-constexpr f64 TURN_TICKS = 8.0;
-// A sword's speed at its arrival, as a multiple of its average speed in flight: it still strikes rather than settles.
-constexpr f64 ARRIVAL_SPEED = 0.5;
-// A cubic Bézier whose inner control points sit the same distance to one side of its chord bends 3/4 of that distance
-// at its middle; this offset makes the bend exactly the wanted one.
+// Not tuning data, though it shapes the bend: a cubic Bézier whose inner control points sit the same distance to one side
+// of its chord bends 3/4 of that distance at its middle, so this offset makes the bend exactly the shape's `sweep`.
 constexpr f64 SIDE_ARM = 4.0 / 3.0;
-// The inner control points sit a third of the way along the chord from each end, so a flight with no bend is paced evenly.
+// Maths, not tuning: the inner control points sit a third of the way along the chord from each end, so a flight with no bend is
+// paced evenly.
 constexpr f64 THIRD = 1.0 / 3.0;
-// The middle of a random number's range [0, 1).
+// Maths: the middle of a random number's range [0, 1).
 constexpr f64 HALF = 0.5;
-// The ring's angles, in radians.
+// Maths: the ring's angles, in radians.
 constexpr f64 FULL_TURN = 2.0 * std::numbers::pi;
-// A cubic Hermite curve's coefficients of u² and u³ for a move from rest to rest: 3u² − 2u³.
+// Maths: a cubic Hermite curve's coefficients of u² and u³ for a move from rest to rest: 3u² − 2u³.
 constexpr f64 HERMITE_SQUARE = 3.0;
 constexpr f64 HERMITE_CUBE = 2.0;
 
@@ -282,20 +274,22 @@ VolleyVector Interpolated(const VolleyTarget& target, f32 alpha) {
 
 // Where a swing that started at `swingStart` from `from` towards `towards` is at `time`: exactly `towards` once it's over,
 // which is by `arrival` at the latest (a move needs the volley's commit window before it, so the swing has time, and at
-// RETARGET_SPEED when the targets are still within the tagged area). Its length follows the way to `towards`, so a
-// target that moves while the swing is under way changes it smoothly; its progress keeps rising while that target moves
-// slower than RETARGET_SPEED.
-VolleyVector Swing(VolleyVector from, VolleyVector towards, f64 swingStart, f64 time, u64 arrival) {
-    const f64 ticks =
-        std::min(std::max(RETARGET_TICKS, Length(towards - from) / RETARGET_SPEED), static_cast<f64>(arrival) - swingStart);
+// the shape's `retargetSpeed` when the targets are still within the tagged area). Its length follows the way to
+// `towards`, so a target that moves while the swing is under way changes it smoothly; its progress keeps rising while that
+// target moves slower than `retargetSpeed`.
+VolleyVector Swing(const VolleyShape& shape, VolleyVector from, VolleyVector towards, f64 swingStart, f64 time, u64 arrival) {
+    const f64 ticks = std::min(
+        std::max(static_cast<f64>(shape.retargetTicks), Length(towards - from) / static_cast<f64>(shape.retargetSpeed)),
+        static_cast<f64>(arrival) - swingStart
+    );
     const f64 progress = (time - swingStart) / ticks;
     return progress >= 1.0 ? towards : Lerp(from, towards, Ease(progress, 0.0, 0.0));
 }
 
 // The flight from the ring to the aim: a cubic Bézier whose inner control points sit a third of the way along the chord
 // and equally far to the same side of it, so it bends like an arc, the same way for every sword, with the chord's
-// direction never reversed (no cusps, so no sudden turns). The bend, as a fraction of the chord, is SHORT_BEND on short
-// flights and falls so that a long flight bends by nearly the shape's sweep. Everything follows the chord smoothly, so
+// direction never reversed (no cusps, so no sudden turns). The bend, as a fraction of the chord, is the shape's `shortBend` on
+// short flights and falls so that a long flight bends by nearly the shape's sweep. Everything follows the chord smoothly, so
 // the curve follows a moving aim, and with no sweep it is the straight chord, evenly paced.
 struct SwordFlight {
     VolleyVector start{};
@@ -311,25 +305,25 @@ struct FlightPoint {
 };
 
 // The control points' offset from the chord's thirds, for a chord `chord`.
-VolleyVector Bend(VolleyVector chord, f64 sweep, f64 share) {
+VolleyVector Bend(VolleyVector chord, f64 sweep, f64 share, f64 shortBend) {
     if (sweep <= 0.0) {
         return {};
     }
-    const f64 shortest = sweep / SHORT_BEND;
+    const f64 shortest = sweep / shortBend;
     const f64 ratio = sweep * share / std::sqrt(Dot(chord, chord) + (shortest * shortest));
     return Sideways(chord) * (SIDE_ARM * ratio);
 }
 
 // The way a flight from `ring` towards `aim` leaves the ring (not unit length).
-VolleyVector Leaving(VolleyVector ring, VolleyVector aim, f64 sweep, f64 share) {
+VolleyVector Leaving(VolleyVector ring, VolleyVector aim, f64 sweep, f64 share, f64 shortBend) {
     const VolleyVector chord = aim - ring;
-    return (chord * THIRD) + Bend(chord, sweep, share);
+    return (chord * THIRD) + Bend(chord, sweep, share, shortBend);
 }
 
-SwordFlight FlightTo(VolleyVector ring, VolleyVector aim, f64 sweep, f64 share) {
+SwordFlight FlightTo(VolleyVector ring, VolleyVector aim, f64 sweep, f64 share, f64 shortBend) {
     const VolleyVector chord = aim - ring;
     const VolleyVector third = chord * THIRD;
-    const VolleyVector side = Bend(chord, sweep, share);
+    const VolleyVector side = Bend(chord, sweep, share, shortBend);
     return { .start = ring, .first = ring + third + side, .second = aim - third + side, .end = aim };
 }
 
@@ -375,6 +369,7 @@ SwordPose SwordAt(const Volley& volley, u32 sword, f64 tick, Vec2 aim) {
     const f64 radius = plan.radius;
     const f64 sweep = static_cast<f64>(shape.sweep);
     const f64 flightTicks = static_cast<f64>(shape.flightTicks);
+    const f64 shortBend = static_cast<f64>(shape.shortBend);
     const VolleyVector target = Widen(aim);
     const VolleyVector ring = Widen(volley.origin) + (plan.outwards * radius);
     // The way its flight leaves the ring, planned from the cast's fixed point and then corrected to the moving aim, so
@@ -384,8 +379,8 @@ SwordPose SwordAt(const Volley& volley, u32 sword, f64 tick, Vec2 aim) {
         VolleyVector leaving{};
     };
     const auto ways = [&]() -> Ways {
-        const VolleyVector planned = Unit(Leaving(ring, Widen(volley.point), sweep, plan.bend), plan.outwards);
-        return { .planned = planned, .leaving = Unit(Leaving(ring, target, sweep, plan.bend), planned) };
+        const VolleyVector planned = Unit(Leaving(ring, Widen(volley.point), sweep, plan.bend, shortBend), plan.outwards);
+        return { .planned = planned, .leaving = Unit(Leaving(ring, target, sweep, plan.bend, shortBend), planned) };
     };
 
     SwordPose pose{};
@@ -404,7 +399,7 @@ SwordPose SwordAt(const Volley& volley, u32 sword, f64 tick, Vec2 aim) {
     }
     // As it sets off it turns from pointing out of its ring to facing the way it moves, as angles, never wrapped. A flight
     // shorter than the turn turns over the whole flight, so it faces its flight by its arrival.
-    const f64 turnTicks = std::min(TURN_TICKS, flightTicks);
+    const f64 turnTicks = std::min(static_cast<f64>(shape.turnTicks), flightTicks);
     const auto heading = [&](VolleyVector tangent, f64 since) {
         const f64 turned = radius > 0.0 && turnTicks > 0.0 ? Ease(since / turnTicks, 0.0, 0.0) : 1.0;
         if (turned >= 1.0 && Length(tangent) > 0.0) {
@@ -419,9 +414,9 @@ SwordPose SwordAt(const Volley& volley, u32 sword, f64 tick, Vec2 aim) {
                            AngleBetween(way.leaving, moving);
         return Narrow(Rotate(plan.outwards, turned * flight));
     };
-    const SwordFlight flight = FlightTo(ring, target, sweep, plan.bend);
+    const SwordFlight flight = FlightTo(ring, target, sweep, plan.bend, shortBend);
     if (flown < flightTicks) {
-        const FlightPoint point = Along(flight, Ease(flown / flightTicks, 0.0, ARRIVAL_SPEED));
+        const FlightPoint point = Along(flight, Ease(flown / flightTicks, 0.0, static_cast<f64>(shape.arrivalSpeed)));
         pose.position = Narrow(point.position);
         pose.heading = heading(point.tangent, flown);
         return pose;
@@ -439,7 +434,8 @@ SwordPose SwordAt(const Volley& volley, u32 sword, f64 tick, Vec2 aim) {
 Vec2 AimOffset(const Volley& volley, u32 sword) {
     const f64 angle = FULL_TURN * ToUnit(VolleyDraw(volley, sword, PURPOSE_SCATTER_ANGLE));
     // The square root spreads the spots evenly over the disc rather than crowding its middle.
-    const f64 reach = static_cast<f64>(AIM_SCATTER) * std::sqrt(ToUnit(VolleyDraw(volley, sword, PURPOSE_SCATTER_REACH)));
+    const f64 reach =
+        static_cast<f64>(volley.shape.aimScatter) * std::sqrt(ToUnit(VolleyDraw(volley, sword, PURPOSE_SCATTER_REACH)));
     return { .x = static_cast<f32>(reach * math::Cos(angle)), .y = static_cast<f32>(reach * math::Sin(angle)) };
 }
 
@@ -457,12 +453,13 @@ Vec2 SwordAim(const Volley& volley, u32 sword, u64 simulationTick, f32 alpha, st
     f64 swingStart = 0.0;
     const u32 target = WalkTargets(volley, sword, arrival, time, targets, [&](f64 died, std::size_t from) {
         const VolleyVector left = Widen(targets[from].current);
-        swingFrom = swinging ? Swing(swingFrom, left, swingStart, died, arrival) : left;
+        swingFrom = swinging ? Swing(volley.shape, swingFrom, left, swingStart, died, arrival) : left;
         swingStart = died;
         swinging = true;
     });
     const VolleyVector towards = Interpolated(targets[target], alpha);
-    return Narrow(swinging ? Swing(swingFrom, towards, swingStart, time, arrival) : towards) + AimOffset(volley, sword);
+    return Narrow(swinging ? Swing(volley.shape, swingFrom, towards, swingStart, time, arrival) : towards) +
+           AimOffset(volley, sword);
 }
 
 } // namespace core

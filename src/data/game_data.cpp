@@ -109,8 +109,8 @@ std::expected<core::GameData, core::Error> ParseGameData(
         if (!fox) {
             return std::unexpected{ fox.error() };
         }
-        return ParseAbilities(abilities, warnings).transform([&](const core::Abilities& table) {
-            return core::GameData{ .cultivator = *cultivator, .fox = *fox, .abilities = table };
+        return ParseAbilitiesFile(abilities, warnings).transform([&](const AbilitiesFile& file) {
+            return core::GameData{ .cultivator = *cultivator, .fox = *fox, .abilities = file.abilities, .combat = file.combat };
         });
     }
     catch (const YAML::Exception& error) {

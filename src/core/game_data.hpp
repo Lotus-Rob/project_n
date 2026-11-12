@@ -7,6 +7,7 @@
 
 #include "core/abilities.hpp"
 #include "core/archive.hpp"
+#include "core/combat_rules.hpp"
 #include "core/types.hpp"
 
 #include "core/generated/atlas.hpp" // by `project_n atlas`
@@ -48,11 +49,13 @@ struct GameData {
     CreatureData fox{};
     /// The player's abilities and loadout.
     Abilities abilities{};
+    /// The times and amounts the fight runs by (abilities.yaml's `combat:` section).
+    CombatRules combat{};
 
     /// Lists its fields for an archive (core/archive.hpp).
     template<typename Self, typename Archive>
     void Fields(this Self& self, Archive& archive) {
-        archive(self.cultivator, self.fox, self.abilities);
+        archive(self.cultivator, self.fox, self.abilities, self.combat);
     }
 
     /// A hash of every value: two GameData hash alike when every value has the same bits.

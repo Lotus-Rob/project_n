@@ -13,6 +13,9 @@
 
 namespace {
 
+// The shipped combat rules (assets/data/abilities.yaml's `combat:` section, which a data test checks).
+constexpr core::CombatRules RULES{};
+
 using core::atlas::SpriteId;
 
 constexpr std::size_t FOXES = 12;
@@ -161,14 +164,14 @@ TEST_CASE("health at zero gives a dying state, then removal, then a respawn on t
     REQUIRE(dying != nullptr);
     CHECK(dying->startTick == DEATH);
 
-    Run(arena, DEATH + 1, DEATH + game::DYING_TICKS - 1);
+    Run(arena, DEATH + 1, DEATH + RULES.dyingTicks - 1);
     CHECK(arena.State().DomainOf(fox).has_value());
-    Run(arena, DEATH + game::DYING_TICKS, DEATH + game::DYING_TICKS);
+    Run(arena, DEATH + RULES.dyingTicks, DEATH + RULES.dyingTicks);
     CHECK_FALSE(arena.State().DomainOf(fox).has_value());
     CHECK(Foxes(arena).size() == FOXES - 1);
 
-    const u64 respawn = DEATH + game::DYING_TICKS + game::RESPAWN_TICKS;
-    Run(arena, DEATH + game::DYING_TICKS + 1, respawn - 1);
+    const u64 respawn = DEATH + RULES.dyingTicks + RULES.respawnTicks;
+    Run(arena, DEATH + RULES.dyingTicks + 1, respawn - 1);
     CHECK(Foxes(arena).size() == FOXES - 1);
     Run(arena, respawn, respawn);
     const std::vector<core::StableId> after = Foxes(arena);
@@ -193,7 +196,7 @@ core::StableId Respawned(game::Arena& arena) {
     Run(arena, 1, 1);
     const std::vector<core::StableId> before = Foxes(arena);
     arena.Damage(before.front(), FOX_HEALTH, 1);
-    Run(arena, 2, 1 + game::DYING_TICKS + game::RESPAWN_TICKS);
+    Run(arena, 2, 1 + RULES.dyingTicks + RULES.respawnTicks);
     std::vector<core::StableId> added;
     std::ranges::set_difference(Foxes(arena), before, std::back_inserter(added));
     REQUIRE(added.size() == 1);
@@ -206,7 +209,7 @@ TEST_CASE("a respawned fox eases into its orbit") {
     constexpr f32 TWICE = 2.0F;
     game::Arena arena(test::TestManifest(), game::Scene::Arena, FarFromTheCrystal());
     const core::StableId fox = Respawned(arena);
-    const u64 arrived = 1 + game::DYING_TICKS + game::RESPAWN_TICKS + game::ARRIVE_TICKS;
+    const u64 arrived = 1 + RULES.dyingTicks + RULES.respawnTicks + RULES.arriveTicks;
     const core::StableId other = Foxes(arena).front(); // an orbiting fox: the respawned one has the newest ID
     REQUIRE(other != fox);
     const core::Vec2 from = FootOf(arena, fox);
@@ -216,7 +219,7 @@ TEST_CASE("a respawned fox eases into its orbit") {
     std::vector<core::Vec2> path{ from };
     std::vector<core::Vec2> otherPath{ FootOf(arena, other) };
     f32 farthest = 0.0F;
-    for (u64 tick = arrived - game::ARRIVE_TICKS + 1; tick < arrived; ++tick) {
+    for (u64 tick = arrived - RULES.arriveTicks + 1; tick < arrived; ++tick) {
         Run(arena, tick, tick);
         path.push_back(FootOf(arena, fox));
         otherPath.push_back(FootOf(arena, other));
@@ -228,7 +231,7 @@ TEST_CASE("a respawned fox eases into its orbit") {
     for (std::size_t index = 1; index < otherPath.size(); ++index) {
         orbitStep = std::max(orbitStep, Distance(otherPath.at(index - 1), otherPath.at(index)));
     }
-    const f32 approach = TWICE * farthest / static_cast<f32>(game::ARRIVE_TICKS);
+    const f32 approach = TWICE * farthest / static_cast<f32>(RULES.arriveTicks);
     for (std::size_t index = 1; index < path.size(); ++index) {
         INFO("tick ", index, " of its arrival");
         CHECK(Distance(path.at(index - 1), path.at(index)) <= (TWICE * orbitStep) + approach);
@@ -263,7 +266,7 @@ TEST_CASE("a dying fox carries no ID, label or health bar") {
     const core::StableId fox = Foxes(arena).front();
     arena.Damage(fox, FOX_HEALTH, DEATH);
     u32 last = 0;
-    for (u64 tick = DEATH; tick < DEATH + game::DYING_TICKS; ++tick) {
+    for (u64 tick = DEATH; tick < DEATH + RULES.dyingTicks; ++tick) {
         if (tick > DEATH) {
             Run(arena, tick, tick);
         }
@@ -296,10 +299,10 @@ TEST_CASE("the selection clears when the selected fox is removed") {
     arena.Tick(At(DEATH), { .actions = select, .held = {} }, events);
     REQUIRE(arena.Selected() == fox);
     arena.Damage(fox, FOX_HEALTH, DEATH);
-    Run(arena, DEATH + 1, DEATH + game::DYING_TICKS - 1);
+    Run(arena, DEATH + 1, DEATH + RULES.dyingTicks - 1);
     CHECK(arena.Selected() == fox);
-    CHECK_FALSE(Published(arena, DEATH + game::DYING_TICKS - 1).selected.has_value()); // a dying fox isn't outlined
-    Run(arena, DEATH + game::DYING_TICKS, DEATH + game::DYING_TICKS);
+    CHECK_FALSE(Published(arena, DEATH + RULES.dyingTicks - 1).selected.has_value()); // a dying fox isn't outlined
+    Run(arena, DEATH + RULES.dyingTicks, DEATH + RULES.dyingTicks);
     CHECK(arena.Selected() == core::StableId{});
 }
 
@@ -316,8 +319,8 @@ TEST_CASE("a dying fox can't be selected") {
 
 TEST_CASE("the player removed on the tick a fox respawns leaves no player, and the fox circles the start") {
     constexpr u64 FOX_DEATH = 1;
-    constexpr u64 PLAYER_DEATH = FOX_DEATH + game::RESPAWN_TICKS; // both removed on the respawn's tick
-    constexpr core::Vec2 START{ .x = 960.0F, .y = 620.0F };       // where the cultivator starts
+    constexpr u64 PLAYER_DEATH = FOX_DEATH + RULES.respawnTicks; // both removed on the respawn's tick
+    constexpr core::Vec2 START{ .x = 960.0F, .y = 620.0F };      // where the cultivator starts
     game::Arena arena(test::TestManifest(), game::Scene::Arena, FarFromTheCrystal());
     const std::vector<core::StableId> before = Foxes(arena);
     const core::StableId player = arena.Player();
@@ -325,8 +328,8 @@ TEST_CASE("the player removed on the tick a fox respawns leaves no player, and t
     arena.Damage(before.front(), FOX_HEALTH, FOX_DEATH);
     Run(arena, FOX_DEATH + 1, PLAYER_DEATH);
     arena.Damage(player, CULTIVATOR_HEALTH, PLAYER_DEATH);
-    const u64 respawn = FOX_DEATH + game::DYING_TICKS + game::RESPAWN_TICKS;
-    REQUIRE(respawn == PLAYER_DEATH + game::DYING_TICKS);
+    const u64 respawn = FOX_DEATH + RULES.dyingTicks + RULES.respawnTicks;
+    REQUIRE(respawn == PLAYER_DEATH + RULES.dyingTicks);
     Run(arena, PLAYER_DEATH + 1, respawn);
     CHECK(arena.Player() == core::StableId{});
     CHECK_FALSE(arena.State().DomainOf(player).has_value());
@@ -398,10 +401,10 @@ TEST_CASE("damage to a dying or removed creature does nothing") {
     arena.Damage(fox, HEALING, DEATH + 1);
     CHECK(HealthOf(arena, fox).current == 0);
     CHECK(Entities(arena).get<game::Dying>(EntityOf(arena, fox)).startTick == DEATH);
-    Run(arena, DEATH + 1, DEATH + game::DYING_TICKS);
+    Run(arena, DEATH + 1, DEATH + RULES.dyingTicks);
     REQUIRE_FALSE(arena.State().DomainOf(fox).has_value());
     const u64 before = arena.StateHash();
-    arena.Damage(fox, MORE, DEATH + game::DYING_TICKS);
+    arena.Damage(fox, MORE, DEATH + RULES.dyingTicks);
     CHECK(arena.StateHash() == before);
 }
 
@@ -1029,7 +1032,7 @@ TEST_CASE("a burn ticks its count and stops, each tick a Burn hit of the bolt's 
     std::vector<core::Event> events = StampedCast(arena, CAST, core::Slot::Generator, point);
     const u64 arrival = core::ArrivalTick(OnlyVolley(arena, CAST).volley, 0);
     constexpr u64 AFTER = 10;
-    const u64 lastTick = arrival + (BURN_TICKS * game::AFFLICTION_PERIOD);
+    const u64 lastTick = arrival + (BURN_TICKS * RULES.afflictionPeriod);
     std::ranges::move(Play(arena, CAST + 1, lastTick + AFTER), std::back_inserter(events));
     const std::vector<core::Event> used = OfUse(events, game::CastUse(CAST, core::Slot::Generator));
     REQUIRE(used.size() == 1 + BURN_TICKS + 1);
@@ -1042,7 +1045,7 @@ TEST_CASE("a burn ticks its count and stops, each tick a Burn hit of the bolt's 
         CHECK(hit.kind == core::EventKind::Hit);
         CHECK(hit.hit == core::HitKind::Burn);
         CHECK(hit.target == fox);
-        CHECK(hit.tick == arrival + (index * game::AFFLICTION_PERIOD));
+        CHECK(hit.tick == arrival + (index * RULES.afflictionPeriod));
         if (index > 0) {
             CHECK(hit.value == BURN_DAMAGE);
         }
@@ -1061,8 +1064,8 @@ TEST_CASE("a second bolt refreshes the burn; its later ticks belong to the lates
     std::ranges::move(Play(arena, CAST + 1, SECOND - 1), std::back_inserter(events));
     std::ranges::move(StampedCast(arena, SECOND, core::Slot::Generator, ChestOf(arena, fox)), std::back_inserter(events));
     const u64 arrival = core::ArrivalTick(OnlyVolley(arena, SECOND).volley, 0);
-    REQUIRE(arrival < CAST + game::AFFLICTION_PERIOD); // the first burn hasn't ticked yet
-    const u64 lastTick = arrival + (BURN_TICKS * game::AFFLICTION_PERIOD);
+    REQUIRE(arrival < CAST + RULES.afflictionPeriod); // the first burn hasn't ticked yet
+    const u64 lastTick = arrival + (BURN_TICKS * RULES.afflictionPeriod);
     std::ranges::move(Play(arena, SECOND + 1, lastTick + 1), std::back_inserter(events));
 
     const std::vector<core::Event> first = OfUse(events, game::CastUse(CAST, core::Slot::Generator));
@@ -1075,7 +1078,7 @@ TEST_CASE("a second bolt refreshes the burn; its later ticks belong to the lates
     REQUIRE(second.size() == 1 + BURN_TICKS + 1);
     for (u32 index = 1; index <= BURN_TICKS; ++index) {
         CHECK(second.at(index).hit == core::HitKind::Burn);
-        CHECK(second.at(index).tick == arrival + (index * game::AFFLICTION_PERIOD));
+        CHECK(second.at(index).tick == arrival + (index * RULES.afflictionPeriod));
     }
     CHECK(second.back().kind == core::EventKind::UseEnded);
     CHECK(second.back().tick == lastTick);
@@ -1087,10 +1090,10 @@ TEST_CASE("a burn ends with its creature's death, and its use with it") {
     const core::StableId fox = Foxes(arena).front();
     std::vector<core::Event> events = StampedCast(arena, CAST, core::Slot::Generator, point);
     const u64 arrival = core::ArrivalTick(OnlyVolley(arena, CAST).volley, 0);
-    const u64 death = arrival + game::AFFLICTION_PERIOD + 1; // after the first tick of the burn
+    const u64 death = arrival + RULES.afflictionPeriod + 1; // after the first tick of the burn
     std::ranges::move(Play(arena, CAST + 1, death - 1), std::back_inserter(events));
     arena.Damage(fox, AMPLE, death);
-    std::ranges::move(Play(arena, death, death + (BURN_TICKS * game::AFFLICTION_PERIOD)), std::back_inserter(events));
+    std::ranges::move(Play(arena, death, death + (BURN_TICKS * RULES.afflictionPeriod)), std::back_inserter(events));
     const std::vector<core::Event> used = OfUse(events, game::CastUse(CAST, core::Slot::Generator));
     REQUIRE(used.size() == 3); // the hit, one tick, the end
     CHECK(used.back().kind == core::EventKind::UseEnded);
@@ -1180,7 +1183,7 @@ TEST_CASE("a scene change mid-volley ends every open use") {
     const core::Snapshot snapshot = Published(arena, CHANGE);
     CHECK(snapshot.volleys.empty());
     CHECK(snapshot.volleyTargets.empty());
-    const std::vector<core::Event> later = Play(arena, CHANGE + 1, CHANGE + (BURN_TICKS * game::AFFLICTION_PERIOD));
+    const std::vector<core::Event> later = Play(arena, CHANGE + 1, CHANGE + (BURN_TICKS * RULES.afflictionPeriod));
     CHECK(OfUse(later, bolt).empty());
     CHECK(OfUse(later, swords).empty());
 }
@@ -1278,7 +1281,7 @@ TEST_CASE("the lance strikes every enemy in its area with poison and ends after 
         CHECK(struck.at(index).value == LANCE_DAMAGE);
     }
 
-    const u64 lastTick = CAST + (POISON_TICKS * game::AFFLICTION_PERIOD);
+    const u64 lastTick = CAST + (POISON_TICKS * RULES.afflictionPeriod);
     std::ranges::move(Play(arena, CAST + 1, lastTick + 1), std::back_inserter(events));
     const std::vector<core::Event> used = OfUse(events, use);
     REQUIRE(used.size() == TAGGED + (TAGGED * POISON_TICKS) + 1);
@@ -1289,7 +1292,7 @@ TEST_CASE("the lance strikes every enemy in its area with poison and ends after 
             const core::Event& hit = used.at((tick * TAGGED) + index);
             CHECK(hit.kind == core::EventKind::Hit);
             CHECK(hit.hit == core::HitKind::Poison);
-            CHECK(hit.tick == CAST + (tick * game::AFFLICTION_PERIOD));
+            CHECK(hit.tick == CAST + (tick * RULES.afflictionPeriod));
             CHECK(hit.value == POISON_DAMAGE);
             targets.push_back(hit.target);
         }
@@ -1325,7 +1328,7 @@ TEST_CASE("a second lance refreshes the poison; its later ticks belong to the la
     std::ranges::move(Play(arena, CAST + 1, SECOND - 1), std::back_inserter(events));
     const core::Vec2 again = ChestOf(arena, ready.tagged.front());
     std::ranges::move(StampedCast(arena, SECOND, core::Slot::Spender, again), std::back_inserter(events));
-    const u64 lastTick = SECOND + (POISON_TICKS * game::AFFLICTION_PERIOD);
+    const u64 lastTick = SECOND + (POISON_TICKS * RULES.afflictionPeriod);
     std::ranges::move(Play(arena, SECOND + 1, lastTick + 1), std::back_inserter(events));
 
     const std::vector<core::Event> first = OfUse(events, game::CastUse(CAST, core::Slot::Spender));
@@ -1341,7 +1344,7 @@ TEST_CASE("a second lance refreshes the poison; its later ticks belong to the la
 }
 
 TEST_CASE("a lance on the tick an earlier poison is due deals that tick first, then refreshes it") {
-    constexpr u64 DUE = CAST + game::AFFLICTION_PERIOD;
+    constexpr u64 DUE = CAST + RULES.afflictionPeriod;
     game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
     const Aimed ready = ReadyLance(arena, 1);
     const core::StableId fox = ready.tagged.front();
@@ -1380,10 +1383,10 @@ TEST_CASE("the lance's flash carries its element and fades after its ticks") {
     CHECK(cast.flashes.front().element == core::HitKind::Poison);
     CHECK(cast.volleys.empty()); // a strike, not a volley
 
-    Run(arena, CAST + 1, CAST + core::FLASH_TICKS - 1);
-    CHECK(Published(arena, CAST + core::FLASH_TICKS - 1).flashes.size() == 1);
-    Run(arena, CAST + core::FLASH_TICKS, CAST + core::FLASH_TICKS);
-    CHECK(Published(arena, CAST + core::FLASH_TICKS).flashes.empty());
+    Run(arena, CAST + 1, CAST + RULES.flashTicks - 1);
+    CHECK(Published(arena, CAST + RULES.flashTicks - 1).flashes.size() == 1);
+    Run(arena, CAST + RULES.flashTicks, CAST + RULES.flashTicks);
+    CHECK(Published(arena, CAST + RULES.flashTicks).flashes.empty());
 }
 
 TEST_CASE("the lance's flash survives a save") {
@@ -1406,16 +1409,125 @@ TEST_CASE("the lance's flash survives a save") {
     CHECK(snapshot.flashes.front().point.y == ready.point.y);
     CHECK(snapshot.flashes.front().startTick == CAST);
     CHECK(snapshot.flashes.front().element == core::HitKind::Poison);
-    Run(arena, SAVED_AT + 1, CAST + core::FLASH_TICKS);
-    Run(loaded, SAVED_AT + 1, CAST + core::FLASH_TICKS);
+    Run(arena, SAVED_AT + 1, CAST + RULES.flashTicks);
+    Run(loaded, SAVED_AT + 1, CAST + RULES.flashTicks);
     CHECK(loaded.StateHash() == arena.StateHash());
-    CHECK(Published(loaded, CAST + core::FLASH_TICKS).flashes.empty());
+    CHECK(Published(loaded, CAST + RULES.flashTicks).flashes.empty());
 }
 
 TEST_CASE("afflictions are valid with no negative damage") {
     constexpr i64 HARM = 40;
     CHECK(game::Afflictions{ .burn = { .damage = HARM, .ticksLeft = 1, .use = 1, .nextTick = 1 }, .poison = {} }.Valid());
     CHECK_FALSE(game::Afflictions{ .burn = {}, .poison = { .damage = -1, .ticksLeft = 1, .use = 1, .nextTick = 1 } }.Valid());
+}
+
+TEST_CASE("the data's combat rules set how long a death dissolves and when a fox respawns") {
+    constexpr u64 DEATH = 5;
+    constexpr u64 QUICK_DYING = 10;
+    constexpr u64 QUICK_RESPAWN = 20;
+    core::GameData data = FarFromTheCrystal();
+    data.combat.dyingTicks = QUICK_DYING;
+    data.combat.respawnTicks = QUICK_RESPAWN;
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
+    Run(arena, 1, DEATH);
+    const core::StableId fox = Foxes(arena).front();
+    arena.Damage(fox, FOX_HEALTH, DEATH);
+    Run(arena, DEATH + 1, DEATH + QUICK_DYING - 1);
+    CHECK(arena.State().DomainOf(fox).has_value());
+    Run(arena, DEATH + QUICK_DYING, DEATH + QUICK_DYING);
+    CHECK_FALSE(arena.State().DomainOf(fox).has_value());
+    Run(arena, DEATH + QUICK_DYING + 1, DEATH + QUICK_DYING + QUICK_RESPAWN - 1);
+    CHECK(Foxes(arena).size() == FOXES - 1);
+    Run(arena, DEATH + QUICK_DYING + QUICK_RESPAWN, DEATH + QUICK_DYING + QUICK_RESPAWN);
+    CHECK(Foxes(arena).size() == FOXES);
+}
+
+TEST_CASE("a respawn shortened by new game data comes on its own tick, before an earlier one, and survives a save") {
+    constexpr u64 FIRST_DEATH = 5;
+    constexpr u64 RELOAD = FIRST_DEATH + RULES.dyingTicks; // the first fox's removal queues its respawn first
+    constexpr u64 SECOND_DEATH = RELOAD + 1;
+    constexpr u64 QUICK_RESPAWN = 20;
+    constexpr u64 FIRST_DUE = FIRST_DEATH + RULES.dyingTicks + RULES.respawnTicks;
+    constexpr u64 SECOND_DUE = SECOND_DEATH + RULES.dyingTicks + QUICK_RESPAWN;
+    static_assert(SECOND_DUE < FIRST_DUE);
+    core::GameData data = FarFromTheCrystal();
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
+    Run(arena, 1, FIRST_DEATH);
+    const std::vector<core::StableId> foxes = Foxes(arena);
+    arena.Damage(foxes.at(0), FOX_HEALTH, FIRST_DEATH);
+    Run(arena, FIRST_DEATH + 1, RELOAD);
+    data.combat.respawnTicks = QUICK_RESPAWN;
+    arena.SetData(data);
+    Run(arena, SECOND_DEATH, SECOND_DEATH);
+    arena.Damage(foxes.at(1), FOX_HEALTH, SECOND_DEATH);
+    Run(arena, SECOND_DEATH + 1, SECOND_DUE - 1);
+    REQUIRE(Foxes(arena).size() == FOXES - 2);
+
+    std::vector<std::byte> bytes;
+    core::Writer writer{ bytes };
+    arena.Save(writer);
+    game::Arena loaded(test::TestManifest(), game::Scene::Arena, data);
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader, SECOND_DUE - 1));
+    CHECK(loaded.StateHash() == arena.StateHash());
+
+    for (game::Arena* const played : { &arena, &loaded }) {
+        Run(*played, SECOND_DUE, SECOND_DUE);
+        CHECK(Foxes(*played).size() == FOXES - 1);
+        Run(*played, SECOND_DUE + 1, FIRST_DUE - 1);
+        CHECK(Foxes(*played).size() == FOXES - 1);
+        Run(*played, FIRST_DUE, FIRST_DUE);
+        CHECK(Foxes(*played).size() == FOXES);
+    }
+}
+
+TEST_CASE("the data's combat rules set the aura's period and the lance's burst") {
+    constexpr u64 PERIOD = 20;
+    constexpr u32 SET_DAMAGE = 7;
+    core::GameData data = NearTheCrystal();
+    data.combat.auraPeriod = PERIOD;
+    data.combat.auraDamageMin = SET_DAMAGE;
+    data.combat.auraDamageMax = SET_DAMAGE;
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
+    std::vector<core::Event> events;
+    Run(arena, 1, PERIOD - 1);
+    arena.Tick(At(PERIOD), {}, events);
+    const auto hit = std::ranges::find(events, core::EventKind::Hit, &core::Event::kind);
+    REQUIRE(hit != events.end());
+    CHECK(hit->value == SET_DAMAGE);
+}
+
+TEST_CASE("the data's combat rules set the lance's burst and its poison's period") {
+    constexpr u64 FLASH = 5;
+    constexpr u64 PERIOD = 7;
+    core::GameData data = Gathered(AMPLE);
+    data.combat.flashTicks = FLASH;
+    data.combat.afflictionPeriod = PERIOD;
+    constexpr f32 EVERYONE = 5'000.0F; // tags every fox, wherever the point
+    data.abilities.table.at(POISON_LANCE).radius = EVERYONE;
+    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
+    Run(arena, 1, CAST - 1);
+    static_cast<void>(StampedCast(arena, CAST, core::Slot::Spender, ChestOf(arena, Foxes(arena).front())));
+    std::vector<core::Event> events;
+    for (u64 tick = CAST + 1; tick <= CAST + PERIOD; ++tick) {
+        std::vector<core::Event> now;
+        arena.Tick(At(tick), {}, now);
+        for (core::Event event : now) {
+            event.tick = tick;
+            events.push_back(event);
+        }
+        if (tick == CAST + FLASH - 1) {
+            CHECK(Published(arena, tick).flashes.size() == 1);
+        }
+        if (tick == CAST + FLASH) {
+            CHECK(Published(arena, tick).flashes.empty());
+        }
+    }
+    constexpr u64 USE = game::CastUse(CAST, core::Slot::Spender);
+    const auto ticked = std::ranges::count_if(events, [](const core::Event& event) {
+        return event.kind == core::EventKind::Hit && event.use == USE && event.tick == CAST + PERIOD;
+    });
+    CHECK(ticked >= 1);
 }
 
 } // namespace

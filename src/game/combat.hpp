@@ -10,6 +10,7 @@
 #include "core/abilities.hpp"
 #include "core/archive.hpp"
 #include "core/assert.hpp"
+#include "core/combat_rules.hpp"
 #include "core/frame.hpp"
 #include "core/manifest.hpp"
 #include "core/stable_id.hpp"
@@ -23,13 +24,6 @@
 #include <vector>
 
 namespace game {
-
-/// How many ticks a death's dissolve takes, from the hit that kills to the entity's removal: about half a second.
-inline constexpr u64 DYING_TICKS = 30;
-/// How many ticks after a fox's removal another takes its place.
-inline constexpr u64 RESPAWN_TICKS = 180;
-/// How many ticks a respawned fox takes to ease from the ground's edge into its orbit: about three seconds.
-inline constexpr u32 ARRIVE_TICKS = 180;
 
 /// The first of the source numbers (core::AbilityUse()) of the ability uses a cast starts, one per slot: the source of the
 /// use of slot `s` is CAST_SOURCE + `s`. Below it are the aura's and the burst's.
@@ -59,8 +53,8 @@ struct Health {
     }
 };
 
-/// Marks a creature whose health ran out: it dissolves for DYING_TICKS, then is removed. It can't be hit, picked or
-/// labelled meanwhile.
+/// Marks a creature whose health ran out: it dissolves for core::CombatRules::dyingTicks, then is removed. It can't be hit,
+/// picked or labelled meanwhile.
 struct Dying {
     /// The simulation tick its health ran out.
     u64 startTick = 0;
@@ -140,9 +134,6 @@ struct Dashing {
     }
 };
 
-/// How many ticks apart an affliction's ticks are, the first this long after the hit that left it: a simulation second.
-inline constexpr u64 AFFLICTION_PERIOD = 60;
-
 /// One affliction on a creature (a burn or a poison): what each of its ticks deals, how many are left, the ability use
 /// they belong to and when the next is due.
 struct AfflictionState {
@@ -195,13 +186,19 @@ struct Afflictions {
 [[nodiscard]] i64 HitAmount(const core::AbilityData& ability, i64 base);
 
 /// How far through its dissolve a creature dying since `dying.startTick` is at `tick`, from 0 (its death's tick) to 1
-/// (its last tick drawn, the one before its removal).
-[[nodiscard]] f32 DissolveAt(const Dying& dying, u64 tick);
+/// (its last tick drawn, the one before its removal, `dyingTicks` after the death: core::CombatRules::dyingTicks, at
+/// least 1).
+[[nodiscard]] f32 DissolveAt(const Dying& dying, u64 tick, u64 dyingTicks);
 
 /// The arena's combat state beyond its components: the volleys in flight (the flying swords and the fire bolts), the
 /// flashes showing (the poison lance's) and the respawns waiting.
 class Combat {
 public:
+    /// Runs the fight by `rules` from now on (the arena's game data: the dissolve's and the respawn's times, the
+    /// affliction period, the burst's length). Nothing already cast changes: a volley keeps its shape, a flash its length,
+    /// an affliction its next tick.
+    void SetRules(const core::CombatRules& rules);
+
     /// Takes `amount` from `target`'s health (a negative amount heals, never past its most) at `tick`; health running
     /// out makes it Dying at `tick`. Does nothing to a target that isn't in `state`, has no Health, or is dying.
     static void Damage(core::State& state, core::StableId target, i64 amount, u64 tick);
@@ -218,12 +215,12 @@ public:
     /// of one at the tagged enemy nearest the point, its flight ⌈distance / speed⌉ ticks, with no ring and no sweep. With
     /// none tagged, the volley's one target is the point itself. Either volley keeps its shape, damage and affliction as
     /// cast (each amount through HitAmount()), so new game data never changes it, and its commit window is the ability
-    /// radius's (core::CommitTicksFor()). Its seed is drawn from core::Random with the state counter. The poison lance
-    /// strikes in this tick's Strike(), after the afflictions due: every living enemy whose chest is then within its
-    /// radius of the point, in stable ID order, takes its damage (as cast) as a hit of its element (Poison) at its head
-    /// and, unless the hit killed it, gains its affliction (as a sword's hit leaves one, refreshing one there); a Flash of
-    /// its element starts at the point. Its use ends then, with a UseEnded after its hits, unless an affliction it left
-    /// holds it, and then after that affliction's last tick. The strike waits only from the cast to the Strike() of the
+    /// radius's (core::CommitTicksFor(), at its motion's retarget speed). Its seed is drawn from core::Random with the state
+    /// counter. The poison lance strikes in this tick's Strike(), after the afflictions due: every living enemy whose chest is
+    /// then within its radius of the point, in stable ID order, takes its damage (as cast) as a hit of its element (Poison) at
+    /// its head and, unless the hit killed it, gains its affliction (as a sword's hit leaves one, refreshing one there); a
+    /// Flash of its element starts at the point. Its use ends then, with a UseEnded after its hits, unless an affliction it
+    /// left holds it, and then after that affliction's last tick. The strike waits only from the cast to the Strike() of the
     /// same tick, so no save or hash ever holds it.
     void Cast(
         core::State& state,
@@ -241,8 +238,8 @@ public:
 
     /// Advances combat in the active domain of `state` to `tick`, after the orbits have moved: eases each Arriving
     /// creature from where it appeared towards where its orbit put it (which it reaches, ending its arrival, at its last
-    /// tick); removes each creature DYING_TICKS after its death, queueing a fox's respawn RESPAWN_TICKS later; and
-    /// returns how many foxes are due to respawn at `tick`, which the caller spawns.
+    /// tick); removes each creature `dyingTicks` after its death, queueing a fox's respawn `respawnTicks` later (SetRules());
+    /// and returns how many foxes are due to respawn at `tick`, which the caller spawns.
     [[nodiscard]] u32 Tick(core::State& state, u64 tick);
 
     /// Advances the volleys and afflictions to `tick`, last in the tick, once everything else that moves or kills has.
@@ -258,7 +255,7 @@ public:
     ///   and a dying creature's afflictions end;
     /// - each use whose last hit is behind it ends with a UseEnded event: a volley's at its last arrival unless it left an
     ///   affliction, else after that affliction's last tick, its creature's death or its refresh;
-    /// - a volley whose last sword has faded is dropped, and a flash core::FLASH_TICKS after its start.
+    /// - a volley whose last sword has faded is dropped, and a flash its `ticks` after its start.
     void Strike(core::State& state, const core::Manifest& manifest, u64 tick, std::vector<core::Event>& events);
 
     /// Appends a UseEnded event for each use still open in `state`'s active domain (a volley with swords still to
@@ -379,7 +376,7 @@ private:
         const core::Action& cast,
         const core::TickCounters& counters
     );
-    static void Arrive(
+    void Arrive(
         core::State& state,
         const core::Manifest& manifest,
         const Flight& flight,
@@ -387,7 +384,7 @@ private:
         u64 tick,
         std::vector<core::Event>& events,
         std::vector<u64>& ending
-    );
+    ) const;
     void FollowTargets(core::State& state, const core::Manifest& manifest);
     void MarkDeaths(const core::State& state, u64 tick);
     [[nodiscard]] bool Holds(const core::State& state, u64 use) const;
@@ -395,6 +392,7 @@ private:
     // event: the one queue every use's end goes through.
     void EndReleased(const core::State& state, std::vector<u64>& ending, u64 tick, std::vector<core::Event>& events) const;
 
+    core::CombatRules m_rules{};
     // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::vector<u64> m_respawns{};
     // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer

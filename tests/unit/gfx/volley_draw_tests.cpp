@@ -13,6 +13,9 @@
 
 namespace {
 
+// The shipped combat rules (assets/data/abilities.yaml's `combat:` section, which a data test checks).
+constexpr core::CombatRules RULES{};
+
 using core::atlas::SpriteId;
 
 constexpr u64 START = 600;
@@ -37,7 +40,7 @@ constexpr core::VolleyShape SWORDS{
     .sweep = 420.0F,
     .sweepJitter = 0.6F,
     .fadeTicks = 18,
-    .commitTicks = core::CommitTicksFor(260.0F),
+    .commitTicks = core::CommitTicksFor(260.0F, core::VolleyShape{}),
 };
 constexpr core::Volley VOLLEY{ .use = 7, .startTick = START, .seed = SEED, .origin = ORIGIN, .point = POINT, .shape = SWORDS };
 // A fire bolt: one straight flight from the caster.
@@ -411,7 +414,9 @@ TEST_CASE("the HUD's bars are placed first and keep their room: the largest voll
 TEST_CASE("the lance's burst grows and fades in its element's colour, from its start to its end") {
     constexpr u64 SIX_TICKS = 6;
     constexpr f32 SIDE = 16.0F; // the test manifest's burst
-    const std::array<core::Flash, 1> flashes{ { { .point = POINT, .startTick = START, .element = core::HitKind::Poison } } };
+    const std::array<core::Flash, 1> flashes{
+        { { .point = POINT, .startTick = START, .ticks = RULES.flashTicks, .element = core::HitKind::Poison } }
+    };
     const core::Manifest manifest = TestManifest();
     const auto drawn = [&](f64 renderTick, const core::UiColours& colours = {}) {
         gfx::VolleyDrawing drawing;
@@ -445,7 +450,7 @@ TEST_CASE("the lance's burst grows and fades in its element's colour, from its s
     );
     CHECK(half.instances[0].colour == Times(poison, gfx::FLASH_INTENSITY * HALF));
 
-    const gfx::VolleyDrawing end = drawn(static_cast<f64>(START + core::FLASH_TICKS));
+    const gfx::VolleyDrawing end = drawn(static_cast<f64>(START + RULES.flashTicks));
     CHECK(end.instances.empty());
 
     constexpr u32 GREEN = 0xFF00'FF00U;
