@@ -11,16 +11,18 @@ namespace {
 
 // Swords a job chunk draws: enough work to be worth a worker's wake, few enough that a volley of 1,000 spreads.
 constexpr u32 SWORD_CHUNK = 256;
-// How much larger than its image a sword is drawn: 1,000 at full size cover their ring several times over and read as one
-// grey mass; at this size they read as swords in a ring.
-constexpr f32 SWORD_SCALE = 0.6F;
-// How much larger than its image a halo is drawn: a glow round the blade a little longer than it.
-constexpr f32 HALO_SCALE = 0.75F;
+// How much larger than its image (10 by 40) a sword is drawn: 9 by 36 world units, so on rings a ring step (38) apart
+// one ring's tips nearly touch the next ring's hilts, and neighbours round a ring (about 20 apart) stand side by side.
+constexpr f32 SWORD_SCALE = 0.9F;
+// How much larger than its image a halo is drawn: a glow round the blade a little longer than it, scaled with the blade.
+// The bolt's keeps its own size.
+constexpr f32 HALO_SCALE = 1.125F;
+constexpr f32 BOLT_HALO_SCALE = 0.75F;
 // How much larger than its image (16 world units across) a sword's tinted core is drawn: under the middle of the blade,
-// smaller than its halo. The bolt's is twice as large, as the bolt is.
-constexpr f32 CORE_SCALE = 1.0F;
+// smaller than its halo, scaled with the blade. The bolt's keeps its own size.
+constexpr f32 CORE_SCALE = 1.5F;
 constexpr f32 BOLT_CORE_SCALE = 2.0F;
-// A trail's width at the sword, in world units: about the drawn blade's.
+// A trail's width at the sword or the bolt, in world units: a thin streak, narrower than the drawn blade.
 constexpr f32 TRAIL_WIDTH = 5.0F;
 // How much of that width its tail loses, so it narrows as it fades.
 constexpr f32 TRAIL_TAPER = 0.6F;
@@ -147,7 +149,7 @@ void DrawSword(
             { .sprite = core::atlas::SpriteId::Halo,
               .previous = head.position,
               .current = head.position,
-              .scale = HALO_SCALE,
+              .scale = bolt ? BOLT_HALO_SCALE : HALO_SCALE,
               .colour = core::ScaledColour(effect, HALO_INTENSITY * head.shown * head.shown) }
         );
         *slots.sword = core::MakeInstance(
