@@ -1,6 +1,6 @@
 # A faster development loop: lint what a change reaches, one gate per level, reviews sized to the task
 
-Date: 2026-11-12 · Status: approved 2026-11-12, on the user's condition that it doesn't cost the game performance (§5)
+Date: 2026-11-12 · Status: implemented 2026-11-12 (approved the same day, on the user's condition that it doesn't cost the game performance: met, Outcome)
 
 ## Intent
 
@@ -209,4 +209,56 @@ numbers instead.
 
 ## Outcome
 
-(Filled in when implemented.)
+Built natively (the user's choice) in five commits: "build(tools): lint only the units a change reaches", "build(tools):
+print how long each check step took", "build(tools): draw the reference pictures in parallel", "build(xmake): stop the
+MSVC build recompiling everything under Wine", "docs(agents): one gate per level and reviews sized to the task".
+Measured 2026-11-12 on the branch head, 32 cores, against the table above.
+
+**`check`**, from its own step-time table (Goal 2), in seconds:
+
+| step | nothing changed | after `src/core/types.hpp` (warm) | warm before |
+|---|---|---|---|
+| selftest + commit-check + fmt | 1.2 | 1.2 | 1 |
+| lint (127 units: the branch changes `project_n.py`, which widens it) | 75.4 | 69.5 | 72 |
+| test linux-gcc release | 37.2 | 49.7 | 52 |
+| test linux-clang release | 12.5 | 18.0 | 18 |
+| **test windows-msvc release** | **5.3** | **53.7** | **107** |
+| **reference pictures** | **4.6** | **4.6** | **29** |
+| unity test | 24.1 | 22.1 | 21 |
+| releasedbg build | 18.3 | 16.2 | 16 |
+| **total** | **178.6** | **235.0** | **316** |
+
+Goal 5 (warm `check` ≤ 5 min) is met: 235 s, from 316 s, with nothing dropped or loosened.
+
+- **A typical task's lint** (Goal 1), a comment added to `src/gfx/renderer.hpp`: 11 units, 19.5 s (from 127 units,
+  71 s). The 11 are the 8 units whose records name the header and the 3 fuzz targets, which lint's linux-clang debug
+  build doesn't build, so they have no record and are always linted, as the rule says. A planted `typedef` in that
+  header was caught on the same 11 units in 17 s. Records are parsed as Lua strings holding Make rules: Lua's escapes
+  first, then Make's `\ ` in paths (a checkout under a path with spaces), then each prerequisite resolved through
+  `ROOT` (relative or absolute, the host's or the container's `/src`).
+- **windows-msvc**: the first build after the change compiled all 143 files once (57 s; `xmake test`'s second build
+  compiled nothing), a no-op build compiles nothing in ~1 s, a comment in `renderer.hpp` recompiled exactly its 8
+  includers (and 8 again when reverted), and the step with nothing changed takes 5.3 s. The wrapper also stops its loop
+  on a trailing `/sourceDependencies` with no file (the plan's script would have spun forever there).
+- **Reference pictures**: 25 processes, all at once: drawing takes 4.0 s (from ~28 s), the step 4.6–6.4 s. Each
+  process passes doctest's `--minimal`, because a range-limited doctest still reports every case as passed in its
+  summary (it counts range-skipped cases), which made 24 false "25 passed" blocks around a real failure. A failing run
+  ends with one line naming its cases (`reference: 1 of 25 case(s) failed: the map cells at zoom 1`, checked with
+  `outlines.png` copied over `cells.png`).
+- **AGENTS.md**: the gates per level and the review sizes are in "Working with superpowers"; `doctor --docs` finds
+  every quoted command.
+
+**The user's condition: performance.** No compiler or linker flag changed; only MSVC's build cache is off, under Wine,
+which changes path-derived anonymous-namespace names and so where code lands. `headless_bench.exe` built with the cache
+on ("before": the branch with the policy line disabled for that build only, because XMake reads the project policy
+before `--ccache`) and off ("after"), alternated 10 times each under Wine: 8 of 9 measures within ±0.7%, but month
+steps at the third worker count +3.5% by median (Welch t = 2.8). The plan stops there, so this went to the user, who
+chose a layout check: three cache-on builds from three build directories (each with other names) and the cache-off
+build, rotated 10 times each. The cache-on builds alone spread up to 2.2% on month steps; the cache-off build sits
+inside their range on all 9 measures (−1.0% to +1.1% of their mean), and month steps at the third worker count measured
+2.657 ms before against 2.656 ms after. The +3.5% did not reproduce: it was where code landed and run-to-run noise, not
+the cache. A second cache-off build has the same code (114 identity bytes differ). The GPU side can't run under Wine
+here; its CPU side compiles with the same flags. Shipped Windows builds (`artifact`, in the same container) get the
+cache-off binary.
+
+**Still to measure** (Goal 6): the glow chunk's time per task against chunk 4's, in the glow chunk's Outcome.
