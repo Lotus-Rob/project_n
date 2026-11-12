@@ -33,8 +33,9 @@ float4 FragmentMain(VertexOut input) : SV_Target0 {
     if (input.ring == 0.0) {
         const float4 colour = atlas.Sample(atlasSampler, float3(input.uv, input.layer)) * input.colour;
         if (input.dissolve > 0.0) {
-            // Blocks of the sprite's own UV, so the pattern travels with it; more of them gone, the rest fainter.
-            const float2 block = floor(input.uv / max(uvPerPixel * DISSOLVE_BLOCK_PIXELS, 1e-7));
+            // Blocks of the sprite's own UV (from its region's corner, not its place on the page), so the pattern travels with it
+            // and the atlas packing doesn't reshuffle it; more of them gone, the rest fainter.
+            const float2 block = floor((input.uv - input.region.xy) / max(uvPerPixel * DISSOLVE_BLOCK_PIXELS, 1e-7));
             if (BlockHash(block) < input.dissolve) {
                 discard;
             }

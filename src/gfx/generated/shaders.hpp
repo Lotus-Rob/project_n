@@ -156,15 +156,15 @@ inline constexpr Stage RIBBON_FRAG{
 };
 
 /// shaders/bin/sprite.frag.spv, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 21000> SPRITE_FRAG_SPIRV{{
+inline constexpr std::array<u8, 21048> SPRITE_FRAG_SPIRV{{
 #include "sprite.frag.spv.h"
 }};
 /// shaders/bin/sprite.frag.dxil, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 9364> SPRITE_FRAG_DXIL{{
+inline constexpr std::array<u8, 9372> SPRITE_FRAG_DXIL{{
 #include "sprite.frag.dxil.h"
 }};
 /// shaders/bin/sprite.frag.msl, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 25168> SPRITE_FRAG_MSL{{
+inline constexpr std::array<u8, 25195> SPRITE_FRAG_MSL{{
 #include "sprite.frag.msl.h"
 }};
 /// shaders/sprite.frag.hlsl.
