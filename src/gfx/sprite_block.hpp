@@ -31,6 +31,10 @@ struct SpriteBlock {
 /// so that the lower mips and filtering find its own colour past its edges, not an empty page.
 [[nodiscard]] SpriteBlock BlockOf(const core::SpriteInfo& sprite, u32 edge);
 
+/// The texels of its page that `sprite`'s distance field fills: its region and core::FIELD_REACH_TEXELS around it, which is
+/// what gfx::DistanceField() makes, whatever the manifest's gutter. A wider gutter's rest keeps the field's clear.
+[[nodiscard]] SpriteBlock FieldBlockOf(const core::SpriteInfo& sprite);
+
 /// Writes BlockOf(sprite, edge) into `destination`, row after row without gaps, from the sprite's image
 /// `pixels`, whose rows start `pitch` bytes apart, repeating the image's edges out to the block's.
 /// `destination` holds exactly the block.

@@ -1,4 +1,6 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/manifest.hpp"
+#include "gfx/distance_field.hpp"
 #include "gfx/sprite_block.hpp"
 
 #include <doctest/doctest.h>
@@ -55,6 +57,24 @@ TEST_CASE("a sprite's block is its region and its edge on every side") {
     CHECK(block.y == 16);
     CHECK(block.width == 42);
     CHECK(block.height == 72);
+}
+
+TEST_CASE("a field block covers the region and 16 texels round it") {
+    const core::SpriteInfo sprite{
+        .file = "a.png", .page = 0, .x = 32, .y = 48, .width = 10, .height = 6, .footX = 0, .footY = 0
+    };
+    const core::Manifest fieldManifest{ .gutter = 40 }; // wider than the field reaches
+    const std::vector<std::byte> image(std::size_t{ 10 } * 6 * gfx::BYTES_PER_TEXEL, std::byte{ 255 });
+    const std::vector<u8> field = gfx::DistanceField(image, 10 * gfx::BYTES_PER_TEXEL, 10, 6);
+    // One byte a texel, the region and the field's reach round it, whatever the gutter: a wider one is the clear's.
+    const gfx::SpriteBlock block = gfx::FieldBlockOf(sprite);
+    const gfx::SpriteBlock colour = gfx::BlockOf(sprite, fieldManifest.Edge());
+    CHECK(colour.width == 50);
+    CHECK(block.x == 16);
+    CHECK(block.y == 32);
+    CHECK(block.width == 42);
+    CHECK(block.height == 38);
+    CHECK(field.size() == static_cast<std::size_t>(block.width) * block.height);
 }
 
 TEST_CASE("opaque neighbours stay opaque and their own colour across their edges at the low mips") {
