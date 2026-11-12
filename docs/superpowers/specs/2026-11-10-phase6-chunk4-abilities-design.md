@@ -348,6 +348,10 @@ measurements behind them, and what is left open. Commits are named by subject: t
   debug UI with imgui in the future and all these values could be tweakable so we can tune it visually. Just ensure all
   the values like the distance, speed, range, shape, convergence, everything etc is data-driven and able to be tuned."
   Built as Task 10b, below; the ImGui UI itself is a later plan.
+- **A deeper damage colour** (2026-11-12, Task 10e): the damage element's default, `#CFE3FF`, was near-white, so the
+  swords' tinted cores added only a faint blue cast on the pale ground. The user: "Yes, make it deeper." It is now
+  `#6FA8FF` (packed `0xFFFF'6429`), a clear azure at about twice the saturation; the swords' cores read blue and the
+  halos still glow. No text uses the effect colours, so no contrast changed.
 
 ### Rulings
 
@@ -599,8 +603,6 @@ slowing gave 28.1 ms for a first cast.
 
 - **Player death is undefined** (ruling 12): nothing damages the player yet; if something did, the cultivator would be
   removed and the camera would stop following. What death does is a later chunk's design.
-- **The damage element's default colour, `#CFE3FF`, is near-white,** so the swords' tinted cores add only a faint blue
-  cast on the pale ground. Deepen the default? The user's call (the table makes it one value).
 - **Whether the waves read as separate rings in motion** (Task 9b's review): a still reads as one wide swirl. Levers, all
   data: lower `scatter`, a longer `wave_gap`, a short hold on the ring.
 - **Every tuning value as data** (Task 10b, planned): the motion constants above, the combat rules and the drawing's

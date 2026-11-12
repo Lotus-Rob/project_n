@@ -129,7 +129,7 @@ inline constexpr std::array<UiColourInfo, UI_COLOURS> UI_COLOUR_INFO{ {
 /// The colours as drawn, in UiColour's order: linear (the scene is drawn in linear space) and premultiplied, packed with
 /// red in the low byte, as TextItem::colour is. Those that existed before the table are what they were, bit for bit; the
 /// new ones are their sRGB colours (health bar and enemy health bar `#D8574A`, Qi bar `#5AA9E6`, bar background `#20242A`, HUD
-/// text `#F4EFE6`, cooling `#8A8F96`, warning `#F08A5D`; effects: damage `#CFE3FF`, healing `#8FE3A8`, poison `#7CD957`, burn
+/// text `#F4EFE6`, cooling `#8A8F96`, warning `#F08A5D`; effects: damage `#6FA8FF`, healing `#8FE3A8`, poison `#7CD957`, burn
 /// `#FF8A3D`).
 inline constexpr std::array<u32, UI_COLOURS> DEFAULT_UI_COLOURS{ {
     0xFFFF'FFFFU, // damage number: linear (1, 1, 1)
@@ -140,7 +140,7 @@ inline constexpr std::array<u32, UI_COLOURS> DEFAULT_UI_COLOURS{ {
     0xFF04'1A02U, // healing number, no outline: sRGB #145A22
     0xFF57'061DU, // poison number, no outline: sRGB #5E2A9E
     0xFF00'0839U, // burn number, no outline: sRGB #823200
-    0xFFFF'C49FU, // damage effect: sRGB #CFE3FF
+    0xFFFF'6429U, // damage effect: sRGB #6FA8FF
     0xFF64'C446U, // healing effect: sRGB #8FE3A8
     0xFF18'B133U, // poison effect: sRGB #7CD957
     0xFF0C'41FFU, // burn effect: sRGB #FF8A3D
