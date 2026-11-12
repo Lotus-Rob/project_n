@@ -75,22 +75,14 @@ std::expected<void, core::Error> ReadSwords(
     core::SwordLook& look
 ) {
     internal::NoteUnknownKeys(
-        "effects",
-        node,
-        name,
-        "key",
-        { "sword_scale", "halo_scale", "core_scale", "trail", "trail_width", "trail_taper", "halo_intensity", "core_opacity" },
-        warnings
+        "effects", node, name, "key", { "sword_scale", "trail", "trail_width", "trail_taper", "trail_intensity" }, warnings
     );
     EffectFields fields(node, name);
     fields.Read("sword_scale", look.swordScale, POSITIVE);
-    fields.Read("halo_scale", look.haloScale, POSITIVE);
-    fields.Read("core_scale", look.coreScale, POSITIVE);
     fields.Read("trail", look.trailTicks, POSITIVE, TICKS_A_SECOND);
     fields.Read("trail_width", look.trailWidth, POSITIVE);
     fields.Read("trail_taper", look.trailTaper, FRACTION);
-    fields.Read("halo_intensity", look.haloIntensity, NOT_NEGATIVE);
-    fields.Read("core_opacity", look.coreOpacity, FRACTION);
+    fields.Read("trail_intensity", look.trailIntensity, NOT_NEGATIVE);
     if (fields.Error()) {
         return std::unexpected{ *fields.Error() };
     }

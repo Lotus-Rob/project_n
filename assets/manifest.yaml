@@ -37,7 +37,7 @@ sprites:  # in art/sprites.toml order: a sprite's index is its SpriteId
   - { name: solid, file: sprites/solid.png, page: 0, region: [1268, 1844, 8, 8], foot: [0, 4] }
   - { name: glow_core, file: sprites/glow_core.png, page: 0, region: [1220, 1844, 16, 16], foot: [8, 8] }
 scenes:  # in art/scenes.toml order: a scene's index is its SceneId
-  - { name: arena, sprites: [ground, shadow, rock_large, rock_small, pine, shrine, treant_blighted, tree_dead, hut, crane, stele, fox_spirit, fox_yellow, wisp_red, orb_gold, crystal_ice, cultivator, fox, orb_blue, orb_red, villager, sword, halo, fire_bolt, lance_strike, solid, glow_core] }
+  - { name: arena, sprites: [ground, shadow, rock_large, rock_small, pine, shrine, treant_blighted, tree_dead, hut, crane, stele, fox_spirit, fox_yellow, wisp_red, orb_gold, crystal_ice, cultivator, fox, orb_blue, orb_red, villager, sword, fire_bolt, lance_strike, solid] }
   - { name: stress, sprites: [ground, shadow, rock_large, rock_small, pine, shrine, treant_blighted, tree_dead, hut, crane, stele, fox_spirit, fox_yellow, wisp_red, orb_gold, crystal_ice, cultivator, fox, orb_blue, orb_red, villager] }
   - { name: painted, sprites: [ground, shadow, tree_dead, crane, hut, stele, treant_blighted, crystal_ice, fox_spirit, wisp_red, fox_yellow, orb_gold, orb_blue, orb_red] }
   - { name: cells, sprites: [ground, cell_plain, cell_forest, cell_mountain, cell_snow, cell_city] }

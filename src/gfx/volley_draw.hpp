@@ -3,8 +3,8 @@
 /// @file
 /// @ingroup gfx
 /// Drawing what the simulation reports but leaves to the main thread to place each frame (the phase 6 chunk 4 spec): the
-/// flying swords at the render time, each with its halo and its trail, the poison lance's bursts, and the enemies' health
-/// bars. Pure: the renderer uploads what these functions write as the overlay's sprite instances and the ribbons'
+/// flying swords at the render time, each wearing its glow and with its trail, the poison lance's bursts, and the enemies'
+/// health bars. Pure: the renderer uploads what these functions write as the overlay's sprite instances and the ribbons'
 /// vertices, and tests read them without a device.
 
 #include "core/effects.hpp"
@@ -28,10 +28,10 @@ namespace gfx {
 /// How many quads each sword's trail has, between TRAIL_SEGMENTS + 1 points on its path. In code, not in effects.yaml: it
 /// sizes the ribbon buffers.
 inline constexpr u32 TRAIL_SEGMENTS = 8;
-/// The instances the overlay draws for each sword: its core, its halo and itself. An engine limit, so in code.
-inline constexpr u32 SWORD_INSTANCES = 3;
-/// The most instances the overlay's buffer holds (an engine limit, so in code): every sword's three of the largest volley, and
-/// room for bolts and health bars.
+/// The instances the overlay draws for each sword: itself, wearing its glow. An engine limit, so in code.
+inline constexpr u32 SWORD_INSTANCES = 1;
+/// The most instances the overlay's buffer holds (an engine limit, so in code): every sword of the largest volley, and room
+/// for bolts, bursts, health bars and the HUD.
 inline constexpr u32 MAX_OVERLAY_INSTANCES = 8'192;
 static_assert(SWORD_INSTANCES * core::MAX_VOLLEY_COUNT <= MAX_OVERLAY_INSTANCES, "the overlay holds the largest volley");
 /// The most ribbon quads the trails' buffer holds (an engine limit, so in code): every trail of the largest volley.
@@ -40,9 +40,8 @@ static_assert(core::MAX_VOLLEY_COUNT * TRAIL_SEGMENTS <= MAX_RIBBON_QUADS, "the 
 /// The ribbon vertices each sword's trail takes: QUAD_VERTICES for each of its TRAIL_SEGMENTS quads.
 inline constexpr u32 TRAIL_VERTICES = TRAIL_SEGMENTS * QUAD_VERTICES;
 
-/// How many whole swords (core, halo, blade and trail) still fit beside `instances` overlay instances and
-/// `ribbonVertices` ribbon vertices already placed, in MAX_OVERLAY_INSTANCES and MAX_RIBBON_QUADS: DrawVolleys() draws
-/// no more.
+/// How many whole swords (blade and trail) still fit beside `instances` overlay instances and `ribbonVertices` ribbon vertices
+/// already placed, in MAX_OVERLAY_INSTANCES and MAX_RIBBON_QUADS: DrawVolleys() draws no more.
 [[nodiscard]] constexpr std::size_t SwordRoom(std::size_t instances, std::size_t ribbonVertices) {
     constexpr std::size_t RIBBON_VERTICES = std::size_t{ MAX_RIBBON_QUADS } * QUAD_VERTICES;
     const std::size_t overlayRoom =
@@ -68,11 +67,10 @@ struct RibbonVertex {
 };
 static_assert(sizeof(RibbonVertex) == MESH_VERTEX_BYTES, "the ribbon pipeline reads vertices as the mesh path's");
 
-/// What one frame draws over the snapshot: the overlay's sprite instances and their batches, the HUD's batches among the
-/// same instances, and the trails' quads (QUAD_VERTICES corners each, in MeshVertex's corner order). The batches draw
-/// every sword's core, then every halo, then the bursts, then the health bars, then every sword, in world units; the HUD's
-/// draw its bars in target pixels, over the world's texts. The renderer keeps one and clears it each frame, so its buffers
-/// keep their capacity.
+/// What one frame draws over the snapshot: the overlay's sprite instances and their batches, the HUD's batches among the same
+/// instances, and the trails' quads (QUAD_VERTICES corners each, in MeshVertex's corner order). The batches draw every sword,
+/// then the bursts, then the health bars, in world units; the HUD's draw its bars in target pixels, over the world's texts. The
+/// renderer keeps one and clears it each frame, so its buffers keep their capacity.
 struct VolleyDrawing {
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The overlay's sprites, drawn as the batches say, with the overlay's alpha a no-op: each has `previous == current`.
@@ -84,7 +82,7 @@ struct VolleyDrawing {
     /// The HUD's batches (DrawHudBars()), placed in target pixels: not among `batches`.
     std::vector<core::Batch> hud{};
     // NOLINTEND(readability-redundant-member-init)
-    /// Swords left out, core, halo, blade and trail, as the overlay or the trails had no room for them.
+    /// Swords left out, blade and trail, as the overlay or the trails had no room for them.
     std::size_t droppedSwords = 0;
 
     /// Empties it, keeping its buffers' capacity.
@@ -143,26 +141,22 @@ void DrawFlashes(
 
 /// Adds the swords of `volleys` (their targets in `targets`, as the snapshot holds them) to `out` at the render time
 /// `core::RenderTick(simulationTick, alpha)`: each where core::SwordAt() puts it flying at core::SwordAim(), so a sword is
-/// drawn where the simulation says it is, between ticks too. Every sword of every volley, in order, fills one core, one
-/// halo, one sword and TRAIL_SEGMENTS ribbon quads, whether it shows or not: one that doesn't (before its launch, after it
-/// struck a living target at its arrival, or faded) writes zero instances and quads, so the bytes never depend on the
-/// worker count. Swords that don't fit beside what `out` holds (SwordRoom()) are left out whole and counted in
-/// `droppedSwords`: no core, halo, blade or trail is drawn without the rest of its sword.
+/// drawn where the simulation says it is, between ticks too. Every sword of every volley, in order, fills one instance and
+/// TRAIL_SEGMENTS ribbon quads, whether it shows or not: one that doesn't (before its launch, after it struck a living
+/// target at its arrival, or faded) writes a zero instance and quads, so the bytes never depend on the worker count.
+/// Swords that don't fit beside what `out` holds (SwordRoom()) are left out whole and counted in `droppedSwords`: no blade
+/// is drawn without its trail.
 ///
-/// - The cores make one batch, normal, drawn before every batch already in `out`: a small soft dot in `colours`'
-///   EffectColour() of the volley's element times its ability's core opacity (core::Effects::LookOf()) and how much of the
-///   sword shows (SwordPose::shown).
-/// - The halos make the next, additive, before those already there too (the health bars, which they would wash out), in
-///   the element's colour times its halo intensity and the square of how much shows, so a plunged sword's glow goes before
-///   its blade.
-/// - The swords make one batch, normal, after everything: the ability picks only the sprite (`sword` in its own steel,
-///   `fire_bolt` white tinted by the element's colour), at the look's sword scale, faded as its pose says, turned to its
-///   heading (the sprites point up).
-/// - A trail runs back along the same path from the sword to where it was the look's trail ticks earlier, or where it left its
-/// ring
-///   if later (a sword still on its ring has none), in the element's colour times its halo intensity and how much shows,
-///   narrowing by its taper towards its tail, at its width. A sword that struck stops at its arrival and its trail drains into
-///   its target.
+/// - The swords make one batch, normal, drawn before every batch already in `out` (the bursts and the health bars, which
+///   stay readable over them): the ability picks the sprite (`sword` in its own steel, `fire_bolt` white tinted by
+///   `colours`' EffectColour() of the volley's element), at its look's sword scale (core::Effects::LookOf()), faded by how
+///   much of it shows (SwordPose::shown), turned to its heading (the sprites point up). Each wears its role's glow
+///   (core::GlowRole::FlyingSwords, or FireBolt for the bolt) in the volley's element, its pulse counted from its own launch
+///   tick; the glow fades with the square of what shows, so a plunged sword's glow goes before its blade.
+/// - A trail runs back along the same path from the sword to where it was the look's trail ticks earlier, or where it left
+///   its ring if later (a sword still on its ring has none), in the element's colour times its trail intensity and how much
+///   shows, narrowing by its taper towards its tail, at its width. A sword that struck stops at its arrival and its trail
+///   drains into its target.
 ///
 /// A sword strikes when its target at its arrival (core::SwordTarget()) is a creature alive as that tick's arrivals
 /// resolved (core::VolleyTarget::Struck()), and vanishes then; any other plunges, staying at its aim while it fades over

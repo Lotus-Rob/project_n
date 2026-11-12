@@ -90,6 +90,7 @@ foot = [32, 112]
 [sword]
 foot = [5, 20]
 
+# Unused since the swords wear glows (core/glow.hpp): kept for its stable ID, in no scene.
 [halo]
 foot = [24, 24]
 
@@ -102,5 +103,6 @@ foot = [48, 48]
 [solid]
 foot = [0, 4]
 
+# Unused since the swords wear glows (core/glow.hpp): kept for its stable ID, in no scene.
 [glow_core]
 foot = [8, 8]

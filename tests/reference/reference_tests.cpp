@@ -376,6 +376,20 @@ TEST_CASE("new effects change the next picture of the same snapshot, and the shi
     renderer.SetEffects(core::Effects{});
     const gfx::Image restored = Captured(renderer, snapshot, view, jobs);
     CHECK(restored.rgba == shipped.rgba);
+
+    // A glow tuned live while a volley flies (the debug data watch): a smaller sword aura shows in the next picture.
+    constexpr u64 SINCE_SWORDS = 30; // half a second: the first rings stand and their first swords leave
+    constexpr f32 SMALLER_AURA = 4.0F;
+    const core::Snapshot swords = CastAndWait(core::Slot::Special1, SINCE_SWORDS, jobs);
+    const gfx::Image auraShipped = Captured(renderer, swords, {}, jobs);
+    core::Effects smaller;
+    smaller.glows.at(std::to_underlying(core::GlowRole::FlyingSwords)).size = SMALLER_AURA;
+    renderer.SetEffects(smaller);
+    const gfx::Image auraChanged = Captured(renderer, swords, {}, jobs);
+    CHECK(auraChanged.rgba != auraShipped.rgba);
+    renderer.SetEffects(core::Effects{});
+    const gfx::Image auraRestored = Captured(renderer, swords, {}, jobs);
+    CHECK(auraRestored.rgba == auraShipped.rgba);
 }
 
 TEST_CASE("the HUD at zoom 1, one slot cooling down") {

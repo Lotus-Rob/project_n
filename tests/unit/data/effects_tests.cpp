@@ -136,10 +136,7 @@ TEST_CASE("each section sets its values, a trail in seconds as ticks, and leaves
     constexpr f32 SOME = 7.0F;
     constexpr f32 QUARTER = 0.25F;
     constexpr f32 HALF = 0.5F;
-    constexpr f32 THREE_QUARTERS = 0.75F;
     constexpr f32 TWO = 2.0F;
-    constexpr f32 THREE = 3.0F;
-    constexpr f32 FOUR = 4.0F;
     constexpr f32 NINE = 9.0F;
     constexpr f32 FIVE = 5.0F;
     constexpr f32 TWENTY = 20.0F;
@@ -147,8 +144,7 @@ TEST_CASE("each section sets its values, a trail in seconds as ticks, and leaves
     constexpr f64 TWO_AND_A_HALF = 2.5;
     const std::expected<core::Effects, core::Error> effects = data::ParseEffects(
         "abilities:\n"
-        "  fire_bolt: { sword_scale: 2, halo_scale: 3, core_scale: 4, trail: 0.5, trail_width: 7, trail_taper: 0.25,\n"
-        "               halo_intensity: 0.5, core_opacity: 0.75 }\n"
+        "  fire_bolt: { sword_scale: 2, trail: 0.5, trail_width: 7, trail_taper: 0.25, trail_intensity: 0.5 }\n"
         "  poison_lance: { flash_start_scale: 1, flash_end_scale: 2, flash_intensity: 0.25 }\n"
         "health_bar: { rise: 9, width: 50, height: 8, fill_width: 46, fill_height: 5 }\n"
         "hud: { margin: 20, bar_width: 300, bar_height: 20, line_height: 30, bar_gap: 8, bar_text_inset: 4,\n"
@@ -157,13 +153,10 @@ TEST_CASE("each section sets its values, a trail in seconds as ticks, and leaves
     REQUIRE(effects.has_value());
     const core::SwordLook& bolt = effects->fireBolt;
     CHECK(bolt.swordScale == TWO);
-    CHECK(bolt.haloScale == THREE);
-    CHECK(bolt.coreScale == FOUR);
     CHECK(bolt.trailTicks == HALF_A_SECOND_OF_TICKS);
     CHECK(bolt.trailWidth == SOME);
     CHECK(bolt.trailTaper == QUARTER);
-    CHECK(bolt.haloIntensity == HALF);
-    CHECK(bolt.coreOpacity == THREE_QUARTERS);
+    CHECK(bolt.trailIntensity == HALF);
     CHECK(effects->poisonLance.endScale == TWO);
     CHECK(effects->poisonLance.intensity == QUARTER);
     CHECK(effects->healthBar.rise == NINE);
@@ -182,10 +175,10 @@ TEST_CASE("a value out of range is refused, naming the key and its line") {
     };
     constexpr std::array<Broken, 10> CASES{ {
         Broken{ .text = "abilities:\n  fire_bolt: { sword_scale: 0 }", .says = "fire_bolt's sword_scale" },
-        Broken{ .text = "abilities:\n  flying_swords: { halo_scale: -1 }", .says = "flying_swords's halo_scale" },
+        Broken{ .text = "abilities:\n  flying_swords: { trail_intensity: -1 }", .says = "flying_swords's trail_intensity" },
         Broken{ .text = "abilities:\n  flying_swords: { trail: 0 }", .says = "flying_swords's trail" },
         Broken{ .text = "abilities:\n  flying_swords: { trail_taper: 1.5 }", .says = "flying_swords's trail_taper" },
-        Broken{ .text = "abilities:\n  flying_swords: { core_opacity: 2 }", .says = "flying_swords's core_opacity" },
+        Broken{ .text = "abilities:\n  flying_swords: { trail_width: 0 }", .says = "flying_swords's trail_width" },
         Broken{ .text = "abilities:\n  poison_lance: { flash_end_scale: 0 }", .says = "poison_lance's flash_end_scale" },
         Broken{ .text = "health_bar: { width: 0 }", .says = "health_bar's width" },
         Broken{ .text = "hud: { not_enough_qi: -1 }", .says = "hud's not_enough_qi" },
@@ -229,6 +222,22 @@ TEST_CASE("an unknown key is a warning with its line, in each place") {
     CHECK(warnings[2].contains("fire_bolt has no key glitter"));
     CHECK(warnings[3].contains("health_bar has no key colour"));
     CHECK(warnings[4].contains("hud has no key fancy"));
+}
+
+TEST_CASE("the halo's and the core's keys are gone: each is an unknown key's warning, and the look keeps its numbers") {
+    std::vector<std::string> warnings;
+    const std::expected<core::Effects, core::Error> effects = data::ParseEffects(
+        "abilities:\n"
+        "  flying_swords: { halo_scale: 3, core_scale: 4, halo_intensity: 0.5, core_opacity: 0.75 }\n",
+        &warnings
+    );
+    REQUIRE(effects.has_value());
+    REQUIRE(warnings.size() == 4);
+    CHECK(warnings[0].contains("flying_swords has no key halo_scale"));
+    CHECK(warnings[1].contains("flying_swords has no key core_scale"));
+    CHECK(warnings[2].contains("flying_swords has no key halo_intensity"));
+    CHECK(warnings[3].contains("flying_swords has no key core_opacity"));
+    CHECK(effects->Hash() == core::Effects{}.Hash());
 }
 
 TEST_CASE("effects are loaded from a folder's effects.yaml, and a missing file is refused") {
