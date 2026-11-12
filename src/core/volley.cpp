@@ -149,20 +149,40 @@ struct WavePlace {
     u32 size = 1;
 };
 
-// The swords split over the waves in order of index, the first `count % waves` waves taking one more than the rest. A
-// wave takes a run of indices rather than every `waves`th one, so each still holds every target's swords in turn
-// (SwordTarget() starts a sword at `sword` modulo the targets).
+// The first sword of `wave` (from 0 to the shape's `waves`, where it is the count): the swords before it share the count
+// as the rings before it share the rings' radii, so every ring is as closely packed round its circumference. Rounding
+// down each boundary sends each wave's leftover sword outwards. With no radius at all, every ring weighs the same. The
+// boundaries never fall as the wave rises (each step of the share is correctly rounded), and at the last wave the share
+// is the total over itself, exactly 1.
+u32 WaveStart(const VolleyShape& shape, u32 wave) {
+    const auto inner = static_cast<f64>(shape.ringRadius);
+    const auto step = static_cast<f64>(shape.ringStep);
+    // The radii of the first `rings` rings, summed: an arithmetic series.
+    const auto radii = [inner, step](u32 rings) {
+        const auto count = static_cast<f64>(rings);
+        return (count * inner) + (step * count * (count - 1.0) * HALF);
+    };
+    const f64 total = radii(shape.waves);
+    const f64 share = total > 0.0 ? radii(wave) / total : static_cast<f64>(wave) / static_cast<f64>(shape.waves);
+    return static_cast<u32>(static_cast<f64>(shape.count) * share);
+}
+
+// The swords split over the waves in order of index, inner first, each wave's share of them its ring's share of the
+// circumferences (WaveStart()). A wave takes a run of indices rather than every `waves`th one, so each still holds every
+// target's swords in turn (SwordTarget() starts a sword at `sword` modulo the targets).
 WavePlace PlaceInWave(const VolleyShape& shape, u32 sword) {
     PN_ASSERT(sword < shape.count, "a sword beyond its volley's count");
     PN_ASSERT(shape.waves >= 1, "a volley of no waves");
-    const u32 fewer = shape.count / shape.waves;
-    const u32 more = fewer + 1;
-    const u32 inLarger = (shape.count % shape.waves) * more; // the swords of the waves holding one more
-    if (sword < inLarger) {
-        return { .wave = sword / more, .index = sword % more, .size = more };
+    // The last wave starting at or before `sword`: a binary search, as the boundaries never fall. A wave of no swords
+    // starts where the next does, so the search passes over it.
+    u32 low = 0;
+    u32 high = shape.waves; // starts at the count, after every sword
+    while (high - low > 1) {
+        const u32 middle = low + ((high - low) / 2);
+        (WaveStart(shape, middle) <= sword ? low : high) = middle;
     }
-    const u32 rest = sword - inLarger;
-    return { .wave = (shape.count % shape.waves) + (rest / fewer), .index = rest % fewer, .size = fewer };
+    const u32 first = WaveStart(shape, low);
+    return { .wave = low, .index = sword - first, .size = WaveStart(shape, low + 1) - first };
 }
 
 u64 VolleyDraw(const Volley& volley, u32 sword, u32 purpose) {

@@ -213,8 +213,10 @@ struct SwordPose {
 };
 
 /// The wave `sword` (below the shape's count) forms in, from 0 (the first, innermost ring) to below the shape's `waves`.
-/// The swords split over the waves by index, in order, as evenly as possible: the first `count % waves` waves hold one
-/// more than the rest.
+/// The swords split over the waves by index, in order, each wave's share of them its ring's share of all the rings'
+/// circumferences, so every ring is as closely packed: wave `w` starts at sword ⌊count × (r₀ + … + r₍w−1₎) / (r₀ + … +
+/// r₍waves−1₎)⌋, where `rᵢ` is ring `i`'s radius, `ringRadius + i × ringStep`, and so takes each leftover sword from
+/// the waves inside it. With no ring radius at all, every wave takes an even share the same way.
 [[nodiscard]] u32 WaveOf(const Volley& volley, u32 sword);
 
 /// The tick `sword` (below the shape's count) starts to appear on its ring: its wave (WaveOf()) starts `waveGapTicks`
