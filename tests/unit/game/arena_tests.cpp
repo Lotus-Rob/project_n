@@ -2,6 +2,7 @@
 #include "core/instances.hpp"
 #include "core/jobs.hpp"
 #include "core/state.hpp"
+#include "data/effects.hpp"
 #include "data/game_data.hpp"
 #include "game/arena.hpp"
 #include "game/npcs.hpp"
@@ -476,6 +477,15 @@ TEST_CASE("the shipped creatures and abilities tables are the built-in data") {
     const u64 shippedHash = shipped->Hash();
     const u64 builtInHash = game::BuiltInData().Hash();
     CHECK(shippedHash == builtInHash);
+}
+
+TEST_CASE("the shipped effects table is the default looks and layout") {
+    const std::expected<core::Effects, core::Error> shipped =
+        platform::AssetsDirectory().and_then([](const std::filesystem::path& assets) {
+            return data::LoadEffects(assets / "data");
+        });
+    REQUIRE_MESSAGE(shipped.has_value(), shipped.error().message);
+    CHECK(shipped->Hash() == core::Effects{}.Hash());
 }
 
 TEST_CASE("the shipped manifest runs every scene with the built-in data") {

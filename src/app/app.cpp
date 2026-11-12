@@ -9,6 +9,7 @@
 #include "core/math.hpp"
 #include "core/profile.hpp"
 #include "core/tick_clock.hpp"
+#include "data/effects.hpp"
 #include "data/game_data.hpp"
 #include "platform/clock.hpp"
 
@@ -107,6 +108,18 @@ DataWatch::Listing DataWatch::List(const std::filesystem::path& folder, std::err
     return listing;
 }
 
+DataReload ReloadOf(
+    const core::Effects& effects,
+    const std::expected<core::Effects, core::Error>& readEffects,
+    const core::GameData& data,
+    const std::expected<core::GameData, core::Error>& readData
+) {
+    return {
+        .effects = readEffects && readEffects->Hash() != effects.Hash(),
+        .gameData = readData && readData->Hash() != data.Hash(),
+    };
+}
+
 bool HasFlag(std::span<const char* const> args, std::string_view flag) {
     return std::ranges::any_of(args, [flag](const char* arg) { return std::string_view{ arg } == flag; });
 }
@@ -128,6 +141,7 @@ App::App(platform::Window window, gfx::Renderer renderer, Options options)
     )
   , m_frameNs{ m_startNs } {
     m_numberTexts.reserve(NUMBER_RESERVE);
+    ApplyEffects(m_options.effects);
     // The main thread is the job system's thread 0: waiting on its low-priority work, it may run the
     // logic's chunks, which need the simulation's environment.
     core::math::SetFloatingPointEnvironment();
@@ -256,16 +270,40 @@ void App::WatchData(u64 nowNs) {
         return;
     }
     // On this thread: the files are small. A worker parses them once they aren't.
-    const std::expected<core::GameData, core::Error> reloaded = data::LoadGameData(m_options.dataFolder);
-    if (const std::expected<void, core::Error> runs =
-            reloaded.and_then([this](const core::GameData& data) { return game::CheckScenes(*m_options.manifest, data); });
-        !runs) {
-        PN_LOG_ERROR("the game data changed but wasn't reloaded; the old data stays: {}", runs.error().message);
-        return;
+    const std::expected<core::Effects, core::Error> effects = data::LoadEffects(m_options.dataFolder);
+    if (!effects) {
+        PN_LOG_ERROR("the effects changed but weren't reloaded; the old effects stay: {}", effects.error().message);
     }
-    PN_LOG_INFO("the game data changed: reloading it");
-    m_options.data = *reloaded; // what `--cast-swords` reads the costs from
-    m_handover.SendInput({ .kind = core::ActionKind::ReloadData, .data = std::make_shared<const core::GameData>(*reloaded) });
+    std::expected<core::GameData, core::Error> gameData = data::LoadGameData(m_options.dataFolder);
+    if (gameData) {
+        if (const std::expected<void, core::Error> runs = game::CheckScenes(*m_options.manifest, *gameData); !runs) {
+            gameData = std::unexpected{ runs.error() };
+        }
+    }
+    if (!gameData) {
+        PN_LOG_ERROR("the game data changed but wasn't reloaded; the old data stays: {}", gameData.error().message);
+    }
+    const DataReload reload = ReloadOf(m_options.effects, effects, m_options.data, gameData);
+    if (reload.effects) {
+        PN_LOG_INFO("the effects changed: reloading them");
+        ApplyEffects(*effects);
+    }
+    if (reload.gameData) {
+        PN_LOG_INFO("the game data changed: reloading it");
+        m_options.data = *gameData; // what `--cast-swords` reads the costs from
+        m_handover.SendInput(
+            { .kind = core::ActionKind::ReloadData, .data = std::make_shared<const core::GameData>(*gameData) }
+        );
+    }
+    else if (gameData) {
+        PN_LOG_DEBUG("the game data is as it was: the simulation keeps running it");
+    }
+}
+
+void App::ApplyEffects(const core::Effects& effects) {
+    m_options.effects = effects;
+    m_renderer.SetEffects(effects);
+    m_hud.SetEffects(effects);
 }
 
 void App::HandleInput(const platform::WindowState& state) {

@@ -10,6 +10,9 @@
 
 namespace {
 
+// The shipped layout (assets/data/effects.yaml, which a data test checks).
+constexpr core::HudLayout HUD{};
+
 constexpr u32 HEIGHT = 720;
 constexpr f64 NOW = 1'000.0; // the render tick the HUD is built at
 constexpr core::CasterView CASTER{
@@ -112,28 +115,28 @@ TEST_CASE("the HUD shows the health bar, the Qi bar and every slot in order") {
     const gfx::HudBar& health = built.bars.at(HEALTH_BAR);
     const gfx::HudBar& qiBar = built.bars.at(QI_BAR);
     for (const gfx::HudBar& bar : built.bars) {
-        CHECK(bar.topLeft.x == app::HUD_MARGIN);
-        CHECK(bar.size.x == app::HUD_BAR_WIDTH);
-        CHECK(bar.size.y == app::HUD_BAR_HEIGHT);
+        CHECK(bar.topLeft.x == HUD.margin);
+        CHECK(bar.size.x == HUD.barWidth);
+        CHECK(bar.size.y == HUD.barHeight);
     }
     // Top to bottom: the health bar, the Qi bar, then the slots, the last 16 pixels over the bottom.
     CHECK(health.topLeft.y + health.size.y < qiBar.topLeft.y);
     CHECK(qiBar.topLeft.y + qiBar.size.y <= built.lines.at(FIRST_SLOT_LINE).topLeft.y);
     for (std::size_t line = FIRST_SLOT_LINE; line < built.lines.size(); ++line) {
         CAPTURE(line);
-        CHECK(built.lines.at(line).topLeft.x == app::HUD_MARGIN);
+        CHECK(built.lines.at(line).topLeft.x == HUD.margin);
         if (line > FIRST_SLOT_LINE) {
-            CHECK(built.lines.at(line).topLeft.y == built.lines.at(line - 1).topLeft.y + app::HUD_LINE_HEIGHT);
+            CHECK(built.lines.at(line).topLeft.y == built.lines.at(line - 1).topLeft.y + HUD.lineHeight);
         }
     }
-    CHECK(built.lines.back().topLeft.y + app::HUD_LINE_HEIGHT == static_cast<f32>(HEIGHT) - app::HUD_MARGIN);
+    CHECK(built.lines.back().topLeft.y + HUD.lineHeight == static_cast<f32>(HEIGHT) - HUD.margin);
     // Each bar's words are written on it.
     for (const auto& [line, bar] : { std::pair{ HEALTH_LINE, health }, std::pair{ QI_LINE, qiBar } }) {
         const gfx::HudLine& text = built.lines.at(line);
         CHECK(text.topLeft.x > bar.topLeft.x);
         CHECK(text.topLeft.x < bar.topLeft.x + bar.size.x);
         CHECK(text.topLeft.y < bar.topLeft.y + bar.size.y);
-        CHECK(text.topLeft.y + app::HUD_LINE_HEIGHT > bar.topLeft.y);
+        CHECK(text.topLeft.y + HUD.lineHeight > bar.topLeft.y);
     }
 }
 
@@ -221,10 +224,10 @@ TEST_CASE("the HUD grows with the text size, 16 pixels in from the edges") {
     constexpr f32 DOUBLE = 2.0F;
     app::Hud hud(HudStrings(), { .language = core::Language::English, .scale = DOUBLE }, core::UiColours{});
     const Built built = Build(hud);
-    CHECK(built.bars.at(HEALTH_BAR).topLeft.x == app::HUD_MARGIN);
-    CHECK(built.bars.at(HEALTH_BAR).size.x == app::HUD_BAR_WIDTH * DOUBLE);
-    CHECK(built.bars.at(HEALTH_BAR).size.y == app::HUD_BAR_HEIGHT * DOUBLE);
-    CHECK(built.lines.back().topLeft.y + (app::HUD_LINE_HEIGHT * DOUBLE) == static_cast<f32>(HEIGHT) - app::HUD_MARGIN);
+    CHECK(built.bars.at(HEALTH_BAR).topLeft.x == HUD.margin);
+    CHECK(built.bars.at(HEALTH_BAR).size.x == HUD.barWidth * DOUBLE);
+    CHECK(built.bars.at(HEALTH_BAR).size.y == HUD.barHeight * DOUBLE);
+    CHECK(built.lines.back().topLeft.y + (HUD.lineHeight * DOUBLE) == static_cast<f32>(HEIGHT) - HUD.margin);
 }
 
 TEST_CASE("the HUD follows the target's height: the same layout, moved down with its bottom") {
@@ -243,10 +246,10 @@ TEST_CASE("the HUD follows the target's height: the same layout, moved down with
     }
     for (std::size_t bar = 0; bar < taller.bars.size(); ++bar) {
         CAPTURE(bar);
-        CHECK(taller.bars.at(bar).topLeft.x == app::HUD_MARGIN);
+        CHECK(taller.bars.at(bar).topLeft.x == HUD.margin);
         CHECK(taller.bars.at(bar).topLeft.y == shorter.bars.at(bar).topLeft.y + DOWN);
     }
-    CHECK(taller.lines.back().topLeft.y + app::HUD_LINE_HEIGHT == static_cast<f32>(TALLER) - app::HUD_MARGIN);
+    CHECK(taller.lines.back().topLeft.y + HUD.lineHeight == static_cast<f32>(TALLER) - HUD.margin);
 }
 
 // A HUD table: each colour the HUD reads, distinct, starting from `first`.
@@ -304,7 +307,7 @@ TEST_CASE("with the outline and the shadow off, the slot lines take the ink, a c
         const u32 ink = table.Of(core::UiColour::TextInk);
         CHECK(built.lines.at(HEALTH_LINE).colour == table.Of(core::UiColour::HudText)); // on its bar
         CHECK(built.lines.at(QI_LINE).colour == table.Of(core::UiColour::HudText));
-        CHECK(built.lines.at(SPENDER_LINE).colour == core::ScaledColour(ink, app::HUD_COOLING_INK_OPACITY));
+        CHECK(built.lines.at(SPENDER_LINE).colour == core::ScaledColour(ink, HUD.coolingInkOpacity));
         CHECK(built.lines.at(SPENDER_LINE).text == "Right click  Poison Lance  3s"); // still its seconds
         for (std::size_t line = FIRST_SLOT_LINE; line < built.lines.size(); ++line) {
             if (line != SPENDER_LINE) {
@@ -333,8 +336,34 @@ TEST_CASE("with the outline and the shadow off, the slot lines' ink is as opaque
     const Built built = Build(hud, SpenderCooling());
     const u32 ink = core::ScaledColour(colours.Of(core::UiColour::TextInk), core::OpacityOf(HALF_OPAQUE_TEXT));
     CHECK(built.lines.at(FIRST_SLOT_LINE).colour == ink);
-    CHECK(built.lines.at(SPENDER_LINE).colour == core::ScaledColour(ink, app::HUD_COOLING_INK_OPACITY));
+    CHECK(built.lines.at(SPENDER_LINE).colour == core::ScaledColour(ink, HUD.coolingInkOpacity));
     CHECK(built.lines.at(HEALTH_LINE).colour == HALF_OPAQUE_TEXT); // on its bar, the text's own colour
+}
+
+TEST_CASE("new effects move and resize the HUD at its next build, keeping the warning that is playing") {
+    constexpr f32 WIDE = 300.0F;
+    constexpr f32 MARGIN = 40.0F;
+    constexpr f32 TALLER_LINES = 2.0F;
+    constexpr f64 LONG_WARNING = 5.0;
+    constexpr f64 FOUR_SECONDS = 240.0;
+    app::Hud hud = English();
+    hud.Play({ .kind = core::EventKind::NotEnoughQi }, NOW);
+    core::Effects tuned;
+    tuned.hud.barWidth = WIDE;
+    tuned.hud.margin = MARGIN;
+    tuned.hud.lineHeight = HUD.lineHeight * TALLER_LINES;
+    hud.SetEffects(tuned);
+    const Built built = Build(hud);
+    CHECK(built.bars.at(HEALTH_BAR).size.x == WIDE);
+    CHECK(built.bars.at(HEALTH_BAR).topLeft.x == MARGIN);
+    CHECK(built.lines.back().topLeft.y + tuned.hud.lineHeight == static_cast<f32>(HEIGHT) - MARGIN);
+    CHECK(built.lines.at(QI_LINE).text == "Not enough Qi");
+
+    tuned.hud.notEnoughQiSeconds = LONG_WARNING;
+    hud.SetEffects(tuned);
+    CHECK(Build(hud, CASTER, NOW + FOUR_SECONDS).lines.at(QI_LINE).text == "Qi 50/100"); // set at the refusal's own time
+    hud.Play({ .kind = core::EventKind::NotEnoughQi }, NOW);
+    CHECK(Build(hud, CASTER, NOW + FOUR_SECONDS).lines.at(QI_LINE).text == "Not enough Qi");
 }
 
 } // namespace

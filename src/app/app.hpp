@@ -11,7 +11,10 @@
 #include "app/damage_numbers.hpp"
 #include "app/hud.hpp"
 #include "app/view.hpp"
+#include "core/effects.hpp"
+#include "core/error.hpp"
 #include "core/frame.hpp"
+#include "core/game_data.hpp"
 #include "core/jobs.hpp"
 #include "core/manifest.hpp"
 #include "core/settings.hpp"
@@ -26,6 +29,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <expected>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -52,6 +56,8 @@ struct Options {
     game::Scene scene = game::Scene::Arena;
     /// The game data, read from `assets/data/`.
     core::GameData data = game::BuiltInData();
+    /// The effects' looks and the HUD's layout, read from `assets/data/effects.yaml`; debug builds reload them with the data.
+    core::Effects effects{};
     /// Quit by itself after this long (`--quit-after`); 0 never does.
     u64 quitAfterNs = 0;
     /// Send a debug burst of hits once a second (`--burst`), so a profile run sees the damage numbers' stress without a key
@@ -97,6 +103,24 @@ private:
     bool m_unreadable = false; // whether the last look failed, which was logged
 };
 
+/// What an edit in the data folder reloads: each part only when what it reads changed.
+struct DataReload {
+    /// The effects changed: the renderer and the HUD take them; the simulation never knows.
+    bool effects = false;
+    /// The game data changed: the simulation reloads it (ReloadData, which ends a replay playing).
+    bool gameData = false;
+};
+
+/// What the data folder, read again after an edit, reloads: the effects when `readEffects` hashes unlike `effects` (those
+/// drawn), the game data when `readData` hashes unlike `data` (that running). A part that couldn't be read reloads nothing;
+/// an edit that changed neither (the strings, say) reloads nothing.
+[[nodiscard]] DataReload ReloadOf(
+    const core::Effects& effects,
+    const std::expected<core::Effects, core::Error>& readEffects,
+    const core::GameData& data,
+    const std::expected<core::GameData, core::Error>& readData
+);
+
 /// The main thread's systems (the job system, the window, the renderer, the handover and its display
 /// side, the camera, the damage numbers, the HUD) and the logic thread, which builds and runs a Game on the job system.
 class App {
@@ -129,7 +153,11 @@ private:
         const core::Snapshot& drawn,
         f64 alpha
     ) const;
+    // Reads the data folder again after an edit and reloads what changed (ReloadOf()); a broken edit is logged with its
+    // line, and what it broke stays as it was.
     void WatchData(u64 nowNs);
+    // Draws, and lays the HUD out, as `effects` says from the next frame: the simulation is never told.
+    void ApplyEffects(const core::Effects& effects);
     void RepeatBurst(u64 nowNs);
     void CastOnTimer(u64 nowNs);
     void MeasureLatency(const core::Snapshot& drawn);

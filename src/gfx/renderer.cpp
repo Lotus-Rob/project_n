@@ -220,6 +220,7 @@ struct Renderer::Impl {
     std::shared_ptr<const core::Strings> strings = nullptr;
     TextOptions textOptions{};
     core::UiColours uiColours{};
+    core::Effects effects{};
     std::filesystem::path assets{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::vector<bool> resident{};   // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::optional<SceneLoad> load = std::nullopt;
@@ -297,10 +298,18 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
         const auto alpha = static_cast<f32>(shown.view->alpha);
         const f64 renderTick = core::RenderTick(snapshot.simulationTick, shown.view->alpha);
         DrawHudBars(shown.hud.bars, *manifest, volleyDrawing);
-        DrawFlashes(snapshot.flashes, renderTick, *manifest, uiColours, volleyDrawing);
-        DrawHealthBars(snapshot.healthBars, barsShown, alpha, *manifest, uiColours, volleyDrawing);
+        DrawFlashes(snapshot.flashes, renderTick, *manifest, uiColours, effects, volleyDrawing);
+        DrawHealthBars(snapshot.healthBars, barsShown, alpha, *manifest, uiColours, effects, volleyDrawing);
         DrawVolleys(
-            snapshot.volleys, snapshot.volleyTargets, snapshot.simulationTick, alpha, *manifest, uiColours, jobs, volleyDrawing
+            snapshot.volleys,
+            snapshot.volleyTargets,
+            snapshot.simulationTick,
+            alpha,
+            *manifest,
+            uiColours,
+            effects,
+            jobs,
+            volleyDrawing
         );
     }
     SDL_PushGPUDebugGroup(commands, "upload");
@@ -990,6 +999,10 @@ void Renderer::SetTextOptions(const TextOptions& text) {
 
 void Renderer::SetUiColours(const core::UiColours& colours) {
     m_impl->uiColours = colours;
+}
+
+void Renderer::SetEffects(const core::Effects& effects) {
+    m_impl->effects = effects;
 }
 
 std::expected<Image, core::Error> Renderer::Capture(

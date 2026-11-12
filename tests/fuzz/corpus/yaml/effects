@@ -1,0 +1,26 @@
+# How the abilities, the health bars and the HUD look and are laid out. Presentation only: nothing here changes what
+# happens, and it is not saved or hashed. Debug builds reload it within half a second of an edit, so a number can be tuned
+# with the game running; a key left out keeps its shipped number, and a value out of range is refused with its line (the old
+# look stays).
+#
+# abilities: how each ability's sword, bolt or burst is drawn. fire_bolt and flying_swords take
+#   sword_scale, halo_scale, core_scale (how much larger than their images the blade, its additive glow and the tinted core
+#   under it are drawn, above 0); trail (seconds the trail reaches back, above 0), trail_width (world units at the sword,
+#   above 0), trail_taper (how much of that width its tail loses, 0 to 1); halo_intensity (the glow's and the trail's
+#   brightness as a fraction of their element's colour, 0 or more) and core_opacity (the core's, 0 to 1).
+#   poison_lance takes flash_start_scale and flash_end_scale (its burst's size as a multiple of its 96-unit sprite at its
+#   start and end, above 0) and flash_intensity (its brightness, 0 or more).
+# health_bar: an enemy's bar in world units: rise (how far over its head the bar's middle sits, 0 or more), width and height
+#   (the background, above 0), fill_width (the fill at full health) and fill_height (above 0).
+# hud: the temporary HUD in target pixels at text scale 1: margin (in from the left and bottom edges, 0 or more), bar_width,
+#   bar_height, line_height (slot to slot, above 0), bar_gap, bar_text_inset, bar_text_rise (0 or more), not_enough_qi
+#   (seconds the Qi bar warns after a refused cast, above 0) and cooling_ink_opacity (a cooling slot's ink, 0 to 1).
+abilities:
+  fire_bolt:     { sword_scale: 1.0, halo_scale: 0.75, core_scale: 2.0, trail: 0.1, trail_width: 5, trail_taper: 0.6,
+                   halo_intensity: 1, core_opacity: 0.6 }
+  flying_swords: { sword_scale: 0.9, halo_scale: 1.125, core_scale: 1.5, trail: 0.1, trail_width: 5, trail_taper: 0.6,
+                   halo_intensity: 1, core_opacity: 0.6 }
+  poison_lance:  { flash_start_scale: 0.5, flash_end_scale: 1.9, flash_intensity: 1 }
+health_bar: { rise: 5, width: 44, height: 6, fill_width: 40, fill_height: 4 }
+hud: { margin: 16, bar_width: 240, bar_height: 18, line_height: 24, bar_gap: 6, bar_text_inset: 6, bar_text_rise: 7,
+       not_enough_qi: 1, cooling_ink_opacity: 0.55 }

@@ -6,6 +6,7 @@
 /// and each slot's control, ability and cooldown, at the bottom left. Pure: it lays out lines and bars in target pixels,
 /// which the renderer draws (gfx::HudDraw), and tests read them without a device.
 
+#include "core/effects.hpp"
 #include "core/frame.hpp"
 #include "core/strings.hpp"
 #include "core/types.hpp"
@@ -21,30 +22,15 @@
 
 namespace app {
 
-/// How far the HUD sits in from the target's left and bottom edges, in target pixels, whatever the text size.
-inline constexpr f32 HUD_MARGIN = 16.0F;
-/// A bar's width in target pixels at text scale 1.
-inline constexpr f32 HUD_BAR_WIDTH = 240.0F;
-/// A bar's height in target pixels at text scale 1.
-inline constexpr f32 HUD_BAR_HEIGHT = 18.0F;
-/// How far apart the HUD's lines of slots are, top to top, in target pixels at text scale 1: a line of
-/// gfx::HUD_PIXELS text and the gap under it.
-inline constexpr f32 HUD_LINE_HEIGHT = 24.0F;
-/// How long the Qi bar reads "Not enough Qi" after a cast was refused for want of it, in seconds.
-inline constexpr f64 NOT_ENOUGH_QI_SECONDS = 1.0;
-/// How opaque a cooling slot's line is, in core::UiColour::TextInk, when the text has neither outline nor shadow: fainter
-/// than the other slots' ink, beside the seconds it shows.
-inline constexpr f32 HUD_COOLING_INK_OPACITY = 0.55F;
-
 /// Lays out the temporary HUD each frame from the player's casting state (core::CasterView). At the bottom left, top to
 /// bottom: the health bar (core::UiColour::HealthBar on BarBackground) with "Health {value}/{max}" on it, the Qi bar (QiBar on
 /// BarBackground) with "Qi {value}/{max}" on it, then a line per slot in core::Slot's order: its control, its ability's
 /// name or "—", and while it cools down its seconds left, rounded up. Every value shows as a number as well as a length;
-/// a slot cooling down is drawn in HudCooling and shows its seconds; for NOT_ENOUGH_QI_SECONDS after a NotEnoughQi event,
+/// a slot cooling down is drawn in HudCooling and shows its seconds; for `notEnoughQiSeconds` after a NotEnoughQi event,
 /// the Qi bar's text reads "Not enough Qi" in HudWarning. Every colour comes from the table, the text from the strings.
 /// With the text's outline and shadow both off, the slots' lines, over the ground, take TextInk as the labels do, as opaque
-/// as HudText is (a cooling one at HUD_COOLING_INK_OPACITY of that), so they read on the pale ground; the bars' words, on
-/// their bars, keep theirs.
+/// as HudText is (a cooling one at the layout's `coolingInkOpacity` of that), so they read on the pale ground; the bars' words,
+/// on their bars, keep theirs. Every size, gap and time is core::HudLayout's, the shipped one until SetEffects().
 class Hud {
 public:
     /// A HUD showing `strings` as `text` says, the renderer's text options: in its language, its sizes its scale times
@@ -55,11 +41,14 @@ public:
     /// Draws in `colours` from the next Build() on.
     void SetColours(const core::UiColours& colours);
 
+    /// Lays out as `effects`' HUD layout says from the next Build() on, with the warning playing as it was.
+    void SetEffects(const core::Effects& effects);
+
     /// Lays out as `text` says from the next Build() on.
     void SetTextOptions(const gfx::TextOptions& text);
 
     /// Plays `event` at render tick `renderTick`: a NotEnoughQi makes the Qi bar read "Not enough Qi" for
-    /// NOT_ENOUGH_QI_SECONDS from then. Any other event changes nothing.
+    /// the layout's `notEnoughQiSeconds` from then. Any other event changes nothing.
     void Play(const core::Event& event, f64 renderTick);
 
     /// Forgets the warning playing, for a new timeline, where it never happened.
@@ -84,6 +73,7 @@ private:
     std::shared_ptr<const core::Strings> m_strings;
     gfx::TextOptions m_text;
     core::UiColours m_colours;
+    core::HudLayout m_layout{};                      // the shipped layout until SetEffects()
     std::optional<f64> m_warnedUntil = std::nullopt; // the render tick the warning ends at
     // Each line's text, the bars' first: kept from frame to frame, so a frame allocates nothing once they have grown.
     std::array<std::string, 2 + core::SLOTS> m_texts{};
