@@ -187,6 +187,7 @@ TEST_CASE("a recorded fight replays with every hash matching") {
     constexpr i64 QI_LEFT = 20;      // 100, less two lances (25 each), plus three bolts (10 each), less the swords (60)
     constexpr core::Vec2 DASH_TO{ .x = 400.0F, .y = 0.0F };
     constexpr u32 MAX_BURSTS = 100;
+    constexpr std::size_t HASHES = 4; // the hashes this recording holds, the last on its final tick
     core::GameData data = game::BuiltInData();
     data.fox.health = WEAK_FOX;
     data.abilities.qiStart = data.abilities.qiMax;
@@ -206,8 +207,11 @@ TEST_CASE("a recorded fight replays with every hash matching") {
             recording.Cast(core::Slot::Generator, FootOf(recording.arena, Foxes(recording.arena).front()));
             recording.Burst(BOLT_COOLING);
         }
-        recording.Cast(core::Slot::Movement, FootOf(recording.arena, recording.arena.Player()) + DASH_TO);
+        const core::Vec2 dashedFrom = FootOf(recording.arena, recording.arena.Player());
+        recording.Cast(core::Slot::Movement, dashedFrom + DASH_TO);
         recording.Burst(DASHING);
+        const f32 dashed = FootOf(recording.arena, recording.arena.Player()).x - dashedFrom.x; // straight right
+        CHECK(dashed == doctest::Approx(data.abilities.Of(core::AbilityKind::Dash).distance));
         recording.Cast(core::Slot::Special1, FootOf(recording.arena, Foxes(recording.arena).back()));
         recording.Burst(TO_MID_VOLLEY);
         REQUIRE(recording.volleys > 0); // the swords fly
@@ -231,7 +235,7 @@ TEST_CASE("a recorded fight replays with every hash matching") {
         playing.Burst(core::REPLAY_HASH_TICKS);
     }
     CHECK(playing.replay.AtEnd());
-    CHECK(playing.replay.HashCount() > 1);
+    CHECK(playing.replay.HashCount() == HASHES);
     CHECK(playing.replay.Matched() == playing.replay.HashCount());
 }
 
