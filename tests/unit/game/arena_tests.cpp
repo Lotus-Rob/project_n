@@ -804,4 +804,84 @@ TEST_CASE("the still scenes publish no texts") {
     CHECK(Published(arena).texts.empty());
 }
 
+constexpr u32 GLOW_ROLE_MASK = 0xFFU; // the role fills the glow word's low byte
+constexpr f32 HALF = 0.5F;
+constexpr f32 CHARGE_RISE_TICKS = 108.0F; // the demo charge's rise, in ticks
+constexpr f32 CHARGE_BEFORE_MIDWAY = 53.0F;
+constexpr f32 CHARGE_TEN = 10.0F;
+
+// The role in an instance's glow words (core::Frame's Instance::glow).
+core::GlowRole GlowRoleOf(const core::Snapshot& snapshot, SpriteId sprite) {
+    const auto found =
+        std::ranges::find_if(snapshot.instances, [sprite](const core::Instance& instance) { return Draws(instance, sprite); });
+    REQUIRE(found != snapshot.instances.end());
+    return static_cast<core::GlowRole>(found->glow & GLOW_ROLE_MASK);
+}
+
+TEST_CASE("the shrine, stele and crystal wear the demo glows") {
+    game::Arena arena(test::TestManifest());
+    const core::Snapshot snapshot = Published(arena);
+    CHECK(GlowRoleOf(snapshot, SpriteId::Shrine) == core::GlowRole::DemoPulse);
+    CHECK(GlowRoleOf(snapshot, SpriteId::Stele) == core::GlowRole::DemoCharge);
+    CHECK(GlowRoleOf(snapshot, SpriteId::CrystalIce) == core::GlowRole::DemoProgress);
+    CHECK(GlowRoleOf(snapshot, SpriteId::Pine) == core::GlowRole::None);
+    CHECK(GlowRoleOf(snapshot, SpriteId::Fox) == core::GlowRole::None);
+}
+
+TEST_CASE("the demo pulse starts at tick 0") {
+    const core::GlowInput glow = game::DemoGlow(core::GlowRole::DemoPulse, 500);
+    CHECK(glow.role == core::GlowRole::DemoPulse);
+    CHECK(glow.startTick == 0);
+}
+
+TEST_CASE("the demo charge rises, holds, releases and loops") {
+    const core::GlowInput rising = game::DemoGlow(core::GlowRole::DemoCharge, 54);
+    CHECK(rising.currentValue == doctest::Approx(HALF));
+    CHECK(rising.previousValue == doctest::Approx(CHARGE_BEFORE_MIDWAY / CHARGE_RISE_TICKS));
+    CHECK_FALSE(rising.released);
+    const core::GlowInput held = game::DemoGlow(core::GlowRole::DemoCharge, 120);
+    CHECK(held.currentValue == doctest::Approx(1.0F));
+    CHECK_FALSE(held.released);
+    const core::GlowInput released = game::DemoGlow(core::GlowRole::DemoCharge, 150);
+    CHECK(released.released);
+    CHECK(released.startTick == 144);
+    const core::GlowInput next = game::DemoGlow(core::GlowRole::DemoCharge, 192 + 10);
+    CHECK(next.currentValue == doctest::Approx(CHARGE_TEN / CHARGE_RISE_TICKS));
+    CHECK_FALSE(next.released);
+    CHECK(game::DemoGlow(core::GlowRole::DemoCharge, 192).previousValue == 0.0F); // a loop starts clean
+    const core::GlowInput later = game::DemoGlow(core::GlowRole::DemoCharge, 342);
+    CHECK(later.released);
+    CHECK(later.startTick == 336); // the absolute tick, not the one in the loop
+}
+
+TEST_CASE("the demo progress fills, then shows a result that changes each loop") {
+    const core::GlowInput filling = game::DemoGlow(core::GlowRole::DemoProgress, 90);
+    CHECK(filling.currentValue == doctest::Approx(HALF));
+    CHECK(filling.result == 0);
+    CHECK(game::DemoGlow(core::GlowRole::DemoProgress, 200).result == 1);
+    CHECK(game::DemoGlow(core::GlowRole::DemoProgress, 500).result == 2);
+    const core::GlowInput restarted = game::DemoGlow(core::GlowRole::DemoProgress, 300); // a loop starts clean
+    CHECK(restarted.previousValue == 0.0F);
+    CHECK(restarted.result == 0);
+    CHECK(game::DemoGlow(core::GlowRole::DemoProgress, 1400).result == 1);
+}
+
+TEST_CASE("a role without a demo drive has no glow") {
+    CHECK(game::DemoGlow(core::GlowRole::Hover, 10).role == core::GlowRole::None);
+}
+
+TEST_CASE("glows leave the state hash alone") {
+    game::Arena published(test::TestManifest());
+    game::Arena plain(test::TestManifest());
+    std::vector<core::Event> events;
+    for (const u64 tick : { BURST_TICK, BURST_TICK + 1 }) {
+        published.Tick(At(tick), {}, events);
+        plain.Tick(At(tick), {}, events);
+        if (tick == BURST_TICK) {
+            static_cast<void>(Published(published)); // between ticks, so a publish that changed state would show
+        }
+    }
+    CHECK(published.StateHash() == plain.StateHash());
+}
+
 } // namespace

@@ -19,11 +19,12 @@ struct Prop {
     SpriteId sprite = SpriteId{};
     core::Vec2 foot{};
     f32 scale = 1.0F;
+    core::GlowRole glow = core::GlowRole::None; // the glow it wears in the arena scene
 };
 
 // Laid out on the 1920x1080 ground, which the camera shows whole.
 constexpr std::array PROPS{
-    Prop{ .sprite = SpriteId::Shrine, .foot = { .x = 960.0F, .y = 330.0F } },
+    Prop{ .sprite = SpriteId::Shrine, .foot = { .x = 960.0F, .y = 330.0F }, .glow = core::GlowRole::DemoPulse },
     Prop{ .sprite = SpriteId::Pine, .foot = { .x = 290.0F, .y = 430.0F } },
     Prop{ .sprite = SpriteId::Pine, .foot = { .x = 1660.0F, .y = 400.0F } },
     Prop{ .sprite = SpriteId::Pine, .foot = { .x = 1500.0F, .y = 960.0F } },
@@ -34,7 +35,7 @@ constexpr std::array PROPS{
 };
 
 // The stone tablet, with its vertical caption beside it (design doc 0002.4 §2).
-constexpr Prop STELE{ .sprite = SpriteId::Stele, .foot = { .x = 760.0F, .y = 980.0F } };
+constexpr Prop STELE{ .sprite = SpriteId::Stele, .foot = { .x = 760.0F, .y = 980.0F }, .glow = core::GlowRole::DemoCharge };
 // Game text (the phase 6 chunk 3 spec): offsets in world units, so they scale with the zoom as the text does.
 // Clear of the head, with room between them for the health bar the main thread draws there.
 constexpr core::Vec2 LABEL_OFFSET{ .x = 0.0F, .y = -12.0F };
@@ -54,8 +55,41 @@ constexpr std::array ARENA_PAINTED{
     Prop{ .sprite = SpriteId::WispRed, .foot = { .x = 175.0F, .y = 345.0F }, .scale = 0.6F },
 };
 constexpr Prop ARENA_GLOW{ .sprite = SpriteId::OrbGold, .foot = { .x = 1720.0F, .y = 420.0F } }; // in the treant's branches
-constexpr Prop CRYSTAL{ .sprite = SpriteId::CrystalIce, .foot = { .x = 420.0F, .y = 620.0F }, .scale = 0.8F };
+constexpr Prop CRYSTAL{ .sprite = SpriteId::CrystalIce,
+                        .foot = { .x = 420.0F, .y = 620.0F },
+                        .scale = 0.8F,
+                        .glow = core::GlowRole::DemoProgress };
 constexpr f32 CRYSTAL_SPIN = 0.02F; // radians per tick: a turn in about five seconds
+
+// The demo glows' loops, in ticks (60 a second).
+constexpr u64 CHARGE_LOOP = 192;    // 3.2 s
+constexpr u64 CHARGE_RISE = 108;    // the value climbs from 0 to 1 over these, then holds
+constexpr u64 CHARGE_RELEASE = 144; // and is released here
+constexpr u64 PROGRESS_LOOP = 300;  // 5 s
+constexpr u64 PROGRESS_FILL = 180;  // the value climbs over these, then the result shows
+constexpr u64 PROGRESS_RESULTS = 4;
+
+// The demo glow of the arena scene's prop drawing `sprite`: none for the rest. It finds the role by sprite, so the arena must
+// keep one prop per demo sprite (the shrine, the stele and the crystal). The role isn't stored on the entity: that would
+// change what saves hold and the state hash, and a glow is presentation only.
+core::GlowRole DemoRoleOf(SpriteId sprite) {
+    for (const Prop& prop : PROPS) {
+        if (prop.sprite == sprite) {
+            return prop.glow;
+        }
+    }
+    for (const Prop& prop : { STELE, CRYSTAL }) {
+        if (prop.sprite == sprite) {
+            return prop.glow;
+        }
+    }
+    return core::GlowRole::None;
+}
+
+// A value rising linearly from 0 to 1 over `rise` ticks, then held.
+f32 Rise(u64 age, u64 rise) {
+    return std::min(static_cast<f32>(age) / static_cast<f32>(rise), 1.0F);
+}
 
 // The debug burst: DEBUG_BURST_HITS hits round the foxes, values from 1 to DEBUG_BURST_MAX.
 constexpr u32 DEBUG_BURST_HITS = 4'000;
@@ -926,6 +960,30 @@ void Arena::ApplyData() {
     }
 }
 
+core::GlowInput DemoGlow(core::GlowRole role, u64 tick) {
+    if (role == core::GlowRole::DemoPulse) {
+        return { .role = role };
+    }
+    if (role == core::GlowRole::DemoCharge) {
+        const u64 age = tick % CHARGE_LOOP;
+        const bool released = age >= CHARGE_RELEASE;
+        return { .role = role,
+                 .previousValue = age == 0 ? 0.0F : Rise(age - 1, CHARGE_RISE),
+                 .currentValue = Rise(age, CHARGE_RISE),
+                 .startTick = released ? tick - age + CHARGE_RELEASE : 0,
+                 .released = released };
+    }
+    if (role == core::GlowRole::DemoProgress) {
+        const u64 age = tick % PROGRESS_LOOP;
+        const u8 result = age >= PROGRESS_FILL ? static_cast<u8>(1 + ((tick / PROGRESS_LOOP) % PROGRESS_RESULTS)) : u8{ 0 };
+        return { .role = role,
+                 .previousValue = age == 0 ? 0.0F : Rise(age - 1, PROGRESS_FILL),
+                 .currentValue = Rise(age, PROGRESS_FILL),
+                 .result = result };
+    }
+    return {};
+}
+
 void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
     PN_PROFILE_ZONE();
     const auto& bodies = m_state[ACTIVE].Entities().storage<Body>();
@@ -934,6 +992,7 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
     const auto& spins = m_state[ACTIVE].Entities().storage<Spin>();
     const auto& dyings = m_state[ACTIVE].Entities().storage<Dying>();
     const u64 tick = snapshot.simulationTick;
+    const bool demoGlows = m_scene == Scene::Arena;
     snapshot.combat = IsCombatScene();
     const u32 chunks = core::ChunkCount(looks.size(), PUBLISH_CHUNK);
     core::Rect view = m_view;
@@ -981,7 +1040,8 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
                       .scale = look.scale,
                       .previousRotation = spin.previous,
                       .currentRotation = spin.current,
-                      .dissolve = dissolve }
+                      .dissolve = dissolve,
+                      .glow = demoGlows ? DemoGlow(DemoRoleOf(look.sprite), tick) : core::GlowInput{} }
                 ),
                 body.current.y,
                 dying ? core::StableId{} : stableId
