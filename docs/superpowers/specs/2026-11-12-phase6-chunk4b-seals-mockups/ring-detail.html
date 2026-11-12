@@ -1,0 +1,98 @@
+<h2>Which kind of detail feels right for a seal's rings?</h2>
+<p class="subtitle">Three directions. Each seal has 5 rings turning at their own speeds in see-through layers. Tick "Tilt onto the ground" to see the layers separate in depth. Click the one closest to what you picture. If you'd mix them, say so in the terminal.</p>
+
+<style>
+  .seal-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px; }
+  .card-image:has(.seal-box) { display:block; aspect-ratio:auto; }
+  .seal-box { position:relative; width:100%; height:340px; background:radial-gradient(circle at 50% 55%, #141c2e 0%, #070a12 75%); border-radius:8px; overflow:hidden; perspective:900px; }
+  .stage { position:absolute; inset:10px; transform-style:preserve-3d; transition:transform 1.2s ease; }
+  .tilted .stage { transform:rotateX(60deg) translateY(30px) scale(1.15); }
+  .layer { position:absolute; inset:0; transform-style:preserve-3d; mix-blend-mode:screen; transition:transform 1.2s ease; }
+  .layer svg { width:100%; height:100%; overflow:visible; filter:drop-shadow(0 0 2px #6fa8ff) drop-shadow(0 0 6px rgba(111,168,255,.6)); }
+  .layer g.spin { transform-origin:0px 0px; animation:spin linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .tilt-toggle { display:inline-flex; gap:8px; align-items:center; margin:4px 0 14px; cursor:pointer; }
+</style>
+
+<label class="tilt-toggle"><input type="checkbox" id="tilt"> Tilt onto the ground</label>
+
+<div class="cards seal-cards">
+  <div class="card" data-choice="script" onclick="toggleSelect(this)">
+    <div class="card-image"><div class="seal-box" id="seal-script"></div></div>
+    <div class="card-body"><h3>A · Script rings</h3><p>Bands of invented glyphs between double circles, around a central star. Reads as written power, an incantation.</p></div>
+  </div>
+  <div class="card" data-choice="geometry" onclick="toggleSelect(this)">
+    <div class="card-image"><div class="seal-box" id="seal-geometry"></div></div>
+    <div class="card-body"><h3>B · Sacred geometry</h3><p>Interlocking polygons and star figures, nodes at their points, ruled with fine tick marks. Reads as precise and mechanical.</p></div>
+  </div>
+  <div class="card" data-choice="filigree" onclick="toggleSelect(this)">
+    <div class="card-image"><div class="seal-box" id="seal-filigree"></div></div>
+    <div class="card-body"><h3>C · Filigree</h3><p>Many hair-thin rings, petals, dotted lines and spokes. Reads as delicate and ornamental, like a lotus.</p></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const NS = 'http://www.w3.org/2000/svg';
+  const C = '#6FA8FF', W = '#DCEBFF';
+  function rng(seed) { return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }; }
+  function el(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent.appendChild(e); return e; }
+  function circle(g, r, w, extra) { return el('circle', Object.assign({ r, fill: 'none', stroke: C, 'stroke-width': w }, extra || {}), g); }
+  function ticks(g, r, n, len, w) { let d = ''; for (let i = 0; i < n; i++) { const a = i / n * 2 * Math.PI, c = Math.cos(a), s = Math.sin(a); d += `M${c*r} ${s*r}L${c*(r-len)} ${s*(r-len)}`; } el('path', { d, stroke: C, 'stroke-width': w, fill: 'none' }, g); }
+  function dots(g, r, n, size, col) { for (let i = 0; i < n; i++) { const a = i / n * 2 * Math.PI; el('circle', { cx: Math.cos(a)*r, cy: Math.sin(a)*r, r: size, fill: col || C }, g); } }
+  function star(g, r, n, k, w) { const pts = []; for (let i = 0; i < n; i++) { const a = (i * k) / n * 2 * Math.PI - Math.PI / 2; pts.push(`${Math.cos(a)*r},${Math.sin(a)*r}`); } el('polygon', { points: pts.join(' '), fill: 'none', stroke: C, 'stroke-width': w, 'stroke-linejoin': 'round' }, g); }
+  function polygon(g, r, n, rot, w) { star(g, r, n, 1, w); }
+  function glyph(rand) {
+    const P = []; for (let y = 0; y < 4; y++) for (let x = 0; x < 3; x++) P.push([(x - 1) * 4, (y - 1.5) * 4]);
+    let d = ''; const strokes = 2 + Math.floor(rand() * 3);
+    for (let s = 0; s < strokes; s++) { const a = P[Math.floor(rand() * P.length)], b = P[Math.floor(rand() * P.length)]; d += `M${a[0]} ${a[1]}L${b[0]} ${b[1]}`; }
+    return d;
+  }
+  function glyphRing(g, r, n, scale, rand, w) {
+    for (let i = 0; i < n; i++) { const deg = i / n * 360; el('path', { d: glyph(rand), transform: `rotate(${deg}) translate(0 ${-r}) scale(${scale})`, stroke: C, 'stroke-width': w / scale, fill: 'none', 'stroke-linecap': 'round' }, g); }
+  }
+  function petals(g, r, n, depth, w) { let d = ''; for (let i = 0; i < n; i++) { const a0 = i / n * 2 * Math.PI, a1 = (i + 1) / n * 2 * Math.PI, am = (a0 + a1) / 2; d += `M${Math.cos(a0)*r} ${Math.sin(a0)*r}Q${Math.cos(am)*(r+depth)} ${Math.sin(am)*(r+depth)} ${Math.cos(a1)*r} ${Math.sin(a1)*r}`; } el('path', { d, stroke: C, 'stroke-width': w, fill: 'none' }, g); }
+  function spokes(g, r0, r1, n, w) { let d = ''; for (let i = 0; i < n; i++) { const a = i / n * 2 * Math.PI; d += `M${Math.cos(a)*r0} ${Math.sin(a)*r0}L${Math.cos(a)*r1} ${Math.sin(a)*r1}`; } el('path', { d, stroke: C, 'stroke-width': w, fill: 'none' }, g); }
+
+  function seal(id, layers) {
+    const box = document.getElementById(id); const stage = document.createElement('div'); stage.className = 'stage'; box.appendChild(stage);
+    layers.forEach((L, i) => {
+      const div = document.createElement('div'); div.className = 'layer'; div.dataset.z = L.z; div.style.opacity = L.o; stage.appendChild(div);
+      const svg = el('svg', { viewBox: '-200 -200 400 400' }, div);
+      const g = el('g', { class: 'spin' }, svg); g.style.animationDuration = Math.abs(L.t) + 's'; if (L.t < 0) g.style.animationDirection = 'reverse';
+      L.draw(g);
+    });
+  }
+
+  let r = rng(7);
+  seal('seal-script', [
+    { z: 0, o: .85, t: 90, draw: g => { circle(g, 192, 1.4); circle(g, 184, .8); glyphRing(g, 172, 48, .9, r, 1.1); circle(g, 160, .8); } },
+    { z: 12, o: .7, t: -60, draw: g => { circle(g, 148, 1.2); ticks(g, 148, 96, 6, .6); circle(g, 132, .6, { 'stroke-dasharray': '2 5' }); } },
+    { z: 24, o: .8, t: 45, draw: g => { circle(g, 118, 1); glyphRing(g, 106, 28, .8, r, 1); circle(g, 94, 1); } },
+    { z: 36, o: .75, t: -30, draw: g => { star(g, 90, 6, 2, 1.2); star(g, 90, 6, 2, 1.2); polygon(g, 52, 6, 0, .8); dots(g, 90, 6, 2.5, W); } },
+    { z: 48, o: .9, t: 20, draw: g => { circle(g, 40, 1.2); glyphRing(g, 32, 12, .6, r, .9); circle(g, 12, 1.5); dots(g, 0, 1, 4, W); } },
+  ]);
+
+  seal('seal-geometry', [
+    { z: 0, o: .85, t: 120, draw: g => { circle(g, 192, 1.4); ticks(g, 192, 180, 5, .5); ticks(g, 192, 36, 12, 1); circle(g, 176, .7); } },
+    { z: 12, o: .75, t: -70, draw: g => { star(g, 172, 8, 3, 1); dots(g, 172, 8, 3, W); circle(g, 120, .7); } },
+    { z: 24, o: .8, t: 50, draw: g => { polygon(g, 118, 6, 0, 1.1); star(g, 118, 6, 2, .9); dots(g, 118, 6, 5, 'none'); for (let i = 0; i < 6; i++) { const a = i / 6 * 2 * Math.PI - Math.PI / 2; circle(g, 7, .9, { cx: Math.cos(a)*118, cy: Math.sin(a)*118 }); } } },
+    { z: 36, o: .75, t: -35, draw: g => { star(g, 70, 3, 1, 1.1); g.appendChild(g.lastChild.cloneNode()).setAttribute('transform', 'rotate(60)'); circle(g, 70, .7, { 'stroke-dasharray': '1 4' }); circle(g, 35, .9); } },
+    { z: 48, o: .9, t: 25, draw: g => { star(g, 30, 12, 5, .8); circle(g, 8, 1.5); dots(g, 0, 1, 3, W); } },
+  ]);
+
+  seal('seal-filigree', [
+    { z: 0, o: .8, t: 100, draw: g => { circle(g, 194, .7); circle(g, 190, .4); ticks(g, 190, 240, 4, .35); petals(g, 172, 32, 14, .7); circle(g, 172, .5); } },
+    { z: 12, o: .65, t: -65, draw: g => { dots(g, 158, 72, 1, W); circle(g, 150, .4); circle(g, 146, .4); spokes(g, 120, 146, 48, .35); } },
+    { z: 24, o: .75, t: 40, draw: g => { petals(g, 110, 16, 26, .8); petals(g, 110, 16, 12, .5); circle(g, 110, .5); } },
+    { z: 36, o: .7, t: -28, draw: g => { circle(g, 78, .4, { 'stroke-dasharray': '1 3' }); petals(g, 62, 8, 30, .9); circle(g, 62, .5); dots(g, 70, 24, 1.2, W); } },
+    { z: 48, o: .9, t: 18, draw: g => { petals(g, 26, 8, 14, .8); circle(g, 26, .5); circle(g, 6, 1.2); dots(g, 0, 1, 2.5, W); } },
+  ]);
+
+  function applyTilt(on) {
+    document.querySelectorAll('.seal-box').forEach(b => b.classList.toggle('tilted', on));
+    document.querySelectorAll('.layer').forEach(l => { l.style.transform = on ? `translateZ(${l.dataset.z}px)` : 'none'; });
+  }
+  document.getElementById('tilt').addEventListener('change', e => applyTilt(e.target.checked));
+})();
+</script>
