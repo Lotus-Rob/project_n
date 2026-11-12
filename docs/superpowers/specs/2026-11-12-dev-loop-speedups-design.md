@@ -245,8 +245,19 @@ Goal 5 (warm `check` ≤ 5 min) is met: 235 s, from 316 s, with nothing dropped 
   summary (it counts range-skipped cases), which made 24 false "25 passed" blocks around a real failure. A failing run
   ends with one line naming its cases (`reference: 1 of 25 case(s) failed: the map cells at zoom 1`, checked with
   `outlines.png` copied over `cells.png`).
-- **AGENTS.md**: the gates per level and the review sizes are in "Working with superpowers"; `doctor --docs` finds
-  every quoted command.
+- **AGENTS.md**: the gates per level and the review sizes are in "Working with superpowers", and the Rules line on
+  verifying builds now points at them; `doctor --docs` finds every quoted command.
+- **Smaller rulings**: `check`'s steps moved into `check_steps(args, step)`, so one `try`/`finally` around one call
+  times them and prints the table, behaviour otherwise unchanged. Tasks 1–3 each changed `project_n.py`, which widens
+  lint to all 127 units, so their per-task `lint --range` ran once, after Task 3 (clean); each task still ran `ruff`.
+- **The whole-branch review's fixes** (one fix pass, each test-first): the wrapper strips `/sourceDependencies` only
+  when `PROJECT_N_CL_DROP_SOURCE_DEPENDENCIES=1`, which `xmake_env` sets, because the MSVC install is shared by every
+  checkout, and one whose `xmake.lua` keeps the build cache on (main until this merges, other branches until they
+  rebase) would otherwise have rebuilt nothing after a header change (no other checkout had built windows-msvc since the
+  wrapper went in; rechecked after the fix: no-op build 0 compiles, `renderer.hpp` probe 8); a record counts only when
+  its unit is in the lint build's fresh compile database, as XMake never deletes records of units it no longer builds;
+  the record test spells its root as XMake writes a Windows path into a Lua string, so `selftest` passes on CI's
+  Windows job (checked by simulating Windows paths); the AGENTS.md Rules line above.
 
 **The user's condition: performance.** No compiler or linker flag changed; only MSVC's build cache is off, under Wine,
 which changes path-derived anonymous-namespace names and so where code lands. `headless_bench.exe` built with the cache
