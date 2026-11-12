@@ -1,0 +1,88 @@
+<h2>Two questions about how seals sit in the arena</h2>
+<p class="subtitle">The arena's ground is pale paper, and its art is drawn as if seen from above at an angle (the blob shadows are flat ellipses). Click your pick in each row; tell me in the terminal if neither is right.</p>
+
+<style>
+  .q { margin: 18px 0 8px; font-weight: 600; }
+  .row2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px; }
+  .card-image:has(.paper) { display:block; aspect-ratio:auto; }
+  .paper { position:relative; width:100%; height:300px; background:radial-gradient(circle at 50% 50%, rgb(236,227,203) 0%, rgb(226,214,186) 80%); overflow:hidden; border-radius:8px; }
+  .seal { position:absolute; left:50%; top:50%; width:280px; height:280px; margin:-140px 0 0 -140px; }
+  .seal .layer { position:absolute; inset:0; }
+  .seal svg { width:100%; height:100%; overflow:visible; }
+  .seal g.spin { transform-origin:0px 0px; animation:spin linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .glow .layer { mix-blend-mode:plus-lighter; }
+  .glow svg { filter:drop-shadow(0 0 2px #6fa8ff) drop-shadow(0 0 7px rgba(111,168,255,.7)); }
+  .wash::before { content:""; position:absolute; inset:-6%; border-radius:50%; background:radial-gradient(circle, rgba(18,24,48,.78) 0%, rgba(18,24,48,.62) 55%, rgba(18,24,48,0) 72%); }
+  .seal.flat::before { transform:scaleY(.42); }
+  .figure { position:absolute; left:50%; top:50%; width:16px; height:44px; margin:-40px 0 0 -8px; background:#f4efe6; border:2px solid #2b2b2b; border-radius:8px 8px 3px 3px; z-index:5; }
+  .figure::after { content:""; position:absolute; left:-10px; right:-10px; bottom:-10px; height:9px; border-radius:50%; background:rgba(0,0,0,.25); }
+</style>
+
+<p class="q">1 · What does "on the ground" look like?</p>
+<div class="cards row2" data-question="view">
+  <div class="card" data-choice="view-top" onclick="toggleSelect(this)">
+    <div class="card-image"><div class="paper" id="v-top"></div></div>
+    <div class="card-body"><h3>A · Straight down</h3><p>A true circle, like the sword rings today. Simple, but ground, upright and overhead seals look alike, and the depth comes only from the layers turning.</p></div>
+  </div>
+  <div class="card" data-choice="view-angle" onclick="toggleSelect(this)">
+    <div class="card-image"><div class="paper" id="v-angle"></div></div>
+    <div class="card-body"><h3>B · At the art's angle</h3><p>One camera angle for all seals, matching the art: a ground seal lies flat as an ellipse, an upright one stands as a circle, and a layer's height lifts it up the screen, so tiers stack visibly.</p></div>
+  </div>
+</div>
+
+<p class="q">2 · How should a glowing seal show on pale paper?</p>
+<div class="cards row2" data-question="ground">
+  <div class="card" data-choice="ground-glow" onclick="toggleSelect(this)">
+    <div class="card-image"><div class="paper" id="g-glow"></div></div>
+    <div class="card-body"><h3>A · Glow only</h3><p>Light added on top, like the references. On pale paper it washes out towards white, as the swords' cores did.</p></div>
+  </div>
+  <div class="card" data-choice="ground-wash" onclick="toggleSelect(this)">
+    <div class="card-image"><div class="paper" id="g-wash"></div></div>
+    <div class="card-body"><h3>B · Ink wash, then glow</h3><p>A soft dark wash of ink spreads under the seal, then its lines glow on it. Keeps the references' glow and fits the ink-on-paper art; how dark is data.</p></div>
+  </div>
+  <div class="card" data-choice="ground-ink" onclick="toggleSelect(this)">
+    <div class="card-image"><div class="paper" id="g-ink"></div></div>
+    <div class="card-body"><h3>C · Drawn in ink</h3><p>The seal's lines drawn dark and coloured, like brushwork on the paper, with no glow. Very readable, but it loses the shining look.</p></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const NS = 'http://www.w3.org/2000/svg';
+  function rng(seed) { return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }; }
+  function el(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent.appendChild(e); return e; }
+  function build(box, opts) {
+    const C = opts.colour, W = opts.light;
+    const r = rng(7);
+    const circle = (g, rad, w, extra) => el('circle', Object.assign({ r: rad, fill: 'none', stroke: C, 'stroke-width': w }, extra || {}), g);
+    const ticks = (g, rad, n, len, w) => { let d = ''; for (let i = 0; i < n; i++) { const a = i / n * 2 * Math.PI, c = Math.cos(a), s = Math.sin(a); d += `M${c*rad} ${s*rad}L${c*(rad-len)} ${s*(rad-len)}`; } el('path', { d, stroke: C, 'stroke-width': w, fill: 'none' }, g); };
+    const dots = (g, rad, n, size) => { for (let i = 0; i < n; i++) { const a = i / n * 2 * Math.PI; el('circle', { cx: Math.cos(a)*rad, cy: Math.sin(a)*rad, r: size, fill: W }, g); } };
+    const star = (g, rad, n, k, w, rot) => { const pts = []; for (let i = 0; i < n; i++) { const a = (i * k) / n * 2 * Math.PI - Math.PI / 2 + (rot || 0); pts.push(`${Math.cos(a)*rad},${Math.sin(a)*rad}`); } el('polygon', { points: pts.join(' '), fill: 'none', stroke: C, 'stroke-width': w, 'stroke-linejoin': 'round' }, g); };
+    const glyph = () => { const P = []; for (let y = 0; y < 4; y++) for (let x = 0; x < 3; x++) P.push([(x - 1) * 4, (y - 1.5) * 4]); let d = ''; const n = 2 + Math.floor(r() * 3); for (let s = 0; s < n; s++) { const a = P[Math.floor(r() * P.length)], b = P[Math.floor(r() * P.length)]; d += `M${a[0]} ${a[1]}L${b[0]} ${b[1]}`; } return d; };
+    const glyphs = (g, rad, n, scale, w) => { for (let i = 0; i < n; i++) el('path', { d: glyph(), transform: `rotate(${i / n * 360}) translate(0 ${-rad}) scale(${scale})`, stroke: C, 'stroke-width': w / scale, fill: 'none', 'stroke-linecap': 'round' }, g); };
+    const layers = [
+      { h: 0, t: 90, draw: g => { circle(g, 192, 1.6); circle(g, 184, .9); glyphs(g, 172, 48, .9, 1.2); circle(g, 160, .9); } },
+      { h: 10, t: -60, draw: g => { circle(g, 148, 1.3); ticks(g, 148, 96, 6, .7); circle(g, 132, .7, { 'stroke-dasharray': '2 5' }); } },
+      { h: 22, t: 45, draw: g => { circle(g, 118, 1.1); glyphs(g, 106, 28, .8, 1.1); circle(g, 94, 1.1); } },
+      { h: 36, t: -30, draw: g => { star(g, 90, 3, 1, 1.3); star(g, 90, 3, 1, 1.3, Math.PI); dots(g, 90, 6, 2.6); } },
+      { h: 52, t: 20, draw: g => { circle(g, 40, 1.3); glyphs(g, 32, 12, .6, 1); circle(g, 12, 1.6); dots(g, 0, 1, 4); } },
+    ];
+    const seal = document.createElement('div'); seal.className = 'seal ' + (opts.cls || ''); box.appendChild(seal);
+    layers.forEach(L => {
+      const div = document.createElement('div'); div.className = 'layer'; seal.appendChild(div);
+      if (opts.squash) div.style.transform = `translateY(${-L.h}px) scaleY(.42)`;
+      const svg = el('svg', { viewBox: '-200 -200 400 400' }, div);
+      const g = el('g', { class: 'spin' }, svg); g.style.animationDuration = Math.abs(L.t) + 's'; if (L.t < 0) g.style.animationDirection = 'reverse';
+      L.draw(g);
+    });
+    if (opts.figure) { const f = document.createElement('div'); f.className = 'figure'; box.appendChild(f); }
+  }
+  const BLUE = '#6FA8FF', LIGHT = '#DCEBFF';
+  build(document.getElementById('v-top'), { colour: BLUE, light: LIGHT, cls: 'glow wash', figure: true });
+  build(document.getElementById('v-angle'), { colour: BLUE, light: LIGHT, cls: 'glow wash flat', squash: true, figure: true });
+  build(document.getElementById('g-glow'), { colour: BLUE, light: LIGHT, cls: 'glow' });
+  build(document.getElementById('g-wash'), { colour: BLUE, light: LIGHT, cls: 'glow wash' });
+  build(document.getElementById('g-ink'), { colour: '#1F4E9C', light: '#1F4E9C' });
+})();
+</script>
