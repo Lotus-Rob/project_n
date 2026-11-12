@@ -1,5 +1,6 @@
 #include "data/effects.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/glow.hpp"
 #include "core/log.hpp"
 #include "core/tick_clock.hpp"
 #include "data/internal/yaml.hpp"
@@ -191,6 +192,242 @@ std::expected<void, core::Error> ReadHud(const YAML::Node& node, std::vector<std
     return {};
 }
 
+constexpr internal::Range REACH{ .low = 0.0, .lowOpen = true, .high = static_cast<f64>(core::MAX_GLOW_SIZE) };
+constexpr internal::Range BEAT{ .low = static_cast<f64>(core::MIN_PULSE_SECONDS) };
+
+constexpr std::array<std::string_view, 2> BLEND_NAMES{ { "light", "ink" } };
+constexpr std::array<std::string_view, 5> CURVE_NAMES{ { "linear", "ease_in", "ease_out", "smooth", "sine" } };
+constexpr std::array<std::string_view, 4> KIND_NAMES{ { "steady", "pulse", "charge", "progress" } };
+
+// The palette colour `<area>.<key>` names (core::UI_COLOUR_INFO), if it names one.
+std::optional<core::UiColour> PaletteColour(std::string_view name) {
+    for (std::size_t colour = 0; colour < core::UI_COLOURS; ++colour) {
+        const core::UiColourInfo& info = core::UI_COLOUR_INFO.at(colour);
+        const std::string_view area = core::COLOUR_AREA_INFO.at(std::to_underlying(info.area)).key;
+        if (name.size() == area.size() + 1 + info.key.size() && name.starts_with(area) && name[area.size()] == '.' &&
+            name.ends_with(info.key)) {
+            return static_cast<core::UiColour>(colour);
+        }
+    }
+    return std::nullopt;
+}
+
+std::expected<core::UiColour, core::Error> ReadPalette(const YAML::Node& node, std::string_view owner) {
+    const std::string name = node.IsScalar() ? node.Scalar() : std::string{};
+    if (const std::optional<core::UiColour> colour = PaletteColour(name)) {
+        return *colour;
+    }
+    return std::unexpected{
+        RefuseEffects(node, std::format("{} has the colour \"{}\", which isn't a palette colour (area.key)", owner, name))
+    };
+}
+
+// Sets `field` to the entry of `names` that `key` in `map` spells (leaving it when absent), or refuses.
+template<typename Enum, std::size_t Count>
+std::expected<void, core::Error> ReadNamed(
+    const YAML::Node& map,
+    std::string_view owner,
+    const char* key,
+    const std::array<std::string_view, Count>& names,
+    Enum& field
+) {
+    const YAML::Node node = map[key];
+    if (!node) {
+        return {};
+    }
+    const std::string text = node.IsScalar() ? node.Scalar() : std::string{};
+    for (std::size_t index = 0; index < Count; ++index) {
+        if (names.at(index) == text) {
+            field = static_cast<Enum>(index);
+            return {};
+        }
+    }
+    return std::unexpected{ RefuseEffects(node, std::format("{}'s {} \"{}\" isn't known", owner, key, text)) };
+}
+
+std::expected<void, core::Error> ReadDrive(
+    const YAML::Node& node,
+    const std::string& glow,
+    std::vector<std::string>* warnings,
+    core::GlowDrive& drive
+) {
+    const std::string owner = std::format("{}'s drive", glow);
+    internal::NoteUnknownKeys(
+        "effects", node, owner, "key", { "kind", "period", "depth", "curve", "fade", "fade_curve", "results" }, warnings
+    );
+    EffectFields fields(node, owner);
+    fields.Read("period", drive.periodSeconds, BEAT);
+    fields.Read("depth", drive.depth, FRACTION);
+    fields.Read("fade", drive.fadeSeconds, POSITIVE);
+    if (fields.Error()) {
+        return std::unexpected{ *fields.Error() };
+    }
+    if (const std::expected<void, core::Error> read = ReadNamed(node, owner, "kind", KIND_NAMES, drive.kind); !read) {
+        return read;
+    }
+    if (const std::expected<void, core::Error> read = ReadNamed(node, owner, "curve", CURVE_NAMES, drive.curve); !read) {
+        return read;
+    }
+    if (const std::expected<void, core::Error> read = ReadNamed(node, owner, "fade_curve", CURVE_NAMES, drive.fadeCurve);
+        !read) {
+        return read;
+    }
+    if (const YAML::Node results = node["results"]) {
+        if (!results.IsSequence() || results.size() > core::MAX_GLOW_RESULTS) {
+            return std::unexpected{ RefuseEffects(
+                results, std::format("{}'s results isn't a list of at most {} colours", owner, core::MAX_GLOW_RESULTS)
+            ) };
+        }
+        drive.resultCount = 0;
+        for (const YAML::Node& entry : results) {
+            const std::expected<core::UiColour, core::Error> colour = ReadPalette(entry, owner);
+            if (!colour) {
+                return std::unexpected{ colour.error() };
+            }
+            drive.results.at(drive.resultCount) = *colour;
+            ++drive.resultCount;
+        }
+    }
+    return {};
+}
+
+std::expected<void, core::Error> ReadGlow(
+    const YAML::Node& node,
+    const std::string& name,
+    std::vector<std::string>* warnings,
+    core::GlowLook& look
+) {
+    internal::NoteUnknownKeys(
+        "effects", node, name, "key", { "colour", "blend", "size", "feather", "opacity", "zoom_shrink", "drive" }, warnings
+    );
+    EffectFields fields(node, name);
+    fields.Read("size", look.size, REACH);
+    fields.Read("feather", look.feather, FRACTION);
+    fields.Read("opacity", look.opacity, FRACTION);
+    fields.Read("zoom_shrink", look.zoomShrink, FRACTION);
+    if (fields.Error()) {
+        return std::unexpected{ *fields.Error() };
+    }
+    if (const YAML::Node colour = node["colour"]) {
+        if (colour.IsScalar() && colour.Scalar() == "element") {
+            look.colour.element = true;
+        }
+        else {
+            const std::expected<core::UiColour, core::Error> palette = ReadPalette(colour, name);
+            if (!palette) {
+                return std::unexpected{ palette.error() };
+            }
+            look.colour = { .element = false, .colour = *palette };
+        }
+    }
+    if (const std::expected<void, core::Error> read = ReadNamed(node, name, "blend", BLEND_NAMES, look.blend); !read) {
+        return read;
+    }
+    if (const YAML::Node drive = node["drive"]) {
+        if (!drive.IsMap()) {
+            return std::unexpected{ RefuseEffects(drive, std::format("{}'s drive isn't a map", name)) };
+        }
+        return ReadDrive(drive, name, warnings, look.drive);
+    }
+    return {};
+}
+
+bool IsRoleKey(std::string_view key) {
+    return !key.empty() && std::ranges::find(core::GLOW_ROLE_KEYS, key) != core::GLOW_ROLE_KEYS.end();
+}
+
+using NamedGlows = std::vector<std::pair<std::string, core::GlowLook>>;
+
+NamedGlows::iterator FindGlow(NamedGlows& named, const std::string& name) {
+    return std::ranges::find_if(named, [&name](const auto& entry) { return entry.first == name; });
+}
+
+// Adds each glow of `glows` to `named`, replacing the one of its name.
+std::expected<void, core::Error> ReadGlowTable(const YAML::Node& glows, std::vector<std::string>* warnings, NamedGlows& named) {
+    if (!glows.IsMap()) {
+        return std::unexpected{ RefuseEffects(glows, "glows isn't a map") };
+    }
+    for (const auto& entry : glows) {
+        const auto name = entry.first.as<std::string>();
+        if (!entry.second.IsMap()) {
+            return std::unexpected{ RefuseEffects(entry.second, std::format("glow {} isn't a map", name)) };
+        }
+        const auto existing = FindGlow(named, name);
+        core::GlowLook look = existing == named.end() ? core::GlowLook{} : existing->second;
+        if (const std::expected<void, core::Error> read = ReadGlow(entry.second, name, warnings, look); !read) {
+            return read;
+        }
+        if (existing == named.end()) {
+            named.emplace_back(name, look);
+        }
+        else {
+            existing->second = look;
+        }
+    }
+    return {};
+}
+
+// Fills `roleGlows` (by role) from `roles`: every role must name a glow of `named`.
+std::expected<void, core::Error> ReadRoles(
+    const YAML::Node& roles,
+    std::vector<std::string>* warnings,
+    NamedGlows& named,
+    std::array<std::string, core::GLOW_ROLES>& roleGlows
+) {
+    if (!roles.IsMap()) {
+        return std::unexpected{ RefuseEffects(roles, "glow_roles isn't a map") };
+    }
+    for (const auto& entry : roles) {
+        const auto key = entry.first.as<std::string>();
+        if (warnings != nullptr && !IsRoleKey(key)) {
+            warnings->push_back(
+                std::format("effects line {}: glow_roles has no role {}; it is ignored", entry.first.Mark().line + 1, key)
+            );
+        }
+    }
+    for (std::size_t role = 1; role < core::GLOW_ROLES; ++role) {
+        const std::string_view key = core::GLOW_ROLE_KEYS.at(role);
+        const YAML::Node glow = roles[std::string{ key }];
+        if (!glow) {
+            return std::unexpected{ RefuseEffects(roles, std::format("glow_roles has no role {}", key)) };
+        }
+        roleGlows.at(role) = glow.IsScalar() ? glow.Scalar() : std::string{};
+        if (FindGlow(named, roleGlows.at(role)) == named.end()) {
+            return std::unexpected{ RefuseEffects(
+                glow, std::format("glow_roles's {} names the glow \"{}\", which isn't there", key, roleGlows.at(role))
+            ) };
+        }
+    }
+    return {};
+}
+
+// The glows by name (the shipped ones, which `glows:` adds to or replaces) and which each role wears.
+std::expected<void, core::Error> ReadGlows(const YAML::Node& root, std::vector<std::string>* warnings, core::Effects& table) {
+    NamedGlows named;
+    named.reserve(core::SHIPPED_GLOW_COUNT);
+    for (const core::NamedGlow& glow : core::SHIPPED_GLOWS) {
+        named.emplace_back(std::string{ glow.name }, glow.look);
+    }
+    if (const YAML::Node glows = root["glows"]) {
+        if (const std::expected<void, core::Error> read = ReadGlowTable(glows, warnings, named); !read) {
+            return read;
+        }
+    }
+    std::array<std::string, core::GLOW_ROLES> roleGlows;
+    for (std::size_t role = 1; role < core::GLOW_ROLES; ++role) {
+        roleGlows.at(role) = core::SHIPPED_GLOW_ROLES.at(role);
+    }
+    if (const YAML::Node roles = root["glow_roles"]) {
+        if (const std::expected<void, core::Error> read = ReadRoles(roles, warnings, named, roleGlows); !read) {
+            return read;
+        }
+    }
+    for (std::size_t role = 1; role < core::GLOW_ROLES; ++role) {
+        table.glows.at(role) = FindGlow(named, roleGlows.at(role))->second;
+    }
+    return {};
+}
+
 } // namespace
 
 std::expected<core::Effects, core::Error> ParseEffects(std::string_view effects, std::vector<std::string>* warnings) {
@@ -199,7 +436,9 @@ std::expected<core::Effects, core::Error> ParseEffects(std::string_view effects,
         if (!root.IsMap()) {
             return std::unexpected{ RefuseEffects(root, "not a map of effects") };
         }
-        internal::NoteUnknownKeys("effects", root, "", "section", { "abilities", "health_bar", "hud" }, warnings);
+        internal::NoteUnknownKeys(
+            "effects", root, "", "section", { "abilities", "health_bar", "hud", "glows", "glow_roles" }, warnings
+        );
         core::Effects table;
         if (const YAML::Node abilities = root["abilities"]) {
             if (const std::expected<void, core::Error> read = ReadAbilities(abilities, warnings, table); !read) {
@@ -215,6 +454,9 @@ std::expected<core::Effects, core::Error> ParseEffects(std::string_view effects,
             if (const std::expected<void, core::Error> read = ReadHud(hud, warnings, table.hud); !read) {
                 return std::unexpected{ read.error() };
             }
+        }
+        if (const std::expected<void, core::Error> read = ReadGlows(root, warnings, table); !read) {
+            return std::unexpected{ read.error() };
         }
         return table;
     }

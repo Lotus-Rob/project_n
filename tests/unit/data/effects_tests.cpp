@@ -1,4 +1,5 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/glow.hpp"
 #include "data/effects.hpp"
 
 #include <doctest/doctest.h>
@@ -16,6 +17,118 @@ TEST_CASE("an empty table of effects is the shipped looks and layout") {
     REQUIRE(effects.has_value());
     CHECK(effects->Hash() == core::Effects{}.Hash());
     CHECK(effects->Valid());
+    CHECK(effects->glows.at(std::to_underlying(core::GlowRole::FlyingSwords)).opacity == core::shipped::SWORD_AURA.opacity);
+}
+
+TEST_CASE("glows are read and mapped to their roles") {
+    constexpr f32 SIZE = 6.0F;
+    constexpr f32 OPACITY = 0.8F;
+    constexpr f32 PERIOD = 0.34F;
+    const std::expected<core::Effects, core::Error> effects = data::ParseEffects(
+        "glows:\n"
+        "  mine: { colour: selection.hover, blend: ink, size: 6, feather: 0.5, opacity: 0.8, zoom_shrink: 0,\n"
+        "          drive: { kind: pulse, period: 0.34, depth: 0.5, curve: smooth } }\n"
+        "  tally: { colour: element, drive: { kind: progress, curve: ease_in,\n"
+        "                                     results: [effects.healing, names_and_captions.caption] } }\n"
+        "glow_roles: { selected: mine, hover: hover, flying_swords: tally, fire_bolt: bolt_aura, demo_pulse: demo_pulse,\n"
+        "              demo_charge: demo_charge, demo_progress: demo_progress }\n"
+    );
+    REQUIRE(effects.has_value());
+    const core::GlowLook& selected = effects->glows.at(std::to_underlying(core::GlowRole::Selected));
+    CHECK_FALSE(selected.colour.element);
+    CHECK(selected.colour.colour == core::UiColour::HoverOutline);
+    CHECK(selected.blend == core::GlowBlend::Ink);
+    CHECK(selected.size == SIZE);
+    CHECK(selected.opacity == OPACITY);
+    CHECK(selected.drive.kind == core::DriveKind::Pulse);
+    CHECK(selected.drive.periodSeconds == PERIOD);
+    CHECK(selected.drive.curve == core::GlowCurve::Smooth);
+    const core::GlowLook& tally = effects->glows.at(std::to_underlying(core::GlowRole::FlyingSwords));
+    CHECK(tally.colour.element);
+    CHECK(tally.drive.kind == core::DriveKind::Progress);
+    CHECK(tally.drive.curve == core::GlowCurve::EaseIn);
+    CHECK(tally.drive.resultCount == 2);
+    CHECK(tally.drive.results.at(1) == core::UiColour::Caption);
+}
+
+TEST_CASE("glows alone keep the shipped roles, and a redefined shipped glow follows its role") {
+    const std::expected<core::Effects, core::Error> effects =
+        data::ParseEffects("glows:\n  hover: { colour: selection.selected, size: 5 }\n");
+    REQUIRE(effects.has_value());
+    CHECK(effects->glows.at(std::to_underlying(core::GlowRole::Hover)).colour.colour == core::UiColour::SelectedOutline);
+    CHECK(effects->glows.at(std::to_underlying(core::GlowRole::Selected)).colour.colour == core::UiColour::SelectedOutline);
+    const core::GlowLook& hover = effects->glows.at(std::to_underlying(core::GlowRole::Hover));
+    CHECK(hover.blend == core::GlowBlend::Ink);
+    CHECK(hover.feather == 0.0F);
+    CHECK(hover.drive.kind == core::DriveKind::Steady);
+}
+
+TEST_CASE("the hash covers the glows' opacity and results") {
+    constexpr f32 DIMMER = 0.5F;
+    const core::Effects shipped{};
+    core::Effects dimmer{};
+    dimmer.glows.at(std::to_underlying(core::GlowRole::Hover)).opacity = DIMMER;
+    CHECK(dimmer.Hash() != shipped.Hash());
+    core::Effects recoloured{};
+    recoloured.glows.at(std::to_underlying(core::GlowRole::DemoProgress)).drive.results.at(1) = core::UiColour::PoisonEffect;
+    CHECK(recoloured.Hash() != shipped.Hash());
+}
+
+TEST_CASE(
+    "a missing role, an unknown glow, colour or curve, and a pulse faster than three a second are refused with their lines"
+) {
+    struct Broken {
+        std::string_view text;
+        std::string_view says;
+    };
+    constexpr std::array<Broken, 9> CASES{ {
+        Broken{ .text = "glow_roles: { selected: selected }\n", .says = "hover" },
+        Broken{ .text = "glow_roles: { selected: nothing, hover: hover }\n", .says = "nothing" },
+        Broken{ .text = "glows:\n  a: { colour: effects.shiny }\n", .says = "effects.shiny" },
+        Broken{ .text = "glows:\n  a: { colour: wobble }\n", .says = "wobble" },
+        Broken{ .text = "glows:\n  a: { drive: { kind: pulse, curve: bumpy } }\n", .says = "bumpy" },
+        Broken{ .text = "glows:\n  a: { drive: { kind: wobble } }\n", .says = "wobble" },
+        Broken{ .text = "glows:\n  a: { blend: gloss }\n", .says = "gloss" },
+        Broken{ .text = "glows:\n  a: { drive: { kind: pulse, period: 0.2 } }\n", .says = "a's drive's period" },
+        Broken{ .text = "glows:\n  a: { size: 17 }\n", .says = "a's size" },
+    } };
+    for (const Broken& broken : CASES) {
+        CAPTURE(broken.text);
+        const core::Error error = ErrorFor(broken.text);
+        CHECK(error.message.contains(broken.says));
+        CHECK(error.message.contains("effects line"));
+    }
+    const core::Error nine = ErrorFor(
+        "glows:\n  a: { drive: { kind: progress, results: [effects.damage, effects.damage, effects.damage, effects.damage,\n"
+        "    effects.damage, effects.damage, effects.damage, effects.damage, effects.damage] } }\n"
+    );
+    CHECK(nine.message.contains("results"));
+    const std::expected<core::Effects, core::Error> slow =
+        data::ParseEffects("glows:\n  a: { drive: { kind: pulse, period: 0.34 } }\n");
+    CHECK(slow.has_value());
+}
+
+TEST_CASE("a hex colour is refused") {
+    const core::Error quoted = ErrorFor("glows:\n  a: { colour: \"#ff0000\" }\n");
+    const core::Error plain = ErrorFor("glows:\n  a: { colour: 0xff0000 }\n");
+    CHECK(quoted.message.contains("#ff0000"));
+    CHECK(plain.message.contains("0xff0000"));
+}
+
+TEST_CASE("an unknown key in a glow, its drive or the roles is a warning with its line") {
+    std::vector<std::string> warnings;
+    const std::expected<core::Effects, core::Error> effects = data::ParseEffects(
+        "glows:\n"
+        "  a: { sparkle: 1, drive: { kind: steady, wobble: 2 } }\n"
+        "glow_roles: { selected: a, hover: hover, flying_swords: a, fire_bolt: a, demo_pulse: a, demo_charge: a,\n"
+        "              demo_progress: a, dance: a }\n",
+        &warnings
+    );
+    REQUIRE(effects.has_value());
+    REQUIRE(warnings.size() == 3);
+    CHECK(warnings[0].contains("sparkle"));
+    CHECK(warnings[1].contains("wobble"));
+    CHECK(warnings[2].contains("dance"));
 }
 
 TEST_CASE("each section sets its values, a trail in seconds as ticks, and leaves the others") {

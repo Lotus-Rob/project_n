@@ -8,8 +8,11 @@
 
 #include "core/abilities.hpp"
 #include "core/archive.hpp"
+#include "core/glow.hpp"
 #include "core/types.hpp"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace core {
@@ -241,6 +244,8 @@ struct Effects {
     HealthBarLook healthBar{};
     /// The HUD's layout.
     HudLayout hud{};
+    /// Each glow role's look, indexed by GlowRole (None's is unused): `glow_roles:` resolved against `glows:`.
+    std::array<GlowLook, GLOW_ROLES> glows = ShippedGlowTable();
 
     /// The look of `kind`'s projectiles: the bolt's for the fire bolt, else the swords'.
     [[nodiscard]] const SwordLook& LookOf(AbilityKind kind) const {
@@ -249,13 +254,17 @@ struct Effects {
 
     /// Whether every part is valid.
     [[nodiscard]] bool Valid() const {
-        return fireBolt.Valid() && flyingSwords.Valid() && poisonLance.Valid() && healthBar.Valid() && hud.Valid();
+        return fireBolt.Valid() && flyingSwords.Valid() && poisonLance.Valid() && healthBar.Valid() && hud.Valid() &&
+               std::ranges::all_of(glows, [](const GlowLook& glow) { return glow.Valid(); });
     }
 
     /// Lists its fields for an archive (core/archive.hpp), which hashes them (Hash()).
     template<typename Self, typename Archive>
     void Fields(this Self& self, Archive& archive) {
         archive(self.fireBolt, self.flyingSwords, self.poisonLance, self.healthBar, self.hud);
+        for (auto& glow : self.glows) {
+            archive(glow);
+        }
     }
 
     /// A hash of every value: two tables hash alike when every value has the same bits. Not part of the game data's hash:
