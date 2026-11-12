@@ -333,6 +333,8 @@ void Combat::Launch(
         shape.staggerTicks = 0;
         shape.waveGapTicks = 0;
         shape.outTicks = 0;
+        shape.holdTicks = 0;
+        shape.departJitterTicks = 0;
         shape.sweep = 0.0F;
         shape.sweepJitter = 0.0F;
         shape.flightTicks = FlightTicks(origin, tagged.empty() ? cast.point : tagged.front().chest, ability.speed);

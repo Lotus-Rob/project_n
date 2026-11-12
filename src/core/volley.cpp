@@ -12,8 +12,8 @@ namespace {
 
 // The volley's own random numbers' purposes. They key on the volley's seed, not the game's, so they share no numbers with
 // game/random_purposes.hpp's.
-// A sword's launch within its wave's stagger.
-constexpr u32 PURPOSE_LAUNCH = 1;
+// How long a sword waits on its ring after its hold before it leaves (VolleyShape::departJitterTicks).
+constexpr u32 PURPOSE_DEPART = 1;
 // How far a sword's place round its ring strays from an even spacing (VolleyShape::angleJitter).
 constexpr u32 PURPOSE_RING = 2;
 // A sword's share of the sweep (VolleyShape::sweepJitter).
@@ -31,14 +31,10 @@ constexpr u32 PURPOSE_WAVE_TURN = 8;
 
 // The bend of a short flight, as a fraction of its chord. Long flights approach the shape's sweep instead.
 constexpr f64 SHORT_BEND = 0.5;
-// The fraction of the out phase after which a sword starts turning from its burst to facing its flight.
-constexpr f64 TURN_START = 0.5;
-// How far round the caster a sword's burst sweeps as it spirals out to its place on the ring, in radians: it starts this
-// far ahead of that place, the way the flight bends, and turns into it as it slows. Its path bulges about a quarter of
-// the ring's radius from the straight line, so the burst is a swirl, not spokes.
-constexpr f64 SPIRAL_TURN = 1.0;
-// A sword's speed as it leaves the caster, as a multiple of its average speed out to the ring: a burst.
-constexpr f64 BURST_SPEED = 1.5;
+// Ticks a sword takes to turn from pointing out of its ring to facing its flight, as it sets off: long enough that even
+// half a turn stays a visible swing (at most 0.6 rad a tick), short enough that it has moved only a few world units
+// along its flight by the end, its flight easing from rest.
+constexpr f64 TURN_TICKS = 8.0;
 // A sword's speed at its arrival, as a multiple of its average speed in flight: it still strikes rather than settles.
 constexpr f64 ARRIVAL_SPEED = 0.5;
 // A cubic Bézier whose inner control points sit the same distance to one side of its chord bends 3/4 of that distance
@@ -138,7 +134,8 @@ f64 Either(u64 random) {
 
 // What a sword's path depends on besides the time and the aim: drawn from the volley's seed, the same on every call.
 struct SwordPlan {
-    u64 launch = 0;
+    u64 launch = 0;          // it appears
+    u64 departure = 0;       // it leaves its ring
     VolleyVector outwards{}; // unit
     f64 radius = 0.0;        // how far from the origin its place on its ring lies
     f64 bend = 1.0;          // this sword's share of the sweep
@@ -172,9 +169,17 @@ u64 VolleyDraw(const Volley& volley, u32 sword, u32 purpose) {
     return Random(volley.seed, 0, 0, purpose, sword);
 }
 
-u64 Launch(const Volley& volley, u32 sword, u32 wave) {
-    const u64 waveStart = volley.startTick + (static_cast<u64>(wave) * volley.shape.waveGapTicks);
-    return waveStart + ToBelow(VolleyDraw(volley, sword, PURPOSE_LAUNCH), volley.shape.staggerTicks);
+// A wave's swords appear in order of index, which is clockwise round the ring (the even spacing's angle rises with it, and
+// world y grows downwards), so the ring draws itself in one sweep over the stagger.
+u64 Launch(const Volley& volley, WavePlace place) {
+    const u64 waveStart = volley.startTick + (static_cast<u64>(place.wave) * volley.shape.waveGapTicks);
+    return waveStart + ((u64{ volley.shape.staggerTicks } * place.index) / place.size);
+}
+
+u64 Departure(const Volley& volley, u32 sword, u64 launch) {
+    const VolleyShape& shape = volley.shape;
+    return launch + shape.outTicks + shape.holdTicks +
+           ToBelow(VolleyDraw(volley, sword, PURPOSE_DEPART), shape.departJitterTicks);
 }
 
 SwordPlan Plan(const Volley& volley, u32 sword) {
@@ -185,8 +190,10 @@ SwordPlan Plan(const Volley& volley, u32 sword) {
     const f64 angle = even + (static_cast<f64>(shape.angleJitter) * Either(VolleyDraw(volley, sword, PURPOSE_RING)));
     const f64 ring = static_cast<f64>(shape.ringRadius) + (static_cast<f64>(place.wave) * static_cast<f64>(shape.ringStep));
     const f64 band = static_cast<f64>(shape.scatter) * Either(VolleyDraw(volley, sword, PURPOSE_BAND));
+    const u64 launch = Launch(volley, place);
     return {
-        .launch = Launch(volley, sword, place.wave),
+        .launch = launch,
+        .departure = Departure(volley, sword, launch),
         .outwards = { .x = math::Cos(angle), .y = math::Sin(angle) },
         .radius = ring * (1.0 + band),
         .bend = 1.0 + (static_cast<f64>(shape.sweepJitter) * Either(VolleyDraw(volley, sword, PURPOSE_BEND))),
@@ -293,7 +300,7 @@ VolleyVector Bend(VolleyVector chord, f64 sweep, f64 share) {
 }
 
 // The way a flight from `ring` towards `aim` leaves the ring (not unit length).
-VolleyVector Departure(VolleyVector ring, VolleyVector aim, f64 sweep, f64 share) {
+VolleyVector Leaving(VolleyVector ring, VolleyVector aim, f64 sweep, f64 share) {
     const VolleyVector chord = aim - ring;
     return (chord * THIRD) + Bend(chord, sweep, share);
 }
@@ -322,11 +329,11 @@ u32 WaveOf(const Volley& volley, u32 sword) {
 }
 
 u64 LaunchTick(const Volley& volley, u32 sword) {
-    return Launch(volley, sword, WaveOf(volley, sword));
+    return Launch(volley, PlaceInWave(volley.shape, sword));
 }
 
 u64 ArrivalTick(const Volley& volley, u32 sword) {
-    return LaunchTick(volley, sword) + volley.shape.outTicks + volley.shape.flightTicks;
+    return Departure(volley, sword, LaunchTick(volley, sword)) + volley.shape.flightTicks;
 }
 
 u64 LastArrival(const Volley& volley) {
@@ -342,59 +349,60 @@ SwordPose SwordAt(const Volley& volley, u32 sword, f64 tick, Vec2 aim) {
     const SwordPlan plan = Plan(volley, sword);
     const f64 radius = plan.radius;
     const f64 sweep = static_cast<f64>(shape.sweep);
-    const f64 outTicks = static_cast<f64>(shape.outTicks);
     const f64 flightTicks = static_cast<f64>(shape.flightTicks);
-    const VolleyVector origin = Widen(volley.origin);
     const VolleyVector target = Widen(aim);
-    const VolleyVector ring = origin + (plan.outwards * radius);
-    const f64 elapsed = tick - static_cast<f64>(plan.launch);
-
-    // Where the sword faces while it can't face where it moves: on the spot at the origin, or at rest on the ring. It turns
-    // `turned` of the way from `burst` (an angle from pointing outwards: the way its spiral out runs) to its flight, as
-    // angles, never wrapped, so the turn never flips side as the burst's way changes. The flight's way is planned from
-    // the cast's fixed point, then corrected to the moving aim, so it never flips side as the aim moves either.
-    const auto facing = [&](f64 turned, f64 burst) -> VolleyVector {
-        if (radius > 0.0 && turned <= 0.0) {
-            return Rotate(plan.outwards, burst);
-        }
-        const VolleyVector planned = Unit(Departure(ring, Widen(volley.point), sweep, plan.bend), plan.outwards);
-        const VolleyVector actual = Unit(Departure(ring, target, sweep, plan.bend), planned);
-        const f64 flight = AngleBetween(plan.outwards, planned) + AngleBetween(planned, actual);
-        // With no ring to burst out to, it faces its flight from the start (the bolt).
-        return radius > 0.0 ? Rotate(plan.outwards, burst + (turned * (flight - burst))) : actual;
+    const VolleyVector ring = Widen(volley.origin) + (plan.outwards * radius);
+    // The way its flight leaves the ring, planned from the cast's fixed point and then corrected to the moving aim, so
+    // its turn to it never flips side as the aim moves. Only a turn, the bolt and a flight of no length need it.
+    struct Ways {
+        VolleyVector planned{};
+        VolleyVector leaving{};
     };
-    // The spiral out: `eased` of the way to the ring, still `SPIRAL_TURN × (1 − eased)` round from its place. The way it
-    // moves there is turned from its place's direction by the atan of SPIRAL_TURN × eased, back the way it sweeps.
-    const auto burstAngle = [](f64 eased) { return (SPIRAL_TURN * (1.0 - eased)) - math::Atan2(SPIRAL_TURN * eased, 1.0); };
+    const auto ways = [&]() -> Ways {
+        const VolleyVector planned = Unit(Leaving(ring, Widen(volley.point), sweep, plan.bend), plan.outwards);
+        return { .planned = planned, .leaving = Unit(Leaving(ring, target, sweep, plan.bend), planned) };
+    };
 
     SwordPose pose{};
+    pose.position = Narrow(ring);
+    // On its ring it points straight out of it; with no ring (the bolt), the way it will fly.
+    pose.heading = Narrow(radius > 0.0 ? plan.outwards : ways().leaving);
+    const f64 elapsed = tick - static_cast<f64>(plan.launch);
     if (elapsed < 0.0) {
-        pose.position = volley.origin;
-        pose.heading = Narrow(facing(0.0, burstAngle(0.0)));
         return pose;
     }
-    pose.shown = 1.0F;
-    if (elapsed < outTicks) {
-        const f64 progress = elapsed / outTicks;
-        const f64 eased = Ease(progress, BURST_SPEED, 0.0);
-        pose.position = Narrow(origin + (Rotate(plan.outwards, SPIRAL_TURN * (1.0 - eased)) * (radius * eased)));
-        pose.heading = Narrow(facing(Ease((progress - TURN_START) / (1.0 - TURN_START), 0.0, 0.0), burstAngle(eased)));
+    const f64 outTicks = static_cast<f64>(shape.outTicks);
+    pose.shown = elapsed < outTicks ? static_cast<f32>(elapsed / outTicks) : 1.0F;
+    const f64 flown = tick - static_cast<f64>(plan.departure);
+    if (flown < 0.0) {
         return pose;
     }
-    // Only a flight of no length has no tangent; it faces as it did on the ring.
-    const auto heading = [&facing](VolleyVector tangent) {
-        return Narrow(Length(tangent) > 0.0 ? Unit(tangent, {}) : facing(1.0, 0.0));
+    // As it sets off it turns from pointing out of its ring to facing the way it moves, as angles, never wrapped. A flight
+    // shorter than the turn turns over the whole flight, so it faces its flight by its arrival.
+    const f64 turnTicks = std::min(TURN_TICKS, flightTicks);
+    const auto heading = [&](VolleyVector tangent, f64 since) {
+        const f64 turned = radius > 0.0 && turnTicks > 0.0 ? Ease(since / turnTicks, 0.0, 0.0) : 1.0;
+        if (turned >= 1.0 && Length(tangent) > 0.0) {
+            return Narrow(Unit(tangent, {}));
+        }
+        const Ways way = ways();
+        const VolleyVector moving = Unit(tangent, way.leaving);
+        if (turned >= 1.0) {
+            return Narrow(moving);
+        }
+        const f64 flight = AngleBetween(plan.outwards, way.planned) + AngleBetween(way.planned, way.leaving) +
+                           AngleBetween(way.leaving, moving);
+        return Narrow(Rotate(plan.outwards, turned * flight));
     };
     const SwordFlight flight = FlightTo(ring, target, sweep, plan.bend);
-    const f64 flown = elapsed - outTicks;
     if (flown < flightTicks) {
         const FlightPoint point = Along(flight, Ease(flown / flightTicks, 0.0, ARRIVAL_SPEED));
         pose.position = Narrow(point.position);
-        pose.heading = heading(point.tangent);
+        pose.heading = heading(point.tangent, flown);
         return pose;
     }
     pose.position = aim;
-    pose.heading = heading(flight.end - flight.second);
+    pose.heading = heading(flight.end - flight.second, flown);
     const f64 after = flown - flightTicks;
     const f64 fadeTicks = static_cast<f64>(shape.fadeTicks);
     if (after > 0.0) {

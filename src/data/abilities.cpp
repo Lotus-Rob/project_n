@@ -145,6 +145,8 @@ std::expected<core::VolleyShape, core::Error> Swords(
           "angle_jitter",
           "stagger",
           "out",
+          "hold",
+          "depart_jitter",
           "flight",
           "sweep",
           "sweep_jitter",
@@ -166,12 +168,28 @@ std::expected<core::VolleyShape, core::Error> Swords(
     const std::expected<f32, core::Error> angleJitter = NonNegative(node, name, "angle_jitter", true);
     const std::expected<u32, core::Error> stagger = Seconds(node, name, "stagger", true);
     const std::expected<u32, core::Error> out = Seconds(node, name, "out", true);
+    const std::expected<u32, core::Error> hold = Seconds(node, name, "hold", true);
+    const std::expected<u32, core::Error> departJitter = Seconds(node, name, "depart_jitter", true);
     const std::expected<u32, core::Error> flight = Seconds(node, name, "flight", true);
     const std::expected<f32, core::Error> sweep = NonNegative(node, name, "sweep");
     const std::expected<f32, core::Error> sweepJitter = Fraction(node, name, "sweep_jitter");
     const std::expected<u32, core::Error> fade = Seconds(node, name, "fade", true);
     if (const std::optional<core::Error> error = FirstError(
-            count, waves, waveGap, ring, ringStep, scatter, angleJitter, stagger, out, flight, sweep, sweepJitter, fade
+            count,
+            waves,
+            waveGap,
+            ring,
+            ringStep,
+            scatter,
+            angleJitter,
+            stagger,
+            out,
+            hold,
+            departJitter,
+            flight,
+            sweep,
+            sweepJitter,
+            fade
         )) {
         return std::unexpected{ *error };
     }
@@ -184,6 +202,8 @@ std::expected<core::VolleyShape, core::Error> Swords(
                               .staggerTicks = *stagger,
                               .waveGapTicks = *waveGap,
                               .outTicks = *out,
+                              .holdTicks = *hold,
+                              .departJitterTicks = *departJitter,
                               .flightTicks = *flight,
                               .sweep = *sweep,
                               .sweepJitter = *sweepJitter,

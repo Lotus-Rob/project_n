@@ -5,10 +5,12 @@
 # burn or poison { ticks, damage } (damage over time, once a second), swords (the volley; times in seconds, distances in
 # world units): count; waves (rings formed one after another, inner first, at least 1) and wave_gap (between their
 # starts); ring_radius (the first ring) and ring_step (each next one further out); scatter (how far a sword strays in or
-# out of its ring, a fraction of its radius below 1) and angle_jitter (round it, radians); stagger (a wave's launches);
-# out (to the ring); flight; sweep (how far a flight bends) and sweep_jitter (how much each sword's bend differs, a
-# fraction below 1); fade. loadout: which ability sits in each slot (generator, spender, movement,
-# special_1..special_4, ultimate); a slot left out is empty.
+# out of its ring, a fraction of its radius below 1) and angle_jitter (round it, radians), 0 for even rings; stagger
+# (a wave's swords appear one after another clockwise round its ring over this); out (each fades in at its place,
+# pointing out); hold (every sword stays still); depart_jitter (each then waits up to this more before it leaves);
+# flight; sweep (how far a flight bends) and sweep_jitter (how much each sword's bend differs, a fraction below 1); fade.
+# loadout: which ability sits in each slot (generator, spender, movement, special_1..special_4, ultimate); a slot left
+# out is empty.
 qi: { max: 100, start: 50 }
 abilities:
   fire_bolt:     { slot: generator, cooldown: 0.25, qi_gain: 10, damage: 140, element: burn, radius: 120, speed: 1500,
@@ -17,7 +19,7 @@ abilities:
                    poison: { ticks: 4, damage: 60 } }
   dash:          { slot: movement, cooldown: 1.0, distance: 260, duration: 0.15 }
   flying_swords: { slot: special, cooldown: 6, qi_cost: 60, damage: 20, radius: 260,
-                   swords: { count: 1000, waves: 5, wave_gap: 0.2, ring_radius: 160, ring_step: 100, scatter: 0.25,
-                             angle_jitter: 0.5, stagger: 0.15, out: 0.35, flight: 1.7, sweep: 420, sweep_jitter: 0.6,
-                             fade: 0.3 } }
+                   swords: { count: 1000, waves: 5, wave_gap: 0.2, ring_radius: 160, ring_step: 100, scatter: 0,
+                             angle_jitter: 0, stagger: 0.1, out: 0.35, hold: 0.3, depart_jitter: 0.25, flight: 1.7,
+                             sweep: 420, sweep_jitter: 0.6, fade: 0.3 } }
 loadout: { generator: fire_bolt, spender: poison_lance, movement: dash, special_1: flying_swords }

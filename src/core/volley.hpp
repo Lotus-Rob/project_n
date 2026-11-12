@@ -55,9 +55,11 @@ inline constexpr u32 MIN_COMMIT_TICKS = 2 * static_cast<u32>(RETARGET_TICKS);
 
 /// How a volley is laid out and flies, from `abilities.yaml`. All times are simulation ticks.
 ///
-/// The swords form in waves: rings one after another, the innermost first, each further out than the one before. A
-/// sword's place round its ring, how far in or out of the ring it lies, its launch within its wave and how much its
-/// flight bends are each drawn from the volley's seed, so the rings are loose bands and the flights a swarm.
+/// The swords form in waves: rings one after another, the innermost first, each further out than the one before. Each
+/// ring is a still sunburst: its swords appear evenly spaced round it, one after another clockwise, pointing straight out,
+/// and hold there. Then each leaves after a delay of its own and flies a bend of its own, both drawn from the volley's
+/// seed, so the rings dissolve into a swarm. A shape may still loosen its rings (`scatter`, `angleJitter`), drawn from
+/// the seed too.
 struct VolleyShape {
     /// How many swords (or bolts) the volley has, at most MAX_VOLLEY_COUNT.
     u32 count = 0;
@@ -73,12 +75,18 @@ struct VolleyShape {
     f32 scatter = 0.0F;
     /// How far a sword's place may stray round its ring from an even spacing, either way, in radians.
     f32 angleJitter = 0.0F;
-    /// Ticks between the first sword of a wave leaving the caster and the last.
+    /// Ticks over which a wave's swords appear, one after another clockwise round its ring: the first on the wave's start,
+    /// the last before `staggerTicks` have passed.
     u32 staggerTicks = 0;
     /// Ticks between one wave's start and the next's.
     u32 waveGapTicks = 0;
-    /// Ticks a sword takes to move from the caster to its place on its ring.
+    /// Ticks a sword takes to appear, fading in at its place on its ring.
     u32 outTicks = 0;
+    /// Ticks every sword stays still on its ring once it has appeared.
+    u32 holdTicks = 0;
+    /// How much longer a sword may wait on its ring after its hold, in ticks: each waits its own delay, drawn from the
+    /// volley's seed, from 0 to below this, so a ring leaves unevenly. 0 leaves together.
+    u32 departJitterTicks = 0;
     /// Ticks a sword flies from its ring to its target; 0 means "from the distance and AbilityData::speed" (the bolt).
     u32 flightTicks = 0;
     /// How far a sword's path bends sideways, in world units: a long flight bends nearly this far, a short one less
@@ -107,6 +115,8 @@ struct VolleyShape {
             self.staggerTicks,
             self.waveGapTicks,
             self.outTicks,
+            self.holdTicks,
+            self.departJitterTicks,
             self.flightTicks,
             self.sweep,
             self.sweepJitter,
@@ -130,15 +140,15 @@ struct VolleyShape {
 struct Volley {
     /// The ability use its hits and its end belong to (core::AbilityUse()).
     u64 use = 0;
-    /// The tick it was cast on: the first sword launches then at the earliest.
+    /// The tick it was cast on: the first sword starts to appear then.
     u64 startTick = 0;
-    /// Its own random numbers' seed (core::Random): each sword's launch, place on its ring and bend. The cast draws it from
-    /// core::Random with a purpose of its own and the state counter, so the volley's draws, which key on this seed with
-    /// purposes local to the path, share no numbers with the game's.
+    /// Its own random numbers' seed (core::Random): each sword's delay before it leaves its ring, its bend and any looseness
+    /// of its place on its ring. The cast draws it from core::Random with a purpose of its own and the state counter, so
+    /// the volley's draws, which key on this seed with purposes local to the path, share no numbers with the game's.
     u64 seed = 0;
-    /// Where the swords burst out from: the caster, in world units.
+    /// The caster, in world units: the middle of the swords' rings, and where the bolt flies from.
     Vec2 origin{};
-    /// The point it was cast at: on the ring, each sword turns to face its flight towards it.
+    /// The point it was cast at: as it leaves its ring, each sword turns to face its flight towards it.
     Vec2 point{};
     /// Its shape as it was cast: new game data never changes a volley in flight. The cast resolves `flightTicks` (for the
     /// bolt, ⌈distance / speed⌉), so here it is always the flight's length in ticks: 0 means it arrives on reaching the
@@ -195,10 +205,10 @@ struct VolleyTarget {
 struct SwordPose {
     /// Its position, in world units.
     Vec2 position{};
-    /// The way it points, unit length: the way it flies, or on the ring, the way it is turning to.
+    /// The way it points, unit length: on its ring straight out of it, then the way it flies.
     Vec2 heading{ .x = 1.0F, .y = 0.0F };
-    /// How much of it shows: 0 before its launch, 1 from then until its arrival, falling to 0 over the shape's
-    /// `fadeTicks` after.
+    /// How much of it shows: 0 until its launch, rising to 1 over the shape's `outTicks` as it appears, 1 from then until
+    /// its arrival, falling to 0 over the shape's `fadeTicks` after.
     f32 shown = 0.0F;
 };
 
@@ -207,31 +217,34 @@ struct SwordPose {
 /// more than the rest.
 [[nodiscard]] u32 WaveOf(const Volley& volley, u32 sword);
 
-/// The tick `sword` (below the shape's count) leaves the caster: its wave (WaveOf()) starts `waveGapTicks` after the one
-/// before, the first on the volley's start tick, and the wave's swords stream out over the shape's `staggerTicks` from
-/// then, in an order drawn from the seed.
+/// The tick `sword` (below the shape's count) starts to appear on its ring: its wave (WaveOf()) starts `waveGapTicks`
+/// after the one before, the first on the volley's start tick, and the wave's swords appear one after another clockwise
+/// round the ring over the shape's `staggerTicks` from then, in order of index: the wave's `k`th of `n` after
+/// ⌊staggerTicks × k / n⌋ ticks.
 [[nodiscard]] u64 LaunchTick(const Volley& volley, u32 sword);
 
-/// The tick `sword` (below the shape's count) reaches its target: its launch, then `outTicks` to the ring and
-/// `flightTicks` to the target.
+/// The tick `sword` (below the shape's count) reaches its target: its launch, then `outTicks` appearing, `holdTicks`
+/// still, its own delay (below `departJitterTicks`, drawn from the seed) and `flightTicks` to the target.
 [[nodiscard]] u64 ArrivalTick(const Volley& volley, u32 sword);
 
 /// The tick the volley's last sword arrives: the latest ArrivalTick(), or the start for a volley of no swords. It draws
-/// every sword's launch, so it costs O(count): call it once per volley, not every tick.
+/// every sword's delay, so it costs O(count): call it once per volley, not every tick.
 [[nodiscard]] u64 LastArrival(const Volley& volley);
 
 /// Where `sword` (below the shape's count) is at `tick`, a simulation tick or a render time between two, flying at `aim`
-/// (SwordAim()). Before its launch it waits unseen at the origin. For `outTicks` it spirals out, facing the way it moves
-/// and slowing, to its place on its wave's ring round the origin (`ringRadius`, a `ringStep` further for each wave before
-/// it, strayed in or out by up to `scatter` of that and round by up to `angleJitter`), sweeping round the origin the way
-/// its flight bends, and turns there to face its flight. For `flightTicks` it flies a curve that bends to the same side
-/// for every sword (so the rings swirl), by its own share of the sweep (`sweepJitter`), and ends at `aim`, wherever that
-/// moves, speeding up and then slowing a little. After its arrival it stays at `aim` and fades. A volley of no ring and
-/// no sweep (the bolt) flies straight. A pure function: the same inputs give the same bits on every thread.
+/// (SwordAim()). Its place is on its wave's ring round the origin (`ringRadius`, a `ringStep` further for each wave
+/// before it), evenly spaced round it (strayed in or out by up to `scatter` of the radius and round by up to
+/// `angleJitter`, when the shape sets them). It waits there unseen until its launch, then appears there without moving,
+/// fading in over `outTicks` and pointing straight out of the ring, and stays still, pointing out, through `holdTicks`
+/// and its own delay. Then it sets off from rest: for `flightTicks` it flies a curve that bends to the same side for
+/// every sword (so the rings swirl), by its own share of the sweep (`sweepJitter`), and ends at `aim`, wherever that
+/// moves, speeding up and then slowing a little, turning from pointing out to facing the way it flies over its first
+/// few ticks. After its arrival it stays at `aim` and fades. A volley of no ring and no sweep (the bolt) faces its
+/// flight from the start and flies straight. A pure function: the same inputs give the same bits on every thread.
 ///
 /// Its position never jumps while the aim moves continuously. Its heading turns at a bounded rate too, but no rule that
 /// depends only on the present aim can promise that everywhere, and it can flip: in flight, when the aim passes over
-/// the point it flew from on the ring (the target is then behind it); on the ring, while it turns, when the aim moves
+/// the point it flew from on the ring (the target is then behind it); as it sets off, while it turns, when the aim moves
 /// to the far side of that point from the volley's `point`.
 [[nodiscard]] SwordPose SwordAt(const Volley& volley, u32 sword, f64 tick, Vec2 aim);
 
