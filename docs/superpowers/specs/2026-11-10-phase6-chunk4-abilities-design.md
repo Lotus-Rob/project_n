@@ -453,8 +453,8 @@ accepted.
     nothing.
 52. **`Arena::Load` refuses a flash that starts after the loaded simulation tick** (`core::Simulation::Load` takes the
     save's tick). Costs nothing.
-53. **A sword's wave is a run of indices, not drawn** (implementer's): it keeps each wave spread over every target. If the
-    wave should be shuffled, a seeded bijection on the index.
+53. **A sword's wave is a run of indices, not drawn** (implementer's): it keeps each wave spread over every target. Costs
+    nothing.
 54. **`sweep_jitter` must be below 1** (implementer's): it keeps every bend on the swirl's side. Costs nothing.
 55. **"The path curves" is measured against min(chord, sweep)** (implementer's; the review found it principled): an outer
     ring's swords form near the point, so their chord can be shorter than the sweep. Costs nothing.
@@ -464,11 +464,12 @@ accepted.
     so a timer cast alone would fail with `NotEnoughQi`. `app::TimedCast` casts special 1 when it is ready and the Qi
     covers it, and otherwise, while the Qi is short, the fire bolt when it is ready, as a player would: no game rule or
     data changes for the profile run. The timer casts the swords 4 s after the last, or as soon after as they are ready,
-    so with their 6 s cooldown it casts about every 6 s. Its bolts (about three a cycle) are in the profile, as in play.
+    so with their 6 s cooldown it casts about every 6 s. Its bolts (about three a cycle) are in the profile, as in play; if a swords-only profile is wanted, a documented
+    Qi grant for the run.
 58. **`app::CastLatency` watches one ability's volleys and forgets a press after `CAST_LATENCY_LIMIT_NS` (1 s)**
     (Task 10): `--cast-swords`' bolts are volleys too, and a refused press (cooldown, Qi, pause) would otherwise lengthen
     the next press's latency. A new volley is one whose use the previous frame didn't draw. Key presses of special 1 are
-    measured as well as the timer's.
+    measured as well as the timer's. Costs nothing.
 59. **The `save` fuzz target loads every input as saved at u64's largest tick but one** and ticks and publishes at the
     largest (Task 10): any flash a save can name then loads, so fuzzed flashes reach the code after the load (at tick 0
     only a flash starting at 0 could). Volleys and respawns in the seeds are all overdue at that tick, so they exercise
