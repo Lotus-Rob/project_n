@@ -262,7 +262,7 @@ TEST_CASE("a sword still on its ring shows, but draws no trail") {
     bool shown = true;
     bool trailed = false;
     for (const u32 sword : HOLDING) {
-        REQUIRE(core::ArrivalTick(VOLLEY, sword) - SWORDS.flightTicks > TICK + 1); // still on its ring
+        REQUIRE(core::DepartureTick(VOLLEY, sword) > TICK + 1); // still on its ring
         shown = shown && !IsZero(SwordOf(drawing, sword));
         for (u32 quad = 0; quad < gfx::TRAIL_SEGMENTS; ++quad) {
             for (u32 corner = 0; corner < gfx::QUAD_VERTICES; ++corner) {
@@ -640,10 +640,10 @@ TEST_CASE("cores, halos and trails take their element's colour, not their abilit
     // The first sword to leave its ring, with its whole trail behind it, while the bolt is still in flight.
     u32 sword = 0;
     for (u32 other = 1; other < SWORDS.count; ++other) {
-        sword = core::ArrivalTick(VOLLEY, other) < core::ArrivalTick(VOLLEY, sword) ? other : sword;
+        sword = core::DepartureTick(VOLLEY, other) < core::DepartureTick(VOLLEY, sword) ? other : sword;
     }
     constexpr u32 THE_BOLT = SWORDS.count;
-    const u64 tick = core::ArrivalTick(VOLLEY, sword) - SWORDS.flightTicks + static_cast<u64>(gfx::TRAIL_TICKS) + 1;
+    const u64 tick = core::DepartureTick(VOLLEY, sword) + static_cast<u64>(gfx::TRAIL_TICKS) + 1;
     REQUIRE(tick < core::ArrivalTick(BOLT, 0));
     const core::Manifest manifest = TestManifest();
     const auto check = [&](const core::UiColours& colours) {

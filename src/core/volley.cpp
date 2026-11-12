@@ -31,9 +31,10 @@ constexpr u32 PURPOSE_WAVE_TURN = 8;
 
 // The bend of a short flight, as a fraction of its chord. Long flights approach the shape's sweep instead.
 constexpr f64 SHORT_BEND = 0.5;
-// Ticks a sword takes to turn from pointing out of its ring to facing its flight, as it sets off: long enough that even
-// half a turn stays a visible swing (at most 0.6 rad a tick), short enough that it has moved only a few world units
-// along its flight by the end, its flight easing from rest.
+// Ticks a sword takes to turn from pointing out of its ring to facing its flight, as it sets off, its flight easing from
+// rest: long enough that even half a turn stays a visible swing (at most 0.6 rad a tick). The trade-off for the look:
+// the turn overlaps the flight's start, so by its end a sword has moved up to about 25 world units along its flight
+// (about 1.5% of it), under about 7 while it still points more than 90° off the way it moves.
 constexpr f64 TURN_TICKS = 8.0;
 // A sword's speed at its arrival, as a multiple of its average speed in flight: it still strikes rather than settles.
 constexpr f64 ARRIVAL_SPEED = 0.5;
@@ -332,8 +333,12 @@ u64 LaunchTick(const Volley& volley, u32 sword) {
     return Launch(volley, PlaceInWave(volley.shape, sword));
 }
 
+u64 DepartureTick(const Volley& volley, u32 sword) {
+    return Departure(volley, sword, LaunchTick(volley, sword));
+}
+
 u64 ArrivalTick(const Volley& volley, u32 sword) {
-    return Departure(volley, sword, LaunchTick(volley, sword)) + volley.shape.flightTicks;
+    return DepartureTick(volley, sword) + volley.shape.flightTicks;
 }
 
 u64 LastArrival(const Volley& volley) {
