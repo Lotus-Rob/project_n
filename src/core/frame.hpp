@@ -29,8 +29,8 @@
 
 namespace core {
 
-/// One sprite as the GPU reads it from the instance storage buffer (design doc 0002 §8.5): 40
-/// bytes, matching `Instance` in shaders/sprite.vert.hlsl field for field. Position and rotation
+/// One sprite as the GPU reads it from the instance storage buffer (design doc 0002 §8.5): INSTANCE_BYTES
+/// (56) bytes, matching `Instance` in shaders/sprite.vert.hlsl field for field. Position and rotation
 /// interpolate from previous to current by the render clock's alpha; size, region and colour snap
 /// at the tick. The 16-bit fields are packed in pairs into u32s (core/instances.hpp), low half
 /// first, as the shader unpacks them.
@@ -52,10 +52,20 @@ struct Instance {
     u32 layerFlags = 0;
     /// Premultiplied colour the texture is multiplied by: red in the low byte, then green, blue and alpha.
     u32 colour = 0;
+    /// The glow's inputs (SpriteDraw::glow): the role (core::GlowRole) in bits 0 to 7, the progress result in 8 to 15, the
+    /// element (core::HitKind) in 16 to 23, and bit 24 set once a charge is released. 0 for no glow.
+    u32 glow = 0;
+    /// The glow's value at the previous tick, then at this one: two unorm16.
+    u32 glowValue = 0;
+    /// The low 32 bits of the glow's start tick.
+    u32 glowStart = 0;
+    /// Unused: DXC's SPIR-V StructuredBuffer stride is a multiple of 8 when the struct holds a float2, so without this word
+    /// the shader's stride (56) would not match the 52 bytes of fields.
+    u32 reserved = 0;
 };
 /// The bytes of one Instance, which the shader's StructuredBuffer reads with the same layout.
-inline constexpr std::size_t INSTANCE_BYTES = 40;
-static_assert(sizeof(Instance) == INSTANCE_BYTES, "the shader reads instances as 40 bytes");
+inline constexpr std::size_t INSTANCE_BYTES = 56;
+static_assert(sizeof(Instance) == INSTANCE_BYTES, "the shader reads instances as 56 bytes");
 
 /// How a batch of instances blends onto what is drawn under it (design doc 0002 §8.8): one
 /// pipeline each.

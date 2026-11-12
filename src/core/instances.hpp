@@ -6,6 +6,7 @@
 /// the shader unpacks, and an Instance from a sprite of the atlas manifest and its transform.
 
 #include "core/frame.hpp"
+#include "core/glow.hpp"
 #include "core/manifest.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
@@ -55,6 +56,8 @@ struct SpriteDraw {
     /// How much wider than `scale` makes it it is drawn, about its foot point: a health bar's fill is as long as its
     /// health. Meant for unrotated sprites.
     f32 widthScale = 1.0F;
+    /// The glow it wears round its edge (core/glow.hpp); none by default.
+    GlowInput glow{};
 };
 
 /// The instance that draws `draw`: its quad placed so the sprite's foot point lands on its

@@ -1,6 +1,6 @@
 #include "sprite.hlsli"
 
-// core::Instance (src/core/frame.hpp), 40 bytes. 16-bit fields come in pairs, low half first, and
+// core::Instance (src/core/frame.hpp), 56 bytes. 16-bit fields come in pairs, low half first, and
 // are unpacked by hand: SDL_GPU's baseline doesn't guarantee native 16-bit types (§8.5).
 struct Instance {
     float2 previous;  // the quad's centre at the previous tick, world units
@@ -11,6 +11,10 @@ struct Instance {
     uint regionMax;   // two unorm16: its bottom-right
     uint layerFlags;  // u16 layer (page), then the dissolve as unorm16
     uint colour;      // premultiplied RGBA8, red in the low byte
+    uint glow;        // role (bits 0-7), result (8-15), element (16-23), released (bit 24); 0 for no glow
+    uint glowValue;   // two unorm16: the glow's value at the previous tick, then at this one
+    uint glowStart;   // the glow's start tick, low 32 bits
+    uint reserved;    // pads the struct to 56 bytes, a multiple of 8 as SPIR-V's buffer layout needs
 };
 
 struct Draw {
