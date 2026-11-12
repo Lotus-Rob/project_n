@@ -7,6 +7,7 @@
 /// bars. Pure: the renderer uploads what these functions write as the overlay's sprite instances and the ribbons'
 /// vertices, and tests read them without a device.
 
+#include "core/effects.hpp"
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
 #include "core/manifest.hpp"
@@ -24,38 +25,16 @@
 
 namespace gfx {
 
-/// How many quads each sword's trail has, between TRAIL_SEGMENTS + 1 points on its path.
+/// How many quads each sword's trail has, between TRAIL_SEGMENTS + 1 points on its path. In code, not in effects.yaml: it
+/// sizes the ribbon buffers.
 inline constexpr u32 TRAIL_SEGMENTS = 8;
-/// How far back in time a sword's trail reaches, in simulation ticks: its tail is where the sword was then. Chunk 11's
-/// reduce motion shortens it.
-inline constexpr f32 TRAIL_TICKS = 6.0F;
-/// How bright the halos and the trails are, as a fraction of their element's colour: all the effects' additive light.
-/// Chunk 11's reduce flashing lowers it.
-inline constexpr f32 HALO_INTENSITY = 1.0F;
-/// How bright the poison lance's burst is, as a fraction of its element's colour: additive light, like the halos. Chunk
-/// 11's reduce flashing lowers it.
-inline constexpr f32 FLASH_INTENSITY = 1.0F;
-/// How opaque the tinted core under each sword's halo is, as a fraction of its element's colour: the hue that shows on
-/// pale ground, where added light only whitens. Colour, not light, so reduce flashing leaves it alone.
-inline constexpr f32 CORE_OPACITY = 0.6F;
-/// How far over a creature's head its health bar's middle sits, in world units.
-inline constexpr f32 HEALTH_BAR_RISE = 5.0F;
-/// The health bar's background, in world units: its fill sits centred inside it.
-inline constexpr f32 HEALTH_BAR_WIDTH = 44.0F;
-/// The health bar background's height.
-inline constexpr f32 HEALTH_BAR_HEIGHT = 6.0F;
-/// The fill's length at full health, in world units.
-inline constexpr f32 HEALTH_FILL_WIDTH = 40.0F;
-/// The fill's height.
-inline constexpr f32 HEALTH_FILL_HEIGHT = 4.0F;
-
-/// The instances the overlay draws for each sword: its core, its halo and itself.
+/// The instances the overlay draws for each sword: its core, its halo and itself. An engine limit, so in code.
 inline constexpr u32 SWORD_INSTANCES = 3;
-/// The most instances the overlay's buffer holds: every sword's three of the largest volley, and room for bolts and
-/// health bars.
+/// The most instances the overlay's buffer holds (an engine limit, so in code): every sword's three of the largest volley, and
+/// room for bolts and health bars.
 inline constexpr u32 MAX_OVERLAY_INSTANCES = 8'192;
 static_assert(SWORD_INSTANCES * core::MAX_VOLLEY_COUNT <= MAX_OVERLAY_INSTANCES, "the overlay holds the largest volley");
-/// The most ribbon quads the trails' buffer holds: every trail of the largest volley.
+/// The most ribbon quads the trails' buffer holds (an engine limit, so in code): every trail of the largest volley.
 inline constexpr u32 MAX_RIBBON_QUADS = 16'384;
 static_assert(core::MAX_VOLLEY_COUNT * TRAIL_SEGMENTS <= MAX_RIBBON_QUADS, "the ribbons hold the largest volley's trails");
 /// The ribbon vertices each sword's trail takes: QUAD_VERTICES for each of its TRAIL_SEGMENTS quads.
@@ -126,9 +105,9 @@ struct BarShown {
 };
 
 /// Adds a health bar for each of `bars` to `out`, as one batch of normal (premultiplied over) instances: a background of
-/// HEALTH_BAR_WIDTH by HEALTH_BAR_HEIGHT in `colours`' BarBackground, and inside it a fill HEALTH_FILL_HEIGHT tall in its
-/// EnemyHealthBar, as long as HEALTH_FILL_WIDTH times the bar's fraction (clamped to [0, 1], NaN as 0) and starting at the
-/// left, both centred HEALTH_BAR_RISE world units over the head as `alpha` (0: previous tick, 1: this tick) puts it.
+/// `effects`' health bar width by height in `colours`' BarBackground, and inside it a fill of its fill height in its
+/// EnemyHealthBar, as long as its fill width times the bar's fraction (clamped to [0, 1], NaN as 0) and starting at the
+/// left, both centred its rise in world units over the head as `alpha` (0: previous tick, 1: this tick) puts it.
 /// Health shows by the fill's length, whatever its colours. A bar follows its creature's label: it is drawn at its
 /// `shown` opacity (sorted by entity), and not at all for a creature not there or at 0. Draws `manifest`'s `solid`
 /// sprite, an 8 by 8 white square with its foot at its left middle.
@@ -138,6 +117,7 @@ void DrawHealthBars(
     f32 alpha,
     const core::Manifest& manifest,
     const core::UiColours& colours,
+    const core::Effects& effects,
     VolleyDrawing& out
 );
 
@@ -147,20 +127,17 @@ void DrawHealthBars(
 /// first in a frame, so the HUD's room is taken before the world's effects take theirs (SwordRoom() counts it).
 void DrawHudBars(std::span<const HudBar> bars, const core::Manifest& manifest, VolleyDrawing& out);
 
-/// How large the poison lance's burst is drawn, as a multiple of its sprite (96 world units across), at its start.
-inline constexpr f32 FLASH_START_SCALE = 0.5F;
-/// How large it has grown at its end: about the lance's area across.
-inline constexpr f32 FLASH_END_SCALE = 1.9F;
-
 /// Adds each of `flashes` showing at render tick `renderTick` to `out`, as one batch of additive instances: `manifest`'s
-/// `lance_strike` (white) centred on its point, in `colours`' EffectColour() of its element times FLASH_INTENSITY. Over
-/// its core::FLASH_TICKS it grows from FLASH_START_SCALE to FLASH_END_SCALE, slowing as it goes, and fades to nothing; it
-/// shows from its start tick (`renderTick` at it) to the end, and not at all outside them, so it never flashes back.
+/// `lance_strike` (white) centred on its point, in `colours`' EffectColour() of its element times the lance's
+/// core::BurstLook::intensity in `effects`. Over its own `ticks` it grows from the look's start scale to its end scale,
+/// slowing as it goes, and fades to nothing; it shows from its start tick (`renderTick` at it) to the end, and not at all
+/// outside them, so it never flashes back.
 void DrawFlashes(
     std::span<const core::Flash> flashes,
     f64 renderTick,
     const core::Manifest& manifest,
     const core::UiColours& colours,
+    const core::Effects& effects,
     VolleyDrawing& out
 );
 
@@ -173,16 +150,19 @@ void DrawFlashes(
 /// `droppedSwords`: no core, halo, blade or trail is drawn without the rest of its sword.
 ///
 /// - The cores make one batch, normal, drawn before every batch already in `out`: a small soft dot in `colours`'
-///   EffectColour() of the volley's element times CORE_OPACITY and how much of the sword shows (SwordPose::shown).
+///   EffectColour() of the volley's element times its ability's core opacity (core::Effects::LookOf()) and how much of the
+///   sword shows (SwordPose::shown).
 /// - The halos make the next, additive, before those already there too (the health bars, which they would wash out), in
-///   the element's colour times HALO_INTENSITY and the square of how much shows, so a plunged sword's glow goes before
+///   the element's colour times its halo intensity and the square of how much shows, so a plunged sword's glow goes before
 ///   its blade.
 /// - The swords make one batch, normal, after everything: the ability picks only the sprite (`sword` in its own steel,
-///   `fire_bolt` white tinted by the element's colour), faded as its pose says, turned to its heading (the sprites point
-///   up).
-/// - A trail runs back along the same path from the sword to where it was TRAIL_TICKS earlier, or where it left its ring
-///   if later (a sword still on its ring has none), in the element's colour times HALO_INTENSITY and how much shows, narrowing
-///   towards its tail. A sword that struck stops at its arrival and its trail drains into its target.
+///   `fire_bolt` white tinted by the element's colour), at the look's sword scale, faded as its pose says, turned to its
+///   heading (the sprites point up).
+/// - A trail runs back along the same path from the sword to where it was the look's trail ticks earlier, or where it left its
+/// ring
+///   if later (a sword still on its ring has none), in the element's colour times its halo intensity and how much shows,
+///   narrowing by its taper towards its tail, at its width. A sword that struck stops at its arrival and its trail drains into
+///   its target.
 ///
 /// A sword strikes when its target at its arrival (core::SwordTarget()) is a creature alive as that tick's arrivals
 /// resolved (core::VolleyTarget::Struck()), and vanishes then; any other plunges, staying at its aim while it fades over
@@ -194,6 +174,7 @@ void DrawVolleys(
     f32 alpha,
     const core::Manifest& manifest,
     const core::UiColours& colours,
+    const core::Effects& effects,
     core::Jobs& jobs,
     VolleyDrawing& out
 );

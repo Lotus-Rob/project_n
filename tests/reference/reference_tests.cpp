@@ -353,6 +353,27 @@ TEST_CASE("the poison lance's burst, close up: a flash at the point in the poiso
     CompareWithReference(Captured(renderer, snapshot, view, jobs), "lance_burst");
 }
 
+TEST_CASE("new effects change the next picture of the same snapshot, and the shipped ones bring it back") {
+    constexpr f32 TIMES = 3.0F;
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    const core::Snapshot snapshot = CastThenPublish(core::Slot::Spender, SINCE_LANCE, jobs);
+    REQUIRE(snapshot.flashes.size() == 1);
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
+    const gfx::View view{ .camera = { .centre = AMONG_THE_FOXES, .zoom = gfx::MAX_ZOOM } };
+    const gfx::Image shipped = Captured(renderer, snapshot, view, jobs);
+    core::Effects bigger;
+    bigger.poisonLance.startScale *= TIMES;
+    bigger.poisonLance.endScale *= TIMES;
+    renderer.SetEffects(bigger);
+    const gfx::Image changed = Captured(renderer, snapshot, view, jobs);
+    CHECK(changed.rgba != shipped.rgba);
+    renderer.SetEffects(core::Effects{});
+    const gfx::Image restored = Captured(renderer, snapshot, view, jobs);
+    CHECK(restored.rgba == shipped.rgba);
+}
+
 TEST_CASE("the HUD at zoom 1, one slot cooling down") {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;

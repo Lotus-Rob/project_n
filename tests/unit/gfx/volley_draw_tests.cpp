@@ -42,6 +42,8 @@ constexpr core::VolleyShape SWORDS{
     .fadeTicks = 18,
     .commitTicks = core::CommitTicksFor(260.0F, core::VolleyShape{}),
 };
+// The shipped looks (assets/data/effects.yaml, which a data test checks).
+constexpr core::Effects EFFECTS{};
 constexpr core::Volley VOLLEY{ .use = 7, .startTick = START, .seed = SEED, .origin = ORIGIN, .point = POINT, .shape = SWORDS };
 // A fire bolt: one straight flight from the caster.
 constexpr core::Volley BOLT{ .use = 8,
@@ -124,11 +126,12 @@ gfx::VolleyDrawing Drawn(
     u64 tick,
     f32 alpha,
     const core::UiColours& colours = {},
-    u32 workers = 1
+    u32 workers = 1,
+    const core::Effects& effects = EFFECTS
 ) {
     core::Jobs jobs{ workers };
     gfx::VolleyDrawing drawing;
-    gfx::DrawVolleys(volleys, targets, tick, alpha, TestManifest(), colours, jobs, drawing);
+    gfx::DrawVolleys(volleys, targets, tick, alpha, TestManifest(), colours, effects, jobs, drawing);
     return drawing;
 }
 
@@ -287,13 +290,13 @@ TEST_CASE("the trail is sampled from the same path a little back in time") {
     for (const u32 sword : SAMPLED_SWORDS) {
         CAPTURE(sword);
         // Each a whole trail into its flight, which lasts far longer.
-        const u64 tick = core::DepartureTick(VOLLEY, sword) + static_cast<u64>(gfx::TRAIL_TICKS) + 1;
+        const u64 tick = core::DepartureTick(VOLLEY, sword) + static_cast<u64>(EFFECTS.flyingSwords.trailTicks) + 1;
         REQUIRE(tick < core::ArrivalTick(VOLLEY, sword));
         const gfx::VolleyDrawing drawing = Drawn(volleys, targets, tick, ALPHA);
         const f64 renderTick = core::RenderTick(tick, static_cast<f64>(ALPHA));
         const core::SwordPose head = core::SwordAt(VOLLEY, sword, renderTick, Spot(POINT, sword));
         const core::SwordPose tail =
-            core::SwordAt(VOLLEY, sword, renderTick - static_cast<f64>(gfx::TRAIL_TICKS), Spot(POINT, sword));
+            core::SwordAt(VOLLEY, sword, renderTick - static_cast<f64>(EFFECTS.flyingSwords.trailTicks), Spot(POINT, sword));
         // The first quad's first pair is at the sword, the last quad's last pair at the tail, one on either side.
         CheckAt(Middle(TrailVertex(drawing, sword, 0, 0), TrailVertex(drawing, sword, 0, 1)), head.position);
         const gfx::RibbonVertex& left = TrailVertex(drawing, sword, LAST, 2);
@@ -314,8 +317,8 @@ TEST_CASE("the cores draw under the halos, the halos under the bars, and the swo
     constexpr u32 BAR_INSTANCES = 2;
     core::Jobs jobs{ 1 };
     gfx::VolleyDrawing drawing;
-    gfx::DrawHealthBars(bars, Whole(bars), 1.0F, TestManifest(), {}, drawing);
-    gfx::DrawVolleys(volleys, targets, ALL_APPEARED, 1.0F, TestManifest(), {}, jobs, drawing);
+    gfx::DrawHealthBars(bars, Whole(bars), 1.0F, TestManifest(), {}, EFFECTS, drawing);
+    gfx::DrawVolleys(volleys, targets, ALL_APPEARED, 1.0F, TestManifest(), {}, EFFECTS, jobs, drawing);
     REQUIRE(drawing.batches.size() == 4);
     const core::Batch& cores = drawing.batches[0];
     const core::Batch& halos = drawing.batches[1];
@@ -352,8 +355,8 @@ TEST_CASE("swords past the overlay's or the trails' room are left out whole, nev
     );
     core::Jobs jobs{ 1 };
     gfx::VolleyDrawing drawing;
-    gfx::DrawHealthBars(bars, Whole(bars), 1.0F, TestManifest(), {}, drawing);
-    gfx::DrawVolleys(volleys, targets, ALL_APPEARED, 1.0F, TestManifest(), {}, jobs, drawing);
+    gfx::DrawHealthBars(bars, Whole(bars), 1.0F, TestManifest(), {}, EFFECTS, drawing);
+    gfx::DrawVolleys(volleys, targets, ALL_APPEARED, 1.0F, TestManifest(), {}, EFFECTS, jobs, drawing);
     CHECK(drawing.instances.size() <= gfx::MAX_OVERLAY_INSTANCES);
     REQUIRE(drawing.batches.size() == 4);
     CHECK(drawing.batches[0].count == FITTING);
@@ -401,7 +404,7 @@ TEST_CASE("the HUD's bars are placed first and keep their room: the largest voll
     CHECK(placed[0].colour == BACKGROUND);
     CHECK(placed[1].colour == FILL);
 
-    gfx::DrawVolleys(volleys, targets, ALL_APPEARED, 1.0F, manifest, {}, jobs, drawing);
+    gfx::DrawVolleys(volleys, targets, ALL_APPEARED, 1.0F, manifest, {}, EFFECTS, jobs, drawing);
     CHECK(drawing.instances.size() <= gfx::MAX_OVERLAY_INSTANCES);
     CHECK(drawing.batches.back().count == gfx::SwordRoom(HUD_INSTANCES, 0));
     const bool whole = std::ranges::equal(BytesOf(placed), BytesOf(std::span{ drawing.instances }.first(HUD_INSTANCES)));
@@ -420,7 +423,7 @@ TEST_CASE("the lance's burst grows and fades in its element's colour, from its s
     const core::Manifest manifest = TestManifest();
     const auto drawn = [&](f64 renderTick, const core::UiColours& colours = {}) {
         gfx::VolleyDrawing drawing;
-        gfx::DrawFlashes(flashes, renderTick, manifest, colours, drawing);
+        gfx::DrawFlashes(flashes, renderTick, manifest, colours, EFFECTS, drawing);
         return drawing;
     };
     const auto sized = [](f32 scale) { return core::PackPair(core::PackHalf(SIDE * scale), core::PackHalf(SIDE * scale)); };
@@ -436,8 +439,8 @@ TEST_CASE("the lance's burst grows and fades in its element's colour, from its s
     REQUIRE(start.batches.size() == 1);
     CHECK(start.batches[0].pipeline == core::Pipeline::Additive);
     CheckAt(start.instances[0].current, POINT);
-    CHECK(start.instances[0].size == sized(gfx::FLASH_START_SCALE));
-    CHECK(start.instances[0].colour == Times(poison, gfx::FLASH_INTENSITY));
+    CHECK(start.instances[0].size == sized(EFFECTS.poisonLance.startScale));
+    CHECK(start.instances[0].colour == Times(poison, EFFECTS.poisonLance.intensity));
     CHECK(start.instances[0].regionMin == core::MakeInstance(manifest, { .sprite = SpriteId::LanceStrike }).regionMin);
 
     // Halfway: half as bright, three quarters of the way to its full size.
@@ -446,9 +449,11 @@ TEST_CASE("the lance's burst grows and fades in its element's colour, from its s
     constexpr f32 THREE_QUARTERS = 0.75F;
     CHECK(
         half.instances[0].size ==
-        sized(gfx::FLASH_START_SCALE + ((gfx::FLASH_END_SCALE - gfx::FLASH_START_SCALE) * THREE_QUARTERS))
+        sized(
+            EFFECTS.poisonLance.startScale + ((EFFECTS.poisonLance.endScale - EFFECTS.poisonLance.startScale) * THREE_QUARTERS)
+        )
     );
-    CHECK(half.instances[0].colour == Times(poison, gfx::FLASH_INTENSITY * HALF));
+    CHECK(half.instances[0].colour == Times(poison, EFFECTS.poisonLance.intensity * HALF));
 
     const gfx::VolleyDrawing end = drawn(static_cast<f64>(START + RULES.flashTicks));
     CHECK(end.instances.empty());
@@ -567,22 +572,22 @@ TEST_CASE("a health bar's fill is as long as its health and takes the table's co
     constexpr core::Vec2 BEFORE{ .x = 100.0F, .y = 200.0F };
     constexpr core::Vec2 AFTER{ .x = 120.0F, .y = 220.0F };
     constexpr f32 FRACTION = 0.25F;
-    constexpr core::Vec2 MIDDLE{ .x = 110.0F, .y = 210.0F - gfx::HEALTH_BAR_RISE }; // halfway, risen
+    constexpr core::Vec2 MIDDLE{ .x = 110.0F, .y = 210.0F - EFFECTS.healthBar.rise }; // halfway, risen
     const std::array<core::HealthBar, 1> bars{
         { { .entity = FOX, .previous = BEFORE, .current = AFTER, .fraction = FRACTION } }
     };
     const core::Manifest manifest = TestManifest();
     gfx::VolleyDrawing drawing;
-    gfx::DrawHealthBars(bars, Whole(bars), HALFWAY, manifest, {}, drawing);
+    gfx::DrawHealthBars(bars, Whole(bars), HALFWAY, manifest, {}, EFFECTS, drawing);
     REQUIRE(drawing.instances.size() == 2);
     const core::Instance& background = drawing.instances[0];
     const core::Instance& fill = drawing.instances[1];
     CheckAt(background.current, MIDDLE);
-    CHECK(background.size == core::PackPair(core::PackHalf(gfx::HEALTH_BAR_WIDTH), core::PackHalf(gfx::HEALTH_BAR_HEIGHT)));
-    const f32 length = gfx::HEALTH_FILL_WIDTH * FRACTION;
-    CHECK(fill.size == core::PackPair(core::PackHalf(length), core::PackHalf(gfx::HEALTH_FILL_HEIGHT)));
+    CHECK(background.size == core::PackPair(core::PackHalf(EFFECTS.healthBar.width), core::PackHalf(EFFECTS.healthBar.height)));
+    const f32 length = EFFECTS.healthBar.fillWidth * FRACTION;
+    CHECK(fill.size == core::PackPair(core::PackHalf(length), core::PackHalf(EFFECTS.healthBar.fillHeight)));
     // From the left of the full fill's place.
-    CheckAt(fill.current, { .x = MIDDLE.x - (gfx::HEALTH_FILL_WIDTH * HALF) + (length * HALF), .y = MIDDLE.y });
+    CheckAt(fill.current, { .x = MIDDLE.x - (EFFECTS.healthBar.fillWidth * HALF) + (length * HALF), .y = MIDDLE.y });
     const core::UiColours defaults{};
     CHECK(background.colour == defaults.Of(core::UiColour::BarBackground));
     CHECK(fill.colour == defaults.Of(core::UiColour::EnemyHealthBar));
@@ -593,7 +598,7 @@ TEST_CASE("a health bar's fill is as long as its health and takes the table's co
     recoloured.Set(core::UiColour::EnemyHealthBar, RECOLOURED_FILL);
     recoloured.Set(core::UiColour::BarBackground, RECOLOURED_BACK);
     drawing.Clear();
-    gfx::DrawHealthBars(bars, Whole(bars), HALFWAY, manifest, recoloured, drawing);
+    gfx::DrawHealthBars(bars, Whole(bars), HALFWAY, manifest, recoloured, EFFECTS, drawing);
     REQUIRE(drawing.instances.size() == 2);
     CHECK(drawing.instances[0].colour == RECOLOURED_BACK);
     CHECK(drawing.instances[1].colour == RECOLOURED_FILL);
@@ -609,10 +614,10 @@ TEST_CASE("a health bar's fill stops at full and shows nothing for a health that
           .fraction = std::numeric_limits<f32>::quiet_NaN() },
     } };
     gfx::VolleyDrawing drawing;
-    gfx::DrawHealthBars(bars, Whole(bars), 1.0F, TestManifest(), {}, drawing);
+    gfx::DrawHealthBars(bars, Whole(bars), 1.0F, TestManifest(), {}, EFFECTS, drawing);
     REQUIRE(drawing.instances.size() == 4);
-    const u32 full = core::PackPair(core::PackHalf(gfx::HEALTH_FILL_WIDTH), core::PackHalf(gfx::HEALTH_FILL_HEIGHT));
-    const u32 empty = core::PackPair(core::PackHalf(0.0F), core::PackHalf(gfx::HEALTH_FILL_HEIGHT));
+    const u32 full = core::PackPair(core::PackHalf(EFFECTS.healthBar.fillWidth), core::PackHalf(EFFECTS.healthBar.fillHeight));
+    const u32 empty = core::PackPair(core::PackHalf(0.0F), core::PackHalf(EFFECTS.healthBar.fillHeight));
     CHECK(drawing.instances[1].size == full);
     CHECK(drawing.instances[3].size == empty);
 }
@@ -638,7 +643,7 @@ TEST_CASE("a health bar shows as its creature's label does: faded with it, and n
     } };
     const std::array<gfx::BarShown, 2> shown{ { { .entity = FOX, .opacity = FADING }, { .entity = FADED, .opacity = 0.0F } } };
     gfx::VolleyDrawing drawing;
-    gfx::DrawHealthBars(bars, shown, 1.0F, TestManifest(), {}, drawing);
+    gfx::DrawHealthBars(bars, shown, 1.0F, TestManifest(), {}, EFFECTS, drawing);
     REQUIRE(drawing.instances.size() == 2); // only the first's
     const core::UiColours defaults{};
     CHECK(drawing.instances[0].colour == Times(defaults.Of(core::UiColour::BarBackground), FADING));
@@ -655,20 +660,20 @@ TEST_CASE("cores, halos and trails take their element's colour, not their abilit
         sword = core::DepartureTick(VOLLEY, other) < core::DepartureTick(VOLLEY, sword) ? other : sword;
     }
     constexpr u32 THE_BOLT = SWORDS.count;
-    const u64 tick = core::DepartureTick(VOLLEY, sword) + static_cast<u64>(gfx::TRAIL_TICKS) + 1;
+    const u64 tick = core::DepartureTick(VOLLEY, sword) + static_cast<u64>(EFFECTS.flyingSwords.trailTicks) + 1;
     REQUIRE(tick < core::ArrivalTick(BOLT, 0));
     const core::Manifest manifest = TestManifest();
     const auto check = [&](const core::UiColours& colours) {
         const gfx::VolleyDrawing drawing = Drawn(volleys, targets, tick, 1.0F, colours);
         const u32 damage = colours.Of(core::UiColour::DamageEffect);
         const u32 burn = colours.Of(core::UiColour::BurnEffect);
-        CHECK(CoreOf(drawing, sword).colour == Times(damage, gfx::CORE_OPACITY));
-        CHECK(HaloOf(drawing, sword).colour == Times(damage, gfx::HALO_INTENSITY));
-        CHECK(TrailVertex(drawing, sword, 0, 0).colour == Times(damage, gfx::HALO_INTENSITY));
+        CHECK(CoreOf(drawing, sword).colour == Times(damage, EFFECTS.flyingSwords.coreOpacity));
+        CHECK(HaloOf(drawing, sword).colour == Times(damage, EFFECTS.flyingSwords.haloIntensity));
+        CHECK(TrailVertex(drawing, sword, 0, 0).colour == Times(damage, EFFECTS.flyingSwords.haloIntensity));
         CHECK(SwordOf(drawing, sword).colour == core::OPAQUE_WHITE); // its own steel
-        CHECK(CoreOf(drawing, THE_BOLT).colour == Times(burn, gfx::CORE_OPACITY));
-        CHECK(HaloOf(drawing, THE_BOLT).colour == Times(burn, gfx::HALO_INTENSITY));
-        CHECK(TrailVertex(drawing, THE_BOLT, 0, 0).colour == Times(burn, gfx::HALO_INTENSITY));
+        CHECK(CoreOf(drawing, THE_BOLT).colour == Times(burn, EFFECTS.flyingSwords.coreOpacity));
+        CHECK(HaloOf(drawing, THE_BOLT).colour == Times(burn, EFFECTS.flyingSwords.haloIntensity));
+        CHECK(TrailVertex(drawing, THE_BOLT, 0, 0).colour == Times(burn, EFFECTS.flyingSwords.haloIntensity));
         CHECK(SwordOf(drawing, THE_BOLT).colour == burn); // white art, tinted
         // The ability picks the sword's sprite; every core is the same dot.
         CHECK(SwordOf(drawing, sword).regionMin == core::MakeInstance(manifest, { .sprite = SpriteId::Sword }).regionMin);
@@ -695,8 +700,99 @@ TEST_CASE("cores, halos and trails take their element's colour, not their abilit
     const std::span<const gfx::RibbonVertex> trailsBefore = std::span{ before.ribbons }.first(swordVertices);
     const std::span<const gfx::RibbonVertex> trailsAfter = std::span{ after.ribbons }.first(swordVertices);
     CHECK(std::ranges::equal(std::as_bytes(trailsBefore), std::as_bytes(trailsAfter)));
-    CHECK(CoreOf(after, THE_BOLT).colour == Times(GREEN, gfx::CORE_OPACITY));
+    CHECK(CoreOf(after, THE_BOLT).colour == Times(GREEN, EFFECTS.flyingSwords.coreOpacity));
     CHECK(HaloOf(after, THE_BOLT).colour == GREEN);
+}
+
+TEST_CASE("each ability draws by its own look in the effects, and new effects show at the next draw") {
+    const std::array<core::VolleyTarget, 2> targets{ { { .entity = FOX, .previous = POINT, .current = POINT },
+                                                       { .entity = FOX, .previous = POINT, .current = POINT } } };
+    const std::array<core::VolleyView, 2> volleys{ { SwordsView(), BoltView(1) } };
+    constexpr u32 THE_BOLT = SWORDS.count;
+    constexpr u32 SWORD = 0;
+    constexpr f32 DOUBLE = 2.0F;
+    constexpr f32 DIM = 0.5F;
+    const core::Manifest manifest = TestManifest();
+    const u64 tick = core::DepartureTick(VOLLEY, SWORD) + static_cast<u64>(EFFECTS.flyingSwords.trailTicks) + 1;
+    REQUIRE(tick < core::ArrivalTick(BOLT, 0));
+    core::Effects tuned = EFFECTS;
+    tuned.flyingSwords.swordScale = EFFECTS.flyingSwords.swordScale * DOUBLE;
+    tuned.flyingSwords.haloIntensity = DIM;
+    tuned.fireBolt.coreScale = EFFECTS.fireBolt.coreScale * DOUBLE;
+    tuned.fireBolt.haloScale = EFFECTS.fireBolt.haloScale * DOUBLE;
+    const gfx::VolleyDrawing before = Drawn(volleys, targets, tick, 1.0F);
+    const gfx::VolleyDrawing after = Drawn(volleys, targets, tick, 1.0F, {}, 1, tuned);
+    const auto sizeOf = [&manifest](SpriteId sprite, f32 scale) {
+        return core::MakeInstance(manifest, { .sprite = sprite, .scale = scale }).size;
+    };
+    CHECK(SwordOf(before, SWORD).size == sizeOf(SpriteId::Sword, EFFECTS.flyingSwords.swordScale));
+    CHECK(SwordOf(after, SWORD).size == sizeOf(SpriteId::Sword, tuned.flyingSwords.swordScale));
+    CHECK(CoreOf(after, THE_BOLT).size == sizeOf(SpriteId::GlowCore, tuned.fireBolt.coreScale));
+    CHECK(HaloOf(after, THE_BOLT).size == sizeOf(SpriteId::Halo, tuned.fireBolt.haloScale));
+    // The swords' core was left as it was; only their glow dimmed.
+    CHECK(CoreOf(after, SWORD).size == CoreOf(before, SWORD).size);
+    const u32 damage = core::UiColours{}.Of(core::UiColour::DamageEffect);
+    CHECK(HaloOf(after, SWORD).colour == Times(damage, DIM));
+    CHECK(HaloOf(before, SWORD).colour == Times(damage, EFFECTS.flyingSwords.haloIntensity));
+}
+
+TEST_CASE("a trail takes its reach, width and taper from the effects") {
+    const std::array<core::VolleyTarget, 1> targets{ { { .entity = FOX, .previous = POINT, .current = POINT } } };
+    const std::array<core::VolleyView, 1> volleys{ { SwordsView() } };
+    constexpr u32 SWORD = 0;
+    constexpr f32 LONG = 12.0F;
+    constexpr f32 WIDE = 10.0F;
+    const u64 tick = core::DepartureTick(VOLLEY, SWORD) + static_cast<u64>(LONG) + 1;
+    core::Effects tuned = EFFECTS;
+    tuned.flyingSwords.trailTicks = LONG;
+    tuned.flyingSwords.trailWidth = WIDE;
+    tuned.flyingSwords.trailTaper = 0.0F;
+    const gfx::VolleyDrawing before = Drawn(volleys, targets, tick, 1.0F);
+    const gfx::VolleyDrawing after = Drawn(volleys, targets, tick, 1.0F, {}, 1, tuned);
+    const auto across = [](const gfx::VolleyDrawing& drawing, u32 corner) {
+        const gfx::RibbonVertex left = TrailVertex(drawing, SWORD, 0, corner);
+        const gfx::RibbonVertex right = TrailVertex(drawing, SWORD, 0, corner + 1);
+        return std::hypot(left.x - right.x, left.y - right.y);
+    };
+    CHECK(across(before, 0) == doctest::Approx(EFFECTS.flyingSwords.trailWidth).epsilon(CLOSE));
+    CHECK(across(after, 0) == doctest::Approx(WIDE).epsilon(CLOSE));
+    // The tail lies further back along a longer reach.
+    const gfx::RibbonVertex headBefore = TrailVertex(before, SWORD, 0, 0);
+    const gfx::RibbonVertex tailBefore = TrailVertex(before, SWORD, gfx::TRAIL_SEGMENTS - 1, 2);
+    const gfx::RibbonVertex tailAfter = TrailVertex(after, SWORD, gfx::TRAIL_SEGMENTS - 1, 2);
+    CHECK(
+        std::hypot(tailAfter.x - headBefore.x, tailAfter.y - headBefore.y) >
+        std::hypot(tailBefore.x - headBefore.x, tailBefore.y - headBefore.y)
+    );
+}
+
+TEST_CASE("the health bars and the burst take their sizes from the effects") {
+    constexpr f32 DOUBLE = 2.0F;
+    constexpr f32 RISE = 20.0F;
+    constexpr f64 LAST_MOMENT = 9.999; // of the burst's ten ticks
+    const std::array<core::HealthBar, 1> bars{ { { .entity = FOX, .previous = {}, .current = {}, .fraction = 1.0F } } };
+    const core::Manifest manifest = TestManifest();
+    core::Effects tuned = EFFECTS;
+    tuned.healthBar.width = EFFECTS.healthBar.width * DOUBLE;
+    tuned.healthBar.rise = RISE;
+    tuned.poisonLance.endScale = EFFECTS.poisonLance.endScale * DOUBLE;
+    gfx::VolleyDrawing drawing;
+    gfx::DrawHealthBars(bars, Whole(bars), 1.0F, manifest, {}, tuned, drawing);
+    REQUIRE(drawing.instances.size() == 2);
+    CHECK(drawing.instances[0].current.y == -RISE);
+    CHECK(
+        drawing.instances[0].size ==
+        core::PackPair(core::PackHalf(tuned.healthBar.width), core::PackHalf(EFFECTS.healthBar.height))
+    );
+    const std::array<core::Flash, 1> flashes{
+        { { .point = {}, .startTick = 0, .ticks = 10, .element = core::HitKind::Poison } }
+    };
+    gfx::VolleyDrawing burst;
+    gfx::DrawFlashes(flashes, LAST_MOMENT, manifest, {}, tuned, burst);
+    REQUIRE(burst.instances.size() == 1);
+    gfx::VolleyDrawing plain;
+    gfx::DrawFlashes(flashes, LAST_MOMENT, manifest, {}, EFFECTS, plain);
+    CHECK(burst.instances[0].size != plain.instances[0].size);
 }
 
 } // namespace

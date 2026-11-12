@@ -9,13 +9,6 @@ namespace app {
 
 namespace {
 
-// The gap between the two bars, and between the Qi bar and the first slot's line, in target pixels at text scale 1.
-constexpr f32 BAR_GAP = 6.0F;
-// How far into its bar a bar's words start, in target pixels at text scale 1.
-constexpr f32 BAR_TEXT_INSET = 6.0F;
-// How far above its bar's top a bar's words' box starts, in target pixels at text scale 1: the box of a line of
-// gfx::HUD_PIXELS text is taller than its letters, which this centres on the bar.
-constexpr f32 BAR_TEXT_RISE = 7.0F;
 // Between a slot line's control, its ability and its seconds left.
 constexpr std::string_view SEPARATOR = "  ";
 // The specials' and the ultimate's keys, from Slot::Special1 on: their digits read the same in every language.
@@ -72,13 +65,17 @@ void Hud::SetColours(const core::UiColours& colours) {
     m_colours = colours;
 }
 
+void Hud::SetEffects(const core::Effects& effects) {
+    m_layout = effects.hud;
+}
+
 void Hud::SetTextOptions(const gfx::TextOptions& text) {
     m_text = text;
 }
 
 void Hud::Play(const core::Event& event, f64 renderTick) {
     if (event.kind == core::EventKind::NotEnoughQi) {
-        m_warnedUntil = renderTick + (NOT_ENOUGH_QI_SECONDS * static_cast<f64>(core::TICKS_PER_SECOND));
+        m_warnedUntil = renderTick + (m_layout.notEnoughQiSeconds * static_cast<f64>(core::TICKS_PER_SECOND));
     }
 }
 
@@ -104,13 +101,15 @@ void Hud::Build(
     const bool inked = !m_text.outline && !m_text.shadow;
     const u32 ink = core::ScaledColour(m_colours.Of(core::UiColour::TextInk), core::OpacityOf(text));
     const u32 slotText = inked ? ink : text;
-    const u32 coolingText = inked ? core::ScaledColour(ink, HUD_COOLING_INK_OPACITY) : m_colours.Of(core::UiColour::HudCooling);
-    const f32 lineHeight = HUD_LINE_HEIGHT * m_text.scale;
-    const core::Vec2 barSize{ .x = HUD_BAR_WIDTH * m_text.scale, .y = HUD_BAR_HEIGHT * m_text.scale };
+    const core::HudLayout& layout = m_layout;
+    const u32 coolingText =
+        inked ? core::ScaledColour(ink, layout.coolingInkOpacity) : m_colours.Of(core::UiColour::HudCooling);
+    const f32 lineHeight = layout.lineHeight * m_text.scale;
+    const core::Vec2 barSize{ .x = layout.barWidth * m_text.scale, .y = layout.barHeight * m_text.scale };
     // From the bottom up: the slots' lines, then the Qi bar over them, then the health bar over it.
-    const f32 firstSlot = static_cast<f32>(height) - HUD_MARGIN - (lineHeight * static_cast<f32>(core::SLOTS));
-    const f32 qiTop = firstSlot - ((BAR_GAP * m_text.scale) + barSize.y);
-    const f32 healthTop = qiTop - ((BAR_GAP * m_text.scale) + barSize.y);
+    const f32 firstSlot = static_cast<f32>(height) - layout.margin - (lineHeight * static_cast<f32>(core::SLOTS));
+    const f32 qiTop = firstSlot - ((layout.barGap * m_text.scale) + barSize.y);
+    const f32 healthTop = qiTop - ((layout.barGap * m_text.scale) + barSize.y);
 
     const bool warned = m_warnedUntil && renderTick < *m_warnedUntil;
     std::string& healthText = m_texts.at(0);
@@ -125,7 +124,8 @@ void Hud::Build(
     const auto barText = [&](const std::string& says, f32 top, u32 colour) {
         lines.push_back(
             { .text = says,
-              .topLeft = { .x = HUD_MARGIN + (BAR_TEXT_INSET * m_text.scale), .y = top - (BAR_TEXT_RISE * m_text.scale) },
+              .topLeft = { .x = layout.margin + (layout.barTextInset * m_text.scale),
+                           .y = top - (layout.barTextRise * m_text.scale) },
               .colour = colour }
         );
     };
@@ -149,21 +149,21 @@ void Hud::Build(
         }
         lines.push_back(
             { .text = line,
-              .topLeft = { .x = HUD_MARGIN, .y = firstSlot + (lineHeight * static_cast<f32>(index)) },
+              .topLeft = { .x = layout.margin, .y = firstSlot + (lineHeight * static_cast<f32>(index)) },
               .colour = cooling ? coolingText : slotText }
         );
     }
 
     const u32 background = m_colours.Of(core::UiColour::BarBackground);
     bars.push_back(
-        { .topLeft = { .x = HUD_MARGIN, .y = healthTop },
+        { .topLeft = { .x = layout.margin, .y = healthTop },
           .size = barSize,
           .fraction = FractionOf(caster.health, caster.healthMax),
           .fill = m_colours.Of(core::UiColour::HealthBar),
           .background = background }
     );
     bars.push_back(
-        { .topLeft = { .x = HUD_MARGIN, .y = qiTop },
+        { .topLeft = { .x = layout.margin, .y = qiTop },
           .size = barSize,
           .fraction = FractionOf(caster.qi, caster.qiMax),
           .fill = m_colours.Of(core::UiColour::QiBar),

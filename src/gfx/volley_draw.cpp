@@ -11,21 +11,6 @@ namespace {
 
 // Swords a job chunk draws: enough work to be worth a worker's wake, few enough that a volley of 1,000 spreads.
 constexpr u32 SWORD_CHUNK = 256;
-// How much larger than its image (10 by 40) a sword is drawn: 9 by 36 world units, so on rings a ring step (38) apart
-// one ring's tips nearly touch the next ring's hilts, and neighbours round a ring (about 20 apart) stand side by side.
-constexpr f32 SWORD_SCALE = 0.9F;
-// How much larger than its image a halo is drawn: a glow round the blade a little longer than it, scaled with the blade.
-// The bolt's keeps its own size.
-constexpr f32 HALO_SCALE = 1.125F;
-constexpr f32 BOLT_HALO_SCALE = 0.75F;
-// How much larger than its image (16 world units across) a sword's tinted core is drawn: under the middle of the blade,
-// smaller than its halo, scaled with the blade. The bolt's keeps its own size.
-constexpr f32 CORE_SCALE = 1.5F;
-constexpr f32 BOLT_CORE_SCALE = 2.0F;
-// A trail's width at the sword or the bolt, in world units: a thin streak, narrower than the drawn blade.
-constexpr f32 TRAIL_WIDTH = 5.0F;
-// How much of that width its tail loses, so it narrows as it fades.
-constexpr f32 TRAIL_TAPER = 0.6F;
 // A tangent shorter than this, in world units, is too short to say which way the trail runs there.
 constexpr f32 SHORTEST_TANGENT = 1e-4F;
 constexpr u32 TRAIL_POINTS = TRAIL_SEGMENTS + 1;
@@ -45,6 +30,7 @@ f32 RotationTo(core::Vec2 heading) {
 struct SwordFrame {
     const core::Manifest* manifest = nullptr;
     const core::UiColours* colours = nullptr;
+    const core::Effects* effects = nullptr;
     u64 simulationTick = 0;
     f32 alpha = 0.0F;
     f64 renderTick = 0.0;
@@ -66,6 +52,7 @@ void DrawTrail(
     f64 headTick,
     f64 tailTick,
     const core::SwordPose& head,
+    const core::SwordLook& look,
     u32 colour,
     std::span<RibbonVertex> trail
 ) {
@@ -84,7 +71,7 @@ void DrawTrail(
         const core::Vec2 along = length > SHORTEST_TANGENT ? runs * (1.0F / length) : head.heading;
         const f32 back = static_cast<f32>(point) / static_cast<f32>(TRAIL_SEGMENTS);
         const core::Vec2 side =
-            core::Vec2{ .x = -along.y, .y = along.x } * (TRAIL_WIDTH * (1.0F - (TRAIL_TAPER * back)) * 0.5F);
+            core::Vec2{ .x = -along.y, .y = along.x } * (look.trailWidth * (1.0F - (look.trailTaper * back)) * 0.5F);
         lefts.at(point) = points.at(point) + side;
         rights.at(point) = points.at(point) - side;
     }
@@ -135,13 +122,14 @@ void DrawSword(
     if (!gone && head.shown > 0.0F) {
         const f32 rotation = RotationTo(head.heading);
         const bool bolt = view.ability == core::AbilityKind::FireBolt;
+        const core::SwordLook& look = frame.effects->LookOf(view.ability);
         *slots.core = core::MakeInstance(
             *frame.manifest,
             { .sprite = core::atlas::SpriteId::GlowCore,
               .previous = head.position,
               .current = head.position,
-              .scale = bolt ? BOLT_CORE_SCALE : CORE_SCALE,
-              .colour = core::ScaledColour(effect, CORE_OPACITY * head.shown) }
+              .scale = look.coreScale,
+              .colour = core::ScaledColour(effect, look.coreOpacity * head.shown) }
         );
         // The glow goes before the blade, as the square of what shows: a plunged sword doesn't flash as it fades.
         *slots.halo = core::MakeInstance(
@@ -149,15 +137,15 @@ void DrawSword(
             { .sprite = core::atlas::SpriteId::Halo,
               .previous = head.position,
               .current = head.position,
-              .scale = bolt ? BOLT_HALO_SCALE : HALO_SCALE,
-              .colour = core::ScaledColour(effect, HALO_INTENSITY * head.shown * head.shown) }
+              .scale = look.haloScale,
+              .colour = core::ScaledColour(effect, look.haloIntensity * head.shown * head.shown) }
         );
         *slots.sword = core::MakeInstance(
             *frame.manifest,
             { .sprite = bolt ? core::atlas::SpriteId::FireBolt : core::atlas::SpriteId::Sword,
               .previous = head.position,
               .current = head.position,
-              .scale = bolt ? 1.0F : SWORD_SCALE,
+              .scale = look.swordScale,
               .previousRotation = rotation,
               .currentRotation = rotation,
               .colour = core::ScaledColour(bolt ? effect : core::OPAQUE_WHITE, head.shown) }
@@ -165,10 +153,19 @@ void DrawSword(
     }
     // A sword still on its ring has not moved, so its trail starts where it left.
     const auto departure = static_cast<f64>(core::DepartureTick(volley, sword));
-    const f64 tailTick = std::max(frame.renderTick - static_cast<f64>(TRAIL_TICKS), departure);
+    const core::SwordLook& look = frame.effects->LookOf(view.ability);
+    const f64 tailTick = std::max(frame.renderTick - static_cast<f64>(look.trailTicks), departure);
     if (headTick > tailTick && head.shown > 0.0F) {
         DrawTrail(
-            volley, sword, aim, headTick, tailTick, head, core::ScaledColour(effect, HALO_INTENSITY * head.shown), slots.trail
+            volley,
+            sword,
+            aim,
+            headTick,
+            tailTick,
+            head,
+            look,
+            core::ScaledColour(effect, look.haloIntensity * head.shown),
+            slots.trail
         );
     }
 }
@@ -195,9 +192,11 @@ void DrawHealthBars(
     f32 alpha,
     const core::Manifest& manifest,
     const core::UiColours& colours,
+    const core::Effects& effects,
     VolleyDrawing& out
 ) {
     PN_PROFILE_ZONE();
+    const core::HealthBarLook& look = effects.healthBar;
     if (bars.empty()) {
         return;
     }
@@ -214,7 +213,7 @@ void DrawHealthBars(
             continue;
         }
         const core::Vec2 head = bar.previous + ((bar.current - bar.previous) * alpha);
-        const core::Vec2 middle{ .x = head.x, .y = head.y - HEALTH_BAR_RISE };
+        const core::Vec2 middle{ .x = head.x, .y = head.y - look.rise };
         // The square's foot is its left middle: a bar `full` long at most stands on its left end, `length` long.
         const auto add = [&](f32 full, f32 length, f32 thickness, u32 colour) {
             const core::Vec2 foot{ .x = middle.x - (full * 0.5F), .y = middle.y };
@@ -231,13 +230,12 @@ void DrawHealthBars(
                 )
             );
         };
-        add(HEALTH_BAR_WIDTH, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT, core::ScaledColour(backColour, std::min(opacity, 1.0F)));
+        add(look.width, look.width, look.height, core::ScaledColour(backColour, std::min(opacity, 1.0F)));
         // The fill starts where a full one would, so it shrinks towards the left as health falls.
         const f32 fraction = bar.fraction > 0.0F ? std::min(bar.fraction, 1.0F) : 0.0F;
-        add(HEALTH_FILL_WIDTH,
-            HEALTH_FILL_WIDTH * fraction,
-            HEALTH_FILL_HEIGHT,
-            core::ScaledColour(fillColour, std::min(opacity, 1.0F)));
+        add(
+            look.fillWidth, look.fillWidth * fraction, look.fillHeight, core::ScaledColour(fillColour, std::min(opacity, 1.0F))
+        );
     }
     if (out.instances.size() > first) {
         out.batches.push_back(
@@ -286,9 +284,11 @@ void DrawFlashes(
     f64 renderTick,
     const core::Manifest& manifest,
     const core::UiColours& colours,
+    const core::Effects& effects,
     VolleyDrawing& out
 ) {
     PN_PROFILE_ZONE();
+    const core::BurstLook& look = effects.poisonLance;
     const auto first = static_cast<u32>(out.instances.size());
     for (const core::Flash& flash : flashes) {
         const f64 progress = (renderTick - static_cast<f64>(flash.startTick)) / static_cast<f64>(flash.ticks);
@@ -305,9 +305,8 @@ void DrawFlashes(
                 { .sprite = core::atlas::SpriteId::LanceStrike,
                   .previous = flash.point,
                   .current = flash.point,
-                  .scale = FLASH_START_SCALE + ((FLASH_END_SCALE - FLASH_START_SCALE) * grown),
-                  .colour =
-                      core::ScaledColour(colours.Of(core::EffectColour(flash.element)), FLASH_INTENSITY * (1.0F - shown)) }
+                  .scale = look.startScale + ((look.endScale - look.startScale) * grown),
+                  .colour = core::ScaledColour(colours.Of(core::EffectColour(flash.element)), look.intensity * (1.0F - shown)) }
             )
         );
     }
@@ -325,6 +324,7 @@ void DrawVolleys(
     f32 alpha,
     const core::Manifest& manifest,
     const core::UiColours& colours,
+    const core::Effects& effects,
     core::Jobs& jobs,
     VolleyDrawing& out
 ) {
@@ -355,6 +355,7 @@ void DrawVolleys(
     out.batches.push_back({ .first = swords, .count = total, .pipeline = core::Pipeline::Normal });
     const SwordFrame frame{ .manifest = &manifest,
                             .colours = &colours,
+                            .effects = &effects,
                             .simulationTick = simulationTick,
                             .alpha = alpha,
                             .renderTick = core::RenderTick(simulationTick, static_cast<f64>(alpha)) };

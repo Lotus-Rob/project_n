@@ -65,4 +65,60 @@ TEST_CASE("the data watch sees nothing when nothing changed") {
     CHECK_FALSE(watch.Changed());
 }
 
+// The data folder's parts as read again: the shipped effects and game data unless changed.
+struct Read {
+    std::expected<core::Effects, core::Error> effects = core::Effects{};
+    std::expected<core::GameData, core::Error> data = game::BuiltInData();
+};
+
+app::DataReload ReloadAfter(const Read& read) {
+    return app::ReloadOf(core::Effects{}, read.effects, game::BuiltInData(), read.data);
+}
+
+core::Effects LargerSwords() {
+    constexpr f32 LARGER = 2.0F;
+    core::Effects effects;
+    effects.flyingSwords.swordScale = LARGER;
+    return effects;
+}
+
+core::GameData FasterFoxes() {
+    constexpr f32 FASTER = 9.0F;
+    core::GameData data = game::BuiltInData();
+    data.fox.walkSpeed = FASTER;
+    return data;
+}
+
+TEST_CASE("an edit to the effects alone reloads them, never the game data") {
+    const app::DataReload reload = ReloadAfter({ .effects = LargerSwords() });
+    CHECK(reload.effects);
+    CHECK_FALSE(reload.gameData); // a ReloadData would end a replay playing
+}
+
+TEST_CASE("an edit to the game data alone reloads it, not the effects") {
+    const app::DataReload reload = ReloadAfter({ .data = FasterFoxes() });
+    CHECK_FALSE(reload.effects);
+    CHECK(reload.gameData);
+}
+
+TEST_CASE("edits to both reload both") {
+    const app::DataReload reload = ReloadAfter({ .effects = LargerSwords(), .data = FasterFoxes() });
+    CHECK(reload.effects);
+    CHECK(reload.gameData);
+}
+
+TEST_CASE("a change that leaves both as they were, a strings edit, reloads nothing") {
+    const app::DataReload reload = ReloadAfter({});
+    CHECK_FALSE(reload.effects);
+    CHECK_FALSE(reload.gameData);
+}
+
+TEST_CASE("a part that can't be read is not reloaded") {
+    const app::DataReload reload = ReloadAfter(
+        { .effects = std::unexpected{ core::Error{ "broken" } }, .data = std::unexpected{ core::Error{ "broken" } } }
+    );
+    CHECK_FALSE(reload.effects);
+    CHECK_FALSE(reload.gameData);
+}
+
 } // namespace

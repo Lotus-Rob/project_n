@@ -2,6 +2,7 @@
 #include "core/command_line.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
+#include "data/effects.hpp"
 #include "data/game_data.hpp"
 #include "data/manifest.hpp"
 #include "data/settings.hpp"
@@ -83,6 +84,11 @@ i32 Run(const core::Settings& settings, app::Options options) {
     PN_LOG_INFO("game data read from {}", dataFolder.string());
     options.data = *gameData;
     options.dataFolder = dataFolder;
+    const std::expected<core::Effects, core::Error> effects = data::LoadEffects(dataFolder);
+    if (!effects) {
+        return FailToStart("the game's data couldn't be read", effects.error());
+    }
+    options.effects = *effects;
     std::expected<core::Strings, core::Error> strings = data::LoadStrings(dataFolder);
     if (!strings) {
         return FailToStart("the game's data couldn't be read", strings.error());

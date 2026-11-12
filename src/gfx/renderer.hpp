@@ -4,6 +4,7 @@
 /// @ingroup gfx
 /// Drawing frames into the window with SDL_GPU.
 
+#include "core/effects.hpp"
 #include "core/error.hpp"
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
@@ -98,6 +99,10 @@ public:
     /// Draws labels, captions, the outlines of the hovered and selected entity, the ink of text's outlines and shadows,
     /// the health bars and the effects in `colours` from the next frame on, with no restart.
     void SetUiColours(const core::UiColours& colours);
+
+    /// Draws the swords, bolts, bursts and health bars as `effects` says from the next frame on, with no restart and no new
+    /// timeline: the simulation never sees it.
+    void SetEffects(const core::Effects& effects);
 
     /// Draws as Draw() does, but into a picture `width` by `height` pixels instead of the window, waits for the GPU and
     /// returns the picture, or says why it couldn't. Every glyph its texts and the HUD's lines need is rasterised on `jobs`
