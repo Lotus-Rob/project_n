@@ -145,17 +145,39 @@ what runs or in what order.
 
 ### 5. Trimming `check`'s slowest steps
 
-Two steps grew most since 2026-11-10, and neither is lint's:
+Two steps grew most since 2026-11-10:
 
 - **Reference pictures, 3 s → 29 s warm**, with no build in it (linux-gcc release is already built by the test step
   before): one `reference_tests` process draws all 23 pictures in turn on lavapipe. First measure whether lavapipe keeps
   every core busy during a picture. If it leaves cores idle, `run_references` runs the pictures as a few processes at
   once, each given a share of the test cases through doctest's `--test-case` filter, every picture still drawn and
   compared, the failures of every shard reported.
-- **windows-msvc, 73 s → 107 s warm**: time its parts first (the container's start, the build under Wine, the tests
-  under Wine). If the Wine test run dominates, the suites (one binary each, independent per tests/AGENTS.md) run as
-  parallel processes; whether `xmake test` already runs them at once is part of the measurement (its `-j` sets
-  compile jobs only). If the build dominates, it stays: XMake already uses every core.
+- **windows-msvc, 107 s warm: every MSVC build recompiles everything, and `check` builds it twice.** Measured
+  2026-11-12 (the user asked whether caching, copying or setting up ahead would help): the container starts in 0.1 s,
+  Pixi in it in 0.3 s, Wine in 1.2 s, configure takes 0.1 s, and the 8 test suites run in parallel in 4 s. The rest is
+  two full builds of 143 compiles (17 precompiled headers) and 17 links, ~47 s each, with nothing changed: one from
+  `test`'s build, one from `xmake test`, which builds again before running.
+  - **Cause:** XMake asks `cl` for `/sourceDependencies` JSON. Under Wine that names every header as a lowercased Wine
+    path (`z:\opt\msvc\…`, `z:\home\dev\.xmake\…\include\sdl3\sdl.h`, `z:\src\src\…`), which XMake on Linux can't
+    stat, and its `depend.is_changed` treats a file it can't stat as changed. Mapping `z:` back wouldn't be enough:
+    the case is lost (`SDL3/SDL.h`).
+  - **Fix, tried by hand:** `/showIncludes` instead, which msvc-wine's `cl` wrapper already rewrites to Linux paths with
+    their case, and XMake's build cache off for MSVC under Wine: the cache compiles the preprocessed file, whose
+    `/showIncludes` lists no headers, so with the cache on, a header change rebuilt nothing (wrong, not just fast).
+    With both: a build with nothing changed **0.3 s** (from ~47 s); a change to `gfx/renderer.hpp` rebuilds **exactly
+    the 8 units that include it**, 19 s with their links; the whole step after no change 5 s.
+  - **How, durably:** XMake has no option for the dependency format; it probes once whether `cl` takes
+    `/sourceDependencies` and caches the answer. The builder picks, in this order of preference: (a) our MSVC install's
+    `cl` wrapper (set up by `ensure_msvc`, already post-processed there for the toolset stub) drops
+    `/sourceDependencies <file>`, so XMake's own probe finds no JSON and falls back by itself, applied idempotently so
+    existing installs get it without a reinstall; (b) anything else only if (a) fails, back to the user. The build cache
+    goes off in xmake.lua for the msvc toolchain on a non-Windows host (`build.ccache` policy), with the reason. A
+    regression test where one exists: the windows-msvc step after no change stays a no-op build (`check`'s step
+    times show it).
+  - **Upstream:** a report drafted for the user to post (XMake: `/sourceDependencies` under msvc-wine never resolves,
+    and the build cache drops `/showIncludes` dependencies), on the backlog with the others.
+  - Expected: the step ~25 s after a typical header change, ~55 s after a change every unit reaches (one build, not
+    two), 5 s after none.
 
 Any trim beyond these two (dropping a step, a preset or a mode; moving one to CI) comes back to the user with the
 numbers instead.
