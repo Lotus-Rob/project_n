@@ -1,6 +1,6 @@
 # A faster development loop: lint what a change reaches, one gate per level, reviews sized to the task
 
-Date: 2026-11-12 · Status: draft for the user's approval
+Date: 2026-11-12 · Status: approved 2026-11-12, on the user's condition that it doesn't cost the game performance (§5)
 
 ## Intent
 
@@ -174,6 +174,16 @@ Two steps grew most since 2026-11-10:
     goes off in xmake.lua for the msvc toolchain on a non-Windows host (`build.ccache` policy), with the reason. A
     regression test where one exists: the windows-msvc step after no change stays a no-op build (`check`'s step
     times show it).
+  - **The user's condition (2026-11-12): "as long as it doesn't impact our performance".** No compiler or linker flag
+    changes; Linux builds aren't touched. Turning the build cache off does change the MSVC binaries' bytes: with the
+    cache on, cl compiles a preprocessed temporary copy, so anonymous namespaces get other path-derived names
+    (`?A0xa99cabdd@core` against `?A0x9c794e1e@core`) and addresses shift; each mode is stable build to build apart from
+    69 identity bytes (the PE timestamp and the `.pdb` record), code sections equal. Measured: the MSVC
+    `headless_bench.exe` of each mode, alternated 10 times each under Wine (9 measures: ticks, combat ticks, month
+    steps at 3 worker counts): 8 of 9 within ±1.2%, combat ticks 0.5–1.2% faster without the cache; month steps at the
+    third worker count +6.7% by mean from two outlier runs (3.28 and 3.30 ms against ~2.6–2.7), ~2% without them, on
+    12 samples a run. Read: no difference beyond noise. The renderer's GPU side can't run under Wine here; its CPU side
+    compiles with the same flags. The Outcome repeats the alternated benchmark on the built branch.
   - **Upstream:** a report drafted for the user to post (XMake: `/sourceDependencies` under msvc-wine never resolves,
     and the build cache drops `/showIncludes` dependencies), on the backlog with the others.
   - Expected: the step ~25 s after a typical header change, ~55 s after a change every unit reaches (one build, not
