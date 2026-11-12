@@ -326,14 +326,32 @@ class CheckTest(unittest.TestCase):
             project_n.cmd_check(project_n.argparse.Namespace(container=False, sanitizers=False))
         self.assertEqual(ran, [])  # refused before running anything
 
-    def container_check(self):
-        tests, builds, references = [], [], []
-        with mock.patch.multiple(project_n, clone_set_up=lambda: True, cmd_selftest=lambda args: None,
-                                 commit_range=lambda: None, cmd_fmt=lambda args: None, cmd_lint=lambda args: None,
-                                 cmd_reference=references.append, cmd_test=tests.append, cmd_build=builds.append), \
-             contextlib.redirect_stdout(io.StringIO()):
+    def container_check(self, out=None, **patches):
+        tests, builds, references, out = [], [], [], out or io.StringIO()
+        steps = {"clone_set_up": lambda: True, "cmd_selftest": lambda args: None, "commit_range": lambda: None,
+                 "cmd_fmt": lambda args: None, "cmd_lint": lambda args: None, "cmd_reference": references.append,
+                 "cmd_test": tests.append, "cmd_build": builds.append}
+        with mock.patch.multiple(project_n, **{**steps, **patches}), contextlib.redirect_stdout(out):
             project_n.cmd_check(project_n.argparse.Namespace(container=True, sanitizers=False))
-        return tests, builds, references
+        return tests, builds, references, out.getvalue()
+
+    def test_check_prints_each_steps_time(self):
+        out = self.container_check()[3]
+        presets = [p for p in project_n.PRESETS if project_n.PRESETS[p]["image"]]
+        expected = ["selftest", "fmt", "lint", *(f"test {p} release" for p in presets), "reference", "unity test",
+                    "releasedbg", "total"]
+        positions = [out.find(name) for name in expected]
+        self.assertNotIn(-1, positions, out)
+        self.assertEqual(positions, sorted(positions), out)
+
+    def test_step_times_print_when_a_step_fails(self):
+        def fail(args):
+            raise project_n.Fail("boom")
+        out = io.StringIO()
+        with self.assertRaises(project_n.Fail):
+            self.container_check(out, cmd_test=fail)
+        self.assertIn("lint", out.getvalue())
+        self.assertRegex(out.getvalue(), r"test \S+ release")
 
     def test_check_compares_the_reference_pictures_once_on_linux(self):
         references = self.container_check()[2]

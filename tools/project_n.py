@@ -1289,36 +1289,64 @@ def commit_range():
     return None
 
 
+def step_times_table(times):
+    """`check`'s steps and how long each took, then the total: what to look at when the loop feels slow."""
+    width = max((len(name) for name, _ in times), default=0)
+    lines = [f"  {name:<{width}}  {seconds:7.1f} s" for name, seconds in times]
+    return "\n".join(["check: step times", *lines, f"  {'total':<{width}}  {sum(s for _, s in times):7.1f} s"])
+
+
 def cmd_check(args):
     """The merge gate: commit messages, formatting and lint of the diff, then build and test every
     preset. The pre-commit hook checks formatting at each commit, so the hooks must be on; this
     format check covers what it misses (rebases and cherry-picks don't run it)."""
     if not clone_set_up():
         raise Fail("set the clone up first (the commit hooks, Git LFS's filters): pixi run project_n setup")
-    cmd_selftest(args)
+    times = []
+
+    def step(name, command, *step_args):
+        start = time.monotonic()
+        try:
+            return command(*step_args)
+        finally:
+            times.append((name, time.monotonic() - start))
+
+    try:
+        check_steps(args, step)
+    finally:
+        print(step_times_table(times), flush=True)
+
+
+def check_steps(args, step):
+    """cmd_check's steps, each run through `step(name, command, args)`, which times it."""
+    step("selftest", cmd_selftest, args)
     rng = commit_range()
-    if rng and cmd_commit_check(argparse.Namespace(range=rng, message_file=None)):
+    if rng and step("commit-check", cmd_commit_check, argparse.Namespace(range=rng, message_file=None)):
         raise Fail("commit-check failed")
-    cmd_fmt(argparse.Namespace(check=True, staged=False, all=False, range=None))
-    cmd_lint(argparse.Namespace(container=args.container, fix=False, all=False, range=None))
+    step("fmt", cmd_fmt, argparse.Namespace(check=True, staged=False, all=False, range=None))
+    step("lint", cmd_lint, argparse.Namespace(container=args.container, fix=False, all=False, range=None))
     skipped = [p for p in PRESETS if not buildable_here(p) or (args.container and not PRESETS[p]["image"])]
     for preset in [p for p in PRESETS if p not in skipped]:
-        cmd_test(argparse.Namespace(preset=preset, mode="release", sanitizer="none", container=args.container,
-                                    target=None, test=None, args=[], unity=False))
+        step(f"test {preset} release", cmd_test, argparse.Namespace(
+            preset=preset, mode="release", sanitizer="none", container=args.container, target=None, test=None, args=[],
+            unity=False))
     linux = next((p for p in PRESETS if PRESETS[p]["plat"] == "linux" and p not in skipped), None)
     if linux:
-        cmd_reference(argparse.Namespace(preset=linux, container=args.container, update=False))
+        step(f"reference {linux}", cmd_reference, argparse.Namespace(preset=linux, container=args.container, update=False))
     # Unity builds are off (xmake.lua) but kept working: one test run with them on.
     unity_preset = NATIVE_PRESET if NATIVE_PRESET not in skipped else next(p for p in PRESETS if p not in skipped)
-    cmd_test(argparse.Namespace(preset=unity_preset, mode="debug", sanitizer="none", container=args.container,
-                                target=None, test=None, args=[], unity=True))
+    step(f"unity test {unity_preset} debug", cmd_test, argparse.Namespace(
+        preset=unity_preset, mode="debug", sanitizer="none", container=args.container, target=None, test=None, args=[],
+        unity=True))
     # Profiling builds turn Tracy's zones on, code no other mode compiles: one build keeps it compiling.
-    cmd_build(argparse.Namespace(preset=unity_preset, mode="releasedbg", sanitizer="none", container=args.container))
+    step(f"build {unity_preset} releasedbg", cmd_build, argparse.Namespace(
+        preset=unity_preset, mode="releasedbg", sanitizer="none", container=args.container))
     if args.sanitizers:
         for preset, sanitizers in SANITIZERS.items():
             for sanitizer in sanitizers if preset not in skipped else ():
-                cmd_test(argparse.Namespace(preset=preset, mode="debug", sanitizer=sanitizer, container=args.container,
-                                            target=None, test=None, args=[], unity=False))
+                step(f"test {preset} debug {sanitizer}", cmd_test, argparse.Namespace(
+                    preset=preset, mode="debug", sanitizer=sanitizer, container=args.container, target=None, test=None,
+                    args=[], unity=False))
     print("check: all presets passed" + (" with every supported sanitizer" if args.sanitizers else "")
           + (f" (skipped {', '.join(skipped)}: not buildable on this host)" if skipped else ""))
 
