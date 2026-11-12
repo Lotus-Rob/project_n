@@ -97,6 +97,16 @@ TEST_CASE("showing another scene puts the camera back at the reference view") {
     CHECK(camera.zoom == 1.0F);
 }
 
+TEST_CASE("showing another scene starts it at the run's zoom") {
+    constexpr auto FIRST = core::SceneId{ 0 };
+    constexpr auto SECOND = core::SceneId{ 1 };
+    gfx::Camera camera{ .centre = MOVED, .zoom = 1.0F };
+    std::optional<core::SceneId> shown = FIRST;
+    app::ShowScene(camera, shown, SECOND, gfx::MIN_ZOOM);
+    CHECK(camera.centre.x == gfx::REFERENCE_CENTRE.x);
+    CHECK(camera.zoom == gfx::MIN_ZOOM);
+}
+
 TEST_CASE("showing the same scene again leaves the camera where the player put it") {
     constexpr auto FIRST = core::SceneId{ 0 };
     constexpr f32 ZOOMED = 2.0F;

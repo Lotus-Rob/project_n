@@ -108,6 +108,22 @@ DataWatch::Listing DataWatch::List(const std::filesystem::path& folder, std::err
     return listing;
 }
 
+std::expected<f32, core::Error> ZoomOf(std::span<const char* const> args) {
+    const auto flag = std::ranges::find(args, std::string_view{ "--zoom" });
+    if (flag == args.end()) {
+        return 1.0F;
+    }
+    const std::string_view text = std::next(flag) == args.end() ? std::string_view{} : std::string_view{ *std::next(flag) };
+    f32 zoom = 0.0F;
+    const char* last = std::to_address(text.end());
+    const auto [end, error] = std::from_chars(std::to_address(text.begin()), last, zoom);
+    if (error != std::errc{} || end != last || !std::isfinite(zoom) || zoom < gfx::MIN_ZOOM || zoom > gfx::MAX_ZOOM) {
+        return std::unexpected{ core::Error{
+            std::format("--zoom: '{}' isn't a zoom from {} to {}", text, gfx::MIN_ZOOM, gfx::MAX_ZOOM) } };
+    }
+    return zoom;
+}
+
 DataReload ReloadOf(
     const core::Effects& effects,
     const std::expected<core::Effects, core::Error>& readEffects,
@@ -449,7 +465,7 @@ bool App::Present(const platform::WindowState& state) {
     if (!LoadScene(drawn->scene)) {
         return false;
     }
-    ShowScene(m_camera, m_shown, drawn->scene);
+    ShowScene(m_camera, m_shown, drawn->scene, m_options.zoom);
     if (m_numbersEpoch != drawn->epoch) {
         m_numbers.Clear(); // a new timeline: none of the old one's hits happened in it
         m_hud.Clear();     // nor its refused casts
