@@ -400,6 +400,34 @@ def pixi_prefix(name):
     return Path(next(e["prefix"] for e in envs if e["name"] == name))
 
 
+DOCTEST_COUNT_RE = re.compile(r"unskipped test cases passing the current filters: (\d+)")
+
+
+def reference_case_count(exe, env):
+    """How many test cases the reference binary holds, from doctest's `--count`."""
+    result = subprocess.run([exe, "--count"], cwd=ROOT, env=env, check=False, capture_output=True, encoding="utf-8",
+                            errors="replace")
+    m = DOCTEST_COUNT_RE.search(result.stdout)
+    if not m:
+        raise Fail(f"reference: {exe} --count printed no case count:\n{result.stdout}{result.stderr or ''}")
+    return int(m[1])
+
+
+def doctest_case_name(output):
+    """The test case a doctest failure names, if it printed one."""
+    m = re.search(r"^TEST CASE:\s+(.+)$", output, re.MULTILINE)
+    return m and m[1].strip()
+
+
+def run_reference_case(exe, env, index):
+    """(output, return code) of the reference binary's `index`th case (1-based, doctest's order), stdout and stderr
+    together. Cases are picked by position: some names hold commas, which --test-case would split on. --minimal drops
+    doctest's summary from a passing case: it would claim all 25 cases passed, counting those outside the range."""
+    result = subprocess.run([exe, f"--first={index}", f"--last={index}", "--minimal=true"], cwd=ROOT, env=env, check=False,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding="utf-8", errors="replace")
+    return result.stdout, result.returncode
+
+
 def run_references(preset, update=False):
     """Compare a built release's pictures of fixed scenes with tests/reference/, on Mesa's software
     Vulkan (Pixi's lavapipe environment) and without a display: every machine draws the same."""
@@ -409,11 +437,19 @@ def run_references(preset, update=False):
     drawn = ROOT / "build" / "reference"
     shutil.rmtree(drawn, ignore_errors=True)
     drawn.mkdir(parents=True)
-    try:
-        run([binary_path(preset, "release", "reference_tests")], env=env)
-    except subprocess.CalledProcessError:
-        if not update:
-            raise
+    exe = binary_path(preset, "release", "reference_tests")
+    count = reference_case_count(exe, env)
+    # One process per case, all cores at once: a single process kept lavapipe on 1.4 of 32 cores (28 s for 25 cases).
+    print(f"+ {exe} on {count} case(s), one process each, {jobs()} at a time", flush=True)
+    with concurrent.futures.ThreadPoolExecutor(jobs()) as pool:
+        results = list(pool.map(lambda index: run_reference_case(exe, env, index), range(1, count + 1)))
+    for output, _ in results:
+        print(output, end="", flush=True)
+    failed = [doctest_case_name(output) or f"case {index}" for index, (output, returncode) in enumerate(results, 1)
+              if returncode]
+    if failed and not update:
+        raise subprocess.CalledProcessError(1, [str(exe)], stderr=f"reference: {len(failed)} of {count} case(s) failed: "
+                                                                 + "; ".join(failed) + "\n")
     if update:
         # Every committed view must be redrawn: a run that crashed part-way would update only some.
         missing = sorted({p.name for p in (ROOT / "tests" / "reference").glob("*.png")} - {p.name for p in drawn.glob("*.png")})

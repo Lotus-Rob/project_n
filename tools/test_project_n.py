@@ -6,6 +6,7 @@ import functools
 import io
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -370,25 +371,36 @@ class CheckTest(unittest.TestCase):
 
 
 class ReferenceTest(unittest.TestCase):
-    def references(self, update, committed=()):
-        """Runs `run_references` in a temporary root holding the `committed` pictures, where the test
-        run draws a.png and then fails."""
-        def draw_and_fail(argv, env=None):
-            if str(argv[0]) != "reference_tests":
-                return  # pixi install
-            (root / "build" / "reference" / "a.png").write_bytes(b"drawn")
-            raise subprocess.CalledProcessError(1, argv)
+    def references(self, update, committed=(), case=None):
+        """Runs `run_references` in a temporary root holding the `committed` pictures, over three cases run by `case`
+        (index -> (output, return code)); by default case 2 draws a.png and fails. Returns (a.png's bytes or None, the
+        indices run, stdout)."""
+        ran, out = [], io.StringIO()
+
+        def draw_and_fail(index):
+            if index == 2:
+                (root / "build" / "reference" / "a.png").write_bytes(b"drawn")
+                return "case 2 failed\n", 1
+            return "", 0
+
+        def run_case(exe, env, index):
+            ran.append(index)
+            return (case or draw_and_fail)(index)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "tests" / "reference").mkdir(parents=True)
             for name in committed:
                 (root / "tests" / "reference" / name).write_bytes(b"committed")
-            with mock.patch.multiple(project_n, ROOT=root, capture=lambda argv: '{"environments_info": [{"name": "lavapipe", "prefix": "/lavapipe"}]}',
-                                     run=draw_and_fail,
-                                     binary_path=lambda *args: Path("reference_tests")), \
-                 contextlib.redirect_stdout(io.StringIO()):
-                project_n.run_references("linux-gcc", update)
-            return (root / "tests" / "reference" / "a.png").read_bytes()
+            try:
+                with mock.patch.multiple(project_n, ROOT=root, capture=lambda argv: '{"environments_info": [{"name": "lavapipe", "prefix": "/lavapipe"}]}',
+                                         run=lambda argv, env=None: None, reference_case_count=lambda exe, env: 3,
+                                         run_reference_case=run_case, binary_path=lambda *args: Path("reference_tests")), \
+                     contextlib.redirect_stdout(out):
+                    project_n.run_references("linux-gcc", update)
+            finally:
+                self.ran, self.out = sorted(ran), out.getvalue()
+            picture = root / "tests" / "reference" / "a.png"
+            return picture.read_bytes() if picture.exists() else None
 
     def test_a_failing_comparison_fails(self):
         with self.assertRaises(subprocess.CalledProcessError):
@@ -400,6 +412,39 @@ class ReferenceTest(unittest.TestCase):
     def test_update_refuses_a_run_that_didnt_draw_every_view(self):
         with self.assertRaises(project_n.Fail):
             self.references(update=True, committed=["a.png", "b.png"])
+
+    def test_every_case_runs_once(self):
+        self.references(update=False, case=lambda index: ("", 0))
+        self.assertEqual(self.ran, [1, 2, 3])
+
+    def test_every_case_runs_when_one_fails(self):
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.references(update=False, case=lambda index: ("", 1 if index == 1 else 0))
+        self.assertEqual(self.ran, [1, 2, 3])
+
+    def test_a_failure_ends_naming_the_failed_cases(self):
+        outputs = {1: ("TEST CASE:  the map cells at zoom 1\nERROR: CHECK\n", 1), 2: ("", 0), 3: ("", -11)}
+        with self.assertRaises(subprocess.CalledProcessError) as raised:
+            self.references(update=False, case=outputs.__getitem__)
+        self.assertIn("2 of 3", raised.exception.stderr)
+        self.assertIn("the map cells at zoom 1", raised.exception.stderr)
+        self.assertIn("case 3", raised.exception.stderr)  # crashed before doctest named it
+
+    def test_outputs_print_in_case_order(self):
+        def finish_out_of_order(index):
+            time.sleep(0.01 * (3 - index))  # case 3 finishes first
+            return ["one", "two", "three"][index - 1], 0
+        self.references(update=False, case=finish_out_of_order)
+        self.assertLess(self.out.index("one"), self.out.index("two"))
+        self.assertLess(self.out.index("two"), self.out.index("three"))
+
+    def test_the_case_count_is_read_from_doctest(self):
+        line = "[doctest] unskipped test cases passing the current filters: 25\n"
+        with mock.patch.object(project_n.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, line)):
+            self.assertEqual(project_n.reference_case_count(Path("reference_tests"), {}), 25)
+        with mock.patch.object(project_n.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, "crashed\n")), \
+             self.assertRaises(project_n.Fail):
+            project_n.reference_case_count(Path("reference_tests"), {})
 
     def test_reference_refuses_a_preset_that_isnt_linux(self):
         with self.assertRaises(project_n.Fail):
