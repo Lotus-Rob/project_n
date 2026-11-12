@@ -285,7 +285,12 @@ measurements behind them, and what is left open. Commits are named by subject: t
   `core::ScaledColour`, with `core::OpacityOf`, for the HUD, text and volley drawings); "ink the HUD's slots as opaque as
   its text, as labels are"; "fuzz a save taken mid-fight, loaded at the largest tick"; "replay a recorded fight with every
   ability"; "cast the swords on a timer for profiling, log their latency" (`--cast-swords`, `app::TimedCast`,
-  `app::CastLatency`); "slow the flying swords, as the user asked"; and this record.
+  `app::CastLatency`); "slow the flying swords, as the user asked"; and this record ("record what chunk 4 built"). The
+  branch's first full `check` then found what native builds can't: "build the HUD tests with GCC"; "construct the HUD
+  with parentheses for MSVC" and "build the branch's tests with MSVC" (C4866, C4868, C5258); "copy the swords' shape for
+  the pictures, bound their waits" (the volley pictures read the swords' shape through a reference into a temporary;
+  linux-gcc's release read garbage and ticked towards tick 2.9 billion, hanging `check` for an hour; every wait in the
+  reference suite now fails loudly instead); "name the abilities reader's refusal for its file" (a unity-build clash).
 
 ### The user's decisions while building it
 
