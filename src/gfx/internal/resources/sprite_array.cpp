@@ -99,10 +99,10 @@ std::expected<void, core::Error> UploadSprite(
     SDL_GPUDevice* device,
     const SpriteArray& array,
     const core::SpriteInfo& sprite,
-    u32 mipLevels,
+    u32 edge,
     const SDL_Surface& image
 ) {
-    const SpriteBlock block = BlockOf(sprite, mipLevels);
+    const SpriteBlock block = BlockOf(sprite, edge);
     const u32 bytes = block.width * block.height * static_cast<u32>(BYTES_PER_TEXEL);
     SDL_GPUTransferBufferCreateInfo transferInfo{};
     transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
@@ -113,9 +113,7 @@ std::expected<void, core::Error> UploadSprite(
         return std::unexpected{ core::Error{ std::format("no transfer buffer for {}: {}", sprite.file, SDL_GetError()) } };
     }
     const auto pitch = static_cast<std::size_t>(image.pitch);
-    WriteBlock(
-        sprite, mipLevels, BytesAt(image.pixels, pitch * static_cast<std::size_t>(image.h)), pitch, BytesAt(mapped, bytes)
-    );
+    WriteBlock(sprite, edge, BytesAt(image.pixels, pitch * static_cast<std::size_t>(image.h)), pitch, BytesAt(mapped, bytes));
     SDL_UnmapGPUTransferBuffer(device, transfer.get());
 
     SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(device);

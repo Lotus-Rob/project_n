@@ -71,8 +71,10 @@ struct Manifest {
     u32 pageSize = 0;
     /// The number of pages (array layers).
     u32 pages = 0;
-    /// The mip levels to generate; the gutters between sprites keep them apart down to the last.
+    /// The mip levels to generate; the gutter between sprites keeps them apart down to the last.
     u32 mipLevels = 0;
+    /// The texels between sprites, and from a sprite to its page's edge at least: each owns half (Edge()).
+    u32 gutter = 0;
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// Every sprite, indexed by atlas::SpriteId: as many as atlas::SPRITE_NAMES.
     std::vector<SpriteInfo> sprites{};
@@ -80,6 +82,10 @@ struct Manifest {
     std::vector<SceneInfo> scenes{};
     // NOLINTEND(readability-redundant-member-init)
 
+    /// Each sprite's share of the gutter: the texels past its region on every side that it writes and its field fills.
+    [[nodiscard]] u32 Edge() const {
+        return gutter / 2;
+    }
     /// The sprite `sprite`, which must be in the manifest.
     [[nodiscard]] const SpriteInfo& Sprite(atlas::SpriteId sprite) const {
         return sprites.at(std::to_underlying(sprite));

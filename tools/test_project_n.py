@@ -1263,6 +1263,16 @@ class AtlasTest(unittest.TestCase):
                 apart = a[0] != b[0] or a[3] + 8 <= b[1] or b[3] + 8 <= a[1] or a[4] + 8 <= b[2] or b[4] + 8 <= a[2]
                 self.assertTrue(apart, (a, b))
 
+    def test_the_packer_keeps_a_32_texel_gutter(self):
+        (_, x0, y0), (_, x1, y1) = project_n.pack_atlas([(10, 40), (24, 48)])
+        self.assertTrue(min(x0, y0, x1, y1) >= 32, (x0, y0, x1, y1))
+        first, second = sorted([(x0, 10), (x1, 24)])  # the packer places the taller first
+        self.assertTrue(second[0] >= first[0] + first[1] + 32, (x0, x1))
+
+    def test_the_manifest_states_its_gutter(self):
+        text = project_n.atlas_manifest([("a", 10, 40, 0, 0)], [(0, 32, 32)], [])
+        self.assertIn("\ngutter: 32\n", text)
+
     def test_a_full_page_opens_the_next(self):
         self.assertEqual([p for p, _, _ in project_n.pack_atlas([(80, 80)] * 3, page=100, gutter=4)], [0, 1, 2])
 
@@ -1324,7 +1334,7 @@ class AtlasTest(unittest.TestCase):
                 project_n.cmd_atlas(mock.Mock(placeholders=False))
             self.assertFalse(project_n.stale_atlas())
             manifest = (root / "assets" / "manifest.yaml").read_text(encoding="utf-8")
-            self.assertIn("  - { name: a, file: sprites/a.png, page: 0, region: [16, 16, 10, 20], foot: [5, 20] }", manifest)
+            self.assertIn("  - { name: a, file: sprites/a.png, page: 0, region: [32, 32, 10, 20], foot: [5, 20] }", manifest)
             self.assertIn("  - { name: one, sprites: [a] }", manifest)
             self.assertIn('    "a",', (root / "src" / "core" / "generated" / "atlas.hpp").read_text(encoding="utf-8"))
             (root / "assets" / "manifest.yaml").write_text(manifest + "# edited\n", encoding="utf-8")
