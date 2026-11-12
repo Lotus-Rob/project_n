@@ -19,6 +19,10 @@
 
 namespace core {
 
+/// How far a sprite's distance field reaches past its edge, in texels: the most a glow can reach, and half the atlas
+/// gutter's least, so a field never meets its neighbour's.
+inline constexpr u32 FIELD_REACH_TEXELS = 16;
+
 /// The sprite called `name` in art/sprites.toml, if there is one.
 [[nodiscard]] inline std::optional<atlas::SpriteId> SpriteNamed(std::string_view name) {
     const std::span<const std::string_view> names{ atlas::SPRITE_NAMES };
