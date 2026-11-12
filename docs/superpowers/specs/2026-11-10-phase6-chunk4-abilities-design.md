@@ -1,6 +1,6 @@
 # Phase 6, chunk 4: abilities and the flying swords
 
-Date: 2026-11-10 · Status: **implemented 2026-11-11** (approved 2026-11-10; see Outcome) · Phase spec: `2026-11-10-phase6-design.md` · New: no earlier design
+Date: 2026-11-10 · Status: **implemented 2026-11-12** (approved 2026-11-10; see Outcome) · Phase spec: `2026-11-10-phase6-design.md` · New: no earlier design
 
 ## In short
 
@@ -166,11 +166,13 @@ Phase decision 17 requires this section.
 - **Colour is never the only signal:** health bars show health by the fill's length. A slot on cooldown shows its
   seconds left as a number, not just dimmed. Too little Qi shows the words "Not enough Qi", not just a red tint. The
   fire bolt and the poison lance differ in shape as well as colour (a flying bolt with a trail; a burst at the point).
-- **Reduce flashing (chunk 11 wires it):** the halos and the bolt's glow take their brightness from one constant,
-  `gfx::HALO_INTENSITY`, and the lance's burst from `gfx::FLASH_INTENSITY`. Chunk 11 lowers both under reduce
-  flashing. The dissolve fades and never flashes.
-- **Reduce motion (chunk 11 wires it):** the trail length is one constant, `gfx::TRAIL_TICKS`, which chunk 11 shortens
-  under reduce motion. The swords' flight is the ability itself and stays. Nothing shakes the camera.
+- **Reduce flashing (chunk 11 wires it):** the halos and the bolt's glow take their brightness from one value per
+  ability, `halo_intensity` in `assets/data/effects.yaml` (`core::SwordLook::haloIntensity`), and the lance's burst
+  from its `flash_intensity` (`core::BurstLook::intensity`). Chunk 11 lowers them under reduce flashing. The dissolve
+  fades and never flashes.
+- **Reduce motion (chunk 11 wires it):** the trail length is one value per ability, `trail` in `effects.yaml`
+  (`core::SwordLook::trailTicks`), which chunk 11 shortens under reduce motion. The swords' flight is the ability
+  itself and stays. Nothing shakes the camera.
 - **Input:** every ability is on the mouse and keyboard. Playing with a gamepad is a phase non-goal (decision 18 covers
   UI only), so casts have no gamepad bindings yet.
 
@@ -196,7 +198,8 @@ The user's, 2026-11-10:
     for them.
 
 The user's decisions taken while building it (the swords' waves of rings, their tinted cores, their slower flight, their
-rings as still sunbursts) are in the Outcome.
+rings as still sunbursts almost tip to heel, every tuning value as data, small unit tests, a deeper damage colour) are in
+the Outcome.
 
 ## Calls made here (not the user's; check them)
 
@@ -241,10 +244,13 @@ layout; commit split and order.
 
 ## Outcome
 
-Implemented on `worktree-phase6-chunk4-abilities`, 2026-11-11, by the plan
-`docs/superpowers/plans/2026-11-11-phase6-chunk4-abilities.md` (Tasks 1 to 10, with Task 9b added mid-run). This records
-what was built, the user's decisions taken while building it, every ruling of the plan's ledger, the values chosen, the
-measurements behind them, and what is left open. Commits are named by subject: the rebase merge rewrites every hash.
+Implemented on `worktree-phase6-chunk4-abilities`, 2026-11-11 and 2026-11-12, by the plan
+`docs/superpowers/plans/2026-11-11-phase6-chunk4-abilities.md` (Tasks 1 to 10, with Tasks 9b, 10b, 10c, 10d and 10e
+added mid-run for the user's decisions). This records what was built, the user's decisions taken while building it,
+every ruling of the plan's ledger, the values chosen, the measurements behind them, and what is left open. Commits are
+named by subject: the rebase merge rewrites every hash. Before the pull request, each late fix was folded into the commit
+whose code it fixed; builds are verified at the head, not commit by commit (the user's decision below). The subjects
+below are the commits as they landed.
 
 ### What was built
 
@@ -277,7 +283,7 @@ measurements behind them, and what is left open. Commits are named by subject: t
   and spread their aim over a target"; "tint the swords' glow and show health bars as their labels"; "leave a sword out
   whole when its trail has no room"; "check that the swords' aim spots spread evenly over the disc". `gfx::DrawVolleys`
   (tinted cores, additive halos, swords at the exact render time), the additive ribbon pipeline for trails, the enemies'
-  health bars.
+  health bars. The spiral out is gone since Task 10c's still rings; the aim spread stays.
 - **Task 9, the lance and the HUD:** "strike with the poison lance and show a temporary HUD"; "strike with the lance
   after the tick's due afflictions"; "refuse a save whose flash starts after its tick"; "ink the HUD's slot lines when
   text has no outline or shadow"; "pre-warm the HUD's texts as filled in with numbers"; "take the HUD's room first, so an
@@ -286,18 +292,39 @@ measurements behind them, and what is left open. Commits are named by subject: t
 - **Task 9b, waves of rings** (the user's decision below): "form chunk 4's swords in waves of wide rings" (the plan);
   "form the flying swords in waves of wide, scattered rings"; "form the flying swords in waves of rings, as decided";
   "cover an uneven wave split and the shortest flight"; "refuse a missing or negative scatter, a negative jitter"; "name
-  the abilities' number reader for what it checks"; "rewrap the swords' summary line".
+  the abilities' number reader for what it checks"; "rewrap the swords' summary line". Task 10c keeps the waves and
+  their fields, and ships the scatter and the angle jitter that made the rings loose at 0.
 - **Task 10, the recorded fight, the measurements, this record:** "scale a packed colour in one place" (one
   `core::ScaledColour`, with `core::OpacityOf`, for the HUD, text and volley drawings); "ink the HUD's slots as opaque as
   its text, as labels are"; "fuzz a save taken mid-fight, loaded at the largest tick"; "replay a recorded fight with every
   ability"; "cast the swords on a timer for profiling, log their latency" (`--cast-swords`, `app::TimedCast`,
-  `app::CastLatency`); "slow the flying swords, as the user asked"; and this record ("record what chunk 4 built"). The
-  branch's first full `check` then found what native builds can't: "build the HUD tests with GCC"; "construct the HUD
-  with parentheses for MSVC" and "build the branch's tests with MSVC" (C4866, C4868, C5258); "copy the swords' shape for
-  the pictures, bound their waits" (the volley pictures read the swords' shape through a reference into a temporary;
-  linux-gcc's release read garbage and ticked towards tick 2.9 billion, hanging `check` for an hour; every wait in the
-  reference suite now fails loudly instead); "name the abilities reader's refusal for its file" (a unity-build clash).
-
+  `app::CastLatency`); "slow the flying swords, as the user asked"; and this record ("record what chunk 4 built", "add
+  check's fixes to chunk 4's outcome"). The branch's first full `check` then found what native builds can't: GCC's
+  `-Weffc++` and `-Wrange-loop-construct` in the HUD tests; MSVC's C4866 (temporaries inside `CHECK`), C4868 (braces
+  round a copied shared pointer, in the App's HUD and its tests) and C5258 (a needless capture); a unity-build clash
+  between the data readers' file-local `Fail`s (abilities.cpp's is `RefuseAbilities` now); and a hang: the volley
+  pictures read the swords' shape through a reference into the temporary `game::BuiltInData()` returns, and linux-gcc's
+  release read garbage and ticked towards tick 2.9 billion, hanging `check` for an hour. Each fix was folded into the
+  commit whose code it fixed; what stands on its own is "bound every wait in the reference suite" (a picture more than
+  600 ticks after its cast, or a scene not resident within a minute, now fails loudly, naming what never happened).
+  Task 10's review round: "pin the recorded fight's hash count and its dash"; "shrink the mid-fight save seed to its
+  combat" (209,421 → 4,421 bytes: the world tier and relationships cut out); "match chunk 4's rulings to the ledger".
+- **Task 10c, still rings** (the user's decision below): "plan still rings, small tests and tunable data" (the plan for
+  10c, 10d and 10b); "form the swords' rings as still circles that hold, then fly"; "describe the swords' rings as still
+  sunbursts"; "share the tick a sword leaves its ring" (`core::DepartureTick`, for the logic, the renderer and the
+  tests); "sample the formation tests, and the widest turn"; "give each ring swords in proportion to its circumference";
+  "stack ten quick rings of swords almost tip to heel"; "draw the flying swords half as large again". A sword waits
+  unseen at its own place on its ring, fades in there pointing straight out (no burst, no spiral, no trail), each ring
+  drawing itself in one clockwise sweep as its swords appear in index order; it holds, leaves after a drawn delay
+  (`holdTicks`, `departJitterTicks`, both data), and turns from outwards to its flight over the flight's first
+  `TURN_TICKS` (8) as it eases off from rest. A wave's share of the swords follows its radius, so every ring has the
+  same spacing. A sword's trail starts where it left its ring, so a holding sword draws none.
+- **Task 10d, small unit tests** (the user's rule below): "sample the volley's behaviour, not every sword and tick";
+  "generate the fight save seed reproducibly"; "keep unit tests to a handful of samples" (the rule in tests/AGENTS.md);
+  "write the fight save seed from a skipped case" (the generator case skipped by default and run by name, and
+  tests/AGENTS.md's one way for a test to write a repo file); "derive the sampled swords from the waves". The sweeping
+  volley, volley drawing and combat tests now check chosen samples (each wave's boundary swords, the first and last, the
+  shortest chord, the widest turn) and assert each loop's worst value once, with the same bounds.
 - **Task 10b, every tuning value as data** (the user's request, below): two tables. "read the abilities' motion and the
   combat rules from data": the projectile abilities' motion joins `core::VolleyShape` (read from each ability's `motion:`
   block in `abilities.yaml`, saved with the volley so a volley in flight keeps the motion it was cast with): `aim_scatter`,
@@ -319,7 +346,27 @@ measurements behind them, and what is left open. Commits are named by subject: t
   versions, random purposes, `CAST_SOURCE`, the debug burst and the arena's layout (scene data, chunk 7). The abilities'
   other numbers were data already. Two rulings: a time in `effects.yaml` is seconds (`trail`, `not_enough_qi`) as
   elsewhere, ticks in `core`; `MAX_ARRIVAL_SPEED` (3) bounds `arrival_speed`, past which the arrival's ease stops being
-  monotonic.
+  monotonic. Its review's findings are in those commits: `abilities.yaml` is parsed once for both tables
+  (`data::ParseAbilitiesFile`); every default is a named `core::shipped` constant and `BUILT_IN_DATA.combat` is
+  `core::CombatRules{}`; a `motion:` block on an ability that flies nothing (neither swords nor a speed) is refused with
+  its line, as a dash without its distance is; a test shows a swing following the shape's `retarget` and
+  `retarget_speed`; `MIN_COMMIT_TICKS` is twice the shipped retarget ticks, never a tuned one. Recorded here by "record
+  chunk 4's tuning values as data".
+- **Task 10e, a deeper damage colour** (the user's decision below): "plan a deeper damage colour"; "deepen the damage
+  effect's colour". The table's default and its test, the plan's colour list, and the three volley pictures.
+- **The final review's fixes** (2026-11-12; rulings 72 to 77), each folded into the commit whose code it fixes, test
+  first: a fox's respawn is queued in order, so one that new game data shortened comes on its own tick and the save
+  takes it ("read the abilities' motion and the combat rules from data"); a creature with health below 1 is refused
+  with its line ("read the abilities and the loadout", then "cap a volley and check the dash, share the number
+  reader"); the data watch reloads the game data only when its hash changed, so an `effects.yaml` edit no longer ends a
+  replay, decided by the tested `app::ReloadOf` ("read the effects' looks and the HUD's layout from data"); the abilities
+  reader's own number and seconds readers gave way to `data::internal`'s, with one seconds limit ("read the abilities'
+  motion and the combat rules from data"); stale comments and agent docs (the arena's rings, `--cast-swords`' timer, the
+  `yaml` seeds) went to the commits that made them stale; and the HUD's parenthesised construction moved into "strike
+  with the poison lance and show a temporary HUD", where its braces were first written.
+  One new commit, "start every scene at a chosen zoom for profiling" (`--zoom`, ruling 77), made the frame profile at
+  both ends of the zoom possible (Measurements). The review's first finding, an affliction that never ticks while its
+  target is hit faster than its period, was not changed: the user's decision below.
 
 ### The user's decisions while building it
 
@@ -329,8 +376,9 @@ measurements behind them, and what is left open. Commits are named by subject: t
   element, never by ability; health and Qi as two bars in the HUD; the specs amended to say so in Task 1.
 - **A glow and a tinted core** (ruling 44, 2026-11-11): the plan's additive (ONE, ONE) halos and trails lost the
   element's hue on the pale paper, reading white. The glows stay additive, and each sword and the fire bolt gets a
-  normal-blend core in its element's colour (`core::EffectColour`), with its own opacity, `gfx::CORE_OPACITY` (0.6),
-  apart from `HALO_INTENSITY`. The reference picture `bolt_burn` shows the bolt's orange on the pale ground.
+  normal-blend core in its element's colour (`core::EffectColour`), with its own opacity (0.6; `core_opacity` in
+  `effects.yaml` since Task 10b), apart from the glow's intensity. The reference picture `bolt_burn` shows the bolt's
+  orange on the pale ground.
 - **Waves of rings** (2026-11-11, after seeing the swords form a single ring: "Can we make the sword spread much wider so
   the 1000 swords don't just end up looking like a circle? Much wider, much more spread, much more randomness in the
   creation? Make the creation semi-sequenced with rings of swords one after each other"; it was the spec's decision 11):
@@ -339,19 +387,64 @@ measurements behind them, and what is left open. Commits are named by subject: t
   and how much its flight bends are drawn at random. This replaces decision 2's and Goal 4's single ring. Shipped: 5
   waves 0.2 s apart, rings from 160 to 560 world units (100 apart), scatter 0.25 of the radius, 0.5 rad of angle jitter,
   sweep jitter 0.6, launches staggered over 0.15 s within a wave. Task 6's rules and smoothness bounds are unchanged.
+  **The still rings below replaced the loose bands** the same day: the waves stayed, their scatter and angle jitter
+  went to 0, and the sweep jitter (how much each flight bends) stayed.
 - **Slower swords** (2026-11-11, during Task 10: "I think the swords should be slower"; ruling 56): each sword's flight
   1.1 → **1.7 s** (102 ticks) and its burst out to its ring 0.25 → **0.35 s** (21 ticks), about 1.5 times as long; the
   waves, their gap, the stagger, the rings, the jitters and the fire bolt unchanged. A volley now lasts about 3.3 s
   (was 2.3), inside the swords' 6 s cooldown. Every test and picture derives its ticks from the shape and passes as it
-  was.
+  was. The flight stays 1.7 s; the burst out became Task 10c's fade-in at the ring, 0.12 s since ruling 63.
 - **Every tuning value as data** (2026-11-11, during Task 10, for a future ImGui tuning UI): "Maybe we could plan in a
   debug UI with imgui in the future and all these values could be tweakable so we can tune it visually. Just ensure all
   the values like the distance, speed, range, shape, convergence, everything etc is data-driven and able to be tuned."
   Built as Task 10b, below; the ImGui UI itself is a later plan.
+- **Still rings, "o O"** (2026-11-11, during Task 10, after seeing the waves spiral out: "Can we have it more of a static
+  circle like o O than a spiral?", then with a reference image of the caster at the centre of a still sunburst of swords,
+  each pointing straight out with its hilt on the circle, evenly spaced: "My vision was more like this … Not the spiral
+  we're getting"): built as Task 10c. **Each ring is a regular sunburst that appears where it stands,** fading in as it
+  draws itself in one clockwise sweep, the rings one after another, inner first; it holds still, then each sword leaves
+  after its own short random delay, turns to its flight and flies. This **supersedes ruling 41's spiral** and ruling 22's
+  burst and turn on the ring (ruling 61 has the turn now). Shipped first as 5 rings, 100 apart, of 200 swords each;
+  ruling 62 changed the rings and ruling 63 the times. A glowing seal under the caster was offered with it, not added
+  (below).
+- **The ring look** (2026-11-12, after seeing the first still rings, where at zoom 1 a ring of 200 small swords read as
+  a fine fringe: "Make the swords slightly large, much less space between the rings, so the swords are almost touching
+  tip to heel, and increase the ring count. The rings should appear one after each other, fading in and then moving";
+  then "The ring fade/completion should be faster too"; rulings 62 and 63): **ten rings, 38 world units apart** (a
+  drawn sword's 36 and a gap of 2), from 160 to 502; each ring's share of the 1,000 in proportion to its radius (48 to
+  152 swords, about 20.8 units of arc apart on every ring); swords drawn at 0.9 of their art (was 0.6); a ring every
+  0.15 s, each fading in over 0.12 s in a 0.05 s clockwise sweep, holding 0.3 s and leaving within 0.25 s. The last
+  sword arrives about 3.7 s after the cast, inside the 6 s cooldown.
+- **Small unit tests** (2026-11-12): `check` took about 30 minutes, against 3 to 4.5 before; the user asked that a unit
+  test check about 20 representative samples, never sweep every item and fine time step, with timing left to profiling
+  and breadth to fuzzing. Built as Task 10d, and the rule is in tests/AGENTS.md. What it found: the 30 minutes was
+  entirely the hang Task 10 fixed (Task 10's passing `check` took 291 s), and the assertions were never `check`'s bulk:
+  cutting the core, gfx and game suites' from about 2.2 million to 213,000 saved 24 s (267 s). The rest is clang-tidy
+  over the branch's diff, the MSVC build and its tests under Wine, the GCC build and the debug unity build's
+  `game_tests`, which tick 1,000-sword arenas (Measurements; a plan of its own after this chunk).
+- **Lint at milestones** (2026-11-12): lint once after a task's implementation and once after its review's fixes, with
+  only the affected suite in between, and only the task's own changes (`lint --range <task base>..HEAD`). A changed
+  header still lints every unit that includes it; narrowing that is the next branch after this chunk.
 - **A deeper damage colour** (2026-11-12, Task 10e): the damage element's default, `#CFE3FF`, was near-white, so the
   swords' tinted cores added only a faint blue cast on the pale ground. The user: "Yes, make it deeper." It is now
   `#6FA8FF` (packed `0xFFFF'6429`), a clear azure at about twice the saturation; the swords' cores read blue and the
-  halos still glow. No text uses the effect colours, so no contrast changed.
+  halos still glow. No text uses the effect colours, so no contrast changed. Kept, as the user decided.
+- **An affliction's clock** (2026-11-12, on the final review's first finding): A new hit refreshes an affliction's clock
+  (the user, 2026-11-12), so a target hit faster than once a second doesn't tick until the hits stop. This supersedes
+  ruling 74; `Afflict` and its tests stay as they were.
+- **Builds are verified per task, chunk or phase, never commit by commit** (2026-11-12, during the final fix wave's
+  per-commit builds): `check` (every preset) runs at the end of each completed task, chunk or phase; root AGENTS.md and
+  the phase spec say so. The per-commit builds the final review asked for (ruling 72) were stopped. Before they
+  stopped, 30 of the 80 commits had built on windows-msvc and linux-gcc release, and three had not built on MSVC:
+  "swing a sword's aim to a new target when its target dies", "keep a sword on its target near and after its arrival"
+  and "cover the swing's arrival clamp and the commit boundary", whose `volley_tests.cpp` puts a temporary inside
+  `CHECK` (MSVC C4866), in lines a later commit rewrote. They are left as they are, by this decision.
+- **A cast during the dash** (2026-11-12, on ruling 76): "Leave it, we shouldn't cast during a dash. We could consider
+  queuing it to execute as soon as the dash ends though." A cast during the dash stays dropped (ruling 19); queuing the
+  press to go off as the dash ends is a possible follow-up, on the user's backlog.
+- **A glowing seal under the caster** (2026-11-12): yes, as a generic, data-driven seal system (layers and rings of its
+  own). It is its own chunk, **4b** (spec `2026-11-12-phase6-chunk4b-seals-design.md`, on branch
+  `worktree-phase6-chunk4b-seals`), and is not built here.
 
 ### Rulings
 
@@ -404,9 +497,10 @@ accepted.
 22. **Swords burst out eased to rest on their ring, then turn in place over the out phase's last 6 ticks** to face their
     flight (at most about 0.1 rad per eighth of a tick), instead of the plan's first control point along the burst
     direction: the literal plan made a cusp (a 3.0 rad jump) for some sword in every ring, and resting on the ring
-    matches the reference ring image. If the user wants no pause, a reshaped curve.
+    matches the reference ring image. If the user wants no pause, a reshaped curve. **Superseded by the still rings**
+    (Task 10c): there is no burst, and the turn is ruling 61's.
 23. **Swords arrive at half their mean speed** (`ARRIVAL_SPEED`), so they strike rather than settle: feel. If wrong, one
-    constant.
+    value (`arrival_speed`, data since Task 10b).
 24. **The dead-target spread test asserts {334, 0, 333, 333}:** what the brief's own formula gives (its 83/83/84 was an
     arithmetic slip). Costs nothing.
 25. **Retargeting is a stateless chain:** `VolleyTarget` gains `diedTick` (its position frozen from its death); a dead
@@ -463,14 +557,15 @@ accepted.
     `core::VolleyTarget::Struck`, shared with the logic's arrivals (implementer's): one rule for both threads. Costs
     nothing.
 41. **The burst spirals out** (a tangential part in the swirl's sense) instead of a straight radial line, with Task 6's
-    smoothness bounds unchanged: the spec's "no straight segments". If it reads as too twisty, a retune.
+    smoothness bounds unchanged: the spec's "no straight segments". If it reads as too twisty, a retune. **Superseded
+    by the user's still rings** (Task 10c): the swords appear on their ring and no longer burst out at all.
 42. **A per-sword aim offset from the volley's seed, a fraction of the creature's size, always applied** (never only after
     a death): it spreads strikes and plunges over the body instead of one bright disc; hits and ticks are unaffected.
     Costs nothing.
 43. **Health bars follow their creature's label:** they fade with "too small to read" and hide when the label is stacked,
     so health by length stays readable. If bars should outlive labels, a rule of their own.
 44. **The user's: glows stay additive, and each sword and the bolt gets a tinted normal-blend core** in its element's
-    colour, with its own `CORE_OPACITY` (see the user's decisions above). This changes the plan's ONE, ONE-only effects.
+    colour, with its own opacity (see the user's decisions above). This changes the plan's ONE, ONE-only effects.
 45. **`AIM_SCATTER` stays a fixed 18 world units** (about a quarter of a fox), not a fraction of each target: foxes are the
     only enemies, and a per-target reach would change the save and the hash. **Revisit when a later chunk adds bigger
     enemies.**
@@ -480,8 +575,8 @@ accepted.
 48. **HUD lines over the ground follow the labels' rule** (`TextInk` when the outline and the shadow are both off); the
     words on the bars keep `HudText`, on their bars: readable on pale ground with the accessibility options as they
     exist. Costs a revisit with chunk 11's high-contrast option.
-49. **In ink mode a cooling slot's line is `TextInk` at a named, reduced opacity** (`HUD_COOLING_INK_OPACITY`, 0.55) and
-    still shows its seconds: cooling is never colour only. Costs nothing.
+49. **In ink mode a cooling slot's line is `TextInk` at a named, reduced opacity** (0.55; `cooling_ink_opacity` in
+    `effects.yaml` since Task 10b) and still shows its seconds: cooling is never colour only. Costs nothing.
 50. **The lance applies its hits and afflictions in `Strike`, after the tick's due afflictions,** as the bolt and the
     swords do: one refresh rule for every ability (see Notes). Costs nothing.
 51. **The HUD reserves its text quads and overlay room first;** an overflow drops world effects, never the HUD. Costs
@@ -493,14 +588,14 @@ accepted.
 54. **`sweep_jitter` must be below 1** (implementer's): it keeps every bend on the swirl's side. Costs nothing.
 55. **"The path curves" is measured against min(chord, sweep)** (implementer's; the review found it principled): an outer
     ring's swords form near the point, so their chord can be shorter than the sweep. Costs nothing.
-56. **The user's: slow the swords about 1.5 times** (flight 1.7 s, out 0.35 s; above). If the user wants them slower or
-    faster, one data line.
+56. **The user's: slow the swords about 1.5 times** (flight 1.7 s, out 0.35 s, which ruling 63 made a 0.12 s fade-in;
+    above). If the user wants them slower or faster, one data line.
 57. **`--cast-swords` tops the Qi up with the generator** (Task 10): the swords cost 60 Qi and the player starts with 50,
     so a timer cast alone would fail with `NotEnoughQi`. `app::TimedCast` casts special 1 when it is ready and the Qi
     covers it, and otherwise, while the Qi is short, the fire bolt when it is ready, as a player would: no game rule or
     data changes for the profile run. The timer casts the swords 4 s after the last, or as soon after as they are ready,
-    so with their 6 s cooldown it casts about every 6 s. Its bolts (about three a cycle) are in the profile, as in play; if a swords-only profile is wanted, a documented
-    Qi grant for the run.
+    so with their 6 s cooldown it casts about every 6 s. Its bolts (about three a cycle) are in the profile, as in
+    play. If a swords-only profile is wanted, a documented Qi grant for the run.
 58. **`app::CastLatency` watches one ability's volleys and forgets a press after `CAST_LATENCY_LIMIT_NS` (1 s)**
     (Task 10): `--cast-swords`' bolts are volleys too, and a refused press (cooldown, Qi, pause) would otherwise lengthen
     the next press's latency. A new volley is one whose use the previous frame didn't draw. Key presses of special 1 are
@@ -509,6 +604,66 @@ accepted.
     largest (Task 10): any flash a save can name then loads, so fuzzed flashes reach the code after the load (at tick 0
     only a flash starting at 0 could). Volleys and respawns in the seeds are all overdue at that tick, so they exercise
     the catch-up path; mid-flight states are reached by mutation. Costs nothing.
+60. **The Outcome's later decisions were brought up to date once, at the end** (this Outcome), after Tasks 10c, 10d and
+    10b, not at Task 10's review: those tasks hadn't run, the Outcome must describe what was built, and rewriting it
+    twice wastes a round. Costs nothing, as the refresh happened.
+61. **The turn from outwards to the flight happens over the flight's first `TURN_TICKS` (8),** not in a phase of its
+    own (implementer's; the review accepted it): `ArrivalTick` and the user's 1.7 s flight stay exact. The sword pivots
+    as it eases off from rest, sliding up to about 25 world units by the turn's end and under 7 while it faces more than
+    90° away from its flight; the worst turn is 0.074 rad per eighth of a tick (bound 0.25). If a "turn, then go" look is
+    wanted, an 8-tick phase added to every arrival.
+62. **The user's ring look:** swords drawn at 0.9 of their art (was 0.6); `ring_step` a drawn sword's length and a small
+    gap (38); ten waves (160 to 502); a wave's share of the count in proportion to its radius, so the arc between swords
+    is the same on every ring (about 20.8 units); `wave_gap` 0.15 s; the hold 0.3 s. All data. If wrong, data lines.
+63. **The user's faster ring fade:** `out` (the fade-in) 0.35 → 0.12 s and `stagger` (the clockwise sweep) 0.1 →
+    0.05 s, the hold kept at 0.3 s. If wrong, data lines.
+64. **The retarget smoothness test bounds sword 433's two swings in mid-flight by the swing bound** of rulings 34 and 35
+    (4.1 times its median step, under the median plus `RETARGET_PEAK`, against the plain bound's 3 times): the bound
+    applied where it belongs, not a loosening. Costs nothing.
+65. **The save seed's generator takes no environment variable:** "the mid-fight save loads, and so does the fuzz seed cut
+    from it" writes nothing, and "write the fight save seed" is skipped by default (`doctest::skip()`), run by name with
+    `--no-skip`, and writes through `PN_FUZZ_CORPUS`, a define tests/xmake.lua sets from the project's folder, checking
+    the write. No `getenv`, MSVC pragma or `<cstdlib>`. tests/AGENTS.md names a skipped generator run by name as the one
+    way a test may write a repo file: it isn't a behaviour test, so skipping it by default doesn't break "never skip a
+    test". Costs nothing.
+66. **The statistical tests that compute over every sword and assert once stay:** the user's complaint was the number of
+    assertions, and a distribution needs its population (20 samples can't show one without wider bounds). Costs nothing.
+67. **The user's deeper damage colour:** `#CFE3FF` → `#6FA8FF`, a clear azure in the same hue family at about twice the
+    saturation, with the pictures updated and looked at: a colour pick, not a guess at behaviour, and the table's to
+    change. If wrong, one table edit.
+68. **Task 10b's brief named a `TURN_START` constant that doesn't exist:** the turn is `turnTicks`, read from `turn:` in
+    seconds. Costs nothing.
+69. **`SIDE_ARM` stays in code as maths** (the 4/3 that makes a bend exactly the sweep), documented in volley.cpp:
+    tuning the bend is `short_bend`'s job. Costs nothing.
+70. (Revised by ruling 75.) **`App::WatchData` has no test of its own** (it needs a window); what it calls is tested:
+    `data::LoadEffects`, `gfx::Renderer::SetEffects` changing the next picture, `app::Hud::SetEffects` on the next
+    build. A wiring slip in `WatchData` itself would show only in a live run.
+71. **Task 10b's review round had no `check` of its own:** the next full `check` on the same branch covers it, as a check
+    a round doubles five-minute runs for the same coverage; a failure in 10b's code lands in 10b's commit. Task 10e's
+    `check` stopped at the commit check on the pending fixup, so the wrap-up's `check`, after the fold, is that run.
+    Costs nothing if it passes.
+72. (Changed by the user's decision on verifying builds.) **Every commit was to build on every preset this host
+    builds**, not only natively, as a commit MSVC can't build breaks bisecting on Windows. The HUD's parenthesised
+    construction (`m_hud(...)`, the HUD tests' `app::Hud(...)`) moved into "strike with the poison lance and show a
+    temporary HUD", where the braces were first written, and stays there; the per-commit builds were stopped by the
+    user's decision, which verifies builds at the head of each task, chunk or phase instead.
+73. **The wrap-up's fold choices stand:** a reference-suite bound with no branch origin is its own test commit ("bound
+    every wait in the reference suite"); a fixup splits where its file first exists; and what matters is the
+    verification (an empty end diff, the per-commit builds, the gates), not the tool. If wrong, a commit carries a
+    neighbour's change, visible in review.
+74. (Superseded by the user's decision on an affliction's clock.) **A refresh would have kept an affliction's pending
+    tick**, renewing its ticks, damage and use, so a fox hit faster than the period still burns once a second. The user
+    chose the opposite: a new hit refreshes the clock. Nothing was changed.
+75. **The reload decision is a pure, tested function** (revising ruling 70): `app::ReloadOf` compares the effects and the
+    game data read again with those in use by `Hash()`; `ReloadData` goes to the simulation only when the game data's
+    hash changed, an unchanged game data is logged at debug level, and a part that fails to read changes nothing.
+    `WatchData` itself still needs a window. Costs nothing.
+76. **A cast during the dash stays dropped** (ruling 19), as the user decided (their decision on a cast during the dash,
+    above): no cast during a dash. Queuing the press to go off as the dash ends is a possible follow-up, on the user's
+    backlog.
+77. **`--zoom <value>` starts every scene at a zoom** from 0.25 to 2 (`app::ZoomOf`, refusing anything else with a
+    message), a profiling aid like `--cast-swords`, so the frame profile runs at the closest and the farthest zoom with
+    nothing touched. Costs nothing.
 
 Not ledger rulings, but calls made in measuring: the runs are unpinned (30 workers, as chunk 3's), and Tracy's CSV
 exporter was again read from Pixi's package cache with `pixi.toml` unchanged.
@@ -521,25 +676,46 @@ exporter was again read from Pixi's package cache with `pixi.toml` unchanged.
   than the commit window (33 ticks for the swords) before its arrival drives into the corpse and hits nothing.
 - **The lance strikes in `Strike`, after the tick's due afflictions** (ruling 50), not at the cast: a refresh never
   swallows a tick that was due.
+- **An affliction under hits faster than its period never ticks** (the user's decision): the bolt (0.25 s cooldown)
+  held on one fox keeps its burn from ever ticking, and two lances 0.5 s apart do the same to a poison, so a target's
+  damage over time comes only when the hits stop. Balance (and any stacking design) starts from that.
 - **`AIM_SCATTER` is fixed at 18 world units while foxes are the only enemies** (ruling 45).
 - **The plan's "exact sRGB round trip" was impossible** (ruling 6): within one linear step for every default, exact for
   the defaults named by an sRGB colour.
+- **Chunk 11's accessibility scaling must apply after `effects.yaml` reloads:** a reload hands the renderer the file's
+  raw `halo_intensity`, `core_opacity`, `trail` and `flash_intensity`, so reduce flashing and reduce motion scale them
+  on the main thread after reading, never in the file.
+- **Floating-point contraction isn't pinned off** (`-ffp-contract`): the path maths is deterministic within one binary,
+  as the engine requires, but a fused multiply-add could make two compilers' binaries differ. For the sweep-up list.
+- **`check`'s time** (Measurements): clang-tidy over a branch's diff, the MSVC build and its tests under Wine, and the
+  debug unity build's `game_tests` (about 18 s of ticking 1,000-sword arenas) are its bulk; a plan of its own. Sweeping
+  tests older than this branch (core's "draws spread evenly over a range", 100,020 assertions; its unit values, radix
+  sort and handover; gfx's number placement, 68,948) are left for the sweep-up.
+- **The `save` fuzz seed is generated, not kept by hand:** whenever the save layout changes, regenerate
+  `tests/fuzz/corpus/save/fight` with the skipped case (tests/AGENTS.md has the command).
 
 ### Values chosen
 
 - **Abilities** (`assets/data/abilities.yaml`): Qi 100 at most, 50 at the start. Fire bolt: generator, 0.25 s cooldown,
   +10 Qi, 140 burn damage, radius 120, 1,500 units a second, a burn of 3 ticks × 40. Poison lance: spender, 0.5 s,
   25 Qi, 360 poison damage, radius 90, a poison of 4 ticks × 60. Dash: 1 s, 260 units over 0.15 s. Flying swords:
-  special, 6 s, 60 Qi, 20 damage a sword, radius 260, 1,000 swords in 5 waves (above), out 0.35 s, flight 1.7 s, sweep
-  420, fade 0.3 s. Fox health 1,200; the player's 1,000.
-- **The path:** `RETARGET_TICKS` 8, `RETARGET_SPEED` 16 units a tick, `RETARGET_PEAK` 24, `MIN_COMMIT_TICKS` 16 (the
-  swords' window 33), `AIM_SCATTER` 18, `MAX_VOLLEY_COUNT` 2,000; swords drawn at 0.6 of their art.
-- **Death:** `DYING_TICKS` 30 (half a second), `RESPAWN_TICKS` 180, `ARRIVE_TICKS` 180; the dissolve's blocks 4 screen
-  pixels; afflictions tick every 60 ticks.
-- **Drawing:** `TRAIL_TICKS` 6 over `TRAIL_SEGMENTS` 8, `HALO_INTENSITY` 1, `FLASH_INTENSITY` 1, `CORE_OPACITY` 0.6;
-  `MAX_OVERLAY_INSTANCES` 8,192 (three a sword), `MAX_RIBBON_QUADS` 16,384; health bars 44 × 6 (fill 40 × 4), 5 above
-  the label.
-- **The HUD:** 18 px text, 16 px margins, bars 240 × 18, lines 24 apart, "Not enough Qi" for 1 s, cooling ink at 0.55.
+  special, 6 s, 60 Qi, 20 damage a sword, radius 260, 1,000 swords in 10 rings from 160 to 502 (38 apart, 48 to 152
+  swords each) 0.15 s apart, each fading in over 0.12 s in a 0.05 s clockwise sweep, holding 0.3 s and leaving within
+  0.25 s; scatter and angle jitter 0; flight 1.7 s, sweep 420, sweep jitter 0.6, fade 0.3 s. Fox health 1,200; the
+  player's 1,000.
+- **The path** (each projectile ability's `motion:`, the same for the bolt and the swords): `aim_scatter` 18 world units,
+  `short_bend` 0.5, `turn` 0.1333 s (8 ticks), `arrival_speed` 0.5, `retarget` 0.1333 s (8 ticks), `retarget_speed`
+  960 units a second (16 a tick), so the swing's peak is 24 a tick; in code, `MIN_COMMIT_TICKS` 16 (the swords' window
+  33) and `MAX_VOLLEY_COUNT` 2,000.
+- **Combat rules** (`abilities.yaml`'s `combat:`): dying 0.5 s (30 ticks), respawn 3 s (180), arrival 3 s (180), an
+  affliction tick every second, the lance's burst 0.2 s; the crystal's aura every second, reaching 320, damage 50 to
+  400, healing 50 to 200. The dissolve's blocks are 4 screen pixels (the sprite shader).
+- **Drawing** (`assets/data/effects.yaml`): the swords at 0.9 of their art (halo 1.125, core 1.5), the bolt at 1.0
+  (halo 0.75, core 2.0); trails 0.1 s (6 ticks) over `TRAIL_SEGMENTS` 8, 5 wide, taper 0.6; glow intensity 1,
+  core opacity 0.6; the lance's burst grows from 0.5 to 1.9, intensity 1; health bars 44 × 6 (fill 40 × 4), 5 above
+  the label. In code: `MAX_OVERLAY_INSTANCES` 8,192 (three a sword), `MAX_RIBBON_QUADS` 16,384.
+- **The HUD** (`effects.yaml`): 18 px text, 16 px margins, bars 240 × 18 and 6 apart, their words 6 in and raised 7,
+  lines 24 apart, "Not enough Qi" for 1 s, cooling ink at 0.55.
 
 ### Measurements
 
@@ -547,17 +723,25 @@ exporter was again read from Pixi's package cache with `pixi.toml` unchanged.
 each commit: the arena's cast, 1,040 calls over 130 ticks × 8 render times, 1,000 swords, timed with
 `platform::NowNs()`; per frame, mean / worst):
 
-| `DrawVolleys` | Task 8 | Task 8's fixes (cores, aim spread, ribbon room) | Task 9b (waves of rings) |
-|---|---|---|---|
-| 30 workers | 166 / 392 µs | 201–205 / 469–475 µs | 243–247 / 449–460 µs |
-| 1 worker and the main thread | 281 / 662 µs | 328–330 / 758–859 µs | 363–365 / 780–792 µs |
+| `DrawVolleys` | Task 8 | Task 8's fixes (cores, aim spread, ribbon room) | Task 9b (waves of rings) | Task 10c (still rings) | Task 10c's ring look |
+|---|---|---|---|---|---|
+| 30 workers | 166 / 392 µs | 201–205 / 469–475 µs | 243–247 / 449–460 µs | 195–209 / 424–515 µs | 212 / 525 µs |
+| 1 worker and the main thread | 281 / 662 µs | 328–330 / 758–859 µs | 363–365 / 780–792 µs | 283–284 / 619–686 µs | 285 / 687 µs |
 
-Each step stayed under the review's 1.5× threshold (about 1.2× and 1.1×). Over the whole 9b volley (160 ticks) it was
-225–229 / 427–482 µs (all workers) and 326–338 / 649–650 µs (1 worker). The upload is about 3,000 overlay instances and
-8,000 ribbon quads a frame; the GPU's side was not measured on its own.
+Each step stayed under the review's 1.5× threshold (about 1.2× and 1.1×, then level or lower). Over the whole 9b volley
+(160 ticks) it was 225–229 / 427–482 µs (all workers) and 326–338 / 649–650 µs (1 worker); over the whole volley of
+the still rings (230 ticks) 200–204 / 468–502 and 295–298 / 656–675 µs, and of the ring look 223 / 565 and 306 /
+807 µs. The still rings' mean is 15 to 20% below 9b's: a sword holding on its ring draws no trail, which saves 8 of its 9
+path calls. The upload is about 3,000 overlay instances and 8,000 ribbon quads a frame; the GPU's side was not measured
+on its own.
 
-**Frame time with the shipped (slower) swords** (Task 10): `pixi run project_n profile --seconds 70 -- --cast-swords`
-and a baseline without the flag; releasedbg, linux-clang, the arena, 1280×720, Wayland, NVIDIA RTX 4090, presenting
+**The swords' smoothness** (Task 10c, a temporary probe, removed): the worst turn of a heading is 0.070 rad per eighth
+of a tick (0.074 in the review's run) against the bound of 0.25; a sword on its ring moves exactly 0; the worst plain
+flight step is 2.78 times the median (bound 3).
+
+**Frame time with the slower swords** (Task 10, before Task 10c's still rings and the ring look, which are profiled
+below; `DrawVolleys` above stayed level through both):
+`pixi run project_n profile --seconds 70 -- --cast-swords` and a baseline without the flag; releasedbg, linux-clang, the arena, 1280×720, Wayland, NVIDIA RTX 4090, presenting
 with mailbox (unthrottled, about 1,000 frames a second). **Unpinned: the game ran 30 workers**, as chunk 3's runs did
 (the game takes `Jobs::DefaultWorkers()`; `taskset` doesn't change it, as `hardware_concurrency` ignores the affinity), so
 the phase bar's 2-worker run still waits for chunk 5. Read with `tracy-csvexport -u`; a frame is one iteration of
@@ -591,19 +775,93 @@ A volley adds about 1.1 ms to the median frame: 0.35 ms of the main thread's own
 the rest in `SubmitFrame`, waiting on the GPU for the extra 3,000 instances and 8,000 quads at an unthrottled frame rate.
 The logic thread doesn't notice a volley (one record, its arrivals scheduled): about 11 µs a tick with or without one.
 
+**Frame time with the final rings** (the final review, ruling 77; the still rings and the ring look as shipped):
+`pixi run project_n profile --seconds 30 -- --cast-swords --zoom 2` (the closest zoom) and `--zoom 0.25` (the farthest),
+captures `20261112-143310` and `20261112-143351`, on the same host and settings as Task 10's runs (releasedbg,
+linux-clang, the arena, 1280×720, Wayland, NVIDIA RTX 4090, mailbox, 30 workers, unpinned) and read the same way
+(`tracy-csvexport -u`; a frame is one iteration of `App::Run`'s loop; the first two seconds skipped). **The window lost
+its focus again in both runs** (someone used the desktop), so the paused stretches are left out with half a second
+either side: the closest run keeps 2.2-12.9 s and 24.8-28.0 s (three volleys, the last cut off after its peak), the
+farthest 2.2-19.4 s (three volleys). A volley counts as drawn for 4.0 s from its first frame (the last sword
+arrives by about 3.7 s and fades); its peak is 1.5 to 2.0 s after that first frame, when every ring has formed and
+none has arrived, where `DrawVolleys`' median per 0.25 s is within 10% of its highest (it climbs from 46 µs in the
+first quarter second to 353 µs at 1.75 s at the closest zoom, 380 µs at the farthest, and falls after 3.25 s).
+
+| Main thread, one loop iteration (median / 99th / worst, ms) | Closest zoom (2) | Farthest zoom (0.25) |
+|---|---|---|
+| Without volleys | 0.382 / 2.03 / 3.23 (4,327 frames) | 0.196 / 1.98 / 2.72 (10,071) |
+| With a volley drawn | 1.32 / 2.21 / 3.88 (9,030) | 1.20 / 2.18 / 4.17 (10,797) |
+| At a volley's peak | 1.34 / 2.26 / 3.88 (1,168) | 1.28 / 2.17 / 2.78 (1,254) |
+
+| Per call at a volley's peak (median / 99th / worst, µs) | Closest zoom (2) | Farthest zoom (0.25) |
+|---|---|---|
+| `DrawVolleys` | 327 / 528 / 663 | 371 / 519 / 622 |
+| `SubmitFrame` (waits on the driver and the GPU) | 904 / 1,811 / 3,261 | 739 / 1,620 / 2,231 |
+| `SubmitFrame` without volleys | 209 / 1,932 / 3,126 | 106 / 1,883 / 2,636 |
+
+No frame came near the 16.7 ms bar: the worst of both runs is 4.2 ms, with a volley drawn at the farthest zoom, and no
+run logged an overflow or a warning. The final rings cost about what Task 10's waves did: about 1 ms on the median frame
+at the peak (0.96 ms at the closest zoom, 1.09 at the farthest, against 1.1 then), `DrawVolleys`' median at the peak
+327 to 371 µs against Task 10's 298, and most of the rest in `SubmitFrame`. Between the zooms, `DrawVolleys` costs about
+13% more at the farthest and `SubmitFrame` about 18% less, and frames without volleys take 0.38 ms at the median at the
+closest zoom against 0.20 at the farthest; why was not profiled further (more swords on screen and fewer pixels each at
+the farthest zoom would fit).
+
 **Input to the first sword** (`swords first drawn N ms after the press`, the log at debug level): eleven presses with
 the shipped swords, eight by `--cast-swords`' timer and three by hand (key 1, in the runs above): **16.8, 16.9, 17.2,
 17.3, 17.3, 18.0, 25.1, 26.3, 26.8, 26.9 and 27.3 ms**; median 18.0, mean 21.4. The first swords cast of each run
 takes 25 to 27 ms and every later one 17 to 18 ms; the floor is the display delay (10 ms) plus the wait for the logic's
 next tick (up to 16.7 ms); the first cast's extra 8 to 10 ms is likely its buffers' first growth and cold caches (not
-profiled further). An earlier trial before the
-slowing gave 28.1 ms for a first cast.
+profiled further). An earlier trial before the slowing gave 28.1 ms for a first cast. The final rings' two profile runs agree: 28.1 and
+27.2 ms for each run's first cast, 15.2 to 17.4 ms for the five after.
+
+**Fuzzing** (linux-clang with AddressSanitizer, no crash in any run): Task 10, 30 s each: `save` 3,080 runs with the
+209 KB mid-fight seed (about 100 a second), then 8,537 runs with the 4,421-byte one; `replay` 719,137; `yaml` 18,897.
+Task 10d: `save` 6,723 runs in 21 s with the generated seed.
+
+**`check`** (all presets but macos-clang, which this host can't build): Task 10's first passing run took **291 s**
+(the hour before it was the hang). Its steps, from line counts every 2 s (±2 s):
+
+| Step | Time |
+|---|---|
+| self-tests, fmt, doxygen, LFS, ruff, native debug build (cached) | ~4 s |
+| clang-tidy, 125 units | 65 s |
+| linux-gcc release build / tests | 40 s / 2 s |
+| linux-clang release build / tests | 12 s / 2 s |
+| windows-msvc (container) build / tests under Wine | 46 s / 42 s |
+| reference pictures (linux-gcc release, lavapipe) | 28 s |
+| unity build / tests (linux-clang debug) | 2 s / 20 s |
+| releasedbg build | 22 s |
+
+Task 10d's small tests then took it to **267 s** (one MSVC finding on the way). Assertions and time of the `test` step
+(linux-clang debug), before and after:
+
+| Suite | Assertions | Time |
+|---|---|---|
+| `core_tests` | 2,039,806 → 138,581 (`volley_tests.cpp` about 1.9 million → 514) | 2.06 → 0.34 s |
+| `gfx_tests` | 140,956 → 72,379 (`volley_draw_tests.cpp` 737 after) | 2.59 → 1.72 s |
+| `game_tests` | 45,017 → 2,080 | 21.4 → 17.6 s |
+
+Six mutations of the volley's maths (no commit window, a jumping swing, an arrival a tick late, a flipped turn, a
+40-unit jump in flight, no bend) each still fail the sampled tests. Task 10b's `check` passed after three fixes only
+`check` finds (MSVC's C4868 and C4866, a unity-build clash among `data/effects.cpp`'s file-local names), folded into its
+commits; Task 10e's stopped at the commit check on a pending fixup, before any build. After the fold, each of the
+branch's 79 commits built on its own (native preset), `check` passed in **310 s**, `check --sanitizers` (address,
+undefined, thread and leak on linux-gcc and linux-clang, with the fuzz seeds; MSVC's address build) in 874 s with no
+finding, and `lint` over the branch's diff was clean. After the final review's fixes were folded (the end tree matched
+the unfolded one exactly), `lint` over the branch was clean and `check` at the head passed in **314 s** (commit check
+81 commits, clang-tidy on 127 units, every test suite on linux-gcc and linux-clang release, windows-msvc under Wine and
+the unity build, the 25 reference pictures).
+
+**Pictures:** Task 10b moved none (`reference` passed without `--update`); Task 10e's deeper colour moved the three
+volley pictures (`volley_ring` 22,000 pixels, `volley_converging` 123,000, `volley_plunge` 86,000) and nothing else.
 
 ### Open for the user
 
 - **Player death is undefined** (ruling 12): nothing damages the player yet; if something did, the cultivator would be
   removed and the camera would stop following. What death does is a later chunk's design.
-- **Whether the waves read as separate rings in motion** (Task 9b's review): a still reads as one wide swirl. Levers, all
-  data: lower `scatter`, a longer `wave_gap`, a short hold on the ring.
-- **Every tuning value as data** (Task 10b, planned): the motion constants above, the combat rules and the drawing's
-  looks move into the data tables.
+- **The still rings in motion:** since Task 10c the swords were seen only in the reference pictures (tight rings tip
+  to heel, distinct blades; the outer rings standing as a sunburst while the inner ones swirl in). The clockwise sweep,
+  the hold and the uneven departure are motion that a still can't show; their frame time is now measured at both ends
+  of the zoom (Measurements), but nobody has judged them by eye. Every lever is data in `abilities.yaml` and
+  `effects.yaml`.
