@@ -6,9 +6,9 @@ Date: 2026-11-10 · Status: **implemented 2026-11-11** (approved 2026-11-10; see
 
 - **An ability loadout:** generator (left click), spender (right click), movement (Space), four specials (1–4, each a
   cooldown and a resource cost), an ultimate (5, a very long cooldown). Set in data for now; the UI to equip comes later.
-- **The flying swords** (special 1): **1,000 swords form round the player in waves of wide, scattered rings, one after
-  another, and flow, on curving paths, into the area under the mouse**, striking every enemy tagged there. Bright
-  trails and a soft glow on each sword.
+- **The flying swords** (special 1): **1,000 swords form round the player in waves of still rings, one after another,
+  each a regular sunburst of swords pointing straight out; then they leave at random times and flow, on curving paths,
+  into the area under the mouse**, striking every enemy tagged there. Bright trails and a soft glow on each sword.
 - **Two basic elemental attacks:** a fire bolt that burns (generator) and a poison lance that poisons (spender); a dash
   toward the mouse (movement).
 - **Enemies have health and die** in a pixelated dissolve, then respawn at the arena's edge. They don't fight back yet.
@@ -33,9 +33,15 @@ and dungeons the player enters, never in the open world or towns.
 3. **Targeting:** every cast aims at the **world point under the mouse**; a **hit area** around that point tags the
    enemies in it when the cast starts. **One cast per click** (a held button doesn't repeat).
 4. **The flying swords** (special 1, plain damage only):
-   - on the key press, 1,000 swords **form in waves of wide, scattered rings, one after another** (the user's decision
-     of 2026-11-11, in the Outcome; it was "burst out of the player in a ring"), staggered so they stream out like
-     particles;
+   - on the key press, 1,000 swords **form in waves of still rings, one after another, small to large** ("o then O"):
+     each ring a **regular sunburst** round the player, its swords evenly spaced and packed side by side, each pointing
+     straight out with its hilt on the circle, drawn in one quick clockwise sweep as they fade in where they stand; the
+     rings hold still a moment, then each sword leaves after a short random delay, so a ring forms evenly and dissolves
+     into flight unevenly. The user's decisions of 2026-11-11, recorded in the Outcome: first "waves of wide, scattered
+     rings, one after another" (it was "burst out of the player in a ring"); then, after seeing them spiral out, "Can we
+     have it more of a static circle like o O than a spiral?", and with a reference image (the caster at the centre of
+     a sunburst of swords, each pointing straight out, hilts on the circle, evenly spaced and packed side by side,
+     standing still as a formation): "My vision was more like this … Not the spiral we're getting";
    - each then flies on a **curved path** that sweeps round and **converges into the target area**, flowing into it;
    - **homing:** the swords split among the enemies tagged in the area and **follow each one as it moves**; when an
      enemy dies, its swords turn to the tagged enemies still alive; **once every tagged enemy is dead, the remaining
@@ -93,11 +99,11 @@ and dungeons the player enters, never in the open world or towns.
 
 - **A volley is one record, not 1,000 entities:** its origin, target point, start tick, seed, and each sword's assigned
   enemy (tagged at the cast, split evenly). Each sword's position at any time is a function of (volley, sword index,
-  time, its enemy's position): out along its ring direction with a stagger, then along a curved path (a smooth spline
-  whose control points sweep round the caster) whose end **follows its enemy**. The simulation schedules each sword's
-  arrival tick when the volley starts; at that tick the hit lands on the sword's enemy if alive, else on another tagged
-  enemy still alive (reassigned the moment its enemy dies, so the sword visibly turns), else nowhere: the sword plunges
-  into the ground at its last aim point.
+  time, its enemy's position): appearing still at its place on its ring, pointing out, then along a curved path (a
+  smooth spline whose control points sweep round the caster) whose end **follows its enemy**. The simulation schedules
+  each sword's arrival tick when the volley starts; at that tick the hit lands on the sword's enemy if alive, else on
+  another tagged enemy still alive (reassigned the moment its enemy dies, so the sword visibly turns), else nowhere: the
+  sword plunges into the ground at its last aim point.
 - **The main thread draws them** (`core::` holds the path function so the logic and the renderer share it): the
   snapshot carries the volley records and each sword's current enemy, and the renderer evaluates every sword at the
   exact render time against its enemy's interpolated position, so swords, trails and the enemies they follow line up.
@@ -189,8 +195,8 @@ The user's, 2026-11-10:
 10. **One cast per click;** melee combos (one per click within a short window) come later, and the input leaves room
     for them.
 
-The user's decisions taken while building it (the swords' waves of rings, their tinted cores, their slower flight) are
-in the Outcome.
+The user's decisions taken while building it (the swords' waves of rings, their tinted cores, their slower flight, their
+rings as still sunbursts) are in the Outcome.
 
 ## Calls made here (not the user's; check them)
 
