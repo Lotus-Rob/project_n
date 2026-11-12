@@ -23,14 +23,14 @@ constexpr core::StableId FOX{ 9 };
 // The shipped swords (assets/data/abilities.yaml) in ticks, as their cast resolves them.
 constexpr core::VolleyShape SWORDS{
     .count = 1'000,
-    .waves = 5,
+    .waves = 10,
     .ringRadius = 160.0F,
-    .ringStep = 100.0F,
+    .ringStep = 38.0F,
     .scatter = 0.0F,
     .angleJitter = 0.0F,
-    .staggerTicks = 6,
-    .waveGapTicks = 12,
-    .outTicks = 21,
+    .staggerTicks = 3,
+    .waveGapTicks = 9,
+    .outTicks = 7,
     .holdTicks = 18,
     .departJitterTicks = 15,
     .flightTicks = 102,
@@ -48,11 +48,10 @@ constexpr core::Volley BOLT{ .use = 8,
                              .point = POINT,
                              .shape = { .count = 1, .flightTicks = 60, .commitTicks = core::MIN_COMMIT_TICKS } };
 constexpr std::array<u32, 4> SAMPLED_SWORDS{ { 0, 1, 499, 999 } };
-// Every sword left its ring a whole trail ago (the last wave starts last, its last sword appears last, and waits on its
-// ring the longest delay), and none arrived.
-constexpr u64 MID_FLIGHT = START + (u64{ SWORDS.waves - 1 } * SWORDS.waveGapTicks) + (SWORDS.staggerTicks - 1) +
-                           SWORDS.outTicks + SWORDS.holdTicks + (SWORDS.departJitterTicks - 1) +
-                           static_cast<u64>(gfx::TRAIL_TICKS);
+// Every sword has appeared (the last wave starts last and its last sword appears last), and none has arrived: the
+// inner rings are in flight while the outer ones still stand.
+constexpr u64 MID_FLIGHT =
+    START + (u64{ SWORDS.waves - 1 } * SWORDS.waveGapTicks) + (SWORDS.staggerTicks - 1) + SWORDS.outTicks;
 static_assert(MID_FLIGHT < START + SWORDS.outTicks + SWORDS.holdTicks + SWORDS.flightTicks);
 constexpr f32 CLOSE = 1e-4F;  // relative
 constexpr f32 HALFWAY = 0.5F; // of a tick, as the frame's alpha
@@ -257,11 +256,12 @@ TEST_CASE("a sword still on its ring shows, but draws no trail") {
     // The first wave has appeared and holds still on its ring.
     constexpr u64 TICK = START + SWORDS.outTicks + 2;
     const gfx::VolleyDrawing drawing = Drawn(volleys, targets, TICK, HALFWAY);
-    // The first wave's first, middle and last swords.
-    constexpr std::array<u32, 3> HOLDING{ { 0, 100, 199 } };
+    // Three of the first wave's swords: its first, one in its middle and one near its end.
+    constexpr std::array<u32, 3> HOLDING{ { 0, 24, 47 } };
     bool shown = true;
     bool trailed = false;
     for (const u32 sword : HOLDING) {
+        REQUIRE(core::WaveOf(VOLLEY, sword) == 0);
         REQUIRE(core::DepartureTick(VOLLEY, sword) > TICK + 1); // still on its ring
         shown = shown && !IsZero(SwordOf(drawing, sword));
         for (u32 quad = 0; quad < gfx::TRAIL_SEGMENTS; ++quad) {
@@ -278,11 +278,14 @@ TEST_CASE("the trail is sampled from the same path a little back in time") {
     const std::array<core::VolleyTarget, 1> targets{ { { .entity = FOX, .previous = POINT, .current = POINT } } };
     const std::array<core::VolleyView, 1> volleys{ { SwordsView() } };
     constexpr f32 ALPHA = HALFWAY;
-    const gfx::VolleyDrawing drawing = Drawn(volleys, targets, MID_FLIGHT, ALPHA);
-    const f64 renderTick = core::RenderTick(MID_FLIGHT, static_cast<f64>(ALPHA));
     constexpr u32 LAST = gfx::TRAIL_SEGMENTS - 1;
     for (const u32 sword : SAMPLED_SWORDS) {
         CAPTURE(sword);
+        // Each a whole trail into its flight, which lasts far longer.
+        const u64 tick = core::DepartureTick(VOLLEY, sword) + static_cast<u64>(gfx::TRAIL_TICKS) + 1;
+        REQUIRE(tick < core::ArrivalTick(VOLLEY, sword));
+        const gfx::VolleyDrawing drawing = Drawn(volleys, targets, tick, ALPHA);
+        const f64 renderTick = core::RenderTick(tick, static_cast<f64>(ALPHA));
         const core::SwordPose head = core::SwordAt(VOLLEY, sword, renderTick, Spot(POINT, sword));
         const core::SwordPose tail =
             core::SwordAt(VOLLEY, sword, renderTick - static_cast<f64>(gfx::TRAIL_TICKS), Spot(POINT, sword));

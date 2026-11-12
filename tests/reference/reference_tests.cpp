@@ -290,10 +290,10 @@ void CheckVolley(std::string_view name, u64 after, const gfx::View& view = {}) {
 TEST_CASE("the flying swords mid-volley: the ring and the converging paths") {
     // A copy: the game data BuiltInData() returns is a temporary, gone at the end of this line.
     const core::VolleyShape swords = game::BuiltInData().abilities.Of(core::AbilityKind::FlyingSwords).volley;
-    // The third ring fading in round the first two, which stand still (none leaves before its appearing and hold are
-    // over), as the fourth is about to start: o then O. Then the third wave's middle swords halfway through their flight.
+    // The third ring halfway through fading in round the first two, which stand still, tip to heel (none leaves before
+    // its appearing and hold are over): o then O. Then the third wave's middle swords halfway through their flight.
     constexpr u64 THIRD_WAVE = 2;
-    const u64 appearing = (THIRD_WAVE + 1) * swords.waveGapTicks;
+    const u64 appearing = (THIRD_WAVE * swords.waveGapTicks) + ((swords.staggerTicks + swords.outTicks) / 2);
     REQUIRE(appearing < swords.outTicks + swords.holdTicks);
     CheckVolley("volley_ring", appearing);
     const u64 leaving = (THIRD_WAVE * swords.waveGapTicks) + (swords.staggerTicks / 2) + swords.outTicks + swords.holdTicks +
