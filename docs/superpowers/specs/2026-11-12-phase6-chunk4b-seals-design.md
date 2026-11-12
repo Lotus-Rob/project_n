@@ -1,6 +1,6 @@
 # Phase 6, chunk 4b: seals
 
-Date: 2026-11-12 · Status: awaiting approval · Phase spec: `2026-11-10-phase6-design.md` · Builds on: chunk 4
+Date: 2026-11-12 · Status: approved 2026-11-12 · Phase spec: `2026-11-10-phase6-design.md` · Builds on: chunk 4
 (`2026-11-10-phase6-chunk4-abilities-design.md`), which must merge first
 
 ## In short
