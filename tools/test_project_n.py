@@ -388,6 +388,36 @@ class CheckTest(unittest.TestCase):
         self.assertTrue(project_n.PRESETS[builds[0].preset]["image"], builds[0].preset)
 
 
+class RunReferenceCaseTest(unittest.TestCase):
+    def run_cases(self, returncode, indices=(1, 2)):
+        """Runs `run_reference_case` for each index with a fake subprocess; returns the XDG_RUNTIME_DIR each saw."""
+        seen = []
+
+        def fake_run(argv, **kwargs):
+            directory = Path(kwargs["env"]["XDG_RUNTIME_DIR"])
+            self.assertTrue(directory.is_dir())
+            if os.name != "nt":
+                self.assertEqual(directory.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(kwargs["env"]["VK_DRIVER_FILES"], "x")
+            seen.append(directory)
+            return subprocess.CompletedProcess([], returncode, "")
+        with mock.patch.object(project_n.subprocess, "run", fake_run):
+            for index in indices:
+                project_n.run_reference_case("exe", {"XDG_RUNTIME_DIR": "/shared", "VK_DRIVER_FILES": "x"}, index)
+        return seen
+
+    def test_each_case_gets_its_own_runtime_directory(self):
+        first, second = self.run_cases(0)
+        self.assertNotEqual(first, second)
+        for directory in (first, second):
+            self.assertNotEqual(directory, Path("/shared"))
+            self.assertFalse(directory.exists())
+
+    def test_the_runtime_directory_goes_when_a_case_crashes(self):
+        (directory,) = self.run_cases(-11, indices=(1,))
+        self.assertFalse(directory.exists())
+
+
 class ReferenceTest(unittest.TestCase):
     def references(self, update, committed=(), case=None):
         """Runs `run_references` in a temporary root holding the `committed` pictures, over three cases run by `case`

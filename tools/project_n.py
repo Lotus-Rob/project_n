@@ -453,9 +453,13 @@ def doctest_case_name(output):
 def run_reference_case(exe, env, index):
     """(output, return code) of the reference binary's `index`th case (1-based, doctest's order), stdout and stderr
     together. Cases are picked by position: some names hold commas, which --test-case would split on. --minimal drops
-    doctest's summary from a passing case: it would claim all 25 cases passed, counting those outside the range."""
-    result = subprocess.run([exe, f"--first={index}", f"--last={index}", "--minimal=true"], cwd=ROOT, env=env, check=False,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding="utf-8", errors="replace")
+    doctest's summary from a passing case: it would claim every case passed, counting those outside the range."""
+    # Its own runtime directory: without one every case makes Mesa create /tmp/xdg-runtime-mesa-<uid> at once, and the
+    # loser crashes (main, 2026-11-13).
+    with tempfile.TemporaryDirectory(prefix="project_n-xdg-") as runtime_dir:
+        result = subprocess.run([exe, f"--first={index}", f"--last={index}", "--minimal=true"], cwd=ROOT,
+                                env={**env, "XDG_RUNTIME_DIR": runtime_dir}, check=False, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, encoding="utf-8", errors="replace")
     return result.stdout, result.returncode
 
 
@@ -470,7 +474,7 @@ def run_references(preset, update=False):
     drawn.mkdir(parents=True)
     exe = binary_path(preset, "release", "reference_tests")
     count = reference_case_count(exe, env)
-    # One process per case, all cores at once: a single process kept lavapipe on 1.4 of 32 cores (28 s for 25 cases).
+    # One process per case, all cores at once: a single process kept lavapipe on 1.4 of 32 cores (28 s for 25 cases, 2026-11-12).
     print(f"+ {exe} on {count} case(s), one process each, {jobs()} at a time", flush=True)
     with concurrent.futures.ThreadPoolExecutor(jobs()) as pool:
         results = list(pool.map(lambda index: run_reference_case(exe, env, index), range(1, count + 1)))
