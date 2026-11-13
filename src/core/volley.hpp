@@ -286,6 +286,10 @@ struct SwordPose {
 /// it stands still on its ring.
 [[nodiscard]] u64 DepartureTick(const Volley& volley, u32 sword);
 
+/// The tick the volley's last sword leaves its ring: the latest DepartureTick(), or the start for a volley of no swords.
+/// It draws every sword's delay, so it costs O(count): call it once per volley, not every tick.
+[[nodiscard]] u64 LastDepartureTick(const Volley& volley);
+
 /// The tick `sword` (below the shape's count) reaches its target: its departure (DepartureTick()), then `flightTicks`.
 [[nodiscard]] u64 ArrivalTick(const Volley& volley, u32 sword);
 

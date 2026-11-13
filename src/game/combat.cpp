@@ -370,6 +370,29 @@ void Combat::Launch(
     }
     PN_ASSERT(flight.volley.Valid(), "a cast resolved an invalid volley");
     flight.Prepare();
+    if (ability.seal) {
+        const u64 lastDeparture = core::LastDepartureTick(flight.volley);
+        m_seals.push_back(
+            {
+                .key = ability.seal->key,
+                .point = origin,
+                .size = ability.seal->size,
+                .startTick = tick,
+                .endTick = lastDeparture,
+                .element = ability.hit,
+                .hasElement = true,
+            }
+        );
+        PN_LOG_DEBUG(
+            "tick {}: {} raises seal {:#x} at ({}, {}) until tick {}",
+            tick,
+            core::ABILITY_NAMES.at(std::to_underlying(kind)),
+            ability.seal->key,
+            origin.x,
+            origin.y,
+            lastDeparture
+        );
+    }
     PN_LOG_DEBUG(
         "tick {}: {} cast at ({}, {}): {} enemies tagged, {} launched, the last arriving at tick {}",
         tick,
@@ -612,6 +635,7 @@ void Combat::Strike(core::State& state, const core::Manifest& manifest, u64 tick
     });
     // None starts after `tick`: a cast starts it at its tick, and Arena::Load() refuses one from a later tick.
     std::erase_if(m_flashes, [tick](const core::Flash& flash) { return tick - flash.startTick >= flash.ticks; });
+    std::erase_if(m_seals, [tick](const core::Seal& seal) { return tick >= seal.endTick; });
 }
 
 void Combat::EndReleased(const core::State& state, std::vector<u64>& ending, u64 tick, std::vector<core::Event>& events) const {
@@ -694,10 +718,15 @@ void Combat::Publish(core::Snapshot& snapshot) const {
         snapshot.volleyTargets.insert(snapshot.volleyTargets.end(), flight.targets.begin(), flight.targets.end());
     }
     snapshot.flashes.insert(snapshot.flashes.end(), m_flashes.begin(), m_flashes.end());
+    snapshot.seals.insert(snapshot.seals.end(), m_seals.begin(), m_seals.end());
 }
 
 bool Combat::FlashesStartBy(u64 tick) const {
     return std::ranges::all_of(m_flashes, [tick](const core::Flash& flash) { return flash.startTick <= tick; });
+}
+
+bool Combat::SealsStartBy(u64 tick) const {
+    return std::ranges::all_of(m_seals, [tick](const core::Seal& seal) { return seal.startTick <= tick; });
 }
 
 bool Combat::AimsAtCreatures(const core::State& state) const {
@@ -757,6 +786,27 @@ std::vector<core::Flash> ReadFlashes(core::Reader& archive) {
     return flashes;
 }
 
+// The seals Combat::Save() wrote, failing `archive` on a count past what is left or a seal that can't be used.
+std::vector<core::Seal> ReadSeals(core::Reader& archive) {
+    u64 count = 0;
+    archive(count);
+    // Each seal takes more than a u64, so a count past this is malformed.
+    if (count > archive.Remaining() / sizeof(u64)) {
+        archive.Fail();
+    }
+    std::vector<core::Seal> seals;
+    seals.reserve(archive.Failed() ? 0 : static_cast<std::size_t>(count));
+    for (u64 i = 0; i < count && !archive.Failed(); ++i) {
+        core::Seal seal;
+        archive(seal);
+        if (!seal.Valid()) {
+            archive.Fail();
+        }
+        seals.push_back(seal);
+    }
+    return seals;
+}
+
 } // namespace
 
 void Combat::Load(core::Reader& archive) {
@@ -795,10 +845,12 @@ void Combat::Load(core::Reader& archive) {
         }
     }
     std::vector<core::Flash> flashes = ReadFlashes(archive);
+    std::vector<core::Seal> seals = ReadSeals(archive);
     if (!archive.Failed()) {
         m_respawns = std::move(respawns);
         m_flights = std::move(flights);
         m_flashes = std::move(flashes);
+        m_seals = std::move(seals);
     }
 }
 

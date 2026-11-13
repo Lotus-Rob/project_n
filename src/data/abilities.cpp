@@ -147,6 +147,36 @@ std::expected<core::Affliction, core::Error> AfflictionAt(
     return core::Affliction{ .ticks = *ticks, .damage = *damage };
 }
 
+// Reads a `seal:` block: the seal's name, which game data keeps only as its key, and its size.
+std::expected<core::SealCast, core::Error> SealAt(
+    const YAML::Node& node,
+    const std::string& name,
+    std::vector<std::string>* warnings
+) {
+    if (!node.IsMap()) {
+        return RefuseAbilities(node, std::format("{} isn't a map", name));
+    }
+    internal::NoteUnknownKeys("abilities", node, name, "key", { "name", "size" }, warnings);
+    const YAML::Node sealName = node["name"];
+    // A null (`name:` or `~`) reads as the text "null", and a list or a map isn't a name: only a scalar's text counts.
+    const std::string text = sealName && sealName.IsScalar() ? sealName.Scalar() : std::string{};
+    if (text.empty()) {
+        return RefuseAbilities(sealName ? sealName : node, std::format("{} has no name", name));
+    }
+    constexpr internal::Range ABOVE_ZERO{ .low = 0.0,
+                                          .lowOpen = true,
+                                          .high = static_cast<f64>(std::numeric_limits<f32>::max()) };
+    const std::expected<f64, core::Error> size = internal::RequiredNumber("abilities", node, name, "size", ABOVE_ZERO);
+    if (!size) {
+        return std::unexpected{ size.error() };
+    }
+    const core::SealCast cast{ .key = core::SealKeyOf(text), .size = static_cast<f32>(*size) };
+    if (!cast.Valid()) { // a size above 0 too small for an f32
+        return RefuseAbilities(node["size"], std::format("{}'s size is too small", name));
+    }
+    return cast;
+}
+
 std::expected<core::VolleyShape, core::Error> Swords(
     const YAML::Node& node,
     const std::string& name,
@@ -288,7 +318,8 @@ std::expected<core::AbilityData, core::Error> Ability(
           "burn",
           "poison",
           "swords",
-          "motion" },
+          "motion",
+          "seal" },
         warnings
     );
     core::AbilityData data;
@@ -352,6 +383,17 @@ std::expected<core::AbilityData, core::Error> Ability(
     }
     if (const std::expected<void, core::Error> flies = Flight(node, name, warnings, data); !flies) {
         return std::unexpected{ flies.error() };
+    }
+    if (const YAML::Node seal = node["seal"]) {
+        // Only a volley raises its seal: one anywhere else would never show, so it is refused, as a motion there is.
+        if (!node["swords"] && data.speed <= 0.0F) {
+            return RefuseAbilities(seal, std::format("{} has a seal but flies nothing: it needs swords or a speed", name));
+        }
+        const std::expected<core::SealCast, core::Error> cast = SealAt(seal, std::format("{}'s seal", name), warnings);
+        if (!cast) {
+            return std::unexpected{ cast.error() };
+        }
+        data.seal = *cast;
     }
     return data;
 }

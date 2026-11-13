@@ -151,7 +151,7 @@ public:
 
     /// Replaces the state with the one Save() wrote at simulation tick `simulationTick`, its creatures taking the game
     /// data in use; false, changing nothing, when the bytes are malformed, of another version, don't end where the state
-    /// does, or hold a flash that starts after `simulationTick`.
+    /// does, or hold a flash or a seal that starts after `simulationTick`.
     [[nodiscard]] bool Load(core::Reader& archive, u64 simulationTick) override;
 
     /// A hash of everything Save() writes, in the state's current order.

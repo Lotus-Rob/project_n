@@ -349,7 +349,7 @@ TEST_CASE("a save with bytes after the state, or of another format, is refused")
     CHECK_FALSE(game.Load(otherReader, SAVED_TICK));
 }
 
-constexpr u32 FORMAT = 3;
+constexpr u32 FORMAT = 4;
 constexpr u32 ACTIVE_VERSION = 4;
 constexpr u32 WORLD_VERSION = 1;
 using Active = core::ComponentList<
@@ -378,14 +378,15 @@ struct SavedVolley {
 
 // An arena save of `state` with `player`, laid out as Arena::Save writes one: format, scene, seed,
 // stable-ID counter, months, the player and the selection (none), then each domain after its version,
-// then no relationships, no respawns waiting, `volley` if any (the flying swords' hits of 20, none resolved yet) and
-// `flash` if any.
+// then no relationships, no respawns waiting, `volley` if any (the flying swords' hits of 20, none resolved yet),
+// `flash` if any and `seal` if any.
 // Its versions must follow arena.cpp's, or every refusal below is the version's.
 std::vector<std::byte> ArenaSave(
     const core::State& state,
     core::StableId player = {},
     const std::optional<SavedVolley>& volley = std::nullopt,
-    const std::optional<core::Flash>& flash = std::nullopt
+    const std::optional<core::Flash>& flash = std::nullopt,
+    const std::optional<core::Seal>& seal = std::nullopt
 ) {
     constexpr u64 MONTHS_PASSED = 0;
     constexpr u64 RELATIONSHIPS = 0;
@@ -412,6 +413,10 @@ std::vector<std::byte> ArenaSave(
     writer(static_cast<u64>(flash ? 1 : 0));
     if (flash) {
         writer(*flash);
+    }
+    writer(static_cast<u64>(seal ? 1 : 0));
+    if (seal) {
+        writer(*seal);
     }
     return bytes;
 }
@@ -871,6 +876,58 @@ TEST_CASE("a save with a flash that starts after the save's tick is refused") {
     CHECK(game.Load(reader, STARTED));
     const bool before = Loads(bytes, STARTED - 1);
     CHECK_FALSE(before);
+}
+
+TEST_CASE("a save with a seal of no size, ending before it starts, at NaN or of an unknown element is refused") {
+    constexpr core::Seal SOUND{ .key = 1,
+                                .point = { .x = 100.0F, .y = 50.0F },
+                                .size = 420.0F,
+                                .startTick = 10,
+                                .endTick = 40,
+                                .element = core::HitKind::Damage,
+                                .hasElement = true };
+    constexpr core::Seal NEVER_ENDING{ .key = 1, .size = 1.0F, .startTick = 10, .endTick = core::NEVER_ENDS };
+    constexpr f32 NOT_A_NUMBER = std::numeric_limits<f32>::quiet_NaN();
+    const core::State state{ game::DOMAINS, STATE_SEED };
+    const auto saveOf = [&state](const core::Seal& seal) { return ArenaSave(state, {}, std::nullopt, std::nullopt, seal); };
+    const auto loads = [&saveOf](const core::Seal& seal) { return Loads(saveOf(seal)); };
+    for (const core::Seal& sound : { SOUND, NEVER_ENDING }) {
+        game::Arena game(test::TestManifest(), game::Scene::Arena);
+        const std::vector<std::byte> bytes = saveOf(sound);
+        core::Reader reader{ bytes };
+        CHECK(game.Load(reader, SAVED_TICK));
+    }
+    core::Seal broken = SOUND;
+    broken.size = 0.0F;
+    CHECK_FALSE(loads(broken));
+    broken = SOUND;
+    broken.size = NOT_A_NUMBER;
+    CHECK_FALSE(loads(broken));
+    broken = SOUND;
+    broken.endTick = broken.startTick - 1;
+    CHECK_FALSE(loads(broken));
+    broken = SOUND;
+    broken.point.x = NOT_A_NUMBER;
+    CHECK_FALSE(loads(broken));
+    broken = SOUND;
+    broken.element = static_cast<core::HitKind>(core::HIT_KINDS);
+    CHECK_FALSE(loads(broken));
+}
+
+TEST_CASE("a save with a seal that starts after its tick is refused, and one its tick already ended is loaded") {
+    constexpr core::Seal JUST_STARTED{ .key = 1, .size = 1.0F, .startTick = SAVED_TICK, .endTick = SAVED_TICK + 1 };
+    constexpr core::Seal ENDED{ .key = 1, .size = 1.0F, .startTick = 10, .endTick = 40 }; // harmless: the next tick removes it
+    constexpr core::Seal FROM_LATER{ .key = 1, .size = 1.0F, .startTick = SAVED_TICK + 1, .endTick = core::NEVER_ENDS };
+    const core::State state{ game::DOMAINS, STATE_SEED };
+    const auto saveOf = [&state](const core::Seal& seal) { return ArenaSave(state, {}, std::nullopt, std::nullopt, seal); };
+    for (const core::Seal& sound : { JUST_STARTED, ENDED }) { // the boundary, started on the save's own tick, and the past
+        game::Arena game(test::TestManifest(), game::Scene::Arena);
+        const std::vector<std::byte> bytes = saveOf(sound);
+        core::Reader reader{ bytes };
+        CHECK(game.Load(reader, SAVED_TICK));
+    }
+    const bool fromLater = Loads(saveOf(FROM_LATER));
+    CHECK_FALSE(fromLater);
 }
 
 } // namespace

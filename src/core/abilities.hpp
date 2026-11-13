@@ -7,12 +7,14 @@
 
 #include "core/archive.hpp"
 #include "core/hit.hpp"
+#include "core/seal.hpp"
 #include "core/types.hpp"
 #include "core/volley.hpp"
 
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <optional>
 #include <string_view>
 #include <utility>
 
@@ -143,8 +145,11 @@ struct AbilityData {
     f32 speed = 0.0F;
     /// The swords' and the bolt's shape.
     VolleyShape volley{};
+    /// The seal a cast raises under the caster's volley, from the cast until its last sword leaves its ring; none for most.
+    std::optional<SealCast> seal = std::nullopt;
 
-    /// Lists its fields for an archive (core/archive.hpp).
+    /// Lists its fields for a writing archive (core/archive.hpp: a Writer or a Hasher, as game data is hashed but never
+    /// read back from bytes): the seal as whether there is one, then it if so.
     template<typename Self, typename Archive>
     void Fields(this Self& self, Archive& archive) {
         archive(
@@ -161,14 +166,20 @@ struct AbilityData {
             self.speed,
             self.volley
         );
+        const bool sealed = self.seal.has_value();
+        archive(sealed);
+        if (self.seal) {
+            archive(*self.seal);
+        }
     }
 
-    /// Whether every amount is not negative, every distance finite and not negative, and the enums are known.
+    /// Whether every amount is not negative, every distance finite and not negative, the enums are known and any seal is
+    /// valid.
     [[nodiscard]] bool Valid() const {
         const auto distanceOk = [](f32 value) { return std::isfinite(value) && value >= 0.0F; };
         return std::to_underlying(slot) < SLOT_KINDS && std::to_underlying(hit) < HIT_KINDS && qiCost >= 0 && qiGain >= 0 &&
                damage >= 0 && distanceOk(radius) && affliction.Valid() && distanceOk(distance) && distanceOk(speed) &&
-               volley.Valid();
+               volley.Valid() && (!seal || seal->Valid());
     }
 };
 

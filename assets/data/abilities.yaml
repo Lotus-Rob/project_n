@@ -15,6 +15,8 @@
 # facing its flight), arrival_speed (its speed on arrival as a multiple of its average speed, 0 to 3), retarget (the
 # fewest seconds a swing to another target takes, above 0) and retarget_speed (the fastest average speed of that swing,
 # world units a second, above 0: it also sets how long before its arrival a target must die for a sword to move on).
+# seal (an ability that flies swords or a bolt): the seal a cast raises under the caster, from the cast until its last
+# sword leaves its ring: its name (its look is in seals.yaml) and size (its outer radius, world units, above 0).
 # loadout: which ability sits in each slot (generator, spender, movement, special_1..special_4, ultimate); a slot left
 # out is empty.
 # combat: the rules of the fight, times in seconds: dying (a death's dissolve, above 0), respawn (after a fox's removal
@@ -36,7 +38,8 @@ abilities:
                              angle_jitter: 0, stagger: 0.05, out: 0.12, hold: 0.3, depart_jitter: 0.25, flight: 1.7,
                              sweep: 420, sweep_jitter: 0.6, fade: 0.3 },
                    motion: { aim_scatter: 18, short_bend: 0.5, turn: 0.1333, arrival_speed: 0.5, retarget: 0.1333,
-                             retarget_speed: 960 } }
+                             retarget_speed: 960 },
+                   seal: { name: sword_formation, size: 420 } } # size: the seal's outer radius, world units
 loadout: { generator: fire_bolt, spender: poison_lance, movement: dash, special_1: flying_swords }
 combat:
   dying: 0.5

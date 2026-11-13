@@ -16,11 +16,14 @@ abilities:
   flying_swords: { slot: special, cooldown: 6, qi_cost: 60, damage: 20, radius: 260,
                    swords: { count: 1000, waves: 10, wave_gap: 0.15, ring_radius: 160, ring_step: 38, scatter: 0,
                              angle_jitter: 0, stagger: 0.05, out: 0.12, hold: 0.3, depart_jitter: 0.25, flight: 1.7,
-                             sweep: 420, sweep_jitter: 0.6, fade: 0.3 } }
+                             sweep: 420, sweep_jitter: 0.6, fade: 0.3 },
+                   seal: { name: sword_formation, size: 420 } }
 loadout: { generator: fire_bolt, spender: poison_lance, movement: dash, special_1: flying_swords }
 )";
 // The line of the loadout in ABILITIES.
-constexpr std::string_view LOADOUT_LINE = "line 12";
+constexpr std::string_view LOADOUT_LINE = "line 13";
+// The line of the swords' seal in ABILITIES.
+constexpr std::string_view SEAL_LINE = "line 12";
 
 // ABILITIES with `from` replaced by `to`.
 std::string With(std::string_view from, std::string_view replacement) {
@@ -170,7 +173,7 @@ TEST_CASE("a time over a million seconds is refused, naming the ability and the 
 TEST_CASE("a loadout entry for an ability the abilities don't define is refused") {
     const core::Error error =
         ErrorFor(With("  dash:          { slot: movement, cooldown: 1.0, distance: 260, duration: 0.15 }\n", ""));
-    CHECK(error.message.contains("line 11")); // the loadout's, one up
+    CHECK(error.message.contains("line 12")); // the loadout's, one up
     CHECK(error.message.contains("dash in the loadout isn't defined"));
 }
 
@@ -250,14 +253,14 @@ TEST_CASE("a non-map or a broken file is refused with a reason") {
 }
 
 // The swords' line in ABILITIES, ending where a motion block can follow.
-constexpr std::string_view SWORDS_END = "sweep: 420, sweep_jitter: 0.6, fade: 0.3 } }";
+constexpr std::string_view SWORDS_END = "sweep: 420, sweep_jitter: 0.6, fade: 0.3 },";
 // The shipped motion, spelled out as abilities.yaml has it (retarget_speed in world units a second).
 constexpr std::string_view SHIPPED_MOTION =
     "aim_scatter: 18, short_bend: 0.5, turn: 0.1333, arrival_speed: 0.5, retarget: 0.1333, retarget_speed: 960";
 
 // ABILITIES with the swords given a motion block of `motion`.
 std::string WithMotion(std::string_view motion) {
-    return With(SWORDS_END, std::format("sweep: 420, sweep_jitter: 0.6, fade: 0.3 }}, motion: {{ {} }} }}", motion));
+    return With(SWORDS_END, std::format("sweep: 420, sweep_jitter: 0.6, fade: 0.3 }}, motion: {{ {} }},", motion));
 }
 
 TEST_CASE("a motion block spelling out the shipped motion reads the shape's defaults") {
@@ -321,6 +324,41 @@ TEST_CASE("a motion value out of range is refused, naming the key") {
         CHECK(error.message.contains(broken.says));
         CHECK(error.message.contains("abilities line"));
     }
+}
+
+TEST_CASE("the abilities reader reads a seal and refuses a bad one") {
+    constexpr f32 SEAL_SIZE = 420.0F; // the seal's outer radius, in world units
+    const std::expected<core::Abilities, core::Error> abilities = data::ParseAbilities(ABILITIES);
+    REQUIRE(abilities.has_value());
+    const std::optional<core::SealCast> sealed = abilities->Of(core::AbilityKind::FlyingSwords).seal;
+    REQUIRE(sealed.has_value());
+    const core::SealCast seal = sealed.value_or(core::SealCast{});
+    CHECK(seal.key == core::SealKeyOf("sword_formation"));
+    CHECK(seal.size == SEAL_SIZE);
+    CHECK_FALSE(abilities->Of(core::AbilityKind::FireBolt).seal.has_value()); // none unless it says so
+
+    struct Broken {
+        std::string_view seal;
+        std::string_view says;
+    };
+    constexpr std::array<Broken, 8> CASES{ {
+        Broken{ .seal = "{ name: sword_formation, size: 0 }", .says = "flying_swords's seal's size isn't a number above 0" },
+        Broken{ .seal = "{ name: sword_formation, size: -5 }", .says = "flying_swords's seal's size" },
+        Broken{ .seal = "{ name: \"\", size: 420 }", .says = "flying_swords's seal has no name" },
+        Broken{ .seal = "{ size: 420 }", .says = "flying_swords's seal has no name" },
+        Broken{ .seal = "{ name: , size: 420 }", .says = "flying_swords's seal has no name" },  // null, not "null"
+        Broken{ .seal = "{ name: ~, size: 420 }", .says = "flying_swords's seal has no name" }, // null spelled out
+        Broken{ .seal = "{ name: [a], size: 420 }", .says = "flying_swords's seal has no name" },
+        Broken{ .seal = "sword_formation", .says = "flying_swords's seal isn't a map" },
+    } };
+    for (const Broken& broken : CASES) {
+        CAPTURE(broken.seal);
+        const core::Error error = ErrorFor(With("{ name: sword_formation, size: 420 }", broken.seal));
+        CHECK(error.message.contains(broken.says));
+        CHECK(error.message.contains(SEAL_LINE));
+    }
+    const core::Error unread = ErrorFor(With("duration: 0.15 }", "duration: 0.15, seal: { name: dash_seal, size: 9 } }"));
+    CHECK(unread.message.contains("dash has a seal but flies nothing"));
 }
 
 TEST_CASE("a motion block on an ability that flies nothing is refused with its line") {
