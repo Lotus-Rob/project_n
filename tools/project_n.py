@@ -385,6 +385,14 @@ def all_test_files(suites):
     return sorted({n for names in suites.values() for n in names})
 
 
+def test_file_pattern(stem):
+    """doctest's `--source-file` value for the cases of `<stem>_tests.cpp`, as tests/xmake.lua's `unit_tests` registers
+    one test per file: doctest matches the whole `__FILE__` the compiler saw (`tests/unit/core/log_tests.cpp`, or with
+    `\\` from MSVC), so the separator before the name keeps `log` from taking `sdl_log_tests.cpp`. doctest splits on
+    commas and keeps a backslash before anything but a comma or a backslash. Mirrored in tests/xmake.lua."""
+    return f"*/{stem}_tests.cpp,*\\{stem}_tests.cpp"
+
+
 def test_filter(name, suite):
     """doctest's filter for `test --suite SUITE --test NAME`: the cases of the test file NAME names, else the cases with
     NAME in their name. A file of another suite fails: doctest passes a run whose filter selects nothing."""
@@ -394,7 +402,7 @@ def test_filter(name, suite):
     if name not in suites.get(suite, ()):
         raise Fail(f"{name}_tests.cpp is in {', '.join(s for s, files in suites.items() if name in files)}, not {suite}")
     # The whole file name: `*log*` would also match logic_tests.cpp, and `*game*` every file under unit/game/.
-    return f"--source-file=*{name}_tests.cpp"
+    return f"--source-file={test_file_pattern(name)}"
 
 
 def cmd_test(args):
@@ -416,7 +424,10 @@ def cmd_test(args):
         # MSVC's ASan hot-patches system DLLs; Wine's (CET endbr64 prologues) can't be patched.
         print(f"test: built with {args.sanitizer} sanitizer; MSVC sanitizer runs need native Windows, not Wine")
         return
-    if args.target:
+    if args.target in test_names() and not extra:
+        # Each test file is a test of its own (tests/xmake.lua), so a suite's files run in parallel.
+        run(["xmake", "test", "--output-on-failure", f"{args.target}/*"], env=xmake_env(bdir))
+    elif args.target:
         run(["xmake", "run", args.target, *extra], env=xmake_env(bdir))
     else:
         run(["xmake", "test", "--output-on-failure"], env=xmake_env(bdir))

@@ -2,11 +2,28 @@
 
 -- `xmake test` runs test binaries directly; only `xmake run` knows to use Wine. Windows tests
 -- built on Linux (msvc-wine) run through it explicitly, so nothing depends on the host's binfmt.
+-- Its output is kept as XMake keeps a native test's, so `--output-on-failure` shows only the failing
+-- files' output, not every file's run printed at once, interleaved.
 local function test_under_wine(target, opt)
     import("lib.detect.find_tool")
     local wine = assert(find_tool("wine"), "wine not found")
     local args = table.join(path.absolute(target:targetfile()), table.wrap(opt.runargs or target:get("runargs")))
-    return os.execv(wine.program, args, {try = true, curdir = target:rundir()}) == 0
+    local log = path.absolute(path.join(target:autogendir(), "tests", (opt.name:gsub("[/\\>=<|%*]", "_"))))
+    os.mkdir(path.directory(log))
+    os.tryrm(log .. ".out") -- a run Wine fails to start must not show the previous run's output
+    os.tryrm(log .. ".err")
+    local code = os.execv(wine.program, args, {try = true, curdir = target:rundir(),
+                                               stdout = log .. ".out", stderr = log .. ".err"})
+    for _, kind in ipairs({"out", "err"}) do
+        local output = io.readfile(log .. "." .. kind)
+        if output and #output > 0 then -- XMake prints an empty one too
+            opt["std" .. kind] = output
+        end
+    end
+    if code ~= 0 then
+        opt.errors = string.format("run %s failed, exit code: %s", opt.name, tostring(code))
+    end
+    return code == 0
 end
 
 -- What a target that builds an arena needs: the shipped manifest (support/manifest.hpp) and its reader.
@@ -14,6 +31,29 @@ local function with_manifest()
     add_deps("data", "platform")
     add_includedirs(os.scriptdir())
     add_rules("assets")
+end
+
+-- doctest's `--source-file` value for the cases of `<stem>_tests.cpp`: `test_file_pattern` in tools/project_n.py.
+local function test_file_pattern(stem)
+    return "*/" .. stem .. "_tests.cpp,*\\" .. stem .. "_tests.cpp"
+end
+
+-- One test per `*_tests.cpp` file, named after it, so `xmake test` runs a target's files in parallel, and `rest`
+-- for the cases outside them (main.cpp, a header): no case drops out. doctest passes a run that selects nothing.
+-- No test file may be called `rest_tests.cpp` (the selftest checks). Description scope: no assert or raise here.
+local function add_file_tests(files)
+    local patterns = {}
+    for _, glob in ipairs(table.wrap(files)) do
+        for _, file in ipairs(os.files(path.join(os.scriptdir(), glob))) do
+            local stem = path.basename(file)
+            if stem:endswith("_tests") then
+                stem = stem:sub(1, -#"_tests" - 1)
+                table.insert(patterns, test_file_pattern(stem))
+                add_tests(stem, {runargs = {"--source-file=" .. test_file_pattern(stem)}})
+            end
+        end
+    end
+    add_tests("rest", {runargs = {"--source-file-exclude=" .. table.concat(patterns, ",")}})
 end
 
 -- `module` is the src/ module under test (default core); it brings the modules below it. `arena`: it builds arenas.
@@ -29,7 +69,7 @@ local function unit_tests(name, files, module, arena)
         add_files(files, {unity_ignored = true})
         set_pcxxheader("unit/pch.hpp")
         add_packages("doctest")
-        add_tests("default")
+        add_file_tests(files)
         if is_plat("windows") and not is_host("windows") then
             on_test(test_under_wine)
         end

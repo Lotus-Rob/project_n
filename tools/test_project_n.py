@@ -2,10 +2,12 @@
 
 import argparse
 import contextlib
+import fnmatch
 import functools
 import io
 import json
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -1087,9 +1089,12 @@ class SanitizerTest(unittest.TestCase):
         self.assertIn("--unity", argvs[0])
 
     def test_a_test_name_filters_by_file_or_else_by_case_name(self):
-        self.assertEqual(project_n.test_filter("data_watch", "app_tests"), "--source-file=*data_watch_tests.cpp")
-        self.assertEqual(project_n.test_filter("log", "core_tests"), "--source-file=*log_tests.cpp")  # not logic_tests.cpp
-        self.assertEqual(project_n.test_filter("game", "app_tests"), "--source-file=*game_tests.cpp")  # not all of unit/game/
+        self.assertEqual(project_n.test_filter("data_watch", "app_tests"),
+                         "--source-file=*/data_watch_tests.cpp,*\\data_watch_tests.cpp")
+        self.assertEqual(project_n.test_filter("log", "core_tests"),  # not logic_tests.cpp
+                         "--source-file=*/log_tests.cpp,*\\log_tests.cpp")
+        self.assertEqual(project_n.test_filter("game", "app_tests"),  # not all of unit/game/
+                         "--source-file=*/game_tests.cpp,*\\game_tests.cpp")
         self.assertEqual(project_n.test_filter("no such file", "app_tests"), "--test-case=*no such file*")
 
     def test_a_test_file_of_another_suite_is_refused(self):  # doctest would pass the empty run
@@ -1150,6 +1155,68 @@ class SanitizerTest(unittest.TestCase):
         with mock.patch.dict(project_n.os.environ, {"ASAN_OPTIONS": "detect_leaks=0"}):
             options = project_n.xmake_env(project_n.build_dir("linux-gcc", "debug"))["ASAN_OPTIONS"]
         self.assertTrue(options.startswith("abort_on_error=0") and options.endswith(":detect_leaks=0"), options)
+
+
+class TestFilesTest(unittest.TestCase):
+    @staticmethod
+    def matches(path, stem):
+        """Whether doctest's `--source-file` takes PATH: any comma-separated part matching, case-insensitively.
+        fnmatchcase, as fnmatch's normcase turns `/` into `\\` on Windows and so would hide a separator mismatch."""
+        return any(fnmatch.fnmatchcase(path.lower(), part.lower()) for part in project_n.test_file_pattern(stem).split(","))
+
+    def test_a_file_pattern_matches_only_its_file(self):
+        for stem, own, other in (("log", ("core", "log"), ("platform", "sdl_log")),
+                                 ("clock", ("platform", "clock"), ("core", "tick_clock"))):
+            spellings = {}
+            for area, name in (own, other):
+                spellings[name] = (f"/src/tests/unit/{area}/{name}_tests.cpp", f"z:\\src\\tests\\unit\\{area}\\{name}_tests.cpp")
+            for path in spellings[own[1]]:
+                self.assertTrue(self.matches(path, stem), (stem, path))
+            for path in spellings[other[1]]:
+                self.assertFalse(self.matches(path, stem), (stem, path))
+
+    def test_no_suite_has_two_files_one_pattern_catches(self):
+        for suite, stems in project_n.test_names().items():
+            self.assertEqual(len(set(stems)), len(stems), f"{suite}: two test files share a name")
+            for stem in stems:
+                for other in stems:
+                    if other != stem:
+                        path = f"tests/unit/{suite}/{other}_tests.cpp"
+                        self.assertFalse(self.matches(path, stem), f"{suite}: {stem}'s pattern takes {other}_tests.cpp")
+
+    def test_the_lua_copy_of_the_pattern_builds_the_same_string(self):  # tests/xmake.lua's test_file_pattern
+        lua = (project_n.ROOT / "tests" / "xmake.lua").read_text()
+        expression = re.search(r"local function test_file_pattern\(stem\)\n    return (.*)\nend", lua).group(1)
+        # A Lua concatenation of string literals and `stem`: evaluate it for one stem.
+        parts = re.findall(r'"((?:[^"\\]|\\.)*)"|(stem)', expression)
+        built = "".join("log" if name else literal.replace("\\\\", "\\") for literal, name in parts)
+        self.assertEqual(expression.count(".."), len(parts) - 1, expression)  # nothing but literals, `stem` and `..`
+        self.assertEqual(built, project_n.test_file_pattern("log"))
+
+    def test_no_test_file_takes_the_name_of_the_rest(self):  # tests/xmake.lua registers `rest` beside the files' tests
+        for suite, stems in project_n.test_names().items():
+            self.assertNotIn("rest", stems, suite)
+
+    @staticmethod
+    def ran(target, test=None, args=()):
+        ran = []
+        with mock.patch.multiple(project_n, build=lambda *a: Path("build"), xmake_env=lambda bdir: {},
+                                 needs_container=lambda *a: False, run=lambda argv, env: ran.append(argv)):
+            project_n.cmd_test(project_n.argparse.Namespace(preset=project_n.NATIVE_PRESET, mode="debug", sanitizer="none",
+                                                            container=False, target=target, test=test, args=list(args),
+                                                            unity=False))
+        return ran
+
+    def test_a_suite_without_filters_runs_its_file_tests(self):
+        self.assertEqual(self.ran("game_tests"), [["xmake", "test", "--output-on-failure", "game_tests/*"]])
+
+    def test_a_suite_with_filters_runs_its_binary(self):
+        self.assertEqual(self.ran("game_tests", test="save"),
+                         [["xmake", "run", "game_tests", project_n.test_filter("save", "game_tests")]])
+        self.assertEqual(self.ran("game_tests", args=["--", "--count"]), [["xmake", "run", "game_tests", "--count"]])
+
+    def test_a_target_that_is_no_suite_runs_its_binary(self):  # the benchmark registers no test
+        self.assertEqual(self.ran("headless_bench"), [["xmake", "run", "headless_bench"]])
 
 
 class HelpersTest(unittest.TestCase):
