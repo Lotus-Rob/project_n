@@ -1157,23 +1157,69 @@ TEST_CASE("the snapshot carries each volley and its targets") {
     }
 }
 
+// The tick the first sword of `volley`'s second-to-last wave arrives: until then, two waves' hits are still due.
+u64 SecondToLastWaveArrival(const core::Volley& volley) {
+    u64 first = std::numeric_limits<u64>::max();
+    for (u32 sword = 0; sword < volley.shape.count; ++sword) {
+        if (core::WaveOf(volley, sword) + 2 == volley.shape.waves) {
+            first = std::min(first, core::ArrivalTick(volley, sword));
+        }
+    }
+    return first;
+}
+
+// The waves of `volley`'s swords that arrive after `tick`, one per sword, first wave first.
+std::vector<u32> WavesDueAfter(const core::Volley& volley, u64 tick) {
+    std::vector<u32> due;
+    for (u32 sword = 0; sword < volley.shape.count; ++sword) {
+        if (core::ArrivalTick(volley, sword) > tick) {
+            due.push_back(core::WaveOf(volley, sword));
+        }
+    }
+    std::ranges::sort(due);
+    return due;
+}
+
 TEST_CASE("a scene change mid-volley ends every open use") {
     constexpr u64 SWORDS_CAST = 100;
-    constexpr u64 CHANGE = 150; // the swords in flight, the burn between its ticks
     game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    const core::Vec2 point = ReadyBolt(arena);
-    std::vector<core::Event> events = StampedCast(arena, CAST, core::Slot::Generator, point);
-    std::ranges::move(Play(arena, CAST + 1, SWORDS_CAST - 1), std::back_inserter(events));
+    Run(arena, 1, SWORDS_CAST - 1);
     const core::StableId fox = Foxes(arena).front();
-    std::ranges::move(StampedCast(arena, SWORDS_CAST, core::Slot::Special1, ChestOf(arena, fox)), std::back_inserter(events));
+    std::vector<core::Event> events = StampedCast(arena, SWORDS_CAST, core::Slot::Special1, ChestOf(arena, fox));
     const core::Snapshot cast = Published(arena, SWORDS_CAST);
     REQUIRE_FALSE(cast.volleys.empty());
-    REQUIRE(core::LastArrival(cast.volleys.back().volley) > CHANGE);
-    std::ranges::move(Play(arena, SWORDS_CAST + 1, CHANGE - 1), std::back_inserter(events));
+    const core::Volley& swordsCast = cast.volleys.back().volley;
+    REQUIRE(swordsCast.shape.waves >= 2);
+    const u64 swordsEnd = core::LastArrival(swordsCast);
+    // The change late in the swords' flight, just before their second-to-last wave arrives, and the bolt cast a burn's
+    // length before their end, so its burn (begun after the bolt's flight) is between its ticks then: the tail after
+    // the change, in the slow stress scene, is about two waves long.
+    REQUIRE(swordsEnd > SWORDS_CAST + (BURN_TICKS * RULES.afflictionPeriod)); // the bolt cast after the swords
+    const u64 changeTick = SecondToLastWaveArrival(swordsCast) - 1;
+    const u64 boltCast = swordsEnd - (BURN_TICKS * RULES.afflictionPeriod);
+    std::ranges::move(Play(arena, SWORDS_CAST + 1, boltCast - 1), std::back_inserter(events));
+    std::ranges::move(StampedCast(arena, boltCast, core::Slot::Generator, ChestOf(arena, fox)), std::back_inserter(events));
+    const core::Snapshot boltCastSnapshot = Published(arena, boltCast);
+    const auto boltVolley =
+        std::ranges::find(boltCastSnapshot.volleys, core::AbilityKind::FireBolt, &core::VolleyView::ability);
+    REQUIRE(boltVolley != boltCastSnapshot.volleys.end());
+    const u64 arrival = core::ArrivalTick(boltVolley->volley, 0);
+    const u64 burnEnd = arrival + (BURN_TICKS * RULES.afflictionPeriod);
+    REQUIRE(arrival < changeTick);
+    REQUIRE((changeTick - arrival) % RULES.afflictionPeriod != 0); // the burn between its ticks
+    std::ranges::move(Play(arena, boltCast + 1, changeTick - 1), std::back_inserter(events));
+    const core::Snapshot before = Published(arena, changeTick - 1);
+    const auto inFlight = std::ranges::find(before.volleys, core::AbilityKind::FlyingSwords, &core::VolleyView::ability);
+    REQUIRE(inFlight != before.volleys.end());
+    std::vector<u32> due = WavesDueAfter(inFlight->volley, changeTick);
+    CHECK(due.size() > swordsCast.shape.count / swordsCast.shape.waves); // more than a wave's hits still due
+    const auto repeated = std::ranges::unique(due);
+    due.erase(repeated.begin(), repeated.end());
+    CHECK(due.size() >= 2); // of two waves or more
     const std::array<core::Action, 1> change{ { { .kind = core::ActionKind::CycleScene } } };
     std::vector<core::Event> ended;
-    arena.Tick(At(CHANGE), { .actions = change, .held = {} }, ended);
-    const u64 bolt = game::CastUse(CAST, core::Slot::Generator);
+    arena.Tick(At(changeTick), { .actions = change, .held = {} }, ended);
+    const u64 bolt = game::CastUse(boltCast, core::Slot::Generator);
     const u64 swords = game::CastUse(SWORDS_CAST, core::Slot::Special1);
     REQUIRE(ended.size() == 2);
     CHECK(CountKind(ended, core::EventKind::UseEnded) == 2);
@@ -1181,10 +1227,13 @@ TEST_CASE("a scene change mid-volley ends every open use") {
     CHECK(std::ranges::contains(ended, swords, &core::Event::use));
     CHECK(CountKind(OfUse(events, bolt), core::EventKind::UseEnded) == 0);
     CHECK(CountKind(OfUse(events, swords), core::EventKind::UseEnded) == 0);
-    const core::Snapshot snapshot = Published(arena, CHANGE);
+    const std::vector<core::Event> boltBefore = OfUse(events, bolt);
+    CHECK(boltBefore.size() == BURN_TICKS); // its hit and every tick of its burn but the last
+    const core::Snapshot snapshot = Published(arena, changeTick);
     CHECK(snapshot.volleys.empty());
     CHECK(snapshot.volleyTargets.empty());
-    const std::vector<core::Event> later = Play(arena, CHANGE + 1, CHANGE + (BURN_TICKS * RULES.afflictionPeriod));
+    // To the last tick either use had an event due on, had the scene stayed.
+    const std::vector<core::Event> later = Play(arena, changeTick + 1, std::max(burnEnd, swordsEnd));
     CHECK(OfUse(later, bolt).empty());
     CHECK(OfUse(later, swords).empty());
 }
