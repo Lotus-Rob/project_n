@@ -1,6 +1,6 @@
 # Faster CI and local builds: cache what we compile, spread what can't be cached, run test cases in parallel
 
-Date: 2026-11-13 · Status: draft
+Date: 2026-11-13 · Status: approved 2026-11-13
 
 ## Intent
 
