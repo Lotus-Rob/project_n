@@ -32,7 +32,13 @@
 ///   Qi and slots, from the caster state the arena publishes;
 /// - game text over the world: name labels over the player and every fox, and the tablet's vertical caption;
 /// - the glow drives (core/glow.hpp), one demo prop each: the shrine pulses, the stele charges and releases on a loop, the
-///   ice crystal fills and shows a result that changes each loop (DemoGlow()).
+///   ice crystal fills and shows a result that changes each loop (DemoGlow());
+/// - seals (core/seal.hpp, their looks in `assets/data/seals.yaml`): the flying swords raise one under their rings, and the
+///   arena scene shows a showcase that between them uses every part and placement, each in a clearing of its own away
+///   from the fight: a large ground seal of 9 rings, an upright one with satellite seals on its ring, one overhead with
+///   pillars of light falling into its shadow on the ground and sparks rising, one in tiers of square and diamond frames,
+///   one with flames spilling past its rings and drifting shards, and small ones of 1 and 3 rings; scene content,
+///   republished every tick and never saved, which F8 hides and shows.
 /// Its stress variant adds a crowd and a bullet spiral, about 100,000 instances in all (§8.1), and a world tier of 50,000.
 
 #include "core/draw_list.hpp"
@@ -212,7 +218,8 @@ public:
     /// `snapshot.simulationTick`), its shadow with it. The player's cultivator is the one to follow, with what is drawn
     /// culled around it. A scene with a player adds its texts: the player's and each living fox's name label over its
     /// head, and the tablet's caption; the arena scene adds each living fox's health bar at its head, the player's casting
-    /// state (core::Snapshot::caster) and the volleys in flight with their targets (Combat::Publish()).
+    /// state (core::Snapshot::caster), its showcase seals (core::Seal::showcase, from tick 0 and never ending) and, after
+    /// them, the volleys in flight with their targets and the seals raised in play (Combat::Publish()).
     void Publish(core::Snapshot& snapshot, core::Jobs& jobs) override;
 
 private:

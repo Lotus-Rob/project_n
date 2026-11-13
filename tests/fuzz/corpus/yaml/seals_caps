@@ -1,0 +1,10 @@
+# A seals table one satellite past a look's cap (63): aliases make each one cheap, so only the cap keeps it small.
+seals:
+  a:
+    colours: [element]
+    layers: [{ inner: 0, outer: 1 }]
+    satellites: [&m { seal: b, size: 0.1 }, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m,
+                 *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m,
+                 *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m, *m,
+                 *m]
+  b: { colours: [element], layers: [{ inner: 0, outer: 1 }] }

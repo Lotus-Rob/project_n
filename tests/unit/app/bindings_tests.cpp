@@ -186,4 +186,12 @@ TEST_CASE("F7 sends the debug burst") {
     CHECK(down.value_or(app::ControlEvent{}).pressed);
 }
 
+TEST_CASE("F8 shows or hides the arena's showcase seals") {
+    app::Bindings bindings;
+    const std::optional<app::ControlEvent> down = bindings.Handle(Key(InputCode::KeyF8, true));
+    REQUIRE(down.has_value());
+    CHECK(down.value_or(app::ControlEvent{}).control == app::Control::ToggleShowcase);
+    CHECK(down.value_or(app::ControlEvent{}).pressed);
+}
+
 } // namespace

@@ -1,6 +1,8 @@
+#include "core/archive.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/instances.hpp"
 #include "core/jobs.hpp"
+#include "core/seal.hpp"
 #include "core/state.hpp"
 #include "data/effects.hpp"
 #include "data/game_data.hpp"
@@ -8,6 +10,7 @@
 #include "game/npcs.hpp"
 #include "platform/paths.hpp"
 #include "support/manifest.hpp"
+#include "support/seals.hpp"
 
 #include <doctest/doctest.h>
 
@@ -873,6 +876,69 @@ TEST_CASE("the demo progress fills, then shows a result that changes each loop")
 
 TEST_CASE("a role without a demo drive has no glow") {
     CHECK(game::DemoGlow(core::GlowRole::Hover, 10).role == core::GlowRole::None);
+}
+
+// The arena's showcase seals (the phase 6 chunk 4b spec, "The showcase"), in the order it publishes them.
+constexpr std::array<core::SealKey, 7> SHOWCASE{ { core::SealKeyOf("showcase_grand"),
+                                                   core::SealKeyOf("showcase_upright"),
+                                                   core::SealKeyOf("showcase_overhead"),
+                                                   core::SealKeyOf("showcase_tiers"),
+                                                   core::SealKeyOf("showcase_flame"),
+                                                   core::SealKeyOf("showcase_small_1"),
+                                                   core::SealKeyOf("showcase_small_3") } };
+
+// The keys of `snapshot`'s showcase seals, in its order: the seals test::RaisedSeals() leaves out.
+std::vector<core::SealKey> ShowcaseKeys(const core::Snapshot& snapshot) {
+    std::vector<core::SealKey> keys;
+    keys.reserve(snapshot.seals.size());
+    for (const core::Seal& seal : snapshot.seals) {
+        if (seal.showcase) {
+            keys.push_back(seal.key);
+        }
+    }
+    return keys;
+}
+
+TEST_CASE("the arena publishes its showcase seals, unsaved") {
+    constexpr u64 SAVED_AT = 30;
+    const std::vector<core::SealKey> expected(SHOWCASE.begin(), SHOWCASE.end());
+    game::Arena arena(test::TestManifest());
+    for (u64 tick = 1; tick <= SAVED_AT; ++tick) {
+        Tick(arena, At(tick), {});
+    }
+    const core::Snapshot published = Published(arena);
+    const std::vector<core::SealKey> shown = ShowcaseKeys(published);
+    CHECK(shown == expected);
+    const std::vector<core::Seal> raised = test::RaisedSeals(published);
+    CHECK(raised.empty());
+    // Shown from the scene's start and never ending, of no element: scene content, not a seal raised in play.
+    const bool lasting = std::ranges::all_of(published.seals, [](const core::Seal& seal) {
+        return seal.startTick == 0 && seal.endTick == core::NEVER_ENDS && !seal.hasElement && seal.Valid();
+    });
+    CHECK(lasting);
+
+    // Not state: publishing them leaves the save's bytes alone, and a load brings them back from the scene.
+    std::vector<std::byte> before;
+    core::Writer beforeWriter{ before };
+    game::Arena unpublished(test::TestManifest());
+    for (u64 tick = 1; tick <= SAVED_AT; ++tick) {
+        Tick(unpublished, At(tick), {});
+    }
+    unpublished.Save(beforeWriter);
+    std::vector<std::byte> bytes;
+    core::Writer writer{ bytes };
+    arena.Save(writer);
+    CHECK(bytes == before);
+    game::Arena loaded(test::TestManifest(), game::Scene::Cells);
+    const std::vector<core::SealKey> shownElsewhere = ShowcaseKeys(Published(loaded));
+    CHECK(shownElsewhere.empty()); // the other scenes show none
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader, SAVED_AT));
+    const core::Snapshot reloaded = Published(loaded);
+    const std::vector<core::SealKey> shownAgain = ShowcaseKeys(reloaded);
+    CHECK(shownAgain == expected);
+    const std::vector<core::Seal> raisedAgain = test::RaisedSeals(reloaded);
+    CHECK(raisedAgain.empty());
 }
 
 TEST_CASE("glows leave the state hash alone") {

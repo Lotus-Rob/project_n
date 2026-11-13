@@ -18,8 +18,8 @@ constexpr u32 SEAL_LIGHT_VERTICES = 4; // a particle's quad: a triangle strip
 // A storage buffer may not be empty: the smallest pack's room, grown as packs need.
 constexpr u32 SEAL_SMALLEST_PACK = 64;
 static_assert(
-    MAX_SEALS_DRAWN * (core::MAX_SEAL_LAYERS + 1) <= MAX_SEAL_LAYERS_DRAWN,
-    "the layer buffer holds every layer DrawSeals() draws, so no quad points past it"
+    MAX_SEALS_DRAWN * (core::MAX_SEAL_LAYERS + SEAL_EXTRA_LAYERS) <= MAX_SEAL_LAYERS_DRAWN,
+    "the layer buffer holds every layer DrawSeals() draws, emblems and shadows too, so no quad points past it"
 );
 
 // `Draw` in shaders/seal.vert.hlsl: rows of 16 bytes, as HLSL packs a constant buffer.

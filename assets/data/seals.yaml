@@ -3,32 +3,34 @@
 # alone. Debug builds reload it within half a second of an edit; a value out of range is refused with its line (the old
 # looks stay), and an unknown key is a warning. Angles are in degrees, times in seconds, spins in degrees a second (negative
 # turns the other way); radii, widths and sizes are fractions of the seal's size (its outer radius, which game data or the
-# scene gives) unless a key says world units.
+# scene gives) unless a key says world units. A number that must be above 0 must also be a normal float (at least about
+# 1.2e-38).
 #
 # view_ratio: the art's angle, how far depth on a flat seal is squashed on screen (above 0, at most 1; the blob shadow's
 #   24 / 64). above_opacity: the most an upright or overhead seal shows over the creatures (0 to 1). spin_scale: scales the
-#   seals' time: spins, particle motion and life, and the appear and fade (0 or more; reduce motion lowers it; at 0 nothing
-#   moves and seals appear and go at once). brightness: multiplies every line and light (0 or more; reduce flashing lowers
-#   it).
+#   seals' time: spins, particle motion and life, and the appear and fade (0 to 10; reduce motion lowers it; at 0 nothing
+#   moves and seals appear and go at once). brightness: multiplies every line and light (0 to 10; reduce flashing lowers
+#   it); above_opacity still caps an upright or overhead seal after it.
 # halo: the light round every part of every seal, fading out past its edge: reach (a fraction of the seal's size, 0 none to
 #   0.1) and strength (at the part's edge, 0 to 1).
-# glyph_sets: named lists of sprites a script draws from, in turn round its ring.
-# seals: each seal by name, with
+# glyph_sets: up to 64 named lists of 1 to 256 sprites each, which a script draws from in turn round its ring.
+# seals: up to 1,024, each by name, with
 #   plane: ground (flat, an ellipse at the art's angle), upright (standing, a circle) or overhead (flat, lifted); lift: world
 #     units its plane sits above the ground (0 or more).
 #   wash: the ink under its glow, so it shines on the pale ground: darkness (0 none to 1), reach (how far it spreads, above
-#     0) and softness (of its edge, 0 hard to 1).
+#     0) and softness (of its edge, 0 hard to 1); and for an overhead seal, shadow: how dark the shadow it casts on the
+#     ground under it is (its wash's shape and ink, 0 none, the default, to 1), so it reads as hanging in the air.
 #   colours: one or two, each `element` (the colour of the element it was raised with) or a palette colour as area.key, such
 #     as effects.seal_gold; never hex. A part, the emblem or the light picks one by `colour: 0` (the default) or `colour: 1`.
 #   life: appear and fade (seconds, 0 or more) with appear_curve and fade_curve (linear, ease_in, ease_out, smooth, sine),
 #     and order: outer_first or inner_first, the order its layers appear in, one after another.
 #   layers: 1 to 9, each inner and outer (its band, inner below outer, outer at most 1), height (world units it rises above
-#     the plane, 0 or more), spin, opacity (0 to 1), frame ({ sides: 0 round, or 3 or more for a square or diamond band;
+#     the plane, 0 or more), spin, opacity (0 to 1), frame ({ sides: 0 round, or 3 to 64 for a square or diamond band;
 #     rotation }: a frame's inner and outer are its polygons' corners, so its sides' middles are nearer, and a round part
 #     past them is cut off there) and up to 16 parts. Every part has a kind, a radius (above 0, at most 1), a rotation (where
 #     its first item sits) and a colour, and by kind:
-#       circle: width (above 0), dash and gap (degrees of the ring; dash 0 is solid; a dash and gap that don't divide 360
-#         leave one shorter dash where the first begins);
+#       circle: width (above 0), dash and gap (degrees of the ring; dash 0 is solid; when a dash and gap don't divide 360,
+#         what is left over joins the ring's first dash, making one longer or shorter run there, which turns with the ring);
 #       ticks: count (1 to 360), length and width;
 #       dots: count and size (across);
 #       script: glyphs (a glyph set), count, size (a glyph's height) and facing (outward or inward);
@@ -36,19 +38,20 @@
 #       polygon: sides (3 to 360) and width;
 #       flourish: sprites (1 to 3, drawn in turn), count, size and spill (how far past the layer it may reach, 0 to 1).
 #   emblem: a sprite at the centre: sprite, size (above 0, at most 1), spin and colour.
-#   satellites: other seals drawn on its rings, each seal (by name, never its own; nesting at most 2 deep), layer (whose
-#     ring), angle, size (above 0, at most 1), mount (fixed: stays put; with_layer: turns with the layer; orbit: goes round
-#     at orbit degrees a second).
+#   satellites: up to 63 other seals drawn on its rings, each seal (by name, never its own; nesting at most 2 deep), layer
+#     (whose ring), angle, size (0.001 to 1), mount (fixed: stays put; with_layer: turns with the layer; orbit: goes
+#     round at orbit degrees a second).
 #   light: colour, and pillars { count, height (world units), width, fade (how much of its length a pillar fades out
-#     over towards its far end, 0 to 1), cycle (seconds its light takes to run its length once, above 0), rest (how bright
-#     a pillar is between its light's passes, a share of the pass's, 0 to 1; 0.35 if left out), band (how far the passing
-#     light reaches each way, a share of the pillar's length, above 0 to 0.5; 0.15) }, sparks { count, rise (world units a
-#     second), life (seconds, above 0), size (across) } and shards { count, drift (world units a second, out from the
-#     centre), spin, size (length), thin (width over length, above 0 to 1; 0.35), edge (how much of the way from its
-#     middle to its points a shard softens over, above 0 to 1; 0.5) }: 256 particles at most in all. Pillars stand at
-#     points of the seal, falling from an overhead one towards the ground and rising from one on the ground or upright;
-#     sparks and shards are born at points of the seal, somewhere new each time they come round. Each particle has the
-#     seal's ink under its light, as dark as its wash.
+#     over towards its far end, 0 to 1), cycle (seconds its light takes to run its length once, a tick, 1/60, or more),
+#     rest (how bright a pillar is between its light's passes, a share of the pass's, 0 to 1; 0.35 if left out), band (how
+#     far the passing light reaches each way, a share of the pillar's length, above 0 to 0.5; 0.15) }, sparks { count,
+#     rise (world units a second), life (seconds, a tick, 1/60, or more), size (across) } and shards { count, drift (world
+#     units a second, out from the centre), spin (0, or 0.001 or more either way), size (length), thin (width over
+#     length, above 0 to 1; 0.35), edge (how much of the way from its middle to its points a shard softens over, above 0
+#     to 1; 0.5) }: 256 particles at most in all. Pillars stand at points of the seal, falling from an overhead one
+#     towards the ground and rising from one on the ground or upright; sparks and shards are born at points of the seal,
+#     somewhere new each time they come round, a shard at least once an hour. Each particle has the seal's ink under its
+#     light, as dark as its wash.
 view_ratio: 0.375
 above_opacity: 0.7
 spin_scale: 1
@@ -94,3 +97,292 @@ seals:
           - { kind: star, points: 6, step: 2, radius: 0.56, width: 0.005 }
     emblem: { sprite: emblem_swords, size: 0.22, spin: 0, colour: 0 }
     light: { sparks: { count: 24, rise: 40, life: 1.2, size: 0.02 } }
+
+  # The arena's showcase (scene content; where each stands and its size are the arena's): between them every part and
+  # every placement.
+
+  # The grand seal: the largest, on the ground in a clearing of its own, 9 rings rising towards its heart, gold script and
+  # lines with blue between, two scripts at two sizes, a dashed line whose dashes don't divide its ring, a star, ticks,
+  # dots and a lotus at the heart.
+  showcase_grand:
+    plane: ground
+    lift: 0
+    wash: { darkness: 0.45, reach: 1.06, softness: 0.6 }
+    colours: [effects.seal_gold, effects.damage]
+    life: { appear: 1.5, appear_curve: ease_out, fade: 0.5, fade_curve: smooth, order: outer_first }
+    layers:
+      - inner: 0.93
+        outer: 1
+        spin: 2
+        opacity: 0.75
+        parts:
+          - { kind: circle, radius: 0.995, width: 0.003 }
+          - { kind: dots, count: 72, radius: 0.965, size: 0.006, colour: 1 }
+          - { kind: circle, radius: 0.935, width: 0.002 }
+      - inner: 0.82
+        outer: 0.92
+        height: 6
+        spin: -3
+        opacity: 0.8
+        parts:
+          - { kind: script, glyphs: runes, count: 48, radius: 0.87, size: 0.06, facing: outward }
+          - { kind: circle, radius: 0.825, width: 0.002, colour: 1 }
+      - inner: 0.75
+        outer: 0.81
+        height: 12
+        spin: 5
+        opacity: 0.75
+        parts:
+          - { kind: ticks, count: 120, radius: 0.79, length: 0.025, width: 0.002 }
+          - { kind: circle, radius: 0.762, width: 0.0025, dash: 7, gap: 4, colour: 1 }
+      - inner: 0.63
+        outer: 0.74
+        height: 20
+        spin: -7
+        opacity: 0.8
+        parts:
+          - { kind: script, glyphs: runes, count: 36, radius: 0.685, size: 0.045, facing: inward, rotation: 5, colour: 1 }
+          - { kind: circle, radius: 0.735, width: 0.002 }
+          - { kind: circle, radius: 0.635, width: 0.002 }
+      - inner: 0
+        outer: 0.62
+        height: 30
+        spin: 9
+        opacity: 0.6
+        parts:
+          - { kind: circle, radius: 0.61, width: 0.003, colour: 1 }
+          - { kind: star, points: 8, step: 3, radius: 0.6, width: 0.0025 }
+      - inner: 0.41
+        outer: 0.5
+        height: 40
+        spin: -12
+        opacity: 0.75
+        parts:
+          - { kind: polygon, sides: 6, radius: 0.49, width: 0.0025, colour: 1 }
+          - { kind: dots, count: 12, radius: 0.45, size: 0.012 }
+      - inner: 0.29
+        outer: 0.39
+        height: 52
+        spin: 15
+        opacity: 0.75
+        parts:
+          - { kind: ticks, count: 36, radius: 0.355, length: 0.04, width: 0.0025, colour: 1 }
+          - { kind: circle, radius: 0.3, width: 0.003 }
+      - inner: 0.17
+        outer: 0.28
+        height: 64
+        spin: -20
+        opacity: 0.8
+        parts:
+          - { kind: circle, radius: 0.27, width: 0.003, dash: 12, gap: 6, colour: 1 }
+          - { kind: star, points: 5, step: 2, radius: 0.25, width: 0.003 }
+      - inner: 0
+        outer: 0.16
+        height: 76
+        spin: 4
+        opacity: 0.85
+        parts:
+          - { kind: circle, radius: 0.15, width: 0.004 }
+    emblem: { sprite: emblem_lotus, size: 0.2, spin: 0, colour: 0 }
+
+  # Standing on its own: two rings round an open middle, with small seals on its outer ring, one turning with it, one
+  # orbiting it and one held still. Its dashes don't divide its ring: one longer run where they begin.
+  showcase_upright:
+    plane: upright
+    lift: 80
+    wash: { darkness: 0.6, reach: 1.08, softness: 0.4 }
+    colours: [effects.damage, effects.seal_gold]
+    life: { appear: 0.8, appear_curve: ease_out, fade: 0.4, fade_curve: smooth, order: inner_first }
+    layers:
+      - inner: 0.78
+        outer: 1
+        spin: 10
+        opacity: 0.9
+        parts:
+          - { kind: circle, radius: 0.98, width: 0.022 }
+          - { kind: script, glyphs: runes, count: 14, radius: 0.89, size: 0.15, facing: outward }
+          - { kind: circle, radius: 0.795, width: 0.016, colour: 1 }
+      - inner: 0.58
+        outer: 0.76
+        spin: -16
+        opacity: 0.85
+        parts:
+          - { kind: ticks, count: 24, radius: 0.69, length: 0.1, width: 0.022 }
+          - { kind: circle, radius: 0.6, width: 0.032, dash: 25, gap: 10 }
+    satellites:
+      - { seal: showcase_small_1, layer: 0, angle: 30, size: 0.3, mount: with_layer }
+      - { seal: showcase_small_3, layer: 0, angle: 150, size: 0.34, mount: orbit, orbit: -12 }
+      - { seal: showcase_small_1, layer: 0, angle: 270, size: 0.26, mount: fixed }
+
+  # Hung overhead: a few bold parts, pillars of light falling from it into the light shadow it casts on the ground, and
+  # sparks rising.
+  showcase_overhead:
+    plane: overhead
+    lift: 180
+    wash: { darkness: 0.7, reach: 1.12, softness: 0.4, shadow: 0.3 }
+    colours: [effects.seal_gold, effects.damage]
+    life: { appear: 1, appear_curve: smooth, fade: 0.5, fade_curve: smooth, order: inner_first }
+    layers:
+      - inner: 0.8
+        outer: 1
+        spin: 6
+        opacity: 0.95
+        parts:
+          - { kind: circle, radius: 0.97, width: 0.035 }
+          - { kind: dots, count: 6, radius: 0.885, size: 0.075, colour: 1 }
+          - { kind: circle, radius: 0.81, width: 0.025 }
+      - inner: 0.42
+        outer: 0.78
+        height: 10
+        spin: -10
+        opacity: 0.95
+        parts:
+          - { kind: script, glyphs: runes, count: 6, radius: 0.6, size: 0.26, facing: inward }
+      - inner: 0
+        outer: 0.4
+        height: 20
+        spin: 14
+        opacity: 0.95
+        parts:
+          - { kind: circle, radius: 0.37, width: 0.03, colour: 1 }
+    emblem: { sprite: emblem_spiral, size: 0.4, spin: -20, colour: 0 }
+    light:
+      colour: 0
+      pillars: { count: 6, height: 180, width: 0.1, fade: 0.3, cycle: 1.8 }
+      sparks: { count: 30, rise: 25, life: 1.6, size: 0.045 }
+
+  # In tiers: square and diamond frames stacked at rising heights, round lines cut off at the frames' sides.
+  showcase_tiers:
+    plane: ground
+    lift: 0
+    wash: { darkness: 0.75, reach: 1.8, softness: 0.6 }
+    colours: [effects.damage, effects.seal_gold]
+    life: { appear: 1.2, appear_curve: ease_out, fade: 0.5, fade_curve: smooth, order: outer_first }
+    layers:
+      - inner: 0.66
+        outer: 1
+        spin: 4
+        opacity: 0.9
+        frame: { sides: 4, rotation: 45 }
+        parts:
+          - { kind: polygon, sides: 4, radius: 0.98, width: 0.04, rotation: 45 }
+          - { kind: circle, radius: 0.82, width: 0.03, colour: 1 }
+          - { kind: dots, count: 4, radius: 0.9, size: 0.08, rotation: 45, colour: 1 }
+          - { kind: polygon, sides: 4, radius: 0.68, width: 0.03, rotation: 45 }
+      - inner: 0.42
+        outer: 0.74
+        height: 18
+        spin: -7
+        opacity: 0.9
+        frame: { sides: 4, rotation: 0 }
+        parts:
+          - { kind: polygon, sides: 4, radius: 0.72, width: 0.04 }
+          - { kind: circle, radius: 0.6, width: 0.026, colour: 1 }
+          - { kind: polygon, sides: 4, radius: 0.44, width: 0.03 }
+      - inner: 0.2
+        outer: 0.48
+        height: 36
+        spin: 10
+        opacity: 0.9
+        frame: { sides: 4, rotation: 45 }
+        parts:
+          - { kind: polygon, sides: 4, radius: 0.46, width: 0.04, rotation: 45 }
+          - { kind: circle, radius: 0.39, width: 0.026, colour: 1 }
+          - { kind: ticks, count: 16, radius: 0.28, length: 0.06, width: 0.026 }
+      - inner: 0
+        outer: 0.26
+        height: 54
+        spin: -14
+        opacity: 0.95
+        frame: { sides: 4, rotation: 0 }
+        parts:
+          - { kind: polygon, sides: 4, radius: 0.25, width: 0.04, colour: 1 }
+          - { kind: circle, radius: 0.12, width: 0.03 }
+
+  # Flames spilling past its outer ring, gold on violet, and shards drifting out from it.
+  showcase_flame:
+    plane: ground
+    lift: 0
+    wash: { darkness: 0.6, reach: 1.35, softness: 0.5 }
+    colours: [effects.seal_violet, effects.seal_gold]
+    life: { appear: 1, appear_curve: ease_out, fade: 0.5, fade_curve: smooth, order: inner_first }
+    layers:
+      - inner: 0.6
+        outer: 0.86
+        spin: -8
+        opacity: 0.95
+        parts:
+          - { kind: circle, radius: 0.85, width: 0.016 }
+          - kind: flourish
+            sprites: [flourish_flame_0, flourish_flame_1, flourish_flame_2]
+            count: 9
+            radius: 0.8
+            size: 0.4
+            spill: 0.4
+            colour: 1
+          - { kind: circle, radius: 0.62, width: 0.012 }
+      - inner: 0.3
+        outer: 0.58
+        height: 6
+        spin: 14
+        opacity: 0.9
+        parts:
+          - { kind: script, glyphs: runes, count: 10, radius: 0.46, size: 0.15, facing: outward }
+          - { kind: circle, radius: 0.32, width: 0.012, colour: 1 }
+      - inner: 0
+        outer: 0.28
+        height: 12
+        spin: -20
+        opacity: 0.95
+        parts:
+          - { kind: polygon, sides: 3, radius: 0.26, width: 0.014 }
+          - { kind: polygon, sides: 3, radius: 0.26, width: 0.014, rotation: 60 }
+    emblem: { sprite: emblem_eye, size: 0.2, spin: 0, colour: 1 }
+    light:
+      colour: 0
+      shards: { count: 28, drift: 10, spin: 90, size: 0.25, thin: 0.3 }
+
+  # The low end: one ring, and three. Upright, as they also stand on the upright seal's ring.
+  showcase_small_1:
+    plane: upright
+    lift: 0
+    wash: { darkness: 0.45, reach: 1.1, softness: 0.4 }
+    colours: [effects.seal_gold]
+    life: { appear: 0.6, appear_curve: ease_out, fade: 0.3, fade_curve: smooth, order: outer_first }
+    layers:
+      - inner: 0
+        outer: 1
+        spin: 20
+        opacity: 0.9
+        parts:
+          - { kind: circle, radius: 0.95, width: 0.05 }
+          - { kind: polygon, sides: 3, radius: 0.78, width: 0.045 }
+          - { kind: dots, count: 3, radius: 0.78, size: 0.14, rotation: 60 }
+
+  showcase_small_3:
+    plane: upright
+    lift: 0
+    wash: { darkness: 0.45, reach: 1.1, softness: 0.4 }
+    colours: [effects.damage, effects.seal_violet]
+    life: { appear: 0.6, appear_curve: ease_out, fade: 0.3, fade_curve: smooth, order: outer_first }
+    layers:
+      - inner: 0.72
+        outer: 1
+        spin: 14
+        opacity: 0.9
+        parts:
+          - { kind: circle, radius: 0.95, width: 0.04 }
+          - { kind: ticks, count: 12, radius: 0.84, length: 0.12, width: 0.03, colour: 1 }
+      - inner: 0.38
+        outer: 0.7
+        spin: -24
+        opacity: 0.9
+        parts:
+          - { kind: star, points: 5, step: 2, radius: 0.66, width: 0.035 }
+      - inner: 0
+        outer: 0.36
+        spin: 30
+        opacity: 0.9
+        parts:
+          - { kind: circle, radius: 0.3, width: 0.045, colour: 1 }
+          - { kind: dots, count: 4, radius: 0.16, size: 0.08 }

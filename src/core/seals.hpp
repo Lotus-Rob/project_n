@@ -234,6 +234,9 @@ struct SealLook {
     f32 washReach = shipped::SEAL_WASH_REACH;
     /// How soft its ink wash's edge is, 0 (hard) to 1.
     f32 washSoftness = shipped::SEAL_WASH_SOFTNESS;
+    /// How dark the shadow an overhead seal casts on the ground under it is, 0 (none) to 1: its wash's shape and ink, which
+    /// shows it hangs in the air. Only an overhead seal has one.
+    f32 washShadow = 0.0F;
     /// Its colours: `element` (the record's element) or a palette colour; `colourCount` of them count.
     std::array<GlowColour, 2> colours{};
     /// How many of `colours` it has: 1 or 2.

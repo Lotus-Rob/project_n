@@ -13,6 +13,7 @@
 #include "core/tick_clock.hpp"
 #include "game/arena.hpp"
 #include "support/manifest.hpp"
+#include "support/seals.hpp"
 
 #include <doctest/doctest.h>
 
@@ -43,7 +44,7 @@ struct Session {
         static_cast<void>(logic.RunBurst({ .ticks = ticks }));
         core::Snapshot* published = handover.TakeState();
         volleys = published->volleys.size();
-        seals = published->seals.size();
+        seals = test::RaisedSeals(*published).size();
         if (published->scene != reported) {
             reported = published->scene;
             handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = published->scene });
@@ -74,7 +75,7 @@ struct Session {
     core::Logic logic{ handover, arena, jobs, saves, replays, replay, NoClock };
     std::optional<core::SceneId> reported = std::nullopt;
     std::size_t volleys = 0; // in flight in the last snapshot published
-    std::size_t seals = 0;   // in play in the last snapshot published
+    std::size_t seals = 0;   // raised in play in the last snapshot published
 };
 
 // A folder of its own, removed when the test ends.

@@ -8,6 +8,7 @@
 #include "game/components.hpp"
 #include "game/npcs.hpp"
 #include "support/manifest.hpp"
+#include "support/seals.hpp"
 
 #include <doctest/doctest.h>
 
@@ -1427,15 +1428,21 @@ bool SameSeal(const core::Seal& lhs, const core::Seal& rhs) {
            lhs.showcase == rhs.showcase;
 }
 
+// How many seals raised in play `arena` publishes at `tick` (test::RaisedSeals()).
+std::size_t RaisedAt(game::Arena& arena, u64 tick) {
+    return test::RaisedSeals(Published(arena, tick)).size();
+}
+
 TEST_CASE("casting the swords raises one seal at the cast point until the last sword leaves") {
     game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
     const core::Vec2 point = ReadyBolt(arena);
     StampedCast(arena, CAST, core::Slot::Special1, point);
     const core::Snapshot cast = Published(arena, CAST);
     REQUIRE(cast.volleys.size() == 1);
-    REQUIRE(cast.seals.size() == 1);
+    const std::vector<core::Seal> raised = test::RaisedSeals(cast);
+    REQUIRE(raised.size() == 1);
     const core::Volley& volley = cast.volleys.front().volley;
-    const core::Seal& seal = cast.seals.front();
+    const core::Seal& seal = raised.front();
     const u64 end = core::LastDepartureTick(volley);
     CHECK(seal.key == core::SealKeyOf("sword_formation"));
     CHECK(seal.size == SWORDS_SEAL_SIZE);
@@ -1449,9 +1456,9 @@ TEST_CASE("casting the swords raises one seal at the cast point until the last s
     CHECK_FALSE(seal.showcase);
 
     Run(arena, CAST + 1, end - 1);
-    CHECK(Published(arena, end - 1).seals.size() == 1); // the last sword still on its ring
+    CHECK(RaisedAt(arena, end - 1) == 1); // the last sword still on its ring
     Run(arena, end, end);
-    CHECK(Published(arena, end).seals.empty());
+    CHECK(RaisedAt(arena, end) == 0);
 }
 
 TEST_CASE("an ability without a seal raises none") {
@@ -1460,7 +1467,8 @@ TEST_CASE("an ability without a seal raises none") {
     StampedCast(arena, CAST, core::Slot::Generator, point);
     const core::Snapshot snapshot = Published(arena, CAST);
     CHECK(snapshot.volleys.size() == 1);
-    CHECK(snapshot.seals.empty());
+    const std::vector<core::Seal> raised = test::RaisedSeals(snapshot);
+    CHECK(raised.empty());
 }
 
 TEST_CASE("a seal survives a save and load mid-formation") {
@@ -1468,8 +1476,9 @@ TEST_CASE("a seal survives a save and load mid-formation") {
     const core::Vec2 point = ReadyBolt(arena);
     StampedCast(arena, CAST, core::Slot::Special1, point);
     const core::Snapshot cast = Published(arena, CAST);
-    REQUIRE(cast.seals.size() == 1);
-    const core::Seal raised = cast.seals.front();
+    const std::vector<core::Seal> raisedAtCast = test::RaisedSeals(cast);
+    REQUIRE(raisedAtCast.size() == 1);
+    const core::Seal& raised = raisedAtCast.front();
     const u64 savedAt = CAST + ((raised.endTick - CAST) / 2);
     Run(arena, CAST + 1, savedAt);
     std::vector<std::byte> bytes;
@@ -1481,13 +1490,14 @@ TEST_CASE("a seal survives a save and load mid-formation") {
     REQUIRE(loaded.Load(reader, savedAt));
     CHECK(loaded.StateHash() == arena.StateHash());
     const core::Snapshot snapshot = Published(loaded, savedAt);
-    REQUIRE(snapshot.seals.size() == 1);
-    const bool same = SameSeal(snapshot.seals.front(), raised);
+    const std::vector<core::Seal> raisedLoaded = test::RaisedSeals(snapshot);
+    REQUIRE(raisedLoaded.size() == 1);
+    const bool same = SameSeal(raisedLoaded.front(), raised);
     CHECK(same);
     Run(loaded, savedAt + 1, raised.endTick - 1);
-    CHECK(Published(loaded, raised.endTick - 1).seals.size() == 1);
+    CHECK(RaisedAt(loaded, raised.endTick - 1) == 1);
     Run(loaded, raised.endTick, raised.endTick);
-    CHECK(Published(loaded, raised.endTick).seals.empty());
+    CHECK(RaisedAt(loaded, raised.endTick) == 0);
 }
 
 TEST_CASE("a scene change ends every seal") {
@@ -1496,11 +1506,11 @@ TEST_CASE("a scene change ends every seal") {
     const core::Vec2 point = ReadyBolt(arena);
     StampedCast(arena, CAST, core::Slot::Special1, point);
     Run(arena, CAST + 1, CHANGE - 1);
-    REQUIRE(Published(arena, CHANGE - 1).seals.size() == 1);
+    REQUIRE(RaisedAt(arena, CHANGE - 1) == 1);
     const std::array<core::Action, 1> change{ { { .kind = core::ActionKind::CycleScene } } };
     std::vector<core::Event> events;
     arena.Tick(At(CHANGE), { .actions = change, .held = {} }, events);
-    CHECK(Published(arena, CHANGE).seals.empty());
+    CHECK(RaisedAt(arena, CHANGE) == 0);
 }
 
 TEST_CASE("a load ends every seal its save doesn't hold") {
@@ -1512,10 +1522,10 @@ TEST_CASE("a load ends every seal its save doesn't hold") {
     arena.Save(writer); // before the cast
     StampedCast(arena, CAST, core::Slot::Special1, point);
     Run(arena, CAST + 1, LOADED);
-    REQUIRE(Published(arena, LOADED).seals.size() == 1);
+    REQUIRE(RaisedAt(arena, LOADED) == 1);
     core::Reader reader{ bytes };
     REQUIRE(arena.Load(reader, LOADED));
-    CHECK(Published(arena, LOADED).seals.empty());
+    CHECK(RaisedAt(arena, LOADED) == 0);
 }
 
 TEST_CASE("afflictions are valid with no negative damage") {

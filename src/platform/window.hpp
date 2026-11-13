@@ -66,6 +66,7 @@ enum class InputCode : u8 {
     KeyF5,
     KeyF6,
     KeyF7,
+    KeyF8,
     KeyF9,
     KeyF10,
     MouseLeft,

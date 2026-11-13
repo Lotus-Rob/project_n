@@ -23,7 +23,6 @@
 #include "core/tick_clock.hpp"
 #include "core/ui_colours.hpp"
 #include "core/volley.hpp"
-#include "data/seals.hpp"
 #include "data/strings.hpp"
 #include "game/arena.hpp"
 #include "game/combat.hpp"
@@ -37,6 +36,7 @@
 #include "platform/paths.hpp"
 #include "platform/window.hpp"
 #include "support/manifest.hpp"
+#include "support/seals.hpp"
 
 #include <doctest/doctest.h>
 
@@ -193,7 +193,7 @@ void CheckAgainstReference(const View& view) {
 
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
-    gfx::View shown{ .alpha = view.alpha, .camera = { .zoom = view.zoom } };
+    gfx::View shown{ .alpha = view.alpha, .camera = { .zoom = view.zoom }, .showcase = false };
     if (view.outlines) {
         const auto player = std::ranges::find(snapshot.ids, arena.Player());
         REQUIRE(player != snapshot.ids.end());
@@ -256,7 +256,7 @@ TEST_CASE("a fox dissolving, at half its progress") {
     const core::Snapshot snapshot = Published(arena, jobs, SHOWN_AT);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
-    const gfx::View view{ .camera = { .centre = centre, .zoom = gfx::MAX_ZOOM } };
+    const gfx::View view{ .camera = { .centre = centre, .zoom = gfx::MAX_ZOOM }, .showcase = false };
     CompareWithReference(Captured(renderer, snapshot, view, jobs), "fox_dissolving");
 }
 
@@ -290,7 +290,7 @@ core::Snapshot CastAndWait(core::Slot slot, u64 after, core::Jobs& jobs) {
     return snapshot;
 }
 
-void CheckVolley(std::string_view name, u64 after, const gfx::View& view = {}) {
+void CheckVolley(std::string_view name, u64 after, const gfx::View& view = { .showcase = false }) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
     const core::Snapshot snapshot = CastAndWait(core::Slot::Special1, after, jobs);
@@ -327,7 +327,7 @@ TEST_CASE("the flying swords plunging, close up: the foxes they flew at died, so
         const auto dead = [](const core::VolleyTarget& target) { return target.diedTick != 0; };
         REQUIRE(std::ranges::all_of(snapshot.volleyTargets, dead));
     }
-    CheckVolley("volley_plunge", after, { .camera = { .centre = AMONG_THE_FOXES, .zoom = gfx::MAX_ZOOM } });
+    CheckVolley("volley_plunge", after, { .camera = { .centre = AMONG_THE_FOXES, .zoom = gfx::MAX_ZOOM }, .showcase = false });
 }
 
 TEST_CASE("a fire bolt in flight, close up: its burn's colour shows on the pale ground") {
@@ -344,7 +344,7 @@ TEST_CASE("a fire bolt in flight, close up: its burn's colour shows on the pale 
     REQUIRE(pose.shown > 0.0F);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
-    const gfx::View view{ .camera = { .centre = pose.position, .zoom = gfx::MAX_ZOOM } };
+    const gfx::View view{ .camera = { .centre = pose.position, .zoom = gfx::MAX_ZOOM }, .showcase = false };
     CompareWithReference(Captured(renderer, snapshot, view, jobs), "bolt_burn");
 }
 
@@ -358,7 +358,7 @@ TEST_CASE("the poison lance's burst, close up: a flash at the point in the poiso
     REQUIRE(snapshot.flashes.size() == 1);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
-    const gfx::View view{ .camera = { .centre = AMONG_THE_FOXES, .zoom = gfx::MAX_ZOOM } };
+    const gfx::View view{ .camera = { .centre = AMONG_THE_FOXES, .zoom = gfx::MAX_ZOOM }, .showcase = false };
     CompareWithReference(Captured(renderer, snapshot, view, jobs), "lance_burst");
 }
 
@@ -370,7 +370,7 @@ TEST_CASE("new effects change the next picture of the same snapshot, and the shi
     REQUIRE(snapshot.flashes.size() == 1);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
-    const gfx::View view{ .camera = { .centre = AMONG_THE_FOXES, .zoom = gfx::MAX_ZOOM } };
+    const gfx::View view{ .camera = { .centre = AMONG_THE_FOXES, .zoom = gfx::MAX_ZOOM }, .showcase = false };
     const gfx::Image shipped = Captured(renderer, snapshot, view, jobs);
     core::Effects bigger;
     bigger.poisonLance.startScale *= TIMES;
@@ -386,23 +386,15 @@ TEST_CASE("new effects change the next picture of the same snapshot, and the shi
     constexpr u64 SINCE_SWORDS = 30; // half a second: the first rings stand and their first swords leave
     constexpr f32 SMALLER_AURA = 4.0F;
     const core::Snapshot swords = CastAndWait(core::Slot::Special1, SINCE_SWORDS, jobs);
-    const gfx::Image auraShipped = Captured(renderer, swords, {}, jobs);
+    const gfx::Image auraShipped = Captured(renderer, swords, { .showcase = false }, jobs);
     core::Effects smaller;
     smaller.glows.at(std::to_underlying(core::GlowRole::FlyingSwords)).size = SMALLER_AURA;
     renderer.SetEffects(smaller);
-    const gfx::Image auraChanged = Captured(renderer, swords, {}, jobs);
+    const gfx::Image auraChanged = Captured(renderer, swords, { .showcase = false }, jobs);
     CHECK(auraChanged.rgba != auraShipped.rgba);
     renderer.SetEffects(core::Effects{});
-    const gfx::Image auraRestored = Captured(renderer, swords, {}, jobs);
+    const gfx::Image auraRestored = Captured(renderer, swords, { .showcase = false }, jobs);
     CHECK(auraRestored.rgba == auraShipped.rgba);
-}
-
-// The shipped seals (assets/data/seals.yaml), read against the shipped manifest.
-core::Seals ShippedSeals() {
-    std::expected<core::Seals, core::Error> seals = data::LoadSeals(Assets() / "data", *test::TestManifest());
-    const std::string sealsWhy = seals.error_or(core::Error{}).message;
-    REQUIRE_MESSAGE(seals.has_value(), sealsWhy);
-    return std::move(*seals);
 }
 
 // The seal the flying swords raise, as their cast raises it: in the damage element, its outer radius `size`, raised at
@@ -439,8 +431,8 @@ TEST_CASE("a seal on the pale ground: coloured lines glowing on their wash") {
     const core::Snapshot snapshot = ArenaWithSwordSeal(jobs);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
-    renderer.SetSeals(ShippedSeals());
-    const gfx::View view{ .camera = { .centre = AMONG_THE_FOXES, .zoom = gfx::MAX_ZOOM } };
+    renderer.SetSeals(test::ShippedSeals());
+    const gfx::View view{ .camera = { .centre = AMONG_THE_FOXES, .zoom = gfx::MAX_ZOOM }, .showcase = false };
     CompareWithReference(Captured(renderer, snapshot, view, jobs), "seal_ground");
 }
 
@@ -451,9 +443,9 @@ TEST_CASE("new seals change the next picture of the same snapshot") {
     const core::Snapshot snapshot = ArenaWithSwordSeal(jobs);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
-    const core::Seals shipped = ShippedSeals();
+    const core::Seals shipped = test::ShippedSeals();
     renderer.SetSeals(shipped);
-    const gfx::View view{ .camera = { .centre = AMONG_THE_FOXES, .zoom = gfx::MAX_ZOOM } };
+    const gfx::View view{ .camera = { .centre = AMONG_THE_FOXES, .zoom = gfx::MAX_ZOOM }, .showcase = false };
     const gfx::Image drawn = Captured(renderer, snapshot, view, jobs);
     // A part's width, which only a new pack of the table carries to the GPU.
     core::Seals wider = shipped;
@@ -493,7 +485,7 @@ TEST_CASE("an overhead seal's light on the pale ground: pillars falling from it,
     core::Seal seal = SwordSeal(AMONG_THE_FOXES + BELOW, SIZE, SEAL_TICK - SINCE_RAISED);
     seal.key = core::SealKeyOf(LIT);
     snapshot.seals.push_back(seal);
-    core::Seals seals = ShippedSeals();
+    core::Seals seals = test::ShippedSeals();
     const core::SealLook* swords = seals.Find(core::SealKeyOf(SWORD_SEAL));
     REQUIRE(swords != nullptr);
     core::SealLook look = *swords;
@@ -505,8 +497,69 @@ TEST_CASE("an overhead seal's light on the pale ground: pillars falling from it,
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
     renderer.SetSeals(seals);
-    const gfx::View view{ .camera = { .centre = AMONG_THE_FOXES, .zoom = gfx::MAX_ZOOM } };
+    const gfx::View view{ .camera = { .centre = AMONG_THE_FOXES, .zoom = gfx::MAX_ZOOM }, .showcase = false };
     CompareWithReference(Captured(renderer, snapshot, view, jobs), "seal_light");
+}
+
+// The arena at rest at SEAL_TICK with its showcase seals, in the shipped looks, shown by `view` (the showcase drawn).
+void CheckShowcase(std::string_view name, const gfx::View& view) {
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    game::Arena arena(test::TestManifest());
+    const core::Snapshot snapshot = Published(arena, jobs, SEAL_TICK);
+    const bool shown = std::ranges::any_of(snapshot.seals, &core::Seal::showcase);
+    REQUIRE(shown);
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
+    renderer.SetSeals(test::ShippedSeals());
+    CompareWithReference(Captured(renderer, snapshot, view, jobs), name);
+}
+
+TEST_CASE("the arena's showcase at zoom 1: seals of every kind and placement round the fight") {
+    CheckShowcase("seal_showcase", {});
+}
+
+// Close up, each of the showcase's seals (game/arena.cpp's SHOWCASE) is in one of these.
+TEST_CASE("the showcase close up: the overhead seal's pillars falling into its shadow, and the small seals of 1 and 3 rings") {
+    constexpr core::Vec2 OVERHEAD_AND_SMALL{ .x = 970.0F, .y = 270.0F };
+    CheckShowcase("seal_showcase_above", { .camera = { .centre = OVERHEAD_AND_SMALL, .zoom = gfx::MAX_ZOOM } });
+}
+
+TEST_CASE("the showcase close up: the grand seal and the upright seal with its satellites") {
+    constexpr core::Vec2 GRAND_AND_UPRIGHT{ .x = 480.0F, .y = 800.0F };
+    CheckShowcase("seal_showcase_left", { .camera = { .centre = GRAND_AND_UPRIGHT, .zoom = gfx::MAX_ZOOM } });
+}
+
+TEST_CASE("the showcase close up: the tiers of square and diamond frames") {
+    constexpr core::Vec2 TIERS{ .x = 975.0F, .y = 810.0F };
+    CheckShowcase("seal_showcase_tiers", { .camera = { .centre = TIERS, .zoom = gfx::MAX_ZOOM } });
+}
+
+TEST_CASE("the showcase close up: the flames spilling past their ring, and the drifting shards") {
+    constexpr core::Vec2 FLAME{ .x = 1440.0F, .y = 810.0F };
+    CheckShowcase("seal_showcase_flame", { .camera = { .centre = FLAME, .zoom = gfx::MAX_ZOOM } });
+}
+
+TEST_CASE("the swords' seal mid-formation, under their rings") {
+    // A copy: the game data BuiltInData() returns is a temporary, gone at the end of this line.
+    const core::VolleyShape swords = game::BuiltInData().abilities.Of(core::AbilityKind::FlyingSwords).volley;
+    // As volley_ring: the third ring halfway through fading in round the first two, which stand still; the seal has just
+    // finished appearing under them.
+    constexpr u64 THIRD_WAVE = 2;
+    const u64 forming = (THIRD_WAVE * swords.waveGapTicks) + ((swords.staggerTicks + swords.outTicks) / 2);
+    REQUIRE(forming < swords.outTicks + swords.holdTicks);
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    const core::Snapshot snapshot = CastAndWait(core::Slot::Special1, forming, jobs);
+    const std::vector<core::Seal> raised = test::RaisedSeals(snapshot);
+    REQUIRE(raised.size() == 1);
+    const core::Vec2 point = raised.front().point; // at the rings' centre, under the caster
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
+    renderer.SetSeals(test::ShippedSeals());
+    constexpr f32 WHOLE_SEAL = 1.5F; // close, with the whole seal and its rings in the picture
+    const gfx::View view{ .camera = { .centre = point, .zoom = WHOLE_SEAL }, .showcase = false };
+    CompareWithReference(Captured(renderer, snapshot, view, jobs), "seal_swords");
 }
 
 TEST_CASE("the HUD at zoom 1, one slot cooling down") {
@@ -525,7 +578,8 @@ TEST_CASE("the HUD at zoom 1, one slot cooling down") {
     );
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
-    const gfx::Image drawn = Captured(renderer, snapshot, {}, jobs, WIDTH, HEIGHT, {}, { .lines = lines, .bars = bars });
+    const gfx::Image drawn =
+        Captured(renderer, snapshot, { .showcase = false }, jobs, WIDTH, HEIGHT, {}, { .lines = lines, .bars = bars });
     CompareWithReference(drawn, "hud_zoom_one");
 }
 
@@ -549,7 +603,7 @@ void CheckGlows(std::string_view name, f32 zoom, core::Vec2 centre) {
     const core::Snapshot snapshot = Published(arena, jobs, GLOW_TICK);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
-    const gfx::View view{ .camera = { .centre = centre, .zoom = zoom } };
+    const gfx::View view{ .camera = { .centre = centre, .zoom = zoom }, .showcase = false };
     CompareWithReference(Captured(renderer, snapshot, view, jobs), name);
 }
 
@@ -640,7 +694,7 @@ void CheckNumbers(std::string_view name, f32 zoom, bool bare = false) {
         renderer.SetTextOptions({ .outline = false, .shadow = false });
     }
     const std::vector<core::TextItem> numbers = NumberGrid(bare);
-    const gfx::View view{ .camera = { .zoom = zoom } };
+    const gfx::View view{ .camera = { .zoom = zoom }, .showcase = false };
     CompareWithReference(Captured(renderer, snapshot, view, jobs, WIDTH, HEIGHT, numbers), name);
 }
 
@@ -702,7 +756,7 @@ void CheckRecoloured(std::string_view name, bool bare) {
     }
     const auto player = std::ranges::find(snapshot.ids, arena.Player());
     REQUIRE(player != snapshot.ids.end());
-    const gfx::View view{ .outlined = static_cast<std::size_t>(player - snapshot.ids.begin()) };
+    const gfx::View view{ .outlined = static_cast<std::size_t>(player - snapshot.ids.begin()), .showcase = false };
     const std::vector<core::TextItem> numbers = NumberGrid(bare, garish);
     CompareWithReference(Captured(renderer, snapshot, view, jobs, WIDTH, HEIGHT, numbers), name);
 }
@@ -750,7 +804,7 @@ TEST_CASE("a number on a creature too small to see starts from its label") {
     } };
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
-    CompareWithReference(Captured(renderer, snapshot, {}, jobs, WIDTH, HEIGHT, numbers), "numbers_label");
+    CompareWithReference(Captured(renderer, snapshot, { .showcase = false }, jobs, WIDTH, HEIGHT, numbers), "numbers_label");
 }
 
 // What a label is measured over: the backdrop's flat dark, where its light fill is most of its ink, or a flat pale
@@ -897,7 +951,7 @@ TEST_CASE("a label's ink is the same at sub-pixel camera offsets, over a dark an
         std::vector<f64> totals;
         for (const f32 offsetX : OFFSETS) {
             for (const f32 offsetY : OFFSETS) {
-                gfx::View view{ .camera = centred };
+                gfx::View view{ .camera = centred, .showcase = false };
                 view.camera.centre = view.camera.centre + (core::Vec2{ .x = offsetX, .y = offsetY } * worldPerPixel);
                 const gfx::Image with = Captured(renderer, scene.with, view, jobs);
                 const gfx::Image without = Captured(renderer, scene.without, view, jobs);
@@ -929,7 +983,7 @@ TEST_CASE("a label following its creature doesn't step, over a dark and a pale g
                          static_cast<f64>(gfx::PixelsPerUnit(camera, WIDTH, HEIGHT));
         std::vector<f64> centres;
         for (const f64 alpha : ALPHAS) {
-            const gfx::View view{ .alpha = alpha, .camera = camera };
+            const gfx::View view{ .alpha = alpha, .camera = camera, .showcase = false };
             const gfx::Image with = Captured(renderer, scene.with, view, jobs);
             const gfx::Image without = Captured(renderer, scene.without, view, jobs);
             centres.push_back(InkOf(scene, view, with, without).centreX);
@@ -1019,7 +1073,7 @@ f64 GlowAmount(GlowRig& rig, const GlowShot& shot) {
     if (shot.ground) {
         under.push_back(core::MakeInstance(*test::TestManifest(), { .sprite = core::atlas::SpriteId::Ground }));
     }
-    const gfx::View view{ .alpha = shot.alpha, .camera = { .centre = prop.current, .zoom = 1.0F } };
+    const gfx::View view{ .alpha = shot.alpha, .camera = { .centre = prop.current, .zoom = 1.0F }, .showcase = false };
     const auto capture = [&](std::optional<core::Instance> top) {
         std::vector<core::Instance> drawn = under;
         if (top) {
@@ -1221,7 +1275,7 @@ TEST_CASE("a screen-wide seal at the smallest zoom: no shimmer") {
     core::Jobs jobs;
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, ArenaScene(), jobs);
-    const core::Seals shipped = ShippedSeals();
+    const core::Seals shipped = test::ShippedSeals();
     // Over the backdrop, the seal's light alone, without its wash: there it adds without saturating.
     core::Seals unwashed = shipped;
     for (auto& [key, look] : unwashed.looks) {

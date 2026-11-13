@@ -590,12 +590,17 @@ std::expected<void, core::Error> ReadPlainKeys(Fields& fields, core::SealLook& l
     fields.Named("plane", PLANE_NAMES, look.plane);
     fields.Read("lift", look.lift, WORLD);
     if (const YAML::Node wash = fields.Map()["wash"]; wash && !fields.Failed()) {
-        Fields ink(wash, name + "'s wash", { "darkness", "reach", "softness" }, context.warnings);
+        Fields ink(wash, name + "'s wash", { "darkness", "reach", "softness", "shadow" }, context.warnings);
         ink.Read("darkness", look.washDarkness, internal::FRACTION);
         ink.Read("reach", look.washReach, WASH_REACH);
         ink.Read("softness", look.washSoftness, internal::FRACTION);
+        ink.Read("shadow", look.washShadow, internal::FRACTION);
         if (const std::expected<void, core::Error> read = ink.Result(); !read) {
             return read;
+        }
+        // A seal on the ground has no ground under it to shade, and an upright one no flat shape to cast.
+        if (look.washShadow > 0.0F && look.plane != core::SealPlane::Overhead && !fields.Failed()) {
+            return RefuseSeals(wash["shadow"], std::format("{}'s wash's shadow is only for an overhead seal", name));
         }
     }
     if (const YAML::Node life = fields.Map()["life"]; life && !fields.Failed()) {

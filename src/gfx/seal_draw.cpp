@@ -564,6 +564,30 @@ SealPackedLook SealPackLook(
     return packed;
 }
 
+// Adds the shadow an overhead seal casts on the ground under it, `opacity` strong: its wash's quad and ink, laid on the
+// ground, with a layer record of its own for its strength, drawn with the ground seals' washes.
+void SealAddShadow(
+    SealDrawing& out,
+    const core::Seal& seal,
+    const core::SealLook& look,
+    const SealGpuLayer& shared,
+    f32 opacity,
+    f32 viewRatio
+) {
+    const SealPlace ground{ .seal = &seal, .plane = core::SealPlane::Ground, .lift = 0.0F, .viewRatio = viewRatio };
+    SealGpuLayer shadow = SealLayerAt(ground, 0.0F, shared);
+    shadow.washOpacity = opacity;
+    const auto index = static_cast<u32>(out.layers.size());
+    out.layers.push_back(shadow);
+    const f32 reach = look.washReach;
+    const std::array<core::Vec2, QUAD_VERTICES> corners{
+        { { .x = -reach, .y = -reach }, { .x = reach, .y = -reach }, { .x = -reach, .y = reach }, { .x = reach, .y = reach } }
+    };
+    for (const core::Vec2 corner : corners) {
+        out.groundWash.push_back({ .position = ground.At(corner, 0.0F), .local = corner, .layer = index });
+    }
+}
+
 // Adds one seal by its look, packed as `packed`: its layers and their bands, its emblem, its wash and its light.
 void SealDrawLook(
     SealFrame& frame,
@@ -625,6 +649,9 @@ void SealDrawLook(
         for (const core::Vec2 corner : corners) {
             wash.push_back({ .position = place.At(corner, 0.0F), .local = corner, .layer = firstLayer });
         }
+    }
+    if (look.plane == core::SealPlane::Overhead && look.washShadow > 0.0F) {
+        SealAddShadow(out, seal, look, shared, std::min(look.washShadow * sealLife, cap), looks.viewRatio);
     }
     SealAddLight(
         out,

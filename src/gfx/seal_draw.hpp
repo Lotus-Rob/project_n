@@ -17,6 +17,7 @@
 #include "core/ui_colours.hpp"
 #include "core/vec2.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <optional>
@@ -31,6 +32,19 @@ inline constexpr std::size_t MAX_SEALS_DRAWN = 64;
 static_assert(core::MAX_SEAL_SATELLITES < MAX_SEALS_DRAWN, "a seal and its satellites fit one frame");
 /// The quads a round layer's band takes round its ring.
 inline constexpr u32 SEAL_BAND_SEGMENTS = 48;
+/// The layer records a drawn seal takes besides its layers': its emblem's and an overhead seal's shadow's.
+inline constexpr u32 SEAL_EXTRA_LAYERS = 2;
+/// The quads a drawn seal takes besides its layers' bands: its wash's and an overhead seal's shadow's (its emblem's band is
+/// SEAL_BAND_SEGMENTS more).
+inline constexpr u32 SEAL_EXTRA_QUADS = 2;
+/// The most layers a frame's seals have, which the renderer's layer buffer holds: every drawn seal's, with its emblem's and
+/// its shadow's.
+inline constexpr u32 MAX_SEAL_LAYERS_DRAWN = static_cast<u32>(MAX_SEALS_DRAWN) * (core::MAX_SEAL_LAYERS + SEAL_EXTRA_LAYERS);
+/// The most quads a frame's seals take, which the renderer's vertex buffer holds: for every drawn seal, its layers' bands
+/// (each round or a frame of at most core::MAX_SEAL_FRAME_SIDES sides), its emblem's, its wash and its shadow.
+inline constexpr u32 MAX_SEAL_QUADS =
+    static_cast<u32>(MAX_SEALS_DRAWN) * ((core::MAX_SEAL_LAYERS * std::max(SEAL_BAND_SEGMENTS, core::MAX_SEAL_FRAME_SIDES)) +
+                                         SEAL_BAND_SEGMENTS + SEAL_EXTRA_QUADS);
 /// The room a band leaves past its parts for their anti-aliased edges (half a line and a pixel's filter at the art's sizes),
 /// a fraction of the seal's size.
 inline constexpr f32 SEAL_ANTIALIAS_ALLOWANCE = 0.018F;
@@ -404,7 +418,8 @@ struct SealPack {
 /// renderer keeps one and clears it each frame, so its buffers keep their capacity.
 struct SealDrawing {
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    /// The ground seals' washes: one quad a seal, drawn with normal premultiplied blending.
+    /// The ground seals' washes, one quad a seal, and the shadows overhead seals cast on the ground
+    /// (core::SealLook::washShadow), one quad each: drawn with normal premultiplied blending.
     std::vector<SealVertex> groundWash{};
     /// The ground seals' bands: their layers' quads, drawn additively over the washes.
     std::vector<SealVertex> groundLines{};
@@ -412,7 +427,7 @@ struct SealDrawing {
     std::vector<SealVertex> aboveWash{};
     /// The upright and overhead seals' bands.
     std::vector<SealVertex> aboveLines{};
-    /// Every drawn seal's layers, each seal's in its look's order, then its emblem's.
+    /// Every drawn seal's layers, each seal's in its look's order, then its emblem's, then its shadow's.
     std::vector<SealGpuLayer> layers{};
     /// One record for each drawn ground seal with light, its particles counted from the list's first: drawn after the ground
     /// seals' bands.
@@ -440,7 +455,9 @@ struct SealDrawing {
 /// its band: an annulus of SEAL_BAND_SEGMENTS quads from SealBandMargin() of `looks`' halo inside its inner radius (or its
 /// centre) to that margin past its outer (the quads' outer edges round the circle, and further by its flourishes' spill), or
 /// its frame's band between two regular polygons with their corners there; each seal its emblem (a layer of its own, at its
-/// innermost layer's height and life), its wash's quad to its reach and its light's record (in its plane's list, its
+/// innermost layer's height and life), its wash's quad to its reach (and an overhead seal's shadow: its wash's quad laid on
+/// the ground under it, in `out.groundWash` with a layer record of its own, as dark as its shadow times its life, capped as
+/// its wash is) and its light's record (in its plane's list, its
 /// particles cut to core::MAX_SEAL_PARTICLES, the rest counted in `out.droppedParticles`). Seals past MAX_SEALS_DRAWN are
 /// counted in `out.droppedSeals`, not drawn; a seal whose size isn't a normal f32 in `out.tinySeals`, with its satellites. A
 /// colour slot naming `element` takes the record's element's effect colour, which for a seal without one (`hasElement` false:

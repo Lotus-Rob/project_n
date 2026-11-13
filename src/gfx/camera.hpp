@@ -46,6 +46,9 @@ struct View {
     /// while the player zooms or hovers a paused game; damage numbers are timed by the render clock before they reach the
     /// renderer, and freeze with the game.
     f64 frameClock = 0.0;
+    /// Whether it draws the seals a scene shows as its content (core::Seal::showcase): the arena's showcase, which a debug
+    /// key hides and shows. Seals raised in play draw either way.
+    bool showcase = true;
 };
 
 /// `zoom` after `notches` of the mouse wheel: each one multiplies it by the same factor, and the
