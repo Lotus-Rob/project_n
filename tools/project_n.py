@@ -911,10 +911,123 @@ def tidy_command(bdir, unit):
     return ["clang-tidy", "--quiet", "-p", bdir, unit]
 
 
-def tidy_one(bdir, unit):
-    """(output, return code) of clang-tidy on one unit, its diagnostics and errors together."""
+def tidy_cache_dir(bdir):
+    """Where lint keeps each unit's clang-tidy result: <BUILD_CACHE_ENV>/tidy in CI (its object cache's steps save it),
+    else the build folder's .tidy-cache; None on a tag, which keeps nothing."""
+    if tag_ref():
+        return None
+    root = build_cache_root()
+    return root / "tidy" if root else ROOT / bdir / ".tidy-cache"
+
+
+def compile_entries(bdir, unit):
+    """The compile database's entries for `unit`: clang-tidy runs each one."""
+    compdb = ROOT / bdir / "compile_commands.json"
+    if not compdb.exists():
+        return []
+    target = os.path.normpath(ROOT / unit)
+    return [e for e in json.loads(compdb.read_text(encoding="utf-8"))
+            if os.path.normpath(os.path.join(ROOT, e["directory"], e["file"])) == target]
+
+
+def preprocess_command(entry):
+    """(flags, command) for one compile database entry: its command without `-c`, `-o <object>` and the input, then
+    that with `-E` and the input, which writes the preprocessed text to stdout."""
+    args, flags = list(entry["arguments"]), []
+    i = 1
+    while i < len(args):
+        if args[i] == "-o":
+            i += 2
+            continue
+        if args[i] != "-c" and args[i] != entry["file"]:
+            flags.append(args[i])
+        i += 1
+    flags.insert(0, args[0])
+    return flags, [*flags, "-E", entry["file"]]
+
+
+def preprocessed(entry):
+    """The entry's preprocessed text, or None when preprocessing fails (the unit is then linted uncached)."""
+    result = subprocess.run(preprocess_command(entry)[1], check=False, cwd=entry["directory"], stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL)
+    return result.stdout if result.returncode == 0 else None
+
+
+def tidy_version():
+    return capture(["clang-tidy", "--version"])
+
+
+def tidy_configs():
+    """(path, contents) of every .clang-tidy in the repository, untracked ones too, sorted by path."""
+    listed = capture(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ":(glob)**/.clang-tidy"])
+    return [(p, (ROOT / p).read_bytes()) for p in sorted(set(listed.split("\0"))) if p and (ROOT / p).is_file()]
+
+
+# A line marker in preprocessed text after a newline: `# <line> "<file>"`, the file in C string escapes. Searched from
+# the literal newline, not a MULTILINE `^`, which is twice as slow over a unit's ~5 MB.
+LINE_MARKER_RE = re.compile(rb'\n# \d+ "((?:[^"\\\n]|\\.)*)"')
+
+
+def digest(pieces):
+    """SHA-256 of `pieces` (bytes or str), each length-prefixed so no two run together into one."""
+    h = hashlib.sha256()
+    for piece in pieces:
+        data = piece if isinstance(piece, bytes) else piece.encode("utf-8")
+        h.update(len(data).to_bytes(8, "little") + data)
+    return h.hexdigest()
+
+
+def entry_digest(entry):
+    """Digest of one compile database entry's part of tidy_key, or None when it fails to preprocess or its markers don't
+    name its own source as a file of ours (ROOT spelt otherwise: a symlink, a bind mount), which would leave every file
+    of ours, and so a NOLINT edit, out of the key."""
+    text = preprocessed(entry)
+    if text is None:
+        return None
+    root = os.path.normpath(ROOT)
+    names = {re.sub(rb"\\(.)", rb"\1", m[1]).decode("utf-8", "replace") for m in LINE_MARKER_RE.finditer(b"\n" + text)}
+    paths = {os.path.normpath(os.path.join(entry["directory"], n)) for n in names}
+    ours = sorted(p for p in paths if p.startswith(root + os.sep) and os.path.isfile(p))
+    if os.path.normpath(os.path.join(root, entry["directory"], entry["file"])) not in ours:
+        return None
+    return digest([json.dumps(preprocess_command(entry)[0]), text,
+                   *itertools.chain.from_iterable((Path(p).relative_to(root).as_posix(), Path(p).read_bytes()) for p in ours)])
+
+
+def tidy_key(bdir, unit):
+    """SHA-256 of all a unit's clang-tidy result depends on: per compile database entry (in any order: XMake exports a
+    file two targets compile either way round), its flags (without the input and output paths) and preprocessed text,
+    plus the contents of each of our files that text names (comments, NOLINT included, and the macro definitions and
+    spacing preprocessing drops); clang-tidy's version and the arguments lint passes it (tidy_command, with placeholders
+    for the build folder and the unit, so the folder's location is no input); every .clang-tidy. None when the unit has
+    no entry or fails to preprocess: it is then linted uncached."""
+    entries = [entry_digest(e) for e in compile_entries(bdir, unit)]
+    if not entries or None in entries:
+        return None
+    command = json.dumps([str(a) for a in tidy_command("<build>", "<unit>")])
+    return digest([*sorted(entries), tidy_version(), command, *itertools.chain.from_iterable(tidy_configs())])
+
+
+def tidy_one(bdir, unit, cache=None):
+    """(output, return code) of clang-tidy on one unit, its diagnostics and errors together. With `cache` (a folder), a
+    result kept under the unit's tidy_key is returned instead, unless main or a tag must lint cold (cold_ref); a fresh
+    result is kept there (never on a tag, nor a crash, which may be the machine's)."""
+    key = tidy_key(bdir, unit) if cache else None
+    stored = Path(cache, f"{key}.json") if key else None
+    if stored and not cold_ref():
+        try:
+            kept = json.loads(stored.read_text(encoding="utf-8"))
+            if isinstance(kept["output"], str) and isinstance(kept["returncode"], int):
+                return kept["output"], kept["returncode"]
+        except (OSError, ValueError, KeyError, TypeError):
+            pass  # absent or corrupt: a miss
     result = subprocess.run(resolve(tidy_command(bdir, unit)), check=False, cwd=ROOT, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, encoding="utf-8", errors="replace")
+    if stored and not tag_ref() and result.returncode in (0, 1):
+        stored.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=stored.parent, delete=False, suffix=".tmp") as f:
+            json.dump({"output": result.stdout, "returncode": result.returncode}, f)
+        os.replace(f.name, stored)  # whole or not at all: a run cut short leaves no half-written result
     return result.stdout, result.returncode
 
 
@@ -935,16 +1048,20 @@ def tidy_blocks(output):
     return [(output[a:b], a in starts) for a, b in itertools.pairwise(bounds) if a < b]
 
 
-def tidy_units(bdir, units, fix):
+def tidy_units(bdir, units, fix, cache=None):
     """(failed, ignored findings) of clang-tidy over `units`, one process per unit across all cores, each judged by
-    tidy_verdict: run together, one unit's ignored finding would hide another's error. A finding prints, and an ignored
-    one counts, once however many units report it. With `fix`, the units that failed get one serial clang-tidy --fix afterwards."""
+    tidy_verdict: run together, one unit's ignored finding would hide another's error. A finding prints once however
+    many units report it; a listed one (IGNORED_FINDINGS) never prints, and counts once. `cache` goes to tidy_one. With
+    `fix`, the units that failed get one serial clang-tidy --fix afterwards."""
     with concurrent.futures.ThreadPoolExecutor(jobs()) as pool:
-        results = list(pool.map(lambda unit: tidy_one(bdir, unit), units))
+        results = list(pool.map(lambda unit: tidy_one(bdir, unit, cache), units))
     printed = set()
     for output, _ in results:
         for text, is_finding in tidy_blocks(output):
-            key = finding_key(text, TIDY_FINDING_RE.match(text).group(1) if is_finding else "")
+            finding = TIDY_FINDING_RE.match(text) if is_finding else None
+            if finding and listed_finding(finding.group(1), finding.group(2)):
+                continue
+            key = finding_key(text, finding.group(1) if finding else "")
             if not (is_finding and key in printed):
                 printed.add(key)
                 print(text, end="", flush=True)
@@ -1500,7 +1617,7 @@ def cmd_lint(args):
     try:
         print(f"+ clang-tidy --quiet -p {bdir} on {len(units)} unit(s), {jobs()} at a time"
               + (", then --fix on the units that fail" if args.fix else ""), flush=True)
-        failed, ignored = tidy_units(bdir, units, args.fix)
+        failed, ignored = tidy_units(bdir, units, args.fix, tidy_cache_dir(bdir))
         if failed:
             raise Fail("clang-tidy failed: findings in our code, a compiler error or a crash (above)")
         if ignored:

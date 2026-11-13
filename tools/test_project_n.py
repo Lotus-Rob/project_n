@@ -1935,7 +1935,7 @@ class ParallelTidyTest(unittest.TestCase):
         fix pass got or None, what was printed)."""
         ran, fixed = [], []
 
-        def one(bdir, unit):
+        def one(bdir, unit, cache=None):
             ran.append(unit)
             return results[unit]
 
@@ -2009,6 +2009,18 @@ class ParallelTidyTest(unittest.TestCase):
         self.assertFalse([a for a in cmd if str(a).startswith(("--fix", "--export-fixes"))])
         self.assertEqual(cmd[-1], "src/a.cpp")
 
+    def test_an_ignored_finding_is_counted_not_printed(self):
+        # The listed Quill finding, with its notes and code lines, reached through every PN_LOG_* call: counted, not shown.
+        quill = (self.IGNORED + f"  132 |       return _data[index];\n      |       ^\n"
+                 f"{project_n.ROOT}/src/main.cpp:22:9: note: Calling 'Run'\n   22 |         Run();\n      |         ^\n")
+        verdict, _, _, out = self.tidy({"src/a.cpp": (quill, 1), "src/b.cpp": (quill, 1)})
+        self.assertEqual(verdict, (False, 1))
+        self.assertEqual(out, "")
+        finding = self.FINDING.format(root=project_n.ROOT)
+        verdict, _, _, out = self.tidy({"src/a.cpp": (quill + finding, 1)})
+        self.assertEqual(verdict, (True, 1))
+        self.assertEqual(out, finding)
+
     def test_a_shared_header_finding_prints_once(self):
         finding = self.FINDING.format(root=project_n.ROOT)
         _, _, _, out = self.tidy({"src/a.cpp": (finding, 1), "src/b.cpp": (finding, 1)})
@@ -2035,6 +2047,163 @@ class ParallelTidyTest(unittest.TestCase):
                                   "src/b.cpp": ("Error while processing src/b.cpp.\n", 1)})
         self.assertIn("src/a.cpp.", out)
         self.assertIn("src/b.cpp.", out)
+
+
+class TidyCacheTest(unittest.TestCase):
+    """Each unit's clang-tidy result is kept under a key of everything it depends on, read on branches only; main and
+    tags lint cold, and a tag stores nothing (spec 2026-11-13 §2b)."""
+
+    BDIR = Path("build/x")
+    UNIT = "src/a.cpp"
+    FINDING = "src/a.cpp:1:5: error: variable 'x' is non-const [cppcoreguidelines-avoid-non-const-global-variables]\n"
+
+    def setUp(self):
+        self.root = self.enterContext(temp_repo({".clang-tidy": "Checks: '*'\n", self.UNIT: "int x;\n"}))
+        self.cache = self.root / "tidy-cache"
+        self.text, self.version = b'# 1 "src/a.cpp"\nint x;\n', "LLVM version 22.1.0\n"
+        self.output, self.ran = (self.FINDING, 1), []
+        self.compdb(["-O0"])
+        self.enterContext(self.ci())
+        self.enterContext(mock.patch.multiple(project_n, preprocessed=lambda entry: self.text,
+                                              tidy_version=lambda: self.version))
+        real = subprocess.run
+
+        def fake(cmd, *args, **kwargs):  # clang-tidy itself; everything else (git) really runs
+            if "--quiet" not in cmd:
+                return real(cmd, *args, **kwargs)
+            self.ran.append(cmd[-1])
+            return subprocess.CompletedProcess(cmd, self.output[1], stdout=self.output[0])
+
+        self.enterContext(mock.patch.object(project_n.subprocess, "run", fake))
+
+    def ci(self, ref=None, cache=None):
+        """os.environ with CI's ref and object cache folder, or neither (a local run)."""
+        env = {k: v for k, v in os.environ.items() if k not in (project_n.BUILD_CACHE_ENV, "GITHUB_REF")}
+        env |= {"GITHUB_REF": ref} if ref else {}
+        env |= {project_n.BUILD_CACHE_ENV: str(cache)} if cache else {}
+        return mock.patch.dict(project_n.os.environ, env, clear=True)
+
+    def compdb(self, *flag_sets, out="build/x/.objs/a.cpp.o"):
+        """One compile database entry for UNIT per set of flags (two targets may compile one file)."""
+        entries = [{"directory": str(self.root), "file": self.UNIT,
+                    "arguments": ["/usr/bin/clang++", "-c", "-std=c++23", *flags, "-o", out, self.UNIT]}
+                   for flags in flag_sets]
+        path = self.root / self.BDIR / "compile_commands.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(entries), encoding="utf-8")
+
+    def lint(self, cache=None):
+        return project_n.tidy_one(self.BDIR, self.UNIT, cache or self.cache)
+
+    def test_a_cached_unit_is_not_linted_again(self):
+        first = self.lint()
+        self.assertEqual(self.lint(), first)
+        self.assertEqual(first, self.output)
+        self.assertEqual(self.ran, [self.UNIT])
+        self.assertEqual(len(list(self.cache.glob("*.json"))), 1)
+
+    def test_each_key_input_misses(self):
+        key = project_n.tidy_key(self.BDIR, self.UNIT)
+        self.assertEqual(project_n.tidy_key(self.BDIR, self.UNIT), key)
+        self.compdb(["-O0"], out="build/y/a.o")  # the output path is no input
+        self.assertEqual(project_n.tidy_key(self.BDIR, self.UNIT), key)
+        moved = self.root / "build/moved/compile_commands.json"  # nor where the build folder is (clang-tidy's -p)
+        moved.parent.mkdir(parents=True)
+        moved.write_bytes((self.root / self.BDIR / "compile_commands.json").read_bytes())
+        self.assertEqual(project_n.tidy_key(Path("build/moved"), self.UNIT), key)
+        keys = {key}
+
+        def changed():
+            keys.add(project_n.tidy_key(self.BDIR, self.UNIT))
+            return len(keys)
+
+        self.text = b'# 1 "src/a.cpp"\nint y;\n'
+        self.assertEqual(changed(), 2)
+        self.compdb(["-O2"])
+        self.assertEqual(changed(), 3)
+        self.version = "LLVM version 22.1.1\n"
+        self.assertEqual(changed(), 4)
+        (self.root / "src/.clang-tidy").write_text("Checks: '-*'\n")
+        self.assertEqual(changed(), 5)
+        # A comment the preprocessed text drops (a NOLINT) in a file of ours it names.
+        (self.root / self.UNIT).write_text("int x; // NOLINT\n")
+        self.assertEqual(changed(), 6)
+        # What lint passes clang-tidy besides the unit.
+        with mock.patch.object(project_n, "tidy_command", lambda bdir, unit: ["clang-tidy", "--checks=-*", "-p", bdir, unit]):
+            self.assertEqual(changed(), 7)
+
+    def test_the_order_of_a_units_entries_is_no_input(self):
+        # XMake exports a file two targets compile (tests/unit/gfx/main.cpp) in either order from one run to the next.
+        self.compdb(["-Isrc"], ["-Itests"])
+        key = project_n.tidy_key(self.BDIR, self.UNIT)
+        self.compdb(["-Itests"], ["-Isrc"])
+        self.assertEqual(project_n.tidy_key(self.BDIR, self.UNIT), key)
+
+    def test_main_reads_no_cached_result(self):
+        self.lint()
+        self.output = ("", 0)
+        with self.ci("refs/heads/main"):
+            self.assertEqual(self.lint(), ("", 0))
+        self.assertEqual(self.ran, [self.UNIT, self.UNIT])
+        self.assertEqual(self.lint(), ("", 0))  # main stored its result: the next branch run reads it
+        self.assertEqual(len(self.ran), 2)
+
+    def test_a_tag_stores_nothing(self):
+        with self.ci("refs/tags/v1.0.0", self.root / "objects"):
+            self.assertIsNone(project_n.tidy_cache_dir(self.BDIR))
+            self.lint()
+            self.lint()
+        self.assertEqual(len(self.ran), 2)
+        self.assertFalse(self.cache.exists())
+
+    def test_cache_folders(self):
+        self.assertEqual(project_n.tidy_cache_dir(self.BDIR), self.root / self.BDIR / ".tidy-cache")
+        with self.ci("refs/heads/ci-speed", self.root / "objects"):
+            self.assertEqual(project_n.tidy_cache_dir(self.BDIR), self.root / "objects" / "tidy")
+
+    def test_a_corrupt_result_is_a_miss(self):
+        self.lint()
+        next(self.cache.glob("*.json")).write_text("{\"output\": ")
+        self.assertEqual(self.lint(), self.output)
+        self.assertEqual(len(self.ran), 2)
+
+    def test_a_unit_whose_markers_miss_its_own_file_is_never_cached(self):
+        # ROOT spelt otherwise in the markers (a symlink, a bind mount): no file of ours would count, nor a NOLINT edit.
+        self.text = b'# 1 "/elsewhere/src/a.cpp"\nint x;\n'
+        self.assertIsNone(project_n.tidy_key(self.BDIR, self.UNIT))
+
+    def test_a_unit_that_fails_to_preprocess_is_never_cached(self):
+        self.text = None
+        self.assertIsNone(project_n.tidy_key(self.BDIR, self.UNIT))
+        self.lint()
+        self.lint()
+        self.assertEqual(len(self.ran), 2)
+        self.assertFalse(self.cache.exists())
+
+    def test_a_crash_is_never_cached(self):
+        # A crash may be the machine's (memory, a signal), not the unit's: the next run tries again.
+        self.output = ("", -11)
+        self.lint()
+        self.lint()
+        self.assertEqual(len(self.ran), 2)
+
+    def test_preprocessing_drops_the_object_and_adds_e(self):
+        entry = {"directory": "/r", "file": "src/a.cpp",
+                 "arguments": ["/usr/bin/clang++", "-c", "-Isrc", "-o", "build/a.o", "src/a.cpp"]}
+        flags, command = project_n.preprocess_command(entry)
+        self.assertEqual(flags, ["/usr/bin/clang++", "-Isrc"])
+        self.assertEqual(command, ["/usr/bin/clang++", "-Isrc", "-E", "src/a.cpp"])
+
+    def test_a_failing_cached_unit_is_still_fixed(self):
+        fixed = []
+        with mock.patch.object(project_n, "tidy_fix", lambda bdir, units: fixed.append(units)), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            project_n.tidy_units(self.BDIR, [self.UNIT], False, self.cache)
+            verdict = project_n.tidy_units(self.BDIR, [self.UNIT], True, self.cache)
+        self.assertEqual(self.ran, [self.UNIT])
+        self.assertEqual(verdict, (True, 0))
+        self.assertEqual(fixed, [[self.UNIT]])
+        self.assertEqual(out.getvalue(), self.FINDING * 2)  # a cached result prints as a fresh one does
 
 
 if __name__ == "__main__":
