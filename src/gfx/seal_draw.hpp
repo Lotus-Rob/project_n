@@ -152,8 +152,8 @@ struct SealGpuLayer {
     core::Vec2 axisDepth{};
     /// How far it has turned, in radians (SealLayerAngle()): its parts' zero and its frame turn with it.
     f32 angle = 0.0F;
-    /// Its lines' strength: its opacity times its life (SealLifeOpacity()), capped at core::Seals::aboveOpacity off the
-    /// ground, times core::Seals::brightness.
+    /// Its lines' strength: its opacity times its life (SealLifeOpacity()) times core::Seals::brightness, then capped at
+    /// core::Seals::aboveOpacity off the ground.
     f32 opacity = 0.0F;
     /// Its seal's colours, slot 0 then 1 (slot 1 repeats slot 0 for a look of one): linear premultiplied RGBA8, red in the
     /// low byte (core::UiColours::Of()).
@@ -215,8 +215,9 @@ inline constexpr std::size_t SEAL_VERTEX_BYTES = 24;
 static_assert(sizeof(SealVertex) == SEAL_VERTEX_BYTES, "the seal pipelines read vertices as 24 bytes");
 
 /// A seal's light as the particle draw reads it: the StructuredBuffer element `SealParticles` of shaders/seal.hlsli, which must
-/// keep this layout (112 bytes; its float2s at 8-byte offsets). Each stream's age is already wrapped by its period and scaled
-/// by core::Seals::spinScale, so its speeds are not scaled again; particle `i` of a stream staggers its own age from it.
+/// keep this layout (160 bytes; its float2s at 8-byte offsets). Each stream's age is already wrapped by its period and scaled
+/// by core::Seals::spinScale, so its speeds are not scaled again; particle `i` of a stream staggers its own age from it, and
+/// a spark or shard is born somewhere new each time it comes round (its stream's lap counts those, wrapping at 2^32).
 struct SealGpuParticles {
     /// Its seal's plane's centre in the world, lifted at the art's angle.
     core::Vec2 centre{};
@@ -228,11 +229,12 @@ struct SealGpuParticles {
     u32 seed = 0;
     /// Its colour: linear premultiplied RGBA8.
     u32 colour = 0;
-    /// Its strength: its seal's life, capped as a layer's is, times core::Seals::brightness.
+    /// Its strength: its seal's life times core::Seals::brightness, then capped as a layer's is.
     f32 opacity = 0.0F;
     /// Its seal's size, in world units.
     f32 size = 0.0F;
-    /// The frame's particle index of its first particle: its pillars, then sparks, then shards.
+    /// Its plane's list's particle index of its first particle (SealDrawing::groundParticles' or aboveParticles'): its
+    /// pillars, then sparks, then shards.
     u32 firstParticle = 0;
     /// How many pillars.
     u32 pillars = 0;
@@ -265,19 +267,85 @@ struct SealGpuParticles {
     f32 shardDrift = 0.0F;
     /// How fast a shard turns, in radians a second.
     f32 shardSpin = 0.0F;
+    /// Which way its pillars run from the plane, in world y: 1 down the screen (falling from an overhead seal towards the
+    /// ground), -1 up it (rising from a seal on the ground or standing upright).
+    f32 pillarFall = 0.0F;
+    /// A spark's size across, in world units.
+    f32 sparkSize = 0.0F;
+    /// How many times the sparks' age has come round (wrapping at 2^32): each life of a spark is born somewhere new.
+    u32 sparkLap = 0;
+    /// A shard's length, in world units.
+    f32 shardSize = 0.0F;
+    /// How many times the shards' age has come round.
+    u32 shardLap = 0;
+    /// Its seal's ink: the wash's colour, linear premultiplied RGBA8, drawn under each particle's light.
+    u32 washColour = 0;
+    /// How strongly that ink shows under a particle at its full strength: its seal's wash's opacity.
+    f32 washOpacity = 0.0F;
+    /// How bright a pillar is between its falling light's passes (core::SealLight::pillarRest).
+    f32 pillarRest = 0.0F;
+    /// How far a pillar's falling light reaches each way of its middle, a share of its length (core::SealLight::pillarBand).
+    f32 pillarBand = 0.0F;
+    /// A shard's width over its length (core::SealLight::shardThin).
+    f32 shardThin = 0.0F;
+    /// How much of the way from a shard's middle to its points its light softens over (core::SealLight::shardEdge).
+    f32 shardEdge = 0.0F;
     /// Pads the record to a multiple of 16 bytes.
-    std::array<u32, 2> reserved{};
+    std::array<u32, 3> reserved{};
 };
 /// The bytes of one SealGpuParticles.
-inline constexpr std::size_t SEAL_GPU_PARTICLES_BYTES = 112;
-static_assert(sizeof(SealGpuParticles) == SEAL_GPU_PARTICLES_BYTES, "the particle draw reads seal light as 112 bytes");
+inline constexpr std::size_t SEAL_GPU_PARTICLES_BYTES = 160;
+static_assert(sizeof(SealGpuParticles) == SEAL_GPU_PARTICLES_BYTES, "the particle draw reads seal light as 160 bytes");
 /// Where SealGpuParticles::pillarAge (the first stream's) is, in bytes: the HLSL `SealParticles` keeps the same.
 inline constexpr std::size_t SEAL_GPU_PARTICLES_STREAMS_AT = 56;
 static_assert(
     offsetof(SealGpuParticles, pillarAge) == SEAL_GPU_PARTICLES_STREAMS_AT,
     "the particle draw finds the streams there"
 );
+/// Where SealGpuParticles::washColour is, in bytes: the HLSL `SealParticles` keeps the same.
+inline constexpr std::size_t SEAL_GPU_PARTICLES_INK_AT = 124;
+static_assert(offsetof(SealGpuParticles, washColour) == SEAL_GPU_PARTICLES_INK_AT, "the particle draw finds the ink there");
+/// Where SealGpuParticles::pillarRest (the first of the shapes) is, in bytes: the HLSL `SealParticles` keeps the same.
+inline constexpr std::size_t SEAL_GPU_PARTICLES_SHAPES_AT = 132;
+static_assert(
+    offsetof(SealGpuParticles, pillarRest) == SEAL_GPU_PARTICLES_SHAPES_AT,
+    "the particle draw finds the shapes there"
+);
 static_assert(offsetof(SealGpuParticles, axisDepth) % sizeof(core::Vec2) == 0, "a float2 of a StructuredBuffer is 8-aligned");
+
+/// SealParticle::kind of a pillar of light.
+inline constexpr u32 SEAL_PILLAR = 0;
+/// SealParticle::kind of a spark.
+inline constexpr u32 SEAL_SPARK = 1;
+/// SealParticle::kind of a shard.
+inline constexpr u32 SEAL_SHARD = 2;
+
+/// One particle of a seal's light where the particle vertex shader places it: a quad in the world, round its centre.
+struct SealParticle {
+    /// Its centre in the world.
+    core::Vec2 centre{};
+    /// From its centre to the middle of its far edge, in world units: half its length (a pillar's, away from its plane).
+    core::Vec2 along{};
+    /// From its centre to the middle of its side, in world units: half its width.
+    core::Vec2 across{};
+    /// How strongly it shows, 0 to 1, before its seal's opacity: a spark's and a drifting shard's rise and fall over its
+    /// life, so none pops in or out.
+    f32 strength = 0.0F;
+    /// A pillar's falling light: how far along it the light is, 0 (at its plane) to below 1 (its far end); else 0.
+    f32 phase = 0.0F;
+    /// SEAL_PILLAR, SEAL_SPARK or SEAL_SHARD.
+    u32 kind = SEAL_PILLAR;
+};
+
+/// Where particle `index` of `light` is (its pillars first, then sparks, then shards; below their sum), as the particle
+/// vertex shader places it: `SealParticleAt` in shaders/seal.hlsli is the same function, with the same constants, and the
+/// two must change together. A pure function of the record: its seed, the index and its stream's age and lap, never a
+/// time since the seal's start and no state. A pillar stands at a point of its seal's disc for good, running `pillarHeight`
+/// from its plane (down when `pillarFall` is 1), its light falling along it once a `pillarCycle`; a spark is born at a point
+/// of the disc and rises `sparkRise` a second over its life; a shard is born at a point of the disc and drifts out from the
+/// centre across the plane at `shardDrift`, turning at `shardSpin` on the plane, `shardThin` of its length wide. Each particle
+/// staggers its stream's age by its own hash, and a spark or shard is born somewhere new each lap.
+[[nodiscard]] SealParticle SealParticleAt(const SealGpuParticles& light, u32 index);
 
 /// One layer of a look as PackSeals() packed it.
 struct SealPackedLayer {
@@ -346,11 +414,20 @@ struct SealDrawing {
     std::vector<SealVertex> aboveLines{};
     /// Every drawn seal's layers, each seal's in its look's order, then its emblem's.
     std::vector<SealGpuLayer> layers{};
-    /// One record for each drawn seal with light.
-    std::vector<SealGpuParticles> particles{};
+    /// One record for each drawn ground seal with light, its particles counted from the list's first: drawn after the ground
+    /// seals' bands.
+    std::vector<SealGpuParticles> groundParticles{};
+    /// One record for each drawn upright or overhead seal with light: drawn after their bands.
+    std::vector<SealGpuParticles> aboveParticles{};
     // NOLINTEND(readability-redundant-member-init)
     /// Seals left out, satellites included, past MAX_SEALS_DRAWN.
     std::size_t droppedSeals = 0;
+    /// Seals left out, satellites included, whose size isn't a normal f32 (a satellite of a satellite of a tiny seal),
+    /// with the satellites they would have drawn: nothing of them is laid out.
+    std::size_t tinySeals = 0;
+    /// Particles left out of seals whose light has more than core::MAX_SEAL_PARTICLES (which the reader refuses): each seal
+    /// keeps its pillars first, then its sparks, then its shards, up to the limit.
+    std::size_t droppedParticles = 0;
 
     /// Empties it, keeping its buffers' capacity.
     void Clear();
@@ -363,12 +440,13 @@ struct SealDrawing {
 /// its band: an annulus of SEAL_BAND_SEGMENTS quads from SealBandMargin() of `looks`' halo inside its inner radius (or its
 /// centre) to that margin past its outer (the quads' outer edges round the circle, and further by its flourishes' spill), or
 /// its frame's band between two regular polygons with their corners there; each seal its emblem (a layer of its own, at its
-/// innermost layer's height and life), its wash's quad to its reach and its light's record. Seals past MAX_SEALS_DRAWN are
-/// counted in `out.droppedSeals`, not drawn. A colour slot naming `element` takes the record's element's effect colour, which
-/// for a seal without one (`hasElement` false: the showcase's) is its default element's, Damage. Everything runs on the seals'
-/// time, scaled by core::Seals::spinScale: spins, particle motion and life, and the appear and fade; at 0 (still) the appear
-/// and fade are instant, so the seal shows whole from its start to its end. Its wash is the table's text ink, so it recolours
-/// with the palette.
+/// innermost layer's height and life), its wash's quad to its reach and its light's record (in its plane's list, its
+/// particles cut to core::MAX_SEAL_PARTICLES, the rest counted in `out.droppedParticles`). Seals past MAX_SEALS_DRAWN are
+/// counted in `out.droppedSeals`, not drawn; a seal whose size isn't a normal f32 in `out.tinySeals`, with its satellites. A
+/// colour slot naming `element` takes the record's element's effect colour, which for a seal without one (`hasElement` false:
+/// the showcase's) is its default element's, Damage. Everything runs on the seals' time, scaled by core::Seals::spinScale:
+/// spins, particle motion and life, and the appear and fade; at 0 (still) the appear and fade are instant, so the seal shows
+/// whole from its start to its end. Its wash is the table's text ink, so it recolours with the palette.
 void DrawSeals(
     std::span<const core::Seal> seals,
     const core::Seals& looks,

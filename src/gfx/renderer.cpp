@@ -67,6 +67,19 @@ void ReportOverflow(core::RepeatedFailure& overflows, std::size_t dropped, std::
     }
 }
 
+// Logs, once until they draw again, seals DrawSeals() left out for a size too small to lay out: `tiny` this frame.
+void ReportTinySeals(core::RepeatedFailure& failures, std::size_t tiny) {
+    PN_PROFILE_ZONE();
+    if (tiny > 0) {
+        if (failures.Fail()) {
+            PN_LOG_WARNING("{} seals too small to lay out (a size that isn't a normal float) aren't drawn", tiny);
+        }
+    }
+    else if (const u64 failed = failures.Succeed(); failed > 0) {
+        PN_LOG_INFO("every seal is large enough to draw again, after {} frames that weren't", failed);
+    }
+}
+
 // The transform that places target pixels (x right, y down from the top left) on a target `width` by `height` pixels.
 ClipTransform PixelsToClip(u32 width, u32 height) {
     return { .scaleX = CLIP_SPAN / static_cast<f32>(width),
@@ -288,7 +301,9 @@ struct Renderer::Impl {
     core::RepeatedFailure ribbonOverflows{};
     core::RepeatedFailure swordOverflows{};
     core::RepeatedFailure sealOverflows{};
+    core::RepeatedFailure tinySealFailures{};
     core::RepeatedFailure sealQuadOverflows{};
+    core::RepeatedFailure sealParticleOverflows{};
     core::RepeatedFailure uploadFailures{};
     // NOLINTEND(readability-redundant-member-init)
 };
@@ -367,8 +382,10 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     if (ribbonsDropped) {
         ReportOverflow(ribbonOverflows, *ribbonsDropped, "ribbon quads", MAX_RIBBON_QUADS);
     }
-    // Seals left out whole by DrawSeals(), past the frame's room, and quads past the buffer's.
+    // Seals left out whole by DrawSeals(), past the frame's room, particles past a seal's, and quads past the buffer's.
     ReportOverflow(sealOverflows, sealDrawing.droppedSeals, "seals", static_cast<u32>(MAX_SEALS_DRAWN));
+    ReportTinySeals(tinySealFailures, sealDrawing.tinySeals);
+    ReportOverflow(sealParticleOverflows, sealDrawing.droppedParticles, "seal particles", core::MAX_SEAL_PARTICLES);
     if (sealQuadsDropped) {
         ReportOverflow(sealQuadOverflows, *sealQuadsDropped, "seal quads", internal::MAX_SEAL_QUADS);
     }

@@ -20,11 +20,15 @@ namespace data {
 /// keeps core::Seals' default), `glyph_sets:` (named lists of sprites) and `seals:` (named looks: plane, lift, wash, colours,
 /// life, layers and their parts, emblem, satellites and light; the file's comments name every key). A sprite must be in
 /// `manifest`. Fails, naming the line, on YAML that doesn't parse, a value that isn't a number or is out of range (a size of
-/// 0 or less, an inner radius not below its outer one, a negative time), 0 or more than core::MAX_SEAL_LAYERS layers, more
-/// than core::MAX_SEAL_PARTS parts in a layer, more than core::MAX_SEAL_PARTICLES particles, an unknown palette colour,
-/// curve, sprite, glyph set or seal, a colour slot the seal lacks, and a satellite naming its own seal, forming a loop or
-/// nesting deeper than core::MAX_SATELLITE_DEPTH. A key it doesn't know is ignored, with a line naming it added to
-/// `warnings` when given.
+/// 0 or less, an inner radius not below its outer one, a negative time, a pillar cycle or spark life under a tick, a
+/// satellite under 0.001 of its seal's size, a shard spin that isn't 0 but under 0.001 degrees a second either way), a
+/// value above 0 its f32 would hold as 0 or a denormal, 0 or more than core::MAX_SEAL_LAYERS layers, more than
+/// core::MAX_SEAL_PARTS parts in a layer, a frame of 1, 2 or more than core::MAX_SEAL_FRAME_SIDES sides, more than
+/// core::MAX_SEAL_PARTICLES particles, more than core::MAX_SEAL_LOOKS seals, core::MAX_SEAL_GLYPH_SETS glyph sets,
+/// core::MAX_GLYPH_SET_SPRITES sprites in a glyph set or core::MAX_SEAL_SATELLITES satellites on a seal, an unknown
+/// palette colour, curve, sprite, glyph set or seal, a colour slot the seal lacks, a wash's shadow on a seal that isn't
+/// overhead, and a satellite naming its own seal, forming a loop or nesting deeper than core::MAX_SATELLITE_DEPTH. A key
+/// it doesn't know is ignored, with a line naming it added to `warnings` when given.
 [[nodiscard]] std::expected<core::Seals, core::Error> ParseSeals(
     std::string_view text,
     const core::Manifest& manifest,

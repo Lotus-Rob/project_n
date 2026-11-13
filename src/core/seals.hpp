@@ -40,6 +40,8 @@ inline constexpr u32 MAX_SEAL_GLYPH_SETS = 64;
 inline constexpr u32 MAX_GLYPH_SET_SPRITES = 256;
 /// The most particles (pillars, sparks and shards together) a seal's light has.
 inline constexpr u32 MAX_SEAL_PARTICLES = 256;
+/// The most `pillarBand` of SealLight: past half its length the falling light would meet itself coming round.
+inline constexpr f32 MOST_SEAL_PILLAR_BAND = 0.5F;
 
 /// What a seal's look and the table take when the data leaves a key out.
 namespace shipped {
@@ -62,6 +64,14 @@ inline constexpr f32 SEAL_ABOVE_OPACITY = 0.7F;
 inline constexpr f32 SEAL_HALO_REACH = 0.012F;
 /// The default `haloStrength` of Seals.
 inline constexpr f32 SEAL_HALO_STRENGTH = 0.3F;
+/// The default `pillarRest` of SealLight.
+inline constexpr f32 SEAL_PILLAR_REST = 0.35F;
+/// The default `pillarBand` of SealLight.
+inline constexpr f32 SEAL_PILLAR_BAND = 0.15F;
+/// The default `shardThin` of SealLight.
+inline constexpr f32 SEAL_SHARD_THIN = 0.35F;
+/// The default `shardEdge` of SealLight.
+inline constexpr f32 SEAL_SHARD_EDGE = 0.5F;
 
 } // namespace shipped
 
@@ -182,18 +192,32 @@ struct SealLight {
     f32 pillarFade = 0.0F;
     /// How long a pillar's light takes to fall its length once, in seconds: above 0 when there are pillars.
     f64 pillarCycle = 0.0;
+    /// How bright a pillar is between its falling light's passes, as a share of the light at the pass, 0 to 1.
+    f32 pillarRest = shipped::SEAL_PILLAR_REST;
+    /// How far the falling light reaches each way of its middle, as a share of the pillar's length: above 0, at most
+    /// MOST_SEAL_PILLAR_BAND.
+    f32 pillarBand = shipped::SEAL_PILLAR_BAND;
     /// How many sparks.
     u32 sparks = 0;
     /// How fast a spark rises, in world units a second.
     f32 sparkRise = 0.0F;
     /// How long a spark lives, in seconds: above 0 when there are sparks.
     f64 sparkLife = 0.0;
+    /// A spark's size across: a fraction of the seal's size, above 0 when there are sparks.
+    f32 sparkSize = 0.0F;
     /// How many shards.
     u32 shards = 0;
     /// How fast a shard drifts, in world units a second.
     f32 shardDrift = 0.0F;
     /// How fast a shard turns, in degrees a second.
     f32 shardSpin = 0.0F;
+    /// A shard's length: a fraction of the seal's size, above 0 when there are shards.
+    f32 shardSize = 0.0F;
+    /// A shard's width over its length: above 0, at most 1.
+    f32 shardThin = shipped::SEAL_SHARD_THIN;
+    /// How much of the way from a shard's middle to its points its light softens over: above 0 (a hard edge), at most 1
+    /// (softening from the middle).
+    f32 shardEdge = shipped::SEAL_SHARD_EDGE;
     /// Which of its seal's colours it takes.
     u8 slot = 0;
 };

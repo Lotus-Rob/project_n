@@ -18,6 +18,8 @@ constexpr f64 SEAL_TICKS_A_SECOND = static_cast<f64>(core::TICKS_PER_SECOND);
 constexpr f64 SEAL_FOREVER = std::numeric_limits<f64>::infinity();
 constexpr f32 SEAL_TAU = 2.0F * std::numbers::pi_v<f32>;
 constexpr u32 SEAL_HIGH_HALF = 32;
+constexpr f64 SEAL_LAP_WRAP = 4'294'967'296.0; // 2^32: a stream's lap wraps there
+constexpr f64 SEAL_LONGEST_CYCLE = 3'600.0;    // seconds: the longest period the reader takes (its LIFETIME)
 
 f32 SealRadians(f32 degrees) {
     return static_cast<f32>(static_cast<f64>(degrees) * SEAL_RADIANS_A_DEGREE);
@@ -29,13 +31,139 @@ f32 SealSpin(f32 degreesASecond, f64 seconds, f32 spinScale) {
     return static_cast<f32>(std::fmod(turned, SEAL_TURN_DEGREES) * SEAL_RADIANS_A_DEGREE);
 }
 
-f32 SealWrappedAge(f64 seconds, f64 period) {
-    if (!(period > 0.0)) {
-        return 0.0F;
+// A stream's age wrapped by its period, and how many times it has come round (wrapping at 2^32).
+struct SealWrapped {
+    f32 age = 0.0F;
+    u32 lap = 0;
+};
+
+SealWrapped SealWrap(f64 seconds, f64 period) {
+    if (!(period > 0.0) || period > static_cast<f64>(std::numeric_limits<f32>::max()) || !std::isfinite(seconds)) {
+        return {};
     }
-    const auto age = static_cast<f32>(std::fmod(seconds, period));
-    // An age just short of its period can round up to it as an f32: that is the period's start again.
-    return age < static_cast<f32>(period) ? age : 0.0F;
+    f64 laps = std::floor(seconds / period);
+    f64 age = seconds - (laps * period);
+    // The division can round across a lap's edge: keep the age and its lap together.
+    if (age < 0.0) {
+        age += period;
+        laps -= 1.0;
+    }
+    else if (age >= period) {
+        age -= period;
+        laps += 1.0;
+    }
+    // Past 2^53 laps the product above has lost the age (a shard's cycle follows its seal's size, so a tiny satellite's
+    // gets there): the remainder is exact.
+    if (age < 0.0 || age >= period) {
+        age = std::fmod(seconds, period);
+    }
+    auto narrow = static_cast<f32>(age);
+    // An age just short of its period can round up to it as an f32: that is the next lap's start.
+    if (!(narrow < static_cast<f32>(period))) {
+        narrow = 0.0F;
+        laps += 1.0;
+    }
+    // Wrapped in f64 before it narrows: a u64 can't hold every count of laps an f64 can.
+    const f64 lap = std::isfinite(laps) ? std::fmod(std::max(laps, 0.0), SEAL_LAP_WRAP) : 0.0;
+    return { .age = narrow, .lap = static_cast<u32>(lap) };
+}
+
+// The particle placement's hash and constants. shaders/seal.hlsli's SealHash, SealUnit and SEAL_UNIT_SCALE are the same and
+// change with these (SealParticleAt()).
+constexpr u32 SEAL_HASH_SHIFT_FIRST = 16;
+constexpr u32 SEAL_HASH_SHIFT_SECOND = 15;
+constexpr u32 SEAL_HASH_MULTIPLY_FIRST = 0x7FEB352DU;
+constexpr u32 SEAL_HASH_MULTIPLY_SECOND = 0x846CA68BU;
+constexpr u32 SEAL_UNIT_SHIFT = 8;                    // a unit number takes the hash's top 24 bits, exact as an f32
+constexpr f32 SEAL_UNIT_SCALE = 1.0F / 16'777'216.0F; // 2^-24
+constexpr f32 SEAL_HALF = 0.5F;                       // a quad's half-sides are half its sizes
+// Which of a particle's numbers each draw of its hash takes.
+constexpr u32 SEAL_DRAW_RADIUS = 1;
+constexpr u32 SEAL_DRAW_ANGLE = 2;
+constexpr u32 SEAL_DRAW_TURN = 3;
+
+// A 32-bit integer hash (lowbias32): consecutive inputs give unrelated outputs.
+constexpr u32 SealHash(u32 value) {
+    value ^= value >> SEAL_HASH_SHIFT_FIRST;
+    value *= SEAL_HASH_MULTIPLY_FIRST;
+    value ^= value >> SEAL_HASH_SHIFT_SECOND;
+    value *= SEAL_HASH_MULTIPLY_SECOND;
+    value ^= value >> SEAL_HASH_SHIFT_FIRST;
+    return value;
+}
+
+// A number from 0 to below 1, draw `draw` of `hash`.
+f32 SealUnit(u32 hash, u32 draw) {
+    return static_cast<f32>(SealHash(hash + draw) >> SEAL_UNIT_SHIFT) * SEAL_UNIT_SCALE;
+}
+
+// A particle's own age in its stream: the stream's, staggered by the particle's hash, and the life it is in.
+SealWrapped SealStaggered(f32 age, f32 period, u32 lap, u32 hash) {
+    if (!(period > 0.0F)) {
+        return { .age = age, .lap = lap };
+    }
+    const f32 staggered = age + (SealUnit(hash, 0) * period);
+    return staggered >= period ? SealWrapped{ .age = staggered - period, .lap = lap + 1 }
+                               : SealWrapped{ .age = staggered, .lap = lap };
+}
+
+// Where `local` (seal sizes on the plane) of `light`'s seal lands in the world.
+core::Vec2 SealOnPlane(const SealGpuParticles& light, core::Vec2 local) {
+    return light.centre + (light.axisX * local.x) + (light.axisDepth * local.y);
+}
+
+// A unit number's rise and fall over a life, 0 at its ends and 1 halfway: nothing pops in or out.
+f32 SealRiseAndFall(f32 through) {
+    constexpr f32 PEAK = 4.0F; // 4t(1 - t) is 1 at its middle
+    return PEAK * through * (1.0F - through);
+}
+
+// Pillar `index` of `light`: at a point of the disc for good, in its share of the turn, its light falling along it.
+SealParticle SealPillarAt(const SealGpuParticles& light, u32 index, u32 hash) {
+    const f32 radius = std::sqrt(SealUnit(hash, SEAL_DRAW_RADIUS));
+    const f32 angle = SEAL_TAU * (static_cast<f32>(index) + SealUnit(hash, SEAL_DRAW_ANGLE)) / static_cast<f32>(light.pillars);
+    const core::Vec2 foot = SealOnPlane(light, { .x = radius * std::cos(angle), .y = radius * std::sin(angle) });
+    const core::Vec2 along{ .y = light.pillarFall * light.pillarHeight * SEAL_HALF };
+    const SealWrapped own = SealStaggered(light.pillarAge, light.pillarCycle, 0, hash);
+    return { .centre = foot + along,
+             .along = along,
+             .across = { .x = light.pillarWidth * SEAL_HALF },
+             .strength = 1.0F,
+             .phase = light.pillarCycle > 0.0F ? own.age / light.pillarCycle : 0.0F,
+             .kind = SEAL_PILLAR };
+}
+
+// A spark of `light`: born at a point of the disc each life, rising.
+SealParticle SealSparkAt(const SealGpuParticles& light, u32 hash) {
+    const SealWrapped own = SealStaggered(light.sparkAge, light.sparkLife, light.sparkLap, hash);
+    const u32 life = SealHash(hash ^ SealHash(own.lap));
+    const f32 radius = std::sqrt(SealUnit(life, SEAL_DRAW_RADIUS));
+    const f32 angle = SEAL_TAU * SealUnit(life, SEAL_DRAW_ANGLE);
+    const core::Vec2 born = SealOnPlane(light, { .x = radius * std::cos(angle), .y = radius * std::sin(angle) });
+    const f32 halfSize = light.sparkSize * SEAL_HALF;
+    return { .centre = born - core::Vec2{ .y = light.sparkRise * own.age },
+             .along = { .y = halfSize },
+             .across = { .x = halfSize },
+             .strength = light.sparkLife > 0.0F ? SealRiseAndFall(own.age / light.sparkLife) : 1.0F,
+             .kind = SEAL_SPARK };
+}
+
+// A shard of `light`: born at a point of the disc each time it comes round, drifting out from the centre and turning.
+SealParticle SealShardAt(const SealGpuParticles& light, u32 hash) {
+    const SealWrapped own = SealStaggered(light.shardAge, light.shardCycle, light.shardLap, hash);
+    const u32 life = SealHash(hash ^ SealHash(own.lap));
+    const f32 angle = SEAL_TAU * SealUnit(life, SEAL_DRAW_ANGLE);
+    const f32 outward = std::sqrt(SealUnit(life, SEAL_DRAW_RADIUS)) + (light.shardDrift * own.age / light.size);
+    const f32 turn = (SEAL_TAU * SealUnit(life, SEAL_DRAW_TURN)) + (light.shardSpin * own.age);
+    const f32 halfSize = light.shardSize * SEAL_HALF / light.size;
+    const f32 thin = halfSize * light.shardThin;
+    const core::Vec2 way{ .x = std::cos(turn), .y = std::sin(turn) };
+    const bool drifts = light.shardDrift > 0.0F && light.shardCycle > 0.0F;
+    return { .centre = SealOnPlane(light, { .x = outward * std::cos(angle), .y = outward * std::sin(angle) }),
+             .along = (light.axisX * (way.x * halfSize)) + (light.axisDepth * (way.y * halfSize)),
+             .across = (light.axisX * (-way.y * thin)) + (light.axisDepth * (way.x * thin)),
+             .strength = drifts ? SealRiseAndFall(own.age / light.shardCycle) : 1.0F,
+             .kind = SEAL_SHARD };
 }
 
 // How many layers of `look` appear before `layer`: by outer radius, ties in the look's order.
@@ -244,10 +372,13 @@ struct SealLightShared {
     f32 spinScale = 0.0F;
     u32 colour = 0;
     f32 opacity = 0.0F;
+    u32 washColour = 0;
+    f32 washOpacity = 0.0F;
     u64 salt = 0;
 };
 
-// Adds `look`'s light, its motion scaled by spin_scale through its ages.
+// Adds `look`'s light to its plane's list, its motion scaled by spin_scale through its ages, its streams cut to
+// core::MAX_SEAL_PARTICLES in all (pillars first), what was cut counted.
 void SealAddLight(
     SealDrawing& out,
     const SealPlace& place,
@@ -256,12 +387,18 @@ void SealAddLight(
     const SealLightShared& shared
 ) {
     const core::SealLight& light = look.light;
-    if (light.pillars + light.sparks + light.shards == 0) {
+    const u64 wanted = u64{ light.pillars } + light.sparks + light.shards;
+    if (wanted == 0) {
         return;
     }
+    const u32 pillars = std::min(light.pillars, core::MAX_SEAL_PARTICLES);
+    const u32 sparks = std::min(light.sparks, core::MAX_SEAL_PARTICLES - pillars);
+    const u32 shards = std::min(light.shards, core::MAX_SEAL_PARTICLES - pillars - sparks);
+    out.droppedParticles += static_cast<std::size_t>(wanted - pillars - sparks - shards);
     const core::Seal& seal = *place.seal;
     const f64 age = times.since * static_cast<f64>(shared.spinScale);
-    // A shard comes round once it has drifted a seal's size, or turned once if it only turns.
+    // A shard comes round once it has drifted a seal's size, or turned once if it only turns; at most once an hour, as
+    // the longest stream the reader takes, so a drift tiny next to its seal's size still gives an f32 cycle.
     f64 shardCycle = 0.0;
     if (light.shardDrift > 0.0F) {
         shardCycle = static_cast<f64>(seal.size) / static_cast<f64>(light.shardDrift);
@@ -269,11 +406,15 @@ void SealAddLight(
     else if (std::abs(light.shardSpin) > 0.0F) {
         shardCycle = SEAL_TURN_DEGREES / static_cast<f64>(std::abs(light.shardSpin));
     }
+    shardCycle = std::min(shardCycle, SEAL_LONGEST_CYCLE);
+    const SealWrapped sparkAge = SealWrap(age, light.sparkLife);
+    const SealWrapped shardAge = SealWrap(age, shardCycle);
     const SealGpuLayer plane = SealLayerAt(place, 0.0F, {});
-    const u32 first = out.particles.empty() ? 0
-                                            : out.particles.back().firstParticle + out.particles.back().pillars +
-                                                  out.particles.back().sparks + out.particles.back().shards;
-    out.particles.push_back(
+    const bool overhead = look.plane == core::SealPlane::Overhead;
+    std::vector<SealGpuParticles>& list = look.plane == core::SealPlane::Ground ? out.groundParticles : out.aboveParticles;
+    const u32 first =
+        list.empty() ? 0 : list.back().firstParticle + list.back().pillars + list.back().sparks + list.back().shards;
+    list.push_back(
         { .centre = plane.centre,
           .axisX = plane.axisX,
           .axisDepth = plane.axisDepth,
@@ -284,21 +425,32 @@ void SealAddLight(
           .opacity = shared.opacity,
           .size = seal.size,
           .firstParticle = first,
-          .pillars = light.pillars,
-          .sparks = light.sparks,
-          .shards = light.shards,
-          .pillarAge = SealWrappedAge(age, light.pillarCycle),
+          .pillars = pillars,
+          .sparks = sparks,
+          .shards = shards,
+          .pillarAge = SealWrap(age, light.pillarCycle).age,
           .pillarCycle = static_cast<f32>(light.pillarCycle),
           .pillarHeight = light.pillarHeight,
           .pillarWidth = light.pillarWidth * seal.size,
           .pillarFade = light.pillarFade,
-          .sparkAge = SealWrappedAge(age, light.sparkLife),
+          .sparkAge = sparkAge.age,
           .sparkLife = static_cast<f32>(light.sparkLife),
           .sparkRise = light.sparkRise,
-          .shardAge = SealWrappedAge(age, shardCycle),
+          .shardAge = shardAge.age,
           .shardCycle = static_cast<f32>(shardCycle),
           .shardDrift = light.shardDrift,
-          .shardSpin = SealRadians(light.shardSpin) }
+          .shardSpin = SealRadians(light.shardSpin),
+          .pillarFall = overhead ? 1.0F : -1.0F,
+          .sparkSize = light.sparkSize * seal.size,
+          .sparkLap = sparkAge.lap,
+          .shardSize = light.shardSize * seal.size,
+          .shardLap = shardAge.lap,
+          .washColour = shared.washColour,
+          .washOpacity = shared.washOpacity,
+          .pillarRest = light.pillarRest,
+          .pillarBand = light.pillarBand,
+          .shardThin = light.shardThin,
+          .shardEdge = light.shardEdge }
     );
 }
 
@@ -323,7 +475,7 @@ void SealAddLayer(
     SealDrawing& out = *frame.out;
     SealGpuLayer gpu = SealLayerAt(layers.place, layer.height, layers.shared);
     gpu.angle = SealLayerAngle(layer, layers.times->since, looks.spinScale);
-    gpu.opacity = std::min(layer.opacity * life, layers.cap) * looks.brightness;
+    gpu.opacity = std::min(layer.opacity * life * looks.brightness, layers.cap);
     gpu.firstPart = packed.firstPart;
     gpu.partCount = packed.partCount;
     gpu.inner = layer.inner;
@@ -364,7 +516,7 @@ void SealAddEmblem(
     SealDrawing& out = *frame.out;
     SealGpuLayer gpu = SealLayerAt(layers.place, height, layers.shared);
     gpu.angle = SealSpin(emblem.spin, layers.times->since, looks.spinScale);
-    gpu.opacity = std::min(life, layers.cap) * looks.brightness;
+    gpu.opacity = std::min(life * looks.brightness, layers.cap);
     gpu.firstPart = packed.emblemPart;
     gpu.partCount = 1;
     gpu.outer = packed.emblemReach;
@@ -429,7 +581,9 @@ void SealDrawLook(
     }
     const bool above = look.plane != core::SealPlane::Ground;
     std::vector<SealVertex>& lines = above ? out.aboveLines : out.groundLines;
-    const f32 cap = above ? looks.aboveOpacity : 1.0F;
+    // Off the ground the cap holds after brightness, so the fight stays readable however bright the seals are set; on the
+    // ground nothing needs it.
+    const f32 cap = above ? looks.aboveOpacity : std::numeric_limits<f32>::infinity();
     const SealPlace place{ .seal = &seal, .plane = look.plane, .lift = look.lift, .viewRatio = looks.viewRatio };
     // Spin_scale slows the life too; at 0 nothing moves, so the seal shows whole from its start to its end.
     const bool still = !(looks.spinScale > 0.0F);
@@ -479,7 +633,9 @@ void SealDrawLook(
         times,
         { .spinScale = looks.spinScale,
           .colour = shared.colours.at(std::min<std::size_t>(look.light.slot, shared.colours.size() - 1)),
-          .opacity = std::min(sealLife, cap) * looks.brightness,
+          .opacity = std::min(sealLife * looks.brightness, cap),
+          .washColour = shared.washColour,
+          .washOpacity = shared.washOpacity,
           .salt = salt }
     );
 }
@@ -512,14 +668,19 @@ u32 SealsDrawnAt(const core::Seals& seals, const SealPack& pack, const core::Sea
 }
 
 // Adds `seal`, a satellite `depth` deep (0 for one in play), if the frame has room; its look then, so its satellites are
-// drawn next. Null when the table (or its pack) hasn't its look, or when the frame is full: then it is counted with all
-// it would have drawn, which is not walked.
+// drawn next. Null when the table (or its pack) hasn't its look, when its size isn't a normal f32 (a satellite of a
+// satellite of a tiny seal: its light would divide by it), or when the frame is full: then it is counted with all it
+// would have drawn, which is not walked.
 const core::SealLook* SealDrawOne(SealFrame& frame, const core::Seal& seal, const SealTimes& times, u64 salt, u32 depth) {
     const std::optional<std::size_t> index = SealLookIndex(*frame.looks, seal.key);
     if (!index || *index >= frame.pack->looks.size()) {
         return nullptr;
     }
     const SealPackedLook& packed = frame.pack->looks[*index];
+    if (!std::isnormal(seal.size) || seal.size < 0.0F) {
+        frame.out->tinySeals += packed.seals.at(depth);
+        return nullptr;
+    }
     if (frame.drawn >= MAX_SEALS_DRAWN) {
         frame.out->droppedSeals += packed.seals.at(depth);
         return nullptr;
@@ -594,6 +755,17 @@ f32 SealLifeOpacity(const core::SealLook& look, std::size_t layer, f64 secondsSi
     return appear * fade;
 }
 
+SealParticle SealParticleAt(const SealGpuParticles& light, u32 index) {
+    const u32 hash = SealHash(light.seed ^ SealHash(index));
+    if (index < light.pillars) {
+        return SealPillarAt(light, index, hash);
+    }
+    if (index < light.pillars + light.sparks) {
+        return SealSparkAt(light, hash);
+    }
+    return SealShardAt(light, hash);
+}
+
 f32 SealLayerAngle(const core::SealLayer& layer, f64 seconds, f32 spinScale) {
     return SealSpin(layer.spin, seconds, spinScale);
 }
@@ -604,8 +776,11 @@ void SealDrawing::Clear() {
     aboveWash.clear();
     aboveLines.clear();
     layers.clear();
-    particles.clear();
+    groundParticles.clear();
+    aboveParticles.clear();
     droppedSeals = 0;
+    tinySeals = 0;
+    droppedParticles = 0;
 }
 
 // The reader's caps bound a pack, so its sizes fit the u32s its GPU buffers take: every look's layers' parts and its

@@ -471,6 +471,44 @@ TEST_CASE("new seals change the next picture of the same snapshot") {
     CHECK(restored.rgba == drawn.rgba);
 }
 
+TEST_CASE("an overhead seal's light on the pale ground: pillars falling from it, sparks rising") {
+    // The swords' seal's look hung overhead, with pillars and more sparks: a look made here, as the table ships none yet.
+    constexpr std::string_view LIT = "lit_overhead";
+    constexpr f32 LIFT = 170.0F;
+    constexpr f32 SIZE = 260.0F;
+    constexpr core::Vec2 BELOW{ .x = 0.0F, .y = 110.0F }; // its point, from the foxes: its pillars reach the ground there
+    constexpr core::SealLight LIGHT{ .pillars = 12,
+                                     .pillarHeight = 160.0F,
+                                     .pillarWidth = 0.035F,
+                                     .pillarFade = 0.6F,
+                                     .pillarCycle = 1.6,
+                                     .sparks = 40,
+                                     .sparkRise = 40.0F,
+                                     .sparkLife = 1.2,
+                                     .sparkSize = 0.035F };
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    game::Arena arena(test::TestManifest());
+    core::Snapshot snapshot = Published(arena, jobs, SEAL_TICK);
+    core::Seal seal = SwordSeal(AMONG_THE_FOXES + BELOW, SIZE, SEAL_TICK - SINCE_RAISED);
+    seal.key = core::SealKeyOf(LIT);
+    snapshot.seals.push_back(seal);
+    core::Seals seals = ShippedSeals();
+    const core::SealLook* swords = seals.Find(core::SealKeyOf(SWORD_SEAL));
+    REQUIRE(swords != nullptr);
+    core::SealLook look = *swords;
+    look.plane = core::SealPlane::Overhead;
+    look.lift = LIFT;
+    look.light = LIGHT;
+    seals.looks.emplace_back(seal.key, std::move(look));
+    std::ranges::sort(seals.looks, {}, &std::pair<core::SealKey, core::SealLook>::first);
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
+    renderer.SetSeals(seals);
+    const gfx::View view{ .camera = { .centre = AMONG_THE_FOXES, .zoom = gfx::MAX_ZOOM } };
+    CompareWithReference(Captured(renderer, snapshot, view, jobs), "seal_light");
+}
+
 TEST_CASE("the HUD at zoom 1, one slot cooling down") {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
