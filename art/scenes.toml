@@ -7,6 +7,11 @@ sprites = [
     "ground", "shadow", "rock_large", "rock_small", "pine", "shrine", "treant_blighted", "tree_dead", "hut", "crane",
     "stele", "fox_spirit", "fox_yellow", "wisp_red", "orb_gold", "crystal_ice", "cultivator", "fox", "orb_blue",
     "orb_red", "villager", "sword", "fire_bolt", "lance_strike", "solid",
+    "rune_00", "rune_01", "rune_02", "rune_03", "rune_04", "rune_05", "rune_06", "rune_07", "rune_08", "rune_09",
+    "rune_10", "rune_11", "rune_12", "rune_13", "rune_14", "rune_15", "rune_16", "rune_17", "rune_18", "rune_19",
+    "rune_20", "rune_21", "rune_22", "rune_23",
+    "flourish_flame_0", "flourish_flame_1", "flourish_flame_2", "emblem_lotus", "emblem_swords", "emblem_eye",
+    "emblem_spiral",
 ]
 
 # The arena with a crowd and bullet spirals, for the benchmark: the same sprites but the effects, as nothing casts there.

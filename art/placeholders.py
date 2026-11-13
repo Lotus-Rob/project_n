@@ -579,6 +579,219 @@ def cell_city():
     return canvas
 
 
+# The seals' art (phase 6 chunk 4b): white shapes on a transparent ground, tinted by the seal's colours. The game
+# computes each sprite's distance field from its alpha as it loads, so the art carries none: only a one-pixel antialiased
+# edge. Drawn at 4x on a bit mask and reduced by averaging; arcs come from a rational half-angle parametrisation and
+# Beziers, never a transcendental function.
+
+SUPER = 4
+
+
+class Mask:
+    """A 4x supersampled bit mask, stamped with discs along paths; coordinates are in final pixels."""
+
+    def __init__(self, width, height):
+        self.width, self.height = width, height
+        self.stride = width * SUPER
+        self.bits = bytearray(self.stride * height * SUPER)
+
+    def disc(self, cx, cy, radius):
+        r = radius * SUPER
+        px, py = cx * SUPER, cy * SUPER
+        for y in range(max(0, math.ceil(py - r)), min(self.height * SUPER, math.floor(py + r) + 1)):
+            dy = y + 0.5 - py
+            span = r * r - dy * dy
+            if span < 0.0:
+                continue
+            half = math.sqrt(span)
+            x0, x1 = max(0, math.ceil(px - half - 0.5)), min(self.stride, math.floor(px + half - 0.5) + 1)
+            if x1 > x0:
+                self.bits[y * self.stride + x0:y * self.stride + x1] = b"\x01" * (x1 - x0)
+
+    def path(self, points, width0, width1=None):
+        """A round-capped polyline whose width tapers from width0 to width1 along its length."""
+        width1 = width0 if width1 is None else width1
+        lengths = [0.0]
+        for (ax, ay), (bx, by) in itertools.pairwise(points):
+            lengths.append(lengths[-1] + math.sqrt((bx - ax) ** 2 + (by - ay) ** 2))
+        total = lengths[-1] or 1.0
+        for (ax, ay), (bx, by), start, end in zip(points, points[1:], lengths, lengths[1:]):
+            steps = max(1, math.ceil((end - start) * SUPER))
+            for step in range(steps + 1):
+                t = step / steps
+                along = (start + (end - start) * t) / total
+                self.disc(ax + (bx - ax) * t, ay + (by - ay) * t, (width0 + (width1 - width0) * along) * 0.5)
+
+    def canvas(self):
+        """Box-reduces to a white Canvas whose alpha is the covered fraction."""
+        canvas = Canvas(self.width, self.height)
+        area = float(SUPER * SUPER)
+        for y in range(self.height):
+            rows = [self.bits[(y * SUPER + j) * self.stride:(y * SUPER + j + 1) * self.stride] for j in range(SUPER)]
+            columns = [sum(column) for column in zip(*rows)]
+            for x in range(self.width):
+                covered = sum(columns[x * SUPER:(x + 1) * SUPER])
+                if covered:
+                    i = y * self.width + x
+                    canvas.r[i] = canvas.g[i] = canvas.b[i] = canvas.a[i] = covered / area
+        return canvas
+
+
+def bezier(*p, steps=48):
+    """Points along a quadratic (three points) or cubic (four points) Bezier curve."""
+    out = []
+    for step in range(steps + 1):
+        t = step / steps
+        u = 1.0 - t
+        if len(p) == 3:
+            w = (u * u, 2 * u * t, t * t)
+        else:
+            w = (u ** 3, 3 * u * u * t, 3 * u * t * t, t ** 3)
+        out.append((sum(a * q[0] for a, q in zip(w, p)), sum(a * q[1] for a, q in zip(w, p))))
+    return out
+
+
+def ellipse(cx, cy, rx, ry, per_quadrant=32):
+    """A closed ellipse: four quadrants of the half-angle parametrisation x = (1-t^2)/(1+t^2), y = 2t/(1+t^2)."""
+    quadrant = []
+    for step in range(per_quadrant + 1):
+        t = step / per_quadrant
+        quadrant.append(((1.0 - t * t) / (1.0 + t * t), 2.0 * t / (1.0 + t * t)))
+    points = list(quadrant)
+    points += [(-y, x) for x, y in quadrant[1:]]
+    points += [(-x, -y) for x, y in quadrant[1:]]
+    points += [(y, -x) for x, y in quadrant[1:]]
+    return [(cx + x * rx, cy + y * ry) for x, y in points]
+
+
+def spiral(cx, cy, r0, r1, steps, step_t):
+    """A spiral outwards from radius r0 to r1, turning a unit vector by the angle whose half-angle tangent is step_t."""
+    c, s = (1.0 - step_t * step_t) / (1.0 + step_t * step_t), 2.0 * step_t / (1.0 + step_t * step_t)
+    x, y = 1.0, 0.0
+    out = []
+    for i in range(steps + 1):
+        r = r0 + (r1 - r0) * i / steps
+        out.append((cx + x * r, cy + y * r))
+        x, y = x * c - y * s, x * s + y * c
+    return out
+
+
+def lcg(seed):
+    """The mockup's generator: a linear congruential stream of floats in [0, 1)."""
+    state = seed & 0xFFFFFFFF
+    while True:
+        state = (state * 1664525 + 1013904223) & 0xFFFFFFFF
+        yield state / 4294967296.0
+
+
+RUNES = 24
+# The grid keeps a stroke's round cap and its soft edge inside the canvas: 4 px from the sides, 2.5 from top and bottom
+# at the widest stroke (8 px).
+RUNE_GRID = [(24.0 + (x - 1) * 16.0, 32.0 + (y - 1.5) * 17.0) for y in range(4) for x in range(3)]
+
+
+def rune_strokes():
+    """The runes' strokes, one list of (a, b, width) each: 2 to 5 distinct segments between points of a 3 x 4 grid, 6 to
+    8 pixels wide, and no two runes with the same segments (a set already used is drawn again from the same stream)."""
+    rand = lcg(1000)
+    used = set()
+    runes = []
+    while len(runes) < RUNES:
+        strokes = []
+        for _ in range(2 + int(next(rand) * 3)):
+            a = RUNE_GRID[int(next(rand) * len(RUNE_GRID))]
+            b = a
+            while b == a:
+                b = RUNE_GRID[int(next(rand) * len(RUNE_GRID))]
+            width = 6.0 + int(next(rand) * 3)
+            if all({a, b} != {c, d} for c, d, _ in strokes):
+                strokes.append((a, b, width))
+        key = frozenset(frozenset((a, b)) for a, b, _ in strokes)
+        if len(strokes) >= 2 and key not in used:
+            used.add(key)
+            runes.append(strokes)
+    return runes
+
+
+def rune(index):
+    """An invented rune (48 x 64): see rune_strokes."""
+    mask = Mask(48, 64)
+    for a, b, width in rune_strokes()[index]:
+        mask.path([a, b], width)
+    return mask.canvas()
+
+
+# Each flame tongue: base, two control points and tip (256 x 128 canvas, y down), tapering from 14 to 4 pixels.
+FLAMES = [
+    [((128, 112), (84, 96), (176, 64), (150, 16))],
+    [((128, 112), (60, 100), (100, 50), (64, 16)), ((128, 112), (196, 100), (156, 50), (192, 16))],
+    [((128, 112), (40, 96), (72, 56), (40, 24)), ((128, 112), (128, 80), (100, 40), (128, 8)),
+     ((128, 112), (216, 96), (184, 56), (216, 24))],
+]
+
+
+def flourish_flame(tongues):
+    """A flame flourish (256 x 128): tapering curls rising from a base line."""
+    mask = Mask(256, 128)
+    mask.path(bezier((12, 110), (80, 118), (176, 118), (244, 110)), 10.0)
+    for base, c1, c2, tip in FLAMES[tongues]:
+        mask.path(bezier(base, c1, c2, tip), 14.0, 4.0)
+        # A small curl peeling off each tongue's lower half, away from its tip.
+        start = bezier(base, c1, c2, tip)[16]
+        away = -1.0 if tip[0] > base[0] else 1.0
+        mask.path(bezier(start, (start[0] + away * 30, start[1] - 4), (start[0] + away * 36, start[1] + 22)), 9.0, 4.0)
+    return mask.canvas()
+
+
+def emblem_lotus():
+    """A lotus: five petals outlined from one base over a cupped line."""
+    mask = Mask(256, 256)
+    base = (128.0, 204.0)
+    for tip in ((128, 36), (64, 64), (192, 64), (30, 120), (226, 120)):
+        dx, dy = tip[0] - base[0], tip[1] - base[1]
+        length = math.sqrt(dx * dx + dy * dy)
+        nx, ny = -dy / length, dx / length
+        mid = (base[0] + dx * 0.5, base[1] + dy * 0.5)
+        for side in (-1.0, 1.0):
+            mask.path(bezier(base, (mid[0] + side * nx * 70, mid[1] + side * ny * 70), tip), 12.0)
+    mask.path(bezier((36, 200), (128, 256), (220, 200)), 14.0)
+    return mask.canvas()
+
+
+def emblem_swords():
+    """Two crossed swords in a ring."""
+    mask = Mask(256, 256)
+    mask.path(ellipse(128, 128, 114, 114), 12.0)
+    for sign in (-1.0, 1.0):
+        pommel, tip = (128 - 76 * sign, 204), (128 + 76 * sign, 52)
+        mask.path([pommel, tip], 20.0, 8.0)
+        # The cross-guard sits a third of the way from the pommel, across the blade.
+        gx, gy = pommel[0] + (tip[0] - pommel[0]) / 3, pommel[1] + (tip[1] - pommel[1]) / 3
+        mask.path([(gx - 24, gy - 24 * sign), (gx + 24, gy + 24 * sign)], 14.0)
+        mask.disc(pommel[0], pommel[1], 13.0)
+    return mask.canvas()
+
+
+def emblem_eye():
+    """An open eye: almond lids, a ringed iris, a pupil and three lashes."""
+    mask = Mask(256, 256)
+    mask.path(bezier((16, 136), (80, 48), (176, 48), (240, 136)), 14.0)
+    mask.path(bezier((16, 136), (80, 224), (176, 224), (240, 136)), 14.0)
+    mask.path(ellipse(128, 136, 40, 40), 12.0)
+    mask.disc(128, 136, 16.0)
+    for x0, y0, x1, y1 in ((128, 84, 128, 36), (84, 92, 62, 52), (172, 92, 194, 52)):
+        mask.path([(x0, y0), (x1, y1)], 12.0, 7.0)
+    return mask.canvas()
+
+
+def emblem_spiral():
+    """A spiral of about three turns."""
+    mask = Mask(256, 256)
+    mask.path(spiral(128, 128, 10, 112, 150, 0.0625), 14.0)
+    mask.disc(128, 128, 13.0)
+    return mask.canvas()
+
+
 # name -> (painter, opaque); the names are those in art/sprites.toml.
 PLACEHOLDERS = {
     "ground": (ground, True),
@@ -602,6 +815,12 @@ PLACEHOLDERS = {
     "lance_strike": (lance_strike, False),
     "solid": (solid, False),
     "glow_core": (glow_core, False),
+    **{f"rune_{i:02d}": ((lambda i=i: rune(i)), False) for i in range(RUNES)},
+    **{f"flourish_flame_{i}": ((lambda i=i: flourish_flame(i)), False) for i in range(3)},
+    "emblem_lotus": (emblem_lotus, False),
+    "emblem_swords": (emblem_swords, False),
+    "emblem_eye": (emblem_eye, False),
+    "emblem_spiral": (emblem_spiral, False),
 }
 
 

@@ -106,3 +106,98 @@ foot = [0, 4]
 # Unused since the swords wear glows (core/glow.hpp): kept for its stable ID, in no scene.
 [glow_core]
 foot = [8, 8]
+
+# The seals' art (phase 6 chunk 4b): white shapes, tinted by the seal. Each foot is the centre.
+
+[rune_00]
+foot = [24, 32]
+
+[rune_01]
+foot = [24, 32]
+
+[rune_02]
+foot = [24, 32]
+
+[rune_03]
+foot = [24, 32]
+
+[rune_04]
+foot = [24, 32]
+
+[rune_05]
+foot = [24, 32]
+
+[rune_06]
+foot = [24, 32]
+
+[rune_07]
+foot = [24, 32]
+
+[rune_08]
+foot = [24, 32]
+
+[rune_09]
+foot = [24, 32]
+
+[rune_10]
+foot = [24, 32]
+
+[rune_11]
+foot = [24, 32]
+
+[rune_12]
+foot = [24, 32]
+
+[rune_13]
+foot = [24, 32]
+
+[rune_14]
+foot = [24, 32]
+
+[rune_15]
+foot = [24, 32]
+
+[rune_16]
+foot = [24, 32]
+
+[rune_17]
+foot = [24, 32]
+
+[rune_18]
+foot = [24, 32]
+
+[rune_19]
+foot = [24, 32]
+
+[rune_20]
+foot = [24, 32]
+
+[rune_21]
+foot = [24, 32]
+
+[rune_22]
+foot = [24, 32]
+
+[rune_23]
+foot = [24, 32]
+
+[flourish_flame_0]
+foot = [128, 64]
+
+[flourish_flame_1]
+foot = [128, 64]
+
+[flourish_flame_2]
+foot = [128, 64]
+
+[emblem_lotus]
+foot = [128, 128]
+
+[emblem_swords]
+foot = [128, 128]
+
+[emblem_eye]
+foot = [128, 128]
+
+[emblem_spiral]
+foot = [128, 128]

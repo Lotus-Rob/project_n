@@ -42,10 +42,41 @@ enum class SpriteId : u16 { // NOLINT(performance-enum-size): stable IDs outgrow
     LanceStrike, ///< assets/sprites/lance_strike.png
     Solid, ///< assets/sprites/solid.png
     GlowCore, ///< assets/sprites/glow_core.png
+    Rune00, ///< assets/sprites/rune_00.png
+    Rune01, ///< assets/sprites/rune_01.png
+    Rune02, ///< assets/sprites/rune_02.png
+    Rune03, ///< assets/sprites/rune_03.png
+    Rune04, ///< assets/sprites/rune_04.png
+    Rune05, ///< assets/sprites/rune_05.png
+    Rune06, ///< assets/sprites/rune_06.png
+    Rune07, ///< assets/sprites/rune_07.png
+    Rune08, ///< assets/sprites/rune_08.png
+    Rune09, ///< assets/sprites/rune_09.png
+    Rune10, ///< assets/sprites/rune_10.png
+    Rune11, ///< assets/sprites/rune_11.png
+    Rune12, ///< assets/sprites/rune_12.png
+    Rune13, ///< assets/sprites/rune_13.png
+    Rune14, ///< assets/sprites/rune_14.png
+    Rune15, ///< assets/sprites/rune_15.png
+    Rune16, ///< assets/sprites/rune_16.png
+    Rune17, ///< assets/sprites/rune_17.png
+    Rune18, ///< assets/sprites/rune_18.png
+    Rune19, ///< assets/sprites/rune_19.png
+    Rune20, ///< assets/sprites/rune_20.png
+    Rune21, ///< assets/sprites/rune_21.png
+    Rune22, ///< assets/sprites/rune_22.png
+    Rune23, ///< assets/sprites/rune_23.png
+    FlourishFlame0, ///< assets/sprites/flourish_flame_0.png
+    FlourishFlame1, ///< assets/sprites/flourish_flame_1.png
+    FlourishFlame2, ///< assets/sprites/flourish_flame_2.png
+    EmblemLotus, ///< assets/sprites/emblem_lotus.png
+    EmblemSwords, ///< assets/sprites/emblem_swords.png
+    EmblemEye, ///< assets/sprites/emblem_eye.png
+    EmblemSpiral, ///< assets/sprites/emblem_spiral.png
 };
 
 /// Every sprite's name, indexed by SpriteId: the manifest must list the same, in this order.
-inline constexpr std::array<std::string_view, 32> SPRITE_NAMES{ {
+inline constexpr std::array<std::string_view, 63> SPRITE_NAMES{ {
     "ground",
     "rock_large",
     "rock_small",
@@ -78,6 +109,37 @@ inline constexpr std::array<std::string_view, 32> SPRITE_NAMES{ {
     "lance_strike",
     "solid",
     "glow_core",
+    "rune_00",
+    "rune_01",
+    "rune_02",
+    "rune_03",
+    "rune_04",
+    "rune_05",
+    "rune_06",
+    "rune_07",
+    "rune_08",
+    "rune_09",
+    "rune_10",
+    "rune_11",
+    "rune_12",
+    "rune_13",
+    "rune_14",
+    "rune_15",
+    "rune_16",
+    "rune_17",
+    "rune_18",
+    "rune_19",
+    "rune_20",
+    "rune_21",
+    "rune_22",
+    "rune_23",
+    "flourish_flame_0",
+    "flourish_flame_1",
+    "flourish_flame_2",
+    "emblem_lotus",
+    "emblem_swords",
+    "emblem_eye",
+    "emblem_spiral",
 } };
 
 } // namespace core::atlas

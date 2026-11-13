@@ -39,3 +39,6 @@ updates its row in the same commit (what made it, when, and who) and takes it ou
 | lance_strike.png | `art/placeholders.py` (procedural placeholder) | 2026-11-11 | white, tinted by its element's colour; as above |
 | solid.png | `art/placeholders.py` (procedural placeholder) | 2026-11-11 | the bars' white square; as above |
 | glow_core.png | `art/placeholders.py` (procedural placeholder) | 2026-11-11 | white; unused since the swords wear glows, kept for its stable ID; as above |
+| rune_00.png to rune_23.png | `art/placeholders.py` (procedural placeholder) | 2026-11-13 | the seals' invented runes, 2 to 5 strokes on a 3 x 4 grid; white, tinted by the seal; `./dev atlas --placeholders` redraws them byte for byte |
+| flourish_flame_0.png to flourish_flame_2.png | `art/placeholders.py` (procedural placeholder) | 2026-11-13 | the seals' flame flourishes, 256 x 128; white; as above |
+| emblem_lotus.png, emblem_swords.png, emblem_eye.png, emblem_spiral.png | `art/placeholders.py` (procedural placeholder) | 2026-11-13 | the seals' emblems, 256 x 256, abstract and original; white; as above |
