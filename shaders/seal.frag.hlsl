@@ -35,10 +35,6 @@ struct Pixel {
     float pixel;  // the most a screen pixel spans of the plane, in seal sizes
 };
 
-float4 UnpackColour(uint colour) {
-    return float4(colour & 0xFF, (colour >> 8) & 0xFF, (colour >> 16) & 0xFF, colour >> 24) / 255.0;
-}
-
 float2 Direction(float angle) {
     float sine, cosine;
     sincos(angle, sine, cosine);
@@ -179,7 +175,8 @@ float RingSpriteLight(Pixel p, SealPart part, float first) {
     return SpriteLight(p, sprite, itemOut * part.radius, part.inward != 0 ? -itemOut : itemOut, part.size);
 }
 
-// How far from the centre a part's ink and halo reach, in seal sizes: the pixels outside that never test it.
+// How far from the centre a part's ink and halo reach, in seal sizes: the pixels outside that never test it. Its start
+// less the margin is SealBandStart() in src/gfx/seal_draw.cpp, which sorts a layer's parts by it: the two change together.
 float2 PartBand(Pixel p, SealPart part) {
     const float margin = look.haloReach + p.pixel;
     if (part.kind == SEAL_CIRCLE) {
@@ -288,11 +285,15 @@ float4 FragmentMain(SealOut input) : SV_Target0 {
     }
     const float3 colours[2] = { UnpackColour(layer.colour0).rgb, UnpackColour(layer.colour1).rgb };
     float3 light = 0.0;
-    // Sorted by radius: only the parts whose band holds the pixel are drawn.
+    // Sorted by where their bands start (gfx::PackSeals()): once a part's band starts past the pixel, every later one's
+    // does too, so only the parts up to there are tested, and only those whose band holds the pixel are drawn.
     for (uint index = 0; index < layer.partCount; ++index) {
         const SealPart part = parts[layer.firstPart + index];
         const float2 band = PartBand(p, part);
-        if (p.radius < band.x || p.radius > band.y) {
+        if (p.radius < band.x) {
+            break;
+        }
+        if (p.radius > band.y) {
             continue;
         }
         const bool framed = layer.frameSides >= 3;

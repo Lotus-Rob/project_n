@@ -1,0 +1,355 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct SealParticles
+{
+    float2 centre;
+    float2 axisX;
+    float2 axisDepth;
+    uint seed;
+    uint colour;
+    float opacity;
+    float size;
+    uint firstParticle;
+    uint pillars;
+    uint sparks;
+    uint shards;
+    float pillarAge;
+    float pillarCycle;
+    float pillarHeight;
+    float pillarWidth;
+    float pillarFade;
+    float sparkAge;
+    float sparkLife;
+    float sparkRise;
+    float shardAge;
+    float shardCycle;
+    float shardDrift;
+    float shardSpin;
+    float pillarFall;
+    float sparkSize;
+    uint sparkLap;
+    float shardSize;
+    uint shardLap;
+    uint washColour;
+    float washOpacity;
+    float pillarRest;
+    float pillarBand;
+    float shardThin;
+    float shardEdge;
+    uint reserved0;
+    uint reserved1;
+    uint reserved2;
+};
+
+struct type_StructuredBuffer_SealParticles
+{
+    SealParticles _m0[1];
+};
+
+struct type_ConstantBuffer_LightDraw
+{
+    float4 worldToClip;
+    float2 pixelsPerClip;
+    uint firstRecord;
+    uint recordCount;
+    uint ink;
+    packed_uint3 padding;
+};
+
+struct VertexMain_out
+{
+    float2 out_var_TEXCOORD0 [[user(locn0)]];
+    float4 out_var_TEXCOORD1 [[user(locn1)]];
+    uint out_var_TEXCOORD2 [[user(locn2)]];
+    float out_var_TEXCOORD3 [[user(locn3)]];
+    float out_var_TEXCOORD4 [[user(locn4)]];
+    float4 out_var_TEXCOORD5 [[user(locn5)]];
+    float4 gl_Position [[position]];
+};
+
+vertex VertexMain_out VertexMain(constant type_ConstantBuffer_LightDraw& draw [[buffer(0)]], const device type_StructuredBuffer_SealParticles& records [[buffer(1)]], uint gl_VertexIndex [[vertex_id]], uint gl_InstanceIndex [[instance_id]])
+{
+    VertexMain_out out = {};
+    uint _102 = (draw.firstRecord + draw.recordCount) - 1u;
+    uint _107;
+    _107 = draw.firstRecord;
+    uint _108;
+    uint _105;
+    for (uint _104 = _102; _107 < _104; _104 = _105, _107 = _108)
+    {
+        uint _114 = ((_107 + _104) + 1u) / 2u;
+        bool _117 = records._m0[_114].firstParticle <= gl_InstanceIndex;
+        if (_117)
+        {
+            _105 = _104;
+        }
+        else
+        {
+            _105 = _114 - 1u;
+        }
+        _108 = _117 ? _114 : _107;
+    }
+    uint _189 = gl_InstanceIndex - records._m0[_107].firstParticle;
+    uint _192 = (_189 ^ (_189 >> 16u)) * 2146121005u;
+    uint _195 = (_192 ^ (_192 >> 15u)) * 2221713035u;
+    uint _198 = records._m0[_107].seed ^ (_195 ^ (_195 >> 16u));
+    uint _201 = (_198 ^ (_198 >> 16u)) * 2146121005u;
+    uint _204 = (_201 ^ (_201 >> 15u)) * 2221713035u;
+    uint _206 = _204 ^ (_204 >> 16u);
+    float2 _505;
+    float2 _506;
+    float2 _507;
+    float _508;
+    float _509;
+    uint _510;
+    if (_189 < records._m0[_107].pillars)
+    {
+        uint _211 = _206 + 1u;
+        uint _214 = (_211 ^ (_211 >> 16u)) * 2146121005u;
+        uint _217 = (_214 ^ (_214 >> 15u)) * 2221713035u;
+        uint _225 = _206 + 2u;
+        uint _228 = (_225 ^ (_225 >> 16u)) * 2146121005u;
+        uint _231 = (_228 ^ (_228 >> 15u)) * 2221713035u;
+        float _240 = (6.283185482025146484375 * (float(_189) + (float((_231 ^ (_231 >> 16u)) >> 8u) * 5.9604644775390625e-08))) / float(records._m0[_107].pillars);
+        float2 _244 = float2(cos(_240), sin(_240)) * sqrt(float((_217 ^ (_217 >> 16u)) >> 8u) * 5.9604644775390625e-08);
+        bool _251 = records._m0[_107].pillarCycle > 0.0;
+        float _272;
+        if (_251)
+        {
+            uint _256 = (_206 ^ (_206 >> 16u)) * 2146121005u;
+            uint _259 = (_256 ^ (_256 >> 15u)) * 2221713035u;
+            float _266 = records._m0[_107].pillarAge + ((float((_259 ^ (_259 >> 16u)) >> 8u) * 5.9604644775390625e-08) * records._m0[_107].pillarCycle);
+            float _271;
+            if (_266 >= records._m0[_107].pillarCycle)
+            {
+                _271 = _266 - records._m0[_107].pillarCycle;
+            }
+            else
+            {
+                _271 = _266;
+            }
+            _272 = _271;
+        }
+        else
+        {
+            _272 = records._m0[_107].pillarAge;
+        }
+        float2 _275 = float2(0.0, (records._m0[_107].pillarFall * records._m0[_107].pillarHeight) * 0.5);
+        float _283;
+        if (_251)
+        {
+            _283 = _272 / records._m0[_107].pillarCycle;
+        }
+        else
+        {
+            _283 = 0.0;
+        }
+        _505 = ((records._m0[_107].centre + (records._m0[_107].axisX * _244.x)) + (records._m0[_107].axisDepth * _244.y)) + _275;
+        _506 = _275;
+        _507 = float2(records._m0[_107].pillarWidth * 0.5, 0.0);
+        _508 = 1.0;
+        _509 = _283;
+        _510 = 0u;
+    }
+    else
+    {
+        bool _285 = _189 < (records._m0[_107].pillars + records._m0[_107].sparks);
+        float2 _500;
+        float2 _501;
+        float2 _502;
+        float _503;
+        if (_285)
+        {
+            bool _289 = records._m0[_107].sparkLife > 0.0;
+            float _312;
+            uint _313;
+            if (_289)
+            {
+                uint _294 = (_206 ^ (_206 >> 16u)) * 2146121005u;
+                uint _297 = (_294 ^ (_294 >> 15u)) * 2221713035u;
+                float _304 = records._m0[_107].sparkAge + ((float((_297 ^ (_297 >> 16u)) >> 8u) * 5.9604644775390625e-08) * records._m0[_107].sparkLife);
+                float _310;
+                uint _311;
+                if (_304 >= records._m0[_107].sparkLife)
+                {
+                    _310 = _304 - records._m0[_107].sparkLife;
+                    _311 = records._m0[_107].sparkLap + 1u;
+                }
+                else
+                {
+                    _310 = _304;
+                    _311 = records._m0[_107].sparkLap;
+                }
+                _312 = _310;
+                _313 = _311;
+            }
+            else
+            {
+                _312 = records._m0[_107].sparkAge;
+                _313 = records._m0[_107].sparkLap;
+            }
+            uint _316 = (_313 ^ (_313 >> 16u)) * 2146121005u;
+            uint _319 = (_316 ^ (_316 >> 15u)) * 2221713035u;
+            uint _322 = _206 ^ (_319 ^ (_319 >> 16u));
+            uint _325 = (_322 ^ (_322 >> 16u)) * 2146121005u;
+            uint _328 = (_325 ^ (_325 >> 15u)) * 2221713035u;
+            uint _330 = _328 ^ (_328 >> 16u);
+            uint _331 = _330 + 1u;
+            uint _334 = (_331 ^ (_331 >> 16u)) * 2146121005u;
+            uint _337 = (_334 ^ (_334 >> 15u)) * 2221713035u;
+            uint _344 = _330 + 2u;
+            uint _347 = (_344 ^ (_344 >> 16u)) * 2146121005u;
+            uint _350 = (_347 ^ (_347 >> 15u)) * 2221713035u;
+            float _355 = float((_350 ^ (_350 >> 16u)) >> 8u) * 3.7450703871400037314742803573608e-07;
+            float2 _359 = float2(cos(_355), sin(_355)) * sqrt(float((_337 ^ (_337 >> 16u)) >> 8u) * 5.9604644775390625e-08);
+            float _366 = records._m0[_107].sparkSize * 0.5;
+            float _379;
+            if (_289)
+            {
+                float _375 = _312 / records._m0[_107].sparkLife;
+                _379 = (4.0 * _375) * (1.0 - _375);
+            }
+            else
+            {
+                _379 = 1.0;
+            }
+            _500 = ((records._m0[_107].centre + (records._m0[_107].axisX * _359.x)) + (records._m0[_107].axisDepth * _359.y)) - float2(0.0, records._m0[_107].sparkRise * _312);
+            _501 = float2(0.0, _366);
+            _502 = float2(_366, 0.0);
+            _503 = _379;
+        }
+        else
+        {
+            bool _380 = records._m0[_107].shardCycle > 0.0;
+            float _403;
+            uint _404;
+            if (_380)
+            {
+                uint _385 = (_206 ^ (_206 >> 16u)) * 2146121005u;
+                uint _388 = (_385 ^ (_385 >> 15u)) * 2221713035u;
+                float _395 = records._m0[_107].shardAge + ((float((_388 ^ (_388 >> 16u)) >> 8u) * 5.9604644775390625e-08) * records._m0[_107].shardCycle);
+                float _401;
+                uint _402;
+                if (_395 >= records._m0[_107].shardCycle)
+                {
+                    _401 = _395 - records._m0[_107].shardCycle;
+                    _402 = records._m0[_107].shardLap + 1u;
+                }
+                else
+                {
+                    _401 = _395;
+                    _402 = records._m0[_107].shardLap;
+                }
+                _403 = _401;
+                _404 = _402;
+            }
+            else
+            {
+                _403 = records._m0[_107].shardAge;
+                _404 = records._m0[_107].shardLap;
+            }
+            uint _407 = (_404 ^ (_404 >> 16u)) * 2146121005u;
+            uint _410 = (_407 ^ (_407 >> 15u)) * 2221713035u;
+            uint _413 = _206 ^ (_410 ^ (_410 >> 16u));
+            uint _416 = (_413 ^ (_413 >> 16u)) * 2146121005u;
+            uint _419 = (_416 ^ (_416 >> 15u)) * 2221713035u;
+            uint _421 = _419 ^ (_419 >> 16u);
+            uint _422 = _421 + 2u;
+            uint _425 = (_422 ^ (_422 >> 16u)) * 2146121005u;
+            uint _428 = (_425 ^ (_425 >> 15u)) * 2221713035u;
+            float _433 = float((_428 ^ (_428 >> 16u)) >> 8u) * 3.7450703871400037314742803573608e-07;
+            uint _434 = _421 + 1u;
+            uint _437 = (_434 ^ (_434 >> 16u)) * 2146121005u;
+            uint _440 = (_437 ^ (_437 >> 15u)) * 2221713035u;
+            uint _450 = _421 + 3u;
+            uint _453 = (_450 ^ (_450 >> 16u)) * 2146121005u;
+            uint _456 = (_453 ^ (_453 >> 15u)) * 2221713035u;
+            float _463 = (float((_456 ^ (_456 >> 16u)) >> 8u) * 3.7450703871400037314742803573608e-07) + (records._m0[_107].shardSpin * _403);
+            float _465 = (records._m0[_107].shardSize * 0.5) / records._m0[_107].size;
+            float _466 = sin(_463);
+            float _467 = cos(_463);
+            float2 _473 = float2(cos(_433), sin(_433)) * (sqrt(float((_440 ^ (_440 >> 16u)) >> 8u) * 5.9604644775390625e-08) + ((records._m0[_107].shardDrift * _403) / records._m0[_107].size));
+            float _485 = _465 * records._m0[_107].shardThin;
+            float _499;
+            if ((records._m0[_107].shardDrift > 0.0) ? _380 : false)
+            {
+                float _495 = _403 / records._m0[_107].shardCycle;
+                _499 = (4.0 * _495) * (1.0 - _495);
+            }
+            else
+            {
+                _499 = 1.0;
+            }
+            _500 = (records._m0[_107].centre + (records._m0[_107].axisX * _473.x)) + (records._m0[_107].axisDepth * _473.y);
+            _501 = (records._m0[_107].axisX * (_467 * _465)) + (records._m0[_107].axisDepth * (_466 * _465));
+            _502 = (records._m0[_107].axisX * ((-_466) * _485)) + (records._m0[_107].axisDepth * (_467 * _485));
+            _503 = _499;
+        }
+        _505 = _500;
+        _506 = _501;
+        _507 = _502;
+        _508 = _503;
+        _509 = 0.0;
+        _510 = _285 ? 1u : 2u;
+    }
+    float4 _514;
+    float2 _515;
+    float2 _518;
+    float _529;
+    float2 _530;
+    do
+    {
+        _514 = draw.worldToClip;
+        _515 = _514.xy;
+        _518 = draw.pixelsPerClip;
+        float _521 = 2.0 * length((_506 * _515) * _518);
+        if (_521 < 2.0)
+        {
+            float _526 = 2.0 / precise::max(_521, 9.9999999747524270787835121154785e-07);
+            _529 = _508 / _526;
+            _530 = _506 * _526;
+            break;
+        }
+        _529 = _508;
+        _530 = _506;
+        break;
+    } while(false);
+    float _544;
+    float2 _545;
+    do
+    {
+        float _536 = 2.0 * length((_507 * _515) * _518);
+        if (_536 < 2.0)
+        {
+            float _541 = 2.0 / precise::max(_536, 9.9999999747524270787835121154785e-07);
+            _544 = _529 / _541;
+            _545 = _507 * _541;
+            break;
+        }
+        _544 = _529;
+        _545 = _507;
+        break;
+    } while(false);
+    float2 _552 = (float2(float(gl_VertexIndex & 1u), float(gl_VertexIndex >> 1u)) * 2.0) - float2(1.0);
+    float4 _597;
+    if (draw.ink != 0u)
+    {
+        _597 = (float4(float(records._m0[_107].washColour & 255u), float((records._m0[_107].washColour >> 8u) & 255u), float((records._m0[_107].washColour >> 16u) & 255u), float(records._m0[_107].washColour >> 24u)) * float4(0.0039215688593685626983642578125)) * records._m0[_107].washOpacity;
+    }
+    else
+    {
+        _597 = (float4(float(records._m0[_107].colour & 255u), float((records._m0[_107].colour >> 8u) & 255u), float((records._m0[_107].colour >> 16u) & 255u), float(records._m0[_107].colour >> 24u)) * float4(0.0039215688593685626983642578125)) * records._m0[_107].opacity;
+    }
+    out.gl_Position = float4((((_505 + (_545 * _552.x)) + (_530 * _552.y)) * _515) + _514.zw, 0.0, 1.0);
+    out.out_var_TEXCOORD0 = _552;
+    out.out_var_TEXCOORD1 = _597 * _544;
+    out.out_var_TEXCOORD2 = _510;
+    out.out_var_TEXCOORD3 = _509;
+    out.out_var_TEXCOORD4 = length(_530) / precise::max(length(_545), 9.9999999747524270787835121154785e-07);
+    out.out_var_TEXCOORD5 = float4(records._m0[_107].pillarFade, records._m0[_107].pillarRest, records._m0[_107].pillarBand, records._m0[_107].shardEdge);
+    return out;
+}
+

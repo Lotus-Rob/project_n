@@ -1,3 +1,4 @@
+#include "colour.hlsli"
 #include "sprite.hlsli"
 
 // core::Instance (src/core/frame.hpp), 56 bytes. 16-bit fields come in pairs, low half first, and
@@ -81,10 +82,6 @@ float2 UnpackHalves(uint packed) {
 
 float2 UnpackUnorm16(uint packed) {
     return float2(packed & 0xFFFF, packed >> 16) / 65535.0;
-}
-
-float4 UnpackColour(uint colour) {
-    return float4(colour & 0xFF, (colour >> 8) & 0xFF, (colour >> 16) & 0xFF, colour >> 24) / 255.0;
 }
 
 // core::CurveAt() (src/core/glow.cpp), line for line: `fraction`, held to 0..1, through `curve`.

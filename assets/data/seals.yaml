@@ -40,9 +40,15 @@
 #     ring), angle, size (above 0, at most 1), mount (fixed: stays put; with_layer: turns with the layer; orbit: goes round
 #     at orbit degrees a second).
 #   light: colour, and pillars { count, height (world units), width, fade (how much of its length a pillar fades out
-#     over towards its far end, 0 to 1), cycle (seconds its light takes to fall its length once, above 0) }, sparks { count,
-#     rise (world units a second), life (seconds, above 0) } and shards { count, drift (world units a second), spin }: 256
-#     particles at most in all.
+#     over towards its far end, 0 to 1), cycle (seconds its light takes to run its length once, above 0), rest (how bright
+#     a pillar is between its light's passes, a share of the pass's, 0 to 1; 0.35 if left out), band (how far the passing
+#     light reaches each way, a share of the pillar's length, above 0 to 0.5; 0.15) }, sparks { count, rise (world units a
+#     second), life (seconds, above 0), size (across) } and shards { count, drift (world units a second, out from the
+#     centre), spin, size (length), thin (width over length, above 0 to 1; 0.35), edge (how much of the way from its
+#     middle to its points a shard softens over, above 0 to 1; 0.5) }: 256 particles at most in all. Pillars stand at
+#     points of the seal, falling from an overhead one towards the ground and rising from one on the ground or upright;
+#     sparks and shards are born at points of the seal, somewhere new each time they come round. Each particle has the
+#     seal's ink under its light, as dark as its wash.
 view_ratio: 0.375
 above_opacity: 0.7
 spin_scale: 1
@@ -87,4 +93,4 @@ seals:
           - { kind: circle, radius: 0.575, width: 0.005 }
           - { kind: star, points: 6, step: 2, radius: 0.56, width: 0.005 }
     emblem: { sprite: emblem_swords, size: 0.22, spin: 0, colour: 0 }
-    light: { sparks: { count: 24, rise: 40, life: 1.2 } }
+    light: { sparks: { count: 24, rise: 40, life: 1.2, size: 0.02 } }

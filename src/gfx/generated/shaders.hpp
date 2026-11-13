@@ -156,15 +156,15 @@ inline constexpr Stage RIBBON_FRAG{
 };
 
 /// shaders/bin/seal.frag.spv, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 25552> SEAL_FRAG_SPIRV{{
+inline constexpr std::array<u8, 25524> SEAL_FRAG_SPIRV{{
 #include "seal.frag.spv.h"
 }};
 /// shaders/bin/seal.frag.dxil, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 13380> SEAL_FRAG_DXIL{{
+inline constexpr std::array<u8, 13420> SEAL_FRAG_DXIL{{
 #include "seal.frag.dxil.h"
 }};
 /// shaders/bin/seal.frag.msl, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 28029> SEAL_FRAG_MSL{{
+inline constexpr std::array<u8, 27894> SEAL_FRAG_MSL{{
 #include "seal.frag.msl.h"
 }};
 /// shaders/seal.frag.hlsl.
@@ -199,6 +199,56 @@ inline constexpr Stage SEAL_VERT{
     .spirv = SEAL_VERT_SPIRV,
     .dxil = SEAL_VERT_DXIL,
     .msl = SEAL_VERT_MSL,
+    .samplers = 0,
+    .storageTextures = 0,
+    .storageBuffers = 1,
+    .uniformBuffers = 1,
+};
+
+/// shaders/bin/seal_light.frag.spv, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 2332> SEAL_LIGHT_FRAG_SPIRV{{
+#include "seal_light.frag.spv.h"
+}};
+/// shaders/bin/seal_light.frag.dxil, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 4324> SEAL_LIGHT_FRAG_DXIL{{
+#include "seal_light.frag.dxil.h"
+}};
+/// shaders/bin/seal_light.frag.msl, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 1785> SEAL_LIGHT_FRAG_MSL{{
+#include "seal_light.frag.msl.h"
+}};
+/// shaders/seal_light.frag.hlsl.
+inline constexpr Stage SEAL_LIGHT_FRAG{
+    .name = "seal_light.frag",
+    .entryPoint = "FragmentMain",
+    .spirv = SEAL_LIGHT_FRAG_SPIRV,
+    .dxil = SEAL_LIGHT_FRAG_DXIL,
+    .msl = SEAL_LIGHT_FRAG_MSL,
+    .samplers = 0,
+    .storageTextures = 0,
+    .storageBuffers = 0,
+    .uniformBuffers = 0,
+};
+
+/// shaders/bin/seal_light.vert.spv, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 14868> SEAL_LIGHT_VERT_SPIRV{{
+#include "seal_light.vert.spv.h"
+}};
+/// shaders/bin/seal_light.vert.dxil, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 9388> SEAL_LIGHT_VERT_DXIL{{
+#include "seal_light.vert.dxil.h"
+}};
+/// shaders/bin/seal_light.vert.msl, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 13023> SEAL_LIGHT_VERT_MSL{{
+#include "seal_light.vert.msl.h"
+}};
+/// shaders/seal_light.vert.hlsl.
+inline constexpr Stage SEAL_LIGHT_VERT{
+    .name = "seal_light.vert",
+    .entryPoint = "VertexMain",
+    .spirv = SEAL_LIGHT_VERT_SPIRV,
+    .dxil = SEAL_LIGHT_VERT_DXIL,
+    .msl = SEAL_LIGHT_VERT_MSL,
     .samplers = 0,
     .storageTextures = 0,
     .storageBuffers = 1,

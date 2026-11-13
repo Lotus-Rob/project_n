@@ -40,11 +40,10 @@ TEST_CASE("the seals reader refuses a value its f32 can't hold above 0, with its
           .text = "seals:\n  a:\n    colours: [element]\n    layers:\n"
                   "      - { inner: 0, outer: 1, parts: [{ kind: circle, radius: 1e-40, width: 0.1 }] }\n",
           .says = "seals line 5: a layer 0 part 0's radius is too small for an f32" },
-        { .why = "a satellite's size that narrows to 0",
-          .text = "seals:\n"
-                  "  a: { colours: [element], layers: [{ inner: 0, outer: 1 }], satellites: [{ seal: b, size: 1e-50 }] }\n"
-                  "  b: { colours: [element], layers: [{ inner: 0, outer: 1 }] }\n",
-          .says = "seals line 2: a's satellite 0's size is too small for an f32" },
+        { .why = "an emblem's size that narrows to 0",
+          .text = "seals:\n  a:\n    colours: [element]\n    layers: [{ inner: 0, outer: 1 }]\n"
+                  "    emblem: { sprite: emblem_swords, size: 1e-50 }\n",
+          .says = "seals line 5: a's emblem's size is too small for an f32" },
         { .why = "a view ratio that narrows to 0",
           .text = "view_ratio: 1e-50\n",
           .says = "seals line 1: the seals table's view_ratio is too small for an f32" },
@@ -107,6 +106,88 @@ TEST_CASE("the seals reader refuses a table past its caps, with its line") {
     }
 }
 
+TEST_CASE("the seals reader refuses a period under a tick, with its line, and takes one tick") {
+    struct Broken {
+        std::string_view why;
+        std::string_view text;
+        std::string_view says;
+    };
+    constexpr std::array<Broken, 3> CASES{ {
+        { .why = "a spark's life far under a tick, whose laps would overflow",
+          .text = "seals:\n  a:\n    colours: [element]\n    layers: [{ inner: 0, outer: 1 }]\n"
+                  "    light: { sparks: { count: 8, rise: 40, life: 1e-20, size: 0.01 } }\n",
+          .says = "seals line 5: a's spark stream's life is under a tick (1/60 s)" },
+        { .why = "a spark's life just under a tick",
+          .text = "seals:\n  a:\n    colours: [element]\n    layers: [{ inner: 0, outer: 1 }]\n"
+                  "    light: { sparks: { count: 8, rise: 40, life: 0.0166, size: 0.01 } }\n",
+          .says = "seals line 5: a's spark stream's life is under a tick (1/60 s)" },
+        { .why = "a pillar's cycle under a tick",
+          .text = "seals:\n  a:\n    colours: [element]\n    layers: [{ inner: 0, outer: 1 }]\n"
+                  "    light: { pillars: { count: 2, height: 80, width: 0.05, fade: 0.5, cycle: 1e-20 } }\n",
+          .says = "seals line 5: a's pillar stream's cycle is under a tick (1/60 s)" },
+    } };
+    for (const Broken& broken : CASES) {
+        CAPTURE(broken.why);
+        const core::Error error = ErrorFor(broken.text);
+        CHECK(error.message == broken.says);
+    }
+    // A tick, the boundary, is a period.
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    const std::expected<core::Seals, core::Error> tick = data::ParseSeals(
+        "seals:\n  a:\n    colours: [element]\n    layers: [{ inner: 0, outer: 1 }]\n"
+        "    light: { sparks: { count: 8, rise: 40, life: 0.016666666666666666, size: 0.01 } }\n",
+        *manifest
+    );
+    CHECK(tick.has_value());
+}
+
+TEST_CASE("the seals reader refuses a shard turning too slowly and a satellite too small, with their line") {
+    // A slower turn or a smaller satellite would only feed the layout numbers past an f32 (a shard's cycle, a satellite of
+    // a satellite's size), never a look anyone could see.
+    struct Broken {
+        std::string_view why;
+        std::string_view text;
+        std::string_view says;
+    };
+    constexpr std::array<Broken, 3> CASES{ {
+        { .why = "a shard spin far under the least, whose cycle would pass an f32",
+          .text = "seals:\n  a:\n    colours: [element]\n    layers: [{ inner: 0, outer: 1 }]\n"
+                  "    light: { shards: { count: 4, drift: 0, spin: 1e-37, size: 0.05 } }\n",
+          .says = "seals line 5: a's shard stream's spin isn't 0 or at least 0.001 degrees a second either way" },
+        { .why = "a shard spin just under the least, turning the other way",
+          .text = "seals:\n  a:\n    colours: [element]\n    layers: [{ inner: 0, outer: 1 }]\n"
+                  "    light: { shards: { count: 4, drift: 0, spin: -0.0009, size: 0.05 } }\n",
+          .says = "seals line 5: a's shard stream's spin isn't 0 or at least 0.001 degrees a second either way" },
+        { .why = "a satellite under the least size",
+          .text = "seals:\n"
+                  "  a: { colours: [element], layers: [{ inner: 0, outer: 1 }], satellites: [{ seal: b, size: 0.0009 }] }\n"
+                  "  b: { colours: [element], layers: [{ inner: 0, outer: 1 }] }\n",
+          .says = "seals line 2: a's satellite 0's size isn't a number from 0.001 to 1" },
+    } };
+    for (const Broken& broken : CASES) {
+        CAPTURE(broken.why);
+        const core::Error error = ErrorFor(broken.text);
+        CHECK(error.message == broken.says);
+    }
+    // The least of each, and a shard that doesn't turn, are taken.
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    const std::expected<core::Seals, core::Error> least = data::ParseSeals(
+        "seals:\n"
+        "  a:\n"
+        "    colours: [element]\n"
+        "    layers: [{ inner: 0, outer: 1 }]\n"
+        "    satellites: [{ seal: b, size: 0.001 }]\n"
+        "    light: { shards: { count: 4, drift: 0, spin: -0.001, size: 0.05 } }\n"
+        "  b:\n"
+        "    colours: [element]\n"
+        "    layers: [{ inner: 0, outer: 1 }]\n"
+        "    light: { shards: { count: 4, drift: 3, spin: 0, size: 0.05 } }\n",
+        *manifest
+    );
+    const std::string why = least.error_or(core::Error{}).message;
+    CHECK_MESSAGE(least.has_value(), why);
+}
+
 TEST_CASE("the shipped seals table loads clean") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
@@ -142,6 +223,11 @@ TEST_CASE("every part, the emblem, a satellite and the light are read into the l
     constexpr f32 TICK_LENGTH = 0.03F;
     constexpr f32 PILLAR_FADE = 0.5F;
     constexpr f64 PILLAR_CYCLE = 2.5;
+    constexpr f32 SPARK_SIZE = 0.01F;
+    constexpr f32 SHARD_SIZE = 0.04F;
+    constexpr f32 PILLAR_REST = 0.4F;
+    constexpr f32 PILLAR_BAND = 0.2F;
+    constexpr f32 SHARD_THIN = 0.25F;
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const std::expected<core::Seals, core::Error> seals = data::ParseSeals(
         "view_ratio: 0.5\n"
@@ -170,8 +256,9 @@ TEST_CASE("every part, the emblem, a satellite and the light are read into the l
         "          - { kind: polygon, sides: 5, radius: 0.5, width: 0.01 }\n"
         "    emblem: { sprite: emblem_swords, size: 0.2, colour: 1 }\n"
         "    satellites: [{ seal: b, layer: 0, angle: 90, size: 0.2, mount: orbit, orbit: 30 }]\n"
-        "    light: { pillars: { count: 2, height: 80, width: 0.05, fade: 0.5, cycle: 2.5 },\n"
-        "             sparks: { count: 24, rise: 40, life: 1.5 } }\n",
+        "    light: { pillars: { count: 2, height: 80, width: 0.05, fade: 0.5, cycle: 2.5, rest: 0.4, band: 0.2 },\n"
+        "             sparks: { count: 24, rise: 40, life: 1.5, size: 0.01 },\n"
+        "             shards: { count: 6, drift: 15, spin: 30, size: 0.04, thin: 0.25 } }\n",
         *manifest
     );
     REQUIRE(seals.has_value());
@@ -216,6 +303,13 @@ TEST_CASE("every part, the emblem, a satellite and the light are read into the l
     CHECK(look->light.sparkLife == SPARK_LIFE);
     CHECK(look->light.pillarFade == PILLAR_FADE);
     CHECK(look->light.pillarCycle == PILLAR_CYCLE);
+    CHECK(look->light.sparkSize == SPARK_SIZE);
+    CHECK(look->light.shards == 6);
+    CHECK(look->light.shardSize == SHARD_SIZE);
+    CHECK(look->light.pillarRest == PILLAR_REST);
+    CHECK(look->light.pillarBand == PILLAR_BAND);
+    CHECK(look->light.shardThin == SHARD_THIN);
+    CHECK(look->light.shardEdge == core::shipped::SEAL_SHARD_EDGE); // left out: the default
     const core::SealLook* missing = seals->Find(core::SealKeyOf("c"));
     CHECK(missing == nullptr);
 }
@@ -226,7 +320,7 @@ TEST_CASE("the seals reader refuses out-of-range values with their line") {
         std::string_view text;
         std::string_view says;
     };
-    constexpr std::array<Broken, 22> CASES{ {
+    constexpr std::array<Broken, 25> CASES{ {
         { .why = "no ring",
           .text = "seals:\n  a:\n    colours: [element]\n    layers: []\n",
           .says = "seals line 4: a's layers isn't a list of 1 to 9 layers" },
@@ -290,12 +384,24 @@ TEST_CASE("the seals reader refuses out-of-range values with their line") {
           .says = "seals line 4: a's life's appear isn't" },
         { .why = "one spark past the limit",
           .text = "seals:\n  a:\n    colours: [element]\n    layers: [{ inner: 0, outer: 1 }]\n"
-                  "    light: { sparks: { count: 257, rise: 40, life: 1 } }\n",
+                  "    light: { sparks: { count: 257, rise: 40, life: 1, size: 0.01 } }\n",
           .says = "seals line 5: a's spark stream's count isn't a whole number from 0 to 256" },
+        { .why = "sparks of no size",
+          .text = "seals:\n  a:\n    colours: [element]\n    layers: [{ inner: 0, outer: 1 }]\n"
+                  "    light: { sparks: { count: 8, rise: 40, life: 1, size: 0 } }\n",
+          .says = "seals line 5: a's spark stream's size isn't a number above 0 and up to 1" },
+        { .why = "shards with no size given",
+          .text = "seals:\n  a:\n    colours: [element]\n    layers: [{ inner: 0, outer: 1 }]\n"
+                  "    light: { shards: { count: 8, drift: 10, spin: 30 } }\n",
+          .says = "seals line 5: a's shard stream has no size" },
         { .why = "a pillar fading past its length",
           .text = "seals:\n  a:\n    colours: [element]\n    layers: [{ inner: 0, outer: 1 }]\n"
                   "    light: { pillars: { count: 2, height: 80, width: 0.05, fade: 1.5, cycle: 2 } }\n",
           .says = "seals line 5: a's pillar stream's fade isn't a number from 0 to 1" },
+        { .why = "a pillar's falling light reaching past half its length",
+          .text = "seals:\n  a:\n    colours: [element]\n    layers: [{ inner: 0, outer: 1 }]\n"
+                  "    light: { pillars: { count: 2, height: 80, width: 0.05, fade: 0.5, cycle: 2, band: 0.6 } }\n",
+          .says = "seals line 5: a's pillar stream's band isn't a number above 0 and up to 0.5" },
         { .why = "a pillar whose light never falls",
           .text = "seals:\n  a:\n    colours: [element]\n    layers: [{ inner: 0, outer: 1 }]\n"
                   "    light: { pillars: { count: 2, height: 80, width: 0.05, fade: 0.5, cycle: 0 } }\n",

@@ -13,6 +13,8 @@ namespace {
 constexpr u32 SEAL_VERTEX_BUFFER_BYTES = MAX_SEAL_QUADS * QUAD_VERTICES * static_cast<u32>(SEAL_VERTEX_BYTES);
 constexpr u32 SEAL_INDEX_BYTES = MAX_SEAL_QUADS * QUAD_INDICES * static_cast<u32>(sizeof(u32));
 constexpr u32 SEAL_LAYER_BUFFER_BYTES = MAX_SEAL_LAYERS_DRAWN * static_cast<u32>(SEAL_GPU_LAYER_BYTES);
+constexpr u32 SEAL_LIGHT_BUFFER_BYTES = MAX_SEAL_LIGHTS_DRAWN * static_cast<u32>(SEAL_GPU_PARTICLES_BYTES);
+constexpr u32 SEAL_LIGHT_VERTICES = 4; // a particle's quad: a triangle strip
 // A storage buffer may not be empty: the smallest pack's room, grown as packs need.
 constexpr u32 SEAL_SMALLEST_PACK = 64;
 static_assert(
@@ -31,6 +33,17 @@ struct SealUniforms {
 };
 static_assert(sizeof(SealUniforms) == SEAL_UNIFORM_BYTES, "the seal vertex shader's constant buffer is 32 bytes");
 
+// `target`'s world-to-clip transform as the seal vertex shaders take it: clip = world * xy + zw.
+std::array<f32, 4> WorldToClipOf(const SealTarget& target) {
+    const ClipTransform& worldToClip = target.worldToClip;
+    return { { worldToClip.scaleX, worldToClip.scaleY, worldToClip.offsetX, worldToClip.offsetY } };
+}
+
+// `target`'s pixels per clip unit, across and down: half its size.
+std::array<f32, 2> PixelsPerClipOf(const SealTarget& target) {
+    return { { static_cast<f32>(target.width) / SEAL_CLIP_SPAN, static_cast<f32>(target.height) / SEAL_CLIP_SPAN } };
+}
+
 // The constants the seal shaders copy, as they hold them: each must equal what it copies.
 constexpr u32 SHADER_SEAL_STAR = 4;     // seal.hlsli's SEAL_STAR
 constexpr u32 SHADER_SEAL_FLOURISH = 6; // seal.hlsli's SEAL_FLOURISH
@@ -44,6 +57,24 @@ static_assert(
     "seal.hlsli's SEAL_ constants are core::SealPartKind's values"
 );
 static_assert(SEAL_EMBLEM_KIND == SHADER_SEAL_EMBLEM, "seal.hlsli's SEAL_EMBLEM is gfx::SEAL_EMBLEM_KIND");
+constexpr u32 SHADER_SEAL_SPARK = 1; // seal.hlsli's SEAL_SPARK
+constexpr u32 SHADER_SEAL_SHARD = 2; // seal.hlsli's SEAL_SHARD
+static_assert(
+    SEAL_PILLAR == 0 && SEAL_SPARK == SHADER_SEAL_SPARK && SEAL_SHARD == SHADER_SEAL_SHARD,
+    "seal.hlsli's particle kinds are gfx's"
+);
+
+// `LightDraw` in shaders/seal_light.vert.hlsl: rows of 16 bytes, as HLSL packs a constant buffer.
+constexpr std::size_t SEAL_LIGHT_UNIFORM_BYTES = 48;
+struct SealLightUniforms {
+    std::array<f32, 4> worldToClip{};
+    std::array<f32, 2> pixelsPerClip{};
+    u32 firstRecord = 0;
+    u32 recordCount = 0;
+    u32 ink = 0;
+    std::array<u32, 3> padding{};
+};
+static_assert(sizeof(SealLightUniforms) == SEAL_LIGHT_UNIFORM_BYTES, "the light's vertex constant buffer is 48 bytes");
 
 // `Look` in shaders/seal.frag.hlsl, the fragment uniform: the table's halo and the band margin the bands were laid out with
 // (gfx::SealBandMargin() of the same reach), so the shader's frame mask ends where the geometry does.
@@ -56,16 +87,11 @@ struct SealLookUniforms {
 };
 static_assert(sizeof(SealLookUniforms) == SEAL_LOOK_UNIFORM_BYTES, "the seal fragment shader's constant buffer is 16 bytes");
 
-Gpu<SDL_GPUGraphicsPipeline> CreateSealPipeline(SDL_GPUDevice* device, SDL_GPUTextureFormat format, bool wash) {
-    const Gpu<SDL_GPUShader> vertex = CreateShader(device, shaders::SEAL_VERT, SDL_GPU_SHADERSTAGE_VERTEX);
-    const Gpu<SDL_GPUShader> fragment = CreateShader(device, shaders::SEAL_FRAG, SDL_GPU_SHADERSTAGE_FRAGMENT);
-    if (vertex == nullptr || fragment == nullptr) {
-        return { nullptr, { device } };
-    }
+// A colour target of `format` blending premultiplied alpha (§8.8): ink covers what is under it, light adds to it.
+SDL_GPUColorTargetDescription SealBlendTarget(SDL_GPUTextureFormat format, bool ink) {
     SDL_GPUColorTargetDescription target{};
     target.format = format;
-    // Premultiplied alpha's blends (§8.8): the wash's ink covers what is under it, the lines' light adds to it.
-    const SDL_GPUBlendFactor destination = wash ? SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA : SDL_GPU_BLENDFACTOR_ONE;
+    const SDL_GPUBlendFactor destination = ink ? SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA : SDL_GPU_BLENDFACTOR_ONE;
     target.blend_state.enable_blend = true;
     target.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
     target.blend_state.dst_color_blendfactor = destination;
@@ -73,6 +99,16 @@ Gpu<SDL_GPUGraphicsPipeline> CreateSealPipeline(SDL_GPUDevice* device, SDL_GPUTe
     target.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
     target.blend_state.dst_alpha_blendfactor = destination;
     target.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+    return target;
+}
+
+Gpu<SDL_GPUGraphicsPipeline> CreateSealPipeline(SDL_GPUDevice* device, SDL_GPUTextureFormat format, bool wash) {
+    const Gpu<SDL_GPUShader> vertex = CreateShader(device, shaders::SEAL_VERT, SDL_GPU_SHADERSTAGE_VERTEX);
+    const Gpu<SDL_GPUShader> fragment = CreateShader(device, shaders::SEAL_FRAG, SDL_GPU_SHADERSTAGE_FRAGMENT);
+    if (vertex == nullptr || fragment == nullptr) {
+        return { nullptr, { device } };
+    }
+    const SDL_GPUColorTargetDescription target = SealBlendTarget(format, wash);
     const SDL_GPUVertexBufferDescription buffer{
         .slot = 0, .pitch = SEAL_VERTEX_BYTES, .input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX, .instance_step_rate = 0
     };
@@ -106,6 +142,30 @@ Gpu<SDL_GPUGraphicsPipeline> CreateSealPipeline(SDL_GPUDevice* device, SDL_GPUTe
     return pipeline;
 }
 
+// The particles' pipeline: their ink (`ink`) or their light. No vertex buffer: each particle's quad is built from the vertex
+// and instance indices, placed from its seal's record.
+Gpu<SDL_GPUGraphicsPipeline> CreateLightPipeline(SDL_GPUDevice* device, SDL_GPUTextureFormat format, bool ink) {
+    const Gpu<SDL_GPUShader> vertex = CreateShader(device, shaders::SEAL_LIGHT_VERT, SDL_GPU_SHADERSTAGE_VERTEX);
+    const Gpu<SDL_GPUShader> fragment = CreateShader(device, shaders::SEAL_LIGHT_FRAG, SDL_GPU_SHADERSTAGE_FRAGMENT);
+    if (vertex == nullptr || fragment == nullptr) {
+        return { nullptr, { device } };
+    }
+    const SDL_GPUColorTargetDescription target = SealBlendTarget(format, ink);
+    SDL_GPUGraphicsPipelineCreateInfo info{};
+    info.vertex_shader = vertex.get();
+    info.fragment_shader = fragment.get();
+    info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLESTRIP;
+    info.target_info.color_target_descriptions = &target;
+    info.target_info.num_color_targets = 1;
+    info.props = SDL_CreateProperties();
+    SDL_SetStringProperty(
+        info.props, SDL_PROP_GPU_GRAPHICSPIPELINE_CREATE_NAME_STRING, ink ? "seal light's ink" : "seal light"
+    );
+    Gpu<SDL_GPUGraphicsPipeline> pipeline{ SDL_CreateGPUGraphicsPipeline(device, &info), { device } };
+    SDL_DestroyProperties(info.props);
+    return pipeline;
+}
+
 Gpu<SDL_GPUTransferBuffer> CreateUploadBuffer(SDL_GPUDevice* device, u32 bytes) {
     SDL_GPUTransferBufferCreateInfo info{};
     info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
@@ -120,7 +180,10 @@ std::expected<SealRenderer, core::Error> SealRenderer::Create(SDL_GPUDevice* dev
     renderer.m_device = device;
     renderer.m_wash = CreateSealPipeline(device, format, true);
     renderer.m_lines = CreateSealPipeline(device, format, false);
-    if (renderer.m_wash == nullptr || renderer.m_lines == nullptr) {
+    renderer.m_lightInk = CreateLightPipeline(device, format, true);
+    renderer.m_light = CreateLightPipeline(device, format, false);
+    if (renderer.m_wash == nullptr || renderer.m_lines == nullptr || renderer.m_lightInk == nullptr ||
+        renderer.m_light == nullptr) {
         return std::unexpected{ core::Error{ std::format("a seal pipeline was rejected: {}", SDL_GetError()) } };
     }
     renderer.m_vertices = CreateMeshBuffer(device, SDL_GPU_BUFFERUSAGE_VERTEX, SEAL_VERTEX_BUFFER_BYTES, "seal vertices");
@@ -129,6 +192,9 @@ std::expected<SealRenderer, core::Error> SealRenderer::Create(SDL_GPUDevice* dev
         CreateMeshBuffer(device, SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ, SEAL_LAYER_BUFFER_BYTES, "seal layers");
     renderer.m_vertexTransfer = CreateUploadBuffer(device, SEAL_VERTEX_BUFFER_BYTES);
     renderer.m_layerTransfer = CreateUploadBuffer(device, SEAL_LAYER_BUFFER_BYTES);
+    renderer.m_lights =
+        CreateMeshBuffer(device, SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ, SEAL_LIGHT_BUFFER_BYTES, "seal light");
+    renderer.m_lightTransfer = CreateUploadBuffer(device, SEAL_LIGHT_BUFFER_BYTES);
     const bool packRoom = renderer.Reserve(
                               renderer.m_parts,
                               renderer.m_partTransfer,
@@ -144,7 +210,8 @@ std::expected<SealRenderer, core::Error> SealRenderer::Create(SDL_GPUDevice* dev
                               "seal sprites"
                           );
     if (renderer.m_vertices == nullptr || renderer.m_indices == nullptr || renderer.m_layers == nullptr ||
-        renderer.m_vertexTransfer == nullptr || renderer.m_layerTransfer == nullptr || !packRoom) {
+        renderer.m_vertexTransfer == nullptr || renderer.m_layerTransfer == nullptr || renderer.m_lights == nullptr ||
+        renderer.m_lightTransfer == nullptr || !packRoom) {
         return std::unexpected{ core::Error{ std::format("the seal buffers weren't created: {}", SDL_GetError()) } };
     }
     return renderer;
@@ -200,6 +267,7 @@ std::expected<void, core::Error> SealRenderer::UploadPack(SDL_GPUCopyPass* copy)
 std::expected<std::size_t, core::Error> SealRenderer::Upload(SDL_GPUCopyPass* copy, const SealDrawing& drawing) {
     PN_PROFILE_ZONE();
     m_groundWash = m_groundLines = m_aboveWash = m_aboveLines = {};
+    m_groundLight = m_aboveLight = {};
     if (!m_indicesUploaded) {
         if (!UploadQuadIndices(m_device, copy, m_indices.get(), MAX_SEAL_QUADS)) {
             return std::unexpected{ core::Error{ std::format("the seal quad indices weren't uploaded: {}", SDL_GetError()) } };
@@ -228,7 +296,25 @@ std::expected<std::size_t, core::Error> SealRenderer::Upload(SDL_GPUCopyPass* co
     add(drawing.groundLines, m_groundLines);
     add(drawing.aboveWash, m_aboveWash);
     add(drawing.aboveLines, m_aboveLines);
+    // The light records, the ground's then the others': one for each drawn seal with light, so they always fit.
+    m_lightRecords.clear();
+    const auto addLight = [&](const std::vector<SealGpuParticles>& records, LightRun& run) {
+        run = { .firstRecord = static_cast<u32>(m_lightRecords.size()), .records = static_cast<u32>(records.size()) };
+        if (!records.empty()) {
+            const SealGpuParticles& last = records.back();
+            run.particles = last.firstParticle + last.pillars + last.sparks + last.shards;
+        }
+        m_lightRecords.insert(m_lightRecords.end(), records.begin(), records.end());
+    };
+    addLight(drawing.groundParticles, m_groundLight);
+    addLight(drawing.aboveParticles, m_aboveLight);
+    PN_ASSERT(m_lightRecords.size() <= MAX_SEAL_LIGHTS_DRAWN, "a frame drew more seals with light than DrawSeals() can");
+    if (m_lightRecords.size() > MAX_SEAL_LIGHTS_DRAWN) {
+        m_groundLight = m_aboveLight = {};
+        m_lightRecords.clear();
+    }
     if (m_quads.empty()) {
+        m_groundLight = m_aboveLight = {};
         return dropped;
     }
     PN_ASSERT(drawing.layers.size() <= MAX_SEAL_LAYERS_DRAWN, "a frame drew more seal layers than DrawSeals() can");
@@ -236,8 +322,13 @@ std::expected<std::size_t, core::Error> SealRenderer::Upload(SDL_GPUCopyPass* co
         std::span{ drawing.layers }.first(std::min<std::size_t>(drawing.layers.size(), MAX_SEAL_LAYERS_DRAWN));
     // Cycled: a frame in flight may still read what the buffers held (§8.7).
     if (!CopyToBuffer(m_device, copy, m_vertexTransfer.get(), m_vertices.get(), std::as_bytes(std::span{ m_quads }), true) ||
-        !CopyToBuffer(m_device, copy, m_layerTransfer.get(), m_layers.get(), std::as_bytes(layers), true)) {
+        !CopyToBuffer(m_device, copy, m_layerTransfer.get(), m_layers.get(), std::as_bytes(layers), true) ||
+        (!m_lightRecords.empty() &&
+         !CopyToBuffer(
+             m_device, copy, m_lightTransfer.get(), m_lights.get(), std::as_bytes(std::span{ m_lightRecords }), true
+         ))) {
         m_groundWash = m_groundLines = m_aboveWash = m_aboveLines = {};
+        m_groundLight = m_aboveLight = {};
         return std::unexpected{ core::Error{ std::format("the seals weren't uploaded: {}", SDL_GetError()) } };
     }
     return dropped;
@@ -257,7 +348,7 @@ void SealRenderer::DrawGround(
     const SpriteArray& sprites
 ) const {
     PN_PROFILE_ZONE();
-    DrawRuns(commands, pass, target, sprites, m_groundWash, m_groundLines);
+    DrawRuns(commands, pass, target, sprites, m_groundWash, m_groundLines, m_groundLight);
 }
 
 void SealRenderer::DrawAbove(
@@ -267,7 +358,7 @@ void SealRenderer::DrawAbove(
     const SpriteArray& sprites
 ) const {
     PN_PROFILE_ZONE();
-    DrawRuns(commands, pass, target, sprites, m_aboveWash, m_aboveLines);
+    DrawRuns(commands, pass, target, sprites, m_aboveWash, m_aboveLines, m_aboveLight);
 }
 
 void SealRenderer::DrawRuns(
@@ -276,40 +367,67 @@ void SealRenderer::DrawRuns(
     const SealTarget& target,
     const SpriteArray& sprites,
     Run wash,
-    Run lines
+    Run lines,
+    LightRun light
 ) const {
     if (wash.quads == 0 && lines.quads == 0) {
         return;
     }
     const SDL_GPUBufferBinding vertices{ .buffer = m_vertices.get(), .offset = 0 };
-    SDL_BindGPUVertexBuffers(pass, 0, &vertices, 1);
     const SDL_GPUBufferBinding indices{ .buffer = m_indices.get(), .offset = 0 };
-    SDL_BindGPUIndexBuffer(pass, &indices, SDL_GPU_INDEXELEMENTSIZE_32BIT);
     const SDL_GPUTextureSamplerBinding field{ .texture = sprites.field.get(), .sampler = sprites.fieldSampler.get() };
-    SDL_BindGPUFragmentSamplers(pass, 0, &field, 1);
     const std::array<SDL_GPUBuffer*, 3> storage{ m_layers.get(), m_parts.get(), m_sprites.get() };
-    SDL_BindGPUFragmentStorageBuffers(pass, 0, storage.data(), static_cast<u32>(storage.size()));
-    SDL_BindGPUVertexStorageBuffers(pass, 0, storage.data(), 1); // the layers, for their axes
-    const ClipTransform& worldToClip = target.worldToClip;
-    SealUniforms uniforms{ .worldToClip = { worldToClip.scaleX, worldToClip.scaleY, worldToClip.offsetX, worldToClip.offsetY },
-                           .pixelsPerClip = { static_cast<f32>(target.width) / SEAL_CLIP_SPAN,
-                                              static_cast<f32>(target.height) / SEAL_CLIP_SPAN } };
+    SealUniforms uniforms{ .worldToClip = WorldToClipOf(target), .pixelsPerClip = PixelsPerClipOf(target) };
     const SealLookUniforms look{ .haloReach = m_haloReach,
                                  .haloStrength = m_haloStrength,
                                  .bandMargin = SealBandMargin(m_haloReach) };
-    // The washes first, under every seal's lines: ink, then light.
-    for (const auto& [run, pipeline, isWash] :
-         { std::tuple{ wash, m_wash.get(), true }, std::tuple{ lines, m_lines.get(), false } }) {
+    // The bands' bindings again for each, as the light's draws between them bind their own.
+    const auto drawBands = [&](Run run, SDL_GPUGraphicsPipeline* pipeline, bool isWash) {
         if (run.quads == 0) {
-            continue;
+            return;
         }
+        SDL_BindGPUVertexBuffers(pass, 0, &vertices, 1);
+        SDL_BindGPUIndexBuffer(pass, &indices, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+        SDL_BindGPUFragmentSamplers(pass, 0, &field, 1);
+        SDL_BindGPUFragmentStorageBuffers(pass, 0, storage.data(), static_cast<u32>(storage.size()));
+        SDL_BindGPUVertexStorageBuffers(pass, 0, storage.data(), 1); // the layers, for their axes
         SDL_BindGPUGraphicsPipeline(pass, pipeline);
         uniforms.wash = isWash ? 1U : 0U;
         SDL_PushGPUVertexUniformData(commands, 0, &uniforms, sizeof(uniforms));
         SDL_PushGPUFragmentUniformData(commands, 0, &look, sizeof(look));
         // The run's vertices are reached through the vertex offset; no shader reads SV_VertexID (§8.5).
         SDL_DrawGPUIndexedPrimitives(pass, run.quads * QUAD_INDICES, 1, 0, static_cast<i32>(run.first * QUAD_VERTICES), 0);
+    };
+    // Ink, then light: the washes and the particles' ink under every seal's lines and the particles' light.
+    drawBands(wash, m_wash.get(), true);
+    DrawLight(commands, pass, target, light, m_lightInk.get(), true);
+    drawBands(lines, m_lines.get(), false);
+    DrawLight(commands, pass, target, light, m_light.get(), false);
+}
+
+void SealRenderer::DrawLight(
+    SDL_GPUCommandBuffer* commands,
+    SDL_GPURenderPass* pass,
+    const SealTarget& target,
+    LightRun light,
+    SDL_GPUGraphicsPipeline* pipeline,
+    bool ink
+) const {
+    if (light.particles == 0) {
+        return;
     }
+    SDL_BindGPUGraphicsPipeline(pass, pipeline);
+    const std::array<SDL_GPUBuffer*, 1> records{ m_lights.get() };
+    SDL_BindGPUVertexStorageBuffers(pass, 0, records.data(), static_cast<u32>(records.size()));
+    const SealLightUniforms uniforms{ .worldToClip = WorldToClipOf(target),
+                                      .pixelsPerClip = PixelsPerClipOf(target),
+                                      .firstRecord = light.firstRecord,
+                                      .recordCount = light.records,
+                                      .ink = ink ? 1U : 0U };
+    SDL_PushGPUVertexUniformData(commands, 0, &uniforms, sizeof(uniforms));
+    // The plane's records are found through the uniform, the particles counted from 0 in the instance index; first_vertex
+    // and first_instance stay 0, as SDL needs for its built-in indices (§8.5).
+    SDL_DrawGPUPrimitives(pass, SEAL_LIGHT_VERTICES, light.particles, 0, 0);
 }
 
 } // namespace gfx::internal

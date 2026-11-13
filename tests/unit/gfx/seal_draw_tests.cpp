@@ -239,7 +239,8 @@ TEST_CASE("a round band holds its outer circle and the wash reaches its reach") 
     // Its quads' outer edges are chords outside the circle: the nearest point of one is still the outer radius out, and the
     // margin for the shader's halo past it; its inner edge is the margin inside the inner radius.
     constexpr f32 MARGIN = gfx::SealBandMargin(core::shipped::SEAL_HALO_REACH);
-    CHECK(Distance(OuterMiddle(drawn.groundLines), {}) >= 1.0F + MARGIN - CLOSE_UV);
+    const f32 outerReach = Distance(OuterMiddle(drawn.groundLines), {});
+    CHECK(outerReach >= 1.0F + MARGIN - CLOSE_UV);
     CHECK(Distance(drawn.groundLines[0].local, {}) == doctest::Approx(OneLayer().layers[0].inner - MARGIN));
     // The vertex shader grows a band a pixel past both edges: its outer corners out, its inner ones in; never its wash.
     CHECK(drawn.groundLines[0].grow == doctest::Approx(-1.0F));
@@ -295,6 +296,43 @@ TEST_CASE("an element slot takes the record's element colour and a named slot th
     CHECK(drawn.layers[0].colours[1] == colours.Of(core::UiColour::SealGold));
 }
 
+TEST_CASE("brightness scales a seal's lines and light, and the above cap holds after it") {
+    constexpr f32 CAP = 0.7F;
+    constexpr f32 BRIGHT = 2.0F;
+    constexpr f32 DIM = 0.5F;
+    constexpr f32 EMBLEM = 0.2F;
+    constexpr core::SealLight SPARKS{ .sparks = 8, .sparkRise = 40.0F, .sparkLife = 1.0, .sparkSize = 0.02F };
+    core::SealLook look = OneLayer();
+    look.emblem = core::SealEmblem{ .sprite = SpriteId::EmblemSwords, .size = EMBLEM };
+    look.light = SPARKS;
+    core::SealLook overhead = look;
+    overhead.plane = core::SealPlane::Overhead;
+    core::Seals looks = Table({ { "ground", look }, { "overhead", overhead } });
+    looks.aboveOpacity = CAP;
+    // Each strength drawn: the layer's, the emblem's and the light's.
+    const auto strengths = [&looks](std::string_view name, f32 brightness) {
+        looks.brightness = brightness;
+        const gfx::SealDrawing drawn = Draw(One(name), looks, HELD);
+        REQUIRE(drawn.layers.size() == 2);
+        const std::vector<gfx::SealGpuParticles>& lights =
+            drawn.groundParticles.empty() ? drawn.aboveParticles : drawn.groundParticles;
+        REQUIRE(lights.size() == 1);
+        return std::array<f32, 3>{ { drawn.layers[0].opacity, drawn.layers[1].opacity, lights[0].opacity } };
+    };
+    // Raised, brighter than the cap: capped after brightness, so the fight stays readable.
+    constexpr std::array<f32, 3> ALL_CAPPED{ { CAP, CAP, CAP } };
+    const std::array<f32, 3> capped = strengths("overhead", BRIGHT);
+    CHECK(capped == ALL_CAPPED);
+    // Raised and dimmed below the cap: dimmed from its full strength, not from the cap.
+    constexpr std::array<f32, 3> ALL_DIMMED{ { DIM, DIM, DIM } };
+    const std::array<f32, 3> dimmed = strengths("overhead", DIM);
+    CHECK(dimmed == ALL_DIMMED);
+    // On the ground there is no cap: brightness above 1 shows whole.
+    constexpr std::array<f32, 3> ALL_BRIGHT{ { BRIGHT, BRIGHT, BRIGHT } };
+    const std::array<f32, 3> ground = strengths("ground", BRIGHT);
+    CHECK(ground == ALL_BRIGHT);
+}
+
 TEST_CASE("hidden showcase seals draw nothing") {
     const gfx::SealDrawing drawn = Draw(One("shown", true), Table({ { "shown", OneLayer() } }), SECOND, false);
     CHECK((drawn.layers.empty() && drawn.groundWash.empty() && drawn.groundLines.empty() && drawn.droppedSeals == 0));
@@ -302,7 +340,8 @@ TEST_CASE("hidden showcase seals draw nothing") {
 
 TEST_CASE("more seals than the frame holds are counted") {
     constexpr std::size_t SEALS = 70;
-    const std::vector<core::Seal> seals(SEALS, One("many")[0]);
+    const core::Seal many = One("many").front();
+    const std::vector<core::Seal> seals(SEALS, many);
     const gfx::SealDrawing drawn = Draw(seals, Table({ { "many", OneLayer() } }), SECOND);
     CHECK(drawn.layers.size() == gfx::MAX_SEALS_DRAWN);
     CHECK(drawn.droppedSeals == SEALS - gfx::MAX_SEALS_DRAWN);
@@ -378,11 +417,11 @@ TEST_CASE("a never-ending seal hands the GPU small times") {
     f32 worstTurn = 0.0F; // radians from the angle turned in f64
     for (const f64 seconds : TIMES) {
         const gfx::SealDrawing drawn = Draw(One("forever", true), looks, seconds);
-        REQUIRE((drawn.particles.size() == 1 && drawn.layers.size() == 1));
-        const gfx::SealGpuParticles& light = drawn.particles[0];
+        REQUIRE((drawn.groundParticles.size() == 1 && drawn.layers.size() == 1));
+        const gfx::SealGpuParticles& light = drawn.groundParticles[0];
         for (const auto& [age, period] : { std::pair{ light.pillarAge, light.pillarCycle },
-                                          std::pair{ light.sparkAge, light.sparkLife },
-                                          std::pair{ light.shardAge, light.shardCycle } }) {
+                                           std::pair{ light.sparkAge, light.sparkLife },
+                                           std::pair{ light.shardAge, light.shardCycle } }) {
             worstAge = std::max(worstAge, age < 0.0F ? 1.0F : age / period);
         }
         const f64 turned =
@@ -391,6 +430,160 @@ TEST_CASE("a never-ending seal hands the GPU small times") {
     }
     CHECK(worstAge < 1.0F);
     CHECK(worstTurn < CLOSE_ANGLE);
+}
+
+// A light of every stream: 4 pillars, 24 sparks and 6 shards.
+constexpr core::SealLight ALL_LIGHT{ .pillars = 4,
+                                     .pillarHeight = 80.0F,
+                                     .pillarWidth = 0.05F,
+                                     .pillarFade = 0.5F,
+                                     .pillarCycle = 1.7,
+                                     .sparks = 24,
+                                     .sparkRise = 40.0F,
+                                     .sparkLife = 1.2,
+                                     .sparkSize = 0.02F,
+                                     .shards = 6,
+                                     .shardDrift = 15.0F,
+                                     .shardSpin = 30.0F,
+                                     .shardSize = 0.05F };
+constexpr u32 ALL_PARTICLES = 34;
+
+TEST_CASE("a seal's particle count is its light's, capped") {
+    constexpr u32 FLOOD = 300; // sparks past the limit, which only a look made in code can hold: the reader refuses it
+    core::SealLook lit = OneLayer();
+    lit.light = ALL_LIGHT;
+    core::SealLook flood = lit;
+    flood.light.sparks = FLOOD;
+    core::SealLook above = lit;
+    above.plane = core::SealPlane::Overhead;
+    const core::Seal litSeal = One("lit").front();
+    const core::Seal floodSeal = One("flood").front();
+    const core::Seal aboveSeal = One("above").front();
+    const std::vector<core::Seal> seals{ litSeal, floodSeal, litSeal, aboveSeal };
+    const gfx::SealDrawing drawn = Draw(seals, Table({ { "lit", lit }, { "flood", flood }, { "above", above } }), SECOND);
+    REQUIRE(drawn.groundParticles.size() == 3);
+    const gfx::SealGpuParticles& first = drawn.groundParticles[0];
+    CHECK((first.pillars == ALL_LIGHT.pillars && first.sparks == ALL_LIGHT.sparks && first.shards == ALL_LIGHT.shards));
+    // Past the limit a seal keeps its pillars, then as many sparks as fit, and no shards; what it left out is counted.
+    const gfx::SealGpuParticles& capped = drawn.groundParticles[1];
+    CHECK(capped.pillars == ALL_LIGHT.pillars);
+    CHECK(capped.sparks == core::MAX_SEAL_PARTICLES - ALL_LIGHT.pillars);
+    CHECK(capped.shards == 0);
+    CHECK(drawn.droppedParticles == std::size_t{ ALL_LIGHT.pillars + FLOOD + ALL_LIGHT.shards - core::MAX_SEAL_PARTICLES });
+    // Each record's particles follow the one before's in its plane's list.
+    CHECK(capped.firstParticle == ALL_PARTICLES);
+    CHECK(drawn.groundParticles[2].firstParticle == ALL_PARTICLES + core::MAX_SEAL_PARTICLES);
+    // An overhead seal's light is in the list drawn with the seals above, counted from its own first.
+    REQUIRE(drawn.aboveParticles.size() == 1);
+    CHECK(drawn.aboveParticles[0].firstParticle == 0);
+}
+
+// Every field of `particle`, bit for bit.
+constexpr std::size_t PARTICLE_FIELDS = 9;
+using ParticleBits = std::array<u32, PARTICLE_FIELDS>;
+ParticleBits Bits(const gfx::SealParticle& particle) {
+    return { { std::bit_cast<u32>(particle.centre.x),
+               std::bit_cast<u32>(particle.centre.y),
+               std::bit_cast<u32>(particle.along.x),
+               std::bit_cast<u32>(particle.along.y),
+               std::bit_cast<u32>(particle.across.x),
+               std::bit_cast<u32>(particle.across.y),
+               std::bit_cast<u32>(particle.strength),
+               std::bit_cast<u32>(particle.phase),
+               particle.kind } };
+}
+
+TEST_CASE("particles are placed the same for the same time") {
+    // Three times a twentieth of a second apart, inside one life of each particle sampled (the seed is fixed).
+    constexpr f64 STEP = 0.05;
+    constexpr std::array<f64, 3> TIMES{ { SECOND, SECOND + STEP, SECOND + (2.0 * STEP) } };
+    constexpr u32 PILLAR = 0;
+    constexpr u32 SPARK = ALL_LIGHT.pillars;
+    constexpr u32 SHARD = ALL_LIGHT.pillars + ALL_LIGHT.sparks;
+    constexpr f32 HALF = 0.5F; // a quad's half-side of its size
+    core::SealLook look = OneLayer();
+    look.light = ALL_LIGHT;
+    const core::Seals looks = Table({ { "lit", look } });
+    std::array<std::array<gfx::SealParticle, 3>, TIMES.size()> placed{};
+    for (std::size_t time = 0; time < TIMES.size(); ++time) {
+        const gfx::SealDrawing drawn = Draw(One("lit"), looks, TIMES.at(time));
+        REQUIRE(drawn.groundParticles.size() == 1);
+        const gfx::SealGpuParticles& light = drawn.groundParticles[0];
+        placed.at(time) = { gfx::SealParticleAt(light, PILLAR),
+                            gfx::SealParticleAt(light, SPARK),
+                            gfx::SealParticleAt(light, SHARD) };
+    }
+    // A second frame drawn at the same time, from records laid out afresh, places every particle bit for bit alike.
+    const gfx::SealDrawing again = Draw(One("lit"), looks, TIMES[1]);
+    REQUIRE(again.groundParticles.size() == 1);
+    bool same = true;
+    for (std::size_t sample = 0; sample < placed[1].size(); ++sample) {
+        const u32 index = std::array<u32, 3>{ { PILLAR, SPARK, SHARD } }.at(sample);
+        same = same && Bits(gfx::SealParticleAt(again.groundParticles[0], index)) == Bits(placed[1].at(sample));
+    }
+    CHECK(same);
+    const auto& [pillar0, spark0, shard0] = placed[0];
+    const auto& [pillar1, spark1, shard1] = placed[1];
+    const auto& [pillar2, spark2, shard2] = placed[2];
+    CHECK((pillar0.kind == gfx::SEAL_PILLAR && spark0.kind == gfx::SEAL_SPARK && shard0.kind == gfx::SEAL_SHARD));
+    // A pillar stands where it stood, rising from the ground seal its height and its seal's width, its light moving on.
+    CHECK(Distance(pillar0.centre, pillar2.centre) < CLOSE);
+    CHECK(Distance(pillar0.along, { .y = -ALL_LIGHT.pillarHeight * HALF }) < CLOSE);
+    CHECK(Distance(pillar0.across, { .x = ALL_LIGHT.pillarWidth * SIZE * HALF }) < CLOSE);
+    const auto cycleStep = static_cast<f32>(STEP / ALL_LIGHT.pillarCycle);
+    CHECK(pillar1.phase - pillar0.phase == doctest::Approx(cycleStep));
+    // A spark rises at its rise, straight up the screen.
+    const core::Vec2 risen = spark1.centre - spark0.centre;
+    CHECK(Distance(risen, { .y = -ALL_LIGHT.sparkRise * static_cast<f32>(STEP) }) < CLOSE);
+    CHECK(Distance(spark2.centre - spark1.centre, risen) < CLOSE);
+    // A shard drifts steadily out from its seal's centre, turning as it goes.
+    const core::Vec2 drifted = shard1.centre - shard0.centre;
+    CHECK(Distance(shard2.centre - shard1.centre, drifted) < CLOSE);
+    CHECK((drifted.x * (shard0.centre.x - POINT.x)) + (drifted.y * (shard0.centre.y - POINT.y)) > 0.0F);
+    CHECK(Distance(shard0.along, shard1.along) > CLOSE);
+}
+
+TEST_CASE("a spark rises on through its stream's wrap and is born elsewhere a life later") {
+    // Just before and just after the sparks' age wraps for the second time: the lap goes up with it, so the spark (inside
+    // its own life there: the seed is fixed) moves on by its rise and doesn't jump.
+    constexpr f64 WRAP = 2.0 * ALL_LIGHT.sparkLife;
+    constexpr f64 EPSILON = 0.001;
+    constexpr u32 SPARK = ALL_LIGHT.pillars;
+    core::SealLook look = OneLayer();
+    look.light = ALL_LIGHT;
+    const core::Seals looks = Table({ { "lit", look } });
+    const auto sparkAt = [&](f64 seconds) {
+        const gfx::SealDrawing drawn = Draw(One("lit"), looks, seconds);
+        REQUIRE(drawn.groundParticles.size() == 1);
+        return gfx::SealParticleAt(drawn.groundParticles[0], SPARK);
+    };
+    const gfx::SealParticle before = sparkAt(WRAP - EPSILON);
+    const gfx::SealParticle after = sparkAt(WRAP + EPSILON);
+    const auto risen = ALL_LIGHT.sparkRise * static_cast<f32>(2.0 * EPSILON);
+    CHECK(Distance(after.centre - before.centre, { .y = -risen }) < CLOSE);
+    // One life later it is as far through its life, but born somewhere new.
+    const gfx::SealParticle later = sparkAt(WRAP + EPSILON + ALL_LIGHT.sparkLife);
+    CHECK(later.strength == doctest::Approx(after.strength).epsilon(CLOSE));
+    CHECK(Distance(later.centre, after.centre) > CLOSE);
+}
+
+TEST_CASE("a stream whose laps pass 2^64 counts them modulo 2^32") {
+    // A seal 2^-20 across whose shards drift 2^10 a second comes round every 2^-30 s; at 2^35 + 2^-10 s it has come round
+    // 2^65 + 2^20 times, exactly, which no u64 holds: its lap is that count modulo 2^32, 2^20, and its age 0.
+    constexpr f32 TINY = 1.0F / 1'048'576.0F;                // 2^-20
+    constexpr f32 DRIFT = 1'024.0F;                          // 2^10
+    constexpr f64 LATE = 34'359'738'368.0 + (1.0 / 1'024.0); // 2^35 + 2^-10
+    constexpr u32 LAP = 1'048'576;                           // 2^20
+    core::SealLook look = OneLayer();
+    look.light = { .shards = 1, .shardDrift = DRIFT, .shardSize = LINE };
+    const core::Seals looks = Table({ { "tiny", look } });
+    const gfx::SealPack pack = gfx::PackSeals(looks, TestManifest());
+    const std::array<core::Seal, 1> seals{ { { .key = core::SealKeyOf("tiny"), .point = POINT, .size = TINY } } };
+    gfx::SealDrawing drawn;
+    gfx::DrawSeals(seals, looks, pack, core::UiColours{}, LATE, static_cast<u64>(LATE * TICKS), true, drawn);
+    REQUIRE(drawn.groundParticles.size() == 1);
+    CHECK(drawn.groundParticles[0].shardLap == LAP);
+    CHECK(drawn.groundParticles[0].shardAge == 0.0F);
 }
 
 TEST_CASE("a script part points at its sprite's field block") {

@@ -1,6 +1,7 @@
 #include "data/seals.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
+#include "core/tick_clock.hpp"
 #include "data/internal/yaml.hpp"
 
 namespace data {
@@ -20,8 +21,15 @@ constexpr f64 MOST_TIME = 3'600.0;
 constexpr f64 MOST_REACH = 4.0;
 constexpr f64 MOST_SCALE = 10.0;
 constexpr f64 MOST_HALO_REACH = 0.1; // a tenth of the seal's size: past it every layer's band would widen far
+constexpr f64 LEAST_PERIOD = 1.0 / static_cast<f64>(core::TICKS_PER_SECOND);
+// A shard's slowest turn: one turn in 100 hours. Slower would only make its cycle a number past an f32.
+constexpr f64 LEAST_SHARD_SPIN = 0.001;
+// The least satellite: a thousandth of its seal, so nested twice it stays a normal f32 on a seal above about 1.2e-32 across
+// (the layout skips a smaller one).
+constexpr f64 LEAST_SATELLITE = 0.001;
 
 constexpr internal::Range SIZE{ .low = 0.0, .lowOpen = true, .high = 1.0 };
+constexpr internal::Range SATELLITE_SIZE{ .low = LEAST_SATELLITE, .lowOpen = false, .high = 1.0 };
 constexpr internal::Range ANGLE{ .low = -MOST_DEGREES, .lowOpen = false, .high = MOST_DEGREES };
 constexpr internal::Range ARC{ .low = 0.0, .lowOpen = false, .high = MOST_DEGREES };
 constexpr internal::Range SPIN{ .low = -MOST_SPIN, .lowOpen = false, .high = MOST_SPIN };
@@ -33,6 +41,7 @@ constexpr internal::Range WASH_REACH{ .low = 0.0, .lowOpen = true, .high = MOST_
 constexpr internal::Range SCALE{ .low = 0.0, .lowOpen = false, .high = MOST_SCALE };
 constexpr internal::Range RATIO{ .low = 0.0, .lowOpen = true, .high = 1.0 };
 constexpr internal::Range HALO_REACH{ .low = 0.0, .lowOpen = false, .high = MOST_HALO_REACH };
+constexpr internal::Range PILLAR_BAND{ .low = 0.0, .lowOpen = true, .high = static_cast<f64>(core::MOST_SEAL_PILLAR_BAND) };
 
 constexpr std::array<std::string_view, 3> PLANE_NAMES{ { "ground", "upright", "overhead" } };
 constexpr std::array<std::string_view, 7> PART_NAMES{ { "circle", "ticks", "dots", "script", "star", "polygon", "flourish" } };
@@ -115,6 +124,15 @@ public:
             return;
         }
         field = static_cast<u32>(*value);
+    }
+
+    // A stream's period, in seconds: at least a tick, so the stream comes round at most once a tick and its laps stay a
+    // count an f64 holds exactly.
+    void Period(const char* key, f64& field, bool required) {
+        Read(key, field, LIFETIME, required);
+        if (!m_error && m_map[key] && field < LEAST_PERIOD) {
+            Fail(m_map[key], std::format("{}'s {} is under a tick (1/{} s)", m_owner, key, core::TICKS_PER_SECOND));
+        }
     }
 
     template<typename Enum, std::size_t Count>
@@ -455,31 +473,49 @@ std::expected<void, core::Error> ReadLight(const YAML::Node& node, ReadSeal& sea
     constexpr i64 MOST = core::MAX_SEAL_PARTICLES;
     if (const YAML::Node pillars = node["pillars"]; pillars && !fields.Failed()) {
         Fields stream(
-            pillars, seal.name + "'s pillar stream", { "count", "height", "width", "fade", "cycle" }, context.warnings
+            pillars,
+            seal.name + "'s pillar stream",
+            { "count", "height", "width", "fade", "cycle", "rest", "band" },
+            context.warnings
         );
         stream.Whole("count", light.pillars, 0, MOST);
         stream.Read("height", light.pillarHeight, WORLD_SIZE, light.pillars > 0);
         stream.Read("width", light.pillarWidth, SIZE, light.pillars > 0);
         stream.Read("fade", light.pillarFade, internal::FRACTION, light.pillars > 0);
-        stream.Read("cycle", light.pillarCycle, LIFETIME, light.pillars > 0);
+        stream.Period("cycle", light.pillarCycle, light.pillars > 0);
+        stream.Read("rest", light.pillarRest, internal::FRACTION);
+        stream.Read("band", light.pillarBand, PILLAR_BAND);
         if (const std::expected<void, core::Error> read = stream.Result(); !read) {
             return read;
         }
     }
     if (const YAML::Node sparks = node["sparks"]; sparks && !fields.Failed()) {
-        Fields stream(sparks, seal.name + "'s spark stream", { "count", "rise", "life" }, context.warnings);
+        Fields stream(sparks, seal.name + "'s spark stream", { "count", "rise", "life", "size" }, context.warnings);
         stream.Whole("count", light.sparks, 0, MOST);
         stream.Read("rise", light.sparkRise, WORLD, light.sparks > 0);
-        stream.Read("life", light.sparkLife, LIFETIME, light.sparks > 0);
+        stream.Period("life", light.sparkLife, light.sparks > 0);
+        stream.Read("size", light.sparkSize, SIZE, light.sparks > 0);
         if (const std::expected<void, core::Error> read = stream.Result(); !read) {
             return read;
         }
     }
     if (const YAML::Node shards = node["shards"]; shards && !fields.Failed()) {
-        Fields stream(shards, seal.name + "'s shard stream", { "count", "drift", "spin" }, context.warnings);
+        Fields stream(
+            shards, seal.name + "'s shard stream", { "count", "drift", "spin", "size", "thin", "edge" }, context.warnings
+        );
         stream.Whole("count", light.shards, 0, MOST);
         stream.Read("drift", light.shardDrift, WORLD, light.shards > 0);
         stream.Read("spin", light.shardSpin, SPIN, light.shards > 0);
+        stream.Read("size", light.shardSize, SIZE, light.shards > 0);
+        stream.Read("thin", light.shardThin, RATIO);
+        stream.Read("edge", light.shardEdge, RATIO);
+        if (const f64 spin = std::abs(static_cast<f64>(light.shardSpin));
+            !stream.Failed() && spin > 0.0 && spin < LEAST_SHARD_SPIN) {
+            stream.Fail(
+                shards["spin"],
+                std::format("{}'s spin isn't 0 or at least {} degrees a second either way", stream.Owner(), LEAST_SHARD_SPIN)
+            );
+        }
         if (const std::expected<void, core::Error> read = stream.Result(); !read) {
             return read;
         }
@@ -510,7 +546,7 @@ std::expected<void, core::Error> ReadSatellites(const YAML::Node& node, ReadSeal
         core::SealSatellite satellite;
         fields.Whole("layer", satellite.layer, 0, static_cast<i64>(seal.look.layers.size()) - 1);
         fields.Read("angle", satellite.angle, ANGLE);
-        fields.Read("size", satellite.size, SIZE, true);
+        fields.Read("size", satellite.size, SATELLITE_SIZE, true);
         fields.Named("mount", MOUNT_NAMES, satellite.mount);
         fields.Read("orbit", satellite.orbit, SPIN);
         const YAML::Node named = entry["seal"];
