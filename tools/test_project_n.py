@@ -153,18 +153,31 @@ class RestoreLockTest(unittest.TestCase):
     BEFORE = b'{\r\n__meta__ = { version = "1.0" }\nsdl = {}\nttf = {}\n'
 
     def restored(self, now):
-        with temp_repo({"xmake-requires.lock": "x"}) as root:
+        """The lock after restore_reordered_lock, and what it printed (captured: selftest's output stays clean)."""
+        out = io.StringIO()
+        with temp_repo({"xmake-requires.lock": "x"}) as root, contextlib.redirect_stdout(out):
             lock = root / "xmake-requires.lock"
             lock.write_bytes(now)
             project_n.restore_reordered_lock(self.BEFORE)
-            return lock.read_bytes()
+            return lock.read_bytes(), out.getvalue()
 
-    def test_reordered_lock_is_restored_byte_for_byte(self):
-        self.assertEqual(self.restored(b'{\r\nsdl = {}\nttf = {}\n__meta__ = { version = "1.0" }\n'), self.BEFORE)
+    def test_reordered_lock_is_restored_byte_for_byte_silently(self):
+        reordered = b'{\r\nsdl = {}\nttf = {}\n__meta__ = { version = "1.0" }\n'
+        self.assertEqual(self.restored(reordered), (self.BEFORE, ""))
 
-    def test_changed_or_added_line_is_kept(self):
-        for now in (self.BEFORE.replace(b"ttf", b"tty"), self.BEFORE + b"more = {}\n"):
-            self.assertEqual(self.restored(now), now)
+    def test_unchanged_lock_prints_nothing(self):
+        self.assertEqual(self.restored(self.BEFORE), (self.BEFORE, ""))
+
+    def test_changed_or_added_line_is_kept_and_its_diff_printed_to_commit(self):
+        # CI's macos job added its missing entries every run, unseen: the log must show them.
+        for now, changed in ((self.BEFORE.replace(b"ttf", b"tty"), ["-ttf = {}", "+tty = {}"]),
+                             (self.BEFORE + b"more = {}\r\n", ["+more = {}"])):
+            lock, printed = self.restored(now)
+            self.assertEqual(lock, now)
+            lines = printed.splitlines()
+            self.assertIn("xmake-requires.lock", lines[0])
+            self.assertIn("commit", lines[0])
+            self.assertEqual([line for line in lines if line.startswith(("+", "-")) and line[:3] not in ("+++", "---")], changed)
 
     def test_unchanged_lock_is_not_written(self):
         with temp_repo({"xmake-requires.lock": "x"}) as root:
