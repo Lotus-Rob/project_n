@@ -8,7 +8,7 @@ namespace core {
 namespace {
 
 constexpr f64 TICKS_A_SECOND = static_cast<f64>(TICKS_PER_SECOND);
-constexpr f32 HALF = 0.5F;
+constexpr f32 GLOW_HALF = 0.5F;
 constexpr f32 TWO = 2.0F;
 constexpr f32 THREE = 3.0F;
 constexpr f32 ONE_THIRD = 1.0F / 3.0F;
@@ -22,7 +22,7 @@ f32 CurveMean(GlowCurve curve) {
     if (curve == GlowCurve::EaseOut) {
         return TWO_THIRDS;
     }
-    return HALF;
+    return GLOW_HALF;
 }
 
 } // namespace
@@ -39,7 +39,7 @@ f32 CurveAt(GlowCurve curve, f32 fraction) {
         return held * held * (THREE - (TWO * held));
     }
     if (curve == GlowCurve::Sine) {
-        return (1.0F - math::Cos(std::numbers::pi_v<f32> * held)) * HALF;
+        return (1.0F - math::Cos(std::numbers::pi_v<f32> * held)) * GLOW_HALF;
     }
     return held;
 }
