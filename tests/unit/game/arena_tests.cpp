@@ -28,9 +28,12 @@ core::Snapshot Published(game::Arena& arena) {
     return snapshot;
 }
 
-// Whether an instance draws `sprite`: its region starts where the sprite's does.
+// Whether an instance draws `sprite`: its region starts where the sprite's does, on the same page (the low half of
+// layerFlags; sprites on different pages can start at the same point).
 bool Draws(const core::Instance& instance, SpriteId sprite) {
-    return instance.regionMin == core::MakeInstance(*test::TestManifest(), { .sprite = sprite }).regionMin;
+    constexpr u32 PAGE_MASK = 0xFFFFU;
+    const core::Instance expected = core::MakeInstance(*test::TestManifest(), { .sprite = sprite });
+    return instance.regionMin == expected.regionMin && (instance.layerFlags & PAGE_MASK) == (expected.layerFlags & PAGE_MASK);
 }
 
 TEST_CASE("the ground is drawn first") {
