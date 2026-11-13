@@ -158,18 +158,69 @@ def lock_bytes():
     return lock.read_bytes() if lock.is_file() else b""
 
 
-def restore_reordered_lock(before):
-    """XMake rewrites xmake-requires.lock with the same lines in another order (`__meta__` moves, entries swap):
-    when that is all that changed, write the bytes from `before` back so `git status` stays clean. A real change
-    stays and prints its diff, to commit: a platform's missing entries, added on hosts no one commits from (CI's
-    macos and windows jobs), would otherwise go unseen."""
+LOCK_TOKEN = re.compile(r'\s*(\[\s*"(?:[^"\\]|\\.)*"\s*\]|"(?:[^"\\]|\\.)*"|[{}=,]|[\w.+-]+)')
+
+
+def lock_entries(data):
+    """xmake-requires.lock's entries, {(platform, package): fields} plus {(key,): value} for top-level keys
+    that hold no packages (`__meta__`), with fields as canonical JSON; None if the text isn't the Lua table
+    XMake writes."""
+    text, pos, tokens = data.decode("utf-8", "replace"), 0, []
+    while pos < len(text.rstrip()):
+        match = LOCK_TOKEN.match(text, pos)
+        if not match:
+            return None
+        tokens.append(match.group(1))
+        pos = match.end()
+    stream = iter(tokens + [None])
+
+    def value(token):
+        if token != "{":
+            if token in (None, "}", "=", ","):
+                raise ValueError(token)
+            return token
+        table = {}
+        token = next(stream)
+        while token != "}":
+            key = token.strip('[] ').strip('"') if token and token.startswith("[") else token
+            if next(stream) != "=":
+                raise ValueError(key)
+            table[key] = value(next(stream))
+            token = next(stream)
+            if token == ",":
+                token = next(stream)
+        return table
+
+    try:
+        tree = value(next(stream))
+        if next(stream) is not None or not isinstance(tree, dict):
+            return None
+    except (ValueError, StopIteration):
+        return None
+    entries = {}
+    for key, fields in tree.items():
+        if isinstance(fields, dict) and key.count("|") == 1:
+            entries.update(((key, package), json.dumps(f, sort_keys=True)) for package, f in fields.items())
+        else:
+            entries[(key,)] = json.dumps(fields, sort_keys=True)
+    return entries
+
+
+def restore_lock_unless_added(before):
+    """XMake rewrites xmake-requires.lock after every call: in another order (`__meta__` moves, entries swap:
+    Lua table order), and with only the entries the current configuration uses (the windows-msvc container
+    drops native Windows' build tools from `windows|x64`: its own host tools are Linux ones). When it only
+    reordered or dropped entries, write the bytes from `before` back so `git status` stays clean. An added or
+    changed entry stays and prints its diff, to commit: a platform's missing entries, added on hosts no one
+    commits from (CI's macos and windows jobs), would otherwise go unseen."""
     now = lock_bytes()
     if now == before:
         return
-    if sorted(now.splitlines()) == sorted(before.splitlines()):
+    old, new = lock_entries(before), lock_entries(now)
+    if old is not None and new is not None and new.items() <= old.items():
         (ROOT / "xmake-requires.lock").write_bytes(before)
         return
-    print("xmake-requires.lock: XMake changed entries; commit them (tools/AGENTS.md):", flush=True)
+    print("xmake-requires.lock: XMake added or changed entries; commit them (tools/AGENTS.md):", flush=True)
     old_lines, new_lines = (b.decode("utf-8", "replace").splitlines() for b in (before, now))
     diff = difflib.unified_diff(old_lines, new_lines, "a/xmake-requires.lock", "b/xmake-requires.lock", lineterm="")
     print("\n".join(diff), flush=True)
@@ -177,15 +228,15 @@ def restore_reordered_lock(before):
 
 def run(cmd, env=None, **kwargs):
     """Run a command from the repo root, echoing it; raise on failure. Output is never piped.
-    Any XMake call may rewrite xmake-requires.lock in another order, so each one restores it afterwards, even
-    when it fails (tools/AGENTS.md)."""
+    Any XMake call may reorder or prune xmake-requires.lock, so each one restores it afterwards, even when it
+    fails (tools/AGENTS.md)."""
     print("+", " ".join(str(c) for c in cmd), flush=True)
     before = lock_bytes() if cmd[0] == "xmake" else None
     try:
         return subprocess.run(resolve(cmd), cwd=ROOT, check=True, env=env, **kwargs)
     finally:
         if before is not None:
-            restore_reordered_lock(before)
+            restore_lock_unless_added(before)
 
 
 def capture(cmd, check=True):
