@@ -1,6 +1,6 @@
 # History first: every superpowers step starts from what came before
 
-Date: 2026-11-13 · Status: approved 2026-11-13 (the user: "Including these changes")
+Date: 2026-11-13 · Status: implemented 2026-11-13 (approved the same day; the user: "Including these changes")
 
 ## Intent
 
@@ -141,3 +141,60 @@ the skill's exact query patterns, from baseline runs against real past topics in
 (project_n and another project) so the skill is shown to be project-agnostic (writing-skills' test-first
 method); a small self-test for the hook script (feeding it sample hook input).
 
+## Outcome (2026-11-13)
+
+What the global files hold now (not versioned; backups `~/.claude/settings.json.bak-2026-11-13`,
+`~/.claude/CLAUDE.md.bak-2026-11-13`):
+
+| File | Holds |
+|---|---|
+| `~/.claude/skills/recall-history/SKILL.md` | the dispatcher: skip if the topic's history is in context; dispatch `history-recall` with repo, topic, paths, error, size; where the report goes; Decided / Tried and rejected reopened only with the user |
+| `~/.claude/agents/history-recall.md` | Sonnet; tools Bash, Read, Grep, Glob, LSP, `palace_query`; read-only; gathers in two turns of parallel calls (project rules, docs, git and churn, palace ≤ 3 × `LIMIT 5` in the wing slugged as MemPalace files it, widened hits labelled as other projects', code; git skipped outside a repo); a five-heading report of ≤ 25 lines |
+| `~/.claude/hooks/recall_history_reminder.py` (+ `test_recall_history_reminder.py`, 6 tests) | PostToolUse on Skill and UserPromptSubmit (a typed `/superpowers:<step>`): one sentence when brainstorming, writing-plans, systematic-debugging or requesting-code-review starts; nothing otherwise, never blocks |
+| `~/.claude/settings.json` | superpowers enabled at user scope; skill-creator disabled; ponytail and its marketplace gone; hooks: Stop, PreCompact (as before), PostToolUse and UserPromptSubmit (the reminder), SessionEnd (MemPalace) |
+| `~/.claude/CLAUDE.md` | 1,533 bytes (1,289 before, without the history rules): packages and MemPalace rules unchanged in substance, the wing rule made exact (MemPalace's slug, worktrees), plus "History first" |
+
+Rulings and their evidence:
+
+- **The skill is an output contract, not prohibitions.** Baselines (a fresh Sonnet subagent asked "before we design
+  it, what do we already know?") found the history well in both projects: project_n's found that the lint change had
+  already shipped, the dev-loop-speedups spec and a stale backlog entry; the other project's found an architecture
+  record's explicit rejection of the approach asked about. Their failure was the report: 45–60 lines, no decided/rejected split, no cleanup
+  judgement. So the agent fixes the report's shape and size; the hook fixes the trigger (both baselines only searched
+  because they were asked to).
+- **Measured cost**, headless `claude -p` for both arms (baselines on the session default, Opus; the agent on Sonnet):
+
+  | Topic | Baseline | `history-recall` |
+  |---|---|---|
+  | project_n: lint only what a header reaches | 136k tokens, $0.39, 31 lines | 74k–96k tokens, $0.12–0.14, 25 lines |
+  | another project: a feature its records once rejected | 110k tokens, $0.32, 36 lines | 62k tokens, $0.105, 29 lines |
+
+  The first agent draft took 10 turns (200k tokens) and 31–32 lines; "two turns of parallel calls" and a 25-line
+  target with a count-and-cut rule brought it to the numbers above. Only the report reaches the main session.
+- **The hook runs after the skill loads (PostToolUse).** Checked end to end: a fresh `claude -p` session in an empty
+  repo with no project settings invoked superpowers:brainstorming (so superpowers loads from the user scope) and quoted
+  the reminder verbatim.
+- **A new agent type loads only at session start**, so the GREEN runs used `claude -p --agent history-recall`; from
+  the next session the Agent tool can dispatch it.
+- **ponytail's cached copy** (`~/.claude/plugins/cache/ponytail`) survived `claude plugin uninstall` and was deleted
+  with the other leftovers.
+- **Final review's fixes** (Opus, whole branch plus the global files; no Critical):
+  - A typed `/superpowers:brainstorming` loads the skill without a Skill tool call, so PostToolUse never fired (checked
+    end to end: "None reached me"). The script now also answers UserPromptSubmit when the prompt's first word is one
+    of the four commands; rechecked end to end, the reminder arrives.
+  - The wing was the raw folder name, but MemPalace files sessions under a slug (lower case, `-` and spaces to `_`:
+    a hyphenated folder name's `IN` query finds nothing, its underscored wing holds the drawers) and folds only `.claude/worktrees/` and
+    `.worktrees/` into the project. The agent and the global CLAUDE.md now derive the wing that way; a worktree
+    elsewhere queries its own wing and the main repository's.
+  - Widened palace hits come from other projects: the agent labels them as cross-project hints and writes "no hits in
+    <wing>". Run on a repository with no wing: "no hits", one query for a small change, $0.04.
+  - The global CLAUDE.md regained "before answering" (not only when asked) and "never guess"; the skill's line limit
+    matches the agent's 25; the agent skips git outside a repository.
+  - Left for the user: another project still pins superpowers at project scope on 7.0.0 (every other project gets 7.0.2
+    from the user scope; `claude plugin uninstall superpowers@claude-plugins-official --scope project` there
+    would end that); the headless test runs were filed into the palace (a wing of end-to-end test noise, and the
+    recall reports in project_n's wing and another's), and removing palace entries is the user's call.
+- **main's unity build was broken** by the glows: `src/core/glow.cpp` and `src/core/volley.cpp` each defined an
+  anonymous `HALF` (`f32` and `f64`), which collide in one unity batch, so `check` failed on any branch. Renamed
+  glow's to `GLOW_HALF` ("fix(core): keep glow's half constant unique across unity batches"); `test --preset
+  linux-clang --unity` failed before and passes after.
