@@ -6,9 +6,10 @@
 # scene gives) unless a key says world units.
 #
 # view_ratio: the art's angle, how far depth on a flat seal is squashed on screen (above 0, at most 1; the blob shadow's
-#   24 / 64). above_opacity: the most an upright or overhead seal shows over the creatures (0 to 1). spin_scale: multiplies
-#   every spin, particle speed and how fast seals appear and fade (0 or more; reduce motion lowers it). brightness: multiplies
-#   every line and light (0 or more; reduce flashing lowers it).
+#   24 / 64). above_opacity: the most an upright or overhead seal shows over the creatures (0 to 1). spin_scale: scales the
+#   seals' time: spins, particle motion and life, and the appear and fade (0 or more; reduce motion lowers it; at 0 nothing
+#   moves and seals appear and go at once). brightness: multiplies every line and light (0 or more; reduce flashing lowers
+#   it).
 # glyph_sets: named lists of sprites a script draws from, in turn round its ring.
 # seals: each seal by name, with
 #   plane: ground (flat, an ellipse at the art's angle), upright (standing, a circle) or overhead (flat, lifted); lift: world
@@ -21,7 +22,8 @@
 #     order: outer_first or inner_first, the order its layers appear in, one after another.
 #   layers: 1 to 9, each inner and outer (its band, inner below outer, outer at most 1), height (world units it rises above
 #     the plane, 0 or more), spin, opacity (0 to 1), frame ({ sides: 0 round, or 3 or more for a square or diamond band;
-#     rotation }) and up to 16 parts. Every part has a kind, a radius (above 0, at most 1), a rotation (where its first item
+#     rotation }: a frame's inner and outer are its polygons' corners, so its sides' middles are nearer, and a round part
+#     past them is cut off there) and up to 16 parts. Every part has a kind, a radius (above 0, at most 1), a rotation (where its first item
 #     sits) and a colour, and by kind:
 #       circle: width (above 0), dash and gap (degrees of the ring; dash 0 is solid);
 #       ticks: count (1 to 360), length and width;
@@ -35,8 +37,9 @@
 #     ring), angle, size (above 0, at most 1), mount (fixed: stays put; with_layer: turns with the layer; orbit: goes round
 #     at orbit degrees a second).
 #   light: colour, and pillars { count, height (world units), width, fade (how much of its length a pillar fades out
-#     over towards its far end, 0 to 1) }, sparks { count, rise (world units a second), life
-#     (seconds, above 0) } and shards { count, drift (world units a second), spin }: 256 particles at most in all.
+#     over towards its far end, 0 to 1), cycle (seconds its light takes to fall its length once, above 0) }, sparks { count,
+#     rise (world units a second), life (seconds, above 0) } and shards { count, drift (world units a second), spin }: 256
+#     particles at most in all.
 view_ratio: 0.375
 above_opacity: 0.7
 spin_scale: 1

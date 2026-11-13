@@ -452,11 +452,14 @@ std::expected<void, core::Error> ReadLight(const YAML::Node& node, ReadSeal& sea
     fields.Slot(light.slot, seal.look.colourCount, seal.name);
     constexpr i64 MOST = core::MAX_SEAL_PARTICLES;
     if (const YAML::Node pillars = node["pillars"]; pillars && !fields.Failed()) {
-        Fields stream(pillars, seal.name + "'s pillar stream", { "count", "height", "width", "fade" }, context.warnings);
+        Fields stream(
+            pillars, seal.name + "'s pillar stream", { "count", "height", "width", "fade", "cycle" }, context.warnings
+        );
         stream.Whole("count", light.pillars, 0, MOST);
         stream.Read("height", light.pillarHeight, WORLD_SIZE, light.pillars > 0);
         stream.Read("width", light.pillarWidth, SIZE, light.pillars > 0);
         stream.Read("fade", light.pillarFade, internal::FRACTION, light.pillars > 0);
+        stream.Read("cycle", light.pillarCycle, LIFETIME, light.pillars > 0);
         if (const std::expected<void, core::Error> read = stream.Result(); !read) {
             return read;
         }

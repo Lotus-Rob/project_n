@@ -126,7 +126,7 @@ struct SealLayer {
     /// Its frame's turn from the layer's zero, in degrees.
     f32 frameRotation = 0.0F;
     /// Its parts, at most MAX_SEAL_PARTS, in the data's order.
-    std::vector<SealPart> parts;
+    std::vector<SealPart> parts{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
 };
 
 /// A sprite at a seal's centre.
@@ -174,6 +174,8 @@ struct SealLight {
     f32 pillarWidth = 0.0F;
     /// How much of a pillar's length it fades out over, towards its far end, 0 (a hard end) to 1 (fading all the way).
     f32 pillarFade = 0.0F;
+    /// How long a pillar's light takes to fall its length once, in seconds: above 0 when there are pillars.
+    f64 pillarCycle = 0.0;
     /// How many sparks.
     u32 sparks = 0;
     /// How fast a spark rises, in world units a second.
@@ -217,11 +219,12 @@ struct SealLook {
     /// Whether its layers appear from the innermost out, rather than the outermost in.
     bool innerFirst = false;
     /// Its layers, 1 to MAX_SEAL_LAYERS, in the data's order.
-    std::vector<SealLayer> layers;
+    std::vector<SealLayer> layers{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The sprite at its centre, if it has one.
     std::optional<SealEmblem> emblem = std::nullopt;
     /// The seals drawn on its rings.
-    std::vector<SealSatellite> satellites;
+    std::vector<SealSatellite>
+        satellites{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// Its light.
     SealLight light{};
 };
@@ -232,7 +235,7 @@ struct Seals {
     f32 viewRatio = shipped::SEAL_VIEW_RATIO;
     /// The most opacity an upright or overhead seal reaches, over the creatures, 0 to 1.
     f32 aboveOpacity = shipped::SEAL_ABOVE_OPACITY;
-    /// Multiplies every spin, every particle's speed and how fast seals appear and fade (reduce motion lowers it), 0 or more.
+    /// Scales the seals' time: spins, particle motion and life, and the appear and fade (reduce motion lowers it), 0 or more.
     f32 spinScale = 1.0F;
     /// Multiplies every line and light (reduce flashing lowers it), 0 or more.
     f32 brightness = 1.0F;
