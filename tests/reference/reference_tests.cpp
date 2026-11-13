@@ -3,7 +3,9 @@
 // the working directory: each view's picture lands in build/reference/, where `--update` takes it from.
 // Game text is also measured on the pictures (the phase 6 chunk 3 spec, "Testing"): a label's ink must not shimmer at
 // sub-pixel camera offsets, nor step while its creature moves. So are the glows' drives (the phase 6 glow spec): a demo
-// glow's drawn amount follows core::GlowStrength() from tick to tick, and reduce flashing holds and dims it.
+// glow's drawn amount follows core::GlowStrength() from tick to tick, and reduce flashing holds and dims it. So are the
+// seals (the phase 6 chunk 4b spec, "Testing"): a screen-wide seal's ink, tile by tile, must not shimmer at sub-pixel camera
+// offsets.
 #include "app/damage_numbers.hpp"
 #include "app/hud.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
@@ -14,11 +16,14 @@
 #include "core/instances.hpp"
 #include "core/jobs.hpp"
 #include "core/math.hpp"
+#include "core/seal.hpp"
+#include "core/seals.hpp"
 #include "core/settings.hpp"
 #include "core/strings.hpp"
 #include "core/tick_clock.hpp"
 #include "core/ui_colours.hpp"
 #include "core/volley.hpp"
+#include "data/seals.hpp"
 #include "data/strings.hpp"
 #include "game/arena.hpp"
 #include "game/combat.hpp"
@@ -392,6 +397,80 @@ TEST_CASE("new effects change the next picture of the same snapshot, and the shi
     CHECK(auraRestored.rgba == auraShipped.rgba);
 }
 
+// The shipped seals (assets/data/seals.yaml), read against the shipped manifest.
+core::Seals ShippedSeals() {
+    std::expected<core::Seals, core::Error> seals = data::LoadSeals(Assets() / "data", *test::TestManifest());
+    const std::string sealsWhy = seals.error_or(core::Error{}).message;
+    REQUIRE_MESSAGE(seals.has_value(), sealsWhy);
+    return std::move(*seals);
+}
+
+// The seal the flying swords raise, as their cast raises it: in the damage element, its outer radius `size`, raised at
+// `startTick` and never ending, so a picture holds it whatever its tick.
+constexpr std::string_view SWORD_SEAL = "sword_formation";
+core::Seal SwordSeal(core::Vec2 point, f32 size, u64 startTick) {
+    return { .key = core::SealKeyOf(SWORD_SEAL),
+             .point = point,
+             .size = size,
+             .startTick = startTick,
+             .endTick = core::NEVER_ENDS,
+             .element = core::HitKind::Damage,
+             .hasElement = true };
+}
+
+// The seals' pictures are drawn at this tick, of a seal raised SINCE_RAISED ticks before: whole, its rings turned.
+constexpr u64 SEAL_TICK = 600;
+constexpr u64 SINCE_RAISED = 90;
+
+// The arena at rest at SEAL_TICK with the swords' seal at its shipped size among the foxes, which stand on it.
+core::Snapshot ArenaWithSwordSeal(core::Jobs& jobs) {
+    game::Arena arena(test::TestManifest());
+    core::Snapshot snapshot = Published(arena, jobs, SEAL_TICK);
+    // A copy: the game data BuiltInData() returns is a temporary, gone at the end of this line.
+    const std::optional<core::SealCast> cast = game::BuiltInData().abilities.Of(core::AbilityKind::FlyingSwords).seal;
+    REQUIRE(cast.has_value());
+    snapshot.seals.push_back(SwordSeal(AMONG_THE_FOXES, cast.value_or(core::SealCast{}).size, SEAL_TICK - SINCE_RAISED));
+    return snapshot;
+}
+
+TEST_CASE("a seal on the pale ground: coloured lines glowing on their wash") {
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    const core::Snapshot snapshot = ArenaWithSwordSeal(jobs);
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
+    renderer.SetSeals(ShippedSeals());
+    const gfx::View view{ .camera = { .centre = AMONG_THE_FOXES, .zoom = gfx::MAX_ZOOM } };
+    CompareWithReference(Captured(renderer, snapshot, view, jobs), "seal_ground");
+}
+
+TEST_CASE("new seals change the next picture of the same snapshot") {
+    constexpr f32 WIDER = 4.0F;
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    const core::Snapshot snapshot = ArenaWithSwordSeal(jobs);
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
+    const core::Seals shipped = ShippedSeals();
+    renderer.SetSeals(shipped);
+    const gfx::View view{ .camera = { .centre = AMONG_THE_FOXES, .zoom = gfx::MAX_ZOOM } };
+    const gfx::Image drawn = Captured(renderer, snapshot, view, jobs);
+    // A part's width, which only a new pack of the table carries to the GPU.
+    core::Seals wider = shipped;
+    const auto look =
+        std::ranges::find(wider.looks, core::SealKeyOf(SWORD_SEAL), &std::pair<core::SealKey, core::SealLook>::first);
+    REQUIRE(look != wider.looks.end());
+    REQUIRE_FALSE(look->second.layers.empty());
+    REQUIRE_FALSE(look->second.layers.front().parts.empty());
+    look->second.layers.front().parts.front().width *= WIDER;
+    renderer.SetSeals(wider);
+    const gfx::Image changed = Captured(renderer, snapshot, view, jobs);
+    CHECK(changed.rgba != drawn.rgba);
+    renderer.SetSeals(shipped);
+    const gfx::Image restored = Captured(renderer, snapshot, view, jobs);
+    CHECK(restored.rgba == drawn.rgba);
+}
+
 TEST_CASE("the HUD at zoom 1, one slot cooling down") {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
@@ -686,6 +765,7 @@ LabelScene PlayerLabel(core::Jobs& jobs, Ground ground) {
     scene.label = *label;
     scene.with.instances.clear();
     scene.with.batches.clear();
+    scene.with.groundBatches = 0;
     scene.with.ids.clear();
     if (ground == Ground::Pale) {
         scene.with.instances.push_back(FlatPaleGround());
@@ -1041,6 +1121,119 @@ TEST_CASE("reduce flashing holds a pulse at its average and dims light glows, an
     const f64 dimmed = ExpectedGlow(rig.effects, lit, true) / ExpectedGlow(rig.effects, lit, false);
     INFO("a light pulse reducing flashing: ", lightReduced / lightFull, " of its full strength, GlowStrength ", dimmed);
     CHECK(std::abs((lightReduced / lightFull / dimmed) - 1.0) < MOST_ERROR);
+}
+
+// Each pixel's ink `with` adds over `without`: its darkness (1 - luminance) less the other's, signed, so a pixel's share of a
+// line counts in proportion to how much of it the line covers (LinearAt()).
+std::vector<f64> InkPerPixel(const gfx::Image& with, const gfx::Image& without) {
+    std::vector<f64> ink(std::size_t{ WIDTH } * HEIGHT);
+    for (std::size_t pixel = 0; pixel < ink.size(); ++pixel) {
+        ink[pixel] = Luminance(without, pixel) - Luminance(with, pixel);
+    }
+    return ink;
+}
+
+// The shimmer measure's tiles: one every SHIMMER_TILE pixels each way, weighing the pixels round its centre by a Gaussian
+// SHIMMER_SIGMA pixels wide, cut off SHIMMER_REACH pixels out. Local, so a line that crawls shows in its tile instead of
+// averaging out over the picture; smooth, so a tile's ink stays put while what it covers moves less than a pixel.
+constexpr i32 SHIMMER_TILE = 32;
+constexpr f64 SHIMMER_SIGMA = 16.0;
+constexpr i32 SHIMMER_REACH = 48;
+
+// The ink under each tile's window, row by row, of a picture whose camera stood `shift` pixels right of and below the
+// first's, so its content `shift` pixels up and left: the windows move with the content. Drawn without aliasing, a tile
+// keeps its ink at every shift; lines that hit or miss pixels as they move change it.
+std::vector<f64> TileInks(std::span<const f64> ink, f64 shift) {
+    constexpr f64 PIXEL_CENTRE = 0.5;
+    constexpr f64 HALF = 0.5;
+    const auto weight = [shift](i32 pixel, i32 centre) {
+        const f64 away = static_cast<f64>(pixel) + PIXEL_CENTRE + shift - static_cast<f64>(centre);
+        return std::exp(-HALF * (away / SHIMMER_SIGMA) * (away / SHIMMER_SIGMA));
+    };
+    std::vector<f64> tiles;
+    constexpr auto WIDE = static_cast<i32>(WIDTH);
+    constexpr auto HIGH = static_cast<i32>(HEIGHT);
+    for (i32 centreY = SHIMMER_TILE / 2; centreY < HIGH; centreY += SHIMMER_TILE) {
+        for (i32 centreX = SHIMMER_TILE / 2; centreX < WIDE; centreX += SHIMMER_TILE) {
+            f64 sum = 0.0;
+            for (i32 row = std::max(centreY - SHIMMER_REACH, 0); row < std::min(centreY + SHIMMER_REACH, HIGH); ++row) {
+                const f64 down = weight(row, centreY);
+                for (i32 column = std::max(centreX - SHIMMER_REACH, 0); column < std::min(centreX + SHIMMER_REACH, WIDE);
+                     ++column) {
+                    sum += ink[(static_cast<std::size_t>(row) * WIDTH) + static_cast<std::size_t>(column)] * down *
+                           weight(column, centreX);
+                }
+            }
+            tiles.push_back(sum);
+        }
+    }
+    return tiles;
+}
+
+TEST_CASE("a screen-wide seal at the smallest zoom: no shimmer") {
+    // Its outer radius, in world units: most of the half of the 7,680 the smallest zoom shows across.
+    constexpr f32 SCREEN_WIDE = 3'600.0F;
+    constexpr f32 QUARTER_PIXEL = 0.25F;
+    constexpr f64 MOST_CHANGE = 0.02; // a label's, at its sub-pixel offsets
+    constexpr f64 ENOUGH_INK = 0.1;   // a tile measured holds at least this share of the inkiest tile's ink
+    // The pale ground's foot and scale: the painted ground, one flat colour, grown to cover the whole view.
+    constexpr core::Vec2 PALE_FOOT{ .x = -3'000.0F, .y = -1'800.0F };
+    constexpr f32 PALE_SCALE = 5.0F;
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs;
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, ArenaScene(), jobs);
+    const core::Seals shipped = ShippedSeals();
+    // Over the backdrop, the seal's light alone, without its wash: there it adds without saturating.
+    core::Seals unwashed = shipped;
+    for (auto& [key, look] : unwashed.looks) {
+        look.washDarkness = 0.0F;
+    }
+    u64 uploads = 0;
+    for (const Ground ground : GROUNDS) {
+        renderer.SetSeals(ground == Ground::Pale ? shipped : unwashed);
+        std::vector<core::Instance> under;
+        if (ground == Ground::Pale) {
+            core::Instance pale = FlatPaleGround();
+            const core::Instance placed = core::MakeInstance(
+                *test::TestManifest(),
+                { .sprite = core::atlas::SpriteId::Ground, .previous = PALE_FOOT, .current = PALE_FOOT, .scale = PALE_SCALE }
+            );
+            pale.previous = placed.previous;
+            pale.current = placed.current;
+            pale.size = placed.size;
+            under.push_back(pale);
+        }
+        core::Snapshot without = SnapshotOf(under, SEAL_TICK, ++uploads);
+        without.groundBatches = static_cast<u32>(without.batches.size());
+        core::Snapshot with = without;
+        with.wallTick = ++uploads;
+        with.seals.push_back(SwordSeal(gfx::REFERENCE_CENTRE, SCREEN_WIDE, SEAL_TICK - SINCE_RAISED));
+        const gfx::Camera far{ .zoom = gfx::MIN_ZOOM };
+        const f32 worldPerPixel = 1.0F / gfx::PixelsPerUnit(far, WIDTH, HEIGHT);
+        std::array<std::vector<f64>, 2> tiles{};
+        for (std::size_t shot = 0; shot < tiles.size(); ++shot) {
+            const f32 offset = shot == 0 ? 0.0F : QUARTER_PIXEL;
+            gfx::View view{ .camera = far };
+            view.camera.centre = view.camera.centre + (core::Vec2{ .x = offset, .y = offset } * worldPerPixel);
+            const gfx::Image sealed = Captured(renderer, with, view, jobs);
+            const gfx::Image bare = Captured(renderer, without, view, jobs);
+            tiles.at(shot) = TileInks(InkPerPixel(sealed, bare), static_cast<f64>(offset));
+        }
+        // The tiles holding enough of the seal's ink to measure, and the worst change among them.
+        const f64 most = std::ranges::max(tiles[0], {}, [](f64 ink) { return std::abs(ink); });
+        REQUIRE(std::abs(most) > 0.0);
+        f64 worst = 0.0;
+        std::size_t measured = 0;
+        for (std::size_t tile = 0; tile < tiles[0].size(); ++tile) {
+            if (std::abs(tiles[0][tile]) >= ENOUGH_INK * std::abs(most)) {
+                worst = std::max(worst, std::abs((tiles[1][tile] / tiles[0][tile]) - 1.0));
+                ++measured;
+            }
+        }
+        INFO(Over(ground), ": of ", measured, " tiles, the worst changed its ink by ", worst);
+        CHECK(worst < MOST_CHANGE);
+    }
 }
 
 } // namespace

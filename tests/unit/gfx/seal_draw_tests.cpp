@@ -217,6 +217,8 @@ core::Vec2 OuterMiddle(std::span<const gfx::SealVertex> band) {
 
 TEST_CASE("a frame's band reaches its corners, its sides' middles nearer") {
     constexpr u32 SQUARE = 4;
+    // Its outer radius, and the margin for the shader's halo with the table's default reach.
+    constexpr f32 REACH = 1.0F + gfx::SealBandMargin(core::shipped::SEAL_HALO_REACH);
     core::SealLook look = OneLayer();
     look.layers = { { .inner = 0.0F, .outer = 1.0F, .frameSides = SQUARE, .frameRotation = 0.0F, .parts = {} } };
     const gfx::SealDrawing drawn = Draw(One("frame"), Table({ { "frame", look } }), SECOND);
@@ -224,15 +226,25 @@ TEST_CASE("a frame's band reaches its corners, its sides' middles nearer") {
     // A frame's outer radius is its corners'; a square's sides' middles are only cos(45°) of it out.
     const f32 corner = Distance(drawn.groundLines[2].local, {});
     const f32 middle = Distance(OuterMiddle(drawn.groundLines), {});
-    CHECK(std::max(std::abs(corner - 1.0F), std::abs(middle - std::cos(std::numbers::pi_v<f32> / SQUARE))) < CLOSE);
+    CHECK(std::max(std::abs(corner - REACH), std::abs(middle - (REACH * std::cos(std::numbers::pi_v<f32> / SQUARE)))) < CLOSE);
+    // Its inner corners are at the centre, with no way in to grow.
+    CHECK(drawn.groundLines[0].grow == doctest::Approx(0.0F));
+    CHECK(drawn.groundLines[2].grow == doctest::Approx(1.0F));
 }
 
 TEST_CASE("a round band holds its outer circle and the wash reaches its reach") {
     constexpr f32 REACH = core::shipped::SEAL_WASH_REACH;
     const gfx::SealDrawing drawn = Draw(One("round"), Table({ { "round", OneLayer() } }), SECOND);
     REQUIRE((drawn.groundLines.size() >= gfx::QUAD_VERTICES && drawn.groundWash.size() == gfx::QUAD_VERTICES));
-    // Its quads' outer edges are chords outside the circle: the nearest point of one is still the outer radius out.
-    CHECK(Distance(OuterMiddle(drawn.groundLines), {}) >= 1.0F - CLOSE_UV);
+    // Its quads' outer edges are chords outside the circle: the nearest point of one is still the outer radius out, and the
+    // margin for the shader's halo past it; its inner edge is the margin inside the inner radius.
+    constexpr f32 MARGIN = gfx::SealBandMargin(core::shipped::SEAL_HALO_REACH);
+    CHECK(Distance(OuterMiddle(drawn.groundLines), {}) >= 1.0F + MARGIN - CLOSE_UV);
+    CHECK(Distance(drawn.groundLines[0].local, {}) == doctest::Approx(OneLayer().layers[0].inner - MARGIN));
+    // The vertex shader grows a band a pixel past both edges: its outer corners out, its inner ones in; never its wash.
+    CHECK(drawn.groundLines[0].grow == doctest::Approx(-1.0F));
+    CHECK(drawn.groundLines[2].grow == doctest::Approx(1.0F));
+    CHECK(drawn.groundWash[0].grow == doctest::Approx(0.0F));
     // The wash's far corner is its reach out each way, squashed by the art's angle.
     const core::Vec2 far = POINT + core::Vec2{ .x = REACH * SIZE, .y = REACH * SIZE * VIEW_RATIO };
     CHECK(Distance(drawn.groundWash[3].position, far) < CLOSE);
@@ -301,26 +313,47 @@ TEST_CASE("a full frame counts each seal it leaves out with every satellite it w
     // seals a planet. Twelve planets and all but the last speck of a thirteenth fill the frame's 64; the rest are counted.
     constexpr std::size_t PLANETS = 20;
     constexpr std::size_t EACH = 5;
+    constexpr f32 SMALLER = 0.2F; // each satellite's size
     core::SealLook speck = OneLayer();
     core::SealLook moon = OneLayer();
-    moon.satellites = { { .seal = core::SealKeyOf("speck"), .size = 0.2F } };
+    moon.satellites = { { .seal = core::SealKeyOf("speck"), .size = SMALLER } };
     core::SealLook planet = OneLayer();
-    planet.satellites = { { .seal = core::SealKeyOf("moon"), .size = 0.2F },
-                          { .seal = core::SealKeyOf("moon"), .angle = HALF_TURN, .size = 0.2F },
-                          { .seal = core::SealKeyOf("moon"), .layer = 1, .size = 0.2F } };
+    planet.satellites = { { .seal = core::SealKeyOf("moon"), .size = SMALLER },
+                          { .seal = core::SealKeyOf("moon"), .angle = HALF_TURN, .size = SMALLER },
+                          { .seal = core::SealKeyOf("moon"), .layer = 1, .size = SMALLER } };
     const core::Seals looks = Table({ { "planet", planet }, { "moon", moon }, { "speck", speck } });
     const gfx::SealPack pack = gfx::PackSeals(looks, TestManifest());
     // Packed with the table: a planet draws five in play, three as a satellite (its specks too deep) and one deepest.
-    std::size_t at = 0;
-    while (looks.looks.at(at).first != core::SealKeyOf("planet")) {
-        ++at;
+    std::size_t planetAt = 0;
+    while (looks.looks.at(planetAt).first != core::SealKeyOf("planet")) {
+        ++planetAt;
     }
     const std::array<u32, 3> counts{ { EACH, 3, 1 } };
-    CHECK(pack.looks.at(at).seals == counts);
+    CHECK(pack.looks.at(planetAt).seals == counts);
     const std::vector<core::Seal> seals(PLANETS, One("planet").front());
     const gfx::SealDrawing drawn = Draw(seals, looks, SECOND);
     CHECK(drawn.layers.size() == gfx::MAX_SEALS_DRAWN);
     CHECK(drawn.droppedSeals == (PLANETS * EACH) - gfx::MAX_SEALS_DRAWN);
+}
+
+TEST_CASE("a seal buffer grows to twice its room or what is asked, never past a u32") {
+    constexpr u32 SMALL = 1'000;
+    constexpr std::size_t THRICE = 3'000;           // three times SMALL
+    constexpr u32 LARGE = 3'000'000'000;            // twice it is past a u32
+    constexpr u32 MOST = 4'294'967'295;             // the most a u32 counts
+    constexpr std::size_t PAST = 4'294'967'296 + 8; // more bytes than a u32 counts, 8 once narrowed
+    const std::optional<u32> held = gfx::SealBufferRoom(SMALL, SMALL);
+    CHECK(held == SMALL);
+    const std::optional<u32> doubled = gfx::SealBufferRoom(SMALL, SMALL + 1);
+    CHECK(doubled == 2 * SMALL);
+    const std::optional<u32> asked = gfx::SealBufferRoom(SMALL, THRICE);
+    CHECK(asked == THRICE);
+    // Doubling past a u32 stops at its most, never wrapping round to less.
+    const std::optional<u32> capped = gfx::SealBufferRoom(LARGE, std::size_t{ LARGE } + 1);
+    CHECK(capped == MOST);
+    // Bytes no u32 counts have no room, rather than the few they narrow to.
+    const std::optional<u32> past = gfx::SealBufferRoom(LARGE, PAST);
+    CHECK_FALSE(past.has_value());
 }
 
 TEST_CASE("a never-ending seal hands the GPU small times") {

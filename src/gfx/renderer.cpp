@@ -10,12 +10,14 @@
 #include "gfx/internal/features/composite.hpp"
 #include "gfx/internal/features/meshes.hpp"
 #include "gfx/internal/features/ribbons.hpp"
+#include "gfx/internal/features/seals.hpp"
 #include "gfx/internal/features/sprites.hpp"
 #include "gfx/internal/frame/frame.hpp"
 #include "gfx/internal/gpu.hpp"
 #include "gfx/internal/resources/scene_target.hpp"
 #include "gfx/internal/resources/sprite_array.hpp"
 #include "gfx/labels.hpp"
+#include "gfx/seal_draw.hpp"
 #include "gfx/sprite_block.hpp"
 #include "gfx/text_layout.hpp"
 #include "gfx/text_place.hpp"
@@ -158,6 +160,8 @@ struct Renderer::Impl {
     // first, drawn last) and the glyph fields they need; then ends the glyph cache's frame. A recorded copy counts as
     // uploaded only once its commands are submitted (Submitted()): a dropped buffer must upload again.
     std::expected<void, core::Error> Upload(SDL_GPUCommandBuffer* commands, const Shown& shown, core::Jobs& jobs);
+    // Lays out the snapshot's seals at the render time into sealDrawing, and logs once each seal key the table lacks.
+    void LaySeals(const core::Snapshot& snapshot, f64 renderTick);
     // Makes the glyph pages the cache's fields are on.
     std::expected<void, core::Error> MakeGlyphPages();
     // What `item` says, in the language shown.
@@ -224,6 +228,7 @@ struct Renderer::Impl {
     TextOptions textOptions{};
     core::UiColours uiColours{};
     core::Effects effects{};
+    core::Seals sealLooks{};        // empty until SetSeals(): no seal is drawn
     std::filesystem::path assets{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::vector<bool> resident{};   // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::optional<SceneLoad> load = std::nullopt;
@@ -233,6 +238,7 @@ struct Renderer::Impl {
     internal::SpriteRenderer overlay{}; // the per-frame sprites: swords, bursts and health bars (VolleyDrawing)
     internal::GlowTableBuffer glowTable{};
     internal::RibbonRenderer ribbons{};
+    internal::SealRenderer seals{}; // with the table's pack
     internal::Compositor compositor{};
     internal::SceneTarget sceneTarget{};
     // What every text of a frame shares, worked out once a frame by PlaceTexts(): the functions it calls for each text
@@ -269,8 +275,10 @@ struct Renderer::Impl {
     std::vector<std::size_t> numberQuads{};    // PlaceNumbers()' scratch: each chunk's first quad
     std::vector<MeshVertex> meshVertices{};
     std::vector<internal::MeshRun> meshRuns{};
-    VolleyDrawing volleyDrawing{};     // this frame's health bars and swords, placed at the render time, and the HUD's bars
-    std::size_t hudRuns = 0;           // meshRuns' first runs, which draw the HUD's lines
+    VolleyDrawing volleyDrawing{}; // this frame's health bars and swords, placed at the render time, and the HUD's bars
+    SealDrawing sealDrawing{};     // this frame's seals, laid out at the render time
+    std::vector<core::SealKey> sealsMissing{}; // the seal keys the table lacked, each logged once
+    std::size_t hudRuns = 0;                   // meshRuns' first runs, which draw the HUD's lines
     std::size_t openRun = 0;           // the first of meshRuns a quad may join: none of the HUD's takes the world's texts
     std::vector<BarShown> barsShown{}; // by entity: how much of each creature's health bar shows, from its label
     core::RepeatedFailure failures{};
@@ -279,6 +287,8 @@ struct Renderer::Impl {
     core::RepeatedFailure overlayOverflows{};
     core::RepeatedFailure ribbonOverflows{};
     core::RepeatedFailure swordOverflows{};
+    core::RepeatedFailure sealOverflows{};
+    core::RepeatedFailure sealQuadOverflows{};
     core::RepeatedFailure uploadFailures{};
     // NOLINTEND(readability-redundant-member-init)
 };
@@ -303,9 +313,11 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
         PlaceTexts(shown, jobs);
     }
     volleyDrawing.Clear();
+    sealDrawing.Clear();
     if (Holds(snapshot.scene)) {
         const auto alpha = static_cast<f32>(shown.view->alpha);
         const f64 renderTick = core::RenderTick(snapshot.simulationTick, shown.view->alpha);
+        LaySeals(snapshot, renderTick);
         DrawHudBars(shown.hud.bars, *manifest, volleyDrawing);
         DrawFlashes(snapshot.flashes, renderTick, *manifest, uiColours, effects, volleyDrawing);
         DrawHealthBars(snapshot.healthBars, barsShown, alpha, *manifest, uiColours, effects, volleyDrawing);
@@ -340,6 +352,7 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
         meshes.Upload(copy, glyphs ? std::span<const MeshVertex>{ meshVertices } : std::span<const MeshVertex>{});
     const std::expected<std::size_t, core::Error> overlayDropped = overlay.Upload(copy, volleyDrawing.instances);
     const std::expected<std::size_t, core::Error> ribbonsDropped = ribbons.Upload(copy, volleyDrawing.ribbons);
+    const std::expected<std::size_t, core::Error> sealQuadsDropped = seals.Upload(copy, sealDrawing);
     SDL_EndGPUCopyPass(copy);
     SDL_PopGPUDebugGroup(commands);
     text->EndFrame(jobs);
@@ -354,6 +367,11 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     if (ribbonsDropped) {
         ReportOverflow(ribbonOverflows, *ribbonsDropped, "ribbon quads", MAX_RIBBON_QUADS);
     }
+    // Seals left out whole by DrawSeals(), past the frame's room, and quads past the buffer's.
+    ReportOverflow(sealOverflows, sealDrawing.droppedSeals, "seals", static_cast<u32>(MAX_SEALS_DRAWN));
+    if (sealQuadsDropped) {
+        ReportOverflow(sealQuadOverflows, *sealQuadsDropped, "seal quads", internal::MAX_SEAL_QUADS);
+    }
     std::expected<void, core::Error> instancesCopied{};
     if (newInstances && dropped) {
         uploaded.Recorded(shownId);
@@ -365,7 +383,32 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     const auto copied = [](std::size_t /*dropped*/) {};
     return core::Combine(
         core::Combine(core::Combine(core::Combine(instancesCopied, glowsCopied), glyphs), quadsDropped.transform(copied)),
-        core::Combine(overlayDropped.transform(copied), ribbonsDropped.transform(copied))
+        core::Combine(
+            core::Combine(overlayDropped.transform(copied), ribbonsDropped.transform(copied)),
+            sealQuadsDropped.transform(copied)
+        )
+    );
+}
+
+void Renderer::Impl::LaySeals(const core::Snapshot& snapshot, f64 renderTick) {
+    PN_PROFILE_ZONE();
+    for (const core::Seal& seal : snapshot.seals) {
+        if (sealLooks.Find(seal.key) == nullptr && !std::ranges::contains(sealsMissing, seal.key)) {
+            sealsMissing.push_back(seal.key);
+            PN_LOG_WARNING("a seal (key {:#018x}) isn't in seals.yaml, so it draws nothing", seal.key);
+        }
+    }
+    // The render clock's whole tick: a seal is in play from its start tick to the tick before its end.
+    const u64 wholeTick = renderTick > 0.0 ? static_cast<u64>(std::floor(renderTick)) : 0;
+    DrawSeals(
+        snapshot.seals,
+        sealLooks,
+        seals.Pack(),
+        uiColours,
+        renderTick / static_cast<f64>(core::TICKS_PER_SECOND),
+        wholeTick,
+        true,
+        sealDrawing
     );
 }
 
@@ -669,6 +712,7 @@ std::expected<void, core::Error> Renderer::Impl::UploadGlyphs(SDL_GPUCopyPass* c
 void Renderer::Impl::Submitted(bool submitted) {
     PN_PROFILE_ZONE();
     uploaded.Submitted(submitted);
+    seals.Submitted(submitted);
     if (submitted) {
         text->Uploaded(glyphsRecorded);
         glowHeld = glowRecorded.value_or(glowHeld);
@@ -725,8 +769,14 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
         return;
     }
     const ClipTransform transform = WorldToClip(view.camera, sceneTarget.width, sceneTarget.height);
+    const internal::SealTarget sealTarget{ .worldToClip = transform, .width = sceneTarget.width, .height = sceneTarget.height };
     const internal::GlowFrame glows = GlowFrameOf(snapshot, view);
-    instances.Draw(commands, pass, snapshot.batches, sprites, transform, alpha, glows);
+    // The ground and its decals, the seals on the ground, then the world over them (the phase 6 chunk 4b spec, "Drawing").
+    const std::span<const core::Batch> batches{ snapshot.batches };
+    const std::size_t groundBatches = std::min<std::size_t>(snapshot.groundBatches, batches.size());
+    instances.Draw(commands, pass, batches.first(groundBatches), sprites, transform, alpha, glows);
+    seals.DrawGround(commands, pass, sealTarget, sprites);
+    instances.Draw(commands, pass, batches.subspan(groundBatches), sprites, transform, alpha, glows);
     if (snapshot.selected) {
         instances.DrawGlowOnly(commands, pass, *snapshot.selected, core::GlowRole::Selected, sprites, transform, alpha, glows);
     }
@@ -736,6 +786,9 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
             commands, pass, static_cast<u32>(*outlined), core::GlowRole::Hover, sprites, transform, alpha, glows
         );
     }
+    // The upright and overhead seals over the creatures, capped in opacity, under all that follows: the swords fly out over
+    // them, and the health bars, damage numbers and HUD stay readable (the phase 6 chunk 4b spec, "Drawing").
+    seals.DrawAbove(commands, pass, sealTarget, sprites);
     // The trails, then the overlay: the swords, each wearing its glow, the lance's bursts (additive) and the health bars, at
     // the render time; their instances hold no motion between ticks, so the overlay's alpha changes nothing.
     ribbons.Draw(commands, pass, transform);
@@ -902,6 +955,11 @@ std::expected<Renderer, core::Error> Renderer::Create(
         return std::unexpected{ std::move(ribbons.error()) };
     }
     impl->ribbons = std::move(*ribbons);
+    std::expected<internal::SealRenderer, core::Error> seals = internal::SealRenderer::Create(device, internal::SCENE_FORMAT);
+    if (!seals) {
+        return std::unexpected{ std::move(seals.error()) };
+    }
+    impl->seals = std::move(*seals);
     std::expected<internal::Compositor, core::Error> compositor =
         internal::Compositor::Create(device, SDL_GetGPUSwapchainTextureFormat(device, impl->window));
     if (!compositor) {
@@ -1044,6 +1102,11 @@ void Renderer::SetUiColours(const core::UiColours& colours) {
 void Renderer::SetEffects(const core::Effects& effects) {
     m_impl->effects = effects;
     m_impl->GlowsChanged();
+}
+
+void Renderer::SetSeals(const core::Seals& seals) {
+    m_impl->sealLooks = seals;
+    m_impl->seals.SetPack(PackSeals(seals, *m_impl->manifest), seals);
 }
 
 void Renderer::SetReduceFlashing(bool reduce) {

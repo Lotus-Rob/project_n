@@ -10,6 +10,8 @@
 #   seals' time: spins, particle motion and life, and the appear and fade (0 or more; reduce motion lowers it; at 0 nothing
 #   moves and seals appear and go at once). brightness: multiplies every line and light (0 or more; reduce flashing lowers
 #   it).
+# halo: the light round every part of every seal, fading out past its edge: reach (a fraction of the seal's size, 0 none to
+#   0.1) and strength (at the part's edge, 0 to 1).
 # glyph_sets: named lists of sprites a script draws from, in turn round its ring.
 # seals: each seal by name, with
 #   plane: ground (flat, an ellipse at the art's angle), upright (standing, a circle) or overhead (flat, lifted); lift: world
@@ -18,14 +20,15 @@
 #     0) and softness (of its edge, 0 hard to 1).
 #   colours: one or two, each `element` (the colour of the element it was raised with) or a palette colour as area.key, such
 #     as effects.seal_gold; never hex. A part, the emblem or the light picks one by `colour: 0` (the default) or `colour: 1`.
-#   life: appear and fade (seconds, 0 or more) with appear_curve and fade_curve (linear, ease_in, ease_out, smooth, sine), and
-#     order: outer_first or inner_first, the order its layers appear in, one after another.
+#   life: appear and fade (seconds, 0 or more) with appear_curve and fade_curve (linear, ease_in, ease_out, smooth, sine),
+#     and order: outer_first or inner_first, the order its layers appear in, one after another.
 #   layers: 1 to 9, each inner and outer (its band, inner below outer, outer at most 1), height (world units it rises above
 #     the plane, 0 or more), spin, opacity (0 to 1), frame ({ sides: 0 round, or 3 or more for a square or diamond band;
 #     rotation }: a frame's inner and outer are its polygons' corners, so its sides' middles are nearer, and a round part
-#     past them is cut off there) and up to 16 parts. Every part has a kind, a radius (above 0, at most 1), a rotation (where its first item
-#     sits) and a colour, and by kind:
-#       circle: width (above 0), dash and gap (degrees of the ring; dash 0 is solid);
+#     past them is cut off there) and up to 16 parts. Every part has a kind, a radius (above 0, at most 1), a rotation (where
+#     its first item sits) and a colour, and by kind:
+#       circle: width (above 0), dash and gap (degrees of the ring; dash 0 is solid; a dash and gap that don't divide 360
+#         leave one shorter dash where the first begins);
 #       ticks: count (1 to 360), length and width;
 #       dots: count and size (across);
 #       script: glyphs (a glyph set), count, size (a glyph's height) and facing (outward or inward);
@@ -44,6 +47,7 @@ view_ratio: 0.375
 above_opacity: 0.7
 spin_scale: 1
 brightness: 1
+halo: { reach: 0.012, strength: 0.3 }
 glyph_sets:
   runes: [rune_00, rune_01, rune_02, rune_03, rune_04, rune_05, rune_06, rune_07, rune_08, rune_09, rune_10, rune_11,
           rune_12, rune_13, rune_14, rune_15, rune_16, rune_17, rune_18, rune_19, rune_20, rune_21, rune_22, rune_23]

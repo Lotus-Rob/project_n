@@ -226,7 +226,7 @@ TEST_CASE("the seals reader refuses out-of-range values with their line") {
         std::string_view text;
         std::string_view says;
     };
-    constexpr std::array<Broken, 21> CASES{ {
+    constexpr std::array<Broken, 22> CASES{ {
         { .why = "no ring",
           .text = "seals:\n  a:\n    colours: [element]\n    layers: []\n",
           .says = "seals line 4: a's layers isn't a list of 1 to 9 layers" },
@@ -281,6 +281,9 @@ TEST_CASE("the seals reader refuses out-of-range values with their line") {
         { .why = "a flat view",
           .text = "view_ratio: 0\n",
           .says = "seals line 1: the seals table's view_ratio isn't a number above 0 and up to 1" },
+        { .why = "a halo reaching past its limit",
+          .text = "halo: { reach: 0.2, strength: 0.3 }\n",
+          .says = "seals line 1: the seals table's halo's reach isn't a number from 0 to 0.1" },
         { .why = "a negative appear time",
           .text = "seals:\n  a:\n    colours: [element]\n    life: { appear: -1 }\n"
                   "    layers: [{ inner: 0, outer: 1 }]\n",

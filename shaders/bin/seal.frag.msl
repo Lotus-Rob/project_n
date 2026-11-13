@@ -1,0 +1,572 @@
+#pragma clang diagnostic ignored "-Wmissing-prototypes"
+#pragma clang diagnostic ignored "-Wmissing-braces"
+
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+template<typename T, size_t Num>
+struct spvUnsafeArray
+{
+    T elements[Num ? Num : 1];
+    
+    thread T& operator [] (size_t pos) thread
+    {
+        return elements[pos];
+    }
+    constexpr const thread T& operator [] (size_t pos) const thread
+    {
+        return elements[pos];
+    }
+    
+    device T& operator [] (size_t pos) device
+    {
+        return elements[pos];
+    }
+    constexpr const device T& operator [] (size_t pos) const device
+    {
+        return elements[pos];
+    }
+    
+    constexpr const constant T& operator [] (size_t pos) const constant
+    {
+        return elements[pos];
+    }
+    
+    threadgroup T& operator [] (size_t pos) threadgroup
+    {
+        return elements[pos];
+    }
+    constexpr const threadgroup T& operator [] (size_t pos) const threadgroup
+    {
+        return elements[pos];
+    }
+};
+
+struct SealLayer
+{
+    float2 centre;
+    float2 axisX;
+    float2 axisDepth;
+    float angle;
+    float opacity;
+    uint colour0;
+    uint colour1;
+    uint firstPart;
+    uint partCount;
+    float inner;
+    float outer;
+    uint frameSides;
+    float frameRotation;
+    uint washColour;
+    float washOpacity;
+    float washReach;
+    float washSoftness;
+    float spill;
+    uint reserved;
+};
+
+struct type_StructuredBuffer_SealLayer
+{
+    SealLayer _m0[1];
+};
+
+struct SealPart
+{
+    uint kind;
+    uint slot;
+    float radius;
+    float width;
+    float size;
+    uint count;
+    uint _step;
+    float dash;
+    float gap;
+    float rotation;
+    float spill;
+    uint inward;
+    uint firstSprite;
+    uint spriteCount;
+    uint reserved0;
+    uint reserved1;
+};
+
+struct type_StructuredBuffer_SealPart
+{
+    SealPart _m0[1];
+};
+
+struct SealSprite
+{
+    float2 fieldMin;
+    float2 fieldMax;
+    float width;
+    float height;
+    uint page;
+    uint reserved;
+};
+
+struct type_StructuredBuffer_SealSprite
+{
+    SealSprite _m0[1];
+};
+
+struct type_ConstantBuffer_Look
+{
+    float haloReach;
+    float haloStrength;
+    float bandMargin;
+    float padding;
+};
+
+constant float _92 = {};
+
+struct FragmentMain_out
+{
+    float4 out_var_SV_Target0 [[color(0)]];
+};
+
+struct FragmentMain_in
+{
+    float2 in_var_TEXCOORD0 [[user(locn0)]];
+    uint in_var_TEXCOORD1 [[user(locn1)]];
+    uint in_var_TEXCOORD2 [[user(locn2)]];
+};
+
+fragment FragmentMain_out FragmentMain(FragmentMain_in in [[stage_in]], constant type_ConstantBuffer_Look& look [[buffer(0)]], const device type_StructuredBuffer_SealLayer& layers [[buffer(1)]], const device type_StructuredBuffer_SealPart& parts [[buffer(2)]], const device type_StructuredBuffer_SealSprite& sprites [[buffer(3)]], texture2d_array<float> field [[texture(0)]], sampler fieldSmplr [[sampler(0)]])
+{
+    FragmentMain_out out = {};
+    float4 _1053;
+    do
+    {
+        float2 _101 = dfdx(in.in_var_TEXCOORD0);
+        float2 _102 = dfdy(in.in_var_TEXCOORD0);
+        float _103 = length(in.in_var_TEXCOORD0);
+        float _113;
+        if (_103 > 0.0)
+        {
+            _113 = precise::atan2(in.in_var_TEXCOORD0.y, in.in_var_TEXCOORD0.x);
+        }
+        else
+        {
+            _113 = 0.0;
+        }
+        float _116 = precise::max(length(_101), length(_102));
+        if (in.in_var_TEXCOORD2 != 0u)
+        {
+            float2 _153 = in.in_var_TEXCOORD0 / float2(precise::max(_103, 9.9999999747524270787835121154785e-07));
+            _1053 = (float4(float(layers._m0[in.in_var_TEXCOORD1].washColour & 255u), float((layers._m0[in.in_var_TEXCOORD1].washColour >> 8u) & 255u), float((layers._m0[in.in_var_TEXCOORD1].washColour >> 16u) & 255u), float(layers._m0[in.in_var_TEXCOORD1].washColour >> 24u)) * float4(0.0039215688593685626983642578125)) * (layers._m0[in.in_var_TEXCOORD1].washOpacity * smoothstep(0.0, 1.0, (layers._m0[in.in_var_TEXCOORD1].washReach - _103) / precise::max(layers._m0[in.in_var_TEXCOORD1].washReach * layers._m0[in.in_var_TEXCOORD1].washSoftness, precise::max(length(float2(dot(_153, _101), dot(_153, _102))), 9.9999999747524270787835121154785e-07))));
+            break;
+        }
+        spvUnsafeArray<float3, 2> _199 = spvUnsafeArray<float3, 2>({ (float4(float(layers._m0[in.in_var_TEXCOORD1].colour0 & 255u), float((layers._m0[in.in_var_TEXCOORD1].colour0 >> 8u) & 255u), float((layers._m0[in.in_var_TEXCOORD1].colour0 >> 16u) & 255u), _92) * float4(0.0039215688593685626983642578125)).xyz, (float4(float(layers._m0[in.in_var_TEXCOORD1].colour1 & 255u), float((layers._m0[in.in_var_TEXCOORD1].colour1 >> 8u) & 255u), float((layers._m0[in.in_var_TEXCOORD1].colour1 >> 16u) & 255u), _92) * float4(0.0039215688593685626983642578125)).xyz });
+        spvUnsafeArray<float3, 2> _95 = _199;
+        float3 _201;
+        _201 = float3(0.0);
+        float3 _202;
+        for (uint _204 = 0u; _204 < layers._m0[in.in_var_TEXCOORD1].partCount; _201 = _202, _204++)
+        {
+            float _239;
+            bool _241;
+            uint _209 = layers._m0[in.in_var_TEXCOORD1].firstPart + _204;
+            float2 _294;
+            do
+            {
+                _239 = look.haloReach;
+                float _240 = _239 + _116;
+                _241 = parts._m0[_209].kind == 0u;
+                if (_241)
+                {
+                    float _244 = parts._m0[_209].width * 0.5;
+                    _294 = float2((parts._m0[_209].radius - _244) - _240, (parts._m0[_209].radius + _244) + _240);
+                    break;
+                }
+                bool _254;
+                if (parts._m0[_209].kind != 1u)
+                {
+                    _254 = parts._m0[_209].kind == 2u;
+                }
+                else
+                {
+                    _254 = true;
+                }
+                if (_254)
+                {
+                    float _259 = (precise::max(parts._m0[_209].size, parts._m0[_209].width) * 0.5) + _240;
+                    _294 = float2(parts._m0[_209].radius - _259, parts._m0[_209].radius + _259);
+                    break;
+                }
+                bool _267;
+                if (parts._m0[_209].kind != 4u)
+                {
+                    _267 = parts._m0[_209].kind == 5u;
+                }
+                else
+                {
+                    _267 = true;
+                }
+                if (_267)
+                {
+                    float _275;
+                    if (parts._m0[_209].kind == 4u)
+                    {
+                        _275 = float(parts._m0[_209]._step);
+                    }
+                    else
+                    {
+                        _275 = 1.0;
+                    }
+                    float _277 = (parts._m0[_209].width * 0.5) + _240;
+                    _294 = float2((parts._m0[_209].radius * cos((3.1415927410125732421875 * _275) / float(parts._m0[_209].count))) - _277, parts._m0[_209].radius + _277);
+                    break;
+                }
+                if (parts._m0[_209].kind == 7u)
+                {
+                    _294 = float2(-1.0, 1000000000.0);
+                    break;
+                }
+                _294 = float2((parts._m0[_209].radius - parts._m0[_209].size) - _240, (parts._m0[_209].radius + parts._m0[_209].size) + _240);
+                break;
+            } while(false);
+            bool _301;
+            if ((isunordered(_103, _294.x) || _103 >= _294.x))
+            {
+                _301 = _103 > _294.y;
+            }
+            else
+            {
+                _301 = true;
+            }
+            if (_301)
+            {
+                _202 = _201;
+                continue;
+            }
+            float _942;
+            do
+            {
+                float _310 = layers._m0[in.in_var_TEXCOORD1].angle + parts._m0[_209].rotation;
+                if (_241)
+                {
+                    float2 _315 = in.in_var_TEXCOORD0 / float2(precise::max(_103, 9.9999999747524270787835121154785e-07));
+                    float _316 = parts._m0[_209].width * 0.5;
+                    float _322 = precise::max(length(float2(dot(_315, _101), dot(_315, _102))), 9.9999999747524270787835121154785e-07);
+                    float _323 = abs(_103 - parts._m0[_209].radius);
+                    float _333 = fast::clamp(((_316 - _323) / _322) + 0.5, 0.0, 1.0) - fast::clamp((((parts._m0[_209].width * (-0.5)) - _323) / _322) + 0.5, 0.0, 1.0);
+                    float _338 = 1.0 - fast::clamp((_323 - _316) / precise::max(_239, 9.9999999747524270787835121154785e-07), 0.0, 1.0);
+                    float _346 = _333 + ((1.0 - fast::clamp(_333, 0.0, 1.0)) * ((look.haloStrength * _338) * _338));
+                    float _386;
+                    if (parts._m0[_209].dash > 0.0)
+                    {
+                        float _350 = _113 - _310;
+                        float _354 = _350 - (6.283185482025146484375 * floor(_350 * 0.15915493667125701904296875));
+                        float _355 = parts._m0[_209].dash + parts._m0[_209].gap;
+                        float _360 = parts._m0[_209].dash * 0.5;
+                        float _364 = _360 * parts._m0[_209].radius;
+                        float2 _368 = float2(-_315.y, _315.x);
+                        float _373 = precise::max(length(float2(dot(_368, _101), dot(_368, _102))), 9.9999999747524270787835121154785e-07);
+                        float _374 = abs(abs((_354 - (_355 * floor(_354 / _355))) - _360) * parts._m0[_209].radius);
+                        _386 = _346 * (fast::clamp(((_364 - _374) / _373) + 0.5, 0.0, 1.0) - fast::clamp((((-_364) - _374) / _373) + 0.5, 0.0, 1.0));
+                    }
+                    else
+                    {
+                        _386 = _346;
+                    }
+                    _942 = _386;
+                    break;
+                }
+                if (parts._m0[_209].kind == 1u)
+                {
+                    float _391 = 6.283185482025146484375 / float(parts._m0[_209].count);
+                    float _396 = _310 + (rint((_113 - _310) / _391) * _391);
+                    float _397 = sin(_396);
+                    float _398 = cos(_396);
+                    float2 _399 = float2(_398, _397);
+                    float2 _401 = float2(-_397, _398);
+                    float _404 = dot(in.in_var_TEXCOORD0, _401);
+                    float _405 = parts._m0[_209].width * 0.5;
+                    float _406 = parts._m0[_209].size * 0.5;
+                    float _411 = precise::max(length(float2(dot(_399, _101), dot(_399, _102))), 9.9999999747524270787835121154785e-07);
+                    float _412 = abs(dot(in.in_var_TEXCOORD0, _399) - parts._m0[_209].radius);
+                    float _424 = precise::max(_412 - _406, 0.0);
+                    float _429 = precise::max(length(float2(dot(_401, _101), dot(_401, _102))), 9.9999999747524270787835121154785e-07);
+                    float _430 = abs(_404);
+                    float _441 = (fast::clamp(((_405 - _430) / _429) + 0.5, 0.0, 1.0) - fast::clamp((((parts._m0[_209].width * (-0.5)) - _430) / _429) + 0.5, 0.0, 1.0)) * (fast::clamp(((_406 - _412) / _411) + 0.5, 0.0, 1.0) - fast::clamp((((parts._m0[_209].size * (-0.5)) - _412) / _411) + 0.5, 0.0, 1.0));
+                    float _451 = 1.0 - fast::clamp((abs(sqrt((_424 * _424) + (_404 * _404))) - _405) / precise::max(_239, 9.9999999747524270787835121154785e-07), 0.0, 1.0);
+                    _942 = _441 + ((1.0 - fast::clamp(_441, 0.0, 1.0)) * ((look.haloStrength * _451) * _451));
+                    break;
+                }
+                if (parts._m0[_209].kind == 2u)
+                {
+                    float _464 = 6.283185482025146484375 / float(parts._m0[_209].count);
+                    float _469 = _310 + (rint((_113 - _310) / _464) * _464);
+                    float2 _474 = in.in_var_TEXCOORD0 - (float2(cos(_469), sin(_469)) * parts._m0[_209].radius);
+                    float _475 = length(_474);
+                    float _476 = parts._m0[_209].size * 0.5;
+                    float2 _479 = _474 / float2(precise::max(_475, 9.9999999747524270787835121154785e-07));
+                    float _484 = precise::max(length(float2(dot(_479, _101), dot(_479, _102))), 9.9999999747524270787835121154785e-07);
+                    float _485 = abs(_475);
+                    float _495 = fast::clamp(((_476 - _485) / _484) + 0.5, 0.0, 1.0) - fast::clamp((((parts._m0[_209].size * (-0.5)) - _485) / _484) + 0.5, 0.0, 1.0);
+                    float _500 = 1.0 - fast::clamp((_485 - _476) / precise::max(_239, 9.9999999747524270787835121154785e-07), 0.0, 1.0);
+                    _942 = _495 + ((1.0 - fast::clamp(_495, 0.0, 1.0)) * ((look.haloStrength * _500) * _500));
+                    break;
+                }
+                if (parts._m0[_209].kind == 4u)
+                {
+                    float _512 = float(parts._m0[_209].count);
+                    float _513 = 6.283185482025146484375 / _512;
+                    float _516 = (3.1415927410125732421875 * float(parts._m0[_209]._step)) / _512;
+                    float _518 = parts._m0[_209].radius * cos(_516);
+                    float _520 = parts._m0[_209].radius * sin(_516);
+                    float _521 = _310 + _516;
+                    float _525 = acos(fast::clamp(_518 / precise::max(_103, 9.9999999747524270787835121154785e-07), 0.0, 1.0));
+                    float _532 = _521 + (rint(((_113 + ((-1.0) * _525)) - _521) / _513) * _513);
+                    float _533 = sin(_532);
+                    float _534 = cos(_532);
+                    float2 _535 = float2(_534, _533);
+                    float _537 = dot(in.in_var_TEXCOORD0, _535) - _518;
+                    float _543 = precise::max(abs(dot(in.in_var_TEXCOORD0, float2(-_533, _534))) - _520, 0.0);
+                    float _547 = sqrt((_537 * _537) + (_543 * _543));
+                    bool _548 = _547 < 1000000000.0;
+                    float _551 = _548 ? _547 : 1000000000.0;
+                    float _556 = _521 + (rint((_113 - _521) / _513) * _513);
+                    float _557 = sin(_556);
+                    float _558 = cos(_556);
+                    float2 _559 = float2(_558, _557);
+                    float _561 = dot(in.in_var_TEXCOORD0, _559) - _518;
+                    float _567 = precise::max(abs(dot(in.in_var_TEXCOORD0, float2(-_557, _558))) - _520, 0.0);
+                    float _571 = sqrt((_561 * _561) + (_567 * _567));
+                    bool _572 = _571 < _551;
+                    float _575 = _572 ? _571 : _551;
+                    float _581 = _521 + (rint(((_113 + _525) - _521) / _513) * _513);
+                    float _582 = sin(_581);
+                    float _583 = cos(_581);
+                    float2 _584 = float2(_583, _582);
+                    float _586 = dot(in.in_var_TEXCOORD0, _584) - _518;
+                    float _592 = precise::max(abs(dot(in.in_var_TEXCOORD0, float2(-_582, _583))) - _520, 0.0);
+                    float _596 = sqrt((_586 * _586) + (_592 * _592));
+                    bool _597 = _596 < _575;
+                    float2 _599 = select(select(select(float2(1.0, 0.0), _535, bool2(_548)), _559, bool2(_572)), _584, bool2(_597));
+                    float _601 = parts._m0[_209].width * 0.5;
+                    float _606 = precise::max(length(float2(dot(_599, _101), dot(_599, _102))), 9.9999999747524270787835121154785e-07);
+                    float _607 = abs(_597 ? _596 : _575);
+                    float _617 = fast::clamp(((_601 - _607) / _606) + 0.5, 0.0, 1.0) - fast::clamp((((parts._m0[_209].width * (-0.5)) - _607) / _606) + 0.5, 0.0, 1.0);
+                    float _622 = 1.0 - fast::clamp((_607 - _601) / precise::max(_239, 9.9999999747524270787835121154785e-07), 0.0, 1.0);
+                    _942 = _617 + ((1.0 - fast::clamp(_617, 0.0, 1.0)) * ((look.haloStrength * _622) * _622));
+                    break;
+                }
+                if (parts._m0[_209].kind == 5u)
+                {
+                    float _634 = float(parts._m0[_209].count);
+                    float _635 = 6.283185482025146484375 / _634;
+                    float _636 = 3.1415927410125732421875 / _634;
+                    float _638 = parts._m0[_209].radius * cos(_636);
+                    float _640 = parts._m0[_209].radius * sin(_636);
+                    float _641 = _310 + _636;
+                    float _645 = acos(fast::clamp(_638 / precise::max(_103, 9.9999999747524270787835121154785e-07), 0.0, 1.0));
+                    float _652 = _641 + (rint(((_113 + ((-1.0) * _645)) - _641) / _635) * _635);
+                    float _653 = sin(_652);
+                    float _654 = cos(_652);
+                    float2 _655 = float2(_654, _653);
+                    float _657 = dot(in.in_var_TEXCOORD0, _655) - _638;
+                    float _663 = precise::max(abs(dot(in.in_var_TEXCOORD0, float2(-_653, _654))) - _640, 0.0);
+                    float _667 = sqrt((_657 * _657) + (_663 * _663));
+                    bool _668 = _667 < 1000000000.0;
+                    float _671 = _668 ? _667 : 1000000000.0;
+                    float _676 = _641 + (rint((_113 - _641) / _635) * _635);
+                    float _677 = sin(_676);
+                    float _678 = cos(_676);
+                    float2 _679 = float2(_678, _677);
+                    float _681 = dot(in.in_var_TEXCOORD0, _679) - _638;
+                    float _687 = precise::max(abs(dot(in.in_var_TEXCOORD0, float2(-_677, _678))) - _640, 0.0);
+                    float _691 = sqrt((_681 * _681) + (_687 * _687));
+                    bool _692 = _691 < _671;
+                    float _695 = _692 ? _691 : _671;
+                    float _701 = _641 + (rint(((_113 + _645) - _641) / _635) * _635);
+                    float _702 = sin(_701);
+                    float _703 = cos(_701);
+                    float2 _704 = float2(_703, _702);
+                    float _706 = dot(in.in_var_TEXCOORD0, _704) - _638;
+                    float _712 = precise::max(abs(dot(in.in_var_TEXCOORD0, float2(-_702, _703))) - _640, 0.0);
+                    float _716 = sqrt((_706 * _706) + (_712 * _712));
+                    bool _717 = _716 < _695;
+                    float2 _719 = select(select(select(float2(1.0, 0.0), _655, bool2(_668)), _679, bool2(_692)), _704, bool2(_717));
+                    float _721 = parts._m0[_209].width * 0.5;
+                    float _726 = precise::max(length(float2(dot(_719, _101), dot(_719, _102))), 9.9999999747524270787835121154785e-07);
+                    float _727 = abs(_717 ? _716 : _695);
+                    float _737 = fast::clamp(((_721 - _727) / _726) + 0.5, 0.0, 1.0) - fast::clamp((((parts._m0[_209].width * (-0.5)) - _727) / _726) + 0.5, 0.0, 1.0);
+                    float _742 = 1.0 - fast::clamp((_727 - _721) / precise::max(_239, 9.9999999747524270787835121154785e-07), 0.0, 1.0);
+                    _942 = _737 + ((1.0 - fast::clamp(_737, 0.0, 1.0)) * ((look.haloStrength * _742) * _742));
+                    break;
+                }
+                if (parts._m0[_209].kind == 7u)
+                {
+                    if (parts._m0[_209].spriteCount == 0u)
+                    {
+                        _942 = 0.0;
+                        break;
+                    }
+                    float _767 = layers._m0[in.in_var_TEXCOORD1].angle - 1.57079637050628662109375;
+                    float _768 = sin(_767);
+                    float _769 = cos(_767);
+                    float2 _770 = float2(_769, _768);
+                    float _834;
+                    do
+                    {
+                        float2 _774 = float2(-_768, _769);
+                        float _775 = sprites._m0[parts._m0[_209].firstSprite].height / parts._m0[_209].size;
+                        float2 _777 = float2(sprites._m0[parts._m0[_209].firstSprite].width, sprites._m0[parts._m0[_209].firstSprite].height) + float2(32.0);
+                        float2 _782 = float2(dot(in.in_var_TEXCOORD0, _774), -dot(in.in_var_TEXCOORD0, _770)) * _775;
+                        if (any(abs(_782) >= (_777 * 0.5)))
+                        {
+                            _834 = 0.0;
+                            break;
+                        }
+                        float2 _790 = (sprites._m0[parts._m0[_209].firstSprite].fieldMax - sprites._m0[parts._m0[_209].firstSprite].fieldMin) / _777;
+                        float3 _811 = float3(((sprites._m0[parts._m0[_209].firstSprite].fieldMin + sprites._m0[parts._m0[_209].firstSprite].fieldMax) * 0.5) + (_782 * _790), float(sprites._m0[parts._m0[_209].firstSprite].page));
+                        float _815 = (field.sample(fieldSmplr, _811.xy, uint(rint(_811.z)), gradient2d((float2(dot(_101, _774), -dot(_101, _770)) * _775) * _790, (float2(dot(_102, _774), -dot(_102, _770)) * _775) * _790)).x - 0.5) * 32.0;
+                        float _822 = 1.0 - fast::clamp(_815 / fast::clamp(_239 * _775, 0.001000000047497451305389404296875, 16.0), 0.0, 1.0);
+                        float _825 = fast::clamp(0.5 - (_815 / precise::max(_775 * _116, 0.001000000047497451305389404296875)), 0.0, 1.0);
+                        _834 = _825 + ((1.0 - fast::clamp(_825, 0.0, 1.0)) * ((look.haloStrength * _822) * _822));
+                        break;
+                    } while(false);
+                    _942 = _834;
+                    break;
+                }
+                float _941;
+                do
+                {
+                    if (parts._m0[_209].spriteCount == 0u)
+                    {
+                        _941 = 0.0;
+                        break;
+                    }
+                    float _840 = float(parts._m0[_209].count);
+                    float _841 = 6.283185482025146484375 / _840;
+                    float _844 = rint((_113 - _310) / _841);
+                    float _850 = _310 + (_844 * _841);
+                    float2 _853 = float2(cos(_850), sin(_850));
+                    uint _856 = parts._m0[_209].firstSprite + (uint(_844 - (_840 * floor(_844 / _840))) % parts._m0[_209].spriteCount);
+                    float2 _873;
+                    if (parts._m0[_209].inward != 0u)
+                    {
+                        _873 = -_853;
+                    }
+                    else
+                    {
+                        _873 = _853;
+                    }
+                    float _940;
+                    do
+                    {
+                        float2 _879 = float2(-_873.y, _873.x);
+                        float _880 = sprites._m0[_856].height / parts._m0[_209].size;
+                        float2 _882 = float2(sprites._m0[_856].width, sprites._m0[_856].height) + float2(32.0);
+                        float2 _883 = in.in_var_TEXCOORD0 - (_853 * parts._m0[_209].radius);
+                        float2 _888 = float2(dot(_883, _879), -dot(_883, _873)) * _880;
+                        if (any(abs(_888) >= (_882 * 0.5)))
+                        {
+                            _940 = 0.0;
+                            break;
+                        }
+                        float2 _896 = (sprites._m0[_856].fieldMax - sprites._m0[_856].fieldMin) / _882;
+                        float2 _900 = ((sprites._m0[_856].fieldMin + sprites._m0[_856].fieldMax) * 0.5) + (_888 * _896);
+                        float3 _917 = float3(_900, float(sprites._m0[_856].page));
+                        float _921 = (field.sample(fieldSmplr, _917.xy, uint(rint(_917.z)), gradient2d((float2(dot(_101, _879), -dot(_101, _873)) * _880) * _896, (float2(dot(_102, _879), -dot(_102, _873)) * _880) * _896)).x - 0.5) * 32.0;
+                        float _928 = 1.0 - fast::clamp(_921 / fast::clamp(_239 * _880, 0.001000000047497451305389404296875, 16.0), 0.0, 1.0);
+                        float _931 = fast::clamp(0.5 - (_921 / precise::max(_880 * _116, 0.001000000047497451305389404296875)), 0.0, 1.0);
+                        _940 = _931 + ((1.0 - fast::clamp(_931, 0.0, 1.0)) * ((look.haloStrength * _928) * _928));
+                        break;
+                    } while(false);
+                    _941 = _940;
+                    break;
+                } while(false);
+                _942 = _941;
+                break;
+            } while(false);
+            float _996;
+            if (layers._m0[in.in_var_TEXCOORD1].frameSides >= 3u)
+            {
+                float _995;
+                do
+                {
+                    bool _952;
+                    if (parts._m0[_209].kind != 5u)
+                    {
+                        _952 = parts._m0[_209].kind == 4u;
+                    }
+                    else
+                    {
+                        _952 = true;
+                    }
+                    if (_952)
+                    {
+                        _995 = 1.0;
+                        break;
+                    }
+                    float _959 = float(layers._m0[in.in_var_TEXCOORD1].frameSides);
+                    float _960 = 6.283185482025146484375 / _959;
+                    float _961 = 3.1415927410125732421875 / _959;
+                    float _962 = (layers._m0[in.in_var_TEXCOORD1].angle + layers._m0[in.in_var_TEXCOORD1].frameRotation) + _961;
+                    float _967 = _962 + (rint((_113 - _962) / _960) * _960);
+                    float2 _970 = float2(cos(_967), sin(_967));
+                    float _971 = dot(in.in_var_TEXCOORD0, _970);
+                    float _972 = cos(_961);
+                    float _979 = precise::max(length(float2(dot(_970, _101), dot(_970, _102))), 9.9999999747524270787835121154785e-07);
+                    float _982 = fast::clamp(0.5 - ((_971 - ((layers._m0[in.in_var_TEXCOORD1].outer + ((parts._m0[_209].kind == 6u) ? layers._m0[in.in_var_TEXCOORD1].spill : 0.0)) * _972)) / _979), 0.0, 1.0);
+                    float _994;
+                    if (layers._m0[in.in_var_TEXCOORD1].inner > 0.0)
+                    {
+                        _994 = _982 * (1.0 - fast::clamp(0.5 - ((_971 - (layers._m0[in.in_var_TEXCOORD1].inner * _972)) / _979), 0.0, 1.0));
+                    }
+                    else
+                    {
+                        _994 = _982;
+                    }
+                    _995 = _994;
+                    break;
+                } while(false);
+                _996 = _995;
+            }
+            else
+            {
+                _996 = 1.0;
+            }
+            _202 = _201 + (_95[min(parts._m0[_209].slot, 1u)] * (_942 * _996));
+        }
+        float _1046;
+        if (layers._m0[in.in_var_TEXCOORD1].frameSides >= 3u)
+        {
+            float _1006 = layers._m0[in.in_var_TEXCOORD1].inner - look.bandMargin;
+            float _1010 = float(layers._m0[in.in_var_TEXCOORD1].frameSides);
+            float _1011 = 6.283185482025146484375 / _1010;
+            float _1012 = 3.1415927410125732421875 / _1010;
+            float _1013 = (layers._m0[in.in_var_TEXCOORD1].angle + layers._m0[in.in_var_TEXCOORD1].frameRotation) + _1012;
+            float _1018 = _1013 + (rint((_113 - _1013) / _1011) * _1011);
+            float2 _1021 = float2(cos(_1018), sin(_1018));
+            float _1022 = dot(in.in_var_TEXCOORD0, _1021);
+            float _1023 = cos(_1012);
+            float _1030 = precise::max(length(float2(dot(_1021, _101), dot(_1021, _102))), 9.9999999747524270787835121154785e-07);
+            float _1033 = fast::clamp(-((_1022 - (((layers._m0[in.in_var_TEXCOORD1].outer + layers._m0[in.in_var_TEXCOORD1].spill) + look.bandMargin) * _1023)) / _1030), 0.0, 1.0);
+            float _1045;
+            if (_1006 > 0.0)
+            {
+                _1045 = _1033 * (1.0 - fast::clamp(1.0 - ((_1022 - (_1006 * _1023)) / _1030), 0.0, 1.0));
+            }
+            else
+            {
+                _1045 = _1033;
+            }
+            _1046 = _1045;
+        }
+        else
+        {
+            _1046 = 1.0;
+        }
+        _1053 = float4(_201 * (layers._m0[in.in_var_TEXCOORD1].opacity * _1046), 0.0);
+        break;
+    } while(false);
+    out.out_var_SV_Target0 = _1053;
+    return out;
+}
+

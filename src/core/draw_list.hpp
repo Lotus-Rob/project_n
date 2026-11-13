@@ -29,21 +29,28 @@ enum class Layer : u8 {
 /// texture binding (one texture array per scene, so none yet; add it with the second binding).
 using SortKey = u64;
 
+/// Where a sort key keeps its layer: its top byte.
+inline constexpr u32 SORT_KEY_LAYER_SHIFT = 56;
+/// Where a sort key keeps its pipeline.
+inline constexpr u32 SORT_KEY_PIPELINE_SHIFT = 16;
+
 /// The key of an instance in `layer` at `depth` (QuantiseDepth() in the world layer; 0 elsewhere,
 /// where the stable sort keeps submission order), drawn with `pipeline`.
 [[nodiscard]] constexpr SortKey MakeSortKey(Layer layer, u32 depth, Pipeline pipeline) {
-    constexpr u32 LAYER_SHIFT = 56;
     constexpr u32 DEPTH_SHIFT = 24;
-    constexpr u32 PIPELINE_SHIFT = 16;
-    return (SortKey{ static_cast<u8>(layer) } << LAYER_SHIFT) | (SortKey{ depth } << DEPTH_SHIFT) |
-           (SortKey{ static_cast<u8>(pipeline) } << PIPELINE_SHIFT);
+    return (SortKey{ static_cast<u8>(layer) } << SORT_KEY_LAYER_SHIFT) | (SortKey{ depth } << DEPTH_SHIFT) |
+           (SortKey{ static_cast<u8>(pipeline) } << SORT_KEY_PIPELINE_SHIFT);
+}
+
+/// The layer a key was made with.
+[[nodiscard]] constexpr Layer LayerOf(SortKey key) {
+    return static_cast<Layer>(key >> SORT_KEY_LAYER_SHIFT);
 }
 
 /// The pipeline a key was made with.
 [[nodiscard]] constexpr Pipeline PipelineOf(SortKey key) {
-    constexpr u32 PIPELINE_SHIFT = 16;
     constexpr SortKey PIPELINE_MASK = 0xFF;
-    return static_cast<Pipeline>((key >> PIPELINE_SHIFT) & PIPELINE_MASK);
+    return static_cast<Pipeline>((key >> SORT_KEY_PIPELINE_SHIFT) & PIPELINE_MASK);
 }
 
 /// A foot y as a depth: sixteenths of a world unit below `viewTop`, clamped to u32's range, so
@@ -63,7 +70,8 @@ struct SortEntry {
 /// resized to match and its contents are lost.
 void RadixSort(std::vector<SortEntry>& entries, std::vector<SortEntry>& scratch);
 
-/// Appends to `batches` one Batch per run of `sorted` with the same pipeline.
+/// Appends to `batches` one Batch per run of `sorted` with the same pipeline, cut where the ground and its decals
+/// (Layer::Ground and Layer::Decals) end and the layers above them begin.
 void AppendBatches(std::span<const SortEntry> sorted, std::vector<Batch>& batches);
 
 /// An axis-aligned rectangle of the world, in world units.
@@ -97,7 +105,8 @@ public:
 
     /// Appends the instances in drawing order to `snapshot`'s, their IDs to its IDs and their
     /// batches to its batches, gathering in chunks on `jobs`: the bytes are the same whatever its
-    /// worker count.
+    /// worker count. Its batches of the ground and decals count in Snapshot::groundBatches when all the
+    /// snapshot's batches before them do.
     void Publish(Snapshot& snapshot, Jobs& jobs);
 
 private:

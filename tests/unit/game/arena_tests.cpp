@@ -291,12 +291,14 @@ core::Snapshot MovedArena() {
     return Published(arena);
 }
 
-TEST_CASE("the arena publishes a normal batch, then an additive one that ends the snapshot") {
+TEST_CASE("the arena publishes the ground's normal batch, the world's, then an additive one that ends the snapshot") {
     const core::Snapshot snapshot = MovedArena();
-    REQUIRE(snapshot.batches.size() == 2);
+    REQUIRE(snapshot.batches.size() == 3);
+    CHECK(snapshot.groundBatches == 1);
     CHECK(snapshot.batches[0].pipeline == core::Pipeline::Normal);
-    CHECK(snapshot.batches[1].pipeline == core::Pipeline::Additive);
-    CHECK(snapshot.batches[1].first + snapshot.batches[1].count == snapshot.instances.size());
+    CHECK(snapshot.batches[1].pipeline == core::Pipeline::Normal);
+    CHECK(snapshot.batches[2].pipeline == core::Pipeline::Additive);
+    CHECK(snapshot.batches[2].first + snapshot.batches[2].count == snapshot.instances.size());
 }
 
 TEST_CASE("the world draws in foot-y order, after the ground and its decals") {

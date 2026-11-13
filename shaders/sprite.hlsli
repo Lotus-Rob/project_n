@@ -2,9 +2,7 @@
 // Register spaces follow SDL_GPU's order (§8.8): vertex resources in space0, vertex uniforms in
 // space1, fragment resources in space2, fragment uniforms in space3.
 
-// A distance field holds signed texels from -FIELD_REACH_TEXELS (inside) to +FIELD_REACH_TEXELS (outside) as 0 to 1, the
-// sprite's edge at one half (core::FIELD_REACH_TEXELS; gfx::DistanceField()).
-static const float FIELD_REACH_TEXELS = 16.0;
+#include "field.hlsli"
 
 struct VertexOut {
     float4 position : SV_Position;

@@ -155,6 +155,56 @@ inline constexpr Stage RIBBON_FRAG{
     .uniformBuffers = 0,
 };
 
+/// shaders/bin/seal.frag.spv, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 25552> SEAL_FRAG_SPIRV{{
+#include "seal.frag.spv.h"
+}};
+/// shaders/bin/seal.frag.dxil, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 13380> SEAL_FRAG_DXIL{{
+#include "seal.frag.dxil.h"
+}};
+/// shaders/bin/seal.frag.msl, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 28029> SEAL_FRAG_MSL{{
+#include "seal.frag.msl.h"
+}};
+/// shaders/seal.frag.hlsl.
+inline constexpr Stage SEAL_FRAG{
+    .name = "seal.frag",
+    .entryPoint = "FragmentMain",
+    .spirv = SEAL_FRAG_SPIRV,
+    .dxil = SEAL_FRAG_DXIL,
+    .msl = SEAL_FRAG_MSL,
+    .samplers = 1,
+    .storageTextures = 0,
+    .storageBuffers = 3,
+    .uniformBuffers = 1,
+};
+
+/// shaders/bin/seal.vert.spv, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 3660> SEAL_VERT_SPIRV{{
+#include "seal.vert.spv.h"
+}};
+/// shaders/bin/seal.vert.dxil, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 6088> SEAL_VERT_DXIL{{
+#include "seal.vert.dxil.h"
+}};
+/// shaders/bin/seal.vert.msl, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 2276> SEAL_VERT_MSL{{
+#include "seal.vert.msl.h"
+}};
+/// shaders/seal.vert.hlsl.
+inline constexpr Stage SEAL_VERT{
+    .name = "seal.vert",
+    .entryPoint = "VertexMain",
+    .spirv = SEAL_VERT_SPIRV,
+    .dxil = SEAL_VERT_DXIL,
+    .msl = SEAL_VERT_MSL,
+    .samplers = 0,
+    .storageTextures = 0,
+    .storageBuffers = 1,
+    .uniformBuffers = 1,
+};
+
 /// shaders/bin/sprite.frag.spv, embedded by XMake's utils.bin2c.
 inline constexpr std::array<u8, 5212> SPRITE_FRAG_SPIRV{{
 #include "sprite.frag.spv.h"

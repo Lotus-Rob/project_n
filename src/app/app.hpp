@@ -17,6 +17,7 @@
 #include "core/game_data.hpp"
 #include "core/jobs.hpp"
 #include "core/manifest.hpp"
+#include "core/seals.hpp"
 #include "core/settings.hpp"
 #include "core/strings.hpp"
 #include "core/tick_clock.hpp"
@@ -58,6 +59,8 @@ struct Options {
     core::GameData data = game::BuiltInData();
     /// The effects' looks and the HUD's layout, read from `assets/data/effects.yaml`; debug builds reload them with the data.
     core::Effects effects{};
+    /// The seals' looks, read from `assets/data/seals.yaml` against `manifest`; debug builds reload them with the data.
+    core::Seals seals{};
     /// Quit by itself after this long (`--quit-after`); 0 never does.
     u64 quitAfterNs = 0;
     /// Send a debug burst of hits once a second (`--burst`), so a profile run sees the damage numbers' stress without a key

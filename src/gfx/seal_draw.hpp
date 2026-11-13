@@ -19,6 +19,7 @@
 
 #include <array>
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -30,6 +31,16 @@ inline constexpr std::size_t MAX_SEALS_DRAWN = 64;
 static_assert(core::MAX_SEAL_SATELLITES < MAX_SEALS_DRAWN, "a seal and its satellites fit one frame");
 /// The quads a round layer's band takes round its ring.
 inline constexpr u32 SEAL_BAND_SEGMENTS = 48;
+/// The room a band leaves past its parts for their anti-aliased edges (half a line and a pixel's filter at the art's sizes),
+/// a fraction of the seal's size.
+inline constexpr f32 SEAL_ANTIALIAS_ALLOWANCE = 0.018F;
+
+/// How far past a layer's inner and outer radii its band reaches, a fraction of the seal's size, for a table whose halo
+/// reaches `haloReach` (core::Seals::haloReach): room for the halo and SEAL_ANTIALIAS_ALLOWANCE, so neither is cut off at
+/// the band's edge.
+[[nodiscard]] constexpr f32 SealBandMargin(f32 haloReach) {
+    return haloReach + SEAL_ANTIALIAS_ALLOWANCE;
+}
 /// SealGpuPart::kind of a seal's emblem, past core::SealPartKind's values (which the other parts' kinds are).
 inline constexpr u32 SEAL_EMBLEM_KIND = 7;
 static_assert(std::to_underlying(core::SealPartKind::Flourish) + 1 == SEAL_EMBLEM_KIND, "the emblem's kind follows the parts'");
@@ -131,7 +142,7 @@ static_assert(offsetof(SealGpuSprite, page) == SEAL_GPU_SPRITE_PAGE_AT, "the sea
 static_assert(offsetof(SealGpuSprite, fieldMax) % sizeof(core::Vec2) == 0, "a float2 of a StructuredBuffer is 8-aligned");
 
 /// One layer of a seal (or its emblem, drawn as a layer of its own) as the seal shaders read it: the StructuredBuffer element
-/// `SealLayer` of shaders/seal.hlsli, which must keep this layout (80 bytes; its float2s at 8-byte offsets).
+/// `SealLayer` of shaders/seal.hlsli, which must keep this layout (88 bytes; its float2s at 8-byte offsets).
 struct SealGpuLayer {
     /// Its centre in the world: its seal's point, lifted and raised by its height at the art's angle.
     core::Vec2 centre{};
@@ -168,10 +179,15 @@ struct SealGpuLayer {
     f32 washReach = 0.0F;
     /// How soft its seal's wash's edge is, 0 (hard) to 1.
     f32 washSoftness = 0.0F;
+    /// How far its flourishes reach past its outer radius (SealPackedLayer::spill), a fraction of the seal's size: a frame
+    /// lets them through that far.
+    f32 spill = 0.0F;
+    /// Pads the layer to a multiple of 8 bytes, as its float2s need.
+    u32 reserved = 0;
 };
 /// The bytes of one SealGpuLayer.
-inline constexpr std::size_t SEAL_GPU_LAYER_BYTES = 80;
-static_assert(sizeof(SealGpuLayer) == SEAL_GPU_LAYER_BYTES, "the seal shaders read layers as 80 bytes");
+inline constexpr std::size_t SEAL_GPU_LAYER_BYTES = 88;
+static_assert(sizeof(SealGpuLayer) == SEAL_GPU_LAYER_BYTES, "the seal shaders read layers as 88 bytes");
 /// Where SealGpuLayer::colours is, in bytes: the HLSL `SealLayer` keeps the same.
 inline constexpr std::size_t SEAL_GPU_LAYER_COLOURS_AT = 32;
 /// Where SealGpuLayer::washColour is, in bytes: the HLSL `SealLayer` keeps the same.
@@ -189,8 +205,10 @@ struct SealVertex {
     core::Vec2 local{};
     /// Its layer in SealDrawing::layers (a wash's: its seal's first).
     u32 layer = 0;
-    /// Pads the vertex to a multiple of 8 bytes.
-    u32 reserved = 0;
+    /// Which way the vertex shader grows its quad by a pixel, so the band's anti-aliased edge never meets the geometry's
+    /// end at any zoom: 1 out from the centre (a band's outer edge), -1 towards it (its inner edge), 0 not at all (a wash's
+    /// corner, or a band's at the centre).
+    f32 grow = 0.0F;
 };
 /// The bytes of one SealVertex.
 inline constexpr std::size_t SEAL_VERTEX_BYTES = 24;
@@ -307,10 +325,15 @@ struct SealPack {
 /// The pack of `seals`' looks, their sprites' field blocks from `manifest` (gfx::FieldBlockOf() in UV of their page).
 [[nodiscard]] SealPack PackSeals(const core::Seals& seals, const core::Manifest& manifest);
 
+/// The bytes a seal buffer of `capacity` bytes grows to so it holds `bytes`: `capacity` when it already does, else twice
+/// `capacity` or `bytes`, whichever is more (so a reload that grows the table a little reuses it), held to the most a u32
+/// counts; none when `bytes` is past that, which no GPU buffer holds.
+[[nodiscard]] std::optional<u32> SealBufferRoom(u32 capacity, std::size_t bytes);
+
 /// What one frame draws of its seals: the ground seals' washes and bands (drawn after the ground batches), the upright and
-/// overhead ones' (drawn after the overlay), each as quads of QUAD_VERTICES corners in MeshVertex's corner order, and the
-/// layers and light records they index (the layers' parts are the table's SealPack). The renderer keeps one and clears it
-/// each frame, so its buffers keep their capacity.
+/// overhead ones' (drawn after the outlines, under the swords' trails and the overlay), each as quads of QUAD_VERTICES corners
+/// in MeshVertex's corner order, and the layers and light records they index (the layers' parts are the table's SealPack). The
+/// renderer keeps one and clears it each frame, so its buffers keep their capacity.
 struct SealDrawing {
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The ground seals' washes: one quad a seal, drawn with normal premultiplied blending.
@@ -337,14 +360,14 @@ struct SealDrawing {
 /// whole tick is `renderTick` (in play from its start tick to the tick before its end), and its satellites, nested to
 /// core::MAX_SATELLITE_DEPTH, each by its look in `looks` and its parts in `pack` (PackSeals() of `looks`), its colours from
 /// `colours`. A showcase seal is left out when `showcase` is false; one whose key `looks` hasn't is skipped. Each layer adds
-/// its band: an annulus of SEAL_BAND_SEGMENTS quads from its inner radius to past its outer (the quads' outer edges round the
-/// circle, and further by its flourishes' spill), or its frame's band between two regular polygons with their corners at its
-/// inner and outer radii (and the spill); each seal its emblem (a layer of its own, at its innermost layer's height and
-/// life), its wash's quad to its reach and its light's record. Seals past MAX_SEALS_DRAWN are counted in
-/// `out.droppedSeals`, not drawn. A colour slot naming `element` takes the record's element's effect colour, which for a seal
-/// without one (`hasElement` false: the showcase's) is its default element's, Damage. Everything runs on the seals' time,
-/// scaled by core::Seals::spinScale: spins, particle motion and life, and the appear and fade; at 0 (still) the appear and
-/// fade are instant, so the seal shows whole from its start to its end. Its wash is the table's text ink, so it recolours
+/// its band: an annulus of SEAL_BAND_SEGMENTS quads from SealBandMargin() of `looks`' halo inside its inner radius (or its
+/// centre) to that margin past its outer (the quads' outer edges round the circle, and further by its flourishes' spill), or
+/// its frame's band between two regular polygons with their corners there; each seal its emblem (a layer of its own, at its
+/// innermost layer's height and life), its wash's quad to its reach and its light's record. Seals past MAX_SEALS_DRAWN are
+/// counted in `out.droppedSeals`, not drawn. A colour slot naming `element` takes the record's element's effect colour, which
+/// for a seal without one (`hasElement` false: the showcase's) is its default element's, Damage. Everything runs on the seals'
+/// time, scaled by core::Seals::spinScale: spins, particle motion and life, and the appear and fade; at 0 (still) the appear
+/// and fade are instant, so the seal shows whole from its start to its end. Its wash is the table's text ink, so it recolours
 /// with the palette.
 void DrawSeals(
     std::span<const core::Seal> seals,

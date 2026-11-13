@@ -16,8 +16,8 @@
 
 namespace data {
 
-/// The seals `text` (seals.yaml's) holds: view_ratio, above_opacity, spin_scale and brightness (each left out keeps
-/// core::Seals' default), `glyph_sets:` (named lists of sprites) and `seals:` (named looks: plane, lift, wash, colours,
+/// The seals `text` (seals.yaml's) holds: view_ratio, above_opacity, spin_scale, brightness and the halo (each left out
+/// keeps core::Seals' default), `glyph_sets:` (named lists of sprites) and `seals:` (named looks: plane, lift, wash, colours,
 /// life, layers and their parts, emblem, satellites and light; the file's comments name every key). A sprite must be in
 /// `manifest`. Fails, naming the line, on YAML that doesn't parse, a value that isn't a number or is out of range (a size of
 /// 0 or less, an inner radius not below its outer one, a negative time), 0 or more than core::MAX_SEAL_LAYERS layers, more
