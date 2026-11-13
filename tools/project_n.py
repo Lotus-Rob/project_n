@@ -152,10 +152,30 @@ def resolve(cmd):
     return [exe, *(str(c) for c in args)]
 
 
+def lock_bytes():
+    lock = ROOT / "xmake-requires.lock"
+    return lock.read_bytes() if lock.is_file() else b""
+
+
+def restore_reordered_lock(before):
+    """XMake rewrites xmake-requires.lock with the same lines in another order (`__meta__` moves, entries swap):
+    when that is all that changed, write the bytes from `before` back so `git status` stays clean."""
+    now = lock_bytes()
+    if now != before and sorted(now.splitlines()) == sorted(before.splitlines()):
+        (ROOT / "xmake-requires.lock").write_bytes(before)
+
+
 def run(cmd, env=None, **kwargs):
-    """Run a command from the repo root, echoing it; raise on failure. Output is never piped."""
+    """Run a command from the repo root, echoing it; raise on failure. Output is never piped.
+    Any XMake call may rewrite xmake-requires.lock in another order, so each one restores it afterwards, even
+    when it fails (tools/AGENTS.md)."""
     print("+", " ".join(str(c) for c in cmd), flush=True)
-    return subprocess.run(resolve(cmd), cwd=ROOT, check=True, env=env, **kwargs)
+    before = lock_bytes() if cmd[0] == "xmake" else None
+    try:
+        return subprocess.run(resolve(cmd), cwd=ROOT, check=True, env=env, **kwargs)
+    finally:
+        if before is not None:
+            restore_reordered_lock(before)
 
 
 def capture(cmd, check=True):
