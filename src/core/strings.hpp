@@ -38,6 +38,8 @@ enum class StringId : u8 {
     ColourHealingEffect,        ///< Healing effects' colour.
     ColourPoisonEffect,         ///< Poison effects' colour.
     ColourBurnEffect,           ///< Burn effects' colour.
+    ColourSealGold,             ///< Seals' gold accent.
+    ColourSealViolet,           ///< Seals' violet accent.
     ColourLabel,                ///< Name labels' colour.
     ColourCaption,              ///< The caption's colour.
     ColourTextInk,              ///< The ink of text outlines and shadows.
@@ -64,7 +66,7 @@ enum class StringId : u8 {
     FlyingSwords,               ///< The flying swords' name.
 };
 /// How many strings StringId names.
-inline constexpr std::size_t STRINGS = 45;
+inline constexpr std::size_t STRINGS = 47;
 /// Each StringId's name in strings.yaml, in StringId's order.
 inline constexpr std::array<std::string_view, STRINGS> STRING_NAMES{ { "cultivator_name",
                                                                        "tablet_caption",
@@ -87,6 +89,8 @@ inline constexpr std::array<std::string_view, STRINGS> STRING_NAMES{ { "cultivat
                                                                        "colour_healing_effect",
                                                                        "colour_poison_effect",
                                                                        "colour_burn_effect",
+                                                                       "colour_seal_gold",
+                                                                       "colour_seal_violet",
                                                                        "colour_label",
                                                                        "colour_caption",
                                                                        "colour_text_ink",

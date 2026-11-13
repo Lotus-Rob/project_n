@@ -44,6 +44,8 @@ enum class UiColour : u8 {
     HealingEffect,     ///< The effects of healing-element abilities.
     PoisonEffect,      ///< The effects of poison-element abilities.
     BurnEffect,        ///< The effects of burn-element abilities.
+    SealGold,          ///< A seal's gold accent.
+    SealViolet,        ///< A seal's violet accent.
     Label,             ///< A name label.
     Caption,           ///< The caption beside the tablet.
     TextInk,           ///< The ink of text's outline and shadow, and of labels and captions when both are off.
@@ -58,7 +60,7 @@ enum class UiColour : u8 {
     HudWarning,        ///< The HUD's warning.
 };
 /// How many colours UiColour names.
-inline constexpr std::size_t UI_COLOURS = 24;
+inline constexpr std::size_t UI_COLOURS = 26;
 
 /// What the menu and the settings file call an area.
 struct ColourAreaInfo {
@@ -101,6 +103,8 @@ inline constexpr std::array<UiColourInfo, UI_COLOURS> UI_COLOUR_INFO{ {
     { .area = ColourArea::Effects, .key = "healing", .name = StringId::ColourHealingEffect },
     { .area = ColourArea::Effects, .key = "poison", .name = StringId::ColourPoisonEffect },
     { .area = ColourArea::Effects, .key = "burn", .name = StringId::ColourBurnEffect },
+    { .area = ColourArea::Effects, .key = "seal_gold", .name = StringId::ColourSealGold },
+    { .area = ColourArea::Effects, .key = "seal_violet", .name = StringId::ColourSealViolet },
     { .area = ColourArea::NamesAndCaptions, .key = "label", .name = StringId::ColourLabel },
     { .area = ColourArea::NamesAndCaptions, .key = "caption", .name = StringId::ColourCaption },
     { .area = ColourArea::NamesAndCaptions, .key = "text_ink", .name = StringId::ColourTextInk },
@@ -130,7 +134,7 @@ inline constexpr std::array<UiColourInfo, UI_COLOURS> UI_COLOUR_INFO{ {
 /// red in the low byte, as TextItem::colour is. Those that existed before the table are what they were, bit for bit; the
 /// new ones are their sRGB colours (health bar and enemy health bar `#D8574A`, Qi bar `#5AA9E6`, bar background `#20242A`, HUD
 /// text `#F4EFE6`, cooling `#8A8F96`, warning `#F08A5D`; effects: damage `#6FA8FF`, healing `#8FE3A8`, poison `#7CD957`, burn
-/// `#FF8A3D`).
+/// `#FF8A3D`, seal gold `#F2C14E`, seal violet `#B48CF0`).
 inline constexpr std::array<u32, UI_COLOURS> DEFAULT_UI_COLOURS{ {
     0xFFFF'FFFFU, // damage number: linear (1, 1, 1)
     0xFF25'B533U, // healing number: sRGB #7CDB6A
@@ -144,6 +148,8 @@ inline constexpr std::array<u32, UI_COLOURS> DEFAULT_UI_COLOURS{ {
     0xFF64'C446U, // healing effect: sRGB #8FE3A8
     0xFF18'B133U, // poison effect: sRGB #7CD957
     0xFF0C'41FFU, // burn effect: sRGB #FF8A3D
+    0xFF13'88E2U, // seal gold: sRGB #F2C14E
+    0xFFDE'4374U, // seal violet: sRGB #B48CF0
     0xFFCA'DCE7U, // label: sRGB #F4EFE6
     0xFF5A'B1E2U, // caption: sRGB #F2D9A0
     0xFF06'0404U, // text ink: sRGB #20242A

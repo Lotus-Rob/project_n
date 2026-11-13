@@ -6,7 +6,7 @@
 namespace {
 
 // How many colours each area holds, in the menu's order.
-constexpr std::array<std::size_t, core::COLOUR_AREAS> PER_AREA{ { 8, 4, 3, 2, 7 } };
+constexpr std::array<std::size_t, core::COLOUR_AREAS> PER_AREA{ { 8, 6, 3, 2, 7 } };
 
 u32 Default(core::UiColour colour) {
     return core::DEFAULT_UI_COLOURS.at(std::to_underlying(colour));
@@ -89,6 +89,20 @@ TEST_CASE("the new elements' defaults are the sRGB colours they are named by") {
     CHECK(core::FromSrgb(0xF4, 0xEF, 0xE6, 0xFF) == Default(core::UiColour::HudText));
     CHECK(core::FromSrgb(0x8A, 0x8F, 0x96, 0xFF) == Default(core::UiColour::HudCooling));
     CHECK(core::FromSrgb(0xF0, 0x8A, 0x5D, 0xFF) == Default(core::UiColour::HudWarning));
+}
+
+TEST_CASE("the seal accents have sRGB defaults, keys and a place after the elements") {
+    CHECK(core::FromSrgb(0xF2, 0xC1, 0x4E, 0xFF) == Default(core::UiColour::SealGold));
+    CHECK(core::FromSrgb(0xB4, 0x8C, 0xF0, 0xFF) == Default(core::UiColour::SealViolet));
+    // They follow the four elements, which stay first so that an element's effect colour is still computed.
+    CHECK(std::to_underlying(core::UiColour::SealGold) == std::to_underlying(core::UiColour::BurnEffect) + 1);
+    CHECK(std::to_underlying(core::UiColour::SealViolet) == std::to_underlying(core::UiColour::BurnEffect) + 2);
+    CHECK(core::UI_COLOUR_INFO.at(std::to_underlying(core::UiColour::SealGold)).key == "seal_gold");
+    CHECK(core::UI_COLOUR_INFO.at(std::to_underlying(core::UiColour::SealViolet)).key == "seal_violet");
+    CHECK(core::EffectColour(core::HitKind::Damage) == core::UiColour::DamageEffect);
+    CHECK(core::EffectColour(core::HitKind::Healing) == core::UiColour::HealingEffect);
+    CHECK(core::EffectColour(core::HitKind::Poison) == core::UiColour::PoisonEffect);
+    CHECK(core::EffectColour(core::HitKind::Burn) == core::UiColour::BurnEffect);
 }
 
 TEST_CASE("sRGB round-trips through the table on every default") {

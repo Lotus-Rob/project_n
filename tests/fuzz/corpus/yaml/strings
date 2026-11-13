@@ -66,6 +66,12 @@ colour_poison_effect:
 colour_burn_effect:
   en: Burn
   zh: 灼烧
+colour_seal_gold:
+  en: Seal gold
+  zh: 法印金
+colour_seal_violet:
+  en: Seal violet
+  zh: 法印紫
 colour_label:
   en: Names
   zh: 名称
