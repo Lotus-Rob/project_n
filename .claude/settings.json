@@ -2,8 +2,7 @@
   "enabledPlugins": {
     "clangd-lsp@claude-plugins-official": false,
     "clangd@project-n-tools": true,
-    "superpowers@claude-plugins-official": true,
-    "ponytail@ponytail": false
+    "superpowers@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "project-n-tools": {
