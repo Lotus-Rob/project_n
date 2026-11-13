@@ -188,54 +188,7 @@ constexpr internal::Range REACH{ .low = 0.0, .lowOpen = true, .high = static_cas
 constexpr internal::Range BEAT{ .low = static_cast<f64>(core::MIN_PULSE_SECONDS) };
 
 constexpr std::array<std::string_view, 2> BLEND_NAMES{ { "light", "ink" } };
-constexpr std::array<std::string_view, 5> CURVE_NAMES{ { "linear", "ease_in", "ease_out", "smooth", "sine" } };
 constexpr std::array<std::string_view, 4> KIND_NAMES{ { "steady", "pulse", "charge", "progress" } };
-
-// The palette colour `<area>.<key>` names (core::UI_COLOUR_INFO), if it names one.
-std::optional<core::UiColour> PaletteColour(std::string_view name) {
-    for (std::size_t colour = 0; colour < core::UI_COLOURS; ++colour) {
-        const core::UiColourInfo& info = core::UI_COLOUR_INFO.at(colour);
-        const std::string_view area = core::COLOUR_AREA_INFO.at(std::to_underlying(info.area)).key;
-        if (name.size() == area.size() + 1 + info.key.size() && name.starts_with(area) && name[area.size()] == '.' &&
-            name.ends_with(info.key)) {
-            return static_cast<core::UiColour>(colour);
-        }
-    }
-    return std::nullopt;
-}
-
-std::expected<core::UiColour, core::Error> ReadPalette(const YAML::Node& node, std::string_view owner) {
-    const std::string name = node.IsScalar() ? node.Scalar() : std::string{};
-    if (const std::optional<core::UiColour> colour = PaletteColour(name)) {
-        return *colour;
-    }
-    return std::unexpected{
-        RefuseEffects(node, std::format("{} has the colour \"{}\", which isn't a palette colour (area.key)", owner, name))
-    };
-}
-
-// Sets `field` to the entry of `names` that `key` in `map` spells (leaving it when absent), or refuses.
-template<typename Enum, std::size_t Count>
-std::expected<void, core::Error> ReadNamed(
-    const YAML::Node& map,
-    std::string_view owner,
-    const char* key,
-    const std::array<std::string_view, Count>& names,
-    Enum& field
-) {
-    const YAML::Node node = map[key];
-    if (!node) {
-        return {};
-    }
-    const std::string text = node.IsScalar() ? node.Scalar() : std::string{};
-    for (std::size_t index = 0; index < Count; ++index) {
-        if (names.at(index) == text) {
-            field = static_cast<Enum>(index);
-            return {};
-        }
-    }
-    return std::unexpected{ RefuseEffects(node, std::format("{}'s {} \"{}\" isn't known", owner, key, text)) };
-}
 
 std::expected<void, core::Error> ReadDrive(
     const YAML::Node& node,
@@ -254,13 +207,18 @@ std::expected<void, core::Error> ReadDrive(
     if (fields.Error()) {
         return std::unexpected{ *fields.Error() };
     }
-    if (const std::expected<void, core::Error> read = ReadNamed(node, owner, "kind", KIND_NAMES, drive.kind); !read) {
+    if (const std::expected<void, core::Error> read =
+            internal::ReadNamed("effects", node, owner, "kind", KIND_NAMES, drive.kind);
+        !read) {
         return read;
     }
-    if (const std::expected<void, core::Error> read = ReadNamed(node, owner, "curve", CURVE_NAMES, drive.curve); !read) {
+    if (const std::expected<void, core::Error> read =
+            internal::ReadNamed("effects", node, owner, "curve", internal::CURVE_NAMES, drive.curve);
+        !read) {
         return read;
     }
-    if (const std::expected<void, core::Error> read = ReadNamed(node, owner, "fade_curve", CURVE_NAMES, drive.fadeCurve);
+    if (const std::expected<void, core::Error> read =
+            internal::ReadNamed("effects", node, owner, "fade_curve", internal::CURVE_NAMES, drive.fadeCurve);
         !read) {
         return read;
     }
@@ -272,7 +230,7 @@ std::expected<void, core::Error> ReadDrive(
         }
         drive.resultCount = 0;
         for (const YAML::Node& entry : results) {
-            const std::expected<core::UiColour, core::Error> colour = ReadPalette(entry, owner);
+            const std::expected<core::UiColour, core::Error> colour = internal::ReadPalette("effects", entry, owner);
             if (!colour) {
                 return std::unexpected{ colour.error() };
             }
@@ -301,18 +259,21 @@ std::expected<void, core::Error> ReadGlow(
         return std::unexpected{ *fields.Error() };
     }
     if (const YAML::Node colour = node["colour"]) {
-        if (colour.IsScalar() && colour.Scalar() == "element") {
+        const std::expected<core::GlowColour, core::Error> read = internal::ReadGlowColour("effects", colour, name);
+        if (!read) {
+            return std::unexpected{ read.error() };
+        }
+        // `element` keeps the palette colour the look had, as it always has: only the choice changes.
+        if (read->element) {
             look.colour.element = true;
         }
         else {
-            const std::expected<core::UiColour, core::Error> palette = ReadPalette(colour, name);
-            if (!palette) {
-                return std::unexpected{ palette.error() };
-            }
-            look.colour = { .element = false, .colour = *palette };
+            look.colour = *read;
         }
     }
-    if (const std::expected<void, core::Error> read = ReadNamed(node, name, "blend", BLEND_NAMES, look.blend); !read) {
+    if (const std::expected<void, core::Error> read =
+            internal::ReadNamed("effects", node, name, "blend", BLEND_NAMES, look.blend);
+        !read) {
         return read;
     }
     if (const YAML::Node drive = node["drive"]) {

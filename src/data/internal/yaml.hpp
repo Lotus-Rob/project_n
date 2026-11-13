@@ -2,17 +2,24 @@
 
 /// @file
 /// @ingroup data
-/// What the data module's readers share: reading a text file whole, and yaml-cpp's errors as ours.
+/// What the data module's readers share: reading a text file whole, yaml-cpp's errors as ours, tuning numbers, names from a
+/// closed list and colours from the palette.
 
 #include "core/error.hpp"
+#include "core/glow.hpp"
 #include "core/types.hpp"
+#include "core/ui_colours.hpp"
 
 #include <yaml-cpp/yaml.h>
 
+#include <array>
+#include <cstddef>
 #include <expected>
 #include <filesystem>
+#include <format>
 #include <initializer_list>
 #include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -110,6 +117,56 @@ void NoteUnknownKeys(
     std::string_view kind,
     std::initializer_list<std::string_view> known,
     std::vector<std::string>* warnings
+);
+
+/// The refusal "`what` line N: `why`", N the line of `node`.
+[[nodiscard]] core::Error RefusalAt(std::string_view what, const YAML::Node& node, std::string_view why);
+
+/// The names of core::GlowCurve's values in the data files, in its order.
+inline constexpr std::array<std::string_view, 5> CURVE_NAMES{ { "linear", "ease_in", "ease_out", "smooth", "sine" } };
+
+/// Sets `field` to the entry of `names` that `key` in `map` spells, its index as an `Enum` (leaving it when absent), or
+/// refuses: "`what` line N: `owner`'s `key` "text" isn't known".
+template<typename Enum, std::size_t Count>
+[[nodiscard]] std::expected<void, core::Error> ReadNamed(
+    std::string_view what,
+    const YAML::Node& map,
+    std::string_view owner,
+    const char* key,
+    const std::array<std::string_view, Count>& names,
+    Enum& field
+) {
+    const YAML::Node node = map[key];
+    if (!node) {
+        return {};
+    }
+    const std::string text = node.IsScalar() ? node.Scalar() : std::string{};
+    for (std::size_t index = 0; index < Count; ++index) {
+        if (names.at(index) == text) {
+            field = static_cast<Enum>(index);
+            return {};
+        }
+    }
+    return std::unexpected{ RefusalAt(what, node, std::format("{}'s {} \"{}\" isn't known", owner, key, text)) };
+}
+
+/// The palette colour `<area>.<key>` names (core::UI_COLOUR_INFO), if it names one.
+[[nodiscard]] std::optional<core::UiColour> PaletteColour(std::string_view name);
+
+/// The palette colour `node` names as `<area>.<key>`, or "`what` line N: `owner` has the colour "name", which isn't a
+/// palette colour (area.key)".
+[[nodiscard]] std::expected<core::UiColour, core::Error> ReadPalette(
+    std::string_view what,
+    const YAML::Node& node,
+    std::string_view owner
+);
+
+/// The glow colour `node` names: `element` (the element colour of what draws it) or a palette colour, which ReadPalette()
+/// reads and refuses.
+[[nodiscard]] std::expected<core::GlowColour, core::Error> ReadGlowColour(
+    std::string_view what,
+    const YAML::Node& node,
+    std::string_view owner
 );
 
 } // namespace data::internal

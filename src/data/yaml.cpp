@@ -33,46 +33,14 @@ core::Error ErrorOf(std::string_view what, const YAML::Exception& error) {
     return { std::format("{} line {}: {}", what, error.mark.line + 1, error.msg) };
 }
 
-std::expected<i64, core::Error> WholeNumber(
-    std::string_view what,
-    const YAML::Node& map,
-    std::string_view name,
-    const char* key,
-    bool required,
-    i64 limit
-) {
-    const auto fail = [&](const YAML::Node& node, std::string_view why) {
-        return std::unexpected{ core::Error{ std::format("{} line {}: {}", what, node.Mark().line + 1, why) } };
-    };
-    const YAML::Node node = map[key];
-    if (!node) {
-        if (required) {
-            return fail(map, std::format("{} has no {}", name, key));
-        }
-        return 0;
-    }
-    f64 value = 0.0;
-    try {
-        value = node.as<f64>();
-    }
-    catch (const YAML::Exception&) {
-        return fail(node, std::format("{}'s {} isn't a number", name, key));
-    }
-    // An f64 holds every whole number up to 2^53 exactly; `limit` is below it.
-    if (!std::isfinite(value) || value < 0.0 || value != std::floor(value) || value > static_cast<f64>(limit)) {
-        return fail(node, std::format("{}'s {} isn't a whole number from 0 to {}", name, key, limit));
-    }
-    return static_cast<i64>(value);
-}
-
 namespace {
+
+std::unexpected<core::Error> Refuse(std::string_view what, const YAML::Node& node, std::string_view why) {
+    return std::unexpected{ RefusalAt(what, node, why) };
+}
 
 // The most seconds a time may be: well within a u32's ticks.
 constexpr f64 MOST_SECONDS = 1'000'000.0;
-
-std::unexpected<core::Error> Refuse(std::string_view what, const YAML::Node& node, std::string_view why) {
-    return std::unexpected{ core::Error{ std::format("{} line {}: {}", what, node.Mark().line + 1, why) } };
-}
 
 std::string Describe(const Range& range) {
     const bool bounded = std::isfinite(range.high);
@@ -85,6 +53,35 @@ std::string Describe(const Range& range) {
 }
 
 } // namespace
+
+std::expected<i64, core::Error> WholeNumber(
+    std::string_view what,
+    const YAML::Node& map,
+    std::string_view name,
+    const char* key,
+    bool required,
+    i64 limit
+) {
+    const YAML::Node node = map[key];
+    if (!node) {
+        if (required) {
+            return Refuse(what, map, std::format("{} has no {}", name, key));
+        }
+        return 0;
+    }
+    f64 value = 0.0;
+    try {
+        value = node.as<f64>();
+    }
+    catch (const YAML::Exception&) {
+        return Refuse(what, node, std::format("{}'s {} isn't a number", name, key));
+    }
+    // An f64 holds every whole number up to 2^53 exactly; `limit` is below it.
+    if (!std::isfinite(value) || value < 0.0 || value != std::floor(value) || value > static_cast<f64>(limit)) {
+        return Refuse(what, node, std::format("{}'s {} isn't a whole number from 0 to {}", name, key, limit));
+    }
+    return static_cast<i64>(value);
+}
 
 std::expected<f64, core::Error> TunedNumber(
     std::string_view what,
@@ -175,6 +172,45 @@ std::expected<u32, core::Error> RequiredTicks(
         return Refuse(what, map, std::format("{} has no {}", name, key));
     }
     return TunedTicks(what, map, name, key, 0, least);
+}
+
+core::Error RefusalAt(std::string_view what, const YAML::Node& node, std::string_view why) {
+    return { std::format("{} line {}: {}", what, node.Mark().line + 1, why) };
+}
+
+std::optional<core::UiColour> PaletteColour(std::string_view name) {
+    for (std::size_t colour = 0; colour < core::UI_COLOURS; ++colour) {
+        const core::UiColourInfo& info = core::UI_COLOUR_INFO.at(colour);
+        const std::string_view area = core::COLOUR_AREA_INFO.at(std::to_underlying(info.area)).key;
+        if (name.size() == area.size() + 1 + info.key.size() && name.starts_with(area) && name[area.size()] == '.' &&
+            name.ends_with(info.key)) {
+            return static_cast<core::UiColour>(colour);
+        }
+    }
+    return std::nullopt;
+}
+
+std::expected<core::UiColour, core::Error> ReadPalette(std::string_view what, const YAML::Node& node, std::string_view owner) {
+    const std::string name = node.IsScalar() ? node.Scalar() : std::string{};
+    if (const std::optional<core::UiColour> colour = PaletteColour(name)) {
+        return *colour;
+    }
+    return std::unexpected{
+        RefusalAt(what, node, std::format("{} has the colour \"{}\", which isn't a palette colour (area.key)", owner, name))
+    };
+}
+
+std::expected<core::GlowColour, core::Error> ReadGlowColour(
+    std::string_view what,
+    const YAML::Node& node,
+    std::string_view owner
+) {
+    if (node.IsScalar() && node.Scalar() == "element") {
+        return core::GlowColour{ .element = true };
+    }
+    return ReadPalette(what, node, owner).transform([](core::UiColour colour) {
+        return core::GlowColour{ .element = false, .colour = colour };
+    });
 }
 
 void NoteUnknownKeys(
