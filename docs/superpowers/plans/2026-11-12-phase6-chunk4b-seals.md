@@ -11,15 +11,35 @@ element), saved and published in `Snapshot::seals`; the swords' cast raises one.
 (`assets/data/seals.yaml` → `core::Seals`, not hashed, hot-reloaded). The main thread turns records, looks and the
 render time into band geometry and a packed parts buffer (pure functions in `gfx/seal_draw`, tested without a device);
 two new pipelines draw the wash (normal blend) and the lines and light (additive), procedurally, from analytic distance
-fields and distance-field sprites, in a fixed few draw calls per frame.
+fields and the glows' sprite field array (every sprite's distance field, made at load), in a fixed few draw calls per
+frame.
 
 **Tech Stack:** C++23, SDL_GPU, HLSL (`project_n shaders`), yaml-cpp (only in `data`), doctest, Python placeholder art
 (`art/placeholders.py`), all through Pixi.
 
-**Spec:** `docs/superpowers/specs/2026-11-12-phase6-chunk4b-seals-design.md` (read it first; its mockups are beside it).
+**Spec:** `docs/superpowers/specs/2026-11-12-phase6-chunk4b-seals-design.md` (read it first; its mockups are beside it),
+and the glow spec's Outcome, "Notes for the seals chunk" (`2026-11-12-phase6-glow-design.md`).
 
-**Starts after chunk 4 merges.** This branch was cut from main before chunk 4; rebase it onto main once chunk 4's PR
-merges, then start Task 1. Every file below exists on main from then on.
+**Revised 2026-11-13** after chunk 4 and the glows merged: the branch is rebased onto main, and the plan reuses the
+glows' field array, `core::GlowColour`, `core::CurveAt` and the effects reader's palette and curve helpers. Every file
+below exists on main.
+
+## Waves
+
+Each task's implementer works in its own worktree branched from the feature branch's head, rebased onto it as its review
+passes (AGENTS.md: Working with superpowers).
+
+| Wave | Tasks | What each needs |
+|---|---|---|
+| A | 1 (art, light), 3 (colours, light), 4 (simulation, full) | nothing: no shared file |
+| B | 2 (looks and reader, full) | Task 1's sprite names (the shipped table names them), Task 4's `core::SealKey` |
+| C | 5 (layout, full) | Task 2's `core::SealLook`, Task 4's `core::Seal` |
+| D | 6 (drawing, full) | Task 5 |
+| E | 7 (light, full) | Task 6 (the same shaders and renderer feature) |
+| F | 8 (showcase, full) | Tasks 3, 6 and 7 (its pictures show pillars and the accents) |
+| G | 9 (measurements and Outcome, light) | everything; profiling runs alone |
+
+Shared lines: Tasks 2, 6 and 8 each add a line to `src/AGENTS.md`; a rebase conflict there is merged by hand.
 
 ## Global Constraints
 
@@ -29,8 +49,16 @@ merges, then start Task 1. Every file below exists on main from then on.
   by its key. `seals.yaml` is not hashed and not saved.
 - **Drawing is a pure function** of the seal record, `core::Seals` and the render time (`core::RenderTick(snapshot
   .simulationTick, alpha)`): no per-seal state kept between frames on the CPU or GPU.
-- **Colours come from the table** (`core::UiColours`): no seal colour in code or a shader. A colour slot is `element`
-  (the record's element's effect colour) or a table name.
+- **Colours come from the table** (`core::UiColours`): no seal colour in code or a shader. A colour slot is a
+  `core::GlowColour`: `element` (the record's element's effect colour) or a palette name written `<area>.<key>`
+  (`effects.damage`, `effects.seal_gold`), read by the same helpers as `effects.yaml`'s glows.
+- **Fields are the glows':** runes, flourishes and emblems are plain sprites; their distance fields are already in
+  `gfx::SpriteArray::field` (R8, the colour atlas's layers, size and mips) at `gfx::FieldBlockOf(sprite)`. Decode
+  `d = (sample − 0.5) × 2 × FIELD_REACH_TEXELS` texels, negative inside; the reach is `core::FIELD_REACH_TEXELS` (16).
+- **Small times on the GPU:** the CPU computes in `f64` seconds; shaders get each layer's angle already turned and each
+  particle stream's age wrapped by its period, never a time since a seal's start (an `f32` of that loses sub-tick
+  precision after about 5 hours, and showcase seals never end).
+- **Curves are the glows':** a seal's appear and fade each take a `core::GlowCurve`, evaluated with `core::CurveAt`.
 - **The art's angle:** one ratio for every seal, `view_ratio`, default `0.375` (the blob shadow's 24 / 64). A point
   `(x, depth, up)` in a seal's frame lands on screen at world `(x, depth × view_ratio − up)` from the seal's point.
 - **Ink wash, then glow:** each seal draws its wash with normal premultiplied blending, then its lines and light
@@ -71,7 +99,9 @@ merges, then start Task 1. Every file below exists on main from then on.
 
 ---
 
-### Task 1: Placeholder seal art: runes, flourishes and emblems as distance fields
+### Task 1: Placeholder seal art: runes, flourishes and emblems
+
+review: light (procedural art and generated outputs)
 
 **Files:**
 - Modify: `art/placeholders.py`, `art/sprites.toml` (append only), `art/scenes.toml` (`arena` list)
@@ -79,36 +109,45 @@ merges, then start Task 1. Every file below exists on main from then on.
 - Modify: `assets/sprites/PROVENANCE.md`
 
 **Interfaces:**
-- Produces (the only glyph set this chunk ships: font characters as a glyph set are left for later): sprites `rune_00` … `rune_23` (an invented rune set), `flourish_flame_0` … `flourish_flame_2`,
-  `emblem_lotus`, `emblem_swords`, `emblem_eye`, `emblem_spiral` in the arena scene, each white with its alpha holding a
-  signed distance field: alpha = clamp(0.5 + d / (2 × SDF_SPREAD), 0, 1), `d` in pixels positive inside, `SDF_SPREAD` =
-  8 pixels, so alpha 0.5 is the edge. Runes 48 × 64 pixels, flourishes 256 × 128, emblems 256 × 256.
+- Produces (the only glyph set this chunk ships; font characters as a glyph set are left for later): sprites `rune_00`
+  … `rune_23` (an invented rune set), `flourish_flame_0` … `flourish_flame_2`, `emblem_lotus`, `emblem_swords`,
+  `emblem_eye`, `emblem_spiral` in the arena scene: white shapes on a transparent ground with an antialiased alpha edge
+  (alpha 0.5 at the edge, where the loader's distance field puts its zero line). No field is written into the art: the
+  game makes each sprite's field as it loads (the glows). Runes 48 × 64 pixels with strokes 6 to 8 pixels wide,
+  flourishes 256 × 128, emblems 256 × 256, so every stroke is wider than a few texels and its halo fits the field's
+  16-texel reach.
 
-- [ ] **Step 1:** in `placeholders.py`, a distance-field writer (stroke shapes rasterised at 4× and reduced to a field)
-  and the generators: runes as 2 to 5 strokes on a 3 × 4 grid (seeded, as the mockup's `glyph()`), flame flourishes as
-  tapering curls, four abstract emblems (no creature from the references). Deterministic from fixed seeds.
+- [ ] **Step 1:** in `placeholders.py`, the generators, drawn at 4× and reduced for a smooth edge: runes as 2 to 5
+  strokes on a 3 × 4 grid (seeded, as the mockup's `glyph()`), flame flourishes as tapering curls, four abstract emblems
+  (no creature from the references). Deterministic from fixed seeds.
 - [ ] **Step 2:** append the sprites to `sprites.toml` and the arena's list in `scenes.toml`; run
   `pixi run project_n atlas --placeholders`, then `pixi run project_n atlas`; expected: the manifest lists them.
-- [ ] **Step 3:** look at three of the PNGs (a rune, a flourish, an emblem): the alpha ramps across each stroke's edge.
-- [ ] **Step 4:** `pixi run project_n test`; PROVENANCE.md names them as procedural placeholders.
+- [ ] **Step 3:** look at three of the PNGs (a rune, a flourish, an emblem): clean white strokes, a soft one-texel edge.
+- [ ] **Step 4:** `pixi run project_n test`; expected: pass (the manifest and atlas tests cover the new sprites);
+  PROVENANCE.md names them as procedural placeholders.
 - [ ] **Step 5: Commit** `feat(art): placeholder runes, flourishes and emblems for seals` (scope per `SCOPES`).
 
 ### Task 2: The seal looks: `core::Seals` and `seals.yaml`
 
+review: full
+
 **Files:**
 - Create: `src/core/seals.hpp`, `src/data/seals.hpp`, `src/data/seals.cpp`, `assets/data/seals.yaml`,
   `tests/unit/data/seals_tests.cpp`, `tests/fuzz/corpus/yaml/seals`
-- Modify: `tests/fuzz/yaml.cpp`, `src/AGENTS.md`, `src/data/module.dox`
+- Modify: `src/data/effects.cpp` and `src/data/internal/yaml.hpp` (+ its `.cpp`), moving the palette and curve helpers
+  there, `tests/fuzz/yaml.cpp`, `src/AGENTS.md`, `src/data/module.dox`
 
 **Interfaces:**
 - Consumes: `data::internal` helpers (`TunedNumber`, `TunedWhole`, `NoteUnknownKeys`), `core::Manifest` (sprite names),
-  `core::UiColour` names (Task 3 adds two; this task accepts any existing name).
-- Produces (all in `core`):
-  - `using SealKey = u64;` and `[[nodiscard]] constexpr SealKey SealKeyOf(std::string_view name)`: FNV-1a 64 of the
-    name; stable across runs and platforms.
+  `core::SealKey` and `core::SealKeyOf` (Task 4, `core/seal.hpp`), `core::GlowColour`, `core::GlowCurve` (`core/glow.hpp`),
+  palette names (Task 3 adds two; this task accepts any existing name).
+- Moves, unchanged in behaviour, from `effects.cpp`'s anonymous namespace into `data::internal`: `PaletteColour`,
+  `ReadPalette`, `ReadNamed` and `CURVE_NAMES`, plus a new `ReadGlowColour(const YAML::Node&, std::string_view owner)`
+  returning `std::expected<core::GlowColour, core::Error>` (the `element`-or-palette branch `ReadGlow` has inline, which
+  then calls it). The effects tests pass unchanged.
+- Produces (all in `core`, `core/seals.hpp`):
   - `enum class SealPlane : u8 { Ground, Upright, Overhead };`
   - `enum class SealPartKind : u8 { Circle, Ticks, Dots, Script, Star, Polygon, Flourish };`
-  - `struct SealColourSlot { bool element = true; UiColour colour = UiColour::DamageEffect; };`
   - `struct SealPart { SealPartKind kind; u8 slot; f32 radius; f32 width; f32 size; u32 count; u32 step; f32 dash;
     f32 gap; f32 rotation; f32 spill; bool inward; u32 glyphSet; std::array<atlas::SpriteId, 3> sprites; };` (radius,
     width and size as fractions of the seal's size; unused fields stay zero)
@@ -120,7 +159,8 @@ merges, then start Task 1. Every file below exists on main from then on.
   - `struct SealLight { u32 pillars; f32 pillarHeight; f32 pillarWidth; u32 sparks; f32 sparkRise; f64 sparkLife;
     u32 shards; f32 shardDrift; f32 shardSpin; u8 slot; };`
   - `struct SealLook { SealPlane plane; f32 lift; f32 washDarkness; f32 washReach; f32 washSoftness;
-    std::array<SealColourSlot, 2> colours; u8 colourCount; f64 appear; f64 fade; bool innerFirst;
+    std::array<GlowColour, 2> colours; u8 colourCount; f64 appear; GlowCurve appearCurve; f64 fade; GlowCurve
+    fadeCurve; bool innerFirst;
     std::vector<SealLayer> layers; std::optional<SealEmblem> emblem; std::vector<SealSatellite> satellites;
     SealLight light; };`
   - `struct Seals { f32 viewRatio = 0.375F; f32 aboveOpacity = 0.7F; f32 spinScale = 1.0F; f32 brightness = 1.0F;
@@ -142,8 +182,8 @@ merges, then start Task 1. Every file below exists on main from then on.
       plane: ground          # ground | upright | overhead
       lift: 0                # world units above the ground
       wash: { darkness: 0.6, reach: 1.15, softness: 0.25 }
-      colours: [element, seal_gold]
-      life: { appear: 0.4, fade: 0.3, order: outer_first }
+      colours: [element, effects.seal_gold]
+      life: { appear: 0.4, appear_curve: ease_out, fade: 0.3, fade_curve: smooth, order: outer_first }
       layers:
         - { inner: 0.86, outer: 1.0, height: 0, spin: 9, opacity: 0.9, parts: [ ... ] }
       emblem: { sprite: emblem_swords, size: 0.18, spin: 0, colour: 1 }
@@ -155,10 +195,9 @@ merges, then start Task 1. Every file below exists on main from then on.
 - [ ] **Step 1: Write the failing tests** in `seals_tests.cpp`:
   - `TEST_CASE("the shipped seals table loads clean")`: `LoadSeals` of `assets/data` with the shipped manifest returns a
     table where `Find(SealKeyOf("sword_formation"))` is not null and no warning is logged.
-  - `TEST_CASE("a seal key is the same for the same name")`: `SealKeyOf("a") == SealKeyOf("a")`,
-    `SealKeyOf("a") != SealKeyOf("b")`, and a `constexpr` known value for `"sword_formation"` (computed once, pinned).
   - `TEST_CASE("the seals reader refuses out-of-range values with their line")`: one sample each, checking the message
-    names the line: 0 layers; 10 layers; 17 parts; a size ≤ 0; `inner ≥ outer`; an unknown colour name; an unknown
+    names the line: 0 layers; 10 layers; 17 parts; a size ≤ 0; `inner ≥ outer`; an unknown palette name; an unknown curve
+    name; an unknown
     sprite; an unknown glyph set; a satellite naming its own seal; two seals naming each other; satellites 3 deep;
     `view_ratio` outside (0, 1]; a negative appear time; `sparks.count` over 256.
   - `TEST_CASE("the seals reader warns on unknown keys and reads the rest")`.
@@ -166,7 +205,9 @@ merges, then start Task 1. Every file below exists on main from then on.
     caller's previous `core::Seals` is untouched (the reload contract `App` relies on).
 - [ ] **Step 2:** `pixi run project_n test --suite data_tests --test seals`; expected: fails to compile (no
   `data/seals.hpp`).
-- [ ] **Step 3:** implement `core/seals.hpp` and `data/seals.cpp` as the Interfaces say, sharing the yaml helpers;
+- [ ] **Step 3:** move the helpers into `data::internal` first and run `pixi run project_n test --suite data_tests
+  --test effects` (expected: pass, unchanged); then implement `core/seals.hpp` and `data/seals.cpp` as the Interfaces
+  say, sharing the yaml helpers;
   write `assets/data/seals.yaml` with one seal, `sword_formation` (script look: two rune bands, a star, ticks, an emblem;
   `colours: [element]`; ground), every value commented with its unit and effect, as `effects.yaml` does.
 - [ ] **Step 4:** the `yaml` fuzz target parses `seals.yaml` text too (with the shipped manifest), seed
@@ -175,17 +216,21 @@ merges, then start Task 1. Every file below exists on main from then on.
 
 ### Task 3: The seals' accent colours
 
+review: light (data values and a mechanical table entry)
+
 **Files:**
 - Modify: `src/core/ui_colours.hpp` (and its `.cpp` if any), `assets/data/strings.yaml`, `src/data/settings.cpp` if
   the settings file lists colours by name, `tests/unit/core/ui_colours_tests.cpp`
 
 **Interfaces:**
 - Produces: `core::UiColour::SealGold` (default sRGB `#F2C14E`) and `core::UiColour::SealViolet` (default `#B48CF0`),
-  both in the **Effects** area, `UI_COLOURS` 24 → 26, their names in English and Simplified Chinese in `strings.yaml`,
-  settable by name in `seals.yaml` as `seal_gold` and `seal_violet`.
+  both in the **Effects** area after `BurnEffect` (the element colours stay first and in order: the element colour is
+  `DamageEffect` plus the element), `UI_COLOURS` 24 → 26, keys `seal_gold` and `seal_violet`, so palette names
+  `effects.seal_gold` and `effects.seal_violet`, their names in English and Simplified Chinese in `strings.yaml`.
 
 - [ ] **Step 1:** failing test `TEST_CASE("the seal accents have defaults and names")`: the two packed defaults
-  (converted as the neighbours are) and both names resolving in both languages.
+  (converted as the neighbours are), both names resolving in both languages, and each element's effect colour
+  unchanged.
 - [ ] **Step 2:** `pixi run project_n test --suite core_tests --test ui_colours`; expected: fails to compile.
 - [ ] **Step 3:** add the two entries where every colour is listed (enum, defaults, area, names, settings keys).
 - [ ] **Step 4:** run the suites that list colours (`core_tests`, `data_tests`); expected: pass.
@@ -193,16 +238,21 @@ merges, then start Task 1. Every file below exists on main from then on.
 
 ### Task 4: Seals in the simulation: the record, the swords' seal, saves
 
+review: full (simulation, determinism, saves)
+
 **Files:**
-- Modify: `src/core/frame.hpp` (`Seal`, `Snapshot::seals`), `src/core/abilities` types (where `AbilityData` lives),
+- Create: `src/core/seal.hpp` (the key and the record), `tests/unit/core/seal_tests.cpp`
+- Modify: `src/core/frame.hpp` (`Snapshot::seals`), `src/core/abilities` types (where `AbilityData` lives),
   `src/data/abilities.cpp`, `assets/data/abilities.yaml`, `src/game/combat.hpp`, `src/game/combat.cpp`,
   `src/game/arena.cpp` (`ARENA_FORMAT` 3 → 4), `tests/unit/game/combat_tests.cpp`, `tests/unit/game/save_tests.cpp`,
   `tests/unit/data/abilities_tests.cpp`, fuzz seeds `tests/fuzz/corpus/save/*`, `tests/fuzz/corpus/replay/*`,
   `tests/fuzz/corpus/yaml/abilities`
 
 **Interfaces:**
-- Consumes: `core::SealKey`, `core::SealKeyOf` (Task 2); `core::DepartureTick` (chunk 4).
-- Produces:
+- Consumes: `core::DepartureTick` (chunk 4).
+- Produces (in `core/seal.hpp`, which Task 2's `core/seals.hpp` includes):
+  - `using SealKey = u64;` and `[[nodiscard]] constexpr SealKey SealKeyOf(std::string_view name)`: FNV-1a 64 of the
+    name; stable across runs and platforms.
   - `struct core::Seal { SealKey key; Vec2 point; f32 size; u64 startTick; u64 endTick; HitKind element; bool
     hasElement; bool showcase; }` with `Fields()`; `endTick == NEVER_ENDS` (`u64` max) for one that never ends;
     `showcase` is set only by the arena's scene content (Task 8), never saved.
@@ -214,6 +264,8 @@ merges, then start Task 1. Every file below exists on main from then on.
     `endTick`, saved with the combat state, and cleared with everything else on a scene change or load.
 
 - [ ] **Step 1: Write the failing tests:**
+  - `TEST_CASE("a seal key is the same for the same name")` (`core_tests`): `SealKeyOf("a") == SealKeyOf("a")`,
+    `SealKeyOf("a") != SealKeyOf("b")`, and a `constexpr` known value for `"sword_formation"` (computed once, pinned).
   - `TEST_CASE("casting the swords raises one seal at the cast point until the last sword leaves")`: after a cast at
     tick T, `snapshot.seals` holds one seal with the ability's key and size, `startTick == T`, `endTick ==` the last
     sword's departure; at `endTick` it is gone.
@@ -223,7 +275,8 @@ merges, then start Task 1. Every file below exists on main from then on.
   - `TEST_CASE("a scene change ends every seal")`.
   - `TEST_CASE("the abilities reader reads a seal and refuses a bad one")`: a size ≤ 0 and an empty name, with lines.
   - The game data hash changes when an ability's seal name changes (one sample beside the existing hash test).
-- [ ] **Step 2:** run `combat_tests`, `save_tests`, `abilities_tests`; expected: fail to compile.
+- [ ] **Step 2:** run `core_tests --test seal`, `game_tests` (combat, save) and `data_tests --test abilities`;
+  expected: fail to compile.
 - [ ] **Step 3:** implement as the Interfaces say; `abilities.yaml`'s `flying_swords` gains
   `seal: { name: sword_formation, size: 420 }` (a commented value: the seal's outer radius in world units).
 - [ ] **Step 4:** bump `ARENA_FORMAT` to 4 with its history comment; regenerate the `save` fight seed (tests/AGENTS.md's
@@ -233,11 +286,14 @@ merges, then start Task 1. Every file below exists on main from then on.
 
 ### Task 5: Laying seals out: the angle, the bands, the parts, the life
 
+review: full
+
 **Files:**
 - Create: `src/gfx/seal_draw.hpp`, `src/gfx/seal_draw.cpp`, `tests/unit/gfx/seal_draw_tests.cpp`
 
 **Interfaces:**
-- Consumes: `core::Seal`, `core::Seals`, `core::SealLook` (Tasks 2, 4), `core::UiColours`, `core::Manifest`.
+- Consumes: `core::Seal` (Task 4), `core::Seals`, `core::SealLook` (Task 2), `core::UiColours`, `core::Manifest`,
+  `core::CurveAt`, `gfx::FieldBlockOf`.
 - Produces (pure, no device):
   - `[[nodiscard]] Vec2 SealToWorld(const core::Seal& seal, core::SealPlane plane, f32 lift, f32 viewRatio, SealLocal local)`, with `struct SealLocal { f32 x; f32 depth; f32 up; };`:
     `local` in world units in the seal's frame (`Ground`/`Overhead`: x and depth on the plane, up the
@@ -245,14 +301,17 @@ merges, then start Task 1. Every file below exists on main from then on.
     Constraints' projection.
   - `[[nodiscard]] f32 SealLifeOpacity(const core::SealLook& look, std::size_t layer, f64 secondsSinceStart, f64
     secondsToEnd)`: layers appear one after another over `look.appear` (each over `appear / layers`, outer or inner
-    first), all fade together over the last `look.fade` seconds before the end; 1 while held.
+    first), all fade together over the last `look.fade` seconds before the end, each shaped by its curve
+    (`CurveAt(look.appearCurve, …)`, `CurveAt(look.fadeCurve, …)`); 1 while held.
   - `[[nodiscard]] f32 SealLayerAngle(const core::SealLayer& layer, f64 seconds, f32 spinScale)` in radians.
   - `struct SealGpuPart` (16-byte aligned, the shader's `StructuredBuffer` layout: kind, slot, radii, width, counts,
-    dash, sprite UV rects for scripts, flourishes and emblems) and `struct SealGpuLayer` (centre, axes for the projection,
+    dash, and for scripts, flourishes and emblems each sprite's field rectangle: `FieldBlockOf(sprite)` in UV of its page
+    and the page's layer) and `struct SealGpuLayer` (centre, axes for the projection,
     angle, opacity × life × brightness, two premultiplied colours, first part and part count, inner and outer radius).
   - `struct SealVertex` (world position, the band's local position, the layer index).
-  - `struct SealGpuParticles` (a seal's light: its key hash, start seconds, the particle counts and sizes, centre and
-    axes, colour), one per seal with light; the particle draw's instances index into them.
+  - `struct SealGpuParticles` (a seal's light: its key hash, each stream's age already wrapped by its period (sparks by
+    their life, shards and pillars by their cycle) as `f32` seconds, the particle counts and sizes, centre and axes,
+    colour), one per seal with light; the particle draw's instances index into them.
   - `struct SealDrawing { std::vector<SealVertex> groundWash, groundLines, aboveWash, aboveLines; std::vector<SealGpuLayer>
     layers; std::vector<SealGpuPart> parts; std::vector<SealGpuParticles> particles; std::size_t droppedSeals; void
     Clear(); }` and `void DrawSeals(std::span<const core::Seal> seals, const core::Seals& looks, const core::UiColours&
@@ -276,6 +335,11 @@ merges, then start Task 1. Every file below exists on main from then on.
   - `TEST_CASE("an element slot takes the record's element colour")` and a named slot takes the table's.
   - `TEST_CASE("hidden showcase seals draw nothing")`.
   - `TEST_CASE("more seals than the frame holds are counted")`: 70 seals → 64 drawn, `droppedSeals == 6`.
+  - `TEST_CASE("a never-ending seal hands the GPU small times")`: a showcase seal started at tick 0, drawn at render
+    times 10 s and 100 hours: every particle stream's age is below its period, and the layer angles match those
+    computed in `f64`.
+  - `TEST_CASE("a script part points at its sprite's field block")`: a rune part's rectangle equals `FieldBlockOf` of
+    that rune over the page size, on its page's layer.
 - [ ] **Step 2:** `pixi run project_n test --suite gfx_tests --test seal_draw`; expected: fails to compile.
 - [ ] **Step 3:** implement the Interfaces in `seal_draw.cpp`; one `PN_PROFILE_ZONE()` in `DrawSeals` only.
 - [ ] **Step 4:** run the test again; expected: pass.
@@ -283,16 +347,19 @@ merges, then start Task 1. Every file below exists on main from then on.
 
 ### Task 6: Drawing seals: the wash and the lines
 
+review: full (rendering)
+
 **Files:**
-- Create: `shaders/seal.vert.hlsl`, `shaders/seal.frag.hlsl`, `shaders/seal.hlsli`,
+- Create: `shaders/seal.vert.hlsl`, `shaders/seal.frag.hlsl`, `shaders/seal.hlsli`, `shaders/field.hlsli`,
   `src/gfx/internal/features/seals.hpp`, `src/gfx/internal/features/seals.cpp`
-- Modify: `src/gfx/renderer.hpp`, `src/gfx/renderer.cpp`, `src/core/draw_list.cpp` and `src/core/frame.hpp`
+- Modify: `shaders/sprite.frag.hlsl`, `shaders/sprite.hlsli`, `src/gfx/renderer.hpp`, `src/gfx/renderer.cpp`, `src/core/draw_list.cpp` and `src/core/frame.hpp`
   (`Snapshot::groundBatches`), `src/app/app.cpp` (load and reload `seals.yaml`), `src/main.cpp`,
   `tests/reference/reference_tests.cpp`, `tests/reference/*.png`, `tests/unit/core/draw_list_tests.cpp`,
   `src/AGENTS.md`, `src/gfx/module.dox`
 
 **Interfaces:**
-- Consumes: Task 5's `SealDrawing` and `DrawSeals`; Task 1's sprites.
+- Consumes: Task 5's `SealDrawing` and `DrawSeals`; Task 1's sprites; the glows' `SpriteArray::field` and
+  `fieldSampler` (`src/gfx/internal/resources/sprite_array.hpp`).
 - Produces:
   - `u32 Snapshot::groundBatches`: batches `[0, groundBatches)` hold only the `Ground` and `Decals` layers (the draw
     list splits a batch at that boundary).
@@ -304,7 +371,12 @@ merges, then start Task 1. Every file below exists on main from then on.
     logged once per key.
   - The fragment shader draws each part as an analytic distance field (circle, dashed circle, ticks, dots, star,
     polygon, frame) or by sampling the atlas's distance-field sprites (script, flourish, emblem), anti-aliased with
-    `fwidth`, testing only parts whose band holds the pixel.
+    `fwidth`, testing only parts whose band holds the pixel. Its sprite parts sample the field array alone (the art is
+    white; the slot colours it), bound at `t0/s0 space2` (`[[vk::binding(0, 2)]]`), decoded as the sprite shader decodes
+    it: the decode moves out of `sprite.frag.hlsl` into `float FieldTexels(float sample)` in a new `shaders/field.hlsli`
+    with `FIELD_REACH_TEXELS` (moved from `sprite.hlsli`, which includes it), included by both fragment shaders, so
+    there is one decode, not a copy with other numbers; the sprite pictures stay unchanged; the parts and layers are storage buffers in
+    SDL_GPU's binding order (design doc 0002 §8.8).
 
 - [ ] **Step 1: Write the failing tests:**
   - `TEST_CASE("the ground batches hold only the ground and decals")` in `draw_list_tests.cpp`.
@@ -326,6 +398,8 @@ merges, then start Task 1. Every file below exists on main from then on.
 
 ### Task 7: Seal light: pillars, sparks and shards
 
+review: full (rendering)
+
 **Files:**
 - Modify: `shaders/seal.*.hlsl`, `src/gfx/internal/features/seals.*`, `src/gfx/seal_draw.*`,
   `tests/unit/gfx/seal_draw_tests.cpp`, `tests/reference/*`
@@ -333,7 +407,7 @@ merges, then start Task 1. Every file below exists on main from then on.
 **Interfaces:**
 - Consumes: `SealLight` (Task 2), `SealDrawing::particles` (Task 5).
 - Produces: one instanced additive draw for all particles of a frame: the vertex shader places particle `i` of a seal
-  from its seal's start time, the render time and a hash of (seal key, start tick, i): pillars as tall quads falling
+  from its stream's wrapped age (Task 5) and a hash of (seal key, start tick, i): pillars as tall quads falling
   from the plane, sparks rising and fading over `sparkLife`, shards drifting and turning. No particle state anywhere.
 
 - [ ] **Step 1:** failing tests: `TEST_CASE("a seal's particle count is its light's, capped")` and
@@ -347,6 +421,8 @@ merges, then start Task 1. Every file below exists on main from then on.
 
 ### Task 8: The showcase and the swords' seal in the arena
 
+review: full (game content, rendering)
+
 **Files:**
 - Modify: `assets/data/seals.yaml` (the showcase looks), `src/game/arena.cpp` and `arena.hpp` (the showcase's places,
   published with `showcase = true`; the header's feature list), `src/gfx/camera.hpp` (`View::showcase`, default true),
@@ -356,7 +432,7 @@ merges, then start Task 1. Every file below exists on main from then on.
 **Interfaces:**
 - Consumes: everything above.
 - Produces: the showcase seals the spec lists, authored in `seals.yaml`: `showcase_grand` (ground, screen-wide, 9
-  layers, two rune bands at two sizes, a star, ticks, dots, emblem, `[seal_gold, damage-coloured]` two colours),
+  layers, two rune bands at two sizes, a star, ticks, dots, emblem, `[effects.seal_gold, effects.damage]` two colours),
   `showcase_upright` (upright before the cultivator's start, satellites `showcase_small_1` and `showcase_small_3` on its
   ring), `showcase_overhead` (overhead, pillars and sparks), `showcase_tiers` (diamond and square frames at rising
   heights), `showcase_flame` (flourishes spilling, shards, violet accent); and `showcase_small_1` (1 layer),
@@ -375,11 +451,15 @@ merges, then start Task 1. Every file below exists on main from then on.
 
 ### Task 9: Measurements, docs and the Outcome
 
+review: light (docs and measurements)
+
 **Files:**
 - Modify: `docs/superpowers/specs/2026-11-12-phase6-chunk4b-seals-design.md` (Outcome, Status),
   `docs/superpowers/specs/2026-11-10-phase6-design.md` (chunk 4b's status), `src/AGENTS.md`, `tests/AGENTS.md` (the
   seals' fuzz seed), `AGENTS.md` (map: `seals.yaml`)
 
+- [ ] **Step 0:** close animated pages (the brainstorm companion) before profiling: they skew GPU timings (the
+  glows' gotcha in AGENTS.md).
 - [ ] **Step 1:** `pixi run project_n profile --seconds 30` with the showcase shown and hidden, and
   `pixi run project_n profile --seconds 30 -- --cast-swords`; at the window's usual size and at 3840 × 2160 (the window
   size in `settings.yaml`); record median / 99th / worst

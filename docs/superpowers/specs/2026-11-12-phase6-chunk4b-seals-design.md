@@ -1,7 +1,8 @@
 # Phase 6, chunk 4b: seals
 
-Date: 2026-11-12 · Status: approved 2026-11-12 · Phase spec: `2026-11-10-phase6-design.md` · Builds on: chunk 4
-(`2026-11-10-phase6-chunk4-abilities-design.md`), which must merge first
+Date: 2026-11-12 · Status: approved 2026-11-12; revised 2026-11-13 to build on the glows (awaiting approval) · Phase
+spec: `2026-11-10-phase6-design.md` · Builds on: chunk 4 (`2026-11-10-phase6-chunk4-abilities-design.md`) and the glows
+(`2026-11-12-phase6-glow-design.md`, its Outcome's "Notes for the seals chunk"), both merged
 
 ## In short
 
@@ -112,10 +113,12 @@ main thread. Each seal is named. A seal names in its data:
 - **Its ink wash:** how dark, how far past the outer ring and how soft (Design: "The view and the ground").
 - **Its colours:** one or two slots. Each slot is either `element`, which takes the colour of the record's element (a
   seal raised in play, such as the swords' seal: the damage element's colour), or a name in the colour table
-  (`core::UiColours`). The showcase's seals have no element and name table entries. New entries for the accents the
+  (`core::UiColours`), written `<area>.<key>` as `effects.yaml`'s glows write it. A slot is a `core::GlowColour`, the
+  glows' type for exactly this choice, read by the same helpers. The showcase's seals have no element and name table entries. New entries for the accents the
   showcase needs (a gold, a violet) join the table under **Effects**, with their names in both languages, so chunk 11's
   menu and presets recolour them (my call). Every part says which slot it takes.
-- **Its life:** how long it takes to appear and to fade, and in what order its rings appear.
+- **Its life:** how long it takes to appear and to fade, along which curve each (the glows' curves: linear, ease_in,
+  ease_out, smooth, sine, through `core::CurveAt`), and in what order its rings appear.
 - **Its layers (1 to 9 rings, plus any non-round frames):** each with its inner and outer radius as fractions of the
   seal's size, its height above the plane, its spin (degrees a second, either way), its opacity, and its parts:
   - **circle:** at a radius, a width, solid or dashed (dash and gap);
@@ -144,6 +147,14 @@ drawn through chunk 3's distance-field glyph cache. Flourishes and emblems are p
 `art/placeholders.py` (flame-like flourishes; a few abstract emblem motifs), listed in `art/sprites.toml` and packed
 by `atlas` as every sprite is. Glyphs, flourishes and emblems are drawn as **distance fields**, so they stay sharp at
 any size and zoom.
+
+**The fields are the glows'** (revised 2026-11-13). Since the glow chunk, every sprite already has a distance field,
+made from its alpha as it loads, in the R8 field array beside the colour atlas (`gfx::SpriteArray::field`, at
+`gfx::FieldBlockOf(sprite)`, signed: negative inside, reach 16 texels each way). So the seals' art is drawn as ordinary
+white sprites with a soft alpha edge, with no field written by hand, and the seal shader samples the field array as the
+sprite shader's glows do: the negative half gives a rune's antialiased inside, the positive half its halo. A sprite
+part's halo reaches at most 16 of its own texels (the field's reach); the analytic parts' halos have no such limit. The
+seals' art is sized so its strokes are several texels wide at its own resolution, well inside that reach.
 
 ### The view and the ground (the user's decisions)
 
@@ -181,6 +192,10 @@ The approach (**my call**; the builder may change it with measurements that beat
 - **Light is stateless too.** Pillars are quads; sparks and shards are instances whose positions are functions of their
   seal's start, the render time and a per-particle seed, computed in the vertex shader. Nothing is simulated step by
   step.
+- **Time stays precise on the GPU.** The CPU works in `f64` seconds and hands the shaders only small numbers: each
+  layer's angle already turned, and each particle stream's age wrapped by its own period. The glows found that an `f32`
+  age counted from a seal's start loses sub-tick precision after about 5 hours (their Outcome's notes); the showcase
+  seals never end, so their time must not grow without bound on the GPU.
 - **Overflow:** layers and particles past their buffers are reported through `ReportOverflow` /
   `core::RepeatedFailure`, as instances and quads are. Nothing is dropped silently.
 - **No hitch:** every seal's parts are packed when `seals.yaml` loads or reloads, never on first draw.
@@ -257,6 +272,11 @@ The user's, 2026-11-12:
   debug key, and hidden in the existing arena reference pictures.
 - **GPU cost** is measured as the frame-time difference with the showcase shown and hidden (at the window's size and
   4K); a GPU timing method stays chunk 5's.
+- **Built on the glows** (the 2026-11-13 revision): the seals sample the glows' field array rather than drawing fields
+  into their art; a colour slot is the glows' `core::GlowColour`, read by the same helpers (moved where both readers
+  share them), with palette names written `<area>.<key>`; the appear and fade take the glows' curves (`core::CurveAt`);
+  the GPU sees only small times (Drawing). A seal does not wear a glow role: its halo comes from its own shader, which
+  already has each part's distance.
 
 ## Testing
 
