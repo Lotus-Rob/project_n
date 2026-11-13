@@ -266,6 +266,9 @@ struct Snapshot {
     std::vector<Instance> instances{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The instances' batches, in drawing order, covering them all; refilled in place likewise.
     std::vector<Batch> batches{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    /// How many of `batches`, from the first, draw only the ground and its decals (core::Layer::Ground and Decals): the
+    /// renderer draws the ground seals after them, under the world.
+    u32 groundBatches = 0;
     /// The entity each instance draws, parallel to `instances` (zero for one that is no entity's:
     /// the ground, a shadow), for picking; refilled in place likewise.
     std::vector<StableId> ids{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer

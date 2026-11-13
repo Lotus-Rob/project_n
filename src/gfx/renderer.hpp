@@ -9,6 +9,7 @@
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
 #include "core/manifest.hpp"
+#include "core/seals.hpp"
 #include "core/strings.hpp"
 #include "core/types.hpp"
 #include "core/ui_colours.hpp"
@@ -77,9 +78,11 @@ public:
     /// follows before the next Acquire(). A failure is logged, and the Draw() after it does nothing.
     void Acquire();
     /// Draws `snapshot` into the frame Acquire() acquired as `view` shows it, and presents it. Uploads its instances only when
-    /// it isn't the snapshot drawn last (§8.3); a snapshot of a scene it doesn't hold draws the backdrop only. The view's
-    /// outlined instance gets a pale outline drawn over everything, and the snapshot's selected instance a gold one; the gold
-    /// wins where both fall on one. Over them go the swords' trails and the overlay, placed every frame at the render time
+    /// it isn't the snapshot drawn last (§8.3); a snapshot of a scene it doesn't hold draws the backdrop only. The seals on the
+    /// ground draw over its ground and decals (Snapshot::groundBatches), under the rest (gfx/seal_draw.hpp, at the render
+    /// time, as SetSeals() describes them). The view's outlined instance gets a pale outline drawn over everything, and the
+    /// snapshot's selected instance a gold one; the gold wins where both fall on one. Over them go the upright and overhead
+    /// seals, capped in opacity, then the swords' trails and the overlay, placed every frame at the render time
     /// (gfx/volley_draw.hpp): the swords, each wearing its glow, the poison lance's bursts and the enemies' health bars, shown
     /// as their labels are. Over all of it go the snapshot's texts, then `extra` (the main thread's own, such as damage
     /// numbers), then `hud` in target pixels: its bars, then its lines. A glyph seen for the first time is rasterised on
@@ -102,6 +105,10 @@ public:
     /// Draws the swords, bolts, bursts, health bars and glows as `effects` says from the next frame on, with no restart and
     /// no new timeline: the simulation never sees it.
     void SetEffects(const core::Effects& effects);
+
+    /// Draws the seals in play as `seals` says from the next frame on, with no restart: their parts are packed now and
+    /// uploaded with the next frame, never on a seal's first draw. Until it is called no seal is drawn.
+    void SetSeals(const core::Seals& seals);
 
     /// Draws glows for the reduce flashing setting from the next frame on (off until it is called): pulses hold still and
     /// light glows dim (the phase 6 glow spec, "Accessibility").

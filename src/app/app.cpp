@@ -11,6 +11,7 @@
 #include "core/tick_clock.hpp"
 #include "data/effects.hpp"
 #include "data/game_data.hpp"
+#include "data/seals.hpp"
 #include "platform/clock.hpp"
 
 namespace app {
@@ -158,6 +159,7 @@ App::App(platform::Window window, gfx::Renderer renderer, Options options)
   , m_frameNs{ m_startNs } {
     m_numberTexts.reserve(NUMBER_RESERVE);
     ApplyEffects(m_options.effects);
+    m_renderer.SetSeals(m_options.seals);
     // The main thread is the job system's thread 0: waiting on its low-priority work, it may run the
     // logic's chunks, which need the simulation's environment.
     core::math::SetFloatingPointEnvironment();
@@ -289,6 +291,15 @@ void App::WatchData(u64 nowNs) {
     const std::expected<core::Effects, core::Error> effects = data::LoadEffects(m_options.dataFolder);
     if (!effects) {
         PN_LOG_ERROR("the effects changed but weren't reloaded; the old effects stay: {}", effects.error().message);
+    }
+    // The seals are drawn only, as the effects: a new table shows the next frame and the simulation never knows.
+    if (std::expected<core::Seals, core::Error> seals = data::LoadSeals(m_options.dataFolder, *m_options.manifest); seals) {
+        m_options.seals = std::move(*seals);
+        m_renderer.SetSeals(m_options.seals);
+        PN_LOG_INFO("the seals were read again: {} looks", m_options.seals.looks.size());
+    }
+    else {
+        PN_LOG_ERROR("the seals changed but weren't reloaded; the old seals stay: {}", seals.error().message);
     }
     std::expected<core::GameData, core::Error> gameData = data::LoadGameData(m_options.dataFolder);
     if (gameData) {

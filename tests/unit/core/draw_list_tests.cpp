@@ -35,6 +35,10 @@ TEST_CASE("a sort key orders by layer, then depth, then pipeline") {
     );
     CHECK(core::PipelineOf(core::MakeSortKey(Layer::Effects, DEEP, Pipeline::Additive)) == Pipeline::Additive);
     CHECK(core::PipelineOf(core::MakeSortKey(Layer::Effects, DEEP, Pipeline::Normal)) == Pipeline::Normal);
+    CHECK(core::LayerOf(core::MakeSortKey(Layer::Decals, DEEP, Pipeline::Additive)) == Layer::Decals);
+    CHECK(
+        core::LayerOf(core::MakeSortKey(Layer::Effects, std::numeric_limits<u32>::max(), Pipeline::Normal)) == Layer::Effects
+    );
 }
 
 TEST_CASE("depth grows down the view in sixteenths of a unit, and clamps at both ends") {
@@ -91,22 +95,27 @@ TEST_CASE("the radix sort handles no entries and keys that differ only in their 
     CHECK(entries[1].index == 0);
 }
 
-TEST_CASE("batches cover the sorted entries, one per run of a pipeline") {
+TEST_CASE("batches cover the sorted entries, one per run of a pipeline, cut where the ground ends") {
     const std::array sorted{
         core::SortEntry{ .key = core::MakeSortKey(Layer::Ground, 0, Pipeline::Normal) },
+        core::SortEntry{ .key = core::MakeSortKey(Layer::Decals, 0, Pipeline::Normal) },
         core::SortEntry{ .key = core::MakeSortKey(Layer::World, 3, Pipeline::Normal) },
+        core::SortEntry{ .key = core::MakeSortKey(Layer::World, 4, Pipeline::Normal) },
         core::SortEntry{ .key = core::MakeSortKey(Layer::Effects, 0, Pipeline::Additive) },
         core::SortEntry{ .key = core::MakeSortKey(Layer::Effects, 0, Pipeline::Additive) },
     };
     std::vector<core::Batch> batches;
     core::AppendBatches(sorted, batches);
-    REQUIRE(batches.size() == 2);
+    REQUIRE(batches.size() == 3);
     CHECK(batches[0].first == 0);
     CHECK(batches[0].count == 2);
     CHECK(batches[0].pipeline == Pipeline::Normal);
     CHECK(batches[1].first == 2);
     CHECK(batches[1].count == 2);
-    CHECK(batches[1].pipeline == Pipeline::Additive);
+    CHECK(batches[1].pipeline == Pipeline::Normal);
+    CHECK(batches[2].first == 4);
+    CHECK(batches[2].count == 2);
+    CHECK(batches[2].pipeline == Pipeline::Additive);
     batches.clear();
     core::AppendBatches({}, batches);
     CHECK(batches.empty());
@@ -134,6 +143,7 @@ constexpr std::array ADDED{
     Added{ .layer = Layer::World, .pipeline = Pipeline::Additive, .mark = 6.0F, .footY = 950.0F },
 };
 constexpr std::array<f32, 9> PUBLISHED{ { 1.0F, 2.0F, 2.5F, 3.0F, 4.0F, 5.0F, 6.0F, 7.0F, 9.0F } };
+constexpr u32 GROUND_RUN = 3; // the ground and the decals, cut from the normal world sprites after them
 constexpr u32 NORMAL_RUN = 6; // ground, decals and the normal world sprites; then the additive ones
 
 TEST_CASE("a draw list publishes by layer, the world by foot y, the rest in the order added") {
@@ -146,12 +156,36 @@ TEST_CASE("a draw list publishes by layer, the world by foot y, the rest in the 
     core::Snapshot snapshot;
     list.Publish(snapshot, jobs);
     CHECK(std::ranges::equal(Marks(snapshot), PUBLISHED));
-    REQUIRE(snapshot.batches.size() == 2);
+    REQUIRE(snapshot.batches.size() == 3);
     CHECK(snapshot.batches[0].first == 0);
-    CHECK(snapshot.batches[0].count == NORMAL_RUN);
-    CHECK(snapshot.batches[1].pipeline == Pipeline::Additive);
-    CHECK(snapshot.batches[1].first == NORMAL_RUN);
-    CHECK(snapshot.batches[1].count == ADDED.size() - NORMAL_RUN);
+    CHECK(snapshot.batches[1].first + snapshot.batches[1].count == NORMAL_RUN);
+    CHECK(snapshot.batches[1].pipeline == Pipeline::Normal);
+    CHECK(snapshot.batches[2].pipeline == Pipeline::Additive);
+    CHECK(snapshot.batches[2].first == NORMAL_RUN);
+    CHECK(snapshot.batches[2].count == ADDED.size() - NORMAL_RUN);
+}
+
+TEST_CASE("the ground batches hold only the ground and decals") {
+    core::Jobs jobs{ 1 };
+    core::DrawList list;
+    list.Begin(VIEW);
+    for (const Added& added : ADDED) {
+        list.Add(0, added.layer, added.pipeline, Marked(added.mark), added.footY);
+    }
+    core::Snapshot snapshot;
+    list.Publish(snapshot, jobs);
+    // The normal ground and decals share a pipeline with the world sprites after them, yet end a batch of their own.
+    REQUIRE(snapshot.groundBatches == 1);
+    REQUIRE(snapshot.batches.size() > snapshot.groundBatches);
+    CHECK(snapshot.batches[0].first == 0);
+    CHECK(snapshot.batches[0].count == GROUND_RUN);
+    CHECK(snapshot.batches[1].first == GROUND_RUN);
+    // Without ground or decals, no batch is the ground's.
+    list.Begin(VIEW);
+    list.Add(0, Layer::World, Pipeline::Normal, Marked(1.0F));
+    core::Snapshot world;
+    list.Publish(world, jobs);
+    CHECK(world.groundBatches == 0);
 }
 
 TEST_CASE("a draw list's IDs follow their instances into drawing order") {

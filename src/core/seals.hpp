@@ -26,6 +26,8 @@ namespace core {
 inline constexpr u32 MAX_SEAL_LAYERS = 9;
 /// The most parts a layer has.
 inline constexpr u32 MAX_SEAL_PARTS = 16;
+/// The most sides a layer's frame has.
+inline constexpr u32 MAX_SEAL_FRAME_SIDES = 64;
 /// How deep satellites nest at most: a satellite's satellite is 2 deep.
 inline constexpr u32 MAX_SATELLITE_DEPTH = 2;
 /// The most looks a seals table has.
@@ -56,6 +58,10 @@ inline constexpr f64 SEAL_FADE_SECONDS = 0.3;
 inline constexpr f32 SEAL_VIEW_RATIO = 24.0F / 64.0F;
 /// The default `aboveOpacity` of Seals.
 inline constexpr f32 SEAL_ABOVE_OPACITY = 0.7F;
+/// The default `haloReach` of Seals: a little past a fine line.
+inline constexpr f32 SEAL_HALO_REACH = 0.012F;
+/// The default `haloStrength` of Seals.
+inline constexpr f32 SEAL_HALO_STRENGTH = 0.3F;
 
 } // namespace shipped
 
@@ -121,7 +127,7 @@ struct SealLayer {
     f32 spin = 0.0F;
     /// Its opacity, 0 to 1.
     f32 opacity = 1.0F;
-    /// Its frame's sides: 0 is round, else 3 or more (a square, a diamond).
+    /// Its frame's sides: 0 is round, else 3 to MAX_SEAL_FRAME_SIDES (a square, a diamond).
     u32 frameSides = 0;
     /// Its frame's turn from the layer's zero, in degrees.
     f32 frameRotation = 0.0F;
@@ -239,6 +245,11 @@ struct Seals {
     f32 spinScale = 1.0F;
     /// Multiplies every line and light (reduce flashing lowers it), 0 or more.
     f32 brightness = 1.0F;
+    /// How far the halo round every part of every seal reaches past the part's edge: a fraction of the seal's size, 0 (none)
+    /// to 0.1. Each layer's band reaches past its radii by this and an allowance for anti-aliasing (gfx::SealBandMargin()).
+    f32 haloReach = shipped::SEAL_HALO_REACH;
+    /// How strong that halo is at the part's edge, 0 to 1, fading to nothing at its reach.
+    f32 haloStrength = shipped::SEAL_HALO_STRENGTH;
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The glyph sets scripts draw from, each one or more sprites, in the data's order.
     std::vector<std::vector<atlas::SpriteId>> glyphSets{};

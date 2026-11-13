@@ -1,2 +1,6 @@
 /// @defgroup gfx gfx
-/// Drawing with SDL_GPU: the device, the swapchain, pipelines and frames (design doc 0002 §8).
+/// Drawing with SDL_GPU: the device, the swapchain, pipelines and frames (design doc 0002 §8). Each feature keeps its
+/// pipelines and buffers in its own class under `internal/features/` (sprites, meshes, ribbons, seals, the composite); the
+/// seals are laid out on the CPU (seal_draw.hpp) and drawn by the seal shaders, each layer's parts as distance fields: the
+/// ground ones over the ground and decals, the upright and overhead ones over the creatures but under the swords' trails,
+/// the overlay, text and the HUD.

@@ -19,6 +19,11 @@ std::size_t Digit(SortKey key, u32 shift) {
     return static_cast<std::size_t>((key >> shift) & (RADIX - 1));
 }
 
+// Whether `key` sorts into the ground or its decals, which the ground seals draw over.
+bool OnGround(SortKey key) {
+    return std::to_underlying(LayerOf(key)) <= std::to_underlying(Layer::Decals);
+}
+
 } // namespace
 
 u32 QuantiseDepth(f32 footY, f32 viewTop) {
@@ -58,7 +63,8 @@ void AppendBatches(std::span<const SortEntry> sorted, std::vector<Batch>& batche
     PN_PROFILE_ZONE();
     for (std::size_t i = 0; i < sorted.size(); ++i) {
         const Pipeline pipeline = PipelineOf(sorted[i].key);
-        if (i == 0 || batches.back().pipeline != pipeline) {
+        // The ground's batches end where the world begins, so the ground seals can draw between them.
+        if (i == 0 || batches.back().pipeline != pipeline || OnGround(sorted[i - 1].key) != OnGround(sorted[i].key)) {
             batches.push_back({ .first = static_cast<u32>(i), .count = 0, .pipeline = pipeline });
         }
         ++batches.back().count;
@@ -132,7 +138,12 @@ void DrawList::Publish(Snapshot& snapshot, Jobs& jobs) {
         }
     });
     AppendBatches(m_entries, snapshot.batches);
+    // The ground's batches lead only when every batch before these was the ground's too.
+    const bool groundSoFar = snapshot.groundBatches == firstBatch;
     for (std::size_t i = firstBatch; i < snapshot.batches.size(); ++i) {
+        if (groundSoFar && snapshot.groundBatches == i && OnGround(m_entries[snapshot.batches[i].first].key)) {
+            ++snapshot.groundBatches;
+        }
         snapshot.batches[i].first += static_cast<u32>(first);
     }
 }

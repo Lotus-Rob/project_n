@@ -46,7 +46,7 @@ float4 Glowing(VertexOut input, float2 uvPerPixel) {
     // Texels from the sprite's edge, negative inside. This sample's mip and fwidth() below take derivatives after
     // FragmentMain()'s branches, which is sound: they test flat per-instance inputs (`glowOnly`, `glowShape`), so every pixel
     // of a primitive's 2x2 quads takes the same way.
-    const float outside = (field.Sample(fieldSampler, float3(input.uv, input.layer)) - 0.5) * (2.0 * FIELD_REACH_TEXELS);
+    const float outside = FieldTexels(field.Sample(fieldSampler, float3(input.uv, input.layer)));
     // A screen pixel in texels: the fade is never sharper than that.
     const float pixel = max(fwidth(outside), 1e-3);
     const float2 shape = input.glowShape;

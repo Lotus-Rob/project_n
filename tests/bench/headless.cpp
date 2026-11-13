@@ -62,6 +62,7 @@ Worst Measure(u32 workers) {
         snapshot.simulationTick = tick;
         snapshot.instances.clear();
         snapshot.batches.clear();
+        snapshot.groundBatches = 0;
         const auto publishStart = std::chrono::steady_clock::now();
         arena.Publish(snapshot, jobs);
         publishMs.push_back(MsSince(publishStart));

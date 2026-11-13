@@ -107,17 +107,19 @@ void SealAddBand(
     u32 layer,
     std::vector<SealVertex>& lines
 ) {
-    const auto corner = [&](core::Vec2 way, f32 radius) {
+    const auto corner = [&](core::Vec2 way, f32 radius, f32 grow) {
         const core::Vec2 local = way * radius;
-        return SealVertex{ .position = place.At(local, height), .local = local, .layer = layer };
+        return SealVertex{
+            .position = place.At(local, height), .local = local, .layer = layer, .grow = radius > 0.0F ? grow : 0.0F
+        };
     };
     for (u32 side = 0; side < sides; ++side) {
         const core::Vec2 start = direction(side);
         const core::Vec2 end = direction(side + 1);
-        lines.push_back(corner(start, inner));
-        lines.push_back(corner(end, inner));
-        lines.push_back(corner(start, outer));
-        lines.push_back(corner(end, outer));
+        lines.push_back(corner(start, inner, -1.0F));
+        lines.push_back(corner(end, inner, -1.0F));
+        lines.push_back(corner(start, outer, 1.0F));
+        lines.push_back(corner(end, outer, 1.0F));
     }
 }
 
@@ -328,7 +330,11 @@ void SealAddLayer(
     gpu.outer = layer.outer;
     gpu.frameSides = layer.frameSides;
     gpu.frameRotation = SealRadians(layer.frameRotation);
-    const f32 spill = packed.spill;
+    gpu.spill = packed.spill;
+    // The band reaches past the parts' radii by the margin the shader's halo and anti-aliasing take.
+    const f32 margin = SealBandMargin(looks.haloReach);
+    const f32 inner = std::max(layer.inner - margin, 0.0F);
+    const f32 outer = layer.outer + packed.spill + margin;
     const auto index = static_cast<u32>(out.layers.size());
     out.layers.push_back(gpu);
     if (layer.frameSides >= 3) {
@@ -338,12 +344,10 @@ void SealAddLayer(
             const f32 angle = first + (step * static_cast<f32>(side));
             return core::Vec2{ .x = std::cos(angle), .y = std::sin(angle) };
         };
-        SealAddBand(
-            layers.place, layer.frameSides, corner, layer.inner, layer.outer + spill, layer.height, index, *layers.lines
-        );
+        SealAddBand(layers.place, layer.frameSides, corner, inner, outer, layer.height, index, *layers.lines);
     }
     else {
-        SealAddRoundBand(layers.place, layer.inner, layer.outer + spill, layer.height, index, *layers.lines);
+        SealAddRoundBand(layers.place, inner, outer, layer.height, index, *layers.lines);
     }
 }
 
@@ -639,6 +643,17 @@ SealPack PackSeals(const core::Seals& seals, const core::Manifest& manifest) {
         }
     }
     return pack;
+}
+
+std::optional<u32> SealBufferRoom(u32 capacity, std::size_t bytes) {
+    if (bytes <= capacity) {
+        return capacity;
+    }
+    constexpr u64 MOST = std::numeric_limits<u32>::max();
+    if (bytes > MOST) {
+        return std::nullopt;
+    }
+    return static_cast<u32>(std::max<u64>(bytes, std::min(u64{ capacity } * 2, MOST)));
 }
 
 void DrawSeals(

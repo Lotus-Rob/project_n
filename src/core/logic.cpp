@@ -48,6 +48,7 @@ bool Logic::RunBurst(const TickBurst& burst, const std::stop_token& stop) {
     snapshot.scene = m_simulation->Scene();
     snapshot.instances.clear();
     snapshot.batches.clear();
+    snapshot.groundBatches = 0;
     snapshot.ids.clear();
     snapshot.texts.clear();
     snapshot.healthBars.clear();

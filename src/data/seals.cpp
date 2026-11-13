@@ -11,7 +11,7 @@ constexpr std::string_view WHAT = "seals";
 
 // Bounds that keep every number a sane f32 and every loop short; the spec leaves them to the builder.
 constexpr i64 MOST_ITEMS = 360; // ticks, dots, glyphs or flourishes round one ring, star points or polygon sides
-constexpr i64 MOST_SIDES = 64;  // a frame's sides
+constexpr i64 MOST_SIDES = core::MAX_SEAL_FRAME_SIDES;                                     // a frame's sides
 constexpr std::size_t MOST_SPRITES = std::tuple_size_v<decltype(core::SealPart::sprites)>; // a flourish's sprites
 constexpr f64 MOST_DEGREES = 360.0;                                                        // an angle or a dash
 constexpr f64 MOST_SPIN = 720.0;                                                           // degrees a second
@@ -19,6 +19,7 @@ constexpr f64 MOST_WORLD = 100'000.0;
 constexpr f64 MOST_TIME = 3'600.0;
 constexpr f64 MOST_REACH = 4.0;
 constexpr f64 MOST_SCALE = 10.0;
+constexpr f64 MOST_HALO_REACH = 0.1; // a tenth of the seal's size: past it every layer's band would widen far
 
 constexpr internal::Range SIZE{ .low = 0.0, .lowOpen = true, .high = 1.0 };
 constexpr internal::Range ANGLE{ .low = -MOST_DEGREES, .lowOpen = false, .high = MOST_DEGREES };
@@ -31,6 +32,7 @@ constexpr internal::Range LIFETIME{ .low = 0.0, .lowOpen = true, .high = MOST_TI
 constexpr internal::Range WASH_REACH{ .low = 0.0, .lowOpen = true, .high = MOST_REACH };
 constexpr internal::Range SCALE{ .low = 0.0, .lowOpen = false, .high = MOST_SCALE };
 constexpr internal::Range RATIO{ .low = 0.0, .lowOpen = true, .high = 1.0 };
+constexpr internal::Range HALO_REACH{ .low = 0.0, .lowOpen = false, .high = MOST_HALO_REACH };
 
 constexpr std::array<std::string_view, 3> PLANE_NAMES{ { "ground", "upright", "overhead" } };
 constexpr std::array<std::string_view, 7> PART_NAMES{ { "circle", "ticks", "dots", "script", "star", "polygon", "flourish" } };
@@ -777,7 +779,7 @@ std::expected<core::Seals, core::Error> ParseSeals(
             root,
             "",
             "section",
-            { "view_ratio", "above_opacity", "spin_scale", "brightness", "glyph_sets", "seals" },
+            { "view_ratio", "above_opacity", "spin_scale", "brightness", "halo", "glyph_sets", "seals" },
             warnings
         );
         core::Seals table;
@@ -788,6 +790,14 @@ std::expected<core::Seals, core::Error> ParseSeals(
         fields.Read("brightness", table.brightness, SCALE);
         if (const std::expected<void, core::Error> read = fields.Result(); !read) {
             return std::unexpected{ read.error() };
+        }
+        if (const YAML::Node halo = root["halo"]) {
+            Fields glow(halo, "the seals table's halo", { "reach", "strength" }, warnings);
+            glow.Read("reach", table.haloReach, HALO_REACH);
+            glow.Read("strength", table.haloStrength, internal::FRACTION);
+            if (const std::expected<void, core::Error> read = glow.Result(); !read) {
+                return std::unexpected{ read.error() };
+            }
         }
         std::vector<std::string> glyphNames;
         if (const YAML::Node sets = root["glyph_sets"]) {
