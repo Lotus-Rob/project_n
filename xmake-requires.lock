@@ -615,6 +615,14 @@
             },
             version = "v1.10.0"
         },
+        ["meson#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "7060d07c57346764f3f7dfd8311ea2a885b51161",
+                url = "https://gitlab.com/tboox/xmake-repo.git"
+            },
+            version = "1.12.1"
+        },
         ["ninja#f56260b5"] = {
             repo = {
                 branch = "master",
@@ -622,6 +630,22 @@
                 url = "https://gitlab.com/tboox/xmake-repo.git"
             },
             version = "v1.13.2"
+        },
+        ["pkgconf#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "7060d07c57346764f3f7dfd8311ea2a885b51161",
+                url = "https://gitlab.com/tboox/xmake-repo.git"
+            },
+            version = "2.5.1"
+        },
+        ["python 3.x#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "7060d07c57346764f3f7dfd8311ea2a885b51161",
+                url = "https://gitlab.com/tboox/xmake-repo.git"
+            },
+            version = "3.14.3"
         },
         ["quill-wine 13.1.0#f56260b5"] = {
             repo = {
