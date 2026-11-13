@@ -126,6 +126,10 @@ TEST_CASE("every area and colour name reads in both languages") {
     }
     CHECK(strings->Text(core::StringId::ColourAreaHud, core::Language::English) == "HUD");
     CHECK(strings->Text(core::StringId::ColourQiBar, core::Language::Chinese) == "灵气条");
+    CHECK(strings->Text(core::StringId::ColourSealGold, core::Language::English) == "Seal gold");
+    CHECK(strings->Text(core::StringId::ColourSealGold, core::Language::Chinese) == "法印金");
+    CHECK(strings->Text(core::StringId::ColourSealViolet, core::Language::English) == "Seal violet");
+    CHECK(strings->Text(core::StringId::ColourSealViolet, core::Language::Chinese) == "法印紫");
 }
 
 TEST_CASE("the HUD strings fill their value") {

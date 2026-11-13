@@ -539,7 +539,7 @@ TEST_CASE("with the outline and the shadow off, damage numbers turn dark, as lab
     CheckNumbers("numbers_bare", 1.0F, /*bare=*/true);
 }
 
-// A table of 24 distinct, garish colours: six saturated hues, each a little dimmer than the one 6 before it.
+// A table of one distinct, garish colour per entry: six saturated hues, each a little dimmer than the one 6 before it.
 core::UiColours GarishColours() {
     constexpr std::array<std::array<u8, 3>, 6> HUES{
         { { 1, 0, 1 }, { 0, 1, 0 }, { 1, 1, 0 }, { 0, 1, 1 }, { 1, 0, 0 }, { 0, 0, 1 } }
