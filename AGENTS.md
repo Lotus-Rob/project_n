@@ -9,7 +9,7 @@ Containers (Podman) are only for artefacts and container checks. Design and rati
 - `tools/project_n.py` the only entry point (tools/AGENTS.md) · `containers/` artefact images (containers/AGENTS.md)
 - `shaders/` HLSL, one file per stage; `bin/`: the committed binaries `shaders` writes · `assets/` what the game loads at runtime (`sprites/`: images, with `PROVENANCE.md`; `data/`: YAML data tables: `creatures.yaml` and `abilities.yaml` (game data, hashed: with its motion and `combat:` rules), which `game::BuiltInData()` mirrors, `effects.yaml` (presentation, not hashed, hot-reloaded: the effects' looks and the HUD's layout; `core::Effects{}` mirrors it) and `strings.yaml`, the text in each language; `manifest.yaml`: the atlas, which `atlas` writes) · `art/` `sprites.toml` (sprite list, foot points), `scenes.toml` (each scene's sprites), `placeholders.py` (procedural art) · `src/*/generated/`: headers `shaders` and `atlas` write (fmt and lint skip them) · `xmake/repo/` local fixes to xmake-repo packages · `docs/design/` past designs and their rationale: read before redesigning anything · `docs/superpowers/`: `specs/` (designs, `YYYY-MM-DD-<topic>-design.md`) and `plans/` (`YYYY-MM-DD-<feature>.md`), each approved before its code
 - `.github/` CI workflows (.github/AGENTS.md)
-- `.claude/settings.json` turns superpowers on and ponytail off, and swaps the global clangd plugin for `.claude/marketplace/`'s, which starts Pixi's clangd through `pixi run` on every host; the `LSP` tool reads `build/compile_commands.json`, which native builds refresh
+- `.claude/settings.json` turns superpowers on and swaps the global clangd plugin for `.claude/marketplace/`'s, which starts Pixi's clangd through `pixi run` on every host; the `LSP` tool reads `build/compile_commands.json`, which native builds refresh
 
 ## Commands
 - `./dev <command>` (Windows `dev`) is shorthand for `pixi run project_n <command>`; either works from anywhere.
@@ -31,6 +31,7 @@ Superpowers runs the process (brainstorming, spec, plan, test-first work, verifi
 - Code review: the reviewer also checks the diff against the AGENTS.md of every directory it touches, and finds callers of changed C++ symbols with the `LSP` tool (`findReferences`, `incomingCalls`) rather than grep, which misses overloads and templates.
 - Rationale outlives the ledger: superpowers' plan ledger (`.superpowers/sdd/`) is gitignored and deleted when the work is done, so before the PR copy its rulings, with the measurements behind them, into an **Outcome** section of the spec, and mark the spec implemented.
 - "Continue where we left off": read `in-flight.md` in the project memory (one section per branch in flight, written by the handover skill), then `git status`, `git worktree list` and any `.superpowers/sdd/*/progress.md`, then search the palace (`project_n` wing) from that section's date.
+- History sources for `recall-history` (global skill, run at each superpowers step): `docs/design/`, the specs' Outcome sections, and the project memory's `sweep-up-backlog.md` and `in-flight.md`.
 - Finishing a branch: never "merge locally"; always the pull request below.
 
 ## Finishing a branch
