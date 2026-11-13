@@ -11,7 +11,7 @@ Owned by: root AGENTS.md. Rationale: docs/design/0001 §5.2 (linking), §6.1 (pi
 
 1. Find the package in xmake-repo at the commit recorded in `xmake-requires.lock`; pick an exact version that it offers. Check the licence: it must be compatible with the project's AGPL-3.0-or-later (permissive licences, Apache-2.0, LGPL and GPLv3 are; GPLv2-only and proprietary ones aren't). Ask the user when unsure.
 2. In `xmake.lua`, add `add_requires("<name> <x.y.z>")` with the licence in a trailing comment (`-- zlib`; add `tests only` when it never ships). These comments are the project's licence record. Add `add_packages("<name>")` only to the targets that use it.
-3. `pixi run project_n build --preset linux-clang`, then `--preset windows-msvc` (container). Each one writes its platform into `xmake-requires.lock`; check that the lock now has entries for both `linux|x86_64` and `windows|x64`. The `macosx|arm64` entry needs a Mac: CI's `macos` job (or a manual workflow run) adds it and its log prints the lock's diff (`xmake-requires.lock: XMake changed entries`); tell the user it must be committed from there.
+3. `pixi run project_n build --preset linux-clang`, then `--preset windows-msvc` (container). Each one writes its platform into `xmake-requires.lock`; check that the lock now has entries for both `linux|x86_64` and `windows|x64`. The `macosx|arm64` entry needs a Mac: CI's `macos` job (or a manual workflow run) adds it and its log prints the lock's diff (`xmake-requires.lock: XMake added or changed entries`), as CI's `windows` job does for native Windows' build tools; tell the user it must be committed from there.
 4. Check that nothing came from the host. Read the package's configure output for features that were silently skipped: SDL3 dropped Wayland without failing. If the package only builds with host files, fix it with an override in `xmake/repo/` (see the existing overrides, which use `set_base`) following the fix-xmake-package skill.
 5. If the package needs a build tool (cmake, meson, autotools…), the tool must come pinned from `pixi.toml` and be listed in the `add_requireconfs("**|...", {system = false})` exceptions in `xmake.lua`.
 6. `pixi run project_n check`, `pixi run project_n check --container`, and `pixi run project_n artifact --preset linux-gcc` (artifact fails if the binary depends on a shared library from the Pixi environment).
@@ -26,7 +26,7 @@ Owned by: root AGENTS.md. Rationale: docs/design/0001 §5.2 (linking), §6.1 (pi
 
 ## Updating or removing
 
-Same steps: change or delete the `add_requires` line, rebuild both platforms so the lock follows, and commit as `build(deps): bump <name> to <x.y.z>` or `build(deps): remove <name>`.
+Same steps: change or delete the `add_requires` line, rebuild both platforms so the lock follows, and commit as `build(deps): bump <name> to <x.y.z>` or `build(deps): remove <name>`. A bump adds an entry, so the lock follows by itself; a removal doesn't: `project_n` writes back a lock XMake only pruned (one configuration drops what another needs), so delete the removed package's entries (and its dependencies' that nothing else needs) from every platform section by hand.
 
 ## Gotchas
 - Never pipe `project_n build` output while packages install: XMake can stall (tools/AGENTS.md).

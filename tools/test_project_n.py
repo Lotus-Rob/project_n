@@ -150,47 +150,93 @@ class DirtyTreeTest(unittest.TestCase):
 
 
 class RestoreLockTest(unittest.TestCase):
-    BEFORE = b'{\r\n__meta__ = { version = "1.0" }\nsdl = {}\nttf = {}\n'
+    # A small lock as XMake writes it: two platforms, entries with nested fields, CRLF on one line.
+    META = '    __meta__ = {\n        version = "1.0"\n    }'
+    SDL = '        ["sdl#1"] = {\n            version = "3.4"\n        }'
+    TTF = '        ["ttf#1"] = {\n            repo = {\n                commit = "aa"\n            },\n            version = "3.2"\n        }'
+    MESON = '        ["meson#1"] = {\n            version = "1.12"\n        }'
+    ZLIB = '        ["zlib#1"] = {\n            version = "1.3"\n        }'
+
+    @staticmethod
+    def lock(*blocks, windows=(), meta_last=False):
+        sections = [f'    ["linux|x86_64"] = {{\n{",\n".join(blocks)}\n    }}']
+        if windows:
+            sections.append(f'    ["windows|x64"] = {{\n{",\n".join(windows)}\n    }}')
+        parts = [*sections, RestoreLockTest.META] if meta_last else [RestoreLockTest.META, *sections]
+        return ("{\r\n" + ",\n".join(parts) + "\n}\n").encode()
+
+    @property
+    def BEFORE(self):
+        return self.lock(self.SDL, self.TTF, windows=(self.MESON, self.SDL))
 
     def restored(self, now):
-        """The lock after restore_reordered_lock, and what it printed (captured: selftest's output stays clean)."""
+        """The lock after restore_lock_unless_added, and what it printed (captured: selftest's output stays clean)."""
         out = io.StringIO()
         with temp_repo({"xmake-requires.lock": "x"}) as root, contextlib.redirect_stdout(out):
             lock = root / "xmake-requires.lock"
             lock.write_bytes(now)
-            project_n.restore_reordered_lock(self.BEFORE)
+            project_n.restore_lock_unless_added(self.BEFORE)
             return lock.read_bytes(), out.getvalue()
 
+    def changed_lines(self, printed):
+        lines = printed.splitlines()
+        self.assertIn("xmake-requires.lock", lines[0])
+        self.assertIn("commit", lines[0])
+        return [line for line in lines if line.startswith(("+", "-")) and line[:3] not in ("+++", "---")]
+
     def test_reordered_lock_is_restored_byte_for_byte_silently(self):
-        reordered = b'{\r\nsdl = {}\nttf = {}\n__meta__ = { version = "1.0" }\n'
+        reordered = self.lock(self.TTF, self.SDL, windows=(self.SDL, self.MESON), meta_last=True)
         self.assertEqual(self.restored(reordered), (self.BEFORE, ""))
 
     def test_unchanged_lock_prints_nothing(self):
         self.assertEqual(self.restored(self.BEFORE), (self.BEFORE, ""))
 
-    def test_changed_or_added_line_is_kept_and_its_diff_printed_to_commit(self):
+    def test_pruned_entries_are_restored_silently(self):
+        # The windows-msvc container drops native Windows' build tools from windows|x64, and its own run
+        # reorders: neither is a change to commit.
+        for now in (self.lock(self.SDL, self.TTF, windows=(self.SDL,)),
+                    self.lock(self.TTF, self.SDL, meta_last=True)):
+            self.assertEqual(self.restored(now), (self.BEFORE, ""), now)
+
+    def test_added_or_changed_entry_is_kept_and_its_diff_printed_to_commit(self):
         # CI's macos job added its missing entries every run, unseen: the log must show them.
-        for now, changed in ((self.BEFORE.replace(b"ttf", b"tty"), ["-ttf = {}", "+tty = {}"]),
-                             (self.BEFORE + b"more = {}\r\n", ["+more = {}"])):
+        changed = self.lock(self.SDL, self.TTF.replace('"aa"', '"bb"'), windows=(self.MESON, self.SDL))
+        added = self.lock(self.SDL, self.TTF, self.ZLIB, windows=(self.MESON, self.SDL))
+        for now, diff in ((changed, ['-                commit = "aa"', '+                commit = "bb"']),
+                          (added, ["+        },", '+        ["zlib#1"] = {', '+            version = "1.3"'])):
             lock, printed = self.restored(now)
             self.assertEqual(lock, now)
-            lines = printed.splitlines()
-            self.assertIn("xmake-requires.lock", lines[0])
-            self.assertIn("commit", lines[0])
-            self.assertEqual([line for line in lines if line.startswith(("+", "-")) and line[:3] not in ("+++", "---")], changed)
+            self.assertEqual(self.changed_lines(printed), diff)
+
+    def test_removal_with_an_addition_is_kept_and_printed(self):
+        now = self.lock(self.SDL, self.TTF, windows=(self.ZLIB, self.SDL))
+        lock, printed = self.restored(now)
+        self.assertEqual(lock, now)
+        self.assertIn('+        ["zlib#1"] = {', self.changed_lines(printed))
+
+    def test_unreadable_lock_is_kept_and_printed(self):
+        now = self.BEFORE.replace(b'version = "3.4"', b'version = ')
+        lock, printed = self.restored(now)
+        self.assertEqual(lock, now)
+        self.assertIn('+            version = ', self.changed_lines(printed))
 
     def test_unchanged_lock_is_not_written(self):
         with temp_repo({"xmake-requires.lock": "x"}) as root:
             lock = root / "xmake-requires.lock"
             lock.write_bytes(self.BEFORE)
             os.utime(lock, ns=(1_000_000_000, 1_000_000_000))
-            project_n.restore_reordered_lock(self.BEFORE)
+            project_n.restore_lock_unless_added(self.BEFORE)
             self.assertEqual(lock.stat().st_mtime_ns, 1_000_000_000)
+
+    @property
+    def REORDERED(self):
+        """What the fake XMake below writes: BEFORE with its linux entries swapped."""
+        return self.lock(self.TTF, self.SDL, windows=(self.MESON, self.SDL))
 
     def reordering_xmake(self, root, fail):
         """A subprocess.run that reorders the lock as XMake does, and fails when asked."""
         def fake(cmd, **kwargs):
-            (root / "xmake-requires.lock").write_bytes(b"b\na\n")
+            (root / "xmake-requires.lock").write_bytes(self.REORDERED)
             if fail:
                 raise project_n.subprocess.CalledProcessError(1, cmd)
         return mock.patch.object(project_n.subprocess, "run", fake)
@@ -198,28 +244,28 @@ class RestoreLockTest(unittest.TestCase):
     def test_every_xmake_call_restores_the_lock_even_when_it_fails(self):
         for fail in (False, True):
             with temp_repo({"xmake-requires.lock": "x"}) as root:
-                (root / "xmake-requires.lock").write_bytes(b"a\nb\n")
+                (root / "xmake-requires.lock").write_bytes(self.BEFORE)
                 with self.reordering_xmake(root, fail):
                     if fail:
                         with self.assertRaises(project_n.subprocess.CalledProcessError):
                             project_n.run(["xmake", "build"])
                     else:
                         project_n.run(["xmake", "test"])
-                self.assertEqual((root / "xmake-requires.lock").read_bytes(), b"a\nb\n")
+                self.assertEqual((root / "xmake-requires.lock").read_bytes(), self.BEFORE)
 
     def test_configure_restores_the_lock(self):
         with temp_repo({"xmake-requires.lock": "x"}) as root:
-            (root / "xmake-requires.lock").write_bytes(b"a\nb\n")
+            (root / "xmake-requires.lock").write_bytes(self.BEFORE)
             with self.reordering_xmake(root, False), mock.patch.object(project_n, "xmake_env", lambda bdir: {}):
                 project_n.configure("linux-clang", "debug")
-            self.assertEqual((root / "xmake-requires.lock").read_bytes(), b"a\nb\n")
+            self.assertEqual((root / "xmake-requires.lock").read_bytes(), self.BEFORE)
 
     def test_other_commands_leave_the_lock_alone(self):
         with temp_repo({"xmake-requires.lock": "x"}) as root:
-            (root / "xmake-requires.lock").write_bytes(b"a\nb\n")
+            (root / "xmake-requires.lock").write_bytes(self.BEFORE)
             with self.reordering_xmake(root, False):
                 project_n.run(["git", "status"])
-            self.assertEqual((root / "xmake-requires.lock").read_bytes(), b"b\na\n")
+            self.assertEqual((root / "xmake-requires.lock").read_bytes(), self.REORDERED)
 
 
 class ScopeTest(unittest.TestCase):
