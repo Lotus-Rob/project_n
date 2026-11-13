@@ -447,11 +447,55 @@
             },
             version = "2023.12.16"
         },
+        ["enkits v1.12#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "v1.12"
+        },
+        ["entt v4.0.0#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
+                url = "https://gitlab.com/tboox/xmake-repo.git"
+            },
+            version = "v4.0.0"
+        },
+        ["freetype#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "2.14.1"
+        },
+        ["harfbuzz-msvcwine#f56260b5"] = {
+            repo = {
+                url = "xmake/repo"
+            },
+            version = "13.1.1"
+        },
         ["libsdl3-wayland 3.4.16#f56260b5"] = {
             repo = {
                 url = "xmake/repo"
             },
             version = "3.4.16"
+        },
+        ["libsdl3_ttf-wayland 3.2.2#4b60acb1"] = {
+            repo = {
+                url = "xmake/repo"
+            },
+            version = "3.2.2"
+        },
+        ["lz4 v1.10.0#3ef3fffc"] = {
+            repo = {
+                branch = "master",
+                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "v1.10.0"
         },
         ["ninja#f56260b5"] = {
             repo = {
@@ -486,6 +530,22 @@
                 url = "xmake/repo"
             },
             version = "v0.14.1"
+        },
+        ["yaml-cpp 0.9.0#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "0.9.0"
+        },
+        ["zlib#f56260b5"] = {
+            repo = {
+                branch = "master",
+                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "v1.3.2"
         }
     },
     ["windows|x64"] = {
