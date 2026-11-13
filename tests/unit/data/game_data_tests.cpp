@@ -92,6 +92,22 @@ TEST_CASE("game data that differs hashes differently") {
     CHECK(data->Hash() != faster->Hash());
 }
 
+TEST_CASE("game data hashes differently when an ability's seal changes its name") {
+    constexpr std::string_view SEALED = R"(qi: { max: 100, start: 50 }
+abilities:
+  flying_swords: { slot: special, cooldown: 6, swords: { count: 1, waves: 1, ring_step: 0, scatter: 0, angle_jitter: 0,
+                   stagger: 0, wave_gap: 0, out: 0, hold: 0, depart_jitter: 0, flight: 1, sweep_jitter: 0, fade: 0 },
+                   seal: { name: sword_formation, size: 420 } }
+)";
+    constexpr std::string_view NAME = "sword_formation";
+    const std::string renamed = std::string{ SEALED }.replace(SEALED.find(NAME), NAME.size(), "other_formation");
+    const std::expected<core::GameData, core::Error> data = data::ParseGameData(CREATURES, SEALED);
+    const std::expected<core::GameData, core::Error> other = data::ParseGameData(CREATURES, renamed);
+    REQUIRE(data.has_value());
+    REQUIRE(other.has_value());
+    CHECK(data->Hash() != other->Hash());
+}
+
 // A change to CREATURES that breaks it, and what the error must say.
 struct Broken {
     std::string_view from;

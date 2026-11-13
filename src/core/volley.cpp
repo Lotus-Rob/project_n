@@ -351,6 +351,14 @@ u64 DepartureTick(const Volley& volley, u32 sword) {
     return Departure(volley, sword, LaunchTick(volley, sword));
 }
 
+u64 LastDepartureTick(const Volley& volley) {
+    u64 last = volley.startTick;
+    for (u32 sword = 0; sword < volley.shape.count; ++sword) {
+        last = std::max(last, DepartureTick(volley, sword));
+    }
+    return last;
+}
+
 u64 ArrivalTick(const Volley& volley, u32 sword) {
     return DepartureTick(volley, sword) + volley.shape.flightTicks;
 }

@@ -43,6 +43,7 @@ struct Session {
         static_cast<void>(logic.RunBurst({ .ticks = ticks }));
         core::Snapshot* published = handover.TakeState();
         volleys = published->volleys.size();
+        seals = published->seals.size();
         if (published->scene != reported) {
             reported = published->scene;
             handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = published->scene });
@@ -73,6 +74,7 @@ struct Session {
     core::Logic logic{ handover, arena, jobs, saves, replays, replay, NoClock };
     std::optional<core::SceneId> reported = std::nullopt;
     std::size_t volleys = 0; // in flight in the last snapshot published
+    std::size_t seals = 0;   // in play in the last snapshot published
 };
 
 // A folder of its own, removed when the test ends.
@@ -215,6 +217,7 @@ TEST_CASE("a recorded fight replays with every hash matching") {
         recording.Cast(core::Slot::Special1, FootOf(recording.arena, Foxes(recording.arena).back()));
         recording.Burst(TO_MID_VOLLEY);
         REQUIRE(recording.volleys > 0); // the swords fly
+        REQUIRE(recording.seals > 0);   // over their seal, which the hashes then cover
         recording.Send(core::ActionKind::Save);
         recording.Burst(TO_RESPAWNS);
         recording.Burst(core::REPLAY_HASH_TICKS - (recording.logic.Counters().wall % core::REPLAY_HASH_TICKS));

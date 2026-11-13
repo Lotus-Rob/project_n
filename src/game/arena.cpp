@@ -163,7 +163,8 @@ constexpr u32 WORLD_CELLS = 4'096;
 constexpr u64 SEED = 0x5eed;
 
 // The arena's part of a save: its format, then a version per domain, each changed with what its components save.
-constexpr u32 ARENA_FORMAT = 3;   // 2: the player and the selection; 3: the respawns waiting, the volleys and the flashes
+// 2: the player and the selection; 3: the respawns waiting, the volleys and the flashes; 4: the seals
+constexpr u32 ARENA_FORMAT = 4;
 constexpr u32 ACTIVE_VERSION = 4; // 2: creatures; 3: spin; 4: health, dying, arriving, caster, dashing, afflictions
 constexpr u32 WORLD_VERSION = 1;
 using ActiveComponents = core::ComponentList<
@@ -342,7 +343,8 @@ constexpr core::GameData BUILT_IN_DATA{
                           .flightTicks = 102,
                           .sweep = 420.0F,
                           .sweepJitter = 0.6F,
-                          .fadeTicks = 18 } },
+                          .fadeTicks = 18 },
+              .seal = core::SealCast{ .key = core::SealKeyOf("sword_formation"), .size = 420.0F } },
         } },
         .loadout = { {
             core::AbilityKind::FireBolt,
@@ -915,7 +917,7 @@ bool Arena::Load(core::Reader& archive, u64 simulationTick) {
     const bool playerFound = player == core::StableId{} || (state.DomainOf(player) == ACTIVE &&
                                                             state[ACTIVE].Entities().all_of<Body>(state[ACTIVE].Find(player)));
     if (archive.Failed() || archive.Remaining() != 0 || !Consistent(state) || !playerFound || !combat.AimsAtCreatures(state) ||
-        !combat.FlashesStartBy(simulationTick)) {
+        !combat.FlashesStartBy(simulationTick) || !combat.SealsStartBy(simulationTick)) {
         return false;
     }
     m_state = std::move(state);

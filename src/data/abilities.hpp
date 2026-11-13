@@ -21,7 +21,9 @@ namespace data {
 /// where above zero); a speed in world units a second becomes units a tick. A projectile ability's `motion:` block (refused on
 /// an ability with neither swords nor a speed) (aim_scatter, short_bend, turn, arrival_speed, retarget in seconds,
 /// retarget_speed in world units a second) sets how its swords or bolts fly; a key it leaves out keeps the shape's shipped
-/// default. A key it doesn't know is ignored, with a line naming it added to `warnings` when given.
+/// default. Its `seal:` block (refused likewise) names the seal a cast raises, kept as its key (core::SealKeyOf()), and its
+/// size (above 0); one without a name is refused. A key it doesn't know is ignored, with a line naming it added to
+/// `warnings` when given.
 [[nodiscard]] std::expected<core::Abilities, core::Error> ParseAbilities(
     std::string_view abilities,
     std::vector<std::string>* warnings = nullptr

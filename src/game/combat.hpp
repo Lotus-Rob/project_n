@@ -3,9 +3,9 @@
 /// @file
 /// @ingroup game
 /// Combat (the phase 6 chunk 4 spec): creatures' health, the amount every hit deals, the volleys in flight (the flying
-/// swords and the fire bolt), the poison lance's strikes and their flashes, the burns and poisons hits leave, dying, and
-/// the respawns a death queues. Health, damage and healing are i64, so long-term progression can grow amounts without
-/// bound while a fight stays fast.
+/// swords and the fire bolt), the seal the swords raise (chunk 4b), the poison lance's strikes and their flashes, the burns
+/// and poisons hits leave, dying, and the respawns a death queues. Health, damage and healing are i64, so long-term progression
+/// can grow amounts without bound while a fight stays fast.
 
 #include "core/abilities.hpp"
 #include "core/archive.hpp"
@@ -13,6 +13,7 @@
 #include "core/combat_rules.hpp"
 #include "core/frame.hpp"
 #include "core/manifest.hpp"
+#include "core/seal.hpp"
 #include "core/stable_id.hpp"
 #include "core/state.hpp"
 #include "core/tick_clock.hpp"
@@ -191,7 +192,7 @@ struct Afflictions {
 [[nodiscard]] f32 DissolveAt(const Dying& dying, u64 tick, u64 dyingTicks);
 
 /// The arena's combat state beyond its components: the volleys in flight (the flying swords and the fire bolts), the
-/// flashes showing (the poison lance's) and the respawns waiting.
+/// flashes showing (the poison lance's), the seals in play (the flying swords') and the respawns waiting.
 class Combat {
 public:
     /// Runs the fight by `rules` from now on (the arena's game data: the dissolve's and the respawn's times, the
@@ -216,12 +217,14 @@ public:
     /// none tagged, the volley's one target is the point itself. Either volley keeps its shape, damage and affliction as
     /// cast (each amount through HitAmount()), so new game data never changes it, and its commit window is the ability
     /// radius's (core::CommitTicksFor(), at its motion's retarget speed). Its seed is drawn from core::Random with the state
-    /// counter. The poison lance strikes in this tick's Strike(), after the afflictions due: every living enemy whose chest is
-    /// then within its radius of the point, in stable ID order, takes its damage (as cast) as a hit of its element (Poison) at
-    /// its head and, unless the hit killed it, gains its affliction (as a sword's hit leaves one, refreshing one there); a
-    /// Flash of its element starts at the point. Its use ends then, with a UseEnded after its hits, unless an affliction it
-    /// left holds it, and then after that affliction's last tick. The strike waits only from the cast to the Strike() of the
-    /// same tick, so no save or hash ever holds it.
+    /// counter. A volley whose ability has a seal (core::AbilityData::seal) raises it at the volley's origin, where it stays
+    /// however the caster moves, of the ability's key, size and element, from the cast's tick until its last sword's
+    /// departure (core::DepartureTick()). The poison lance strikes in this tick's Strike(), after the afflictions due: every
+    /// living enemy whose chest is then within its radius of the point, in stable ID order, takes its damage (as cast) as a hit
+    /// of its element (Poison) at its head and, unless the hit killed it, gains its affliction (as a sword's hit leaves one,
+    /// refreshing one there); a Flash of its element starts at the point. Its use ends then, with a UseEnded after its hits,
+    /// unless an affliction it left holds it, and then after that affliction's last tick. The strike waits only from the cast
+    /// to the Strike() of the same tick, so no save or hash ever holds it.
     void Cast(
         core::State& state,
         const core::Manifest& manifest,
@@ -255,15 +258,15 @@ public:
     ///   and a dying creature's afflictions end;
     /// - each use whose last hit is behind it ends with a UseEnded event: a volley's at its last arrival unless it left an
     ///   affliction, else after that affliction's last tick, its creature's death or its refresh;
-    /// - a volley whose last sword has faded is dropped, and a flash its `ticks` after its start.
+    /// - a volley whose last sword has faded is dropped, a flash its `ticks` after its start, and a seal at its end tick.
     void Strike(core::State& state, const core::Manifest& manifest, u64 tick, std::vector<core::Event>& events);
 
     /// Appends a UseEnded event for each use still open in `state`'s active domain (a volley with swords still to
     /// arrive, an affliction with ticks left), in use order: before a scene change throws them away.
     void EndUses(const core::State& state, std::vector<core::Event>& events) const;
 
-    /// Adds each volley in flight, and its targets, to `snapshot`'s volleys and volley targets, and each flash showing
-    /// to its flashes.
+    /// Adds each volley in flight, and its targets, to `snapshot`'s volleys and volley targets, each flash showing to its
+    /// flashes, and each seal in play to its seals.
     void Publish(core::Snapshot& snapshot) const;
 
     /// The respawns waiting: the tick each is due, earliest first.
@@ -274,7 +277,7 @@ public:
     /// Writes the combat state into `archive` (a Writer or a Hasher): the respawns waiting (their count, then each one's
     /// tick), then the volleys in flight (their count, then each one's cast, ability, element, damage, affliction, how
     /// many of its swords have arrived, and its targets' count and targets), then the flashes showing (their count, then
-    /// each one).
+    /// each one), then the seals in play (their count, then each one).
     template<typename Archive>
     void Save(Archive& archive) const {
         PN_ASSERT(m_strikes.empty(), "a lance's strike outlived its tick's Strike()");
@@ -294,6 +297,10 @@ public:
         for (const core::Flash& flash : m_flashes) {
             archive(flash);
         }
+        archive(static_cast<u64>(m_seals.size()));
+        for (const core::Seal& seal : m_seals) {
+            archive(seal);
+        }
     }
 
     /// Whether every living target of the volleys in flight (`diedTick` 0) names a creature in `state`'s active domain:
@@ -305,12 +312,18 @@ public:
     /// their save was made at, as a flash is never dated after the tick it showed in.
     [[nodiscard]] bool FlashesStartBy(u64 tick) const;
 
+    /// Whether every seal starts at `tick` or before: what loaded seals must satisfy with the simulation tick their save
+    /// was made at, as a seal is never dated after the tick it was raised in. One already ended by then is harmless: the
+    /// next Strike() removes it.
+    [[nodiscard]] bool SealsStartBy(u64 tick) const;
+
     /// Reads what Save() wrote, failing `archive` and changing nothing on a count past what is left, ticks out of order,
     /// a volley that can't be used (invalid (core::Volley::Valid()), of an unknown ability or element, a negative
     /// amount, more swords arrived than it has, no targets, a target at a point that isn't finite, or the point target
-    /// (zero) not dead), or a flash at a point that isn't finite or of an unknown element. Arena::Load() checks the rest
-    /// against what it loads beside them, refusing the save when a living target isn't a creature in its active domain
-    /// (AimsAtCreatures()) or a flash starts after the save's tick (FlashesStartBy()).
+    /// (zero) not dead), a flash at a point that isn't finite or of an unknown element, or a seal that can't be used
+    /// (core::Seal::Valid(): one ending before it starts among them). Arena::Load() checks the rest against what it loads
+    /// beside them, refusing the save when a living target isn't a creature in its active domain (AimsAtCreatures()) or a
+    /// flash or a seal starts after the save's tick (FlashesStartBy(), SealsStartBy()).
     void Load(core::Reader& archive);
 
 private:
@@ -399,6 +412,8 @@ private:
     std::vector<Flight> m_flights{};
     // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::vector<core::Flash> m_flashes{};
+    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::vector<core::Seal> m_seals{};
     // Cast this tick, struck by its Strike(): empty between ticks, so never saved.
     // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::vector<LanceStrike> m_strikes{};

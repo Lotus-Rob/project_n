@@ -12,6 +12,7 @@
 #include "core/hit.hpp"
 #include "core/manifest.hpp"
 #include "core/profile.hpp"
+#include "core/seal.hpp"
 #include "core/stable_id.hpp"
 #include "core/strings.hpp"
 #include "core/types.hpp"
@@ -279,6 +280,8 @@ struct Snapshot {
         volleyTargets{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The bursts showing, each for its `ticks` from its start; refilled in place likewise.
     std::vector<Flash> flashes{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    /// The seals in play, each from its start tick to the tick before its end; refilled in place likewise.
+    std::vector<Seal> seals{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// Whether the scene is a combat scene, where casts act.
     bool combat = false;
     /// The player's Qi, health and cooldowns in a combat scene with a player; none otherwise.

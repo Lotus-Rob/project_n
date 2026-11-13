@@ -847,6 +847,17 @@ TEST_CASE("a degenerate volley stays finite") {
     CHECK(core::LastArrival(EMPTY) == START);
 }
 
+TEST_CASE("the last departure is the latest sword's, a flight before the last arrival, and the start for none") {
+    u64 latest = 0;
+    for (u32 sword = 0; sword < SWORDS.count; ++sword) {
+        latest = std::max(latest, core::DepartureTick(VOLLEY, sword));
+    }
+    CHECK(core::LastDepartureTick(VOLLEY) == latest);
+    CHECK(core::LastDepartureTick(VOLLEY) + VOLLEY.shape.flightTicks == core::LastArrival(VOLLEY));
+    constexpr core::Volley EMPTY{ .startTick = START, .shape = {} };
+    CHECK(core::LastDepartureTick(EMPTY) == START);
+}
+
 TEST_CASE("the same volley gives the same positions bit for bit") {
     constexpr std::array<f64, 3> TICKS{
         { static_cast<f64>(START) + 20.375, static_cast<f64>(START) + 50.0, static_cast<f64>(START) + 71.875 }
