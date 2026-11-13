@@ -29,6 +29,8 @@ jobs:
     # The non-build half of `check`: commit messages, quoted commands, formatting, clang-tidy.
     runs-on: ubuntu-26.04
     timeout-minutes: 60
+    env:
+      PROJECT_N_BUILD_CACHE: /home/runner/build-cache # object caches (.github/AGENTS.md)
     permissions:
       contents: read
       packages: write # the linux image cache in GHCR
@@ -59,6 +61,17 @@ jobs:
           path: /home/runner/xmake-cache
           key: xmake-lint-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
           restore-keys: xmake-lint-
+      - name: Restore objects
+        id: objects
+        # Warm on branch pushes only: main and tags compile cold (project_n enforces it too). Main only looks
+        # its key up for Save objects; tags skip both.
+        if: github.ref_type == 'branch'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /home/runner/build-cache
+          lookup-only: ${{ github.ref == 'refs/heads/main' }}
+          key: objects-lint-linux-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-${{ github.sha }}
+          restore-keys: objects-lint-linux-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
@@ -70,12 +83,20 @@ jobs:
       - run: pixi run project_n fmt --check
       - run: pixi run project_n lint --container
       - name: Save XMake packages
-        # Even when a later step failed: packages that built are still valid.
-        if: always() && steps.xmake-cache.outputs.cache-hit != 'true'
+        # Even when a later step failed: packages that built are still valid. Tags save nothing.
+        if: always() && github.ref_type != 'tag' && steps.xmake-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /home/runner/xmake-cache
-          key: xmake-lint-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
+          key: ${{ steps.xmake-cache.outputs.cache-primary-key }} # the restore's: builds may change the lock
+      - name: Save objects
+        # Even when a later step failed: objects that compiled are still valid. Main saves its cold build (unless
+        # its lookup found the key already); tags save nothing.
+        if: always() && github.ref_type != 'tag' && steps.objects.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /home/runner/build-cache
+          key: ${{ steps.objects.outputs.cache-primary-key }} # the restore's: builds may change the lock
 
   container:
     # One clean-container build per preset (`project_n artifact`): build, tests, runtime-dependency check, dist/.
@@ -89,6 +110,7 @@ jobs:
       contents: read
       packages: write # the linux image cache in GHCR
     env:
+      PROJECT_N_BUILD_CACHE: /home/runner/build-cache # object caches (.github/AGENTS.md)
       PROJECT_N_ACCEPT_MSVC_LICENSE: "1" # confirmed to fit the project (design doc 0001 O3); image stays on the runner
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -103,6 +125,17 @@ jobs:
           path: /home/runner/xmake-cache
           key: xmake-${{ matrix.preset }}-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
           restore-keys: xmake-${{ matrix.preset }}-
+      - name: Restore objects
+        id: objects
+        # Warm on branch pushes only: main and tags compile cold (project_n enforces it too). Main only looks
+        # its key up for Save objects; tags skip both.
+        if: github.ref_type == 'branch' && matrix.preset == 'linux-clang'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /home/runner/build-cache
+          lookup-only: ${{ github.ref == 'refs/heads/main' }}
+          key: objects-container-linux-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-${{ github.sha }}
+          restore-keys: objects-container-linux-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
@@ -135,12 +168,20 @@ jobs:
           name: ${{ steps.artifact.outputs.archive }}
           path: dist/*.zip
       - name: Save XMake packages
-        # Even when a later step failed: packages that built are still valid.
-        if: always() && steps.xmake-cache.outputs.cache-hit != 'true'
+        # Even when a later step failed: packages that built are still valid. Tags save nothing.
+        if: always() && github.ref_type != 'tag' && steps.xmake-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /home/runner/xmake-cache
-          key: xmake-${{ matrix.preset }}-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
+          key: ${{ steps.xmake-cache.outputs.cache-primary-key }} # the restore's: builds may change the lock
+      - name: Save objects
+        # Even when a later step failed: objects that compiled are still valid. Main saves its cold build (unless
+        # its lookup found the key already); tags save nothing.
+        if: always() && github.ref_type != 'tag' && steps.objects.outputs.cache-hit != 'true' && matrix.preset == 'linux-clang'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /home/runner/build-cache
+          key: ${{ steps.objects.outputs.cache-primary-key }} # the restore's: builds may change the lock
 
   windows:
     # Native MSVC: the authoritative Windows build, and the only place MSVC's ASan can run.
@@ -197,17 +238,19 @@ jobs:
       - run: pixi run project_n test --preset windows-msvc --mode release
       - run: pixi run project_n test --preset windows-msvc --sanitizer address
       - name: Save XMake packages
-        # Even when a later step failed: packages that built are still valid.
-        if: always() && steps.xmake-cache.outputs.cache-hit != 'true'
+        # Even when a later step failed: packages that built are still valid. Tags save nothing.
+        if: always() && github.ref_type != 'tag' && steps.xmake-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.xmake/project_n # packages_dir() in tools/project_n.py
-          key: xmake-windows-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
+          key: ${{ steps.xmake-cache.outputs.cache-primary-key }} # the restore's: builds may change the lock
 
   macos:
     # Native macos-clang on Apple Silicon: the only place it can build (docs/design/0001 §5.7).
     runs-on: macos-26
     timeout-minutes: 180
+    env:
+      PROJECT_N_BUILD_CACHE: /Users/runner/build-cache # object caches (.github/AGENTS.md)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         env:
@@ -227,6 +270,17 @@ jobs:
           path: ~/.xmake/project_n # packages_dir() in tools/project_n.py
           key: xmake-macos-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
           restore-keys: xmake-macos-
+      - name: Restore objects
+        id: objects
+        # Warm on branch pushes only: main and tags compile cold (project_n enforces it too). Main only looks
+        # its key up for Save objects; tags skip both.
+        if: github.ref_type == 'branch'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /Users/runner/build-cache
+          lookup-only: ${{ github.ref == 'refs/heads/main' }}
+          key: objects-macos-macos-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-${{ github.sha }}
+          restore-keys: objects-macos-macos-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
@@ -250,12 +304,20 @@ jobs:
           name: ${{ steps.artifact.outputs.archive }}
           path: dist/*.zip
       - name: Save XMake packages
-        # Even when a later step failed: packages that built are still valid.
-        if: always() && steps.xmake-cache.outputs.cache-hit != 'true'
+        # Even when a later step failed: packages that built are still valid. Tags save nothing.
+        if: always() && github.ref_type != 'tag' && steps.xmake-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.xmake/project_n # packages_dir() in tools/project_n.py
-          key: xmake-macos-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
+          key: ${{ steps.xmake-cache.outputs.cache-primary-key }} # the restore's: builds may change the lock
+      - name: Save objects
+        # Even when a later step failed: objects that compiled are still valid. Main saves its cold build (unless
+        # its lookup found the key already); tags save nothing.
+        if: always() && github.ref_type != 'tag' && steps.objects.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /Users/runner/build-cache
+          key: ${{ steps.objects.outputs.cache-primary-key }} # the restore's: builds may change the lock
 
   release:
     # A vX.Y.Z tag: every preset's archives into a draft GitHub release, for the user to check and publish.
