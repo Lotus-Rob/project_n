@@ -1,6 +1,6 @@
 # Phase 6, chunk 4b: seals
 
-Date: 2026-11-12 · Status: approved 2026-11-12; revised 2026-11-13 to build on the glows (awaiting approval) · Phase
+Date: 2026-11-12 · Status: approved 2026-11-12; revised 2026-11-13 to build on the glows, approved 2026-11-13 · Phase
 spec: `2026-11-10-phase6-design.md` · Builds on: chunk 4 (`2026-11-10-phase6-chunk4-abilities-design.md`) and the glows
 (`2026-11-12-phase6-glow-design.md`, its Outcome's "Notes for the seals chunk"), both merged
 
