@@ -1,0 +1,389 @@
+#include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/glow.hpp"
+#include "core/manifest.hpp"
+#include "core/seal.hpp"
+#include "core/seals.hpp"
+#include "core/tick_clock.hpp"
+#include "core/ui_colours.hpp"
+#include "core/vec2.hpp"
+#include "gfx/mesh_vertex.hpp"
+#include "gfx/seal_draw.hpp"
+#include "gfx/sprite_block.hpp"
+
+#include <doctest/doctest.h>
+
+namespace {
+
+using core::atlas::SpriteId;
+
+constexpr f32 VIEW_RATIO = 0.375F;
+constexpr f32 CLOSE = 1e-3F;       // world units, or a fraction of full opacity
+constexpr f32 CLOSE_UV = 1e-6F;    // of a page
+constexpr f32 CLOSE_ANGLE = 1e-5F; // radians: well under what an f32 time of 100 hours would lose
+constexpr f64 TICKS = static_cast<f64>(core::TICKS_PER_SECOND);
+constexpr f64 FOREVER = std::numeric_limits<f64>::infinity();
+constexpr f64 DEGREES_A_TURN = 360.0;
+constexpr f32 HALF_TURN = 180.0F;
+constexpr f32 QUARTER_TURN = 90.0F;
+constexpr core::Vec2 POINT{ .x = 300.0F, .y = 200.0F };
+constexpr f32 SIZE = 100.0F; // every seal's, so a ring's radius is its fraction of 100
+constexpr f32 HEIGHT = 20.0F;
+constexpr f32 LINE = 0.01F; // a part's width
+constexpr f32 HALF_PI = std::numbers::pi_v<f32> / 2.0F;
+constexpr core::Seal SEAL{ .key = 1, .point = POINT, .size = SIZE };
+constexpr f64 SECOND = 1.0; // when most cases draw
+
+f32 Distance(core::Vec2 lhs, core::Vec2 rhs) {
+    return std::hypot(lhs.x - rhs.x, lhs.y - rhs.y);
+}
+
+// The point of a ring SIZE across at `degrees` on a seal's plane, `height` off it.
+gfx::SealLocal Ring(f32 degrees, f32 height) {
+    const f32 radians = degrees * std::numbers::pi_v<f32> / HALF_TURN;
+    return { .x = SIZE * std::cos(radians), .depth = SIZE * std::sin(radians), .up = height };
+}
+
+// A manifest of every sprite, 24 by 32 texels, each at its own place past the field's reach; the runes on page 1.
+core::Manifest TestManifest() {
+    constexpr u32 PAGE_SIZE = 1'024;
+    constexpr u16 STRIDE = 70;
+    constexpr u16 MARGIN = 40;
+    constexpr std::size_t ROW = 12;
+    constexpr u16 WIDTH = 24;
+    constexpr u16 HEIGHT_TEXELS = 32;
+    std::vector<core::SpriteInfo> sprites;
+    for (std::size_t sprite = 0; sprite < core::atlas::SPRITE_NAMES.size(); ++sprite) {
+        const bool rune = sprite >= std::to_underlying(SpriteId::Rune00) && sprite <= std::to_underlying(SpriteId::Rune23);
+        sprites.push_back(
+            { .file = "sprites/test.png",
+              .page = static_cast<u16>(rune ? 1 : 0),
+              .x = static_cast<u16>(MARGIN + ((sprite % ROW) * STRIDE)),
+              .y = static_cast<u16>(MARGIN + ((sprite / ROW) * STRIDE)),
+              .width = WIDTH,
+              .height = HEIGHT_TEXELS }
+        );
+    }
+    return { .pageSize = PAGE_SIZE, .pages = 2, .mipLevels = 1, .sprites = std::move(sprites), .scenes = {} };
+}
+
+// One round layer from `inner` to `outer`, turning at `spin`, with a circle at its edge.
+core::SealLayer Layer(f32 inner, f32 outer, f32 spin = 0.0F) {
+    return { .inner = inner,
+             .outer = outer,
+             .spin = spin,
+             .parts = { { .kind = core::SealPartKind::Circle, .radius = outer, .width = LINE } } };
+}
+
+// A ground seal of one still layer, the outer half, in the element's colour.
+core::SealLook OneLayer() {
+    constexpr f32 INNER = 0.5F;
+    core::SealLook look;
+    look.colours = { { { .element = true } } };
+    look.layers = { Layer(INNER, 1.0F) };
+    return look;
+}
+
+// The three layers' life: appearing over 0.3 s, a share of 0.1 s each; fading over the last 0.4 s.
+constexpr f64 APPEAR = 0.3;
+constexpr f64 SHARE = 0.1;
+constexpr f64 FADE = 0.4;
+constexpr f64 HALF_FADE = 0.2;
+constexpr f64 HELD = 10.0; // long after every layer appeared
+// Their edges, outermost first.
+constexpr std::array<f32, 4> EDGES{ { 1.0F, 0.7F, 0.4F, 0.0F } };
+
+// Three layers listed outermost first, fading along `fadeCurve`, appearing outer or inner first.
+core::SealLook ThreeLayers(core::GlowCurve fadeCurve, bool innerFirst) {
+    core::SealLook look = OneLayer();
+    look.appear = APPEAR;
+    look.appearCurve = core::GlowCurve::Linear;
+    look.fade = FADE;
+    look.fadeCurve = fadeCurve;
+    look.innerFirst = innerFirst;
+    look.layers = { Layer(EDGES[1], EDGES[0]), Layer(EDGES[2], EDGES[1]), Layer(EDGES[3], EDGES[2]) };
+    return look;
+}
+
+// A table of `looks` by name, sorted by key as the reader leaves it.
+core::Seals Table(std::vector<std::pair<std::string_view, core::SealLook>> looks) {
+    core::Seals seals;
+    for (auto& [name, look] : looks) {
+        seals.looks.emplace_back(core::SealKeyOf(name), std::move(look));
+    }
+    std::ranges::sort(seals.looks, {}, &std::pair<core::SealKey, core::SealLook>::first);
+    return seals;
+}
+
+// One seal of the look `name` at POINT.
+std::array<core::Seal, 1> One(std::string_view name, bool showcase = false) {
+    return { { { .key = core::SealKeyOf(name), .point = POINT, .size = SIZE, .showcase = showcase } } };
+}
+
+// Draws `seals` at `seconds` by `looks` packed, the showcase shown when `showcase`.
+gfx::SealDrawing Draw(std::span<const core::Seal> seals, const core::Seals& looks, f64 seconds, bool showcase = true) {
+    const gfx::SealPack pack = gfx::PackSeals(looks, TestManifest());
+    gfx::SealDrawing out;
+    gfx::DrawSeals(seals, looks, pack, core::UiColours{}, seconds, static_cast<u64>(seconds * TICKS), showcase, out);
+    return out;
+}
+
+TEST_CASE("a ground seal lies flat at the art's angle") {
+    constexpr f32 SQUASHED = SIZE * VIEW_RATIO;
+    // At 0°, 90°, 180° and 270°: the ring's ends across, then its nearest and farthest points, squashed by the ratio.
+    constexpr std::array<core::Vec2, 4> AWAY{ { { .x = SIZE }, { .y = SQUASHED }, { .x = -SIZE }, { .y = -SQUASHED } } };
+    f32 worst = 0.0F;
+    for (std::size_t quarter = 0; quarter < AWAY.size(); ++quarter) {
+        const gfx::SealLocal local = Ring(QUARTER_TURN * static_cast<f32>(quarter), 0.0F);
+        const core::Vec2 lands = gfx::SealToWorld(SEAL, core::SealPlane::Ground, 0.0F, VIEW_RATIO, local);
+        worst = std::max(worst, Distance(lands, POINT + AWAY.at(quarter)));
+    }
+    CHECK(worst < CLOSE);
+    // A layer 20 high rises 20 up the screen.
+    const core::Vec2 raised = gfx::SealToWorld(SEAL, core::SealPlane::Ground, 0.0F, VIEW_RATIO, Ring(0.0F, HEIGHT));
+    CHECK(Distance(raised, POINT + core::Vec2{ .x = SIZE, .y = -HEIGHT }) < CLOSE);
+}
+
+TEST_CASE("an upright seal stands as a circle and its heights come forward") {
+    // Its plane faces the viewer: 90° round its ring is a whole radius down, not squashed.
+    const core::Vec2 side = gfx::SealToWorld(SEAL, core::SealPlane::Upright, 0.0F, VIEW_RATIO, Ring(QUARTER_TURN, 0.0F));
+    CHECK(Distance(side, POINT + core::Vec2{ .y = SIZE }) < CLOSE);
+    // A layer 20 high stands 20 nearer the viewer, which the art's angle shows 7.5 lower.
+    const core::Vec2 forward = gfx::SealToWorld(SEAL, core::SealPlane::Upright, 0.0F, VIEW_RATIO, Ring(0.0F, HEIGHT));
+    CHECK(Distance(forward, POINT + core::Vec2{ .x = SIZE, .y = HEIGHT * VIEW_RATIO }) < CLOSE);
+}
+
+TEST_CASE("an overhead seal is lifted by its lift") {
+    constexpr f32 LIFT = 50.0F;
+    const core::Vec2 lifted = gfx::SealToWorld(SEAL, core::SealPlane::Overhead, LIFT, VIEW_RATIO, Ring(0.0F, 0.0F));
+    CHECK(Distance(lifted, POINT + core::Vec2{ .x = SIZE, .y = -LIFT }) < CLOSE);
+}
+
+TEST_CASE("layers appear one after another and fade together") {
+    const core::SealLook outerFirst = ThreeLayers(core::GlowCurve::Linear, false);
+    // Each layer appears over its share: after one share the outermost has, the innermost hasn't begun.
+    CHECK(gfx::SealLifeOpacity(outerFirst, 0, SHARE, FOREVER) == doctest::Approx(1.0F));
+    CHECK(gfx::SealLifeOpacity(outerFirst, 2, SHARE, FOREVER) == 0.0F);
+    // Inner first, the innermost (listed last) is the one that has.
+    const core::SealLook innerFirst = ThreeLayers(core::GlowCurve::Linear, true);
+    CHECK(gfx::SealLifeOpacity(innerFirst, 2, SHARE, FOREVER) == doctest::Approx(1.0F));
+    // Halfway through the fade every layer is at half, whenever it appeared.
+    constexpr f32 HALF = 0.5F;
+    f32 worst = 0.0F;
+    for (std::size_t layer = 0; layer < outerFirst.layers.size(); ++layer) {
+        worst = std::max(worst, std::abs(gfx::SealLifeOpacity(outerFirst, layer, HELD, HALF_FADE) - HALF));
+    }
+    CHECK(worst < CLOSE);
+    // The fade takes its curve as the glows' does, over the share gone by: ease in has lost only a quarter halfway.
+    constexpr f32 THREE_QUARTERS = 0.75F;
+    const core::SealLook easeIn = ThreeLayers(core::GlowCurve::EaseIn, false);
+    CHECK(gfx::SealLifeOpacity(easeIn, 1, HELD, HALF_FADE) == doctest::Approx(THREE_QUARTERS));
+}
+
+TEST_CASE("a layer turns at its spin, scaled by spin_scale") {
+    constexpr f64 LONG_AFTER = 1'000.0;
+    const core::SealLayer layer = Layer(EDGES[1], EDGES[0], -QUARTER_TURN);
+    CHECK(gfx::SealLayerAngle(layer, SECOND, 1.0F) == doctest::Approx(-HALF_PI));
+    // Reduce motion's still: no turn however long it has been up.
+    CHECK(gfx::SealLayerAngle(layer, LONG_AFTER, 0.0F) == 0.0F);
+}
+
+TEST_CASE("a satellite on a turning ring follows it") {
+    constexpr f32 RING_INNER = 0.8F;
+    constexpr f32 MIDDLE = 90.0F; // the ring's band runs from 0.8 to 1 of the seal's 100
+    constexpr f32 MOON = 0.1F;
+    constexpr f32 ORBIT = 45.0F;
+    core::SealLook ring = OneLayer();
+    ring.layers = { Layer(RING_INNER, 1.0F, QUARTER_TURN) };
+    const core::SealKey moon = core::SealKeyOf("moon");
+    ring.satellites = { { .seal = moon, .size = MOON, .mount = core::SealMount::WithLayer },
+                        { .seal = moon, .size = MOON, .mount = core::SealMount::Fixed },
+                        { .seal = moon, .size = MOON, .mount = core::SealMount::Orbit, .orbit = ORBIT } };
+    const gfx::SealDrawing drawn = Draw(One("ring"), Table({ { "ring", ring }, { "moon", OneLayer() } }), SECOND);
+    REQUIRE(drawn.layers.size() == 4);
+    // After a second the ring has turned 90°: the satellite on it is at its nearest point.
+    CHECK(Distance(drawn.layers[1].centre, POINT + core::Vec2{ .y = MIDDLE * VIEW_RATIO }) < CLOSE);
+    // A fixed one stays at 0°.
+    CHECK(Distance(drawn.layers[2].centre, POINT + core::Vec2{ .x = MIDDLE }) < CLOSE);
+    // An orbiting one has gone its own 45°.
+    const f32 diagonal = MIDDLE * std::numbers::sqrt2_v<f32> / 2.0F;
+    CHECK(Distance(drawn.layers[3].centre, POINT + core::Vec2{ .x = diagonal, .y = diagonal * VIEW_RATIO }) < CLOSE);
+}
+
+// The middle of the first quad's outer edge (a quad's corners: inner start, inner end, outer start, outer end) of `band`.
+core::Vec2 OuterMiddle(std::span<const gfx::SealVertex> band) {
+    constexpr f32 MIDWAY = 0.5F;
+    return (band[2].local + band[3].local) * MIDWAY;
+}
+
+TEST_CASE("a frame's band reaches its corners, its sides' middles nearer") {
+    constexpr u32 SQUARE = 4;
+    core::SealLook look = OneLayer();
+    look.layers = { { .inner = 0.0F, .outer = 1.0F, .frameSides = SQUARE, .frameRotation = 0.0F, .parts = {} } };
+    const gfx::SealDrawing drawn = Draw(One("frame"), Table({ { "frame", look } }), SECOND);
+    REQUIRE(drawn.groundLines.size() == std::size_t{ SQUARE } * gfx::QUAD_VERTICES);
+    // A frame's outer radius is its corners'; a square's sides' middles are only cos(45°) of it out.
+    const f32 corner = Distance(drawn.groundLines[2].local, {});
+    const f32 middle = Distance(OuterMiddle(drawn.groundLines), {});
+    CHECK(std::max(std::abs(corner - 1.0F), std::abs(middle - std::cos(std::numbers::pi_v<f32> / SQUARE))) < CLOSE);
+}
+
+TEST_CASE("a round band holds its outer circle and the wash reaches its reach") {
+    constexpr f32 REACH = core::shipped::SEAL_WASH_REACH;
+    const gfx::SealDrawing drawn = Draw(One("round"), Table({ { "round", OneLayer() } }), SECOND);
+    REQUIRE((drawn.groundLines.size() >= gfx::QUAD_VERTICES && drawn.groundWash.size() == gfx::QUAD_VERTICES));
+    // Its quads' outer edges are chords outside the circle: the nearest point of one is still the outer radius out.
+    CHECK(Distance(OuterMiddle(drawn.groundLines), {}) >= 1.0F - CLOSE_UV);
+    // The wash's far corner is its reach out each way, squashed by the art's angle.
+    const core::Vec2 far = POINT + core::Vec2{ .x = REACH * SIZE, .y = REACH * SIZE * VIEW_RATIO };
+    CHECK(Distance(drawn.groundWash[3].position, far) < CLOSE);
+}
+
+TEST_CASE("a look's parts are packed sorted by where their bands start, and its drawn layer points at them") {
+    // Where each band starts: a star's at its apothem (0.9 cos 60°, less half its line), well inside its radius, so it
+    // goes before the ticks it lies outside of; the circle and the star share a radius but not a start.
+    constexpr f32 OUTER = 0.9F;
+    constexpr f32 MIDDLE = 0.6F;
+    constexpr f32 INNER = 0.3F;
+    constexpr f32 DOT = 0.02F;
+    constexpr u32 COUNT = 8;
+    constexpr u32 POINTS = 6;
+    constexpr u32 STEP = 2; // a hexagram
+    core::SealLook look = OneLayer();
+    look.layers[0].parts = {
+        { .kind = core::SealPartKind::Circle, .radius = OUTER, .width = LINE },
+        { .kind = core::SealPartKind::Ticks, .radius = MIDDLE, .width = LINE, .size = DOT, .count = COUNT },
+        { .kind = core::SealPartKind::Dots, .radius = INNER, .size = DOT, .count = COUNT },
+        { .kind = core::SealPartKind::Star, .radius = OUTER, .width = LINE, .count = POINTS, .step = STEP },
+    };
+    const core::Seals looks = Table({ { "sorted", look } });
+    const gfx::SealPack pack = gfx::PackSeals(looks, TestManifest());
+    constexpr std::array<u32, 4> SORTED{ { std::to_underlying(core::SealPartKind::Dots),
+                                           std::to_underlying(core::SealPartKind::Star),
+                                           std::to_underlying(core::SealPartKind::Ticks),
+                                           std::to_underlying(core::SealPartKind::Circle) } };
+    const bool sorted = std::ranges::equal(pack.parts, SORTED, {}, &gfx::SealGpuPart::kind);
+    CHECK(sorted);
+    // Each frame only points the layer at its look's packed parts.
+    const gfx::SealDrawing drawn = Draw(One("sorted"), looks, SECOND);
+    REQUIRE(drawn.layers.size() == 1);
+    CHECK((drawn.layers[0].firstPart == pack.layers[0].firstPart && drawn.layers[0].partCount == SORTED.size()));
+}
+
+TEST_CASE("an element slot takes the record's element colour and a named slot the table's") {
+    core::SealLook look = OneLayer();
+    look.colours = { { { .element = true }, { .colour = core::UiColour::SealGold } } };
+    look.colourCount = 2;
+    std::array<core::Seal, 1> seals = One("two");
+    seals[0].element = core::HitKind::Poison;
+    seals[0].hasElement = true;
+    const gfx::SealDrawing drawn = Draw(seals, Table({ { "two", look } }), SECOND);
+    REQUIRE(drawn.layers.size() == 1);
+    const core::UiColours colours{};
+    CHECK(drawn.layers[0].colours[0] == colours.Of(core::UiColour::PoisonEffect));
+    CHECK(drawn.layers[0].colours[1] == colours.Of(core::UiColour::SealGold));
+}
+
+TEST_CASE("hidden showcase seals draw nothing") {
+    const gfx::SealDrawing drawn = Draw(One("shown", true), Table({ { "shown", OneLayer() } }), SECOND, false);
+    CHECK((drawn.layers.empty() && drawn.groundWash.empty() && drawn.groundLines.empty() && drawn.droppedSeals == 0));
+}
+
+TEST_CASE("more seals than the frame holds are counted") {
+    constexpr std::size_t SEALS = 70;
+    const std::vector<core::Seal> seals(SEALS, One("many")[0]);
+    const gfx::SealDrawing drawn = Draw(seals, Table({ { "many", OneLayer() } }), SECOND);
+    CHECK(drawn.layers.size() == gfx::MAX_SEALS_DRAWN);
+    CHECK(drawn.droppedSeals == SEALS - gfx::MAX_SEALS_DRAWN);
+}
+
+TEST_CASE("a full frame counts each seal it leaves out with every satellite it would have drawn") {
+    // A planet with two moons, each with a speck, and a satellite on a ring it lacks (skipped, so never counted): five
+    // seals a planet. Twelve planets and all but the last speck of a thirteenth fill the frame's 64; the rest are counted.
+    constexpr std::size_t PLANETS = 20;
+    constexpr std::size_t EACH = 5;
+    core::SealLook speck = OneLayer();
+    core::SealLook moon = OneLayer();
+    moon.satellites = { { .seal = core::SealKeyOf("speck"), .size = 0.2F } };
+    core::SealLook planet = OneLayer();
+    planet.satellites = { { .seal = core::SealKeyOf("moon"), .size = 0.2F },
+                          { .seal = core::SealKeyOf("moon"), .angle = HALF_TURN, .size = 0.2F },
+                          { .seal = core::SealKeyOf("moon"), .layer = 1, .size = 0.2F } };
+    const core::Seals looks = Table({ { "planet", planet }, { "moon", moon }, { "speck", speck } });
+    const gfx::SealPack pack = gfx::PackSeals(looks, TestManifest());
+    // Packed with the table: a planet draws five in play, three as a satellite (its specks too deep) and one deepest.
+    std::size_t at = 0;
+    while (looks.looks.at(at).first != core::SealKeyOf("planet")) {
+        ++at;
+    }
+    const std::array<u32, 3> counts{ { EACH, 3, 1 } };
+    CHECK(pack.looks.at(at).seals == counts);
+    const std::vector<core::Seal> seals(PLANETS, One("planet").front());
+    const gfx::SealDrawing drawn = Draw(seals, looks, SECOND);
+    CHECK(drawn.layers.size() == gfx::MAX_SEALS_DRAWN);
+    CHECK(drawn.droppedSeals == (PLANETS * EACH) - gfx::MAX_SEALS_DRAWN);
+}
+
+TEST_CASE("a never-ending seal hands the GPU small times") {
+    // A spin whose turns an f32 of 100 hours couldn't hold to a hundredth of a degree.
+    constexpr f32 SPIN = 7.3F;
+    constexpr std::array<f64, 2> TIMES{ { 10.0, 100.0 * 3'600.0 } }; // seconds: soon, and 100 hours on
+    constexpr core::SealLight LIGHT{ .pillars = 4,
+                                     .pillarHeight = 80.0F,
+                                     .pillarWidth = 0.05F,
+                                     .pillarCycle = 1.7,
+                                     .sparks = 24,
+                                     .sparkRise = 40.0F,
+                                     .sparkLife = 1.2,
+                                     .shards = 6,
+                                     .shardDrift = 15.0F,
+                                     .shardSpin = 30.0F };
+    core::SealLook look = OneLayer();
+    look.layers[0].spin = SPIN;
+    look.light = LIGHT;
+    const core::Seals looks = Table({ { "forever", look } });
+    f32 worstAge = 0.0F;  // of each stream's age over its period
+    f32 worstTurn = 0.0F; // radians from the angle turned in f64
+    for (const f64 seconds : TIMES) {
+        const gfx::SealDrawing drawn = Draw(One("forever", true), looks, seconds);
+        REQUIRE((drawn.particles.size() == 1 && drawn.layers.size() == 1));
+        const gfx::SealGpuParticles& light = drawn.particles[0];
+        for (const auto& [age, period] : { std::pair{ light.pillarAge, light.pillarCycle },
+                                          std::pair{ light.sparkAge, light.sparkLife },
+                                          std::pair{ light.shardAge, light.shardCycle } }) {
+            worstAge = std::max(worstAge, age < 0.0F ? 1.0F : age / period);
+        }
+        const f64 turned =
+            std::fmod(static_cast<f64>(SPIN) * seconds, DEGREES_A_TURN) * std::numbers::pi / static_cast<f64>(HALF_TURN);
+        worstTurn = std::max(worstTurn, std::abs(drawn.layers[0].angle - static_cast<f32>(turned)));
+    }
+    CHECK(worstAge < 1.0F);
+    CHECK(worstTurn < CLOSE_ANGLE);
+}
+
+TEST_CASE("a script part points at its sprite's field block") {
+    constexpr f32 RADIUS = 0.9F;
+    constexpr f32 GLYPH = 0.08F;
+    constexpr u32 GLYPHS = 24;
+    core::SealLook look = OneLayer();
+    look.layers[0].parts = {
+        { .kind = core::SealPartKind::Script, .radius = RADIUS, .size = GLYPH, .count = GLYPHS, .glyphSet = 0 }
+    };
+    core::Seals looks = Table({ { "script", look } });
+    looks.glyphSets = { { SpriteId::Rune03, SpriteId::Rune04 } };
+    const core::Manifest manifest = TestManifest();
+    const gfx::SealPack pack = gfx::PackSeals(looks, manifest);
+    REQUIRE(pack.parts.size() == 1);
+    const gfx::SealGpuPart& part = pack.parts[0];
+    REQUIRE((part.spriteCount == 2 && part.firstSprite < pack.sprites.size()));
+    const gfx::SealGpuSprite& sprite = pack.sprites[part.firstSprite];
+    const core::SpriteInfo& rune = manifest.Sprite(SpriteId::Rune03);
+    const gfx::SpriteBlock block = gfx::FieldBlockOf(rune);
+    const auto page = static_cast<f32>(manifest.pageSize);
+    const core::Vec2 low{ .x = static_cast<f32>(block.x) / page, .y = static_cast<f32>(block.y) / page };
+    const core::Vec2 high{ .x = static_cast<f32>(block.x + block.width) / page,
+                           .y = static_cast<f32>(block.y + block.height) / page };
+    CHECK(std::max(Distance(sprite.fieldMin, low), Distance(sprite.fieldMax, high)) < CLOSE_UV);
+    CHECK(sprite.page == rune.page);
+}
+
+} // namespace

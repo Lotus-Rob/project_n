@@ -1,0 +1,360 @@
+#pragma once
+
+/// @file
+/// @ingroup gfx
+/// Laying seals out (the phase 6 chunk 4b spec, "The view and the ground" and "Drawing"): each seal in play, from its record,
+/// its look (core::Seals) and the render time, becomes the band geometry of its layers and the wash under them at the art's
+/// angle, its layers' records pointing at the parts each band's fragment shader draws, and its light's particle records. The
+/// parts and their sprites are packed once per table (PackSeals(), when the table loads or reloads), never per frame. Pure,
+/// with no state between frames: the renderer uploads what DrawSeals() writes, and tests read it without a device. The GPU
+/// sees only small times: each layer's angle already turned and each particle stream's age already wrapped, never a time
+/// since a seal's start.
+
+#include "core/manifest.hpp"
+#include "core/seal.hpp"
+#include "core/seals.hpp"
+#include "core/types.hpp"
+#include "core/ui_colours.hpp"
+#include "core/vec2.hpp"
+
+#include <array>
+#include <cstddef>
+#include <span>
+#include <utility>
+#include <vector>
+
+namespace gfx {
+
+/// The most seals a frame draws, satellites included; DrawSeals() counts the rest in SealDrawing::droppedSeals.
+inline constexpr std::size_t MAX_SEALS_DRAWN = 64;
+static_assert(core::MAX_SEAL_SATELLITES < MAX_SEALS_DRAWN, "a seal and its satellites fit one frame");
+/// The quads a round layer's band takes round its ring.
+inline constexpr u32 SEAL_BAND_SEGMENTS = 48;
+/// SealGpuPart::kind of a seal's emblem, past core::SealPartKind's values (which the other parts' kinds are).
+inline constexpr u32 SEAL_EMBLEM_KIND = 7;
+static_assert(std::to_underlying(core::SealPartKind::Flourish) + 1 == SEAL_EMBLEM_KIND, "the emblem's kind follows the parts'");
+
+/// A point of a seal's layer: `x` and `depth` across the seal's plane, in world units from its centre (`x` to the right,
+/// `depth` towards the bottom of the screen: nearer the viewer on a flat plane, down an upright one), and `up` off the plane
+/// (the layer's height), in world units.
+struct SealLocal {
+    /// Across the plane, to the right.
+    f32 x = 0.0F;
+    /// Across the plane, towards the bottom of the screen.
+    f32 depth = 0.0F;
+    /// Off the plane: the layer's height.
+    f32 up = 0.0F;
+};
+
+/// Where `local`, a point of a layer of `seal`, lands in the world at the art's angle `viewRatio`, its plane `plane` lifted
+/// `lift` above the ground. A flat (ground or overhead) plane lies in the seal's frame, so the point is `(x, depth, up +
+/// lift)`; an upright one stands facing the viewer, so it is `(x, up, -depth + lift)` there, its heights coming forward.
+/// A frame point `(x, depth, up)` lands at `seal.point + (x, depth * viewRatio - up)`.
+[[nodiscard]] core::Vec2 SealToWorld(const core::Seal& seal, core::SealPlane plane, f32 lift, f32 viewRatio, SealLocal local);
+
+/// How much of layer `layer` of `look` shows, from 0 to 1, `secondsSinceStart` after its seal started and `secondsToEnd`
+/// before it ends (infinite for one that never ends). The layers appear one after another over `look.appear`, each over its
+/// share `appear / layers`, outermost first (by outer radius) or innermost first, along `look.appearCurve`; all fade together
+/// over the last `look.fade` seconds, as the glows fade (core::GlowStrength()): `1 - CurveAt(look.fadeCurve, passed)`, `passed`
+/// the share of the fade gone by, `1 - secondsToEnd / fade` held to 0..1; 1 while held. 0 for a layer the look hasn't. The
+/// caller scales both times by core::Seals::spinScale.
+[[nodiscard]] f32 SealLifeOpacity(const core::SealLook& look, std::size_t layer, f64 secondsSinceStart, f64 secondsToEnd);
+
+/// How far `layer` has turned `seconds` after its seal started at its spin times `spinScale`, in radians: worked in `f64` and
+/// wrapped to less than a turn either way (the sign kept), so the result is as precise however long the seal has been up.
+[[nodiscard]] f32 SealLayerAngle(const core::SealLayer& layer, f64 seconds, f32 spinScale);
+
+/// One part of a layer as the seal fragment shader reads it: the StructuredBuffer element `SealPart` of shaders/seal.hlsli,
+/// which must keep this layout (every field 4 bytes, 64 in all). Radii, widths and sizes are fractions of the seal's size;
+/// angles in radians.
+struct SealGpuPart {
+    /// A core::SealPartKind, or SEAL_EMBLEM_KIND.
+    u32 kind = 0;
+    /// Which of its layer's colours it takes: 0 or 1.
+    u32 slot = 0;
+    /// Where it sits (an emblem: 0, the centre).
+    f32 radius = 0.0F;
+    /// Its line's width.
+    f32 width = 0.0F;
+    /// Its items' size: a tick's length, a dot's diameter, a glyph's, flourish's or emblem's height.
+    f32 size = 0.0F;
+    /// How many ticks, dots, glyphs, flourishes, star points or polygon sides (an emblem: 1).
+    u32 count = 0;
+    /// A star's step.
+    u32 step = 0;
+    /// A dashed circle's dash; 0 is solid.
+    f32 dash = 0.0F;
+    /// A dashed circle's gap.
+    f32 gap = 0.0F;
+    /// Where its first item or corner is from its layer's zero.
+    f32 rotation = 0.0F;
+    /// How far a flourish may reach past its layer's outer edge.
+    f32 spill = 0.0F;
+    /// 1 when a script's glyphs face the centre, else 0.
+    u32 inward = 0;
+    /// Its first sprite in SealPack::sprites (scripts, flourishes and emblems), drawn in turn round the ring.
+    u32 firstSprite = 0;
+    /// How many sprites it has from `firstSprite`: a script's glyph set's, a flourish's 3, an emblem's 1; else 0.
+    u32 spriteCount = 0;
+    /// Pads the part to a multiple of 16 bytes.
+    std::array<u32, 2> reserved{};
+};
+/// The bytes of one SealGpuPart.
+inline constexpr std::size_t SEAL_GPU_PART_BYTES = 64;
+static_assert(sizeof(SealGpuPart) == SEAL_GPU_PART_BYTES, "the seal shader reads parts as 64 bytes");
+/// Where SealGpuPart::firstSprite is, in bytes: the HLSL `SealPart` keeps the same.
+inline constexpr std::size_t SEAL_GPU_PART_SPRITES_AT = 48;
+static_assert(offsetof(SealGpuPart, firstSprite) == SEAL_GPU_PART_SPRITES_AT, "the seal shader finds a part's sprites there");
+
+/// One sprite a part draws, as the seal fragment shader reads it: the StructuredBuffer element `SealSprite` of
+/// shaders/seal.hlsli, which must keep this layout (32 bytes; its float2s at 8-byte offsets).
+struct SealGpuSprite {
+    /// The top left of its distance field's block (gfx::FieldBlockOf()), in UV of its page.
+    core::Vec2 fieldMin{};
+    /// The bottom right of that block, in UV of its page.
+    core::Vec2 fieldMax{};
+    /// The sprite's width in texels (its block's less the field's reach each side).
+    f32 width = 0.0F;
+    /// The sprite's height in texels.
+    f32 height = 0.0F;
+    /// Its page: the layer of the field array.
+    u32 page = 0;
+    /// Pads the sprite to a multiple of 16 bytes.
+    u32 reserved = 0;
+};
+/// The bytes of one SealGpuSprite.
+inline constexpr std::size_t SEAL_GPU_SPRITE_BYTES = 32;
+static_assert(sizeof(SealGpuSprite) == SEAL_GPU_SPRITE_BYTES, "the seal shader reads sprites as 32 bytes");
+/// Where SealGpuSprite::page is, in bytes: the HLSL `SealSprite` keeps the same.
+inline constexpr std::size_t SEAL_GPU_SPRITE_PAGE_AT = 24;
+static_assert(offsetof(SealGpuSprite, page) == SEAL_GPU_SPRITE_PAGE_AT, "the seal shader finds a sprite's page there");
+static_assert(offsetof(SealGpuSprite, fieldMax) % sizeof(core::Vec2) == 0, "a float2 of a StructuredBuffer is 8-aligned");
+
+/// One layer of a seal (or its emblem, drawn as a layer of its own) as the seal shaders read it: the StructuredBuffer element
+/// `SealLayer` of shaders/seal.hlsli, which must keep this layout (80 bytes; its float2s at 8-byte offsets).
+struct SealGpuLayer {
+    /// Its centre in the world: its seal's point, lifted and raised by its height at the art's angle.
+    core::Vec2 centre{};
+    /// Where one seal size along its plane's x lands in the world, from `centre`.
+    core::Vec2 axisX{};
+    /// Where one seal size along its plane's depth lands in the world, from `centre`.
+    core::Vec2 axisDepth{};
+    /// How far it has turned, in radians (SealLayerAngle()): its parts' zero and its frame turn with it.
+    f32 angle = 0.0F;
+    /// Its lines' strength: its opacity times its life (SealLifeOpacity()), capped at core::Seals::aboveOpacity off the
+    /// ground, times core::Seals::brightness.
+    f32 opacity = 0.0F;
+    /// Its seal's colours, slot 0 then 1 (slot 1 repeats slot 0 for a look of one): linear premultiplied RGBA8, red in the
+    /// low byte (core::UiColours::Of()).
+    std::array<u32, 2> colours{};
+    /// Its first part in SealPack::parts.
+    u32 firstPart = 0;
+    /// How many parts it has from `firstPart`, sorted by where their bands start.
+    u32 partCount = 0;
+    /// Its inner radius, a fraction of the seal's size; a frame's inner polygon's corners.
+    f32 inner = 0.0F;
+    /// Its outer radius, a fraction of the seal's size (its band reaches further by its flourishes' spill); a frame's
+    /// corners: its sides' middles are only `outer * cos(pi / frameSides)` out, so round parts past that clip there.
+    f32 outer = 0.0F;
+    /// Its frame's sides: 0 round, else 3 or more, a regular polygon with its corners at `inner` and `outer`.
+    u32 frameSides = 0;
+    /// Its frame's turn from its zero, in radians.
+    f32 frameRotation = 0.0F;
+    /// Its seal's ink wash's colour: the table's text ink, linear premultiplied RGBA8.
+    u32 washColour = 0;
+    /// How strongly its seal's wash shows: its darkness times its seal's life, capped as `opacity` is.
+    f32 washOpacity = 0.0F;
+    /// How far its seal's wash reaches, a fraction of the seal's size.
+    f32 washReach = 0.0F;
+    /// How soft its seal's wash's edge is, 0 (hard) to 1.
+    f32 washSoftness = 0.0F;
+};
+/// The bytes of one SealGpuLayer.
+inline constexpr std::size_t SEAL_GPU_LAYER_BYTES = 80;
+static_assert(sizeof(SealGpuLayer) == SEAL_GPU_LAYER_BYTES, "the seal shaders read layers as 80 bytes");
+/// Where SealGpuLayer::colours is, in bytes: the HLSL `SealLayer` keeps the same.
+inline constexpr std::size_t SEAL_GPU_LAYER_COLOURS_AT = 32;
+/// Where SealGpuLayer::washColour is, in bytes: the HLSL `SealLayer` keeps the same.
+inline constexpr std::size_t SEAL_GPU_LAYER_WASH_AT = 64;
+static_assert(offsetof(SealGpuLayer, colours) == SEAL_GPU_LAYER_COLOURS_AT, "the seal shaders find a layer's colours there");
+static_assert(offsetof(SealGpuLayer, washColour) == SEAL_GPU_LAYER_WASH_AT, "the seal shaders find a layer's wash there");
+static_assert(offsetof(SealGpuLayer, axisDepth) % sizeof(core::Vec2) == 0, "a float2 of a StructuredBuffer is 8-aligned");
+
+/// One corner of a band's or a wash's quad, as the seal vertex shader reads it (`SealVertex` in shaders/seal.vert.hlsl): 24
+/// bytes.
+struct SealVertex {
+    /// Where it is in the world.
+    core::Vec2 position{};
+    /// Where it is on its seal's plane, in seal sizes from the centre, not turned with its layer: x, then depth.
+    core::Vec2 local{};
+    /// Its layer in SealDrawing::layers (a wash's: its seal's first).
+    u32 layer = 0;
+    /// Pads the vertex to a multiple of 8 bytes.
+    u32 reserved = 0;
+};
+/// The bytes of one SealVertex.
+inline constexpr std::size_t SEAL_VERTEX_BYTES = 24;
+static_assert(sizeof(SealVertex) == SEAL_VERTEX_BYTES, "the seal pipelines read vertices as 24 bytes");
+
+/// A seal's light as the particle draw reads it: the StructuredBuffer element `SealParticles` of shaders/seal.hlsli, which must
+/// keep this layout (112 bytes; its float2s at 8-byte offsets). Each stream's age is already wrapped by its period and scaled
+/// by core::Seals::spinScale, so its speeds are not scaled again; particle `i` of a stream staggers its own age from it.
+struct SealGpuParticles {
+    /// Its seal's plane's centre in the world, lifted at the art's angle.
+    core::Vec2 centre{};
+    /// Where one seal size along its plane's x lands in the world, from `centre`.
+    core::Vec2 axisX{};
+    /// Where one seal size along its plane's depth lands in the world, from `centre`.
+    core::Vec2 axisDepth{};
+    /// A hash of its seal's key, start tick and place, which seeds each particle's hash.
+    u32 seed = 0;
+    /// Its colour: linear premultiplied RGBA8.
+    u32 colour = 0;
+    /// Its strength: its seal's life, capped as a layer's is, times core::Seals::brightness.
+    f32 opacity = 0.0F;
+    /// Its seal's size, in world units.
+    f32 size = 0.0F;
+    /// The frame's particle index of its first particle: its pillars, then sparks, then shards.
+    u32 firstParticle = 0;
+    /// How many pillars.
+    u32 pillars = 0;
+    /// How many sparks.
+    u32 sparks = 0;
+    /// How many shards.
+    u32 shards = 0;
+    /// The pillars' age, in seconds, below `pillarCycle`.
+    f32 pillarAge = 0.0F;
+    /// How long a pillar's light takes to fall its length once, in seconds (core::SealLight::pillarCycle).
+    f32 pillarCycle = 0.0F;
+    /// A pillar's height, in world units.
+    f32 pillarHeight = 0.0F;
+    /// A pillar's width, in world units.
+    f32 pillarWidth = 0.0F;
+    /// How much of a pillar's length it fades out over, towards its far end.
+    f32 pillarFade = 0.0F;
+    /// The sparks' age, in seconds, below `sparkLife`.
+    f32 sparkAge = 0.0F;
+    /// How long a spark lives, in seconds.
+    f32 sparkLife = 0.0F;
+    /// How fast a spark rises, in world units a second.
+    f32 sparkRise = 0.0F;
+    /// The shards' age, in seconds, below `shardCycle`.
+    f32 shardAge = 0.0F;
+    /// How long a shard drifts before it comes round again, in seconds: one seal size at its drift (or one turn at its spin
+    /// when it doesn't drift); 0 when it neither drifts nor turns.
+    f32 shardCycle = 0.0F;
+    /// How fast a shard drifts, in world units a second.
+    f32 shardDrift = 0.0F;
+    /// How fast a shard turns, in radians a second.
+    f32 shardSpin = 0.0F;
+    /// Pads the record to a multiple of 16 bytes.
+    std::array<u32, 2> reserved{};
+};
+/// The bytes of one SealGpuParticles.
+inline constexpr std::size_t SEAL_GPU_PARTICLES_BYTES = 112;
+static_assert(sizeof(SealGpuParticles) == SEAL_GPU_PARTICLES_BYTES, "the particle draw reads seal light as 112 bytes");
+/// Where SealGpuParticles::pillarAge (the first stream's) is, in bytes: the HLSL `SealParticles` keeps the same.
+inline constexpr std::size_t SEAL_GPU_PARTICLES_STREAMS_AT = 56;
+static_assert(
+    offsetof(SealGpuParticles, pillarAge) == SEAL_GPU_PARTICLES_STREAMS_AT,
+    "the particle draw finds the streams there"
+);
+static_assert(offsetof(SealGpuParticles, axisDepth) % sizeof(core::Vec2) == 0, "a float2 of a StructuredBuffer is 8-aligned");
+
+/// One layer of a look as PackSeals() packed it.
+struct SealPackedLayer {
+    /// Its first part in SealPack::parts.
+    u32 firstPart = 0;
+    /// How many parts it has from `firstPart`, sorted by where their bands start (nearest the centre first).
+    u32 partCount = 0;
+    /// How far its band reaches past its outer radius: its flourishes' greatest spill, a fraction of the seal's size.
+    f32 spill = 0.0F;
+};
+
+/// One look as PackSeals() packed it.
+struct SealPackedLook {
+    /// Its first layer in SealPack::layers: it has as many as its look (at most core::MAX_SEAL_LAYERS).
+    u32 firstLayer = 0;
+    /// Its emblem's part in SealPack::parts, when its look has an emblem.
+    u32 emblemPart = 0;
+    /// How far its emblem's disc reaches, a fraction of the seal's size: it holds the emblem's whole distance field, which
+    /// reaches core::FIELD_REACH_TEXELS past its sprite, however it turns.
+    f32 emblemReach = 0.0F;
+    /// How many seals drawing it adds at each satellite depth (0: a seal in play, 1: its satellite, 2: a satellite's):
+    /// itself and every satellite DrawSeals() would draw on it, each with its own. A full frame counts them all in
+    /// SealDrawing::droppedSeals without walking them.
+    std::array<u32, core::MAX_SATELLITE_DEPTH + 1> seals{};
+};
+
+/// Every look's parts and sprites as the seal shaders read them, packed once for a table: the renderer calls PackSeals() when
+/// it loads `seals.yaml` and on every reload, and uploads `parts` and `sprites` then; each frame DrawSeals() only points its
+/// layers at their look's parts.
+struct SealPack {
+    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    /// Every look's layers' parts, each layer's sorted by where their bands start, nearest the centre first (ties in the
+    /// look's order: the seal fragment shader stops at the first part whose band starts past its pixel), then its
+    /// emblem's.
+    std::vector<SealGpuPart> parts{};
+    /// The parts' sprites: every glyph set's first (its scripts share them), then each flourish's and emblem's.
+    std::vector<SealGpuSprite> sprites{};
+    /// Every look's layers, each look's together.
+    std::vector<SealPackedLayer> layers{};
+    /// Every look, in core::Seals::looks' order.
+    std::vector<SealPackedLook> looks{};
+    // NOLINTEND(readability-redundant-member-init)
+};
+
+/// The pack of `seals`' looks, their sprites' field blocks from `manifest` (gfx::FieldBlockOf() in UV of their page).
+[[nodiscard]] SealPack PackSeals(const core::Seals& seals, const core::Manifest& manifest);
+
+/// What one frame draws of its seals: the ground seals' washes and bands (drawn after the ground batches), the upright and
+/// overhead ones' (drawn after the overlay), each as quads of QUAD_VERTICES corners in MeshVertex's corner order, and the
+/// layers and light records they index (the layers' parts are the table's SealPack). The renderer keeps one and clears it
+/// each frame, so its buffers keep their capacity.
+struct SealDrawing {
+    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    /// The ground seals' washes: one quad a seal, drawn with normal premultiplied blending.
+    std::vector<SealVertex> groundWash{};
+    /// The ground seals' bands: their layers' quads, drawn additively over the washes.
+    std::vector<SealVertex> groundLines{};
+    /// The upright and overhead seals' washes.
+    std::vector<SealVertex> aboveWash{};
+    /// The upright and overhead seals' bands.
+    std::vector<SealVertex> aboveLines{};
+    /// Every drawn seal's layers, each seal's in its look's order, then its emblem's.
+    std::vector<SealGpuLayer> layers{};
+    /// One record for each drawn seal with light.
+    std::vector<SealGpuParticles> particles{};
+    // NOLINTEND(readability-redundant-member-init)
+    /// Seals left out, satellites included, past MAX_SEALS_DRAWN.
+    std::size_t droppedSeals = 0;
+
+    /// Empties it, keeping its buffers' capacity.
+    void Clear();
+};
+
+/// Adds to `out` every seal of `seals` in play at the render clock, `renderSeconds` (core::RenderTick() in seconds), whose
+/// whole tick is `renderTick` (in play from its start tick to the tick before its end), and its satellites, nested to
+/// core::MAX_SATELLITE_DEPTH, each by its look in `looks` and its parts in `pack` (PackSeals() of `looks`), its colours from
+/// `colours`. A showcase seal is left out when `showcase` is false; one whose key `looks` hasn't is skipped. Each layer adds
+/// its band: an annulus of SEAL_BAND_SEGMENTS quads from its inner radius to past its outer (the quads' outer edges round the
+/// circle, and further by its flourishes' spill), or its frame's band between two regular polygons with their corners at its
+/// inner and outer radii (and the spill); each seal its emblem (a layer of its own, at its innermost layer's height and
+/// life), its wash's quad to its reach and its light's record. Seals past MAX_SEALS_DRAWN are counted in
+/// `out.droppedSeals`, not drawn. A colour slot naming `element` takes the record's element's effect colour, which for a seal
+/// without one (`hasElement` false: the showcase's) is its default element's, Damage. Everything runs on the seals' time,
+/// scaled by core::Seals::spinScale: spins, particle motion and life, and the appear and fade; at 0 (still) the appear and
+/// fade are instant, so the seal shows whole from its start to its end. Its wash is the table's text ink, so it recolours
+/// with the palette.
+void DrawSeals(
+    std::span<const core::Seal> seals,
+    const core::Seals& looks,
+    const SealPack& pack,
+    const core::UiColours& colours,
+    f64 renderSeconds,
+    u64 renderTick,
+    bool showcase,
+    SealDrawing& out
+);
+
+} // namespace gfx
