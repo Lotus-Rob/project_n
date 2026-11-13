@@ -113,7 +113,8 @@ TEST_CASE("the shipped seals table loads clean") {
     REQUIRE(assets.has_value());
     const std::expected<core::Seals, core::Error> loaded = data::LoadSeals(*assets / "data", *manifest);
     REQUIRE(loaded.has_value());
-    CHECK(loaded->Find(core::SealKeyOf("sword_formation")) != nullptr);
+    const core::SealLook* shipped = loaded->Find(core::SealKeyOf("sword_formation"));
+    CHECK(shipped != nullptr);
     // LoadSeals logs its warnings; the same text parsed here hands them back, and there are none.
     std::ifstream input{ *assets / "data" / "seals.yaml", std::ios::binary };
     const std::string text{ std::istreambuf_iterator<char>{ input }, std::istreambuf_iterator<char>{} };
@@ -140,6 +141,7 @@ TEST_CASE("every part, the emblem, a satellite and the light are read into the l
     constexpr f64 APPEAR = 0.4;
     constexpr f32 TICK_LENGTH = 0.03F;
     constexpr f32 PILLAR_FADE = 0.5F;
+    constexpr f64 PILLAR_CYCLE = 2.5;
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const std::expected<core::Seals, core::Error> seals = data::ParseSeals(
         "view_ratio: 0.5\n"
@@ -168,8 +170,8 @@ TEST_CASE("every part, the emblem, a satellite and the light are read into the l
         "          - { kind: polygon, sides: 5, radius: 0.5, width: 0.01 }\n"
         "    emblem: { sprite: emblem_swords, size: 0.2, colour: 1 }\n"
         "    satellites: [{ seal: b, layer: 0, angle: 90, size: 0.2, mount: orbit, orbit: 30 }]\n"
-        "    light: { pillars: { count: 2, height: 80, width: 0.05, fade: 0.5 }, sparks: { count: 24, rise: 40, life: 1.5 } "
-        "}\n",
+        "    light: { pillars: { count: 2, height: 80, width: 0.05, fade: 0.5, cycle: 2.5 },\n"
+        "             sparks: { count: 24, rise: 40, life: 1.5 } }\n",
         *manifest
     );
     REQUIRE(seals.has_value());
@@ -213,7 +215,9 @@ TEST_CASE("every part, the emblem, a satellite and the light are read into the l
     CHECK(look->light.sparks == 24);
     CHECK(look->light.sparkLife == SPARK_LIFE);
     CHECK(look->light.pillarFade == PILLAR_FADE);
-    CHECK(seals->Find(core::SealKeyOf("c")) == nullptr);
+    CHECK(look->light.pillarCycle == PILLAR_CYCLE);
+    const core::SealLook* missing = seals->Find(core::SealKeyOf("c"));
+    CHECK(missing == nullptr);
 }
 
 TEST_CASE("the seals reader refuses out-of-range values with their line") {
@@ -222,7 +226,7 @@ TEST_CASE("the seals reader refuses out-of-range values with their line") {
         std::string_view text;
         std::string_view says;
     };
-    constexpr std::array<Broken, 20> CASES{ {
+    constexpr std::array<Broken, 21> CASES{ {
         { .why = "no ring",
           .text = "seals:\n  a:\n    colours: [element]\n    layers: []\n",
           .says = "seals line 4: a's layers isn't a list of 1 to 9 layers" },
@@ -287,8 +291,12 @@ TEST_CASE("the seals reader refuses out-of-range values with their line") {
           .says = "seals line 5: a's spark stream's count isn't a whole number from 0 to 256" },
         { .why = "a pillar fading past its length",
           .text = "seals:\n  a:\n    colours: [element]\n    layers: [{ inner: 0, outer: 1 }]\n"
-                  "    light: { pillars: { count: 2, height: 80, width: 0.05, fade: 1.5 } }\n",
+                  "    light: { pillars: { count: 2, height: 80, width: 0.05, fade: 1.5, cycle: 2 } }\n",
           .says = "seals line 5: a's pillar stream's fade isn't a number from 0 to 1" },
+        { .why = "a pillar whose light never falls",
+          .text = "seals:\n  a:\n    colours: [element]\n    layers: [{ inner: 0, outer: 1 }]\n"
+                  "    light: { pillars: { count: 2, height: 80, width: 0.05, fade: 0.5, cycle: 0 } }\n",
+          .says = "seals line 5: a's pillar stream's cycle isn't a number above 0" },
         { .why = "a colour slot the seal lacks",
           .text = "seals:\n  a:\n    colours: [element]\n    layers:\n"
                   "      - { inner: 0, outer: 1, parts: [{ kind: circle, radius: 1, width: 0.1, colour: 1 }] }\n",
@@ -357,8 +365,10 @@ TEST_CASE("a broken seals table keeps the old one") {
     REQUIRE_FALSE(edited.has_value());
     CHECK(edited.error().message.starts_with("seals line 3: c's layers"));
     CHECK(current.looks.size() == 1);
-    CHECK(current.Find(core::SealKeyOf("a")) != nullptr);
-    CHECK(current.Find(core::SealKeyOf("b")) == nullptr);
+    const core::SealLook* kept = current.Find(core::SealKeyOf("a"));
+    CHECK(kept != nullptr);
+    const core::SealLook* gone = current.Find(core::SealKeyOf("b"));
+    CHECK(gone == nullptr);
 }
 
 } // namespace
