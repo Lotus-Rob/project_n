@@ -6,6 +6,7 @@ Standard library only. See tools/AGENTS.md and docs/design/0001.
 
 import argparse
 import concurrent.futures
+import difflib
 import functools
 import hashlib
 import itertools
@@ -159,10 +160,19 @@ def lock_bytes():
 
 def restore_reordered_lock(before):
     """XMake rewrites xmake-requires.lock with the same lines in another order (`__meta__` moves, entries swap):
-    when that is all that changed, write the bytes from `before` back so `git status` stays clean."""
+    when that is all that changed, write the bytes from `before` back so `git status` stays clean. A real change
+    stays and prints its diff, to commit: a platform's missing entries, added on hosts no one commits from (CI's
+    macos and windows jobs), would otherwise go unseen."""
     now = lock_bytes()
-    if now != before and sorted(now.splitlines()) == sorted(before.splitlines()):
+    if now == before:
+        return
+    if sorted(now.splitlines()) == sorted(before.splitlines()):
         (ROOT / "xmake-requires.lock").write_bytes(before)
+        return
+    print("xmake-requires.lock: XMake changed entries; commit them (tools/AGENTS.md):", flush=True)
+    old_lines, new_lines = (b.decode("utf-8", "replace").splitlines() for b in (before, now))
+    diff = difflib.unified_diff(old_lines, new_lines, "a/xmake-requires.lock", "b/xmake-requires.lock", lineterm="")
+    print("\n".join(diff), flush=True)
 
 
 def run(cmd, env=None, **kwargs):
