@@ -207,6 +207,7 @@ private:
     DataWatch m_dataWatch{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     DeviceInUse m_device{};
     bool m_quit = false;
+    bool m_showcase = true; // whether the arena's showcase seals are drawn (F8)
     bool m_paused = false;
     std::atomic<bool> m_logicFailed = false;
     std::jthread m_logic{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer; last, so it

@@ -31,6 +31,7 @@ constexpr std::array KEYS{
     KeyCode{ .key = SDL_SCANCODE_F5, .code = InputCode::KeyF5 },
     KeyCode{ .key = SDL_SCANCODE_F6, .code = InputCode::KeyF6 },
     KeyCode{ .key = SDL_SCANCODE_F7, .code = InputCode::KeyF7 },
+    KeyCode{ .key = SDL_SCANCODE_F8, .code = InputCode::KeyF8 },
     KeyCode{ .key = SDL_SCANCODE_F9, .code = InputCode::KeyF9 },
     KeyCode{ .key = SDL_SCANCODE_F10, .code = InputCode::KeyF10 },
     KeyCode{ .key = SDL_SCANCODE_SPACE, .code = InputCode::KeySpace },

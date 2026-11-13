@@ -19,21 +19,12 @@
 
 #include <SDL3/SDL.h>
 
-#include <algorithm>
 #include <cstddef>
 #include <expected>
 #include <optional>
 #include <vector>
 
 namespace gfx::internal {
-
-/// The most layers a frame's seals have: every drawn seal's, its emblem's among them.
-inline constexpr u32 MAX_SEAL_LAYERS_DRAWN = static_cast<u32>(MAX_SEALS_DRAWN) * (core::MAX_SEAL_LAYERS + 1);
-/// The most quads a frame's seals take: for every drawn seal, its layers' bands (each round or a frame of at most
-/// core::MAX_SEAL_FRAME_SIDES sides), its emblem's and its wash.
-inline constexpr u32 MAX_SEAL_QUADS =
-    static_cast<u32>(MAX_SEALS_DRAWN) *
-    ((core::MAX_SEAL_LAYERS * std::max(SEAL_BAND_SEGMENTS, core::MAX_SEAL_FRAME_SIDES)) + SEAL_BAND_SEGMENTS + 1);
 
 /// The most seals with light a frame draws: one record for each drawn seal.
 inline constexpr u32 MAX_SEAL_LIGHTS_DRAWN = static_cast<u32>(MAX_SEALS_DRAWN);

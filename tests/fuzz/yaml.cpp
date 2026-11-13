@@ -1,7 +1,8 @@
 // The data module's YAML readers (data::ParseGameData, data::ParseAbilities, data::ParseSettings, data::ParseManifest,
 // data::ParseStrings, data::ParseEffects, data::ParseSeals): a data or settings file is edited by hand and the manifest
 // may be damaged, so any text is refused with an error or read, never a crash or an exception escaping. Seeded with the
-// shipped creatures, abilities, effects, seals and strings tables, a settings file and the manifest.
+// shipped creatures, abilities, effects, seals and strings tables, a settings file, the manifest and a seals table past a
+// cap.
 #include "../support/manifest.hpp" // relative: lint has no compile flags for the fuzz targets, which only build with ASan
 #include "core/cxx23.hpp"          // IWYU pragma: keep
 #include "data/abilities.hpp"

@@ -173,8 +173,9 @@ struct Renderer::Impl {
     // first, drawn last) and the glyph fields they need; then ends the glyph cache's frame. A recorded copy counts as
     // uploaded only once its commands are submitted (Submitted()): a dropped buffer must upload again.
     std::expected<void, core::Error> Upload(SDL_GPUCommandBuffer* commands, const Shown& shown, core::Jobs& jobs);
-    // Lays out the snapshot's seals at the render time into sealDrawing, and logs once each seal key the table lacks.
-    void LaySeals(const core::Snapshot& snapshot, f64 renderTick);
+    // Lays out the snapshot's seals at the render time into sealDrawing, its showcase seals only when `showcase`, and logs
+    // once each seal key the table lacks among those drawn.
+    void LaySeals(const core::Snapshot& snapshot, f64 renderTick, bool showcase);
     // Makes the glyph pages the cache's fields are on.
     std::expected<void, core::Error> MakeGlyphPages();
     // What `item` says, in the language shown.
@@ -332,7 +333,7 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     if (Holds(snapshot.scene)) {
         const auto alpha = static_cast<f32>(shown.view->alpha);
         const f64 renderTick = core::RenderTick(snapshot.simulationTick, shown.view->alpha);
-        LaySeals(snapshot, renderTick);
+        LaySeals(snapshot, renderTick, shown.view->showcase);
         DrawHudBars(shown.hud.bars, *manifest, volleyDrawing);
         DrawFlashes(snapshot.flashes, renderTick, *manifest, uiColours, effects, volleyDrawing);
         DrawHealthBars(snapshot.healthBars, barsShown, alpha, *manifest, uiColours, effects, volleyDrawing);
@@ -387,7 +388,7 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     ReportTinySeals(tinySealFailures, sealDrawing.tinySeals);
     ReportOverflow(sealParticleOverflows, sealDrawing.droppedParticles, "seal particles", core::MAX_SEAL_PARTICLES);
     if (sealQuadsDropped) {
-        ReportOverflow(sealQuadOverflows, *sealQuadsDropped, "seal quads", internal::MAX_SEAL_QUADS);
+        ReportOverflow(sealQuadOverflows, *sealQuadsDropped, "seal quads", MAX_SEAL_QUADS);
     }
     std::expected<void, core::Error> instancesCopied{};
     if (newInstances && dropped) {
@@ -407,10 +408,11 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     );
 }
 
-void Renderer::Impl::LaySeals(const core::Snapshot& snapshot, f64 renderTick) {
+void Renderer::Impl::LaySeals(const core::Snapshot& snapshot, f64 renderTick, bool showcase) {
     PN_PROFILE_ZONE();
     for (const core::Seal& seal : snapshot.seals) {
-        if (sealLooks.Find(seal.key) == nullptr && !std::ranges::contains(sealsMissing, seal.key)) {
+        if ((showcase || !seal.showcase) && sealLooks.Find(seal.key) == nullptr &&
+            !std::ranges::contains(sealsMissing, seal.key)) {
             sealsMissing.push_back(seal.key);
             PN_LOG_WARNING("a seal (key {:#018x}) isn't in seals.yaml, so it draws nothing", seal.key);
         }
@@ -424,7 +426,7 @@ void Renderer::Impl::LaySeals(const core::Snapshot& snapshot, f64 renderTick) {
         uiColours,
         renderTick / static_cast<f64>(core::TICKS_PER_SECOND),
         wholeTick,
-        true,
+        showcase,
         sealDrawing
     );
 }

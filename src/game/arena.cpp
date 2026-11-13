@@ -7,6 +7,7 @@
 #include "core/math.hpp"
 #include "core/profile.hpp"
 #include "core/random.hpp"
+#include "core/seal.hpp"
 #include "game/random_purposes.hpp"
 
 namespace game {
@@ -30,8 +31,34 @@ constexpr std::array PROPS{
     Prop{ .sprite = SpriteId::Pine, .foot = { .x = 1500.0F, .y = 960.0F } },
     Prop{ .sprite = SpriteId::RockLarge, .foot = { .x = 610.0F, .y = 780.0F } },
     Prop{ .sprite = SpriteId::RockLarge, .foot = { .x = 1320.0F, .y = 640.0F } },
-    Prop{ .sprite = SpriteId::RockSmall, .foot = { .x = 220.0F, .y = 960.0F } },
+    Prop{ .sprite = SpriteId::RockSmall, .foot = { .x = 48.0F, .y = 1050.0F } }, // in the corner, off the grand seal
     Prop{ .sprite = SpriteId::RockSmall, .foot = { .x = 1180.0F, .y = 300.0F } },
+};
+
+// The showcase seals (the phase 6 chunk 4b spec, "The showcase"): between them every part and placement seals.yaml can
+// describe. Scene content, as the props are: republished every tick, never saved. Their looks are seals.yaml's; here only
+// which seal stands where, and how large (its outer radius). Each has a clearing of its own: none reaches another, nor the
+// swords' seal a cast at the player's start raises (app's showcase_tests holds this), so no seal hides another.
+struct ShowcaseSeal {
+    core::SealKey key = 0;
+    core::Vec2 point{};
+    f32 size = 0.0F;
+};
+
+constexpr std::array SHOWCASE{
+    // The largest, about a third of the arena across, in the open lower left below the fight: nothing stands on it.
+    ShowcaseSeal{ .key = core::SealKeyOf("showcase_grand"), .point = { .x = 402.0F, .y = 935.0F }, .size = 290.0F },
+    // Standing between the dead tree and the crystal.
+    ShowcaseSeal{ .key = core::SealKeyOf("showcase_upright"), .point = { .x = 275.0F, .y = 700.0F }, .size = 70.0F },
+    // Hung over the open ground between the hut and the shrine, its pillars reaching down into its shadow.
+    ShowcaseSeal{ .key = core::SealKeyOf("showcase_overhead"), .point = { .x = 715.0F, .y = 340.0F }, .size = 120.0F },
+    // Below the fight, between the tablet and the crane.
+    ShowcaseSeal{ .key = core::SealKeyOf("showcase_tiers"), .point = { .x = 975.0F, .y = 890.0F }, .size = 100.0F },
+    // In the open ground under the blighted treant, right of the lower right pine's trunk, its shards drifting round it.
+    ShowcaseSeal{ .key = core::SealKeyOf("showcase_flame"), .point = { .x = 1650.0F, .y = 968.0F }, .size = 105.0F },
+    // The low end, one above the other between the shrine's rock and the fox spirit.
+    ShowcaseSeal{ .key = core::SealKeyOf("showcase_small_1"), .point = { .x = 1300.0F, .y = 140.0F }, .size = 40.0F },
+    ShowcaseSeal{ .key = core::SealKeyOf("showcase_small_3"), .point = { .x = 1300.0F, .y = 290.0F }, .size = 55.0F },
 };
 
 // The stone tablet, with its vertical caption beside it (design doc 0002.4 §2).
@@ -1053,6 +1080,14 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
     m_drawList.Publish(snapshot, jobs);
     PublishOverhead(snapshot);
     PublishCaster(snapshot);
+    if (m_scene == Scene::Arena) {
+        // Before the seals raised in play, which draw over them.
+        for (const ShowcaseSeal& seal : SHOWCASE) {
+            snapshot.seals.push_back(
+                { .key = seal.key, .point = seal.point, .size = seal.size, .endTick = core::NEVER_ENDS, .showcase = true }
+            );
+        }
+    }
     m_combat.Publish(snapshot);
     if (m_selected != core::StableId{}) {
         if (const auto drawn = std::ranges::find(snapshot.ids, m_selected); drawn != snapshot.ids.end()) {

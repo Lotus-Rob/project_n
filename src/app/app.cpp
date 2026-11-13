@@ -356,6 +356,10 @@ void App::HandleInput(const platform::WindowState& state) {
         else if (control->control == Control::Zoom) {
             m_camera.zoom = gfx::ZoomedBy(m_camera.zoom, control->value);
         }
+        else if (control->control == Control::ToggleShowcase) {
+            m_showcase = !m_showcase;
+            PN_LOG_INFO("the showcase seals {}", m_showcase ? "shown" : "hidden");
+        }
         else if (const core::Snapshot* drawn = m_display.Drawn(); SlotOf(control->control) && drawn != nullptr) {
             if (SelectsInstead(control->control, drawn->combat, control->alt)) {
                 Select(state, control->position);
@@ -507,13 +511,9 @@ bool App::Present(const platform::WindowState& state) {
                 m_hud.Build(*drawn->caster, renderTick, static_cast<u32>(std::max(state.height, 0)), m_hudLines, m_hudBars);
             }
             // Labels on the frame clock, which runs while the game is paused; numbers on the render clock, which holds.
-            m_renderer.Draw(
-                *drawn,
-                FrameView(m_camera, alpha, Hovered(state, *drawn, alpha), m_frameClock.Advance(platform::NowNs())),
-                m_jobs,
-                m_numberTexts,
-                { .lines = m_hudLines, .bars = m_hudBars }
-            );
+            gfx::View view = FrameView(m_camera, alpha, Hovered(state, *drawn, alpha), m_frameClock.Advance(platform::NowNs()));
+            view.showcase = m_showcase;
+            m_renderer.Draw(*drawn, view, m_jobs, m_numberTexts, { .lines = m_hudLines, .bars = m_hudBars });
             MeasureLatency(*drawn);
             PN_PROFILE_FRAME();
         }

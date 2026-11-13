@@ -60,6 +60,7 @@ Bindings::Bindings()
       { .code = InputCode::KeyF9, .control = Control::Load },
       { .code = InputCode::KeyF6, .control = Control::ToggleRecording },
       { .code = InputCode::KeyF7, .control = Control::DebugBurst },
+      { .code = InputCode::KeyF8, .control = Control::ToggleShowcase },
       { .code = InputCode::KeyF10, .control = Control::PlayReplay },
   } {
 }

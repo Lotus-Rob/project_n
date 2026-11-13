@@ -251,6 +251,33 @@ TEST_CASE("a round band holds its outer circle and the wash reaches its reach") 
     CHECK(Distance(drawn.groundWash[3].position, far) < CLOSE);
 }
 
+TEST_CASE("an overhead seal's shadow lies on the ground under it, as light as its look says; none without one") {
+    constexpr f32 LIFT = 120.0F;
+    constexpr f32 SHADOW = 0.2F;
+    constexpr f32 REACH = core::shipped::SEAL_WASH_REACH;
+    core::SealLook overhead = OneLayer();
+    overhead.plane = core::SealPlane::Overhead;
+    overhead.lift = LIFT;
+    core::SealLook shaded = overhead;
+    shaded.washShadow = SHADOW;
+    const gfx::SealDrawing drawn = Draw(One("shaded"), Table({ { "shaded", shaded } }), HELD);
+    // Its wash stays in its own plane, overhead; the shadow is the only quad on the ground.
+    CHECK(drawn.aboveWash.size() == gfx::QUAD_VERTICES);
+    REQUIRE(drawn.groundWash.size() == gfx::QUAD_VERTICES);
+    // Its far corner is the wash's reach out each way on the ground, not lifted.
+    const core::Vec2 far = POINT + core::Vec2{ .x = REACH * SIZE, .y = REACH * SIZE * VIEW_RATIO };
+    CHECK(Distance(drawn.groundWash[3].position, far) < CLOSE);
+    const gfx::SealGpuLayer& shadow = drawn.layers.at(drawn.groundWash[0].layer);
+    CHECK(Distance(shadow.centre, POINT) < CLOSE);
+    CHECK(shadow.washOpacity == doctest::Approx(SHADOW)); // whole, under the opacity cap
+    const gfx::SealGpuLayer& wash = drawn.layers.at(drawn.aboveWash[0].layer);
+    CHECK(shadow.washColour == wash.washColour); // the wash's ink
+    CHECK(shadow.washReach == wash.washReach);
+
+    const gfx::SealDrawing plain = Draw(One("plain"), Table({ { "plain", overhead } }), HELD);
+    CHECK(plain.groundWash.empty());
+}
+
 TEST_CASE("a look's parts are packed sorted by where their bands start, and its drawn layer points at them") {
     // Where each band starts: a star's at its apothem (0.9 cos 60°, less half its line), well inside its radius, so it
     // goes before the ticks it lies outside of; the circle and the star share a radius but not a start.
@@ -336,6 +363,36 @@ TEST_CASE("brightness scales a seal's lines and light, and the above cap holds a
 TEST_CASE("hidden showcase seals draw nothing") {
     const gfx::SealDrawing drawn = Draw(One("shown", true), Table({ { "shown", OneLayer() } }), SECOND, false);
     CHECK((drawn.layers.empty() && drawn.groundWash.empty() && drawn.groundLines.empty() && drawn.droppedSeals == 0));
+}
+
+TEST_CASE("the most seals a frame draws, each the largest an overhead seal with a shadow can be, fit the renderer's buffers") {
+    // The worst case seals.yaml allows: every layer a frame of the most sides, an emblem, a wash and a shadow.
+    core::SealLook largest;
+    largest.plane = core::SealPlane::Overhead;
+    largest.washShadow = 1.0F;
+    largest.colours = { { { .element = true } } };
+    for (u32 layer = 0; layer < core::MAX_SEAL_LAYERS; ++layer) {
+        largest.layers.push_back({ .inner = 0.0F, .outer = 1.0F, .frameSides = core::MAX_SEAL_FRAME_SIDES, .parts = {} });
+    }
+    largest.emblem = core::SealEmblem{ .sprite = SpriteId::EmblemSwords, .size = 1.0F };
+    const core::Seals looks = Table({ { "largest", largest } });
+    const std::vector<core::Seal> seals(gfx::MAX_SEALS_DRAWN, One("largest").front());
+    const gfx::SealDrawing drawn = Draw(seals, looks, HELD);
+    CHECK(drawn.droppedSeals == 0);
+    CHECK(drawn.layers.size() <= gfx::MAX_SEAL_LAYERS_DRAWN);
+    const std::size_t quads =
+        (drawn.groundWash.size() + drawn.groundLines.size() + drawn.aboveWash.size() + drawn.aboveLines.size()) /
+        gfx::QUAD_VERTICES;
+    CHECK(quads <= gfx::MAX_SEAL_QUADS);
+    // Every quad's layer is one the layer buffer holds.
+    u32 highest = 0;
+    for (const std::vector<gfx::SealVertex>* list :
+         { &drawn.groundWash, &drawn.groundLines, &drawn.aboveWash, &drawn.aboveLines }) {
+        for (const gfx::SealVertex& vertex : *list) {
+            highest = std::max(highest, vertex.layer);
+        }
+    }
+    CHECK(highest < gfx::MAX_SEAL_LAYERS_DRAWN);
 }
 
 TEST_CASE("more seals than the frame holds are counted") {

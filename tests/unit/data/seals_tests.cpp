@@ -228,6 +228,7 @@ TEST_CASE("every part, the emblem, a satellite and the light are read into the l
     constexpr f32 PILLAR_REST = 0.4F;
     constexpr f32 PILLAR_BAND = 0.2F;
     constexpr f32 SHARD_THIN = 0.25F;
+    constexpr f32 SHADOW = 0.2F;
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const std::expected<core::Seals, core::Error> seals = data::ParseSeals(
         "view_ratio: 0.5\n"
@@ -238,6 +239,7 @@ TEST_CASE("every part, the emblem, a satellite and the light are read into the l
         "  b: { colours: [element], layers: [{ inner: 0, outer: 1 }] }\n"
         "  a:\n"
         "    plane: overhead\n"
+        "    wash: { shadow: 0.2 }\n"
         "    colours: [element, effects.seal_gold]\n"
         "    life: { appear: 0.4, appear_curve: smooth, order: inner_first }\n"
         "    layers:\n"
@@ -268,6 +270,8 @@ TEST_CASE("every part, the emblem, a satellite and the light are read into the l
     const core::SealLook* look = seals->Find(core::SealKeyOf("a"));
     REQUIRE(look != nullptr);
     CHECK(look->plane == core::SealPlane::Overhead);
+    CHECK(look->washShadow == SHADOW);
+    CHECK(look->washDarkness == core::shipped::SEAL_WASH_DARKNESS); // left out of its wash: the default
     CHECK(look->colourCount == 2);
     CHECK(look->colours.at(1).colour == core::UiColour::SealGold);
     CHECK(look->appear == APPEAR);
@@ -320,7 +324,7 @@ TEST_CASE("the seals reader refuses out-of-range values with their line") {
         std::string_view text;
         std::string_view says;
     };
-    constexpr std::array<Broken, 25> CASES{ {
+    constexpr std::array<Broken, 28> CASES{ {
         { .why = "no ring",
           .text = "seals:\n  a:\n    colours: [element]\n    layers: []\n",
           .says = "seals line 4: a's layers isn't a list of 1 to 9 layers" },
@@ -418,6 +422,18 @@ TEST_CASE("the seals reader refuses out-of-range values with their line") {
           .text = "seals:\n  a:\n    colours: [element]\n    layers:\n"
                   "      - { inner: 0, outer: 1, parts: [{ kind: star, points: 6, step: 3, radius: 1, width: 0.1 }] }\n",
           .says = "seals line 5: a layer 0 part 0's step isn't below half its points" },
+        { .why = "a shadow darker than ink",
+          .text = "seals:\n  a:\n    plane: overhead\n    wash: { shadow: 1.5 }\n    colours: [element]\n"
+                  "    layers: [{ inner: 0, outer: 1 }]\n",
+          .says = "seals line 4: a's wash's shadow isn't a number from 0 to 1" },
+        { .why = "a shadow under a seal already on the ground",
+          .text = "seals:\n  a:\n    plane: ground\n    wash: { shadow: 0.2 }\n    colours: [element]\n"
+                  "    layers: [{ inner: 0, outer: 1 }]\n",
+          .says = "seals line 4: a's wash's shadow is only for an overhead seal" },
+        { .why = "a shadow under an upright seal, which has no flat shape to cast",
+          .text = "seals:\n  a:\n    plane: upright\n    wash: { shadow: 0.2 }\n    colours: [element]\n"
+                  "    layers: [{ inner: 0, outer: 1 }]\n",
+          .says = "seals line 4: a's wash's shadow is only for an overhead seal" },
         { .why = "a layer that isn't a map: refused as ours, not as yaml-cpp's bad subscript",
           .text = "seals:\n  a:\n    colours: [element]\n    layers: [5]\n",
           .says = "seals line 4: a layer 0 isn't a map" },
