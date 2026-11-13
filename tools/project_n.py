@@ -93,6 +93,15 @@ exec "$(dirname "$0")/cl" "${args[@]}"
 IMAGE_INPUTS = ("pixi.toml", "pixi.lock", "tools/env/activate.sh")
 IMAGE_IGNORE = "containers/.containerignore"  # the build context is the repo root; this admits only IMAGE_INPUTS
 CACHE_VOLUME = "project_n-xmake-cache"  # PROJECT_N_XMAKE_CACHE=<dir> bind-mounts a directory instead (CI caches it)
+# CI's compiled objects of our code, one folder per build (object_cache_dir), kept between runs by actions/cache.
+# Unset locally, where each build folder keeps XMake's own cache.
+BUILD_CACHE_ENV = "PROJECT_N_BUILD_CACHE"
+CONTAINER_BUILD_CACHE = "/home/dev/build-cache"  # where container_cmd mounts it
+# Toolchains whose CI builds use the object cache. Not pixi-gcc: with a precompiled header, GCC's preprocessed text
+# holds `#pragma GCC pch_preprocess "<pch>.gch"` instead of the headers, so XMake's key (which hashes that text)
+# misses a change to any header the PCH includes (core/types.hpp...) and hands back the old object; xmake.lua keeps
+# GCC off the build cache everywhere. Not msvc (§4).
+CI_CACHED_TOOLCHAINS = ("pixi-clang",)
 
 # Conventional Commits (docs/design/0001 §11.1). Add a scope in the commit that first uses it.
 TYPES = ("feat", "fix", "perf", "refactor", "test", "build", "ci", "docs", "style", "chore", "revert")
@@ -173,9 +182,50 @@ def buildable_here(preset):
     return bool(PRESETS[preset]["image"]) or (PRESETS[preset]["host"] == HOST and not IN_CONTAINER)
 
 
+def build_leaf(mode, sanitizer="none", unity=False):
+    return (mode if sanitizer == "none" else f"{mode}-{sanitizer}") + ("-unity" if unity else "")
+
+
 def build_dir(preset, mode, sanitizer="none", unity=False):
-    leaf = (mode if sanitizer == "none" else f"{mode}-{sanitizer}") + ("-unity" if unity else "")
+    leaf = build_leaf(mode, sanitizer, unity)
     return Path("build", "container", preset, leaf) if IN_CONTAINER else Path("build", preset, leaf)
+
+
+def cold_ref():
+    """CI is building main or a tag: every object compiles from source (the user's rule, spec 2026-11-13 §2)."""
+    ref = os.environ.get("GITHUB_REF", "")
+    return ref == "refs/heads/main" or ref.startswith("refs/tags/")
+
+
+def tag_ref():
+    return os.environ.get("GITHUB_REF", "").startswith("refs/tags/")
+
+
+# XMake's key for a cached object (build_cache.lua's cachekey) is the compiler's path, the compile flags without
+# -D, -I, -isystem, -include and --sysroot, and a hash of the preprocessed source. Leaving -D out is safe for our
+# flags: every define we pass (PN_ASSERTS, _FORTIFY_SOURCE, _GLIBCXX_ASSERTIONS, _LIBCPP_HARDENING_MODE,
+# _LIBCPP_DISABLE_AVAILABILITY, NDEBUG, PN_SOURCE_DATA, PN_FUZZ_CORPUS, packages' TRACY_*) is an ordinary macro that
+# reaches the object only through the preprocessed text, which is hashed; none is a compiler switch. Clang's text
+# holds the precompiled header's headers too, and its object compiles from that text alone.
+def build_cache_root():
+    """BUILD_CACHE_ENV made absolute (podman takes a relative source for a volume name; XMake resolves --ccachedir
+    from ROOT), or None: unset, or a tag, which neither reads nor writes one."""
+    root = os.environ.get(BUILD_CACHE_ENV)
+    return Path(root).absolute() if root and not tag_ref() else None
+
+
+def object_cache_dir(preset, mode, sanitizer="none", unity=False):
+    """CI's object cache for one build: <BUILD_CACHE_ENV>/<preset>-<leaf>, or None (unset, a tag, an uncached toolchain)."""
+    root = build_cache_root()
+    if not root or PRESETS[preset]["toolchain"] not in CI_CACHED_TOOLCHAINS:
+        return None
+    return root / f"{preset}-{build_leaf(mode, sanitizer, unity)}"
+
+
+def holds_objects(bdir):
+    """Whether a build folder already holds compiled objects: XMake's .objs/, or its own cache in .build_cache/."""
+    folders = (ROOT / bdir / ".objs", ROOT / bdir / ".build_cache")
+    return any(d.is_dir() and any(p.is_file() for p in d.rglob("*")) for d in folders)
 
 
 def packages_dir():
@@ -293,6 +343,12 @@ def container_cmd(image, inner, interactive=False, mounts=()):
         Path(cache).mkdir(parents=True, exist_ok=True)
     cmd = ["podman", "run", "--rm", "--userns=keep-id:uid=1000,gid=1000", "-v", f"{ROOT}:/src:Z",
            "-v", f"{cache}:/home/dev/.xmake:Z" if cache else f"{CACHE_VOLUME}:/home/dev/.xmake", "-e", f"PROJECT_N_IMAGE={image}"]
+    objects = build_cache_root()
+    if objects:
+        objects.mkdir(parents=True, exist_ok=True)
+        cmd += ["-v", f"{objects}:{CONTAINER_BUILD_CACHE}:Z", "-e", f"{BUILD_CACHE_ENV}={CONTAINER_BUILD_CACHE}"]
+    if os.environ.get("GITHUB_REF"):  # the cold rule holds inside too
+        cmd += ["-e", f"GITHUB_REF={os.environ['GITHUB_REF']}"]
     for mount in mounts:
         cmd += ["-v", mount]
     if interactive:
@@ -319,6 +375,16 @@ def configure(preset, mode, sanitizer="none", unity=False):
            "-o", bdir, f"--sanitizer={sanitizer}", *(["--unity_build=y"] if unity else [])]
     if p["toolchain"] == "msvc":
         cmd.append("--sdk=/opt/msvc" if IN_CONTAINER else f"--vs_toolset={VS_TOOLSET}")
+    if cold_ref() and holds_objects(bdir):
+        raise Fail(f"{bdir} already holds compiled objects, and CI builds {os.environ['GITHUB_REF']} from source: "
+                   "delete the folder first (the cold rule, tools/AGENTS.md)")
+    cache = object_cache_dir(preset, mode, sanitizer, unity)
+    # On main a build only writes, into an empty folder: it reads no object an earlier build of the run made.
+    if cache and not (cold_ref() and cache.is_dir() and any(cache.iterdir())):
+        cache.mkdir(parents=True, exist_ok=True)
+        cmd += ["--build_cache=y", f"--ccachedir={cache}"]  # the option beats XMake's own switch, off on CI
+    elif cold_ref():
+        cmd.append("--ccache=n")  # nor XMake's own cache in the build folder, on in containers (no CI variable there)
     run(cmd, env=xmake_env(bdir))
     return bdir
 
@@ -1477,7 +1543,7 @@ def ci_artifact_name(preset):
     """The name CI uploads a preset's archives under: the version and preset, as in the archives'
     names, plus the commit unless CI is building a tag (a dev build isn't that version yet)."""
     name = f"{APP}-{read_version()}-{preset}"
-    if not os.environ.get("GITHUB_REF", "").startswith("refs/tags/"):
+    if not tag_ref():
         name += "-" + capture(["git", "rev-parse", "--short=7", "HEAD"]).strip()
     return name
 

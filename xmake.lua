@@ -89,11 +89,24 @@ set_warnings("everything", "pedantic", "error")
 
 local sanitized = get_config("sanitizer") and get_config("sanitizer") ~= "none"
 
+-- CI's object cache (`project_n` sets it with --ccachedir on branch builds; tools/AGENTS.md). XMake turns its build
+-- cache off on CI and for Windows' cl; a project policy comes before both, so this turns it back on.
+option("build_cache", {default = false, description = "Compile through XMake's build cache, even on CI"})
+if get_config("toolchain") == "pixi-gcc" then
+    -- Never for GCC, wherever it builds: XMake preprocesses with -fpch-preprocess, which writes
+    -- `#pragma GCC pch_preprocess "<pch>.gch"` in place of the precompiled header's headers, and keys an object on
+    -- that text, so a changed core/types.hpp handed back the old object (the test still saw the old value).
+    set_policy("build.ccache", false)
+elseif has_config("build_cache") then
+    set_policy("build.ccache", true)
+end
+
 if is_plat("windows") then
     -- Off Windows (msvc-wine), XMake's build cache compiles the preprocessed file, whose /showIncludes
     -- lists no headers, and /showIncludes is how XMake learns what each object depends on there
     -- (CL_WRAPPER in tools/project_n.py): with the cache on, a changed header rebuilt nothing.
-    if not is_host("windows") then
+    -- Unless the build cache is asked for: only CI asks, whose build folders are never reused.
+    if not is_host("windows") and not has_config("build_cache") then
         set_policy("build.ccache", false)
     end
     -- MSVC 14.50 has no /std:c++23: it warns (D9002, not fatal even with /WX), ignores it and

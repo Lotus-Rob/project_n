@@ -566,6 +566,135 @@ class ArtifactReferenceTest(unittest.TestCase):
         self.assertEqual(self.references_in_artifact("windows-msvc"), [])
 
 
+class ObjectCacheTest(unittest.TestCase):
+    """CI's object cache: warm on branch pushes, never read on main or a tag (the user's cold rule)."""
+
+    def setUp(self):
+        self.tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.ran = []
+        self.enterContext(mock.patch.multiple(project_n, ROOT=self.tmp, IN_CONTAINER=False, xmake_env=lambda bdir: {},
+                                              run=lambda cmd, **kwargs: self.ran.append([str(c) for c in cmd])))
+
+    def ci(self, cache=None, ref=None):
+        """os.environ as CI sets it: the object cache folder and the ref, or neither (a local run)."""
+        env = {k: v for k, v in os.environ.items() if k not in (project_n.BUILD_CACHE_ENV, "GITHUB_REF")}
+        env |= {project_n.BUILD_CACHE_ENV: str(cache)} if cache else {}
+        env |= {"GITHUB_REF": ref} if ref else {}
+        return mock.patch.dict(project_n.os.environ, env, clear=True)
+
+    def configured(self, preset="linux-clang", mode="release"):
+        """The `xmake f` command `configure` runs."""
+        self.ran.clear()
+        project_n.configure(preset, mode)
+        return next(cmd for cmd in self.ran if cmd[1:2] == ["f"])
+
+    def test_no_cache_without_the_variable(self):
+        with self.ci(ref="refs/heads/ci-speed"):
+            self.assertIsNone(project_n.object_cache_dir("linux-clang", "release"))
+            # Locally nothing changes: XMake's own cache in the build folder stays on.
+            self.assertFalse([a for a in self.configured() if a.startswith(("--build_cache", "--ccachedir", "--ccache"))])
+
+    def test_a_relative_cache_folder_is_made_absolute(self):
+        # podman would take a relative source for a named volume, and XMake resolves --ccachedir from ROOT.
+        with self.ci("rel-cache", "refs/heads/ci-speed"), mock.patch.object(project_n.Path, "mkdir"):
+            self.assertEqual(project_n.object_cache_dir("linux-clang", "release"),
+                             Path.cwd() / "rel-cache" / "linux-clang-release")
+            cmd = project_n.container_cmd("image", ["true"])
+        self.assertIn(f"{Path.cwd() / 'rel-cache'}:/home/dev/build-cache:Z", cmd)
+
+    def test_a_branch_build_uses_its_leaf_folder(self):
+        with self.ci(self.tmp / "c", "refs/heads/ci-speed"):
+            folder = self.tmp / "c" / "linux-clang-release"
+            self.assertEqual(project_n.object_cache_dir("linux-clang", "release"), folder)
+            self.assertEqual(project_n.object_cache_dir("linux-clang", "debug", "address", unity=True),
+                             self.tmp / "c" / "linux-clang-debug-address-unity")
+            cmd = self.configured()
+        self.assertIn("--build_cache=y", cmd)
+        self.assertIn(f"--ccachedir={folder}", cmd)
+        self.assertTrue(folder.is_dir())
+
+    def test_msvc_stays_uncached(self):
+        with self.ci("/c", "refs/heads/ci-speed"):
+            self.assertIsNone(project_n.object_cache_dir("windows-msvc", "release"))
+
+    def test_gcc_stays_uncached(self):
+        # GCC's preprocessed text names the precompiled header instead of holding it, so XMake's key misses a header change.
+        with self.ci("/c", "refs/heads/ci-speed"):
+            self.assertIsNone(project_n.object_cache_dir("linux-gcc", "release"))
+
+    def test_a_tag_uses_no_cache(self):
+        with self.ci("/c", "refs/tags/v0.4.0"):
+            self.assertIsNone(project_n.object_cache_dir("linux-clang", "release"))
+            self.assertTrue(project_n.cold_ref() and project_n.tag_ref())
+
+    def test_main_writes_only_into_an_empty_folder(self):
+        folder = self.tmp / "c" / "linux-clang-release"
+        with self.ci(self.tmp / "c", "refs/heads/main"):
+            self.assertTrue(project_n.cold_ref() and not project_n.tag_ref())
+            self.assertIn("--build_cache=y", self.configured())  # no folder yet: nothing to read
+            self.assertIn("--build_cache=y", self.configured())  # still empty
+            (folder / "ab").mkdir()
+            (folder / "ab" / "object").write_bytes(b"cached")
+            cmd = self.configured()
+        self.assertFalse([a for a in cmd if a.startswith(("--build_cache", "--ccachedir"))])
+        self.assertIn("--ccache=n", cmd)  # nor XMake's own cache in the build folder (on in containers: no CI there)
+        with self.ci(ref="refs/heads/main"):
+            self.assertIn("--ccache=n", self.configured())
+        with self.ci(self.tmp / "c", "refs/tags/v0.4.0"):
+            self.assertIn("--ccache=n", self.configured())
+
+    def test_a_cold_ref_refuses_a_reused_build_folder(self):
+        bdir = project_n.build_dir("linux-clang", "release")
+        with self.ci(ref="refs/heads/main"):
+            project_n.build("linux-clang", "release")  # no folder
+            (self.tmp / bdir / ".objs").mkdir(parents=True)
+            project_n.build("linux-clang", "release")  # cleaned: no objects left
+            (self.tmp / bdir / ".objs" / "core" / "x.o").parent.mkdir(parents=True)
+            (self.tmp / bdir / ".objs" / "core" / "x.o").write_bytes(b"o")
+            self.ran.clear()
+            with self.assertRaisesRegex(project_n.Fail, re.escape(str(bdir))):
+                project_n.build("linux-clang", "release")
+            self.assertEqual(self.ran, [])
+            (self.tmp / bdir / ".objs" / "core" / "x.o").unlink()
+            project_n.build("linux-clang", "release")
+            (self.tmp / bdir / ".build_cache" / "ab").mkdir(parents=True)  # XMake's own cache, kept from a build
+            (self.tmp / bdir / ".build_cache" / "ab" / "object").write_bytes(b"o")
+            with self.assertRaisesRegex(project_n.Fail, re.escape(str(bdir))):
+                project_n.build("linux-clang", "release")
+        with self.ci(ref="refs/heads/ci-speed"):
+            project_n.build("linux-clang", "release")  # a branch build reuses its folder as ever
+
+    def test_the_container_gets_the_cache_and_the_ref(self):
+        with self.ci("/home/runner/build-cache", "refs/heads/ci-speed"), mock.patch.object(project_n.Path, "mkdir"):
+            cmd = project_n.container_cmd("image", ["true"])
+        self.assertIn(f"{Path('/home/runner/build-cache').absolute()}:/home/dev/build-cache:Z", cmd)
+        self.assertIn("PROJECT_N_BUILD_CACHE=/home/dev/build-cache", cmd)
+        self.assertIn("GITHUB_REF=refs/heads/ci-speed", cmd)
+        with self.ci():
+            cmd = project_n.container_cmd("image", ["true"])
+        self.assertFalse([a for a in cmd if "build-cache" in a or "GITHUB_REF" in a])
+        with self.ci(self.tmp / "c", "refs/tags/v1.0.0"):  # a tag neither reads nor writes one
+            cmd = project_n.container_cmd("image", ["true"])
+        self.assertFalse([a for a in cmd if "build-cache" in a])
+        self.assertIn("GITHUB_REF=refs/tags/v1.0.0", cmd)
+        self.assertFalse((self.tmp / "c").exists())
+
+    def test_artifact_on_a_tag_builds_without_a_cache(self):
+        class Stop(Exception):
+            pass
+
+        def stop(*args):
+            raise Stop
+
+        with self.ci(self.tmp / "c", "refs/tags/v1.0.0"), \
+             mock.patch.multiple(project_n, IN_CONTAINER=True, tree_dirty=lambda: "", lfs_pointers=lambda folder: [],
+                                 run_references=lambda preset: None, binary_path=stop), self.assertRaises(Stop):
+            project_n.cmd_artifact(project_n.argparse.Namespace(preset="linux-clang"))
+        xmake_f = next(cmd for cmd in self.ran if cmd[1:2] == ["f"])
+        self.assertFalse([a for a in xmake_f if a.startswith(("--build_cache", "--ccachedir"))])
+        self.assertFalse((self.tmp / "c").exists())  # a tag writes no cache either
+
+
 class RunTest(unittest.TestCase):
     def test_run_hands_the_arguments_after_the_separator_to_the_game(self):
         ran = []
