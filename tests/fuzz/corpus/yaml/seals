@@ -1,0 +1,83 @@
+# How each seal looks: the glowing magic circles raised in play (the flying swords' sword_formation) and shown in the arena.
+# Presentation only: nothing here changes what happens, and it is not saved or hashed; game data names a seal by its name
+# alone. Debug builds reload it within half a second of an edit; a value out of range is refused with its line (the old
+# looks stay), and an unknown key is a warning. Angles are in degrees, times in seconds, spins in degrees a second (negative
+# turns the other way); radii, widths and sizes are fractions of the seal's size (its outer radius, which game data or the
+# scene gives) unless a key says world units.
+#
+# view_ratio: the art's angle, how far depth on a flat seal is squashed on screen (above 0, at most 1; the blob shadow's
+#   24 / 64). above_opacity: the most an upright or overhead seal shows over the creatures (0 to 1). spin_scale: multiplies
+#   every spin, particle speed and how fast seals appear and fade (0 or more; reduce motion lowers it). brightness: multiplies
+#   every line and light (0 or more; reduce flashing lowers it).
+# glyph_sets: named lists of sprites a script draws from, in turn round its ring.
+# seals: each seal by name, with
+#   plane: ground (flat, an ellipse at the art's angle), upright (standing, a circle) or overhead (flat, lifted); lift: world
+#     units its plane sits above the ground (0 or more).
+#   wash: the ink under its glow, so it shines on the pale ground: darkness (0 none to 1), reach (how far it spreads, above
+#     0) and softness (of its edge, 0 hard to 1).
+#   colours: one or two, each `element` (the colour of the element it was raised with) or a palette colour as area.key, such
+#     as effects.seal_gold; never hex. A part, the emblem or the light picks one by `colour: 0` (the default) or `colour: 1`.
+#   life: appear and fade (seconds, 0 or more) with appear_curve and fade_curve (linear, ease_in, ease_out, smooth, sine), and
+#     order: outer_first or inner_first, the order its layers appear in, one after another.
+#   layers: 1 to 9, each inner and outer (its band, inner below outer, outer at most 1), height (world units it rises above
+#     the plane, 0 or more), spin, opacity (0 to 1), frame ({ sides: 0 round, or 3 or more for a square or diamond band;
+#     rotation }) and up to 16 parts. Every part has a kind, a radius (above 0, at most 1), a rotation (where its first item
+#     sits) and a colour, and by kind:
+#       circle: width (above 0), dash and gap (degrees of the ring; dash 0 is solid);
+#       ticks: count (1 to 360), length and width;
+#       dots: count and size (across);
+#       script: glyphs (a glyph set), count, size (a glyph's height) and facing (outward or inward);
+#       star: points (3 to 360), step (it joins every step-th point: a hexagram is 6 and 2; below half the points), width;
+#       polygon: sides (3 to 360) and width;
+#       flourish: sprites (1 to 3, drawn in turn), count, size and spill (how far past the layer it may reach, 0 to 1).
+#   emblem: a sprite at the centre: sprite, size (above 0, at most 1), spin and colour.
+#   satellites: other seals drawn on its rings, each seal (by name, never its own; nesting at most 2 deep), layer (whose
+#     ring), angle, size (above 0, at most 1), mount (fixed: stays put; with_layer: turns with the layer; orbit: goes round
+#     at orbit degrees a second).
+#   light: colour, and pillars { count, height (world units), width, fade (how much of its length a pillar fades out
+#     over towards its far end, 0 to 1) }, sparks { count, rise (world units a second), life
+#     (seconds, above 0) } and shards { count, drift (world units a second), spin }: 256 particles at most in all.
+view_ratio: 0.375
+above_opacity: 0.7
+spin_scale: 1
+brightness: 1
+glyph_sets:
+  runes: [rune_00, rune_01, rune_02, rune_03, rune_04, rune_05, rune_06, rune_07, rune_08, rune_09, rune_10, rune_11,
+          rune_12, rune_13, rune_14, rune_15, rune_16, rune_17, rune_18, rune_19, rune_20, rune_21, rune_22, rune_23]
+seals:
+  # Under the flying swords' rings from the cast until the last sword leaves: a script seal in the damage element's colour.
+  sword_formation:
+    plane: ground
+    lift: 0
+    wash: { darkness: 0.55, reach: 1.12, softness: 0.3 }
+    colours: [element]
+    life: { appear: 0.4, appear_curve: ease_out, fade: 0.3, fade_curve: smooth, order: outer_first }
+    layers:
+      # The outer band: a rim, a ring of runes facing out, and an inner line.
+      - inner: 0.85
+        outer: 1
+        spin: 9
+        opacity: 0.9
+        parts:
+          - { kind: circle, radius: 0.985, width: 0.006 }
+          - { kind: script, glyphs: runes, count: 24, radius: 0.925, size: 0.08, facing: outward }
+          - { kind: circle, radius: 0.865, width: 0.004 }
+      # The middle band, turning the other way: ticks, a smaller ring of runes facing in, and a dashed line.
+      - inner: 0.6
+        outer: 0.84
+        spin: -14
+        opacity: 0.85
+        parts:
+          - { kind: ticks, count: 72, radius: 0.815, length: 0.03, width: 0.003 }
+          - { kind: script, glyphs: runes, count: 18, radius: 0.72, size: 0.07, facing: inward, rotation: 10 }
+          - { kind: circle, radius: 0.62, width: 0.004, dash: 6, gap: 4 }
+      # The heart: a hexagram inside a ring, turning slowly.
+      - inner: 0
+        outer: 0.59
+        spin: 6
+        opacity: 0.8
+        parts:
+          - { kind: circle, radius: 0.575, width: 0.005 }
+          - { kind: star, points: 6, step: 2, radius: 0.56, width: 0.005 }
+    emblem: { sprite: emblem_swords, size: 0.22, spin: 0, colour: 0 }
+    light: { sparks: { count: 24, rise: 40, life: 1.2 } }

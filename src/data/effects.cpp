@@ -12,7 +12,7 @@ namespace {
 constexpr f64 TICKS_A_SECOND = static_cast<f64>(core::TICKS_PER_SECOND);
 
 core::Error RefuseEffects(const YAML::Node& node, std::string_view why) {
-    return { std::format("effects line {}: {}", node.Mark().line + 1, why) };
+    return internal::RefusalAt("effects", node, why);
 }
 
 // Reads a map of numbers into f32 fields, remembering the first refusal: each `read` leaves its field as it was when its key
@@ -66,7 +66,6 @@ private:
 
 constexpr internal::Range POSITIVE{ .low = 0.0, .lowOpen = true };
 constexpr internal::Range NOT_NEGATIVE{ .low = 0.0 };
-constexpr internal::Range FRACTION{ .low = 0.0, .lowOpen = false, .high = 1.0 };
 
 std::expected<void, core::Error> ReadSwords(
     const YAML::Node& node,
@@ -81,7 +80,7 @@ std::expected<void, core::Error> ReadSwords(
     fields.Read("sword_scale", look.swordScale, POSITIVE);
     fields.Read("trail", look.trailTicks, POSITIVE, TICKS_A_SECOND);
     fields.Read("trail_width", look.trailWidth, POSITIVE);
-    fields.Read("trail_taper", look.trailTaper, FRACTION);
+    fields.Read("trail_taper", look.trailTaper, internal::FRACTION);
     fields.Read("trail_intensity", look.trailIntensity, NOT_NEGATIVE);
     if (fields.Error()) {
         return std::unexpected{ *fields.Error() };
@@ -177,7 +176,7 @@ std::expected<void, core::Error> ReadHud(const YAML::Node& node, std::vector<std
     fields.Read("bar_text_inset", layout.barTextInset, NOT_NEGATIVE);
     fields.Read("bar_text_rise", layout.barTextRise, NOT_NEGATIVE);
     fields.Read("not_enough_qi", layout.notEnoughQiSeconds, POSITIVE);
-    fields.Read("cooling_ink_opacity", layout.coolingInkOpacity, FRACTION);
+    fields.Read("cooling_ink_opacity", layout.coolingInkOpacity, internal::FRACTION);
     if (fields.Error()) {
         return std::unexpected{ *fields.Error() };
     }
@@ -202,7 +201,7 @@ std::expected<void, core::Error> ReadDrive(
     );
     EffectFields fields(node, owner);
     fields.Read("period", drive.periodSeconds, BEAT);
-    fields.Read("depth", drive.depth, FRACTION);
+    fields.Read("depth", drive.depth, internal::FRACTION);
     fields.Read("fade", drive.fadeSeconds, POSITIVE);
     if (fields.Error()) {
         return std::unexpected{ *fields.Error() };
@@ -252,9 +251,9 @@ std::expected<void, core::Error> ReadGlow(
     );
     EffectFields fields(node, name);
     fields.Read("size", look.size, REACH);
-    fields.Read("feather", look.feather, FRACTION);
-    fields.Read("opacity", look.opacity, FRACTION);
-    fields.Read("zoom_shrink", look.zoomShrink, FRACTION);
+    fields.Read("feather", look.feather, internal::FRACTION);
+    fields.Read("opacity", look.opacity, internal::FRACTION);
+    fields.Read("zoom_shrink", look.zoomShrink, internal::FRACTION);
     if (fields.Error()) {
         return std::unexpected{ *fields.Error() };
     }

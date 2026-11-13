@@ -56,6 +56,9 @@ struct Range {
     f64 high = std::numeric_limits<f64>::infinity();
 };
 
+/// A fraction: from 0 to 1, both included.
+inline constexpr Range FRACTION{ .low = 0.0, .lowOpen = false, .high = 1.0 };
+
 /// The finite number at `key` in `map` within `range` (`fallback` when absent), which `name` names in errors: "`what` line
 /// N: ..." when it isn't a number or is out of range. The one reader of an optional tuning value.
 [[nodiscard]] std::expected<f64, core::Error> TunedNumber(
