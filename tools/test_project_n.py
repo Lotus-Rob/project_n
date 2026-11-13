@@ -149,6 +149,66 @@ class DirtyTreeTest(unittest.TestCase):
             self.assertTrue(project_n.tree_dirty())
 
 
+class RestoreLockTest(unittest.TestCase):
+    BEFORE = b'{\r\n__meta__ = { version = "1.0" }\nsdl = {}\nttf = {}\n'
+
+    def restored(self, now):
+        with temp_repo({"xmake-requires.lock": "x"}) as root:
+            lock = root / "xmake-requires.lock"
+            lock.write_bytes(now)
+            project_n.restore_reordered_lock(self.BEFORE)
+            return lock.read_bytes()
+
+    def test_reordered_lock_is_restored_byte_for_byte(self):
+        self.assertEqual(self.restored(b'{\r\nsdl = {}\nttf = {}\n__meta__ = { version = "1.0" }\n'), self.BEFORE)
+
+    def test_changed_or_added_line_is_kept(self):
+        for now in (self.BEFORE.replace(b"ttf", b"tty"), self.BEFORE + b"more = {}\n"):
+            self.assertEqual(self.restored(now), now)
+
+    def test_unchanged_lock_is_not_written(self):
+        with temp_repo({"xmake-requires.lock": "x"}) as root:
+            lock = root / "xmake-requires.lock"
+            lock.write_bytes(self.BEFORE)
+            os.utime(lock, ns=(1_000_000_000, 1_000_000_000))
+            project_n.restore_reordered_lock(self.BEFORE)
+            self.assertEqual(lock.stat().st_mtime_ns, 1_000_000_000)
+
+    def reordering_xmake(self, root, fail):
+        """A subprocess.run that reorders the lock as XMake does, and fails when asked."""
+        def fake(cmd, **kwargs):
+            (root / "xmake-requires.lock").write_bytes(b"b\na\n")
+            if fail:
+                raise project_n.subprocess.CalledProcessError(1, cmd)
+        return mock.patch.object(project_n.subprocess, "run", fake)
+
+    def test_every_xmake_call_restores_the_lock_even_when_it_fails(self):
+        for fail in (False, True):
+            with temp_repo({"xmake-requires.lock": "x"}) as root:
+                (root / "xmake-requires.lock").write_bytes(b"a\nb\n")
+                with self.reordering_xmake(root, fail):
+                    if fail:
+                        with self.assertRaises(project_n.subprocess.CalledProcessError):
+                            project_n.run(["xmake", "build"])
+                    else:
+                        project_n.run(["xmake", "test"])
+                self.assertEqual((root / "xmake-requires.lock").read_bytes(), b"a\nb\n")
+
+    def test_configure_restores_the_lock(self):
+        with temp_repo({"xmake-requires.lock": "x"}) as root:
+            (root / "xmake-requires.lock").write_bytes(b"a\nb\n")
+            with self.reordering_xmake(root, False), mock.patch.object(project_n, "xmake_env", lambda bdir: {}):
+                project_n.configure("linux-clang", "debug")
+            self.assertEqual((root / "xmake-requires.lock").read_bytes(), b"a\nb\n")
+
+    def test_other_commands_leave_the_lock_alone(self):
+        with temp_repo({"xmake-requires.lock": "x"}) as root:
+            (root / "xmake-requires.lock").write_bytes(b"a\nb\n")
+            with self.reordering_xmake(root, False):
+                project_n.run(["git", "status"])
+            self.assertEqual((root / "xmake-requires.lock").read_bytes(), b"b\na\n")
+
+
 class ScopeTest(unittest.TestCase):
     DIFF = project_n.argparse.Namespace(all=False, range=None)
 
