@@ -69,6 +69,16 @@ public:
     /// The scene its state needs drawn (design doc 0002.3.1 §3): it ticks only while the main thread holds it.
     [[nodiscard]] virtual SceneId Scene() const = 0;
 
+    /// The scene it is: its `sprites` are what Scene() returns.
+    [[nodiscard]] virtual SceneFacts Current() const = 0;
+
+    /// The scene its last tick asked to change to, until EnterScene(); none otherwise. The tick that asks has already
+    /// done what leaving the old scene does (open uses end).
+    [[nodiscard]] virtual std::optional<SceneFacts> Requested() const = 0;
+
+    /// Makes the scene Requested() names current, building it; one must have been requested.
+    virtual void EnterScene() = 0;
+
     /// Writes what the state looks like now into `snapshot`'s drawing data: its instances, batches
     /// and IDs arrive empty, with their capacity kept, and it follows nothing until set. Called once per burst, after its last
     /// tick, on the thread that created `jobs`, whose workers it may fork.
@@ -112,7 +122,8 @@ public:
     /// load or a replay starting in another scene), the burst runs no tick but waits (design doc
     /// 0002.3.1 §4): it takes live input only, records nothing and moves no counter; Pause and
     /// Resume still apply, SceneResident and ReloadData are taken, everything else is dropped; a tick
-    /// that changes the scene (CycleScene) ends its burst. Each tick takes the input sent since the
+    /// whose simulation asks for another scene (Simulation::Requested()) has it entered at once
+    /// (Simulation::EnterScene()), before any replay check, and ends its burst. Each tick takes the input sent since the
     /// one before (the last Pause or Resume wins; while a replay plays, the recorded input instead)
     /// and the newest held input, which every tick of a burst gets,
     /// counts itself, frozen while paused or while a calendar step is asked for, and ticks the

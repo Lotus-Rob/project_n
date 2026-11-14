@@ -58,6 +58,7 @@ bool Logic::RunBurst(const TickBurst& burst, const std::stop_token& stop) {
     snapshot.seals.clear();
     snapshot.caster.reset();
     snapshot.follow.reset();
+    snapshot.camera = CameraKind::Pan;
     snapshot.selected.reset();
     m_simulation->Publish(snapshot, *m_jobs);
     snapshot.publishedNs = m_now();
@@ -113,6 +114,10 @@ Logic::TickEnd Logic::RunTick(const std::stop_token& stop) {
             event.tick = m_counters.simulation;
             event.epoch = m_epoch;
         }
+    }
+    if (m_simulation->Requested().has_value()) {
+        m_simulation->EnterScene();
+        return TickEnd::EndBurst;
     }
     return m_calendar == Calendar::Requested ? TickEnd::EndBurst : TickEnd::Continue;
 }
