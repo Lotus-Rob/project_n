@@ -42,7 +42,7 @@ void Game::Step(u64 nowNs, const std::stop_token& stop) {
     if (m_logic.RunBurst(burst, stop)) {
         const u64 stalledNs = m_now();
         PN_LOG_INFO(
-            "an expected stall (a month, a save, a load, a replay or a scene becoming resident) took {} ms",
+            "an expected stall (a month, a save, a load, a replay or the wait for a scene) took {} ms",
             (stalledNs - nowNs) / core::NS_PER_MS
         );
         m_clock.Restart(stalledNs);

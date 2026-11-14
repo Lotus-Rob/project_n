@@ -10,6 +10,7 @@
 #include "core/logic.hpp"
 #include "core/replay.hpp"
 #include "core/saves.hpp"
+#include "core/scene_reports.hpp"
 #include "core/tick_clock.hpp"
 #include "game/arena.hpp"
 #include "support/manifest.hpp"
@@ -26,7 +27,7 @@ u64 NoClock() {
 }
 
 // A game as app::Game holds one, built as `scene`, without its clock: the tests choose the bursts. As App does, it
-// reports each scene a snapshot needs resident, at once.
+// reports each scene a snapshot needs resident, and each scene change's way out and way in played, at once.
 struct Session {
     explicit Session(
         const std::filesystem::path& folder,
@@ -36,8 +37,9 @@ struct Session {
       : saves(folder / "slot.pns", jobs)
       , replays(folder / "replay.pnr", jobs)
       , arena(test::TestManifest(), scene, data) { // parentheses: MSVC C4868
-        Burst(1);                                  // waits, and reports the scene
-        Burst(1);                                  // takes the report
+        Burst(1);                                  // loading: reports the scene resident
+        Burst(1);                                  // entering: reports the way in played
+        Burst(1);                                  // takes that report
     }
 
     void Burst(u64 ticks) {
@@ -48,6 +50,9 @@ struct Session {
         if (published->scene != reported) {
             reported = published->scene;
             handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = published->scene });
+        }
+        if (const std::optional<core::Action> report = reports.Answer(published->sceneChange)) {
+            handover.SendInput(*report);
         }
         handover.ReturnState(published);
     }
@@ -73,6 +78,7 @@ struct Session {
     core::Replay replay{};
     game::Arena arena;
     core::Logic logic{ handover, arena, jobs, saves, replays, replay, NoClock };
+    core::SceneReports reports{};
     std::optional<core::SceneId> reported = std::nullopt;
     std::size_t volleys = 0; // in flight in the last snapshot published
     std::size_t seals = 0;   // raised in play in the last snapshot published
@@ -116,9 +122,10 @@ TEST_CASE("an arena with NPCs plays its replay back with every hash matching") {
         recording.Send(core::ActionKind::ToggleRecording);
         recording.Burst(1);
         recording.Send(core::ActionKind::CycleScene); // to the arena
-        recording.Burst(BURST);                       // ends after the change
-        recording.Burst(BURST);                       // waits for the arena, which the session reports
-        recording.Burst(BURST);                       // takes the report
+        recording.Burst(BURST);                       // ends after the request: leaving, which the session reports
+        recording.Burst(BURST);                       // the arena is built: loading, and the session reports it resident
+        recording.Burst(BURST);                       // entering, which the session reports
+        recording.Burst(BURST);                       // takes that report: the arena runs
         REQUIRE(recording.arena.Player() != core::StableId{});
         recording.Hold(RIGHT);
         recording.Burst(WALK);

@@ -23,12 +23,12 @@ Simulation::~Simulation() = default;
 bool Logic::RunBurst(const TickBurst& burst, const std::stop_token& stop) {
     PN_PROFILE_ZONE();
     TickEnd end = TickEnd::Continue;
-    if (burst.ticks > 0 && m_simulation->Scene() != m_resident) {
+    if (burst.ticks > 0 && Waiting()) {
         end = Wait() ? TickEnd::Stall : TickEnd::EndBurst;
     }
     for (u64 tick = 0; tick < burst.ticks && end == TickEnd::Continue; ++tick) {
         end = RunTick(stop);
-        if (end == TickEnd::Continue && m_simulation->Scene() != m_resident) {
+        if (end == TickEnd::Continue && Waiting()) {
             end = TickEnd::EndBurst; // the next burst waits for the new scene
         }
         CheckReplay();
@@ -46,6 +46,11 @@ bool Logic::RunBurst(const TickBurst& burst, const std::stop_token& stop) {
     snapshot.advanced = m_advanced;
     snapshot.transition = m_calendar == Calendar::Published;
     snapshot.scene = m_simulation->Scene();
+    snapshot.sceneChange = m_change;
+    if (m_change.stage == SceneStage::Running) {
+        snapshot.sceneChange.from = m_simulation->Current();
+        snapshot.sceneChange.to = snapshot.sceneChange.from;
+    }
     snapshot.instances.clear();
     snapshot.batches.clear();
     snapshot.groundBatches = 0;
@@ -115,8 +120,20 @@ Logic::TickEnd Logic::RunTick(const std::stop_token& stop) {
             event.epoch = m_epoch;
         }
     }
-    if (m_simulation->Requested().has_value()) {
-        m_simulation->EnterScene();
+    if (const std::optional<SceneFacts> requested = m_simulation->Requested()) {
+        m_change = {
+            .stage = SceneStage::Leaving,
+            .from = m_simulation->Current(),
+            .to = *requested,
+            .change = m_change.change + 1,
+        };
+        PN_LOG_DEBUG(
+            "scene change {} at tick {}: leaving scene {} for scene {}",
+            m_change.change,
+            m_counters.wall,
+            std::to_underlying(m_change.from.key),
+            std::to_underlying(m_change.to.key)
+        );
         return TickEnd::EndBurst;
     }
     return m_calendar == Calendar::Requested ? TickEnd::EndBurst : TickEnd::Continue;
@@ -144,14 +161,46 @@ bool Logic::Wait() {
                 m_paused = m_windowPaused;
             }
         }
+        else if (action.kind == ActionKind::SceneLeft || action.kind == ActionKind::SceneEntered) {
+            if (!TakeReport(action)) {
+                ++dropped;
+            }
+        }
         else if (action.kind != ActionKind::ReloadData) {
             ++dropped;
         }
     }
-    if (dropped > 0) {
-        PN_LOG_DEBUG("{} actions dropped at tick {}: the scene is loading", dropped, m_counters.wall);
+    if (m_change.stage == SceneStage::Loading && m_simulation->Scene() == m_resident) {
+        m_change.stage = SceneStage::Entering;
+        PN_LOG_DEBUG("scene change {} at tick {}: the new scene is resident, entering", m_change.change, m_counters.wall);
     }
-    return m_simulation->Scene() == m_resident;
+    if (dropped > 0) {
+        PN_LOG_DEBUG("{} actions dropped at tick {}: the scene is changing or loading", dropped, m_counters.wall);
+    }
+    return !Waiting();
+}
+
+bool Logic::Waiting() const {
+    return m_change.stage != SceneStage::Running || m_simulation->Scene() != m_resident;
+}
+
+// Moves the scene change on when `report` answers the stage it is in; returns false for a stale report.
+bool Logic::TakeReport(const Action& report) {
+    if (report.change != m_change.change) {
+        return false;
+    }
+    if (report.kind == ActionKind::SceneLeft && m_change.stage == SceneStage::Leaving) {
+        m_simulation->EnterScene();
+        m_change.stage = SceneStage::Loading;
+        PN_LOG_DEBUG("scene change {} at tick {}: the old scene is left, the new one built", m_change.change, m_counters.wall);
+        return true;
+    }
+    if (report.kind == ActionKind::SceneEntered && m_change.stage == SceneStage::Entering) {
+        m_change.stage = SceneStage::Running;
+        PN_LOG_DEBUG("scene change {} at tick {}: entered, the scene runs", m_change.change, m_counters.wall);
+        return true;
+    }
+    return false;
 }
 
 Logic::ActionSet Logic::TakeInput() {
@@ -159,10 +208,15 @@ Logic::ActionSet Logic::TakeInput() {
     m_handover->TakeInput(m_input);
     for (const Action& action : m_input) {
         if (action.kind == ActionKind::SceneResident) {
-            m_resident = action.scene; // the main thread's news, not the tick's input: never recorded
+            m_resident = action.scene;
         }
     }
-    std::erase_if(m_input, [](const Action& action) { return action.kind == ActionKind::SceneResident; });
+    // The main thread's news, never the tick's input, so never recorded; a scene report here is stale, as no change is
+    // under way.
+    std::erase_if(m_input, [](const Action& action) {
+        return action.kind == ActionKind::SceneResident || action.kind == ActionKind::SceneLeft ||
+               action.kind == ActionKind::SceneEntered;
+    });
     m_held = m_handover->ReadHeld();
     for (const Action& action : m_input) {
         if (action.kind == ActionKind::Pause || action.kind == ActionKind::Resume) {

@@ -108,7 +108,8 @@ public:
       , m_saves{ &saves }
       , m_replays{ &replays }
       , m_replay{ &replay }
-      , m_now{ now } {
+      , m_now{ now }
+      , m_change{ .stage = SceneStage::Loading, .from = simulation.Current(), .to = simulation.Current(), .change = 1 } {
     }
     Logic(const Logic&) = delete;
     Logic& operator=(const Logic&) = delete;
@@ -117,14 +118,20 @@ public:
     ~Logic() = default;
 
     /// Runs up to `burst.ticks` ticks back to back, then publishes the snapshot of the last one run,
-    /// filled by the simulation, naming its scene and stamped with `now()`. While the simulation's
-    /// scene isn't resident (no SceneResident has named it since it changed: at the start, after a
-    /// load or a replay starting in another scene), the burst runs no tick but waits (design doc
-    /// 0002.3.1 §4): it takes live input only, records nothing and moves no counter; Pause and
-    /// Resume still apply, SceneResident and ReloadData are taken, everything else is dropped; a tick
-    /// whose simulation asks for another scene (Simulation::Requested()) has it entered at once
-    /// (Simulation::EnterScene()), before any replay check, and ends its burst. Each tick takes the input sent since the
-    /// one before (the last Pause or Resume wins; while a replay plays, the recorded input instead)
+    /// filled by the simulation, naming its scene and the scene change it is in (Snapshot::sceneChange) and stamped
+    /// with `now()`. Every change of scene runs through stages (design doc 0002.3.1 §4, as built in phase 6 chunk 5):
+    /// - the game's start is change 1, loading (from and to the start scene);
+    /// - a tick whose simulation asks for another scene (Simulation::Requested()) starts the next change, leaving,
+    ///   and ends its burst (its replay check sees the old scene): the old scene shows, frozen, until a SceneLeft naming
+    ///   the change;
+    /// - that SceneLeft has the scene entered (Simulation::EnterScene()), then loading until a SceneResident names the
+    ///   new scene's sprites (at once when they are resident already);
+    /// - then entering, until a SceneEntered naming the change, which ends the change on a stall.
+    /// While a change is under way, or the simulation's scene isn't resident (a load or a replay starting in another
+    /// scene), the burst runs no tick but waits: it takes live input only, records nothing and moves no counter; Pause
+    /// and Resume still apply, SceneResident, ReloadData and the reports naming the change's stage are taken, and
+    /// everything else (a second change asked for, a Load, a stale report) is dropped. Each tick takes the input sent
+    /// since the one before (the last Pause or Resume wins; while a replay plays, the recorded input instead)
     /// and the newest held input, which every tick of a burst gets,
     /// counts itself, frozen while paused or while a calendar step is asked for, and ticks the
     /// simulation unless frozen. Ticks that change what comes next end the burst after them, so every
@@ -141,9 +148,10 @@ public:
     ///   playing (a new epoch); every REPLAY_HASH_TICKS wall ticks the state's hash is recorded or
     ///   checked, and a divergence stops playback with an error. While a replay plays, live Pause and
     ///   Resume (the window's focus) are kept aside and take effect when it stops.
-    /// A SceneResident taken on a running tick is applied and never recorded.
+    /// A SceneResident taken on a running tick is applied and never recorded, and a stale SceneLeft or SceneEntered is
+    /// dropped. The stage is in neither Hash() nor a save.
     /// Returns whether the burst ended on a stall the caller expected (a step, a save, a load, a
-    /// replay starting or finishing, the scene waited for becoming resident), so its clock restarts rather than catching up
+    /// replay starting or finishing, the wait for a scene ending), so its clock restarts rather than catching up
     /// (TickClock::Restart). `stop` cuts a step short.
     bool RunBurst(const TickBurst& burst, const std::stop_token& stop = {});
 
@@ -178,7 +186,9 @@ private:
     static_assert(ACTION_KINDS <= std::numeric_limits<ActionSet>::digits, "an ActionSet holds a bit per kind");
 
     TickEnd RunTick(const std::stop_token& stop);
+    [[nodiscard]] bool Waiting() const;
     bool Wait();
+    bool TakeReport(const Action& report);
     ActionSet TakeInput();
     void CheckReplay();
     [[nodiscard]] std::vector<std::byte> Serialise(bool withLogicState);
@@ -198,6 +208,7 @@ private:
     Saves* m_replays;
     Replay* m_replay;
     u64 (*m_now)();
+    SceneChange m_change; // the scene change under way, or the last one, now running: never hashed or saved
     TickCounters m_counters{};
     u64 m_epoch = 0;
     bool m_paused = false;       // the simulation's pausing: live input's, or the replay's while one plays

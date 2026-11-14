@@ -480,6 +480,10 @@ bool App::Present(const platform::WindowState& state) {
     if (!LoadScene(drawn->scene)) {
         return false;
     }
+    // Nothing draws the ways out of and into a scene yet (chunk 10): each is reported played as soon as it shows.
+    if (const std::optional<core::Action> report = m_sceneReports.Answer(drawn->sceneChange)) {
+        m_handover.SendInput(*report);
+    }
     ShowScene(m_camera, m_shown, drawn->scene, m_options.zoom);
     if (m_numbersEpoch != drawn->epoch) {
         m_numbers.Clear(); // a new timeline: none of the old one's hits happened in it
