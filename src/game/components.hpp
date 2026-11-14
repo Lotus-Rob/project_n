@@ -5,7 +5,9 @@
 /// Components every scene's entities share: where an entity stands, how it is drawn, and how it turns and circles.
 
 #include "core/draw_list.hpp"
+#include "core/ecs.hpp"
 #include "core/frame.hpp"
+#include "core/manifest.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 
@@ -142,5 +144,8 @@ struct Orbit {
 
 /// Where an Orbit puts its entity's foot at `tick`.
 [[nodiscard]] core::Vec2 OrbitPoint(const Orbit& orbit, u64 tick);
+
+/// Where `entity`'s head is: its foot raised by its sprite's foot height at its scale. It must have a Body and a Look.
+[[nodiscard]] core::Vec2 HeadOf(const core::Registry& entities, const core::Manifest& manifest, core::Entity entity);
 
 } // namespace game

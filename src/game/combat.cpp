@@ -49,11 +49,6 @@ core::Vec2 Raised(core::Vec2 foot, f32 height) {
     return { .x = foot.x, .y = foot.y - height };
 }
 
-// Where a hit on `entity` shows: its head.
-core::Vec2 HeadOf(const core::Registry& entities, const core::Manifest& manifest, core::Entity entity) {
-    return Raised(entities.get<Body>(entity).current, HeightOf(entities, manifest, entity));
-}
-
 // Where the volleys aim at `entity`, its chest, at the previous tick and this one.
 struct Chest {
     core::Vec2 previous{};
