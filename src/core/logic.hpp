@@ -84,8 +84,10 @@ public:
 
     /// Writes what the state looks like now into `snapshot`'s drawing data: its instances, batches
     /// and IDs arrive empty, with their capacity kept, and it follows nothing until set. Called once per burst, after its last
-    /// tick, on the thread that created `jobs`, whose workers it may fork.
-    virtual void Publish(Snapshot& snapshot, Jobs& jobs) = 0;
+    /// tick, on the thread that created `jobs`, whose workers it may fork. `view` is the world the main thread's window
+    /// shows, with its margin (ViewReport::area), taken of the scene the snapshot shows; none until one arrives, at the
+    /// start and after each swap. It changes only what is published, never the state.
+    virtual void Publish(Snapshot& snapshot, Jobs& jobs, const std::optional<Rect>& view) = 0;
 };
 
 /// What the logic thread keeps between bursts (the tick counters, pausing, the calendar step's
@@ -154,7 +156,9 @@ public:
     ///   every REPLAY_HASH_TICKS wall ticks the state's hash is recorded or checked, and a divergence stops playback with an
     ///   error. While a replay plays, live Pause and Resume (the window's focus) are kept aside and take effect when it stops.
     /// A SceneResident taken on a running tick is applied and never recorded, and a stale SceneLeft or SceneEntered is
-    /// dropped. The stage is in neither Hash() nor a save.
+    /// dropped. The stage is in neither Hash() nor a save. The publish is given the main thread's latest view
+    /// (GameHandover::ReadView()) when it was taken of the scene shown (ViewReport::change is ShownChange()), else none;
+    /// the view is never recorded, hashed or saved.
     /// Returns whether the burst ended on a stall the caller expected (a step, a save, a load, a
     /// replay starting or finishing, the wait for a scene ending), so its clock restarts rather than catching up
     /// (TickClock::Restart). `stop` cuts a step short.

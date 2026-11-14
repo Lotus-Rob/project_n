@@ -7,6 +7,7 @@
 #include "core/profile.hpp"
 #include "core/random.hpp"
 #include "core/seal.hpp"
+#include "core/view_limits.hpp"
 #include "game/random_purposes.hpp"
 
 namespace game {
@@ -44,15 +45,12 @@ constexpr u32 DEBUG_BURST_HITS = 4'000;
 constexpr u32 DEBUG_BURST_MAX = 99;
 constexpr u32 USE_DEBUG_BURST = 2; // the burst's ability use source (core::AbilityUse); the arena's aura is 1
 
-// Half the view around the player: the world shown at the smallest zoom (0.25) in a window up to 32:9 wide or about
-// square, so the logic culls without the main thread's camera (design doc 0002.3 §4).
-// A fixed size; cull relative to the window (the camera's view rectangle) or the world's size when a window
-// shape or zoom outgrows it.
-constexpr core::Vec2 FOLLOW_HALF_VIEW{ .x = 7'680.0F, .y = 4'320.0F };
-
 // The world NPCs a scene asks for live over the map, a dozen to a cell.
 constexpr u32 WORLD_CELLS = 4'096;
 constexpr u64 SEED = 0x5eed;
+
+// Halfway across a scene's view, where a still camera starts: what a publish culls round before the window's view arrives.
+constexpr f32 MIDDLE = 0.5F;
 
 // The host's part of a save: its format, then a version per domain, each changed with what its components save.
 // 2: the player and the selection; 3: the respawns waiting, the volleys and the flashes; 4: the seals
@@ -662,7 +660,7 @@ core::GlowInput DemoGlow(core::GlowRole role, u64 tick) {
     return {};
 }
 
-void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
+void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::optional<core::Rect>& view) {
     PN_PROFILE_ZONE();
     const auto& bodies = m_state[ACTIVE].Entities().storage<Body>();
     const auto& looks = m_state[ACTIVE].Entities().storage<Look>();
@@ -675,14 +673,19 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
     snapshot.combat = traits.combat;
     snapshot.camera = traits.camera;
     const u32 chunks = core::ChunkCount(looks.size(), PUBLISH_CHUNK);
-    core::Rect view = traits.view;
+    core::Vec2 start = (traits.view.min + traits.view.max) * MIDDLE;
     if (m_player != core::StableId{}) {
         const Body& body = bodies.get(m_state[ACTIVE].Find(m_player));
         snapshot.follow = core::Follow{ .previous = body.previous, .current = body.current };
-        view = { .min = body.current - FOLLOW_HALF_VIEW, .max = body.current + FOLLOW_HALF_VIEW };
+        start = body.current;
     }
-    m_drawList.Begin(view, std::max(chunks, 1U));
-    m_drawList.Add(
+    // Before the main thread's view arrives the camera's zoom and window are unknown, so cull as widely as any shows.
+    m_drawList.Begin(
+        view.value_or(core::Rect{ .min = start - core::WIDEST_HALF_VIEW, .max = start + core::WIDEST_HALF_VIEW }),
+        std::max(chunks, 1U)
+    );
+    // Whole: its quad is far larger than the cull margin, so its centre may lie outside the view while part of it shows.
+    m_drawList.AddWhole(
         0, core::Layer::Ground, core::Pipeline::Normal, core::MakeInstance(*m_manifest, { .sprite = SpriteId::Ground })
     );
     jobs.ParallelFor(chunks, [&](u32 chunk) {

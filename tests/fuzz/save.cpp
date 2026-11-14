@@ -43,7 +43,7 @@ extern "C" i32 LLVMFuzzerTestOneInput(const u8* data, std::size_t size) {
         core::Jobs jobs{ 1 }; // here, not static: only inputs that load pay for its thread
         core::Snapshot snapshot;
         snapshot.simulationTick = NEXT;
-        host.Publish(snapshot, jobs);
+        host.Publish(snapshot, jobs, std::nullopt);
         std::vector<std::byte> saved;
         core::Writer writer{ saved };
         host.Save(writer);

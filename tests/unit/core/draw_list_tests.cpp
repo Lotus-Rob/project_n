@@ -252,6 +252,19 @@ TEST_CASE("a draw list drops what lies past the cull margin, on every side") {
     CHECK(Marks(snapshot) == std::vector{ KEPT_LEFT, KEPT_RIGHT });
 }
 
+TEST_CASE("a draw list keeps what is added whole, however far past the cull margin") {
+    constexpr f32 FAR_LEFT = -10.0F * core::DrawList::CULL_MARGIN;
+    constexpr f32 PAST = VIEW.max.x + core::DrawList::CULL_MARGIN + 1.0F;
+    core::Jobs jobs{ 1 };
+    core::DrawList list;
+    list.Begin(VIEW);
+    list.AddWhole(0, Layer::Ground, Pipeline::Normal, Marked(FAR_LEFT));
+    list.Add(0, Layer::Ground, Pipeline::Normal, Marked(PAST));
+    core::Snapshot snapshot;
+    list.Publish(snapshot, jobs);
+    CHECK(Marks(snapshot) == std::vector{ FAR_LEFT });
+}
+
 TEST_CASE("a draw list's submission order is its parts in order, each as it was added") {
     constexpr u32 PARTS = 3;
     constexpr f32 SECOND = 2.0F;

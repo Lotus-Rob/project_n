@@ -15,6 +15,7 @@
 #include <array>
 #include <cstddef>
 #include <mutex>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -26,12 +27,13 @@ inline constexpr f64 STALE_EVENT_TICKS = 30.0;
 /// The channels between the threads. State (logic to main) is newest-wins: a snapshot may be
 /// skipped, since each one is complete. Events (logic to main) and input (main to logic)
 /// accumulate: none is lost or delivered twice, and each arrives in the order sent. Held input
-/// (main to logic) is newest-wins too: a value the logic reads as often as it likes.
+/// (main to logic) is newest-wins too: a value the logic reads as often as it likes. So is the view
+/// (main to logic), of which there is none until the first is sent.
 ///
 /// The state channel rotates four `State` buffers: one the logic writes, one finished and waiting,
 /// and up to two the main thread holds (one taken but not yet due, one drawn). Buffers and
 /// vectors keep their capacity, so the steady state allocates nothing.
-template<typename State, typename Event, typename Input, typename Held>
+template<typename State, typename Event, typename Input, typename Held, typename View>
 class Handover {
 public:
     /// The number of `State` buffers.
@@ -113,6 +115,18 @@ public:
         return m_held;
     }
 
+    /// Main thread: replaces the view with `view`.
+    void SendView(const View& view) PN_REQUIRES(!m_mutex) {
+        const std::scoped_lock lock{ m_mutex };
+        m_view = view;
+    }
+
+    /// Logic thread: the view the main thread sent last, or none before the first. Reading doesn't consume it.
+    [[nodiscard]] std::optional<View> ReadView() const PN_REQUIRES(!m_mutex) {
+        const std::scoped_lock lock{ m_mutex };
+        return m_view;
+    }
+
     /// Main thread: the newest snapshot not taken yet, or null. The main thread owns it until it
     /// gives it back with ReturnState(), and holds at most two at once.
     [[nodiscard]] State* TakeState() PN_REQUIRES(!m_mutex) {
@@ -143,7 +157,7 @@ private:
         return m_free[--m_freeCount];
     }
 
-    Mutex m_mutex{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    mutable Mutex m_mutex{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::array<State, BUFFERS> m_states{};
     std::array<State*, BUFFERS> m_free PN_GUARDED_BY(m_mutex){};
     std::size_t m_freeCount PN_GUARDED_BY(m_mutex) = 0;
@@ -152,18 +166,19 @@ private:
     std::vector<Event> m_events PN_GUARDED_BY(m_mutex){};
     std::vector<Input> m_input PN_GUARDED_BY(m_mutex){};
     Held m_held PN_GUARDED_BY(m_mutex){};
+    std::optional<View> m_view PN_GUARDED_BY(m_mutex) = std::nullopt;
 };
 
 /// The main thread's side of the state channel: the snapshot it draws, and a newer one it has
 /// taken but that isn't due yet. A snapshot is adopted (drawn) only once it is due (IsDue()), so
 /// the picture moves from one snapshot into the next without judder. `State` has a
 /// `u64 scheduledNs` and the `u64 publishedNs` the logic thread published it at.
-template<typename State, typename Event, typename Input, typename Held>
+template<typename State, typename Event, typename Input, typename Held, typename View>
 class Display {
 public:
     /// Adopts the held snapshot if it is due at `nowNs`; then, with none held, takes the newest
     /// waiting one and adopts it too if due. Returns whether a new snapshot was adopted (to upload).
-    bool Update(Handover<State, Event, Input, Held>& handover, u64 nowNs, u64 delayNs) {
+    bool Update(Handover<State, Event, Input, Held, View>& handover, u64 nowNs, u64 delayNs) {
         PN_PROFILE_ZONE();
         bool adopted = false;
         if (m_held != nullptr && IsDue(m_held->scheduledNs, nowNs, delayNs)) {
@@ -194,7 +209,7 @@ public:
     }
 
 private:
-    void Adopt(Handover<State, Event, Input, Held>& handover) {
+    void Adopt(Handover<State, Event, Input, Held, View>& handover) {
         if (m_drawn != nullptr) {
             handover.ReturnState(m_drawn);
         }

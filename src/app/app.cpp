@@ -20,7 +20,6 @@ namespace {
 
 // Frames during a calendar step's transition: few, leaving the cores to the step (design doc 0002 §7.3).
 constexpr u64 TRANSITION_FRAME_NS = core::NS_PER_SECOND / 20;
-constexpr f32 PAN_SPEED = 900.0F; // world units a second at full movement, at zoom 1
 constexpr u64 DATA_CHECK_NS = core::NS_PER_SECOND / 2;
 constexpr u64 LOAD_BUDGET_NS = 2 * core::NS_PER_MS; // a scene's uploads each frame: the window never freezes while one loads
 #ifdef NDEBUG
@@ -370,7 +369,9 @@ void App::HandleInput(const platform::WindowState& state) {
             m_quit = true;
         }
         else if (control->control == Control::Zoom) {
-            m_camera.zoom = gfx::ZoomedBy(m_camera.zoom, control->value);
+            if (ZoomsCamera(m_display.Drawn())) {
+                m_camera.zoom = gfx::ZoomedBy(m_camera.zoom, control->value);
+            }
         }
         else if (control->control == Control::ToggleShowcase) {
             m_showcase = !m_showcase;
@@ -448,9 +449,8 @@ std::optional<std::size_t> App::Hovered(const platform::WindowState& state, cons
 void App::Pan(u64 nowNs) {
     PN_PROFILE_ZONE();
     const u64 elapsedNs = nowNs - std::exchange(m_frameNs, nowNs);
-    const core::Snapshot* drawn = m_display.Drawn();
-    if (drawn == nullptr || drawn->follow) {
-        return; // the camera follows the snapshot's target as it draws
+    if (!PansCamera(m_display.Drawn())) {
+        return;
     }
     const f32 seconds = static_cast<f32>(elapsedNs) / static_cast<f32>(core::NS_PER_SECOND);
     m_camera.centre = m_camera.centre + (m_held.move * (PAN_SPEED * seconds / m_camera.zoom));
@@ -521,6 +521,10 @@ bool App::Present(const platform::WindowState& state) {
             if (drawn->follow) {
                 m_camera.centre = FollowedCentre(*drawn->follow, alpha);
             }
+            // Only drawn frames send one: hidden, the logic keeps the last view, and the first frame back sends a fresh one.
+            m_handover.SendView(
+                { .area = CullArea(m_camera, state.width, state.height), .change = core::ShownChange(drawn->sceneChange) }
+            );
             const f64 renderTick = core::RenderTick(drawn->simulationTick, alpha);
             m_numberTexts.clear();
             m_numbers.Texts(renderTick, m_numberTexts);

@@ -117,6 +117,95 @@ TEST_CASE("showing the same scene again leaves the camera where the player put i
     CHECK(camera.zoom == ZOOMED);
 }
 
+constexpr i32 WINDOW_WIDTH = 1280;
+constexpr i32 WINDOW_HEIGHT = 720;
+
+// Whether `area` is `expected`, within float rounding.
+void CheckArea(const core::Rect& area, const core::Rect& expected) {
+    CHECK(area.min.x == doctest::Approx(expected.min.x));
+    CHECK(area.min.y == doctest::Approx(expected.min.y));
+    CHECK(area.max.x == doctest::Approx(expected.max.x));
+    CHECK(area.max.y == doctest::Approx(expected.max.y));
+}
+
+TEST_CASE("the cull area holds the window's view and its margin") {
+    // At the reference centre, the window shows REFERENCE_SIZE / zoom, and the margin adds a quarter of it on each side.
+    constexpr core::Rect WIDEST{ .min = { .x = -4'800.0F, .y = -2'700.0F }, .max = { .x = 6'720.0F, .y = 3'780.0F } };
+    constexpr core::Rect REFERENCE{ .min = { .x = -480.0F, .y = -270.0F }, .max = { .x = 2'400.0F, .y = 1'350.0F } };
+    constexpr core::Rect CLOSEST{ .min = { .x = 240.0F, .y = 135.0F }, .max = { .x = 1'680.0F, .y = 945.0F } };
+    CheckArea(app::CullArea({ .zoom = gfx::MIN_ZOOM }, WINDOW_WIDTH, WINDOW_HEIGHT), WIDEST);  // 7,680 by 4,320 shown
+    CheckArea(app::CullArea({ .zoom = 1.0F }, WINDOW_WIDTH, WINDOW_HEIGHT), REFERENCE);        // 1,920 by 1,080 shown
+    CheckArea(app::CullArea({ .zoom = gfx::MAX_ZOOM }, WINDOW_WIDTH, WINDOW_HEIGHT), CLOSEST); // 960 by 540 shown
+}
+
+TEST_CASE("the cull area follows the window's size") {
+    constexpr i32 WIDE_WIDTH = 2'560;
+    constexpr i32 WIDE_HEIGHT = 1'080;
+    // 2,560 by 1,080 is wider than 16:9: the height still fits 1,080 world units, and the width shows 2,560.
+    constexpr core::Rect NARROWER{ .min = { .x = -480.0F, .y = -270.0F }, .max = { .x = 2'400.0F, .y = 1'350.0F } };
+    constexpr core::Rect WIDER{ .min = { .x = -960.0F, .y = -270.0F }, .max = { .x = 2'880.0F, .y = 1'350.0F } };
+    CheckArea(app::CullArea({}, WINDOW_WIDTH, WINDOW_HEIGHT), NARROWER);
+    CheckArea(app::CullArea({}, WIDE_WIDTH, WIDE_HEIGHT), WIDER); // resized: the next frame's view widens with it
+}
+
+// The world rectangle `camera` shows in a window `width` by `height`.
+core::Rect WindowArea(const gfx::Camera& camera, i32 width, i32 height) {
+    return { .min = app::WindowToWorld(camera, {}, width, height),
+             .max =
+                 app::WindowToWorld(camera, { .x = static_cast<f32>(width), .y = static_cast<f32>(height) }, width, height) };
+}
+
+TEST_CASE("the cull margin holds a wheel notch out and a full-speed pan for the longest frame step") {
+    struct Window {
+        i32 width = 0;
+        i32 height = 0;
+    };
+    constexpr std::array WINDOWS{
+        Window{ .width = 1'280, .height = 720 },   // 16:9
+        Window{ .width = 720, .height = 1'280 },   // upright: the width fits the reference
+        Window{ .width = 3'840, .height = 1'080 }, // 32:9
+    };
+    constexpr auto ZOOMS = std::to_array({ gfx::MIN_ZOOM, 1.0F, gfx::MAX_ZOOM });
+    constexpr auto SIGNS = std::to_array({ -1.0F, 1.0F });
+    constexpr f32 SECONDS = static_cast<f32>(app::FRAME_STEP_LIMIT_NS) / static_cast<f32>(core::NS_PER_SECOND);
+    for (const Window& window : WINDOWS) {
+        for (const f32 zoom : ZOOMS) {
+            for (const f32 sign : SIGNS) {
+                CAPTURE(window.width);
+                CAPTURE(zoom);
+                CAPTURE(sign);
+                const gfx::Camera before{ .zoom = zoom };
+                const core::Rect area = app::CullArea(before, window.width, window.height);
+                gfx::Camera after{ .zoom = gfx::ZoomedBy(zoom, -1.0F) };
+                // Along both axes at once: farther than any held movement, which is at most 1 long.
+                const f32 pan = sign * app::PAN_SPEED * SECONDS / after.zoom;
+                after.centre = after.centre + core::Vec2{ .x = pan, .y = pan };
+                const core::Rect shown = WindowArea(after, window.width, window.height);
+                CHECK(
+                    (shown.min.x >= area.min.x && shown.min.y >= area.min.y && shown.max.x <= area.max.x &&
+                     shown.max.y <= area.max.y)
+                );
+            }
+        }
+    }
+}
+
+TEST_CASE("the camera holds still while a calendar step's transition shows") {
+    const core::Snapshot still;
+    core::Snapshot following;
+    following.follow = core::Follow{};
+    core::Snapshot transition;
+    transition.transition = true;
+    CHECK_FALSE(app::PansCamera(nullptr)); // nothing drawn yet
+    CHECK(app::PansCamera(&still));
+    CHECK_FALSE(app::PansCamera(&following)); // the camera follows the target instead
+    CHECK_FALSE(app::PansCamera(&transition));
+    CHECK(app::ZoomsCamera(nullptr));
+    CHECK(app::ZoomsCamera(&still));
+    CHECK(app::ZoomsCamera(&following));
+    CHECK_FALSE(app::ZoomsCamera(&transition));
+}
+
 TEST_CASE("labels fade while the frame clock runs and the render clock holds, as when the game is paused") {
     constexpr u64 FRAME_NS = 50 * core::NS_PER_MS; // three frames make LABEL_FADE_SECONDS
     constexpr f64 PAUSED_ALPHA = 0.25;             // the render clock's part in the view: held, as while paused

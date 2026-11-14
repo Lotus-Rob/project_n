@@ -48,6 +48,24 @@ core::Vec2 WindowToWorld(const gfx::Camera& camera, core::Vec2 position, i32 wid
     );
 }
 
+core::Rect CullArea(const gfx::Camera& camera, i32 width, i32 height) {
+    PN_PROFILE_ZONE();
+    const core::Vec2 min = WindowToWorld(camera, {}, width, height);
+    const core::Vec2 max = WindowToWorld(
+        camera, { .x = static_cast<f32>(std::max(width, 1)), .y = static_cast<f32>(std::max(height, 1)) }, width, height
+    );
+    const core::Vec2 margin = (max - min) * CULL_MARGIN;
+    return { .min = min - margin, .max = max + margin };
+}
+
+bool PansCamera(const core::Snapshot* drawn) {
+    return drawn != nullptr && !drawn->follow && !drawn->transition;
+}
+
+bool ZoomsCamera(const core::Snapshot* drawn) {
+    return drawn == nullptr || !drawn->transition;
+}
+
 std::optional<std::size_t> PickInstance(const core::Snapshot& snapshot, f64 alpha, core::Vec2 world) {
     PN_PROFILE_ZONE();
     constexpr u32 LOW_HALF = 0xFFFFU;

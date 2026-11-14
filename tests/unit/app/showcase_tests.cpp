@@ -99,7 +99,7 @@ TEST_CASE("the showcase seals keep apart and clear of the swords' seal at the pl
     core::Jobs jobs{ 1 };
     game::Host host(test::TestManifest());
     core::Snapshot snapshot;
-    host.Publish(snapshot, jobs);
+    host.Publish(snapshot, jobs, std::nullopt);
     REQUIRE(snapshot.follow.has_value());
     const core::Seals looks = test::ShippedSeals();
     const gfx::SealPack pack = gfx::PackSeals(looks, *test::TestManifest());

@@ -64,7 +64,7 @@ Worst Measure(u32 workers) {
         snapshot.batches.clear();
         snapshot.groundBatches = 0;
         const auto publishStart = std::chrono::steady_clock::now();
-        host.Publish(snapshot, jobs);
+        host.Publish(snapshot, jobs, std::nullopt);
         publishMs.push_back(MsSince(publishStart));
         combatMs.push_back(MsSince(start));
         instances = snapshot.instances.size();

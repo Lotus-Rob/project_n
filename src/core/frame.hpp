@@ -126,6 +126,29 @@ struct SceneChange {
     u64 change = 0;
 };
 
+/// The change that entered the scene a snapshot in `change` shows: the change before while it is left (the old scene
+/// still shows), its own otherwise. A view (ViewReport) names it, so a view of the old scene never culls the new one.
+[[nodiscard]] constexpr u64 ShownChange(const SceneChange& change) {
+    return change.stage == SceneStage::Leaving ? change.change - 1 : change.change;
+}
+
+/// An axis-aligned rectangle of the world, in world units.
+struct Rect {
+    /// The top-left corner.
+    Vec2 min{};
+    /// The bottom-right corner.
+    Vec2 max{};
+};
+
+/// What the main thread's window shows, as it last told the logic (design doc 0002.3 §11, as built in phase 6 chunk 5a):
+/// news like SceneResident, which changes what is published and never the state, so it is never recorded, hashed or saved.
+struct ViewReport {
+    /// The world the window shows, with a margin for the camera moving before a snapshot culled to it is drawn.
+    Rect area{};
+    /// The change that entered the scene it shows (ShownChange()): only a publish of that scene culls to it.
+    u64 change = 0;
+};
+
 /// How the camera moves over a scene.
 enum class CameraKind : u8 {
     Follow, ///< It centres on what the snapshot follows (Snapshot::follow).
@@ -447,9 +470,9 @@ struct TickInput {
 };
 
 /// The handover the game's two threads share.
-using GameHandover = Handover<Snapshot, Event, Action, HeldInput>;
+using GameHandover = Handover<Snapshot, Event, Action, HeldInput, ViewReport>;
 /// The main thread's side of GameHandover's state channel.
-using GameDisplay = Display<Snapshot, Event, Action, HeldInput>;
+using GameDisplay = Display<Snapshot, Event, Action, HeldInput, ViewReport>;
 
 /// The main loop's frame once `drawn` is chosen (design doc 0002 §6): while `visible`, `acquire()`s the swapchain
 /// texture, which may block; then reads `now()` (ns) once for alpha and the render clock, plays the `pending` events due

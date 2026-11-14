@@ -93,6 +93,11 @@ void DrawList::Add(u32 part, Layer layer, Pipeline pipeline, const Instance& ins
         position.y < m_view.min.y - CULL_MARGIN || position.y > m_view.max.y + CULL_MARGIN) {
         return;
     }
+    AddWhole(part, layer, pipeline, instance, footY, entity);
+}
+
+void DrawList::AddWhole(u32 part, Layer layer, Pipeline pipeline, const Instance& instance, f32 footY, StableId entity) {
+    PN_ASSERT(part < m_partCount, "a draw list part past those Begin asked for");
     Part& into = m_parts[part];
     const u32 depth = layer == Layer::World ? QuantiseDepth(footY, m_view.min.y) : 0;
     into.entries.push_back({ .key = MakeSortKey(layer, depth, pipeline), .index = static_cast<u32>(into.instances.size()) });
