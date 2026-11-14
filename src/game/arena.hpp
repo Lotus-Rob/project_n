@@ -189,6 +189,12 @@ public:
     /// Rebuilds itself as the scene Requested() names, the selection cleared, and forgets the request.
     void EnterScene() override;
 
+    /// Rebuilds the scene it is with the code from before each scene had a class of its own: for the one-off comparison
+    /// that proves the move builds the same, and gone with that code.
+    void RebuildAsBefore() {
+        Build(m_scene);
+    }
+
     /// How many months have passed.
     [[nodiscard]] u64 Months() const {
         return m_months;

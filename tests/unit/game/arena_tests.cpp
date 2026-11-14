@@ -996,4 +996,29 @@ TEST_CASE("glows leave the state hash alone") {
     CHECK(published.StateHash() == plain.StateHash());
 }
 
+// The one-off comparison while each scene moves into a class of its own; it goes with the code from before.
+std::vector<std::byte> SavedBytes(game::Arena& arena) {
+    std::vector<std::byte> bytes;
+    core::Writer writer{ bytes };
+    arena.Save(writer);
+    return bytes;
+}
+
+TEST_CASE("each scene builds what the old Build built") {
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    for (const game::Scene scene : { game::Scene::Arena, game::Scene::Stress, game::Scene::Painted, game::Scene::Cells }) {
+        INFO("scene ", game::SceneName(scene));
+        game::Arena built(manifest, scene);
+        game::Arena before(manifest, scene);
+        before.RebuildAsBefore();
+        // Every entity's saved components and stable ID, in both domains, in the order they were made.
+        CHECK(built.StateHash() == before.StateHash());
+        CHECK(built.Player() == before.Player());
+        CHECK(built.Current() == before.Current());
+        const std::vector<std::byte> builtBytes = SavedBytes(built);
+        const std::vector<std::byte> beforeBytes = SavedBytes(before);
+        CHECK(builtBytes == beforeBytes);
+    }
+}
+
 } // namespace
