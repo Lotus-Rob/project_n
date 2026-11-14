@@ -1119,6 +1119,41 @@ TEST_CASE("ReloadData while a replay plays stops it, and the data is taken") {
     CHECK(recorded.rig.simulation.dataHash == data->Hash());
 }
 
+TEST_CASE("a replay stopped while its start is held leaves the window's pausing at the swap") {
+    Recorded recorded{ "replay_stopped_mid_change" }; // its start is unpaused, at wall tick 1
+    Rig& rig = recorded.rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::PlayReplay });
+    REQUIRE(rig.Burst(1).snapshot.sceneChange.stage == core::SceneStage::Leaving);
+    rig.handover.SendInput({ .kind = core::ActionKind::Pause }); // the window's, while leaving
+    rig.handover.SendInput({ .kind = core::ActionKind::ReloadData, .data = NewData() });
+    const BurstResult leaving = rig.Burst(1);
+    REQUIRE(leaving.snapshot.sceneChange.stage == core::SceneStage::Leaving);
+    CHECK_FALSE(rig.replay.Playing());
+    static_cast<void>(Settle(rig, leaving));
+    CHECK(rig.logic.Counters().wall == 1);
+    CHECK(rig.logic.Counters().simulation == 0);
+    CHECK(rig.logic.Counters().state == 0);
+    CHECK(rig.logic.Epoch() == 1);
+    CHECK_FALSE(rig.Burst(1).snapshot.advanced); // paused, as the window asked
+}
+
+TEST_CASE("a calendar step asked for on a sound load's tick goes with the old state") {
+    constexpr u64 TICKS = 3;
+    const SaveSlot slot{ "calendar_with_load" };
+    Rig rig(slot.File());
+    rig.handover.SendInput({ .kind = core::ActionKind::Save });
+    static_cast<void>(rig.Burst(1));
+    rig.jobs.WaitForBackground();
+    rig.handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
+    rig.handover.SendInput({ .kind = core::ActionKind::Load });
+    const BurstResult asked = rig.Burst(1);
+    REQUIRE(asked.snapshot.sceneChange.stage == core::SceneStage::Leaving);
+    CHECK_FALSE(asked.snapshot.transition);
+    static_cast<void>(Settle(rig, asked));
+    static_cast<void>(rig.Burst(TICKS));
+    CHECK(rig.simulation.steps.empty());
+}
+
 TEST_CASE("a replay recorded under other game data doesn't play") {
     Recorded recorded{ "replay_other_data" };
     recorded.rig.simulation.SetData(*NewData());
