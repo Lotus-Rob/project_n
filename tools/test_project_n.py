@@ -544,10 +544,10 @@ class RunReferenceCaseTest(unittest.TestCase):
 
 
 class ReferenceTest(unittest.TestCase):
-    def references(self, update, committed=(), case=None, draws=None):
+    def references(self, update, committed=(), case=None, draws=None, quiet=False):
         """Runs `run_references` in a temporary root holding the `committed` pictures, over three cases run by `case`
         (index -> (output, return code)); by default case 2 draws a.png and fails. Case 1 first draws `draws` (name ->
-        bytes). Returns (a.png's bytes or None, the indices run, stdout)."""
+        bytes). Returns a.png's bytes or None; keeps the indices run, stdout and what it returned."""
         ran, out = [], io.StringIO()
 
         def draw_and_fail(index):
@@ -571,7 +571,7 @@ class ReferenceTest(unittest.TestCase):
                                          run=lambda argv, env=None: None, reference_case_count=lambda exe, env: 3,
                                          run_reference_case=run_case, binary_path=lambda *args: Path("reference_tests")), \
                      contextlib.redirect_stdout(out):
-                    project_n.run_references("linux-gcc", update)
+                    self.returned = project_n.run_references("linux-gcc", update, quiet=quiet)
             finally:
                 self.ran, self.out = sorted(ran), out.getvalue()
             picture = root / "tests" / "reference" / "a.png"
@@ -612,6 +612,15 @@ class ReferenceTest(unittest.TestCase):
         self.references(update=False, case=finish_out_of_order)
         self.assertLess(self.out.index("one"), self.out.index("two"))
         self.assertLess(self.out.index("two"), self.out.index("three"))
+
+    def test_a_quiet_run_returns_the_outputs_and_prints_them_only_on_a_failure(self):
+        self.references(update=False, case=lambda index: (f"MESSAGE: case {index}\n", 0), quiet=True)
+        self.assertEqual(self.returned, "MESSAGE: case 1\nMESSAGE: case 2\nMESSAGE: case 3\n")
+        self.assertNotIn("MESSAGE", self.out)
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.references(update=False, case=lambda index: (f"MESSAGE: case {index}\n", 1 if index == 2 else 0),
+                            quiet=True)
+        self.assertIn("MESSAGE: case 1\nMESSAGE: case 2\nMESSAGE: case 3\n", self.out)
 
     def test_a_passing_run_names_the_pictures_that_changed_within_tolerance(self):
         # Lavapipe draws every case the same to the byte, so a picture that differs has drifted from its reference.
@@ -1222,6 +1231,251 @@ class ProfileTest(unittest.TestCase):
             project_n.cmd_profiler(project_n.argparse.Namespace(file=None))
             project_n.cmd_profiler(project_n.argparse.Namespace(file="a.tracy"))
         self.assertEqual([argv[4:] for argv in ran], [["tracy-profiler"], ["tracy-profiler", Path("a.tracy").resolve()]])
+
+
+class MeasureTest(unittest.TestCase):
+    SEP = project_n.EXPORT_SEP
+    HEADER = SEP.join(("name", "src_file", "src_line", "ns_since_start", "exec_time_ns", "thread", "value")) + "\n"
+    MS = 1_000_000
+
+    def zones(self, *rows):
+        """`tracy-csvexport -u -e -s EXPORT_SEP` lines from (name, file, start ms, self ms, thread) rows."""
+        return [self.HEADER, *(self.SEP.join((name, file, "1", str(round(start * self.MS)), str(round(took * self.MS)),
+                                              str(thread), "")) + "\n"
+                               for name, file, start, took, thread in rows)]
+
+    def messages(self, *rows):
+        """`tracy-csvexport -m -s EXPORT_SEP` output from (text, ns) rows."""
+        return "".join(f"{text}{self.SEP}{ns}\n" for text, ns in (("MessageName", "total_ns"), *rows))
+
+    def frames(self, *starts):
+        return [("Run", "src/app/app.cpp", start, 0.1, 1) for start in starts]
+
+    def test_percentiles(self):
+        self.assertEqual(project_n.percentiles(list(range(100, 0, -1))), (50.5, 99, 100))
+        self.assertEqual(project_n.percentiles([*[1.0] * 197, 5.0, 6.0, 40.0]), (1.0, 5.0, 40.0))
+        # Below 100 values the 99th percentile by nearest rank is the worst: none is given.
+        self.assertEqual(project_n.percentiles([2.0, 9.0, 1.0, 1.5, 30.0]), (2.0, None, 30.0))
+        self.assertEqual(project_n.percentiles([4.0]), (4.0, None, 4.0))
+
+    def test_zone_rows_keep_names_and_texts_holding_commas(self):
+        # MSVC's function names keep template arguments; a zone's text is free.
+        line = self.SEP.join(("Pack<A,B>::Load", "src/gfx/renderer.cpp", "9", "500", "20", "3", "world, tiles")) + "\n"
+        self.assertEqual(list(project_n.zone_rows([self.HEADER, line])),
+                         [("Pack<A,B>::Load", "src/gfx/renderer.cpp", 500, 20, "3")])
+
+    def test_hitches_use_work_not_wall_time(self):
+        # Frame 1 is 30 ms long only by its 25 ms wait for the GPU; frame 2 is 20 ms of work.
+        timeline = project_n.frame_timeline(self.zones(
+            *self.frames(0, 10, 40, 60), ("WaitForGpu", "src/gfx/internal/frame/frame.cpp", 12, 25, 1),
+            ("WaitForGpu", "src/gfx/internal/frame/frame.cpp", 59, 0.5, 1), ("Update", "src/core/logic.cpp", 41, 19, 2)))
+        self.assertEqual((timeline.main, len(timeline.starts)), ("1", 4))
+        self.assertEqual(project_n.hitch_frames(timeline, range(3)), [2])
+        self.assertEqual(round(timeline.work(1) / self.MS, 3), 5.0)
+
+    def test_segments_split_by_messages(self):
+        messages = project_n.read_messages(self.messages(("perf_event_paranoid: 2", 1000), ("camera path: follow", 2_000_000_000),
+                                                         ("camera path: zoom in, then out", 6_000_000_000)))
+        self.assertEqual(messages[-1], ("camera path: zoom in, then out", 6_000_000_000))
+        self.assertEqual(project_n.measure_segments(messages, 0, 8_000_000_000, camera=True),
+                         [("follow: first 0.5 s", 2_000_000_000, 2_500_000_000), ("follow: rest", 2_500_000_000, 6_000_000_000),
+                          ("zoom in, then out: first 0.5 s", 6_000_000_000, 6_500_000_000),
+                          ("zoom in, then out: rest", 6_500_000_000, 8_000_000_000)])
+        # An arena run has no path: one segment, after the scene has loaded.
+        self.assertEqual(project_n.measure_segments(messages, 1_000_000_000, 9_000_000_000, camera=False),
+                         [("whole run", 3_000_000_000, 9_000_000_000)])
+        # A segment shorter than the new-ground part is all new ground; its rest is empty.
+        short = project_n.read_messages(self.messages(("camera path: pan", 1_000_000_000), ("camera path: labels", 1_300_000_000)))
+        self.assertEqual(project_n.measure_segments(short, 0, 2_000_000_000, camera=True)[:2],
+                         [("pan: first 0.5 s", 1_000_000_000, 1_300_000_000), ("pan: rest", 1_300_000_000, 1_300_000_000)])
+        timeline = project_n.frame_timeline(self.zones(*self.frames(1000, 1100, 1200, 1300, 1400)))
+        self.assertFalse(project_n.segment_frames(timeline, 1_300_000_000, 1_300_000_000))
+
+    def test_segment_rows_count_each_thread_and_the_gpus_share(self):
+        timeline = project_n.frame_timeline(self.zones(
+            *self.frames(0, 10, 20, 30), ("WaitForGpu", "src/gfx/internal/frame/frame.cpp", 5, 4, 1),
+            ("WaitForGpu", "src/gfx/internal/frame/frame.cpp", 15, 6, 1)))
+        work = project_n.frame_work(self.zones(
+            *self.frames(0, 10, 20, 30), ("Present", "src/app/app.cpp", 1, 3, 1), ("WaitForGpu", "src/gfx/internal/frame/frame.cpp", 5, 4, 1),
+            ("Tick", "src/core/logic.cpp", 11, 2, 2), ("WaitUntilNs", "src/platform/clock.cpp", 13, 7, 2),
+            ("ExecuteRange", "src/core/jobs.cpp", 12, 1, 5)), timeline, hitches=[])
+        segment = project_n.segment_stats("all", timeline, work, range(3), hitches=[])
+        rows = {what: (round(median, 2), p99, round(worst, 2)) for what, (median, p99, worst) in segment.rows}
+        self.assertEqual(rows["frame"], (10.0, None, 10.0))
+        self.assertEqual(rows["work"], (6.0, None, 10.0))
+        self.assertEqual(rows["main"], (0.1, None, 3.1))  # its waits for the GPU and the clock aren't work
+        self.assertEqual(rows["logic"], (0.0, None, 2.0))
+        self.assertEqual(rows["worker 5"], (0.0, None, 1.0))
+        self.assertAlmostEqual(segment.gpu, 1 / 3)
+
+    def test_threads_are_named_by_what_they_ran(self):
+        timeline = project_n.frame_timeline(self.zones(*self.frames(0, 10)))
+        work = project_n.frame_work(self.zones(
+            ("Mix", "src/platform/audio.cpp", 1, 1, 7), ("ExecuteRange", "src/core/jobs.cpp", 1, 1, 12),
+            ("Tick", "src/core/logic.cpp", 1, 1, 9), ("ExecuteRange", "src/core/jobs.cpp", 1, 1, 9),
+            ("ExecuteRange", "src/core/jobs.cpp", 1, 1, 3), ("Tick", "src/core/logic.cpp", 1, 1, 2),
+            ("ExecuteRange", "src/core/jobs.cpp", 1, 1, 1), ("Present", "src/app/app.cpp", 1, 1, 1)),
+            timeline, hitches=[])
+        # The main and logic threads run job system zones too; two logic threads keep a name each.
+        self.assertEqual(list(work.busy), ["main", "logic 2", "logic 9", "worker 3", "worker 12", "thread 7"])
+        self.assertEqual([busy[0] / self.MS for busy in work.busy.values()], [2, 1, 2, 1, 1, 1])
+
+    def test_a_segment_paced_by_the_display_is_marked(self):
+        def segment(median):
+            return project_n.Segment("all", 200, [("frame", (median, 7.0, 8.0))], 0.87, [])
+        self.assertTrue(project_n.paced(segment(6.06), "2560x1440 at 165 Hz"))
+        self.assertFalse(project_n.paced(segment(4.0), "2560x1440 at 165 Hz"))
+        self.assertFalse(project_n.paced(segment(6.06), "unknown"))
+        table = project_n.measure_table([project_n.MeasuredRun("burst", "2560x1440 at 165 Hz", [], [], [segment(6.06)]),
+                                         project_n.MeasuredRun("swords", "2560x1440 at 165 Hz", [], [], [segment(1.2)])],
+                                        "not measured (no world run)")
+        rows = {line.split()[0]: line for line in table.splitlines() if line.startswith(("burst", "swords"))}
+        self.assertIn("87% paced", rows["burst"])
+        self.assertNotIn("paced", rows["swords"])
+        self.assertIn("at a volley's peak", rows["swords"])
+
+    def test_a_hitch_names_its_largest_zones(self):
+        timeline = project_n.frame_timeline(self.zones(*self.frames(0, 30)))
+        work = project_n.frame_work(self.zones(
+            ("Upload", "src/gfx/renderer.cpp", 1, 12, 1), ("Place", "src/gfx/labels.cpp", 2, 3, 1),
+            ("Place", "src/gfx/labels.cpp", 6, 3, 1), ("Draw", "src/gfx/renderer.cpp", 9, 4, 1),
+            ("Tiny", "src/gfx/renderer.cpp", 14, 1, 1), ("WaitForGpu", "src/gfx/internal/frame/frame.cpp", 20, 9, 1),
+            ("Busy", "src/core/logic.cpp", 3, 25, 2)), timeline, hitches=[0])
+        segment = project_n.segment_stats("all", timeline, work, range(1), hitches=[0])
+        (start, took, frame, zones), = segment.hitches
+        self.assertEqual((start, round(took / self.MS), round(frame / self.MS)), (0, 30, 30))
+        self.assertEqual([(name, round(ns / self.MS)) for name, ns in zones], [("Upload", 12), ("Place", 6), ("Draw", 4)])
+
+    def test_latency_read_from_log(self):
+        log = ("21:00:01.1 [1] app.cpp:338   LOG_INFO   root   input latency: 31.4 ms from a Move press to its first drawn frame\n"
+               "21:00:02.1 [1] app.cpp:330   LOG_DEBUG  root   swords first drawn 12.0 ms after the press\n"
+               "21:00:03.1 [1] app.cpp:338   LOG_INFO   root   input latency: 8.0 ms from a Move press to its first drawn frame\n")
+        self.assertEqual(project_n.input_latencies(log), [31.4, 8.0])
+        self.assertEqual(project_n.input_latencies("display: 2560x1440 at 165 Hz\n"), [])
+        self.assertEqual(project_n.display_mode("[1] window.cpp:234  LOG_INFO  root  display: 2560x1440 at 165 Hz\n"),
+                         "2560x1440 at 165 Hz")
+        self.assertEqual(project_n.display_mode("no display line\n"), "unknown")
+
+    def test_display_is_the_one_the_window_ended_on(self):
+        log = ("[1] window.cpp:290  LOG_INFO  root  display: 1920x1080 at 59.95 Hz (DP-1)\n"
+               "[1] window.cpp:290  LOG_INFO  root  display: 2560x1440 at 165 Hz (DP-2)\n")
+        self.assertEqual(project_n.display_mode(log), "2560x1440 at 165 Hz (DP-2)")
+        segment = project_n.Segment("follow", 200, [("frame", (6.06, 6.2, 6.3))], 0.9, [])
+        self.assertTrue(project_n.paced(segment, project_n.display_mode(log)))
+
+    def test_shimmer_read_from_reference_output(self):
+        output = ("[doctest] doctest version is \"2.4.11\"\n"
+                  "tests/reference/reference_tests.cpp:212: MESSAGE: world shimmer: 0.0308694\n"
+                  "tests/reference/reference_tests.cpp:180: MESSAGE: seals shimmer: 0.01\n")
+        self.assertEqual(project_n.world_shimmer(output), 0.0308694)
+        self.assertIsNone(project_n.world_shimmer("no such case\n"))
+
+    def test_measure_refuses_unknown_runs(self):
+        def build(*args):
+            raise AssertionError("built before refusing the runs")
+        with mock.patch.multiple(project_n, build=build):
+            with self.assertRaisesRegex(project_n.Fail, "unknown run.*rain.*world, burst, swords, seals"):
+                project_n.cmd_measure(argparse.Namespace(runs="world,rain", keep=False))
+            with self.assertRaises(project_n.Fail):
+                project_n.cmd_measure(argparse.Namespace(runs="", keep=False))
+        self.assertEqual(project_n.measure_runs("seals,world,seals"), ["seals", "world"])
+        self.assertEqual(project_n.measure_runs(None), ["world", "burst", "swords", "seals"])
+
+    PAUSED_LOG = ("21:00:00.1 [1] window.cpp:234  LOG_INFO     root  display: 2560x1440 at 165 Hz\n"
+                  "21:00:05.1 [1] app.cpp:403     LOG_INFO     root  paused: the window is unfocused or minimised\n"
+                  "21:00:05.1 [1] app.cpp:406     LOG_WARNING  root  the game paused during the camera path: from here it "
+                  "measures no running game\n"
+                  "21:00:06.9 [1] app.cpp:315     LOG_INFO     root  camera path: pan\n"
+                  "21:00:06.9 [1] app.cpp:318     LOG_WARNING  root  camera path: pan with the game paused (the window "
+                  "is unfocused or minimised): it measures no running game\n"
+                  "21:00:09.1 [1] app.cpp:403     LOG_INFO     root  resumed: the window is back\n"
+                  "21:00:25.1 [1] app.cpp:305     LOG_INFO     root  camera path finished: quitting\n")
+
+    def test_paused_run_is_untrusted(self):
+        self.assertEqual(project_n.untrusted_reasons(self.PAUSED_LOG, camera=True),
+                         ["paused: the window is unfocused or minimised",
+                          "the game paused during the camera path: from here it measures no running game",
+                          ("camera path: pan with the game paused (the window is unfocused or minimised): it measures no "
+                           "running game")])
+        self.assertEqual(project_n.untrusted_reasons("camera path finished: quitting\n", camera=True), [])
+        self.assertEqual(project_n.untrusted_reasons("quitting after 20 seconds\n", camera=False), [])
+        self.assertEqual(project_n.untrusted_reasons("quitting after 60 seconds\n", camera=True),
+                         ["the camera path didn't finish"])
+        steady = project_n.Segment("whole run", 10, [("frame", (1.0, 2.0, 3.0))], 0.25, [])
+        measured = {"world": project_n.MeasuredRun("world", "2560x1440 at 165 Hz", [31.4], ["paused: the window is unfocused or minimised"], [steady]),
+                    "burst": project_n.MeasuredRun("burst", "2560x1440 at 165 Hz", [], [], [steady])}
+        asked = []
+
+        def run_references(preset, quiet=False):
+            asked.append(quiet)
+            return "[INFO] a case's game log\nMESSAGE: world shimmer: 0.031\n"
+        status, out, err, left = self.measure(measured, run_references)
+        self.assertEqual(asked, [True])  # the cases' output stays out of the table's way
+        self.assertNotIn("a case's game log", out)
+        self.assertEqual(status, 1)
+        world_row = next(line for line in out.splitlines() if line.startswith("world "))
+        self.assertIn("untrusted: paused: the window is unfocused or minimised", world_row)
+        self.assertNotIn("untrusted", next(line for line in out.splitlines() if line.startswith("burst ")))
+        self.assertIn("world shimmer: 0.031", out)
+        self.assertIn("1 of 2 runs untrusted: world", err)
+        self.assertEqual(len(left), 1)  # kept even without --keep: the game log says why it is untrusted
+        self.assertIn(f"game logs are kept in {left[0]}", out)
+
+    def measure(self, measured, run_references):
+        """Runs `cmd_measure` over the runs `measured` (name -> MeasuredRun) with `run_references` in place of the
+        reference pictures; returns (its status, stdout, stderr, what is left in build/measure/)."""
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.multiple(project_n, ROOT=Path(tmp), HOST="linux", build=lambda *args: Path("build"),
+                                 run_references=run_references,
+                                 profiler_tool=lambda program, package: f"/profiler/bin/{program}",
+                                 measure_run=lambda name, bdir, tools, folder: measured[name]), \
+             contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
+            status = project_n.cmd_measure(argparse.Namespace(runs=",".join(measured), keep=False))
+            left = list((Path(tmp) / "build" / "measure").glob("*"))
+        return status, out.getvalue(), err.getvalue(), left
+
+    def test_a_failing_reference_case_leaves_the_shimmer_unmeasured_and_runs_on(self):
+        def fail(preset, quiet=False):
+            raise subprocess.CalledProcessError(1, ["reference_tests"], stderr="reference: 1 of 44 case(s) failed: world\n")
+        steady = project_n.Segment("whole run", 10, [("frame", (1.0, None, 3.0))], 0.25, [])
+        status, out, err, left = self.measure({"world": project_n.MeasuredRun("world", "unknown", [], [], [steady])}, fail)
+        self.assertEqual(left, [])  # a trusted run without --keep leaves nothing
+        self.assertIsNone(status)
+        self.assertIn("world shimmer: not measured (reference failed)", out)
+        self.assertIn("world  whole run", out)
+        self.assertIn("1 of 44 case(s) failed", err)
+
+    def test_a_camera_run_without_segment_messages_measures_no_frames(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            export = Path(tmp) / "world.csv"
+            export.write_text("".join(self.zones(*self.frames(0, 10, 20, 30))), encoding="utf-8")
+            measured = project_n.read_run("world", export, self.messages(("perf_event_paranoid: 2", 1000)),
+                                          "display: 2560x1440 at 165 Hz\ncamera path finished: quitting\n")
+        self.assertEqual((measured.reasons, measured.segments), (["no frames measured"], []))
+        row = next(line for line in project_n.measure_table([measured], "x").splitlines() if line.startswith("world"))
+        self.assertIn("display 2560x1440 at 165 Hz; untrusted: no frames measured", row)
+
+    def test_the_game_starts_as_profile_starts_it(self):
+        recorded, exported = [], []
+
+        def record(recorder, game, out, **kwargs):
+            recorded.append((recorder, game, kwargs["env"]))
+
+        def export(argv, **kwargs):
+            exported.append([str(a) for a in argv[:-1]])
+            return ""
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.multiple(project_n, record=record, run=export, capture=export,
+                                 xmake_env=lambda bdir: {"XMAKE_CONFIGDIR": str(bdir)},
+                                 read_run=lambda name, export, messages, text: name), \
+             contextlib.redirect_stdout(io.StringIO()):
+            project_n.measure_run("seals", Path("build/rd"), {"tracy-capture": "capture", "tracy-csvexport": "export"},
+                                  Path(tmp))
+        self.assertEqual(recorded, [("capture", ["xmake", "run", project_n.APP, "--fullscreen", "--workers", "2", "--unpaced",
+                                                 "--quit-after", "30", "--cast-swords", "--zoom", "2"],
+                                     {"XMAKE_CONFIGDIR": str(Path("build/rd"))})])
+        # Both exports split their columns on a separator no name, text or message holds.
+        self.assertEqual(exported, [["export", "-u", "-e", "-s", project_n.EXPORT_SEP], ["export", "-m", "-s", project_n.EXPORT_SEP]])
 
 
 class SourceTest(unittest.TestCase):
