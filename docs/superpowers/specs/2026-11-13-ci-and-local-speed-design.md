@@ -412,4 +412,19 @@ so two container jobs each link about half of the twelve executables (/LTCG unde
   drop the superseded ones" built the user's ruling: each job keeps only what its builds used and saves nothing when
   nothing is left (main's lint after a merge without C++ had saved an empty folder as the newest fallback); a new
   `caches` job, not a required check, keeps each family's newest entry per ref; the sibling entries share one package
-  cache. Steady-state sizes: to be measured on the next runs.
+  cache. Measured on the PR's first run (43598140094, Clang objects cold after the xmake.lua change): the `caches` job
+  deleted 44 superseded entries of ci-speed (4,644 MiB) and kept 20; the repository went from 11.22 GB to 34 entries,
+  5.46 GiB (main 3.68 GiB, of which the setup caches are most; ci-speed 1.78 GiB, its object entries 556 MiB). Each
+  job's object folder holds one build's 138 objects (172–243 MiB), which a cold run leaves unpruned.
+
+**The final review** (2026-11-14, Opus, on main..HEAD; GLM's flash model in parallel: no findings) asked for six
+fixes, all made: the caches' growth (above); `PROJECT_N_XMAKE_CACHE` made absolute like `PROJECT_N_BUILD_CACHE`
+(podman read a relative one as a volume name); `reference` naming pictures that drifted within tolerance; the macOS
+rpath deleted from the bundle's copy, so a second `artifact --reuse-build` works (Linux's `patchelf` succeeds on a
+binary without one, so it still edits in place); main's lint no longer saving an empty folder; design doc 0001 §8/§12.
+Its re-reviews added: the cleanup's package family must not catch the macOS XMake bundle (`xmake-tool-macos`), native
+Windows' package key renamed `xmake-windows-native-` (`xmake-windows-` prefixed the msvc container's entry), and a 404
+or a 403 part-way through the cleanup reported truly. Rulings: a failing prune step fails its job (no
+`continue-on-error`: a hidden failure would let the caches grow again unseen); lint reads container (linux-clang)'s
+package entry (same image, toolchain and requires) and reader jobs never save packages; a family CI no longer writes
+keeps its newest entry until GitHub's seven-day eviction; the `caches` job runs on cancelled runs too (about a minute).
