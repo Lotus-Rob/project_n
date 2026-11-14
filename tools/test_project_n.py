@@ -540,10 +540,10 @@ class RunReferenceCaseTest(unittest.TestCase):
 
 
 class ReferenceTest(unittest.TestCase):
-    def references(self, update, committed=(), case=None):
+    def references(self, update, committed=(), case=None, draws=None):
         """Runs `run_references` in a temporary root holding the `committed` pictures, over three cases run by `case`
-        (index -> (output, return code)); by default case 2 draws a.png and fails. Returns (a.png's bytes or None, the
-        indices run, stdout)."""
+        (index -> (output, return code)); by default case 2 draws a.png and fails. Case 1 first draws `draws` (name ->
+        bytes). Returns (a.png's bytes or None, the indices run, stdout)."""
         ran, out = [], io.StringIO()
 
         def draw_and_fail(index):
@@ -554,6 +554,8 @@ class ReferenceTest(unittest.TestCase):
 
         def run_case(exe, env, index):
             ran.append(index)
+            for name, data in (draws or {}).items() if index == 1 else ():
+                (root / "build" / "reference" / name).write_bytes(data)
             return (case or draw_and_fail)(index)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -606,6 +608,21 @@ class ReferenceTest(unittest.TestCase):
         self.references(update=False, case=finish_out_of_order)
         self.assertLess(self.out.index("one"), self.out.index("two"))
         self.assertLess(self.out.index("two"), self.out.index("three"))
+
+    def test_a_passing_run_names_the_pictures_that_changed_within_tolerance(self):
+        # Lavapipe draws every case the same to the byte, so a picture that differs has drifted from its reference.
+        self.references(update=False, committed=["a.png", "b.png", "c.png"], case=lambda index: ("", 0),
+                        draws={"a.png": b"drawn", "b.png": b"committed", "c.png": b"drawn"})
+        self.assertIn("reference: within tolerance but changed: a, c; refresh them with "
+                      "`pixi run project_n reference --update`", self.out)
+
+    def test_a_passing_run_that_drew_every_reference_says_nothing_more(self):
+        self.references(update=False, committed=["a.png"], case=lambda index: ("", 0), draws={"a.png": b"committed"})
+        self.assertNotIn("changed", self.out)
+
+    def test_update_doesnt_name_changed_pictures(self):
+        self.references(update=True, committed=["a.png"], case=lambda index: ("", 0), draws={"a.png": b"drawn"})
+        self.assertNotIn("changed", self.out)
 
     def test_the_case_count_is_read_from_doctest(self):
         line = "[doctest] unskipped test cases passing the current filters: 25\n"

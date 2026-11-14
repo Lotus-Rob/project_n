@@ -750,6 +750,14 @@ def run_references(preset, update=False):
         for picture in drawn.glob("*.png"):
             shutil.copy(picture, ROOT / "tests" / "reference" / picture.name)
         print("reference: tests/reference/ updated; look at the pictures before committing them")
+        return
+    # Lavapipe draws every case the same to the byte: a passing picture that differs has drifted within the tolerance.
+    changed = [p.stem for p in sorted(drawn.glob("*.png"))
+               if (ROOT / "tests" / "reference" / p.name).is_file()
+               and p.read_bytes() != (ROOT / "tests" / "reference" / p.name).read_bytes()]
+    if changed:
+        print(f"reference: within tolerance but changed: {', '.join(changed)}; "
+              "refresh them with `pixi run project_n reference --update`")
 
 
 def cmd_reference(args):
