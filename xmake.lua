@@ -105,8 +105,7 @@ if is_plat("windows") then
     -- Off Windows (msvc-wine), XMake's build cache compiles the preprocessed file, whose /showIncludes
     -- lists no headers, and /showIncludes is how XMake learns what each object depends on there
     -- (CL_WRAPPER in tools/project_n.py): with the cache on, a changed header rebuilt nothing.
-    -- Unless the build cache is asked for: only CI asks, whose build folders are never reused.
-    if not is_host("windows") and not has_config("build_cache") then
+    if not is_host("windows") then
         set_policy("build.ccache", false)
     end
     -- MSVC 14.50 has no /std:c++23: it warns (D9002, not fatal even with /WX), ignores it and
