@@ -411,7 +411,10 @@ std::optional<core::SceneFacts> Arena::Requested() const {
 
 void Arena::EnterScene() {
     PN_ASSERT(m_requested.has_value(), "a scene entered that nothing asked for");
-    Build(m_requested.value_or(m_scene));
+    if (!m_requested) {
+        return; // with assertions off, the scene and its fight stay as they are
+    }
+    Build(*m_requested);
 }
 
 std::optional<Scene> SceneNamed(std::string_view name) {
