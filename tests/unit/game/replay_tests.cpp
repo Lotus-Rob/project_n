@@ -27,7 +27,8 @@ u64 NoClock() {
 }
 
 // A game as app::Game holds one, built as `scene`, without its clock: the tests choose the bursts. As App does, it
-// reports each scene a snapshot needs resident, and each scene change's way out and way in played, at once.
+// reports each scene a snapshot needs resident, and each scene change's way out and way in played: at once, or `late`
+// bursts after the stage first shows, as a slow main thread would.
 struct Session {
     explicit Session(
         const std::filesystem::path& folder,
@@ -47,12 +48,17 @@ struct Session {
         core::Snapshot* published = handover.TakeState();
         volleys = published->volleys.size();
         seals = test::RaisedSeals(*published).size();
-        if (published->scene != reported) {
-            reported = published->scene;
-            handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = published->scene });
-        }
-        if (const std::optional<core::Action> report = reports.Answer(published->sceneChange)) {
-            handover.SendInput(*report);
+        const core::SceneChange& change = published->sceneChange;
+        waited = change.change == shown.change && change.stage == shown.stage ? waited + 1 : 0;
+        shown = change;
+        if (waited >= late) {
+            if (published->scene != reported) {
+                reported = published->scene;
+                handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = published->scene });
+            }
+            if (const std::optional<core::Action> report = reports.Answer(change)) {
+                handover.SendInput(*report);
+            }
         }
         handover.ReturnState(published);
     }
@@ -80,8 +86,11 @@ struct Session {
     core::Logic logic{ handover, arena, jobs, saves, replays, replay, NoClock };
     core::SceneReports reports{};
     std::optional<core::SceneId> reported = std::nullopt;
-    std::size_t volleys = 0; // in flight in the last snapshot published
-    std::size_t seals = 0;   // raised in play in the last snapshot published
+    u32 late = 0;              // how many bursts after a stage shows it is answered
+    core::SceneChange shown{}; // the stage the last snapshot showed
+    u32 waited = 0;            // bursts since it first showed
+    std::size_t volleys = 0;   // in flight in the last snapshot published
+    std::size_t seals = 0;     // raised in play in the last snapshot published
 };
 
 // A folder of its own, removed when the test ends.
@@ -165,6 +174,42 @@ TEST_CASE("an arena with NPCs plays its replay back with every hash matching") {
     CHECK(playing.arena.Months() == 1);
     CHECK(playing.arena.Selected() == selected);
     CHECK(playing.logic.Epoch() == 1);
+}
+
+TEST_CASE("a replay starting in another scene plays back with the same hashes") {
+    constexpr u32 LATE = 5;
+    constexpr u32 MAX_BURSTS = 100;
+    const Folder folder{ "other_scene" };
+    core::SceneId recordedIn{};
+    {
+        Session recording(folder.Path(), game::Scene::Painted);
+        recording.Burst(core::REPLAY_HASH_TICKS - 1); // starts on a hash tick, which playback checks once restored
+        recording.Send(core::ActionKind::ToggleRecording);
+        recording.Burst(1);
+        REQUIRE(recording.logic.Counters().wall == core::REPLAY_HASH_TICKS);
+        recording.Burst(core::REPLAY_HASH_TICKS);
+        recording.Send(core::ActionKind::ToggleRecording);
+        recording.Burst(1);
+        recordedIn = recording.arena.Scene();
+    } // its job system finishes writing the replay
+
+    for (const u32 late : { 0U, LATE }) { // the reports answered at once, and late
+        CAPTURE(late);
+        Session playing(folder.Path()); // in the arena
+        REQUIRE(playing.arena.Scene() != recordedIn);
+        playing.late = late;
+        playing.Send(core::ActionKind::PlayReplay);
+        playing.Burst(1);
+        REQUIRE(playing.replay.Playing());
+        for (u32 bursts = 0; bursts < MAX_BURSTS && playing.replay.Playing(); ++bursts) {
+            playing.Burst(core::REPLAY_HASH_TICKS);
+        }
+        CHECK(playing.replay.AtEnd());
+        CHECK(playing.replay.HashCount() == 2);
+        CHECK(playing.replay.Matched() == playing.replay.HashCount());
+        CHECK(playing.arena.Scene() == recordedIn);
+        CHECK(playing.logic.Epoch() == 1);
+    }
 }
 
 // The living foxes' IDs, in order: none dying.

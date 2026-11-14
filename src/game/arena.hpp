@@ -88,9 +88,10 @@ public:
     /// the relationships, into `archive`.
     void Save(core::Writer& archive) override;
 
-    /// Replaces the state with the one Save() wrote at simulation tick `simulationTick`, its creatures taking the game
-    /// data in use; false, changing nothing, when the bytes are malformed, of another version, don't end where the state
-    /// does, or hold a flash or a seal that starts after `simulationTick`.
+    /// Reads and checks the state Save() wrote at simulation tick `simulationTick` and holds it, changing nothing else:
+    /// Requested() names its scene until EnterScene() makes it current, its creatures taking the game data in use then.
+    /// False, holding nothing new, when the bytes are malformed, of another version, don't end where the state does, or
+    /// hold a flash or a seal that starts after `simulationTick`.
     [[nodiscard]] bool Load(core::Reader& archive, u64 simulationTick) override;
 
     /// A hash of everything Save() writes, in the state's current order.
@@ -116,10 +117,12 @@ public:
         return FactsOf(m_scene);
     }
 
-    /// The scene the last CycleScene asked for, until EnterScene() or a load; none otherwise.
+    /// The scene of the state a load holds, or else the scene the last CycleScene asked for, until EnterScene(); none
+    /// otherwise.
     [[nodiscard]] std::optional<core::SceneFacts> Requested() const override;
 
-    /// Rebuilds itself as the scene Requested() names, the selection cleared, and forgets the request.
+    /// Makes the scene Requested() names current: the state a load holds, its creatures taking the game data in use, or
+    /// else the scene asked for, rebuilt with the selection cleared. It forgets both.
     void EnterScene() override;
 
     /// How many months have passed.
@@ -211,6 +214,18 @@ private:
 
     // The scene a CycleScene asked for, until it is entered.
     std::optional<core::SceneKey> m_requested = std::nullopt;
+
+    // A sound load's state, held until EnterScene() makes it current.
+    struct Loaded {
+        core::State state;
+        Relationships relationships;
+        Combat combat;
+        core::SceneKey scene;
+        u64 months;
+        core::StableId player;
+        core::StableId selected;
+    };
+    std::optional<Loaded> m_loaded = std::nullopt;
 };
 
 } // namespace game

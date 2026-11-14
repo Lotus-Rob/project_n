@@ -1453,6 +1453,7 @@ TEST_CASE("the lance's flash survives a save") {
     game::Arena loaded(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_AT));
+    loaded.EnterScene(); // as the logic does at the swap
     CHECK(loaded.StateHash() == arena.StateHash());
     const core::Snapshot snapshot = Published(loaded, SAVED_AT);
     REQUIRE(snapshot.flashes.size() == 1);
@@ -1538,6 +1539,7 @@ TEST_CASE("a seal survives a save and load mid-formation") {
     game::Arena loaded(test::TestManifest(), game::Scene::Cells, Gathered(AMPLE));
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, savedAt));
+    loaded.EnterScene(); // as the logic does at the swap
     CHECK(loaded.StateHash() == arena.StateHash());
     const core::Snapshot snapshot = Published(loaded, savedAt);
     const std::vector<core::Seal> raisedLoaded = test::RaisedSeals(snapshot);
@@ -1576,6 +1578,7 @@ TEST_CASE("a load ends every seal its save doesn't hold") {
     REQUIRE(RaisedAt(arena, LOADED) == 1);
     core::Reader reader{ bytes };
     REQUIRE(arena.Load(reader, LOADED));
+    arena.EnterScene(); // as the logic does at the swap
     CHECK(RaisedAt(arena, LOADED) == 0);
 }
 
@@ -1633,6 +1636,7 @@ TEST_CASE("a respawn shortened by new game data comes on its own tick, before an
     game::Arena loaded(test::TestManifest(), game::Scene::Arena, data);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SECOND_DUE - 1));
+    loaded.EnterScene(); // as the logic does at the swap
     CHECK(loaded.StateHash() == arena.StateHash());
 
     for (game::Arena* const played : { &arena, &loaded }) {

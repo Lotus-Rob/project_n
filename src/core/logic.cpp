@@ -121,22 +121,26 @@ Logic::TickEnd Logic::RunTick(const std::stop_token& stop) {
         }
     }
     if (const std::optional<SceneFacts> requested = m_simulation->Requested()) {
-        m_change = {
-            .stage = SceneStage::Leaving,
-            .from = m_simulation->Current(),
-            .to = *requested,
-            .change = m_change.change + 1,
-        };
-        PN_LOG_DEBUG(
-            "scene change {} at tick {}: leaving scene {} for scene {}",
-            m_change.change,
-            m_counters.wall,
-            std::to_underlying(m_change.from.key),
-            std::to_underlying(m_change.to.key)
-        );
+        StartChange(*requested);
         return TickEnd::EndBurst;
     }
     return m_calendar == Calendar::Requested ? TickEnd::EndBurst : TickEnd::Continue;
+}
+
+void Logic::StartChange(const SceneFacts& next) {
+    m_change = {
+        .stage = SceneStage::Leaving,
+        .from = m_simulation->Current(),
+        .to = next,
+        .change = m_change.change + 1,
+    };
+    PN_LOG_DEBUG(
+        "scene change {} at tick {}: leaving scene {} for scene {}",
+        m_change.change,
+        m_counters.wall,
+        std::to_underlying(m_change.from.key),
+        std::to_underlying(m_change.to.key)
+    );
 }
 
 bool Logic::Wait() {
@@ -191,6 +195,9 @@ bool Logic::TakeReport(const Action& report) {
     }
     if (report.kind == ActionKind::SceneLeft && m_change.stage == SceneStage::Leaving) {
         m_simulation->EnterScene();
+        if (const std::optional<Restored> restored = std::exchange(m_restored, std::nullopt)) {
+            TakeRestored(*restored);
+        }
         m_change.stage = SceneStage::Loading;
         PN_LOG_DEBUG("scene change {} at tick {}: the old scene is left, the new one built", m_change.change, m_counters.wall);
         return true;
@@ -266,7 +273,8 @@ u64 Logic::Hash() const {
 
 void Logic::CheckReplay() {
     PN_PROFILE_ZONE();
-    if (m_counters.wall % REPLAY_HASH_TICKS != 0) {
+    // While a load or a replay's start is held, the counters aren't its yet: the swap checks it, once they are.
+    if (m_restored || m_counters.wall % REPLAY_HASH_TICKS != 0) {
         return;
     }
     if (m_replay->Recording()) {
@@ -305,11 +313,27 @@ bool Logic::Restore(std::span<const std::byte> state, bool withLogicState) {
     if (archive.Failed() || format != SAVE_FORMAT || !m_simulation->Load(archive, counters.simulation)) {
         return false;
     }
-    m_counters = counters;
-    m_paused = paused;
-    m_calendar = calendar;
-    ++m_epoch;
+    m_restored = Restored{
+        .counters = counters,
+        .paused = withLogicState ? std::optional{ paused } : std::nullopt,
+        .calendar = calendar,
+    };
+    m_calendar = Calendar::None; // a step asked for on this tick goes with the state it would have stepped
+    const std::optional<SceneFacts> next = m_simulation->Requested();
+    PN_ASSERT(next.has_value(), "a state loaded that names no scene to enter");
+    StartChange(next.value_or(m_simulation->Current()));
     return true;
+}
+
+void Logic::TakeRestored(const Restored& restored) {
+    m_counters = restored.counters;
+    if (restored.paused && m_replay->Playing()) { // a replay stopped since leaves the window's pausing
+        m_paused = *restored.paused;
+    }
+    m_calendar = restored.calendar;
+    ++m_epoch;
+    PN_LOG_DEBUG("scene change {}: timeline {} begins at tick {}", m_change.change, m_epoch, m_counters.wall);
+    CheckReplay(); // a replay's start, as it was checked when recorded
 }
 
 void Logic::Save() {
@@ -338,7 +362,12 @@ bool Logic::Load() {
         PN_LOG_ERROR("not loaded: {} is malformed or from another version of the game", m_saves->Slot().string());
         return false;
     }
-    PN_LOG_INFO("loaded the game from {} at tick {}; timeline {} begins", m_saves->Slot().string(), m_counters.wall, m_epoch);
+    PN_LOG_INFO(
+        "loaded the game from {} at tick {}; timeline {} begins once its scene is entered",
+        m_saves->Slot().string(),
+        m_counters.wall,
+        m_epoch + 1
+    );
     return true;
 }
 
@@ -383,7 +412,7 @@ bool Logic::TogglePlayback() {
         PN_LOG_ERROR("no replay played: its start state is malformed");
         return false;
     }
-    PN_LOG_INFO("playing the replay from tick {}; timeline {} begins", m_counters.wall, m_epoch);
+    PN_LOG_INFO("playing the replay at tick {}; timeline {} begins once its scene is entered", m_counters.wall, m_epoch + 1);
     return true;
 }
 
