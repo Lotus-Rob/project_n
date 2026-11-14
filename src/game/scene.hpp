@@ -136,7 +136,4 @@ protected:
     ~Scene() = default;
 };
 
-/// Where `entity`'s head is: its foot raised by its sprite's foot height at its scale. It must have a Body and a Look.
-[[nodiscard]] core::Vec2 HeadOf(const core::Registry& entities, const core::Manifest& manifest, core::Entity entity);
-
 } // namespace game
