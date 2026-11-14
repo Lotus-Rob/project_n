@@ -149,3 +149,6 @@ flying_swords:
 walker_name:
   en: Wanderer
   zh: 旅人
+portal_label:
+  en: Portal
+  zh: 传送门

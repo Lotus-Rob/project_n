@@ -95,12 +95,15 @@ Box FootprintOverTime(const core::Seal& seal, const core::Seals& looks, const gf
     return box;
 }
 
-TEST_CASE("the showcase seals keep apart and clear of the swords' seal at the player's start, so none hides another") {
+TEST_CASE(
+    "the showcase seals and the portal keep apart and clear of the swords' seal at the player's start, so none hides another"
+) {
     core::Jobs jobs{ 1 };
     game::Host host(test::TestManifest());
     core::Snapshot snapshot;
     host.Publish(snapshot, jobs, std::nullopt);
     REQUIRE(snapshot.follow.has_value());
+    REQUIRE(std::ranges::contains(snapshot.seals, game::PORTAL_SEAL, &core::Seal::key)); // the arena's portal is among them
     const core::Seals looks = test::ShippedSeals();
     const gfx::SealPack pack = gfx::PackSeals(looks, *test::TestManifest());
 
@@ -131,21 +134,66 @@ TEST_CASE("the showcase seals keep apart and clear of the swords' seal at the pl
     );
     for (std::size_t first = 0; first < boxes.size(); ++first) {
         const Box& box = boxes[first];
-        report +=
-            std::format("showcase seal {} reaches ({}, {}) to ({}, {})\n", first, box.min.x, box.min.y, box.max.x, box.max.y);
+        report += std::format("seal {} reaches ({}, {}) to ({}, {})\n", first, box.min.x, box.min.y, box.max.x, box.max.y);
         if (box.Overlaps(startArea)) {
             report += std::format("  it reaches the player's start\n");
             ++overlaps;
         }
         for (std::size_t second = first + 1; second < boxes.size(); ++second) {
             if (box.Overlaps(boxes[second])) {
-                report += std::format("  it overlaps showcase seal {}\n", second);
+                report += std::format("  it overlaps seal {}\n", second);
                 ++overlaps;
             }
         }
     }
     INFO(report);
     CHECK(overlaps == 0);
+}
+
+TEST_CASE("the portal publishes its seal and label in every walkable scene, the showcase hidden or not") {
+    constexpr f64 SHOWN_WHOLE = 10.0;     // seconds: long past its appearing
+    constexpr f32 SIZE_PER_RADIUS = 2.0F; // the seal twice its step area
+    const core::Seals looks = test::ShippedSeals();
+    // The step area is as flat as the shipped table draws the ground seal, so what the player sees predicts the step.
+    CHECK(looks.viewRatio == game::PORTAL_DEPTH_RATIO);
+    const gfx::SealPack pack = gfx::PackSeals(looks, *test::TestManifest());
+    core::Jobs jobs{ 1 };
+    for (const core::SceneKey scene : { game::ARENA_SCENE, game::STRESS_SCENE, game::WORLD_SCENE }) {
+        CAPTURE(game::SceneName(scene));
+        game::Host host(test::TestManifest(), scene);
+        core::Snapshot snapshot;
+        host.Publish(snapshot, jobs, std::nullopt);
+        const std::optional<core::Vec2> portal = game::SceneOf(scene).Traits().portal;
+        REQUIRE(portal.has_value());
+        const core::Vec2 point = portal.value_or(core::Vec2{});
+        const auto seal = std::ranges::find(snapshot.seals, game::PORTAL_SEAL, &core::Seal::key);
+        REQUIRE(seal != snapshot.seals.end());
+        CHECK(seal->point.x == point.x);
+        CHECK(seal->point.y == point.y);
+        CHECK(seal->size == SIZE_PER_RADIUS * game::PORTAL_RADIUS);
+        CHECK(seal->startTick == 0);
+        CHECK(seal->endTick == core::NEVER_ENDS);
+        CHECK_FALSE(seal->showcase);
+        const auto label = std::ranges::find(snapshot.texts, core::StringId::PortalLabel, &core::TextItem::string);
+        REQUIRE(label != snapshot.texts.end());
+        CHECK(label->current.x == point.x);
+        CHECK(label->current.y < point.y); // over it
+        // F8 hides the showcase, never the portal.
+        for (const bool showcase : { true, false }) {
+            CAPTURE(showcase);
+            gfx::SealDrawing drawn;
+            const auto tick = static_cast<u64>(SHOWN_WHOLE * static_cast<f64>(core::TICKS_PER_SECOND));
+            gfx::DrawSeals(std::span{ &*seal, 1 }, looks, pack, core::UiColours{}, SHOWN_WHOLE, tick, showcase, drawn);
+            CHECK_FALSE(drawn.groundLines.empty());
+        }
+    }
+    // The still scenes have none.
+    for (const core::SceneKey scene : { game::PAINTED_SCENE, game::CELLS_SCENE }) {
+        game::Host host(test::TestManifest(), scene);
+        core::Snapshot snapshot;
+        host.Publish(snapshot, jobs, std::nullopt);
+        CHECK_FALSE(std::ranges::contains(snapshot.seals, game::PORTAL_SEAL, &core::Seal::key));
+    }
 }
 
 } // namespace

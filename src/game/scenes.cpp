@@ -66,6 +66,14 @@ core::SceneKey NextScene(core::SceneKey key) {
     return core::SceneKey{ static_cast<u16>((std::to_underlying(key) + 1U) % SCENE_LIST.size()) };
 }
 
+core::SceneKey NextWalkableScene(core::SceneKey key) {
+    core::SceneKey next = NextScene(key);
+    while (next != key && !SceneOf(next).Traits().portal) {
+        next = NextScene(next);
+    }
+    return next;
+}
+
 std::expected<void, core::Error> CheckScenes(const core::Manifest& manifest, const core::GameData& data) {
     for (const Scene* const entry : Scenes()) {
         const SceneTraits& traits = entry->Traits();

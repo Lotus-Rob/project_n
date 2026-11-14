@@ -2,13 +2,14 @@
 
 /// @file
 /// The seals for tests of a host: those of a snapshot raised in play (the arena scene also publishes its showcase seals,
-/// core::Seal::showcase, which are scene content), and the shipped looks (its target links data and platform, as
-/// support/manifest.hpp's does).
+/// core::Seal::showcase, and every walkable scene its portal, game::PORTAL_SEAL, which are scene content), and the shipped
+/// looks (its target links game, data and platform, as support/manifest.hpp's does).
 
 #include "core/frame.hpp"
 #include "core/seal.hpp"
 #include "core/seals.hpp"
 #include "data/seals.hpp"
+#include "game/scene.hpp"
 #include "platform/paths.hpp"
 #include "support/manifest.hpp"
 
@@ -22,10 +23,12 @@
 
 namespace test {
 
-/// The seals of `snapshot` raised in play, in its order: all but its showcase seals.
+/// The seals of `snapshot` raised in play, in its order: all but its showcase seals and its portal.
 [[nodiscard]] inline std::vector<core::Seal> RaisedSeals(const core::Snapshot& snapshot) {
     std::vector<core::Seal> raised;
-    std::ranges::copy_if(snapshot.seals, std::back_inserter(raised), [](const core::Seal& seal) { return !seal.showcase; });
+    std::ranges::copy_if(snapshot.seals, std::back_inserter(raised), [](const core::Seal& seal) {
+        return !seal.showcase && seal.key != game::PORTAL_SEAL;
+    });
     return raised;
 }
 

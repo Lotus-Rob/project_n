@@ -13,12 +13,15 @@
 #include "core/game_data.hpp"
 #include "core/glow.hpp"
 #include "core/manifest.hpp"
+#include "core/seal.hpp"
+#include "core/seals.hpp"
 #include "core/state.hpp"
 #include "core/tick_clock.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 #include "game/components.hpp"
 
+#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -32,6 +35,20 @@ inline constexpr core::Rect GROUND{ .min = {}, .max = { .x = 1'920.0F, .y = 1'08
 /// How far a name label stands from the head it names (core::TextItem::offset), in world units, so it scales with the
 /// zoom as the text does (the phase 6 chunk 3 spec): clear of the head, with room between them for a health bar.
 inline constexpr core::Vec2 LABEL_OFFSET{ .x = 0.0F, .y = -12.0F };
+
+/// How far across from a portal's point (SceneTraits::portal) the cultivator's foot steps through it, in world units: about
+/// the width of the cultivator's body (its sprite is 72 across). Up and down it reaches PORTAL_RADIUS × PORTAL_DEPTH_RATIO,
+/// so the step area is an ellipse on the ground, the inner half of the portal's drawn seal (twice this size) on every axis:
+/// walking onto the seal's middle takes the cultivator through, and brushing its rim, from any side, doesn't.
+inline constexpr f32 PORTAL_RADIUS = 48.0F;
+
+/// How much flatter than wide a portal's step area is: the shipped seals' view ratio (core::shipped::SEAL_VIEW_RATIO), at
+/// which its ground seal is drawn. A constant of the game's, never the hot-reloaded table's, so presentation stays out of
+/// the simulation.
+inline constexpr f32 PORTAL_DEPTH_RATIO = core::shipped::SEAL_VIEW_RATIO;
+
+/// The look a portal wears: the `portal` seal of `assets/data/seals.yaml`.
+inline constexpr core::SealKey PORTAL_SEAL = core::SealKeyOf("portal");
 
 /// A sprite that wears a demo glow (DemoGlow()) in a scene, and which.
 struct DemoGlowSprite {
@@ -61,6 +78,9 @@ struct SceneTraits {
     core::CameraKind camera = core::CameraKind::Pan;
     /// How many world NPCs the host spawns after it builds.
     u32 worldNpcs = 0;
+    /// Where its portal stands, the foot point the cultivator steps onto to walk to the next walkable scene
+    /// (NextWalkableScene()); none for a scene without a cultivator to walk.
+    std::optional<core::Vec2> portal = std::nullopt;
 };
 
 /// The host as a scene sees it: the state, what it draws with, and the spawns every scene shares.

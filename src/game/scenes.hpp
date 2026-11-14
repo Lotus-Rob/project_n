@@ -46,6 +46,10 @@ inline constexpr core::SceneKey WORLD_SCENE{ 4 };
 /// The scene after `key` in F2's order, the first again after the last.
 [[nodiscard]] core::SceneKey NextScene(core::SceneKey key);
 
+/// The scene a portal in `key` leads to: the next after it in F2's order whose traits have a portal (SceneTraits::portal),
+/// wrapping round, so the walkable scenes lead round arena, stress and world and skip the still ones.
+[[nodiscard]] core::SceneKey NextWalkableScene(core::SceneKey key);
+
 /// Whether every scene can run from `manifest` with `data` (design doc 0002.3.1 §3): the manifest names each,
 /// and the scenes with creatures load the sprites `data` gives them, without which they would be invisible.
 /// Otherwise, which scene is short of what.

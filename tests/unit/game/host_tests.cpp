@@ -1292,4 +1292,159 @@ TEST_CASE("glows leave the state hash alone") {
     CHECK(published.StateHash() == plain.StateHash());
 }
 
+// The portal's point in `scene`, which must have one.
+core::Vec2 PortalOf(core::SceneKey scene) {
+    const std::optional<core::Vec2> portal = game::SceneOf(scene).Traits().portal;
+    REQUIRE(portal.has_value());
+    return portal.value_or(core::Vec2{});
+}
+
+// Ticks `host` once at `tick` with `actions`, its cultivator walking from where it stands to `target`: held movement is at
+// most 1 long, so the game data's walk speed becomes the distance.
+void StepTo(
+    game::Host& host,
+    u64 tick,
+    core::Vec2 target,
+    std::vector<core::Event>& events,
+    std::span<const core::Action> actions = {}
+) {
+    const core::Vec2 away = target - FootOf(host, host.Player());
+    const f32 distance = std::hypot(away.x, away.y);
+    core::GameData data = game::BuiltInData();
+    data.cultivator.walkSpeed = distance;
+    host.SetData(data);
+    host.Tick(At(tick), { .actions = actions, .held = { .move = away * (1.0F / distance) } }, events);
+}
+
+// Ticks `host` at ticks 1 and 2, its cultivator stepping to `step` from its portal's point straight in from three times as
+// far out, so its path this tick crosses no more of the step area than `step` itself reaches.
+void StepInTo(game::Host& host, core::Vec2 portal, core::Vec2 step, std::vector<core::Event>& events) {
+    constexpr f32 FAR_OUT = 3.0F;
+    StepTo(host, 1, portal + (step * FAR_OUT), events);
+    REQUIRE_FALSE(host.Requested().has_value());
+    StepTo(host, 2, portal + step, events);
+}
+
+// Each walkable scene and the one its portal leads to.
+constexpr std::array<std::pair<core::SceneKey, core::SceneKey>, 3> PORTAL_LEADS{ {
+    { game::ARENA_SCENE, game::STRESS_SCENE },
+    { game::STRESS_SCENE, game::WORLD_SCENE },
+    { game::WORLD_SCENE, game::ARENA_SCENE },
+} };
+
+TEST_CASE("stepping onto the portal asks for the next walkable scene") {
+    for (const auto& [scene, next] : PORTAL_LEADS) {
+        CAPTURE(game::SceneName(scene));
+        game::Host host(test::TestManifest(), scene);
+        std::vector<core::Event> events;
+        StepTo(host, 1, PortalOf(scene), events);
+        const std::optional<core::SceneFacts> requested = host.Requested();
+        REQUIRE(requested.has_value());
+        CHECK(requested.value_or(core::SceneFacts{}).key == next);
+    }
+    // Near the step area's edges, on the seal's inner rings: across, and up and down where the drawn seal is flatter.
+    constexpr f32 ACROSS = 0.9F * game::PORTAL_RADIUS;
+    constexpr f32 DEEP = 0.9F * game::PORTAL_RADIUS * game::PORTAL_DEPTH_RATIO;
+    const core::Vec2 portal = PortalOf(game::ARENA_SCENE);
+    for (const core::Vec2 step : { core::Vec2{ .x = ACROSS }, core::Vec2{ .y = DEEP }, core::Vec2{ .y = -DEEP } }) {
+        CAPTURE(step.x);
+        CAPTURE(step.y);
+        game::Host host(test::TestManifest());
+        std::vector<core::Event> events;
+        StepInTo(host, portal, step, events);
+        CHECK(host.Requested().has_value());
+    }
+}
+
+TEST_CASE("a dash onto or across the portal asks for the next walkable scene") {
+    constexpr u64 MOST_TICKS = 12; // longer than the dash lasts
+    const core::Vec2 portal = PortalOf(game::ARENA_SCENE);
+    // Ending on it from the right; and straight down across it, from above to below, where its eased steps in the middle
+    // land either side of the step area, farther apart than it is deep.
+    constexpr core::Vec2 RIGHT{ .x = 200.0F };
+    constexpr core::Vec2 ABOVE{ .y = -130.0F };
+    for (const auto& [from, onto] : { std::pair{ portal + RIGHT, portal }, std::pair{ portal + ABOVE, portal - ABOVE } }) {
+        CAPTURE(from.y);
+        game::Host host(test::TestManifest());
+        std::vector<core::Event> events;
+        StepTo(host, 1, from, events);
+        REQUIRE_FALSE(host.Requested().has_value());
+        const std::array<core::Action, 1> dash{
+            { { .kind = core::ActionKind::Cast, .slot = core::Slot::Movement, .point = onto } }
+        };
+        host.Tick(At(2), { .actions = dash, .held = {} }, events);
+        for (u64 tick = 3; tick < MOST_TICKS && !host.Requested(); ++tick) {
+            host.Tick(At(tick), {}, events);
+        }
+        const std::optional<core::SceneFacts> requested = host.Requested();
+        REQUIRE(requested.has_value());
+        CHECK(requested.value_or(core::SceneFacts{}).key == game::STRESS_SCENE);
+    }
+}
+
+TEST_CASE("the step onto the portal ends the uses still open") {
+    constexpr core::Vec2 FAR_POINT{ .x = 1'500.0F, .y = 500.0F }; // a bolt's flight there outlasts a tick
+    constexpr u64 BOLT_USE = game::CastUse(1, core::Slot::Generator);
+    game::Host host(test::TestManifest());
+    const std::array<core::Action, 1> cast{
+        { { .kind = core::ActionKind::Cast, .slot = core::Slot::Generator, .point = FAR_POINT } }
+    };
+    std::vector<core::Event> events;
+    host.Tick(At(1), { .actions = cast, .held = {} }, events);
+    events.clear();
+    StepTo(host, 2, PortalOf(game::ARENA_SCENE), events);
+    REQUIRE(host.Requested().has_value());
+    REQUIRE(events.size() == 1); // nothing of the arena's goes on to hit
+    CHECK(events.front().kind == core::EventKind::UseEnded);
+    CHECK(events.front().use == BOLT_USE);
+
+    // A bolt cast on the stepping tick itself ends with it.
+    constexpr u64 SAME_TICK_USE = game::CastUse(1, core::Slot::Generator);
+    game::Host casting(test::TestManifest());
+    events.clear();
+    StepTo(casting, 1, PortalOf(game::ARENA_SCENE), events, cast);
+    REQUIRE(casting.Requested().has_value());
+    REQUIRE(events.size() == 1);
+    CHECK(events.front().kind == core::EventKind::UseEnded);
+    CHECK(events.front().use == SAME_TICK_USE);
+}
+
+TEST_CASE("a step beside the portal asks for nothing") {
+    constexpr f32 BESIDE = 1.5F * game::PORTAL_RADIUS;
+    // Straight up or down, past the drawn seal's rim (PORTAL_DEPTH_RATIO of its size, twice the radius) but within the radius.
+    constexpr f32 PAST_THE_RIM = 0.9F * game::PORTAL_RADIUS;
+    const core::Vec2 portal = PortalOf(game::ARENA_SCENE);
+    for (const core::Vec2 step : { core::Vec2{ .x = BESIDE },
+                                   core::Vec2{ .x = -BESIDE },
+                                   core::Vec2{ .y = BESIDE },
+                                   core::Vec2{ .y = PAST_THE_RIM },
+                                   core::Vec2{ .y = -PAST_THE_RIM } }) {
+        CAPTURE(step.x);
+        CAPTURE(step.y);
+        game::Host host(test::TestManifest());
+        std::vector<core::Event> events;
+        StepInTo(host, portal, step, events);
+        CHECK_FALSE(host.Requested().has_value());
+    }
+}
+
+TEST_CASE("arriving through a portal lands off the next scene's portal") {
+    constexpr u64 FIRST_TICKS = 3;
+    for (const auto& [scene, next] : PORTAL_LEADS) {
+        CAPTURE(game::SceneName(scene));
+        game::Host host(test::TestManifest(), scene);
+        std::vector<core::Event> events;
+        StepTo(host, 1, PortalOf(scene), events);
+        REQUIRE(host.Requested().has_value());
+        host.EnterScene(); // as the logic does after the tick
+        REQUIRE(host.Current().key == next);
+        const core::Vec2 away = FootOf(host, host.Player()) - PortalOf(next);
+        CHECK(std::hypot(away.x, away.y) > game::PORTAL_RADIUS);
+        for (u64 tick = 2; tick < 2 + FIRST_TICKS; ++tick) {
+            host.Tick(At(tick), {}, events);
+        }
+        CHECK_FALSE(host.Requested().has_value());
+    }
+}
+
 } // namespace

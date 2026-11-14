@@ -55,9 +55,12 @@ public:
     /// cells, world, then the arena again; Requested()), ending every use still open (Combat::EndUses()), and does nothing
     /// else. Otherwise walks the player's cultivator where `input`'s held movement points, selects what its Select actions name
     /// (nothing for a dying one), ignores Cast actions outside a combat scene (in one a Cast is Combat::Cast(): Qi,
-    /// cooldown, the ability's effect; a dash moves the player in place of held movement), moves every entity on an Orbit to
-    /// where it is at `counters.simulation`, advances combat (Combat::Tick(): arrivals, removing the dead, which clears
-    /// their selection, and the foxes due back, which the scene respawns: Scene::Respawn()), and walks the active NPCs,
+    /// cooldown, the ability's effect; a dash moves the player in place of held movement). When the player's foot, on its way
+    /// this tick, crosses the step area of the scene's portal (SceneTraits::portal: an ellipse PORTAL_RADIUS across and
+    /// PORTAL_DEPTH_RATIO as deep, as its seal is drawn), it asks for the scene the portal leads to
+    /// (NextWalkableScene(); Requested()), ending every use still open, and does nothing more. Otherwise it moves every entity
+    /// on an Orbit to where it is at `counters.simulation`, advances combat (Combat::Tick(): arrivals, removing the dead, which
+    /// clears their selection, and the foxes due back, which the scene respawns: Scene::Respawn()), and walks the active NPCs,
     /// whose decisions draw random numbers keyed on `counters.state`. Then the scene takes its own part of the tick
     /// (Scene::Tick(): in the arena, the crystal's aura); a DebugBurst action appends 4,000 hits round the foxes, which
     /// change nothing. Last, the volleys and afflictions strike (Combat::Strike()), appending their hits. Each use ends with a
@@ -152,8 +155,11 @@ public:
     /// hooks get the same area. The snapshot names the scene's camera (SceneTraits::camera). A scene with a player adds the
     /// player's and each living fox's name label over its head; a combat scene adds each living fox's health bar at its
     /// head and the player's casting state (core::Snapshot::caster). Then the scene adds its own (Scene::Publish(): the
-    /// tablet's caption, the arena's showcase seals, the world's walker labels) and, after it, the volleys in flight with
-    /// their targets and the seals raised in play (Combat::Publish()).
+    /// tablet's caption, the arena's showcase seals, the world's walker labels), then a scene with a portal adds its seal
+    /// (PORTAL_SEAL at SceneTraits::portal, twice PORTAL_RADIUS in size, from tick 0 and never ending, no showcase seal, so
+    /// F8 never hides it) and its "Portal" caption over it, both whatever the view, as the seals are: one record each, whose
+    /// look reaches past its point. After them come the volleys in flight with their targets and the seals raised in play
+    /// (Combat::Publish()).
     void Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::optional<core::Rect>& view) override;
 
 private:
@@ -174,6 +180,9 @@ private:
     void Select(core::StableId target);
     void CastAction(const core::Action& action, const core::TickCounters& counters, std::vector<core::Event>& events);
     void DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const;
+    void Leave(core::SceneKey next, std::vector<core::Event>& events);
+    [[nodiscard]] bool OnPortal() const;
+    void PublishPortal(core::Snapshot& snapshot) const;
     void PublishOverhead(core::Snapshot& snapshot) const;
     void PublishCaster(core::Snapshot& snapshot) const;
     void ApplyData();
