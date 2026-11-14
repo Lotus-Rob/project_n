@@ -130,6 +130,9 @@ struct SceneChange {
 enum class CameraKind : u8 {
     Follow, ///< It centres on what the snapshot follows (Snapshot::follow).
     Pan,    ///< It stays where it is until the player pans it.
+    /// It follows what the snapshot follows until the player pans it, then stays where the player leaves it until
+    /// snap back.
+    Roam,
 };
 
 /// The entity the camera follows (design doc 0002 §8.10): its foot at the previous and this tick.
