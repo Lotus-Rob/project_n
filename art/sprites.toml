@@ -201,3 +201,65 @@ foot = [128, 128]
 
 [emblem_spiral]
 foot = [128, 128]
+
+# The world's terrain (phase 6 chunk 5a): seamless 256-pixel tiles, ten kinds with two variants each, laid edge to
+# edge from their top-left corners.
+[terrain_meadow_0]
+foot = [0, 0]
+
+[terrain_meadow_1]
+foot = [0, 0]
+
+[terrain_grass_0]
+foot = [0, 0]
+
+[terrain_grass_1]
+foot = [0, 0]
+
+[terrain_forest_0]
+foot = [0, 0]
+
+[terrain_forest_1]
+foot = [0, 0]
+
+[terrain_hills_0]
+foot = [0, 0]
+
+[terrain_hills_1]
+foot = [0, 0]
+
+[terrain_rock_0]
+foot = [0, 0]
+
+[terrain_rock_1]
+foot = [0, 0]
+
+[terrain_snow_0]
+foot = [0, 0]
+
+[terrain_snow_1]
+foot = [0, 0]
+
+[terrain_sand_0]
+foot = [0, 0]
+
+[terrain_sand_1]
+foot = [0, 0]
+
+[terrain_marsh_0]
+foot = [0, 0]
+
+[terrain_marsh_1]
+foot = [0, 0]
+
+[terrain_shallows_0]
+foot = [0, 0]
+
+[terrain_shallows_1]
+foot = [0, 0]
+
+[terrain_water_0]
+foot = [0, 0]
+
+[terrain_water_1]
+foot = [0, 0]

@@ -1,14 +1,18 @@
 """Self-checks for project_n.py. Run: pixi run python -m unittest discover -s tools"""
 
 import argparse
+import concurrent.futures
 import contextlib
 import fnmatch
 import functools
+import importlib.util
 import io
+import itertools
 import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -2080,6 +2084,61 @@ class AtlasTest(unittest.TestCase):
                 project_n.read_scenes(sprites)
         with temp_repo({"art/scenes.toml": '[one]\nsprites = ["b"]\n[two]\nsprites = ["a", "b"]\n'}):
             self.assertEqual(project_n.read_scenes(sprites), [("one", ["b"]), ("two", ["a", "b"])])
+
+
+@functools.cache
+def placeholders():
+    """art/placeholders.py, loaded from its path (art/ isn't on the self-tests' import path) and registered as a module,
+    so its types pickle and dataclasses resolve as an imported module's would."""
+    spec = importlib.util.spec_from_file_location("placeholders", Path(__file__).resolve().parent.parent / "art" / "placeholders.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def terrain_edges(name):
+    """Paints terrain tile `name` and returns what the seam test reads: whether it's opaque, its size, the mean RGB
+    difference between its neighbouring columns and between its neighbouring rows, and its edge columns and rows. Runs in
+    a worker process: painting the twenty tiles one after another took most of the self-tests' time."""
+    painter, opaque = placeholders().PLACEHOLDERS[name]
+    canvas = painter()
+    w, h = canvas.width, canvas.height
+    pixels = list(zip(canvas.r, canvas.g, canvas.b))
+    columns = [pixels[x::w] for x in range(w)]
+    rows = [pixels[y * w:(y + 1) * w] for y in range(h)]
+
+    def interior(lines):
+        return sum(rgb_apart(a, b) for a, b in itertools.pairwise(lines)) / (len(lines) - 1)
+    return {"opaque": opaque, "size": (w, h), "columns": interior(columns), "rows": interior(rows),
+            "left": columns[0], "right": columns[-1], "top": rows[0], "bottom": rows[-1]}
+
+
+def rgb_apart(a, b):
+    """The mean absolute channel difference between two equally long lines of (r, g, b) pixels."""
+    return sum(abs(p - q) for u, v in zip(a, b) for p, q in zip(u, v)) / (3 * len(a))
+
+
+class PlaceholderTest(unittest.TestCase):
+    TERRAIN = ("meadow", "grass", "forest", "hills", "rock", "snow", "sand", "marsh", "shallows", "water")
+
+    def test_terrain_tiles_are_seamless(self):
+        """Each tile joins itself across the wrap, and its other variant, about as smoothly as its own neighbouring
+        columns and rows join: the world tiles them edge to edge, so a seam would draw the grid."""
+        names = [f"terrain_{kind}_{variant}" for kind in self.TERRAIN for variant in (0, 1)]
+        with concurrent.futures.ProcessPoolExecutor(max_workers=min(len(names), os.cpu_count() or 1)) as pool:
+            tiles = dict(zip(names, pool.map(terrain_edges, names)))
+        for name, tile in tiles.items():
+            self.assertTrue(tile["opaque"], name)
+            self.assertEqual(tile["size"], (256, 256), name)
+        for kind in self.TERRAIN:
+            for left, right in itertools.product((0, 1), repeat=2):
+                # right beside left: its first column after left's last (the same tile: its own wrap), its first row under
+                # left's last.
+                a, b = tiles[f"terrain_{kind}_{left}"], tiles[f"terrain_{kind}_{right}"]
+                with self.subTest(kind=kind, left=left, right=right):
+                    self.assertLessEqual(rgb_apart(a["right"], b["left"]), 1.5 * (a["columns"] + b["columns"]) / 2)
+                    self.assertLessEqual(rgb_apart(a["bottom"], b["top"]), 1.5 * (a["rows"] + b["rows"]) / 2)
 
 
 class GitLfsTest(unittest.TestCase):

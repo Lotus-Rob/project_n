@@ -1,11 +1,11 @@
 """Procedural placeholder art for the sprite pipeline (design doc 0002 §2, §9): ink wash on paper.
 
-Writes assets/sprites/<name>.png for every placeholder sprite in art/sprites.toml: a painted
-ground, rocks, a pine, a shrine, a fox, a cultivator, a villager, glowing orbs, a blob shadow, four world-map
-cells, and the abilities' effects: a sword, a halo and a soft dot (both unused now), a fire bolt, the lance's burst
-and the bars' solid square. Each is original and drawn from code. Reproducible byte for byte: the drawing uses only
-arithmetic and square roots (correctly rounded everywhere), integer hashing, and seeded
-random.Random, never a transcendental function. Run through `./dev atlas --placeholders`.
+Writes assets/sprites/<name>.png for every placeholder sprite in art/sprites.toml: a painted ground, rocks, a pine,
+a shrine, a fox, a cultivator, a villager, glowing orbs, a blob shadow, four world-map cells, the world's seamless
+terrain tiles, and the abilities' effects: a sword, a halo and a soft dot (both unused now), a fire bolt, the lance's
+burst and the bars' solid square. Each is original and drawn from code. Reproducible byte for byte: the drawing uses
+only arithmetic and square roots (correctly rounded everywhere), integer hashing, and seeded random.Random, never a
+transcendental function. Run through `./dev atlas --placeholders`.
 
 Standard library only, like tools/project_n.py, so it runs in the Pixi environment as it is.
 """
@@ -579,6 +579,304 @@ def cell_city():
     return canvas
 
 
+# World terrain (phase 6 chunk 5a): opaque 256-pixel squares the world scene lays edge to edge, ten kinds with two
+# variants each. Every wash is noise whose lattice wraps at the tile's edge (lattice_cell), so it tiles; every brush
+# mark is painted again on the far side of any edge it crosses. A kind's colours and the lattice points and marks on
+# its edges are the kind's alone; the variant reseeds the rest (the lattice inside, the marks wholly inside, the
+# grain), so either variant joins itself and the other.
+
+TILE = 256
+POOL = (62, 80, 92)
+SPRAY = (236, 242, 248)
+CANOPY = (66, 94, 70)
+
+
+def lattice_cell(x, y, seed, cells_x, cells_y, variant):
+    """The corners (a, b, c, d: top left, top right, bottom left, bottom right) of the lattice cell holding pixel
+    (x, y), with cells_x by cells_y cells to a tile, and where in the cell it lies. The lattice wraps at the tile's
+    edges, and its points on the edges hash the seed alone while the others hash the seed and variant: variants differ
+    inside but meet along the edges, where the smooth interpolation is flat across them, so any two join seamlessly."""
+    u, v = x * cells_x / TILE, y * cells_y / TILE
+    xi, yi = math.floor(u), math.floor(v)
+    x0, x1, y0, y1 = xi % cells_x, (xi + 1) % cells_x, yi % cells_y, (yi + 1) % cells_y
+
+    def at(px, py):
+        return hash01(px, py, seed if px == 0 or py == 0 else seed + 7919 * variant)
+    return at(x0, y0), at(x1, y0), at(x0, y1), at(x1, y1), u - xi, v - yi
+
+
+def tiled_noise(x, y, seed, cells_x, cells_y, variant=0):
+    """noise() on lattice_cell's wrapping lattice."""
+    a, b, c, d, fx, fy = lattice_cell(x, y, seed, cells_x, cells_y, variant)
+    tx, ty = smooth(fx), smooth(fy)
+    top, bottom = a + (b - a) * tx, c + (d - c) * tx
+    return top + (bottom - top) * ty
+
+
+def tiled_fbm(x, y, seed, cells_x, cells_y, octaves=3, variant=0):
+    total, amplitude, norm = 0.0, 1.0, 0.0
+    for octave in range(octaves):
+        total += tiled_noise(x, y, seed + octave * 101, cells_x << octave, cells_y << octave, variant) * amplitude
+        norm += amplitude
+        amplitude *= 0.5
+    return total / norm
+
+
+def tiled_lean(x, y, seed, cells, octaves=3, variant=0):
+    """How steeply tiled_fbm (square cells) rises toward the lower right at (x, y), per pixel: its derivative, taken
+    from the cell's own corners rather than samples beside the pixel, so it joins across edges as the noise does."""
+    total, amplitude, norm = 0.0, 1.0, 0.0
+    for octave in range(octaves):
+        n = cells << octave
+        a, b, c, d, fx, fy = lattice_cell(x, y, seed + octave * 101, n, n, variant)
+        tx, ty = smooth(fx), smooth(fy)
+        dx, dy = 6.0 * fx * (1.0 - fx), 6.0 * fy * (1.0 - fy)  # smooth()'s derivative
+        top, bottom = a + (b - a) * tx, c + (d - c) * tx
+        across = ((b - a) + ((d - c) - (b - a)) * ty) * dx
+        down = (bottom - top) * dy
+        total += (across + down) * n / TILE * amplitude
+        norm += amplitude
+        amplitude *= 0.5
+    return total / norm
+
+
+def tiled_field(sample, step=4):
+    """sample(x, y), which must wrap, read every `step` pixels across a tile and interpolated between: a slow wash."""
+    n = TILE // step + 1
+    grid = [sample(gx * step, gy * step) for gy in range(n) for gx in range(n)]
+    out = []
+    for y in range(TILE):
+        gy, ty = y // step, (y % step) / step
+        for x in range(TILE):
+            gx, tx = x // step, (x % step) / step
+            i0, i1 = gy * n + gx, (gy + 1) * n + gx
+            out.append((grid[i0] * (1 - tx) + grid[i0 + 1] * tx) * (1 - ty)
+                       + (grid[i1] * (1 - tx) + grid[i1 + 1] * tx) * ty)
+    return out
+
+
+# Terrain marks: (box, draw), where draw(canvas, ox, oy) paints the mark moved by (ox, oy) and box bounds it unmoved.
+
+def crosses(box):
+    return box[0] < 0 or box[1] < 0 or box[2] > TILE or box[3] > TILE
+
+
+def paint_wrapped(canvas, box, draw):
+    for oy in (-TILE, 0, TILE):
+        for ox in (-TILE, 0, TILE):
+            if box[0] + ox < TILE and box[2] + ox > 0 and box[1] + oy < TILE and box[3] + oy > 0:
+                draw(canvas, ox, oy)
+
+
+def stroke_mark(points, width0, width1, colour, alpha, dry=0.0, seed=0):
+    pad = max(width0, width1)
+    box = (min(p[0] for p in points) - pad, min(p[1] for p in points) - pad,
+           max(p[0] for p in points) + pad, max(p[1] for p in points) + pad)
+
+    def draw(canvas, ox, oy):
+        canvas.stroke([(x + ox, y + oy) for x, y in points], width0, width1, colour, alpha, dry, seed)
+    return box, draw
+
+
+def dabs_mark(dabs):
+    """Dabs (x, y, radius, colour, alpha, dry, seed) painted together as one mark."""
+    box = (min(d[0] - d[2] for d in dabs), min(d[1] - d[2] for d in dabs),
+           max(d[0] + d[2] for d in dabs), max(d[1] + d[2] for d in dabs))
+
+    def draw(canvas, ox, oy):
+        for x, y, radius, colour, alpha, dry, seed in dabs:
+            canvas.dab(x + ox, y + oy, radius, colour, alpha, dry=dry, seed=seed)
+    return box, draw
+
+
+def group(marks):
+    marks = list(marks)
+    box = (min(m[0][0] for m in marks), min(m[0][1] for m in marks),
+           max(m[0][2] for m in marks), max(m[0][3] for m in marks))
+
+    def draw(canvas, ox, oy):
+        for _, part in marks:
+            part(canvas, ox, oy)
+    return box, draw
+
+
+def spot(rng):
+    return rng.uniform(0, TILE), rng.uniform(0, TILE)
+
+
+def tuft(rng, colour, alpha, size):
+    """grass()'s tuft of dry blades, as a mark."""
+    x, y = spot(rng)
+    blades = []
+    for blade in range(rng.randint(2, 4)):
+        lean, height, base = rng.uniform(-6, 6) * size, rng.uniform(8, 16) * size, x + blade * 3 * size
+        blades.append(stroke_mark([(base, y), (base + lean * 0.5, y - height * 0.6), (base + lean, y - height)],
+                                  2.2 * size, 0.6 * size, colour, alpha, dry=0.3, seed=rng.randint(0, 1 << 20)))
+    return group(blades)
+
+
+def flower(rng, colour):
+    x, y = spot(rng)
+    return dabs_mark([(x, y, rng.uniform(1.5, 2.6), colour, 0.75, 0.2, rng.randint(0, 1 << 20))])
+
+
+def crown(rng):
+    """A tree seen from above: a soft shadow to the lower right, clustered needle dabs, light on the upper left."""
+    x, y = spot(rng)
+    r = rng.uniform(15, 24)
+    dabs = [(x + r * 0.3, y + r * 0.4, r * 1.1, INK, 0.3, 0.3, rng.randint(0, 1 << 20))]
+    for _ in range(10):
+        dabs.append((x + rng.uniform(-0.6, 0.6) * r, y + rng.uniform(-0.6, 0.6) * r, r * rng.uniform(0.35, 0.55),
+                     CANOPY, 0.7, 0.4, rng.randint(0, 1 << 20)))
+    for _ in range(4):
+        dabs.append((x - r * 0.3 + rng.uniform(-0.25, 0.25) * r, y - r * 0.3 + rng.uniform(-0.25, 0.25) * r, r * 0.28,
+                     (118, 146, 108), 0.4, 0.5, rng.randint(0, 1 << 20)))
+    return dabs_mark(dabs)
+
+
+def walk(rng, steps, reach, colour, alpha, width0, width1):
+    """A crack or a ridge: a polyline wandering rightwards from a random spot."""
+    x, y = spot(rng)
+    points = [(x, y)]
+    for _ in range(steps):
+        x, y = x + rng.uniform(reach * 0.4, reach), y + rng.uniform(-reach * 0.5, reach * 0.5)
+        points.append((x, y))
+    return stroke_mark(points, width0, width1, colour, alpha, dry=0.4, seed=rng.randint(0, 1 << 20))
+
+
+def ripple(rng, length, colour, alpha, width):
+    """A shallow arc on water, or a drift line on snow."""
+    x, y = spot(rng)
+    length *= rng.uniform(0.6, 1.4)
+    rise = length * rng.uniform(0.04, 0.1)
+    return stroke_mark([(x, y), (x + length * 0.5, y - rise), (x + length, y)], width, width * 0.4, colour, alpha,
+                       dry=0.2, seed=rng.randint(0, 1 << 20))
+
+
+def reeds(rng):
+    x, y = spot(rng)
+    stalks = []
+    for _ in range(rng.randint(3, 5)):
+        base = x + rng.uniform(-5, 5)
+        lean, height = rng.uniform(-3, 3), rng.uniform(9, 18)
+        stalks.append(stroke_mark([(base, y), (base + lean, y - height)], 1.8, 0.6, (54, 64, 48), 0.65,
+                                  seed=rng.randint(0, 1 << 20)))
+    return group(stalks)
+
+
+def pebble(rng, colour, alpha, size):
+    x, y = spot(rng)
+    r = rng.uniform(1.2, 2.6) * size
+    return dabs_mark([(x + r * 0.3, y + r * 0.4, r, INK, alpha * 0.4, 0.0, 0), (x, y, r, colour, alpha, 0.2, 0)])
+
+
+# Surfaces: per pixel, a list of (colour, amount) laid over the wash in order.
+
+def hill_light(seed, variant, cells, strength):
+    """Slopes facing the upper left lit, the others shaded, from a wrapping height field."""
+    lean = tiled_field(lambda x, y: tiled_lean(x, y, seed + 50, cells, variant=variant) * 48.0)
+    return [(SPRAY, [smoothstep(0.0, -1.0, s) * strength for s in lean]),
+            (INK, [smoothstep(0.0, 1.0, s) * strength for s in lean])]
+
+
+def hills_surface(seed, variant):
+    return hill_light(seed, variant, 3, 0.45)
+
+
+def rock_surface(seed, variant):
+    strata = tiled_field(lambda x, y: tiled_fbm(x, y, seed + 60, 3, 10, variant=variant))
+    return [*hill_light(seed, variant, 4, 0.35), (INK, [smoothstep(0.55, 0.8, s) * 0.35 for s in strata])]
+
+
+def snow_surface(seed, variant):
+    drifts = tiled_field(lambda x, y: tiled_fbm(x, y, seed + 60, 3, 8, variant=variant))
+    return [((176, 192, 214), [smoothstep(0.45, 0.75, d) * 0.55 for d in drifts])]
+
+
+def sand_surface(seed, variant):
+    warp = tiled_field(lambda x, y: tiled_fbm(x, y, seed + 60, 3, 3, 2, variant))
+    ridges = []
+    for i, w in enumerate(warp):
+        y = i // TILE
+        phase = (y + (w - 0.5) * 40.0) * 24.0 / TILE
+        crest = abs(phase - math.floor(phase) - 0.5) * 2.0  # 1 at a crest, 0 in a trough; 24 to a tile
+        ridges.append(smoothstep(0.75, 1.0, crest) * 0.4)
+    return [((172, 142, 96), ridges)]
+
+
+def marsh_surface(seed, variant):
+    wet = tiled_field(lambda x, y: tiled_fbm(x, y, seed + 60, 5, 5, variant=variant))
+    return [(INK, [smoothstep(0.5, 0.58, w) * 0.3 for w in wet]), (POOL, [smoothstep(0.56, 0.6, w) * 0.9 for w in wet])]
+
+
+def shallows_surface(seed, variant):
+    bed = tiled_field(lambda x, y: tiled_fbm(x, y, seed + 60, 3, 3, variant=variant))
+    return [((196, 208, 174), [smoothstep(0.52, 0.7, b) * 0.6 for b in bed])]
+
+
+def water_surface(seed, variant):
+    deep = tiled_field(lambda x, y: tiled_fbm(x, y, seed + 60, 3, 3, variant=variant))
+    return [((22, 34, 62), [smoothstep(0.45, 0.75, d) * 0.6 for d in deep])]
+
+
+# kind -> (seed, light, dark, surface or None, marks(rng)); the names are in art/sprites.toml as terrain_<kind>_<n>.
+TERRAIN = {
+    "meadow": (40, (212, 208, 152), (164, 170, 112), None,
+               lambda rng: [tuft(rng, (104, 124, 76), 0.3, 0.7) for _ in range(28)]
+               + [flower(rng, rng.choice([(240, 232, 204), (240, 232, 204), (214, 170, 80), VERMILION]))
+                  for _ in range(36)]),
+    "grass": (41, (150, 168, 108), (96, 120, 78), None,
+              lambda rng: [tuft(rng, (50, 70, 48), 0.4, 0.8) for _ in range(80)]),
+    "forest": (42, (58, 76, 60), (32, 44, 38), None,
+               lambda rng: [crown(rng) for _ in range(44)]),
+    "hills": (43, (178, 160, 112), (122, 112, 78), hills_surface,
+              lambda rng: [walk(rng, 3, 16, INK, 0.2, 4.0, 1.0) for _ in range(10)]
+              + [tuft(rng, (90, 96, 62), 0.35, 0.7) for _ in range(18)]),
+    "rock": (44, (166, 164, 158), (100, 102, 108), rock_surface,
+             lambda rng: [walk(rng, rng.randint(3, 5), 13, INK, 0.4, 2.8, 0.7) for _ in range(16)]
+             + [pebble(rng, (190, 188, 180), 0.8, 1.6) for _ in range(14)]),
+    "snow": (45, (242, 244, 246), (210, 218, 230), snow_surface,
+             lambda rng: [ripple(rng, 36, (170, 186, 210), 0.22, 5.0) for _ in range(20)]
+             + [pebble(rng, (90, 92, 100), 0.55, 1.0) for _ in range(8)]),
+    "sand": (46, (228, 210, 164), (200, 176, 126), sand_surface,
+             lambda rng: [pebble(rng, (156, 134, 102), 0.6, 1.0) for _ in range(18)]),
+    "marsh": (47, (130, 136, 96), (92, 100, 74), marsh_surface,
+              lambda rng: [reeds(rng) for _ in range(34)] + [tuft(rng, (60, 74, 50), 0.4, 0.7) for _ in range(20)]),
+    "shallows": (48, (148, 190, 184), (106, 158, 162), shallows_surface,
+                 lambda rng: [ripple(rng, 20, SPRAY, 0.4, 2.2) for _ in range(40)]
+                 + [pebble(rng, (120, 140, 128), 0.5, 1.0) for _ in range(10)]),
+    "water": (49, (66, 94, 130), (36, 54, 88), water_surface,
+              lambda rng: [ripple(rng, 24, (150, 178, 206), 0.3, 2.4) for _ in range(36)]),
+}
+
+
+def terrain(kind, variant):
+    """A wrapping wash between the kind's light and dark, its surface, paper grain and its marks."""
+    seed, light, dark, surface, marks = TERRAIN[kind]
+    own = seed * 8 + 1 + variant
+    canvas = Canvas(TILE, TILE)
+    wash = tiled_field(lambda x, y: tiled_fbm(x, y, seed, 4, 4, variant=variant))
+    blots = tiled_field(lambda x, y: tiled_fbm(x, y, seed + 30, 5, 5, variant=variant))
+    layers = surface(seed, variant) if surface else []
+    for i in range(TILE * TILE):
+        x, y = i % TILE, i // TILE
+        colour = mix(light, dark, smoothstep(0.3, 0.72, wash[i]))
+        colour = mix(colour, INK, smoothstep(0.55, 0.85, blots[i]) * 0.12)
+        for ink, amounts in layers:
+            colour = mix(colour, ink, amounts[i])
+        grain = (hash01(x, y, own) - 0.5) * 0.035 + (tiled_noise(x, y, seed + 3, 8, 128) - 0.5) * 0.03
+        canvas.r[i] = max(0.0, min(1.0, colour[0] / 255.0 + grain))
+        canvas.g[i] = max(0.0, min(1.0, colour[1] / 255.0 + grain))
+        canvas.b[i] = max(0.0, min(1.0, colour[2] / 255.0 + grain))
+        canvas.a[i] = 1.0
+    # The marks across an edge come from the kind's stream, so both variants carry them; the variant's own stay inside.
+    shared = [m for m in marks(random.Random(seed)) if crosses(m[0])]
+    inside = [m for m in marks(random.Random(own)) if not crosses(m[0])]
+    for box, draw in shared + inside:
+        paint_wrapped(canvas, box, draw)
+    return canvas
+
+
 # The seals' art (phase 6 chunk 4b): white shapes on a transparent ground, tinted by the seal's colours. The game
 # computes each sprite's distance field from its alpha as it loads, so the art carries none: only a one-pixel antialiased
 # edge. Drawn at 4x on a bit mask and reduced by averaging; arcs come from a rational half-angle parametrisation and
@@ -821,6 +1119,8 @@ PLACEHOLDERS = {
     "emblem_swords": (emblem_swords, False),
     "emblem_eye": (emblem_eye, False),
     "emblem_spiral": (emblem_spiral, False),
+    **{f"terrain_{kind}_{variant}": ((lambda kind=kind, variant=variant: terrain(kind, variant)), True)
+       for kind in TERRAIN for variant in (0, 1)},
 }
 
 
