@@ -51,9 +51,10 @@ public:
     /// and writes all of it into `archive`.
     virtual void Save(Writer& archive) = 0;
 
-    /// Replaces the state with the one Save() wrote, read from `archive` to its end, saved at simulation tick
-    /// `simulationTick` (the save's counters, which the logic reads before it). Returns false, changing nothing, when the
-    /// bytes are malformed or of another version, or don't fit that tick.
+    /// Reads and checks the state Save() wrote, read from `archive` to its end, saved at simulation tick
+    /// `simulationTick` (the save's counters, which the logic reads before it), and holds it, changing nothing else:
+    /// Requested() names its scene until EnterScene() makes it current. Returns false, changing nothing and holding
+    /// nothing new, when the bytes are malformed or of another version, or don't fit that tick.
     [[nodiscard]] virtual bool Load(Reader& archive, u64 simulationTick) = 0;
 
     /// A hash of the whole state as it is, order included: two runs that agree hash alike (§7.4).
@@ -72,11 +73,13 @@ public:
     /// The scene it is: its `sprites` are what Scene() returns.
     [[nodiscard]] virtual SceneFacts Current() const = 0;
 
-    /// The scene its last tick asked to change to, until EnterScene(); none otherwise. The tick that asks has already
-    /// done what leaving the old scene does (open uses end).
+    /// The scene of the state Load() holds, or else the scene its last tick asked to change to, until EnterScene(); none
+    /// otherwise. The tick that asks has already done what leaving the old scene does (open uses end); a load leaves
+    /// nothing to do.
     [[nodiscard]] virtual std::optional<SceneFacts> Requested() const = 0;
 
-    /// Makes the scene Requested() names current, building it; one must have been requested.
+    /// Makes the scene Requested() names current: the state Load() holds, or else the scene asked for, built. One must
+    /// have been loaded or asked for.
     virtual void EnterScene() = 0;
 
     /// Writes what the state looks like now into `snapshot`'s drawing data: its instances, batches
@@ -126,28 +129,30 @@ public:
     ///   the change;
     /// - that SceneLeft has the scene entered (Simulation::EnterScene()), then loading until a SceneResident names the
     ///   new scene's sprites (at once when they are resident already);
-    /// - then entering, until a SceneEntered naming the change, which ends the change on a stall.
-    /// While a change is under way, or the simulation's scene isn't resident (a load or a replay starting in another
-    /// scene), the burst runs no tick but waits: it takes live input only, records nothing and moves no counter; Pause
-    /// and Resume still apply, SceneResident, ReloadData and the reports naming the change's stage are taken, and
-    /// everything else (a second change asked for, a Load, a stale report) is dropped. Each tick takes the input sent
-    /// since the one before (the last Pause or Resume wins; while a replay plays, the recorded input instead)
-    /// and the newest held input, which every tick of a burst gets,
-    /// counts itself, frozen while paused or while a calendar step is asked for, and ticks the
-    /// simulation unless frozen. Ticks that change what comes next end the burst after them, so every
-    /// change sits at a fixed wall tick whatever the burst sizes (design doc 0002.2 §2):
+    /// - then entering, until a SceneEntered naming the change, which ends the change on a stall;
+    /// - a sound load or a replay starting starts the next change too, on its tick, into the scene of the state the
+    ///   simulation holds (Simulation::Load()); that state and its counters (and a replay's pausing and calendar phase)
+    ///   replace the old at the swap, where a new timeline epoch begins and a replay's start hash is checked; until then
+    ///   nothing of it is in force.
+    /// While a change is under way, or the simulation's scene isn't resident, the burst runs no tick but waits: it takes
+    /// live input only, records nothing and moves no counter; Pause and Resume still apply, SceneResident, ReloadData and the
+    /// reports naming the change's stage are taken, and everything else (a second change asked for, a Load, a stale report) is
+    /// dropped. Each tick takes the input sent since the one before (the last Pause or Resume wins; while a replay plays, the
+    /// recorded input instead) and the newest held input, which every tick of a burst gets, counts itself, frozen while paused
+    /// or while a calendar step is asked for, and ticks the simulation unless frozen. Ticks that change what comes next end the
+    /// burst after them, so every change sits at a fixed wall tick whatever the burst sizes (design doc 0002.2 §2):
     /// - AdvanceCalendar: the burst publishes the transition, and the next tick runs the step
     ///   instead of taking input (input waits in the handover);
     /// - Save (frozen): the state is sorted, serialised and handed to the save system (before a
     ///   ToggleRecording in the same tick takes effect);
-    /// - Load (wins over Save): the save is read and, when sound, replaces the state and the
-    ///   counters and starts a new timeline epoch;
+    /// - Load (wins over Save): the save is read and checked, and, when sound, starts a scene change into it (above),
+    ///   which ends none of the old scene's uses; a broken one is refused on its tick, which is frozen;
     /// - ReloadData (frozen, first): the simulation takes the new game data; a recording finishes
     ///   and a replay playing stops, as the timeline's rules changed;
     /// - ToggleRecording, PlayReplay: a replay starts or finishes recording, or starts or stops
-    ///   playing (a new epoch); every REPLAY_HASH_TICKS wall ticks the state's hash is recorded or
-    ///   checked, and a divergence stops playback with an error. While a replay plays, live Pause and
-    ///   Resume (the window's focus) are kept aside and take effect when it stops.
+    ///   playing (starting runs a scene change into its start, as a load does, and plays from the first tick after it);
+    ///   every REPLAY_HASH_TICKS wall ticks the state's hash is recorded or checked, and a divergence stops playback with an
+    ///   error. While a replay plays, live Pause and Resume (the window's focus) are kept aside and take effect when it stops.
     /// A SceneResident taken on a running tick is applied and never recorded, and a stale SceneLeft or SceneEntered is
     /// dropped. The stage is in neither Hash() nor a save.
     /// Returns whether the burst ended on a stall the caller expected (a step, a save, a load, a
@@ -160,7 +165,8 @@ public:
         return m_counters;
     }
 
-    /// The timeline epoch: 0 at the start, one more at each load (design doc 0002 §5).
+    /// The timeline epoch: 0 at the start, one more at each load or replay start, from its scene change's swap (design
+    /// doc 0002 §5).
     [[nodiscard]] u64 Epoch() const {
         return m_epoch;
     }
@@ -175,6 +181,13 @@ private:
         Published, // the transition is out: the next tick runs the step
     };
 
+    // What a sound load or replay brings for the logic, held from its tick to its scene change's swap.
+    struct Restored {
+        TickCounters counters;
+        std::optional<bool> paused; // a replay's pausing; a load keeps the game's
+        Calendar calendar;
+    };
+
     enum class TickEnd : u8 {
         Continue, // the burst goes on
         EndBurst, // the burst ends here, on time
@@ -186,6 +199,8 @@ private:
     static_assert(ACTION_KINDS <= std::numeric_limits<ActionSet>::digits, "an ActionSet holds a bit per kind");
 
     TickEnd RunTick(const std::stop_token& stop);
+    void StartChange(const SceneFacts& next);
+    void TakeRestored(const Restored& restored);
     [[nodiscard]] bool Waiting() const;
     bool Wait();
     bool TakeReport(const Action& report);
@@ -215,7 +230,8 @@ private:
     bool m_windowPaused = false; // the last Pause or Resume live input sent, also while a replay plays
     bool m_advanced = false;     // whether the simulation ran in the last tick
     Calendar m_calendar = Calendar::None;
-    std::optional<SceneId> m_resident = std::nullopt; // the scene the main thread said it holds last
+    std::optional<SceneId> m_resident = std::nullopt;  // the scene the main thread said it holds last
+    std::optional<Restored> m_restored = std::nullopt; // a sound load or replay's, until its swap
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for
     // members whose default constructor is defaulted.
     std::vector<Action> m_input{};

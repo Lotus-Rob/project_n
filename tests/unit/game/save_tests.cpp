@@ -2,6 +2,7 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
+#include "core/manifest.hpp"
 #include "core/state.hpp"
 #include "core/tick_clock.hpp"
 #include "game/arena.hpp"
@@ -85,6 +86,7 @@ TEST_CASE("a game loaded from a save goes on exactly as the game that saved") {
     game::Arena loaded(test::TestManifest(), game::Scene::Arena);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene(); // as the logic does at the swap
     CHECK(loaded.StateHash() == saved.StateHash());
     CHECK(loaded.Months() == saved.Months());
     CHECK(loaded.Scene() == saved.Scene());
@@ -98,6 +100,30 @@ TEST_CASE("a game loaded from a save goes on exactly as the game that saved") {
     CHECK(same);
 }
 
+TEST_CASE("Load holds and changes nothing until EnterScene") {
+    game::Arena saved(test::TestManifest(), game::Scene::Painted);
+    Tick(saved, At(1), {});
+    const std::vector<std::byte> bytes = Saved(saved);
+
+    game::Arena loaded(test::TestManifest(), game::Scene::Arena);
+    const u64 before = loaded.StateHash();
+    const core::SceneId shown = loaded.Scene();
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
+    CHECK(loaded.StateHash() == before);
+    CHECK(loaded.Scene() == shown);
+    CHECK(loaded.Current().key == game::KeyOf(game::Scene::Arena));
+    const std::optional<core::SceneFacts> requested = loaded.Requested(); // the saved scene's facts
+    REQUIRE(requested.has_value());
+    CHECK(requested.value_or(core::SceneFacts{}) == saved.Current());
+
+    loaded.EnterScene();
+    CHECK(loaded.StateHash() == saved.StateHash());
+    CHECK(loaded.Scene() == saved.Scene());
+    CHECK(loaded.Current() == saved.Current());
+    CHECK_FALSE(loaded.Requested().has_value());
+}
+
 TEST_CASE("the player, where it walked, and the selection survive a save") {
     constexpr core::HeldInput RIGHT{ .move = { .x = 1.0F, .y = 0.0F } };
     game::Arena saved(test::TestManifest());
@@ -108,6 +134,7 @@ TEST_CASE("the player, where it walked, and the selection survive a save") {
     game::Arena loaded(test::TestManifest(), game::Scene::Cells);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene(); // as the logic does at the swap
     CHECK(loaded.Player() == saved.Player());
     CHECK(loaded.Selected() == saved.Player());
     Tick(loaded, At(2), { .actions = {}, .held = RIGHT });
@@ -135,6 +162,7 @@ TEST_CASE("health, the dying and the respawns survive a save") {
     game::Arena loaded(test::TestManifest(), game::Scene::Cells);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene(); // as the logic does at the swap
     CHECK(loaded.StateHash() == saved.StateHash());
     for (u64 tick = SAVED_AT + 1; tick <= PLAYED_TO; ++tick) {
         Tick(saved, At(tick), {});
@@ -165,6 +193,7 @@ TEST_CASE("Qi, cooldowns and a dash under way survive a save") {
     game::Arena loaded(test::TestManifest(), game::Scene::Cells);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene(); // as the logic does at the swap
     CHECK(loaded.StateHash() == saved.StateHash());
     const game::Caster& caster =
         loaded.State()[game::ACTIVE].Entities().get<game::Caster>(loaded.State()[game::ACTIVE].Find(loaded.Player()));
@@ -201,6 +230,7 @@ TEST_CASE("a save mid-arrival goes on as the game that saved, with the same even
     game::Arena loaded(test::TestManifest(), game::Scene::Cells);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene(); // as the logic does at the swap
     CHECK(loaded.StateHash() == saved.StateHash());
     std::vector<core::Event> savedEvents;
     std::vector<core::Event> loadedEvents;
@@ -241,6 +271,7 @@ TEST_CASE("the save round-trips mid-volley") {
     game::Arena loaded(test::TestManifest(), game::Scene::Cells, data);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene(); // as the logic does at the swap
     CHECK(loaded.StateHash() == saved.StateHash());
     std::size_t hits = 0;
     u32 differentEvents = 0; // ticks whose events differ, counted so the test asserts the worst once
@@ -294,6 +325,7 @@ TEST_CASE("the save round-trips mid-burn") {
     game::Arena loaded(test::TestManifest(), game::Scene::Cells, data);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene(); // as the logic does at the swap
     CHECK(loaded.StateHash() == saved.StateHash());
     std::vector<core::Event> used;
     u32 differentEvents = 0; // ticks whose events differ, counted so the test asserts the worst once
@@ -421,7 +453,8 @@ std::vector<std::byte> ArenaSave(
     return bytes;
 }
 
-// Whether a fresh arena loads `bytes`, saved at `savedTick`; CHECKs that its state hash is the same afterwards.
+// Whether a fresh arena loads `bytes`, saved at `savedTick`; CHECKs that its state hash is the same afterwards, and that
+// it holds a state to enter exactly when it loaded one.
 bool Loads(const std::vector<std::byte>& bytes, u64 savedTick = SAVED_TICK) {
     game::Arena game(test::TestManifest(), game::Scene::Arena);
     const u64 before = game.StateHash();
@@ -429,6 +462,8 @@ bool Loads(const std::vector<std::byte>& bytes, u64 savedTick = SAVED_TICK) {
     const bool loaded = game.Load(reader, savedTick);
     const u64 after = game.StateHash();
     CHECK(after == before);
+    const bool holds = game.Requested().has_value();
+    CHECK(holds == loaded);
     return loaded;
 }
 
@@ -544,7 +579,8 @@ TEST_CASE("the mid-fight save loads, and so does the fuzz seed cut from it") {
     const std::vector<std::byte> full = Saved(saved);
     game::Arena loadedFull(test::TestManifest(), game::Scene::Cells, data);
     core::Reader fullReader{ full };
-    CHECK(loadedFull.Load(fullReader, SAVED_TICK));
+    REQUIRE(loadedFull.Load(fullReader, SAVED_TICK));
+    loadedFull.EnterScene(); // as the logic does at the swap
     CHECK(loadedFull.StateHash() == saved.StateHash());
 
     const std::vector<std::byte> seed = WithoutWorldTier(saved, full);
@@ -743,6 +779,7 @@ TEST_CASE("a save with a volley aiming at a living target that is no creature he
     core::Reader reader{ bytes };
     game::Arena game(test::TestManifest(), game::Scene::Arena);
     REQUIRE(game.Load(reader, SAVED_TICK));
+    game.EnterScene(); // as the logic does at the swap
     std::vector<core::Event> events;
     game.Tick(At(1), {}, events); // follows the fox's chest
 }
@@ -755,6 +792,7 @@ TEST_CASE("a loaded volley whose arrivals are all overdue still ends its use, on
     core::Reader reader{ bytes };
     game::Arena game(test::TestManifest(), game::Scene::Arena);
     REQUIRE(game.Load(reader, SAVED_TICK));
+    game.EnterScene(); // as the logic does at the swap
     std::vector<core::Event> events;
     game.Tick(At(LATER), {}, events);
     game.Tick(At(LATER + 1), {}, events);
@@ -774,6 +812,7 @@ TEST_CASE("a save's Qi above the loading game's most is lowered to it") {
     game::Arena loaded(test::TestManifest(), game::Scene::Arena, data);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene(); // as the logic does at the swap
     const core::Registry& entities = loaded.State()[game::ACTIVE].Entities();
     CHECK(entities.get<game::Caster>(loaded.State()[game::ACTIVE].Find(loaded.Player())).qi == LOWER);
 }

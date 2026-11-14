@@ -265,10 +265,27 @@ core::SceneFacts Arena::FactsOf(core::SceneKey scene) const {
 }
 
 std::optional<core::SceneFacts> Arena::Requested() const {
+    if (m_loaded) {
+        return FactsOf(m_loaded->scene);
+    }
     return m_requested.transform([this](core::SceneKey scene) { return FactsOf(scene); });
 }
 
 void Arena::EnterScene() {
+    if (m_loaded) {
+        m_state = std::move(m_loaded->state);
+        m_relationships = std::move(m_loaded->relationships);
+        m_combat = std::move(m_loaded->combat);
+        m_scene = m_loaded->scene;
+        m_sceneId = SceneIdOf(*m_manifest, m_scene);
+        m_months = m_loaded->months;
+        m_player = m_loaded->player;
+        m_selected = m_loaded->selected;
+        m_loaded.reset();
+        m_requested.reset(); // the load replaces the scene a CycleScene asked for
+        ApplyData();
+        return;
+    }
     PN_ASSERT(m_requested.has_value(), "a scene entered that nothing asked for");
     if (!m_requested) {
         return; // with assertions off, the scene and its fight stay as they are
@@ -590,16 +607,15 @@ bool Arena::Load(core::Reader& archive, u64 simulationTick) {
         !combat.FlashesStartBy(simulationTick) || !combat.SealsStartBy(simulationTick)) {
         return false;
     }
-    m_state = std::move(state);
-    m_relationships = std::move(relationships);
-    m_combat = std::move(combat);
-    m_scene = core::SceneKey{ scene };
-    m_sceneId = SceneIdOf(*m_manifest, m_scene);
-    m_requested.reset();
-    m_months = months;
-    m_player = player;
-    m_selected = selected;
-    ApplyData();
+    m_loaded = Loaded{
+        .state = std::move(state),
+        .relationships = std::move(relationships),
+        .combat = std::move(combat),
+        .scene = core::SceneKey{ scene },
+        .months = months,
+        .player = player,
+        .selected = selected,
+    };
     return true;
 }
 

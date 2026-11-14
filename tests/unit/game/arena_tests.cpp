@@ -517,6 +517,27 @@ TEST_CASE("CycleScene asks for the next scene and EnterScene builds it") {
     CHECK_FALSE(arena.Requested().has_value());
 }
 
+TEST_CASE("a load held over a scene asked for wins, and EnterScene forgets both") {
+    constexpr core::TickCounters CHANGE_TICK{ .wall = 1, .simulation = 1, .state = 1 };
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    game::Arena saved(manifest, game::Scene::Cells);
+    std::vector<std::byte> bytes;
+    core::Writer writer{ bytes };
+    saved.Save(writer);
+
+    game::Arena arena(manifest);
+    const std::array<core::Action, 1> cycle{ { { .kind = core::ActionKind::CycleScene } } };
+    Tick(arena, CHANGE_TICK, { .actions = cycle, .held = {} }); // asks for the stress arena
+    core::Reader reader{ bytes };
+    REQUIRE(arena.Load(reader, CHANGE_TICK.simulation));
+    const std::optional<core::SceneFacts> requested = arena.Requested();
+    CHECK(requested == saved.Current());
+    arena.EnterScene();
+    CHECK(arena.Current() == saved.Current());
+    CHECK(arena.StateHash() == saved.StateHash());
+    CHECK_FALSE(arena.Requested().has_value());
+}
+
 TEST_CASE("the shipped creatures and abilities tables are the built-in data") {
     const std::expected<core::GameData, core::Error> shipped =
         platform::AssetsDirectory().and_then([](const std::filesystem::path& assets) {
@@ -975,6 +996,7 @@ TEST_CASE("the arena publishes its showcase seals, unsaved") {
     CHECK(shownElsewhere.empty()); // the other scenes show none
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_AT));
+    loaded.EnterScene(); // as the logic does at the swap
     const core::Snapshot reloaded = Published(loaded);
     const std::vector<core::SealKey> shownAgain = ShowcaseKeys(reloaded);
     CHECK(shownAgain == expected);
