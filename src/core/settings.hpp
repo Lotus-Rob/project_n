@@ -47,6 +47,8 @@ struct Settings {
     bool textOutline = true;
     /// Whether game text has a shadow.
     bool textShadow = true;
+    /// Whether the pointer at the window's edge pans the roaming camera.
+    bool edgePan = true;
     /// Every colour of the interface (`settings.yaml` doesn't read it until the accessibility menu, chunk 11).
     UiColours uiColours{};
 };

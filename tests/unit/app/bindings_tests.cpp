@@ -73,6 +73,98 @@ TEST_CASE("the stick pushed all the way moves at full speed") {
     CHECK(bindings.Move().x == doctest::Approx(1.0F));
 }
 
+TEST_CASE("I, J, K and L pan the camera, and the right stick past its dead zone") {
+    app::Bindings bindings;
+    static_cast<void>(bindings.Handle(Key(InputCode::KeyL, true)));
+    CHECK(bindings.Pan().x == doctest::Approx(1.0F));
+    static_cast<void>(bindings.Handle(Key(InputCode::KeyJ, true)));
+    CHECK(bindings.Pan().x == 0.0F);
+    static_cast<void>(bindings.Handle(Key(InputCode::KeyJ, false)));
+    static_cast<void>(bindings.Handle(Key(InputCode::KeyL, false)));
+    static_cast<void>(bindings.Handle(Key(InputCode::KeyI, true)));
+    CHECK(bindings.Pan().y == doctest::Approx(-1.0F));
+    static_cast<void>(bindings.Handle(Key(InputCode::KeyI, false)));
+    static_cast<void>(bindings.Handle(Key(InputCode::KeyK, true)));
+    CHECK(bindings.Pan().y == doctest::Approx(1.0F));
+    static_cast<void>(bindings.Handle(Key(InputCode::KeyK, false)));
+    CHECK(bindings.Pan().y == 0.0F);
+    static_cast<void>(bindings.Handle(Stick(InputCode::PadRightX, 1.0F)));
+    CHECK(bindings.Pan().x == doctest::Approx(1.0F));
+    CHECK(bindings.Move().x == 0.0F);
+}
+
+TEST_CASE("pan keys and the right stick together add up to at most 1, and the right stick never moves") {
+    app::Bindings bindings;
+    static_cast<void>(bindings.Handle(Key(InputCode::KeyL, true)));
+    static_cast<void>(bindings.Handle(Key(InputCode::KeyK, true)));
+    static_cast<void>(bindings.Handle(Stick(InputCode::PadRightX, -1.0F)));
+    static_cast<void>(bindings.Handle(Stick(InputCode::PadRightY, -1.0F)));
+    const core::Vec2 pan = bindings.Pan();
+    CHECK(std::hypot(pan.x, pan.y) == doctest::Approx(1.0F));
+    CHECK(pan.x > 0.0F); // the held keys win over the stick, as Move()'s do
+    CHECK(pan.y > 0.0F);
+    static_cast<void>(bindings.Handle(Key(InputCode::KeyL, false)));
+    static_cast<void>(bindings.Handle(Key(InputCode::KeyK, false)));
+    CHECK(bindings.Pan().x < 0.0F); // the stick again once the keys are up
+    CHECK(bindings.Move().x == 0.0F);
+    CHECK(bindings.Move().y == 0.0F);
+    static_cast<void>(bindings.Handle(Key(InputCode::KeyD, true)));
+    CHECK(bindings.Move().x == doctest::Approx(1.0F));
+    CHECK(bindings.Move().y == 0.0F);
+}
+
+TEST_CASE("the right stick inside its dead zone doesn't pan") {
+    constexpr f32 ONE_AXIS = app::STICK_DEAD_ZONE * 0.75F;
+    constexpr f32 BOTH_AXES = app::STICK_DEAD_ZONE * 0.5F;
+    app::Bindings bindings;
+    // The dead zone is radial, as Move()'s: 0.15 on one axis, or 0.1 on both (length 0.14), is inside it.
+    static_cast<void>(bindings.Handle(Stick(InputCode::PadRightX, ONE_AXIS)));
+    CHECK(bindings.Pan().x == 0.0F);
+    static_cast<void>(bindings.Handle(Stick(InputCode::PadRightX, BOTH_AXES)));
+    static_cast<void>(bindings.Handle(Stick(InputCode::PadRightY, BOTH_AXES)));
+    CHECK(bindings.Pan().x == 0.0F);
+    CHECK(bindings.Pan().y == 0.0F);
+}
+
+TEST_CASE("the middle button drags the camera, C and the right stick's click snap it back") {
+    app::Bindings bindings;
+    const std::optional<app::ControlEvent> drag =
+        bindings.Handle({ .device = platform::Device::Mouse, .code = InputCode::MouseMiddle, .pressed = true });
+    CHECK(drag.value_or(app::ControlEvent{}).control == app::Control::DragCamera);
+    CHECK(drag.value_or(app::ControlEvent{}).pressed);
+    const std::optional<app::ControlEvent> dropped =
+        bindings.Handle({ .device = platform::Device::Mouse, .code = InputCode::MouseMiddle });
+    CHECK(dropped.value_or(app::ControlEvent{ .pressed = true }).control == app::Control::DragCamera);
+    CHECK_FALSE(dropped.value_or(app::ControlEvent{ .pressed = true }).pressed);
+    const std::optional<app::ControlEvent> key = bindings.Handle(Key(InputCode::KeyC, true));
+    CHECK(key.value_or(app::ControlEvent{}).control == app::Control::SnapBack);
+    const std::optional<app::ControlEvent> click = bindings.Handle(
+        { .device = platform::Device::Gamepad, .code = InputCode::PadRightStick, .pressed = true, .value = 1.0F }
+    );
+    CHECK(click.value_or(app::ControlEvent{}).control == app::Control::SnapBack);
+}
+
+TEST_CASE("WASD and the arrows still move") {
+    constexpr auto KEYS = std::to_array(
+        { InputCode::KeyW,
+          InputCode::KeyA,
+          InputCode::KeyS,
+          InputCode::KeyD,
+          InputCode::KeyUp,
+          InputCode::KeyLeft,
+          InputCode::KeyDown,
+          InputCode::KeyRight }
+    );
+    for (const InputCode code : KEYS) {
+        app::Bindings bindings;
+        static_cast<void>(bindings.Handle(Key(code, true)));
+        const core::Vec2 move = bindings.Move();
+        CHECK(std::hypot(move.x, move.y) == doctest::Approx(1.0F));
+        CHECK(bindings.Pan().x == 0.0F);
+        CHECK(bindings.Pan().y == 0.0F);
+    }
+}
+
 TEST_CASE("the wheel zooms by its notches") {
     constexpr f32 NOTCHES = 2.0F;
     app::Bindings bindings;
@@ -150,6 +242,16 @@ TEST_CASE("a stick held diagonally past its dead zone with each axis inside it p
     static_cast<void>(device.Take({ .device = platform::Device::Mouse, .code = InputCode::MouseLeft, .pressed = true }));
     static_cast<void>(device.Take(Stick(InputCode::PadLeftX, DIAGONAL)));
     static_cast<void>(device.Take(Stick(InputCode::PadLeftY, DIAGONAL)));
+    CHECK(device.Used() == platform::Device::Gamepad);
+}
+
+TEST_CASE("a right stick inside its dead zone leaves the keyboard and mouse in use, and one pushed over takes the pad") {
+    constexpr f32 DRIFT = 0.15F;
+    app::DeviceInUse device;
+    static_cast<void>(device.Take({ .device = platform::Device::Mouse, .code = InputCode::MouseLeft, .pressed = true }));
+    CHECK_FALSE(device.Take(Stick(InputCode::PadRightX, DRIFT)));
+    CHECK(device.Used() == platform::Device::Mouse);
+    CHECK(device.Take(Stick(InputCode::PadRightX, 1.0F)));
     CHECK(device.Used() == platform::Device::Gamepad);
 }
 

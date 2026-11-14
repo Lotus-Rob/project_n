@@ -82,6 +82,15 @@ enum class InputCode : u8 {
     Key3,
     Key4,
     Key5,
+    MouseMiddle,   ///< The middle button (the wheel's click).
+    PadRightX,     ///< `value`: -1 (left) to 1 (right).
+    PadRightY,     ///< `value`: -1 (up) to 1 (down).
+    PadRightStick, ///< The right stick's click.
+    KeyI,
+    KeyJ,
+    KeyK,
+    KeyL,
+    KeyC,
 };
 
 /// One input from the player: a button pressed or released, a stick moved, the wheel turned. Key

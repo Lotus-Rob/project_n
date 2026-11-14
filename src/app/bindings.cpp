@@ -14,18 +14,38 @@ constexpr core::Vec2 MOVE_DOWN{ .x = 0.0F, .y = 1.0F };
 constexpr core::Vec2 MOVE_LEFT{ .x = -1.0F, .y = 0.0F };
 constexpr core::Vec2 MOVE_RIGHT{ .x = 1.0F, .y = 0.0F };
 
-// Key5 is the last code: a code added after it goes here too.
+// KeyC is the last code: a code added after it goes here too.
 static_assert(
-    std::to_underlying(InputCode::Key5) < std::numeric_limits<u32>::digits,
-    "Bit() gives each input code a bit of a u32"
+    std::to_underlying(InputCode::KeyC) < std::numeric_limits<u64>::digits,
+    "Bit() gives each input code a bit of a u64"
 );
 
-constexpr u32 Bit(InputCode code) {
-    return 1U << std::to_underlying(code);
+constexpr u64 Bit(InputCode code) {
+    return u64{ 1 } << std::to_underlying(code);
 }
 
 f32 Length(core::Vec2 vec) {
     return std::hypot(vec.x, vec.y);
+}
+
+// The held direction of `control`'s keys, else its stick past the dead zone, at most 1 long.
+core::Vec2 Held(const std::vector<Binding>& table, u64 heldKeys, Control control, core::Vec2 stick) {
+    core::Vec2 keys{};
+    for (const Binding& binding : table) {
+        if (binding.control == control && (heldKeys & Bit(binding.code)) != 0) {
+            keys = keys + binding.direction;
+        }
+    }
+    if (const f32 length = Length(keys); length > 0.0F) {
+        return keys * (1.0F / length);
+    }
+    const f32 length = Length(stick);
+    if (length <= STICK_DEAD_ZONE) {
+        return {};
+    }
+    // Rescaled so movement starts from zero at the dead zone's edge.
+    const f32 travel = std::min((length - STICK_DEAD_ZONE) / (1.0F - STICK_DEAD_ZONE), 1.0F);
+    return stick * (travel / length);
 }
 
 } // namespace
@@ -42,6 +62,15 @@ Bindings::Bindings()
       { .code = InputCode::KeyRight, .control = Control::Move, .direction = MOVE_RIGHT },
       { .code = InputCode::PadLeftX, .control = Control::Move, .direction = MOVE_RIGHT },
       { .code = InputCode::PadLeftY, .control = Control::Move, .direction = MOVE_DOWN },
+      { .code = InputCode::KeyI, .control = Control::PanCamera, .direction = MOVE_UP },
+      { .code = InputCode::KeyJ, .control = Control::PanCamera, .direction = MOVE_LEFT },
+      { .code = InputCode::KeyK, .control = Control::PanCamera, .direction = MOVE_DOWN },
+      { .code = InputCode::KeyL, .control = Control::PanCamera, .direction = MOVE_RIGHT },
+      { .code = InputCode::PadRightX, .control = Control::PanCamera, .direction = MOVE_RIGHT },
+      { .code = InputCode::PadRightY, .control = Control::PanCamera, .direction = MOVE_DOWN },
+      { .code = InputCode::MouseMiddle, .control = Control::DragCamera },
+      { .code = InputCode::KeyC, .control = Control::SnapBack },
+      { .code = InputCode::PadRightStick, .control = Control::SnapBack },
       { .code = InputCode::MouseLeft, .control = Control::Primary },
       { .code = InputCode::MouseRight, .control = Control::Secondary },
       { .code = InputCode::KeySpace, .control = Control::Movement },
@@ -86,6 +115,21 @@ std::optional<ControlEvent> Bindings::Handle(const platform::InputEvent& input) 
         }
         return std::nullopt;
     }
+    if (found->control == Control::PanCamera) {
+        if (input.code == InputCode::PadRightX) {
+            m_panStick.x = input.value;
+        }
+        else if (input.code == InputCode::PadRightY) {
+            m_panStick.y = input.value;
+        }
+        else if (input.pressed) {
+            m_heldKeys |= Bit(input.code);
+        }
+        else {
+            m_heldKeys &= ~Bit(input.code);
+        }
+        return std::nullopt;
+    }
     if (found->control == Control::Zoom) {
         if (input.code == InputCode::MouseWheel) {
             return ControlEvent{ .control = Control::Zoom, .pressed = true, .value = input.value };
@@ -102,9 +146,12 @@ std::optional<ControlEvent> Bindings::Handle(const platform::InputEvent& input) 
 
 bool DeviceInUse::Take(const platform::InputEvent& input) {
     PN_PROFILE_ZONE();
-    if (input.code == InputCode::PadLeftX || input.code == InputCode::PadLeftY) {
-        (input.code == InputCode::PadLeftX ? m_stick.x : m_stick.y) = input.value;
-        if (Length(m_stick) <= STICK_DEAD_ZONE) {
+    const bool left = input.code == InputCode::PadLeftX || input.code == InputCode::PadLeftY;
+    const bool right = input.code == InputCode::PadRightX || input.code == InputCode::PadRightY;
+    if (left || right) {
+        core::Vec2& stick = left ? m_stick : m_rightStick;
+        (input.code == InputCode::PadLeftX || input.code == InputCode::PadRightX ? stick.x : stick.y) = input.value;
+        if (Length(stick) <= STICK_DEAD_ZONE) {
             return false; // a stick at rest, or drifting: not the player's hand
         }
     }
@@ -126,22 +173,12 @@ bool DeviceInUse::TakeCursor(std::optional<core::Vec2> cursor) {
 
 core::Vec2 Bindings::Move() const {
     PN_PROFILE_ZONE();
-    core::Vec2 keys{};
-    for (const Binding& binding : m_table) {
-        if (binding.control == Control::Move && (m_heldKeys & Bit(binding.code)) != 0) {
-            keys = keys + binding.direction;
-        }
-    }
-    if (const f32 length = Length(keys); length > 0.0F) {
-        return keys * (1.0F / length);
-    }
-    const f32 length = Length(m_stick);
-    if (length <= STICK_DEAD_ZONE) {
-        return {};
-    }
-    // Rescaled so movement starts from zero at the dead zone's edge.
-    const f32 travel = std::min((length - STICK_DEAD_ZONE) / (1.0F - STICK_DEAD_ZONE), 1.0F);
-    return m_stick * (travel / length);
+    return Held(m_table, m_heldKeys, Control::Move, m_stick);
+}
+
+core::Vec2 Bindings::Pan() const {
+    PN_PROFILE_ZONE();
+    return Held(m_table, m_heldKeys, Control::PanCamera, m_panStick);
 }
 
 } // namespace app
