@@ -125,6 +125,21 @@ std::expected<f32, core::Error> ZoomOf(std::span<const char* const> args) {
     return zoom;
 }
 
+std::expected<u32, core::Error> WorkersOf(std::span<const char* const> args) {
+    const auto flag = std::ranges::find(args, std::string_view{ "--workers" });
+    if (flag == args.end()) {
+        return 0;
+    }
+    const std::string_view text = std::next(flag) == args.end() ? std::string_view{} : std::string_view{ *std::next(flag) };
+    u32 workers = 0;
+    const char* last = std::to_address(text.end());
+    const auto [end, error] = std::from_chars(std::to_address(text.begin()), last, workers);
+    if (error != std::errc{} || end != last || workers < 1 || workers > MAX_WORKERS) {
+        return std::unexpected{ core::Error{ std::format("--workers: '{}' isn't a count from 1 to {}", text, MAX_WORKERS) } };
+    }
+    return workers;
+}
+
 DataReload ReloadOf(
     const core::Effects& effects,
     const std::expected<core::Effects, core::Error>& readEffects,
@@ -142,7 +157,8 @@ bool HasFlag(std::span<const char* const> args, std::string_view flag) {
 }
 
 App::App(platform::Window window, gfx::Renderer renderer, Options options)
-  : m_window{ std::move(window) }
+  : m_jobs{ options.workers != 0 ? options.workers : core::Jobs::DefaultWorkers(), /*externalThreads=*/1 }
+  , m_window{ std::move(window) }
   , m_renderer{ std::move(renderer) }
   , m_options{ std::move(options) }
   , m_startNs{ platform::NowNs() }

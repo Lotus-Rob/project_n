@@ -157,7 +157,39 @@ std::optional<InputEvent> InputOf(const SDL_Event& event) {
     return std::nullopt;
 }
 
+// The mode of the display `window` is on, or why it couldn't be read.
+std::expected<DisplayMode, core::Error> DisplayOf(SDL_Window* window) {
+    const SDL_DisplayID display = SDL_GetDisplayForWindow(window);
+    const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(display);
+    if (mode == nullptr) {
+        return std::unexpected{ core::Error{ SDL_GetError() } };
+    }
+    const char* name = SDL_GetDisplayName(display);
+    return DisplayMode{
+        .id = display,
+        .name = name != nullptr ? name : "",
+        .width = mode->w,
+        .height = mode->h,
+        .refreshNumerator = mode->refresh_rate_numerator,
+        .refreshDenominator = mode->refresh_rate_denominator,
+    };
+}
+
 } // namespace
+
+std::string DisplayLine(const DisplayMode& mode) {
+    return std::format(
+        "display: {}x{} at {:.4g} Hz ({})", mode.width, mode.height, mode.RefreshHz(), mode.name.empty() ? "unnamed" : mode.name
+    );
+}
+
+bool MoveToDisplay(WindowState& state, const DisplayMode& now) {
+    if (now == state.display) {
+        return false;
+    }
+    state.display = now;
+    return true;
+}
 
 struct Window::Impl {
     Impl() = default;
@@ -189,6 +221,18 @@ struct Window::Impl {
         gamepads.push_back(gamepad);
         const char* name = SDL_GetGamepadName(gamepad);
         PN_LOG_INFO("gamepad connected: {}", name != nullptr ? name : "unnamed");
+    }
+
+    // Reads the display the window is on and logs it when it differs from the one last logged.
+    void ReadDisplay() {
+        const std::expected<DisplayMode, core::Error> now = DisplayOf(window);
+        if (!now) {
+            PN_LOG_WARNING("the display's mode couldn't be read: {}", now.error().message);
+            return;
+        }
+        if (MoveToDisplay(state, *now)) {
+            PN_LOG_INFO("{}", DisplayLine(state.display));
+        }
     }
 
     void CloseGamepad(SDL_JoystickID which) {
@@ -230,6 +274,7 @@ std::expected<Window, core::Error> Window::Open(std::string_view title, i32 widt
     PN_LOG_INFO(
         "window {}x{}{}, video driver: {}", width, height, fullscreen ? " (fullscreen)" : "", SDL_GetCurrentVideoDriver()
     );
+    impl->ReadDisplay(); // where SDL opened it; the compositor may yet place it elsewhere, which Poll logs
     // Fullscreen takes the screen's size, not the one asked for.
     SDL_GetWindowSize(impl->window, &impl->state.width, &impl->state.height);
     return Window{ std::move(impl) };
@@ -280,6 +325,9 @@ const WindowState& Window::Poll(u64 hiddenWaitNs, std::vector<InputEvent>& input
                 state.visible = false;
                 break;
             case SDL_EVENT_WINDOW_SHOWN:
+                state.visible = true;
+                m_impl->ReadDisplay(); // placed now
+                break;
             case SDL_EVENT_WINDOW_EXPOSED:
                 state.visible = true;
                 break;
@@ -288,6 +336,11 @@ const WindowState& Window::Poll(u64 hiddenWaitNs, std::vector<InputEvent>& input
                 break;
             case SDL_EVENT_WINDOW_FOCUS_LOST:
                 state.focused = false;
+                break;
+            case SDL_EVENT_WINDOW_DISPLAY_CHANGED:
+            case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
+            case SDL_EVENT_DISPLAY_CURRENT_MODE_CHANGED:
+                m_impl->ReadDisplay();
                 break;
             default:
                 break;

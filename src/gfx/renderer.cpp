@@ -890,13 +890,20 @@ bool Renderer::Impl::Holds(core::SceneId scene) const {
     });
 }
 
+std::span<const PresentMode> PresentModeOrder(bool unpaced) {
+    static constexpr auto PACED = std::to_array({ PresentMode::Mailbox, PresentMode::Immediate });
+    static constexpr auto UNPACED = std::to_array({ PresentMode::Immediate, PresentMode::Mailbox });
+    return unpaced ? std::span<const PresentMode>{ UNPACED } : std::span<const PresentMode>{ PACED };
+}
+
 std::expected<Renderer, core::Error> Renderer::Create(
     platform::Window& window,
     const std::filesystem::path& assets,
     std::shared_ptr<const core::Manifest> manifest,
     std::shared_ptr<const core::Strings> strings,
     const TextOptions& text,
-    const core::UiColours& colours
+    const core::UiColours& colours,
+    bool unpaced
 ) {
     auto impl = std::make_unique<Impl>();
     impl->manifest = std::move(manifest);
@@ -922,11 +929,18 @@ std::expected<Renderer, core::Error> Renderer::Create(
     }
     impl->claim = internal::Gpu<SDL_Window>{ impl->window, { device } };
 
-    // Rendering is uncapped (design doc 0002 §6): mailbox, then immediate; vsync is always there.
+    // Rendering is uncapped (design doc 0002 §6), in PresentModeOrder(); vsync is always there.
     SDL_GPUPresentMode mode = SDL_GPU_PRESENTMODE_VSYNC;
-    for (const SDL_GPUPresentMode uncapped : { SDL_GPU_PRESENTMODE_MAILBOX, SDL_GPU_PRESENTMODE_IMMEDIATE }) {
-        if (SDL_WindowSupportsGPUPresentMode(device, impl->window, uncapped)) {
-            mode = uncapped;
+    for (const PresentMode uncapped : PresentModeOrder(unpaced)) {
+        SDL_GPUPresentMode candidate = SDL_GPU_PRESENTMODE_VSYNC;
+        if (uncapped == PresentMode::Immediate) {
+            candidate = SDL_GPU_PRESENTMODE_IMMEDIATE;
+        }
+        else if (uncapped == PresentMode::Mailbox) {
+            candidate = SDL_GPU_PRESENTMODE_MAILBOX;
+        }
+        if (SDL_WindowSupportsGPUPresentMode(device, impl->window, candidate)) {
+            mode = candidate;
             break;
         }
     }

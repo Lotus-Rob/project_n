@@ -58,10 +58,10 @@ i32 FailToStart(std::string_view what, const core::Error& error) {
 
 // Opens the window (as `settings` say) and the renderer, then hands them to the app; a failure to start is reported, not
 // thrown.
-i32 Run(const core::Settings& settings, app::Options options) {
+i32 Run(const core::Settings& settings, app::Options options, bool fullscreen) {
     platform::RouteSdlLogs();
     std::expected<platform::Window, core::Error> window =
-        platform::Window::Open("project_n", settings.windowWidth, settings.windowHeight, settings.fullscreen);
+        platform::Window::Open("project_n", settings.windowWidth, settings.windowHeight, settings.fullscreen || fullscreen);
     if (!window) {
         return FailToStart("the window couldn't be opened", window.error());
     }
@@ -107,7 +107,8 @@ i32 Run(const core::Settings& settings, app::Options options) {
         options.manifest,
         options.strings,
         { .language = settings.language, .outline = settings.textOutline, .shadow = settings.textShadow },
-        settings.uiColours
+        settings.uiColours,
+        options.unpaced
     );
     if (!renderer) {
         return FailToStart("the graphics card couldn't be used", renderer.error());
@@ -147,6 +148,14 @@ int main(int argc, char** argv) {
         PN_LOG_ERROR("{}", zoom.error().message);
         return 1;
     }
+    const std::expected<u32, core::Error> workers = app::WorkersOf(args);
+    if (!workers) {
+        PN_LOG_ERROR("{}", workers.error().message);
+        return 1;
+    }
+    if (*workers != 0) {
+        PN_LOG_INFO("the job system is pinned to {} workers", *workers);
+    }
     if (*zoom != 1.0F) {
         PN_LOG_INFO("every scene starts at zoom {}", *zoom);
     }
@@ -160,9 +169,12 @@ int main(int argc, char** argv) {
                     .burst = app::HasFlag(args, "--burst"),
                     .zoom = *zoom,
                     .castSwords = app::HasFlag(args, "--cast-swords"),
+                    .workers = *workers,
+                    .unpaced = app::HasFlag(args, "--unpaced"),
                     .saveSlot = userData ? *userData / "saves" / "quicksave.pns" : std::filesystem::path{},
                     .replaySlot = userData ? *userData / "saves" / "replay.pnr" : std::filesystem::path{},
-                });
+                },
+                app::HasFlag(args, "--fullscreen"));
         PN_LOG_NOTICE("project_n stopped with status {}", status);
         return status;
     }

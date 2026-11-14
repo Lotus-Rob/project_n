@@ -57,4 +57,35 @@ TEST_CASE("--zoom refuses a missing value, text that isn't a number and a zoom o
     }
 }
 
+TEST_CASE("--workers takes a count from 1 to 64") {
+    constexpr std::array<const char*, 4> TWO{ { "project_n", "--workers", "2", "--unpaced" } };
+    constexpr std::array<const char*, 3> MOST{ { "project_n", "--workers", "64" } };
+    constexpr std::array<const char*, 2> WITHOUT{ { "project_n", "--unpaced" } };
+    const std::expected<u32, core::Error> two = app::WorkersOf(TWO);
+    const std::expected<u32, core::Error> most = app::WorkersOf(MOST);
+    const std::expected<u32, core::Error> without = app::WorkersOf(WITHOUT);
+    REQUIRE(two.has_value());
+    REQUIRE(most.has_value());
+    REQUIRE(without.has_value());
+    CHECK(*two == 2);
+    CHECK(*most == 64);
+    CHECK(*without == 0);
+}
+
+TEST_CASE("--workers refuses a missing, non-numeric or out-of-range count") {
+    constexpr std::array<const char*, 2> MISSING{ { "project_n", "--workers" } };
+    constexpr std::array<const char*, 3> TEXT{ { "project_n", "--workers", "two" } };
+    constexpr std::array<const char*, 3> ZERO{ { "project_n", "--workers", "0" } };
+    constexpr std::array<const char*, 3> TOO_MANY{ { "project_n", "--workers", "65" } };
+    for (const std::span<const char* const> args : { std::span<const char* const>{ MISSING },
+                                                     std::span<const char* const>{ TEXT },
+                                                     std::span<const char* const>{ ZERO },
+                                                     std::span<const char* const>{ TOO_MANY } }) {
+        const std::expected<u32, core::Error> workers = app::WorkersOf(args);
+        REQUIRE_FALSE(workers.has_value());
+        CAPTURE(workers.error().message);
+        CHECK(workers.error().message.starts_with("--workers: "));
+    }
+}
+
 } // namespace
