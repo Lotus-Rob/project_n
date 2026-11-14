@@ -293,7 +293,8 @@ core::Snapshot CastAndWait(core::Slot slot, u64 after, core::Jobs& jobs) {
 void CheckVolley(std::string_view name, u64 after, const gfx::View& view = { .showcase = false }) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
-    const core::Snapshot snapshot = CastAndWait(core::Slot::Special1, after, jobs);
+    core::Snapshot snapshot = CastAndWait(core::Slot::Special1, after, jobs);
+    snapshot.seals.clear(); // the seal the cast raises has its own picture, seal_swords, drawn with its look
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
     CompareWithReference(Captured(renderer, snapshot, view, jobs), name);
@@ -385,7 +386,8 @@ TEST_CASE("new effects change the next picture of the same snapshot, and the shi
     // A glow tuned live while a volley flies (the debug data watch): a smaller sword aura shows in the next picture.
     constexpr u64 SINCE_SWORDS = 30; // half a second: the first rings stand and their first swords leave
     constexpr f32 SMALLER_AURA = 4.0F;
-    const core::Snapshot swords = CastAndWait(core::Slot::Special1, SINCE_SWORDS, jobs);
+    core::Snapshot swords = CastAndWait(core::Slot::Special1, SINCE_SWORDS, jobs);
+    swords.seals.clear(); // as in CheckVolley(): this renderer has no seal looks
     const gfx::Image auraShipped = Captured(renderer, swords, { .showcase = false }, jobs);
     core::Effects smaller;
     smaller.glows.at(std::to_underlying(core::GlowRole::FlyingSwords)).size = SMALLER_AURA;
