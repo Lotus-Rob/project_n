@@ -4,12 +4,14 @@
 /// @ingroup game
 /// What a scene is to the host that runs it: its traits, the context the host hands it, and the hooks it implements.
 /// A scene keeps no state of its own (everything lives in the host's saved state), so one instance of each serves
-/// every game, and adding a scene is its file and a line in game/scenes.hpp's list.
+/// every game. Adding a scene is its class in game/scenes/, and in game/scenes.cpp an instance and its place in the list,
+/// with its key constant in game/scenes.hpp.
 
 #include "core/draw_list.hpp"
 #include "core/ecs.hpp"
 #include "core/frame.hpp"
 #include "core/game_data.hpp"
+#include "core/glow.hpp"
 #include "core/manifest.hpp"
 #include "core/state.hpp"
 #include "core/tick_clock.hpp"
@@ -17,6 +19,7 @@
 #include "core/vec2.hpp"
 #include "game/components.hpp"
 
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -25,6 +28,14 @@ namespace game {
 /// The painted ground every scene draws under it (core::atlas::SpriteId::Ground at the origin), 1920 by 1080 world
 /// units: what the camera shows whole in a still scene.
 inline constexpr core::Rect GROUND{ .min = {}, .max = { .x = 1'920.0F, .y = 1'080.0F } };
+
+/// A sprite that wears a demo glow (DemoGlow()) in a scene, and which.
+struct DemoGlowSprite {
+    /// The sprite.
+    core::atlas::SpriteId sprite = core::atlas::SpriteId{};
+    /// The glow it wears.
+    core::GlowRole role = core::GlowRole::None;
+};
 
 /// What the host reads of a scene: plain facts, the same every time.
 struct SceneTraits {
@@ -38,8 +49,8 @@ struct SceneTraits {
     bool combat = false;
     /// Whether it has creatures, which draw the game data's sprites (CheckScenes()).
     bool creatures = false;
-    /// Whether its shrine, stele and ice crystal wear the demo glows (DemoGlow()).
-    bool demoGlows = false;
+    /// The sprites that wear the demo glows (DemoGlow()) and which each wears; empty for a scene without them.
+    std::span<const DemoGlowSprite> demoGlows{}; // NOLINT(readability-redundant-member-init): traits that omit it need it
     /// How the camera moves over it.
     core::CameraKind camera = core::CameraKind::Pan;
     /// How many world NPCs the host spawns after it builds.

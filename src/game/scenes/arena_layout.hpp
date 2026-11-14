@@ -7,10 +7,13 @@
 /// and the tablet's caption.
 
 #include "core/frame.hpp"
+#include "core/glow.hpp"
 #include "core/tick_clock.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 #include "game/scene.hpp"
+
+#include <array>
 
 namespace game {
 
@@ -19,6 +22,14 @@ inline constexpr core::Vec2 ARENA_START{ .x = 960.0F, .y = 620.0F };
 
 /// Where the ice crystal stands, whose aura reaches round it in the arena.
 inline constexpr core::Vec2 CRYSTAL_FOOT{ .x = 420.0F, .y = 620.0F };
+
+/// The arena's demo glows (SceneTraits::demoGlows): its layout holds one prop of each of these sprites, the shrine, the
+/// stele and the ice crystal, so each glow shows once.
+inline constexpr std::array<DemoGlowSprite, 3> ARENA_DEMO_GLOWS{ {
+    { .sprite = core::atlas::SpriteId::Shrine, .role = core::GlowRole::DemoPulse },
+    { .sprite = core::atlas::SpriteId::Stele, .role = core::GlowRole::DemoCharge },
+    { .sprite = core::atlas::SpriteId::CrystalIce, .role = core::GlowRole::DemoProgress },
+} };
 
 /// Spawns the props and painted art, the turning ice crystal, the cultivator (made the player), its 12 foxes and 8
 /// orbs, in that order.

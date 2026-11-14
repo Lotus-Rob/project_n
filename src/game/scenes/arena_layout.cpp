@@ -20,8 +20,8 @@ struct LayoutProp {
     f32 scale = 1.0F;
 };
 
-// Laid out on the 1920x1080 ground, which the camera shows whole. The shrine, the stele and the crystal are the arena's
-// one prop each of the sprites that wear the demo glows.
+// Laid out on the 1920x1080 ground, which the camera shows whole. The shrine, the stele and the crystal are its one prop
+// each of the sprites in ARENA_DEMO_GLOWS.
 constexpr std::array PROPS{
     LayoutProp{ .sprite = SpriteId::Shrine, .foot = { .x = 960.0F, .y = 330.0F } },
     LayoutProp{ .sprite = SpriteId::Pine, .foot = { .x = 290.0F, .y = 430.0F } },
