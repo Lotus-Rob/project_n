@@ -12,6 +12,7 @@ Date: 2026-11-14 · Status: approved 2026-11-14 (re-checked against the scenes p
   camera and culling are proven on a map too big to see at once before anything real lives on it.
 - **The camera:** follows the cultivator, pans freely (drag, screen edge, keys, stick), zooms as today, and a key snaps
   it back.
+- **Portals in place of F2:** a glowing portal in each walkable scene takes the cultivator to the next one.
 - **Culling against the window:** the logic publishes what the main thread's view shows plus a margin, in every scene;
   the fixed `FOLLOW_HALF_VIEW` goes.
 
@@ -145,6 +146,18 @@ says which it carries. 5b and 5c update the chunk spec when they start.
      chunk records its numbers there too.
    - It runs on the development machine. It is not a gate, and not part of `check` or CI.
 
+5. **Portals, in place of F2 for now** (the user, 2026-11-14; the real connections between places are 5c's):
+   - One portal in each scene with a cultivator to walk (the arena, `stress`, `world`), away from where it starts.
+   - They lead round the walkable scenes in F2's order (arena → `stress` → `world` → arena), skipping `painted` and
+     `cells`, which have no character; F2 stays as the debug key that visits every scene.
+   - Stepping onto one starts the scene change at once, with no prompt (the prompt is 5c's, for real entering). The
+     host checks the cultivator's foot against it in the tick, so it is recorded and replayed as any walk; the
+     cultivator arrives at the next scene's usual start, off its portal, so it never bounces straight back.
+   - It looks like a glowing ground seal from the seals system (a `portal` look in `seals.yaml`, hot-reloaded, never
+     hidden by the showcase key), with a "Portal" label over it.
+   - In the arena it stands in clear ground away from the fight and the showcase, with a footprint test (showcased
+     items never overlap); the portal is scene content, not an entity, so no state hash or save changes.
+
 ## Non-goals
 
 - The map as data, roads, cities and danger sites, fog of war, time flowing, travel, generated names, click to walk
@@ -159,8 +172,8 @@ says which it carries. 5b and 5c update the chunk spec when they start.
 - **Shimmer** of tiles or walkers at any zoom or sub-pixel offset.
 - **Popping:** tiles, walkers or labels appearing at the view's edge from one frame to the next.
 - **Hitches** when the camera reaches new ground or many walkers come into view.
-- **Other scenes changing:** the arena, `stress`, `painted` and `cells` draw and replay as before; their reference
-  pictures and replay hashes don't move.
+- **Other scenes changing:** the arena, `stress`, `painted` and `cells` draw and replay as before; their replay hashes
+  don't move, and their reference pictures move only where the portal shows, refreshed on purpose.
 - **Numbers that can't be trusted:** runs of the same build that disagree by more than the noise the Outcome records,
   or a measurement that changes what it measures without saying so (Tracy's own cost).
 
@@ -175,7 +188,8 @@ The user's:
 4. **`measure` re-records chunks 3, 4 and 4b's arena numbers** pinned, beside the world path (2026-11-14).
 5. **The world gets terrain tiles of its own** (2026-11-14): seamless placeholder tiles generated for it, more kinds
    than the `cells` mip test's bordered cells, so the map reads as terrain rather than a grid.
-6. Carried from the chunk spec: **the world map carries the scale** (about 20 screens across, too big to see at once);
+6. **Portals replace F2 for now** (2026-11-14), as Goal 5 says; real connections between places are 5c's.
+7. Carried from the chunk spec: **the world map carries the scale** (about 20 screens across, too big to see at once);
    **the camera follows, pans freely, zooms, and a key snaps back** (click to walk is 5b); the measurements are
    **recorded per chunk, not a gate**, on the development machine with the job system pinned to 2 workers.
 
@@ -216,7 +230,10 @@ The user's:
   swap until a view of the new change arrives, the logic culls as widely as today.
 - **The world scene:** only tiles in view are published, found without a full scan; `CheckScenes` covers `world`; a
   walker's position is the same for the same seed and tick; a save made in `world` loads back into it.
-- **Other scenes:** their reference pictures and replay tests pass unchanged.
+- **Other scenes:** their replay tests pass unchanged; their reference pictures change only where the portal shows.
+- **Portals:** stepping onto one asks for the next walkable scene and a step beside it doesn't; the cycle goes arena →
+  `stress` → `world` → arena; a replay recorded through a portal plays back with the same hashes; the arena's portal
+  overlaps no showcase footprint or fight space.
 - **The measurement command's own logic** (tools self-tests): reading the export, percentiles, finding hitches,
   latency from the log, shimmer between pictures.
 - **Pictures:** the world scene at several zooms (reference pictures).
