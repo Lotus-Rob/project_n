@@ -66,7 +66,8 @@ Goals, Anti-goals and Calls are this plan's ground). The scenes spec's Outcome
 - **Panning keys:** I, J, K, L and the right stick pan; WASD, the arrows and the left stick stay Move (in the still
   scenes Move still pans, as today). Snap back: C and the right stick's click. Drag: the middle button, and the right
   button outside combat scenes (in combat it casts the spender).
-- **World tiles reuse the five `cell_*` sprites** at 256 world units (no new art in 5a; `cells` stays the mip test).
+- **World tiles are new seamless placeholders** (the user, 2026-11-14): ten kinds, two variants each, 256 world units
+  square (Task 10); `cells` stays the mip test with its bordered cells.
 - **Walkers are active-domain entities with `Body`, `Look` (the villager sprite) and `Orbit`,** moved by the host's
   existing orbit system, so they are a pure function of their orbit and the tick and save with existing components.
   Every eighth carries a placeholder name label (`StringId::WalkerName`), published by the world scene for walkers in
@@ -84,8 +85,8 @@ review passes (AGENTS.md: Working with superpowers). One task is dispatched per 
 | Wave | Tasks | What each needs |
 |---|---|---|
 | prep | `CameraKind::Roam` (controller, before wave A) | nothing |
-| A | 1 (measuring flags, full), 2 (culling against the window, full), 3 (camera inputs, full) | no shared file (1: `main.cpp`, `app.hpp`'s `Options`, the renderer, pixi; 2: core, `host.cpp`, `app.cpp`; 3: platform, `bindings.*`, settings) |
-| B | 4 (the world scene, full), 6 (camera control, full) | 4: Task 2's `Publish` view; 6: Tasks 2 and 3. 4 is `src/game`, art and assets; 6 is `src/app` |
+| A | 1 (measuring flags, full), 2 (culling against the window, full), 3 (camera inputs, full), 10 (terrain tiles, light) | no shared file (1: `main.cpp`, `app.hpp`'s `Options`, the renderer, pixi; 2: core, `host.cpp`, `app.cpp`; 3: platform, `bindings.*`, settings; 10: `art/`, `assets/sprites/`, the atlas outputs, drifted reference pictures) |
+| B | 4 (the world scene, full), 6 (camera control, full) | 4: Task 2's `Publish` view and Task 10's sprites; 6: Tasks 2 and 3. 4 is `src/game`, art and assets; 6 is `src/app` |
 | C | 5 (world pictures and shimmer, full), 7 (scripted path and latency, full) | 5: Task 4; 7: Tasks 1 and 6 |
 | D | 8 (`measure`, full) | Tasks 1, 5 and 7 |
 | E | 9 (the first measurement and budgets, light) | everything; runs alone (profiling), when the user says the display is free |
@@ -233,14 +234,14 @@ review passes (AGENTS.md: Working with superpowers). One task is dispatched per 
 - Create: `src/game/scenes/world.hpp`, `src/game/scenes/world.cpp`
 - Modify: `src/game/scene.hpp`, `src/game/scene.cpp` (hooks), `src/game/host.cpp` (calls them), `src/game/scenes.cpp`
   (`SCENE_LIST` after `CellsScene`), `src/game/scenes.hpp` (`WORLD_SCENE`), every scene's `Publish` override,
-  `art/scenes.toml` (`[world]` last: `ground`, `cell_plain`, `cell_forest`, `cell_mountain`, `cell_snow`, `cell_city`,
-  `shadow`, `cultivator`, `villager`), `assets/manifest.yaml`, `src/core/generated/atlas.hpp`, `art/atlas.sha256`
+  `art/scenes.toml` (Task 10's `[world]` gains `shadow`, `cultivator` and `villager`), `assets/manifest.yaml`, `src/core/generated/atlas.hpp`, `art/atlas.sha256`
   (`pixi run project_n atlas`), `assets/data/strings.yaml` and `src/core/strings.hpp` (`walker_name`, both languages),
   `src/AGENTS.md` (`--world`, F2's list)
 - Test: `tests/unit/game/scenes_tests.cpp`, `tests/unit/game/host_tests.cpp`, `tests/unit/game/save_tests.cpp`
 
 **Interfaces:**
-- Consumes: `core::CameraKind::Roam` (prep); `Simulation::Publish`'s view (Task 2).
+- Consumes: `core::CameraKind::Roam` (prep); `Simulation::Publish`'s view (Task 2); the `terrain_<kind>_<variant>`
+  sprites and `[world]` in `art/scenes.toml` (Task 10).
 - Produces:
   - `virtual void Scene::PublishGround(const SceneContext&, core::Rect view, core::DrawList&, u32 part) const;`
     (ground-layer content added after `DrawList::Begin`; nothing by default) and `Scene::Publish` gains
@@ -261,12 +262,15 @@ review passes (AGENTS.md: Working with superpowers). One task is dispatched per 
   - `TEST_CASE("the world's busiest region holds thousands of walkers at the widest view")` (the densest 7,680 × 4,320
     window: at least 2,000).
   - `TEST_CASE("a save made in world loads back into it")`.
+  - `TEST_CASE("every terrain kind appears somewhere on the map, and a tile's kind is the same asked twice")`.
   - Re-point `"F2's CycleScene visits every scene in order and back"` and `"each scene is found by its name"` to include
     `world` after `cells`; `CheckScenes` covers it.
 - [ ] **Step 2: Run** `pixi run project_n test --suite game_tests`: FAIL.
 - [ ] **Step 3: Implement** the hooks (the host calls `PublishGround` right after `Begin`, part 0, and passes its cull
-  area to `Publish`), `WorldScene` (tiles: the `cell_*` sprite at `(column + 2 × row) % 5` with a counter-based random
-  swap so equal tiles don't line up; walkers: spawned by `Build` with `Body`, `Look` (villager) and `Orbit` (centre,
+  area to `Publish`), `WorldScene` (tiles: each tile's kind from a fixed low-frequency value noise over the map,
+  thresholded so the kinds form regions (deep water, shallows and sand at the low end; meadow, grassland, forest and
+  marsh in the middle; hills, rock and snow at the high end), its variant from a hash of its column and row, both pure
+  functions of the tile's position, tested in Step 1 for the same answer twice; walkers: spawned by `Build` with `Body`, `Look` (villager) and `Orbit` (centre,
   radius, wobble, speed from `core/random.hpp` keyed for the world scene's purpose), denser round a few gathering points
   so one region is busiest; labels for every eighth walker within `view`), `WORLD_SCENE`, the strings, `art/scenes.toml`
   and `pixi run project_n atlas`.
@@ -420,3 +424,36 @@ review passes (AGENTS.md: Working with superpowers). One task is dispatched per 
   the noise between them, the earlier unpinned numbers beside the pinned ones, the GPU method and its limits, and the
   first budget numbers with their reasons.
 - [ ] **Step 3: Commit** `docs(design): record 5a's first measurements and budgets`.
+
+### Task 10: terrain tiles
+
+**review: light** (generated art and its outputs)
+
+**Files:**
+- Modify: `art/placeholders.py` (a seamless terrain painter, registered in `PLACEHOLDERS`), `art/sprites.toml` (each
+  tile, `foot = [0, 0]`), `art/scenes.toml` (`[world]`, last, with `ground` and the twenty tiles), `assets/sprites/`
+  (the new PNGs), `assets/sprites/PROVENANCE.md` (a row each), `assets/manifest.yaml`, `src/core/generated/atlas.hpp`,
+  `art/atlas.sha256`, any reference picture the re-pack drifts
+- Test: `tools/test_project_n.py` (beside any placeholder tests; the module imported as the other tools tests do)
+
+**Interfaces:**
+- Produces: sprites `terrain_<kind>_<variant>` for kinds `meadow`, `grass`, `forest`, `hills`, `rock`, `snow`, `sand`,
+  `marsh`, `shallows`, `water` and variants `0`, `1`: 256 × 256, opaque, `SpriteId::TerrainMeadow0` and so on in the
+  generated header; `[world]` in `art/scenes.toml`.
+
+- [ ] **Step 1: Write the failing test** `test_terrain_tiles_are_seamless`: for each kind and variant, the mean
+  absolute colour difference across the wrap (column 255 to column 0, row 255 to row 0) is at most 1.5 times the mean
+  difference between neighbouring interior columns and rows; and across a variant pair's shared edge the same holds.
+- [ ] **Step 2: Run** `pixi run project_n selftest`: FAIL (no painter).
+- [ ] **Step 3: Implement** `terrain(kind, variant)`: a kind's base colour and texture (grass strokes, tree dabs, hill
+  shading, rock cracks, snow drifts, sand ripples, marsh pools, water ripples) from noise sampled with a period of 256
+  so every edge wraps; the variant changes the seed of the detail, never the base, so variants join. Same ink-and-wash
+  look as the other placeholders; distinct enough by kind to read at zoom 0.25.
+- [ ] **Step 4: Generate** with `pixi run project_n atlas --placeholders` (it redraws every placeholder byte for byte),
+  then `pixi run project_n selftest` (PASS) and `pixi run project_n reference`: any picture named "within tolerance but
+  changed" is looked at and committed with this change (tests/AGENTS.md Gotchas).
+- [ ] **Step 5: Look** at the tiles side by side and tiled 3 × 3 (a throwaway image in the scratch folder) for seams and
+  readability at small size.
+- [ ] **Step 6: Commit** `build(tools): paint seamless terrain tiles for the world` (the painter, sprites, atlas
+  outputs, provenance, refreshed pictures).
+

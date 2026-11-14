@@ -173,13 +173,18 @@ The user's:
 3. **The free camera is outside combat only:** the world and the still scenes; combat scenes keep following
    (2026-11-14).
 4. **`measure` re-records chunks 3, 4 and 4b's arena numbers** pinned, beside the world path (2026-11-14).
-5. Carried from the chunk spec: **the world map carries the scale** (about 20 screens across, too big to see at once);
+5. **The world gets terrain tiles of its own** (2026-11-14): seamless placeholder tiles generated for it, more kinds
+   than the `cells` mip test's bordered cells, so the map reads as terrain rather than a grid.
+6. Carried from the chunk spec: **the world map carries the scale** (about 20 screens across, too big to see at once);
    **the camera follows, pans freely, zooms, and a key snaps back** (click to walk is 5b); the measurements are
    **recorded per chunk, not a gate**, on the development machine with the job system pinned to 2 workers.
 
 ## Calls made here (not the user's; check them)
 
 - **A new `world` scene;** `cells` stays the mip test, and `stress` and `painted` stay as they are.
+- **Ten terrain kinds, two variants each:** meadow, grassland, forest, hills, rock, snow, sand, marsh, shallows and deep
+  water, 256 world units square, each seamless with itself and its other variant; kinds meet at hard edges (placeholders
+  until 5b's map as data), laid out in regions by low-frequency noise over the map.
 - **The game still starts in the arena** until 5c makes the world map the hub (until then the world is a stand-in with
   nowhere to enter).
 - **A stand-in crowd** of wandering walkers with placeholder names, until 5b's travellers; stateless (seed and tick),
