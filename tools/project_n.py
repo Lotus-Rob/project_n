@@ -5,7 +5,10 @@ Standard library only. See tools/AGENTS.md and docs/design/0001.
 """
 
 import argparse
+import bisect
+import collections
 import concurrent.futures
+import dataclasses
 import difflib
 import functools
 import hashlib
@@ -15,6 +18,7 @@ import os
 import plistlib
 import re
 import shutil
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -720,9 +724,11 @@ def run_reference_case(exe, env, index):
     return result.stdout, result.returncode
 
 
-def run_references(preset, update=False):
+def run_references(preset, update=False, quiet=False):
     """Compare a built release's pictures of fixed scenes with tests/reference/, on Mesa's software
-    Vulkan (Pixi's lavapipe environment) and without a display: every machine draws the same."""
+    Vulkan (Pixi's lavapipe environment) and without a display: every machine draws the same. Returns every case's
+    output (nothing with `update`), which `measure` reads the world's shimmer from; `quiet` prints it only when a case
+    fails."""
     lavapipe = pixi_prefix("lavapipe")
     env = {**os.environ, "SDL_VIDEO_DRIVER": "offscreen", "SDL_VULKAN_LIBRARY": str(lavapipe / "lib" / "libvulkan.so.1"),
            "VK_DRIVER_FILES": str(lavapipe / "share" / "vulkan" / "icd.d" / "lvp_icd.x86_64.json")}
@@ -735,10 +741,11 @@ def run_references(preset, update=False):
     print(f"+ {exe} on {count} case(s), one process each, {jobs()} at a time", flush=True)
     with concurrent.futures.ThreadPoolExecutor(jobs()) as pool:
         results = list(pool.map(lambda index: run_reference_case(exe, env, index), range(1, count + 1)))
-    for output, _ in results:
-        print(output, end="", flush=True)
     failed = [doctest_case_name(output) or f"case {index}" for index, (output, returncode) in enumerate(results, 1)
               if returncode]
+    if not quiet or failed:
+        for output, _ in results:
+            print(output, end="", flush=True)
     if failed and not update:
         raise subprocess.CalledProcessError(1, [str(exe)], stderr=f"reference: {len(failed)} of {count} case(s) failed: "
                                                                  + "; ".join(failed) + "\n")
@@ -758,6 +765,7 @@ def run_references(preset, update=False):
     if changed:
         print(f"reference: within tolerance but changed: {', '.join(changed)}; "
               "refresh them with `pixi run project_n reference --update`")
+    return "".join(output for output, _ in results)
 
 
 def cmd_reference(args):
@@ -2057,20 +2065,33 @@ def cmd_profile(args):
     if args.seconds < 1:
         raise Fail("--seconds takes a whole number above 0")
     bdir = build(args.preset, "releasedbg")
+    recorder = profiler_tool("tracy-capture", "tracy-profiler-capture")
+    out = ROOT / "build" / "profiles" / f"{time.strftime('%Y%m%d-%H%M%S')}.tracy"
+    extra = args.args[1:] if args.args[:1] == ["--"] else args.args
+    record(recorder, ["xmake", "run", APP, "--quit-after", str(args.seconds), *extra], out, env=xmake_env(bdir))
+    print(f"profile: {out} (open it with `project_n profiler {out.relative_to(ROOT).as_posix()}`)")
+
+
+def profiler_tool(program, package):
+    """The path of `program` from Pixi's profiler environment (pixi.toml: feature.profiler), which `package` installs."""
     prefix = pixi_prefix("profiler")
     # Windows' conda packages put programs in Library/bin.
-    recorder = shutil.which("tracy-capture", path=os.pathsep.join(str(prefix / d) for d in ("bin", "Library/bin")))
-    if not recorder:
-        raise Fail(f"no tracy-capture in {prefix}: is tracy-profiler-capture still in pixi.toml's profiler feature?")
-    out = ROOT / "build" / "profiles" / f"{time.strftime('%Y%m%d-%H%M%S')}.tracy"
+    tool = shutil.which(program, path=os.pathsep.join(str(prefix / d) for d in ("bin", "Library/bin")))
+    if not tool:
+        raise Fail(f"no {program} in {prefix}: is {package} still in pixi.toml's profiler feature?")
+    return tool
+
+
+def record(recorder, game, out, **kwargs):
+    """Run the command line `game`, which quits by itself, while Tracy's `recorder` (tracy-capture) records it into
+    `out`; `kwargs` go to `run`. A failed or unfinished recording leaves no file."""
     out.parent.mkdir(parents=True, exist_ok=True)
-    extra = args.args[1:] if args.args[:1] == ["--"] else args.args
     # Nothing is clicked, so the game keeps the focus and never pauses itself (0002 §6). It quits by
     # itself; the recorder stops when the game disconnects, after Tracy has sent the rest.
     print("+", recorder, "-o", out, flush=True)
     recording = subprocess.Popen([recorder, "-o", str(out)], cwd=ROOT)
     try:
-        run(["xmake", "run", APP, "--quit-after", str(args.seconds), *extra], env=xmake_env(bdir))
+        run(game, **kwargs)
         recording.wait(timeout=60)
         if recording.returncode != 0 or not out.exists():
             raise Fail(f"tracy-capture failed with status {recording.returncode}; nothing recorded")
@@ -2082,7 +2103,362 @@ def cmd_profile(args):
         if isinstance(e, subprocess.TimeoutExpired):
             raise Fail("tracy-capture didn't finish within 60 s of the game quitting; nothing recorded") from None
         raise
-    print(f"profile: {out} (open it with `project_n profiler {out.relative_to(ROOT).as_posix()}`)")
+
+
+# `measure`'s runs: name -> (game arguments, seconds before the game quits). The arena runs last as long as chunks 3, 4
+# and 4b profiled them; the world path quits the game when it ends (about 26 s), its limit only a safety net.
+MEASURE_RUNS = {"world": (["--world", "--camera-path"], 60), "burst": (["--burst"], 20),
+                "swords": (["--cast-swords"], 70), "seals": (["--cast-swords", "--zoom", "2"], 30)}
+MEASURE_WORKERS = 2
+# Fixed conditions (the chunk 5a spec): the display's native size, and a present the display's refresh doesn't pace.
+MEASURE_FLAGS = ["--fullscreen", "--workers", str(MEASURE_WORKERS), "--unpaced"]
+# The arena runs' numbers from before the job system could be pinned, printed beside the new ones.
+MEASURE_EARLIER = {"burst": "chunk 3: 0.43 ms median, 2.6 ms worst (main thread)",
+                   "swords": "chunk 4: 1,000 swords 1.31/2.31/2.60 ms (median/p99/worst frame, at a volley's peak)",
+                   "seals": "chunk 4b: ~685 µs median frame"}
+HITCH_MS = 16.7  # a frame whose work is longer misses a 60 Hz display's refresh
+NEW_GROUND_SECONDS = 0.5  # each camera segment's start, measured apart: the camera cuts or turns onto new ground there
+SETTLE_SECONDS = 2.0  # an arena run's start, left out: the scene loads (the camera path waits as long)
+MS = 1_000_000  # nanoseconds
+FRAME_ZONE = ("Run", "src/app/app.cpp")  # App::Run's loop body: one zone a frame, on the main thread
+GPU_WAIT_ZONE = "WaitForGpu"  # the wait for the next swapchain image: the GPU's share while presenting unpaced
+IDLE_ZONES = (GPU_WAIT_ZONE, "WaitUntilNs")  # zones that only wait, never a thread's work
+LOGIC_FILE = "src/core/logic.cpp"  # names the logic thread
+JOBS_FILE = "src/core/jobs.cpp"  # names the job system's workers (the main and logic threads run its zones too)
+P99_FRAMES = 100  # below this many frames the 99th percentile by nearest rank is the worst: printed as —
+# A segment whose median frame is within this share of the display's refresh interval is paced by the display: its
+# GPU share is then the wait to present, not the GPU's work.
+PACED_TOLERANCE = 0.03
+# tracy-csvexport's column separator (`-s`): the ASCII unit separator, which no column holds. Its exports aren't
+# quoted, and a zone's name (MSVC names keep template arguments: `Foo<A,B>::Bar`), its text and a message may all hold
+# commas.
+EXPORT_SEP = "\x1f"
+SEGMENT_PREFIX = "camera path: "  # the Tracy message each camera path segment begins with (src/app/app.cpp)
+LATENCY_RE = re.compile(r"input latency: ([\d.]+) ms")
+SHIMMER_RE = re.compile(r"world shimmer: (\S+)")
+DISPLAY_RE = re.compile(r"display: (\d+x\d+ at \S+ Hz(?: \([^)\n]*\))?)")
+REFRESH_RE = re.compile(r"at ([\d.]+) Hz")
+PAUSED_RE = re.compile(r"paused: the window is unfocused or minimised")
+PATH_WARNING_RE = re.compile(r"^.*WARNING\s+\S+\s+(.*camera path.*)$", re.MULTILINE)
+
+
+@dataclasses.dataclass
+class Timeline:
+    """A run's frames from its main thread's frame zones: frame i runs from starts[i] to starts[i + 1] (ns since the
+    capture began), waits[i] of it for the GPU."""
+    starts: list
+    waits: list
+    main: str  # the main thread's number in the export
+
+    def frame(self, i):
+        return self.starts[i + 1] - self.starts[i]
+
+    def work(self, i):
+        return self.frame(i) - self.waits[i]
+
+    def index(self, ns):
+        """The frame running at `ns`, if any."""
+        i = bisect.bisect_right(self.starts, ns) - 1
+        return i if 0 <= i < len(self.starts) - 1 else None
+
+
+@dataclasses.dataclass
+class Work:
+    """What each thread did in a run's frames."""
+    busy: dict  # thread name -> each frame's work on it, ns: the self time of its zones starting in the frame
+    zones: dict  # hitch frame -> the main thread's zones' self times in it by name
+
+
+@dataclasses.dataclass
+class Segment:
+    """One part of a run's numbers: a camera segment's start or rest, or an arena run's whole."""
+    label: str
+    frames: int
+    rows: list  # (what, (median, p99 or None, worst) ms): the whole frame, its work and each thread's
+    gpu: float  # the share of the frame time spent waiting for the GPU
+    hitches: list  # (start ns since the run's first frame, work ns, frame ns, its three largest zones as (name, ns))
+
+
+@dataclasses.dataclass
+class MeasuredRun:
+    """A run's numbers and what its game log says about them."""
+    name: str
+    display: str
+    latencies: list  # input latencies, ms
+    reasons: list  # why its numbers can't be trusted; none when they can
+    segments: list
+
+
+def measure_runs(text):
+    """The run names `--runs` lists (all of them without it), in order and once each; unknown names are refused."""
+    names = list(dict.fromkeys(name.strip() for name in (text.split(",") if text is not None else MEASURE_RUNS)))
+    unknown = [name for name in names if name not in MEASURE_RUNS]
+    if unknown or not names:
+        raise Fail(f"measure: unknown run(s) {', '.join(unknown) or 'none named'}; the runs are {', '.join(MEASURE_RUNS)}")
+    return names
+
+
+def percentiles(values):
+    """(median, 99th percentile, worst) of `values`; the percentile by nearest rank, None below P99_FRAMES values,
+    where it would be the worst."""
+    ordered = sorted(values)
+    p99 = ordered[-(-len(ordered) * 99 // 100) - 1] if len(ordered) >= P99_FRAMES else None
+    return statistics.median(ordered), p99, ordered[-1]
+
+
+def zone_rows(lines):
+    """(name, file, start ns, self ns, thread) of each zone in `tracy-csvexport -u -e` output."""
+    for line in lines:
+        if line.startswith(f"name{EXPORT_SEP}src_file{EXPORT_SEP}"):
+            continue
+        name, file, _, start, took, thread, _ = line.rstrip("\r\n").split(EXPORT_SEP, 6)
+        yield name, file, int(start), int(took), thread
+
+
+def frame_timeline(lines):
+    """The frames of a run's export (the main thread's frame zones) with each one's wait for the GPU."""
+    starts, waits, main = [], [], None
+    wanted = (f"{FRAME_ZONE[0]}{EXPORT_SEP}", f"{GPU_WAIT_ZONE}{EXPORT_SEP}")
+    for name, file, start, took, thread in zone_rows(line for line in lines if line.startswith(wanted)):
+        if name == FRAME_ZONE[0] and file.endswith(FRAME_ZONE[1]):
+            starts.append(start)
+            main = thread
+        elif name == GPU_WAIT_ZONE:
+            waits.append((start, took, thread))
+    if len(starts) < 2:
+        raise Fail(f"measure: the capture holds {len(starts)} frame(s): did the game run?")
+    timeline = Timeline(sorted(starts), [0] * (len(starts) - 1), main)
+    for start, took, thread in waits:
+        if thread == main and (i := timeline.index(start)) is not None:
+            timeline.waits[i] += took
+    return timeline
+
+
+def hitch_frames(timeline, frames):
+    """The frames among `frames` whose work, their time less the wait for the GPU, is over HITCH_MS."""
+    return [i for i in frames if timeline.work(i) > HITCH_MS * MS]
+
+
+def frame_work(lines, timeline, hitches):
+    """Each thread's work in each frame of a run's export, and the main thread's zones in each of the `hitches`
+    frames. A zone counts in the frame it starts in. Threads are named by what they ran: main, logic, a worker (job
+    system zones), or else a thread; a name two threads share takes each one's number."""
+    busy = collections.defaultdict(lambda: [0] * (len(timeline.starts) - 1))
+    zones = {i: collections.Counter() for i in hitches}
+    logic, workers = set(), set()
+    for name, file, start, took, thread in zone_rows(lines):
+        if file.endswith(LOGIC_FILE):
+            logic.add(thread)
+        elif file.endswith(JOBS_FILE):
+            workers.add(thread)
+        i = timeline.index(start)
+        if i is None or name in IDLE_ZONES:
+            continue
+        busy[thread][i] += took
+        if thread == timeline.main and i in zones:
+            zones[i][name] += took
+
+    def kind(thread):
+        return 0 if thread == timeline.main else 1 if thread in logic else 2 if thread in workers else 3
+
+    def order(thread):
+        return kind(thread), int(thread) if thread.isdigit() else 0, thread
+    names = {thread: ("main", "logic", f"worker {thread}", f"thread {thread}")[kind(thread)] for thread in busy}
+    shared = {name for name, count in collections.Counter(names.values()).items() if count > 1}
+    names = {thread: f"{name} {thread}" if name in shared else name for thread, name in names.items()}
+    return Work({names[thread]: busy[thread] for thread in sorted(busy, key=order)}, zones)
+
+
+def read_messages(text):
+    """(text, ns since the capture began) of each message in `tracy-csvexport -m` output."""
+    messages = []
+    for line in text.splitlines()[1:]:
+        message, _, ns = line.rpartition(EXPORT_SEP)
+        if ns.isdigit():
+            messages.append((message, int(ns)))
+    return messages
+
+
+def measure_segments(messages, first, last, camera):
+    """(label, start ns, end ns) of each part of a run whose frames start between `first` and `last`: a camera path
+    run's segments from their messages, each split into its first NEW_GROUND_SECONDS and the rest; else the whole run
+    after the scene has loaded."""
+    if not camera:
+        return [("whole run", first + round(SETTLE_SECONDS * 1e9), last)]
+    starts = [(text.removeprefix(SEGMENT_PREFIX), ns) for text, ns in messages if text.startswith(SEGMENT_PREFIX)]
+    segments = []
+    for (name, start), end in zip(starts, [ns for _, ns in starts[1:]] + [last]):
+        cut = min(start + round(NEW_GROUND_SECONDS * 1e9), end)
+        segments += [(f"{name}: first {NEW_GROUND_SECONDS:g} s", start, cut), (f"{name}: rest", cut, end)]
+    return segments
+
+
+def segment_frames(timeline, start, end):
+    """The frames starting from `start` until `end`."""
+    return range(bisect.bisect_left(timeline.starts, start), min(bisect.bisect_left(timeline.starts, end), len(timeline.starts) - 1))
+
+
+def segment_stats(label, timeline, work, frames, hitches):
+    """A segment's numbers over `frames`, with those of the `hitches` frames it holds."""
+    rows = [("frame", percentiles([timeline.frame(i) / MS for i in frames])),
+            ("work", percentiles([timeline.work(i) / MS for i in frames])),
+            *((thread, percentiles([busy[i] / MS for i in frames])) for thread, busy in work.busy.items())]
+    gpu = sum(timeline.waits[i] for i in frames) / sum(timeline.frame(i) for i in frames)
+    found = [(timeline.starts[i] - timeline.starts[0], timeline.work(i), timeline.frame(i), work.zones[i].most_common(3))
+             for i in hitches if i in frames]
+    return Segment(label, len(frames), rows, gpu, found)
+
+
+def input_latencies(log):
+    return [float(ms) for ms in LATENCY_RE.findall(log)]
+
+
+def world_shimmer(output):
+    """The world's shimmer the reference pictures' world case prints, if it did."""
+    m = SHIMMER_RE.search(output)
+    return m and float(m[1])
+
+
+def display_mode(log):
+    """The display the game's window ended on: the log's last display line, as the game logs one again whenever the
+    window moves to another display (a compositor may place a new window elsewhere than SDL opened it)."""
+    modes = DISPLAY_RE.findall(log)
+    return modes[-1] if modes else "unknown"
+
+
+def untrusted_reasons(log, camera):
+    """Why a run's game log says its numbers measure no running game: a pause, a camera path warning, a path that
+    didn't finish."""
+    reasons = [*PAUSED_RE.findall(log), *PATH_WARNING_RE.findall(log)]
+    if camera and "camera path finished" not in log:
+        reasons.append("the camera path didn't finish")
+    return list(dict.fromkeys(reasons))
+
+
+def paced(segment, display):
+    """Whether the segment's median frame is the display's refresh interval (`display` as `display_mode` reads it):
+    the display, not the frame's work or the GPU, set its pace."""
+    m = REFRESH_RE.search(display)
+    if not m or not float(m[1]):
+        return False
+    interval = 1000 / float(m[1])
+    median = segment.rows[0][1][0]
+    return abs(median - interval) <= PACED_TOLERANCE * interval
+
+
+def measure_run(name, bdir, tools, folder):
+    """Run the game as the run `name` says under Tracy, export the capture and read its numbers; its capture, export and
+    game log go into `folder`."""
+    flags, seconds = MEASURE_RUNS[name]
+    recorded, log, export = (folder / f"{name}{suffix}" for suffix in (".tracy", ".log", ".csv"))
+    print(f"measure: {name} runs fullscreen for up to {seconds} s; leave its window focused and nothing else animating",
+          flush=True)
+    # Started as `profile` and `run` start it, on every host; the output goes to a file, never through a filter.
+    with log.open("w", encoding="utf-8") as out:
+        record(tools["tracy-capture"], ["xmake", "run", APP, *MEASURE_FLAGS, "--quit-after", str(seconds), *flags],
+               recorded, env=xmake_env(bdir), stdout=out, stderr=subprocess.STDOUT)
+    with export.open("w", encoding="utf-8") as out:
+        run([tools["tracy-csvexport"], "-u", "-e", "-s", EXPORT_SEP, recorded], stdout=out)
+    messages = capture([tools["tracy-csvexport"], "-m", "-s", EXPORT_SEP, recorded])
+    return read_run(name, export, messages, log.read_text(encoding="utf-8", errors="replace"))
+
+
+def read_run(name, export, messages_text, text):
+    """A run's numbers from its zone export (the file `export`), its messages export and its game log."""
+    camera = "--camera-path" in MEASURE_RUNS[name][0]
+    messages = read_messages(messages_text)
+    with export.open(encoding="utf-8") as lines:
+        timeline = frame_timeline(lines)
+    parts = [(label, frames) for label, start, end in measure_segments(messages, timeline.starts[0], timeline.starts[-1], camera)
+             if (frames := segment_frames(timeline, start, end))]
+    hitches = [i for _, frames in parts for i in hitch_frames(timeline, frames)]
+    with export.open(encoding="utf-8") as lines:
+        work = frame_work(lines, timeline, hitches)
+    reasons = untrusted_reasons(text, camera) + ([] if parts else ["no frames measured"])
+    return MeasuredRun(name, display_mode(text), input_latencies(text), reasons,
+                       [segment_stats(label, timeline, work, frames, hitches) for label, frames in parts])
+
+
+def measure_table(results, shimmer):
+    """The table `measure` prints: per run and segment the frame time, its work and each thread's (ms), the GPU's share
+    (marked paced when the display set the pace) and the hitches; each run's display, input latency, earlier numbers
+    and trust beside its first row; then each hitch with its largest zones. `shimmer` is the world's shimmer as text."""
+    rows = []
+    for result in results:
+        notes = [f"display {result.display}", *(f"input latency {ms:g} ms" for ms in result.latencies),
+                 *([f"earlier, unpinned: {MEASURE_EARLIER[result.name]}"] if result.name in MEASURE_EARLIER else []),
+                 *([f"untrusted: {'; '.join(result.reasons)}"] if result.reasons else [])]
+        first_of_run = True
+        for segment in result.segments:
+            gpu = f"{segment.gpu:.0%}" + (" paced" if paced(segment, result.display) else "")
+            for n, (what, values) in enumerate(segment.rows):
+                rows.append((result.name if first_of_run else "", segment.label if n == 0 else "",
+                             str(segment.frames) if n == 0 else "", what,
+                             *("—" if v is None else f"{v:.2f}" for v in values),
+                             gpu if n == 0 else "", str(len(segment.hitches)) if n == 0 else "",
+                             "; ".join(notes) if first_of_run else ""))
+                first_of_run = False
+        if first_of_run:
+            rows.append((result.name, "", "", "", "", "", "", "", "", "; ".join(notes)))
+    header = ("run", "segment", "frames", "time", "median ms", "p99 ms", "worst ms", "GPU", "hitches", "")
+    widths = [max(len(row[c]) for row in (header, *rows)) for c in range(len(header) - 1)]
+    numeric = {2, 4, 5, 6, 7, 8}
+
+    def line(row):
+        cells = [cell.rjust(width) if c in numeric else cell.ljust(width) for c, (cell, width) in enumerate(zip(row, widths))]
+        return "  ".join([*cells, row[-1]]).rstrip()
+    out = [f"measure: {MEASURE_WORKERS} workers, unpaced, fullscreen at native size; world shimmer: {shimmer}",
+           line(header), *map(line, rows),
+           (f"p99 —: fewer than {P99_FRAMES} frames, where it would be the worst. GPU: the share of the frame time spent "
+            f"waiting for the next swapchain image ({GPU_WAIT_ZONE}); paced: the median frame is within "
+            f"{PACED_TOLERANCE:.0%} of the display's refresh interval, so there the share is the wait to present.")]
+    hitches = [(result.name, segment.label, hitch) for result in results for segment in result.segments
+               for hitch in segment.hitches]
+    out.append(f"hitches (work, a frame's time less its wait for the GPU, over {HITCH_MS} ms): "
+               + ("" if hitches else "none"))
+    for name, label, (start, took, frame, zones) in hitches:
+        largest = ", ".join(f"{zone} {ns / MS:.2f}" for zone, ns in zones)
+        out.append(f"  {name}, {label}, at {start / 1e9:.2f} s: work {took / MS:.2f} ms, frame {frame / MS:.2f} ms; "
+                   f"largest zones (self time, ms): {largest}")
+    return "\n".join(out)
+
+
+def cmd_measure(args):
+    runs = measure_runs(args.runs)
+    shimmer = "not measured (no world run)"
+    if "world" in runs and HOST != "linux":
+        shimmer = "not measured (the reference pictures run on Linux only)"
+    elif "world" in runs:
+        build(NATIVE_PRESET, "release")
+        try:
+            value = world_shimmer(run_references(NATIVE_PRESET, quiet=True))
+        except (Fail, subprocess.CalledProcessError) as e:  # a picture failing its bound mustn't stop the runs
+            print(f"measure: the world's shimmer isn't measured: {getattr(e, 'stderr', None) or e}".rstrip(),
+                  file=sys.stderr)
+            shimmer = "not measured (reference failed)"
+        else:
+            shimmer = (f"{value:g} (the reference pictures' world case)" if value is not None
+                       else "not measured (the reference pictures printed none)")
+    bdir = build(NATIVE_PRESET, "releasedbg")
+    tools = {program: profiler_tool(program, package)
+             for program, package in (("tracy-capture", "tracy-profiler-capture"), ("tracy-csvexport", "tracy-profiler-csvexport"))}
+    folder = ROOT / "build" / "measure" / time.strftime("%Y%m%d-%H%M%S")
+    folder.mkdir(parents=True, exist_ok=True)
+    try:
+        results = [measure_run(name, bdir, tools, folder) for name in runs]
+    except BaseException:
+        print(f"measure: the runs' captures, exports and game logs are kept in {folder}", file=sys.stderr)
+        raise
+    untrusted = [result.name for result in results if result.reasons]
+    if args.keep or untrusted:  # an untrusted run's game log says why
+        print(f"measure: the runs' captures, exports and game logs are kept in {folder}")
+    else:
+        shutil.rmtree(folder)
+    print(measure_table(results, shimmer))
+    if untrusted:
+        print(f"measure: warning: {len(untrusted)} of {len(results)} runs untrusted: {', '.join(untrusted)}; "
+              "run again with the window focused and nothing else animating", file=sys.stderr)
+        return 1
 
 
 def cmd_selftest(args):
@@ -2502,6 +2878,11 @@ def make_parser():
             preset="native")
     p.add_argument("--seconds", type=int, default=10, help="how long the game runs before it quits (default 10)")
     p.add_argument("args", nargs=argparse.REMAINDER, help="-- <game arguments>, e.g. -- --stress")
+    p = add("measure", cmd_measure,
+            f"the smoothness and cost numbers: releasedbg runs fullscreen under Tracy, {MEASURE_WORKERS} workers, unpaced, "
+            "as one table; exits 1 if a run paused (never a gate)")
+    p.add_argument("--runs", help=f"[possible values: {', '.join(MEASURE_RUNS)}] the runs, comma-separated (default: all)")
+    p.add_argument("--keep", action="store_true", help="keep each run's capture, export and game log in build/measure/")
     p = add("atlas", cmd_atlas, "assign the sprites of art/sprites.toml their texture-array pages (src/core/generated/atlas.hpp)")
     p.add_argument("--placeholders", action="store_true", help="first redraw the procedural placeholders (every image in PLACEHOLDERS in art/placeholders.py)")
     add("shaders", cmd_shaders, "compile shaders/*.hlsl into shaders/bin/ (SPIR-V, DXIL, MSL); Linux and Windows only")
