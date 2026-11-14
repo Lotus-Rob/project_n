@@ -10,6 +10,7 @@
 #include "data/game_data.hpp"
 #include "game/host.hpp"
 #include "game/npcs.hpp"
+#include "game/scenes/world.hpp"
 #include "platform/paths.hpp"
 #include "support/manifest.hpp"
 #include "support/seals.hpp"
@@ -237,7 +238,7 @@ TEST_CASE("a cast outside a combat scene is ignored") {
     const std::array<core::Action, 1> cast{
         { { .kind = core::ActionKind::Cast, .slot = core::Slot::Generator, .point = { .x = 50.0F, .y = 60.0F } } }
     };
-    for (const core::SceneKey scene : { game::STRESS_SCENE, game::PAINTED_SCENE, game::CELLS_SCENE }) {
+    for (const core::SceneKey scene : { game::STRESS_SCENE, game::PAINTED_SCENE, game::CELLS_SCENE, game::WORLD_SCENE }) {
         game::Host casting(test::TestManifest(), scene);
         game::Host idle(test::TestManifest(), scene);
         std::vector<core::Event> events;
@@ -249,7 +250,8 @@ TEST_CASE("a cast outside a combat scene is ignored") {
 }
 
 TEST_CASE("the arena is a combat scene and the others aren't") {
-    for (const core::SceneKey scene : { game::ARENA_SCENE, game::STRESS_SCENE, game::PAINTED_SCENE, game::CELLS_SCENE }) {
+    for (const core::SceneKey scene :
+         { game::ARENA_SCENE, game::STRESS_SCENE, game::PAINTED_SCENE, game::CELLS_SCENE, game::WORLD_SCENE }) {
         game::Host host(test::TestManifest(), scene);
         const bool combat = scene == game::ARENA_SCENE;
         CHECK(host.IsCombatScene() == combat);
@@ -485,6 +487,178 @@ TEST_CASE("the cell grid publishes every cell, with none culled at its far corne
     CHECK(snapshot.instances.size() == CELLS + 1); // and the ground, hidden beneath them
 }
 
+// Whether an instance draws one of `terrain`, the instances of the world's terrain sprites, by region and page as Draws().
+bool DrawsTerrain(const core::Instance& instance, std::span<const core::Instance> terrain) {
+    constexpr u32 PAGE_MASK = 0xFFFFU;
+    return std::ranges::any_of(terrain, [&](const core::Instance& tile) {
+        return instance.regionMin == tile.regionMin && (instance.layerFlags & PAGE_MASK) == (tile.layerFlags & PAGE_MASK);
+    });
+}
+
+TEST_CASE("a world publish holds only the tiles in view, with no painted ground under them") {
+    // A screen at zoom 1, off the tile grid on both axes: columns 39 to 46 and rows 19 to 23.
+    constexpr core::Rect VIEW{ .min = { .x = 10'000.0F, .y = 5'000.0F }, .max = { .x = 11'920.0F, .y = 6'080.0F } };
+    constexpr std::size_t TILES = std::size_t{ 8 } * 5;
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    game::Host host(manifest, game::WORLD_SCENE);
+    const core::Snapshot snapshot = Published(host, VIEW);
+    const game::TileSpan span = game::TilesIn(VIEW);
+    // The terrain sprites, which art/sprites.toml lists together.
+    std::vector<core::Instance> terrain;
+    for (auto id = std::to_underlying(SpriteId::TerrainMeadow0); id <= std::to_underlying(SpriteId::TerrainWater1); ++id) {
+        terrain.push_back(core::MakeInstance(*manifest, { .sprite = static_cast<SpriteId>(id) }));
+    }
+    REQUIRE((span.lastColumn + 1 - span.firstColumn) * (span.lastRow + 1 - span.firstRow) == TILES);
+    // Every tile instance is in the ground's batches, and its centre on one of the span's tiles.
+    u32 groundInstances = 0;
+    for (const core::Batch& batch : std::span{ snapshot.batches }.first(snapshot.groundBatches)) {
+        groundInstances += batch.count;
+    }
+    const core::Rect spanned{
+        .min = { .x = static_cast<f32>(span.firstColumn) * game::WORLD_TILE,
+                 .y = static_cast<f32>(span.firstRow) * game::WORLD_TILE },
+        .max = { .x = static_cast<f32>(span.lastColumn + 1) * game::WORLD_TILE,
+                 .y = static_cast<f32>(span.lastRow + 1) * game::WORLD_TILE },
+    };
+    std::size_t tiles = 0;
+    bool allInSpan = true;
+    for (std::size_t i = 0; i < snapshot.instances.size(); ++i) {
+        if (DrawsTerrain(snapshot.instances[i], terrain)) {
+            ++tiles;
+            allInSpan = allInSpan && i < groundInstances && Within(snapshot.instances[i].current, spanned);
+        }
+    }
+    CHECK(tiles == TILES);
+    CHECK(allInSpan);
+    CHECK(std::ranges::none_of(snapshot.instances, [](const core::Instance& instance) {
+        return Draws(instance, SpriteId::Ground);
+    }));
+}
+
+// The world's walkers (the entities on an orbit) and where each stands, in ID order.
+std::vector<std::pair<core::StableId, game::Body>> Walkers(const game::Host& host) {
+    std::vector<std::pair<core::StableId, game::Body>> walkers;
+    const core::Registry& entities = host.State()[game::ACTIVE].Entities();
+    for (auto [entity, body, orbit, stableId] :
+         entities.view<const game::Body, const game::Orbit, const core::StableId>().each()) {
+        walkers.emplace_back(stableId, body);
+    }
+    std::ranges::sort(walkers, {}, &std::pair<core::StableId, game::Body>::first);
+    return walkers;
+}
+
+TEST_CASE("a walker's foot is the same for the same tick, built twice") {
+    game::Host first(test::TestManifest(), game::WORLD_SCENE);
+    game::Host second(test::TestManifest(), game::WORLD_SCENE);
+    std::vector<std::vector<std::pair<core::StableId, game::Body>>> atEachTick;
+    // The first tick, and one long after.
+    for (const u64 tick : { 1ULL, 500ULL }) {
+        CAPTURE(tick);
+        Tick(first, { .wall = tick, .simulation = tick, .state = tick }, {});
+        Tick(second, { .wall = tick, .simulation = tick, .state = tick }, {});
+        const std::vector<std::pair<core::StableId, game::Body>> mine = Walkers(first);
+        const std::vector<std::pair<core::StableId, game::Body>> theirs = Walkers(second);
+        REQUIRE_FALSE(mine.empty());
+        const bool same = std::ranges::equal(mine, theirs, [](const auto& lhs, const auto& rhs) {
+            return lhs.first == rhs.first &&
+                   std::bit_cast<u64>(lhs.second.previous) == std::bit_cast<u64>(rhs.second.previous) &&
+                   std::bit_cast<u64>(lhs.second.current) == std::bit_cast<u64>(rhs.second.current);
+        });
+        CHECK(same);
+        atEachTick.push_back(mine);
+    }
+    // And they walk: by tick 500 every walker stands somewhere else than at tick 1 (the fastest is short of a lap).
+    REQUIRE(atEachTick.size() == 2);
+    REQUIRE(atEachTick[0].size() == atEachTick[1].size());
+    const bool allMoved = std::ranges::equal(atEachTick[0], atEachTick[1], [](const auto& early, const auto& late) {
+        return early.first == late.first && std::bit_cast<u64>(early.second.current) != std::bit_cast<u64>(late.second.current);
+    });
+    CHECK(allMoved);
+}
+
+TEST_CASE("the world's busiest region holds thousands of walkers at the widest view") {
+    constexpr core::Vec2 WIDEST_HALF_SCREEN{ .x = 3'840.0F, .y = 2'160.0F }; // a 16:9 window at zoom 0.25
+    constexpr std::size_t THOUSANDS = 2'000;
+    const game::Host host(test::TestManifest(), game::WORLD_SCENE);
+    const core::Rect window = Grown({ .min = game::WORLD_BUSIEST, .max = game::WORLD_BUSIEST }, WIDEST_HALF_SCREEN);
+    const std::vector<std::pair<core::StableId, game::Body>> walkers = Walkers(host);
+    const auto inside = static_cast<std::size_t>(std::ranges::count_if(walkers, [&](const auto& walker) {
+        return Within(walker.second.current, window);
+    }));
+    CHECK(inside >= THOUSANDS);
+}
+
+// How many of `walkers` stand within the screen (1,920 by 1,080 at zoom 1) centred on `centre`.
+std::size_t OnScreenAt(const std::vector<std::pair<core::StableId, game::Body>>& walkers, core::Vec2 centre) {
+    constexpr core::Vec2 HALF_SCREEN{ .x = 960.0F, .y = 540.0F };
+    const core::Rect screen = Grown({ .min = centre, .max = centre }, HALF_SCREEN);
+    return static_cast<std::size_t>(std::ranges::count_if(walkers, [&](const auto& walker) {
+        return Within(walker.second.current, screen);
+    }));
+}
+
+TEST_CASE("the world's cultivator starts in quiet country") {
+    constexpr std::size_t QUIET_SCREEN = 8;
+    constexpr std::size_t WIDEST_SCREENS = 64; // the widest view, WIDEST_HALF_VIEW each way, is 8 by 8 screens
+    const game::Host host(test::TestManifest(), game::WORLD_SCENE);
+    const std::vector<std::pair<core::StableId, game::Body>> walkers = Walkers(host);
+    const core::Vec2 home = (game::WORLD_MAP.min + game::WORLD_MAP.max) * 0.5F;
+    CHECK(OnScreenAt(walkers, home) <= QUIET_SCREEN);
+    // Only a weak fallback: spread and gathered walkers look alike, so this bounds the widest view to the countryside's
+    // count for each of its screens. The real guarantee that no gathering reaches it is world.cpp's compile-time ClearOfStart.
+    const core::Rect widest = Grown({ .min = home, .max = home }, core::WIDEST_HALF_VIEW);
+    const auto inWidest = static_cast<std::size_t>(std::ranges::count_if(walkers, [&](const auto& walker) {
+        return Within(walker.second.current, widest);
+    }));
+    CHECK(inWidest <= QUIET_SCREEN * WIDEST_SCREENS);
+}
+
+// The sample counts sit close to the bounds (the busiest window holds 2,025 where the widest-view test wants 2,000, its
+// densest screen 146 where this wants at most 150): they depend on the walker draws, their purposes and the orbit ranges.
+// A change there means retuning the density in world.cpp, never loosening a test.
+TEST_CASE("no screen of the world is a pile of walkers") {
+    constexpr std::size_t PILE = 150;
+    constexpr std::size_t COUNTRYSIDE = 8;
+    const game::Host host(test::TestManifest(), game::WORLD_SCENE);
+    const std::vector<std::pair<core::StableId, game::Body>> walkers = Walkers(host);
+    const core::Vec2 busiest = game::WORLD_BUSIEST;
+    struct Sample {
+        std::string_view name;
+        core::Vec2 centre;
+        std::size_t most;
+    };
+    const std::array<Sample, 20> samples{ {
+        { .name = "busiest's point", .centre = busiest, .most = PILE },
+        { .name = "busiest, half out east", .centre = busiest + core::Vec2{ .x = 2'000.0F, .y = 0.0F }, .most = PILE },
+        { .name = "map's north-east corner", .centre = { .x = 37'440.0F, .y = 540.0F }, .most = COUNTRYSIDE },
+        { .name = "busiest, near its north-west corner",
+          .centre = busiest + core::Vec2{ .x = -3'800.0F, .y = -2'200.0F },
+          .most = PILE },
+        { .name = "busiest, near its south-east corner",
+          .centre = busiest + core::Vec2{ .x = 3'800.0F, .y = 2'200.0F },
+          .most = PILE },
+        { .name = "busiest, off its west edge", .centre = busiest + core::Vec2{ .x = -5'000.0F, .y = 0.0F }, .most = PILE },
+        { .name = "north-west town's point", .centre = { .x = 8'000.0F, .y = 5'600.0F }, .most = PILE },
+        { .name = "north-west town, half out", .centre = { .x = 9'200.0F, .y = 6'100.0F }, .most = PILE },
+        { .name = "north-west town, near its edge", .centre = { .x = 6'000.0F, .y = 4'600.0F }, .most = PILE },
+        { .name = "north-east town's point", .centre = { .x = 30'500.0F, .y = 4'500.0F }, .most = PILE },
+        { .name = "map's south-west corner", .centre = { .x = 960.0F, .y = 21'060.0F }, .most = COUNTRYSIDE },
+        { .name = "north-east town, near its edge", .centre = { .x = 32'600.0F, .y = 5'400.0F }, .most = PILE },
+        { .name = "south-west town's point", .centre = { .x = 9'600.0F, .y = 17'800.0F }, .most = PILE },
+        { .name = "busiest, the densest screen a sweep found", .centre = { .x = 32'880.0F, .y = 10'260.0F }, .most = PILE },
+        { .name = "south-west town, near its edge", .centre = { .x = 8'000.0F, .y = 18'800.0F }, .most = PILE },
+        { .name = "the start", .centre = (game::WORLD_MAP.min + game::WORLD_MAP.max) * 0.5F, .most = COUNTRYSIDE },
+        { .name = "countryside, north", .centre = { .x = 19'200.0F, .y = 3'000.0F }, .most = COUNTRYSIDE },
+        { .name = "countryside, west", .centre = { .x = 3'000.0F, .y = 11'000.0F }, .most = COUNTRYSIDE },
+        { .name = "map's north-west corner", .centre = { .x = 960.0F, .y = 540.0F }, .most = COUNTRYSIDE },
+        { .name = "map's south-east corner", .centre = { .x = 37'440.0F, .y = 21'060.0F }, .most = COUNTRYSIDE },
+    } };
+    for (const Sample& sample : samples) {
+        CAPTURE(sample.name);
+        CHECK(OnScreenAt(walkers, sample.centre) <= sample.most);
+    }
+}
+
 TEST_CASE("the stress arena publishes the same bytes with one worker and with many") {
     constexpr u64 TICK = 7;
     constexpr u32 MANY_WORKERS = 7;
@@ -556,7 +730,8 @@ TEST_CASE("a host needs the manifest's scene named after the scene it runs") {
 }
 
 TEST_CASE("each scene is found by its name") {
-    for (const core::SceneKey scene : { game::ARENA_SCENE, game::STRESS_SCENE, game::PAINTED_SCENE, game::CELLS_SCENE }) {
+    for (const core::SceneKey scene :
+         { game::ARENA_SCENE, game::STRESS_SCENE, game::PAINTED_SCENE, game::CELLS_SCENE, game::WORLD_SCENE }) {
         const std::optional<core::SceneKey> found = game::SceneNamed(game::SceneName(scene));
         CHECK(found == scene);
     }
@@ -572,7 +747,7 @@ TEST_CASE("F2's CycleScene visits every scene in order and back, clearing the se
     REQUIRE(host.Selected() == host.Player());
     const std::array<core::Action, 1> cycle{ { { .kind = core::ActionKind::CycleScene } } };
     u64 tick = 1;
-    for (const std::string_view name : { "stress", "painted", "cells", "arena" }) {
+    for (const std::string_view name : { "stress", "painted", "cells", "world", "arena" }) {
         ++tick;
         Tick(host, { .wall = tick, .simulation = tick, .state = tick }, { .actions = cycle, .held = {} });
         host.EnterScene(); // as the logic does after the tick

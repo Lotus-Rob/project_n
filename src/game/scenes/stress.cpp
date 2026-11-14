@@ -98,7 +98,7 @@ void StressScene::Respawn(SceneContext& context, const core::TickCounters& count
     RespawnFox(context, counters, index);
 }
 
-void StressScene::Publish(const SceneContext& context, core::Snapshot& snapshot) const {
+void StressScene::Publish(const SceneContext& context, core::Rect /*view*/, core::Snapshot& snapshot) const {
     PN_PROFILE_ZONE();
     PublishCaption(context, snapshot);
 }

@@ -31,11 +31,12 @@ sprites = [
 [cells]
 sprites = ["ground", "cell_plain", "cell_forest", "cell_mountain", "cell_snow", "cell_city"]
 
-# The world map (phase 6 chunk 5a): its terrain tiles.
+# The world map (phase 6 chunk 5a): its terrain tiles, the cultivator (the fox too, as the creatures data draws both)
+# and the walkers with their shadows.
 [world]
 sprites = [
-    "ground", "terrain_meadow_0", "terrain_meadow_1", "terrain_grass_0", "terrain_grass_1", "terrain_forest_0",
-    "terrain_forest_1", "terrain_hills_0", "terrain_hills_1", "terrain_rock_0", "terrain_rock_1", "terrain_snow_0",
-    "terrain_snow_1", "terrain_sand_0", "terrain_sand_1", "terrain_marsh_0", "terrain_marsh_1", "terrain_shallows_0",
-    "terrain_shallows_1", "terrain_water_0", "terrain_water_1",
+    "shadow", "cultivator", "fox", "villager", "terrain_meadow_0", "terrain_meadow_1", "terrain_grass_0",
+    "terrain_grass_1", "terrain_forest_0", "terrain_forest_1", "terrain_hills_0", "terrain_hills_1", "terrain_rock_0",
+    "terrain_rock_1", "terrain_snow_0", "terrain_snow_1", "terrain_sand_0", "terrain_sand_1", "terrain_marsh_0",
+    "terrain_marsh_1", "terrain_shallows_0", "terrain_shallows_1", "terrain_water_0", "terrain_water_1",
 ]

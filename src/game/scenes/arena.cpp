@@ -112,7 +112,7 @@ void ArenaScene::Respawn(SceneContext& context, const core::TickCounters& counte
     RespawnFox(context, counters, index);
 }
 
-void ArenaScene::Publish(const SceneContext& context, core::Snapshot& snapshot) const {
+void ArenaScene::Publish(const SceneContext& context, core::Rect /*view*/, core::Snapshot& snapshot) const {
     PN_PROFILE_ZONE();
     PublishCaption(context, snapshot);
     for (const ShowcaseSeal& seal : SHOWCASE) {

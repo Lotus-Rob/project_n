@@ -26,7 +26,7 @@ public:
     void Respawn(SceneContext& context, const core::TickCounters& counters, u32 index) const override;
 
     /// The tablet's caption while there is a player (PublishCaption()).
-    void Publish(const SceneContext& context, core::Snapshot& snapshot) const override;
+    void Publish(const SceneContext& context, core::Rect view, core::Snapshot& snapshot) const override;
 };
 
 } // namespace game

@@ -70,7 +70,7 @@ public:
 
     /// The tablet's caption while there is a player (PublishCaption()), then the showcase seals (core::Seal::showcase,
     /// from tick 0 and never ending).
-    void Publish(const SceneContext& context, core::Snapshot& snapshot) const override;
+    void Publish(const SceneContext& context, core::Rect view, core::Snapshot& snapshot) const override;
 };
 
 } // namespace game

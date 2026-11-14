@@ -100,6 +100,32 @@ TEST_CASE("a game loaded from a save goes on exactly as the game that saved") {
     CHECK(same);
 }
 
+TEST_CASE("a save made in world loads back into it") {
+    constexpr core::HeldInput RIGHT{ .move = { .x = 1.0F, .y = 0.0F } };
+    core::Jobs jobs{ 1 };
+    game::Host saved(test::TestManifest(), game::WORLD_SCENE);
+    Tick(saved, At(1), { .actions = {}, .held = RIGHT }); // the walkers on their way, the cultivator off its start
+    const std::vector<std::byte> bytes = Saved(saved);
+
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE);
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene();
+    CHECK(loaded.Current() == saved.Current());
+    CHECK(loaded.Current().key == game::WORLD_SCENE);
+    CHECK(loaded.Player() == saved.Player());
+    CHECK(loaded.StateHash() == saved.StateHash());
+
+    // And it goes on as the game that saved.
+    Tick(saved, At(2), { .actions = {}, .held = RIGHT });
+    Tick(loaded, At(2), { .actions = {}, .held = RIGHT });
+    CHECK(loaded.StateHash() == saved.StateHash());
+    const std::vector<core::Instance> fromLoaded = Published(loaded, jobs);
+    const std::vector<core::Instance> fromSaved = Published(saved, jobs);
+    const bool same = SameBytes(fromLoaded, fromSaved);
+    CHECK(same);
+}
+
 TEST_CASE("Load holds and changes nothing until EnterScene") {
     game::Host saved(test::TestManifest(), game::PAINTED_SCENE);
     Tick(saved, At(1), {});
