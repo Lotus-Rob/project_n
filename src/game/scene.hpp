@@ -50,7 +50,8 @@ struct SceneTraits {
     /// Whether it has creatures, which draw the game data's sprites (CheckScenes()).
     bool creatures = false;
     /// The sprites that wear the demo glows (DemoGlow()) and which each wears; empty for a scene without them.
-    std::span<const DemoGlowSprite> demoGlows{}; // NOLINT(readability-redundant-member-init): traits that omit it need it
+    std::span<const DemoGlowSprite> demoGlows{}; // NOLINT(readability-redundant-member-init): Clang's
+                                                 // -Wmissing-designated-field-initializers warns where a scene's traits omit it
     /// How the camera moves over it.
     core::CameraKind camera = core::CameraKind::Pan;
     /// How many world NPCs the host spawns after it builds.

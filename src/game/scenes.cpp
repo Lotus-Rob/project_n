@@ -29,6 +29,7 @@ static_assert(KeyedAt(STRESS_SCENE, &STRESS_INSTANCE));
 static_assert(KeyedAt(PAINTED_SCENE, &PAINTED_INSTANCE));
 static_assert(KeyedAt(CELLS_SCENE, &CELLS_INSTANCE));
 static_assert(SCENE_LIST.size() == 4, "a listed scene without its key constant in game/scenes.hpp");
+static_assert(SCENE_LIST.size() <= std::numeric_limits<u8>::max() + 1U, "a save stores the scene's key in one byte");
 
 } // namespace
 
