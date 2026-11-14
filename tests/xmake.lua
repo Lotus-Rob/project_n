@@ -26,7 +26,7 @@ local function test_under_wine(target, opt)
     return code == 0
 end
 
--- What a target that builds an arena needs: the shipped manifest (support/manifest.hpp) and its reader.
+-- What a target that builds a host needs: the shipped manifest (support/manifest.hpp) and its reader.
 local function with_manifest()
     add_deps("data", "platform")
     add_includedirs(os.scriptdir())
@@ -56,7 +56,7 @@ local function add_file_tests(files)
     add_tests("rest", {runargs = {"--source-file-exclude=" .. table.concat(patterns, ",")}})
 end
 
--- `module` is the src/ module under test (default core); it brings the modules below it. `arena`: it builds arenas.
+-- `module` is the src/ module under test (default core); it brings the modules below it. `arena`: it builds hosts.
 local function unit_tests(name, files, module, arena)
     target(name)
         set_kind("binary")

@@ -1,7 +1,7 @@
 #pragma once
 
 /// @file
-/// The seals for tests of an arena: those of a snapshot raised in play (the arena scene also publishes its showcase seals,
+/// The seals for tests of a host: those of a snapshot raised in play (the arena scene also publishes its showcase seals,
 /// core::Seal::showcase, which are scene content), and the shipped looks (its target links data and platform, as
 /// support/manifest.hpp's does).
 

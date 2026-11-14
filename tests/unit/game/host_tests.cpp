@@ -402,7 +402,7 @@ TEST_CASE("the stress arena publishes the same bytes with one worker and with ma
     CHECK(std::ranges::equal(std::as_bytes(std::span{ published[0] }), std::as_bytes(std::span{ published[1] })));
 }
 
-TEST_CASE("two arenas ticked alike publish the same bytes") {
+TEST_CASE("two hosts ticked alike publish the same bytes") {
     constexpr u64 TICKS = 120;
     game::Host first(test::TestManifest());
     game::Host second(test::TestManifest());
@@ -448,7 +448,7 @@ TEST_CASE("months pass for the stress arena's world NPCs, and its active NPCs st
     CHECK(state[game::ACTIVE].Entities().storage<game::Npc>()->size() == ACTIVE_NPCS);
 }
 
-TEST_CASE("an arena needs the manifest's scene of its own name") {
+TEST_CASE("a host needs the manifest's scene named after the scene it runs") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const core::SceneId arena = game::Host(manifest).Scene();
     const core::SceneId painted = game::Host(manifest, game::PAINTED_SCENE).Scene();

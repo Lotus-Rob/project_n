@@ -461,7 +461,7 @@ std::vector<std::byte> ArenaSave(
     return bytes;
 }
 
-// Whether a fresh arena loads `bytes`, saved at `savedTick`; CHECKs that its state hash is the same afterwards, and that
+// Whether a fresh host loads `bytes`, saved at `savedTick`; CHECKs that its state hash is the same afterwards, and that
 // it holds a state to enter exactly when it loaded one.
 bool Loads(const std::vector<std::byte>& bytes, u64 savedTick = SAVED_TICK) {
     game::Host game(test::TestManifest(), game::ARENA_SCENE);

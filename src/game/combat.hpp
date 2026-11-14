@@ -191,11 +191,11 @@ struct Afflictions {
 /// least 1).
 [[nodiscard]] f32 DissolveAt(const Dying& dying, u64 tick, u64 dyingTicks);
 
-/// The arena's combat state beyond its components: the volleys in flight (the flying swords and the fire bolts), the
-/// flashes showing (the poison lance's), the seals in play (the flying swords') and the respawns waiting.
+/// The host's combat state beyond its components, in any combat scene: the volleys in flight (the flying swords and the fire
+/// bolts), the flashes showing (the poison lance's), the seals in play (the flying swords') and the respawns waiting.
 class Combat {
 public:
-    /// Runs the fight by `rules` from now on (the arena's game data: the dissolve's and the respawn's times, the
+    /// Runs the fight by `rules` from now on (the host's game data: the dissolve's and the respawn's times, the
     /// affliction period, the burst's length). Nothing already cast changes: a volley keeps its shape, a flash its length,
     /// an affliction its next tick.
     void SetRules(const core::CombatRules& rules);
