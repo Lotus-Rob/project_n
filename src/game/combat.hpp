@@ -321,7 +321,7 @@ public:
     /// a volley that can't be used (invalid (core::Volley::Valid()), of an unknown ability or element, a negative
     /// amount, more swords arrived than it has, no targets, a target at a point that isn't finite, or the point target
     /// (zero) not dead), a flash at a point that isn't finite or of an unknown element, or a seal that can't be used
-    /// (core::Seal::Valid(): one ending before it starts among them). Arena::Load() checks the rest against what it loads
+    /// (core::Seal::Valid(): one ending before it starts among them). Host::Load() checks the rest against what it loads
     /// beside them, refusing the save when a living target isn't a creature in its active domain (AimsAtCreatures()) or a
     /// flash or a seal starts after the save's tick (FlashesStartBy(), SealsStartBy()).
     void Load(core::Reader& archive);

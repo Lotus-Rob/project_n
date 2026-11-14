@@ -1,4 +1,4 @@
-// The save reader (game::Arena::Load, behind the save file's checksum): a save is untrusted, so any bytes are
+// The save reader (game::Host::Load, behind the save file's checksum): a save is untrusted, so any bytes are
 // refused or loaded into a state the game can enter, tick, publish and save again, never a crash. Seeded with the
 // painted scene's save and the arena's in the middle of a fight (a volley in flight, a lance's flash, burn and poison,
 // a fox dying, one easing in, a respawn waiting, the player dashing), its 5,000 world NPCs and their relationships
@@ -7,7 +7,7 @@
 #include "core/archive.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/jobs.hpp"
-#include "game/arena.hpp"
+#include "game/host.hpp"
 
 namespace {
 
@@ -33,20 +33,20 @@ extern "C" i32 LLVMFuzzerTestOneInput(const u8* data, std::size_t size);
 
 extern "C" i32 LLVMFuzzerTestOneInput(const u8* data, std::size_t size) {
     std::vector<std::byte> bytes = Bytes(data, size);
-    game::Arena arena(test::TestManifest(), game::Scene::Painted);
+    game::Host host(test::TestManifest(), game::PAINTED_SCENE);
     core::Reader reader{ bytes };
-    if (arena.Load(reader, SAVED_AT)) {
-        arena.EnterScene(); // as the logic does at the swap
+    if (host.Load(reader, SAVED_AT)) {
+        host.EnterScene(); // as the logic does at the swap
         constexpr u64 NEXT = SAVED_AT + 1;
         std::vector<core::Event> events;
-        arena.Tick({ .wall = NEXT, .simulation = NEXT, .state = NEXT }, {}, events);
+        host.Tick({ .wall = NEXT, .simulation = NEXT, .state = NEXT }, {}, events);
         core::Jobs jobs{ 1 }; // here, not static: only inputs that load pay for its thread
         core::Snapshot snapshot;
         snapshot.simulationTick = NEXT;
-        arena.Publish(snapshot, jobs);
+        host.Publish(snapshot, jobs);
         std::vector<std::byte> saved;
         core::Writer writer{ saved };
-        arena.Save(writer);
+        host.Save(writer);
     }
     return 0;
 }

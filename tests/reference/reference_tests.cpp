@@ -24,8 +24,8 @@
 #include "core/ui_colours.hpp"
 #include "core/volley.hpp"
 #include "data/strings.hpp"
-#include "game/arena.hpp"
 #include "game/combat.hpp"
+#include "game/host.hpp"
 #include "gfx/camera.hpp"
 #include "gfx/image.hpp"
 #include "gfx/renderer.hpp"
@@ -64,7 +64,7 @@ constexpr f32 CROWD_ZOOM = 0.75F;
 
 struct View {
     std::string_view name;
-    game::Scene scene = game::Scene::Arena;
+    core::SceneKey scene = game::ARENA_SCENE;
     u64 ticks = 0;
     f64 alpha = 1.0;
     f32 zoom = 1.0F;
@@ -121,12 +121,12 @@ gfx::Renderer RendererFor(platform::Window& window, core::SceneId scene, core::J
     return std::move(*renderer);
 }
 
-// What `arena` publishes at simulation tick `tick`.
-core::Snapshot Published(game::Arena& arena, core::Jobs& jobs, u64 tick = 0) {
+// What `host` publishes at simulation tick `tick`.
+core::Snapshot Published(game::Host& host, core::Jobs& jobs, u64 tick = 0) {
     core::Snapshot snapshot;
     snapshot.simulationTick = tick; // as core::Logic stamps it
-    arena.Publish(snapshot, jobs);
-    snapshot.scene = arena.Scene(); // as core::Logic names it
+    host.Publish(snapshot, jobs);
+    snapshot.scene = host.Scene(); // as core::Logic names it
     return snapshot;
 }
 
@@ -167,35 +167,35 @@ void CheckAgainstReference(const View& view) {
         data.fox.orbitRadius = CROWD_ORBIT;
         data.fox.orbitWobble = CROWD_WOBBLE;
     }
-    game::Arena arena(test::TestManifest(), view.scene, data);
+    game::Host host(test::TestManifest(), view.scene, data);
     std::vector<core::Event> events; // the hits the ticks start, which no picture shows
     for (u64 tick = 1; tick <= view.ticks; ++tick) {
-        arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, {}, events);
+        host.Tick({ .wall = tick, .simulation = tick, .state = tick }, {}, events);
     }
     if (view.outlines) {
         // The fox spawned first: the lowest ID among them.
         core::StableId fox{ std::numeric_limits<u64>::max() };
-        const core::Registry& entities = arena.State()[game::ACTIVE].Entities();
+        const core::Registry& entities = host.State()[game::ACTIVE].Entities();
         for (auto [entity, creature, stableId] : entities.view<const game::Creature, const core::StableId>().each()) {
             if (creature.kind == game::CreatureKind::Fox && std::to_underlying(stableId) < std::to_underlying(fox)) {
                 fox = stableId;
             }
         }
         const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = fox } } };
-        arena.Tick(
+        host.Tick(
             { .wall = view.ticks + 1, .simulation = view.ticks + 1, .state = view.ticks + 1 },
             { .actions = select, .held = {} },
             events
         );
-        REQUIRE(arena.Selected() == fox);
+        REQUIRE(host.Selected() == fox);
     }
-    const core::Snapshot snapshot = Published(arena, jobs);
+    const core::Snapshot snapshot = Published(host, jobs);
 
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
     gfx::View shown{ .alpha = view.alpha, .camera = { .zoom = view.zoom }, .showcase = false };
     if (view.outlines) {
-        const auto player = std::ranges::find(snapshot.ids, arena.Player());
+        const auto player = std::ranges::find(snapshot.ids, host.Player());
         REQUIRE(player != snapshot.ids.end());
         shown.outlined = static_cast<std::size_t>(player - snapshot.ids.begin());
         shown.camera.centre = snapshot.follow.value_or(core::Follow{}).current;
@@ -213,19 +213,19 @@ void CheckAgainstReference(const View& view) {
 }
 
 TEST_CASE("the painted scene: sprites, shadows and overlapping glows, after a smaller picture") {
-    CheckAgainstReference({ .name = "painted", .scene = game::Scene::Painted, .refit = true });
+    CheckAgainstReference({ .name = "painted", .scene = game::PAINTED_SCENE, .refit = true });
 }
 
 TEST_CASE("the map cells at zoom 1") {
-    CheckAgainstReference({ .name = "cells", .scene = game::Scene::Cells });
+    CheckAgainstReference({ .name = "cells", .scene = game::CELLS_SCENE });
 }
 
 TEST_CASE("the map cells at the smallest zoom: the low mips") {
-    CheckAgainstReference({ .name = "cells_far", .scene = game::Scene::Cells, .zoom = gfx::MIN_ZOOM });
+    CheckAgainstReference({ .name = "cells_far", .scene = game::CELLS_SCENE, .zoom = gfx::MIN_ZOOM });
 }
 
 TEST_CASE("the arena halfway between two ticks: interpolation and foot-y order") {
-    CheckAgainstReference({ .name = "arena_halfway", .scene = game::Scene::Arena, .ticks = TWO_SECONDS, .alpha = HALFWAY });
+    CheckAgainstReference({ .name = "arena_halfway", .scene = game::ARENA_SCENE, .ticks = TWO_SECONDS, .alpha = HALFWAY });
 }
 
 TEST_CASE("a fox dissolving, at half its progress") {
@@ -236,13 +236,13 @@ TEST_CASE("a fox dissolving, at half its progress") {
     core::Jobs jobs;
     core::GameData data = game::BuiltInData();
     data.fox.health = 1;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
     std::vector<core::Event> events;
     for (u64 tick = 1; tick <= SHOWN_AT; ++tick) {
-        arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, {}, events);
+        host.Tick({ .wall = tick, .simulation = tick, .state = tick }, {}, events);
     }
     // The dying fox nearest the crystal, centred: the middle of its sprite, half its foot's height over its foot.
-    const core::Registry& entities = arena.State()[game::ACTIVE].Entities();
+    const core::Registry& entities = host.State()[game::ACTIVE].Entities();
     std::optional<core::Vec2> nearest;
     for (auto [entity, body, dying] : entities.view<const game::Body, const game::Dying>().each()) {
         const auto distance = [](core::Vec2 foot) { return std::hypot(foot.x - CRYSTAL_FOOT.x, foot.y - CRYSTAL_FOOT.y); };
@@ -253,7 +253,7 @@ TEST_CASE("a fox dissolving, at half its progress") {
     REQUIRE(nearest.has_value());
     const f32 footY = static_cast<f32>(test::TestManifest()->Sprite(core::atlas::SpriteId::Fox).footY);
     const core::Vec2 centre = nearest.value_or(core::Vec2{}) - core::Vec2{ .x = 0.0F, .y = footY / 2.0F };
-    const core::Snapshot snapshot = Published(arena, jobs, SHOWN_AT);
+    const core::Snapshot snapshot = Published(host, jobs, SHOWN_AT);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
     const gfx::View view{ .camera = { .centre = centre, .zoom = gfx::MAX_ZOOM }, .showcase = false };
@@ -272,15 +272,15 @@ core::Snapshot CastThenPublish(core::Slot slot, u64 after, core::Jobs& jobs) {
     REQUIRE(after <= MOST_TICKS_AFTER_CAST);
     core::GameData data = game::BuiltInData();
     data.abilities.qiStart = data.abilities.qiMax;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
     std::vector<core::Event> events;
     const std::array<core::Action, 1> cast{ { { .kind = core::ActionKind::Cast, .slot = slot, .point = AMONG_THE_FOXES } } };
     const u64 shownAt = CAST_TICK + after;
     for (u64 tick = 1; tick <= shownAt; ++tick) {
         const core::TickInput input = tick == CAST_TICK ? core::TickInput{ .actions = cast, .held = {} } : core::TickInput{};
-        arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, input, events);
+        host.Tick({ .wall = tick, .simulation = tick, .state = tick }, input, events);
     }
-    return Published(arena, jobs, shownAt);
+    return Published(host, jobs, shownAt);
 }
 
 // CastThenPublish() of a volley: one in flight.
@@ -416,8 +416,8 @@ constexpr u64 SINCE_RAISED = 90;
 
 // The arena at rest at SEAL_TICK with the swords' seal at its shipped size among the foxes, which stand on it.
 core::Snapshot ArenaWithSwordSeal(core::Jobs& jobs) {
-    game::Arena arena(test::TestManifest());
-    core::Snapshot snapshot = Published(arena, jobs, SEAL_TICK);
+    game::Host host(test::TestManifest());
+    core::Snapshot snapshot = Published(host, jobs, SEAL_TICK);
     // A copy: the game data BuiltInData() returns is a temporary, gone at the end of this line.
     const std::optional<core::SealCast> cast = game::BuiltInData().abilities.Of(core::AbilityKind::FlyingSwords).seal;
     REQUIRE(cast.has_value());
@@ -480,8 +480,8 @@ TEST_CASE("an overhead seal's light on the pale ground: pillars falling from it,
                                      .sparkSize = 0.035F };
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
-    game::Arena arena(test::TestManifest());
-    core::Snapshot snapshot = Published(arena, jobs, SEAL_TICK);
+    game::Host host(test::TestManifest());
+    core::Snapshot snapshot = Published(host, jobs, SEAL_TICK);
     core::Seal seal = SwordSeal(AMONG_THE_FOXES + BELOW, SIZE, SEAL_TICK - SINCE_RAISED);
     seal.key = core::SealKeyOf(LIT);
     snapshot.seals.push_back(seal);
@@ -505,8 +505,8 @@ TEST_CASE("an overhead seal's light on the pale ground: pillars falling from it,
 void CheckShowcase(std::string_view name, const gfx::View& view) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
-    game::Arena arena(test::TestManifest());
-    const core::Snapshot snapshot = Published(arena, jobs, SEAL_TICK);
+    game::Host host(test::TestManifest());
+    const core::Snapshot snapshot = Published(host, jobs, SEAL_TICK);
     const bool shown = std::ranges::any_of(snapshot.seals, &core::Seal::showcase);
     REQUIRE(shown);
     platform::Window window = OpenWindow();
@@ -519,7 +519,7 @@ TEST_CASE("the arena's showcase at zoom 1: seals of every kind and placement rou
     CheckShowcase("seal_showcase", {});
 }
 
-// Close up, each of the showcase's seals (game/arena.cpp's SHOWCASE) is in one of these.
+// Close up, each of the showcase's seals (game/scenes/arena.cpp's SHOWCASE) is in one of these.
 TEST_CASE("the showcase close up: the overhead seal's pillars falling into its shadow, and the small seals of 1 and 3 rings") {
     constexpr core::Vec2 OVERHEAD_AND_SMALL{ .x = 970.0F, .y = 270.0F };
     CheckShowcase("seal_showcase_above", { .camera = { .centre = OVERHEAD_AND_SMALL, .zoom = gfx::MAX_ZOOM } });
@@ -584,7 +584,7 @@ TEST_CASE("the HUD at zoom 1, one slot cooling down") {
 }
 
 TEST_CASE("the hovered entity's pale outline and the selected one's gold, close up") {
-    CheckAgainstReference({ .name = "outlines", .scene = game::Scene::Arena, .zoom = gfx::MAX_ZOOM, .outlines = true });
+    CheckAgainstReference({ .name = "outlines", .scene = game::ARENA_SCENE, .zoom = gfx::MAX_ZOOM, .outlines = true });
 }
 
 // The arena at tick GLOW_TICK, where the shrine, the stele and the ice crystal wear the demo glows (game::DemoGlow()), its
@@ -595,12 +595,12 @@ void CheckGlows(std::string_view name, f32 zoom, core::Vec2 centre) {
     constexpr u64 GLOW_TICK = 492;
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, game::BuiltInData());
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, game::BuiltInData());
     std::vector<core::Event> events;
     for (u64 tick = 1; tick <= GLOW_TICK; ++tick) {
-        arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, {}, events);
+        host.Tick({ .wall = tick, .simulation = tick, .state = tick }, {}, events);
     }
-    const core::Snapshot snapshot = Published(arena, jobs, GLOW_TICK);
+    const core::Snapshot snapshot = Published(host, jobs, GLOW_TICK);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
     const gfx::View view{ .camera = { .centre = centre, .zoom = zoom }, .showcase = false };
@@ -686,8 +686,8 @@ std::vector<core::TextItem> NumberGrid(bool bare, const core::UiColours& colours
 void CheckNumbers(std::string_view name, f32 zoom, bool bare = false) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
-    game::Arena arena(test::TestManifest());
-    const core::Snapshot snapshot = Published(arena, jobs);
+    game::Host host(test::TestManifest());
+    const core::Snapshot snapshot = Published(host, jobs);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
     if (bare) {
@@ -733,20 +733,20 @@ core::UiColours GarishColours() {
 void CheckRecoloured(std::string_view name, bool bare) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
-    game::Arena arena(test::TestManifest());
+    game::Host host(test::TestManifest());
     std::vector<core::Event> events;
     // The fox spawned first: the lowest ID among them, as the outlines picture selects.
     core::StableId fox{ std::numeric_limits<u64>::max() };
-    const core::Registry& entities = arena.State()[game::ACTIVE].Entities();
+    const core::Registry& entities = host.State()[game::ACTIVE].Entities();
     for (auto [entity, creature, stableId] : entities.view<const game::Creature, const core::StableId>().each()) {
         if (creature.kind == game::CreatureKind::Fox && std::to_underlying(stableId) < std::to_underlying(fox)) {
             fox = stableId;
         }
     }
     const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = fox } } };
-    arena.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} }, events);
-    REQUIRE(arena.Selected() == fox);
-    const core::Snapshot snapshot = Published(arena, jobs);
+    host.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} }, events);
+    REQUIRE(host.Selected() == fox);
+    const core::Snapshot snapshot = Published(host, jobs);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
     const core::UiColours garish = GarishColours();
@@ -754,7 +754,7 @@ void CheckRecoloured(std::string_view name, bool bare) {
     if (bare) {
         renderer.SetTextOptions({ .outline = false, .shadow = false });
     }
-    const auto player = std::ranges::find(snapshot.ids, arena.Player());
+    const auto player = std::ranges::find(snapshot.ids, host.Player());
     REQUIRE(player != snapshot.ids.end());
     const gfx::View view{ .outlined = static_cast<std::size_t>(player - snapshot.ids.begin()), .showcase = false };
     const std::vector<core::TextItem> numbers = NumberGrid(bare, garish);
@@ -779,8 +779,8 @@ TEST_CASE("a number on a creature too small to see starts from its label") {
     constexpr i32 ON_SEEN = 33;
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
-    game::Arena arena(test::TestManifest());
-    core::Snapshot snapshot = Published(arena, jobs);
+    game::Host host(test::TestManifest());
+    core::Snapshot snapshot = Published(host, jobs);
     std::vector<core::TextItem*> foxes;
     for (core::TextItem& text : snapshot.texts) {
         if (text.kind == core::TextKind::Label && text.priority == core::LabelPriority::Rest) {
@@ -831,7 +831,7 @@ struct LabelScene {
 
 // The manifest's arena scene, whose sprites the label measurements' renderer holds.
 core::SceneId ArenaScene() {
-    const std::optional<core::SceneId> arena = test::TestManifest()->SceneNamed(game::SceneName(game::Scene::Arena));
+    const std::optional<core::SceneId> arena = test::TestManifest()->SceneNamed(game::SceneName(game::ARENA_SCENE));
     REQUIRE(arena.has_value());
     return arena.value_or(core::SceneId{});
 }
@@ -850,8 +850,8 @@ core::Instance FlatPaleGround() {
 }
 
 LabelScene PlayerLabel(core::Jobs& jobs, Ground ground) {
-    game::Arena arena(test::TestManifest());
-    LabelScene scene{ .with = Published(arena, jobs) };
+    game::Host host(test::TestManifest());
+    LabelScene scene{ .with = Published(host, jobs) };
     const auto label = std::ranges::find(scene.with.texts, core::LabelPriority::Player, &core::TextItem::priority);
     REQUIRE(label != scene.with.texts.end());
     scene.label = *label;
@@ -1010,9 +1010,9 @@ struct GlowShot {
 };
 
 // The prop wearing `shot`'s glow as the arena publishes it at the shot's tick, its start tick replaced if the shot gives one.
-core::Instance GlowingProp(game::Arena& arena, core::Jobs& jobs, const GlowShot& shot) {
+core::Instance GlowingProp(game::Host& host, core::Jobs& jobs, const GlowShot& shot) {
     constexpr u32 ROLE_BITS = 0xFFU;
-    const core::Snapshot published = Published(arena, jobs, shot.tick);
+    const core::Snapshot published = Published(host, jobs, shot.tick);
     const auto prop = std::ranges::find_if(published.instances, [&](const core::Instance& instance) {
         return (instance.glow & ROLE_BITS) == std::to_underlying(shot.role);
     });
@@ -1049,7 +1049,7 @@ std::array<f64, 4> Unpacked(u32 packed) {
 // holds, and a count of the snapshots shown, which tells each new one apart.
 struct GlowRig {
     gfx::Renderer* renderer = nullptr;
-    game::Arena* arena = nullptr;
+    game::Host* host = nullptr;
     core::Jobs* jobs = nullptr;
     core::Effects effects{};
     u64 uploads = 0;
@@ -1066,7 +1066,7 @@ f64 GlowAmount(GlowRig& rig, const GlowShot& shot) {
     const core::UiColour own = look.colour.element ? core::EffectColour(input.element) : look.colour.colour;
     const core::UiColour colour = input.result == 0 ? own : look.drive.results.at(std::size_t{ input.result } - 1);
     const std::array<f64, 4> tint = Unpacked(core::UiColours{}.Of(colour));
-    const core::Instance prop = GlowingProp(*rig.arena, *rig.jobs, shot);
+    const core::Instance prop = GlowingProp(*rig.host, *rig.jobs, shot);
     core::Instance plain = prop;
     plain.glow = 0;
     std::vector<core::Instance> under;
@@ -1159,10 +1159,10 @@ TEST_CASE("each drive's drawn glow follows GlowStrength, also with start ticks a
     } };
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, game::BuiltInData());
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, game::BuiltInData());
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, ArenaScene(), jobs);
-    GlowRig rig{ .renderer = &renderer, .arena = &arena, .jobs = &jobs };
+    GlowRig rig{ .renderer = &renderer, .host = &host, .jobs = &jobs };
     for (const GlowPair& pair : pairs) {
         const f64 drawn = GlowAmount(rig, pair.first) / GlowAmount(rig, pair.second);
         const f64 expected = ExpectedGlow(rig.effects, pair.first, false) / ExpectedGlow(rig.effects, pair.second, false);
@@ -1179,10 +1179,10 @@ TEST_CASE("reduce flashing holds a pulse at its average and dims light glows, an
     using enum core::GlowRole;
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, game::BuiltInData());
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, game::BuiltInData());
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, ArenaScene(), jobs);
-    GlowRig rig{ .renderer = &renderer, .arena = &arena, .jobs = &jobs };
+    GlowRig rig{ .renderer = &renderer, .host = &host, .jobs = &jobs };
     const GlowShot beat{ .role = DemoPulse, .tick = 0 };
     const GlowShot halfBeat{ .role = DemoPulse, .tick = HALF_BEAT };
     const GlowShot filling{ .role = DemoProgress, .tick = HALF_FILLED };

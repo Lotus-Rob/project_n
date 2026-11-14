@@ -1,6 +1,6 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/jobs.hpp"
-#include "game/arena.hpp"
+#include "game/host.hpp"
 #include "game/scenes.hpp"
 #include "support/manifest.hpp"
 
@@ -9,7 +9,7 @@
 namespace {
 
 TEST_CASE("names round-trip") {
-    for (const game::SceneClass* const scene : game::Scenes()) {
+    for (const game::Scene* const scene : game::Scenes()) {
         const std::string_view name = scene->Traits().name;
         const std::optional<core::SceneKey> key = game::SceneNamed(name);
         REQUIRE(key.has_value());
@@ -36,7 +36,7 @@ TEST_CASE("every listed scene passes CheckScenes against the shipped manifest") 
     const std::expected<void, core::Error> shipped = game::CheckScenes(*test::TestManifest(), game::BuiltInData());
     CHECK(shipped.has_value());
     // Each listed scene is checked: a manifest without it is refused, naming it.
-    for (const game::SceneClass* const scene : game::Scenes()) {
+    for (const game::Scene* const scene : game::Scenes()) {
         const std::string_view name = scene->Traits().name;
         core::Manifest manifest = *test::TestManifest();
         std::erase_if(manifest.scenes, [name](const core::SceneInfo& info) { return info.name == name; });
@@ -47,17 +47,17 @@ TEST_CASE("every listed scene passes CheckScenes against the shipped manifest") 
 }
 
 TEST_CASE("each scene's camera reaches the snapshot") {
-    constexpr std::array<std::pair<game::Scene, core::CameraKind>, 4> CAMERAS{ {
-        { game::Scene::Arena, core::CameraKind::Follow },
-        { game::Scene::Stress, core::CameraKind::Follow },
-        { game::Scene::Painted, core::CameraKind::Pan },
-        { game::Scene::Cells, core::CameraKind::Pan },
+    constexpr std::array<std::pair<core::SceneKey, core::CameraKind>, 4> CAMERAS{ {
+        { game::ARENA_SCENE, core::CameraKind::Follow },
+        { game::STRESS_SCENE, core::CameraKind::Follow },
+        { game::PAINTED_SCENE, core::CameraKind::Pan },
+        { game::CELLS_SCENE, core::CameraKind::Pan },
     } };
     core::Jobs jobs{ 1 };
     for (const auto& [scene, camera] : CAMERAS) {
-        game::Arena arena(test::TestManifest(), scene);
+        game::Host host(test::TestManifest(), scene);
         core::Snapshot snapshot;
-        arena.Publish(snapshot, jobs);
+        host.Publish(snapshot, jobs);
         CHECK(snapshot.camera == camera);
     }
 }

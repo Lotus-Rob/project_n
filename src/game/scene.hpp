@@ -98,7 +98,7 @@ public:
 
 /// One scene: its traits, how it builds, and its own behaviour through hooks the host calls. It holds no state, so its
 /// hooks are const and everything they change goes through the context into the host's state.
-class SceneClass {
+class Scene {
 public:
     /// Its traits, the same every call.
     [[nodiscard]] virtual const SceneTraits& Traits() const = 0;
@@ -121,18 +121,18 @@ public:
 
 protected:
     /// A scene; only the scenes themselves make one.
-    SceneClass() = default;
+    Scene() = default;
     /// Copies a scene, which has nothing to copy.
-    SceneClass(const SceneClass&) = default;
+    Scene(const Scene&) = default;
     /// Copies a scene, which has nothing to copy.
-    SceneClass& operator=(const SceneClass&) = default;
+    Scene& operator=(const Scene&) = default;
     /// Moves a scene, which has nothing to move.
-    SceneClass(SceneClass&&) = default;
+    Scene(Scene&&) = default;
     /// Moves a scene, which has nothing to move.
-    SceneClass& operator=(SceneClass&&) = default;
+    Scene& operator=(Scene&&) = default;
     /// Never deleted through the interface (the scenes are constants of game/scenes.cpp), so not virtual: each scene stays
     /// a constant with nothing to destroy.
-    ~SceneClass() = default;
+    ~Scene() = default;
 };
 
 /// Where `entity`'s head is: its foot raised by its sprite's foot height at its scale. It must have a Body and a Look.

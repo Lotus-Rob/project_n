@@ -8,7 +8,7 @@
 #include "data/seals.hpp"
 #include "data/settings.hpp"
 #include "data/strings.hpp"
-#include "game/arena.hpp"
+#include "game/scenes.hpp"
 #include "gfx/renderer.hpp"
 #include "platform/paths.hpp"
 #include "platform/sdl_log.hpp"
@@ -18,14 +18,14 @@ namespace {
 
 // `--<name>` for any scene of the atlas (art/scenes.toml) the game knows: `--stress`, `--painted`, `--cells`; the
 // arena by default.
-game::Scene ChooseScene(std::span<char*> args) {
+core::SceneKey ChooseScene(std::span<char*> args) {
     for (const std::string_view arg : args) {
         if (const std::optional<core::SceneKey> scene =
                 arg.starts_with("--") ? game::SceneNamed(arg.substr(2)) : std::nullopt) {
-            return static_cast<game::Scene>(std::to_underlying(*scene));
+            return *scene;
         }
     }
-    return game::Scene::Arena;
+    return game::ARENA_SCENE;
 }
 
 // `--quit-after SECONDS`: quit by itself, as on a quit request, so `project_n profile` records with no click into a
@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
-    const game::Scene scene = ChooseScene(args);
+    const core::SceneKey scene = ChooseScene(args);
     PN_LOG_INFO("scene: {}", game::SceneName(scene));
     const std::expected<u64, core::Error> quitAfterNs = QuitAfterNs(args);
     if (!quitAfterNs) {

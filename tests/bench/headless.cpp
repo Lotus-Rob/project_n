@@ -9,7 +9,7 @@
 #include "core/jobs.hpp"
 #include "core/log.hpp"
 #include "core/math.hpp"
-#include "game/arena.hpp"
+#include "game/host.hpp"
 #include "support/manifest.hpp"
 
 namespace {
@@ -42,7 +42,7 @@ struct Worst {
 // keeping their capacity), then lets months pass for its world NPCs.
 Worst Measure(u32 workers) {
     core::Jobs jobs{ workers };
-    game::Arena arena(test::TestManifest(), game::Scene::Stress);
+    game::Host host(test::TestManifest(), game::STRESS_SCENE);
     core::GameHandover handover;
     std::vector<core::Event> events;
     std::vector<f64> tickMs;
@@ -55,7 +55,7 @@ Worst Measure(u32 workers) {
     for (u64 tick = 1; tick <= TICKS; ++tick) {
         const auto start = std::chrono::steady_clock::now();
         events.clear();
-        arena.Tick({ .wall = tick, .simulation = tick, .state = tick }, {}, events);
+        host.Tick({ .wall = tick, .simulation = tick, .state = tick }, {}, events);
         tickMs.push_back(MsSince(start));
 
         core::Snapshot& snapshot = handover.Writing();
@@ -64,7 +64,7 @@ Worst Measure(u32 workers) {
         snapshot.batches.clear();
         snapshot.groundBatches = 0;
         const auto publishStart = std::chrono::steady_clock::now();
-        arena.Publish(snapshot, jobs);
+        host.Publish(snapshot, jobs);
         publishMs.push_back(MsSince(publishStart));
         combatMs.push_back(MsSince(start));
         instances = snapshot.instances.size();
@@ -74,10 +74,10 @@ Worst Measure(u32 workers) {
     std::vector<f64> monthMs;
     for (u64 month = 1; month <= MONTHS; ++month) {
         const auto start = std::chrono::steady_clock::now();
-        arena.AdvanceCalendar({ .wall = TICKS + month, .simulation = TICKS, .state = TICKS + month }, jobs, {});
+        host.AdvanceCalendar({ .wall = TICKS + month, .simulation = TICKS, .state = TICKS + month }, jobs, {});
         monthMs.push_back(MsSince(start));
     }
-    const std::size_t npcs = arena.State()[game::WORLD].Entities().storage<game::Npc>()->size();
+    const std::size_t npcs = host.State()[game::WORLD].Entities().storage<game::Npc>()->size();
 
     PN_LOG_INFO("with {} workers:", workers);
     Report("ticks", tickMs, instances);

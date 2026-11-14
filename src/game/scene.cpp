@@ -6,14 +6,14 @@ namespace game {
 
 SceneContext::~SceneContext() = default;
 
-void SceneClass::
+void Scene::
     Tick(SceneContext& /*context*/, const core::TickCounters& /*counters*/, std::vector<core::Event>& /*events*/) const {
 }
 
-void SceneClass::Respawn(SceneContext& /*context*/, const core::TickCounters& /*counters*/, u32 /*index*/) const {
+void Scene::Respawn(SceneContext& /*context*/, const core::TickCounters& /*counters*/, u32 /*index*/) const {
 }
 
-void SceneClass::Publish(const SceneContext& /*context*/, core::Snapshot& /*snapshot*/) const {
+void Scene::Publish(const SceneContext& /*context*/, core::Snapshot& /*snapshot*/) const {
 }
 
 core::Vec2 HeadOf(const core::Registry& entities, const core::Manifest& manifest, core::Entity entity) {
