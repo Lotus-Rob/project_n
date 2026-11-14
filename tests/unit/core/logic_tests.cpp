@@ -1,6 +1,7 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/logic.hpp"
 #include "core/save_file.hpp"
+#include "core/scene_reports.hpp"
 
 #include <doctest/doctest.h>
 
@@ -126,15 +127,12 @@ struct BurstResult {
     core::Snapshot snapshot{};
 };
 
-// The logic and the systems it drives, held as a game holds them, its scene reported resident as the main thread
-// does once it holds it; saves go to `slot` and replays to `replaySlot` (none by default).
-struct Rig {
-    explicit Rig(std::filesystem::path slot = {}, std::filesystem::path replaySlot = {})
+// The logic and the systems it drives, held as a game holds them, before the game's start has been answered; saves go
+// to `slot` and replays to `replaySlot` (none by default).
+struct Unstarted {
+    explicit Unstarted(std::filesystem::path slot = {}, std::filesystem::path replaySlot = {})
       : saves(std::move(slot), jobs)
       , replays(std::move(replaySlot), jobs) {
-        handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = simulation.scene });
-        REQUIRE(Burst(1).stalled);
-        simulation.publishes = 0;
     }
 
     // Runs a burst of `ticks` and returns what RunBurst said and published.
@@ -147,6 +145,18 @@ struct Rig {
         return result;
     }
 
+    // Answers `snapshot` as App does with a scene it loads at once: reports its scene resident when it is new, and the
+    // stage of its scene change through core::SceneReports.
+    void Answer(const core::Snapshot& snapshot) {
+        if (snapshot.scene != reported) {
+            reported = snapshot.scene;
+            handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = snapshot.scene });
+        }
+        if (const std::optional<core::Action> report = reports.Answer(snapshot.sceneChange)) {
+            handover.SendInput(*report);
+        }
+    }
+
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     core::GameHandover handover{};
     Recorder simulation{};
@@ -156,7 +166,36 @@ struct Rig {
     core::Saves replays;
     core::Replay replay{};
     core::Logic logic{ handover, simulation, jobs, saves, replays, replay, PublishedClock };
+    core::SceneReports reports{};
+    std::optional<core::SceneId> reported = std::nullopt; // the scene Answer() reported resident last
 };
+
+// Unstarted's systems once the game's start has run: its scene loaded, entered and running.
+struct Rig : Unstarted {
+    explicit Rig(std::filesystem::path slot = {}, std::filesystem::path replaySlot = {})
+      : Unstarted(std::move(slot), std::move(replaySlot)) {
+        Answer(Burst(1).snapshot); // loading: its scene is reported resident
+        Answer(Burst(1).snapshot); // entering: the way in is reported played
+        REQUIRE(Burst(1).stalled);
+        simulation.publishes = 0;
+    }
+};
+
+// Answers the scene change `result` shows `late` bursts after each stage shows, as a slow main thread would (at once by
+// default), in bursts of 3, until the change ends; returns the burst that ended it.
+BurstResult Settle(Unstarted& rig, BurstResult result, u32 late = 0) {
+    constexpr u64 TICKS = 3;
+    constexpr u32 MAX_STAGES = 10;
+    for (u32 stage = 0; stage < MAX_STAGES && result.snapshot.sceneChange.stage != core::SceneStage::Running; ++stage) {
+        for (u32 waited = 0; waited < late; ++waited) {
+            result = rig.Burst(TICKS);
+        }
+        rig.Answer(result.snapshot);
+        result = rig.Burst(TICKS);
+    }
+    REQUIRE(result.snapshot.sceneChange.stage == core::SceneStage::Running);
+    return result;
+}
 
 TEST_CASE("a burst runs and publishes its ticks") {
     constexpr u64 TICKS = 3;
@@ -349,8 +388,10 @@ TEST_CASE("a tick that changes the scene ends its burst, and the next burst wait
     constexpr u64 TICKS = 3;
     Rig rig;
     rig.handover.SendInput({ .kind = core::ActionKind::CycleScene });
+    const core::Snapshot asked = rig.Burst(TICKS).snapshot;
+    CHECK(asked.wallTick == 1);
+    rig.Answer(asked); // the way out played
     const core::Snapshot changed = rig.Burst(TICKS).snapshot;
-    CHECK(changed.wallTick == 1);
     CHECK(changed.scene == OTHER_SCENE);
     CHECK(rig.Burst(TICKS).snapshot.wallTick == 1);
 }
@@ -360,8 +401,10 @@ TEST_CASE("a scene asked for is entered after the tick that asks") {
     Rig rig;
     rig.simulation.calls.clear();
     rig.handover.SendInput({ .kind = core::ActionKind::CycleScene });
+    const core::Snapshot asked = rig.Burst(TICKS).snapshot;
+    rig.Answer(asked); // the way out played
     const core::Snapshot changed = rig.Burst(TICKS).snapshot;
-    const std::vector<Call> expected{ Call::Tick, Call::EnterScene, Call::Publish };
+    const std::vector<Call> expected{ Call::Tick, Call::Publish, Call::EnterScene, Call::Publish };
     CHECK(rig.simulation.calls == expected);
     CHECK(changed.wallTick == 1);
     CHECK(changed.scene == OTHER_SCENE);
@@ -374,11 +417,124 @@ TEST_CASE("a scene asked for with the same sprites ends its burst too") {
     rig.simulation.asks = { .key = OTHER_KEY, .sprites = rig.simulation.scene }; // another scene sharing the sprite set
     rig.simulation.calls.clear();
     rig.handover.SendInput({ .kind = core::ActionKind::CycleScene });
+    const core::Snapshot asked = rig.Burst(TICKS).snapshot;
+    rig.Answer(asked); // the way out played
     const core::Snapshot changed = rig.Burst(TICKS).snapshot;
-    const std::vector<Call> expected{ Call::Tick, Call::EnterScene, Call::Publish };
+    const std::vector<Call> expected{ Call::Tick, Call::Publish, Call::EnterScene, Call::Publish };
     CHECK(rig.simulation.calls == expected);
     CHECK(changed.wallTick == 1);
+    CHECK(changed.sceneChange.stage == core::SceneStage::Entering); // its sprites are resident already
     CHECK(rig.simulation.key == OTHER_KEY);
+}
+
+TEST_CASE("a scene change leaves, swaps, loads and enters without a tick") {
+    constexpr u64 TICKS = 3;
+    constexpr u64 CHANGE = 2;
+    constexpr core::SceneFacts START{};
+    constexpr core::SceneFacts OTHER{ .key = OTHER_KEY, .sprites = OTHER_SCENE };
+    Rig rig;
+    static_cast<void>(rig.Burst(TICKS));
+    rig.simulation.calls.clear();
+    rig.handover.SendInput({ .kind = core::ActionKind::CycleScene });
+    const BurstResult asked = rig.Burst(TICKS);
+    const core::TickCounters counters = rig.logic.Counters();
+    CHECK(counters.wall == TICKS + 1);
+    CHECK(asked.snapshot.sceneChange.stage == core::SceneStage::Leaving);
+    CHECK(asked.snapshot.sceneChange.from == START);
+    CHECK(asked.snapshot.sceneChange.to == OTHER);
+    CHECK(asked.snapshot.sceneChange.change == CHANGE);
+    CHECK(asked.snapshot.scene == START.sprites); // the old scene shows while it leaves
+
+    const BurstResult leaving = rig.Burst(TICKS); // no report yet
+    CHECK(leaving.snapshot.sceneChange.stage == core::SceneStage::Leaving);
+    rig.handover.SendInput({ .kind = core::ActionKind::SceneLeft, .change = CHANGE });
+    const BurstResult left = rig.Burst(TICKS);
+    CHECK_FALSE(left.stalled);
+    CHECK(left.snapshot.sceneChange.stage == core::SceneStage::Loading);
+    CHECK(left.snapshot.scene == OTHER_SCENE);
+    rig.handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = OTHER_SCENE });
+    const BurstResult resident = rig.Burst(TICKS);
+    CHECK_FALSE(resident.stalled);
+    CHECK(resident.snapshot.sceneChange.stage == core::SceneStage::Entering);
+    rig.handover.SendInput({ .kind = core::ActionKind::SceneEntered, .change = CHANGE });
+    const BurstResult entered = rig.Burst(TICKS);
+    CHECK(entered.stalled);
+    CHECK(entered.snapshot.sceneChange.stage == core::SceneStage::Running);
+    CHECK(entered.snapshot.sceneChange.from == OTHER);
+    CHECK(entered.snapshot.sceneChange.to == OTHER);
+
+    const std::vector<Call> expected{ Call::Tick,    Call::Publish, Call::Publish, Call::EnterScene,
+                                      Call::Publish, Call::Publish, Call::Publish };
+    CHECK(rig.simulation.calls == expected);
+    CHECK(rig.logic.Counters().wall == counters.wall);
+    CHECK(rig.logic.Counters().simulation == counters.simulation);
+    CHECK(rig.logic.Counters().state == counters.state);
+    CHECK(rig.Burst(1).snapshot.simulationTick == counters.simulation + 1);
+}
+
+TEST_CASE("the start loads, then enters") {
+    constexpr core::SceneFacts START{};
+    Unstarted rig;
+    const BurstResult loading = rig.Burst(1);
+    CHECK_FALSE(loading.stalled);
+    CHECK(loading.snapshot.sceneChange.stage == core::SceneStage::Loading);
+    CHECK(loading.snapshot.sceneChange.change == 1);
+    CHECK(loading.snapshot.sceneChange.from == START);
+    CHECK(loading.snapshot.sceneChange.to == START);
+    rig.handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = START.sprites });
+    const BurstResult entering = rig.Burst(1);
+    CHECK_FALSE(entering.stalled);
+    CHECK(entering.snapshot.sceneChange.stage == core::SceneStage::Entering);
+    rig.handover.SendInput({ .kind = core::ActionKind::SceneEntered, .change = 1 });
+    const BurstResult running = rig.Burst(1);
+    CHECK(running.stalled);
+    CHECK(running.snapshot.sceneChange.stage == core::SceneStage::Running);
+    CHECK(rig.logic.Counters().wall == 0);
+    CHECK(rig.simulation.ticks.empty());
+}
+
+TEST_CASE("a change asked for while paused completes and stays paused") {
+    constexpr u64 TICKS = 3;
+    Rig rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::CycleScene });
+    const BurstResult asked = rig.Burst(1);
+    rig.handover.SendInput({ .kind = core::ActionKind::Pause }); // before the way out is reported played
+    static_cast<void>(Settle(rig, asked));
+    CHECK(rig.simulation.key == OTHER_KEY);
+    CHECK_FALSE(rig.Burst(TICKS).snapshot.advanced);
+    CHECK(rig.simulation.ticks.size() == 1);
+}
+
+TEST_CASE("a second CycleScene during a change is dropped") {
+    Rig rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::CycleScene });
+    static_cast<void>(rig.Burst(1));
+    rig.handover.SendInput({ .kind = core::ActionKind::CycleScene }); // pressed again while leaving
+    const BurstResult leaving = rig.Burst(1);
+    static_cast<void>(Settle(rig, leaving));
+    const BurstResult next = rig.Burst(1);
+    CHECK(next.snapshot.sceneChange.stage == core::SceneStage::Running);
+    CHECK(next.snapshot.sceneChange.change == 2);
+    CHECK(rig.simulation.actions == std::vector<std::size_t>{ 1, 0 });
+    CHECK_FALSE(rig.simulation.requested.has_value());
+}
+
+TEST_CASE("a stale report is ignored") {
+    constexpr u64 SECOND = 2;
+    constexpr u64 THIRD = 3;
+    Rig rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::CycleScene });
+    static_cast<void>(Settle(rig, rig.Burst(1)));
+    rig.handover.SendInput({ .kind = core::ActionKind::CycleScene });
+    REQUIRE(rig.Burst(1).snapshot.sceneChange.change == THIRD);
+    rig.simulation.calls.clear();
+    rig.handover.SendInput({ .kind = core::ActionKind::SceneLeft, .change = SECOND });   // the change before's
+    rig.handover.SendInput({ .kind = core::ActionKind::SceneEntered, .change = THIRD }); // not this stage's
+    const BurstResult stale = rig.Burst(1);
+    CHECK(stale.snapshot.sceneChange.stage == core::SceneStage::Leaving);
+    CHECK(stale.snapshot.sceneChange.change == THIRD);
+    CHECK_FALSE(std::ranges::contains(rig.simulation.calls, Call::EnterScene));
+    CHECK(rig.simulation.requested.has_value());
 }
 
 TEST_CASE("a Pause sent while the scene loads holds once it is resident") {
@@ -536,12 +692,13 @@ void StartPlaying(Rig& rig) {
     REQUIRE(rig.replay.Playing());
 }
 
-// Plays the replay in `rig`'s replay slot, a tick per burst so it stops exactly at the replay's end.
+// Plays the replay in `rig`'s replay slot, a tick per burst so it stops exactly at the replay's end, answering each
+// snapshot as App does.
 void Play(Rig& rig) {
     constexpr u32 MAX_BURSTS = 1'000;
     StartPlaying(rig);
     for (u32 bursts = 0; bursts < MAX_BURSTS && rig.replay.Playing() && !rig.replay.AtEnd(); ++bursts) {
-        static_cast<void>(rig.Burst(1));
+        rig.Answer(rig.Burst(1).snapshot);
     }
 }
 
@@ -646,6 +803,46 @@ TEST_CASE("a Pause sent while a replay plays holds once the replay ends by itsel
     CHECK_FALSE(result.snapshot.advanced);
 }
 
+// Records a replay across a scene change into the replay file beside `slot`, the main thread answering each stage `late`
+// bursts after it shows, and ending right after a hash tick; returns the replay file's bytes.
+std::vector<std::byte> RecordAcrossChange(const SaveSlot& slot, u32 late) {
+    constexpr u64 TICKS = 70;
+    constexpr u64 BURST = 3;
+    const std::filesystem::path replayFile = slot.File().parent_path() / "replay.pnr";
+    Rig rig(slot.File(), replayFile);
+    rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
+    static_cast<void>(rig.Burst(1));
+    static_cast<void>(rig.Burst(BURST));
+    rig.handover.SendInput({ .kind = core::ActionKind::CycleScene });
+    static_cast<void>(Settle(rig, rig.Burst(BURST), late));
+    static_cast<void>(rig.Burst(TICKS));
+    while (rig.logic.Counters().wall % core::REPLAY_HASH_TICKS != 0) {
+        static_cast<void>(rig.Burst(1));
+    }
+    rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
+    static_cast<void>(rig.Burst(1));
+    rig.jobs.WaitForBackground();
+    std::expected<std::vector<std::byte>, core::Error> replay = core::ReadSaveFile(replayFile);
+    REQUIRE(replay.has_value());
+    return std::move(replay).value_or(std::vector<std::byte>{});
+}
+
+TEST_CASE("nothing is recorded while a scene changes") {
+    constexpr u32 LATE = 10;
+    const SaveSlot instant{ "change_answered_at_once" };
+    const SaveSlot slow{ "change_answered_late" };
+    const std::vector<std::byte> answeredAtOnce = RecordAcrossChange(instant, 0);
+    const std::vector<std::byte> answeredLate = RecordAcrossChange(slow, LATE);
+    CHECK(answeredAtOnce == answeredLate);
+    for (const SaveSlot* slot : { &instant, &slow }) {
+        Rig rig(slot->File(), slot->File().parent_path() / "replay.pnr");
+        Play(rig);
+        CHECK(rig.replay.AtEnd());
+        CHECK(rig.replay.HashCount() > 0);
+        CHECK(rig.replay.Matched() == rig.replay.HashCount());
+    }
+}
+
 TEST_CASE("a SceneResident on a running tick reaches neither the simulation nor the replay") {
     const SaveSlot slot{ "scene_resident_unrecorded" };
     Rig rig(slot.File(), slot.File().parent_path() / "replay.pnr");
@@ -712,6 +909,20 @@ TEST_CASE("ReloadData sent while the scene loads reaches the simulation once the
     static_cast<void>(rig.Burst(1));
     static_cast<void>(rig.Burst(1));
     CHECK(rig.simulation.dataHash == data->Hash());
+}
+
+TEST_CASE("new game data mid-change is taken and the change goes on") {
+    Rig rig;
+    rig.handover.SendInput({ .kind = core::ActionKind::CycleScene });
+    const BurstResult asked = rig.Burst(1);
+    const std::shared_ptr<const core::GameData> data = NewData();
+    rig.handover.SendInput({ .kind = core::ActionKind::ReloadData, .data = data });
+    const BurstResult reloaded = rig.Burst(1);
+    CHECK(rig.simulation.dataHash == data->Hash());
+    CHECK(reloaded.snapshot.sceneChange.stage == core::SceneStage::Leaving);
+    static_cast<void>(Settle(rig, asked));
+    CHECK(rig.simulation.key == OTHER_KEY);
+    CHECK(rig.logic.Counters().wall == 1);
 }
 
 TEST_CASE("ReloadData while recording finishes the recording and writes it") {

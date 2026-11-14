@@ -105,6 +105,27 @@ struct SceneFacts {
     friend constexpr bool operator==(const SceneFacts&, const SceneFacts&) = default;
 };
 
+/// Where a scene change stands (design doc 0002.3.1 §4, as built in phase 6 chunk 5). Leaving, loading and entering run
+/// no tick, count nothing and record nothing, so a change of any length leaves replays exact.
+enum class SceneStage : u8 {
+    Running,  ///< The scene runs: no change under way.
+    Leaving,  ///< The old scene shows, frozen, while the main thread plays the way out, until it answers SceneLeft.
+    Loading,  ///< The new scene is built and waits for the main thread to hold its sprites (SceneResident).
+    Entering, ///< The new scene shows, frozen, while the main thread plays the way in, until it answers SceneEntered.
+};
+
+/// The scene change a snapshot is in, for the main thread to answer (core::SceneReports) and, later, to draw.
+struct SceneChange {
+    /// Its stage.
+    SceneStage stage = SceneStage::Running;
+    /// The scene it leaves; while running, the current scene.
+    SceneFacts from{};
+    /// The scene it enters; while running, the current scene.
+    SceneFacts to{};
+    /// Which change it is, counting the game's start as 1: the main thread's answers name it.
+    u64 change = 0;
+};
+
 /// How the camera moves over a scene.
 enum class CameraKind : u8 {
     Follow, ///< It centres on what the snapshot follows (Snapshot::follow).
@@ -285,6 +306,8 @@ struct Snapshot {
     /// The scene its state needs (Simulation::Scene()): drawn only once the main thread holds it, and the ticks
     /// wait until it says so (design doc 0002.3.1 §4).
     SceneId scene{};
+    /// The scene change it is in, set by core::Logic on every publish: its stage and the scenes on either side.
+    SceneChange sceneChange{};
     /// The sprites to draw, in drawing order. The buffer keeps its capacity from publish to
     /// publish: the publisher clears and refills it, never assigns a new one.
     std::vector<Instance> instances{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
@@ -375,10 +398,12 @@ enum class ActionKind : u8 {
     SceneResident,   ///< The main thread holds the scene `scene` and can draw it: never in a replay.
     DebugBurst,      ///< Hit every fox thousands of times (a debug key), for the damage numbers' stress.
     Cast,            ///< Use the ability in the slot `slot` at the world point `point`: one per press, in a combat scene.
+    SceneLeft,       ///< The main thread has played the way out of scene change `change`: never in a replay.
+    SceneEntered,    ///< The main thread has played the way into scene change `change`: never in a replay.
 };
-/// How many kinds ActionKind names (Cast is the last): a replay read from disk holds only
+/// How many kinds ActionKind names (SceneEntered is the last): a replay read from disk holds only
 /// kinds below this.
-inline constexpr u8 ACTION_KINDS = static_cast<u8>(std::to_underlying(ActionKind::Cast) + 1U);
+inline constexpr u8 ACTION_KINDS = static_cast<u8>(std::to_underlying(ActionKind::SceneEntered) + 1U);
 
 /// A player's or the main thread's request to the simulation, sent as input: a press, taken once.
 struct Action {
@@ -394,6 +419,8 @@ struct Action {
     Slot slot = Slot::Generator;
     /// Where it is cast, in world units (Cast); the origin otherwise.
     Vec2 point{};
+    /// The scene change it answers (SceneLeft, SceneEntered); zero otherwise. A replay never holds it.
+    u64 change = 0;
 };
 
 /// What the player holds down, as the main thread last sent it (design doc 0002 §10): every tick of

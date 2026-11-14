@@ -17,6 +17,7 @@
 #include "core/game_data.hpp"
 #include "core/jobs.hpp"
 #include "core/manifest.hpp"
+#include "core/scene_reports.hpp"
 #include "core/seals.hpp"
 #include "core/settings.hpp"
 #include "core/strings.hpp"
@@ -203,6 +204,7 @@ private:
     std::optional<core::SceneId> m_loading = std::nullopt;  // the scene the renderer loads
     std::optional<core::SceneId> m_reported = std::nullopt; // the scene the logic was told is resident, last
     std::optional<core::SceneId> m_shown = std::nullopt;    // the scene of the snapshot drawn last
+    core::SceneReports m_sceneReports{};                    // the ways out and in reported played
     std::optional<u64> m_numbersEpoch = std::nullopt;       // the timeline the damage numbers belong to
     DataWatch m_dataWatch{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     DeviceInUse m_device{};

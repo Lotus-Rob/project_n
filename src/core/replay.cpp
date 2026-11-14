@@ -14,10 +14,11 @@ constexpr u32 REPLAY_FORMAT = 4; // 2: actions carry their target, ticks their h
 constexpr std::string_view VERSION = PN_GAME_VERSION; // from xmake.lua's set_version
 constexpr std::size_t MAX_ACTIONS_PER_TICK = 255;     // a tick's count is a byte
 
-// Actions that end or replace a recording's timeline, so none is ever recorded.
+// Actions that end or replace a recording's timeline, and the main thread's news, so none is ever recorded.
 bool NeverRecorded(ActionKind kind) {
     return kind == ActionKind::Load || kind == ActionKind::ToggleRecording || kind == ActionKind::PlayReplay ||
-           kind == ActionKind::ReloadData || kind == ActionKind::SceneResident;
+           kind == ActionKind::ReloadData || kind == ActionKind::SceneResident || kind == ActionKind::SceneLeft ||
+           kind == ActionKind::SceneEntered;
 }
 
 // Whether held input read from a replay could have been sent: finite, each axis within [-1, 1], at most 1 long

@@ -177,9 +177,12 @@ std::vector<std::byte> RecordedWithFirstKind(core::ActionKind kind) {
     return replay;
 }
 
-TEST_CASE("a replay holding a load, new game data or a resident scene, which are never recorded, is refused") {
-    for (const core::ActionKind kind :
-         { core::ActionKind::Load, core::ActionKind::ReloadData, core::ActionKind::SceneResident }) {
+TEST_CASE("a replay holding a load, new game data, a resident scene or a scene report, which are never recorded, is refused") {
+    for (const core::ActionKind kind : { core::ActionKind::Load,
+                                         core::ActionKind::ReloadData,
+                                         core::ActionKind::SceneResident,
+                                         core::ActionKind::SceneLeft,
+                                         core::ActionKind::SceneEntered }) {
         core::Replay player;
         const auto started = player.StartPlaying(RecordedWithFirstKind(kind));
         CHECK_FALSE(started.has_value());
