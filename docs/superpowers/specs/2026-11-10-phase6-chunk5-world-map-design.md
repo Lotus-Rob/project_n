@@ -2,6 +2,14 @@
 
 Date: 2026-11-10 · Status: approved 2026-11-10 · Phase spec: `2026-11-10-phase6-design.md` · New: no earlier design
 
+**Split 2026-11-14 (the user's)** into four parts, each with its own spec update, plan and PR: first **scenes**, a clean,
+extendable scene layer with the scene-change sequence transitions will use (`2026-11-14-phase6-chunk5-scenes-design.md`);
+**5a** the measurements,
+a stand-in world scene, the camera and culling against the window (`2026-11-14-phase6-chunk5a-measure-camera-design.md`,
+which also records what changed since this spec); **5b** the map as data, fog, time, travel, names and labels, click to
+walk; **5c** the world-and-scene split, the save version, the enter prompt and the stand-in town. 5b and 5c update this
+spec when they start. Where this spec and 5a's differ, 5a's wins (a new `world` scene, `cells` kept).
+
 ## In short
 
 - **A hand-made world map** inspired by Tale of Immortal: tiles of plains, forest, mountains, snow, desert, swamp, rivers,
