@@ -404,3 +404,12 @@ so two container jobs each link about half of the twelve executables (/LTCG unde
 - The ruleset's nine checks are applied by the user just before merging, after which every open branch rebases.
 - "build(xmake): drop msvc-wine's unused build cache exception" changes xmake.lua, which the object caches' keys hash,
   so the branch's next run compiles every Clang object cold once.
+- **The caches' growth, found by the final review** (2026-11-14): 76 entries, 11.22 GB, over the 10 GB limit, so
+  GitHub was evicting main's entries and a new branch's first push would run cold. XMake's build cache never evicts
+  (container (linux-clang)'s object entry grew from 135 to 284 MB), clang-tidy's results were never pruned, nothing
+  deleted a ref's superseded entries (ci-speed held eleven of each object cache), and the split had saved duplicate
+  package caches. "build(tools): bound CI's caches to what each run used" and "ci: prune the caches each run saves and
+  drop the superseded ones" built the user's ruling: each job keeps only what its builds used and saves nothing when
+  nothing is left (main's lint after a merge without C++ had saved an empty folder as the newest fallback); a new
+  `caches` job, not a required check, keeps each family's newest entry per ref; the sibling entries share one package
+  cache. Steady-state sizes: to be measured on the next runs.
