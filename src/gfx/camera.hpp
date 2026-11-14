@@ -7,22 +7,22 @@
 
 #include "core/types.hpp"
 #include "core/vec2.hpp"
+#include "core/view_limits.hpp"
 
 #include <cstddef>
 #include <optional>
 
 namespace gfx {
 
-/// The reference resolution art is painted for: at zoom 1 the window shows this much of the
-/// world on its shorter axis, whatever its size.
-inline constexpr core::Vec2 REFERENCE_SIZE{ .x = 1920.0F, .y = 1080.0F };
+/// The reference resolution art is painted for (core::REFERENCE_SIZE).
+using core::REFERENCE_SIZE;
 /// The middle of the reference area, where a scene laid out in it is centred.
 inline constexpr core::Vec2 REFERENCE_CENTRE{ .x = 960.0F, .y = 540.0F };
 
-/// The smallest zoom of the range §8.10 sets, wide enough to show every mip level.
-inline constexpr f32 MIN_ZOOM = 0.25F;
-/// The largest zoom.
-inline constexpr f32 MAX_ZOOM = 2.0F;
+/// The smallest zoom (core::MIN_ZOOM).
+using core::MIN_ZOOM;
+/// The largest zoom (core::MAX_ZOOM).
+using core::MAX_ZOOM;
 
 /// What the window shows: the world around `centre`, at `zoom`.
 struct Camera {
