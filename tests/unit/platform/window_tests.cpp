@@ -158,4 +158,135 @@ TEST_CASE("a mouse press carries its button, position and whether Alt was held")
     CHECK(withAlt[0].alt);
 }
 
+TEST_CASE("the camera keys I, J, K, L and C become inputs, with an anchor each side") {
+    struct Pair {
+        SDL_Scancode key;
+        platform::InputCode code;
+    };
+    constexpr std::array PAIRS{
+        Pair{ .key = SDL_SCANCODE_I, .code = platform::InputCode::KeyI },
+        Pair{ .key = SDL_SCANCODE_J, .code = platform::InputCode::KeyJ },
+        Pair{ .key = SDL_SCANCODE_K, .code = platform::InputCode::KeyK },
+        Pair{ .key = SDL_SCANCODE_L, .code = platform::InputCode::KeyL },
+        Pair{ .key = SDL_SCANCODE_C, .code = platform::InputCode::KeyC },
+        Pair{ .key = SDL_SCANCODE_ESCAPE, .code = platform::InputCode::KeyEscape },
+        Pair{ .key = SDL_SCANCODE_F5, .code = platform::InputCode::KeyF5 },
+    };
+    std::expected<platform::Window, core::Error> window = OpenWindow();
+    for (const Pair& pair : PAIRS) {
+        PushKey(pair.key, true, false);
+    }
+    std::vector<platform::InputEvent> inputs;
+    static_cast<void>(window->Poll(0, inputs));
+    REQUIRE(inputs.size() == PAIRS.size());
+    for (std::size_t index = 0; index < PAIRS.size(); ++index) {
+        CHECK(inputs[index].code == PAIRS[index].code);
+        CHECK(inputs[index].pressed);
+    }
+}
+
+TEST_CASE("the mouse's buttons become their inputs, and an unknown one is ignored") {
+    struct Pair {
+        u8 button;
+        platform::InputCode code;
+    };
+    constexpr std::array PAIRS{
+        Pair{ .button = SDL_BUTTON_LEFT, .code = platform::InputCode::MouseLeft },
+        Pair{ .button = SDL_BUTTON_MIDDLE, .code = platform::InputCode::MouseMiddle },
+        Pair{ .button = SDL_BUTTON_RIGHT, .code = platform::InputCode::MouseRight },
+    };
+    constexpr f32 CLICK = 5.0F;
+    std::expected<platform::Window, core::Error> window = OpenWindow();
+    for (const Pair& pair : PAIRS) {
+        PushButton(pair.button, CLICK, CLICK);
+    }
+    PushButton(SDL_BUTTON_X1, CLICK, CLICK);
+    std::vector<platform::InputEvent> inputs;
+    static_cast<void>(window->Poll(0, inputs));
+    REQUIRE(inputs.size() == PAIRS.size());
+    for (std::size_t index = 0; index < PAIRS.size(); ++index) {
+        CHECK(inputs[index].code == PAIRS[index].code);
+        CHECK(inputs[index].device == platform::Device::Mouse);
+    }
+}
+
+void PushAxis(SDL_GamepadAxis axis, i16 value) {
+    SDL_Event event{};
+    event.type = SDL_EVENT_GAMEPAD_AXIS_MOTION;
+    event.gaxis.axis = static_cast<u8>(axis);
+    event.gaxis.value = value;
+    REQUIRE(SDL_PushEvent(&event));
+}
+
+TEST_CASE("the sticks' axes become inputs scaled to -1 to 1, and the triggers are ignored") {
+    struct Sample {
+        SDL_GamepadAxis axis;
+        i16 raw;
+        platform::InputCode code;
+        f32 value;
+    };
+    constexpr std::array SAMPLES{
+        Sample{ .axis = SDL_GAMEPAD_AXIS_LEFTX,
+                .raw = SDL_JOYSTICK_AXIS_MAX,
+                .code = platform::InputCode::PadLeftX,
+                .value = 1.0F },
+        Sample{ .axis = SDL_GAMEPAD_AXIS_LEFTY,
+                .raw = SDL_JOYSTICK_AXIS_MIN,
+                .code = platform::InputCode::PadLeftY,
+                .value = -1.0F },
+        Sample{ .axis = SDL_GAMEPAD_AXIS_RIGHTX,
+                .raw = SDL_JOYSTICK_AXIS_MAX,
+                .code = platform::InputCode::PadRightX,
+                .value = 1.0F },
+        Sample{ .axis = SDL_GAMEPAD_AXIS_RIGHTX,
+                .raw = SDL_JOYSTICK_AXIS_MIN,
+                .code = platform::InputCode::PadRightX,
+                .value = -1.0F },
+        Sample{ .axis = SDL_GAMEPAD_AXIS_RIGHTY,
+                .raw = SDL_JOYSTICK_AXIS_MAX,
+                .code = platform::InputCode::PadRightY,
+                .value = 1.0F },
+        Sample{ .axis = SDL_GAMEPAD_AXIS_RIGHTY, .raw = 0, .code = platform::InputCode::PadRightY, .value = 0.0F },
+    };
+    std::expected<platform::Window, core::Error> window = OpenWindow();
+    for (const Sample& sample : SAMPLES) {
+        PushAxis(sample.axis, sample.raw);
+    }
+    PushAxis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER, SDL_JOYSTICK_AXIS_MAX);
+    std::vector<platform::InputEvent> inputs;
+    static_cast<void>(window->Poll(0, inputs));
+    REQUIRE(inputs.size() == SAMPLES.size());
+    for (std::size_t index = 0; index < SAMPLES.size(); ++index) {
+        CHECK(inputs[index].code == SAMPLES[index].code);
+        CHECK(inputs[index].device == platform::Device::Gamepad);
+        CHECK(inputs[index].value == doctest::Approx(SAMPLES[index].value));
+    }
+}
+
+void PushPadButton(SDL_GamepadButton button, bool down) {
+    SDL_Event event{};
+    event.type = down ? SDL_EVENT_GAMEPAD_BUTTON_DOWN : SDL_EVENT_GAMEPAD_BUTTON_UP;
+    event.gbutton.button = static_cast<u8>(button);
+    event.gbutton.down = down;
+    REQUIRE(SDL_PushEvent(&event));
+}
+
+TEST_CASE("the shoulders and the right stick's click become inputs, other buttons are ignored") {
+    std::expected<platform::Window, core::Error> window = OpenWindow();
+    PushPadButton(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, true);
+    PushPadButton(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, true);
+    PushPadButton(SDL_GAMEPAD_BUTTON_RIGHT_STICK, true);
+    PushPadButton(SDL_GAMEPAD_BUTTON_RIGHT_STICK, false);
+    PushPadButton(SDL_GAMEPAD_BUTTON_LEFT_STICK, true);
+    std::vector<platform::InputEvent> inputs;
+    static_cast<void>(window->Poll(0, inputs));
+    REQUIRE(inputs.size() == 4);
+    CHECK(inputs[0].code == platform::InputCode::PadLeftShoulder);
+    CHECK(inputs[1].code == platform::InputCode::PadRightShoulder);
+    CHECK(inputs[2].code == platform::InputCode::PadRightStick);
+    CHECK(inputs[2].pressed);
+    CHECK(inputs[3].code == platform::InputCode::PadRightStick);
+    CHECK_FALSE(inputs[3].pressed);
+}
+
 } // namespace

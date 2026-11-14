@@ -223,4 +223,26 @@ TEST_CASE("a malformed settings file gives the defaults and is left alone") {
     CHECK(contents == BROKEN);
 }
 
+TEST_CASE("edge_pan reads true and false, and defaults to true") {
+    CHECK(core::Settings{}.edgePan);
+    const std::expected<core::Settings, core::Error> none = data::ParseSettings("language: en\n");
+    REQUIRE(none.has_value());
+    CHECK(none->edgePan);
+    const std::expected<core::Settings, core::Error> disabled = data::ParseSettings("edge_pan: false\n");
+    REQUIRE(disabled.has_value());
+    CHECK_FALSE(disabled->edgePan);
+    const std::expected<core::Settings, core::Error> enabled = data::ParseSettings("edge_pan: true\n");
+    REQUIRE(enabled.has_value());
+    CHECK(enabled->edgePan);
+}
+
+TEST_CASE("an edge_pan that isn't a boolean keeps its default with a warning") {
+    std::vector<std::string> warnings;
+    const std::expected<core::Settings, core::Error> settings = data::ParseSettings("edge_pan: maybe\n", &warnings);
+    REQUIRE(settings.has_value());
+    CHECK(settings->edgePan);
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0] == "settings line 1: edge_pan is true or false, not maybe; true is used");
+}
+
 } // namespace

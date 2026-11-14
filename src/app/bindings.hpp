@@ -17,6 +17,9 @@ namespace app {
 /// What the player can ask for, whatever the device.
 enum class Control : u8 {
     Move,            ///< Walk, or pan without a follow target: an axis pair, held.
+    PanCamera,       ///< Pan the roaming camera: an axis pair, held (Bindings::Pan()).
+    DragCamera,      ///< Drag the roaming camera by the pointer: a button.
+    SnapBack,        ///< Bring the camera back to the player: a button.
     Primary,         ///< The left button: casts the generator, or selects what is under the pointer.
     Secondary,       ///< The right button: casts the spender.
     Movement,        ///< Space: casts the movement ability.
@@ -69,7 +72,7 @@ class DeviceInUse {
 public:
     /// Notes the device `input` came from; true when what prompts show changed (a gamepad after the
     /// keyboard or mouse, or the other way, or a gamepad of another family). The stick counts as
-    /// used only past its dead zone, judged on both axes as Bindings::Move() judges it.
+    /// used only past its dead zone (either stick), judged on both axes as Bindings::Move() judges it.
     [[nodiscard]] bool Take(const platform::InputEvent& input);
 
     /// Notes where the mouse cursor is over the window (none when it isn't): its moving is the mouse
@@ -89,14 +92,16 @@ public:
 private:
     platform::Device m_device = platform::Device::Keyboard;
     platform::GamepadFamily m_family = platform::GamepadFamily::Other;
-    core::Vec2 m_stick{};                              // the stick's position as its axis events last put it
+    core::Vec2 m_stick{};                              // the left stick's position as its axis events last put it
+    core::Vec2 m_rightStick{};                         // the right stick's, likewise
     std::optional<core::Vec2> m_cursor = std::nullopt; // where TakeCursor() saw the cursor last
 };
 
 /// The bindings in use, and the held state of the inputs that drive Move.
 class Bindings {
 public:
-    /// The default bindings: WASD, the arrow keys and the left stick move; the left button casts or selects, the right casts,
+    /// The default bindings: WASD, the arrow keys and the left stick move; I, J, K, L and the right stick pan the camera, the
+    /// middle button drags it, C and the right stick's click snap it back; the left button casts or selects, the right casts,
     /// Space and 1 to 5 cast; the wheel and the shoulder buttons zoom; Escape quits; M, F2, F5, F9, F6 and F10 are the debug
     /// keys. Code, not data; bindings become data (a YAML table
     /// the player's rebinds save over) when rebinding lands with the settings screen (§10, §11).
@@ -110,10 +115,14 @@ public:
     /// Where the held movement points: the keys held, else the stick past its dead zone, at most 1 long.
     [[nodiscard]] core::Vec2 Move() const;
 
+    /// Where the held camera pan points: I, J, K and L held, else the right stick past its dead zone, at most 1 long.
+    [[nodiscard]] core::Vec2 Pan() const;
+
 private:
     std::vector<Binding> m_table;
-    u32 m_heldKeys = 0; // a bit per InputCode of a Move key held down
+    u64 m_heldKeys = 0; // a bit per InputCode of a Move or PanCamera key held down
     core::Vec2 m_stick{};
+    core::Vec2 m_panStick{};
 };
 
 } // namespace app

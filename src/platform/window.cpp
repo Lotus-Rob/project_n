@@ -40,6 +40,11 @@ constexpr std::array KEYS{
     KeyCode{ .key = SDL_SCANCODE_3, .code = InputCode::Key3 },
     KeyCode{ .key = SDL_SCANCODE_4, .code = InputCode::Key4 },
     KeyCode{ .key = SDL_SCANCODE_5, .code = InputCode::Key5 },
+    KeyCode{ .key = SDL_SCANCODE_I, .code = InputCode::KeyI },
+    KeyCode{ .key = SDL_SCANCODE_J, .code = InputCode::KeyJ },
+    KeyCode{ .key = SDL_SCANCODE_K, .code = InputCode::KeyK },
+    KeyCode{ .key = SDL_SCANCODE_L, .code = InputCode::KeyL },
+    KeyCode{ .key = SDL_SCANCODE_C, .code = InputCode::KeyC },
 };
 
 GamepadFamily FamilyOf(SDL_JoystickID gamepad) {
@@ -67,11 +72,18 @@ std::optional<InputEvent> KeyInput(const SDL_KeyboardEvent& key) {
 }
 
 std::optional<InputEvent> MouseButtonInput(const SDL_MouseButtonEvent& button) {
-    if (button.button != SDL_BUTTON_LEFT && button.button != SDL_BUTTON_RIGHT) {
+    InputCode code = InputCode::MouseLeft;
+    if (button.button == SDL_BUTTON_RIGHT) {
+        code = InputCode::MouseRight;
+    }
+    else if (button.button == SDL_BUTTON_MIDDLE) {
+        code = InputCode::MouseMiddle;
+    }
+    else if (button.button != SDL_BUTTON_LEFT) {
         return std::nullopt;
     }
     return InputEvent{ .device = Device::Mouse,
-                       .code = button.button == SDL_BUTTON_LEFT ? InputCode::MouseLeft : InputCode::MouseRight,
+                       .code = code,
                        .pressed = button.down,
                        .value = button.down ? 1.0F : 0.0F,
                        .position = { .x = button.x, .y = button.y },
@@ -87,24 +99,40 @@ InputEvent WheelInput(const SDL_MouseWheelEvent& wheel) {
 }
 
 std::optional<InputEvent> AxisInput(const SDL_GamepadAxisEvent& axis) {
-    if (axis.axis != SDL_GAMEPAD_AXIS_LEFTX && axis.axis != SDL_GAMEPAD_AXIS_LEFTY) {
+    InputCode code = InputCode::PadLeftX;
+    if (axis.axis == SDL_GAMEPAD_AXIS_LEFTY) {
+        code = InputCode::PadLeftY;
+    }
+    else if (axis.axis == SDL_GAMEPAD_AXIS_RIGHTX) {
+        code = InputCode::PadRightX;
+    }
+    else if (axis.axis == SDL_GAMEPAD_AXIS_RIGHTY) {
+        code = InputCode::PadRightY;
+    }
+    else if (axis.axis != SDL_GAMEPAD_AXIS_LEFTX) {
         return std::nullopt;
     }
     constexpr f32 AXIS_MAX = 32'767.0F;
     return InputEvent{ .device = Device::Gamepad,
                        .family = FamilyOf(axis.which),
-                       .code = axis.axis == SDL_GAMEPAD_AXIS_LEFTX ? InputCode::PadLeftX : InputCode::PadLeftY,
+                       .code = code,
                        .value = std::clamp(static_cast<f32>(axis.value) / AXIS_MAX, -1.0F, 1.0F) };
 }
 
 std::optional<InputEvent> PadButtonInput(const SDL_GamepadButtonEvent& button) {
-    if (button.button != SDL_GAMEPAD_BUTTON_LEFT_SHOULDER && button.button != SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER) {
+    InputCode code = InputCode::PadLeftShoulder;
+    if (button.button == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER) {
+        code = InputCode::PadRightShoulder;
+    }
+    else if (button.button == SDL_GAMEPAD_BUTTON_RIGHT_STICK) {
+        code = InputCode::PadRightStick;
+    }
+    else if (button.button != SDL_GAMEPAD_BUTTON_LEFT_SHOULDER) {
         return std::nullopt;
     }
     return InputEvent{ .device = Device::Gamepad,
                        .family = FamilyOf(button.which),
-                       .code = button.button == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER ? InputCode::PadLeftShoulder
-                                                                                 : InputCode::PadRightShoulder,
+                       .code = code,
                        .pressed = button.down,
                        .value = button.down ? 1.0F : 0.0F };
 }

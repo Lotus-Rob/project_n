@@ -110,7 +110,13 @@ std::expected<core::Settings, core::Error> ParseSettings(std::string_view yaml, 
             root,
             "",
             "setting",
-            { "window", "language", "combined_damage_numbers", "damage_number_motion", "text_outline", "text_shadow" },
+            { "window",
+              "language",
+              "combined_damage_numbers",
+              "damage_number_motion",
+              "text_outline",
+              "text_shadow",
+              "edge_pan" },
             warnings
         );
         if (root["language"]) {
@@ -128,6 +134,7 @@ std::expected<core::Settings, core::Error> ParseSettings(std::string_view yaml, 
         ReadBoolean(root, "combined_damage_numbers", settings.combinedDamageNumbers, warnings);
         ReadBoolean(root, "text_outline", settings.textOutline, warnings);
         ReadBoolean(root, "text_shadow", settings.textShadow, warnings);
+        ReadBoolean(root, "edge_pan", settings.edgePan, warnings);
         if (const YAML::Node window = root["window"]) {
             internal::NoteUnknownKeys("settings", window, "window", "setting", { "width", "height", "fullscreen" }, warnings);
             ReadIfPresent(window, "width", settings.windowWidth);
