@@ -17,12 +17,19 @@ using core::atlas::SpriteId;
 constexpr f32 WORLD_HALF = 0.5F;
 constexpr core::Vec2 WORLD_CENTRE = (WORLD_MAP.min + WORLD_MAP.max) * WORLD_HALF;
 
+// The portal, a short walk from the start up and to the left: on the first screen, so it is found at once, in the quiet
+// country round the start, which no gathering reaches (ClearOfStart()), and west of it, off the strip east of the start
+// that `--camera-path` walks the cultivator along, so a measured run never changes scene (app's camera_path_tests holds
+// this).
+constexpr core::Vec2 WORLD_PORTAL = WORLD_CENTRE + core::Vec2{ .x = -560.0F, .y = -200.0F };
+
 constexpr SceneTraits WORLD_TRAITS{
     .name = "world",
     .view = WORLD_MAP,
     .home = WORLD_CENTRE,
     .creatures = true,
     .camera = core::CameraKind::Roam,
+    .portal = WORLD_PORTAL,
 };
 
 static_assert(

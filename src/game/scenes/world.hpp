@@ -78,7 +78,8 @@ struct TileSpan {
 class WorldScene final : public Scene {
 public:
     /// Named `world`, viewing the whole map, with creatures (the cultivator) and no world NPCs, the camera following the
-    /// cultivator until panned, and orbits returning to the map's centre.
+    /// cultivator until panned, orbits returning to the map's centre, and its portal a short walk from the start, on the
+    /// first screen.
     [[nodiscard]] const SceneTraits& Traits() const override;
 
     /// The cultivator at the map's centre, made the player, then 5,625 walkers: 1,600 spread evenly over the whole

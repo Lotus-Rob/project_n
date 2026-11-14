@@ -20,6 +20,10 @@ namespace game {
 /// Where the player's cultivator starts, which its foxes circle wherever it walks and its orbs circle for good.
 inline constexpr core::Vec2 ARENA_START{ .x = 960.0F, .y = 620.0F };
 
+/// Where the arena's portal stands, and its stress variant's on the same ground: in the open top-left corner, clear of the
+/// props, of the showcase seals and of the fight round the start (app's showcase_tests holds the last two).
+inline constexpr core::Vec2 ARENA_PORTAL{ .x = 110.0F, .y = 115.0F };
+
 /// Where the ice crystal stands, whose aura reaches round it in the arena.
 inline constexpr core::Vec2 CRYSTAL_FOOT{ .x = 420.0F, .y = 620.0F };
 

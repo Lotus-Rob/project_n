@@ -45,6 +45,12 @@ constexpr u32 USE_DEBUG_BURST = 2; // the burst's ability use source (core::Abil
 constexpr u32 WORLD_CELLS = 4'096;
 constexpr u64 SEED = 0x5eed;
 
+// The portal as drawn: a ground seal twice its step area (PORTAL_RADIUS), so the step lands on its inner rings, and its
+// caption PORTAL_RADIUS over its point, just past the far rim of the seal's squashed ellipse (PORTAL_DEPTH_RATIO of its
+// size).
+constexpr f32 PORTAL_SEAL_SIZE = 2.0F * PORTAL_RADIUS;
+constexpr core::Vec2 PORTAL_LABEL_RISE{ .x = 0.0F, .y = -PORTAL_RADIUS };
+
 // Halfway across a scene's view, where a still camera starts: what a publish culls round before the window's view arrives.
 constexpr f32 MIDDLE = 0.5F;
 
@@ -350,8 +356,7 @@ void Host::Tick(const core::TickCounters& counters, const core::TickInput& input
     if (std::ranges::contains(input.actions, core::ActionKind::CycleScene, &core::Action::kind)) {
         const core::SceneKey next = NextScene(m_scene);
         PN_LOG_INFO("tick {}: the scene changes to {}", counters.simulation, SceneName(next));
-        m_combat.EndUses(m_state, events); // nothing of this scene's goes on to hit
-        m_requested = next;                // the logic has it built after this tick
+        Leave(next, events);
         return;
     }
     for (const core::Action& action : input.actions) {
@@ -364,6 +369,12 @@ void Host::Tick(const core::TickCounters& counters, const core::TickInput& input
     }
     if (!Combat::Dash(m_state, m_player, counters.simulation)) {
         Walk(input.held.move);
+    }
+    if (OnPortal()) {
+        const core::SceneKey next = NextWalkableScene(m_scene);
+        PN_LOG_INFO("tick {}: the cultivator steps through the portal to {}", counters.simulation, SceneName(next));
+        Leave(next, events);
+        return;
     }
     core::Domain& active = m_state[ACTIVE];
     if (m_player != core::StableId{}) {
@@ -404,6 +415,52 @@ void Host::Tick(const core::TickCounters& counters, const core::TickInput& input
     }
     // Last, once everything that moves or kills this tick has.
     m_combat.Strike(m_state, *m_manifest, counters.simulation, events);
+}
+
+void Host::Leave(core::SceneKey next, std::vector<core::Event>& events) {
+    m_combat.EndUses(m_state, events); // nothing of this scene's goes on to hit
+    m_requested = next;                // the logic has it built after this tick
+}
+
+bool Host::OnPortal() const {
+    const std::optional<core::Vec2> portal = Running().Traits().portal;
+    if (!portal || m_player == core::StableId{}) {
+        return false;
+    }
+    // The foot's whole path this tick, not only where it ends: a dash moves farther in a tick than the step area is deep.
+    // Measured in the step area's own units, where it is the unit circle.
+    const Body& body = m_state[ACTIVE].Entities().get<Body>(m_state[ACTIVE].Find(m_player));
+    const auto scaled = [&portal](core::Vec2 foot) {
+        const core::Vec2 away = foot - *portal;
+        return core::Vec2{ .x = away.x / PORTAL_RADIUS, .y = away.y / (PORTAL_RADIUS * PORTAL_DEPTH_RATIO) };
+    };
+    const core::Vec2 from = scaled(body.previous);
+    const core::Vec2 path = scaled(body.current) - from;
+    const f32 length = (path.x * path.x) + (path.y * path.y);
+    const f32 along = length > 0.0F ? std::clamp(-((from.x * path.x) + (from.y * path.y)) / length, 0.0F, 1.0F) : 0.0F;
+    const core::Vec2 nearest = from + (path * along);
+    return (nearest.x * nearest.x) + (nearest.y * nearest.y) <= 1.0F;
+}
+
+void Host::PublishPortal(core::Snapshot& snapshot) const {
+    PN_PROFILE_ZONE();
+    const std::optional<core::Vec2> portal = Running().Traits().portal;
+    if (!portal) {
+        return;
+    }
+    snapshot.seals.push_back(
+        { .key = PORTAL_SEAL, .point = *portal, .size = PORTAL_SEAL_SIZE, .startTick = 0, .endTick = core::NEVER_ENDS }
+    );
+    const core::Vec2 over = *portal + PORTAL_LABEL_RISE;
+    snapshot.texts.push_back(
+        {
+            .kind = core::TextKind::Caption,
+            .string = core::StringId::PortalLabel,
+            .previous = over,
+            .current = over,
+            .align = core::TextAlign::BottomCentre,
+        }
+    );
 }
 
 void Host::PublishOverhead(core::Snapshot& snapshot) const {
@@ -729,6 +786,7 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
     PublishCaster(snapshot);
     // Before the seals raised in play, which draw over the scene's own.
     Running().Publish(context, area, snapshot);
+    PublishPortal(snapshot);
     m_combat.Publish(snapshot);
     if (m_selected != core::StableId{}) {
         if (const auto drawn = std::ranges::find(snapshot.ids, m_selected); drawn != snapshot.ids.end()) {

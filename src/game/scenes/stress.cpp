@@ -18,6 +18,7 @@ constexpr SceneTraits STRESS_TRAITS{
     .creatures = true,
     .camera = core::CameraKind::Follow,
     .worldNpcs = 50'000,
+    .portal = ARENA_PORTAL,
 };
 
 // A crowd on a grid over the whole ground, each member circling its own spot, and bullets on the arms of a spiral

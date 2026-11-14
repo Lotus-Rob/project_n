@@ -35,6 +35,15 @@ TEST_CASE("the list is F2's order and wraps") {
     CHECK(&game::SceneOf(game::PAINTED_SCENE) == game::Scenes()[2]);
 }
 
+TEST_CASE("the walkable scenes lead round arena, stress and world") {
+    CHECK(game::NextWalkableScene(game::ARENA_SCENE) == game::STRESS_SCENE);
+    CHECK(game::NextWalkableScene(game::STRESS_SCENE) == game::WORLD_SCENE);
+    CHECK(game::NextWalkableScene(game::WORLD_SCENE) == game::ARENA_SCENE); // and round again, past painted and cells
+    // The still scenes have no cultivator to walk, so no portal.
+    CHECK_FALSE(game::SceneOf(game::PAINTED_SCENE).Traits().portal.has_value());
+    CHECK_FALSE(game::SceneOf(game::CELLS_SCENE).Traits().portal.has_value());
+}
+
 TEST_CASE("every listed scene passes CheckScenes against the shipped manifest") {
     const std::expected<void, core::Error> shipped = game::CheckScenes(*test::TestManifest(), game::BuiltInData());
     CHECK(shipped.has_value());

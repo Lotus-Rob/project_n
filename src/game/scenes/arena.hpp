@@ -13,6 +13,8 @@
 /// - NPCs walking in the active tier and 5,000 in the world tier, whose months pass on request (§7.7);
 /// - saves, loads and replays of all of it;
 /// - F2 cycling through the scenes, each loaded on demand while the ticks wait for it;
+/// - a portal in its top-left corner, a glowing ground seal with a "Portal" caption that the cultivator walks onto to go to
+///   the next walkable scene (stress, then world, whose portals lead on and back here), recorded and replayed as any walk;
 /// - the ice crystal's aura, which hits the foxes in its reach (and heals the player) once a second, and F7's debug burst
 ///   of 4,000 hits: both emit hit events (core::Event), which the main thread shows as damage numbers; the aura's also
 ///   take the foxes' health (and heal the player's), while the burst's are numbers only;
@@ -55,7 +57,7 @@ namespace game {
 class ArenaScene final : public Scene {
 public:
     /// Named `arena`, viewing the ground, a combat scene with creatures and the demo glows (ARENA_DEMO_GLOWS), the camera
-    /// following the player, with 5,000 world NPCs.
+    /// following the player, with 5,000 world NPCs and its portal at ARENA_PORTAL.
     [[nodiscard]] const SceneTraits& Traits() const override;
 
     /// The shared layout (game/scenes/arena_layout.hpp) and its walking NPCs.

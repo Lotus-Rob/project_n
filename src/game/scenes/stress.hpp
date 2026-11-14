@@ -16,7 +16,9 @@ namespace game {
 /// The stress arena: the arena's layout and its crowds, the camera following the player.
 class StressScene final : public Scene {
 public:
-    /// Named `stress`, viewing the ground, with creatures, the camera following the player, with 50,000 world NPCs.
+    /// Named `stress`, viewing the ground, with creatures, the camera following the player, with 50,000 world NPCs and its
+    /// portal where the arena's stands (ARENA_PORTAL). A known limit: the crowd covering the ground hides the portal's
+    /// ground seal, so only its caption shows (thinning the crowd there would change the scene's replay hashes).
     [[nodiscard]] const SceneTraits& Traits() const override;
 
     /// The shared layout (game/scenes/arena_layout.hpp), the crowd, the bullet spiral, then the walking NPCs.

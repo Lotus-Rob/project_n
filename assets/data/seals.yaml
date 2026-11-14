@@ -98,6 +98,45 @@ seals:
     emblem: { sprite: emblem_swords, size: 0.22, spin: 0, colour: 0 }
     light: { sparks: { count: 24, rise: 40, life: 1.2, size: 0.02 } }
 
+  # A portal (scene content: each walkable scene places its own, under a "Portal" label): a glowing ground seal in violet
+  # and gold, its rings turning against each other round a bright heart, with light rising from its rim. Lines, dots and
+  # light only, no sprites, so it draws in every scene whatever sprites the scene loads.
+  portal:
+    plane: ground
+    lift: 0
+    wash: { darkness: 0.6, reach: 1.15, softness: 0.5 }
+    colours: [effects.seal_violet, effects.seal_gold]
+    life: { appear: 0.8, appear_curve: ease_out, fade: 0.4, fade_curve: smooth, order: inner_first }
+    layers:
+      - inner: 0.72
+        outer: 1
+        spin: 12
+        opacity: 0.95
+        parts:
+          - { kind: circle, radius: 0.97, width: 0.035 }
+          - { kind: ticks, count: 24, radius: 0.87, length: 0.08, width: 0.025, colour: 1 }
+          - { kind: circle, radius: 0.76, width: 0.025, dash: 20, gap: 10 }
+      - inner: 0.36
+        outer: 0.7
+        height: 4
+        spin: -24
+        opacity: 0.95
+        parts:
+          - { kind: star, points: 8, step: 3, radius: 0.66, width: 0.03, colour: 1 }
+          - { kind: dots, count: 8, radius: 0.5, size: 0.06 }
+      - inner: 0
+        outer: 0.34
+        height: 8
+        spin: 40
+        opacity: 1
+        parts:
+          - { kind: circle, radius: 0.3, width: 0.05, colour: 1 }
+          - { kind: polygon, sides: 3, radius: 0.2, width: 0.04 }
+    light:
+      colour: 0
+      pillars: { count: 8, height: 60, width: 0.06, fade: 0.8, cycle: 1.2 }
+      sparks: { count: 24, rise: 30, life: 1.4, size: 0.04 }
+
   # The arena's showcase (scene content; where each stands and its size are the arena's): between them every part and
   # every placement.
 

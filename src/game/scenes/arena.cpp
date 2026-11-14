@@ -22,6 +22,7 @@ constexpr SceneTraits ARENA_TRAITS{
     .demoGlows = ARENA_DEMO_GLOWS,
     .camera = core::CameraKind::Follow,
     .worldNpcs = 5'000,
+    .portal = ARENA_PORTAL,
 };
 
 constexpr u32 USE_AURA = 1; // the aura's ability use source (core::AbilityUse)

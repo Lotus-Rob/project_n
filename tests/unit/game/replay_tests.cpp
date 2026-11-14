@@ -295,4 +295,48 @@ TEST_CASE("a recorded fight replays with every hash matching") {
     CHECK(playing.replay.Matched() == playing.replay.HashCount());
 }
 
+TEST_CASE("a replay recorded through a portal plays back with the same hashes") {
+    // The cultivator walks from its start onto the arena's portal through the real logic, which changes the scene to the
+    // stress arena as F2 would: the walk, the step and the scene it leads to play back with every hash matching.
+    constexpr u64 TO_THE_PORTAL = 600; // more ticks than the walk takes: the step onto it ends the burst
+    constexpr u64 BURST = 7;
+    constexpr u32 MAX_BURSTS = 100;
+    constexpr std::size_t HASHES = 5; // four on the walk, the last in the stress arena on the final tick
+    const Folder folder{ "portal" };
+    {
+        Session recording(folder.Path());
+        recording.Send(core::ActionKind::ToggleRecording);
+        recording.Burst(1);
+        const std::optional<core::Vec2> portal = game::SceneOf(game::ARENA_SCENE).Traits().portal;
+        REQUIRE(portal.has_value());
+        const core::Vec2 away = portal.value_or(core::Vec2{}) - FootOf(recording.host, recording.host.Player());
+        recording.Hold(away * (1.0F / std::hypot(away.x, away.y)));
+        const u64 setOff = recording.logic.Counters().wall;
+        recording.Burst(TO_THE_PORTAL); // ends after the step onto it: leaving, which the session reports
+        REQUIRE(recording.logic.Counters().wall < setOff + TO_THE_PORTAL);
+        recording.Hold({});
+        recording.Burst(BURST); // the stress arena is built: loading, and the session reports it resident
+        recording.Burst(BURST); // entering, which the session reports
+        recording.Burst(BURST); // takes that report: the stress arena runs
+        REQUIRE(recording.host.Current().key == game::STRESS_SCENE);
+        // To a hash tick, so the recording's last state is checked.
+        recording.Burst(core::REPLAY_HASH_TICKS - (recording.logic.Counters().wall % core::REPLAY_HASH_TICKS));
+        REQUIRE(recording.logic.Counters().wall % core::REPLAY_HASH_TICKS == 0);
+        recording.Send(core::ActionKind::ToggleRecording);
+        recording.Burst(1);
+    } // its job system finishes writing the replay
+
+    Session playing(folder.Path());
+    playing.Send(core::ActionKind::PlayReplay);
+    playing.Burst(1);
+    REQUIRE(playing.replay.Playing());
+    for (u32 bursts = 0; bursts < MAX_BURSTS && playing.replay.Playing(); ++bursts) {
+        playing.Burst(core::REPLAY_HASH_TICKS);
+    }
+    CHECK(playing.replay.AtEnd());
+    CHECK(playing.replay.HashCount() == HASHES);
+    CHECK(playing.replay.Matched() == playing.replay.HashCount());
+    CHECK(playing.host.Current().key == game::STRESS_SCENE);
+}
+
 } // namespace
