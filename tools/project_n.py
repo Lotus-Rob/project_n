@@ -101,7 +101,8 @@ CONTAINER_BUILD_CACHE = "/home/dev/build-cache"  # where container_cmd mounts it
 # Toolchains whose CI builds use the object cache. Not pixi-gcc: with a precompiled header, GCC's preprocessed text
 # holds `#pragma GCC pch_preprocess "<pch>.gch"` instead of the headers, so XMake's key (which hashes that text)
 # misses a change to any header the PCH includes (core/types.hpp...) and hands back the old object; xmake.lua keeps
-# GCC off the build cache everywhere. Not msvc (§4).
+# GCC off the build cache everywhere. Not msvc either: a hit drops the debug info /Zi keeps beside the objects, and
+# under Wine it is no faster (.github/AGENTS.md, Gotchas).
 CI_CACHED_TOOLCHAINS = ("pixi-clang",)
 
 # Conventional Commits (docs/design/0001 §11.1). Add a scope in the commit that first uses it.
