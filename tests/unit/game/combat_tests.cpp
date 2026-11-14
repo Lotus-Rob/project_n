@@ -1219,6 +1219,7 @@ TEST_CASE("a scene change mid-volley ends every open use") {
     const std::array<core::Action, 1> change{ { { .kind = core::ActionKind::CycleScene } } };
     std::vector<core::Event> ended;
     arena.Tick(At(changeTick), { .actions = change, .held = {} }, ended);
+    arena.EnterScene(); // as the logic does after the tick
     const u64 bolt = game::CastUse(boltCast, core::Slot::Generator);
     const u64 swords = game::CastUse(SWORDS_CAST, core::Slot::Special1);
     REQUIRE(ended.size() == 2);
@@ -1559,6 +1560,7 @@ TEST_CASE("a scene change ends every seal") {
     const std::array<core::Action, 1> change{ { { .kind = core::ActionKind::CycleScene } } };
     std::vector<core::Event> events;
     arena.Tick(At(CHANGE), { .actions = change, .held = {} }, events);
+    arena.EnterScene(); // as the logic does after the tick
     CHECK(RaisedAt(arena, CHANGE) == 0);
 }
 

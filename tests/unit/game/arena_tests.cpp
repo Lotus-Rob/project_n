@@ -268,6 +268,13 @@ TEST_CASE("the still scenes have no player and follow nothing") {
     CHECK_FALSE(Published(arena).follow.has_value());
 }
 
+TEST_CASE("the snapshot names the camera") {
+    game::Arena arena(test::TestManifest());
+    game::Arena painted(test::TestManifest(), game::Scene::Painted);
+    CHECK(Published(arena).camera == core::CameraKind::Follow);
+    CHECK(Published(painted).camera == core::CameraKind::Pan);
+}
+
 // The sprite an instance draws, and where its foot stands: MakeInstance offsets the quad's
 // centre from the foot by a fixed amount per sprite, times the scale the instance's size shows.
 std::optional<std::pair<SpriteId, f32>> SpriteAndFootY(const core::Instance& instance) {
@@ -469,11 +476,45 @@ TEST_CASE("F2's CycleScene visits every scene in order and back, clearing the se
     for (const std::string_view name : { "stress", "painted", "cells", "arena" }) {
         ++tick;
         Tick(arena, { .wall = tick, .simulation = tick, .state = tick }, { .actions = cycle, .held = {} });
+        arena.EnterScene(); // as the logic does after the tick
         const std::optional<core::SceneId> expected = manifest->SceneNamed(name);
         CHECK(arena.Scene() == expected);
     }
     CHECK(arena.Selected() == core::StableId{});
     CHECK(arena.Player() != core::StableId{});
+}
+
+TEST_CASE("CycleScene asks for the next scene and EnterScene builds it") {
+    constexpr core::TickCounters CAST_TICK{ .wall = 1, .simulation = 1, .state = 1 };
+    constexpr core::TickCounters CHANGE_TICK{ .wall = 2, .simulation = 2, .state = 2 };
+    constexpr core::Vec2 FAR_POINT{ .x = 1'500.0F, .y = 500.0F }; // a bolt's flight there outlasts a tick
+    constexpr u64 BOLT_USE = game::CastUse(CAST_TICK.simulation, core::Slot::Generator);
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    game::Arena arena(manifest);
+    const core::SceneFacts arenaFacts{ .key = core::SceneKey{ 0 }, .sprites = arena.Scene(), .combat = true };
+    REQUIRE(arena.Current() == arenaFacts);
+    const std::array<core::Action, 1> cast{
+        { { .kind = core::ActionKind::Cast, .slot = core::Slot::Generator, .point = FAR_POINT } }
+    };
+    Tick(arena, CAST_TICK, { .actions = cast, .held = {} });
+    const std::array<core::Action, 1> cycle{ { { .kind = core::ActionKind::CycleScene } } };
+    std::vector<core::Event> events;
+    arena.Tick(CHANGE_TICK, { .actions = cycle, .held = {} }, events);
+    const std::optional<core::SceneId> stressSprites = manifest->SceneNamed("stress");
+    REQUIRE(stressSprites.has_value());
+    const core::SceneFacts stress{ .key = core::SceneKey{ 1 },
+                                   .sprites = stressSprites.value_or(core::SceneId{}),
+                                   .combat = false };
+    const std::optional<core::SceneFacts> requested = arena.Requested();
+    CHECK(requested == stress);
+    CHECK(arena.Current() == arenaFacts);
+    REQUIRE(events.size() == 1); // the bolt's use, still open, ends on the tick that asks
+    CHECK(events.front().kind == core::EventKind::UseEnded);
+    CHECK(events.front().use == BOLT_USE);
+    arena.EnterScene();
+    CHECK(arena.Current() == stress);
+    CHECK(arena.Scene() == stress.sprites);
+    CHECK_FALSE(arena.Requested().has_value());
 }
 
 TEST_CASE("the shipped creatures and abilities tables are the built-in data") {

@@ -14,12 +14,21 @@ u64 PublishedClock() {
 }
 
 constexpr core::SceneId OTHER_SCENE{ 1 };
+constexpr core::SceneKey OTHER_KEY{ 1 };
 
-// Records the ticks it ran and its publishes, and publishes one instance per tick so far; a CycleScene moves it to
-// OTHER_SCENE.
+// What the logic asked of the simulation, in order.
+enum class Call : u8 {
+    Tick,
+    EnterScene,
+    Publish,
+};
+
+// Records the ticks it ran and its publishes, and publishes one instance per tick so far; a CycleScene asks for
+// OTHER_SCENE, which it enters when told.
 class Recorder final : public core::Simulation {
 public:
     void Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) override {
+        calls.push_back(Call::Tick);
         events.push_back({ .kind = core::EventKind::UseEnded, .use = counters.simulation });
         ticks.push_back(counters.simulation);
         states.push_back(counters.state);
@@ -27,7 +36,7 @@ public:
         actions.push_back(input.actions.size());
         casts += static_cast<std::size_t>(std::ranges::count(input.actions, core::ActionKind::Cast, &core::Action::kind));
         if (std::ranges::contains(input.actions, core::ActionKind::CycleScene, &core::Action::kind)) {
-            scene = OTHER_SCENE;
+            requested = core::SceneFacts{ .key = OTHER_KEY, .sprites = OTHER_SCENE };
         }
     }
     void AdvanceCalendar(const core::TickCounters& counters, core::Jobs& /*jobs*/, const std::stop_token& /*stop*/) override {
@@ -58,7 +67,22 @@ public:
     [[nodiscard]] core::SceneId Scene() const override {
         return scene;
     }
+    [[nodiscard]] core::SceneFacts Current() const override {
+        return { .key = key, .sprites = scene };
+    }
+    [[nodiscard]] std::optional<core::SceneFacts> Requested() const override {
+        return requested;
+    }
+    void EnterScene() override {
+        REQUIRE(requested.has_value());
+        calls.push_back(Call::EnterScene);
+        const core::SceneFacts entered = requested.value_or(core::SceneFacts{});
+        key = entered.key;
+        scene = entered.sprites;
+        requested.reset();
+    }
     void Publish(core::Snapshot& snapshot, core::Jobs& /*jobs*/) override {
+        calls.push_back(Call::Publish);
         ++publishes;
         ticksAtPublish = ticks.size();
         capacityAtPublish = snapshot.instances.capacity();
@@ -74,12 +98,15 @@ public:
     std::vector<u64> steps{};            // the state counter at each calendar step
     std::vector<core::HeldInput> held{}; // the held input at each tick
     std::vector<std::size_t> actions{};  // how many actions each tick took
+    std::vector<Call> calls{};
     // NOLINTEND(readability-redundant-member-init)
     std::size_t casts = 0; // how many Cast actions it was given
     bool rejectLoads = false;
     u64 hashSalt = 0; // set to make its state hash differ from another's with the same ticks
     u64 dataHash = 0; // the hash of the game data it was given last
+    core::SceneKey key{};
     core::SceneId scene{};
+    std::optional<core::SceneFacts> requested = std::nullopt;
     std::size_t publishes = 0;
     std::size_t ticksAtPublish = 0;
     std::size_t textsAtPublish = 0;
@@ -309,6 +336,19 @@ TEST_CASE("a tick that changes the scene ends its burst, and the next burst wait
     CHECK(changed.wallTick == 1);
     CHECK(changed.scene == OTHER_SCENE);
     CHECK(rig.Burst(TICKS).snapshot.wallTick == 1);
+}
+
+TEST_CASE("a scene asked for is entered after the tick that asks") {
+    constexpr u64 TICKS = 3;
+    Rig rig;
+    rig.simulation.calls.clear();
+    rig.handover.SendInput({ .kind = core::ActionKind::CycleScene });
+    const core::Snapshot changed = rig.Burst(TICKS).snapshot;
+    const std::vector<Call> expected{ Call::Tick, Call::EnterScene, Call::Publish };
+    CHECK(rig.simulation.calls == expected);
+    CHECK(changed.wallTick == 1);
+    CHECK(changed.scene == OTHER_SCENE);
+    CHECK_FALSE(rig.simulation.requested.has_value());
 }
 
 TEST_CASE("a Pause sent while the scene loads holds once it is resident") {

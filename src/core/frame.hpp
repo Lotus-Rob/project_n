@@ -87,6 +87,30 @@ struct Batch {
     Pipeline pipeline = Pipeline::Normal;
 };
 
+/// The game's own name for a scene, its place in the game's list of scenes: core passes it through without reading it, so
+/// scenes that share a sprite set stay distinct.
+enum class SceneKey : u16 {
+};
+
+/// What the logic and the main thread know of a scene.
+struct SceneFacts {
+    /// The game's name for it.
+    SceneKey key{};
+    /// The manifest's scene (sprite set) it draws with.
+    SceneId sprites{};
+    /// Whether it is a combat scene, where fights happen and casts act.
+    bool combat = false;
+
+    /// Whether two scenes' facts are alike, field by field.
+    friend constexpr bool operator==(const SceneFacts&, const SceneFacts&) = default;
+};
+
+/// How the camera moves over a scene.
+enum class CameraKind : u8 {
+    Follow, ///< It centres on what the snapshot follows (Snapshot::follow).
+    Pan,    ///< It stays where it is until the player pans it.
+};
+
 /// The entity the camera follows (design doc 0002 §8.10): its foot at the previous and this tick.
 struct Follow {
     /// The foot point at the previous tick, in world units.
@@ -291,6 +315,8 @@ struct Snapshot {
     std::optional<CasterView> caster = std::nullopt;
     /// What the camera follows, if anything.
     std::optional<Follow> follow = std::nullopt;
+    /// How the camera moves over the scene: Pan unless the simulation says otherwise.
+    CameraKind camera = CameraKind::Pan;
     /// The index in `instances` of the selected entity's instance, which the renderer outlines; none
     /// when nothing is selected or it isn't drawn.
     std::optional<u32> selected = std::nullopt;
@@ -345,7 +371,7 @@ enum class ActionKind : u8 {
     PlayReplay,      ///< Play the replay file back from its start (a new timeline), or stop playing it.
     Select,          ///< Select the entity `target` names (a stale or zero ID selects nothing).
     ReloadData,      ///< Swap in the game data `data` (debug builds' hot reload): never in a replay.
-    CycleScene,      ///< Switch to the next scene (a debug key): the simulation rebuilds itself as it.
+    CycleScene,      ///< Switch to the next scene (a debug key): the simulation asks for it, and the logic has it built.
     SceneResident,   ///< The main thread holds the scene `scene` and can draw it: never in a replay.
     DebugBurst,      ///< Hit every fox thousands of times (a debug key), for the damage numbers' stress.
     Cast,            ///< Use the ability in the slot `slot` at the world point `point`: one per press, in a combat scene.

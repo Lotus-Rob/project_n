@@ -135,17 +135,17 @@ public:
         const core::GameData& data = BuiltInData()
     );
 
-    /// Rebuilds itself as the next scene in Scene's order (arena, stress, painted, cells, then the arena again) when
-    /// `input` holds a CycleScene, the selection cleared; walks the player's cultivator where `input`'s held
-    /// movement points, selects what its Select actions name (nothing for a dying one), ignores Cast actions outside a combat
-    /// scene (in one a Cast is Combat::Cast(): Qi, cooldown, the ability's effect; a dash moves the player in place of held
-    /// movement), moves every entity on an Orbit to where it is at `counters.simulation`, advances combat (Combat::Tick():
-    /// arrivals, removing the dead, which clears their selection, and spawning the foxes due at the ground's edge), and walks
-    /// the active NPCs, whose decisions draw random numbers keyed on `counters.state`. In the arena scene, every 60th
-    /// simulation tick the crystal's aura hits each living fox in reach and heals the player if in reach, appending a hit event
-    /// for each; a DebugBurst action appends 4,000 hits round the foxes, which change nothing. Last, the volleys and
-    /// afflictions strike (Combat::Strike()), appending their hits. Each use ends with a UseEnded event; a scene change ends
-    /// every use still open first (Combat::EndUses()). The events themselves change nothing in the state.
+    /// When `input` holds a CycleScene, asks for the next scene in Scene's order (arena, stress, painted, cells, then the
+    /// arena again; Requested()), ending every use still open (Combat::EndUses()), and does nothing else. Otherwise walks
+    /// the player's cultivator where `input`'s held movement points, selects what its Select actions name (nothing for a dying
+    /// one), ignores Cast actions outside a combat scene (in one a Cast is Combat::Cast(): Qi, cooldown, the ability's effect;
+    /// a dash moves the player in place of held movement), moves every entity on an Orbit to where it is at
+    /// `counters.simulation`, advances combat (Combat::Tick(): arrivals, removing the dead, which clears their selection, and
+    /// spawning the foxes due at the ground's edge), and walks the active NPCs, whose decisions draw random numbers keyed on
+    /// `counters.state`. In the arena scene, every 60th simulation tick the crystal's aura hits each living fox in reach and
+    /// heals the player if in reach, appending a hit event for each; a DebugBurst action appends 4,000 hits round the foxes,
+    /// which change nothing. Last, the volleys and afflictions strike (Combat::Strike()), appending their hits. Each use ends
+    /// with a UseEnded event. The events themselves change nothing in the state.
     void Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) override;
 
     /// Lets a month pass for the world NPCs (MonthStep).
@@ -177,6 +177,17 @@ public:
     [[nodiscard]] core::SceneId Scene() const override {
         return m_sceneId;
     }
+
+    /// The scene it is: its place in Scene's order as its key, its manifest scene, and whether it is a combat scene.
+    [[nodiscard]] core::SceneFacts Current() const override {
+        return FactsOf(m_scene);
+    }
+
+    /// The scene the last CycleScene asked for, until EnterScene() or a load; none otherwise.
+    [[nodiscard]] std::optional<core::SceneFacts> Requested() const override;
+
+    /// Rebuilds itself as the scene Requested() names, the selection cleared, and forgets the request.
+    void EnterScene() override;
 
     /// How many months have passed.
     [[nodiscard]] u64 Months() const {
@@ -227,6 +238,7 @@ private:
     void Write(Archive& archive) const;
 
     void Build(game::Scene scene);
+    [[nodiscard]] core::SceneFacts FactsOf(game::Scene scene) const;
     core::Entity Spawn(core::Vec2 foot, const Look& look);
     void Walk(core::Vec2 move);
     void Select(core::StableId target);
@@ -263,6 +275,9 @@ private:
     core::Rect m_view{};         // what a publish culls to without a player
     core::StableId m_player{};   // the cultivator the player walks; zero for none
     core::StableId m_selected{}; // zero for none
+
+    // The scene a CycleScene asked for, until it is entered.
+    std::optional<game::Scene> m_requested = std::nullopt;
 };
 
 } // namespace game

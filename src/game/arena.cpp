@@ -397,6 +397,23 @@ bool Arena::IsCombatScene() const {
     return SCENES.at(std::to_underlying(m_scene)).combat;
 }
 
+core::SceneFacts Arena::FactsOf(game::Scene scene) const {
+    return {
+        .key = core::SceneKey{ std::to_underlying(scene) },
+        .sprites = SceneIdOf(*m_manifest, scene),
+        .combat = SCENES.at(std::to_underlying(scene)).combat,
+    };
+}
+
+std::optional<core::SceneFacts> Arena::Requested() const {
+    return m_requested.transform([this](game::Scene scene) { return FactsOf(scene); });
+}
+
+void Arena::EnterScene() {
+    PN_ASSERT(m_requested.has_value(), "a scene entered that nothing asked for");
+    Build(m_requested.value_or(m_scene));
+}
+
 std::optional<Scene> SceneNamed(std::string_view name) {
     const std::span<const SceneEntry> scenes{ SCENES };
     const auto found = std::ranges::find(scenes, name, &SceneEntry::name);
@@ -464,6 +481,7 @@ void Arena::Build(game::Scene scene) {
     m_combat.SetRules(m_data.combat);
     m_scene = scene;
     m_sceneId = SceneIdOf(*m_manifest, scene);
+    m_requested.reset();
     m_view = ViewOf(scene);
     m_player = {};
     m_selected = {};
@@ -651,7 +669,7 @@ void Arena::Tick(const core::TickCounters& counters, const core::TickInput& inpu
         const auto next = static_cast<game::Scene>((std::to_underlying(m_scene) + 1U) % SCENES.size());
         PN_LOG_INFO("tick {}: the scene changes to {}", counters.simulation, SceneName(next));
         m_combat.EndUses(m_state, events); // nothing of this scene's goes on to hit
-        Build(next);                       // the new scene's first tick is the next one
+        m_requested = next;                // the logic has it built after this tick
         return;
     }
     for (const core::Action& action : input.actions) {
@@ -952,6 +970,7 @@ bool Arena::Load(core::Reader& archive, u64 simulationTick) {
     m_combat = std::move(combat);
     m_scene = scene;
     m_sceneId = SceneIdOf(*m_manifest, scene);
+    m_requested.reset();
     m_months = months;
     m_view = ViewOf(scene);
     m_player = player;
@@ -1028,6 +1047,7 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
     if (m_player != core::StableId{}) {
         const Body& body = bodies.get(m_state[ACTIVE].Find(m_player));
         snapshot.follow = core::Follow{ .previous = body.previous, .current = body.current };
+        snapshot.camera = core::CameraKind::Follow;
         view = { .min = body.current - FOLLOW_HALF_VIEW, .max = body.current + FOLLOW_HALF_VIEW };
     }
     m_drawList.Begin(view, std::max(chunks, 1U));
