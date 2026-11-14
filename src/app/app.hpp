@@ -7,6 +7,7 @@
 /// snapshots the logic thread publishes.
 
 #include "app/bindings.hpp"
+#include "app/camera_control.hpp"
 #include "app/cast.hpp"
 #include "app/damage_numbers.hpp"
 #include "app/hud.hpp"
@@ -167,9 +168,11 @@ private:
     void RunLogic(const std::stop_token& stop);
     void HandleInput(const platform::WindowState& state);
     void NoteDevice(const platform::InputEvent& input);
+    // Hands the camera's controls (drag, zoom, snap back) to it: true when `control` was one of them, pressed.
+    [[nodiscard]] bool SteerCamera(const ControlEvent& control);
     void Select(const platform::WindowState& state, core::Vec2 position);
     void Cast(const platform::WindowState& state, const ControlEvent& control, platform::Device device, bool combat);
-    void Pan(u64 nowNs);
+    void MoveCamera(const platform::WindowState& state, const core::Snapshot& drawn, f64 alpha);
     [[nodiscard]] bool Present(const platform::WindowState& state);
     [[nodiscard]] bool LoadScene(core::SceneId wanted);
     [[nodiscard]] std::optional<std::size_t> Hovered(
@@ -208,15 +211,16 @@ private:
     std::vector<platform::InputEvent> m_inputs{};
     Bindings m_bindings{};
     // NOLINTEND(readability-redundant-member-init)
-    gfx::Camera m_camera{};
+    CameraControl m_camera;                                 // starts each scene at m_options.zoom
+    Drag m_drag{};                                          // the camera's, by the pointer
     FrameClock m_frameClock{};                              // what labels fade by
     core::HeldInput m_held{};                               // as last sent
-    u64 m_frameNs = 0;                                      // when the last frame began, for panning
+    u64 m_cameraNs = 0;                                     // when the camera last moved on
+    std::optional<u64> m_cameraChange = std::nullopt;       // the scene change the camera last showed
     u64 m_dataCheckNs = 0;                                  // when the data folder is looked at next
     u64 m_loadStartNs = 0;                                  // when the scene loading began
     std::optional<core::SceneId> m_loading = std::nullopt;  // the scene the renderer loads
     std::optional<core::SceneId> m_reported = std::nullopt; // the scene the logic was told is resident, last
-    std::optional<core::SceneId> m_shown = std::nullopt;    // the scene of the snapshot drawn last
     core::SceneReports m_sceneReports{};                    // the ways out and in reported played
     std::optional<u64> m_numbersEpoch = std::nullopt;       // the timeline the damage numbers belong to
     DataWatch m_dataWatch{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer

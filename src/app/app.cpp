@@ -171,7 +171,8 @@ App::App(platform::Window window, gfx::Renderer renderer, Options options)
           .shadow = m_options.settings.textShadow },
         m_options.settings.uiColours
     )
-  , m_frameNs{ m_startNs } {
+  , m_camera{ m_options.zoom }
+  , m_cameraNs{ m_startNs } {
     m_numberTexts.reserve(NUMBER_RESERVE);
     ApplyEffects(m_options.effects);
     m_renderer.SetSeals(m_options.seals);
@@ -239,7 +240,6 @@ i32 App::Run() {
         if (m_logicFailed) {
             return 1;
         }
-        Pan(platform::NowNs());
         WatchData(platform::NowNs());
         RepeatBurst(platform::NowNs());
         CastOnTimer(platform::NowNs());
@@ -355,6 +355,10 @@ void App::HandleInput(const platform::WindowState& state) {
         PN_LOG_INFO("{}: the window is {}", m_paused ? "paused" : "resumed", m_paused ? "unfocused or minimised" : "back");
         m_handover.SendInput({ .kind = m_paused ? core::ActionKind::Pause : core::ActionKind::Resume });
     }
+    if (m_paused) {
+        // Maybe while nothing is drawn (minimised): the cursor's return across the edge mustn't pan.
+        m_camera.LoseFocus();
+    }
     if (m_device.TakeCursor(m_window.Cursor())) {
         PN_LOG_INFO("prompts for {}", DeviceName(m_device.Used(), m_device.Family()));
     }
@@ -362,16 +366,11 @@ void App::HandleInput(const platform::WindowState& state) {
     for (const platform::InputEvent& input : m_inputs) {
         NoteDevice(input);
         const std::optional<ControlEvent> control = m_bindings.Handle(input);
-        if (!control || !control->pressed) {
+        if (!control || SteerCamera(*control) || !control->pressed) {
             continue;
         }
         if (control->control == Control::Quit) {
             m_quit = true;
-        }
-        else if (control->control == Control::Zoom) {
-            if (ZoomsCamera(m_display.Drawn())) {
-                m_camera.zoom = gfx::ZoomedBy(m_camera.zoom, control->value);
-            }
         }
         else if (control->control == Control::ToggleShowcase) {
             m_showcase = !m_showcase;
@@ -393,11 +392,37 @@ void App::HandleInput(const platform::WindowState& state) {
             m_handover.SendInput({ .kind = action->kind });
         }
     }
+    if (m_paused) {
+        m_drag.End(); // after this frame's presses too: a button's release may never come while paused
+    }
     const core::HeldInput held{ .move = m_bindings.Move() };
     if (held != m_held) {
         m_held = held;
         m_handover.SendHeld(held);
     }
+}
+
+bool App::SteerCamera(const ControlEvent& control) {
+    if (!control.pressed) {
+        m_drag.Release(control.control);
+        return false;
+    }
+    const core::Snapshot* drawn = m_display.Drawn();
+    if (DragsCamera(control.control, drawn == nullptr || drawn->combat)) {
+        m_drag.Press(control.control, control.position);
+        return true;
+    }
+    if (control.control == Control::Zoom) {
+        if (ZoomsCamera(drawn)) {
+            m_camera.Zoom(control.value);
+        }
+        return true;
+    }
+    if (control.control == Control::SnapBack) {
+        m_camera.SnapBack();
+        return true;
+    }
+    return false;
 }
 
 void App::NoteDevice(const platform::InputEvent& input) {
@@ -410,8 +435,9 @@ void App::Cast(const platform::WindowState& state, const ControlEvent& control, 
     // The clicked position for a mouse button; for a key, wherever the cursor is over the window.
     const std::optional<core::Vec2> cursor =
         device == platform::Device::Mouse ? std::optional{ control.position } : m_window.Cursor();
-    const std::optional<core::Vec2> point =
-        cursor.transform([&](core::Vec2 window) { return WindowToWorld(m_camera, window, state.width, state.height); });
+    const std::optional<core::Vec2> point = cursor.transform([&](core::Vec2 window) {
+        return WindowToWorld(m_camera.Camera(), window, state.width, state.height);
+    });
     const std::optional<core::Action> cast = CastAction(control.control, control.pressed, combat, control.alt, point);
     if (!cast) {
         if (combat && !point) {
@@ -432,7 +458,7 @@ void App::Select(const platform::WindowState& state, core::Vec2 position) {
     }
     // The picture the player clicked on: the drawn snapshot at the render clock, as the camera shows it.
     const f64 alpha = core::Alpha(drawn->scheduledNs, platform::NowNs(), core::DEFAULT_DISPLAY_DELAY_NS, drawn->advanced);
-    const core::StableId target = Pick(*drawn, alpha, WindowToWorld(m_camera, position, state.width, state.height));
+    const core::StableId target = Pick(*drawn, alpha, WindowToWorld(m_camera.Camera(), position, state.width, state.height));
     PN_LOG_DEBUG("clicked on entity {}", std::to_underlying(target));
     m_handover.SendInput({ .kind = core::ActionKind::Select, .target = target });
 }
@@ -443,17 +469,44 @@ std::optional<std::size_t> App::Hovered(const platform::WindowState& state, cons
     if (!cursor || m_device.Used() == platform::Device::Gamepad) {
         return std::nullopt; // a gamepad has no cursor to hover with
     }
-    return PickInstance(drawn, alpha, WindowToWorld(m_camera, *cursor, state.width, state.height));
+    return PickInstance(drawn, alpha, WindowToWorld(m_camera.Camera(), *cursor, state.width, state.height));
 }
 
-void App::Pan(u64 nowNs) {
+void App::MoveCamera(const platform::WindowState& state, const core::Snapshot& drawn, f64 alpha) {
     PN_PROFILE_ZONE();
-    const u64 elapsedNs = nowNs - std::exchange(m_frameNs, nowNs);
-    if (!PansCamera(m_display.Drawn())) {
-        return;
+    const u64 nowNs = platform::NowNs();
+    const f32 seconds =
+        static_cast<f32>(nowNs - std::min(nowNs, std::exchange(m_cameraNs, nowNs))) / static_cast<f32>(core::NS_PER_SECOND);
+    const std::optional<core::Vec2> pointer = m_window.Cursor();
+    const std::optional<core::Vec2> dragFrom = m_drag.Take(pointer, state.focused, state.width, state.height);
+    // A gamepad has no cursor: a mouse left resting at the window's edge doesn't pan while one is in use.
+    const std::optional<core::Vec2> cursor = dragFrom || m_device.Used() != platform::Device::Gamepad ? pointer : std::nullopt;
+    const bool wasFree = m_camera.Free();
+    m_camera.Update(
+        {
+            .kind = drawn.camera,
+            .change = core::ShownChange(drawn.sceneChange),
+            .followed = drawn.follow.transform([alpha](const core::Follow& follow) { return FollowedCentre(follow, alpha); }),
+            .move = m_held.move,
+            .pan = m_bindings.Pan(),
+            .cursor = cursor,
+            .dragFrom = dragFrom,
+            .focused = state.focused,
+            .edgePan = m_options.settings.edgePan,
+            .width = state.width,
+            .height = state.height,
+            .seconds = seconds,
+            .still = HoldsCamera(&drawn),
+        }
+    );
+    if (const u64 change = core::ShownChange(drawn.sceneChange); change != m_cameraChange) {
+        m_cameraChange = change;
+        const bool follows = drawn.follow && drawn.camera != core::CameraKind::Pan;
+        PN_LOG_DEBUG("the camera starts scene change {} {}", change, follows ? "following the player" : "at the scene's view");
     }
-    const f32 seconds = static_cast<f32>(elapsedNs) / static_cast<f32>(core::NS_PER_SECOND);
-    m_camera.centre = m_camera.centre + (m_held.move * (PAN_SPEED * seconds / m_camera.zoom));
+    else if (m_camera.Free() != wasFree) {
+        PN_LOG_DEBUG("the camera {}", m_camera.Free() ? "was panned free of the player" : "snapped back to the player");
+    }
 }
 
 bool App::LoadScene(core::SceneId wanted) {
@@ -500,7 +553,6 @@ bool App::Present(const platform::WindowState& state) {
     if (const std::optional<core::Action> report = m_sceneReports.Answer(drawn->sceneChange)) {
         m_handover.SendInput(*report);
     }
-    ShowScene(m_camera, m_shown, drawn->scene, m_options.zoom);
     if (m_numbersEpoch != drawn->epoch) {
         m_numbers.Clear(); // a new timeline: none of the old one's hits happened in it
         m_hud.Clear();     // nor its refused casts
@@ -518,12 +570,11 @@ bool App::Present(const platform::WindowState& state) {
             m_hud.Play(event, static_cast<f64>(event.tick));
         },
         [this, drawn, &state](f64 alpha) {
-            if (drawn->follow) {
-                m_camera.centre = FollowedCentre(*drawn->follow, alpha);
-            }
+            MoveCamera(state, *drawn, alpha);
             // Only drawn frames send one: hidden, the logic keeps the last view, and the first frame back sends a fresh one.
             m_handover.SendView(
-                { .area = CullArea(m_camera, state.width, state.height), .change = core::ShownChange(drawn->sceneChange) }
+                { .area = CullArea(m_camera.Camera(), state.width, state.height),
+                  .change = core::ShownChange(drawn->sceneChange) }
             );
             const f64 renderTick = core::RenderTick(drawn->simulationTick, alpha);
             m_numberTexts.clear();
@@ -535,7 +586,8 @@ bool App::Present(const platform::WindowState& state) {
                 m_hud.Build(*drawn->caster, renderTick, static_cast<u32>(std::max(state.height, 0)), m_hudLines, m_hudBars);
             }
             // Labels on the frame clock, which runs while the game is paused; numbers on the render clock, which holds.
-            gfx::View view = FrameView(m_camera, alpha, Hovered(state, *drawn, alpha), m_frameClock.Advance(platform::NowNs()));
+            gfx::View view =
+                FrameView(m_camera.Camera(), alpha, Hovered(state, *drawn, alpha), m_frameClock.Advance(platform::NowNs()));
             view.showcase = m_showcase;
             m_renderer.Draw(*drawn, view, m_jobs, m_numberTexts, { .lines = m_hudLines, .bars = m_hudBars });
             MeasureLatency(*drawn);

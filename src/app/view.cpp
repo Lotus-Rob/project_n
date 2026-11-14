@@ -26,13 +26,6 @@ gfx::View FrameView(const gfx::Camera& camera, f64 alpha, std::optional<std::siz
     return { .alpha = alpha, .camera = camera, .outlined = outlined, .frameClock = frameSeconds };
 }
 
-void ShowScene(gfx::Camera& camera, std::optional<core::SceneId>& shown, core::SceneId scene, f32 zoom) {
-    if (shown != scene) {
-        camera = gfx::Camera{ .zoom = zoom }; // each scene is laid out for the reference view; a followed one re-centres it
-    }
-    shown = scene;
-}
-
 core::Vec2 FollowedCentre(const core::Follow& follow, f64 alpha) {
     PN_PROFILE_ZONE();
     return Interpolated(follow.previous, follow.current, alpha);
@@ -58,8 +51,8 @@ core::Rect CullArea(const gfx::Camera& camera, i32 width, i32 height) {
     return { .min = min - margin, .max = max + margin };
 }
 
-bool PansCamera(const core::Snapshot* drawn) {
-    return drawn != nullptr && !drawn->follow && !drawn->transition;
+bool HoldsCamera(const core::Snapshot* drawn) {
+    return drawn == nullptr || drawn->transition;
 }
 
 bool ZoomsCamera(const core::Snapshot* drawn) {
