@@ -699,8 +699,9 @@ class ObjectCacheTest(unittest.TestCase):
                                               run=lambda cmd, **kwargs: self.ran.append([str(c) for c in cmd])))
 
     def ci(self, cache=None, ref=None):
-        """os.environ as CI sets it: the object cache folder and the ref, or neither (a local run)."""
-        env = {k: v for k, v in os.environ.items() if k not in (project_n.BUILD_CACHE_ENV, "GITHUB_REF")}
+        """os.environ as CI sets it: the object cache folder and the ref, or neither (a local run). Never CI's step
+        output (GITHUB_OUTPUT): a test run on a runner would write into the real step's."""
+        env = {k: v for k, v in os.environ.items() if k not in (project_n.BUILD_CACHE_ENV, "GITHUB_REF", "GITHUB_OUTPUT")}
         env |= {project_n.BUILD_CACHE_ENV: str(cache)} if cache else {}
         env |= {"GITHUB_REF": ref} if ref else {}
         return mock.patch.dict(project_n.os.environ, env, clear=True)
