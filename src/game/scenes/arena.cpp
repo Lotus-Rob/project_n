@@ -19,7 +19,7 @@ constexpr SceneTraits ARENA_TRAITS{
     .home = ARENA_START,
     .combat = true,
     .creatures = true,
-    .demoGlows = true,
+    .demoGlows = ARENA_DEMO_GLOWS,
     .camera = core::CameraKind::Follow,
     .worldNpcs = 5'000,
 };

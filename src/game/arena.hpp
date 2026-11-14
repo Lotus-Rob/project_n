@@ -2,13 +2,12 @@
 
 /// @file
 /// @ingroup game
-/// The host every scene runs in (game/scene.hpp, listed in game/scenes.hpp): as the core::Simulation it owns the
+/// The host every scene runs in (game/scene.hpp, listed in game/scenes.cpp): as the core::Simulation it owns the
 /// state's domains, the world NPCs and the calendar, the player's cultivator, the selection, combat, the game data,
 /// saving, loading and hashing, and the publishing every scene shares, and it knows no scene by name.
 
 #include "core/draw_list.hpp"
 #include "core/ecs.hpp"
-#include "core/error.hpp"
 #include "core/frame.hpp"
 #include "core/game_data.hpp"
 #include "core/glow.hpp"
@@ -36,7 +35,7 @@ namespace game {
 /// no data files (tests, tools).
 [[nodiscard]] core::GameData BuiltInData();
 
-/// Which scene to build: its place in game/scenes.hpp's list (core::SceneKey).
+/// Which scene to build: its place in the list in game/scenes.cpp (core::SceneKey).
 enum class Scene : u8 {
     Arena,   ///< The demonstration arena.
     Stress,  ///< The arena with a crowd of 90,000, a spiral of 10,000 bullets and 50,000 world NPCs, for profiling.
@@ -44,7 +43,7 @@ enum class Scene : u8 {
     Cells,   ///< A still grid of 640 map cells, for judging the mips as the view zooms out (§16 phase 3).
 };
 
-/// The key of `scene` in game/scenes.hpp's list.
+/// The key of `scene`: its place in the list in game/scenes.cpp.
 [[nodiscard]] constexpr core::SceneKey KeyOf(Scene scene) {
     return core::SceneKey{ std::to_underlying(scene) };
 }
@@ -57,8 +56,8 @@ enum class Scene : u8 {
 /// Its previous value is the one at `tick - 1` in the same loop, 0 at a loop's first tick. Any other role gives no glow.
 [[nodiscard]] core::GlowInput DemoGlow(core::GlowRole role, u64 tick);
 
-/// The host as a simulation: it runs the scene it is (game/scenes.hpp), moves its creatures each tick and publishes every
-/// sprite.
+/// The host as a simulation: it runs the scene it is (listed in game/scenes.cpp), moves its creatures each tick and publishes
+/// every sprite.
 class Arena final : public core::Simulation {
 public:
     /// Builds `scene` with `data`'s creatures: the same entities, in the same places, every time. It
@@ -112,7 +111,7 @@ public:
         return m_sceneId;
     }
 
-    /// The scene it is: its key in the list (game/scenes.hpp), its manifest scene, and whether it is a combat scene.
+    /// The scene it is: its key in the list (game/scenes.cpp), its manifest scene, and whether it is a combat scene.
     [[nodiscard]] core::SceneFacts Current() const override {
         return FactsOf(m_scene);
     }
@@ -160,8 +159,8 @@ public:
     /// entities in foot-y order, then the effects, packed in fixed chunks
     /// on `jobs`: the bytes are the same whatever its worker count. Each entity's instance carries
     /// its ID, but a dying one's carries none and dissolves (core::SpriteDraw::dissolve, DissolveAt() at
-    /// `snapshot.simulationTick`), its shadow with it; a scene with the demo glows (SceneTraits::demoGlows) has its shrine,
-    /// stele and ice crystal wear them (DemoGlow()). The player's cultivator is the one to follow, with what is drawn culled
+    /// `snapshot.simulationTick`), its shadow with it; the sprites a scene's traits list (SceneTraits::demoGlows) wear
+    /// their demo glows (DemoGlow()). The player's cultivator is the one to follow, with what is drawn culled
     /// around it, and the snapshot names the scene's camera (SceneTraits::camera). A scene with a player adds the player's
     /// and each living fox's name label over its head; a combat scene adds each living fox's health bar at its head and the
     /// player's casting state (core::Snapshot::caster). Then the scene adds its own (SceneClass::Publish(): the tablet's

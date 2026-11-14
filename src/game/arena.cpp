@@ -4,7 +4,6 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/instances.hpp"
 #include "core/log.hpp"
-#include "core/math.hpp"
 #include "core/profile.hpp"
 #include "core/random.hpp"
 #include "core/seal.hpp"
@@ -28,19 +27,11 @@ constexpr u64 PROGRESS_LOOP = 300;  // 5 s
 constexpr u64 PROGRESS_FILL = 180;  // the value climbs over these, then the result shows
 constexpr u64 PROGRESS_RESULTS = 4;
 
-// The demo glow a sprite wears in a scene with the demo glows: none for the rest. The role isn't stored on the entity:
-// that would change what saves hold and the state hash, and a glow is presentation only.
-core::GlowRole DemoRoleOf(SpriteId sprite) {
-    if (sprite == SpriteId::Shrine) {
-        return core::GlowRole::DemoPulse;
-    }
-    if (sprite == SpriteId::Stele) {
-        return core::GlowRole::DemoCharge;
-    }
-    if (sprite == SpriteId::CrystalIce) {
-        return core::GlowRole::DemoProgress;
-    }
-    return core::GlowRole::None;
+// The demo glow `sprite` wears in a scene whose traits list `glows`: none for the rest. The role isn't stored on the
+// entity: that would change what saves hold and the state hash, and a glow is presentation only.
+core::GlowRole DemoRoleOf(std::span<const DemoGlowSprite> glows, SpriteId sprite) {
+    const auto found = std::ranges::find(glows, sprite, &DemoGlowSprite::sprite);
+    return found == glows.end() ? core::GlowRole::None : found->role;
 }
 
 // A value rising linearly from 0 to 1 over `rise` ticks, then held.
@@ -58,7 +49,6 @@ constexpr u32 USE_DEBUG_BURST = 2; // the burst's ability use source (core::Abil
 // A fixed size; cull relative to the window (the camera's view rectangle) or the world's size when a window
 // shape or zoom outgrows it.
 constexpr core::Vec2 FOLLOW_HALF_VIEW{ .x = 7'680.0F, .y = 4'320.0F };
-constexpr f32 WOBBLES_PER_LAP = 3.0F;
 
 // The world NPCs a scene asks for live over the map, a dozen to a cell.
 constexpr u32 WORLD_CELLS = 4'096;
@@ -284,20 +274,6 @@ void Arena::EnterScene() {
         return; // with assertions off, the scene and its fight stay as they are
     }
     Build(*m_requested);
-}
-
-core::Vec2 OrbitPoint(const Orbit& orbit, u64 tick) {
-    // In f64 and reduced to one turn: an f32 angle loses whole ticks within hours, and Sin and Cos are NaN past 2^20
-    // quarter turns.
-    const f64 angle = std::fmod(
-        static_cast<f64>(orbit.phase) + (static_cast<f64>(orbit.speed) * static_cast<f64>(tick)), 2 * std::numbers::pi
-    );
-    const f64 radius = static_cast<f64>(orbit.radius) +
-                       (static_cast<f64>(orbit.wobble) * core::math::Sin(static_cast<f64>(WOBBLES_PER_LAP) * angle));
-    return {
-        .x = orbit.centre.x + static_cast<f32>(radius * core::math::Cos(angle)),
-        .y = orbit.centre.y + static_cast<f32>(radius * core::math::Sin(angle) * static_cast<f64>(VIEW_TILT)),
-    };
 }
 
 Arena::Arena(std::shared_ptr<const core::Manifest> manifest, game::Scene scene, const core::GameData& data)
@@ -689,7 +665,7 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
     const auto& dyings = m_state[ACTIVE].Entities().storage<Dying>();
     const u64 tick = snapshot.simulationTick;
     const SceneTraits& traits = Running().Traits();
-    const bool demoGlows = traits.demoGlows;
+    const std::span<const DemoGlowSprite> demoGlows = traits.demoGlows;
     snapshot.combat = traits.combat;
     snapshot.camera = traits.camera;
     const u32 chunks = core::ChunkCount(looks.size(), PUBLISH_CHUNK);
@@ -739,7 +715,7 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
                       .previousRotation = spin.previous,
                       .currentRotation = spin.current,
                       .dissolve = dissolve,
-                      .glow = demoGlows ? DemoGlow(DemoRoleOf(look.sprite), tick) : core::GlowInput{} }
+                      .glow = DemoGlow(DemoRoleOf(demoGlows, look.sprite), tick) }
                 ),
                 body.current.y,
                 dying ? core::StableId{} : stableId

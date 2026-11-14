@@ -17,9 +17,18 @@ constexpr PaintedScene PAINTED_INSTANCE{};
 constexpr CellsScene CELLS_INSTANCE{};
 
 // F2's order, each at its key's place.
-constexpr std::array<const SceneClass*, 4> SCENE_LIST{
-    { &ARENA_INSTANCE, &STRESS_INSTANCE, &PAINTED_INSTANCE, &CELLS_INSTANCE }
-};
+constexpr auto SCENE_LIST =
+    std::to_array<const SceneClass*>({ &ARENA_INSTANCE, &STRESS_INSTANCE, &PAINTED_INSTANCE, &CELLS_INSTANCE });
+
+// Each key constant names its scene's place, and every listed scene has one.
+constexpr bool KeyedAt(core::SceneKey key, const SceneClass* scene) {
+    return std::to_underlying(key) < SCENE_LIST.size() && SCENE_LIST.at(std::to_underlying(key)) == scene;
+}
+static_assert(KeyedAt(ARENA_SCENE, &ARENA_INSTANCE));
+static_assert(KeyedAt(STRESS_SCENE, &STRESS_INSTANCE));
+static_assert(KeyedAt(PAINTED_SCENE, &PAINTED_INSTANCE));
+static_assert(KeyedAt(CELLS_SCENE, &CELLS_INSTANCE));
+static_assert(SCENE_LIST.size() == 4, "a listed scene without its key constant in game/scenes.hpp");
 
 } // namespace
 

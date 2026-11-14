@@ -2,8 +2,9 @@
 
 /// @file
 /// @ingroup game
-/// The game's scenes, in F2's order: a scene's key (core::SceneKey) is its place in this list, which is also what a save
-/// stores of it. Adding a scene is its file in game/scenes/ and a line in this list.
+/// The game's scenes, in F2's order: a scene's key (core::SceneKey) is its place in the list (game/scenes.cpp), which is
+/// also what a save stores of it. Adding a scene is its class in game/scenes/, an instance and its place in the list in
+/// game/scenes.cpp, and its key constant here, which game/scenes.cpp checks against its place.
 
 #include "core/error.hpp"
 #include "core/frame.hpp"
