@@ -26,7 +26,6 @@
 #include <memory>
 #include <optional>
 #include <stop_token>
-#include <string_view>
 #include <vector>
 
 namespace game {
@@ -35,22 +34,6 @@ namespace game {
 /// no data files (tests, tools).
 [[nodiscard]] core::GameData BuiltInData();
 
-/// Which scene to build: its place in the list in game/scenes.cpp (core::SceneKey).
-enum class Scene : u8 {
-    Arena,   ///< The demonstration arena.
-    Stress,  ///< The arena with a crowd of 90,000, a spiral of 10,000 bullets and 50,000 world NPCs, for profiling.
-    Painted, ///< A still scene of painted sprites and overlapping glows, for judging art and blending (§8.4).
-    Cells,   ///< A still grid of 640 map cells, for judging the mips as the view zooms out (§16 phase 3).
-};
-
-/// The key of `scene`: its place in the list in game/scenes.cpp.
-[[nodiscard]] constexpr core::SceneKey KeyOf(Scene scene) {
-    return core::SceneKey{ std::to_underlying(scene) };
-}
-
-/// The name of `scene`'s sprites in the atlas manifest (art/scenes.toml): `arena`, `stress`, `painted`, `cells`.
-[[nodiscard]] std::string_view SceneName(Scene scene);
-
 /// The input of the demo glow `role` at simulation `tick` (the shrine's pulse, the stele's charge on a 3.2 s loop that rises,
 /// holds and releases, the crystal's progress on a 5 s loop that fills and then shows a result): pure and presentation only.
 /// Its previous value is the one at `tick - 1` in the same loop, 0 at a loop's first tick. Any other role gives no glow.
@@ -58,13 +41,13 @@ enum class Scene : u8 {
 
 /// The host as a simulation: it runs the scene it is (listed in game/scenes.cpp), moves its creatures each tick and publishes
 /// every sprite.
-class Arena final : public core::Simulation {
+class Host final : public core::Simulation {
 public:
     /// Builds `scene` with `data`'s creatures: the same entities, in the same places, every time. It
     /// draws its sprites where `manifest` puts them; `manifest` must pass CheckScenes().
-    explicit Arena(
+    explicit Host(
         std::shared_ptr<const core::Manifest> manifest,
-        game::Scene scene = game::Scene::Arena,
+        core::SceneKey scene = ARENA_SCENE,
         const core::GameData& data = BuiltInData()
     );
 
@@ -74,9 +57,9 @@ public:
     /// (nothing for a dying one), ignores Cast actions outside a combat scene (in one a Cast is Combat::Cast(): Qi,
     /// cooldown, the ability's effect; a dash moves the player in place of held movement), moves every entity on an Orbit to
     /// where it is at `counters.simulation`, advances combat (Combat::Tick(): arrivals, removing the dead, which clears
-    /// their selection, and the foxes due back, which the scene respawns: SceneClass::Respawn()), and walks the active NPCs,
+    /// their selection, and the foxes due back, which the scene respawns: Scene::Respawn()), and walks the active NPCs,
     /// whose decisions draw random numbers keyed on `counters.state`. Then the scene takes its own part of the tick
-    /// (SceneClass::Tick(): in the arena, the crystal's aura); a DebugBurst action appends 4,000 hits round the foxes, which
+    /// (Scene::Tick(): in the arena, the crystal's aura); a DebugBurst action appends 4,000 hits round the foxes, which
     /// change nothing. Last, the volleys and afflictions strike (Combat::Strike()), appending their hits. Each use ends with a
     /// UseEnded event. The events themselves change nothing in the state.
     void Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) override;
@@ -166,7 +149,7 @@ public:
     /// their demo glows (DemoGlow()). The player's cultivator is the one to follow, with what is drawn culled
     /// around it, and the snapshot names the scene's camera (SceneTraits::camera). A scene with a player adds the player's
     /// and each living fox's name label over its head; a combat scene adds each living fox's health bar at its head and the
-    /// player's casting state (core::Snapshot::caster). Then the scene adds its own (SceneClass::Publish(): the tablet's
+    /// player's casting state (core::Snapshot::caster). Then the scene adds its own (Scene::Publish(): the tablet's
     /// caption, the arena's showcase seals) and, after it, the volleys in flight with their targets and the seals raised
     /// in play (Combat::Publish()).
     void Publish(core::Snapshot& snapshot, core::Jobs& jobs) override;
@@ -177,7 +160,7 @@ private:
 
     class Context; // the SceneContext a scene's hooks reach the host through
 
-    [[nodiscard]] const SceneClass& Running() const {
+    [[nodiscard]] const game::Scene& Running() const {
         return SceneOf(m_scene);
     }
     void Build(core::SceneKey scene);

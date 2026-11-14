@@ -3,9 +3,9 @@
 #include "core/instances.hpp"
 #include "core/jobs.hpp"
 #include "core/state.hpp"
-#include "game/arena.hpp"
 #include "game/combat.hpp"
 #include "game/components.hpp"
+#include "game/host.hpp"
 #include "game/npcs.hpp"
 #include "support/manifest.hpp"
 #include "support/seals.hpp"
@@ -32,35 +32,35 @@ core::TickCounters At(u64 tick) {
     return { .wall = tick, .simulation = tick, .state = tick };
 }
 
-// Ticks `arena` from `first` to `last`, holding nothing, ignoring its events.
-void Run(game::Arena& arena, u64 first, u64 last) {
+// Ticks `host` from `first` to `last`, holding nothing, ignoring its events.
+void Run(game::Host& host, u64 first, u64 last) {
     std::vector<core::Event> events;
     for (u64 tick = first; tick <= last; ++tick) {
         events.clear();
-        arena.Tick(At(tick), {}, events);
+        host.Tick(At(tick), {}, events);
     }
 }
 
-// What `arena` publishes at simulation tick `tick`.
-core::Snapshot Published(game::Arena& arena, u64 tick) {
+// What `host` publishes at simulation tick `tick`.
+core::Snapshot Published(game::Host& host, u64 tick) {
     core::Jobs jobs{ 1 };
     core::Snapshot snapshot;
     snapshot.simulationTick = tick;
-    arena.Publish(snapshot, jobs);
+    host.Publish(snapshot, jobs);
     return snapshot;
 }
 
-const core::Registry& Entities(const game::Arena& arena) {
-    return arena.State()[game::ACTIVE].Entities();
+const core::Registry& Entities(const game::Host& host) {
+    return host.State()[game::ACTIVE].Entities();
 }
 
-core::Entity EntityOf(const game::Arena& arena, core::StableId stableId) {
-    return arena.State()[game::ACTIVE].Find(stableId);
+core::Entity EntityOf(const game::Host& host, core::StableId stableId) {
+    return host.State()[game::ACTIVE].Find(stableId);
 }
 
-std::vector<core::StableId> Foxes(const game::Arena& arena) {
+std::vector<core::StableId> Foxes(const game::Host& host) {
     std::vector<core::StableId> foxes;
-    for (auto [entity, creature, stable] : Entities(arena).view<const game::Creature, const core::StableId>().each()) {
+    for (auto [entity, creature, stable] : Entities(host).view<const game::Creature, const core::StableId>().each()) {
         if (creature.kind == game::CreatureKind::Fox) {
             foxes.push_back(stable);
         }
@@ -69,12 +69,12 @@ std::vector<core::StableId> Foxes(const game::Arena& arena) {
     return foxes;
 }
 
-game::Health HealthOf(const game::Arena& arena, core::StableId stableId) {
-    return Entities(arena).get<game::Health>(EntityOf(arena, stableId));
+game::Health HealthOf(const game::Host& host, core::StableId stableId) {
+    return Entities(host).get<game::Health>(EntityOf(host, stableId));
 }
 
-core::Vec2 FootOf(const game::Arena& arena, core::StableId stableId) {
-    return Entities(arena).get<game::Body>(EntityOf(arena, stableId)).current;
+core::Vec2 FootOf(const game::Host& host, core::StableId stableId) {
+    return Entities(host).get<game::Body>(EntityOf(host, stableId)).current;
 }
 
 f32 Distance(core::Vec2 start, core::Vec2 end) {
@@ -91,14 +91,14 @@ core::GameData FarFromTheCrystal() {
 }
 
 TEST_CASE("every creature starts at its kind's health") {
-    const game::Arena arena(test::TestManifest());
-    CHECK(HealthOf(arena, arena.Player()).current == CULTIVATOR_HEALTH);
-    CHECK(HealthOf(arena, arena.Player()).max == CULTIVATOR_HEALTH);
-    const std::vector<core::StableId> foxes = Foxes(arena);
+    const game::Host host(test::TestManifest());
+    CHECK(HealthOf(host, host.Player()).current == CULTIVATOR_HEALTH);
+    CHECK(HealthOf(host, host.Player()).max == CULTIVATOR_HEALTH);
+    const std::vector<core::StableId> foxes = Foxes(host);
     REQUIRE(foxes.size() == FOXES);
     for (const core::StableId fox : foxes) {
-        CHECK(HealthOf(arena, fox).current == FOX_HEALTH);
-        CHECK(HealthOf(arena, fox).max == FOX_HEALTH);
+        CHECK(HealthOf(host, fox).current == FOX_HEALTH);
+        CHECK(HealthOf(host, fox).max == FOX_HEALTH);
     }
 }
 
@@ -116,38 +116,38 @@ core::GameData NearTheCrystal() {
 
 // The arena near the crystal, the player walked to it on tick 1 and damaged by `wound` at tick 2, ticked to the aura's
 // first hit; the hits of that tick.
-std::vector<core::Event> AuraAfterWound(game::Arena& arena, i64 wound) {
+std::vector<core::Event> AuraAfterWound(game::Host& host, i64 wound) {
     constexpr core::HeldInput LEFT{ .move = { .x = -1.0F, .y = 0.0F } };
     std::vector<core::Event> events;
-    arena.Tick(At(1), { .actions = {}, .held = LEFT }, events);
-    arena.Damage(arena.Player(), wound, 2);
-    Run(arena, 2, AURA_TICK - 1);
+    host.Tick(At(1), { .actions = {}, .held = LEFT }, events);
+    host.Damage(host.Player(), wound, 2);
+    Run(host, 2, AURA_TICK - 1);
     events.clear();
-    arena.Tick(At(AURA_TICK), {}, events);
+    host.Tick(At(AURA_TICK), {}, events);
     return events;
 }
 
 TEST_CASE("the aura's damage lowers a fox's health and heals the player up to its most") {
     constexpr i64 DEEP = 500;
     constexpr i64 SCRATCH = 10; // less than the least healing
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, NearTheCrystal());
-    const std::vector<core::Event> events = AuraAfterWound(arena, DEEP);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, NearTheCrystal());
+    const std::vector<core::Event> events = AuraAfterWound(host, DEEP);
     std::size_t damaged = 0;
     for (const core::Event& event : events) {
-        if (event.kind != core::EventKind::Hit || event.target == arena.Player()) {
+        if (event.kind != core::EventKind::Hit || event.target == host.Player()) {
             continue;
         }
         ++damaged;
         CHECK(event.hit == core::HitKind::Damage);
-        CHECK(HealthOf(arena, event.target).current == FOX_HEALTH - event.value);
+        CHECK(HealthOf(host, event.target).current == FOX_HEALTH - event.value);
     }
     CHECK(damaged > 0);
-    const auto heal = std::ranges::find(events, arena.Player(), &core::Event::target);
+    const auto heal = std::ranges::find(events, host.Player(), &core::Event::target);
     REQUIRE(heal != events.end());
     CHECK(heal->hit == core::HitKind::Healing);
-    CHECK(HealthOf(arena, arena.Player()).current == CULTIVATOR_HEALTH - DEEP + heal->value);
+    CHECK(HealthOf(host, host.Player()).current == CULTIVATOR_HEALTH - DEEP + heal->value);
 
-    game::Arena scratched(test::TestManifest(), game::Scene::Arena, NearTheCrystal());
+    game::Host scratched(test::TestManifest(), game::ARENA_SCENE, NearTheCrystal());
     const std::vector<core::Event> again = AuraAfterWound(scratched, SCRATCH);
     REQUIRE(std::ranges::contains(again, scratched.Player(), &core::Event::target));
     CHECK(HealthOf(scratched, scratched.Player()).current == CULTIVATOR_HEALTH);
@@ -155,32 +155,32 @@ TEST_CASE("the aura's damage lowers a fox's health and heals the player up to it
 
 TEST_CASE("health at zero gives a dying state, then removal, then a respawn on the edge") {
     constexpr u64 DEATH = 5;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, FarFromTheCrystal());
-    Run(arena, 1, DEATH);
-    const std::vector<core::StableId> before = Foxes(arena);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, FarFromTheCrystal());
+    Run(host, 1, DEATH);
+    const std::vector<core::StableId> before = Foxes(host);
     const core::StableId fox = before.front();
-    arena.Damage(fox, FOX_HEALTH, DEATH);
-    CHECK(HealthOf(arena, fox).current == 0);
-    const game::Dying* const dying = Entities(arena).try_get<game::Dying>(EntityOf(arena, fox));
+    host.Damage(fox, FOX_HEALTH, DEATH);
+    CHECK(HealthOf(host, fox).current == 0);
+    const game::Dying* const dying = Entities(host).try_get<game::Dying>(EntityOf(host, fox));
     REQUIRE(dying != nullptr);
     CHECK(dying->startTick == DEATH);
 
-    Run(arena, DEATH + 1, DEATH + RULES.dyingTicks - 1);
-    CHECK(arena.State().DomainOf(fox).has_value());
-    Run(arena, DEATH + RULES.dyingTicks, DEATH + RULES.dyingTicks);
-    CHECK_FALSE(arena.State().DomainOf(fox).has_value());
-    CHECK(Foxes(arena).size() == FOXES - 1);
+    Run(host, DEATH + 1, DEATH + RULES.dyingTicks - 1);
+    CHECK(host.State().DomainOf(fox).has_value());
+    Run(host, DEATH + RULES.dyingTicks, DEATH + RULES.dyingTicks);
+    CHECK_FALSE(host.State().DomainOf(fox).has_value());
+    CHECK(Foxes(host).size() == FOXES - 1);
 
     const u64 respawn = DEATH + RULES.dyingTicks + RULES.respawnTicks;
-    Run(arena, DEATH + RULES.dyingTicks + 1, respawn - 1);
-    CHECK(Foxes(arena).size() == FOXES - 1);
-    Run(arena, respawn, respawn);
-    const std::vector<core::StableId> after = Foxes(arena);
+    Run(host, DEATH + RULES.dyingTicks + 1, respawn - 1);
+    CHECK(Foxes(host).size() == FOXES - 1);
+    Run(host, respawn, respawn);
+    const std::vector<core::StableId> after = Foxes(host);
     REQUIRE(after.size() == FOXES);
     std::vector<core::StableId> added;
     std::ranges::set_difference(after, before, std::back_inserter(added));
     REQUIRE(added.size() == 1);
-    const core::Vec2 foot = FootOf(arena, added.front());
+    const core::Vec2 foot = FootOf(host, added.front());
     INFO("the new fox stands at ", foot.x, ", ", foot.y);
     const bool onEdge = std::abs(foot.x - GROUND.min.x) < ON_THE_EDGE || std::abs(foot.x - GROUND.max.x) < ON_THE_EDGE ||
                         std::abs(foot.y - GROUND.min.y) < ON_THE_EDGE || std::abs(foot.y - GROUND.max.y) < ON_THE_EDGE;
@@ -189,17 +189,17 @@ TEST_CASE("health at zero gives a dying state, then removal, then a respawn on t
     CHECK(foot.x <= GROUND.max.x + ON_THE_EDGE);
     CHECK(foot.y >= GROUND.min.y - ON_THE_EDGE);
     CHECK(foot.y <= GROUND.max.y + ON_THE_EDGE);
-    CHECK(HealthOf(arena, added.front()).current == FOX_HEALTH);
+    CHECK(HealthOf(host, added.front()).current == FOX_HEALTH);
 }
 
 // Kills the first fox at tick 1 and ticks to its respawn; the new fox.
-core::StableId Respawned(game::Arena& arena) {
-    Run(arena, 1, 1);
-    const std::vector<core::StableId> before = Foxes(arena);
-    arena.Damage(before.front(), FOX_HEALTH, 1);
-    Run(arena, 2, 1 + RULES.dyingTicks + RULES.respawnTicks);
+core::StableId Respawned(game::Host& host) {
+    Run(host, 1, 1);
+    const std::vector<core::StableId> before = Foxes(host);
+    host.Damage(before.front(), FOX_HEALTH, 1);
+    Run(host, 2, 1 + RULES.dyingTicks + RULES.respawnTicks);
     std::vector<core::StableId> added;
-    std::ranges::set_difference(Foxes(arena), before, std::back_inserter(added));
+    std::ranges::set_difference(Foxes(host), before, std::back_inserter(added));
     REQUIRE(added.size() == 1);
     return added.front();
 }
@@ -208,24 +208,24 @@ TEST_CASE("a respawned fox eases into its orbit") {
     constexpr u64 AFTERWARDS = 60;
     // An eased arrival's fastest step is 1.5 times its mean: twice leaves room without allowing a snap.
     constexpr f32 TWICE = 2.0F;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, FarFromTheCrystal());
-    const core::StableId fox = Respawned(arena);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, FarFromTheCrystal());
+    const core::StableId fox = Respawned(host);
     const u64 arrived = 1 + RULES.dyingTicks + RULES.respawnTicks + RULES.arriveTicks;
-    const core::StableId other = Foxes(arena).front(); // an orbiting fox: the respawned one has the newest ID
+    const core::StableId other = Foxes(host).front(); // an orbiting fox: the respawned one has the newest ID
     REQUIRE(other != fox);
-    const core::Vec2 from = FootOf(arena, fox);
-    const game::Orbit orbit = Entities(arena).get<game::Orbit>(EntityOf(arena, fox));
-    REQUIRE(Entities(arena).all_of<game::Arriving>(EntityOf(arena, fox)));
+    const core::Vec2 from = FootOf(host, fox);
+    const game::Orbit orbit = Entities(host).get<game::Orbit>(EntityOf(host, fox));
+    REQUIRE(Entities(host).all_of<game::Arriving>(EntityOf(host, fox)));
 
     std::vector<core::Vec2> path{ from };
-    std::vector<core::Vec2> otherPath{ FootOf(arena, other) };
+    std::vector<core::Vec2> otherPath{ FootOf(host, other) };
     f32 farthest = 0.0F;
     for (u64 tick = arrived - RULES.arriveTicks + 1; tick < arrived; ++tick) {
-        Run(arena, tick, tick);
-        path.push_back(FootOf(arena, fox));
-        otherPath.push_back(FootOf(arena, other));
+        Run(host, tick, tick);
+        path.push_back(FootOf(host, fox));
+        otherPath.push_back(FootOf(host, other));
         farthest = std::max(farthest, Distance(from, game::OrbitPoint(orbit, tick)));
-        CHECK(Entities(arena).all_of<game::Arriving>(EntityOf(arena, fox)));
+        CHECK(Entities(host).all_of<game::Arriving>(EntityOf(host, fox)));
     }
     CHECK(Distance(path.back(), game::OrbitPoint(orbit, arrived - 1)) > 0.0F); // still on its way
     f32 orbitStep = 0.0F;
@@ -238,13 +238,13 @@ TEST_CASE("a respawned fox eases into its orbit") {
         CHECK(Distance(path.at(index - 1), path.at(index)) <= (TWICE * orbitStep) + approach);
     }
     for (u64 tick = arrived; tick < arrived + AFTERWARDS; ++tick) {
-        Run(arena, tick, tick);
-        const core::Vec2 foot = FootOf(arena, fox);
+        Run(host, tick, tick);
+        const core::Vec2 foot = FootOf(host, fox);
         const core::Vec2 circled = game::OrbitPoint(orbit, tick);
         CHECK(foot.x == circled.x);
         CHECK(foot.y == circled.y);
     }
-    CHECK_FALSE(Entities(arena).all_of<game::Arriving>(EntityOf(arena, fox)));
+    CHECK_FALSE(Entities(host).all_of<game::Arriving>(EntityOf(host, fox)));
 }
 
 // The index in `snapshot` of the instance drawing a fox whose foot stands at `foot`.
@@ -262,18 +262,18 @@ std::optional<std::size_t> FoxInstanceAt(const core::Snapshot& snapshot, core::V
 
 TEST_CASE("a dying fox carries no ID, label or health bar") {
     constexpr u64 DEATH = 3;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, FarFromTheCrystal());
-    Run(arena, 1, DEATH);
-    const core::StableId fox = Foxes(arena).front();
-    arena.Damage(fox, FOX_HEALTH, DEATH);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, FarFromTheCrystal());
+    Run(host, 1, DEATH);
+    const core::StableId fox = Foxes(host).front();
+    host.Damage(fox, FOX_HEALTH, DEATH);
     u32 last = 0;
     for (u64 tick = DEATH; tick < DEATH + RULES.dyingTicks; ++tick) {
         if (tick > DEATH) {
-            Run(arena, tick, tick);
+            Run(host, tick, tick);
         }
         INFO("tick ", tick);
-        const core::Snapshot snapshot = Published(arena, tick);
-        const std::optional<std::size_t> drawn = FoxInstanceAt(snapshot, FootOf(arena, fox));
+        const core::Snapshot snapshot = Published(host, tick);
+        const std::optional<std::size_t> drawn = FoxInstanceAt(snapshot, FootOf(host, fox));
         REQUIRE(drawn.has_value());
         CHECK(snapshot.ids.at(drawn.value_or(0)) == core::StableId{});
         CHECK_FALSE(std::ranges::contains(snapshot.ids, fox));
@@ -293,51 +293,51 @@ TEST_CASE("a dying fox carries no ID, label or health bar") {
 
 TEST_CASE("the selection clears when the selected fox is removed") {
     constexpr u64 DEATH = 1;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, FarFromTheCrystal());
-    const core::StableId fox = Foxes(arena).front();
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, FarFromTheCrystal());
+    const core::StableId fox = Foxes(host).front();
     const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = fox } } };
     std::vector<core::Event> events;
-    arena.Tick(At(DEATH), { .actions = select, .held = {} }, events);
-    REQUIRE(arena.Selected() == fox);
-    arena.Damage(fox, FOX_HEALTH, DEATH);
-    Run(arena, DEATH + 1, DEATH + RULES.dyingTicks - 1);
-    CHECK(arena.Selected() == fox);
-    CHECK_FALSE(Published(arena, DEATH + RULES.dyingTicks - 1).selected.has_value()); // a dying fox isn't outlined
-    Run(arena, DEATH + RULES.dyingTicks, DEATH + RULES.dyingTicks);
-    CHECK(arena.Selected() == core::StableId{});
+    host.Tick(At(DEATH), { .actions = select, .held = {} }, events);
+    REQUIRE(host.Selected() == fox);
+    host.Damage(fox, FOX_HEALTH, DEATH);
+    Run(host, DEATH + 1, DEATH + RULES.dyingTicks - 1);
+    CHECK(host.Selected() == fox);
+    CHECK_FALSE(Published(host, DEATH + RULES.dyingTicks - 1).selected.has_value()); // a dying fox isn't outlined
+    Run(host, DEATH + RULES.dyingTicks, DEATH + RULES.dyingTicks);
+    CHECK(host.Selected() == core::StableId{});
 }
 
 TEST_CASE("a dying fox can't be selected") {
     constexpr u64 DEATH = 1;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, FarFromTheCrystal());
-    const core::StableId fox = Foxes(arena).front();
-    arena.Damage(fox, FOX_HEALTH, 0);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, FarFromTheCrystal());
+    const core::StableId fox = Foxes(host).front();
+    host.Damage(fox, FOX_HEALTH, 0);
     const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = fox } } };
     std::vector<core::Event> events;
-    arena.Tick(At(DEATH), { .actions = select, .held = {} }, events);
-    CHECK(arena.Selected() == core::StableId{});
+    host.Tick(At(DEATH), { .actions = select, .held = {} }, events);
+    CHECK(host.Selected() == core::StableId{});
 }
 
 TEST_CASE("the player removed on the tick a fox respawns leaves no player, and the fox circles the start") {
     constexpr u64 FOX_DEATH = 1;
     constexpr u64 PLAYER_DEATH = FOX_DEATH + RULES.respawnTicks; // both removed on the respawn's tick
     constexpr core::Vec2 START{ .x = 960.0F, .y = 620.0F };      // where the cultivator starts
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, FarFromTheCrystal());
-    const std::vector<core::StableId> before = Foxes(arena);
-    const core::StableId player = arena.Player();
-    Run(arena, 1, FOX_DEATH);
-    arena.Damage(before.front(), FOX_HEALTH, FOX_DEATH);
-    Run(arena, FOX_DEATH + 1, PLAYER_DEATH);
-    arena.Damage(player, CULTIVATOR_HEALTH, PLAYER_DEATH);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, FarFromTheCrystal());
+    const std::vector<core::StableId> before = Foxes(host);
+    const core::StableId player = host.Player();
+    Run(host, 1, FOX_DEATH);
+    host.Damage(before.front(), FOX_HEALTH, FOX_DEATH);
+    Run(host, FOX_DEATH + 1, PLAYER_DEATH);
+    host.Damage(player, CULTIVATOR_HEALTH, PLAYER_DEATH);
     const u64 respawn = FOX_DEATH + RULES.dyingTicks + RULES.respawnTicks;
     REQUIRE(respawn == PLAYER_DEATH + RULES.dyingTicks);
-    Run(arena, PLAYER_DEATH + 1, respawn);
-    CHECK(arena.Player() == core::StableId{});
-    CHECK_FALSE(arena.State().DomainOf(player).has_value());
+    Run(host, PLAYER_DEATH + 1, respawn);
+    CHECK(host.Player() == core::StableId{});
+    CHECK_FALSE(host.State().DomainOf(player).has_value());
     std::vector<core::StableId> added;
-    std::ranges::set_difference(Foxes(arena), before, std::back_inserter(added));
+    std::ranges::set_difference(Foxes(host), before, std::back_inserter(added));
     REQUIRE(added.size() == 1);
-    const game::Orbit orbit = Entities(arena).get<game::Orbit>(EntityOf(arena, added.front()));
+    const game::Orbit orbit = Entities(host).get<game::Orbit>(EntityOf(host, added.front()));
     CHECK(orbit.centre.x == START.x);
     CHECK(orbit.centre.y == START.y);
 }
@@ -346,14 +346,14 @@ TEST_CASE("each living enemy in a combat scene reports its health over its head"
     constexpr i64 WOUND = 300;
     constexpr f32 THREE_QUARTERS = 0.75F;
     constexpr u64 TICK = 2;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, FarFromTheCrystal());
-    Run(arena, 1, TICK);
-    const std::vector<core::StableId> foxes = Foxes(arena);
-    arena.Damage(foxes.at(0), WOUND, TICK);
-    arena.Damage(foxes.at(1), FOX_HEALTH, TICK);
-    const core::Snapshot snapshot = Published(arena, TICK);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, FarFromTheCrystal());
+    Run(host, 1, TICK);
+    const std::vector<core::StableId> foxes = Foxes(host);
+    host.Damage(foxes.at(0), WOUND, TICK);
+    host.Damage(foxes.at(1), FOX_HEALTH, TICK);
+    const core::Snapshot snapshot = Published(host, TICK);
     CHECK(snapshot.healthBars.size() == FOXES - 1);
-    CHECK_FALSE(std::ranges::contains(snapshot.healthBars, arena.Player(), &core::HealthBar::entity));
+    CHECK_FALSE(std::ranges::contains(snapshot.healthBars, host.Player(), &core::HealthBar::entity));
     CHECK_FALSE(std::ranges::contains(snapshot.healthBars, foxes.at(1), &core::HealthBar::entity));
     for (const core::HealthBar& bar : snapshot.healthBars) {
         INFO("fox ", std::to_underlying(bar.entity));
@@ -367,7 +367,7 @@ TEST_CASE("each living enemy in a combat scene reports its health over its head"
         CHECK(bar.fraction == (bar.entity == foxes.at(0) ? THREE_QUARTERS : 1.0F));
     }
 
-    game::Arena stress(test::TestManifest(), game::Scene::Stress);
+    game::Host stress(test::TestManifest(), game::STRESS_SCENE);
     CHECK(Published(stress, 0).healthBars.empty());
 }
 
@@ -375,38 +375,38 @@ TEST_CASE("new game data sets a creature's most health, keeping what it has up t
     constexpr i64 WOUND = 300;
     constexpr i64 LOWER_MOST = 500;
     constexpr i64 HIGHER_MOST = 2'000;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, FarFromTheCrystal());
-    const std::vector<core::StableId> foxes = Foxes(arena);
-    arena.Damage(foxes.at(0), WOUND, 0);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, FarFromTheCrystal());
+    const std::vector<core::StableId> foxes = Foxes(host);
+    host.Damage(foxes.at(0), WOUND, 0);
     core::GameData data = FarFromTheCrystal();
     data.fox.health = HIGHER_MOST;
-    arena.SetData(data);
-    CHECK(HealthOf(arena, foxes.at(0)).current == FOX_HEALTH - WOUND);
-    CHECK(HealthOf(arena, foxes.at(0)).max == HIGHER_MOST);
+    host.SetData(data);
+    CHECK(HealthOf(host, foxes.at(0)).current == FOX_HEALTH - WOUND);
+    CHECK(HealthOf(host, foxes.at(0)).max == HIGHER_MOST);
     data.fox.health = LOWER_MOST;
-    arena.SetData(data);
-    CHECK(HealthOf(arena, foxes.at(0)).current == LOWER_MOST);
-    CHECK(HealthOf(arena, foxes.at(1)).current == LOWER_MOST);
-    CHECK(HealthOf(arena, foxes.at(1)).max == LOWER_MOST);
+    host.SetData(data);
+    CHECK(HealthOf(host, foxes.at(0)).current == LOWER_MOST);
+    CHECK(HealthOf(host, foxes.at(1)).current == LOWER_MOST);
+    CHECK(HealthOf(host, foxes.at(1)).max == LOWER_MOST);
 }
 
 TEST_CASE("damage to a dying or removed creature does nothing") {
     constexpr u64 DEATH = 1;
     constexpr i64 MORE = 100;
     constexpr i64 HEALING = -500;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, FarFromTheCrystal());
-    Run(arena, 1, DEATH);
-    const core::StableId fox = Foxes(arena).front();
-    arena.Damage(fox, FOX_HEALTH, DEATH);
-    arena.Damage(fox, MORE, DEATH + 1);
-    arena.Damage(fox, HEALING, DEATH + 1);
-    CHECK(HealthOf(arena, fox).current == 0);
-    CHECK(Entities(arena).get<game::Dying>(EntityOf(arena, fox)).startTick == DEATH);
-    Run(arena, DEATH + 1, DEATH + RULES.dyingTicks);
-    REQUIRE_FALSE(arena.State().DomainOf(fox).has_value());
-    const u64 before = arena.StateHash();
-    arena.Damage(fox, MORE, DEATH + RULES.dyingTicks);
-    CHECK(arena.StateHash() == before);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, FarFromTheCrystal());
+    Run(host, 1, DEATH);
+    const core::StableId fox = Foxes(host).front();
+    host.Damage(fox, FOX_HEALTH, DEATH);
+    host.Damage(fox, MORE, DEATH + 1);
+    host.Damage(fox, HEALING, DEATH + 1);
+    CHECK(HealthOf(host, fox).current == 0);
+    CHECK(Entities(host).get<game::Dying>(EntityOf(host, fox)).startTick == DEATH);
+    Run(host, DEATH + 1, DEATH + RULES.dyingTicks);
+    REQUIRE_FALSE(host.State().DomainOf(fox).has_value());
+    const u64 before = host.StateHash();
+    host.Damage(fox, MORE, DEATH + RULES.dyingTicks);
+    CHECK(host.StateHash() == before);
 }
 
 TEST_CASE("an aura amount passes through the one function every hit's amount does") {
@@ -435,34 +435,28 @@ constexpr u64 DASH_TICKS = 9;
 constexpr u64 DASH_COOLDOWN = 60;
 constexpr core::Vec2 FAR_RIGHT{ .x = 5'000.0F, .y = 0.0F };
 
-// Ticks `arena` once at `tick`, casting the ability in `slot` at `point` and holding `held`; the tick's events.
-std::vector<core::Event> CastAt(
-    game::Arena& arena,
-    u64 tick,
-    core::Slot slot,
-    core::Vec2 point = {},
-    core::HeldInput held = {}
-) {
+// Ticks `host` once at `tick`, casting the ability in `slot` at `point` and holding `held`; the tick's events.
+std::vector<core::Event> CastAt(game::Host& host, u64 tick, core::Slot slot, core::Vec2 point = {}, core::HeldInput held = {}) {
     const std::array<core::Action, 1> cast{ { { .kind = core::ActionKind::Cast, .slot = slot, .point = point } } };
     std::vector<core::Event> events;
-    arena.Tick(At(tick), { .actions = cast, .held = held }, events);
+    host.Tick(At(tick), { .actions = cast, .held = held }, events);
     return events;
 }
 
-const game::Caster& CasterOf(const game::Arena& arena) {
-    return Entities(arena).get<game::Caster>(EntityOf(arena, arena.Player()));
+const game::Caster& CasterOf(const game::Host& host) {
+    return Entities(host).get<game::Caster>(EntityOf(host, host.Player()));
 }
 
 TEST_CASE("the player starts with the data's starting Qi") {
-    const game::Arena arena(test::TestManifest());
-    CHECK(CasterOf(arena).qi == QI_START);
-    CHECK(CasterOf(arena).qi == game::BuiltInData().abilities.qiStart);
+    const game::Host host(test::TestManifest());
+    CHECK(CasterOf(host).qi == QI_START);
+    CHECK(CasterOf(host).qi == game::BuiltInData().abilities.qiStart);
 }
 
 TEST_CASE("a cast in the combat scene has an effect: Qi changes and the slot's cooldown starts") {
     constexpr u64 TICK = 7;
-    game::Arena casting(test::TestManifest());
-    game::Arena idle(test::TestManifest());
+    game::Host casting(test::TestManifest());
+    game::Host idle(test::TestManifest());
     CastAt(casting, TICK, core::Slot::Generator);
     Run(idle, TICK, TICK);
     CHECK(CasterOf(casting).qi == QI_START + BOLT_GAIN);
@@ -471,61 +465,61 @@ TEST_CASE("a cast in the combat scene has an effect: Qi changes and the slot's c
 }
 
 TEST_CASE("the generator gains Qi up to the most; the spender and a special cost it") {
-    game::Arena arena(test::TestManifest());
+    game::Host host(test::TestManifest());
     u64 tick = 1;
     for (i64 expected = QI_START + BOLT_GAIN; expected < QI_MAX; expected += BOLT_GAIN) {
-        CastAt(arena, tick, core::Slot::Generator);
-        CHECK(CasterOf(arena).qi == expected);
+        CastAt(host, tick, core::Slot::Generator);
+        CHECK(CasterOf(host).qi == expected);
         tick += BOLT_COOLDOWN;
     }
-    CastAt(arena, tick, core::Slot::Generator);
-    CHECK(CasterOf(arena).qi == QI_MAX);
+    CastAt(host, tick, core::Slot::Generator);
+    CHECK(CasterOf(host).qi == QI_MAX);
     tick += BOLT_COOLDOWN;
-    CastAt(arena, tick, core::Slot::Generator);
-    CHECK(CasterOf(arena).qi == QI_MAX);
+    CastAt(host, tick, core::Slot::Generator);
+    CHECK(CasterOf(host).qi == QI_MAX);
 
-    CastAt(arena, tick, core::Slot::Spender);
-    CHECK(CasterOf(arena).qi == QI_MAX - LANCE_COST);
-    CastAt(arena, tick, core::Slot::Special1);
-    CHECK(CasterOf(arena).qi == QI_MAX - LANCE_COST - SWORDS_COST);
+    CastAt(host, tick, core::Slot::Spender);
+    CHECK(CasterOf(host).qi == QI_MAX - LANCE_COST);
+    CastAt(host, tick, core::Slot::Special1);
+    CHECK(CasterOf(host).qi == QI_MAX - LANCE_COST - SWORDS_COST);
 }
 
 TEST_CASE("a cooldown blocks a recast until it's over") {
     constexpr u64 FIRST = 10;
-    game::Arena arena(test::TestManifest());
-    CastAt(arena, FIRST, core::Slot::Generator);
-    CastAt(arena, FIRST + BOLT_COOLDOWN - 1, core::Slot::Generator);
-    CHECK(CasterOf(arena).qi == QI_START + BOLT_GAIN);
-    Run(arena, FIRST + BOLT_COOLDOWN, FIRST + (2 * BOLT_COOLDOWN));
-    CHECK(CasterOf(arena).qi == QI_START + BOLT_GAIN); // the refused cast wasn't queued
-    CastAt(arena, FIRST + (2 * BOLT_COOLDOWN), core::Slot::Generator);
-    CHECK(CasterOf(arena).qi == QI_START + (2 * BOLT_GAIN));
+    game::Host host(test::TestManifest());
+    CastAt(host, FIRST, core::Slot::Generator);
+    CastAt(host, FIRST + BOLT_COOLDOWN - 1, core::Slot::Generator);
+    CHECK(CasterOf(host).qi == QI_START + BOLT_GAIN);
+    Run(host, FIRST + BOLT_COOLDOWN, FIRST + (2 * BOLT_COOLDOWN));
+    CHECK(CasterOf(host).qi == QI_START + BOLT_GAIN); // the refused cast wasn't queued
+    CastAt(host, FIRST + (2 * BOLT_COOLDOWN), core::Slot::Generator);
+    CHECK(CasterOf(host).qi == QI_START + (2 * BOLT_GAIN));
 }
 
 TEST_CASE("a cast at the tick the cooldown ends goes off") {
     constexpr u64 FIRST = 10;
-    game::Arena arena(test::TestManifest());
-    CastAt(arena, FIRST, core::Slot::Generator);
-    CastAt(arena, FIRST + BOLT_COOLDOWN, core::Slot::Generator);
-    CHECK(CasterOf(arena).qi == QI_START + (2 * BOLT_GAIN));
+    game::Host host(test::TestManifest());
+    CastAt(host, FIRST, core::Slot::Generator);
+    CastAt(host, FIRST + BOLT_COOLDOWN, core::Slot::Generator);
+    CHECK(CasterOf(host).qi == QI_START + (2 * BOLT_GAIN));
 }
 
 TEST_CASE("a cast without enough Qi does nothing but report it") {
     constexpr i64 SHORT = 10;
     core::GameData data = game::BuiltInData();
     data.abilities.qiStart = SHORT;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
-    const std::vector<core::Event> events = CastAt(arena, 1, core::Slot::Spender);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
+    const std::vector<core::Event> events = CastAt(host, 1, core::Slot::Spender);
     REQUIRE(events.size() == 1);
     CHECK(events.front().kind == core::EventKind::NotEnoughQi);
     CHECK(events.front().value == static_cast<i64>(std::to_underlying(core::Slot::Spender)));
-    CHECK(CasterOf(arena).qi == SHORT);
-    CHECK(CasterOf(arena).readyTick.at(std::to_underlying(core::Slot::Spender)) == 0);
+    CHECK(CasterOf(host).qi == SHORT);
+    CHECK(CasterOf(host).readyTick.at(std::to_underlying(core::Slot::Spender)) == 0);
 }
 
 TEST_CASE("an empty slot casts nothing") {
-    game::Arena casting(test::TestManifest());
-    game::Arena idle(test::TestManifest());
+    game::Host casting(test::TestManifest());
+    game::Host idle(test::TestManifest());
     const std::vector<core::Event> events = CastAt(casting, 1, core::Slot::Special2);
     Run(idle, 1, 1);
     CHECK(events.empty());
@@ -537,95 +531,95 @@ TEST_CASE("the dash moves the player toward the point, by its distance, over its
     constexpr core::HeldInput LEFT{ .move = { .x = -1.0F, .y = 0.0F } };
     constexpr u64 START = 1;
     constexpr u64 LAST = START + DASH_TICKS - 1;
-    game::Arena arena(test::TestManifest());
-    const core::StableId player = arena.Player();
-    const core::Vec2 from = FootOf(arena, player);
-    CastAt(arena, START, core::Slot::Movement, from + FAR_RIGHT, LEFT);
+    game::Host host(test::TestManifest());
+    const core::StableId player = host.Player();
+    const core::Vec2 from = FootOf(host, player);
+    CastAt(host, START, core::Slot::Movement, from + FAR_RIGHT, LEFT);
     // The cast's own tick takes the first step, eased: less than a linear ninth of the way.
-    const f32 first = FootOf(arena, player).x - from.x;
+    const f32 first = FootOf(host, player).x - from.x;
     CHECK(first > 0.0F);
     CHECK(first < DASH_DISTANCE / static_cast<f32>(DASH_TICKS));
     f32 previous = first;
     for (u64 tick = START + 1; tick < LAST; ++tick) {
         std::vector<core::Event> events;
-        arena.Tick(At(tick), { .actions = {}, .held = LEFT }, events);
-        const f32 moved = FootOf(arena, player).x - from.x;
+        host.Tick(At(tick), { .actions = {}, .held = LEFT }, events);
+        const f32 moved = FootOf(host, player).x - from.x;
         CHECK(moved > previous);
         CHECK(moved < DASH_DISTANCE);
         previous = moved;
     }
-    CHECK(Entities(arena).all_of<game::Dashing>(EntityOf(arena, player)));
+    CHECK(Entities(host).all_of<game::Dashing>(EntityOf(host, player)));
     std::vector<core::Event> events;
-    arena.Tick(At(LAST), { .actions = {}, .held = LEFT }, events);
-    CHECK(FootOf(arena, player).x == from.x + DASH_DISTANCE);
-    CHECK(FootOf(arena, player).y == from.y);
-    CHECK_FALSE(Entities(arena).all_of<game::Dashing>(EntityOf(arena, player)));
-    for (const core::StableId fox : Foxes(arena)) {
-        const core::Vec2 centre = Entities(arena).get<game::Orbit>(EntityOf(arena, fox)).centre;
-        CHECK(centre.x == FootOf(arena, player).x);
-        CHECK(centre.y == FootOf(arena, player).y);
+    host.Tick(At(LAST), { .actions = {}, .held = LEFT }, events);
+    CHECK(FootOf(host, player).x == from.x + DASH_DISTANCE);
+    CHECK(FootOf(host, player).y == from.y);
+    CHECK_FALSE(Entities(host).all_of<game::Dashing>(EntityOf(host, player)));
+    for (const core::StableId fox : Foxes(host)) {
+        const core::Vec2 centre = Entities(host).get<game::Orbit>(EntityOf(host, fox)).centre;
+        CHECK(centre.x == FootOf(host, player).x);
+        CHECK(centre.y == FootOf(host, player).y);
     }
-    arena.Tick(At(LAST + 1), { .actions = {}, .held = LEFT }, events);
-    CHECK(FootOf(arena, player).x < from.x + DASH_DISTANCE); // walking again
+    host.Tick(At(LAST + 1), { .actions = {}, .held = LEFT }, events);
+    CHECK(FootOf(host, player).x < from.x + DASH_DISTANCE); // walking again
 }
 
 TEST_CASE("the dash stops at a point nearer than its distance") {
     constexpr f32 NEAR_BY = 100.0F;
-    game::Arena arena(test::TestManifest());
-    const core::Vec2 from = FootOf(arena, arena.Player());
-    CastAt(arena, 1, core::Slot::Movement, from + core::Vec2{ .x = 0.0F, .y = NEAR_BY });
-    Run(arena, 2, DASH_TICKS);
-    CHECK(FootOf(arena, arena.Player()).x == from.x);
-    CHECK(FootOf(arena, arena.Player()).y == from.y + NEAR_BY);
+    game::Host host(test::TestManifest());
+    const core::Vec2 from = FootOf(host, host.Player());
+    CastAt(host, 1, core::Slot::Movement, from + core::Vec2{ .x = 0.0F, .y = NEAR_BY });
+    Run(host, 2, DASH_TICKS);
+    CHECK(FootOf(host, host.Player()).x == from.x);
+    CHECK(FootOf(host, host.Player()).y == from.y + NEAR_BY);
 }
 
 TEST_CASE("a dash toward the player's own foot goes nowhere, finite, and ends on time") {
     constexpr u64 START = 1;
-    game::Arena arena(test::TestManifest());
-    const core::Vec2 from = FootOf(arena, arena.Player());
-    CastAt(arena, START, core::Slot::Movement, from);
-    CHECK(FootOf(arena, arena.Player()).x == from.x);
-    CHECK(FootOf(arena, arena.Player()).y == from.y);
-    Run(arena, START + 1, START + DASH_TICKS - 1);
-    CHECK(FootOf(arena, arena.Player()).x == from.x);
-    CHECK(FootOf(arena, arena.Player()).y == from.y);
-    CHECK_FALSE(Entities(arena).all_of<game::Dashing>(EntityOf(arena, arena.Player())));
-    CHECK(CasterOf(arena).readyTick.at(std::to_underlying(core::Slot::Movement)) == START + DASH_COOLDOWN);
+    game::Host host(test::TestManifest());
+    const core::Vec2 from = FootOf(host, host.Player());
+    CastAt(host, START, core::Slot::Movement, from);
+    CHECK(FootOf(host, host.Player()).x == from.x);
+    CHECK(FootOf(host, host.Player()).y == from.y);
+    Run(host, START + 1, START + DASH_TICKS - 1);
+    CHECK(FootOf(host, host.Player()).x == from.x);
+    CHECK(FootOf(host, host.Player()).y == from.y);
+    CHECK_FALSE(Entities(host).all_of<game::Dashing>(EntityOf(host, host.Player())));
+    CHECK(CasterOf(host).readyTick.at(std::to_underlying(core::Slot::Movement)) == START + DASH_COOLDOWN);
 }
 
 TEST_CASE("a cast during a dash is ignored") {
-    game::Arena arena(test::TestManifest());
-    CastAt(arena, 1, core::Slot::Movement, FAR_RIGHT);
-    const std::vector<core::Event> events = CastAt(arena, 2, core::Slot::Generator);
+    game::Host host(test::TestManifest());
+    CastAt(host, 1, core::Slot::Movement, FAR_RIGHT);
+    const std::vector<core::Event> events = CastAt(host, 2, core::Slot::Generator);
     CHECK(events.empty());
-    CHECK(CasterOf(arena).qi == QI_START);
-    CHECK(CasterOf(arena).readyTick.at(std::to_underlying(core::Slot::Generator)) == 0);
+    CHECK(CasterOf(host).qi == QI_START);
+    CHECK(CasterOf(host).readyTick.at(std::to_underlying(core::Slot::Generator)) == 0);
 }
 
 TEST_CASE("a cast by a dying player is ignored") {
-    game::Arena arena(test::TestManifest());
-    Run(arena, 1, 1);
-    arena.Damage(arena.Player(), CULTIVATOR_HEALTH, 1);
-    REQUIRE(Entities(arena).all_of<game::Dying>(EntityOf(arena, arena.Player())));
-    CastAt(arena, 2, core::Slot::Generator);
-    CHECK(CasterOf(arena).qi == QI_START);
-    CHECK(CasterOf(arena).readyTick.at(std::to_underlying(core::Slot::Generator)) == 0);
+    game::Host host(test::TestManifest());
+    Run(host, 1, 1);
+    host.Damage(host.Player(), CULTIVATOR_HEALTH, 1);
+    REQUIRE(Entities(host).all_of<game::Dying>(EntityOf(host, host.Player())));
+    CastAt(host, 2, core::Slot::Generator);
+    CHECK(CasterOf(host).qi == QI_START);
+    CHECK(CasterOf(host).readyTick.at(std::to_underlying(core::Slot::Generator)) == 0);
 }
 
 TEST_CASE("a cast at a point that isn't finite is ignored") {
     constexpr f32 NOT_A_NUMBER = std::numeric_limits<f32>::quiet_NaN();
     constexpr f32 INFINITE = std::numeric_limits<f32>::infinity();
-    game::Arena arena(test::TestManifest());
-    CastAt(arena, 1, core::Slot::Generator, { .x = NOT_A_NUMBER, .y = 0.0F });
-    CastAt(arena, 2, core::Slot::Movement, { .x = 0.0F, .y = INFINITE });
-    CHECK(CasterOf(arena).qi == QI_START);
-    CHECK(CasterOf(arena).readyTick == std::array<u64, core::SLOTS>{});
-    CHECK_FALSE(Entities(arena).all_of<game::Dashing>(EntityOf(arena, arena.Player())));
+    game::Host host(test::TestManifest());
+    CastAt(host, 1, core::Slot::Generator, { .x = NOT_A_NUMBER, .y = 0.0F });
+    CastAt(host, 2, core::Slot::Movement, { .x = 0.0F, .y = INFINITE });
+    CHECK(CasterOf(host).qi == QI_START);
+    CHECK(CasterOf(host).readyTick == std::array<u64, core::SLOTS>{});
+    CHECK_FALSE(Entities(host).all_of<game::Dashing>(EntityOf(host, host.Player())));
 }
 
 TEST_CASE("a cast of a slot out of range is ignored") {
-    game::Arena casting(test::TestManifest());
-    game::Arena idle(test::TestManifest());
+    game::Host casting(test::TestManifest());
+    game::Host idle(test::TestManifest());
     const std::vector<core::Event> events = CastAt(casting, 1, static_cast<core::Slot>(core::SLOTS));
     Run(idle, 1, 1);
     CHECK(events.empty());
@@ -634,17 +628,17 @@ TEST_CASE("a cast of a slot out of range is ignored") {
 
 TEST_CASE("new game data with a lower most Qi lowers the Qi held to it") {
     constexpr i64 LOWER = 20;
-    game::Arena arena(test::TestManifest());
+    game::Host host(test::TestManifest());
     core::GameData data = game::BuiltInData();
     data.abilities.qiMax = LOWER;
-    arena.SetData(data);
-    CHECK(CasterOf(arena).qi == LOWER);
+    host.SetData(data);
+    CHECK(CasterOf(host).qi == LOWER);
 }
 
 TEST_CASE("a casting player's state is published in a combat scene only") {
-    game::Arena arena(test::TestManifest());
-    CastAt(arena, 1, core::Slot::Generator);
-    const core::Snapshot snapshot = Published(arena, 1);
+    game::Host host(test::TestManifest());
+    CastAt(host, 1, core::Slot::Generator);
+    const core::Snapshot snapshot = Published(host, 1);
     REQUIRE(snapshot.caster.has_value());
     const core::CasterView view = snapshot.caster.value_or(core::CasterView{});
     CHECK(view.qi == QI_START + BOLT_GAIN);
@@ -653,7 +647,7 @@ TEST_CASE("a casting player's state is published in a combat scene only") {
     CHECK(view.healthMax == CULTIVATOR_HEALTH);
     CHECK(view.readyTick.at(std::to_underlying(core::Slot::Generator)) == 1 + BOLT_COOLDOWN);
     CHECK(view.loadout.at(std::to_underlying(core::Slot::Spender)) == core::AbilityKind::PoisonLance);
-    game::Arena painted(test::TestManifest(), game::Scene::Painted);
+    game::Host painted(test::TestManifest(), game::PAINTED_SCENE);
     CHECK_FALSE(Published(painted, 1).caster.has_value());
 }
 
@@ -702,11 +696,11 @@ core::GameData Gathered(i64 health) {
 constexpr core::Vec2 OFF_AXIS{ .x = 12.0F, .y = 5.0F };
 
 // Where the volleys aim at a creature: its foot raised by half its sprite's foot height.
-core::Vec2 ChestOf(const game::Arena& arena, core::StableId stableId) {
-    const core::Entity entity = EntityOf(arena, stableId);
-    const game::Look& look = Entities(arena).get<game::Look>(entity);
+core::Vec2 ChestOf(const game::Host& host, core::StableId stableId) {
+    const core::Entity entity = EntityOf(host, stableId);
+    const game::Look& look = Entities(host).get<game::Look>(entity);
     const f32 height = static_cast<f32>(test::TestManifest()->Sprite(look.sprite).footY) * look.scale;
-    const core::Vec2 foot = Entities(arena).get<game::Body>(entity).current;
+    const core::Vec2 foot = Entities(host).get<game::Body>(entity).current;
     constexpr f32 HALF = 0.5F;
     return { .x = foot.x, .y = foot.y - (height * HALF) };
 }
@@ -717,10 +711,10 @@ struct Tagging {
     f32 radius = 0.0F;
 };
 
-Tagging Nearest(const game::Arena& arena, core::Vec2 point, std::size_t count) {
+Tagging Nearest(const game::Host& host, core::Vec2 point, std::size_t count) {
     std::vector<std::pair<f32, core::StableId>> away;
-    for (const core::StableId fox : Foxes(arena)) {
-        away.emplace_back(Distance(point, ChestOf(arena, fox)), fox);
+    for (const core::StableId fox : Foxes(host)) {
+        away.emplace_back(Distance(point, ChestOf(host, fox)), fox);
     }
     std::ranges::sort(away);
     REQUIRE(away.size() > count);
@@ -741,12 +735,12 @@ core::GameData WithSwords(core::GameData data, f32 radius, i64 damage = SWORD_DA
     return data;
 }
 
-// Ticks `arena` from `first` to `last`, holding nothing; its events, each stamped with its tick.
-std::vector<core::Event> Play(game::Arena& arena, u64 first, u64 last) {
+// Ticks `host` from `first` to `last`, holding nothing; its events, each stamped with its tick.
+std::vector<core::Event> Play(game::Host& host, u64 first, u64 last) {
     std::vector<core::Event> events;
     for (u64 tick = first; tick <= last; ++tick) {
         const std::size_t before = events.size();
-        arena.Tick(At(tick), {}, events);
+        host.Tick(At(tick), {}, events);
         for (core::Event& event : std::span{ events }.subspan(before)) {
             event.tick = tick;
         }
@@ -766,44 +760,44 @@ std::size_t CountKind(const std::vector<core::Event>& events, core::EventKind ki
 }
 
 // Casts `slot` at `point` on `tick`, stamping the cast tick's events with it.
-std::vector<core::Event> StampedCast(game::Arena& arena, u64 tick, core::Slot slot, core::Vec2 point) {
-    std::vector<core::Event> events = CastAt(arena, tick, slot, point);
+std::vector<core::Event> StampedCast(game::Host& host, u64 tick, core::Slot slot, core::Vec2 point) {
+    std::vector<core::Event> events = CastAt(host, tick, slot, point);
     for (core::Event& event : events) {
         event.tick = tick;
     }
     return events;
 }
 
-// The only volley `arena` publishes at `tick`.
-core::VolleyView OnlyVolley(game::Arena& arena, u64 tick) {
-    const core::Snapshot snapshot = Published(arena, tick);
+// The only volley `host` publishes at `tick`.
+core::VolleyView OnlyVolley(game::Host& host, u64 tick) {
+    const core::Snapshot snapshot = Published(host, tick);
     REQUIRE(snapshot.volleys.size() == 1);
     return snapshot.volleys.empty() ? core::VolleyView{} : snapshot.volleys.front();
 }
 
-// Ticks `arena`, whose foxes have `health`, to before CAST and gives its swords a radius that tags the `count` foxes
+// Ticks `host`, whose foxes have `health`, to before CAST and gives its swords a radius that tags the `count` foxes
 // nearest the first fox's chest, dealing `damage`; those foxes and that chest.
 struct Aimed {
     std::vector<core::StableId> tagged;
     core::Vec2 point{};
 };
 
-Aimed ReadySwords(game::Arena& arena, i64 health, std::size_t count, i64 damage = SWORD_DAMAGE) {
-    Run(arena, 1, CAST - 1);
-    const core::Vec2 point = ChestOf(arena, Foxes(arena).front()) + OFF_AXIS;
-    const Tagging tagging = Nearest(arena, point, count);
-    arena.SetData(WithSwords(Gathered(health), tagging.radius, damage));
+Aimed ReadySwords(game::Host& host, i64 health, std::size_t count, i64 damage = SWORD_DAMAGE) {
+    Run(host, 1, CAST - 1);
+    const core::Vec2 point = ChestOf(host, Foxes(host).front()) + OFF_AXIS;
+    const Tagging tagging = Nearest(host, point, count);
+    host.SetData(WithSwords(Gathered(health), tagging.radius, damage));
     return { .tagged = tagging.foxes, .point = point };
 }
 
 TEST_CASE("every sword's hit is scheduled once and the use ends with the last") {
     constexpr std::size_t TAGGED = 3;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    const Aimed ready = ReadySwords(arena, AMPLE, TAGGED);
-    std::vector<core::Event> events = StampedCast(arena, CAST, core::Slot::Special1, ready.point);
-    const core::VolleyView view = OnlyVolley(arena, CAST);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    const Aimed ready = ReadySwords(host, AMPLE, TAGGED);
+    std::vector<core::Event> events = StampedCast(host, CAST, core::Slot::Special1, ready.point);
+    const core::VolleyView view = OnlyVolley(host, CAST);
     const u64 last = core::LastArrival(view.volley);
-    std::ranges::move(Play(arena, CAST + 1, last + 1), std::back_inserter(events));
+    std::ranges::move(Play(host, CAST + 1, last + 1), std::back_inserter(events));
     const std::vector<core::Event> used = OfUse(events, game::CastUse(CAST, core::Slot::Special1));
     CHECK(CountKind(used, core::EventKind::Hit) == SWORDS);
     REQUIRE(CountKind(used, core::EventKind::UseEnded) == 1);
@@ -831,28 +825,28 @@ TEST_CASE("hits split evenly over the tagged enemies") {
     constexpr i64 HEALTH = 10'000;
     constexpr std::size_t TAGGED = 4;
     constexpr std::size_t EACH = SWORDS / TAGGED;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(HEALTH));
-    const Aimed ready = ReadySwords(arena, HEALTH, TAGGED);
-    StampedCast(arena, CAST, core::Slot::Special1, ready.point);
-    const u64 last = core::LastArrival(OnlyVolley(arena, CAST).volley);
-    const std::vector<core::Event> used = OfUse(Play(arena, CAST + 1, last), game::CastUse(CAST, core::Slot::Special1));
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(HEALTH));
+    const Aimed ready = ReadySwords(host, HEALTH, TAGGED);
+    StampedCast(host, CAST, core::Slot::Special1, ready.point);
+    const u64 last = core::LastArrival(OnlyVolley(host, CAST).volley);
+    const std::vector<core::Event> used = OfUse(Play(host, CAST + 1, last), game::CastUse(CAST, core::Slot::Special1));
     for (const core::StableId fox : ready.tagged) {
         CAPTURE(std::to_underlying(fox));
         CHECK(std::ranges::count(used, fox, &core::Event::target) == EACH);
-        CHECK(HealthOf(arena, fox).current == HEALTH - (static_cast<i64>(EACH) * SWORD_DAMAGE));
+        CHECK(HealthOf(host, fox).current == HEALTH - (static_cast<i64>(EACH) * SWORD_DAMAGE));
     }
 }
 
 TEST_CASE("a dead enemy's swords move to the living") {
     constexpr i64 FRAIL = 3; // three hits of 1
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    const Aimed ready = ReadySwords(arena, AMPLE, 2, 1);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    const Aimed ready = ReadySwords(host, AMPLE, 2, 1);
     const core::StableId frail = ready.tagged.front();
     const core::StableId other = ready.tagged.back();
-    arena.Damage(frail, AMPLE - FRAIL, CAST - 1);
-    StampedCast(arena, CAST, core::Slot::Special1, ready.point);
-    const u64 last = core::LastArrival(OnlyVolley(arena, CAST).volley);
-    const std::vector<core::Event> used = OfUse(Play(arena, CAST + 1, last), game::CastUse(CAST, core::Slot::Special1));
+    host.Damage(frail, AMPLE - FRAIL, CAST - 1);
+    StampedCast(host, CAST, core::Slot::Special1, ready.point);
+    const u64 last = core::LastArrival(OnlyVolley(host, CAST).volley);
+    const std::vector<core::Event> used = OfUse(Play(host, CAST + 1, last), game::CastUse(CAST, core::Slot::Special1));
     // It dies on the tick of its third hit (swords arriving on that tick still strike it); the volley outlasts its
     // dissolve, so by now it is gone.
     std::vector<core::Event> frailHits;
@@ -874,11 +868,11 @@ TEST_CASE("a dead enemy's swords move to the living") {
 
 TEST_CASE("with all tagged enemies dead the rest plunge and emit nothing") {
     constexpr i64 FRAIL = 3;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(FRAIL));
-    const Aimed ready = ReadySwords(arena, FRAIL, 2, 1);
-    StampedCast(arena, CAST, core::Slot::Special1, ready.point);
-    const u64 last = core::LastArrival(OnlyVolley(arena, CAST).volley);
-    const std::vector<core::Event> used = OfUse(Play(arena, CAST + 1, last + 1), game::CastUse(CAST, core::Slot::Special1));
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(FRAIL));
+    const Aimed ready = ReadySwords(host, FRAIL, 2, 1);
+    StampedCast(host, CAST, core::Slot::Special1, ready.point);
+    const u64 last = core::LastArrival(OnlyVolley(host, CAST).volley);
+    const std::vector<core::Event> used = OfUse(Play(host, CAST + 1, last + 1), game::CastUse(CAST, core::Slot::Special1));
     // Each dies at its third hit (they are gone by now).
     u64 lastDeath = 0;
     for (const core::StableId fox : ready.tagged) {
@@ -908,10 +902,10 @@ u32 Missed(bool holds) {
 
 TEST_CASE("each tick's hits are the swords arriving then whose target was alive as the tick began") {
     constexpr i64 FRAIL = 3;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(FRAIL));
-    const Aimed ready = ReadySwords(arena, FRAIL, 2, 1);
-    StampedCast(arena, CAST, core::Slot::Special1, ready.point);
-    core::Snapshot before = Published(arena, CAST);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(FRAIL));
+    const Aimed ready = ReadySwords(host, FRAIL, 2, 1);
+    StampedCast(host, CAST, core::Slot::Special1, ready.point);
+    core::Snapshot before = Published(host, CAST);
     REQUIRE(before.volleys.size() == 1);
     const core::Volley volley = before.volleys.front().volley;
     const u64 last = core::LastArrival(volley);
@@ -937,7 +931,7 @@ TEST_CASE("each tick's hits are the swords arriving then whose target was alive 
                 ++expected.at(target.entity == ready.tagged.front() ? 0 : 1);
             }
         }
-        const std::vector<core::Event> events = OfUse(Play(arena, tick, tick), volley.use);
+        const std::vector<core::Event> events = OfUse(Play(host, tick, tick), volley.use);
         for (std::size_t index = 0; index < 2; ++index) {
             const i64 hits = std::ranges::count(events, ready.tagged.at(index), &core::Event::target);
             wrongHits += Missed(hits == expected.at(index));
@@ -946,7 +940,7 @@ TEST_CASE("each tick's hits are the swords arriving then whose target was alive 
             }
             hitsTaken.at(index) += hits;
         }
-        before = Published(arena, tick);
+        before = Published(host, tick);
         if (before.volleyTargets.size() != 2) {
             ++wrongDeath;
             continue;
@@ -970,23 +964,23 @@ TEST_CASE("each tick's hits are the swords arriving then whose target was alive 
 
 TEST_CASE("two volleys on the same targets each end once, at their own last arrival") {
     constexpr u64 SECOND = CAST + 5;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    Run(arena, 1, CAST - 1);
-    const core::Vec2 point = ChestOf(arena, Foxes(arena).front()) + OFF_AXIS;
-    core::GameData data = WithSwords(Gathered(AMPLE), Nearest(arena, point, 2).radius);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    Run(host, 1, CAST - 1);
+    const core::Vec2 point = ChestOf(host, Foxes(host).front()) + OFF_AXIS;
+    core::GameData data = WithSwords(Gathered(AMPLE), Nearest(host, point, 2).radius);
     data.abilities.table.at(FLYING_SWORDS).cooldownTicks = 0; // free and ready, so the second overlaps the first
     data.abilities.table.at(FLYING_SWORDS).qiCost = 0;
-    arena.SetData(data);
-    std::vector<core::Event> events = StampedCast(arena, CAST, core::Slot::Special1, point);
-    std::ranges::move(Play(arena, CAST + 1, SECOND - 1), std::back_inserter(events));
-    std::ranges::move(StampedCast(arena, SECOND, core::Slot::Special1, point), std::back_inserter(events));
-    const core::Snapshot snapshot = Published(arena, SECOND);
+    host.SetData(data);
+    std::vector<core::Event> events = StampedCast(host, CAST, core::Slot::Special1, point);
+    std::ranges::move(Play(host, CAST + 1, SECOND - 1), std::back_inserter(events));
+    std::ranges::move(StampedCast(host, SECOND, core::Slot::Special1, point), std::back_inserter(events));
+    const core::Snapshot snapshot = Published(host, SECOND);
     REQUIRE(snapshot.volleys.size() == 2);
     REQUIRE(snapshot.volleys.front().volley.use != snapshot.volleys.back().volley.use);
     const u64 firstLast = core::LastArrival(snapshot.volleys.front().volley);
     const u64 secondLast = core::LastArrival(snapshot.volleys.back().volley);
     REQUIRE(core::LaunchTick(snapshot.volleys.back().volley, 0) < firstLast); // in flight together
-    std::ranges::move(Play(arena, SECOND + 1, secondLast + 1), std::back_inserter(events));
+    std::ranges::move(Play(host, SECOND + 1, secondLast + 1), std::back_inserter(events));
     for (const core::VolleyView& view : snapshot.volleys) {
         CAPTURE(view.volley.use);
         const std::vector<core::Event> used = OfUse(events, view.volley.use);
@@ -1000,41 +994,41 @@ TEST_CASE("two volleys on the same targets each end once, at their own last arri
 
 TEST_CASE("with none tagged, the swords strike the point and emit nothing but the end") {
     constexpr core::Vec2 NOWHERE{ .x = 960.0F, .y = 1'100.0F }; // 260 below the lowest fox's chest
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    Run(arena, 1, CAST - 1);
-    std::vector<core::Event> events = StampedCast(arena, CAST, core::Slot::Special1, NOWHERE);
-    const core::Snapshot snapshot = Published(arena, CAST);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    Run(host, 1, CAST - 1);
+    std::vector<core::Event> events = StampedCast(host, CAST, core::Slot::Special1, NOWHERE);
+    const core::Snapshot snapshot = Published(host, CAST);
     REQUIRE(snapshot.volleys.size() == 1);
     REQUIRE(snapshot.volleyTargets.size() == 1);
     CHECK(snapshot.volleyTargets.front().entity == core::StableId{});
     CHECK(snapshot.volleyTargets.front().current.x == NOWHERE.x);
     CHECK(snapshot.volleyTargets.front().current.y == NOWHERE.y);
     const u64 last = core::LastArrival(snapshot.volleys.front().volley);
-    std::ranges::move(Play(arena, CAST + 1, last + 1), std::back_inserter(events));
+    std::ranges::move(Play(host, CAST + 1, last + 1), std::back_inserter(events));
     const std::vector<core::Event> used = OfUse(events, game::CastUse(CAST, core::Slot::Special1));
     REQUIRE(used.size() == 1);
     CHECK(used.front().kind == core::EventKind::UseEnded);
     CHECK(used.front().tick == last);
-    for (const core::StableId fox : Foxes(arena)) {
-        CHECK(HealthOf(arena, fox).current == AMPLE);
+    for (const core::StableId fox : Foxes(host)) {
+        CHECK(HealthOf(host, fox).current == AMPLE);
     }
 }
 
 // An arena of foxes with ample health, ticked to before CAST; the first fox's chest.
-core::Vec2 ReadyBolt(game::Arena& arena) {
-    Run(arena, 1, CAST - 1);
-    return ChestOf(arena, Foxes(arena).front());
+core::Vec2 ReadyBolt(game::Host& host) {
+    Run(host, 1, CAST - 1);
+    return ChestOf(host, Foxes(host).front());
 }
 
 TEST_CASE("a burn ticks its count and stops, each tick a Burn hit of the bolt's use") {
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    const core::Vec2 point = ReadyBolt(arena);
-    const core::StableId fox = Foxes(arena).front();
-    std::vector<core::Event> events = StampedCast(arena, CAST, core::Slot::Generator, point);
-    const u64 arrival = core::ArrivalTick(OnlyVolley(arena, CAST).volley, 0);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    const core::Vec2 point = ReadyBolt(host);
+    const core::StableId fox = Foxes(host).front();
+    std::vector<core::Event> events = StampedCast(host, CAST, core::Slot::Generator, point);
+    const u64 arrival = core::ArrivalTick(OnlyVolley(host, CAST).volley, 0);
     constexpr u64 AFTER = 10;
     const u64 lastTick = arrival + (BURN_TICKS * RULES.afflictionPeriod);
-    std::ranges::move(Play(arena, CAST + 1, lastTick + AFTER), std::back_inserter(events));
+    std::ranges::move(Play(host, CAST + 1, lastTick + AFTER), std::back_inserter(events));
     const std::vector<core::Event> used = OfUse(events, game::CastUse(CAST, core::Slot::Generator));
     REQUIRE(used.size() == 1 + BURN_TICKS + 1);
     CHECK(used.front().kind == core::EventKind::Hit);
@@ -1053,21 +1047,21 @@ TEST_CASE("a burn ticks its count and stops, each tick a Burn hit of the bolt's 
     }
     CHECK(used.back().kind == core::EventKind::UseEnded);
     CHECK(used.back().tick == lastTick);
-    CHECK(HealthOf(arena, fox).current == AMPLE - BOLT_DAMAGE - (BURN_TICKS * BURN_DAMAGE));
+    CHECK(HealthOf(host, fox).current == AMPLE - BOLT_DAMAGE - (BURN_TICKS * BURN_DAMAGE));
 }
 
 TEST_CASE("a second bolt refreshes the burn; its later ticks belong to the latest use, and the first use ends") {
     constexpr u64 SECOND = CAST + BOLT_COOLDOWN;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    const core::Vec2 point = ReadyBolt(arena);
-    const core::StableId fox = Foxes(arena).front();
-    std::vector<core::Event> events = StampedCast(arena, CAST, core::Slot::Generator, point);
-    std::ranges::move(Play(arena, CAST + 1, SECOND - 1), std::back_inserter(events));
-    std::ranges::move(StampedCast(arena, SECOND, core::Slot::Generator, ChestOf(arena, fox)), std::back_inserter(events));
-    const u64 arrival = core::ArrivalTick(OnlyVolley(arena, SECOND).volley, 0);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    const core::Vec2 point = ReadyBolt(host);
+    const core::StableId fox = Foxes(host).front();
+    std::vector<core::Event> events = StampedCast(host, CAST, core::Slot::Generator, point);
+    std::ranges::move(Play(host, CAST + 1, SECOND - 1), std::back_inserter(events));
+    std::ranges::move(StampedCast(host, SECOND, core::Slot::Generator, ChestOf(host, fox)), std::back_inserter(events));
+    const u64 arrival = core::ArrivalTick(OnlyVolley(host, SECOND).volley, 0);
     REQUIRE(arrival < CAST + RULES.afflictionPeriod); // the first burn hasn't ticked yet
     const u64 lastTick = arrival + (BURN_TICKS * RULES.afflictionPeriod);
-    std::ranges::move(Play(arena, SECOND + 1, lastTick + 1), std::back_inserter(events));
+    std::ranges::move(Play(host, SECOND + 1, lastTick + 1), std::back_inserter(events));
 
     const std::vector<core::Event> first = OfUse(events, game::CastUse(CAST, core::Slot::Generator));
     REQUIRE(first.size() == 2);
@@ -1086,15 +1080,15 @@ TEST_CASE("a second bolt refreshes the burn; its later ticks belong to the lates
 }
 
 TEST_CASE("a burn ends with its creature's death, and its use with it") {
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    const core::Vec2 point = ReadyBolt(arena);
-    const core::StableId fox = Foxes(arena).front();
-    std::vector<core::Event> events = StampedCast(arena, CAST, core::Slot::Generator, point);
-    const u64 arrival = core::ArrivalTick(OnlyVolley(arena, CAST).volley, 0);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    const core::Vec2 point = ReadyBolt(host);
+    const core::StableId fox = Foxes(host).front();
+    std::vector<core::Event> events = StampedCast(host, CAST, core::Slot::Generator, point);
+    const u64 arrival = core::ArrivalTick(OnlyVolley(host, CAST).volley, 0);
     const u64 death = arrival + RULES.afflictionPeriod + 1; // after the first tick of the burn
-    std::ranges::move(Play(arena, CAST + 1, death - 1), std::back_inserter(events));
-    arena.Damage(fox, AMPLE, death);
-    std::ranges::move(Play(arena, death, death + (BURN_TICKS * RULES.afflictionPeriod)), std::back_inserter(events));
+    std::ranges::move(Play(host, CAST + 1, death - 1), std::back_inserter(events));
+    host.Damage(fox, AMPLE, death);
+    std::ranges::move(Play(host, death, death + (BURN_TICKS * RULES.afflictionPeriod)), std::back_inserter(events));
     const std::vector<core::Event> used = OfUse(events, game::CastUse(CAST, core::Slot::Generator));
     REQUIRE(used.size() == 3); // the hit, one tick, the end
     CHECK(used.back().kind == core::EventKind::UseEnded);
@@ -1103,36 +1097,36 @@ TEST_CASE("a burn ends with its creature's death, and its use with it") {
 
 TEST_CASE("the bolt strikes the tagged enemy nearest the point") {
     constexpr f32 NEARER_THE_SECOND = 0.7F;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    Run(arena, 1, CAST - 1);
-    const core::StableId first = Foxes(arena).front();
-    const core::Vec2 firstChest = ChestOf(arena, first);
-    const Tagging pair = Nearest(arena, firstChest + OFF_AXIS, 2);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    Run(host, 1, CAST - 1);
+    const core::StableId first = Foxes(host).front();
+    const core::Vec2 firstChest = ChestOf(host, first);
+    const Tagging pair = Nearest(host, firstChest + OFF_AXIS, 2);
     REQUIRE(std::ranges::contains(pair.foxes, first));
     const core::StableId second = pair.foxes.front() == first ? pair.foxes.back() : pair.foxes.front();
-    const core::Vec2 secondChest = ChestOf(arena, second);
+    const core::Vec2 secondChest = ChestOf(host, second);
     const core::Vec2 point = firstChest + ((secondChest - firstChest) * NEARER_THE_SECOND);
     const f32 bolt = game::BuiltInData().abilities.table.at(FIRE_BOLT).radius;
     REQUIRE(Distance(point, firstChest) < bolt); // both are tagged
-    std::vector<core::Event> events = StampedCast(arena, CAST, core::Slot::Generator, point);
-    const core::Snapshot snapshot = Published(arena, CAST);
+    std::vector<core::Event> events = StampedCast(host, CAST, core::Slot::Generator, point);
+    const core::Snapshot snapshot = Published(host, CAST);
     REQUIRE(snapshot.volleyTargets.size() == 1);
     CHECK(snapshot.volleyTargets.front().entity == second);
-    const u64 arrival = core::ArrivalTick(OnlyVolley(arena, CAST).volley, 0);
-    std::ranges::move(Play(arena, CAST + 1, arrival), std::back_inserter(events));
+    const u64 arrival = core::ArrivalTick(OnlyVolley(host, CAST).volley, 0);
+    std::ranges::move(Play(host, CAST + 1, arrival), std::back_inserter(events));
     const std::vector<core::Event> used = OfUse(events, game::CastUse(CAST, core::Slot::Generator));
     REQUIRE_FALSE(used.empty());
     CHECK(used.front().kind == core::EventKind::Hit);
     CHECK(used.front().target == second);
-    CHECK(HealthOf(arena, first).current == AMPLE);
+    CHECK(HealthOf(host, first).current == AMPLE);
 }
 
 TEST_CASE("the snapshot carries each volley and its targets") {
     constexpr std::size_t TAGGED = 3;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    const Aimed ready = ReadySwords(arena, AMPLE, TAGGED);
-    StampedCast(arena, CAST, core::Slot::Special1, ready.point);
-    const core::Snapshot snapshot = Published(arena, CAST);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    const Aimed ready = ReadySwords(host, AMPLE, TAGGED);
+    StampedCast(host, CAST, core::Slot::Special1, ready.point);
+    const core::Snapshot snapshot = Published(host, CAST);
     REQUIRE(snapshot.volleys.size() == 1);
     const core::VolleyView& view = snapshot.volleys.front();
     CHECK(view.ability == core::AbilityKind::FlyingSwords);
@@ -1151,7 +1145,7 @@ TEST_CASE("the snapshot carries each volley and its targets") {
         CAPTURE(index);
         CHECK(target.entity == ready.tagged.at(index));
         CHECK(target.diedTick == 0);
-        const core::Vec2 chest = ChestOf(arena, target.entity);
+        const core::Vec2 chest = ChestOf(host, target.entity);
         CHECK(target.current.x == chest.x);
         CHECK(target.current.y == chest.y);
     }
@@ -1182,11 +1176,11 @@ std::vector<u32> WavesDueAfter(const core::Volley& volley, u64 tick) {
 
 TEST_CASE("a scene change mid-volley ends every open use") {
     constexpr u64 SWORDS_CAST = 100;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    Run(arena, 1, SWORDS_CAST - 1);
-    const core::StableId fox = Foxes(arena).front();
-    std::vector<core::Event> events = StampedCast(arena, SWORDS_CAST, core::Slot::Special1, ChestOf(arena, fox));
-    const core::Snapshot cast = Published(arena, SWORDS_CAST);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    Run(host, 1, SWORDS_CAST - 1);
+    const core::StableId fox = Foxes(host).front();
+    std::vector<core::Event> events = StampedCast(host, SWORDS_CAST, core::Slot::Special1, ChestOf(host, fox));
+    const core::Snapshot cast = Published(host, SWORDS_CAST);
     REQUIRE_FALSE(cast.volleys.empty());
     const core::Volley& swordsCast = cast.volleys.back().volley;
     REQUIRE(swordsCast.shape.waves >= 2);
@@ -1197,9 +1191,9 @@ TEST_CASE("a scene change mid-volley ends every open use") {
     REQUIRE(swordsEnd > SWORDS_CAST + (BURN_TICKS * RULES.afflictionPeriod)); // the bolt cast after the swords
     const u64 changeTick = SecondToLastWaveArrival(swordsCast) - 1;
     const u64 boltCast = swordsEnd - (BURN_TICKS * RULES.afflictionPeriod);
-    std::ranges::move(Play(arena, SWORDS_CAST + 1, boltCast - 1), std::back_inserter(events));
-    std::ranges::move(StampedCast(arena, boltCast, core::Slot::Generator, ChestOf(arena, fox)), std::back_inserter(events));
-    const core::Snapshot boltCastSnapshot = Published(arena, boltCast);
+    std::ranges::move(Play(host, SWORDS_CAST + 1, boltCast - 1), std::back_inserter(events));
+    std::ranges::move(StampedCast(host, boltCast, core::Slot::Generator, ChestOf(host, fox)), std::back_inserter(events));
+    const core::Snapshot boltCastSnapshot = Published(host, boltCast);
     const auto boltVolley =
         std::ranges::find(boltCastSnapshot.volleys, core::AbilityKind::FireBolt, &core::VolleyView::ability);
     REQUIRE(boltVolley != boltCastSnapshot.volleys.end());
@@ -1207,8 +1201,8 @@ TEST_CASE("a scene change mid-volley ends every open use") {
     const u64 burnEnd = arrival + (BURN_TICKS * RULES.afflictionPeriod);
     REQUIRE(arrival < changeTick);
     REQUIRE((changeTick - arrival) % RULES.afflictionPeriod != 0); // the burn between its ticks
-    std::ranges::move(Play(arena, boltCast + 1, changeTick - 1), std::back_inserter(events));
-    const core::Snapshot before = Published(arena, changeTick - 1);
+    std::ranges::move(Play(host, boltCast + 1, changeTick - 1), std::back_inserter(events));
+    const core::Snapshot before = Published(host, changeTick - 1);
     const auto inFlight = std::ranges::find(before.volleys, core::AbilityKind::FlyingSwords, &core::VolleyView::ability);
     REQUIRE(inFlight != before.volleys.end());
     std::vector<u32> due = WavesDueAfter(inFlight->volley, changeTick);
@@ -1218,8 +1212,8 @@ TEST_CASE("a scene change mid-volley ends every open use") {
     CHECK(due.size() >= 2); // of two waves or more
     const std::array<core::Action, 1> change{ { { .kind = core::ActionKind::CycleScene } } };
     std::vector<core::Event> ended;
-    arena.Tick(At(changeTick), { .actions = change, .held = {} }, ended);
-    arena.EnterScene(); // as the logic does after the tick
+    host.Tick(At(changeTick), { .actions = change, .held = {} }, ended);
+    host.EnterScene(); // as the logic does after the tick
     const u64 bolt = game::CastUse(boltCast, core::Slot::Generator);
     const u64 swords = game::CastUse(SWORDS_CAST, core::Slot::Special1);
     REQUIRE(ended.size() == 2);
@@ -1230,11 +1224,11 @@ TEST_CASE("a scene change mid-volley ends every open use") {
     CHECK(CountKind(OfUse(events, swords), core::EventKind::UseEnded) == 0);
     const std::vector<core::Event> boltBefore = OfUse(events, bolt);
     CHECK(boltBefore.size() == BURN_TICKS); // its hit and every tick of its burn but the last
-    const core::Snapshot snapshot = Published(arena, changeTick);
+    const core::Snapshot snapshot = Published(host, changeTick);
     CHECK(snapshot.volleys.empty());
     CHECK(snapshot.volleyTargets.empty());
     // To the last tick either use had an event due on, had the scene stayed.
-    const std::vector<core::Event> later = Play(arena, changeTick + 1, std::max(burnEnd, swordsEnd));
+    const std::vector<core::Event> later = Play(host, changeTick + 1, std::max(burnEnd, swordsEnd));
     CHECK(OfUse(later, bolt).empty());
     CHECK(OfUse(later, swords).empty());
 }
@@ -1254,16 +1248,16 @@ TEST_CASE("new game data leaves a volley in flight as it was cast") {
     constexpr u32 NEW_COUNT = 10;
     constexpr u32 NEW_FLIGHT = 5;
     constexpr f32 NEW_RADIUS = 1'000.0F;
-    game::Arena keptArena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    game::Arena reloadedArena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    const Aimed kept = ReadySwords(keptArena, AMPLE, 2);
-    const Aimed reloaded = ReadySwords(reloadedArena, AMPLE, 2);
-    StampedCast(keptArena, CAST, core::Slot::Special1, kept.point);
-    StampedCast(reloadedArena, CAST, core::Slot::Special1, reloaded.point);
-    const core::VolleyView cast = OnlyVolley(keptArena, CAST);
+    game::Host keptHost(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    game::Host reloadedHost(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    const Aimed kept = ReadySwords(keptHost, AMPLE, 2);
+    const Aimed reloaded = ReadySwords(reloadedHost, AMPLE, 2);
+    StampedCast(keptHost, CAST, core::Slot::Special1, kept.point);
+    StampedCast(reloadedHost, CAST, core::Slot::Special1, reloaded.point);
+    const core::VolleyView cast = OnlyVolley(keptHost, CAST);
     const u64 last = core::LastArrival(cast.volley);
-    Run(keptArena, CAST + 1, RELOAD);
-    Run(reloadedArena, CAST + 1, RELOAD);
+    Run(keptHost, CAST + 1, RELOAD);
+    Run(reloadedHost, CAST + 1, RELOAD);
     core::GameData data = Gathered(AMPLE);
     core::AbilityData& swords = data.abilities.table.at(FLYING_SWORDS);
     swords.damage = NEW_DAMAGE;
@@ -1271,26 +1265,26 @@ TEST_CASE("new game data leaves a volley in flight as it was cast") {
     swords.volley.count = NEW_COUNT;
     swords.volley.flightTicks = NEW_FLIGHT;
     data.abilities.table.at(FIRE_BOLT).damage = NEW_DAMAGE;
-    reloadedArena.SetData(data);
+    reloadedHost.SetData(data);
 
-    const core::VolleyView after = OnlyVolley(reloadedArena, RELOAD);
+    const core::VolleyView after = OnlyVolley(reloadedHost, RELOAD);
     CHECK(after.volley.shape.count == cast.volley.shape.count);
     CHECK(after.volley.shape.flightTicks == cast.volley.shape.flightTicks);
     CHECK(after.volley.shape.commitTicks == cast.volley.shape.commitTicks);
-    const std::vector<core::Event> keptEvents = Play(keptArena, RELOAD + 1, last + 1);
-    const std::vector<core::Event> reloadedEvents = Play(reloadedArena, RELOAD + 1, last + 1);
+    const std::vector<core::Event> keptEvents = Play(keptHost, RELOAD + 1, last + 1);
+    const std::vector<core::Event> reloadedEvents = Play(reloadedHost, RELOAD + 1, last + 1);
     CHECK(CountKind(reloadedEvents, core::EventKind::Hit) == SWORDS);
     const bool same = SameEvents(keptEvents, reloadedEvents);
     CHECK(same);
 
     // The next cast takes the new data.
     const core::StableId fox = reloaded.tagged.front();
-    StampedCast(reloadedArena, last + 2, core::Slot::Generator, ChestOf(reloadedArena, fox));
-    const core::Snapshot boltCast = Published(reloadedArena, last + 2);
+    StampedCast(reloadedHost, last + 2, core::Slot::Generator, ChestOf(reloadedHost, fox));
+    const core::Snapshot boltCast = Published(reloadedHost, last + 2);
     REQUIRE_FALSE(boltCast.volleys.empty());
     const u64 arrival = core::ArrivalTick(boltCast.volleys.back().volley, 0); // the swords still fading before it
     const std::vector<core::Event> hits =
-        OfUse(Play(reloadedArena, last + 3, arrival), game::CastUse(last + 2, core::Slot::Generator));
+        OfUse(Play(reloadedHost, last + 3, arrival), game::CastUse(last + 2, core::Slot::Generator));
     REQUIRE_FALSE(hits.empty());
     CHECK(hits.front().value == NEW_DAMAGE);
 }
@@ -1303,24 +1297,24 @@ constexpr u32 POISON_TICKS = 4;
 constexpr u64 LANCE_COOLDOWN = 30;
 constexpr std::size_t POISON_LANCE = std::to_underlying(core::AbilityKind::PoisonLance);
 
-// Ticks `arena`, whose foxes have AMPLE health, to before CAST and gives its lance a radius that tags the `count` foxes
+// Ticks `host`, whose foxes have AMPLE health, to before CAST and gives its lance a radius that tags the `count` foxes
 // nearest the first fox's chest; those foxes and that chest.
-Aimed ReadyLance(game::Arena& arena, std::size_t count) {
-    Run(arena, 1, CAST - 1);
-    const core::Vec2 point = ChestOf(arena, Foxes(arena).front()) + OFF_AXIS;
-    const Tagging tagging = Nearest(arena, point, count);
+Aimed ReadyLance(game::Host& host, std::size_t count) {
+    Run(host, 1, CAST - 1);
+    const core::Vec2 point = ChestOf(host, Foxes(host).front()) + OFF_AXIS;
+    const Tagging tagging = Nearest(host, point, count);
     core::GameData data = Gathered(AMPLE);
     data.abilities.table.at(POISON_LANCE).radius = tagging.radius;
-    arena.SetData(data);
+    host.SetData(data);
     return { .tagged = tagging.foxes, .point = point };
 }
 
 TEST_CASE("the lance strikes every enemy in its area with poison and ends after its last tick") {
     constexpr std::size_t TAGGED = 3;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    const Aimed ready = ReadyLance(arena, TAGGED);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    const Aimed ready = ReadyLance(host, TAGGED);
     const u64 use = game::CastUse(CAST, core::Slot::Spender);
-    std::vector<core::Event> events = StampedCast(arena, CAST, core::Slot::Spender, ready.point);
+    std::vector<core::Event> events = StampedCast(host, CAST, core::Slot::Spender, ready.point);
 
     const std::vector<core::Event> struck = OfUse(events, use);
     REQUIRE(struck.size() == TAGGED);
@@ -1333,7 +1327,7 @@ TEST_CASE("the lance strikes every enemy in its area with poison and ends after 
     }
 
     const u64 lastTick = CAST + (POISON_TICKS * RULES.afflictionPeriod);
-    std::ranges::move(Play(arena, CAST + 1, lastTick + 1), std::back_inserter(events));
+    std::ranges::move(Play(host, CAST + 1, lastTick + 1), std::back_inserter(events));
     const std::vector<core::Event> used = OfUse(events, use);
     REQUIRE(used.size() == TAGGED + (TAGGED * POISON_TICKS) + 1);
     for (u32 tick = 1; tick <= POISON_TICKS; ++tick) {
@@ -1353,19 +1347,19 @@ TEST_CASE("the lance strikes every enemy in its area with poison and ends after 
     CHECK(used.back().kind == core::EventKind::UseEnded);
     CHECK(used.back().tick == lastTick);
     for (const core::StableId fox : ready.tagged) {
-        CHECK(HealthOf(arena, fox).current == AMPLE - LANCE_DAMAGE - (POISON_TICKS * POISON_DAMAGE));
+        CHECK(HealthOf(host, fox).current == AMPLE - LANCE_DAMAGE - (POISON_TICKS * POISON_DAMAGE));
     }
-    for (const core::StableId fox : Foxes(arena)) {
+    for (const core::StableId fox : Foxes(host)) {
         if (!std::ranges::contains(ready.tagged, fox)) {
-            CHECK(HealthOf(arena, fox).current == AMPLE);
+            CHECK(HealthOf(host, fox).current == AMPLE);
         }
     }
 }
 
 TEST_CASE("a lance with no enemy in its area ends its use at once") {
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    Run(arena, 1, CAST - 1);
-    const std::vector<core::Event> events = StampedCast(arena, CAST, core::Slot::Spender, FAR_RIGHT);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    Run(host, 1, CAST - 1);
+    const std::vector<core::Event> events = StampedCast(host, CAST, core::Slot::Spender, FAR_RIGHT);
     const std::vector<core::Event> used = OfUse(events, game::CastUse(CAST, core::Slot::Spender));
     REQUIRE(used.size() == 1);
     CHECK(used.front().kind == core::EventKind::UseEnded);
@@ -1373,14 +1367,14 @@ TEST_CASE("a lance with no enemy in its area ends its use at once") {
 
 TEST_CASE("a second lance refreshes the poison; its later ticks belong to the latest use, and the first use ends") {
     constexpr u64 SECOND = CAST + LANCE_COOLDOWN;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    const Aimed ready = ReadyLance(arena, 1);
-    std::vector<core::Event> events = StampedCast(arena, CAST, core::Slot::Spender, ready.point);
-    std::ranges::move(Play(arena, CAST + 1, SECOND - 1), std::back_inserter(events));
-    const core::Vec2 again = ChestOf(arena, ready.tagged.front());
-    std::ranges::move(StampedCast(arena, SECOND, core::Slot::Spender, again), std::back_inserter(events));
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    const Aimed ready = ReadyLance(host, 1);
+    std::vector<core::Event> events = StampedCast(host, CAST, core::Slot::Spender, ready.point);
+    std::ranges::move(Play(host, CAST + 1, SECOND - 1), std::back_inserter(events));
+    const core::Vec2 again = ChestOf(host, ready.tagged.front());
+    std::ranges::move(StampedCast(host, SECOND, core::Slot::Spender, again), std::back_inserter(events));
     const u64 lastTick = SECOND + (POISON_TICKS * RULES.afflictionPeriod);
-    std::ranges::move(Play(arena, SECOND + 1, lastTick + 1), std::back_inserter(events));
+    std::ranges::move(Play(host, SECOND + 1, lastTick + 1), std::back_inserter(events));
 
     const std::vector<core::Event> first = OfUse(events, game::CastUse(CAST, core::Slot::Spender));
     REQUIRE(first.size() == 2);
@@ -1396,12 +1390,12 @@ TEST_CASE("a second lance refreshes the poison; its later ticks belong to the la
 
 TEST_CASE("a lance on the tick an earlier poison is due deals that tick first, then refreshes it") {
     constexpr u64 DUE = CAST + RULES.afflictionPeriod;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    const Aimed ready = ReadyLance(arena, 1);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    const Aimed ready = ReadyLance(host, 1);
     const core::StableId fox = ready.tagged.front();
-    StampedCast(arena, CAST, core::Slot::Spender, ready.point);
-    Run(arena, CAST + 1, DUE - 1);
-    const std::vector<core::Event> due = StampedCast(arena, DUE, core::Slot::Spender, ChestOf(arena, fox));
+    StampedCast(host, CAST, core::Slot::Spender, ready.point);
+    Run(host, CAST + 1, DUE - 1);
+    const std::vector<core::Event> due = StampedCast(host, DUE, core::Slot::Spender, ChestOf(host, fox));
 
     constexpr u64 FIRST = game::CastUse(CAST, core::Slot::Spender);
     constexpr u64 SECOND = game::CastUse(DUE, core::Slot::Spender);
@@ -1419,14 +1413,14 @@ TEST_CASE("a lance on the tick an earlier poison is due deals that tick first, t
     const std::vector<core::Event> ended = OfUse(due, FIRST);
     REQUIRE_FALSE(ended.empty());
     CHECK(ended.back().kind == core::EventKind::UseEnded); // refreshed after its tick
-    CHECK(HealthOf(arena, fox).current == AMPLE - (2 * LANCE_DAMAGE) - POISON_DAMAGE);
+    CHECK(HealthOf(host, fox).current == AMPLE - (2 * LANCE_DAMAGE) - POISON_DAMAGE);
 }
 
 TEST_CASE("the lance's flash carries its element and fades after its ticks") {
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    const Aimed ready = ReadyLance(arena, 1);
-    StampedCast(arena, CAST, core::Slot::Spender, ready.point);
-    const core::Snapshot cast = Published(arena, CAST);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    const Aimed ready = ReadyLance(host, 1);
+    StampedCast(host, CAST, core::Slot::Spender, ready.point);
+    const core::Snapshot cast = Published(host, CAST);
     REQUIRE(cast.flashes.size() == 1);
     CHECK(cast.flashes.front().point.x == ready.point.x);
     CHECK(cast.flashes.front().point.y == ready.point.y);
@@ -1434,36 +1428,36 @@ TEST_CASE("the lance's flash carries its element and fades after its ticks") {
     CHECK(cast.flashes.front().element == core::HitKind::Poison);
     CHECK(cast.volleys.empty()); // a strike, not a volley
 
-    Run(arena, CAST + 1, CAST + RULES.flashTicks - 1);
-    CHECK(Published(arena, CAST + RULES.flashTicks - 1).flashes.size() == 1);
-    Run(arena, CAST + RULES.flashTicks, CAST + RULES.flashTicks);
-    CHECK(Published(arena, CAST + RULES.flashTicks).flashes.empty());
+    Run(host, CAST + 1, CAST + RULES.flashTicks - 1);
+    CHECK(Published(host, CAST + RULES.flashTicks - 1).flashes.size() == 1);
+    Run(host, CAST + RULES.flashTicks, CAST + RULES.flashTicks);
+    CHECK(Published(host, CAST + RULES.flashTicks).flashes.empty());
 }
 
 TEST_CASE("the lance's flash survives a save") {
     constexpr u64 SAVED_AT = CAST + 3;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    const Aimed ready = ReadyLance(arena, 1);
-    StampedCast(arena, CAST, core::Slot::Spender, ready.point);
-    Run(arena, CAST + 1, SAVED_AT);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    const Aimed ready = ReadyLance(host, 1);
+    StampedCast(host, CAST, core::Slot::Spender, ready.point);
+    Run(host, CAST + 1, SAVED_AT);
     std::vector<std::byte> bytes;
     core::Writer writer{ bytes };
-    arena.Save(writer);
+    host.Save(writer);
 
-    game::Arena loaded(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_AT));
     loaded.EnterScene(); // as the logic does at the swap
-    CHECK(loaded.StateHash() == arena.StateHash());
+    CHECK(loaded.StateHash() == host.StateHash());
     const core::Snapshot snapshot = Published(loaded, SAVED_AT);
     REQUIRE(snapshot.flashes.size() == 1);
     CHECK(snapshot.flashes.front().point.x == ready.point.x);
     CHECK(snapshot.flashes.front().point.y == ready.point.y);
     CHECK(snapshot.flashes.front().startTick == CAST);
     CHECK(snapshot.flashes.front().element == core::HitKind::Poison);
-    Run(arena, SAVED_AT + 1, CAST + RULES.flashTicks);
+    Run(host, SAVED_AT + 1, CAST + RULES.flashTicks);
     Run(loaded, SAVED_AT + 1, CAST + RULES.flashTicks);
-    CHECK(loaded.StateHash() == arena.StateHash());
+    CHECK(loaded.StateHash() == host.StateHash());
     CHECK(Published(loaded, CAST + RULES.flashTicks).flashes.empty());
 }
 
@@ -1479,16 +1473,16 @@ bool SameSeal(const core::Seal& lhs, const core::Seal& rhs) {
            lhs.showcase == rhs.showcase;
 }
 
-// How many seals raised in play `arena` publishes at `tick` (test::RaisedSeals()).
-std::size_t RaisedAt(game::Arena& arena, u64 tick) {
-    return test::RaisedSeals(Published(arena, tick)).size();
+// How many seals raised in play `host` publishes at `tick` (test::RaisedSeals()).
+std::size_t RaisedAt(game::Host& host, u64 tick) {
+    return test::RaisedSeals(Published(host, tick)).size();
 }
 
 TEST_CASE("casting the swords raises one seal at the cast point until the last sword leaves") {
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    const core::Vec2 point = ReadyBolt(arena);
-    StampedCast(arena, CAST, core::Slot::Special1, point);
-    const core::Snapshot cast = Published(arena, CAST);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    const core::Vec2 point = ReadyBolt(host);
+    StampedCast(host, CAST, core::Slot::Special1, point);
+    const core::Snapshot cast = Published(host, CAST);
     REQUIRE(cast.volleys.size() == 1);
     const std::vector<core::Seal> raised = test::RaisedSeals(cast);
     REQUIRE(raised.size() == 1);
@@ -1506,41 +1500,41 @@ TEST_CASE("casting the swords raises one seal at the cast point until the last s
     CHECK(seal.element == core::HitKind::Damage);
     CHECK_FALSE(seal.showcase);
 
-    Run(arena, CAST + 1, end - 1);
-    CHECK(RaisedAt(arena, end - 1) == 1); // the last sword still on its ring
-    Run(arena, end, end);
-    CHECK(RaisedAt(arena, end) == 0);
+    Run(host, CAST + 1, end - 1);
+    CHECK(RaisedAt(host, end - 1) == 1); // the last sword still on its ring
+    Run(host, end, end);
+    CHECK(RaisedAt(host, end) == 0);
 }
 
 TEST_CASE("an ability without a seal raises none") {
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    const core::Vec2 point = ReadyBolt(arena);
-    StampedCast(arena, CAST, core::Slot::Generator, point);
-    const core::Snapshot snapshot = Published(arena, CAST);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    const core::Vec2 point = ReadyBolt(host);
+    StampedCast(host, CAST, core::Slot::Generator, point);
+    const core::Snapshot snapshot = Published(host, CAST);
     CHECK(snapshot.volleys.size() == 1);
     const std::vector<core::Seal> raised = test::RaisedSeals(snapshot);
     CHECK(raised.empty());
 }
 
 TEST_CASE("a seal survives a save and load mid-formation") {
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    const core::Vec2 point = ReadyBolt(arena);
-    StampedCast(arena, CAST, core::Slot::Special1, point);
-    const core::Snapshot cast = Published(arena, CAST);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    const core::Vec2 point = ReadyBolt(host);
+    StampedCast(host, CAST, core::Slot::Special1, point);
+    const core::Snapshot cast = Published(host, CAST);
     const std::vector<core::Seal> raisedAtCast = test::RaisedSeals(cast);
     REQUIRE(raisedAtCast.size() == 1);
     const core::Seal& raised = raisedAtCast.front();
     const u64 savedAt = CAST + ((raised.endTick - CAST) / 2);
-    Run(arena, CAST + 1, savedAt);
+    Run(host, CAST + 1, savedAt);
     std::vector<std::byte> bytes;
     core::Writer writer{ bytes };
-    arena.Save(writer);
+    host.Save(writer);
 
-    game::Arena loaded(test::TestManifest(), game::Scene::Cells, Gathered(AMPLE));
+    game::Host loaded(test::TestManifest(), game::CELLS_SCENE, Gathered(AMPLE));
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, savedAt));
     loaded.EnterScene(); // as the logic does at the swap
-    CHECK(loaded.StateHash() == arena.StateHash());
+    CHECK(loaded.StateHash() == host.StateHash());
     const core::Snapshot snapshot = Published(loaded, savedAt);
     const std::vector<core::Seal> raisedLoaded = test::RaisedSeals(snapshot);
     REQUIRE(raisedLoaded.size() == 1);
@@ -1554,32 +1548,32 @@ TEST_CASE("a seal survives a save and load mid-formation") {
 
 TEST_CASE("a scene change ends every seal") {
     constexpr u64 CHANGE = CAST + 5; // the swords still forming
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    const core::Vec2 point = ReadyBolt(arena);
-    StampedCast(arena, CAST, core::Slot::Special1, point);
-    Run(arena, CAST + 1, CHANGE - 1);
-    REQUIRE(RaisedAt(arena, CHANGE - 1) == 1);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    const core::Vec2 point = ReadyBolt(host);
+    StampedCast(host, CAST, core::Slot::Special1, point);
+    Run(host, CAST + 1, CHANGE - 1);
+    REQUIRE(RaisedAt(host, CHANGE - 1) == 1);
     const std::array<core::Action, 1> change{ { { .kind = core::ActionKind::CycleScene } } };
     std::vector<core::Event> events;
-    arena.Tick(At(CHANGE), { .actions = change, .held = {} }, events);
-    arena.EnterScene(); // as the logic does after the tick
-    CHECK(RaisedAt(arena, CHANGE) == 0);
+    host.Tick(At(CHANGE), { .actions = change, .held = {} }, events);
+    host.EnterScene(); // as the logic does after the tick
+    CHECK(RaisedAt(host, CHANGE) == 0);
 }
 
 TEST_CASE("a load ends every seal its save doesn't hold") {
     constexpr u64 LOADED = CAST + 5; // the swords still forming
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, Gathered(AMPLE));
-    const core::Vec2 point = ReadyBolt(arena);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
+    const core::Vec2 point = ReadyBolt(host);
     std::vector<std::byte> bytes;
     core::Writer writer{ bytes };
-    arena.Save(writer); // before the cast
-    StampedCast(arena, CAST, core::Slot::Special1, point);
-    Run(arena, CAST + 1, LOADED);
-    REQUIRE(RaisedAt(arena, LOADED) == 1);
+    host.Save(writer); // before the cast
+    StampedCast(host, CAST, core::Slot::Special1, point);
+    Run(host, CAST + 1, LOADED);
+    REQUIRE(RaisedAt(host, LOADED) == 1);
     core::Reader reader{ bytes };
-    REQUIRE(arena.Load(reader, LOADED));
-    arena.EnterScene(); // as the logic does at the swap
-    CHECK(RaisedAt(arena, LOADED) == 0);
+    REQUIRE(host.Load(reader, LOADED));
+    host.EnterScene(); // as the logic does at the swap
+    CHECK(RaisedAt(host, LOADED) == 0);
 }
 
 TEST_CASE("afflictions are valid with no negative damage") {
@@ -1595,18 +1589,18 @@ TEST_CASE("the data's combat rules set how long a death dissolves and when a fox
     core::GameData data = FarFromTheCrystal();
     data.combat.dyingTicks = QUICK_DYING;
     data.combat.respawnTicks = QUICK_RESPAWN;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
-    Run(arena, 1, DEATH);
-    const core::StableId fox = Foxes(arena).front();
-    arena.Damage(fox, FOX_HEALTH, DEATH);
-    Run(arena, DEATH + 1, DEATH + QUICK_DYING - 1);
-    CHECK(arena.State().DomainOf(fox).has_value());
-    Run(arena, DEATH + QUICK_DYING, DEATH + QUICK_DYING);
-    CHECK_FALSE(arena.State().DomainOf(fox).has_value());
-    Run(arena, DEATH + QUICK_DYING + 1, DEATH + QUICK_DYING + QUICK_RESPAWN - 1);
-    CHECK(Foxes(arena).size() == FOXES - 1);
-    Run(arena, DEATH + QUICK_DYING + QUICK_RESPAWN, DEATH + QUICK_DYING + QUICK_RESPAWN);
-    CHECK(Foxes(arena).size() == FOXES);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
+    Run(host, 1, DEATH);
+    const core::StableId fox = Foxes(host).front();
+    host.Damage(fox, FOX_HEALTH, DEATH);
+    Run(host, DEATH + 1, DEATH + QUICK_DYING - 1);
+    CHECK(host.State().DomainOf(fox).has_value());
+    Run(host, DEATH + QUICK_DYING, DEATH + QUICK_DYING);
+    CHECK_FALSE(host.State().DomainOf(fox).has_value());
+    Run(host, DEATH + QUICK_DYING + 1, DEATH + QUICK_DYING + QUICK_RESPAWN - 1);
+    CHECK(Foxes(host).size() == FOXES - 1);
+    Run(host, DEATH + QUICK_DYING + QUICK_RESPAWN, DEATH + QUICK_DYING + QUICK_RESPAWN);
+    CHECK(Foxes(host).size() == FOXES);
 }
 
 TEST_CASE("a respawn shortened by new game data comes on its own tick, before an earlier one, and survives a save") {
@@ -1618,28 +1612,28 @@ TEST_CASE("a respawn shortened by new game data comes on its own tick, before an
     constexpr u64 SECOND_DUE = SECOND_DEATH + RULES.dyingTicks + QUICK_RESPAWN;
     static_assert(SECOND_DUE < FIRST_DUE);
     core::GameData data = FarFromTheCrystal();
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
-    Run(arena, 1, FIRST_DEATH);
-    const std::vector<core::StableId> foxes = Foxes(arena);
-    arena.Damage(foxes.at(0), FOX_HEALTH, FIRST_DEATH);
-    Run(arena, FIRST_DEATH + 1, RELOAD);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
+    Run(host, 1, FIRST_DEATH);
+    const std::vector<core::StableId> foxes = Foxes(host);
+    host.Damage(foxes.at(0), FOX_HEALTH, FIRST_DEATH);
+    Run(host, FIRST_DEATH + 1, RELOAD);
     data.combat.respawnTicks = QUICK_RESPAWN;
-    arena.SetData(data);
-    Run(arena, SECOND_DEATH, SECOND_DEATH);
-    arena.Damage(foxes.at(1), FOX_HEALTH, SECOND_DEATH);
-    Run(arena, SECOND_DEATH + 1, SECOND_DUE - 1);
-    REQUIRE(Foxes(arena).size() == FOXES - 2);
+    host.SetData(data);
+    Run(host, SECOND_DEATH, SECOND_DEATH);
+    host.Damage(foxes.at(1), FOX_HEALTH, SECOND_DEATH);
+    Run(host, SECOND_DEATH + 1, SECOND_DUE - 1);
+    REQUIRE(Foxes(host).size() == FOXES - 2);
 
     std::vector<std::byte> bytes;
     core::Writer writer{ bytes };
-    arena.Save(writer);
-    game::Arena loaded(test::TestManifest(), game::Scene::Arena, data);
+    host.Save(writer);
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, data);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SECOND_DUE - 1));
     loaded.EnterScene(); // as the logic does at the swap
-    CHECK(loaded.StateHash() == arena.StateHash());
+    CHECK(loaded.StateHash() == host.StateHash());
 
-    for (game::Arena* const played : { &arena, &loaded }) {
+    for (game::Host* const played : { &host, &loaded }) {
         Run(*played, SECOND_DUE, SECOND_DUE);
         CHECK(Foxes(*played).size() == FOXES - 1);
         Run(*played, SECOND_DUE + 1, FIRST_DUE - 1);
@@ -1656,10 +1650,10 @@ TEST_CASE("the data's combat rules set the aura's period and the lance's burst")
     data.combat.auraPeriod = PERIOD;
     data.combat.auraDamageMin = SET_DAMAGE;
     data.combat.auraDamageMax = SET_DAMAGE;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
     std::vector<core::Event> events;
-    Run(arena, 1, PERIOD - 1);
-    arena.Tick(At(PERIOD), {}, events);
+    Run(host, 1, PERIOD - 1);
+    host.Tick(At(PERIOD), {}, events);
     const auto hit = std::ranges::find(events, core::EventKind::Hit, &core::Event::kind);
     REQUIRE(hit != events.end());
     CHECK(hit->value == SET_DAMAGE);
@@ -1673,22 +1667,22 @@ TEST_CASE("the data's combat rules set the lance's burst and its poison's period
     data.combat.afflictionPeriod = PERIOD;
     constexpr f32 EVERYONE = 5'000.0F; // tags every fox, wherever the point
     data.abilities.table.at(POISON_LANCE).radius = EVERYONE;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
-    Run(arena, 1, CAST - 1);
-    static_cast<void>(StampedCast(arena, CAST, core::Slot::Spender, ChestOf(arena, Foxes(arena).front())));
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
+    Run(host, 1, CAST - 1);
+    static_cast<void>(StampedCast(host, CAST, core::Slot::Spender, ChestOf(host, Foxes(host).front())));
     std::vector<core::Event> events;
     for (u64 tick = CAST + 1; tick <= CAST + PERIOD; ++tick) {
         std::vector<core::Event> now;
-        arena.Tick(At(tick), {}, now);
+        host.Tick(At(tick), {}, now);
         for (core::Event event : now) {
             event.tick = tick;
             events.push_back(event);
         }
         if (tick == CAST + FLASH - 1) {
-            CHECK(Published(arena, tick).flashes.size() == 1);
+            CHECK(Published(host, tick).flashes.size() == 1);
         }
         if (tick == CAST + FLASH) {
-            CHECK(Published(arena, tick).flashes.empty());
+            CHECK(Published(host, tick).flashes.empty());
         }
     }
     constexpr u64 USE = game::CastUse(CAST, core::Slot::Spender);

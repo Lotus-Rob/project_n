@@ -10,7 +10,7 @@
 namespace game {
 
 /// The cell grid: 32 by 20 map cells on the ground layer, the camera panned by hand.
-class CellsScene final : public SceneClass {
+class CellsScene final : public Scene {
 public:
     /// Named `cells`, viewing the whole grid, with no creatures and no world NPCs, the camera panned by hand.
     [[nodiscard]] const SceneTraits& Traits() const override;

@@ -12,7 +12,7 @@
 #include "core/saves.hpp"
 #include "core/scene_reports.hpp"
 #include "core/tick_clock.hpp"
-#include "game/arena.hpp"
+#include "game/host.hpp"
 #include "support/manifest.hpp"
 #include "support/seals.hpp"
 
@@ -32,15 +32,15 @@ u64 NoClock() {
 struct Session {
     explicit Session(
         const std::filesystem::path& folder,
-        game::Scene scene = game::Scene::Arena,
+        core::SceneKey scene = game::ARENA_SCENE,
         const core::GameData& data = game::BuiltInData()
     )
       : saves(folder / "slot.pns", jobs)
       , replays(folder / "replay.pnr", jobs)
-      , arena(test::TestManifest(), scene, data) { // parentheses: MSVC C4868
-        Burst(1);                                  // loading: reports the scene resident
-        Burst(1);                                  // entering: reports the way in played
-        Burst(1);                                  // takes that report
+      , host(test::TestManifest(), scene, data) { // parentheses: MSVC C4868
+        Burst(1);                                 // loading: reports the scene resident
+        Burst(1);                                 // entering: reports the way in played
+        Burst(1);                                 // takes that report
     }
 
     void Burst(u64 ticks) {
@@ -82,8 +82,8 @@ struct Session {
     core::Saves saves;
     core::Saves replays;
     core::Replay replay{};
-    game::Arena arena;
-    core::Logic logic{ handover, arena, jobs, saves, replays, replay, NoClock };
+    game::Host host;
+    core::Logic logic{ handover, host, jobs, saves, replays, replay, NoClock };
     core::SceneReports reports{};
     std::optional<core::SceneId> reported = std::nullopt;
     u32 late = 0;              // how many bursts after a stage shows it is answered
@@ -127,7 +127,7 @@ TEST_CASE("an arena with NPCs plays its replay back with every hash matching") {
     const Folder folder{ "npcs" };
     core::StableId selected{};
     {
-        Session recording(folder.Path(), game::Scene::Cells);
+        Session recording(folder.Path(), game::CELLS_SCENE);
         recording.Send(core::ActionKind::ToggleRecording);
         recording.Burst(1);
         recording.Send(core::ActionKind::CycleScene); // to the arena
@@ -135,10 +135,10 @@ TEST_CASE("an arena with NPCs plays its replay back with every hash matching") {
         recording.Burst(BURST);                       // the arena is built: loading, and the session reports it resident
         recording.Burst(BURST);                       // entering, which the session reports
         recording.Burst(BURST);                       // takes that report: the arena runs
-        REQUIRE(recording.arena.Player() != core::StableId{});
+        REQUIRE(recording.host.Player() != core::StableId{});
         recording.Hold(RIGHT);
         recording.Burst(WALK);
-        selected = recording.arena.Player();
+        selected = recording.host.Player();
         recording.Send(core::ActionKind::Select, selected);
         recording.Hold(UP_LEFT);
         recording.Burst(1); // before the pause: a frozen tick's actions do nothing
@@ -155,8 +155,8 @@ TEST_CASE("an arena with NPCs plays its replay back with every hash matching") {
         // To a hash tick, so the recording's last state is checked.
         recording.Burst(core::REPLAY_HASH_TICKS - (recording.logic.Counters().wall % core::REPLAY_HASH_TICKS));
         REQUIRE(recording.logic.Counters().wall % core::REPLAY_HASH_TICKS == 0);
-        REQUIRE(recording.arena.Months() == 1);
-        REQUIRE(recording.arena.Selected() == selected);
+        REQUIRE(recording.host.Months() == 1);
+        REQUIRE(recording.host.Selected() == selected);
         recording.Send(core::ActionKind::ToggleRecording);
         recording.Burst(1);
     } // its job system finishes writing the replay
@@ -171,8 +171,8 @@ TEST_CASE("an arena with NPCs plays its replay back with every hash matching") {
     CHECK(playing.replay.AtEnd());
     CHECK(playing.replay.HashCount() == 2);
     CHECK(playing.replay.Matched() == playing.replay.HashCount());
-    CHECK(playing.arena.Months() == 1);
-    CHECK(playing.arena.Selected() == selected);
+    CHECK(playing.host.Months() == 1);
+    CHECK(playing.host.Selected() == selected);
     CHECK(playing.logic.Epoch() == 1);
 }
 
@@ -182,7 +182,7 @@ TEST_CASE("a replay starting in another scene plays back with the same hashes") 
     const Folder folder{ "other_scene" };
     core::SceneId recordedIn{};
     {
-        Session recording(folder.Path(), game::Scene::Painted);
+        Session recording(folder.Path(), game::PAINTED_SCENE);
         recording.Burst(core::REPLAY_HASH_TICKS - 1); // starts on a hash tick, which playback checks once restored
         recording.Send(core::ActionKind::ToggleRecording);
         recording.Burst(1);
@@ -190,13 +190,13 @@ TEST_CASE("a replay starting in another scene plays back with the same hashes") 
         recording.Burst(core::REPLAY_HASH_TICKS);
         recording.Send(core::ActionKind::ToggleRecording);
         recording.Burst(1);
-        recordedIn = recording.arena.Scene();
+        recordedIn = recording.host.Scene();
     } // its job system finishes writing the replay
 
     for (const u32 late : { 0U, LATE }) { // the reports answered at once, and late
         CAPTURE(late);
         Session playing(folder.Path()); // in the arena
-        REQUIRE(playing.arena.Scene() != recordedIn);
+        REQUIRE(playing.host.Scene() != recordedIn);
         playing.late = late;
         playing.Send(core::ActionKind::PlayReplay);
         playing.Burst(1);
@@ -207,15 +207,15 @@ TEST_CASE("a replay starting in another scene plays back with the same hashes") 
         CHECK(playing.replay.AtEnd());
         CHECK(playing.replay.HashCount() == 2);
         CHECK(playing.replay.Matched() == playing.replay.HashCount());
-        CHECK(playing.arena.Scene() == recordedIn);
+        CHECK(playing.host.Scene() == recordedIn);
         CHECK(playing.logic.Epoch() == 1);
     }
 }
 
 // The living foxes' IDs, in order: none dying.
-std::vector<core::StableId> Foxes(const game::Arena& arena) {
+std::vector<core::StableId> Foxes(const game::Host& host) {
     std::vector<core::StableId> foxes;
-    const core::Registry& entities = arena.State()[game::ACTIVE].Entities();
+    const core::Registry& entities = host.State()[game::ACTIVE].Entities();
     for (auto [entity, creature, stable] : entities.view<const game::Creature, const core::StableId>().each()) {
         if (creature.kind == game::CreatureKind::Fox && !entities.all_of<game::Dying>(entity)) {
             foxes.push_back(stable);
@@ -226,8 +226,8 @@ std::vector<core::StableId> Foxes(const game::Arena& arena) {
 }
 
 // Where `entity`'s foot is now.
-core::Vec2 FootOf(const game::Arena& arena, core::StableId entity) {
-    return arena.State()[game::ACTIVE].Entities().get<game::Body>(arena.State()[game::ACTIVE].Find(entity)).current;
+core::Vec2 FootOf(const game::Host& host, core::StableId entity) {
+    return host.State()[game::ACTIVE].Entities().get<game::Body>(host.State()[game::ACTIVE].Find(entity)).current;
 }
 
 TEST_CASE("a recorded fight replays with every hash matching") {
@@ -248,26 +248,26 @@ TEST_CASE("a recorded fight replays with every hash matching") {
     data.abilities.qiStart = data.abilities.qiMax;
     const Folder folder{ "fight" };
     {
-        Session recording(folder.Path(), game::Scene::Arena, data);
-        const std::vector<core::StableId> first = Foxes(recording.arena);
+        Session recording(folder.Path(), game::ARENA_SCENE, data);
+        const std::vector<core::StableId> first = Foxes(recording.host);
         REQUIRE(first.size() >= 3);
         recording.Send(core::ActionKind::ToggleRecording);
         recording.Burst(1);
         // Each at a fox still living: the lances kill theirs at once.
         for (u32 lance = 0; lance < 2; ++lance) {
-            recording.Cast(core::Slot::Spender, FootOf(recording.arena, Foxes(recording.arena).front()));
+            recording.Cast(core::Slot::Spender, FootOf(recording.host, Foxes(recording.host).front()));
             recording.Burst(LANCE_COOLING);
         }
         for (u32 bolt = 0; bolt < 3; ++bolt) {
-            recording.Cast(core::Slot::Generator, FootOf(recording.arena, Foxes(recording.arena).front()));
+            recording.Cast(core::Slot::Generator, FootOf(recording.host, Foxes(recording.host).front()));
             recording.Burst(BOLT_COOLING);
         }
-        const core::Vec2 dashedFrom = FootOf(recording.arena, recording.arena.Player());
+        const core::Vec2 dashedFrom = FootOf(recording.host, recording.host.Player());
         recording.Cast(core::Slot::Movement, dashedFrom + DASH_TO);
         recording.Burst(DASHING);
-        const f32 dashed = FootOf(recording.arena, recording.arena.Player()).x - dashedFrom.x; // straight right
+        const f32 dashed = FootOf(recording.host, recording.host.Player()).x - dashedFrom.x; // straight right
         CHECK(dashed == doctest::Approx(data.abilities.Of(core::AbilityKind::Dash).distance));
-        recording.Cast(core::Slot::Special1, FootOf(recording.arena, Foxes(recording.arena).back()));
+        recording.Cast(core::Slot::Special1, FootOf(recording.host, Foxes(recording.host).back()));
         recording.Burst(TO_MID_VOLLEY);
         REQUIRE(recording.volleys > 0); // the swords fly
         REQUIRE(recording.seals > 0);   // over their seal, which the hashes then cover
@@ -275,15 +275,15 @@ TEST_CASE("a recorded fight replays with every hash matching") {
         recording.Burst(TO_RESPAWNS);
         recording.Burst(core::REPLAY_HASH_TICKS - (recording.logic.Counters().wall % core::REPLAY_HASH_TICKS));
         REQUIRE(recording.logic.Counters().wall % core::REPLAY_HASH_TICKS == 0);
-        const core::Registry& entities = recording.arena.State()[game::ACTIVE].Entities();
-        CHECK(entities.get<game::Caster>(recording.arena.State()[game::ACTIVE].Find(recording.arena.Player())).qi == QI_LEFT);
-        const std::vector<core::StableId> now = Foxes(recording.arena);
+        const core::Registry& entities = recording.host.State()[game::ACTIVE].Entities();
+        CHECK(entities.get<game::Caster>(recording.host.State()[game::ACTIVE].Find(recording.host.Player())).qi == QI_LEFT);
+        const std::vector<core::StableId> now = Foxes(recording.host);
         CHECK(std::ranges::any_of(now, [&first](core::StableId fox) { return !std::ranges::contains(first, fox); }));
         recording.Send(core::ActionKind::ToggleRecording);
         recording.Burst(1);
     } // its job system finishes writing the replay
 
-    Session playing(folder.Path(), game::Scene::Arena, data);
+    Session playing(folder.Path(), game::ARENA_SCENE, data);
     playing.Send(core::ActionKind::PlayReplay);
     playing.Burst(1);
     REQUIRE(playing.replay.Playing());

@@ -6,7 +6,7 @@
 #include "core/state.hpp"
 #include "data/effects.hpp"
 #include "data/game_data.hpp"
-#include "game/arena.hpp"
+#include "game/host.hpp"
 #include "game/npcs.hpp"
 #include "platform/paths.hpp"
 #include "support/manifest.hpp"
@@ -18,16 +18,16 @@ namespace {
 
 using core::atlas::SpriteId;
 
-// Ticks `arena`, which the tests below that look at no events do.
-void Tick(game::Arena& arena, const core::TickCounters& counters, const core::TickInput& input) {
+// Ticks `host`, which the tests below that look at no events do.
+void Tick(game::Host& host, const core::TickCounters& counters, const core::TickInput& input) {
     std::vector<core::Event> events;
-    arena.Tick(counters, input, events);
+    host.Tick(counters, input, events);
 }
 
-core::Snapshot Published(game::Arena& arena) {
+core::Snapshot Published(game::Host& host) {
     core::Jobs jobs{ 1 };
     core::Snapshot snapshot;
-    arena.Publish(snapshot, jobs);
+    host.Publish(snapshot, jobs);
     return snapshot;
 }
 
@@ -40,15 +40,15 @@ bool Draws(const core::Instance& instance, SpriteId sprite) {
 }
 
 TEST_CASE("the ground is drawn first") {
-    game::Arena arena(test::TestManifest());
-    const core::Snapshot snapshot = Published(arena);
+    game::Host host(test::TestManifest());
+    const core::Snapshot snapshot = Published(host);
     REQUIRE_FALSE(snapshot.instances.empty());
     CHECK(Draws(snapshot.instances.front(), SpriteId::Ground));
 }
 
 TEST_CASE("shadows are drawn before what casts them") {
-    game::Arena arena(test::TestManifest());
-    const core::Snapshot snapshot = Published(arena);
+    game::Host host(test::TestManifest());
+    const core::Snapshot snapshot = Published(host);
     const auto firstShadow =
         std::ranges::find_if(snapshot.instances, [](const auto& instance) { return Draws(instance, SpriteId::Shadow); });
     const auto firstFox =
@@ -70,10 +70,10 @@ std::vector<std::pair<f32, f32>> Positions(const core::Snapshot& snapshot, core:
 }
 
 TEST_CASE("a tick moves the foxes, and their previous position is where they were") {
-    game::Arena arena(test::TestManifest());
-    const core::Snapshot before = Published(arena);
-    Tick(arena, { .wall = 1, .simulation = 1, .state = 1 }, {});
-    const core::Snapshot after = Published(arena);
+    game::Host host(test::TestManifest());
+    const core::Snapshot before = Published(host);
+    Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, {});
+    const core::Snapshot after = Published(host);
     // Copied, not recomputed: the previous positions are the same floats.
     CHECK(Positions(after, &core::Instance::previous) == Positions(before, &core::Instance::current));
     CHECK(Positions(after, &core::Instance::current) != Positions(before, &core::Instance::current));
@@ -89,11 +89,11 @@ u32 RotationOf(const core::Snapshot& snapshot, SpriteId sprite) {
 
 TEST_CASE("the ice crystal turns each tick, from where it was") {
     constexpr u32 HALF_BITS = 16;
-    game::Arena arena(test::TestManifest());
-    Tick(arena, { .wall = 1, .simulation = 1, .state = 1 }, {});
-    const u32 before = RotationOf(Published(arena), SpriteId::CrystalIce);
-    Tick(arena, { .wall = 2, .simulation = 2, .state = 2 }, {});
-    const u32 after = RotationOf(Published(arena), SpriteId::CrystalIce);
+    game::Host host(test::TestManifest());
+    Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, {});
+    const u32 before = RotationOf(Published(host), SpriteId::CrystalIce);
+    Tick(host, { .wall = 2, .simulation = 2, .state = 2 }, {});
+    const u32 after = RotationOf(Published(host), SpriteId::CrystalIce);
     CHECK((after & 0xFFFFU) == (before >> HALF_BITS)); // its previous rotation is the last tick's current one
     CHECK((after >> HALF_BITS) != (after & 0xFFFFU));
 }
@@ -110,29 +110,29 @@ core::Vec2 PositionOf(const core::Snapshot& snapshot, core::StableId entity) {
 constexpr core::HeldInput HELD_RIGHT{ .move = { .x = 1.0F, .y = 0.0F } };
 
 TEST_CASE("the cultivator walks where the held input points, and the camera follows it") {
-    game::Arena arena(test::TestManifest());
-    REQUIRE(arena.Player() != core::StableId{});
-    const core::Snapshot before = Published(arena);
+    game::Host host(test::TestManifest());
+    REQUIRE(host.Player() != core::StableId{});
+    const core::Snapshot before = Published(host);
     REQUIRE(before.follow.has_value());
-    Tick(arena, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
-    const core::Snapshot after = Published(arena);
+    Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
+    const core::Snapshot after = Published(host);
     REQUIRE(after.follow.has_value());
     const core::Follow from = before.follow.value_or(core::Follow{});
     const core::Follow onto = after.follow.value_or(core::Follow{});
     CHECK(onto.previous.x == from.current.x);
     CHECK(onto.current.x > from.current.x);
     CHECK(onto.current.y == from.current.y);
-    CHECK(PositionOf(after, arena.Player()).x - PositionOf(before, arena.Player()).x == onto.current.x - from.current.x);
+    CHECK(PositionOf(after, host.Player()).x - PositionOf(before, host.Player()).x == onto.current.x - from.current.x);
 }
 
 TEST_CASE("the cultivator walks at the game data's speed") {
     constexpr f32 SPEED = 7.0F;
     core::GameData data = game::BuiltInData();
     data.cultivator.walkSpeed = SPEED;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
-    const core::Vec2 before = PositionOf(Published(arena), arena.Player());
-    Tick(arena, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
-    const core::Vec2 after = PositionOf(Published(arena), arena.Player());
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
+    const core::Vec2 before = PositionOf(Published(host), host.Player());
+    Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
+    const core::Vec2 after = PositionOf(Published(host), host.Player());
     CHECK(after.x - before.x == doctest::Approx(SPEED));
 }
 
@@ -151,12 +151,12 @@ f32 Spread(const core::Snapshot& snapshot, SpriteId sprite) {
 
 // Where the leftmost instance drawing `sprite` stands, left to right, after `ticks` ticks of `held` under `data`.
 f32 LeftmostAfter(const core::GameData& data, u64 ticks, core::HeldInput held, SpriteId sprite) {
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
     for (u64 tick = 1; tick <= ticks; ++tick) {
-        Tick(arena, { .wall = tick, .simulation = tick, .state = tick }, { .actions = {}, .held = held });
+        Tick(host, { .wall = tick, .simulation = tick, .state = tick }, { .actions = {}, .held = held });
     }
     f32 left = std::numeric_limits<f32>::max();
-    for (const core::Instance& instance : Published(arena).instances) {
+    for (const core::Instance& instance : Published(host).instances) {
         if (Draws(instance, sprite)) {
             left = std::min(left, instance.current.x);
         }
@@ -180,53 +180,53 @@ TEST_CASE("foxes that orbit the player follow where it walks; others keep circli
 TEST_CASE("new game data changes the foxes' sprite and orbit at once") {
     constexpr f32 WIDER = 2.0F;
     constexpr f32 CLEARLY_WIDER = 1.5F; // the foxes' foot offsets blur the doubling
-    game::Arena arena(test::TestManifest());
+    game::Host host(test::TestManifest());
     core::GameData data = game::BuiltInData();
     data.fox.sprite = SpriteId::FoxYellow;
     data.fox.orbitRadius *= WIDER;
-    const u64 before = arena.DataHash();
-    const f32 builtInSpread = Spread(Published(arena), SpriteId::Fox);
-    arena.SetData(data);
-    CHECK(arena.DataHash() == data.Hash());
-    CHECK(arena.DataHash() != before);
-    Tick(arena, { .wall = 1, .simulation = 1, .state = 1 }, {});
-    const core::Snapshot snapshot = Published(arena);
+    const u64 before = host.DataHash();
+    const f32 builtInSpread = Spread(Published(host), SpriteId::Fox);
+    host.SetData(data);
+    CHECK(host.DataHash() == data.Hash());
+    CHECK(host.DataHash() != before);
+    Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, {});
+    const core::Snapshot snapshot = Published(host);
     CHECK(std::ranges::none_of(snapshot.instances, [](const auto& instance) { return Draws(instance, SpriteId::Fox); }));
     CHECK(Spread(snapshot, SpriteId::FoxYellow) > builtInSpread * CLEARLY_WIDER);
 }
 
 TEST_CASE("standing still, the cultivator draws still") {
-    game::Arena arena(test::TestManifest());
-    Tick(arena, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
-    Tick(arena, { .wall = 2, .simulation = 2, .state = 2 }, {});
-    const core::Snapshot snapshot = Published(arena);
+    game::Host host(test::TestManifest());
+    Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
+    Tick(host, { .wall = 2, .simulation = 2, .state = 2 }, {});
+    const core::Snapshot snapshot = Published(host);
     REQUIRE(snapshot.follow.has_value());
     const core::Follow follow = snapshot.follow.value_or(core::Follow{});
     CHECK(follow.previous.x == follow.current.x);
 }
 
 TEST_CASE("each entity's instance carries its ID; the ground and shadows carry none") {
-    game::Arena arena(test::TestManifest());
-    const core::Snapshot snapshot = Published(arena);
+    game::Host host(test::TestManifest());
+    const core::Snapshot snapshot = Published(host);
     REQUIRE(snapshot.ids.size() == snapshot.instances.size());
     CHECK(snapshot.ids.front() == core::StableId{});
-    CHECK(std::ranges::contains(snapshot.ids, arena.Player()));
+    CHECK(std::ranges::contains(snapshot.ids, host.Player()));
 }
 
 TEST_CASE("the snapshot names the selected entity's instance; selecting nothing clears it") {
-    game::Arena arena(test::TestManifest());
-    const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = arena.Player() } } };
-    Tick(arena, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
-    CHECK(arena.Selected() == arena.Player());
-    const core::Snapshot snapshot = Published(arena);
-    const auto drawn = std::ranges::find(snapshot.ids, arena.Player());
+    game::Host host(test::TestManifest());
+    const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = host.Player() } } };
+    Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
+    CHECK(host.Selected() == host.Player());
+    const core::Snapshot snapshot = Published(host);
+    const auto drawn = std::ranges::find(snapshot.ids, host.Player());
     REQUIRE(drawn != snapshot.ids.end());
     CHECK(snapshot.selected == std::optional<u32>{ static_cast<u32>(drawn - snapshot.ids.begin()) });
 
     const std::array<core::Action, 1> none{ { { .kind = core::ActionKind::Select } } };
-    Tick(arena, { .wall = 2, .simulation = 2, .state = 2 }, { .actions = none, .held = {} });
-    CHECK(arena.Selected() == core::StableId{});
-    CHECK_FALSE(Published(arena).selected.has_value());
+    Tick(host, { .wall = 2, .simulation = 2, .state = 2 }, { .actions = none, .held = {} });
+    CHECK(host.Selected() == core::StableId{});
+    CHECK_FALSE(Published(host).selected.has_value());
 }
 
 TEST_CASE("a cast outside a combat scene is ignored") {
@@ -234,9 +234,9 @@ TEST_CASE("a cast outside a combat scene is ignored") {
     const std::array<core::Action, 1> cast{
         { { .kind = core::ActionKind::Cast, .slot = core::Slot::Generator, .point = { .x = 50.0F, .y = 60.0F } } }
     };
-    for (const game::Scene scene : { game::Scene::Stress, game::Scene::Painted, game::Scene::Cells }) {
-        game::Arena casting(test::TestManifest(), scene);
-        game::Arena idle(test::TestManifest(), scene);
+    for (const core::SceneKey scene : { game::STRESS_SCENE, game::PAINTED_SCENE, game::CELLS_SCENE }) {
+        game::Host casting(test::TestManifest(), scene);
+        game::Host idle(test::TestManifest(), scene);
         std::vector<core::Event> events;
         casting.Tick(COUNTERS, { .actions = cast, .held = {} }, events);
         Tick(idle, COUNTERS, { .actions = {}, .held = {} });
@@ -246,32 +246,32 @@ TEST_CASE("a cast outside a combat scene is ignored") {
 }
 
 TEST_CASE("the arena is a combat scene and the others aren't") {
-    for (const game::Scene scene : { game::Scene::Arena, game::Scene::Stress, game::Scene::Painted, game::Scene::Cells }) {
-        game::Arena arena(test::TestManifest(), scene);
-        const bool combat = scene == game::Scene::Arena;
-        CHECK(arena.IsCombatScene() == combat);
-        CHECK(Published(arena).combat == combat);
+    for (const core::SceneKey scene : { game::ARENA_SCENE, game::STRESS_SCENE, game::PAINTED_SCENE, game::CELLS_SCENE }) {
+        game::Host host(test::TestManifest(), scene);
+        const bool combat = scene == game::ARENA_SCENE;
+        CHECK(host.IsCombatScene() == combat);
+        CHECK(Published(host).combat == combat);
     }
 }
 
 TEST_CASE("a stale ID selects nothing") {
     constexpr core::StableId NEVER_HANDED_OUT{ 1'000'000 };
-    game::Arena arena(test::TestManifest());
+    game::Host host(test::TestManifest());
     const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = NEVER_HANDED_OUT } } };
-    Tick(arena, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
-    CHECK(arena.Selected() == core::StableId{});
+    Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
+    CHECK(host.Selected() == core::StableId{});
 }
 
 TEST_CASE("the still scenes have no player and follow nothing") {
-    game::Arena arena(test::TestManifest(), game::Scene::Painted);
-    CHECK(arena.Player() == core::StableId{});
-    CHECK_FALSE(Published(arena).follow.has_value());
+    game::Host host(test::TestManifest(), game::PAINTED_SCENE);
+    CHECK(host.Player() == core::StableId{});
+    CHECK_FALSE(Published(host).follow.has_value());
 }
 
 TEST_CASE("the snapshot names the camera") {
-    game::Arena arena(test::TestManifest());
-    game::Arena painted(test::TestManifest(), game::Scene::Painted);
-    CHECK(Published(arena).camera == core::CameraKind::Follow);
+    game::Host host(test::TestManifest());
+    game::Host painted(test::TestManifest(), game::PAINTED_SCENE);
+    CHECK(Published(host).camera == core::CameraKind::Follow);
     CHECK(Published(painted).camera == core::CameraKind::Pan);
 }
 
@@ -292,17 +292,17 @@ std::optional<std::pair<SpriteId, f32>> SpriteAndFootY(const core::Instance& ins
 }
 
 // The arena after enough ticks that foxes have moved in front of and behind things.
-core::Snapshot MovedArena() {
+core::Snapshot MovedHost() {
     constexpr u64 TICKS = 90;
-    game::Arena arena(test::TestManifest());
+    game::Host host(test::TestManifest());
     for (u64 tick = 1; tick <= TICKS; ++tick) {
-        Tick(arena, { .wall = tick, .simulation = tick, .state = tick }, {});
+        Tick(host, { .wall = tick, .simulation = tick, .state = tick }, {});
     }
-    return Published(arena);
+    return Published(host);
 }
 
 TEST_CASE("the arena publishes the ground's normal batch, the world's, then an additive one that ends the snapshot") {
-    const core::Snapshot snapshot = MovedArena();
+    const core::Snapshot snapshot = MovedHost();
     REQUIRE(snapshot.batches.size() == 3);
     CHECK(snapshot.groundBatches == 1);
     CHECK(snapshot.batches[0].pipeline == core::Pipeline::Normal);
@@ -312,7 +312,7 @@ TEST_CASE("the arena publishes the ground's normal batch, the world's, then an a
 }
 
 TEST_CASE("the world draws in foot-y order, after the ground and its decals") {
-    const core::Snapshot snapshot = MovedArena();
+    const core::Snapshot snapshot = MovedHost();
     REQUIRE_FALSE(snapshot.batches.empty());
     f32 lastFoot = -std::numeric_limits<f32>::infinity();
     std::size_t world = 0;
@@ -334,7 +334,7 @@ TEST_CASE("the world draws in foot-y order, after the ground and its decals") {
 }
 
 TEST_CASE("the additive batch holds only the orbs") {
-    const core::Snapshot snapshot = MovedArena();
+    const core::Snapshot snapshot = MovedHost();
     REQUIRE_FALSE(snapshot.batches.empty());
     for (u32 i = snapshot.batches.back().first; i < snapshot.instances.size(); ++i) {
         CHECK(
@@ -346,14 +346,14 @@ TEST_CASE("the additive batch holds only the orbs") {
 
 TEST_CASE("the stress arena publishes 100,000 instances") {
     constexpr std::size_t INSTANCES = 100'000;
-    game::Arena arena(test::TestManifest(), game::Scene::Stress);
-    CHECK(Published(arena).instances.size() >= INSTANCES);
+    game::Host host(test::TestManifest(), game::STRESS_SCENE);
+    CHECK(Published(host).instances.size() >= INSTANCES);
 }
 
 TEST_CASE("the stress arena's 10,000 bullets draw last, in an additive batch") {
     constexpr u32 BULLETS = 10'000;
-    game::Arena arena(test::TestManifest(), game::Scene::Stress);
-    const core::Snapshot snapshot = Published(arena);
+    game::Host host(test::TestManifest(), game::STRESS_SCENE);
+    const core::Snapshot snapshot = Published(host);
     REQUIRE_FALSE(snapshot.batches.empty());
     const core::Batch& effects = snapshot.batches.back();
     CHECK(effects.pipeline == core::Pipeline::Additive);
@@ -363,8 +363,8 @@ TEST_CASE("the stress arena's 10,000 bullets draw last, in an additive batch") {
 
 TEST_CASE("the painted scene's glows draw last, in an additive batch") {
     constexpr u32 GLOWS = 5;
-    game::Arena arena(test::TestManifest(), game::Scene::Painted);
-    const core::Snapshot snapshot = Published(arena);
+    game::Host host(test::TestManifest(), game::PAINTED_SCENE);
+    const core::Snapshot snapshot = Published(host);
     REQUIRE_FALSE(snapshot.batches.empty());
     CHECK(snapshot.batches.back().pipeline == core::Pipeline::Additive);
     CHECK(snapshot.batches.back().count == GLOWS);
@@ -372,17 +372,17 @@ TEST_CASE("the painted scene's glows draw last, in an additive batch") {
 
 TEST_CASE("the painted scene holds still") {
     constexpr u64 TICK = 7;
-    game::Arena arena(test::TestManifest(), game::Scene::Painted);
-    const core::Snapshot before = Published(arena);
-    Tick(arena, { .wall = TICK, .simulation = TICK, .state = TICK }, {});
-    const core::Snapshot after = Published(arena);
+    game::Host host(test::TestManifest(), game::PAINTED_SCENE);
+    const core::Snapshot before = Published(host);
+    Tick(host, { .wall = TICK, .simulation = TICK, .state = TICK }, {});
+    const core::Snapshot after = Published(host);
     CHECK(std::ranges::equal(std::as_bytes(std::span{ before.instances }), std::as_bytes(std::span{ after.instances })));
 }
 
 TEST_CASE("the cell grid publishes every cell, with none culled at its far corners") {
     constexpr std::size_t CELLS = 640;
-    game::Arena arena(test::TestManifest(), game::Scene::Cells);
-    const core::Snapshot snapshot = Published(arena);
+    game::Host host(test::TestManifest(), game::CELLS_SCENE);
+    const core::Snapshot snapshot = Published(host);
     CHECK(snapshot.instances.size() == CELLS + 1); // and the ground, hidden beneath them
 }
 
@@ -391,11 +391,11 @@ TEST_CASE("the stress arena publishes the same bytes with one worker and with ma
     constexpr u32 MANY_WORKERS = 7;
     std::vector<std::vector<core::Instance>> published;
     for (const u32 workers : { 1U, MANY_WORKERS }) {
-        game::Arena arena(test::TestManifest(), game::Scene::Stress);
-        Tick(arena, { .wall = TICK, .simulation = TICK, .state = TICK }, {});
+        game::Host host(test::TestManifest(), game::STRESS_SCENE);
+        Tick(host, { .wall = TICK, .simulation = TICK, .state = TICK }, {});
         core::Jobs jobs{ workers };
         core::Snapshot snapshot;
-        arena.Publish(snapshot, jobs);
+        host.Publish(snapshot, jobs);
         published.push_back(std::move(snapshot.instances));
     }
     REQUIRE_FALSE(published[0].empty());
@@ -404,8 +404,8 @@ TEST_CASE("the stress arena publishes the same bytes with one worker and with ma
 
 TEST_CASE("two arenas ticked alike publish the same bytes") {
     constexpr u64 TICKS = 120;
-    game::Arena first(test::TestManifest());
-    game::Arena second(test::TestManifest());
+    game::Host first(test::TestManifest());
+    game::Host second(test::TestManifest());
     for (u64 tick = 1; tick <= TICKS; ++tick) {
         Tick(first, { .wall = tick, .simulation = tick, .state = tick }, {});
         Tick(second, { .wall = tick, .simulation = tick, .state = tick }, {});
@@ -419,8 +419,8 @@ TEST_CASE("an orbit stays on its circle after many ticks") {
     constexpr f64 RADIUS = 150.0;
     constexpr f32 SPEED = -0.02F;
     constexpr game::Orbit ORBIT{ .radius = static_cast<f32>(RADIUS), .speed = SPEED };
-    constexpr f64 VIEW_TILT = 0.6;                                     // arena.cpp's: the circle is drawn flattened in y
-    constexpr f64 TOLERANCE = 0.01;                                    // world units
+    constexpr f64 VIEW_TILT = 0.6;  // game/components.hpp's: the circle is drawn flattened in y
+    constexpr f64 TOLERANCE = 0.01; // world units
     constexpr std::array<u64, 2> TICKS{ { 16'777'217, 100'000'000 } }; // 2^24 + 1, and about 19 days at 60 Hz
     for (const u64 tick : TICKS) {
         CAPTURE(tick);
@@ -434,32 +434,32 @@ TEST_CASE("an orbit stays on its circle after many ticks") {
 TEST_CASE("months pass for the stress arena's world NPCs, and its active NPCs stay put") {
     constexpr u32 WORLD_NPCS = 50'000;
     constexpr std::size_t ACTIVE_NPCS = 6;
-    game::Arena arena(test::TestManifest(), game::Scene::Stress);
+    game::Host host(test::TestManifest(), game::STRESS_SCENE);
     core::Jobs jobs{ 1 };
-    const core::State& state = arena.State();
+    const core::State& state = host.State();
     CHECK(state[game::WORLD].Entities().storage<game::Npc>()->size() == WORLD_NPCS);
     CHECK(state[game::ACTIVE].Entities().storage<game::Npc>()->size() == ACTIVE_NPCS);
 
     constexpr u64 MONTHS = 12; // loneliness outweighs ambition after several
     for (u64 month = 1; month <= MONTHS; ++month) {
-        arena.AdvanceCalendar({ .wall = month, .simulation = 0, .state = month }, jobs, {});
+        host.AdvanceCalendar({ .wall = month, .simulation = 0, .state = month }, jobs, {});
     }
-    CHECK_FALSE(arena.NpcRelationships().All().empty());
+    CHECK_FALSE(host.NpcRelationships().All().empty());
     CHECK(state[game::ACTIVE].Entities().storage<game::Npc>()->size() == ACTIVE_NPCS);
 }
 
 TEST_CASE("an arena needs the manifest's scene of its own name") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
-    const core::SceneId arena = game::Arena(manifest).Scene();
-    const core::SceneId painted = game::Arena(manifest, game::Scene::Painted).Scene();
+    const core::SceneId arena = game::Host(manifest).Scene();
+    const core::SceneId painted = game::Host(manifest, game::PAINTED_SCENE).Scene();
     CHECK(arena == manifest->SceneNamed("arena"));
     CHECK(painted == manifest->SceneNamed("painted"));
 }
 
 TEST_CASE("each scene is found by its name") {
-    for (const game::Scene scene : { game::Scene::Arena, game::Scene::Stress, game::Scene::Painted, game::Scene::Cells }) {
+    for (const core::SceneKey scene : { game::ARENA_SCENE, game::STRESS_SCENE, game::PAINTED_SCENE, game::CELLS_SCENE }) {
         const std::optional<core::SceneKey> found = game::SceneNamed(game::SceneName(scene));
-        CHECK(found == game::KeyOf(scene));
+        CHECK(found == scene);
     }
     const std::optional<core::SceneKey> unknown = game::SceneNamed("nowhere");
     CHECK_FALSE(unknown.has_value());
@@ -467,21 +467,21 @@ TEST_CASE("each scene is found by its name") {
 
 TEST_CASE("F2's CycleScene visits every scene in order and back, clearing the selection") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
-    game::Arena arena(manifest);
-    const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = arena.Player() } } };
-    Tick(arena, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
-    REQUIRE(arena.Selected() == arena.Player());
+    game::Host host(manifest);
+    const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = host.Player() } } };
+    Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
+    REQUIRE(host.Selected() == host.Player());
     const std::array<core::Action, 1> cycle{ { { .kind = core::ActionKind::CycleScene } } };
     u64 tick = 1;
     for (const std::string_view name : { "stress", "painted", "cells", "arena" }) {
         ++tick;
-        Tick(arena, { .wall = tick, .simulation = tick, .state = tick }, { .actions = cycle, .held = {} });
-        arena.EnterScene(); // as the logic does after the tick
+        Tick(host, { .wall = tick, .simulation = tick, .state = tick }, { .actions = cycle, .held = {} });
+        host.EnterScene(); // as the logic does after the tick
         const std::optional<core::SceneId> expected = manifest->SceneNamed(name);
-        CHECK(arena.Scene() == expected);
+        CHECK(host.Scene() == expected);
     }
-    CHECK(arena.Selected() == core::StableId{});
-    CHECK(arena.Player() != core::StableId{});
+    CHECK(host.Selected() == core::StableId{});
+    CHECK(host.Player() != core::StableId{});
 }
 
 TEST_CASE("CycleScene asks for the next scene and EnterScene builds it") {
@@ -490,52 +490,52 @@ TEST_CASE("CycleScene asks for the next scene and EnterScene builds it") {
     constexpr core::Vec2 FAR_POINT{ .x = 1'500.0F, .y = 500.0F }; // a bolt's flight there outlasts a tick
     constexpr u64 BOLT_USE = game::CastUse(CAST_TICK.simulation, core::Slot::Generator);
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
-    game::Arena arena(manifest);
-    const core::SceneFacts arenaFacts{ .key = core::SceneKey{ 0 }, .sprites = arena.Scene(), .combat = true };
-    REQUIRE(arena.Current() == arenaFacts);
+    game::Host host(manifest);
+    const core::SceneFacts arenaFacts{ .key = core::SceneKey{ 0 }, .sprites = host.Scene(), .combat = true };
+    REQUIRE(host.Current() == arenaFacts);
     const std::array<core::Action, 1> cast{
         { { .kind = core::ActionKind::Cast, .slot = core::Slot::Generator, .point = FAR_POINT } }
     };
-    Tick(arena, CAST_TICK, { .actions = cast, .held = {} });
+    Tick(host, CAST_TICK, { .actions = cast, .held = {} });
     const std::array<core::Action, 1> cycle{ { { .kind = core::ActionKind::CycleScene } } };
     std::vector<core::Event> events;
-    arena.Tick(CHANGE_TICK, { .actions = cycle, .held = {} }, events);
+    host.Tick(CHANGE_TICK, { .actions = cycle, .held = {} }, events);
     const std::optional<core::SceneId> stressSprites = manifest->SceneNamed("stress");
     REQUIRE(stressSprites.has_value());
     const core::SceneFacts stress{ .key = core::SceneKey{ 1 },
                                    .sprites = stressSprites.value_or(core::SceneId{}),
                                    .combat = false };
-    const std::optional<core::SceneFacts> requested = arena.Requested();
+    const std::optional<core::SceneFacts> requested = host.Requested();
     CHECK(requested == stress);
-    CHECK(arena.Current() == arenaFacts);
+    CHECK(host.Current() == arenaFacts);
     REQUIRE(events.size() == 1); // the bolt's use, still open, ends on the tick that asks
     CHECK(events.front().kind == core::EventKind::UseEnded);
     CHECK(events.front().use == BOLT_USE);
-    arena.EnterScene();
-    CHECK(arena.Current() == stress);
-    CHECK(arena.Scene() == stress.sprites);
-    CHECK_FALSE(arena.Requested().has_value());
+    host.EnterScene();
+    CHECK(host.Current() == stress);
+    CHECK(host.Scene() == stress.sprites);
+    CHECK_FALSE(host.Requested().has_value());
 }
 
 TEST_CASE("a load held over a scene asked for wins, and EnterScene forgets both") {
     constexpr core::TickCounters CHANGE_TICK{ .wall = 1, .simulation = 1, .state = 1 };
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
-    game::Arena saved(manifest, game::Scene::Cells);
+    game::Host saved(manifest, game::CELLS_SCENE);
     std::vector<std::byte> bytes;
     core::Writer writer{ bytes };
     saved.Save(writer);
 
-    game::Arena arena(manifest);
+    game::Host host(manifest);
     const std::array<core::Action, 1> cycle{ { { .kind = core::ActionKind::CycleScene } } };
-    Tick(arena, CHANGE_TICK, { .actions = cycle, .held = {} }); // asks for the stress arena
+    Tick(host, CHANGE_TICK, { .actions = cycle, .held = {} }); // asks for the stress arena
     core::Reader reader{ bytes };
-    REQUIRE(arena.Load(reader, CHANGE_TICK.simulation));
-    const std::optional<core::SceneFacts> requested = arena.Requested();
+    REQUIRE(host.Load(reader, CHANGE_TICK.simulation));
+    const std::optional<core::SceneFacts> requested = host.Requested();
     CHECK(requested == saved.Current());
-    arena.EnterScene();
-    CHECK(arena.Current() == saved.Current());
-    CHECK(arena.StateHash() == saved.StateHash());
-    CHECK_FALSE(arena.Requested().has_value());
+    host.EnterScene();
+    CHECK(host.Current() == saved.Current());
+    CHECK(host.StateHash() == saved.StateHash());
+    CHECK_FALSE(host.Requested().has_value());
 }
 
 TEST_CASE("the shipped creatures and abilities tables are the built-in data") {
@@ -612,32 +612,32 @@ core::TickCounters At(u64 tick) {
     return { .wall = tick, .simulation = tick, .state = tick };
 }
 
-// Ticks `arena` from tick 1 to `last`, the first tick walking left, and returns every event of them.
-std::vector<core::Event> TickAll(game::Arena& arena, u64 last) {
+// Ticks `host` from tick 1 to `last`, the first tick walking left, and returns every event of them.
+std::vector<core::Event> TickAll(game::Host& host, u64 last) {
     std::vector<core::Event> events;
     for (u64 tick = 1; tick <= last; ++tick) {
         const core::HeldInput held = tick == 1 ? HELD_LEFT : core::HeldInput{};
-        arena.Tick(At(tick), { .actions = {}, .held = held }, events);
+        host.Tick(At(tick), { .actions = {}, .held = held }, events);
     }
     return events;
 }
 
 // The same, returning the events of the last tick alone.
-std::vector<core::Event> TickTo(game::Arena& arena, u64 last) {
-    std::vector<core::Event> events = TickAll(arena, last - 1);
+std::vector<core::Event> TickTo(game::Host& host, u64 last) {
+    std::vector<core::Event> events = TickAll(host, last - 1);
     events.clear();
-    arena.Tick(At(last), {}, events);
+    host.Tick(At(last), {}, events);
     return events;
 }
 
-core::Vec2 FootOf(const game::Arena& arena, core::StableId entity) {
-    const core::Domain& active = arena.State()[game::ACTIVE];
+core::Vec2 FootOf(const game::Host& host, core::StableId entity) {
+    const core::Domain& active = host.State()[game::ACTIVE];
     return active.Entities().get<game::Body>(active.Find(entity)).current;
 }
 
-std::vector<core::StableId> Foxes(const game::Arena& arena) {
+std::vector<core::StableId> Foxes(const game::Host& host) {
     std::vector<core::StableId> foxes;
-    const core::Registry& entities = arena.State()[game::ACTIVE].Entities();
+    const core::Registry& entities = host.State()[game::ACTIVE].Entities();
     for (auto [entity, creature, stable] : entities.view<const game::Creature, const core::StableId>().each()) {
         if (creature.kind == game::CreatureKind::Fox) {
             foxes.push_back(stable);
@@ -659,16 +659,16 @@ std::vector<core::Event> HitsOf(const std::vector<core::Event>& events) {
 }
 
 TEST_CASE("the aura hits a fox in reach once a second and none between") {
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, NearCrystalData());
-    CHECK(TickAll(arena, AURA_TICK - 1).empty());
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, NearCrystalData());
+    CHECK(TickAll(host, AURA_TICK - 1).empty());
     std::vector<core::Event> events;
-    arena.Tick(At(AURA_TICK), {}, events);
+    host.Tick(At(AURA_TICK), {}, events);
     REQUIRE_FALSE(events.empty());
     CHECK(events.back().kind == core::EventKind::UseEnded);
     CHECK(events.back().use == core::AbilityUse(AURA_TICK, USE_AURA));
     std::size_t damaged = 0;
-    for (const core::StableId fox : Foxes(arena)) {
-        const bool reached = InReach(FootOf(arena, fox));
+    for (const core::StableId fox : Foxes(host)) {
+        const bool reached = InReach(FootOf(host, fox));
         const auto hit = std::ranges::find_if(events, [fox](const core::Event& event) {
             return event.kind == core::EventKind::Hit && event.target == fox;
         });
@@ -682,7 +682,7 @@ TEST_CASE("the aura hits a fox in reach once a second and none between") {
         }
     }
     CHECK(damaged > 0);
-    CHECK(damaged < Foxes(arena).size());
+    CHECK(damaged < Foxes(host).size());
 }
 
 TEST_CASE("the aura misses a fox out of reach") {
@@ -690,19 +690,19 @@ TEST_CASE("the aura misses a fox out of reach") {
     core::GameData data = game::BuiltInData();
     data.fox.orbitRadius = FAR_ORBIT;
     data.fox.orbitWobble = 0.0F;
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, data);
-    const std::vector<core::Event> events = TickTo(arena, AURA_TICK);
-    for (const core::StableId fox : Foxes(arena)) {
-        REQUIRE_FALSE(InReach(FootOf(arena, fox)));
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
+    const std::vector<core::Event> events = TickTo(host, AURA_TICK);
+    for (const core::StableId fox : Foxes(host)) {
+        REQUIRE_FALSE(InReach(FootOf(host, fox)));
     }
     REQUIRE(events.size() == 1);
     CHECK(events.front().kind == core::EventKind::UseEnded);
 }
 
 TEST_CASE("the aura heals the player in reach") {
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, NearCrystalData());
-    const std::vector<core::Event> events = TickTo(arena, AURA_TICK);
-    const auto heal = std::ranges::find(events, arena.Player(), &core::Event::target);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, NearCrystalData());
+    const std::vector<core::Event> events = TickTo(host, AURA_TICK);
+    const auto heal = std::ranges::find(events, host.Player(), &core::Event::target);
     REQUIRE(heal != events.end());
     CHECK(heal->kind == core::EventKind::Hit);
     CHECK(heal->hit == core::HitKind::Healing);
@@ -711,8 +711,8 @@ TEST_CASE("the aura heals the player in reach") {
 }
 
 TEST_CASE("the aura's hits are the same on a rerun") {
-    game::Arena first(test::TestManifest(), game::Scene::Arena, NearCrystalData());
-    game::Arena second(test::TestManifest(), game::Scene::Arena, NearCrystalData());
+    game::Host first(test::TestManifest(), game::ARENA_SCENE, NearCrystalData());
+    game::Host second(test::TestManifest(), game::ARENA_SCENE, NearCrystalData());
     const std::vector<core::Event> one = TickTo(first, AURA_TICK);
     const std::vector<core::Event> two = TickTo(second, AURA_TICK);
     REQUIRE(one.size() == two.size());
@@ -727,18 +727,18 @@ TEST_CASE("the aura's hits are the same on a rerun") {
 }
 
 TEST_CASE("the aura hits at a fox's head") {
-    game::Arena arena(test::TestManifest(), game::Scene::Arena, NearCrystalData());
-    const std::vector<core::Event> events = TickTo(arena, AURA_TICK);
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, NearCrystalData());
+    const std::vector<core::Event> events = TickTo(host, AURA_TICK);
     const std::vector<core::Event> hits = HitsOf(events);
     REQUIRE_FALSE(hits.empty());
-    const core::Vec2 foot = FootOf(arena, hits.front().target);
+    const core::Vec2 foot = FootOf(host, hits.front().target);
     CHECK(hits.front().position.x == doctest::Approx(foot.x));
     CHECK(hits.front().position.y < foot.y);
 }
 
 TEST_CASE("the debug burst leaves the state hash alone") {
-    game::Arena burst(test::TestManifest());
-    game::Arena plain(test::TestManifest());
+    game::Host burst(test::TestManifest());
+    game::Host plain(test::TestManifest());
     const std::array<core::Action, 1> actions{ { { .kind = core::ActionKind::DebugBurst } } };
     std::vector<core::Event> events;
     burst.Tick(At(BURST_TICK), { .actions = actions, .held = {} }, events);
@@ -749,14 +749,14 @@ TEST_CASE("the debug burst leaves the state hash alone") {
 TEST_CASE("the debug burst hits every fox with all four kinds") {
     constexpr std::size_t HITS = 4'000;
     constexpr std::size_t KINDS = 4;
-    game::Arena arena(test::TestManifest());
+    game::Host host(test::TestManifest());
     const std::array<core::Action, 1> actions{ { { .kind = core::ActionKind::DebugBurst } } };
     std::vector<core::Event> events;
-    arena.Tick(At(BURST_TICK), { .actions = actions, .held = {} }, events);
+    host.Tick(At(BURST_TICK), { .actions = actions, .held = {} }, events);
     REQUIRE(events.size() == HITS + 1);
     CHECK(events.back().kind == core::EventKind::UseEnded);
     CHECK(events.back().use == core::AbilityUse(BURST_TICK, USE_DEBUG_BURST));
-    const std::vector<core::StableId> foxes = Foxes(arena);
+    const std::vector<core::StableId> foxes = Foxes(host);
     std::unordered_map<core::StableId, std::size_t> perFox;
     std::unordered_map<core::StableId, std::array<std::size_t, KINDS>> kindsPerFox;
     std::array<std::size_t, KINDS> perKind{};
@@ -804,18 +804,18 @@ TEST_CASE("the debug burst hits every fox with all four kinds") {
 }
 
 TEST_CASE("the debug burst hits nothing in a scene without foxes") {
-    game::Arena arena(test::TestManifest(), game::Scene::Painted);
+    game::Host host(test::TestManifest(), game::PAINTED_SCENE);
     const std::array<core::Action, 1> actions{ { { .kind = core::ActionKind::DebugBurst } } };
     std::vector<core::Event> events;
-    arena.Tick(At(BURST_TICK), { .actions = actions, .held = {} }, events);
+    host.Tick(At(BURST_TICK), { .actions = actions, .held = {} }, events);
     REQUIRE(events.size() == 1);
     CHECK(events.front().kind == core::EventKind::UseEnded);
 }
 
 TEST_CASE("the arena labels the player and every fox, and captions the tablet") {
     constexpr std::size_t FOXES = 12;
-    game::Arena arena(test::TestManifest());
-    const core::Snapshot snapshot = Published(arena);
+    game::Host host(test::TestManifest());
+    const core::Snapshot snapshot = Published(host);
     const auto labels = [&](core::LabelPriority priority) {
         return std::ranges::count_if(snapshot.texts, [priority](const core::TextItem& text) {
             return text.kind == core::TextKind::Label && text.priority == priority;
@@ -832,7 +832,7 @@ TEST_CASE("the arena labels the player and every fox, and captions the tablet") 
             foxKeys.push_back(text.nameKey);
         }
     }
-    std::vector<core::StableId> expected = Foxes(arena);
+    std::vector<core::StableId> expected = Foxes(host);
     std::ranges::sort(foxes);
     std::ranges::sort(expected);
     CHECK(foxes == expected);
@@ -845,8 +845,8 @@ TEST_CASE("the arena labels the player and every fox, and captions the tablet") 
 }
 
 TEST_CASE("labels and the caption leave their colour to the table") {
-    game::Arena arena(test::TestManifest());
-    const core::Snapshot snapshot = Published(arena);
+    game::Host host(test::TestManifest());
+    const core::Snapshot snapshot = Published(host);
     REQUIRE_FALSE(snapshot.texts.empty());
     for (const core::TextItem& text : snapshot.texts) {
         CHECK(text.colour == core::TextItem{}.colour);
@@ -855,12 +855,12 @@ TEST_CASE("labels and the caption leave their colour to the table") {
 
 TEST_CASE("the player's label stands a little over its head") {
     constexpr f32 CULTIVATOR_FOOT_Y = 122.0F; // assets/manifest.yaml
-    game::Arena arena(test::TestManifest());
-    const core::Snapshot snapshot = Published(arena);
+    game::Host host(test::TestManifest());
+    const core::Snapshot snapshot = Published(host);
     const auto label = std::ranges::find(snapshot.texts, core::LabelPriority::Player, &core::TextItem::priority);
     REQUIRE(label != snapshot.texts.end());
-    const core::Vec2 foot = FootOf(arena, arena.Player());
-    CHECK(label->entity == arena.Player());
+    const core::Vec2 foot = FootOf(host, host.Player());
+    CHECK(label->entity == host.Player());
     CHECK(label->string == core::StringId::CultivatorName);
     CHECK(label->nameKey == std::to_underlying(core::StringId::CultivatorName));
     CHECK(label->current.x == foot.x);
@@ -870,8 +870,8 @@ TEST_CASE("the player's label stands a little over its head") {
 }
 
 TEST_CASE("the still scenes publish no texts") {
-    game::Arena arena(test::TestManifest(), game::Scene::Painted);
-    CHECK(Published(arena).texts.empty());
+    game::Host host(test::TestManifest(), game::PAINTED_SCENE);
+    CHECK(Published(host).texts.empty());
 }
 
 constexpr u32 GLOW_ROLE_MASK = 0xFFU; // the role fills the glow word's low byte
@@ -889,8 +889,8 @@ core::GlowRole GlowRoleOf(const core::Snapshot& snapshot, SpriteId sprite) {
 }
 
 TEST_CASE("the shrine, stele and crystal wear the demo glows") {
-    game::Arena arena(test::TestManifest());
-    const core::Snapshot snapshot = Published(arena);
+    game::Host host(test::TestManifest());
+    const core::Snapshot snapshot = Published(host);
     CHECK(GlowRoleOf(snapshot, SpriteId::Shrine) == core::GlowRole::DemoPulse);
     CHECK(GlowRoleOf(snapshot, SpriteId::Stele) == core::GlowRole::DemoCharge);
     CHECK(GlowRoleOf(snapshot, SpriteId::CrystalIce) == core::GlowRole::DemoProgress);
@@ -964,11 +964,11 @@ std::vector<core::SealKey> ShowcaseKeys(const core::Snapshot& snapshot) {
 TEST_CASE("the arena publishes its showcase seals, unsaved") {
     constexpr u64 SAVED_AT = 30;
     const std::vector<core::SealKey> expected(SHOWCASE.begin(), SHOWCASE.end());
-    game::Arena arena(test::TestManifest());
+    game::Host host(test::TestManifest());
     for (u64 tick = 1; tick <= SAVED_AT; ++tick) {
-        Tick(arena, At(tick), {});
+        Tick(host, At(tick), {});
     }
-    const core::Snapshot published = Published(arena);
+    const core::Snapshot published = Published(host);
     const std::vector<core::SealKey> shown = ShowcaseKeys(published);
     CHECK(shown == expected);
     const std::vector<core::Seal> raised = test::RaisedSeals(published);
@@ -982,16 +982,16 @@ TEST_CASE("the arena publishes its showcase seals, unsaved") {
     // Not state: publishing them leaves the save's bytes alone, and a load brings them back from the scene.
     std::vector<std::byte> before;
     core::Writer beforeWriter{ before };
-    game::Arena unpublished(test::TestManifest());
+    game::Host unpublished(test::TestManifest());
     for (u64 tick = 1; tick <= SAVED_AT; ++tick) {
         Tick(unpublished, At(tick), {});
     }
     unpublished.Save(beforeWriter);
     std::vector<std::byte> bytes;
     core::Writer writer{ bytes };
-    arena.Save(writer);
+    host.Save(writer);
     CHECK(bytes == before);
-    game::Arena loaded(test::TestManifest(), game::Scene::Cells);
+    game::Host loaded(test::TestManifest(), game::CELLS_SCENE);
     const std::vector<core::SealKey> shownElsewhere = ShowcaseKeys(Published(loaded));
     CHECK(shownElsewhere.empty()); // the other scenes show none
     core::Reader reader{ bytes };
@@ -1005,8 +1005,8 @@ TEST_CASE("the arena publishes its showcase seals, unsaved") {
 }
 
 TEST_CASE("glows leave the state hash alone") {
-    game::Arena published(test::TestManifest());
-    game::Arena plain(test::TestManifest());
+    game::Host published(test::TestManifest());
+    game::Host plain(test::TestManifest());
     std::vector<core::Event> events;
     for (const u64 tick : { BURST_TICK, BURST_TICK + 1 }) {
         published.Tick(At(tick), {}, events);

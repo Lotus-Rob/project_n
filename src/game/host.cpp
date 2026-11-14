@@ -1,4 +1,4 @@
-#include "game/arena.hpp"
+#include "game/host.hpp"
 
 #include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
@@ -54,7 +54,7 @@ constexpr core::Vec2 FOLLOW_HALF_VIEW{ .x = 7'680.0F, .y = 4'320.0F };
 constexpr u32 WORLD_CELLS = 4'096;
 constexpr u64 SEED = 0x5eed;
 
-// The arena's part of a save: its format, then a version per domain, each changed with what its components save.
+// The host's part of a save: its format, then a version per domain, each changed with what its components save.
 // 2: the player and the selection; 3: the respawns waiting, the volleys and the flashes; 4: the seals
 constexpr u32 ARENA_FORMAT = 4;
 constexpr u32 ACTIVE_VERSION = 4; // 2: creatures; 3: spin; 4: health, dying, arriving, caster, dashing, afflictions
@@ -202,14 +202,10 @@ core::GameData BuiltInData() {
     return BUILT_IN_DATA;
 }
 
-std::string_view SceneName(Scene scene) {
-    return SceneName(KeyOf(scene));
-}
-
 // What a scene's hooks reach the host through: only for the length of one call.
-class Arena::Context final : public SceneContext {
+class Host::Context final : public SceneContext {
 public:
-    explicit Context(Arena& host)
+    explicit Context(Host& host)
       : m_host{ &host } {
     }
     Context(const Context&) = delete;
@@ -247,16 +243,16 @@ public:
     }
 
 private:
-    Arena* m_host;
+    Host* m_host;
 };
 
-Arena::Context::~Context() = default; // out of line: the vtable's home
+Host::Context::~Context() = default; // out of line: the vtable's home
 
-bool Arena::IsCombatScene() const {
+bool Host::IsCombatScene() const {
     return Running().Traits().combat;
 }
 
-core::SceneFacts Arena::FactsOf(core::SceneKey scene) const {
+core::SceneFacts Host::FactsOf(core::SceneKey scene) const {
     return {
         .key = scene,
         .sprites = SceneIdOf(*m_manifest, scene),
@@ -264,14 +260,14 @@ core::SceneFacts Arena::FactsOf(core::SceneKey scene) const {
     };
 }
 
-std::optional<core::SceneFacts> Arena::Requested() const {
+std::optional<core::SceneFacts> Host::Requested() const {
     if (m_loaded) {
         return FactsOf(m_loaded->scene);
     }
     return m_requested.transform([this](core::SceneKey scene) { return FactsOf(scene); });
 }
 
-void Arena::EnterScene() {
+void Host::EnterScene() {
     if (m_loaded) {
         m_state = std::move(m_loaded->state);
         m_relationships = std::move(m_loaded->relationships);
@@ -293,18 +289,18 @@ void Arena::EnterScene() {
     Build(*m_requested);
 }
 
-Arena::Arena(std::shared_ptr<const core::Manifest> manifest, game::Scene scene, const core::GameData& data)
+Host::Host(std::shared_ptr<const core::Manifest> manifest, core::SceneKey scene, const core::GameData& data)
   : m_manifest{ std::move(manifest) }
   , m_state{ DOMAINS, SEED }
   , m_data{ data }
-  , m_scene{ KeyOf(scene) }
+  , m_scene{ scene }
   , m_sceneId{ SceneIdOf(*m_manifest, m_scene) } {
     Build(m_scene);
 }
 
 // Everything but the calendar and the game data starts afresh: the entities, their IDs, the relationships, the
 // selection.
-void Arena::Build(core::SceneKey scene) {
+void Host::Build(core::SceneKey scene) {
     m_state = core::State{ DOMAINS, SEED };
     m_relationships = Relationships{};
     m_combat = Combat{};
@@ -321,14 +317,14 @@ void Arena::Build(core::SceneKey scene) {
     }
 }
 
-core::Entity Arena::Spawn(core::Vec2 foot, const Look& look) {
+core::Entity Host::Spawn(core::Vec2 foot, const Look& look) {
     const core::Entity entity = m_state.Create(ACTIVE).second;
     m_state[ACTIVE].Entities().emplace<Body>(entity, foot, foot);
     m_state[ACTIVE].Entities().emplace<Look>(entity, look);
     return entity;
 }
 
-core::Entity Arena::SpawnFox(const Orbit& orbit, core::Vec2 foot) {
+core::Entity Host::SpawnFox(const Orbit& orbit, core::Vec2 foot) {
     const core::Entity entity = Spawn(foot, { .sprite = m_data.fox.sprite, .shadow = true });
     core::Registry& entities = m_state[ACTIVE].Entities();
     entities.emplace<Orbit>(entity, orbit);
@@ -337,7 +333,7 @@ core::Entity Arena::SpawnFox(const Orbit& orbit, core::Vec2 foot) {
     return entity;
 }
 
-core::Entity Arena::SpawnPlayer(core::Vec2 foot) {
+core::Entity Host::SpawnPlayer(core::Vec2 foot) {
     const core::Entity entity = Spawn(foot, { .sprite = m_data.cultivator.sprite, .shadow = true });
     core::Registry& entities = m_state[ACTIVE].Entities();
     entities.emplace<Creature>(entity, CreatureKind::Cultivator);
@@ -347,7 +343,7 @@ core::Entity Arena::SpawnPlayer(core::Vec2 foot) {
     return entity;
 }
 
-void Arena::CastAction(const core::Action& action, const core::TickCounters& counters, std::vector<core::Event>& events) {
+void Host::CastAction(const core::Action& action, const core::TickCounters& counters, std::vector<core::Event>& events) {
     if (IsCombatScene()) {
         m_combat.Cast(m_state, *m_manifest, m_data.abilities, m_player, action, counters, events);
         return;
@@ -355,7 +351,7 @@ void Arena::CastAction(const core::Action& action, const core::TickCounters& cou
     PN_LOG_DEBUG("tick {}: a cast is ignored: the scene {} is no combat scene", counters.simulation, Running().Traits().name);
 }
 
-void Arena::Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) {
+void Host::Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) {
     PN_PROFILE_ZONE();
     if (std::ranges::contains(input.actions, core::ActionKind::CycleScene, &core::Action::kind)) {
         const core::SceneKey next = NextScene(m_scene);
@@ -416,7 +412,7 @@ void Arena::Tick(const core::TickCounters& counters, const core::TickInput& inpu
     m_combat.Strike(m_state, *m_manifest, counters.simulation, events);
 }
 
-void Arena::PublishOverhead(core::Snapshot& snapshot) const {
+void Host::PublishOverhead(core::Snapshot& snapshot) const {
     PN_PROFILE_ZONE();
     if (m_player == core::StableId{}) {
         return;
@@ -458,7 +454,7 @@ void Arena::PublishOverhead(core::Snapshot& snapshot) const {
     }
 }
 
-void Arena::PublishCaster(core::Snapshot& snapshot) const {
+void Host::PublishCaster(core::Snapshot& snapshot) const {
     if (m_player == core::StableId{} || !IsCombatScene()) {
         return;
     }
@@ -479,7 +475,7 @@ void Arena::PublishCaster(core::Snapshot& snapshot) const {
     };
 }
 
-void Arena::DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const {
+void Host::DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const {
     PN_PROFILE_ZONE();
     const u64 use = core::AbilityUse(counters.simulation, USE_DEBUG_BURST);
     const core::Registry& entities = m_state[ACTIVE].Entities();
@@ -514,7 +510,7 @@ void Arena::DebugBurst(const core::TickCounters& counters, std::vector<core::Eve
     events.push_back({ .kind = core::EventKind::UseEnded, .use = use });
 }
 
-void Arena::Walk(core::Vec2 move) {
+void Host::Walk(core::Vec2 move) {
     if (m_player == core::StableId{}) {
         return;
     }
@@ -524,7 +520,7 @@ void Arena::Walk(core::Vec2 move) {
     body.current = body.current + (move * m_data.cultivator.walkSpeed);
 }
 
-void Arena::Select(core::StableId target) {
+void Host::Select(core::StableId target) {
     // A dying creature can't be picked, as its instance names none.
     const bool dying =
         m_state.DomainOf(target) == ACTIVE && m_state[ACTIVE].Entities().all_of<Dying>(m_state[ACTIVE].Find(target));
@@ -534,13 +530,13 @@ void Arena::Select(core::StableId target) {
     );
 }
 
-void Arena::AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs, const std::stop_token& stop) {
+void Host::AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs, const std::stop_token& stop) {
     m_monthStep.Run(m_state, m_relationships, jobs, counters.state, stop);
     ++m_months;
 }
 
 template<typename Archive>
-void Arena::Write(Archive& archive) const {
+void Host::Write(Archive& archive) const {
     // The scene stays one byte, as the scene enum was.
     archive(
         ARENA_FORMAT,
@@ -559,20 +555,20 @@ void Arena::Write(Archive& archive) const {
     m_combat.Save(archive);
 }
 
-void Arena::Save(core::Writer& archive) {
+void Host::Save(core::Writer& archive) {
     PN_PROFILE_ZONE();
     m_state.SortCanonical();
     Write(archive);
 }
 
-u64 Arena::StateHash() const {
+u64 Host::StateHash() const {
     PN_PROFILE_ZONE();
     core::Hasher hasher;
     Write(hasher);
     return hasher.Value();
 }
 
-bool Arena::Load(core::Reader& archive, u64 simulationTick) {
+bool Host::Load(core::Reader& archive, u64 simulationTick) {
     PN_PROFILE_ZONE();
     u32 format = 0;
     u8 scene = 0;
@@ -619,12 +615,12 @@ bool Arena::Load(core::Reader& archive, u64 simulationTick) {
     return true;
 }
 
-void Arena::SetData(const core::GameData& data) {
+void Host::SetData(const core::GameData& data) {
     m_data = data;
     ApplyData();
 }
 
-void Arena::ApplyData() {
+void Host::ApplyData() {
     m_combat.SetRules(m_data.combat);
     core::Registry& entities = m_state[ACTIVE].Entities();
     for (auto [entity, creature, look] : entities.view<const Creature, Look>().each()) {
@@ -672,7 +668,7 @@ core::GlowInput DemoGlow(core::GlowRole role, u64 tick) {
     return {};
 }
 
-void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
+void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
     PN_PROFILE_ZONE();
     const auto& bodies = m_state[ACTIVE].Entities().storage<Body>();
     const auto& looks = m_state[ACTIVE].Entities().storage<Look>();

@@ -29,10 +29,10 @@ inline constexpr core::SceneKey PAINTED_SCENE{ 2 };
 inline constexpr core::SceneKey CELLS_SCENE{ 3 };
 
 /// Every scene, in F2's order: a scene's index is its key.
-[[nodiscard]] std::span<const SceneClass* const> Scenes();
+[[nodiscard]] std::span<const Scene* const> Scenes();
 
 /// The scene of `key`, which must be listed.
-[[nodiscard]] const SceneClass& SceneOf(core::SceneKey key);
+[[nodiscard]] const Scene& SceneOf(core::SceneKey key);
 
 /// The scene called `name` (SceneTraits::name), if one is listed.
 [[nodiscard]] std::optional<core::SceneKey> SceneNamed(std::string_view name);

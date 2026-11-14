@@ -13,7 +13,7 @@
 #include "core/saves.hpp"
 #include "core/tick_clock.hpp"
 #include "core/types.hpp"
-#include "game/arena.hpp"
+#include "game/host.hpp"
 
 #include <filesystem>
 #include <memory>
@@ -23,11 +23,11 @@ namespace app {
 
 /// What a Game is built for.
 struct GameSetup {
-    /// The atlas manifest the arena draws with; never null.
+    /// The atlas manifest the host draws with; never null.
     std::shared_ptr<const core::Manifest> manifest = nullptr;
-    /// The scene the arena is built as.
-    game::Scene scene = game::Scene::Arena;
-    /// The game data the arena starts with.
+    /// The scene the host is built as.
+    core::SceneKey scene = game::ARENA_SCENE;
+    /// The game data the host starts with.
     core::GameData data = game::BuiltInData();
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The save slot; no saves when empty.
@@ -42,7 +42,7 @@ struct GameSetup {
 };
 
 /// The logic thread's systems: the save slot, the replay file's slot, the replay, the simulation
-/// (the arena), the logic that drives them and the tick clock, built in that order and destroyed in
+/// (the host), the logic that drives them and the tick clock, built in that order and destroyed in
 /// reverse, working on a job system it is handed.
 class Game {
 public:
@@ -82,7 +82,7 @@ private:
     core::Saves m_saves;
     core::Saves m_replays;
     core::Replay m_replay{};
-    game::Arena m_arena;
+    game::Host m_host;
     core::Logic m_logic;
     core::TickClock m_clock;
     bool m_overloaded = false;

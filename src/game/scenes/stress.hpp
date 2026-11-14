@@ -14,7 +14,7 @@
 namespace game {
 
 /// The stress arena: the arena's layout and its crowds, the camera following the player.
-class StressScene final : public SceneClass {
+class StressScene final : public Scene {
 public:
     /// Named `stress`, viewing the ground, with creatures, the camera following the player, with 50,000 world NPCs.
     [[nodiscard]] const SceneTraits& Traits() const override;

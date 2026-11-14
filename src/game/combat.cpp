@@ -633,7 +633,7 @@ void Combat::Strike(core::State& state, const core::Manifest& manifest, u64 tick
     std::erase_if(m_flights, [tick](const Flight& flight) {
         return !flight.Pending() && tick > flight.lastArrival + flight.volley.shape.fadeTicks;
     });
-    // None starts after `tick`: a cast starts it at its tick, and Arena::Load() refuses one from a later tick.
+    // None starts after `tick`: a cast starts it at its tick, and Host::Load() refuses one from a later tick.
     std::erase_if(m_flashes, [tick](const core::Flash& flash) { return tick - flash.startTick >= flash.ticks; });
     std::erase_if(m_seals, [tick](const core::Seal& seal) { return tick >= seal.endTick; });
 }

@@ -52,7 +52,7 @@
 namespace game {
 
 /// The demonstration arena: a combat scene the camera follows the player round.
-class ArenaScene final : public SceneClass {
+class ArenaScene final : public Scene {
 public:
     /// Named `arena`, viewing the ground, a combat scene with creatures and the demo glows (ARENA_DEMO_GLOWS), the camera
     /// following the player, with 5,000 world NPCs.

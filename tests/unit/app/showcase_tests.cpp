@@ -8,7 +8,7 @@
 #include "core/seals.hpp"
 #include "core/tick_clock.hpp"
 #include "core/ui_colours.hpp"
-#include "game/arena.hpp"
+#include "game/host.hpp"
 #include "gfx/seal_draw.hpp"
 #include "support/manifest.hpp"
 #include "support/seals.hpp"
@@ -97,9 +97,9 @@ Box FootprintOverTime(const core::Seal& seal, const core::Seals& looks, const gf
 
 TEST_CASE("the showcase seals keep apart and clear of the swords' seal at the player's start, so none hides another") {
     core::Jobs jobs{ 1 };
-    game::Arena arena(test::TestManifest());
+    game::Host host(test::TestManifest());
     core::Snapshot snapshot;
-    arena.Publish(snapshot, jobs);
+    host.Publish(snapshot, jobs);
     REQUIRE(snapshot.follow.has_value());
     const core::Seals looks = test::ShippedSeals();
     const gfx::SealPack pack = gfx::PackSeals(looks, *test::TestManifest());

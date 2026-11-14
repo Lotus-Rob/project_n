@@ -24,7 +24,7 @@
 #include "core/tick_clock.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
-#include "game/arena.hpp"
+#include "game/host.hpp"
 #include "gfx/camera.hpp"
 #include "gfx/renderer.hpp"
 #include "platform/window.hpp"
@@ -55,7 +55,7 @@ struct Options {
     /// The strings table, read from `assets/data/strings.yaml`, which the HUD shows; never null.
     std::shared_ptr<const core::Strings> strings = nullptr;
     /// The scene the logic thread builds.
-    game::Scene scene = game::Scene::Arena;
+    core::SceneKey scene = game::ARENA_SCENE;
     /// The game data, read from `assets/data/`.
     core::GameData data = game::BuiltInData();
     /// The effects' looks and the HUD's layout, read from `assets/data/effects.yaml`; debug builds reload them with the data.

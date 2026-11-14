@@ -5,9 +5,9 @@
 #include "core/manifest.hpp"
 #include "core/state.hpp"
 #include "core/tick_clock.hpp"
-#include "game/arena.hpp"
 #include "game/combat.hpp"
 #include "game/components.hpp"
+#include "game/host.hpp"
 #include "game/npcs.hpp"
 #include "support/manifest.hpp"
 
@@ -28,28 +28,28 @@ core::TickCounters At(u64 tick) {
     return { .wall = tick, .simulation = tick, .state = tick };
 }
 
-// Ticks `arena`, ignoring its events.
-void Tick(game::Arena& arena, const core::TickCounters& counters, const core::TickInput& input) {
+// Ticks `host`, ignoring its events.
+void Tick(game::Host& host, const core::TickCounters& counters, const core::TickInput& input) {
     std::vector<core::Event> events;
-    arena.Tick(counters, input, events);
+    host.Tick(counters, input, events);
 }
 
 // The stress arena after some ticks and months: every component and the relationships in use.
-void Play(game::Arena& arena, core::Jobs& jobs, u64 from) {
+void Play(game::Host& host, core::Jobs& jobs, u64 from) {
     for (u64 tick = from; tick < from + TICKS; ++tick) {
-        Tick(arena, At(tick), {});
+        Tick(host, At(tick), {});
     }
     for (u64 month = 0; month < MONTHS; ++month) {
-        arena.AdvanceCalendar(At(from + TICKS + month), jobs, {});
+        host.AdvanceCalendar(At(from + TICKS + month), jobs, {});
     }
 }
 
 constexpr i64 FOX_HEALTH = 1'200;
 
 // The arena's foxes, in ID order.
-std::vector<core::StableId> Foxes(const game::Arena& arena) {
+std::vector<core::StableId> Foxes(const game::Host& host) {
     std::vector<core::StableId> foxes;
-    const core::Registry& entities = arena.State()[game::ACTIVE].Entities();
+    const core::Registry& entities = host.State()[game::ACTIVE].Entities();
     for (auto [entity, creature, stable] : entities.view<const game::Creature, const core::StableId>().each()) {
         if (creature.kind == game::CreatureKind::Fox) {
             foxes.push_back(stable);
@@ -59,16 +59,16 @@ std::vector<core::StableId> Foxes(const game::Arena& arena) {
     return foxes;
 }
 
-std::vector<std::byte> Saved(game::Arena& arena) {
+std::vector<std::byte> Saved(game::Host& host) {
     std::vector<std::byte> bytes;
     core::Writer writer{ bytes };
-    arena.Save(writer);
+    host.Save(writer);
     return bytes;
 }
 
-std::vector<core::Instance> Published(game::Arena& arena, core::Jobs& jobs) {
+std::vector<core::Instance> Published(game::Host& host, core::Jobs& jobs) {
     core::Snapshot snapshot;
-    arena.Publish(snapshot, jobs);
+    host.Publish(snapshot, jobs);
     return snapshot.instances;
 }
 
@@ -78,12 +78,12 @@ bool SameBytes(std::span<const core::Instance> lhs, std::span<const core::Instan
 
 TEST_CASE("a game loaded from a save goes on exactly as the game that saved") {
     core::Jobs jobs{ 1 };
-    game::Arena saved(test::TestManifest(), game::Scene::Stress);
+    game::Host saved(test::TestManifest(), game::STRESS_SCENE);
     Play(saved, jobs, 1);
     const std::vector<std::byte> bytes = Saved(saved);
     REQUIRE_FALSE(saved.NpcRelationships().All().empty());
 
-    game::Arena loaded(test::TestManifest(), game::Scene::Arena);
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
     loaded.EnterScene(); // as the logic does at the swap
@@ -101,18 +101,18 @@ TEST_CASE("a game loaded from a save goes on exactly as the game that saved") {
 }
 
 TEST_CASE("Load holds and changes nothing until EnterScene") {
-    game::Arena saved(test::TestManifest(), game::Scene::Painted);
+    game::Host saved(test::TestManifest(), game::PAINTED_SCENE);
     Tick(saved, At(1), {});
     const std::vector<std::byte> bytes = Saved(saved);
 
-    game::Arena loaded(test::TestManifest(), game::Scene::Arena);
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE);
     const u64 before = loaded.StateHash();
     const core::SceneId shown = loaded.Scene();
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
     CHECK(loaded.StateHash() == before);
     CHECK(loaded.Scene() == shown);
-    CHECK(loaded.Current().key == game::KeyOf(game::Scene::Arena));
+    CHECK(loaded.Current().key == game::ARENA_SCENE);
     const std::optional<core::SceneFacts> requested = loaded.Requested(); // the saved scene's facts
     REQUIRE(requested.has_value());
     CHECK(requested.value_or(core::SceneFacts{}) == saved.Current());
@@ -126,12 +126,12 @@ TEST_CASE("Load holds and changes nothing until EnterScene") {
 
 TEST_CASE("the player, where it walked, and the selection survive a save") {
     constexpr core::HeldInput RIGHT{ .move = { .x = 1.0F, .y = 0.0F } };
-    game::Arena saved(test::TestManifest());
+    game::Host saved(test::TestManifest());
     const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = saved.Player() } } };
     Tick(saved, At(1), { .actions = select, .held = RIGHT });
     const std::vector<std::byte> bytes = Saved(saved);
 
-    game::Arena loaded(test::TestManifest(), game::Scene::Cells);
+    game::Host loaded(test::TestManifest(), game::CELLS_SCENE);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
     loaded.EnterScene(); // as the logic does at the swap
@@ -147,7 +147,7 @@ TEST_CASE("health, the dying and the respawns survive a save") {
     constexpr u64 SAVED_AT = 40;   // the first fox gone and its respawn waiting, the second mid-dissolve
     constexpr u64 PLAYED_TO = 400; // past both respawns and into their arrivals
     constexpr i64 WOUND = 300;
-    game::Arena saved(test::TestManifest());
+    game::Host saved(test::TestManifest());
     for (u64 tick = 1; tick <= SAVED_AT; ++tick) {
         Tick(saved, At(tick), {});
         if (tick == FIRST_DEATH) {
@@ -159,7 +159,7 @@ TEST_CASE("health, the dying and the respawns survive a save") {
     saved.Damage(foxes.at(1), WOUND, SAVED_AT);
     const std::vector<std::byte> bytes = Saved(saved);
 
-    game::Arena loaded(test::TestManifest(), game::Scene::Cells);
+    game::Host loaded(test::TestManifest(), game::CELLS_SCENE);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
     loaded.EnterScene(); // as the logic does at the swap
@@ -176,7 +176,7 @@ TEST_CASE("Qi, cooldowns and a dash under way survive a save") {
     constexpr u64 SAVED_AT = 4; // mid-dash
     constexpr u64 PLAYED_TO = 30;
     constexpr core::Vec2 FAR_RIGHT{ .x = 5'000.0F, .y = 0.0F };
-    game::Arena saved(test::TestManifest());
+    game::Host saved(test::TestManifest());
     const std::array<core::Action, 2> casts{ {
         { .kind = core::ActionKind::Cast, .slot = core::Slot::Generator },
         { .kind = core::ActionKind::Cast, .slot = core::Slot::Movement, .point = FAR_RIGHT },
@@ -190,7 +190,7 @@ TEST_CASE("Qi, cooldowns and a dash under way survive a save") {
     REQUIRE(entities.all_of<game::Dashing>(player));
     const std::vector<std::byte> bytes = Saved(saved);
 
-    game::Arena loaded(test::TestManifest(), game::Scene::Cells);
+    game::Host loaded(test::TestManifest(), game::CELLS_SCENE);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
     loaded.EnterScene(); // as the logic does at the swap
@@ -217,7 +217,7 @@ TEST_CASE("a save mid-arrival goes on as the game that saved, with the same even
     constexpr u64 DEATH = 5;
     constexpr u64 SAVED_AT = 300;  // the fox that respawned at tick 215 is easing in until tick 395
     constexpr u64 PLAYED_TO = 420; // past its arrival and two of the aura's hits
-    game::Arena saved(test::TestManifest());
+    game::Host saved(test::TestManifest());
     for (u64 tick = 1; tick <= SAVED_AT; ++tick) {
         Tick(saved, At(tick), {});
         if (tick == DEATH) {
@@ -227,7 +227,7 @@ TEST_CASE("a save mid-arrival goes on as the game that saved, with the same even
     REQUIRE_FALSE(saved.State()[game::ACTIVE].Entities().view<const game::Arriving>().empty());
     const std::vector<std::byte> bytes = Saved(saved);
 
-    game::Arena loaded(test::TestManifest(), game::Scene::Cells);
+    game::Host loaded(test::TestManifest(), game::CELLS_SCENE);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
     loaded.EnterScene(); // as the logic does at the swap
@@ -248,7 +248,7 @@ TEST_CASE("the save round-trips mid-volley") {
     constexpr u64 CAST = 2;
     core::GameData data = game::BuiltInData();
     data.abilities.qiStart = data.abilities.qiMax; // enough for the swords
-    game::Arena saved(test::TestManifest(), game::Scene::Arena, data);
+    game::Host saved(test::TestManifest(), game::ARENA_SCENE, data);
     Tick(saved, At(1), {});
     const core::Vec2 point =
         saved.State()[game::ACTIVE].Entities().get<game::Body>(saved.State()[game::ACTIVE].Find(Foxes(saved).front())).current;
@@ -268,7 +268,7 @@ TEST_CASE("the save round-trips mid-volley") {
     }
     const std::vector<std::byte> bytes = Saved(saved);
 
-    game::Arena loaded(test::TestManifest(), game::Scene::Cells, data);
+    game::Host loaded(test::TestManifest(), game::CELLS_SCENE, data);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
     loaded.EnterScene(); // as the logic does at the swap
@@ -298,7 +298,7 @@ TEST_CASE("the save round-trips mid-burn") {
     core::GameData data = game::BuiltInData();
     data.fox.orbitRadius = NEAR_ORBIT;
     data.fox.orbitWobble = 0.0F;
-    game::Arena saved(test::TestManifest(), game::Scene::Arena, data);
+    game::Host saved(test::TestManifest(), game::ARENA_SCENE, data);
     Tick(saved, At(1), {});
     const core::StableId fox = Foxes(saved).front();
     const core::Vec2 foot =
@@ -322,7 +322,7 @@ TEST_CASE("the save round-trips mid-burn") {
     REQUIRE(saved.State()[game::ACTIVE].Entities().all_of<game::Afflictions>(saved.State()[game::ACTIVE].Find(fox)));
     const std::vector<std::byte> bytes = Saved(saved);
 
-    game::Arena loaded(test::TestManifest(), game::Scene::Cells, data);
+    game::Host loaded(test::TestManifest(), game::CELLS_SCENE, data);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
     loaded.EnterScene(); // as the logic does at the swap
@@ -354,10 +354,10 @@ TEST_CASE("the save round-trips mid-burn") {
 
 TEST_CASE("a truncated save is refused, and the game is unchanged") {
     constexpr std::size_t CUT = 4;
-    game::Arena saved(test::TestManifest(), game::Scene::Stress);
+    game::Host saved(test::TestManifest(), game::STRESS_SCENE);
     const std::vector<std::byte> bytes = Saved(saved);
 
-    game::Arena game(test::TestManifest(), game::Scene::Arena);
+    game::Host game(test::TestManifest(), game::ARENA_SCENE);
     const u64 before = game.StateHash();
     core::Reader reader{ std::span{ bytes }.first(bytes.size() - CUT) };
     CHECK_FALSE(game.Load(reader, SAVED_TICK));
@@ -367,10 +367,10 @@ TEST_CASE("a truncated save is refused, and the game is unchanged") {
 TEST_CASE("a save with bytes after the state, or of another format, is refused") {
     constexpr std::byte EXTRA{ 1 };
     constexpr u32 OTHER_FORMAT = 99;
-    game::Arena saved(test::TestManifest(), game::Scene::Arena);
+    game::Host saved(test::TestManifest(), game::ARENA_SCENE);
     std::vector<std::byte> longer = Saved(saved);
     longer.push_back(EXTRA);
-    game::Arena game(test::TestManifest(), game::Scene::Arena);
+    game::Host game(test::TestManifest(), game::ARENA_SCENE);
     core::Reader longReader{ longer };
     CHECK_FALSE(game.Load(longReader, SAVED_TICK));
 
@@ -408,11 +408,11 @@ struct SavedVolley {
     std::vector<core::VolleyTarget> targets;
 };
 
-// An arena save of `state` with `player`, laid out as Arena::Save writes one: format, scene, seed,
+// An arena save of `state` with `player`, laid out as Host::Save writes one: format, scene, seed,
 // stable-ID counter, months, the player and the selection (none), then each domain after its version,
 // then no relationships, no respawns waiting, `volley` if any (the flying swords' hits of 20, none resolved yet),
 // `flash` if any and `seal` if any.
-// Its versions must follow arena.cpp's, or every refusal below is the version's.
+// Its versions must follow game/host.cpp's, or every refusal below is the version's.
 std::vector<std::byte> ArenaSave(
     const core::State& state,
     core::StableId player = {},
@@ -425,7 +425,15 @@ std::vector<std::byte> ArenaSave(
     constexpr u64 RESPAWNS = 0;
     std::vector<std::byte> bytes;
     core::Writer writer{ bytes };
-    writer(FORMAT, game::Scene::Arena, state.Seed(), state.Ids().next, MONTHS_PASSED, player, core::StableId{});
+    writer(
+        FORMAT,
+        static_cast<u8>(std::to_underlying(game::ARENA_SCENE)),
+        state.Seed(),
+        state.Ids().next,
+        MONTHS_PASSED,
+        player,
+        core::StableId{}
+    );
     writer(ACTIVE_VERSION);
     core::SaveDomain(writer, state[game::ACTIVE], Active{});
     writer(WORLD_VERSION);
@@ -456,7 +464,7 @@ std::vector<std::byte> ArenaSave(
 // Whether a fresh arena loads `bytes`, saved at `savedTick`; CHECKs that its state hash is the same afterwards, and that
 // it holds a state to enter exactly when it loaded one.
 bool Loads(const std::vector<std::byte>& bytes, u64 savedTick = SAVED_TICK) {
-    game::Arena game(test::TestManifest(), game::Scene::Arena);
+    game::Host game(test::TestManifest(), game::ARENA_SCENE);
     const u64 before = game.StateHash();
     core::Reader reader{ bytes };
     const bool loaded = game.Load(reader, savedTick);
@@ -486,7 +494,7 @@ core::GameData FightData() {
 // Plays `saved` (an arena scene made with FightData()) to the middle of a fight, as tests/fuzz/corpus/save/fight holds
 // it: the arena scene has no world tier, so its save is small. Casts are at the chest of one fox, whose tick-by-tick
 // history the numbers below arrange.
-void PlayFight(game::Arena& saved) {
+void PlayFight(game::Host& saved) {
     constexpr u64 FIRST_DEATH = 5;    // its fox respawns 210 ticks later and is still easing in at SAVED_AT
     constexpr u64 SECOND_DEATH = 150; // removed by SAVED_AT, its respawn still waiting
     constexpr u64 SWORDS_AT = 285;
@@ -530,11 +538,19 @@ void PlayFight(game::Arena& saved) {
 // `full`, the save of `saved`, with the world tier and the relationships left out (about 200 KB of NPCs): the bytes before
 // the world tier, an empty one, no relationships, and what follows the relationships, which is all combat. Empty if
 // `full` isn't laid out that way.
-std::vector<std::byte> WithoutWorldTier(const game::Arena& saved, const std::vector<std::byte>& full) {
+std::vector<std::byte> WithoutWorldTier(const game::Host& saved, const std::vector<std::byte>& full) {
     const core::State& state = saved.State();
     const core::State bare{ game::DOMAINS, state.Seed() };
     const auto head = Written([&](core::Writer& writer) {
-        writer(FORMAT, game::Scene::Arena, state.Seed(), state.Ids().next, saved.Months(), saved.Player(), saved.Selected());
+        writer(
+            FORMAT,
+            static_cast<u8>(std::to_underlying(game::ARENA_SCENE)),
+            state.Seed(),
+            state.Ids().next,
+            saved.Months(),
+            saved.Player(),
+            saved.Selected()
+        );
         writer(ACTIVE_VERSION);
         core::SaveDomain(writer, state[game::ACTIVE], Active{});
     });
@@ -564,7 +580,7 @@ std::vector<std::byte> WithoutWorldTier(const game::Arena& saved, const std::vec
 
 TEST_CASE("the mid-fight save loads, and so does the fuzz seed cut from it") {
     const core::GameData data = FightData();
-    game::Arena saved(test::TestManifest(), game::Scene::Arena, data);
+    game::Host saved(test::TestManifest(), game::ARENA_SCENE, data);
     PlayFight(saved);
     const core::Registry& entities = saved.State()[game::ACTIVE].Entities();
     core::Jobs jobs{ 1 };
@@ -577,7 +593,7 @@ TEST_CASE("the mid-fight save loads, and so does the fuzz seed cut from it") {
     CHECK_FALSE(entities.view<const game::Arriving>().empty());
     CHECK_FALSE(entities.view<const game::Dashing>().empty());
     const std::vector<std::byte> full = Saved(saved);
-    game::Arena loadedFull(test::TestManifest(), game::Scene::Cells, data);
+    game::Host loadedFull(test::TestManifest(), game::CELLS_SCENE, data);
     core::Reader fullReader{ full };
     REQUIRE(loadedFull.Load(fullReader, SAVED_TICK));
     loadedFull.EnterScene(); // as the logic does at the swap
@@ -587,14 +603,14 @@ TEST_CASE("the mid-fight save loads, and so does the fuzz seed cut from it") {
     constexpr std::size_t SMALL = 16'384;
     REQUIRE_FALSE(seed.empty());
     CHECK(seed.size() < SMALL);
-    game::Arena loaded(test::TestManifest(), game::Scene::Cells, data);
+    game::Host loaded(test::TestManifest(), game::CELLS_SCENE, data);
     core::Reader reader{ seed };
     CHECK(loaded.Load(reader, SAVED_TICK));
 }
 
 // Not part of a run: `--test-case='write the fight save seed' --no-skip` (tests/AGENTS.md) writes the fuzz seed.
 TEST_CASE("write the fight save seed" * doctest::skip()) {
-    game::Arena saved(test::TestManifest(), game::Scene::Arena, FightData());
+    game::Host saved(test::TestManifest(), game::ARENA_SCENE, FightData());
     PlayFight(saved);
     const std::vector<std::byte> seed = WithoutWorldTier(saved, Saved(saved));
     REQUIRE_FALSE(seed.empty());
@@ -615,7 +631,7 @@ TEST_CASE("a sound save built as the refusals below build theirs is loaded") {
     static_cast<void>(game::SpawnNpc(state, NPC_CELL));
     const core::Entity player = state.Create(game::ACTIVE).second;
     state[game::ACTIVE].Entities().emplace<game::Body>(player);
-    game::Arena game(test::TestManifest(), game::Scene::Arena);
+    game::Host game(test::TestManifest(), game::ARENA_SCENE);
     const std::vector<std::byte> bytes = ArenaSave(state, state[game::ACTIVE].Entities().get<core::StableId>(player));
     core::Reader reader{ bytes };
     CHECK(game.Load(reader, SAVED_TICK));
@@ -659,7 +675,7 @@ TEST_CASE("a save with a fox as the arena makes one is loaded") {
     SpawnFox(state, { .current = FOX_HEALTH, .max = FOX_HEALTH });
     const std::vector<std::byte> bytes = ArenaSave(state);
     core::Reader reader{ bytes };
-    game::Arena game(test::TestManifest(), game::Scene::Arena);
+    game::Host game(test::TestManifest(), game::ARENA_SCENE);
     CHECK(game.Load(reader, SAVED_TICK));
 }
 
@@ -727,7 +743,7 @@ TEST_CASE("a save with a volley as a cast makes one is loaded") {
     const core::State state{ game::DOMAINS, STATE_SEED };
     const std::vector<std::byte> bytes = ArenaSave(state, {}, PointVolley());
     core::Reader reader{ bytes };
-    game::Arena game(test::TestManifest(), game::Scene::Arena);
+    game::Host game(test::TestManifest(), game::ARENA_SCENE);
     CHECK(game.Load(reader, SAVED_TICK));
 }
 
@@ -777,7 +793,7 @@ TEST_CASE("a save with a volley aiming at a living target that is no creature he
     const core::Entity fox = SpawnFox(state, { .current = FOX_HEALTH, .max = FOX_HEALTH });
     const std::vector<std::byte> bytes = ArenaSave(state, {}, AimedAt(state[game::ACTIVE].Entities().get<core::StableId>(fox)));
     core::Reader reader{ bytes };
-    game::Arena game(test::TestManifest(), game::Scene::Arena);
+    game::Host game(test::TestManifest(), game::ARENA_SCENE);
     REQUIRE(game.Load(reader, SAVED_TICK));
     game.EnterScene(); // as the logic does at the swap
     std::vector<core::Event> events;
@@ -790,7 +806,7 @@ TEST_CASE("a loaded volley whose arrivals are all overdue still ends its use, on
     const SavedVolley volley = PointVolley();
     const std::vector<std::byte> bytes = ArenaSave(state, {}, volley);
     core::Reader reader{ bytes };
-    game::Arena game(test::TestManifest(), game::Scene::Arena);
+    game::Host game(test::TestManifest(), game::ARENA_SCENE);
     REQUIRE(game.Load(reader, SAVED_TICK));
     game.EnterScene(); // as the logic does at the swap
     std::vector<core::Event> events;
@@ -804,12 +820,12 @@ TEST_CASE("a loaded volley whose arrivals are all overdue still ends its use, on
 
 TEST_CASE("a save's Qi above the loading game's most is lowered to it") {
     constexpr i64 LOWER = 20;
-    game::Arena saved(test::TestManifest());
+    game::Host saved(test::TestManifest());
     Tick(saved, At(1), {});
     const std::vector<std::byte> bytes = Saved(saved);
     core::GameData data = game::BuiltInData();
     data.abilities.qiMax = LOWER;
-    game::Arena loaded(test::TestManifest(), game::Scene::Arena, data);
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, data);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
     loaded.EnterScene(); // as the logic does at the swap
@@ -831,7 +847,7 @@ TEST_CASE("a save with an arrival of no ticks, or from NaN, is refused, and the 
     constexpr f32 NOT_A_NUMBER = std::numeric_limits<f32>::quiet_NaN();
     const std::vector<std::byte> sound = ArrivingSave({ .from = {}, .startTick = 0, .ticks = ARRIVAL });
     core::Reader reader{ sound };
-    game::Arena game(test::TestManifest(), game::Scene::Arena);
+    game::Host game(test::TestManifest(), game::ARENA_SCENE);
     CHECK(game.Load(reader, SAVED_TICK));
     const bool noTicks = Loads(ArrivingSave({ .from = {}, .startTick = 0, .ticks = 0 }));
     CHECK_FALSE(noTicks);
@@ -910,7 +926,7 @@ TEST_CASE("a save with a flash that starts after the save's tick is refused") {
         std::nullopt,
         core::Flash{ .point = POINT, .startTick = STARTED, .ticks = RULES.flashTicks, .element = core::HitKind::Poison }
     );
-    game::Arena game(test::TestManifest(), game::Scene::Arena);
+    game::Host game(test::TestManifest(), game::ARENA_SCENE);
     core::Reader reader{ bytes };
     CHECK(game.Load(reader, STARTED));
     const bool before = Loads(bytes, STARTED - 1);
@@ -931,7 +947,7 @@ TEST_CASE("a save with a seal of no size, ending before it starts, at NaN or of 
     const auto saveOf = [&state](const core::Seal& seal) { return ArenaSave(state, {}, std::nullopt, std::nullopt, seal); };
     const auto loads = [&saveOf](const core::Seal& seal) { return Loads(saveOf(seal)); };
     for (const core::Seal& sound : { SOUND, NEVER_ENDING }) {
-        game::Arena game(test::TestManifest(), game::Scene::Arena);
+        game::Host game(test::TestManifest(), game::ARENA_SCENE);
         const std::vector<std::byte> bytes = saveOf(sound);
         core::Reader reader{ bytes };
         CHECK(game.Load(reader, SAVED_TICK));
@@ -960,7 +976,7 @@ TEST_CASE("a save with a seal that starts after its tick is refused, and one its
     const core::State state{ game::DOMAINS, STATE_SEED };
     const auto saveOf = [&state](const core::Seal& seal) { return ArenaSave(state, {}, std::nullopt, std::nullopt, seal); };
     for (const core::Seal& sound : { JUST_STARTED, ENDED }) { // the boundary, started on the save's own tick, and the past
-        game::Arena game(test::TestManifest(), game::Scene::Arena);
+        game::Host game(test::TestManifest(), game::ARENA_SCENE);
         const std::vector<std::byte> bytes = saveOf(sound);
         core::Reader reader{ bytes };
         CHECK(game.Load(reader, SAVED_TICK));

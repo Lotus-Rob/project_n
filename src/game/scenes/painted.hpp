@@ -10,7 +10,7 @@
 namespace game {
 
 /// The painted scene: still sprites with shadows and additive glows over the ground, the camera panned by hand.
-class PaintedScene final : public SceneClass {
+class PaintedScene final : public Scene {
 public:
     /// Named `painted`, viewing the ground, with no creatures and no world NPCs, the camera panned by hand.
     [[nodiscard]] const SceneTraits& Traits() const override;

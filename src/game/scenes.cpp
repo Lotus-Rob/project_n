@@ -18,10 +18,10 @@ constexpr CellsScene CELLS_INSTANCE{};
 
 // F2's order, each at its key's place.
 constexpr auto SCENE_LIST =
-    std::to_array<const SceneClass*>({ &ARENA_INSTANCE, &STRESS_INSTANCE, &PAINTED_INSTANCE, &CELLS_INSTANCE });
+    std::to_array<const Scene*>({ &ARENA_INSTANCE, &STRESS_INSTANCE, &PAINTED_INSTANCE, &CELLS_INSTANCE });
 
 // Each key constant names its scene's place, and every listed scene has one.
-constexpr bool KeyedAt(core::SceneKey key, const SceneClass* scene) {
+constexpr bool KeyedAt(core::SceneKey key, const Scene* scene) {
     return std::to_underlying(key) < SCENE_LIST.size() && SCENE_LIST.at(std::to_underlying(key)) == scene;
 }
 static_assert(KeyedAt(ARENA_SCENE, &ARENA_INSTANCE));
@@ -32,19 +32,19 @@ static_assert(SCENE_LIST.size() == 4, "a listed scene without its key constant i
 
 } // namespace
 
-std::span<const SceneClass* const> Scenes() {
+std::span<const Scene* const> Scenes() {
     return SCENE_LIST;
 }
 
-const SceneClass& SceneOf(core::SceneKey key) {
+const Scene& SceneOf(core::SceneKey key) {
     const std::size_t index = std::to_underlying(key);
     PN_ASSERT(index < SCENE_LIST.size(), "a scene key that is no listed scene's");
     return *Scenes()[index < SCENE_LIST.size() ? index : 0];
 }
 
 std::optional<core::SceneKey> SceneNamed(std::string_view name) {
-    const std::span<const SceneClass* const> scenes = Scenes();
-    const auto found = std::ranges::find(scenes, name, [](const SceneClass* scene) { return scene->Traits().name; });
+    const std::span<const Scene* const> scenes = Scenes();
+    const auto found = std::ranges::find(scenes, name, [](const Scene* scene) { return scene->Traits().name; });
     if (found == scenes.end()) {
         return std::nullopt;
     }
@@ -60,7 +60,7 @@ core::SceneKey NextScene(core::SceneKey key) {
 }
 
 std::expected<void, core::Error> CheckScenes(const core::Manifest& manifest, const core::GameData& data) {
-    for (const SceneClass* const entry : Scenes()) {
+    for (const Scene* const entry : Scenes()) {
         const SceneTraits& traits = entry->Traits();
         const std::optional<core::SceneId> scene = manifest.SceneNamed(traits.name);
         if (!scene) {
