@@ -59,8 +59,9 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /home/runner/xmake-cache
-          key: xmake-lint-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
-          restore-keys: xmake-lint-
+          # container (linux-clang)'s, which saves them: the same image, toolchain and packages (.github/AGENTS.md).
+          key: xmake-linux-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
+          restore-keys: xmake-linux-clang-
       - name: Restore objects
         id: objects
         # Warm on branch pushes only: main and tags compile cold (project_n enforces it too). Main only looks
@@ -82,17 +83,15 @@ jobs:
       - run: pixi run project_n commit-check --range "$RANGE"
       - run: pixi run project_n fmt --check
       - run: pixi run project_n lint --container
-      - name: Save XMake packages
-        # Even when a later step failed: packages that built are still valid. Tags save nothing.
-        if: always() && github.ref_type != 'tag' && steps.xmake-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /home/runner/xmake-cache
-          key: ${{ steps.xmake-cache.outputs.cache-primary-key }} # the restore's: builds may change the lock
+      - name: Prune objects
+        id: prune
+        # Only what this run's builds used stays (XMake's cache never evicts); says whether anything is left to save.
+        if: always() && github.ref_type != 'tag' && steps.objects.outputs.cache-hit != 'true'
+        run: pixi run project_n prune-build-cache
       - name: Save objects
         # Even when a later step failed: objects that compiled are still valid. Main saves its cold build (unless
-        # its lookup found the key already); tags save nothing.
-        if: always() && github.ref_type != 'tag' && steps.objects.outputs.cache-hit != 'true'
+        # its lookup found the key already); tags save nothing, nor does a run that used none (an empty folder).
+        if: always() && github.ref_type != 'tag' && steps.objects.outputs.cache-hit != 'true' && steps.prune.outputs.save == 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /home/runner/build-cache
@@ -170,10 +169,15 @@ jobs:
         with:
           path: /home/runner/xmake-cache
           key: ${{ steps.xmake-cache.outputs.cache-primary-key }} # the restore's: builds may change the lock
+      - name: Prune objects
+        id: prune
+        # Only what this run's builds used stays (XMake's cache never evicts); says whether anything is left to save.
+        if: always() && github.ref_type != 'tag' && steps.objects.outputs.cache-hit != 'true' && matrix.preset == 'linux-clang'
+        run: pixi run project_n prune-build-cache
       - name: Save objects
         # Even when a later step failed: objects that compiled are still valid. Main saves its cold build (unless
-        # its lookup found the key already); tags save nothing.
-        if: always() && github.ref_type != 'tag' && steps.objects.outputs.cache-hit != 'true' && matrix.preset == 'linux-clang'
+        # its lookup found the key already); tags save nothing, nor does a run that used none (an empty folder).
+        if: always() && github.ref_type != 'tag' && steps.objects.outputs.cache-hit != 'true' && matrix.preset == 'linux-clang' && steps.prune.outputs.save == 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /home/runner/build-cache
@@ -199,11 +203,9 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /home/runner/xmake-cache
-          key: xmake-releasedbg-linux-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
-          # Then container linux-clang's: the same image and toolchain.
-          restore-keys: |
-            xmake-releasedbg-linux-clang-
-            xmake-linux-clang-
+          # container (linux-clang)'s, which saves them: the same image, toolchain and packages (.github/AGENTS.md).
+          key: xmake-linux-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
+          restore-keys: xmake-linux-clang-
       - name: Restore objects
         id: objects
         # Warm on branch pushes only: main and tags compile cold (project_n enforces it too). Main only looks
@@ -223,17 +225,15 @@ jobs:
       - uses: ./.github/actions/lfs
       - run: pixi run project_n image --preset linux-clang
       - run: pixi run project_n build --preset linux-clang --mode releasedbg --container
-      - name: Save XMake packages
-        # Even when a later step failed: packages that built are still valid. Tags save nothing.
-        if: always() && github.ref_type != 'tag' && steps.xmake-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /home/runner/xmake-cache
-          key: ${{ steps.xmake-cache.outputs.cache-primary-key }} # the restore's: builds may change the lock
+      - name: Prune objects
+        id: prune
+        # Only what this run's builds used stays (XMake's cache never evicts); says whether anything is left to save.
+        if: always() && github.ref_type != 'tag' && steps.objects.outputs.cache-hit != 'true'
+        run: pixi run project_n prune-build-cache
       - name: Save objects
         # Even when a later step failed: objects that compiled are still valid. Main saves its cold build (unless
-        # its lookup found the key already); tags save nothing.
-        if: always() && github.ref_type != 'tag' && steps.objects.outputs.cache-hit != 'true'
+        # its lookup found the key already); tags save nothing, nor does a run that used none (an empty folder).
+        if: always() && github.ref_type != 'tag' && steps.objects.outputs.cache-hit != 'true' && steps.prune.outputs.save == 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /home/runner/build-cache
@@ -289,11 +289,9 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.xmake/project_n # packages_dir() in tools/project_n.py
-          key: xmake-windows-${{ matrix.build }}-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
-          # Then the other entry's: the same toolchain, some packages to add.
-          restore-keys: |
-            xmake-windows-${{ matrix.build }}-
-            xmake-windows-
+          # One entry for both builds, saved by the release one: a sanitizer or mode picks no other package variant.
+          key: xmake-windows-native-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
+          restore-keys: xmake-windows-native-
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
@@ -306,8 +304,9 @@ jobs:
       - run: pixi run project_n doctor; if ($LASTEXITCODE -notin 0, 3) { exit 1 }; exit 0
       - run: pixi run project_n test --preset windows-msvc ${{ matrix.test }}
       - name: Save XMake packages
-        # Even when a later step failed: packages that built are still valid. Tags save nothing.
-        if: always() && github.ref_type != 'tag' && steps.xmake-cache.outputs.cache-hit != 'true'
+        # Even when a later step failed: packages that built are still valid. Tags save nothing; the address entry
+        # reads this one's.
+        if: always() && github.ref_type != 'tag' && steps.xmake-cache.outputs.cache-hit != 'true' && matrix.build == 'release'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.xmake/project_n # packages_dir() in tools/project_n.py
@@ -347,11 +346,9 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.xmake/project_n # packages_dir() in tools/project_n.py
-          key: xmake-macos-${{ matrix.build }}-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
-          # Then the other entry's: the same toolchain, some packages to add.
-          restore-keys: |
-            xmake-macos-${{ matrix.build }}-
-            xmake-macos-
+          # One entry for both builds, saved by the release one: a sanitizer or mode picks no other package variant.
+          key: xmake-macos-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
+          restore-keys: xmake-macos-
       - name: Restore objects
         id: objects
         # Warm on branch pushes only: main and tags compile cold (project_n enforces it too). Main only looks
@@ -388,20 +385,49 @@ jobs:
           name: ${{ steps.artifact.outputs.archive }}
           path: dist/*.zip
       - name: Save XMake packages
-        # Even when a later step failed: packages that built are still valid. Tags save nothing.
-        if: always() && github.ref_type != 'tag' && steps.xmake-cache.outputs.cache-hit != 'true'
+        # Even when a later step failed: packages that built are still valid. Tags save nothing; the address entry
+        # reads this one's.
+        if: always() && github.ref_type != 'tag' && steps.xmake-cache.outputs.cache-hit != 'true' && matrix.build == 'release'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.xmake/project_n # packages_dir() in tools/project_n.py
           key: ${{ steps.xmake-cache.outputs.cache-primary-key }} # the restore's: builds may change the lock
+      - name: Prune objects
+        id: prune
+        # Only what this run's builds used stays (XMake's cache never evicts); says whether anything is left to save.
+        if: always() && github.ref_type != 'tag' && steps.objects.outputs.cache-hit != 'true'
+        run: pixi run project_n prune-build-cache
       - name: Save objects
         # Even when a later step failed: objects that compiled are still valid. Main saves its cold build (unless
-        # its lookup found the key already); tags save nothing.
-        if: always() && github.ref_type != 'tag' && steps.objects.outputs.cache-hit != 'true'
+        # its lookup found the key already); tags save nothing, nor does a run that used none (an empty folder).
+        if: always() && github.ref_type != 'tag' && steps.objects.outputs.cache-hit != 'true' && steps.prune.outputs.save == 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /Users/runner/build-cache
           key: ${{ steps.objects.outputs.cache-primary-key }} # the restore's: builds may change the lock
+
+  caches:
+    # Deletes this ref's superseded cache entries once every job has saved its own (.github/AGENTS.md). Not a required
+    # check, so it may skip (tags save nothing); the only job that may delete caches.
+    needs: [lint, container, releasedbg, windows, macos]
+    if: always() && github.ref_type != 'tag'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: write # deleting cache entries
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        env:
+          GIT_LFS_SKIP_SMUDGE: "1" # pointers only: no LFS file is needed
+      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+        with:
+          pixi-version: ${{ env.PIXI_VERSION }}
+          locked: true
+          cache: true
+      - run: pixi run project_n prune-ci-caches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   release:
     # A vX.Y.Z tag: every preset's archives into a draft GitHub release, for the user to check and publish.
