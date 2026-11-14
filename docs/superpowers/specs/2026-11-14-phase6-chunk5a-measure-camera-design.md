@@ -1,7 +1,7 @@
 # Phase 6, chunk 5a: the measurements, the world scene and the camera
 
-Date: 2026-11-14 · Status: draft, to be re-checked once the scenes part (`2026-11-14-phase6-chunk5-scenes-design.md`)
-has merged · Chunk spec: `2026-11-10-phase6-chunk5-world-map-design.md` · Phase spec: `2026-11-10-phase6-design.md`
+Date: 2026-11-14 · Status: draft, re-checked 2026-11-14 against the scenes part as merged
+(`2026-11-14-phase6-chunk5-scenes-design.md`, its Outcome) · Chunk spec: `2026-11-10-phase6-chunk5-world-map-design.md` · Phase spec: `2026-11-10-phase6-design.md`
 
 ## In short
 
@@ -35,10 +35,24 @@ says which it carries. 5b and 5c update the chunk spec when they start.
 
 ## History
 
-- **Nothing of chunk 5 is built.** The camera is the main thread's (`gfx::Camera`, `app/view.hpp`: follow,
-  `ShowScene`, `WindowToWorld`); the logic culls to `m_view` (a scene's fixed rectangle) or, with a player, to
-  `FOLLOW_HALF_VIEW` (±7,680 × ±4,320) around it (`game::Arena::Publish`, src/game/arena.cpp), which its own comment and
-  the backlog (the user, 2026-11-07; 0002.3 §11) mark for culling relative to the window.
+- **Nothing of 5a is built.** The camera is the main thread's (`gfx::Camera`, `app/view.hpp`: follow,
+  `ShowScene`, `WindowToWorld`); `ShowScene` resets it when the snapshot's sprite set changes. The logic culls to the
+  scene's `SceneTraits::view` or, with a player, to `FOLLOW_HALF_VIEW` (±7,680 × ±4,320, the widest zoom in a 32:9
+  window) around it (`game::Host::Publish`, src/game/host.cpp), which its own comment and the backlog (the user,
+  2026-11-07; 0002.3 §11) mark for culling relative to the window.
+- **The scenes part (merged 2026-11-14) is the layer 5a builds on:**
+  - A scene is a stateless class in `game/scenes/` behind `game::Scene`, listed in `SCENE_LIST` (`game/scenes.cpp`, F2's
+    order; its key is its place there, its constant in `game/scenes.hpp`). Its `SceneTraits` hold what the host reads
+    (view, home, camera, combat, world NPCs, demo glows), and `Scene::Publish` adds the scene's own content (the
+    arena's showcase). `--<name>` starts any scene `art/scenes.toml` names.
+  - A save stores the scene's key and accepts any listed scene, so a new scene saves and loads with no format change.
+  - `Snapshot::camera` (`core::CameraKind`: Follow for the arena and `stress`, Pan for the still scenes) comes from the
+    traits, but app doesn't read it yet; its Outcome leaves that, and resetting the camera on each scene change rather
+    than on a new sprite set, to 5a.
+  - Every scene change runs through stages the logic publishes (`Snapshot::sceneChange`: leaving, loading, entering,
+    running, with the change's number). The main thread's news (`SceneResident`, `SceneLeft`, `SceneEntered`) reaches
+    the logic beside the tick's input but is never part of it: never recorded, never hashed, and the replay reader
+    refuses it.
 - **Measurement debts owed to chunk 5:** chunks 3, 4 and 4b each recorded unpinned numbers "until chunk 5" (chunk 3's
   burst 0.43 ms median and 2.6 ms worst on the main thread; chunk 4's 1,000 swords 1.31/2.31/2.60 ms whole frame,
   median/p99/worst; chunk 4b ~685 µs median frame while swords fly, `DrawVolleys` 133 µs mean; all on an RTX 4090 at
@@ -61,19 +75,25 @@ says which it carries. 5b and 5c update the chunk spec when they start.
 
 ## Goals
 
-1. **The world scene.** A new scene class on the scenes part's layer (`world` in `art/scenes.toml` and the scene list,
-   `--world`, after `cells` in F2's cycle) about 20
+1. **The world scene.** A new scene class on the scenes layer (`game/scenes/world.*`, listed after `cells` in
+   `SCENE_LIST` with its key constant, and `world` in `art/scenes.toml`, which brings `--world`) about 20
    screens across at zoom 1 (about 38,400 × 21,600 world units), tiled with placeholder terrain from
    `art/placeholders.py` (several kinds, varied enough that panning shows movement and shimmer would show). The tiles
-   are static, and publishing finds the ones in view by their grid position, never by scanning them all. A stand-in
+   are static scene content, not entities: the scene's `Publish` finds the ones in view by their grid position, never
+   by scanning them all. A stand-in
    crowd of walkers wanders the whole map, enough that the widest view over its busiest part has thousands on screen,
    some with name labels (placeholder names), so culling, labels and the measurements carry real load; 5b replaces them
    with travelling NPCs. The cultivator walks it as today (Move). The walkers are a pure function of their seed and the
    tick, built from existing components, so the saved state's format and `ACTIVE_VERSION` don't change in 5a (the
-   world's save format is 5c's); F5 and F9 work in `world` by accepting it as a saved scene.
+   world's save format is 5c's); F5 and F9 work in `world` as in any listed scene.
 2. **The camera, outside combat** (the user, 2026-11-14): in `world` and the still test scenes. **Combat scenes**
    (the arena, `stress`) keep today's camera, following the cultivator only, so they play and replay as now; chunk 7
    can revisit this for large combat scenes.
+   - Each scene's traits name its camera, published as `Snapshot::camera`: Follow (combat scenes), Pan (the still
+     scenes) and a third kind for `world`, following until panned, with snap back. App reads the kind from the snapshot
+     instead of inferring it from what the snapshot follows.
+   - App resets the camera on each scene change (`Snapshot::sceneChange`'s number), not on a new sprite set, so scenes
+     that share sprites (5c's and chunk 7's rooms) each start from their own view.
    - Follows the cultivator by default, as today.
    - **Pans freely** by dragging with the mouse (the right or middle button, my call: the left button stays free for
      selecting and 5b's click to walk), by pushing the pointer to the screen's edge, by keys and by the gamepad's right
@@ -87,9 +107,15 @@ says which it carries. 5b and 5c update the chunk spec when they start.
      the camera never jitters while following, dragging, edge-panning or zooming.
 3. **Culling against the window, in every scene.**
    - Each frame the main thread sends the logic its view rectangle plus a margin. The logic publishes only what lies
-     inside the latest one it has. Before the first arrives, it uses the scene's own rectangle.
-   - The rectangle changes what is published, never the state: it is **not recorded** in replays and the state hash
-     ignores it.
+     inside the latest one it has.
+   - The rectangle is the main thread's news, like `SceneResident`: it changes what is published, never the state; it
+     is **not recorded** in replays, the replay reader refuses it, and the state hash ignores it.
+   - It names the scene change it was taken in, and the logic uses only one taken in the current change, so the first
+     publishes after a swap never cull the new scene by the old scene's view.
+   - Until one arrives (the start, after each swap, and harnesses that never send one: the reference pictures, the
+     headless benchmark), the logic culls to the widest zoom (0.25) of a 32:9 window round where the camera starts
+     (what it follows, or the centre of the scene's view): what `FOLLOW_HALF_VIEW` covers today, derived from the zoom
+     limit instead of a fixed number, so those pictures and numbers don't move.
    - The margin is wide enough that a fast pan or a wheel notch of zoom-out, in the time a view takes to reach a
      published snapshot, never shows the edge of what was published.
    - `FOLLOW_HALF_VIEW` and its comment go; the backlog's culling item and the 0002.3 §11 note close.
@@ -166,16 +192,23 @@ The user's:
 - **Labels are measured at a middle zoom,** walkers at the widest view (Ruling 25 hides labels there).
 - **The command is `measure`;** `--workers N` pins the job system.
 - **The zoom range stays 0.25 to 2.**
-- **Cleanups placed in later parts:** splitting `tests/unit/game/arena_tests.cpp` is 5c's first task (5c adds the save
-  and scene cases there); the floating-point contraction decision is 5b's, before its route maths.
+- **A third camera kind for `world`** (follow until panned, snap back) beside Follow and Pan, so combat scenes and the
+  still scenes keep theirs; its name is the builder's.
+- **The view is the main thread's news, named by its scene change;** before one arrives, the logic culls as widely as
+  today's `FOLLOW_HALF_VIEW`, so harnesses that send none (reference pictures, the headless benchmark) are unchanged.
+- **Cleanups placed in later parts:** splitting `tests/unit/game/host_tests.cpp` (the scenes part renamed
+  `arena_tests.cpp`; 1,021 lines, the scene list's cases now in `scenes_tests.cpp`) is 5c's first task (5c adds the
+  save and scene cases there); the floating-point contraction decision is 5b's, before its route maths.
 
 ## Testing
 
 - **Camera maths** (pure, no device): drag moves the world with the pointer; edge pan starts only inside the edge band
   and its speed is the same in screens per second at every zoom; panning frees the camera; snap back follows again;
-  zoom stays in range; combat scenes ignore the free-camera inputs and keep following.
+  zoom stays in range; combat scenes ignore the free-camera inputs and keep following; app takes the camera's kind
+  from the snapshot and resets the camera on each scene change, between scenes that share sprites too.
 - **Culling:** what is published lies within the view plus the margin; a replay recorded while panning plays back with
-  the same hashes; the state hash ignores the view; with no view yet, the scene's rectangle is used.
+  the same hashes; the state hash ignores the view and the replay reader refuses it; with no view yet, and after a
+  swap until a view of the new change arrives, the logic culls as widely as today.
 - **The world scene:** only tiles in view are published, found without a full scan; `CheckScenes` covers `world`; a
   walker's position is the same for the same seed and tick; a save made in `world` loads back into it.
 - **Other scenes:** their reference pictures and replay tests pass unchanged.
