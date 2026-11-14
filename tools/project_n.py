@@ -1901,12 +1901,15 @@ def info_plist(version):
 
 
 def macos_bundle(dist, binary):
-    """dist/<APP>.app: the binary, conda's libc++ in Frameworks (the rpath in xmake.lua), the assets in
-    Resources (where SDL_GetBasePath points in a bundle) and Info.plist."""
+    """dist/<APP>.app: the binary without its rpath into the Pixi environment, conda's libc++ in Frameworks (the
+    rpath in xmake.lua), the assets in Resources (where SDL_GetBasePath points in a bundle) and Info.plist."""
     contents = dist / f"{APP}.app" / "Contents"
     for d in ("MacOS", "Frameworks", "Resources"):
         (contents / d).mkdir(parents=True)
     shutil.copy2(binary, contents / "MacOS")
+    # From the copy only: `artifact --reuse-build` doesn't relink the build folder's binary, whose rpath would be gone
+    # the next time ("no LC_RPATH load command").
+    run(["install_name_tool", "-delete_rpath", Path(os.environ["CONDA_PREFIX"], "lib"), contents / "MacOS" / binary.name])
     shutil.copytree(ROOT / "assets", contents / "Resources" / "assets")
     shutil.copy2(Path(os.environ["CONDA_PREFIX"], "lib", "libc++.1.dylib"), contents / "Frameworks")
     (contents / "Info.plist").write_bytes(plistlib.dumps(info_plist(read_version())))
@@ -1954,12 +1957,13 @@ def cmd_artifact(args):
         run_references(args.preset)
     binary = binary_path(args.preset, "release")
     if PRESETS[args.preset]["plat"] == "linux":
-        run(["patchelf", "--remove-rpath", binary])  # conda's GCC hard-codes an rpath into .pixi
+        # conda's GCC hard-codes an rpath into .pixi. Edited in place, unlike macOS (macos_bundle): patchelf succeeds on
+        # a binary with no rpath, so a reused build packages again.
+        run(["patchelf", "--remove-rpath", binary])
         leaked = [line for line in capture(["ldd", binary]).splitlines() if ".pixi" in line]
         if leaked:
             raise Fail("artefact links into the Pixi environment:\n" + "\n".join(leaked))
     elif PRESETS[args.preset]["plat"] == "macosx":
-        run(["install_name_tool", "-delete_rpath", Path(os.environ["CONDA_PREFIX"], "lib"), binary])
         shipped = ("/usr/lib/", "/System/", "@rpath/libc++.1.dylib")  # libc++ ships in the bundle
         leaked = [line for line in capture(["otool", "-L", binary]).splitlines()[1:] if not line.strip().startswith(shipped)]
         if leaked:

@@ -1800,21 +1800,59 @@ class HelpersTest(unittest.TestCase):
         self.assertEqual(project_n.msvc_versions(env_sh), {"msvc": "14.50.35717", "windows_sdk": "10.0.26100.0"})
 
     def test_macos_bundle_layout(self):
-        signed = []
+        ran = []
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             (root / "lib").mkdir()
             (root / "lib" / "libc++.1.dylib").write_bytes(b"dylib")
             (root / "project_n").write_bytes(b"binary")
             with (mock.patch.dict(project_n.os.environ, {"CONDA_PREFIX": d, "MACOSX_DEPLOYMENT_TARGET": "13.0"}),
-                  mock.patch.object(project_n, "run", lambda cmd, **_: signed.append(Path(cmd[-1]).name))):
+                  mock.patch.object(project_n, "run", lambda cmd, **_: ran.append((cmd[0], Path(cmd[-1]).name)))):
                 project_n.macos_bundle(root / "dist", root / "project_n")
             contents = root / "dist" / "project_n.app" / "Contents"
             self.assertEqual((contents / "MacOS" / "project_n").read_bytes(), b"binary")
             self.assertTrue((contents / "Frameworks" / "libc++.1.dylib").is_file())
             plist = project_n.plistlib.loads((contents / "Info.plist").read_bytes())
         self.assertEqual((plist["CFBundleExecutable"], plist["LSMinimumSystemVersion"]), ("project_n", "13.0"))
-        self.assertEqual(signed, ["libc++.1.dylib", "project_n.app", "project_n.app"])  # nested code first
+        # The rpath goes before signing (a signature install_name_tool broke won't run), nested code is signed first.
+        self.assertEqual(ran, [("install_name_tool", "project_n"), ("codesign", "libc++.1.dylib"),
+                               ("codesign", "project_n.app"), ("codesign", "project_n.app")])
+
+    def test_a_repeated_macos_artefact_reusing_its_build_ships_without_the_rpath(self):
+        # With --reuse-build XMake doesn't relink, so an rpath deleted from the build folder's binary is gone the next
+        # time and install_name_tool fails ("no LC_RPATH load command"). The fake keeps the rpath in the file's bytes.
+        def run(cmd, **_):
+            if cmd[0] == "install_name_tool":
+                target = root / cmd[-1]  # run's working directory is ROOT
+                if b"rpath" not in target.read_bytes():
+                    raise subprocess.CalledProcessError(1, cmd)
+                target.write_bytes(target.read_bytes().replace(b"rpath", b""))
+
+        answers = {"otool": "project_n:\n\t/usr/lib/libSystem.B.dylib\n", "git": "abc\n", "xcrun": "15.0\n"}
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            with mock.patch.object(project_n, "IN_CONTAINER", True):
+                binary = project_n.binary_path("macos-clang", "release")
+            (root / binary).parent.mkdir(parents=True)
+            (root / binary).write_bytes(b"binary rpath")
+            (root / binary.with_suffix(".dSYM")).mkdir()
+            (root / "lib").mkdir()
+            (root / "lib" / "libc++.1.dylib").write_bytes(b"dylib")
+            (root / "assets").mkdir()
+            for name, text in (("LICENSE", "AGPL"), ("THIRD_PARTY_NOTICES.md", "notices"), ("pixi.lock", "lock"),
+                               ("xmake.lua", 'set_version("0.1.0")')):
+                (root / name).write_text(text)
+            env = {k: v for k, v in os.environ.items() if k not in ("GITHUB_OUTPUT", "GITHUB_REF")}
+            env |= {"CONDA_PREFIX": d, "MACOSX_DEPLOYMENT_TARGET": "13.0", "GITHUB_REF": "refs/heads/ci-speed"}
+            with (mock.patch.dict(project_n.os.environ, env, clear=True),
+                  mock.patch.multiple(project_n, ROOT=root, IN_CONTAINER=True, tree_dirty=lambda: "", run=run,
+                                      build=lambda *args: binary.parents[3], xmake_env=lambda bdir: {},
+                                      capture=lambda cmd, **_: answers[cmd[0]]),
+                  contextlib.redirect_stdout(io.StringIO())):
+                for _ in range(2):
+                    project_n.cmd_artifact(project_n.argparse.Namespace(preset="macos-clang", reuse_build=True))
+            shipped = root / "dist" / "macos-clang" / "project_n.app" / "Contents" / "MacOS" / "project_n"
+            self.assertEqual(shipped.read_bytes(), b"binary ")
 
     def test_msvc_install_follows_only_its_containerfile(self):
         self.assertRegex(project_n.msvc_dir().name, r"^msvc-[0-9a-f]{12}$")
