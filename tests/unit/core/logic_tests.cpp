@@ -23,8 +23,8 @@ enum class Call : u8 {
     Publish,
 };
 
-// Records the ticks it ran and its publishes, and publishes one instance per tick so far; a CycleScene asks for
-// OTHER_SCENE, which it enters when told.
+// Records the ticks it ran and its publishes, and publishes one instance per tick so far, following with the camera when
+// told to; a CycleScene asks for the scene `asks` names (OTHER_SCENE by default), which it enters when told.
 class Recorder final : public core::Simulation {
 public:
     void Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) override {
@@ -36,7 +36,7 @@ public:
         actions.push_back(input.actions.size());
         casts += static_cast<std::size_t>(std::ranges::count(input.actions, core::ActionKind::Cast, &core::Action::kind));
         if (std::ranges::contains(input.actions, core::ActionKind::CycleScene, &core::Action::kind)) {
-            requested = core::SceneFacts{ .key = OTHER_KEY, .sprites = OTHER_SCENE };
+            requested = asks;
         }
     }
     void AdvanceCalendar(const core::TickCounters& counters, core::Jobs& /*jobs*/, const std::stop_token& /*stop*/) override {
@@ -88,6 +88,10 @@ public:
         capacityAtPublish = snapshot.instances.capacity();
         sizeAtPublish = snapshot.instances.size();
         textsAtPublish = snapshot.texts.size();
+        cameraAtPublish = snapshot.camera;
+        if (followCamera) {
+            snapshot.camera = core::CameraKind::Follow;
+        }
         snapshot.instances.resize(ticks.size());
         snapshot.texts.push_back({});
     }
@@ -107,6 +111,9 @@ public:
     core::SceneKey key{};
     core::SceneId scene{};
     std::optional<core::SceneFacts> requested = std::nullopt;
+    core::SceneFacts asks{ .key = OTHER_KEY, .sprites = OTHER_SCENE }; // the scene a CycleScene asks for
+    bool followCamera = false;
+    core::CameraKind cameraAtPublish = core::CameraKind::Pan;
     std::size_t publishes = 0;
     std::size_t ticksAtPublish = 0;
     std::size_t textsAtPublish = 0;
@@ -253,6 +260,16 @@ TEST_CASE("each publish starts from empty instances and texts, the instances kee
     }
 }
 
+TEST_CASE("each publish starts with the camera panning, whatever the publish before said") {
+    Rig rig;
+    rig.simulation.followCamera = true;
+    // By the time there have been more bursts than buffers, every write reuses a buffer a Follow was published in.
+    for (u64 burst = 0; burst < 2 * core::GameHandover::BUFFERS; ++burst) {
+        CHECK(rig.Burst(1).snapshot.camera == core::CameraKind::Follow);
+        CHECK(rig.simulation.cameraAtPublish == core::CameraKind::Pan);
+    }
+}
+
 TEST_CASE("a calendar step asked for ends the burst at once and publishes the transition first") {
     constexpr u64 TICKS = 3;
     Rig rig;
@@ -349,6 +366,19 @@ TEST_CASE("a scene asked for is entered after the tick that asks") {
     CHECK(changed.wallTick == 1);
     CHECK(changed.scene == OTHER_SCENE);
     CHECK_FALSE(rig.simulation.requested.has_value());
+}
+
+TEST_CASE("a scene asked for with the same sprites ends its burst too") {
+    constexpr u64 TICKS = 3;
+    Rig rig;
+    rig.simulation.asks = { .key = OTHER_KEY, .sprites = rig.simulation.scene }; // another scene sharing the sprite set
+    rig.simulation.calls.clear();
+    rig.handover.SendInput({ .kind = core::ActionKind::CycleScene });
+    const core::Snapshot changed = rig.Burst(TICKS).snapshot;
+    const std::vector<Call> expected{ Call::Tick, Call::EnterScene, Call::Publish };
+    CHECK(rig.simulation.calls == expected);
+    CHECK(changed.wallTick == 1);
+    CHECK(rig.simulation.key == OTHER_KEY);
 }
 
 TEST_CASE("a Pause sent while the scene loads holds once it is resident") {
