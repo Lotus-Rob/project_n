@@ -1,8 +1,8 @@
 # CI only runs project_n commands (docs/design/0001 §12); see .github/AGENTS.md.
 name: ci
 
-# Every push runs every job: main's ruleset requires all six on each pull request, and a skipped
-# job would count as passed (.github/rulesets/main.json).
+# Every push runs every job: main's ruleset requires all nine checks on each pull request, and a
+# skipped job would count as passed (.github/rulesets/main.json).
 on:
   push:
     branches: ["**"]
@@ -159,10 +159,6 @@ jobs:
           key: msvc-install-${{ hashFiles('containers/msvc.Containerfile') }}
       - id: artifact
         run: pixi run project_n artifact --preset ${{ matrix.preset }}
-      - name: Build releasedbg
-        # The only mode that compiles Tracy's zones (0001 rule 22), once, in the fastest job.
-        if: matrix.preset == 'linux-clang'
-        run: pixi run project_n build --preset linux-clang --mode releasedbg --container
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ steps.artifact.outputs.archive }}
@@ -183,8 +179,77 @@ jobs:
           path: /home/runner/build-cache
           key: ${{ steps.objects.outputs.cache-primary-key }} # the restore's: builds may change the lock
 
+  releasedbg:
+    # linux-clang's releasedbg build in its container: the only mode that compiles Tracy's zones (0001 rule 22).
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write # the linux image cache in GHCR
+    env:
+      PROJECT_N_BUILD_CACHE: /home/runner/build-cache # object caches (.github/AGENTS.md)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        env:
+          GIT_LFS_SKIP_SMUDGE: "1" # pointers only: the LFS action fetches through Pixi, cached
+      - name: Log in to the image cache
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin || true
+      - name: Restore XMake packages
+        id: xmake-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /home/runner/xmake-cache
+          key: xmake-releasedbg-linux-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
+          # Then container linux-clang's: the same image and toolchain.
+          restore-keys: |
+            xmake-releasedbg-linux-clang-
+            xmake-linux-clang-
+      - name: Restore objects
+        id: objects
+        # Warm on branch pushes only: main and tags compile cold (project_n enforces it too). Main only looks
+        # its key up for Save objects; tags skip both.
+        if: github.ref_type == 'branch'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /home/runner/build-cache
+          lookup-only: ${{ github.ref == 'refs/heads/main' }}
+          key: objects-releasedbg-linux-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-${{ github.sha }}
+          restore-keys: objects-releasedbg-linux-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-
+      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+        with:
+          pixi-version: ${{ env.PIXI_VERSION }}
+          locked: true
+          cache: true
+      - uses: ./.github/actions/lfs
+      - run: pixi run project_n image --preset linux-clang
+      - run: pixi run project_n build --preset linux-clang --mode releasedbg --container
+      - name: Save XMake packages
+        # Even when a later step failed: packages that built are still valid. Tags save nothing.
+        if: always() && github.ref_type != 'tag' && steps.xmake-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /home/runner/xmake-cache
+          key: ${{ steps.xmake-cache.outputs.cache-primary-key }} # the restore's: builds may change the lock
+      - name: Save objects
+        # Even when a later step failed: objects that compiled are still valid. Main saves its cold build (unless
+        # its lookup found the key already); tags save nothing.
+        if: always() && github.ref_type != 'tag' && steps.objects.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /home/runner/build-cache
+          key: ${{ steps.objects.outputs.cache-primary-key }} # the restore's: builds may change the lock
+
   windows:
-    # Native MSVC: the authoritative Windows build, and the only place MSVC's ASan can run.
+    # Native MSVC: the authoritative Windows build, and the only place MSVC's ASan can run. One build per entry.
+    name: windows (${{ matrix.build }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - build: release
+            test: --mode release
+          - build: address
+            test: --sanitizer address
     runs-on: windows-2025-vs2026
     timeout-minutes: 180
     steps:
@@ -224,19 +289,22 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.xmake/project_n # packages_dir() in tools/project_n.py
-          key: xmake-windows-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
-          restore-keys: xmake-windows-
+          key: xmake-windows-${{ matrix.build }}-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
+          # Then the other entry's: the same toolchain, some packages to add.
+          restore-keys: |
+            xmake-windows-${{ matrix.build }}-
+            xmake-windows-
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
           cache: true
       - uses: ./.github/actions/lfs
-      - run: pixi run project_n selftest  # the only place it runs on Windows (paths, shims)
+      - if: matrix.build == 'address' # the only place it runs on Windows (paths, shims): the shorter build's entry
+        run: pixi run project_n selftest
       # Report only: CI needs no commit hook or podman. Exit code 3 means problems found; anything else is a bug.
       - run: pixi run project_n doctor; if ($LASTEXITCODE -notin 0, 3) { exit 1 }; exit 0
-      - run: pixi run project_n test --preset windows-msvc --mode release
-      - run: pixi run project_n test --preset windows-msvc --sanitizer address
+      - run: pixi run project_n test --preset windows-msvc ${{ matrix.test }}
       - name: Save XMake packages
         # Even when a later step failed: packages that built are still valid. Tags save nothing.
         if: always() && github.ref_type != 'tag' && steps.xmake-cache.outputs.cache-hit != 'true'
@@ -246,7 +314,18 @@ jobs:
           key: ${{ steps.xmake-cache.outputs.cache-primary-key }} # the restore's: builds may change the lock
 
   macos:
-    # Native macos-clang on Apple Silicon: the only place it can build (docs/design/0001 §5.7).
+    # Native macos-clang on Apple Silicon: the only place it can build (docs/design/0001 §5.7). One build per
+    # entry on branch pushes: release (tests, then the artefact from that build) and ASan; on main and tags the
+    # artefact rebuilds in a clean room.
+    name: macos (${{ matrix.build }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - build: release
+            test: --mode release
+          - build: address
+            test: --sanitizer address
     runs-on: macos-26
     timeout-minutes: 180
     env:
@@ -268,8 +347,11 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.xmake/project_n # packages_dir() in tools/project_n.py
-          key: xmake-macos-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
-          restore-keys: xmake-macos-
+          key: xmake-macos-${{ matrix.build }}-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
+          # Then the other entry's: the same toolchain, some packages to add.
+          restore-keys: |
+            xmake-macos-${{ matrix.build }}-
+            xmake-macos-
       - name: Restore objects
         id: objects
         # Warm on branch pushes only: main and tags compile cold (project_n enforces it too). Main only looks
@@ -279,8 +361,8 @@ jobs:
         with:
           path: /Users/runner/build-cache
           lookup-only: ${{ github.ref == 'refs/heads/main' }}
-          key: objects-macos-macos-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-${{ github.sha }}
-          restore-keys: objects-macos-macos-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-
+          key: objects-macos-${{ matrix.build }}-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-${{ github.sha }}
+          restore-keys: objects-macos-${{ matrix.build }}-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
@@ -295,11 +377,13 @@ jobs:
         with:
           path: ~/.xmake/project_n-tools
           key: xmake-tool-macos-${{ env.XMAKE_TOOL }}
-      - run: pixi run project_n test --preset macos-clang --mode release
-      - run: pixi run project_n test --preset macos-clang --sanitizer address
+      - run: pixi run project_n test --preset macos-clang ${{ matrix.test }}
       - id: artifact
-        run: pixi run project_n artifact --preset macos-clang
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        # Packages the release build the tests just ran on; main and tags rebuild in a clean room (project_n).
+        if: matrix.build == 'release'
+        run: pixi run project_n artifact --preset macos-clang --reuse-build
+      - if: matrix.build == 'release'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ steps.artifact.outputs.archive }}
           path: dist/*.zip
@@ -322,7 +406,7 @@ jobs:
   release:
     # A vX.Y.Z tag: every preset's archives into a draft GitHub release, for the user to check and publish.
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [lint, container, windows, macos]
+    needs: [lint, container, releasedbg, windows, macos]
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
