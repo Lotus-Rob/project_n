@@ -4,8 +4,8 @@
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A `measure` command that records the phase's smoothness and cost numbers, a world scene about 20 screens
-across to prove the camera and culling on, a camera that follows, pans freely and snaps back outside combat, and
-culling against the window in every scene.
+across to prove the camera and culling on, a camera that follows, pans freely and snaps back outside combat, culling
+against the window in every scene, and portals that take the cultivator between the walkable scenes.
 
 **Architecture:** The main thread sends the logic its view (the window's world rectangle plus a margin, named by its
 scene change) through `core::GameHandover` as a latest value, never as tick input; `core::Logic` hands the current
@@ -23,8 +23,9 @@ Goals, Anti-goals and Calls are this plan's ground). The scenes spec's Outcome
 
 ## Global Constraints
 
-- Other scenes don't change: the arena, `stress`, `painted` and `cells` keep their reference pictures
-  (`pixi run project_n reference`) and replay test hashes; combat scenes keep following the cultivator only.
+- Other scenes don't change: the arena, `stress`, `painted` and `cells` keep their replay test hashes and their
+  reference pictures (`pixi run project_n reference`), but for pictures showing a portal (Task 11 only); combat scenes
+  keep following the cultivator only.
 - The view rectangle is never tick input: never recorded in a replay, never in `Logic::Hash()` or a save.
 - No save format change: `ARENA_FORMAT`, `ACTIVE_VERSION`, `WORLD_VERSION`, `SAVE_FORMAT` stay; a save already accepts
   any listed scene.
@@ -74,6 +75,10 @@ Goals, Anti-goals and Calls are this plan's ground). The scenes spec's Outcome
   view.
 - **Input latency** is measured from a scripted Move press to the first drawn frame whose followed foot moved, logged
   as the cast latency is today.
+- **Portals are scene content, checked in the host's tick:** `SceneTraits::portal` (its foot point; none for the still
+  scenes) and `game::PORTAL_RADIUS`; the host asks for `NextWalkableScene()` when the player's foot is within the radius
+  on a tick, as `CycleScene` asks (ending open uses first). No component and no saved state: a request ends the tick's
+  burst and the stages run no tick, so it can't fire twice, and arrival is at the scene's start, off its portal.
 - **The GPU's share** is the CPU's wait for the next swapchain image while presenting unpaced (`--unpaced`), in its own
   Tracy zone, `WaitForGpu`; Task 9 records in the Outcome why, and its limits.
 
@@ -87,9 +92,10 @@ review passes (AGENTS.md: Working with superpowers). One task is dispatched per 
 | prep | `CameraKind::Roam` (controller, before wave A) | nothing |
 | A | 1 (measuring flags, full), 2 (culling against the window, full), 3 (camera inputs, full), 10 (terrain tiles, light) | no shared file (1: `main.cpp`, `app.hpp`'s `Options`, the renderer, pixi; 2: core, `host.cpp`, `app.cpp`; 3: platform, `bindings.*`, settings; 10: `art/`, `assets/sprites/`, the atlas outputs, drifted reference pictures) |
 | B | 4 (the world scene, full), 6 (camera control, full) | 4: Task 2's `Publish` view and Task 10's sprites; 6: Tasks 2 and 3. 4 is `src/game`, art and assets; 6 is `src/app` |
-| C | 5 (world pictures and shimmer, full), 7 (scripted path and latency, full) | 5: Task 4; 7: Tasks 1 and 6 |
-| D | 8 (`measure`, full) | Tasks 1, 5 and 7 |
-| E | 9 (the first measurement and budgets, light) | everything; runs alone (profiling), when the user says the display is free |
+| C | 11 (portals, full), 7 (scripted path and latency, full) | 11: Task 4 (`src/game`, seals and strings data, arena pictures); 7: Tasks 1 and 6 (`src/app`, the renderer's zone) |
+| D | 5 (world pictures and shimmer, full) | Tasks 4 and 11 (the world's pictures show its portal) |
+| E | 8 (`measure`, full) | Tasks 1, 5 and 7 |
+| F | 9 (the first measurement and budgets, light) | everything; runs alone (profiling), when the user says the display is free |
 
 ---
 
@@ -287,7 +293,7 @@ review passes (AGENTS.md: Working with superpowers). One task is dispatched per 
 - Modify: `tests/reference/reference_tests.cpp`, `tests/reference/*.png` (new), `tests/AGENTS.md`
 
 **Interfaces:**
-- Consumes: `game::WORLD_SCENE` (Task 4).
+- Consumes: `game::WORLD_SCENE` (Task 4); the world's portal (Task 11), which the pictures may show.
 - Produces: reference cases `world_widest` (zoom 0.25 over the busiest region), `world_middle` (zoom 0.6, labels
   showing), `world_close` (zoom 2); `TEST_CASE("the world's tiles and walkers at the smallest zoom: no shimmer")`, which
   prints its per-tile ink change (the metric `measure` reads, one line `world shimmer: <value>`).
@@ -456,4 +462,49 @@ review passes (AGENTS.md: Working with superpowers). One task is dispatched per 
   readability at small size.
 - [ ] **Step 6: Commit** `build(tools): paint seamless terrain tiles for the world` (the painter, sprites, atlas
   outputs, provenance, refreshed pictures).
+
+### Task 11: portals
+
+**review: full** (simulation, scene changes, replays)
+
+**Files:**
+- Modify: `src/game/scene.hpp` (`SceneTraits::portal`, `PORTAL_RADIUS`), `src/game/scenes.hpp`, `src/game/scenes.cpp`
+  (`NextWalkableScene`), `src/game/host.cpp` (the tick's check, the portal's seal and label in `Publish`),
+  `src/game/scenes/arena.cpp`, `src/game/scenes/stress.cpp`, `src/game/scenes/world.cpp` (each portal's point),
+  `assets/data/seals.yaml` (`portal`), `assets/data/strings.yaml` and `src/core/strings.hpp` (`portal_label`, both
+  languages), `tests/reference/*.png` (arena pictures that show the portal, refreshed on purpose), `src/AGENTS.md`
+  (portals in the keys and scenes line; the arena's feature list in `game/scenes/arena.hpp`)
+- Test: `tests/unit/game/scenes_tests.cpp`, `tests/unit/game/host_tests.cpp`, `tests/unit/game/replay_tests.cpp`, the
+  showcase footprint tests (`tests/unit/app/showcase_tests.cpp` or wherever the arena's footprints are checked)
+
+**Interfaces:**
+- Consumes: `game::WORLD_SCENE` and the world's traits (Task 4).
+- Produces: `std::optional<core::Vec2> SceneTraits::portal` (a scene's portal foot point; none for `painted` and
+  `cells`); `inline constexpr f32 game::PORTAL_RADIUS` (the builder's value, about the cultivator's width);
+  `[[nodiscard]] core::SceneKey game::NextWalkableScene(core::SceneKey)` (the next scene in `SCENE_LIST` whose traits
+  have a portal, wrapping); `StringId::PortalLabel`; the `portal` seal look.
+
+- [ ] **Step 1: Write the failing tests.**
+  - `TEST_CASE("the walkable scenes lead round arena, stress and world")`: `NextWalkableScene` of `ARENA_SCENE` is
+    `STRESS_SCENE`, of `STRESS_SCENE` is `WORLD_SCENE`, of `WORLD_SCENE` is `ARENA_SCENE`.
+  - `TEST_CASE("stepping onto the portal asks for the next walkable scene")` (arena: walk the player's foot to the
+    portal's point → `Requested()` names `stress`); `TEST_CASE("a step beside the portal asks for nothing")` (a foot
+    at 1.5 × `PORTAL_RADIUS`).
+  - `TEST_CASE("arriving through a portal lands off the next scene's portal")` (after the change the player's foot is
+    farther than `PORTAL_RADIUS` from the new scene's portal; no request on the first ticks).
+  - `TEST_CASE("a replay recorded through a portal plays back with the same hashes")` (game replay harness: walk the
+    arena's cultivator onto its portal while recording).
+  - `TEST_CASE("the portal publishes its seal and label in every walkable scene, the showcase hidden or not")`.
+  - The arena's portal joins the showcase footprint test: its seal's footprint overlaps no showcase item and lies
+    outside the fight's space.
+- [ ] **Step 2: Run** `pixi run project_n test --suite game_tests` (and the footprint suite): FAIL.
+- [ ] **Step 3: Implement** the traits and points (each in clear ground, the arena's chosen with the footprint test),
+  the host's check after the player moves in `Tick` (ending open uses, as `CycleScene` does), the seal (`core::Seal`
+  with `SealKeyOf("portal")`, the portal's point, a size of about twice `PORTAL_RADIUS`, start tick 0, never ending,
+  `showcase = false`) and the label in `Publish`, the `portal` look in `seals.yaml` (ground plane, glowing) and the
+  strings.
+- [ ] **Step 4: Run** `pixi run project_n test` (PASS), `pixi run project_n reference`; refresh with
+  `pixi run project_n reference --update` only the pictures that show the portal, look at each, and check no other
+  picture changed. Then walk through every portal once in the game (`pixi run project_n run`; look-at-the-game skill).
+- [ ] **Step 5: Commit** `feat(game): walk through portals between the walkable scenes`.
 
