@@ -1,5 +1,6 @@
 #include "app/camera_control.hpp"
 
+#include "app/camera_path.hpp"
 #include "app/view.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/profile.hpp"
@@ -50,6 +51,13 @@ core::Vec2 Dragged(const gfx::Camera& camera, const CameraInput& input) {
     }
     return WindowToWorld(camera, *input.dragFrom, input.width, input.height) -
            WindowToWorld(camera, *input.cursor, input.width, input.height);
+}
+
+// The world the window's shorter side shows through `camera`: a screen, what pan speeds are counted in.
+f32 ScreenOf(const gfx::Camera& camera, const CameraInput& input) {
+    const auto shorter = static_cast<f32>(std::max(std::min(input.width, input.height), 1));
+    return shorter /
+           gfx::PixelsPerUnit(camera, static_cast<u32>(std::max(input.width, 1)), static_cast<u32>(std::max(input.height, 1)));
 }
 
 } // namespace
@@ -113,12 +121,17 @@ void CameraControl::Update(const CameraInput& input) {
         m_notches = 0.0F;
         m_snapBack = false;
         m_free = false;
+        m_segment.reset();
     }
     const core::Vec2 edge = EdgeOf(input);
     const bool cursorIn = input.focused && input.cursor && Inside(*input.cursor, input.width, input.height);
     // A cursor arriving over the window is likely in the band it crossed: only one seen clear of it since pans.
     const bool armed = m_edgeArmed;
     m_edgeArmed = cursorIn && (armed || LengthSquared(edge) <= 0.0F);
+    if (const std::optional<f32> path = input.path) {
+        FollowPath(input, *path);
+        return;
+    }
     if (!input.still) {
         const f32 notch = std::clamp(m_notches, -1.0F, 1.0F);
         m_notches -= notch;
@@ -151,12 +164,39 @@ void CameraControl::Update(const CameraInput& input) {
         return;
     }
     m_free = input.kind == core::CameraKind::Roam;
-    const auto shorter = static_cast<f32>(std::max(std::min(input.width, input.height), 1));
-    const f32 screen =
-        shorter /
-        gfx::PixelsPerUnit(m_camera, static_cast<u32>(std::max(input.width, 1)), static_cast<u32>(std::max(input.height, 1)));
     const f32 seconds = std::clamp(input.seconds, 0.0F, FRAME_STEP_LIMIT_SECONDS);
-    m_camera.centre = m_camera.centre + (pan * (PAN_SCREENS_PER_SECOND * screen * seconds)) + dragged;
+    m_camera.centre = m_camera.centre + (pan * (PAN_SCREENS_PER_SECOND * ScreenOf(m_camera, input) * seconds)) + dragged;
+}
+
+void CameraControl::FollowPath(const CameraInput& input, f32 seconds) {
+    // The path replaces the player's camera inputs: none waits to move the camera after it.
+    m_notches = 0.0F;
+    m_snapBack = false;
+    const std::optional<std::size_t> index = CameraPathSegment(seconds);
+    if (!index) {
+        return; // over: the run quits
+    }
+    if (index != m_segment) {
+        m_segment = index;
+        m_segmentFrom = m_camera.centre;
+    }
+    const CameraSegment& segment = CameraPath()[*index];
+    const f32 through = SegmentThrough(*index, seconds);
+    const bool follows = input.kind == core::CameraKind::Follow || segment.centre == PathCentre::Follows;
+    if (follows && input.followed) {
+        m_camera.centre = *input.followed;
+    }
+    if (input.still) {
+        return;
+    }
+    m_camera.zoom = SegmentZoom(segment, through);
+    if (follows) {
+        m_free = false;
+        return;
+    }
+    m_free = input.kind == core::CameraKind::Roam;
+    m_camera.centre = segment.centre == PathCentre::At ? segment.point
+                                                       : m_segmentFrom + (segment.pan * (ScreenOf(m_camera, input) * through));
 }
 
 } // namespace app

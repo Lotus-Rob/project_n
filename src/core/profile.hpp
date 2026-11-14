@@ -18,11 +18,15 @@
 #define PN_PROFILE_ZONE() ZoneNamed(pn_profile_zone, true)
 /// Ends a frame in the profiler's timeline: `PN_PROFILE_FRAME();` once per frame, after presenting.
 #define PN_PROFILE_FRAME() FrameMark
+/// Marks a moment in the profiler's timeline with `text` (a `std::string` or `std::string_view`), such as a scripted
+/// run's next stage: rarely, never every frame.
+#define PN_PROFILE_MESSAGE(text) TracyMessage((text).data(), (text).size())
 #else
 // Tracy's own disabled macros are empty, which leaves `PN_PROFILE_ZONE();` an empty statement
 // (-Wextra-semi-stmt).
 #define PN_PROFILE_ZONE() static_cast<void>(0)
 #define PN_PROFILE_FRAME() static_cast<void>(0)
+#define PN_PROFILE_MESSAGE(text) static_cast<void>(0)
 #endif
 
 // NOLINTEND(cppcoreguidelines-macro-usage)

@@ -171,6 +171,7 @@ int main(int argc, char** argv) {
                     .castSwords = app::HasFlag(args, "--cast-swords"),
                     .workers = *workers,
                     .unpaced = app::HasFlag(args, "--unpaced"),
+                    .cameraPath = app::HasFlag(args, "--camera-path"),
                     .saveSlot = userData ? *userData / "saves" / "quicksave.pns" : std::filesystem::path{},
                     .replaySlot = userData ? *userData / "saves" / "replay.pnr" : std::filesystem::path{},
                 },

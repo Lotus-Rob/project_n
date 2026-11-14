@@ -5,13 +5,24 @@
 
 namespace gfx::internal {
 
+namespace {
+
+// Acquires `frame`'s swapchain image, waiting until the GPU has finished an earlier frame and an image is free: the
+// CPU's wait on the GPU, which its zone, named after it, shows the measurements (the phase 6 chunk 5a spec, Goal 4).
+bool WaitForGpu(Frame& frame, SDL_Window* window) {
+    PN_PROFILE_ZONE();
+    return SDL_WaitAndAcquireGPUSwapchainTexture(frame.commands, window, &frame.swapchain, &frame.width, &frame.height);
+}
+
+} // namespace
+
 std::expected<Frame, core::Error> AcquireFrame(SDL_GPUDevice* device, SDL_Window* window) {
     PN_PROFILE_ZONE();
     Frame frame{ .commands = SDL_AcquireGPUCommandBuffer(device) };
     if (frame.commands == nullptr) {
         return std::unexpected{ core::Error{ std::format("no command buffer: {}", SDL_GetError()) } };
     }
-    if (!SDL_WaitAndAcquireGPUSwapchainTexture(frame.commands, window, &frame.swapchain, &frame.width, &frame.height)) {
+    if (!WaitForGpu(frame, window)) {
         core::Error error{ std::format("no swapchain texture: {}", SDL_GetError()) };
         SDL_CancelGPUCommandBuffer(frame.commands); // allowed: no swapchain texture was acquired (§8.3)
         return std::unexpected{ std::move(error) };

@@ -3,7 +3,8 @@
 /// @file
 /// @ingroup app
 /// The camera's control (the phase 6 chunk 5a spec, Goal 2): how the camera follows, pans, is dragged, zooms and snaps
-/// back over each kind of scene (core::CameraKind), frame by frame. Pure: tested with hand-built frames.
+/// back over each kind of scene (core::CameraKind), frame by frame, and how the scripted path (`app/camera_path.hpp`)
+/// moves it for the measurements (Goal 4). Pure: tested with hand-built frames.
 
 #include "app/bindings.hpp"
 #include "core/frame.hpp"
@@ -11,6 +12,7 @@
 #include "core/vec2.hpp"
 #include "gfx/camera.hpp"
 
+#include <cstddef>
 #include <optional>
 
 namespace app {
@@ -55,6 +57,11 @@ struct CameraInput {
     /// no pan, drag, edge pan, snap back or zoom moves it, so it never shows past what was published; it still follows.
     /// A snap back or wheel notches given meanwhile wait for the first frame that isn't still.
     bool still = false;
+    /// How far into the scripted path (CameraPath()) the run is, in seconds (`--camera-path`); none while no path drives the
+    /// camera. While one does, it moves the camera in place of the player's pan, drag, edge pan, snap back and zoom (dropped,
+    /// not kept for later); a Follow scene's camera still only follows, at the path's zoom, and a still frame holds it as it
+    /// holds the player's inputs.
+    std::optional<f32> path = std::nullopt;
 };
 
 /// Whether a press of `control` starts dragging the camera: the middle button always (a scene that follows ignores the
@@ -86,7 +93,8 @@ private:
 /// The camera over each kind of scene: a Follow scene centres on what it follows and nothing else moves it; a Pan
 /// scene pans by Move, the pan controls, the screen's edge and a drag, and snap back returns it to the scene's start;
 /// a Roam scene follows until any of those but Move pans it, then stays where the player leaves it until snap back
-/// follows again. The wheel zooms every kind, one notch a frame, within gfx::MIN_ZOOM and gfx::MAX_ZOOM.
+/// follows again. The wheel zooms every kind, one notch a frame, within gfx::MIN_ZOOM and gfx::MAX_ZOOM. While
+/// CameraInput::path is set, the scripted path (CameraPath()) moves it instead.
 class CameraControl {
 public:
     /// A camera whose every scene starts at `startZoom` (the run's `--zoom`).
@@ -121,6 +129,9 @@ public:
     void LoseFocus();
 
 private:
+    // Moves the camera as the scripted path says `seconds` (CameraInput::path) in.
+    void FollowPath(const CameraInput& input, f32 seconds);
+
     f32 m_startZoom;
     gfx::Camera m_camera;
     core::Vec2 m_start{};                       // where the scene's camera started: a Pan scene's snap back
@@ -129,6 +140,8 @@ private:
     bool m_snapBack = false;                    // waiting to snap back
     bool m_edgeArmed = false;                   // the cursor was seen inside clear of the edge band since it arrived
     bool m_free = false;
+    std::optional<std::size_t> m_segment = std::nullopt; // the path segment the camera was last moved in
+    core::Vec2 m_segmentFrom{};                          // where the camera was as that segment started
 };
 
 } // namespace app

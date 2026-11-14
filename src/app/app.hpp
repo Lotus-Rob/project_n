@@ -83,6 +83,10 @@ struct Options {
     /// Present as fast as the display allows, immediate before mailbox (`--unpaced`), so a measurement isn't capped by the
     /// display's rate.
     bool unpaced = false;
+    /// Drive the camera along the scripted path (CameraPath()) from CAMERA_PATH_DELAY_NS after the scene runs, with its
+    /// scripted Move, and quit after it (`--camera-path`), logging each segment's start and the Move's input latency, for the
+    /// measurements.
+    bool cameraPath = false;
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The player's settings, read from `settings.yaml`: the main thread's systems take theirs from it.
     core::Settings settings{};
@@ -168,6 +172,8 @@ private:
     void RunLogic(const std::stop_token& stop);
     void HandleInput(const platform::WindowState& state);
     void NoteDevice(const platform::InputEvent& input);
+    // Sends the held input when it changed: the player's Move, or `--camera-path`'s while it runs, timing its press.
+    void SendHeld();
     // Hands the camera's controls (drag, zoom, snap back) to it: true when `control` was one of them, pressed.
     [[nodiscard]] bool SteerCamera(const ControlEvent& control);
     void Select(const platform::WindowState& state, core::Vec2 position);
@@ -187,7 +193,9 @@ private:
     void ApplyEffects(const core::Effects& effects);
     void RepeatBurst(u64 nowNs);
     void CastOnTimer(u64 nowNs);
-    void MeasureLatency(const core::Snapshot& drawn);
+    // Moves `--camera-path` on to `nowNs`: starts it, logs each segment's start, and quits after it.
+    void FollowPath(u64 nowNs);
+    void MeasureLatency(const core::Snapshot& drawn, f64 alpha);
 
     // First, so it goes last: the logic thread registers with it, the renderer's loads run on it.
     core::Jobs m_jobs;
@@ -200,6 +208,7 @@ private:
     DamageNumbers m_numbers; // as m_options.settings say
     Hud m_hud;               // likewise
     CastLatency m_swordsLatency{ core::AbilityKind::FlyingSwords };
+    MoveLatency m_moveLatency{}; // `--camera-path`'s scripted press
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     core::GameHandover m_handover{};
     core::GameDisplay m_display{};
@@ -211,18 +220,21 @@ private:
     std::vector<platform::InputEvent> m_inputs{};
     Bindings m_bindings{};
     // NOLINTEND(readability-redundant-member-init)
-    CameraControl m_camera;                                 // starts each scene at m_options.zoom
-    Drag m_drag{};                                          // the camera's, by the pointer
-    FrameClock m_frameClock{};                              // what labels fade by
-    core::HeldInput m_held{};                               // as last sent
-    u64 m_cameraNs = 0;                                     // when the camera last moved on
-    std::optional<u64> m_cameraChange = std::nullopt;       // the scene change the camera last showed
-    u64 m_dataCheckNs = 0;                                  // when the data folder is looked at next
-    u64 m_loadStartNs = 0;                                  // when the scene loading began
-    std::optional<core::SceneId> m_loading = std::nullopt;  // the scene the renderer loads
-    std::optional<core::SceneId> m_reported = std::nullopt; // the scene the logic was told is resident, last
-    core::SceneReports m_sceneReports{};                    // the ways out and in reported played
-    std::optional<u64> m_numbersEpoch = std::nullopt;       // the timeline the damage numbers belong to
+    CameraControl m_camera;                                  // starts each scene at m_options.zoom
+    Drag m_drag{};                                           // the camera's, by the pointer
+    FrameClock m_frameClock{};                               // what labels fade by
+    core::HeldInput m_held{};                                // as last sent
+    u64 m_cameraNs = 0;                                      // when the camera last moved on
+    std::optional<u64> m_cameraChange = std::nullopt;        // the scene change the camera last showed
+    u64 m_dataCheckNs = 0;                                   // when the data folder is looked at next
+    u64 m_loadStartNs = 0;                                   // when the scene loading began
+    std::optional<core::SceneId> m_loading = std::nullopt;   // the scene the renderer loads
+    std::optional<core::SceneId> m_reported = std::nullopt;  // the scene the logic was told is resident, last
+    core::SceneReports m_sceneReports{};                     // the ways out and in reported played
+    std::optional<u64> m_numbersEpoch = std::nullopt;        // the timeline the damage numbers belong to
+    std::optional<u64> m_pathStartNs = std::nullopt;         // when `--camera-path` starts, once the scene runs
+    std::optional<f32> m_pathSeconds = std::nullopt;         // how far into it this frame is, while it runs
+    std::optional<std::size_t> m_pathSegment = std::nullopt; // the segment last logged
     DataWatch m_dataWatch{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     DeviceInUse m_device{};
     bool m_quit = false;
