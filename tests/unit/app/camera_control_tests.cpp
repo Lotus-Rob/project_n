@@ -3,6 +3,7 @@
 #include "app/view.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
+#include "game/scenes/world.hpp"
 #include "gfx/camera.hpp"
 
 #include <doctest/doctest.h>
@@ -450,6 +451,183 @@ TEST_CASE("the camera holds still while a calendar step's transition shows, and 
     frame.dragFrom = std::nullopt;
     control.Update(frame);
     CHECK(control.Camera().zoom == doctest::Approx(gfx::ZoomedBy(1.0F, 1.0F)));
+}
+
+TEST_CASE("the camera path gives each segment's camera at its times") {
+    constexpr core::Vec2 MIDWAY{ .x = 5'200.0F, .y = -2'900.0F }; // the player halfway along its walk
+    constexpr core::Vec2 ELSEWHERE{ .x = 6'000.0F, .y = 0.0F };   // where the player is once the camera stops following
+    constexpr f32 SCREEN = HEIGHT;                                // at zoom 1 a pixel is a world unit
+    constexpr core::Vec2 PANNED{ .x = WALKED.x + (3.0F * SCREEN), .y = WALKED.y };
+    constexpr f32 LABEL_ZOOM = 0.6F;
+    struct Sample {
+        const char* why = "";
+        f32 seconds = 0.0F;
+        core::Vec2 followed{};
+        core::Vec2 centre{};
+        f32 zoom = 1.0F;
+        bool free = false;
+    };
+    const std::array samples{
+        Sample{
+            .why = "follow: its start", .seconds = 0.0F, .followed = PLAYER, .centre = PLAYER, .zoom = 1.0F, .free = false },
+        Sample{
+            .why = "follow: its middle", .seconds = 2.0F, .followed = MIDWAY, .centre = MIDWAY, .zoom = 1.0F, .free = false },
+        Sample{ .why = "follow: its end", .seconds = 4.0F, .followed = WALKED, .centre = WALKED, .zoom = 1.0F, .free = false },
+        Sample{ .why = "pan: a tenth in, from where the follow ended",
+                .seconds = 4.4F,
+                .followed = ELSEWHERE,
+                .centre = WALKED + (RIGHT * (0.3F * SCREEN)),
+                .zoom = 1.0F,
+                .free = true },
+        Sample{ .why = "pan: its middle, halfway across 3 screens",
+                .seconds = 6.0F,
+                .followed = ELSEWHERE,
+                .centre = WALKED + (RIGHT * (1.5F * SCREEN)),
+                .zoom = 1.0F,
+                .free = true },
+        Sample{ .why = "pan: its end, 3 screens across",
+                .seconds = 8.0F,
+                .followed = ELSEWHERE,
+                .centre = PANNED,
+                .zoom = 1.0F,
+                .free = true },
+        Sample{ .why = "zoom: a quarter in, zooming in",
+                .seconds = 9.0F,
+                .followed = ELSEWHERE,
+                .centre = PANNED,
+                .zoom = std::numbers::sqrt2_v<f32>,
+                .free = true },
+        Sample{ .why = "zoom: its middle, the closest",
+                .seconds = 10.0F,
+                .followed = ELSEWHERE,
+                .centre = PANNED,
+                .zoom = gfx::MAX_ZOOM,
+                .free = true },
+        Sample{ .why = "zoom: three quarters in, zooming out",
+                .seconds = 11.0F,
+                .followed = ELSEWHERE,
+                .centre = PANNED,
+                .zoom = std::numbers::sqrt2_v<f32> / 2.0F,
+                .free = true },
+        Sample{ .why = "zoom: its end, the farthest",
+                .seconds = 12.0F,
+                .followed = ELSEWHERE,
+                .centre = PANNED,
+                .zoom = gfx::MIN_ZOOM,
+                .free = true },
+        Sample{ .why = "widest view: its start, over the busiest region",
+                .seconds = 12.5F,
+                .followed = ELSEWHERE,
+                .centre = game::WORLD_BUSIEST,
+                .zoom = gfx::MIN_ZOOM,
+                .free = true },
+        Sample{ .why = "widest view: its middle",
+                .seconds = 15.0F,
+                .followed = ELSEWHERE,
+                .centre = game::WORLD_BUSIEST,
+                .zoom = gfx::MIN_ZOOM,
+                .free = true },
+        Sample{ .why = "widest view: its end",
+                .seconds = 18.0F,
+                .followed = ELSEWHERE,
+                .centre = game::WORLD_BUSIEST,
+                .zoom = gfx::MIN_ZOOM,
+                .free = true },
+        Sample{ .why = "labels: its start",
+                .seconds = 18.5F,
+                .followed = ELSEWHERE,
+                .centre = game::WORLD_BUSIEST,
+                .zoom = LABEL_ZOOM,
+                .free = true },
+        Sample{ .why = "labels: its middle",
+                .seconds = 20.0F,
+                .followed = ELSEWHERE,
+                .centre = game::WORLD_BUSIEST,
+                .zoom = LABEL_ZOOM,
+                .free = true },
+        Sample{ .why = "labels: its end, the path's last moment",
+                .seconds = 22.0F,
+                .followed = ELSEWHERE,
+                .centre = game::WORLD_BUSIEST,
+                .zoom = LABEL_ZOOM,
+                .free = true },
+    };
+    app::CameraControl control{ 1.0F };
+    for (const Sample& sample : samples) {
+        CAPTURE(sample.why);
+        app::CameraInput frame = Frame(CameraKind::Roam);
+        frame.followed = sample.followed;
+        frame.path = sample.seconds;
+        frame.pan = RIGHT; // the player's pan: the path replaces it
+        control.Update(frame);
+        CheckAt(control, sample.centre);
+        CHECK(control.Camera().zoom == doctest::Approx(sample.zoom));
+        CHECK(control.Free() == sample.free);
+    }
+}
+
+TEST_CASE("the camera path only zooms a combat scene, which keeps following") {
+    constexpr f32 ZOOM_MIDDLE = 10.0F; // the zoom segment's middle: the closest zoom
+    constexpr f32 WIDEST = 15.0F;      // the widest view, centred on the busiest region elsewhere
+    app::CameraControl control{ 1.0F };
+    app::CameraInput frame = Frame(CameraKind::Follow);
+    frame.followed = PLAYER;
+    frame.path = ZOOM_MIDDLE;
+    control.Update(frame);
+    CheckAt(control, PLAYER);
+    CHECK(control.Camera().zoom == doctest::Approx(gfx::MAX_ZOOM));
+    frame.followed = WALKED;
+    frame.path = WIDEST;
+    control.Update(frame);
+    CheckAt(control, WALKED);
+    CHECK(control.Camera().zoom == doctest::Approx(gfx::MIN_ZOOM));
+    CHECK_FALSE(control.Free());
+}
+
+TEST_CASE("a still frame holds the camera path's pan and zoom, and still follows") {
+    constexpr f32 FOLLOWING = 2.0F;
+    constexpr f32 PANNING = 6.0F;
+    constexpr f32 ZOOM_MIDDLE = 10.0F;
+    constexpr core::Vec2 ELSEWHERE{ .x = 6'000.0F, .y = 0.0F };
+    app::CameraControl control{ 1.0F };
+    app::CameraInput frame = Frame(CameraKind::Roam);
+    frame.followed = PLAYER;
+    frame.path = 0.0F;
+    control.Update(frame);
+    frame.still = true;
+    frame.followed = WALKED;
+    frame.path = FOLLOWING;
+    control.Update(frame);
+    CheckAt(control, WALKED); // following goes on
+    frame.followed = ELSEWHERE;
+    frame.path = PANNING;
+    control.Update(frame);
+    CheckAt(control, WALKED); // no pan
+    frame.path = ZOOM_MIDDLE;
+    control.Update(frame);
+    CHECK(control.Camera().zoom == 1.0F); // no zoom
+    frame.still = false;
+    control.Update(frame);
+    CheckAt(control, WALKED); // the zoom segment holds where the camera was as it began
+    CHECK(control.Camera().zoom == doctest::Approx(gfx::MAX_ZOOM));
+}
+
+TEST_CASE("a scene change during the camera path's pan pans on from the new scene's start") {
+    constexpr f32 FOLLOW_END = 4.0F;
+    constexpr f32 PAN_MIDDLE = 6.0F;
+    constexpr f32 HALF_PAN = 1.5F * HEIGHT; // halfway across 3 screens, at zoom 1
+    app::CameraControl control{ 1.0F };
+    app::CameraInput frame = Frame(CameraKind::Roam);
+    frame.followed = PLAYER;
+    frame.path = FOLLOW_END;
+    control.Update(frame);
+    frame.path = PAN_MIDDLE;
+    control.Update(frame);
+    CheckAt(control, PLAYER + (RIGHT * HALF_PAN));
+    frame.change = 2;
+    frame.followed = WALKED;
+    control.Update(frame);
+    CheckAt(control, WALKED + (RIGHT * HALF_PAN));
 }
 
 } // namespace

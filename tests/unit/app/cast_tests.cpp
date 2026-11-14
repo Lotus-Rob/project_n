@@ -234,6 +234,37 @@ core::Abilities Costed() {
 
 constexpr u64 NOW_TICK = 500;
 
+// The player standing at HERE, and a tick into a step from there towards THERE.
+constexpr core::Follow STANDING{ .previous = HERE, .current = HERE };
+constexpr core::Follow STEPPING{ .previous = HERE, .current = THERE };
+
+TEST_CASE("the move latency runs from a press while standing to the first frame drawing the step") {
+    constexpr u64 STILL_NS = 15'000'000;
+    constexpr u64 AGAIN_NS = 50'000'000;
+    app::MoveLatency latency;
+    latency.Pressed(PRESSED_NS, STANDING);
+    const std::optional<u64> standing = latency.Drawn(STANDING, 0.5, STILL_NS); // not stepped yet
+    CHECK_FALSE(standing.has_value());
+    const std::optional<u64> atStart = latency.Drawn(STEPPING, 0.0, LATER_NS); // the step's snapshot, drawn at its start
+    CHECK_FALSE(atStart.has_value());
+    const std::optional<u64> stepped = latency.Drawn(STEPPING, 0.25, LATEST_NS);
+    CHECK(stepped == LATEST_NS - PRESSED_NS);
+    const std::optional<u64> after = latency.Drawn(STEPPING, 0.5, AGAIN_NS); // the press was answered
+    CHECK_FALSE(after.has_value());
+}
+
+TEST_CASE("a press while walking, or one forgotten for a pause, gives no move latency") {
+    app::MoveLatency walking;
+    walking.Pressed(PRESSED_NS, STEPPING); // already under way: no answer to the press
+    const std::optional<u64> walked = walking.Drawn(STEPPING, 0.5, LATEST_NS);
+    CHECK_FALSE(walked.has_value());
+    app::MoveLatency paused;
+    paused.Pressed(PRESSED_NS, STANDING);
+    paused.Forget();
+    const std::optional<u64> resumed = paused.Drawn(STEPPING, 0.5, LATEST_NS);
+    CHECK_FALSE(resumed.has_value());
+}
+
 TEST_CASE("the timed cast sends the swords at the point when they are ready and the Qi covers them") {
     const std::optional<core::Action> cast = app::TimedCast(CasterWith(SWORDS_COST), Costed(), NOW_TICK, HERE);
     REQUIRE(cast.has_value());

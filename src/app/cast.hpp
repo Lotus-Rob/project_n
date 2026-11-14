@@ -5,7 +5,8 @@
 /// Casting (the phase 6 chunk 4 spec): which controls cast which slot, and when a press is a cast. Every press is its
 /// own Cast action, never merged, repeated while held or debounced here: the simulation decides what a press does,
 /// so a combo needs no change to the action or to this module. Also the casts `--cast-swords` sends by itself for a
-/// profile run, and the time from a press to the first frame drawing its volley. Pure: tested with constructed controls.
+/// profile run, the time from a press to the first frame drawing its volley, and likewise from a Move press to the first
+/// frame drawing the player walking. Pure: tested with constructed controls.
 
 #include "app/bindings.hpp"
 #include "core/abilities.hpp"
@@ -75,6 +76,27 @@ private:
     std::vector<u64> m_drawn{};   // the uses of the ability's volleys the last frame drew
     std::vector<u64> m_drawing{}; // this frame's, kept to reuse its room
     // NOLINTEND(readability-redundant-member-init)
+};
+
+/// The time from a Move press to the first frame that draws the player walking: the input latency of a step as the
+/// player sees it (`--camera-path`'s scripted press, the phase 6 chunk 5a spec's measurement).
+class MoveLatency {
+public:
+    /// A Move press at `nowNs` (platform::NowNs()), the player last drawn at `follow`: timed only when the player stands
+    /// (its foot where it was a tick before), so a step already under way never passes for the press's answer. It
+    /// replaces any press still waiting.
+    void Pressed(u64 nowNs, const core::Follow& follow);
+
+    /// Drops the press waiting, if any: the game paused, so its first drawn step would count the pause.
+    void Forget();
+
+    /// The frame drawn at `nowNs` draws the player at `follow` interpolated by `alpha`: when a press waits and the foot
+    /// drawn has left where it stood, the time since the press, which no longer waits; else none.
+    [[nodiscard]] std::optional<u64> Drawn(const core::Follow& follow, f64 alpha, u64 nowNs);
+
+private:
+    std::optional<u64> m_pressedNs = std::nullopt;
+    core::Vec2 m_stood{}; // where the player stood at the press
 };
 
 } // namespace app

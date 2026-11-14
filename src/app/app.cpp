@@ -1,5 +1,6 @@
 #include "app/app.hpp"
 
+#include "app/camera_path.hpp"
 #include "app/cast.hpp"
 #include "app/damage_numbers.hpp"
 #include "app/game.hpp"
@@ -228,6 +229,7 @@ i32 App::Run() {
     for (;;) {
         PN_PROFILE_ZONE();
         const platform::WindowState& state = m_window.Poll(core::TICK_NS, m_inputs);
+        FollowPath(platform::NowNs());
         HandleInput(state);
         if (state.quitRequested || m_quit) {
             PN_LOG_DEBUG("quit requested");
@@ -284,11 +286,57 @@ void App::CastOnTimer(u64 nowNs) {
     m_nextCastNs = nowNs + (m_options.data.abilities.Of(generator).cooldownTicks * core::TICK_NS);
 }
 
-void App::MeasureLatency(const core::Snapshot& drawn) {
+void App::FollowPath(u64 nowNs) {
     PN_PROFILE_ZONE();
-    if (const std::optional<u64> latency = m_swordsLatency.Drawn(drawn.volleys, platform::NowNs())) {
+    m_pathSeconds.reset();
+    if (!m_options.cameraPath) {
+        return;
+    }
+    if (const core::Snapshot* drawn = m_display.Drawn();
+        !m_pathStartNs && drawn != nullptr && drawn->sceneChange.stage == core::SceneStage::Running) {
+        m_pathStartNs = nowNs + CAMERA_PATH_DELAY_NS;
+    }
+    if (!m_pathStartNs || nowNs < *m_pathStartNs) {
+        return;
+    }
+    const f32 seconds = static_cast<f32>(nowNs - *m_pathStartNs) / static_cast<f32>(core::NS_PER_SECOND);
+    if (CameraPathOver(seconds)) {
+        if (!m_quit) {
+            PN_LOG_INFO("camera path finished: quitting");
+        }
+        m_quit = true;
+        return;
+    }
+    m_pathSeconds = seconds;
+    const std::optional<std::size_t> segment = CameraPathSegment(seconds);
+    if (segment && segment != m_pathSegment) {
+        m_pathSegment = segment;
+        const std::string started = std::format("camera path: {}", CameraPath()[*segment].name);
+        PN_LOG_INFO("{}", started);
+        PN_PROFILE_MESSAGE(started);
+        if (m_paused) {
+            PN_LOG_WARNING(
+                "{} with the game paused (the window is unfocused or minimised): it measures no running game", started
+            );
+        }
+    }
+}
+
+void App::MeasureLatency(const core::Snapshot& drawn, f64 alpha) {
+    PN_PROFILE_ZONE();
+    const u64 nowNs = platform::NowNs();
+    if (const std::optional<u64> latency = m_swordsLatency.Drawn(drawn.volleys, nowNs)) {
         PN_LOG_DEBUG(
             "swords first drawn {:.1f} ms after the press", static_cast<f64>(*latency) / static_cast<f64>(core::NS_PER_MS)
+        );
+    }
+    if (!drawn.follow) {
+        return;
+    }
+    if (const std::optional<u64> latency = m_moveLatency.Drawn(*drawn.follow, alpha, nowNs)) {
+        PN_LOG_INFO(
+            "input latency: {:.1f} ms from a Move press to its first drawn frame",
+            static_cast<f64>(*latency) / static_cast<f64>(core::NS_PER_MS)
         );
     }
 }
@@ -354,10 +402,15 @@ void App::HandleInput(const platform::WindowState& state) {
         m_paused = !m_paused;
         PN_LOG_INFO("{}: the window is {}", m_paused ? "paused" : "resumed", m_paused ? "unfocused or minimised" : "back");
         m_handover.SendInput({ .kind = m_paused ? core::ActionKind::Pause : core::ActionKind::Resume });
+        if (m_paused && m_pathSeconds) {
+            PN_LOG_WARNING("the game paused during the camera path: from here it measures no running game");
+        }
     }
     if (m_paused) {
-        // Maybe while nothing is drawn (minimised): the cursor's return across the edge mustn't pan.
+        // Maybe while nothing is drawn (minimised): the cursor's return across the edge mustn't pan. A Move press
+        // waiting for its first drawn step would count the pause.
         m_camera.LoseFocus();
+        m_moveLatency.Forget();
     }
     if (m_device.TakeCursor(m_window.Cursor())) {
         PN_LOG_INFO("prompts for {}", DeviceName(m_device.Used(), m_device.Family()));
@@ -395,11 +448,23 @@ void App::HandleInput(const platform::WindowState& state) {
     if (m_paused) {
         m_drag.End(); // after this frame's presses too: a button's release may never come while paused
     }
-    const core::HeldInput held{ .move = m_bindings.Move() };
-    if (held != m_held) {
-        m_held = held;
-        m_handover.SendHeld(held);
+    SendHeld();
+}
+
+void App::SendHeld() {
+    PN_PROFILE_ZONE();
+    // While `--camera-path` runs, its scripted Move stands in for the player's.
+    const core::HeldInput held{ .move = m_pathSeconds ? CameraPathMove(*m_pathSeconds) : m_bindings.Move() };
+    if (held == m_held) {
+        return;
     }
+    const core::Snapshot* drawn = m_display.Drawn();
+    const auto pressed = [](core::Vec2 move) { return (move.x * move.x) + (move.y * move.y) > 0.0F; };
+    if (m_pathSeconds && pressed(held.move) && !pressed(m_held.move) && drawn != nullptr && drawn->follow) {
+        m_moveLatency.Pressed(platform::NowNs(), *drawn->follow);
+    }
+    m_held = held;
+    m_handover.SendHeld(held);
 }
 
 bool App::SteerCamera(const ControlEvent& control) {
@@ -497,6 +562,7 @@ void App::MoveCamera(const platform::WindowState& state, const core::Snapshot& d
             .height = state.height,
             .seconds = seconds,
             .still = HoldsCamera(&drawn),
+            .path = m_pathSeconds,
         }
     );
     if (const u64 change = core::ShownChange(drawn.sceneChange); change != m_cameraChange) {
@@ -590,7 +656,7 @@ bool App::Present(const platform::WindowState& state) {
                 FrameView(m_camera.Camera(), alpha, Hovered(state, *drawn, alpha), m_frameClock.Advance(platform::NowNs()));
             view.showcase = m_showcase;
             m_renderer.Draw(*drawn, view, m_jobs, m_numberTexts, { .lines = m_hudLines, .bars = m_hudBars });
-            MeasureLatency(*drawn);
+            MeasureLatency(*drawn, alpha);
             PN_PROFILE_FRAME();
         }
     );

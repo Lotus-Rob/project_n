@@ -1,10 +1,16 @@
 #include "app/cast.hpp"
 
+#include "app/view.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 
 namespace app {
 
 namespace {
+
+f32 DistanceSquared(core::Vec2 first, core::Vec2 second) {
+    const core::Vec2 apart = second - first;
+    return (apart.x * apart.x) + (apart.y * apart.y);
+}
 
 struct SlotControl {
     Control control = Control::Primary;
@@ -89,6 +95,28 @@ std::optional<u64> CastLatency::Drawn(std::span<const core::VolleyView> volleys,
     const u64 pressed = m_presses.front();
     m_presses.erase(m_presses.begin());
     return nowNs - pressed;
+}
+
+void MoveLatency::Pressed(u64 nowNs, const core::Follow& follow) {
+    if (DistanceSquared(follow.previous, follow.current) > 0.0F) {
+        m_pressedNs.reset();
+        return;
+    }
+    m_pressedNs = nowNs;
+    m_stood = follow.current;
+}
+
+void MoveLatency::Forget() {
+    m_pressedNs.reset();
+}
+
+std::optional<u64> MoveLatency::Drawn(const core::Follow& follow, f64 alpha, u64 nowNs) {
+    const std::optional<u64> pressedNs = m_pressedNs;
+    if (!pressedNs || DistanceSquared(m_stood, FollowedCentre(follow, alpha)) <= 0.0F) {
+        return std::nullopt;
+    }
+    m_pressedNs.reset();
+    return nowNs - *pressedNs;
 }
 
 } // namespace app
