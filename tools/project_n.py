@@ -1762,9 +1762,13 @@ def cmd_artifact(args):
         raise Fail("assets/ holds Git LFS pointers, not the files: run `pixi run project_n setup`\n" + "\n".join(pointers))
     if "GITHUB_OUTPUT" in os.environ and not IN_CONTAINER:
         write_ci_artifact_name(args.preset)
+    reuse = args.reuse_build
     if not IN_CONTAINER and (PRESETS[args.preset]["image"] or needs_container(args.preset)):
-        return reenter(args.preset, ["artifact", "--preset", args.preset])
-    shutil.rmtree(ROOT / build_dir(args.preset, "release"), ignore_errors=True)  # clean room: nothing from earlier builds
+        return reenter(args.preset, ["artifact", "--preset", args.preset, *(["--reuse-build"] if reuse else [])])
+    if reuse and cold_ref():
+        print(f"artifact: CI builds {os.environ['GITHUB_REF']} from source, so the clean room rebuilds (--reuse-build refused)")
+    if not reuse or cold_ref():
+        shutil.rmtree(ROOT / build_dir(args.preset, "release"), ignore_errors=True)  # clean room: nothing from earlier builds
     bdir = build(args.preset, "release")
     run(["xmake", "test", "--output-on-failure"], env=xmake_env(bdir))
     if PRESETS[args.preset]["plat"] == "linux":
@@ -2278,7 +2282,9 @@ def make_parser():
     p.add_argument("args", nargs=argparse.REMAINDER, help="-- <game arguments>, e.g. -- --stress")
     p = add("check", cmd_check, "the merge gate: commits, format and lint of the diff, build and test every preset", container=True)
     p.add_argument("--sanitizers", action="store_true", help="also test every preset under each supported sanitizer")
-    add("artifact", cmd_artifact, "clean-room release build in the preset's container, into dist/", preset="required")
+    p = add("artifact", cmd_artifact, "clean-room release build in the preset's container, into dist/", preset="required")
+    p.add_argument("--reuse-build", action="store_true",
+                   help="package the release build an earlier `test --mode release` left instead of a clean room; refused on CI's main and tags, which build from source")
     p = add("release", cmd_release, "bump the version with git-cliff, write CHANGELOG.md and commit it on a release/ branch")
     group = p.add_mutually_exclusive_group()
     group.add_argument("--dry-run", action="store_true")
