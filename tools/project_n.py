@@ -1381,7 +1381,8 @@ ATLAS_HEADER = "src/core/generated/atlas.hpp"  # the sprite names as SpriteId, w
 ATLAS_HASHES = "art/atlas.sha256"  # the inputs and outputs with their hashes: `lint` finds a stale or edited manifest or header
 ATLAS_PAGE = 2048  # every page of the array is this square
 ATLAS_MIPS = 5  # mip levels the game generates for the array
-ATLAS_GUTTER = 32  # empty pixels between sprites, each owning half, filled with its edges at load: 2 x 16 for two distance fields' reach (core::FIELD_REACH_TEXELS), and at least 2^(ATLAS_MIPS - 1) = 16 so neighbours don't bleed in down to the last mip
+ATLAS_GUTTER = 32  # the least empty pixels between sprites, each owning half, filled with its edges at load: 2 x 16 for two distance fields' reach (core::FIELD_REACH_TEXELS), and at least 2^(ATLAS_MIPS - 1) = 16 so neighbours don't bleed in down to the last mip
+ATLAS_ALIGN = 1 << (ATLAS_MIPS - 1)  # every region's x and y are a multiple of the last mip's texel, so each mip level's texels fall on a sprite the same way wherever it lands: a sprite that moves (another resized or reordered before it) keeps its mips
 
 
 def png_size(path):
@@ -1392,25 +1393,31 @@ def png_size(path):
     return int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
 
 
-def pack_atlas(sizes, page=ATLAS_PAGE, gutter=ATLAS_GUTTER):
-    """Shelf packing, tallest first: (page, x, y) for each (width, height), in the order given. Deterministic."""
-    if any(w + 2 * gutter > page or h + 2 * gutter > page for w, h in sizes):
+def pack_atlas(sizes, page=ATLAS_PAGE, gutter=ATLAS_GUTTER, align=ATLAS_ALIGN):
+    """Shelf packing in the order given: (page, x, y) for each (width, height), every x and y a multiple of `align` and
+    at least `gutter` from the page's edge and every other sprite. Each place depends only on the sprites before it, so
+    a sprite appended to the list moves no other (art/sprites.toml only appends). Deterministic."""
+    def aligned(v):
+        return -(-v // align) * align
+    start = aligned(gutter)
+    if any(start + w + gutter > page or start + h + gutter > page for w, h in sizes):
         raise Fail(f"a sprite is larger than a {page}-pixel page less its {gutter}-pixel gutters")
-    pages = []  # per page: [the open shelf's top, its height, the next free x]
-    places = [None] * len(sizes)
-    for i in sorted(range(len(sizes)), key=lambda i: (-sizes[i][1], -sizes[i][0], i)):
-        w, h = sizes[i]
+    pages = []  # per page: [the open shelf's top, its height so far, the next free x]
+    places = []
+    for w, h in sizes:
         for p, shelf in enumerate(pages):
-            if shelf[2] + w + gutter <= page and shelf[0] + h + gutter <= page and h <= shelf[1]:
-                break
-            if shelf[0] + shelf[1] + gutter + h + gutter <= page:  # open a new shelf under the full one
-                shelf[:] = [shelf[0] + shelf[1] + gutter, h, gutter]
+            if shelf[2] + w + gutter <= page and shelf[0] + h + gutter <= page:
+                break  # on the open shelf, which grows to the tallest sprite on it
+            below = aligned(shelf[0] + shelf[1] + gutter)
+            if below + h + gutter <= page:  # open a new shelf under the full one
+                shelf[:] = [below, 0, start]
                 break
         else:
-            pages.append([gutter, h, gutter])
+            pages.append([start, 0, start])
             p, shelf = len(pages) - 1, pages[-1]
-        places[i] = (p, shelf[2], shelf[0])
-        shelf[2] += w + gutter
+        places.append((p, shelf[2], shelf[0]))
+        shelf[1] = max(shelf[1], h)
+        shelf[2] = aligned(shelf[2] + w + gutter)
     return places
 
 

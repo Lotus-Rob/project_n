@@ -1954,21 +1954,44 @@ def png_header(width, height):
 
 
 class AtlasTest(unittest.TestCase):
-    def test_sprites_keep_their_gutters_and_never_overlap(self):
-        sizes = [(100, 40), (30, 60), (90, 50), (60, 60), (20, 10)]
-        places = project_n.pack_atlas(sizes, page=200, gutter=8)
+    def assert_gutters_hold(self, sizes, places, page, gutter):
         rects = [(p, x, y, x + w, y + h) for (p, x, y), (w, h) in zip(places, sizes)]
         for p, x0, y0, x1, y1 in rects:
-            self.assertTrue(x0 >= 8 and y0 >= 8 and x1 <= 192 and y1 <= 192, (x0, y0, x1, y1))
+            self.assertTrue(x0 >= gutter and y0 >= gutter and x1 <= page - gutter and y1 <= page - gutter, (x0, y0, x1, y1))
         for i, a in enumerate(rects):
             for b in rects[i + 1:]:
-                apart = a[0] != b[0] or a[3] + 8 <= b[1] or b[3] + 8 <= a[1] or a[4] + 8 <= b[2] or b[4] + 8 <= a[2]
+                apart = (a[0] != b[0] or a[3] + gutter <= b[1] or b[3] + gutter <= a[1] or a[4] + gutter <= b[2]
+                         or b[4] + gutter <= a[2])
                 self.assertTrue(apart, (a, b))
+
+    def test_sprites_keep_their_gutters_and_never_overlap(self):
+        sizes = [(100, 40), (30, 60), (90, 50), (60, 60), (20, 10)]
+        self.assert_gutters_hold(sizes, project_n.pack_atlas(sizes, page=200, gutter=8, align=1), 200, 8)
+
+    def test_every_region_starts_on_the_last_mips_texel(self):
+        """So each mip level's texels fall on a sprite the same way wherever it lands, and a re-pack draws it as before."""
+        sizes = [(1920, 1080), (256, 256), (180, 128), (92, 68), (33, 17), (10, 40), (48, 64), (8, 8)]
+        places = project_n.pack_atlas(sizes)
+        align = 1 << (project_n.ATLAS_MIPS - 1)
+        for (_, x, y), size in zip(places, sizes):
+            self.assertEqual((x % align, y % align), (0, 0), (size, x, y))
+        self.assert_gutters_hold(sizes, places, project_n.ATLAS_PAGE, project_n.ATLAS_GUTTER)
+
+    def test_appending_a_sprite_moves_no_earlier_one(self):
+        """Sprites are appended to art/sprites.toml, so the packer places them in list order: an earlier one never
+        moves, and its pixels draw as before. The appended ones: a taller one than the open shelf, a small one and one
+        that needs a new page."""
+        sizes = [(1920, 1080), (180, 128), (92, 68), (240, 380), (256, 256), (48, 64)]
+        places = project_n.pack_atlas(sizes)
+        for added in ([(300, 420)], [(300, 420), (8, 8)], [(300, 420), (8, 8), (1900, 1900)]):
+            grown = project_n.pack_atlas(sizes + added)
+            self.assertEqual(grown[:len(sizes)], places, added)
+            self.assert_gutters_hold(sizes + added, grown, project_n.ATLAS_PAGE, project_n.ATLAS_GUTTER)
 
     def test_the_packer_keeps_a_32_texel_gutter(self):
         (_, x0, y0), (_, x1, y1) = project_n.pack_atlas([(10, 40), (24, 48)])
         self.assertTrue(min(x0, y0, x1, y1) >= 32, (x0, y0, x1, y1))
-        first, second = sorted([(x0, 10), (x1, 24)])  # the packer places the taller first
+        first, second = sorted([(x0, 10), (x1, 24)])  # left to right
         self.assertTrue(second[0] >= first[0] + first[1] + 32, (x0, x1))
 
     def test_the_manifest_states_its_gutter(self):
