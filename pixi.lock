@@ -370,6 +370,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pugixml-1.15-h3f63f65_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/tbb-2023.1.0-haa8c3ee_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/tracy-profiler-capture-0.14.1-h3e73199_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/tracy-profiler-csvexport-0.14.1-h3e73199_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/tracy-profiler-gui-0.14.1-h4eb8b74_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/wayland-1.26.0-hc1c935e_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/xkeyboard-config-2.48-hebe6cf0_1.conda
@@ -413,6 +414,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/pugixml-1.15-hd3d436d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tbb-2023.1.0-h81c76ee_2.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tracy-profiler-capture-0.14.1-h06b183b_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tracy-profiler-csvexport-0.14.1-h06b183b_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tracy-profiler-gui-0.14.1-hbeebd52_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
       win-64:
@@ -437,6 +439,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/pugixml-1.15-h372dad0_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/tbb-2023.1.0-h272cf33_2.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/tracy-profiler-capture-0.14.1-h057d317_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/win-64/tracy-profiler-csvexport-0.14.1-h057d317_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/tracy-profiler-gui-0.14.1-h7462320_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/ucrt-10.0.26100.0-h57928b3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/vc-14.5-ha367084_42.conda
@@ -2323,6 +2326,29 @@ packages:
   run_exports: {}
   size: 809445
   timestamp: 1787909925817
+- conda: https://conda.anaconda.org/conda-forge/linux-64/tracy-profiler-csvexport-0.14.1-h3e73199_0.conda
+  sha256: ddddecb33edbcb5800b69e1e70ec221ac0f7ea433c1315870621ff080112de35
+  md5: 7b8d4dafe121313b54ec8e0406a3c7d3
+  depends:
+  - libgcc >=15
+  - libstdcxx >=15
+  - __glibc >=2.17,<3.0.a0
+  - dbus >=1.16.2,<2.0a0
+  - xorg-libx11 >=1.8.13,<2.0a0
+  - libzlib >=1.3.2,<2.0a0
+  - glfw >=3.5.1,<4.0a0
+  - libfreetype >=2.14.3
+  - libfreetype6 >=2.14.3
+  - pugixml >=1.15,<1.16.0a0
+  - tbb >=2023.0.0
+  - libcapstone >=6.0.0a.4,<6.0.1a
+  - libcurl >=8.21.0,<9.0a0
+  - libegl >=1.7.0,<2.0a0
+  license: BSD-3-Clause
+  license_family: BSD
+  run_exports: {}
+  size: 570716
+  timestamp: 1787909925817
 - conda: https://conda.anaconda.org/conda-forge/linux-64/tracy-profiler-gui-0.14.1-h4eb8b74_0.conda
   sha256: 0dd31ed3d546c50db384b327a0ab9246cf33e7e0f88262b37ac9d95a5e8cd0ef
   md5: aa47e40fc786cb86b89b0beda620fff7
@@ -3941,6 +3967,25 @@ packages:
   run_exports: {}
   size: 567013
   timestamp: 1787909948517
+- conda: https://conda.anaconda.org/conda-forge/osx-arm64/tracy-profiler-csvexport-0.14.1-h06b183b_0.conda
+  sha256: 7c667fc6b1c04efeef4bacb6451bdf080153f4830975be0c6fd36dd3bd2bfa19
+  md5: 578770cb2379dfc100be25bc529b9e09
+  depends:
+  - __osx >=11.0
+  - libcxx >=21
+  - libzlib >=1.3.2,<2.0a0
+  - libcurl >=8.21.0,<9.0a0
+  - libfreetype >=2.14.3
+  - libfreetype6 >=2.14.3
+  - tbb >=2023.0.0
+  - pugixml >=1.15,<1.16.0a0
+  - libcapstone >=6.0.0a.4,<6.0.1a
+  - glfw >=3.5.1,<4.0a0
+  license: BSD-3-Clause
+  license_family: BSD
+  run_exports: {}
+  size: 459155
+  timestamp: 1787909948517
 - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tracy-profiler-gui-0.14.1-hbeebd52_0.conda
   sha256: bbe45cf0c2fbe6d32df04f5b9958fcec34e34b30196a171f64c5222716b64c7a
   md5: b46b50d3741e6c6e3dce0dc892fc4be3
@@ -4684,6 +4729,25 @@ packages:
   license_family: BSD
   run_exports: {}
   size: 2132742
+  timestamp: 1787909939528
+- conda: https://conda.anaconda.org/conda-forge/win-64/tracy-profiler-csvexport-0.14.1-h057d317_0.conda
+  sha256: 0ea4d57e9edcd23ae5bb0aec1bb343352086713df45f34e6d46016d73bc02634
+  md5: 0da5e7b5b43f9ef6b83a253d6bae8179
+  depends:
+  - vc >=14.3,<15
+  - vc14_runtime >=14.44.35208
+  - ucrt >=10.0.20348.0
+  - tbb >=2023.0.0
+  - libcurl >=8.21.0,<9.0a0
+  - libzlib >=1.3.2,<2.0a0
+  - pugixml >=1.15,<1.16.0a0
+  - libfreetype >=2.14.3
+  - libfreetype6 >=2.14.3
+  - glfw >=3.5.1,<4.0a0
+  license: BSD-3-Clause
+  license_family: BSD
+  run_exports: {}
+  size: 1034430
   timestamp: 1787909939528
 - conda: https://conda.anaconda.org/conda-forge/win-64/tracy-profiler-gui-0.14.1-h7462320_0.conda
   sha256: d9040a084a08ddd7f5231b9741e38aba446fd567fe7237d005e77c2549c35907

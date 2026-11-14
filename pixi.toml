@@ -122,6 +122,7 @@ channels = ["conda-forge", "conda-forge/label/capstone_dev"]
 [feature.profiler.dependencies]
 tracy-profiler-gui = "==0.14.1"
 tracy-profiler-capture = "==0.14.1"
+tracy-profiler-csvexport = "==0.14.1"
 
 # Its Linux and macOS builds need libcapstone 6, published only under this label (Windows' doesn't).
 [feature.profiler.target.linux-64.dependencies]
