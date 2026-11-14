@@ -1,7 +1,7 @@
 #pragma once
 
 /// @file
-/// The shipped atlas manifest for tests that build an arena (design doc 0002.3.1 §6): their target
+/// The shipped atlas manifest for tests that build a host (design doc 0002.3.1 §6): their target
 /// copies assets/ next to it (the `assets` rule) and links data and platform.
 
 #include "core/manifest.hpp"
