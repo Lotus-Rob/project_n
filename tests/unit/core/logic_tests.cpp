@@ -24,9 +24,9 @@ enum class Call : u8 {
     Publish,
 };
 
-// Records the ticks it ran and its publishes, and publishes one instance per tick so far, following with the camera when
-// told to; a CycleScene asks for the scene `asks` names (OTHER_SCENE by default), and a load for the scene it saved,
-// which it enters when told.
+// Records the ticks it ran and its publishes (with the view each was given), and publishes one instance per tick so far,
+// following with the camera when told to; a CycleScene asks for the scene `asks` names (OTHER_SCENE by default), and a load for
+// the scene it saved, which it enters when told.
 class Recorder final : public core::Simulation {
 public:
     void Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) override {
@@ -88,8 +88,9 @@ public:
         loaded.reset();
         requested.reset();
     }
-    void Publish(core::Snapshot& snapshot, core::Jobs& /*jobs*/) override {
+    void Publish(core::Snapshot& snapshot, core::Jobs& /*jobs*/, const std::optional<core::Rect>& view) override {
         calls.push_back(Call::Publish);
+        views.push_back(view);
         ++publishes;
         ticksAtPublish = ticks.size();
         capacityAtPublish = snapshot.instances.capacity();
@@ -110,6 +111,7 @@ public:
     std::vector<core::HeldInput> held{}; // the held input at each tick
     std::vector<std::size_t> actions{};  // how many actions each tick took
     std::vector<Call> calls{};
+    std::vector<std::optional<core::Rect>> views{}; // the view each publish was given
     // NOLINTEND(readability-redundant-member-init)
     std::size_t casts = 0; // how many Cast actions it was given
     bool rejectLoads = false;
@@ -1025,6 +1027,120 @@ TEST_CASE("a SceneResident on a running tick reaches neither the simulation nor 
     rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
     static_cast<void>(rig.Burst(1));
     StartPlaying(rig); // the replay reader refuses a SceneResident
+}
+
+constexpr core::Rect AREA{ .min = { .x = -100.0F, .y = -50.0F }, .max = { .x = 1'380.0F, .y = 770.0F } };
+constexpr core::Rect OTHER_AREA{ .min = { .x = 3'000.0F, .y = 2'000.0F }, .max = { .x = 4'000.0F, .y = 2'600.0F } };
+
+// Whether `view` is `area`, bit for bit: the logic passes the main thread's view on untouched.
+bool IsArea(const std::optional<core::Rect>& view, const core::Rect& area) {
+    using Bits = std::array<u32, sizeof(core::Rect) / sizeof(u32)>;
+    return view.has_value() && std::bit_cast<Bits>(*view) == std::bit_cast<Bits>(area);
+}
+
+TEST_CASE("the logic publishes with the current change's view") {
+    Rig rig;
+    static_cast<void>(rig.Burst(1));
+    CHECK_FALSE(rig.simulation.views.back().has_value()); // none sent yet
+    rig.handover.SendView({ .area = AREA, .change = 1 });
+    static_cast<void>(rig.Burst(1));
+    CHECK(IsArea(rig.simulation.views.back(), AREA));
+    rig.handover.SendView({ .area = OTHER_AREA, .change = 1 });
+    static_cast<void>(rig.Burst(1));
+    CHECK(IsArea(rig.simulation.views.back(), OTHER_AREA));
+}
+
+TEST_CASE("a view taken in an earlier change is ignored after the swap") {
+    constexpr u64 TICKS = 3;
+    Rig rig;
+    rig.handover.SendView({ .area = AREA, .change = 1 });
+    rig.handover.SendInput({ .kind = core::ActionKind::CycleScene });
+    const BurstResult leaving = rig.Burst(1);
+    REQUIRE(leaving.snapshot.sceneChange.stage == core::SceneStage::Leaving);
+    rig.Answer(leaving.snapshot);
+    const BurstResult swapped = rig.Burst(TICKS);
+    REQUIRE(swapped.snapshot.sceneChange.stage != core::SceneStage::Leaving);
+    CHECK_FALSE(rig.simulation.views.back().has_value());
+    const BurstResult running = Settle(rig, swapped);
+    REQUIRE(running.snapshot.sceneChange.change == 2);
+    CHECK_FALSE(rig.simulation.views.back().has_value());
+    static_cast<void>(rig.Burst(TICKS));
+    CHECK_FALSE(rig.simulation.views.back().has_value());
+    rig.handover.SendView({ .area = OTHER_AREA, .change = 2 });
+    static_cast<void>(rig.Burst(TICKS));
+    CHECK(IsArea(rig.simulation.views.back(), OTHER_AREA));
+}
+
+TEST_CASE("while the old scene is left, the view taken of it still culls it") {
+    Rig rig;
+    rig.handover.SendView({ .area = AREA, .change = 1 });
+    rig.handover.SendInput({ .kind = core::ActionKind::CycleScene });
+    const BurstResult leaving = rig.Burst(1);
+    REQUIRE(leaving.snapshot.sceneChange.stage == core::SceneStage::Leaving);
+    REQUIRE(leaving.snapshot.sceneChange.change == 2);
+    CHECK(IsArea(rig.simulation.views.back(), AREA));
+    // App names a view of the old scene, drawn while it is left, by the change that entered it.
+    const u64 shown = core::ShownChange(leaving.snapshot.sceneChange);
+    CHECK(shown == 1);
+    rig.handover.SendView({ .area = OTHER_AREA, .change = shown });
+    static_cast<void>(rig.Burst(1));
+    CHECK(IsArea(rig.simulation.views.back(), OTHER_AREA));
+}
+
+TEST_CASE("the logic keeps the last view while none is sent") {
+    constexpr u32 BURSTS = 10;
+    Rig rig;
+    rig.handover.SendView({ .area = AREA, .change = 1 });
+    for (u32 burst = 0; burst < BURSTS; ++burst) {
+        static_cast<void>(rig.Burst(1));
+    }
+    CHECK(rig.simulation.publishes == BURSTS);
+    CHECK(IsArea(rig.simulation.views.back(), AREA));
+}
+
+// A replay's bytes and the logic's hash where it ended.
+struct Recording {
+    std::vector<std::byte> replay;
+    u64 hash = 0;
+};
+
+// Records a replay into the replay file beside `slot`, sending a view that moves on before every burst when `views`, and
+// ending right after a hash tick; returns the replay file's bytes and the logic's hash at its end.
+Recording RecordSendingViews(const SaveSlot& slot, bool views) {
+    constexpr u64 TICKS = 3;
+    constexpr f32 STEP = 37.0F; // how far each view moves from the one before
+    const std::filesystem::path replayFile = slot.File().parent_path() / "replay.pnr";
+    Rig rig(slot.File(), replayFile);
+    rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
+    static_cast<void>(rig.Burst(1));
+    f32 offset = 0.0F;
+    for (u64 burst = 0; burst == 0 || rig.logic.Counters().wall % core::REPLAY_HASH_TICKS != 0; ++burst) {
+        if (views) {
+            offset += STEP;
+            const core::Vec2 moved{ .x = offset, .y = -offset };
+            rig.handover.SendView({ .area = { .min = AREA.min + moved, .max = AREA.max + moved }, .change = 1 });
+        }
+        // Bursts of a tick near the end, so the recording stops right after a hash tick.
+        const u64 left = core::REPLAY_HASH_TICKS - (rig.logic.Counters().wall % core::REPLAY_HASH_TICKS);
+        static_cast<void>(rig.Burst(left > TICKS ? TICKS : 1));
+    }
+    const u64 hash = rig.logic.Hash();
+    rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
+    static_cast<void>(rig.Burst(1));
+    rig.jobs.WaitForBackground();
+    std::expected<std::vector<std::byte>, core::Error> replay = core::ReadSaveFile(replayFile);
+    REQUIRE(replay.has_value());
+    return { .replay = std::move(replay).value_or(std::vector<std::byte>{}), .hash = hash };
+}
+
+TEST_CASE("the view is never recorded and never hashed") {
+    const SaveSlot without{ "views_never_sent" };
+    const SaveSlot with{ "views_sent_each_burst" };
+    const Recording unseen = RecordSendingViews(without, false);
+    const Recording seen = RecordSendingViews(with, true);
+    REQUIRE_FALSE(unseen.replay.empty());
+    CHECK(seen.replay == unseen.replay);
+    CHECK(seen.hash == unseen.hash);
 }
 
 TEST_CASE("a Save arriving in the same tick as ToggleRecording still writes the save file") {

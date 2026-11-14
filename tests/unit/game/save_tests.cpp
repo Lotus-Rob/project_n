@@ -68,7 +68,7 @@ std::vector<std::byte> Saved(game::Host& host) {
 
 std::vector<core::Instance> Published(game::Host& host, core::Jobs& jobs) {
     core::Snapshot snapshot;
-    host.Publish(snapshot, jobs);
+    host.Publish(snapshot, jobs, std::nullopt);
     return snapshot.instances;
 }
 
@@ -258,7 +258,7 @@ TEST_CASE("the save round-trips mid-volley") {
     Tick(saved, At(CAST), { .actions = cast, .held = {} });
     core::Jobs jobs{ 1 };
     core::Snapshot snapshot;
-    saved.Publish(snapshot, jobs);
+    saved.Publish(snapshot, jobs, std::nullopt);
     REQUIRE(snapshot.volleys.size() == 1);
     const core::Volley volley = snapshot.volleys.front().volley;
     const u64 last = core::LastArrival(volley);
@@ -312,7 +312,7 @@ TEST_CASE("the save round-trips mid-burn") {
     Tick(saved, At(CAST), { .actions = cast, .held = {} });
     core::Jobs jobs{ 1 };
     core::Snapshot snapshot;
-    saved.Publish(snapshot, jobs);
+    saved.Publish(snapshot, jobs, std::nullopt);
     REQUIRE(snapshot.volleys.size() == 1);
     const core::Volley bolt = snapshot.volleys.front().volley;
     const u64 savedAt = core::ArrivalTick(bolt, 0) + BETWEEN;
@@ -585,7 +585,7 @@ TEST_CASE("the mid-fight save loads, and so does the fuzz seed cut from it") {
     const core::Registry& entities = saved.State()[game::ACTIVE].Entities();
     core::Jobs jobs{ 1 };
     core::Snapshot snapshot;
-    saved.Publish(snapshot, jobs);
+    saved.Publish(snapshot, jobs, std::nullopt);
     REQUIRE(snapshot.volleys.size() >= 1);
     REQUIRE(snapshot.flashes.size() >= 1);
     CHECK_FALSE(entities.view<const game::Afflictions>().empty());

@@ -146,13 +146,15 @@ public:
     /// on `jobs`: the bytes are the same whatever its worker count. Each entity's instance carries
     /// its ID, but a dying one's carries none and dissolves (core::SpriteDraw::dissolve, DissolveAt() at
     /// `snapshot.simulationTick`), its shadow with it; the sprites a scene's traits list (SceneTraits::demoGlows) wear
-    /// their demo glows (DemoGlow()). The player's cultivator is the one to follow, with what is drawn culled
-    /// around it, and the snapshot names the scene's camera (SceneTraits::camera). A scene with a player adds the player's
-    /// and each living fox's name label over its head; a combat scene adds each living fox's health bar at its head and the
-    /// player's casting state (core::Snapshot::caster). Then the scene adds its own (Scene::Publish(): the tablet's
-    /// caption, the arena's showcase seals) and, after it, the volleys in flight with their targets and the seals raised
-    /// in play (Combat::Publish()).
-    void Publish(core::Snapshot& snapshot, core::Jobs& jobs) override;
+    /// their demo glows (DemoGlow()). What is drawn is culled to `view` (the main thread's window and its margin)
+    /// or, with none yet, to the widest view a window shows (core::WIDEST_HALF_VIEW) round where the camera starts: the
+    /// player's cultivator, which is the one to follow, or else the centre of the scene's view (SceneTraits::view); the
+    /// ground is drawn whole either way. The snapshot names the scene's camera (SceneTraits::camera). A scene with a player
+    /// adds the player's and each living fox's name label over its head; a combat scene adds each living fox's health bar at
+    /// its head and the player's casting state (core::Snapshot::caster). Then the scene adds its own (Scene::Publish(): the
+    /// tablet's caption, the arena's showcase seals) and, after it, the volleys in flight with their targets and the seals
+    /// raised in play (Combat::Publish()).
+    void Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::optional<core::Rect>& view) override;
 
 private:
     template<typename Archive>

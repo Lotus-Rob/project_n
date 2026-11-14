@@ -74,14 +74,6 @@ void RadixSort(std::vector<SortEntry>& entries, std::vector<SortEntry>& scratch)
 /// (Layer::Ground and Layer::Decals) end and the layers above them begin.
 void AppendBatches(std::span<const SortEntry> sorted, std::vector<Batch>& batches);
 
-/// An axis-aligned rectangle of the world, in world units.
-struct Rect {
-    /// The top-left corner.
-    Vec2 min{};
-    /// The bottom-right corner.
-    Vec2 max{};
-};
-
 /// A tick's sprites as they're published: added in any order, culled to the view, written to the
 /// snapshot sorted and batched. It fills in parts, each from one job chunk at a time, so a publish
 /// can pack its instances in parallel; the parts in order, each in the order its instances were
@@ -102,6 +94,10 @@ public:
     /// orders it within the world layer; elsewhere instances keep the submission order. Different
     /// parts may be added to at once.
     void Add(u32 part, Layer layer, Pipeline pipeline, const Instance& instance, f32 footY = 0.0F, StableId entity = {});
+
+    /// Adds `instance` as Add() does, wherever it lies: for a sprite too large for CULL_MARGIN (the ground), which would
+    /// pop at the view's edge while part of it still shows.
+    void AddWhole(u32 part, Layer layer, Pipeline pipeline, const Instance& instance, f32 footY = 0.0F, StableId entity = {});
 
     /// Appends the instances in drawing order to `snapshot`'s, their IDs to its IDs and their
     /// batches to its batches, gathering in chunks on `jobs`: the bytes are the same whatever its

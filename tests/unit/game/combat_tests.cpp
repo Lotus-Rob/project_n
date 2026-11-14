@@ -46,7 +46,7 @@ core::Snapshot Published(game::Host& host, u64 tick) {
     core::Jobs jobs{ 1 };
     core::Snapshot snapshot;
     snapshot.simulationTick = tick;
-    host.Publish(snapshot, jobs);
+    host.Publish(snapshot, jobs, std::nullopt);
     return snapshot;
 }
 

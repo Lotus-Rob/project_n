@@ -21,6 +21,23 @@ namespace app {
 /// The most the frame clock moves on from one frame to the next, in nanoseconds: a tenth of a second.
 inline constexpr u64 FRAME_STEP_LIMIT_NS = core::NS_PER_SECOND / 10;
 
+/// How fast the camera pans a still scene, in world units a second at full movement, at zoom 1 (faster as it zooms out).
+inline constexpr f32 PAN_SPEED = 900.0F;
+
+/// How far past the window's view the logic publishes, on each side, as a fraction of the view's size on that axis
+/// (CullArea()). A snapshot culled to a view is drawn while the camera moves on, for up to FRAME_STEP_LIMIT_NS before
+/// a fresh view has culled a newer one: in that time a wheel notch out (gfx::ZoomedBy() by -1, 1.15 times as much world)
+/// grows each side by 0.075 of the view, and a pan at full speed at the new zoom moves at most 0.096 of it on either
+/// axis (PAN_SPEED × 1.15 for a tenth of a second, over the 1,080 world units at zoom 1 the shorter axis shows at
+/// least). A quarter covers both at once, 0.171, with room to spare, so nothing pops in at the window's edge; wider
+/// would publish more for no picture. The bound it guarantees: the camera may move about a quarter of the view per
+/// publish interval (FRAME_STEP_LIMIT_NS at most) and show nothing missing. A wheel event carrying several notches, or
+/// a flick of a drag (which pans 1:1 with the cursor) faster than that, can show the edge for a frame until the next
+/// view culls a fresh publish: a known limit, which the camera control (one notch of zoom a frame) and the measurements
+/// (phase 6 chunk 5a's Tasks 6 and 9) own. While a calendar step's transition shows, no fresh publish comes, so the
+/// camera holds still (PansCamera(), ZoomsCamera()).
+inline constexpr f32 CULL_MARGIN = 0.25F;
+
 /// The main thread's frame clock (gfx::View::frameClock): seconds of wall time from its first frame, which runs on
 /// while the game is paused, unlike the render clock. A gap longer than FRAME_STEP_LIMIT_NS between frames (a hidden
 /// window, a stall) moves it on by that limit only: the first frame after it moves a label's fade by two thirds of
@@ -50,6 +67,20 @@ void ShowScene(gfx::Camera& camera, std::optional<core::SceneId>& shown, core::S
 
 /// The world point `camera` shows at `position`, in the coordinates of a window `width` by `height`.
 [[nodiscard]] core::Vec2 WindowToWorld(const gfx::Camera& camera, core::Vec2 position, i32 width, i32 height);
+
+/// The world `camera` shows in a window `width` by `height`, grown on each side by CULL_MARGIN of its size: what the
+/// logic culls a publish to (core::ViewReport::area).
+[[nodiscard]] core::Rect CullArea(const gfx::Camera& camera, i32 width, i32 height);
+
+/// Whether held movement pans the camera over `drawn` (null before the first snapshot): only in a scene that follows
+/// nothing (the camera follows the snapshot's target as it draws), and never while a calendar step's transition shows
+/// (core::Snapshot::transition), when the logic publishes nothing new and the snapshot drawn stays culled to the view
+/// it was sent, so panning past CULL_MARGIN would show its edge.
+[[nodiscard]] bool PansCamera(const core::Snapshot* drawn);
+
+/// Whether the wheel or the shoulder buttons zoom the camera over `drawn` (null before the first snapshot): not while a
+/// calendar step's transition shows, as PansCamera(), since zooming out past CULL_MARGIN would show the edge too.
+[[nodiscard]] bool ZoomsCamera(const core::Snapshot* drawn);
 
 /// The index of the instance drawn on top at `world` in `snapshot` interpolated by `alpha`: the last
 /// in drawing order with an ID whose quad, turned by its interpolated rotation, contains the point, or

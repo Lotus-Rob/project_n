@@ -17,8 +17,8 @@ struct Event {
     bool cosmetic = false;
 };
 
-using Handover = core::Handover<State, Event, u64, i32>;
-using Display = core::Display<State, Event, u64, i32>;
+using Handover = core::Handover<State, Event, u64, i32, u64>;
+using Display = core::Display<State, Event, u64, i32, u64>;
 
 constexpr u64 HANDOVER_DELAY_NS = 10;
 constexpr u64 FIRST_NS = 100; // scheduled times
@@ -43,6 +43,21 @@ TEST_CASE("the state channel hands over only the newest snapshot") {
     REQUIRE(taken != nullptr);
     CHECK(taken->sequence == 2);
     CHECK(handover.TakeState() == nullptr);
+}
+
+TEST_CASE("ReadView gives the latest view, none before the first") {
+    constexpr u64 FIRST_VIEW = 7;
+    constexpr u64 LATEST_VIEW = 9;
+    constexpr std::optional<u64> LATEST{ LATEST_VIEW };
+    Handover handover;
+    const std::optional<u64> before = handover.ReadView();
+    CHECK_FALSE(before.has_value());
+    handover.SendView(FIRST_VIEW);
+    handover.SendView(LATEST_VIEW);
+    const std::optional<u64> latest = handover.ReadView();
+    CHECK(latest == LATEST);
+    const std::optional<u64> again = handover.ReadView(); // reading doesn't consume it
+    CHECK(again == LATEST);
 }
 
 TEST_CASE("events accumulate until taken, in order") {

@@ -65,7 +65,13 @@ bool Logic::RunBurst(const TickBurst& burst, const std::stop_token& stop) {
     snapshot.follow.reset();
     snapshot.camera = CameraKind::Pan;
     snapshot.selected.reset();
-    m_simulation->Publish(snapshot, *m_jobs);
+    // A view of the old scene, taken before the swap, would cull the new one round where the old camera was.
+    std::optional<Rect> culled = std::nullopt;
+    if (const std::optional<ViewReport> view = m_handover->ReadView();
+        view && view->change == ShownChange(snapshot.sceneChange)) {
+        culled = view->area;
+    }
+    m_simulation->Publish(snapshot, *m_jobs, culled);
     snapshot.publishedNs = m_now();
     m_handover->Publish(m_events);
     return end == TickEnd::Stall;

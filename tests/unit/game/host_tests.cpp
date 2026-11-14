@@ -1,9 +1,11 @@
 #include "core/archive.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/draw_list.hpp"
 #include "core/instances.hpp"
 #include "core/jobs.hpp"
 #include "core/seal.hpp"
 #include "core/state.hpp"
+#include "core/view_limits.hpp"
 #include "data/effects.hpp"
 #include "data/game_data.hpp"
 #include "game/host.hpp"
@@ -24,10 +26,11 @@ void Tick(game::Host& host, const core::TickCounters& counters, const core::Tick
     host.Tick(counters, input, events);
 }
 
-core::Snapshot Published(game::Host& host) {
+// What `host` publishes culled to `view`, or with none sent yet.
+core::Snapshot Published(game::Host& host, const std::optional<core::Rect>& view = std::nullopt) {
     core::Jobs jobs{ 1 };
     core::Snapshot snapshot;
-    host.Publish(snapshot, jobs);
+    host.Publish(snapshot, jobs, view);
     return snapshot;
 }
 
@@ -275,6 +278,102 @@ TEST_CASE("the snapshot names the camera") {
     CHECK(Published(painted).camera == core::CameraKind::Pan);
 }
 
+// `area` grown by `margin` on every side.
+core::Rect Grown(const core::Rect& area, core::Vec2 margin) {
+    return { .min = area.min - margin, .max = area.max + margin };
+}
+
+// What a publish culled to round the player before the window's view: the fallback still covers it, so the reference
+// pictures and the headless benchmark stay as they were.
+constexpr core::Vec2 FOLLOW_HALF_VIEW{ .x = 7'680.0F, .y = 4'320.0F };
+static_assert(
+    std::bit_cast<u64>(core::WIDEST_HALF_VIEW) == std::bit_cast<u64>(FOLLOW_HALF_VIEW),
+    "the widest view is what culling covered"
+);
+
+// Whether `point` lies within `area`, its edges included.
+bool Within(core::Vec2 point, const core::Rect& area) {
+    return point.x >= area.min.x && point.x <= area.max.x && point.y >= area.min.y && point.y <= area.max.y;
+}
+
+// The view a publish culls to with none sent: the widest a window shows round `centre`.
+core::Rect WidestRound(core::Vec2 centre) {
+    return Grown({ .min = centre, .max = centre }, core::WIDEST_HALF_VIEW);
+}
+
+constexpr core::Vec2 DRAW_MARGIN{ .x = core::DrawList::CULL_MARGIN, .y = core::DrawList::CULL_MARGIN };
+
+TEST_CASE("a publish with a view holds only what lies within it") {
+    constexpr core::Vec2 HALF_VIEW{ .x = 200.0F, .y = 150.0F }; // a 400 by 300 view round the cultivator
+    game::Host host(test::TestManifest());
+    const core::Snapshot everything = Published(host);
+    const core::Vec2 cultivator = PositionOf(everything, host.Player());
+    const core::Rect view = Grown({ .min = cultivator, .max = cultivator }, HALF_VIEW);
+    const core::Snapshot culled = Published(host, view);
+    REQUIRE(culled.instances.size() > 1);
+    CHECK(Draws(culled.instances.front(), SpriteId::Ground)); // drawn whole: larger than the margin allows
+    const bool allWithin = std::ranges::all_of(std::span{ culled.instances }.subspan(1), [&](const core::Instance& instance) {
+        return Within(instance.current, Grown(view, DRAW_MARGIN));
+    });
+    CHECK(allWithin);
+    // And everything within it is kept: as many as lie there in the publish with no view, which holds the whole arena.
+    REQUIRE(Draws(everything.instances.front(), SpriteId::Ground));
+    const auto inside = static_cast<std::size_t>(
+        std::ranges::count_if(std::span{ everything.instances }.subspan(1), [&](const core::Instance& instance) {
+            return Within(instance.current, Grown(view, DRAW_MARGIN));
+        })
+    );
+    CHECK(culled.instances.size() == inside + 1);
+    CHECK(std::ranges::contains(culled.ids, host.Player()));
+    // A creature published with no view, outside this one and its margin, is absent.
+    std::optional<core::StableId> outside;
+    for (std::size_t i = 0; i < everything.ids.size() && !outside; ++i) {
+        if (everything.ids[i] != core::StableId{} && !Within(everything.instances[i].current, Grown(view, DRAW_MARGIN))) {
+            outside = everything.ids[i];
+        }
+    }
+    REQUIRE(outside.has_value());
+    CHECK_FALSE(std::ranges::contains(culled.ids, outside.value_or(core::StableId{})));
+}
+
+TEST_CASE("with no view, a publish culls to the widest view round the followed cultivator") {
+    core::GameData data = game::BuiltInData();
+    // One step takes the cultivator so far right that the widest view's left edge, margin and all, crosses the arena.
+    data.cultivator.walkSpeed = core::WIDEST_HALF_VIEW.x + core::DrawList::CULL_MARGIN;
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
+    Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
+    const core::Snapshot fallback = Published(host);
+    REQUIRE(fallback.follow.has_value());
+    const core::Rect widest = WidestRound(fallback.follow.value_or(core::Follow{}).current);
+    // The same bytes as a publish sent that view: the same instances, the world's depth measured from the same top.
+    const core::Snapshot sent = Published(host, widest);
+    CHECK(std::ranges::equal(std::as_bytes(std::span{ fallback.instances }), std::as_bytes(std::span{ sent.instances })));
+    // Some of the arena lies within it and some past it.
+    constexpr core::Rect ALL{ .min = { .x = -1.0e6F, .y = -1.0e6F }, .max = { .x = 1.0e6F, .y = 1.0e6F } };
+    const core::Snapshot everything = Published(host, ALL);
+    REQUIRE(Draws(everything.instances.front(), SpriteId::Ground)); // drawn whole either way, so left out of the count
+    const auto kept = static_cast<std::size_t>(
+        std::ranges::count_if(std::span{ everything.instances }.subspan(1), [&](const core::Instance& instance) {
+            return Within(instance.current, Grown(widest, DRAW_MARGIN));
+        })
+    );
+    CHECK(kept > 0);
+    CHECK(kept < everything.instances.size() - 1);
+    CHECK(fallback.instances.size() == kept + 1);
+}
+
+TEST_CASE("with no view and no player, a publish culls to the widest view round the scene's view centre") {
+    constexpr core::Vec2 CENTRE{ .x = 960.0F, .y = 540.0F }; // the middle of the painted scene's view, the ground
+    game::Host host(test::TestManifest(), game::PAINTED_SCENE);
+    const core::Snapshot fallback = Published(host);
+    const core::Snapshot sent = Published(host, WidestRound(CENTRE));
+    REQUIRE(fallback.instances.size() > 1);
+    CHECK(std::ranges::equal(std::as_bytes(std::span{ fallback.instances }), std::as_bytes(std::span{ sent.instances })));
+    // A view far from the scene's culls all but the ground: the fallback isn't simply "keep everything".
+    constexpr core::Rect FAR_AWAY{ .min = { .x = 50'000.0F, .y = 50'000.0F }, .max = { .x = 51'000.0F, .y = 51'000.0F } };
+    CHECK(Published(host, FAR_AWAY).instances.size() == 1);
+}
+
 // The sprite an instance draws, and where its foot stands: MakeInstance offsets the quad's
 // centre from the foot by a fixed amount per sprite, times the scale the instance's size shows.
 std::optional<std::pair<SpriteId, f32>> SpriteAndFootY(const core::Instance& instance) {
@@ -395,7 +494,7 @@ TEST_CASE("the stress arena publishes the same bytes with one worker and with ma
         Tick(host, { .wall = TICK, .simulation = TICK, .state = TICK }, {});
         core::Jobs jobs{ workers };
         core::Snapshot snapshot;
-        host.Publish(snapshot, jobs);
+        host.Publish(snapshot, jobs, std::nullopt);
         published.push_back(std::move(snapshot.instances));
     }
     REQUIRE_FALSE(published[0].empty());

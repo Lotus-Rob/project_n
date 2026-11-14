@@ -126,7 +126,7 @@ gfx::Renderer RendererFor(platform::Window& window, core::SceneId scene, core::J
 core::Snapshot Published(game::Host& host, core::Jobs& jobs, u64 tick = 0) {
     core::Snapshot snapshot;
     snapshot.simulationTick = tick; // as core::Logic stamps it
-    host.Publish(snapshot, jobs);
+    host.Publish(snapshot, jobs, std::nullopt);
     snapshot.scene = host.Scene(); // as core::Logic names it
     return snapshot;
 }

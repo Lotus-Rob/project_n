@@ -57,7 +57,7 @@ TEST_CASE("each scene's camera reaches the snapshot") {
     for (const auto& [scene, camera] : CAMERAS) {
         game::Host host(test::TestManifest(), scene);
         core::Snapshot snapshot;
-        host.Publish(snapshot, jobs);
+        host.Publish(snapshot, jobs, std::nullopt);
         CHECK(snapshot.camera == camera);
     }
 }
