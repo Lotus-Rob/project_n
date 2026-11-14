@@ -29,8 +29,11 @@
           { "context": "container (linux-gcc)", "integration_id": 15368 },
           { "context": "container (linux-clang)", "integration_id": 15368 },
           { "context": "container (windows-msvc)", "integration_id": 15368 },
-          { "context": "windows", "integration_id": 15368 },
-          { "context": "macos", "integration_id": 15368 }
+          { "context": "releasedbg", "integration_id": 15368 },
+          { "context": "windows (release)", "integration_id": 15368 },
+          { "context": "windows (address)", "integration_id": 15368 },
+          { "context": "macos (release)", "integration_id": 15368 },
+          { "context": "macos (address)", "integration_id": 15368 }
         ]
       }
     }
