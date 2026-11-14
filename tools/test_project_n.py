@@ -1810,6 +1810,13 @@ class HelpersTest(unittest.TestCase):
         self.assertIn(f"{project_n.CACHE_VOLUME}:/home/dev/.xmake", cmd)
         self.assertEqual(cmd[-5:], ["img", "pixi", "run", "project_n", "build"])
 
+    def test_a_relative_package_cache_folder_is_made_absolute(self):
+        # podman would take a relative source for a named volume, so the packages would miss the folder CI caches.
+        with mock.patch.dict(project_n.os.environ, {"PROJECT_N_XMAKE_CACHE": "rel-xmake"}), \
+             mock.patch.object(project_n.Path, "mkdir"):
+            cmd = project_n.container_cmd("img", ["true"])
+        self.assertIn(f"{Path.cwd() / 'rel-xmake'}:/home/dev/.xmake:Z", cmd)
+
 
 class ShaderTest(unittest.TestCase):
     def resource(self, name, space, binding, readonly=True):

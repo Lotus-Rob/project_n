@@ -519,7 +519,8 @@ def preset_container(preset):
 def container_cmd(image, inner, interactive=False, mounts=()):
     cache = os.environ.get("PROJECT_N_XMAKE_CACHE")
     if cache:
-        Path(cache).mkdir(parents=True, exist_ok=True)
+        cache = Path(cache).absolute()  # podman takes a relative source for a volume name
+        cache.mkdir(parents=True, exist_ok=True)
     cmd = ["podman", "run", "--rm", "--userns=keep-id:uid=1000,gid=1000", "-v", f"{ROOT}:/src:Z",
            "-v", f"{cache}:/home/dev/.xmake:Z" if cache else f"{CACHE_VOLUME}:/home/dev/.xmake", "-e", f"PROJECT_N_IMAGE={image}"]
     objects = build_cache_root()
