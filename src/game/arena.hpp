@@ -2,44 +2,9 @@
 
 /// @file
 /// @ingroup game
-/// The demonstration arena (design doc 0002 §2, 0002.3 §2): the growing demo scene, which shows every feature of the
-/// game and engine. Each new feature adds itself here. So far:
-/// - a painted ground with props and the painted art, in foot-y order, some drawn larger or smaller (scale) and one
-///   turning (rotation), with blob shadows;
-/// - the player's cultivator, walked by held input, which the camera follows and the logic culls around;
-/// - a pack of foxes circling it wherever it walks and glowing orbs circling its start (orbits, the additive pipeline), the
-///   foxes and the cultivator from the creatures data table (hot reload in debug builds);
-/// - click-to-select, the selected entity outlined in gold and the hovered one in pale white;
-/// - NPCs walking in the active tier and 5,000 in the world tier, whose months pass on request (§7.7);
-/// - saves, loads and replays of all of it;
-/// - F2 cycling through the scenes, each loaded on demand while the ticks wait for it;
-/// - the ice crystal's aura, which hits the foxes in its reach (and heals the player) once a second, and F7's debug burst
-///   of 4,000 hits: both emit hit events (core::Event), which the main thread shows as damage numbers; the aura's also
-///   take the foxes' health (and heal the player's), while the burst's are numbers only;
-/// - health (game/combat.hpp): a fox whose health runs out dissolves in blocky pixels, is removed, and another
-///   appears at the ground's edge a few seconds later, easing into its orbit; each living fox reports its health
-///   over its head (core::HealthBar);
-/// - Qi and cooldowns (game/combat.hpp): a cast spends or gains the player's Qi and cools its slot down; the dash moves
-///   the player;
-/// - the abilities, cast at the world point under the cursor in this combat scene (the loadout and every number from
-///   the abilities data table): the flying swords and the fire bolt (game/combat.hpp), volleys that tag the foxes
-///   round the point, follow them, move on from the dead and strike at their scheduled ticks, the swords formed in
-///   still rings, each a sunburst that holds, then flies; the bolt's hit leaves a burn that ticks; the main thread draws them
-///   at the render time, each wearing its glow, with additive trails, and the foxes' health bars (gfx/volley_draw.hpp);
-///   `--cast-swords` casts the swords on a timer for a profile run;
-/// - the poison lance (game/combat.hpp): a strike that hits and poisons every fox round the point at once, its burst a
-///   flash the main thread draws in the poison's colour; and the temporary HUD (app/hud.hpp) of the player's health,
-///   Qi and slots, from the caster state the arena publishes;
-/// - game text over the world: name labels over the player and every fox, and the tablet's vertical caption;
-/// - the glow drives (core/glow.hpp), one demo prop each: the shrine pulses, the stele charges and releases on a loop, the
-///   ice crystal fills and shows a result that changes each loop (DemoGlow());
-/// - seals (core/seal.hpp, their looks in `assets/data/seals.yaml`): the flying swords raise one under their rings, and the
-///   arena scene shows a showcase that between them uses every part and placement, each in a clearing of its own away
-///   from the fight: a large ground seal of 9 rings, an upright one with satellite seals on its ring, one overhead with
-///   pillars of light falling into its shadow on the ground and sparks rising, one in tiers of square and diamond frames,
-///   one with flames spilling past its rings and drifting shards, and small ones of 1 and 3 rings; scene content,
-///   republished every tick and never saved, which F8 hides and shows.
-/// Its stress variant adds a crowd and a bullet spiral, about 100,000 instances in all (§8.1), and a world tier of 50,000.
+/// The host every scene runs in (game/scene.hpp, listed in game/scenes.hpp): as the core::Simulation it owns the
+/// state's domains, the world NPCs and the calendar, the player's cultivator, the selection, combat, the game data,
+/// saving, loading and hashing, and the publishing every scene shares, and it knows no scene by name.
 
 #include "core/draw_list.hpp"
 #include "core/ecs.hpp"
@@ -56,9 +21,9 @@
 #include "game/combat.hpp"
 #include "game/components.hpp"
 #include "game/npcs.hpp"
+#include "game/scene.hpp"
+#include "game/scenes.hpp"
 
-#include <cmath>
-#include <expected>
 #include <memory>
 #include <optional>
 #include <stop_token>
@@ -67,40 +32,11 @@
 
 namespace game {
 
-/// A path around a point: the entity's foot circles `centre` at `radius`, a little in and out.
-struct Orbit {
-    /// The point circled.
-    core::Vec2 centre{};
-    /// The mean distance from it.
-    f32 radius = 0.0F;
-    /// How far it strays in and out of that distance, three times a lap.
-    f32 wobble = 0.0F;
-    /// The angle at tick 0, in radians.
-    f32 phase = 0.0F;
-    /// Radians per tick; negative goes anticlockwise.
-    f32 speed = 0.0F;
-
-    /// Lists its fields for an archive (core/archive.hpp).
-    template<typename Self, typename Archive>
-    void Fields(this Self& self, Archive& archive) {
-        archive(self.centre, self.radius, self.wobble, self.phase, self.speed);
-    }
-
-    /// Whether a value read from a save can be used: finite numbers.
-    [[nodiscard]] bool Valid() const {
-        return core::IsFinite(centre) && std::isfinite(radius) && std::isfinite(wobble) && std::isfinite(phase) &&
-               std::isfinite(speed);
-    }
-};
-
-/// Where an Orbit puts its entity's foot at `tick`.
-[[nodiscard]] core::Vec2 OrbitPoint(const Orbit& orbit, u64 tick);
-
 /// The test bed's game data as built in: what `assets/data/creatures.yaml` ships, for runs that read
 /// no data files (tests, tools).
 [[nodiscard]] core::GameData BuiltInData();
 
-/// Which arena to build.
+/// Which scene to build: its place in game/scenes.hpp's list (core::SceneKey).
 enum class Scene : u8 {
     Arena,   ///< The demonstration arena.
     Stress,  ///< The arena with a crowd of 90,000, a spiral of 10,000 bullets and 50,000 world NPCs, for profiling.
@@ -108,23 +44,21 @@ enum class Scene : u8 {
     Cells,   ///< A still grid of 640 map cells, for judging the mips as the view zooms out (§16 phase 3).
 };
 
-/// The scene called `name` (SceneName()), if there is one.
-[[nodiscard]] std::optional<Scene> SceneNamed(std::string_view name);
+/// The key of `scene` in game/scenes.hpp's list.
+[[nodiscard]] constexpr core::SceneKey KeyOf(Scene scene) {
+    return core::SceneKey{ std::to_underlying(scene) };
+}
 
 /// The name of `scene`'s sprites in the atlas manifest (art/scenes.toml): `arena`, `stress`, `painted`, `cells`.
 [[nodiscard]] std::string_view SceneName(Scene scene);
-
-/// Whether every scene can run from `manifest` with `data` (design doc 0002.3.1 §3): the manifest names each,
-/// and the scenes with creatures load the sprites `data` gives them, without which they would be invisible.
-/// Otherwise, which scene is short of what.
-[[nodiscard]] std::expected<void, core::Error> CheckScenes(const core::Manifest& manifest, const core::GameData& data);
 
 /// The input of the demo glow `role` at simulation `tick` (the shrine's pulse, the stele's charge on a 3.2 s loop that rises,
 /// holds and releases, the crystal's progress on a 5 s loop that fills and then shows a result): pure and presentation only.
 /// Its previous value is the one at `tick - 1` in the same loop, 0 at a loop's first tick. Any other role gives no glow.
 [[nodiscard]] core::GlowInput DemoGlow(core::GlowRole role, u64 tick);
 
-/// The arena scene as a simulation: it moves its creatures each tick and publishes every sprite.
+/// The host as a simulation: it runs the scene it is (game/scenes.hpp), moves its creatures each tick and publishes every
+/// sprite.
 class Arena final : public core::Simulation {
 public:
     /// Builds `scene` with `data`'s creatures: the same entities, in the same places, every time. It
@@ -135,17 +69,17 @@ public:
         const core::GameData& data = BuiltInData()
     );
 
-    /// When `input` holds a CycleScene, asks for the next scene in Scene's order (arena, stress, painted, cells, then the
-    /// arena again; Requested()), ending every use still open (Combat::EndUses()), and does nothing else. Otherwise walks
-    /// the player's cultivator where `input`'s held movement points, selects what its Select actions name (nothing for a dying
-    /// one), ignores Cast actions outside a combat scene (in one a Cast is Combat::Cast(): Qi, cooldown, the ability's effect;
-    /// a dash moves the player in place of held movement), moves every entity on an Orbit to where it is at
-    /// `counters.simulation`, advances combat (Combat::Tick(): arrivals, removing the dead, which clears their selection, and
-    /// spawning the foxes due at the ground's edge), and walks the active NPCs, whose decisions draw random numbers keyed on
-    /// `counters.state`. In the arena scene, every 60th simulation tick the crystal's aura hits each living fox in reach and
-    /// heals the player if in reach, appending a hit event for each; a DebugBurst action appends 4,000 hits round the foxes,
-    /// which change nothing. Last, the volleys and afflictions strike (Combat::Strike()), appending their hits. Each use ends
-    /// with a UseEnded event. The events themselves change nothing in the state.
+    /// When `input` holds a CycleScene, asks for the next scene in the list's order (NextScene(): arena, stress, painted,
+    /// cells, then the arena again; Requested()), ending every use still open (Combat::EndUses()), and does nothing else.
+    /// Otherwise walks the player's cultivator where `input`'s held movement points, selects what its Select actions name
+    /// (nothing for a dying one), ignores Cast actions outside a combat scene (in one a Cast is Combat::Cast(): Qi,
+    /// cooldown, the ability's effect; a dash moves the player in place of held movement), moves every entity on an Orbit to
+    /// where it is at `counters.simulation`, advances combat (Combat::Tick(): arrivals, removing the dead, which clears
+    /// their selection, and the foxes due back, which the scene respawns: SceneClass::Respawn()), and walks the active NPCs,
+    /// whose decisions draw random numbers keyed on `counters.state`. Then the scene takes its own part of the tick
+    /// (SceneClass::Tick(): in the arena, the crystal's aura); a DebugBurst action appends 4,000 hits round the foxes, which
+    /// change nothing. Last, the volleys and afflictions strike (Combat::Strike()), appending their hits. Each use ends with a
+    /// UseEnded event. The events themselves change nothing in the state.
     void Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) override;
 
     /// Lets a month pass for the world NPCs (MonthStep).
@@ -178,7 +112,7 @@ public:
         return m_sceneId;
     }
 
-    /// The scene it is: its place in Scene's order as its key, its manifest scene, and whether it is a combat scene.
+    /// The scene it is: its key in the list (game/scenes.hpp), its manifest scene, and whether it is a combat scene.
     [[nodiscard]] core::SceneFacts Current() const override {
         return FactsOf(m_scene);
     }
@@ -189,23 +123,17 @@ public:
     /// Rebuilds itself as the scene Requested() names, the selection cleared, and forgets the request.
     void EnterScene() override;
 
-    /// Rebuilds the scene it is with the code from before each scene had a class of its own: for the one-off comparison
-    /// that proves the move builds the same, and gone with that code.
-    void RebuildAsBefore() {
-        Build(m_scene);
-    }
-
     /// How many months have passed.
     [[nodiscard]] u64 Months() const {
         return m_months;
     }
 
-    /// The game state: the arena's entities in the active domain, NPCs in the world domain.
+    /// The game state: the scene's entities in the active domain, NPCs in the world domain.
     [[nodiscard]] const core::State& State() const {
         return m_state;
     }
 
-    /// Whether the scene is a combat scene, where fights happen and casts act: the arena only.
+    /// Whether the scene is a combat scene, where fights happen and casts act (SceneTraits::combat): the arena only.
     [[nodiscard]] bool IsCombatScene() const;
 
     /// The cultivator the player walks, or zero in a scene without one (the painted scene, the cells).
@@ -232,38 +160,39 @@ public:
     /// entities in foot-y order, then the effects, packed in fixed chunks
     /// on `jobs`: the bytes are the same whatever its worker count. Each entity's instance carries
     /// its ID, but a dying one's carries none and dissolves (core::SpriteDraw::dissolve, DissolveAt() at
-    /// `snapshot.simulationTick`), its shadow with it. The player's cultivator is the one to follow, with what is drawn
-    /// culled around it. A scene with a player adds its texts: the player's and each living fox's name label over its
-    /// head, and the tablet's caption; the arena scene adds each living fox's health bar at its head, the player's casting
-    /// state (core::Snapshot::caster), its showcase seals (core::Seal::showcase, from tick 0 and never ending) and, after
-    /// them, the volleys in flight with their targets and the seals raised in play (Combat::Publish()).
+    /// `snapshot.simulationTick`), its shadow with it; a scene with the demo glows (SceneTraits::demoGlows) has its shrine,
+    /// stele and ice crystal wear them (DemoGlow()). The player's cultivator is the one to follow, with what is drawn culled
+    /// around it, and the snapshot names the scene's camera (SceneTraits::camera). A scene with a player adds the player's
+    /// and each living fox's name label over its head; a combat scene adds each living fox's health bar at its head and the
+    /// player's casting state (core::Snapshot::caster). Then the scene adds its own (SceneClass::Publish(): the tablet's
+    /// caption, the arena's showcase seals) and, after it, the volleys in flight with their targets and the seals raised
+    /// in play (Combat::Publish()).
     void Publish(core::Snapshot& snapshot, core::Jobs& jobs) override;
 
 private:
     template<typename Archive>
     void Write(Archive& archive) const;
 
-    void Build(game::Scene scene);
-    [[nodiscard]] core::SceneFacts FactsOf(game::Scene scene) const;
+    class Context; // the SceneContext a scene's hooks reach the host through
+
+    [[nodiscard]] const SceneClass& Running() const {
+        return SceneOf(m_scene);
+    }
+    void Build(core::SceneKey scene);
+    [[nodiscard]] core::SceneFacts FactsOf(core::SceneKey scene) const;
     core::Entity Spawn(core::Vec2 foot, const Look& look);
+    core::Entity SpawnFox(const Orbit& orbit, core::Vec2 foot);
+    core::Entity SpawnPlayer(core::Vec2 foot);
     void Walk(core::Vec2 move);
     void Select(core::StableId target);
     void CastAction(const core::Action& action, const core::TickCounters& counters, std::vector<core::Event>& events);
-    void Aura(const core::TickCounters& counters, std::vector<core::Event>& events);
     void DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const;
-    [[nodiscard]] core::Vec2 HeadOf(core::Entity entity) const;
     void PublishOverhead(core::Snapshot& snapshot) const;
     void PublishCaster(core::Snapshot& snapshot) const;
-    core::Entity SpawnFox(const Orbit& orbit, core::Vec2 foot);
-    void Respawn(const core::TickCounters& counters, u32 index);
     void ApplyData();
     [[nodiscard]] const core::CreatureData& DataOf(CreatureKind kind) const {
         return kind == CreatureKind::Fox ? m_data.fox : m_data.cultivator;
     }
-    void SpawnStress();
-    void SpawnNpcs(u32 worldNpcs);
-    void SpawnPainted();
-    void SpawnCells();
 
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for
     // members whose default constructor is defaulted.
@@ -275,15 +204,14 @@ private:
     std::shared_ptr<const core::Manifest> m_manifest;
     core::State m_state;
     core::GameData m_data;
-    game::Scene m_scene;
+    core::SceneKey m_scene;
     core::SceneId m_sceneId;     // m_scene's in the manifest
     u64 m_months = 0;            // the calendar: months passed
-    core::Rect m_view{};         // what a publish culls to without a player
     core::StableId m_player{};   // the cultivator the player walks; zero for none
     core::StableId m_selected{}; // zero for none
 
     // The scene a CycleScene asked for, until it is entered.
-    std::optional<game::Scene> m_requested = std::nullopt;
+    std::optional<core::SceneKey> m_requested = std::nullopt;
 };
 
 } // namespace game

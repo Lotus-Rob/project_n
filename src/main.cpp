@@ -20,8 +20,9 @@ namespace {
 // arena by default.
 game::Scene ChooseScene(std::span<char*> args) {
     for (const std::string_view arg : args) {
-        if (const std::optional<game::Scene> scene = arg.starts_with("--") ? game::SceneNamed(arg.substr(2)) : std::nullopt) {
-            return *scene;
+        if (const std::optional<core::SceneKey> scene =
+                arg.starts_with("--") ? game::SceneNamed(arg.substr(2)) : std::nullopt) {
+            return static_cast<game::Scene>(std::to_underlying(*scene));
         }
     }
     return game::Scene::Arena;

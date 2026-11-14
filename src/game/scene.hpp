@@ -1,0 +1,130 @@
+#pragma once
+
+/// @file
+/// @ingroup game
+/// What a scene is to the host that runs it: its traits, the context the host hands it, and the hooks it implements.
+/// A scene keeps no state of its own (everything lives in the host's saved state), so one instance of each serves
+/// every game, and adding a scene is its file and a line in game/scenes.hpp's list.
+
+#include "core/draw_list.hpp"
+#include "core/ecs.hpp"
+#include "core/frame.hpp"
+#include "core/game_data.hpp"
+#include "core/manifest.hpp"
+#include "core/state.hpp"
+#include "core/tick_clock.hpp"
+#include "core/types.hpp"
+#include "core/vec2.hpp"
+#include "game/components.hpp"
+
+#include <string_view>
+#include <vector>
+
+namespace game {
+
+/// The painted ground every scene draws under it (core::atlas::SpriteId::Ground at the origin), 1920 by 1080 world
+/// units: what the camera shows whole in a still scene.
+inline constexpr core::Rect GROUND{ .min = {}, .max = { .x = 1'920.0F, .y = 1'080.0F } };
+
+/// What the host reads of a scene: plain facts, the same every time.
+struct SceneTraits {
+    /// Its name, which is also its manifest scene's (art/scenes.toml) and its command line flag's (`--<name>`).
+    std::string_view name;
+    /// What a publish culls to while there is no player to follow, and where a still camera starts.
+    core::Rect view{};
+    /// Where orbits return when the game data stops them circling the player.
+    core::Vec2 home{};
+    /// Whether it is a combat scene: casts act, and its foxes show health bars.
+    bool combat = false;
+    /// Whether it has creatures, which draw the game data's sprites (CheckScenes()).
+    bool creatures = false;
+    /// Whether its shrine, stele and ice crystal wear the demo glows (DemoGlow()).
+    bool demoGlows = false;
+    /// How the camera moves over it.
+    core::CameraKind camera = core::CameraKind::Pan;
+    /// How many world NPCs the host spawns after it builds.
+    u32 worldNpcs = 0;
+};
+
+/// The host as a scene sees it: the state, what it draws with, and the spawns every scene shares.
+class SceneContext {
+public:
+    SceneContext() = default;
+    SceneContext(const SceneContext&) = delete;
+    SceneContext& operator=(const SceneContext&) = delete;
+    SceneContext(SceneContext&&) = delete;
+    SceneContext& operator=(SceneContext&&) = delete;
+    virtual ~SceneContext();
+
+    /// The game state: the scene's entities in the active domain, NPCs in the world domain.
+    [[nodiscard]] virtual core::State& State() = 0;
+
+    /// The game state, read-only.
+    [[nodiscard]] virtual const core::State& State() const = 0;
+
+    /// The atlas manifest the scene draws with.
+    [[nodiscard]] virtual const core::Manifest& Manifest() const = 0;
+
+    /// The game data in use.
+    [[nodiscard]] virtual const core::GameData& Data() const = 0;
+
+    /// Creates an entity in the active domain standing at `foot`, drawn as `look`.
+    virtual core::Entity Spawn(core::Vec2 foot, const Look& look) = 0;
+
+    /// Creates a fox of the game data standing at `foot`, on `orbit`, with its kind's sprite and full health.
+    virtual core::Entity SpawnFox(const Orbit& orbit, core::Vec2 foot) = 0;
+
+    /// Creates the game data's cultivator standing at `foot`, with full health and its starting Qi, and makes it the
+    /// player's.
+    virtual core::Entity SpawnPlayer(core::Vec2 foot) = 0;
+
+    /// The cultivator the player walks, or zero when there is none.
+    [[nodiscard]] virtual core::StableId Player() const = 0;
+
+    /// Deals `amount` to `target` at simulation tick `tick` (Combat::Damage()): a negative amount heals.
+    virtual void Damage(core::StableId target, i64 amount, u64 tick) = 0;
+};
+
+/// One scene: its traits, how it builds, and its own behaviour through hooks the host calls. It holds no state, so its
+/// hooks are const and everything they change goes through the context into the host's state.
+class SceneClass {
+public:
+    /// Its traits, the same every call.
+    [[nodiscard]] virtual const SceneTraits& Traits() const = 0;
+
+    /// Spawns its entities through `context` into a fresh state: the same entities, in the same order and places,
+    /// every time.
+    virtual void Build(SceneContext& context) const = 0;
+
+    /// Its own part of each tick at `counters`, after the active NPCs walk, appending any events it starts to `events`.
+    /// Nothing by default.
+    virtual void Tick(SceneContext& context, const core::TickCounters& counters, std::vector<core::Event>& events) const;
+
+    /// Brings back a fox that died, the `index`th of those due at `counters`. Nothing by default: a scene without foxes
+    /// never has one due.
+    virtual void Respawn(SceneContext& context, const core::TickCounters& counters, u32 index) const;
+
+    /// Adds its own content to `snapshot` after the host has published the entities, their texts and the caster, and
+    /// before the seals raised in play. Nothing by default.
+    virtual void Publish(const SceneContext& context, core::Snapshot& snapshot) const;
+
+protected:
+    /// A scene; only the scenes themselves make one.
+    SceneClass() = default;
+    /// Copies a scene, which has nothing to copy.
+    SceneClass(const SceneClass&) = default;
+    /// Copies a scene, which has nothing to copy.
+    SceneClass& operator=(const SceneClass&) = default;
+    /// Moves a scene, which has nothing to move.
+    SceneClass(SceneClass&&) = default;
+    /// Moves a scene, which has nothing to move.
+    SceneClass& operator=(SceneClass&&) = default;
+    /// Never deleted through the interface (the scenes are constants of game/scenes.cpp), so not virtual: each scene stays
+    /// a constant with nothing to destroy.
+    ~SceneClass() = default;
+};
+
+/// Where `entity`'s head is: its foot raised by its sprite's foot height at its scale. It must have a Body and a Look.
+[[nodiscard]] core::Vec2 HeadOf(const core::Registry& entities, const core::Manifest& manifest, core::Entity entity);
+
+} // namespace game
