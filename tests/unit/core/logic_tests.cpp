@@ -535,6 +535,13 @@ TEST_CASE("a stale report is ignored") {
     CHECK(stale.snapshot.sceneChange.change == THIRD);
     CHECK_FALSE(std::ranges::contains(rig.simulation.calls, Call::EnterScene));
     CHECK(rig.simulation.requested.has_value());
+
+    rig.handover.SendInput({ .kind = core::ActionKind::SceneLeft, .change = THIRD });
+    REQUIRE(rig.Burst(1).snapshot.sceneChange.stage == core::SceneStage::Entering);       // the same sprites, resident
+    rig.handover.SendInput({ .kind = core::ActionKind::SceneEntered, .change = SECOND }); // the change before's
+    const BurstResult staleEntered = rig.Burst(1);
+    CHECK_FALSE(staleEntered.stalled);
+    CHECK(staleEntered.snapshot.sceneChange.stage == core::SceneStage::Entering);
 }
 
 TEST_CASE("a Pause sent while the scene loads holds once it is resident") {
@@ -642,6 +649,30 @@ TEST_CASE("with no save slot, Save and Load are refused") {
     rig.handover.SendInput({ .kind = core::ActionKind::Load });
     CHECK(rig.Burst(1).stalled);
     CHECK(rig.logic.Epoch() == 0);
+}
+
+TEST_CASE("a Load during a change is dropped") {
+    constexpr u64 TICKS = 3;
+    const SaveSlot slot{ "load_mid_change" };
+    Rig rig(slot.File());
+    rig.handover.SendInput({ .kind = core::ActionKind::Save });
+    static_cast<void>(rig.Burst(1));
+    rig.jobs.WaitForBackground();
+    REQUIRE(std::filesystem::exists(slot.File()));
+    static_cast<void>(rig.Burst(TICKS));
+    rig.handover.SendInput({ .kind = core::ActionKind::CycleScene });
+    static_cast<void>(rig.Burst(1));
+    const core::TickCounters counters = rig.logic.Counters();
+    rig.handover.SendInput({ .kind = core::ActionKind::Load }); // pressed while leaving
+    const BurstResult leaving = rig.Burst(1);
+    static_cast<void>(Settle(rig, leaving));
+    CHECK(rig.simulation.key == OTHER_KEY);
+    CHECK(rig.logic.Epoch() == 0);
+    CHECK(rig.logic.Counters().wall == counters.wall);
+    const BurstResult next = rig.Burst(1); // nor is it taken once the scene runs
+    CHECK(next.snapshot.advanced);
+    CHECK(rig.logic.Epoch() == 0);
+    CHECK(rig.simulation.ticks.size() == TICKS + 2);
 }
 
 TEST_CASE("the step's wall tick doesn't depend on how the clock split the ticks into bursts") {
