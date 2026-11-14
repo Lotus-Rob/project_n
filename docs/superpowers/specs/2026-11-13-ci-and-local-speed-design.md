@@ -1,6 +1,6 @@
 # Faster CI and local builds: cache what we compile, spread what can't be cached, run test cases in parallel
 
-Date: 2026-11-13 · Status: approved 2026-11-13
+Date: 2026-11-13 · Status: implemented 2026-11-14 (approved 2026-11-13; see Outcome)
 
 ## Intent
 
@@ -247,4 +247,160 @@ looked at for wasted ticks (same behaviour, same asserts, fewer frames to reach 
 
 ## Outcome
 
-(Filled in before the PR.)
+Built in the eighteen commits from "build(tools): give each reference case its own runtime directory" to "build(xmake):
+drop msvc-wine's unused build cache exception". CI was measured on this branch's own runs, 2026-11-13 and 14 (the run
+ids below: GitHub keeps each one's step times). Local numbers are dated, on the 32-core dev machine.
+
+**CI, per job** (job wall time; the last two columns medians over three runs, all green):
+
+| job | no object cache yet¹ | cached, before the split² | **after the split³** |
+|---|---|---|---|
+| lint | 12m37 | 2m44 | **2m29** |
+| container (linux-clang) | 12m37 (with releasedbg) | 7m52 (with releasedbg) | **4m49** |
+| releasedbg | (in linux-clang) | (in linux-clang) | **3m39** |
+| container (linux-gcc) | 6m08 | 8m24 | **8m13** |
+| container (windows-msvc) | 7m17 | 10m03 | **10m02** (8m55 over four runs⁴) |
+| windows (release) | 13m42 (`windows`: both builds) | 10m22 (`windows`) | **6m13** |
+| windows (address) | (in `windows`) | (in `windows`) | **5m56** |
+| macos (release) | 12m45 (`macos`: three builds) | 9m53 (`macos`) | **3m45** |
+| macos (address) | (in `macos`) | (in `macos`) | **2m29** |
+| **run wall** (created to updated) | | 13m38 | **10m06** (9m15 over four runs⁴) |
+
+¹ Run 43511118499, a single run: the first with the object cache steps, which found nothing to restore and compiled
+cold, after the parallel test files had landed. For scale, main before this branch: run walls of 21.5 and 16.3 min
+(the table at the top), 12.5 min on run 43293701453.
+² Runs 43548418939 (a re-run), 43549321125 (one `.cpp` touched) and 43550574071 (`src/core/types.hpp` touched, which
+every precompiled header includes, so every Clang object and clang-tidy result missed). Every cache was in place;
+"build(tools): let artifact package an earlier release build on branches" and the split were not.
+³ Runs 43553079531 (a push changing only a tools file), 43585392994 (a re-run of it) and 43586261018 (one `.cpp`
+touched). The split's first run, 43552206135, failed in `selftest` and is not counted.
+⁴ Adding run 43586955595, the branch head of the time (container (windows-msvc) 7m32, run wall 8m24): the four job
+times 10m02, 10m08, 7m48, 7m32 and the four walls 10m06, 10m13, 8m17, 8m24, each median taken between the middle two.
+
+Runner noise is large: the Windows jobs ran 25–35 % faster in 43586261018 than in 43585392994 for the same build
+work, so only medians decided anything.
+
+**What each change bought, with the ruling behind it:**
+
+- **The object cache** ("build(tools): keep CI's compiled objects between runs", "ci: keep compiled objects between
+  branch runs"). container (linux-clang) went from 12m37 cold to 7m01 warm (run 43513251309: `artifact` 359 → 206 s,
+  releasedbg 308 → 132 s). The caches saved on the cold run took lint 38.8 MiB, container (linux-clang) 135.4 MiB and
+  macos 127.2 MiB of the 10 GB. Only Clang uses it (`CI_CACHED_TOOLCHAINS`):
+  - **GCC never does, locally too.** With a precompiled header, GCC's preprocessed text holds `#pragma GCC
+    pch_preprocess "<pch>.gch"` instead of the headers, so XMake's key missed a change to `core/types.hpp` and handed
+    back the old object; reproduced first (a test still saw the old value after the header changed), then shown gone
+    with GCC off the cache in xmake.lua. That bug was latent in every local linux-gcc build before this branch.
+  - **A clang miss costs more than an uncached compile** (the cache compiles the preprocessed file without the PCH):
+    linux-clang release 44 s cold through the cache, 35.5 s uncached, 27 s warm; debug 25 / 19 / 11 s (32 cores, the
+    builder's hand check). Main writes through the cache into an empty folder, so it pays the cold figure.
+  - **macOS never hit at first**: the save key differed from the restore key every run, because the macOS job added
+    to `xmake-requires.lock` the `macosx|arm64` entries of five requires added from Linux. The saves now use the key
+    their restore step computed, and the missing entries are committed ("build(deps): lock the macOS packages added
+    since entt"); on the first warm run after that (43521575852) the macos job went from 14m07 to 9m57 (release tests
+    338 → 212 s, ASan 242 → 131 s).
+- **clang-tidy's results** ("build(tools): keep clang-tidy's results for unchanged units"): locally `lint --all` 84.1 s
+  cold, 13.0 s warm, 22.6 s after a comment-only edit (141 units, 32 cores); in CI lint went from 11m09 to 2m35
+  (`lint --container` 613 → 108 s, runs 43529001973 and 43530664696). The key holds more than the plan's: the bytes of
+  every repository file the `-E` text names (`-E` drops comments, so removing a NOLINT would otherwise have been served
+  a cached pass), each unit's compile entries sorted (XMake exports a file two targets compile in either order),
+  `tidy_command`'s own arguments; crashes are never stored, and the three fuzz targets (no compile database entry) stay
+  uncached.
+- **The lock file** ("build(tools): restore xmake-requires.lock when a build only reorders it", then "… only prunes
+  it"): `run` writes the committed bytes back after every XMake call that only reordered the lock or dropped entries,
+  and keeps and prints anything added or changed. Native Windows added meson, pkgconf and python entries to
+  `windows|x64` every run, so "build(deps): lock the build tools native Windows resolves" committed them; run
+  43522155375 then showed the windows-msvc container's `artifact` dropping them again (msvc-wine's host tools are Linux
+  ones). Restoring only reorders, as the plan's `restore_reordered_lock` did, would have left that drop in every local
+  windows-msvc build with a print asking to commit it, and committing it would have brought native Windows' drift
+  back; so it became `restore_lock_unless_added`. The cost, recorded in the add-dependency skill: removing a dependency
+  leaves its entries until deleted by hand. The next run (43525566167) printed no lock change in any job.
+- **The split** ("ci: split the jobs that ran longest", nine required checks, `.github/rulesets/main.json` changed in
+  the same commit): macos 9m53 → 3m45 and 2m29, windows 10m22 → 6m13 and 5m56, container (linux-clang) 7m52 → 4m49
+  plus releasedbg 3m39. In macos (release), `artifact --reuse-build` packages the release build its tests just made:
+  14–18 s instead of a second clean build of 181 s; main and tags still rebuild in the clean room.
+- **The Mesa race** ("build(tools): give each reference case its own runtime directory"): none of the branch's CI
+  runs failed in the reference pictures.
+- **Sweep-up items:** the reference pictures did not drift between runs; four of them (`cells`, `cells_far`, `painted`,
+  `fox_dissolving`) were stale within tolerance after earlier renderer changes and atlas re-packs, and every
+  `--update` rewrote them identically (refreshed in "test(tests): refresh the reference pictures lavapipe draws
+  today", with a Gotcha in tests/AGENTS.md: refresh such pictures, never revert them). `lint` no longer prints the
+  ignored Quill report.
+
+**Local** (linux-clang debug unless named):
+
+| what | before | after |
+|---|---|---|
+| `test`, built, nothing changed | 37 s (`game_tests` one process, 20.9 s; the plan's baseline) | **8.4 s** (8.2–8.6 s over three runs; XMake's test phase 6.6–6.9 s for 76 file tests)⁵ |
+| slowest test case ("a scene change mid-volley ends every open use") | 6.3 s | **1.3 s** (every assertion kept, the change made late in the swords' flight, so 32 stress ticks follow it instead of 180) |
+| `test` in a fresh build folder (a fresh worktree's first) | not measured as one figure: a ~20 s cold build plus the 37 s run | **34.1 s** (build 20.2 s, tests 6.9 s)⁵; 33.4 s in a fresh worktree on 2026-11-14 |
+| `lint --all` | 84.1 s (every unit linted, as before this branch) | **13.0 s** with every result kept |
+| `check`, **cold** (every build folder fresh, packages kept) | 390 s, in a fresh worktree on 2026-11-14 midway through this branch (load average 13–29) | **370 s**⁶ |
+| `check`, warm (stale build folders: a different condition) | 238 s on main (the table at the top) | not measured |
+
+⁵ Measured for this Outcome on the branch head with the cold build folder moved away for the fresh run, load average 4–5
+(other programs running). The slowest file tests are now game_tests/arena and game_tests/save at 6.3–6.7 s each.
+⁶ Measured for this Outcome: one run on the branch head with every build folder removed first and the packages kept, as
+for the 390 s run (load average 10 at the start, 32 at the end). Steps: lint 111 s (clang-tidy's cache empty), test
+linux-gcc release 73 s, linux-clang release 44 s, windows-msvc release 63 s, reference 8 s, unity test 24 s, releasedbg
+build 47 s. The 390 s run came after the parallel test files and the clang-tidy cache had landed, so the two differ by
+noise, not by this branch. Cold, `check` is bound by its six builds (XMake's time: 21, 63, 34, 53, 15 and 39 s), which
+only a cache shared between folders could shorten (the spike below). A warm `check` was not measured.
+
+**The spikes:**
+
+- **No compile cache shared between local worktrees** (record, don't adopt; tools/AGENTS.md). A shared `--ccachedir`
+  hit 0 of 140 compiles from another worktree: XMake's key holds the compiler's path, which is each worktree's own
+  `.pixi`, and the preprocessed text, whose line markers name that env's headers and, through `-include-pch`, every
+  precompiled header's headers by absolute path; no flag mapped those, and `-ffile-prefix-map=<ROOT>=.` guarantees a
+  miss, since XMake keys on the flag's text. Only a Pixi env shared by every worktree, a plain `-include` instead of
+  each PCH and `-ffile-compilation-dir=.` hit 128 of 140, byte-identical to a cold compile: a fresh worktree's debug
+  build in 9 s instead of 20 s (XMake's time), but every cold build 20 → 28 s, and gdb started from the binary's folder
+  loses the sources. Not adopted: a shared env is an architecture change this spec didn't approve, and dropping the PCH
+  changes shipped builds' compile flags.
+- **No MSVC objects in CI** (.github/AGENTS.md, Gotchas). XMake's `cl` cache compiles each file's preprocessed text
+  without the PCH, so even a cold-cached `.exe` differs in code from an uncached one (418,566 bytes; anonymous
+  namespaces take the `__cpp_*` file's name), and it keeps only the `.obj`, so on a hit the debug types `/Zi` left in
+  the build folder's pdb are gone: the warm artefact's `.pdb` shrank from 27.6 to 12.1 MB. Two uncached CI builds gave
+  a byte-identical `.exe`. Under Wine it was no faster either (`artifact` 445 s uncached, 683 s cold, 472 s warm);
+  native Windows was (job 797 → 464 s warm) but 342 s slower cold, as every main run is. Only `/Z7` would keep the
+  debug info, a release compile flag change. The xmake.lua exception that let CI turn msvc-wine's cache on was then
+  dead and is gone.
+
+**The user's rulings (2026-11-14):** container (windows-msvc)'s three-run median of 10m02 is runner noise: over four
+runs it is 8m55 (the fourth 7m32), within the 10-minute ceiling, and the job's median was 10m03 before the split, which
+didn't touch it. The idea that would shorten it is recorded, not built: `artifact` and `test` taking a target subset,
+so two container jobs each link about half of the twelve executables (/LTCG under Wine takes ~4m25 of the job), est.
+~8 min; it needs new, test-first `project_n` logic and a tenth required check. Splitting
+`tests/unit/game/arena_tests.cpp` goes on the sweep-up backlog (below).
+
+**Goals:**
+
+1. CI: the 10-minute goal is met on typical pushes (every job's median within 10 minutes, the msvc one by the ruling
+   above); the 5-minute one is not, for four jobs (below). A push that misses every Clang object and clang-tidy result
+   (a header every PCH includes, run 43550574071) is over 10 in lint, which can't split along builds: 17m53 there before
+   the split, and 11m09 on the run that filled an empty clang-tidy cache (43529001973). The user accepted lint's
+   cold time as recorded (2026-11-14); sharding it is an idea on the sweep-up backlog.
+2. Test rounds: `game_tests` no longer runs in one process; `test` takes 8.4 s instead of 37 s.
+3. Fresh worktrees: no correct shared cache (the spike above); tools/AGENTS.md has today's cold build times instead of
+   "~10 s".
+4. The sweep-up items are fixed and the backlog pruned (the lock reorder, the reference pictures, the Quill print, the
+   finished entries); "CI speed, another pass" is marked done there.
+5. Measured before and after, above.
+
+**What's left:**
+
+- **Jobs over 5 minutes, and why they stop there** (medians within 10 minutes, as §5 allows):
+  - windows (release) 6m13: bound by /LTCG links, ~3.6 min of a 264 s build after ~1 min of compiling
+    (`reference_tests.exe` alone ~80 s). Testing in another job saves the ~10 s of tests; LTO is design doc 0001's.
+  - windows (address) 5m56: game_tests/arena is one process of 104–187 s (54 cases), while the other test files run
+    beside it.
+  - container (linux-gcc) 8m13: one clean-room `artifact`, ~2 min of compiling and then ~3 min of LTO links and `.sym`
+    splits; GCC uses no object cache.
+  - container (windows-msvc) 10m02: one clean-room `artifact`, ~2.3 min of compiling under Wine and then ~4m25 of
+    /LTCG links; MSVC uses no object cache (above).
+- **Splitting `arena_tests.cpp`** in two, no case changed, should take windows (address) from ~5m56 to ~4m45 (sweep-up
+  backlog).
+- **The msvc link split** above, if the job's median stays near 10 minutes.
+- The ruleset's nine checks are applied by the user just before merging, after which every open branch rebases.
+- "build(xmake): drop msvc-wine's unused build cache exception" changes xmake.lua, which the object caches' keys hash,
+  so the branch's next run compiles every Clang object cold once.
