@@ -26,6 +26,20 @@
 
 namespace gfx {
 
+/// How the swapchain presents a frame.
+enum class PresentMode : u8 {
+    /// At once, tearing allowed: nothing waits for the display.
+    Immediate,
+    /// The newest finished frame replaces the one waiting for the display's next refresh.
+    Mailbox,
+    /// On the display's refresh, each frame in turn; every display has it.
+    Vsync,
+};
+
+/// The uncapped present modes to try, best first: mailbox, then immediate; immediate, then mailbox when `unpaced` (a
+/// measurement wants nothing to wait). Vsync follows when neither is available, so it isn't listed.
+[[nodiscard]] std::span<const PresentMode> PresentModeOrder(bool unpaced);
+
 /// How game text is drawn (the phase 6 chunk 3 spec, "Settings" and "Accessibility"): from the settings at start-up.
 struct TextOptions {
     /// The language labels and captions show in.
@@ -46,15 +60,17 @@ class Renderer {
 public:
     /// Creates a GPU device for `window` and presents to it, with the empty sprite atlas `manifest` describes, whose
     /// scenes load from `assets`, and the glyph cache, its font from `assets/fonts/`, or says why it couldn't. Texts show
-    /// `strings`, drawn as `text` says, in `colours`; every glyph `strings` uses, in every language, is rasterised now
-    /// (TextLayout::Prewarm()), so the game's own text never waits for one. The window must outlive the renderer.
+    /// `strings`, drawn as `text` says, in `colours`; frames present as PresentModeOrder(`unpaced`) says; every glyph `strings`
+    /// uses, in every language, is rasterised now (TextLayout::Prewarm()), so the game's own text never waits for one. The
+    /// window must outlive the renderer.
     [[nodiscard]] static std::expected<Renderer, core::Error> Create(
         platform::Window& window,
         const std::filesystem::path& assets,
         std::shared_ptr<const core::Manifest> manifest,
         std::shared_ptr<const core::Strings> strings,
         const TextOptions& text,
-        const core::UiColours& colours
+        const core::UiColours& colours,
+        bool unpaced
     );
 
     Renderer(const Renderer&) = delete;

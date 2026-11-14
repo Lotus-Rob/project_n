@@ -50,6 +50,64 @@ TEST_CASE("a start-up failure is shown with what failed and why") {
     CHECK(shownMessage == "the window couldn't be opened:\nno display");
 }
 
+TEST_CASE("a window moving between displays names each new one once, and its mode when that changes") {
+    const platform::DisplayMode fast{
+        .id = 1, .name = "DP-2", .width = 2560, .height = 1440, .refreshNumerator = 165, .refreshDenominator = 1
+    };
+    const platform::DisplayMode slow{
+        .id = 2, .name = "DP-1", .width = 1920, .height = 1080, .refreshNumerator = 59950, .refreshDenominator = 1000
+    };
+    const platform::DisplayMode twin{
+        .id = 3, .name = "HDMI-A-1", .width = 1920, .height = 1080, .refreshNumerator = 59950, .refreshDenominator = 1000
+    };
+    // fast's display, its refresh rate changed
+    const platform::DisplayMode modeChanged{
+        .id = 1, .name = "DP-2", .width = 2560, .height = 1440, .refreshNumerator = 144, .refreshDenominator = 1
+    };
+    platform::WindowState state;
+    CHECK(platform::MoveToDisplay(state, slow)); // first: where SDL opened it, before the compositor placed it
+    CHECK(platform::MoveToDisplay(state, fast)); // placed on another display
+    CHECK(state.display == fast);
+    CHECK_FALSE(platform::MoveToDisplay(state, fast)); // the same display again: nothing new to name
+    CHECK(platform::MoveToDisplay(state, twin));       // another display of the same mode is still a move
+    CHECK(state.display == twin);
+    CHECK(platform::MoveToDisplay(state, fast));
+    CHECK(platform::MoveToDisplay(state, modeChanged)); // same display, its refresh rate changed
+    CHECK(state.display == modeChanged);
+}
+
+TEST_CASE("a display's log line gives its size, refresh rate and name") {
+    CHECK(
+        platform::DisplayLine(
+            { .id = 1, .name = "DP-2", .width = 2560, .height = 1440, .refreshNumerator = 164999, .refreshDenominator = 1000 }
+        ) == "display: 2560x1440 at 165 Hz (DP-2)"
+    );
+    CHECK(
+        platform::DisplayLine(
+            { .id = 2, .name = "DP-1", .width = 1920, .height = 1080, .refreshNumerator = 59950, .refreshDenominator = 1000 }
+        ) == "display: 1920x1080 at 59.95 Hz (DP-1)"
+    );
+    CHECK(platform::DisplayLine({ .id = 3, .width = 800, .height = 600 }) == "display: 800x600 at 0 Hz (unnamed)");
+}
+
+TEST_CASE("an opened window knows the display it is on, and keeps it when SDL says the display changed") {
+    std::expected<platform::Window, core::Error> window = OpenWindow();
+    std::vector<platform::InputEvent> inputs;
+    const SDL_DisplayID display = SDL_GetDisplayForWindow(static_cast<SDL_Window*>(window->Handle()));
+    const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(display);
+    REQUIRE(mode != nullptr);
+    const platform::WindowState& opened = window->Poll(0, inputs);
+    CHECK(opened.display.id == display);
+    CHECK(opened.display.width == mode->w);
+    CHECK(opened.display.height == mode->h);
+    SDL_Event event{};
+    event.type = SDL_EVENT_WINDOW_DISPLAY_CHANGED;
+    event.window.windowID = SDL_GetWindowID(static_cast<SDL_Window*>(window->Handle()));
+    event.window.data1 = static_cast<i32>(display);
+    REQUIRE(SDL_PushEvent(&event));
+    CHECK(window->Poll(0, inputs).display.id == display);
+}
+
 TEST_CASE("the window is minimised from a minimise until a restore") {
     std::expected<platform::Window, core::Error> window = OpenWindow();
     std::vector<platform::InputEvent> inputs;

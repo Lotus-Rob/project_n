@@ -103,7 +103,8 @@ gfx::Renderer RendererFor(platform::Window& window, core::SceneId scene, core::J
         test::TestManifest(),
         std::make_shared<const core::Strings>(std::move(*strings)),
         {},
-        core::UiColours{}
+        core::UiColours{},
+        false
     );
     const std::string rendererWhy = renderer.error_or(core::Error{}).message;
     REQUIRE_MESSAGE(renderer.has_value(), rendererWhy);

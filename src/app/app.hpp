@@ -48,6 +48,9 @@ inline constexpr u64 CAST_SWORDS_NS = 4 * core::NS_PER_SECOND;
 /// Where `--cast-swords` casts, from the followed player's foot, in world units.
 inline constexpr core::Vec2 CAST_SWORDS_OFFSET{ .x = 300.0F, .y = 0.0F };
 
+/// The most worker threads `--workers` accepts.
+inline constexpr u32 MAX_WORKERS = 64;
+
 /// What the command line and the platform chose for a run.
 struct Options {
     /// The atlas manifest, read from `assets/manifest.yaml`; never null.
@@ -74,6 +77,11 @@ struct Options {
     /// at the followed player's foot plus CAST_SWORDS_OFFSET (`--cast-swords`), topping the Qi up with the generator first when
     /// it is short (TimedCast()), so a profile run sees volleys without key presses.
     bool castSwords = false;
+    /// How many worker threads the job system runs (`--workers`); 0 takes core::Jobs::DefaultWorkers().
+    u32 workers = 0;
+    /// Present as fast as the display allows, immediate before mailbox (`--unpaced`), so a measurement isn't capped by the
+    /// display's rate.
+    bool unpaced = false;
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The player's settings, read from `settings.yaml`: the main thread's systems take theirs from it.
     core::Settings settings{};
@@ -92,6 +100,11 @@ struct Options {
 /// The zoom `--zoom <value>` in the command line `args` asks every scene to start at, 1 without it; an error ("--zoom:
 /// ...") for a missing value, text that isn't a number, or a zoom outside gfx::MIN_ZOOM to gfx::MAX_ZOOM.
 [[nodiscard]] std::expected<f32, core::Error> ZoomOf(std::span<const char* const> args);
+
+/// The job system's worker count `--workers <count>` in the command line `args` asks for, 0 without it (the default for the
+/// machine); an error ("--workers: ...") for a missing value, text that isn't a number, or a count outside 1 to
+/// MAX_WORKERS.
+[[nodiscard]] std::expected<u32, core::Error> WorkersOf(std::span<const char* const> args);
 
 /// Watches a folder of files for changes (the game data, design doc 0002.3 §7).
 class DataWatch {
@@ -174,7 +187,7 @@ private:
     void MeasureLatency(const core::Snapshot& drawn);
 
     // First, so it goes last: the logic thread registers with it, the renderer's loads run on it.
-    core::Jobs m_jobs{ core::Jobs::DefaultWorkers(), /*externalThreads=*/1 };
+    core::Jobs m_jobs;
     platform::Window m_window;
     gfx::Renderer m_renderer;
     Options m_options;

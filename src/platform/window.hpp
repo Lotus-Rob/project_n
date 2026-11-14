@@ -12,10 +12,35 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
 namespace platform {
+
+/// A display and its current mode, as the log names it.
+struct DisplayMode {
+    /// SDL's ID for the display; 0 for none.
+    u32 id = 0;
+    /// The name the system gives it (a connector such as `DP-2` on Linux); empty when it has none.
+    std::string name{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    /// Its width in pixels.
+    i32 width = 0;
+    /// Its height in pixels.
+    i32 height = 0;
+    /// Its refresh rate exactly, in hertz, as this over refreshDenominator; 0 when unknown.
+    i32 refreshNumerator = 0;
+    /// The refresh rate's denominator; 0 when unknown.
+    i32 refreshDenominator = 0;
+
+    /// Its refresh rate in hertz; 0 when unknown.
+    [[nodiscard]] f64 RefreshHz() const {
+        return refreshDenominator == 0 ? 0.0 : static_cast<f64>(refreshNumerator) / refreshDenominator;
+    }
+
+    /// Whether both are the same display in the same mode, exactly.
+    bool operator==(const DisplayMode&) const = default;
+};
 
 /// What the window's events have said so far.
 struct WindowState {
@@ -31,7 +56,19 @@ struct WindowState {
     i32 width = 0;
     /// Its height, likewise.
     i32 height = 0;
+    /// The display the window is on, read when it opens and again whenever SDL says it was shown, went fullscreen,
+    /// moved to another display or that display's mode changed: a compositor may place a new window on another display
+    /// than the one SDL opened it on.
+    DisplayMode display{};
 };
+
+/// The log line naming `mode`, `display: WxH at N Hz (name)`, which `project_n measure` reads to judge whether a run's
+/// frames were paced by the display.
+[[nodiscard]] std::string DisplayLine(const DisplayMode& mode);
+
+/// Records that the window is now on `now`, as Window::Open and Poll do: returns whether that differs from
+/// `state.display` (another display, or the same one's mode changed), which is when the log names it again.
+bool MoveToDisplay(WindowState& state, const DisplayMode& now);
 
 /// The kind of device an input came from.
 enum class Device : u8 {
