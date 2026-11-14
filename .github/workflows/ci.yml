@@ -73,7 +73,7 @@ jobs:
           lookup-only: ${{ github.ref == 'refs/heads/main' }}
           key: objects-lint-linux-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-${{ github.sha }}
           restore-keys: objects-lint-linux-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-
-      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
@@ -135,7 +135,7 @@ jobs:
           lookup-only: ${{ github.ref == 'refs/heads/main' }}
           key: objects-container-linux-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-${{ github.sha }}
           restore-keys: objects-container-linux-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-
-      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
@@ -217,7 +217,7 @@ jobs:
           lookup-only: ${{ github.ref == 'refs/heads/main' }}
           key: objects-releasedbg-linux-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-${{ github.sha }}
           restore-keys: objects-releasedbg-linux-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-
-      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
@@ -292,7 +292,7 @@ jobs:
           # One entry for both builds, saved by the release one: a sanitizer or mode picks no other package variant.
           key: xmake-windows-native-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
           restore-keys: xmake-windows-native-
-      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
@@ -360,7 +360,7 @@ jobs:
           lookup-only: ${{ github.ref == 'refs/heads/main' }}
           key: objects-macos-${{ matrix.build }}-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-${{ github.sha }}
           restore-keys: objects-macos-${{ matrix.build }}-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**', 'xmake.lua') }}-
-      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
@@ -420,7 +420,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         env:
           GIT_LFS_SKIP_SMUDGE: "1" # pointers only: no LFS file is needed
-      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
@@ -446,7 +446,7 @@ jobs:
           pattern: project_n-*
           path: dist
           merge-multiple: true
-      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           locked: true
