@@ -1,7 +1,7 @@
 # Phase 6, chunk 5a: the measurements, the world scene and the camera
 
-Date: 2026-11-14 · Status: draft, re-checked 2026-11-14 against the scenes part as merged
-(`2026-11-14-phase6-chunk5-scenes-design.md`, its Outcome) · Chunk spec: `2026-11-10-phase6-chunk5-world-map-design.md` · Phase spec: `2026-11-10-phase6-design.md`
+Date: 2026-11-14 · Status: approved 2026-11-14 (re-checked against the scenes part as merged:
+`2026-11-14-phase6-chunk5-scenes-design.md`, its Outcome) · Plan: `2026-11-14-phase6-chunk5a.md` · Chunk spec: `2026-11-10-phase6-chunk5-world-map-design.md` · Phase spec: `2026-11-10-phase6-design.md`
 
 ## In short
 
