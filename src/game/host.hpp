@@ -198,8 +198,27 @@ private:
     // The scene a CycleScene asked for, until it is entered.
     std::optional<core::SceneKey> m_requested = std::nullopt;
 
-    // A sound load's state, held until EnterScene() makes it current.
+    // A sound load's state, held until EnterScene() makes it current. A constructor, not an aggregate: core::State has no
+    // default, and MSVC warns (C4623) where an aggregate's default constructor is implicitly deleted.
     struct Loaded {
+        Loaded(
+            core::State loadedState,
+            Relationships loadedRelationships,
+            Combat loadedCombat,
+            core::SceneKey loadedScene,
+            u64 loadedMonths,
+            core::StableId loadedPlayer,
+            core::StableId loadedSelected
+        )
+          : state(std::move(loadedState))
+          , relationships(std::move(loadedRelationships))
+          , combat(std::move(loadedCombat))
+          , scene(loadedScene)
+          , months(loadedMonths)
+          , player(loadedPlayer)
+          , selected(loadedSelected) {
+        }
+
         core::State state;
         Relationships relationships;
         Combat combat;
