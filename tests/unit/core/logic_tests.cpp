@@ -985,6 +985,35 @@ TEST_CASE("nothing is recorded while a scene changes") {
     }
 }
 
+TEST_CASE("a Pause sent while recording during a scene change is recorded, so the replay plays back alike") {
+    constexpr u64 TICKS = 70;
+    const SaveSlot slot{ "pause_during_change" };
+    const std::filesystem::path replayFile = slot.File().parent_path() / "replay.pnr";
+    {
+        Rig rig(slot.File(), replayFile);
+        rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
+        static_cast<void>(rig.Burst(1));
+        rig.handover.SendInput({ .kind = core::ActionKind::CycleScene });
+        const BurstResult asked = rig.Burst(1);
+        rig.handover.SendInput({ .kind = core::ActionKind::Pause }); // the window lost its focus while leaving
+        static_cast<void>(Settle(rig, asked));
+        static_cast<void>(rig.Burst(TICKS));
+        rig.handover.SendInput({ .kind = core::ActionKind::Resume });
+        static_cast<void>(rig.Burst(TICKS));
+        while (rig.logic.Counters().wall % core::REPLAY_HASH_TICKS != 0) {
+            static_cast<void>(rig.Burst(1));
+        }
+        rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
+        static_cast<void>(rig.Burst(1));
+        rig.jobs.WaitForBackground();
+    }
+    Rig rig(slot.File(), replayFile);
+    Play(rig);
+    CHECK(rig.replay.AtEnd());
+    CHECK(rig.replay.HashCount() > 0);
+    CHECK(rig.replay.Matched() == rig.replay.HashCount());
+}
+
 TEST_CASE("a SceneResident on a running tick reaches neither the simulation nor the replay") {
     const SaveSlot slot{ "scene_resident_unrecorded" };
     Rig rig(slot.File(), slot.File().parent_path() / "replay.pnr");
