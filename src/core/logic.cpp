@@ -163,6 +163,7 @@ bool Logic::Wait() {
             m_windowPaused = action.kind == ActionKind::Pause;
             if (!m_replay->Playing()) {
                 m_paused = m_windowPaused;
+                m_heldPausing = action.kind;
             }
         }
         else if (action.kind == ActionKind::SceneLeft || action.kind == ActionKind::SceneEntered) {
@@ -224,6 +225,11 @@ Logic::ActionSet Logic::TakeInput() {
         return action.kind == ActionKind::SceneResident || action.kind == ActionKind::SceneLeft ||
                action.kind == ActionKind::SceneEntered;
     });
+    // A recording takes only running ticks' input: this tick records the pausing taken while the scene changed, which a
+    // replay would otherwise never see. Live input sent since comes after it, so the last still wins.
+    if (const std::optional<ActionKind> pausing = std::exchange(m_heldPausing, std::nullopt)) {
+        m_input.insert(m_input.begin(), Action{ .kind = *pausing });
+    }
     m_held = m_handover->ReadHeld();
     for (const Action& action : m_input) {
         if (action.kind == ActionKind::Pause || action.kind == ActionKind::Resume) {
