@@ -369,7 +369,7 @@ bool Logic::Load() {
         return false;
     }
     PN_LOG_INFO(
-        "loaded the game from {} at tick {}; timeline {} begins once its scene is entered",
+        "loaded the game from {} at tick {}; timeline {} begins once the scene shown is left",
         m_saves->Slot().string(),
         m_counters.wall,
         m_epoch + 1
@@ -418,7 +418,7 @@ bool Logic::TogglePlayback() {
         PN_LOG_ERROR("no replay played: its start state is malformed");
         return false;
     }
-    PN_LOG_INFO("playing the replay at tick {}; timeline {} begins once its scene is entered", m_counters.wall, m_epoch + 1);
+    PN_LOG_INFO("playing the replay at tick {}; timeline {} begins once the scene shown is left", m_counters.wall, m_epoch + 1);
     return true;
 }
 
