@@ -21,7 +21,7 @@ enum class Control : u8 {
     DragCamera,      ///< Drag the roaming camera by the pointer: a button.
     SnapBack,        ///< Bring the camera back to the player: a button.
     Primary,         ///< The left button: casts the generator, or selects what is under the pointer.
-    Secondary,       ///< The right button: casts the spender.
+    Secondary,       ///< The right button: casts the spender, or outside combat drags the camera (DragsCamera()).
     Movement,        ///< Space: casts the movement ability.
     Special1,        ///< Key 1.
     Special2,        ///< Key 2.

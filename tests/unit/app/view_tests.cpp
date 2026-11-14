@@ -1,3 +1,4 @@
+#include "app/camera_control.hpp"
 #include "app/view.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/instances.hpp"
@@ -85,38 +86,6 @@ TEST_CASE("picking turns with a rotated instance, as alpha draws it") {
     CHECK(app::Pick(snapshot, 1.0, ALONG_X) == core::StableId{});
 }
 
-TEST_CASE("showing another scene puts the camera back at the reference view") {
-    constexpr auto FIRST = core::SceneId{ 0 };
-    constexpr auto SECOND = core::SceneId{ 1 };
-    constexpr f32 ZOOMED = 2.0F;
-    gfx::Camera camera{ .centre = MOVED, .zoom = ZOOMED };
-    std::optional<core::SceneId> shown = FIRST;
-    app::ShowScene(camera, shown, SECOND);
-    CHECK(camera.centre.x == gfx::REFERENCE_CENTRE.x);
-    CHECK(camera.centre.y == gfx::REFERENCE_CENTRE.y);
-    CHECK(camera.zoom == 1.0F);
-}
-
-TEST_CASE("showing another scene starts it at the run's zoom") {
-    constexpr auto FIRST = core::SceneId{ 0 };
-    constexpr auto SECOND = core::SceneId{ 1 };
-    gfx::Camera camera{ .centre = MOVED, .zoom = 1.0F };
-    std::optional<core::SceneId> shown = FIRST;
-    app::ShowScene(camera, shown, SECOND, gfx::MIN_ZOOM);
-    CHECK(camera.centre.x == gfx::REFERENCE_CENTRE.x);
-    CHECK(camera.zoom == gfx::MIN_ZOOM);
-}
-
-TEST_CASE("showing the same scene again leaves the camera where the player put it") {
-    constexpr auto FIRST = core::SceneId{ 0 };
-    constexpr f32 ZOOMED = 2.0F;
-    gfx::Camera camera{ .centre = MOVED, .zoom = ZOOMED };
-    std::optional<core::SceneId> shown = FIRST;
-    app::ShowScene(camera, shown, FIRST);
-    CHECK(camera.centre.x == MOVED.x);
-    CHECK(camera.zoom == ZOOMED);
-}
-
 constexpr i32 WINDOW_WIDTH = 1280;
 constexpr i32 WINDOW_HEIGHT = 720;
 
@@ -177,8 +146,10 @@ TEST_CASE("the cull margin holds a wheel notch out and a full-speed pan for the 
                 const gfx::Camera before{ .zoom = zoom };
                 const core::Rect area = app::CullArea(before, window.width, window.height);
                 gfx::Camera after{ .zoom = gfx::ZoomedBy(zoom, -1.0F) };
-                // Along both axes at once: farther than any held movement, which is at most 1 long.
-                const f32 pan = sign * app::PAN_SPEED * SECONDS / after.zoom;
+                const core::Rect zoomedOut = WindowArea(after, window.width, window.height);
+                const f32 screen = std::min(zoomedOut.max.x - zoomedOut.min.x, zoomedOut.max.y - zoomedOut.min.y);
+                // Along both axes at once: farther than any pan, which is at most 1 long.
+                const f32 pan = sign * app::PAN_SCREENS_PER_SECOND * screen * SECONDS;
                 after.centre = after.centre + core::Vec2{ .x = pan, .y = pan };
                 const core::Rect shown = WindowArea(after, window.width, window.height);
                 CHECK(
@@ -196,10 +167,10 @@ TEST_CASE("the camera holds still while a calendar step's transition shows") {
     following.follow = core::Follow{};
     core::Snapshot transition;
     transition.transition = true;
-    CHECK_FALSE(app::PansCamera(nullptr)); // nothing drawn yet
-    CHECK(app::PansCamera(&still));
-    CHECK_FALSE(app::PansCamera(&following)); // the camera follows the target instead
-    CHECK_FALSE(app::PansCamera(&transition));
+    CHECK(app::HoldsCamera(nullptr)); // nothing drawn yet
+    CHECK_FALSE(app::HoldsCamera(&still));
+    CHECK_FALSE(app::HoldsCamera(&following)); // whether a scene that follows pans is its camera kind's (CameraControl)
+    CHECK(app::HoldsCamera(&transition));
     CHECK(app::ZoomsCamera(nullptr));
     CHECK(app::ZoomsCamera(&still));
     CHECK(app::ZoomsCamera(&following));
