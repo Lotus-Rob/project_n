@@ -675,7 +675,7 @@ class ArtifactReferenceTest(unittest.TestCase):
                                  run=lambda *args, **kwargs: None, xmake_env=lambda bdir: {},
                                  run_references=compared.append, binary_path=stop), \
              mock.patch.object(project_n.shutil, "rmtree"), self.assertRaises(Stop):
-            project_n.cmd_artifact(project_n.argparse.Namespace(preset=preset))
+            project_n.cmd_artifact(project_n.argparse.Namespace(preset=preset, reuse_build=False))
         return compared
 
     def test_a_linux_artefact_compares_the_reference_pictures(self):
@@ -683,6 +683,10 @@ class ArtifactReferenceTest(unittest.TestCase):
 
     def test_a_windows_artefact_doesnt(self):
         self.assertEqual(self.references_in_artifact("windows-msvc"), [])
+
+    def test_artifact_takes_the_reuse_option(self):
+        self.assertTrue(project_n.make_parser().parse_args(["artifact", "--preset", "macos-clang", "--reuse-build"]).reuse_build)
+        self.assertFalse(project_n.make_parser().parse_args(["artifact", "--preset", "macos-clang"]).reuse_build)
 
 
 class ObjectCacheTest(unittest.TestCase):
@@ -808,10 +812,47 @@ class ObjectCacheTest(unittest.TestCase):
         with self.ci(self.tmp / "c", "refs/tags/v1.0.0"), \
              mock.patch.multiple(project_n, IN_CONTAINER=True, tree_dirty=lambda: "", lfs_pointers=lambda folder: [],
                                  run_references=lambda preset: None, binary_path=stop), self.assertRaises(Stop):
-            project_n.cmd_artifact(project_n.argparse.Namespace(preset="linux-clang"))
+            project_n.cmd_artifact(project_n.argparse.Namespace(preset="linux-clang", reuse_build=False))
         xmake_f = next(cmd for cmd in self.ran if cmd[1:2] == ["f"])
         self.assertFalse([a for a in xmake_f if a.startswith(("--build_cache", "--ccachedir"))])
         self.assertFalse((self.tmp / "c").exists())  # a tag writes no cache either
+
+    def artifact_cleans(self, ref, reuse_build):
+        """Whether `artifact` deletes the release build folder first (its clean room), stopped after the build."""
+        class Stop(Exception):
+            pass
+
+        def stop(*args):
+            raise Stop
+
+        deleted = []
+        with self.ci(ref=ref), \
+             mock.patch.multiple(project_n, IN_CONTAINER=True, tree_dirty=lambda: "", lfs_pointers=lambda folder: [],
+                                 run_references=lambda preset: None, binary_path=stop), \
+             mock.patch.object(project_n.shutil, "rmtree", lambda path, **kwargs: deleted.append(Path(path))):
+            bdir = project_n.build_dir("linux-clang", "release")
+            (self.tmp / bdir / ".objs").mkdir(parents=True, exist_ok=True)
+            with mock.patch.object(project_n, "build", lambda *args: bdir), self.assertRaises(Stop):
+                project_n.cmd_artifact(project_n.argparse.Namespace(preset="linux-clang", reuse_build=reuse_build))
+        return self.tmp / bdir in deleted
+
+    def test_artifact_reuses_the_release_build_on_a_branch_only(self):
+        # A branch push may package the build its `test --mode release` step made (macOS: one build fewer).
+        self.assertFalse(self.artifact_cleans("refs/heads/ci-speed", reuse_build=True))
+        self.assertTrue(self.artifact_cleans("refs/heads/ci-speed", reuse_build=False))
+        self.assertTrue(self.artifact_cleans(None, reuse_build=False))
+        # Main and tags refuse the reuse: their artefacts compile from source in a clean room (the cold rule).
+        self.assertTrue(self.artifact_cleans("refs/heads/main", reuse_build=True))
+        self.assertTrue(self.artifact_cleans("refs/tags/v1.0.0", reuse_build=True))
+
+    def test_artifact_hands_the_reuse_to_the_container(self):
+        with self.ci(ref="refs/heads/ci-speed"), \
+             mock.patch.multiple(project_n, tree_dirty=lambda: "", lfs_pointers=lambda folder: [],
+                                 reenter=lambda preset, argv: self.ran.append([preset, *argv])):
+            project_n.cmd_artifact(project_n.argparse.Namespace(preset="linux-gcc", reuse_build=True))
+            project_n.cmd_artifact(project_n.argparse.Namespace(preset="linux-gcc", reuse_build=False))
+        self.assertEqual(self.ran, [["linux-gcc", "artifact", "--preset", "linux-gcc", "--reuse-build"],
+                                    ["linux-gcc", "artifact", "--preset", "linux-gcc"]])
 
 
 class RunTest(unittest.TestCase):
@@ -1788,7 +1829,7 @@ class GitLfsTest(unittest.TestCase):
                                  reenter=mock.Mock(side_effect=AssertionError("built anyway")),
                                  build=mock.Mock(side_effect=AssertionError("built anyway"))), \
              self.assertRaises(project_n.Fail):
-            project_n.cmd_artifact(argparse.Namespace(preset="linux-gcc"))
+            project_n.cmd_artifact(argparse.Namespace(preset="linux-gcc", reuse_build=False))
 
 
 class XmakeProjectTest(unittest.TestCase):
