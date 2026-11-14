@@ -27,6 +27,8 @@ inline constexpr core::SceneKey STRESS_SCENE{ 1 };
 inline constexpr core::SceneKey PAINTED_SCENE{ 2 };
 /// A still grid of map cells (game/scenes/cells.hpp).
 inline constexpr core::SceneKey CELLS_SCENE{ 3 };
+/// The world map: terrain tiles and wandering walkers (game/scenes/world.hpp).
+inline constexpr core::SceneKey WORLD_SCENE{ 4 };
 
 /// Every scene, in F2's order: a scene's index is its key.
 [[nodiscard]] std::span<const Scene* const> Scenes();
@@ -37,7 +39,8 @@ inline constexpr core::SceneKey CELLS_SCENE{ 3 };
 /// The scene called `name` (SceneTraits::name), if one is listed.
 [[nodiscard]] std::optional<core::SceneKey> SceneNamed(std::string_view name);
 
-/// The name of the scene of `key` (SceneTraits::name), also its manifest scene's: `arena`, `stress`, `painted`, `cells`.
+/// The name of the scene of `key` (SceneTraits::name), also its manifest scene's: `arena`, `stress`, `painted`, `cells`,
+/// `world`.
 [[nodiscard]] std::string_view SceneName(core::SceneKey key);
 
 /// The scene after `key` in F2's order, the first again after the last.

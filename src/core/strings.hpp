@@ -64,9 +64,10 @@ enum class StringId : u8 {
     PoisonLance,                ///< The poison lance's name.
     Dash,                       ///< The dash's name.
     FlyingSwords,               ///< The flying swords' name.
+    WalkerName,                 ///< The name label of a walker on the world map.
 };
 /// How many strings StringId names.
-inline constexpr std::size_t STRINGS = 47;
+inline constexpr std::size_t STRINGS = 48;
 /// Each StringId's name in strings.yaml, in StringId's order.
 inline constexpr std::array<std::string_view, STRINGS> STRING_NAMES{ { "cultivator_name",
                                                                        "tablet_caption",
@@ -114,7 +115,8 @@ inline constexpr std::array<std::string_view, STRINGS> STRING_NAMES{ { "cultivat
                                                                        "fire_bolt",
                                                                        "poison_lance",
                                                                        "dash",
-                                                                       "flying_swords" } };
+                                                                       "flying_swords",
+                                                                       "walker_name" } };
 
 /// A language the strings come in.
 enum class Language : u8 {

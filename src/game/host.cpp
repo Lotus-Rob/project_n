@@ -16,10 +16,6 @@ namespace {
 
 using core::atlas::SpriteId;
 
-// Game text (the phase 6 chunk 3 spec): an offset in world units, so it scales with the zoom as the text does.
-// Clear of the head, with room between them for the health bar the main thread draws there.
-constexpr core::Vec2 LABEL_OFFSET{ .x = 0.0F, .y = -12.0F };
-
 // The demo glows' loops, in ticks (60 a second).
 constexpr u64 CHARGE_LOOP = 192;    // 3.2 s
 constexpr u64 CHARGE_RISE = 108;    // the value climbs from 0 to 1 over these, then holds
@@ -680,14 +676,11 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
         start = body.current;
     }
     // Before the main thread's view arrives the camera's zoom and window are unknown, so cull as widely as any shows.
-    m_drawList.Begin(
-        view.value_or(core::Rect{ .min = start - core::WIDEST_HALF_VIEW, .max = start + core::WIDEST_HALF_VIEW }),
-        std::max(chunks, 1U)
-    );
-    // Whole: its quad is far larger than the cull margin, so its centre may lie outside the view while part of it shows.
-    m_drawList.AddWhole(
-        0, core::Layer::Ground, core::Pipeline::Normal, core::MakeInstance(*m_manifest, { .sprite = SpriteId::Ground })
-    );
+    const core::Rect area =
+        view.value_or(core::Rect{ .min = start - core::WIDEST_HALF_VIEW, .max = start + core::WIDEST_HALF_VIEW });
+    const Context context{ *this };
+    m_drawList.Begin(area, std::max(chunks, 1U));
+    Running().PublishGround(context, area, m_drawList, 0);
     jobs.ParallelFor(chunks, [&](u32 chunk) {
         const std::size_t begin = std::size_t{ chunk } * PUBLISH_CHUNK;
         const std::size_t end = std::min(looks.size(), begin + PUBLISH_CHUNK);
@@ -735,7 +728,7 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
     PublishOverhead(snapshot);
     PublishCaster(snapshot);
     // Before the seals raised in play, which draw over the scene's own.
-    Running().Publish(Context{ *this }, snapshot);
+    Running().Publish(context, area, snapshot);
     m_combat.Publish(snapshot);
     if (m_selected != core::StableId{}) {
         if (const auto drawn = std::ranges::find(snapshot.ids, m_selected); drawn != snapshot.ids.end()) {

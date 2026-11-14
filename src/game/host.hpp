@@ -52,8 +52,8 @@ public:
     );
 
     /// When `input` holds a CycleScene, asks for the next scene in the list's order (NextScene(): arena, stress, painted,
-    /// cells, then the arena again; Requested()), ending every use still open (Combat::EndUses()), and does nothing else.
-    /// Otherwise walks the player's cultivator where `input`'s held movement points, selects what its Select actions name
+    /// cells, world, then the arena again; Requested()), ending every use still open (Combat::EndUses()), and does nothing
+    /// else. Otherwise walks the player's cultivator where `input`'s held movement points, selects what its Select actions name
     /// (nothing for a dying one), ignores Cast actions outside a combat scene (in one a Cast is Combat::Cast(): Qi,
     /// cooldown, the ability's effect; a dash moves the player in place of held movement), moves every entity on an Orbit to
     /// where it is at `counters.simulation`, advances combat (Combat::Tick(): arrivals, removing the dead, which clears
@@ -141,19 +141,19 @@ public:
         return m_relationships;
     }
 
-    /// Publishes the ground, then a shadow under each entity that casts one, then the world's
-    /// entities in foot-y order, then the effects, packed in fixed chunks
-    /// on `jobs`: the bytes are the same whatever its worker count. Each entity's instance carries
-    /// its ID, but a dying one's carries none and dissolves (core::SpriteDraw::dissolve, DissolveAt() at
-    /// `snapshot.simulationTick`), its shadow with it; the sprites a scene's traits list (SceneTraits::demoGlows) wear
-    /// their demo glows (DemoGlow()). What is drawn is culled to `view` (the main thread's window and its margin)
-    /// or, with none yet, to the widest view a window shows (core::WIDEST_HALF_VIEW) round where the camera starts: the
-    /// player's cultivator, which is the one to follow, or else the centre of the scene's view (SceneTraits::view); the
-    /// ground is drawn whole either way. The snapshot names the scene's camera (SceneTraits::camera). A scene with a player
-    /// adds the player's and each living fox's name label over its head; a combat scene adds each living fox's health bar at
-    /// its head and the player's casting state (core::Snapshot::caster). Then the scene adds its own (Scene::Publish(): the
-    /// tablet's caption, the arena's showcase seals) and, after it, the volleys in flight with their targets and the seals
-    /// raised in play (Combat::Publish()).
+    /// Publishes the scene's ground (Scene::PublishGround(): the painted ground, or the world's tiles), then a shadow under
+    /// each entity that casts one, then the world's entities in foot-y order, then the effects, packed in fixed chunks on
+    /// `jobs`: the bytes are the same whatever its worker count. Each entity's instance carries its ID, but a dying one's
+    /// carries none and dissolves (core::SpriteDraw::dissolve, DissolveAt() at `snapshot.simulationTick`), its shadow with
+    /// it; the sprites a scene's traits list (SceneTraits::demoGlows) wear their demo glows (DemoGlow()). What is drawn is
+    /// culled to `view` (the main thread's window and its margin) or, with none yet, to the widest view a window shows
+    /// (core::WIDEST_HALF_VIEW) round where the camera starts: the player's cultivator, which is the one to follow, or else
+    /// the centre of the scene's view (SceneTraits::view); the painted ground is drawn whole either way, and the scene's
+    /// hooks get the same area. The snapshot names the scene's camera (SceneTraits::camera). A scene with a player adds the
+    /// player's and each living fox's name label over its head; a combat scene adds each living fox's health bar at its
+    /// head and the player's casting state (core::Snapshot::caster). Then the scene adds its own (Scene::Publish(): the
+    /// tablet's caption, the arena's showcase seals, the world's walker labels) and, after it, the volleys in flight with
+    /// their targets and the seals raised in play (Combat::Publish()).
     void Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::optional<core::Rect>& view) override;
 
 private:

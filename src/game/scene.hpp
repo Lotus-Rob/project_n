@@ -25,9 +25,13 @@
 
 namespace game {
 
-/// The painted ground every scene draws under it (core::atlas::SpriteId::Ground at the origin), 1920 by 1080 world
-/// units: what the camera shows whole in a still scene.
+/// The painted ground a scene draws under it unless it draws its own (Scene::PublishGround(); core::atlas::SpriteId::Ground
+/// at the origin), 1920 by 1080 world units: what the camera shows whole in a still scene.
 inline constexpr core::Rect GROUND{ .min = {}, .max = { .x = 1'920.0F, .y = 1'080.0F } };
+
+/// How far a name label stands from the head it names (core::TextItem::offset), in world units, so it scales with the
+/// zoom as the text does (the phase 6 chunk 3 spec): clear of the head, with room between them for a health bar.
+inline constexpr core::Vec2 LABEL_OFFSET{ .x = 0.0F, .y = -12.0F };
 
 /// A sprite that wears a demo glow (DemoGlow()) in a scene, and which.
 struct DemoGlowSprite {
@@ -117,9 +121,14 @@ public:
     /// never has one due.
     virtual void Respawn(SceneContext& context, const core::TickCounters& counters, u32 index) const;
 
+    /// Adds its ground-layer content (core::Layer::Ground) to part `part` of `drawList`, just after the host began it for
+    /// `view` (the area the publish culls to), so it draws under every entity. By default the painted ground (GROUND),
+    /// whole; a scene that overrides it draws its own ground instead (the world, its tiles).
+    virtual void PublishGround(const SceneContext& context, core::Rect view, core::DrawList& drawList, u32 part) const;
+
     /// Adds its own content to `snapshot` after the host has published the entities, their texts and the caster, and
-    /// before the seals raised in play. Nothing by default.
-    virtual void Publish(const SceneContext& context, core::Snapshot& snapshot) const;
+    /// before the seals raised in play; `view` is the area the host culled to. Nothing by default.
+    virtual void Publish(const SceneContext& context, core::Rect view, core::Snapshot& snapshot) const;
 
 protected:
     /// A scene; only the scenes themselves make one.

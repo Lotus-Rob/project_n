@@ -6,6 +6,7 @@
 #include "game/scenes/cells.hpp"
 #include "game/scenes/painted.hpp"
 #include "game/scenes/stress.hpp"
+#include "game/scenes/world.hpp"
 
 namespace game {
 
@@ -15,10 +16,11 @@ constexpr ArenaScene ARENA_INSTANCE{};
 constexpr StressScene STRESS_INSTANCE{};
 constexpr PaintedScene PAINTED_INSTANCE{};
 constexpr CellsScene CELLS_INSTANCE{};
+constexpr WorldScene WORLD_INSTANCE{};
 
 // F2's order, each at its key's place.
 constexpr auto SCENE_LIST =
-    std::to_array<const Scene*>({ &ARENA_INSTANCE, &STRESS_INSTANCE, &PAINTED_INSTANCE, &CELLS_INSTANCE });
+    std::to_array<const Scene*>({ &ARENA_INSTANCE, &STRESS_INSTANCE, &PAINTED_INSTANCE, &CELLS_INSTANCE, &WORLD_INSTANCE });
 
 // Each key constant names its scene's place, and every listed scene has one.
 constexpr bool KeyedAt(core::SceneKey key, const Scene* scene) {
@@ -28,7 +30,11 @@ static_assert(KeyedAt(ARENA_SCENE, &ARENA_INSTANCE));
 static_assert(KeyedAt(STRESS_SCENE, &STRESS_INSTANCE));
 static_assert(KeyedAt(PAINTED_SCENE, &PAINTED_INSTANCE));
 static_assert(KeyedAt(CELLS_SCENE, &CELLS_INSTANCE));
-static_assert(SCENE_LIST.size() == 4, "a listed scene without its key constant in game/scenes.hpp");
+static_assert(KeyedAt(WORLD_SCENE, &WORLD_INSTANCE));
+static_assert(
+    SCENE_LIST.size() == std::to_underlying(WORLD_SCENE) + 1U,
+    "a listed scene without its key constant in game/scenes.hpp"
+);
 static_assert(SCENE_LIST.size() <= std::numeric_limits<u8>::max() + 1U, "a save stores the scene's key in one byte");
 
 } // namespace
