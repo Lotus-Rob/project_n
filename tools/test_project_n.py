@@ -856,6 +856,259 @@ class ObjectCacheTest(unittest.TestCase):
                                     ["linux-gcc", "artifact", "--preset", "linux-gcc"]])
 
 
+class PruneBuildCacheTest(unittest.TestCase):
+    """Before CI saves its object cache folder: only what this run's builds used stays, and an empty folder is never
+    saved (XMake's build cache never evicts, so each save grew)."""
+
+    def setUp(self):
+        self.tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.cache = self.tmp / "build-cache"
+        self.output = self.tmp / "github-output"
+        self.enterContext(mock.patch.multiple(project_n, ROOT=self.tmp, IN_CONTAINER=False))
+        self.enterContext(self.ci())
+
+    def ci(self, ref="refs/heads/ci-speed", cache=True):
+        env = {k: v for k, v in os.environ.items() if k not in (project_n.BUILD_CACHE_ENV, "GITHUB_REF", "GITHUB_OUTPUT")}
+        env |= {"GITHUB_REF": ref, "GITHUB_OUTPUT": str(self.output)}
+        env |= {project_n.BUILD_CACHE_ENV: str(self.cache)} if cache else {}
+        return mock.patch.dict(project_n.os.environ, env, clear=True)
+
+    def obj(self, bdir, name, data):
+        path = self.tmp / bdir / ".objs" / "core" / "linux" / "x86_64" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+
+    def cached(self, folder, key, data, info=False):
+        """A file XMake's build cache keeps: <folder>/<key[:2]>/<key>, with its warnings in <key>.txt."""
+        path = self.cache / folder / key[:2] / key
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        if info:
+            path.with_name(key + ".txt").write_text("{outdata = 'warning'}")
+        return path
+
+    def tidy(self, name, age):
+        """A clang-tidy result `age` seconds old (a restored archive keeps its files' old times)."""
+        path = self.cache / "tidy" / f"{name}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('{"output": "", "returncode": 0}')
+        stamp = time.time() - age
+        os.utime(path, (stamp, stamp))
+        return path
+
+    def prune(self):
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            project_n.cmd_prune_build_cache(argparse.Namespace())
+        return out.getvalue()
+
+    def saved(self):
+        return self.output.read_text().splitlines()[-1]
+
+    def files(self):
+        return sorted(p.relative_to(self.cache).as_posix() for p in self.cache.rglob("*") if p.is_file())
+
+    def test_only_what_this_runs_objects_match_stays(self):
+        # Containers build under build/container/, native builds (macOS) under build/; both feed <preset>-<leaf>.
+        self.obj("build/container/linux-clang/release", "a.cpp.o", b"object a")
+        self.obj("build/macos-clang/debug-address", "b.cpp.o", b"object b")
+        self.cached("linux-clang-release", "aa11", b"object a", info=True)
+        self.cached("linux-clang-release", "bb22", b"stale object", info=True)
+        self.cached("macos-clang-debug-address", "cc33", b"object b")
+        self.cached("macos-clang-debug-address", "dd44", b"object a")  # another build's object counts for nothing
+        (self.cache / "linux-clang-release" / "ee").mkdir()
+        (self.cache / "linux-clang-release" / "ee" / "ee55.txt").write_text("{}")  # warnings without their object
+        out = self.prune()
+        self.assertEqual(self.files(), ["linux-clang-release/aa/aa11", "linux-clang-release/aa/aa11.txt",
+                                        "macos-clang-debug-address/cc/cc33"])
+        self.assertFalse((self.cache / "linux-clang-release" / "bb").exists())  # emptied folders go too
+        self.assertEqual(self.saved(), "save=true")
+        self.assertEqual(len(out.splitlines()), 1, out)  # one summary line: outcomes, not steps
+        self.assertIn("kept 3 object cache files", out)  # aa11 and its warnings, cc33
+        self.assertIn("removed 4", out)
+
+    def test_a_folder_no_preset_owns_is_removed(self):
+        self.obj("build/container/linux-clang/release", "a.cpp.o", b"object a")
+        self.cached("old-layout", "aa11", b"object a")
+        self.prune()
+        self.assertEqual(self.files(), [])
+        self.assertEqual(self.saved(), "save=false")
+
+    def test_main_keeps_every_object(self):
+        # Main wrote into an empty folder (the cold rule), so all of it is this run's; its clean-room rebuild (macOS
+        # artefact) compiles without the cache, and those objects need not match the ones its tests' build cached.
+        self.cached("macos-clang-release", "aa11", b"object a", info=True)
+        with self.ci("refs/heads/main"):
+            self.prune()
+        self.assertEqual(self.files(), ["macos-clang-release/aa/aa11", "macos-clang-release/aa/aa11.txt"])
+        self.assertEqual(self.saved(), "save=true")
+
+    def test_clang_tidy_results_stay_when_used_or_written_this_run(self):
+        old = self.tidy("old", age=86400)
+        used = self.tidy("used", age=86400)
+        project_n.mark_tidy_run(self.cache / "tidy")
+        os.utime(used)  # a hit marks it (tidy_one)
+        self.tidy("written", age=0)
+        self.prune()
+        self.assertEqual(self.files(), ["tidy/used.json", "tidy/written.json"])  # the mark goes too: a fresh one per run
+        self.assertFalse(old.exists())
+        self.assertEqual(self.saved(), "save=true")
+
+    def test_clang_tidy_results_no_lint_read_go(self):
+        # No mark: lint stopped before clang-tidy (no changed C++), so this run used none of them.
+        self.tidy("restored", age=86400)
+        self.prune()
+        self.assertEqual(self.files(), [])
+        self.assertEqual(self.saved(), "save=false")
+
+    def test_an_empty_folder_is_never_saved(self):
+        # Main merged no C++: lint returned before building, after container_cmd had made the folder.
+        self.prune()
+        self.assertEqual(self.saved(), "save=false")
+        self.cache.mkdir()
+        self.prune()
+        self.assertEqual(self.saved(), "save=false")
+        self.assertTrue(self.cache.is_dir())
+
+    def test_without_a_cache_nothing_is_saved(self):
+        with self.ci(cache=False):
+            self.prune()
+        self.assertEqual(self.saved(), "save=false")
+        with self.ci("refs/tags/v1.0.0"):
+            self.prune()
+        self.assertEqual(self.saved(), "save=false")
+
+
+class CiCachesTest(unittest.TestCase):
+    """The cleanup job: per family of a ref's cache entries, the newest stays and the rest go."""
+
+    HASH = "1e5cfaf136c8680a89cc73eba35ee0f011e76a470773e203055f820608aeaaeb"
+    SHA = "0b2c7c3c8d81d9e0ddfefe34add4b052ff14f3c4"
+
+    def setUp(self):
+        self.calls, self.deleted, self.entries, self.refuse, self.refuse_after = [], [], [], None, 0
+        self.enterContext(mock.patch.dict(project_n.os.environ, {"GITHUB_REF": "refs/heads/ci-speed"}))
+
+        def capture(cmd, check=True):
+            self.calls.append([str(c) for c in cmd])
+            if self.refuse and cmd[2] == self.refuse and len(self.deleted) >= self.refuse_after:
+                raise subprocess.CalledProcessError(1, cmd, stderr="HTTP 403: Resource not accessible by integration")
+            if cmd[2] == "delete":
+                self.deleted.append(int(cmd[3]))
+                return ""
+            return json.dumps(self.entries)
+
+        self.enterContext(mock.patch.object(project_n, "capture", capture))
+
+    def entry(self, key, created, version="v1", size=1000):
+        self.entries.append({"id": len(self.entries) + 1, "key": key, "version": version, "sizeInBytes": size,
+                             "createdAt": f"2026-11-14T{created}:00.000000Z"})
+        return len(self.entries)
+
+    def prune(self):
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            code = project_n.cmd_prune_ci_caches(argparse.Namespace())
+        return code, out.getvalue()
+
+    def test_families_from_the_keys_ci_writes(self):
+        family = project_n.cache_family
+        self.assertEqual(family(f"objects-container-linux-clang-{self.HASH}-{self.SHA}"), "objects-container-linux-clang")
+        self.assertEqual(family(f"objects-lint-linux-clang-{self.HASH}-{self.SHA}"), "objects-lint-linux-clang")
+        self.assertEqual(family(f"objects-macos-debug-address-{self.HASH}-{self.SHA}"), "objects-macos-debug-address")
+        self.assertEqual(family(f"xmake-windows-msvc-{self.HASH}"), "xmake-windows-msvc")
+        self.assertEqual(family(f"xmake-linux-clang-{self.HASH}"), "xmake-linux-clang")
+        self.assertEqual(family(f"xmake-windows-native-{self.HASH}"), "xmake-windows-native")
+        self.assertEqual(family("lfs-63a480f5e6a32a13"), "lfs")
+        # Setup caches are never touched: the pixi envs, the MSVC install and toolset, the macOS XMake bundle.
+        for key in (f"pixi-linux-64-{self.HASH}", f"msvc-{self.HASH}", f"msvc-install-{self.HASH}",
+                    f"xmake-tool-macos-{self.HASH}", "objects-lint", "other"):
+            self.assertIsNone(family(key), key)
+
+    def test_the_newest_of_each_family_stays(self):
+        old = self.entry(f"objects-lint-linux-clang-{self.HASH}-{'1' * 40}", "01:00")
+        new = self.entry(f"objects-lint-linux-clang-{self.HASH}-{self.SHA}", "03:00")
+        older_env = self.entry(f"objects-lint-linux-clang-{'f' * 64}-{'2' * 40}", "02:00")  # a toolchain bump ago
+        xmake_old = self.entry(f"xmake-lint-{'f' * 64}", "01:30", size=2048)
+        self.entry(f"xmake-lint-{self.HASH}", "02:30")
+        # One key in two versions (paths, compression: the LFS action on Linux and Windows): both stay.
+        self.entry("lfs-63a480f5e6a32a13", "01:00", version="linux")
+        self.entry("lfs-63a480f5e6a32a13", "01:01", version="windows")
+        lfs_old = self.entry("lfs-c1ce682b00a8f188", "00:30", version="linux")
+        self.entry(f"msvc-install-{self.HASH}", "00:00")
+        self.entry(f"msvc-install-{'f' * 64}", "00:10")
+        self.entry(f"pixi-linux-64-{self.HASH}", "00:00")
+        code, out = self.prune()
+        self.assertEqual(code, 0)
+        self.assertEqual(sorted(self.deleted), sorted([old, older_env, xmake_old, lfs_old]))
+        self.assertNotIn(new, self.deleted)
+        list_call = self.calls[0]
+        self.assertEqual(list_call[:3], ["gh", "cache", "list"])
+        self.assertIn("refs/heads/ci-speed", list_call)  # this ref's entries only
+        self.assertTrue(all("--ref" in c or c[2] == "delete" for c in self.calls))
+        self.assertEqual(len(out.splitlines()), 1, out)
+        self.assertIn("deleted 4", out)
+
+    def test_a_refusal_after_some_deletes_counts_them(self):
+        # A 403 part-way through says how many went first, not "nothing deleted".
+        self.entry(f"xmake-lint-{'e' * 64}", "01:00")
+        self.entry(f"xmake-lint-{'f' * 64}", "01:30")
+        self.entry(f"xmake-lint-{self.HASH}", "02:30")
+        self.refuse, self.refuse_after = "delete", 1
+        code, out = self.prune()
+        self.assertEqual(code, 0)
+        self.assertEqual(len(self.deleted), 1)
+        self.assertEqual(len(out.splitlines()), 1, out)
+        self.assertIn("deleted 1", out)
+        self.assertNotIn("nothing deleted", out)
+
+    def test_a_read_only_token_skips_quietly(self):
+        # Dependabot's runs get a read-only token: deleting is refused, and the run must not fail for it.
+        self.entry(f"xmake-lint-{'f' * 64}", "01:30")
+        self.entry(f"xmake-lint-{self.HASH}", "02:30")
+        self.refuse = "delete"
+        code, out = self.prune()
+        self.assertEqual(code, 0)
+        self.assertEqual(len(out.splitlines()), 1, out)
+        self.assertIn("403", out)
+        self.refuse = "list"
+        self.assertEqual(self.prune()[0], 0)
+
+    def test_an_entry_already_gone_is_skipped(self):
+        # Two runs of one ref may race to delete the same entry: the loser's HTTP 404 means it is gone already.
+        gone = self.entry(f"xmake-lint-{'e' * 64}", "01:00")
+        old = self.entry(f"xmake-lint-{'f' * 64}", "01:30")
+        self.entry(f"xmake-lint-{self.HASH}", "02:30")
+
+        def capture(cmd, check=True):
+            if cmd[2] == "delete" and int(cmd[3]) == gone:
+                raise subprocess.CalledProcessError(1, cmd, stderr="HTTP 404: Not Found")
+            if cmd[2] == "delete":
+                self.deleted.append(int(cmd[3]))
+                return ""
+            return json.dumps(self.entries)
+
+        with mock.patch.object(project_n, "capture", capture):
+            code, out = self.prune()
+        self.assertEqual(code, 0)
+        self.assertEqual(self.deleted, [old])
+        self.assertIn("deleted 1", out)
+
+    def test_another_failure_fails(self):
+        self.entry(f"xmake-lint-{'f' * 64}", "01:30")
+        self.entry(f"xmake-lint-{self.HASH}", "02:30")
+
+        def capture(cmd, check=True):
+            if cmd[2] == "delete":
+                raise subprocess.CalledProcessError(1, cmd, stderr="HTTP 500: server error")
+            return json.dumps(self.entries)
+
+        with mock.patch.object(project_n, "capture", capture), self.assertRaises(subprocess.CalledProcessError):
+            self.prune()
+
+    def test_ci_only(self):
+        with mock.patch.dict(project_n.os.environ, {"GITHUB_REF": ""}), self.assertRaises(project_n.Fail):
+            self.prune()
+
+
 class RunTest(unittest.TestCase):
     def test_run_hands_the_arguments_after_the_separator_to_the_game(self):
         ran = []
@@ -2180,6 +2433,23 @@ class TidyCacheTest(unittest.TestCase):
         key = project_n.tidy_key(self.BDIR, self.UNIT)
         self.compdb(["-Itests"], ["-Isrc"])
         self.assertEqual(project_n.tidy_key(self.BDIR, self.UNIT), key)
+
+    def test_a_hit_marks_the_result_used(self):
+        # Pruning before CI saves the folder keeps the results this run read (prune-build-cache).
+        self.lint()
+        stored = next(self.cache.glob("*.json"))
+        os.utime(stored, (1, 1))
+        self.lint()
+        self.assertGreater(stored.stat().st_mtime, time.time() - 60)
+        self.assertEqual(self.ran, [self.UNIT])
+
+    def test_a_lint_run_marks_its_start_once(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            project_n.tidy_units(self.BDIR, [self.UNIT], False, self.cache)
+            mark = (self.cache / project_n.TIDY_RUN_MARK).read_text()
+            self.assertAlmostEqual(float(mark), time.time(), delta=60)
+            project_n.tidy_units(self.BDIR, [self.UNIT], False, self.cache)  # a second lint keeps the run's start
+        self.assertEqual((self.cache / project_n.TIDY_RUN_MARK).read_text(), mark)
 
     def test_main_reads_no_cached_result(self):
         self.lint()

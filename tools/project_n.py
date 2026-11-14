@@ -310,6 +310,103 @@ def holds_objects(bdir):
     return any(d.is_dir() and any(p.is_file() for p in d.rglob("*")) for d in folders)
 
 
+def object_build_dirs(folder):
+    """The build folders whose objects a <preset>-<leaf> folder of CI's object cache holds (object_cache_dir): native and
+    container; none for a name no preset starts."""
+    for preset in PRESETS:
+        leaf = folder.removeprefix(f"{preset}-")
+        if leaf != folder and leaf:
+            return [ROOT / "build" / preset / leaf, ROOT / "build" / "container" / preset / leaf]
+    return []
+
+
+def file_digest(path):
+    with open(path, "rb") as f:
+        return hashlib.file_digest(f, "sha256").hexdigest()
+
+
+# A clang-tidy result written within this many seconds before the run's mark still counts as this run's: Linux stamps
+# files from a coarse clock that may trail time.time() by a tick. Results from earlier runs are minutes older.
+TIDY_CLOCK_SLACK = 2.0
+
+
+def prune_objects(folder, every):
+    """Remove the files of one object cache folder this run's build didn't use: XMake's build cache never evicts (a hit
+    copies `<key>` to the object file and leaves it), so each save grew. Used means byte for byte equal to an object in
+    the build folder (a hit copies it there, a miss copies it from there), and `<key>.txt` (the warnings) goes with its
+    `<key>`. With `every`, all stay: main wrote into an empty folder (the cold rule). (kept, removed) as
+    ([sizes], [sizes])."""
+    files = [p for p in folder.rglob("*") if p.is_file()]
+    if every:
+        return [p.stat().st_size for p in files], []
+    objects = [p for d in object_build_dirs(folder.name) for p in (d / ".objs").rglob("*") if p.is_file()]
+    sizes = {p.stat().st_size for p in objects}
+    used = {file_digest(p) for p in objects}
+    keep = {p for p in files if p.suffix != ".txt" and p.stat().st_size in sizes and file_digest(p) in used}
+    keep |= {p for p in files if p.suffix == ".txt" and p.with_suffix("") in keep}
+    kept, removed = [], []
+    for p in files:
+        (kept if p in keep else removed).append(p.stat().st_size)
+        if p not in keep:
+            p.unlink()
+    return kept, removed
+
+
+def prune_tidy(folder):
+    """Remove the clang-tidy results this run neither wrote nor read (TIDY_RUN_MARK), and the mark. No mark: lint never
+    reached clang-tidy, so none was used."""
+    mark = folder / TIDY_RUN_MARK
+    try:
+        start = float(mark.read_text(encoding="utf-8")) - TIDY_CLOCK_SLACK
+    except (OSError, ValueError):
+        start = float("inf")
+    mark.unlink(missing_ok=True)
+    kept, removed = [], []
+    for p in (p for p in folder.rglob("*") if p.is_file()):
+        size, recent = p.stat().st_size, p.stat().st_mtime >= start
+        (kept if recent and p.suffix == ".json" else removed).append(size)
+        if not (recent and p.suffix == ".json"):
+            p.unlink()
+    return kept, removed
+
+
+def remove_empty_folders(root):
+    for d in sorted((p for p in root.rglob("*") if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
+        if not any(d.iterdir()):
+            d.rmdir()
+
+
+def mib(sizes):
+    return f"{sum(sizes) / 2**20:.1f} MiB"
+
+
+def set_ci_output(name, value):
+    """A step output for the workflow (steps.<id>.outputs.<name>), when CI runs this."""
+    if "GITHUB_OUTPUT" in os.environ:
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+            out.write(f"{name}={value}\n")
+
+
+def cmd_prune_build_cache(args):
+    """Before CI saves BUILD_CACHE_ENV: keep only the objects and clang-tidy results this run used, and tell the save
+    step (`save`) whether anything is left: an empty folder saved as the newest entry would make the next run cold."""
+    root = build_cache_root()
+    objects, tidy = ([], []), ([], [])
+    if root and root.is_dir():
+        for folder in sorted(p for p in root.iterdir() if p.is_dir()):
+            if folder.name == "tidy":
+                tidy = prune_tidy(folder)
+            else:
+                kept, removed = prune_objects(folder, every=cold_ref())
+                objects = (objects[0] + kept, objects[1] + removed)
+        remove_empty_folders(root)
+    save = bool(root and root.is_dir() and any(root.iterdir()))
+    print(f"prune-build-cache: kept {len(objects[0])} object cache files ({mib(objects[0])}) and {len(tidy[0])} clang-tidy results "
+          f"({mib(tidy[0])}), removed {len(objects[1])} ({mib(objects[1])}) and {len(tidy[1])} ({mib(tidy[1])})"
+          + ("" if save else "; nothing to save"))
+    set_ci_output("save", "true" if save else "false")
+
+
 def packages_dir():
     """XMake keys its package cache on the toolchain name, not the compiler version, so each
     environment gets its own: a toolchain bump never reuses stale builds. pixi.toml counts too,
@@ -921,6 +1018,20 @@ def tidy_cache_dir(bdir):
     return root / "tidy" if root else ROOT / bdir / ".tidy-cache"
 
 
+# In a clang-tidy cache folder: when this run's lint started reading it (`time.time()`), written once per run. Every
+# result written or read since is newer (a hit refreshes its time), and every result an earlier run left older, even
+# restored by tar with its old times, so prune-build-cache drops what this run didn't use; it deletes the mark too,
+# so a saved folder never holds one.
+TIDY_RUN_MARK = ".run-start"
+
+
+def mark_tidy_run(cache):
+    mark = Path(cache, TIDY_RUN_MARK)
+    if not mark.is_file():
+        mark.parent.mkdir(parents=True, exist_ok=True)
+        mark.write_text(repr(time.time()), encoding="utf-8")
+
+
 def compile_entries(bdir, unit):
     """The compile database's entries for `unit`: clang-tidy runs each one."""
     compdb = ROOT / bdir / "compile_commands.json"
@@ -1012,13 +1123,15 @@ def tidy_key(bdir, unit):
 def tidy_one(bdir, unit, cache=None):
     """(output, return code) of clang-tidy on one unit, its diagnostics and errors together. With `cache` (a folder), a
     result kept under the unit's tidy_key is returned instead, unless main or a tag must lint cold (cold_ref); a fresh
-    result is kept there (never on a tag, nor a crash, which may be the machine's)."""
+    result is kept there (never on a tag, nor a crash, which may be the machine's), and a hit refreshes the kept file's
+    time (prune-build-cache keeps what a run used)."""
     key = tidy_key(bdir, unit) if cache else None
     stored = Path(cache, f"{key}.json") if key else None
     if stored and not cold_ref():
         try:
             kept = json.loads(stored.read_text(encoding="utf-8"))
             if isinstance(kept["output"], str) and isinstance(kept["returncode"], int):
+                os.utime(stored)  # used by this run: prune-build-cache keeps it
                 return kept["output"], kept["returncode"]
         except (OSError, ValueError, KeyError, TypeError):
             pass  # absent or corrupt: a miss
@@ -1054,6 +1167,8 @@ def tidy_units(bdir, units, fix, cache=None):
     tidy_verdict: run together, one unit's ignored finding would hide another's error. A finding prints once however
     many units report it; a listed one (IGNORED_FINDINGS) never prints, and counts once. `cache` goes to tidy_one. With
     `fix`, the units that failed get one serial clang-tidy --fix afterwards."""
+    if cache:
+        mark_tidy_run(cache)
     with concurrent.futures.ThreadPoolExecutor(jobs()) as pool:
         results = list(pool.map(lambda unit: tidy_one(bdir, unit, cache), units))
     printed = set()
@@ -1510,6 +1625,61 @@ LFS_PRUNE = ["git", "-c", "lfs.fetchrecentrefsdays=0", "-c", "lfs.fetchrecentcom
 
 def cmd_lfs_prune(args):
     run(LFS_PRUNE)
+
+
+# The families of cache entries ci.yml writes, each a key with its changing parts dropped: objects (the env hash, the
+# commit), XMake packages (their hash), Git LFS objects (lfs_key). Others (the Pixi envs, the MSVC install and toolset,
+# the macOS XMake bundle `xmake-tool-macos-`) are setup caches keyed on what they install, never pruned.
+CACHE_FAMILIES = (re.compile(r"(objects-.+)-[0-9a-f]{64}-[0-9a-f]{40}"), re.compile(r"(xmake-(?!tool-).+)-[0-9a-f]{64}"),
+                  re.compile(r"(lfs)-[0-9a-f]{16}"))
+
+
+def cache_family(key):
+    """The family of a cache key (CACHE_FAMILIES), or None for one never pruned."""
+    return next((m[1] for m in (f.fullmatch(key) for f in CACHE_FAMILIES) if m), None)
+
+
+def refused(error):
+    """Whether gh failed because the token may not do it: Dependabot's runs get a read-only one."""
+    return "HTTP 403" in (error.stderr or "")
+
+
+def cmd_prune_ci_caches(args):
+    """CI's cleanup job: of this ref's cache entries, keep the newest of each family and version (one key saved from two
+    operating systems is two entries) and delete the rest, which no restore of this ref reads again: each restore takes
+    the newest match. Other refs' entries are never touched."""
+    ref = os.environ.get("GITHUB_REF")
+    if not ref:
+        raise Fail("prune-ci-caches prunes the Actions caches of the ref CI is building (GITHUB_REF): CI runs it")
+    deleted = []
+    try:
+        entries = json.loads(capture(["gh", "cache", "list", "--ref", ref, "--limit", "1000",
+                                      "--json", "id,key,version,sizeInBytes,createdAt"]))
+        newest, superseded = {}, []
+        for entry in sorted(entries, key=lambda e: e["createdAt"], reverse=True):
+            family = cache_family(entry["key"])
+            if not family:
+                continue
+            if (family, entry["version"]) in newest:
+                superseded.append(entry)
+            else:
+                newest[(family, entry["version"])] = entry
+        for entry in superseded:
+            try:
+                capture(["gh", "cache", "delete", str(entry["id"])])
+                deleted.append(entry)
+            except subprocess.CalledProcessError as e:
+                if "HTTP 404" not in (e.stderr or ""):
+                    raise  # a 404: another run of this ref deleted it first
+    except subprocess.CalledProcessError as e:
+        if not refused(e):
+            raise
+        done = f"deleted {len(deleted)} before that" if deleted else "nothing deleted"
+        print(f"prune-ci-caches: the token may not manage {ref}'s caches (HTTP 403, a read-only token); {done}")
+        return 0
+    print(f"prune-ci-caches: deleted {len(deleted)} superseded cache entries of {ref} "
+          f"({mib(e['sizeInBytes'] for e in deleted)}), kept {len(newest)}")
+    return 0
 
 
 def check_lfs_pointers(rng):
@@ -2262,6 +2432,10 @@ def make_parser():
     add("setup", cmd_setup, "set up a clone once: the commit hooks and Git LFS's filters (local config), then fetch LFS files")
     add("lfs-key", cmd_lfs_key, "print the cache key of this commit's Git LFS objects (CI's LFS action)")
     add("lfs-prune", cmd_lfs_prune, "delete Git LFS objects the checkout doesn't use, before CI caches them (frees disk locally too)")
+    add("prune-build-cache", cmd_prune_build_cache,
+        "keep only the objects and clang-tidy results this run used in PROJECT_N_BUILD_CACHE, before CI saves it")
+    add("prune-ci-caches", cmd_prune_ci_caches,
+        "delete this ref's superseded Actions cache entries, keeping each family's newest (CI's cleanup job)")
     p = add("doctor", cmd_doctor, "check the environment; prints how to fix problems, installs nothing")
     p.add_argument("--docs", action="store_true", help="only check that commands quoted in agent docs and README exist")
     add_sanitizer(add("build", cmd_build, "build a preset, or all of them", preset="native", mode=True, container=True,
@@ -2339,7 +2513,7 @@ def make_parser():
 def main(argv=None):
     args = make_parser().parse_args(argv)
     try:
-        if HOST == "macos" and args.func not in (cmd_setup, cmd_lfs_key, cmd_lfs_prune, cmd_commit_check, cmd_selftest, cmd_fmt, cmd_release, cmd_docs, cmd_profiler, cmd_shaders, cmd_atlas, prune_worktrees):
+        if HOST == "macos" and args.func not in (cmd_setup, cmd_lfs_key, cmd_lfs_prune, cmd_prune_build_cache, cmd_prune_ci_caches, cmd_commit_check, cmd_selftest, cmd_fmt, cmd_release, cmd_docs, cmd_profiler, cmd_shaders, cmd_atlas, prune_worktrees):
             ensure_macos_xmake()  # not for commands without XMake: the commit hook must work offline
         return args.func(args) or 0
     except Fail as e:
