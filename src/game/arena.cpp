@@ -16,77 +16,9 @@ namespace {
 
 using core::atlas::SpriteId;
 
-struct Prop {
-    SpriteId sprite = SpriteId{};
-    core::Vec2 foot{};
-    f32 scale = 1.0F;
-    core::GlowRole glow = core::GlowRole::None; // the glow it wears in the arena scene
-};
-
-// Laid out on the 1920x1080 ground, which the camera shows whole.
-constexpr std::array PROPS{
-    Prop{ .sprite = SpriteId::Shrine, .foot = { .x = 960.0F, .y = 330.0F }, .glow = core::GlowRole::DemoPulse },
-    Prop{ .sprite = SpriteId::Pine, .foot = { .x = 290.0F, .y = 430.0F } },
-    Prop{ .sprite = SpriteId::Pine, .foot = { .x = 1660.0F, .y = 400.0F } },
-    Prop{ .sprite = SpriteId::Pine, .foot = { .x = 1500.0F, .y = 960.0F } },
-    Prop{ .sprite = SpriteId::RockLarge, .foot = { .x = 610.0F, .y = 780.0F } },
-    Prop{ .sprite = SpriteId::RockLarge, .foot = { .x = 1320.0F, .y = 640.0F } },
-    Prop{ .sprite = SpriteId::RockSmall, .foot = { .x = 48.0F, .y = 1050.0F } }, // in the corner, off the grand seal
-    Prop{ .sprite = SpriteId::RockSmall, .foot = { .x = 1180.0F, .y = 300.0F } },
-};
-
-// The showcase seals (the phase 6 chunk 4b spec, "The showcase"): between them every part and placement seals.yaml can
-// describe. Scene content, as the props are: republished every tick, never saved. Their looks are seals.yaml's; here only
-// which seal stands where, and how large (its outer radius). Each has a clearing of its own: none reaches another, nor the
-// swords' seal a cast at the player's start raises (app's showcase_tests holds this), so no seal hides another.
-struct ShowcaseSeal {
-    core::SealKey key = 0;
-    core::Vec2 point{};
-    f32 size = 0.0F;
-};
-
-constexpr std::array SHOWCASE{
-    // The largest, about a third of the arena across, in the open lower left below the fight: nothing stands on it.
-    ShowcaseSeal{ .key = core::SealKeyOf("showcase_grand"), .point = { .x = 402.0F, .y = 935.0F }, .size = 290.0F },
-    // Standing between the dead tree and the crystal.
-    ShowcaseSeal{ .key = core::SealKeyOf("showcase_upright"), .point = { .x = 275.0F, .y = 700.0F }, .size = 70.0F },
-    // Hung over the open ground between the hut and the shrine, its pillars reaching down into its shadow.
-    ShowcaseSeal{ .key = core::SealKeyOf("showcase_overhead"), .point = { .x = 715.0F, .y = 340.0F }, .size = 120.0F },
-    // Below the fight, between the tablet and the crane.
-    ShowcaseSeal{ .key = core::SealKeyOf("showcase_tiers"), .point = { .x = 975.0F, .y = 890.0F }, .size = 100.0F },
-    // In the open ground under the blighted treant, right of the lower right pine's trunk, its shards drifting round it.
-    ShowcaseSeal{ .key = core::SealKeyOf("showcase_flame"), .point = { .x = 1650.0F, .y = 968.0F }, .size = 105.0F },
-    // The low end, one above the other between the shrine's rock and the fox spirit.
-    ShowcaseSeal{ .key = core::SealKeyOf("showcase_small_1"), .point = { .x = 1300.0F, .y = 140.0F }, .size = 40.0F },
-    ShowcaseSeal{ .key = core::SealKeyOf("showcase_small_3"), .point = { .x = 1300.0F, .y = 290.0F }, .size = 55.0F },
-};
-
-// The stone tablet, with its vertical caption beside it (design doc 0002.4 §2).
-constexpr Prop STELE{ .sprite = SpriteId::Stele, .foot = { .x = 760.0F, .y = 980.0F }, .glow = core::GlowRole::DemoCharge };
-// Game text (the phase 6 chunk 3 spec): offsets in world units, so they scale with the zoom as the text does.
+// Game text (the phase 6 chunk 3 spec): an offset in world units, so it scales with the zoom as the text does.
 // Clear of the head, with room between them for the health bar the main thread draws there.
 constexpr core::Vec2 LABEL_OFFSET{ .x = 0.0F, .y = -12.0F };
-constexpr core::Vec2 CAPTION_OFFSET{ .x = 24.0F, .y = 0.0F }; // clear of the tablet's right edge
-
-// The painted art around the arena's edges, some larger or smaller than painted (design doc 0002.3 §2: every feature
-// shows in the arena).
-constexpr std::array ARENA_PAINTED{
-    Prop{ .sprite = SpriteId::TreantBlighted, .foot = { .x = 1720.0F, .y = 720.0F }, .scale = 1.25F },
-    Prop{ .sprite = SpriteId::TreeDead, .foot = { .x = 110.0F, .y = 700.0F }, .scale = 0.7F },
-    Prop{ .sprite = SpriteId::Hut, .foot = { .x = 480.0F, .y = 250.0F } },
-    Prop{ .sprite = SpriteId::Crane, .foot = { .x = 1250.0F, .y = 960.0F } },
-    STELE,
-    Prop{ .sprite = SpriteId::FoxSpirit, .foot = { .x = 1450.0F, .y = 260.0F }, .scale = 0.8F },
-    Prop{ .sprite = SpriteId::FoxYellow, .foot = { .x = 1000.0F, .y = 1010.0F } },
-    Prop{ .sprite = SpriteId::WispRed, .foot = { .x = 130.0F, .y = 320.0F }, .scale = 0.6F },
-    Prop{ .sprite = SpriteId::WispRed, .foot = { .x = 175.0F, .y = 345.0F }, .scale = 0.6F },
-};
-constexpr Prop ARENA_GLOW{ .sprite = SpriteId::OrbGold, .foot = { .x = 1720.0F, .y = 420.0F } }; // in the treant's branches
-constexpr Prop CRYSTAL{ .sprite = SpriteId::CrystalIce,
-                        .foot = { .x = 420.0F, .y = 620.0F },
-                        .scale = 0.8F,
-                        .glow = core::GlowRole::DemoProgress };
-constexpr f32 CRYSTAL_SPIN = 0.02F; // radians per tick: a turn in about five seconds
 
 // The demo glows' loops, in ticks (60 a second).
 constexpr u64 CHARGE_LOOP = 192;    // 3.2 s
@@ -96,19 +28,17 @@ constexpr u64 PROGRESS_LOOP = 300;  // 5 s
 constexpr u64 PROGRESS_FILL = 180;  // the value climbs over these, then the result shows
 constexpr u64 PROGRESS_RESULTS = 4;
 
-// The demo glow of the arena scene's prop drawing `sprite`: none for the rest. It finds the role by sprite, so the arena must
-// keep one prop per demo sprite (the shrine, the stele and the crystal). The role isn't stored on the entity: that would
-// change what saves hold and the state hash, and a glow is presentation only.
+// The demo glow a sprite wears in a scene with the demo glows: none for the rest. The role isn't stored on the entity:
+// that would change what saves hold and the state hash, and a glow is presentation only.
 core::GlowRole DemoRoleOf(SpriteId sprite) {
-    for (const Prop& prop : PROPS) {
-        if (prop.sprite == sprite) {
-            return prop.glow;
-        }
+    if (sprite == SpriteId::Shrine) {
+        return core::GlowRole::DemoPulse;
     }
-    for (const Prop& prop : { STELE, CRYSTAL }) {
-        if (prop.sprite == sprite) {
-            return prop.glow;
-        }
+    if (sprite == SpriteId::Stele) {
+        return core::GlowRole::DemoCharge;
+    }
+    if (sprite == SpriteId::CrystalIce) {
+        return core::GlowRole::DemoProgress;
     }
     return core::GlowRole::None;
 }
@@ -121,71 +51,16 @@ f32 Rise(u64 age, u64 rise) {
 // The debug burst: DEBUG_BURST_HITS hits round the foxes, values from 1 to DEBUG_BURST_MAX.
 constexpr u32 DEBUG_BURST_HITS = 4'000;
 constexpr u32 DEBUG_BURST_MAX = 99;
-// Ability use sources (core::AbilityUse).
-constexpr u32 USE_AURA = 1;
-constexpr u32 USE_DEBUG_BURST = 2;
+constexpr u32 USE_DEBUG_BURST = 2; // the burst's ability use source (core::AbilityUse); the arena's aura is 1
 
-// Nothing in it moves: the reference pictures need every run to draw the same.
-constexpr std::array PAINTED{
-    Prop{ .sprite = SpriteId::TreeDead, .foot = { .x = 260.0F, .y = 460.0F } },
-    Prop{ .sprite = SpriteId::Crane, .foot = { .x = 620.0F, .y = 280.0F } },
-    Prop{ .sprite = SpriteId::Hut, .foot = { .x = 1640.0F, .y = 420.0F } },
-    Prop{ .sprite = SpriteId::Stele, .foot = { .x = 500.0F, .y = 720.0F } },
-    Prop{ .sprite = SpriteId::TreantBlighted, .foot = { .x = 960.0F, .y = 640.0F } },
-    Prop{ .sprite = SpriteId::CrystalIce, .foot = { .x = 1380.0F, .y = 680.0F } },
-    Prop{ .sprite = SpriteId::FoxSpirit, .foot = { .x = 1640.0F, .y = 900.0F } },
-    Prop{ .sprite = SpriteId::WispRed, .foot = { .x = 240.0F, .y = 960.0F } },
-    Prop{ .sprite = SpriteId::WispRed, .foot = { .x = 300.0F, .y = 980.0F } }, // overlaps: semi-transparent ink over ink
-    Prop{ .sprite = SpriteId::FoxYellow, .foot = { .x = 740.0F, .y = 930.0F } },
-};
-constexpr std::array PAINTED_GLOWS{
-    Prop{ .sprite = SpriteId::OrbGold, .foot = { .x = 960.0F, .y = 430.0F } }, // over the treant's dark branches
-    Prop{ .sprite = SpriteId::OrbBlue, .foot = { .x = 1120.0F, .y = 900.0F } },
-    Prop{ .sprite = SpriteId::OrbRed, .foot = { .x = 1160.0F, .y = 900.0F } }, // overlaps: glows add
-    Prop{ .sprite = SpriteId::OrbGold, .foot = { .x = 1140.0F, .y = 930.0F } },
-    Prop{ .sprite = SpriteId::OrbBlue, .foot = { .x = 1380.0F, .y = 600.0F } }, // over the ice
-};
-
-constexpr core::Vec2 CULTIVATOR{ .x = 960.0F, .y = 620.0F };
 // Half the view around the player: the world shown at the smallest zoom (0.25) in a window up to 32:9 wide or about
 // square, so the logic culls without the main thread's camera (design doc 0002.3 §4).
 // A fixed size; cull relative to the window (the camera's view rectangle) or the world's size when a window
 // shape or zoom outgrows it.
 constexpr core::Vec2 FOLLOW_HALF_VIEW{ .x = 7'680.0F, .y = 4'320.0F };
-constexpr u32 FOXES = 12;
-constexpr u32 ORBS = 8;
-constexpr f32 ORB_RADIUS = 150.0F;
-constexpr f32 ORB_WOBBLE = 40.0F; // in and out of the circle, world units
-constexpr f32 ORB_SPEED = -0.02F; // anticlockwise, about three times the foxes' pace
-constexpr f32 TURN = 2.0F * std::numbers::pi_v<f32>;
 constexpr f32 WOBBLES_PER_LAP = 3.0F;
-constexpr f32 VIEW_TILT = 0.6F; // circles on the ground look flattened: the view looks down at an angle
 
-// The stress scene: a crowd on a grid over the whole ground, each member circling its own spot,
-// and bullets on the arms of a spiral turning around the cultivator.
-constexpr u32 CROWD_COLUMNS = 300;
-constexpr u32 CROWD_ROWS = 300;
-constexpr core::Vec2 CROWD_AREA{ .x = 1920.0F, .y = 1080.0F };
-constexpr f32 CROWD_RADIUS = 8.0F;
-constexpr f32 CROWD_WOBBLE = 2.0F;
-constexpr f32 CROWD_SPEED = 0.01F;
-constexpr f32 CROWD_SCALE = 0.15F;     // a fox about 17 pixels wide: crowds this large are small sprites (§8.1)
-constexpr f32 GOLDEN_ANGLE = 2.39996F; // spreads the crowd's phases evenly
-constexpr u32 SPIRAL_ARMS = 5;
-constexpr u32 BULLETS_PER_ARM = 2'000;
-constexpr f32 SPIRAL_INNER = 60.0F;
-constexpr f32 SPIRAL_STEP = 0.25F;   // world units outward per bullet along an arm
-constexpr f32 SPIRAL_TWIST = 0.004F; // radians per bullet along an arm: an arm winds about 1.3 times
-constexpr f32 SPIRAL_SPEED = 0.01F;
-constexpr f32 BULLET_SCALE = 0.5F;
-
-// The stress scene's NPCs: a few walking about the arena, each in its own map cell, and a world of them living over
-// the map, a dozen to a cell.
-constexpr std::array<u32, 6> ACTIVE_CELLS{
-    { MAP_COLUMNS + 1, MAP_COLUMNS + 4, MAP_COLUMNS + 6, (3 * MAP_COLUMNS) + 2, (3 * MAP_COLUMNS) + 3, (3 * MAP_COLUMNS) + 5 }
-};
-constexpr u32 WORLD_NPCS = 50'000;
-constexpr u32 SMALL_WORLD_NPCS = 5'000;
+// The world NPCs a scene asks for live over the map, a dozen to a cell.
 constexpr u32 WORLD_CELLS = 4'096;
 constexpr u64 SEED = 0x5eed;
 
@@ -213,23 +88,6 @@ using ActiveComponents = core::ComponentList<
 using WorldComponents = core::ComponentList<Npc, Needs, Met, Group>;
 
 constexpr u32 PUBLISH_CHUNK = 4'096; // entities packed per job chunk
-// The still scenes' view: the camera starts on the whole ground.
-constexpr core::Rect GROUND_VIEW{ .min = {}, .max = CROWD_AREA };
-
-// A grid around the reference area's middle, wider than the view at the smallest zoom (gfx::MIN_ZOOM).
-constexpr u32 CELL_COLUMNS = 32;
-constexpr u32 CELL_ROWS = 20;
-constexpr f32 GRID_CELL_SIZE = 256.0F;
-constexpr core::Vec2 CELLS_MIN{ .x = 960.0F - (CELL_COLUMNS * GRID_CELL_SIZE / 2.0F),
-                                .y = 540.0F - (CELL_ROWS * GRID_CELL_SIZE / 2.0F) };
-constexpr core::Rect CELLS_VIEW{
-    .min = CELLS_MIN,
-    .max = { .x = CELLS_MIN.x + (CELL_COLUMNS * GRID_CELL_SIZE), .y = CELLS_MIN.y + (CELL_ROWS * GRID_CELL_SIZE) },
-};
-constexpr std::array<SpriteId, 5> CELLS{
-    { SpriteId::CellPlain, SpriteId::CellForest, SpriteId::CellMountain, SpriteId::CellSnow, SpriteId::CellCity }
-};
-
 // Whether the active domain's combat components come as combat reads them: every creature has health and only
 // creatures do, a creature is dying exactly when its health is out, an arriving one has the body and orbit it
 // eases between, and only something with health is afflicted.
@@ -275,46 +133,7 @@ bool Consistent(const core::State& state) {
     return CombatConsistent(state[ACTIVE].Entities()); // the world domain saves no combat components
 }
 
-// A point on the edge of `ground`, `unit` (0 to 1) of the way round it clockwise from its top-left corner.
-core::Vec2 EdgePoint(const core::Rect& ground, f64 unit) {
-    const f64 width = static_cast<f64>(ground.max.x) - static_cast<f64>(ground.min.x);
-    const f64 height = static_cast<f64>(ground.max.y) - static_cast<f64>(ground.min.y);
-    constexpr f64 TWICE = 2.0; // round a rectangle passes each side twice
-    f64 along = unit * TWICE * (width + height);
-    if (along < width) {
-        return { .x = ground.min.x + static_cast<f32>(along), .y = ground.min.y };
-    }
-    along -= width;
-    if (along < height) {
-        return { .x = ground.max.x, .y = ground.min.y + static_cast<f32>(along) };
-    }
-    along -= height;
-    if (along < width) {
-        return { .x = ground.max.x - static_cast<f32>(along), .y = ground.max.y };
-    }
-    along -= width;
-    return { .x = ground.min.x, .y = ground.max.y - static_cast<f32>(std::min(along, height)) };
-}
-
-core::Rect ViewOf(Scene scene) {
-    return scene == Scene::Cells ? CELLS_VIEW : GROUND_VIEW;
-}
-
-// Each Scene's name in the manifest, in Scene's order, whether it has creatures, which draw the data's sprites, and
-// whether it is a combat scene: fights happen there, the aura hits, its foxes have health bars and casts act.
-struct SceneEntry {
-    std::string_view name;
-    bool creatures = false;
-    bool combat = false;
-};
-constexpr std::array<SceneEntry, 4> SCENES{ {
-    { .name = "arena", .creatures = true, .combat = true },
-    { .name = "stress", .creatures = true },
-    { .name = "painted", .creatures = false },
-    { .name = "cells", .creatures = false },
-} };
-
-core::SceneId SceneIdOf(const core::Manifest& manifest, Scene scene) {
+core::SceneId SceneIdOf(const core::Manifest& manifest, core::SceneKey scene) {
     const std::optional<core::SceneId> found = manifest.SceneNamed(SceneName(scene));
     PN_ASSERT(found.has_value(), "the manifest lacks a scene: main checks it at start");
     return found.value_or(core::SceneId{});
@@ -393,20 +212,70 @@ core::GameData BuiltInData() {
     return BUILT_IN_DATA;
 }
 
-bool Arena::IsCombatScene() const {
-    return SCENES.at(std::to_underlying(m_scene)).combat;
+std::string_view SceneName(Scene scene) {
+    return SceneName(KeyOf(scene));
 }
 
-core::SceneFacts Arena::FactsOf(game::Scene scene) const {
+// What a scene's hooks reach the host through: only for the length of one call.
+class Arena::Context final : public SceneContext {
+public:
+    explicit Context(Arena& host)
+      : m_host{ &host } {
+    }
+    Context(const Context&) = delete;
+    Context& operator=(const Context&) = delete;
+    Context(Context&&) = delete;
+    Context& operator=(Context&&) = delete;
+    ~Context() override;
+
+    [[nodiscard]] core::State& State() override {
+        return m_host->m_state;
+    }
+    [[nodiscard]] const core::State& State() const override {
+        return m_host->m_state;
+    }
+    [[nodiscard]] const core::Manifest& Manifest() const override {
+        return *m_host->m_manifest;
+    }
+    [[nodiscard]] const core::GameData& Data() const override {
+        return m_host->m_data;
+    }
+    core::Entity Spawn(core::Vec2 foot, const Look& look) override {
+        return m_host->Spawn(foot, look);
+    }
+    core::Entity SpawnFox(const Orbit& orbit, core::Vec2 foot) override {
+        return m_host->SpawnFox(orbit, foot);
+    }
+    core::Entity SpawnPlayer(core::Vec2 foot) override {
+        return m_host->SpawnPlayer(foot);
+    }
+    [[nodiscard]] core::StableId Player() const override {
+        return m_host->m_player;
+    }
+    void Damage(core::StableId target, i64 amount, u64 tick) override {
+        m_host->Damage(target, amount, tick);
+    }
+
+private:
+    Arena* m_host;
+};
+
+Arena::Context::~Context() = default; // out of line: the vtable's home
+
+bool Arena::IsCombatScene() const {
+    return Running().Traits().combat;
+}
+
+core::SceneFacts Arena::FactsOf(core::SceneKey scene) const {
     return {
-        .key = core::SceneKey{ std::to_underlying(scene) },
+        .key = scene,
         .sprites = SceneIdOf(*m_manifest, scene),
-        .combat = SCENES.at(std::to_underlying(scene)).combat,
+        .combat = SceneOf(scene).Traits().combat,
     };
 }
 
 std::optional<core::SceneFacts> Arena::Requested() const {
-    return m_requested.transform([this](game::Scene scene) { return FactsOf(scene); });
+    return m_requested.transform([this](core::SceneKey scene) { return FactsOf(scene); });
 }
 
 void Arena::EnterScene() {
@@ -415,40 +284,6 @@ void Arena::EnterScene() {
         return; // with assertions off, the scene and its fight stay as they are
     }
     Build(*m_requested);
-}
-
-std::optional<Scene> SceneNamed(std::string_view name) {
-    const std::span<const SceneEntry> scenes{ SCENES };
-    const auto found = std::ranges::find(scenes, name, &SceneEntry::name);
-    if (found == scenes.end()) {
-        return std::nullopt;
-    }
-    return static_cast<Scene>(found - scenes.begin());
-}
-
-std::string_view SceneName(Scene scene) {
-    return SCENES.at(std::to_underlying(scene)).name;
-}
-
-std::expected<void, core::Error> CheckScenes(const core::Manifest& manifest, const core::GameData& data) {
-    for (const SceneEntry& entry : SCENES) {
-        const std::optional<core::SceneId> scene = manifest.SceneNamed(entry.name);
-        if (!scene) {
-            return std::unexpected{ core::Error{ std::format("the atlas has no scene {}: run `./dev atlas`", entry.name) } };
-        }
-        const std::vector<SpriteId>& sprites = manifest.Scene(*scene).sprites;
-        for (const SpriteId sprite : { data.cultivator.sprite, data.fox.sprite }) {
-            if (entry.creatures && !std::ranges::contains(sprites, sprite)) {
-                return std::unexpected{ core::Error{ std::format(
-                    "the scene {} doesn't load {}, which the creatures data draws: add it to art/scenes.toml and run "
-                    "`./dev atlas`",
-                    entry.name,
-                    core::atlas::SPRITE_NAMES.at(std::to_underlying(sprite))
-                ) } };
-            }
-        }
-    }
-    return {};
 }
 
 core::Vec2 OrbitPoint(const Orbit& orbit, u64 tick) {
@@ -469,15 +304,14 @@ Arena::Arena(std::shared_ptr<const core::Manifest> manifest, game::Scene scene, 
   : m_manifest{ std::move(manifest) }
   , m_state{ DOMAINS, SEED }
   , m_data{ data }
-  , m_scene{ scene }
-  , m_sceneId{ SceneIdOf(*m_manifest, scene) }
-  , m_view{ ViewOf(scene) } {
-    Build(scene);
+  , m_scene{ KeyOf(scene) }
+  , m_sceneId{ SceneIdOf(*m_manifest, m_scene) } {
+    Build(m_scene);
 }
 
 // Everything but the calendar and the game data starts afresh: the entities, their IDs, the relationships, the
 // selection.
-void Arena::Build(game::Scene scene) {
+void Arena::Build(core::SceneKey scene) {
     m_state = core::State{ DOMAINS, SEED };
     m_relationships = Relationships{};
     m_combat = Combat{};
@@ -485,129 +319,12 @@ void Arena::Build(game::Scene scene) {
     m_scene = scene;
     m_sceneId = SceneIdOf(*m_manifest, scene);
     m_requested.reset();
-    m_view = ViewOf(scene);
     m_player = {};
     m_selected = {};
-    if (scene == game::Scene::Cells) {
-        SpawnCells();
-        return;
-    }
-    if (scene == game::Scene::Painted) {
-        SpawnPainted();
-        return;
-    }
-    for (const Prop& prop : PROPS) {
-        Spawn(prop.foot, { .sprite = prop.sprite });
-    }
-    for (const Prop& prop : ARENA_PAINTED) {
-        Spawn(prop.foot, { .sprite = prop.sprite, .shadow = true, .scale = prop.scale });
-    }
-    Spawn(
-        ARENA_GLOW.foot, { .sprite = ARENA_GLOW.sprite, .layer = core::Layer::Effects, .pipeline = core::Pipeline::Additive }
-    );
-    m_state[ACTIVE].Entities().emplace<Spin>(
-        Spawn(CRYSTAL.foot, { .sprite = CRYSTAL.sprite, .shadow = true, .scale = CRYSTAL.scale }), Spin{ .speed = CRYSTAL_SPIN }
-    );
-    core::Registry& entities = m_state[ACTIVE].Entities();
-    const core::Entity cultivator = Spawn(CULTIVATOR, { .sprite = m_data.cultivator.sprite, .shadow = true });
-    entities.emplace<Creature>(cultivator, CreatureKind::Cultivator);
-    entities.emplace<Health>(cultivator, m_data.cultivator.health, m_data.cultivator.health);
-    entities.emplace<Caster>(cultivator, m_data.abilities.qiStart);
-    m_player = entities.get<core::StableId>(cultivator);
-    for (u32 fox = 0; fox < FOXES; ++fox) {
-        const Orbit orbit{
-            .centre = CULTIVATOR,
-            .radius = m_data.fox.orbitRadius,
-            .wobble = m_data.fox.orbitWobble,
-            .phase = TURN * static_cast<f32>(fox) / static_cast<f32>(FOXES),
-            .speed = m_data.fox.orbitSpeed,
-        };
-        SpawnFox(orbit, OrbitPoint(orbit, 0));
-    }
-    for (u32 orb = 0; orb < ORBS; ++orb) {
-        const Orbit orbit{
-            .centre = CULTIVATOR,
-            .radius = ORB_RADIUS,
-            .wobble = ORB_WOBBLE,
-            .phase = TURN * static_cast<f32>(orb) / static_cast<f32>(ORBS),
-            .speed = ORB_SPEED,
-        };
-        const Look look{
-            .sprite = orb % 2 == 0 ? SpriteId::OrbBlue : SpriteId::OrbRed,
-            .layer = core::Layer::Effects,
-            .pipeline = core::Pipeline::Additive,
-        };
-        m_state[ACTIVE].Entities().emplace<Orbit>(Spawn(OrbitPoint(orbit, 0), look), orbit);
-    }
-    if (scene == game::Scene::Stress) {
-        SpawnStress();
-    }
-    SpawnNpcs(scene == game::Scene::Stress ? WORLD_NPCS : SMALL_WORLD_NPCS);
-}
-
-void Arena::SpawnStress() {
-    for (u32 row = 0; row < CROWD_ROWS; ++row) {
-        for (u32 column = 0; column < CROWD_COLUMNS; ++column) {
-            const u32 member = (row * CROWD_COLUMNS) + column;
-            const Orbit orbit{
-                .centre = { .x = (static_cast<f32>(column) + 0.5F) * CROWD_AREA.x / static_cast<f32>(CROWD_COLUMNS),
-                            .y = (static_cast<f32>(row) + 0.5F) * CROWD_AREA.y / static_cast<f32>(CROWD_ROWS) },
-                .radius = CROWD_RADIUS,
-                .wobble = CROWD_WOBBLE,
-                .phase = GOLDEN_ANGLE * static_cast<f32>(member),
-                .speed = member % 2 == 0 ? CROWD_SPEED : -CROWD_SPEED,
-            };
-            const Look look{ .sprite = member % 2 == 0 ? SpriteId::Fox : SpriteId::Cultivator, .scale = CROWD_SCALE };
-            m_state[ACTIVE].Entities().emplace<Orbit>(Spawn(OrbitPoint(orbit, 0), look), orbit);
-        }
-    }
-    for (u32 arm = 0; arm < SPIRAL_ARMS; ++arm) {
-        for (u32 step = 0; step < BULLETS_PER_ARM; ++step) {
-            const Orbit orbit{
-                .centre = CULTIVATOR,
-                .radius = SPIRAL_INNER + (SPIRAL_STEP * static_cast<f32>(step)),
-                .phase =
-                    (TURN * static_cast<f32>(arm) / static_cast<f32>(SPIRAL_ARMS)) + (SPIRAL_TWIST * static_cast<f32>(step)),
-                .speed = SPIRAL_SPEED,
-            };
-            const Look look{
-                .sprite = arm % 2 == 0 ? SpriteId::OrbBlue : SpriteId::OrbRed,
-                .layer = core::Layer::Effects,
-                .pipeline = core::Pipeline::Additive,
-                .scale = BULLET_SCALE,
-            };
-            m_state[ACTIVE].Entities().emplace<Orbit>(Spawn(OrbitPoint(orbit, 0), look), orbit);
-        }
-    }
-}
-
-void Arena::SpawnNpcs(u32 worldNpcs) {
-    for (const u32 cell : ACTIVE_CELLS) {
-        Activate(m_state, SpawnNpc(m_state, cell));
-    }
-    for (u32 npc = 0; npc < worldNpcs; ++npc) {
+    Context context{ *this };
+    Running().Build(context);
+    for (u32 npc = 0; npc < Running().Traits().worldNpcs; ++npc) {
         SpawnNpc(m_state, npc % WORLD_CELLS);
-    }
-}
-
-void Arena::SpawnPainted() {
-    for (const Prop& prop : PAINTED) {
-        Spawn(prop.foot, { .sprite = prop.sprite, .shadow = true });
-    }
-    for (const Prop& glow : PAINTED_GLOWS) {
-        Spawn(glow.foot, { .sprite = glow.sprite, .layer = core::Layer::Effects, .pipeline = core::Pipeline::Additive });
-    }
-}
-
-void Arena::SpawnCells() {
-    for (u32 row = 0; row < CELL_ROWS; ++row) {
-        for (u32 column = 0; column < CELL_COLUMNS; ++column) {
-            const core::Vec2 corner{ .x = CELLS_MIN.x + (static_cast<f32>(column) * GRID_CELL_SIZE),
-                                     .y = CELLS_MIN.y + (static_cast<f32>(row) * GRID_CELL_SIZE) };
-            // Steps of 2 by row keep equal cells from lining up in columns.
-            const SpriteId sprite = CELLS.at((column + (2 * row)) % CELLS.size());
-            Spawn(corner, { .sprite = sprite, .layer = core::Layer::Ground });
-        }
     }
 }
 
@@ -627,35 +344,14 @@ core::Entity Arena::SpawnFox(const Orbit& orbit, core::Vec2 foot) {
     return entity;
 }
 
-// At a random point on the ground's edge, its orbit's angle starting on that side of its centre, so it eases in
-// rather than crossing the circle.
-void Arena::Respawn(const core::TickCounters& counters, u32 index) {
-    const u64 random = core::Random(m_state.Seed(), counters.state, 0, PURPOSE_RESPAWN, index);
-    const core::Vec2 edge = EdgePoint(GROUND_VIEW, core::ToUnit(random));
-    core::Vec2 centre = CULTIVATOR;
-    if (m_data.fox.orbitsPlayer && m_player != core::StableId{}) {
-        centre = m_state[ACTIVE].Entities().get<Body>(m_state[ACTIVE].Find(m_player)).current;
-    }
-    const f64 toward = core::math::Atan2(
-        static_cast<f64>(edge.y - centre.y) / static_cast<f64>(VIEW_TILT), static_cast<f64>(edge.x - centre.x)
-    );
-    const f64 travelled = static_cast<f64>(m_data.fox.orbitSpeed) * static_cast<f64>(counters.simulation);
-    const Orbit orbit{
-        .centre = centre,
-        .radius = m_data.fox.orbitRadius,
-        .wobble = m_data.fox.orbitWobble,
-        .phase = static_cast<f32>(std::remainder(toward - travelled, 2 * std::numbers::pi)),
-        .speed = m_data.fox.orbitSpeed,
-    };
-    const core::Entity entity = SpawnFox(orbit, edge);
-    m_state[ACTIVE].Entities().emplace<Arriving>(entity, edge, counters.simulation, m_data.combat.arriveTicks);
-    PN_LOG_DEBUG(
-        "tick {}: a fox respawns as entity {} at ({}, {})",
-        counters.simulation,
-        std::to_underlying(m_state[ACTIVE].Entities().get<core::StableId>(entity)),
-        edge.x,
-        edge.y
-    );
+core::Entity Arena::SpawnPlayer(core::Vec2 foot) {
+    const core::Entity entity = Spawn(foot, { .sprite = m_data.cultivator.sprite, .shadow = true });
+    core::Registry& entities = m_state[ACTIVE].Entities();
+    entities.emplace<Creature>(entity, CreatureKind::Cultivator);
+    entities.emplace<Health>(entity, m_data.cultivator.health, m_data.cultivator.health);
+    entities.emplace<Caster>(entity, m_data.abilities.qiStart);
+    m_player = entities.get<core::StableId>(entity);
+    return entity;
 }
 
 void Arena::CastAction(const core::Action& action, const core::TickCounters& counters, std::vector<core::Event>& events) {
@@ -663,13 +359,13 @@ void Arena::CastAction(const core::Action& action, const core::TickCounters& cou
         m_combat.Cast(m_state, *m_manifest, m_data.abilities, m_player, action, counters, events);
         return;
     }
-    PN_LOG_DEBUG("tick {}: a cast is ignored: the scene {} is no combat scene", counters.simulation, SceneName(m_scene));
+    PN_LOG_DEBUG("tick {}: a cast is ignored: the scene {} is no combat scene", counters.simulation, Running().Traits().name);
 }
 
 void Arena::Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) {
     PN_PROFILE_ZONE();
     if (std::ranges::contains(input.actions, core::ActionKind::CycleScene, &core::Action::kind)) {
-        const auto next = static_cast<game::Scene>((std::to_underlying(m_scene) + 1U) % SCENES.size());
+        const core::SceneKey next = NextScene(m_scene);
         PN_LOG_INFO("tick {}: the scene changes to {}", counters.simulation, SceneName(next));
         m_combat.EndUses(m_state, events); // nothing of this scene's goes on to hit
         m_requested = next;                // the logic has it built after this tick
@@ -713,26 +409,18 @@ void Arena::Tick(const core::TickCounters& counters, const core::TickInput& inpu
         PN_LOG_INFO("tick {}: the player's cultivator died and is gone", counters.simulation);
         m_player = {};
     }
+    Context context{ *this };
     for (u32 index = 0; index < respawns; ++index) {
-        Respawn(counters, index);
+        Running().Respawn(context, counters, index);
     }
     DecideActive(active, m_state.Seed(), counters.state, counters.simulation);
     WalkActive(active);
-    if (IsCombatScene() && counters.simulation % m_data.combat.auraPeriod == 0) {
-        Aura(counters, events);
-    }
+    Running().Tick(context, counters, events);
     if (std::ranges::contains(input.actions, core::ActionKind::DebugBurst, &core::Action::kind)) {
         DebugBurst(counters, events);
     }
     // Last, once everything that moves or kills this tick has.
     m_combat.Strike(m_state, *m_manifest, counters.simulation, events);
-}
-
-core::Vec2 Arena::HeadOf(core::Entity entity) const {
-    const core::Registry& entities = m_state[ACTIVE].Entities();
-    const core::Vec2 foot = entities.get<Body>(entity).current;
-    const f32 footY = static_cast<f32>(m_manifest->Sprite(entities.get<Look>(entity).sprite).footY);
-    return { .x = foot.x, .y = foot.y - (footY * entities.get<Look>(entity).scale) };
 }
 
 void Arena::PublishOverhead(core::Snapshot& snapshot) const {
@@ -775,20 +463,6 @@ void Arena::PublishOverhead(core::Snapshot& snapshot) const {
             }
         );
     }
-    const core::SpriteInfo& stele = m_manifest->Sprite(STELE.sprite);
-    const core::Vec2 topRight{ .x = STELE.foot.x + static_cast<f32>(stele.width) - static_cast<f32>(stele.footX),
-                               .y = STELE.foot.y - static_cast<f32>(stele.footY) };
-    snapshot.texts.push_back(
-        {
-            .kind = core::TextKind::Caption,
-            .string = core::StringId::TabletCaption,
-            .previous = topRight,
-            .current = topRight,
-            .offset = CAPTION_OFFSET,
-            .align = core::TextAlign::TopCentre,
-            .direction = core::TextDirection::TopToBottom,
-        }
-    );
 }
 
 void Arena::PublishCaster(core::Snapshot& snapshot) const {
@@ -810,43 +484,6 @@ void Arena::PublishCaster(core::Snapshot& snapshot) const {
         .readyTick = caster->readyTick,
         .loadout = m_data.abilities.loadout,
     };
-}
-
-void Arena::Aura(const core::TickCounters& counters, std::vector<core::Event>& events) {
-    PN_PROFILE_ZONE();
-    const u64 use = core::AbilityUse(counters.simulation, USE_AURA);
-    const std::size_t first = events.size();
-    const core::Registry& entities = m_state[ACTIVE].Entities();
-    const core::CombatRules& rules = m_data.combat;
-    const f32 reach = rules.auraReach;
-    for (auto [entity, body, creature, target] : entities.view<const Body, const Creature, const core::StableId>().each()) {
-        const core::Vec2 away = body.current - CRYSTAL.foot;
-        if ((away.x * away.x) + (away.y * away.y) > reach * reach || entities.all_of<Dying>(entity)) {
-            continue;
-        }
-        const bool healing = creature.kind == CreatureKind::Cultivator;
-        if (!healing && creature.kind != CreatureKind::Fox) {
-            continue;
-        }
-        const u32 low = healing ? rules.auraHealingMin : rules.auraDamageMin;
-        const u32 high = healing ? rules.auraHealingMax : rules.auraDamageMax;
-        const u64 random = core::Random(m_state.Seed(), counters.state, std::to_underlying(target), PURPOSE_AURA, 0);
-        events.push_back(
-            {
-                .kind = core::EventKind::Hit,
-                .hit = healing ? core::HitKind::Healing : core::HitKind::Damage,
-                .use = use,
-                .target = target,
-                .position = HeadOf(entity),
-                .value = HitAmount(static_cast<i64>(low) + static_cast<i64>(core::ToBelow(random, high - low + 1))),
-            }
-        );
-    }
-    // Applied once every hit is chosen: a death changes the components the loop above reads.
-    for (const core::Event& hit : std::span{ events }.subspan(first)) {
-        Combat::Damage(m_state, hit.target, hit.hit == core::HitKind::Healing ? -hit.value : hit.value, counters.simulation);
-    }
-    events.push_back({ .kind = core::EventKind::UseEnded, .use = use });
 }
 
 void Arena::DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const {
@@ -876,7 +513,7 @@ void Arena::DebugBurst(const core::TickCounters& counters, std::vector<core::Eve
                 .hit = static_cast<core::HitKind>((index / foxes.size()) % core::HIT_KINDS),
                 .use = use,
                 .target = target,
-                .position = HeadOf(fox),
+                .position = HeadOf(entities, *m_manifest, fox),
                 .value = 1 + static_cast<i64>(core::ToBelow(random, DEBUG_BURST_MAX)),
             }
         );
@@ -911,7 +548,16 @@ void Arena::AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs
 
 template<typename Archive>
 void Arena::Write(Archive& archive) const {
-    archive(ARENA_FORMAT, m_scene, m_state.Seed(), m_state.Ids().next, m_months, m_player, m_selected);
+    // The scene stays one byte, as the scene enum was.
+    archive(
+        ARENA_FORMAT,
+        static_cast<u8>(std::to_underlying(m_scene)),
+        m_state.Seed(),
+        m_state.Ids().next,
+        m_months,
+        m_player,
+        m_selected
+    );
     archive(ACTIVE_VERSION);
     core::SaveDomain(archive, m_state[ACTIVE], ActiveComponents{});
     archive(WORLD_VERSION);
@@ -936,14 +582,14 @@ u64 Arena::StateHash() const {
 bool Arena::Load(core::Reader& archive, u64 simulationTick) {
     PN_PROFILE_ZONE();
     u32 format = 0;
-    game::Scene scene = game::Scene::Arena;
+    u8 scene = 0;
     u64 seed = 0;
     u64 next = 0;
     u64 months = 0;
     core::StableId player{};
     core::StableId selected{};
     archive(format, scene, seed, next, months, player, selected);
-    if (format != ARENA_FORMAT || scene > game::Scene::Cells) {
+    if (format != ARENA_FORMAT || scene >= Scenes().size()) {
         archive.Fail();
     }
     core::State state{ DOMAINS, seed, core::StableIdCounter{ .next = next } };
@@ -971,11 +617,10 @@ bool Arena::Load(core::Reader& archive, u64 simulationTick) {
     m_state = std::move(state);
     m_relationships = std::move(relationships);
     m_combat = std::move(combat);
-    m_scene = scene;
-    m_sceneId = SceneIdOf(*m_manifest, scene);
+    m_scene = core::SceneKey{ scene };
+    m_sceneId = SceneIdOf(*m_manifest, m_scene);
     m_requested.reset();
     m_months = months;
-    m_view = ViewOf(scene);
     m_player = player;
     m_selected = selected;
     ApplyData();
@@ -1002,7 +647,7 @@ void Arena::ApplyData() {
         }
         if (Orbit* const orbit = entities.try_get<Orbit>(entity)) {
             if (!kind.orbitsPlayer) {
-                orbit->centre = CULTIVATOR; // back from wherever the player led it
+                orbit->centre = Running().Traits().home; // back from wherever the player led it
             }
             orbit->radius = kind.orbitRadius;
             orbit->wobble = kind.orbitWobble;
@@ -1043,14 +688,15 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
     const auto& spins = m_state[ACTIVE].Entities().storage<Spin>();
     const auto& dyings = m_state[ACTIVE].Entities().storage<Dying>();
     const u64 tick = snapshot.simulationTick;
-    const bool demoGlows = m_scene == Scene::Arena;
-    snapshot.combat = IsCombatScene();
+    const SceneTraits& traits = Running().Traits();
+    const bool demoGlows = traits.demoGlows;
+    snapshot.combat = traits.combat;
+    snapshot.camera = traits.camera;
     const u32 chunks = core::ChunkCount(looks.size(), PUBLISH_CHUNK);
-    core::Rect view = m_view;
+    core::Rect view = traits.view;
     if (m_player != core::StableId{}) {
         const Body& body = bodies.get(m_state[ACTIVE].Find(m_player));
         snapshot.follow = core::Follow{ .previous = body.previous, .current = body.current };
-        snapshot.camera = core::CameraKind::Follow;
         view = { .min = body.current - FOLLOW_HALF_VIEW, .max = body.current + FOLLOW_HALF_VIEW };
     }
     m_drawList.Begin(view, std::max(chunks, 1U));
@@ -1103,14 +749,8 @@ void Arena::Publish(core::Snapshot& snapshot, core::Jobs& jobs) {
     m_drawList.Publish(snapshot, jobs);
     PublishOverhead(snapshot);
     PublishCaster(snapshot);
-    if (m_scene == Scene::Arena) {
-        // Before the seals raised in play, which draw over them.
-        for (const ShowcaseSeal& seal : SHOWCASE) {
-            snapshot.seals.push_back(
-                { .key = seal.key, .point = seal.point, .size = seal.size, .endTick = core::NEVER_ENDS, .showcase = true }
-            );
-        }
-    }
+    // Before the seals raised in play, which draw over the scene's own.
+    Running().Publish(Context{ *this }, snapshot);
     m_combat.Publish(snapshot);
     if (m_selected != core::StableId{}) {
         if (const auto drawn = std::ranges::find(snapshot.ids, m_selected); drawn != snapshot.ids.end()) {

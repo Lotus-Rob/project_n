@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup game
-/// Components every scene's entities share: where an entity stands and how it is drawn.
+/// Components every scene's entities share: where an entity stands, how it is drawn, and how it turns and circles.
 
 #include "core/draw_list.hpp"
 #include "core/frame.hpp"
@@ -12,6 +12,7 @@
 #include "core/generated/atlas.hpp" // by `project_n atlas`
 
 #include <cmath>
+#include <numbers>
 #include <utility>
 
 namespace game {
@@ -106,5 +107,40 @@ struct Creature {
         return kind <= CreatureKind::Fox;
     }
 };
+
+/// A full turn, in radians.
+inline constexpr f32 TURN = 2.0F * std::numbers::pi_v<f32>;
+
+/// How much flatter than wide a circle on the ground looks: the view looks down at an angle.
+inline constexpr f32 VIEW_TILT = 0.6F;
+
+/// A path around a point: the entity's foot circles `centre` at `radius`, a little in and out.
+struct Orbit {
+    /// The point circled.
+    core::Vec2 centre{};
+    /// The mean distance from it.
+    f32 radius = 0.0F;
+    /// How far it strays in and out of that distance, three times a lap.
+    f32 wobble = 0.0F;
+    /// The angle at tick 0, in radians.
+    f32 phase = 0.0F;
+    /// Radians per tick; negative goes anticlockwise.
+    f32 speed = 0.0F;
+
+    /// Lists its fields for an archive (core/archive.hpp).
+    template<typename Self, typename Archive>
+    void Fields(this Self& self, Archive& archive) {
+        archive(self.centre, self.radius, self.wobble, self.phase, self.speed);
+    }
+
+    /// Whether a value read from a save can be used: finite numbers.
+    [[nodiscard]] bool Valid() const {
+        return core::IsFinite(centre) && std::isfinite(radius) && std::isfinite(wobble) && std::isfinite(phase) &&
+               std::isfinite(speed);
+    }
+};
+
+/// Where an Orbit puts its entity's foot at `tick`.
+[[nodiscard]] core::Vec2 OrbitPoint(const Orbit& orbit, u64 tick);
 
 } // namespace game
