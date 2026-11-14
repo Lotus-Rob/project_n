@@ -603,15 +603,9 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
         !combat.FlashesStartBy(simulationTick) || !combat.SealsStartBy(simulationTick)) {
         return false;
     }
-    m_loaded = Loaded{
-        .state = std::move(state),
-        .relationships = std::move(relationships),
-        .combat = std::move(combat),
-        .scene = core::SceneKey{ scene },
-        .months = months,
-        .player = player,
-        .selected = selected,
-    };
+    m_loaded.emplace(
+        std::move(state), std::move(relationships), std::move(combat), core::SceneKey{ scene }, months, player, selected
+    );
     return true;
 }
 
