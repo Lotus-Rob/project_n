@@ -178,6 +178,22 @@ core::Error RefusalAt(std::string_view what, const YAML::Node& node, std::string
     return { std::format("{} line {}: {}", what, node.Mark().line + 1, why) };
 }
 
+std::expected<core::atlas::SpriteId, core::Error> ReadSprite(
+    std::string_view what,
+    const YAML::Node& node,
+    std::string_view owner,
+    const core::Manifest& manifest
+) {
+    const std::string name = node.IsScalar() ? node.Scalar() : std::string{};
+    const std::optional<core::atlas::SpriteId> sprite = core::SpriteNamed(name);
+    if (!sprite || std::to_underlying(*sprite) >= manifest.sprites.size()) {
+        return std::unexpected{
+            RefusalAt(what, node, std::format("{} names the sprite \"{}\", which isn't in the atlas", owner, name))
+        };
+    }
+    return *sprite;
+}
+
 std::optional<core::UiColour> PaletteColour(std::string_view name) {
     for (std::size_t colour = 0; colour < core::UI_COLOURS; ++colour) {
         const core::UiColourInfo& info = core::UI_COLOUR_INFO.at(colour);

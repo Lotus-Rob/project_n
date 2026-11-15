@@ -25,6 +25,7 @@
 #include "core/tick_clock.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
+#include "core/world_look.hpp"
 #include "game/host.hpp"
 #include "gfx/camera.hpp"
 #include "gfx/renderer.hpp"
@@ -66,6 +67,9 @@ struct Options {
     core::Effects effects{};
     /// The seals' looks, read from `assets/data/seals.yaml` against `manifest`; debug builds reload them with the data.
     core::Seals seals{};
+    /// The world map's look, read from `assets/data/world_look.yaml` against `manifest` and the map; debug builds reload it
+    /// with the data.
+    core::WorldLook worldLook{};
     /// Quit by itself after this long (`--quit-after`); 0 never does.
     u64 quitAfterNs = 0;
     /// Send a debug burst of hits once a second (`--burst`), so a profile run sees the damage numbers' stress without a key
@@ -153,6 +157,10 @@ struct DataReload {
 /// Makes the game data `read` after an edit carry the world map `running` was started with: the map is read at the
 /// start only, so an edit to `world.yaml` alone reloads nothing. Does nothing to data that couldn't be read.
 void KeepWorld(const core::GameData& running, std::expected<core::GameData, core::Error>& read);
+
+/// Makes `current` the world look `read` after an edit when it differs (by Hash()), and says whether it did: a look that
+/// couldn't be read, or reads as it was, leaves `current` as it is.
+[[nodiscard]] bool KeepLook(core::WorldLook& current, std::expected<core::WorldLook, core::Error> read);
 
 /// The main thread's systems (the job system, the window, the renderer, the handover and its display
 /// side, the camera, the damage numbers, the HUD) and the logic thread, which builds and runs a Game on the job system.

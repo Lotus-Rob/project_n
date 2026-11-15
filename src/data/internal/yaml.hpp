@@ -7,6 +7,7 @@
 
 #include "core/error.hpp"
 #include "core/glow.hpp"
+#include "core/manifest.hpp"
 #include "core/types.hpp"
 #include "core/ui_colours.hpp"
 
@@ -152,6 +153,15 @@ template<typename Enum, std::size_t Count>
     }
     return std::unexpected{ RefusalAt(what, node, std::format("{}'s {} \"{}\" isn't known", owner, key, text)) };
 }
+
+/// The sprite `node` names, which must be in the atlas and in `manifest`: "`what` line N: `owner` names the sprite "name",
+/// which isn't in the atlas" otherwise.
+[[nodiscard]] std::expected<core::atlas::SpriteId, core::Error> ReadSprite(
+    std::string_view what,
+    const YAML::Node& node,
+    std::string_view owner,
+    const core::Manifest& manifest
+);
 
 /// The palette colour `<area>.<key>` names (core::UI_COLOUR_INFO), if it names one.
 [[nodiscard]] std::optional<core::UiColour> PaletteColour(std::string_view name);

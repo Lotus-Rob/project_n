@@ -13,6 +13,7 @@
 #include "data/effects.hpp"
 #include "data/game_data.hpp"
 #include "data/seals.hpp"
+#include "data/world_look.hpp"
 #include "platform/clock.hpp"
 
 namespace app {
@@ -156,6 +157,14 @@ void KeepWorld(const core::GameData& running, std::expected<core::GameData, core
     if (read) {
         read->world = running.world;
     }
+}
+
+bool KeepLook(core::WorldLook& current, std::expected<core::WorldLook, core::Error> read) {
+    if (!read || read->Hash() == current.Hash()) {
+        return false;
+    }
+    current = std::move(*read);
+    return true;
 }
 
 bool HasFlag(std::span<const char* const> args, std::string_view flag) {
@@ -369,6 +378,17 @@ void App::WatchData(u64 nowNs) {
     }
     else {
         PN_LOG_ERROR("the seals changed but weren't reloaded; the old seals stay: {}", seals.error().message);
+    }
+    // The world's look is drawn only too, and checked against the map the game runs: a look the map can't use keeps the old.
+    if (m_options.data.world) {
+        std::expected<core::WorldLook, core::Error> look =
+            data::LoadWorldLook(m_options.dataFolder, *m_options.manifest, *m_options.data.world);
+        if (!look) {
+            PN_LOG_ERROR("the world's look changed but wasn't reloaded; the old look stays: {}", look.error().message);
+        }
+        else if (KeepLook(m_options.worldLook, std::move(look))) {
+            PN_LOG_INFO("the world's look was read again: {} kinds", m_options.worldLook.kinds.size());
+        }
     }
     std::expected<core::GameData, core::Error> gameData = data::LoadGameData(m_options.dataFolder);
     KeepWorld(m_options.data, gameData);

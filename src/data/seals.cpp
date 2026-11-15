@@ -59,12 +59,7 @@ std::expected<core::atlas::SpriteId, core::Error> SpriteAt(
     std::string_view owner,
     const core::Manifest& manifest
 ) {
-    const std::string name = node.IsScalar() ? node.Scalar() : std::string{};
-    const std::optional<core::atlas::SpriteId> sprite = core::SpriteNamed(name);
-    if (!sprite || std::to_underlying(*sprite) >= manifest.sprites.size()) {
-        return RefuseSeals(node, std::format("{} names the sprite \"{}\", which isn't in the atlas", owner, name));
-    }
-    return *sprite;
+    return internal::ReadSprite(WHAT, node, owner, manifest);
 }
 
 // Reads one map's values, keeping the first refusal: each read after it does nothing, so a reader reads every field and
