@@ -3,7 +3,8 @@
 // cells and changed to with F2, with the player walking and selecting, a pause, a calendar step and a save in it, plays
 // back in a fresh game in another scene (a load across scenes, waiting for each) with every hash matching, the last
 // one on the recording's final tick. Phase 6 chunk 4 adds a recorded fight: every ability cast, foxes dying and
-// respawning, a save while the swords fly.
+// respawning, a save while the swords fly. Phase 6 chunk 5b1 adds the world scene on the shipped map, walked across a
+// month step.
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
@@ -294,6 +295,52 @@ TEST_CASE("a recorded fight replays with every hash matching") {
     CHECK(playing.replay.AtEnd());
     CHECK(playing.replay.HashCount() == HASHES);
     CHECK(playing.replay.Matched() == playing.replay.HashCount());
+}
+
+TEST_CASE("a replay on the world scene plays back with the same hashes") {
+    // On the shipped map with its cities' 50,000 NPCs: the cultivator walks east from the start city, a month passes and
+    // it walks on, across more than one hash window; a fresh game on the same map plays it back with every hash matching.
+    constexpr u64 WALK = 40;
+    constexpr u64 BURST = 7;
+    constexpr u32 MAX_BURSTS = 100;
+    constexpr std::size_t HASHES = 3; // the last on the recording's final tick
+    constexpr core::Vec2 RIGHT{ .x = 1.0F, .y = 0.0F };
+    const Folder folder{ "world" };
+    {
+        Session recording(folder.Path(), game::WORLD_SCENE);
+        REQUIRE(recording.host.Player() != core::StableId{});
+        recording.Send(core::ActionKind::ToggleRecording);
+        recording.Burst(1);
+        const core::Vec2 start = FootOf(recording.host, recording.host.Player());
+        recording.Hold(RIGHT);
+        recording.Burst(WALK);
+        recording.Send(core::ActionKind::AdvanceCalendar);
+        recording.Burst(BURST); // ends at the request
+        recording.Burst(BURST); // the month step
+        recording.Burst(WALK);
+        recording.Hold({});
+        // To a hash tick past the first window, so the recording's last state is checked.
+        recording.Burst(core::REPLAY_HASH_TICKS);
+        recording.Burst(core::REPLAY_HASH_TICKS - (recording.logic.Counters().wall % core::REPLAY_HASH_TICKS));
+        REQUIRE(recording.logic.Counters().wall % core::REPLAY_HASH_TICKS == 0);
+        REQUIRE(recording.host.Months() == 1);
+        REQUIRE(FootOf(recording.host, recording.host.Player()).x > start.x); // it walked
+        recording.Send(core::ActionKind::ToggleRecording);
+        recording.Burst(1);
+    } // its job system finishes writing the replay
+
+    Session playing(folder.Path(), game::WORLD_SCENE);
+    playing.Send(core::ActionKind::PlayReplay);
+    playing.Burst(1);
+    REQUIRE(playing.replay.Playing());
+    for (u32 bursts = 0; bursts < MAX_BURSTS && playing.replay.Playing(); ++bursts) {
+        playing.Burst(core::REPLAY_HASH_TICKS);
+    }
+    CHECK(playing.replay.AtEnd());
+    CHECK(playing.replay.HashCount() == HASHES);
+    CHECK(playing.replay.Matched() == playing.replay.HashCount());
+    CHECK(playing.host.Months() == 1);
+    CHECK(playing.host.Current().key == game::WORLD_SCENE);
 }
 
 TEST_CASE("a replay recorded through a portal plays back with the same hashes") {
