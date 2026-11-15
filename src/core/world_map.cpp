@@ -40,10 +40,14 @@ void HashLine(Hasher& hasher, const std::vector<TilePoint>& line) {
     }
 }
 
-// Calls `mark` with every tile a segment from `from` to `to` passes through, 4-connected, `from` first: it steps along
-// the axis whose next tile boundary the segment crosses first, the column's on a tie.
+// Calls `mark` with every tile a segment between two points passes through, 4-connected, starting from the endpoint
+// with the lower (row, column) so a segment and its reverse mark the same tiles: it steps along the axis whose next
+// tile boundary the segment crosses first, the column's on a tie.
 template<typename Mark>
-void Rasterise(TilePoint from, TilePoint last, const Mark& mark) {
+void Rasterise(TilePoint first, TilePoint second, const Mark& mark) {
+    const bool swap = std::pair{ second.row, second.column } < std::pair{ first.row, first.column };
+    const TilePoint from = swap ? second : first;
+    const TilePoint last = swap ? first : second;
     const i64 deltaX = static_cast<i64>(last.column) - static_cast<i64>(from.column);
     const i64 deltaY = static_cast<i64>(last.row) - static_cast<i64>(from.row);
     const i64 stepX = deltaX < 0 ? -1 : 1;
@@ -72,6 +76,11 @@ void Rasterise(TilePoint from, TilePoint last, const Mark& mark) {
     }
 }
 
+// "line L: " when `lines` knows entry `index`'s line, else nothing.
+std::string AtLine(const std::vector<u32>& lines, std::size_t index) {
+    return index < lines.size() ? std::format("line {}: ", lines[index]) : std::string{};
+}
+
 std::size_t IndexOf(const WorldMapSource& source, TilePoint point) {
     return (static_cast<std::size_t>(point.row) * source.columns) + point.column;
 }
@@ -82,12 +91,12 @@ struct Seed {
 };
 
 struct Reach {
-    std::vector<u32> cost;
+    std::vector<u64> cost;
     std::vector<u16> owner;
 };
 
 struct Entry {
-    u32 cost;
+    u64 cost;
     u16 city;
     u32 tile;
     [[nodiscard]] friend bool operator>(const Entry& lhs, const Entry& rhs) {
@@ -105,7 +114,7 @@ struct Entry {
 // has one owner whatever the platform.
 Reach Search(const WorldMap& map, std::span<const Seed> seeds) {
     const std::size_t tiles = static_cast<std::size_t>(map.Columns()) * map.Rows();
-    Reach reach{ .cost = std::vector<u32>(tiles, std::numeric_limits<u32>::max()), .owner = std::vector<u16>(tiles, NO_PLACE) };
+    Reach reach{ .cost = std::vector<u64>(tiles, std::numeric_limits<u64>::max()), .owner = std::vector<u16>(tiles, NO_PLACE) };
     std::vector<bool> settled(tiles, false);
     std::priority_queue<Entry, std::vector<Entry>, std::greater<>> queue;
     for (const Seed seed : seeds) {
@@ -132,7 +141,7 @@ Reach Search(const WorldMap& map, std::span<const Seed> seeds) {
                 const u32 next = map.TileIndex({ .column = static_cast<u32>(column), .row = static_cast<u32>(row) });
                 const u32 step = map.StepCost(entry.tile, next);
                 if (step != IMPASSABLE_COST && !settled.at(next)) {
-                    queue.push({ .cost = entry.cost + step, .city = entry.city, .tile = next });
+                    queue.push({ .cost = entry.cost + u64{ step }, .city = entry.city, .tile = next });
                 }
             }
         }
@@ -147,6 +156,7 @@ std::expected<void, Error> MarkLines(
     const WorldMapSource& source,
     std::span<const std::vector<TilePoint>> lines,
     std::string_view what,
+    const std::vector<u32>& lineNumbers,
     u8 flag,
     std::vector<u8>& flags,
     const Blocked& blocked
@@ -156,6 +166,7 @@ std::expected<void, Error> MarkLines(
         for (std::size_t point = 0; point < line.size(); ++point) {
             if (line[point].column >= source.columns || line[point].row >= source.rows) {
                 return std::unexpected{ Refuse(
+                    AtLine(lineNumbers, index) +
                     std::format(
                         "{} {}: point {} ({}, {}) lies off the map", what, index, point, line[point].column, line[point].row
                     )
@@ -171,15 +182,15 @@ std::expected<void, Error> MarkLines(
                 flags.at(tileIndex) |= flag;
                 if (!refusal && blocked(tileIndex)) {
                     refusal = Refuse(
-                        std::format(
-                            "{} {}: the tile ({}, {}) is {}, which no {} can cross",
-                            what,
-                            index,
-                            tile.column,
-                            tile.row,
-                            source.kinds[source.grid[tileIndex]].name,
-                            what
-                        )
+                        AtLine(lineNumbers, index) + std::format(
+                                                         "{} {}: the tile ({}, {}) is {}, which no {} can cross",
+                                                         what,
+                                                         index,
+                                                         tile.column,
+                                                         tile.row,
+                                                         source.kinds[source.grid[tileIndex]].name,
+                                                         what
+                                                     )
                     );
                 }
             });
@@ -206,6 +217,30 @@ std::expected<void, Error> CheckShape(const WorldMapSource& source) {
     if (source.kinds.empty() || source.kinds.size() > std::numeric_limits<u8>::max()) {
         return std::unexpected{ Refuse(std::format("the map names {} terrain kinds", source.kinds.size())) };
     }
+    for (std::size_t index = 0; index < source.kinds.size(); ++index) {
+        const TerrainKind& kind = source.kinds[index];
+        if (kind.cost != IMPASSABLE_COST && kind.cost > MAX_WALK_COST) {
+            return std::unexpected{ Refuse(
+                AtLine(source.lines.kinds, index) + std::format(
+                                                        "terrain kind {} ('{}') costs {}, over the most a step may cost, {}",
+                                                        index,
+                                                        kind.name,
+                                                        kind.cost,
+                                                        MAX_WALK_COST
+                                                    )
+            ) };
+        }
+    }
+    if (source.roadCost > MAX_WALK_COST || source.fordCost > MAX_WALK_COST) {
+        return std::unexpected{ Refuse(
+            std::format(
+                "the road cost {} or the ford cost {} is over the most a step may cost, {}",
+                source.roadCost,
+                source.fordCost,
+                MAX_WALK_COST
+            )
+        ) };
+    }
     if (std::ranges::any_of(source.grid, [&](u8 kind) { return kind >= source.kinds.size(); })) {
         return std::unexpected{ Refuse("the grid names a terrain kind that doesn't exist") };
     }
@@ -219,22 +254,34 @@ std::expected<void, Error> CheckShape(const WorldMapSource& source) {
 std::expected<void, Error> DeriveTiles(const WorldMapSource& source, std::vector<u8>& flags, std::vector<u16>& cost) {
     const std::size_t tiles = flags.size();
     const auto never = [](std::size_t) { return false; };
-    if (auto marked = MarkLines(source, source.rivers, "river", FLAG_RIVER, flags, never); !marked) {
+    if (auto marked = MarkLines(source, source.rivers, "river", source.lines.rivers, FLAG_RIVER, flags, never); !marked) {
         return marked;
     }
     std::vector<u8> roadFlags(tiles, 0);
     const auto impassable = [&](std::size_t tile) { return source.kinds[source.grid[tile]].cost == IMPASSABLE_COST; };
-    if (auto marked = MarkLines(source, source.roads, "road", FLAG_ROAD, roadFlags, impassable); !marked) {
+    if (auto marked = MarkLines(source, source.roads, "road", source.lines.roads, FLAG_ROAD, roadFlags, impassable); !marked) {
         return marked;
     }
     for (std::size_t index = 0; index < source.fords.size(); ++index) {
         const TilePoint ford = source.fords[index];
         const bool onMap = ford.column < source.columns && ford.row < source.rows;
-        if (!onMap || (flags[IndexOf(source, ford)] & FLAG_RIVER) == 0) {
+        std::string problem;
+        if (!onMap) {
+            problem = "lies off the map";
+        }
+        else if ((flags[IndexOf(source, ford)] & FLAG_RIVER) == 0) {
+            problem = "has no river";
+        }
+        else if (const TerrainKind& kind = source.kinds[source.grid[IndexOf(source, ford)]]; kind.cost == IMPASSABLE_COST) {
+            problem = std::format("is {}, which no ford can cross", kind.name);
+        }
+        else if (roadFlags[IndexOf(source, ford)] != 0) {
+            problem = "is bridged";
+        }
+        if (!problem.empty()) {
             return std::unexpected{ Refuse(
-                std::format(
-                    "ford {}: the tile ({}, {}) {}", index, ford.column, ford.row, onMap ? "has no river" : "lies off the map"
-                )
+                AtLine(source.lines.fords, index) +
+                std::format("ford {}: the tile ({}, {}) {}", index, ford.column, ford.row, problem)
             ) };
         }
         flags[IndexOf(source, ford)] |= FLAG_FORD;
@@ -270,18 +317,22 @@ std::expected<PlaceLayer, Error> PlaceTiles(const WorldMapSource& source, const 
             source.places.begin(), source.places.begin() + static_cast<std::ptrdiff_t>(index), place.key, &Place::key
         );
         if (twin != source.places.begin() + static_cast<std::ptrdiff_t>(index)) {
-            return std::unexpected{
-                Refuse(std::format("places {} and {} share the key '{}'", twin - source.places.begin(), index, place.key))
-            };
+            return std::unexpected{ Refuse(
+                AtLine(source.lines.places, index) +
+                std::format("places {} and {} share the key '{}'", twin - source.places.begin(), index, place.key)
+            ) };
         }
         if (place.tile.column >= source.columns || place.tile.row >= source.rows) {
-            return std::unexpected{ Refuse(std::format("place {} ('{}') lies off the map", index, place.key)) };
+            return std::unexpected{
+                Refuse(AtLine(source.lines.places, index) + std::format("place {} ('{}') lies off the map", index, place.key))
+            };
         }
         const std::size_t tile = IndexOf(source, place.tile);
         if (cost[tile] == IMPASSABLE_COST) {
-            return std::unexpected{
-                Refuse(std::format("place {} ('{}') stands on a tile no one can walk on", index, place.key))
-            };
+            return std::unexpected{ Refuse(
+                AtLine(source.lines.places, index) +
+                std::format("place {} ('{}') stands on a tile no one can walk on", index, place.key)
+            ) };
         }
         if (layer.place[tile] != NO_PLACE) {
             return std::unexpected{ Refuse(
@@ -294,15 +345,31 @@ std::expected<PlaceLayer, Error> PlaceTiles(const WorldMapSource& source, const 
                 )
             ) };
         }
+        if ((place.kind == PlaceKind::City) != place.sort.empty()) {
+            return std::unexpected{ Refuse(
+                AtLine(source.lines.places, index) +
+                std::format(
+                    "place {} ('{}') {}",
+                    index,
+                    place.key,
+                    place.sort.empty() ? "is a danger without a sort" : "is a city with a sort"
+                )
+            ) };
+        }
         layer.place[tile] = static_cast<u16>(index);
         if (!place.start) {
             continue;
         }
         if (place.kind != PlaceKind::City) {
-            return std::unexpected{ Refuse(std::format("place {} ('{}') starts the game but isn't a city", index, place.key)) };
+            return std::unexpected{ Refuse(
+                AtLine(source.lines.places, index) +
+                std::format("place {} ('{}') starts the game but isn't a city", index, place.key)
+            ) };
         }
         if (layer.start != NO_PLACE) {
-            return std::unexpected{ Refuse(std::format("places {} and {} both start the game", layer.start, index)) };
+            return std::unexpected{ Refuse(
+                AtLine(source.lines.places, index) + std::format("places {} and {} both start the game", layer.start, index)
+            ) };
         }
         layer.start = static_cast<u16>(index);
     }
@@ -344,6 +411,7 @@ std::expected<WorldMap, Error> WorldMap::Build(WorldMapSource source) {
     for (const Seed city : cities) {
         if (fromStart.owner[city.tile] == NO_PLACE) {
             return std::unexpected{ Refuse(
+                AtLine(map.m_source.lines.places, city.city) +
                 std::format(
                     "place {} ('{}') can't be reached on foot from the start", city.city, map.m_source.places[city.city].key
                 )

@@ -25,6 +25,10 @@ inline constexpr u16 IMPASSABLE_COST = 0xFFFF;
 /// The place index of a tile without a place; the region of a tile no city reaches.
 inline constexpr u16 NO_PLACE = 0xFFFF;
 
+/// The most any terrain kind, road or ford may cost to walk (a kind that no one can walk on is IMPASSABLE_COST instead):
+/// it keeps a path's cost, even a diagonal's seven fifths, far below that sentinel.
+inline constexpr u16 MAX_WALK_COST = 1'000;
+
 /// A tile of the map, by column and row.
 struct TilePoint {
     /// Its column, from the left.
@@ -80,6 +84,22 @@ enum class TileFlag : u8 {
     Ford = 8,   ///< A named crossing of a river, walkable at a price.
 };
 
+/// The line of the data file each entry of a WorldMapSource was written on, for refusals to name; each vector is
+/// indexed like the source's own (kinds, roads, rivers, fords, places), and may be empty or short, as it is for data
+/// built in code. Never hashed.
+struct SourceLines {
+    /// The line of each terrain kind.
+    std::vector<u32> kinds;
+    /// The line of each road.
+    std::vector<u32> roads;
+    /// The line of each river.
+    std::vector<u32> rivers;
+    /// The line of each ford.
+    std::vector<u32> fords;
+    /// The line of each place.
+    std::vector<u32> places;
+};
+
 /// What the data says, before Build derives the layers.
 struct WorldMapSource {
     /// The map's width in tiles.
@@ -104,6 +124,8 @@ struct WorldMapSource {
     std::vector<TilePoint> fords;
     /// The places.
     std::vector<Place> places;
+    /// Where each entry was written, for refusals to name; not hashed.
+    SourceLines lines;
 };
 
 /// A block of tiles, by their first and last columns and rows, both included; empty when its first column or row lies
@@ -122,7 +144,10 @@ struct TileSpan {
 /// The world map: the authored source and the per-tile layers derived from it.
 class WorldMap {
 public:
-    /// Checks `source` and derives the layers; the error names the place, line or ford it refuses.
+    /// Checks `source` and derives the layers; the error names the kind, line, ford or place it refuses, and the line of
+    /// the data it was written on when `source.lines` knows it. A polyline's tiles are the same whichever way it is
+    /// written: each segment is stepped from its endpoint with the lower (row, column), one axis at a time and
+    /// 4-connected, the column first on a tie.
     [[nodiscard]] static std::expected<WorldMap, Error> Build(WorldMapSource source);
 
     /// The map's width in tiles.
@@ -170,7 +195,8 @@ public:
     }
     /// What a step from `from` onto the adjacent `target` costs: the entered tile's cost; a diagonal costs seven fifths
     /// of it and is allowed only when both orthogonal neighbours are passable. IMPASSABLE_COST when the step isn't
-    /// allowed (not adjacent, off the map, or onto an impassable tile).
+    /// allowed (not adjacent, off the map, or onto an impassable tile); with costs bounded by MAX_WALK_COST, an
+    /// allowed step never reaches that value.
     [[nodiscard]] u32 StepCost(u32 from, u32 target) const;
     /// The passable tiles of the region of place `city`, in tile order; empty for a place that isn't a city.
     [[nodiscard]] std::span<const u32> RegionTiles(u16 city) const;
