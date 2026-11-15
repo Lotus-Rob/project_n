@@ -340,9 +340,11 @@ Raw output kept locally while the branch lives (`.superpowers/sdd/`, gitignored)
 design 5b1, the world map as data") replaces the 0.031 ceiling with a 0.06 guard, because the map's kind edges and
 overlays add shimmer the noise ground did not have (Ruling S). Against main, the work medians move by at most 0.13 ms (`labels: first
 0.5 s`, 82 frames, so noisy; `labels: rest` moves 0.08), inside 5a's 0.15 ms line. One p99 moves by more than 5a's 0.5 ms line: `follow: rest` work p99 (1.77 to 3.45 ms), inside the spread 5a saw
-between its own runs of the same unchanged scene (2.99, 3.13 and 1.25). A single run past the line counts only once a second confirms it, and none was taken: the
-world's per-frame cost is unchanged within noise, as expected, since the map's tiles are drawn by the same quads as
-5a's noise (Decision: matching 5a's quads exactly) and the labels add a handful of names.
+between its own runs of the same unchanged scene (2.99, 3.13 and 1.25). That is a single run, unconfirmed: no second
+`measure` run was taken (the user's call at finishing, 2026-11-15), so it is neither shown to be noise nor shown to be a
+regression; it sits inside 5a's 5.5 ms work p99 budget either way. The rest of the world's per-frame cost is unchanged
+within noise, as expected, since the map's tiles are drawn by the same quads as 5a's noise (Decision: matching 5a's quads
+exactly) and the labels add a handful of names.
 
 **Ruling M: the world run's walker counts changed, so main against the branch is not like for like.** The busiest view
 retuned from 58x50 to 60x52 tiles (3,120 walkers) and walkers whose orbit would stand on sea or peaks redraw onto
@@ -439,16 +441,56 @@ The plan ledger's calls, each with its reason and what it costs if wrong. Commit
   shapes.
 - "Route costs are whole numbers" in the docs states 5b2 work already true of 5b1's map (Task 4).
 
+### Fixed at finishing
+
+The final whole-branch review's findings and the gate's build failures, each fixed on the branch (commits by subject):
+
+- **GCC release builds:** `-Weffc++` wanted initializers on the world map's, the look's and the game data's members
+  ("refactor(core): initialise the world map's members for GCC's -Weffc++").
+- **MSVC release builds** (only in `check`): `Strings::Find` searches a named span (an array iterator is a class there),
+  the host's NPC check deduces its array with `std::to_array` ("refactor(core): pass MSVC's warnings in the strings lookup
+  and NPC check"); the new tests name every value before `CHECK` (C4866) and brace `Strings::Add`'s arrays twice (C5246)
+  ("test: name values before CHECK so MSVC's release build passes").
+- **The look reader is fuzzed** (Important): the `yaml` target reads each input as a look against the shipped manifest and
+  the `world` seed's map, seeded with a small look (`world_look`); a 60 s run found nothing ("test(tests): fuzz the world
+  look reader").
+- **A replay on the world scene** (Important; the Testing section's): a walk across a month step on the shipped map plays
+  back with every hash matching ("test(game): replay the world scene with every hash matching").
+- **A danger with people, two kinds of one name, and cities homing more than `MOST_WORLD_PEOPLE` (100,000, twice the
+  shipped 50,000) are refused**, each naming its line; the shipped-map test sums the cities only ("fix(core): refuse
+  dangers with people, twin kind names, overfull worlds").
+- **A look sprite outside the world scene's sprite list is refused** (both reviewers): it would draw from a page that
+  isn't resident; checked against the manifest scene `data::WORLD_LOOK_SCENE` names, which an app test pins to game's
+  world scene ("fix(data): refuse a world look sprite the world scene doesn't load").
+- **One owner for a point's tile and the start city's centre:** `WorldMap::TileAt` and `WorldMap::StartCentre` replace
+  the world scene's, the scenes tests' and the reference tests' copies ("refactor(core): give the world map one owner for
+  tiles of points").
+- **`Strings` keeps a key index** (deferred minor): Add fills it and Find reads it, the reader's own set is gone, and a
+  `ParseStrings` overload taking the cap lets a test reach the "too many strings" refusal ("refactor(core): index data
+  strings by key in Strings"). The overload is public: the review asked for one in `src/data/internal/`, but `lint`
+  refuses an internal header outside its module, the tests included.
+- **The seals' keep-or-replace decision is tested in app** (deferred minor): `app::KeepSeals`, as `KeepLook`; the seals
+  test that checked a table that could never change now checks only the refusal, under a name that says so
+  ("refactor(app): test the seals' keep-or-replace decision in app").
+- **Docs:** the world scene's Traits and Build name the cities' people ("docs(game): say the world scene spawns the
+  cities' people"); a danger sort is "a key the data names", not a data string ("docs(core): call a danger sort a key the
+  data names, not a data string"); the grid-cell NPC functions say they apply only without the map, and Activate and
+  Deactivate assert a homeless NPC ("refactor(game): keep grid-cell NPC functions to scenes without the map"); the
+  shimmer bound's ratio to its measure is stated right ("test(tests): state the world shimmer bound as 1.5 times its
+  measure", then 1.4 times after the harbour).
+- **No straight kind edge of 8 tiles or more** (Goal 9, deferred minor): twelve runs of 8 to 11 tiles jogged by hand and
+  the harbour's deep pool reshaped (the user's call); the busiest view keeps 2,051 walkers (2,000 needed) and the port's
+  densest screen 206 (PORT_PILE 210); world shimmer 0.0436 (0.0397 before, guard 0.06), `world_widest` and
+  `world_middle` refreshed ("chore(data): jog the world map's straight kind edges").
+- **`follow: rest` work p99** is marked a single unconfirmed run above, no second run taken (the user's call).
+
 ### Known limits
 
 - **A month step is timed by hand only** (above): no flag or camera-path step drives the calendar yet.
 - **A place name can still lose to a creature label** where the label pass finds no room (Player outranks Place in
   priority); Ruling T only cleared the start city's name.
-- **`Strings` has no key index.** The reader's `dataKeys` set duplicates `Strings::keys` and `Add`'s `!Find` assert is
-  linear (quadratic in debug for big tables); fold both into one index before or with 5b2's generated names.
-- **Task 2's "too many strings" refusal is covered by inspection only** (the cap is not injectable).
 - **Placeholder art:** a faint knot where road and river arms meet at a tile centre; pre-existing over-120-column lines
   in `art/placeholders.py` and `art/scenes.toml`. No straight edge between two kinds runs 8 tiles or more (checked at
   finishing, the harbour's deep pool reshaped by hand); runs of 6 and 7 remain, which 5b-look's blending softens.
-- **`tests/unit/data/seals_tests.cpp`'s broken-reload test has the tautological shape** Task 7 fixed for the look (the
-  seals' keep-or-replace decision is untested in app).
+- **A seals table may name a sprite outside the scene it draws in,** the gap the look's reader now closes for the world
+  (the seals' reader checks only the manifest): pre-existing (chunk 4b's), left to the sweep-up backlog.
