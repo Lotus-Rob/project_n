@@ -76,7 +76,7 @@ struct View {
     std::optional<core::Vec2> centre = std::nullopt;
     // Drawn as the game draws it, which the older pictures predate: published stamped with its tick and culled to the
     // picture's view and its margin (app::CullArea()) instead of to the widest view round where the camera starts (a map
-    // larger than that needs it), its seals drawn with seals.yaml's looks (the portal's).
+    // larger than that needs it).
     bool asInGame = false;
     // The picture's size; `refit` and the measures assume WIDTH by HEIGHT.
     u32 width = WIDTH;
@@ -101,7 +101,8 @@ platform::Window OpenWindow() {
     return std::move(*window);
 }
 
-// A renderer for `window` holding `scene`'s sprites, its texts in English with outline and shadow.
+// A renderer for `window` holding `scene`'s sprites, its texts in English with outline and shadow and its seals in
+// seals.yaml's looks, as the game draws them (a scene's portal among them).
 gfx::Renderer RendererFor(platform::Window& window, core::SceneId scene, core::Jobs& jobs) {
     std::expected<core::Strings, core::Error> strings = data::LoadStrings(Assets() / "data");
     const std::string stringsWhy = strings.error_or(core::Error{}).message;
@@ -117,6 +118,7 @@ gfx::Renderer RendererFor(platform::Window& window, core::SceneId scene, core::J
     );
     const std::string rendererWhy = renderer.error_or(core::Error{}).message;
     REQUIRE_MESSAGE(renderer.has_value(), rendererWhy);
+    renderer->SetSeals(test::ShippedSeals());
     renderer->BeginScene(scene, jobs);
     std::expected<bool, core::Error> held = false;
     const u64 startedNs = platform::NowNs();
@@ -214,9 +216,6 @@ void CheckAgainstReference(const View& view) {
 
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
-    if (view.asInGame) {
-        renderer.SetSeals(test::ShippedSeals());
-    }
     gfx::View shown{ .alpha = view.alpha, .camera = { .zoom = view.zoom }, .showcase = false };
     if (view.outlines) {
         const auto player = std::ranges::find(snapshot.ids, host.Player());
@@ -460,7 +459,7 @@ TEST_CASE("new effects change the next picture of the same snapshot, and the shi
     constexpr u64 SINCE_SWORDS = 30; // half a second: the first rings stand and their first swords leave
     constexpr f32 SMALLER_AURA = 4.0F;
     core::Snapshot swords = CastAndWait(core::Slot::Special1, SINCE_SWORDS, jobs);
-    swords.seals.clear(); // as in CheckVolley(): this renderer has no seal looks
+    swords.seals.clear(); // as in CheckVolley(): the seal the cast raises has its own picture
     const gfx::Image auraShipped = Captured(renderer, swords, { .showcase = false }, jobs);
     core::Effects smaller;
     smaller.glows.at(std::to_underlying(core::GlowRole::FlyingSwords)).size = SMALLER_AURA;
@@ -506,7 +505,6 @@ TEST_CASE("a seal on the pale ground: coloured lines glowing on their wash") {
     const core::Snapshot snapshot = ArenaWithSwordSeal(jobs);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
-    renderer.SetSeals(test::ShippedSeals());
     const gfx::View view{ .camera = { .centre = AMONG_THE_FOXES, .zoom = gfx::MAX_ZOOM }, .showcase = false };
     CompareWithReference(Captured(renderer, snapshot, view, jobs), "seal_ground");
 }
@@ -586,7 +584,6 @@ void CheckShowcase(std::string_view name, const gfx::View& view) {
     REQUIRE(shown);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
-    renderer.SetSeals(test::ShippedSeals());
     CompareWithReference(Captured(renderer, snapshot, view, jobs), name);
 }
 
@@ -631,7 +628,6 @@ TEST_CASE("the swords' seal mid-formation, under their rings") {
     const core::Vec2 point = raised.front().point; // at the rings' centre, under the caster
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
-    renderer.SetSeals(test::ShippedSeals());
     constexpr f32 WHOLE_SEAL = 1.5F; // close, with the whole seal and its rings in the picture
     const gfx::View view{ .camera = { .centre = point, .zoom = WHOLE_SEAL }, .showcase = false };
     CompareWithReference(Captured(renderer, snapshot, view, jobs), "seal_swords");
@@ -1453,7 +1449,6 @@ TEST_CASE("the world's tiles and walkers at the smallest zoom: shimmer held to i
                                    .scene = world.scene };
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, world.scene, jobs);
-    renderer.SetSeals(test::ShippedSeals()); // the portal's, out of the picture
     // Over the dark backdrop the lit ground's ink is negative (lighter); the ratios don't mind.
     const TileChange change = WorstTileChange(QuarterPixelApart(renderer, world, backdrop, far, jobs));
     // The line `project_n measure` reads from the reference run's output.
