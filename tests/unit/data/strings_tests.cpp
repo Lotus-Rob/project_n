@@ -55,11 +55,52 @@ TEST_CASE("strings parse into each language") {
 TEST_CASE("an unknown string or language is reported with its line, and the rest still parse") {
     std::vector<std::string> warnings;
     const std::expected<core::Strings, core::Error> strings =
-        data::ParseStrings(With("  zh: 问道\n", "  zh: 问道\n  fr: Demander\nfarewell:\n  en: Bye\n"), &warnings);
+        data::ParseStrings(With("  zh: 问道\n", "  zh: 问道\n  fr: Demander\nfarewell:\n  en: Bye\n  zh: 再见\n"), &warnings);
     REQUIRE(strings.has_value());
-    REQUIRE(warnings.size() == 2);
+    REQUIRE(warnings.size() == 1);
     CHECK(warnings[0] == "strings line 7: tablet_caption has no language fr; it is ignored");
-    CHECK(warnings[1] == "strings line 8: there is no string farewell; it is ignored");
+    // A name the code doesn't know is a data string now, not a warning.
+    // Without it, the fallback's text ("x") fails the check.
+    const core::StringId farewell = strings->Find("farewell").value_or(core::StringId::CultivatorName);
+    CHECK(std::to_underlying(farewell) == core::STRINGS);
+    CHECK(strings->Text(farewell, core::Language::English) == "Bye");
+}
+
+TEST_CASE("an entry no code names is kept as a data string, found by its key") {
+    std::vector<std::string> warnings;
+    const std::expected<core::Strings, core::Error> strings =
+        data::ParseStrings(Everything() + "place_capital:\n  en: Azure Cloud City\n  zh: 青云城\n", &warnings);
+    REQUIRE(strings.has_value());
+    CHECK(warnings.empty());
+    const core::StringId capital = strings->Find("place_capital").value_or(core::StringId::CultivatorName);
+    CHECK(std::to_underlying(capital) == core::STRINGS);
+    CHECK(strings->Text(capital, core::Language::English) == "Azure Cloud City");
+    CHECK(strings->Text(capital, core::Language::Chinese) == "青云城");
+}
+
+TEST_CASE("data strings keep file order after the named ones") {
+    const std::expected<core::Strings, core::Error> strings =
+        data::ParseStrings("place_b:\n  en: B\n  zh: 乙\n" + Everything() + "place_a:\n  en: A\n  zh: 甲\n");
+    REQUIRE(strings.has_value());
+    CHECK(strings->Find("place_b").transform(std::to_underlying<core::StringId>) == core::STRINGS);
+    CHECK(strings->Find("place_a").transform(std::to_underlying<core::StringId>) == core::STRINGS + 1);
+}
+
+TEST_CASE("a data string missing a language is refused, naming its line") {
+    const std::string error = ErrorFor(Everything() + "place_capital:\n  en: Azure Cloud City\n");
+    CHECK(error == std::format("strings line {}: place_capital has no zh", 14 + (3 * (core::STRINGS - 4))));
+}
+
+TEST_CASE("a data string given twice is an error naming the second") {
+    const std::string error = ErrorFor(Everything() + "place_a:\n  en: A\n  zh: 甲\nplace_a:\n  en: A\n  zh: 甲\n");
+    CHECK(error == std::format("strings line {}: place_a is there twice", 16 + (3 * (core::STRINGS - 4))));
+}
+
+TEST_CASE("a named string is found by its key") {
+    const std::expected<core::Strings, core::Error> strings = data::ParseStrings(Everything());
+    REQUIRE(strings.has_value());
+    CHECK(strings->Find("fox_name") == core::StringId::FoxName);
+    CHECK_FALSE(strings->Find("nope").has_value());
 }
 
 // Each error is named before its CHECK: MSVC's C4866 refuses a temporary std::string inside one (tests/AGENTS.md).

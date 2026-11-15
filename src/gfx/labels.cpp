@@ -523,7 +523,11 @@ void CaptionFades::Begin(f64 clock) {
 }
 
 f32 CaptionFades::Opacity(core::StringId string, bool complete) {
-    Fade& fade = m_fades.at(std::to_underlying(string));
+    const auto index = static_cast<std::size_t>(std::to_underlying(string));
+    if (index >= m_fades.size()) {
+        m_fades.resize(index + 1);
+    }
+    Fade& fade = m_fades.at(index);
     if (!complete) {
         fade.opacity = 0.0F;
     }

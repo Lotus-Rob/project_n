@@ -576,7 +576,7 @@ void Renderer::Impl::MeasureStacks() {
         f32 width = -1.0F; // unmeasured
         bool complete = false;
     };
-    std::array<std::array<Measured, 2>, core::STRINGS> measured{};
+    std::vector<std::array<Measured, 2>> measured(strings->text.size());
     for (LabelInput& label : labelInputs) {
         const core::TextItem& item = label.item;
         Measured& stackText = measured.at(std::to_underlying(item.string)).at(std::to_underlying(item.direction));

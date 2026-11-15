@@ -180,6 +180,20 @@ TEST_CASE("pre-warm covers every string in both languages and the digits") {
     CHECK(text.Pending().size() == warmed);
 }
 
+TEST_CASE("prewarming covers data strings") {
+    gfx::TextLayout text = OpenFonts();
+    text.Prewarm(core::Strings{});
+    text.Uploaded(text.Pending().size());
+    core::Strings strings{};
+    strings.Add("place_capital", { { "Azure Cloud City", "青云城" } });
+    text.Prewarm(strings);
+    CHECK(text.Pending().size() > 0);
+    for (const core::TextDirection direction : BOTH_WAYS) {
+        CHECK(text.Lay("青云城", direction).complete);
+        CHECK(text.Lay("Azure Cloud City", direction).complete);
+    }
+}
+
 TEST_CASE("pre-warm covers the HUD's texts as they are filled in with numbers") {
     constexpr i64 QI_HELD = 75;
     constexpr i64 QI_MOST = 100;

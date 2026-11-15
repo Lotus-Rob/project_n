@@ -27,24 +27,17 @@ std::expected<core::Strings, core::Error> ParseStrings(std::string_view yaml, st
         for (const auto& entry : root) {
             const auto name = entry.first.as<std::string>();
             const auto known = std::ranges::find(names, name);
-            if (known == names.end()) {
-                if (warnings != nullptr) {
-                    warnings->push_back(
-                        std::format("strings line {}: there is no string {}; it is ignored", entry.first.Mark().line + 1, name)
-                    );
-                }
-                continue;
-            }
-            const auto index = static_cast<std::size_t>(known - names.begin());
-            if (found.at(index)) {
+            const YAML::Node& texts = entry.second;
+            const bool twice = known == names.end() ? strings.Find(name).has_value()
+                                                    : found.at(static_cast<std::size_t>(known - names.begin()));
+            if (twice) {
                 return FailAt(entry.first, std::format("{} is there twice", name));
             }
-            found.at(index) = true;
-            const YAML::Node& texts = entry.second;
             if (!texts.IsMap()) {
                 return FailAt(texts, std::format("{} isn't a map of languages", name));
             }
             internal::NoteUnknownKeys("strings", texts, name, "language", { "en", "zh" }, warnings);
+            std::array<std::string, core::LANGUAGES> read;
             for (std::size_t language = 0; language < core::LANGUAGES; ++language) {
                 const std::string_view code = core::LANGUAGE_CODES.at(language);
                 const YAML::Node text = texts[std::string{ code }];
@@ -54,7 +47,15 @@ std::expected<core::Strings, core::Error> ParseStrings(std::string_view yaml, st
                 if (!text.IsScalar() || text.Scalar().empty()) {
                     return FailAt(text, std::format("{}'s {} isn't text", name, code));
                 }
-                strings.text.at(index).at(language) = text.Scalar();
+                read.at(language) = text.Scalar();
+            }
+            if (known == names.end()) {
+                strings.Add(name, std::move(read));
+            }
+            else {
+                const auto index = static_cast<std::size_t>(known - names.begin());
+                found.at(index) = true;
+                strings.text.at(index) = std::move(read);
             }
         }
         const std::span<const bool> present{ found };
