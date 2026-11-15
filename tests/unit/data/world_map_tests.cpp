@@ -31,15 +31,27 @@ constexpr u32 PEOPLE = 100;
 constexpr f32 TILE_SIZE = 256.0F;
 constexpr u16 MEADOW_COST = 10;
 constexpr u32 FORD_TILE = 8;
-constexpr u32 SHIPPED_COLUMNS = 150;
-constexpr u32 SHIPPED_ROWS = 85;
-constexpr u32 SHIPPED_PEOPLE = 50'000;
+constexpr std::ptrdiff_t SHIPPED_CITIES = 6;
+constexpr std::ptrdiff_t LEAST_DANGERS = 18;
+constexpr std::ptrdiff_t MOST_DANGERS = 22;
 
 core::Strings Names() {
     core::Strings strings;
     strings.Add("place_capital", { "Capital", "都城" });
     strings.Add("place_wolf_pass", { "Wolf Pass", "狼关" });
     return strings;
+}
+
+// assets/data/world.yaml read against the shipped strings, as main reads it (support/world.hpp's ShippedWorld() needs game,
+// which data_tests doesn't link).
+std::shared_ptr<const core::WorldMap> Shipped() {
+    const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
+    REQUIRE(assets.has_value());
+    const std::expected<core::Strings, core::Error> strings = data::LoadStrings(*assets / "data");
+    REQUIRE(strings.has_value());
+    std::expected<std::shared_ptr<const core::WorldMap>, core::Error> map = data::LoadWorldMap(*assets / "data", *strings);
+    REQUIRE(map.has_value());
+    return std::move(*map);
 }
 
 // SMALL with `from` replaced by `replacement`.
@@ -208,19 +220,96 @@ TEST_CASE("an unknown key inside a kind or a place warns, with its line") {
     CHECK(warnings[1].contains(std::format("line {}:", LineOf(kinds, "peopel"))));
 }
 
-TEST_CASE("the shipped world map loads against the shipped strings") {
+// The shipped map, read as main reads it, has nothing to warn about. Its size and the port's tile are pinned to the
+// constants in code by game_tests' shipped_world cases.
+TEST_CASE("the shipped world map loads clean") {
     const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
     REQUIRE(assets.has_value());
     const std::expected<core::Strings, core::Error> strings = data::LoadStrings(*assets / "data");
     REQUIRE(strings.has_value());
-    const std::expected<std::shared_ptr<const core::WorldMap>, core::Error> map =
-        data::LoadWorldMap(*assets / "data", *strings);
+    // LoadWorldMap logs its warnings; the same text parsed here hands them back, and there are none.
+    std::ifstream input{ *assets / "data" / "world.yaml", std::ios::binary };
+    const std::string text{ std::istreambuf_iterator<char>{ input }, std::istreambuf_iterator<char>{} };
+    std::vector<std::string> warnings;
+    const std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(text, *strings, &warnings);
     REQUIRE(map.has_value());
-    CHECK((*map)->Columns() == SHIPPED_COLUMNS);
-    CHECK((*map)->Rows() == SHIPPED_ROWS);
-    REQUIRE((*map)->Places().size() == 1);
-    CHECK((*map)->Places()[0].people == SHIPPED_PEOPLE);
+    CHECK(warnings.empty());
+    CHECK(map->Places()[map->Start()].key == "capital");
     CHECK_FALSE(data::LoadWorldMap(*assets / "no_such_folder", *strings).has_value());
+}
+
+// Build refuses a city it can't reach, so this pins the rule on the shipped file; the danger sites, which Build leaves
+// unchecked (5c enters them), are reachable too.
+TEST_CASE("every city on the shipped map is reachable from the capital, and every danger site too") {
+    const std::shared_ptr<const core::WorldMap> map = Shipped();
+    const u32 tiles = map->Columns() * map->Rows();
+    std::vector<bool> reached(tiles, false);
+    std::vector<u32> frontier{ map->TileIndex(map->Places()[map->Start()].tile) };
+    reached.at(frontier.front()) = true;
+    while (!frontier.empty()) {
+        const core::TilePoint point = map->PointOf(frontier.back());
+        const u32 from = frontier.back();
+        frontier.pop_back();
+        for (u32 row = point.row == 0 ? 0 : point.row - 1; row <= std::min(point.row + 1, map->Rows() - 1); ++row) {
+            for (u32 column = point.column == 0 ? 0 : point.column - 1;
+                 column <= std::min(point.column + 1, map->Columns() - 1);
+                 ++column) {
+                const u32 next = map->TileIndex({ .column = column, .row = row });
+                if (!reached.at(next) && map->StepCost(from, next) != core::IMPASSABLE_COST) {
+                    reached.at(next) = true;
+                    frontier.push_back(next);
+                }
+            }
+        }
+    }
+    const auto unreached =
+        std::ranges::find_if(map->Places(), [&](const core::Place& place) { return !reached.at(map->TileIndex(place.tile)); });
+    CHECK_MESSAGE(unreached == map->Places().end(), "a place no one can walk to from the capital");
+}
+
+// The anti-goal "cities without roads between them": walking reachability (above) holds over open ground alone, so this
+// follows the road tiles themselves, edge to edge as roads are rasterised, from the capital to every city.
+TEST_CASE("the shipped roads join every city to the capital") {
+    const std::shared_ptr<const core::WorldMap> map = Shipped();
+    constexpr u8 ROAD = std::to_underlying(core::TileFlag::Road);
+    const auto onRoad = [&](u32 tile) { return (map->FlagsAt(tile) & ROAD) != 0; };
+    const u32 capital = map->TileIndex(map->Places()[map->Start()].tile);
+    REQUIRE(onRoad(capital));
+    std::vector<bool> reached(static_cast<std::size_t>(map->Columns()) * map->Rows(), false);
+    std::vector<u32> frontier{ capital };
+    reached.at(capital) = true;
+    while (!frontier.empty()) {
+        const core::TilePoint point = map->PointOf(frontier.back());
+        frontier.pop_back();
+        const std::array<core::TilePoint, 4> sides{ { { .column = point.column + 1, .row = point.row },
+                                                      { .column = point.column - 1, .row = point.row },
+                                                      { .column = point.column, .row = point.row + 1 },
+                                                      { .column = point.column, .row = point.row - 1 } } };
+        for (const core::TilePoint side : sides) {
+            // A step off the map's first column or row wraps to a huge value, which this bound also refuses.
+            if (side.column >= map->Columns() || side.row >= map->Rows()) {
+                continue;
+            }
+            const u32 next = map->TileIndex(side);
+            if (!reached.at(next) && onRoad(next)) {
+                reached.at(next) = true;
+                frontier.push_back(next);
+            }
+        }
+    }
+    const auto cut = std::ranges::find_if(map->Places(), [&](const core::Place& place) {
+        return place.kind == core::PlaceKind::City && !reached.at(map->TileIndex(place.tile));
+    });
+    CHECK_MESSAGE(cut == map->Places().end(), "a city no road from the capital reaches");
+}
+
+TEST_CASE("the shipped map has about six cities and twenty danger sites") {
+    const std::shared_ptr<const core::WorldMap> map = Shipped();
+    const auto cities = std::ranges::count(map->Places(), core::PlaceKind::City, &core::Place::kind);
+    const auto dangers = std::ranges::count(map->Places(), core::PlaceKind::Danger, &core::Place::kind);
+    CHECK(cities == SHIPPED_CITIES);
+    CHECK(dangers >= LEAST_DANGERS);
+    CHECK(dangers <= MOST_DANGERS);
 }
 
 } // namespace
