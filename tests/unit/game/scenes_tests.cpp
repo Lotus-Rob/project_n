@@ -107,18 +107,6 @@ TEST_CASE("the world scene needs the world map") {
     CHECK(refused.error().message.contains("scene world"));
 }
 
-// The tile centre of the shipped map's start city.
-core::Vec2 StartOf(const core::WorldMap& map) {
-    return map.TileCentre(map.TileIndex(map.Places()[map.Start()].tile));
-}
-
-// The tile `point` lies on.
-u32 TileAt(const core::WorldMap& map, core::Vec2 point) {
-    return map.TileIndex(
-        { .column = static_cast<u32>(point.x / map.TileSize()), .row = static_cast<u32>(point.y / map.TileSize()) }
-    );
-}
-
 constexpr f32 PORTAL_LEFT = -560.0F;
 constexpr f32 PORTAL_UP = -200.0F;
 
@@ -127,7 +115,7 @@ TEST_CASE("the cultivator starts on the start city, the portal a short walk from
     game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
     const core::Domain& active = host.State()[game::ACTIVE];
     const core::Vec2 foot = active.Entities().get<game::Body>(active.Find(host.Player())).current;
-    const core::Vec2 start = StartOf(*map);
+    const core::Vec2 start = map->StartCentre();
     CHECK(foot.x == start.x);
     CHECK(foot.y == start.y);
     const std::optional<core::Vec2> portal = host.Portal();
@@ -164,7 +152,7 @@ TEST_CASE("each place in view publishes its name, in its own kind, and none outs
     const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
     game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
     core::Jobs jobs{ 1 };
-    const core::Vec2 start = StartOf(*map);
+    const core::Vec2 start = map->StartCentre();
     const core::Rect view{ .min = start - core::Vec2{ .x = 960.0F, .y = 540.0F },
                            .max = start + core::Vec2{ .x = 960.0F, .y = 540.0F } };
     core::Snapshot snapshot;
@@ -213,7 +201,7 @@ TEST_CASE("the stand-in gatherings sit on their cities, clear of the start and a
     const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
     const std::vector<game::Gathering> gatherings = game::WorldGatherings(*map);
     REQUIRE(gatherings.size() == 4);
-    const core::Vec2 start = StartOf(*map);
+    const core::Vec2 start = map->StartCentre();
     const core::Rect widest{ .min = start - core::WIDEST_HALF_VIEW, .max = start + core::WIDEST_HALF_VIEW };
     const auto apart = [](const core::Rect& one, const core::Rect& other) {
         return one.max.x < other.min.x || one.min.x > other.max.x || one.max.y < other.min.y || one.min.y > other.max.y;
@@ -223,7 +211,7 @@ TEST_CASE("the stand-in gatherings sit on their cities, clear of the start and a
         const core::Rect reach = game::GatheringReach(gathering);
         CAPTURE(i);
         // On a city's tile, never the start's; on the map; clear of the start; apart from the others.
-        const u32 tile = TileAt(*map, gathering.point);
+        const u32 tile = map->TileAt(gathering.point);
         const u16 place = map->PlaceAt(tile);
         REQUIRE(place != core::NO_PLACE);
         CHECK(map->Places()[place].kind == core::PlaceKind::City);
@@ -239,7 +227,7 @@ TEST_CASE("the stand-in gatherings sit on their cities, clear of the start and a
     }
     // The busiest is the port's, the towns the next three cities in place order: sect, oasis, marsh town.
     const auto key = [&](const game::Gathering& gathering) {
-        const u32 tile = TileAt(*map, gathering.point);
+        const u32 tile = map->TileAt(gathering.point);
         return map->Places()[map->PlaceAt(tile)].key;
     };
     CHECK(key(gatherings[0]) == "port");
@@ -250,7 +238,7 @@ TEST_CASE("the stand-in gatherings sit on their cities, clear of the start and a
 
 // The tile of the `walker`th walker's first draw is impassable: its centre had to be redrawn.
 bool FirstDrawIsSea(const core::WorldMap& map, u64 seed, u32 walker) {
-    return map.CostAt(TileAt(map, game::SpreadDraw(seed, walker, 0))) == core::IMPASSABLE_COST;
+    return map.CostAt(map.TileAt(game::SpreadDraw(seed, walker, 0))) == core::IMPASSABLE_COST;
 }
 
 constexpr u64 WALKER_SEED = 1;
@@ -284,7 +272,7 @@ TEST_CASE("no spread walker stands on an impassable tile, those whose first draw
         }
         if (centre) {
             ++placed;
-            CHECK(map->CostAt(TileAt(*map, centre.value_or(core::Vec2{}))) != core::IMPASSABLE_COST);
+            CHECK(map->CostAt(map->TileAt(centre.value_or(core::Vec2{}))) != core::IMPASSABLE_COST);
         }
     }
     CHECK(placed >= 3); // the sea doesn't take the sampled walkers
@@ -331,9 +319,9 @@ TEST_CASE("no gathered walker stands on an impassable tile, the port's crowd on 
             .x = gathering.point.x - gathering.half.x + (width * static_cast<f32>(column)),
             .y = gathering.point.y - gathering.half.y + (height * static_cast<f32>(row)),
         };
-        const u32 tile = TileAt(*map, low);
+        const u32 tile = map->TileAt(low);
         const bool cellInOneSeaTile =
-            tile == TileAt(*map, low + core::Vec2{ .x = width, .y = height }) && map->CostAt(tile) == core::IMPASSABLE_COST;
+            tile == map->TileAt(low + core::Vec2{ .x = width, .y = height }) && map->CostAt(tile) == core::IMPASSABLE_COST;
         const bool seaCell = sample.member == 1'415 || sample.member == 1'423 || (sample.gathering == 2 && sample.member == 0);
         if (seaCell) {
             REQUIRE(cellInOneSeaTile);
@@ -345,7 +333,7 @@ TEST_CASE("no gathered walker stands on an impassable tile, the port's crowd on 
         }
         if (centre) {
             ++placed;
-            CHECK(map->CostAt(TileAt(*map, centre.value_or(core::Vec2{}))) != core::IMPASSABLE_COST);
+            CHECK(map->CostAt(map->TileAt(centre.value_or(core::Vec2{}))) != core::IMPASSABLE_COST);
         }
     }
     CHECK(placed >= 6);

@@ -385,6 +385,34 @@ TEST_CASE("cities homing more than the most a world holds are refused, naming th
     CHECK(refusal == "line 12: place 1 ('city1') brings the cities' people to 100001, over the most a world holds, 100000");
 }
 
+TEST_CASE("TileAt finds the tile a point lies on, clamped to the map") {
+    // Three columns and two rows of 256-unit tiles.
+    const core::WorldMap map = MustBuild(Source({ "0..", "..." }));
+    constexpr core::Vec2 INSIDE{ .x = 300.0F, .y = 300.0F };
+    constexpr core::Vec2 ON_EDGE{ .x = 512.0F, .y = 0.0F };
+    constexpr core::Vec2 BEFORE{ .x = -10.0F, .y = -10.0F };
+    constexpr core::Vec2 PAST{ .x = 10'000.0F, .y = 10'000.0F };
+    constexpr core::Vec2 UNBOUNDED{ .x = std::numeric_limits<f32>::infinity(), .y = std::numeric_limits<f32>::quiet_NaN() };
+    const u32 inside = map.TileAt(INSIDE);
+    const u32 onEdge = map.TileAt(ON_EDGE);
+    const u32 before = map.TileAt(BEFORE);
+    const u32 past = map.TileAt(PAST);
+    const u32 unbounded = map.TileAt(UNBOUNDED);
+    CHECK(inside == 4);
+    CHECK(onEdge == 2); // a tile's left edge is its own
+    CHECK(before == 0);
+    CHECK(past == 5);
+    CHECK(unbounded == 5); // a coordinate that isn't a number counts as past the map
+}
+
+TEST_CASE("StartCentre is the middle of the start city's tile") {
+    core::WorldMapSource source = Source({ "1..", "..0" });
+    const core::WorldMap map = MustBuild(std::move(source));
+    const core::Vec2 centre = map.StartCentre();
+    CHECK(centre.x == CENTRE_X);
+    CHECK(centre.y == CENTRE_Y);
+}
+
 TEST_CASE("TilesIn finds the tiles a view overlaps, clamped to the map") {
     constexpr u32 COLUMNS = 150;
     constexpr u32 ROWS = 85;

@@ -128,21 +128,6 @@ bool Within(core::Vec2 point, const core::Rect& area) {
     return point.x >= area.min.x && point.x <= area.max.x && point.y >= area.min.y && point.y <= area.max.y;
 }
 
-// The centre of the start city's tile.
-core::Vec2 StartOf(const core::WorldMap& map) {
-    return map.TileCentre(map.TileIndex(map.Places()[map.Start()].tile));
-}
-
-// The tile of `point`, clamped to the map.
-u32 TileOf(const core::WorldMap& map, core::Vec2 point) {
-    const auto clamped = [](f32 position, f32 size, u32 count) {
-        return std::min(static_cast<u32>(std::max(position / size, 0.0F)), count - 1);
-    };
-    return map.TileIndex(
-        { .column = clamped(point.x, map.TileSize(), map.Columns()), .row = clamped(point.y, map.TileSize(), map.Rows()) }
-    );
-}
-
 // Of every ten of a city's people, this many live on the city's own tile; the rest are spread over its region.
 constexpr u32 TENTHS_ON_CITY_TILE = 7;
 constexpr u32 TENTH = 10;
@@ -185,7 +170,7 @@ core::Rect GatheringReach(const Gathering& gathering) {
 
 std::vector<Gathering> WorldGatherings(const core::WorldMap& map) {
     std::vector<Gathering> gatherings;
-    const u16 busiest = map.PlaceAt(TileOf(map, WORLD_BUSIEST));
+    const u16 busiest = map.PlaceAt(map.TileAt(WORLD_BUSIEST));
     const auto onCity = [&map](std::size_t place, Gathering shape) {
         shape.point = map.TileCentre(map.TileIndex(map.Places()[place].tile));
         return shape;
@@ -213,7 +198,7 @@ core::Vec2 SpreadDraw(u64 seed, u32 walker, u32 redraw) {
 std::optional<core::Vec2> SpreadCentre(const core::WorldMap& map, u64 seed, u32 walker) {
     for (u32 redraw = 0; redraw <= SPREAD_REDRAWS; ++redraw) {
         const core::Vec2 centre = SpreadDraw(seed, walker, redraw);
-        if (map.CostAt(TileOf(map, centre)) != core::IMPASSABLE_COST) {
+        if (map.CostAt(map.TileAt(centre)) != core::IMPASSABLE_COST) {
             return centre;
         }
     }
@@ -228,7 +213,7 @@ std::optional<core::Vec2> GatheredCentre(
     const Gathering& gathering
 ) {
     const core::Rect area{ .min = gathering.point - gathering.half, .max = gathering.point + gathering.half };
-    const auto passable = [&map](core::Vec2 centre) { return map.CostAt(TileOf(map, centre)) != core::IMPASSABLE_COST; };
+    const auto passable = [&map](core::Vec2 centre) { return map.CostAt(map.TileAt(centre)) != core::IMPASSABLE_COST; };
     const core::Vec2 cell = JitteredCellCentre(seed, walker, member, gathering.columns, gathering.rows, area);
     if (passable(cell)) {
         return cell;
@@ -255,12 +240,12 @@ std::optional<core::Vec2> WorldScene::Portal(const SceneContext& context) const 
     if (context.Data().world == nullptr) {
         return std::nullopt;
     }
-    return StartOf(*context.Data().world) + WORLD_PORTAL_OFFSET;
+    return context.Data().world->StartCentre() + WORLD_PORTAL_OFFSET;
 }
 
 void WorldScene::Build(SceneContext& context) const {
     const core::WorldMap& map = *context.Data().world;
-    context.SpawnPlayer(StartOf(map));
+    context.SpawnPlayer(map.StartCentre());
     const u64 seed = context.State().Seed();
     u32 walker = 0;
     for (; walker < SPREAD_WALKERS; ++walker) {

@@ -187,6 +187,13 @@ public:
     }
     /// The world position of the middle of `tile`.
     [[nodiscard]] Vec2 TileCentre(u32 tile) const;
+    /// The index of the tile `point` lies on (a tile's left and top edges are its own), clamped to the map: a point
+    /// before it takes the first column or row, one past it (or not a number) the last.
+    [[nodiscard]] u32 TileAt(Vec2 point) const;
+    /// The world position of the middle of the start city's tile.
+    [[nodiscard]] Vec2 StartCentre() const {
+        return TileCentre(TileIndex(m_source.places[m_start].tile));
+    }
     /// The terrain kind index of `tile`.
     [[nodiscard]] u8 KindAt(u32 tile) const {
         return m_source.grid.at(tile);

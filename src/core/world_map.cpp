@@ -494,6 +494,13 @@ u32 WorldMap::StepCost(u32 from, u32 target) const {
     return cost * DIAGONAL_NUMERATOR / DIAGONAL_DENOMINATOR;
 }
 
+u32 WorldMap::TileAt(Vec2 point) const {
+    const auto clamped = [this](f32 coordinate, u32 tiles) {
+        return static_cast<u32>(std::clamp<i64>(TileOf(coordinate, m_source.tileSize, tiles), 0, static_cast<i64>(tiles) - 1));
+    };
+    return TileIndex({ .column = clamped(point.x, m_source.columns), .row = clamped(point.y, m_source.rows) });
+}
+
 std::span<const u32> WorldMap::RegionTiles(u16 city) const {
     if (city >= m_regionTiles.size()) {
         return {};
