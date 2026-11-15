@@ -44,7 +44,8 @@ namespace game {
 class Host final : public core::Simulation {
 public:
     /// Builds `scene` with `data`'s creatures: the same entities, in the same places, every time. It
-    /// draws its sprites where `manifest` puts them; `manifest` must pass CheckScenes().
+    /// draws its sprites where `manifest` puts them; `manifest` and `data` must pass CheckScenes(): the world scene needs
+    /// `data.world`, which the default BuiltInData() lacks (build it with a map, and Load() refuses a save of it without).
     explicit Host(
         std::shared_ptr<const core::Manifest> manifest,
         core::SceneKey scene = ARENA_SCENE,
@@ -56,7 +57,7 @@ public:
     /// else. Otherwise walks the player's cultivator where `input`'s held movement points, selects what its Select actions name
     /// (nothing for a dying one), ignores Cast actions outside a combat scene (in one a Cast is Combat::Cast(): Qi,
     /// cooldown, the ability's effect; a dash moves the player in place of held movement). When the player's foot, on its way
-    /// this tick, crosses the step area of the scene's portal (SceneTraits::portal: an ellipse PORTAL_RADIUS across and
+    /// this tick, crosses the step area of the scene's portal (Scene::Portal(): an ellipse PORTAL_RADIUS across and
     /// PORTAL_DEPTH_RATIO as deep, as its seal is drawn), it asks for the scene the portal leads to
     /// (NextWalkableScene(); Requested()), ending every use still open, and does nothing more. Otherwise it moves every entity
     /// on an Orbit to where it is at `counters.simulation`, advances combat (Combat::Tick(): arrivals, removing the dead, which
@@ -121,6 +122,9 @@ public:
         return m_state;
     }
 
+    /// Where the running scene's portal stands in this game (Scene::Portal()), or none when it has none.
+    [[nodiscard]] std::optional<core::Vec2> Portal();
+
     /// Whether the scene is a combat scene, where fights happen and casts act (SceneTraits::combat): the arena only.
     [[nodiscard]] bool IsCombatScene() const;
 
@@ -181,8 +185,8 @@ private:
     void CastAction(const core::Action& action, const core::TickCounters& counters, std::vector<core::Event>& events);
     void DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const;
     void Leave(core::SceneKey next, std::vector<core::Event>& events);
-    [[nodiscard]] bool OnPortal() const;
-    void PublishPortal(core::Snapshot& snapshot) const;
+    [[nodiscard]] bool OnPortal();
+    void PublishPortal(core::Snapshot& snapshot);
     void PublishOverhead(core::Snapshot& snapshot) const;
     void PublishCaster(core::Snapshot& snapshot) const;
     void ApplyData();

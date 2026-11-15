@@ -15,6 +15,7 @@
 #include "game/host.hpp"
 #include "support/manifest.hpp"
 #include "support/seals.hpp"
+#include "support/world.hpp"
 
 #include <doctest/doctest.h>
 
@@ -33,7 +34,7 @@ struct Session {
     explicit Session(
         const std::filesystem::path& folder,
         core::SceneKey scene = game::ARENA_SCENE,
-        const core::GameData& data = game::BuiltInData()
+        const core::GameData& data = test::ShippedData()
     )
       : saves(folder / "slot.pns", jobs)
       , replays(folder / "replay.pnr", jobs)

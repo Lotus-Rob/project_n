@@ -12,6 +12,7 @@
 #include "gfx/seal_draw.hpp"
 #include "support/manifest.hpp"
 #include "support/seals.hpp"
+#include "support/world.hpp"
 
 #include <doctest/doctest.h>
 
@@ -160,10 +161,10 @@ TEST_CASE("the portal publishes its seal and label in every walkable scene, the 
     core::Jobs jobs{ 1 };
     for (const core::SceneKey scene : { game::ARENA_SCENE, game::STRESS_SCENE, game::WORLD_SCENE }) {
         CAPTURE(game::SceneName(scene));
-        game::Host host(test::TestManifest(), scene);
+        game::Host host(test::TestManifest(), scene, test::ShippedData());
         core::Snapshot snapshot;
         host.Publish(snapshot, jobs, std::nullopt);
-        const std::optional<core::Vec2> portal = game::SceneOf(scene).Traits().portal;
+        const std::optional<core::Vec2> portal = host.Portal();
         REQUIRE(portal.has_value());
         const core::Vec2 point = portal.value_or(core::Vec2{});
         const auto seal = std::ranges::find(snapshot.seals, game::PORTAL_SEAL, &core::Seal::key);

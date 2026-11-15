@@ -68,7 +68,7 @@ core::SceneKey NextScene(core::SceneKey key) {
 
 core::SceneKey NextWalkableScene(core::SceneKey key) {
     core::SceneKey next = NextScene(key);
-    while (next != key && !SceneOf(next).Traits().portal) {
+    while (next != key && !SceneOf(next).Traits().portal && !SceneOf(next).Traits().portalFromMap) {
         next = NextScene(next);
     }
     return next;
@@ -82,6 +82,11 @@ std::expected<void, core::Error> CheckScenes(const core::Manifest& manifest, con
             return std::unexpected{ core::Error{ std::format("the atlas has no scene {}: run `./dev atlas`", traits.name) } };
         }
         const std::vector<core::atlas::SpriteId>& sprites = manifest.Scene(*scene).sprites;
+        if (traits.worldMap && data.world == nullptr) {
+            return std::unexpected{ core::Error{ std::format(
+                "the scene {} needs the world map (assets/data/world.yaml), which the game data lacks", traits.name
+            ) } };
+        }
         for (const core::atlas::SpriteId sprite : { data.cultivator.sprite, data.fox.sprite }) {
             if (traits.creatures && !std::ranges::contains(sprites, sprite)) {
                 return std::unexpected{ core::Error{ std::format(

@@ -82,9 +82,6 @@ i32 Run(const core::Settings& settings, app::Options options, bool fullscreen) {
     if (!gameData) {
         return FailToStart("the game's data couldn't be read", gameData.error());
     }
-    if (const std::expected<void, core::Error> runs = game::CheckScenes(*options.manifest, *gameData); !runs) {
-        return FailToStart("the game's files are damaged", runs.error());
-    }
     PN_LOG_INFO("game data read from {}", dataFolder.string());
     options.data = *gameData;
     options.dataFolder = dataFolder;
@@ -108,6 +105,10 @@ i32 Run(const core::Settings& settings, app::Options options, bool fullscreen) {
         return FailToStart("the game's data couldn't be read", world.error());
     }
     options.data.world = *world;
+    // The world scene needs the map, so the scenes are checked once it is in the data.
+    if (const std::expected<void, core::Error> runs = game::CheckScenes(*options.manifest, options.data); !runs) {
+        return FailToStart("the game's files are damaged", runs.error());
+    }
     // The look names its sprites by the manifest and its kinds and danger sorts by the map, so it is read with them.
     std::expected<core::WorldLook, core::Error> worldLook = data::LoadWorldLook(dataFolder, *options.manifest, **world);
     if (!worldLook) {

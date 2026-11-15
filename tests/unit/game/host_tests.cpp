@@ -14,6 +14,7 @@
 #include "platform/paths.hpp"
 #include "support/manifest.hpp"
 #include "support/seals.hpp"
+#include "support/world.hpp"
 
 #include <doctest/doctest.h>
 
@@ -239,8 +240,8 @@ TEST_CASE("a cast outside a combat scene is ignored") {
         { { .kind = core::ActionKind::Cast, .slot = core::Slot::Generator, .point = { .x = 50.0F, .y = 60.0F } } }
     };
     for (const core::SceneKey scene : { game::STRESS_SCENE, game::PAINTED_SCENE, game::CELLS_SCENE, game::WORLD_SCENE }) {
-        game::Host casting(test::TestManifest(), scene);
-        game::Host idle(test::TestManifest(), scene);
+        game::Host casting(test::TestManifest(), scene, test::ShippedData());
+        game::Host idle(test::TestManifest(), scene, test::ShippedData());
         std::vector<core::Event> events;
         casting.Tick(COUNTERS, { .actions = cast, .held = {} }, events);
         Tick(idle, COUNTERS, { .actions = {}, .held = {} });
@@ -252,7 +253,7 @@ TEST_CASE("a cast outside a combat scene is ignored") {
 TEST_CASE("the arena is a combat scene and the others aren't") {
     for (const core::SceneKey scene :
          { game::ARENA_SCENE, game::STRESS_SCENE, game::PAINTED_SCENE, game::CELLS_SCENE, game::WORLD_SCENE }) {
-        game::Host host(test::TestManifest(), scene);
+        game::Host host(test::TestManifest(), scene, test::ShippedData());
         const bool combat = scene == game::ARENA_SCENE;
         CHECK(host.IsCombatScene() == combat);
         CHECK(Published(host).combat == combat);
@@ -499,7 +500,7 @@ TEST_CASE("a world publish holds no tiles in view and no painted ground: the ren
     // A screen at zoom 1, off the tile grid on both axes: eight columns and five rows of tiles, which the map once published.
     constexpr core::Rect VIEW{ .min = { .x = 10'000.0F, .y = 5'000.0F }, .max = { .x = 11'920.0F, .y = 6'080.0F } };
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
-    game::Host host(manifest, game::WORLD_SCENE);
+    game::Host host(manifest, game::WORLD_SCENE, test::ShippedData());
     const core::Snapshot snapshot = Published(host, VIEW);
     // The terrain sprites, which art/sprites.toml lists together.
     std::vector<core::Instance> terrain;
@@ -525,8 +526,8 @@ std::vector<std::pair<core::StableId, game::Body>> Walkers(const game::Host& hos
 }
 
 TEST_CASE("a walker's foot is the same for the same tick, built twice") {
-    game::Host first(test::TestManifest(), game::WORLD_SCENE);
-    game::Host second(test::TestManifest(), game::WORLD_SCENE);
+    game::Host first(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    game::Host second(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
     std::vector<std::vector<std::pair<core::StableId, game::Body>>> atEachTick;
     // The first tick, and one long after.
     for (const u64 tick : { 1ULL, 500ULL }) {
@@ -556,7 +557,7 @@ TEST_CASE("a walker's foot is the same for the same tick, built twice") {
 TEST_CASE("the world's busiest region holds thousands of walkers at the widest view") {
     constexpr core::Vec2 WIDEST_HALF_SCREEN{ .x = 3'840.0F, .y = 2'160.0F }; // a 16:9 window at zoom 0.25
     constexpr std::size_t THOUSANDS = 2'000;
-    const game::Host host(test::TestManifest(), game::WORLD_SCENE);
+    const game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
     const core::Rect window = Grown({ .min = game::WORLD_BUSIEST, .max = game::WORLD_BUSIEST }, WIDEST_HALF_SCREEN);
     const std::vector<std::pair<core::StableId, game::Body>> walkers = Walkers(host);
     const auto inside = static_cast<std::size_t>(std::ranges::count_if(walkers, [&](const auto& walker) {
@@ -577,12 +578,13 @@ std::size_t OnScreenAt(const std::vector<std::pair<core::StableId, game::Body>>&
 TEST_CASE("the world's cultivator starts in quiet country") {
     constexpr std::size_t QUIET_SCREEN = 8;
     constexpr std::size_t WIDEST_SCREENS = 64; // the widest view, WIDEST_HALF_VIEW each way, is 8 by 8 screens
-    const game::Host host(test::TestManifest(), game::WORLD_SCENE);
+    const game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
     const std::vector<std::pair<core::StableId, game::Body>> walkers = Walkers(host);
-    const core::Vec2 home = (game::WORLD_MAP.min + game::WORLD_MAP.max) * 0.5F;
+    const core::Domain& active = host.State()[game::ACTIVE];
+    const core::Vec2 home = active.Entities().get<game::Body>(active.Find(host.Player())).current;
     CHECK(OnScreenAt(walkers, home) <= QUIET_SCREEN);
     // Only a weak fallback: spread and gathered walkers look alike, so this bounds the widest view to the countryside's
-    // count for each of its screens. The real guarantee that no gathering reaches it is world.cpp's compile-time ClearOfStart.
+    // count for each of its screens. The real guarantee that no gathering reaches it is scenes_tests' check on the shipped map.
     const core::Rect widest = Grown({ .min = home, .max = home }, core::WIDEST_HALF_VIEW);
     const auto inWidest = static_cast<std::size_t>(std::ranges::count_if(walkers, [&](const auto& walker) {
         return Within(walker.second.current, widest);
@@ -590,13 +592,19 @@ TEST_CASE("the world's cultivator starts in quiet country") {
     CHECK(inWidest <= QUIET_SCREEN * WIDEST_SCREENS);
 }
 
-// The sample counts sit close to the bounds (the busiest window holds 2,025 where the widest-view test wants 2,000, its
-// densest screen 146 where this wants at most 150): they depend on the walker draws, their purposes and the orbit ranges.
-// A change there means retuning the density in world.cpp, never loosening a test.
+// The sample counts sit close to the bounds (the busiest window holds 2,046 where the widest-view test wants 2,000; the
+// densest screen of the port's crowd, found by a sweep every 60 units, holds 206 where PORT_PILE allows 210; the densest
+// of the other samples is the sect's 93 against 150, the oasis's 90 and the marsh town's 77): they depend on the walker
+// draws, their purposes and the orbit ranges. A change there means retuning the density in world.cpp, never loosening a
+// test.
 TEST_CASE("no screen of the world is a pile of walkers") {
     constexpr std::size_t PILE = 150;
+    // The port's crowd has a limit of its own: its widest view (the busiest region, kept at 2,000 walkers or more so
+    // `measure` stays comparable with 5a) is about 35 to 40 percent sea, where no walker stands, so the land holds
+    // more a screen than PILE allows. The user's decision, 2026-11-15.
+    constexpr std::size_t PORT_PILE = 210;
     constexpr std::size_t COUNTRYSIDE = 8;
-    const game::Host host(test::TestManifest(), game::WORLD_SCENE);
+    const game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
     const std::vector<std::pair<core::StableId, game::Body>> walkers = Walkers(host);
     const core::Vec2 busiest = game::WORLD_BUSIEST;
     struct Sample {
@@ -605,7 +613,7 @@ TEST_CASE("no screen of the world is a pile of walkers") {
         std::size_t most;
     };
     const std::array<Sample, 20> samples{ {
-        { .name = "busiest's point", .centre = busiest, .most = PILE },
+        { .name = "busiest's point", .centre = busiest, .most = PORT_PILE },
         { .name = "busiest, half out east", .centre = busiest + core::Vec2{ .x = 2'000.0F, .y = 0.0F }, .most = PILE },
         { .name = "map's north-east corner", .centre = { .x = 37'440.0F, .y = 540.0F }, .most = COUNTRYSIDE },
         { .name = "busiest, near its north-west corner",
@@ -615,15 +623,15 @@ TEST_CASE("no screen of the world is a pile of walkers") {
           .centre = busiest + core::Vec2{ .x = 3'800.0F, .y = 2'200.0F },
           .most = PILE },
         { .name = "busiest, off its west edge", .centre = busiest + core::Vec2{ .x = -5'000.0F, .y = 0.0F }, .most = PILE },
-        { .name = "north-west town's point", .centre = { .x = 8'000.0F, .y = 5'600.0F }, .most = PILE },
-        { .name = "north-west town, half out", .centre = { .x = 9'200.0F, .y = 6'100.0F }, .most = PILE },
-        { .name = "north-west town, near its edge", .centre = { .x = 6'000.0F, .y = 4'600.0F }, .most = PILE },
-        { .name = "north-east town's point", .centre = { .x = 30'500.0F, .y = 4'500.0F }, .most = PILE },
+        { .name = "sect's point", .centre = { .x = 6'272.0F, .y = 7'552.0F }, .most = PILE },
+        { .name = "sect, half out", .centre = { .x = 7'472.0F, .y = 8'052.0F }, .most = PILE },
+        { .name = "sect, near its edge", .centre = { .x = 4'272.0F, .y = 6'552.0F }, .most = PILE },
+        { .name = "oasis's point", .centre = { .x = 15'488.0F, .y = 3'456.0F }, .most = PILE },
         { .name = "map's south-west corner", .centre = { .x = 960.0F, .y = 21'060.0F }, .most = COUNTRYSIDE },
-        { .name = "north-east town, near its edge", .centre = { .x = 32'600.0F, .y = 5'400.0F }, .most = PILE },
-        { .name = "south-west town's point", .centre = { .x = 9'600.0F, .y = 17'800.0F }, .most = PILE },
-        { .name = "busiest, the densest screen a sweep found", .centre = { .x = 32'880.0F, .y = 10'260.0F }, .most = PILE },
-        { .name = "south-west town, near its edge", .centre = { .x = 8'000.0F, .y = 18'800.0F }, .most = PILE },
+        { .name = "oasis, near its edge", .centre = { .x = 14'328.0F, .y = 4'056.0F }, .most = PILE },
+        { .name = "marsh town's point", .centre = { .x = 16'768.0F, .y = 18'304.0F }, .most = PILE },
+        { .name = "busiest, the densest screen a sweep found", .centre = { .x = 31'240.0F, .y = 9'580.0F }, .most = PORT_PILE },
+        { .name = "marsh town, near its edge", .centre = { .x = 17'708.0F, .y = 17'644.0F }, .most = PILE },
         { .name = "the start", .centre = (game::WORLD_MAP.min + game::WORLD_MAP.max) * 0.5F, .most = COUNTRYSIDE },
         { .name = "countryside, north", .centre = { .x = 19'200.0F, .y = 3'000.0F }, .most = COUNTRYSIDE },
         { .name = "countryside, west", .centre = { .x = 3'000.0F, .y = 11'000.0F }, .most = COUNTRYSIDE },
@@ -718,7 +726,7 @@ TEST_CASE("each scene is found by its name") {
 
 TEST_CASE("F2's CycleScene visits every scene in order and back, clearing the selection") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
-    game::Host host(manifest);
+    game::Host host(manifest, game::ARENA_SCENE, test::ShippedData());
     const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = host.Player() } } };
     Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
     REQUIRE(host.Selected() == host.Player());
@@ -809,8 +817,8 @@ TEST_CASE("the shipped effects table is the default looks and layout") {
     CHECK(shipped->Hash() == core::Effects{}.Hash());
 }
 
-TEST_CASE("the shipped manifest runs every scene with the built-in data") {
-    const std::expected<void, core::Error> checked = game::CheckScenes(*test::TestManifest(), game::BuiltInData());
+TEST_CASE("the shipped manifest runs every scene with the shipped data") {
+    const std::expected<void, core::Error> checked = game::CheckScenes(*test::TestManifest(), test::ShippedData());
     CHECK(checked.has_value());
 }
 
@@ -1271,7 +1279,8 @@ TEST_CASE("glows leave the state hash alone") {
 
 // The portal's point in `scene`, which must have one.
 core::Vec2 PortalOf(core::SceneKey scene) {
-    const std::optional<core::Vec2> portal = game::SceneOf(scene).Traits().portal;
+    game::Host host(test::TestManifest(), scene, test::ShippedData());
+    const std::optional<core::Vec2> portal = host.Portal();
     REQUIRE(portal.has_value());
     return portal.value_or(core::Vec2{});
 }
@@ -1287,7 +1296,7 @@ void StepTo(
 ) {
     const core::Vec2 away = target - FootOf(host, host.Player());
     const f32 distance = std::hypot(away.x, away.y);
-    core::GameData data = game::BuiltInData();
+    core::GameData data = test::ShippedData();
     data.cultivator.walkSpeed = distance;
     host.SetData(data);
     host.Tick(At(tick), { .actions = actions, .held = { .move = away * (1.0F / distance) } }, events);
@@ -1312,7 +1321,7 @@ constexpr std::array<std::pair<core::SceneKey, core::SceneKey>, 3> PORTAL_LEADS{
 TEST_CASE("stepping onto the portal asks for the next walkable scene") {
     for (const auto& [scene, next] : PORTAL_LEADS) {
         CAPTURE(game::SceneName(scene));
-        game::Host host(test::TestManifest(), scene);
+        game::Host host(test::TestManifest(), scene, test::ShippedData());
         std::vector<core::Event> events;
         StepTo(host, 1, PortalOf(scene), events);
         const std::optional<core::SceneFacts> requested = host.Requested();
@@ -1409,7 +1418,7 @@ TEST_CASE("arriving through a portal lands off the next scene's portal") {
     constexpr u64 FIRST_TICKS = 3;
     for (const auto& [scene, next] : PORTAL_LEADS) {
         CAPTURE(game::SceneName(scene));
-        game::Host host(test::TestManifest(), scene);
+        game::Host host(test::TestManifest(), scene, test::ShippedData());
         std::vector<core::Event> events;
         StepTo(host, 1, PortalOf(scene), events);
         REQUIRE(host.Requested().has_value());

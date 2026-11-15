@@ -13,6 +13,10 @@ void Scene::
     Tick(SceneContext& /*context*/, const core::TickCounters& /*counters*/, std::vector<core::Event>& /*events*/) const {
 }
 
+std::optional<core::Vec2> Scene::Portal(const SceneContext& /*context*/) const {
+    return Traits().portal;
+}
+
 void Scene::Respawn(SceneContext& /*context*/, const core::TickCounters& /*counters*/, u32 /*index*/) const {
 }
 
