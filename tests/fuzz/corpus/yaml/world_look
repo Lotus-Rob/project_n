@@ -1,0 +1,12 @@
+kinds:
+  deep_water: [terrain_water_0]
+  meadow: [terrain_meadow_0, terrain_meadow_1]
+roads:
+  [road_0, road_1, road_2, road_3, road_4, road_5, road_6, road_7, road_8, road_9, road_10, road_11, road_12, road_13, road_14, road_15]
+rivers:
+  [river_0, river_1, river_2, river_3, river_4, river_5, river_6, river_7, river_8, river_9, river_10, river_11, river_12, river_13, river_14, river_15]
+bridge: { across: bridge_h, down: bridge_v }
+ford: ford
+markers:
+  city: marker_city
+  mountain_pass: marker_mountain_pass
