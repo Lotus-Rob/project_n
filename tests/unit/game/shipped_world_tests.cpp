@@ -27,7 +27,7 @@ TEST_CASE("the shipped cities' shares sum to 50,000") {
     u32 capital = 0;
     u32 largest = 0;
     for (const core::Place& place : map->Places()) {
-        people += place.people;
+        people += place.kind == core::PlaceKind::City ? place.people : 0;
         capital = place.key == "capital" ? place.people : capital;
         largest = std::max(largest, place.people);
     }

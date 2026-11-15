@@ -29,6 +29,10 @@ inline constexpr u16 NO_PLACE = 0xFFFF;
 /// it keeps a path's cost, even a diagonal's seven fifths, far below that sentinel.
 inline constexpr u16 MAX_WALK_COST = 1'000;
 
+/// The most people all the cities of a map may home together: twice the shipped map's 50,000, the tier phase 4's gates
+/// were set for. It bounds what the world scene spawns, whatever the data says.
+inline constexpr u32 MOST_WORLD_PEOPLE = 100'000;
+
 /// A tile of the map, by column and row.
 struct TilePoint {
     /// Its column, from the left.
@@ -74,7 +78,7 @@ struct Place {
     std::string nameKey{};
     /// Its name, resolved by the reader: never hashed.
     StringId name{};
-    /// How many NPCs a city's share holds.
+    /// How many NPCs a city's share holds; always 0 for a danger, which homes no one.
     u32 people = 0;
     /// Whether the player starts here (exactly one city).
     bool start = false;
@@ -155,9 +159,10 @@ struct TileSpan {
 class WorldMap {
 public:
     /// Checks `source` and derives the layers; the error names the kind, line, ford or place it refuses, and the line of
-    /// the data it was written on when `source.lines` knows it. A polyline's tiles are the same whichever way it is
-    /// written: each segment is stepped from its endpoint with the lower (row, column), one axis at a time and
-    /// 4-connected, the column first on a tie.
+    /// the data it was written on when `source.lines` knows it. Among its refusals: two kinds of one name, a danger with
+    /// people, and cities whose people sum past MOST_WORLD_PEOPLE (naming the place that crosses it). A polyline's tiles are
+    /// the same whichever way it is written: each segment is stepped from its endpoint with the lower (row, column), one axis
+    /// at a time and 4-connected, the column first on a tie.
     [[nodiscard]] static std::expected<WorldMap, Error> Build(WorldMapSource source);
 
     /// The map's width in tiles.
