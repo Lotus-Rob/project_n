@@ -592,7 +592,7 @@ TEST_CASE("the world's cultivator starts in quiet country") {
     CHECK(inWidest <= QUIET_SCREEN * WIDEST_SCREENS);
 }
 
-// The sample counts sit close to the bounds (the busiest window holds 2,046 where the widest-view test wants 2,000; the
+// The sample counts sit close to the bounds (the busiest window holds 2,051 where the widest-view test wants 2,000; the
 // densest screen of the port's crowd, found by a sweep every 60 units, holds 206 where PORT_PILE allows 210; the densest
 // of the other samples is the sect's 93 against 150, the oasis's 90 and the marsh town's 77): they depend on the walker
 // draws, their purposes and the orbit ranges. A change there means retuning the density in world.cpp, never loosening a

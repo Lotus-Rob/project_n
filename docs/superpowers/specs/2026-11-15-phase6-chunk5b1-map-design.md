@@ -448,7 +448,7 @@ The plan ledger's calls, each with its reason and what it costs if wrong. Commit
   linear (quadratic in debug for big tables); fold both into one index before or with 5b2's generated names.
 - **Task 2's "too many strings" refusal is covered by inspection only** (the cap is not injectable).
 - **Placeholder art:** a faint knot where road and river arms meet at a tile centre; pre-existing over-120-column lines
-  in `art/placeholders.py` and `art/scenes.toml`; three straight single-kind runs of 10 tiles (row 11 sand/grass, row 25
-  hills/grass, row 69 meadow/forest) with no visible artefact.
+  in `art/placeholders.py` and `art/scenes.toml`. No straight edge between two kinds runs 8 tiles or more (checked at
+  finishing, the harbour's deep pool reshaped by hand); runs of 6 and 7 remain, which 5b-look's blending softens.
 - **`tests/unit/data/seals_tests.cpp`'s broken-reload test has the tautological shape** Task 7 fixed for the look (the
   seals' keep-or-replace decision is untested in app).
