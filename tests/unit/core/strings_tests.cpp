@@ -8,7 +8,8 @@ namespace {
 TEST_CASE("a default table holds every named string, empty, and no data string") {
     const core::Strings strings;
     CHECK(strings.text.size() == core::STRINGS);
-    CHECK(strings.keys.empty());
+    const std::optional<core::StringId> data = strings.Find("place_capital");
+    CHECK_FALSE(data.has_value());
     CHECK(strings.Text(core::StringId::FoxName, core::Language::English).empty());
 }
 
@@ -39,7 +40,6 @@ TEST_CASE("an added string follows the named ones and is found by its key") {
 TEST_CASE("the last string a table holds gets the last id") {
     core::Strings strings;
     strings.text.resize(core::MOST_STRINGS - 1);
-    strings.keys.resize(core::MOST_STRINGS - 1 - core::STRINGS);
     const core::StringId last = strings.Add("last", { { "a", "b" } });
     CHECK(std::to_underlying(last) == core::MOST_STRINGS - 1);
     const std::optional<core::StringId> found = strings.Find("last");

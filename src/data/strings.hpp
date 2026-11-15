@@ -7,6 +7,7 @@
 #include "core/error.hpp"
 #include "core/strings.hpp"
 
+#include <cstddef>
 #include <expected>
 #include <filesystem>
 #include <string>
@@ -21,6 +22,15 @@ namespace data {
 /// line naming it added to `warnings` when given.
 [[nodiscard]] std::expected<core::Strings, core::Error> ParseStrings(
     std::string_view yaml,
+    std::vector<std::string>* warnings = nullptr
+);
+
+/// ParseStrings() for a table that holds at most `most` strings, named and data together (core::MOST_STRINGS when larger):
+/// a data string past it is refused, naming its line. The overload above caps at core::MOST_STRINGS; a smaller cap lets a
+/// small table reach the refusal.
+[[nodiscard]] std::expected<core::Strings, core::Error> ParseStrings(
+    std::string_view yaml,
+    std::size_t most,
     std::vector<std::string>* warnings = nullptr
 );
 
