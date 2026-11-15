@@ -250,11 +250,33 @@ TEST_CASE("the map cells at the smallest zoom: the low mips") {
     CheckAgainstReference({ .name = "cells_far", .scene = game::CELLS_SCENE, .zoom = gfx::MIN_ZOOM });
 }
 
+// The start city's tile centre.
+core::Vec2 CapitalCentre(const core::WorldMap& map) {
+    return map.TileCentre(map.TileIndex(map.Places()[map.Start()].tile));
+}
 // Halfway from the cultivator, on the start city's tile centre, to the world's portal: both show at the largest zoom.
 core::Vec2 StartAndPortal() {
     const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
-    const core::Vec2 start = map->TileCentre(map->TileIndex(map->Places()[map->Start()].tile));
-    return start + (game::WORLD_PORTAL_OFFSET * static_cast<f32>(HALFWAY));
+    return CapitalCentre(*map) + (game::WORLD_PORTAL_OFFSET * static_cast<f32>(HALFWAY));
+}
+// The tile centre of the bridge nearest the start city in `map`, by tiles (the lower index on a tie).
+core::Vec2 NearestBridgeToStart(const core::WorldMap& map) {
+    const core::TilePoint capital = map.Places()[map.Start()].tile;
+    const auto distance = [&](core::TilePoint point) {
+        const i64 across = static_cast<i64>(point.column) - static_cast<i64>(capital.column);
+        const i64 down = static_cast<i64>(point.row) - static_cast<i64>(capital.row);
+        return (across * across) + (down * down);
+    };
+    std::optional<core::TilePoint> nearest;
+    for (u32 tile = 0; tile < map.Columns() * map.Rows(); ++tile) {
+        const core::TilePoint point = map.PointOf(tile);
+        if ((map.FlagsAt(tile) & std::to_underlying(core::TileFlag::Bridge)) != 0 &&
+            (!nearest || distance(point) < distance(*nearest))) {
+            nearest = point;
+        }
+    }
+    REQUIRE(nearest.has_value());
+    return map.TileCentre(map.TileIndex(nearest.value_or(core::TilePoint{})));
 }
 // The middle zoom `--camera-path` judges labels at. Labels fade out below 9 pixels, 20 world units × 2/3 × 0.675 on 720
 // lines, so this picture is 1080 lines high, as the measured fullscreen window is at least: 12 pixels.
@@ -297,6 +319,45 @@ TEST_CASE("the world at the largest zoom: the cultivator at the start and the po
           .zoom = gfx::MAX_ZOOM,
           .centre = StartAndPortal(),
           .asInGame = true }
+    );
+}
+
+// The capital's name, roads, the river and a bridge at one zoom. Centred on the capital, as the game starts; if the nearest
+// bridge, with one bridge sprite's room round it, lies outside that view, the centre moves halfway towards the bridge so
+// the picture holds both.
+TEST_CASE("the world's capital at a middle zoom: its name, roads, the river and a bridge") {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const core::Vec2 capital = CapitalCentre(*map);
+    const core::Vec2 bridge = NearestBridgeToStart(*map);
+    const core::SpriteInfo& sprite = test::TestManifest()->Sprite(core::atlas::SpriteId::BridgeV);
+    const f32 room = static_cast<f32>(std::max(sprite.width, sprite.height));
+    const core::Vec2 reach = core::REFERENCE_SIZE * (static_cast<f32>(HALFWAY) / LABELS_ZOOM); // the view's half size
+    const bool shows = std::abs(bridge.x - capital.x) + room < reach.x && std::abs(bridge.y - capital.y) + room < reach.y;
+    CheckAgainstReference(
+        { .name = "world_places",
+          .scene = game::WORLD_SCENE,
+          .ticks = TWO_SECONDS,
+          .zoom = LABELS_ZOOM,
+          .centre = shows ? capital : capital + ((bridge - capital) * static_cast<f32>(HALFWAY)),
+          .asInGame = true,
+          .width = FULL_HD_WIDTH,
+          .height = FULL_HD_HEIGHT }
+    );
+}
+
+// The start, as the game begins, at the widest zoom: the capital's name reads there (a place's name is 18 pixels, a
+// creature's label too small to read), though the cultivator stands on it: its label gives way instead of hiding the name.
+TEST_CASE("the world at the smallest zoom over the capital: its name reads under the cultivator") {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    CheckAgainstReference(
+        { .name = "world_places_widest",
+          .scene = game::WORLD_SCENE,
+          .ticks = TWO_SECONDS,
+          .zoom = gfx::MIN_ZOOM,
+          .centre = CapitalCentre(*map),
+          .asInGame = true,
+          .width = FULL_HD_WIDTH,
+          .height = FULL_HD_HEIGHT }
     );
 }
 
@@ -1434,11 +1495,11 @@ TEST_CASE("a screen-wide seal at the smallest zoom: no shimmer") {
 
 // A regression guard, not a proof of no shimmer: the tiles shimmer today, above the 0.02 the labels and seals hold.
 TEST_CASE("the world's tiles and walkers at the smallest zoom: shimmer held to its bound") {
-    // Measured 0.0309 (2026-11-14, three runs alike). It is the ground's, not the walkers': the worst tiles sit where two
-    // kinds of terrain meet, whose hard tile-quad edges step a whole pixel at a time (the dark forest's small ink over the
-    // dark backdrop weighs its tiles' changes more). The fix is the sweep-up backlog's world map look (blending between
-    // kinds), which must bring this to 0.02 or under and tighten the bound. About twice the measure, as the seals' 0.02 is
-    // of their 0.011.
+    // Measured 0.0397 on the data-driven world map (2026-11-15; 5a's flat world measured 0.0309). It is the ground's, not the
+    // walkers': the worst tiles sit where two kinds of terrain meet, whose hard tile-quad edges step a whole pixel at a time
+    // (the dark forest's small ink over the dark backdrop weighs its tiles' changes more). The fix is the sweep-up backlog's
+    // world map look (blending between kinds), which must bring this to 0.02 or under and tighten the bound. About twice the
+    // measure, as the seals' 0.02 is of their 0.011.
     constexpr f64 MOST_CHANGE = 0.06;
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
