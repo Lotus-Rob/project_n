@@ -191,10 +191,14 @@ TEST_CASE("prewarming covers data strings") {
     const std::size_t warmed = text.Pending().size();
     CHECK(warmed > 0);
     for (const core::TextDirection direction : BOTH_WAYS) {
-        CHECK(text.Lay("青云城", direction).complete);
-        CHECK(text.Lay("Azure Cloud City", direction).complete);
-        CHECK(text.Lay(Stacked("{name}（+{count}）", "青云城", "1234567890"), direction).complete);
-        CHECK(text.Lay(Stacked("{name} (+{count})", "Azure Cloud City", "1234567890"), direction).complete);
+        const bool chinese = text.Lay("青云城", direction).complete;
+        const bool english = text.Lay("Azure Cloud City", direction).complete;
+        const bool chineseStack = text.Lay(Stacked("{name}（+{count}）", "青云城", "1234567890"), direction).complete;
+        const bool englishStack = text.Lay(Stacked("{name} (+{count})", "Azure Cloud City", "1234567890"), direction).complete;
+        CHECK(chinese);
+        CHECK(english);
+        CHECK(chineseStack);
+        CHECK(englishStack);
     }
     CHECK(text.Pending().size() == warmed);
 }

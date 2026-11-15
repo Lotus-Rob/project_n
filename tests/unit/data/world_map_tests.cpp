@@ -37,8 +37,8 @@ constexpr std::ptrdiff_t MOST_DANGERS = 22;
 
 core::Strings Names() {
     core::Strings strings;
-    strings.Add("place_capital", { "Capital", "都城" });
-    strings.Add("place_wolf_pass", { "Wolf Pass", "狼关" });
+    strings.Add("place_capital", { { "Capital", "都城" } });
+    strings.Add("place_wolf_pass", { { "Wolf Pass", "狼关" } });
     return strings;
 }
 
@@ -124,7 +124,8 @@ TEST_CASE("a tab in a row is refused, naming its line") {
     const std::string text = With("..~..\n", "..\t..\n");
     const std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(text, Names());
     REQUIRE_FALSE(map.has_value());
-    CHECK(map.error().message.contains(std::format("line {}:", LineOf(text, "..\t.."))));
+    const std::string atLine = std::format("line {}:", LineOf(text, "..\t.."));
+    CHECK(map.error().message.contains(atLine));
 }
 
 // A change to SMALL that the reader must refuse, and what the refusal must name.
@@ -165,7 +166,8 @@ TEST_CASE("the reader refuses, naming the line") {
         const std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(text, strings);
         REQUIRE_FALSE(map.has_value());
         CHECK(map.error().message.contains(broken.says));
-        CHECK(map.error().message.contains(std::format("line {}:", LineOf(text, broken.onLineOf))));
+        const std::string atLine = std::format("line {}:", LineOf(text, broken.onLineOf));
+        CHECK(map.error().message.contains(atLine));
     }
 }
 
@@ -174,12 +176,14 @@ TEST_CASE("a folded or quoted grid is refused, naming the grid's line, never mis
     const std::string folded = With("grid: |", "grid: >");
     const std::expected<core::WorldMap, core::Error> foldedMap = data::ParseWorldMap(folded, strings);
     REQUIRE_FALSE(foldedMap.has_value());
-    CHECK(foldedMap.error().message.contains(std::format("line {}:", LineOf(folded, "grid:"))));
+    const std::string foldedLine = std::format("line {}:", LineOf(folded, "grid:"));
+    CHECK(foldedMap.error().message.contains(foldedLine));
     CHECK(foldedMap.error().message.contains("block"));
     const std::string quoted = With("grid: |\n  ~~~~~\n  ..~..\n  .....\n", "grid: \"~~~~~\\n..~..\\n.....\"\n");
     const std::expected<core::WorldMap, core::Error> quotedMap = data::ParseWorldMap(quoted, strings);
     REQUIRE_FALSE(quotedMap.has_value());
-    CHECK(quotedMap.error().message.contains(std::format("line {}:", LineOf(quoted, "grid:"))));
+    const std::string quotedLine = std::format("line {}:", LineOf(quoted, "grid:"));
+    CHECK(quotedMap.error().message.contains(quotedLine));
     CHECK(quotedMap.error().message.contains("block"));
 }
 
@@ -187,14 +191,17 @@ TEST_CASE("an empty row is refused on its own line") {
     const std::string text = With("grid: |\n", "grid: |\n\n");
     const std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(text, Names());
     REQUIRE_FALSE(map.has_value());
-    CHECK(map.error().message.contains(std::format("line {}:", LineOf(text, "grid:") + 1)));
+    const std::string atLine = std::format("line {}:", LineOf(text, "grid:") + 1);
+    CHECK(map.error().message.contains(atLine));
     CHECK(map.error().message.contains("empty"));
 }
 
 TEST_CASE("the reader refuses YAML that doesn't parse, and a map that isn't one") {
     const core::Strings strings = Names();
-    CHECK_FALSE(data::ParseWorldMap("kinds: [", strings).has_value());
-    CHECK_FALSE(data::ParseWorldMap("- a\n- b\n", strings).has_value());
+    const bool unparsed = data::ParseWorldMap("kinds: [", strings).has_value();
+    const bool notAMap = data::ParseWorldMap("- a\n- b\n", strings).has_value();
+    CHECK_FALSE(unparsed);
+    CHECK_FALSE(notAMap);
 }
 
 TEST_CASE("an unknown key warns") {
@@ -203,7 +210,8 @@ TEST_CASE("an unknown key warns") {
     const std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(text, Names(), &warnings);
     REQUIRE(map.has_value());
     REQUIRE(warnings.size() == 1);
-    CHECK(warnings[0].contains(std::format("line {}:", LineOf(text, "weather"))));
+    const std::string atLine = std::format("line {}:", LineOf(text, "weather"));
+    CHECK(warnings[0].contains(atLine));
     CHECK(warnings[0].contains("weather"));
 }
 
@@ -215,9 +223,11 @@ TEST_CASE("an unknown key inside a kind or a place warns, with its line") {
     REQUIRE(map.has_value());
     REQUIRE(warnings.size() == 2);
     CHECK(warnings[0].contains("colour"));
-    CHECK(warnings[0].contains(std::format("line {}:", LineOf(kinds, "colour"))));
+    const std::string colourLine = std::format("line {}:", LineOf(kinds, "colour"));
+    CHECK(warnings[0].contains(colourLine));
     CHECK(warnings[1].contains("peopel"));
-    CHECK(warnings[1].contains(std::format("line {}:", LineOf(kinds, "peopel"))));
+    const std::string peopelLine = std::format("line {}:", LineOf(kinds, "peopel"));
+    CHECK(warnings[1].contains(peopelLine));
 }
 
 // The shipped map, read as main reads it, has nothing to warn about. Its size and the port's tile are pinned to the
@@ -235,7 +245,8 @@ TEST_CASE("the shipped world map loads clean") {
     REQUIRE(map.has_value());
     CHECK(warnings.empty());
     CHECK(map->Places()[map->Start()].key == "capital");
-    CHECK_FALSE(data::LoadWorldMap(*assets / "no_such_folder", *strings).has_value());
+    const bool missingLoads = data::LoadWorldMap(*assets / "no_such_folder", *strings).has_value();
+    CHECK_FALSE(missingLoads);
 }
 
 // Build refuses a city it can't reach, so this pins the rule on the shipped file; the danger sites, which Build leaves

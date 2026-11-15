@@ -207,12 +207,15 @@ TEST_CASE("a place name fades in and out as labels do") {
     const std::span<const gfx::PlacedLabel> appearing = Place(pass, place, FRAME_SECONDS);
     REQUIRE(appearing.size() == 1);
     CHECK(appearing[0].opacity == doctest::Approx(FRAME_STEP));
-    CHECK(Place(pass, place, FRAME_SECONDS + WHOLE_FADE)[0].opacity == 1.0F);
+    const std::span<const gfx::PlacedLabel> shown = Place(pass, place, FRAME_SECONDS + WHOLE_FADE);
+    REQUIRE(shown.size() == 1);
+    CHECK(shown[0].opacity == 1.0F);
     // Its item goes: it fades out where it was.
     const std::span<const gfx::PlacedLabel> leaving = Place(pass, {}, FRAME_SECONDS + WHOLE_FADE + HALF_FADE);
     REQUIRE(leaving.size() == 1);
     CHECK(leaving[0].opacity == doctest::Approx(HALF));
-    CHECK(Place(pass, {}, FRAME_SECONDS + (2 * WHOLE_FADE)).empty());
+    const std::span<const gfx::PlacedLabel> gone = Place(pass, {}, FRAME_SECONDS + (2 * WHOLE_FADE));
+    CHECK(gone.empty());
 }
 
 TEST_CASE("at the widest zoom a place name stays while a creature's label fades out") {

@@ -14,9 +14,12 @@ TEST_CASE("a default table holds every named string, empty, and no data string")
 
 TEST_CASE("a named string is found by its key") {
     const core::Strings strings;
-    CHECK(strings.Find("fox_name") == core::StringId::FoxName);
-    CHECK(strings.Find("portal_label") == core::StringId::PortalLabel);
-    CHECK_FALSE(strings.Find("nope").has_value());
+    const std::optional<core::StringId> fox = strings.Find("fox_name");
+    const std::optional<core::StringId> portal = strings.Find("portal_label");
+    const std::optional<core::StringId> nope = strings.Find("nope");
+    CHECK(fox == core::StringId::FoxName);
+    CHECK(portal == core::StringId::PortalLabel);
+    CHECK_FALSE(nope.has_value());
 }
 
 TEST_CASE("an added string follows the named ones and is found by its key") {
@@ -25,8 +28,10 @@ TEST_CASE("an added string follows the named ones and is found by its key") {
     const core::StringId second = strings.Add("place_port", { { "Port", "港" } });
     CHECK(std::to_underlying(added) == core::STRINGS);
     CHECK(std::to_underlying(second) == core::STRINGS + 1);
-    CHECK(strings.Find("place_capital") == added);
-    CHECK(strings.Find("place_port") == second);
+    const std::optional<core::StringId> capital = strings.Find("place_capital");
+    const std::optional<core::StringId> port = strings.Find("place_port");
+    CHECK(capital == added);
+    CHECK(port == second);
     CHECK(strings.Text(added, core::Language::Chinese) == "青云城");
     CHECK(strings.Text(second, core::Language::English) == "Port");
 }
@@ -37,7 +42,8 @@ TEST_CASE("the last string a table holds gets the last id") {
     strings.keys.resize(core::MOST_STRINGS - 1 - core::STRINGS);
     const core::StringId last = strings.Add("last", { { "a", "b" } });
     CHECK(std::to_underlying(last) == core::MOST_STRINGS - 1);
-    CHECK(strings.Find("last") == last);
+    const std::optional<core::StringId> found = strings.Find("last");
+    CHECK(found == last);
     CHECK(strings.text.size() == core::MOST_STRINGS);
 }
 
