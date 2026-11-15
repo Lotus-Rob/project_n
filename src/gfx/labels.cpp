@@ -46,7 +46,7 @@ std::span<const PlacedLabel> LabelPass::Place(std::span<const LabelInput> labels
     m_clock = clock;
     const f32 step = elapsed / LABEL_FADE_SECONDS;
     Begin(labels, width, height);
-    Resolve(labels, width, height);
+    Resolve(labels, width, height, scale);
     Centre(labels);
     m_placed.clear();
     FadeGone(step);
@@ -86,7 +86,7 @@ void LabelPass::Begin(std::span<const LabelInput> labels, u32 width, u32 height)
     }
 }
 
-void LabelPass::Resolve(std::span<const LabelInput> labels, u32 width, u32 height) {
+void LabelPass::Resolve(std::span<const LabelInput> labels, u32 width, u32 height, f32 scale) {
     PN_PROFILE_ZONE();
     m_order.resize(labels.size());
     std::ranges::iota(m_order, std::size_t{ 0 });
@@ -104,9 +104,17 @@ void LabelPass::Resolve(std::span<const LabelInput> labels, u32 width, u32 heigh
     for (const std::size_t index : m_order) {
         const LabelInput& label = labels[index];
         const Box box = BoxAt(label.anchor, label.width, label.height, 0.0F);
-        if (box.right <= 0.0F || box.left >= static_cast<f32>(width) || box.bottom <= 0.0F ||
-            box.top >= static_cast<f32>(height)) {
+        const bool offScreen = box.right <= 0.0F || box.left >= static_cast<f32>(width) || box.bottom <= 0.0F ||
+                               box.top >= static_cast<f32>(height);
+        if (offScreen) {
             m_role[index] = OFF_SCREEN; // nothing draws there, so it takes no room from those that do
+            continue;
+        }
+        // One too small to read is a stack of its own that covers no room and joins none, so it fades out where it is
+        // and never hides a readable label: a player's at the widest zoom doesn't hide a place's name.
+        if (label.pixels < LABEL_MIN_PIXELS * scale) {
+            m_role[index] = m_stacks.size();
+            m_stacks.push_back({ .head = index, .into = m_role[index], .members = 1, .sum = label.anchor });
             continue;
         }
         if (Collect(index, labels)) {
