@@ -336,13 +336,13 @@ std::expected<PlaceLayer, Error> PlaceTiles(const WorldMapSource& source, const 
         }
         if (layer.place[tile] != NO_PLACE) {
             return std::unexpected{ Refuse(
-                std::format(
-                    "place {} ('{}') shares its tile with place {} ('{}')",
-                    index,
-                    place.key,
-                    layer.place[tile],
-                    source.places[layer.place[tile]].key
-                )
+                AtLine(source.lines.places, index) + std::format(
+                                                         "place {} ('{}') shares its tile with place {} ('{}')",
+                                                         index,
+                                                         place.key,
+                                                         layer.place[tile],
+                                                         source.places[layer.place[tile]].key
+                                                     )
             ) };
         }
         if ((place.kind == PlaceKind::City) != place.sort.empty()) {

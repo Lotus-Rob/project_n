@@ -318,6 +318,12 @@ TEST_CASE("a refusal names the line of the entry it refuses when the source know
     place.places[1].key = place.places[0].key;
     place.lines.places = { PLACE_LINE - 1, PLACE_LINE };
     CHECK(Contains(Refusal(place), "line 40: places 0 and 1"));
+    core::WorldMapSource crowded = Source({ "0.." });
+    crowded.places.push_back(
+        { .key = "twin", .kind = core::PlaceKind::City, .sort = "", .tile = { .column = 0, .row = 0 }, .nameKey = "twin" }
+    );
+    crowded.lines.places = { PLACE_LINE - 1, PLACE_LINE };
+    CHECK(Contains(Refusal(crowded), "line 40: place 1"));
 }
 
 TEST_CASE("TilesIn finds the tiles a view overlaps, clamped to the map") {
