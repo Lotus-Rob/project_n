@@ -1,6 +1,6 @@
 # Phase 6, chunk 5b1: the world map as data
 
-Date: 2026-11-15 · Status: approved 2026-11-15 · Plan: `2026-11-15-phase6-chunk5b1.md` · Chunk spec: `2026-11-10-phase6-chunk5-world-map-design.md` · Phase
+Date: 2026-11-15 · Status: **implemented 2026-11-15** (see Outcome; approved 2026-11-15) · Plan: `2026-11-15-phase6-chunk5b1.md` · Chunk spec: `2026-11-10-phase6-chunk5-world-map-design.md` · Phase
 spec: `2026-11-10-phase6-design.md` · Builds on: `2026-11-14-phase6-chunk5a-measure-camera-design.md` (its Outcome)
 
 ## In short
@@ -293,3 +293,158 @@ cities); the rest wait for 5b2, 5b3 and 5c.
 The YAML's exact shape and the legend's characters; the `core` types' names and where the map hangs off the game data;
 the polyline rasterisation rule (every tile a segment touches, by a supercover line); the danger sorts' list; the map's
 exact layout within Goal 9; marker art; the label style for places; the measurement sitting; commit split and order.
+
+## Outcome
+
+### Measurements (2026-11-15)
+
+Taken by plan Task 13, one sitting, display free, nothing else running: `pixi run project_n measure --runs world --keep`
+once on main (a worktree of main inside the repo, at "feat(app): zoom at a steady rate, holding notches through
+transitions") and once on the branch head (at "test(gfx): picture the world map's places, roads and rivers"). Both
+exited 0, trusted, no hitches, every row `paced` (the 165.1 Hz DP-3 display, as 5a's sitting; same machine). Times in
+ms, each cell main / branch. Frames: 82 in each first-0.5 s segment, 577 to 579 in the rest, 908 or 909 in the widest
+view. Main's numbers sit inside 5a's three runs (work medians within the 0.15 ms noise line), so main is a valid base.
+
+| Segment | Frame median | Frame p99 | Frame worst | Work median | Work p99 | Work worst | GPU share |
+|---|---|---|---|---|---|---|---|
+| follow: first 0.5 s | 6.01 / 6.08 | — | 7.57 / 7.65 | 0.60 / 0.62 | — | 0.77 / 0.96 | 90 / 90 % |
+| follow: rest | 6.04 / 6.05 | 7.89 / 8.57 | 8.79 / 10.07 | 0.75 / 0.76 | 1.77 / 3.45 | 3.55 / 4.24 | 87 / 86 % |
+| pan: first 0.5 s | 6.05 / 6.06 | — | 9.26 / 8.63 | 1.04 / 1.05 | — | 4.12 / 3.89 | 79 / 79 % |
+| pan: rest | 6.06 / 6.10 | 9.23 / 9.05 | 10.49 / 10.93 | 1.10 / 1.07 | 4.29 / 4.09 | 4.47 / 5.18 | 79 / 79 % |
+| zoom in and out: first 0.5 s | 6.09 / 6.12 | — | 9.96 / 9.14 | 1.00 / 1.04 | — | 5.17 / 3.55 | 80 / 80 % |
+| zoom in and out: rest | 6.06 / 6.08 | 8.81 / 8.83 | 10.08 / 10.14 | 1.03 / 1.06 | 3.65 / 3.65 | 4.44 / 5.07 | 80 / 79 % |
+| widest view: first 0.5 s | 6.04 / 6.13 | — | 9.38 / 8.98 | 1.45 / 1.40 | — | 4.35 / 4.51 | 74 / 75 % |
+| widest view: rest | 6.02 / 6.08 | 9.35 / 8.89 | 12.03 / 10.76 | 1.47 / 1.50 | 4.43 / 4.35 | 6.07 / 6.27 | 73 / 72 % |
+| labels: first 0.5 s | 6.04 / 6.11 | — | 8.70 / 9.43 | 1.16 / 1.29 | — | 3.57 / 4.43 | 81 / 75 % |
+| labels: rest | 6.03 / 6.04 | 9.33 / 9.53 | 10.07 / 9.84 | 1.12 / 1.20 | 4.03 / 4.33 | 5.50 / 4.93 | 80 / 76 % |
+
+The other threads (median / p99 / worst, main / branch). The main thread's work equals *work* within 0.01 ms in every
+cell. Logic medians are mostly 0 (a tick starts in few frames) and mean nothing; the workers' medians are 0.
+
+| Segment | Logic p99 | Logic worst | Worker 3 p99 | Worker 4 p99 |
+|---|---|---|---|---|
+| follow: rest | 2.32 / 2.31 | 2.47 / 2.39 | 0.98 / 0.95 | 0.91 / 1.00 |
+| pan: rest | 2.32 / 2.40 | 2.39 / 2.91 | 1.05 / 1.00 | 0.90 / 0.98 |
+| zoom in and out: rest | 2.52 / 2.31 | 2.62 / 2.55 | 0.90 / 0.97 | 1.00 / 0.90 |
+| widest view: rest | 3.21 / 2.94 | 3.34 / 3.17 | 1.02 / 1.06 | 1.00 / 1.03 |
+| labels: rest | 2.71 / 2.58 | 3.21 / 2.84 | 0.93 / 0.95 | 0.99 / 1.03 |
+
+Also: **input latency** 24.7 / 23.1 ms (5a: 18.5 to 23.8); **world shimmer** 0.0309 / 0.0397 (guard 0.06; see Ruling S).
+Raw output kept locally while the branch lives (`.superpowers/sdd/`, gitignored); the capture folders were
+`build/measure/20261115-194444` (main) and `20261115-194750` (branch).
+
+**Reading them.** 5a's budgets hold on the branch: the heaviest work median is 1.50 ms (widest view; budget 2.5) and
+the heaviest logic p99 is 2.94 ms (budget 5.5). Against main, the work medians move by at most 0.13 ms (`labels: first
+0.5 s`, 82 frames, so noisy; `labels: rest` moves 0.08), inside 5a's 0.15 ms line. One p99 moves by more than 5a's 0.5 ms line: `follow: rest` work p99 (1.77 to 3.45 ms), inside the spread 5a saw
+between its own runs of the same unchanged scene (2.99, 3.13 and 1.25). A single run past the line counts only once a second confirms it, and none was taken: the
+world's per-frame cost is unchanged within noise, as expected, since the map's tiles are drawn by the same quads as
+5a's noise (Decision: matching 5a's quads exactly) and the labels add a handful of names.
+
+**Ruling M: the world run's walker counts changed, so main against the branch is not like for like.** The busiest view
+retuned from 58x50 to 60x52 tiles (3,120 walkers) and walkers whose orbit would stand on sea or peaks redraw onto
+land (Ruling L), so the branch's world run draws different crowds from main's at the same camera positions. The
+branch's numbers are the world run's new baseline for 5b2 onward; main's are kept only to show the cost did not move.
+
+**The month step: 1.78 ms median.** `measure` sends no input and no flag presses the calendar key (a debug
+control, `Control::AdvanceCalendar`), so the step was timed by hand: `pixi run project_n profile --seconds 40 --
+--world --workers 2` (releasedbg, windowed), the user focusing the window and pressing M, then the `MonthStep::Run`
+zone (`src/game/npcs.cpp`, the logic thread) read from the capture with `tracy-csvexport -u -e`. 23 steps with the
+50,000 world NPCs homed in cities: min 1.24 ms, median 1.78 ms, max 8.48 ms. 20 of the 23 took 1.24-3.45 ms; the
+three slow ones (6.15, 6.40, 8.48 ms) each came 0.12-0.15 s after the step before (a quick double press), though a
+fourth step that close took 1.78 ms. Either way a month step costs well under one 60 Hz frame of logic time, and the
+logic tick that runs it stalls by design (`Logic::RunTick`). Making the step scriptable, so `measure` can time it
+unattended, is left for 5b2, whose days within a month give the calendar a real driver.
+
+### Rulings made while building
+
+The plan ledger's calls, each with its reason and what it costs if wrong. Commits are named by subject.
+
+**The map and its reader.**
+
+- **A ford on a tile without a river, or on an impassable river tile, is refused (A, and the review's Important).** A
+  ford is by definition a river crossing and an unchecked one silently does nothing or opens deep water. A ford on a
+  bridged tile is refused too. Cost if wrong: one refusal to remove.
+- **Duplicate place keys are refused (C).** Keys are identities later tasks look up (capital, port).
+- **Walk costs are bounded (MAX_WALK_COST 1000, path sums in u64) and rasterising a road is direction independent
+  (Task 1's review).** An overflow or a tie decided by direction would change the hash.
+- **`WorldMapSource` carries optional line numbers (D),** so `Build`'s refusals read "line L: ..." and the reader fills
+  them instead of parsing text. `road_cost` and `ford_cost` refusals carry no line (F); the reader prefixes them with
+  its key's line.
+- **Danger sites are exempt from reachability (E);** the spec asks it of cities only. Cost: 5c adds the check.
+- **Strings named by data are capped (MOST_STRINGS) and refuse past it,** so the u16 id cannot wrap (Task 2's review).
+  Ruling B: Task 2 rewrote the old "unknown top-level key warns" case to the new rule (a key with both languages is a
+  data string, no warning); not a loosened test, the behaviour changed.
+- **The look may give kinds and markers the map doesn't use (G);** only a kind or sort the map uses and the look lacks
+  refuses, but every sprite the look names is checked against the manifest. A reload keeps the old look on a refusal
+  (`KeepLook`, tested in `data_watch_tests`).
+- **Shipped-map tests needing game constants live in the game suite (I);** data sits below game and includes no game
+  header (`tests/unit/game/shipped_world_tests.cpp`).
+- **Names: "Immortal Isle" (K, then the user).** First kept "Penglai Isle" as the mythic proper name; the user chose a
+  name by meaning, as the other places (`chore(data): name the eastern isle Immortal Isle in English`). 幽灯林 is
+  "Ghostlight Woods".
+- **The user's call on the first map preview:** the north-east river ends in the sea or a lake, and the oasis lake gets a
+  deep-water middle; the generator then smoothed straight shores in three rounds (longest straight shore 10 to 5 tiles,
+  the port's coast pushed by noise up to ~7 tiles).
+- **Diagonal steps stay on the world map** (`docs(design): keep diagonal steps on the world map`).
+
+**The world scene.**
+
+- **Gatherings and spread walkers redraw off impassable tiles (L).** The plan named only spread walkers because 5a's
+  gatherings sat inland; the spec's "on passable tiles" governs. Cost: denser crowds on land, which is why the busiest
+  view retuned to 60x52 (3,120 walkers; busiest redraw count 1,887 before the retune).
+- **The port's pile limit is 210 (the user's call).** 5a's two bounds conflicted at the coastal port: the busiest
+  16-screen window needs 2,000 walkers or more (125 a screen on average) while no screen may hold more than 150, with
+  the window about 35 to 40% sea. No retune satisfied both (a sweep found 206 at (31240, 9580)). The user raised the
+  port's limit (`PORT_PILE` 210; the crowd of the port alone); the 2,000 in the busiest view stays so measurements
+  compare, and the pile test samples the real densest screen.
+- **Place names sit below the tile centre (T).** Two defects hid the start city's name: a label faded for size still
+  took room in the label pass (so the cultivator's invisible label hid the capital's name at the widest zoom), and the
+  anchor 60 units above the tile lay on the label of a cultivator standing on the city. Fixed test-first in two commits,
+  `fix(gfx): let labels too small to read give way to the rest` (such a label takes no room, still fades out) and
+  `fix(game): name each city under its tile, clear of a cultivator there` (anchor below, marker size + 8). Cost if
+  wrong: a reverted constant and rule, pictures refreshed.
+- **`world_places` at LABELS_ZOOM 0.6 over the capital, 1920x1080 (R); `world_places_widest` over the capital too (Q,
+  V).** The widest picture was first to pair the capital with its nearest other place (amended Q, U); the review found no
+  pair of names fits a 1080p widest view with margin on the shipped map, so it is centred on the capital and pins fix
+  (a); names beside names stay covered by the label-pass unit tests. `world_widest` stays over `WORLD_BUSIEST`, the view
+  `measure` and the shimmer case share. Cost: a second picture if a pair ever fits.
+- **Shimmer is recorded (S):** the world scene's shimmer is 0.0397 (5a: 0.0309), under the guard of 0.06; the map's
+  kind edges and overlays add a little. The backlog item's acceptance check stays "world shimmer <= 0.02" (5b-look).
+
+**World NPCs.**
+
+- **Each city's NPCs home on a tile index (N, O, P).** In a scene with the map, `Npc::cell` is a `WorldMap` tile index
+  (column + row x `WORLD_COLUMNS`); arena and stress keep the 64-column grid. `home` is a city's place index; a load
+  refuses a home that is not a city's, or a cell past the map, and any home but `NO_HOME` in a scene without it. The
+  world scene's `worldNpcs` trait stays 0 and its Build spawns the cities' shares in place order, the first
+  floor(share x 7 / 10) on the city's tile and the rest on its region at a keyed draw (`PURPOSE_HOME_TILE` 10;
+  purpose 9 retired). Because `Npc` is in the active components too, `ACTIVE_VERSION` went 4 to 5 and `WORLD_VERSION`
+  to 2; both save fuzz seeds regenerated, an old save refuses. Cost: a conversion.
+- **The three towns round the sect, the oasis and the marsh town (J):** the port already holds the busiest gathering,
+  so "the first three other cities" skips both the start and the port.
+
+**Review and process.**
+
+- The reader is fuzzed (`tests/fuzz/corpus/`), as tests/AGENTS.md asks of every reader (Task 5's review). Its 60 s run
+  met an ASan container-overflow inside yaml-cpp's `ScanDirective`, reached from `ParseGameData` too: pre-existing and
+  already in the sweep-up backlog (chunk 4b seals, Ruling 9); no action here.
+- `KeepLook` takes its `std::expected` by value, a sink parameter moved into `current` on a change. The variant test
+  keeps its own copy of 5a's seed and purpose constants as an independent oracle; a failure reports a count, not the
+  tile.
+- The version-4 refusal test has no version-5 positive control of its own: the save round-trip tests load the same
+  shapes.
+- "Route costs are whole numbers" in the docs states 5b2 work already true of 5b1's map (Task 4).
+
+### Known limits
+
+- **A month step is timed by hand only** (above): no flag or camera-path step drives the calendar yet.
+- **A place name can still lose to a creature label** where the label pass finds no room (Player outranks Place in
+  priority); Ruling T only cleared the start city's name.
+- **`Strings` has no key index.** The reader's `dataKeys` set duplicates `Strings::keys` and `Add`'s `!Find` assert is
+  linear (quadratic in debug for big tables); fold both into one index before or with 5b2's generated names.
+- **Task 2's "too many strings" refusal is covered by inspection only** (the cap is not injectable).
+- **Placeholder art:** a faint knot where road and river arms meet at a tile centre; pre-existing over-120-column lines
+  in `art/placeholders.py` and `art/scenes.toml`; three straight single-kind runs of 10 tiles (row 11 sand/grass, row 25
+  hills/grass, row 69 meadow/forest) with no visible artefact.
+- **`tests/unit/data/seals_tests.cpp`'s broken-reload test has the tautological shape** Task 7 fixed for the look (the
+  seals' keep-or-replace decision is untested in app).
