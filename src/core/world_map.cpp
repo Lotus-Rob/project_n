@@ -219,6 +219,16 @@ std::expected<void, Error> CheckShape(const WorldMapSource& source) {
     }
     for (std::size_t index = 0; index < source.kinds.size(); ++index) {
         const TerrainKind& kind = source.kinds[index];
+        // The name is the look's key: two kinds of one name would draw alike.
+        const auto twin = std::ranges::find(
+            source.kinds.begin(), source.kinds.begin() + static_cast<std::ptrdiff_t>(index), kind.name, &TerrainKind::name
+        );
+        if (twin != source.kinds.begin() + static_cast<std::ptrdiff_t>(index)) {
+            return std::unexpected{ Refuse(
+                AtLine(source.lines.kinds, index) +
+                std::format("terrain kinds {} and {} share the name '{}'", twin - source.kinds.begin(), index, kind.name)
+            ) };
+        }
         if (kind.cost != IMPASSABLE_COST && kind.cost > MAX_WALK_COST) {
             return std::unexpected{ Refuse(
                 AtLine(source.lines.kinds, index) + std::format(
@@ -308,9 +318,32 @@ struct PlaceLayer {
     u16 start = NO_PLACE;
 };
 
+// Whether place `index`'s kind suits what it says: a sort only for a danger, the start only for a city, people only for a
+// city (a danger's would be read and never spawned).
+std::expected<void, Error> CheckRole(const WorldMapSource& source, std::size_t index) {
+    const Place& place = source.places[index];
+    std::string problem;
+    if ((place.kind == PlaceKind::City) != place.sort.empty()) {
+        problem = place.sort.empty() ? "is a danger without a sort" : "is a city with a sort";
+    }
+    else if (place.start && place.kind != PlaceKind::City) {
+        problem = "starts the game but isn't a city";
+    }
+    else if (place.kind == PlaceKind::Danger && place.people > 0) {
+        problem = "is a danger with people";
+    }
+    if (!problem.empty()) {
+        return std::unexpected{
+            Refuse(AtLine(source.lines.places, index) + std::format("place {} ('{}') {}", index, place.key, problem))
+        };
+    }
+    return {};
+}
+
 // Puts the places on their tiles, each on a walkable tile of its own, and finds the one start.
 std::expected<PlaceLayer, Error> PlaceTiles(const WorldMapSource& source, const std::vector<u16>& cost) {
     PlaceLayer layer{ .place = std::vector<u16>(cost.size(), NO_PLACE), .start = NO_PLACE };
+    u64 people = 0;
     for (std::size_t index = 0; index < source.places.size(); ++index) {
         const Place& place = source.places[index];
         const auto twin = std::ranges::find(
@@ -345,26 +378,25 @@ std::expected<PlaceLayer, Error> PlaceTiles(const WorldMapSource& source, const 
                                                      )
             ) };
         }
-        if ((place.kind == PlaceKind::City) != place.sort.empty()) {
+        if (auto role = CheckRole(source, index); !role) {
+            return std::unexpected{ role.error() };
+        }
+        people += place.people;
+        if (people > MOST_WORLD_PEOPLE) {
             return std::unexpected{ Refuse(
-                AtLine(source.lines.places, index) +
-                std::format(
-                    "place {} ('{}') {}",
-                    index,
-                    place.key,
-                    place.sort.empty() ? "is a danger without a sort" : "is a city with a sort"
-                )
+                AtLine(source.lines.places, index) + std::format(
+                                                         "place {} ('{}') brings the cities' people to {}, over the most a "
+                                                         "world holds, {}",
+                                                         index,
+                                                         place.key,
+                                                         people,
+                                                         MOST_WORLD_PEOPLE
+                                                     )
             ) };
         }
         layer.place[tile] = static_cast<u16>(index);
         if (!place.start) {
             continue;
-        }
-        if (place.kind != PlaceKind::City) {
-            return std::unexpected{ Refuse(
-                AtLine(source.lines.places, index) +
-                std::format("place {} ('{}') starts the game but isn't a city", index, place.key)
-            ) };
         }
         if (layer.start != NO_PLACE) {
             return std::unexpected{ Refuse(

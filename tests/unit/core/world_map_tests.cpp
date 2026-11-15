@@ -348,6 +348,43 @@ TEST_CASE("a refusal names the line of the entry it refuses when the source know
     CHECK(crowdedRefusal.contains("line 40: place 1"));
 }
 
+TEST_CASE("a danger site homing people is refused, naming its line") {
+    constexpr u32 PLACE_LINE = 30;
+    core::WorldMapSource source = Source({ "0.." });
+    source.places.push_back(
+        { .key = "pit", .kind = core::PlaceKind::Danger, .sort = "pit", .tile = { .column = 2, .row = 0 }, .nameKey = "pit" }
+    );
+    source.lines.places = { PLACE_LINE - 1, PLACE_LINE };
+    core::WorldMapSource empty = source;
+    const bool built = core::WorldMap::Build(std::move(empty)).has_value();
+    CHECK(built);
+    source.places[1].people = 1;
+    const std::string refusal = Refusal(source);
+    CHECK(refusal == "line 30: place 1 ('pit') is a danger with people");
+}
+
+TEST_CASE("two terrain kinds with one name are refused, naming the second's line") {
+    constexpr u32 KIND_LINE = 7;
+    core::WorldMapSource source = Source({ "0.." });
+    source.kinds[SAND].name = "meadow";
+    source.lines.kinds = { KIND_LINE - 3, KIND_LINE - 2, KIND_LINE - 1, KIND_LINE };
+    const std::string refusal = Refusal(source);
+    CHECK(refusal == "line 7: terrain kinds 0 and 3 share the name 'meadow'");
+}
+
+TEST_CASE("cities homing more than the most a world holds are refused, naming the city that crosses it") {
+    constexpr u32 PLACE_LINE = 12;
+    core::WorldMapSource source = Source({ "0.1" });
+    source.places[0].people = core::MOST_WORLD_PEOPLE - PEOPLE;
+    source.lines.places = { PLACE_LINE - 1, PLACE_LINE };
+    core::WorldMapSource full = source;
+    const bool built = core::WorldMap::Build(std::move(full)).has_value(); // exactly the most
+    CHECK(built);
+    source.places[1].people = PEOPLE + 1;
+    const std::string refusal = Refusal(source);
+    CHECK(refusal == "line 12: place 1 ('city1') brings the cities' people to 100001, over the most a world holds, 100000");
+}
+
 TEST_CASE("TilesIn finds the tiles a view overlaps, clamped to the map") {
     constexpr u32 COLUMNS = 150;
     constexpr u32 ROWS = 85;

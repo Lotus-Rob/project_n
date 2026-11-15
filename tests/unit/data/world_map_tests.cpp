@@ -137,7 +137,7 @@ struct Broken {
 };
 
 TEST_CASE("the reader refuses, naming the line") {
-    constexpr std::array<Broken, 17> CASES{ {
+    constexpr std::array<Broken, 19> CASES{ {
         Broken{ .from = "..~..\n", .replacement = "..~.\n", .onLineOf = "..~.\n", .says = "row" },
         Broken{ .from = "..~..\n", .replacement = "..x..\n", .onLineOf = "..x..", .says = "'x'" },
         Broken{ .from = ", cost: 10", .replacement = "", .onLineOf = "name: meadow", .says = "cost" },
@@ -158,6 +158,12 @@ TEST_CASE("the reader refuses, naming the line") {
         Broken{ .from = "[[3, 1], [3, 2]]", .replacement = "[[3, 1], [3, 9]]", .onLineOf = "rivers:", .says = "river" },
         Broken{ .from = "tile_size: 256", .replacement = "tile_size: 1e-50", .onLineOf = "tile_size", .says = "tile_size" },
         Broken{ .from = "grid: |", .replacement = "gridx: |", .onLineOf = "road_cost", .says = "grid" },
+        Broken{ .from = "sort: mountain_pass, ",
+                .replacement = "sort: mountain_pass, people: 5, ",
+                .onLineOf = "key: wolf_pass",
+                .says = "danger with people" },
+        Broken{
+            .from = "name: meadow", .replacement = "name: deep_water", .onLineOf = "symbol: \".\"", .says = "share the name" },
     } };
     const core::Strings strings = Names();
     for (const Broken& broken : CASES) {
