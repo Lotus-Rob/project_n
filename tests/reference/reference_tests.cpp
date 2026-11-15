@@ -1491,11 +1491,12 @@ TEST_CASE("a screen-wide seal at the smallest zoom: no shimmer") {
 
 // A regression guard, not a proof of no shimmer: the tiles shimmer today, above the 0.02 the labels and seals hold.
 TEST_CASE("the world's tiles and walkers at the smallest zoom: shimmer held to its bound") {
-    // Measured 0.0397 on the data-driven world map (2026-11-15; 5a's flat world measured 0.0309). It is the ground's, not the
-    // walkers': the worst tiles sit where two kinds of terrain meet, whose hard tile-quad edges step a whole pixel at a time
-    // (the dark forest's small ink over the dark backdrop weighs its tiles' changes more). The fix is the sweep-up backlog's
-    // world map look (blending between kinds), which must bring this to 0.02 or under and tighten the bound. About one and a
-    // half times the measure (the seals' 0.02 is about twice their 0.011).
+    // Measured 0.0436 on the data-driven world map (2026-11-15, its harbour reshaped; 0.0397 before; 5a's flat world measured
+    // 0.0309). It is the ground's, not the walkers': the worst tiles sit where two kinds of terrain meet, whose hard tile-quad
+    // edges step a whole pixel at a time (the dark forest's small ink over the dark backdrop weighs its tiles' changes more),
+    // so the harbour's longer shore adds some. The fix is the sweep-up backlog's world map look (blending between kinds),
+    // which must bring this to 0.02 or under and tighten the bound. About 1.4 times the measure (the seals' 0.02 is about
+    // twice their 0.011).
     constexpr f64 MOST_CHANGE = 0.06;
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
