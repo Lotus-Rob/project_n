@@ -333,8 +333,12 @@ Also: **input latency** 24.7 / 23.1 ms (5a: 18.5 to 23.8); **world shimmer** 0.0
 Raw output kept locally while the branch lives (`.superpowers/sdd/`, gitignored); the capture folders were
 `build/measure/20261115-194444` (main) and `20261115-194750` (branch).
 
-**Reading them.** 5a's budgets hold on the branch: the heaviest work median is 1.50 ms (widest view; budget 2.5) and
-the heaviest logic p99 is 2.94 ms (budget 5.5). Against main, the work medians move by at most 0.13 ms (`labels: first
+**Reading them.** 5a's work and logic budgets hold on the branch, with no hitches: the heaviest work median is 1.50 ms
+(widest view; budget 2.5), the heaviest work p99 is 4.35 ms (widest view; budget 5.5) and the heaviest logic p99 is
+2.94 ms (budget 5.5). One of 5a's budgets does not hold as written: world shimmer, ≤ 0.031 in 5a's budgets table, is
+0.0397 on the branch. That is the approved 5b1 spec's own change, not a regression: its goals line (written in "docs(design):
+design 5b1, the world map as data") replaces the 0.031 ceiling with a 0.06 guard, because the map's kind edges and
+overlays add shimmer the noise ground did not have (Ruling S). Against main, the work medians move by at most 0.13 ms (`labels: first
 0.5 s`, 82 frames, so noisy; `labels: rest` moves 0.08), inside 5a's 0.15 ms line. One p99 moves by more than 5a's 0.5 ms line: `follow: rest` work p99 (1.77 to 3.45 ms), inside the spread 5a saw
 between its own runs of the same unchanged scene (2.99, 3.13 and 1.25). A single run past the line counts only once a second confirms it, and none was taken: the
 world's per-frame cost is unchanged within noise, as expected, since the map's tiles are drawn by the same quads as
@@ -351,7 +355,7 @@ control, `Control::AdvanceCalendar`), so the step was timed by hand: `pixi run p
 zone (`src/game/npcs.cpp`, the logic thread) read from the capture with `tracy-csvexport -u -e`. 23 steps with the
 50,000 world NPCs homed in cities: min 1.24 ms, median 1.78 ms, max 8.48 ms. 20 of the 23 took 1.24-3.45 ms; the
 three slow ones (6.15, 6.40, 8.48 ms) each came 0.12-0.15 s after the step before (a quick double press), though a
-fourth step that close took 1.78 ms. Either way a month step costs well under one 60 Hz frame of logic time, and the
+fourth, 0.11 s after the one before, took 1.78 ms. Either way a month step costs well under one 60 Hz frame of logic time, and the
 logic tick that runs it stalls by design (`Logic::RunTick`). Making the step scriptable, so `measure` can time it
 unattended, is left for 5b2, whose days within a month give the calendar a real driver.
 
@@ -391,7 +395,7 @@ The plan ledger's calls, each with its reason and what it costs if wrong. Commit
 
 - **Gatherings and spread walkers redraw off impassable tiles (L).** The plan named only spread walkers because 5a's
   gatherings sat inland; the spec's "on passable tiles" governs. Cost: denser crowds on land, which is why the busiest
-  view retuned to 60x52 (3,120 walkers; busiest redraw count 1,887 before the retune).
+  view retuned to 60x52 (3,120 walkers): the redraws left 1,887 walkers in the busiest view, so the grid was retuned from 58x50 to 60x52.
 - **The port's pile limit is 210 (the user's call).** 5a's two bounds conflicted at the coastal port: the busiest
   16-screen window needs 2,000 walkers or more (125 a screen on average) while no screen may hold more than 150, with
   the window about 35 to 40% sea. No retune satisfied both (a sweep found 206 at (31240, 9580)). The user raised the
@@ -408,8 +412,8 @@ The plan ledger's calls, each with its reason and what it costs if wrong. Commit
   pair of names fits a 1080p widest view with margin on the shipped map, so it is centred on the capital and pins fix
   (a); names beside names stay covered by the label-pass unit tests. `world_widest` stays over `WORLD_BUSIEST`, the view
   `measure` and the shimmer case share. Cost: a second picture if a pair ever fits.
-- **Shimmer is recorded (S):** the world scene's shimmer is 0.0397 (5a: 0.0309), under the guard of 0.06; the map's
-  kind edges and overlays add a little. The backlog item's acceptance check stays "world shimmer <= 0.02" (5b-look).
+- **Shimmer is recorded (S):** the world scene's shimmer is 0.0397 (5a: 0.0309), under the guard of 0.06, which replaces 5a's
+  ≤ 0.031 shimmer budget (5b1's goals line); the map's kind edges and overlays add a little. The backlog item's acceptance check stays "world shimmer <= 0.02" (5b-look).
 
 **World NPCs.**
 
