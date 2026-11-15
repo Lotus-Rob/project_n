@@ -147,6 +147,18 @@ TEST_CASE("the look reader refuses what the map can't be drawn by, naming the li
         { .why = "a missing bridge",
           .text = With("bridge: { across: bridge_h, down: bridge_v }\n", ""),
           .says = "world_look line 1: the look has no bridge" },
+        { .why = "a sprite in the atlas the world scene doesn't load",
+          .text = With("ford: ford", "ford: cell_plain"),
+          .says = std::format(
+              "world_look line {}: ford names the sprite \"cell_plain\", which the world scene doesn't load",
+              LineOf(SMALL_LOOK, "ford: ford")
+          ) },
+        { .why = "an unused kind naming a sprite the world scene doesn't load",
+          .text = With("  meadow:", "  snow: [cell_snow]\n  meadow:"),
+          .says = std::format(
+              "world_look line {}: kind snow names the sprite \"cell_snow\", which the world scene doesn't load",
+              LineOf(With("  meadow:", "  snow: [cell_snow]\n  meadow:"), "snow:")
+          ) },
         { .why = "a marker with an unknown sprite",
           .text = With("marker_city", "marker_nowhere"),
           .says = std::format(

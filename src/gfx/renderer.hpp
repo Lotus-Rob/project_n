@@ -130,9 +130,9 @@ public:
     /// Draws the world map of a snapshot that shows it (core::Snapshot::worldMap) from `map` and `look` from the next frame
     /// on, with no restart: the tiles in view (gfx/terrain_draw.hpp), under the ground and everything else, laid out again
     /// only when the view reaches other tiles or this is called again. Until it is called a snapshot's map draws nothing.
-    /// `look`'s sprites must be resident when the map draws: in the manifest (data::LoadWorldLook checks that) and in the
-    /// sprites of the scene that shows the map (art/scenes.toml's `world`), which a look naming another sprite would draw
-    /// from a page that isn't loaded.
+    /// `look`'s sprites must be resident when the map draws: in the manifest and in the sprites of the scene that shows the
+    /// map (art/scenes.toml's `world`, data::WORLD_LOOK_SCENE), both of which data::LoadWorldLook checks; a look naming
+    /// another sprite would draw from a page that isn't loaded.
     void SetWorld(std::shared_ptr<const core::WorldMap> map, const core::WorldLook& look);
 
     /// Draws glows for the reduce flashing setting from the next frame on (off until it is called): pulses hold still and

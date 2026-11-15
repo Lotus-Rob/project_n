@@ -1,6 +1,8 @@
 #include "app/app.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/world_look.hpp"
+#include "data/world_look.hpp"
+#include "game/scenes.hpp"
 
 #include <doctest/doctest.h>
 
@@ -190,6 +192,12 @@ TEST_CASE("a different look replaces the running one, and reports the change") {
     const bool replaced = app::KeepLook(current, edited);
     CHECK(replaced);
     CHECK(current.Hash() == edited.Hash());
+}
+
+// The look reader checks sprites against the manifest scene it names, which must be the one game shows the map in.
+TEST_CASE("the look's sprites are checked against the world scene's") {
+    const std::string_view world = game::SceneName(game::WORLD_SCENE);
+    CHECK(world == data::WORLD_LOOK_SCENE);
 }
 
 TEST_CASE("an identical look changes nothing") {
