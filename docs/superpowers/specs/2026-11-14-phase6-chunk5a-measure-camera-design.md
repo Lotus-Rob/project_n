@@ -1,6 +1,6 @@
 # Phase 6, chunk 5a: the measurements, the world scene and the camera
 
-Date: 2026-11-14 · Status: approved 2026-11-14 (re-checked against the scenes part as merged:
+Date: 2026-11-14 · Status: **implemented 2026-11-15** (see Outcome; approved 2026-11-14, re-checked against the scenes part as merged:
 `2026-11-14-phase6-chunk5-scenes-design.md`, its Outcome) · Plan: `2026-11-14-phase6-chunk5a.md` · Chunk spec: `2026-11-10-phase6-chunk5-world-map-design.md` · Phase spec: `2026-11-10-phase6-design.md`
 
 ## In short
@@ -266,7 +266,7 @@ against.
 | Memory | 62 GiB |
 | OS | CachyOS, kernel 7.3.4-1-cachyos |
 | Desktop | niri 26.04 (Wayland); the game on SDL 3.4.16's Wayland driver, presenting with mailbox (`--unpaced`: the driver offers no immediate) |
-| Display measured on | DP-3, Dell S2721DGF, 2560×1440 at 165.08 Hz, variable refresh off; the game logged `display: 2560x1440 at 165 Hz` in every run. A second monitor, DP-1 (Dell U2722DE, 2560×1440 at 59.95 Hz), sits to its left |
+| Displays | Three. Measured on DP-3, Dell S2721DGF, 2560×1440 at 165.08 Hz, variable refresh off (focused in every run; the game logged `display: 2560x1440 at 165 Hz` each time). The other two are 60 Hz: DP-1, Dell U2722DE, 2560×1440 at 59.95 Hz, and DP-2, another Dell U2722DE at 59.95 Hz, turned to portrait (1440×2560) |
 
 **How to read the tables.** Times are in ms; each cell is run 1 / run 2 / run 3. *Frame* is the main thread's `Run`
 zone, start to start; *work* is the frame less its wait for the next swapchain image (`WaitForGpu`). The main thread's
@@ -368,13 +368,14 @@ done and an image is free), summed over a segment and divided by its frame time.
   basis for moving work onto the GPU (the backlog's GPU items).
 
 **The 60 Hz lock seen during Task 8.** Two earlier runs, taken while the desktop was in use, locked at ~16.7 ms frames
-though the log said 165 Hz. Here every run locked at 6.06 ms, with the 165 Hz monitor focused. The likely cause is the
-second, 60 Hz monitor: niri opens a new window on the focused output, and the game logs the display mode right after
-creating its window, probably before Wayland has said which output the window is on, so the logged mode needn't be the
-window's. This is unproven (proving it would have moved the user's focus). It is a known limit: **the display line
-can name the wrong monitor**, and with it `measure`'s `paced` verdict; it is fixed on this branch at finishing. Until
-then, run `measure` with the 165 Hz monitor focused, and trust a run only if its rows say `paced` or its frame medians
-sit at 1/refresh.
+though the log said 165 Hz; Task 9's runs, with the 165 Hz monitor focused, locked at 6.06 ms. The cause, proven at
+finishing: the game read its display once, right after creating its window, and niri then placed the window on the
+focused output. A three-second windowed run logged `display: 2560x1440 at 165.1 Hz` (DP-3) at creation, then the window
+landed on the focused 59.95 Hz DP-2. Fixed on this branch: the window keeps the display it is on, reads it again when it
+is shown, goes fullscreen, moves to another display or that display's mode changes, and logs it again, with the
+display's name, whenever it differs (`platform::MoveToDisplay`, tested with a window moving between a 165 Hz display
+and two 60 Hz ones); `measure` takes the log's last display line, so its `paced` verdict uses the display the window
+ended on. Task 9's single 165 Hz lines were right: its frames sat at one 165 Hz interval.
 
 **The first budgets.** Each one gives its reason; a later chunk that breaks one says so in its Outcome, with why. The
 budgets are ceilings that catch large regressions; modest ones are caught by measuring main's head and the branch in
@@ -391,3 +392,111 @@ measured in the same sitting, keeps it: when both break it, the machine moved, n
 | Input latency | ≤ 50 ms | 23.8 ms | three 60 Hz frames: the press waits up to one logic tick, then a publish, a draw and a present; Task 8's runs (36.4 ms, and 49.4 ms at 60 Hz) spread wider than these three |
 | World shimmer | ≤ 0.031 | 0.0309 | no worse than today; the 0.02 the labels and seals hold is the world map look's job (Task 5's ruling) |
 | Frame time, worst frame, GPU share | no budget | — | paced, the frame time is the display's interval and the GPU share the wait to present; worst frames are single frames, ±1.9 ms between runs |
+
+### Rulings made while building
+
+The plan ledger's calls, with what stood behind them. Each one names what it costs if wrong.
+
+**The world and its tiles.**
+
+- **The world's tile shimmer is a regression guard for now (Task 5).** Its tiles shimmer at 0.0309 against the 0.02 the
+  labels and seals hold: the hard, un-anti-aliased quad edges where two terrain kinds meet step a whole pixel at a time
+  (the dark forest over the dark backdrop weighs most). The fix is the sweep-up backlog's world map look (blending
+  between kinds, chunk 5b), which replaces those edges, so anti-aliasing today's edges here would be redrawn there. The
+  reference case is named as a guard (bound 0.06, about twice the measure, as the seals' 0.02 is of their 0.011) and
+  prints `world shimmer:` for `measure`; the backlog item carries the acceptance check "world shimmer ≤ 0.02". **Open
+  for the user's review**; if wrong, a 5a task anti-aliases the tile edges (a shader or geometry change and new
+  pictures).
+- **Ground tiles and the painted ground skip the per-instance cull** (`DrawList::AddWhole`): culled by centre, a tile or
+  the 1920×1080 ground overlapping the view's edge with its centre outside would pop. `TilesIn` already picks the
+  tiles, so a publish holds exactly the tiles in view. At finishing the world stopped drawing the painted ground under
+  its tiles: `Scene::PublishGround` draws it by default and the world's override draws only tiles.
+- **The atlas packs in list order on aligned regions** (`art/sprites.toml` order; regions aligned to 2^(mips-1)
+  texels). Every picture moved once, looked at, in that commit; the tiles commit then moved none. A list-order packer is
+  stable under appends, and aligned regions make a sprite's mips independent of where it lands.
+- **The crowd (the user, after wave B: "too many wanderers").** 20,000 walkers became 5,625: 1,600 spread about 4 a
+  screen, the busiest gathering 2,900 (about 123 a screen round `WORLD_BUSIEST`), three towns of 375. The start is quiet
+  country (5 walkers on its screen; no gathering within the widest view of it, `WIDEST_HALF_VIEW` read as half-extents,
+  the strict reading), the busiest window at the widest view holds 2,025, and no screen holds over 146.
+
+**The camera.**
+
+- **The view culls by the scene shown** (`core::ShownChange`): while leaving, App still draws the old scene under the
+  new change's number, so naming `sceneChange.change` would let the old scene's view cull the new one after the swap.
+- **Pan and zoom hold while a calendar step's transition draws**; zoom applies at most one wheel notch a frame, the rest
+  over the next frames, which keeps a notch inside `CULL_MARGIN` (about a quarter view per publish interval).
+- **Edge pan arms only once the cursor has been seen inside the window clear of the edge band** since it last arrived
+  or the window regained the focus: a cursor resting at an edge, or crossing the band on its way in, never moves the
+  camera unasked (accessibility first). Cost if wrong: a player entering at the edge moves inward once.
+- **The right stick's pan keeps the radial dead zone** that `Move()` and the device-in-use check use.
+- **The scripted Move is held through the follow segment**, and the input latency is that press's first drawn movement.
+  The cut to `WORLD_BUSIEST` for the zoom segments stays (panning there would muddle the zoom), and each segment's first
+  0.5 s (`NEW_GROUND_SECONDS`) is its own row, the new-ground hitch measured rather than hidden.
+
+**The measurements.**
+
+- **A run whose log shows a pause, a camera path warning or an unfinished path is untrusted**: its row says why, a
+  warning prints, and `measure` exits 1 (the table still prints). Never a gate, but a scripted run can't miss it.
+- **The GPU share is annotated, not redefined**: it stays `WaitForGpu` over the frame time, marked `paced` where the
+  frame median is within 3 % of the display's interval (then it is the wait to present).
+- **Both Tracy exports use the unit separator** (`tracy-csvexport -s`): names, zone texts and messages may hold commas
+  (MSVC's `__FUNCTION__` keeps template arguments), and the exports aren't quoted. `measure` starts the game through
+  `xmake run` as `profile` does.
+- **Main's head and the branch are measured in one sitting** (the noise above): Task 8's world run a day before Task 9's
+  had p99s 2 to 4 times lower on the same code.
+- **`measure` keeps its captures in `build/measure/<time>/`, not `build/profiles/`** as Goal 4 says: `profile` keeps the
+  user's own recordings there, while `measure`'s captures, exports and logs are a run's working files, removed unless
+  `--keep`, a run fails or a run is untrusted (its game log says why).
+- **The world's shimmer is measured at the smallest zoom only** (Goal 4 asks for several): that is where the most tile
+  edges sit near pixel size, over the busiest region whole, so it is the worst case for crawling edges; the labels' and
+  seals' shimmer cases cover the other zooms for text and seals. The world map look's acceptance check measures it at
+  several zooms (the sweep-up backlog).
+
+**Process.**
+
+- **A fix to this branch's own unmerged commit is folded into that commit before the PR**: main never had the bug, so a
+  `fix:` line would describe nothing a player saw. A test-only correction stays its own `test:` commit.
+- **A portal's step area matches its drawn seal**: an ellipse `PORTAL_RADIUS` across, flattened by `PORTAL_DEPTH_RATIO`
+  (the shipped seals' view ratio, which a test ties it to), checked over the foot's whole path each tick so a dash can't
+  jump the shallow ellipse. A circle fired 12 units outside the drawn rim above and below. Walking through each portal
+  is covered by host and replay tests, as the game has no input injection.
+
+### Known limits
+
+- **A fast drag flick or a snap back from far** shows the view's edge uncovered for one or two publishes (60 Hz): a
+  drag is 1:1 and can't be bounded without hurting its feel, and a glide would add motion and still outrun the margin.
+- **The stress arena's crowd covers its portal seal** (its caption shows); moving the crowd would move every hash.
+- **The portal's caption can draw over a walker's label**: captions have no overlap rules by design (chunk 3's ruling
+  21, as the tablet's caption), and a walker crossing it is brief; none was seen (the closest label came 197 units from
+  the caption over two minutes). **Open for the user's review**; if wrong, the label pass takes captions as fixed
+  obstacles, a change to the labels' design.
+- **A window that grows by more than `CULL_MARGIN` at once** (maximised, or made fullscreen) shows its new edges empty
+  until the next publish culls to the new view, as a drag flick does.
+- **The GPU share on this host is the wait to present** (no immediate present on NVIDIA under niri): no GPU time proper
+  until one is measured unpaced (above).
+
+### Fixed at finishing
+
+- The display line named the wrong monitor (above), with `measure` reading the last one.
+- Every reference picture's renderer draws seals in `seals.yaml`'s looks, as the game does: the arena and stress
+  pictures logged the portal's seal key as missing in 23 cases, and the HUD and glow pictures now show the portal in the
+  arena's corner.
+- A snap back pressed as a scene change arrives is now tested where it would show (the change arriving while the camera
+  holds still); App ends a drag after a paused frame's presses, not before them.
+
+The final review (Opus, whole branch, with GLM alongside) found no Critical issue and one Important: Goal 2's "every
+camera action by mouse, keyboard and gamepad" wasn't met, as zoom had no key and snap back no mouse button. Now `-` and
+`=` zoom (by their place on the keyboard) and a middle click that drags nothing (it never strays past
+`CLICK_SLOP_PIXELS`, 4) snaps back. Its Minors, all fixed: wheel notches during a calendar step's transition now wait for
+its end as snap back does (App dropped them, against `CameraInput::still`'s promise); the world no longer loads the
+painted ground it stopped drawing; the default `Scene::PublishGround` has its profile zone; an untrusted run's folder is
+kept; `SceneTraits::view` says what reads it, and a test checks every scene that follows nothing starts its camera at
+that view's centre; the two rulings and the known limit above.
+
+GLM (glm-5.3-flash) found three more, all confirmed and fixed. Medium: wheel notches drained one a frame, so at 165 Hz
+a flick zoomed nearly three notches inside one publish interval while a snapshot culled to the old view still showed
+(up to about 43 ms), past `CULL_MARGIN`; zoom now runs at most `ZOOM_NOTCHES_PER_SECOND` (30, one every two publish
+intervals) and one notch a frame, and the margin's comment reckons the real 43 ms (1.3 notches and a full-speed pan:
+0.22 of the view each side, under the quarter). Low: the terrain test compared each tile's kind with itself; it now
+pins four tiles' kinds and variants. Low: the input codes' bit guard still named `KeyC` after `-` and `=` were added
+after it.
