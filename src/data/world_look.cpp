@@ -8,12 +8,12 @@ namespace data {
 
 namespace {
 
-constexpr std::string_view WHAT = "world_look";
+constexpr std::string_view LOOK_READER = "world_look";
 
 using Failure = std::unexpected<core::Error>;
 
 Failure Refuse(const YAML::Node& node, std::string_view why) {
-    return Failure{ internal::RefusalAt(WHAT, node, why) };
+    return Failure{ internal::RefusalAt(LOOK_READER, node, why) };
 }
 
 // The sprites a look may name: those of the manifest, and among them those the scene showing the map loads.
@@ -25,7 +25,8 @@ struct Atlas {
 // The sprite `node` names, which must be in the atlas, in the manifest and among the world scene's; `owner` names it in
 // refusals. The renderer would draw a sprite outside the world scene's from a page that isn't loaded.
 std::expected<core::atlas::SpriteId, core::Error> SpriteAt(const YAML::Node& node, std::string_view owner, const Atlas& atlas) {
-    const std::expected<core::atlas::SpriteId, core::Error> sprite = internal::ReadSprite(WHAT, node, owner, *atlas.manifest);
+    const std::expected<core::atlas::SpriteId, core::Error> sprite =
+        internal::ReadSprite(LOOK_READER, node, owner, *atlas.manifest);
     if (!sprite) {
         return std::unexpected{ sprite.error() };
     }
@@ -200,10 +201,12 @@ std::expected<core::WorldLook, core::Error> ParseWorldLook(
         }
         const std::optional<core::SceneId> scene = manifest.SceneNamed(WORLD_LOOK_SCENE);
         if (!scene) {
-            return Failure{ core::Error{ std::format("{}: the manifest has no {} scene", WHAT, WORLD_LOOK_SCENE) } };
+            return Failure{ core::Error{ std::format("{}: the manifest has no {} scene", LOOK_READER, WORLD_LOOK_SCENE) } };
         }
         const Atlas atlas{ .manifest = &manifest, .resident = manifest.Scene(*scene).sprites };
-        internal::NoteUnknownKeys(WHAT, root, "", "key", { "kinds", "roads", "rivers", "bridge", "ford", "markers" }, warnings);
+        internal::NoteUnknownKeys(
+            LOOK_READER, root, "", "key", { "kinds", "roads", "rivers", "bridge", "ford", "markers" }, warnings
+        );
         core::WorldLook look;
         if (auto read = ReadKinds(root, atlas, map, look); !read) {
             return std::unexpected{ std::move(read.error()) };
@@ -218,7 +221,7 @@ std::expected<core::WorldLook, core::Error> ParseWorldLook(
         if (!bridge) {
             return std::unexpected{ bridge.error() };
         }
-        internal::NoteUnknownKeys(WHAT, *bridge, "bridge", "key", { "across", "down" }, warnings);
+        internal::NoteUnknownKeys(LOOK_READER, *bridge, "bridge", "key", { "across", "down" }, warnings);
         const std::expected<core::atlas::SpriteId, core::Error> across = SpriteIn(*bridge, "across", "bridge", atlas);
         if (!across) {
             return std::unexpected{ across.error() };
@@ -244,7 +247,7 @@ std::expected<core::WorldLook, core::Error> ParseWorldLook(
         return look;
     }
     catch (const YAML::Exception& error) {
-        return std::unexpected{ internal::ErrorOf(WHAT, error) };
+        return std::unexpected{ internal::ErrorOf(LOOK_READER, error) };
     }
 }
 
