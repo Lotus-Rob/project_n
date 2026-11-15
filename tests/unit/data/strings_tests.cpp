@@ -98,6 +98,20 @@ TEST_CASE("a data string given twice is an error naming the second") {
     CHECK(error == std::format("strings line {}: place_a is there twice", 16 + (3 * (core::STRINGS - 4))));
 }
 
+TEST_CASE("a data string past the table's cap is refused, naming its line") {
+    constexpr std::size_t ROOM_FOR_ONE = core::STRINGS + 1;
+    const std::string text = Everything() + "place_a:\n  en: A\n  zh: 甲\nplace_b:\n  en: B\n  zh: 乙\n";
+    const std::expected<core::Strings, core::Error> one =
+        data::ParseStrings(Everything() + "place_a:\n  en: A\n  zh: 甲\n", ROOM_FOR_ONE);
+    REQUIRE(one.has_value());
+    const std::expected<core::Strings, core::Error> two = data::ParseStrings(text, ROOM_FOR_ONE);
+    REQUIRE_FALSE(two.has_value());
+    CHECK(
+        two.error().message ==
+        std::format("strings line {}: too many strings: at most {}", 4 + (3 * core::STRINGS), ROOM_FOR_ONE)
+    );
+}
+
 TEST_CASE("a typo of a named string leaves that one missing") {
     const std::string error = ErrorFor(With("fox_name:", "fox_nam:"));
     CHECK(error == "strings line 1: there is no fox_name");

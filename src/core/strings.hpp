@@ -11,10 +11,12 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -139,12 +141,11 @@ inline constexpr std::size_t LANGUAGES = 2;
 inline constexpr std::array<std::string_view, LANGUAGES> LANGUAGE_CODES{ { "en", "zh" } };
 
 /// Every string in every language.
-struct Strings {
+class Strings {
+public:
     /// The text of each string (by StringId) in each language (by Language): the STRINGS the code names first, in
     /// StringId's order, then the data strings.
     std::vector<std::array<std::string, LANGUAGES>> text = std::vector<std::array<std::string, LANGUAGES>>(STRINGS);
-    /// The key of each data string, in order: `keys[i]` names `text[STRINGS + i]`.
-    std::vector<std::string> keys{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
 
     /// The text of `string` in `language`.
     [[nodiscard]] const std::string& Text(StringId string, Language language) const {
@@ -157,22 +158,36 @@ struct Strings {
         if (const auto named = std::ranges::find(names, key); named != names.end()) {
             return StringId{ static_cast<u16>(named - names.begin()) };
         }
-        if (const auto data = std::ranges::find(keys, key); data != keys.end()) {
-            return StringId{ static_cast<u16>(STRINGS + static_cast<std::size_t>(data - keys.begin())) };
+        if (const auto data = m_index.find(key); data != m_index.end()) {
+            return data->second;
         }
         return std::nullopt;
     }
 
-    /// Adds a data string under `key` with its `texts` (by Language), and returns its ID. `key` is neither one the code
-    /// names nor one already added, and the table holds fewer than MOST_STRINGS (the reader checks both).
+    /// Adds a data string under `key` with its `texts` (by Language), and returns its ID, the next after `text`'s last.
+    /// `key` is neither one the code names nor one already added, and the table holds fewer than MOST_STRINGS (the reader
+    /// checks both).
     StringId Add(std::string key, std::array<std::string, LANGUAGES> texts) {
         PN_ASSERT(!Find(key).has_value(), "a data string's key is new");
         PN_ASSERT(text.size() < MOST_STRINGS, "the table has room for another string");
         const StringId added{ static_cast<u16>(text.size()) };
-        keys.push_back(std::move(key));
+        m_index.emplace(std::move(key), added);
         text.push_back(std::move(texts));
         return added;
     }
+
+private:
+    // Hashes a key as text, so Find looks a std::string_view up without building a std::string.
+    struct KeyHash {
+        using is_transparent = void;
+        [[nodiscard]] std::size_t operator()(std::string_view key) const {
+            return std::hash<std::string_view>{}(key);
+        }
+    };
+
+    // Each data string's ID by its key: Add keeps it, Find reads it.
+    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::unordered_map<std::string, StringId, KeyHash, std::equal_to<>> m_index{};
 };
 
 /// Writes `text` into `into` (replacing what it held, keeping its capacity) with `value` in place of each `{value}` and
