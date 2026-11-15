@@ -173,7 +173,8 @@ TEST_CASE("each place in view publishes its name, in its own kind, and none outs
     CHECK(places.front().current.x == start.x);
     // The name hangs under the city marker, which is drawn round the tile's centre where the cultivator stands: clear
     // of the cultivator's label, which rides over its head.
-    const core::SpriteInfo& marker = test::TestManifest()->Sprite(core::atlas::SpriteId::MarkerCity);
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest(); // held: marker points into it
+    const core::SpriteInfo& marker = manifest->Sprite(core::atlas::SpriteId::MarkerCity);
     CHECK(places.front().align == core::TextAlign::TopCentre);
     CHECK(places.front().current.y == start.y + static_cast<f32>(marker.height - marker.footY) + PLACE_NAME_GAP);
     CHECK(places.front().current.y > start.y); // whatever the offset, the name hangs below the tile's centre
