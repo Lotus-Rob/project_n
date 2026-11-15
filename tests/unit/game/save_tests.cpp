@@ -409,8 +409,8 @@ TEST_CASE("a save with bytes after the state, or of another format, is refused")
 }
 
 constexpr u32 FORMAT = 4;
-constexpr u32 ACTIVE_VERSION = 4;
-constexpr u32 WORLD_VERSION = 1;
+constexpr u32 ACTIVE_VERSION = 5; // 5: the NPCs' homes
+constexpr u32 WORLD_VERSION = 2;  // 2: the NPCs' homes
 using Active = core::ComponentList<
     game::Body,
     game::Look,
@@ -446,7 +446,9 @@ std::vector<std::byte> ArenaSave(
     const std::optional<SavedVolley>& volley = std::nullopt,
     const std::optional<core::Flash>& flash = std::nullopt,
     const std::optional<core::Seal>& seal = std::nullopt,
-    core::SceneKey scene = game::ARENA_SCENE
+    core::SceneKey scene = game::ARENA_SCENE,
+    u32 worldVersion = WORLD_VERSION,
+    u32 activeVersion = ACTIVE_VERSION
 ) {
     constexpr u64 MONTHS_PASSED = 0;
     constexpr u64 RELATIONSHIPS = 0;
@@ -462,9 +464,9 @@ std::vector<std::byte> ArenaSave(
         player,
         core::StableId{}
     );
-    writer(ACTIVE_VERSION);
+    writer(activeVersion);
     core::SaveDomain(writer, state[game::ACTIVE], Active{});
-    writer(WORLD_VERSION);
+    writer(worldVersion);
     core::SaveDomain(writer, state[game::WORLD], World{});
     writer(RELATIONSHIPS);
     writer(RESPAWNS);
@@ -1041,6 +1043,97 @@ TEST_CASE("write the world save seed" * doctest::skip()) {
     });
     file.close();
     CHECK(file.good());
+}
+
+// The index of the first place of `kind` on the shipped map.
+u16 FirstPlace(const core::WorldMap& map, core::PlaceKind kind) {
+    const auto places = map.Places();
+    const auto found = std::ranges::find(places, kind, &core::Place::kind);
+    REQUIRE(found != places.end());
+    return static_cast<u16>(found - places.begin());
+}
+
+// A save of the world scene holding one world NPC in `cell`, homed at `home`; `worldVersion` as it was written.
+std::vector<std::byte> WorldSaveOf(u32 cell, u16 home, u32 worldVersion = WORLD_VERSION, u32 activeVersion = ACTIVE_VERSION) {
+    core::State state{ game::DOMAINS, STATE_SEED };
+    static_cast<void>(game::SpawnNpc(state, cell, home));
+    return ArenaSave(state, {}, std::nullopt, std::nullopt, std::nullopt, game::WORLD_SCENE, worldVersion, activeVersion);
+}
+
+// Whether a host with the shipped map loads `bytes`.
+bool LoadsWithMap(const std::vector<std::byte>& bytes) {
+    game::Host game(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    core::Reader reader{ bytes };
+    return game.Load(reader, SAVED_TICK);
+}
+
+TEST_CASE("a world save round-trips the NPCs' homes") {
+    game::Host saved(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    const std::vector<std::byte> bytes = Saved(saved);
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene();
+    CHECK(loaded.StateHash() == saved.StateHash());
+    // The homes themselves, not only the hash: each NPC is homed and placed as it was.
+    const core::Registry& was = saved.State()[game::WORLD].Entities();
+    const core::Registry& now = loaded.State()[game::WORLD].Entities();
+    bool same = was.view<const game::Npc>().size() == now.view<const game::Npc>().size();
+    for (const auto [entity, stable, person] : was.view<const core::StableId, const game::Npc>().each()) {
+        const game::Npc& other = now.get<game::Npc>(loaded.State()[game::WORLD].Find(stable));
+        same = same && other.home == person.home && other.cell == person.cell && person.home != game::NO_HOME;
+    }
+    CHECK(same);
+}
+
+TEST_CASE("a version-1 world save is refused") {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const u16 city = FirstPlace(*map, core::PlaceKind::City);
+    const u32 cell = map->TileIndex(map->Places()[city].tile);
+    CHECK(LoadsWithMap(WorldSaveOf(cell, city)));
+    constexpr u32 OLD_VERSION = 1;
+    CHECK_FALSE(LoadsWithMap(WorldSaveOf(cell, city, OLD_VERSION)));
+}
+
+TEST_CASE("a version-4 active section is refused") {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const u16 city = FirstPlace(*map, core::PlaceKind::City);
+    const u32 cell = map->TileIndex(map->Places()[city].tile);
+    constexpr u32 OLD_VERSION = 4;
+    CHECK_FALSE(LoadsWithMap(WorldSaveOf(cell, city, WORLD_VERSION, OLD_VERSION)));
+    const core::State state{ game::DOMAINS, STATE_SEED };
+    CHECK_FALSE(
+        Loads(ArenaSave(state, {}, std::nullopt, std::nullopt, std::nullopt, game::ARENA_SCENE, WORLD_VERSION, OLD_VERSION))
+    );
+}
+
+TEST_CASE("a world save naming a home past the map's cities is refused") {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const u16 city = FirstPlace(*map, core::PlaceKind::City);
+    const u32 cell = map->TileIndex(map->Places()[city].tile);
+    const u16 pastPlaces = static_cast<u16>(map->Places().size());
+    const u16 danger = FirstPlace(*map, core::PlaceKind::Danger);
+    CHECK_FALSE(LoadsWithMap(WorldSaveOf(cell, pastPlaces)));
+    CHECK_FALSE(LoadsWithMap(WorldSaveOf(cell, danger)));
+    CHECK_FALSE(LoadsWithMap(WorldSaveOf(cell, game::NO_HOME)));
+}
+
+TEST_CASE("a world save with an NPC on a tile past the map is refused") {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const u16 city = FirstPlace(*map, core::PlaceKind::City);
+    const u32 tiles = map->Columns() * map->Rows();
+    CHECK(LoadsWithMap(WorldSaveOf(tiles - 1, city)));
+    CHECK_FALSE(LoadsWithMap(WorldSaveOf(tiles, city)));
+}
+
+TEST_CASE("an arena save still loads, its NPCs homeless, and one with a home is refused") {
+    core::State homeless{ game::DOMAINS, STATE_SEED };
+    static_cast<void>(game::SpawnNpc(homeless, NPC_CELL));
+    CHECK(Loads(ArenaSave(homeless)));
+    core::State homed{ game::DOMAINS, STATE_SEED };
+    constexpr u16 SOME_HOME = 0;
+    static_cast<void>(game::SpawnNpc(homed, NPC_CELL, SOME_HOME));
+    CHECK_FALSE(Loads(ArenaSave(homed)));
 }
 
 } // namespace

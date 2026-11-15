@@ -328,4 +328,60 @@ TEST_CASE("no gathered walker stands on an impassable tile, the port's crowd on 
     CHECK(placed >= 6);
 }
 
+TEST_CASE("the world scene's NPCs live in their cities and regions") {
+    constexpr u32 PEOPLE = 50'000;
+    constexpr u32 PERCENT_ON_CITY_TILE = 70;
+    constexpr u32 PERCENT_TOLERANCE = 2;
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    game::Host const host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    const core::Registry& entities = host.State()[game::WORLD].Entities();
+    std::vector<u32> perCity(map->Places().size(), 0);
+    u32 onCityTile = 0;
+    u32 total = 0;
+    bool homed = true;
+    for (const auto [entity, person] : entities.view<const game::Npc>().each()) {
+        ++total;
+        const bool isCity = person.home < map->Places().size() && map->Places()[person.home].kind == core::PlaceKind::City;
+        homed = homed && isCity;
+        if (!isCity) {
+            continue;
+        }
+        ++perCity[person.home];
+        const u32 cityTile = map->TileIndex(map->Places()[person.home].tile);
+        const std::span<const u32> region = map->RegionTiles(person.home);
+        onCityTile += person.cell == cityTile ? 1U : 0U;
+        homed = homed && (person.cell == cityTile || std::ranges::binary_search(region, person.cell));
+    }
+    CHECK(homed);
+    CHECK(total == PEOPLE);
+    CHECK(onCityTile >= PEOPLE * (PERCENT_ON_CITY_TILE - PERCENT_TOLERANCE) / 100);
+    CHECK(onCityTile <= PEOPLE * (PERCENT_ON_CITY_TILE + PERCENT_TOLERANCE) / 100);
+    // Each city has exactly its share.
+    bool shares = true;
+    for (std::size_t place = 0; place < map->Places().size(); ++place) {
+        const core::Place& city = map->Places()[place];
+        shares = shares && perCity[place] == (city.kind == core::PlaceKind::City ? city.people : 0U);
+    }
+    CHECK(shares);
+}
+
+TEST_CASE("a month passes on the world map, the same twice, over the world NPCs") {
+    core::Jobs jobs{ 1 };
+    game::Host first(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    game::Host second(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    const auto fresh = [](const game::Host& host) {
+        u32 untouched = 0;
+        for (const auto [entity, person] : host.State()[game::WORLD].Entities().view<const game::Npc>().each()) {
+            untouched += person.action == game::Action::Rest && person.power == 0.0F ? 1U : 0U;
+        }
+        return untouched;
+    };
+    const u32 before = fresh(first);
+    first.AdvanceCalendar({ .wall = 1, .simulation = 1, .state = 1 }, jobs, {});
+    second.AdvanceCalendar({ .wall = 1, .simulation = 1, .state = 1 }, jobs, {});
+    CHECK(first.Months() == 1);
+    CHECK(fresh(first) < before); // NPCs acted: some cultivated or socialised
+    CHECK(first.StateHash() == second.StateHash());
+}
+
 } // namespace
