@@ -39,6 +39,7 @@
 #include "platform/window.hpp"
 #include "support/manifest.hpp"
 #include "support/seals.hpp"
+#include "support/world.hpp"
 
 #include <doctest/doctest.h>
 
@@ -119,6 +120,8 @@ gfx::Renderer RendererFor(platform::Window& window, core::SceneId scene, core::J
     const std::string rendererWhy = renderer.error_or(core::Error{}).message;
     REQUIRE_MESSAGE(renderer.has_value(), rendererWhy);
     renderer->SetSeals(test::ShippedSeals());
+    const std::shared_ptr<const core::WorldMap> world = test::ShippedWorld();
+    renderer->SetWorld(world, test::ShippedWorldLook(*test::TestManifest(), *world));
     renderer->BeginScene(scene, jobs);
     std::expected<bool, core::Error> held = false;
     const u64 startedNs = platform::NowNs();

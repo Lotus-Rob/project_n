@@ -1,7 +1,6 @@
 #include "game/scenes/world.hpp"
 
 #include "core/cxx23.hpp" // IWYU pragma: keep
-#include "core/instances.hpp"
 #include "core/profile.hpp"
 #include "core/random.hpp"
 #include "core/view_limits.hpp"
@@ -29,6 +28,7 @@ constexpr SceneTraits WORLD_TRAITS{
     .home = WORLD_CENTRE,
     .creatures = true,
     .camera = core::CameraKind::Roam,
+    .worldMap = true,
     .portal = WORLD_PORTAL,
 };
 
@@ -41,95 +41,6 @@ static_assert(
         static_cast<f32>(WORLD_ROWS) * WORLD_TILE >= WORLD_MAP.max.y,
     "the last row reaches the map's bottom edge"
 );
-
-// The terrain: two octaves of value noise on lattices this many tiles apart, the broad one counting twice, in 16-bit
-// fixed point throughout, so every machine draws the same map. Its own seed, as the map is fixed whatever the game's is.
-constexpr u64 TERRAIN_SEED = 0x5eed;
-constexpr u32 BROAD_SPACING = 16;
-constexpr u32 FINE_SPACING = 6;
-constexpr u32 BROAD_DRAW = 0;
-constexpr u32 FINE_DRAW = 1;
-constexpr u32 VARIANT_DRAW = 2;
-constexpr u32 FIXED_BITS = 16;
-constexpr u64 FIXED_ONE = u64{ 1 } << FIXED_BITS;
-constexpr u32 LATTICE_SHIFT = 64 - FIXED_BITS; // a lattice value is a random number's top 16 bits
-constexpr u32 COLUMN_SHIFT = 32;
-constexpr u32 VARIANT_SHIFT = 63; // a variant is a random number's top bit
-
-// Where each kind starts on the noise's 0 to 65,535 scale, above DeepWater's: placed from the map's own spread of values
-// (about 8% deep water, 7% shallows, 6% sand, 8% marsh, 14% meadow, 17% grassland, 15% forest, 11% hills, 8% rock and 6%
-// snow), so every kind holds regions of its own.
-constexpr std::array<u32, TERRAINS - 1> TERRAIN_STARTS{
-    { 17'500, 21'000, 23'500, 26'500, 31'000, 36'000, 41'000, 45'000, 49'500 }
-};
-
-// Each kind's two variants, in Terrain's order.
-constexpr std::array<std::array<SpriteId, 2>, TERRAINS> TERRAIN_SPRITES{ {
-    { { SpriteId::TerrainWater0, SpriteId::TerrainWater1 } },
-    { { SpriteId::TerrainShallows0, SpriteId::TerrainShallows1 } },
-    { { SpriteId::TerrainSand0, SpriteId::TerrainSand1 } },
-    { { SpriteId::TerrainMarsh0, SpriteId::TerrainMarsh1 } },
-    { { SpriteId::TerrainMeadow0, SpriteId::TerrainMeadow1 } },
-    { { SpriteId::TerrainGrass0, SpriteId::TerrainGrass1 } },
-    { { SpriteId::TerrainForest0, SpriteId::TerrainForest1 } },
-    { { SpriteId::TerrainHills0, SpriteId::TerrainHills1 } },
-    { { SpriteId::TerrainRock0, SpriteId::TerrainRock1 } },
-    { { SpriteId::TerrainSnow0, SpriteId::TerrainSnow1 } },
-} };
-
-// The key a tile's (or a lattice point's) random numbers are drawn with.
-constexpr u64 PointKey(u32 column, u32 row) {
-    return (u64{ column } << COLUMN_SHIFT) | row;
-}
-
-// The noise's value at a lattice point of `draw`'s octave, from 0 to 65,535.
-u64 Lattice(u32 column, u32 row, u32 draw) {
-    return core::Random(TERRAIN_SEED, 0, PointKey(column, row), PURPOSE_TERRAIN, draw) >> LATTICE_SHIFT;
-}
-
-// How far across its lattice cell `offset` of `spacing` tiles is, eased (3t² - 2t³) so the noise has no creases at the
-// lattice lines, in 16-bit fixed point.
-u64 Eased(u32 offset, u32 spacing) {
-    const u64 across = (u64{ offset } << FIXED_BITS) / spacing;
-    return (across * across * ((3 * FIXED_ONE) - (2 * across))) >> (2 * FIXED_BITS);
-}
-
-// One octave's value at a tile, from 0 to 65,535: its lattice cell's corners blended by where in the cell it lies.
-u64 Octave(u32 column, u32 row, u32 spacing, u32 draw) {
-    const u32 left = column / spacing;
-    const u32 top = row / spacing;
-    const u64 across = Eased(column % spacing, spacing);
-    const u64 down = Eased(row % spacing, spacing);
-    const u64 upper =
-        ((Lattice(left, top, draw) * (FIXED_ONE - across)) + (Lattice(left + 1, top, draw) * across)) >> FIXED_BITS;
-    const u64 lower =
-        ((Lattice(left, top + 1, draw) * (FIXED_ONE - across)) + (Lattice(left + 1, top + 1, draw) * across)) >> FIXED_BITS;
-    return ((upper * (FIXED_ONE - down)) + (lower * down)) >> FIXED_BITS;
-}
-
-// Every tile's sprite, row by row. Named and its size checked before the function returning it, for MSVC's C4686.
-using TileTable = std::array<SpriteId, std::size_t{ WORLD_COLUMNS } * WORLD_ROWS>;
-static_assert(sizeof(TileTable) == sizeof(SpriteId) * WORLD_COLUMNS * WORLD_ROWS);
-
-// Worked out once: a publish at the widest view draws a few thousand tiles, each worth nine hashes.
-const TileTable& TileSprites() {
-    static const TileTable sprites = [] {
-        TileTable all{};
-        for (u32 row = 0; row < WORLD_ROWS; ++row) {
-            for (u32 column = 0; column < WORLD_COLUMNS; ++column) {
-                all.at((std::size_t{ row } * WORLD_COLUMNS) + column) = TileSprite(column, row);
-            }
-        }
-        return all;
-    }();
-    return sprites;
-}
-
-// The tile `coordinate` lies in along an axis of `tiles`: -1 or `tiles` when it lies before or past the map.
-i64 TileOf(f32 coordinate, u32 tiles) {
-    // fmin and fmax keep a huge or NaN coordinate from overflowing the conversion.
-    return static_cast<i64>(std::floor(std::fmax(std::fmin(coordinate / WORLD_TILE, static_cast<f32>(tiles)), -1.0F)));
-}
 
 // The walkers' orbits.
 constexpr f32 ORBIT_RADIUS_MIN = 120.0F;
@@ -282,32 +193,6 @@ bool Within(core::Vec2 point, const core::Rect& area) {
 
 } // namespace
 
-TileSpan TilesIn(core::Rect view) {
-    const i64 firstColumn = std::max<i64>(TileOf(view.min.x, WORLD_COLUMNS), 0);
-    const i64 lastColumn = std::min<i64>(TileOf(view.max.x, WORLD_COLUMNS), WORLD_COLUMNS - 1);
-    const i64 firstRow = std::max<i64>(TileOf(view.min.y, WORLD_ROWS), 0);
-    const i64 lastRow = std::min<i64>(TileOf(view.max.y, WORLD_ROWS), WORLD_ROWS - 1);
-    if (firstColumn > lastColumn || firstRow > lastRow) {
-        return { .firstColumn = 1, .lastColumn = 0, .firstRow = 1, .lastRow = 0 };
-    }
-    return { .firstColumn = static_cast<u32>(firstColumn),
-             .lastColumn = static_cast<u32>(lastColumn),
-             .firstRow = static_cast<u32>(firstRow),
-             .lastRow = static_cast<u32>(lastRow) };
-}
-
-Terrain TerrainAt(u32 column, u32 row) {
-    const u64 height =
-        ((2 * Octave(column, row, BROAD_SPACING, BROAD_DRAW)) + Octave(column, row, FINE_SPACING, FINE_DRAW)) / 3;
-    const auto above = std::ranges::count_if(TERRAIN_STARTS, [height](u32 start) { return height >= start; });
-    return static_cast<Terrain>(above);
-}
-
-core::atlas::SpriteId TileSprite(u32 column, u32 row) {
-    const u64 variant = core::Random(TERRAIN_SEED, 0, PointKey(column, row), PURPOSE_TERRAIN, VARIANT_DRAW) >> VARIANT_SHIFT;
-    return TERRAIN_SPRITES.at(std::to_underlying(TerrainAt(column, row))).at(variant);
-}
-
 const SceneTraits& WorldScene::Traits() const {
     return WORLD_TRAITS;
 }
@@ -322,29 +207,6 @@ void WorldScene::Build(SceneContext& context) const {
     for (const Gathering& gathering : GATHERINGS) {
         for (u32 member = 0; member < gathering.columns * gathering.rows; ++member, ++walker) {
             SpawnWalker(context, WalkerOrbit(seed, walker, GatheredCentre(seed, walker, member, gathering)));
-        }
-    }
-}
-
-void WorldScene::PublishGround(const SceneContext& context, core::Rect view, core::DrawList& drawList, u32 part) const {
-    PN_PROFILE_ZONE();
-    const TileSpan span = TilesIn(view);
-    const TileTable& sprites = TileSprites();
-    for (u32 row = span.firstRow; row <= span.lastRow; ++row) {
-        for (u32 column = span.firstColumn; column <= span.lastColumn; ++column) {
-            const core::Vec2 corner{ .x = static_cast<f32>(column) * WORLD_TILE, .y = static_cast<f32>(row) * WORLD_TILE };
-            // Whole: TilesIn chose it, and the draw list's cull by centre would drop one whose centre is past the edge.
-            drawList.AddWhole(
-                part,
-                core::Layer::Ground,
-                core::Pipeline::Normal,
-                core::MakeInstance(
-                    context.Manifest(),
-                    { .sprite = sprites.at((std::size_t{ row } * WORLD_COLUMNS) + column),
-                      .previous = corner,
-                      .current = corner }
-                )
-            );
         }
     }
 }

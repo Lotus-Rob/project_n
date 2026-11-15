@@ -77,6 +77,9 @@ struct SceneTraits {
                                                  // -Wmissing-designated-field-initializers warns where a scene's traits omit it
     /// How the camera moves over it.
     core::CameraKind camera = core::CameraKind::Pan;
+    /// Whether it shows the world map, which the renderer draws from the map and the look (core::Snapshot::worldMap), so
+    /// it publishes no ground of its own: neither tiles nor the painted ground.
+    bool worldMap = false;
     /// How many world NPCs the host spawns after it builds.
     u32 worldNpcs = 0;
     /// Where its portal stands, the foot point the cultivator steps onto to walk to the next walkable scene
@@ -144,7 +147,8 @@ public:
 
     /// Adds its ground-layer content (core::Layer::Ground) to part `part` of `drawList`, just after the host began it for
     /// `view` (the area the publish culls to), so it draws under every entity. By default the painted ground (GROUND),
-    /// whole; a scene that overrides it draws its own ground instead (the world, its tiles).
+    /// whole; a scene that overrides it draws its own ground instead; one that shows the world map (SceneTraits::worldMap)
+    /// draws none, as the renderer draws the map.
     virtual void PublishGround(const SceneContext& context, core::Rect view, core::DrawList& drawList, u32 part) const;
 
     /// Adds its own content to `snapshot` after the host has published the entities, their texts and the caster, and

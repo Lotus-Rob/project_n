@@ -13,6 +13,8 @@
 #include "core/strings.hpp"
 #include "core/types.hpp"
 #include "core/ui_colours.hpp"
+#include "core/world_look.hpp"
+#include "core/world_map.hpp"
 #include "gfx/camera.hpp"
 #include "gfx/hud_draw.hpp"
 #include "gfx/image.hpp"
@@ -124,6 +126,14 @@ public:
     /// Draws the seals in play as `seals` says from the next frame on, with no restart: their parts are packed now and
     /// uploaded with the next frame, never on a seal's first draw. Until it is called no seal is drawn.
     void SetSeals(const core::Seals& seals);
+
+    /// Draws the world map of a snapshot that shows it (core::Snapshot::worldMap) from `map` and `look` from the next frame
+    /// on, with no restart: the tiles in view (gfx/terrain_draw.hpp), under the ground and everything else, laid out again
+    /// only when the view reaches other tiles or this is called again. Until it is called a snapshot's map draws nothing.
+    /// `look`'s sprites must be resident when the map draws: in the manifest (data::LoadWorldLook checks that) and in the
+    /// sprites of the scene that shows the map (art/scenes.toml's `world`), which a look naming another sprite would draw
+    /// from a page that isn't loaded.
+    void SetWorld(std::shared_ptr<const core::WorldMap> map, const core::WorldLook& look);
 
     /// Draws glows for the reduce flashing setting from the next frame on (off until it is called): pulses hold still and
     /// light glows dim (the phase 6 glow spec, "Accessibility").
