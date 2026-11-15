@@ -78,10 +78,6 @@ std::string Refusal(core::WorldMapSource source) {
     return built.error().message;
 }
 
-bool Contains(const std::string& text, std::string_view part) {
-    return text.contains(part);
-}
-
 TEST_CASE("a road caps a tile's cost and a river blocks it") {
     // Columns: 0 the city, 1 road, 2 river, 3 road and river, 4 river with a ford, 5 road over sand.
     core::WorldMapSource source = Source({ "0.....", "......" });
@@ -140,8 +136,10 @@ TEST_CASE("a steep segment running up and to the right marks its run, the same w
     core::WorldMapSource backward = Source({ "0....", ".....", "....." });
     backward.roads = { { LOW, HIGH } };
     // (3,0), (3,1), (4,1), (4,2)
-    CHECK(RoadTiles(MustBuild(std::move(forward))) == std::vector<u32>{ 3, 8, 9, 14 });
-    CHECK(RoadTiles(MustBuild(std::move(backward))) == std::vector<u32>{ 3, 8, 9, 14 });
+    const std::vector<u32> forwardTiles = RoadTiles(MustBuild(std::move(forward)));
+    const std::vector<u32> backwardTiles = RoadTiles(MustBuild(std::move(backward)));
+    CHECK(forwardTiles == std::vector<u32>{ 3, 8, 9, 14 });
+    CHECK(backwardTiles == std::vector<u32>{ 3, 8, 9, 14 });
 }
 
 TEST_CASE("a diagonal segment marks the same tiles in either direction") {
@@ -152,8 +150,10 @@ TEST_CASE("a diagonal segment marks the same tiles in either direction") {
     core::WorldMapSource backward = Source({ "0....", ".....", "....." });
     backward.roads = { { CORNER, ORIGIN } };
     // (0,0), (1,0), (1,1): the tie goes to the column from the lower end.
-    CHECK(RoadTiles(MustBuild(std::move(forward))) == std::vector<u32>{ 0, 1, 6 });
-    CHECK(RoadTiles(MustBuild(std::move(backward))) == std::vector<u32>{ 0, 1, 6 });
+    const std::vector<u32> forwardTiles = RoadTiles(MustBuild(std::move(forward)));
+    const std::vector<u32> backwardTiles = RoadTiles(MustBuild(std::move(backward)));
+    CHECK(forwardTiles == std::vector<u32>{ 0, 1, 6 });
+    CHECK(backwardTiles == std::vector<u32>{ 0, 1, 6 });
 }
 
 TEST_CASE("a diagonal step costs seven fifths and never cuts a corner") {
@@ -205,105 +205,123 @@ TEST_CASE("a tie between two cities goes to the lower index, the same every buil
 TEST_CASE("Build refuses a map it can't use") {
     core::WorldMapSource overWater = Source({ "0~." });
     overWater.roads = { { { .column = 0, .row = 0 }, { .column = 2, .row = 0 } } };
-    CHECK(Contains(Refusal(overWater), "road 0"));
+    const std::string overWaterRefusal = Refusal(overWater);
+    CHECK(overWaterRefusal.contains("road 0"));
 
     core::WorldMapSource overPeaks = Source({ "0.^", "..." });
     overPeaks.roads = { { { .column = 0, .row = 1 }, { .column = 1, .row = 1 } }, { { .column = 2, .row = 0 } } };
-    CHECK(Contains(Refusal(overPeaks), "road 1"));
+    const std::string overPeaksRefusal = Refusal(overPeaks);
+    CHECK(overPeaksRefusal.contains("road 1"));
 
     core::WorldMapSource onWater = Source({ "0.~" });
     onWater.places.push_back(
         { .key = "pit", .kind = core::PlaceKind::Danger, .sort = "pit", .tile = { .column = 2, .row = 0 }, .nameKey = "pit" }
     );
-    CHECK(Contains(Refusal(onWater), "place 1"));
+    const std::string onWaterRefusal = Refusal(onWater);
+    CHECK(onWaterRefusal.contains("place 1"));
 
     core::WorldMapSource crowded = Source({ "0.." });
     crowded.places.push_back(
         { .key = "twin", .kind = core::PlaceKind::City, .sort = "", .tile = { .column = 0, .row = 0 }, .nameKey = "twin" }
     );
-    CHECK(Contains(Refusal(crowded), "place 1"));
+    const std::string crowdedRefusal = Refusal(crowded);
+    CHECK(crowdedRefusal.contains("place 1"));
 
     core::WorldMapSource noStart = Source({ "0.1" });
     noStart.places[0].start = false;
-    CHECK(Contains(Refusal(noStart), "no place starts"));
+    const std::string noStartRefusal = Refusal(noStart);
+    CHECK(noStartRefusal.contains("no place starts"));
 
     core::WorldMapSource twoStarts = Source({ "0.1" });
     twoStarts.places[1].start = true;
-    CHECK(Contains(Refusal(twoStarts), "places 0 and 1"));
+    const std::string twoStartsRefusal = Refusal(twoStarts);
+    CHECK(twoStartsRefusal.contains("places 0 and 1"));
 
-    CHECK(Contains(Refusal(Source({ "0^1" })), "place 1"));
+    const std::string walledRefusal = Refusal(Source({ "0^1" }));
+    CHECK(walledRefusal.contains("place 1"));
 
     core::WorldMapSource offMap = Source({ "0..", "..." });
     offMap.roads = { { { .column = 0, .row = 0 } }, { { .column = 1, .row = 1 }, { .column = 3, .row = 1 } } };
-    CHECK(Contains(Refusal(offMap), "road 1"));
+    const std::string offMapRefusal = Refusal(offMap);
+    CHECK(offMapRefusal.contains("road 1"));
 
     core::WorldMapSource riverOff = Source({ "0.." });
     riverOff.rivers = { { { .column = 0, .row = OFF_MAP } } };
-    CHECK(Contains(Refusal(riverOff), "river 0"));
+    const std::string riverOffRefusal = Refusal(riverOff);
+    CHECK(riverOffRefusal.contains("river 0"));
 
     core::WorldMapSource dryFord = Source({ "0.." });
     dryFord.fords = { { .column = 1, .row = 0 } };
-    CHECK(Contains(Refusal(dryFord), "ford 0"));
+    const std::string dryFordRefusal = Refusal(dryFord);
+    CHECK(dryFordRefusal.contains("ford 0"));
 
     core::WorldMapSource fordOff = Source({ "0.." });
     fordOff.fords = { { .column = OFF_MAP, .row = 0 } };
-    CHECK(Contains(Refusal(fordOff), "ford 0"));
+    const std::string fordOffRefusal = Refusal(fordOff);
+    CHECK(fordOffRefusal.contains("ford 0"));
 
     core::WorldMapSource sameKey = Source({ "0.1" });
     sameKey.places[1].key = sameKey.places[0].key;
     const std::string sameKeyRefusal = Refusal(sameKey);
-    CHECK(Contains(sameKeyRefusal, "'city0'"));
-    CHECK(Contains(sameKeyRefusal, "places 0 and 1"));
+    CHECK(sameKeyRefusal.contains("'city0'"));
+    CHECK(sameKeyRefusal.contains("places 0 and 1"));
 
     core::WorldMapSource impassableFord = Source({ "0~." });
     impassableFord.rivers = { { { .column = 1, .row = 0 } } };
     impassableFord.fords = { { .column = 1, .row = 0 } };
     const std::string impassableFordRefusal = Refusal(impassableFord);
-    CHECK(Contains(impassableFordRefusal, "ford 0"));
-    CHECK(Contains(impassableFordRefusal, "deep water"));
+    CHECK(impassableFordRefusal.contains("ford 0"));
+    CHECK(impassableFordRefusal.contains("deep water"));
 
     core::WorldMapSource bridgedFord = Source({ "0.." });
     bridgedFord.rivers = { { { .column = 1, .row = 0 } } };
     bridgedFord.roads = { { { .column = 1, .row = 0 } } };
     bridgedFord.fords = { { .column = 1, .row = 0 } };
     const std::string bridgedFordRefusal = Refusal(bridgedFord);
-    CHECK(Contains(bridgedFordRefusal, "ford 0"));
-    CHECK(Contains(bridgedFordRefusal, "bridged"));
+    CHECK(bridgedFordRefusal.contains("ford 0"));
+    CHECK(bridgedFordRefusal.contains("bridged"));
 
     core::WorldMapSource dearKind = Source({ "0.." });
     dearKind.kinds[MEADOW].cost = core::MAX_WALK_COST + 1;
-    CHECK(Contains(Refusal(dearKind), "meadow"));
+    const std::string dearKindRefusal = Refusal(dearKind);
+    CHECK(dearKindRefusal.contains("meadow"));
     core::WorldMapSource dearRoad = Source({ "0.." });
     dearRoad.roadCost = core::MAX_WALK_COST + 1;
-    CHECK(Contains(Refusal(dearRoad), "road cost"));
+    const std::string dearRoadRefusal = Refusal(dearRoad);
+    CHECK(dearRoadRefusal.contains("road cost"));
     core::WorldMapSource dearFord = Source({ "0.." });
     dearFord.fordCost = core::MAX_WALK_COST + 1;
-    CHECK(Contains(Refusal(dearFord), "ford cost"));
+    const std::string dearFordRefusal = Refusal(dearFord);
+    CHECK(dearFordRefusal.contains("ford cost"));
 
     core::WorldMapSource placeOff = Source({ "0.." });
     placeOff.places[0].tile.column = OFF_MAP;
-    CHECK(Contains(Refusal(placeOff), "place 0"));
+    const std::string placeOffRefusal = Refusal(placeOff);
+    CHECK(placeOffRefusal.contains("place 0"));
 
     core::WorldMapSource dangerStart = Source({ "0.1" });
     dangerStart.places[0].kind = core::PlaceKind::Danger;
     dangerStart.places[0].sort = "pit";
     const std::string dangerStartRefusal = Refusal(dangerStart);
-    CHECK(Contains(dangerStartRefusal, "place 0"));
-    CHECK(Contains(dangerStartRefusal, "isn't a city"));
+    CHECK(dangerStartRefusal.contains("place 0"));
+    CHECK(dangerStartRefusal.contains("isn't a city"));
 
     core::WorldMapSource bareDanger = Source({ "0.." });
     bareDanger.places.push_back(
         { .key = "pit", .kind = core::PlaceKind::Danger, .sort = "", .tile = { .column = 1, .row = 0 }, .nameKey = "pit" }
     );
-    CHECK(Contains(Refusal(bareDanger), "place 1"));
+    const std::string bareDangerRefusal = Refusal(bareDanger);
+    CHECK(bareDangerRefusal.contains("place 1"));
 
     core::WorldMapSource sortedCity = Source({ "0.1" });
     sortedCity.places[1].sort = "cave";
-    CHECK(Contains(Refusal(sortedCity), "place 1"));
+    const std::string sortedCityRefusal = Refusal(sortedCity);
+    CHECK(sortedCityRefusal.contains("place 1"));
 
     core::WorldMapSource shortGrid = Source({ "0.." });
     shortGrid.grid.pop_back();
-    CHECK(Contains(Refusal(shortGrid), "grid"));
+    const std::string shortGridRefusal = Refusal(shortGrid);
+    CHECK(shortGridRefusal.contains("grid"));
 }
 
 TEST_CASE("a refusal names the line of the entry it refuses when the source knows its lines") {
@@ -311,19 +329,23 @@ TEST_CASE("a refusal names the line of the entry it refuses when the source know
     constexpr u32 PLACE_LINE = 40;
     core::WorldMapSource road = Source({ "0~." });
     road.roads = { { { .column = 1, .row = 0 } } };
-    CHECK(Refusal(road) == "road 0: the tile (1, 0) is deep water, which no road can cross");
+    const std::string unlined = Refusal(road);
+    CHECK(unlined == "road 0: the tile (1, 0) is deep water, which no road can cross");
     road.lines.roads = { ROAD_LINE };
-    CHECK(Refusal(road) == "line 12: road 0: the tile (1, 0) is deep water, which no road can cross");
+    const std::string lined = Refusal(road);
+    CHECK(lined == "line 12: road 0: the tile (1, 0) is deep water, which no road can cross");
     core::WorldMapSource place = Source({ "0.1" });
     place.places[1].key = place.places[0].key;
     place.lines.places = { PLACE_LINE - 1, PLACE_LINE };
-    CHECK(Contains(Refusal(place), "line 40: places 0 and 1"));
+    const std::string placeRefusal = Refusal(place);
+    CHECK(placeRefusal.contains("line 40: places 0 and 1"));
     core::WorldMapSource crowded = Source({ "0.." });
     crowded.places.push_back(
         { .key = "twin", .kind = core::PlaceKind::City, .sort = "", .tile = { .column = 0, .row = 0 }, .nameKey = "twin" }
     );
     crowded.lines.places = { PLACE_LINE - 1, PLACE_LINE };
-    CHECK(Contains(Refusal(crowded), "line 40: place 1"));
+    const std::string crowdedRefusal = Refusal(crowded);
+    CHECK(crowdedRefusal.contains("line 40: place 1"));
 }
 
 TEST_CASE("TilesIn finds the tiles a view overlaps, clamped to the map") {
@@ -432,7 +454,9 @@ TEST_CASE("the hash changes when any authored value does, not with resolved name
     core::WorldMapSource square = wide;
     square.columns = 4;
     square.rows = 4;
-    CHECK(MustBuild(wide).Hash() != MustBuild(square).Hash());
+    const u64 wideHash = MustBuild(wide).Hash();
+    const u64 squareHash = MustBuild(square).Hash();
+    CHECK(wideHash != squareHash);
 }
 
 } // namespace

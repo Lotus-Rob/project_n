@@ -38,8 +38,8 @@ extern "C" i32 LLVMFuzzerTestOneInput(const u8* bytes, std::size_t size) {
     // The world map names its places by strings, so it is read against a table holding the seed's names.
     [[clang::no_destroy]] static const core::Strings names = [] {
         core::Strings table;
-        table.Add("place_capital", { "Capital", "Capital" });
-        table.Add("place_wolf_pass", { "Wolf Pass", "Wolf Pass" });
+        table.Add("place_capital", { { "Capital", "Capital" } });
+        table.Add("place_wolf_pass", { { "Wolf Pass", "Wolf Pass" } });
         return table;
     }();
     const std::expected<core::WorldMap, core::Error> world = data::ParseWorldMap(text, names, &warnings);

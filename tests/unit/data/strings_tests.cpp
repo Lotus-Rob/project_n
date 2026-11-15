@@ -82,8 +82,10 @@ TEST_CASE("data strings keep file order after the named ones") {
     const std::expected<core::Strings, core::Error> strings =
         data::ParseStrings("place_b:\n  en: B\n  zh: 乙\n" + Everything() + "place_a:\n  en: A\n  zh: 甲\n");
     REQUIRE(strings.has_value());
-    CHECK(strings->Find("place_b").transform(std::to_underlying<core::StringId>) == core::STRINGS);
-    CHECK(strings->Find("place_a").transform(std::to_underlying<core::StringId>) == core::STRINGS + 1);
+    const std::optional<u16> first = strings->Find("place_b").transform(std::to_underlying<core::StringId>);
+    const std::optional<u16> second = strings->Find("place_a").transform(std::to_underlying<core::StringId>);
+    CHECK(first == core::STRINGS);
+    CHECK(second == core::STRINGS + 1);
 }
 
 TEST_CASE("a data string missing a language is refused, naming its line") {
@@ -104,8 +106,10 @@ TEST_CASE("a typo of a named string leaves that one missing") {
 TEST_CASE("a named string is found by its key") {
     const std::expected<core::Strings, core::Error> strings = data::ParseStrings(Everything());
     REQUIRE(strings.has_value());
-    CHECK(strings->Find("fox_name") == core::StringId::FoxName);
-    CHECK_FALSE(strings->Find("nope").has_value());
+    const std::optional<core::StringId> fox = strings->Find("fox_name");
+    const std::optional<core::StringId> nope = strings->Find("nope");
+    CHECK(fox == core::StringId::FoxName);
+    CHECK_FALSE(nope.has_value());
 }
 
 // Each error is named before its CHECK: MSVC's C4866 refuses a temporary std::string inside one (tests/AGENTS.md).

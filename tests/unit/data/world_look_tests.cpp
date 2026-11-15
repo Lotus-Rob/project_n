@@ -48,8 +48,8 @@ constexpr std::size_t MASKS = 16;
 
 core::WorldMap SmallMap() {
     core::Strings strings;
-    strings.Add("place_capital", { "Capital", "都城" });
-    strings.Add("place_wolf_pass", { "Wolf Pass", "狼关" });
+    strings.Add("place_capital", { { "Capital", "都城" } });
+    strings.Add("place_wolf_pass", { { "Wolf Pass", "狼关" } });
     std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(SMALL_MAP, strings);
     REQUIRE(map.has_value());
     return std::move(*map);

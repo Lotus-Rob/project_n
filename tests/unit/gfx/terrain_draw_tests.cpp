@@ -65,8 +65,8 @@ markers:
 
 core::WorldMap SmallMap() {
     core::Strings strings;
-    strings.Add("place_capital", { "Capital", "都城" });
-    strings.Add("place_wolf_pass", { "Wolf Pass", "狼关" });
+    strings.Add("place_capital", { { "Capital", "都城" } });
+    strings.Add("place_wolf_pass", { { "Wolf Pass", "狼关" } });
     std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(SMALL_MAP, strings);
     REQUIRE(map.has_value());
     return std::move(*map);
@@ -238,7 +238,7 @@ places:
   - { key: capital, kind: city, tile: [1, 0], name: place_capital, people: 100, start: true }
 )yaml";
     core::Strings strings;
-    strings.Add("place_capital", { "Capital", "都城" });
+    strings.Add("place_capital", { { "Capital", "都城" } });
     std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(MAP, strings);
     REQUIRE(map.has_value());
     core::WorldLook look = SmallLook(*manifest, SmallMap());

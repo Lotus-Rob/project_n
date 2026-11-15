@@ -140,9 +140,14 @@ TEST_CASE("the cultivator starts on the start city, the portal a short walk from
 }
 
 TEST_CASE("every place marker sprite reaches as far below the tile's centre as the city marker") {
-    constexpr std::array MARKERS{ core::atlas::SpriteId::MarkerHauntedForest, core::atlas::SpriteId::MarkerMountainPass,
-                                  core::atlas::SpriteId::MarkerShrine,        core::atlas::SpriteId::MarkerCave,
-                                  core::atlas::SpriteId::MarkerCliff,         core::atlas::SpriteId::MarkerCorruptVillage };
+    constexpr auto MARKERS = std::to_array(
+        { core::atlas::SpriteId::MarkerHauntedForest,
+          core::atlas::SpriteId::MarkerMountainPass,
+          core::atlas::SpriteId::MarkerShrine,
+          core::atlas::SpriteId::MarkerCave,
+          core::atlas::SpriteId::MarkerCliff,
+          core::atlas::SpriteId::MarkerCorruptVillage }
+    );
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const core::SpriteInfo& city = manifest->Sprite(core::atlas::SpriteId::MarkerCity);
     for (const core::atlas::SpriteId sprite : MARKERS) {
