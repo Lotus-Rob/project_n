@@ -43,7 +43,8 @@ struct TilePoint {
 /// One kind of terrain: its name, the symbol the data writes it with, and what a step onto it costs.
 struct TerrainKind {
     /// Its name, as the data and the look name it.
-    std::string name;
+    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::string name{};
     /// The symbol its tiles are written with in the grid.
     char symbol = ' ';
     /// The cost of entering one of its tiles, or IMPASSABLE_COST.
@@ -59,15 +60,18 @@ enum class PlaceKind : u8 {
 /// A named spot on the map.
 struct Place {
     /// Its key in the data.
-    std::string key;
+    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::string key{};
     /// What it is.
     PlaceKind kind = PlaceKind::City;
     /// A danger's sort (a data string's key); empty for a city.
-    std::string sort;
+    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::string sort{};
     /// The tile it stands on.
-    TilePoint tile;
+    TilePoint tile{};
     /// The key of its name in strings.yaml.
-    std::string nameKey;
+    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::string nameKey{};
     /// Its name, resolved by the reader: never hashed.
     StringId name{};
     /// How many NPCs a city's share holds.
@@ -88,16 +92,19 @@ enum class TileFlag : u8 {
 /// indexed like the source's own (kinds, roads, rivers, fords, places), and may be empty or short, as it is for data
 /// built in code. Never hashed.
 struct SourceLines {
+    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for
+    // members whose default constructor is defaulted.
     /// The line of each terrain kind.
-    std::vector<u32> kinds;
+    std::vector<u32> kinds{};
     /// The line of each road.
-    std::vector<u32> roads;
+    std::vector<u32> roads{};
     /// The line of each river.
-    std::vector<u32> rivers;
+    std::vector<u32> rivers{};
     /// The line of each ford.
-    std::vector<u32> fords;
+    std::vector<u32> fords{};
     /// The line of each place.
-    std::vector<u32> places;
+    std::vector<u32> places{};
+    // NOLINTEND(readability-redundant-member-init)
 };
 
 /// What the data says, before Build derives the layers.
@@ -112,20 +119,23 @@ struct WorldMapSource {
     u16 roadCost = 0;
     /// What a ford costs, whatever the terrain.
     u16 fordCost = 0;
+    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for
+    // members whose default constructor is defaulted.
     /// The terrain kinds.
-    std::vector<TerrainKind> kinds;
+    std::vector<TerrainKind> kinds{};
     /// One kind index per tile, row by row.
-    std::vector<u8> grid;
+    std::vector<u8> grid{};
     /// The roads, each a polyline of tile points.
-    std::vector<std::vector<TilePoint>> roads;
+    std::vector<std::vector<TilePoint>> roads{};
     /// The rivers, each a polyline of tile points.
-    std::vector<std::vector<TilePoint>> rivers;
+    std::vector<std::vector<TilePoint>> rivers{};
     /// The fords: tiles of a river.
-    std::vector<TilePoint> fords;
+    std::vector<TilePoint> fords{};
     /// The places.
-    std::vector<Place> places;
+    std::vector<Place> places{};
     /// Where each entry was written, for refusals to name; not hashed.
-    SourceLines lines;
+    SourceLines lines{};
+    // NOLINTEND(readability-redundant-member-init)
 };
 
 /// A block of tiles, by their first and last columns and rows, both included; empty when its first column or row lies
@@ -229,12 +239,15 @@ public:
 private:
     WorldMap() = default;
 
-    WorldMapSource m_source;
-    std::vector<u8> m_flags;
-    std::vector<u16> m_cost;
-    std::vector<u16> m_place;
-    std::vector<u16> m_region;
-    std::vector<std::vector<u32>> m_regionTiles;
+    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for
+    // members whose default constructor is defaulted.
+    WorldMapSource m_source{};
+    std::vector<u8> m_flags{};
+    std::vector<u16> m_cost{};
+    std::vector<u16> m_place{};
+    std::vector<u16> m_region{};
+    std::vector<std::vector<u32>> m_regionTiles{};
+    // NOLINTEND(readability-redundant-member-init)
     u16 m_start = NO_PLACE;
 };
 
