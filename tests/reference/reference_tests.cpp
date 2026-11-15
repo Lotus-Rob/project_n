@@ -1494,8 +1494,8 @@ TEST_CASE("the world's tiles and walkers at the smallest zoom: shimmer held to i
     // Measured 0.0397 on the data-driven world map (2026-11-15; 5a's flat world measured 0.0309). It is the ground's, not the
     // walkers': the worst tiles sit where two kinds of terrain meet, whose hard tile-quad edges step a whole pixel at a time
     // (the dark forest's small ink over the dark backdrop weighs its tiles' changes more). The fix is the sweep-up backlog's
-    // world map look (blending between kinds), which must bring this to 0.02 or under and tighten the bound. About twice the
-    // measure, as the seals' 0.02 is of their 0.011.
+    // world map look (blending between kinds), which must bring this to 0.02 or under and tighten the bound. About one and a
+    // half times the measure (the seals' 0.02 is about twice their 0.011).
     constexpr f64 MOST_CHANGE = 0.06;
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
