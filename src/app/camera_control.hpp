@@ -101,8 +101,8 @@ private:
 /// The camera over each kind of scene: a Follow scene centres on what it follows and nothing else moves it; a Pan
 /// scene pans by Move, the pan controls, the screen's edge and a drag, and snap back returns it to the scene's start;
 /// a Roam scene follows until any of those but Move pans it, then stays where the player leaves it until snap back
-/// follows again. The wheel zooms every kind, one notch a frame, within gfx::MIN_ZOOM and gfx::MAX_ZOOM. While
-/// CameraInput::path is set, the scripted path (CameraPath()) moves it instead.
+/// follows again. The wheel zooms every kind, at most ZOOM_NOTCHES_PER_SECOND and one notch a frame, within
+/// gfx::MIN_ZOOM and gfx::MAX_ZOOM. While CameraInput::path is set, the scripted path (CameraPath()) moves it instead.
 class CameraControl {
 public:
     /// A camera whose every scene starts at `startZoom` (the run's `--zoom`).
@@ -123,9 +123,9 @@ public:
         return m_free;
     }
 
-    /// Zooms by `notches` of the wheel (gfx::ZoomedBy()), at most one a frame from the next Update(): the rest wait for
-    /// the frames after, so a view never grows by more than a notch between two frames. Notches past a zoom limit are
-    /// dropped.
+    /// Zooms by `notches` of the wheel (gfx::ZoomedBy()) from the next Update(), at most ZOOM_NOTCHES_PER_SECOND of the
+    /// frames' time and one notch a frame: the rest wait for the frames after, so the view never outgrows CULL_MARGIN
+    /// before a publish culls to it. Notches past a zoom limit are dropped.
     void Zoom(f32 notches);
 
     /// Snaps the camera back (a Roam scene's to what it follows, a Pan scene's to where it started; a Follow scene's

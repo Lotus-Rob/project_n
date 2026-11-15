@@ -453,6 +453,25 @@ TEST_CASE("zoom stays within 0.25 and 2") {
     CHECK(control.Camera().zoom == gfx::MIN_ZOOM);
 }
 
+TEST_CASE("short frames zoom at most ZOOM_NOTCHES_PER_SECOND, so the cull margin holds at any frame rate") {
+    // A 240 Hz display: eight frames to a notch at 30 a second. One notch a frame would zoom a flick of three notches
+    // inside one 60 Hz publish interval, growing the view past CULL_MARGIN before a publish culls to it.
+    constexpr f32 NOTCHES = 3.0F;
+    constexpr i32 FRAMES_PER_NOTCH = 8;
+    constexpr f32 HERTZ = app::ZOOM_NOTCHES_PER_SECOND * FRAMES_PER_NOTCH; // 240
+    app::CameraInput fast = Frame(CameraKind::Pan);
+    fast.seconds = 1.0F / HERTZ;
+    app::CameraControl control{ 1.0F };
+    control.Update(fast);
+    control.Zoom(NOTCHES);
+    control.Update(fast);
+    CHECK(control.Camera().zoom == doctest::Approx(gfx::ZoomedBy(1.0F, 1.0F / FRAMES_PER_NOTCH))); // an eighth
+    for (i32 frame = 1; frame < FRAMES_PER_NOTCH; ++frame) {
+        control.Update(fast);
+    }
+    CHECK(control.Camera().zoom == doctest::Approx(gfx::ZoomedBy(1.0F, 1.0F))); // one notch in a thirtieth of a second
+}
+
 TEST_CASE("zoom takes one wheel notch a frame, and drops notches past its limit") {
     constexpr f32 NOTCHES = 3.0F;
     constexpr f32 PAST_CLOSEST = 20.0F; // notches, from about 1.5: the closest zoom is 2 away

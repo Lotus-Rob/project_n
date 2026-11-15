@@ -139,7 +139,9 @@ void CameraControl::Update(const CameraInput& input) {
         return;
     }
     if (!input.still) {
-        const f32 notch = std::clamp(m_notches, -1.0F, 1.0F);
+        // A wheel notch a frame would let fast frames zoom several notches while one snapshot shows (CULL_MARGIN).
+        const f32 most = std::min(std::clamp(input.seconds, 0.0F, FRAME_STEP_LIMIT_SECONDS) * ZOOM_NOTCHES_PER_SECOND, 1.0F);
+        const f32 notch = std::clamp(m_notches, -most, most);
         m_notches -= notch;
         m_camera.zoom = gfx::ZoomedBy(m_camera.zoom, notch);
         if ((m_notches > 0.0F && m_camera.zoom >= gfx::MAX_ZOOM) || (m_notches < 0.0F && m_camera.zoom <= gfx::MIN_ZOOM)) {

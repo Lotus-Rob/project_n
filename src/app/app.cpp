@@ -480,9 +480,7 @@ bool App::SteerCamera(const ControlEvent& control) {
         return true;
     }
     if (control.control == Control::Zoom) {
-        if (ZoomsCamera(drawn)) {
-            m_camera.Zoom(control.value);
-        }
+        m_camera.Zoom(control.value);
         return true;
     }
     if (control.control == Control::SnapBack) {

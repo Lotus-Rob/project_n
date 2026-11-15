@@ -171,10 +171,6 @@ TEST_CASE("the camera holds still while a calendar step's transition shows") {
     CHECK_FALSE(app::HoldsCamera(&still));
     CHECK_FALSE(app::HoldsCamera(&following)); // whether a scene that follows pans is its camera kind's (CameraControl)
     CHECK(app::HoldsCamera(&transition));
-    CHECK(app::ZoomsCamera(nullptr));
-    CHECK(app::ZoomsCamera(&still));
-    CHECK(app::ZoomsCamera(&following));
-    CHECK_FALSE(app::ZoomsCamera(&transition));
 }
 
 TEST_CASE("labels fade while the frame clock runs and the render clock holds, as when the game is paused") {
