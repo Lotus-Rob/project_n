@@ -161,9 +161,9 @@ void Relationships::Load(core::Reader& archive, const core::State& state) {
     }
 }
 
-core::StableId SpawnNpc(core::State& state, u32 cell) {
+core::StableId SpawnNpc(core::State& state, u32 cell, u16 home) {
     const auto [stableId, entity] = state.Create(WORLD);
-    state[WORLD].Entities().emplace<Npc>(entity, cell);
+    state[WORLD].Entities().emplace<Npc>(entity, cell, home);
     state[WORLD].Entities().emplace<Needs>(entity);
     return stableId;
 }

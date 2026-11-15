@@ -45,6 +45,9 @@ inline constexpr u32 DECISION_TICKS = 6;
 /// The map cell `point` lies in; a point off the map's edge counts as in the nearest edge cell.
 [[nodiscard]] u32 CellAt(core::Vec2 point);
 
+/// An NPC's `home` in a scene with no world map: it lives in no city.
+inline constexpr u16 NO_HOME = 0xFFFF;
+
 /// What a world NPC does with a month.
 enum class Action : u8 {
     Rest,      ///< Recovers from fatigue.
@@ -54,8 +57,11 @@ enum class Action : u8 {
 
 /// A world or active NPC's hot state: what a calendar step reads every month.
 struct Npc {
-    /// The map cell it lives in.
+    /// Where it lives: a 64-column grid cell (MAP_COLUMNS) in the arena and the stress arena, a core::WorldMap tile index
+    /// (column + row * the map's columns) in a scene with the world map.
     u32 cell = 0;
+    /// The place index (core::WorldMap::Places) of the city it belongs to in a scene with the world map, NO_HOME otherwise.
+    u16 home = NO_HOME;
     /// What it did last month.
     Action action = Action::Rest;
     /// How far its cultivation has come.
@@ -64,7 +70,7 @@ struct Npc {
     /// Lists its fields for an archive (core/archive.hpp).
     template<typename Self, typename Archive>
     void Fields(this Self& self, Archive& archive) {
-        archive(self.cell, self.action, self.power);
+        archive(self.cell, self.home, self.action, self.power);
     }
 
     /// Whether a value read from a save can be used: an action that exists and a finite power.
@@ -187,8 +193,8 @@ private:
     // NOLINTEND(readability-redundant-member-init)
 };
 
-/// Creates a world NPC in `cell`, rested and content.
-core::StableId SpawnNpc(core::State& state, u32 cell);
+/// Creates a world NPC in `cell`, rested and content, belonging to the city of place index `home` (NO_HOME: none).
+core::StableId SpawnNpc(core::State& state, u32 cell, u16 home = NO_HOME);
 /// Creates an aggregate of `members` people in `cell`.
 core::StableId SpawnGroup(core::State& state, u32 cell, u32 members);
 

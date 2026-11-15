@@ -8,6 +8,7 @@
 #include "core/random.hpp"
 #include "core/seal.hpp"
 #include "core/view_limits.hpp"
+#include "core/world_map.hpp"
 #include "game/random_purposes.hpp"
 
 namespace game {
@@ -57,8 +58,9 @@ constexpr f32 MIDDLE = 0.5F;
 // The host's part of a save: its format, then a version per domain, each changed with what its components save.
 // 2: the player and the selection; 3: the respawns waiting, the volleys and the flashes; 4: the seals
 constexpr u32 ARENA_FORMAT = 4;
-constexpr u32 ACTIVE_VERSION = 4; // 2: creatures; 3: spin; 4: health, dying, arriving, caster, dashing, afflictions
-constexpr u32 WORLD_VERSION = 1;
+constexpr u32 ACTIVE_VERSION =
+    5; // 2: creatures; 3: spin; 4: health, dying, arriving, caster, dashing, afflictions; 5: the NPCs' homes
+constexpr u32 WORLD_VERSION = 2; // 2: the NPCs' homes
 using ActiveComponents = core::ComponentList<
     Body,
     Look,
@@ -96,6 +98,22 @@ bool CombatConsistent(const core::Registry& entities) {
            std::ranges::all_of(entities.view<const Caster>(), hasHealth) &&
            std::ranges::all_of(entities.view<const Dashing>(), hasBody) &&
            std::ranges::all_of(entities.view<const Afflictions>(), hasHealth);
+}
+
+// Whether every NPC's cell and home suit the scene: with a world map, a tile on it and a city's place index; without,
+// no home.
+bool NpcsPlaced(const core::State& state, const core::WorldMap* map) {
+    const auto placed = [map](const Npc& person) {
+        if (map == nullptr) {
+            return person.home == NO_HOME;
+        }
+        return person.cell < map->Columns() * map->Rows() && person.home < map->Places().size() &&
+               map->Places()[person.home].kind == core::PlaceKind::City;
+    };
+    return std::ranges::all_of(std::array{ ACTIVE, WORLD }, [&](core::DomainIndex domain) {
+        const auto npcs = state[domain].Entities().view<const Npc>();
+        return std::ranges::all_of(npcs, [&](core::Entity entity) { return placed(npcs.get<const Npc>(entity)); });
+    });
 }
 
 // Whether every entity has the components that code reads together with the ones it has: a save can
@@ -664,10 +682,12 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
     relationships.Load(archive, state);
     Combat combat;
     combat.Load(archive);
+    const bool sceneHasMap = scene < Scenes().size() && SceneOf(core::SceneKey{ scene }).Traits().worldMap;
+    const bool npcsPlaced = NpcsPlaced(state, sceneHasMap ? m_data.world.get() : nullptr);
     const bool playerFound = player == core::StableId{} || (state.DomainOf(player) == ACTIVE &&
                                                             state[ACTIVE].Entities().all_of<Body>(state[ACTIVE].Find(player)));
-    if (archive.Failed() || archive.Remaining() != 0 || !Consistent(state) || !playerFound || !combat.AimsAtCreatures(state) ||
-        !combat.FlashesStartBy(simulationTick) || !combat.SealsStartBy(simulationTick)) {
+    if (archive.Failed() || archive.Remaining() != 0 || !Consistent(state) || !npcsPlaced || !playerFound ||
+        !combat.AimsAtCreatures(state) || !combat.FlashesStartBy(simulationTick) || !combat.SealsStartBy(simulationTick)) {
         return false;
     }
     m_loaded.emplace(
