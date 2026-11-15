@@ -25,7 +25,8 @@ inline constexpr u32 LINE_MASKS = 16;
 /// The sprites that draw the world map.
 struct WorldLook {
     /// The variants of each terrain kind, by the map's kind index; each has at least one.
-    std::vector<std::vector<atlas::SpriteId>> kinds;
+    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::vector<std::vector<atlas::SpriteId>> kinds{};
     /// The road overlay by neighbour mask.
     std::array<atlas::SpriteId, LINE_MASKS> roads{};
     /// The river overlay by neighbour mask.
@@ -39,7 +40,8 @@ struct WorldLook {
     /// A city's marker.
     atlas::SpriteId cityMarker{};
     /// The marker of each danger sort, in the file's order (a sort is a data string's key).
-    std::vector<std::pair<std::string, atlas::SpriteId>> dangerMarkers;
+    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::vector<std::pair<std::string, atlas::SpriteId>> dangerMarkers{};
 
     /// A hash of every value, so a reload can tell an edit from none. Not part of the game data's hash.
     [[nodiscard]] u64 Hash() const {

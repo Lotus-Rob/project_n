@@ -58,7 +58,7 @@ struct GameData {
     /// The world map (`world.yaml`), shared with the scenes and the drawing; null in game::BuiltInData(). Read once at
     /// the start and kept through a reload, so an edit to `world.yaml` alone changes nothing. Hashed, but not listed in
     /// Fields(): a pointer isn't archived.
-    std::shared_ptr<const WorldMap> world;
+    std::shared_ptr<const WorldMap> world = nullptr;
 
     /// Lists its fields for an archive (core/archive.hpp).
     template<typename Self, typename Archive>
