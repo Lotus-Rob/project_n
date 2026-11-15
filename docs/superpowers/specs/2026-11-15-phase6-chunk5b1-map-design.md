@@ -233,6 +233,9 @@ The user's, 2026-11-15:
    NPCs): "Sounds good".
 7. **The map is organic and aesthetic, matching real-world biomes and land forming,** never square, stale or grid-like
    (Goal 9).
+8. **Diagonal steps stay** (asked after the user's look at Tale of Immortal's orthogonal-only travel): the step rule
+   as built, diagonal = the entered tile's cost × 7 / 5, only past two passable orthogonal neighbours; for 5b2's paths
+   too.
 
 The chunk spec's decisions 2, 3, 5, 9, 10 and 14 carry into 5b1 (the map, its scale, hand-made content, NPCs in
 cities); the rest wait for 5b2, 5b3 and 5c.
