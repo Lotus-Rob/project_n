@@ -246,3 +246,148 @@ the default keys and buttons (every action on mouse, keyboard and gamepad); the 
 method (SDL_GPU has no timestamp queries; for example, the CPU's wait on the GPU at submit or acquire, or a frame-time
 difference with work shown and hidden), recorded with why; the budget numbers; command details; commit split and
 order.
+
+## Outcome
+
+### Measurements (2026-11-15)
+
+The phase's first measurement, taken by plan Task 9 on the build of "build(tools): add measure, the phase's smoothness
+and cost numbers": `pixi run project_n measure` three times in a row (every run: world, burst, swords, seals), with the
+display free and nothing else running. All three exited 0 and were trusted (no pause, no camera path warning, every path
+finished), with no hitches and every row marked `paced`. They are the baseline every later chunk of phase 6 records
+against.
+
+**The machine.**
+
+| Part | What it is |
+|---|---|
+| CPU | Intel Core i9-13900K (24 cores, 32 threads, up to 5.8 GHz); `powersave` governor, energy preference `balance_performance`, power profile `balanced` |
+| GPU | NVIDIA GeForce RTX 4090 (24 GiB), driver 620.70.06, Vulkan |
+| Memory | 62 GiB |
+| OS | CachyOS, kernel 7.3.4-1-cachyos |
+| Desktop | niri 26.04 (Wayland); the game on SDL 3.4.16's Wayland driver, presenting with mailbox (`--unpaced`: the driver offers no immediate) |
+| Display measured on | DP-3, Dell S2721DGF, 2560×1440 at 165.08 Hz, variable refresh off; the game logged `display: 2560x1440 at 165 Hz` in every run. A second monitor, DP-1 (Dell U2722DE, 2560×1440 at 59.95 Hz), sits to its left |
+
+**How to read the tables.** Times are in ms; each cell is run 1 / run 2 / run 3. *Frame* is the main thread's `Run`
+zone, start to start; *work* is the frame less its wait for the next swapchain image (`WaitForGpu`). The main thread's
+own work equals *work* within 0.01 ms in every cell, so it isn't repeated. p99 is `—` below 100 frames (each segment's
+first 0.5 s: 82 frames). The rest of each camera segment has 577 to 579 frames (the widest view 908 or 909); the arena
+runs leave their first 2 s out and have 2,970 to 2,972 frames (burst), 11,225 or 11,226 (swords) and 4,622 or 4,623
+(seals).
+
+| Run | Segment | Frame median | Frame p99 | Frame worst | Work median | Work p99 | Work worst | GPU share |
+|---|---|---|---|---|---|---|---|---|
+| world | follow: first 0.5 s | 6.05 / 6.06 / 6.03 | — | 7.43 / 7.28 / 7.24 | 0.62 / 0.56 / 0.58 | — | 1.21 / 1.16 / 0.94 | 89 / 90 / 90 % |
+| world | follow: rest | 6.06 / 6.04 / 6.05 | 8.11 / 8.08 / 7.67 | 8.57 / 9.59 / 9.88 | 0.74 / 0.75 / 0.67 | 2.99 / 3.13 / 1.25 | 3.53 / 3.67 / 1.61 | 86 / 87 / 89 % |
+| world | pan: first 0.5 s | 6.04 / 6.07 / 6.06 | — | 8.80 / 8.44 / 9.52 | 0.98 / 1.00 / 0.61 | — | 3.35 / 3.32 / 4.04 | 81 / 81 / 86 % |
+| world | pan: rest | 6.11 / 6.04 / 6.08 | 8.61 / 9.06 / 9.43 | 8.97 / 10.18 / 10.89 | 1.11 / 1.03 / 1.01 | 3.79 / 3.85 / 4.12 | 4.05 / 4.00 / 5.83 | 78 / 79 / 81 % |
+| world | zoom in and out: first 0.5 s | 6.08 / 6.11 / 6.06 | — | 9.29 / 8.84 / 9.55 | 0.96 / 1.00 / 0.95 | — | 4.36 / 3.50 / 4.05 | 79 / 79 / 83 % |
+| world | zoom in and out: rest | 6.07 / 6.09 / 6.03 | 9.01 / 8.93 / 9.22 | 9.62 / 9.36 / 13.06 | 1.07 / 1.06 / 1.06 | 3.94 / 3.92 / 4.17 | 4.21 / 4.24 / 7.94 | 79 / 78 / 78 % |
+| world | widest view: first 0.5 s | 6.14 / 6.16 / 6.04 | — | 10.15 / 9.38 / 9.12 | 1.58 / 1.46 / 1.44 | — | 4.95 / 4.71 / 4.80 | 69 / 71 / 74 % |
+| world | widest view: rest | 6.06 / 6.06 / 5.98 | 9.34 / 9.08 / 9.62 | 12.39 / 10.48 / 12.99 | 1.44 / 1.53 / 1.47 | 4.50 / 4.49 / 4.64 | 8.04 / 5.77 / 7.40 | 73 / 71 / 71 % |
+| world | labels: first 0.5 s | 6.14 / 6.12 / 5.96 | — | 10.33 / 10.18 / 12.66 | 1.22 / 1.28 / 1.27 | — | 5.91 / 4.23 / 4.07 | 76 / 76 / 75 % |
+| world | labels: rest | 6.09 / 6.09 / 6.02 | 9.05 / 9.40 / 9.21 | 11.05 / 10.78 / 10.89 | 1.21 / 1.29 / 1.23 | 3.82 / 4.13 / 4.07 | 5.93 / 4.78 / 5.06 | 76 / 76 / 77 % |
+| burst | whole run | 6.04 / 6.05 / 6.08 | 9.10 / 9.14 / 8.94 | 10.71 / 13.68 / 13.38 | 2.62 / 2.54 / 2.67 | 5.68 / 5.31 / 5.67 | 7.75 / 7.23 / 8.26 | 56 / 58 / 55 % |
+| swords | whole run | 6.05 / 6.05 / 6.05 | 9.19 / 9.27 / 9.26 | 12.79 / 13.50 / 12.02 | 2.56 / 2.51 / 2.59 | 6.08 / 6.18 / 6.15 | 11.05 / 8.94 / 8.28 | 56 / 57 / 56 % |
+| seals | whole run | 6.06 / 6.05 / 6.04 | 9.00 / 9.02 / 9.21 | 11.18 / 10.56 / 12.25 | 2.55 / 2.64 / 2.56 | 6.15 / 5.81 / 5.89 | 7.97 / 7.37 / 10.24 | 57 / 57 / 57 % |
+
+The other threads' work per frame. A zone counts in the frame it starts in, and the logic ticks at 60 Hz against 165
+frames a second, so most frames hold none of its work and its median is mostly 0:
+
+| Run | Segment | Logic median | Logic p99 | Logic worst | Worker 3 median | Worker 3 p99 | Worker 3 worst | Worker 4 median | Worker 4 p99 | Worker 4 worst |
+|---|---|---|---|---|---|---|---|---|---|---|
+| world | follow: first 0.5 s | 0.00 / 0.00 / 0.15 | — | 2.29 / 2.27 / 2.21 | 0.00 / 0.00 / 0.00 | — | 0.97 / 0.92 / 0.92 | 0.00 / 0.00 / 0.00 | — | 0.90 / 0.86 / 0.93 |
+| world | follow: rest | 0.00 / 0.00 / 0.00 | 2.29 / 2.24 / 2.30 | 2.46 / 2.40 / 2.58 | 0.00 / 0.00 / 0.00 | 0.91 / 0.93 / 1.04 | 1.05 / 1.47 / 1.39 | 0.00 / 0.00 / 0.00 | 0.90 / 0.90 / 0.90 | 1.13 / 1.20 / 0.98 |
+| world | pan: first 0.5 s | 0.00 / 0.00 / 0.00 | — | 2.26 / 2.50 / 2.08 | 0.00 / 0.00 / 0.00 | — | 0.93 / 0.86 / 0.87 | 0.00 / 0.00 / 0.00 | — | 0.96 / 0.87 / 0.20 |
+| world | pan: rest | 0.00 / 0.00 / 0.00 | 2.32 / 2.29 / 2.28 | 2.50 / 2.45 / 2.61 | 0.00 / 0.00 / 0.00 | 0.96 / 0.88 / 0.94 | 1.12 / 1.03 / 1.07 | 0.00 / 0.00 / 0.00 | 0.94 / 0.94 / 0.91 | 1.08 / 1.17 / 1.14 |
+| world | zoom in and out: first 0.5 s | 0.00 / 0.15 / 0.00 | — | 2.23 / 2.25 / 2.53 | 0.00 / 0.00 / 0.00 | — | 0.92 / 1.06 / 0.86 | 0.00 / 0.00 / 0.00 | — | 1.00 / 0.89 / 0.95 |
+| world | zoom in and out: rest | 0.12 / 0.00 / 0.00 | 2.50 / 2.44 / 2.41 | 3.14 / 2.56 / 2.69 | 0.00 / 0.00 / 0.00 | 0.93 / 0.91 / 0.98 | 1.12 / 1.11 / 1.49 | 0.00 / 0.00 / 0.00 | 0.94 / 0.94 / 0.90 | 1.11 / 1.05 / 1.15 |
+| world | widest view: first 0.5 s | 0.43 / 0.70 / 0.00 | — | 3.37 / 3.83 / 3.89 | 0.00 / 0.00 / 0.00 | — | 1.03 / 0.97 / 1.11 | 0.00 / 0.00 / 0.00 | — | 1.28 / 1.24 / 1.03 |
+| world | widest view: rest | 0.00 / 0.27 / 0.14 | 3.25 / 3.11 / 3.08 | 3.45 / 3.58 / 3.27 | 0.00 / 0.00 / 0.00 | 1.15 / 1.01 / 1.01 | 1.83 / 1.33 / 1.18 | 0.00 / 0.00 / 0.00 | 1.06 / 1.02 / 1.06 | 1.52 / 1.52 / 1.51 |
+| world | labels: first 0.5 s | 0.00 / 0.36 / 0.23 | — | 3.01 / 2.72 / 2.63 | 0.00 / 0.00 / 0.00 | — | 0.94 / 1.12 / 0.93 | 0.00 / 0.00 / 0.00 | — | 0.92 / 1.02 / 1.04 |
+| world | labels: rest | 0.00 / 0.00 / 0.00 | 2.70 / 2.72 / 2.73 | 2.82 / 2.85 / 3.14 | 0.00 / 0.00 / 0.00 | 1.00 / 1.01 / 1.10 | 1.26 / 1.26 / 1.31 | 0.00 / 0.00 / 0.00 | 1.03 / 0.96 / 0.94 | 1.08 / 1.20 / 1.10 |
+| burst | whole run | 0.00 / 0.00 / 0.00 | 0.22 / 0.25 / 0.23 | 0.61 / 0.69 / 0.66 | 0.35 / 0.35 / 0.36 | 0.46 / 0.45 / 0.46 | 0.69 / 0.58 / 0.73 | 0.35 / 0.35 / 0.36 | 0.45 / 0.44 / 0.46 | 0.75 / 0.66 / 0.63 |
+| swords | whole run | 0.00 / 0.00 / 0.00 | 0.19 / 0.19 / 0.19 | 1.26 / 0.50 / 0.48 | 0.24 / 0.23 / 0.23 | 2.28 / 2.25 / 2.25 | 2.58 / 2.53 / 2.49 | 0.24 / 0.23 / 0.24 | 2.25 / 2.25 / 2.25 | 2.58 / 2.51 / 2.47 |
+| seals | whole run | 0.00 / 0.00 / 0.00 | 0.20 / 0.20 / 0.19 | 0.48 / 0.48 / 0.55 | 0.25 / 0.25 / 0.26 | 2.27 / 2.24 / 2.24 | 2.48 / 2.41 / 2.47 | 0.26 / 0.27 / 0.28 | 2.24 / 2.22 / 2.23 | 2.59 / 2.48 / 2.43 |
+
+Also measured: **input latency** (a Move press to its first drawn frame) 23.8 / 23.7 / 18.5 ms; **world shimmer**
+0.0309 in all three (the reference pictures' world case, drawn on software Vulkan, so the same every run); **hitches**
+none. Where the main thread's work goes (read from run 1's Tracy captures, not from `measure`'s table; kept locally in
+`build/measure/20261115-104554/`, not committed): `SubmitFrame` (handing the frame to the driver) is its
+largest zone, a mean of 0.59 ms a frame in the world, 0.71 in burst and 0.98 in swords, and at most 7.4 to 9.0 ms. In
+the arena runs the job system's chunks come next (`PlaceNumberChunk` in burst, the swords' `ExecuteRange`), now shared
+by the main thread and just two workers.
+
+**The noise between the runs.** Frame medians agree within ±0.09 ms, work medians within ±0.07 ms and the workers'
+medians within ±0.01 ms; the logic's medians, mostly 0 because few frames start a tick, jump between 0 and 0.7 ms and
+mean nothing. Work p99s agree within ±0.2 ms, the logic's and workers' within ±0.09 ms, and frame p99s within ±0.41 ms.
+Two cells fall outside: the 82-frame `pan: first 0.5 s` work median (0.61 against 1.00) and `follow: rest`'s work p99 in
+run 3 (1.25 against 2.99 and 3.13). Worst frames move by ±0.1 to ±1.9 ms (they are single frames), the GPU share by up
+to ±2.5 points and the input latency by ±2.7 ms. So, on a segment of 100 frames or more, a later change counts as real
+when a work median moves by more than 0.15 ms (the widest span within this sitting is burst's 0.13 ms) or a work or
+thread p99 by more than 0.5 ms (the widest span is burst's 0.37 ms, leaving out the outlier). Because one run can
+still move a p99 far (`follow: rest` by 1.74 ms in run 3), a single run past either line counts only once a second run
+confirms it. Worst frames are read only as hitch or no hitch.
+
+Runs on different days disagree by more than that. Task 8's single world run, on the same game code a day earlier and
+also paced at 165 Hz, had alike medians (0.48 to 0.78 ms of work) but rest-segment work p99s of 1.7 to 1.9 ms and logic
+p99s of 0.6 to 0.8 ms; here they are 3.8 to 4.6 ms (pan to labels) and 2.2 to 3.3 ms. The likely cause is the CPU's
+clocks: under `powersave` and the `balanced` profile a mostly idle CPU clocks down between paced frames, and how far
+depends on what else the machine is doing. This is unproven. So **each later chunk measures main's head and its own
+branch in one sitting**, and judges its numbers against that pair (with the rule above) as well as against this table,
+for the world and the arena runs alike.
+
+**Beside the earlier, unpinned numbers.**
+
+| Measurement | Earlier (unpinned) | Now (pinned, the three runs' range) |
+|---|---|---|
+| Chunk 3, damage-number burst, main thread | 0.43 ms median, 2.6 ms worst | the main thread's own work (its row, not *work*): 2.54 to 2.67 ms median, 7.22 to 8.26 ms worst |
+| Chunk 4, 1,000 flying swords, whole frame at a volley's peak | 1.31 / 2.31 / 2.60 ms (median / p99 / worst) | work over the whole run 2.51 to 2.59 / 6.08 to 6.18 / 8.28 to 11.05 ms; frame 6.05 / 9.19 to 9.27 / 12.02 to 13.50 ms |
+| Chunk 4b, swords with their seals, frame | ~685 µs median | work 2.55 to 2.64 ms median; frame 6.04 to 6.06 ms |
+
+They aren't a regression check. The earlier numbers ran in a 720p window (tiled to whatever niri gave it) on 30
+workers, and chunk 4's at a volley's peak. These run fullscreen at 2560×1440, four times the pixels, on 2 workers,
+which moves the job system's chunks onto fewer threads (the main thread among them). They are also paced at 165 Hz,
+which src/AGENTS.md's Gotchas found makes every zone three to five times slower than unthrottled. From here on, the
+pinned numbers are the ones compared.
+
+**The GPU's share: method and limits.** SDL_GPU has no timestamp queries, so the share is the CPU's wait on the GPU:
+the main thread's `WaitForGpu` zone round `SDL_WaitAndAcquireGPUSwapchainTexture` (it returns once an earlier frame is
+done and an image is free), summed over a segment and divided by its frame time. Its limits, as measured here:
+
+- This host's Vulkan on Wayland (NVIDIA under niri) offers no immediate present, so `--unpaced` falls back to mailbox,
+  and the compositor still paces every frame to the display: the frame medians sit at 5.96 to 6.16 ms, one 165 Hz
+  interval, in every row. On a paced host the share is the wait to present, not GPU time (hence `paced` on every row):
+  55 to 58 % in the arena runs and 69 to 90 % in the world say only how much of a 6.06 ms interval the CPU leaves idle.
+- *Work*, hitches and the per-thread numbers leave the wait out, so they hold whatever the pacing. *Work* still
+  includes `SubmitFrame`, the driver's own time at submit, and some of that may be waiting too.
+- Frames over the interval (frame p99 7.7 to 9.6 ms, while work p99 stays under 6.2 ms) miss a refresh on the GPU's or
+  the compositor's side; with no GPU timing this method can't say which.
+- A GPU time proper needs an unpaced present (for example XWayland's immediate, `SDL_VIDEO_DRIVER=x11`) or a
+  frame-time difference with the work shown and hidden, as chunk 4b did. Until one is measured, the GPU share is no
+  basis for moving work onto the GPU (the backlog's GPU items).
+
+**The 60 Hz lock seen during Task 8.** Two earlier runs, taken while the desktop was in use, locked at ~16.7 ms frames
+though the log said 165 Hz. Here every run locked at 6.06 ms, with the 165 Hz monitor focused. The likely cause is the
+second, 60 Hz monitor: niri opens a new window on the focused output, and the game logs the display mode right after
+creating its window, probably before Wayland has said which output the window is on, so the logged mode needn't be the
+window's. This is unproven (proving it would have moved the user's focus). It is a known limit: **the display line
+can name the wrong monitor**, and with it `measure`'s `paced` verdict; it is fixed on this branch at finishing. Until
+then, run `measure` with the 165 Hz monitor focused, and trust a run only if its rows say `paced` or its frame medians
+sit at 1/refresh.
+
+**The first budgets.** Each one gives its reason; a later chunk that breaks one says so in its Outcome, with why. The
+budgets are ceilings that catch large regressions; modest ones are caught by measuring main's head and the branch in
+one sitting (the rule under the noise). Since runs on different days disagree, a branch breaks a budget only when main,
+measured in the same sitting, keeps it: when both break it, the machine moved, not the branch.
+
+| Budget | Value | Measured here (the highest of the three runs) | Why |
+|---|---|---|---|
+| Hitches | none: no frame's work over 16.7 ms, the first 0.5 s of each segment included | none (the most work in a frame: 11.05 ms, swords) | the spec's anti-goal; 16.7 ms is one refresh of a 60 Hz display (`HITCH_MS`) |
+| World, work median per segment | ≤ 2.5 ms | 1.58 ms (widest view, first 0.5 s) | the map's steady cost with nothing living on it yet; leaves 5b about 1 ms over the busiest view for fog, names and labels. A ceiling: a modest regression shows only in the same-sitting pair |
+| World, work p99 per segment | ≤ 5.5 ms | 4.64 ms (widest view) | a third of a 60 Hz frame, so a machine three times slower than this one still keeps 60 Hz at the 99th percentile; also inside one 165 Hz interval here. A ceiling: a modest regression shows only in the same-sitting pair |
+| World, logic p99 per frame | ≤ 5.5 ms | 3.25 ms (widest view) | a third of the logic's 60 Hz tick, the same three-times-slower margin, with room for 5b's travellers and time |
+| Arena runs (burst, swords, seals) | work median ≤ 3.0 ms, work p99 ≤ 7.5 ms, logic p99 ≤ 0.5 ms | 2.67, 6.18 and 0.25 ms | the arena's content doesn't grow in phase 6, so these guard it against shared code (renderer, culling, jobs). Each sits above this sitting's spread with room for a day's drift (the world's medians held from one day to the next while its p99s moved, hence 3.0 ms and 7.5 ms, a tenth and a fifth over the highest); as ceilings they catch large regressions, and the same-sitting pair catches modest ones. The p99 is already above a third of a 60 Hz frame, which is what the backlog's GPU items (volley instancing) are for |
+| Input latency | ≤ 50 ms | 23.8 ms | three 60 Hz frames: the press waits up to one logic tick, then a publish, a draw and a present; Task 8's runs (36.4 ms, and 49.4 ms at 60 Hz) spread wider than these three |
+| World shimmer | ≤ 0.031 | 0.0309 | no worse than today; the 0.02 the labels and seals hold is the world map look's job (Task 5's ruling) |
+| Frame time, worst frame, GPU share | no budget | — | paced, the frame time is the display's interval and the GPU share the wait to present; worst frames are single frames, ±1.9 ms between runs |
