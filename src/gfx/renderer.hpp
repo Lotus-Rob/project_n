@@ -21,7 +21,6 @@
 #include <expected>
 #include <filesystem>
 #include <memory>
-#include <optional>
 #include <span>
 
 namespace gfx {
