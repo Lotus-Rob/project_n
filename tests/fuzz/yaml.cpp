@@ -1,8 +1,8 @@
 // The data module's YAML readers (data::ParseGameData, data::ParseAbilities, data::ParseSettings, data::ParseManifest,
-// data::ParseStrings, data::ParseEffects, data::ParseSeals, data::ParseWorldMap): a data or settings file is edited by hand and
-// the manifest may be damaged, so any text is refused with an error or read, never a crash or an exception escaping. Seeded
-// with the shipped creatures, abilities, effects, seals and strings tables, a settings file, the manifest, a seals table past a
-// cap and a small world map.
+// data::ParseStrings, data::ParseEffects, data::ParseSeals, data::ParseWorldMap, data::ParseWorldLook): a data or settings
+// file is edited by hand and the manifest may be damaged, so any text is refused with an error or read, never a crash or an
+// exception escaping. Seeded with the shipped creatures, abilities, effects, seals and strings tables, a settings file, the
+// manifest, a seals table past a cap, a small world map and a small look for it.
 #include "../support/manifest.hpp" // relative: lint has no compile flags for the fuzz targets, which only build with ASan
 #include "core/cxx23.hpp"          // IWYU pragma: keep
 #include "data/abilities.hpp"
@@ -12,7 +12,31 @@
 #include "data/seals.hpp"
 #include "data/settings.hpp"
 #include "data/strings.hpp"
+#include "data/world_look.hpp"
 #include "data/world_map.hpp"
+
+namespace {
+
+// The `world` seed: the map the look is read against.
+constexpr std::string_view SMALL_MAP = R"yaml(road_cost: 4
+ford_cost: 30
+tile_size: 256
+kinds:
+  - { symbol: "~", name: deep_water, cost: impassable }
+  - { symbol: ".", name: meadow, cost: 10 }
+grid: |
+  ~~~~~
+  ..~..
+  .....
+roads: [ [[0, 2], [4, 2]] ]
+rivers: [ [[3, 1], [3, 2]] ]
+fords: [ [3, 1] ]
+places:
+  - { key: capital, kind: city, tile: [0, 2], name: place_capital, people: 100, start: true }
+  - { key: wolf_pass, kind: danger, sort: mountain_pass, tile: [4, 1], name: place_wolf_pass }
+)yaml";
+
+} // namespace
 
 // Declared first: libFuzzer ships no header for it, and -Wmissing-prototypes requires one.
 extern "C" i32 LLVMFuzzerTestOneInput(const u8* bytes, std::size_t size);
@@ -43,10 +67,20 @@ extern "C" i32 LLVMFuzzerTestOneInput(const u8* bytes, std::size_t size) {
         return table;
     }();
     const std::expected<core::WorldMap, core::Error> world = data::ParseWorldMap(text, names, &warnings);
+    // The look names the map's kinds and sorts, so it is read against the `world` seed's map, built once.
+    [[clang::no_destroy]] static const core::WorldMap small = [] {
+        std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(SMALL_MAP, names);
+        if (!map) {
+            std::abort(); // the seed map is valid; every input after would test nothing
+        }
+        return std::move(*map);
+    }();
+    const std::expected<core::WorldLook, core::Error> look = data::ParseWorldLook(text, *shipped, small, &warnings);
     if ((!gameData && gameData.error().message.empty()) || (!abilities && abilities.error().message.empty()) ||
         (!effects && effects.error().message.empty()) || (!settings && settings.error().message.empty()) ||
         (!manifest && manifest.error().message.empty()) || (!strings && strings.error().message.empty()) ||
-        (!seals && seals.error().message.empty()) || (!world && world.error().message.empty())) {
+        (!seals && seals.error().message.empty()) || (!world && world.error().message.empty()) ||
+        (!look && look.error().message.empty())) {
         std::abort(); // a refusal always says why
     }
     return 0;
