@@ -440,6 +440,14 @@ The plan ledger's calls, each with its reason and what it costs if wrong. Commit
 - The version-4 refusal test has no version-5 positive control of its own: the save round-trip tests load the same
   shapes.
 - "Route costs are whole numbers" in the docs states 5b2 work already true of 5b1's map (Task 4).
+- **At finishing:** a world whose cities' people sum past `MOST_WORLD_PEOPLE` (100,000, twice the shipped 50,000, the
+  tier phase 4's gates were set for) is refused, so no hand edit makes `SpawnPeople` allocate without bound (GLM's
+  finding); cost if wrong: one constant. The seals' twin of the look's sprite-list gap goes to the sweep-up backlog
+  (pre-existing, `seals.yaml` is 4b's). Lines over 120 columns in `art/` stay: no tool or rule sets 120 for Python or
+  TOML (clang-format's 128 is C++'s, ruff's defaults skip E501). The knot where road and river arms meet stays with the
+  placeholder art (smooth lines are 5b-look's). `Host::Portal`, `OnPortal` and `PublishPortal` stay non-const: `Context`
+  takes `Host&`, as `Publish` already does. `Strings::text` stays public: the key index covers only data keys, which
+  only `Add` writes, while `text` also holds the code-named strings the reader fills by id.
 
 ### Fixed at finishing
 
@@ -451,6 +459,9 @@ The final whole-branch review's findings and the gate's build failures, each fix
   the host's NPC check deduces its array with `std::to_array` ("refactor(core): pass MSVC's warnings in the strings lookup
   and NPC check"); the new tests name every value before `CHECK` (C4866) and brace `Strings::Add`'s arrays twice (C5246)
   ("test: name values before CHECK so MSVC's release build passes").
+- **Unity builds** (only in `check`): the map reader's anonymous `WHAT` and `Refuse` clashed with the seals' and the
+  manifest's in one batch; the readers' constants are named apart ("refactor(data): name the world readers' file
+  constants apart").
 - **The look reader is fuzzed** (Important): the `yaml` target reads each input as a look against the shipped manifest and
   the `world` seed's map, seeded with a small look (`world_look`); a 60 s run found nothing ("test(tests): fuzz the world
   look reader").
