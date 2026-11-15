@@ -83,20 +83,21 @@ struct Gathering {
 /// The world map's scene: wandering walkers, the cultivator walking it, over the map the renderer draws.
 class WorldScene final : public Scene {
 public:
-    /// Named `world`, viewing the whole map, with creatures (the cultivator) and no world NPCs, the camera following the
-    /// cultivator until panned, orbits returning to the map's centre, and its portal a short walk from the start, on the
-    /// first screen.
+    /// Named `world`, viewing the whole map, with creatures (the cultivator) and no grid of world NPCs (`worldNpcs` 0: Build
+    /// spawns the cities' people on the map instead), the camera following the cultivator until panned, orbits returning to
+    /// the map's centre, and its portal a short walk from the start, on the first screen.
     [[nodiscard]] const SceneTraits& Traits() const override;
 
     /// The start city's tile centre plus WORLD_PORTAL_OFFSET; none without a map.
     [[nodiscard]] std::optional<core::Vec2> Portal(const SceneContext& context) const override;
 
-    /// The cultivator on the start city's tile centre, made the player, then about 5,800 walkers (5,845 less those the sea
-    /// leaves out): 1,600 spread evenly over the whole map (about 4 a screen; any whose centre would be on an impassable tile
-    /// are redrawn or left out) and the rest evenly over the WorldGatherings(), none within the widest view of the start: the
-    /// busiest, 3,120 walkers (about 130 a screen, those whose spot is sea redrawn on to land or left out) and three towns of
-    /// 375 (about 60 a screen). Each circles a point of its own at a walking pace, its orbit drawn from core/random.hpp keyed
-    /// on its index.
+    /// The cultivator on the start city's tile centre, made the player; each city's `people` as world NPCs homed in it
+    /// (seven tenths on the city's tile, the rest on drawn tiles of its region); then about 5,800 walkers (5,845 less those the
+    /// sea leaves out): 1,600 spread evenly over the whole map (about 4 a screen; any whose centre would be on an impassable
+    /// tile are redrawn or left out) and the rest evenly over the WorldGatherings(), none within the widest view of the start:
+    /// the busiest, 3,120 walkers (about 130 a screen, those whose spot is sea redrawn on to land or left out) and three towns
+    /// of 375 (about 60 a screen). Each circles a point of its own at a walking pace, its orbit drawn from core/random.hpp
+    /// keyed on its index.
     void Build(SceneContext& context) const override;
 
     /// A name label over every eighth walker (by its ID) standing within `view`, and the name of every place of the
