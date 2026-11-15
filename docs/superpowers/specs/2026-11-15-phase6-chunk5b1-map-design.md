@@ -462,6 +462,9 @@ The final whole-branch review's findings and the gate's build failures, each fix
 - **Unity builds** (only in `check`): the map reader's anonymous `WHAT` and `Refuse` clashed with the seals' and the
   manifest's in one batch; the readers' constants are named apart ("refactor(data): name the world readers' file
   constants apart").
+- **ASan in CI** (macOS and Windows address jobs): two tests bound a `SpriteInfo&` into the manifest a temporary
+  `shared_ptr` from `test::TestManifest()` freed at the end of the line; both hold the manifest now ("test(game): hold
+  the manifest a test's sprite points into").
 - **The look reader is fuzzed** (Important): the `yaml` target reads each input as a look against the shipped manifest and
   the `world` seed's map, seeded with a small look (`world_look`); a 60 s run found nothing ("test(tests): fuzz the world
   look reader").

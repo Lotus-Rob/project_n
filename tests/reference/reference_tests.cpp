@@ -325,7 +325,8 @@ TEST_CASE("the world's capital at a middle zoom: its name, roads, the river and 
     const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
     const core::Vec2 capital = map->StartCentre();
     const core::Vec2 bridge = NearestBridgeToStart(*map);
-    const core::SpriteInfo& sprite = test::TestManifest()->Sprite(core::atlas::SpriteId::BridgeV);
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest(); // held: sprite points into it
+    const core::SpriteInfo& sprite = manifest->Sprite(core::atlas::SpriteId::BridgeV);
     const f32 room = static_cast<f32>(std::max(sprite.width, sprite.height));
     const core::Vec2 reach = core::REFERENCE_SIZE * (static_cast<f32>(HALFWAY) / LABELS_ZOOM); // the view's half size
     const bool shows = std::abs(bridge.x - capital.x) + room < reach.x && std::abs(bridge.y - capital.y) + room < reach.y;
