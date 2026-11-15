@@ -146,6 +146,12 @@ struct SceneLoad {
     core::Jobs::Pending decoding; // last: destroyed first, waiting for the decodes before their slots go
 };
 
+// How wide a label stack of one string is laid out, once measured in a frame.
+struct MeasuredStack {
+    f32 width = -1.0F; // unmeasured
+    bool complete = false;
+};
+
 } // namespace
 
 struct Renderer::Impl {
@@ -279,8 +285,9 @@ struct Renderer::Impl {
     bool reduceFlashing = false;
     std::size_t glyphsRecorded = 0; // of the cache's pending fields, in the command buffer not yet submitted
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::string number{};  // a number's text, made again for each
-    std::string stacked{}; // a label stack's text, likewise
+    std::string number{};                                 // a number's text, made again for each
+    std::vector<std::array<MeasuredStack, 2>> measured{}; // a label stack's width per string and direction, likewise
+    std::string stacked{};                                // a label stack's text, likewise
     LabelPass labels{};
     CaptionFades captionFades{};
     std::vector<LabelInput> labelInputs{};
@@ -572,14 +579,10 @@ void Renderer::Impl::MeasureStacks() {
     // the font's digits are tabular (Noto Sans SC's '0' to '9' are all 555 units wide), so the digits' number decides.
     const auto most = static_cast<u32>(labelInputs.size());
     const std::string& stack = strings->Text(core::StringId::LabelStack, textOptions.language);
-    struct Measured {
-        f32 width = -1.0F; // unmeasured
-        bool complete = false;
-    };
-    std::vector<std::array<Measured, 2>> measured(strings->text.size());
+    measured.assign(strings->text.size(), {});
     for (LabelInput& label : labelInputs) {
         const core::TextItem& item = label.item;
-        Measured& stackText = measured.at(std::to_underlying(item.string)).at(std::to_underlying(item.direction));
+        MeasuredStack& stackText = measured.at(std::to_underlying(item.string)).at(std::to_underlying(item.direction));
         if (stackText.width < 0.0F) {
             StackText(stacked, stack, TextOf(item), most);
             const Layout& layout = text->Lay(stacked, item.direction);

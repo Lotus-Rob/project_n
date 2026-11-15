@@ -22,16 +22,20 @@ std::expected<core::Strings, core::Error> ParseStrings(std::string_view yaml, st
         }
         core::Strings strings;
         std::array<bool, core::STRINGS> found{};
+        std::unordered_set<std::string> dataKeys; // the data strings' keys so far: a set, as a table may hold thousands
         const std::span<const std::string_view> names{ core::STRING_NAMES };
         // Walked rather than looked up: yaml-cpp keeps both entries of a name given twice, and a lookup finds the first.
         for (const auto& entry : root) {
             const auto name = entry.first.as<std::string>();
             const auto known = std::ranges::find(names, name);
             const YAML::Node& texts = entry.second;
-            const bool twice = known == names.end() ? strings.Find(name).has_value()
+            const bool twice = known == names.end() ? !dataKeys.insert(name).second
                                                     : found.at(static_cast<std::size_t>(known - names.begin()));
             if (twice) {
                 return FailAt(entry.first, std::format("{} is there twice", name));
+            }
+            if (known == names.end() && strings.text.size() >= core::MOST_STRINGS) {
+                return FailAt(entry.first, std::format("too many strings: at most {}", core::MOST_STRINGS));
             }
             if (!texts.IsMap()) {
                 return FailAt(texts, std::format("{} isn't a map of languages", name));

@@ -5,6 +5,7 @@
 /// The game's strings (design doc 0002.4.2 §5): the IDs the code names, and their text in each language, as
 /// `assets/data/strings.yaml` holds them.
 
+#include "core/assert.hpp"
 #include "core/types.hpp"
 
 #include <algorithm>
@@ -73,6 +74,8 @@ enum class StringId : u16 {     // NOLINT(performance-enum-size): data strings n
 };
 /// How many strings StringId names.
 inline constexpr std::size_t STRINGS = 49;
+/// The most strings a table holds, named and data together: StringId is 16 bits.
+inline constexpr std::size_t MOST_STRINGS = 0xFFFF;
 /// Each StringId's name in strings.yaml, in StringId's order.
 inline constexpr std::array<std::string_view, STRINGS> STRING_NAMES{ { "cultivator_name",
                                                                        "tablet_caption",
@@ -158,8 +161,11 @@ struct Strings {
         return std::nullopt;
     }
 
-    /// Adds a data string under `key` with its `texts` (by Language), and returns its ID.
+    /// Adds a data string under `key` with its `texts` (by Language), and returns its ID. `key` is neither one the code
+    /// names nor one already added, and the table holds fewer than MOST_STRINGS (the reader checks both).
     StringId Add(std::string key, std::array<std::string, LANGUAGES> texts) {
+        PN_ASSERT(!Find(key).has_value(), "a data string's key is new");
+        PN_ASSERT(text.size() < MOST_STRINGS, "the table has room for another string");
         const StringId added{ static_cast<u16>(text.size()) };
         keys.push_back(std::move(key));
         text.push_back(std::move(texts));

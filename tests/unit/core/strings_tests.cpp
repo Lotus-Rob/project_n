@@ -31,4 +31,14 @@ TEST_CASE("an added string follows the named ones and is found by its key") {
     CHECK(strings.Text(second, core::Language::English) == "Port");
 }
 
+TEST_CASE("the last string a table holds gets the last id") {
+    core::Strings strings;
+    strings.text.resize(core::MOST_STRINGS - 1);
+    strings.keys.resize(core::MOST_STRINGS - 1 - core::STRINGS);
+    const core::StringId last = strings.Add("last", { { "a", "b" } });
+    CHECK(std::to_underlying(last) == core::MOST_STRINGS - 1);
+    CHECK(strings.Find("last") == last);
+    CHECK(strings.text.size() == core::MOST_STRINGS);
+}
+
 } // namespace
