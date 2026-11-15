@@ -39,5 +39,10 @@ sprites = [
     "terrain_grass_1", "terrain_forest_0", "terrain_forest_1", "terrain_hills_0", "terrain_hills_1", "terrain_rock_0",
     "terrain_rock_1", "terrain_snow_0", "terrain_snow_1", "terrain_sand_0", "terrain_sand_1", "terrain_marsh_0",
     "terrain_marsh_1", "terrain_shallows_0", "terrain_shallows_1", "terrain_water_0", "terrain_water_1",
-    "terrain_peaks_0", "terrain_peaks_1", "road_0", "road_1", "road_2", "road_3", "road_4", "road_5", "road_6", "road_7", "road_8", "road_9", "road_10", "road_11", "road_12", "road_13", "road_14", "road_15", "river_0", "river_1", "river_2", "river_3", "river_4", "river_5", "river_6", "river_7", "river_8", "river_9", "river_10", "river_11", "river_12", "river_13", "river_14", "river_15", "bridge_h", "bridge_v", "ford", "marker_city", "marker_haunted_forest", "marker_mountain_pass", "marker_shrine", "marker_cave", "marker_cliff", "marker_corrupt_village",
+    "terrain_peaks_0", "terrain_peaks_1", "road_0", "road_1", "road_2", "road_3", "road_4", "road_5", "road_6",
+    "road_7", "road_8", "road_9", "road_10", "road_11", "road_12", "road_13", "road_14", "road_15", "river_0",
+    "river_1", "river_2", "river_3", "river_4", "river_5", "river_6", "river_7", "river_8", "river_9", "river_10",
+    "river_11", "river_12", "river_13", "river_14", "river_15", "bridge_h", "bridge_v", "ford", "marker_city",
+    "marker_haunted_forest", "marker_mountain_pass", "marker_shrine", "marker_cave", "marker_cliff",
+    "marker_corrupt_village",
 ]
