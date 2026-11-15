@@ -177,12 +177,14 @@ enum class TextKind : u8 {
     Label,   ///< A name over a creature's head.
     Caption, ///< A caption on the scenery.
     Number,  ///< A damage or healing number.
+    Place,   ///< The name of a place on the world map, in the label pass: it reads at the widest zoom.
 };
 
 /// Which of two overlapping labels is shown: the higher.
 enum class LabelPriority : u8 {
     Rest,     ///< Any other creature.
     Named,    ///< A creature with its own name.
+    Place,    ///< A place's name.
     Player,   ///< The player's.
     Hovered,  ///< The hovered entity's.
     Selected, ///< The selected entity's.
@@ -228,13 +230,15 @@ struct TextItem {
     f32 lift = 0.0F;
     /// How much of it shows, from 0 (none) to 1 (all).
     f32 opacity = 1.0F;
-    /// The entity it names or belongs to; zero for none (a caption).
+    /// The entity it names or belongs to; zero for none (a caption). A Place needs its own non-zero entity that no
+    /// creature uses: the label pass tells labels apart by it.
     StableId entity{};
-    /// Of a Label: the named entity's height, in world units; 0 when unknown, which never counts as too small to see.
+    /// Of a Label or a Place: the named entity's height, in world units; 0 when unknown, which never counts as too small to
+    /// see.
     f32 height = 0.0F;
-    /// Which labels may stack: those with the same key.
+    /// Which labels may stack: those with the same key. A Place needs a key of its own per name, or places stack.
     u32 nameKey = 0;
-    /// Of a Label: which wins where labels overlap.
+    /// Of a Label or a Place: which wins where labels overlap.
     LabelPriority priority = LabelPriority::Rest;
     /// Of a Number: its premultiplied linear colour (the scene is drawn in linear space): red in the low byte, then green,
     /// blue and alpha. A Label and a Caption leave it alone: the renderer draws them in core::UiColours' colours.

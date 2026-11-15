@@ -146,7 +146,8 @@ struct SceneLoad {
     core::Jobs::Pending decoding; // last: destroyed first, waiting for the decodes before their slots go
 };
 
-// How wide a label stack of one string is laid out, once measured in a frame.
+// How wide a label stack of one string is laid out, once measured in a frame, in base pixels (a label scales it by its
+// own pixel size: a place name and a creature's label may share a string).
 struct MeasuredStack {
     f32 width = -1.0F; // unmeasured
     bool complete = false;
@@ -271,6 +272,7 @@ struct Renderer::Impl {
         u32 height = 0;
         f32 perUnit = 0.0F; // PixelsPerUnit()
         f32 labelPixels = 0.0F;
+        f32 placePixels = 0.0F;
         f32 captionPixels = 0.0F;
         f32 numberPixels = 0.0F;
     };
@@ -474,6 +476,7 @@ void Renderer::Impl::PlaceTexts(const Shown& shown, core::Jobs& jobs) {
                   .height = shown.height,
                   .perUnit = perUnit,
                   .labelPixels = TextPixels(core::TextKind::Label, perUnit, textOptions.scale),
+                  .placePixels = TextPixels(core::TextKind::Place, perUnit, textOptions.scale),
                   .captionPixels = TextPixels(core::TextKind::Caption, perUnit, textOptions.scale),
                   .numberPixels = TextPixels(core::TextKind::Number, perUnit, textOptions.scale) };
     const f32 captionOpacity = CaptionOpacity(textFrame.captionPixels, textOptions.scale);
@@ -485,7 +488,7 @@ void Renderer::Impl::PlaceTexts(const Shown& shown, core::Jobs& jobs) {
                 const Layout& layout = text->Lay(TextOf(item), item.direction);
                 PlaceText(item, layout, captionOpacity * captionFades.Opacity(item.string, layout.complete));
             }
-            else if (item.kind == core::TextKind::Label) {
+            else if (item.kind == core::TextKind::Label || item.kind == core::TextKind::Place) {
                 labelInputs.push_back(LabelOf(item, hovered, selected));
             }
         }
@@ -586,9 +589,9 @@ void Renderer::Impl::MeasureStacks() {
         if (stackText.width < 0.0F) {
             StackText(stacked, stack, TextOf(item), most);
             const Layout& layout = text->Lay(stacked, item.direction);
-            stackText = { .width = layout.width * (label.pixels / SDF_BASE_PIXELS), .complete = layout.complete };
+            stackText = { .width = layout.width, .complete = layout.complete };
         }
-        label.stackWidth = stackText.width;
+        label.stackWidth = stackText.width * (label.pixels / SDF_BASE_PIXELS);
         label.complete = label.complete && stackText.complete;
     }
 }
@@ -615,7 +618,7 @@ void Renderer::Impl::PlaceLabel(const core::TextItem& item, u32 count, f32 opaci
 
 LabelInput Renderer::Impl::LabelOf(const core::TextItem& item, core::StableId hovered, core::StableId selected) {
     const f32 perUnit = textFrame.perUnit;
-    const f32 pixels = textFrame.labelPixels;
+    const f32 pixels = item.kind == core::TextKind::Place ? textFrame.placePixels : textFrame.labelPixels;
     const Layout& layout = text->Lay(TextOf(item), item.direction);
     const f32 scale = pixels / SDF_BASE_PIXELS;
     core::LabelPriority priority = item.priority;

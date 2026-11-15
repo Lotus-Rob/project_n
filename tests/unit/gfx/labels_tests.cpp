@@ -19,6 +19,7 @@ constexpr f32 SCALE = 1.0F;
 constexpr f32 ROW = 300.0F; // every box's anchor y, unless a test says otherwise
 constexpr u32 FOX_KEY = 7;
 constexpr u32 PLAYER_KEY = 3;
+constexpr u32 PLACE_KEY = 9;
 constexpr f64 FRAME_SECONDS = 1.0 / 60.0;
 constexpr f64 HALF_FADE = 0.075;
 constexpr f64 WHOLE_FADE = 0.15;
@@ -165,6 +166,72 @@ TEST_CASE("overlapping labels of different names give way by priority") {
     REQUIRE(placed.size() == 1);
     CHECK(placed[0].input == PLAYER);
     CHECK(placed[0].count == 0);
+}
+
+TEST_CASE("two overlapping place names show one, and a place name beats a walker's label") {
+    constexpr std::size_t FIRST_PLACE = 0;
+    constexpr std::size_t SECOND = 1;
+    {
+        // Two places of different names overlapping: one shows, the first of equal rank.
+        const std::array<gfx::LabelInput, 2> labels{ { Label(1, PLACE_KEY, core::LabelPriority::Place, AT_100),
+                                                       Label(2, PLACE_KEY + 1, core::LabelPriority::Place, AT_110) } };
+        gfx::LabelPass pass;
+        const std::span<const gfx::PlacedLabel> placed = Place(pass, labels, 0.0);
+        REQUIRE(placed.size() == 1);
+        CHECK(placed[0].input == FIRST_PLACE);
+    }
+    {
+        // A place name beats a named creature's label.
+        const std::array<gfx::LabelInput, 2> labels{ { Label(1, FOX_KEY, core::LabelPriority::Named, AT_100),
+                                                       Label(2, PLACE_KEY, core::LabelPriority::Place, AT_110) } };
+        gfx::LabelPass pass;
+        const std::span<const gfx::PlacedLabel> placed = Place(pass, labels, 0.0);
+        REQUIRE(placed.size() == 1);
+        CHECK(placed[0].input == SECOND);
+    }
+    {
+        // The player's name still beats a place's.
+        const std::array<gfx::LabelInput, 2> labels{ { Label(1, PLACE_KEY, core::LabelPriority::Place, AT_100),
+                                                       Player(2, AT_110) } };
+        gfx::LabelPass pass;
+        const std::span<const gfx::PlacedLabel> placed = Place(pass, labels, 0.0);
+        REQUIRE(placed.size() == 1);
+        CHECK(placed[0].input == SECOND);
+    }
+}
+
+TEST_CASE("a place name fades in and out as labels do") {
+    const std::array<gfx::LabelInput, 1> place{ { Label(1, PLACE_KEY, core::LabelPriority::Place, AT_100) } };
+    gfx::LabelPass pass;
+    static_cast<void>(Place(pass, {}, 0.0));
+    const std::span<const gfx::PlacedLabel> appearing = Place(pass, place, FRAME_SECONDS);
+    REQUIRE(appearing.size() == 1);
+    CHECK(appearing[0].opacity == doctest::Approx(FRAME_STEP));
+    CHECK(Place(pass, place, FRAME_SECONDS + WHOLE_FADE)[0].opacity == 1.0F);
+    // Its item goes: it fades out where it was.
+    const std::span<const gfx::PlacedLabel> leaving = Place(pass, {}, FRAME_SECONDS + WHOLE_FADE + HALF_FADE);
+    REQUIRE(leaving.size() == 1);
+    CHECK(leaving[0].opacity == doctest::Approx(HALF));
+    CHECK(Place(pass, {}, FRAME_SECONDS + (2 * WHOLE_FADE)).empty());
+}
+
+TEST_CASE("at the widest zoom a place name stays while a creature's label fades out") {
+    constexpr f32 WIDEST = 0.25F;
+    const f32 perUnit = gfx::PixelsPerUnit({ .zoom = WIDEST }, SCREEN_WIDTH, SCREEN_HEIGHT);
+    gfx::LabelInput place = Label(1, PLACE_KEY, core::LabelPriority::Place, AT_100);
+    place.pixels = gfx::TextPixels(core::TextKind::Place, perUnit, SCALE);
+    gfx::LabelInput walker = Fox(2, ELSEWHERE);
+    walker.pixels = gfx::TextPixels(core::TextKind::Label, perUnit, SCALE);
+    const std::array<gfx::LabelInput, 2> labels{ { place, walker } };
+    constexpr std::size_t PLACE = 0;
+    constexpr std::size_t WALKER = 1;
+    gfx::LabelPass pass;
+    static_cast<void>(Place(pass, {}, 0.0));
+    static_cast<void>(Place(pass, labels, FRAME_SECONDS));
+    const std::span<const gfx::PlacedLabel> placed = Place(pass, labels, FRAME_SECONDS + WHOLE_FADE);
+    REQUIRE(placed.size() == 2);
+    CHECK(Of(placed, PLACE).opacity == 1.0F);
+    CHECK(Of(placed, WALKER).opacity == 0.0F);
 }
 
 TEST_CASE("a hidden label's anchor is its own") {

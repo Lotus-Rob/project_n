@@ -28,6 +28,9 @@ namespace gfx {
 
 /// A label's size (its font's pixel size where a world unit is a pixel: zoom 1 at 1920x1080) in world units.
 inline constexpr f32 LABEL_WORLD_SIZE = 20.0F;
+/// A place name's size in world units: 18 pixels at the widest zoom (0.25) on a 1080-pixel-high target, so a name still
+/// reads there, where a creature's label has faded.
+inline constexpr f32 PLACE_WORLD_SIZE = 72.0F;
 /// A caption's size in world units.
 inline constexpr f32 CAPTION_WORLD_SIZE = 32.0F;
 /// A number's size in world units.
@@ -42,8 +45,8 @@ inline constexpr f32 VISIBLE_CREATURE_PIXELS = 8.0F;
 
 /// The pixel size a text of `kind` is drawn at where a world unit covers `pixelsPerUnit` target pixels
 /// (PixelsPerUnit()) and the text is scaled by `scale` (the text size setting, 1 by default): its world size ×
-/// pixelsPerUnit × scale. A number never goes below NUMBER_MIN_PIXELS × scale; labels and captions don't stop shrinking
-/// (a label too small to read fades out instead).
+/// pixelsPerUnit × scale. A number never goes below NUMBER_MIN_PIXELS × scale; labels, captions and place names don't stop
+/// shrinking (one too small to read fades out instead).
 [[nodiscard]] f32 TextPixels(core::TextKind kind, f32 pixelsPerUnit, f32 scale);
 
 /// Whether a creature `entityPixels` tall on the screen (LabelInput::entityPixels) is too small to see: under

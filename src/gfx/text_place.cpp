@@ -165,7 +165,14 @@ f32 TextPixels(core::TextKind kind, f32 pixelsPerUnit, f32 scale) {
     if (kind == core::TextKind::Number) {
         return std::max(NUMBER_WORLD_SIZE * pixelsPerUnit, NUMBER_MIN_PIXELS) * scale;
     }
-    return (kind == core::TextKind::Caption ? CAPTION_WORLD_SIZE : LABEL_WORLD_SIZE) * pixelsPerUnit * scale;
+    f32 world = LABEL_WORLD_SIZE;
+    if (kind == core::TextKind::Caption) {
+        world = CAPTION_WORLD_SIZE;
+    }
+    else if (kind == core::TextKind::Place) {
+        world = PLACE_WORLD_SIZE;
+    }
+    return world * pixelsPerUnit * scale;
 }
 
 bool TooSmallToSee(f32 entityPixels) {

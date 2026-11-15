@@ -58,6 +58,21 @@ TEST_CASE("text grows with the pixels a world unit covers") {
     CHECK(gfx::TextPixels(core::TextKind::Caption, HALF, 1.0F) == doctest::Approx(CAPTION_AT_HALF));
 }
 
+TEST_CASE("a place name still reads at the widest zoom, where a creature's label has faded") {
+    constexpr f32 PLACE_AT_WIDEST = 18.0F;
+    const f32 perUnit = gfx::PixelsPerUnit({ .zoom = QUARTER }, REFERENCE_WIDTH, REFERENCE_HEIGHT);
+    CHECK(gfx::TextPixels(core::TextKind::Place, perUnit, 1.0F) == doctest::Approx(PLACE_AT_WIDEST));
+    CHECK(gfx::TextPixels(core::TextKind::Place, perUnit, 1.0F) >= gfx::LABEL_MIN_PIXELS);
+    CHECK(gfx::TextPixels(core::TextKind::Label, perUnit, 1.0F) < gfx::LABEL_MIN_PIXELS);
+}
+
+TEST_CASE("a place name is drawn in the label colour") {
+    const core::UiColours colours = core::UiColours{};
+    const core::TextItem place{ .kind = core::TextKind::Place };
+    const core::TextItem label{ .kind = core::TextKind::Label };
+    CHECK(gfx::TextColour(place, colours, true, true) == gfx::TextColour(label, colours, true, true));
+}
+
 TEST_CASE("numbers stop shrinking at their minimum, scaled with the text size") {
     constexpr f32 SMALLEST = 12.0F;
     constexpr f32 SMALLEST_LARGER = 18.0F;
