@@ -157,7 +157,7 @@ CITY_NAMES = {
     "sect": ("青云宗", "Azure Cloud Sect"),
     "oasis": ("月泉镇", "Moon Spring Town"),
     "marsh_town": ("雾泽镇", "Mist Marsh Town"),
-    "isle": ("蓬莱岛", "Penglai Isle"),
+    "isle": ("蓬莱岛", "Immortal Isle"),
 }
 
 RIVER_SHARE = 0.03  # the share of the most water any tile gathers that makes a river
