@@ -49,27 +49,27 @@ TEST_CASE("creatures that use only known keys report nothing") {
 }
 
 // What CREATURES holds.
-constexpr core::GameData PARSED{
-    .cultivator = { .sprite = core::atlas::SpriteId::Cultivator, .health = 1000, .walkSpeed = 4.0F },
-    .fox = { .sprite = core::atlas::SpriteId::Fox,
-             .health = 1200,
-             .walkSpeed = 0.5F,
-             .orbitRadius = 300.0F,
-             .orbitWobble = 40.0F,
-             .orbitSpeed = -0.006F },
-};
+constexpr core::CreatureData PARSED_CULTIVATOR{ .sprite = core::atlas::SpriteId::Cultivator,
+                                                .health = 1000,
+                                                .walkSpeed = 4.0F };
+constexpr core::CreatureData PARSED_FOX{ .sprite = core::atlas::SpriteId::Fox,
+                                         .health = 1200,
+                                         .walkSpeed = 0.5F,
+                                         .orbitRadius = 300.0F,
+                                         .orbitWobble = 40.0F,
+                                         .orbitSpeed = -0.006F };
 
 TEST_CASE("the creatures parse") {
     const std::expected<core::GameData, core::Error> data = data::ParseGameData(CREATURES, ABILITIES);
     REQUIRE(data.has_value());
-    CHECK(data->cultivator.sprite == PARSED.cultivator.sprite);
-    CHECK(data->cultivator.walkSpeed == PARSED.cultivator.walkSpeed);
-    CHECK(data->cultivator.orbitRadius == PARSED.cultivator.orbitRadius);
-    CHECK(data->fox.sprite == PARSED.fox.sprite);
-    CHECK(data->fox.walkSpeed == PARSED.fox.walkSpeed);
-    CHECK(data->fox.orbitRadius == PARSED.fox.orbitRadius);
-    CHECK(data->fox.orbitWobble == PARSED.fox.orbitWobble);
-    CHECK(data->fox.orbitSpeed == PARSED.fox.orbitSpeed);
+    CHECK(data->cultivator.sprite == PARSED_CULTIVATOR.sprite);
+    CHECK(data->cultivator.walkSpeed == PARSED_CULTIVATOR.walkSpeed);
+    CHECK(data->cultivator.orbitRadius == PARSED_CULTIVATOR.orbitRadius);
+    CHECK(data->fox.sprite == PARSED_FOX.sprite);
+    CHECK(data->fox.walkSpeed == PARSED_FOX.walkSpeed);
+    CHECK(data->fox.orbitRadius == PARSED_FOX.orbitRadius);
+    CHECK(data->fox.orbitWobble == PARSED_FOX.orbitWobble);
+    CHECK(data->fox.orbitSpeed == PARSED_FOX.orbitSpeed);
     CHECK_FALSE(data->fox.orbitsPlayer); // around the start unless it says otherwise
 }
 

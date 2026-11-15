@@ -1200,8 +1200,9 @@ TEST_CASE("a load while recording finishes the recording on its tick") {
 
 // New game data, unlike the default.
 std::shared_ptr<const core::GameData> NewData() {
-    constexpr core::GameData DATA{ .cultivator = { .walkSpeed = 1.0F } };
-    return std::make_shared<const core::GameData>(DATA);
+    core::GameData data;
+    data.cultivator.walkSpeed = 1.0F;
+    return std::make_shared<const core::GameData>(std::move(data));
 }
 
 TEST_CASE("ReloadData gives the simulation the data on a frozen tick that ends the burst") {

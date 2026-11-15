@@ -12,6 +12,7 @@
 #include "core/hit.hpp"
 #include "core/manifest.hpp"
 #include "core/profile.hpp"
+#include "core/rect.hpp"
 #include "core/seal.hpp"
 #include "core/stable_id.hpp"
 #include "core/strings.hpp"
@@ -131,14 +132,6 @@ struct SceneChange {
 [[nodiscard]] constexpr u64 ShownChange(const SceneChange& change) {
     return change.stage == SceneStage::Leaving ? change.change - 1 : change.change;
 }
-
-/// An axis-aligned rectangle of the world, in world units.
-struct Rect {
-    /// The top-left corner.
-    Vec2 min{};
-    /// The bottom-right corner.
-    Vec2 max{};
-};
 
 /// What the main thread's window shows, as it last told the logic (design doc 0002.3 §11, as built in phase 6 chunk 5a):
 /// news like SceneResident, which changes what is published and never the state, so it is never recorded, hashed or saved.

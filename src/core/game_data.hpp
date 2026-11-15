@@ -9,8 +9,11 @@
 #include "core/archive.hpp"
 #include "core/combat_rules.hpp"
 #include "core/types.hpp"
+#include "core/world_map.hpp"
 
 #include "core/generated/atlas.hpp" // by `project_n atlas`
+
+#include <memory>
 
 namespace core {
 
@@ -41,7 +44,8 @@ struct CreatureData {
     }
 };
 
-/// Every data table: the test bed's creatures (`assets/data/creatures.yaml`) and the abilities (`abilities.yaml`).
+/// Every data table: the test bed's creatures (`assets/data/creatures.yaml`), the abilities (`abilities.yaml`) and the
+/// world map (`world.yaml`).
 struct GameData {
     /// The cultivator the player walks.
     CreatureData cultivator{};
@@ -51,6 +55,10 @@ struct GameData {
     Abilities abilities{};
     /// The times and amounts the fight runs by (abilities.yaml's `combat:` section).
     CombatRules combat{};
+    /// The world map (`world.yaml`), shared with the scenes and the drawing; null in game::BuiltInData(). Read once at
+    /// the start and kept through a reload, so an edit to `world.yaml` alone changes nothing. Hashed, but not listed in
+    /// Fields(): a pointer isn't archived.
+    std::shared_ptr<const WorldMap> world;
 
     /// Lists its fields for an archive (core/archive.hpp).
     template<typename Self, typename Archive>
@@ -61,7 +69,7 @@ struct GameData {
     /// A hash of every value: two GameData hash alike when every value has the same bits.
     [[nodiscard]] u64 Hash() const {
         Hasher hasher;
-        hasher(*this);
+        hasher(*this, world ? world->Hash() : u64{ 0 });
         return hasher.Value();
     }
 };
