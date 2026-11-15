@@ -62,8 +62,9 @@ struct DemoGlowSprite {
 struct SceneTraits {
     /// Its name, which is also its manifest scene's (art/scenes.toml) and its command line flag's (`--<name>`).
     std::string_view name;
-    /// Where a still camera starts; with no player to follow, a publish sent no view yet culls to the widest view a
-    /// window shows (core::WIDEST_HALF_VIEW) round its centre.
+    /// With no player to follow, the area round whose centre a publish sent no view yet culls, as widely as a window shows
+    /// (core::WIDEST_HALF_VIEW). App's camera starts a scene that follows nothing at gfx::REFERENCE_CENTRE, which this
+    /// must centre on (app's camera tests check every such scene).
     core::Rect view{};
     /// Where orbits return when the game data stops them circling the player.
     core::Vec2 home{};

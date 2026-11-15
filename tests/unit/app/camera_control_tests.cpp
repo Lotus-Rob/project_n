@@ -3,6 +3,8 @@
 #include "app/view.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
+#include "game/scene.hpp"
+#include "game/scenes.hpp"
 #include "game/scenes/world.hpp"
 #include "gfx/camera.hpp"
 
@@ -42,6 +44,23 @@ constexpr f32 BAND = app::EDGE_BAND * static_cast<f32>(HEIGHT);
 void CheckAt(const app::CameraControl& control, core::Vec2 expected) {
     CHECK(control.Camera().centre.x == doctest::Approx(expected.x));
     CHECK(control.Camera().centre.y == doctest::Approx(expected.y));
+}
+
+TEST_CASE("a scene that follows nothing starts its camera where its publishes cull before a view arrives") {
+    std::size_t still = 0;
+    for (const game::Scene* scene : game::Scenes()) {
+        const game::SceneTraits& traits = scene->Traits();
+        if (traits.camera != CameraKind::Pan) {
+            continue; // these follow the player, round whom the host culls
+        }
+        ++still;
+        CAPTURE(traits.name);
+        app::CameraControl control{ 1.0F };
+        control.Update(Frame(CameraKind::Pan));
+        constexpr f32 HALF = 0.5F;
+        CheckAt(control, (traits.view.min + traits.view.max) * HALF); // its centre
+    }
+    CHECK(still == 2); // painted and cells
 }
 
 TEST_CASE("dragging moves the world with the pointer") {
