@@ -8,7 +8,7 @@ namespace data {
 
 namespace {
 
-constexpr std::string_view WHAT = "world";
+constexpr std::string_view WORLD_READER = "world";
 
 // The first character past the visible ASCII ones.
 constexpr char DELETE = 0x7F;
@@ -23,8 +23,8 @@ constexpr f64 MOST_TILE_SIZE = 1'000'000.0;
 
 using Failure = std::unexpected<core::Error>;
 
-Failure Refuse(const YAML::Node& node, std::string_view why) {
-    return Failure{ internal::RefusalAt(WHAT, node, why) };
+Failure RefuseMap(const YAML::Node& node, std::string_view why) {
+    return Failure{ internal::RefusalAt(WORLD_READER, node, why) };
 }
 
 // The 1-based line `node` was written on, as the other readers report it.
@@ -39,10 +39,10 @@ std::expected<i64, core::Error> Whole(const YAML::Node& node, std::string_view o
         value = node.as<f64>();
     }
     catch (const YAML::Exception&) {
-        return Refuse(node, std::format("{} isn't a number", owner));
+        return RefuseMap(node, std::format("{} isn't a number", owner));
     }
     if (!std::isfinite(value) || value < 0.0 || value != std::floor(value) || value > static_cast<f64>(limit)) {
-        return Refuse(node, std::format("{} isn't a whole number from 0 to {}", owner, limit));
+        return RefuseMap(node, std::format("{} isn't a whole number from 0 to {}", owner, limit));
     }
     return static_cast<i64>(value);
 }
@@ -50,7 +50,7 @@ std::expected<i64, core::Error> Whole(const YAML::Node& node, std::string_view o
 // The tile `node` holds as [column, row].
 std::expected<core::TilePoint, core::Error> Point(const YAML::Node& node, std::string_view owner) {
     if (!node.IsSequence() || node.size() != 2) {
-        return Refuse(node, std::format("{} has a point that isn't [column, row]", owner));
+        return RefuseMap(node, std::format("{} has a point that isn't [column, row]", owner));
     }
     const std::expected<i64, core::Error> column = Whole(node[0], std::format("{}'s column", owner), MOST_COORDINATE);
     if (!column) {
@@ -67,7 +67,7 @@ std::expected<core::TilePoint, core::Error> Point(const YAML::Node& node, std::s
 std::expected<YAML::Node, core::Error> Sequence(const YAML::Node& root, const char* key) {
     const YAML::Node node = root[key];
     if (node && !node.IsSequence()) {
-        return Refuse(node, std::format("{} isn't a list", key));
+        return RefuseMap(node, std::format("{} isn't a list", key));
     }
     return std::expected<YAML::Node, core::Error>{ node };
 }
@@ -76,10 +76,10 @@ std::expected<YAML::Node, core::Error> Sequence(const YAML::Node& root, const ch
 std::expected<std::string, core::Error> Text(const YAML::Node& map, const char* key, std::string_view owner) {
     const YAML::Node node = map[key];
     if (!node) {
-        return Refuse(map, std::format("{} has no {}", owner, key));
+        return RefuseMap(map, std::format("{} has no {}", owner, key));
     }
     if (!node.IsScalar() || node.Scalar().empty()) {
-        return Refuse(node, std::format("{}'s {} isn't text", owner, key));
+        return RefuseMap(node, std::format("{}'s {} isn't text", owner, key));
     }
     return node.Scalar();
 }
@@ -94,34 +94,36 @@ std::expected<void, core::Error> ReadKinds(
         return std::unexpected{ kinds.error() };
     }
     if (!*kinds) {
-        return Refuse(root, "there are no kinds");
+        return RefuseMap(root, "there are no kinds");
     }
     for (const YAML::Node& entry : *kinds) {
         if (!entry.IsMap()) {
-            return Refuse(entry, "a kind isn't a map");
+            return RefuseMap(entry, "a kind isn't a map");
         }
         if (source.kinds.size() >= std::numeric_limits<u8>::max()) {
-            return Refuse(entry, std::format("too many kinds: at most {}", std::numeric_limits<u8>::max()));
+            return RefuseMap(entry, std::format("too many kinds: at most {}", std::numeric_limits<u8>::max()));
         }
         const std::expected<std::string, core::Error> name = Text(entry, "name", "a kind");
         if (!name) {
             return std::unexpected{ name.error() };
         }
-        internal::NoteUnknownKeys(WHAT, entry, std::format("kind {}", *name), "key", { "symbol", "name", "cost" }, warnings);
+        internal::NoteUnknownKeys(
+            WORLD_READER, entry, std::format("kind {}", *name), "key", { "symbol", "name", "cost" }, warnings
+        );
         const std::expected<std::string, core::Error> symbol = Text(entry, "symbol", std::format("kind {}", *name));
         if (!symbol) {
             return std::unexpected{ symbol.error() };
         }
         // A visible ASCII character: a space or a tab can't be told apart in a grid.
         if (symbol->size() != 1 || (*symbol)[0] <= ' ' || (*symbol)[0] >= DELETE) {
-            return Refuse(entry["symbol"], std::format("kind {}'s symbol isn't one visible ASCII character", *name));
+            return RefuseMap(entry["symbol"], std::format("kind {}'s symbol isn't one visible ASCII character", *name));
         }
         if (std::ranges::any_of(source.kinds, [&](const core::TerrainKind& kind) { return kind.symbol == (*symbol)[0]; })) {
-            return Refuse(entry, std::format("kind {}'s symbol '{}' is another kind's too", *name, *symbol));
+            return RefuseMap(entry, std::format("kind {}'s symbol '{}' is another kind's too", *name, *symbol));
         }
         const YAML::Node cost = entry["cost"];
         if (!cost) {
-            return Refuse(entry, std::format("kind {} has no cost", *name));
+            return RefuseMap(entry, std::format("kind {} has no cost", *name));
         }
         u16 walk = core::IMPASSABLE_COST;
         if (!cost.IsScalar() || cost.Scalar() != "impassable") {
@@ -141,16 +143,16 @@ std::expected<void, core::Error> ReadKinds(
 std::expected<void, core::Error> ReadGrid(const YAML::Node& root, std::string_view yaml, core::WorldMapSource& source) {
     const YAML::Node grid = root["grid"];
     if (!grid) {
-        return Refuse(root, "there is no grid");
+        return RefuseMap(root, "there is no grid");
     }
     if (!grid.IsScalar()) {
-        return Refuse(grid, "the grid isn't a block of rows");
+        return RefuseMap(grid, "the grid isn't a block of rows");
     }
     // Only a literal block scalar (`|`) keeps one row to a line, and its rows' lines are counted from the indicator, which
     // yaml-cpp's mark points at: a folded (`>`) or quoted grid would be misread, so it is refused.
     const auto indicator = static_cast<std::size_t>(grid.Mark().pos);
     if (indicator >= yaml.size() || yaml[indicator] != '|') {
-        return Refuse(grid, "the grid isn't a literal block (`grid: |`, one row to a line)");
+        return RefuseMap(grid, "the grid isn't a literal block (`grid: |`, one row to a line)");
     }
     // The rows of a block scalar (`|`) start on the line after its indicator.
     const u32 firstRow = LineOf(grid) + 1;
@@ -170,7 +172,7 @@ std::expected<void, core::Error> ReadGrid(const YAML::Node& root, std::string_vi
         rows.pop_back();
     }
     if (rows.empty()) {
-        return Refuse(grid, "the grid has no rows");
+        return RefuseMap(grid, "the grid has no rows");
     }
     std::array<u8, CHARACTERS> kindOf{};
     std::array<bool, CHARACTERS> known{};
@@ -184,12 +186,12 @@ std::expected<void, core::Error> ReadGrid(const YAML::Node& root, std::string_vi
     for (std::size_t index = 0; index < rows.size(); ++index) {
         const u32 line = firstRow + static_cast<u32>(index);
         if (rows[index].empty()) {
-            return Failure{ core::Error{ std::format("{} line {}: grid row {} is empty", WHAT, line, index + 1) } };
+            return Failure{ core::Error{ std::format("{} line {}: grid row {} is empty", WORLD_READER, line, index + 1) } };
         }
         if (rows[index].size() != rows.front().size()) {
             return Failure{ core::Error{ std::format(
                 "{} line {}: grid row {} holds {} tiles, not {} like the first",
-                WHAT,
+                WORLD_READER,
                 line,
                 index + 1,
                 rows[index].size(),
@@ -201,7 +203,7 @@ std::expected<void, core::Error> ReadGrid(const YAML::Node& root, std::string_vi
             if (!known.at(symbol)) {
                 return Failure{ core::Error{ std::format(
                     "{} line {}: grid row {}, column {} holds {:?}, which no kind uses",
-                    WHAT,
+                    WORLD_READER,
                     line,
                     index + 1,
                     column + 1,
@@ -227,7 +229,7 @@ std::expected<void, core::Error> ReadPolylines(
     }
     for (const YAML::Node& entry : *list) {
         if (!entry.IsSequence()) {
-            return Refuse(entry, std::format("a {} isn't a list of points", key));
+            return RefuseMap(entry, std::format("a {} isn't a list of points", key));
         }
         std::vector<core::TilePoint> line;
         for (const YAML::Node& point : entry) {
@@ -272,11 +274,11 @@ std::expected<void, core::Error> ReadPlaceKind(const YAML::Node& entry, const st
         place.kind = core::PlaceKind::Danger;
     }
     else {
-        return Refuse(entry["kind"], std::format("{}'s kind \"{}\" is neither city nor danger", owner, *kind));
+        return RefuseMap(entry["kind"], std::format("{}'s kind \"{}\" is neither city nor danger", owner, *kind));
     }
     if (const YAML::Node sort = entry["sort"]) {
         if (!sort.IsScalar()) {
-            return Refuse(sort, std::format("{}'s sort isn't text", owner));
+            return RefuseMap(sort, std::format("{}'s sort isn't text", owner));
         }
         place.sort = sort.Scalar();
     }
@@ -296,7 +298,7 @@ std::expected<void, core::Error> ReadPlaceName(
     }
     const std::optional<core::StringId> found = strings.Find(*name);
     if (!found) {
-        return Refuse(entry["name"], std::format("{}'s name \"{}\" has no string in strings.yaml", owner, *name));
+        return RefuseMap(entry["name"], std::format("{}'s name \"{}\" has no string in strings.yaml", owner, *name));
     }
     place.nameKey = *name;
     place.name = *found;
@@ -306,7 +308,7 @@ std::expected<void, core::Error> ReadPlaceName(
 // Reads the tile, the people and whether it starts of `entry`, a place called `owner`, into `place`.
 std::expected<void, core::Error> ReadPlaceTile(const YAML::Node& entry, const std::string& owner, core::Place& place) {
     if (!entry["tile"]) {
-        return Refuse(entry, std::format("{} has no tile", owner));
+        return RefuseMap(entry, std::format("{} has no tile", owner));
     }
     const std::expected<core::TilePoint, core::Error> tile = Point(entry["tile"], owner);
     if (!tile) {
@@ -325,7 +327,7 @@ std::expected<void, core::Error> ReadPlaceTile(const YAML::Node& entry, const st
             place.start = start.as<bool>();
         }
         catch (const YAML::Exception&) {
-            return Refuse(start, std::format("{}'s start isn't true or false", owner));
+            return RefuseMap(start, std::format("{}'s start isn't true or false", owner));
         }
     }
     return {};
@@ -343,7 +345,7 @@ std::expected<void, core::Error> ReadPlaces(
     }
     for (const YAML::Node& entry : *list) {
         if (!entry.IsMap()) {
-            return Refuse(entry, "a place isn't a map");
+            return RefuseMap(entry, "a place isn't a map");
         }
         core::Place place;
         const std::expected<std::string, core::Error> key = Text(entry, "key", "a place");
@@ -353,7 +355,7 @@ std::expected<void, core::Error> ReadPlaces(
         place.key = *key;
         const std::string owner = std::format("place {}", place.key);
         internal::NoteUnknownKeys(
-            WHAT, entry, owner, "key", { "key", "kind", "sort", "tile", "name", "people", "start" }, warnings
+            WORLD_READER, entry, owner, "key", { "key", "kind", "sort", "tile", "name", "people", "start" }, warnings
         );
         if (const std::expected<void, core::Error> read =
                 ReadPlaceKind(entry, owner, place).and_then([&] { return ReadPlaceTile(entry, owner, place); }).and_then([&] {
@@ -372,17 +374,17 @@ std::expected<void, core::Error> ReadPlaces(
 // Build refuses the same bound (CheckShape) but, with no line for these two, without one, so the two must agree.
 std::expected<void, core::Error> ReadSizes(const YAML::Node& root, core::WorldMapSource& source) {
     const std::expected<i64, core::Error> road =
-        internal::WholeNumber(WHAT, root, "the map", "road_cost", true, core::MAX_WALK_COST);
+        internal::WholeNumber(WORLD_READER, root, "the map", "road_cost", true, core::MAX_WALK_COST);
     if (!road) {
         return std::unexpected{ road.error() };
     }
     const std::expected<i64, core::Error> ford =
-        internal::WholeNumber(WHAT, root, "the map", "ford_cost", true, core::MAX_WALK_COST);
+        internal::WholeNumber(WORLD_READER, root, "the map", "ford_cost", true, core::MAX_WALK_COST);
     if (!ford) {
         return std::unexpected{ ford.error() };
     }
     const std::expected<f64, core::Error> tile = internal::RequiredNumber(
-        WHAT, root, "the map", "tile_size", { .low = LEAST_TILE_SIZE, .lowOpen = false, .high = MOST_TILE_SIZE }
+        WORLD_READER, root, "the map", "tile_size", { .low = LEAST_TILE_SIZE, .lowOpen = false, .high = MOST_TILE_SIZE }
     );
     if (!tile) {
         return std::unexpected{ tile.error() };
@@ -403,10 +405,10 @@ std::expected<core::WorldMap, core::Error> ParseWorldMap(
     try {
         const YAML::Node root = YAML::Load(std::string{ yaml });
         if (!root.IsMap()) {
-            return Refuse(root, "not a map");
+            return RefuseMap(root, "not a map");
         }
         internal::NoteUnknownKeys(
-            WHAT,
+            WORLD_READER,
             root,
             "",
             "key",
@@ -437,11 +439,11 @@ std::expected<core::WorldMap, core::Error> ParseWorldMap(
             return std::unexpected{ std::move(read.error()) };
         }
         return core::WorldMap::Build(std::move(source)).transform_error([](core::Error error) {
-            return core::Error{ std::format("{}: {}", WHAT, error.message) };
+            return core::Error{ std::format("{}: {}", WORLD_READER, error.message) };
         });
     }
     catch (const YAML::Exception& error) {
-        return std::unexpected{ internal::ErrorOf(WHAT, error) };
+        return std::unexpected{ internal::ErrorOf(WORLD_READER, error) };
     }
 }
 
