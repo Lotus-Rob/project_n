@@ -177,6 +177,7 @@ core::StableId SpawnGroup(core::State& state, u32 cell, u32 members) {
 void Activate(core::State& state, core::StableId npc) {
     state.Move(npc, ACTIVE, [](const core::Registry& from, core::Entity old, core::Registry& into, core::Entity moved) {
         const Npc& person = into.emplace<Npc>(moved, from.get<Npc>(old));
+        PN_ASSERT(person.home == NO_HOME, "an NPC activated in a scene with the world map, whose cell isn't a grid cell");
         into.emplace<Needs>(moved, from.get<Needs>(old));
         if (from.all_of<Met>(old)) {
             into.emplace<Met>(moved);
@@ -191,6 +192,7 @@ void Activate(core::State& state, core::StableId npc) {
 void Deactivate(core::State& state, core::StableId npc) {
     state.Move(npc, WORLD, [](const core::Registry& from, core::Entity old, core::Registry& into, core::Entity moved) {
         Npc& person = into.emplace<Npc>(moved, from.get<Npc>(old));
+        PN_ASSERT(person.home == NO_HOME, "an NPC deactivated in a scene with the world map, whose cell isn't a grid cell");
         person.cell = CellAt(from.get<Body>(old).current);
         into.emplace<Needs>(moved, from.get<Needs>(old));
         if (from.all_of<Met>(old)) {

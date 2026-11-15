@@ -40,9 +40,11 @@ inline constexpr u32 MAX_GROUP_MEMBERS = 1'000'000;
 /// An active NPC decides once every this many simulation ticks: about 10 times a second.
 inline constexpr u32 DECISION_TICKS = 6;
 
-/// The centre of map cell `cell`, in world units.
+/// The centre of map cell `cell` of the 64-column grid (MAP_COLUMNS), in world units: for scenes without the world map,
+/// where Npc::cell is such a cell (with the map it is a core::WorldMap tile index, whose centre is TileCentre's).
 [[nodiscard]] core::Vec2 CellCentre(u32 cell);
-/// The map cell `point` lies in; a point off the map's edge counts as in the nearest edge cell.
+/// The 64-column grid's cell `point` lies in; a point off the map's edge counts as in the nearest edge cell. For scenes
+/// without the world map only, as CellCentre().
 [[nodiscard]] u32 CellAt(core::Vec2 point);
 
 /// An NPC's `home` in a scene with no world map: it lives in no city.
@@ -198,11 +200,14 @@ core::StableId SpawnNpc(core::State& state, u32 cell, u16 home = NO_HOME);
 /// Creates an aggregate of `members` people in `cell`.
 core::StableId SpawnGroup(core::State& state, u32 cell, u32 members);
 
-/// Moves world NPC `npc` into the active tier, standing at its cell's centre.
+/// Moves world NPC `npc` into the active tier, standing at its cell's centre. Only in a scene without the world map, where
+/// the cell is a grid cell (CellCentre()): `npc` has no home (NO_HOME, asserted).
 void Activate(core::State& state, core::StableId npc);
-/// Moves active NPC `npc` back into the world tier, in the cell it stands in.
+/// Moves active NPC `npc` back into the world tier, in the grid cell it stands in (CellAt()). Only in a scene without the
+/// world map: `npc` has no home (NO_HOME, asserted).
 void Deactivate(core::State& state, core::StableId npc);
-/// Turns aggregate `group` into world NPCs in its cell, one per member, and returns their stable IDs.
+/// Turns aggregate `group` into world NPCs in its cell, one per member, homeless (NO_HOME), and returns their stable IDs.
+/// Only in a scene without the world map, where a group's cell is a grid cell.
 std::vector<core::StableId> Materialise(core::State& state, core::StableId group);
 /// Folds world NPC `npc`, whom the player has never met, into aggregate `group`, forgetting
 /// its relationships so none names an ID that is gone.
