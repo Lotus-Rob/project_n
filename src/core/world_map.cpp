@@ -13,7 +13,7 @@ constexpr u8 FLAG_ROAD = std::to_underlying(TileFlag::Road);
 constexpr u8 FLAG_RIVER = std::to_underlying(TileFlag::River);
 constexpr u8 FLAG_BRIDGE = std::to_underlying(TileFlag::Bridge);
 constexpr u8 FLAG_FORD = std::to_underlying(TileFlag::Ford);
-constexpr f32 HALF = 0.5F; // the middle of a tile
+constexpr f32 TILE_MIDDLE = 0.5F; // the middle of a tile
 constexpr u32 MAX_TILES = 1U << 24;
 
 Error Refuse(std::string message) {
@@ -463,8 +463,8 @@ std::expected<WorldMap, Error> WorldMap::Build(WorldMapSource source) {
 
 Vec2 WorldMap::TileCentre(u32 tile) const {
     const TilePoint point = PointOf(tile);
-    return { .x = (static_cast<f32>(point.column) + HALF) * m_source.tileSize,
-             .y = (static_cast<f32>(point.row) + HALF) * m_source.tileSize };
+    return { .x = (static_cast<f32>(point.column) + TILE_MIDDLE) * m_source.tileSize,
+             .y = (static_cast<f32>(point.row) + TILE_MIDDLE) * m_source.tileSize };
 }
 
 u32 WorldMap::StepCost(u32 from, u32 target) const {
