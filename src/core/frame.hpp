@@ -339,6 +339,9 @@ struct Snapshot {
     /// How many of `batches`, from the first, draw only the ground and its decals (core::Layer::Ground and Decals): the
     /// renderer draws the ground seals after them, under the world.
     u32 groundBatches = 0;
+    /// Whether the scene shows the world map (game::SceneTraits::worldMap): the renderer draws it, from the map and the look
+    /// it was given, under the ground and everything else, so the snapshot holds none of its tiles.
+    bool worldMap = false;
     /// The entity each instance draws, parallel to `instances` (zero for one that is no entity's:
     /// the ground, a shadow), for picking; refilled in place likewise.
     std::vector<StableId> ids{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer

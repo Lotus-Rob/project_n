@@ -80,10 +80,8 @@ unit_tests("game_tests", "unit/game/*.cpp", "game", true)
     -- Where the skipped "write the fight save seed" case writes (save_tests.cpp), whatever the working directory.
     add_defines('PN_FUZZ_CORPUS="' .. path.join(os.projectdir(), "tests", "fuzz", "corpus"):gsub("\\", "/") .. '"')
 unit_tests("platform_tests", "unit/platform/*.cpp", "platform")
-unit_tests("gfx_tests", "unit/gfx/*.cpp", "gfx")
-    add_rules("assets") -- the font (ttf_tests.cpp)
+unit_tests("gfx_tests", "unit/gfx/*.cpp", "gfx", true) -- the shipped manifest (terrain_draw_tests.cpp), strings (text_layout_tests.cpp, which the glyph cache pre-warms) and font (ttf_tests.cpp)
     add_packages("libsdl3_ttf-wayland") -- private to gfx; its test reaches SDL3_ttf directly
-    add_deps("data") -- the shipped strings, which the glyph cache pre-warms (text_layout_tests.cpp)
 unit_tests("app_tests", "unit/app/*.cpp", "app", true)
 unit_tests("data_tests", "unit/data/*.cpp", "data", true)
 -- Logging start-up states: Quill's loggers live for the whole process, so each test needs its own.

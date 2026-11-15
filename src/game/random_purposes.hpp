@@ -24,7 +24,7 @@ inline constexpr u32 PURPOSE_RESPAWN = 6;
 inline constexpr u32 PURPOSE_VOLLEY = 7;
 /// A world walker drawing where it wanders and how (game/scenes/world.hpp).
 inline constexpr u32 PURPOSE_WALKER = 8;
-/// The world map's terrain: its noise and each tile's variant (game/scenes/world.hpp).
-inline constexpr u32 PURPOSE_TERRAIN = 9;
+// 9 is retired from game (the old world terrain noise): gfx/terrain_draw.cpp keys the world map's tile variants with it, so
+// nothing here may reuse it.
 
 } // namespace game

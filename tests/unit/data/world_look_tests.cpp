@@ -222,4 +222,47 @@ TEST_CASE("the shipped look loads clean against the shipped map and the small on
     CHECK(warnings.empty());
 }
 
+TEST_CASE("the shipped look covers the shipped map") {
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
+    REQUIRE(assets.has_value());
+    const std::expected<core::Strings, core::Error> strings = data::LoadStrings(*assets / "data");
+    REQUIRE(strings.has_value());
+    const auto world = data::LoadWorldMap(*assets / "data", *strings);
+    REQUIRE(world.has_value());
+    const core::WorldMap& map = **world;
+    const std::expected<core::WorldLook, core::Error> look = data::LoadWorldLook(*assets / "data", *manifest, map);
+    REQUIRE(look.has_value());
+    // Every kind the map declares has a look with a variant: the terrain draws no tile bare.
+    REQUIRE(look->kinds.size() >= map.Kinds().size());
+    for (std::size_t kind = 0; kind < map.Kinds().size(); ++kind) {
+        CAPTURE(map.Kinds()[kind].name);
+        CHECK_FALSE(look->kinds[kind].empty());
+    }
+    // Every sprite the look names is one the world scene loads, or the renderer would draw from a page that isn't resident.
+    const std::optional<core::SceneId> worldScene = manifest->SceneNamed("world");
+    REQUIRE(worldScene.has_value());
+    const core::SceneId worldId = worldScene.value_or(core::SceneId{});
+    const std::vector<core::atlas::SpriteId>& resident = manifest->Scene(worldId).sprites;
+    std::vector<core::atlas::SpriteId> named = { look->bridgeAcross, look->bridgeDown, look->ford, look->cityMarker };
+    named.insert(named.end(), look->roads.begin(), look->roads.end());
+    named.insert(named.end(), look->rivers.begin(), look->rivers.end());
+    for (const std::vector<core::atlas::SpriteId>& variants : look->kinds) {
+        named.insert(named.end(), variants.begin(), variants.end());
+    }
+    for (const auto& [sort, sprite] : look->dangerMarkers) {
+        named.push_back(sprite);
+    }
+    CHECK(std::ranges::all_of(named, [&](core::atlas::SpriteId sprite) { return std::ranges::contains(resident, sprite); }));
+    // Every danger sort the map places has a marker.
+    for (const core::Place& place : map.Places()) {
+        if (place.kind == core::PlaceKind::Danger) {
+            CAPTURE(place.key);
+            CHECK(
+                std::ranges::contains(look->dangerMarkers, place.sort, &std::pair<std::string, core::atlas::SpriteId>::first)
+            );
+        }
+    }
+}
+
 } // namespace

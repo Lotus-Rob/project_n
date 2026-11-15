@@ -495,43 +495,20 @@ bool DrawsTerrain(const core::Instance& instance, std::span<const core::Instance
     });
 }
 
-TEST_CASE("a world publish holds only the tiles in view, with no painted ground under them") {
-    // A screen at zoom 1, off the tile grid on both axes: columns 39 to 46 and rows 19 to 23.
+TEST_CASE("a world publish holds no tiles in view and no painted ground: the renderer draws the map") {
+    // A screen at zoom 1, off the tile grid on both axes: eight columns and five rows of tiles, which the map once published.
     constexpr core::Rect VIEW{ .min = { .x = 10'000.0F, .y = 5'000.0F }, .max = { .x = 11'920.0F, .y = 6'080.0F } };
-    constexpr std::size_t TILES = std::size_t{ 8 } * 5;
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     game::Host host(manifest, game::WORLD_SCENE);
     const core::Snapshot snapshot = Published(host, VIEW);
-    const game::TileSpan span = game::TilesIn(VIEW);
     // The terrain sprites, which art/sprites.toml lists together.
     std::vector<core::Instance> terrain;
     for (auto id = std::to_underlying(SpriteId::TerrainMeadow0); id <= std::to_underlying(SpriteId::TerrainWater1); ++id) {
         terrain.push_back(core::MakeInstance(*manifest, { .sprite = static_cast<SpriteId>(id) }));
     }
-    REQUIRE((span.lastColumn + 1 - span.firstColumn) * (span.lastRow + 1 - span.firstRow) == TILES);
-    // Every tile instance is in the ground's batches, and its centre on one of the span's tiles.
-    u32 groundInstances = 0;
-    for (const core::Batch& batch : std::span{ snapshot.batches }.first(snapshot.groundBatches)) {
-        groundInstances += batch.count;
-    }
-    const core::Rect spanned{
-        .min = { .x = static_cast<f32>(span.firstColumn) * game::WORLD_TILE,
-                 .y = static_cast<f32>(span.firstRow) * game::WORLD_TILE },
-        .max = { .x = static_cast<f32>(span.lastColumn + 1) * game::WORLD_TILE,
-                 .y = static_cast<f32>(span.lastRow + 1) * game::WORLD_TILE },
-    };
-    std::size_t tiles = 0;
-    bool allInSpan = true;
-    for (std::size_t i = 0; i < snapshot.instances.size(); ++i) {
-        if (DrawsTerrain(snapshot.instances[i], terrain)) {
-            ++tiles;
-            allInSpan = allInSpan && i < groundInstances && Within(snapshot.instances[i].current, spanned);
-        }
-    }
-    CHECK(tiles == TILES);
-    CHECK(allInSpan);
-    CHECK(std::ranges::none_of(snapshot.instances, [](const core::Instance& instance) {
-        return Draws(instance, SpriteId::Ground);
+    CHECK(snapshot.worldMap);
+    CHECK(std::ranges::none_of(snapshot.instances, [&](const core::Instance& instance) {
+        return DrawsTerrain(instance, terrain) || Draws(instance, SpriteId::Ground);
     }));
 }
 

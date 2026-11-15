@@ -18,6 +18,9 @@ void Scene::Respawn(SceneContext& /*context*/, const core::TickCounters& /*count
 
 void Scene::PublishGround(const SceneContext& context, core::Rect /*view*/, core::DrawList& drawList, u32 part) const {
     PN_PROFILE_ZONE();
+    if (Traits().worldMap) {
+        return;
+    }
     // Whole: its quad is far larger than the cull margin, so its centre may lie outside the view while part of it shows.
     drawList.AddWhole(
         part,

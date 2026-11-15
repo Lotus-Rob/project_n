@@ -6,9 +6,12 @@
 /// target copies assets/ next to it (the `assets` rule) and links data and platform, and game for ShippedData().
 
 #include "core/game_data.hpp"
+#include "core/manifest.hpp"
 #include "core/strings.hpp"
+#include "core/world_look.hpp"
 #include "core/world_map.hpp"
 #include "data/strings.hpp"
+#include "data/world_look.hpp"
 #include "data/world_map.hpp"
 #include "game/host.hpp"
 #include "platform/paths.hpp"
@@ -33,6 +36,19 @@ namespace test {
         std::abort(); // every test after would fail for the same reason
     }
     return std::move(*loaded);
+}
+
+/// assets/data/world_look.yaml, read against `manifest` and `map` (ShippedWorld()); a test binary that can't read it stops at
+/// once, as ShippedWorld() does.
+[[nodiscard]] inline core::WorldLook ShippedWorldLook(const core::Manifest& manifest, const core::WorldMap& map) {
+    std::expected<core::WorldLook, core::Error> look =
+        platform::AssetsDirectory().and_then([&](const std::filesystem::path& assets) {
+            return data::LoadWorldLook(assets / "data", manifest, map);
+        });
+    if (!look) {
+        std::abort(); // every test after would fail for the same reason
+    }
+    return std::move(*look);
 }
 
 /// game::BuiltInData() with the shipped world map: the data every host that builds or cycles into the world scene needs.

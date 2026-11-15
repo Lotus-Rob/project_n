@@ -731,6 +731,7 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
     const std::span<const DemoGlowSprite> demoGlows = traits.demoGlows;
     snapshot.combat = traits.combat;
     snapshot.camera = traits.camera;
+    snapshot.worldMap = traits.worldMap;
     const u32 chunks = core::ChunkCount(looks.size(), PUBLISH_CHUNK);
     core::Vec2 start = (traits.view.min + traits.view.max) * MIDDLE;
     if (m_player != core::StableId{}) {
