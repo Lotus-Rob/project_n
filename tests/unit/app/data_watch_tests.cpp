@@ -1,5 +1,6 @@
 #include "app/app.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/world_look.hpp"
 
 #include <doctest/doctest.h>
 
@@ -166,6 +167,32 @@ TEST_CASE("keeping the map leaves a game data that couldn't be read as it was") 
     app::KeepWorld(running, read);
     REQUIRE_FALSE(read.has_value());
     CHECK(read.error().message == "broken");
+}
+
+// A look whose meadow has the one variant `variant`.
+core::WorldLook LookOf(core::atlas::SpriteId variant) {
+    core::WorldLook look;
+    look.kinds = { { variant } };
+    return look;
+}
+
+TEST_CASE("a look that couldn't be read leaves the running one, and reports no change") {
+    core::WorldLook current = LookOf(core::atlas::SpriteId::TerrainMeadow0);
+    const u64 before = current.Hash();
+    CHECK_FALSE(app::KeepLook(current, std::unexpected{ core::Error{ "broken" } }));
+    CHECK(current.Hash() == before);
+}
+
+TEST_CASE("a different look replaces the running one, and reports the change") {
+    core::WorldLook current = LookOf(core::atlas::SpriteId::TerrainMeadow0);
+    const core::WorldLook edited = LookOf(core::atlas::SpriteId::TerrainMeadow1);
+    CHECK(app::KeepLook(current, edited));
+    CHECK(current.Hash() == edited.Hash());
+}
+
+TEST_CASE("an identical look changes nothing") {
+    core::WorldLook current = LookOf(core::atlas::SpriteId::TerrainMeadow0);
+    CHECK_FALSE(app::KeepLook(current, LookOf(core::atlas::SpriteId::TerrainMeadow0)));
 }
 
 } // namespace

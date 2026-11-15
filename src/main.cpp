@@ -8,6 +8,7 @@
 #include "data/seals.hpp"
 #include "data/settings.hpp"
 #include "data/strings.hpp"
+#include "data/world_look.hpp"
 #include "data/world_map.hpp"
 #include "game/scenes.hpp"
 #include "gfx/renderer.hpp"
@@ -107,6 +108,12 @@ i32 Run(const core::Settings& settings, app::Options options, bool fullscreen) {
         return FailToStart("the game's data couldn't be read", world.error());
     }
     options.data.world = *world;
+    // The look names its sprites by the manifest and its kinds and danger sorts by the map, so it is read with them.
+    std::expected<core::WorldLook, core::Error> worldLook = data::LoadWorldLook(dataFolder, *options.manifest, **world);
+    if (!worldLook) {
+        return FailToStart("the game's data couldn't be read", worldLook.error());
+    }
+    options.worldLook = std::move(*worldLook);
     PN_LOG_INFO("world map: {} by {} tiles, {} places", (*world)->Columns(), (*world)->Rows(), (*world)->Places().size());
     options.strings = std::make_shared<const core::Strings>(std::move(*strings));
     std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(
