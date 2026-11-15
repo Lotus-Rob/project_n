@@ -139,8 +139,21 @@ TEST_CASE("the cultivator starts on the start city, the portal a short walk from
     CHECK(game::WORLD_PORTAL_OFFSET.y == PORTAL_UP);
 }
 
-// How far above its tile's centre a place's name is anchored.
-constexpr f32 PLACE_NAME_RISE = 60.0F;
+TEST_CASE("every place marker sprite reaches as far below the tile's centre as the city marker") {
+    constexpr std::array MARKERS{ core::atlas::SpriteId::MarkerHauntedForest, core::atlas::SpriteId::MarkerMountainPass,
+                                  core::atlas::SpriteId::MarkerShrine,        core::atlas::SpriteId::MarkerCave,
+                                  core::atlas::SpriteId::MarkerCliff,         core::atlas::SpriteId::MarkerCorruptVillage };
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    const core::SpriteInfo& city = manifest->Sprite(core::atlas::SpriteId::MarkerCity);
+    for (const core::atlas::SpriteId sprite : MARKERS) {
+        const core::SpriteInfo& marker = manifest->Sprite(sprite);
+        INFO("sprite ", std::to_underlying(sprite));
+        CHECK(marker.height - marker.footY == city.height - city.footY);
+    }
+}
+
+// The gap between the city marker's lower edge and the name hanging from it, in world units.
+constexpr f32 PLACE_NAME_GAP = 8.0F;
 
 TEST_CASE("each place in view publishes its name, in its own kind, and none outside the view") {
     const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
@@ -165,7 +178,12 @@ TEST_CASE("each place in view publishes its name, in its own kind, and none outs
     CHECK(places.front().nameKey == std::to_underlying(capital.name));
     CHECK(places.front().entity != core::StableId{});
     CHECK(places.front().current.x == start.x);
-    CHECK(places.front().current.y == start.y - PLACE_NAME_RISE);
+    // The name hangs under the city marker, which is drawn round the tile's centre where the cultivator stands: clear
+    // of the cultivator's label, which rides over its head.
+    const core::SpriteInfo& marker = test::TestManifest()->Sprite(core::atlas::SpriteId::MarkerCity);
+    CHECK(places.front().align == core::TextAlign::TopCentre);
+    CHECK(places.front().current.y == start.y + static_cast<f32>(marker.height - marker.footY) + PLACE_NAME_GAP);
+    CHECK(places.front().current.y > start.y); // whatever the offset, the name hangs below the tile's centre
     // The whole map in view: every place, each with an entity and a key of its own.
     core::Snapshot wide;
     host.Publish(wide, jobs, game::WORLD_MAP);

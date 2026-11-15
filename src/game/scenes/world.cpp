@@ -149,8 +149,8 @@ constexpr u32 TENTH = 10;
 
 // The stable ID of the place `index`'s name label: far above any creature's, which count up from 1.
 constexpr u64 PLACE_ENTITY_BASE = 1ULL << 40;
-// How far above its tile's centre a place's name is anchored, in world units.
-constexpr f32 PLACE_NAME_RISE = 60.0F;
+// The gap between the city marker's lower edge and the name hanging from it, in world units.
+constexpr f32 PLACE_NAME_GAP = 8.0F;
 
 // Spawns the cities' people, city by city in place order, `npc` counting them all: the first seven tenths of a city's share
 // on its own tile, each of the rest on a tile of its region drawn for its running index.
@@ -281,13 +281,19 @@ void WorldScene::Build(SceneContext& context) const {
 void WorldScene::Publish(const SceneContext& context, core::Rect view, core::Snapshot& snapshot) const {
     PN_PROFILE_ZONE();
     const core::WorldMap& map = *context.Data().world;
+    // Every place's marker (world_look.yaml picks one per city and danger sort) shares the city marker's size below the
+    // tile's centre; a test checks they do.
+    const core::SpriteInfo& marker = context.Manifest().Sprite(core::atlas::SpriteId::MarkerCity);
+    const f32 markerBelow = static_cast<f32>(marker.height - marker.footY);
     for (std::size_t index = 0; index < map.Places().size(); ++index) {
         const core::Place& place = map.Places()[index];
         const core::Vec2 centre = map.TileCentre(map.TileIndex(place.tile));
         if (!Within(centre, view)) {
             continue;
         }
-        const core::Vec2 anchor = centre - core::Vec2{ .x = 0.0F, .y = PLACE_NAME_RISE };
+        // The name hangs under the marker drawn round the tile's centre, like a map label under its town: the cultivator
+        // stands on the start city with its own label over its head, so a name above the tile would sit on that label.
+        const core::Vec2 anchor = centre + core::Vec2{ .x = 0.0F, .y = markerBelow + PLACE_NAME_GAP };
         snapshot.texts.push_back(
             {
                 .kind = core::TextKind::Place,
@@ -297,6 +303,7 @@ void WorldScene::Publish(const SceneContext& context, core::Rect view, core::Sna
                 .entity = static_cast<core::StableId>(PLACE_ENTITY_BASE + index),
                 .nameKey = std::to_underlying(place.name),
                 .priority = core::LabelPriority::Place,
+                .align = core::TextAlign::TopCentre,
             }
         );
     }
