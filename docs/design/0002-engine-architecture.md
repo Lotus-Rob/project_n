@@ -261,11 +261,11 @@ Within one executable, the same state and inputs give the same ticks on any mach
 Across compilers and platforms results may differ (code generation); cross-platform replays or lockstep multiplayer would need fixed point or more of our own maths, which nobody has asked for.
 
 **Floating-point contraction stays on** (no `-ffp-contract` flag, decided in phase 6 chunk 5b1). The compiler may fuse a
-multiply and an add into one fused multiply-add, rounding once instead of twice. That choice is made when the binary is
-built, so within one binary the same state and inputs still give the same ticks: contraction can't make a binary
-disagree with itself. Route costs are whole numbers and floats only place a walker along its route, so fusing can't
-change which route wins. Revisit only if replays or saves must ever match across builds (the
-[5b1 spec](../superpowers/specs/2026-11-15-phase6-chunk5b1-map-design.md), Goal 10).
+multiply and an add into one fused multiply-add, rounding once instead of twice (GCC and Clang contract by default in
+C++). That choice is made when the binary is built, so within one binary the same state and inputs still give the same
+ticks: contraction can't make a binary disagree with itself. Route costs are whole numbers and floats only place a
+walker along its route, so fusing can't change which route wins. Revisit only if replays or saves must ever match across
+builds (the [5b1 spec](../superpowers/specs/2026-11-15-phase6-chunk5b1-map-design.md), Goal 10).
 
 ### 7.5 The job system
 
