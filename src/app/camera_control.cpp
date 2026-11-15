@@ -70,13 +70,18 @@ void Drag::Press(Control button, core::Vec2 where) {
     if (!m_from) {
         m_from = where;
         m_button = button;
+        m_pressedAt = where;
+        m_strayed = false;
     }
 }
 
-void Drag::Release(Control button) {
-    if (button == m_button) {
-        m_from.reset();
+bool Drag::Release(Control button, core::Vec2 where) {
+    if (button != m_button || !m_from) {
+        return false;
     }
+    m_from.reset();
+    return button == Control::DragCamera && !m_strayed &&
+           LengthSquared(where - m_pressedAt) <= CLICK_SLOP_PIXELS * CLICK_SLOP_PIXELS;
 }
 
 void Drag::End() {
@@ -92,6 +97,7 @@ std::optional<core::Vec2> Drag::Take(std::optional<core::Vec2> cursor, bool focu
         m_from.reset(); // the button may come up where the window never hears of it
         return std::nullopt;
     }
+    m_strayed = m_strayed || LengthSquared(*cursor - m_pressedAt) > CLICK_SLOP_PIXELS * CLICK_SLOP_PIXELS;
     return std::exchange(m_from, cursor);
 }
 
