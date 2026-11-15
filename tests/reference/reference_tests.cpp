@@ -250,14 +250,10 @@ TEST_CASE("the map cells at the smallest zoom: the low mips") {
     CheckAgainstReference({ .name = "cells_far", .scene = game::CELLS_SCENE, .zoom = gfx::MIN_ZOOM });
 }
 
-// The start city's tile centre.
-core::Vec2 CapitalCentre(const core::WorldMap& map) {
-    return map.TileCentre(map.TileIndex(map.Places()[map.Start()].tile));
-}
 // Halfway from the cultivator, on the start city's tile centre, to the world's portal: both show at the largest zoom.
 core::Vec2 StartAndPortal() {
     const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
-    return CapitalCentre(*map) + (game::WORLD_PORTAL_OFFSET * static_cast<f32>(HALFWAY));
+    return map->StartCentre() + (game::WORLD_PORTAL_OFFSET * static_cast<f32>(HALFWAY));
 }
 // The tile centre of the bridge nearest the start city in `map`, by tiles (the lower index on a tie).
 core::Vec2 NearestBridgeToStart(const core::WorldMap& map) {
@@ -327,7 +323,7 @@ TEST_CASE("the world at the largest zoom: the cultivator at the start and the po
 // the picture holds both.
 TEST_CASE("the world's capital at a middle zoom: its name, roads, the river and a bridge") {
     const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
-    const core::Vec2 capital = CapitalCentre(*map);
+    const core::Vec2 capital = map->StartCentre();
     const core::Vec2 bridge = NearestBridgeToStart(*map);
     const core::SpriteInfo& sprite = test::TestManifest()->Sprite(core::atlas::SpriteId::BridgeV);
     const f32 room = static_cast<f32>(std::max(sprite.width, sprite.height));
@@ -354,7 +350,7 @@ TEST_CASE("the world at the smallest zoom over the capital: its name reads under
           .scene = game::WORLD_SCENE,
           .ticks = TWO_SECONDS,
           .zoom = gfx::MIN_ZOOM,
-          .centre = CapitalCentre(*map),
+          .centre = map->StartCentre(),
           .asInGame = true,
           .width = FULL_HD_WIDTH,
           .height = FULL_HD_HEIGHT }
