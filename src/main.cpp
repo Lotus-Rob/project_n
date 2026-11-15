@@ -8,6 +8,7 @@
 #include "data/seals.hpp"
 #include "data/settings.hpp"
 #include "data/strings.hpp"
+#include "data/world_map.hpp"
 #include "game/scenes.hpp"
 #include "gfx/renderer.hpp"
 #include "platform/paths.hpp"
@@ -100,6 +101,13 @@ i32 Run(const core::Settings& settings, app::Options options, bool fullscreen) {
     if (!strings) {
         return FailToStart("the game's data couldn't be read", strings.error());
     }
+    // The map names its places by the strings, so it is read after them; it is read once and the data watch keeps it.
+    const std::expected<std::shared_ptr<const core::WorldMap>, core::Error> world = data::LoadWorldMap(dataFolder, *strings);
+    if (!world) {
+        return FailToStart("the game's data couldn't be read", world.error());
+    }
+    options.data.world = *world;
+    PN_LOG_INFO("world map: {} by {} tiles, {} places", (*world)->Columns(), (*world)->Rows(), (*world)->Places().size());
     options.strings = std::make_shared<const core::Strings>(std::move(*strings));
     std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(
         *window,

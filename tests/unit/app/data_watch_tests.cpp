@@ -121,4 +121,51 @@ TEST_CASE("a part that can't be read is not reloaded") {
     CHECK_FALSE(reload.gameData);
 }
 
+// A map of two meadow tiles, `name` the key of its one city's name.
+std::shared_ptr<const core::WorldMap> TwoTiles(std::string_view name) {
+    constexpr f32 TILE = 256.0F;
+    constexpr u16 MEADOW_COST = 10;
+    core::WorldMapSource source;
+    source.columns = 2;
+    source.rows = 1;
+    source.tileSize = TILE;
+    source.kinds = { { .name = "meadow", .symbol = '.', .cost = MEADOW_COST } };
+    source.grid = { 0, 0 };
+    source.places = { { .key = "capital",
+                        .kind = core::PlaceKind::City,
+                        .sort = "",
+                        .tile = { .column = 0, .row = 0 },
+                        .nameKey = std::string{ name },
+                        .name = {},
+                        .people = 1,
+                        .start = true } };
+    std::expected<core::WorldMap, core::Error> map = core::WorldMap::Build(std::move(source));
+    REQUIRE(map.has_value());
+    return std::make_shared<const core::WorldMap>(std::move(*map));
+}
+
+TEST_CASE("a reload keeps the map as loaded") {
+    core::GameData running = game::BuiltInData();
+    running.world = TwoTiles("place_capital");
+    std::expected<core::GameData, core::Error> read = game::BuiltInData();
+    read->world = TwoTiles("place_other"); // a world.yaml edited since the start
+    CHECK(app::ReloadOf(core::Effects{}, core::Effects{}, running, read).gameData);
+    app::KeepWorld(running, read);
+    REQUIRE(read.has_value());
+    CHECK(read->world == running.world);
+    CHECK_FALSE(app::ReloadOf(core::Effects{}, core::Effects{}, running, read).gameData);
+    constexpr f32 FASTER = 9.0F;
+    read->fox.walkSpeed = FASTER;
+    CHECK(app::ReloadOf(core::Effects{}, core::Effects{}, running, read).gameData); // another table's edit still reloads
+}
+
+TEST_CASE("keeping the map leaves a game data that couldn't be read as it was") {
+    core::GameData running = game::BuiltInData();
+    running.world = TwoTiles("place_capital");
+    std::expected<core::GameData, core::Error> read = std::unexpected{ core::Error{ "broken" } };
+    app::KeepWorld(running, read);
+    REQUIRE_FALSE(read.has_value());
+    CHECK(read.error().message == "broken");
+}
+
 } // namespace

@@ -1,8 +1,8 @@
 // The data module's YAML readers (data::ParseGameData, data::ParseAbilities, data::ParseSettings, data::ParseManifest,
-// data::ParseStrings, data::ParseEffects, data::ParseSeals): a data or settings file is edited by hand and the manifest
-// may be damaged, so any text is refused with an error or read, never a crash or an exception escaping. Seeded with the
-// shipped creatures, abilities, effects, seals and strings tables, a settings file, the manifest and a seals table past a
-// cap.
+// data::ParseStrings, data::ParseEffects, data::ParseSeals, data::ParseWorldMap): a data or settings file is edited by hand and
+// the manifest may be damaged, so any text is refused with an error or read, never a crash or an exception escaping. Seeded
+// with the shipped creatures, abilities, effects, seals and strings tables, a settings file, the manifest, a seals table past a
+// cap and a small world map.
 #include "../support/manifest.hpp" // relative: lint has no compile flags for the fuzz targets, which only build with ASan
 #include "core/cxx23.hpp"          // IWYU pragma: keep
 #include "data/abilities.hpp"
@@ -12,6 +12,7 @@
 #include "data/seals.hpp"
 #include "data/settings.hpp"
 #include "data/strings.hpp"
+#include "data/world_map.hpp"
 
 // Declared first: libFuzzer ships no header for it, and -Wmissing-prototypes requires one.
 extern "C" i32 LLVMFuzzerTestOneInput(const u8* bytes, std::size_t size);
@@ -34,10 +35,18 @@ extern "C" i32 LLVMFuzzerTestOneInput(const u8* bytes, std::size_t size) {
     // The seals name sprites, so they are read against the shipped manifest, loaded once and kept to the process's end.
     [[clang::no_destroy]] static const std::shared_ptr<const core::Manifest> shipped = test::TestManifest();
     const std::expected<core::Seals, core::Error> seals = data::ParseSeals(text, *shipped, &warnings);
+    // The world map names its places by strings, so it is read against a table holding the seed's names.
+    [[clang::no_destroy]] static const core::Strings names = [] {
+        core::Strings table;
+        table.Add("place_capital", { "Capital", "Capital" });
+        table.Add("place_wolf_pass", { "Wolf Pass", "Wolf Pass" });
+        return table;
+    }();
+    const std::expected<core::WorldMap, core::Error> world = data::ParseWorldMap(text, names, &warnings);
     if ((!gameData && gameData.error().message.empty()) || (!abilities && abilities.error().message.empty()) ||
         (!effects && effects.error().message.empty()) || (!settings && settings.error().message.empty()) ||
         (!manifest && manifest.error().message.empty()) || (!strings && strings.error().message.empty()) ||
-        (!seals && seals.error().message.empty())) {
+        (!seals && seals.error().message.empty()) || (!world && world.error().message.empty())) {
         std::abort(); // a refusal always says why
     }
     return 0;

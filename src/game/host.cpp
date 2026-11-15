@@ -129,77 +129,83 @@ core::SceneId SceneIdOf(const core::Manifest& manifest, core::SceneKey scene) {
     return found.value_or(core::SceneId{});
 }
 
-// What assets/data/creatures.yaml and abilities.yaml ship.
-constexpr core::GameData BUILT_IN_DATA{
-    .cultivator = { .sprite = SpriteId::Cultivator, .health = 1'000, .walkSpeed = 4.0F }, // 240 world units a second at full stick
-    // A lap in about 17 seconds.
-    .fox = { .sprite = SpriteId::Fox,
-             .health = 1'200,
-             .orbitRadius = 300.0F,
-             .orbitWobble = 40.0F,
-             .orbitSpeed = 0.006F,
-             .orbitsPlayer = true },
-    .abilities = {
-        .qiMax = 100,
-        .qiStart = 50,
-        .table = { {
-            {},
-            { .slot = core::SlotKind::Generator,
-              .cooldownTicks = 15,
-              .qiGain = 10,
-              .damage = 140,
-              .hit = core::HitKind::Burn,
-              .radius = 120.0F,
-              .affliction = { .ticks = 3, .damage = 40 },
-              .speed = 25.0F },
-            { .slot = core::SlotKind::Spender,
-              .cooldownTicks = 30,
-              .qiCost = 25,
-              .damage = 360,
-              .hit = core::HitKind::Poison,
-              .radius = 90.0F,
-              .affliction = { .ticks = 4, .damage = 60 } },
-            { .slot = core::SlotKind::Movement, .cooldownTicks = 60, .distance = 260.0F, .durationTicks = 9 },
-            { .slot = core::SlotKind::Special,
-              .cooldownTicks = 360,
-              .qiCost = 60,
-              .damage = 20,
-              .radius = 260.0F,
-              .volley = { .count = 1'000,
-                          .waves = 10,
-                          .ringRadius = 160.0F,
-                          .ringStep = 38.0F,
-                          .scatter = 0.0F,
-                          .angleJitter = 0.0F,
-                          .staggerTicks = 3,
-                          .waveGapTicks = 9,
-                          .outTicks = 7,
-                          .holdTicks = 18,
-                          .departJitterTicks = 15,
-                          .flightTicks = 102,
-                          .sweep = 420.0F,
-                          .sweepJitter = 0.6F,
-                          .fadeTicks = 18 },
-              .seal = core::SealCast{ .key = core::SealKeyOf("sword_formation"), .size = 420.0F } },
-        } },
-        .loadout = { {
-            core::AbilityKind::FireBolt,
-            core::AbilityKind::PoisonLance,
-            core::AbilityKind::Dash,
-            core::AbilityKind::FlyingSwords,
-            core::AbilityKind::None,
-            core::AbilityKind::None,
-            core::AbilityKind::None,
-            core::AbilityKind::None,
-        } },
-    },
-    .combat = core::CombatRules{}, // the shipped rules; a test checks that abilities.yaml says the same
+// What assets/data/creatures.yaml and abilities.yaml ship. Parts rather than one GameData, which holds the world map's
+// pointer and so is neither a constant expression nor free to destroy at exit.
+constexpr core::CreatureData BUILT_IN_CULTIVATOR{ .sprite = SpriteId::Cultivator,
+                                                  .health = 1'000,
+                                                  .walkSpeed = 4.0F }; // 240 world units a second at full stick
+// A lap in about 17 seconds.
+constexpr core::CreatureData BUILT_IN_FOX{ .sprite = SpriteId::Fox,
+                                           .health = 1'200,
+                                           .orbitRadius = 300.0F,
+                                           .orbitWobble = 40.0F,
+                                           .orbitSpeed = 0.006F,
+                                           .orbitsPlayer = true };
+constexpr core::Abilities BUILT_IN_ABILITIES{
+    .qiMax = 100,
+    .qiStart = 50,
+    .table = { {
+        {},
+        { .slot = core::SlotKind::Generator,
+          .cooldownTicks = 15,
+          .qiGain = 10,
+          .damage = 140,
+          .hit = core::HitKind::Burn,
+          .radius = 120.0F,
+          .affliction = { .ticks = 3, .damage = 40 },
+          .speed = 25.0F },
+        { .slot = core::SlotKind::Spender,
+          .cooldownTicks = 30,
+          .qiCost = 25,
+          .damage = 360,
+          .hit = core::HitKind::Poison,
+          .radius = 90.0F,
+          .affliction = { .ticks = 4, .damage = 60 } },
+        { .slot = core::SlotKind::Movement, .cooldownTicks = 60, .distance = 260.0F, .durationTicks = 9 },
+        { .slot = core::SlotKind::Special,
+          .cooldownTicks = 360,
+          .qiCost = 60,
+          .damage = 20,
+          .radius = 260.0F,
+          .volley = { .count = 1'000,
+                      .waves = 10,
+                      .ringRadius = 160.0F,
+                      .ringStep = 38.0F,
+                      .scatter = 0.0F,
+                      .angleJitter = 0.0F,
+                      .staggerTicks = 3,
+                      .waveGapTicks = 9,
+                      .outTicks = 7,
+                      .holdTicks = 18,
+                      .departJitterTicks = 15,
+                      .flightTicks = 102,
+                      .sweep = 420.0F,
+                      .sweepJitter = 0.6F,
+                      .fadeTicks = 18 },
+          .seal = core::SealCast{ .key = core::SealKeyOf("sword_formation"), .size = 420.0F } },
+    } },
+    .loadout = { {
+        core::AbilityKind::FireBolt,
+        core::AbilityKind::PoisonLance,
+        core::AbilityKind::Dash,
+        core::AbilityKind::FlyingSwords,
+        core::AbilityKind::None,
+        core::AbilityKind::None,
+        core::AbilityKind::None,
+        core::AbilityKind::None,
+    } },
 };
 
 } // namespace
 
 core::GameData BuiltInData() {
-    return BUILT_IN_DATA;
+    return core::GameData{
+        .cultivator = BUILT_IN_CULTIVATOR,
+        .fox = BUILT_IN_FOX,
+        .abilities = BUILT_IN_ABILITIES,
+        .combat = core::CombatRules{}, // the shipped rules; a test checks that abilities.yaml says the same
+        .world = nullptr,
+    };
 }
 
 // What a scene's hooks reach the host through: only for the length of one call.
@@ -289,10 +295,10 @@ void Host::EnterScene() {
     Build(*m_requested);
 }
 
-Host::Host(std::shared_ptr<const core::Manifest> manifest, core::SceneKey scene, const core::GameData& data)
+Host::Host(std::shared_ptr<const core::Manifest> manifest, core::SceneKey scene, core::GameData data)
   : m_manifest{ std::move(manifest) }
   , m_state{ DOMAINS, SEED }
-  , m_data{ data }
+  , m_data{ std::move(data) }
   , m_scene{ scene }
   , m_sceneId{ SceneIdOf(*m_manifest, m_scene) } {
     Build(m_scene);

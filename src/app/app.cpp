@@ -152,6 +152,12 @@ DataReload ReloadOf(
     };
 }
 
+void KeepWorld(const core::GameData& running, std::expected<core::GameData, core::Error>& read) {
+    if (read) {
+        read->world = running.world;
+    }
+}
+
 bool HasFlag(std::span<const char* const> args, std::string_view flag) {
     return std::ranges::any_of(args, [flag](const char* arg) { return std::string_view{ arg } == flag; });
 }
@@ -365,6 +371,7 @@ void App::WatchData(u64 nowNs) {
         PN_LOG_ERROR("the seals changed but weren't reloaded; the old seals stay: {}", seals.error().message);
     }
     std::expected<core::GameData, core::Error> gameData = data::LoadGameData(m_options.dataFolder);
+    KeepWorld(m_options.data, gameData);
     if (gameData) {
         if (const std::expected<void, core::Error> runs = game::CheckScenes(*m_options.manifest, *gameData); !runs) {
             gameData = std::unexpected{ runs.error() };

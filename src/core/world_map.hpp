@@ -8,7 +8,7 @@
 /// tie-breaks, so it is the same on every machine.
 
 #include "core/error.hpp"
-#include "core/frame.hpp"
+#include "core/rect.hpp"
 #include "core/strings.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"

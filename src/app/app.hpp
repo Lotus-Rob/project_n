@@ -150,6 +150,10 @@ struct DataReload {
     const std::expected<core::GameData, core::Error>& readData
 );
 
+/// Makes the game data `read` after an edit carry the world map `running` was started with: the map is read at the
+/// start only, so an edit to `world.yaml` alone reloads nothing. Does nothing to data that couldn't be read.
+void KeepWorld(const core::GameData& running, std::expected<core::GameData, core::Error>& read);
+
 /// The main thread's systems (the job system, the window, the renderer, the handover and its display
 /// side, the camera, the damage numbers, the HUD) and the logic thread, which builds and runs a Game on the job system.
 class App {

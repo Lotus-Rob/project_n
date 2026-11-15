@@ -48,7 +48,7 @@ public:
     explicit Host(
         std::shared_ptr<const core::Manifest> manifest,
         core::SceneKey scene = ARENA_SCENE,
-        const core::GameData& data = BuiltInData()
+        core::GameData data = BuiltInData()
     );
 
     /// When `input` holds a CycleScene, asks for the next scene in the list's order (NextScene(): arena, stress, painted,
