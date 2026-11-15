@@ -12,12 +12,6 @@
 namespace {
 
 // One seal with one ring, the least a table holds: the table a reload starts from.
-constexpr std::string_view ONE_SEAL = "seals:\n"
-                                      "  a:\n"
-                                      "    colours: [element]\n"
-                                      "    layers:\n"
-                                      "      - { inner: 0.5, outer: 1, parts: [{ kind: circle, radius: 0.9, width: 0.01 }] }\n";
-
 core::Error ErrorFor(std::string_view text) {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const std::expected<core::Seals, core::Error> seals = data::ParseSeals(text, *manifest);
@@ -474,13 +468,10 @@ TEST_CASE("the seals reader warns on unknown keys and reads the rest") {
     CHECK(look->layers.front().parts.front().dash == 0.0F);
 }
 
-TEST_CASE("a broken seals table keeps the old one") {
+TEST_CASE("an edit whose second seal is broken is refused whole, naming its line") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
-    std::expected<core::Seals, core::Error> first = data::ParseSeals(ONE_SEAL, *manifest);
-    REQUIRE(first.has_value());
-    const core::Seals current = std::move(*first);
-    // An edit whose first seal reads, but whose second doesn't: the reader hands back no part of it, so the caller keeps
-    // the table it had (App's reload keeps `current` on an error).
+    // An edit whose first seal reads, but whose second doesn't: the reader hands back no part of it, so the data watch
+    // keeps the table it had (app::KeepSeals, tested in app_tests' data_watch).
     const std::expected<core::Seals, core::Error> edited = data::ParseSeals(
         "seals:\n"
         "  b: { colours: [element], layers: [{ inner: 0, outer: 1 }] }\n"
@@ -489,11 +480,6 @@ TEST_CASE("a broken seals table keeps the old one") {
     );
     REQUIRE_FALSE(edited.has_value());
     CHECK(edited.error().message.starts_with("seals line 3: c's layers"));
-    CHECK(current.looks.size() == 1);
-    const core::SealLook* kept = current.Find(core::SealKeyOf("a"));
-    CHECK(kept != nullptr);
-    const core::SealLook* gone = current.Find(core::SealKeyOf("b"));
-    CHECK(gone == nullptr);
 }
 
 } // namespace

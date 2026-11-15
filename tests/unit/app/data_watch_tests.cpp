@@ -1,5 +1,6 @@
 #include "app/app.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/seals.hpp"
 #include "core/world_look.hpp"
 #include "data/world_look.hpp"
 #include "game/scenes.hpp"
@@ -192,6 +193,32 @@ TEST_CASE("a different look replaces the running one, and reports the change") {
     const bool replaced = app::KeepLook(current, edited);
     CHECK(replaced);
     CHECK(current.Hash() == edited.Hash());
+}
+
+// A seals table holding the one seal `key`, plain.
+core::Seals SealsOf(std::string_view key) {
+    core::Seals seals;
+    seals.looks = { { core::SealKeyOf(key), core::SealLook{} } };
+    return seals;
+}
+
+TEST_CASE("a seals table that couldn't be read leaves the running one, and reports no change") {
+    core::Seals current = SealsOf("a");
+    const bool replaced = app::KeepSeals(current, std::unexpected{ core::Error{ "broken" } });
+    CHECK_FALSE(replaced);
+    REQUIRE(current.looks.size() == 1);
+    const core::SealLook* kept = current.Find(core::SealKeyOf("a"));
+    CHECK(kept != nullptr);
+}
+
+TEST_CASE("a seals table that reads replaces the running one, and reports the change") {
+    core::Seals current = SealsOf("a");
+    const bool replaced = app::KeepSeals(current, SealsOf("b"));
+    CHECK(replaced);
+    const core::SealLook* gone = current.Find(core::SealKeyOf("a"));
+    const core::SealLook* read = current.Find(core::SealKeyOf("b"));
+    CHECK(gone == nullptr);
+    CHECK(read != nullptr);
 }
 
 // The look reader checks sprites against the manifest scene it names, which must be the one game shows the map in.

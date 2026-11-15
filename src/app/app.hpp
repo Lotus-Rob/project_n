@@ -158,6 +158,10 @@ struct DataReload {
 /// start only, so an edit to `world.yaml` alone reloads nothing. Does nothing to data that couldn't be read.
 void KeepWorld(const core::GameData& running, std::expected<core::GameData, core::Error>& read);
 
+/// Makes `current` the seals table `read` after an edit, and says whether it did: a table that couldn't be read leaves
+/// `current` as it is, as the reader hands back no part of a broken one.
+[[nodiscard]] bool KeepSeals(core::Seals& current, std::expected<core::Seals, core::Error> read);
+
 /// Makes `current` the world look `read` after an edit when it differs (by Hash()), and says whether it did: a look that
 /// couldn't be read, or reads as it was, leaves `current` as it is.
 [[nodiscard]] bool KeepLook(core::WorldLook& current, std::expected<core::WorldLook, core::Error> read);

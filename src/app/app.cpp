@@ -159,6 +159,14 @@ void KeepWorld(const core::GameData& running, std::expected<core::GameData, core
     }
 }
 
+bool KeepSeals(core::Seals& current, std::expected<core::Seals, core::Error> read) {
+    if (!read) {
+        return false;
+    }
+    current = std::move(*read);
+    return true;
+}
+
 bool KeepLook(core::WorldLook& current, std::expected<core::WorldLook, core::Error> read) {
     if (!read || read->Hash() == current.Hash()) {
         return false;
@@ -372,13 +380,13 @@ void App::WatchData(u64 nowNs) {
         PN_LOG_ERROR("the effects changed but weren't reloaded; the old effects stay: {}", effects.error().message);
     }
     // The seals are drawn only, as the effects: a new table shows the next frame and the simulation never knows.
-    if (std::expected<core::Seals, core::Error> seals = data::LoadSeals(m_options.dataFolder, *m_options.manifest); seals) {
-        m_options.seals = std::move(*seals);
+    std::expected<core::Seals, core::Error> seals = data::LoadSeals(m_options.dataFolder, *m_options.manifest);
+    if (!seals) {
+        PN_LOG_ERROR("the seals changed but weren't reloaded; the old seals stay: {}", seals.error().message);
+    }
+    else if (KeepSeals(m_options.seals, std::move(seals))) {
         m_renderer.SetSeals(m_options.seals);
         PN_LOG_INFO("the seals were read again: {} looks", m_options.seals.looks.size());
-    }
-    else {
-        PN_LOG_ERROR("the seals changed but weren't reloaded; the old seals stay: {}", seals.error().message);
     }
     // The world's look is drawn only too, and checked against the map the game runs: a look the map can't use keeps the old.
     if (m_options.data.world) {
