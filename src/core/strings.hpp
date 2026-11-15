@@ -12,6 +12,7 @@
 #include <array>
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -152,8 +153,9 @@ struct Strings {
 
     /// The string `key` names in strings.yaml, whether the code names it or it is a data string; empty if none.
     [[nodiscard]] std::optional<StringId> Find(std::string_view key) const {
-        if (const auto* const named = std::ranges::find(STRING_NAMES, key); named != STRING_NAMES.end()) {
-            return StringId{ static_cast<u16>(named - STRING_NAMES.begin()) };
+        const std::span names{ STRING_NAMES }; // a span's iterator is a class everywhere, unlike std::array's
+        if (const auto named = std::ranges::find(names, key); named != names.end()) {
+            return StringId{ static_cast<u16>(named - names.begin()) };
         }
         if (const auto data = std::ranges::find(keys, key); data != keys.end()) {
             return StringId{ static_cast<u16>(STRINGS + static_cast<std::size_t>(data - keys.begin())) };

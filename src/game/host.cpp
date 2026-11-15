@@ -110,7 +110,7 @@ bool NpcsPlaced(const core::State& state, const core::WorldMap* map) {
         return person.cell < map->Columns() * map->Rows() && person.home < map->Places().size() &&
                map->Places()[person.home].kind == core::PlaceKind::City;
     };
-    return std::ranges::all_of(std::array{ ACTIVE, WORLD }, [&](core::DomainIndex domain) {
+    return std::ranges::all_of(std::to_array({ ACTIVE, WORLD }), [&](core::DomainIndex domain) {
         const auto npcs = state[domain].Entities().view<const Npc>();
         return std::ranges::all_of(npcs, [&](core::Entity entity) { return placed(npcs.get<const Npc>(entity)); });
     });
