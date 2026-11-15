@@ -100,7 +100,8 @@ public:
     void Build(SceneContext& context) const override;
 
     /// A name label over every eighth walker (by its ID) standing within `view`, and the name of every place of the
-    /// map whose tile centre lies within it (core::TextKind::Place).
+    /// map whose tile centre lies within it (core::TextKind::Place), hung under the tile's marker so a cultivator standing
+    /// on a city never has its own label over the name.
     void Publish(const SceneContext& context, core::Rect view, core::Snapshot& snapshot) const override;
 };
 
