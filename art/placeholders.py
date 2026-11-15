@@ -2,7 +2,7 @@
 
 Writes assets/sprites/<name>.png for every placeholder sprite in art/sprites.toml: a painted ground, rocks, a pine,
 a shrine, a fox, a cultivator, a villager, glowing orbs, a blob shadow, four world-map cells, the world's seamless
-terrain tiles, and the abilities' effects: a sword, a halo and a soft dot (both unused now), a fire bolt, the lance's
+terrain tiles, the map's road, river, bridge and marker overlays, and the abilities' effects: a sword, a halo and a soft dot (both unused now), a fire bolt, the lance's
 burst and the bars' solid square. Each is original and drawn from code. Reproducible byte for byte: the drawing uses
 only arithmetic and square roots (correctly rounded everywhere), integer hashing, and seeded random.Random, never a
 transcendental function. Run through `./dev atlas --placeholders`.
@@ -819,6 +819,31 @@ def water_surface(seed, variant):
     return [((22, 34, 62), [smoothstep(0.45, 0.75, d) * 0.6 for d in deep])]
 
 
+def peak(rng):
+    """A mountain seen from the south: a lit left face, a shaded right face, ink ridge lines and a snowy tip."""
+    x, y = spot(rng)
+    w, h = rng.uniform(26, 46), rng.uniform(30, 52)
+    tip = (x + rng.uniform(-4, 4), y - h)
+    left, right, foot = (x - w * 0.5, y), (x + w * 0.5, y + h * 0.04), (x + w * 0.05, y + h * 0.08)
+    seeds = [rng.randint(0, 1 << 20) for _ in range(3)]
+    shadow = dabs_mark([(x + w * 0.2, y + 2, w * 0.55, INK, 0.25, 0.3, seeds[0])])
+    ridges = group([
+        stroke_mark([left, (x - w * 0.2, y - h * 0.55), tip], 3.0, 1.2, INK, 0.75, dry=0.3, seed=seeds[1]),
+        stroke_mark([tip, (x + w * 0.25, y - h * 0.45), right], 1.2, 3.0, INK, 0.75, dry=0.3, seed=seeds[2]),
+        dabs_mark([(tip[0], tip[1] + h * 0.13, w * 0.2, SPRAY, 0.9, 0.2, seeds[1])]),
+    ])
+    box = (left[0] - 4, tip[1] - 4, right[0] + 4, foot[1] + 4)
+
+    def draw(canvas, ox, oy):
+        def moved(points):
+            return [(px + ox, py + oy) for px, py in points]
+        shadow[1](canvas, ox, oy)
+        fill(canvas, moved([tip, left, foot]), (176, 178, 184), 0.85)
+        fill(canvas, moved([tip, foot, right]), (70, 76, 92), 0.8)
+        ridges[1](canvas, ox, oy)
+    return box, draw
+
+
 # kind -> (seed, light, dark, surface or None, marks(rng)); the names are in art/sprites.toml as terrain_<kind>_<n>.
 TERRAIN = {
     "meadow": (40, (212, 208, 152), (164, 170, 112), None,
@@ -845,6 +870,8 @@ TERRAIN = {
     "shallows": (48, (148, 190, 184), (106, 158, 162), shallows_surface,
                  lambda rng: [ripple(rng, 20, SPRAY, 0.4, 2.2) for _ in range(40)]
                  + [pebble(rng, (120, 140, 128), 0.5, 1.0) for _ in range(10)]),
+    "peaks": (50, (150, 152, 158), (88, 92, 104), rock_surface,
+              lambda rng: [peak(rng) for _ in range(14)] + [pebble(rng, (190, 188, 180), 0.7, 1.4) for _ in range(10)]),
     "water": (49, (66, 94, 130), (36, 54, 88), water_surface,
               lambda rng: [ripple(rng, 24, (150, 178, 206), 0.3, 2.4) for _ in range(36)]),
 }
@@ -1090,6 +1117,214 @@ def emblem_spiral():
     return mask.canvas()
 
 
+# The map's overlays (phase 6 chunk 5b1): transparent but for the drawing, 256 px like the terrain tiles. A road or river
+# tile has one of 16 masks, the bits of the neighbours carrying the same line (N 1, E 2, S 4, W 8); each arm runs from
+# the tile's centre to the middle of its edge, straight over the last stretch and painted by the same solid strokes at
+# every tile, so neighbours join. Mask 0 is an isolated dot.
+
+MID = TILE / 2.0
+OCHRE = (150, 110, 64)
+WATER_LINE = (58, 120, 128)
+PLANK = (150, 112, 70)
+
+
+def arm(seed, layers):
+    """The east arm: from just outside the east edge's middle to the centre, straight over its last stretch."""
+    rng = random.Random(seed)
+    off = rng.uniform(-8.0, 8.0)
+    points = [(TILE + 8.0, MID), (MID + 88, MID), (MID + 44, MID + off), (MID, MID)]
+    canvas = Canvas(TILE, TILE)
+    for width, colour, alpha, dry, sd in layers:
+        canvas.stroke(points, width, width, colour, alpha, dry, sd)
+    return canvas
+
+
+def remap(canvas, source):
+    """A canvas whose pixel (x, y) is the original's pixel source(x, y); the maps used here are exact."""
+    out = Canvas(TILE, TILE)
+    for y in range(TILE):
+        for x in range(TILE):
+            sx, sy = source(x, y)
+            i, j = y * TILE + x, sy * TILE + sx
+            out.r[i], out.g[i], out.b[i], out.a[i] = canvas.r[j], canvas.g[j], canvas.b[j], canvas.a[j]
+    return out
+
+
+def lay(canvas, top):
+    for i in range(TILE * TILE):
+        keep = 1.0 - top.a[i]
+        canvas.r[i] = top.r[i] + canvas.r[i] * keep
+        canvas.g[i] = top.g[i] + canvas.g[i] * keep
+        canvas.b[i] = top.b[i] + canvas.b[i] * keep
+        canvas.a[i] = top.a[i] + canvas.a[i] * keep
+
+
+def line_tile(mask, seed, layers, dot):
+    """The mask's arms laid over one another. The west arm mirrors the east one and the north the south, which is
+    the east arm turned about the diagonal, so the two tiles meeting at an edge paint the same pixels along it."""
+    canvas = Canvas(TILE, TILE)
+    if not mask:
+        for width, colour, alpha, dry, sd in layers:
+            canvas.dab(MID, MID, width * dot, colour, alpha, dry=dry, seed=sd)
+        return canvas
+    east, south = arm(seed, layers), remap(arm(seed + 1, layers), lambda x, y: (y, x))
+    drawn = {1: remap(south, lambda x, y: (x, TILE - 1 - y)), 2: east, 4: south,
+             8: remap(east, lambda x, y: (TILE - 1 - x, y))}
+    for bit, picture in drawn.items():
+        if mask & bit:
+            lay(canvas, picture)
+    return canvas
+
+
+def road(mask):
+    """A worn track: a dark soft verge, an ochre bed and dry light wheel marks."""
+    return line_tile(mask, 60, [(19, INK, 0.28, 0.35, 1), (14, OCHRE, 1.0, 0.0, 2), (8, (190, 152, 98), 0.55, 0.5, 3),
+                                (3, (104, 74, 44), 0.45, 0.6, 4)], 0.5)
+
+
+def river(mask):
+    """A blue-green ribbon with a pale bank, a lighter middle and a few ripples."""
+    return line_tile(mask, 61, [(38, (214, 206, 160), 0.7, 0.45, 1), (30, WATER_LINE, 1.0, 0.0, 2),
+                                (16, (96, 158, 160), 0.6, 0.5, 3), (4, (200, 226, 224), 0.4, 0.6, 4)], 0.5)
+
+
+def plank_bridge(across):
+    """A plank deck over the river with ink rails; the road runs along `across` ('h': east-west, 'v': north-south)."""
+    canvas = Canvas(TILE, TILE)
+
+    def at(a, b):
+        return (MID + a, MID + b) if across == "h" else (MID + b, MID + a)
+    for a in range(-34, 35, 8):
+        canvas.stroke([at(a, -15), at(a, 15)], 6.5, 6.5, PLANK, 1.0, 0.1, 40 + a)
+    canvas.stroke([at(-38, -17), at(38, -17)], 4.0, 4.0, INK, 0.85, 0.15, 5)
+    canvas.stroke([at(-38, 17), at(38, 17)], 4.0, 4.0, INK, 0.85, 0.15, 6)
+    for a in (-38, 38):
+        for b in (-17, 17):
+            x, y = at(a, b)
+            canvas.dab(x, y, 5.5, INK, 0.9, dry=0.1, seed=a + b)
+    return canvas
+
+
+def ford():
+    """Pale shallows with stepping stones, over the river; it reads the same across either way."""
+    canvas = Canvas(TILE, TILE)
+    canvas.dab(MID, MID, 48, (188, 214, 196), 0.55, soft=1.0, dry=0.3, seed=7)
+    rng = random.Random(62)
+    for i in range(7):
+        x, y = MID + (i - 3) * 13.0 + rng.uniform(-3, 3), MID + (i % 2 - 0.5) * 20.0 + rng.uniform(-3, 3)
+        r = rng.uniform(6.0, 8.5)
+        canvas.dab(x + 2, y + 3, r, INK, 0.35, dry=0.0, seed=i)
+        canvas.dab(x, y, r, (160, 156, 148), 1.0, dry=0.2, seed=i + 9)
+        canvas.dab(x - r * 0.3, y - r * 0.3, r * 0.45, (212, 208, 196), 0.7, dry=0.3, seed=i + 19)
+    return canvas
+
+
+# Place markers: bold ink glyphs on a paper disc, about 96 px, the foot at the centre.
+
+MARKER = 96
+CENTRE = MARKER / 2.0
+
+
+def inside(polygon, x, y):
+    hit = False
+    for (ax, ay), (bx, by) in zip(polygon, polygon[1:] + polygon[:1]):
+        if (ay > y) != (by > y) and x < ax + (y - ay) * (bx - ax) / (by - ay):
+            hit = not hit
+    return hit
+
+
+def fill(canvas, polygon, colour, alpha=1.0):
+    box = (min(p[0] for p in polygon), min(p[1] for p in polygon), max(p[0] for p in polygon),
+           max(p[1] for p in polygon))
+    canvas.shape(box, lambda x, y: (colour, alpha) if inside(polygon, x, y) else None)
+
+
+def ink_line(canvas, points, width=4.5, colour=INK, alpha=0.95):
+    canvas.stroke(points, width, width, colour, alpha, 0.1, int(points[0][0] * 7 + points[0][1]))
+
+
+def marker_disc():
+    canvas = Canvas(MARKER, MARKER)
+
+    def coverage(x, y):
+        d = math.sqrt((x - CENTRE) ** 2 + (y - CENTRE) ** 2)
+        if d >= 45.0:
+            return None
+        cover = min(1.0, (45.0 - d) * 1.5)
+        if d > 40.0:
+            return INK, cover * 0.9
+        shade = smoothstep(18.0, 40.0, d) * 0.18
+        return mix(PAPER, (196, 182, 150), shade), cover
+    canvas.shape((0, 0, MARKER, MARKER), coverage)
+    return canvas
+
+
+def glyph_city(canvas):
+    fill(canvas, [(26, 68), (26, 46), (32, 46), (32, 41), (38, 41), (38, 46), (44, 46), (44, 41), (52, 41), (52, 46),
+                  (58, 46), (58, 41), (64, 41), (64, 46), (70, 46), (70, 68)], INK, 0.9)
+    fill(canvas, [(40, 41), (48, 22), (56, 41)], VERMILION, 0.95)
+    fill(canvas, [(43, 68), (43, 56), (48, 51), (53, 56), (53, 68)], PAPER, 1.0)
+
+
+def glyph_haunted_forest(canvas):
+    for x, y, s in ((34, 66, 1.0), (60, 68, 1.15)):
+        fill(canvas, [(x, y - 40 * s), (x - 15 * s, y - 14 * s), (x + 15 * s, y - 14 * s)], INK, 0.9)
+        fill(canvas, [(x, y - 26 * s), (x - 19 * s, y), (x + 19 * s, y)], INK, 0.9)
+        ink_line(canvas, [(x, y), (x, y + 6 * s)], 4.0)
+    canvas.dab(62, 46, 3.6, VERMILION, 1.0)
+    canvas.dab(72, 46, 3.6, VERMILION, 1.0)
+
+
+def glyph_mountain_pass(canvas):
+    fill(canvas, [(20, 70), (36, 30), (46, 52), (38, 70)], INK, 0.9)
+    fill(canvas, [(58, 70), (66, 56), (76, 24), (88, 70)], INK, 0.9)
+    fill(canvas, [(36, 30), (40, 38), (31, 38)], PAPER, 0.95)
+    fill(canvas, [(76, 24), (82, 36), (70, 36)], PAPER, 0.95)
+    ink_line(canvas, [(48, 70), (50, 62), (56, 56), (52, 50)], 3.0, VERMILION, 0.95)
+
+
+def glyph_shrine(canvas):
+    ink_line(canvas, [(32, 70), (32, 36)], 6.0)
+    ink_line(canvas, [(64, 70), (64, 36)], 6.0)
+    ink_line(canvas, [(26, 38), (70, 38)], 6.5, VERMILION)
+    ink_line(canvas, [(22, 31), (74, 31)], 6.0, VERMILION)
+    ink_line(canvas, [(32, 50), (64, 50)], 4.0)
+
+
+def glyph_cave(canvas):
+    fill(canvas, [(18, 70), (24, 50), (36, 36), (48, 30), (60, 36), (72, 50), (78, 70)], (112, 108, 100), 0.95)
+    mouth = [(34, 70), (36, 56), (42, 48), (48, 46), (54, 48), (60, 56), (62, 70)]
+    fill(canvas, mouth, INK, 0.97)
+    ink_line(canvas, [(18, 70), (24, 50), (36, 36), (48, 30), (60, 36), (72, 50), (78, 70)], 3.5)
+
+
+def glyph_cliff(canvas):
+    fill(canvas, [(20, 30), (46, 30), (50, 36), (60, 34), (76, 38), (76, 70), (20, 70)], (126, 120, 108), 0.95)
+    ink_line(canvas, [(20, 30), (46, 30), (50, 36), (60, 34), (76, 38)], 4.5)
+    for x in (30, 42, 54, 66):
+        ink_line(canvas, [(x, 42), (x - 3, 56), (x + 1, 68)], 2.6, INK, 0.7)
+    fill(canvas, [(20, 70), (76, 70), (80, 76), (16, 76)], INK, 0.6)
+
+
+def glyph_corrupt_village(canvas):
+    for x, y, s in ((34, 66, 0.85), (60, 70, 1.1)):
+        fill(canvas, [(x - 14 * s, y), (x - 14 * s, y - 16 * s), (x, y - 30 * s), (x + 14 * s, y - 16 * s),
+                      (x + 14 * s, y)], INK, 0.9)
+        fill(canvas, [(x - 3 * s, y), (x - 3 * s, y - 10 * s), (x + 4 * s, y - 10 * s), (x + 4 * s, y)], PAPER, 0.9)
+    ink_line(canvas, [(26, 26), (46, 46)], 4.5, VERMILION)
+    ink_line(canvas, [(46, 26), (26, 46)], 4.5, VERMILION)
+
+
+GLYPHS = {"city": glyph_city, "haunted_forest": glyph_haunted_forest, "mountain_pass": glyph_mountain_pass,
+          "shrine": glyph_shrine, "cave": glyph_cave, "cliff": glyph_cliff, "corrupt_village": glyph_corrupt_village}
+
+
+def marker(sort):
+    canvas = marker_disc()
+    GLYPHS[sort](canvas)
+    return canvas
+
+
 # name -> (painter, opaque); the names are those in art/sprites.toml.
 PLACEHOLDERS = {
     "ground": (ground, True),
@@ -1121,6 +1356,12 @@ PLACEHOLDERS = {
     "emblem_spiral": (emblem_spiral, False),
     **{f"terrain_{kind}_{variant}": ((lambda kind=kind, variant=variant: terrain(kind, variant)), True)
        for kind in TERRAIN for variant in (0, 1)},
+    **{f"road_{m}": ((lambda m=m: road(m)), False) for m in range(16)},
+    **{f"river_{m}": ((lambda m=m: river(m)), False) for m in range(16)},
+    "bridge_h": (lambda: plank_bridge("h"), False),
+    "bridge_v": (lambda: plank_bridge("v"), False),
+    "ford": (ford, False),
+    **{f"marker_{sort}": ((lambda sort=sort: marker(sort)), False) for sort in GLYPHS},
 }
 
 

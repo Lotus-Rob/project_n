@@ -93,10 +93,54 @@ enum class SpriteId : u16 { // NOLINT(performance-enum-size): stable IDs outgrow
     TerrainShallows1, ///< assets/sprites/terrain_shallows_1.png
     TerrainWater0, ///< assets/sprites/terrain_water_0.png
     TerrainWater1, ///< assets/sprites/terrain_water_1.png
+    TerrainPeaks0, ///< assets/sprites/terrain_peaks_0.png
+    TerrainPeaks1, ///< assets/sprites/terrain_peaks_1.png
+    Road0, ///< assets/sprites/road_0.png
+    Road1, ///< assets/sprites/road_1.png
+    Road2, ///< assets/sprites/road_2.png
+    Road3, ///< assets/sprites/road_3.png
+    Road4, ///< assets/sprites/road_4.png
+    Road5, ///< assets/sprites/road_5.png
+    Road6, ///< assets/sprites/road_6.png
+    Road7, ///< assets/sprites/road_7.png
+    Road8, ///< assets/sprites/road_8.png
+    Road9, ///< assets/sprites/road_9.png
+    Road10, ///< assets/sprites/road_10.png
+    Road11, ///< assets/sprites/road_11.png
+    Road12, ///< assets/sprites/road_12.png
+    Road13, ///< assets/sprites/road_13.png
+    Road14, ///< assets/sprites/road_14.png
+    Road15, ///< assets/sprites/road_15.png
+    River0, ///< assets/sprites/river_0.png
+    River1, ///< assets/sprites/river_1.png
+    River2, ///< assets/sprites/river_2.png
+    River3, ///< assets/sprites/river_3.png
+    River4, ///< assets/sprites/river_4.png
+    River5, ///< assets/sprites/river_5.png
+    River6, ///< assets/sprites/river_6.png
+    River7, ///< assets/sprites/river_7.png
+    River8, ///< assets/sprites/river_8.png
+    River9, ///< assets/sprites/river_9.png
+    River10, ///< assets/sprites/river_10.png
+    River11, ///< assets/sprites/river_11.png
+    River12, ///< assets/sprites/river_12.png
+    River13, ///< assets/sprites/river_13.png
+    River14, ///< assets/sprites/river_14.png
+    River15, ///< assets/sprites/river_15.png
+    BridgeH, ///< assets/sprites/bridge_h.png
+    BridgeV, ///< assets/sprites/bridge_v.png
+    Ford, ///< assets/sprites/ford.png
+    MarkerCity, ///< assets/sprites/marker_city.png
+    MarkerHauntedForest, ///< assets/sprites/marker_haunted_forest.png
+    MarkerMountainPass, ///< assets/sprites/marker_mountain_pass.png
+    MarkerShrine, ///< assets/sprites/marker_shrine.png
+    MarkerCave, ///< assets/sprites/marker_cave.png
+    MarkerCliff, ///< assets/sprites/marker_cliff.png
+    MarkerCorruptVillage, ///< assets/sprites/marker_corrupt_village.png
 };
 
 /// Every sprite's name, indexed by SpriteId: the manifest must list the same, in this order.
-inline constexpr std::array<std::string_view, 83> SPRITE_NAMES{ {
+inline constexpr std::array<std::string_view, 127> SPRITE_NAMES{ {
     "ground",
     "rock_large",
     "rock_small",
@@ -180,6 +224,50 @@ inline constexpr std::array<std::string_view, 83> SPRITE_NAMES{ {
     "terrain_shallows_1",
     "terrain_water_0",
     "terrain_water_1",
+    "terrain_peaks_0",
+    "terrain_peaks_1",
+    "road_0",
+    "road_1",
+    "road_2",
+    "road_3",
+    "road_4",
+    "road_5",
+    "road_6",
+    "road_7",
+    "road_8",
+    "road_9",
+    "road_10",
+    "road_11",
+    "road_12",
+    "road_13",
+    "road_14",
+    "road_15",
+    "river_0",
+    "river_1",
+    "river_2",
+    "river_3",
+    "river_4",
+    "river_5",
+    "river_6",
+    "river_7",
+    "river_8",
+    "river_9",
+    "river_10",
+    "river_11",
+    "river_12",
+    "river_13",
+    "river_14",
+    "river_15",
+    "bridge_h",
+    "bridge_v",
+    "ford",
+    "marker_city",
+    "marker_haunted_forest",
+    "marker_mountain_pass",
+    "marker_shrine",
+    "marker_cave",
+    "marker_cliff",
+    "marker_corrupt_village",
 } };
 
 } // namespace core::atlas
