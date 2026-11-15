@@ -55,10 +55,6 @@ bool HoldsCamera(const core::Snapshot* drawn) {
     return drawn == nullptr || drawn->transition;
 }
 
-bool ZoomsCamera(const core::Snapshot* drawn) {
-    return drawn == nullptr || !drawn->transition;
-}
-
 std::optional<std::size_t> PickInstance(const core::Snapshot& snapshot, f64 alpha, core::Vec2 world) {
     PN_PROFILE_ZONE();
     constexpr u32 LOW_HALF = 0xFFFFU;

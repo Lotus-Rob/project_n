@@ -22,18 +22,25 @@ namespace app {
 inline constexpr u64 FRAME_STEP_LIMIT_NS = core::NS_PER_SECOND / 10;
 
 /// How far past the window's view the logic publishes, on each side, as a fraction of the view's size on that axis
-/// (CullArea()). A snapshot culled to a view is drawn while the camera moves on, for up to FRAME_STEP_LIMIT_NS before
-/// a fresh view has culled a newer one: in that time a wheel notch out (gfx::ZoomedBy() by -1, 1.15 times as much world;
-/// CameraControl takes at most one a frame) grows each side by 0.075 of the view, and a pan at full speed at the new
-/// zoom moves at most 0.115 of it on either axis (PAN_SCREENS_PER_SECOND of the shorter side's world, 1.15 times as
-/// much, for a tenth of a second; CameraControl counts no more of a longer frame). A quarter covers both at once, 0.19,
-/// with room to spare, so nothing pops in at the window's edge; wider would publish more for no picture. The bound it
-/// guarantees: the camera may move about a quarter of the view per publish interval (FRAME_STEP_LIMIT_NS at most) and
-/// show nothing missing. A flick of a drag (which pans 1:1 with the cursor) faster than that, or a snap back from far
-/// away (a jump to the player), can show the edge for a frame or two until the next view culls a fresh publish: a known
-/// limit, which phase 6 chunk 5a's measurements own. While a calendar step's transition shows, no fresh publish comes, so the
-/// camera holds still (HoldsCamera(), ZoomsCamera(), CameraInput::still).
+/// (CullArea()). A snapshot culled to a view is drawn while the camera moves on, until a fresh view has culled a newer
+/// one: about 43 ms at most at 60 Hz (a publish interval for the view to reach the logic, core::DEFAULT_DISPLAY_DELAY_NS,
+/// and another interval while that snapshot shows), or one frame when frames run longer, FRAME_STEP_LIMIT_NS at most.
+/// Zoom runs at most ZOOM_NOTCHES_PER_SECOND and one notch a frame (gfx::ZoomedBy(): a notch out shows 1.15 times as
+/// much world), so 1.3 notches in 43 ms, or one in a long frame, grow each side by at most 0.10 of the view; a pan at
+/// full speed at the new zoom moves at most 0.12 of it on either axis (PAN_SCREENS_PER_SECOND of the shorter side's
+/// world, 1.2 times as much, for a tenth of a second; CameraControl counts no more of a longer frame). A quarter covers
+/// both at once, 0.22, so nothing pops in at the window's edge; wider would publish more for no picture. The bound it
+/// guarantees: the camera may move about a quarter of the view while a snapshot shows and show nothing missing. A flick of a
+/// drag (which pans 1:1 with the cursor) faster than that, or a snap back from far away (a jump to the player), can show the
+/// edge for a frame or two until the next view culls a fresh publish: a known limit, which phase 6 chunk 5a's measurements own;
+/// so can a window that grows by more than the margin at once (maximised, or made fullscreen), at its new edges. While a
+/// calendar step's transition shows, no fresh publish comes, so the camera holds still (HoldsCamera(), CameraInput::still).
 inline constexpr f32 CULL_MARGIN = 0.25F;
+
+/// How many wheel notches a second the camera zooms by at most, however short the frames (CameraControl::Zoom()): one
+/// every two publish intervals, which keeps CULL_MARGIN's bound at any frame rate. A flick of three notches takes a tenth
+/// of a second.
+inline constexpr f32 ZOOM_NOTCHES_PER_SECOND = static_cast<f32>(core::TICKS_PER_SECOND) / 2.0F;
 
 /// The main thread's frame clock (gfx::View::frameClock): seconds of wall time from its first frame, which runs on
 /// while the game is paused, unlike the render clock. A gap longer than FRAME_STEP_LIMIT_NS between frames (a hidden
@@ -70,10 +77,6 @@ private:
 /// it was sent, so panning past CULL_MARGIN would show its edge. Which scenes pan at all is the scene's camera kind's
 /// (CameraControl).
 [[nodiscard]] bool HoldsCamera(const core::Snapshot* drawn);
-
-/// Whether the wheel or the shoulder buttons zoom the camera over `drawn` (null before the first snapshot): not while a
-/// calendar step's transition shows, as HoldsCamera(), since zooming out past CULL_MARGIN would show the edge too.
-[[nodiscard]] bool ZoomsCamera(const core::Snapshot* drawn);
 
 /// The index of the instance drawn on top at `world` in `snapshot` interpolated by `alpha`: the last
 /// in drawing order with an ID whose quad, turned by its interpolated rotation, contains the point, or
