@@ -33,6 +33,7 @@
 #include <numbers>
 #include <numeric>
 #include <optional>
+#include <queue>
 #include <source_location>
 #include <span>
 #include <stop_token>
