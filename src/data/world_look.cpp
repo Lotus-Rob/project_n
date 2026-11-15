@@ -16,13 +16,26 @@ Failure Refuse(const YAML::Node& node, std::string_view why) {
     return Failure{ internal::RefusalAt(WHAT, node, why) };
 }
 
-// The sprite `node` names, which must be in the atlas and in `manifest`; `owner` names it in refusals.
-std::expected<core::atlas::SpriteId, core::Error> SpriteAt(
-    const YAML::Node& node,
-    std::string_view owner,
-    const core::Manifest& manifest
-) {
-    return internal::ReadSprite(WHAT, node, owner, manifest);
+// The sprites a look may name: those of the manifest, and among them those the scene showing the map loads.
+struct Atlas {
+    const core::Manifest* manifest; // never null
+    std::span<const core::atlas::SpriteId> resident;
+};
+
+// The sprite `node` names, which must be in the atlas, in the manifest and among the world scene's; `owner` names it in
+// refusals. The renderer would draw a sprite outside the world scene's from a page that isn't loaded.
+std::expected<core::atlas::SpriteId, core::Error> SpriteAt(const YAML::Node& node, std::string_view owner, const Atlas& atlas) {
+    const std::expected<core::atlas::SpriteId, core::Error> sprite = internal::ReadSprite(WHAT, node, owner, *atlas.manifest);
+    if (!sprite) {
+        return std::unexpected{ sprite.error() };
+    }
+    if (!std::ranges::contains(atlas.resident, *sprite)) {
+        return Refuse(
+            node,
+            std::format("{} names the sprite \"{}\", which the {} scene doesn't load", owner, node.Scalar(), WORLD_LOOK_SCENE)
+        );
+    }
+    return *sprite;
 }
 
 // The sprites of the list `node` holds, which `owner` names in refusals: `count` of them, or any number from 1 when
@@ -30,7 +43,7 @@ std::expected<core::atlas::SpriteId, core::Error> SpriteAt(
 std::expected<std::vector<core::atlas::SpriteId>, core::Error> SpriteList(
     const YAML::Node& node,
     std::string_view owner,
-    const core::Manifest& manifest,
+    const Atlas& atlas,
     std::size_t count
 ) {
     if (!node || !node.IsSequence()) {
@@ -44,7 +57,7 @@ std::expected<std::vector<core::atlas::SpriteId>, core::Error> SpriteList(
     }
     std::vector<core::atlas::SpriteId> sprites;
     for (const YAML::Node& entry : node) {
-        const std::expected<core::atlas::SpriteId, core::Error> sprite = SpriteAt(entry, owner, manifest);
+        const std::expected<core::atlas::SpriteId, core::Error> sprite = SpriteAt(entry, owner, atlas);
         if (!sprite) {
             return std::unexpected{ sprite.error() };
         }
@@ -70,18 +83,18 @@ std::expected<core::atlas::SpriteId, core::Error> SpriteIn(
     const YAML::Node& map,
     const char* key,
     std::string_view owner,
-    const core::Manifest& manifest
+    const Atlas& atlas
 ) {
     const YAML::Node node = map[key];
     if (!node) {
         return Refuse(map, std::format("{} has no {}", owner, key));
     }
-    return SpriteAt(node, std::format("{} {}", owner, key), manifest);
+    return SpriteAt(node, std::format("{} {}", owner, key), atlas);
 }
 
 std::expected<void, core::Error> ReadKinds(
     const YAML::Node& root,
-    const core::Manifest& manifest,
+    const Atlas& atlas,
     const core::WorldMap& map,
     core::WorldLook& look
 ) {
@@ -95,7 +108,7 @@ std::expected<void, core::Error> ReadKinds(
             return Refuse(*kinds, std::format("the map's kind {} has no look in kinds", kind.name));
         }
         std::expected<std::vector<core::atlas::SpriteId>, core::Error> sprites =
-            SpriteList(variants, std::format("kind {}", kind.name), manifest, 0);
+            SpriteList(variants, std::format("kind {}", kind.name), atlas, 0);
         if (!sprites) {
             return std::unexpected{ sprites.error() };
         }
@@ -107,7 +120,7 @@ std::expected<void, core::Error> ReadKinds(
         if (std::ranges::any_of(map.Kinds(), [&](const core::TerrainKind& kind) { return kind.name == name; })) {
             continue;
         }
-        if (const auto sprites = SpriteList(entry.second, std::format("kind {}", name), manifest, 0); !sprites) {
+        if (const auto sprites = SpriteList(entry.second, std::format("kind {}", name), atlas, 0); !sprites) {
             return std::unexpected{ sprites.error() };
         }
     }
@@ -117,7 +130,7 @@ std::expected<void, core::Error> ReadKinds(
 std::expected<void, core::Error> ReadMasks(
     const YAML::Node& root,
     const char* key,
-    const core::Manifest& manifest,
+    const Atlas& atlas,
     std::array<core::atlas::SpriteId, core::LINE_MASKS>& masks
 ) {
     const YAML::Node node = root[key];
@@ -125,7 +138,7 @@ std::expected<void, core::Error> ReadMasks(
         return Refuse(root, std::format("the look has no {}", key));
     }
     const std::expected<std::vector<core::atlas::SpriteId>, core::Error> sprites =
-        SpriteList(node, key, manifest, core::LINE_MASKS);
+        SpriteList(node, key, atlas, core::LINE_MASKS);
     if (!sprites) {
         return std::unexpected{ sprites.error() };
     }
@@ -135,7 +148,7 @@ std::expected<void, core::Error> ReadMasks(
 
 std::expected<void, core::Error> ReadMarkers(
     const YAML::Node& root,
-    const core::Manifest& manifest,
+    const Atlas& atlas,
     const core::WorldMap& map,
     core::WorldLook& look
 ) {
@@ -143,7 +156,7 @@ std::expected<void, core::Error> ReadMarkers(
     if (!markers) {
         return std::unexpected{ markers.error() };
     }
-    const std::expected<core::atlas::SpriteId, core::Error> city = SpriteIn(*markers, "city", "marker", manifest);
+    const std::expected<core::atlas::SpriteId, core::Error> city = SpriteIn(*markers, "city", "marker", atlas);
     if (!city) {
         return std::unexpected{ city.error() };
     }
@@ -154,7 +167,7 @@ std::expected<void, core::Error> ReadMarkers(
             continue;
         }
         const std::expected<core::atlas::SpriteId, core::Error> sprite =
-            SpriteAt(entry.second, std::format("marker {}", sort), manifest);
+            SpriteAt(entry.second, std::format("marker {}", sort), atlas);
         if (!sprite) {
             return std::unexpected{ sprite.error() };
         }
@@ -185,15 +198,20 @@ std::expected<core::WorldLook, core::Error> ParseWorldLook(
         if (!root.IsMap()) {
             return Refuse(root, "not a map");
         }
+        const std::optional<core::SceneId> scene = manifest.SceneNamed(WORLD_LOOK_SCENE);
+        if (!scene) {
+            return Failure{ core::Error{ std::format("{}: the manifest has no {} scene", WHAT, WORLD_LOOK_SCENE) } };
+        }
+        const Atlas atlas{ .manifest = &manifest, .resident = manifest.Scene(*scene).sprites };
         internal::NoteUnknownKeys(WHAT, root, "", "key", { "kinds", "roads", "rivers", "bridge", "ford", "markers" }, warnings);
         core::WorldLook look;
-        if (auto read = ReadKinds(root, manifest, map, look); !read) {
+        if (auto read = ReadKinds(root, atlas, map, look); !read) {
             return std::unexpected{ std::move(read.error()) };
         }
-        if (auto read = ReadMasks(root, "roads", manifest, look.roads); !read) {
+        if (auto read = ReadMasks(root, "roads", atlas, look.roads); !read) {
             return std::unexpected{ std::move(read.error()) };
         }
-        if (auto read = ReadMasks(root, "rivers", manifest, look.rivers); !read) {
+        if (auto read = ReadMasks(root, "rivers", atlas, look.rivers); !read) {
             return std::unexpected{ std::move(read.error()) };
         }
         const std::expected<YAML::Node, core::Error> bridge = MapAt(root, "bridge");
@@ -201,11 +219,11 @@ std::expected<core::WorldLook, core::Error> ParseWorldLook(
             return std::unexpected{ bridge.error() };
         }
         internal::NoteUnknownKeys(WHAT, *bridge, "bridge", "key", { "across", "down" }, warnings);
-        const std::expected<core::atlas::SpriteId, core::Error> across = SpriteIn(*bridge, "across", "bridge", manifest);
+        const std::expected<core::atlas::SpriteId, core::Error> across = SpriteIn(*bridge, "across", "bridge", atlas);
         if (!across) {
             return std::unexpected{ across.error() };
         }
-        const std::expected<core::atlas::SpriteId, core::Error> down = SpriteIn(*bridge, "down", "bridge", manifest);
+        const std::expected<core::atlas::SpriteId, core::Error> down = SpriteIn(*bridge, "down", "bridge", atlas);
         if (!down) {
             return std::unexpected{ down.error() };
         }
@@ -215,12 +233,12 @@ std::expected<core::WorldLook, core::Error> ParseWorldLook(
         if (!ford) {
             return Refuse(root, "the look has no ford");
         }
-        const std::expected<core::atlas::SpriteId, core::Error> fordSprite = SpriteAt(ford, "ford", manifest);
+        const std::expected<core::atlas::SpriteId, core::Error> fordSprite = SpriteAt(ford, "ford", atlas);
         if (!fordSprite) {
             return std::unexpected{ fordSprite.error() };
         }
         look.ford = *fordSprite;
-        if (auto read = ReadMarkers(root, manifest, map, look); !read) {
+        if (auto read = ReadMarkers(root, atlas, map, look); !read) {
             return std::unexpected{ std::move(read.error()) };
         }
         return look;
