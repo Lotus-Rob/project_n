@@ -305,6 +305,45 @@ TEST_CASE("a label below the readable size fades out but stays placed") {
     CHECK(pass.Anchor(core::StableId{ 1 }).value_or(core::Vec2{}).x == AT_100);
 }
 
+TEST_CASE("a label too small to read takes no room from a readable one under it") {
+    gfx::LabelInput player = Player(1, AT_100);
+    player.pixels = TOO_SMALL;
+    gfx::LabelInput place = Label(2, PLACE_KEY, core::LabelPriority::Place, AT_110);
+    const std::array<gfx::LabelInput, 2> labels{ { player, place } };
+    gfx::LabelPass pass;
+    const std::span<const gfx::PlacedLabel> placed = Place(pass, labels, 0.0);
+    CHECK(Of(placed, 1).opacity == 1.0F);
+    CHECK(Of(placed, 1).anchor.x == AT_110);
+}
+
+TEST_CASE("a label that grew too small to read fades out in place, and gives its room away") {
+    std::array<gfx::LabelInput, 2> labels{ { Player(1, AT_100), Label(2, PLACE_KEY, core::LabelPriority::Place, AT_110) } };
+    gfx::LabelPass pass;
+    static_cast<void>(Place(pass, labels, 0.0));
+    labels[0].pixels = TOO_SMALL;
+    const std::span<const gfx::PlacedLabel> placed = Place(pass, labels, HALF_FADE);
+    CHECK(Of(placed, 0).opacity == doctest::Approx(HALF));
+    CHECK(Of(placed, 0).anchor.x == AT_100);
+    CHECK(Of(placed, 1).opacity == doctest::Approx(HALF)); // the place's name is no longer under the player's room
+}
+
+TEST_CASE("a stack whose labels all grew too small to read splits and fades out without its count") {
+    std::array<gfx::LabelInput, 3> labels{ { Fox(1, AT_100), Fox(2, AT_110), Fox(3, AT_120) } };
+    gfx::LabelPass pass;
+    static_cast<void>(Place(pass, labels, 0.0));
+    for (gfx::LabelInput& label : labels) {
+        label.pixels = TOO_SMALL;
+    }
+    const std::span<const gfx::PlacedLabel> halfway = Place(pass, labels, HALF_FADE);
+    REQUIRE(halfway.size() == labels.size()); // one each, no longer one stack
+    CHECK(Of(halfway, 0).opacity == doctest::Approx(HALF));
+    const std::span<const gfx::PlacedLabel> gone = Place(pass, labels, WHOLE_FADE);
+    for (std::size_t input = 0; input < labels.size(); ++input) {
+        CHECK(Of(gone, input).opacity == 0.0F);
+        CHECK(Of(gone, input).count == 0);
+    }
+}
+
 TEST_CASE("a larger text scale needs larger labels to read") {
     constexpr f32 DOUBLE = 2.0F;
     const std::array<gfx::LabelInput, 1> labels{ { Fox(1, AT_100) } }; // 13 pixels: under 9 × 2

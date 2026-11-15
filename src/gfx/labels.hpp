@@ -6,10 +6,12 @@
 /// name label on the screen so they never crowd it. Overlapping labels of one name, chains of them included, stack
 /// into one "Name (+N)" over the creature nearest the group's middle, with room kept for that wider text; a label
 /// overlapping one of another name gives way to the higher priority (selected > hovered > player > named creatures >
-/// the rest); labels too small to read, or whose glyphs aren't all rasterised, fade out, still placed. Every change fades
-/// over LABEL_FADE_SECONDS, never pops: a label coming or going fades in or out, a stack's count cross-fades and its place
-/// glides; and a label on the edge of overlapping keeps its state (LABEL_HYSTERESIS_PIXELS), so it doesn't flicker. Pure,
-/// tested without a device.
+/// the rest); labels too small to read, or whose glyphs aren't all rasterised, fade out, and one too small to read takes no
+/// room from the rest and joins no stack (a player's label at the widest zoom never hides a place's name; a stack whose
+/// members all grow too small splits, each fading out alone, its "(+N)" count fading with it). Every change fades over
+/// LABEL_FADE_SECONDS, never pops: a label coming or going fades in or out, a stack's count cross-fades and its place glides;
+/// and a label on the edge of overlapping keeps its state (LABEL_HYSTERESIS_PIXELS), so it doesn't flicker. Pure, tested
+/// without a device.
 
 #include "core/frame.hpp"
 #include "core/stable_id.hpp"
@@ -17,7 +19,6 @@
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 
-#include <array>
 #include <cstddef>
 #include <optional>
 #include <span>
@@ -204,7 +205,7 @@ private:
     // Gives each label its state's entry (m_seenOf) and the grid its size for a screen `width` by `height`.
     void Begin(std::span<const LabelInput> labels, u32 width, u32 height);
     // Steps 1 to 3: m_order, then each label's stack in m_role, merged where a label bridges two.
-    void Resolve(std::span<const LabelInput> labels, u32 width, u32 height);
+    void Resolve(std::span<const LabelInput> labels, u32 width, u32 height, f32 scale);
     // Joins the label at `index` to the stacks in m_joined, and any of its name their text's room reaches, if that room
     // reaches no other; else it is hidden.
     void Join(std::size_t index, std::span<const LabelInput> labels);
