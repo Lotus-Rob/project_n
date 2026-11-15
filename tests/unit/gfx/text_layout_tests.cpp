@@ -161,7 +161,7 @@ TEST_CASE("pre-warm covers every string in both languages and the digits") {
     std::vector<std::string> shown{ "-1234567890+" };
     for (std::size_t language = 0; language < core::LANGUAGES; ++language) {
         const std::string& stack = strings->text.at(std::to_underlying(core::StringId::LabelStack)).at(language);
-        for (std::size_t string = 0; string < core::STRINGS; ++string) {
+        for (std::size_t string = 0; string < strings->text.size(); ++string) {
             const std::string& entry = strings->text.at(string).at(language);
             if (string == std::to_underlying(core::StringId::LabelStack)) {
                 shown.push_back(Stacked(entry, "", ""));
@@ -186,12 +186,17 @@ TEST_CASE("prewarming covers data strings") {
     text.Uploaded(text.Pending().size());
     core::Strings strings{};
     strings.Add("place_capital", { { "Azure Cloud City", "青云城" } });
+    strings.text.at(std::to_underlying(core::StringId::LabelStack)) = { { "{name} (+{count})", "{name}（+{count}）" } };
     text.Prewarm(strings);
-    CHECK(text.Pending().size() > 0);
+    const std::size_t warmed = text.Pending().size();
+    CHECK(warmed > 0);
     for (const core::TextDirection direction : BOTH_WAYS) {
         CHECK(text.Lay("青云城", direction).complete);
         CHECK(text.Lay("Azure Cloud City", direction).complete);
+        CHECK(text.Lay(Stacked("{name}（+{count}）", "青云城", "1234567890"), direction).complete);
+        CHECK(text.Lay(Stacked("{name} (+{count})", "Azure Cloud City", "1234567890"), direction).complete);
     }
+    CHECK(text.Pending().size() == warmed);
 }
 
 TEST_CASE("pre-warm covers the HUD's texts as they are filled in with numbers") {

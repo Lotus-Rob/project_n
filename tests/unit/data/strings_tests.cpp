@@ -96,6 +96,11 @@ TEST_CASE("a data string given twice is an error naming the second") {
     CHECK(error == std::format("strings line {}: place_a is there twice", 16 + (3 * (core::STRINGS - 4))));
 }
 
+TEST_CASE("a typo of a named string leaves that one missing") {
+    const std::string error = ErrorFor(With("fox_name:", "fox_nam:"));
+    CHECK(error == "strings line 1: there is no fox_name");
+}
+
 TEST_CASE("a named string is found by its key") {
     const std::expected<core::Strings, core::Error> strings = data::ParseStrings(Everything());
     REQUIRE(strings.has_value());
