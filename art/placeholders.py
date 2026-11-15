@@ -2,10 +2,10 @@
 
 Writes assets/sprites/<name>.png for every placeholder sprite in art/sprites.toml: a painted ground, rocks, a pine,
 a shrine, a fox, a cultivator, a villager, glowing orbs, a blob shadow, four world-map cells, the world's seamless
-terrain tiles, the map's road, river, bridge and marker overlays, and the abilities' effects: a sword, a halo and a soft dot (both unused now), a fire bolt, the lance's
-burst and the bars' solid square. Each is original and drawn from code. Reproducible byte for byte: the drawing uses
-only arithmetic and square roots (correctly rounded everywhere), integer hashing, and seeded random.Random, never a
-transcendental function. Run through `./dev atlas --placeholders`.
+terrain tiles, the map's road, river, bridge and marker overlays, and the abilities' effects: a sword, a halo and a
+soft dot (both unused now), a fire bolt, the lance's burst and the bars' solid square. Each is original and drawn from
+code. Reproducible byte for byte: the drawing uses only arithmetic and square roots (correctly rounded everywhere),
+integer hashing, and seeded random.Random, never a transcendental function. Run through `./dev atlas --placeholders`.
 
 Standard library only, like tools/project_n.py, so it runs in the Pixi environment as it is.
 """
@@ -830,8 +830,14 @@ def peak(rng):
     ridges = group([
         stroke_mark([left, (x - w * 0.2, y - h * 0.55), tip], 3.0, 1.2, INK, 0.75, dry=0.3, seed=seeds[1]),
         stroke_mark([tip, (x + w * 0.25, y - h * 0.45), right], 1.2, 3.0, INK, 0.75, dry=0.3, seed=seeds[2]),
-        dabs_mark([(tip[0], tip[1] + h * 0.13, w * 0.2, SPRAY, 0.9, 0.2, seeds[1])]),
     ])
+    reach = rng.uniform(0.35, 0.5)
+    cut = [tip[0] + (foot[0] - tip[0]) * 0.5 + rng.uniform(-1, 1) * w * 0.05,
+           tip[1] + h * (reach + rng.uniform(0, 0.12))]
+    low = [(left[0] * reach + tip[0] * (1 - reach) + 1, tip[1] + (left[1] - tip[1]) * reach)]
+    low += [(tip[0] + (cut[0] - tip[0]) * 0.5 - w * 0.06, tip[1] + (cut[1] - tip[1]) * 0.55 + h * 0.08), tuple(cut)]
+    high = [(right[0] * reach + tip[0] * (1 - reach) - 1, tip[1] + (right[1] - tip[1]) * reach),
+            (tip[0] + (cut[0] - tip[0]) * 0.6 + w * 0.07, tip[1] + (cut[1] - tip[1]) * 0.7 - h * 0.03)]
     box = (left[0] - 4, tip[1] - 4, right[0] + 4, foot[1] + 4)
 
     def draw(canvas, ox, oy):
@@ -840,6 +846,8 @@ def peak(rng):
         shadow[1](canvas, ox, oy)
         fill(canvas, moved([tip, left, foot]), (176, 178, 184), 0.85)
         fill(canvas, moved([tip, foot, right]), (70, 76, 92), 0.8)
+        fill(canvas, moved([tip, *low]), (244, 246, 248), 0.95)
+        fill(canvas, moved([tip, cut, *high[::-1]]), (176, 190, 212), 0.9)
         ridges[1](canvas, ox, oy)
     return box, draw
 
@@ -1117,10 +1125,10 @@ def emblem_spiral():
     return mask.canvas()
 
 
-# The map's overlays (phase 6 chunk 5b1): transparent but for the drawing, 256 px like the terrain tiles. A road or river
-# tile has one of 16 masks, the bits of the neighbours carrying the same line (N 1, E 2, S 4, W 8); each arm runs from
-# the tile's centre to the middle of its edge, straight over the last stretch and painted by the same solid strokes at
-# every tile, so neighbours join. Mask 0 is an isolated dot.
+# The map's overlays (phase 6 chunk 5b1): transparent but for the drawing, 256 px like the terrain tiles. A road or
+# river tile has one of 16 masks, the bits of the neighbours carrying the same line (N 1, E 2, S 4, W 8); each arm runs
+# from the tile's centre to the middle of its edge, straight over the last stretch and painted by the same solid strokes
+# at every tile, so neighbours join. Mask 0 is an isolated dot.
 
 MID = TILE / 2.0
 OCHRE = (150, 110, 64)
@@ -1128,11 +1136,25 @@ WATER_LINE = (58, 120, 128)
 PLANK = (150, 112, 70)
 
 
+def curve(points, steps=12):
+    """A Catmull-Rom curve through the points, ends included, arriving along its first and last segments."""
+    padded = [points[0], *points, points[-1]]
+    out = [points[0]]
+    for p0, p1, p2, p3 in zip(padded, padded[1:], padded[2:], padded[3:]):
+        for k in range(1, steps + 1):
+            t = k / steps
+            t2, t3 = t * t, t * t * t
+            out.append(tuple(
+                0.5 * (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (3 * b - a - 3 * c + d) * t3)
+                for a, b, c, d in zip(p0, p1, p2, p3)))
+    return out
+
+
 def arm(seed, layers):
     """The east arm: from just outside the east edge's middle to the centre, straight over its last stretch."""
     rng = random.Random(seed)
-    off = rng.uniform(-8.0, 8.0)
-    points = [(TILE + 8.0, MID), (MID + 88, MID), (MID + 44, MID + off), (MID, MID)]
+    off = rng.uniform(-6.0, 6.0)
+    points = curve([(TILE + 8.0, MID), (MID + 88, MID), (MID + 48, MID + off), (MID + 16, MID), (MID, MID)])
     canvas = Canvas(TILE, TILE)
     for width, colour, alpha, dry, sd in layers:
         canvas.stroke(points, width, width, colour, alpha, dry, sd)
