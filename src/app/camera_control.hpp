@@ -68,14 +68,20 @@ struct CameraInput {
 /// drag), the right button outside a combat scene (`combat` false), where it casts nothing.
 [[nodiscard]] bool DragsCamera(Control control, bool combat);
 
+/// How far the pointer may stray, in window pixels, while the middle button is down for its click to count as a click,
+/// not a drag: a hand's tremor, not a movement.
+inline constexpr f32 CLICK_SLOP_PIXELS = 4.0F;
+
 /// A drag of the camera by a pointer button: where each frame's drag movement starts.
 class Drag {
 public:
     /// `button` went down with the pointer at `where`: a drag starts there, unless one is under way.
     void Press(Control button, core::Vec2 where);
 
-    /// `button` went up: the drag it started ends.
-    void Release(Control button);
+    /// `button` went up at `where`: the drag it started ends. Returns whether it was a click of the middle button
+    /// (Control::DragCamera) that dragged nothing, never straying more than CLICK_SLOP_PIXELS from where it went down
+    /// nor ended by the window: snap back's mouse binding.
+    [[nodiscard]] bool Release(Control button, core::Vec2 where);
 
     /// Ends any drag: the window lost the focus or was minimised, where a button's release may never reach it.
     void End();
@@ -88,6 +94,8 @@ public:
 private:
     std::optional<core::Vec2> m_from = std::nullopt; // where the next frame's movement starts, while dragging
     Control m_button = Control::DragCamera;          // what started it
+    core::Vec2 m_pressedAt{};                        // where it started
+    bool m_strayed = false;                          // whether the pointer went past CLICK_SLOP_PIXELS since
 };
 
 /// The camera over each kind of scene: a Follow scene centres on what it follows and nothing else moves it; a Pan

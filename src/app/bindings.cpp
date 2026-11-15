@@ -14,9 +14,9 @@ constexpr core::Vec2 MOVE_DOWN{ .x = 0.0F, .y = 1.0F };
 constexpr core::Vec2 MOVE_LEFT{ .x = -1.0F, .y = 0.0F };
 constexpr core::Vec2 MOVE_RIGHT{ .x = 1.0F, .y = 0.0F };
 
-// KeyC is the last code: a code added after it goes here too.
+// KeyEquals is the last code: a code added after it goes here instead.
 static_assert(
-    std::to_underlying(InputCode::KeyC) < std::numeric_limits<u64>::digits,
+    std::to_underlying(InputCode::KeyEquals) < std::numeric_limits<u64>::digits,
     "Bit() gives each input code a bit of a u64"
 );
 
@@ -82,6 +82,8 @@ Bindings::Bindings()
       { .code = InputCode::MouseWheel, .control = Control::Zoom },
       { .code = InputCode::PadLeftShoulder, .control = Control::Zoom, .direction = MOVE_LEFT },
       { .code = InputCode::PadRightShoulder, .control = Control::Zoom, .direction = MOVE_RIGHT },
+      { .code = InputCode::KeyMinus, .control = Control::Zoom, .direction = MOVE_LEFT },
+      { .code = InputCode::KeyEquals, .control = Control::Zoom, .direction = MOVE_RIGHT },
       { .code = InputCode::KeyEscape, .control = Control::Quit },
       { .code = InputCode::KeyM, .control = Control::AdvanceCalendar },
       { .code = InputCode::KeyF2, .control = Control::CycleScene },

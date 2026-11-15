@@ -128,6 +128,8 @@ enum class InputCode : u8 {
     KeyK,
     KeyL,
     KeyC,
+    KeyMinus,  ///< The key right of 0 on a US keyboard, by its place.
+    KeyEquals, ///< The key right of KeyMinus, by its place.
 };
 
 /// One input from the player: a button pressed or released, a stick moved, the wheel turned. Key

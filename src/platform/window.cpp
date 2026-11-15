@@ -45,6 +45,8 @@ constexpr std::array KEYS{
     KeyCode{ .key = SDL_SCANCODE_K, .code = InputCode::KeyK },
     KeyCode{ .key = SDL_SCANCODE_L, .code = InputCode::KeyL },
     KeyCode{ .key = SDL_SCANCODE_C, .code = InputCode::KeyC },
+    KeyCode{ .key = SDL_SCANCODE_MINUS, .code = InputCode::KeyMinus },
+    KeyCode{ .key = SDL_SCANCODE_EQUALS, .code = InputCode::KeyEquals },
 };
 
 GamepadFamily FamilyOf(SDL_JoystickID gamepad) {

@@ -182,6 +182,18 @@ TEST_CASE("the left shoulder button zooms out") {
     CHECK(shoulder.value < 0.0F);
 }
 
+TEST_CASE("minus zooms out and equals zooms in, one notch a press") {
+    app::Bindings bindings;
+    const app::ControlEvent zoomOut = bindings.Handle(Key(InputCode::KeyMinus, true)).value_or(app::ControlEvent{});
+    const app::ControlEvent zoomIn = bindings.Handle(Key(InputCode::KeyEquals, true)).value_or(app::ControlEvent{});
+    const std::optional<app::ControlEvent> released = bindings.Handle(Key(InputCode::KeyEquals, false));
+    CHECK(zoomOut.control == app::Control::Zoom);
+    CHECK(zoomOut.value == -1.0F);
+    CHECK(zoomIn.control == app::Control::Zoom);
+    CHECK(zoomIn.value == 1.0F);
+    CHECK_FALSE(released.has_value());
+}
+
 TEST_CASE("the left button is Primary and carries Alt") {
     constexpr core::Vec2 WHERE{ .x = 10.0F, .y = 20.0F };
     app::Bindings bindings;

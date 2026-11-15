@@ -155,6 +155,17 @@ TEST_CASE("a movement key is matched by its place on the keyboard, not by its la
     CHECK(inputs[0].code == platform::InputCode::KeyW);
 }
 
+TEST_CASE("the zoom keys, minus and equals, become inputs by their place on the keyboard") {
+    std::expected<platform::Window, core::Error> window = OpenWindow();
+    PushKey(SDL_SCANCODE_MINUS, true, false);
+    PushKey(SDL_SCANCODE_EQUALS, true, false);
+    std::vector<platform::InputEvent> inputs;
+    static_cast<void>(window->Poll(0, inputs));
+    REQUIRE(inputs.size() == 2);
+    CHECK(inputs[0].code == platform::InputCode::KeyMinus);
+    CHECK(inputs[1].code == platform::InputCode::KeyEquals);
+}
+
 TEST_CASE("Space and the number keys become inputs") {
     struct Pair {
         SDL_Scancode key;

@@ -274,12 +274,41 @@ TEST_CASE("a drag ends when the button that started it is released") {
     constexpr core::Vec2 PRESSED{ .x = 1'000.0F, .y = 500.0F };
     app::Drag drag;
     drag.Press(app::Control::Secondary, PRESSED);
-    drag.Release(app::Control::DragCamera); // another button: the drag goes on
+    static_cast<void>(drag.Release(app::Control::DragCamera, PRESSED)); // another button: the drag goes on
     const std::optional<core::Vec2> goingOn = drag.Take(PRESSED, true, WIDTH, HEIGHT);
-    drag.Release(app::Control::Secondary);
+    static_cast<void>(drag.Release(app::Control::Secondary, PRESSED));
     const std::optional<core::Vec2> ended = drag.Take(PRESSED, true, WIDTH, HEIGHT);
     CHECK(goingOn.has_value());
     CHECK_FALSE(ended.has_value());
+}
+
+TEST_CASE("a middle click that drags nothing snaps back, as a mouse's snap back") {
+    constexpr core::Vec2 PRESSED{ .x = 1'000.0F, .y = 500.0F };
+    constexpr core::Vec2 JITTER{ .x = 1'002.0F, .y = 501.0F }; // within app::CLICK_SLOP_PIXELS: a hand's tremor
+    constexpr core::Vec2 DRAGGED{ .x = 1'050.0F, .y = 500.0F };
+    app::Drag still;
+    still.Press(app::Control::DragCamera, PRESSED);
+    static_cast<void>(still.Take(JITTER, true, WIDTH, HEIGHT));
+    CHECK(still.Release(app::Control::DragCamera, JITTER));
+    // A drag, even one brought back to where it began, is a drag.
+    app::Drag back;
+    back.Press(app::Control::DragCamera, PRESSED);
+    static_cast<void>(back.Take(DRAGGED, true, WIDTH, HEIGHT));
+    static_cast<void>(back.Take(PRESSED, true, WIDTH, HEIGHT));
+    CHECK_FALSE(back.Release(app::Control::DragCamera, PRESSED));
+    // Moved between the last frame and the release.
+    app::Drag quick;
+    quick.Press(app::Control::DragCamera, PRESSED);
+    CHECK_FALSE(quick.Release(app::Control::DragCamera, DRAGGED));
+    // The right button's click casts or selects; it never snaps back.
+    app::Drag right;
+    right.Press(app::Control::Secondary, PRESSED);
+    CHECK_FALSE(right.Release(app::Control::Secondary, PRESSED));
+    // A drag the window ended (focus lost) leaves no click to release.
+    app::Drag ended;
+    ended.Press(app::Control::DragCamera, PRESSED);
+    ended.End();
+    CHECK_FALSE(ended.Release(app::Control::DragCamera, PRESSED));
 }
 
 TEST_CASE("in a roaming scene, panning frees the camera and snap back follows again") {

@@ -469,7 +469,9 @@ void App::SendHeld() {
 
 bool App::SteerCamera(const ControlEvent& control) {
     if (!control.pressed) {
-        m_drag.Release(control.control);
+        if (m_drag.Release(control.control, control.position)) {
+            m_camera.SnapBack();
+        }
         return false;
     }
     const core::Snapshot* drawn = m_display.Drawn();
