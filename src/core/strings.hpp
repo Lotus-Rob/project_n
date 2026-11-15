@@ -7,16 +7,20 @@
 
 #include "core/types.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace core {
 
-/// A string the game shows, by the name STRING_NAMES gives it in strings.yaml.
-enum class StringId : u8 {
+/// A string the game shows: one the code names, by the name STRING_NAMES gives it in strings.yaml, or a data string past
+/// them (values from STRINGS), by its key in strings.yaml (Strings::Find).
+enum class StringId : u16 {     // NOLINT(performance-enum-size): data strings number past the named ones, so it needs 16 bits
     CultivatorName,             ///< The player's name label.
     TabletCaption,              ///< The vertical caption beside the stone tablet.
     FoxName,                    ///< The fox's name label.
@@ -132,12 +136,34 @@ inline constexpr std::array<std::string_view, LANGUAGES> LANGUAGE_CODES{ { "en",
 
 /// Every string in every language.
 struct Strings {
-    /// The text of each string (by StringId) in each language (by Language).
-    std::array<std::array<std::string, LANGUAGES>, STRINGS> text{};
+    /// The text of each string (by StringId) in each language (by Language): the STRINGS the code names first, in
+    /// StringId's order, then the data strings.
+    std::vector<std::array<std::string, LANGUAGES>> text = std::vector<std::array<std::string, LANGUAGES>>(STRINGS);
+    /// The key of each data string, in order: `keys[i]` names `text[STRINGS + i]`.
+    std::vector<std::string> keys{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
 
     /// The text of `string` in `language`.
     [[nodiscard]] const std::string& Text(StringId string, Language language) const {
         return text.at(std::to_underlying(string)).at(std::to_underlying(language));
+    }
+
+    /// The string `key` names in strings.yaml, whether the code names it or it is a data string; empty if none.
+    [[nodiscard]] std::optional<StringId> Find(std::string_view key) const {
+        if (const auto* const named = std::ranges::find(STRING_NAMES, key); named != STRING_NAMES.end()) {
+            return StringId{ static_cast<u16>(named - STRING_NAMES.begin()) };
+        }
+        if (const auto data = std::ranges::find(keys, key); data != keys.end()) {
+            return StringId{ static_cast<u16>(STRINGS + static_cast<std::size_t>(data - keys.begin())) };
+        }
+        return std::nullopt;
+    }
+
+    /// Adds a data string under `key` with its `texts` (by Language), and returns its ID.
+    StringId Add(std::string key, std::array<std::string, LANGUAGES> texts) {
+        const StringId added{ static_cast<u16>(text.size()) };
+        keys.push_back(std::move(key));
+        text.push_back(std::move(texts));
+        return added;
     }
 };
 

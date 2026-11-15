@@ -75,7 +75,7 @@ std::vector<std::string> PrewarmTexts(const core::Strings& strings) {
     for (std::size_t language = 0; language < core::LANGUAGES; ++language) {
         const std::string& stack = strings.text.at(std::to_underlying(core::StringId::LabelStack)).at(language);
         texts.push_back(Filled(stack, "", ""));
-        for (std::size_t string = 0; string < core::STRINGS; ++string) {
+        for (std::size_t string = 0; string < strings.text.size(); ++string) {
             if (string != std::to_underlying(core::StringId::LabelStack)) {
                 const std::string& text = strings.text.at(string).at(language);
                 texts.push_back(text);
@@ -88,8 +88,8 @@ std::vector<std::string> PrewarmTexts(const core::Strings& strings) {
             texts.push_back(filled);
         }
         // `filled` is the seconds now, the last of HUD_FILLED.
-        for (std::size_t string = 0; string < core::STRINGS; ++string) {
-            texts.push_back(std::format("{}  {}", strings.text.at(string).at(language), filled));
+        for (const auto& entry : strings.text) {
+            texts.push_back(std::format("{}  {}", entry.at(language), filled));
         }
     }
     return texts;

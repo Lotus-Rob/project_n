@@ -267,7 +267,7 @@ private:
         f32 opacity = 1.0F;
         u64 frame = 0; // the last Begin() it was stepped in
     };
-    std::array<Fade, core::STRINGS> m_fades{};
+    std::vector<Fade> m_fades = std::vector<Fade>(core::STRINGS); // by StringId; grows for a data string
     std::optional<f64> m_clock = std::nullopt;
     f32 m_step = 0.0F;
     u64 m_frame = 0;
