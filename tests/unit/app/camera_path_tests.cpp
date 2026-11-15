@@ -3,6 +3,7 @@
 #include "core/tick_clock.hpp"
 #include "game/host.hpp"
 #include "support/manifest.hpp"
+#include "support/world.hpp"
 
 #include <doctest/doctest.h>
 
@@ -45,10 +46,10 @@ TEST_CASE("the camera path's walk east from the world's start keeps clear of the
         walking += segment.walks ? segment.seconds : 0.0F;
     }
     const f32 reach = walking * static_cast<f32>(core::TICKS_PER_SECOND) * game::BuiltInData().cultivator.walkSpeed;
-    const game::Host host(test::TestManifest(), game::WORLD_SCENE);
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
     const core::Domain& active = host.State()[game::ACTIVE];
     const core::Vec2 start = active.Entities().get<game::Body>(active.Find(host.Player())).current;
-    const std::optional<core::Vec2> portal = game::SceneOf(game::WORLD_SCENE).Traits().portal;
+    const std::optional<core::Vec2> portal = host.Portal();
     REQUIRE(portal.has_value());
     const core::Vec2 point = portal.value_or(core::Vec2{});
     REQUIRE(reach > 0.0F);

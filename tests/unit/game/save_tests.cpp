@@ -10,6 +10,7 @@
 #include "game/host.hpp"
 #include "game/npcs.hpp"
 #include "support/manifest.hpp"
+#include "support/world.hpp"
 
 #include <doctest/doctest.h>
 
@@ -83,7 +84,7 @@ TEST_CASE("a game loaded from a save goes on exactly as the game that saved") {
     const std::vector<std::byte> bytes = Saved(saved);
     REQUIRE_FALSE(saved.NpcRelationships().All().empty());
 
-    game::Host loaded(test::TestManifest(), game::ARENA_SCENE);
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
     loaded.EnterScene(); // as the logic does at the swap
@@ -103,11 +104,11 @@ TEST_CASE("a game loaded from a save goes on exactly as the game that saved") {
 TEST_CASE("a save made in world loads back into it") {
     constexpr core::HeldInput RIGHT{ .move = { .x = 1.0F, .y = 0.0F } };
     core::Jobs jobs{ 1 };
-    game::Host saved(test::TestManifest(), game::WORLD_SCENE);
+    game::Host saved(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
     Tick(saved, At(1), { .actions = {}, .held = RIGHT }); // the walkers on their way, the cultivator off its start
     const std::vector<std::byte> bytes = Saved(saved);
 
-    game::Host loaded(test::TestManifest(), game::ARENA_SCENE);
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
     loaded.EnterScene();
@@ -131,7 +132,7 @@ TEST_CASE("Load holds and changes nothing until EnterScene") {
     Tick(saved, At(1), {});
     const std::vector<std::byte> bytes = Saved(saved);
 
-    game::Host loaded(test::TestManifest(), game::ARENA_SCENE);
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
     const u64 before = loaded.StateHash();
     const core::SceneId shown = loaded.Scene();
     core::Reader reader{ bytes };
@@ -444,7 +445,8 @@ std::vector<std::byte> ArenaSave(
     core::StableId player = {},
     const std::optional<SavedVolley>& volley = std::nullopt,
     const std::optional<core::Flash>& flash = std::nullopt,
-    const std::optional<core::Seal>& seal = std::nullopt
+    const std::optional<core::Seal>& seal = std::nullopt,
+    core::SceneKey scene = game::ARENA_SCENE
 ) {
     constexpr u64 MONTHS_PASSED = 0;
     constexpr u64 RELATIONSHIPS = 0;
@@ -453,7 +455,7 @@ std::vector<std::byte> ArenaSave(
     core::Writer writer{ bytes };
     writer(
         FORMAT,
-        static_cast<u8>(std::to_underlying(game::ARENA_SCENE)),
+        static_cast<u8>(std::to_underlying(scene)),
         state.Seed(),
         state.Ids().next,
         MONTHS_PASSED,
@@ -1009,6 +1011,36 @@ TEST_CASE("a save with a seal that starts after its tick is refused, and one its
     }
     const bool fromLater = Loads(saveOf(FROM_LATER));
     CHECK_FALSE(fromLater);
+}
+
+// A save of the world scene with nothing in it: small, and it names a scene that needs the world map.
+std::vector<std::byte> EmptyWorldSave() {
+    const core::State state{ game::DOMAINS, STATE_SEED };
+    return ArenaSave(state, {}, std::nullopt, std::nullopt, std::nullopt, game::WORLD_SCENE);
+}
+
+TEST_CASE("a save naming the world scene is refused by a host without the world map, and loaded by one with it") {
+    const std::vector<std::byte> bytes = EmptyWorldSave();
+    game::Host without(test::TestManifest(), game::ARENA_SCENE); // the built-in data has no map
+    core::Reader refused{ bytes };
+    CHECK_FALSE(without.Load(refused, SAVED_TICK));
+    CHECK_FALSE(without.Requested().has_value());
+    game::Host with(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    core::Reader accepted{ bytes };
+    CHECK(with.Load(accepted, SAVED_TICK));
+}
+
+// Not part of a run: `--test-case='write the world save seed' --no-skip` (tests/AGENTS.md) writes the fuzz seed that
+// reached the save target's host, which has no map, with a save naming the world scene.
+TEST_CASE("write the world save seed" * doctest::skip()) {
+    const std::vector<std::byte> seed = EmptyWorldSave();
+    const std::filesystem::path path = std::filesystem::path{ PN_FUZZ_CORPUS } / "save" / "world";
+    std::ofstream file{ path, std::ios::binary };
+    std::ranges::transform(seed, std::ostreambuf_iterator<char>{ file }, [](std::byte byte) {
+        return static_cast<char>(std::to_integer<u8>(byte));
+    });
+    file.close();
+    CHECK(file.good());
 }
 
 } // namespace

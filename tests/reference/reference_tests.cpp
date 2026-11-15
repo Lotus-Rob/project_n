@@ -182,7 +182,7 @@ void CompareWithReference(const gfx::Image& drawn, std::string_view name) {
 void CheckAgainstReference(const View& view) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
-    core::GameData data = game::BuiltInData();
+    core::GameData data = test::ShippedData();
     if (view.crowd) {
         data.fox.orbitRadius = CROWD_ORBIT;
         data.fox.orbitWobble = CROWD_WOBBLE;
@@ -250,11 +250,12 @@ TEST_CASE("the map cells at the smallest zoom: the low mips") {
     CheckAgainstReference({ .name = "cells_far", .scene = game::CELLS_SCENE, .zoom = gfx::MIN_ZOOM });
 }
 
-// The world's start, the middle of the map, where the cultivator stands.
-constexpr f32 MIDDLE = 0.5F;
-constexpr core::Vec2 WORLD_START = (game::WORLD_MAP.min + game::WORLD_MAP.max) * MIDDLE;
-// Halfway from the cultivator to the world's portal (560 units left of the start and 200 up): both show at the largest zoom.
-constexpr core::Vec2 START_AND_PORTAL = WORLD_START + core::Vec2{ .x = -280.0F, .y = -100.0F };
+// Halfway from the cultivator, on the start city's tile centre, to the world's portal: both show at the largest zoom.
+core::Vec2 StartAndPortal() {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const core::Vec2 start = map->TileCentre(map->TileIndex(map->Places()[map->Start()].tile));
+    return start + (game::WORLD_PORTAL_OFFSET * static_cast<f32>(HALFWAY));
+}
 // The middle zoom `--camera-path` judges labels at. Labels fade out below 9 pixels, 20 world units × 2/3 × 0.675 on 720
 // lines, so this picture is 1080 lines high, as the measured fullscreen window is at least: 12 pixels.
 constexpr f32 LABELS_ZOOM = 0.6F;
@@ -294,7 +295,7 @@ TEST_CASE("the world at the largest zoom: the cultivator at the start and the po
           .scene = game::WORLD_SCENE,
           .ticks = TWO_SECONDS,
           .zoom = gfx::MAX_ZOOM,
-          .centre = START_AND_PORTAL,
+          .centre = StartAndPortal(),
           .asInGame = true }
     );
 }
@@ -1441,7 +1442,7 @@ TEST_CASE("the world's tiles and walkers at the smallest zoom: shimmer held to i
     constexpr f64 MOST_CHANGE = 0.06;
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
-    game::Host host(test::TestManifest(), game::WORLD_SCENE, game::BuiltInData());
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
     // Over the busiest region, published culled to the unshifted picture's view, as the game sends it (its margin holds
     // the shifted one); the walkers' labels are hidden at this zoom.
     const gfx::Camera far{ .centre = game::WORLD_BUSIEST, .zoom = gfx::MIN_ZOOM };

@@ -316,6 +316,9 @@ void Host::Build(core::SceneKey scene) {
     m_requested.reset();
     m_player = {};
     m_selected = {};
+    PN_ASSERT(
+        !Running().Traits().worldMap || m_data.world != nullptr, "a world scene built without the world map: CheckScenes()"
+    );
     Context context{ *this };
     Running().Build(context);
     for (u32 npc = 0; npc < Running().Traits().worldNpcs; ++npc) {
@@ -428,8 +431,13 @@ void Host::Leave(core::SceneKey next, std::vector<core::Event>& events) {
     m_requested = next;                // the logic has it built after this tick
 }
 
-bool Host::OnPortal() const {
-    const std::optional<core::Vec2> portal = Running().Traits().portal;
+std::optional<core::Vec2> Host::Portal() {
+    const Context context{ *this };
+    return Running().Portal(context);
+}
+
+bool Host::OnPortal() {
+    const std::optional<core::Vec2> portal = Portal();
     if (!portal || m_player == core::StableId{}) {
         return false;
     }
@@ -448,9 +456,9 @@ bool Host::OnPortal() const {
     return (nearest.x * nearest.x) + (nearest.y * nearest.y) <= 1.0F;
 }
 
-void Host::PublishPortal(core::Snapshot& snapshot) const {
+void Host::PublishPortal(core::Snapshot& snapshot) {
     PN_PROFILE_ZONE();
-    const std::optional<core::Vec2> portal = Running().Traits().portal;
+    const std::optional<core::Vec2> portal = Portal();
     if (!portal) {
         return;
     }
@@ -635,7 +643,9 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
     core::StableId player{};
     core::StableId selected{};
     archive(format, scene, seed, next, months, player, selected);
-    if (format != ARENA_FORMAT || scene >= Scenes().size()) {
+    // A scene that shows the world map can't run without it, so a save of one is refused by a game that lacks the map.
+    if (format != ARENA_FORMAT || scene >= Scenes().size() ||
+        (SceneOf(core::SceneKey{ scene }).Traits().worldMap && m_data.world == nullptr)) {
         archive.Fail();
     }
     core::State state{ DOMAINS, seed, core::StableIdCounter{ .next = next } };

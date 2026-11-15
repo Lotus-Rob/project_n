@@ -85,6 +85,9 @@ struct SceneTraits {
     /// Where its portal stands, the foot point the cultivator steps onto to walk to the next walkable scene
     /// (NextWalkableScene()); none for a scene without a cultivator to walk.
     std::optional<core::Vec2> portal = std::nullopt;
+    /// Whether it has a portal that Scene::Portal() places from the game data, rather than `portal`: the world's, which
+    /// follows the map's start. Such a scene leaves `portal` empty and is walkable all the same (NextWalkableScene()).
+    bool portalFromMap = false;
 };
 
 /// The host as a scene sees it: the state, what it draws with, and the spawns every scene shares.
@@ -144,6 +147,10 @@ public:
     /// Brings back a fox that died, the `index`th of those due at `counters`. Nothing by default: a scene without foxes
     /// never has one due.
     virtual void Respawn(SceneContext& context, const core::TickCounters& counters, u32 index) const;
+
+    /// Where its portal stands in this game, or none for a scene without one: SceneTraits::portal by default; a scene with
+    /// SceneTraits::portalFromMap overrides it to follow the game data.
+    [[nodiscard]] virtual std::optional<core::Vec2> Portal(const SceneContext& context) const;
 
     /// Adds its ground-layer content (core::Layer::Ground) to part `part` of `drawList`, just after the host began it for
     /// `view` (the area the publish culls to), so it draws under every entity. By default the painted ground (GROUND),

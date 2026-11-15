@@ -3,7 +3,6 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/profile.hpp"
 #include "core/random.hpp"
-#include "core/view_limits.hpp"
 #include "game/npcs.hpp"
 #include "game/random_purposes.hpp"
 
@@ -16,12 +15,6 @@ using core::atlas::SpriteId;
 constexpr f32 WORLD_HALF = 0.5F;
 constexpr core::Vec2 WORLD_CENTRE = (WORLD_MAP.min + WORLD_MAP.max) * WORLD_HALF;
 
-// The portal, a short walk from the start up and to the left: on the first screen, so it is found at once, in the quiet
-// country round the start, which no gathering reaches (ClearOfStart()), and west of it, off the strip east of the start
-// that `--camera-path` walks the cultivator along, so a measured run never changes scene (app's camera_path_tests holds
-// this).
-constexpr core::Vec2 WORLD_PORTAL = WORLD_CENTRE + core::Vec2{ .x = -560.0F, .y = -200.0F };
-
 constexpr SceneTraits WORLD_TRAITS{
     .name = "world",
     .view = WORLD_MAP,
@@ -29,7 +22,7 @@ constexpr SceneTraits WORLD_TRAITS{
     .creatures = true,
     .camera = core::CameraKind::Roam,
     .worldMap = true,
-    .portal = WORLD_PORTAL,
+    .portalFromMap = true,
 };
 
 static_assert(
@@ -57,82 +50,44 @@ constexpr u32 LABELLED_EVERY = 8;
 // The walkers: a thin crowd spread over the whole map, its orbits' centres kept ORBIT_REACH from the edges, and denser
 // crowds in gathering areas. Both are laid on a grid of cells, one walker's centre jittered within each, so the crowd
 // is even at every scale: a screen holds about the same count wherever it lies in the area, none a pile.
-struct Gathering {
-    core::Vec2 point{}; // the area's middle
-    core::Vec2 half{};  // half its width and height
-    u32 columns = 0;    // cells across
-    u32 rows = 0;       // cells down; one walker each
-};
-
 // The busiest gathering fills a 7,680 by 4,320 view round WORLD_BUSIEST and a margin for the orbits' reach:
-// 2,900 walkers on 8,880 by 5,520 units, about 123 a screen (1,920 by 1,080); the orbits' scatter makes a screen's count
-// vary by about 20 either way, so any denser would pile up past 150 and any thinner leave the view short of 2,000. These
-// counts depend on the walker draws, their purposes and the orbit ranges: change one and retune the density, never the tests.
-// The towns are 4,800 by 2,700: 375 walkers each, about 60 a screen. All, their walkers' orbits included, stand clear of
-// the widest view round the start, which is 15,360 by 8,640, and of each other (both checked below).
-constexpr std::array<Gathering, 4> GATHERINGS{ {
-    { .point = WORLD_BUSIEST, .half = { .x = 4'440.0F, .y = 2'760.0F }, .columns = 58, .rows = 50 },
-    { .point = { .x = 8'000.0F, .y = 5'600.0F }, .half = { .x = 2'400.0F, .y = 1'350.0F }, .columns = 25, .rows = 15 },
-    { .point = { .x = 30'500.0F, .y = 4'500.0F }, .half = { .x = 2'400.0F, .y = 1'350.0F }, .columns = 25, .rows = 15 },
-    { .point = { .x = 9'600.0F, .y = 17'800.0F }, .half = { .x = 2'400.0F, .y = 1'350.0F }, .columns = 25, .rows = 15 },
-} };
+// 3,120 walkers on 8,880 by 5,520 units, about 130 a screen, those whose spot is sea redrawn on to land (1,920 by 1,080); the
+// orbits' scatter makes a screen's count vary by about 20 either way, so any denser would pile up past 150 and any thinner
+// leave the view short of 2,000. These counts depend on the walker draws, their purposes and the orbit ranges: change one and
+// retune the density, never the tests. The towns are 4,800 by 2,700: 375 walkers each, about 60 a screen. All, their walkers'
+// orbits included, stand clear of the widest view round the start, which is 15,360 by 8,640, and of each other (the shipped
+// map's tests check both).
+constexpr Gathering BUSIEST{ .point = {}, .half = { .x = 4'440.0F, .y = 2'760.0F }, .columns = 60, .rows = 52 };
+constexpr Gathering TOWN{ .point = {}, .half = { .x = 2'400.0F, .y = 1'350.0F }, .columns = 25, .rows = 15 };
+constexpr u32 TOWNS = 3;
 // The spread crowd: 50 by 32 cells over the map less its margins, about 4 walkers a screen.
 constexpr u32 SPREAD_COLUMNS = 50;
 constexpr u32 SPREAD_ROWS = 32;
 constexpr u32 SPREAD_WALKERS = SPREAD_COLUMNS * SPREAD_ROWS;
-
-// The area `gathering`'s walkers' feet can reach: its own, grown by the orbits' reach.
-constexpr core::Rect Reached(const Gathering& gathering) {
-    const core::Vec2 farthest = gathering.half + core::Vec2{ .x = ORBIT_REACH, .y = ORBIT_REACH };
-    return { .min = gathering.point - farthest, .max = gathering.point + farthest };
-}
-
-// Whether every walker of `gathering` stays on the map, out to its area's edge and its orbit's.
-constexpr bool OnTheMap(const Gathering& gathering) {
-    const core::Rect reached = Reached(gathering);
-    return reached.min.x >= WORLD_MAP.min.x && reached.max.x <= WORLD_MAP.max.x && reached.min.y >= WORLD_MAP.min.y &&
-           reached.max.y <= WORLD_MAP.max.y;
-}
-static_assert(std::ranges::all_of(GATHERINGS, OnTheMap), "a gathering whose walkers would stand off the map");
-
-// Whether no walker of `gathering` can stand in the widest view round the start.
-constexpr bool ClearOfStart(const Gathering& gathering) {
-    const core::Rect reached = Reached(gathering);
-    const core::Rect widest{ .min = WORLD_CENTRE - core::WIDEST_HALF_VIEW, .max = WORLD_CENTRE + core::WIDEST_HALF_VIEW };
-    return reached.max.x < widest.min.x || reached.min.x > widest.max.x || reached.max.y < widest.min.y ||
-           reached.min.y > widest.max.y;
-}
-static_assert(std::ranges::all_of(GATHERINGS, ClearOfStart), "a gathering whose walkers could stand in view of the start");
-
-// Whether no walker of one gathering can stand where a walker of another could: two overlapping would pile up.
-constexpr bool ApartFromEachOther() {
-    for (std::size_t first = 0; first < GATHERINGS.size(); ++first) {
-        for (std::size_t second = first + 1; second < GATHERINGS.size(); ++second) {
-            const core::Rect one = Reached(GATHERINGS.at(first));
-            const core::Rect other = Reached(GATHERINGS.at(second));
-            const bool apart =
-                one.max.x < other.min.x || one.min.x > other.max.x || one.max.y < other.min.y || one.min.y > other.max.y;
-            if (!apart) {
-                return false;
-            }
-        }
-    }
-    return true;
-}
-static_assert(ApartFromEachOther(), "two gatherings whose walkers could stand in the same place");
+static_assert(SPREAD_WALKERS == WORLD_SPREAD_WALKERS, "the header says how many walkers the spread crowd has");
+// How often a spread walker redraws its centre when it lands on an impassable tile.
+constexpr u32 SPREAD_REDRAWS = 16;
+// And a gathered walker's.
+constexpr u32 GATHERED_REDRAWS = 16;
 
 // The numbers each walker draws (core::Random's draw index).
-constexpr u32 DRAW_CENTRE_X = 0; // the jitter within its cell
-constexpr u32 DRAW_CENTRE_Y = 1;
+constexpr u32 DRAW_CENTRE_X = 0; // the jitter within its cell: this draw and the next (x then y)
 constexpr u32 DRAW_RADIUS = 2;
 constexpr u32 DRAW_WOBBLE = 3;
 constexpr u32 DRAW_PHASE = 4;
 constexpr u32 DRAW_PACE = 5;
 constexpr u32 DRAW_DIRECTION = 6;
+constexpr u32 DRAW_REDRAW = 7; // a redraw's jitter: the next pair of draws after these, two to a redraw
 
 // A walker's random number `draw`, as a value in [0, 1).
 f32 WalkerUnit(u64 seed, u32 walker, u32 draw) {
     return static_cast<f32>(core::ToUnit(core::Random(seed, 0, walker, PURPOSE_WALKER, draw)));
+}
+
+// The first draw of the pair that places a walker for its `redraw`th try: the jitter in its cell at try 0, then the next
+// pairs after the orbit's draws.
+constexpr u32 RedrawDrawX(u32 redraw) {
+    return redraw == 0 ? DRAW_CENTRE_X : DRAW_REDRAW + (2 * (redraw - 1));
 }
 
 // The `walker`th walker's orbit round `centre`: radius, wobble, starting angle, pace and direction drawn for it.
@@ -151,33 +106,15 @@ Orbit WalkerOrbit(u64 seed, u32 walker, core::Vec2 centre) {
 
 // Where the `member`th walker of a grid of `columns` by `rows` cells over `area` circles: in its cell, row by row, at the
 // jitter `walker` draws.
-core::Vec2 JitteredCellCentre(u64 seed, u32 walker, u32 member, u32 columns, u32 rows, const core::Rect& area) {
+core::Vec2 JitteredCellCentre(u64 seed, u32 walker, u32 member, u32 columns, u32 rows, const core::Rect& area, u32 redraw = 0) {
+    const u32 drawX = RedrawDrawX(redraw);
+    const u32 drawY = drawX + 1;
     const f32 width = (area.max.x - area.min.x) / static_cast<f32>(columns);
     const f32 height = (area.max.y - area.min.y) / static_cast<f32>(rows);
     const u32 column = member % columns;
     const u32 row = member / columns;
-    return { .x = area.min.x + (width * (static_cast<f32>(column) + WalkerUnit(seed, walker, DRAW_CENTRE_X))),
-             .y = area.min.y + (height * (static_cast<f32>(row) + WalkerUnit(seed, walker, DRAW_CENTRE_Y))) };
-}
-
-// Where the `walker`th walker of the spread crowd circles: anywhere on the map, away from its edges.
-core::Vec2 SpreadCentre(u64 seed, u32 walker) {
-    const core::Vec2 margin{ .x = ORBIT_REACH, .y = ORBIT_REACH };
-    return JitteredCellCentre(
-        seed, walker, walker, SPREAD_COLUMNS, SPREAD_ROWS, { .min = WORLD_MAP.min + margin, .max = WORLD_MAP.max - margin }
-    );
-}
-
-// Where the `walker`th walker, the `member`th of `gathering`, circles: in its area.
-core::Vec2 GatheredCentre(u64 seed, u32 walker, u32 member, const Gathering& gathering) {
-    return JitteredCellCentre(
-        seed,
-        walker,
-        member,
-        gathering.columns,
-        gathering.rows,
-        { .min = gathering.point - gathering.half, .max = gathering.point + gathering.half }
-    );
+    return { .x = area.min.x + (width * (static_cast<f32>(column) + WalkerUnit(seed, walker, drawX))),
+             .y = area.min.y + (height * (static_cast<f32>(row) + WalkerUnit(seed, walker, drawY))) };
 }
 
 void SpawnWalker(SceneContext& context, const Orbit& orbit) {
@@ -191,28 +128,149 @@ bool Within(core::Vec2 point, const core::Rect& area) {
     return point.x >= area.min.x && point.x <= area.max.x && point.y >= area.min.y && point.y <= area.max.y;
 }
 
+// The centre of the start city's tile.
+core::Vec2 StartOf(const core::WorldMap& map) {
+    return map.TileCentre(map.TileIndex(map.Places()[map.Start()].tile));
+}
+
+// The tile of `point`, clamped to the map.
+u32 TileOf(const core::WorldMap& map, core::Vec2 point) {
+    const auto clamped = [](f32 position, f32 size, u32 count) {
+        return std::min(static_cast<u32>(std::max(position / size, 0.0F)), count - 1);
+    };
+    return map.TileIndex(
+        { .column = clamped(point.x, map.TileSize(), map.Columns()), .row = clamped(point.y, map.TileSize(), map.Rows()) }
+    );
+}
+
+// The stable ID of the place `index`'s name label: far above any creature's, which count up from 1.
+constexpr u64 PLACE_ENTITY_BASE = 1ULL << 40;
+// How far above its tile's centre a place's name is anchored, in world units.
+constexpr f32 PLACE_NAME_RISE = 60.0F;
+
 } // namespace
+
+core::Rect GatheringReach(const Gathering& gathering) {
+    const core::Vec2 farthest = gathering.half + core::Vec2{ .x = ORBIT_REACH, .y = ORBIT_REACH };
+    return { .min = gathering.point - farthest, .max = gathering.point + farthest };
+}
+
+std::vector<Gathering> WorldGatherings(const core::WorldMap& map) {
+    std::vector<Gathering> gatherings;
+    const u16 busiest = map.PlaceAt(TileOf(map, WORLD_BUSIEST));
+    const auto onCity = [&map](std::size_t place, Gathering shape) {
+        shape.point = map.TileCentre(map.TileIndex(map.Places()[place].tile));
+        return shape;
+    };
+    const auto isCity = [&map](std::size_t place) { return map.Places()[place].kind == core::PlaceKind::City; };
+    if (busiest != core::NO_PLACE && isCity(busiest)) {
+        gatherings.push_back(onCity(busiest, BUSIEST));
+    }
+    u32 towns = 0;
+    for (std::size_t place = 0; place < map.Places().size() && towns < TOWNS; ++place) {
+        if (isCity(place) && place != map.Start() && place != busiest) {
+            gatherings.push_back(onCity(place, TOWN));
+            ++towns;
+        }
+    }
+    return gatherings;
+}
+
+core::Vec2 SpreadDraw(u64 seed, u32 walker, u32 redraw) {
+    const core::Vec2 margin{ .x = ORBIT_REACH, .y = ORBIT_REACH };
+    const core::Rect area{ .min = WORLD_MAP.min + margin, .max = WORLD_MAP.max - margin };
+    return JitteredCellCentre(seed, walker, walker, SPREAD_COLUMNS, SPREAD_ROWS, area, redraw);
+}
+
+std::optional<core::Vec2> SpreadCentre(const core::WorldMap& map, u64 seed, u32 walker) {
+    for (u32 redraw = 0; redraw <= SPREAD_REDRAWS; ++redraw) {
+        const core::Vec2 centre = SpreadDraw(seed, walker, redraw);
+        if (map.CostAt(TileOf(map, centre)) != core::IMPASSABLE_COST) {
+            return centre;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<core::Vec2> GatheredCentre(
+    const core::WorldMap& map,
+    u64 seed,
+    u32 walker,
+    u32 member,
+    const Gathering& gathering
+) {
+    const core::Rect area{ .min = gathering.point - gathering.half, .max = gathering.point + gathering.half };
+    const auto passable = [&map](core::Vec2 centre) { return map.CostAt(TileOf(map, centre)) != core::IMPASSABLE_COST; };
+    const core::Vec2 cell = JitteredCellCentre(seed, walker, member, gathering.columns, gathering.rows, area);
+    if (passable(cell)) {
+        return cell;
+    }
+    // Anywhere in the area, not its own cell, which may be all sea: the crowd on land stays as many as it was.
+    for (u32 redraw = 1; redraw <= GATHERED_REDRAWS; ++redraw) {
+        const u32 drawX = RedrawDrawX(redraw);
+        const core::Vec2 centre{
+            .x = area.min.x + ((area.max.x - area.min.x) * WalkerUnit(seed, walker, drawX)),
+            .y = area.min.y + ((area.max.y - area.min.y) * WalkerUnit(seed, walker, drawX + 1)),
+        };
+        if (passable(centre)) {
+            return centre;
+        }
+    }
+    return std::nullopt;
+}
 
 const SceneTraits& WorldScene::Traits() const {
     return WORLD_TRAITS;
 }
 
+std::optional<core::Vec2> WorldScene::Portal(const SceneContext& context) const {
+    if (context.Data().world == nullptr) {
+        return std::nullopt;
+    }
+    return StartOf(*context.Data().world) + WORLD_PORTAL_OFFSET;
+}
+
 void WorldScene::Build(SceneContext& context) const {
-    context.SpawnPlayer(WORLD_CENTRE);
+    const core::WorldMap& map = *context.Data().world;
+    context.SpawnPlayer(StartOf(map));
     const u64 seed = context.State().Seed();
     u32 walker = 0;
     for (; walker < SPREAD_WALKERS; ++walker) {
-        SpawnWalker(context, WalkerOrbit(seed, walker, SpreadCentre(seed, walker)));
+        if (const std::optional<core::Vec2> centre = SpreadCentre(map, seed, walker)) {
+            SpawnWalker(context, WalkerOrbit(seed, walker, *centre));
+        }
     }
-    for (const Gathering& gathering : GATHERINGS) {
+    for (const Gathering& gathering : WorldGatherings(map)) {
         for (u32 member = 0; member < gathering.columns * gathering.rows; ++member, ++walker) {
-            SpawnWalker(context, WalkerOrbit(seed, walker, GatheredCentre(seed, walker, member, gathering)));
+            if (const std::optional<core::Vec2> centre = GatheredCentre(map, seed, walker, member, gathering)) {
+                SpawnWalker(context, WalkerOrbit(seed, walker, *centre));
+            }
         }
     }
 }
 
 void WorldScene::Publish(const SceneContext& context, core::Rect view, core::Snapshot& snapshot) const {
     PN_PROFILE_ZONE();
+    const core::WorldMap& map = *context.Data().world;
+    for (std::size_t index = 0; index < map.Places().size(); ++index) {
+        const core::Place& place = map.Places()[index];
+        const core::Vec2 centre = map.TileCentre(map.TileIndex(place.tile));
+        if (!Within(centre, view)) {
+            continue;
+        }
+        const core::Vec2 anchor = centre - core::Vec2{ .x = 0.0F, .y = PLACE_NAME_RISE };
+        snapshot.texts.push_back(
+            {
+                .kind = core::TextKind::Place,
+                .string = place.name,
+                .previous = anchor,
+                .current = anchor,
+                .entity = static_cast<core::StableId>(PLACE_ENTITY_BASE + index),
+                .nameKey = std::to_underlying(place.name),
+                .priority = core::LabelPriority::Place,
+            }
+        );
+    }
     const core::Registry& entities = context.State()[ACTIVE].Entities();
     for (const core::Entity entity : entities.view<const Orbit>()) {
         const core::StableId stableId = entities.get<core::StableId>(entity);
