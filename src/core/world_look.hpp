@@ -39,7 +39,7 @@ struct WorldLook {
     atlas::SpriteId ford{};
     /// A city's marker.
     atlas::SpriteId cityMarker{};
-    /// The marker of each danger sort, in the file's order (a sort is a data string's key).
+    /// The marker of each danger sort, in the file's order (a sort is a key the data names, not an enum).
     // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::vector<std::pair<std::string, atlas::SpriteId>> dangerMarkers{};
 

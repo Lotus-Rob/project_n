@@ -68,7 +68,7 @@ struct Place {
     std::string key{};
     /// What it is.
     PlaceKind kind = PlaceKind::City;
-    /// A danger's sort (a data string's key); empty for a city.
+    /// A danger's sort (a key the data names, not an enum); empty for a city.
     // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::string sort{};
     /// The tile it stands on.
