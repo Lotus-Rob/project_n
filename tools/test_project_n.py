@@ -3038,7 +3038,7 @@ class BuildSweepTest(unittest.TestCase):
                 removed = [tree for tree, _ in project_n.sweep_build(self.build, NOW)]
         self.assertEqual(removed, [old])
         self.assertTrue(locked.exists())
-        self.assertIn("linux-gcc/debug", out.getvalue())
+        self.assertIn(str(Path("build", "linux-gcc", "debug")), out.getvalue())
 
     def run_swept(self, command, args, **patches):
         """`command` with ROOT at self.build's parent, sweeping for real but building nothing."""
