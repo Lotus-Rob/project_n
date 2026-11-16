@@ -14,9 +14,9 @@ constexpr core::Vec2 MOVE_DOWN{ .x = 0.0F, .y = 1.0F };
 constexpr core::Vec2 MOVE_LEFT{ .x = -1.0F, .y = 0.0F };
 constexpr core::Vec2 MOVE_RIGHT{ .x = 1.0F, .y = 0.0F };
 
-// KeyEquals is the last code: a code added after it goes here instead.
+// PadBack is the last code: a code added after it goes here instead.
 static_assert(
-    std::to_underlying(InputCode::KeyEquals) < std::numeric_limits<u64>::digits,
+    std::to_underlying(InputCode::PadBack) < std::numeric_limits<u64>::digits,
     "Bit() gives each input code a bit of a u64"
 );
 

@@ -30,6 +30,7 @@ enum class Control : u8 {
     Ultimate,        ///< Key 5.
     Zoom,            ///< Zoom the camera by `value` notches.
     Quit,            ///< Leave the game.
+    PauseWorld,      ///< Pause or resume the world map's clock: P and the gamepad's Back.
     AdvanceCalendar, ///< Let a month pass (a debug key).
     Save,            ///< Save the game (a debug key).
     Load,            ///< Load the save (a debug key).
@@ -37,7 +38,6 @@ enum class Control : u8 {
     PlayReplay,      ///< Play the replay or stop it (a debug key).
     CycleScene,      ///< Switch to the next scene (a debug key).
     DebugBurst,      ///< Hit every fox thousands of times (a debug key).
-    PauseWorld,      ///< Pause or resume the world map's clock: P and the gamepad's Back.
     ToggleShowcase,  ///< Hide or show the arena's showcase seals (a debug key).
 };
 
