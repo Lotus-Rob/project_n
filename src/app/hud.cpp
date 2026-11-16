@@ -55,8 +55,13 @@ f32 FractionOf(i64 value, i64 most) {
 
 } // namespace
 
-std::optional<core::Action> DateLineClick(Control control, core::Vec2 position, const std::optional<core::Rect>& area) {
-    if (control != Control::Primary || !area) {
+std::optional<core::Action> DateLineClick(
+    Control control,
+    platform::Device device,
+    core::Vec2 position,
+    const std::optional<core::Rect>& area
+) {
+    if (control != Control::Primary || device != platform::Device::Mouse || !area) {
         return std::nullopt;
     }
     const bool inside =

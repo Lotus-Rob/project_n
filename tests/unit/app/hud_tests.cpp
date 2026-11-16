@@ -373,7 +373,7 @@ TEST_CASE("new effects move and resize the HUD at its next build, keeping the wa
 constexpr core::CalendarView MARCH_TWELFTH{ .month = 2, .day = 11, .paused = false };
 constexpr core::CalendarView PAUSED_MARCH_TWELFTH{ .month = 2, .day = 11, .paused = true };
 constexpr core::CalendarView FIRST_DAY{ .month = 0, .day = 0, .paused = false };
-constexpr core::CalendarView LAST_DAY_OF_A_LATER_YEAR{ .month = 13, .day = 29, .paused = false };
+constexpr core::CalendarView LAST_DAY_OF_THE_FOURTEENTH_MONTH{ .month = 13, .day = 29, .paused = false };
 constexpr u32 WIDTH = 1280;
 
 TEST_CASE("the date line shows the month and day in each language") {
@@ -396,7 +396,7 @@ TEST_CASE("the date line shows the month and day in each language") {
     english.BuildDate(FIRST_DAY, WIDTH, lines);
     CHECK(lines.front().text == "Month 1, day 1");
     lines.clear();
-    english.BuildDate(LAST_DAY_OF_A_LATER_YEAR, WIDTH, lines);
+    english.BuildDate(LAST_DAY_OF_THE_FOURTEENTH_MONTH, WIDTH, lines);
     CHECK(lines.front().text == "Month 14, day 30");
 }
 
@@ -457,21 +457,24 @@ constexpr core::Vec2 RIGHT_EDGE{ .x = 1264.0F, .y = 20.0F };
 constexpr core::Vec2 BOTTOM_EDGE{ .x = 1100.0F, .y = 40.0F };
 
 TEST_CASE("a click in the date line pauses and does nothing else") {
-    const std::optional<core::Action> inside = app::DateLineClick(app::Control::Primary, MIDDLE, AREA);
+    const std::optional<core::Action> inside = app::DateLineClick(app::Control::Primary, platform::Device::Mouse, MIDDLE, AREA);
     REQUIRE(inside.has_value());
     CHECK(inside.value_or(core::Action{}).kind == core::ActionKind::ToggleWorldPause);
-    CHECK(app::DateLineClick(app::Control::Primary, AREA.min, AREA).has_value());
-    CHECK(app::DateLineClick(app::Control::Primary, LAST_PIXEL, AREA).has_value());
+    CHECK(app::DateLineClick(app::Control::Primary, platform::Device::Mouse, AREA.min, AREA).has_value());
+    CHECK(app::DateLineClick(app::Control::Primary, platform::Device::Mouse, LAST_PIXEL, AREA).has_value());
 }
 
 TEST_CASE("a click outside it passes to the world") {
-    CHECK_FALSE(app::DateLineClick(app::Control::Primary, LEFT_OF, AREA).has_value());
-    CHECK_FALSE(app::DateLineClick(app::Control::Primary, ABOVE, AREA).has_value());
-    CHECK_FALSE(app::DateLineClick(app::Control::Primary, RIGHT_EDGE, AREA).has_value());
-    CHECK_FALSE(app::DateLineClick(app::Control::Primary, BOTTOM_EDGE, AREA).has_value());
+    CHECK_FALSE(app::DateLineClick(app::Control::Primary, platform::Device::Mouse, LEFT_OF, AREA).has_value());
+    CHECK_FALSE(app::DateLineClick(app::Control::Primary, platform::Device::Mouse, ABOVE, AREA).has_value());
+    CHECK_FALSE(app::DateLineClick(app::Control::Primary, platform::Device::Mouse, RIGHT_EDGE, AREA).has_value());
+    CHECK_FALSE(app::DateLineClick(app::Control::Primary, platform::Device::Mouse, BOTTOM_EDGE, AREA).has_value());
     // Another button over it, or no line showing, is the world's.
-    CHECK_FALSE(app::DateLineClick(app::Control::Secondary, MIDDLE, AREA).has_value());
-    CHECK_FALSE(app::DateLineClick(app::Control::Primary, MIDDLE, std::nullopt).has_value());
+    CHECK_FALSE(app::DateLineClick(app::Control::Secondary, platform::Device::Mouse, MIDDLE, AREA).has_value());
+    CHECK_FALSE(app::DateLineClick(app::Control::Primary, platform::Device::Mouse, MIDDLE, std::nullopt).has_value());
+    // A press from the keyboard or a gamepad has no pointer: it is the world's, wherever its position says.
+    CHECK_FALSE(app::DateLineClick(app::Control::Primary, platform::Device::Keyboard, MIDDLE, AREA).has_value());
+    CHECK_FALSE(app::DateLineClick(app::Control::Primary, platform::Device::Gamepad, MIDDLE, AREA).has_value());
 }
 
 } // namespace

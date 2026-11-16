@@ -1,4 +1,4 @@
-# The game's strings (design doc 0002.4.2 §5), each by the name the code knows it by (core/strings.hpp), with its
+# The game's strings, each by the name the code knows it by (core/strings.hpp), with its
 # text in English (en) and Simplified Chinese (zh). Every string needs both. settings.yaml's `language` picks one.
 cultivator_name:
   en: Cultivator
@@ -152,3 +152,92 @@ walker_name:
 portal_label:
   en: Portal
   zh: 传送门
+
+# The world map's date line (app/hud.hpp): {month} and {day} are filled in, counted from 1.
+date_line:
+  en: "Month {month}, day {day}"
+  zh: "{month}月{day}日"
+date_paused:
+  en: Paused
+  zh: 暂停
+
+# The places on the world map (world.yaml's places name them `place_<key>`): data strings, which no code names but
+# the map finds by key. Chinese in Chinese, and in English what the Chinese means.
+place_capital:
+  en: Heavenly Capital
+  zh: 天京城
+place_port:
+  en: Seawatch Harbour
+  zh: 望海港
+place_sect:
+  en: Azure Cloud Sect
+  zh: 青云宗
+place_oasis:
+  en: Moon Spring Town
+  zh: 月泉镇
+place_marsh_town:
+  en: Mist Marsh Town
+  zh: 雾泽镇
+place_isle:
+  en: Immortal Isle
+  zh: 蓬莱岛
+place_wolf_fang_pass:
+  en: Wolf Fang Pass
+  zh: 狼牙关
+place_serpent_cave:
+  en: Serpent Cave
+  zh: 蛇窟
+place_weeping_woods:
+  en: Weeping Woods
+  zh: 泣林
+place_star_shrine:
+  en: Star Shrine
+  zh: 观星祠
+place_sword_cliff:
+  en: Sword Cliff
+  zh: 剑崖
+place_blight_village:
+  en: Blight Village
+  zh: 疫村
+place_cloud_gate_pass:
+  en: Cloud Gate Pass
+  zh: 云门关
+place_echoing_cave:
+  en: Echoing Cave
+  zh: 回音洞
+place_ghost_pine_forest:
+  en: Ghost Pine Forest
+  zh: 鬼松林
+place_fallen_immortal_shrine:
+  en: Fallen Immortal Shrine
+  zh: 谪仙祠
+place_heavens_edge_cliff:
+  en: Heaven's Edge Cliff
+  zh: 天涯崖
+place_rotting_reed_village:
+  en: Rotting Reed Village
+  zh: 腐苇村
+place_frost_throat_pass:
+  en: Frost Throat Pass
+  zh: 霜喉关
+place_bat_cave:
+  en: Bat Cave
+  zh: 蝠洞
+place_ghostlight_woods:
+  en: Ghostlight Woods
+  zh: 幽灯林
+place_tide_shrine:
+  en: Tide Shrine
+  zh: 潮音祠
+place_eagle_cliff:
+  en: Eagle Cliff
+  zh: 鹰崖
+place_jade_cave:
+  en: Jade Cave
+  zh: 玉髓洞
+place_bone_forest:
+  en: Bone Forest
+  zh: 白骨林
+place_white_crane_cliff:
+  en: White Crane Cliff
+  zh: 白鹤崖

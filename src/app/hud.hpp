@@ -3,7 +3,8 @@
 /// @file
 /// @ingroup app
 /// The temporary HUD: the player's health and Qi as bars with their numbers written on them,
-/// and each slot's control, ability and cooldown, at the bottom left. Pure: it lays out lines and bars in target pixels,
+/// and each slot's control, ability and cooldown, at the bottom left; on the world map the date line at the top right,
+/// the HUD's one clickable area. Pure: it lays out lines and bars in target pixels,
 /// which the renderer draws (gfx::HudDraw), and tests read them without a device.
 
 #include "app/bindings.hpp"
@@ -16,6 +17,7 @@
 #include "core/vec2.hpp"
 #include "gfx/hud_draw.hpp"
 #include "gfx/renderer.hpp"
+#include "platform/window.hpp"
 
 #include <array>
 #include <memory>
@@ -25,11 +27,13 @@
 
 namespace app {
 
-/// The action a press of `control` at window position `position` sends when it lands in the date line's `area`: the world's
-/// pause toggled, and nothing else (the press is the HUD's, never the world's). None for another control, a position
-/// outside the area (its top and left edges in, its bottom and right out) or no area (no date line showing).
+/// The action a press of `control` from `device` at window position `position` sends when it lands in the date line's
+/// `area`: the world's pause toggled, and nothing else (the press is the HUD's, never the world's). None for another
+/// control, a device that isn't the mouse (only it has a position), a position outside the area (its top and left edges
+/// in, its bottom and right out) or no area (no date line showing).
 [[nodiscard]] std::optional<core::Action> DateLineClick(
     Control control,
+    platform::Device device,
     core::Vec2 position,
     const std::optional<core::Rect>& area
 );
@@ -42,7 +46,9 @@ namespace app {
 /// the Qi bar's text reads "Not enough Qi" in HudWarning. Every colour comes from the table, the text from the strings.
 /// With the text's outline and shadow both off, the slots' lines, over the ground, take TextInk as the labels do, as opaque
 /// as HudText is (a cooling one at the layout's `coolingInkOpacity` of that), so they read on the pale ground; the bars' words,
-/// on their bars, keep theirs. Every size, gap and time is core::HudLayout's, the shipped one until SetEffects().
+/// on their bars, keep theirs. On the world map BuildDate() adds the date line at the top right, and DateLineArea() is the
+/// HUD's one clickable area: a click in it pauses the world (DateLineClick()). Every size, gap and time is core::HudLayout's,
+/// the shipped one until SetEffects().
 class Hud {
 public:
     /// A HUD showing `strings` as `text` says, the renderer's text options: in its language, its sizes its scale times
