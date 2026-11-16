@@ -372,11 +372,12 @@ TEST_CASE("the world at the smallest zoom over the capital: its name reads under
     );
 }
 
-// How far along the route to the nearest other city the cultivator is in the route's picture: about half of its 2,016 ticks.
+// How far along its route the cultivator is in the route's picture: a few tiles out from the capital, the route's dots still
+// ahead of it.
 constexpr u64 ROUTE_TICKS = 280;
 
-// A click's route out of the capital, the cultivator part of the way along it, between the capital and the nearest other
-// city, with the travellers on the roads: the route's dots and its marker over the tiles.
+// A click's route to the tile 8 tiles east of the capital, which leaves the road partway, the cultivator on the road: the
+// route's dots and its marker over the tiles, with the travellers on the roads. The view is centred between the two.
 TEST_CASE("the world at a middle zoom with the cultivator mid-route: the route line and the travellers") {
     const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
     const core::Vec2 target = map->StartCentre() + core::Vec2{ .x = 8.0F * map->TileSize(), .y = 0.0F };

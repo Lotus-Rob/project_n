@@ -1289,6 +1289,17 @@ class MeasureTest(unittest.TestCase):
                          [("follow: first 0.5 s", 2_000_000_000, 2_500_000_000), ("follow: rest", 2_500_000_000, 6_000_000_000),
                           ("zoom in, then out: first 0.5 s", 6_000_000_000, 6_500_000_000),
                           ("zoom in, then out: rest", 6_500_000_000, 8_000_000_000)])
+        # The month step's message starts a segment of its own inside the one it falls in.
+        stepped = project_n.read_messages(self.messages(("camera path: widest view", 12_000_000_000),
+                                                        ("camera path: month step", 15_000_000_000),
+                                                        ("camera path: labels", 18_000_000_000)))
+        self.assertEqual(project_n.measure_segments(stepped, 0, 22_000_000_000, camera=True),
+                         [("widest view: first 0.5 s", 12_000_000_000, 12_500_000_000),
+                          ("widest view: rest", 12_500_000_000, 15_000_000_000),
+                          ("month step: first 0.5 s", 15_000_000_000, 15_500_000_000),
+                          ("month step: rest", 15_500_000_000, 18_000_000_000),
+                          ("labels: first 0.5 s", 18_000_000_000, 18_500_000_000),
+                          ("labels: rest", 18_500_000_000, 22_000_000_000)])
         # An arena run has no path: one segment, after the scene has loaded.
         self.assertEqual(project_n.measure_segments(messages, 1_000_000_000, 9_000_000_000, camera=False),
                          [("whole run", 3_000_000_000, 9_000_000_000)])

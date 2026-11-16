@@ -126,8 +126,8 @@ TEST_CASE("--travel-share refuses a missing, non-numeric, negative or past-a-tho
 }
 
 TEST_CASE("--month-step-at gives the second of the camera path a month passes at; without it none") {
-    constexpr std::array<const char*, 3> LATE{ { "project_n", "--month-step-at", "15.5" } };
-    constexpr std::array<const char*, 3> START{ { "project_n", "--month-step-at", "0" } };
+    constexpr std::array<const char*, 4> LATE{ { "project_n", "--camera-path", "--month-step-at", "15.5" } };
+    constexpr std::array<const char*, 4> START{ { "project_n", "--camera-path", "--month-step-at", "0" } };
     constexpr std::array<const char*, 2> WITHOUT{ { "project_n", "--camera-path" } };
     constexpr f32 LATE_SECOND = 15.5F;
     const std::expected<std::optional<f32>, core::Error> late = app::MonthStepAtOf(LATE);
@@ -141,17 +141,23 @@ TEST_CASE("--month-step-at gives the second of the camera path a month passes at
     CHECK_FALSE(without->has_value());
 }
 
-TEST_CASE("--month-step-at refuses a missing, non-numeric, negative or infinite time") {
-    constexpr std::array<const char*, 2> MISSING{ { "project_n", "--month-step-at" } };
-    constexpr std::array<const char*, 3> TEXT{ { "project_n", "--month-step-at", "soon" } };
-    constexpr std::array<const char*, 3> TRAILING{ { "project_n", "--month-step-at", "5s" } };
-    constexpr std::array<const char*, 3> NEGATIVE{ { "project_n", "--month-step-at", "-1" } };
-    constexpr std::array<const char*, 3> INFINITE{ { "project_n", "--month-step-at", "inf" } };
+TEST_CASE(
+    "--month-step-at refuses a missing, non-numeric, negative, infinite or too late time, and the flag without --camera-path"
+) {
+    constexpr std::array<const char*, 3> MISSING{ { "project_n", "--camera-path", "--month-step-at" } };
+    constexpr std::array<const char*, 4> PAST{ { "project_n", "--camera-path", "--month-step-at", "22.5" } };
+    constexpr std::array<const char*, 3> NO_PATH{ { "project_n", "--month-step-at", "15" } };
+    constexpr std::array<const char*, 4> TEXT{ { "project_n", "--camera-path", "--month-step-at", "soon" } };
+    constexpr std::array<const char*, 4> TRAILING{ { "project_n", "--camera-path", "--month-step-at", "5s" } };
+    constexpr std::array<const char*, 4> NEGATIVE{ { "project_n", "--camera-path", "--month-step-at", "-1" } };
+    constexpr std::array<const char*, 4> INFINITE{ { "project_n", "--camera-path", "--month-step-at", "inf" } };
     for (const std::span<const char* const> args : { std::span<const char* const>{ MISSING },
                                                      std::span<const char* const>{ TEXT },
                                                      std::span<const char* const>{ TRAILING },
                                                      std::span<const char* const>{ NEGATIVE },
-                                                     std::span<const char* const>{ INFINITE } }) {
+                                                     std::span<const char* const>{ INFINITE },
+                                                     std::span<const char* const>{ PAST },
+                                                     std::span<const char* const>{ NO_PATH } }) {
         const std::expected<std::optional<f32>, core::Error> step = app::MonthStepAtOf(args);
         REQUIRE_FALSE(step.has_value());
         CAPTURE(step.error().message);

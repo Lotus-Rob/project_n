@@ -126,8 +126,8 @@ struct Options {
 [[nodiscard]] std::expected<std::optional<u16>, core::Error> TravelShareOf(std::span<const char* const> args);
 
 /// The second of the camera path `--month-step-at <seconds>` in the command line `args` asks a month to pass at, none
-/// without it; an error ("--month-step-at: ...") for a missing value, text that isn't a number, or a negative or infinite
-/// time.
+/// without it; an error ("--month-step-at: ...") for a missing value, text that isn't a number, a negative or infinite
+/// time, a time past the path's end (CameraPathOver()), or the flag without `--camera-path`, which it needs.
 [[nodiscard]] std::expected<std::optional<f32>, core::Error> MonthStepAtOf(std::span<const char* const> args);
 
 /// Watches a folder of files for changes (the game data).
