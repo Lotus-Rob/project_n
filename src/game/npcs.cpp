@@ -39,6 +39,10 @@ constexpr std::array<PowerBand, 3> POWER_BANDS{ {
     { .share = 18, .low = 5.0, .high = 50.0 },
     { .share = 2, .low = 50.0, .high = 500.0 },
 } };
+constexpr u32 BAND_SHARES = std::accumulate(POWER_BANDS.begin(), POWER_BANDS.end(), 0U, [](u32 sum, const PowerBand& band) {
+    return sum + band.share;
+});
+static_assert(BAND_SHARES == POWER_DRAWS, "the bands' shares cover every draw");
 
 f32 Clamped(f32 need) {
     return std::clamp(need, 0.0F, 1.0F);
@@ -111,7 +115,7 @@ f32 StartingPower(u64 seed, core::StableId identity) {
         }
         pick -= band.share;
     }
-    return 0.0F; // unreachable: the shares sum to POWER_DRAWS
+    return 0.0F; // not reached: the shares cover every draw
 }
 
 core::Vec2 CellCentre(u32 cell) {
@@ -188,9 +192,9 @@ void Relationships::Load(core::Reader& archive, const core::State& state) {
     }
 }
 
-core::StableId SpawnNpc(core::State& state, u32 cell, u16 home) {
+core::StableId SpawnNpc(core::State& state, u32 cell, u16 home, f32 power) {
     const auto [stableId, entity] = state.Create(WORLD);
-    state[WORLD].Entities().emplace<Npc>(entity, cell, home);
+    state[WORLD].Entities().emplace<Npc>(entity, cell, home, Action::Rest, power);
     state[WORLD].Entities().emplace<Needs>(entity);
     return stableId;
 }

@@ -228,25 +228,44 @@ TEST_CASE("starting power is the same for the same identity and seed") {
     CHECK(differing > 0);
 }
 
+// Fixed draws under SEED, one in each band: the first stable ID is a cultivator's, the second a mortal's, the 41st a strong
+// one.
+TEST_CASE("starting power for named identities under a fixed seed") {
+    constexpr f32 TOLERANCE = 1e-3F;
+    constexpr f32 MORTAL = 2.90823F;
+    constexpr f32 CULTIVATOR = 25.0162F;
+    constexpr f32 STRONG = 465.879F;
+    CHECK(game::StartingPower(SEED, core::StableId{ 2 }) == doctest::Approx(MORTAL).epsilon(TOLERANCE));     // mortal band
+    CHECK(game::StartingPower(SEED, core::StableId{ 1 }) == doctest::Approx(CULTIVATOR).epsilon(TOLERANCE)); // cultivator band
+    CHECK(game::StartingPower(SEED, core::StableId{ 41 }) == doctest::Approx(STRONG).epsilon(TOLERANCE));    // strong band
+}
+
 TEST_CASE("starting power lies in its bands") {
     constexpr f32 STRONGEST = 500.0F;
+    f32 lowest = STRONGEST;
+    f32 highest = 0.0F;
     for (u64 id = 1; id <= MANY; ++id) {
-        CAPTURE(id);
         const f32 power = game::StartingPower(SEED, core::StableId{ id });
-        CHECK(power >= 0.0F);
-        CHECK(power < STRONGEST);
+        lowest = std::min(lowest, power);
+        highest = std::max(highest, power);
     }
+    CHECK(lowest >= 0.0F);
+    CHECK(highest < STRONGEST);
 }
 
 TEST_CASE("the arena's and stress's NPCs start without power") {
     for (const core::SceneKey scene : { game::ARENA_SCENE, game::STRESS_SCENE }) {
         game::Host const host(test::TestManifest(), scene);
         u32 people = 0;
-        for (const auto [entity, person] : host.State()[game::WORLD].Entities().view<const game::Npc>().each()) {
-            CHECK(person.power == 0.0F);
-            ++people;
+        u32 powered = 0;
+        for (const core::DomainIndex domain : { game::WORLD, game::ACTIVE }) {
+            for (const auto [entity, person] : host.State()[domain].Entities().view<const game::Npc>().each()) {
+                powered += person.power == 0.0F ? 0U : 1U;
+                ++people;
+            }
         }
         CHECK(people > 0);
+        CHECK(powered == 0);
     }
 }
 
