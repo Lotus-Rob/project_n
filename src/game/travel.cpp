@@ -181,6 +181,20 @@ bool LegSound(const core::Leg& leg, const core::WorldMap& map) {
            leg.startTick <= std::numeric_limits<i64>::max() - i64{ leg.arrive.back() };
 }
 
+std::expected<void, core::Error> SetTravelShare(core::GameData& data, u16 sharePerMille) {
+    if (data.world == nullptr) {
+        return std::unexpected{ core::Error{ "the travel share needs the world map, which the game data lacks" } };
+    }
+    core::TravelRules rules = data.world->Travel();
+    rules.sharePerMille = sharePerMille;
+    std::expected<core::WorldMap, core::Error> raised = data.world->WithTravel(rules);
+    if (!raised) {
+        return std::unexpected{ raised.error() };
+    }
+    data.world = std::make_shared<const core::WorldMap>(*std::move(raised));
+    return {};
+}
+
 core::VisitorKind VisitorOf(const core::TravelRules& rules, f32 power) {
     return power >= rules.cultivatorPower ? core::VisitorKind::Cultivator : core::VisitorKind::Trader;
 }

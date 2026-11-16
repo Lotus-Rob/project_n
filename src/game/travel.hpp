@@ -9,6 +9,8 @@
 /// kind of visitor each draws).
 
 #include "core/archive.hpp"
+#include "core/error.hpp"
+#include "core/game_data.hpp"
 #include "core/jobs.hpp"
 #include "core/journey.hpp"
 #include "core/paths.hpp"
@@ -19,6 +21,7 @@
 #include "game/npcs.hpp"
 
 #include <cstddef>
+#include <expected>
 #include <optional>
 #include <span>
 #include <unordered_set>
@@ -49,6 +52,11 @@ struct JournalEntry {
 /// Whether `leg`, read from a save, can be placed on `map`: its shape and profile exist, it starts from a finite point, its
 /// tiles are on the map, one arrive tick each from 0 and rising, and its end tick fits an i64.
 [[nodiscard]] bool LegSound(const core::Leg& leg, const core::WorldMap& map);
+
+/// Gives `data` a world map whose travel share (core::TravelRules::sharePerMille) is `sharePerMille`, the rest of the map
+/// and its rules alike, so the data's hash follows it; the map it had stays as it was for whoever else holds it. Refused,
+/// leaving `data` as it was, for data without a world map or a share past core::MOST_SHARE_PER_MILLE.
+[[nodiscard]] std::expected<void, core::Error> SetTravelShare(core::GameData& data, u16 sharePerMille);
 
 /// The kind of visitor an NPC of `power` is: a cultivator from `rules.cultivatorPower` up, a trader below.
 [[nodiscard]] core::VisitorKind VisitorOf(const core::TravelRules& rules, f32 power);

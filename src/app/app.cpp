@@ -141,6 +141,22 @@ std::expected<u32, core::Error> WorkersOf(std::span<const char* const> args) {
     return workers;
 }
 
+std::expected<std::optional<u16>, core::Error> TravelShareOf(std::span<const char* const> args) {
+    const auto flag = std::ranges::find(args, std::string_view{ "--travel-share" });
+    if (flag == args.end()) {
+        return std::nullopt;
+    }
+    const std::string_view text = std::next(flag) == args.end() ? std::string_view{} : std::string_view{ *std::next(flag) };
+    u16 share = 0;
+    const char* last = std::to_address(text.end());
+    const auto [end, error] = std::from_chars(std::to_address(text.begin()), last, share);
+    if (error != std::errc{} || end != last || share > core::MOST_SHARE_PER_MILLE) {
+        return std::unexpected{ core::Error{
+            std::format("--travel-share: '{}' isn't a share from 0 to {} per thousand", text, core::MOST_SHARE_PER_MILLE) } };
+    }
+    return share;
+}
+
 DataReload ReloadOf(
     const core::Effects& effects,
     const std::expected<core::Effects, core::Error>& readEffects,
