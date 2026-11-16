@@ -198,7 +198,9 @@ private:
 
     // Reads a vector's size and then its elements into `value`, which it changes only when every read succeeds. Each
     // element takes at least its size in bytes (a scalar) or one byte (anything else), so a size past what is left is
-    // malformed: a save never makes it allocate more than its bytes could fill.
+    // malformed. The rest is not allocated up front: it reserves no more elements than the bytes left could hold at
+    // their size in memory, then grows as elements are read, stopping at the first failure, so what a save makes it
+    // allocate follows the bytes it actually holds, never the size it claims.
     template<typename T>
     void GetSequence(T& value) {
         using Element = T::value_type;
@@ -211,9 +213,10 @@ private:
         if (m_failed) {
             return;
         }
-        T read(static_cast<std::size_t>(size));
-        for (Element& element : read) {
-            Get(element);
+        T read;
+        read.reserve(static_cast<std::size_t>(std::min<u64>(size, Remaining() / std::max(LEAST_BYTES, sizeof(Element)))));
+        for (u64 index = 0; index < size && !m_failed; ++index) {
+            Get(read.emplace_back());
         }
         if (!m_failed) {
             value = std::move(read);

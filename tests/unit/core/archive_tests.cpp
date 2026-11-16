@@ -120,6 +120,26 @@ TEST_CASE("a vector whose size is past what is left fails, and leaves the vector
     CHECK(read == untouched);
 }
 
+TEST_CASE("a vector whose element is cut short fails, and leaves the vector alone") {
+    // A size of 2 that passes the size check, with one and a half pairs' bytes after it: the second pair's `second` is
+    // missing.
+    constexpr u64 SIZE = 2;
+    constexpr Pair WHOLE{ .first = 5, .second = 1.5F };
+    constexpr i32 HALF_A_PAIR = 6;
+    std::vector<std::byte> bytes;
+    core::Writer writer{ bytes };
+    writer(SIZE, WHOLE, HALF_A_PAIR);
+
+    constexpr Pair EARLIER{ .first = -3, .second = 0.25F };
+    core::Reader reader{ bytes };
+    std::vector<Pair> read{ EARLIER };
+    reader(read);
+    CHECK(reader.Failed());
+    REQUIRE(read.size() == 1);
+    CHECK(read[0].first == EARLIER.first);
+    CHECK(read[0].second == EARLIER.second);
+}
+
 u64 Hash(u32 first, u32 second) {
     core::Hasher hasher;
     hasher(first, second);

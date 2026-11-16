@@ -27,6 +27,8 @@ constexpr core::StableId SECOND{ 42 };
 constexpr core::StableId THIRD{ 43 };
 constexpr f32 MEMBER_SPACING = 24.0F;
 constexpr f32 CLOSE = 0.001F;
+// A day in a journey's signed ticks.
+constexpr i64 DAY = static_cast<i64>(core::TICKS_PER_DAY);
 // How far from its city's tile centre a staying walker may be, in tiles.
 constexpr f32 STAY_REACH = 0.35F;
 // The last road tile's column.
@@ -86,8 +88,8 @@ f32 LargestJump(const core::WorldMap& map, const core::Journey& journey, i64 fir
 TEST_CASE("a tile leg takes its cost in ticks") {
     const core::WorldMap map = TestMap();
     constexpr i64 START = 1'000;
-    constexpr std::array<u32, 3> MEADOW_THEN_ROAD{ 0, 1, 2 };
-    const core::Leg road = core::MakeTileLeg(map, core::WALKING, START, map.TileCentre(0), MEADOW_THEN_ROAD);
+    constexpr std::array<u32, 3> SAND_THEN_ROAD{ 0, 1, 2 };
+    const core::Leg road = core::MakeTileLeg(map, core::WALKING, START, map.TileCentre(0), SAND_THEN_ROAD);
     CHECK(road.shape == core::LegShape::TileRoute);
     CHECK(road.profile == core::WALKING);
     CHECK(road.startTick == START);
@@ -164,7 +166,7 @@ TEST_CASE("a visit comes home by its own road reversed") {
     CHECK(stay.city == DESTINATION);
     CHECK(stay.seed == SEED);
     CHECK(stay.startTick == DEPART + 480);
-    CHECK(stay.endTick == DEPART + 480 + (TWO_DAYS * core::STAY_DAY_TICKS));
+    CHECK(stay.endTick == DEPART + 480 + (TWO_DAYS * DAY));
     CHECK(back.startTick == stay.endTick);
     CHECK(back.tiles == std::vector<u32>{ 6, 5, 4, 3, 2, 1, 0 });
     // Into the road tiles at 64 ticks each, then into the home's sand at 14 × 16.
@@ -181,7 +183,6 @@ TEST_CASE("a stay keeps its walker near the city's tile") {
     const core::Journey visit = core::Visit(map, ROAD_ROUTE, WALKER, HOME, DESTINATION, 0, FIVE_DAYS, SEED);
     const core::Stay& stay = visit.parts[1].rest;
     const core::Vec2 centre = map.TileCentre(ROAD_ROUTE.back());
-    constexpr i64 DAY = core::STAY_DAY_TICKS;
     // The stay's ends, each day point and the ticks either side of it, and the middles of a few days.
     const std::array<i64, 20> ticks{ 0,
                                      1,
@@ -216,7 +217,7 @@ TEST_CASE("two members of one journey stand apart") {
     core::Journey convoy = core::Visit(map, ROAD_ROUTE, WALKER, HOME, DESTINATION, 0, TWO_DAYS, SEED);
     convoy.members = { WALKER, SECOND, THIRD };
     constexpr i64 ON_THE_ROAD = 100;
-    const i64 inTheCity = convoy.parts[1].rest.startTick + core::STAY_DAY_TICKS + 30;
+    const i64 inTheCity = convoy.parts[1].rest.startTick + DAY + 30;
     for (const i64 tick : { ON_THE_ROAD, inTheCity }) {
         const core::Vec2 first = core::Where(map, convoy, tick, 0);
         const core::Vec2 second = core::Where(map, convoy, tick, 1);
@@ -264,7 +265,7 @@ TEST_CASE("signed ticks place a journey that left before tick 0") {
     constexpr i64 DEPART = BEFORE_ZERO;
     const core::Journey visit = core::Visit(map, ROAD_ROUTE, WALKER, HOME, DESTINATION, DEPART, TWO_DAYS, SEED);
     CHECK(core::StartTick(visit) == DEPART);
-    CHECK(core::EndTick(visit) == DEPART + 480 + (TWO_DAYS * core::STAY_DAY_TICKS) + 544);
+    CHECK(core::EndTick(visit) == DEPART + 480 + (TWO_DAYS * DAY) + 544);
     CHECK_FALSE(core::Underway(visit, DEPART - 1));
     CHECK(core::Underway(visit, DEPART));
     CHECK(core::Underway(visit, 0));

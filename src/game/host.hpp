@@ -7,6 +7,7 @@
 /// cultivator, the selection, combat, the game data, saving, loading and hashing, and the publishing every scene shares,
 /// and it knows no scene by name.
 
+#include "core/calendar.hpp"
 #include "core/draw_list.hpp"
 #include "core/ecs.hpp"
 #include "core/frame.hpp"
@@ -36,8 +37,8 @@ namespace game {
 /// no data files (tests, tools).
 [[nodiscard]] core::GameData BuiltInData();
 
-/// How many simulation ticks a day of world time lasts (3 s at 60 Hz).
-inline constexpr u64 TICKS_PER_DAY = 180;
+/// How many simulation ticks a day of world time lasts (3 s at 60 Hz): core's, which journeys count their stays by.
+inline constexpr u64 TICKS_PER_DAY = core::TICKS_PER_DAY;
 /// How many days a month lasts.
 inline constexpr u64 DAYS_PER_MONTH = 30;
 /// How many simulation ticks a month of world time lasts: its last ends in the month step (Host::MonthDue()).
