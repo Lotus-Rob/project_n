@@ -6,6 +6,7 @@
 #include "core/log.hpp"
 #include "core/profile.hpp"
 #include "core/random.hpp"
+#include "core/rect.hpp"
 #include "core/seal.hpp"
 #include "core/view_limits.hpp"
 #include "core/world_map.hpp"
@@ -89,11 +90,6 @@ using ActiveComponents = core::ComponentList<
 using WorldComponents = core::ComponentList<Npc, Needs, Met, Group>;
 
 constexpr u32 PUBLISH_CHUNK = 4'096; // entities, or journeys, packed per job chunk
-
-/// Whether `point` lies within `area`, its edges included.
-bool InPublishArea(core::Vec2 point, const core::Rect& area) {
-    return point.x >= area.min.x && point.x <= area.max.x && point.y >= area.min.y && point.y <= area.max.y;
-}
 
 /// Whether the active domain's combat components come as combat reads them: every creature has health and only
 /// creatures do, a creature is dying exactly when its health is out, an arriving one has the body and orbit it
@@ -641,7 +637,7 @@ void Host::PublishTravellers(const core::Rect& area, u32 firstPart, u32 chunks, 
             }
             for (std::size_t member = 0; member < journey.members.size(); ++member) {
                 const core::Vec2 current = core::Where(map, journey, now, member);
-                if (!InPublishArea(current, area)) {
+                if (!core::Contains(area, current)) {
                     continue;
                 }
                 const core::Vec2 previous = core::Where(map, journey, before, member);

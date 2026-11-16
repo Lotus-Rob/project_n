@@ -4,6 +4,7 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/profile.hpp"
 #include "core/random.hpp"
+#include "core/rect.hpp"
 #include "game/npcs.hpp"
 #include "game/random_purposes.hpp"
 
@@ -121,11 +122,6 @@ void SpawnWalker(SceneContext& context, const Orbit& orbit) {
     const Look look{ .sprite = SpriteId::Villager, .shadow = true };
     const core::Entity entity = context.Spawn(OrbitPoint(orbit, 0), look);
     context.State()[ACTIVE].Entities().emplace<Orbit>(entity, orbit);
-}
-
-/// Whether `point` lies within `area`, its edges included.
-bool Within(core::Vec2 point, const core::Rect& area) {
-    return point.x >= area.min.x && point.x <= area.max.x && point.y >= area.min.y && point.y <= area.max.y;
 }
 
 // Of every ten of a city's people, this many live on the city's own tile; the rest are spread over its region.
@@ -277,7 +273,7 @@ void WorldScene::Publish(const SceneContext& context, core::Rect view, core::Sna
     for (std::size_t index = 0; index < map.Places().size(); ++index) {
         const core::Place& place = map.Places()[index];
         const core::Vec2 centre = map.TileCentre(map.TileIndex(place.tile));
-        if (!Within(centre, view)) {
+        if (!core::Contains(view, centre)) {
             continue;
         }
         // The name hangs under the marker drawn round the tile's centre, like a map label under its town: the cultivator
@@ -300,7 +296,7 @@ void WorldScene::Publish(const SceneContext& context, core::Rect view, core::Sna
     for (const core::Entity entity : entities.view<const Orbit>()) {
         const core::StableId stableId = entities.get<core::StableId>(entity);
         const Body& body = entities.get<Body>(entity);
-        if (std::to_underlying(stableId) % LABELLED_EVERY != 0 || !Within(body.current, view)) {
+        if (std::to_underlying(stableId) % LABELLED_EVERY != 0 || !core::Contains(view, body.current)) {
             continue;
         }
         const Look& look = entities.get<Look>(entity);
