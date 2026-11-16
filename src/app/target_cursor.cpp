@@ -22,13 +22,21 @@ u32 Moved(u32 value, i32 delta, u32 count) {
 
 } // namespace
 
-void TargetCursor::Show(u32 tile, u32 columns, u32 rows) {
+std::optional<u32> CursorStart(bool worldMap, std::optional<core::Vec2> foot, const core::WorldMap& map) {
+    if (!worldMap || !foot) {
+        return std::nullopt;
+    }
+    return map.TileAt(*foot);
+}
+
+void TargetCursor::Show(u32 tile, u32 columns, u32 rows, core::Vec2 move) {
     m_tile = tile;
     m_columns = columns;
     m_rows = rows;
-    m_stepColumns = 0;
-    m_stepRows = 0;
-    m_wait = 0.0F;
+    m_stepColumns = Pressed(move.x);
+    m_stepRows = Pressed(move.y);
+    m_wait = CURSOR_FIRST_REPEAT_SECONDS;
+    m_awaitRelease = false;
 }
 
 void TargetCursor::Hide() {
@@ -62,10 +70,21 @@ void TargetCursor::Steer(core::Vec2 move, f32 seconds) {
         return;
     }
     m_wait -= seconds;
-    while (m_wait <= 0.0F) {
+    if (m_wait <= 0.0F) {
         Step(columns, rows);
-        m_wait += CURSOR_REPEAT_SECONDS;
+        m_wait = CURSOR_REPEAT_SECONDS; // not caught up: a hitch mustn't carry the cursor past its aim
     }
+}
+
+core::Vec2 TargetCursor::Walk(core::Vec2 move) {
+    if (m_tile) {
+        return {};
+    }
+    if (m_awaitRelease) {
+        m_awaitRelease = ((move.x * move.x) + (move.y * move.y)) > 0.0F;
+        return {};
+    }
+    return move;
 }
 
 std::optional<core::Action> TargetCursor::Confirm(const core::WorldMap& map) {
@@ -74,6 +93,7 @@ std::optional<core::Action> TargetCursor::Confirm(const core::WorldMap& map) {
     }
     core::Action action{ .kind = core::ActionKind::WalkTo, .point = map.TileCentre(*m_tile) };
     Hide();
+    m_awaitRelease = true;
     return action;
 }
 

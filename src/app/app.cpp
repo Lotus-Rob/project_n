@@ -525,7 +525,7 @@ void App::HandleInput(const platform::WindowState& state) {
 void App::SendHeld() {
     PN_PROFILE_ZONE();
     // The cursor takes the movement while it shows, so the cultivator stands.
-    const core::Vec2 walk = m_cursor.Shown() ? core::Vec2{} : m_bindings.Move();
+    const core::Vec2 walk = m_cursor.Walk(m_bindings.Move());
     const core::HeldInput held{ .move = m_pathSeconds ? CameraPathMove(*m_pathSeconds) : walk };
     if (held == m_held) {
         return;
@@ -623,11 +623,16 @@ void App::ToggleCursor() {
     if (m_cursor.Shown()) {
         HideCursor();
     }
-    else if (drawn != nullptr && drawn->worldMap && drawn->follow && map != nullptr) {
-        const u32 tile = map->TileAt(drawn->follow->current);
-        m_cursor.Show(tile, map->Columns(), map->Rows());
-        m_cursorNs = platform::NowNs();
-        PN_LOG_DEBUG("the target cursor shows on the cultivator's tile {}", tile);
+    else if (drawn == nullptr || map == nullptr) {
+        return;
+    }
+    else if (
+        const std::optional<u32> tile = CursorStart(
+            drawn->worldMap, drawn->follow.transform([](const core::Follow& follow) { return follow.current; }), *map
+        )
+    ) {
+        m_cursor.Show(*tile, map->Columns(), map->Rows(), m_bindings.Move());
+        PN_LOG_DEBUG("the target cursor shows on the cultivator's tile {}", *tile);
     }
 }
 
@@ -642,7 +647,12 @@ void App::HideCursor() {
 
 void App::ConfirmCursor() {
     const core::WorldMap* map = m_options.data.world.get();
+    const core::Snapshot* drawn = m_display.Drawn();
     if (map == nullptr) {
+        return;
+    }
+    if (drawn == nullptr || !drawn->worldMap) {
+        HideCursor();
         return;
     }
     const std::optional<u32> tile = m_cursor.Tile();
