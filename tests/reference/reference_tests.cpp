@@ -708,6 +708,9 @@ TEST_CASE("the HUD at zoom 1, one slot cooling down") {
     hud.Build(
         snapshot.caster.value_or(core::CasterView{}), core::RenderTick(snapshot.simulationTick, 1.0), HEIGHT, lines, bars
     );
+    // The date line too, paused, so its right-aligned text is in the picture.
+    constexpr core::CalendarView PAUSED_MARCH_TWELFTH{ .month = 2, .day = 11, .paused = true };
+    hud.BuildDate(PAUSED_MARCH_TWELFTH, WIDTH, lines);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
     const gfx::Image drawn =

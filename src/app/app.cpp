@@ -470,11 +470,8 @@ void App::HandleInput(const platform::WindowState& state) {
             PN_LOG_INFO("the showcase seals {}", m_showcase ? "shown" : "hidden");
         }
         else if (
-            const std::optional<core::Action> pause = DateLineClick(
-                control->control,
-                input.device == platform::Device::Mouse ? control->position : core::Vec2{ .x = -1.0F, .y = -1.0F },
-                m_hud.DateLineArea()
-            )
+            const std::optional<core::Action> pause =
+                DateLineClick(control->control, input.device, control->position, m_hud.DateLineArea())
         ) {
             PN_LOG_INFO("the world's pause asked for by the date line");
             m_handover.SendInput(*pause);

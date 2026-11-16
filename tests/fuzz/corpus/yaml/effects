@@ -14,14 +14,16 @@
 #   (the background, above 0), fill_width (the fill at full health) and fill_height (above 0).
 # hud: the temporary HUD in target pixels at text scale 1: margin (in from the left and bottom edges, 0 or more), bar_width,
 #   bar_height, line_height (slot to slot, above 0), bar_gap, bar_text_inset, bar_text_rise (0 or more), not_enough_qi
-#   (seconds the Qi bar warns after a refused cast, above 0) and cooling_ink_opacity (a cooling slot's ink, 0 to 1).
+#   (seconds the Qi bar warns after a refused cast, above 0), cooling_ink_opacity (a cooling slot's ink, 0 to 1),
+#   date_inset (the date line's distance in from the top and right edges, 0 or more) and date_width (its clickable box's
+#   width, above 0; the text is right-aligned in it and its height is line_height).
 abilities:
   fire_bolt:     { sword_scale: 1.0, trail: 0.1, trail_width: 5, trail_taper: 0.6, trail_intensity: 1 }
   flying_swords: { sword_scale: 0.9, trail: 0.1, trail_width: 5, trail_taper: 0.6, trail_intensity: 1 }
   poison_lance:  { flash_start_scale: 0.5, flash_end_scale: 1.9, flash_intensity: 1 }
 health_bar: { rise: 5, width: 44, height: 6, fill_width: 40, fill_height: 4 }
 hud: { margin: 16, bar_width: 240, bar_height: 18, line_height: 24, bar_gap: 6, bar_text_inset: 6, bar_text_rise: 7,
-       not_enough_qi: 1, cooling_ink_opacity: 0.55 }
+       not_enough_qi: 1, cooling_ink_opacity: 0.55, date_inset: 16, date_width: 260 }
 # glows: named looks of the light or ink a sprite wears round its edge. Each takes colour (a palette colour as area.key, such as
 #   selection.selected or effects.damage, or `element`: the ability's element colour; never hex), blend (`light` adds light,
 #   best on dark ground; `ink` paints over, which reads on the pale paper), size (texels it reaches past the edge at zoom 1,
