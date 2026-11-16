@@ -19,7 +19,7 @@ std::size_t Digit(SortKey key, u32 shift) {
     return static_cast<std::size_t>((key >> shift) & (RADIX - 1));
 }
 
-// Whether `key` sorts into the ground or its decals, which the ground seals draw over.
+/// Whether `key` sorts into the ground or its decals, which the ground seals draw over.
 bool OnGround(SortKey key) {
     return std::to_underlying(LayerOf(key)) <= std::to_underlying(Layer::Decals);
 }

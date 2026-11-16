@@ -13,8 +13,8 @@ namespace {
 
 constexpr u32 OTHER_THREADS = 2; // the main thread and the logic thread
 
-// One item per chunk: enkiTS divides a set by its thread count, so chunk boundaries, and with them the
-// results, would otherwise depend on how many workers run.
+/// One item per chunk: enkiTS divides a set by its thread count, so chunk boundaries, and with them the
+/// results, would otherwise depend on how many workers run.
 class ChunkTask final : public enki::ITaskSet {
 public:
     ChunkTask(u32 chunks, void (*call)(const void*, u32), const void* callable)
@@ -54,7 +54,7 @@ private:
 
 } // namespace
 
-// Low-priority chunks: one item per chunk, as ChunkTask, so a join at high priority never waits on them.
+/// Low-priority chunks: one item per chunk, as ChunkTask, so a join at high priority never waits on them.
 struct Jobs::Pending::Task final : public enki::ITaskSet {
     Task(u32 chunks, std::function<void(u32)> work)
       : enki::ITaskSet(chunks, 1)

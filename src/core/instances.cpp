@@ -10,13 +10,13 @@ constexpr u32 SIGN_MASK = 0x8000'0000U;
 constexpr u32 INFINITY_BITS = 0x7F80'0000U;
 constexpr u32 HALF_INFINITY = 0x7C00U;
 constexpr u32 HALF_QUIET_NAN = 0x7E00U;
-// The first magnitude that rounds past the largest half (65504) to infinity: 65520.
+/// The first magnitude that rounds past the largest half (65504) to infinity: 65520.
 constexpr u32 HALF_OVERFLOW = 0x477F'F000U;
-// 2^-14, the smallest normal half; below it halves are subnormal.
+/// 2^-14, the smallest normal half; below it halves are subnormal.
 constexpr u32 HALF_MIN_NORMAL = 0x3880'0000U;
-// 2^-25: half the smallest subnormal half, which rounds (to even) to zero, like everything below.
+/// 2^-25: half the smallest subnormal half, which rounds (to even) to zero, like everything below.
 constexpr u32 HALF_UNDERFLOW = 0x3300'0000U;
-// Rebiases a normal float's exponent (127) to a half's (15), in place in the float's bits.
+/// Rebiases a normal float's exponent (127) to a half's (15), in place in the float's bits.
 constexpr u32 EXPONENT_REBIAS = 0x3800'0000U;
 constexpr u32 MANTISSA_SHIFT = 13; // 23 mantissa bits down to 10
 constexpr u32 FLOAT_MANTISSA = 0x007F'FFFFU;
@@ -25,7 +25,7 @@ constexpr u32 FLOAT_EXPONENT_SHIFT = 23;
 constexpr u32 SUBNORMAL_BIAS = 126; // a float of biased exponent e is M * 2^(e - 126) smallest subnormals
 constexpr u32 UNORM16_MAX = 0xFFFFU;
 
-// Ties to even, IEEE 754's default: a half packed here has the bits a hardware f32-to-f16 conversion gives.
+/// Ties to even, IEEE 754's default: a half packed here has the bits a hardware f32-to-f16 conversion gives.
 constexpr u32 RoundShift(u32 value, u32 shift) {
     const u32 kept = value >> shift;
     const u32 rest = value & ((1U << shift) - 1U);

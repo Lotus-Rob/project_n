@@ -200,7 +200,7 @@ bool Logic::Waiting() const {
     return m_change.stage != SceneStage::Running || m_simulation->Scene() != m_resident;
 }
 
-// Moves the scene change on when `report` answers the stage it is in; returns false for a stale report.
+/// Moves the scene change on when `report` answers the stage it is in; returns false for a stale report.
 bool Logic::TakeReport(const Action& report) {
     if (report.change != m_change.change) {
         return false;

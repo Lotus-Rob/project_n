@@ -8,16 +8,16 @@ namespace core {
 
 namespace {
 
-// The purpose of the draws NameOf makes, apart from every other use of core::Random.
+/// The purpose of the draws NameOf makes, apart from every other use of core::Random.
 constexpr u32 NAME_PURPOSE = 0x4e41'4d45; // "NAME"
 constexpr u32 DRAW_SURNAME = 0;
 constexpr u32 DRAW_COUNT = 1;
 constexpr u32 DRAW_FIRST = 2;
 constexpr u32 DRAW_SECOND = 3;
-// Of this many equal chances, TWO_GIVEN_SHARE give two given characters; the rest give one.
+/// Of this many equal chances, TWO_GIVEN_SHARE give two given characters; the rest give one.
 constexpr u32 DRAWS_OF_COUNT = 100;
 constexpr u32 TWO_GIVEN_SHARE = 70;
-// The bits of a key's parts: the surname's, the first given's, and the second's plus one (0 for none).
+/// The bits of a key's parts: the surname's, the first given's, and the second's plus one (0 for none).
 constexpr u32 SURNAME_BITS = 10;
 constexpr u32 FIRST_BITS = 10;
 constexpr u32 SECOND_MASK = (1U << 11U) - 1U;
@@ -39,17 +39,17 @@ void HashTable(Hasher& hasher, const std::vector<NameEntry>& table) {
     }
 }
 
-// The characters of entry `index` of `table`, or nothing when it is outside.
+/// The characters of entry `index` of `table`, or nothing when it is outside.
 std::string Characters(const std::vector<NameEntry>& table, u16 index) {
     return index < table.size() ? table[index].characters : std::string{};
 }
 
-// The pinyin of entry `index` of `table`, or nothing when it is outside.
+/// The pinyin of entry `index` of `table`, or nothing when it is outside.
 std::string Pinyin(const std::vector<NameEntry>& table, u16 index) {
     return index < table.size() ? table[index].pinyin : std::string{};
 }
 
-// `text` with its first letter capitalised (ASCII).
+/// `text` with its first letter capitalised (ASCII).
 std::string Capitalised(std::string text) {
     if (!text.empty() && text[0] >= 'a' && text[0] <= 'z') {
         text[0] = static_cast<char>(text[0] - 'a' + 'A');
