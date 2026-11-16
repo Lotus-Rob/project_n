@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// A seal in play (the phase 6 chunk 4b spec, "In the simulation"): which seal, where, how large, when and of which
+/// A seal in play: which seal, where, how large, when and of which
 /// element, as the simulation records and saves it. Nothing about its look is here: the looks (`assets/data/seals.yaml`)
 /// find a seal by its key.
 

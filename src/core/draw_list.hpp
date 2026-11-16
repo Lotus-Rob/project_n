@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// Putting a tick's sprites in drawing order (design doc 0002 §8.5): culling to the view, sort keys
+/// Putting a tick's sprites in drawing order: culling to the view, sort keys
 /// by layer, then depth, then pipeline; a stable radix sort of (key, index) pairs; and the batch
 /// ranges the renderer draws, one per run of a pipeline. Filled in parts on the job system.
 

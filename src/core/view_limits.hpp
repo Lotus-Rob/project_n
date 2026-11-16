@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// How much of the world a window can show (design doc 0002 §8.10): the reference size art is painted for and the zoom
+/// How much of the world a window can show: the reference size art is painted for and the zoom
 /// range. Core holds them so the logic can cull as widely as any window shows without the main thread's camera.
 
 #include "core/types.hpp"
@@ -14,7 +14,7 @@ namespace core {
 /// whatever its size.
 inline constexpr Vec2 REFERENCE_SIZE{ .x = 1920.0F, .y = 1080.0F };
 
-/// The smallest zoom of the range §8.10 sets, wide enough to show every mip level.
+/// The smallest zoom, wide enough to show every mip level.
 inline constexpr f32 MIN_ZOOM = 0.25F;
 /// The largest zoom.
 inline constexpr f32 MAX_ZOOM = 2.0F;

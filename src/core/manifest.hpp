@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// The atlas manifest (design doc 0002.3.1 §2): what `project_n atlas` wrote to assets/manifest.yaml,
+/// The atlas manifest: what `project_n atlas` wrote to assets/manifest.yaml,
 /// the texture array's shape, where each sprite is on it, and the sprites each scene draws. data reads it.
 
 #include "core/types.hpp"

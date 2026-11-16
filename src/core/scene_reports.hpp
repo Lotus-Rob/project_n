@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// The main thread's answers to the logic's scene changes (design doc 0002.3.1 §4, as built in phase 6 chunk 5): it
+/// The main thread's answers to the logic's scene changes: it
 /// reports each change's way out and way in played, once each, and the logic moves the change on.
 
 #include "core/frame.hpp"

@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// Replays (design doc 0002.2, 0002 §7.4): a recording is a start state and then, for every wall
+/// Replays: a recording is a start state and then, for every wall
 /// tick, the actions that tick took, with a hash of the state every REPLAY_HASH_TICKS wall ticks;
 /// playing it back feeds those actions in again and checks the hashes, so a divergence shows
 /// within a second of where it starts. Bytes in memory only: reading and writing the file is

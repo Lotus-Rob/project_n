@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// Counter-based random numbers for the simulation (design doc 0002 §7.4): each number is a hash of
+/// Counter-based random numbers for the simulation: each number is a hash of
 /// its key (seed, state counter, stable ID, purpose, draw index), so it doesn't depend on which
 /// thread draws it or in what order. Never use `std::*_distribution` in the simulation: their
 /// results differ between standard libraries.

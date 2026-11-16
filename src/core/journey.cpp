@@ -15,7 +15,7 @@ constexpr u32 STAY_PURPOSE = 0x5354'4159; // "STAY"
 constexpr u32 STAY_DRAW_X = 0;
 constexpr u32 STAY_DRAW_Y = 1;
 // A day point lies in a square of this side, in tiles, centred on the city's tile centre: its corners are 0.34 of a tile
-// out, within the 0.35 the rulings allow, and so is every point between two of them.
+// out, within the 0.35 bound on how far a day point may stray, and so is every point between two of them.
 constexpr f64 STAY_SIDE = 0.48;
 constexpr f64 UNIT_MIDDLE = 0.5;
 // Members after the first stand on a hexagonal lattice this far apart, in world units.

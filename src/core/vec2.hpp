@@ -2,8 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// A 2D vector of f32: positions, velocities and sizes in world units (reference pixels, design
-/// doc 0002 §8.10), x to the right and y down.
+/// A 2D vector of f32: positions, velocities and sizes in world units (reference pixels), x to the right and y down.
 
 #include "core/types.hpp"
 

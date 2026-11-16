@@ -2,9 +2,8 @@
 
 /// @file
 /// @ingroup core
-/// The frame contract (design doc 0002 §4, §5): the plain data the logic thread hands the main
-/// thread through core::Handover, and the input it gets back. It grows with each phase of §16
-/// (instances, view models and events in phase 3 onwards); phase 1 carries timing and pausing.
+/// The frame contract: the plain data the logic thread hands the main
+/// thread through core::Handover, and the input it gets back: timing and pausing, instances, view models and events.
 
 #include "core/abilities.hpp"
 #include "core/game_data.hpp"
@@ -32,7 +31,7 @@
 
 namespace core {
 
-/// One sprite as the GPU reads it from the instance storage buffer (design doc 0002 §8.5): INSTANCE_BYTES
+/// One sprite as the GPU reads it from the instance storage buffer: INSTANCE_BYTES
 /// (56) bytes, matching `Instance` in shaders/sprite.vert.hlsl field for field. Position and rotation
 /// interpolate from previous to current by the render clock's alpha; size, region and colour snap
 /// at the tick. The 16-bit fields are packed in pairs into u32s (core/instances.hpp), low half
@@ -70,7 +69,7 @@ struct Instance {
 inline constexpr std::size_t INSTANCE_BYTES = 56;
 static_assert(sizeof(Instance) == INSTANCE_BYTES, "the shader reads instances as 56 bytes");
 
-/// How a batch of instances blends onto what is drawn under it (design doc 0002 §8.8): one
+/// How a batch of instances blends onto what is drawn under it: one
 /// pipeline each.
 enum class Pipeline : u8 {
     Normal,   ///< Premultiplied alpha over: ONE, ONE_MINUS_SRC_ALPHA.
@@ -107,7 +106,7 @@ struct SceneFacts {
     friend constexpr bool operator==(const SceneFacts&, const SceneFacts&) = default;
 };
 
-/// Where a scene change stands (design doc 0002.3.1 §4, as built in phase 6 chunk 5). Leaving, loading and entering run
+/// Where a scene change stands. Leaving, loading and entering run
 /// no tick, count nothing and record nothing, so a change of any length leaves replays exact.
 enum class SceneStage : u8 {
     Running,  ///< The scene runs: no change under way.
@@ -134,7 +133,7 @@ struct SceneChange {
     return change.stage == SceneStage::Leaving ? change.change - 1 : change.change;
 }
 
-/// What the main thread's window shows, as it last told the logic (design doc 0002.3 §11, as built in phase 6 chunk 5a):
+/// What the main thread's window shows, as it last told the logic:
 /// news like SceneResident, which changes what is published and never the state, so it is never recorded, hashed or saved.
 struct ViewReport {
     /// The world the window shows, with a margin for the camera moving before a snapshot culled to it is drawn.
@@ -152,7 +151,7 @@ enum class CameraKind : u8 {
     Roam,
 };
 
-/// The entity the camera follows (design doc 0002 §8.10): its foot at the previous and this tick.
+/// The entity the camera follows: its foot at the previous and this tick.
 struct Follow {
     /// The foot point at the previous tick, in world units.
     Vec2 previous{};
@@ -199,9 +198,8 @@ enum class TextAlign : u8 {
 /// Opaque white, premultiplied and packed as TextItem::colour: a text's colour unless it names another.
 inline constexpr u32 TEXT_WHITE = 0xFFFF'FFFFU;
 
-/// A text the main thread draws over the world (the phase 6 chunk 3 spec, "Labels: placement, stacking and
-/// priority"): its size in world units scales with the zoom, and its anchor interpolates by the render clock's alpha,
-/// as instances do.
+/// A text the main thread draws over the world: its size in world units scales with the
+/// zoom, and its anchor interpolates by the render clock's alpha, as instances do.
 struct TextItem {
     /// What it is.
     TextKind kind = TextKind::Label;
@@ -341,11 +339,11 @@ struct Snapshot {
     /// Whether the simulation ran in its tick: false on frozen ticks (paused, loading), whose
     /// snapshots show current transforms only.
     bool advanced = false;
-    /// Whether a calendar step runs next (design doc 0002 §7.3): the main thread shows the transition
+    /// Whether a calendar step runs next: the main thread shows the transition
     /// and caps its frame rate, leaving the cores to the step, until a snapshot without it arrives.
     bool transition = false;
     /// The scene its state needs (Simulation::Scene()): drawn only once the main thread holds it, and the ticks
-    /// wait until it says so (design doc 0002.3.1 §4).
+    /// wait until it says so.
     SceneId scene{};
     /// The scene change it is in, set by core::Logic on every publish: its stage and the scenes on either side.
     SceneChange sceneChange{};
@@ -471,7 +469,7 @@ struct Action {
     u64 change = 0;
 };
 
-/// What the player holds down, as the main thread last sent it (design doc 0002 §10): every tick of
+/// What the player holds down, as the main thread last sent it: every tick of
 /// a burst gets the newest, so movement goes on through a catch-up burst.
 struct HeldInput {
     /// Where the movement controls point: each component in [-1, 1], at most 1 long; zero at rest.
@@ -496,7 +494,7 @@ using GameHandover = Handover<Snapshot, Event, Action, HeldInput, ViewReport>;
 /// The main thread's side of GameHandover's state channel.
 using GameDisplay = Display<Snapshot, Event, Action, HeldInput, ViewReport>;
 
-/// The main loop's frame once `drawn` is chosen (design doc 0002 §6): while `visible`, `acquire()`s the swapchain
+/// The main loop's frame once `drawn` is chosen: while `visible`, `acquire()`s the swapchain
 /// texture, which may block; then reads `now()` (ns) once for alpha and the render clock, plays the `pending` events due
 /// by it (PlayDue()) and, while `visible`, calls `draw(alpha)`. Hidden, the clock and events still advance.
 template<typename Acquire, typename Now, typename Play, typename Draw>
