@@ -11,6 +11,7 @@
 #include "core/handover.hpp"
 #include "core/hit.hpp"
 #include "core/manifest.hpp"
+#include "core/names.hpp"
 #include "core/profile.hpp"
 #include "core/rect.hpp"
 #include "core/seal.hpp"
@@ -204,8 +205,11 @@ inline constexpr u32 TEXT_WHITE = 0xFFFF'FFFFU;
 struct TextItem {
     /// What it is.
     TextKind kind = TextKind::Label;
-    /// What it says (Label, Caption), in the language the renderer shows.
+    /// What it says (Label, Caption), in the language the renderer shows; ignored when `npcName` is set.
     StringId string = StringId::CultivatorName;
+    /// Of a Label: an NPC's name, which it says instead of `string`, composed from the renderer's names table in the
+    /// language shown (core::NameText()). Its stacking key is core::NameKey() of it, whatever `nameKey` holds.
+    std::optional<NpcName> npcName = std::nullopt;
     /// Of a Number: its value, its digits all shown however many.
     i64 value = 0;
     /// Of a Number: whether it shows a "+".

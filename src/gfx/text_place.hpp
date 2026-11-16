@@ -10,7 +10,9 @@
 
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
+#include "core/names.hpp"
 #include "core/stable_id.hpp"
+#include "core/strings.hpp"
 #include "core/types.hpp"
 #include "core/ui_colours.hpp"
 #include "core/vec2.hpp"
@@ -21,7 +23,9 @@
 #include <array>
 #include <cstddef>
 #include <span>
+#include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace gfx {
@@ -52,6 +56,26 @@ inline constexpr f32 VISIBLE_CREATURE_PIXELS = 8.0F;
 /// Whether a creature `entityPixels` tall on the screen (LabelInput::entityPixels) is too small to see: under
 /// VISIBLE_CREATURE_PIXELS, and not 0, which says its height is unknown (core::TextItem::height unset).
 [[nodiscard]] bool TooSmallToSee(f32 entityPixels);
+
+/// The key `item`'s label stacks by: core::NameKey() of its NPC name when it has one, else its `nameKey`, so two names
+/// never stack and one name always does.
+[[nodiscard]] u32 LabelKey(const core::TextItem& item);
+
+/// The text of the NPC names a frame's labels show, composed once per distinct name (core::NameKey()) and kept until
+/// Clear(), so a hundred labels of a name build and measure it once.
+class NameTexts {
+public:
+    /// The text of `name` in `language` from `names`, composed on first ask; empty when `names` is null. The reference
+    /// holds until Clear().
+    [[nodiscard]] const std::string& Of(const core::Names* names, core::NpcName name, core::Language language);
+
+    /// Forgets every text: at the start of a frame, or when the table or the language changes.
+    void Clear();
+
+private:
+    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::unordered_map<u32, std::string> m_texts{};
+};
 
 /// The colour `item` is drawn in, scaled by its opacity (premultiplied, so every channel): a label's and a caption's
 /// from `colours` (core::UiColour::Label, Caption), and, when the outline and the shadow are both off, core::UiColour::
