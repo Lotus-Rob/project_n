@@ -35,7 +35,7 @@ HOST = "windows" if os.name == "nt" else "macos" if sys.platform == "darwin" els
 IN_CONTAINER = os.environ.get("PROJECT_N_IN_CONTAINER") == "1"
 
 APP = "project_n"
-BUNDLE_ID = "dev.projectn.project-n"  # placeholder macOS bundle id, fix it for good before signing (O6)
+BUNDLE_ID = "dev.projectn.project-n"  # placeholder macOS bundle id, fix it for good before signing
 MODES = ("debug", "release", "releasedbg")
 VS_TOOLSET = "14.50"  # native Windows MSVC; must match containers/windows/buildtools.vsconfig
 # conda-forge has no osx-arm64 XMake, so macOS uses the upstream bundle of set_xmakever()'s
@@ -963,30 +963,31 @@ DESIGN_REFERENCE_PATTERNS = (
     r"\b(?:phase|chunk)s?\s+\d",
     r"\bthe\s+spec\b|\bspec's\s+(?:outcome|history)\b|\b(?:chunk|phase|design)\s+(?:\d\w*\s+)?spec\b",
     r"\bdesign\s+(?:docs?|documents?)\b",
-    r"\b000\d(?:\.\d+)*\b",
+    r"(?<![.\d])\b000\d(?:\.\d+)*\b",
+    r"\(\s*[ODQ]\d{1,2}\s*\)",
     "\u00a7",
-    r"\b(?:[3-9]|1[01])[a-c]\d?(?:-look)?\b",
+    r"(?<![/\w-])(?:[3-9]|1[01])[a-c]\d?(?:-look)?(?![\w/])",
     r"\bruling\b",
     r"\bR\d[a-z]\b",
     r"\btasks?\s+\d",
     r"(?-i:\bwaves?\s+[A-J]\b)",
     r"\bthe\s+(?:plan|ledger|brainstorm)\b",
     r"\b20\d\d-\d\d-\d\d\b",
-    r"\bthe\s+user's\s+(?!own\b)",
+    r"\bthe\s+user's\s+(?:call|rule|decision|ruling|(?:cold|tuned|agreed|approved)\s+\w+)\b",
 )
 DESIGN_REFERENCE_RE = re.compile("|".join(DESIGN_REFERENCE_PATTERNS), re.IGNORECASE)
 DESIGN_REFERENCE_MESSAGE = ("code comments don't cite specs, chunks, phases, plans, rulings, tasks or design docs: "
                             "say why in your own words")
 C_COMMENT_SUFFIXES = (".cpp", ".hpp", ".hlsl", ".hlsli", ".dox")
 HASH_COMMENT_SUFFIXES = (".py", ".yaml", ".yml", ".toml", ".sh", ".Containerfile")
-HASH_COMMENT_NAMES = ("Containerfile", "gdbinit", "pre-commit", "commit-msg", "pre-push", ".editorconfig", ".gitignore",
+HASH_COMMENT_NAMES = ("dev", "Containerfile", "gdbinit", "pre-commit", "commit-msg", "pre-push", ".editorconfig", ".gitignore",
                       ".gitattributes", ".containerignore", ".clang-format", ".clang-tidy", ".clangd")
 UNCHECKED_PREFIXES = ("docs/", "assets/sprites/", "assets/fonts/", "assets/manifest.yaml", "tests/fuzz/corpus/",
-                      "tests/reference/", "shaders/bin/", ".claude/")
+                      "shaders/bin/", ".claude/")
 
 
 def comment_kind(path):
-    """How `path`'s comments are written: "c", "lua", "hash", or None for documentation, generated and data files."""
+    """How `path`'s comments are written: "c", "lua", "batch", "hash", or None for documentation, generated and data files."""
     name = Path(path).name
     if path.startswith(UNCHECKED_PREFIXES) or "/generated/" in path or name.endswith((".lock", ".md")):
         return None
@@ -994,6 +995,8 @@ def comment_kind(path):
         return "c"
     if path.endswith(".lua"):
         return "lua"
+    if path.endswith(".cmd"):
+        return "batch"
     if path.endswith(HASH_COMMENT_SUFFIXES) or name in HASH_COMMENT_NAMES or "Containerfile" in name:
         return "hash"
     return None
@@ -1042,15 +1045,22 @@ def c_comments(text, line_marker, block):
     return out
 
 
-def hash_comments(text):
-    """(line, text) of each `#` comment: one that starts a line or follows whitespace, outside quotes."""
+def batch_comments(text):
+    """(line, text) of each `rem`, `@rem` and `::` line of a batch script."""
+    return [(line, row) for line, row in enumerate(text.splitlines(), 1)
+            if re.match(r"\s*(?:@?rem\b|::)", row, re.IGNORECASE)]
+
+
+def hash_comments(text, values_only=False):
+    """(line, text) of each `#` comment: one that starts a line or follows whitespace, outside quotes. With
+    `values_only` (YAML, TOML) a quote opens only where a value can start, so `Wanderer's rest  # note` still has its comment."""
     out = []
     for line, row in enumerate(text.splitlines(), 1):
         quote = ""
         for i, c in enumerate(row):
             if quote:
                 quote = "" if c == quote else quote
-            elif c in "\"'":
+            elif c in "\"'" and (not values_only or not row[:i].rstrip() or row[:i].rstrip()[-1] in ":=-,[{"):
                 quote = c
             elif c == "#" and (i == 0 or row[i - 1].isspace()):
                 out.append((line, row[i:]))
@@ -1076,10 +1086,12 @@ def design_references(path, text):
         comments = c_comments(text, "//", ("/*", "*/"))
     elif kind == "lua":
         comments = c_comments(text, "--", None)
+    elif kind == "batch":
+        comments = batch_comments(text)
     elif path.endswith(".py"):
         comments = python_comments(text)
     else:
-        comments = hash_comments(text)
+        comments = hash_comments(text, path.endswith((".yaml", ".yml", ".toml")))
     return [f"{path}:{line}: {DESIGN_REFERENCE_MESSAGE}" for line, body in sorted(set(comments))
             if DESIGN_REFERENCE_RE.search(body)]
 
@@ -2220,7 +2232,7 @@ def macos_bundle(dist, binary):
     shutil.copytree(ROOT / "assets", contents / "Resources" / "assets")
     shutil.copy2(Path(os.environ["CONDA_PREFIX"], "lib", "libc++.1.dylib"), contents / "Frameworks")
     (contents / "Info.plist").write_bytes(plistlib.dumps(info_plist(read_version())))
-    # Ad-hoc signature (O6), nested code first: Apple's order, as --deep is deprecated. arm64 refuses
+    # Ad-hoc signature, nested code first: Apple's order, as --deep is deprecated. arm64 refuses
     # to run code whose signature install_name_tool broke.
     run(["codesign", "--force", "--sign", "-", contents / "Frameworks" / "libc++.1.dylib"])
     run(["codesign", "--force", "--sign", "-", contents.parent])
