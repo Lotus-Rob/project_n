@@ -319,4 +319,30 @@ TEST_CASE("P and the gamepad's Back pause the world") {
     CHECK(pad.value_or(app::ControlEvent{}).control == app::Control::PauseWorld);
 }
 
+platform::InputEvent Pad(InputCode code, bool pressed) {
+    return { .device = platform::Device::Gamepad, .code = code, .pressed = pressed, .value = pressed ? 1.0F : 0.0F };
+}
+
+TEST_CASE("T and the gamepad's Y show the target cursor, Enter and A confirm it") {
+    app::Bindings bindings;
+    const auto control = [&bindings](const platform::InputEvent& input) {
+        return bindings.Handle(input).value_or(app::ControlEvent{}).control;
+    };
+    CHECK(control(Key(InputCode::KeyT, true)) == app::Control::TargetCursor);
+    CHECK(control(Pad(InputCode::PadNorth, true)) == app::Control::TargetCursor);
+    CHECK(control(Key(InputCode::KeyEnter, true)) == app::Control::Confirm);
+    CHECK(control(Pad(InputCode::PadSouth, true)) == app::Control::Confirm);
+}
+
+TEST_CASE("the d-pad moves like the arrow keys") {
+    app::Bindings bindings;
+    CHECK_FALSE(bindings.Handle(Pad(InputCode::PadDpadLeft, true)).has_value());
+    CHECK(bindings.Move().x == doctest::Approx(-1.0F));
+    static_cast<void>(bindings.Handle(Pad(InputCode::PadDpadLeft, false)));
+    static_cast<void>(bindings.Handle(Pad(InputCode::PadDpadDown, true)));
+    CHECK(bindings.Move().y == doctest::Approx(1.0F));
+    static_cast<void>(bindings.Handle(Pad(InputCode::PadDpadDown, false)));
+    CHECK(bindings.Move().y == 0.0F);
+}
+
 } // namespace

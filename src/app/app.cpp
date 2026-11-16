@@ -489,6 +489,9 @@ void App::HandleInput(const platform::WindowState& state) {
             m_showcase = !m_showcase;
             PN_LOG_INFO("the showcase seals {}", m_showcase ? "shown" : "hidden");
         }
+        else if (TakeCursorControl(control->control)) {
+            continue;
+        }
         else if (
             const std::optional<core::Action> pause =
                 DateLineClick(control->control, input.device, control->position, m_hud.DateLineArea())
@@ -515,12 +518,15 @@ void App::HandleInput(const platform::WindowState& state) {
     if (m_paused) {
         m_drag.End(); // after this frame's presses too: a button's release may never come while paused
     }
+    SteerCursor();
     SendHeld();
 }
 
 void App::SendHeld() {
     PN_PROFILE_ZONE();
-    const core::HeldInput held{ .move = m_pathSeconds ? CameraPathMove(*m_pathSeconds) : m_bindings.Move() };
+    // The cursor takes the movement while it shows, so the cultivator stands.
+    const core::Vec2 walk = m_cursor.Shown() ? core::Vec2{} : m_bindings.Move();
+    const core::HeldInput held{ .move = m_pathSeconds ? CameraPathMove(*m_pathSeconds) : walk };
     if (held == m_held) {
         return;
     }
@@ -590,6 +596,7 @@ void App::Click(const platform::WindowState& state, core::Vec2 position) {
     const f64 alpha = core::Alpha(drawn->scheduledNs, platform::NowNs(), core::DEFAULT_DISPLAY_DELAY_NS, drawn->advanced);
     const core::Vec2 point = WindowToWorld(m_camera.Camera(), position, state.width, state.height);
     const core::StableId target = Pick(*drawn, alpha, point);
+    HideCursor();
     const core::Action action = ClickAction(drawn->worldMap, target, point);
     if (action.kind == core::ActionKind::WalkTo) {
         PN_LOG_DEBUG("clicked the ground at ({}, {}): walking there", point.x, point.y);
@@ -598,6 +605,70 @@ void App::Click(const platform::WindowState& state, core::Vec2 position) {
         PN_LOG_DEBUG("clicked on entity {}", std::to_underlying(target));
     }
     m_handover.SendInput(action);
+}
+
+bool App::TakeCursorControl(Control control) {
+    if (control == Control::TargetCursor) {
+        ToggleCursor();
+    }
+    else if (control == Control::Confirm) {
+        ConfirmCursor();
+    }
+    return control == Control::TargetCursor || control == Control::Confirm;
+}
+
+void App::ToggleCursor() {
+    const core::Snapshot* drawn = m_display.Drawn();
+    const core::WorldMap* map = m_options.data.world.get();
+    if (m_cursor.Shown()) {
+        HideCursor();
+    }
+    else if (drawn != nullptr && drawn->worldMap && drawn->follow && map != nullptr) {
+        const u32 tile = map->TileAt(drawn->follow->current);
+        m_cursor.Show(tile, map->Columns(), map->Rows());
+        m_cursorNs = platform::NowNs();
+        PN_LOG_DEBUG("the target cursor shows on the cultivator's tile {}", tile);
+    }
+}
+
+void App::HideCursor() {
+    if (!m_cursor.Shown()) {
+        return;
+    }
+    m_cursor.Hide();
+    m_renderer.SetTargetTile(std::nullopt);
+    PN_LOG_DEBUG("the target cursor is hidden");
+}
+
+void App::ConfirmCursor() {
+    const core::WorldMap* map = m_options.data.world.get();
+    if (map == nullptr) {
+        return;
+    }
+    const std::optional<u32> tile = m_cursor.Tile();
+    if (const std::optional<core::Action> action = m_cursor.Confirm(*map)) {
+        m_renderer.SetTargetTile(std::nullopt);
+        PN_LOG_DEBUG("the target cursor confirmed tile {}: walking there", tile.value_or(0));
+        m_handover.SendInput(*action);
+    }
+}
+
+void App::SteerCursor() {
+    PN_PROFILE_ZONE();
+    const u64 nowNs = platform::NowNs();
+    const f32 seconds =
+        static_cast<f32>(nowNs - std::min(nowNs, std::exchange(m_cursorNs, nowNs))) / static_cast<f32>(core::NS_PER_SECOND);
+    if (!m_cursor.Shown()) {
+        return;
+    }
+    const core::Snapshot* drawn = m_display.Drawn();
+    const core::WorldMap* map = m_options.data.world.get();
+    if (drawn == nullptr || !drawn->worldMap || map == nullptr) {
+        HideCursor();
+        return;
+    }
+    m_cursor.Steer(m_bindings.Move(), seconds);
+    m_renderer.SetTargetTile(map->TileCentre(m_cursor.Tile().value_or(0)));
 }
 
 std::optional<std::size_t> App::Hovered(const platform::WindowState& state, const core::Snapshot& drawn, f64 alpha) const {

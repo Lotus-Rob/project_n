@@ -14,9 +14,9 @@ constexpr core::Vec2 MOVE_DOWN{ .x = 0.0F, .y = 1.0F };
 constexpr core::Vec2 MOVE_LEFT{ .x = -1.0F, .y = 0.0F };
 constexpr core::Vec2 MOVE_RIGHT{ .x = 1.0F, .y = 0.0F };
 
-// PadBack is the last code: a code added after it goes here instead.
+// PadDpadRight is the last code: a code added after it goes here instead.
 static_assert(
-    std::to_underlying(InputCode::PadBack) < std::numeric_limits<u64>::digits,
+    std::to_underlying(InputCode::PadDpadRight) < std::numeric_limits<u64>::digits,
     "Bit() gives each input code a bit of a u64"
 );
 
@@ -60,6 +60,10 @@ Bindings::Bindings()
       { .code = InputCode::KeyLeft, .control = Control::Move, .direction = MOVE_LEFT },
       { .code = InputCode::KeyDown, .control = Control::Move, .direction = MOVE_DOWN },
       { .code = InputCode::KeyRight, .control = Control::Move, .direction = MOVE_RIGHT },
+      { .code = InputCode::PadDpadUp, .control = Control::Move, .direction = MOVE_UP },
+      { .code = InputCode::PadDpadLeft, .control = Control::Move, .direction = MOVE_LEFT },
+      { .code = InputCode::PadDpadDown, .control = Control::Move, .direction = MOVE_DOWN },
+      { .code = InputCode::PadDpadRight, .control = Control::Move, .direction = MOVE_RIGHT },
       { .code = InputCode::PadLeftX, .control = Control::Move, .direction = MOVE_RIGHT },
       { .code = InputCode::PadLeftY, .control = Control::Move, .direction = MOVE_DOWN },
       { .code = InputCode::KeyI, .control = Control::PanCamera, .direction = MOVE_UP },
@@ -87,6 +91,10 @@ Bindings::Bindings()
       { .code = InputCode::KeyEscape, .control = Control::Quit },
       { .code = InputCode::KeyP, .control = Control::PauseWorld },
       { .code = InputCode::PadBack, .control = Control::PauseWorld },
+      { .code = InputCode::KeyT, .control = Control::TargetCursor },
+      { .code = InputCode::PadNorth, .control = Control::TargetCursor },
+      { .code = InputCode::KeyEnter, .control = Control::Confirm },
+      { .code = InputCode::PadSouth, .control = Control::Confirm },
       { .code = InputCode::KeyM, .control = Control::AdvanceCalendar },
       { .code = InputCode::KeyF2, .control = Control::CycleScene },
       { .code = InputCode::KeyF5, .control = Control::Save },
