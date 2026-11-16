@@ -18,6 +18,7 @@
 #include "game/components.hpp"
 #include "game/npcs.hpp"
 #include "game/scenes.hpp"
+#include "game/travel.hpp"
 
 #include <cstddef>
 #include <optional>
@@ -30,8 +31,8 @@ namespace test {
 inline constexpr u32 HOST_FORMAT = 5;
 /// The active domain's version in a host save (5: the NPCs' homes).
 inline constexpr u32 ACTIVE_VERSION = 5;
-/// The world domain's version in a host save (2: the NPCs' homes).
-inline constexpr u32 WORLD_VERSION = 2;
+/// The world domain's version in a host save (3: the travelling action, the journeys and the journals).
+inline constexpr u32 WORLD_VERSION = 3;
 /// The active domain's saved components, in the host's order.
 using ActiveComponents = core::ComponentList<
     game::Body,
@@ -74,8 +75,9 @@ struct SavedClock {
 };
 
 /// A save of `state` in `scene` with `player`: the format, the scene, the seed, the stable-ID counter, `clock`, the player and
-/// the selection (none), then each domain after its version (`activeVersion`, `worldVersion`), then no relationships, no
-/// respawns waiting, `volley` if any (the flying swords' hits of 20, none resolved yet), `flash` if any and `seal` if any.
+/// the selection (none), then each domain after its version (`activeVersion`, `worldVersion`), then no relationships,
+/// `travel`, no respawns waiting, `volley` if any (the flying swords' hits of 20, none resolved yet), `flash` if any and `seal`
+/// if any.
 [[nodiscard]] inline std::vector<std::byte> ArenaSave(
     const core::State& state,
     core::StableId player = {},
@@ -85,7 +87,8 @@ struct SavedClock {
     core::SceneKey scene = game::ARENA_SCENE,
     u32 worldVersion = WORLD_VERSION,
     u32 activeVersion = ACTIVE_VERSION,
-    SavedClock clock = {}
+    SavedClock clock = {},
+    const game::Travel& travel = game::Travel{}
 ) {
     constexpr u64 RELATIONSHIPS = 0;
     constexpr u64 RESPAWNS = 0;
@@ -107,6 +110,7 @@ struct SavedClock {
     writer(worldVersion);
     core::SaveDomain(writer, state[game::WORLD], WorldComponents{});
     writer(RELATIONSHIPS);
+    travel.Save(writer);
     writer(RESPAWNS);
     writer(static_cast<u64>(volley ? 1 : 0));
     if (volley) {

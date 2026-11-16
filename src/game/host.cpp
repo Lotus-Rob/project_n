@@ -61,7 +61,7 @@ constexpr f32 MIDDLE = 0.5F;
 constexpr u32 ARENA_FORMAT = 5;
 constexpr u32 ACTIVE_VERSION =
     5; // 2: creatures; 3: spin; 4: health, dying, arriving, caster, dashing, afflictions; 5: the NPCs' homes
-constexpr u32 WORLD_VERSION = 2; // 2: the NPCs' homes
+constexpr u32 WORLD_VERSION = 3; // 2: the NPCs' homes; 3: the travelling action, the journeys and the journals
 using ActiveComponents = core::ComponentList<
     Body,
     Look,
@@ -307,6 +307,7 @@ void Host::EnterScene() {
     if (m_loaded) {
         m_state = std::move(m_loaded->state);
         m_relationships = std::move(m_loaded->relationships);
+        m_travel = std::move(m_loaded->travel);
         m_combat = std::move(m_loaded->combat);
         m_scene = m_loaded->scene;
         m_sceneId = SceneIdOf(*m_manifest, m_scene);
@@ -337,10 +338,11 @@ Host::Host(std::shared_ptr<const core::Manifest> manifest, core::SceneKey scene,
 }
 
 /// Everything but the calendar (the world clock and the month steps run) and the game data starts afresh: the entities,
-/// their IDs, the relationships, the selection, the world pause.
+/// their IDs, the relationships, the travel, the selection, the world pause.
 void Host::Build(core::SceneKey scene) {
     m_state = core::State{ DOMAINS, SEED };
     m_relationships = Relationships{};
+    m_travel = Travel{};
     m_combat = Combat{};
     m_combat.SetRules(m_data.combat);
     m_scene = scene;
@@ -685,6 +687,7 @@ void Host::Write(Archive& archive) const {
     archive(WORLD_VERSION);
     core::SaveDomain(archive, m_state[WORLD], WorldComponents{});
     m_relationships.Save(archive);
+    m_travel.Save(archive);
     m_combat.Save(archive);
 }
 
@@ -732,9 +735,11 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
     core::LoadDomain(archive, state, WORLD, WorldComponents{});
     Relationships relationships;
     relationships.Load(archive, state);
+    const bool sceneHasMap = scene < Scenes().size() && SceneOf(core::SceneKey{ scene }).Traits().worldMap;
+    Travel travel;
+    static_cast<void>(travel.Load(archive, state, sceneHasMap ? m_data.world.get() : nullptr)); // a refusal fails `archive`
     Combat combat;
     combat.Load(archive);
-    const bool sceneHasMap = scene < Scenes().size() && SceneOf(core::SceneKey{ scene }).Traits().worldMap;
     const bool npcsPlaced = NpcsPlaced(state, sceneHasMap ? m_data.world.get() : nullptr);
     const bool playerFound = player == core::StableId{} || (state.DomainOf(player) == ACTIVE &&
                                                             state[ACTIVE].Entities().all_of<Body>(state[ACTIVE].Find(player)));
@@ -747,6 +752,7 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
     m_loaded.emplace(
         std::move(state),
         std::move(relationships),
+        std::move(travel),
         std::move(combat),
         core::SceneKey{ scene },
         worldTicks,

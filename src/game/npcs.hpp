@@ -55,6 +55,7 @@ enum class Action : u8 {
     Rest,      ///< Recovers from fatigue.
     Cultivate, ///< Grows in power, and tires.
     Socialise, ///< Meets another NPC in its cell: both are less lonely, and the other thinks better of it.
+    Travel,    ///< Is on a journey (game/travel.hpp), or waiting to set out on one: it doesn't socialise.
 };
 
 /// A world or active NPC's hot state: what a calendar step reads every month.
@@ -77,7 +78,7 @@ struct Npc {
 
     /// Whether a value read from a save can be used: an action that exists and a finite power.
     [[nodiscard]] bool Valid() const {
-        return action <= Action::Socialise && std::isfinite(power);
+        return action <= Action::Travel && std::isfinite(power);
     }
 };
 
