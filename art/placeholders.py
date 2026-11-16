@@ -1354,7 +1354,7 @@ def route_dot():
         d = math.sqrt((x - 8.0) ** 2 + (y - 8.0) ** 2)
         if d >= 7.5:
             return None
-        return (INK, 0.9) if d > 5.0 else (VERMILION, min(1.0, (7.5 - d) * 1.5))
+        return (INK, min(1.0, (7.5 - d) * 0.9)) if d > 5.0 else (VERMILION, 1.0)
     canvas.shape((0, 0, 16, 16), coverage)
     return canvas
 
@@ -1365,7 +1365,7 @@ def route_marker():
     def coverage(x, y):
         d = math.sqrt((x - 24.0) ** 2 + (y - 24.0) ** 2)
         if 17.0 <= d <= 22.0:
-            return VERMILION, min(1.0, (d - 16.0) * 1.5, (23.0 - d) * 1.5) * 0.95
+            return VERMILION, min(1.0, (d - 16.5) * 0.5, (22.5 - d) * 0.5) * 0.95
         return None
     canvas.shape((0, 0, 48, 48), coverage)
     return canvas

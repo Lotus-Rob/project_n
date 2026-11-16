@@ -100,6 +100,10 @@ public:
         sizeAtPublish = snapshot.instances.size();
         textsAtPublish = snapshot.texts.size();
         cameraAtPublish = snapshot.camera;
+        routeAtPublish = snapshot.route.size();
+        if (fillRoute) {
+            snapshot.route.push_back({});
+        }
         if (followCamera) {
             snapshot.camera = core::CameraKind::Follow;
         }
@@ -109,6 +113,8 @@ public:
 
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::vector<u64> ticks{};
+    std::size_t routeAtPublish = 0;      // the route's length as the last publish was handed the snapshot
+    bool fillRoute = false;              // whether a publish writes a route point
     std::vector<u64> states{};           // the state counter at each tick
     std::vector<u64> steps{};            // the state counter at each calendar step
     std::vector<core::HeldInput> held{}; // the held input at each tick
@@ -325,6 +331,16 @@ TEST_CASE("each publish starts with the camera panning, whatever the publish bef
     for (u64 burst = 0; burst < 2 * core::GameHandover::BUFFERS; ++burst) {
         CHECK(rig.Burst(1).snapshot.camera == core::CameraKind::Follow);
         CHECK(rig.simulation.cameraAtPublish == core::CameraKind::Pan);
+    }
+}
+
+TEST_CASE("each publish starts with no route, whatever the publish before said") {
+    Rig rig;
+    rig.simulation.fillRoute = true;
+    // By the time there have been more bursts than buffers, every write reuses a buffer a route was published in.
+    for (u64 burst = 0; burst < 2 * core::GameHandover::BUFFERS; ++burst) {
+        CHECK(rig.Burst(1).snapshot.route.size() == 1);
+        CHECK(rig.simulation.routeAtPublish == 0);
     }
 }
 

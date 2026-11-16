@@ -44,10 +44,11 @@ ford: ford
 markers:
   city: marker_city
   mountain_pass: marker_mountain_pass
-route: { dot: route_dot, spacing: 48, marker: route_marker, cursor: target_tile }
+route: { dot: route_dot, spacing: 40, marker: route_marker, cursor: target_tile }
 )yaml";
 
 constexpr std::size_t MASKS = 16;
+constexpr f32 SMALL_SPACING = 40.0F; // the small look's route spacing, not the default
 
 core::WorldMap SmallMap() {
     core::Strings strings;
@@ -95,7 +96,7 @@ TEST_CASE("a small look parses against a small map") {
     CHECK(look->dangerMarkers[0].first == "mountain_pass");
     CHECK(look->dangerMarkers[0].second == core::atlas::SpriteId::MarkerMountainPass);
     CHECK(look->route.dot == core::atlas::SpriteId::RouteDot);
-    CHECK(look->route.spacing == core::DEFAULT_ROUTE_SPACING);
+    CHECK(look->route.spacing == SMALL_SPACING);
     CHECK(look->route.marker == core::atlas::SpriteId::RouteMarker);
     CHECK(look->route.cursor == core::atlas::SpriteId::TargetTile);
 }
@@ -184,8 +185,18 @@ TEST_CASE("the look reader refuses what the map can't be drawn by, naming the li
               "world_look line {}: route cursor names the sprite \"cell_plain\", which the world scene doesn't load",
               LineOf(SMALL_LOOK, "route:")
           ) },
+        { .why = "a route spacing of zero",
+          .text = With("spacing: 40", "spacing: 0"),
+          .says = std::format(
+              "world_look line {}: route's spacing isn't a number above 0 and up to 4096", LineOf(SMALL_LOOK, "route:")
+          ) },
+        { .why = "a route spacing past the limit",
+          .text = With("spacing: 40", "spacing: 1e30"),
+          .says = std::format(
+              "world_look line {}: route's spacing isn't a number above 0 and up to 4096", LineOf(SMALL_LOOK, "route:")
+          ) },
         { .why = "a missing route",
-          .text = With("route: { dot: route_dot, spacing: 48, marker: route_marker, cursor: target_tile }\n", ""),
+          .text = With("route: { dot: route_dot, spacing: 40, marker: route_marker, cursor: target_tile }\n", ""),
           .says = "world_look line 1: the look has no route" },
         { .why = "a route with no marker",
           .text = With(" marker: route_marker,", ""),
