@@ -313,6 +313,92 @@ std::expected<void, Error> DeriveTiles(const WorldMapSource& source, std::vector
     return {};
 }
 
+// Whether each profile can be used: at most MOST_PROFILES, each with a key of its own, a pace, one cost per kind, all costs
+// walkable or impassable.
+std::expected<void, Error> CheckProfiles(const WorldMapSource& source) {
+    if (source.profiles.size() > MOST_PROFILES) {
+        return std::unexpected{
+            Refuse(std::format("the map has {} profiles, over the most, {}", source.profiles.size(), MOST_PROFILES))
+        };
+    }
+    const auto walkable = [](u16 cost) { return cost == IMPASSABLE_COST || cost <= MAX_WALK_COST; };
+    for (std::size_t index = 0; index < source.profiles.size(); ++index) {
+        const MovementProfile& profile = source.profiles[index];
+        if (profile.key.empty()) {
+            return std::unexpected{ Refuse(std::format("profile {} has no key", index)) };
+        }
+        const auto twin = std::ranges::find(
+            source.profiles.begin(),
+            source.profiles.begin() + static_cast<std::ptrdiff_t>(index),
+            profile.key,
+            &MovementProfile::key
+        );
+        std::string problem;
+        if (twin != source.profiles.begin() + static_cast<std::ptrdiff_t>(index)) {
+            problem = std::format("shares its key with profile {}", twin - source.profiles.begin());
+        }
+        else if (profile.ticksPerCost == 0) {
+            problem = "takes no ticks per cost";
+        }
+        else if (profile.kindCosts.size() != source.kinds.size()) {
+            problem = std::format("costs {} terrain kinds, not {}", profile.kindCosts.size(), source.kinds.size());
+        }
+        else if (!std::ranges::all_of(profile.kindCosts, walkable)) {
+            problem = std::format("costs a terrain kind over the most a step may cost, {}", MAX_WALK_COST);
+        }
+        else if (!std::ranges::all_of(
+                     std::array{
+                         profile.features.road, profile.features.river, profile.features.bridge, profile.features.ford },
+                     walkable
+                 )) {
+            problem = std::format("costs a feature over the most a step may cost, {}", MAX_WALK_COST);
+        }
+        if (!problem.empty()) {
+            return std::unexpected{ Refuse(std::format("profile {} ('{}') {}", index, profile.key, problem)) };
+        }
+    }
+    return {};
+}
+
+// The profile a map without any gets: on foot by the base costs.
+MovementProfile OnFoot(const WorldMapSource& source) {
+    MovementProfile profile{
+        .key = "on_foot",
+        .ticksPerCost = DEFAULT_TICKS_PER_COST,
+        .kindCosts = {},
+        .features = { .road = source.roadCost, .river = IMPASSABLE_COST, .bridge = source.roadCost, .ford = source.fordCost }
+    };
+    for (const TerrainKind& kind : source.kinds) {
+        profile.kindCosts.push_back(kind.cost);
+    }
+    return profile;
+}
+
+// What entering each tile costs by `profile`, from the tiles' flags.
+std::vector<u16> ProfileLayer(const WorldMapSource& source, const std::vector<u8>& flags, const MovementProfile& profile) {
+    std::vector<u16> cost(flags.size(), 0);
+    for (std::size_t tile = 0; tile < flags.size(); ++tile) {
+        const u16 kindCost = profile.kindCosts[source.grid[tile]];
+        const u8 tileFlags = flags[tile];
+        if ((tileFlags & FLAG_BRIDGE) != 0) {
+            cost[tile] = std::min(kindCost, profile.features.bridge);
+        }
+        else if ((tileFlags & FLAG_FORD) != 0) {
+            cost[tile] = profile.features.ford;
+        }
+        else if ((tileFlags & FLAG_RIVER) != 0) {
+            cost[tile] = profile.features.river;
+        }
+        else if ((tileFlags & FLAG_ROAD) != 0) {
+            cost[tile] = std::min(kindCost, profile.features.road);
+        }
+        else {
+            cost[tile] = kindCost;
+        }
+    }
+    return cost;
+}
+
 struct PlaceLayer {
     std::vector<u16> place;
     u16 start = NO_PLACE;
@@ -417,12 +503,21 @@ std::expected<WorldMap, Error> WorldMap::Build(WorldMapSource source) {
     if (auto shape = CheckShape(source); !shape) {
         return std::unexpected{ shape.error() };
     }
+    if (auto profiles = CheckProfiles(source); !profiles) {
+        return std::unexpected{ profiles.error() };
+    }
+    if (source.profiles.empty()) {
+        source.profiles.push_back(OnFoot(source));
+    }
     const std::size_t tiles = source.grid.size();
     WorldMap map;
     map.m_flags.assign(tiles, 0);
     map.m_cost.assign(tiles, 0);
     if (auto derived = DeriveTiles(source, map.m_flags, map.m_cost); !derived) {
         return std::unexpected{ derived.error() };
+    }
+    for (const MovementProfile& profile : source.profiles) {
+        map.m_profileCost.push_back(ProfileLayer(source, map.m_flags, profile));
     }
     auto placed = PlaceTiles(source, map.m_cost);
     if (!placed) {
@@ -468,6 +563,14 @@ Vec2 WorldMap::TileCentre(u32 tile) const {
 }
 
 u32 WorldMap::StepCost(u32 from, u32 target) const {
+    return StepOver(m_cost, from, target);
+}
+
+u32 WorldMap::StepCost(u32 from, u32 target, ProfileIndex profile) const {
+    return StepOver(m_profileCost.at(profile), from, target);
+}
+
+u32 WorldMap::StepOver(const std::vector<u16>& costs, u32 from, u32 target) const {
     const u64 tiles = static_cast<u64>(m_source.columns) * m_source.rows;
     if (from >= tiles || target >= tiles || from == target) {
         return IMPASSABLE_COST;
@@ -479,7 +582,7 @@ u32 WorldMap::StepCost(u32 from, u32 target) const {
     if (std::abs(dColumn) > 1 || std::abs(dRow) > 1) {
         return IMPASSABLE_COST;
     }
-    const u32 cost = m_cost[target];
+    const u32 cost = costs[target];
     if (cost == IMPASSABLE_COST) {
         return IMPASSABLE_COST;
     }
@@ -488,7 +591,7 @@ u32 WorldMap::StepCost(u32 from, u32 target) const {
     }
     const u32 alongRow = TileIndex({ .column = end.column, .row = start.row });
     const u32 alongColumn = TileIndex({ .column = start.column, .row = end.row });
-    if (m_cost[alongRow] == IMPASSABLE_COST || m_cost[alongColumn] == IMPASSABLE_COST) {
+    if (costs[alongRow] == IMPASSABLE_COST || costs[alongColumn] == IMPASSABLE_COST) {
         return IMPASSABLE_COST;
     }
     return cost * DIAGONAL_NUMERATOR / DIAGONAL_DENOMINATOR;
@@ -534,6 +637,17 @@ u64 WorldMap::Hash() const {
     }
     for (const u8 kind : m_source.grid) {
         hasher(kind);
+    }
+    hasher(static_cast<u64>(m_source.profiles.size()));
+    for (const MovementProfile& profile : m_source.profiles) {
+        HashText(hasher, profile.key);
+        hasher(
+            profile.ticksPerCost, profile.features.road, profile.features.river, profile.features.bridge, profile.features.ford
+        );
+        hasher(static_cast<u64>(profile.kindCosts.size()));
+        for (const u16 cost : profile.kindCosts) {
+            hasher(cost);
+        }
     }
     for (const auto* lines : { &m_source.roads, &m_source.rivers }) {
         hasher(static_cast<u64>(lines->size()));

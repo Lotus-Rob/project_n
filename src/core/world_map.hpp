@@ -29,6 +29,15 @@ inline constexpr u16 NO_PLACE = 0xFFFF;
 /// it keeps a path's cost, even a diagonal's seven fifths, far below that sentinel.
 inline constexpr u16 MAX_WALK_COST = 1'000;
 
+/// A way of moving over the map, by its place in WorldMapSource::profiles.
+using ProfileIndex = u8;
+/// The profile people walk by: every NPC journey and the player's routes use it.
+inline constexpr ProfileIndex WALKING = 0;
+/// The most movement profiles a map may hold.
+inline constexpr std::size_t MOST_PROFILES = 16;
+/// The pace of a profile built in code, in ticks per unit of cost.
+inline constexpr u16 DEFAULT_TICKS_PER_COST = 16;
+
 /// The most people all the cities of a map may home together: twice the shipped map's 50,000, the tier phase 4's gates
 /// were set for. It bounds what the world scene spawns, whatever the data says.
 inline constexpr u32 MOST_WORLD_PEOPLE = 100'000;
@@ -84,6 +93,32 @@ struct Place {
     bool start = false;
 };
 
+/// What a profile's steps cost on each feature, each at most MAX_WALK_COST or IMPASSABLE_COST.
+struct FeatureCosts {
+    /// A road tile's cost, which caps the terrain's.
+    u16 road = 0;
+    /// A river tile's cost where neither a ford nor a road crosses it.
+    u16 river = IMPASSABLE_COST;
+    /// A bridge tile's cost, which caps the terrain's.
+    u16 bridge = 0;
+    /// A ford tile's cost, whatever the terrain.
+    u16 ford = 0;
+};
+
+/// A way of moving: how long a unit of cost takes and what each terrain kind and feature costs.
+struct MovementProfile {
+    /// Its key in the data.
+    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::string key{};
+    /// The ticks one unit of cost takes; at least 1.
+    u16 ticksPerCost = DEFAULT_TICKS_PER_COST;
+    /// The cost of each terrain kind, one per kind, each at most MAX_WALK_COST or IMPASSABLE_COST.
+    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::vector<u16> kindCosts{};
+    /// What the features cost.
+    FeatureCosts features{};
+};
+
 /// What a tile carries besides its terrain, as bits of FlagsAt().
 enum class TileFlag : u8 {
     Road = 1,   ///< A road crosses it.
@@ -137,6 +172,9 @@ struct WorldMapSource {
     std::vector<TilePoint> fords{};
     /// The places.
     std::vector<Place> places{};
+    /// The movement profiles, at most MOST_PROFILES; empty adds `on_foot` from the base costs. Profile WALKING is the
+    /// one people walk by.
+    std::vector<MovementProfile> profiles{};
     /// Where each entry was written, for refusals to name; not hashed.
     SourceLines lines{};
     // NOLINTEND(readability-redundant-member-init)
@@ -206,6 +244,15 @@ public:
     [[nodiscard]] u16 CostAt(u32 tile) const {
         return m_cost.at(tile);
     }
+    /// What entering `tile` costs by `profile`, or IMPASSABLE_COST: a road without a river caps the terrain's cost at the
+    /// profile's road cost, a bridge at its bridge cost, a ford costs its ford cost, a river alone its river cost.
+    [[nodiscard]] u16 CostAt(u32 tile, ProfileIndex profile) const {
+        return m_profileCost.at(profile).at(tile);
+    }
+    /// The movement profiles, in the source's order (WALKING first).
+    [[nodiscard]] std::span<const MovementProfile> Profiles() const {
+        return m_source.profiles;
+    }
     /// The index of the place on `tile`, or NO_PLACE.
     [[nodiscard]] u16 PlaceAt(u32 tile) const {
         return m_place.at(tile);
@@ -220,6 +267,8 @@ public:
     /// allowed (not adjacent, off the map, or onto an impassable tile); with costs bounded by MAX_WALK_COST, an
     /// allowed step never reaches that value.
     [[nodiscard]] u32 StepCost(u32 from, u32 target) const;
+    /// What a step from `from` onto the adjacent `target` costs by `profile`: StepCost's rule over that profile's costs.
+    [[nodiscard]] u32 StepCost(u32 from, u32 target, ProfileIndex profile) const;
     /// The passable tiles of the region of place `city`, in tile order; empty for a place that isn't a city.
     [[nodiscard]] std::span<const u32> RegionTiles(u16 city) const;
     /// The places.
@@ -245,7 +294,7 @@ public:
     /// The tiles `view` overlaps, clamped to the map's; empty when it misses the map.
     [[nodiscard]] TileSpan TilesIn(Rect view) const;
     /// A hash of the authored source: sizes, costs, kinds, grid, lines, fords and the places' keys, kinds, sorts, tiles,
-    /// name keys, people and start; never a place's resolved name.
+    /// name keys, people and start, and the movement profiles; never a place's resolved name.
     [[nodiscard]] u64 Hash() const;
 
 private:
@@ -256,11 +305,14 @@ private:
     WorldMapSource m_source{};
     std::vector<u8> m_flags{};
     std::vector<u16> m_cost{};
+    std::vector<std::vector<u16>> m_profileCost{};
     std::vector<u16> m_place{};
     std::vector<u16> m_region{};
     std::vector<std::vector<u32>> m_regionTiles{};
     // NOLINTEND(readability-redundant-member-init)
     u16 m_start = NO_PLACE;
+
+    [[nodiscard]] u32 StepOver(const std::vector<u16>& cost, u32 from, u32 target) const;
 };
 
 } // namespace core
