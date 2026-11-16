@@ -3022,5 +3022,64 @@ class BuildSweepTest(unittest.TestCase):
             self.assertTrue((root / "build" / "linux-gcc" / "release" / project_n.USED_STAMP).is_file())
 
 
+class BuildCacheAgeTest(unittest.TestCase):
+    """A build cache nothing reads goes whole; in the others, entries written over CACHE_DAYS ago go, a key with its
+    warnings."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.build = Path(self.tmp.name) / "build"
+
+    def entry(self, tree, name, age):
+        f = self.build / tree / ".build_cache" / name[:2] / name
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(b"object")
+        os.utime(f, (NOW - age, NOW - age))
+        project_n.mark_used(self.build / tree, NOW)
+        return f
+
+    def sweep(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            project_n.sweep_build(self.build, NOW)
+
+    def test_removes_dead_cache_of_gcc_and_msvc(self):
+        for tree in ("linux-gcc/debug", "container/windows-msvc/release"):
+            self.entry(tree, "ab01", 0)
+        self.sweep()
+        self.assertFalse((self.build / "linux-gcc/debug/.build_cache").exists())
+        self.assertFalse((self.build / "container/windows-msvc/release/.build_cache").exists())
+        self.assertTrue((self.build / "linux-gcc/debug").is_dir())
+
+    def test_ages_clang_entries(self):
+        old = [self.entry("linux-clang/debug", n, 15 * DAY) for n in ("ab01", "ab01.txt")]
+        new = [self.entry("linux-clang/debug", n, 1 * DAY) for n in ("ab02", "ab02.txt")]
+        self.sweep()
+        self.assertEqual([f.exists() for f in old + new], [False, False, True, True])
+
+    def test_never_splits_an_entry(self):
+        old_key = [self.entry("container/linux-clang/release", "cd03", 15 * DAY),
+                   self.entry("container/linux-clang/release", "cd03.txt", 1 * DAY)]
+        new_key = [self.entry("container/linux-clang/release", "cd04", 1 * DAY),
+                   self.entry("container/linux-clang/release", "cd04.txt", 15 * DAY)]
+        self.sweep()
+        self.assertEqual([f.exists() for f in old_key + new_key], [False, False, True, True])
+
+    def test_removes_old_orphan_warnings_and_empty_folders(self):
+        orphan = self.entry("linux-clang/debug", "ef05.txt", 15 * DAY)
+        self.sweep()
+        self.assertFalse(orphan.parent.exists())
+        self.assertTrue((self.build / "linux-clang/debug/.build_cache").is_dir())
+
+    def test_leaves_ci_cache_alone(self):
+        ci = Path(self.tmp.name) / "ci-cache" / "linux-clang-debug" / "ab" / "ab06"
+        ci.parent.mkdir(parents=True)
+        ci.write_bytes(b"object")
+        os.utime(ci, (NOW - 30 * DAY, NOW - 30 * DAY))
+        self.entry("linux-clang/debug", "ab07", 0)
+        self.sweep()
+        self.assertTrue(ci.exists())
+
+
 if __name__ == "__main__":
     unittest.main()
