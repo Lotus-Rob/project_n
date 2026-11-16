@@ -290,10 +290,10 @@ TEST_CASE("Build refuses a map it can't use") {
     CHECK(Refusal(freeKind).contains("costs 0"));
     core::WorldMapSource freeRoad = Source({ "0.." });
     freeRoad.roadCost = 0;
-    CHECK(Refusal(freeRoad).contains("is 0"));
+    CHECK(Refusal(freeRoad).contains("the road cost is 0"));
     core::WorldMapSource freeFord = Source({ "0.." });
     freeFord.fordCost = 0;
-    CHECK(Refusal(freeFord).contains("is 0"));
+    CHECK(Refusal(freeFord).contains("the ford cost is 0"));
     core::WorldMapSource dearRoad = Source({ "0.." });
     dearRoad.roadCost = core::MAX_WALK_COST + 1;
     const std::string dearRoadRefusal = Refusal(dearRoad);

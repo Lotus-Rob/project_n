@@ -44,6 +44,10 @@ inline constexpr ProfileIndex WALKING = 0;
 inline constexpr std::size_t MOST_PROFILES = 16;
 /// The pace of a profile built in code, in ticks per unit of cost.
 inline constexpr u16 DEFAULT_TICKS_PER_COST = 16;
+/// The cost of a road tile (and a bridge) when the source names none: the shipped map's.
+inline constexpr u16 DEFAULT_ROAD_COST = 4;
+/// The cost of a ford tile when the source names none: the shipped map's.
+inline constexpr u16 DEFAULT_FORD_COST = 30;
 
 /// The most people all the cities of a map may home together: twice the shipped map's 50,000, the tier phase 4's gates
 /// were set for. It bounds what the world scene spawns, whatever the data says.
@@ -67,7 +71,7 @@ struct TerrainKind {
     std::string name{};
     /// The symbol its tiles are written with in the grid.
     char symbol = ' ';
-    /// The cost of entering one of its tiles, or IMPASSABLE_COST.
+    /// The cost of entering one of its tiles, from 1 to MAX_WALK_COST, or IMPASSABLE_COST.
     u16 cost = IMPASSABLE_COST;
 };
 
@@ -138,16 +142,16 @@ struct TravelRules {
     f32 cultivatorPower = DEFAULT_CULTIVATOR_POWER;
 };
 
-/// What a profile's steps cost on each feature, each at most MAX_WALK_COST or IMPASSABLE_COST.
+/// What a profile's steps cost on each feature, each from 1 to MAX_WALK_COST, or IMPASSABLE_COST.
 struct FeatureCosts {
     /// A road tile's cost, which caps the terrain's.
-    u16 road = 0;
+    u16 road = DEFAULT_ROAD_COST;
     /// A river tile's cost where neither a ford nor a road crosses it.
     u16 river = IMPASSABLE_COST;
     /// A bridge tile's cost, which caps the terrain's.
-    u16 bridge = 0;
+    u16 bridge = DEFAULT_ROAD_COST;
     /// A ford tile's cost, whatever the terrain.
-    u16 ford = 0;
+    u16 ford = DEFAULT_FORD_COST;
 };
 
 /// A way of moving: how long a unit of cost takes and what each terrain kind and feature costs.
@@ -157,7 +161,7 @@ struct MovementProfile {
     std::string key{};
     /// The ticks one unit of cost takes; at least 1.
     u16 ticksPerCost = DEFAULT_TICKS_PER_COST;
-    /// The cost of each terrain kind, one per kind, each at most MAX_WALK_COST or IMPASSABLE_COST.
+    /// The cost of each terrain kind, one per kind, each from 1 to MAX_WALK_COST, or IMPASSABLE_COST.
     // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::vector<u16> kindCosts{};
     /// What the features cost.
@@ -199,10 +203,10 @@ struct WorldMapSource {
     u32 rows = 0;
     /// A tile's side in world units.
     f32 tileSize = 0.0F;
-    /// The most a road tile costs: it caps the terrain's cost.
-    u16 roadCost = 0;
+    /// The most a road tile costs, from 1 to MAX_WALK_COST: it caps the terrain's cost.
+    u16 roadCost = DEFAULT_ROAD_COST;
     /// What a ford costs, whatever the terrain.
-    u16 fordCost = 0;
+    u16 fordCost = DEFAULT_FORD_COST;
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for
     // members whose default constructor is defaulted.
     /// The terrain kinds.

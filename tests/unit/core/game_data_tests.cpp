@@ -9,16 +9,11 @@ constexpr u16 MEADOW_COST = 10;
 constexpr f32 TILE = 256.0F;
 
 // A 2 by 1 map of meadow and, when `peaks`, a second kind of tile at its right, with one city to start in.
-constexpr u16 ROAD_COST = 4;
-constexpr u16 FORD_COST = 30;
-
 std::shared_ptr<const core::WorldMap> Map(bool peaks) {
     core::WorldMapSource source;
     source.columns = 2;
     source.rows = 1;
     source.tileSize = TILE;
-    source.roadCost = ROAD_COST;
-    source.fordCost = FORD_COST;
     source.kinds = { { .name = "meadow", .symbol = '.', .cost = MEADOW_COST },
                      { .name = "peaks", .symbol = '^', .cost = core::IMPASSABLE_COST } };
     source.grid = { 0, static_cast<u8>(peaks ? 1 : 0) };

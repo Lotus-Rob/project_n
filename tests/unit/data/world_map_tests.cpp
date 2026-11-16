@@ -139,8 +139,23 @@ struct Broken {
     std::string_view says;
 };
 
+// Whether the reader refuses each of `cases`, naming the line and saying what each `says`.
+template<std::size_t COUNT>
+void CheckRefused(const std::array<Broken, COUNT>& cases) {
+    const core::Strings strings = Names();
+    for (const Broken& broken : cases) {
+        CAPTURE(broken.from);
+        const std::string text = With(broken.from, broken.replacement);
+        const std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(text, strings);
+        REQUIRE_FALSE(map.has_value());
+        CHECK(map.error().message.contains(broken.says));
+        const std::string atLine = std::format("line {}:", LineOf(text, broken.onLineOf));
+        CHECK(map.error().message.contains(atLine));
+    }
+}
+
 TEST_CASE("the reader refuses, naming the line") {
-    constexpr std::array<Broken, 38> CASES{ {
+    constexpr std::array<Broken, 24> CASES{ {
         Broken{ .from = "..~..\n", .replacement = "..~.\n", .onLineOf = "..~.\n", .says = "row" },
         Broken{ .from = "..~..\n", .replacement = "..x..\n", .onLineOf = "..x..", .says = "'x'" },
         Broken{ .from = ", cost: 10", .replacement = "", .onLineOf = "name: meadow", .says = "cost" },
@@ -178,6 +193,12 @@ TEST_CASE("the reader refuses, naming the line") {
                 .replacement = "ticks_per_cost: 16, features: { ford: 0 }",
                 .onLineOf = "ticks_per_cost",
                 .says = "ford cost is 0" },
+    } };
+    CheckRefused(CASES);
+}
+
+TEST_CASE("the reader refuses bad profiles, draws and travel, naming the line") {
+    constexpr std::array<Broken, 15> CASES{ {
         Broken{ .from = "profiles:\n  - { key: on_foot, ticks_per_cost: 16 }\n",
                 .replacement = "",
                 .onLineOf = "road_cost",
@@ -234,17 +255,12 @@ TEST_CASE("the reader refuses, naming the line") {
                 .replacement = "travel: { reach_base: -1 }\nplaces:",
                 .onLineOf = "reach_base",
                 .says = "reach_base" },
+        Broken{ .from = "ticks_per_cost: 16 }\n",
+                .replacement = "ticks_per_cost: 16 }\n  - { key: on_foot, ticks_per_cost: 8 }\n",
+                .onLineOf = "ticks_per_cost: 8",
+                .says = "shares its key" },
     } };
-    const core::Strings strings = Names();
-    for (const Broken& broken : CASES) {
-        CAPTURE(broken.from);
-        const std::string text = With(broken.from, broken.replacement);
-        const std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(text, strings);
-        REQUIRE_FALSE(map.has_value());
-        CHECK(map.error().message.contains(broken.says));
-        const std::string atLine = std::format("line {}:", LineOf(text, broken.onLineOf));
-        CHECK(map.error().message.contains(atLine));
-    }
+    CheckRefused(CASES);
 }
 
 TEST_CASE("profiles read with their overrides resolved") {
@@ -387,17 +403,22 @@ TEST_CASE("the shipped world.yaml has on_foot as profile 0 at pace 16") {
     CHECK(map->Travel().stayMinDays <= map->Travel().stayMaxDays);
     CHECK(map->Travel().reachBase > 0);
     // capital, port, sect, oasis, marsh_town, isle
-    constexpr std::array<std::array<u16, core::VISITOR_KINDS>, 6> DRAWS{ {
-        { 3, 3 },
-        { 1, 6 },
-        { 6, 1 },
-        { 1, 5 },
-        { 2, 2 },
-        { 2, 3 },
+    struct Drawn {
+        std::string_view key;
+        std::array<u16, core::VISITOR_KINDS> draws;
+    };
+    constexpr std::array<Drawn, 6> CITIES{ {
+        { .key = "capital", .draws = { 3, 3 } },
+        { .key = "port", .draws = { 1, 6 } },
+        { .key = "sect", .draws = { 6, 1 } },
+        { .key = "oasis", .draws = { 1, 5 } },
+        { .key = "marsh_town", .draws = { 2, 2 } },
+        { .key = "isle", .draws = { 2, 3 } },
     } };
-    for (std::size_t city = 0; city < DRAWS.size(); ++city) {
-        CAPTURE(map->Places()[city].key);
-        CHECK(map->Places()[city].draws == DRAWS[city]);
+    for (std::size_t city = 0; city < CITIES.size(); ++city) {
+        CAPTURE(city);
+        CHECK(map->Places()[city].key == CITIES[city].key);
+        CHECK(map->Places()[city].draws == CITIES[city].draws);
     }
 }
 
