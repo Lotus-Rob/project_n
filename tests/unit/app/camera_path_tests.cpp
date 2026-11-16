@@ -62,4 +62,29 @@ TEST_CASE("the camera path's walk east from the world's start keeps clear of the
     CHECK((west || east || offTheRow));
 }
 
+TEST_CASE("the month step comes once, at its second or the first frame after, and never without one") {
+    constexpr f32 STEP_SECOND = 15.0F;
+    constexpr f32 JUST_BEFORE = 14.99F;
+    constexpr f32 NEXT_FRAME = 15.02F;
+    constexpr f32 AFTER = 15.04F;
+    app::PathMonthStep step{ STEP_SECOND };
+    CHECK_FALSE(step.Due(0.0F));
+    CHECK_FALSE(step.Due(JUST_BEFORE));
+    CHECK(step.Due(NEXT_FRAME));
+    CHECK_FALSE(step.Due(AFTER));
+    CHECK_FALSE(step.Due(LAST));
+    app::PathMonthStep first{ 0.0F };
+    CHECK(first.Due(0.0F));
+    CHECK_FALSE(first.Due(AFTER));
+    app::PathMonthStep none{ std::nullopt };
+    CHECK_FALSE(none.Due(STEP_SECOND));
+}
+
+TEST_CASE("the measured month step falls in the widest view over the busiest roads") {
+    constexpr f32 MEASURED = 15.0F; // `--month-step-at` in measure's world run (MEASURE_RUNS in tools/project_n.py)
+    const std::optional<std::size_t> segment = app::CameraPathSegment(MEASURED);
+    REQUIRE(segment.has_value());
+    CHECK(app::CameraPath()[segment.value_or(0)].name == "widest view");
+}
+
 } // namespace
