@@ -20,11 +20,14 @@ grid: |
 roads: [ [[0, 2], [4, 2]] ]
 rivers: [ [[3, 1], [3, 2]] ]
 fords: [ [3, 1] ]
+profiles:
+  - { key: on_foot, ticks_per_cost: 16 }
 places:
   - { key: capital, kind: city, tile: [0, 2], name: place_capital, people: 100, start: true }
   - { key: wolf_pass, kind: danger, sort: mountain_pass, tile: [4, 1], name: place_wolf_pass }
 )yaml";
 
+constexpr f32 TRAVEL_CULTIVATOR_POWER = 6.0F;
 constexpr u32 COLUMNS = 5;
 constexpr u32 ROWS = 3;
 constexpr u32 PEOPLE = 100;
@@ -137,7 +140,7 @@ struct Broken {
 };
 
 TEST_CASE("the reader refuses, naming the line") {
-    constexpr std::array<Broken, 19> CASES{ {
+    constexpr std::array<Broken, 38> CASES{ {
         Broken{ .from = "..~..\n", .replacement = "..~.\n", .onLineOf = "..~.\n", .says = "row" },
         Broken{ .from = "..~..\n", .replacement = "..x..\n", .onLineOf = "..x..", .says = "'x'" },
         Broken{ .from = ", cost: 10", .replacement = "", .onLineOf = "name: meadow", .says = "cost" },
@@ -164,6 +167,73 @@ TEST_CASE("the reader refuses, naming the line") {
                 .says = "danger with people" },
         Broken{
             .from = "name: meadow", .replacement = "name: deep_water", .onLineOf = "symbol: \".\"", .says = "share the name" },
+        Broken{ .from = ", cost: 10", .replacement = ", cost: 0", .onLineOf = "name: meadow", .says = "is 0" },
+        Broken{ .from = "road_cost: 4", .replacement = "road_cost: 0", .onLineOf = "road_cost", .says = "road_cost is 0" },
+        Broken{ .from = "ford_cost: 30", .replacement = "ford_cost: 0", .onLineOf = "ford_cost", .says = "ford_cost is 0" },
+        Broken{ .from = "ticks_per_cost: 16",
+                .replacement = "ticks_per_cost: 16, kinds: { meadow: 0 }",
+                .onLineOf = "ticks_per_cost",
+                .says = "meadow cost is 0" },
+        Broken{ .from = "ticks_per_cost: 16",
+                .replacement = "ticks_per_cost: 16, features: { ford: 0 }",
+                .onLineOf = "ticks_per_cost",
+                .says = "ford cost is 0" },
+        Broken{ .from = "profiles:\n  - { key: on_foot, ticks_per_cost: 16 }\n",
+                .replacement = "",
+                .onLineOf = "road_cost",
+                .says = "no profiles" },
+        Broken{ .from = "ticks_per_cost: 16",
+                .replacement = "ticks_per_cost: 0",
+                .onLineOf = "ticks_per_cost",
+                .says = "no ticks" },
+        Broken{ .from = "ticks_per_cost: 16",
+                .replacement = "ticks_per_cost: 16, kinds: { lava: 3 }",
+                .onLineOf = "ticks_per_cost",
+                .says = "lava" },
+        Broken{ .from = "ticks_per_cost: 16",
+                .replacement = "ticks_per_cost: 16, features: { moat: 3 }",
+                .onLineOf = "ticks_per_cost",
+                .says = "moat" },
+        Broken{ .from = "ticks_per_cost: 16",
+                .replacement = "ticks_per_cost: 16, features: { road: 1001 }",
+                .onLineOf = "ticks_per_cost",
+                .says = "road cost" },
+        Broken{ .from = "ticks_per_cost: 16",
+                .replacement = "ticks_per_cost: 16, all_kinds: 1001",
+                .onLineOf = "ticks_per_cost",
+                .says = "all_kinds" },
+        Broken{ .from = "sort: mountain_pass, ",
+                .replacement = "sort: mountain_pass, draws: { traders: 1 }, ",
+                .onLineOf = "key: wolf_pass",
+                .says = "danger with draws" },
+        Broken{ .from = "people: 100, ",
+                .replacement = "people: 100, draws: { pilgrims: 1 }, ",
+                .onLineOf = "key: capital",
+                .says = "pilgrims" },
+        Broken{ .from = "people: 100, ",
+                .replacement = "people: 100, draws: { traders: 101 }, ",
+                .onLineOf = "key: capital",
+                .says = "traders draw" },
+        Broken{ .from = "people: 100, ",
+                .replacement = "people: 100, draws: { cultivators: 0, traders: 0 }, ",
+                .onLineOf = "key: capital",
+                .says = "draws no visitors" },
+        Broken{ .from = "places:",
+                .replacement = "travel: { stay_days: [5, 2] }\nplaces:",
+                .onLineOf = "stay_days",
+                .says = "stay_days" },
+        Broken{ .from = "places:",
+                .replacement = "travel: { stay_days: [0, 2] }\nplaces:",
+                .onLineOf = "stay_days",
+                .says = "stay_days" },
+        Broken{ .from = "places:",
+                .replacement = "travel: { share_per_mille: 1001 }\nplaces:",
+                .onLineOf = "share_per_mille",
+                .says = "share_per_mille" },
+        Broken{ .from = "places:",
+                .replacement = "travel: { reach_base: -1 }\nplaces:",
+                .onLineOf = "reach_base",
+                .says = "reach_base" },
     } };
     const core::Strings strings = Names();
     for (const Broken& broken : CASES) {
@@ -175,6 +245,60 @@ TEST_CASE("the reader refuses, naming the line") {
         const std::string atLine = std::format("line {}:", LineOf(text, broken.onLineOf));
         CHECK(map.error().message.contains(atLine));
     }
+}
+
+TEST_CASE("profiles read with their overrides resolved") {
+    const std::string text = With(
+        "  - { key: on_foot, ticks_per_cost: 16 }\n",
+        "  - { key: on_foot, ticks_per_cost: 16 }\n"
+        "  - { key: carriage, ticks_per_cost: 8, all_kinds: impassable, features: { road: 3 } }\n"
+        "  - { key: boat, ticks_per_cost: 12, kinds: { deep_water: 5 }, features: { river: 6, ford: impassable } }\n"
+    );
+    const std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(text, Names());
+    REQUIRE(map.has_value());
+    REQUIRE(map->Profiles().size() == 3);
+    const core::MovementProfile& walking = map->Profiles()[core::WALKING];
+    CHECK(walking.key == "on_foot");
+    CHECK(walking.ticksPerCost == 16);
+    CHECK(walking.kindCosts == std::vector<u16>{ core::IMPASSABLE_COST, MEADOW_COST });
+    CHECK(walking.features.road == 4);
+    CHECK(walking.features.river == core::IMPASSABLE_COST);
+    CHECK(walking.features.ford == 30);
+    const core::MovementProfile& carriage = map->Profiles()[1];
+    CHECK(carriage.ticksPerCost == 8);
+    CHECK(carriage.kindCosts == std::vector<u16>{ core::IMPASSABLE_COST, core::IMPASSABLE_COST });
+    CHECK(carriage.features.road == 3);
+    CHECK(carriage.features.bridge == 4);
+    const core::MovementProfile& boat = map->Profiles()[2];
+    CHECK(boat.kindCosts == std::vector<u16>{ 5, MEADOW_COST });
+    CHECK(boat.features.river == 6);
+    CHECK(boat.features.ford == core::IMPASSABLE_COST);
+}
+
+TEST_CASE("draws and travel rules read") {
+    const std::string text = With("people: 100, ", "people: 100, draws: { cultivators: 3, traders: 7 }, ");
+    const std::string travelled = std::string{ text }.replace(
+        text.find("places:"),
+        7,
+        "travel: { share_per_mille: 25, stay_days: [1, 9], reach_base: 1500, reach_per_power: 40, cultivator_power: 6 "
+        "}\nplaces:"
+    );
+    const std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(travelled, Names());
+    REQUIRE(map.has_value());
+    CHECK(map->Places()[0].draws == std::array<u16, core::VISITOR_KINDS>{ 3, 7 });
+    CHECK(map->Places()[1].draws == std::array<u16, core::VISITOR_KINDS>{ 0, 0 });
+    CHECK(map->Travel().sharePerMille == 25);
+    CHECK(map->Travel().stayMinDays == 1);
+    CHECK(map->Travel().stayMaxDays == 9);
+    CHECK(map->Travel().reachBase == 1500);
+    CHECK(map->Travel().reachPerPower == 40);
+    CHECK(map->Travel().cultivatorPower == doctest::Approx(TRAVEL_CULTIVATOR_POWER));
+    const std::expected<core::WorldMap, core::Error> plain = data::ParseWorldMap(SMALL, Names());
+    REQUIRE(plain.has_value());
+    CHECK(plain->Places()[0].draws == std::array<u16, core::VISITOR_KINDS>{ 1, 1 });
+    CHECK(plain->Travel().sharePerMille == 40);
+    CHECK(plain->Travel().stayMaxDays == 5);
+    CHECK(plain->Hash() != map->Hash());
 }
 
 TEST_CASE("a folded or quoted grid is refused, naming the grid's line, never misread") {
@@ -253,6 +377,28 @@ TEST_CASE("the shipped world map loads clean") {
     CHECK(map->Places()[map->Start()].key == "capital");
     const bool missingLoads = data::LoadWorldMap(*assets / "no_such_folder", *strings).has_value();
     CHECK_FALSE(missingLoads);
+}
+
+TEST_CASE("the shipped world.yaml has on_foot as profile 0 at pace 16") {
+    const std::shared_ptr<const core::WorldMap> map = Shipped();
+    REQUIRE_FALSE(map->Profiles().empty());
+    CHECK(map->Profiles()[core::WALKING].key == "on_foot");
+    CHECK(map->Profiles()[core::WALKING].ticksPerCost == core::DEFAULT_TICKS_PER_COST);
+    CHECK(map->Travel().stayMinDays <= map->Travel().stayMaxDays);
+    CHECK(map->Travel().reachBase > 0);
+    // capital, port, sect, oasis, marsh_town, isle
+    constexpr std::array<std::array<u16, core::VISITOR_KINDS>, 6> DRAWS{ {
+        { 3, 3 },
+        { 1, 6 },
+        { 6, 1 },
+        { 1, 5 },
+        { 2, 2 },
+        { 2, 3 },
+    } };
+    for (std::size_t city = 0; city < DRAWS.size(); ++city) {
+        CAPTURE(map->Places()[city].key);
+        CHECK(map->Places()[city].draws == DRAWS[city]);
+    }
 }
 
 // Build refuses a city it can't reach, so this pins the rule on the shipped file; the danger sites, which Build leaves

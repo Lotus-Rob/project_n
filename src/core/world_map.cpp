@@ -12,6 +12,7 @@ constexpr u8 FLAG_RIVER = std::to_underlying(TileFlag::River);
 constexpr u8 FLAG_BRIDGE = std::to_underlying(TileFlag::Bridge);
 constexpr u8 FLAG_FORD = std::to_underlying(TileFlag::Ford);
 constexpr f32 TILE_MIDDLE = 0.5F; // the middle of a tile
+constexpr u16 PER_MILLE = 1'000;
 constexpr u32 MAX_TILES = 1U << 24;
 
 Error Refuse(std::string message) {
@@ -227,6 +228,12 @@ std::expected<void, Error> CheckShape(const WorldMapSource& source) {
                 std::format("terrain kinds {} and {} share the name '{}'", twin - source.kinds.begin(), index, kind.name)
             ) };
         }
+        if (kind.cost == 0) {
+            return std::unexpected{ Refuse(
+                AtLine(source.lines.kinds, index) +
+                std::format("terrain kind {} ('{}') costs 0: a step takes time, so a cost is at least 1", index, kind.name)
+            ) };
+        }
         if (kind.cost != IMPASSABLE_COST && kind.cost > MAX_WALK_COST) {
             return std::unexpected{ Refuse(
                 AtLine(source.lines.kinds, index) + std::format(
@@ -238,6 +245,9 @@ std::expected<void, Error> CheckShape(const WorldMapSource& source) {
                                                     )
             ) };
         }
+    }
+    if (source.roadCost == 0 || source.fordCost == 0) {
+        return std::unexpected{ Refuse("the road cost or the ford cost is 0: a step takes time, so a cost is at least 1") };
     }
     if (source.roadCost > MAX_WALK_COST || source.fordCost > MAX_WALK_COST) {
         return std::unexpected{ Refuse(
@@ -335,6 +345,16 @@ std::expected<void, Error> CheckProfiles(const WorldMapSource& source) {
         else if (profile.kindCosts.size() != source.kinds.size()) {
             problem = std::format("costs {} terrain kinds, not {}", profile.kindCosts.size(), source.kinds.size());
         }
+        else if (std::ranges::contains(profile.kindCosts, 0)) {
+            problem = "costs a terrain kind 0: a step takes time, so a cost is at least 1";
+        }
+        else if (
+            std::ranges::contains(
+                std::array{ profile.features.road, profile.features.river, profile.features.bridge, profile.features.ford }, 0
+            )
+        ) {
+            problem = "costs a feature 0: a step takes time, so a cost is at least 1";
+        }
         else if (!std::ranges::all_of(profile.kindCosts, walkable)) {
             problem = std::format("costs a terrain kind over the most a step may cost, {}", MAX_WALK_COST);
         }
@@ -348,6 +368,21 @@ std::expected<void, Error> CheckProfiles(const WorldMapSource& source) {
         if (!problem.empty()) {
             return std::unexpected{ Refuse(std::format("profile {} ('{}') {}", index, profile.key, problem)) };
         }
+    }
+    return {};
+}
+
+// Whether the travel rules can be used: a share of at most a thousand, a stay of at least a day, in order.
+std::expected<void, Error> CheckTravel(const TravelRules& travel) {
+    if (travel.sharePerMille > PER_MILLE) {
+        return std::unexpected{
+            Refuse(std::format("the travel share, {} per thousand, is over a thousand", travel.sharePerMille))
+        };
+    }
+    if (travel.stayMinDays == 0 || travel.stayMinDays > travel.stayMaxDays) {
+        return std::unexpected{ Refuse(
+            std::format("the stay of {} to {} days isn't 1 day or more, in order", travel.stayMinDays, travel.stayMaxDays)
+        ) };
     }
     return {};
 }
@@ -409,6 +444,12 @@ std::expected<void, Error> CheckRole(const WorldMapSource& source, std::size_t i
     }
     else if (place.kind == PlaceKind::Danger && place.people > 0) {
         problem = "is a danger with people";
+    }
+    else if (std::ranges::any_of(place.draws, [](u16 draw) { return draw > MOST_DRAW; })) {
+        problem = std::format("draws visitors past the most, {}", MOST_DRAW);
+    }
+    else if (place.kind == PlaceKind::City && std::ranges::all_of(place.draws, [](u16 draw) { return draw == 0; })) {
+        problem = "is a city that draws no visitors";
     }
     if (!problem.empty()) {
         return std::unexpected{
@@ -498,6 +539,9 @@ std::expected<WorldMap, Error> WorldMap::Build(WorldMapSource source) {
     if (auto profiles = CheckProfiles(source); !profiles) {
         return std::unexpected{ profiles.error() };
     }
+    if (auto travel = CheckTravel(source.travel); !travel) {
+        return std::unexpected{ travel.error() };
+    }
     if (source.profiles.empty()) {
         source.profiles.push_back(OnFoot(source));
     }
@@ -514,6 +558,12 @@ std::expected<WorldMap, Error> WorldMap::Build(WorldMapSource source) {
     auto placed = PlaceTiles(source, map.m_cost);
     if (!placed) {
         return std::unexpected{ placed.error() };
+    }
+    // A danger draws no one, whatever a source built in code left in it.
+    for (Place& place : source.places) {
+        if (place.kind == PlaceKind::Danger) {
+            place.draws.fill(0);
+        }
     }
     map.m_place = std::move(placed->place);
     map.m_start = placed->start;
@@ -656,7 +706,19 @@ u64 WorldMap::Hash() const {
         hasher(place.tile.column, place.tile.row);
         HashText(hasher, place.nameKey);
         hasher(place.people, place.start);
+        for (const u16 draw : place.draws) {
+            hasher(draw);
+        }
     }
+    const TravelRules& travel = m_source.travel;
+    hasher(
+        travel.sharePerMille,
+        travel.stayMinDays,
+        travel.stayMaxDays,
+        travel.reachBase,
+        travel.reachPerPower,
+        travel.cultivatorPower
+    );
     return hasher.Value();
 }
 

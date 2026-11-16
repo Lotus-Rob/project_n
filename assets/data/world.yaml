@@ -102,6 +102,15 @@ grid: |
   TTTTTTTTTTTTT###AAAAAAAA#nn..TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT----~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~---%%%%%%%%--~~~~~~~~~~~~------~~~~~~~--~~~~~~~~~~~~~~
   TTTTTTTTTTTTT###AAAAAAAA#nn.TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~--%%%%%%%%%--~~~~~~~~~~~~~----~~~~~~~~~~~~~~~~~~~~~~~~
   TTTTTTTTTTTTT###AAAAAAAA#nnTTTTTTnnnTTTTTTTTTTTTTTTTTTTTTTTT--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~--%%%%%%%%%--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# How people move: pace in ticks per unit of cost (a road tile, cost 4, takes 64 ticks on foot). Profile 0, on_foot, is the
+# one every traveller walks by; a profile may add all_kinds: <cost|impassable>, kinds: { <name>: <cost|impassable> } and
+# features: { road, river, bridge, ford }, laid over the kinds' costs above.
+profiles:
+  - { key: on_foot, ticks_per_cost: 16 }
+# The travellers between cities: the share of a city's people on the road (per thousand), the days they stay, how far
+# they will go (reach_base plus reach_per_power for each whole point of power, in cost units; starting values, tuned by
+# measurement) and the power from which one is a cultivator rather than a trader.
+travel: { share_per_mille: 40, stay_days: [2, 5], reach_base: 1500, reach_per_power: 40, cultivator_power: 5 }
 # Each a polyline of [column, row] tile points; a road over a river is a bridge.
 roads:
   - [[75, 42], [77, 40], [112, 38], [128, 42]]
@@ -130,12 +139,12 @@ fords:
   - [50, 71]
   - [110, 15]
 places:
-  - { key: capital, kind: city, tile: [75, 42], name: place_capital, people: 15000, start: true }
-  - { key: port, kind: city, tile: [128, 42], name: place_port, people: 12000 }
-  - { key: sect, kind: city, tile: [24, 29], name: place_sect, people: 6000 }
-  - { key: oasis, kind: city, tile: [60, 13], name: place_oasis, people: 5000 }
-  - { key: marsh_town, kind: city, tile: [65, 71], name: place_marsh_town, people: 7000 }
-  - { key: isle, kind: city, tile: [143, 58], name: place_isle, people: 5000 }
+  - { key: capital, kind: city, tile: [75, 42], name: place_capital, people: 15000, start: true, draws: { cultivators: 3, traders: 3 } }
+  - { key: port, kind: city, tile: [128, 42], name: place_port, people: 12000, draws: { cultivators: 1, traders: 6 } }
+  - { key: sect, kind: city, tile: [24, 29], name: place_sect, people: 6000, draws: { cultivators: 6, traders: 1 } }
+  - { key: oasis, kind: city, tile: [60, 13], name: place_oasis, people: 5000, draws: { cultivators: 1, traders: 5 } }
+  - { key: marsh_town, kind: city, tile: [65, 71], name: place_marsh_town, people: 7000, draws: { cultivators: 2, traders: 2 } }
+  - { key: isle, kind: city, tile: [143, 58], name: place_isle, people: 5000, draws: { cultivators: 2, traders: 3 } }
   - { key: wolf_fang_pass, kind: danger, sort: mountain_pass, tile: [20, 75], name: place_wolf_fang_pass }
   - { key: serpent_cave, kind: danger, sort: cave, tile: [29, 12], name: place_serpent_cave }
   - { key: weeping_woods, kind: danger, sort: haunted_forest, tile: [2, 80], name: place_weeping_woods }
