@@ -5,7 +5,6 @@
 
 namespace {
 
-// What assets/data/abilities.yaml ships.
 constexpr std::string_view ABILITIES = R"(qi: { max: 100, start: 50 }
 abilities:
   fire_bolt:     { slot: generator, cooldown: 0.25, qi_gain: 10, damage: 140, element: burn, radius: 120, speed: 1500,

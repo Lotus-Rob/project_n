@@ -1,9 +1,8 @@
-// The headless benchmark: ticks a large world without a window or a GPU, reports tick, publish
-// and month-step times, and fails over the budgets, measured on the minimum spec's 2 workers plus this thread:
-// the combat tick (the stress arena's horde and 10,000 bullets, publishing 100,000 instances) inside 8 ms, and
-// a month step for 50,000 world NPCs inside 0.5 s. Run it optimised:
-// `pixi run project_n test --mode release --target headless_bench`. On a machine faster than the minimum spec a pass
-// shows only that nothing grew out of all proportion.
+// The headless benchmark: ticks a large world without a window or a GPU, reports tick, publish and month-step times,
+// and fails over the budgets, measured on the minimum spec's 2 workers plus this thread: the combat tick (the stress
+// arena's horde and 10,000 bullets, publishing 100,000 instances) inside 8 ms, and a month step for 50,000 world NPCs
+// inside 0.5 s. Run it optimised: `pixi run project_n test --mode release --target headless_bench`. On a machine faster
+// than the minimum spec a pass shows only that nothing grew out of all proportion.
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
 #include "core/jobs.hpp"

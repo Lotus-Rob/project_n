@@ -107,7 +107,7 @@ target("headless_bench")
     set_pcxxheader("$(projectdir)/src/pch.hpp") -- not a doctest suite: the game's, without doctest
     add_rules("shared_pch", {owner = "game_pch"})
 
--- Pictures of fixed scenes compared with tests/reference/ Built with the tests
+-- Pictures of fixed scenes compared with tests/reference/. Built with the tests
 -- but not registered as one, as it needs a GPU: `project_n reference` runs it on Mesa's software Vulkan.
 target("reference_tests")
     set_kind("binary")
