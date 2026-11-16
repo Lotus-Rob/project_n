@@ -467,7 +467,7 @@ void Host::Tick(const core::TickCounters& counters, const core::TickInput& input
     }
     core::Domain& active = m_state[ACTIVE];
     if (m_player != core::StableId{}) {
-        const core::Vec2 player = active.Entities().get<Body>(active.Find(m_player)).current;
+        const core::Vec2 player = PlayerBody().current;
         for (auto [entity, creature, orbit] : active.Entities().view<const Creature, Orbit>().each()) {
             if (DataOf(creature.kind).orbitsPlayer) {
                 orbit.centre = player;
@@ -537,8 +537,16 @@ void Host::ToggleWorldPause(u64 tick) {
 }
 
 void Host::WalkTo(core::Vec2 point, u64 tick) {
-    if (!Running().Traits().worldMap || m_player == core::StableId{} || m_worldTicks > TRAVEL_END) {
-        PN_LOG_DEBUG("tick {}: a walk-to is ignored: the scene {} has no world map to walk", tick, Running().Traits().name);
+    if (!Running().Traits().worldMap) {
+        PN_LOG_DEBUG("tick {}: a walk-to is ignored: the scene {} shows no world map", tick, Running().Traits().name);
+        return;
+    }
+    if (m_player == core::StableId{}) {
+        PN_LOG_DEBUG("tick {}: a walk-to is ignored: there is no cultivator to walk", tick);
+        return;
+    }
+    if (m_worldTicks > TRAVEL_END) {
+        PN_LOG_DEBUG("tick {}: a walk-to is ignored: the world clock is past where journeys can be timed", tick);
         return;
     }
     const core::WorldMap& map = *m_data.world;
