@@ -307,7 +307,7 @@ target("build_info")
     end)
     if is_mode("debug") then
         -- Debug builds read and watch the game data in the source tree, so an edit there reloads in
-        -- the running game (design doc 0002.3 §7); never in a build that ships.
+        -- the running game; never in a build that ships.
         set_configvar("PN_SOURCE_DATA", (path.join(os.projectdir(), "assets", "data"):gsub("\\", "/")))
     end
     -- Where the skipped "write the fight save seed" case writes (save_tests.cpp), whatever the working directory.
