@@ -1,5 +1,6 @@
 #include "game/scenes/world.hpp"
 
+#include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/profile.hpp"
 #include "core/random.hpp"
@@ -158,7 +159,8 @@ void SpawnPeople(SceneContext& context, const core::WorldMap& map) {
             }
             // the NPC's identity is the next stable ID the state hands out
             const core::StableId identity{ context.State().Ids().next };
-            SpawnNpc(context.State(), tile, city, StartingPower(seed, identity));
+            const core::StableId spawned = SpawnNpc(context.State(), tile, city, StartingPower(seed, identity));
+            PN_ASSERT(spawned == identity, "an NPC spawned under another stable ID than the one its power was drawn for");
         }
     }
 }
