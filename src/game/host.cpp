@@ -607,15 +607,15 @@ void Host::PublishOverhead(core::Snapshot& snapshot) const {
     }
 }
 
-void Host::PublishTravellers(const core::Rect& area, u32 firstPart, u32 chunks, core::Jobs& jobs) {
-    PN_PROFILE_ZONE();
-    m_travellerLabels.resize(chunks);
-    for (std::vector<core::TextItem>& labels : m_travellerLabels) {
-        labels.clear();
+u32 Host::JourneyChunks() const {
+    // Past TRAVEL_END the clock no longer fits the journeys' signed ticks.
+    if (!Running().Traits().worldMap || m_data.world == nullptr || m_worldTicks > TRAVEL_END) {
+        return 0;
     }
-    if (chunks == 0) {
-        return;
-    }
+    return core::ChunkCount(m_travel.Journeys().size(), PUBLISH_CHUNK);
+}
+
+void Host::PublishJourneys(u32 chunk, u32 part, const core::Rect& area) {
     const core::WorldMap& map = *m_data.world;
     const std::span<const core::Journey> journeys = m_travel.Journeys();
     const auto now = static_cast<i64>(m_worldTicks);
@@ -624,60 +624,56 @@ void Host::PublishTravellers(const core::Rect& area, u32 firstPart, u32 chunks, 
     const f32 height = static_cast<f32>(m_manifest->Sprite(look.sprite).footY) * look.scale;
     const core::Vec2 head{ .x = 0.0F, .y = -height };
     const core::Names* const names = m_data.names.get();
-    const u64 seed = m_state.Seed();
-    jobs.ParallelFor(chunks, [&](u32 chunk) {
-        std::vector<core::TextItem>& labels = m_travellerLabels[chunk];
-        const u32 part = firstPart + chunk;
-        const std::size_t begin = std::size_t{ chunk } * PUBLISH_CHUNK;
-        const std::size_t end = std::min(journeys.size(), begin + PUBLISH_CHUNK);
-        for (std::size_t index = begin; index < end; ++index) {
-            const core::Journey& journey = journeys[index];
-            if (!core::Underway(journey, now)) {
+    std::vector<core::TextItem>& labels = m_travellerLabels[chunk];
+    const std::size_t begin = std::size_t{ chunk } * PUBLISH_CHUNK;
+    const std::size_t end = std::min(journeys.size(), begin + PUBLISH_CHUNK);
+    for (std::size_t index = begin; index < end; ++index) {
+        const core::Journey& journey = journeys[index];
+        if (!core::Underway(journey, now)) {
+            continue;
+        }
+        for (std::size_t member = 0; member < journey.members.size(); ++member) {
+            const core::Vec2 current = core::Where(map, journey, now, member);
+            if (!core::Contains(area, current)) {
                 continue;
             }
-            for (std::size_t member = 0; member < journey.members.size(); ++member) {
-                const core::Vec2 current = core::Where(map, journey, now, member);
-                if (!core::Contains(area, current)) {
-                    continue;
-                }
-                const core::Vec2 previous = core::Where(map, journey, before, member);
-                const core::StableId traveller = journey.members[member];
-                m_drawList.Add(
-                    part,
-                    core::Layer::Decals,
-                    core::Pipeline::Normal,
-                    core::MakeInstance(*m_manifest, { .sprite = SpriteId::Shadow, .previous = previous, .current = current })
-                );
-                m_drawList.Add(
-                    part,
-                    look.layer,
-                    look.pipeline,
-                    core::MakeInstance(
-                        *m_manifest, { .sprite = look.sprite, .previous = previous, .current = current, .scale = look.scale }
-                    ),
-                    current.y,
-                    traveller
-                );
-                if (names == nullptr) {
-                    continue; // a game without names has nothing to call them
-                }
-                const core::NpcName name = core::NameOf(*names, seed, traveller);
-                labels.push_back(
-                    {
-                        .kind = core::TextKind::Label,
-                        .npcName = name,
-                        .previous = previous + head,
-                        .current = current + head,
-                        .offset = LABEL_OFFSET,
-                        .entity = traveller,
-                        .height = height,
-                        .nameKey = core::NameKey(name),
-                        .priority = traveller == m_selected ? core::LabelPriority::Selected : core::LabelPriority::Named,
-                    }
-                );
+            const core::Vec2 previous = core::Where(map, journey, before, member);
+            const core::StableId traveller = journey.members[member];
+            m_drawList.Add(
+                part,
+                core::Layer::Decals,
+                core::Pipeline::Normal,
+                core::MakeInstance(*m_manifest, { .sprite = SpriteId::Shadow, .previous = previous, .current = current })
+            );
+            m_drawList.Add(
+                part,
+                look.layer,
+                look.pipeline,
+                core::MakeInstance(
+                    *m_manifest, { .sprite = look.sprite, .previous = previous, .current = current, .scale = look.scale }
+                ),
+                current.y,
+                traveller
+            );
+            if (names == nullptr) {
+                continue; // a game without names has nothing to call them
             }
+            const core::NpcName name = core::NameOf(*names, m_state.Seed(), traveller);
+            labels.push_back(
+                {
+                    .kind = core::TextKind::Label,
+                    .npcName = name,
+                    .previous = previous + head,
+                    .current = current + head,
+                    .offset = LABEL_OFFSET,
+                    .entity = traveller,
+                    .height = height,
+                    .nameKey = core::NameKey(name),
+                    .priority = traveller == m_selected ? core::LabelPriority::Selected : core::LabelPriority::Named,
+                }
+            );
         }
-    });
+    }
 }
 
 void Host::PublishCaster(core::Snapshot& snapshot) const {
@@ -939,6 +935,7 @@ core::GlowInput DemoGlow(core::GlowRole role, u64 tick) {
 
 void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::optional<core::Rect>& view) {
     PN_PROFILE_ZONE();
+    // Fetched before the fork: a storage asked for the first time is made, which chunks mustn't race to do.
     const auto& bodies = m_state[ACTIVE].Entities().storage<Body>();
     const auto& looks = m_state[ACTIVE].Entities().storage<Look>();
     const auto& ids = m_state[ACTIVE].Entities().storage<core::StableId>();
@@ -970,12 +967,20 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
     const core::Rect area =
         view.value_or(core::Rect{ .min = start - core::WIDEST_HALF_VIEW, .max = start + core::WIDEST_HALF_VIEW });
     const Context context{ *this };
+    // The ground takes the first part whether or not there are entities; the journeys' parts follow the entities'.
     const u32 entityParts = std::max(chunks, 1U);
-    const bool travellers = traits.worldMap && m_data.world != nullptr && m_worldTicks <= TRAVEL_END;
-    const u32 travellerChunks = travellers ? core::ChunkCount(m_travel.Journeys().size(), PUBLISH_CHUNK) : 0;
-    m_drawList.Begin(area, entityParts + travellerChunks);
+    const u32 journeyChunks = JourneyChunks();
+    m_travellerLabels.resize(journeyChunks);
+    for (std::vector<core::TextItem>& labels : m_travellerLabels) {
+        labels.clear();
+    }
+    m_drawList.Begin(area, entityParts + journeyChunks);
     Running().PublishGround(context, area, m_drawList, 0);
-    jobs.ParallelFor(chunks, [&](u32 chunk) {
+    jobs.ParallelFor(chunks + journeyChunks, [&](u32 chunk) {
+        if (chunk >= chunks) {
+            PublishJourneys(chunk - chunks, entityParts + (chunk - chunks), area);
+            return;
+        }
         const std::size_t begin = std::size_t{ chunk } * PUBLISH_CHUNK;
         const std::size_t end = std::min(looks.size(), begin + PUBLISH_CHUNK);
         for (std::size_t i = begin; i < end; ++i) {
@@ -1018,7 +1023,6 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
             );
         }
     });
-    PublishTravellers(area, entityParts, travellerChunks, jobs);
     m_drawList.Publish(snapshot, jobs);
     PublishOverhead(snapshot);
     for (const std::vector<core::TextItem>& labels : m_travellerLabels) {
