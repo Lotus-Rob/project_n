@@ -353,4 +353,32 @@ TEST_CASE("a replay with a cast in a slot past the last, or at a non-finite poin
     CHECK(lastPlays);
 }
 
+// A recording of one tick holding a walk-to towards `point`.
+std::vector<std::byte> RecordedWalkTo(core::Vec2 point) {
+    core::Replay replay;
+    replay.StartRecording(Start());
+    const std::array<core::Action, 1> walk{ { { .kind = core::ActionKind::WalkTo, .point = point } } };
+    replay.Record({ .actions = walk });
+    return replay.FinishRecording();
+}
+
+TEST_CASE("a walk-to's point plays back bit for bit, and one at a non-finite point is refused") {
+    constexpr core::Vec2 POINT{ .x = 12'345.678F, .y = -0.25F };
+    core::Replay player;
+    const auto started = player.StartPlaying(RecordedWalkTo(POINT));
+    REQUIRE(started.has_value());
+    const core::TickInput tick = player.Next();
+    REQUIRE(tick.actions.size() == 1);
+    CHECK(tick.actions[0].kind == core::ActionKind::WalkTo);
+    CHECK(std::bit_cast<u64>(tick.actions[0].point) == std::bit_cast<u64>(POINT));
+    core::Replay nanPlayer;
+    const f32 nan = std::numeric_limits<f32>::quiet_NaN();
+    const bool nanPlays = nanPlayer.StartPlaying(RecordedWalkTo({ .x = 0.0F, .y = nan })).has_value(); // named: MSVC's C4866
+    CHECK_FALSE(nanPlays);
+    core::Replay infinitePlayer;
+    const f32 infinity = std::numeric_limits<f32>::infinity();
+    const bool infinitePlays = infinitePlayer.StartPlaying(RecordedWalkTo({ .x = -infinity, .y = 0.0F })).has_value();
+    CHECK_FALSE(infinitePlays);
+}
+
 } // namespace

@@ -55,19 +55,6 @@ bool IsWorldNpc(const core::State& state, core::StableId npc) {
     return state.DomainOf(npc) == WORLD && state[WORLD].Entities().all_of<Npc>(state[WORLD].Find(npc));
 }
 
-/// Whether `leg`, read from a save, can be placed on `map`: its shape and profile exist, it starts from a finite point,
-/// its tiles are on the map, one arrive tick each from 0 and rising, and its end tick fits.
-bool LegSound(const core::Leg& leg, const core::WorldMap& map) {
-    const u32 tiles = map.Columns() * map.Rows();
-    return leg.shape <= core::LegShape::TileRoute && leg.profile < map.Profiles().size() && core::IsFinite(leg.origin) &&
-           !leg.tiles.empty() && leg.arrive.size() == leg.tiles.size() && leg.arrive.front() == 0 &&
-           std::ranges::adjacent_find(leg.arrive, std::greater_equal{}) == leg.arrive.end() &&
-           std::ranges::all_of(
-               leg.tiles, [tiles](u32 tile) { return tile < tiles; }
-           ) &&
-           leg.startTick <= std::numeric_limits<i64>::max() - i64{ leg.arrive.back() };
-}
-
 /// Whether `stay`, read from a save, can be placed on `map`: in a city, ending at or after it starts, lasting no more
 /// ticks than a leg's arrive ticks hold, and ending at least a day before an i64's most, so placing its walker (whose
 /// last day runs a day past its start) never overflows.
@@ -182,6 +169,17 @@ void SetOut(const VisitMonth& month, auto& npcs, const auto& ids, u32 chunk, std
 }
 
 } // namespace
+
+bool LegSound(const core::Leg& leg, const core::WorldMap& map) {
+    const u32 tiles = map.Columns() * map.Rows();
+    return leg.shape <= core::LegShape::TileRoute && leg.profile < map.Profiles().size() && core::IsFinite(leg.origin) &&
+           !leg.tiles.empty() && leg.arrive.size() == leg.tiles.size() && leg.arrive.front() == 0 &&
+           std::ranges::adjacent_find(leg.arrive, std::greater_equal{}) == leg.arrive.end() &&
+           std::ranges::all_of(
+               leg.tiles, [tiles](u32 tile) { return tile < tiles; }
+           ) &&
+           leg.startTick <= std::numeric_limits<i64>::max() - i64{ leg.arrive.back() };
+}
 
 core::VisitorKind VisitorOf(const core::TravelRules& rules, f32 power) {
     return power >= rules.cultivatorPower ? core::VisitorKind::Cultivator : core::VisitorKind::Trader;

@@ -46,6 +46,10 @@ struct JournalEntry {
     }
 };
 
+/// Whether `leg`, read from a save, can be placed on `map`: its shape and profile exist, it starts from a finite point, its
+/// tiles are on the map, one arrive tick each from 0 and rising, and its end tick fits an i64.
+[[nodiscard]] bool LegSound(const core::Leg& leg, const core::WorldMap& map);
+
 /// The kind of visitor an NPC of `power` is: a cultivator from `rules.cultivatorPower` up, a trader below.
 [[nodiscard]] core::VisitorKind VisitorOf(const core::TravelRules& rules, f32 power);
 

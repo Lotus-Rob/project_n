@@ -66,8 +66,8 @@ constexpr f32 MIDDLE = 0.5F;
 
 // The host's part of a save: its format, then a version per domain, each changed with what its components save.
 // 2: the player and the selection; 3: the respawns waiting, the volleys and the flashes; 4: the seals; 5: the world clock,
-// the month steps run and the world pause in place of the months passed
-constexpr u32 ARENA_FORMAT = 5;
+// the month steps run and the world pause in place of the months passed; 6: the player's route
+constexpr u32 ARENA_FORMAT = 6;
 constexpr u32 ACTIVE_VERSION =
     5; // 2: creatures; 3: spin; 4: health, dying, arriving, caster, dashing, afflictions; 5: the NPCs' homes
 constexpr u32 WORLD_VERSION = 3; // 2: the NPCs' homes; 3: the travelling action, the journeys and the journals
@@ -164,6 +164,21 @@ bool ClockFits(u64 worldTicks, u64 months) {
     const u64 month = worldTicks / TICKS_PER_MONTH;
     return worldTicks <= CALENDAR_END &&
            (month == months || (month > months && month - months == 1 && worldTicks % TICKS_PER_MONTH == 0));
+}
+
+/// Whether the player's route read from a save can be walked: none, or, on `map` (null where the scene shows none) with
+/// the world clock at `worldTicks` within journeys' ticks, a journey of `player` alone with one tile route leg by
+/// core::WALKING of a step at least that LegSound() accepts.
+bool RouteFits(const std::optional<core::Journey>& route, core::StableId player, const core::WorldMap* map, u64 worldTicks) {
+    if (!route) {
+        return true;
+    }
+    if (map == nullptr || player == core::StableId{} || worldTicks > TRAVEL_END || route->members.size() != 1 ||
+        route->members.front() != player || route->parts.size() != 1 || route->parts.front().stay) {
+        return false;
+    }
+    const core::Leg& leg = route->parts.front().leg;
+    return leg.profile == core::WALKING && leg.tiles.size() >= 2 && LegSound(leg, *map);
 }
 
 core::SceneId SceneIdOf(const core::Manifest& manifest, core::SceneKey scene) {
@@ -333,6 +348,7 @@ void Host::EnterScene() {
         m_worldPaused = m_loaded->worldPaused;
         m_player = m_loaded->player;
         m_selected = m_loaded->selected;
+        m_route = std::move(m_loaded->route);
         m_loaded.reset();
         m_requested.reset(); // the load replaces the scene a CycleScene asked for
         ApplyData();
@@ -366,7 +382,7 @@ void Host::SeedTravel() {
 }
 
 /// Everything but the calendar (the world clock and the month steps run) and the game data starts afresh: the entities,
-/// their IDs, the relationships, the travel, the selection, the world pause.
+/// their IDs, the relationships, the travel, the selection, the world pause, the player's route.
 void Host::Build(core::SceneKey scene) {
     m_state = core::State{ DOMAINS, SEED };
     m_relationships = Relationships{};
@@ -379,6 +395,7 @@ void Host::Build(core::SceneKey scene) {
     m_player = {};
     m_selected = {};
     m_worldPaused = false;
+    m_route.reset();
     m_worldTicksBefore = m_worldTicks;
     PN_ASSERT(
         !Running().Traits().worldMap || m_data.world != nullptr, "a world scene built without the world map: CheckScenes()"
@@ -434,8 +451,10 @@ void Host::Tick(const core::TickCounters& counters, const core::TickInput& input
         return;
     }
     TakeActions(input.actions, counters, events);
+    const bool clockRuns = Running().Traits().worldMap && !m_worldPaused && !MonthDue() && m_worldTicks < CALENDAR_END;
     if (!Combat::Dash(m_state, m_player, counters.simulation)) {
-        Walk(m_worldPaused ? core::Vec2{} : input.held.move);
+        // A route walks to where the clock is by the end of the tick, so the portal sees the step it takes.
+        Move(input.held.move, clockRuns ? m_worldTicks + 1 : m_worldTicks, counters.simulation);
     }
     if (OnPortal()) {
         const core::SceneKey next = NextWalkableScene(m_scene);
@@ -443,7 +462,7 @@ void Host::Tick(const core::TickCounters& counters, const core::TickInput& input
         Leave(next, events);
         return;
     }
-    if (Running().Traits().worldMap && !m_worldPaused && !MonthDue() && m_worldTicks < CALENDAR_END) {
+    if (clockRuns) {
         ++m_worldTicks;
     }
     core::Domain& active = m_state[ACTIVE];
@@ -502,6 +521,9 @@ void Host::TakeActions(
         else if (action.kind == core::ActionKind::ToggleWorldPause) {
             ToggleWorldPause(counters.simulation);
         }
+        else if (action.kind == core::ActionKind::WalkTo) {
+            WalkTo(action.point, counters.simulation);
+        }
     }
 }
 
@@ -512,6 +534,86 @@ void Host::ToggleWorldPause(u64 tick) {
     }
     m_worldPaused = !m_worldPaused;
     PN_LOG_INFO("tick {}: the world is {}", tick, m_worldPaused ? "paused" : "resumed");
+}
+
+void Host::WalkTo(core::Vec2 point, u64 tick) {
+    if (!Running().Traits().worldMap || m_player == core::StableId{} || m_worldTicks > TRAVEL_END) {
+        PN_LOG_DEBUG("tick {}: a walk-to is ignored: the scene {} has no world map to walk", tick, Running().Traits().name);
+        return;
+    }
+    const core::WorldMap& map = *m_data.world;
+    const core::Rect area{ .min = {},
+                           .max = { .x = static_cast<f32>(map.Columns()) * map.TileSize(),
+                                    .y = static_cast<f32>(map.Rows()) * map.TileSize() } };
+    if (!core::Contains(area, point)) {
+        PN_LOG_DEBUG("tick {}: a walk-to ({}, {}) off the map is ignored", tick, point.x, point.y);
+        return;
+    }
+    const core::Vec2 foot = PlayerBody().current;
+    const u32 target = map.TileAt(point);
+    const std::vector<u32> tiles = core::FindRoute(map, core::WALKING, map.TileAt(foot), target);
+    if (tiles.empty()) {
+        PN_LOG_DEBUG("tick {}: a walk-to tile {} is ignored: no way there on foot", tick, target);
+        return;
+    }
+    if (tiles.size() == 1) {
+        // A route of the one tile would jump the foot to its centre, or be a step of no ticks that never ends.
+        m_route.reset();
+        PN_LOG_DEBUG("tick {}: the cultivator already stands on tile {} and stops there", tick, target);
+        return;
+    }
+    core::Journey route;
+    route.members = { m_player };
+    route.parts.push_back(
+        { .stay = false, .leg = core::MakeTileLeg(map, core::WALKING, static_cast<i64>(m_worldTicks), foot, tiles) }
+    );
+    PN_LOG_INFO(
+        "tick {}: the cultivator sets out for tile {}, {} tiles on, arriving at world tick {}",
+        tick,
+        target,
+        tiles.size() - 1,
+        core::EndTick(route)
+    );
+    m_route = std::move(route);
+}
+
+void Host::Move(core::Vec2 move, u64 worldTick, u64 tick) {
+    if (m_route && (move.x != 0.0F || move.y != 0.0F)) {
+        m_route.reset();
+        PN_LOG_DEBUG("tick {}: held movement ends the cultivator's route", tick);
+    }
+    if (m_worldPaused) {
+        Walk({}); // the cultivator stands, any route held
+        return;
+    }
+    if (m_route) {
+        FollowRoute(worldTick, tick);
+        return;
+    }
+    Walk(move);
+}
+
+void Host::FollowRoute(u64 worldTick, u64 tick) {
+    if (!m_route || m_player == core::StableId{}) {
+        return;
+    }
+    const core::Journey& route = *m_route;
+    Body& body = PlayerBody();
+    const auto clock = static_cast<i64>(worldTick);
+    body.previous = body.current;
+    body.current = core::Where(*m_data.world, route, clock);
+    if (clock >= core::EndTick(route)) {
+        PN_LOG_DEBUG("tick {}: the cultivator reaches the end of its route", tick);
+        m_route.reset();
+    }
+}
+
+Body& Host::PlayerBody() {
+    return m_state[ACTIVE].Entities().get<Body>(m_state[ACTIVE].Find(m_player));
+}
+
+const Body& Host::PlayerBody() const {
+    return m_state[ACTIVE].Entities().get<Body>(m_state[ACTIVE].Find(m_player));
 }
 
 void Host::Leave(core::SceneKey next, std::vector<core::Event>& events) {
@@ -697,6 +799,25 @@ void Host::PublishCaster(core::Snapshot& snapshot) const {
     };
 }
 
+void Host::PublishRoute(core::Snapshot& snapshot) const {
+    PN_PROFILE_ZONE();
+    if (!m_route || m_player == core::StableId{}) {
+        return;
+    }
+    const auto now = static_cast<i64>(m_worldTicks);
+    snapshot.route.push_back(PlayerBody().current);
+    for (const core::JourneyPart& part : m_route->parts) {
+        for (std::size_t tile = 0; !part.stay && tile < part.leg.tiles.size(); ++tile) {
+            if (part.leg.startTick + i64{ part.leg.arrive[tile] } > now) {
+                snapshot.route.push_back(m_data.world->TileCentre(part.leg.tiles[tile]));
+            }
+        }
+    }
+    if (snapshot.route.size() == 1) {
+        snapshot.route.clear(); // nothing left to walk, so no line and no end to mark
+    }
+}
+
 void Host::DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const {
     PN_PROFILE_ZONE();
     const u64 use = core::AbilityUse(counters.simulation, USE_DEBUG_BURST);
@@ -760,6 +881,10 @@ void Host::AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs,
         if (m_worldTicks < nextMonth) {
             m_worldTicks = nextMonth;
             m_worldTicksBefore = m_worldTicks; // rather than draw travellers streaking across the skipped days
+            if (m_route) {
+                FollowRoute(m_worldTicks, counters.simulation);
+                PlayerBody().previous = PlayerBody().current; // it stands there a frame, as the travellers do
+            }
         }
         ++m_months;
         PN_LOG_INFO("month {} begins at world tick {}", m_months + 1, m_worldTicks);
@@ -798,6 +923,10 @@ void Host::Write(Archive& archive) const {
     core::SaveDomain(archive, m_state[WORLD], WorldComponents{});
     m_relationships.Save(archive);
     m_travel.Save(archive);
+    archive(m_route.has_value());
+    if (m_route) {
+        archive(*m_route);
+    }
     m_combat.Save(archive);
 }
 
@@ -848,6 +977,12 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
     const bool sceneHasMap = scene < Scenes().size() && SceneOf(core::SceneKey{ scene }).Traits().worldMap;
     Travel travel;
     static_cast<void>(travel.Load(archive, state, sceneHasMap ? m_data.world.get() : nullptr)); // a refusal fails `archive`
+    bool walking = false;
+    archive(walking);
+    std::optional<core::Journey> route = std::nullopt;
+    if (walking) {
+        archive(route.emplace());
+    }
     Combat combat;
     combat.Load(archive);
     const bool npcsPlaced = NpcsPlaced(state, sceneHasMap ? m_data.world.get() : nullptr);
@@ -855,8 +990,10 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
                                                             state[ACTIVE].Entities().all_of<Body>(state[ACTIVE].Find(player)));
     // The pause only holds where the world map shows, as a scene build clears it.
     const bool calendarFits = ClockFits(worldTicks, months) && (!worldPaused || sceneHasMap);
+    const bool routeFits = RouteFits(route, player, sceneHasMap ? m_data.world.get() : nullptr, worldTicks);
     if (archive.Failed() || archive.Remaining() != 0 || !Consistent(state) || !npcsPlaced || !playerFound || !calendarFits ||
-        !combat.AimsAtCreatures(state) || !combat.FlashesStartBy(simulationTick) || !combat.SealsStartBy(simulationTick)) {
+        !routeFits || !combat.AimsAtCreatures(state) || !combat.FlashesStartBy(simulationTick) ||
+        !combat.SealsStartBy(simulationTick)) {
         return false;
     }
     m_loaded.emplace(
@@ -869,7 +1006,8 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
         months,
         worldPaused,
         player,
-        selected
+        selected,
+        std::move(route)
     );
     return true;
 }
@@ -955,6 +1093,7 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
             .day = static_cast<u32>((m_worldTicks % TICKS_PER_MONTH) / TICKS_PER_DAY),
             .paused = m_worldPaused,
         };
+        PublishRoute(snapshot);
     }
     const u32 chunks = core::ChunkCount(looks.size(), PUBLISH_CHUNK);
     core::Vec2 start = (traits.view.min + traits.view.max) * MIDDLE;
