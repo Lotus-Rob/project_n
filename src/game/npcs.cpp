@@ -27,7 +27,7 @@ f32 Unit(u64 random) {
     return static_cast<f32>(core::ToUnit(random));
 }
 
-// The starting power's bands: each is a share of 100 draws and a range [low, high).
+/// The starting power's bands: each is a share of 100 draws and a range [low, high).
 struct PowerBand {
     u32 share;
     f64 low;
@@ -54,8 +54,8 @@ struct Month {
     std::span<const std::pair<u32, core::StableId>> byCell; // every world NPC by (cell, stable ID)
 };
 
-// One NPC's month: it scores its actions, takes the best and changes itself; a meeting it starts goes into `met` as
-// (met, by).
+/// One NPC's month: it scores its actions, takes the best and changes itself; a meeting it starts goes into `met` as
+/// (met, by).
 void LiveMonth(
     Npc& person,
     Needs& want,

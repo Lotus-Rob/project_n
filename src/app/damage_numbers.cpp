@@ -10,27 +10,27 @@ namespace app {
 
 namespace {
 
-// Fast at first, slowing to a stop at 1.
+/// Fast at first, slowing to a stop at 1.
 f32 EaseOut(f32 progress) {
     const f32 left = 1.0F - progress;
     return 1.0F - (left * left);
 }
 
-// Slow at both ends.
+/// Slow at both ends.
 f32 EaseInOut(f32 progress) {
     constexpr f32 THREE = 3.0F;
     constexpr f32 TWO = 2.0F;
     return progress * progress * (THREE - (TWO * progress));
 }
 
-// What ScatterOf()'s hashes are for, so each draws its own number.
+/// What ScatterOf()'s hashes are for, so each draws its own number.
 enum class Draw : u8 {
     ScatterX,
     ScatterY,
     Stagger,
 };
 
-// Boost's hash_combine: `part` mixed into `hash` so nearby values spread.
+/// Boost's hash_combine: `part` mixed into `hash` so nearby values spread.
 std::size_t Combine(std::size_t hash, u64 part) {
     constexpr std::size_t MIX = 0x9E37'79B9U;
     constexpr u32 LEFT = 6;
@@ -38,7 +38,7 @@ std::size_t Combine(std::size_t hash, u64 part) {
     return hash ^ (std::hash<u64>{}(part) + MIX + (hash << LEFT) + (hash >> RIGHT));
 }
 
-// `sum` plus `value`, held at i64's ends rather than wrapping: a sum of hits never turns negative.
+/// `sum` plus `value`, held at i64's ends rather than wrapping: a sum of hits never turns negative.
 i64 AddWithin(i64 sum, i64 value) {
     constexpr i64 MOST = std::numeric_limits<i64>::max();
     constexpr i64 LEAST = std::numeric_limits<i64>::min();
@@ -51,7 +51,7 @@ i64 AddWithin(i64 sum, i64 value) {
     return sum + value;
 }
 
-// How far `age` is from `begin` to `end`, from 0 to 1.
+/// How far `age` is from `begin` to `end`, from 0 to 1.
 f32 Progress(f32 age, f32 begin, f32 end) {
     return std::clamp((age - begin) / (end - begin), 0.0F, 1.0F);
 }

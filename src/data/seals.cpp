@@ -53,7 +53,7 @@ std::unexpected<core::Error> RefuseSeals(const YAML::Node& node, std::string_vie
     return std::unexpected{ internal::RefusalAt(WHAT, node, why) };
 }
 
-// The sprite `node` names, which must be in the atlas and in `manifest`.
+/// The sprite `node` names, which must be in the atlas and in `manifest`.
 std::expected<core::atlas::SpriteId, core::Error> SpriteAt(
     const YAML::Node& node,
     std::string_view owner,
@@ -62,8 +62,8 @@ std::expected<core::atlas::SpriteId, core::Error> SpriteAt(
     return internal::ReadSprite(WHAT, node, owner, manifest);
 }
 
-// Reads one map's values, keeping the first refusal: each read after it does nothing, so a reader reads every field and
-// checks once (Result()). An absent key leaves its field as it was unless the key is required.
+/// Reads one map's values, keeping the first refusal: each read after it does nothing, so a reader reads every field and
+/// checks once (Result()). An absent key leaves its field as it was unless the key is required.
 class Fields {
 public:
     Fields(
@@ -121,8 +121,8 @@ public:
         field = static_cast<u32>(*value);
     }
 
-    // A stream's period, in seconds: at least a tick, so the stream comes round at most once a tick and its laps stay a
-    // count an f64 holds exactly.
+    /// A stream's period, in seconds: at least a tick, so the stream comes round at most once a tick and its laps stay a
+    /// count an f64 holds exactly.
     void Period(const char* key, f64& field, bool required) {
         Read(key, field, LIFETIME, required);
         if (!m_error && m_map[key] && field < LEAST_PERIOD) {
@@ -140,7 +140,7 @@ public:
         }
     }
 
-    // Which of the `colours` colours of `seal` the `colour` key picks (0 when absent).
+    /// Which of the `colours` colours of `seal` the `colour` key picks (0 when absent).
     void Slot(u8& field, u8 colours, std::string_view seal) {
         u32 slot = 0;
         Whole("colour", slot, 0, 1);
@@ -168,7 +168,7 @@ public:
         Keep(internal::RefusalAt(WHAT, node, why));
     }
 
-    // Keeps `error` unless an earlier refusal is kept.
+    /// Keeps `error` unless an earlier refusal is kept.
     void Keep(const core::Error& error) {
         if (!m_error) {
             m_error = error;
@@ -179,7 +179,7 @@ public:
         return m_error.has_value();
     }
 
-    // The first refusal, if any.
+    /// The first refusal, if any.
     [[nodiscard]] std::expected<void, core::Error> Result() const {
         if (m_error) {
             return std::unexpected{ *m_error };
@@ -196,7 +196,7 @@ public:
     }
 
 private:
-    // Whether `key` is there to read; refuses when it is required and absent.
+    /// Whether `key` is there to read; refuses when it is required and absent.
     bool Present(const char* key, bool required) {
         if (m_map[key]) {
             return true;
@@ -212,7 +212,7 @@ private:
     std::optional<core::Error> m_error = std::nullopt;
 };
 
-// What every part of a seal reads against.
+/// What every part of a seal reads against.
 struct Context {
     const core::Manifest* manifest = nullptr;
     // The glyph sets' names, in core::Seals::glyphSets' order.
@@ -220,14 +220,14 @@ struct Context {
     std::vector<std::string>* warnings = nullptr;
 };
 
-// A satellite as written: the seal it names, resolved once every seal is read.
+/// A satellite as written: the seal it names, resolved once every seal is read.
 struct Link {
     std::string name;
     YAML::Node node;
     std::size_t target = 0;
 };
 
-// A seal as read, before its satellites are checked.
+/// A seal as read, before its satellites are checked.
 struct ReadSeal {
     std::string name;
     YAML::Node node;
@@ -235,7 +235,7 @@ struct ReadSeal {
     std::vector<Link> links;
 };
 
-// Warns of each key of `node` that a part of `kind` doesn't take, those of other kinds included.
+/// Warns of each key of `node` that a part of `kind` doesn't take, those of other kinds included.
 void NotePartKeys(const YAML::Node& node, std::string_view owner, core::SealPartKind kind, std::vector<std::string>* warnings) {
     using Kind = core::SealPartKind;
     if (kind == Kind::Circle) {
@@ -275,7 +275,7 @@ void NotePartKeys(const YAML::Node& node, std::string_view owner, core::SealPart
     }
 }
 
-// A script's glyph set, by name among `context`'s.
+/// A script's glyph set, by name among `context`'s.
 void ReadGlyphs(Fields& fields, const Context& context, core::SealPart& part) {
     fields.Named("facing", FACING_NAMES, part.inward);
     const YAML::Node glyphs = fields.Map()["glyphs"];
@@ -295,7 +295,7 @@ void ReadGlyphs(Fields& fields, const Context& context, core::SealPart& part) {
     part.glyphSet = static_cast<u32>(found - context.glyphSets->begin());
 }
 
-// A star's points and step, which must be below half its points.
+/// A star's points and step, which must be below half its points.
 void ReadStar(Fields& fields, core::SealPart& part) {
     fields.Whole("points", part.count, 3, MOST_ITEMS, true);
     fields.Whole("step", part.step, 1, MOST_ITEMS, true);
@@ -304,7 +304,7 @@ void ReadStar(Fields& fields, core::SealPart& part) {
     }
 }
 
-// A flourish's spill and its 1 to 3 sprites, repeated in turn to fill all three.
+/// A flourish's spill and its 1 to 3 sprites, repeated in turn to fill all three.
 void ReadFlourish(Fields& fields, const Context& context, core::SealPart& part) {
     fields.Read("spill", part.spill, internal::FRACTION);
     const YAML::Node sprites = fields.Map()["sprites"];
@@ -328,7 +328,7 @@ void ReadFlourish(Fields& fields, const Context& context, core::SealPart& part) 
     }
 }
 
-// The sizes and counts a part of its kind takes besides its kind's own keys.
+/// The sizes and counts a part of its kind takes besides its kind's own keys.
 void ReadShape(Fields& fields, core::SealPart& part) {
     using Kind = core::SealPartKind;
     const Kind kind = part.kind;
@@ -579,7 +579,7 @@ std::expected<void, core::Error> ReadColours(const YAML::Node& node, ReadSeal& s
     return {};
 }
 
-// The look's plane, lift, wash and life: the keys of a seal that are plain values.
+/// The look's plane, lift, wash and life: the keys of a seal that are plain values.
 std::expected<void, core::Error> ReadPlainKeys(Fields& fields, core::SealLook& look, const Context& context) {
     const std::string& name = fields.Owner();
     fields.Named("plane", PLANE_NAMES, look.plane);
@@ -691,8 +691,8 @@ enum class Visit : u8 {
     Done
 };
 
-// The deepest a seal's satellites nest under `seal`, all of whose satellites are done (0 with none), or the refusal of a
-// nesting deeper than core::MAX_SATELLITE_DEPTH, at the satellite that goes too deep.
+/// The deepest a seal's satellites nest under `seal`, all of whose satellites are done (0 with none), or the refusal of a
+/// nesting deeper than core::MAX_SATELLITE_DEPTH, at the satellite that goes too deep.
 std::expected<u32, core::Error> DepthBelow(
     const std::vector<ReadSeal>& seals,
     const std::vector<u32>& depths,
@@ -712,8 +712,8 @@ std::expected<u32, core::Error> DepthBelow(
     return deepest;
 }
 
-// Every satellite names a seal of the table, and none forms a loop or nests too deep. A walk depth first with its own
-// stack, so a long chain in a broken file can't overflow the call stack: a seal is done once all its satellites are.
+/// Every satellite names a seal of the table, and none forms a loop or nests too deep. A walk depth first with its own
+/// stack, so a long chain in a broken file can't overflow the call stack: a seal is done once all its satellites are.
 std::expected<void, core::Error> CheckSatellites(std::vector<ReadSeal>& seals) {
     for (ReadSeal& seal : seals) {
         for (Link& link : seal.links) {

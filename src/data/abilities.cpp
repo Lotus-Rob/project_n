@@ -20,7 +20,7 @@ std::unexpected<core::Error> RefuseAbilities(const YAML::Node& node, std::string
     return std::unexpected{ core::Error{ std::format("abilities line {}: {}", node.Mark().line + 1, why) } };
 }
 
-// The first error among `results`, if any.
+/// The first error among `results`, if any.
 template<typename... T>
 std::optional<core::Error> FirstError(const std::expected<T, core::Error>&... results) {
     std::optional<core::Error> first;
@@ -43,8 +43,8 @@ std::expected<u32, core::Error> Count(const YAML::Node& map, std::string_view na
     });
 }
 
-// `name`'s number at `key` as an f32 (a distance, a speed or an angle), finite and not negative; 0 when absent and not
-// `required`.
+/// `name`'s number at `key` as an f32 (a distance, a speed or an angle), finite and not negative; 0 when absent and not
+/// `required`.
 std::expected<f32, core::Error> NonNegative(
     const YAML::Node& map,
     std::string_view name,
@@ -57,7 +57,7 @@ std::expected<f32, core::Error> NonNegative(
     return value.transform([](f64 number) { return static_cast<f32>(number); });
 }
 
-// A required fraction from 0 to below 1.
+/// A required fraction from 0 to below 1.
 std::expected<f32, core::Error> Fraction(const YAML::Node& map, std::string_view name, const char* key) {
     return NonNegative(map, name, key, true).and_then([&](f32 value) -> std::expected<f32, core::Error> {
         if (value >= 1.0F) {
@@ -75,7 +75,7 @@ std::optional<std::size_t> IndexOf(std::span<const std::string_view> names, std:
     return static_cast<std::size_t>(found - names.begin());
 }
 
-// Reads the `motion:` block of `name` (an ability) onto `shape`: each key it leaves out keeps the shape's shipped default.
+/// Reads the `motion:` block of `name` (an ability) onto `shape`: each key it leaves out keeps the shape's shipped default.
 std::expected<void, core::Error> Motion(
     const YAML::Node& node,
     const std::string& name,
@@ -147,7 +147,7 @@ std::expected<core::Affliction, core::Error> AfflictionAt(
     return core::Affliction{ .ticks = *ticks, .damage = *damage };
 }
 
-// Reads a `seal:` block: the seal's name, which game data keeps only as its key, and its size.
+/// Reads a `seal:` block: the seal's name, which game data keeps only as its key, and its size.
 std::expected<core::SealCast, core::Error> SealAt(
     const YAML::Node& node,
     const std::string& name,
@@ -264,7 +264,7 @@ std::expected<core::VolleyShape, core::Error> Swords(
                               .fadeTicks = *fade };
 }
 
-// Reads the `swords:` and `motion:` blocks of `name` (an ability) into `data.volley`.
+/// Reads the `swords:` and `motion:` blocks of `name` (an ability) into `data.volley`.
 std::expected<void, core::Error> Flight(
     const YAML::Node& node,
     const std::string& name,
@@ -487,7 +487,7 @@ std::expected<core::Abilities, core::Error> Read(const YAML::Node& root, std::ve
     return abilities;
 }
 
-// Reads the `combat:` section; each key it leaves out keeps the shipped default of core::CombatRules.
+/// Reads the `combat:` section; each key it leaves out keeps the shipped default of core::CombatRules.
 std::expected<core::CombatRules, core::Error> Combat(const YAML::Node& node, std::vector<std::string>* warnings) {
     if (!node.IsMap()) {
         return RefuseAbilities(node, "the combat rules aren't a map");
@@ -563,7 +563,7 @@ std::expected<core::CombatRules, core::Error> Combat(const YAML::Node& node, std
 
 namespace {
 
-// The combat rules in `root`'s `combat:` section, or the shipped ones with none.
+/// The combat rules in `root`'s `combat:` section, or the shipped ones with none.
 std::expected<core::CombatRules, core::Error> RulesOf(const YAML::Node& root, std::vector<std::string>* warnings) {
     if (!root.IsMap()) {
         return RefuseAbilities(root, "not a map of abilities");
