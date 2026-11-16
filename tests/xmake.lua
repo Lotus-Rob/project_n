@@ -97,7 +97,7 @@ unit_tests("data_tests", "unit/data/*.cpp", "data", true)
 unit_tests("log_early_tests", {"unit/log_startup/main.cpp", "unit/log_startup/early_tests.cpp"})
 unit_tests("log_fallback_tests", {"unit/log_startup/main.cpp", "unit/log_startup/fallback_tests.cpp"})
 
--- The headless benchmark (design doc 0002 §16): ticks a large world without a window or a GPU. Built
+-- The headless benchmark: ticks a large world without a window or a GPU. Built
 -- with the tests and run on request: `project_n test --mode release --target headless_bench`.
 target("headless_bench")
     set_kind("binary")
@@ -107,7 +107,7 @@ target("headless_bench")
     set_pcxxheader("$(projectdir)/src/pch.hpp") -- not a doctest suite: the game's, without doctest
     add_rules("shared_pch", {owner = "game_pch"})
 
--- Pictures of fixed scenes compared with tests/reference/ (design doc 0002 §8.9). Built with the tests
+-- Pictures of fixed scenes compared with tests/reference/ Built with the tests
 -- but not registered as one, as it needs a GPU: `project_n reference` runs it on Mesa's software Vulkan.
 target("reference_tests")
     set_kind("binary")

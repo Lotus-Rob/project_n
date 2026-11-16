@@ -168,7 +168,7 @@ TEST_CASE("a tile's variant depends on its place only, so a view never changes i
     // The narrow view's first tile, (12, 12), is the wide view's tile at row 2, column 2 of its span.
     const std::size_t wideIndex = (std::size_t{ 2 } * WIDE_COLUMNS) + 2;
     CHECK(Same(narrow.instances.front(), wide.instances.at(wideIndex)));
-    // 5a's pick, which two-variant kinds keep: the top bit of the hash of column and row.
+    // The pick two-variant kinds keep: the top bit of the hash of column and row.
     constexpr u64 SEED = 0x5eed;
     constexpr u32 PURPOSE = 9;
     constexpr u32 DRAW = 2;
@@ -193,7 +193,7 @@ TEST_CASE("a tile's variant depends on its place only, so a view never changes i
             ++checked;
         }
     }
-    // Each tile of a two-variant kind wears 5a's pick (asserted once, for all), and both variants occur among them.
+    // Each tile of a two-variant kind wears that pick (asserted once, for all), and both variants occur among them.
     CHECK(checked > 0);
     CHECK(mismatches == 0);
     CHECK(seen.at(0));

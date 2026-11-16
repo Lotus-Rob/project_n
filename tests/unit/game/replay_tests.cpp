@@ -1,9 +1,9 @@
-// The phase 4 gate for replays (design doc 0002 §16, 0002.2), extended in phase 5 (0002.3 §9): an arena with
+// The replay gate: an arena with
 // every NPC system (walking active NPCs, a world of NPCs living months) recorded through the real logic, from the
 // cells and changed to with F2, with the player walking and selecting, a pause, a calendar step and a save in it, plays
 // back in a fresh game in another scene (a load across scenes, waiting for each) with every hash matching, the last
-// one on the recording's final tick. Phase 6 chunk 4 adds a recorded fight: every ability cast, foxes dying and
-// respawning, a save while the swords fly. Phase 6 chunk 5b1 adds the world scene on the shipped map, walked across a
+// one on the recording's final tick. A recorded fight is replayed the same way: every ability cast, foxes dying and
+// respawning, a save while the swords fly. So is the world scene on the shipped map, walked across a
 // month step.
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"

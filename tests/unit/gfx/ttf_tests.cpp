@@ -8,7 +8,7 @@
 namespace {
 
 constexpr f32 POINT_SIZE = 24.0F;
-constexpr u32 XIU = 0x4FEEU; // 修, in the cultivator's name label (design doc 0002.4 §2)
+constexpr u32 XIU = 0x4FEEU; // 修, in the cultivator's name label
 constexpr u32 LATIN_A = 0x41U;
 
 struct FontCloser {
@@ -17,7 +17,7 @@ struct FontCloser {
     }
 };
 
-// SDL3_ttf as built for the game (design doc 0002.4 §3).
+// SDL3_ttf as built for the game.
 TEST_CASE("SDL3_ttf links HarfBuzz") {
     REQUIRE(TTF_Init());
     i32 major = 0;

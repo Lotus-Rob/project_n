@@ -123,7 +123,7 @@ TEST_CASE("the cultivator starts on the start city, the portal a short walk from
     const core::Vec2 point = portal.value_or(core::Vec2{});
     CHECK(point.x == start.x + game::WORLD_PORTAL_OFFSET.x);
     CHECK(point.y == start.y + game::WORLD_PORTAL_OFFSET.y);
-    CHECK(game::WORLD_PORTAL_OFFSET.x == PORTAL_LEFT); // the offset the 5a portal had, left and up from the start
+    CHECK(game::WORLD_PORTAL_OFFSET.x == PORTAL_LEFT); // as before the world map: left and up from the start
     CHECK(game::WORLD_PORTAL_OFFSET.y == PORTAL_UP);
 }
 

@@ -423,7 +423,7 @@ TEST_CASE("the shipped world.yaml has on_foot as profile 0 at pace 16") {
 }
 
 // Build refuses a city it can't reach, so this pins the rule on the shipped file; the danger sites, which Build leaves
-// unchecked (5c enters them), are reachable too.
+// unchecked (the player will enter them), are reachable too.
 TEST_CASE("every city on the shipped map is reachable from the capital, and every danger site too") {
     const std::shared_ptr<const core::WorldMap> map = Shipped();
     const u32 tiles = map->Columns() * map->Rows();

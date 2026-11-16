@@ -601,8 +601,8 @@ TEST_CASE("the world's cultivator starts in quiet country") {
 TEST_CASE("no screen of the world is a pile of walkers") {
     constexpr std::size_t PILE = 150;
     // The port's crowd has a limit of its own: its widest view (the busiest region, kept at 2,000 walkers or more so
-    // `measure` stays comparable with 5a) is about 35 to 40 percent sea, where no walker stands, so the land holds
-    // more a screen than PILE allows. The user's decision, 2026-11-15.
+    // `measure` stays comparable over time) is about 35 to 40 percent sea, where no walker stands, so the land holds
+    // more a screen than PILE allows, so the port gets its own bound.
     constexpr std::size_t PORT_PILE = 210;
     constexpr std::size_t COUNTRYSIDE = 8;
     const game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
@@ -1200,7 +1200,7 @@ TEST_CASE("a role without a demo drive has no glow") {
     CHECK(game::DemoGlow(core::GlowRole::Hover, 10).role == core::GlowRole::None);
 }
 
-// The arena's showcase seals (the phase 6 chunk 4b spec, "The showcase"), in the order it publishes them.
+// The arena's showcase seals, in the order it publishes them.
 constexpr std::array<core::SealKey, 7> SHOWCASE{ { core::SealKeyOf("showcase_grand"),
                                                    core::SealKeyOf("showcase_upright"),
                                                    core::SealKeyOf("showcase_overhead"),
