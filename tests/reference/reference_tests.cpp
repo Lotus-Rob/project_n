@@ -1,11 +1,10 @@
-// Renders fixed views offscreen and compares them with the committed pictures in tests/reference/
-// (design doc 0002 §8.9). Run through `project_n reference`, which picks Mesa's software Vulkan and
-// the working directory: each view's picture lands in build/reference/, where `--update` takes it from.
-// Game text is also measured on the pictures (the phase 6 chunk 3 spec, "Testing"): a label's ink must not shimmer at
-// sub-pixel camera offsets, nor step while its creature moves. So are the glows' drives (the phase 6 glow spec): a demo
-// glow's drawn amount follows core::GlowStrength() from tick to tick, and reduce flashing holds and dims it. So are the
-// seals (the phase 6 chunk 4b spec, "Testing"): a screen-wide seal's ink, tile by tile, must not shimmer at sub-pixel camera
-// offsets. So is the world map (the phase 6 chunk 5a spec): its tiles and walkers at the smallest zoom, the same way.
+// Renders fixed views offscreen and compares them with the committed pictures in tests/reference/. Run through `project_n
+// reference`, which picks Mesa's software Vulkan and the working directory: each view's picture lands in build/reference/,
+// where `--update` takes it from. Game text is also measured on the pictures: a label's ink must not shimmer at sub-pixel
+// camera offsets, nor step while its creature moves. So are the glows' drives: a demo glow's drawn amount follows
+// core::GlowStrength() from tick to tick, and reduce flashing holds and dims it. So are the seals: a screen-wide seal's ink,
+// tile by tile, must not shimmer at sub-pixel camera offsets. So is the world map: its tiles and walkers at the smallest zoom,
+// the same way.
 #include "app/damage_numbers.hpp"
 #include "app/hud.hpp"
 #include "app/view.hpp"
@@ -1130,7 +1129,7 @@ TEST_CASE("a label following its creature doesn't step, over a dark and a pale g
     }
 }
 
-// A demo glow drawn alone, to be measured (the phase 6 glow spec, "Testing"): its prop at simulation `tick`, the render
+// A demo glow drawn alone, to be measured: its prop at simulation `tick`, the render
 // clock `alpha` of the way from the tick before, with nothing else but, if `ground`, the pale ground (else the dark
 // backdrop, where a light glow adds without saturating).
 struct GlowShot {
@@ -1448,8 +1447,8 @@ TileChange WorstTileChange(const std::array<std::vector<f64>, 2>& tiles) {
 TEST_CASE("a screen-wide seal at the smallest zoom: no shimmer") {
     // Its outer radius, in world units: most of the half of the 7,680 the smallest zoom shows across.
     constexpr f32 SCREEN_WIDE = 3'600.0F;
-    // A label's, at its sub-pixel offsets. Measured 0.0110 over the backdrop and 0.0032 over the pale ground (2026-11-14,
-    // three runs alike; the tiles whose windows the picture's edge cuts left out, which changed neither).
+    // A label's, at its sub-pixel offsets. Measured 0.0110 over the backdrop and 0.0032 over the pale ground (three runs alike;
+    // the tiles whose windows the picture's edge cuts left out, which changed neither).
     constexpr f64 MOST_CHANGE = 0.02;
     // The pale ground's foot and scale: the painted ground, one flat colour, grown to cover the whole view.
     constexpr core::Vec2 PALE_FOOT{ .x = -3'000.0F, .y = -1'800.0F };
@@ -1492,10 +1491,10 @@ TEST_CASE("a screen-wide seal at the smallest zoom: no shimmer") {
 
 // A regression guard, not a proof of no shimmer: the tiles shimmer today, above the 0.02 the labels and seals hold.
 TEST_CASE("the world's tiles and walkers at the smallest zoom: shimmer held to its bound") {
-    // Measured 0.0436 on the data-driven world map (2026-11-15, its harbour reshaped; 0.0397 before; 5a's flat world measured
+    // Measured 0.0436 on the data-driven world map (its harbour reshaped; 0.0397 before; the earlier flat world measured
     // 0.0309). It is the ground's, not the walkers': the worst tiles sit where two kinds of terrain meet, whose hard tile-quad
     // edges step a whole pixel at a time (the dark forest's small ink over the dark backdrop weighs its tiles' changes more),
-    // so the harbour's longer shore adds some. The fix is the sweep-up backlog's world map look (blending between kinds),
+    // so the harbour's longer shore adds some. The fix is a world map look that blends between kinds,
     // which must bring this to 0.02 or under and tighten the bound. About 1.4 times the measure (the seals' 0.02 is about
     // twice their 0.011).
     constexpr f64 MOST_CHANGE = 0.06;

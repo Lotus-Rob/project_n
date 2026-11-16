@@ -1,4 +1,4 @@
-// The arena's showcase seals as drawn (the phase 6 chunk 4b spec, "The showcase"): the arena places them, seals.yaml
+// The arena's showcase seals as drawn: the arena places them, seals.yaml
 // gives their looks and gfx lays them out, so only a test that has all three can check where they reach.
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"

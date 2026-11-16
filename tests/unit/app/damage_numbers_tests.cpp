@@ -273,7 +273,7 @@ TEST_CASE("a number holds its opacity, then fades out evenly") {
     }
 }
 
-// The user's addition: scatter and stagger, so numbers on one creature in one tick don't print over each other.
+// Scatter and stagger, so numbers on one creature in one tick don't print over each other.
 
 // The scatter of each number of `hits` hits on one target in one tick, by its hit's ordinal (its value), as drawn over
 // their whole lives: they start up to NUMBER_STAGGER_MAX_SECONDS apart, so no one moment shows them all.

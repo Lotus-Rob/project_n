@@ -15,7 +15,7 @@ namespace {
 
 constexpr u32 SHIPPED_PEOPLE = 50'000;
 
-// The shipped map's size stays in code until 5b2 (WORLD_COLUMNS, WORLD_ROWS, WORLD_TILE: the stand-in walkers' spread
+// The shipped map's size stays in code (WORLD_COLUMNS, WORLD_ROWS, WORLD_TILE: the stand-in walkers' spread
 // and gatherings are laid out on them), so the map must match it.
 TEST_CASE("the shipped world map is the size the world scene's code assumes") {
     const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
@@ -24,7 +24,7 @@ TEST_CASE("the shipped world map is the size the world scene's code assumes") {
     CHECK(map->TileSize() == doctest::Approx(game::WORLD_TILE));
 }
 
-// `measure` counts the world's NPCs: the cities' shares are its load, as 5a's 50,000.
+// `measure` counts the world's NPCs: the cities' shares are its load, which stays comparable at 50,000.
 TEST_CASE("the shipped cities' shares sum to 50,000") {
     const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
     u32 people = 0;

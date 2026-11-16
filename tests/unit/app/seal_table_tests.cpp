@@ -1,4 +1,4 @@
-// A seals table read from text and drawn (the phase 6 chunk 4b spec, "Drawing"): seals.yaml is untrusted input, so a table
+// A seals table read from text and drawn: seals.yaml is untrusted input, so a table
 // the reader accepts, however extreme its values, lays out only finite numbers within their ranges. Only a test that has
 // both the reader and the layout can follow a value from the file to the GPU's records.
 #include "core/cxx23.hpp" // IWYU pragma: keep

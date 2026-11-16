@@ -1,7 +1,7 @@
-// The headless benchmark (design doc 0002 §16): ticks a large world without a window or a GPU, reports tick, publish
-// and month-step times, and fails over the phase 4 gates, measured on the minimum spec's 2 workers plus this thread:
-// the combat tick (the stress arena's horde and 10,000 bullets, publishing 100,000 instances) inside 8 ms (§7.3), and
-// a month step for 50,000 world NPCs inside 0.5 s (§7.7). Run it optimised:
+// The headless benchmark: ticks a large world without a window or a GPU, reports tick, publish
+// and month-step times, and fails over the budgets, measured on the minimum spec's 2 workers plus this thread:
+// the combat tick (the stress arena's horde and 10,000 bullets, publishing 100,000 instances) inside 8 ms, and
+// a month step for 50,000 world NPCs inside 0.5 s. Run it optimised:
 // `pixi run project_n test --mode release --target headless_bench`. On a machine faster than the minimum spec a pass
 // shows only that nothing grew out of all proportion.
 #include "core/cxx23.hpp" // IWYU pragma: keep
@@ -16,7 +16,7 @@ namespace {
 
 constexpr u64 TICKS = 600;
 constexpr u64 MONTHS = 12;          // NPCs' choices change over the first months; meetings start after several
-constexpr u32 MIN_SPEC_WORKERS = 2; // design doc 0002 §13, on whatever CPU this runs
+constexpr u32 MIN_SPEC_WORKERS = 2; // the minimum spec's core count, on whatever CPU this runs
 constexpr f64 COMBAT_TICK_BUDGET_MS = 8.0;
 constexpr f64 MONTH_STEP_BUDGET_MS = 500.0;
 
@@ -116,7 +116,7 @@ int main(int /*argc*/, char** /*argv*/) {
     }
     if (passed) {
         PN_LOG_INFO(
-            "within the phase 4 budgets on {} workers: combat tick {:.3f} ms of {} ms, month step {:.1f} ms of {} ms",
+            "within the budgets on {} workers: combat tick {:.3f} ms of {} ms, month step {:.1f} ms of {} ms",
             MIN_SPEC_WORKERS,
             minSpec.combatTickMs,
             COMBAT_TICK_BUDGET_MS,
