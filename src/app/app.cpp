@@ -168,12 +168,16 @@ std::expected<std::optional<f32>, core::Error> MonthStepAtOf(std::span<const cha
     if (flag == args.end()) {
         return std::nullopt;
     }
+    if (!HasFlag(args, "--camera-path")) {
+        return std::unexpected{ core::Error{ "--month-step-at: needs --camera-path, whose path it steps a month in" } };
+    }
     const std::string_view text = std::next(flag) == args.end() ? std::string_view{} : std::string_view{ *std::next(flag) };
     f32 seconds = 0.0F;
     const char* last = std::to_address(text.end());
     const auto [end, error] = std::from_chars(std::to_address(text.begin()), last, seconds);
-    if (error != std::errc{} || end != last || !std::isfinite(seconds) || seconds < 0.0F) {
-        return std::unexpected{ core::Error{ std::format("--month-step-at: '{}' isn't a time in seconds, 0 or more", text) } };
+    if (error != std::errc{} || end != last || !std::isfinite(seconds) || seconds < 0.0F || CameraPathOver(seconds)) {
+        return std::unexpected{ core::Error{
+            std::format("--month-step-at: '{}' isn't a time in seconds within the camera path, 0 or more", text) } };
     }
     return seconds;
 }
