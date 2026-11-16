@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup app
-/// The logic thread's side of the game (design doc 0002 §5, §6): the systems it owns, built on
+/// The logic thread's side of the game: the systems it owns, built on
 /// that thread, and its loop of waiting for each tick and running the ticks due.
 
 #include "core/frame.hpp"

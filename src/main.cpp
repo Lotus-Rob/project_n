@@ -184,7 +184,7 @@ int main(int argc, char** argv) {
         PN_LOG_INFO("every scene starts at zoom {}", *zoom);
     }
     try {
-        // One save slot; slots and their screen come with the UI (phase 6).
+        // One save slot: there is no slot choice or screen for it yet.
         const i32 status =
             Run(userData ? data::LoadSettings(*userData / "settings.yaml") : core::Settings{},
                 {

@@ -16,7 +16,7 @@ namespace platform {
 [[nodiscard]] std::expected<std::filesystem::path, core::Error> UserDataDirectory();
 
 /// The folder of the game's runtime assets: `assets/` beside the executable (in the macOS bundle,
-/// `Contents/Resources/assets/`), which the build and `artifact` put there (design doc 0002 §9).
+/// `Contents/Resources/assets/`), which the build and `artifact` put there.
 [[nodiscard]] std::expected<std::filesystem::path, core::Error> AssetsDirectory();
 
 } // namespace platform

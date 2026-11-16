@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup data
-/// The names table (phase 6 chunk 5b2): `assets/data/names.yaml` into core::Names.
+/// The names table: `assets/data/names.yaml` into core::Names.
 
 #include "core/error.hpp"
 #include "core/names.hpp"

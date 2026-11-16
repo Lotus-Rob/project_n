@@ -33,13 +33,12 @@ constexpr std::array PROPS{
     LayoutProp{ .sprite = SpriteId::RockSmall, .foot = { .x = 1180.0F, .y = 300.0F } },
 };
 
-// The stone tablet, with its vertical caption beside it (design doc 0002.4 §2).
+// The stone tablet, with its vertical caption beside it.
 constexpr LayoutProp STELE{ .sprite = SpriteId::Stele, .foot = { .x = 760.0F, .y = 980.0F } };
-// Game text (the phase 6 chunk 3 spec): an offset in world units, so it scales with the zoom as the text does.
+// Game text: an offset in world units, so it scales with the zoom as the text does.
 constexpr core::Vec2 CAPTION_OFFSET{ .x = 24.0F, .y = 0.0F }; // clear of the tablet's right edge
 
-// The painted art around the arena's edges, some larger or smaller than painted (design doc 0002.3 §2: every feature
-// shows in the arena).
+// The painted art around the arena's edges, some larger or smaller than painted: every feature shows in the arena.
 constexpr std::array ARENA_PAINTED{
     LayoutProp{ .sprite = SpriteId::TreantBlighted, .foot = { .x = 1720.0F, .y = 720.0F }, .scale = 1.25F },
     LayoutProp{ .sprite = SpriteId::TreeDead, .foot = { .x = 110.0F, .y = 700.0F }, .scale = 0.7F },

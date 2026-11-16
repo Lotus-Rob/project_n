@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup data
-/// The abilities table (design doc 0002.3 §7): `assets/data/abilities.yaml` into core::Abilities.
+/// The abilities table: `assets/data/abilities.yaml` into core::Abilities.
 
 #include "core/abilities.hpp"
 #include "core/combat_rules.hpp"

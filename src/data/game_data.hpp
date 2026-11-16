@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup data
-/// The data tables (design doc 0002.3 §7): `assets/data/creatures.yaml` and `abilities.yaml` into core::GameData.
+/// The data tables: `assets/data/creatures.yaml` and `abilities.yaml` into core::GameData.
 
 #include "core/error.hpp"
 #include "core/game_data.hpp"

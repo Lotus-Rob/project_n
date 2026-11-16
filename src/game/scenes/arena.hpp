@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup game
-/// The demonstration arena (design doc 0002 §2, 0002.3 §2): the growing demo scene, which shows every feature of the
+/// The demonstration arena: the growing demo scene, which shows every feature of the
 /// game and engine. Each new feature adds itself here. So far:
 /// - a painted ground with props and the painted art, in foot-y order, some drawn larger or smaller (scale) and one
 ///   turning (rotation), with blob shadows;
@@ -10,7 +10,7 @@
 /// - a pack of foxes circling it wherever it walks and glowing orbs circling its start (orbits, the additive pipeline), the
 ///   foxes and the cultivator from the creatures data table (hot reload in debug builds);
 /// - click-to-select, the selected entity outlined in gold and the hovered one in pale white;
-/// - NPCs walking in the active tier and 5,000 in the world tier, whose months pass on request (§7.7);
+/// - NPCs walking in the active tier and 5,000 in the world tier, whose months pass on request;
 /// - saves, loads and replays of all of it;
 /// - F2 cycling through the scenes, each loaded on demand while the ticks wait for it;
 /// - a portal in its top-left corner, a glowing ground seal with a "Portal" caption that the cultivator walks onto to go to
@@ -41,7 +41,7 @@
 ///   pillars of light falling into its shadow on the ground and sparks rising, one in tiers of square and diamond frames,
 ///   one with flames spilling past its rings and drifting shards, and small ones of 1 and 3 rings; scene content,
 ///   republished every tick and never saved, which F8 hides and shows.
-/// Its stress variant (game/scenes/stress.hpp) adds a crowd and a bullet spiral, about 100,000 instances in all (§8.1),
+/// Its stress variant (game/scenes/stress.hpp) adds a crowd and a bullet spiral, about 100,000 instances in all,
 /// and a world tier of 50,000.
 
 #include "core/frame.hpp"

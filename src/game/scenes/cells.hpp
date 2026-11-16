@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup game
-/// The cell grid (design doc 0002 §16 phase 3): a still grid of 640 map cells round the ground's middle, wider than the
+/// The cell grid: a still grid of 640 map cells round the ground's middle, wider than the
 /// view at the smallest zoom, for judging the mips as the view zooms out.
 
 #include "game/scene.hpp"

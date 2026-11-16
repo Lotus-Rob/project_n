@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup app
-/// Bindings (design doc 0002 §10): the table from the player's physical inputs to the game's
+/// Bindings: the table from the player's physical inputs to the game's
 /// controls, and the held movement they add up to. Pure: tested with constructed input events.
 
 #include "core/types.hpp"
@@ -67,7 +67,7 @@ struct Binding {
 /// The stick's radial dead zone: a stick pushed less far than this, of its full travel, is at rest.
 inline constexpr f32 STICK_DEAD_ZONE = 0.2F;
 
-/// The device the player used last: what prompts show (phase 6), and whether the mouse cursor hovers.
+/// The device the player used last: what prompts will show, and whether the mouse cursor hovers.
 class DeviceInUse {
 public:
     /// Notes the device `input` came from; true when what prompts show changed (a gamepad after the
@@ -105,7 +105,7 @@ public:
     /// back; the left button casts or selects, the right casts, Space and 1 to 5 cast; the wheel, the shoulder buttons and
     /// `-` and `=` zoom (every camera action by mouse, keyboard and gamepad); Escape quits; M, F2, F5, F9, F6 and F10 are
     /// the debug keys. Code, not data; bindings become data (a YAML table the player's rebinds save over) when rebinding
-    /// lands with the settings screen (§10, §11).
+    /// lands with the settings screen.
     Bindings();
 
     /// The control `input` presses or releases, if any. Movement inputs update Move() instead and

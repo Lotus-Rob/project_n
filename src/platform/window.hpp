@@ -86,8 +86,7 @@ enum class GamepadFamily : u8 {
 };
 
 /// A physical input the game knows. SDL's standard gamepad layout gives every controller the same
-/// buttons and sticks. Only the inputs the default bindings use; rebinding (design doc
-/// 0002 §10) adds the rest.
+/// buttons and sticks. Only the inputs the default bindings use; rebinding adds the rest.
 enum class InputCode : u8 {
     KeyW,
     KeyA,
@@ -151,7 +150,7 @@ struct InputEvent {
     bool alt = false;
 };
 
-/// Whether the window's state pauses the game (design doc 0002 §6): it lost the focus or was minimised.
+/// Whether the window's state pauses the game: it lost the focus or was minimised.
 [[nodiscard]] constexpr bool PausesGame(const WindowState& state) {
     return !state.focused || state.minimised;
 }
@@ -163,7 +162,7 @@ void ShowError(std::string_view title, std::string_view message);
 
 /// Reports that the game can't start because `what` failed for `error`: logs it at Critical and
 /// shows it with `show` (a title, then the message), since a player who started the game from the
-/// desktop sees no console (design doc 0002 §12).
+/// desktop sees no console.
 void ReportStartFailure(
     std::string_view what,
     const core::Error& error,

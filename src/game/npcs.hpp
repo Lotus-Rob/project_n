@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup game
-/// NPCs in three tiers (design doc 0002 §7.7): active NPCs in the active domain, simulated every
+/// NPCs in three tiers: active NPCs in the active domain, simulated every
 /// tick with their decisions time-sliced; world NPCs in the world domain, simulated only at
 /// calendar steps; and aggregate groups, also in the world domain, that stand for individuals
 /// nobody has met yet. Moving between tiers keeps an NPC's stable ID. The needs and actions here

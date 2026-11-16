@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup data
-/// The strings table (design doc 0002.4.2 §5): `assets/data/strings.yaml` into core::Strings.
+/// The strings table: `assets/data/strings.yaml` into core::Strings.
 
 #include "core/error.hpp"
 #include "core/strings.hpp"

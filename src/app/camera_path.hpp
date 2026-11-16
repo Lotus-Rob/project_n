@@ -2,8 +2,8 @@
 
 /// @file
 /// @ingroup app
-/// The scripted camera path `--camera-path` drives the camera along for the measurements (the phase 6 chunk 5a spec,
-/// Goal 4): its segments, which one is under way at a time, and the Move it presses. CameraControl moves the camera by
+/// The scripted camera path `--camera-path` drives the camera along for the measurements: its
+/// segments, which one is under way at a time, and the Move it presses. CameraControl moves the camera by
 /// it (CameraInput::path). Pure: tested with literal times.
 
 #include "core/tick_clock.hpp"
