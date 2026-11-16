@@ -1914,8 +1914,6 @@ REFERENCES_FOUND = {
     "the user's pointer": "int x = 0;  // the user's tuned value",
     "a block comment": "/* chunk 5 */ int x = 0;",
     "a later line of a block comment": "/*\n * why this order\n * (phase 4)\n */\nint x = 0;",
-    "an item label": "// placeholder id, fix it before signing (O6)",
-    "a design doc decision label": "// the order is fixed (D9) for now",
     "a user's call": "// the user's call: keep the old order",
     "a user's cold rule": "# the user's cold rule",
     "chunk names in a list": "// 5b, 5c share it",
@@ -1943,6 +1941,9 @@ REFERENCES_NOT_FOUND = {
     "a link name": "// an 8b/10b link",
     "the user's setting": "// the user's settings.yaml wins",
     "the user's chosen option": "// the user's chosen key bindings",
+    "dice": "// roll (d6) dice",
+    "a sensor": "// an (O2) sensor reads it",
+    "a standard's section spelled out": "// RFC 8259 section 7 escapes it",
     "a hex literal": "// 0x5b marks it",
     "the user as a role": "// The user's own sanitizer options go last",
     "a user to check": "# for the user to check and publish",
@@ -1992,6 +1993,10 @@ class DesignReferenceTest(unittest.TestCase):
 
     def test_an_apostrophe_in_a_yaml_value_is_no_quote(self):
         self.assertEqual(len(project_n.design_references("assets/data/a.yaml", "name: Wanderer's rest  # phase 4\n")), 1)
+
+    def test_a_yaml_escaped_quote_stays_in_the_string(self):
+        self.assertEqual(project_n.design_references("assets/data/a.yaml", "k: 'it''s # phase 4'\n"), [])
+        self.assertEqual(len(project_n.design_references("assets/data/a.yaml", "k: 'it''s'  # phase 4\n")), 1)
 
     def test_a_quoted_yaml_list_item_hides_its_hash(self):
         self.assertEqual(project_n.design_references("assets/data/a.yaml", "- 'a # chunk 4'\nk: [\"b # chunk 4\"]\n"), [])
