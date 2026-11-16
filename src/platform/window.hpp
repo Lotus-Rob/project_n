@@ -131,6 +131,14 @@ enum class InputCode : u8 {
     KeyEquals, ///< The key right of KeyMinus, by its place.
     KeyP,
     PadBack, ///< SDL's Back button: Xbox's View, PlayStation's Share or Create, Switch's Minus.
+    KeyT,
+    KeyEnter,     ///< Return, and the keypad's Enter.
+    PadSouth,     ///< The face button at the bottom: Xbox's A, PlayStation's Cross, Switch's B.
+    PadNorth,     ///< The face button at the top: Xbox's Y, PlayStation's Triangle, Switch's X.
+    PadDpadUp,    ///< The d-pad's up.
+    PadDpadDown,  ///< The d-pad's down.
+    PadDpadLeft,  ///< The d-pad's left.
+    PadDpadRight, ///< The d-pad's right.
 };
 
 /// One input from the player: a button pressed or released, a stick moved, the wheel turned. Key

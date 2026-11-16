@@ -239,6 +239,9 @@ TEST_CASE("the camera keys I, J, K, L and C become inputs, with an anchor each s
         Pair{ .key = SDL_SCANCODE_L, .code = platform::InputCode::KeyL },
         Pair{ .key = SDL_SCANCODE_C, .code = platform::InputCode::KeyC },
         Pair{ .key = SDL_SCANCODE_P, .code = platform::InputCode::KeyP },
+        Pair{ .key = SDL_SCANCODE_T, .code = platform::InputCode::KeyT },
+        Pair{ .key = SDL_SCANCODE_RETURN, .code = platform::InputCode::KeyEnter },
+        Pair{ .key = SDL_SCANCODE_KP_ENTER, .code = platform::InputCode::KeyEnter },
         Pair{ .key = SDL_SCANCODE_ESCAPE, .code = platform::InputCode::KeyEscape },
         Pair{ .key = SDL_SCANCODE_F5, .code = platform::InputCode::KeyF5 },
     };
@@ -359,6 +362,33 @@ TEST_CASE("the shoulders, the right stick's click and Back become inputs, other 
     CHECK(inputs[3].code == platform::InputCode::PadRightStick);
     CHECK_FALSE(inputs[3].pressed);
     CHECK(inputs[4].code == platform::InputCode::PadBack);
+}
+
+TEST_CASE("the face buttons A and Y and the d-pad become inputs") {
+    struct Pair {
+        SDL_GamepadButton button;
+        platform::InputCode code;
+    };
+    constexpr std::array PAIRS{
+        Pair{ .button = SDL_GAMEPAD_BUTTON_SOUTH, .code = platform::InputCode::PadSouth },
+        Pair{ .button = SDL_GAMEPAD_BUTTON_NORTH, .code = platform::InputCode::PadNorth },
+        Pair{ .button = SDL_GAMEPAD_BUTTON_DPAD_UP, .code = platform::InputCode::PadDpadUp },
+        Pair{ .button = SDL_GAMEPAD_BUTTON_DPAD_DOWN, .code = platform::InputCode::PadDpadDown },
+        Pair{ .button = SDL_GAMEPAD_BUTTON_DPAD_LEFT, .code = platform::InputCode::PadDpadLeft },
+        Pair{ .button = SDL_GAMEPAD_BUTTON_DPAD_RIGHT, .code = platform::InputCode::PadDpadRight },
+    };
+    std::expected<platform::Window, core::Error> window = OpenWindow();
+    for (const Pair& pair : PAIRS) {
+        PushPadButton(pair.button, true);
+    }
+    PushPadButton(SDL_GAMEPAD_BUTTON_EAST, true);
+    std::vector<platform::InputEvent> inputs;
+    static_cast<void>(window->Poll(0, inputs));
+    REQUIRE(inputs.size() == PAIRS.size());
+    for (std::size_t index = 0; index < PAIRS.size(); ++index) {
+        CHECK(inputs[index].code == PAIRS[index].code);
+        CHECK(inputs[index].pressed);
+    }
 }
 
 } // namespace

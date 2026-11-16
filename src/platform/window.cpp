@@ -46,6 +46,9 @@ constexpr std::array KEYS{
     KeyCode{ .key = SDL_SCANCODE_L, .code = InputCode::KeyL },
     KeyCode{ .key = SDL_SCANCODE_C, .code = InputCode::KeyC },
     KeyCode{ .key = SDL_SCANCODE_P, .code = InputCode::KeyP },
+    KeyCode{ .key = SDL_SCANCODE_T, .code = InputCode::KeyT },
+    KeyCode{ .key = SDL_SCANCODE_RETURN, .code = InputCode::KeyEnter },
+    KeyCode{ .key = SDL_SCANCODE_KP_ENTER, .code = InputCode::KeyEnter },
     KeyCode{ .key = SDL_SCANCODE_MINUS, .code = InputCode::KeyMinus },
     KeyCode{ .key = SDL_SCANCODE_EQUALS, .code = InputCode::KeyEquals },
 };
@@ -123,19 +126,28 @@ std::optional<InputEvent> AxisInput(const SDL_GamepadAxisEvent& axis) {
 }
 
 std::optional<InputEvent> PadButtonInput(const SDL_GamepadButtonEvent& button) {
-    InputCode code = InputCode::PadLeftShoulder;
-    if (button.button == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER) {
-        code = InputCode::PadRightShoulder;
-    }
-    else if (button.button == SDL_GAMEPAD_BUTTON_RIGHT_STICK) {
-        code = InputCode::PadRightStick;
-    }
-    else if (button.button == SDL_GAMEPAD_BUTTON_BACK) {
-        code = InputCode::PadBack;
-    }
-    else if (button.button != SDL_GAMEPAD_BUTTON_LEFT_SHOULDER) {
+    struct PadButton {
+        SDL_GamepadButton button = SDL_GAMEPAD_BUTTON_INVALID;
+        InputCode code = InputCode::PadLeftShoulder;
+    };
+    constexpr std::array BUTTONS{
+        PadButton{ .button = SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, .code = InputCode::PadLeftShoulder },
+        PadButton{ .button = SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, .code = InputCode::PadRightShoulder },
+        PadButton{ .button = SDL_GAMEPAD_BUTTON_RIGHT_STICK, .code = InputCode::PadRightStick },
+        PadButton{ .button = SDL_GAMEPAD_BUTTON_BACK, .code = InputCode::PadBack },
+        PadButton{ .button = SDL_GAMEPAD_BUTTON_SOUTH, .code = InputCode::PadSouth },
+        PadButton{ .button = SDL_GAMEPAD_BUTTON_NORTH, .code = InputCode::PadNorth },
+        PadButton{ .button = SDL_GAMEPAD_BUTTON_DPAD_UP, .code = InputCode::PadDpadUp },
+        PadButton{ .button = SDL_GAMEPAD_BUTTON_DPAD_DOWN, .code = InputCode::PadDpadDown },
+        PadButton{ .button = SDL_GAMEPAD_BUTTON_DPAD_LEFT, .code = InputCode::PadDpadLeft },
+        PadButton{ .button = SDL_GAMEPAD_BUTTON_DPAD_RIGHT, .code = InputCode::PadDpadRight },
+    };
+    const std::span buttons{ BUTTONS }; // a span's iterator is a class everywhere, unlike std::array's
+    const auto found = std::ranges::find(buttons, static_cast<SDL_GamepadButton>(button.button), &PadButton::button);
+    if (found == buttons.end()) {
         return std::nullopt;
     }
+    const InputCode code = found->code;
     return InputEvent{ .device = Device::Gamepad,
                        .family = FamilyOf(button.which),
                        .code = code,
