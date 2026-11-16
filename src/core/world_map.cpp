@@ -7,8 +7,6 @@ namespace core {
 
 namespace {
 
-constexpr u32 DIAGONAL_NUMERATOR = 7; // a diagonal step is about the square root of two (7/5) of an orthogonal one
-constexpr u32 DIAGONAL_DENOMINATOR = 5;
 constexpr u8 FLAG_ROAD = std::to_underlying(TileFlag::Road);
 constexpr u8 FLAG_RIVER = std::to_underlying(TileFlag::River);
 constexpr u8 FLAG_BRIDGE = std::to_underlying(TileFlag::Bridge);

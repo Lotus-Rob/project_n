@@ -29,6 +29,12 @@ inline constexpr u16 NO_PLACE = 0xFFFF;
 /// it keeps a path's cost, even a diagonal's seven fifths, far below that sentinel.
 inline constexpr u16 MAX_WALK_COST = 1'000;
 
+/// A diagonal step costs this fraction of the cost of the tile it enters, rounded down (about the square root of two):
+/// StepCost's rule, which the route search's estimate is built on.
+inline constexpr u32 DIAGONAL_NUMERATOR = 7;
+/// The denominator of the diagonal step's fraction; see DIAGONAL_NUMERATOR.
+inline constexpr u32 DIAGONAL_DENOMINATOR = 5;
+
 /// A way of moving over the map, by its place in WorldMapSource::profiles.
 using ProfileIndex = u8;
 /// The profile people walk by: every NPC journey and the player's routes use it.

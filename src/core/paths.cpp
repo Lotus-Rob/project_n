@@ -6,10 +6,6 @@ namespace core {
 
 namespace {
 
-// A diagonal step costs seven fifths of the tile entered, rounded down: StepCost's rule, which the estimate must not exceed.
-constexpr u64 DIAGONAL_NUMERATOR = 7;
-constexpr u64 DIAGONAL_DENOMINATOR = 5;
-
 // Calls `visit(neighbour)` for each of the eight neighbours of `tile` on the map, in ascending tile index.
 template<typename Visit>
 void ForNeighbours(const WorldMap& map, u32 tile, const Visit& visit) {
@@ -27,8 +23,8 @@ void ForNeighbours(const WorldMap& map, u32 tile, const Visit& visit) {
     }
 }
 
-using Entry = std::pair<u64, u32>; // (cost or f, tile)
-using Queue = std::priority_queue<Entry, std::vector<Entry>, std::greater<>>;
+using RouteEntry = std::pair<u64, u32>; // (cost or f, tile)
+using RouteQueue = std::priority_queue<RouteEntry, std::vector<RouteEntry>, std::greater<>>;
 
 // The cheapest cost of entering any tile by `profile`: every tile's cost is one of its kinds' or features' costs, or a
 // cap of the terrain's by one, so none is lower. 0 when nothing is passable.
@@ -58,7 +54,7 @@ u64 Estimate(u32 cheapest, i64 dColumn, i64 dRow) {
 DistanceMap DistanceMap::Build(const WorldMap& map, u32 goal, ProfileIndex profile) {
     std::vector<u32> cost(static_cast<std::size_t>(map.Columns()) * map.Rows(), UNREACHABLE);
     cost.at(goal) = 0;
-    Queue queue;
+    RouteQueue queue;
     queue.emplace(0, goal);
     while (!queue.empty()) {
         const auto [reached, tile] = queue.top();
@@ -107,6 +103,10 @@ std::vector<u32> RouteDown(const WorldMap& map, const DistanceMap& distances, u3
         tile = best;
         route.push_back(tile);
     }
+    PN_ASSERT(route.empty() || tile == distances.Goal(), "a descent along a distance map ends on its goal");
+    if (tile != distances.Goal()) {
+        route.clear();
+    }
     return route;
 }
 
@@ -128,7 +128,7 @@ std::vector<u32> FindRoute(const WorldMap& map, ProfileIndex profile, u32 from, 
     std::vector<u32> cost(tiles, UNREACHABLE);
     std::vector<u32> parent(tiles, UNREACHABLE);
     cost.at(from) = 0;
-    Queue queue; // (f, tile)
+    RouteQueue queue; // (f, tile)
     queue.emplace(estimate(from), from);
     while (!queue.empty()) {
         const auto [estimated, tile] = queue.top();
@@ -169,6 +169,7 @@ Paths::Paths(std::shared_ptr<const WorldMap> map)
 }
 
 const DistanceMap& Paths::To(u16 city, ProfileIndex profile) {
+    PN_ASSERT(city < m_map->Places().size(), "a distance map is asked for a place the map has");
     PN_ASSERT(m_map->Places()[city].kind == PlaceKind::City, "a distance map is kept for cities only");
     std::optional<DistanceMap>& slot = m_maps.at(profile).at(city);
     if (!slot) {

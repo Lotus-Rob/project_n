@@ -21,6 +21,9 @@ constexpr u32 WIDE_LAST_COLUMN = 8;
 // A map from rows of symbols: '.' meadow, ',' sand, '~' deep water, and a digit for a city on meadow, whose place index is
 // the digit.
 core::WorldMapSource Source(const std::vector<std::string>& rows) {
+    for (const std::string& row : rows) {
+        REQUIRE(row.size() == rows.front().size());
+    }
     core::WorldMapSource source;
     source.columns = static_cast<u32>(rows.front().size());
     source.rows = static_cast<u32>(rows.size());
@@ -85,15 +88,15 @@ core::WorldMap RiverMap() {
     return MustBuild(std::move(source));
 }
 
-} // namespace
-
 TEST_CASE("a route takes the road over a shorter line across open ground") {
     core::WorldMapSource source = Source({ "0........", ".........", "........1" });
     source.roads = { { { .column = 0, .row = 1 }, { .column = WIDE_LAST_COLUMN, .row = 1 } } };
     const core::WorldMap map = MustBuild(std::move(source));
     const core::DistanceMap distances = core::DistanceMap::Build(map, 8, core::WALKING);
     const std::vector<u32> route = core::RouteDown(map, distances, 0);
-    CHECK(distances.CostFrom(0) < 8 * MEADOW_COST); // the straight line along the top row
+    // Diagonal onto the road (4 x 7 / 5 = 5), six road steps (24), diagonal off it (10 x 7 / 5 = 14); the straight line along
+    // the top row costs 80.
+    CHECK(distances.CostFrom(0) == 43);
     CHECK(Walked(map, route) == distances.CostFrom(0));
     CHECK(std::ranges::find(route, 13U) != route.end()); // the road's middle, (4, 1)
     CHECK(route.front() == 0);
@@ -128,7 +131,9 @@ TEST_CASE("a distance map's cost is what walking its route costs") {
         CHECK(Walked(map, route) == distances.CostFrom(start));
         CHECK(route.back() == goal);
     }
-    CHECK(distances.CostFrom(map.TileIndex({ .column = 0, .row = 0 })) > FORD_COST);
+    // From the far corner: two diagonals and a step to the ford's west bank (38), the ford (30), the sand beyond (14), a
+    // diagonal and a diagonal onto the road (14 + 5).
+    CHECK(distances.CostFrom(map.TileIndex({ .column = 0, .row = 0 })) == 101);
 }
 
 TEST_CASE("a distance map searches backwards: entering costs differ each way") {
@@ -137,27 +142,43 @@ TEST_CASE("a distance map searches backwards: entering costs differ each way") {
     const u32 sand = map.TileIndex({ .column = 6, .row = 2 });
     const core::DistanceMap toRoad = core::DistanceMap::Build(map, road, core::WALKING);
     const core::DistanceMap toSand = core::DistanceMap::Build(map, sand, core::WALKING);
-    CHECK(toRoad.CostFrom(sand) != toSand.CostFrom(road));
+    CHECK(toRoad.CostFrom(sand) == MEADOW_COST + ROAD_COST); // from the sand, a meadow tile, then the road
+    CHECK(toSand.CostFrom(road) == MEADOW_COST + SAND_COST); // from the road, a meadow tile, then the sand
 }
 
 TEST_CASE("the search costs the same as the distance map") {
-    const core::WorldMap map = MustBuild(Source({ "0.......", "..~~....", "..~.....", "........", ".......1" }));
+    const core::WorldMap lake = MustBuild(Source({ "0.......", "..~~....", "..~.....", "........", ".......1" }));
     const core::WorldMap river = RiverMap();
-    const std::vector<std::pair<u32, u32>> pairs = { { 0, 39 }, { 39, 0 },  { 3, 36 }, { 8, 31 },
-                                                     { 16, 7 }, { 24, 39 }, { 32, 5 }, { 15, 26 } };
-    for (const auto& [from, goal] : pairs) {
-        CAPTURE(from);
-        CAPTURE(goal);
-        const core::DistanceMap distances = core::DistanceMap::Build(map, goal, core::WALKING);
-        const std::vector<u32> route = core::FindRoute(map, core::WALKING, from, goal);
+    struct Sample {
+        std::string name;
+        u32 from;
+        u32 goal;
+        bool goalOnRiver; // on the river map the goal is a river tile no one can enter
+    };
+    const std::vector<Sample> samples = {
+        { .name = "corner to corner", .from = 0, .goal = 39, .goalOnRiver = false },
+        { .name = "the way back", .from = 39, .goal = 0, .goalOnRiver = false },
+        { .name = "onto the river's bank tile, a river on the river map", .from = 3, .goal = 36, .goalOnRiver = true },
+        { .name = "round the lake, over the ford", .from = 8, .goal = 31, .goalOnRiver = false },
+        { .name = "along the ford's row", .from = 16, .goal = 7, .goalOnRiver = false },
+        { .name = "to the road's end from the west bank", .from = 24, .goal = 39, .goalOnRiver = false },
+        { .name = "from the south-west to the north", .from = 32, .goal = 5, .goalOnRiver = false },
+        { .name = "back over the ford, east to west", .from = 15, .goal = 26, .goalOnRiver = false }
+    };
+    for (const auto& [name, from, goal, goalOnRiver] : samples) {
+        CAPTURE(name);
+        const core::DistanceMap distances = core::DistanceMap::Build(lake, goal, core::WALKING);
+        const std::vector<u32> route = core::FindRoute(lake, core::WALKING, from, goal);
         REQUIRE_FALSE(route.empty());
-        CHECK(Walked(map, route) == distances.CostFrom(from));
+        CHECK(Walked(lake, route) == distances.CostFrom(from));
         const core::DistanceMap across = core::DistanceMap::Build(river, goal, core::WALKING);
         const std::vector<u32> crossing = core::FindRoute(river, core::WALKING, from, goal);
-        if (across.CostFrom(from) == core::UNREACHABLE) {
+        if (goalOnRiver) {
             CHECK(crossing.empty());
+            CHECK(across.CostFrom(from) == core::UNREACHABLE);
         }
         else {
+            REQUIRE_FALSE(crossing.empty());
             CHECK(Walked(river, crossing) == across.CostFrom(from));
         }
     }
@@ -173,7 +194,7 @@ TEST_CASE("routes are the same every time") {
 }
 
 TEST_CASE("an unreachable goal gives no route") {
-    const core::WorldMap map = MustBuild(Source({ "0..~.", "...~.", "...~.1" }));
+    const core::WorldMap map = MustBuild(Source({ "0..~.", "...~.", "...~." }));
     const u32 island = 4;
     const u32 shore = 0;
     const core::DistanceMap distances = core::DistanceMap::Build(map, island, core::WALKING);
@@ -197,3 +218,5 @@ TEST_CASE("Paths builds a map once and keeps it") {
     CHECK(&paths.To(1, core::WALKING) == &first);
     CHECK(paths.To(0, core::WALKING).Goal() == 0);
 }
+
+} // namespace

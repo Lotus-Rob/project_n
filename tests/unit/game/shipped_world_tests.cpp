@@ -83,8 +83,6 @@ TEST_CASE("the shipped world's people are mostly mortals, some cultivators, a ra
     CHECK(std::abs(share(strong) - STRONG_SHARE) <= TOLERANCE);
 }
 
-} // namespace
-
 // The search and the distance map are two programs for one answer; the shipped map's roads, river, fords and sand are
 // what could make them differ (the heuristic's floor against seven-fifths diagonals).
 TEST_CASE("the search costs the same as the distance map on the shipped map") {
@@ -108,3 +106,5 @@ TEST_CASE("the search costs the same as the distance map on the shipped map") {
         CHECK(walked == distances.CostFrom(start));
     }
 }
+
+} // namespace
