@@ -16,6 +16,7 @@
 #include "game/npcs.hpp"
 #include "game/scenes/world.hpp"
 #include "platform/paths.hpp"
+#include "support/host.hpp"
 #include "support/manifest.hpp"
 #include "support/saves.hpp"
 #include "support/seals.hpp"
@@ -1916,11 +1917,7 @@ constexpr std::size_t FARTHER = ROUTE_TILES + 2;
 // The ticks the cultivator walks a route before a test changes something: still on its first step.
 constexpr u64 WALKED = 10;
 
-/// `entity`'s body in `host`.
-game::Body BodyOf(const game::Host& host, core::StableId entity) {
-    const core::Domain& active = host.State()[game::ACTIVE];
-    return active.Entities().get<game::Body>(active.Find(entity));
-}
+using test::BodyOf;
 
 /// Ticks `host` once at `tick` with a walk-to towards `point`, under `held` movement.
 void WalkTo(game::Host& host, u64 tick, core::Vec2 point, core::HeldInput held = {}) {
