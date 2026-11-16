@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// The player's settings (design doc 0002.3 §7): what `settings.yaml` in the per-user data folder holds.
+/// The player's settings: what `settings.yaml` in the per-user data folder holds.
 
 #include "core/strings.hpp"
 #include "core/types.hpp"
@@ -49,7 +49,7 @@ struct Settings {
     bool textShadow = true;
     /// Whether the pointer at the window's edge pans the roaming camera.
     bool edgePan = true;
-    /// Every colour of the interface (`settings.yaml` doesn't read it until the accessibility menu, chunk 11).
+    /// Every colour of the interface (`settings.yaml` doesn't read it until the accessibility menu exists).
     UiColours uiColours{};
 };
 

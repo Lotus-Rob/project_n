@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// The game's strings (design doc 0002.4.2 §5): the IDs the code names, and their text in each language, as
+/// The game's strings: the IDs the code names, and their text in each language, as
 /// `assets/data/strings.yaml` holds them.
 
 #include "core/assert.hpp"

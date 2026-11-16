@@ -3,7 +3,7 @@
 /// @file
 /// @ingroup core
 /// Every colour of the user interface in one table of named colours, in the player's settings: the accessibility menu
-/// (chunk 11) lists them as Colours, then an area, then an element, and lets the player change each. The main thread reads
+/// lists them as Colours, then an area, then an element, and lets the player change each. The main thread reads
 /// the table where each element is drawn, so a change shows from the next frame; the simulation never colours anything.
 /// Effects take the colour of their element (damage, healing, poison, burn), never one of their ability's, so a new ability
 /// adds no colour.

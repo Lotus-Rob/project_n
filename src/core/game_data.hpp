@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// The game data (design doc 0002.3 §7): what the data tables in `assets/data/` say, read by the
+/// The game data: what the data tables in `assets/data/` say, read by the
 /// data module and used by the simulation. A replay records its hash and plays only under the same.
 
 #include "core/abilities.hpp"

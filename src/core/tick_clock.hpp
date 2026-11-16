@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// Tick timing (design doc 0002 §6): the logic thread's fixed schedule of 60 ticks a second with
+/// Tick timing: the logic thread's fixed schedule of 60 ticks a second with
 /// its overload policy, the three tick counters, and the main thread's display delay, adoption
 /// test and render clock. Pure functions of the times passed in; nothing here reads a clock.
 
@@ -26,7 +26,7 @@ inline constexpr u64 MAX_CATCH_UP = 3;
 /// How long ticks may run late before it counts as sustained overload.
 inline constexpr u64 OVERLOAD_NS = NS_PER_SECOND;
 /// The display delay D: how long after its scheduled time a snapshot starts to show, so tick run
-/// times can vary without judder. Proposed in the design doc; to be set from measured tick times.
+/// times can vary without judder. A provisional value, to be set from measured tick times.
 inline constexpr u64 DEFAULT_DISPLAY_DELAY_NS = 10'000'000;
 
 /// The scheduled time of the tick `index` ticks after `originNs`, exact to the nanosecond: no
@@ -81,7 +81,7 @@ private:
     std::optional<u64> m_lateSinceNs = std::nullopt;
 };
 
-/// The three tick counters (design doc 0002 §6), saved with the state.
+/// The three tick counters, saved with the state.
 struct TickCounters {
     /// Every tick the schedule runs.
     u64 wall = 0;

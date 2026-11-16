@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// Building sprite instances for the snapshot (design doc 0002 §8.5): the packed 16-bit formats
+/// Building sprite instances for the snapshot: the packed 16-bit formats
 /// the shader unpacks, and an Instance from a sprite of the atlas manifest and its transform.
 
 #include "core/frame.hpp"

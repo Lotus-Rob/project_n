@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// The names of the world's people (phase 6 chunk 5b2): the table `assets/data/names.yaml` holds, and the pure function
+/// The names of the world's people: the table `assets/data/names.yaml` holds, and the pure function
 /// that gives each NPC a name from its stable ID and the game's seed. A name is never saved or put in core::Strings.
 
 #include "core/stable_id.hpp"

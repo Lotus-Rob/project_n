@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// The world map as data (phase 6 chunk 5b1): the authored terrain grid, roads, rivers, fords and places, and the
+/// The world map as data: the authored terrain grid, roads, rivers, fords and places, and the
 /// per-tile layers derived from them (cost, flags, place, region). Read from `world.yaml` by the data module; the
 /// scenes, the drawing and the NPC homes read the result. Everything derived is whole-number work with fixed
 /// tie-breaks, so it is the same on every machine.
@@ -49,8 +49,8 @@ inline constexpr u16 DEFAULT_ROAD_COST = 4;
 /// The cost of a ford tile when the source names none: the shipped map's.
 inline constexpr u16 DEFAULT_FORD_COST = 30;
 
-/// The most people all the cities of a map may home together: twice the shipped map's 50,000, the tier phase 4's gates
-/// were set for. It bounds what the world scene spawns, whatever the data says.
+/// The most people all the cities of a map may home together: twice the shipped map's 50,000, the crowd size the
+/// performance gates were set for. It bounds what the world scene spawns, whatever the data says.
 inline constexpr u32 MOST_WORLD_PEOPLE = 100'000;
 
 /// A tile of the map, by column and row.

@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// The logic thread's work for each burst of ticks (design doc 0002 §6): taking input, running the
+/// The logic thread's work for each burst of ticks: taking input, running the
 /// ticks, frozen while paused, and publishing the last one's snapshot. The thread around it only
 /// waits for the clock and logs. The game module's simulation runs here through core::Simulation.
 
@@ -42,7 +42,7 @@ public:
     /// do nothing. It appends the events the tick starts to `events`; the logic stamps their tick and epoch.
     virtual void Tick(const TickCounters& counters, const TickInput& input, std::vector<Event>& events) = 0;
 
-    /// Runs a calendar step (design doc 0002 §7.3) on a frozen tick that changes the state, keyed
+    /// Runs a calendar step on a frozen tick that changes the state, keyed
     /// on `counters.state`: forks over `jobs` from the thread that created it, and returns early,
     /// leaving the step unfinished, once `stop` is requested (the game is closing).
     virtual void AdvanceCalendar(const TickCounters& counters, Jobs& jobs, const std::stop_token& stop) = 0;
@@ -51,7 +51,7 @@ public:
     /// the step as an AdvanceCalendar action does. It turns false once AdvanceCalendar() has run.
     [[nodiscard]] virtual bool MonthDue() const = 0;
 
-    /// Sorts the state into canonical order (design doc 0002 §7.1), which is part of the timeline,
+    /// Sorts the state into canonical order, which is part of the timeline,
     /// and writes all of it into `archive`.
     virtual void Save(Writer& archive) = 0;
 
@@ -61,17 +61,17 @@ public:
     /// nothing new, when the bytes are malformed or of another version, or don't fit that tick.
     [[nodiscard]] virtual bool Load(Reader& archive, u64 simulationTick) = 0;
 
-    /// A hash of the whole state as it is, order included: two runs that agree hash alike (§7.4).
+    /// A hash of the whole state as it is, order included: two runs that agree hash alike.
     [[nodiscard]] virtual u64 StateHash() const = 0;
 
-    /// Swaps in new game data (design doc 0002.3 §7), which takes effect at once: what the data
+    /// Swaps in new game data, which takes effect at once: what the data
     /// decides for entities that exist (a creature's sprite, its orbit) changes with it.
     virtual void SetData(const GameData& data) = 0;
 
     /// A hash of the game data in use (GameData::Hash): a replay plays only under the data it was recorded with.
     [[nodiscard]] virtual u64 DataHash() const = 0;
 
-    /// The scene its state needs drawn (design doc 0002.3.1 §3): it ticks only while the main thread holds it.
+    /// The scene its state needs drawn: it ticks only while the main thread holds it.
     [[nodiscard]] virtual SceneId Scene() const = 0;
 
     /// The scene it is: its `sprites` are what Scene() returns.
@@ -128,7 +128,7 @@ public:
 
     /// Runs up to `burst.ticks` ticks back to back, then publishes the snapshot of the last one run,
     /// filled by the simulation, naming its scene and the scene change it is in (Snapshot::sceneChange) and stamped
-    /// with `now()`. Every change of scene runs through stages (design doc 0002.3.1 §4, as built in phase 6 chunk 5):
+    /// with `now()`. Every change of scene runs through stages:
     /// - the game's start is change 1, loading (from and to the start scene);
     /// - a tick whose simulation asks for another scene (Simulation::Requested()) starts the next change, leaving,
     ///   and ends its burst (its replay check sees the old scene): the old scene shows, frozen, until a SceneLeft naming
@@ -146,7 +146,7 @@ public:
     /// dropped. Each tick takes the input sent since the one before (the last Pause or Resume wins; while a replay plays, the
     /// recorded input instead) and the newest held input, which every tick of a burst gets, counts itself, frozen while paused
     /// or while a calendar step is asked for, and ticks the simulation unless frozen. Ticks that change what comes next end the
-    /// burst after them, so every change sits at a fixed wall tick whatever the burst sizes (design doc 0002.2 §2):
+    /// burst after them, so every change sits at a fixed wall tick whatever the burst sizes:
     /// - AdvanceCalendar, or a tick that ran the simulation after which it says a month is due (Simulation::MonthDue()):
     ///   the burst publishes the transition, and the next tick runs the step instead of taking input (input waits in the
     ///   handover);
@@ -174,8 +174,7 @@ public:
         return m_counters;
     }
 
-    /// The timeline epoch: 0 at the start, one more at each load or replay start, from its scene change's swap (design
-    /// doc 0002 §5).
+    /// The timeline epoch: 0 at the start, one more at each load or replay start, from its scene change's swap.
     [[nodiscard]] u64 Epoch() const {
         return m_epoch;
     }

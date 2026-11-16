@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// When a system runs (design doc 0002 §7.3): every k simulation ticks at an offset, and, for a
+/// When a system runs: every k simulation ticks at an offset, and, for a
 /// system that time-slices its entities, which of them it processes on a tick. Pure functions of
 /// the tick and the stable ID, so the schedule is the same on every machine and in every replay.
 

@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// The fork-join job system (design doc 0002 §7.5): a parallel-for over fixed-size chunks, run by
+/// The fork-join job system: a parallel-for over fixed-size chunks, run by
 /// worker threads and the thread that forks, which joins before it goes on. enkiTS behind our names.
 
 #include "core/types.hpp"

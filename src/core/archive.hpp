@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// Archives (design doc 0002 §7.6, §7.4): one list of fields per type serves saving, loading and
+/// Archives: one list of fields per type serves saving, loading and
 /// hashing the state. A type lists its fields once, in a member every archive calls:
 ///
 ///     template<typename Self, typename Archive> void Fields(this Self& self, Archive& archive) {

@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// The seals' looks (`assets/data/seals.yaml`; the phase 6 chunk 4b spec, "In the data"): how each named seal is drawn,
+/// The seals' looks (`assets/data/seals.yaml`): how each named seal is drawn,
 /// its plane, ink wash, colours, life, rings and their parts, emblem, satellites and light. Presentation, not game data: it
 /// is not hashed or saved, and the main thread reloads it as the file is edited. A seal in play (core::Seal) finds its look
 /// here by its key. Angles are in degrees, times in seconds; radii, widths and sizes are fractions of the seal's size (its

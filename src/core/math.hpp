@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// Deterministic maths for the simulation (design doc 0002 §7.4): transcendental functions computed
+/// Deterministic maths for the simulation: transcendental functions computed
 /// from IEEE 754's exactly rounded operations only, so one binary gives the same results on every
 /// machine. The platform's maths libraries pick code paths by CPU and change with OS and library
 /// versions; `lint` fails on `std::sin` and the like in `core` and `game`. `std::sqrt`, the basic

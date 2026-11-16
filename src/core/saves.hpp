@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// The save system (design doc 0002 §7.6): one save slot on disk, written by a background job so
+/// The save system: one save slot on disk, written by a background job so
 /// the logic thread never waits on the disk, and read back validated. What goes into a save is
 /// the caller's business (core::Logic); this only stores and fetches its bytes.
 

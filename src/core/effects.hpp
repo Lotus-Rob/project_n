@@ -75,15 +75,15 @@ struct SwordLook {
     /// How much larger than its image (10 by 40) a sword is drawn, above 0: 9 by 36 world units, so on rings a ring step
     /// (38) apart one ring's tips nearly touch the next ring's hilts.
     f32 swordScale = shipped::SWORD_SCALE;
-    /// How far back in time a trail reaches, in simulation ticks, above 0: its tail is where the sword was then. Chunk 11's
-    /// reduce motion shortens it.
+    /// How far back in time a trail reaches, in simulation ticks, above 0: its tail is where the sword was then. The
+    /// accessibility setting reduce motion shortens it.
     f32 trailTicks = shipped::TRAIL_TICKS;
     /// A trail's width at the sword, in world units, above 0: a thin streak, narrower than the drawn blade.
     f32 trailWidth = shipped::TRAIL_WIDTH;
     /// How much of that width its tail loses, from 0 (as wide as the head) to 1 (a point): it narrows as it fades.
     f32 trailTaper = shipped::TRAIL_TAPER;
-    /// How bright the trail is, as a fraction of its element's colour, 0 or more: additive light. Chunk 11's reduce
-    /// flashing lowers it.
+    /// How bright the trail is, as a fraction of its element's colour, 0 or more: additive light. The reduce flashing
+    /// setting lowers it.
     f32 trailIntensity = shipped::TRAIL_INTENSITY;
 
     /// Whether every size, length and width is finite and above 0, the taper is from 0 to 1 and the intensity is finite and
@@ -108,8 +108,8 @@ struct BurstLook {
     f32 startScale = shipped::FLASH_START_SCALE;
     /// How large it has grown at its end, above 0: about the lance's area across.
     f32 endScale = shipped::FLASH_END_SCALE;
-    /// How bright it is, as a fraction of its element's colour, 0 or more: additive light, like the trails. Chunk 11's reduce
-    /// flashing lowers it.
+    /// How bright it is, as a fraction of its element's colour, 0 or more: additive light, like the trails. The reduce flashing
+    /// setting lowers it.
     f32 intensity = shipped::FLASH_INTENSITY;
 
     /// Whether both scales are finite and above 0 and the intensity is finite and not negative.

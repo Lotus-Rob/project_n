@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// Routes over the world map (phase 6 chunk 5b2): a distance map gives, from every tile, what walking to one goal costs
+/// Routes over the world map: a distance map gives, from every tile, what walking to one goal costs
 /// by a movement profile; a route follows it down, or A* finds one tile to tile. Cost is whole numbers with fixed
 /// tie-breaks (lower tile index), so every route is the same on every machine.
 

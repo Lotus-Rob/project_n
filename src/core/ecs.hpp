@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// The game state's entities (design doc 0002 §7.1): EnTT behind our names, stable game IDs, and
+/// The game state's entities: EnTT behind our names, stable game IDs, and
 /// domains that map one to the other and sort into canonical order. The only header that
 /// includes EnTT.
 
@@ -63,7 +63,7 @@ public:
 
     /// Sorts every component storage by stable ID, so iteration no longer depends on the order of
     /// past creations and destructions: done at every save and when a recording starts, and a
-    /// load creates entities in this order (design doc 0002 §7.1).
+    /// load creates entities in this order.
     void SortCanonical();
 
 private:

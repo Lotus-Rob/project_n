@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// The world map's look (phase 6 chunk 5b1): which sprites draw each terrain kind, the road and river overlays, the
+/// The world map's look: which sprites draw each terrain kind, the road and river overlays, the
 /// crossings and the markers, read from `assets/data/world_look.yaml`. Presentation, not game data: it is never hashed
 /// into the game data or saved, `game` never sees it, and the main thread reloads it as the file is edited.
 

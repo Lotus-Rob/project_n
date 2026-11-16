@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// The game state (design doc 0002 §7.1): its domains, the stable-ID counter, the seed, and the
+/// The game state: its domains, the stable-ID counter, the seed, and the
 /// map from stable ID to domain, so a command or relationship can reach an entity in any domain
 /// and an entity can move between domains without anything that names it noticing.
 
@@ -193,7 +193,7 @@ void LoadStorage(Reader& archive, Domain& domain) {
 
 /// Writes `domain`'s entities, then each of `Components` by stable ID, into `archive` (a Writer
 /// or a Hasher), each storage in its own order, so that LoadDomain() rebuilds every storage in
-/// the same order and the loaded game iterates exactly as the saved one (design doc 0002 §7.1).
+/// the same order and the loaded game iterates exactly as the saved one.
 /// A component missing from the list is neither saved nor hashed.
 template<typename Archive, typename... Components>
 void SaveDomain(Archive& archive, const Domain& domain, ComponentList<Components...> /*components*/) {

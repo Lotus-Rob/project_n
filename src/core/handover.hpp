@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// The handover between the logic thread and the main thread (design doc 0002 §5): one object
+/// The handover between the logic thread and the main thread: one object
 /// with three channels behind one mutex, held only to swap pointers and vectors. Also the main
 /// thread's side of the state channel (Display) and of the event channel (PlayDue()).
 
@@ -73,11 +73,11 @@ public:
         }
         else {
             // The main thread hasn't drained the last ones: the rare path that copies under the lock. Cosmetic events
-            // PlayDue() would drop are dropped here, so a stalled main thread doesn't grow the queue (§5): the render
+            // PlayDue() would drop are dropped here, so a stalled main thread doesn't grow the queue: the render
             // clock (RenderTick()) reaches at least the newest tick minus one, so those more than STALE_EVENT_TICKS + 1
             // behind it can't play. An older epoch's are kept: its snapshot may still be drawn, and nothing adds to
             // them once a newer epoch has begun. Other events still accumulate; their coalescing arrives
-            // with their kinds (phase 7).
+            // with their kinds.
             m_events.insert(m_events.end(), events.begin(), events.end());
             events.clear();
             const u64 epoch = m_events.back().epoch;

@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// Journeys over the world map (phase 6 chunk 5b2): a journey is a record of who travels and its parts in order, legs
+/// Journeys over the world map: a journey is a record of who travels and its parts in order, legs
 /// and stays, decided at departure; where each traveller is at a tick is a pure function of the record, as a sword's
 /// place is of its volley. A leg is reached only through Where() and EndTick(), so a new leg shape is one more case
 /// there and nothing that uses legs changes. Ticks are signed, so a journey may have left before the clock's tick 0.

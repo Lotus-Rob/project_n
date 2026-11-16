@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// Stable game IDs (design doc 0002 §7.1): how anything outside a domain or a tick names an
+/// Stable game IDs: how anything outside a domain or a tick names an
 /// entity, without EnTT.
 
 #include "core/types.hpp"

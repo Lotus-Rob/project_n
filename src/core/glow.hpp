@@ -67,7 +67,7 @@ enum class DriveKind : u8 {
 inline constexpr std::size_t MAX_GLOW_RESULTS = 8;
 /// The shortest beat of a pulse in seconds: nothing flashes more than three times a second.
 inline constexpr f32 MIN_PULSE_SECONDS = 1.0F / 3.0F;
-/// How far reduce flashing scales the opacity of light glows (the hook's value until chunk 11's setting).
+/// How far reduce flashing scales the opacity of light glows (a fixed value until the accessibility settings set it).
 inline constexpr f32 REDUCED_LIGHT_OPACITY = 0.5F;
 /// The most a glow's `size` may be: the distance field's reach, in texels.
 inline constexpr f32 MAX_GLOW_SIZE = static_cast<f32>(FIELD_REACH_TEXELS);
