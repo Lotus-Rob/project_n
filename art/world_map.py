@@ -118,7 +118,7 @@ PASSES = [
 ]
 
 # The cities: key, tile, share of the 50,000 world NPCs, whether the game starts there. The capital first (the start),
-# then the port (the busiest gathering), then the three towns the stand-in gatherings sit round, then the isle.
+# then the port (the busiest gathering), then the three towns, then the isle.
 CITIES = [
     ("capital", (75, 42), 15_000, True),
     ("port", PORT, 12_000, False),
