@@ -1,4 +1,5 @@
 #include "app/app.hpp"
+#include "build_info.hpp"
 #include "core/command_line.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
