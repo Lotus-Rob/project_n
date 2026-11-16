@@ -12,6 +12,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace core {
@@ -54,7 +55,7 @@ private:
 
 /// The tiles from `from` down `distances` to its goal, both included: from each tile it steps to the neighbour n with
 /// StepCost(tile, n) + CostFrom(n) == CostFrom(tile), the lowest tile index on a tie. `{from}` when `from` is the goal;
-/// empty when the goal is unreachable from it.
+/// empty when the goal is unreachable from it. It always ends on the goal: a descent that doesn't gives an empty route.
 [[nodiscard]] std::vector<u32> RouteDown(const WorldMap& map, const DistanceMap& distances, u32 from);
 
 /// The cheapest route from `from` to `target` by `profile` (A*, ties by lower tile index), with RouteDown's contract: its
