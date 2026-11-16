@@ -14,6 +14,7 @@
 #include "core/state.hpp"
 #include "core/types.hpp"
 #include "core/volley.hpp"
+#include "game/combat.hpp"
 #include "game/components.hpp"
 #include "game/npcs.hpp"
 #include "game/scenes.hpp"
