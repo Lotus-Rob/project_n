@@ -8,7 +8,9 @@ extendable scene layer with the scene-change sequence transitions will use (`202
 a stand-in world scene, the camera and culling against the window (`2026-11-14-phase6-chunk5a-measure-camera-design.md`,
 which also records what changed since this spec); **5b** the map as data, fog, time, travel, names and labels, click to
 walk; **5c** the world-and-scene split, the save version, the enter prompt and the stand-in town. 5b and 5c update this
-spec when they start. **5b split 2026-11-15 (the user's)** into **5b1** the map as data
+spec when they start. **5c split 2026-11-16 (the user's)** into **5c1** the world kept across scene changes and saves as deltas
+against the seeded world (`2026-11-16-phase6-chunk5c1-world-kept-delta-saves-design.md`), right after 5b2, and **5c2** the
+enter prompt and the stand-in town, after 5b-look. **5b split 2026-11-15 (the user's)** into **5b1** the map as data
 (`2026-11-15-phase6-chunk5b1-map-design.md`), **5b2** paths, days, travel, names and labels, click to walk, **5b3** fog
 and sight, then **5b-look** the world's look; where this spec and 5b1's differ, 5b1's wins. Where this spec and 5a's differ, 5a's wins (a new `world` scene, `cells` kept).
 
