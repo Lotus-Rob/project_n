@@ -6,6 +6,7 @@
 #include "data/effects.hpp"
 #include "data/game_data.hpp"
 #include "data/manifest.hpp"
+#include "data/names.hpp"
 #include "data/seals.hpp"
 #include "data/settings.hpp"
 #include "data/strings.hpp"
@@ -106,6 +107,12 @@ i32 Run(const core::Settings& settings, app::Options options, bool fullscreen) {
         return FailToStart("the game's data couldn't be read", world.error());
     }
     options.data.world = *world;
+    // The names are read once like the map: the data watch keeps them.
+    std::expected<core::Names, core::Error> names = data::LoadNames(dataFolder / "names.yaml");
+    if (!names) {
+        return FailToStart("the game's data couldn't be read", names.error());
+    }
+    options.data.names = std::make_shared<const core::Names>(std::move(*names));
     // The world scene needs the map, so the scenes are checked once it is in the data.
     if (const std::expected<void, core::Error> runs = game::CheckScenes(*options.manifest, options.data); !runs) {
         return FailToStart("the game's files are damaged", runs.error());

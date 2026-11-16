@@ -8,4 +8,5 @@
   - `seals.yaml`: presentation, not hashed, hot-reloaded: each seal's look, read into `core::Seals`
   - `world_look.yaml`: presentation, not hashed, hot-reloaded: which sprites draw each map kind, the road and river overlays, bridges, fords and markers; `data::LoadWorldLook` into `core::WorldLook`, checked against the map
   - `world.yaml`: game data, hashed, read at start after the strings, not reloaded: the world map, `data::LoadWorldMap` into `core::GameData::world`; `art/world_map.py` generated it once and it is hand-tuned since (art/AGENTS.md)
+  - `names.yaml`: game data, hashed, read at start after the map, not reloaded: the surnames and given characters NPC names are drawn from, `data::LoadNames` into `core::GameData::names`
   - `strings.yaml`: the text in each language; not game data, so not hashed, and read once at start

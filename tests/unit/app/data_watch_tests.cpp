@@ -153,10 +153,13 @@ TEST_CASE("a reload keeps the map as loaded") {
     running.world = TwoTiles("place_capital");
     std::expected<core::GameData, core::Error> read = game::BuiltInData();
     read->world = TwoTiles("place_other"); // a world.yaml edited since the start
+    running.names = std::make_shared<const core::Names>();
+    read->names = std::make_shared<const core::Names>(); // a names.yaml edited since the start
     CHECK(app::ReloadOf(core::Effects{}, core::Effects{}, running, read).gameData);
     app::KeepWorld(running, read);
     REQUIRE(read.has_value());
     CHECK(read->world == running.world);
+    CHECK(read->names == running.names);
     CHECK_FALSE(app::ReloadOf(core::Effects{}, core::Effects{}, running, read).gameData);
     constexpr f32 FASTER = 9.0F;
     read->fox.walkSpeed = FASTER;

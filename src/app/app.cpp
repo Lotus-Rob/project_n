@@ -156,6 +156,7 @@ DataReload ReloadOf(
 void KeepWorld(const core::GameData& running, std::expected<core::GameData, core::Error>& read) {
     if (read) {
         read->world = running.world;
+        read->names = running.names;
     }
 }
 
