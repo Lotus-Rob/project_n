@@ -8,6 +8,7 @@
 
 #include "app/bindings.hpp"
 #include "app/camera_control.hpp"
+#include "app/camera_path.hpp"
 #include "app/cast.hpp"
 #include "app/damage_numbers.hpp"
 #include "app/hud.hpp"
@@ -92,6 +93,9 @@ struct Options {
     /// scripted Move, and quit after it (`--camera-path`), logging each segment's start and the Move's input latency, for the
     /// measurements.
     bool cameraPath = false;
+    /// Let one month pass at this second of the camera path (`--month-step-at`, MonthStepAtOf()), logging `camera path:
+    /// month step`, so the step's cost shows in a measurement; none for no step.
+    std::optional<f32> monthStepAt = std::nullopt;
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The player's settings, read from `settings.yaml`: the main thread's systems take theirs from it.
     core::Settings settings{};
@@ -120,6 +124,11 @@ struct Options {
 /// (game::SetTravelShare()), none without it; an error ("--travel-share: ...") for a missing value, text that isn't a whole
 /// number, or a share past core::MOST_SHARE_PER_MILLE.
 [[nodiscard]] std::expected<std::optional<u16>, core::Error> TravelShareOf(std::span<const char* const> args);
+
+/// The second of the camera path `--month-step-at <seconds>` in the command line `args` asks a month to pass at, none
+/// without it; an error ("--month-step-at: ...") for a missing value, text that isn't a number, or a negative or infinite
+/// time.
+[[nodiscard]] std::expected<std::optional<f32>, core::Error> MonthStepAtOf(std::span<const char* const> args);
 
 /// Watches a folder of files for changes (the game data).
 class DataWatch {
@@ -269,6 +278,7 @@ private:
     std::optional<u64> m_pathStartNs = std::nullopt;         // when `--camera-path` starts, once the scene runs
     std::optional<f32> m_pathSeconds = std::nullopt;         // how far into it this frame is, while it runs
     std::optional<std::size_t> m_pathSegment = std::nullopt; // the segment last logged
+    PathMonthStep m_monthStep;                               // `--month-step-at`'s one step
     DataWatch m_dataWatch{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     DeviceInUse m_device{};
     bool m_quit = false;

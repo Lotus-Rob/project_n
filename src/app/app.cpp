@@ -24,6 +24,8 @@ namespace {
 // Frames during a calendar step's transition: few, leaving the cores to the step.
 constexpr u64 TRANSITION_FRAME_NS = core::NS_PER_SECOND / 20;
 constexpr u64 DATA_CHECK_NS = core::NS_PER_SECOND / 2;
+// `measure` reads it, from the log and from Tracy, as the start of the path's month step segment.
+constexpr std::string_view MONTH_STEP_MESSAGE = "camera path: month step";
 constexpr u64 LOAD_BUDGET_NS = 2 * core::NS_PER_MS; // a scene's uploads each frame: the window never freezes while one loads
 #ifdef NDEBUG
 constexpr bool HOT_RELOAD = false;
@@ -161,6 +163,21 @@ std::expected<std::optional<u16>, core::Error> TravelShareOf(std::span<const cha
     return share;
 }
 
+std::expected<std::optional<f32>, core::Error> MonthStepAtOf(std::span<const char* const> args) {
+    const auto flag = std::ranges::find(args, std::string_view{ "--month-step-at" });
+    if (flag == args.end()) {
+        return std::nullopt;
+    }
+    const std::string_view text = std::next(flag) == args.end() ? std::string_view{} : std::string_view{ *std::next(flag) };
+    f32 seconds = 0.0F;
+    const char* last = std::to_address(text.end());
+    const auto [end, error] = std::from_chars(std::to_address(text.begin()), last, seconds);
+    if (error != std::errc{} || end != last || !std::isfinite(seconds) || seconds < 0.0F) {
+        return std::unexpected{ core::Error{ std::format("--month-step-at: '{}' isn't a time in seconds, 0 or more", text) } };
+    }
+    return seconds;
+}
+
 DataReload ReloadOf(
     const core::Effects& effects,
     const std::expected<core::Effects, core::Error>& readEffects,
@@ -217,7 +234,8 @@ App::App(platform::Window window, gfx::Renderer renderer, Options options)
         m_options.settings.uiColours
     )
   , m_camera{ m_options.zoom }
-  , m_cameraNs{ m_startNs } {
+  , m_cameraNs{ m_startNs }
+  , m_monthStep{ m_options.monthStepAt } {
     m_numberTexts.reserve(NUMBER_RESERVE);
     ApplyEffects(m_options.effects);
     m_renderer.SetSeals(m_options.seals);
@@ -354,6 +372,11 @@ void App::FollowPath(u64 nowNs) {
         return;
     }
     m_pathSeconds = seconds;
+    if (m_monthStep.Due(seconds)) {
+        PN_LOG_INFO("{}", MONTH_STEP_MESSAGE);
+        PN_PROFILE_MESSAGE(MONTH_STEP_MESSAGE);
+        m_handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
+    }
     const std::optional<std::size_t> segment = CameraPathSegment(seconds);
     if (segment && segment != m_pathSegment) {
         m_pathSegment = segment;

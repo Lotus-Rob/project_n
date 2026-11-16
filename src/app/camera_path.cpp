@@ -73,6 +73,14 @@ bool CameraPathOver(f32 seconds) {
     return !CameraPathSegment(seconds).has_value();
 }
 
+bool PathMonthStep::Due(f32 seconds) {
+    if (!m_at || seconds < *m_at) {
+        return false;
+    }
+    m_at.reset();
+    return true;
+}
+
 core::Vec2 CameraPathMove(f32 seconds) {
     const std::optional<std::size_t> index = CameraPathSegment(seconds);
     return index && CameraPath()[*index].walks ? core::Vec2{ .x = 1.0F, .y = 0.0F } : core::Vec2{};

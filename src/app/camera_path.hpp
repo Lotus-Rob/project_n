@@ -70,6 +70,21 @@ inline constexpr u64 CAMERA_PATH_DELAY_NS = 2 * core::NS_PER_SECOND;
 /// The zoom `through` (0 to 1) the way along `segment`.
 [[nodiscard]] f32 SegmentZoom(const CameraSegment& segment, f32 through);
 
+/// The one month step the path sends (`--month-step-at`): due once, at the first frame at or after its second.
+class PathMonthStep {
+public:
+    /// A step at `second` seconds into the path; none for no step.
+    explicit PathMonthStep(std::optional<f32> second)
+      : m_at{ second } {
+    }
+
+    /// Whether the step is due `seconds` into the path: true once, then never again.
+    [[nodiscard]] bool Due(f32 seconds);
+
+private:
+    std::optional<f32> m_at;
+};
+
 /// Whether the path is over `seconds` into it, past its last segment's end: the run quits.
 [[nodiscard]] bool CameraPathOver(f32 seconds);
 

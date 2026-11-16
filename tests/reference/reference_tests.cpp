@@ -78,6 +78,8 @@ struct View {
     // picture's view and its margin (app::CullArea()) instead of to the widest view round where the camera starts (a map
     // larger than that needs it).
     bool asInGame = false;
+    // A click's WalkTo there, sent on the first tick: the picture shows the cultivator on its route at `ticks`.
+    std::optional<core::Vec2> walkTo = std::nullopt;
     // The picture's size; `refit` and the measures assume WIDTH by HEIGHT.
     u32 width = WIDTH;
     u32 height = HEIGHT;
@@ -195,7 +197,14 @@ void CheckAgainstReference(const View& view) {
     game::Host host(test::TestManifest(), view.scene, data);
     std::vector<core::Event> events; // the hits the ticks start, which no picture shows
     for (u64 tick = 1; tick <= view.ticks; ++tick) {
-        host.Tick({ .wall = tick, .simulation = tick, .state = tick }, {}, events);
+        const std::array<core::Action, 1> walk{ { { .kind = core::ActionKind::WalkTo,
+                                                    .point = view.walkTo.value_or(core::Vec2{}) } } };
+        const core::TickInput input =
+            tick == 1 && view.walkTo ? core::TickInput{ .actions = walk, .held = {} } : core::TickInput{};
+        host.Tick({ .wall = tick, .simulation = tick, .state = tick }, input, events);
+    }
+    if (view.walkTo) {
+        REQUIRE(host.PlayerRoute().has_value());
     }
     if (view.outlines) {
         // The fox spawned first: the lowest ID among them.
@@ -358,6 +367,27 @@ TEST_CASE("the world at the smallest zoom over the capital: its name reads under
           .zoom = gfx::MIN_ZOOM,
           .centre = map->StartCentre(),
           .asInGame = true,
+          .width = FULL_HD_WIDTH,
+          .height = FULL_HD_HEIGHT }
+    );
+}
+
+// How far along the route to the nearest other city the cultivator is in the route's picture: about half of its 2,016 ticks.
+constexpr u64 ROUTE_TICKS = 280;
+
+// A click's route out of the capital, the cultivator part of the way along it, between the capital and the nearest other
+// city, with the travellers on the roads: the route's dots and its marker over the tiles.
+TEST_CASE("the world at a middle zoom with the cultivator mid-route: the route line and the travellers") {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const core::Vec2 target = map->StartCentre() + core::Vec2{ .x = 8.0F * map->TileSize(), .y = 0.0F };
+    CheckAgainstReference(
+        { .name = "world_route",
+          .scene = game::WORLD_SCENE,
+          .ticks = ROUTE_TICKS,
+          .zoom = LABELS_ZOOM,
+          .centre = map->StartCentre() + ((target - map->StartCentre()) * static_cast<f32>(HALFWAY)),
+          .asInGame = true,
+          .walkTo = target,
           .width = FULL_HD_WIDTH,
           .height = FULL_HD_HEIGHT }
     );

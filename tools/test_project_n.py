@@ -1390,10 +1390,18 @@ class MeasureTest(unittest.TestCase):
         self.assertEqual(project_n.measure_runs(None), ["world", "burst", "swords", "seals"])
 
     def test_world_run_raises_the_travel_share_the_busiest_view_case_counts_at(self):
-        self.assertEqual(project_n.MEASURE_RUNS["world"][0][-2:], ["--travel-share", str(project_n.MEASURE_TRAVEL_SHARE)])
+        args = project_n.MEASURE_RUNS["world"][0]
+        self.assertEqual(args[args.index("--travel-share") + 1], str(project_n.MEASURE_TRAVEL_SHARE))
         case = (project_n.ROOT / "tests" / "unit" / "game" / "shipped_world_tests.cpp").read_text(encoding="utf-8")
         shares = re.findall(r"constexpr u16 MEASURED_SHARE = (\d+);", case)
         self.assertEqual(shares, [str(project_n.MEASURE_TRAVEL_SHARE)])
+
+    def test_world_run_steps_a_month_at_the_second_the_camera_path_test_checks(self):
+        args = project_n.MEASURE_RUNS["world"][0]
+        self.assertEqual(args[args.index("--month-step-at") + 1], str(project_n.MEASURE_MONTH_STEP_AT))
+        case = (project_n.ROOT / "tests" / "unit" / "app" / "camera_path_tests.cpp").read_text(encoding="utf-8")
+        seconds = re.findall(r"constexpr f32 MEASURED = ([\d.]+)F;", case)
+        self.assertEqual([float(second) for second in seconds], [float(project_n.MEASURE_MONTH_STEP_AT)])
 
     PAUSED_LOG = ("21:00:00.1 [1] window.cpp:234  LOG_INFO     root  display: 2560x1440 at 165 Hz\n"
                   "21:00:05.1 [1] app.cpp:403     LOG_INFO     root  paused: the window is unfocused or minimised\n"

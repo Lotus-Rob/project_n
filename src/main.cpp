@@ -190,6 +190,11 @@ int main(int argc, char** argv) {
         PN_LOG_ERROR("{}", travelShare.error().message);
         return 1;
     }
+    const std::expected<std::optional<f32>, core::Error> monthStepAt = app::MonthStepAtOf(args);
+    if (!monthStepAt) {
+        PN_LOG_ERROR("{}", monthStepAt.error().message);
+        return 1;
+    }
     if (*workers != 0) {
         PN_LOG_INFO("the job system is pinned to {} workers", *workers);
     }
@@ -209,6 +214,7 @@ int main(int argc, char** argv) {
                     .workers = *workers,
                     .unpaced = app::HasFlag(args, "--unpaced"),
                     .cameraPath = app::HasFlag(args, "--camera-path"),
+                    .monthStepAt = *monthStepAt,
                     .saveSlot = userData ? *userData / "saves" / "quicksave.pns" : std::filesystem::path{},
                     .replaySlot = userData ? *userData / "saves" / "replay.pnr" : std::filesystem::path{},
                 },

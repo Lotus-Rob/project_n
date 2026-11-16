@@ -125,4 +125,38 @@ TEST_CASE("--travel-share refuses a missing, non-numeric, negative or past-a-tho
     }
 }
 
+TEST_CASE("--month-step-at gives the second of the camera path a month passes at; without it none") {
+    constexpr std::array<const char*, 3> LATE{ { "project_n", "--month-step-at", "15.5" } };
+    constexpr std::array<const char*, 3> START{ { "project_n", "--month-step-at", "0" } };
+    constexpr std::array<const char*, 2> WITHOUT{ { "project_n", "--camera-path" } };
+    constexpr f32 LATE_SECOND = 15.5F;
+    const std::expected<std::optional<f32>, core::Error> late = app::MonthStepAtOf(LATE);
+    const std::expected<std::optional<f32>, core::Error> start = app::MonthStepAtOf(START);
+    const std::expected<std::optional<f32>, core::Error> without = app::MonthStepAtOf(WITHOUT);
+    REQUIRE(late.has_value());
+    REQUIRE(start.has_value());
+    REQUIRE(without.has_value());
+    CHECK(*late == std::optional<f32>{ LATE_SECOND });
+    CHECK(*start == std::optional<f32>{ 0.0F });
+    CHECK_FALSE(without->has_value());
+}
+
+TEST_CASE("--month-step-at refuses a missing, non-numeric, negative or infinite time") {
+    constexpr std::array<const char*, 2> MISSING{ { "project_n", "--month-step-at" } };
+    constexpr std::array<const char*, 3> TEXT{ { "project_n", "--month-step-at", "soon" } };
+    constexpr std::array<const char*, 3> TRAILING{ { "project_n", "--month-step-at", "5s" } };
+    constexpr std::array<const char*, 3> NEGATIVE{ { "project_n", "--month-step-at", "-1" } };
+    constexpr std::array<const char*, 3> INFINITE{ { "project_n", "--month-step-at", "inf" } };
+    for (const std::span<const char* const> args : { std::span<const char* const>{ MISSING },
+                                                     std::span<const char* const>{ TEXT },
+                                                     std::span<const char* const>{ TRAILING },
+                                                     std::span<const char* const>{ NEGATIVE },
+                                                     std::span<const char* const>{ INFINITE } }) {
+        const std::expected<std::optional<f32>, core::Error> step = app::MonthStepAtOf(args);
+        REQUIRE_FALSE(step.has_value());
+        CAPTURE(step.error().message);
+        CHECK(step.error().message.starts_with("--month-step-at: "));
+    }
+}
+
 } // namespace
