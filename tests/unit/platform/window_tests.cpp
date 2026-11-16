@@ -341,7 +341,7 @@ void PushPadButton(SDL_GamepadButton button, bool down) {
     REQUIRE(SDL_PushEvent(&event));
 }
 
-TEST_CASE("the shoulders and the right stick's click become inputs, other buttons are ignored") {
+TEST_CASE("the shoulders, the right stick's click and Back become inputs, other buttons are ignored") {
     std::expected<platform::Window, core::Error> window = OpenWindow();
     PushPadButton(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, true);
     PushPadButton(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, true);
