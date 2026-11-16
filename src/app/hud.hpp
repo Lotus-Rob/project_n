@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup app
-/// The temporary HUD (the phase 6 chunk 4 spec): the player's health and Qi as bars with their numbers written on them,
+/// The temporary HUD: the player's health and Qi as bars with their numbers written on them,
 /// and each slot's control, ability and cooldown, at the bottom left. Pure: it lays out lines and bars in target pixels,
 /// which the renderer draws (gfx::HudDraw), and tests read them without a device.
 

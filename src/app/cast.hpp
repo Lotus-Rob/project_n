@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup app
-/// Casting (the phase 6 chunk 4 spec): which controls cast which slot, and when a press is a cast. Every press is its
+/// Casting: which controls cast which slot, and when a press is a cast. Every press is its
 /// own Cast action, never merged, repeated while held or debounced here: the simulation decides what a press does,
 /// so a combo needs no change to the action or to this module. Also the casts `--cast-swords` sends by itself for a
 /// profile run, the time from a press to the first frame drawing its volley, and likewise from a Move press to the first
@@ -26,7 +26,7 @@ namespace app {
 [[nodiscard]] std::optional<core::Slot> SlotOf(Control control);
 
 /// Whether a press of `control` selects what is under the pointer instead of casting: the left button outside a
-/// combat scene, or with Alt held (the debug selection, until chunks 5 and 6).
+/// combat scene, or with Alt held (the debug selection, until the game has its own).
 [[nodiscard]] bool SelectsInstead(Control control, bool combat, bool alt);
 
 /// The Cast a press of `control` sends, at the world point `point`: none for a release, outside a combat scene,
@@ -55,7 +55,7 @@ namespace app {
 inline constexpr u64 CAST_LATENCY_LIMIT_NS = core::NS_PER_SECOND;
 
 /// The time from a press that casts one ability to the first frame that draws its volley: the input latency of a cast
-/// as the player sees it (the phase 6 chunk 4 spec's measurement).
+/// as the player sees it.
 class CastLatency {
 public:
     /// Measures the casts of `ability`, whose volleys it watches for.
@@ -79,7 +79,7 @@ private:
 };
 
 /// The time from a Move press to the first frame that draws the player walking: the input latency of a step as the
-/// player sees it (`--camera-path`'s scripted press, the phase 6 chunk 5a spec's measurement).
+/// player sees it (`--camera-path`'s scripted press).
 class MoveLatency {
 public:
     /// A Move press at `nowNs` (platform::NowNs()), the player last drawn at `follow`: timed only when the player stands

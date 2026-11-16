@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup app
-/// Damage numbers (the phase 6 chunk 3 spec, "Damage numbers"): every hit the simulation reports plays as a number over
+/// Damage numbers: every hit the simulation reports plays as a number over
 /// its target, coloured by its kind, that bounces or rises (the motion setting) and fades over NUMBER_SECONDS of the
 /// render clock; with the combined setting, one use's hits on one target of one kind add into one number, which plays
 /// once that use ends. Numbers hitting one target in one tick each start apart and later (ScatterOf()), the more so
@@ -70,8 +70,8 @@ struct NumberPose {
 /// The pose of a number moving by `motion`, `seconds` after its start (clamped to 0 to NUMBER_SECONDS). Rise: it
 /// rises from 0 to RISE_EMS, fast at first and easing out. Bounce: it hops to BOUNCE_TOP_EMS by BOUNCE_TOP_SECONDS,
 /// easing out, then settles to BOUNCE_REST_EMS by BOUNCE_REST_SECONDS, easing in and out, and stays there. Either way
-/// it shows fully until NUMBER_FADE_START, then fades linearly to nothing at NUMBER_SECONDS. Pure: reduce motion
-/// (chunk 11) adds a still motion here.
+/// it shows fully until NUMBER_FADE_START, then fades linearly to nothing at NUMBER_SECONDS. Pure: reduce motion,
+/// when it comes, adds a still motion here.
 [[nodiscard]] NumberPose NumberMotionAt(core::NumberMotion motion, f32 seconds);
 
 /// Where and when one hit's number starts, apart from the others on its target in its tick.

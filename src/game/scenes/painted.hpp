@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup game
-/// The painted scene (design doc 0002 §8.4): a still scene of painted sprites and overlapping glows, for judging art and
+/// The painted scene: a still scene of painted sprites and overlapping glows, for judging art and
 /// blending. Nothing in it moves, so the reference pictures draw the same every run.
 
 #include "game/scene.hpp"

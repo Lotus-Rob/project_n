@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup game
-/// The stress arena (design doc 0002 §8.1): the arena's layout with a crowd of 90,000 over the ground, each circling its
+/// The stress arena: the arena's layout with a crowd of 90,000 over the ground, each circling its
 /// own spot, and a spiral of 10,000 bullets turning round the cultivator's start, about 100,000 instances in all, and a
 /// world tier of 50,000 NPCs, for profiling. No combat scene: casts do nothing there.
 

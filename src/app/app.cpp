@@ -20,14 +20,14 @@ namespace app {
 
 namespace {
 
-// Frames during a calendar step's transition: few, leaving the cores to the step (design doc 0002 §7.3).
+// Frames during a calendar step's transition: few, leaving the cores to the step.
 constexpr u64 TRANSITION_FRAME_NS = core::NS_PER_SECOND / 20;
 constexpr u64 DATA_CHECK_NS = core::NS_PER_SECOND / 2;
 constexpr u64 LOAD_BUDGET_NS = 2 * core::NS_PER_MS; // a scene's uploads each frame: the window never freezes while one loads
 #ifdef NDEBUG
 constexpr bool HOT_RELOAD = false;
 #else
-constexpr bool HOT_RELOAD = true; // debug builds reload the game data when its files change (design doc 0002.3 §7)
+constexpr bool HOT_RELOAD = true; // debug builds reload the game data when its files change
 #endif
 
 // The controls that are simply an action for the logic, and what the log says when one is asked for.
@@ -221,7 +221,7 @@ App::~App() {
 }
 
 void App::RunLogic(const std::stop_token& stop) {
-    // An exception that escapes is logged and stops the game (§12).
+    // An exception that escapes is logged and stops the game.
     try {
         core::math::SetFloatingPointEnvironment();
         const core::Jobs::ThreadRegistration registration{ m_jobs };
@@ -644,7 +644,7 @@ bool App::LoadScene(core::SceneId wanted) {
 
 bool App::Present(const platform::WindowState& state) {
     PN_PROFILE_ZONE();
-    // Events are drained every iteration, drawing or not, so the queue never grows (§5).
+    // Events are drained every iteration, drawing or not, so the queue never grows.
     m_handover.TakeEvents(m_incoming);
     m_pending.insert(m_pending.end(), m_incoming.begin(), m_incoming.end());
     static_cast<void>(m_display.Update(m_handover, platform::NowNs(), core::DEFAULT_DISPLAY_DELAY_NS));
@@ -655,7 +655,7 @@ bool App::Present(const platform::WindowState& state) {
     if (!LoadScene(drawn->scene)) {
         return false;
     }
-    // Nothing draws the ways out of and into a scene yet (chunk 10): each is reported played as soon as it shows.
+    // Nothing draws the ways out of and into a scene yet: each is reported played as soon as it shows.
     if (const std::optional<core::Action> report = m_sceneReports.Answer(drawn->sceneChange)) {
         m_handover.SendInput(*report);
     }
@@ -670,7 +670,7 @@ bool App::Present(const platform::WindowState& state) {
         state.visible,
         [this] { m_renderer.Acquire(); },
         platform::NowNs,
-        // Audio and particles (phase 7) play the events too.
+        // Audio and particles will play the events too.
         [this](const core::Event& event) {
             m_numbers.Play(event);
             m_hud.Play(event, static_cast<f64>(event.tick));
@@ -706,7 +706,7 @@ bool App::Present(const platform::WindowState& state) {
         m_numbers.Forget(core::RenderTick(drawn->simulationTick, 0.0));
     }
     if (drawn->transition) {
-        // Nothing draws the transition itself yet; its view model and screen come with the UI (phase 6).
+        // Nothing draws the transition itself yet.
         platform::WaitUntilNs(platform::NowNs() + TRANSITION_FRAME_NS);
     }
     return true;

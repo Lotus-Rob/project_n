@@ -36,7 +36,6 @@ static_assert(
     "the last row reaches the map's bottom edge"
 );
 
-// The walkers' orbits.
 constexpr f32 ORBIT_RADIUS_MIN = 120.0F;
 constexpr f32 ORBIT_RADIUS_RANGE = 480.0F;
 constexpr f32 WOBBLE_MIN = 0.1F; // of the radius

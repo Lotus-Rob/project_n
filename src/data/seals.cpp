@@ -10,7 +10,7 @@ namespace {
 
 constexpr std::string_view WHAT = "seals";
 
-// Bounds that keep every number a sane f32 and every loop short; the spec leaves them to the builder.
+// Bounds that keep every number a sane f32 and every loop short.
 constexpr i64 MOST_ITEMS = 360; // ticks, dots, glyphs or flourishes round one ring, star points or polygon sides
 constexpr i64 MOST_SIDES = core::MAX_SEAL_FRAME_SIDES;                                     // a frame's sides
 constexpr std::size_t MOST_SPRITES = std::tuple_size_v<decltype(core::SealPart::sprites)>; // a flourish's sprites

@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup data
-/// The world map (phase 6 chunk 5b1): `assets/data/world.yaml` into core::WorldMap.
+/// The world map: `assets/data/world.yaml` into core::WorldMap.
 
 #include "core/error.hpp"
 #include "core/strings.hpp"

@@ -2,8 +2,8 @@
 
 /// @file
 /// @ingroup game
-/// Combat (the phase 6 chunk 4 spec): creatures' health, the amount every hit deals, the volleys in flight (the flying
-/// swords and the fire bolt), the seal the swords raise (chunk 4b), the poison lance's strikes and their flashes, the burns
+/// Combat: creatures' health, the amount every hit deals, the volleys in flight (the flying
+/// swords and the fire bolt), the seal the swords raise, the poison lance's strikes and their flashes, the burns
 /// and poisons hits leave, dying, and the respawns a death queues. Health, damage and healing are i64, so long-term progression
 /// can grow amounts without bound while a fight stays fast.
 

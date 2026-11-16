@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup data
-/// The atlas manifest's reader (design doc 0002.3.1 §2): `assets/manifest.yaml` into core::Manifest.
+/// The atlas manifest's reader: `assets/manifest.yaml` into core::Manifest.
 
 #include "core/error.hpp"
 #include "core/manifest.hpp"

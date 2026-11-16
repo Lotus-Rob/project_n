@@ -2,9 +2,9 @@
 
 /// @file
 /// @ingroup app
-/// The camera's control (the phase 6 chunk 5a spec, Goal 2): how the camera follows, pans, is dragged, zooms and snaps
+/// The camera's control: how the camera follows, pans, is dragged, zooms and snaps
 /// back over each kind of scene (core::CameraKind), frame by frame, and how the scripted path (`app/camera_path.hpp`)
-/// moves it for the measurements (Goal 4). Pure: tested with hand-built frames.
+/// moves it for the measurements. Pure: tested with hand-built frames.
 
 #include "app/bindings.hpp"
 #include "core/frame.hpp"

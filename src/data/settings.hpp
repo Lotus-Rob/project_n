@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup data
-/// The settings file (design doc 0002.3 §7): `settings.yaml` in the per-user data folder.
+/// The settings file: `settings.yaml` in the per-user data folder.
 
 #include "core/error.hpp"
 #include "core/settings.hpp"

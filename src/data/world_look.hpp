@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup data
-/// The world map's look (phase 6 chunk 5b1): `assets/data/world_look.yaml` into core::WorldLook.
+/// The world map's look: `assets/data/world_look.yaml` into core::WorldLook.
 
 #include "core/error.hpp"
 #include "core/manifest.hpp"

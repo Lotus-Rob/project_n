@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup app
-/// The main thread's view of a drawn snapshot (design doc 0002 §8.10, §10): where the camera
+/// The main thread's view of a drawn snapshot: where the camera
 /// centres on the followed entity, which world point a window position shows, and which entity
 /// is drawn there. Pure: tested with hand-built snapshots.
 
@@ -32,7 +32,7 @@ inline constexpr u64 FRAME_STEP_LIMIT_NS = core::NS_PER_SECOND / 10;
 /// both at once, 0.22, so nothing pops in at the window's edge; wider would publish more for no picture. The bound it
 /// guarantees: the camera may move about a quarter of the view while a snapshot shows and show nothing missing. A flick of a
 /// drag (which pans 1:1 with the cursor) faster than that, or a snap back from far away (a jump to the player), can show the
-/// edge for a frame or two until the next view culls a fresh publish: a known limit, which phase 6 chunk 5a's measurements own;
+/// edge for a frame or two until the next view culls a fresh publish: a known limit;
 /// so can a window that grows by more than the margin at once (maximised, or made fullscreen), at its new edges. While a
 /// calendar step's transition shows, no fresh publish comes, so the camera holds still (HoldsCamera(), CameraInput::still).
 inline constexpr f32 CULL_MARGIN = 0.25F;

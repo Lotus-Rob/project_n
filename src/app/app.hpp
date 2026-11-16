@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup app
-/// The main thread's side of the game (design doc 0002 §5, §6): the systems it owns, the logic
+/// The main thread's side of the game: the systems it owns, the logic
 /// thread it starts, and the main loop that turns the window's input into actions and draws the
 /// snapshots the logic thread publishes.
 
@@ -115,7 +115,7 @@ struct Options {
 /// MAX_WORKERS.
 [[nodiscard]] std::expected<u32, core::Error> WorkersOf(std::span<const char* const> args);
 
-/// Watches a folder of files for changes (the game data, design doc 0002.3 §7).
+/// Watches a folder of files for changes (the game data).
 class DataWatch {
 public:
     /// Watches `folder` (none when empty) from its state now.

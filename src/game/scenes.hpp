@@ -50,7 +50,7 @@ inline constexpr core::SceneKey WORLD_SCENE{ 4 };
 /// wrapping round, so the walkable scenes lead round arena, stress and world and skip the still ones.
 [[nodiscard]] core::SceneKey NextWalkableScene(core::SceneKey key);
 
-/// Whether every scene can run from `manifest` with `data` (design doc 0002.3.1 §3): the manifest names each,
+/// Whether every scene can run from `manifest` with `data`: the manifest names each,
 /// and the scenes with creatures load the sprites `data` gives them, without which they would be invisible.
 /// Otherwise, which scene is short of what.
 [[nodiscard]] std::expected<void, core::Error> CheckScenes(const core::Manifest& manifest, const core::GameData& data);

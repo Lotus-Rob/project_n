@@ -33,7 +33,7 @@ namespace game {
 inline constexpr core::Rect GROUND{ .min = {}, .max = { .x = 1'920.0F, .y = 1'080.0F } };
 
 /// How far a name label stands from the head it names (core::TextItem::offset), in world units, so it scales with the
-/// zoom as the text does (the phase 6 chunk 3 spec): clear of the head, with room between them for a health bar.
+/// zoom as the text does: clear of the head, with room between them for a health bar.
 inline constexpr core::Vec2 LABEL_OFFSET{ .x = 0.0F, .y = -12.0F };
 
 /// How far across from a portal's point (SceneTraits::portal) the cultivator's foot steps through it, in world units: about

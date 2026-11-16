@@ -2,13 +2,13 @@
 
 /// @file
 /// @ingroup game
-/// The world map (phase 6 chunk 5a): a stand-in about 20 screens across at zoom 1, for proving the camera, culling and
+/// The world map: a stand-in about 20 screens across at zoom 1, for proving the camera, culling and
 /// the measurements on a map too big to see at once. Its terrain is no scene content: the renderer draws the map
 /// (`assets/data/world.yaml`) from its data and look (SceneTraits::worldMap). A crowd of
 /// walkers, each circling its own point and denser in a few gathering areas, wanders the whole map, every eighth
 /// with a name label; they are plain entities (a body, a look and an orbit), so a save holds them as any scene's and
 /// where each stands is a function of its orbit and the tick. The cultivator walks it, the camera following until it
-/// is panned (core::CameraKind::Roam). 5b2 replaces the walkers with travellers.
+/// is panned (core::CameraKind::Roam). The walkers are a stand-in for the travellers the world map will carry.
 
 #include "core/frame.hpp"
 #include "core/types.hpp"
