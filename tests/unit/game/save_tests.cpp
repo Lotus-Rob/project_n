@@ -1245,6 +1245,19 @@ TEST_CASE("a world save round-trips travel and the journal, and hashes them") {
     REQUIRE(without.Load(bareReader, SAVED_TICK));
     without.EnterScene();
     CHECK(without.StateHash() != loaded.StateHash());
+
+    // And with the same journal and the journey leaving a day later, otherwise too.
+    game::Host later(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    game::Travel moved;
+    const core::Journey sameEnded = VisitOf(*map, trip, back, 0, STAY_DAYS);
+    moved.Start(sameEnded);
+    moved.Finish(core::EndTick(sameEnded), state);
+    moved.Start(VisitOf(*map, trip, away, 2 * DAY, STAY_DAYS));
+    const std::vector<std::byte> movedBytes = TravelSave(state, moved);
+    core::Reader movedReader{ movedBytes };
+    REQUIRE(later.Load(movedReader, SAVED_TICK));
+    later.EnterScene();
+    CHECK(later.StateHash() != loaded.StateHash());
 }
 
 TEST_CASE("a world save naming a traveller who isn't there is refused, and so is travel off the world map") {
