@@ -64,9 +64,22 @@ bool LegSound(const core::Leg& leg, const core::WorldMap& map) {
            leg.startTick <= std::numeric_limits<i64>::max() - i64{ leg.arrive.back() };
 }
 
+/// Whether `stay`, read from a save, can be placed on `map`: in a city, ending at or after it starts, lasting no more
+/// ticks than a leg's arrive ticks hold, and ending at least a day before an i64's most, so placing its walker (whose
+/// last day runs a day past its start) never overflows.
+bool StaySound(const core::Stay& stay, const core::WorldMap& map) {
+    if (!IsCity(map, stay.city) || stay.endTick < stay.startTick ||
+        stay.endTick > std::numeric_limits<i64>::max() - DAY_TICKS) {
+        return false;
+    }
+    // Ordered, the difference of two i64s fits a u64.
+    const u64 span = static_cast<u64>(stay.endTick) - static_cast<u64>(stay.startTick);
+    return span <= std::numeric_limits<u32>::max();
+}
+
 /// Whether `part`, read from a save, can be placed on `map`.
 bool PartSound(const core::JourneyPart& part, const core::WorldMap& map) {
-    return part.stay ? IsCity(map, part.rest.city) && part.rest.endTick >= part.rest.startTick : LegSound(part.leg, map);
+    return part.stay ? StaySound(part.rest, map) : LegSound(part.leg, map);
 }
 
 i64 PartStartTick(const core::JourneyPart& part) {
@@ -103,16 +116,15 @@ void Travel::Start(core::Journey journey) {
         "a journey's members aren't travelling already"
     );
     if (journey.members.empty()) {
-        return; // with assertions off, a journey nobody makes is dropped
+        return; // with assertions off, a journey nobody makes is dropped: it has no leader to keep it in order by
     }
-    for (const core::StableId npc : journey.members) {
-        m_travellers.insert(std::ranges::upper_bound(m_travellers, npc), npc);
-    }
+    // One without parts is kept: it ends at tick 0 (core::EndTick()), so the next Finish() writes it and drops it.
+    m_travellers.insert(journey.members.begin(), journey.members.end());
     m_journeys.insert(std::ranges::upper_bound(m_journeys, Leader(journey), {}, Leader), std::move(journey));
 }
 
 bool Travel::Travelling(core::StableId npc) const {
-    return std::ranges::binary_search(m_travellers, npc);
+    return m_travellers.contains(npc);
 }
 
 void Travel::Finish(i64 tick, core::State& state) {
@@ -128,8 +140,7 @@ void Travel::Finish(i64 tick, core::State& state) {
             if (IsWorldNpc(state, npc)) {
                 state[WORLD].Entities().get<Npc>(state[WORLD].Find(npc)).action = Action::Rest;
             }
-            const auto [first, last] = std::ranges::equal_range(m_travellers, npc);
-            m_travellers.erase(first, last);
+            m_travellers.erase(npc);
         }
     }
     if (m_written.empty()) {
@@ -177,18 +188,35 @@ std::span<const JournalEntry> Travel::JournalOf(core::StableId npc) const {
 }
 
 void Travel::Forget(core::StableId npc) {
-    std::erase_if(m_journals, [npc](const Journal& journal) { return journal.npc == npc; });
-    if (!Travelling(npc)) {
+    if (const auto journal = std::ranges::lower_bound(m_journals, npc, {}, &Journal::npc);
+        journal != m_journals.end() && journal->npc == npc) {
+        m_journals.erase(journal);
+    }
+    if (m_travellers.erase(npc) == 0) {
         return;
     }
-    const auto [first, last] = std::ranges::equal_range(m_travellers, npc);
-    m_travellers.erase(first, last);
-    for (core::Journey& journey : m_journeys) {
-        std::erase(journey.members, npc);
+    // Led by `npc`, its journey is found by its key; a follower's needs the scan.
+    auto found = std::ranges::lower_bound(m_journeys, npc, {}, Leader);
+    if (found == m_journeys.end() || Leader(*found) != npc) {
+        found = std::ranges::find_if(m_journeys, [npc](const core::Journey& journey) {
+            return std::ranges::contains(journey.members, npc);
+        });
     }
-    std::erase_if(m_journeys, [](const core::Journey& journey) { return journey.members.empty(); });
-    // A journey that lost its leader is now keyed by the next member.
-    std::ranges::sort(m_journeys, {}, Leader);
+    PN_ASSERT(found != m_journeys.end(), "a traveller is a member of a journey");
+    if (found == m_journeys.end()) {
+        return;
+    }
+    const bool led = Leader(*found) == npc;
+    std::erase(found->members, npc);
+    if (found->members.empty()) {
+        m_journeys.erase(found);
+    }
+    else if (led) {
+        // Keyed by its next member now, it moves to that member's place.
+        core::Journey journey = std::move(*found);
+        m_journeys.erase(found);
+        m_journeys.insert(std::ranges::upper_bound(m_journeys, Leader(journey), {}, Leader), std::move(journey));
+    }
 }
 
 bool Travel::Load(core::Reader& archive, const core::State& state, const core::WorldMap* map) {
@@ -212,17 +240,17 @@ bool Travel::Load(core::Reader& archive, const core::State& state, const core::W
         const bool ordered = std::ranges::adjacent_find(journals, std::greater_equal{}, &Journal::npc) == journals.end();
         return ordered && std::ranges::all_of(journals, journalSound);
     };
-    std::vector<core::StableId> travellers;
+    std::vector<core::StableId> members;
     bool sound = !archive.Failed() && (map != nullptr || (journeys.empty() && journals.empty()));
     if (sound && map != nullptr) {
         sound = journeysSound() && journalsSound();
     }
     if (sound) {
         for (const core::Journey& journey : journeys) {
-            travellers.insert(travellers.end(), journey.members.begin(), journey.members.end());
+            members.insert(members.end(), journey.members.begin(), journey.members.end());
         }
-        std::ranges::sort(travellers);
-        sound = std::ranges::adjacent_find(travellers) == travellers.end(); // nobody in two journeys, or twice in one
+        std::ranges::sort(members);
+        sound = std::ranges::adjacent_find(members) == members.end(); // nobody in two journeys, or twice in one
     }
     if (!sound) {
         archive.Fail();
@@ -230,7 +258,7 @@ bool Travel::Load(core::Reader& archive, const core::State& state, const core::W
     }
     m_journeys = std::move(journeys);
     m_journals = std::move(journals);
-    m_travellers = std::move(travellers);
+    m_travellers = std::unordered_set<core::StableId>(members.begin(), members.end());
     m_written.clear();
     m_merged.clear();
     return true;
