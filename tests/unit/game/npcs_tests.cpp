@@ -228,16 +228,15 @@ TEST_CASE("starting power is the same for the same identity and seed") {
     CHECK(differing > 0);
 }
 
-// Fixed draws under SEED, one in each band: the first stable ID is a cultivator's, the second a mortal's, the 41st a strong
-// one.
+// Fixed draws under SEED, each the first stable ID whose draw lands in its band.
 TEST_CASE("starting power for named identities under a fixed seed") {
     constexpr f32 TOLERANCE = 1e-3F;
     constexpr f32 MORTAL = 2.90823F;
     constexpr f32 CULTIVATOR = 25.0162F;
     constexpr f32 STRONG = 465.879F;
-    CHECK(game::StartingPower(SEED, core::StableId{ 2 }) == doctest::Approx(MORTAL).epsilon(TOLERANCE));     // mortal band
-    CHECK(game::StartingPower(SEED, core::StableId{ 1 }) == doctest::Approx(CULTIVATOR).epsilon(TOLERANCE)); // cultivator band
-    CHECK(game::StartingPower(SEED, core::StableId{ 41 }) == doctest::Approx(STRONG).epsilon(TOLERANCE));    // strong band
+    CHECK(game::StartingPower(SEED, core::StableId{ 2 }) == doctest::Approx(MORTAL).epsilon(TOLERANCE));     // first mortal
+    CHECK(game::StartingPower(SEED, core::StableId{ 1 }) == doctest::Approx(CULTIVATOR).epsilon(TOLERANCE)); // first cultivator
+    CHECK(game::StartingPower(SEED, core::StableId{ 41 }) == doctest::Approx(STRONG).epsilon(TOLERANCE));    // first strong
 }
 
 TEST_CASE("starting power lies in its bands") {
