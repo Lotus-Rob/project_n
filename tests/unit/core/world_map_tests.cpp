@@ -524,4 +524,135 @@ TEST_CASE("the hash changes when any authored value does, not with resolved name
     CHECK(wideHash != squareHash);
 }
 
+// Columns: 0 the city, 1 meadow, 2 road, 3 road and river (a bridge), 4 river with a ford, 5 river; row 1 has deep water
+// under column 2.
+core::WorldMapSource ProfileSource() {
+    core::WorldMapSource source = Source({ "0.....", "..~..." });
+    source.roads = { { { .column = 2, .row = 0 } }, { { .column = 3, .row = 0 } } };
+    source.rivers = { { { .column = 3, .row = 0 }, { .column = SAND_TILE, .row = 0 } } };
+    source.fords = { { .column = 4, .row = 0 } };
+    return source;
+}
+
+constexpr u32 ROAD_TILE = 2;
+constexpr u32 BRIDGE_TILE = 3;
+constexpr u32 FORD_TILE = 4;
+constexpr u32 RIVER_TILE = 5;
+constexpr u32 DEEP_TILE = 8;
+constexpr u16 WATER_RIVER_COST = 5;
+constexpr u16 WATER_SHALLOWS_COST = 8;
+constexpr u16 ROADS_ONLY_COST = 3;
+constexpr u16 ROADS_ONLY_PACE = 12;
+
+core::MovementProfile Profile(std::string key, u16 kindCost) {
+    return { .key = std::move(key),
+             .ticksPerCost = core::DEFAULT_TICKS_PER_COST,
+             .kindCosts = std::vector<u16>(4, kindCost),
+             .features = {} };
+}
+
+TEST_CASE("a map built with no profiles walks on foot by exactly its base costs") {
+    const core::WorldMap map = MustBuild(ProfileSource());
+    REQUIRE(map.Profiles().size() == 1);
+    CHECK(map.Profiles()[0].key == "on_foot");
+    CHECK(map.Profiles()[0].ticksPerCost == 16);
+    CHECK(core::WALKING == 0);
+    for (const u32 tile : { 1U, ROAD_TILE, BRIDGE_TILE, FORD_TILE, RIVER_TILE, DEEP_TILE }) {
+        CHECK(map.CostAt(tile, core::WALKING) == map.CostAt(tile));
+    }
+    // Orthogonal and diagonal steps, onto each kind of tile and past an impassable corner.
+    const std::vector<std::pair<u32, u32>> steps = { { 0, 1 },
+                                                     { 1, ROAD_TILE },
+                                                     { ROAD_TILE, BRIDGE_TILE },
+                                                     { BRIDGE_TILE, FORD_TILE },
+                                                     { FORD_TILE, RIVER_TILE },
+                                                     { 7, DEEP_TILE },
+                                                     { 6, 1 },
+                                                     { 0, 7 },
+                                                     { 1, 8 },
+                                                     { 7, ROAD_TILE },
+                                                     { 9, FORD_TILE },
+                                                     { 1, 0 } };
+    for (const auto& [from, target] : steps) {
+        CHECK(map.StepCost(from, target, core::WALKING) == map.StepCost(from, target));
+    }
+    CHECK(map.StepCost(0, 7, core::WALKING) == MEADOW_COST * 7 / 5);
+}
+
+TEST_CASE("a road-only profile walks roads and bridges and nothing else") {
+    core::WorldMapSource source = ProfileSource();
+    core::MovementProfile roads = Profile("roads", core::IMPASSABLE_COST);
+    roads.ticksPerCost = ROADS_ONLY_PACE;
+    roads.features = {
+        .road = ROADS_ONLY_COST, .river = core::IMPASSABLE_COST, .bridge = ROADS_ONLY_COST, .ford = core::IMPASSABLE_COST
+    };
+    source.profiles = { std::move(roads) };
+    const core::WorldMap map = MustBuild(std::move(source));
+    REQUIRE(map.Profiles().size() == 1);
+    CHECK(map.Profiles()[0].ticksPerCost == ROADS_ONLY_PACE);
+    CHECK(map.CostAt(ROAD_TILE, core::WALKING) == ROADS_ONLY_COST);
+    CHECK(map.CostAt(BRIDGE_TILE, core::WALKING) == ROADS_ONLY_COST);
+    CHECK(map.CostAt(1, core::WALKING) == core::IMPASSABLE_COST);
+    CHECK(map.CostAt(FORD_TILE, core::WALKING) == core::IMPASSABLE_COST);
+    CHECK(map.StepCost(ROAD_TILE, BRIDGE_TILE, core::WALKING) == ROADS_ONLY_COST);
+    CHECK(map.StepCost(1, ROAD_TILE, core::WALKING) == ROADS_ONLY_COST);
+    CHECK(map.StepCost(ROAD_TILE, 1, core::WALKING) == core::IMPASSABLE_COST);
+}
+
+TEST_CASE("a water profile crosses rivers and shallows and not land") {
+    core::WorldMapSource source = ProfileSource();
+    core::MovementProfile water = Profile("water", core::IMPASSABLE_COST);
+    water.kindCosts[SAND] = WATER_SHALLOWS_COST;
+    water.features = {
+        .road = core::IMPASSABLE_COST, .river = WATER_RIVER_COST, .bridge = core::IMPASSABLE_COST, .ford = WATER_RIVER_COST
+    };
+    source.profiles = { Profile("on_foot", MEADOW_COST), std::move(water) };
+    source.grid[1] = SAND;
+    const core::WorldMap map = MustBuild(std::move(source));
+    REQUIRE(map.Profiles().size() == 2);
+    constexpr core::ProfileIndex WATER = 1;
+    CHECK(map.CostAt(RIVER_TILE, WATER) == WATER_RIVER_COST);
+    CHECK(map.CostAt(FORD_TILE, WATER) == WATER_RIVER_COST);
+    CHECK(map.CostAt(1, WATER) == WATER_SHALLOWS_COST);
+    CHECK(map.CostAt(0, WATER) == core::IMPASSABLE_COST);
+    CHECK(map.CostAt(ROAD_TILE, WATER) == core::IMPASSABLE_COST);
+    CHECK(map.CostAt(BRIDGE_TILE, WATER) == core::IMPASSABLE_COST);
+    CHECK(map.StepCost(FORD_TILE, RIVER_TILE, WATER) == WATER_RIVER_COST);
+}
+
+TEST_CASE("Build refuses a profile it can't use") {
+    const auto refusal = [](const std::function<void(std::vector<core::MovementProfile>&)>& change) {
+        core::WorldMapSource source = ProfileSource();
+        source.profiles = { Profile("walk", MEADOW_COST) };
+        change(source.profiles);
+        return Refusal(std::move(source));
+    };
+    CHECK(refusal([](auto& profiles) { profiles[0].ticksPerCost = 0; }).contains("'walk'"));
+    CHECK(refusal([](auto& profiles) { profiles[0].kindCosts.pop_back(); }).contains("'walk'"));
+    CHECK(refusal([](auto& profiles) { profiles[0].kindCosts[0] = core::MAX_WALK_COST + 1; }).contains("'walk'"));
+    CHECK(refusal([](auto& profiles) { profiles[0].features.ford = core::MAX_WALK_COST + 1; }).contains("'walk'"));
+    CHECK(refusal([](auto& profiles) { profiles.push_back(Profile("walk", 1)); }).contains("'walk'"));
+    CHECK(refusal([](auto& profiles) { profiles[0].key = ""; }).contains("profile 0"));
+    CHECK(refusal([](auto& profiles) {
+              profiles.assign(core::MOST_PROFILES + 1, Profile("walk", 1));
+              for (std::size_t index = 0; index < profiles.size(); ++index) {
+                  profiles[index].key = std::format("p{}", index);
+              }
+          }).contains("17 profiles"));
+}
+
+TEST_CASE("the hash changes with a profile's pace or cost") {
+    const auto hashOf = [](const std::function<void(core::MovementProfile&)>& change) {
+        core::WorldMapSource source = ProfileSource();
+        source.profiles = { Profile("walk", MEADOW_COST) };
+        change(source.profiles[0]);
+        return MustBuild(std::move(source)).Hash();
+    };
+    const u64 reference = hashOf([](core::MovementProfile&) {});
+    CHECK(hashOf([](core::MovementProfile& profile) { profile.ticksPerCost = 17; }) != reference);
+    CHECK(hashOf([](core::MovementProfile& profile) { profile.kindCosts[SAND] = 11; }) != reference);
+    CHECK(hashOf([](core::MovementProfile& profile) { profile.features.road = 2; }) != reference);
+    CHECK(hashOf([](core::MovementProfile& profile) { profile.key = "stroll"; }) != reference);
+}
+
 } // namespace
