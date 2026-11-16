@@ -108,7 +108,6 @@ void DrawSword(
     }
     const u64 arrival = core::ArrivalTick(volley, sword);
     const core::Vec2 aim = core::SwordAim(volley, sword, frame.simulationTick, frame.alpha, targets);
-    // Struck: shown on its target at the moment of its arrival, gone after, its trail draining into the target.
     const bool struck = frame.renderTick >= static_cast<f64>(arrival) &&
                         targets[core::SwordTarget(volley, sword, arrival, targets)].Struck(arrival);
     const f64 headTick = struck ? static_cast<f64>(arrival) : frame.renderTick;
