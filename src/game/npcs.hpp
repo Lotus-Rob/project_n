@@ -227,9 +227,10 @@ void DecideActive(core::Domain& active, u64 seed, u64 stateCounter, u64 simulati
 void WalkActive(core::Domain& active);
 
 /// A calendar step of one month over the world tier, forked over fixed-size chunks of NPCs: each
-/// NPC scores its actions, takes the best and changes itself; what it does to others are
-/// commands, merged after the join in (target, source, emission) order. Its results are the same
-/// whatever the job system's worker count. Keeps its buffers between steps.
+/// NPC at home scores its actions, takes the best and changes itself; what it does to others are
+/// commands, merged after the join in (target, source, emission) order. An NPC whose month is Action::Travel (away on a
+/// journey, game/travel.hpp) sits the step out, its action, needs and power as they were, and is nobody's partner. Its
+/// results are the same whatever the job system's worker count. Keeps its buffers between steps.
 class MonthStep {
 public:
     /// NPCs per chunk: the unit of determinism, independent of the worker count.

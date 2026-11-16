@@ -97,7 +97,8 @@ public:
     /// tile are redrawn or left out) and the rest evenly over the WorldGatherings(), none within the widest view of the start:
     /// the busiest, 3,120 walkers (about 130 a screen, those whose spot is sea redrawn on to land or left out) and three towns
     /// of 375 (about 60 a screen). Each circles a point of its own at a walking pace, its orbit drawn from core/random.hpp
-    /// keyed on its index.
+    /// keyed on its index. Last, the people set out on the visits a month of travel would have them on
+    /// (SceneContext::SeedTravel()), so the roads are busy from the first frame.
     void Build(SceneContext& context) const override;
 
     /// A name label over every eighth walker (by its ID) standing within `view`, and the name of every place of the

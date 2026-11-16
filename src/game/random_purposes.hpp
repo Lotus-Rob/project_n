@@ -28,6 +28,13 @@ inline constexpr u32 PURPOSE_WALKER = 8;
 inline constexpr u32 PURPOSE_HOME_TILE = 10;
 /// A world NPC drawing its starting power (game/npcs.hpp).
 inline constexpr u32 PURPOSE_STARTING_POWER = 11;
+/// A month's key for its visits, drawn from the game's seed, the state counter and the month's first tick
+/// (game/travel.hpp).
+inline constexpr u32 PURPOSE_VISIT_MONTH = 12;
+/// A world NPC drawing, under its month's key, whether it sets out on a visit, when, for how long and where.
+inline constexpr u32 PURPOSE_VISIT = 13;
+/// A visit drawing its journey's own seed (core::Stay::seed), from which its stay draws its points.
+inline constexpr u32 PURPOSE_JOURNEY_SEED = 14;
 // 9 is retired from game (the old world terrain noise): gfx/terrain_draw.cpp keys the world map's tile variants with it, so
 // nothing here may reuse it.
 

@@ -144,6 +144,9 @@ bool Consistent(const core::State& state) {
 
 // The world clock's last tick: the first of the last month (LAST_MONTH), where the calendar ends.
 constexpr u64 CALENDAR_END = LAST_MONTH * TICKS_PER_MONTH;
+// The world clock past which nobody sets out: journeys count signed ticks, and this leaves far more room than any visit
+// lasts past its month.
+constexpr u64 TRAVEL_END = static_cast<u64>(std::numeric_limits<i64>::max() / 2);
 
 /// Whether a saved world clock fits the month steps run: within the month after the last step, or at its end, the next
 /// step due, and never past the calendar's end.
@@ -277,6 +280,9 @@ public:
     void Damage(core::StableId target, i64 amount, u64 tick) override {
         m_host->Damage(target, amount, tick);
     }
+    void SeedTravel() override {
+        m_host->SeedTravel();
+    }
 
 private:
     Host* m_host;
@@ -334,7 +340,18 @@ Host::Host(std::shared_ptr<const core::Manifest> manifest, core::SceneKey scene,
   , m_data{ std::move(data) }
   , m_scene{ scene }
   , m_sceneId{ SceneIdOf(*m_manifest, m_scene) } {
+    if (m_data.world != nullptr) {
+        m_paths.emplace(m_data.world);
+    }
     Build(m_scene);
+}
+
+void Host::SeedTravel() {
+    PN_ASSERT(m_paths.has_value(), "travel seeded in a game without the world map");
+    if (!m_paths || m_months * TICKS_PER_MONTH > TRAVEL_END) {
+        return;
+    }
+    m_travel.Seed(m_state, *m_data.world, *m_paths, m_state.Seed(), 0, static_cast<i64>(m_months * TICKS_PER_MONTH));
 }
 
 /// Everything but the calendar (the world clock and the month steps run) and the game data starts afresh: the entities,
@@ -654,7 +671,6 @@ void Host::Select(core::StableId target) {
 }
 
 void Host::AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs, const std::stop_token& stop) {
-    m_monthStep.Run(m_state, m_relationships, jobs, counters.state, stop);
     if (m_months < LAST_MONTH) {
         // A step asked for early (M) moves the clock on to the next month's first tick, so the calendar keeps up with the
         // steps.
@@ -662,6 +678,14 @@ void Host::AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs,
         ++m_months;
         PN_LOG_INFO("month {} begins at world tick {}", m_months + 1, m_worldTicks);
     }
+    // Journeys end and begin before the month's actions, so those back act again and those leaving sit the month out.
+    if (Running().Traits().worldMap && m_paths && m_worldTicks <= TRAVEL_END && !stop.stop_requested()) {
+        m_travel.Finish(static_cast<i64>(m_worldTicks), m_state);
+        m_travel.Month(
+            m_state, *m_data.world, *m_paths, jobs, m_state.Seed(), counters.state, static_cast<i64>(m_months * TICKS_PER_MONTH)
+        );
+    }
+    m_monthStep.Run(m_state, m_relationships, jobs, counters.state, stop);
 }
 
 bool Host::MonthDue() const {
@@ -765,6 +789,12 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
 }
 
 void Host::SetData(const core::GameData& data) {
+    if (data.world != m_data.world) {
+        m_paths.reset();
+        if (data.world != nullptr) {
+            m_paths.emplace(data.world);
+        }
+    }
     m_data = data;
     ApplyData();
 }

@@ -1235,9 +1235,12 @@ TEST_CASE("a world save round-trips travel and the journal, and hashes them") {
     reloaded.EnterScene();
     CHECK(reloaded.StateHash() == loaded.StateHash());
 
-    // The travel is hashed: the same save without it hashes otherwise.
+    // The travel is hashed: the same save without the journal entry hashes otherwise. Its journey stays, as a traveller
+    // without one is refused.
     game::Host without(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
-    const std::vector<std::byte> bare = TravelSave(state, game::Travel{});
+    game::Travel unwritten;
+    unwritten.Start(VisitOf(*map, trip, away, DAY, STAY_DAYS));
+    const std::vector<std::byte> bare = TravelSave(state, unwritten);
     core::Reader bareReader{ bare };
     REQUIRE(without.Load(bareReader, SAVED_TICK));
     without.EnterScene();

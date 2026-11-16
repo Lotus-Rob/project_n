@@ -1,5 +1,7 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/game_data.hpp"
+#include "core/jobs.hpp"
+#include "core/journey.hpp"
 #include "core/paths.hpp"
 #include "core/world_map.hpp"
 #include "game/host.hpp"
@@ -105,6 +107,65 @@ TEST_CASE("the search costs the same as the distance map on the shipped map") {
         }
         CHECK(walked == distances.CostFrom(start));
     }
+}
+
+/// How many of `host`'s journeys are under way at world tick `tick`.
+std::size_t UnderwayAt(const game::Host& host, i64 tick) {
+    return static_cast<std::size_t>(std::ranges::count_if(host.NpcTravel().Journeys(), [tick](const core::Journey& journey) {
+        return core::Underway(journey, tick);
+    }));
+}
+
+// A few thousand of the 50,000 on the roads, enough to make them busy without crowding every tile.
+TEST_CASE("the shipped roads carry a few thousand at once") {
+    constexpr std::size_t FEWEST = 2'000;
+    constexpr std::size_t MOST = 6'000;
+    constexpr auto MONTH = static_cast<i64>(game::TICKS_PER_MONTH);
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    // The new world's first tick and the middle of its first month, then the next month's first tick, middle and last.
+    const std::size_t start = UnderwayAt(host, 0);
+    const std::size_t firstMiddle = UnderwayAt(host, MONTH / 2);
+    {
+        core::Jobs jobs{ 1 };
+        host.AdvanceCalendar({ .wall = 1, .simulation = 1, .state = 1 }, jobs, {});
+    }
+    REQUIRE(host.WorldTicks() == game::TICKS_PER_MONTH);
+    const std::size_t afterStep = UnderwayAt(host, MONTH);
+    const std::size_t secondMiddle = UnderwayAt(host, MONTH + (MONTH / 2));
+    const std::size_t secondLast = UnderwayAt(host, (2 * MONTH) - 1);
+    CAPTURE(start);
+    CAPTURE(firstMiddle);
+    CAPTURE(afterStep);
+    CAPTURE(secondMiddle);
+    CAPTURE(secondLast);
+    const auto counts = std::to_array({ start, firstMiddle, afterStep, secondMiddle, secondLast });
+    CHECK(std::ranges::min(counts) >= FEWEST);
+    CHECK(std::ranges::max(counts) <= MOST);
+}
+
+TEST_CASE("the month step with visits is the same on 1 and 4 workers") {
+    constexpr u32 MANY_WORKERS = 4;
+    struct Stepped {
+        u64 hash = 0;
+        std::size_t departures = 0; // journeys setting out in the month the step begins
+    };
+    const auto stepped = [](u32 workers) {
+        game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+        core::Jobs jobs{ workers };
+        host.AdvanceCalendar({ .wall = 1, .simulation = 1, .state = 1 }, jobs, {});
+        constexpr auto MONTH = static_cast<i64>(game::TICKS_PER_MONTH);
+        return Stepped{ .hash = host.StateHash(),
+                        .departures = static_cast<std::size_t>(
+                            std::ranges::count_if(host.NpcTravel().Journeys(), [](const core::Journey& journey) {
+                                return core::StartTick(journey) >= MONTH;
+                            })
+                        ) };
+    };
+    const Stepped one = stepped(1);
+    const Stepped many = stepped(MANY_WORKERS);
+    CHECK(one.departures > 0);
+    CHECK(one.departures == many.departures);
+    CHECK(one.hash == many.hash);
 }
 
 } // namespace

@@ -1,6 +1,9 @@
 #include "core/archive.hpp"
+#include "core/calendar.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/jobs.hpp"
 #include "core/journey.hpp"
+#include "core/paths.hpp"
 #include "core/random.hpp"
 #include "core/state.hpp"
 #include "core/world_map.hpp"
@@ -315,9 +318,10 @@ TEST_CASE("travel and the journal are saved, loaded and hashed") {
     Journeys(loaded, state, map, home, 1);
     CHECK(Hash(loaded) != Hash(travel));
 
-    // Without the world map, only an empty table loads.
+    // Without the world map, only an empty table loads, and only where nobody is travelling.
     CHECK_FALSE(Loads(bytes, state, nullptr));
-    CHECK(Loads(Bytes(game::Travel{}), state, nullptr));
+    const core::State resting{ game::DOMAINS, STATE_SEED };
+    CHECK(Loads(Bytes(game::Travel{}), resting, nullptr));
 }
 
 TEST_CASE("a save naming a traveller who isn't there is refused") {
@@ -436,6 +440,362 @@ TEST_CASE("a journal out of order, empty, of an NPC not there, too long, or nami
         loads({ { first, { { .destination = pastPlaces, .departureDay = 0, .daysAway = 1, .profile = core::WALKING } } } })
     );
     CHECK_FALSE(loads({ { first, { { .destination = DESTINATION, .departureDay = 0, .daysAway = 1, .profile = 1 } } } }));
+}
+
+TEST_CASE("a loaded journey's members travel, and nobody else does") {
+    const core::WorldMap map = TestMap();
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::StableId npc = Traveller(state);
+    const std::vector<std::byte> bytes = BytesOf(VisitOf(map, npc, 0));
+    REQUIRE(Loads(bytes, state, &map));
+    game::Npc& person = state[game::WORLD].Entities().get<game::Npc>(state[game::WORLD].Find(npc));
+
+    // A member resting would take a month's action while away.
+    person.action = game::Action::Rest;
+    CHECK_FALSE(Loads(bytes, state, &map));
+
+    // Someone travelling on no journey would never come back to the month's actions.
+    person.action = game::Action::Travel;
+    static_cast<void>(Traveller(state));
+    CHECK_FALSE(Loads(bytes, state, &map));
+    CHECK_FALSE(Loads(Bytes(game::Travel{}), state, nullptr));
+}
+
+// The visit map, 21 by 3 tiles of meadow under a road along the top row: the home city at its left end (tile 0), the near
+// city 5 road tiles along (a walk costing 20 from the home's tile) and the far city at the row's right end (costing 80);
+// the isle city stands in the bottom right corner behind shallows on both its sides and its corner, which a boat could
+// cross but walking can't, so nobody walks to or from it.
+constexpr u32 VISIT_COLUMNS = 21;
+constexpr u32 VISIT_ROWS = 3;
+constexpr u8 SHALLOWS = 1;
+constexpr u16 SHALLOWS_COST = 30;
+constexpr u16 NEAR = 1;
+constexpr u16 FAR = 2;
+constexpr u16 ISLE = 3;
+constexpr u32 NEAR_COLUMN = 5;
+constexpr u32 NEAR_COST = 20;
+constexpr u32 FAR_COST = 80;
+constexpr u32 NEAR_PEOPLE = 100;
+constexpr u32 FAR_PEOPLE = 400;
+constexpr u32 ISLE_PEOPLE = 5'000;
+constexpr u32 ISLE_TILE = (VISIT_COLUMNS * VISIT_ROWS) - 1;
+constexpr std::array<u16, core::VISITOR_KINDS> EVERYONE{ { 1, 1 } };
+// Draws by core::VisitorKind: cultivators, then traders.
+constexpr std::array<u16, core::VISITOR_KINDS> SECT_DRAWS{ { 6, 0 } };
+constexpr u8 STAY_MIN = 2;
+constexpr u8 STAY_MAX = 5;
+// Everyone sets out, and the reach covers the whole road whatever the power.
+constexpr core::TravelRules ALL_GO{ .sharePerMille = 1'000,
+                                    .stayMinDays = STAY_MIN,
+                                    .stayMaxDays = STAY_MAX,
+                                    .reachBase = 1'000,
+                                    .reachPerPower = 0,
+                                    .cultivatorPower = 5.0F };
+// A mortal's reach ends between the near city and the far one; each whole point of power adds 10.
+constexpr core::TravelRules SHORT_REACH{ .sharePerMille = 1'000,
+                                         .stayMinDays = STAY_MIN,
+                                         .stayMaxDays = STAY_MAX,
+                                         .reachBase = 50,
+                                         .reachPerPower = 10,
+                                         .cultivatorPower = 5.0F };
+constexpr f32 MORTAL = 0.0F;
+// Either side of the reach's next whole point, and of the cultivator's threshold.
+constexpr f32 JUST_BELOW_FOUR = 3.9F;
+constexpr f32 FOUR = 4.0F;
+constexpr f32 STRONGEST_TRADER = 4.9F;
+constexpr f32 WEAKEST_CULTIVATOR = 5.0F;
+constexpr f32 CULTIVATOR = 10.0F;
+constexpr f32 STRONG = 100.0F;
+constexpr u32 VISITORS = 200;
+constexpr u64 VISIT_COUNTER = 1;
+constexpr i64 MONTH = static_cast<i64>(core::TICKS_PER_MONTH);
+
+/// A city of the visit map.
+core::Place City(const std::string& key, core::TilePoint tile, u32 people, std::array<u16, core::VISITOR_KINDS> draws) {
+    return { .key = key,
+             .kind = core::PlaceKind::City,
+             .sort = "",
+             .tile = tile,
+             .nameKey = key,
+             .name = {},
+             .people = people,
+             .start = key == "home",
+             .draws = draws };
+}
+
+/// The visit map under `rules`, its far city drawing visitors by `farDraws`.
+std::shared_ptr<const core::WorldMap> VisitMap(
+    const core::TravelRules& rules = ALL_GO,
+    std::array<u16, core::VISITOR_KINDS> farDraws = EVERYONE
+) {
+    core::WorldMapSource source;
+    source.columns = VISIT_COLUMNS;
+    source.rows = VISIT_ROWS;
+    source.tileSize = TILE;
+    source.roadCost = ROAD_COST;
+    source.fordCost = FORD_COST;
+    source.kinds = { { .name = "meadow", .symbol = '.', .cost = MEADOW_COST },
+                     { .name = "shallows", .symbol = '-', .cost = SHALLOWS_COST } };
+    source.grid.assign(static_cast<std::size_t>(VISIT_COLUMNS) * VISIT_ROWS, MEADOW);
+    for (const u32 water : { (VISIT_COLUMNS * 2) - 2, (VISIT_COLUMNS * 2) - 1, ISLE_TILE - 1 }) {
+        source.grid[water] = SHALLOWS;
+    }
+    source.profiles = { { .key = "on_foot",
+                          .ticksPerCost = core::DEFAULT_TICKS_PER_COST,
+                          .kindCosts = { MEADOW_COST, core::IMPASSABLE_COST },
+                          .features = {} } };
+    source.roads = { { { .column = 0, .row = 0 }, { .column = VISIT_COLUMNS - 1, .row = 0 } } };
+    source.places = {
+        City("home", { .column = 0, .row = 0 }, PEOPLE, EVERYONE),
+        City("near", { .column = NEAR_COLUMN, .row = 0 }, NEAR_PEOPLE, EVERYONE),
+        City("far", { .column = VISIT_COLUMNS - 1, .row = 0 }, FAR_PEOPLE, farDraws),
+        City("isle", { .column = VISIT_COLUMNS - 1, .row = VISIT_ROWS - 1 }, ISLE_PEOPLE, EVERYONE),
+    };
+    source.travel = rules;
+    auto built = core::WorldMap::Build(std::move(source));
+    INFO((built ? std::string{} : built.error().message));
+    REQUIRE(built.has_value());
+    return std::make_shared<const core::WorldMap>(*std::move(built));
+}
+
+/// `count` world NPCs of `home` standing on `tile`, each with `power`.
+std::vector<core::StableId> Residents(core::State& state, u32 count, u32 tile, u16 home, f32 power) {
+    std::vector<core::StableId> npcs;
+    npcs.reserve(count);
+    for (u32 npc = 0; npc < count; ++npc) {
+        npcs.push_back(game::SpawnNpc(state, tile, home, power));
+    }
+    return npcs;
+}
+
+/// Whether `lhs` and `rhs` have the same bits, as determinism means.
+bool SamePoint(core::Vec2 lhs, core::Vec2 rhs) {
+    return std::bit_cast<u32>(lhs.x) == std::bit_cast<u32>(rhs.x) && std::bit_cast<u32>(lhs.y) == std::bit_cast<u32>(rhs.y);
+}
+
+/// The month of visits from `monthStart`, on one worker.
+void VisitMonth(game::Travel& travel, core::State& state, const core::WorldMap& map, core::Paths& paths, i64 monthStart) {
+    core::Jobs jobs{ 1 };
+    travel.Month(state, map, paths, jobs, GAME_SEED, VISIT_COUNTER, monthStart);
+}
+
+/// How many of `travel`'s journeys go to `city`, counting only those whose first member is one of `members` (sorted).
+std::size_t JourneysTo(const game::Travel& travel, u16 city, std::span<const core::StableId> members) {
+    return static_cast<std::size_t>(std::ranges::count_if(travel.Journeys(), [&](const core::Journey& journey) {
+        return journey.destination == city && std::ranges::binary_search(members, journey.members.front());
+    }));
+}
+
+TEST_CASE("bigger and nearer cities draw more visitors") {
+    const std::shared_ptr<const core::WorldMap> map = VisitMap();
+    // Pull is the people times 1,000,000 over the cost squared, reach (1,000 - cost) * 1,000 / 1,000, every draw 1.
+    CHECK(game::DestinationWeight(*map, ALL_GO, MORTAL, NEAR_COST, NEAR) == 245'000'000);    // 250,000 * 980
+    CHECK(game::DestinationWeight(*map, ALL_GO, MORTAL, 2 * NEAR_COST, NEAR) == 60'000'000); // 62,500 * 960
+    CHECK(game::DestinationWeight(*map, ALL_GO, MORTAL, NEAR_COST, FAR) == 980'000'000);     // 1,000,000 * 980
+    CHECK(game::DestinationWeight(*map, ALL_GO, MORTAL, FAR_COST, FAR) == 57'500'000);       // 62,500 * 920
+    CHECK(game::DestinationWeight(*map, ALL_GO, MORTAL, 0, NEAR) == 100'000'000'000);        // a cost of 0 counts as 1
+
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const std::vector<core::StableId> visitors = Residents(state, VISITORS, 0, HOME, MORTAL);
+    core::Paths paths{ map };
+    game::Travel travel;
+    VisitMonth(travel, state, *map, paths, 0);
+    CHECK(travel.Journeys().size() == VISITORS);
+    const std::size_t near = JourneysTo(travel, NEAR, visitors);
+    const std::size_t far = JourneysTo(travel, FAR, visitors);
+    CAPTURE(near);
+    CAPTURE(far);
+    CHECK(near > far * 2); // its weight is over four times the far city's
+    CHECK(far > 0);
+}
+
+TEST_CASE("the strong reach far cities that mortals don't") {
+    const std::shared_ptr<const core::WorldMap> map = VisitMap(SHORT_REACH);
+    // The reach is 50 plus 10 for each whole point of power, and the far city costs 80.
+    CHECK(game::DestinationWeight(*map, SHORT_REACH, MORTAL, NEAR_COST, NEAR) == 150'000'000); // 250,000 * 600
+    CHECK(game::DestinationWeight(*map, SHORT_REACH, MORTAL, FAR_COST, FAR) == 0);
+    CHECK(game::DestinationWeight(*map, SHORT_REACH, JUST_BELOW_FOUR, FAR_COST, FAR) == 0); // reach 80: none left at cost 80
+    CHECK(game::DestinationWeight(*map, SHORT_REACH, FOUR, FAR_COST, FAR) == 6'937'500);    // 62,500 * 111
+    CHECK(game::DestinationWeight(*map, SHORT_REACH, STRONG, FAR_COST, FAR) == 57'687'500); // 62,500 * 923
+
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const std::vector<core::StableId> mortals = Residents(state, VISITORS / 2, 0, HOME, MORTAL);
+    const std::vector<core::StableId> strong = Residents(state, VISITORS / 2, 0, HOME, STRONG);
+    core::Paths paths{ map };
+    game::Travel travel;
+    VisitMonth(travel, state, *map, paths, 0);
+    CHECK(JourneysTo(travel, NEAR, mortals) == mortals.size());
+    CHECK(JourneysTo(travel, FAR, mortals) == 0);
+    CHECK(JourneysTo(travel, FAR, strong) > 0);
+}
+
+TEST_CASE("a city's draw follows the visitor's kind") {
+    const std::shared_ptr<const core::WorldMap> map = VisitMap(ALL_GO, SECT_DRAWS);
+    CHECK(game::DestinationWeight(*map, ALL_GO, STRONGEST_TRADER, NEAR_COST, FAR) == 0); // a trader
+    CHECK(
+        game::DestinationWeight(*map, ALL_GO, WEAKEST_CULTIVATOR, NEAR_COST, FAR) == 5'880'000'000
+    ); // a cultivator: 6 * 980,000,000
+
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const std::vector<core::StableId> traders = Residents(state, VISITORS / 2, 0, HOME, MORTAL);
+    const std::vector<core::StableId> cultivators = Residents(state, VISITORS / 2, 0, HOME, CULTIVATOR);
+    core::Paths paths{ map };
+    game::Travel travel;
+    VisitMonth(travel, state, *map, paths, 0);
+    CHECK(JourneysTo(travel, FAR, traders) == 0);
+    CHECK(JourneysTo(travel, FAR, cultivators) > 0);
+}
+
+TEST_CASE("nobody sets out twice at once") {
+    const std::shared_ptr<const core::WorldMap> map = VisitMap();
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const std::vector<core::StableId> visitors = Residents(state, VISITORS, 0, HOME, MORTAL);
+    core::Paths paths{ map };
+    game::Travel travel;
+    VisitMonth(travel, state, *map, paths, 0);
+    REQUIRE(travel.Journeys().size() == VISITORS);
+    // Without the journeys ended, everyone is still away at the next month, though some are back by then.
+    VisitMonth(travel, state, *map, paths, MONTH);
+    CHECK(travel.Journeys().size() == VISITORS);
+    std::vector<core::StableId> members;
+    for (const core::Journey& journey : travel.Journeys()) {
+        members.insert(members.end(), journey.members.begin(), journey.members.end());
+    }
+    std::ranges::sort(members);
+    CHECK(std::ranges::adjacent_find(members) == members.end());
+    const bool allTravel = std::ranges::all_of(visitors, [&](core::StableId npc) {
+        return ActionOf(state, npc) == game::Action::Travel && travel.Travelling(npc);
+    });
+    CHECK(allTravel);
+}
+
+TEST_CASE("every visitor comes home") {
+    const std::shared_ptr<const core::WorldMap> map = VisitMap();
+    core::State state{ game::DOMAINS, STATE_SEED };
+    // On the home city's tile, and on tiles round it off the road.
+    constexpr std::array<u32, 4> TILES_LIVED_ON{ 0, VISIT_COLUMNS + 1, 2 * VISIT_COLUMNS, (2 * VISIT_COLUMNS) + 3 };
+    for (const u32 tile : TILES_LIVED_ON) {
+        static_cast<void>(Residents(state, VISITORS / TILES_LIVED_ON.size(), tile, HOME, MORTAL));
+    }
+    core::Paths paths{ map };
+    game::Travel travel;
+    VisitMonth(travel, state, *map, paths, 0);
+    REQUIRE(travel.Journeys().size() == VISITORS);
+    bool home = true;
+    for (const core::Journey& journey : travel.Journeys()) {
+        const u32 tile = state[game::WORLD].Entities().get<game::Npc>(state[game::WORLD].Find(journey.members.front())).cell;
+        const core::Vec2 centre = map->TileCentre(tile);
+        home = home && journey.home == HOME && journey.parts.back().leg.tiles.back() == tile &&
+               SamePoint(core::Where(*map, journey, core::StartTick(journey)), centre) &&
+               SamePoint(core::Where(*map, journey, core::EndTick(journey)), centre);
+    }
+    CHECK(home);
+}
+
+TEST_CASE("a visit across a month step continues") {
+    const std::shared_ptr<const core::WorldMap> map = VisitMap();
+    core::State state{ game::DOMAINS, STATE_SEED };
+    static_cast<void>(Residents(state, VISITORS, 0, HOME, MORTAL));
+    core::Paths paths{ map };
+    game::Travel travel;
+    VisitMonth(travel, state, *map, paths, 0);
+    std::vector<core::Journey> over;
+    std::ranges::copy_if(travel.Journeys(), std::back_inserter(over), [](const core::Journey& journey) {
+        return core::EndTick(journey) > MONTH;
+    });
+    REQUIRE_FALSE(over.empty());
+
+    travel.Finish(MONTH, state);
+    VisitMonth(travel, state, *map, paths, MONTH);
+    bool continued = true;
+    for (const core::Journey& journey : over) {
+        const core::StableId npc = journey.members.front();
+        const auto led =
+            std::ranges::count(travel.Journeys(), npc, [](const core::Journey& kept) { return kept.members.front(); });
+        const auto kept =
+            std::ranges::find(travel.Journeys(), npc, [](const core::Journey& found) { return found.members.front(); });
+        continued = continued && led == 1 && core::StartTick(*kept) == core::StartTick(journey) &&
+                    core::EndTick(*kept) == core::EndTick(journey) && ActionOf(state, npc) == game::Action::Travel;
+    }
+    CHECK(continued);
+}
+
+TEST_CASE("departures spread over the month") {
+    const std::shared_ptr<const core::WorldMap> map = VisitMap();
+    core::State state{ game::DOMAINS, STATE_SEED };
+    static_cast<void>(Residents(state, VISITORS, 0, HOME, MORTAL));
+    core::Paths paths{ map };
+    game::Travel travel;
+    VisitMonth(travel, state, *map, paths, MONTH);
+    REQUIRE(travel.Journeys().size() == VISITORS);
+    const auto [first, last] = std::ranges::minmax_element(travel.Journeys(), {}, [](const core::Journey& journey) {
+        return core::StartTick(journey);
+    });
+    const i64 earliest = core::StartTick(*first);
+    const i64 latest = core::StartTick(*last);
+    // The month from tick 5,400 runs from day 30 to day 59.
+    CHECK(earliest / DAY == 30);
+    CHECK(latest / DAY == 59);
+    CHECK(latest < 2 * MONTH);
+}
+
+TEST_CASE("an unreachable city is never chosen") {
+    const std::shared_ptr<const core::WorldMap> map = VisitMap();
+    core::Paths paths{ map };
+    REQUIRE(paths.To(ISLE, core::WALKING).CostFrom(0) == core::UNREACHABLE);
+    CHECK(game::DestinationWeight(*map, ALL_GO, STRONG, core::UNREACHABLE, ISLE) == 0);
+
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const std::vector<core::StableId> visitors = Residents(state, VISITORS, 0, HOME, STRONG);
+    const std::vector<core::StableId> islanders = Residents(state, VISITORS / 4, ISLE_TILE, ISLE, STRONG);
+    const game::Npc islander = state[game::WORLD].Entities().get<game::Npc>(state[game::WORLD].Find(islanders.front()));
+    constexpr u64 ANY_DRAW = 0x1234'5678'9abc'def0ULL;
+    CHECK_FALSE(game::ChooseDestination(*map, ALL_GO, paths, islander, ANY_DRAW).has_value());
+
+    game::Travel travel;
+    VisitMonth(travel, state, *map, paths, 0);
+    CHECK(travel.Journeys().size() == VISITORS); // the islanders, who reach nowhere, stay
+    CHECK(JourneysTo(travel, ISLE, visitors) == 0);
+    CHECK_FALSE(travel.Travelling(islanders.front()));
+}
+
+TEST_CASE("the draw falls on the first city its share reaches") {
+    const std::shared_ptr<const core::WorldMap> map = VisitMap();
+    core::Paths paths{ map };
+    const game::Npc resident{ .cell = 0, .home = HOME, .action = game::Action::Rest, .power = MORTAL };
+    // Near weighs 245 million, far 57.5 million and the isle nothing: the lowest draw picks near, the highest far.
+    CHECK(game::ChooseDestination(*map, ALL_GO, paths, resident, 0) == NEAR);
+    CHECK(game::ChooseDestination(*map, ALL_GO, paths, resident, std::numeric_limits<u64>::max()) == FAR);
+}
+
+TEST_CASE("a visit to the next tile over goes there and comes back") {
+    core::WorldMapSource source;
+    source.columns = 2;
+    source.rows = 1;
+    source.tileSize = TILE;
+    source.kinds = { { .name = "meadow", .symbol = '.', .cost = MEADOW_COST } };
+    source.grid.assign(2, MEADOW);
+    source.places = { City("home", { .column = 0, .row = 0 }, PEOPLE, EVERYONE),
+                      City("next", { .column = 1, .row = 0 }, PEOPLE, EVERYONE) };
+    source.travel = ALL_GO;
+    auto built = core::WorldMap::Build(std::move(source));
+    REQUIRE(built.has_value());
+    const auto map = std::make_shared<const core::WorldMap>(*std::move(built));
+    core::State state{ game::DOMAINS, STATE_SEED };
+    static_cast<void>(Residents(state, 1, 0, HOME, MORTAL));
+    core::Paths paths{ map };
+    game::Travel travel;
+    VisitMonth(travel, state, *map, paths, 0);
+    REQUIRE(travel.Journeys().size() == 1);
+    const core::Journey& journey = travel.Journeys().front();
+    REQUIRE(journey.parts.size() == 3);
+    const bool there = journey.parts[0].leg.tiles == std::vector<u32>{ 0, 1 };
+    const bool back = journey.parts[2].leg.tiles == std::vector<u32>{ 1, 0 };
+    CHECK(there);
+    CHECK(back);
+    // One meadow step at the default pace of 16 ticks a cost unit.
+    CHECK(core::EndTick(journey.parts[0].leg) - core::StartTick(journey) == MEADOW_COST * 16);
+    CHECK(SamePoint(core::Where(*map, journey, core::EndTick(journey)), map->TileCentre(0)));
 }
 
 } // namespace

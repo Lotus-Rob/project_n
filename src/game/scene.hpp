@@ -127,6 +127,10 @@ public:
 
     /// Deals `amount` to `target` at simulation tick `tick` (Combat::Damage()): a negative amount heals.
     virtual void Damage(core::StableId target, i64 amount, u64 tick) = 0;
+
+    /// Sends the world NPCs spawned so far on the journeys a month of travel would have them on by the world clock's month
+    /// (Travel::Seed()), so the roads are busy from the first frame. Only in a scene showing the world map.
+    virtual void SeedTravel() = 0;
 };
 
 /// One scene: its traits, how it builds, and its own behaviour through hooks the host calls. It holds no state, so its
