@@ -1,4 +1,4 @@
-# The abilities (design doc 0002.3 §7). In debug builds the running game reloads this file when it changes.
+# The abilities. In debug builds the running game reloads this file when it changes.
 # qi: the most Qi the player holds, and what they start with. abilities: each one's slot kind (generator, spender,
 # movement, special or ultimate), cooldown (seconds), qi_cost, qi_gain, damage, element (damage, healing, poison or
 # burn), radius (world units), and by kind: speed (world units a second, the bolt), distance and duration (the dash),

@@ -1,4 +1,4 @@
-# The sprites the atlas step packs (design doc 0002 §9): each one's image is assets/sprites/<name>.png.
+# The sprites the atlas step packs: each one's image is assets/sprites/<name>.png.
 # A sprite's place in this list is its stable ID: add new ones at the end, never reorder or remove.
 #
 # Images: transparent 8-bit PNGs with straight alpha (premultiplied at load), painted for the
@@ -85,7 +85,7 @@ foot = [16, 16]
 [villager]
 foot = [32, 112]
 
-# The abilities' effects (phase 6 chunk 4). All but the sword are white, tinted by their element's colour. Each one's
+# The abilities' effects. All but the sword are white, tinted by their element's colour. Each one's
 # foot is its centre, where the path puts it, but the bars' square's: its left middle, so a bar grows from its left.
 [sword]
 foot = [5, 20]
@@ -107,7 +107,7 @@ foot = [0, 4]
 [glow_core]
 foot = [8, 8]
 
-# The seals' art (phase 6 chunk 4b): white shapes, tinted by the seal. Each foot is the centre.
+# The seals' art: white shapes, tinted by the seal. Each foot is the centre.
 
 [rune_00]
 foot = [24, 32]
@@ -202,7 +202,7 @@ foot = [128, 128]
 [emblem_spiral]
 foot = [128, 128]
 
-# The world's terrain (phase 6 chunk 5a): seamless 256-pixel tiles, ten kinds with two variants each, laid edge to
+# The world's terrain: seamless 256-pixel tiles, ten kinds with two variants each, laid edge to
 # edge from their top-left corners.
 [terrain_meadow_0]
 foot = [0, 0]

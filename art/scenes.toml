@@ -1,4 +1,4 @@
-# The scenes the game loads one at a time (design doc 0002.3 §6, 0002.3.1 §2), in the order F2 cycles through
+# The scenes the game loads one at a time, in the order F2 cycles through
 # them: a scene's place here is its SceneId. Each lists every sprite it draws, the creatures' data-table sprites
 # included; the renderer uploads only those before the scene runs. Names are art/sprites.toml's.
 
@@ -31,7 +31,7 @@ sprites = [
 [cells]
 sprites = ["ground", "cell_plain", "cell_forest", "cell_mountain", "cell_snow", "cell_city"]
 
-# The world map (phase 6 chunk 5a): its terrain tiles, the cultivator (the fox too, as the creatures data draws both)
+# The world map: its terrain tiles, the cultivator (the fox too, as the creatures data draws both)
 # and the walkers with their shadows.
 [world]
 sprites = [

@@ -1,4 +1,4 @@
-"""Procedural placeholder art for the sprite pipeline (design doc 0002 §2, §9): ink wash on paper.
+"""Procedural placeholder art for the sprite pipeline: ink wash on paper.
 
 Writes assets/sprites/<name>.png for every placeholder sprite in art/sprites.toml: a painted ground, rocks, a pine,
 a shrine, a fox, a cultivator, a villager, glowing orbs, a blob shadow, four world-map cells, the world's seamless
@@ -579,7 +579,7 @@ def cell_city():
     return canvas
 
 
-# World terrain (phase 6 chunk 5a): opaque 256-pixel squares the world scene lays edge to edge, ten kinds with two
+# World terrain: opaque 256-pixel squares the world scene lays edge to edge, ten kinds with two
 # variants each. Every wash is noise whose lattice wraps at the tile's edge (lattice_cell), so it tiles; every brush
 # mark is painted again on the far side of any edge it crosses. A kind's colours and the lattice points and marks on
 # its edges are the kind's alone; the variant reseeds the rest (the lattice inside, the marks wholly inside, the
@@ -912,7 +912,7 @@ def terrain(kind, variant):
     return canvas
 
 
-# The seals' art (phase 6 chunk 4b): white shapes on a transparent ground, tinted by the seal's colours. The game
+# The seals' art: white shapes on a transparent ground, tinted by the seal's colours. The game
 # computes each sprite's distance field from its alpha as it loads, so the art carries none: only a one-pixel antialiased
 # edge. Drawn at 4x on a bit mask and reduced by averaging; arcs come from a rational half-angle parametrisation and
 # Beziers, never a transcendental function.
@@ -1125,7 +1125,7 @@ def emblem_spiral():
     return mask.canvas()
 
 
-# The map's overlays (phase 6 chunk 5b1): transparent but for the drawing, 256 px like the terrain tiles. A road or
+# The map's overlays: transparent but for the drawing, 256 px like the terrain tiles. A road or
 # river tile has one of 16 masks, the bits of the neighbours carrying the same line (N 1, E 2, S 4, W 8); each arm runs
 # from the tile's centre to the middle of its edge, straight over the last stretch and painted by the same solid strokes
 # at every tile, so neighbours join. Mask 0 is an isolated dot.

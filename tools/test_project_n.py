@@ -2595,7 +2595,7 @@ class PruneWorktreesTest(unittest.TestCase):
         self.assertIn("no branch", self.reason(self.worktree(branch=None)))
 
     def test_keeps_a_branch_with_no_commits_of_its_own(self):
-        # Never pushed and nothing committed yet: a session may have just made it; its build/ and ledger aren't tracked.
+        # Never pushed and nothing committed yet: a session may have just made it; its build/ and session notes aren't tracked.
         self.assertIn("no commits", self.reason(self.worktree(), cherry=""))
 
     def test_merged_worktree_is_removable(self):
@@ -2752,7 +2752,7 @@ class ParallelTidyTest(unittest.TestCase):
 
 class TidyCacheTest(unittest.TestCase):
     """Each unit's clang-tidy result is kept under a key of everything it depends on, read on branches only; main and
-    tags lint cold, and a tag stores nothing (spec 2026-11-13 §2b)."""
+    tags lint cold, and a tag stores nothing."""
 
     BDIR = Path("build/x")
     UNIT = "src/a.cpp"

@@ -1,4 +1,4 @@
-# The test bed's creatures (design doc 0002.3 §7). In debug builds the running game reloads this
+# The test bed's creatures. In debug builds the running game reloads this
 # file when it changes. Distances are world units (1920 across the arena), speeds per tick (60 a
 # second). health: at full. sprite: an image in assets/sprites/, by name. orbit: the circle a creature walks, if any,
 # around the player (around: player) or the player's starting point (around: start, the default).

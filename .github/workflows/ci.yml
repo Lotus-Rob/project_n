@@ -1,4 +1,4 @@
-# CI only runs project_n commands (docs/design/0001 §12); see .github/AGENTS.md.
+# CI only runs project_n commands; see .github/AGENTS.md.
 name: ci
 
 # Every push runs every job: main's ruleset requires all nine checks on each pull request, and a
@@ -110,7 +110,7 @@ jobs:
       packages: write # the linux image cache in GHCR
     env:
       PROJECT_N_BUILD_CACHE: /home/runner/build-cache # object caches (.github/AGENTS.md)
-      PROJECT_N_ACCEPT_MSVC_LICENSE: "1" # confirmed to fit the project (design doc 0001 O3); image stays on the runner
+      PROJECT_N_ACCEPT_MSVC_LICENSE: "1" # the licence is accepted on purpose; the image stays on the runner
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         env:
@@ -184,7 +184,7 @@ jobs:
           key: ${{ steps.objects.outputs.cache-primary-key }} # the restore's: builds may change the lock
 
   releasedbg:
-    # linux-clang's releasedbg build in its container: the only mode that compiles Tracy's zones (0001 rule 22).
+    # linux-clang's releasedbg build in its container: the only mode that compiles Tracy's zones.
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
@@ -313,7 +313,7 @@ jobs:
           key: ${{ steps.xmake-cache.outputs.cache-primary-key }} # the restore's: builds may change the lock
 
   macos:
-    # Native macos-clang on Apple Silicon: the only place it can build (docs/design/0001 §5.7). One build per
+    # Native macos-clang on Apple Silicon: the only place it can build. One build per
     # entry on branch pushes: release (tests, then the artefact from that build) and ASan; on main and tags the
     # artefact rebuilds in a clean room.
     name: macos (${{ matrix.build }})
