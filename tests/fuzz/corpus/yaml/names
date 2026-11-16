@@ -1,0 +1,328 @@
+# The names NPCs are given (phase 6 chunk 5b2): each NPC's name is drawn from these by its stable ID and the game's seed
+# (core::NameOf), never stored. A surname is drawn by `weight` (its commonness; 1 when left out), then one given character
+# (3 in 10) or two (7 in 10), each uniform. `zh` is the characters, `pinyin` the lower-case ASCII reading the English form is
+# written from. Game data: hashed and read once at the start.
+surnames:
+  - { zh: 王, pinyin: wang, weight: 90 }
+  - { zh: 李, pinyin: li, weight: 90 }
+  - { zh: 张, pinyin: zhang, weight: 85 }
+  - { zh: 刘, pinyin: liu, weight: 65 }
+  - { zh: 陈, pinyin: chen, weight: 60 }
+  - { zh: 杨, pinyin: yang, weight: 50 }
+  - { zh: 黄, pinyin: huang, weight: 40 }
+  - { zh: 赵, pinyin: zhao, weight: 35 }
+  - { zh: 吴, pinyin: wu, weight: 30 }
+  - { zh: 周, pinyin: zhou, weight: 30 }
+  - { zh: 徐, pinyin: xu, weight: 25 }
+  - { zh: 孙, pinyin: sun, weight: 25 }
+  - { zh: 马, pinyin: ma, weight: 22 }
+  - { zh: 朱, pinyin: zhu, weight: 22 }
+  - { zh: 胡, pinyin: hu, weight: 20 }
+  - { zh: 郭, pinyin: guo, weight: 20 }
+  - { zh: 何, pinyin: he, weight: 20 }
+  - { zh: 高, pinyin: gao, weight: 18 }
+  - { zh: 林, pinyin: lin, weight: 18 }
+  - { zh: 罗, pinyin: luo, weight: 17 }
+  - { zh: 郑, pinyin: zheng, weight: 17 }
+  - { zh: 梁, pinyin: liang, weight: 15 }
+  - { zh: 谢, pinyin: xie, weight: 15 }
+  - { zh: 宋, pinyin: song, weight: 14 }
+  - { zh: 唐, pinyin: tang, weight: 14 }
+  - { zh: 许, pinyin: xu, weight: 14 }
+  - { zh: 韩, pinyin: han, weight: 13 }
+  - { zh: 冯, pinyin: feng, weight: 12 }
+  - { zh: 邓, pinyin: deng, weight: 12 }
+  - { zh: 曹, pinyin: cao, weight: 11 }
+  - { zh: 彭, pinyin: peng, weight: 11 }
+  - { zh: 曾, pinyin: zeng, weight: 11 }
+  - { zh: 肖, pinyin: xiao, weight: 10 }
+  - { zh: 田, pinyin: tian, weight: 10 }
+  - { zh: 董, pinyin: dong, weight: 10 }
+  - { zh: 袁, pinyin: yuan, weight: 10 }
+  - { zh: 潘, pinyin: pan, weight: 9 }
+  - { zh: 于, pinyin: yu, weight: 9 }
+  - { zh: 蒋, pinyin: jiang, weight: 9 }
+  - { zh: 蔡, pinyin: cai, weight: 9 }
+  - { zh: 余, pinyin: yu, weight: 8 }
+  - { zh: 杜, pinyin: du, weight: 8 }
+  - { zh: 叶, pinyin: ye, weight: 8 }
+  - { zh: 程, pinyin: cheng, weight: 8 }
+  - { zh: 苏, pinyin: su, weight: 8 }
+  - { zh: 魏, pinyin: wei, weight: 7 }
+  - { zh: 吕, pinyin: lyu, weight: 7 }
+  - { zh: 丁, pinyin: ding, weight: 7 }
+  - { zh: 任, pinyin: ren, weight: 7 }
+  - { zh: 沈, pinyin: shen, weight: 7 }
+  - { zh: 姚, pinyin: yao, weight: 6 }
+  - { zh: 卢, pinyin: lu, weight: 6 }
+  - { zh: 姜, pinyin: jiang, weight: 6 }
+  - { zh: 崔, pinyin: cui, weight: 6 }
+  - { zh: 钟, pinyin: zhong, weight: 6 }
+  - { zh: 谭, pinyin: tan, weight: 6 }
+  - { zh: 陆, pinyin: lu, weight: 5 }
+  - { zh: 汪, pinyin: wang, weight: 5 }
+  - { zh: 范, pinyin: fan, weight: 5 }
+  - { zh: 金, pinyin: jin, weight: 5 }
+  - { zh: 石, pinyin: shi, weight: 5 }
+  - { zh: 廖, pinyin: liao, weight: 5 }
+  - { zh: 贾, pinyin: jia, weight: 4 }
+  - { zh: 夏, pinyin: xia, weight: 4 }
+  - { zh: 韦, pinyin: wei, weight: 4 }
+  - { zh: 傅, pinyin: fu, weight: 4 }
+  - { zh: 方, pinyin: fang, weight: 4 }
+  - { zh: 白, pinyin: bai, weight: 4 }
+  - { zh: 邹, pinyin: zou, weight: 4 }
+  - { zh: 孟, pinyin: meng, weight: 4 }
+  - { zh: 熊, pinyin: xiong, weight: 4 }
+  - { zh: 秦, pinyin: qin, weight: 4 }
+  - { zh: 邱, pinyin: qiu, weight: 3 }
+  - { zh: 江, pinyin: jiang, weight: 3 }
+  - { zh: 尹, pinyin: yin, weight: 3 }
+  - { zh: 薛, pinyin: xue, weight: 3 }
+  - { zh: 闫, pinyin: yan, weight: 3 }
+  - { zh: 段, pinyin: duan, weight: 3 }
+  - { zh: 雷, pinyin: lei, weight: 3 }
+  - { zh: 侯, pinyin: hou, weight: 3 }
+  - { zh: 龙, pinyin: long, weight: 3 }
+  - { zh: 史, pinyin: shi, weight: 3 }
+  - { zh: 陶, pinyin: tao, weight: 3 }
+  - { zh: 黎, pinyin: li, weight: 2 }
+  - { zh: 贺, pinyin: he, weight: 2 }
+  - { zh: 顾, pinyin: gu, weight: 2 }
+  - { zh: 毛, pinyin: mao, weight: 2 }
+  - { zh: 郝, pinyin: hao, weight: 2 }
+  - { zh: 龚, pinyin: gong, weight: 2 }
+  - { zh: 邵, pinyin: shao, weight: 2 }
+  - { zh: 万, pinyin: wan, weight: 2 }
+  - { zh: 钱, pinyin: qian, weight: 2 }
+  - { zh: 严, pinyin: yan, weight: 2 }
+  - { zh: 覃, pinyin: qin, weight: 2 }
+  - { zh: 武, pinyin: wu, weight: 2 }
+  - { zh: 戴, pinyin: dai, weight: 2 }
+  - { zh: 莫, pinyin: mo, weight: 2 }
+  - { zh: 孔, pinyin: kong, weight: 2 }
+  - { zh: 向, pinyin: xiang, weight: 2 }
+  - { zh: 汤, pinyin: tang, weight: 2 }
+  - { zh: 欧阳, pinyin: ouyang, weight: 1 }
+  - { zh: 司马, pinyin: sima, weight: 1 }
+  - { zh: 上官, pinyin: shangguan, weight: 1 }
+  - { zh: 诸葛, pinyin: zhuge, weight: 1 }
+  - { zh: 慕容, pinyin: murong, weight: 1 }
+given:
+  - { zh: 小, pinyin: xiao }
+  - { zh: 明, pinyin: ming }
+  - { zh: 华, pinyin: hua }
+  - { zh: 伟, pinyin: wei }
+  - { zh: 芳, pinyin: fang }
+  - { zh: 娜, pinyin: na }
+  - { zh: 敏, pinyin: min }
+  - { zh: 静, pinyin: jing }
+  - { zh: 丽, pinyin: li }
+  - { zh: 强, pinyin: qiang }
+  - { zh: 磊, pinyin: lei }
+  - { zh: 军, pinyin: jun }
+  - { zh: 洋, pinyin: yang }
+  - { zh: 勇, pinyin: yong }
+  - { zh: 艳, pinyin: yan }
+  - { zh: 杰, pinyin: jie }
+  - { zh: 涛, pinyin: tao }
+  - { zh: 超, pinyin: chao }
+  - { zh: 霞, pinyin: xia }
+  - { zh: 平, pinyin: ping }
+  - { zh: 刚, pinyin: gang }
+  - { zh: 桂, pinyin: gui }
+  - { zh: 英, pinyin: ying }
+  - { zh: 玉, pinyin: yu }
+  - { zh: 兰, pinyin: lan }
+  - { zh: 梅, pinyin: mei }
+  - { zh: 菊, pinyin: ju }
+  - { zh: 竹, pinyin: zhu }
+  - { zh: 松, pinyin: song }
+  - { zh: 柏, pinyin: bai }
+  - { zh: 云, pinyin: yun }
+  - { zh: 风, pinyin: feng }
+  - { zh: 雨, pinyin: yu }
+  - { zh: 雪, pinyin: xue }
+  - { zh: 霜, pinyin: shuang }
+  - { zh: 露, pinyin: lu }
+  - { zh: 月, pinyin: yue }
+  - { zh: 星, pinyin: xing }
+  - { zh: 辰, pinyin: chen }
+  - { zh: 日, pinyin: ri }
+  - { zh: 光, pinyin: guang }
+  - { zh: 山, pinyin: shan }
+  - { zh: 川, pinyin: chuan }
+  - { zh: 河, pinyin: he }
+  - { zh: 海, pinyin: hai }
+  - { zh: 湖, pinyin: hu }
+  - { zh: 泉, pinyin: quan }
+  - { zh: 林, pinyin: lin }
+  - { zh: 森, pinyin: sen }
+  - { zh: 木, pinyin: mu }
+  - { zh: 石, pinyin: shi }
+  - { zh: 金, pinyin: jin }
+  - { zh: 银, pinyin: yin }
+  - { zh: 铁, pinyin: tie }
+  - { zh: 玄, pinyin: xuan }
+  - { zh: 清, pinyin: qing }
+  - { zh: 净, pinyin: jing }
+  - { zh: 空, pinyin: kong }
+  - { zh: 虚, pinyin: xu }
+  - { zh: 灵, pinyin: ling }
+  - { zh: 仙, pinyin: xian }
+  - { zh: 道, pinyin: dao }
+  - { zh: 德, pinyin: de }
+  - { zh: 仁, pinyin: ren }
+  - { zh: 义, pinyin: yi }
+  - { zh: 礼, pinyin: li }
+  - { zh: 智, pinyin: zhi }
+  - { zh: 信, pinyin: xin }
+  - { zh: 忠, pinyin: zhong }
+  - { zh: 孝, pinyin: xiao }
+  - { zh: 廉, pinyin: lian }
+  - { zh: 悦, pinyin: yue }
+  - { zh: 文, pinyin: wen }
+  - { zh: 武, pinyin: wu }
+  - { zh: 才, pinyin: cai }
+  - { zh: 学, pinyin: xue }
+  - { zh: 思, pinyin: si }
+  - { zh: 远, pinyin: yuan }
+  - { zh: 近, pinyin: jin }
+  - { zh: 高, pinyin: gao }
+  - { zh: 长, pinyin: chang }
+  - { zh: 大, pinyin: da }
+  - { zh: 天, pinyin: tian }
+  - { zh: 地, pinyin: di }
+  - { zh: 人, pinyin: ren }
+  - { zh: 和, pinyin: he }
+  - { zh: 安, pinyin: an }
+  - { zh: 宁, pinyin: ning }
+  - { zh: 康, pinyin: kang }
+  - { zh: 乐, pinyin: le }
+  - { zh: 喜, pinyin: xi }
+  - { zh: 福, pinyin: fu }
+  - { zh: 禄, pinyin: lu }
+  - { zh: 寿, pinyin: shou }
+  - { zh: 吉, pinyin: ji }
+  - { zh: 祥, pinyin: xiang }
+  - { zh: 瑞, pinyin: rui }
+  - { zh: 庆, pinyin: qing }
+  - { zh: 昌, pinyin: chang }
+  - { zh: 盛, pinyin: sheng }
+  - { zh: 兴, pinyin: xing }
+  - { zh: 隆, pinyin: long }
+  - { zh: 荣, pinyin: rong }
+  - { zh: 秀, pinyin: xiu }
+  - { zh: 美, pinyin: mei }
+  - { zh: 佳, pinyin: jia }
+  - { zh: 惠, pinyin: hui }
+  - { zh: 慧, pinyin: hui }
+  - { zh: 婷, pinyin: ting }
+  - { zh: 雅, pinyin: ya }
+  - { zh: 琴, pinyin: qin }
+  - { zh: 书, pinyin: shu }
+  - { zh: 画, pinyin: hua }
+  - { zh: 诗, pinyin: shi }
+  - { zh: 词, pinyin: ci }
+  - { zh: 歌, pinyin: ge }
+  - { zh: 舞, pinyin: wu }
+  - { zh: 剑, pinyin: jian }
+  - { zh: 刀, pinyin: dao }
+  - { zh: 弓, pinyin: gong }
+  - { zh: 枪, pinyin: qiang }
+  - { zh: 盾, pinyin: dun }
+  - { zh: 甲, pinyin: jia }
+  - { zh: 战, pinyin: zhan }
+  - { zh: 胜, pinyin: sheng }
+  - { zh: 威, pinyin: wei }
+  - { zh: 雄, pinyin: xiong }
+  - { zh: 豪, pinyin: hao }
+  - { zh: 俊, pinyin: jun }
+  - { zh: 帅, pinyin: shuai }
+  - { zh: 飞, pinyin: fei }
+  - { zh: 翔, pinyin: xiang }
+  - { zh: 鹏, pinyin: peng }
+  - { zh: 鹤, pinyin: he }
+  - { zh: 鹰, pinyin: ying }
+  - { zh: 虎, pinyin: hu }
+  - { zh: 龙, pinyin: long }
+  - { zh: 凤, pinyin: feng }
+  - { zh: 麟, pinyin: lin }
+  - { zh: 嘉, pinyin: jia }
+  - { zh: 蛇, pinyin: she }
+  - { zh: 狐, pinyin: hu }
+  - { zh: 狼, pinyin: lang }
+  - { zh: 熊, pinyin: xiong }
+  - { zh: 鹿, pinyin: lu }
+  - { zh: 马, pinyin: ma }
+  - { zh: 牛, pinyin: niu }
+  - { zh: 羊, pinyin: yang }
+  - { zh: 鱼, pinyin: yu }
+  - { zh: 婉, pinyin: wan }
+  - { zh: 花, pinyin: hua }
+  - { zh: 草, pinyin: cao }
+  - { zh: 叶, pinyin: ye }
+  - { zh: 果, pinyin: guo }
+  - { zh: 根, pinyin: gen }
+  - { zh: 枝, pinyin: zhi }
+  - { zh: 春, pinyin: chun }
+  - { zh: 夏, pinyin: xia }
+  - { zh: 秋, pinyin: qiu }
+  - { zh: 冬, pinyin: dong }
+  - { zh: 晨, pinyin: chen }
+  - { zh: 晴, pinyin: qing }
+  - { zh: 夜, pinyin: ye }
+  - { zh: 晓, pinyin: xiao }
+  - { zh: 朝, pinyin: zhao }
+  - { zh: 阳, pinyin: yang }
+  - { zh: 阴, pinyin: yin }
+  - { zh: 红, pinyin: hong }
+  - { zh: 青, pinyin: qing }
+  - { zh: 白, pinyin: bai }
+  - { zh: 黑, pinyin: hei }
+  - { zh: 黄, pinyin: huang }
+  - { zh: 紫, pinyin: zi }
+  - { zh: 蓝, pinyin: lan }
+  - { zh: 绿, pinyin: lyu }
+  - { zh: 赤, pinyin: chi }
+  - { zh: 翠, pinyin: cui }
+  - { zh: 墨, pinyin: mo }
+  - { zh: 珠, pinyin: zhu }
+  - { zh: 宝, pinyin: bao }
+  - { zh: 琪, pinyin: qi }
+  - { zh: 瑶, pinyin: yao }
+  - { zh: 璇, pinyin: xuan }
+  - { zh: 琳, pinyin: lin }
+  - { zh: 瑾, pinyin: jin }
+  - { zh: 瑜, pinyin: yu }
+  - { zh: 锋, pinyin: feng }
+  - { zh: 岳, pinyin: yue }
+  - { zh: 峰, pinyin: feng }
+  - { zh: 岩, pinyin: yan }
+  - { zh: 渊, pinyin: yuan }
+  - { zh: 潭, pinyin: tan }
+  - { zh: 溪, pinyin: xi }
+  - { zh: 江, pinyin: jiang }
+  - { zh: 波, pinyin: bo }
+  - { zh: 浩, pinyin: hao }
+  - { zh: 然, pinyin: ran }
+  - { zh: 恒, pinyin: heng }
+  - { zh: 毅, pinyin: yi }
+  - { zh: 坚, pinyin: jian }
+  - { zh: 诚, pinyin: cheng }
+  - { zh: 真, pinyin: zhen }
+  - { zh: 善, pinyin: shan }
+  - { zh: 良, pinyin: liang }
+  - { zh: 正, pinyin: zheng }
+  - { zh: 直, pinyin: zhi }
+  - { zh: 勤, pinyin: qin }
+  - { zh: 俭, pinyin: jian }
+  - { zh: 谦, pinyin: qian }
+  - { zh: 逸, pinyin: yi }
+  - { zh: 凡, pinyin: fan }
+  - { zh: 尘, pinyin: chen }
+  - { zh: 源, pinyin: yuan }
+  - { zh: 元, pinyin: yuan }
+  - { zh: 始, pinyin: shi }
+  - { zh: 初, pinyin: chu }
+  - { zh: 归, pinyin: gui }

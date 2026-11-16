@@ -44,4 +44,22 @@ TEST_CASE("the game data's hash changes with the map") {
     CHECK(none.Hash() == core::GameData{}.Hash());
 }
 
+TEST_CASE("the game data's hash changes with the names") {
+    core::Names table;
+    table.surnames = { { .characters = "王", .pinyin = "wang", .weight = 1 } };
+    table.given = { { .characters = "小", .pinyin = "xiao", .weight = 1 } };
+    core::Names other = table;
+    other.given[0].pinyin = "xiaoo";
+    const core::GameData plain;
+    core::GameData named;
+    core::GameData namedAgain;
+    core::GameData renamed;
+    named.names = std::make_shared<const core::Names>(table);
+    namedAgain.names = std::make_shared<const core::Names>(table);
+    renamed.names = std::make_shared<const core::Names>(other);
+    CHECK(named.Hash() == namedAgain.Hash());
+    CHECK(named.Hash() != renamed.Hash());
+    CHECK(named.Hash() != plain.Hash());
+}
+
 } // namespace

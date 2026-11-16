@@ -8,6 +8,7 @@
 #include "core/abilities.hpp"
 #include "core/archive.hpp"
 #include "core/combat_rules.hpp"
+#include "core/names.hpp"
 #include "core/types.hpp"
 #include "core/world_map.hpp"
 
@@ -44,8 +45,8 @@ struct CreatureData {
     }
 };
 
-/// Every data table: the test bed's creatures (`assets/data/creatures.yaml`), the abilities (`abilities.yaml`) and the
-/// world map (`world.yaml`).
+/// Every data table: the test bed's creatures (`assets/data/creatures.yaml`), the abilities (`abilities.yaml`), the
+/// world map (`world.yaml`) and the names (`names.yaml`).
 struct GameData {
     /// The cultivator the player walks.
     CreatureData cultivator{};
@@ -59,6 +60,9 @@ struct GameData {
     /// the start and kept through a reload, so an edit to `world.yaml` alone changes nothing. Hashed, but not listed in
     /// Fields(): a pointer isn't archived.
     std::shared_ptr<const WorldMap> world = nullptr;
+    /// The names NPCs draw theirs from (`names.yaml`); null in game::BuiltInData(). Read once at the start and kept through
+    /// a reload as `world` is. Hashed, but not listed in Fields(): a pointer isn't archived.
+    std::shared_ptr<const Names> names = nullptr;
 
     /// Lists its fields for an archive (core/archive.hpp).
     template<typename Self, typename Archive>
@@ -69,7 +73,7 @@ struct GameData {
     /// A hash of every value: two GameData hash alike when every value has the same bits.
     [[nodiscard]] u64 Hash() const {
         Hasher hasher;
-        hasher(*this, world ? world->Hash() : u64{ 0 });
+        hasher(*this, world ? world->Hash() : u64{ 0 }, names ? names->Hash() : u64{ 0 });
         return hasher.Value();
     }
 };
