@@ -130,7 +130,7 @@ enum class InputCode : u8 {
     KeyMinus,  ///< The key right of 0 on a US keyboard, by its place.
     KeyEquals, ///< The key right of KeyMinus, by its place.
     KeyP,
-    PadBack, ///< The gamepad's Back (View, Select, Share) button.
+    PadBack, ///< SDL's Back button: Xbox's View, PlayStation's Share or Create, Switch's Minus.
 };
 
 /// One input from the player: a button pressed or released, a stick moved, the wheel turned. Key
