@@ -250,6 +250,7 @@ struct Renderer::Impl {
     std::unique_ptr<TextLayout> text = nullptr; // made by Create(): never null after
     std::shared_ptr<const core::Manifest> manifest = nullptr;
     std::shared_ptr<const core::Strings> strings = nullptr;
+    std::shared_ptr<const core::Names> names = nullptr; // null until SetNames(): a named label says nothing
     TextOptions textOptions{};
     core::UiColours uiColours{};
     core::Effects effects{};
@@ -294,9 +295,11 @@ struct Renderer::Impl {
     bool reduceFlashing = false;
     std::size_t glyphsRecorded = 0; // of the cache's pending fields, in the command buffer not yet submitted
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::string number{};                                 // a number's text, made again for each
-    std::vector<std::array<MeasuredStack, 2>> measured{}; // a label stack's width per string and direction, likewise
-    std::string stacked{};                                // a label stack's text, likewise
+    std::string number{};                                   // a number's text, made again for each
+    NameTexts nameTexts{};                                  // the NPC names this frame's labels show, each composed once
+    std::unordered_map<u64, MeasuredStack> measuredNames{}; // a named label's stack width per NameKey and direction
+    std::vector<std::array<MeasuredStack, 2>> measured{};   // a label stack's width per string and direction, likewise
+    std::string stacked{};                                  // a label stack's text, likewise
     LabelPass labels{};
     CaptionFades captionFades{};
     std::vector<LabelInput> labelInputs{};
@@ -507,6 +510,9 @@ std::expected<void, core::Error> Renderer::Impl::MakeGlyphPages() {
 }
 
 std::string_view Renderer::Impl::TextOf(const core::TextItem& item) {
+    if (item.npcName) {
+        return nameTexts.Of(names.get(), *item.npcName, textOptions.language);
+    }
     if (item.kind != core::TextKind::Number) {
         return strings->Text(item.string, textOptions.language);
     }
@@ -517,6 +523,7 @@ std::string_view Renderer::Impl::TextOf(const core::TextItem& item) {
 
 void Renderer::Impl::PlaceTexts(const Shown& shown, core::Jobs& jobs) {
     PN_PROFILE_ZONE();
+    nameTexts.Clear(); // a name is composed once a frame at most, in the language the frame shows
     const core::Snapshot& snapshot = *shown.snapshot;
     const auto idOf = [&snapshot](std::optional<std::size_t> instance) {
         return instance && *instance < snapshot.ids.size() ? snapshot.ids[*instance] : core::StableId{};
@@ -637,9 +644,12 @@ void Renderer::Impl::MeasureStacks() {
     const auto most = static_cast<u32>(labelInputs.size());
     const std::string& stack = strings->Text(core::StringId::LabelStack, textOptions.language);
     measured.assign(strings->text.size(), {});
+    measuredNames.clear();
     for (LabelInput& label : labelInputs) {
         const core::TextItem& item = label.item;
-        MeasuredStack& stackText = measured.at(std::to_underlying(item.string)).at(std::to_underlying(item.direction));
+        MeasuredStack& stackText =
+            item.npcName ? measuredNames[(u64{ core::NameKey(*item.npcName) } << 1U) | std::to_underlying(item.direction)]
+                         : measured.at(std::to_underlying(item.string)).at(std::to_underlying(item.direction));
         if (stackText.width < 0.0F) {
             StackText(stacked, stack, TextOf(item), most);
             const Layout& layout = text->Lay(stacked, item.direction);
@@ -688,7 +698,7 @@ LabelInput Renderer::Impl::LabelOf(const core::TextItem& item, core::StableId ho
         anchor.y += height; // the pass takes the middle of a box's bottom edge
     }
     return { .entity = item.entity,
-             .nameKey = item.nameKey,
+             .nameKey = LabelKey(item),
              .priority = priority,
              .anchor = anchor,
              .width = layout.width * scale,
@@ -1214,6 +1224,17 @@ void Renderer::SetEffects(const core::Effects& effects) {
 void Renderer::SetSeals(const core::Seals& seals) {
     m_impl->sealLooks = seals;
     m_impl->seals.SetPack(PackSeals(seals, *m_impl->manifest), seals);
+}
+
+void Renderer::SetNames(std::shared_ptr<const core::Names> names) {
+    if (names == m_impl->names) {
+        return; // the reload kept the table: its glyphs are there
+    }
+    m_impl->nameTexts.Clear();
+    m_impl->names = std::move(names);
+    if (m_impl->names) {
+        m_impl->text->PrewarmNames(*m_impl->strings, *m_impl->names);
+    }
 }
 
 void Renderer::SetWorld(std::shared_ptr<const core::WorldMap> map, const core::WorldLook& look) {

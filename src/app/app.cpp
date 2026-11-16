@@ -202,6 +202,7 @@ App::App(platform::Window window, gfx::Renderer renderer, Options options)
     ApplyEffects(m_options.effects);
     m_renderer.SetSeals(m_options.seals);
     m_renderer.SetWorld(m_options.data.world, m_options.worldLook);
+    m_renderer.SetNames(m_options.data.names);
     // The main thread is the job system's thread 0: waiting on its low-priority work, it may run the
     // logic's chunks, which need the simulation's environment.
     core::math::SetFloatingPointEnvironment();
@@ -419,6 +420,7 @@ void App::WatchData(u64 nowNs) {
     if (reload.gameData) {
         PN_LOG_INFO("the game data changed: reloading it");
         m_options.data = *gameData; // what `--cast-swords` reads the costs from
+        m_renderer.SetNames(m_options.data.names);
         m_handover.SendInput(
             { .kind = core::ActionKind::ReloadData, .data = std::make_shared<const core::GameData>(*gameData) }
         );

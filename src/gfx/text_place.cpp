@@ -179,6 +179,22 @@ bool TooSmallToSee(f32 entityPixels) {
     return entityPixels > 0.0F && entityPixels < VISIBLE_CREATURE_PIXELS;
 }
 
+u32 LabelKey(const core::TextItem& item) {
+    return item.npcName ? core::NameKey(*item.npcName) : item.nameKey;
+}
+
+const std::string& NameTexts::Of(const core::Names* names, core::NpcName name, core::Language language) {
+    const auto [slot, added] = m_texts.try_emplace(core::NameKey(name));
+    if (added && names != nullptr) {
+        slot->second = core::NameText(*names, name, language);
+    }
+    return slot->second;
+}
+
+void NameTexts::Clear() {
+    m_texts.clear();
+}
+
 u32 TextColour(const core::TextItem& item, const core::UiColours& colours, bool outline, bool shadow) {
     return ColourOfText(item, colours, outline, shadow);
 }

@@ -95,6 +95,40 @@ std::vector<std::string> PrewarmTexts(const core::Strings& strings) {
     return texts;
 }
 
+// A pinyin with its first letter capitalised, as a name's English form writes a surname or a first given syllable.
+std::string Capitalised(std::string pinyin) {
+    constexpr i32 CASE_GAP = 'a' - 'A';
+    if (!pinyin.empty() && pinyin.front() >= 'a' && pinyin.front() <= 'z') {
+        pinyin.front() -= CASE_GAP;
+    }
+    return pinyin;
+}
+
+// What PrewarmNames() rasterises: every name entry alone, as the characters and as pinyin both capitalised and in its
+// lower case form (a second given character is written plain), the apostrophe, and in each language the label stack
+// filled with every character or capitalised pinyin of the table and every digit.
+std::vector<std::string> PrewarmNameTexts(const core::Strings& strings, const core::Names& names) {
+    std::vector<std::string> texts{ "'" };
+    std::string characters;
+    std::string pinyin;
+    for (const std::vector<core::NameEntry>* table : { &names.surnames, &names.given }) {
+        for (const core::NameEntry& entry : *table) {
+            texts.push_back(entry.characters);
+            texts.push_back(Capitalised(entry.pinyin));
+            texts.push_back(entry.pinyin);
+            characters += entry.characters;
+            pinyin += Capitalised(entry.pinyin);
+            pinyin += ' ';
+        }
+    }
+    for (std::size_t language = 0; language < core::LANGUAGES; ++language) {
+        const std::string& stack = strings.text.at(std::to_underlying(core::StringId::LabelStack)).at(language);
+        texts.push_back(Filled(stack, characters, DIGITS));
+        texts.push_back(Filled(stack, pinyin, DIGITS));
+    }
+    return texts;
+}
+
 // A glyph's field as it was rasterised; no texels when it couldn't be.
 struct Field {
     u32 glyph = 0;
@@ -432,14 +466,16 @@ TextLayout::TextLayout(TextLayout&& other) noexcept = default;
 TextLayout& TextLayout::operator=(TextLayout&& other) noexcept = default;
 TextLayout::~TextLayout() = default;
 
-void TextLayout::Prewarm(const core::Strings& strings) {
-    const auto start = std::chrono::steady_clock::now();
+// Shapes each of `texts` both ways, and rasterises on this thread every glyph not yet in the cache, one at a time.
+// Returns how many it rasterised.
+std::size_t TextLayout::Warm(const std::vector<std::string>& texts) {
+    Impl& impl = *m_impl;
     std::vector<u32> unseen;
-    for (const std::string& text : PrewarmTexts(strings)) {
+    for (const std::string& text : texts) {
         for (const core::TextDirection direction : DIRECTIONS) {
-            static_cast<void>(m_impl->Shape(text, direction, [&](const TTF_CopyOperation& copy) {
-                const auto cached = m_impl->glyphs.find(copy.glyph_index);
-                if ((cached == m_impl->glyphs.end() || cached->second.state == GlyphState::Requested) &&
+            static_cast<void>(impl.Shape(text, direction, [&](const TTF_CopyOperation& copy) {
+                const auto cached = impl.glyphs.find(copy.glyph_index);
+                if ((cached == impl.glyphs.end() || cached->second.state == GlyphState::Requested) &&
                     !std::ranges::contains(unseen, copy.glyph_index)) {
                     unseen.push_back(copy.glyph_index);
                 }
@@ -447,11 +483,24 @@ void TextLayout::Prewarm(const core::Strings& strings) {
         }
     }
     for (const u32 glyph : unseen) {
-        m_impl->glyphs.try_emplace(glyph);
-        m_impl->Place(m_impl->fonts->RasteriseField(glyph));
+        impl.glyphs.try_emplace(glyph);
+        impl.Place(impl.fonts->RasteriseField(glyph));
     }
+    return unseen.size();
+}
+
+void TextLayout::Prewarm(const core::Strings& strings) {
+    const auto start = std::chrono::steady_clock::now();
+    const std::size_t rasterised = Warm(PrewarmTexts(strings));
     const std::chrono::duration<f64, std::milli> took = std::chrono::steady_clock::now() - start;
-    PN_LOG_INFO("glyphs rasterised ahead of time as distance fields: {}, in {:.0f} ms", unseen.size(), took.count());
+    PN_LOG_INFO("glyphs rasterised ahead of time as distance fields: {}, in {:.0f} ms", rasterised, took.count());
+}
+
+void TextLayout::PrewarmNames(const core::Strings& strings, const core::Names& names) {
+    const auto start = std::chrono::steady_clock::now();
+    const std::size_t rasterised = Warm(PrewarmNameTexts(strings, names));
+    const std::chrono::duration<f64, std::milli> took = std::chrono::steady_clock::now() - start;
+    PN_LOG_INFO("name glyphs rasterised ahead of time: {}, in {:.0f} ms", rasterised, took.count());
 }
 
 // No zone: it runs once per text, tens of times a frame, and a zone costs more than a hit; a miss's Make() has one.

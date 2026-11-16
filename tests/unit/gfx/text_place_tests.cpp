@@ -1,6 +1,7 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
 #include "core/instances.hpp"
+#include "core/names.hpp"
 #include "core/ui_colours.hpp"
 #include "gfx/text_layout.hpp"
 #include "gfx/text_place.hpp"
@@ -17,6 +18,8 @@ constexpr f32 GLYPH_HEIGHT = 30.0F;
 constexpr gfx::PlacedGlyph
     GLYPH{ .x = 4.0F, .y = 2.0F, .width = GLYPH_WIDTH, .height = GLYPH_HEIGHT, .page = 0, .u = PAGE_U, .v = PAGE_V };
 constexpr gfx::Layout ONE_GLYPH_BOX{ .width = 32.0F, .height = 34.0F };
+constexpr u32 PRODUCER_KEY = 77;
+constexpr u32 PLAIN_KEY = 5;
 constexpr core::Vec2 TOP_LEFT{ .x = 10.25F, .y = 7.5F };
 constexpr f32 HALF_BASE = gfx::SDF_BASE_PIXELS / 2.0F; // 24 pixels: the layout at half its base size
 // Where the glyph lands at half size from TOP_LEFT: its base pixels halved.
@@ -192,3 +195,45 @@ TEST_CASE("a text's opacity scales every channel of its premultiplied colour") {
 }
 
 } // namespace
+
+namespace {
+
+core::Names SmallNames() {
+    core::Names names;
+    names.surnames = { { .characters = "王", .pinyin = "wang", .weight = 1 } };
+    names.given = { { .characters = "小", .pinyin = "xiao", .weight = 1 },
+                    { .characters = "明", .pinyin = "ming", .weight = 1 } };
+    return names;
+}
+
+} // namespace
+
+TEST_CASE("a label with an NPC name shows the name in the language shown") {
+    const core::Names names = SmallNames();
+    gfx::NameTexts texts;
+    const core::NpcName two{ .surname = 0, .first = 0, .second = 1 };
+    const core::NpcName one{ .surname = 0, .first = 1, .second = core::NO_GIVEN };
+    CHECK(texts.Of(&names, two, core::Language::Chinese) == "王小明");
+    texts.Clear();
+    CHECK(texts.Of(&names, two, core::Language::English) == "Wang Xiaoming");
+    CHECK(texts.Of(&names, one, core::Language::English) == "Wang Ming");
+    texts.Clear();
+    CHECK(texts.Of(&names, one, core::Language::Chinese) == "王明");
+    texts.Clear();
+    CHECK(texts.Of(nullptr, one, core::Language::Chinese).empty());
+}
+
+TEST_CASE("two labels of different names never stack") {
+    core::TextItem first;
+    first.npcName = core::NpcName{ .surname = 0, .first = 0, .second = core::NO_GIVEN };
+    core::TextItem second;
+    second.npcName = core::NpcName{ .surname = 0, .first = 1, .second = core::NO_GIVEN };
+    core::TextItem rekeyed = first;
+    rekeyed.nameKey = PRODUCER_KEY; // a producer's key is ignored for a named label
+    core::TextItem plain;
+    plain.nameKey = PLAIN_KEY;
+    CHECK(gfx::LabelKey(first) != gfx::LabelKey(second));
+    CHECK(gfx::LabelKey(first) == gfx::LabelKey(rekeyed));
+    CHECK(gfx::LabelKey(first) == core::NameKey(*first.npcName));
+    CHECK(gfx::LabelKey(plain) == PLAIN_KEY);
+}

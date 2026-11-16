@@ -10,6 +10,7 @@
 #include "core/error.hpp"
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
+#include "core/names.hpp"
 #include "core/strings.hpp"
 #include "core/types.hpp"
 
@@ -18,6 +19,7 @@
 #include <filesystem>
 #include <memory>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -109,6 +111,12 @@ public:
     /// never waits for the worker. Logs how many glyphs it rasterised and how long that took.
     void Prewarm(const core::Strings& strings);
 
+    /// Rasterises now, on this thread, every glyph of every entry of `names`: each surname and given character as
+    /// characters and as pinyin, capitalised or not, the apostrophe, and the label stack of `strings` filled with
+    /// the whole table and every digit, in both languages and both ways: so a name drawn never waits for the worker.
+    /// Logs how many glyphs it rasterised and how long that took.
+    void PrewarmNames(const core::Strings& strings, const core::Names& names);
+
     /// `text` laid out running `direction`, from the cache or made now. A glyph not rasterised yet is left out
     /// (`complete` false) and asked of the worker at EndFrame(); the layout is made again by the first Lay() after it
     /// lands. A character the font lacks draws nothing and is logged once; a text that can't be laid out is empty, and
@@ -138,6 +146,8 @@ public:
 private:
     struct Impl;
     explicit TextLayout(std::unique_ptr<Impl> impl);
+    // Shapes `texts` both ways and rasterises every glyph not yet cached, now; returns how many.
+    std::size_t Warm(const std::vector<std::string>& texts);
 
     std::unique_ptr<Impl> m_impl;
 };

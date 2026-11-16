@@ -9,6 +9,7 @@
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
 #include "core/manifest.hpp"
+#include "core/names.hpp"
 #include "core/seals.hpp"
 #include "core/strings.hpp"
 #include "core/types.hpp"
@@ -126,6 +127,11 @@ public:
     /// Draws the seals in play as `seals` says from the next frame on, with no restart: their parts are packed now and
     /// uploaded with the next frame, never on a seal's first draw. Until it is called no seal is drawn.
     void SetSeals(const core::Seals& seals);
+
+    /// Takes the names NPC labels are composed from (core::TextItem::npcName) and rasterises every glyph of the table now
+    /// (TextLayout::PrewarmNames()), so a name never waits for one; a null table makes a named label say nothing. App
+    /// gives it at the start and again after a data reload; the same table again changes nothing.
+    void SetNames(std::shared_ptr<const core::Names> names);
 
     /// Draws the world map of a snapshot that shows it (core::Snapshot::worldMap) from `map` and `look` from the next frame
     /// on, with no restart: the tiles in view (gfx/terrain_draw.hpp), under the ground and everything else, laid out again

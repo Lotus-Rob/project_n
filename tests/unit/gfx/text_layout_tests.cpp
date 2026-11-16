@@ -1,5 +1,6 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/jobs.hpp"
+#include "core/names.hpp"
 #include "core/strings.hpp"
 #include "data/strings.hpp"
 #include "gfx/text_layout.hpp"
@@ -175,6 +176,38 @@ TEST_CASE("pre-warm covers every string in both languages and the digits") {
         for (const core::TextDirection direction : BOTH_WAYS) {
             const bool complete = text.Lay(entry, direction).complete;
             CHECK_MESSAGE(complete, entry);
+        }
+    }
+    CHECK(text.Pending().size() == warmed);
+}
+
+TEST_CASE("prewarming covers the names table's characters") {
+    core::Names names;
+    names.surnames = { { .characters = "王", .pinyin = "wang", .weight = 1 },
+                       { .characters = "欧阳", .pinyin = "ouyang", .weight = 1 } };
+    names.given = { { .characters = "小", .pinyin = "xiao", .weight = 1 },
+                    { .characters = "明", .pinyin = "ming", .weight = 1 },
+                    { .characters = "安", .pinyin = "an", .weight = 1 } };
+    const std::expected<core::Strings, core::Error> strings = data::LoadStrings(Assets() / "data");
+    const std::string why = strings.error_or(core::Error{}).message;
+    REQUIRE_MESSAGE(strings, why);
+    gfx::TextLayout text = OpenFonts();
+    text.Prewarm(*strings);
+    text.PrewarmNames(*strings, names);
+    const std::size_t warmed = text.Pending().size();
+    const std::array<core::NpcName, 3> shown{ { { .surname = 0, .first = 0, .second = 1 },
+                                                { .surname = 1, .first = 1, .second = 2 },
+                                                { .surname = 1, .first = 2, .second = core::NO_GIVEN } } };
+    for (const core::NpcName name : shown) {
+        for (std::size_t language = 0; language < core::LANGUAGES; ++language) {
+            const std::string spelt = core::NameText(names, name, static_cast<core::Language>(language));
+            const std::string& stack = strings->text.at(std::to_underlying(core::StringId::LabelStack)).at(language);
+            for (const core::TextDirection direction : BOTH_WAYS) {
+                const bool alone = text.Lay(spelt, direction).complete;
+                const bool stacked = text.Lay(Stacked(stack, spelt, "1234567890"), direction).complete;
+                CHECK_MESSAGE(alone, spelt);
+                CHECK_MESSAGE(stacked, spelt);
+            }
         }
     }
     CHECK(text.Pending().size() == warmed);
