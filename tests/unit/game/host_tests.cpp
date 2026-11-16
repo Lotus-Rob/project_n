@@ -6,6 +6,7 @@
 #include "core/journey.hpp"
 #include "core/names.hpp"
 #include "core/paths.hpp"
+#include "core/rect.hpp"
 #include "core/seal.hpp"
 #include "core/state.hpp"
 #include "core/view_limits.hpp"
@@ -298,11 +299,6 @@ static_assert(
     "the widest view is what culling covered"
 );
 
-// Whether `point` lies within `area`, its edges included.
-bool Within(core::Vec2 point, const core::Rect& area) {
-    return point.x >= area.min.x && point.x <= area.max.x && point.y >= area.min.y && point.y <= area.max.y;
-}
-
 // The view a publish culls to with none sent: the widest a window shows round `centre`.
 core::Rect WidestRound(core::Vec2 centre) {
     return Grown({ .min = centre, .max = centre }, core::WIDEST_HALF_VIEW);
@@ -320,14 +316,14 @@ TEST_CASE("a publish with a view holds only what lies within it") {
     REQUIRE(culled.instances.size() > 1);
     CHECK(Draws(culled.instances.front(), SpriteId::Ground)); // drawn whole: larger than the margin allows
     const bool allWithin = std::ranges::all_of(std::span{ culled.instances }.subspan(1), [&](const core::Instance& instance) {
-        return Within(instance.current, Grown(view, DRAW_MARGIN));
+        return core::Contains(Grown(view, DRAW_MARGIN), instance.current);
     });
     CHECK(allWithin);
     // And everything within it is kept: as many as lie there in the publish with no view, which holds the whole arena.
     REQUIRE(Draws(everything.instances.front(), SpriteId::Ground));
     const auto inside = static_cast<std::size_t>(
         std::ranges::count_if(std::span{ everything.instances }.subspan(1), [&](const core::Instance& instance) {
-            return Within(instance.current, Grown(view, DRAW_MARGIN));
+            return core::Contains(Grown(view, DRAW_MARGIN), instance.current);
         })
     );
     CHECK(culled.instances.size() == inside + 1);
@@ -335,7 +331,8 @@ TEST_CASE("a publish with a view holds only what lies within it") {
     // A creature published with no view, outside this one and its margin, is absent.
     std::optional<core::StableId> outside;
     for (std::size_t i = 0; i < everything.ids.size() && !outside; ++i) {
-        if (everything.ids[i] != core::StableId{} && !Within(everything.instances[i].current, Grown(view, DRAW_MARGIN))) {
+        if (everything.ids[i] != core::StableId{} &&
+            !core::Contains(Grown(view, DRAW_MARGIN), everything.instances[i].current)) {
             outside = everything.ids[i];
         }
     }
@@ -361,7 +358,7 @@ TEST_CASE("with no view, a publish culls to the widest view round the followed c
     REQUIRE(Draws(everything.instances.front(), SpriteId::Ground)); // drawn whole either way, so left out of the count
     const auto kept = static_cast<std::size_t>(
         std::ranges::count_if(std::span{ everything.instances }.subspan(1), [&](const core::Instance& instance) {
-            return Within(instance.current, Grown(widest, DRAW_MARGIN));
+            return core::Contains(Grown(widest, DRAW_MARGIN), instance.current);
         })
     );
     CHECK(kept > 0);
@@ -565,7 +562,7 @@ TEST_CASE("the world's busiest region holds thousands of walkers at the widest v
     const core::Rect window = Grown({ .min = game::WORLD_BUSIEST, .max = game::WORLD_BUSIEST }, WIDEST_HALF_SCREEN);
     const std::vector<std::pair<core::StableId, game::Body>> walkers = Walkers(host);
     const auto inside = static_cast<std::size_t>(std::ranges::count_if(walkers, [&](const auto& walker) {
-        return Within(walker.second.current, window);
+        return core::Contains(window, walker.second.current);
     }));
     CHECK(inside >= THOUSANDS);
 }
@@ -575,7 +572,7 @@ std::size_t OnScreenAt(const std::vector<std::pair<core::StableId, game::Body>>&
     constexpr core::Vec2 HALF_SCREEN{ .x = 960.0F, .y = 540.0F };
     const core::Rect screen = Grown({ .min = centre, .max = centre }, HALF_SCREEN);
     return static_cast<std::size_t>(std::ranges::count_if(walkers, [&](const auto& walker) {
-        return Within(walker.second.current, screen);
+        return core::Contains(screen, walker.second.current);
     }));
 }
 
@@ -591,7 +588,7 @@ TEST_CASE("the world's cultivator starts in quiet country") {
     // count for each of its screens. The real guarantee that no gathering reaches it is scenes_tests' check on the shipped map.
     const core::Rect widest = Grown({ .min = home, .max = home }, core::WIDEST_HALF_VIEW);
     const auto inWidest = static_cast<std::size_t>(std::ranges::count_if(walkers, [&](const auto& walker) {
-        return Within(walker.second.current, widest);
+        return core::Contains(widest, walker.second.current);
     }));
     CHECK(inWidest <= QUIET_SCREEN * WIDEST_SCREENS);
 }
@@ -1809,7 +1806,7 @@ TEST_CASE("travellers outside the view are not published") {
     const TravelWorld world = TravelWorldOf(departures);
     const core::Rect view = NearHome(*world.map);
     const core::Vec2 away = core::Where(*world.map, world.journeys[1], clock);
-    REQUIRE((away.x < view.min.x || away.x > view.max.x || away.y < view.min.y || away.y > view.max.y));
+    REQUIRE_FALSE(core::Contains(view, away));
     const core::Snapshot snapshot = Published(*world.host, view);
     CHECK(Shows(snapshot, world.journeys[0].members.front()));
     CHECK_FALSE(Shows(snapshot, world.journeys[1].members.front()));

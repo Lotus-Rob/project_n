@@ -16,4 +16,9 @@ struct Rect {
     Vec2 max{};
 };
 
+/// Whether `point` lies within `area`, its edges included; a point with a NaN coordinate never does.
+[[nodiscard]] constexpr bool Contains(const Rect& area, Vec2 point) {
+    return point.x >= area.min.x && point.x <= area.max.x && point.y >= area.min.y && point.y <= area.max.y;
+}
+
 } // namespace core
