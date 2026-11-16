@@ -20,15 +20,6 @@ namespace {
 
 constexpr u32 SHIPPED_PEOPLE = 50'000;
 
-// The shipped map's size stays in code (WORLD_COLUMNS, WORLD_ROWS, WORLD_TILE: the stand-in walkers' spread
-// and gatherings are laid out on them), so the map must match it.
-TEST_CASE("the shipped world map is the size the world scene's code assumes") {
-    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
-    CHECK(map->Columns() == game::WORLD_COLUMNS);
-    CHECK(map->Rows() == game::WORLD_ROWS);
-    CHECK(map->TileSize() == doctest::Approx(game::WORLD_TILE));
-}
-
 // `measure` counts the world's NPCs: the cities' shares are its load, which stays comparable at 50,000.
 TEST_CASE("the shipped cities' shares sum to 50,000") {
     const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
@@ -44,8 +35,8 @@ TEST_CASE("the shipped cities' shares sum to 50,000") {
     CHECK(capital == largest);
 }
 
-// The measurement path (app/camera_path) flies over WORLD_BUSIEST, where the busiest stand-in gathering sits round the
-// port: moving the port off it would measure an empty sea.
+// The measurement path (app/camera_path) flies over WORLD_BUSIEST, where the travellers crowd round the port: moving the
+// port off it would measure an empty sea.
 TEST_CASE("WORLD_BUSIEST lies in the port's tile") {
     const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
     const auto port = std::ranges::find(map->Places(), std::string_view{ "port" }, &core::Place::key);
@@ -161,9 +152,9 @@ std::size_t TravellersIn(const game::Host& host, const core::WorldMap& map, cons
 }
 
 // `measure`'s world run looks over WORLD_BUSIEST at the widest view: the travellers there are its load, kept at 2,000 or
-// more so its runs stay comparable over time. The shipped share, 60 per thousand, puts 665 to 870 there over the first half
-// month, so the run raises it with `--travel-share`, through what main applies it with: at 200 the fewest is 2,276, at the
-// first tick, rising to 2,696.
+// more so its runs stay comparable over time. The shipped share, 60 per thousand, puts 650 to 884 there over the first half
+// month, so the run raises it with `--travel-share`, through what main applies it with: at 200 the fewest is 2,304, at its
+// second tick, rising to 2,813.
 TEST_CASE("the busiest view holds at least 2,000 travellers") {
     constexpr std::size_t FEWEST = 2'000;
     constexpr u16 MEASURED_SHARE = 200; // `--travel-share` in measure's world run (MEASURE_RUNS in tools/project_n.py)

@@ -3,8 +3,8 @@
 // where `--update` takes it from. Game text is also measured on the pictures: a label's ink must not shimmer at sub-pixel
 // camera offsets, nor step while its creature moves. So are the glows' drives: a demo glow's drawn amount follows
 // core::GlowStrength() from tick to tick, and reduce flashing holds and dims it. So are the seals: a screen-wide seal's ink,
-// tile by tile, must not shimmer at sub-pixel camera offsets. So is the world map: its tiles and walkers at the smallest zoom,
-// the same way.
+// tile by tile, must not shimmer at sub-pixel camera offsets. So is the world map: its tiles and travellers at the smallest
+// zoom, the same way.
 #include "app/damage_numbers.hpp"
 #include "app/hud.hpp"
 #include "app/view.hpp"
@@ -286,9 +286,9 @@ constexpr u32 FULL_HD_WIDTH = 1920;
 constexpr u32 FULL_HD_HEIGHT = 1080;
 
 // The world's pictures are drawn as in the game: centred on the busiest region, the widest one reaches past the widest view
-// round the start, the fallback culled to without a view sent. Two seconds in, the walkers have walked off their orbits'
-// starts and the portal's seal has appeared.
-TEST_CASE("the world at the smallest zoom over its busiest region: tiles and walkers to the edges") {
+// round the start, the fallback culled to without a view sent. Two seconds in, the travellers have walked on from where
+// the world's build set them and the portal's seal has appeared.
+TEST_CASE("the world at the smallest zoom over its busiest region: tiles and travellers to the edges") {
     CheckAgainstReference(
         { .name = "world_widest",
           .scene = game::WORLD_SCENE,
@@ -299,7 +299,7 @@ TEST_CASE("the world at the smallest zoom over its busiest region: tiles and wal
     );
 }
 
-TEST_CASE("the world at a middle zoom over its busiest region: walkers with their labels") {
+TEST_CASE("the world at a middle zoom over its busiest region: travellers with their labels") {
     CheckAgainstReference(
         { .name = "world_middle",
           .scene = game::WORLD_SCENE,
@@ -1499,19 +1499,19 @@ TEST_CASE("a screen-wide seal at the smallest zoom: no shimmer") {
 }
 
 // A regression guard, not a proof of no shimmer: the tiles shimmer today, above the 0.02 the labels and seals hold.
-TEST_CASE("the world's tiles and walkers at the smallest zoom: shimmer held to its bound") {
-    // Measured 0.0436 on the data-driven world map (its harbour reshaped; 0.0397 before; the earlier flat world measured
-    // 0.0309). It is the ground's, not the walkers': the worst tiles sit where two kinds of terrain meet, whose hard tile-quad
-    // edges step a whole pixel at a time (the dark forest's small ink over the dark backdrop weighs its tiles' changes more),
-    // so the harbour's longer shore adds some. The fix is a world map look that blends between kinds,
-    // which must bring this to 0.02 or under and tighten the bound. About 1.4 times the measure (the seals' 0.02 is about
-    // twice their 0.011).
+TEST_CASE("the world's tiles and travellers at the smallest zoom: shimmer held to its bound") {
+    // Measured 0.0482 on the data-driven world map with its travellers (0.0436 when last recorded, with the walkers that
+    // stood in for them; 0.0397 before its harbour was reshaped; the earlier flat world measured 0.0309). It is the ground's,
+    // not the travellers': the worst tiles sit where two kinds of terrain meet, whose hard tile-quad edges step a whole pixel
+    // at a time (the dark forest's small ink over the dark backdrop weighs its tiles' changes more), so the harbour's longer
+    // shore adds some. The fix is a world map look that blends between kinds, which must bring this to 0.02 or under and
+    // tighten the bound. About 1.25 times the measure (the seals' 0.02 is about twice their 0.011).
     constexpr f64 MOST_CHANGE = 0.06;
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
     game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
     // Over the busiest region, published culled to the unshifted picture's view, as the game sends it (its margin holds
-    // the shifted one); the walkers' labels are hidden at this zoom.
+    // the shifted one); the travellers' labels are hidden at this zoom.
     const gfx::Camera far{ .centre = game::WORLD_BUSIEST, .zoom = gfx::MIN_ZOOM };
     const core::Snapshot world =
         Published(host, jobs, 0, app::CullArea(far, static_cast<i32>(WIDTH), static_cast<i32>(HEIGHT)));
