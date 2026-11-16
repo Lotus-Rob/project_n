@@ -85,6 +85,8 @@ Bindings::Bindings()
       { .code = InputCode::KeyMinus, .control = Control::Zoom, .direction = MOVE_LEFT },
       { .code = InputCode::KeyEquals, .control = Control::Zoom, .direction = MOVE_RIGHT },
       { .code = InputCode::KeyEscape, .control = Control::Quit },
+      { .code = InputCode::KeyP, .control = Control::PauseWorld },
+      { .code = InputCode::PadBack, .control = Control::PauseWorld },
       { .code = InputCode::KeyM, .control = Control::AdvanceCalendar },
       { .code = InputCode::KeyF2, .control = Control::CycleScene },
       { .code = InputCode::KeyF5, .control = Control::Save },

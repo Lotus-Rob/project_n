@@ -308,4 +308,15 @@ TEST_CASE("F8 shows or hides the arena's showcase seals") {
     CHECK(down.value_or(app::ControlEvent{}).pressed);
 }
 
+TEST_CASE("P and the gamepad's Back pause the world") {
+    app::Bindings bindings;
+    const std::optional<app::ControlEvent> key = bindings.Handle(Key(InputCode::KeyP, true));
+    REQUIRE(key.has_value());
+    CHECK(key.value_or(app::ControlEvent{}).control == app::Control::PauseWorld);
+    const std::optional<app::ControlEvent> pad =
+        bindings.Handle({ .device = platform::Device::Gamepad, .code = InputCode::PadBack, .pressed = true, .value = 1.0F });
+    REQUIRE(pad.has_value());
+    CHECK(pad.value_or(app::ControlEvent{}).control == app::Control::PauseWorld);
+}
+
 } // namespace
