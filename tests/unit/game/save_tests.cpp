@@ -3,13 +3,17 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
+#include "core/journey.hpp"
 #include "core/manifest.hpp"
+#include "core/paths.hpp"
+#include "core/random.hpp"
 #include "core/state.hpp"
 #include "core/tick_clock.hpp"
 #include "game/combat.hpp"
 #include "game/components.hpp"
 #include "game/host.hpp"
 #include "game/npcs.hpp"
+#include "game/travel.hpp"
 #include "support/manifest.hpp"
 #include "support/saves.hpp"
 #include "support/world.hpp"
@@ -494,8 +498,8 @@ void PlayFight(game::Host& saved) {
 }
 
 // `full`, the save of `saved`, with the world tier and the relationships left out (about 200 KB of NPCs): the bytes before
-// the world tier, an empty one, no relationships, and what follows the relationships, which is all combat. Empty if
-// `full` isn't laid out that way.
+// the world tier, an empty one, no relationships, and what follows the relationships, which is the travel (none in the
+// arena) and combat. Empty if `full` isn't laid out that way.
 std::vector<std::byte> WithoutWorldTier(const game::Host& saved, const std::vector<std::byte>& full) {
     const core::State& state = saved.State();
     const core::State bare{ game::DOMAINS, state.Seed() };
@@ -1015,13 +1019,15 @@ TEST_CASE("a world save round-trips the NPCs' homes") {
     CHECK(same);
 }
 
-TEST_CASE("a version-1 world save is refused") {
+TEST_CASE("a version-1 or version-2 world save is refused") {
     const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
     const u16 city = FirstPlace(*map, core::PlaceKind::City);
     const u32 cell = map->TileIndex(map->Places()[city].tile);
     CHECK(LoadsWithMap(WorldSaveOf(cell, city)));
-    constexpr u32 OLD_VERSION = 1;
-    CHECK_FALSE(LoadsWithMap(WorldSaveOf(cell, city, OLD_VERSION)));
+    constexpr u32 FIRST_VERSION = 1;
+    constexpr u32 BEFORE_TRAVEL = 2;
+    CHECK_FALSE(LoadsWithMap(WorldSaveOf(cell, city, FIRST_VERSION)));
+    CHECK_FALSE(LoadsWithMap(WorldSaveOf(cell, city, BEFORE_TRAVEL)));
 }
 
 TEST_CASE("a version-4 active section is refused") {
@@ -1128,6 +1134,192 @@ TEST_CASE("a save paused off the world map is refused, and one paused on it is l
         { .paused = true }
     );
     CHECK_FALSE(Loads(arena));
+}
+
+// A day in a journey's signed ticks.
+constexpr i64 DAY = static_cast<i64>(core::TICKS_PER_DAY);
+// Stands in for the game's journey draws: a stay's seed is keyed on the state's seed, as every draw is.
+constexpr u32 STAY_PURPOSE = 0x7e57;
+
+/// The shipped map's first city and the next city after it, and the walk from the first's tile to the next's.
+struct Trip {
+    u16 home = core::NO_PLACE;
+    u16 destination = core::NO_PLACE;
+    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::vector<u32> route{};
+};
+
+Trip FirstTrip(const core::WorldMap& map) {
+    Trip trip;
+    trip.home = FirstPlace(map, core::PlaceKind::City);
+    const auto places = map.Places();
+    const auto next = std::find_if(places.begin() + trip.home + 1, places.end(), [](const core::Place& place) {
+        return place.kind == core::PlaceKind::City;
+    });
+    REQUIRE(next != places.end());
+    trip.destination = static_cast<u16>(next - places.begin());
+    trip.route = core::FindRoute(
+        map, core::WALKING, map.TileIndex(places[trip.home].tile), map.TileIndex(places[trip.destination].tile)
+    );
+    REQUIRE(trip.route.size() >= 3);
+    return trip;
+}
+
+/// `member`'s visit along `trip`, leaving on `departTick` and staying `stayDays`.
+core::Journey VisitOf(const core::WorldMap& map, const Trip& trip, core::StableId member, i64 departTick, u32 stayDays) {
+    const auto seed =
+        static_cast<u32>(core::Random(STATE_SEED, static_cast<u64>(departTick), std::to_underlying(member), STAY_PURPOSE, 0));
+    return core::Visit(map, trip.route, member, trip.home, trip.destination, departTick, stayDays, seed);
+}
+
+/// A world NPC of `state` at home on `trip`'s first city, travelling.
+core::StableId TravellerOn(core::State& state, const core::WorldMap& map, const Trip& trip) {
+    const core::StableId npc = game::SpawnNpc(state, map.TileIndex(map.Places()[trip.home].tile), trip.home);
+    state[game::WORLD].Entities().get<game::Npc>(state[game::WORLD].Find(npc)).action = game::Action::Travel;
+    return npc;
+}
+
+/// A save of the world scene holding `state` and `travel`, its world clock at `ticks`.
+std::vector<std::byte> TravelSave(const core::State& state, const game::Travel& travel, u64 ticks = 0) {
+    return ArenaSave(
+        state,
+        {},
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        game::WORLD_SCENE,
+        WORLD_VERSION,
+        ACTIVE_VERSION,
+        { .ticks = ticks },
+        travel
+    );
+}
+
+/// Whether `lhs` and `rhs` have the same bits, as determinism means.
+bool SamePoint(core::Vec2 lhs, core::Vec2 rhs) {
+    return std::bit_cast<u32>(lhs.x) == std::bit_cast<u32>(rhs.x) && std::bit_cast<u32>(lhs.y) == std::bit_cast<u32>(rhs.y);
+}
+
+std::vector<std::byte> TravelBytes(const game::Travel& travel) {
+    return Written([&travel](core::Writer& writer) { travel.Save(writer); });
+}
+
+TEST_CASE("a world save round-trips travel and the journal, and hashes them") {
+    constexpr u32 STAY_DAYS = 2;
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const Trip trip = FirstTrip(*map);
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::StableId back = TravellerOn(state, *map, trip);
+    const core::StableId away = TravellerOn(state, *map, trip);
+    game::Travel travel;
+    const core::Journey ended = VisitOf(*map, trip, back, 0, STAY_DAYS);
+    travel.Start(ended);
+    travel.Finish(core::EndTick(ended), state);
+    travel.Start(VisitOf(*map, trip, away, DAY, STAY_DAYS));
+    const std::vector<std::byte> bytes = TravelSave(state, travel);
+
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene();
+    const bool sameTravel = TravelBytes(loaded.NpcTravel()) == TravelBytes(travel);
+    CHECK(sameTravel);
+    CHECK(loaded.NpcTravel().JournalOf(back).size() == 1);
+    CHECK(loaded.NpcTravel().Travelling(away));
+
+    // Saved again and loaded, it hashes the same.
+    game::Host reloaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    const std::vector<std::byte> again = Saved(loaded);
+    core::Reader againReader{ again };
+    REQUIRE(reloaded.Load(againReader, SAVED_TICK));
+    reloaded.EnterScene();
+    CHECK(reloaded.StateHash() == loaded.StateHash());
+
+    // The travel is hashed: the same save without it hashes otherwise.
+    game::Host without(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    const std::vector<std::byte> bare = TravelSave(state, game::Travel{});
+    core::Reader bareReader{ bare };
+    REQUIRE(without.Load(bareReader, SAVED_TICK));
+    without.EnterScene();
+    CHECK(without.StateHash() != loaded.StateHash());
+}
+
+TEST_CASE("a world save naming a traveller who isn't there is refused, and so is travel off the world map") {
+    constexpr u32 STAY_DAYS = 2;
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const Trip trip = FirstTrip(*map);
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::StableId npc = TravellerOn(state, *map, trip);
+    game::Travel travel;
+    travel.Start(VisitOf(*map, trip, npc, 0, STAY_DAYS));
+    CHECK(LoadsWithMap(TravelSave(state, travel)));
+
+    state.Destroy(npc);
+    CHECK_FALSE(LoadsWithMap(TravelSave(state, travel)));
+
+    // The arena shows no world map, so it holds no travel.
+    const core::State arena{ game::DOMAINS, STATE_SEED };
+    const std::vector<std::byte> arenaBytes = ArenaSave(
+        arena, {}, std::nullopt, std::nullopt, std::nullopt, game::ARENA_SCENE, WORLD_VERSION, ACTIVE_VERSION, {}, travel
+    );
+    CHECK_FALSE(Loads(arenaBytes));
+}
+
+TEST_CASE("a save made mid-journey loads to the same positions on the next tick") {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const Trip trip = FirstTrip(*map);
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::StableId walking = TravellerOn(state, *map, trip);
+    const core::StableId staying = TravellerOn(state, *map, trip);
+    // The walker leaves on tick 0 and is between its second and third tiles at the save; the other set out early enough to
+    // be a day and a third into its stay of three.
+    constexpr u32 TWO_DAYS = 2;
+    constexpr u32 THREE_DAYS = 3;
+    const core::Journey walk = VisitOf(*map, trip, walking, 0, TWO_DAYS);
+    const core::Leg& out = walk.parts.front().leg;
+    const u64 savedAt = (u64{ out.arrive[1] } + u64{ out.arrive[2] }) / 2;
+    const i64 outTicks = core::EndTick(out);
+    const i64 earlier = static_cast<i64>(savedAt) - outTicks - DAY - (DAY / 3);
+    const core::Journey stay = VisitOf(*map, trip, staying, earlier, THREE_DAYS);
+    REQUIRE(stay.parts[1].stay);
+    REQUIRE(stay.parts[1].rest.startTick < static_cast<i64>(savedAt));
+    game::Travel travel;
+    travel.Start(walk);
+    travel.Start(stay);
+
+    game::Host saved(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    const std::vector<std::byte> first = TravelSave(state, travel, savedAt);
+    core::Reader firstReader{ first };
+    REQUIRE(saved.Load(firstReader, SAVED_TICK));
+    saved.EnterScene();
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    const std::vector<std::byte> again = Saved(saved);
+    core::Reader reader{ again };
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene();
+
+    Tick(saved, At(1), {});
+    Tick(loaded, At(1), {});
+    REQUIRE(loaded.WorldTicks() == savedAt + 1);
+    REQUIRE(saved.WorldTicks() == savedAt + 1);
+    const auto next = static_cast<i64>(savedAt + 1);
+    REQUIRE(loaded.NpcTravel().Journeys().size() == 2);
+    // A road step, the quickest, crosses a 256-unit tile in 64 ticks: no traveller goes further in a tick.
+    constexpr f32 ONE_TICK_MOST = 4.0F;
+    f32 farthest = 0.0F;
+    bool same = true;
+    for (std::size_t index = 0; index < 2; ++index) {
+        const core::Journey& journey = loaded.NpcTravel().Journeys()[index];
+        const core::Journey& original = journey.members.front() == walking ? walk : stay;
+        const core::Vec2 now = core::Where(*map, journey, next);
+        const core::Vec2 before = core::Where(*map, original, next - 1);
+        same = same && SamePoint(core::Where(*map, saved.NpcTravel().Journeys()[index], next), now) &&
+               SamePoint(core::Where(*map, original, next), now);
+        const core::Vec2 step = now - before;
+        farthest = std::max(farthest, std::sqrt((step.x * step.x) + (step.y * step.y)));
+    }
+    CHECK(same);
+    CHECK(farthest <= ONE_TICK_MOST);
 }
 
 } // namespace

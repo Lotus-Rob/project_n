@@ -3,9 +3,9 @@
 /// @file
 /// @ingroup game
 /// The host every scene runs in (game/scene.hpp, listed in game/scenes.cpp): as the core::Simulation it owns the
-/// state's domains, the world NPCs and the calendar (the world clock, the month steps, the world pause), the player's
-/// cultivator, the selection, combat, the game data, saving, loading and hashing, and the publishing every scene shares,
-/// and it knows no scene by name.
+/// state's domains, the world NPCs, their journeys and travel journals (game/travel.hpp) and the calendar (the world clock, the
+/// month steps, the world pause), the player's cultivator, the selection, combat, the game data, saving, loading and hashing,
+/// and the publishing every scene shares, and it knows no scene by name.
 
 #include "core/calendar.hpp"
 #include "core/draw_list.hpp"
@@ -24,6 +24,7 @@
 #include "game/npcs.hpp"
 #include "game/scene.hpp"
 #include "game/scenes.hpp"
+#include "game/travel.hpp"
 
 #include <memory>
 #include <optional>
@@ -93,15 +94,15 @@ public:
     [[nodiscard]] bool MonthDue() const override;
 
     /// Sorts the state into canonical order and writes it, with the scene, the world clock, the month steps run, the world
-    /// pause and the relationships, into `archive`.
+    /// pause, the relationships and the travel (the journeys and the journals), into `archive`.
     void Save(core::Writer& archive) override;
 
     /// Reads and checks the state Save() wrote at simulation tick `simulationTick` and holds it, changing nothing else:
     /// Requested() names its scene until EnterScene() makes it current, its creatures taking the game data in use then.
     /// False, holding nothing new, when the bytes are malformed, of another version, don't end where the state does, hold a
     /// flash or a seal that starts after `simulationTick`, a world clock outside the month after the month steps run (its
-    /// end included) or past the calendar's end (LAST_MONTH's first tick), or the world paused in a scene that shows no world
-    /// map.
+    /// end included) or past the calendar's end (LAST_MONTH's first tick), the world paused in a scene that shows no world
+    /// map, or travel that Travel::Load() refuses (any at all in a scene that shows no world map).
     [[nodiscard]] bool Load(core::Reader& archive, u64 simulationTick) override;
 
     /// A hash of everything Save() writes, in the state's current order.
@@ -132,8 +133,8 @@ public:
     [[nodiscard]] std::optional<core::SceneFacts> Requested() const override;
 
     /// Makes the scene Requested() names current: the state a load holds, its creatures taking the game data in use, or
-    /// else the scene asked for, rebuilt with the selection and the world pause cleared and the calendar kept. It forgets
-    /// both.
+    /// else the scene asked for, rebuilt with the selection, the world pause and the travel cleared and the calendar kept. It
+    /// forgets both.
     void EnterScene() override;
 
     /// How many month steps have run.
@@ -182,6 +183,11 @@ public:
     /// What the NPCs think of each other.
     [[nodiscard]] const Relationships& NpcRelationships() const {
         return m_relationships;
+    }
+
+    /// The world NPCs' journeys under way and their travel journals.
+    [[nodiscard]] const Travel& NpcTravel() const {
+        return m_travel;
     }
 
     /// Publishes the scene's ground (Scene::PublishGround(): the painted ground, or the world's tiles), then a shadow under
@@ -242,6 +248,7 @@ private:
     // members whose default constructor is defaulted.
     core::DrawList m_drawList{};
     Relationships m_relationships{};
+    Travel m_travel{};
     MonthStep m_monthStep{};
     Combat m_combat{};
     // NOLINTEND(readability-redundant-member-init)
@@ -265,6 +272,7 @@ private:
         Loaded(
             core::State loadedState,
             Relationships loadedRelationships,
+            Travel loadedTravel,
             Combat loadedCombat,
             core::SceneKey loadedScene,
             u64 loadedWorldTicks,
@@ -275,6 +283,7 @@ private:
         )
           : state(std::move(loadedState))
           , relationships(std::move(loadedRelationships))
+          , travel(std::move(loadedTravel))
           , combat(std::move(loadedCombat))
           , scene(loadedScene)
           , worldTicks(loadedWorldTicks)
@@ -286,6 +295,7 @@ private:
 
         core::State state;
         Relationships relationships;
+        Travel travel;
         Combat combat;
         core::SceneKey scene;
         u64 worldTicks;
