@@ -40,10 +40,10 @@ namespace game {
 
 /// How many simulation ticks a day of world time lasts (3 s at 60 Hz): core's, which journeys count their stays by.
 inline constexpr u64 TICKS_PER_DAY = core::TICKS_PER_DAY;
-/// How many days a month lasts.
-inline constexpr u64 DAYS_PER_MONTH = 30;
+/// How many days a month lasts: core's, over whose days a month's visits set out.
+inline constexpr u64 DAYS_PER_MONTH = core::DAYS_PER_MONTH;
 /// How many simulation ticks a month of world time lasts: its last ends in the month step (Host::MonthDue()).
-inline constexpr u64 TICKS_PER_MONTH = TICKS_PER_DAY * DAYS_PER_MONTH;
+inline constexpr u64 TICKS_PER_MONTH = core::TICKS_PER_MONTH;
 /// The last month the world clock reaches, the last whose first tick a u64 holds: at that tick the calendar ends, the clock
 /// standing still and the month steps no longer counted, so neither ever wraps.
 inline constexpr u64 LAST_MONTH = ~u64{ 0 } / TICKS_PER_MONTH;
@@ -84,9 +84,12 @@ public:
     /// appending their hits. Each use ends with a UseEnded event. The events themselves change nothing in the state.
     void Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) override;
 
-    /// Lets a month pass for the world NPCs (MonthStep) and counts it (Months()). A step asked for before the month is due
-    /// (M, a debug key) first moves the world clock on to the next month's first tick; the world pause holds either way. Once
-    /// the calendar has ended (LAST_MONTH) the step runs uncounted, the clock standing still.
+    /// Lets a month pass for the world NPCs and counts it (Months()). A step asked for before the month is due (M, a debug
+    /// key) first moves the world clock on to the next month's first tick; the world pause holds either way. Once the
+    /// calendar has ended (LAST_MONTH) the step runs uncounted, the clock standing still. In a scene showing the world map
+    /// the journeys over by the clock's tick end (Travel::Finish()) and the new month's visits set out (Travel::Month(),
+    /// keyed on `counters.state`), unless the clock is past half an i64's range, where journeys' ticks would run out; then
+    /// the NPCs at home take their month (MonthStep), the travellers sitting it out.
     void AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs, const std::stop_token& stop) override;
 
     /// Whether the world clock has reached the end of the month after the last step run (TICKS_PER_MONTH a month): the
@@ -232,6 +235,7 @@ private:
         std::vector<core::Event>& events
     );
     void ToggleWorldPause(u64 tick);
+    void SeedTravel();
     void CastAction(const core::Action& action, const core::TickCounters& counters, std::vector<core::Event>& events);
     void DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const;
     void Leave(core::SceneKey next, std::vector<core::Event>& events);
@@ -252,6 +256,7 @@ private:
     MonthStep m_monthStep{};
     Combat m_combat{};
     // NOLINTEND(readability-redundant-member-init)
+    std::optional<core::Paths> m_paths = std::nullopt; // the world map's distance maps, kept for the run; none without one
     std::shared_ptr<const core::Manifest> m_manifest;
     core::State m_state;
     core::GameData m_data;

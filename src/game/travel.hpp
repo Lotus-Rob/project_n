@@ -4,16 +4,22 @@
 /// @ingroup game
 /// The world's travel: the journeys under way (core::Journey records, where each traveller is being a pure function of
 /// its record and the world clock) and each NPC's travel journal, its last journeys, written as each ends. Both are kept
-/// apart from the NPCs' hot data, and saved and hashed with the world.
+/// apart from the NPCs' hot data, and saved and hashed with the world. Each month a share of the world NPCs set out on
+/// visits, to cities weighed by their pull (size and distance), the visitor's reach (its power) and their character (what
+/// kind of visitor each draws).
 
 #include "core/archive.hpp"
+#include "core/jobs.hpp"
 #include "core/journey.hpp"
+#include "core/paths.hpp"
 #include "core/stable_id.hpp"
 #include "core/state.hpp"
 #include "core/types.hpp"
 #include "core/world_map.hpp"
+#include "game/npcs.hpp"
 
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <unordered_set>
 #include <utility>
@@ -39,6 +45,36 @@ struct JournalEntry {
         archive(self.destination, self.departureDay, self.daysAway, self.profile);
     }
 };
+
+/// The kind of visitor an NPC of `power` is: a cultivator from `rules.cultivatorPower` up, a trader below.
+[[nodiscard]] core::VisitorKind VisitorOf(const core::TravelRules& rules, f32 power);
+
+/// How strongly city `destination` of `map` draws a visitor of `power` (finite) whose walk there costs `cost` (in the
+/// profile's cost units, core::UNREACHABLE when it can't get there), in whole numbers so every machine draws alike: the
+/// pull (the city's people × 1,000,000 ÷ cost², a cost counted as at least 1), times the reach (max(0, R − cost) × 1,000 ÷
+/// R, rounded down, R being `rules.reachBase` plus the power's whole part, at least 0, times `rules.reachPerPower`), times
+/// the city's draw for the visitor's kind (VisitorOf()); each product saturates at a u64's most. 0 for an unreachable
+/// cost, a cost at or past the reach, or a draw of 0.
+[[nodiscard]] u64 DestinationWeight(
+    const core::WorldMap& map,
+    const core::TravelRules& rules,
+    f32 power,
+    u32 cost,
+    u16 destination
+);
+
+/// Where `npc`, a world NPC homed in a city of `map` and standing on one of its tiles, goes on a visit, drawn by `random`:
+/// the cities but its home, in place order, each weighed by DestinationWeight() with what walking there from its tile costs
+/// (`paths`, by core::WALKING), and the city picked whose cumulative weight first passes `random` scaled to the total. None
+/// when every weight is 0. Reads `paths` only once its walking maps are built (Paths::Warm()), so chunks may call it at
+/// once after that.
+[[nodiscard]] std::optional<u16> ChooseDestination(
+    const core::WorldMap& map,
+    const core::TravelRules& rules,
+    core::Paths& paths,
+    const Npc& npc,
+    u64 random
+);
 
 /// How many journeys an NPC's journal keeps, the oldest dropped first.
 inline constexpr std::size_t JOURNAL_LENGTH = 10;
@@ -71,6 +107,31 @@ public:
     /// drops its journal.
     void Forget(core::StableId npc);
 
+    /// Sends world NPCs of `state` on visits in the month from world tick `monthStart`, by `map`'s travel rules: first it
+    /// builds `paths`' walking maps of every city, then, in MonthStep::CHUNK-sized chunks of the world NPCs forked over
+    /// `jobs`, each one homed in a city and not travelling sets out with a chance of `sharePerMille` in a thousand, to a
+    /// city ChooseDestination() picks (none, and it stays, when it reaches none), along the walking route from its tile
+    /// (core::RouteDown()), leaving on a tick drawn uniformly over the month's and staying a number of days drawn uniformly
+    /// from the rules' fewest to their most (core::Visit()), so it comes back to its own tile. Every draw is keyed on
+    /// `seed`, `stateCounter`, `monthStart` and the NPC (core/random.hpp), so the journeys are the same on any worker
+    /// count; they join the journeys under way in their first members' order, and each member's month is Action::Travel
+    /// until Finish() ends its journey. On the thread that created `jobs`.
+    void Month(
+        core::State& state,
+        const core::WorldMap& map,
+        core::Paths& paths,
+        core::Jobs& jobs,
+        u64 seed,
+        u64 stateCounter,
+        i64 monthStart
+    );
+
+    /// Gives a newly built world the travel it would have had running a month already: Month() for the month before
+    /// `monthStart`, the journeys over by `monthStart` ended (Finish()), then Month() for the month from `monthStart`. Its
+    /// chunks run in turn on the calling thread, as a scene's build has no job system: the journeys are those any worker
+    /// count would give.
+    void Seed(core::State& state, const core::WorldMap& map, core::Paths& paths, u64 seed, u64 stateCounter, i64 monthStart);
+
     /// Writes the journeys and the journals into `archive` (a Writer or a Hasher).
     template<typename Archive>
     void Save(Archive& archive) const {
@@ -85,10 +146,24 @@ public:
     /// non-finite origin, arrive ticks not one per tile, from 0 and rising, or an end tick past an i64's range, a stay
     /// ending before it starts, lasting more ticks than a u32 holds or ending within a day of an i64's most; journals out
     /// of their NPCs' order, empty, for an NPC not in `state`, longer than its NPC keeps, or naming a city or profile `map`
-    /// lacks.
+    /// lacks; or months that don't match the journeys: a member whose month isn't Action::Travel, or an NPC whose month is
+    /// Action::Travel on no journey (with or without the map).
     [[nodiscard]] bool Load(core::Reader& archive, const core::State& state, const core::WorldMap* map);
 
 private:
+    /// Month(), forking its chunks over `jobs`, or running them in turn on the calling thread without one.
+    void SendOut(
+        core::State& state,
+        const core::WorldMap& map,
+        core::Paths& paths,
+        core::Jobs* jobs,
+        u64 seed,
+        u64 stateCounter,
+        i64 monthStart
+    );
+    /// Adds `journeys`, none of whose members is travelling, emptying it.
+    void StartAll(std::vector<core::Journey>& journeys);
+
     /// One NPC's journal.
     struct Journal {
         core::StableId npc{};
@@ -108,6 +183,8 @@ private:
                                                                       // iterated, so its order can't reach the state
     std::vector<std::pair<core::StableId, JournalEntry>> m_written{}; // Finish()'s new entries, kept for its capacity
     std::vector<Journal> m_merged{};                                  // Finish()'s output, swapped in, as m_written
+    std::vector<std::vector<core::Journey>> m_setOut{};               // per chunk of a month: the visits its NPCs make
+    std::vector<core::Journey> m_departing{};                         // a month's visits, gathered in chunk order
     // NOLINTEND(readability-redundant-member-init)
 };
 

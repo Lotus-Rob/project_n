@@ -107,10 +107,12 @@ grid: |
 # features: { road, river, bridge, ford }, laid over the kinds' costs above.
 profiles:
   - { key: on_foot, ticks_per_cost: 16 }
-# The travellers between cities: the share of a city's people on the road (per thousand), the days they stay, how far
-# they will go (reach_base plus reach_per_power for each whole point of power, in cost units; starting values, tuned by
-# measurement) and the power from which one is a cultivator rather than a trader.
-travel: { share_per_mille: 40, stay_days: [2, 5], reach_base: 1500, reach_per_power: 40, cultivator_power: 5 }
+# The travellers between cities: the share of a city's people setting out each month (per thousand), the days they stay,
+# how far they will go (reach_base plus reach_per_power for each whole point of power, in cost units) and the power from
+# which one is a cultivator rather than a trader. Tuned so about 2,500 to 3,300 of the 50,000 are on the roads at once
+# from the first tick, mortals reaching the next town (the capital's nearest cost about 130, the sect's 225) and the
+# strong the far side of the map (the sect to the isle costs 562).
+travel: { share_per_mille: 60, stay_days: [2, 5], reach_base: 300, reach_per_power: 20, cultivator_power: 5 }
 # Each a polyline of [column, row] tile points; a road over a river is a bridge.
 roads:
   - [[75, 42], [77, 40], [112, 38], [128, 42]]

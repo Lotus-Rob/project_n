@@ -1,9 +1,13 @@
 #include "game/travel.hpp"
 
 #include "core/assert.hpp"
+#include "core/calendar.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
+#include "core/profile.hpp"
+#include "core/random.hpp"
 #include "game/npcs.hpp"
+#include "game/random_purposes.hpp"
 
 namespace game {
 
@@ -107,7 +111,153 @@ core::StableId Leader(const core::Journey& journey) {
     return journey.members.front();
 }
 
+// A destination's weight in fixed point: the pull's people per unit of cost squared, and the reach's share left of it.
+constexpr u64 PULL_SCALE = 1'000'000;
+constexpr u64 REACH_SCALE = 1'000;
+// The travel share's whole, and the power past which more reaches no further: a reach of a u32 per point already saturates.
+constexpr u32 SHARE_WHOLE = 1'000;
+constexpr f32 MOST_WHOLE_POWER = 4'294'967'296.0F;
+constexpr u64 MOST_WEIGHT = std::numeric_limits<u64>::max();
+
+// The numbers an NPC draws in a month under its key (core::Random's draw index).
+constexpr u32 VISIT_DRAW_SETS_OUT = 0;
+constexpr u32 VISIT_DRAW_DEPARTURE = 1;
+constexpr u32 VISIT_DRAW_STAY = 2;
+constexpr u32 VISIT_DRAW_DESTINATION = 3;
+
+u64 SaturatingSum(u64 lhs, u64 rhs) {
+    return lhs > MOST_WEIGHT - rhs ? MOST_WEIGHT : lhs + rhs;
+}
+
+u64 SaturatingProduct(u64 lhs, u64 rhs) {
+    return lhs != 0 && rhs > MOST_WEIGHT / lhs ? MOST_WEIGHT : lhs * rhs;
+}
+
+/// `random` scaled into [0, `bound`): the high 64 bits of their 128-bit product, as core::ToBelow() scales into a u32, for
+/// totals of weights past a u32's range.
+u64 WeightBelow(u64 random, u64 bound) {
+    constexpr u32 HALF = 32;
+    constexpr u64 LOW_HALF = 0xFFFF'FFFFULL;
+    const u64 randomHigh = random >> HALF;
+    const u64 randomLow = random & LOW_HALF;
+    const u64 boundHigh = bound >> HALF;
+    const u64 boundLow = bound & LOW_HALF;
+    const u64 lowLow = randomLow * boundLow;
+    const u64 highLow = randomHigh * boundLow;
+    const u64 lowHigh = randomLow * boundHigh;
+    const u64 carry = ((lowLow >> HALF) + (highLow & LOW_HALF) + (lowHigh & LOW_HALF)) >> HALF;
+    return (randomHigh * boundHigh) + (highLow >> HALF) + (lowHigh >> HALF) + carry;
+}
+
+/// What one month of visits reads, shared by its chunks.
+struct VisitMonth {
+    const core::WorldMap* map = nullptr;
+    core::Paths* paths = nullptr;
+    const Travel* travel = nullptr;
+    u64 key = 0; // the month's, under which each NPC draws
+    i64 monthStart = 0;
+};
+
+/// The visits the world NPCs of chunk `chunk` (MonthStep::CHUNK of them, in `world`'s order) set out on in `month`, each
+/// appended to `out`, its member's month made Action::Travel.
+void SetOut(const VisitMonth& month, core::Registry& world, u32 chunk, std::vector<core::Journey>& out) {
+    auto& npcs = world.storage<Npc>();
+    const auto& ids = world.storage<core::StableId>();
+    const core::WorldMap& map = *month.map;
+    const core::TravelRules& rules = map.Travel();
+    const u32 stayChoices = u32{ rules.stayMaxDays } - u32{ rules.stayMinDays } + 1;
+    const std::size_t begin = std::size_t{ chunk } * MonthStep::CHUNK;
+    const std::size_t end = std::min(npcs.size(), begin + MonthStep::CHUNK);
+    for (std::size_t i = begin; i < end; ++i) {
+        const core::Entity entity = npcs[i];
+        Npc& person = npcs.get(entity);
+        const core::StableId npc = ids.get(entity);
+        if (!IsCity(map, person.home) || month.travel->Travelling(npc)) {
+            continue;
+        }
+        const u64 key = std::to_underlying(npc);
+        const auto draw = [&month, key](u32 index) { return core::Random(month.key, 0, key, PURPOSE_VISIT, index); };
+        if (core::ToBelow(draw(VISIT_DRAW_SETS_OUT), SHARE_WHOLE) >= rules.sharePerMille) {
+            continue;
+        }
+        const std::optional<u16> destination =
+            ChooseDestination(map, rules, *month.paths, person, draw(VISIT_DRAW_DESTINATION));
+        if (!destination) {
+            continue;
+        }
+        const std::vector<u32> route = core::RouteDown(map, month.paths->To(*destination, core::WALKING), person.cell);
+        PN_ASSERT(!route.empty(), "a city with a weight has a route to it");
+        if (route.empty()) {
+            continue;
+        }
+        const i64 departure =
+            month.monthStart + i64{ core::ToBelow(draw(VISIT_DRAW_DEPARTURE), static_cast<u32>(core::TICKS_PER_MONTH)) };
+        const u32 stayDays = u32{ rules.stayMinDays } + core::ToBelow(draw(VISIT_DRAW_STAY), stayChoices);
+        const auto seed = static_cast<u32>(core::Random(month.key, 0, key, PURPOSE_JOURNEY_SEED, 0));
+        out.push_back(core::Visit(map, route, npc, person.home, *destination, departure, stayDays, seed));
+        person.action = Action::Travel;
+    }
+}
+
 } // namespace
+
+core::VisitorKind VisitorOf(const core::TravelRules& rules, f32 power) {
+    return power >= rules.cultivatorPower ? core::VisitorKind::Cultivator : core::VisitorKind::Trader;
+}
+
+u64 DestinationWeight(const core::WorldMap& map, const core::TravelRules& rules, f32 power, u32 cost, u16 destination) {
+    if (cost == core::UNREACHABLE) {
+        return 0;
+    }
+    const core::Place& city = map.Places()[destination];
+    // Below UNREACHABLE, a cost squared fits a u64.
+    const u64 steps = std::max<u64>(cost, 1);
+    const u64 pull = u64{ city.people } * PULL_SCALE / (steps * steps);
+    const u64 whole = power > 0.0F ? static_cast<u64>(std::min(power, MOST_WHOLE_POWER)) : 0;
+    const u64 reachCost = SaturatingSum(rules.reachBase, SaturatingProduct(whole, rules.reachPerPower));
+    if (reachCost <= cost) {
+        return 0;
+    }
+    // (R - cost) * 1,000 / R rounded down is 1,000 less cost * 1,000 / R rounded up, which no reach overflows.
+    const u64 spent = u64{ cost } * REACH_SCALE;
+    const u64 reach = REACH_SCALE - ((spent / reachCost) + (spent % reachCost == 0 ? 0 : 1));
+    const u16 character = city.draws.at(std::to_underlying(VisitorOf(rules, power)));
+    return SaturatingProduct(SaturatingProduct(pull, reach), character);
+}
+
+std::optional<u16> ChooseDestination(
+    const core::WorldMap& map,
+    const core::TravelRules& rules,
+    core::Paths& paths,
+    const Npc& npc,
+    u64 random
+) {
+    const auto weightOf = [&](std::size_t place) -> u64 {
+        if (place == npc.home || !IsCity(map, static_cast<u16>(place))) {
+            return 0;
+        }
+        const auto city = static_cast<u16>(place);
+        return DestinationWeight(map, rules, npc.power, paths.To(city, core::WALKING).CostFrom(npc.cell), city);
+    };
+    const std::size_t places = map.Places().size();
+    u64 total = 0;
+    for (std::size_t place = 0; place < places; ++place) {
+        total = SaturatingSum(total, weightOf(place));
+    }
+    if (total == 0) {
+        return std::nullopt;
+    }
+    const u64 pick = WeightBelow(random, total);
+    u64 cumulative = 0;
+    for (std::size_t place = 0; place < places; ++place) {
+        const u64 weight = weightOf(place);
+        cumulative = SaturatingSum(cumulative, weight);
+        if (weight != 0 && pick < cumulative) {
+            return static_cast<u16>(place);
+        }
+    }
+    return std::nullopt; // not reached: the pick lies below the total, which the last city's sum reaches
+}
 
 void Travel::Start(core::Journey journey) {
     PN_ASSERT(!journey.members.empty() && !journey.parts.empty(), "a journey has a member and a part");
@@ -177,6 +327,95 @@ void Travel::Finish(i64 tick, core::State& state) {
     std::move(journal, m_journals.end(), std::back_inserter(m_merged));
     std::swap(m_journals, m_merged);
     m_merged.clear();
+}
+
+void Travel::StartAll(std::vector<core::Journey>& journeys) {
+    PN_ASSERT(
+        std::ranges::all_of(journeys, [](const core::Journey& journey) { return !journey.members.empty(); }),
+        "a journey has a member"
+    );
+    std::erase_if(journeys, [](const core::Journey& journey) { return journey.members.empty(); });
+    std::ranges::sort(journeys, {}, Leader); // no one leads two, so the order is total
+    for (const core::Journey& journey : journeys) {
+        PN_ASSERT(
+            std::ranges::none_of(journey.members, [this](core::StableId npc) { return Travelling(npc); }),
+            "a journey's members aren't travelling already"
+        );
+        m_travellers.insert(journey.members.begin(), journey.members.end());
+    }
+    const auto before = static_cast<std::ptrdiff_t>(m_journeys.size());
+    m_journeys.insert(m_journeys.end(), std::make_move_iterator(journeys.begin()), std::make_move_iterator(journeys.end()));
+    std::ranges::inplace_merge(m_journeys, m_journeys.begin() + before, {}, Leader);
+    journeys.clear();
+}
+
+void Travel::SendOut(
+    core::State& state,
+    const core::WorldMap& map,
+    core::Paths& paths,
+    core::Jobs* jobs,
+    u64 seed,
+    u64 stateCounter,
+    i64 monthStart
+) {
+    // Built here, before the chunks read them at once.
+    paths.Warm(core::WALKING);
+    core::Registry& world = state[WORLD].Entities();
+    const u32 chunks = core::ChunkCount(world.storage<Npc>().size(), MonthStep::CHUNK);
+    m_setOut.resize(std::max<std::size_t>(m_setOut.size(), chunks));
+    const VisitMonth month{
+        .map = &map,
+        .paths = &paths,
+        .travel = this,
+        .key = core::Random(seed, stateCounter, std::bit_cast<u64>(monthStart), PURPOSE_VISIT_MONTH, 0),
+        .monthStart = monthStart,
+    };
+    const auto setOut = [&](u32 chunk) {
+        m_setOut[chunk].clear();
+        SetOut(month, world, chunk, m_setOut[chunk]);
+    };
+    if (jobs != nullptr) {
+        jobs->ParallelFor(chunks, setOut);
+    }
+    else {
+        for (u32 chunk = 0; chunk < chunks; ++chunk) {
+            setOut(chunk);
+        }
+    }
+    m_departing.clear();
+    for (u32 chunk = 0; chunk < chunks; ++chunk) {
+        std::ranges::move(m_setOut[chunk], std::back_inserter(m_departing));
+        m_setOut[chunk].clear();
+    }
+    PN_LOG_DEBUG("{} world NPCs set out on visits in the month from world tick {}", m_departing.size(), monthStart);
+    StartAll(m_departing);
+}
+
+void Travel::Month(
+    core::State& state,
+    const core::WorldMap& map,
+    core::Paths& paths,
+    core::Jobs& jobs,
+    u64 seed,
+    u64 stateCounter,
+    i64 monthStart
+) {
+    PN_PROFILE_ZONE();
+    SendOut(state, map, paths, &jobs, seed, stateCounter, monthStart);
+}
+
+void Travel::Seed(
+    core::State& state,
+    const core::WorldMap& map,
+    core::Paths& paths,
+    u64 seed,
+    u64 stateCounter,
+    i64 monthStart
+) {
+    PN_PROFILE_ZONE();
+    SendOut(state, map, paths, nullptr, seed, stateCounter, monthStart - static_cast<i64>(core::TICKS_PER_MONTH));
+    Finish(monthStart, state);
+    SendOut(state, map, paths, nullptr, seed, stateCounter, monthStart);
 }
 
 std::span<const JournalEntry> Travel::JournalOf(core::StableId npc) const {
@@ -251,6 +490,17 @@ bool Travel::Load(core::Reader& archive, const core::State& state, const core::W
         }
         std::ranges::sort(members);
         sound = std::ranges::adjacent_find(members) == members.end(); // nobody in two journeys, or twice in one
+    }
+    if (sound) {
+        // A month's action is Travel exactly while its NPC is away, or the month step would let a member act at home, or
+        // never give a stray traveller its months back.
+        sound = std::ranges::all_of(std::to_array({ ACTIVE, WORLD }), [&](core::DomainIndex domain) {
+            const auto npcs = state[domain].Entities().view<const core::StableId, const Npc>();
+            return std::ranges::all_of(npcs, [&](core::Entity entity) {
+                const bool member = std::ranges::binary_search(members, npcs.get<const core::StableId>(entity));
+                return member == (npcs.get<const Npc>(entity).action == Action::Travel);
+            });
+        });
     }
     if (!sound) {
         archive.Fail();

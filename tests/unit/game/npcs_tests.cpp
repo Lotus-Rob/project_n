@@ -195,6 +195,38 @@ TEST_CASE("a month step gives the same world with one worker and with many") {
     }));
 }
 
+TEST_CASE("a traveller sits the month out and nobody meets it") {
+    constexpr u32 NPCS = 64;
+    constexpr u64 MONTHS = 12;
+    core::State state{ game::DOMAINS, SEED };
+    std::vector<core::StableId> travellers;
+    for (u32 npc = 0; npc < NPCS; ++npc) {
+        const core::StableId spawned = game::SpawnNpc(state, CELL);
+        if (npc % 2 == 0) {
+            state[game::WORLD].Entities().get<game::Npc>(state[game::WORLD].Find(spawned)).action = game::Action::Travel;
+            travellers.push_back(spawned);
+        }
+    }
+    game::Relationships relationships;
+    game::MonthStep step;
+    core::Jobs jobs{ 1 };
+    for (u64 month = 1; month <= MONTHS; ++month) {
+        step.Run(state, relationships, jobs, month);
+    }
+    REQUIRE_FALSE(relationships.All().empty()); // those at home met each other
+    const auto& world = state[game::WORLD].Entities();
+    const bool untouched = std::ranges::all_of(travellers, [&](core::StableId npc) {
+        const core::Entity entity = state[game::WORLD].Find(npc);
+        const game::Needs& want = world.get<game::Needs>(entity);
+        return world.get<game::Npc>(entity).action == game::Action::Travel && want.rest == 0.0F && want.company == 0.0F;
+    });
+    CHECK(untouched);
+    const bool unmet = std::ranges::none_of(relationships.All(), [&](const game::Relationship& edge) {
+        return std::ranges::contains(travellers, edge.holder) || std::ranges::contains(travellers, edge.subject);
+    });
+    CHECK(unmet);
+}
+
 TEST_CASE("a month step stopped before it starts changes nothing") {
     constexpr u32 NPCS = 64;
     core::State state{ game::DOMAINS, SEED };

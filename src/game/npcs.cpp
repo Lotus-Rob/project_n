@@ -292,7 +292,9 @@ void MonthStep::Run(
 
     m_byCell.clear();
     for (const auto [entity, person] : npcs.each()) {
-        m_byCell.emplace_back(person.cell, ids.get(entity));
+        if (person.action != Action::Travel) { // away, a traveller is nobody's partner
+            m_byCell.emplace_back(person.cell, ids.get(entity));
+        }
     }
     std::ranges::sort(m_byCell);
 
@@ -308,6 +310,9 @@ void MonthStep::Run(
         const std::size_t end = std::min(npcs.size(), begin + CHUNK);
         for (std::size_t i = begin; i < end; ++i) {
             const core::Entity entity = npcs[i];
+            if (npcs.get(entity).action == Action::Travel) {
+                continue; // its month is the journey's until it ends
+            }
             LiveMonth(
                 npcs.get(entity),
                 needs.get(entity),

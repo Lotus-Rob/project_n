@@ -264,6 +264,7 @@ void WorldScene::Build(SceneContext& context) const {
         }
     }
     SpawnPeople(context, map);
+    context.SeedTravel();
 }
 
 void WorldScene::Publish(const SceneContext& context, core::Rect view, core::Snapshot& snapshot) const {
