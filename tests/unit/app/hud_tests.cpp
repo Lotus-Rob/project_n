@@ -2,6 +2,7 @@
 #include "core/abilities.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
+#include "core/rect.hpp"
 #include "core/strings.hpp"
 #include "core/ui_colours.hpp"
 #include "gfx/hud_draw.hpp"
@@ -57,6 +58,8 @@ std::shared_ptr<const core::Strings> HudStrings() {
     set(core::StringId::PoisonLance, "Poison Lance", "毒枪");
     set(core::StringId::Dash, "Dash", "疾步");
     set(core::StringId::FlyingSwords, "Flying Swords", "飞剑");
+    set(core::StringId::DateLine, "Month {month}, day {day}", "{month}月{day}日");
+    set(core::StringId::DatePaused, "Paused", "暂停");
     return strings;
 }
 
@@ -364,6 +367,111 @@ TEST_CASE("new effects move and resize the HUD at its next build, keeping the wa
     CHECK(Build(hud, CASTER, NOW + FOUR_SECONDS).lines.at(QI_LINE).text == "Qi 50/100"); // set at the refusal's own time
     hud.Play({ .kind = core::EventKind::NotEnoughQi }, NOW);
     CHECK(Build(hud, CASTER, NOW + FOUR_SECONDS).lines.at(QI_LINE).text == "Not enough Qi");
+}
+
+// Month 3, day 12 as the player reads them: the clock counts from 0.
+constexpr core::CalendarView MARCH_TWELFTH{ .month = 2, .day = 11, .paused = false };
+constexpr core::CalendarView PAUSED_MARCH_TWELFTH{ .month = 2, .day = 11, .paused = true };
+constexpr core::CalendarView FIRST_DAY{ .month = 0, .day = 0, .paused = false };
+constexpr core::CalendarView LAST_DAY_OF_A_LATER_YEAR{ .month = 13, .day = 29, .paused = false };
+constexpr u32 WIDTH = 1280;
+
+TEST_CASE("the date line shows the month and day in each language") {
+    std::vector<gfx::HudLine> lines;
+    app::Hud english = English();
+    english.BuildDate(MARCH_TWELFTH, WIDTH, lines);
+    REQUIRE(lines.size() == 1);
+    CHECK(lines.front().text == "Month 3, day 12");
+    CHECK(lines.front().alignRight);
+    CHECK(lines.front().topLeft.y == HUD.dateInset);
+
+    lines.clear();
+    app::Hud chinese(HudStrings(), { .language = core::Language::Chinese }, core::UiColours{});
+    chinese.BuildDate(MARCH_TWELFTH, WIDTH, lines);
+    REQUIRE(lines.size() == 1);
+    CHECK(lines.front().text == "3月12日");
+
+    // The first day of the first month, and a later year's month, read as plain numbers.
+    lines.clear();
+    english.BuildDate(FIRST_DAY, WIDTH, lines);
+    CHECK(lines.front().text == "Month 1, day 1");
+    lines.clear();
+    english.BuildDate(LAST_DAY_OF_A_LATER_YEAR, WIDTH, lines);
+    CHECK(lines.front().text == "Month 14, day 30");
+}
+
+TEST_CASE("the date line marks a paused world") {
+    std::vector<gfx::HudLine> lines;
+    app::Hud english = English();
+    english.BuildDate(PAUSED_MARCH_TWELFTH, WIDTH, lines);
+    REQUIRE(lines.size() == 1);
+    CHECK(lines.front().text == "Month 3, day 12  Paused");
+    lines.clear();
+    app::Hud chinese(HudStrings(), { .language = core::Language::Chinese }, core::UiColours{});
+    chinese.BuildDate(PAUSED_MARCH_TWELFTH, WIDTH, lines);
+    CHECK(lines.front().text == "3月12日  暂停");
+}
+
+TEST_CASE("no date line outside the world map") {
+    std::vector<gfx::HudLine> lines;
+    app::Hud hud = English();
+    hud.BuildDate(MARCH_TWELFTH, WIDTH, lines);
+    REQUIRE(hud.DateLineArea().has_value());
+    lines.clear();
+    hud.BuildDate(std::nullopt, WIDTH, lines);
+    CHECK(lines.empty());
+    CHECK_FALSE(hud.DateLineArea().has_value());
+    CHECK_FALSE(English().DateLineArea().has_value()); // before any build
+}
+
+TEST_CASE("the date line's area sits at the top right and grows with the text scale") {
+    constexpr f32 DOUBLE = 2.0F;
+    std::vector<gfx::HudLine> lines;
+    app::Hud hud = English();
+    hud.BuildDate(MARCH_TWELFTH, WIDTH, lines);
+    REQUIRE(hud.DateLineArea().has_value());
+    const core::Rect area = hud.DateLineArea().value_or(core::Rect{});
+    CHECK(area.max.x == static_cast<f32>(WIDTH) - HUD.dateInset);
+    CHECK(area.min.y == HUD.dateInset);
+    CHECK(area.max.x - area.min.x == HUD.dateWidth);
+    CHECK(area.max.y - area.min.y == HUD.lineHeight);
+    CHECK(lines.front().topLeft.x == area.max.x);
+
+    app::Hud big(HudStrings(), { .language = core::Language::English, .scale = DOUBLE }, core::UiColours{});
+    lines.clear();
+    big.BuildDate(MARCH_TWELFTH, WIDTH, lines);
+    REQUIRE(big.DateLineArea().has_value());
+    const core::Rect larger = big.DateLineArea().value_or(core::Rect{});
+    CHECK(larger.max.x - larger.min.x == HUD.dateWidth * DOUBLE);
+    CHECK(larger.max.y - larger.min.y == HUD.lineHeight * DOUBLE);
+    CHECK(larger.max.x == area.max.x);
+}
+
+// A date line's box and points around its edges.
+constexpr core::Rect AREA{ .min = { .x = 1000.0F, .y = 16.0F }, .max = { .x = 1264.0F, .y = 40.0F } };
+constexpr core::Vec2 MIDDLE{ .x = 1100.0F, .y = 20.0F };
+constexpr core::Vec2 LAST_PIXEL{ .x = 1263.0F, .y = 39.0F };
+constexpr core::Vec2 LEFT_OF{ .x = 999.0F, .y = 20.0F };
+constexpr core::Vec2 ABOVE{ .x = 1100.0F, .y = 15.0F };
+constexpr core::Vec2 RIGHT_EDGE{ .x = 1264.0F, .y = 20.0F };
+constexpr core::Vec2 BOTTOM_EDGE{ .x = 1100.0F, .y = 40.0F };
+
+TEST_CASE("a click in the date line pauses and does nothing else") {
+    const std::optional<core::Action> inside = app::DateLineClick(app::Control::Primary, MIDDLE, AREA);
+    REQUIRE(inside.has_value());
+    CHECK(inside.value_or(core::Action{}).kind == core::ActionKind::ToggleWorldPause);
+    CHECK(app::DateLineClick(app::Control::Primary, AREA.min, AREA).has_value());
+    CHECK(app::DateLineClick(app::Control::Primary, LAST_PIXEL, AREA).has_value());
+}
+
+TEST_CASE("a click outside it passes to the world") {
+    CHECK_FALSE(app::DateLineClick(app::Control::Primary, LEFT_OF, AREA).has_value());
+    CHECK_FALSE(app::DateLineClick(app::Control::Primary, ABOVE, AREA).has_value());
+    CHECK_FALSE(app::DateLineClick(app::Control::Primary, RIGHT_EDGE, AREA).has_value());
+    CHECK_FALSE(app::DateLineClick(app::Control::Primary, BOTTOM_EDGE, AREA).has_value());
+    // Another button over it, or no line showing, is the world's.
+    CHECK_FALSE(app::DateLineClick(app::Control::Secondary, MIDDLE, AREA).has_value());
+    CHECK_FALSE(app::DateLineClick(app::Control::Primary, MIDDLE, std::nullopt).has_value());
 }
 
 } // namespace

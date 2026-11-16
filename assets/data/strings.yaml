@@ -153,6 +153,14 @@ portal_label:
   en: Portal
   zh: 传送门
 
+# The world map's date line (app/hud.hpp): {month} and {day} are filled in, counted from 1.
+date_line:
+  en: "Month {month}, day {day}"
+  zh: "{month}月{day}日"
+date_paused:
+  en: Paused
+  zh: 暂停
+
 # The places on the world map (world.yaml's places name them `place_<key>`): data strings, which no code names but
 # the map finds by key. Chinese in Chinese, and in English what the Chinese means.
 place_capital:

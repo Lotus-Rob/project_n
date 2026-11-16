@@ -74,9 +74,11 @@ enum class StringId : u16 {     // NOLINT(performance-enum-size): data strings n
     FlyingSwords,               ///< The flying swords' name.
     WalkerName,                 ///< The name label of a walker on the world map.
     PortalLabel,                ///< The label over a portal.
+    DateLine,                   ///< The HUD's date on the world map: `{month}` and `{day}` are filled in (FillDate()).
+    DatePaused,                 ///< The mark after the date while the world is paused.
 };
 /// How many strings StringId names.
-inline constexpr std::size_t STRINGS = 49;
+inline constexpr std::size_t STRINGS = 51;
 /// The most strings a table holds, named and data together: StringId is 16 bits.
 inline constexpr std::size_t MOST_STRINGS = 0xFFFF;
 /// Each StringId's name in strings.yaml, in StringId's order.
@@ -128,7 +130,9 @@ inline constexpr std::array<std::string_view, STRINGS> STRING_NAMES{ { "cultivat
                                                                        "dash",
                                                                        "flying_swords",
                                                                        "walker_name",
-                                                                       "portal_label" } };
+                                                                       "portal_label",
+                                                                       "date_line",
+                                                                       "date_paused" } };
 
 /// A language the strings come in.
 enum class Language : u8 {
@@ -193,5 +197,9 @@ private:
 /// Writes `text` into `into` (replacing what it held, keeping its capacity) with `value` in place of each `{value}` and
 /// `most` in place of each `{max}`, both as plain decimal numbers: the HUD's strings (StringId::Health, Qi, Cooldown).
 void FillValue(std::string& into, std::string_view text, i64 value, i64 most);
+
+/// Writes `text` into `into` (replacing what it held, keeping its capacity) with `month` in place of each `{month}` and
+/// `day` in place of each `{day}`, as plain decimal numbers: the date line's string (StringId::DateLine).
+void FillDate(std::string& into, std::string_view text, u64 month, u32 day);
 
 } // namespace core
