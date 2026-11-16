@@ -498,7 +498,7 @@ void App::HandleInput(const platform::WindowState& state) {
         }
         else if (const core::Snapshot* drawn = m_display.Drawn(); SlotOf(control->control) && drawn != nullptr) {
             if (SelectsInstead(control->control, drawn->combat, control->alt)) {
-                Select(state, control->position);
+                Click(state, control->position);
             }
             else {
                 Cast(state, *control, input.device, drawn->combat);
@@ -581,7 +581,7 @@ void App::Cast(const platform::WindowState& state, const ControlEvent& control, 
     }
 }
 
-void App::Select(const platform::WindowState& state, core::Vec2 position) {
+void App::Click(const platform::WindowState& state, core::Vec2 position) {
     const core::Snapshot* drawn = m_display.Drawn();
     if (drawn == nullptr) {
         return;
@@ -591,7 +591,12 @@ void App::Select(const platform::WindowState& state, core::Vec2 position) {
     const core::Vec2 point = WindowToWorld(m_camera.Camera(), position, state.width, state.height);
     const core::StableId target = Pick(*drawn, alpha, point);
     const core::Action action = ClickAction(drawn->worldMap, target, point);
-    PN_LOG_DEBUG("clicked on entity {}", std::to_underlying(target));
+    if (action.kind == core::ActionKind::WalkTo) {
+        PN_LOG_DEBUG("clicked the ground at ({}, {}): walking there", point.x, point.y);
+    }
+    else {
+        PN_LOG_DEBUG("clicked on entity {}", std::to_underlying(target));
+    }
     m_handover.SendInput(action);
 }
 

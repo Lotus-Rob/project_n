@@ -197,7 +197,7 @@ private:
     void SendHeld();
     // Hands the camera's controls (drag, zoom, snap back) to it: true when `control` was one of them, pressed.
     [[nodiscard]] bool SteerCamera(const ControlEvent& control);
-    void Select(const platform::WindowState& state, core::Vec2 position);
+    void Click(const platform::WindowState& state, core::Vec2 position);
     void Cast(const platform::WindowState& state, const ControlEvent& control, platform::Device device, bool combat);
     void MoveCamera(const platform::WindowState& state, const core::Snapshot& drawn, f64 alpha);
     [[nodiscard]] bool Present(const platform::WindowState& state);
