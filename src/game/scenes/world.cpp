@@ -156,9 +156,9 @@ void SpawnPeople(SceneContext& context, const core::WorldMap& map) {
             if (member >= onCityTile && !region.empty()) {
                 tile = region[core::ToBelow(core::Random(seed, 0, npc, PURPOSE_HOME_TILE, 0), static_cast<u32>(region.size()))];
             }
-            const core::StableId person = SpawnNpc(context.State(), tile, city);
-            const core::Entity entity = context.State()[WORLD].Find(person);
-            context.State()[WORLD].Entities().get<Npc>(entity).power = StartingPower(seed, person);
+            // the NPC's identity is the next stable ID the state hands out
+            const core::StableId identity{ context.State().Ids().next };
+            SpawnNpc(context.State(), tile, city, StartingPower(seed, identity));
         }
     }
 }

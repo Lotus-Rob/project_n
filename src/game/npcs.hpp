@@ -200,8 +200,9 @@ private:
 /// world scene uses it: the arena and the stress arena start every NPC at 0.
 [[nodiscard]] f32 StartingPower(u64 seed, core::StableId identity);
 
-/// Creates a world NPC in `cell`, rested and content, belonging to the city of place index `home` (NO_HOME: none).
-core::StableId SpawnNpc(core::State& state, u32 cell, u16 home = NO_HOME);
+/// Creates a world NPC in `cell`, rested and content, belonging to the city of place index `home` (NO_HOME: none), with
+/// `power` (StartingPower() in the world scene, 0 elsewhere).
+core::StableId SpawnNpc(core::State& state, u32 cell, u16 home = NO_HOME, f32 power = 0.0F);
 /// Creates an aggregate of `members` people in `cell`.
 core::StableId SpawnGroup(core::State& state, u32 cell, u32 members);
 
