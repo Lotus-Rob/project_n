@@ -2,7 +2,6 @@
 #include "core/game_data.hpp"
 #include "core/jobs.hpp"
 #include "core/journey.hpp"
-#include "core/names.hpp"
 #include "core/paths.hpp"
 #include "core/rect.hpp"
 #include "core/world_map.hpp"
@@ -170,6 +169,18 @@ TEST_CASE("the month step with visits is the same on 1 and 4 workers") {
     CHECK(one.hash == many.hash);
 }
 
+/// Whether two texts are alike in every field, their numbers to the bit.
+bool SameText(const core::TextItem& lhs, const core::TextItem& rhs) {
+    const auto point = [](core::Vec2 vector) { return std::bit_cast<u64>(vector); };
+    const auto number = [](f32 value) { return std::bit_cast<u32>(value); };
+    return lhs.kind == rhs.kind && lhs.string == rhs.string && lhs.npcName == rhs.npcName && lhs.value == rhs.value &&
+           lhs.sign == rhs.sign && point(lhs.previous) == point(rhs.previous) && point(lhs.current) == point(rhs.current) &&
+           point(lhs.offset) == point(rhs.offset) && point(lhs.scatter) == point(rhs.scatter) &&
+           number(lhs.lift) == number(rhs.lift) && number(lhs.opacity) == number(rhs.opacity) && lhs.entity == rhs.entity &&
+           number(lhs.height) == number(rhs.height) && lhs.nameKey == rhs.nameKey && lhs.priority == rhs.priority &&
+           lhs.colour == rhs.colour && lhs.align == rhs.align && lhs.direction == rhs.direction;
+}
+
 TEST_CASE("publishing travellers is the same on 1 and 4 workers") {
     constexpr u32 MANY_WORKERS = 4;
     // More journeys than one publish chunk takes, so the travellers are packed in several.
@@ -191,23 +202,15 @@ TEST_CASE("publishing travellers is the same on 1 and 4 workers") {
         host.Publish(snapshot, jobs, everywhere);
         published.push_back(std::move(snapshot));
     }
-    const auto named = [](const core::Snapshot& snapshot) {
-        std::vector<std::tuple<core::StableId, u32, u64>> labels;
-        for (const core::TextItem& text : snapshot.texts) {
-            if (text.npcName) {
-                labels.emplace_back(text.entity, core::NameKey(*text.npcName), std::bit_cast<u64>(text.current));
-            }
-        }
-        return labels;
-    };
-    REQUIRE_FALSE(named(published[0]).empty());
+    const auto named = [](const core::TextItem& text) { return text.npcName.has_value(); };
+    REQUIRE(std::ranges::any_of(published[0].texts, named));
     CHECK(
         std::ranges::equal(
             std::as_bytes(std::span{ published[0].instances }), std::as_bytes(std::span{ published[1].instances })
         )
     );
     CHECK(published[0].ids == published[1].ids);
-    CHECK(named(published[0]) == named(published[1]));
+    CHECK(std::ranges::equal(published[0].texts, published[1].texts, SameText));
 }
 
 } // namespace
