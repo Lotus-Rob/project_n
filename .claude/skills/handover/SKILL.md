@@ -1,6 +1,6 @@
 ---
 name: handover
-description: Write a handover so a fresh session can continue project_n work. Use when a "Context budget" notice arrives, when a plan task completes and decides whether to go on, when stopping mid-branch, when blocked on the user's decision, at a large milestone, when the user asks for a handover, a summary for the next session or where things stand, and when a branch merges (its handover is removed).
+description: Write a handover so a fresh session can continue project_n work. Use when a "Context budget" notice arrives, when a plan task completes (to decide whether to go on), when stopping mid-branch, when blocked on the user's decision, at a large milestone, when the user asks for a handover, a summary for the next session or where things stand, and when a branch merges (its handover is removed).
 ---
 
 # Handing work over
@@ -8,13 +8,13 @@ description: Write a handover so a fresh session can continue project_n work. Us
 Owned by: root AGENTS.md.
 
 ## When
-- **The context budget** (the user, 2026-11-16): the user's hook `~/.claude/hooks/context_budget.py` reads the session's context size and adds a "Context budget" notice to Agent results and prompts past 150k tokens, and another past 250k. Below 150k a fresh session costs more than carrying on; above, less.
+- **The context budget** (the user, 2026-11-16): the user's hook `~/.claude/hooks/context_budget.py` reads the session's context size and adds a "Context budget" notice to the session's Agent and SendMessage calls, prompts and agents' reports past 150k tokens, and another past 250k. Below 150k a fresh session costs more than carrying on; above, less.
   - A plan task completes (its review is clean after its fix pass and re-review, and it is on the feature branch): if no notice has come in this session, dispatch the next task or wave. If one has, dispatch nothing new; tasks already running finish their implement-and-review loop; then write the handover and stop, ending with a short summary for the user.
-  - The 250k notice: hand over at the next safe point, as it says. A review back with findings and no fix dispatched yet is a safe point: the handover's Next is that fix pass, its findings listed.
-  - The hook file is missing (another machine): one plan task per session, however much context is left.
+  - The 250k notice: hand over at the next safe point, as it says. A review back with findings and no fix dispatched yet is a safe point: the handover's Next is that fix pass, its findings listed. Agents of the wave still running are waited for, and the handover gives each one's state.
+  - The hook isn't registered in `~/.claude/settings.json` (another machine), or the plan runs inline (executing-plans: no agent calls, so no notices): one plan task per session, however much context is left.
   - After the last task, the handover's Next is finishing the branch (root AGENTS.md, Finishing a branch; its step 3 is the final whole-branch review), which the next session runs.
 - Also: blocked on a decision that is the user's, or a branch merged (delete its section).
-- Work without a plan (a fix, a spike) runs several commits per session. A notice on a prompt is the user's call: say it in one line and hand over when they agree.
+- Work without a plan (a fix, a spike) runs several commits per session. A notice there is the user's call: finish the current request, say it in one line, and hand over when they agree.
 
 ## Where
 `in-flight.md` in the project's Claude Code memory folder (`~/.claude/projects/<project>/memory/`; worktrees share it, and the memory index loads it in every session). It holds one section per branch in flight, headed `## <branch>`. A handover replaces only its own branch's section, or adds it if missing; every other section stays exactly as it was. When the branch merges, delete its section.
