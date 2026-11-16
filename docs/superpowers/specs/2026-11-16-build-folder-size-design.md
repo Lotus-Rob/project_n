@@ -1,6 +1,6 @@
 # A smaller build folder: one precompiled header per build, cold trees and old cache entries removed
 
-Date: 2026-11-16 · Status: draft
+Date: 2026-11-16 · Status: implemented (Outcome below)
 
 ## Intent
 
@@ -220,4 +220,75 @@ error, which stays as a compile flag so a `.gch` that stops matching fails the b
 
 ## Outcome
 
-(Filled in before the PR.)
+Implemented 2026-11-16 on branch `build-size`, executed inline from the plan (`docs/superpowers/plans/2026-11-16-build-folder-size.md`).
+
+### Each toolchain
+
+- **Clang shares** ("build(xmake): share one precompiled header per build folder with Clang"): 2 per build folder,
+  and 5 in the sanitizer folder (the 2 shared plus the 3 fuzz targets' own, as `-fsanitize=fuzzer` changes their
+  flags).
+- **GCC shares** ("build(xmake): share the precompiled headers under GCC"): XMake hands each source
+  `-I <the owner's .gch folder> -include pch.hpp`, so a user finds the owner's wrapper header and `.gch` once
+  `pcoutputfile` points at the owner. `-H` shows game and test objects loading the shared `.gch`. GCC keeps a `.gch`
+  valid when a source adds a define the header never reads (its own documented rule), so the planned `-DPN_PROBE`
+  check built fine and went stale nowhere. A define the header does read (`_GLIBCXX_ASSERTIONS`) fails on
+  `-Werror=invalid-pch`, which names it. Without the flag, that build also failed, but only on
+  `ignoring '#pragma system_header'` from parsing XMake's wrapper, so the flag's value is the clear cause.
+- **MSVC keeps one per target** ("build(xmake): keep MSVC's precompiled headers per target"). `cl` refuses a
+  precompiled header for any `/D` (C4605) or `/I` (C4599, which also checks their order) its build lacked. Trial 1
+  failed in `gfx`, whose `utils.bin2c` include path comes first. Trial 2 moved a target's own include paths to its
+  raw flags, which XMake emits last, and failed in `data` on yaml-cpp's `/DYAML_CPP_STATIC_DEFINE` and its `/I` ahead
+  of the inherited ones. Every module but `game` adds a private package or inherits SDL's from `platform`. Sharing
+  would need every package's flags public on the owner, undoing the modules' private packages (0002 §4), or
+  silencing the only check that a precompiled header matches its source. So the `/Yc` object's linking and `/Z7`
+  versus a shared PDB were never reached. Design 0001 rule 19 and xmake.lua say why.
+
+### Before and after
+
+Cold builds after `project_n clean`, on an idle machine (32 shared cores), XMake's time with wall time in brackets.
+Before: Task 0 at "docs: plan a smaller build folder". After: the branch head.
+
+| Build folder | Precompiled headers | Tree | Cold build |
+|---|---|---|---|
+| linux-clang debug | 17, 0.41 GB → 2, 0.05 GB | 1.6 → 1.3 GB | 23.2 s (35) → 19.8 s (29) |
+| linux-gcc release | 17, 2.40 GB → 2, 0.28 GB | 3.3 → 1.3 GB | 79.5 s (90) → 60.7 s (67) |
+| windows-msvc release (container) | 17, 2.60 GB → 17, 2.60 GB | 3.5 → 3.5 GB | 62.3 s (69) → 52.5 s (60) |
+
+MSVC's build is unchanged and still ran 16% faster, so that is the run-to-run noise. Goal 4 (no slower) holds:
+Clang's gain (15%) is within that noise, and GCC's (24%) only partly beyond it. After `touch src/core/types.hpp`, linux-clang debug recompiled
+170 files (2 of them precompiled headers) in 3.8 s, against 185 (17) in 4.5 s before. An edit to `types.hpp`
+rebuilt all 170 on Clang and GCC, and an edit to `src/pch.hpp` rebuilt 79 (the game's header and its 78 objects;
+test objects don't include it). The build cache's stale-object check passed on Clang: a header change still missed
+the cache. The unity and ASan builds pass.
+
+### The sweep and the cache
+
+- The sweep ("build(tools): stamp each build tree and sweep those unused for a week") first ran in the worktree as
+  `clean --stale --days 0`. It removed linux-gcc/release (3.3 GiB) and the container's windows-msvc/release
+  (3.5 GiB), and kept linux-clang debug and release. The main checkout's first sweep comes after the merge. Its
+  build folder was 45 GB on 2026-11-16. Judged by their newest files, two trees were 7 days old or more that day
+  (the container's windows-msvc releasedbg 2.2 GB and debug-address 3.5 GB). Four more (10.9 GB) reach that age
+  within two days,
+  and every shared-PCH tree drops 0.4–2.2 GB on its next rebuild.
+- Cache ageing ("build(tools): age XMake's build cache and drop the ones nothing reads"): `CACHE_DAYS` went from
+  14 to 7, the user's choice with these numbers ("build(tools): age the build cache after 7 days, not 14"). The
+  main checkout's linux-clang/debug cache held 6.9 GB in 3,147 entries for 744 MB of objects, growing about 1 GB a
+  day, with none older than 7 days. So 14 days would have capped it near 14 GB, and 7 days caps it near 7 GB.
+  Release's held 2.7 GB. GCC's caches in the main checkout (264 MB to 490 MB, unused) go whole on the first sweep.
+
+### Rulings
+
+- The defines moved into a generated header ("build(xmake): give the version and data paths their own generated
+  header"): a `headeronly` target `build_info`, public through the owner, so every target gets the same `-I`.
+- The rule: owner targets `game_pch` and `test_pch` (kind `object`, `build.fence`), and rule `shared_pch` on each
+  user. The rule turns off the user's `c++.build.pcheader` and replaces `target.pcoutputfile` with a lazy delegate
+  to the owner, because XMake 3.1.2 caches the path in a private field. An XMake bump that renames `pcoutputfile`
+  breaks the build loudly. `SHARED_PCH_TOOLCHAINS` reaches rule scripts through `set_values`. The fence covers
+  indirect users, as XMake's deep orders walk the whole chain.
+- The sweep keeps both the native and container tree of the command's preset and leaf (a host can't know which the
+  command will use), and every preset's tree under `build --preset all`. A preset folder emptied of trees goes too.
+- Cache ageing runs on every tree the sweep keeps, the warm ones included, with one summary line.
+- `-Winvalid-pch` is set for `pixi-gcc` only.
+- The success measure "a full `check` from cold no slower" was taken as the three cold builds above, which are
+  `check`'s slowest parts (the plan's Task 0).
+
