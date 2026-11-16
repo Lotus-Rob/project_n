@@ -12,6 +12,13 @@
       }
     }
   },
+  "permissions": {
+    "deny": [
+      "Artifact",
+      "ArtifactComments",
+      "ArtifactData"
+    ]
+  },
   "skillOverrides": {
     "anthropic-skills:built-in-browser": "user-invocable-only",
     "anthropic-skills:chrome-browser": "user-invocable-only",
@@ -26,6 +33,9 @@
     "anthropic-skills:pptx": "user-invocable-only",
     "anthropic-skills:skill-creator": "user-invocable-only",
     "anthropic-skills:xlsx": "user-invocable-only",
+    "artifact-capabilities": "user-invocable-only",
+    "artifact-design": "user-invocable-only",
+    "artifact-diagramming": "user-invocable-only",
     "claude-api": "user-invocable-only",
     "claude-in-chrome": "user-invocable-only",
     "dataviz": "user-invocable-only",
