@@ -95,36 +95,29 @@ std::vector<std::string> PrewarmTexts(const core::Strings& strings) {
     return texts;
 }
 
-// A pinyin with its first letter capitalised, as a name's English form writes a surname or a first given syllable.
-std::string Capitalised(std::string pinyin) {
-    constexpr i32 CASE_GAP = 'a' - 'A';
-    if (!pinyin.empty() && pinyin.front() >= 'a' && pinyin.front() <= 'z') {
-        pinyin.front() -= CASE_GAP;
-    }
-    return pinyin;
-}
-
-// What PrewarmNames() rasterises: every name entry alone, as the characters and as pinyin both capitalised and in its
-// lower case form (a second given character is written plain), the apostrophe, and in each language the label stack
-// filled with every character or capitalised pinyin of the table and every digit.
+// What PrewarmNames() rasterises, composed by core::NameText() itself so it covers what a name shows: each surname with
+// the first given character, each given character first and second (the second written plain, an apostrophe before a
+// vowel), the apostrophe, and in each language the label stack filled with all of them run together and every digit.
 std::vector<std::string> PrewarmNameTexts(const core::Strings& strings, const core::Names& names) {
     std::vector<std::string> texts{ "'" };
-    std::string characters;
-    std::string pinyin;
-    for (const std::vector<core::NameEntry>* table : { &names.surnames, &names.given }) {
-        for (const core::NameEntry& entry : *table) {
-            texts.push_back(entry.characters);
-            texts.push_back(Capitalised(entry.pinyin));
-            texts.push_back(entry.pinyin);
-            characters += entry.characters;
-            pinyin += Capitalised(entry.pinyin);
-            pinyin += ' ';
-        }
+    std::vector<core::NpcName> shown;
+    shown.reserve(names.surnames.size() + (2 * names.given.size()));
+    for (std::size_t surname = 0; surname < names.surnames.size(); ++surname) {
+        shown.push_back({ .surname = static_cast<u16>(surname), .first = 0, .second = core::NO_GIVEN });
+    }
+    for (std::size_t given = 0; given < names.given.size(); ++given) {
+        shown.push_back({ .surname = 0, .first = static_cast<u16>(given), .second = core::NO_GIVEN });
+        shown.push_back({ .surname = 0, .first = 0, .second = static_cast<u16>(given) });
     }
     for (std::size_t language = 0; language < core::LANGUAGES; ++language) {
         const std::string& stack = strings.text.at(std::to_underlying(core::StringId::LabelStack)).at(language);
-        texts.push_back(Filled(stack, characters, DIGITS));
-        texts.push_back(Filled(stack, pinyin, DIGITS));
+        std::string together;
+        for (const core::NpcName name : shown) {
+            texts.push_back(core::NameText(names, name, static_cast<core::Language>(language)));
+            together += texts.back();
+            together += ' ';
+        }
+        texts.push_back(Filled(stack, together, DIGITS));
     }
     return texts;
 }

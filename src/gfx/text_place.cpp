@@ -10,6 +10,9 @@ namespace gfx {
 namespace {
 
 constexpr f32 HALF = 0.5F;
+// Set in a named label's key: core::NameKey() uses 31 bits and so may equal a plain label's key (a StringId, a u16), which
+// would stack the two.
+constexpr u32 NAMED_LABEL_KEY = 1U << 31U;
 constexpr u32 DECIMAL = 10;
 constexpr u8 PLUS_CHARACTER = 10;  // in NUMBER_FACE_CHARACTERS
 constexpr u8 MINUS_CHARACTER = 11; // likewise
@@ -180,11 +183,12 @@ bool TooSmallToSee(f32 entityPixels) {
 }
 
 u32 LabelKey(const core::TextItem& item) {
-    return item.npcName ? core::NameKey(*item.npcName) : item.nameKey;
+    return item.npcName ? (core::NameKey(*item.npcName) | NAMED_LABEL_KEY) : item.nameKey;
 }
 
 const std::string& NameTexts::Of(const core::Names* names, core::NpcName name, core::Language language) {
-    const auto [slot, added] = m_texts.try_emplace(core::NameKey(name));
+    const u64 key = (u64{ core::NameKey(name) } << 1U) | std::to_underlying(language);
+    const auto [slot, added] = m_texts.try_emplace(key);
     if (added && names != nullptr) {
         slot->second = core::NameText(*names, name, language);
     }

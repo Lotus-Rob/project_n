@@ -57,11 +57,12 @@ inline constexpr f32 VISIBLE_CREATURE_PIXELS = 8.0F;
 /// VISIBLE_CREATURE_PIXELS, and not 0, which says its height is unknown (core::TextItem::height unset).
 [[nodiscard]] bool TooSmallToSee(f32 entityPixels);
 
-/// The key `item`'s label stacks by: core::NameKey() of its NPC name when it has one, else its `nameKey`, so two names
-/// never stack and one name always does.
+/// The key `item`'s label stacks by: core::NameKey() of its NPC name with the top bit set when it has one, else its
+/// `nameKey`. The bit keeps a name's key from ever equalling a plain label's (a StringId, a u16), so two names never
+/// stack, nor a name with a plain label, and one name always does.
 [[nodiscard]] u32 LabelKey(const core::TextItem& item);
 
-/// The text of the NPC names a frame's labels show, composed once per distinct name (core::NameKey()) and kept until
+/// The text of the NPC names a frame's labels show, composed once per distinct name and language and kept until
 /// Clear(), so a hundred labels of a name build and measure it once.
 class NameTexts {
 public:
@@ -69,12 +70,13 @@ public:
     /// holds until Clear().
     [[nodiscard]] const std::string& Of(const core::Names* names, core::NpcName name, core::Language language);
 
-    /// Forgets every text: at the start of a frame, or when the table or the language changes.
+    /// Forgets every text: at the start of a frame, and when the table changes. A language change needs none: the
+    /// language is part of what a text is kept under.
     void Clear();
 
 private:
     // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::unordered_map<u32, std::string> m_texts{};
+    std::unordered_map<u64, std::string> m_texts{};
 };
 
 /// The colour `item` is drawn in, scaled by its opacity (premultiplied, so every channel): a label's and a caption's
