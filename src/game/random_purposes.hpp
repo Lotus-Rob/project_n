@@ -26,6 +26,8 @@ inline constexpr u32 PURPOSE_VOLLEY = 7;
 inline constexpr u32 PURPOSE_WALKER = 8;
 /// A world NPC drawing which tile of its city's region it lives on (game/scenes/world.cpp).
 inline constexpr u32 PURPOSE_HOME_TILE = 10;
+/// A world NPC drawing its starting power (game/npcs.hpp).
+inline constexpr u32 PURPOSE_STARTING_POWER = 11;
 // 9 is retired from game (the old world terrain noise): gfx/terrain_draw.cpp keys the world map's tile variants with it, so
 // nothing here may reuse it.
 

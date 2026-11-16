@@ -382,9 +382,10 @@ TEST_CASE("a month passes on the world map, the same twice, over the world NPCs"
     game::Host first(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
     game::Host second(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
     const auto fresh = [](const game::Host& host) {
+        // Resting is how every NPC is spawned (power now starts spread, so power is no sign of a fresh NPC).
         u32 untouched = 0;
         for (const auto [entity, person] : host.State()[game::WORLD].Entities().view<const game::Npc>().each()) {
-            untouched += person.action == game::Action::Rest && person.power == 0.0F ? 1U : 0U;
+            untouched += person.action == game::Action::Rest ? 1U : 0U;
         }
         return untouched;
     };
