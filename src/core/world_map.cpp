@@ -260,8 +260,8 @@ std::expected<void, Error> CheckShape(const WorldMapSource& source) {
     return {};
 }
 
-// Derives each tile's flags and cost from the terrain, the lines and the fords.
-std::expected<void, Error> DeriveTiles(const WorldMapSource& source, std::vector<u8>& flags, std::vector<u16>& cost) {
+// Derives each tile's flags from the lines and the fords; ProfileLayer turns them into costs.
+std::expected<void, Error> DeriveTiles(const WorldMapSource& source, std::vector<u8>& flags) {
     const std::size_t tiles = flags.size();
     const auto never = [](std::size_t) { return false; };
     if (auto marked = MarkLines(source, source.rivers, "river", source.lines.rivers, FLAG_RIVER, flags, never); !marked) {
@@ -297,18 +297,12 @@ std::expected<void, Error> DeriveTiles(const WorldMapSource& source, std::vector
         flags[IndexOf(source, ford)] |= FLAG_FORD;
     }
     for (std::size_t tile = 0; tile < tiles; ++tile) {
-        u16 tileCost = source.kinds[source.grid[tile]].cost;
         if (roadFlags[tile] != 0) {
             flags[tile] |= FLAG_ROAD;
-            tileCost = std::min(tileCost, source.roadCost);
             if ((flags[tile] & FLAG_RIVER) != 0) {
                 flags[tile] |= FLAG_BRIDGE;
             }
         }
-        else if ((flags[tile] & FLAG_RIVER) != 0) {
-            tileCost = (flags[tile] & FLAG_FORD) != 0 ? source.fordCost : IMPASSABLE_COST;
-        }
-        cost[tile] = tileCost;
     }
     return {};
 }
@@ -512,10 +506,10 @@ std::expected<WorldMap, Error> WorldMap::Build(WorldMapSource source) {
     const std::size_t tiles = source.grid.size();
     WorldMap map;
     map.m_flags.assign(tiles, 0);
-    map.m_cost.assign(tiles, 0);
-    if (auto derived = DeriveTiles(source, map.m_flags, map.m_cost); !derived) {
+    if (auto derived = DeriveTiles(source, map.m_flags); !derived) {
         return std::unexpected{ derived.error() };
     }
+    map.m_cost = ProfileLayer(source, map.m_flags, OnFoot(source));
     for (const MovementProfile& profile : source.profiles) {
         map.m_profileCost.push_back(ProfileLayer(source, map.m_flags, profile));
     }
