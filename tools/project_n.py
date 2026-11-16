@@ -140,9 +140,6 @@ class Fail(Exception):
     """A user-facing error: printed without a traceback."""
 
 
-# --- helpers -----------------------------------------------------------------
-
-
 def resolve(cmd):
     """Look the program up on PATH: Windows' CreateProcess only finds .exe files."""
     exe = shutil.which(str(cmd[0])) or str(cmd[0])
@@ -586,9 +583,6 @@ def with_version(xmake_lua, version):
     return VERSION_RE.sub(f'set_version("{version}")', xmake_lua, count=1)
 
 
-# --- containers ----------------------------------------------------------------
-
-
 def image_tag(name):
     spec = IMAGES[name]
     h = hashlib.sha256(sha256(spec["file"], *IMAGE_INPUTS).encode())
@@ -682,9 +676,6 @@ def reenter(preset, argv, interactive=False):
     run(container_cmd(image, ["pixi", "run", "--quiet", "project_n", *argv], interactive, mounts))
 
 
-# --- xmake ---------------------------------------------------------------------
-
-
 def configure(preset, mode, sanitizer="none", unity=False):
     check_sanitizer(preset, sanitizer)
     p, bdir = PRESETS[preset], build_dir(preset, mode, sanitizer, unity)
@@ -723,9 +714,6 @@ def binary_path(preset, mode, name=APP):
     p = PRESETS[preset]
     exe = name + (".exe" if p["plat"] == "windows" else "")
     return build_dir(preset, mode) / p["plat"] / p["arch"] / mode / exe
-
-
-# --- commands ------------------------------------------------------------------
 
 
 def cmd_build(args):
@@ -2940,7 +2928,6 @@ def prune_worktrees(args):
     run(["git", "worktree", "prune"])
     for branch in merged_gone:  # only once pruned: git won't delete a branch a registered worktree has checked out
         run(["git", "branch", "-D", branch])
-
 
 
 def ensure_macos_xmake():
