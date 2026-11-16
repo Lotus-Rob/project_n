@@ -108,6 +108,7 @@ measured in it.
 | 5b3 | **Fog and sight:** explored tiles, cloud with a soft edge, walkers only within sight (split from 5b, 2026-11-15) | To do | `2026-11-10-phase6-chunk5-world-map-design.md` |
 | 5b-look | **The world's look:** blended terrain, painted assets, walk frames and facing, sharp art at every zoom (backlog items, 2026-11-14/15; perhaps two parts) | To do | (to be designed) |
 | 5c | **The world stays alive:** the world-and-scene split, the save version, the enter prompt, the stand-in town | To do | `2026-11-10-phase6-chunk5-world-map-design.md` |
+| GD | **Game design:** a superpowers brainstorm for design pillars, the core loop, a systems map (cultivation, items and crafting, social simulation, content and events, combat depth, audio, onboarding, narrative, balance, modding, shipping, art pipeline: which are in scope and how close to Tale of Immortal) and a game roadmap after phase 7; no code. Runs once all of chunk 5 (5b2, 5b3, 5b-look, 5c) has merged, before chunk 6 (added 2026-11-16, the user's) | To do | (to be designed) |
 | 6 | **Towns:** a town, a small city and a large city, full of NPCs; move, select, inspect, talk | To do | `2026-11-10-phase6-chunk6-towns-design.md` |
 | 7 | **Combat scenes and dungeons:** one-off arenas, two dungeons of rooms, paths and objectives | To do | `2026-11-10-phase6-chunk7-combat-scenes-design.md` |
 | 8 | The `ui` module (S13 first: RmlUi, and UI text's exact-size path) | To do | `2026-11-10-phase6-chunk8-ui-design.md` |
