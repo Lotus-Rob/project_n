@@ -728,7 +728,7 @@ class ArtifactReferenceTest(unittest.TestCase):
 
 
 class ObjectCacheTest(unittest.TestCase):
-    """CI's object cache: warm on branch pushes, never read on main or a tag (a cold cache never feeds a release)."""
+    """CI's object cache: warm on branch pushes, never read on main or a tag (a release is always built cold)."""
 
     def setUp(self):
         self.tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
@@ -1914,6 +1914,11 @@ REFERENCES_FOUND = {
     "the user's pointer": "int x = 0;  // the user's tuned value",
     "a block comment": "/* chunk 5 */ int x = 0;",
     "a later line of a block comment": "/*\n * why this order\n * (phase 4)\n */\nint x = 0;",
+    "an item label": "// placeholder id, fix it before signing (O6)",
+    "a design doc decision label": "// the order is fixed (D9) for now",
+    "a user's call": "// the user's call: keep the old order",
+    "a user's cold rule": "# the user's cold rule",
+    "chunk names in a list": "// 5b, 5c share it",
     "a Python docstring": '"""Warm on branches (the user\'s cold rule)."""',
 }
 REFERENCES_NOT_FOUND = {
@@ -1926,6 +1931,18 @@ REFERENCES_NOT_FOUND = {
     "a texture format": "// an R8 texture holds the mask, in display P3",
     "a hardware spec": "// the minimum spec's core count",
     "a hash name": "// FNV-1a 64 of the bytes",
+    "a design word": "// the design of the queue holds",
+    "a small decimal": "// tolerance 0.0001 of a pixel",
+    "a version string": "// since version 1.0002 of the format",
+    "a ruler": "// the ruler's tick marks the edge",
+    "a task without a number": "// a background task queue",
+    "a wave of things": "// a wave of enemies",
+    "a plan-like word": "// the planner's output",
+    "a year alone": "// 2026 in the header",
+    "a compiler flag": "// -O2 and -O0 builds differ here",
+    "a link name": "// an 8b/10b link",
+    "the user's setting": "// the user's settings.yaml wins",
+    "the user's chosen option": "// the user's chosen key bindings",
     "a hex literal": "// 0x5b marks it",
     "the user as a role": "// The user's own sanitizer options go last",
     "a user to check": "# for the user to check and publish",
@@ -1954,8 +1971,11 @@ class DesignReferenceTest(unittest.TestCase):
     def test_documentation_is_not_code(self):
         self.assertEqual(project_n.design_reference_files(["docs/a.md", "AGENTS.md", "src/core/generated/atlas.hpp",
                                                            "assets/manifest.yaml", "tests/fuzz/corpus/yaml/world",
-                                                           "src/core/a.cpp", "xmake.lua", "shaders/a.hlsl", ".vscode/settings.json"]),
-                         ["src/core/a.cpp", "xmake.lua", "shaders/a.hlsl", ".vscode/settings.json"])
+                                                           "src/core/a.cpp", "xmake.lua", "shaders/a.hlsl", ".vscode/settings.json",
+                                                           "tests/reference/reference_tests.cpp", "tests/reference/a.png",
+                                                           "dev", "dev.cmd"]),
+                         ["src/core/a.cpp", "xmake.lua", "shaders/a.hlsl", ".vscode/settings.json",
+                          "tests/reference/reference_tests.cpp", "dev", "dev.cmd"])
 
     def test_a_finding_names_the_line_and_the_rule(self):
         found = project_n.design_references("src/a.cpp", "int a = 0;\n// chunk 4b\n")
@@ -1963,8 +1983,18 @@ class DesignReferenceTest(unittest.TestCase):
         self.assertTrue(found[0].startswith("src/a.cpp:2: "))
         self.assertIn("own words", found[0])
 
-    def test_the_tree_has_none(self):
-        self.assertEqual(project_n.design_reference_findings(), [])
+    def test_a_batch_script_comment(self):
+        self.assertEqual(len(project_n.design_references("dev.cmd", "@rem phase 6 shorthand\n:: chunk 4\n@echo off\n")), 2)
+        self.assertEqual(project_n.design_references("dev.cmd", "@echo the phase 6 value\n"), [])
+
+    def test_a_shell_script_comment(self):
+        self.assertEqual(len(project_n.design_references("dev", "#!/bin/sh\n# phase 6 shorthand\n")), 1)
+
+    def test_an_apostrophe_in_a_yaml_value_is_no_quote(self):
+        self.assertEqual(len(project_n.design_references("assets/data/a.yaml", "name: Wanderer's rest  # phase 4\n")), 1)
+
+    def test_a_quoted_yaml_list_item_hides_its_hash(self):
+        self.assertEqual(project_n.design_references("assets/data/a.yaml", "- 'a # chunk 4'\nk: [\"b # chunk 4\"]\n"), [])
 
     def test_a_yaml_comment_after_a_value(self):
         self.assertTrue(project_n.design_references("assets/data/a.yaml", "key: 1  # phase 6 value\n"))
