@@ -15,6 +15,7 @@
 
 #include <cstddef>
 #include <span>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -24,7 +25,8 @@ namespace game {
 struct JournalEntry {
     /// The city it travelled to, a place index.
     u16 destination = core::NO_PLACE;
-    /// The day it set out on, counted from the world clock's tick 0 (negative for a journey that left before it).
+    /// The day it set out on, counted from the world clock's tick 0 (negative for a journey that left before it), held
+    /// within an i32's range: a journey more than about 2^31 days from tick 0 counts as that far.
     i32 departureDay = 0;
     /// The days from the day it set out to the day it ended, at most 255.
     u8 daysAway = 0;
@@ -78,10 +80,12 @@ public:
     /// Replaces the journeys and journals with those Save() wrote, read from `archive`, checked against `state` and `map`
     /// (none in a scene without the world map, where both must be empty). False, failing `archive` and changing nothing,
     /// on a malformed table: journeys out of their first members' order, a journey without members or parts, a member that
-    /// isn't a world NPC of `state` or is in two journeys, a city or stay that isn't a city of `map`, parts that don't
-    /// follow on from each other, a leg of an unknown shape or profile, with a tile off the map, a non-finite origin, or
-    /// arrive ticks not one per tile, from 0 and rising, a stay ending before it starts; journals out of their NPCs' order,
-    /// empty, for an NPC not in `state`, longer than its NPC keeps, or naming a city or profile `map` lacks.
+    /// isn't a world NPC of `state`, is in two journeys or is listed twice in one, a city or stay that isn't a city of
+    /// `map`, parts that don't follow on from each other, a leg of an unknown shape or profile, with a tile off the map, a
+    /// non-finite origin, arrive ticks not one per tile, from 0 and rising, or an end tick past an i64's range, a stay
+    /// ending before it starts, lasting more ticks than a u32 holds or ending within a day of an i64's most; journals out
+    /// of their NPCs' order, empty, for an NPC not in `state`, longer than its NPC keeps, or naming a city or profile `map`
+    /// lacks.
     [[nodiscard]] bool Load(core::Reader& archive, const core::State& state, const core::WorldMap* map);
 
 private:
@@ -100,7 +104,8 @@ private:
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::vector<core::Journey> m_journeys{};                          // by first member
     std::vector<Journal> m_journals{};                                // by NPC
-    std::vector<core::StableId> m_travellers{};                       // every journey's members, sorted; not saved
+    std::unordered_set<core::StableId> m_travellers{};                // every journey's members; looked up only, never
+                                                                      // iterated, so its order can't reach the state
     std::vector<std::pair<core::StableId, JournalEntry>> m_written{}; // Finish()'s new entries, kept for its capacity
     std::vector<Journal> m_merged{};                                  // Finish()'s output, swapped in, as m_written
     // NOLINTEND(readability-redundant-member-init)

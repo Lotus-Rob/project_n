@@ -231,26 +231,63 @@ TEST_CASE("a forgotten NPC leaves its journey and its journal") {
     core::State state{ game::DOMAINS, STATE_SEED };
     const core::StableId alone = Traveller(state);
     const core::StableId leader = Traveller(state);
-    const core::StableId follower = Traveller(state);
+    const core::StableId middle = Traveller(state);
+    const core::StableId between = Traveller(state);
+    const core::StableId last = Traveller(state);
     game::Travel travel;
     Journeys(travel, state, map, alone, 1);
     travel.Start(VisitOf(map, alone, DAYS_APART * DAY));
-    core::Journey pair = VisitOf(map, leader, 0);
-    pair.members.push_back(follower);
-    travel.Start(pair);
+    core::Journey group = VisitOf(map, leader, 0);
+    group.members.push_back(middle);
+    group.members.push_back(last);
+    travel.Start(group);
+    travel.Start(VisitOf(map, between, DAY));
 
     travel.Forget(alone);
     CHECK(travel.JournalOf(alone).empty());
     CHECK_FALSE(travel.Travelling(alone));
-    REQUIRE(travel.Journeys().size() == 1);
+    REQUIRE(travel.Journeys().size() == 2);
 
-    // A journey goes on with the members left, led by the next.
+    // A member who doesn't lead leaves the journey as it is.
+    travel.Forget(middle);
+    CHECK_FALSE(travel.Travelling(middle));
+    const bool middleLeft = travel.Journeys().front().members == std::vector{ leader, last };
+    CHECK(middleLeft);
+
+    // Without its leader a journey goes on, led by the next member and in that member's place among the journeys.
     travel.Forget(leader);
     CHECK_FALSE(travel.Travelling(leader));
+    REQUIRE(travel.Journeys().size() == 2);
+    CHECK(travel.Journeys()[0].members.front() == between);
+    const bool lastLeads = travel.Journeys()[1].members == std::vector{ last };
+    CHECK(lastLeads);
+    CHECK(travel.Travelling(last));
+
+    // A journey left without members is dropped.
+    travel.Forget(last);
     REQUIRE(travel.Journeys().size() == 1);
-    const bool followerLeft = travel.Journeys().front().members == std::vector{ follower };
-    CHECK(followerLeft);
-    CHECK(travel.Travelling(follower));
+    CHECK(travel.Journeys().front().members.front() == between);
+}
+
+TEST_CASE("an ended journey of two writes both members' journals") {
+    const core::WorldMap map = TestMap();
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::StableId leader = Traveller(state);
+    const core::StableId follower = Traveller(state);
+    core::Journey pair = VisitOf(map, leader, THIRD_DAY);
+    pair.members.push_back(follower);
+    game::Travel travel;
+    travel.Start(pair);
+    travel.Finish(core::EndTick(pair), state);
+    CHECK(travel.Journeys().empty());
+    for (const core::StableId member : { leader, follower }) {
+        CAPTURE(std::to_underlying(member));
+        CHECK_FALSE(travel.Travelling(member));
+        CHECK(ActionOf(state, member) == game::Action::Rest);
+        REQUIRE(travel.JournalOf(member).size() == 1);
+        CHECK(travel.JournalOf(member).front().departureDay == 3);
+        CHECK(travel.JournalOf(member).front().daysAway == DAYS_AWAY);
+    }
 }
 
 TEST_CASE("travel and the journal are saved, loaded and hashed") {
@@ -330,6 +367,7 @@ TEST_CASE("a travel table with a city off the map, a tile off it, or arrive tick
     CHECK(refused([](core::Journey& journey) { journey.parts[0].leg.origin.x = std::numeric_limits<f32>::quiet_NaN(); }));
     CHECK(refused([](core::Journey& journey) { journey.parts[0].leg.profile = 1; })); // the map has one profile
     CHECK(refused([](core::Journey& journey) { journey.members.push_back(journey.members.front()); })); // twice
+    CHECK(refused([](core::Journey& journey) { journey.parts[0].leg.shape = std::bit_cast<core::LegShape>(u8{ 1 }); }));
 
     // Two journeys of one NPC, then no journals, as Save() lays a table out.
     constexpr u64 NO_JOURNALS = 0;
@@ -337,6 +375,67 @@ TEST_CASE("a travel table with a city off the map, a tile off it, or arrive tick
     core::Writer writer{ twice };
     writer(std::vector{ sound, sound }, NO_JOURNALS);
     CHECK_FALSE(Loads(twice, state, &map));
+}
+
+TEST_CASE("a stay ending before it starts, longer than a leg can be, or within a day of the last tick is refused") {
+    const core::WorldMap map = TestMap();
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::StableId npc = Traveller(state);
+    // A journey of one stay in the destination, from `start` to `end`.
+    const auto loads = [&](i64 start, i64 end) {
+        core::Journey journey{ .members = { npc }, .home = HOME, .destination = DESTINATION, .parts = {} };
+        journey.parts.push_back(
+            { .stay = true, .leg = {}, .rest = { .city = DESTINATION, .startTick = start, .endTick = end, .seed = 0 } }
+        );
+        return Loads(BytesOf(std::move(journey)), state, &map);
+    };
+    constexpr i64 LONGEST = std::numeric_limits<u32>::max();
+    constexpr i64 LATEST_END = std::numeric_limits<i64>::max() - DAY;
+    CHECK(loads(DAY, DAY)); // no ticks long
+    CHECK_FALSE(loads(DAY, DAY - 1));
+    CHECK(loads(0, LONGEST));
+    CHECK_FALSE(loads(0, LONGEST + 1));
+    CHECK_FALSE(loads(std::numeric_limits<i64>::min(), 0)); // the earliest start: far too long
+    CHECK(loads(LATEST_END - DAY, LATEST_END));
+    CHECK_FALSE(loads(LATEST_END - DAY + 1, LATEST_END + 1));
+}
+
+TEST_CASE("a journal out of order, empty, of an NPC not there, too long, or naming what the map lacks is refused") {
+    const core::WorldMap map = TestMap();
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::StableId first = game::SpawnNpc(state, 0, HOME);
+    const core::StableId second = game::SpawnNpc(state, 0, HOME);
+    const core::StableId met = game::SpawnNpc(state, 0, HOME);
+    state[game::WORLD].Entities().emplace<game::Met>(state[game::WORLD].Find(met));
+    constexpr core::StableId NOBODY{ 999 };
+    using Entries = std::vector<game::JournalEntry>;
+    // A table of no journeys and `table`'s journals, as Save() lays one out.
+    const auto loads = [&](const std::vector<std::pair<core::StableId, Entries>>& table) {
+        constexpr u64 NO_JOURNEYS = 0;
+        std::vector<std::byte> bytes;
+        core::Writer writer{ bytes };
+        writer(NO_JOURNEYS, static_cast<u64>(table.size()));
+        for (const auto& [npc, entries] : table) {
+            writer(npc, entries);
+        }
+        return Loads(bytes, state, &map);
+    };
+    const game::JournalEntry entry{ .destination = DESTINATION, .departureDay = 0, .daysAway = 1, .profile = core::WALKING };
+    const Entries one{ entry };
+    const auto pastPlaces = static_cast<u16>(map.Places().size());
+    CHECK(loads({ { first, one }, { second, one } }));
+    CHECK_FALSE(loads({ { second, one }, { first, one } }));
+    CHECK_FALSE(loads({ { first, one }, { first, one } })); // repeated
+    CHECK_FALSE(loads({ { first, {} } }));
+    CHECK_FALSE(loads({ { NOBODY, one } }));
+    CHECK(loads({ { first, Entries(game::JOURNAL_LENGTH, entry) } }));
+    CHECK_FALSE(loads({ { first, Entries(game::JOURNAL_LENGTH + 1, entry) } }));
+    CHECK(loads({ { met, Entries(game::MET_JOURNAL_LENGTH, entry) } }));
+    CHECK_FALSE(loads({ { met, Entries(game::MET_JOURNAL_LENGTH + 1, entry) } }));
+    CHECK_FALSE(
+        loads({ { first, { { .destination = pastPlaces, .departureDay = 0, .daysAway = 1, .profile = core::WALKING } } } })
+    );
+    CHECK_FALSE(loads({ { first, { { .destination = DESTINATION, .departureDay = 0, .daysAway = 1, .profile = 1 } } } }));
 }
 
 } // namespace
