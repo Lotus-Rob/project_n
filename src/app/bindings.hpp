@@ -106,11 +106,10 @@ public:
     /// The default bindings: WASD, the arrow keys, the d-pad and the left stick move; I, J, K, L and the right stick pan the
     /// camera, the middle button drags it, C, the right stick's click and a middle click that drags nothing (Drag::Release())
     /// snap it back; the left button casts or selects, the right casts, Space and 1 to 5 cast; the wheel, the shoulder buttons
-    /// and
-    /// `-` and `=` zoom (every camera action by mouse, keyboard and gamepad); Escape quits; P and the gamepad's Back pause the
-    /// world; T and the gamepad's Y show or hide the target cursor, Enter and the gamepad's A walk to its tile; M, F2, F5, F9,
-    /// F6 and F10 are the debug keys. Code, not data; bindings become data (a YAML table the player's rebinds save over) when
-    /// rebinding lands with the settings screen.
+    /// and `-` and `=` zoom (every camera action by mouse, keyboard and gamepad); Escape quits; P and the gamepad's Back pause
+    /// the world; T and the gamepad's Y show or hide the target cursor, Enter and the gamepad's A walk to its tile; M, F2, F5,
+    /// F9, F6 and F10 are the debug keys. Code, not data; bindings become data (a YAML table the player's rebinds save over)
+    /// when rebinding lands with the settings screen.
     Bindings();
 
     /// The control `input` presses or releases, if any. Movement inputs update Move() instead and

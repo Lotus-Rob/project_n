@@ -25,6 +25,8 @@ constexpr f32 PART_OF_INTERVAL = 0.10F; // of the 0.15 s between repeats
 constexpr f32 REST_OF_INTERVAL = 0.06F;
 constexpr f32 TWO_REPEATS = 0.46F; // the pause, one interval and a little over
 constexpr f32 SHORT_OF_PAUSE = 0.2F;
+constexpr f32 PAUSE = 0.31F;       // a little over the first repeat's 0.3 s
+constexpr f32 FOOT_OFFSET = 10.0F; // below the tile's middle, still on it
 constexpr u16 ROAD_COST = 4;
 constexpr u16 FORD_COST = 30;
 constexpr u16 MEADOW_COST = 10;
@@ -61,12 +63,52 @@ core::WorldMap MapOfFiveByFour() {
 }
 
 TEST_CASE("the cursor starts on the cultivator's tile") {
-    const app::TargetCursor hidden;
-    CHECK_FALSE(hidden.Shown());
-    CHECK_FALSE(hidden.Tile().has_value());
-    const app::TargetCursor cursor = ShownAt(MIDDLE);
-    CHECK(cursor.Shown());
+    const core::WorldMap map = MapOfFiveByFour();
+    const core::Vec2 foot{ .x = COLUMN_CENTRE * TILE, .y = (ROW_CENTRE * TILE) + FOOT_OFFSET };
+    CHECK(app::CursorStart(true, foot, map) == MIDDLE);
+    app::TargetCursor cursor;
+    CHECK_FALSE(cursor.Shown());
+    cursor.Show(MIDDLE, COLUMNS, ROWS);
     CHECK(cursor.Tile() == MIDDLE);
+}
+
+TEST_CASE("the cursor doesn't show off the world map or without a cultivator") {
+    const core::WorldMap map = MapOfFiveByFour();
+    CHECK_FALSE(app::CursorStart(false, core::Vec2{}, map).has_value());
+    CHECK_FALSE(app::CursorStart(true, std::nullopt, map).has_value());
+}
+
+TEST_CASE("the cultivator doesn't walk while the cursor shows") {
+    app::TargetCursor cursor;
+    CHECK(cursor.Walk(RIGHT).x == doctest::Approx(1.0F));
+    cursor.Show(MIDDLE, COLUMNS, ROWS);
+    CHECK(cursor.Walk(RIGHT).x == 0.0F);
+    cursor.Hide();
+    CHECK(cursor.Walk(RIGHT).x == doctest::Approx(1.0F));
+}
+
+TEST_CASE("after confirming, a held direction doesn't walk until released once") {
+    const core::WorldMap map = MapOfFiveByFour();
+    app::TargetCursor cursor = ShownAt(MIDDLE);
+    static_cast<void>(cursor.Confirm(map));
+    CHECK(cursor.Walk(RIGHT).x == 0.0F);
+    CHECK(cursor.Walk(RIGHT).x == 0.0F);
+    CHECK(cursor.Walk(REST).x == 0.0F);
+    CHECK(cursor.Walk(RIGHT).x == doctest::Approx(1.0F));
+}
+
+TEST_CASE("a direction held when the cursor shows doesn't step it until pressed afresh or held") {
+    app::TargetCursor cursor;
+    cursor.Show(MIDDLE, COLUMNS, ROWS, RIGHT);
+    cursor.Steer(RIGHT, FRAME);
+    CHECK(cursor.Tile() == MIDDLE);
+    cursor.Steer(RIGHT, PAUSE);
+    CHECK(cursor.Tile() == MIDDLE + 1);
+    app::TargetCursor released;
+    released.Show(MIDDLE, COLUMNS, ROWS, RIGHT);
+    released.Steer(REST, FRAME);
+    released.Steer(RIGHT, FRAME);
+    CHECK(released.Tile() == MIDDLE + 1);
 }
 
 TEST_CASE("a press steps the cursor one tile") {
@@ -100,16 +142,16 @@ TEST_CASE("held, it repeats after a pause") {
     CHECK(cursor.Tile() == 3);
 }
 
-TEST_CASE("a long frame repeats more than once, and a release starts the pause afresh") {
+TEST_CASE("a long frame steps once, and a release starts the pause afresh") {
     app::TargetCursor cursor = ShownAt(0);
     cursor.Steer(RIGHT, FRAME);
     cursor.Steer(RIGHT, TWO_REPEATS);
-    CHECK(cursor.Tile() == 3);
+    CHECK(cursor.Tile() == 2);
     cursor.Steer(REST, FRAME);
     cursor.Steer(RIGHT, FRAME);
-    CHECK(cursor.Tile() == 4);
+    CHECK(cursor.Tile() == 3);
     cursor.Steer(RIGHT, SHORT_OF_PAUSE);
-    CHECK(cursor.Tile() == 4);
+    CHECK(cursor.Tile() == 3);
 }
 
 TEST_CASE("the cursor stops at the map's edge") {
