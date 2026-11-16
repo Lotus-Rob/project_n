@@ -285,6 +285,9 @@ WARM_LEAVES = ("debug", "release")
 # Written into a build tree by each configure: the disk may be mounted noatime, so files' times can't say when a tree
 # was last read.
 USED_STAMP = ".project_n-used"
+# Set by the first sweep of a run: the commands a command runs (check's steps, `build --preset all`'s builds) would
+# each keep only their own tree and remove the ones the run builds next.
+swept = False
 
 
 # XMake's build cache in a build folder never evicts (linux-clang debug's held 6.9 GB for 0.7 GB of objects, about 1 GB
@@ -326,7 +329,8 @@ def tree_size(tree):
 
 
 def uses_build_cache(tree):
-    """Whether XMake reads this tree's build cache: Clang only, as xmake.lua keeps it off for GCC and for MSVC."""
+    """Whether XMake reads this tree's build cache: Clang only, as xmake.lua keeps it off for GCC and for MSVC. The
+    same toolchains as CI_CACHED_TOOLCHAINS today, for another reason: those are the ones worth CI's object cache."""
     return PRESETS[tree.parent.name]["toolchain"] == "pixi-clang"
 
 
@@ -358,13 +362,18 @@ def sweep_build(build, now, days=STALE_DAYS, keep=()):
     spared = warm_trees(build) | {Path(k) for k in keep}
     removed, cached = [], []
     for tree in build_trees(build) if build.is_dir() else ():
-        if tree in spared or last_used(tree) > now - days * 86400:
-            cached += age_build_cache(tree, now)
+        # A file another program holds (a running test on Windows) mustn't fail the build that only came to tidy up.
+        try:
+            if tree in spared or last_used(tree) > now - days * 86400:
+                cached += age_build_cache(tree, now)
+                continue
+            size = tree_size(tree)
+            shutil.rmtree(tree)
+            if not any(tree.parent.iterdir()):
+                tree.parent.rmdir()
+        except OSError as e:
+            print(f"sweep: left {tree.relative_to(build.parent)}: {e}")
             continue
-        size = tree_size(tree)
-        shutil.rmtree(tree)
-        if not any(tree.parent.iterdir()):
-            tree.parent.rmdir()
         removed.append((tree, size))
         print(f"sweep: removed {tree.relative_to(build.parent)} ({size / 2**30:.1f} GiB), unused for {days}+ days")
     if cached:
@@ -375,18 +384,32 @@ def sweep_build(build, now, days=STALE_DAYS, keep=()):
     return removed
 
 
-def own_trees(presets, mode, sanitizer="none", unity=False):
-    """The trees a command is about to build in, native and in the container, relative to ROOT."""
+def preset_trees(preset, leaf):
+    """One build's tree, native and in the container, relative to ROOT."""
+    return [Path("build", preset, leaf), Path("build", "container", preset, leaf)]
+
+
+def own_trees(presets, mode, sanitizer="none", unity=False, container=False):
+    """The trees a command is about to build in, relative to ROOT: each preset's native one, or its container's where
+    needs_container sends the command."""
     leaf = build_leaf(mode, sanitizer, unity)
-    return [Path("build", *parent, preset, leaf) for preset in presets for parent in ((), ("container",))]
+    return [preset_trees(preset, leaf)[1 if needs_container(preset, container) else 0] for preset in presets]
 
 
 def sweep_here(keep=()):
-    """sweep_build on this checkout's build/, on the host only: CI starts clean, and a container re-entry already
-    swept on the host."""
-    if IN_CONTAINER or os.environ.get("GITHUB_ACTIONS"):
+    """sweep_build on this checkout's build/, once per run and on the host only: CI starts clean, and a container
+    re-entry already swept on the host."""
+    global swept
+    if swept or IN_CONTAINER or os.environ.get("GITHUB_ACTIONS"):
         return
-    sweep_build(ROOT / "build", time.time(), keep=[ROOT / k for k in keep])
+    swept = True
+    now = time.time()
+    # Stamped now, not when each configures: a sweep from another terminal would otherwise see them stale while
+    # this run starts a container or works through check's earlier steps.
+    for tree in (ROOT / k for k in keep):
+        if tree.is_dir():
+            mark_used(tree, now)
+    sweep_build(ROOT / "build", now, keep=[ROOT / k for k in keep])
 
 
 def cold_ref():
@@ -402,9 +425,10 @@ def tag_ref():
 # XMake's key for a cached object (build_cache.lua's cachekey) is the compiler's path, the compile flags without
 # -D, -I, -isystem, -include and --sysroot, and a hash of the preprocessed source. Leaving -D out is safe for our
 # flags: every define we pass (PN_ASSERTS, _FORTIFY_SOURCE, _GLIBCXX_ASSERTIONS, _LIBCPP_HARDENING_MODE,
-# _LIBCPP_DISABLE_AVAILABILITY, NDEBUG, PN_SOURCE_DATA, PN_FUZZ_CORPUS, packages' TRACY_*) is an ordinary macro that
-# reaches the object only through the preprocessed text, which is hashed; none is a compiler switch. Clang's text
-# holds the precompiled header's headers too, and its object compiles from that text alone.
+# _LIBCPP_DISABLE_AVAILABILITY, NDEBUG, packages' TRACY_*) is an ordinary macro that reaches the object only through
+# the preprocessed text, which is hashed; none is a compiler switch. The values the generated build_info.hpp holds
+# (the version, the data paths) are in that text too. Clang's text holds the precompiled header's headers as well,
+# and its object compiles from that text alone.
 def build_cache_root():
     """BUILD_CACHE_ENV made absolute (podman takes a relative source for a volume name; XMake resolves --ccachedir
     from ROOT), or None: unset, or a tag, which neither reads nor writes one."""
@@ -432,7 +456,7 @@ def object_build_dirs(folder):
     for preset in PRESETS:
         leaf = folder.removeprefix(f"{preset}-")
         if leaf != folder and leaf:
-            return [ROOT / "build" / preset / leaf, ROOT / "build" / "container" / preset / leaf]
+            return [ROOT / tree for tree in preset_trees(preset, leaf)]
     return []
 
 
@@ -705,7 +729,8 @@ def binary_path(preset, mode, name=APP):
 
 
 def cmd_build(args):
-    sweep_here(own_trees(list(PRESETS) if args.preset == "all" else [args.preset], args.mode, args.sanitizer))
+    sweep_here(own_trees(list(PRESETS) if args.preset == "all" else [args.preset], args.mode, args.sanitizer,
+                         container=args.container))
     if args.preset == "all":
         return build_all(args)
     check_sanitizer(args.preset, args.sanitizer)
@@ -779,7 +804,7 @@ def cmd_test(args):
         raise Fail("pass --suite <test target> with --test or doctest arguments")
     extra = ([test_filter(args.test, args.target)] if args.test else []) + extra
     check_sanitizer(args.preset, args.sanitizer)
-    sweep_here(own_trees([args.preset], args.mode, args.sanitizer, args.unity))
+    sweep_here(own_trees([args.preset], args.mode, args.sanitizer, args.unity, args.container))
     if needs_container(args.preset, args.container):
         argv = ["test", "--preset", args.preset, "--mode", args.mode, "--sanitizer", args.sanitizer, *(["--unity"] if args.unity else [])]
         argv += (["--target", args.target] if args.target else []) + (["--", *extra] if extra else [])
@@ -1962,7 +1987,7 @@ def cmd_check(args):
     format check covers what it misses (rebases and cherry-picks don't run it)."""
     if not clone_set_up():
         raise Fail("set the clone up first (the commit hooks, Git LFS's filters): pixi run project_n setup")
-    sweep_here()
+    sweep_here(check_trees(args))
     times = []
 
     def step(name, command, *step_args):
@@ -1973,13 +1998,33 @@ def cmd_check(args):
             times.append((name, time.monotonic() - start))
 
     try:
-        check_steps(args, step)
+        skipped = check_steps(args, step)
+        print("check: all presets passed" + (" with every supported sanitizer" if args.sanitizers else "")
+              + (f" (skipped {', '.join(skipped)}: not buildable on this host)" if skipped else ""))
     finally:
         print(step_times_table(times), flush=True)
 
 
+def check_trees(args):
+    """The trees cmd_check's steps build in, found by walking the steps without running them, so the two can't
+    drift apart."""
+    trees = []
+
+    def collect(name, command, *step_args):
+        if command is cmd_lint:
+            trees.extend(own_trees([LINT_PRESET], "debug", container=args.container))
+        elif command is cmd_reference:
+            trees.extend(own_trees([step_args[0].preset], "release", container=args.container))
+        elif command is cmd_test or command is cmd_build:
+            a = step_args[0]
+            trees.extend(own_trees([a.preset], a.mode, a.sanitizer, getattr(a, "unity", False), a.container))
+
+    check_steps(args, collect)
+    return trees
+
+
 def check_steps(args, step):
-    """cmd_check's steps, each run through `step(name, command, args)`, which times it."""
+    """cmd_check's steps, each run through `step(name, command, args)`, which times it; the presets skipped."""
     step("selftest", cmd_selftest, args)
     rng = commit_range()
     if rng and step("commit-check", cmd_commit_check, argparse.Namespace(range=rng, message_file=None)):
@@ -2008,8 +2053,7 @@ def check_steps(args, step):
                 step(f"test {preset} debug {sanitizer}", cmd_test, argparse.Namespace(
                     preset=preset, mode="debug", sanitizer=sanitizer, container=args.container, target=None, test=None,
                     args=[], unity=False))
-    print("check: all presets passed" + (" with every supported sanitizer" if args.sanitizers else "")
-          + (f" (skipped {', '.join(skipped)}: not buildable on this host)" if skipped else ""))
+    return skipped
 
 
 def msvc_versions(env_sh):
@@ -2804,8 +2848,13 @@ def cmd_shell(args):
 
 def cmd_clean(args):
     if args.stale:
-        sweep_build(ROOT / "build", time.time(), days=args.days)
+        if args.preset or args.packages or args.images:
+            raise Fail("clean --stale sweeps every preset's trees and nothing else: pass --preset, --packages or "
+                       "--images without it")
+        sweep_build(ROOT / "build", time.time(), days=STALE_DAYS if args.days is None else args.days)
         return
+    if args.days is not None:
+        raise Fail("--days goes with --stale")
     for preset in [args.preset] if args.preset else PRESETS:
         for d in (ROOT / "build" / preset, ROOT / "build" / "container" / preset):
             shutil.rmtree(d, ignore_errors=True)
@@ -3019,7 +3068,7 @@ def make_parser():
     p = add("clean", cmd_clean, "remove build directories", preset="optional")
     p.add_argument("--stale", action="store_true",
                    help="only remove build trees unused for --days, but the native preset's debug and release (as build, test and check do)")
-    p.add_argument("--days", type=int, default=STALE_DAYS, help=f"with --stale: the age in days (default {STALE_DAYS})")
+    p.add_argument("--days", type=int, help=f"with --stale: the age in days (default {STALE_DAYS})")
     p.add_argument("--packages", action="store_true", help="also remove XMake package dirs of other environments")
     p.add_argument("--images", action="store_true", help="also remove this project's container images other than the current tags")
     add("prune-worktrees", prune_worktrees,
