@@ -56,4 +56,20 @@ namespace detail {
     return static_cast<u32>(((random >> HALF) * u64{ bound }) >> HALF);
 }
 
+/// A random number's value in [0, `bound`), uniform to within `bound` / 2^64 (Lemire's multiply-shift on all 64 bits: the
+/// high half of their 128-bit product), for bounds past a u32's range, such as a sum of large weights.
+[[nodiscard]] constexpr u64 ToBelowWide(u64 random, u64 bound) {
+    constexpr u32 HALF = 32;
+    constexpr u64 LOW_HALF = 0xFFFF'FFFFULL;
+    const u64 randomHigh = random >> HALF;
+    const u64 randomLow = random & LOW_HALF;
+    const u64 boundHigh = bound >> HALF;
+    const u64 boundLow = bound & LOW_HALF;
+    const u64 lowLow = randomLow * boundLow;
+    const u64 highLow = randomHigh * boundLow;
+    const u64 lowHigh = randomLow * boundHigh;
+    const u64 carry = ((lowLow >> HALF) + (highLow & LOW_HALF) + (lowHigh & LOW_HALF)) >> HALF;
+    return (randomHigh * boundHigh) + (highLow >> HALF) + (lowHigh >> HALF) + carry;
+}
+
 } // namespace core

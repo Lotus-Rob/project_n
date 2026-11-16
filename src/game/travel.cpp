@@ -133,22 +133,6 @@ u64 SaturatingProduct(u64 lhs, u64 rhs) {
     return lhs != 0 && rhs > MOST_WEIGHT / lhs ? MOST_WEIGHT : lhs * rhs;
 }
 
-/// `random` scaled into [0, `bound`): the high 64 bits of their 128-bit product, as core::ToBelow() scales into a u32, for
-/// totals of weights past a u32's range.
-u64 WeightBelow(u64 random, u64 bound) {
-    constexpr u32 HALF = 32;
-    constexpr u64 LOW_HALF = 0xFFFF'FFFFULL;
-    const u64 randomHigh = random >> HALF;
-    const u64 randomLow = random & LOW_HALF;
-    const u64 boundHigh = bound >> HALF;
-    const u64 boundLow = bound & LOW_HALF;
-    const u64 lowLow = randomLow * boundLow;
-    const u64 highLow = randomHigh * boundLow;
-    const u64 lowHigh = randomLow * boundHigh;
-    const u64 carry = ((lowLow >> HALF) + (highLow & LOW_HALF) + (lowHigh & LOW_HALF)) >> HALF;
-    return (randomHigh * boundHigh) + (highLow >> HALF) + (lowHigh >> HALF) + carry;
-}
-
 /// What one month of visits reads, shared by its chunks.
 struct VisitMonth {
     const core::WorldMap* map = nullptr;
@@ -158,11 +142,9 @@ struct VisitMonth {
     i64 monthStart = 0;
 };
 
-/// The visits the world NPCs of chunk `chunk` (MonthStep::CHUNK of them, in `world`'s order) set out on in `month`, each
-/// appended to `out`, its member's month made Action::Travel.
-void SetOut(const VisitMonth& month, core::Registry& world, u32 chunk, std::vector<core::Journey>& out) {
-    auto& npcs = world.storage<Npc>();
-    const auto& ids = world.storage<core::StableId>();
+/// The visits the world NPCs of chunk `chunk` (MonthStep::CHUNK of them, in the order of `npcs`, the world's Npc storage,
+/// whose stable IDs `ids` holds) set out on in `month`, each appended to `out`, its member's month made Action::Travel.
+void SetOut(const VisitMonth& month, auto& npcs, const auto& ids, u32 chunk, std::vector<core::Journey>& out) {
     const core::WorldMap& map = *month.map;
     const core::TravelRules& rules = map.Travel();
     const u32 stayChoices = u32{ rules.stayMaxDays } - u32{ rules.stayMinDays } + 1;
@@ -247,7 +229,7 @@ std::optional<u16> ChooseDestination(
     if (total == 0) {
         return std::nullopt;
     }
-    const u64 pick = WeightBelow(random, total);
+    const u64 pick = core::ToBelowWide(random, total);
     u64 cumulative = 0;
     for (std::size_t place = 0; place < places; ++place) {
         const u64 weight = weightOf(place);
@@ -360,8 +342,11 @@ void Travel::SendOut(
 ) {
     // Built here, before the chunks read them at once.
     paths.Warm(core::WALKING);
+    // Fetched once, before the fork: the chunks then only read and write within them.
     core::Registry& world = state[WORLD].Entities();
-    const u32 chunks = core::ChunkCount(world.storage<Npc>().size(), MonthStep::CHUNK);
+    auto& npcs = world.storage<Npc>();
+    const auto& ids = world.storage<core::StableId>();
+    const u32 chunks = core::ChunkCount(npcs.size(), MonthStep::CHUNK);
     m_setOut.resize(std::max<std::size_t>(m_setOut.size(), chunks));
     const VisitMonth month{
         .map = &map,
@@ -372,7 +357,7 @@ void Travel::SendOut(
     };
     const auto setOut = [&](u32 chunk) {
         m_setOut[chunk].clear();
-        SetOut(month, world, chunk, m_setOut[chunk]);
+        SetOut(month, npcs, ids, chunk, m_setOut[chunk]);
     };
     if (jobs != nullptr) {
         jobs->ParallelFor(chunks, setOut);

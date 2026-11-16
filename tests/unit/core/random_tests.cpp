@@ -62,4 +62,19 @@ TEST_CASE("unit values of many draws lie in [0, 1)") {
     }
 }
 
+TEST_CASE("a wide bound scales a number by all 64 bits") {
+    constexpr u64 MOST = std::numeric_limits<u64>::max();
+    constexpr u64 TWO_TO_32 = 1ULL << 32U;
+    constexpr u64 TWO_TO_39 = 1ULL << 39U;
+    constexpr u64 TWO_TO_40 = 1ULL << 40U;
+    constexpr u64 HALF_WAY = 1ULL << 63U;
+    CHECK(core::ToBelowWide(0, TWO_TO_40) == 0);                    // the lowest number gives 0
+    CHECK(core::ToBelowWide(HALF_WAY, TWO_TO_40) == TWO_TO_39);     // halfway up gives half the bound
+    CHECK(core::ToBelowWide(MOST, MOST) == MOST - 1);               // the highest stays below the bound
+    CHECK(core::ToBelowWide(MOST, 1) == 0);                         // a bound of 1 gives only 0
+    CHECK(core::ToBelowWide(TWO_TO_32, TWO_TO_32) == 1);            // the high halves' product alone
+    CHECK(core::ToBelowWide(TWO_TO_32 - 1, MOST) == TWO_TO_32 - 2); // the cross products carried into the high half
+    CHECK(core::ToBelowWide(MOST, TWO_TO_40 + 1) == TWO_TO_40);     // the top of a bound past a u32's range
+}
+
 } // namespace
