@@ -287,9 +287,10 @@ WARM_LEAVES = ("debug", "release")
 USED_STAMP = ".project_n-used"
 
 
-# XMake's build cache in a build folder never evicts (linux-clang debug's held 6 GB for 0.7 GB of objects), so entries
-# written longer ago than this go. With no read times, an old entry still in use is compiled once more.
-CACHE_DAYS = 14
+# XMake's build cache in a build folder never evicts (linux-clang debug's held 6.9 GB for 0.7 GB of objects, about 1 GB
+# a day), so entries written longer ago than this go. With no read times, an old entry still in use is compiled once
+# more.
+CACHE_DAYS = 7
 
 
 def build_trees(build):

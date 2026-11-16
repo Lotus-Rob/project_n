@@ -3052,7 +3052,7 @@ class BuildCacheAgeTest(unittest.TestCase):
         self.assertTrue((self.build / "linux-gcc/debug").is_dir())
 
     def test_ages_clang_entries(self):
-        old = [self.entry("linux-clang/debug", n, 15 * DAY) for n in ("ab01", "ab01.txt")]
+        old = [self.entry("linux-clang/debug", n, 8 * DAY) for n in ("ab01", "ab01.txt")]
         new = [self.entry("linux-clang/debug", n, 1 * DAY) for n in ("ab02", "ab02.txt")]
         self.sweep()
         self.assertEqual([f.exists() for f in old + new], [False, False, True, True])
