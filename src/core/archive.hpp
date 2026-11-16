@@ -9,8 +9,9 @@
 ///         archive(self.cell, self.power);
 ///     }
 ///
-/// Numbers, enums and bools are stored as their bytes, little-endian; anything else through its
-/// Fields(). The Reader checks every read against what is left, since a save file is untrusted.
+/// Numbers, enums and bools are stored as their bytes, little-endian; a vector as its size (a u64) and then each
+/// element; anything else through its Fields(). The Reader checks every read against what is left, since a save file
+/// is untrusted.
 
 #include "core/random.hpp"
 #include "core/types.hpp"
@@ -22,6 +23,7 @@
 #include <cstddef>
 #include <span>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace core {
@@ -31,6 +33,21 @@ static_assert(std::endian::native == std::endian::little, "archives are little-e
 /// A value an archive stores as its bytes: a number, an enum or a bool.
 template<typename T>
 concept Scalar = std::is_arithmetic_v<T> || std::is_enum_v<T>;
+
+namespace detail {
+
+/// Whether `T` is a std::vector an archive stores: any but `std::vector<bool>`, whose elements aren't objects.
+template<typename T>
+inline constexpr bool IS_ARCHIVED_VECTOR = false;
+/// A std::vector of anything but bool.
+template<typename T, typename Allocator>
+inline constexpr bool IS_ARCHIVED_VECTOR<std::vector<T, Allocator>> = !std::same_as<T, bool>;
+
+} // namespace detail
+
+/// A value an archive stores as its size and then its elements: a std::vector (of anything but bool).
+template<typename T>
+concept Sequence = detail::IS_ARCHIVED_VECTOR<T>;
 
 /// Appends values to a byte buffer.
 class Writer {
@@ -52,6 +69,12 @@ private:
         if constexpr (Scalar<T>) {
             const auto raw = std::bit_cast<std::array<std::byte, sizeof(T)>>(value);
             m_bytes->insert(m_bytes->end(), raw.begin(), raw.end());
+        }
+        else if constexpr (Sequence<T>) {
+            Put(static_cast<u64>(value.size()));
+            for (const auto& element : value) {
+                Put(element);
+            }
         }
         else {
             value.Fields(*this);
@@ -87,6 +110,12 @@ private:
                 bits |= u64{ raw.at(i) } << (BITS_PER_BYTE * i);
             }
             m_hash = detail::Mix(m_hash ^ detail::Mix(bits + sizeof(T)));
+        }
+        else if constexpr (Sequence<T>) {
+            Put(static_cast<u64>(value.size()));
+            for (const auto& element : value) {
+                Put(element);
+            }
         }
         else {
             value.Fields(*this);
@@ -159,8 +188,35 @@ private:
             value = std::bit_cast<T>(raw);
             m_offset += sizeof(T);
         }
+        else if constexpr (Sequence<T>) {
+            GetSequence(value);
+        }
         else {
             value.Fields(*this);
+        }
+    }
+
+    // Reads a vector's size and then its elements into `value`, which it changes only when every read succeeds. Each
+    // element takes at least its size in bytes (a scalar) or one byte (anything else), so a size past what is left is
+    // malformed: a save never makes it allocate more than its bytes could fill.
+    template<typename T>
+    void GetSequence(T& value) {
+        using Element = T::value_type;
+        constexpr std::size_t LEAST_BYTES = Scalar<Element> ? sizeof(Element) : 1;
+        u64 size = 0;
+        Get(size);
+        if (!m_failed && size > Remaining() / LEAST_BYTES) {
+            Fail();
+        }
+        if (m_failed) {
+            return;
+        }
+        T read(static_cast<std::size_t>(size));
+        for (Element& element : read) {
+            Get(element);
+        }
+        if (!m_failed) {
+            value = std::move(read);
         }
     }
 
