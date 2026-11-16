@@ -32,7 +32,7 @@ sprites = [
 sprites = ["ground", "cell_plain", "cell_forest", "cell_mountain", "cell_snow", "cell_city"]
 
 # The world map: its terrain tiles, the cultivator (the fox too, as the creatures data draws both)
-# and the walkers with their shadows.
+# and the travellers with their shadows.
 [world]
 sprites = [
     "shadow", "cultivator", "fox", "villager", "terrain_meadow_0", "terrain_meadow_1", "terrain_grass_0",

@@ -44,7 +44,7 @@ TERRAIN_PREVIEW = ROOT / "build" / "world_map_terrain.png"
 # The hand inputs.
 
 SEED = 7
-COLUMNS, ROWS, TILE_SIZE = 150, 85, 256  # game::WORLD_COLUMNS, WORLD_ROWS, WORLD_TILE
+COLUMNS, ROWS, TILE_SIZE = 150, 85, 256  # written into world.yaml, from which the game takes the map's size
 BUSIEST = (33_000, 10_800)  # game::WORLD_BUSIEST, the measurement path's anchor: the port's tile holds it
 PORT = (BUSIEST[0] // TILE_SIZE, BUSIEST[1] // TILE_SIZE)
 ROAD_COST, FORD_COST = 4, 30
