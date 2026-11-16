@@ -32,9 +32,9 @@ inline constexpr u64 FRAME_STEP_LIMIT_NS = core::NS_PER_SECOND / 10;
 /// both at once, 0.22, so nothing pops in at the window's edge; wider would publish more for no picture. The bound it
 /// guarantees: the camera may move about a quarter of the view while a snapshot shows and show nothing missing. A flick of a
 /// drag (which pans 1:1 with the cursor) faster than that, or a snap back from far away (a jump to the player), can show the
-/// edge for a frame or two until the next view culls a fresh publish: a known limit;
-/// so can a window that grows by more than the margin at once (maximised, or made fullscreen), at its new edges. While a
-/// calendar step's transition shows, no fresh publish comes, so the camera holds still (HoldsCamera(), CameraInput::still).
+/// edge for a frame or two until the next view culls a fresh publish (a known limit), and so can a window that grows by more
+/// than the margin at once (maximised, or made fullscreen), at its new edges. While a calendar step's transition shows, no
+/// fresh publish comes, so the camera holds still (HoldsCamera(), CameraInput::still).
 inline constexpr f32 CULL_MARGIN = 0.25F;
 
 /// How many wheel notches a second the camera zooms by at most, however short the frames (CameraControl::Zoom()): one
