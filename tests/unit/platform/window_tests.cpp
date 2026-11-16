@@ -238,6 +238,7 @@ TEST_CASE("the camera keys I, J, K, L and C become inputs, with an anchor each s
         Pair{ .key = SDL_SCANCODE_K, .code = platform::InputCode::KeyK },
         Pair{ .key = SDL_SCANCODE_L, .code = platform::InputCode::KeyL },
         Pair{ .key = SDL_SCANCODE_C, .code = platform::InputCode::KeyC },
+        Pair{ .key = SDL_SCANCODE_P, .code = platform::InputCode::KeyP },
         Pair{ .key = SDL_SCANCODE_ESCAPE, .code = platform::InputCode::KeyEscape },
         Pair{ .key = SDL_SCANCODE_F5, .code = platform::InputCode::KeyF5 },
     };
@@ -346,16 +347,18 @@ TEST_CASE("the shoulders and the right stick's click become inputs, other button
     PushPadButton(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, true);
     PushPadButton(SDL_GAMEPAD_BUTTON_RIGHT_STICK, true);
     PushPadButton(SDL_GAMEPAD_BUTTON_RIGHT_STICK, false);
+    PushPadButton(SDL_GAMEPAD_BUTTON_BACK, true);
     PushPadButton(SDL_GAMEPAD_BUTTON_LEFT_STICK, true);
     std::vector<platform::InputEvent> inputs;
     static_cast<void>(window->Poll(0, inputs));
-    REQUIRE(inputs.size() == 4);
+    REQUIRE(inputs.size() == 5);
     CHECK(inputs[0].code == platform::InputCode::PadLeftShoulder);
     CHECK(inputs[1].code == platform::InputCode::PadRightShoulder);
     CHECK(inputs[2].code == platform::InputCode::PadRightStick);
     CHECK(inputs[2].pressed);
     CHECK(inputs[3].code == platform::InputCode::PadRightStick);
     CHECK_FALSE(inputs[3].pressed);
+    CHECK(inputs[4].code == platform::InputCode::PadBack);
 }
 
 } // namespace

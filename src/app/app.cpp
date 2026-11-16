@@ -2,6 +2,7 @@
 
 #include "app/camera_path.hpp"
 #include "app/cast.hpp"
+#include "app/click.hpp"
 #include "app/damage_numbers.hpp"
 #include "app/game.hpp"
 #include "app/view.hpp"
@@ -40,6 +41,9 @@ constexpr std::array ACTION_CONTROLS{
     ActionControl{ .control = Control::AdvanceCalendar,
                    .kind = core::ActionKind::AdvanceCalendar,
                    .asked = "a month asked to pass" },
+    ActionControl{ .control = Control::PauseWorld,
+                   .kind = core::ActionKind::ToggleWorldPause,
+                   .asked = "the world's pause asked for by a key or button" },
     ActionControl{ .control = Control::Save, .kind = core::ActionKind::Save, .asked = "a save asked for" },
     ActionControl{ .control = Control::Load, .kind = core::ActionKind::Load, .asked = "a load asked for" },
     ActionControl{ .control = Control::ToggleRecording,
@@ -584,9 +588,11 @@ void App::Select(const platform::WindowState& state, core::Vec2 position) {
     }
     // The picture the player clicked on: the drawn snapshot at the render clock, as the camera shows it.
     const f64 alpha = core::Alpha(drawn->scheduledNs, platform::NowNs(), core::DEFAULT_DISPLAY_DELAY_NS, drawn->advanced);
-    const core::StableId target = Pick(*drawn, alpha, WindowToWorld(m_camera.Camera(), position, state.width, state.height));
+    const core::Vec2 point = WindowToWorld(m_camera.Camera(), position, state.width, state.height);
+    const core::StableId target = Pick(*drawn, alpha, point);
+    const core::Action action = ClickAction(drawn->worldMap, target, point);
     PN_LOG_DEBUG("clicked on entity {}", std::to_underlying(target));
-    m_handover.SendInput({ .kind = core::ActionKind::Select, .target = target });
+    m_handover.SendInput(action);
 }
 
 std::optional<std::size_t> App::Hovered(const platform::WindowState& state, const core::Snapshot& drawn, f64 alpha) const {

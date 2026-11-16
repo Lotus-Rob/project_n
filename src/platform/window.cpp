@@ -45,6 +45,7 @@ constexpr std::array KEYS{
     KeyCode{ .key = SDL_SCANCODE_K, .code = InputCode::KeyK },
     KeyCode{ .key = SDL_SCANCODE_L, .code = InputCode::KeyL },
     KeyCode{ .key = SDL_SCANCODE_C, .code = InputCode::KeyC },
+    KeyCode{ .key = SDL_SCANCODE_P, .code = InputCode::KeyP },
     KeyCode{ .key = SDL_SCANCODE_MINUS, .code = InputCode::KeyMinus },
     KeyCode{ .key = SDL_SCANCODE_EQUALS, .code = InputCode::KeyEquals },
 };
@@ -128,6 +129,9 @@ std::optional<InputEvent> PadButtonInput(const SDL_GamepadButtonEvent& button) {
     }
     else if (button.button == SDL_GAMEPAD_BUTTON_RIGHT_STICK) {
         code = InputCode::PadRightStick;
+    }
+    else if (button.button == SDL_GAMEPAD_BUTTON_BACK) {
+        code = InputCode::PadBack;
     }
     else if (button.button != SDL_GAMEPAD_BUTTON_LEFT_SHOULDER) {
         return std::nullopt;
