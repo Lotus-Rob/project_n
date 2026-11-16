@@ -3,6 +3,9 @@
 #include "core/draw_list.hpp"
 #include "core/instances.hpp"
 #include "core/jobs.hpp"
+#include "core/journey.hpp"
+#include "core/names.hpp"
+#include "core/paths.hpp"
 #include "core/seal.hpp"
 #include "core/state.hpp"
 #include "core/view_limits.hpp"
@@ -1601,6 +1604,352 @@ TEST_CASE("the calendar ends at its last month's first tick, and a save of it lo
     game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
     core::Reader reader{ bytes };
     CHECK(loaded.Load(reader, 0));
+}
+
+// The world clock the hand-built travelling worlds below are saved at, early in the first month.
+constexpr u64 TRAVEL_CLOCK = 1'000;
+// The state seed of those worlds, which names their travellers.
+constexpr u64 TRAVEL_SEED = 11;
+// Their visits' stays, in days, and the seed the stays' day points are drawn from.
+constexpr u32 TRAVEL_STAY_DAYS = 2;
+constexpr u32 TRAVEL_STAY_SEED = 0x7e57;
+// How far into its first step a traveller just setting out has walked.
+constexpr i64 JUST_LEFT = 30;
+// Half the side of a view round the first city's tile: it holds a traveller just setting out from it, not one in the next
+// city.
+constexpr f32 NEAR_HOME = 250.0F;
+
+/// The shipped map's first two cities, the walk from the first's tile to the second's, and how long the walk out and a
+/// whole visit take.
+struct Road {
+    u16 from = core::NO_PLACE;
+    u16 to = core::NO_PLACE;
+    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::vector<u32> tiles{};
+    i64 outTicks = 0;
+    i64 visitTicks = 0;
+};
+
+Road FirstRoad(const core::WorldMap& map) {
+    Road road;
+    std::vector<u16> cities;
+    for (std::size_t index = 0; index < map.Places().size() && cities.size() < 2; ++index) {
+        if (map.Places()[index].kind == core::PlaceKind::City) {
+            cities.push_back(static_cast<u16>(index));
+        }
+    }
+    REQUIRE(cities.size() == 2);
+    road.from = cities[0];
+    road.to = cities[1];
+    road.tiles = core::FindRoute(
+        map, core::WALKING, map.TileIndex(map.Places()[road.from].tile), map.TileIndex(map.Places()[road.to].tile)
+    );
+    REQUIRE(road.tiles.size() >= 3);
+    const core::Journey probe =
+        core::Visit(map, road.tiles, core::StableId{ 1 }, road.from, road.to, 0, TRAVEL_STAY_DAYS, TRAVEL_STAY_SEED);
+    road.outTicks = core::EndTick(probe.parts.front().leg);
+    road.visitTicks = core::EndTick(probe);
+    return road;
+}
+
+/// One visit along the first road: when it leaves, and how many travel together.
+struct Departure {
+    i64 tick = 0;
+    u32 members = 1;
+};
+
+/// A world on the shipped map and names, loaded from a save at TRAVEL_CLOCK, the journeys it holds and its player, if any.
+struct TravelWorld {
+    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::unique_ptr<game::Host> host{};
+    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::vector<core::Journey> journeys{};
+    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::shared_ptr<const core::WorldMap> map{};
+    core::StableId player{};
+};
+
+/// A cultivator of `data` for the player, standing at `foot` in `state`'s active domain.
+core::StableId CultivatorAt(core::State& state, const core::GameData& data, core::Vec2 foot) {
+    const auto [stableId, entity] = state.Create(game::ACTIVE);
+    core::Registry& entities = state[game::ACTIVE].Entities();
+    entities.emplace<game::Body>(entity, foot, foot);
+    entities.emplace<game::Look>(entity, game::Look{ .sprite = data.cultivator.sprite, .shadow = true });
+    entities.emplace<game::Creature>(entity, game::CreatureKind::Cultivator);
+    entities.emplace<game::Health>(entity, data.cultivator.health, data.cultivator.health);
+    entities.emplace<game::Caster>(entity, data.abilities.qiStart);
+    return stableId;
+}
+
+/// A host that has loaded and entered a world save at TRAVEL_CLOCK holding one visit along FirstRoad() per departure,
+/// its members world NPCs at home in the road's first city, and, with `player`, the player's cultivator on that city's
+/// tile centre: nothing else lives there.
+TravelWorld TravelWorldOf(std::span<const Departure> departures, bool player = false) {
+    TravelWorld world;
+    world.map = test::ShippedWorld();
+    const Road road = FirstRoad(*world.map);
+    core::State state{ game::DOMAINS, TRAVEL_SEED };
+    const core::GameData data = test::ShippedData();
+    if (player) {
+        world.player = CultivatorAt(state, data, world.map->TileCentre(road.tiles.front()));
+    }
+    game::Travel travel;
+    for (const Departure& departure : departures) {
+        std::vector<core::StableId> members;
+        for (u32 member = 0; member < departure.members; ++member) {
+            const core::StableId npc = game::SpawnNpc(state, road.tiles.front(), road.from);
+            state[game::WORLD].Entities().get<game::Npc>(state[game::WORLD].Find(npc)).action = game::Action::Travel;
+            members.push_back(npc);
+        }
+        core::Journey journey = core::Visit(
+            *world.map, road.tiles, members.front(), road.from, road.to, departure.tick, TRAVEL_STAY_DAYS, TRAVEL_STAY_SEED
+        );
+        journey.members = members;
+        travel.Start(journey);
+        world.journeys.push_back(std::move(journey));
+    }
+    const std::vector<std::byte> bytes = test::ArenaSave(
+        state,
+        world.player,
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        game::WORLD_SCENE,
+        test::WORLD_VERSION,
+        test::ACTIVE_VERSION,
+        { .ticks = TRAVEL_CLOCK },
+        travel
+    );
+    world.host = std::make_unique<game::Host>(test::TestManifest(), game::ARENA_SCENE, data);
+    core::Reader reader{ bytes };
+    REQUIRE(world.host->Load(reader, 0));
+    world.host->EnterScene();
+    return world;
+}
+
+/// A view `half` either way of the first road's first city's tile centre.
+core::Rect NearHome(const core::WorldMap& map, f32 half = NEAR_HOME) {
+    const core::Vec2 home = map.TileCentre(FirstRoad(map).tiles.front());
+    return { .min = home - core::Vec2{ .x = half, .y = half }, .max = home + core::Vec2{ .x = half, .y = half } };
+}
+
+/// The label `snapshot` publishes for `entity`; REQUIREs one.
+core::TextItem LabelOf(const core::Snapshot& snapshot, core::StableId entity) {
+    const auto found = std::ranges::find(snapshot.texts, entity, &core::TextItem::entity);
+    REQUIRE(found != snapshot.texts.end());
+    return *found;
+}
+
+/// Whether `snapshot` draws `entity`, or labels it.
+bool Shows(const core::Snapshot& snapshot, core::StableId entity) {
+    return std::ranges::contains(snapshot.ids, entity) ||
+           std::ranges::contains(snapshot.texts, entity, &core::TextItem::entity);
+}
+
+/// The instance drawing `entity` in `snapshot`; REQUIREs one.
+core::Instance InstanceOf(const core::Snapshot& snapshot, core::StableId entity) {
+    const auto found = std::ranges::find(snapshot.ids, entity);
+    REQUIRE(found != snapshot.ids.end());
+    return snapshot.instances.at(static_cast<std::size_t>(found - snapshot.ids.begin()));
+}
+
+/// Whether two instances have the same bytes.
+bool SameInstance(const core::Instance& lhs, const core::Instance& rhs) {
+    return std::ranges::equal(std::as_bytes(std::span{ &lhs, 1 }), std::as_bytes(std::span{ &rhs, 1 }));
+}
+
+/// Whether two points have the same bits.
+bool SamePoint(core::Vec2 lhs, core::Vec2 rhs) {
+    return std::bit_cast<u64>(lhs) == std::bit_cast<u64>(rhs);
+}
+
+TEST_CASE("travellers in view are drawn and labelled with their names") {
+    const std::array<Departure, 1> departures{ { { .tick = static_cast<i64>(TRAVEL_CLOCK) - JUST_LEFT, .members = 2 } } };
+    const TravelWorld world = TravelWorldOf(departures);
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    const core::Snapshot snapshot = Published(*world.host, NearHome(*world.map));
+    const std::shared_ptr<const core::Names> names = test::ShippedNames();
+    const core::Journey& journey = world.journeys.front();
+    const f32 height = static_cast<f32>(manifest->Sprite(SpriteId::Villager).footY);
+    const core::Vec2 head{ .x = 0.0F, .y = -height };
+    // Both members of the party, the second beside the first.
+    for (std::size_t member = 0; member < journey.members.size(); ++member) {
+        CAPTURE(member);
+        const core::StableId traveller = journey.members[member];
+        const core::Vec2 foot = core::Where(*world.map, journey, static_cast<i64>(TRAVEL_CLOCK), member);
+        const core::Instance expected =
+            core::MakeInstance(*manifest, { .sprite = SpriteId::Villager, .previous = foot, .current = foot });
+        CHECK(SameInstance(InstanceOf(snapshot, traveller), expected));
+        const core::Instance shadow =
+            core::MakeInstance(*manifest, { .sprite = SpriteId::Shadow, .previous = foot, .current = foot });
+        CHECK(std::ranges::any_of(snapshot.instances, [&](const core::Instance& drawn) {
+            return SameInstance(drawn, shadow);
+        }));
+        const core::TextItem label = LabelOf(snapshot, traveller);
+        const core::NpcName name = core::NameOf(*names, TRAVEL_SEED, traveller);
+        CHECK(label.kind == core::TextKind::Label);
+        CHECK(label.npcName == std::optional{ name });
+        CHECK(label.nameKey == core::NameKey(name));
+        CHECK(label.priority == core::LabelPriority::Named);
+        CHECK(SamePoint(label.current, foot + head));
+        CHECK(SamePoint(label.previous, foot + head));
+        CHECK(SamePoint(label.offset, game::LABEL_OFFSET));
+        CHECK(label.height == height);
+    }
+    CHECK(core::NameOf(*names, TRAVEL_SEED, journey.members[0]) != core::NameOf(*names, TRAVEL_SEED, journey.members[1]));
+}
+
+TEST_CASE("travellers outside the view are not published") {
+    const Road road = FirstRoad(*test::ShippedWorld());
+    const auto clock = static_cast<i64>(TRAVEL_CLOCK);
+    const std::array<Departure, 2> departures{ {
+        { .tick = clock - JUST_LEFT },                                                   // by its home
+        { .tick = clock - road.outTicks - (static_cast<i64>(game::TICKS_PER_DAY) / 2) }, // half a day into its stay
+    } };
+    const TravelWorld world = TravelWorldOf(departures);
+    const core::Rect view = NearHome(*world.map);
+    const core::Vec2 away = core::Where(*world.map, world.journeys[1], clock);
+    REQUIRE((away.x < view.min.x || away.x > view.max.x || away.y < view.min.y || away.y > view.max.y));
+    const core::Snapshot snapshot = Published(*world.host, view);
+    CHECK(Shows(snapshot, world.journeys[0].members.front()));
+    CHECK_FALSE(Shows(snapshot, world.journeys[1].members.front()));
+}
+
+TEST_CASE("a traveller still at home or home again isn't drawn") {
+    const Road road = FirstRoad(*test::ShippedWorld());
+    const auto clock = static_cast<i64>(TRAVEL_CLOCK);
+    constexpr i64 SOON = 100;
+    const std::array<Departure, 4> departures{ {
+        { .tick = clock - JUST_LEFT },       // under way, to show the others aren't culled for their place
+        { .tick = clock + SOON },            // yet to leave
+        { .tick = clock },                   // leaving on this very tick
+        { .tick = clock - road.visitTicks }, // home on this very tick
+    } };
+    const TravelWorld world = TravelWorldOf(departures);
+    const core::Snapshot snapshot = Published(*world.host, NearHome(*world.map));
+    CHECK(Shows(snapshot, world.journeys[0].members.front()));
+    CHECK_FALSE(Shows(snapshot, world.journeys[1].members.front()));
+    CHECK(Shows(snapshot, world.journeys[2].members.front()));
+    CHECK_FALSE(Shows(snapshot, world.journeys[3].members.front()));
+}
+
+TEST_CASE("a selected traveller's label outranks a place's") {
+    const std::array<Departure, 1> departures{ { { .tick = static_cast<i64>(TRAVEL_CLOCK) - JUST_LEFT, .members = 2 } } };
+    const TravelWorld world = TravelWorldOf(departures);
+    const core::StableId chosen = world.journeys.front().members[0];
+    const core::StableId other = world.journeys.front().members[1];
+    const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = chosen } } };
+    std::vector<core::Event> events;
+    world.host->Tick(At(1), { .actions = select, .held = {} }, events);
+    REQUIRE(world.host->Selected() == chosen);
+    const core::Snapshot snapshot = Published(*world.host, NearHome(*world.map));
+    const auto place = std::ranges::find(snapshot.texts, core::TextKind::Place, &core::TextItem::kind);
+    REQUIRE(place != snapshot.texts.end());
+    CHECK(LabelOf(snapshot, chosen).priority == core::LabelPriority::Selected);
+    CHECK(LabelOf(snapshot, chosen).priority > place->priority);
+    CHECK(LabelOf(snapshot, other).priority == core::LabelPriority::Named);
+    const auto drawn = static_cast<u32>(std::ranges::find(snapshot.ids, chosen) - snapshot.ids.begin());
+    CHECK(snapshot.selected == std::optional{ drawn }); // outlined
+}
+
+TEST_CASE("the cultivator draws over a traveller standing where it stands") {
+    // One setting out on this tick from the city's tile centre, where the cultivator stands, and one a step on its way.
+    const auto clock = static_cast<i64>(TRAVEL_CLOCK);
+    const std::array<Departure, 2> departures{ { { .tick = clock }, { .tick = clock - JUST_LEFT } } };
+    const TravelWorld world = TravelWorldOf(departures, true);
+    const core::Snapshot snapshot = Published(*world.host, NearHome(*world.map));
+    const auto indexOf = [&snapshot](core::StableId entity) {
+        const auto found = std::ranges::find(snapshot.ids, entity);
+        REQUIRE(found != snapshot.ids.end());
+        return found - snapshot.ids.begin();
+    };
+    const core::Vec2 foot = core::Where(*world.map, world.journeys[0], clock);
+    REQUIRE(SamePoint(foot, world.map->TileCentre(FirstRoad(*world.map).tiles.front())));
+    CHECK(indexOf(world.player) > indexOf(world.journeys[0].members.front()));
+    CHECK(indexOf(world.player) > indexOf(world.journeys[1].members.front()));
+}
+
+TEST_CASE("travellers stand still while the world is paused") {
+    const std::array<Departure, 1> departures{ { { .tick = static_cast<i64>(TRAVEL_CLOCK) - JUST_LEFT } } };
+    const TravelWorld world = TravelWorldOf(departures);
+    const core::StableId traveller = world.journeys.front().members.front();
+    const core::Rect view = NearHome(*world.map);
+
+    // Running, a tick takes it from where the clock was to where it is.
+    TickRange(*world.host, 1, 1);
+    const core::Snapshot running = Published(*world.host, view);
+    const core::Vec2 from = core::Where(*world.map, world.journeys.front(), static_cast<i64>(TRAVEL_CLOCK));
+    const core::Vec2 onward = core::Where(*world.map, world.journeys.front(), static_cast<i64>(TRAVEL_CLOCK) + 1);
+    REQUIRE_FALSE(SamePoint(from, onward));
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    CHECK(SameInstance(
+        InstanceOf(running, traveller),
+        core::MakeInstance(*manifest, { .sprite = SpriteId::Villager, .previous = from, .current = onward })
+    ));
+
+    // Paused, on the pausing tick and after it.
+    TickWith(*world.host, 2, core::ActionKind::ToggleWorldPause);
+    TickRange(*world.host, 3, 3);
+    const core::Snapshot paused = Published(*world.host, view);
+    CHECK(SameInstance(
+        InstanceOf(paused, traveller),
+        core::MakeInstance(*manifest, { .sprite = SpriteId::Villager, .previous = onward, .current = onward })
+    ));
+    const core::TextItem label = LabelOf(paused, traveller);
+    CHECK(SamePoint(label.previous, label.current));
+}
+
+TEST_CASE("a month step asked for early stands travellers where the new clock puts them, with no streak") {
+    const auto nextMonth = static_cast<i64>(game::TICKS_PER_MONTH);
+    const std::array<Departure, 1> departures{ { { .tick = nextMonth - JUST_LEFT } } };
+    const TravelWorld world = TravelWorldOf(departures);
+    const core::StableId traveller = world.journeys.front().members.front();
+    TickRange(*world.host, 1, 1);
+    StepMonth(*world.host, 2);
+    REQUIRE(world.host->WorldTicks() == game::TICKS_PER_MONTH);
+    const core::Vec2 foot = core::Where(*world.map, world.journeys.front(), nextMonth);
+    const core::Instance expected =
+        core::MakeInstance(*test::TestManifest(), { .sprite = SpriteId::Villager, .previous = foot, .current = foot });
+    CHECK(SameInstance(InstanceOf(Published(*world.host, NearHome(*world.map)), traveller), expected));
+}
+
+TEST_CASE("publishing travellers is the same on 1 and 4 workers") {
+    constexpr u32 MANY_WORKERS = 4;
+    // More journeys than one publish chunk takes, so the travellers are packed in several.
+    constexpr std::size_t SEVERAL_CHUNKS = 4'097;
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, {});
+    REQUIRE(host.NpcTravel().Journeys().size() >= SEVERAL_CHUNKS);
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const core::Rect everywhere{
+        .min = {},
+        .max = { .x = static_cast<f32>(map->Columns()) * map->TileSize(),
+                 .y = static_cast<f32>(map->Rows()) * map->TileSize() },
+    };
+    std::vector<core::Snapshot> published;
+    for (const u32 workers : { 1U, MANY_WORKERS }) {
+        core::Jobs jobs{ workers };
+        core::Snapshot snapshot;
+        host.Publish(snapshot, jobs, everywhere);
+        published.push_back(std::move(snapshot));
+    }
+    const auto named = [](const core::Snapshot& snapshot) {
+        std::vector<std::tuple<core::StableId, u32, u64>> labels;
+        for (const core::TextItem& text : snapshot.texts) {
+            if (text.npcName) {
+                labels.emplace_back(text.entity, core::NameKey(*text.npcName), std::bit_cast<u64>(text.current));
+            }
+        }
+        return labels;
+    };
+    REQUIRE_FALSE(named(published[0]).empty());
+    CHECK(
+        std::ranges::equal(
+            std::as_bytes(std::span{ published[0].instances }), std::as_bytes(std::span{ published[1].instances })
+        )
+    );
+    CHECK(published[0].ids == published[1].ids);
+    CHECK(named(published[0]) == named(published[1]));
 }
 
 } // namespace

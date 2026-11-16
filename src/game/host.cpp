@@ -52,6 +52,14 @@ constexpr u64 SEED = 0x5eed;
 constexpr f32 PORTAL_SEAL_SIZE = 2.0F * PORTAL_RADIUS;
 constexpr core::Vec2 PORTAL_LABEL_RISE{ .x = 0.0F, .y = -PORTAL_RADIUS };
 
+// A foot y past any view's bottom: what is added with it sorts after everything else in the world layer.
+constexpr f32 ABOVE_THE_WORLD = std::numeric_limits<f32>::max();
+
+/// The foot y `entity`, whose foot stands at `footY`, sorts by: ABOVE_THE_WORLD for `onTop`, its own for the rest.
+f32 SortingFootY(core::StableId entity, core::StableId onTop, f32 footY) {
+    return entity == onTop ? ABOVE_THE_WORLD : footY;
+}
+
 // Halfway across a scene's view, where a still camera starts: what a publish culls round before the window's view arrives.
 constexpr f32 MIDDLE = 0.5F;
 
@@ -80,7 +88,13 @@ using ActiveComponents = core::ComponentList<
     Afflictions>;
 using WorldComponents = core::ComponentList<Npc, Needs, Met, Group>;
 
-constexpr u32 PUBLISH_CHUNK = 4'096; // entities packed per job chunk
+constexpr u32 PUBLISH_CHUNK = 4'096; // entities, or journeys, packed per job chunk
+
+/// Whether `point` lies within `area`, its edges included.
+bool InPublishArea(core::Vec2 point, const core::Rect& area) {
+    return point.x >= area.min.x && point.x <= area.max.x && point.y >= area.min.y && point.y <= area.max.y;
+}
+
 /// Whether the active domain's combat components come as combat reads them: every creature has health and only
 /// creatures do, a creature is dying exactly when its health is out, an arriving one has the body and orbit it
 /// eases between, and only something with health is afflicted.
@@ -318,6 +332,7 @@ void Host::EnterScene() {
         m_scene = m_loaded->scene;
         m_sceneId = SceneIdOf(*m_manifest, m_scene);
         m_worldTicks = m_loaded->worldTicks;
+        m_worldTicksBefore = m_worldTicks;
         m_months = m_loaded->months;
         m_worldPaused = m_loaded->worldPaused;
         m_player = m_loaded->player;
@@ -368,6 +383,7 @@ void Host::Build(core::SceneKey scene) {
     m_player = {};
     m_selected = {};
     m_worldPaused = false;
+    m_worldTicksBefore = m_worldTicks;
     PN_ASSERT(
         !Running().Traits().worldMap || m_data.world != nullptr, "a world scene built without the world map: CheckScenes()"
     );
@@ -414,6 +430,7 @@ void Host::CastAction(const core::Action& action, const core::TickCounters& coun
 
 void Host::Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) {
     PN_PROFILE_ZONE();
+    m_worldTicksBefore = m_worldTicks;
     if (std::ranges::contains(input.actions, core::ActionKind::CycleScene, &core::Action::kind)) {
         const core::SceneKey next = NextScene(m_scene);
         PN_LOG_INFO("tick {}: the scene changes to {}", counters.simulation, SceneName(next));
@@ -594,6 +611,79 @@ void Host::PublishOverhead(core::Snapshot& snapshot) const {
     }
 }
 
+void Host::PublishTravellers(const core::Rect& area, u32 firstPart, u32 chunks, core::Jobs& jobs) {
+    PN_PROFILE_ZONE();
+    m_travellerLabels.resize(chunks);
+    for (std::vector<core::TextItem>& labels : m_travellerLabels) {
+        labels.clear();
+    }
+    if (chunks == 0) {
+        return;
+    }
+    const core::WorldMap& map = *m_data.world;
+    const std::span<const core::Journey> journeys = m_travel.Journeys();
+    const auto now = static_cast<i64>(m_worldTicks);
+    const auto before = static_cast<i64>(m_worldTicksBefore);
+    const Look look{ .sprite = SpriteId::Villager, .shadow = true };
+    const f32 height = static_cast<f32>(m_manifest->Sprite(look.sprite).footY) * look.scale;
+    const core::Vec2 head{ .x = 0.0F, .y = -height };
+    const core::Names* const names = m_data.names.get();
+    const u64 seed = m_state.Seed();
+    jobs.ParallelFor(chunks, [&](u32 chunk) {
+        std::vector<core::TextItem>& labels = m_travellerLabels[chunk];
+        const u32 part = firstPart + chunk;
+        const std::size_t begin = std::size_t{ chunk } * PUBLISH_CHUNK;
+        const std::size_t end = std::min(journeys.size(), begin + PUBLISH_CHUNK);
+        for (std::size_t index = begin; index < end; ++index) {
+            const core::Journey& journey = journeys[index];
+            if (!core::Underway(journey, now)) {
+                continue;
+            }
+            for (std::size_t member = 0; member < journey.members.size(); ++member) {
+                const core::Vec2 current = core::Where(map, journey, now, member);
+                if (!InPublishArea(current, area)) {
+                    continue;
+                }
+                const core::Vec2 previous = core::Where(map, journey, before, member);
+                const core::StableId traveller = journey.members[member];
+                m_drawList.Add(
+                    part,
+                    core::Layer::Decals,
+                    core::Pipeline::Normal,
+                    core::MakeInstance(*m_manifest, { .sprite = SpriteId::Shadow, .previous = previous, .current = current })
+                );
+                m_drawList.Add(
+                    part,
+                    look.layer,
+                    look.pipeline,
+                    core::MakeInstance(
+                        *m_manifest, { .sprite = look.sprite, .previous = previous, .current = current, .scale = look.scale }
+                    ),
+                    current.y,
+                    traveller
+                );
+                if (names == nullptr) {
+                    continue; // a game without names has nothing to call them
+                }
+                const core::NpcName name = core::NameOf(*names, seed, traveller);
+                labels.push_back(
+                    {
+                        .kind = core::TextKind::Label,
+                        .npcName = name,
+                        .previous = previous + head,
+                        .current = current + head,
+                        .offset = LABEL_OFFSET,
+                        .entity = traveller,
+                        .height = height,
+                        .nameKey = core::NameKey(name),
+                        .priority = traveller == m_selected ? core::LabelPriority::Selected : core::LabelPriority::Named,
+                    }
+                );
+            }
+        }
+    });
+}
+
 void Host::PublishCaster(core::Snapshot& snapshot) const {
     if (m_player == core::StableId{} || !IsCombatScene()) {
         return;
@@ -674,7 +764,11 @@ void Host::AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs,
     if (m_months < LAST_MONTH) {
         // A step asked for early (M) moves the clock on to the next month's first tick, so the calendar keeps up with the
         // steps.
-        m_worldTicks = std::max(m_worldTicks, (m_months + 1) * TICKS_PER_MONTH);
+        const u64 nextMonth = (m_months + 1) * TICKS_PER_MONTH;
+        if (m_worldTicks < nextMonth) {
+            m_worldTicks = nextMonth;
+            m_worldTicksBefore = m_worldTicks; // rather than draw travellers streaking across the skipped days
+        }
         ++m_months;
         PN_LOG_INFO("month {} begins at world tick {}", m_months + 1, m_worldTicks);
     }
@@ -857,6 +951,8 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
     const u64 tick = snapshot.simulationTick;
     const SceneTraits& traits = Running().Traits();
     const std::span<const DemoGlowSprite> demoGlows = traits.demoGlows;
+    // On the map, crowds stand on the cities' tiles where the cultivator starts: the player never loses sight of it.
+    const core::StableId onTop = traits.worldMap ? m_player : core::StableId{};
     snapshot.combat = traits.combat;
     snapshot.camera = traits.camera;
     snapshot.worldMap = traits.worldMap;
@@ -878,7 +974,10 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
     const core::Rect area =
         view.value_or(core::Rect{ .min = start - core::WIDEST_HALF_VIEW, .max = start + core::WIDEST_HALF_VIEW });
     const Context context{ *this };
-    m_drawList.Begin(area, std::max(chunks, 1U));
+    const u32 entityParts = std::max(chunks, 1U);
+    const bool travellers = traits.worldMap && m_data.world != nullptr && m_worldTicks <= TRAVEL_END;
+    const u32 travellerChunks = travellers ? core::ChunkCount(m_travel.Journeys().size(), PUBLISH_CHUNK) : 0;
+    m_drawList.Begin(area, entityParts + travellerChunks);
     Running().PublishGround(context, area, m_drawList, 0);
     jobs.ParallelFor(chunks, [&](u32 chunk) {
         const std::size_t begin = std::size_t{ chunk } * PUBLISH_CHUNK;
@@ -918,13 +1017,17 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
                       .dissolve = dissolve,
                       .glow = DemoGlow(DemoRoleOf(demoGlows, look.sprite), tick) }
                 ),
-                body.current.y,
+                SortingFootY(stableId, onTop, body.current.y),
                 dying ? core::StableId{} : stableId
             );
         }
     });
+    PublishTravellers(area, entityParts, travellerChunks, jobs);
     m_drawList.Publish(snapshot, jobs);
     PublishOverhead(snapshot);
+    for (const std::vector<core::TextItem>& labels : m_travellerLabels) {
+        snapshot.texts.insert(snapshot.texts.end(), labels.begin(), labels.end());
+    }
     PublishCaster(snapshot);
     // Before the seals raised in play, which draw over the scene's own.
     Running().Publish(context, area, snapshot);
