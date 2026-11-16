@@ -102,7 +102,8 @@ platform::Window OpenWindow() {
 }
 
 // A renderer for `window` holding `scene`'s sprites, its texts in English with outline and shadow, its seals in
-// seals.yaml's looks (a scene's portal among them) and the NPCs' names from names.yaml, as the game draws them.
+// seals.yaml's looks (a scene's portal among them) and, for the world, the NPCs' names from names.yaml, as the game
+// draws them.
 gfx::Renderer RendererFor(platform::Window& window, core::SceneId scene, core::Jobs& jobs) {
     std::expected<core::Strings, core::Error> strings = data::LoadStrings(Assets() / "data");
     const std::string stringsWhy = strings.error_or(core::Error{}).message;
@@ -119,7 +120,11 @@ gfx::Renderer RendererFor(platform::Window& window, core::SceneId scene, core::J
     const std::string rendererWhy = renderer.error_or(core::Error{}).message;
     REQUIRE_MESSAGE(renderer.has_value(), rendererWhy);
     renderer->SetSeals(test::ShippedSeals());
-    renderer->SetNames(test::ShippedNames());
+    // Only the world's travellers carry names, and composing every name's glyphs ahead takes a second or two.
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    if (manifest->SceneNamed(game::SceneName(game::WORLD_SCENE)) == std::optional{ scene }) {
+        renderer->SetNames(test::ShippedNames());
+    }
     const std::shared_ptr<const core::WorldMap> world = test::ShippedWorld();
     renderer->SetWorld(world, test::ShippedWorldLook(*test::TestManifest(), *world));
     renderer->BeginScene(scene, jobs);
