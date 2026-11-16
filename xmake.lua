@@ -257,9 +257,39 @@ add_requires("yaml-cpp 0.9.0") -- MIT; behind src/data/
 add_requires("tracy-libdl v0.14.1", {alias = "tracy_on", configs = {tracy_enable = true, only_localhost = true}}) -- BSD-3-Clause; profiling builds only
 add_requires("tracy-libdl 0.14.1", {alias = "tracy_off", configs = {tracy_enable = false, only_localhost = true}}) -- BSD-3-Clause; profiling builds only
 
+-- One precompiled header per header and build folder, not one per target (each is 25 to 150 MB, and every target
+-- compiled its own): an owner target builds it (`shared_pch_owner`), fenced so that nothing that depends on it
+-- compiles before it is done, and every target using it (`shared_pch`) takes the owner's file instead of building
+-- its own. A compiler accepts a precompiled header only from sources compiled with its flags, so the owner holds the
+-- flags its users share (the public packages, include paths and build_info). Toolchains not listed keep one per
+-- target, as XMake builds them.
+local SHARED_PCH_TOOLCHAINS = {["pixi-clang"] = true}
+-- Rule scripts can't see this file's locals: every target carries the answer.
+set_values("shared_pch", SHARED_PCH_TOOLCHAINS[get_config("toolchain")] == true)
+
+rule("shared_pch_owner")
+    on_config(function (target)
+        if not target:values("shared_pch") then
+            target:rule_enable("c++.build.pcheader", false)
+        end
+    end)
+
+rule("shared_pch")
+    on_config(function (target)
+        if target:values("shared_pch") then
+            import("core.project.project")
+            local owner = project.target(target:extraconf("rules", "shared_pch", "owner"))
+            target:rule_enable("c++.build.pcheader", false)
+            -- Asked for at compile time, by then the owner's configuration has settled where its file goes.
+            target.pcoutputfile = function (_, langkind)
+                return owner:pcoutputfile(langkind)
+            end
+        end
+    end)
+
 -- Values a few source files need, in a header generated into the build folder (src/build_info.hpp.in) rather than
 -- as defines: a define on one target would give it flags the others lack, and a precompiled header serves only
--- sources compiled with the flags it was built with. Public through core, so every target has the same include path.
+-- sources compiled with the flags it was built with. Public through game_pch, so every target has the same include path.
 target("build_info")
     set_kind("headeronly")
     set_configdir("$(builddir)/generated")
@@ -278,30 +308,41 @@ target("build_info")
     -- Where the skipped "write the fight save seed" case writes (save_tests.cpp), whatever the working directory.
     set_configvar("PN_FUZZ_CORPUS", (path.join(os.projectdir(), "tests", "fuzz", "corpus"):gsub("\\", "/")))
 
+-- The game's precompiled header, for every module and the targets built like them (`src/pch.hpp`).
+target("game_pch")
+    set_kind("object")
+    add_rules("c++", "shared_pch_owner")
+    set_policy("build.fence", true)
+    set_pcxxheader("src/pch.hpp")
+    add_includedirs("src", {public = true})
+    add_deps("build_info", {public = true})
+    -- Public: the log, profile and ECS facades' headers include their libraries.
+    add_packages("quill-wine", "entt", is_mode("releasedbg") and "tracy_on" or "tracy_off", {public = true})
+
 -- Modules (design doc 0002 §4): static libraries, each linking only the modules below it, so a
 -- module that doesn't link a library can't use it. They share the game's precompiled header.
 target("core")
     set_kind("static")
     add_files("src/core/**.cpp")
-    add_includedirs("src", {public = true})
+    add_deps("game_pch", {public = true})
     set_pcxxheader("src/pch.hpp")
-    -- Public: the log, profile and ECS facades' headers include their libraries.
-    add_packages("quill-wine", "entt", is_mode("releasedbg") and "tracy_on" or "tracy_off", {public = true})
+    add_rules("shared_pch", {owner = "game_pch"})
     add_packages("enkits") -- private: core/jobs.hpp hides it behind a pimpl
     add_packages("lz4") -- private: compresses saves in core/save_file.cpp
-    add_deps("build_info", {public = true})
 
 target("game")
     set_kind("static")
     add_deps("core")
     add_files("src/game/**.cpp")
     set_pcxxheader("src/pch.hpp")
+    add_rules("shared_pch", {owner = "game_pch"})
 
 target("platform")
     set_kind("static")
     add_deps("core")
     add_files("src/platform/**.cpp")
     set_pcxxheader("src/pch.hpp")
+    add_rules("shared_pch", {owner = "game_pch"})
     add_packages("libsdl3-wayland", {public = true})
 
 target("gfx")
@@ -309,6 +350,7 @@ target("gfx")
     add_deps("platform")
     add_files("src/gfx/**.cpp")
     set_pcxxheader("src/pch.hpp")
+    add_rules("shared_pch", {owner = "game_pch"})
     add_packages("libsdl3_ttf-wayland") -- private: text shaping and glyphs, in gfx's .cpp files only
     -- The committed shader binaries (`project_n shaders`), embedded through the header generated
     -- with them (src/gfx/generated/shaders.hpp); no terminating zero, as SDL_GPU takes each one's size.
@@ -320,6 +362,7 @@ target("data")
     add_deps("core")
     add_files("src/data/**.cpp")
     set_pcxxheader("src/pch.hpp")
+    add_rules("shared_pch", {owner = "game_pch"})
     add_packages("yaml-cpp") -- private: only src/data/ reads YAML
 
 target("app")
@@ -327,12 +370,14 @@ target("app")
     add_deps("data", "gfx", "game")
     add_files("src/app/**.cpp")
     set_pcxxheader("src/pch.hpp")
+    add_rules("shared_pch", {owner = "game_pch"})
 
 target("project_n")
     set_kind("binary")
     add_deps("app")
     add_files("src/main.cpp")
     set_pcxxheader("src/pch.hpp")
+    add_rules("shared_pch", {owner = "game_pch"})
     add_rules("assets")
 
 includes("tests")

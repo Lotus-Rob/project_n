@@ -56,6 +56,15 @@ local function add_file_tests(files)
     add_tests("rest", {runargs = {"--source-file-exclude=" .. table.concat(patterns, ",")}})
 end
 
+-- The tests' precompiled header, shared by every doctest target (the shared_pch rules in xmake.lua).
+target("test_pch")
+    set_kind("object")
+    add_rules("c++", "shared_pch_owner")
+    set_policy("build.fence", true)
+    set_pcxxheader("unit/pch.hpp")
+    add_deps("game_pch") -- the flags every module passes on
+    add_packages("doctest")
+
 -- `module` is the src/ module under test (default core); it brings the modules below it. `arena`: it builds hosts.
 local function unit_tests(name, files, module, arena)
     target(name)
@@ -67,7 +76,9 @@ local function unit_tests(name, files, module, arena)
         -- Out of unity batches: doctest names test cases by __LINE__ under Clang 22 (__COUNTER__ is a
         -- C2y extension there), so two files' cases on one line would clash. src/ stays in them.
         add_files(files, {unity_ignored = true})
+        add_deps("test_pch")
         set_pcxxheader("unit/pch.hpp")
+        add_rules("shared_pch", {owner = "test_pch"})
         add_packages("doctest")
         add_file_tests(files)
         if is_plat("windows") and not is_host("windows") then
@@ -94,6 +105,7 @@ target("headless_bench")
     with_manifest()
     add_files("bench/headless.cpp")
     set_pcxxheader("$(projectdir)/src/pch.hpp") -- not a doctest suite: the game's, without doctest
+    add_rules("shared_pch", {owner = "game_pch"})
 
 -- Pictures of fixed scenes compared with tests/reference/ (design doc 0002 §8.9). Built with the tests
 -- but not registered as one, as it needs a GPU: `project_n reference` runs it on Mesa's software Vulkan.
@@ -102,7 +114,9 @@ target("reference_tests")
     add_deps("app") -- the damage numbers it draws; it brings gfx and game
     with_manifest()
     add_files("unit/gfx/main.cpp", "reference/*.cpp", {unity_ignored = true})
+    add_deps("test_pch")
     set_pcxxheader("unit/pch.hpp")
+    add_rules("shared_pch", {owner = "test_pch"})
     add_packages("doctest")
 
 -- libFuzzer targets, one per tests/fuzz/<name>.cpp: linux-clang with AddressSanitizer only
