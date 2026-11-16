@@ -14,6 +14,7 @@
 #include "game/host.hpp"
 #include "game/npcs.hpp"
 #include "game/travel.hpp"
+#include "support/host.hpp"
 #include "support/manifest.hpp"
 #include "support/saves.hpp"
 #include "support/world.hpp"
@@ -1475,8 +1476,7 @@ TEST_CASE("a save made mid-route loads to the same position on the next tick") {
         Tick(saved, At(tick), {});
     }
     REQUIRE(saved.PlayerRoute().has_value());
-    const core::Vec2 there =
-        saved.State()[game::ACTIVE].Entities().get<game::Body>(saved.State()[game::ACTIVE].Find(player)).current;
+    const core::Vec2 there = test::BodyOf(saved, player).current;
 
     game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
     const std::vector<std::byte> bytes = Saved(saved);
@@ -1486,12 +1486,9 @@ TEST_CASE("a save made mid-route loads to the same position on the next tick") {
     CHECK(loaded.StateHash() == saved.StateHash());
     Tick(saved, At(WALKED + 1), {});
     Tick(loaded, At(WALKED + 1), {});
-    const auto bodyOf = [player](const game::Host& host) {
-        return host.State()[game::ACTIVE].Entities().get<game::Body>(host.State()[game::ACTIVE].Find(player));
-    };
-    CHECK(SamePoint(bodyOf(loaded).previous, there)); // no jump
-    CHECK(SamePoint(bodyOf(loaded).current, bodyOf(saved).current));
-    CHECK_FALSE(SamePoint(bodyOf(loaded).current, there)); // walking on
+    CHECK(SamePoint(test::BodyOf(loaded, player).previous, there)); // no jump
+    CHECK(SamePoint(test::BodyOf(loaded, player).current, test::BodyOf(saved, player).current));
+    CHECK_FALSE(SamePoint(test::BodyOf(loaded, player).current, there)); // walking on
     CHECK(loaded.StateHash() == saved.StateHash());
 }
 
