@@ -9,20 +9,20 @@ namespace gfx {
 namespace {
 
 constexpr f32 FADE_FROM = 0.75F; // of the readable size: a caption is gone this far below it
-// Smoothstep's cubic, 3t² − 2t³: a ramp whose ends are flat, so the fade has no visible start or end.
+/// Smoothstep's cubic, 3t² − 2t³: a ramp whose ends are flat, so the fade has no visible start or end.
 constexpr f32 SMOOTHSTEP_SQUARE = 3.0F;
 constexpr f32 SMOOTHSTEP_CUBE = 2.0F;
-// A box shrinks by no more than this part of its smaller side, so a small one never turns inside out.
+/// A box shrinks by no more than this part of its smaller side, so a small one never turns inside out.
 constexpr f32 MOST_SHRINK = 0.25F;
-// A cross-fade past this point shows the new count more than the old.
+/// A cross-fade past this point shows the new count more than the old.
 constexpr f32 HALF_WAY = 0.5F;
 
-// A selected or hovered label is the one the player is looking at: it never hides others' names in a count.
+/// A selected or hovered label is the one the player is looking at: it never hides others' names in a count.
 bool Stacks(core::LabelPriority priority) {
     return priority < core::LabelPriority::Hovered;
 }
 
-// `value` moved `step` toward `target`, no further.
+/// `value` moved `step` toward `target`, no further.
 f32 Toward(f32 value, f32 target, f32 step) {
     return target > value ? std::min(value + step, target) : std::max(value - step, target);
 }
@@ -56,8 +56,8 @@ std::span<const PlacedLabel> LabelPass::Place(std::span<const LabelInput> labels
     return m_placed;
 }
 
-// Anchor() and StackText() run once per label and have no zones, as the pass's helpers: their callers' zones measure
-// them.
+/// Anchor() and StackText() run once per label and have no zones, as the pass's helpers: their callers' zones measure
+/// them.
 std::optional<core::Vec2> LabelPass::Anchor(core::StableId entity) const {
     const auto seen = m_seen.find(entity);
     return seen == m_seen.end() || seen->second.frame != m_frame ? std::nullopt : seen->second.anchor;
@@ -160,7 +160,6 @@ void LabelPass::Join(std::size_t index, std::span<const LabelInput> labels) {
             Cover(room(m_stacks[stack].head), stack, m_stacks[stack].head);
         }
     }
-    // The highest-ranked of the stacks it bridges takes the others in.
     const std::size_t into = std::ranges::min(m_joined);
     for (const std::size_t other : m_joined) {
         if (other != into) {
@@ -301,7 +300,6 @@ core::Vec2 LabelPass::Glide(Seen& seen, std::span<const LabelInput> labels, std:
         seen.glide = 0.0F;
     }
     else if (seen.over != target.entity) {
-        // From where it was drawn, moved on with the creature it was over if that is still here.
         core::Vec2 from = seen.overAnchor;
         if (const auto before = m_seen.find(seen.over); before != m_seen.end() && before->second.frame == m_frame) {
             from = labels[before->second.index].anchor;

@@ -1,7 +1,7 @@
 #include "mesh.hlsli"
 
-// gfx::MeshVertex (src/gfx/mesh_vertex.hpp), 16 bytes; the pipeline's vertex attributes unpack
-// the UV and the colour.
+/// gfx::MeshVertex (src/gfx/mesh_vertex.hpp), 16 bytes; the pipeline's vertex attributes unpack
+/// the UV and the colour.
 struct VertexIn {
     float2 position : TEXCOORD0; // target pixels
     float2 uv : TEXCOORD1;       // unorm16 on the page

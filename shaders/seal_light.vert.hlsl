@@ -1,6 +1,6 @@
 #include "seal.hlsli"
 
-// LightUniforms in src/gfx/internal/features/seals.cpp, 48 bytes.
+/// LightUniforms in src/gfx/internal/features/seals.cpp, 48 bytes.
 struct LightDraw {
     float4 worldToClip;   // clip = world * xy + zw (gfx::ClipTransform)
     float2 pixelsPerClip; // the target's pixels per clip unit, across and down: half its size
@@ -10,16 +10,16 @@ struct LightDraw {
     uint3 padding;        // to a multiple of 16 bytes
 };
 
-// Every drawn seal's light (gfx::SealDrawing's ground records, then the others').
+/// Every drawn seal's light (gfx::SealDrawing's ground records, then the others').
 StructuredBuffer<SealParticles> records : register(t0, space0);
 ConstantBuffer<LightDraw> draw : register(b0, space1);
 
-// The least a particle spans on screen, in pixels, each way: a smaller one is drawn this wide and that much fainter, so it
-// keeps its light and never crawls between pixels.
+/// The least a particle spans on screen, in pixels, each way: a smaller one is drawn this wide and that much fainter, so it
+/// keeps its light and never crawls between pixels.
 static const float SEAL_LEAST_PIXELS = 2.0;
 
-// `halfSize` (half a quad's side, world units) grown to at least SEAL_LEAST_PIXELS across on screen; `strength` dimmed
-// as much.
+/// `halfSize` (half a quad's side, world units) grown to at least SEAL_LEAST_PIXELS across on screen; `strength` dimmed
+/// as much.
 float2 Least(float2 halfSize, inout float strength) {
     const float pixels = 2.0 * length(halfSize * draw.worldToClip.xy * draw.pixelsPerClip);
     if (pixels < SEAL_LEAST_PIXELS) {

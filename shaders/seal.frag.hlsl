@@ -10,9 +10,9 @@
 [[vk::binding(2, 2)]] StructuredBuffer<SealPart> parts : register(t2, space2);
 [[vk::binding(3, 2)]] StructuredBuffer<SealSprite> sprites : register(t3, space2);
 
-// SealLookUniforms in src/gfx/internal/features/seals.cpp, 16 bytes: what the table's seals share. The halo is light round
-// every line and glyph, fading out, so a seal glows rather than reading as flat ink (core::Seals::haloReach and
-// haloStrength).
+/// SealLookUniforms in src/gfx/internal/features/seals.cpp, 16 bytes: what the table's seals share. The halo is light round
+/// every line and glyph, fading out, so a seal glows rather than reading as flat ink (core::Seals::haloReach and
+/// haloStrength).
 struct Look {
     float haloReach;    // how far a part's halo reaches past its edge, in seal sizes
     float haloStrength; // how strong it is at the edge
@@ -25,7 +25,7 @@ ConstantBuffer<Look> look : register(b0, space3);
 static const float PI = 3.14159265;
 static const float TAU = 6.28318531;
 
-// The pixel being shaded, on its seal's plane: where it is and how much of the plane a screen pixel spans there.
+/// The pixel being shaded, on its seal's plane: where it is and how much of the plane a screen pixel spans there.
 struct Pixel {
     float2 local; // in seal sizes from the centre, not turned
     float2 dx;    // how far `local` moves a pixel right
@@ -41,38 +41,38 @@ float2 Direction(float angle) {
     return float2(cosine, sine);
 }
 
-// How far the plane moves along `normal` (a unit direction on it) over one screen pixel, in seal sizes: a distance field's
-// pixel there, from the derivatives taken once at the top, so no derivative is taken inside a branch.
+/// How far the plane moves along `normal` (a unit direction on it) over one screen pixel, in seal sizes: a distance field's
+/// pixel there, from the derivatives taken once at the top, so no derivative is taken inside a branch.
 float Across(Pixel p, float2 normal) {
     return max(length(float2(dot(normal, p.dx), dot(normal, p.dy))), 1e-6);
 }
 
-// How much of a pixel `across` wide a stroke covers, `halfWidth` each way of its middle, the pixel's centre `distance` from it: a
-// box filter, so a line thinner than a pixel keeps its ink and fades rather than crawls as it moves.
+/// How much of a pixel `across` wide a stroke covers, `halfWidth` each way of its middle, the pixel's centre `distance` from it: a
+/// box filter, so a line thinner than a pixel keeps its ink and fades rather than crawls as it moves.
 float Stroke(float distance, float halfWidth, float across) {
     const float away = abs(distance);
     return saturate((halfWidth - away) / across + 0.5) - saturate((-halfWidth - away) / across + 0.5);
 }
 
-// The halo round a stroke `halfWidth` each way of its middle, `distance` from it: from its strength at the stroke's edge (and
-// within it) to nothing the halo's reach past it.
+/// The halo round a stroke `halfWidth` each way of its middle, `distance` from it: from its strength at the stroke's edge (and
+/// within it) to nothing the halo's reach past it.
 float Halo(float distance, float halfWidth) {
     const float fade = 1.0 - saturate((abs(distance) - halfWidth) / max(look.haloReach, 1e-6));
     return look.haloStrength * fade * fade;
 }
 
-// A part's light: its ink's coverage, and its halo only where the ink leaves the pixel uncovered, so a line's own colour
-// stays its colour rather than brightening towards white on the pale ground.
+/// A part's light: its ink's coverage, and its halo only where the ink leaves the pixel uncovered, so a line's own colour
+/// stays its colour rather than brightening towards white on the pale ground.
 float Lit(float coverage, float halo) {
     return coverage + ((1.0 - saturate(coverage)) * halo);
 }
 
-// `value` wrapped into 0 to `period`.
+/// `value` wrapped into 0 to `period`.
 float Wrap(float value, float period) {
     return value - (period * floor(value / period));
 }
 
-// The nearest to `angle` of `count` items round a ring, the first at `first`: its index from 0, then its angle.
+/// The nearest to `angle` of `count` items round a ring, the first at `first`: its index from 0, then its angle.
 float2 Nearest(float angle, float first, uint count) {
     const float step = TAU / count;
     const float turns = round((angle - first) / step);
@@ -112,9 +112,9 @@ float DotsLight(Pixel p, SealPart part, float first) {
     return Lit(Stroke(away, halfWidth, Across(p, offset / max(away, 1e-6))), Halo(away, halfWidth));
 }
 
-// A star polygon's lines, or a polygon's (a step of 1): `count` points at the part's radius, each joined to the `joins`th
-// after it. Every line lies the same distance from the centre, its normal midway between the points it joins; of them,
-// only the line nearest the pixel's direction and the two that cross the pixel's circle near it can be nearest.
+/// A star polygon's lines, or a polygon's (a step of 1): `count` points at the part's radius, each joined to the `joins`th
+/// after it. Every line lies the same distance from the centre, its normal midway between the points it joins; of them,
+/// only the line nearest the pixel's direction and the two that cross the pixel's circle near it can be nearest.
 float StarLight(Pixel p, SealPart part, float first, uint joins) {
     const float slice = TAU / part.count;
     const float spread = PI * joins / part.count; // half the angle a line spans
@@ -139,9 +139,9 @@ float StarLight(Pixel p, SealPart part, float first, uint joins) {
     return Lit(Stroke(nearest, halfWidth, Across(p, nearestNormal)), Halo(nearest, halfWidth));
 }
 
-// The light of `sprite` drawn `height` tall at `centre`, its top towards `up` (a unit direction on the plane): from its
-// distance field, anti-aliased inside its edge, with its halo outside. Sampled with the gradients worked out from the
-// plane's, as the sample may sit in a branch other pixels of its quad skip.
+/// The light of `sprite` drawn `height` tall at `centre`, its top towards `up` (a unit direction on the plane): from its
+/// distance field, anti-aliased inside its edge, with its halo outside. Sampled with the gradients worked out from the
+/// plane's, as the sample may sit in a branch other pixels of its quad skip.
 float SpriteLight(Pixel p, SealSprite sprite, float2 centre, float2 up, float height) {
     const float2 right = float2(-up.y, up.x);
     const float texels = sprite.height / height; // a seal size, in the sprite's texels
@@ -164,7 +164,7 @@ float SpriteLight(Pixel p, SealSprite sprite, float2 centre, float2 up, float he
     return Lit(saturate(0.5 - (outside / pixel)), look.haloStrength * fade * fade);
 }
 
-// A script's glyph or a flourish nearest the pixel, its top outward (or a script's inward).
+/// A script's glyph or a flourish nearest the pixel, its top outward (or a script's inward).
 float RingSpriteLight(Pixel p, SealPart part, float first) {
     if (part.spriteCount == 0) {
         return 0.0;
@@ -175,8 +175,8 @@ float RingSpriteLight(Pixel p, SealPart part, float first) {
     return SpriteLight(p, sprite, itemOut * part.radius, part.inward != 0 ? -itemOut : itemOut, part.size);
 }
 
-// How far from the centre a part's ink and halo reach, in seal sizes: the pixels outside that never test it. Its start
-// less the margin is SealBandStart() in src/gfx/seal_draw.cpp, which sorts a layer's parts by it: the two change together.
+/// How far from the centre a part's ink and halo reach, in seal sizes: the pixels outside that never test it. Its start
+/// less the margin is SealBandStart() in src/gfx/seal_draw.cpp, which sorts a layer's parts by it: the two change together.
 float2 PartBand(Pixel p, SealPart part) {
     const float margin = look.haloReach + p.pixel;
     if (part.kind == SEAL_CIRCLE) {
@@ -225,9 +225,9 @@ float PartLight(Pixel p, SealLayer layer, SealPart part) {
     return RingSpriteLight(p, part, first); // a script or a flourish
 }
 
-// How much of the pixel lies inside the regular polygon of `sides` with its corners `radius` out, its first at `first`:
-// 1 from `full` pixels inside its sides, fading over a pixel to nothing at `full` - 1 (0 ends at the sides; 0.5 centres
-// the fade on them).
+/// How much of the pixel lies inside the regular polygon of `sides` with its corners `radius` out, its first at `first`:
+/// 1 from `full` pixels inside its sides, fading over a pixel to nothing at `full` - 1 (0 ends at the sides; 0.5 centres
+/// the fade on them).
 float InsidePolygon(Pixel p, uint sides, float radius, float first, float full) {
     const float slice = TAU / sides;
     const float firstNormal = first + (slice * 0.5);
@@ -236,24 +236,24 @@ float InsidePolygon(Pixel p, uint sides, float radius, float first, float full) 
     return saturate(full - (offSide / Across(p, normal)));
 }
 
-// How much of the pixel lies between a frame layer's polygons with their corners `inner` and `outer` out, fading over a
-// pixel `full` from their sides as InsidePolygon() does.
+/// How much of the pixel lies between a frame layer's polygons with their corners `inner` and `outer` out, fading over a
+/// pixel `full` from their sides as InsidePolygon() does.
 float BetweenPolygons(Pixel p, SealLayer layer, float inner, float outer, float full) {
     const float first = layer.angle + layer.frameRotation;
     const float inside = InsidePolygon(p, layer.frameSides, outer, first, full);
     return inner > 0.0 ? inside * (1.0 - InsidePolygon(p, layer.frameSides, inner, first, 1.0 - full)) : inside;
 }
 
-// A frame layer's band as its geometry has it (gfx::DrawSeals()): between polygons with their corners the band margin
-// inside its inner radius and past its outer one and its flourishes' spill, fading out before the geometry ends, so
-// nothing the frame lets through is cut off with a hard edge.
+/// A frame layer's band as its geometry has it (gfx::DrawSeals()): between polygons with their corners the band margin
+/// inside its inner radius and past its outer one and its flourishes' spill, fading out before the geometry ends, so
+/// nothing the frame lets through is cut off with a hard edge.
 float FrameMask(Pixel p, SealLayer layer) {
     const float margin = look.bandMargin;
     return BetweenPolygons(p, layer, layer.inner - margin, layer.outer + layer.spill + margin, 0.0);
 }
 
-// How much of a part a frame layer lets through: the frame's own polygon and star lines whole (its band holds them), the
-// others cut off at its polygons with a pixel's fade, flourishes past its outer one by their spill.
+/// How much of a part a frame layer lets through: the frame's own polygon and star lines whole (its band holds them), the
+/// others cut off at its polygons with a pixel's fade, flourishes past its outer one by their spill.
 float FrameClip(Pixel p, SealLayer layer, SealPart part) {
     if (part.kind == SEAL_POLYGON || part.kind == SEAL_STAR) {
         return 1.0;
@@ -262,8 +262,8 @@ float FrameClip(Pixel p, SealLayer layer, SealPart part) {
     return BetweenPolygons(p, layer, layer.inner, layer.outer + spill, 0.5);
 }
 
-// A seal's wash: its ink, darkest at its centre's side of its reach and fading out to nothing at it, over its softness's
-// share of the reach (at least a pixel, so even a hard edge is smooth).
+/// A seal's wash: its ink, darkest at its centre's side of its reach and fading out to nothing at it, over its softness's
+/// share of the reach (at least a pixel, so even a hard edge is smooth).
 float4 Wash(Pixel p, SealLayer layer) {
     const float fade = max(layer.washReach * layer.washSoftness, Across(p, p.local / max(p.radius, 1e-6)));
     const float inside = smoothstep(0.0, 1.0, (layer.washReach - p.radius) / fade);

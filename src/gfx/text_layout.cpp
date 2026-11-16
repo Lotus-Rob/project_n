@@ -17,30 +17,30 @@ namespace gfx {
 namespace {
 
 constexpr std::string_view FONT_FILE = "NotoSansSC-Regular.otf";
-// What numbers and label stacks show besides the strings: values, signs and the brackets of "(+N)" in either language.
+/// What numbers and label stacks show besides the strings: values, signs and the brackets of "(+N)" in either language.
 constexpr std::string_view NUMBER_CHARACTERS = "0123456789+-（）() ";
-// Every digit a label stack's count can show.
+/// Every digit a label stack's count can show.
 constexpr std::string_view DIGITS = "0123456789";
-// Every digit, as a number the HUD's strings are filled in with (core::FillValue()).
+/// Every digit, as a number the HUD's strings are filled in with (core::FillValue()).
 constexpr i64 ALL_DIGITS = 1'234'567'890;
-// The HUD's strings that are filled in with numbers: its bars' words and a slot's seconds.
+/// The HUD's strings that are filled in with numbers: its bars' words and a slot's seconds.
 constexpr std::array<core::StringId, 3> HUD_FILLED{ { core::StringId::Health, core::StringId::Qi, core::StringId::Cooldown } };
-// The label stack's placeholders (core::StringId::LabelStack).
+/// The label stack's placeholders (core::StringId::LabelStack).
 constexpr std::string_view NAME_PLACEHOLDER = "{name}";
 constexpr std::string_view COUNT_PLACEHOLDER = "{count}";
 constexpr std::array<core::TextDirection, 2> DIRECTIONS{ { core::TextDirection::LeftToRight,
                                                            core::TextDirection::TopToBottom } };
-// Fields packed this far apart are never read into each other. Past a quad's edge the field shader reads half a texel
-// (bilinear filtering) beyond the further of its shadow sample (shifted 2 texels) and its supersampling grid (0.375
-// screen pixels, each SDF_BASE_PIXELS / pixels texels): within the padding for text drawn at about 2 pixels or more
-// (at 2.2, 8.7 texels), and smaller text is faded out or never drawn that small (LABEL_MIN_PIXELS, NUMBER_MIN_PIXELS,
-// CaptionOpacity()). The outline is sampled with the fill, at the same points.
+/// Fields packed this far apart are never read into each other. Past a quad's edge the field shader reads half a texel
+/// (bilinear filtering) beyond the further of its shadow sample (shifted 2 texels) and its supersampling grid (0.375
+/// screen pixels, each SDF_BASE_PIXELS / pixels texels): within the padding for text drawn at about 2 pixels or more
+/// (at 2.2, 8.7 texels), and smaller text is faded out or never drawn that small (LABEL_MIN_PIXELS, NUMBER_MIN_PIXELS,
+/// CaptionOpacity()). The outline is sampled with the fill, at the same points.
 constexpr u32 GLYPH_PADDING = SDF_SPREAD + 1;
 
 using Font = std::unique_ptr<TTF_Font, internal::SdlDeleter<TTF_CloseFont>>;
 using Text = std::unique_ptr<TTF_Text, internal::SdlDeleter<TTF_DestroyText>>;
 
-// TTF_Init() and TTF_Quit() are counted: whoever holds the fonts holds the library open while they are.
+/// TTF_Init() and TTF_Quit() are counted: whoever holds the fonts holds the library open while they are.
 struct TtfLibrary {
     TtfLibrary() = default;
     TtfLibrary(const TtfLibrary&) = delete;
@@ -55,7 +55,7 @@ struct TtfLibrary {
     bool open = false;
 };
 
-// `stack` (the label stack's text) with `name` and `count` in its placeholders' places.
+/// `stack` (the label stack's text) with `name` and `count` in its placeholders' places.
 std::string Filled(std::string stack, std::string_view name, std::string_view count) {
     if (const std::size_t place = stack.find(NAME_PLACEHOLDER); place != std::string::npos) {
         stack.replace(place, NAME_PLACEHOLDER.size(), name);
@@ -66,10 +66,10 @@ std::string Filled(std::string stack, std::string_view name, std::string_view co
     return stack;
 }
 
-// What Prewarm() rasterises: the number characters; every string in each language; the label stack without its
-// placeholders and filled with each of its language's strings and every digit, as HarfBuzz shapes a digit after Latin
-// letters into another glyph than a digit on its own; and the HUD's strings filled with every digit likewise, each slot's
-// seconds also after each string, as the HUD writes them after its control and ability.
+/// What Prewarm() rasterises: the number characters; every string in each language; the label stack without its
+/// placeholders and filled with each of its language's strings and every digit, as HarfBuzz shapes a digit after Latin
+/// letters into another glyph than a digit on its own; and the HUD's strings filled with every digit likewise, each slot's
+/// seconds also after each string, as the HUD writes them after its control and ability.
 std::vector<std::string> PrewarmTexts(const core::Strings& strings) {
     std::vector<std::string> texts{ std::string{ NUMBER_CHARACTERS } };
     for (std::size_t language = 0; language < core::LANGUAGES; ++language) {
@@ -87,7 +87,6 @@ std::vector<std::string> PrewarmTexts(const core::Strings& strings) {
             core::FillValue(filled, strings.text.at(std::to_underlying(string)).at(language), ALL_DIGITS, ALL_DIGITS);
             texts.push_back(filled);
         }
-        // `filled` is the seconds now, the last of HUD_FILLED.
         for (const auto& entry : strings.text) {
             texts.push_back(std::format("{}  {}", entry.at(language), filled));
         }
@@ -95,9 +94,9 @@ std::vector<std::string> PrewarmTexts(const core::Strings& strings) {
     return texts;
 }
 
-// What PrewarmNames() rasterises, composed by core::NameText() itself so it covers what a name shows: each surname with
-// the first given character, each given character first and second (the second written plain, an apostrophe before a
-// vowel), the apostrophe, and in each language the label stack filled with all of them run together and every digit.
+/// What PrewarmNames() rasterises, composed by core::NameText() itself so it covers what a name shows: each surname with
+/// the first given character, each given character first and second (the second written plain, an apostrophe before a
+/// vowel), the apostrophe, and in each language the label stack filled with all of them run together and every digit.
 std::vector<std::string> PrewarmNameTexts(const core::Strings& strings, const core::Names& names) {
     std::vector<std::string> texts{ "'" };
     std::vector<core::NpcName> shown;
@@ -122,7 +121,7 @@ std::vector<std::string> PrewarmNameTexts(const core::Strings& strings, const co
     return texts;
 }
 
-// A glyph's field as it was rasterised; no texels when it couldn't be.
+/// A glyph's field as it was rasterised; no texels when it couldn't be.
 struct Field {
     u32 glyph = 0;
     u32 width = 0;
@@ -130,7 +129,7 @@ struct Field {
     std::vector<u8> texels{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
 };
 
-// The glyph's distance field (the alpha channel: SDL3_ttf's field glyphs are white), rows without gaps.
+/// The glyph's distance field (the alpha channel: SDL3_ttf's field glyphs are white), rows without gaps.
 Field Rasterise(TTF_Font* font, u32 glyph) {
     TTF_ImageType type = TTF_IMAGE_INVALID;
     const internal::Surface image{ TTF_GetGlyphImageForIndex(font, glyph, &type) };
@@ -155,9 +154,9 @@ Field Rasterise(TTF_Font* font, u32 glyph) {
     return field;
 }
 
-// The fonts, and what the main thread and the worker share. The TextLayout owns it and waits for its batch before
-// letting it go, so the fonts open and close on the main thread, one after the other (FreeType's library never opens
-// or closes two faces at once), then the library quits.
+/// The fonts, and what the main thread and the worker share. The TextLayout owns it and waits for its batch before
+/// letting it go, so the fonts open and close on the main thread, one after the other (FreeType's library never opens
+/// or closes two faces at once), then the library quits.
 struct Fonts {
     Fonts() = default;
     Fonts(const Fonts&) = delete;
@@ -166,8 +165,8 @@ struct Fonts {
     Fonts& operator=(Fonts&&) = delete;
     ~Fonts() = default;
 
-    // A batch: rasterises the requests one at a time, oldest first, until none are left (or the TextLayout, going,
-    // has dropped them).
+    /// A batch: rasterises the requests one at a time, oldest first, until none are left (or the TextLayout, going,
+    /// has dropped them).
     void RasteriseRequests() PN_REQUIRES(!queueMutex, !fieldMutex) {
         while (true) {
             u32 glyph = 0;
@@ -191,14 +190,14 @@ struct Fonts {
         return Rasterise(field.get(), glyph);
     }
 
-    // First, so the library quits after the fonts close.
+    /// First, so the library quits after the fonts close.
     TtfLibrary library{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    // Shapes on the main thread. Without SDF: SDL3_ttf 3.2.2 shapes a field font's glyphs top to bottom 8 pixels too
-    // far left and 8 or 16 too high by glyph, gives a space a blank field and widens the line by a spread, while a plain
-    // font's glyphs sit exactly where their fields' outlines do, less the spread, either way.
+    /// Shapes on the main thread. Without SDF: SDL3_ttf 3.2.2 shapes a field font's glyphs top to bottom 8 pixels too
+    /// far left and 8 or 16 too high by glyph, gives a space a blank field and widens the line by a spread, while a plain
+    /// font's glyphs sit exactly where their fields' outlines do, less the spread, either way.
     Font shaping = nullptr;
     core::Mutex fieldMutex{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    // Rasterises fields: the worker's batch, or Prewarm() on the main thread, one at a time.
+    /// Rasterises fields: the worker's batch, or Prewarm() on the main thread, one at a time.
     Font field PN_GUARDED_BY(fieldMutex) = nullptr;
     core::Mutex queueMutex{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
@@ -207,7 +206,7 @@ struct Fonts {
     // NOLINTEND(readability-redundant-member-init)
 };
 
-// Where a glyph the cache has seen stands.
+/// Where a glyph the cache has seen stands.
 enum class GlyphState : u8 {
     Requested, // asked of the worker, not landed yet
     Missing,   // can't be drawn, and said so
@@ -237,8 +236,8 @@ struct TextLayout::Impl {
     Impl& operator=(const Impl&) = delete;
     Impl(Impl&&) = delete;
     Impl& operator=(Impl&&) = delete;
-    // A running batch stops after the glyph in hand, nobody being left to take the rest; it's waited for before the
-    // fonts go.
+    /// A running batch stops after the glyph in hand, nobody being left to take the rest; it's waited for before the
+    /// fonts go.
     ~Impl() {
         {
             const std::scoped_lock lock{ fonts->queueMutex };
@@ -267,12 +266,12 @@ struct TextLayout::Impl {
     // NOLINTEND(readability-redundant-member-init)
     u64 frame = 0;
     u64 landings = 0; // how many times the worker's fields have landed
-    // The batch on the worker, if any. Last: destroyed first, so it's done before the fonts go.
+    /// The batch on the worker, if any. Last: destroyed first, so it's done before the fonts go.
     std::optional<core::Jobs::Pending> batch = std::nullopt;
 };
 
-// `text` shaped running `direction` into its box (glyphs not yet placed), calling `visit` with each glyph that draws
-// something; none, logged, when SDL3_ttf can't lay it out.
+/// `text` shaped running `direction` into its box (glyphs not yet placed), calling `visit` with each glyph that draws
+/// something; none, logged, when SDL3_ttf can't lay it out.
 template<typename Visit>
 std::optional<Layout> TextLayout::Impl::Shape(std::string_view text, core::TextDirection direction, const Visit& visit) {
     constexpr auto MARGINS = static_cast<f32>(2 * SDF_SPREAD);
@@ -403,9 +402,9 @@ void TextLayout::Impl::Place(Field field) {
     );
 }
 
-// Lands the fields the worker has finished, and hands it the glyphs asked for since; starts a batch for them when none
-// is running. A batch is low-priority work (Jobs::Start), never queued behind a background job such as a save, nor
-// holding one up.
+/// Lands the fields the worker has finished, and hands it the glyphs asked for since; starts a batch for them when none
+/// is running. A batch is low-priority work (Jobs::Start), never queued behind a background job such as a save, nor
+/// holding one up.
 void TextLayout::Impl::Exchange(core::Jobs& jobs) {
     if (batch && batch->Done()) {
         batch.reset();
@@ -459,8 +458,8 @@ TextLayout::TextLayout(TextLayout&& other) noexcept = default;
 TextLayout& TextLayout::operator=(TextLayout&& other) noexcept = default;
 TextLayout::~TextLayout() = default;
 
-// Shapes each of `texts` both ways, and rasterises on this thread every glyph not yet in the cache, one at a time.
-// Returns how many it rasterised.
+/// Shapes each of `texts` both ways, and rasterises on this thread every glyph not yet in the cache, one at a time.
+/// Returns how many it rasterised.
 std::size_t TextLayout::Warm(const std::vector<std::string>& texts) {
     Impl& impl = *m_impl;
     std::vector<u32> unseen;
@@ -496,7 +495,7 @@ void TextLayout::PrewarmNames(const core::Strings& strings, const core::Names& n
     PN_LOG_INFO("name glyphs rasterised ahead of time: {}, in {:.0f} ms", rasterised, took.count());
 }
 
-// No zone: it runs once per text, tens of times a frame, and a zone costs more than a hit; a miss's Make() has one.
+/// No zone: it runs once per text, tens of times a frame, and a zone costs more than a hit; a miss's Make() has one.
 const Layout& TextLayout::Lay(std::string_view text, core::TextDirection direction) {
     std::string& key = m_impl->key;
     key.assign(1, static_cast<char>(direction));

@@ -15,14 +15,14 @@ constexpr u32 SEAL_INDEX_BYTES = MAX_SEAL_QUADS * QUAD_INDICES * static_cast<u32
 constexpr u32 SEAL_LAYER_BUFFER_BYTES = MAX_SEAL_LAYERS_DRAWN * static_cast<u32>(SEAL_GPU_LAYER_BYTES);
 constexpr u32 SEAL_LIGHT_BUFFER_BYTES = MAX_SEAL_LIGHTS_DRAWN * static_cast<u32>(SEAL_GPU_PARTICLES_BYTES);
 constexpr u32 SEAL_LIGHT_VERTICES = 4; // a particle's quad: a triangle strip
-// A storage buffer may not be empty: the smallest pack's room, grown as packs need.
+/// A storage buffer may not be empty: the smallest pack's room, grown as packs need.
 constexpr u32 SEAL_SMALLEST_PACK = 64;
 static_assert(
     MAX_SEALS_DRAWN * (core::MAX_SEAL_LAYERS + SEAL_EXTRA_LAYERS) <= MAX_SEAL_LAYERS_DRAWN,
     "the layer buffer holds every layer DrawSeals() draws, emblems and shadows too, so no quad points past it"
 );
 
-// `Draw` in shaders/seal.vert.hlsl: rows of 16 bytes, as HLSL packs a constant buffer.
+/// `Draw` in shaders/seal.vert.hlsl: rows of 16 bytes, as HLSL packs a constant buffer.
 constexpr std::size_t SEAL_UNIFORM_BYTES = 32;
 constexpr f32 SEAL_CLIP_SPAN = 2.0F; // clip space spans this much across either axis
 struct SealUniforms {
@@ -33,18 +33,18 @@ struct SealUniforms {
 };
 static_assert(sizeof(SealUniforms) == SEAL_UNIFORM_BYTES, "the seal vertex shader's constant buffer is 32 bytes");
 
-// `target`'s world-to-clip transform as the seal vertex shaders take it: clip = world * xy + zw.
+/// `target`'s world-to-clip transform as the seal vertex shaders take it: clip = world * xy + zw.
 std::array<f32, 4> WorldToClipOf(const SealTarget& target) {
     const ClipTransform& worldToClip = target.worldToClip;
     return { { worldToClip.scaleX, worldToClip.scaleY, worldToClip.offsetX, worldToClip.offsetY } };
 }
 
-// `target`'s pixels per clip unit, across and down: half its size.
+/// `target`'s pixels per clip unit, across and down: half its size.
 std::array<f32, 2> PixelsPerClipOf(const SealTarget& target) {
     return { { static_cast<f32>(target.width) / SEAL_CLIP_SPAN, static_cast<f32>(target.height) / SEAL_CLIP_SPAN } };
 }
 
-// The constants the seal shaders copy, as they hold them: each must equal what it copies.
+/// The constants the seal shaders copy, as they hold them: each must equal what it copies.
 constexpr u32 SHADER_SEAL_STAR = 4;     // seal.hlsli's SEAL_STAR
 constexpr u32 SHADER_SEAL_FLOURISH = 6; // seal.hlsli's SEAL_FLOURISH
 constexpr u32 SHADER_SEAL_EMBLEM = 7;   // seal.hlsli's SEAL_EMBLEM
@@ -64,7 +64,7 @@ static_assert(
     "seal.hlsli's particle kinds are gfx's"
 );
 
-// `LightDraw` in shaders/seal_light.vert.hlsl: rows of 16 bytes, as HLSL packs a constant buffer.
+/// `LightDraw` in shaders/seal_light.vert.hlsl: rows of 16 bytes, as HLSL packs a constant buffer.
 constexpr std::size_t SEAL_LIGHT_UNIFORM_BYTES = 48;
 struct SealLightUniforms {
     std::array<f32, 4> worldToClip{};
@@ -76,8 +76,8 @@ struct SealLightUniforms {
 };
 static_assert(sizeof(SealLightUniforms) == SEAL_LIGHT_UNIFORM_BYTES, "the light's vertex constant buffer is 48 bytes");
 
-// `Look` in shaders/seal.frag.hlsl, the fragment uniform: the table's halo and the band margin the bands were laid out with
-// (gfx::SealBandMargin() of the same reach), so the shader's frame mask ends where the geometry does.
+/// `Look` in shaders/seal.frag.hlsl, the fragment uniform: the table's halo and the band margin the bands were laid out with
+/// (gfx::SealBandMargin() of the same reach), so the shader's frame mask ends where the geometry does.
 constexpr std::size_t SEAL_LOOK_UNIFORM_BYTES = 16;
 struct SealLookUniforms {
     f32 haloReach = 0.0F;
@@ -87,7 +87,7 @@ struct SealLookUniforms {
 };
 static_assert(sizeof(SealLookUniforms) == SEAL_LOOK_UNIFORM_BYTES, "the seal fragment shader's constant buffer is 16 bytes");
 
-// A colour target of `format` blending premultiplied alpha: ink covers what is under it, light adds to it.
+/// A colour target of `format` blending premultiplied alpha: ink covers what is under it, light adds to it.
 SDL_GPUColorTargetDescription SealBlendTarget(SDL_GPUTextureFormat format, bool ink) {
     SDL_GPUColorTargetDescription target{};
     target.format = format;
@@ -142,8 +142,8 @@ Gpu<SDL_GPUGraphicsPipeline> CreateSealPipeline(SDL_GPUDevice* device, SDL_GPUTe
     return pipeline;
 }
 
-// The particles' pipeline: their ink (`ink`) or their light. No vertex buffer: each particle's quad is built from the vertex
-// and instance indices, placed from its seal's record.
+/// The particles' pipeline: their ink (`ink`) or their light. No vertex buffer: each particle's quad is built from the vertex
+/// and instance indices, placed from its seal's record.
 Gpu<SDL_GPUGraphicsPipeline> CreateLightPipeline(SDL_GPUDevice* device, SDL_GPUTextureFormat format, bool ink) {
     const Gpu<SDL_GPUShader> vertex = CreateShader(device, shaders::SEAL_LIGHT_VERT, SDL_GPU_SHADERSTAGE_VERTEX);
     const Gpu<SDL_GPUShader> fragment = CreateShader(device, shaders::SEAL_LIGHT_FRAG, SDL_GPU_SHADERSTAGE_FRAGMENT);
