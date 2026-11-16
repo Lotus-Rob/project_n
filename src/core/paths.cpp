@@ -1,0 +1,188 @@
+#include "core/paths.hpp"
+
+#include "core/assert.hpp"
+
+namespace core {
+
+namespace {
+
+// A diagonal step costs seven fifths of the tile entered, rounded down: StepCost's rule, which the estimate must not exceed.
+constexpr u64 DIAGONAL_NUMERATOR = 7;
+constexpr u64 DIAGONAL_DENOMINATOR = 5;
+
+// Calls `visit(neighbour)` for each of the eight neighbours of `tile` on the map, in ascending tile index.
+template<typename Visit>
+void ForNeighbours(const WorldMap& map, u32 tile, const Visit& visit) {
+    const TilePoint point = map.PointOf(tile);
+    for (i64 dRow = -1; dRow <= 1; ++dRow) {
+        for (i64 dColumn = -1; dColumn <= 1; ++dColumn) {
+            const i64 column = static_cast<i64>(point.column) + dColumn;
+            const i64 row = static_cast<i64>(point.row) + dRow;
+            if ((dRow == 0 && dColumn == 0) || column < 0 || row < 0 || std::cmp_greater_equal(column, map.Columns()) ||
+                std::cmp_greater_equal(row, map.Rows())) {
+                continue;
+            }
+            visit(map.TileIndex({ .column = static_cast<u32>(column), .row = static_cast<u32>(row) }));
+        }
+    }
+}
+
+using Entry = std::pair<u64, u32>; // (cost or f, tile)
+using Queue = std::priority_queue<Entry, std::vector<Entry>, std::greater<>>;
+
+// The cheapest cost of entering any tile by `profile`: every tile's cost is one of its kinds' or features' costs, or a
+// cap of the terrain's by one, so none is lower. 0 when nothing is passable.
+u32 CheapestEntry(const MovementProfile& profile) {
+    u32 cheapest = IMPASSABLE_COST;
+    for (const u16 cost : profile.kindCosts) {
+        cheapest = std::min<u32>(cheapest, cost);
+    }
+    for (const u16 cost : { profile.features.road, profile.features.river, profile.features.bridge, profile.features.ford }) {
+        cheapest = std::min<u32>(cheapest, cost);
+    }
+    return cheapest == IMPASSABLE_COST ? 0 : cheapest;
+}
+
+// The cost of crossing `dColumn` by `dRow` tiles at best, with `cheapest` the least a step may cost: straight steps for
+// the difference, diagonals (seven fifths, rounded down as StepCost does) for the rest.
+u64 Estimate(u32 cheapest, i64 dColumn, i64 dRow) {
+    const u64 along = static_cast<u64>(std::abs(dColumn));
+    const u64 across = static_cast<u64>(std::abs(dRow));
+    const u64 shorter = std::min(along, across);
+    const u64 longer = std::max(along, across);
+    return (u64{ cheapest } * (longer - shorter)) + (u64{ cheapest } * DIAGONAL_NUMERATOR / DIAGONAL_DENOMINATOR * shorter);
+}
+
+} // namespace
+
+DistanceMap DistanceMap::Build(const WorldMap& map, u32 goal, ProfileIndex profile) {
+    std::vector<u32> cost(static_cast<std::size_t>(map.Columns()) * map.Rows(), UNREACHABLE);
+    cost.at(goal) = 0;
+    Queue queue;
+    queue.emplace(0, goal);
+    while (!queue.empty()) {
+        const auto [reached, tile] = queue.top();
+        queue.pop();
+        if (reached > cost[tile]) {
+            continue; // a cheaper entry settled this tile
+        }
+        ForNeighbours(map, tile, [&](u32 next) {
+            const u32 step = map.StepCost(next, tile, profile);
+            if (step == IMPASSABLE_COST) {
+                return;
+            }
+            const u64 total = reached + step;
+            if (total < cost[next]) {
+                cost[next] = static_cast<u32>(total);
+                queue.emplace(total, next);
+            }
+        });
+    }
+    return DistanceMap{ std::move(cost), goal, profile };
+}
+
+std::vector<u32> RouteDown(const WorldMap& map, const DistanceMap& distances, u32 from) {
+    if (distances.CostFrom(from) == UNREACHABLE) {
+        return {};
+    }
+    std::vector<u32> route{ from };
+    const std::size_t most = static_cast<std::size_t>(map.Columns()) * map.Rows();
+    u32 tile = from;
+    while (tile != distances.Goal() && route.size() <= most) {
+        u32 best = UNREACHABLE;
+        ForNeighbours(map, tile, [&](u32 next) {
+            if (best != UNREACHABLE || distances.CostFrom(next) == UNREACHABLE) {
+                return; // neighbours come in tile order: the first that fits is the lowest
+            }
+            const u32 step = map.StepCost(tile, next, distances.Profile());
+            if (step != IMPASSABLE_COST && step + distances.CostFrom(next) == distances.CostFrom(tile)) {
+                best = next;
+            }
+        });
+        PN_ASSERT(best != UNREACHABLE, "a reachable tile has a neighbour one step down");
+        if (best == UNREACHABLE) {
+            route.clear();
+            break;
+        }
+        tile = best;
+        route.push_back(tile);
+    }
+    return route;
+}
+
+std::vector<u32> FindRoute(const WorldMap& map, ProfileIndex profile, u32 from, u32 target) {
+    if (map.CostAt(target, profile) == IMPASSABLE_COST) {
+        return {};
+    }
+    const std::size_t tiles = static_cast<std::size_t>(map.Columns()) * map.Rows();
+    const u32 cheapest = CheapestEntry(map.Profiles()[profile]);
+    const TilePoint targetPoint = map.PointOf(target);
+    const auto estimate = [&](u32 tile) {
+        const TilePoint point = map.PointOf(tile);
+        return Estimate(
+            cheapest,
+            static_cast<i64>(targetPoint.column) - static_cast<i64>(point.column),
+            static_cast<i64>(targetPoint.row) - static_cast<i64>(point.row)
+        );
+    };
+    std::vector<u32> cost(tiles, UNREACHABLE);
+    std::vector<u32> parent(tiles, UNREACHABLE);
+    cost.at(from) = 0;
+    Queue queue; // (f, tile)
+    queue.emplace(estimate(from), from);
+    while (!queue.empty()) {
+        const auto [estimated, tile] = queue.top();
+        queue.pop();
+        if (estimated > u64{ cost[tile] } + estimate(tile)) {
+            continue; // a cheaper way to this tile was found after this entry
+        }
+        if (tile == target) {
+            std::vector<u32> route{ target };
+            while (route.back() != from) {
+                route.push_back(parent.at(route.back()));
+            }
+            std::ranges::reverse(route);
+            return route;
+        }
+        ForNeighbours(map, tile, [&](u32 next) {
+            const u32 step = map.StepCost(tile, next, profile);
+            if (step == IMPASSABLE_COST) {
+                return;
+            }
+            const u64 total = u64{ cost[tile] } + step;
+            if (total < cost[next]) {
+                cost[next] = static_cast<u32>(total);
+                parent[next] = tile;
+                queue.emplace(total + estimate(next), next);
+            }
+        });
+    }
+    return {};
+}
+
+Paths::Paths(std::shared_ptr<const WorldMap> map)
+  : m_map{ std::move(map) }
+  , m_maps(m_map->Profiles().size()) {
+    for (auto& slots : m_maps) {
+        slots.resize(m_map->Places().size());
+    }
+}
+
+const DistanceMap& Paths::To(u16 city, ProfileIndex profile) {
+    PN_ASSERT(m_map->Places()[city].kind == PlaceKind::City, "a distance map is kept for cities only");
+    std::optional<DistanceMap>& slot = m_maps.at(profile).at(city);
+    if (!slot) {
+        slot = DistanceMap::Build(*m_map, m_map->TileIndex(m_map->Places()[city].tile), profile);
+    }
+    return *slot;
+}
+
+void Paths::Warm(ProfileIndex profile) {
+    for (std::size_t place = 0; place < m_map->Places().size(); ++place) {
+        if (m_map->Places()[place].kind == PlaceKind::City) {
+            static_cast<void>(To(static_cast<u16>(place), profile));
+        }
+    }
+}
+
+} // namespace core

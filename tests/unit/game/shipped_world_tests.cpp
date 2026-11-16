@@ -1,5 +1,6 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/game_data.hpp"
+#include "core/paths.hpp"
 #include "core/world_map.hpp"
 #include "game/host.hpp"
 #include "game/npcs.hpp"
@@ -83,3 +84,27 @@ TEST_CASE("the shipped world's people are mostly mortals, some cultivators, a ra
 }
 
 } // namespace
+
+// The search and the distance map are two programs for one answer; the shipped map's roads, river, fords and sand are
+// what could make them differ (the heuristic's floor against seven-fifths diagonals).
+TEST_CASE("the search costs the same as the distance map on the shipped map") {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    // Pairs of cities by place index: the capital, port, sect, oasis, marsh town.
+    const std::vector<std::pair<u16, u16>> pairs = { { 0, 1 }, { 1, 0 }, { 0, 2 }, { 2, 3 },
+                                                     { 3, 4 }, { 4, 0 }, { 1, 4 }, { 2, 0 } };
+    for (const auto& [from, target] : pairs) {
+        CAPTURE(from);
+        CAPTURE(target);
+        const u32 start = map->TileIndex(map->Places()[from].tile);
+        const u32 goal = map->TileIndex(map->Places()[target].tile);
+        const core::DistanceMap distances = core::DistanceMap::Build(*map, goal, core::WALKING);
+        REQUIRE(distances.CostFrom(start) != core::UNREACHABLE);
+        const std::vector<u32> route = core::FindRoute(*map, core::WALKING, start, goal);
+        REQUIRE_FALSE(route.empty());
+        u32 walked = 0;
+        for (std::size_t step = 1; step < route.size(); ++step) {
+            walked += map->StepCost(route[step - 1], route[step], core::WALKING);
+        }
+        CHECK(walked == distances.CostFrom(start));
+    }
+}
