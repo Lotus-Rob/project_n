@@ -185,6 +185,8 @@ struct Renderer::Impl {
     /// Lays out and copies the world map's tiles for the world `shown` shows, when it shows the map and they differ from what
     /// the buffer holds; returns how many instances didn't fit.
     std::expected<std::size_t, core::Error> UploadTerrain(SDL_GPUCopyPass* copy, const Shown& shown);
+    /// Lays out the route and the cursor tile for the frame and copies them, none when neither shows; the buffer's overflow, if
+    /// any.
     std::expected<std::size_t, core::Error> UploadRoute(SDL_GPUCopyPass* copy, const Shown& shown);
     /// Lays out the snapshot's seals at the render time into sealDrawing, its showcase seals only when `showcase`, and logs
     /// once each seal key the table lacks among those drawn.
@@ -327,7 +329,7 @@ struct Renderer::Impl {
     std::optional<TerrainKey> terrainHeld = std::nullopt;
     std::optional<TerrainKey> terrainRecorded = std::nullopt;
     u64 worldVersion = 0;
-    TerrainDrawing routeDrawing{};
+    TerrainDrawing routeDrawing{}; // this frame's route and cursor tile, laid out again each frame; held when routeShown
     std::optional<core::Vec2> targetTile = std::nullopt; // SetTargetTile(): the cursor tile's centre, if it shows
     bool routeShown = false;                             // whether this frame draws the route buffer: it holds something
     bool terrainShown = false;     // whether this frame draws the terrain: the snapshot shows the map and its buffer is current

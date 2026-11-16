@@ -190,6 +190,9 @@ std::expected<void, core::Error> ReadMarkers(
     return {};
 }
 
+// Far more than a tile (256 units) and few enough dots to fit the route buffer; it also keeps the f32 cast defined.
+constexpr f64 MAX_ROUTE_SPACING = 4096.0;
+
 std::expected<void, core::Error> ReadRoute(
     const YAML::Node& root,
     const Atlas& atlas,
@@ -213,8 +216,9 @@ std::expected<void, core::Error> ReadRoute(
     if (!cursor) {
         return std::unexpected{ cursor.error() };
     }
-    const std::expected<f64, core::Error> spacing =
-        internal::RequiredNumber(LOOK_READER, *node, "route", "spacing", { .low = 0.0, .lowOpen = true });
+    const std::expected<f64, core::Error> spacing = internal::RequiredNumber(
+        LOOK_READER, *node, "route", "spacing", { .low = 0.0, .lowOpen = true, .high = MAX_ROUTE_SPACING }
+    );
     if (!spacing) {
         return std::unexpected{ spacing.error() };
     }

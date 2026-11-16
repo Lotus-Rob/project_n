@@ -22,7 +22,7 @@ namespace core {
 /// north, east, south and west).
 inline constexpr u32 LINE_MASKS = 16;
 
-/// The distance between a route's dots when the look's file doesn't say, in world units.
+/// The distance between a route's dots in a look nothing has read yet, in world units.
 inline constexpr f32 DEFAULT_ROUTE_SPACING = 48.0F;
 
 /// The sprites that draw the player's route and the target cursor's tile.
