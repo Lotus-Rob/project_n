@@ -44,6 +44,9 @@ public:
     void AdvanceCalendar(const core::TickCounters& counters, core::Jobs& /*jobs*/, const std::stop_token& /*stop*/) override {
         steps.push_back(counters.state);
     }
+    [[nodiscard]] bool MonthDue() const override {
+        return dueAfter.has_value() && ticks.size() >= *dueAfter && steps.empty();
+    }
     // Its state is how many ticks it ran, in its scene; a load holds them until EnterScene() restores them.
     void Save(core::Writer& archive) override {
         archive(u64{ ticks.size() }, key, scene);
@@ -114,6 +117,8 @@ public:
     std::vector<std::optional<core::Rect>> views{}; // the view each publish was given
     // NOLINTEND(readability-redundant-member-init)
     std::size_t casts = 0; // how many Cast actions it was given
+    // After this many ticks a month is due (MonthDue()), until a calendar step runs; none is ever due by default.
+    std::optional<std::size_t> dueAfter = std::nullopt;
     bool rejectLoads = false;
     u64 hashSalt = 0; // set to make its state hash differ from another's with the same ticks
     u64 dataHash = 0; // the hash of the game data it was given last
@@ -353,6 +358,30 @@ TEST_CASE("the tick after the transition runs the step, changing the state, and 
     static_cast<void>(rig.Burst(1));
     CHECK(rig.simulation.ticks == std::vector<u64>{ 1 });
     CHECK(rig.simulation.states == std::vector<u64>{ 2 }); // the step counted as a change of state
+}
+
+TEST_CASE("a month the simulation says is due runs as a calendar step") {
+    constexpr u64 TICKS = 5;
+    constexpr std::size_t DUE_AFTER = 3;
+    Rig rig;
+    rig.simulation.dueAfter = DUE_AFTER;
+    const BurstResult due = rig.Burst(TICKS);
+    CHECK_FALSE(due.stalled);
+    CHECK(due.snapshot.wallTick == 3); // the burst ends after the tick that made it due
+    CHECK(due.snapshot.simulationTick == 3);
+    CHECK(due.snapshot.advanced);
+    CHECK(due.snapshot.transition);
+    CHECK(rig.simulation.steps.empty());
+
+    const BurstResult step = rig.Burst(TICKS);
+    CHECK(step.stalled);
+    CHECK(rig.simulation.steps == std::vector<u64>{ 4 }); // on the next tick, as a change of state
+    CHECK(rig.simulation.ticks.size() == DUE_AFTER);
+    CHECK_FALSE(step.snapshot.transition);
+
+    static_cast<void>(rig.Burst(TICKS));
+    CHECK(rig.simulation.steps.size() == 1); // once
+    CHECK(rig.simulation.ticks.size() == DUE_AFTER + TICKS);
 }
 
 TEST_CASE("input sent during the transition waits until after the step") {

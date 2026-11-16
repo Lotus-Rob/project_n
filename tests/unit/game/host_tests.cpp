@@ -13,6 +13,7 @@
 #include "game/scenes/world.hpp"
 #include "platform/paths.hpp"
 #include "support/manifest.hpp"
+#include "support/saves.hpp"
 #include "support/seals.hpp"
 #include "support/world.hpp"
 
@@ -1431,6 +1432,175 @@ TEST_CASE("arriving through a portal lands off the next scene's portal") {
         }
         CHECK_FALSE(host.Requested().has_value());
     }
+}
+
+// Ticks `host` from tick `first` to `last` under `held` movement, with no actions.
+void TickRange(game::Host& host, u64 first, u64 last, core::HeldInput held = {}) {
+    std::vector<core::Event> events;
+    for (u64 tick = first; tick <= last; ++tick) {
+        host.Tick(At(tick), { .actions = {}, .held = held }, events);
+    }
+}
+
+// Ticks `host` once at `tick` with one action of `kind`.
+void TickWith(game::Host& host, u64 tick, core::ActionKind kind, core::HeldInput held = {}) {
+    const std::array<core::Action, 1> actions{ { { .kind = kind } } };
+    std::vector<core::Event> events;
+    host.Tick(At(tick), { .actions = actions, .held = held }, events);
+}
+
+TEST_CASE("the world clock runs only on the world map and not while paused") {
+    constexpr u64 TICKS = 10;
+    game::Host world(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    TickRange(world, 1, TICKS);
+    CHECK(world.WorldTicks() == TICKS);
+    CHECK_FALSE(world.WorldPaused());
+
+    TickWith(world, TICKS + 1, core::ActionKind::ToggleWorldPause, HELD_RIGHT);
+    const core::Vec2 foot = FootOf(world, world.Player());
+    TickRange(world, TICKS + 2, TICKS + 1 + TICKS, HELD_RIGHT);
+    CHECK(world.WorldPaused());
+    CHECK(world.WorldTicks() == TICKS);
+    const core::Vec2 after = FootOf(world, world.Player());
+    CHECK(after.x == foot.x); // the cultivator stands under held movement
+    CHECK(after.y == foot.y);
+
+    TickWith(world, (2 * TICKS) + 2, core::ActionKind::ToggleWorldPause);
+    TickRange(world, (2 * TICKS) + 3, (2 * TICKS) + 2 + TICKS);
+    CHECK_FALSE(world.WorldPaused());
+    CHECK(world.WorldTicks() == (2 * TICKS) + 1); // resumed from the toggle's own tick
+
+    game::Host arena(test::TestManifest());
+    TickWith(arena, 1, core::ActionKind::ToggleWorldPause);
+    TickRange(arena, 2, 1 + TICKS);
+    CHECK(arena.WorldTicks() == 0);
+    CHECK_FALSE(arena.WorldPaused()); // ignored off the map
+}
+
+TEST_CASE("a scene change clears the world pause, and the clock stands still away from the map") {
+    constexpr u64 TICKS = 10;
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    TickRange(host, 1, TICKS);
+    TickWith(host, TICKS + 1, core::ActionKind::ToggleWorldPause);
+    REQUIRE(host.WorldPaused());
+    TickWith(host, TICKS + 2, core::ActionKind::CycleScene);
+    host.EnterScene(); // the arena, as the logic does after the tick
+    REQUIRE(host.Current().key == game::ARENA_SCENE);
+    CHECK_FALSE(host.WorldPaused());
+    TickRange(host, TICKS + 3, TICKS + 2 + TICKS);
+    CHECK(host.WorldTicks() == TICKS);
+}
+
+// A host with the shipped map that has loaded and entered an empty world save at `clock`: a world clock anywhere in a
+// month without ticking the world scene there.
+std::unique_ptr<game::Host> WorldAt(test::SavedClock clock) {
+    auto host = std::make_unique<game::Host>(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    const std::vector<std::byte> bytes = test::WorldSaveAt(clock);
+    core::Reader reader{ bytes };
+    REQUIRE(host->Load(reader, 0)); // at tick 0: it holds no flash or seal to date
+    host->EnterScene();
+    REQUIRE(host->Current().key == game::WORLD_SCENE);
+    return host;
+}
+
+// Lets a month pass for `host`, as the logic does on the frozen tick after the transition.
+void StepMonth(game::Host& host, u64 state) {
+    core::Jobs jobs{ 1 };
+    host.AdvanceCalendar({ .wall = state, .simulation = 0, .state = state }, jobs, {});
+}
+
+// What `host` publishes as its calendar.
+std::optional<core::CalendarView> CalendarOf(game::Host& host) {
+    core::Jobs jobs{ 1 };
+    core::Snapshot snapshot;
+    host.Publish(snapshot, jobs, std::nullopt);
+    return snapshot.calendar;
+}
+
+TEST_CASE("a month's last day ends in the month step") {
+    const std::unique_ptr<game::Host> world = WorldAt({ .ticks = game::TICKS_PER_MONTH - 1, .months = 0 });
+    CHECK_FALSE(world->MonthDue()); // the last day's last tick is still to run
+    TickRange(*world, 1, 1);
+    CHECK(world->MonthDue());
+    CHECK(world->WorldTicks() == game::TICKS_PER_MONTH);
+    TickRange(*world, 2, 2);
+    CHECK(world->WorldTicks() == game::TICKS_PER_MONTH); // the clock waits for the step
+
+    StepMonth(*world, 3);
+    CHECK(world->Months() == 1);
+    CHECK_FALSE(world->MonthDue());
+    CHECK(world->WorldTicks() == game::TICKS_PER_MONTH);
+    TickRange(*world, 3, 3);
+    CHECK(world->WorldTicks() == game::TICKS_PER_MONTH + 1); // and runs again
+}
+
+TEST_CASE("M moves the clock to the next month's first tick") {
+    constexpr u64 CLOCK = 1'000;
+    const std::unique_ptr<game::Host> world = WorldAt({ .ticks = CLOCK, .months = 0 });
+    StepMonth(*world, 1);
+    CHECK(world->WorldTicks() == game::TICKS_PER_MONTH);
+    CHECK(world->Months() == 1);
+    CHECK_FALSE(world->MonthDue());
+
+    // Pressed while the world is paused: the clock jumps and the pause holds.
+    TickWith(*world, 1, core::ActionKind::ToggleWorldPause);
+    StepMonth(*world, 2);
+    CHECK(world->WorldTicks() == 2 * game::TICKS_PER_MONTH);
+    CHECK(world->Months() == 2);
+    CHECK(world->WorldPaused());
+    TickRange(*world, 2, 2);
+    CHECK(world->WorldTicks() == 2 * game::TICKS_PER_MONTH);
+
+    // Off the map the clock still moves with the steps, so the calendar keeps up with them.
+    game::Host arena(test::TestManifest());
+    StepMonth(arena, 1);
+    CHECK(arena.WorldTicks() == game::TICKS_PER_MONTH);
+    CHECK(arena.Months() == 1);
+}
+
+TEST_CASE("the calendar view shows the month and the day") {
+    constexpr u64 MONTH = game::TICKS_PER_MONTH;
+    constexpr u64 DAY = game::TICKS_PER_DAY;
+    constexpr u32 ELEVENTH = 11;
+    constexpr u32 LAST_DAY = game::DAYS_PER_MONTH - 1;
+    constexpr u64 INTO_DAY = 5;
+    const auto calendarAt = [](u64 ticks, u64 months) { return CalendarOf(*WorldAt({ .ticks = ticks, .months = months })); };
+    CHECK(calendarAt(0, 0) == core::CalendarView{ .month = 0, .day = 0, .paused = false });       // the first tick
+    CHECK(calendarAt(DAY - 1, 0) == core::CalendarView{ .month = 0, .day = 0, .paused = false }); // a day's last
+    CHECK(calendarAt(DAY, 0) == core::CalendarView{ .month = 0, .day = 1, .paused = false });     // the next day's first
+    CHECK(calendarAt(MONTH - 1, 0) == core::CalendarView{ .month = 0, .day = LAST_DAY, .paused = false }); // a month's last
+    CHECK(calendarAt(MONTH, 0) == core::CalendarView{ .month = 1, .day = 0, .paused = false });            // its step due
+    constexpr u64 MID_MONTH = (MONTH * 2) + (DAY * ELEVENTH) + INTO_DAY; // two months on, five ticks into the 11th day
+    CHECK(calendarAt(MID_MONTH, 2) == core::CalendarView{ .month = 2, .day = ELEVENTH, .paused = false });
+
+    const std::unique_ptr<game::Host> paused = WorldAt({ .ticks = 0, .months = 0 });
+    TickWith(*paused, 1, core::ActionKind::ToggleWorldPause);
+    CHECK(CalendarOf(*paused) == core::CalendarView{ .month = 0, .day = 0, .paused = true });
+
+    game::Host arena(test::TestManifest());
+    CHECK_FALSE(CalendarOf(arena).has_value());
+}
+
+TEST_CASE("the calendar ends at its last month's first tick, and a save of it loads") {
+    constexpr u64 CALENDAR_END = game::LAST_MONTH * game::TICKS_PER_MONTH;
+    const std::unique_ptr<game::Host> world = WorldAt({ .ticks = CALENDAR_END - 1, .months = game::LAST_MONTH - 1 });
+    TickRange(*world, 1, 1);
+    CHECK(world->MonthDue());
+    StepMonth(*world, 2);
+    CHECK(world->Months() == game::LAST_MONTH);
+    CHECK_FALSE(world->MonthDue());
+    TickRange(*world, 2, 2);
+    CHECK(world->WorldTicks() == CALENDAR_END); // the clock stands still rather than wrap
+    StepMonth(*world, 3);
+    CHECK(world->Months() == game::LAST_MONTH); // M no longer counts
+    CHECK(world->WorldTicks() == CALENDAR_END);
+
+    std::vector<std::byte> bytes;
+    core::Writer writer{ bytes };
+    world->Save(writer);
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    core::Reader reader{ bytes };
+    CHECK(loaded.Load(reader, 0));
 }
 
 } // namespace

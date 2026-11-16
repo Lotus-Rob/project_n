@@ -15,6 +15,7 @@
 #include "core/tick_clock.hpp"
 #include "game/host.hpp"
 #include "support/manifest.hpp"
+#include "support/saves.hpp"
 #include "support/seals.hpp"
 #include "support/world.hpp"
 
@@ -26,6 +27,16 @@ constexpr u32 WORKERS = 2;
 
 u64 NoClock() {
     return 0;
+}
+
+// Has `host` load and enter `start`, a host save, as the logic does at a load's swap; returns whether it loaded.
+bool StartFrom(game::Host& host, std::span<const std::byte> start) {
+    core::Reader reader{ start };
+    if (!host.Load(reader, 0)) {
+        return false;
+    }
+    host.EnterScene();
+    return true;
 }
 
 // A game as app::Game holds one, built as `scene`, without its clock: the tests choose the bursts. As App does, it
@@ -40,15 +51,31 @@ struct Session {
       : saves(folder / "slot.pns", jobs)
       , replays(folder / "replay.pnr", jobs)
       , host(test::TestManifest(), scene, data) { // parentheses: MSVC C4868
-        Burst(1);                                 // loading: reports the scene resident
-        Burst(1);                                 // entering: reports the way in played
-        Burst(1);                                 // takes that report
+        Start();
+    }
+
+    // A game whose host starts from `start`, a host save it loads and enters before the logic is built (on the shipped
+    // data), as if its scene had been built so: a state no run reaches cheaply.
+    Session(const std::filesystem::path& folder, std::span<const std::byte> start)
+      : saves(folder / "slot.pns", jobs)
+      , replays(folder / "replay.pnr", jobs)
+      , host(test::TestManifest(), game::ARENA_SCENE, test::ShippedData()) // parentheses: MSVC C4868
+      , started(StartFrom(host, start)) {
+        Start();
+    }
+
+    // Runs the game's start: its scene loaded, entered and running.
+    void Start() {
+        Burst(1); // loading: reports the scene resident
+        Burst(1); // entering: reports the way in played
+        Burst(1); // takes that report
     }
 
     void Burst(u64 ticks) {
         static_cast<void>(logic.RunBurst({ .ticks = ticks }));
         core::Snapshot* published = handover.TakeState();
         volleys = published->volleys.size();
+        transition = published->transition;
         seals = test::RaisedSeals(*published).size();
         const core::SceneChange& change = published->sceneChange;
         waited = change.change == shown.change && change.stage == shown.stage ? waited + 1 : 0;
@@ -85,6 +112,7 @@ struct Session {
     core::Saves replays;
     core::Replay replay{};
     game::Host host;
+    bool started = false; // whether the host loaded the start state it was given
     core::Logic logic{ handover, host, jobs, saves, replays, replay, NoClock };
     core::SceneReports reports{};
     std::optional<core::SceneId> reported = std::nullopt;
@@ -93,6 +121,7 @@ struct Session {
     u32 waited = 0;            // bursts since it first showed
     std::size_t volleys = 0;   // in flight in the last snapshot published
     std::size_t seals = 0;     // raised in play in the last snapshot published
+    bool transition = false;   // whether the last snapshot published showed a calendar step's transition
 };
 
 // A folder of its own, removed when the test ends.
@@ -298,8 +327,9 @@ TEST_CASE("a recorded fight replays with every hash matching") {
 }
 
 TEST_CASE("a replay on the world scene plays back with the same hashes") {
-    // On the shipped map with its cities' 50,000 NPCs: the cultivator walks east from the start city, a month passes and
-    // it walks on, across more than one hash window; a fresh game on the same map plays it back with every hash matching.
+    // On the shipped map with its cities' 50,000 NPCs: the cultivator walks east from the start city, the world is paused, a
+    // month passes (M while paused), the world resumes and the cultivator walks on, across more than one hash window; a fresh
+    // game on the same map plays it back with every hash matching.
     constexpr u64 WALK = 40;
     constexpr u64 BURST = 7;
     constexpr u32 MAX_BURSTS = 100;
@@ -314,9 +344,14 @@ TEST_CASE("a replay on the world scene plays back with the same hashes") {
         const core::Vec2 start = FootOf(recording.host, recording.host.Player());
         recording.Hold(RIGHT);
         recording.Burst(WALK);
+        recording.Send(core::ActionKind::ToggleWorldPause);
+        recording.Burst(1);
+        REQUIRE(recording.host.WorldPaused());
         recording.Send(core::ActionKind::AdvanceCalendar);
         recording.Burst(BURST); // ends at the request
         recording.Burst(BURST); // the month step
+        REQUIRE(recording.host.WorldTicks() == game::TICKS_PER_MONTH);
+        recording.Send(core::ActionKind::ToggleWorldPause);
         recording.Burst(WALK);
         recording.Hold({});
         // To a hash tick past the first window, so the recording's last state is checked.
@@ -325,6 +360,7 @@ TEST_CASE("a replay on the world scene plays back with the same hashes") {
         REQUIRE(recording.logic.Counters().wall % core::REPLAY_HASH_TICKS == 0);
         REQUIRE(recording.host.Months() == 1);
         REQUIRE(FootOf(recording.host, recording.host.Player()).x > start.x); // it walked
+        REQUIRE(recording.host.WorldTicks() > game::TICKS_PER_MONTH); // it ran again once resumed (hashed: the hashes check it)
         recording.Send(core::ActionKind::ToggleRecording);
         recording.Burst(1);
     } // its job system finishes writing the replay
@@ -385,6 +421,32 @@ TEST_CASE("a replay recorded through a portal plays back with the same hashes") 
     CHECK(playing.replay.HashCount() == HASHES);
     CHECK(playing.replay.Matched() == playing.replay.HashCount());
     CHECK(playing.host.Current().key == game::STRESS_SCENE);
+}
+
+TEST_CASE("a world clock reaching its month's end runs the month step through the logic") {
+    // The two sides of the automatic step: the host stops its clock at the month's end, and the logic asks for the step
+    // after that tick, publishing the transition, then runs it on the next.
+    constexpr u64 BURST = 3;
+    const Folder folder{ "month_end" };
+    const std::vector<std::byte> start = test::WorldSaveAt({ .ticks = game::TICKS_PER_MONTH - 1, .months = 0 });
+    Session session(folder.Path(), start);
+    REQUIRE(session.started);
+    REQUIRE(session.host.Current().key == game::WORLD_SCENE);
+
+    session.Burst(BURST); // ends after the month's last tick
+    CHECK(session.transition);
+    CHECK(session.host.WorldTicks() == game::TICKS_PER_MONTH);
+    CHECK(session.host.Months() == 0);
+    CHECK(session.logic.Counters().simulation == 1);
+
+    session.Burst(BURST); // the step, on a frozen tick
+    CHECK(session.host.Months() == 1);
+    CHECK_FALSE(session.transition);
+    CHECK(session.host.WorldTicks() == game::TICKS_PER_MONTH);
+
+    session.Burst(BURST);
+    CHECK(session.host.WorldTicks() == game::TICKS_PER_MONTH + BURST); // the clock runs again
+    CHECK(session.host.Months() == 1);
 }
 
 } // namespace

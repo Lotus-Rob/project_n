@@ -63,6 +63,7 @@ bool Logic::RunBurst(const TickBurst& burst, const std::stop_token& stop) {
     snapshot.flashes.clear();
     snapshot.seals.clear();
     snapshot.caster.reset();
+    snapshot.calendar.reset();
     snapshot.follow.reset();
     snapshot.camera = CameraKind::Pan;
     snapshot.selected.reset();
@@ -125,6 +126,9 @@ Logic::TickEnd Logic::RunTick(const std::stop_token& stop) {
         for (Event& event : std::span{ m_events }.subspan(before)) {
             event.tick = m_counters.simulation;
             event.epoch = m_epoch;
+        }
+        if (m_simulation->MonthDue()) {
+            m_calendar = Calendar::Requested; // as an AdvanceCalendar press asks: the transition, then the step
         }
     }
     if (const std::optional<SceneFacts> requested = m_simulation->Requested()) {
