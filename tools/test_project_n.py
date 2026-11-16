@@ -22,6 +22,14 @@ from unittest import mock
 import project_n
 
 
+def setUpModule():
+    # As if this run had swept already: no test may sweep this checkout's own build/. BuildSweepTest's runs clear
+    # it, with ROOT in a temporary folder.
+    patch = mock.patch.object(project_n, "swept", True)
+    patch.start()
+    unittest.addModuleCleanup(patch.stop)
+
+
 class CommitCheckTest(unittest.TestCase):
     def ok(self, message, **kwargs):
         self.assertEqual(project_n.check_message(message, **kwargs), [], message)
@@ -2987,7 +2995,9 @@ class BuildSweepTest(unittest.TestCase):
         for text in ("garbage", ""):
             with self.subTest(text=text):
                 tree = self.tree(f"linux-gcc/{text or 'empty'}", file_age=2 * DAY)
-                (tree / project_n.USED_STAMP).write_text(text)
+                stamp = tree / project_n.USED_STAMP
+                stamp.write_text(text)
+                os.utime(stamp, (NOW - 9 * DAY, NOW - 9 * DAY))  # not the real clock, which passes NOW one day
                 self.assertEqual(project_n.last_used(tree), NOW - 2 * DAY)
 
     def test_ignores_what_no_command_owns(self):
@@ -3005,12 +3015,109 @@ class BuildSweepTest(unittest.TestCase):
     def test_sweep_here_skips_ci_and_containers(self):
         for env, container in (({"GITHUB_ACTIONS": "true"}, False), ({}, True)):
             with self.subTest(env=env, container=container), mock.patch.dict(os.environ, env), \
-                    mock.patch.object(project_n, "IN_CONTAINER", container), \
+                    mock.patch.object(project_n, "IN_CONTAINER", container), mock.patch.object(project_n, "swept", False), \
                     mock.patch.object(project_n, "sweep_build") as sweep:
                 if not env:
                     os.environ.pop("GITHUB_ACTIONS", None)
                 project_n.sweep_here()
                 sweep.assert_not_called()
+
+    def test_a_tree_that_will_not_go_is_left_and_the_sweep_goes_on(self):
+        locked = self.tree("linux-gcc/debug", stamp=NOW - 8 * DAY)
+        old = self.tree("linux-gcc/release", stamp=NOW - 8 * DAY)
+        rmtree = project_n.shutil.rmtree
+
+        def refuse_locked(path, *args, **kwargs):
+            if Path(path) == locked:
+                raise PermissionError(13, "in use", str(path))
+            rmtree(path, *args, **kwargs)
+
+        with mock.patch.object(project_n.shutil, "rmtree", refuse_locked):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                removed = [tree for tree, _ in project_n.sweep_build(self.build, NOW)]
+        self.assertEqual(removed, [old])
+        self.assertTrue(locked.exists())
+        self.assertIn("linux-gcc/debug", out.getvalue())
+
+    def run_swept(self, command, args, **patches):
+        """`command` with ROOT at self.build's parent, sweeping for real but building nothing."""
+        with mock.patch.multiple(project_n, ROOT=self.build.parent, swept=False, **patches), \
+                mock.patch.dict(os.environ), contextlib.redirect_stdout(io.StringIO()):
+            os.environ.pop("GITHUB_ACTIONS", None)
+            command(args)
+
+    def test_sweeps_once_per_run(self):
+        with mock.patch.multiple(project_n, swept=False, IN_CONTAINER=False, ROOT=self.build.parent), \
+                mock.patch.dict(os.environ), mock.patch.object(project_n, "sweep_build") as sweep:
+            os.environ.pop("GITHUB_ACTIONS", None)
+            project_n.sweep_here([Path("build/linux-gcc/release")])
+            project_n.sweep_here([Path("build/linux-gcc/debug")])  # a command the first one runs
+        sweep.assert_called_once()
+        self.assertEqual(sweep.call_args.kwargs["keep"], [self.build / "linux-gcc" / "release"])
+
+    def test_a_run_stamps_its_tree_before_it_builds(self):
+        # A sweep in another terminal must not take a tree this run is still starting up to build (a container's
+        # re-entry, or check's later steps).
+        used = self.tree(Path("container") / "windows-msvc" / "release", stamp=time.time() - 30 * DAY)
+        twin = self.tree(Path("windows-msvc") / "release", stamp=time.time() - 30 * DAY)
+        self.run_swept(project_n.cmd_test, argparse.Namespace(
+            preset="windows-msvc", mode="release", sanitizer="none", container=False, target=None, test=None, args=[],
+            unity=False, list_tests=False), needs_container=lambda *a: True, reenter=lambda *a: None)
+        self.assertGreater(project_n.last_used(used), time.time() - 60)
+        self.assertFalse(twin.exists())  # the run builds in the container, so the stale native tree goes
+
+    def test_build_all_keeps_every_presets_tree(self):
+        trees = [self.tree(Path("linux-gcc") / "release", stamp=time.time() - 30 * DAY),
+                 self.tree(Path("container") / "windows-msvc" / "release", stamp=time.time() - 30 * DAY)]
+        unused = self.tree(Path("linux-gcc") / "releasedbg", stamp=time.time() - 30 * DAY)
+        self.run_swept(project_n.cmd_build, argparse.Namespace(preset="all", mode="release", sanitizer="none", container=False),
+                       build=lambda *a, **k: None, buildable_here=lambda preset: True, reenter=lambda *a: None,
+                       needs_container=lambda preset, force=False: preset == "windows-msvc",
+                       check_sanitizer=lambda *a: None)
+        self.assertEqual([t.exists() for t in trees], [True, True])
+        self.assertFalse(unused.exists())
+
+    def test_check_keeps_every_tree_its_steps_build(self):
+        for container in (False, True):
+            with self.subTest(container=container):
+                if self.build.exists():
+                    project_n.shutil.rmtree(self.build)
+                self.check_keeps_its_trees(container)
+
+    def check_keeps_its_trees(self, container):
+        used = []
+
+        def record(args):
+            used.extend(project_n.own_trees([args.preset], args.mode, args.sanitizer, getattr(args, "unity", False),
+                                            args.container))
+
+        def record_reference(args):
+            used.extend(project_n.own_trees([args.preset], "release", container=args.container))
+
+        leaves = ("debug", "release", "releasedbg", "debug-unity", "debug-address")
+        created = [self.tree(Path(*parent, preset, leaf), stamp=time.time() - 30 * DAY)
+                   for parent in ((), ("container",)) for preset in project_n.PRESETS for leaf in leaves]
+        self.run_swept(project_n.cmd_check, argparse.Namespace(container=container, sanitizers=False),
+                       clone_set_up=lambda: True, cmd_selftest=lambda args: None, commit_range=lambda: None,
+                       cmd_fmt=lambda args: None, cmd_lint=lambda args: None, cmd_reference=record_reference,
+                       cmd_test=record, cmd_build=record, buildable_here=lambda preset: True,
+                       needs_container=lambda preset, force=False: force or preset == "windows-msvc")
+        lint = Path("build", *(("container",) if container else ()), project_n.LINT_PRESET, "debug")
+        kept = {self.build.parent / t for t in used + [lint]} | project_n.warm_trees(self.build)
+        # A tree only check's steps protect: under --container, the container's, so the native twin goes.
+        gcc = self.build / ("container" if container else "") / "linux-gcc" / "release"
+        self.assertIn(gcc, kept)
+        self.assertEqual({t for t in created if t.exists()}, {t for t in created if t in kept})
+        self.assertTrue(any(not t.exists() for t in created))
+
+    def test_clean_refuses_options_stale_would_drop(self):
+        base = {"stale": False, "days": None, "preset": None, "packages": False, "images": False}
+        for wrong in ({"stale": True, "preset": "linux-gcc"}, {"stale": True, "packages": True},
+                      {"stale": True, "images": True}, {"days": 3}):
+            with self.subTest(wrong=wrong), mock.patch.object(project_n, "ROOT", self.build.parent), \
+                    self.assertRaises(project_n.Fail):
+                project_n.cmd_clean(argparse.Namespace(**{**base, **wrong}))
 
     def test_configure_stamps_its_tree(self):
         with temp_repo({"xmake-requires.lock": "x"}) as root, mock.patch.object(project_n, "run"), \

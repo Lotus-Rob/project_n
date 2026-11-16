@@ -268,8 +268,10 @@ the cache. The unity and ASan builds pass.
   (3.5 GiB), and kept linux-clang debug and release. The main checkout's first sweep comes after the merge. Its
   build folder was 45 GB on 2026-11-16. Judged by their newest files, two trees were 7 days old or more that day
   (the container's windows-msvc releasedbg 2.2 GB and debug-address 3.5 GB). Four more (10.9 GB) reach that age
-  within two days,
-  and every shared-PCH tree drops 0.4–2.2 GB on its next rebuild.
+  within two days. A shared-PCH tree drops its 0.4–2.2 GB of per-target precompiled headers only when built from
+  clean: an incremental build leaves the old ones in `.objs/`, as XMake never removes outputs it stops making. The
+  sweep never takes the native preset's warm trees, so after the merge the main checkout needs one
+  `pixi run project_n clean --preset linux-clang`.
 - Cache ageing ("build(tools): age XMake's build cache and drop the ones nothing reads"): `CACHE_DAYS` went from
   14 to 7, the user's choice with these numbers ("build(tools): age the build cache after 7 days, not 14"). The
   main checkout's linux-clang/debug cache held 6.9 GB in 3,147 entries for 744 MB of objects, growing about 1 GB a
@@ -285,8 +287,22 @@ the cache. The unity and ASan builds pass.
   to the owner, because XMake 3.1.2 caches the path in a private field. An XMake bump that renames `pcoutputfile`
   breaks the build loudly. `SHARED_PCH_TOOLCHAINS` reaches rule scripts through `set_values`. The fence covers
   indirect users, as XMake's deep orders walk the whole chain.
-- The sweep keeps both the native and container tree of the command's preset and leaf (a host can't know which the
-  command will use), and every preset's tree under `build --preset all`. A preset folder emptied of trees goes too.
+- The sweep keeps the tree the command will build in, native or its container's as `needs_container` decides
+  before any re-entry (the plan kept both, but the host does know, and the stamping below would otherwise keep an
+  unused twin fresh for ever), and every preset's tree under `build --preset all`. A preset folder emptied of trees
+  goes too.
+- One sweep per run (the final review): the plan had `check` keep only the warm trees, trusting its builds' stamps,
+  but the sweep runs before those builds configure, and each command `check` and `build --preset all` ran swept
+  again keeping only its own tree. So a week-old linux-gcc release tree was deleted, then built from cold. Now the
+  first sweep of a run sets a flag the later ones see, and `check` keeps every tree its steps build: it walks its
+  own step list without running it, so the two can't drift apart. The run stamps those of its trees that exist before it
+  sweeps (GLM's review): a tree is otherwise stamped only when it configures, after a container's start-up or,
+  in `check`, minutes of earlier steps, and a sweep from another terminal meanwhile would take it.
+- A tree the sweep can't remove (a file another program holds, on Windows) is left with one line, never failing the
+  build that came to tidy up. `clean --stale` refuses `--preset`, `--packages` and `--images`, and `--days` refuses
+  to go without `--stale`, rather than dropping them unsaid.
+- Rejected from the fix re-review: "the stale-twin test fails on a Windows host, where `windows-msvc/release` is
+  warm". The sweep tests pin `NATIVE_PRESET` to linux-clang, so no host's warm trees enter them.
 - Cache ageing runs on every tree the sweep keeps, the warm ones included, with one summary line.
 - `-Winvalid-pch` is set for `pixi-gcc` only.
 - The success measure "a full `check` from cold no slower" was taken as the three cold builds above, which are
