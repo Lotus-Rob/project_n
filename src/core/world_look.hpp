@@ -22,6 +22,21 @@ namespace core {
 /// north, east, south and west).
 inline constexpr u32 LINE_MASKS = 16;
 
+/// The distance between a route's dots when the look's file doesn't say, in world units.
+inline constexpr f32 DEFAULT_ROUTE_SPACING = 48.0F;
+
+/// The sprites that draw the player's route and the target cursor's tile.
+struct RouteLook {
+    /// One dot of the route's line.
+    atlas::SpriteId dot{};
+    /// The world units between one dot and the next along the line.
+    f32 spacing = DEFAULT_ROUTE_SPACING;
+    /// The mark on the route's end.
+    atlas::SpriteId marker{};
+    /// The outline of the cursor's tile.
+    atlas::SpriteId cursor{};
+};
+
 /// The sprites that draw the world map.
 struct WorldLook {
     /// The variants of each terrain kind, by the map's kind index; each has at least one.
@@ -42,6 +57,8 @@ struct WorldLook {
     /// The marker of each danger sort, in the file's order (a sort is a key the data names, not an enum).
     // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::vector<std::pair<std::string, atlas::SpriteId>> dangerMarkers{};
+    /// The route line and the cursor's tile.
+    RouteLook route{};
 
     /// A hash of every value, so a reload can tell an edit from none. Not part of the game data's hash.
     [[nodiscard]] u64 Hash() const {
@@ -68,6 +85,7 @@ struct WorldLook {
             }
             hasher(sprite);
         }
+        hasher(route.dot, route.spacing, route.marker, route.cursor);
         return hasher.Value();
     }
 };

@@ -63,6 +63,7 @@ ford: ford
 markers:
   city: marker_city
   mountain_pass: marker_mountain_pass
+route: { dot: route_dot, spacing: 48, marker: route_marker, cursor: target_tile }
 )yaml";
 
 core::WorldMap SmallMap() {

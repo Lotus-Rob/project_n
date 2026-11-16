@@ -380,6 +380,9 @@ struct Snapshot {
     std::optional<CasterView> caster = std::nullopt;
     /// The world's calendar in a scene that shows the world map (`worldMap`); none elsewhere.
     std::optional<CalendarView> calendar = std::nullopt;
+    /// The player's remaining route on the world map: its foot, then the centres of the tiles still to walk; refilled in
+    /// place each publish and empty for none.
+    std::vector<Vec2> route{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// What the camera follows, if anything.
     std::optional<Follow> follow = std::nullopt;
     /// How the camera moves over the scene: Pan unless the simulation says otherwise.

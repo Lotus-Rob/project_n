@@ -14,6 +14,7 @@
 #include "core/strings.hpp"
 #include "core/types.hpp"
 #include "core/ui_colours.hpp"
+#include "core/vec2.hpp"
 #include "core/world_look.hpp"
 #include "core/world_map.hpp"
 #include "gfx/camera.hpp"
@@ -24,6 +25,7 @@
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <span>
 
 namespace gfx {
@@ -140,6 +142,11 @@ public:
     /// map (art/scenes.toml's `world`, data::WORLD_LOOK_SCENE), both of which data::LoadWorldLook checks; a look naming
     /// another sprite would draw from a page that isn't loaded.
     void SetWorld(std::shared_ptr<const core::WorldMap> map, const core::WorldLook& look);
+
+    /// Draws the outline of the tile centred on `centre` (the target cursor) over the world map from the next frame on, none
+    /// for no value; the route in the snapshot (core::Snapshot::route) draws with it (gfx/route_draw.hpp), between the map
+    /// and the snapshot's ground. Nothing draws outside a snapshot that shows the map.
+    void SetTargetTile(std::optional<core::Vec2> centre);
 
     /// Draws glows for the reduce flashing setting from the next frame on (off until it is called): pulses hold still and
     /// light glows dim.

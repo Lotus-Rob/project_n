@@ -7,6 +7,8 @@
 # bridge:  a road over a river: `across` where the road runs east to west, `down` where it runs north to south
 # ford:    drawn over the river at a ford
 # markers: `city` and one sprite per danger sort the map uses (a sort the map doesn't use is ignored)
+# route:   the player's route and the target cursor: `dot` every `spacing` world units along the line, `marker` on its
+#          end, `cursor` on the cursor's tile
 kinds:
   deep_water: [terrain_water_0, terrain_water_1]
   shallows: [terrain_shallows_0, terrain_shallows_1]
@@ -33,3 +35,4 @@ markers:
   cave: marker_cave
   cliff: marker_cliff
   corrupt_village: marker_corrupt_village
+route: { dot: route_dot, spacing: 48, marker: route_marker, cursor: target_tile }

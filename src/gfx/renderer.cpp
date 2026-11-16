@@ -17,6 +17,7 @@
 #include "gfx/internal/resources/scene_target.hpp"
 #include "gfx/internal/resources/sprite_array.hpp"
 #include "gfx/labels.hpp"
+#include "gfx/route_draw.hpp"
 #include "gfx/seal_draw.hpp"
 #include "gfx/sprite_block.hpp"
 #include "gfx/terrain_draw.hpp"
@@ -184,6 +185,7 @@ struct Renderer::Impl {
     /// Lays out and copies the world map's tiles for the world `shown` shows, when it shows the map and they differ from what
     /// the buffer holds; returns how many instances didn't fit.
     std::expected<std::size_t, core::Error> UploadTerrain(SDL_GPUCopyPass* copy, const Shown& shown);
+    std::expected<std::size_t, core::Error> UploadRoute(SDL_GPUCopyPass* copy, const Shown& shown);
     /// Lays out the snapshot's seals at the render time into sealDrawing, its showcase seals only when `showcase`, and logs
     /// once each seal key the table lacks among those drawn.
     void LaySeals(const core::Snapshot& snapshot, f64 renderTick, bool showcase);
@@ -264,6 +266,7 @@ struct Renderer::Impl {
     internal::SpriteRenderer instances{};
     internal::MeshRenderer meshes{};
     internal::SpriteRenderer terrain{}; // the world map's tiles, overlays and markers (TerrainDrawing)
+    internal::SpriteRenderer route{};   // the player's route and the cursor's tile (TerrainDrawing), over the map
     internal::SpriteRenderer overlay{}; // the per-frame sprites: swords, bursts and health bars (VolleyDrawing)
     internal::GlowTableBuffer glowTable{};
     internal::RibbonRenderer ribbons{};
@@ -324,6 +327,9 @@ struct Renderer::Impl {
     std::optional<TerrainKey> terrainHeld = std::nullopt;
     std::optional<TerrainKey> terrainRecorded = std::nullopt;
     u64 worldVersion = 0;
+    TerrainDrawing routeDrawing{};
+    std::optional<core::Vec2> targetTile = std::nullopt; // SetTargetTile(): the cursor tile's centre, if it shows
+    bool routeShown = false;                             // whether this frame draws the route buffer: it holds something
     bool terrainShown = false;     // whether this frame draws the terrain: the snapshot shows the map and its buffer is current
     VolleyDrawing volleyDrawing{}; // this frame's health bars and swords, placed at the render time, and the HUD's bars
     SealDrawing sealDrawing{};     // this frame's seals, laid out at the render time
@@ -336,6 +342,7 @@ struct Renderer::Impl {
     core::RepeatedFailure meshOverflows{};
     core::RepeatedFailure overlayOverflows{};
     core::RepeatedFailure terrainOverflows{};
+    core::RepeatedFailure routeOverflows{};
     core::RepeatedFailure ribbonOverflows{};
     core::RepeatedFailure swordOverflows{};
     core::RepeatedFailure sealOverflows{};
@@ -404,6 +411,7 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     const std::expected<std::size_t, core::Error> quadsDropped =
         meshes.Upload(copy, glyphs ? std::span<const MeshVertex>{ meshVertices } : std::span<const MeshVertex>{});
     const std::expected<std::size_t, core::Error> terrainDropped = UploadTerrain(copy, shown);
+    const std::expected<std::size_t, core::Error> routeDropped = UploadRoute(copy, shown);
     const std::expected<std::size_t, core::Error> overlayDropped = overlay.Upload(copy, volleyDrawing.instances);
     const std::expected<std::size_t, core::Error> ribbonsDropped = ribbons.Upload(copy, volleyDrawing.ribbons);
     const std::expected<std::size_t, core::Error> sealQuadsDropped = seals.Upload(copy, sealDrawing);
@@ -415,6 +423,9 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     }
     if (terrainDropped) {
         ReportOverflow(terrainOverflows, *terrainDropped, "terrain instances", MAX_TERRAIN_INSTANCES);
+    }
+    if (routeDropped) {
+        ReportOverflow(routeOverflows, *routeDropped, "route instances", MAX_ROUTE_INSTANCES);
     }
     if (overlayDropped) {
         ReportOverflow(overlayOverflows, *overlayDropped, "overlay instances", MAX_OVERLAY_INSTANCES);
@@ -444,7 +455,10 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
         core::Combine(core::Combine(core::Combine(instancesCopied, glowsCopied), glyphs), quadsDropped.transform(copied)),
         core::Combine(
             core::Combine(overlayDropped.transform(copied), ribbonsDropped.transform(copied)),
-            core::Combine(sealQuadsDropped.transform(copied), terrainDropped.transform(copied))
+            core::Combine(
+                sealQuadsDropped.transform(copied),
+                core::Combine(terrainDropped.transform(copied), routeDropped.transform(copied))
+            )
         )
     );
 }
@@ -471,6 +485,23 @@ std::expected<std::size_t, core::Error> Renderer::Impl::UploadTerrain(SDL_GPUCop
         terrainRecorded = key;
         terrainShown = true;
     }
+    return dropped;
+}
+
+std::expected<std::size_t, core::Error> Renderer::Impl::UploadRoute(SDL_GPUCopyPass* copy, const Shown& shown) {
+    PN_PROFILE_ZONE();
+    routeShown = false;
+    if (!shown.snapshot->worldMap || worldMap == nullptr || !Holds(shown.snapshot->scene)) {
+        return std::size_t{ 0 };
+    }
+    routeDrawing.instances.clear();
+    routeDrawing.batches.clear();
+    DrawRoute(shown.snapshot->route, targetTile, worldLook.route, *manifest, routeDrawing);
+    if (routeDrawing.instances.empty()) {
+        return std::size_t{ 0 };
+    }
+    const std::expected<std::size_t, core::Error> dropped = route.Upload(copy, routeDrawing.instances);
+    routeShown = dropped.has_value();
     return dropped;
 }
 
@@ -875,6 +906,10 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
     if (terrainShown) {
         terrain.Draw(commands, pass, terrainDrawing.batches, sprites, transform, alpha, glows);
     }
+    // Over the map, under the ground and everything on it: the line is the map's, not a thing standing on it.
+    if (routeShown) {
+        route.Draw(commands, pass, routeDrawing.batches, sprites, transform, alpha, glows);
+    }
     instances.Draw(commands, pass, batches.first(groundBatches), sprites, transform, alpha, glows);
     seals.DrawGround(commands, pass, sealTarget, sprites);
     instances.Draw(commands, pass, batches.subspan(groundBatches), sprites, transform, alpha, glows);
@@ -1061,6 +1096,12 @@ std::expected<Renderer, core::Error> Renderer::Create(
         return std::unexpected{ std::move(terrain.error()) };
     }
     impl->terrain = std::move(*terrain);
+    std::expected<internal::SpriteRenderer, core::Error> route =
+        internal::SpriteRenderer::Create(device, internal::SCENE_FORMAT, MAX_ROUTE_INSTANCES, "route instances");
+    if (!route) {
+        return std::unexpected{ std::move(route.error()) };
+    }
+    impl->route = std::move(*route);
     std::expected<internal::GlowTableBuffer, core::Error> glowTable =
         internal::GlowTableBuffer::Create(device, BuildGlowTable(impl->effects, impl->uiColours));
     if (!glowTable) {
@@ -1242,6 +1283,10 @@ void Renderer::SetWorld(std::shared_ptr<const core::WorldMap> map, const core::W
     m_impl->worldMap = std::move(map);
     m_impl->worldLook = look;
     ++m_impl->worldVersion;
+}
+
+void Renderer::SetTargetTile(std::optional<core::Vec2> centre) {
+    m_impl->targetTile = centre;
 }
 
 void Renderer::SetReduceFlashing(bool reduce) {
