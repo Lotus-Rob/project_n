@@ -2164,6 +2164,57 @@ TEST_CASE("held movement cancels a route while the world is paused too") {
     CHECK(SamePoint(BodyOf(*world.host, world.player).current, walked));
 }
 
+/// A world loaded `before` ticks ahead of the first month's end with the player's cultivator walking a route along the
+/// first road, set out on tick 1, and that route's leg.
+std::pair<TravelWorld, core::Leg> WalkingBeforeMonthEnd(u64 before) {
+    TravelWorld world = TravelWorldOf({}, true, game::TICKS_PER_MONTH - before);
+    const core::WorldMap& map = *world.map;
+    const core::Leg leg = LegTo(
+        map, FootOf(*world.host, world.player), map.TileCentre(RouteRoad(map)[ROUTE_TILES]), game::TICKS_PER_MONTH - before
+    );
+    REQUIRE(core::EndTick(leg) > static_cast<i64>(game::TICKS_PER_MONTH + 1)); // still walking past the step
+    WalkTo(*world.host, 1, map.TileCentre(leg.tiles.back()));
+    return { std::move(world), leg };
+}
+
+TEST_CASE("the automatic month step and an early one carry the cultivator on along its route") {
+    constexpr u64 MONTH = game::TICKS_PER_MONTH;
+    constexpr u64 BEFORE_MONTH = 40;
+    {
+        // The clock reaches the month's end on tick BEFORE_MONTH and waits there for the step.
+        const auto [world, leg] = WalkingBeforeMonthEnd(BEFORE_MONTH);
+        const core::WorldMap& map = *world.map;
+        TickRange(*world.host, 2, BEFORE_MONTH);
+        REQUIRE(world.host->MonthDue());
+        const core::Vec2 due = core::Where(map, leg, static_cast<i64>(MONTH));
+        TickRange(*world.host, BEFORE_MONTH + 1, BEFORE_MONTH + 2);
+        CHECK(SamePoint(BodyOf(*world.host, world.player).previous, due)); // it stands while the step is due
+        CHECK(SamePoint(BodyOf(*world.host, world.player).current, due));
+        CHECK(world.host->PlayerRoute().has_value());
+        StepMonth(*world.host, BEFORE_MONTH + 3);
+        CHECK(SamePoint(FootOf(*world.host, world.player), due));
+        TickRange(*world.host, BEFORE_MONTH + 3, BEFORE_MONTH + 3);
+        CHECK(SamePoint(BodyOf(*world.host, world.player).previous, due));
+        CHECK(SamePoint(BodyOf(*world.host, world.player).current, core::Where(map, leg, static_cast<i64>(MONTH + 1))));
+    }
+    {
+        // M mid-route, unpaused, lands it where the new tick puts it, still on its way.
+        const auto [world, leg] = WalkingBeforeMonthEnd(BEFORE_MONTH);
+        const core::WorldMap& map = *world.map;
+        TickRange(*world.host, 2, WALKED);
+        StepMonth(*world.host, WALKED + 1);
+        REQUIRE(world.host->WorldTicks() == MONTH);
+        CHECK_FALSE(world.host->WorldPaused());
+        const core::Vec2 stepped = core::Where(map, leg, static_cast<i64>(MONTH));
+        CHECK(SamePoint(BodyOf(*world.host, world.player).previous, stepped));
+        CHECK(SamePoint(BodyOf(*world.host, world.player).current, stepped));
+        CHECK(world.host->PlayerRoute().has_value());
+        TickRange(*world.host, WALKED + 1, WALKED + 1);
+        CHECK(SamePoint(BodyOf(*world.host, world.player).previous, stepped));
+        CHECK(SamePoint(BodyOf(*world.host, world.player).current, core::Where(map, leg, static_cast<i64>(MONTH + 1))));
+    }
+}
+
 TEST_CASE("a month step carries the cultivator on along its route, and the pause holds through it") {
     constexpr u64 MONTH = game::TICKS_PER_MONTH;
     constexpr u64 BEFORE_MONTH = 40;
