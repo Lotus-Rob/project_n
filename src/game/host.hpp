@@ -205,12 +205,19 @@ public:
     /// world map, the calendar (core::CalendarView: the months and the day of the month the world clock has reached, and
     /// the world pause). A scene with a player adds the
     /// player's and each living fox's name label over its head; a combat scene adds each living fox's health bar at its
-    /// head and the player's casting state (core::Snapshot::caster). Then the scene adds its own (Scene::Publish(): the
-    /// tablet's caption, the arena's showcase seals, the world's walker labels), then a scene with a portal adds its seal
-    /// (PORTAL_SEAL at SceneTraits::portal, twice PORTAL_RADIUS in size, from tick 0 and never ending, no showcase seal, so
-    /// F8 never hides it) and its "Portal" caption over it, both whatever the view, as the seals are: one record each, whose
-    /// look reaches past its point. After them come the volleys in flight with their targets and the seals raised in play
-    /// (Combat::Publish()).
+    /// head and the player's casting state (core::Snapshot::caster). In a scene showing the world map each member of each
+    /// journey under way at the world clock (core::Underway()) whose foot lies in the area is drawn as a villager with
+    /// its shadow, its instance carrying its ID (so it can be picked and selected), placed by core::Where() at the clock
+    /// when the last tick began and at the clock now (the same point while the clock stood still), packed in further
+    /// chunks of the same size after the entities', and the player's cultivator draws over them and everything else in
+    /// the world layer, so a crowd never hides it; with the game data's names (GameData::names) it carries a name label
+    /// over its head (core::NameOf() of the state's seed and its ID, stacked by core::NameKey(): LabelPriority::Selected
+    /// when selected, LabelPriority::Named otherwise), the labels following the player's in chunk order. Then the scene
+    /// adds its own (Scene::Publish(): the tablet's caption, the arena's showcase seals, the world's walker labels), then
+    /// a scene with a portal adds its seal (PORTAL_SEAL at SceneTraits::portal, twice PORTAL_RADIUS in size, from tick 0
+    /// and never ending, no showcase seal, so F8 never hides it) and its "Portal" caption over it, both whatever the view,
+    /// as the seals are: one record each, whose look reaches past its point. After them come the volleys in flight with
+    /// their targets and the seals raised in play (Combat::Publish()).
     void Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::optional<core::Rect>& view) override;
 
 private:
@@ -243,6 +250,7 @@ private:
     void PublishPortal(core::Snapshot& snapshot);
     void PublishOverhead(core::Snapshot& snapshot) const;
     void PublishCaster(core::Snapshot& snapshot) const;
+    void PublishTravellers(const core::Rect& area, u32 firstPart, u32 chunks, core::Jobs& jobs);
     void ApplyData();
     [[nodiscard]] const core::CreatureData& DataOf(CreatureKind kind) const {
         return kind == CreatureKind::Fox ? m_data.fox : m_data.cultivator;
@@ -255,14 +263,18 @@ private:
     Travel m_travel{};
     MonthStep m_monthStep{};
     Combat m_combat{};
+    std::vector<std::vector<core::TextItem>> m_travellerLabels{}; // per publish chunk, kept for their capacity
     // NOLINTEND(readability-redundant-member-init)
     std::optional<core::Paths> m_paths = std::nullopt; // the world map's distance maps, kept for the run; none without one
     std::shared_ptr<const core::Manifest> m_manifest;
     core::State m_state;
     core::GameData m_data;
     core::SceneKey m_scene;
-    core::SceneId m_sceneId;     // m_scene's in the manifest
-    u64 m_worldTicks = 0;        // the world clock
+    core::SceneId m_sceneId; // m_scene's in the manifest
+    u64 m_worldTicks = 0;    // the world clock
+    // The world clock when the last tick began, where travellers are drawn moving from. Presentation only, so never saved
+    // or hashed: a load or a jump of the clock sets it to the clock, and travellers stand still for a frame.
+    u64 m_worldTicksBefore = 0;
     u64 m_months = 0;            // month steps run
     bool m_worldPaused = false;  // the player's world pause
     core::StableId m_player{};   // the cultivator the player walks; zero for none
