@@ -524,30 +524,32 @@ TEST_CASE("the hash changes when any authored value does, not with resolved name
     CHECK(wideHash != squareHash);
 }
 
-// Columns: 0 the city, 1 meadow, 2 road, 3 road and river (a bridge), 4 river with a ford, 5 river; row 1 has deep water
-// under column 2.
-core::WorldMapSource ProfileSource() {
-    core::WorldMapSource source = Source({ "0.....", "..~..." });
-    source.roads = { { { .column = 2, .row = 0 } }, { { .column = 3, .row = 0 } } };
-    source.rivers = { { { .column = 3, .row = 0 }, { .column = SAND_TILE, .row = 0 } } };
-    source.fords = { { .column = 4, .row = 0 } };
-    return source;
-}
-
 constexpr u32 ROAD_TILE = 2;
 constexpr u32 BRIDGE_TILE = 3;
 constexpr u32 FORD_TILE = 4;
 constexpr u32 RIVER_TILE = 5;
 constexpr u32 DEEP_TILE = 8;
+
+// Columns: 0 the city, 1 meadow, 2 road, 3 road and river (a bridge), 4 river with a ford, 5 river; row 1 has deep water
+// under column 2.
+core::WorldMapSource ProfileSource() {
+    core::WorldMapSource source = Source({ "0.....", "..~..." });
+    source.roads = { { { .column = 2, .row = 0 } }, { { .column = 3, .row = 0 } } };
+    source.rivers = { { { .column = 3, .row = 0 }, { .column = RIVER_TILE, .row = 0 } } };
+    source.fords = { { .column = 4, .row = 0 } };
+    return source;
+}
+
 constexpr u16 WATER_RIVER_COST = 5;
-constexpr u16 WATER_SHALLOWS_COST = 8;
+constexpr u16 WATER_FORD_COST = 6;
+constexpr u16 SAND_SHALLOWS_COST = 8; // the water profile reads the sand kind as shallows
 constexpr u16 ROADS_ONLY_COST = 3;
 constexpr u16 ROADS_ONLY_PACE = 12;
 
 core::MovementProfile Profile(std::string key, u16 kindCost) {
     return { .key = std::move(key),
              .ticksPerCost = core::DEFAULT_TICKS_PER_COST,
-             .kindCosts = std::vector<u16>(4, kindCost),
+             .kindCosts = std::vector<u16>(Source({ "0" }).kinds.size(), kindCost),
              .features = {} };
 }
 
@@ -558,6 +560,7 @@ TEST_CASE("a map built with no profiles walks on foot by exactly its base costs"
     CHECK(map.Profiles()[0].ticksPerCost == 16);
     CHECK(core::WALKING == 0);
     for (const u32 tile : { 1U, ROAD_TILE, BRIDGE_TILE, FORD_TILE, RIVER_TILE, DEEP_TILE }) {
+        CAPTURE(tile); // a meadow, a road, a bridge, a ford, a river, deep water
         CHECK(map.CostAt(tile, core::WALKING) == map.CostAt(tile));
     }
     // Orthogonal and diagonal steps, onto each kind of tile and past an impassable corner.
@@ -574,6 +577,8 @@ TEST_CASE("a map built with no profiles walks on foot by exactly its base costs"
                                                      { 9, FORD_TILE },
                                                      { 1, 0 } };
     for (const auto& [from, target] : steps) {
+        CAPTURE(from); // orthogonal steps onto each tile kind, then diagonals past meadow, deep water and a ford, and one back
+        CAPTURE(target);
         CHECK(map.StepCost(from, target, core::WALKING) == map.StepCost(from, target));
     }
     CHECK(map.StepCost(0, 7, core::WALKING) == MEADOW_COST * 7 / 5);
@@ -602,9 +607,9 @@ TEST_CASE("a road-only profile walks roads and bridges and nothing else") {
 TEST_CASE("a water profile crosses rivers and shallows and not land") {
     core::WorldMapSource source = ProfileSource();
     core::MovementProfile water = Profile("water", core::IMPASSABLE_COST);
-    water.kindCosts[SAND] = WATER_SHALLOWS_COST;
+    water.kindCosts[SAND] = SAND_SHALLOWS_COST;
     water.features = {
-        .road = core::IMPASSABLE_COST, .river = WATER_RIVER_COST, .bridge = core::IMPASSABLE_COST, .ford = WATER_RIVER_COST
+        .road = core::IMPASSABLE_COST, .river = WATER_RIVER_COST, .bridge = core::IMPASSABLE_COST, .ford = WATER_FORD_COST
     };
     source.profiles = { Profile("on_foot", MEADOW_COST), std::move(water) };
     source.grid[1] = SAND;
@@ -612,12 +617,12 @@ TEST_CASE("a water profile crosses rivers and shallows and not land") {
     REQUIRE(map.Profiles().size() == 2);
     constexpr core::ProfileIndex WATER = 1;
     CHECK(map.CostAt(RIVER_TILE, WATER) == WATER_RIVER_COST);
-    CHECK(map.CostAt(FORD_TILE, WATER) == WATER_RIVER_COST);
-    CHECK(map.CostAt(1, WATER) == WATER_SHALLOWS_COST);
+    CHECK(map.CostAt(FORD_TILE, WATER) == WATER_FORD_COST);
+    CHECK(map.CostAt(1, WATER) == SAND_SHALLOWS_COST);
     CHECK(map.CostAt(0, WATER) == core::IMPASSABLE_COST);
     CHECK(map.CostAt(ROAD_TILE, WATER) == core::IMPASSABLE_COST);
     CHECK(map.CostAt(BRIDGE_TILE, WATER) == core::IMPASSABLE_COST);
-    CHECK(map.StepCost(FORD_TILE, RIVER_TILE, WATER) == WATER_RIVER_COST);
+    CHECK(map.StepCost(RIVER_TILE, FORD_TILE, WATER) == WATER_FORD_COST);
 }
 
 TEST_CASE("Build refuses a profile it can't use") {
@@ -627,12 +632,12 @@ TEST_CASE("Build refuses a profile it can't use") {
         change(source.profiles);
         return Refusal(std::move(source));
     };
-    CHECK(refusal([](auto& profiles) { profiles[0].ticksPerCost = 0; }).contains("'walk'"));
-    CHECK(refusal([](auto& profiles) { profiles[0].kindCosts.pop_back(); }).contains("'walk'"));
-    CHECK(refusal([](auto& profiles) { profiles[0].kindCosts[0] = core::MAX_WALK_COST + 1; }).contains("'walk'"));
-    CHECK(refusal([](auto& profiles) { profiles[0].features.ford = core::MAX_WALK_COST + 1; }).contains("'walk'"));
-    CHECK(refusal([](auto& profiles) { profiles.push_back(Profile("walk", 1)); }).contains("'walk'"));
-    CHECK(refusal([](auto& profiles) { profiles[0].key = ""; }).contains("profile 0"));
+    CHECK(refusal([](auto& profiles) { profiles[0].ticksPerCost = 0; }).contains("no ticks per cost"));
+    CHECK(refusal([](auto& profiles) { profiles[0].kindCosts.pop_back(); }).contains("costs 3 terrain kinds"));
+    CHECK(refusal([](auto& profiles) { profiles[0].kindCosts[0] = core::MAX_WALK_COST + 1; }).contains("a terrain kind over"));
+    CHECK(refusal([](auto& profiles) { profiles[0].features.ford = core::MAX_WALK_COST + 1; }).contains("a feature over"));
+    CHECK(refusal([](auto& profiles) { profiles.push_back(Profile("walk", 1)); }).contains("shares its key"));
+    CHECK(refusal([](auto& profiles) { profiles[0].key = ""; }).contains("has no key"));
     CHECK(refusal([](auto& profiles) {
               profiles.assign(core::MOST_PROFILES + 1, Profile("walk", 1));
               for (std::size_t index = 0; index < profiles.size(); ++index) {

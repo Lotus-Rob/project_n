@@ -312,7 +312,7 @@ private:
     // NOLINTEND(readability-redundant-member-init)
     u16 m_start = NO_PLACE;
 
-    [[nodiscard]] u32 StepOver(const std::vector<u16>& cost, u32 from, u32 target) const;
+    [[nodiscard]] u32 StepOver(const std::vector<u16>& costs, u32 from, u32 target) const;
 };
 
 } // namespace core
