@@ -11,7 +11,7 @@ f32 ZoomedBy(f32 zoom, f32 notches) {
     return std::clamp(zoom * std::pow(ZOOM_PER_NOTCH, notches), MIN_ZOOM, MAX_ZOOM);
 }
 
-// PixelsPerUnit() and WorldToClip() have no zones: a few multiplies, called for each text, and a zone costs more.
+/// PixelsPerUnit() and WorldToClip() have no zones: a few multiplies, called for each text, and a zone costs more.
 f32 PixelsPerUnit(const Camera& camera, u32 width, u32 height) {
     const auto pixelsX = static_cast<f32>(std::max(width, 1U));
     const auto pixelsY = static_cast<f32>(std::max(height, 1U));

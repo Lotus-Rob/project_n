@@ -11,7 +11,7 @@ namespace gfx::internal {
 namespace {
 
 constexpr SDL_GPUTextureFormat FIELD_FORMAT = SDL_GPU_TEXTUREFORMAT_R8_UNORM;
-// D3D12 wants a texture upload's offset into its buffer to be a multiple of this.
+/// D3D12 wants a texture upload's offset into its buffer to be a multiple of this.
 constexpr std::size_t UPLOAD_ALIGNMENT = 512;
 constexpr SDL_GPUTextureUsageFlags ARRAY_USAGE = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
 
@@ -54,7 +54,7 @@ Gpu<SDL_GPUSampler> CreateSampler(SDL_GPUDevice* device, u32 mipLevels, const ch
     return sampler;
 }
 
-// What the sprites' blocks don't cover must be transparent: a fresh texture's contents are undefined.
+/// What the sprites' blocks don't cover must be transparent: a fresh texture's contents are undefined.
 void ClearPages(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* texture, u32 pages, f32 value) {
     for (u32 page = 0; page < pages; ++page) {
         SDL_GPUColorTargetInfo target{};
@@ -67,7 +67,7 @@ void ClearPages(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* texture, u32 pag
     }
 }
 
-// Records the copy of the texels at `offset` of `transfer` into `block` of `texture`'s layer.
+/// Records the copy of the texels at `offset` of `transfer` into `block` of `texture`'s layer.
 void QueueBlock(
     SDL_GPUCopyPass* copy,
     SDL_GPUTransferBuffer* transfer,

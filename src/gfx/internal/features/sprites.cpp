@@ -10,7 +10,7 @@ namespace {
 
 constexpr u32 VERTICES_PER_QUAD = 4; // a triangle strip
 
-// `Draw` in shaders/sprite.vert.hlsl: rows of 16 bytes, as HLSL packs a constant buffer.
+/// `Draw` in shaders/sprite.vert.hlsl: rows of 16 bytes, as HLSL packs a constant buffer.
 constexpr std::size_t DRAW_UNIFORM_BYTES = 80;
 struct DrawUniforms {
     std::array<f32, 4> worldToClip{};
@@ -27,7 +27,7 @@ struct DrawUniforms {
     std::array<f32, 3> padding{};
 };
 static_assert(sizeof(DrawUniforms) == DRAW_UNIFORM_BYTES, "the shader's constant buffer is 80 bytes");
-// The constants the sprite shaders copy, as they hold them: each must equal what it copies.
+/// The constants the sprite shaders copy, as they hold them: each must equal what it copies.
 constexpr std::size_t SHADER_GLOW_ROLES = 8;       // sprite.vert.hlsl's GLOW_ROLES
 constexpr u8 SHADER_GLOW_BLEND_INK = 1;            // sprite.vert.hlsl's GLOW_BLEND_INK
 constexpr std::size_t SHADER_ELEMENTS = 4;         // sprite.vert.hlsl's LAST_ELEMENT + 1, and elementColours' uint4
@@ -64,7 +64,7 @@ static_assert(
 
 constexpr u32 GLOW_TABLE_BYTES = static_cast<u32>(GLOW_RECORD_BYTES * core::GLOW_ROLES);
 
-// What every draw of a frame pushes, before its batch's first instance.
+/// What every draw of a frame pushes, before its batch's first instance.
 DrawUniforms UniformsOf(const ClipTransform& transform, f32 alpha, const GlowFrame& glows) {
     return { .worldToClip = { transform.scaleX, transform.scaleY, transform.offsetX, transform.offsetY },
              .alpha = alpha,
@@ -76,7 +76,7 @@ DrawUniforms UniformsOf(const ClipTransform& transform, f32 alpha, const GlowFra
              .texelUv = glows.texelUv };
 }
 
-// Binds the vertex stage's instances and glow table, and the fragment stage's atlas and distance fields.
+/// Binds the vertex stage's instances and glow table, and the fragment stage's atlas and distance fields.
 void Bind(SDL_GPURenderPass* pass, SDL_GPUBuffer* instances, const SpriteArray& sprites, const GlowFrame& glows) {
     const std::array<SDL_GPUBuffer*, 2> storage{ instances, glows.table };
     SDL_BindGPUVertexStorageBuffers(pass, 0, storage.data(), static_cast<u32>(storage.size()));

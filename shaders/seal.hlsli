@@ -5,7 +5,7 @@
 
 #include "colour.hlsli"
 
-// gfx::SealGpuLayer (src/gfx/seal_draw.hpp), 88 bytes: one layer of a seal, or its emblem, or (for its wash) its first.
+/// gfx::SealGpuLayer (src/gfx/seal_draw.hpp), 88 bytes: one layer of a seal, or its emblem, or (for its wash) its first.
 struct SealLayer {
     float2 centre;       // its centre in the world
     float2 axisX;        // one seal size along its plane's x, in the world
@@ -28,7 +28,7 @@ struct SealLayer {
     uint reserved;       // to 88 bytes, a multiple of 8 as the float2s need
 };
 
-// gfx::SealGpuPart, 64 bytes: one part of a layer. Radii, widths and sizes in seal sizes, angles in radians.
+/// gfx::SealGpuPart, 64 bytes: one part of a layer. Radii, widths and sizes in seal sizes, angles in radians.
 struct SealPart {
     uint kind;        // SEAL_* below
     uint slot;        // which of its layer's colours it takes
@@ -48,7 +48,7 @@ struct SealPart {
     uint reserved1;
 };
 
-// gfx::SealGpuSprite, 32 bytes: one sprite a part draws, by its distance field's block.
+/// gfx::SealGpuSprite, 32 bytes: one sprite a part draws, by its distance field's block.
 struct SealSprite {
     float2 fieldMin; // the block's top left, in UV of its page
     float2 fieldMax; // its bottom right
@@ -58,7 +58,7 @@ struct SealSprite {
     uint reserved;   // to 32 bytes
 };
 
-// core::SealPartKind's values, then gfx::SEAL_EMBLEM_KIND.
+/// core::SealPartKind's values, then gfx::SEAL_EMBLEM_KIND.
 static const uint SEAL_CIRCLE = 0;
 static const uint SEAL_TICKS = 1;
 static const uint SEAL_DOTS = 2;
@@ -68,7 +68,7 @@ static const uint SEAL_POLYGON = 5;
 static const uint SEAL_FLOURISH = 6;
 static const uint SEAL_EMBLEM = 7;
 
-// What the vertex stage hands the fragment stage.
+/// What the vertex stage hands the fragment stage.
 struct SealOut {
     float4 position : SV_Position;
     float2 local : TEXCOORD0;                  // on the seal's plane, in seal sizes from its centre, not turned
@@ -76,8 +76,8 @@ struct SealOut {
     nointerpolation uint wash : TEXCOORD2;     // 1 for a wash, 0 for a band's lines
 };
 
-// gfx::SealGpuParticles (src/gfx/seal_draw.hpp), 160 bytes: one seal's light. Each stream's age is already wrapped by its
-// period on the CPU, so only small times reach here.
+/// gfx::SealGpuParticles (src/gfx/seal_draw.hpp), 160 bytes: one seal's light. Each stream's age is already wrapped by its
+/// period on the CPU, so only small times reach here.
 struct SealParticles {
     float2 centre;       // its plane's centre in the world
     float2 axisX;        // one seal size along its plane's x, in the world
@@ -118,19 +118,19 @@ struct SealParticles {
     uint reserved2;
 };
 
-// gfx::SEAL_PILLAR, SEAL_SPARK and SEAL_SHARD.
+/// gfx::SEAL_PILLAR, SEAL_SPARK and SEAL_SHARD.
 static const uint SEAL_PILLAR = 0;
 static const uint SEAL_SPARK = 1;
 static const uint SEAL_SHARD = 2;
 
-// The placement's constants: gfx::SealParticleAt() in src/gfx/seal_draw.cpp holds the same, and the two change together.
+/// The placement's constants: gfx::SealParticleAt() in src/gfx/seal_draw.cpp holds the same, and the two change together.
 static const float SEAL_TAU = 6.28318531;
 static const float SEAL_UNIT_SCALE = 1.0 / 16777216.0; // 2^-24: a unit number takes the hash's top 24 bits
 static const uint SEAL_DRAW_RADIUS = 1;                // which of a particle's numbers each draw of its hash takes
 static const uint SEAL_DRAW_ANGLE = 2;
 static const uint SEAL_DRAW_TURN = 3;
 
-// One particle where SealParticleAt places it (gfx::SealParticle): a quad round its centre, in world units.
+/// One particle where SealParticleAt places it (gfx::SealParticle): a quad round its centre, in world units.
 struct SealParticle {
     float2 centre;
     float2 along;   // to the middle of its far edge: half its length
@@ -140,13 +140,13 @@ struct SealParticle {
     uint kind;      // SEAL_PILLAR, SEAL_SPARK or SEAL_SHARD
 };
 
-// A particle's own age in its stream, and the life it is in.
+/// A particle's own age in its stream, and the life it is in.
 struct SealOwnAge {
     float age;
     uint lap;
 };
 
-// A 32-bit integer hash (lowbias32), gfx's SealHash.
+/// A 32-bit integer hash (lowbias32), gfx's SealHash.
 uint SealHash(uint value) {
     value ^= value >> 16;
     value *= 0x7FEB352Du;
@@ -156,7 +156,7 @@ uint SealHash(uint value) {
     return value;
 }
 
-// A number from 0 to below 1, draw `draw` of `hash`.
+/// A number from 0 to below 1, draw `draw` of `hash`.
 float SealUnit(uint hash, uint draw) {
     return float(SealHash(hash + draw) >> 8) * SEAL_UNIT_SCALE;
 }
@@ -189,7 +189,7 @@ float2 SealDirection(float angle) {
     return float2(cosine, sine);
 }
 
-// Particle `index` of `light` (its pillars, then sparks, then shards): gfx::SealParticleAt(), which documents it.
+/// Particle `index` of `light` (its pillars, then sparks, then shards): gfx::SealParticleAt(), which documents it.
 SealParticle SealParticleAt(SealParticles light, uint index) {
     const uint hash = SealHash(light.seed ^ SealHash(index));
     SealParticle particle;
@@ -237,7 +237,7 @@ SealParticle SealParticleAt(SealParticles light, uint index) {
     return particle;
 }
 
-// What the light's vertex stage hands its fragment stage.
+/// What the light's vertex stage hands its fragment stage.
 struct SealLightOut {
     float4 position : SV_Position;
     float2 corner : TEXCOORD0;                 // across, then along: -1 to 1 (along: -1 at a pillar's plane)

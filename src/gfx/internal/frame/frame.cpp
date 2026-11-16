@@ -7,8 +7,8 @@ namespace gfx::internal {
 
 namespace {
 
-// Acquires `frame`'s swapchain image, waiting until the GPU has finished an earlier frame and an image is free: the
-// CPU's wait on the GPU, which its zone, named after it, shows the measurements.
+/// Acquires `frame`'s swapchain image, waiting until the GPU has finished an earlier frame and an image is free: the
+/// CPU's wait on the GPU, which its zone, named after it, shows the measurements.
 bool WaitForGpu(Frame& frame, SDL_Window* window) {
     PN_PROFILE_ZONE();
     return SDL_WaitAndAcquireGPUSwapchainTexture(frame.commands, window, &frame.swapchain, &frame.width, &frame.height);

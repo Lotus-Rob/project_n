@@ -7,10 +7,10 @@
 [[vk::combinedImageSampler]] [[vk::binding(1, 2)]] Texture2DArray<float> field : register(t1, space2);
 [[vk::combinedImageSampler]] [[vk::binding(1, 2)]] SamplerState fieldSampler : register(s1, space2);
 
-// A dissolve's blocks are this many screen pixels square, so it stays crisp at every zoom.
+/// A dissolve's blocks are this many screen pixels square, so it stays crisp at every zoom.
 static const float DISSOLVE_BLOCK_PIXELS = 4.0;
 
-// A number from 0 to 1 for the block `block`, the same wherever and whenever it is drawn (a PCG hash, 2D).
+/// A number from 0 to 1 for the block `block`, the same wherever and whenever it is drawn (a PCG hash, 2D).
 float BlockHash(float2 block) {
     uint2 v = uint2(int2(block)) * 1664525u + 1013904223u;
     v.x += v.y * 1664525u;
@@ -22,9 +22,9 @@ float BlockHash(float2 block) {
     return (v.x >> 8) * (1.0 / 16777216.0);
 }
 
-// `colour` as a dissolve leaves it (core::SpriteDraw::dissolve): blocks of the sprite's own UV (from its region's corner,
-// not its place on the page, so the pattern travels with it and the atlas packing doesn't reshuffle it) are discarded, more
-// of them the further it has gone, and the rest fade. `uvPerPixel` is fwidth(input.uv), taken before any discard.
+/// `colour` as a dissolve leaves it (core::SpriteDraw::dissolve): blocks of the sprite's own UV (from its region's corner,
+/// not its place on the page, so the pattern travels with it and the atlas packing doesn't reshuffle it) are discarded, more
+/// of them the further it has gone, and the rest fade. `uvPerPixel` is fwidth(input.uv), taken before any discard.
 float4 Dissolved(float4 colour, VertexOut input, float2 uvPerPixel) {
     if (input.dissolve > 0.0) {
         const float2 block = floor((input.uv - input.region.xy) / max(uvPerPixel * DISSOLVE_BLOCK_PIXELS, 1e-7));
@@ -36,9 +36,9 @@ float4 Dissolved(float4 colour, VertexOut input, float2 uvPerPixel) {
     return colour;
 }
 
-// A sprite wearing a glow, its quad grown by the glow's reach: the sprite over its glow. The glow covers everything under
-// the sprite and fades out from its edge (the field's one half) between the shape's two distances, reaching nothing at the
-// reach; light's alpha is 0, so it adds to what is under it, while ink covers it.
+/// A sprite wearing a glow, its quad grown by the glow's reach: the sprite over its glow. The glow covers everything under
+/// the sprite and fades out from its edge (the field's one half) between the shape's two distances, reaching nothing at the
+/// reach; light's alpha is 0, so it adds to what is under it, while ink covers it.
 float4 Glowing(VertexOut input, float2 uvPerPixel) {
     // The gutter round the region repeats the sprite's edge for filtering: past the region the sprite is transparent.
     const bool inRegion = all(input.uv >= input.region.xy) && all(input.uv <= input.region.zw);

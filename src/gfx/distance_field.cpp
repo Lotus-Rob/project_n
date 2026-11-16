@@ -16,11 +16,11 @@ constexpr f32 EDGE_UNIT = 0.5F; // where the edge sits in the encoded range from
 constexpr f32 PARABOLA_DENOMINATOR_SCALE = 2.0F;
 constexpr f32 ENCODED_MAX = 255.0F;
 constexpr f32 INFINITE = std::numeric_limits<f32>::infinity();
-// Stands for "no such texel": finite, so that the parabolas' intersections stay numbers, and far past any
-// squared distance in a block.
+/// Stands for "no such texel": finite, so that the parabolas' intersections stay numbers, and far past any
+/// squared distance in a block.
 constexpr f32 FAR = 1.0e10F;
 
-// Work space for one line of the transform, sized for the longest.
+/// Work space for one line of the transform, sized for the longest.
 struct Scratch {
     std::vector<f32> column;
     std::vector<std::size_t> hull;
@@ -28,8 +28,8 @@ struct Scratch {
     std::vector<f32> line;
 };
 
-// Felzenszwalb and Huttenlocher's lower envelope of the parabolas f[q] + (x - q)^2, in place along `values`, one line.
-// `scratch` holds the envelope's parabolas and where each starts.
+/// Felzenszwalb and Huttenlocher's lower envelope of the parabolas f[q] + (x - q)^2, in place along `values`, one line.
+/// `scratch` holds the envelope's parabolas and where each starts.
 void Transform1D(std::span<f32> values, Scratch& scratch) {
     const std::size_t lineLength = values.size();
     const auto valueAt = [&](std::size_t index) { return values[index]; };
@@ -68,7 +68,7 @@ void Transform1D(std::span<f32> values, Scratch& scratch) {
     }
 }
 
-// Squared distances from every texel to the nearest texel whose `set` entry is true (FAR-ish when none).
+/// Squared distances from every texel to the nearest texel whose `set` entry is true (FAR-ish when none).
 std::vector<f32> SquaredDistances(const std::vector<bool>& set, std::size_t width, std::size_t height) {
     std::vector<f32> grid(width * height);
     for (std::size_t i = 0; i < grid.size(); ++i) {

@@ -38,13 +38,13 @@ constexpr bool DEBUG_MODE = false;
 constexpr bool DEBUG_MODE = true; // SDL_GPU's validation, in debug builds only
 #endif
 
-// Ink on dark paper, behind the scene where a window wider or taller than the reference shows past it.
-// Linear values, which the composite encodes to about (0.08, 0.08, 0.09).
+/// Ink on dark paper, behind the scene where a window wider or taller than the reference shows past it.
+/// Linear values, which the composite encodes to about (0.08, 0.08, 0.09).
 constexpr SDL_FColor BACKDROP{ .r = 0.0072F, .g = 0.0072F, .b = 0.0085F, .a = 1.0F };
 
-// A text's shadow falls this many base pixels down and right of it, scaling with the text.
+/// A text's shadow falls this many base pixels down and right of it, scaling with the text.
 constexpr f32 TEXT_SHADOW_BASE_PIXELS = 2.0F;
-// Clip space spans this much across either axis.
+/// Clip space spans this much across either axis.
 constexpr f32 CLIP_SPAN = 2.0F;
 
 std::string_view PresentModeName(SDL_GPUPresentMode mode) {
@@ -54,8 +54,8 @@ std::string_view PresentModeName(SDL_GPUPresentMode mode) {
     return mode == SDL_GPU_PRESENTMODE_IMMEDIATE ? "immediate" : "vsync";
 }
 
-// Logs the first of a run of uploads that left `dropped` of `what` out, past the buffer's `limit`, and the first after
-// such a run that fitted.
+/// Logs the first of a run of uploads that left `dropped` of `what` out, past the buffer's `limit`, and the first after
+/// such a run that fitted.
 void ReportOverflow(core::RepeatedFailure& overflows, std::size_t dropped, std::string_view what, u32 limit) {
     PN_PROFILE_ZONE();
     if (dropped > 0) {
@@ -68,7 +68,7 @@ void ReportOverflow(core::RepeatedFailure& overflows, std::size_t dropped, std::
     }
 }
 
-// Logs, once until they draw again, seals DrawSeals() left out for a size too small to lay out: `tiny` this frame.
+/// Logs, once until they draw again, seals DrawSeals() left out for a size too small to lay out: `tiny` this frame.
 void ReportTinySeals(core::RepeatedFailure& failures, std::size_t tiny) {
     PN_PROFILE_ZONE();
     if (tiny > 0) {
@@ -81,7 +81,7 @@ void ReportTinySeals(core::RepeatedFailure& failures, std::size_t tiny) {
     }
 }
 
-// The transform that places target pixels (x right, y down from the top left) on a target `width` by `height` pixels.
+/// The transform that places target pixels (x right, y down from the top left) on a target `width` by `height` pixels.
 ClipTransform PixelsToClip(u32 width, u32 height) {
     return { .scaleX = CLIP_SPAN / static_cast<f32>(width),
              .scaleY = -CLIP_SPAN / static_cast<f32>(height),
@@ -89,8 +89,8 @@ ClipTransform PixelsToClip(u32 width, u32 height) {
              .offsetY = 1.0F };
 }
 
-// A glyph page: R8 distance fields, cleared to 0 (far outside any glyph) in a command buffer of its own, submitted at
-// once, so the padding around its fields reads as nothing whatever happens to the frame that needed it.
+/// A glyph page: R8 distance fields, cleared to 0 (far outside any glyph) in a command buffer of its own, submitted at
+/// once, so the padding around its fields reads as nothing whatever happens to the frame that needed it.
 std::expected<internal::Gpu<SDL_GPUTexture>, core::Error> CreateGlyphPage(SDL_GPUDevice* device) {
     SDL_GPUTextureCreateInfo info{};
     info.type = SDL_GPU_TEXTURETYPE_2D;
@@ -119,7 +119,7 @@ std::expected<internal::Gpu<SDL_GPUTexture>, core::Error> CreateGlyphPage(SDL_GP
     return page;
 }
 
-// A scene loading: its sprites decode on the job system, then upload a few each frame.
+/// A scene loading: its sprites decode on the job system, then upload a few each frame.
 struct SceneLoad {
     SceneLoad(
         core::SceneId loading,
@@ -147,8 +147,8 @@ struct SceneLoad {
     core::Jobs::Pending decoding; // last: destroyed first, waiting for the decodes before their slots go
 };
 
-// How wide a label stack of one string is laid out, once measured in a frame, in base pixels (a label scales it by its
-// own pixel size: a place name and a creature's label may share a string).
+/// How wide a label stack of one string is laid out, once measured in a frame, in base pixels (a label scales it by its
+/// own pixel size: a place name and a creature's label may share a string).
 struct MeasuredStack {
     f32 width = -1.0F; // unmeasured
     bool complete = false;
@@ -164,7 +164,7 @@ struct Renderer::Impl {
     Impl& operator=(Impl&&) = delete;
     ~Impl() = default;
 
-    // What a frame or a capture shows, and on a target how large.
+    /// What a frame or a capture shows, and on a target how large.
     struct Shown {
         const core::Snapshot* snapshot = nullptr;
         std::span<const core::TextItem> extra; // the main thread's texts, drawn after the snapshot's
@@ -174,57 +174,57 @@ struct Renderer::Impl {
         u32 height = 0;
     };
 
-    // Once a swapchain texture is acquired, the frame is submitted even on an error: SDL requires it.
+    /// Once a swapchain texture is acquired, the frame is submitted even on an error: SDL requires it.
     std::expected<void, core::Error> Frame(const internal::Frame& acquired, const Shown& shown, core::Jobs& jobs);
-    // Uploads the snapshot's instances when they're new, and every frame the overlay's sprites and the trails (the
-    // HUD's bars first, then the bursts, health bars and swords at the render time), the texts' quads (the HUD's lines
-    // first, drawn last) and the glyph fields they need; then ends the glyph cache's frame. A recorded copy counts as
-    // uploaded only once its commands are submitted (Submitted()): a dropped buffer must upload again.
+    /// Uploads the snapshot's instances when they're new, and every frame the overlay's sprites and the trails (the
+    /// HUD's bars first, then the bursts, health bars and swords at the render time), the texts' quads (the HUD's lines
+    /// first, drawn last) and the glyph fields they need; then ends the glyph cache's frame. A recorded copy counts as
+    /// uploaded only once its commands are submitted (Submitted()): a dropped buffer must upload again.
     std::expected<void, core::Error> Upload(SDL_GPUCommandBuffer* commands, const Shown& shown, core::Jobs& jobs);
-    // Lays out and copies the world map's tiles for the world `shown` shows, when it shows the map and they differ from what
-    // the buffer holds; returns how many instances didn't fit.
+    /// Lays out and copies the world map's tiles for the world `shown` shows, when it shows the map and they differ from what
+    /// the buffer holds; returns how many instances didn't fit.
     std::expected<std::size_t, core::Error> UploadTerrain(SDL_GPUCopyPass* copy, const Shown& shown);
-    // Lays out the snapshot's seals at the render time into sealDrawing, its showcase seals only when `showcase`, and logs
-    // once each seal key the table lacks among those drawn.
+    /// Lays out the snapshot's seals at the render time into sealDrawing, its showcase seals only when `showcase`, and logs
+    /// once each seal key the table lacks among those drawn.
     void LaySeals(const core::Snapshot& snapshot, f64 renderTick, bool showcase);
-    // Makes the glyph pages the cache's fields are on.
+    /// Makes the glyph pages the cache's fields are on.
     std::expected<void, core::Error> MakeGlyphPages();
-    // What `item` says, in the language shown.
+    /// What `item` says, in the language shown.
     std::string_view TextOf(const core::TextItem& item);
-    // Lays out the texts into meshVertices and meshRuns, in target pixels, unrounded: captions, then the labels as the
-    // label pass places them, then numbers (on `jobs`), so each draws over the one before.
+    /// Lays out the texts into meshVertices and meshRuns, in target pixels, unrounded: captions, then the labels as the
+    /// label pass places them, then numbers (on `jobs`), so each draws over the one before.
     void PlaceTexts(const Shown& shown, core::Jobs& jobs);
-    // The numbers that start from their creature's label (NumberOrigin), from this frame's labels as placed.
+    /// The numbers that start from their creature's label (NumberOrigin), from this frame's labels as placed.
     void FindNumberOrigins();
-    // Each quad of numberPages from meshVertices' quad `firstQuad` on, into meshRuns.
+    /// Each quad of numberPages from meshVertices' quad `firstQuad` on, into meshRuns.
     void AddNumberRuns(u32 firstQuad);
-    // `item`, laid out as `layout`, at its own anchor and size, its colour scaled by `opacity`.
+    /// `item`, laid out as `layout`, at its own anchor and size, its colour scaled by `opacity`.
     void PlaceText(const core::TextItem& item, const Layout& layout, f32 opacity);
-    // `item`, a number running top to bottom, shaped and drawn at `pixels`, moved by its scatter and risen by its lift
-    // from its anchor, or from its creature's NumberOrigin. Numbers across are composed instead (PlaceNumbers()).
+    /// `item`, a number running top to bottom, shaped and drawn at `pixels`, moved by its scatter and risen by its lift
+    /// from its anchor, or from its creature's NumberOrigin. Numbers across are composed instead (PlaceNumbers()).
     void PlaceNumber(const core::TextItem& item);
-    // The label pass's input for `item`, a label, raised to the hovered or selected priority when it names those.
+    /// The label pass's input for `item`, a label, raised to the hovered or selected priority when it names those.
     LabelInput LabelOf(const core::TextItem& item, core::StableId hovered, core::StableId selected);
-    // Each label's stackWidth: its name as a stack with as many digits as the frame's count can have; a label whose stack
-    // text isn't complete isn't either.
+    /// Each label's stackWidth: its name as a stack with as many digits as the frame's count can have; a label whose stack
+    /// text isn't complete isn't either.
     void MeasureStacks();
-    // A label, `item`, showing `count` (its name, or the stack with that count) at `opacity` of its colour, its box's
-    // bottom middle at `anchor`, drawn at `pixels`.
+    /// A label, `item`, showing `count` (its name, or the stack with that count) at `opacity` of its colour, its box's
+    /// bottom middle at `anchor`, drawn at `pixels`.
     void PlaceLabel(const core::TextItem& item, u32 count, f32 opacity, core::Vec2 anchor, f32 pixels);
-    // `layout` drawn at `pixels` with its `align` point at `anchor`, in `colour`.
+    /// `layout` drawn at `pixels` with its `align` point at `anchor`, in `colour`.
     void PlaceLayout(const Layout& layout, core::Vec2 anchor, core::TextAlign align, f32 pixels, u32 colour);
-    // `layout` drawn at `pixels` with its box's top left at `topLeft`, in `colour`, its quads added to the last run when
-    // they share its page and it is openRun or later.
+    /// `layout` drawn at `pixels` with its box's top left at `topLeft`, in `colour`, its quads added to the last run when
+    /// they share its page and it is openRun or later.
     void PlaceAt(const Layout& layout, core::Vec2 topLeft, f32 pixels, u32 colour);
-    // The HUD's lines, placed first, so the quads' room is theirs before the world's texts take any: the runs before
-    // hudRuns, drawn after every other text.
+    /// The HUD's lines, placed first, so the quads' room is theirs before the world's texts take any: the runs before
+    /// hudRuns, drawn after every other text.
     void PlaceHudLines(std::span<const HudLine> lines);
     std::expected<void, core::Error> UploadGlyphs(SDL_GPUCopyPass* copy);
-    // The command buffer holding the last Upload() was submitted, or failed to be, or was cancelled.
+    /// The command buffer holding the last Upload() was submitted, or failed to be, or was cancelled.
     void Submitted(bool submitted);
     void Report(const std::expected<void, core::Error>& drawn);
     [[nodiscard]] bool Holds(core::SceneId scene) const;
-    // The world pass into the scene target, fitted to `width` by `height`, then the final pass into `target`.
+    /// The world pass into the scene target, fitted to `width` by `height`, then the final pass into `target`.
     std::expected<void, core::Error> DrawPasses(
         SDL_GPUCommandBuffer* commands,
         SDL_GPUTexture* target,
@@ -234,13 +234,13 @@ struct Renderer::Impl {
         const View& view
     );
     void DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snapshot& snapshot, const View& view) const;
-    // What every glow of the frame showing `snapshot` as `view` shows it shares.
+    /// What every glow of the frame showing `snapshot` as `view` shows it shares.
     [[nodiscard]] internal::GlowFrame GlowFrameOf(const core::Snapshot& snapshot, const View& view) const;
-    // The glow table changed (new effects or palette): the next Upload() copies it again.
+    /// The glow table changed (new effects or palette): the next Upload() copies it again.
     void GlowsChanged();
     void DrawFinal(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target) const;
 
-    // Resources: the device and what lasts as long as it.
+    /// Resources: the device and what lasts as long as it.
     SDL_Window* window = nullptr;
     internal::Device device = nullptr; // first: destroyed after everything it made
     internal::Gpu<SDL_Window> claim = nullptr;
@@ -260,7 +260,7 @@ struct Renderer::Impl {
     std::filesystem::path assets{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::vector<bool> resident{};   // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     std::optional<SceneLoad> load = std::nullopt;
-    // Features: what draws, each with its pipelines and buffers.
+    /// Features: what draws, each with its pipelines and buffers.
     internal::SpriteRenderer instances{};
     internal::MeshRenderer meshes{};
     internal::SpriteRenderer terrain{}; // the world map's tiles, overlays and markers (TerrainDrawing)
@@ -270,9 +270,9 @@ struct Renderer::Impl {
     internal::SealRenderer seals{}; // with the table's pack
     internal::Compositor compositor{};
     internal::SceneTarget sceneTarget{};
-    // What every text of a frame shares, worked out once a frame by PlaceTexts(): the functions it calls for each text
-    // (TextOf(), LabelOf(), PlaceText(), PlaceNumber(), PlaceLabel(), PlaceLayout()) read it and have no zones, as a
-    // zone costs more than one text's work (src/AGENTS.md); PlaceTexts()' zone measures them.
+    /// What every text of a frame shares, worked out once a frame by PlaceTexts(): the functions it calls for each text
+    /// (TextOf(), LabelOf(), PlaceText(), PlaceNumber(), PlaceLabel(), PlaceLayout()) read it and have no zones, as a
+    /// zone costs more than one text's work (src/AGENTS.md); PlaceTexts()' zone measures them.
     struct TextFrame {
         ClipTransform clip{};
         f32 alpha = 1.0F;
@@ -285,10 +285,10 @@ struct Renderer::Impl {
         f32 numberPixels = 0.0F;
     };
     TextFrame textFrame{};
-    // Per-frame state: the frame in flight, what its uploads hold, and the failures being counted.
+    /// Per-frame state: the frame in flight, what its uploads hold, and the failures being counted.
     std::optional<internal::Frame> frame = std::nullopt; // acquired by Acquire(), submitted by Draw()
     UploadedSnapshot uploaded{};
-    // The glow table's versions: the latest (effects and palette), the one on the GPU, and one recorded but not yet submitted.
+    /// The glow table's versions: the latest (effects and palette), the one on the GPU, and one recorded but not yet submitted.
     u64 glowVersion = 0;
     u64 glowHeld = 0;
     std::optional<u64> glowRecorded = std::nullopt;
@@ -308,8 +308,8 @@ struct Renderer::Impl {
     std::vector<std::size_t> numberQuads{};    // PlaceNumbers()' scratch: each chunk's first quad
     std::vector<MeshVertex> meshVertices{};
     std::vector<internal::MeshRun> meshRuns{};
-    // What the terrain's buffer holds is what TerrainDrawing laid out for the tiles `span` reaches and the map and look
-    // `version` counts (SetWorld()): laid out and copied again only when that changes. Held once its commands are submitted.
+    /// What the terrain's buffer holds is what TerrainDrawing laid out for the tiles `span` reaches and the map and look
+    /// `version` counts (SetWorld()): laid out and copied again only when that changes. Held once its commands are submitted.
     struct TerrainKey {
         core::TileSpan span{};
         u64 version = 0;
@@ -864,7 +864,6 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
     const ClipTransform transform = WorldToClip(view.camera, sceneTarget.width, sceneTarget.height);
     const internal::SealTarget sealTarget{ .worldToClip = transform, .width = sceneTarget.width, .height = sceneTarget.height };
     const internal::GlowFrame glows = GlowFrameOf(snapshot, view);
-    // The ground and its decals, the seals on the ground, then the world over them.
     const std::span<const core::Batch> batches{ snapshot.batches };
     const std::size_t groundBatches = std::min<std::size_t>(snapshot.groundBatches, batches.size());
     // The map under all of it: it is the ground of a scene that shows it, which publishes none.
@@ -886,12 +885,9 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
     // The upright and overhead seals over the creatures, capped in opacity, under all that follows: the swords fly out over
     // them, and the health bars, damage numbers and HUD stay readable.
     seals.DrawAbove(commands, pass, sealTarget, sprites);
-    // The trails, then the overlay: the swords, each wearing its glow, the lance's bursts (additive) and the health bars, at
-    // the render time; their instances hold no motion between ticks, so the overlay's alpha changes nothing.
+    // The overlay's instances hold no motion between ticks, so its alpha changes nothing.
     ribbons.Draw(commands, pass, transform);
     overlay.Draw(commands, pass, volleyDrawing.batches, sprites, transform, alpha, glows);
-    // Game text over the world, its outlines and the overlay, placed in target pixels; then the
-    // HUD over all of it: its bars, then its lines.
     const f32 shadowShift = TEXT_SHADOW_BASE_PIXELS / static_cast<f32>(GLYPH_PAGE_SIZE); // a texel a base pixel
     const ClipTransform pixels = PixelsToClip(sceneTarget.width, sceneTarget.height);
     const internal::TextStyle style{ .outline = textOptions.outline ? 1.0F : 0.0F,

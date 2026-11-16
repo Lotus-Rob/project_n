@@ -1,8 +1,8 @@
 #include "colour.hlsli"
 #include "sprite.hlsli"
 
-// core::Instance (src/core/frame.hpp), 56 bytes. 16-bit fields come in pairs, low half first, and
-// are unpacked by hand: SDL_GPU's baseline doesn't guarantee native 16-bit types.
+/// core::Instance (src/core/frame.hpp), 56 bytes. 16-bit fields come in pairs, low half first, and
+/// are unpacked by hand: SDL_GPU's baseline doesn't guarantee native 16-bit types.
 struct Instance {
     float2 previous;  // the quad's centre at the previous tick, world units
     float2 current;   // and at this tick
@@ -18,7 +18,7 @@ struct Instance {
     uint reserved;    // pads the struct to 56 bytes, a multiple of 8 as SPIR-V's buffer layout needs
 };
 
-// gfx::GlowRecord (src/gfx/glow_table.hpp), 96 bytes: one role's glow; the table is indexed by core::GlowRole.
+/// gfx::GlowRecord (src/gfx/glow_table.hpp), 96 bytes: one role's glow; the table is indexed by core::GlowRole.
 struct GlowRecord {
     float size;        // how far past the edge it reaches at zoom 1, in texels
     float feather;     // 0 a hard ring, 1 a soft fade
@@ -37,26 +37,26 @@ struct GlowRecord {
     uint padding[3];   // to a multiple of 16 bytes
 };
 
-// The table's length: core::GLOW_ROLES.
+/// The table's length: core::GLOW_ROLES.
 static const uint GLOW_ROLES = 8;
-// core::GlowBlend::Ink: the glow paints over what is under it; Light (0) only adds light.
+/// core::GlowBlend::Ink: the glow paints over what is under it; Light (0) only adds light.
 static const uint GLOW_BLEND_INK = 1;
-// The last core::HitKind (Burn): `elementColours` holds one colour for each.
+/// The last core::HitKind (Burn): `elementColours` holds one colour for each.
 static const uint LAST_ELEMENT = 3;
-// core::DriveKind's values.
+/// core::DriveKind's values.
 static const uint DRIVE_PULSE = 1;
 static const uint DRIVE_CHARGE = 2;
 static const uint DRIVE_PROGRESS = 3;
-// core::GlowCurve's values (Linear is 0).
+/// core::GlowCurve's values (Linear is 0).
 static const uint CURVE_EASE_IN = 1;
 static const uint CURVE_EASE_OUT = 2;
 static const uint CURVE_SMOOTH = 3;
 static const uint CURVE_SINE = 4;
-// core::REDUCED_LIGHT_OPACITY: how far reduce flashing scales a light glow's opacity.
+/// core::REDUCED_LIGHT_OPACITY: how far reduce flashing scales a light glow's opacity.
 static const float REDUCED_LIGHT_OPACITY = 0.5;
 static const float PI = 3.14159265;
 
-// DrawUniforms in src/gfx/internal/features/sprites.cpp, 80 bytes.
+/// DrawUniforms in src/gfx/internal/features/sprites.cpp, 80 bytes.
 struct Draw {
     float4 worldToClip;   // clip = world * xy + zw (gfx::ClipTransform)
     float alpha;          // the render clock's progress from previous to current
@@ -84,7 +84,7 @@ float2 UnpackUnorm16(uint packed) {
     return float2(packed & 0xFFFF, packed >> 16) / 65535.0;
 }
 
-// core::CurveAt() (src/core/glow.cpp), line for line: `fraction`, held to 0..1, through `curve`.
+/// core::CurveAt() (src/core/glow.cpp), line for line: `fraction`, held to 0..1, through `curve`.
 float CurveAt(uint curve, float fraction) {
     const float held = clamp(fraction, 0.0, 1.0);
     if (curve == CURVE_EASE_IN) {
@@ -102,7 +102,7 @@ float CurveAt(uint curve, float fraction) {
     return held;
 }
 
-// CurveMean() in src/core/glow.cpp, line for line: the mean of CurveAt(curve, t) over t from 0 to 1, a pulse's average.
+/// CurveMean() in src/core/glow.cpp, line for line: the mean of CurveAt(curve, t) over t from 0 to 1, a pulse's average.
 float CurveMean(uint curve) {
     if (curve == CURVE_EASE_IN) {
         return 1.0 / 3.0;
@@ -113,9 +113,9 @@ float CurveMean(uint curve) {
     return 0.5;
 }
 
-// core::GlowStrength() (src/core/glow.cpp), line for line: the drive's strength from 0 to 1. Its age is in ticks, as the
-// record's period and fade are. The C++ takes a pulse's phase in f64; here the age is the wrapping difference of 32-bit
-// ticks, whose whole ticks f32 holds exactly for 2^24 ticks (three days) after the start.
+/// core::GlowStrength() (src/core/glow.cpp), line for line: the drive's strength from 0 to 1. Its age is in ticks, as the
+/// record's period and fade are. The C++ takes a pulse's phase in f64; here the age is the wrapping difference of 32-bit
+/// ticks, whose whole ticks f32 holds exactly for 2^24 ticks (three days) after the start.
 float GlowStrength(GlowRecord glow, float value, float ageTicks, uint result, bool released, bool reduceFlashing) {
     if (glow.driveKind == DRIVE_PULSE) {
         if (reduceFlashing) {

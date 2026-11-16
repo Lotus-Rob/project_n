@@ -9,24 +9,24 @@ namespace gfx {
 
 namespace {
 
-// Swords a job chunk draws: enough work to be worth a worker's wake, few enough that a volley of 1,000 spreads.
+/// Swords a job chunk draws: enough work to be worth a worker's wake, few enough that a volley of 1,000 spreads.
 constexpr u32 SWORD_CHUNK = 256;
-// A tangent shorter than this, in world units, is too short to say which way the trail runs there.
+/// A tangent shorter than this, in world units, is too short to say which way the trail runs there.
 constexpr f32 SHORTEST_TANGENT = 1e-4F;
 constexpr u32 TRAIL_POINTS = TRAIL_SEGMENTS + 1;
-// A bar's middle, down from its top as a fraction of its height: where the solid square's foot goes.
+/// A bar's middle, down from its top as a fraction of its height: where the solid square's foot goes.
 constexpr f32 BAR_MIDDLE = 0.5F;
 
 f32 Length(core::Vec2 vec) {
     return std::hypot(vec.x, vec.y);
 }
 
-// The clockwise rotation that turns a sprite pointing up (towards -y, as world y grows downwards) to `heading`.
+/// The clockwise rotation that turns a sprite pointing up (towards -y, as world y grows downwards) to `heading`.
 f32 RotationTo(core::Vec2 heading) {
     return std::atan2(heading.x, -heading.y);
 }
 
-// What every sword of a frame shares.
+/// What every sword of a frame shares.
 struct SwordFrame {
     const core::Manifest* manifest = nullptr;
     const core::UiColours* colours = nullptr;
@@ -36,13 +36,13 @@ struct SwordFrame {
     f64 renderTick = 0.0;
 };
 
-// Where one sword's sprite and trail go.
+/// Where one sword's sprite and trail go.
 struct SwordSlots {
     core::Instance* sword = nullptr;
     std::span<RibbonVertex> trail;
 };
 
-// `sword`'s trail: TRAIL_POINTS points on its path, from `headTick` back to `tailTick`, flying at `aim`, `head` the first.
+/// `sword`'s trail: TRAIL_POINTS points on its path, from `headTick` back to `tailTick`, flying at `aim`, `head` the first.
 void DrawTrail(
     const core::Volley& volley,
     u32 sword,
@@ -90,8 +90,8 @@ void DrawTrail(
     }
 }
 
-// Fills `sword`'s slots: its sprite, wearing its glow, where the path puts it at the frame's render time, and its trail;
-// zeros where nothing shows.
+/// Fills `sword`'s slots: its sprite, wearing its glow, where the path puts it at the frame's render time, and its trail;
+/// zeros where nothing shows.
 void DrawSword(
     const SwordFrame& frame,
     const core::VolleyView& view,

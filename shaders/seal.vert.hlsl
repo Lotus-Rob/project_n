@@ -1,6 +1,6 @@
 #include "seal.hlsli"
 
-// gfx::SealVertex (src/gfx/seal_draw.hpp), 24 bytes: a corner of a band's or a wash's quad, placed in the world on the CPU.
+/// gfx::SealVertex (src/gfx/seal_draw.hpp), 24 bytes: a corner of a band's or a wash's quad, placed in the world on the CPU.
 struct VertexIn {
     float2 position : TEXCOORD0; // world units
     float2 local : TEXCOORD1;    // on its seal's plane, in seal sizes
@@ -8,7 +8,7 @@ struct VertexIn {
     float grow : TEXCOORD3;      // 1 to grow it a pixel out from the centre, -1 towards it, 0 to keep it
 };
 
-// SealUniforms in src/gfx/internal/features/seals.cpp, 32 bytes.
+/// SealUniforms in src/gfx/internal/features/seals.cpp, 32 bytes.
 struct Draw {
     float4 worldToClip;   // clip = world * xy + zw (gfx::ClipTransform)
     float2 pixelsPerClip; // the target's pixels per clip unit, across and down: half its size
@@ -16,12 +16,12 @@ struct Draw {
     uint padding;         // to a multiple of 16 bytes
 };
 
-// The layers again, here for their axes: a band's corner moves along its plane, and its place on it with it.
+/// The layers again, here for their axes: a band's corner moves along its plane, and its place on it with it.
 StructuredBuffer<SealLayer> layers : register(t0, space0);
 ConstantBuffer<Draw> draw : register(b0, space1);
 
-// How far a band's edge moves past where the CPU laid it, in screen pixels: its anti-aliased fringe stays inside the quad
-// however small the seal is on screen.
+/// How far a band's edge moves past where the CPU laid it, in screen pixels: its anti-aliased fringe stays inside the quad
+/// however small the seal is on screen.
 static const float SEAL_GROW_PIXELS = 1.0;
 
 SealOut VertexMain(VertexIn input) {

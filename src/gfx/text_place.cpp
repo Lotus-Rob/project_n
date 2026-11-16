@@ -10,8 +10,8 @@ namespace gfx {
 namespace {
 
 constexpr f32 HALF = 0.5F;
-// Set in a named label's key: core::NameKey() uses 31 bits and so may equal a plain label's key (a StringId, a u16), which
-// would stack the two.
+/// Set in a named label's key: core::NameKey() uses 31 bits and so may equal a plain label's key (a StringId, a u16), which
+/// would stack the two.
 constexpr u32 NAMED_LABEL_KEY = 1U << 31U;
 constexpr u32 DECIMAL = 10;
 constexpr u8 PLUS_CHARACTER = 10;  // in NUMBER_FACE_CHARACTERS
@@ -21,7 +21,7 @@ constexpr auto TEXT_MARGINS = static_cast<f32>(2 * SDF_SPREAD);
 // The helpers below are what the public functions and each number in PlaceNumbers() share, so both compute the same
 // bits. They have no zones: a number's are measured by its chunk's, and a zone costs more than their work.
 
-// A number's colour tells its kind: the damage numbers take it from the table, the dark one when both are off.
+/// A number's colour tells its kind: the damage numbers take it from the table, the dark one when both are off.
 u32 ColourOfNumber(const core::TextItem& item) {
     return item.opacity >= 1.0F ? item.colour : core::ScaledColour(item.colour, item.opacity);
 }
@@ -50,7 +50,7 @@ core::Vec2 TopLeftOfText(core::Vec2 anchor, core::Vec2 size, core::TextAlign ali
     return { .x = anchor.x - (size.x * HALF), .y = align == core::TextAlign::BottomCentre ? anchor.y - size.y : anchor.y };
 }
 
-// `glyph`'s quad, its box's top left at `topLeft` and each base pixel `scale` target pixels, into `out`'s four corners.
+/// `glyph`'s quad, its box's top left at `topLeft` and each base pixel `scale` target pixels, into `out`'s four corners.
 void WriteGlyphQuad(const PlacedGlyph& glyph, core::Vec2 topLeft, f32 scale, u32 colour, std::span<MeshVertex> out) {
     constexpr auto PAGE = static_cast<f32>(GLYPH_PAGE_SIZE);
     const f32 left = topLeft.x + (glyph.x * scale);
@@ -69,7 +69,7 @@ void WriteGlyphQuad(const PlacedGlyph& glyph, core::Vec2 topLeft, f32 scale, u32
     out[3] = { .x = right, .y = bottom, .uv = core::PackPair(uRight, vBottom), .colour = colour };
 }
 
-// The characters `value` signed by `sign` shows, as indices into NUMBER_FACE_CHARACTERS, into `out`; returns how many.
+/// The characters `value` signed by `sign` shows, as indices into NUMBER_FACE_CHARACTERS, into `out`; returns how many.
 std::size_t NumberCharacters(i64 value, core::NumberSign sign, std::array<u8, NUMBER_MAX_CHARACTERS>& out) {
     std::size_t count = 0;
     if (sign == core::NumberSign::Plus) {
@@ -89,12 +89,12 @@ std::size_t NumberCharacters(i64 value, core::NumberSign sign, std::array<u8, NU
     return count;
 }
 
-// Whether `item` is a number PlaceNumbers() places.
+/// Whether `item` is a number PlaceNumbers() places.
 bool PlacedAsNumber(const core::TextItem& item) {
     return item.kind == core::TextKind::Number && item.direction == core::TextDirection::LeftToRight && item.opacity > 0.0F;
 }
 
-// How many quads `item` places as.
+/// How many quads `item` places as.
 std::size_t NumberQuads(const NumberFace& face, const core::TextItem& item) {
     if (!PlacedAsNumber(item)) {
         return 0;
@@ -108,7 +108,7 @@ std::size_t NumberQuads(const NumberFace& face, const core::TextItem& item) {
     return quads;
 }
 
-// The quads PlaceNumbers() places in each chunk.
+/// The quads PlaceNumbers() places in each chunk.
 void CountNumberChunk(const NumberFace& face, std::span<const core::TextItem> texts, std::size_t& quads) {
     PN_PROFILE_ZONE();
     quads = 0;
@@ -148,8 +148,8 @@ void PlaceNumberChunk(
     }
 }
 
-// Calls `body(chunk)` for each of `chunks`: on `jobs` when there are several, else on this thread, sparing a frame
-// without numbers the wake of every worker. A chunk's output is the same wherever it runs.
+/// Calls `body(chunk)` for each of `chunks`: on `jobs` when there are several, else on this thread, sparing a frame
+/// without numbers the wake of every worker. A chunk's output is the same wherever it runs.
 template<typename Body>
 void ForEachChunk(core::Jobs& jobs, u32 chunks, const Body& body) {
     if (chunks == 1) {
@@ -162,8 +162,8 @@ void ForEachChunk(core::Jobs& jobs, u32 chunks, const Body& body) {
 
 } // namespace
 
-// The public functions up to PlaceGlyphs() run once per text and have no zones, as the helpers above: their callers'
-// zones measure them.
+/// The public functions up to PlaceGlyphs() run once per text and have no zones, as the helpers above: their callers'
+/// zones measure them.
 f32 TextPixels(core::TextKind kind, f32 pixelsPerUnit, f32 scale) {
     if (kind == core::TextKind::Number) {
         return std::max(NUMBER_WORLD_SIZE * pixelsPerUnit, NUMBER_MIN_PIXELS) * scale;

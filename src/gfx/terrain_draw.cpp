@@ -12,10 +12,10 @@ namespace {
 
 using core::atlas::SpriteId;
 
-// The key of the map's tile variants: a hash of column and row, whichever view finds the tile. Its seed and purpose are
-// those of game/scenes/world.cpp's old noise (game can't be seen from gfx; game/random_purposes.hpp keeps the purpose, 9,
-// retired). Reduced by multiplying the hash's top half by the variant count, a two-variant kind keeps the old noise's pick (the
-// top bit).
+/// The key of the map's tile variants: a hash of column and row, whichever view finds the tile. Its seed and purpose are
+/// those of game/scenes/world.cpp's old noise (game can't be seen from gfx; game/random_purposes.hpp keeps the purpose, 9,
+/// retired). Reduced by multiplying the hash's top half by the variant count, a two-variant kind keeps the old noise's pick
+/// (the top bit).
 constexpr u64 TERRAIN_SEED = 0x5eed;
 constexpr u32 TERRAIN_PURPOSE = 9;
 constexpr u32 VARIANT_DRAW = 2;
@@ -32,7 +32,7 @@ constexpr u8 RIVER = std::to_underlying(core::TileFlag::River);
 constexpr u8 BRIDGE = std::to_underlying(core::TileFlag::Bridge);
 constexpr u8 FORD = std::to_underlying(core::TileFlag::Ford);
 
-// Where the drawing is going and what it draws with, for the passes below.
+/// Where the drawing is going and what it draws with, for the passes below.
 struct Pass {
     const core::WorldMap* map = nullptr;
     const core::WorldLook* look = nullptr;
@@ -40,7 +40,7 @@ struct Pass {
     core::TileSpan span{};
     TerrainDrawing* into = nullptr;
 
-    // `sprite` with its foot at `foot`, standing still.
+    /// `sprite` with its foot at `foot`, standing still.
     void Add(SpriteId sprite, core::Vec2 foot) const {
         into->instances.push_back(core::MakeInstance(*manifest, { .sprite = sprite, .previous = foot, .current = foot }));
     }
@@ -48,7 +48,7 @@ struct Pass {
         const f32 side = map->TileSize();
         return { .x = static_cast<f32>(column) * side, .y = static_cast<f32>(row) * side };
     }
-    // The flags of the tile at `column` and `row`, or 0 past the map: `column` and `row` may lie one outside it.
+    /// The flags of the tile at `column` and `row`, or 0 past the map: `column` and `row` may lie one outside it.
     [[nodiscard]] u8 FlagsAt(i64 column, i64 row) const {
         if (column < 0 || row < 0 || std::cmp_greater_equal(column, map->Columns()) ||
             std::cmp_greater_equal(row, map->Rows())) {
@@ -56,7 +56,7 @@ struct Pass {
         }
         return map->FlagsAt(map->TileIndex({ .column = static_cast<u32>(column), .row = static_cast<u32>(row) }));
     }
-    // Which neighbours of the tile at `column` and `row` carry any of `flag`'s bits, as bits 1, 2, 4 and 8.
+    /// Which neighbours of the tile at `column` and `row` carry any of `flag`'s bits, as bits 1, 2, 4 and 8.
     [[nodiscard]] u32 Neighbours(u32 column, u32 row, u8 flag) const {
         const auto across = static_cast<i64>(column);
         const auto down = static_cast<i64>(row);
@@ -67,7 +67,7 @@ struct Pass {
         mask |= (FlagsAt(across - 1, down) & flag) != 0 ? WEST : 0;
         return mask;
     }
-    // Calls `visit(column, row, flags)` for each tile of the span, row by row.
+    /// Calls `visit(column, row, flags)` for each tile of the span, row by row.
     template<typename Visit>
     void ForTiles(const Visit& visit) const {
         for (u32 row = span.firstRow; row <= span.lastRow; ++row) {
@@ -78,7 +78,7 @@ struct Pass {
     }
 };
 
-// The variant of `variants` that the tile at `column` and `row` wears.
+/// The variant of `variants` that the tile at `column` and `row` wears.
 SpriteId VariantOf(const std::vector<core::atlas::SpriteId>& variants, u32 column, u32 row) {
     const u64 key = (u64{ column } << COLUMN_SHIFT) | row;
     const u64 pick = core::Random(TERRAIN_SEED, 0, key, TERRAIN_PURPOSE, VARIANT_DRAW) >> VARIANT_SHIFT;

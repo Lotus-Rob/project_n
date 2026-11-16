@@ -4,7 +4,7 @@
 // crawl. The same shapes draw the particles' ink (normal blending) and then their light (additive). Their proportions are
 // each look's (seals.yaml's light), handed over in `shape`.
 
-// How much of a pillar's light shows at `corner` (across, along from its plane).
+/// How much of a pillar's light shows at `corner` (across, along from its plane).
 float Pillar(SealLightOut input) {
     const float fade = input.shape.x;
     const float rest = input.shape.y;

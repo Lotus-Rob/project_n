@@ -25,13 +25,13 @@ f32 SealRadians(f32 degrees) {
     return static_cast<f32>(static_cast<f64>(degrees) * SEAL_RADIANS_A_DEGREE);
 }
 
-// The turn is wrapped in f64 before it narrows, so an f32 angle keeps its precision however long the seal has been up.
+/// The turn is wrapped in f64 before it narrows, so an f32 angle keeps its precision however long the seal has been up.
 f32 SealSpin(f32 degreesASecond, f64 seconds, f32 spinScale) {
     const f64 turned = static_cast<f64>(degreesASecond) * static_cast<f64>(spinScale) * seconds;
     return static_cast<f32>(std::fmod(turned, SEAL_TURN_DEGREES) * SEAL_RADIANS_A_DEGREE);
 }
 
-// A stream's age wrapped by its period, and how many times it has come round (wrapping at 2^32).
+/// A stream's age wrapped by its period, and how many times it has come round (wrapping at 2^32).
 struct SealWrapped {
     f32 age = 0.0F;
     u32 lap = 0;
@@ -68,8 +68,8 @@ SealWrapped SealWrap(f64 seconds, f64 period) {
     return { .age = narrow, .lap = static_cast<u32>(lap) };
 }
 
-// The particle placement's hash and constants. shaders/seal.hlsli's SealHash, SealUnit and SEAL_UNIT_SCALE are the same and
-// change with these (SealParticleAt()).
+/// The particle placement's hash and constants. shaders/seal.hlsli's SealHash, SealUnit and SEAL_UNIT_SCALE are the same and
+/// change with these (SealParticleAt()).
 constexpr u32 SEAL_HASH_SHIFT_FIRST = 16;
 constexpr u32 SEAL_HASH_SHIFT_SECOND = 15;
 constexpr u32 SEAL_HASH_MULTIPLY_FIRST = 0x7FEB352DU;
@@ -77,12 +77,12 @@ constexpr u32 SEAL_HASH_MULTIPLY_SECOND = 0x846CA68BU;
 constexpr u32 SEAL_UNIT_SHIFT = 8;                    // a unit number takes the hash's top 24 bits, exact as an f32
 constexpr f32 SEAL_UNIT_SCALE = 1.0F / 16'777'216.0F; // 2^-24
 constexpr f32 SEAL_HALF = 0.5F;                       // a quad's half-sides are half its sizes
-// Which of a particle's numbers each draw of its hash takes.
+/// Which of a particle's numbers each draw of its hash takes.
 constexpr u32 SEAL_DRAW_RADIUS = 1;
 constexpr u32 SEAL_DRAW_ANGLE = 2;
 constexpr u32 SEAL_DRAW_TURN = 3;
 
-// A 32-bit integer hash (lowbias32): consecutive inputs give unrelated outputs.
+/// A 32-bit integer hash (lowbias32): consecutive inputs give unrelated outputs.
 constexpr u32 SealHash(u32 value) {
     value ^= value >> SEAL_HASH_SHIFT_FIRST;
     value *= SEAL_HASH_MULTIPLY_FIRST;
@@ -92,12 +92,12 @@ constexpr u32 SealHash(u32 value) {
     return value;
 }
 
-// A number from 0 to below 1, draw `draw` of `hash`.
+/// A number from 0 to below 1, draw `draw` of `hash`.
 f32 SealUnit(u32 hash, u32 draw) {
     return static_cast<f32>(SealHash(hash + draw) >> SEAL_UNIT_SHIFT) * SEAL_UNIT_SCALE;
 }
 
-// A particle's own age in its stream: the stream's, staggered by the particle's hash, and the life it is in.
+/// A particle's own age in its stream: the stream's, staggered by the particle's hash, and the life it is in.
 SealWrapped SealStaggered(f32 age, f32 period, u32 lap, u32 hash) {
     if (!(period > 0.0F)) {
         return { .age = age, .lap = lap };
@@ -107,18 +107,18 @@ SealWrapped SealStaggered(f32 age, f32 period, u32 lap, u32 hash) {
                                : SealWrapped{ .age = staggered, .lap = lap };
 }
 
-// Where `local` (seal sizes on the plane) of `light`'s seal lands in the world.
+/// Where `local` (seal sizes on the plane) of `light`'s seal lands in the world.
 core::Vec2 SealOnPlane(const SealGpuParticles& light, core::Vec2 local) {
     return light.centre + (light.axisX * local.x) + (light.axisDepth * local.y);
 }
 
-// A unit number's rise and fall over a life, 0 at its ends and 1 halfway: nothing pops in or out.
+/// A unit number's rise and fall over a life, 0 at its ends and 1 halfway: nothing pops in or out.
 f32 SealRiseAndFall(f32 through) {
     constexpr f32 PEAK = 4.0F; // 4t(1 - t) is 1 at its middle
     return PEAK * through * (1.0F - through);
 }
 
-// Pillar `index` of `light`: at a point of the disc for good, in its share of the turn, its light falling along it.
+/// Pillar `index` of `light`: at a point of the disc for good, in its share of the turn, its light falling along it.
 SealParticle SealPillarAt(const SealGpuParticles& light, u32 index, u32 hash) {
     const f32 radius = std::sqrt(SealUnit(hash, SEAL_DRAW_RADIUS));
     const f32 angle = SEAL_TAU * (static_cast<f32>(index) + SealUnit(hash, SEAL_DRAW_ANGLE)) / static_cast<f32>(light.pillars);
@@ -133,7 +133,7 @@ SealParticle SealPillarAt(const SealGpuParticles& light, u32 index, u32 hash) {
              .kind = SEAL_PILLAR };
 }
 
-// A spark of `light`: born at a point of the disc each life, rising.
+/// A spark of `light`: born at a point of the disc each life, rising.
 SealParticle SealSparkAt(const SealGpuParticles& light, u32 hash) {
     const SealWrapped own = SealStaggered(light.sparkAge, light.sparkLife, light.sparkLap, hash);
     const u32 life = SealHash(hash ^ SealHash(own.lap));
@@ -148,7 +148,7 @@ SealParticle SealSparkAt(const SealGpuParticles& light, u32 hash) {
              .kind = SEAL_SPARK };
 }
 
-// A shard of `light`: born at a point of the disc each time it comes round, drifting out from the centre and turning.
+/// A shard of `light`: born at a point of the disc each time it comes round, drifting out from the centre and turning.
 SealParticle SealShardAt(const SealGpuParticles& light, u32 hash) {
     const SealWrapped own = SealStaggered(light.shardAge, light.shardCycle, light.shardLap, hash);
     const u32 life = SealHash(hash ^ SealHash(own.lap));
@@ -166,7 +166,7 @@ SealParticle SealShardAt(const SealGpuParticles& light, u32 hash) {
              .kind = SEAL_SHARD };
 }
 
-// How many layers of `look` appear before `layer`: by outer radius, ties in the look's order.
+/// How many layers of `look` appear before `layer`: by outer radius, ties in the look's order.
 std::size_t SealAppearTurn(const core::SealLook& look, std::size_t layer) {
     const f32 sign = look.innerFirst ? 1.0F : -1.0F;
     const std::pair<f32, std::size_t> mine{ sign * look.layers[layer].outer, layer };
@@ -179,20 +179,20 @@ std::size_t SealAppearTurn(const core::SealLook& look, std::size_t layer) {
     return turn;
 }
 
-// A seal's times at the render clock, in seconds.
+/// A seal's times at the render clock, in seconds.
 struct SealTimes {
     f64 since = 0.0;
     f64 toEnd = 0.0;
 };
 
-// Where a seal's look puts the points of its layers.
+/// Where a seal's look puts the points of its layers.
 struct SealPlace {
     const core::Seal* seal = nullptr;
     core::SealPlane plane = core::SealPlane::Ground;
     f32 lift = 0.0F;
     f32 viewRatio = 0.0F;
 
-    // `local` (in seal sizes) on the plane, `height` (in world units) off it.
+    /// `local` (in seal sizes) on the plane, `height` (in world units) off it.
     [[nodiscard]] core::Vec2 At(core::Vec2 local, f32 height) const {
         return SealToWorld(
             *seal, plane, lift, viewRatio, { .x = local.x * seal->size, .depth = local.y * seal->size, .up = height }
@@ -200,7 +200,7 @@ struct SealPlace {
     }
 };
 
-// What every seal of a frame shares.
+/// What every seal of a frame shares.
 struct SealFrame {
     const core::Seals* looks = nullptr;
     const SealPack* pack = nullptr;
@@ -209,7 +209,7 @@ struct SealFrame {
     std::size_t drawn = 0;
 };
 
-// The ring's corners, the first repeated last to close it.
+/// The ring's corners, the first repeated last to close it.
 const std::array<core::Vec2, SEAL_BAND_SEGMENTS + 1>& SealRingDirections() {
     static const std::array<core::Vec2, SEAL_BAND_SEGMENTS + 1> directions = [] {
         std::array<core::Vec2, SEAL_BAND_SEGMENTS + 1> corners{};
@@ -223,8 +223,8 @@ const std::array<core::Vec2, SEAL_BAND_SEGMENTS + 1>& SealRingDirections() {
     return directions;
 }
 
-// Adds a band of `sides` quads from `inner` to `outer` (seal sizes), `direction(k)` giving corner k's way out from the
-// centre, corner `sides` closing it.
+/// Adds a band of `sides` quads from `inner` to `outer` (seal sizes), `direction(k)` giving corner k's way out from the
+/// centre, corner `sides` closing it.
 void SealAddBand(
     const SealPlace& place,
     u32 sides,
@@ -251,7 +251,7 @@ void SealAddBand(
     }
 }
 
-// A round band: its quads' outer edges lie outside the circle `outer`, so their chords never cut into what it holds.
+/// A round band: its quads' outer edges lie outside the circle `outer`, so their chords never cut into what it holds.
 void SealAddRoundBand(const SealPlace& place, f32 inner, f32 outer, f32 height, u32 layer, std::vector<SealVertex>& lines) {
     static const f32 circumscribe = 1.0F / std::cos(std::numbers::pi_v<f32> / static_cast<f32>(SEAL_BAND_SEGMENTS));
     const auto& ring = SealRingDirections();
@@ -279,7 +279,7 @@ SealGpuSprite SealSpriteOf(const core::Manifest& manifest, core::atlas::SpriteId
              .page = info.page };
 }
 
-// `part` packed, its sprites added to `pack` but for a script's, which are its glyph set's, from `glyphSets`' first.
+/// `part` packed, its sprites added to `pack` but for a script's, which are its glyph set's, from `glyphSets`' first.
 SealGpuPart SealPartOf(
     SealPack& pack,
     const core::Seals& seals,
@@ -313,9 +313,9 @@ SealGpuPart SealPartOf(
     return gpu;
 }
 
-// Where `part`'s band starts, in seal sizes from the centre, before the margin every part's band shares (the halo and a
-// pixel): shaders/seal.frag.hlsl's PartBand() works it out alike, and stops at the first part whose band starts past the
-// pixel, so the order must be this.
+/// Where `part`'s band starts, in seal sizes from the centre, before the margin every part's band shares (the halo and a
+/// pixel): shaders/seal.frag.hlsl's PartBand() works it out alike, and stops at the first part whose band starts past the
+/// pixel, so the order must be this.
 f32 SealBandStart(const core::SealPart& part) {
     using Kind = core::SealPartKind;
     if (part.kind == Kind::Circle) {
@@ -334,7 +334,7 @@ f32 SealBandStart(const core::SealPart& part) {
     return part.radius - part.size; // a glyph or a flourish
 }
 
-// `layer`'s parts packed, sorted by where their bands start; ties keep the look's order.
+/// `layer`'s parts packed, sorted by where their bands start; ties keep the look's order.
 SealPackedLayer SealPackLayer(
     SealPack& pack,
     const core::Seals& seals,
@@ -358,7 +358,7 @@ SealPackedLayer SealPackLayer(
     return packed;
 }
 
-// A layer of the seal `place` puts, at `height`: its centre and the plane's axes there.
+/// A layer of the seal `place` puts, at `height`: its centre and the plane's axes there.
 SealGpuLayer SealLayerAt(const SealPlace& place, f32 height, const SealGpuLayer& shared) {
     SealGpuLayer layer = shared;
     layer.centre = place.At({}, height);
@@ -367,7 +367,7 @@ SealGpuLayer SealLayerAt(const SealPlace& place, f32 height, const SealGpuLayer&
     return layer;
 }
 
-// What a seal's light takes from its seal besides its look.
+/// What a seal's light takes from its seal besides its look.
 struct SealLightShared {
     f32 spinScale = 0.0F;
     u32 colour = 0;
@@ -377,8 +377,8 @@ struct SealLightShared {
     u64 salt = 0;
 };
 
-// Adds `look`'s light to its plane's list, its motion scaled by spin_scale through its ages, its streams cut to
-// core::MAX_SEAL_PARTICLES in all (pillars first), what was cut counted.
+/// Adds `look`'s light to its plane's list, its motion scaled by spin_scale through its ages, its streams cut to
+/// core::MAX_SEAL_PARTICLES in all (pillars first), what was cut counted.
 void SealAddLight(
     SealDrawing& out,
     const SealPlace& place,
@@ -454,7 +454,7 @@ void SealAddLight(
     );
 }
 
-// What a seal's layers share.
+/// What a seal's layers share.
 struct SealLayers {
     SealPlace place{};
     const SealTimes* times = nullptr;
@@ -463,7 +463,7 @@ struct SealLayers {
     SealGpuLayer shared{};
 };
 
-// Adds `layer`, packed as `packed`, its life `life`: its record and its band.
+/// Adds `layer`, packed as `packed`, its life `life`: its record and its band.
 void SealAddLayer(
     const SealFrame& frame,
     const SealLayers& layers,
@@ -503,7 +503,7 @@ void SealAddLayer(
     }
 }
 
-// Adds `emblem`, packed as `packed`'s, as a layer of its own at `height`, its life `life`.
+/// Adds `emblem`, packed as `packed`'s, as a layer of its own at `height`, its life `life`.
 void SealAddEmblem(
     const SealFrame& frame,
     const SealLayers& layers,
@@ -525,7 +525,7 @@ void SealAddEmblem(
     SealAddRoundBand(layers.place, 0.0F, packed.emblemReach, height, index, *layers.lines);
 }
 
-// `emblem` packed into `pack`: its part, its sprite, and the reach of the disc that holds its distance field.
+/// `emblem` packed into `pack`: its part, its sprite, and the reach of the disc that holds its distance field.
 void SealPackEmblem(SealPack& pack, const core::Manifest& manifest, const core::SealEmblem& emblem, SealPackedLook& packed) {
     const core::SpriteInfo& info = manifest.Sprite(emblem.sprite);
     const f32 texel = emblem.size / static_cast<f32>(info.height);
@@ -545,7 +545,7 @@ void SealPackEmblem(SealPack& pack, const core::Manifest& manifest, const core::
     pack.sprites.push_back(SealSpriteOf(manifest, emblem.sprite));
 }
 
-// `look` packed into `pack`: its layers' parts, then its emblem's.
+/// `look` packed into `pack`: its layers' parts, then its emblem's.
 SealPackedLook SealPackLook(
     SealPack& pack,
     const core::Seals& seals,
@@ -564,8 +564,8 @@ SealPackedLook SealPackLook(
     return packed;
 }
 
-// Adds the shadow an overhead seal casts on the ground under it, `opacity` strong: its wash's quad and ink, laid on the
-// ground, with a layer record of its own for its strength, drawn with the ground seals' washes.
+/// Adds the shadow an overhead seal casts on the ground under it, `opacity` strong: its wash's quad and ink, laid on the
+/// ground, with a layer record of its own for its strength, drawn with the ground seals' washes.
 void SealAddShadow(
     SealDrawing& out,
     const core::Seal& seal,
@@ -588,7 +588,7 @@ void SealAddShadow(
     }
 }
 
-// Adds one seal by its look, packed as `packed`: its layers and their bands, its emblem, its wash and its light.
+/// Adds one seal by its look, packed as `packed`: its layers and their bands, its emblem, its wash and its light.
 void SealDrawLook(
     SealFrame& frame,
     const core::Seal& seal,
@@ -667,7 +667,7 @@ void SealDrawLook(
     );
 }
 
-// Where the look of `key` is in `seals`' looks, if it is there.
+/// Where the look of `key` is in `seals`' looks, if it is there.
 std::optional<std::size_t> SealLookIndex(const core::Seals& seals, core::SealKey key) {
     const auto& looks = seals.looks;
     const auto found = std::ranges::lower_bound(looks, key, {}, &std::pair<core::SealKey, core::SealLook>::first);
@@ -677,9 +677,9 @@ std::optional<std::size_t> SealLookIndex(const core::Seals& seals, core::SealKey
     return static_cast<std::size_t>(found - looks.begin());
 }
 
-// How many seals drawing `look` `depth` satellites deep adds, its satellites' counts one deeper already in `pack`: itself,
-// and each satellite DrawSeals() would draw (not one on a ring its look lacks, or naming a look the table lacks) with its
-// own, above the deepest nesting.
+/// How many seals drawing `look` `depth` satellites deep adds, its satellites' counts one deeper already in `pack`: itself,
+/// and each satellite DrawSeals() would draw (not one on a ring its look lacks, or naming a look the table lacks) with its
+/// own, above the deepest nesting.
 u32 SealsDrawnAt(const core::Seals& seals, const SealPack& pack, const core::SealLook& look, u32 depth) {
     u32 count = 1;
     if (depth >= core::MAX_SATELLITE_DEPTH) {
@@ -694,10 +694,10 @@ u32 SealsDrawnAt(const core::Seals& seals, const SealPack& pack, const core::Sea
     return count;
 }
 
-// Adds `seal`, a satellite `depth` deep (0 for one in play), if the frame has room; its look then, so its satellites are
-// drawn next. Null when the table (or its pack) hasn't its look, when its size isn't a normal f32 (a satellite of a
-// satellite of a tiny seal: its light would divide by it), or when the frame is full: then it is counted with all it
-// would have drawn, which is not walked.
+/// Adds `seal`, a satellite `depth` deep (0 for one in play), if the frame has room; its look then, so its satellites are
+/// drawn next. Null when the table (or its pack) hasn't its look, when its size isn't a normal f32 (a satellite of a
+/// satellite of a tiny seal: its light would divide by it), or when the frame is full: then it is counted with all it
+/// would have drawn, which is not walked.
 const core::SealLook* SealDrawOne(SealFrame& frame, const core::Seal& seal, const SealTimes& times, u64 salt, u32 depth) {
     const std::optional<std::size_t> index = SealLookIndex(*frame.looks, seal.key);
     if (!index || *index >= frame.pack->looks.size()) {
@@ -718,7 +718,7 @@ const core::SealLook* SealDrawOne(SealFrame& frame, const core::Seal& seal, cons
     return look;
 }
 
-// Satellite `index` of `seal` (whose look is `look`) as a seal of its own, on its ring where its mount puts it now.
+/// Satellite `index` of `seal` (whose look is `look`) as a seal of its own, on its ring where its mount puts it now.
 std::optional<core::Seal> SealSatelliteOf(
     const SealFrame& frame,
     const core::Seal& seal,
@@ -740,7 +740,6 @@ std::optional<core::Seal> SealSatelliteOf(
         angle += SealSpin(satellite.orbit, times.since, spinScale);
     }
     const SealPlace place{ .seal = &seal, .plane = look.plane, .lift = look.lift, .viewRatio = frame.looks->viewRatio };
-    // It sits across the middle of its ring's band.
     const f32 middle = 0.5F * (ring.inner + ring.outer);
     core::Seal moon = seal;
     moon.key = satellite.seal;
@@ -749,7 +748,7 @@ std::optional<core::Seal> SealSatelliteOf(
     return moon;
 }
 
-// A satellite's salt, from its parent's and its place among the parent's satellites, so two alike differ in their light.
+/// A satellite's salt, from its parent's and its place among the parent's satellites, so two alike differ in their light.
 u64 SealSatelliteSalt(u64 parent, std::size_t index) {
     return core::detail::Mix(parent ^ core::detail::Mix(index + 1));
 }
@@ -776,7 +775,6 @@ f32 SealLifeOpacity(const core::SealLook& look, std::size_t layer, f64 secondsSi
     }
     f32 fade = secondsToEnd > 0.0 ? 1.0F : 0.0F;
     if (look.fade > 0.0) {
-        // As the glows fade: the curve of the share of the fade that has passed.
         fade = 1.0F - core::CurveAt(look.fadeCurve, static_cast<f32>(1.0 - (secondsToEnd / look.fade)));
     }
     return appear * fade;
@@ -810,8 +808,8 @@ void SealDrawing::Clear() {
     droppedParticles = 0;
 }
 
-// The reader's caps bound a pack, so its sizes fit the u32s its GPU buffers take: every look's layers' parts and its
-// emblem's, and every glyph set's sprites with every flourish's and emblem's.
+/// The reader's caps bound a pack, so its sizes fit the u32s its GPU buffers take: every look's layers' parts and its
+/// emblem's, and every glyph set's sprites with every flourish's and emblem's.
 constexpr u64 SEAL_MOST_PACKED_PARTS =
     u64{ core::MAX_SEAL_LOOKS } * ((u64{ core::MAX_SEAL_LAYERS } * core::MAX_SEAL_PARTS) + 1);
 constexpr u64 SEAL_MOST_PACKED_SPRITES =
