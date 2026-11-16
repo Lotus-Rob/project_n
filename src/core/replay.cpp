@@ -58,6 +58,19 @@ void ReadFields(Reader& archive, Action& action) {
     }
 }
 
+/// Writes the fields `action`'s kind carries, as ReadFields() reads them.
+void WriteFields(Writer& archive, const Action& action) {
+    if (action.kind == ActionKind::Select) {
+        archive(action.target);
+    }
+    else if (action.kind == ActionKind::Cast) {
+        archive(action.slot, action.point);
+    }
+    else if (action.kind == ActionKind::WalkTo) {
+        archive(action.point);
+    }
+}
+
 /// Reads the recorded ticks into `actions`, one after another, each tick's first action's index into
 /// `tickStarts` and its held input into `held`; fails `archive` on a tick that doesn't fit, an action
 /// that can't be in a replay or held input that couldn't be sent.
@@ -157,15 +170,7 @@ std::vector<std::byte> Replay::FinishRecording() {
         archive(static_cast<u8>(end - m_tickStarts[tick]));
         for (std::size_t action = m_tickStarts[tick]; action < end; ++action) {
             archive(m_actions[action].kind);
-            if (m_actions[action].kind == ActionKind::Select) {
-                archive(m_actions[action].target);
-            }
-            else if (m_actions[action].kind == ActionKind::Cast) {
-                archive(m_actions[action].slot, m_actions[action].point);
-            }
-            else if (m_actions[action].kind == ActionKind::WalkTo) {
-                archive(m_actions[action].point);
-            }
+            WriteFields(archive, m_actions[action]);
         }
         if (m_held[tick] == last) {
             archive(HeldChange::Same);
