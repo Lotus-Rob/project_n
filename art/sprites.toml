@@ -395,3 +395,12 @@ foot = [48, 48]
 
 [marker_corrupt_village]
 foot = [48, 48]
+
+[route_dot]
+foot = [8, 8]
+
+[route_marker]
+foot = [24, 24]
+
+[target_tile]
+foot = [128, 128]

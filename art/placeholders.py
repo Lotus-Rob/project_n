@@ -1347,6 +1347,42 @@ def marker(sort):
     return canvas
 
 
+def route_dot():
+    canvas = Canvas(16, 16)
+
+    def coverage(x, y):
+        d = math.sqrt((x - 8.0) ** 2 + (y - 8.0) ** 2)
+        if d >= 7.5:
+            return None
+        return (INK, 0.9) if d > 5.0 else (VERMILION, min(1.0, (7.5 - d) * 1.5))
+    canvas.shape((0, 0, 16, 16), coverage)
+    return canvas
+
+
+def route_marker():
+    canvas = Canvas(48, 48)
+
+    def coverage(x, y):
+        d = math.sqrt((x - 24.0) ** 2 + (y - 24.0) ** 2)
+        if 17.0 <= d <= 22.0:
+            return VERMILION, min(1.0, (d - 16.0) * 1.5, (23.0 - d) * 1.5) * 0.95
+        return None
+    canvas.shape((0, 0, 48, 48), coverage)
+    return canvas
+
+
+def target_tile():
+    canvas = Canvas(256, 256)
+
+    def coverage(x, y):
+        edge = min(x, y, 256.0 - x, 256.0 - y)
+        if edge < 8.0:
+            return VERMILION, 0.85
+        return None
+    canvas.shape((0, 0, 256, 256), coverage)
+    return canvas
+
+
 # name -> (painter, opaque); the names are those in art/sprites.toml.
 PLACEHOLDERS = {
     "ground": (ground, True),
@@ -1384,6 +1420,9 @@ PLACEHOLDERS = {
     "bridge_v": (lambda: plank_bridge("v"), False),
     "ford": (ford, False),
     **{f"marker_{sort}": ((lambda sort=sort: marker(sort)), False) for sort in GLYPHS},
+    "route_dot": (route_dot, False),
+    "route_marker": (route_marker, False),
+    "target_tile": (target_tile, False),
 }
 
 

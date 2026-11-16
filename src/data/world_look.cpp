@@ -190,6 +190,38 @@ std::expected<void, core::Error> ReadMarkers(
     return {};
 }
 
+std::expected<void, core::Error> ReadRoute(
+    const YAML::Node& root,
+    const Atlas& atlas,
+    std::vector<std::string>* warnings,
+    core::RouteLook& route
+) {
+    const std::expected<YAML::Node, core::Error> node = MapAt(root, "route");
+    if (!node) {
+        return std::unexpected{ node.error() };
+    }
+    internal::NoteUnknownKeys(LOOK_READER, *node, "route", "key", { "dot", "spacing", "marker", "cursor" }, warnings);
+    const std::expected<core::atlas::SpriteId, core::Error> dot = SpriteIn(*node, "dot", "route", atlas);
+    if (!dot) {
+        return std::unexpected{ dot.error() };
+    }
+    const std::expected<core::atlas::SpriteId, core::Error> marker = SpriteIn(*node, "marker", "route", atlas);
+    if (!marker) {
+        return std::unexpected{ marker.error() };
+    }
+    const std::expected<core::atlas::SpriteId, core::Error> cursor = SpriteIn(*node, "cursor", "route", atlas);
+    if (!cursor) {
+        return std::unexpected{ cursor.error() };
+    }
+    const std::expected<f64, core::Error> spacing =
+        internal::RequiredNumber(LOOK_READER, *node, "route", "spacing", { .low = 0.0, .lowOpen = true });
+    if (!spacing) {
+        return std::unexpected{ spacing.error() };
+    }
+    route = { .dot = *dot, .spacing = static_cast<f32>(*spacing), .marker = *marker, .cursor = *cursor };
+    return {};
+}
+
 } // namespace
 
 std::expected<core::WorldLook, core::Error> ParseWorldLook(
@@ -209,7 +241,7 @@ std::expected<core::WorldLook, core::Error> ParseWorldLook(
         }
         const Atlas atlas{ .manifest = &manifest, .resident = manifest.Scene(*scene).sprites };
         internal::NoteUnknownKeys(
-            LOOK_READER, root, "", "key", { "kinds", "roads", "rivers", "bridge", "ford", "markers" }, warnings
+            LOOK_READER, root, "", "key", { "kinds", "roads", "rivers", "bridge", "ford", "markers", "route" }, warnings
         );
         core::WorldLook look;
         if (auto read = ReadLookKinds(root, atlas, map, look); !read) {
@@ -246,6 +278,9 @@ std::expected<core::WorldLook, core::Error> ParseWorldLook(
         }
         look.ford = *fordSprite;
         if (auto read = ReadMarkers(root, atlas, map, look); !read) {
+            return std::unexpected{ std::move(read.error()) };
+        }
+        if (auto read = ReadRoute(root, atlas, warnings, look.route); !read) {
             return std::unexpected{ std::move(read.error()) };
         }
         return look;

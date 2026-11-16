@@ -137,10 +137,13 @@ enum class SpriteId : u16 { // NOLINT(performance-enum-size): stable IDs outgrow
     MarkerCave, ///< assets/sprites/marker_cave.png
     MarkerCliff, ///< assets/sprites/marker_cliff.png
     MarkerCorruptVillage, ///< assets/sprites/marker_corrupt_village.png
+    RouteDot, ///< assets/sprites/route_dot.png
+    RouteMarker, ///< assets/sprites/route_marker.png
+    TargetTile, ///< assets/sprites/target_tile.png
 };
 
 /// Every sprite's name, indexed by SpriteId: the manifest must list the same, in this order.
-inline constexpr std::array<std::string_view, 127> SPRITE_NAMES{ {
+inline constexpr std::array<std::string_view, 130> SPRITE_NAMES{ {
     "ground",
     "rock_large",
     "rock_small",
@@ -268,6 +271,9 @@ inline constexpr std::array<std::string_view, 127> SPRITE_NAMES{ {
     "marker_cave",
     "marker_cliff",
     "marker_corrupt_village",
+    "route_dot",
+    "route_marker",
+    "target_tile",
 } };
 
 } // namespace core::atlas

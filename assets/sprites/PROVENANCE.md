@@ -106,3 +106,6 @@ updates its row in the same commit (what made it, when, and who) and takes it ou
 | marker_cave.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
 | marker_cliff.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
 | marker_corrupt_village.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
+| route_dot.png | `art/placeholders.py` (procedural placeholder) | 2026-11-16 | as above |
+| route_marker.png | `art/placeholders.py` (procedural placeholder) | 2026-11-16 | as above |
+| target_tile.png | `art/placeholders.py` (procedural placeholder) | 2026-11-16 | as above |

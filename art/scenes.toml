@@ -44,5 +44,5 @@ sprites = [
     "river_1", "river_2", "river_3", "river_4", "river_5", "river_6", "river_7", "river_8", "river_9", "river_10",
     "river_11", "river_12", "river_13", "river_14", "river_15", "bridge_h", "bridge_v", "ford", "marker_city",
     "marker_haunted_forest", "marker_mountain_pass", "marker_shrine", "marker_cave", "marker_cliff",
-    "marker_corrupt_village",
+    "marker_corrupt_village", "route_dot", "route_marker", "target_tile",
 ]

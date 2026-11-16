@@ -44,6 +44,7 @@ ford: ford
 markers:
   city: marker_city
   mountain_pass: marker_mountain_pass
+route: { dot: route_dot, spacing: 48, marker: route_marker, cursor: target_tile }
 )yaml";
 
 constexpr std::size_t MASKS = 16;
@@ -93,6 +94,10 @@ TEST_CASE("a small look parses against a small map") {
     REQUIRE(look->dangerMarkers.size() == 1);
     CHECK(look->dangerMarkers[0].first == "mountain_pass");
     CHECK(look->dangerMarkers[0].second == core::atlas::SpriteId::MarkerMountainPass);
+    CHECK(look->route.dot == core::atlas::SpriteId::RouteDot);
+    CHECK(look->route.spacing == core::DEFAULT_ROUTE_SPACING);
+    CHECK(look->route.marker == core::atlas::SpriteId::RouteMarker);
+    CHECK(look->route.cursor == core::atlas::SpriteId::TargetTile);
 }
 
 TEST_CASE("the look reader refuses what the map can't be drawn by, naming the line") {
@@ -167,6 +172,24 @@ TEST_CASE("the look reader refuses what the map can't be drawn by, naming the li
               "world_look line {}: marker city names the sprite \"marker_nowhere\", which isn't in the atlas",
               LineOf(SMALL_LOOK, "city:")
           ) },
+        { .why = "a route sprite the atlas lacks",
+          .text = With("dot: route_dot", "dot: route_nowhere"),
+          .says = std::format(
+              "world_look line {}: route dot names the sprite \"route_nowhere\", which isn't in the atlas",
+              LineOf(SMALL_LOOK, "route:")
+          ) },
+        { .why = "a route sprite the world scene doesn't load",
+          .text = With("cursor: target_tile", "cursor: cell_plain"),
+          .says = std::format(
+              "world_look line {}: route cursor names the sprite \"cell_plain\", which the world scene doesn't load",
+              LineOf(SMALL_LOOK, "route:")
+          ) },
+        { .why = "a missing route",
+          .text = With("route: { dot: route_dot, spacing: 48, marker: route_marker, cursor: target_tile }\n", ""),
+          .says = "world_look line 1: the look has no route" },
+        { .why = "a route with no marker",
+          .text = With(" marker: route_marker,", ""),
+          .says = std::format("world_look line {}: route has no marker", LineOf(SMALL_LOOK, "route:")) },
     };
     for (const Broken& broken : cases) {
         CAPTURE(broken.why);
