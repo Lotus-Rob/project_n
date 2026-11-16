@@ -208,7 +208,8 @@ struct TextItem {
     /// What it says (Label, Caption), in the language the renderer shows; ignored when `npcName` is set.
     StringId string = StringId::CultivatorName;
     /// Of a Label: an NPC's name, which it says instead of `string`, composed from the renderer's names table in the
-    /// language shown (core::NameText()). Its stacking key is core::NameKey() of it, whatever `nameKey` holds.
+    /// language shown (core::NameText()). Its stacking key is core::NameKey() of it with the top bit set (gfx::LabelKey()),
+    /// whatever `nameKey` holds.
     std::optional<NpcName> npcName = std::nullopt;
     /// Of a Number: its value, its digits all shown however many.
     i64 value = 0;

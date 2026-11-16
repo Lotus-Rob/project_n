@@ -194,10 +194,6 @@ TEST_CASE("a text's opacity scales every channel of its premultiplied colour") {
     CHECK(gfx::TextColour(gone, core::UiColours{}, true, true) == 0U);
 }
 
-} // namespace
-
-namespace {
-
 core::Names SmallNames() {
     core::Names names;
     names.surnames = { { .characters = "王", .pinyin = "wang", .weight = 1 } };
@@ -205,19 +201,14 @@ core::Names SmallNames() {
                     { .characters = "明", .pinyin = "ming", .weight = 1 } };
     return names;
 }
-
-} // namespace
-
 TEST_CASE("a label with an NPC name shows the name in the language shown") {
     const core::Names names = SmallNames();
     gfx::NameTexts texts;
     const core::NpcName two{ .surname = 0, .first = 0, .second = 1 };
     const core::NpcName one{ .surname = 0, .first = 1, .second = core::NO_GIVEN };
     CHECK(texts.Of(&names, two, core::Language::Chinese) == "王小明");
-    texts.Clear();
     CHECK(texts.Of(&names, two, core::Language::English) == "Wang Xiaoming");
     CHECK(texts.Of(&names, one, core::Language::English) == "Wang Ming");
-    texts.Clear();
     CHECK(texts.Of(&names, one, core::Language::Chinese) == "王明");
     texts.Clear();
     CHECK(texts.Of(nullptr, one, core::Language::Chinese).empty());
@@ -234,6 +225,10 @@ TEST_CASE("two labels of different names never stack") {
     plain.nameKey = PLAIN_KEY;
     CHECK(gfx::LabelKey(first) != gfx::LabelKey(second));
     CHECK(gfx::LabelKey(first) == gfx::LabelKey(rekeyed));
-    CHECK(gfx::LabelKey(first) == core::NameKey(*first.npcName));
     CHECK(gfx::LabelKey(plain) == PLAIN_KEY);
+    core::TextItem lowest; // surname 5, the first given character, no second: NameKey() alone is 5
+    lowest.npcName = core::NpcName{ .surname = PLAIN_KEY, .first = 0, .second = core::NO_GIVEN };
+    CHECK(gfx::LabelKey(lowest) != gfx::LabelKey(plain));
 }
+
+} // namespace
