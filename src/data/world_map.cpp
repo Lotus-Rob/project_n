@@ -491,6 +491,12 @@ std::expected<void, core::Error> ReadProfiles(
         if (!profile) {
             return std::unexpected{ profile.error() };
         }
+        const auto twin = std::ranges::find(source.profiles, profile->key, &core::MovementProfile::key);
+        if (twin != source.profiles.end()) {
+            return RefuseMap(
+                entry, std::format("profile {} shares its key with profile {}", profile->key, twin - source.profiles.begin())
+            );
+        }
         source.profiles.push_back(std::move(*profile));
     }
     return {};
@@ -646,8 +652,8 @@ std::expected<void, core::Error> ReadPlaces(
     return {};
 }
 
-// Reads the costs and the tile size into `source`. A cost over core::MAX_WALK_COST is refused here, on its own key's line:
-// Build refuses the same bound (CheckShape) but, with no line for these two, without one, so the two must agree.
+// Reads the costs and the tile size into `source`. A cost of 0 or over core::MAX_WALK_COST is refused here, on its own key's
+// line: Build refuses the same bounds (CheckShape) but, with no line for these two, without one, so the two must agree.
 std::expected<void, core::Error> ReadSizes(const YAML::Node& root, core::WorldMapSource& source) {
     const std::expected<i64, core::Error> road =
         internal::WholeNumber(WORLD_READER, root, "the map", "road_cost", true, core::MAX_WALK_COST);

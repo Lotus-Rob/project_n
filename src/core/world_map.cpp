@@ -246,8 +246,11 @@ std::expected<void, Error> CheckShape(const WorldMapSource& source) {
             ) };
         }
     }
-    if (source.roadCost == 0 || source.fordCost == 0) {
-        return std::unexpected{ Refuse("the road cost or the ford cost is 0: a step takes time, so a cost is at least 1") };
+    if (source.roadCost == 0) {
+        return std::unexpected{ Refuse("the road cost is 0: a step takes time, so a cost is at least 1") };
+    }
+    if (source.fordCost == 0) {
+        return std::unexpected{ Refuse("the ford cost is 0: a step takes time, so a cost is at least 1") };
     }
     if (source.roadCost > MAX_WALK_COST || source.fordCost > MAX_WALK_COST) {
         return std::unexpected{ Refuse(
