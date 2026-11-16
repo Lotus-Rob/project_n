@@ -1,4 +1,4 @@
-# The world map's look (phase 6 chunk 5b1): presentation, not hashed or saved, reloaded live by debug builds (a broken
+# The world map's look: presentation, not hashed or saved, reloaded live by debug builds (a broken
 # edit keeps the old look). It says which sprites draw the map; world.yaml says what the map is.
 #
 # kinds:   each terrain kind of world.yaml by name, a list of variant sprites (at least one; a tile picks by its place)

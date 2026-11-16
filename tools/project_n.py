@@ -1,7 +1,7 @@
 """project_n: the single build entry point. Run as `pixi run project_n <command>`.
 
 Thin by design: every command reduces to calls of XMake, Podman, git, git-cliff, gh and the pinned tools.
-Standard library only. See tools/AGENTS.md and docs/design/0001.
+Standard library only. See tools/AGENTS.md.
 """
 
 import argparse
@@ -36,7 +36,7 @@ BUNDLE_ID = "dev.projectn.project-n"  # placeholder macOS bundle id, fix it for 
 MODES = ("debug", "release", "releasedbg")
 VS_TOOLSET = "14.50"  # native Windows MSVC; must match containers/windows/buildtools.vsconfig
 # conda-forge has no osx-arm64 XMake, so macOS uses the upstream bundle of set_xmakever()'s
-# version (docs/design/0001 §5.7). Checksum of xmake-bundle-v<version>.macos.arm64.
+# version. Checksum of xmake-bundle-v<version>.macos.arm64.
 XMAKE_MACOS_SHA256 = "e719121c56cd34f5f0c0731954a154c1df1b0915f303e5c82dfb6c6cb9e3ef9e"
 LINT_PRESET = "linux-clang"  # #ifdef'd Windows/macOS code isn't linted; lint each native preset once some exists
 
@@ -54,7 +54,7 @@ SANITIZERS = {
 SANITIZER_ENV = {"UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1",
                  "ASAN_OPTIONS": "abort_on_error=0" + ("" if HOST == "windows" else ":detect_leaks=1")}
 
-# Single source of truth for presets (docs/design/0001 §3). `host` is the OS that builds natively.
+# Single source of truth for presets. `host` is the OS that builds natively.
 PRESETS = {
     "linux-gcc": {"host": "linux", "plat": "linux", "arch": "x86_64", "toolchain": "pixi-gcc", "image": "linux"},
     "linux-clang": {"host": "linux", "plat": "linux", "arch": "x86_64", "toolchain": "pixi-clang", "image": "linux"},
@@ -109,7 +109,7 @@ CONTAINER_BUILD_CACHE = "/home/dev/build-cache"  # where container_cmd mounts it
 # under Wine it is no faster (.github/AGENTS.md, Gotchas).
 CI_CACHED_TOOLCHAINS = ("pixi-clang",)
 
-# Conventional Commits (docs/design/0001 §11.1). Add a scope in the commit that first uses it.
+# Conventional Commits. Add a scope in the commit that first uses it.
 TYPES = ("feat", "fix", "perf", "refactor", "test", "build", "ci", "docs", "style", "chore", "revert")
 SCOPES = ("repo", "env", "containers", "tools", "xmake", "deps", "tests", "design", "agents", "release", "core", "data", "platform", "gfx", "game", "app")
 
@@ -122,7 +122,7 @@ CLIFF = ["git", "cliff", "--config", "tools/cliff.toml"]
 # report warnings in third-party headers and in their macros as if they were ours.
 COMPDB = ["xmake", "project", "-k", "compile_commands", "--lsp=clangd"]
 
-# Host prerequisites (docs/design/0001 §5.0): printed by `doctor`, never installed by it.
+# Host prerequisites: printed by `doctor`, never installed by it.
 INSTALL_HINTS = {
     "pixi": {"linux": "sudo pacman -S pixi  (or: curl -fsSL https://pixi.sh/install.sh | sh)", "windows": "winget install prefix-dev.pixi"},
     "git": {"linux": "sudo pacman -S git", "windows": "winget install Git.Git"},
@@ -413,7 +413,7 @@ def sweep_here(keep=()):
 
 
 def cold_ref():
-    """CI is building main or a tag: every object compiles from source (the user's rule, spec 2026-11-13 §2)."""
+    """CI is building main or a tag: every object compiles from source."""
     ref = os.environ.get("GITHUB_REF", "")
     return ref == "refs/heads/main" or ref.startswith("refs/tags/")
 
@@ -856,7 +856,7 @@ def run_reference_case(exe, env, index):
     together. Cases are picked by position: some names hold commas, which --test-case would split on. --minimal drops
     doctest's summary from a passing case: it would claim every case passed, counting those outside the range."""
     # Its own runtime directory: without one every case makes Mesa create /tmp/xdg-runtime-mesa-<uid> at once, and the
-    # loser crashes (main, 2026-11-13).
+    # loser crashes.
     with tempfile.TemporaryDirectory(prefix="project_n-xdg-") as runtime_dir:
         result = subprocess.run([exe, f"--first={index}", f"--last={index}", "--minimal=true"], cwd=ROOT,
                                 env={**env, "XDG_RUNTIME_DIR": runtime_dir}, check=False, stdout=subprocess.PIPE,
@@ -877,7 +877,7 @@ def run_references(preset, update=False, quiet=False):
     drawn.mkdir(parents=True)
     exe = binary_path(preset, "release", "reference_tests")
     count = reference_case_count(exe, env)
-    # One process per case, all cores at once: a single process kept lavapipe on 1.4 of 32 cores (28 s for 25 cases, 2026-11-12).
+    # One process per case, all cores at once: a single process kept lavapipe on 1.4 of 32 cores (28 s for 25 cases).
     print(f"+ {exe} on {count} case(s), one process each, {jobs()} at a time", flush=True)
     with concurrent.futures.ThreadPoolExecutor(jobs()) as pool:
         results = list(pool.map(lambda index: run_reference_case(exe, env, index), range(1, count + 1)))
@@ -1005,7 +1005,7 @@ INCLUDE_RE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]')
 FACADES = {"src/core/log.hpp": "quill/", "src/core/profile.hpp": "tracy/", "src/core/ecs.hpp": "entt/", "src/core/jobs.hpp": "enkiTS/"}
 # Facades whose header hides the library behind a pimpl: only their .cpp includes it.
 HIDDEN_FACADES = {"src/core/jobs.hpp"}
-# The src/ modules (design doc 0002 §4) and the modules each one's code may include: those below it.
+# The src/ modules and the modules each one's code may include: those below it.
 MODULES = {"core": (), "data": ("core",), "platform": ("core",), "gfx": ("core", "platform"),
            "ui": ("core", "gfx", "platform"), "audio": ("core",), "game": ("core",),
            "app": ("core", "data", "platform", "gfx", "ui", "audio", "game")}
@@ -1090,7 +1090,7 @@ PLATFORM_MATHS_RE = re.compile(r"(?:\bstd::|(?<![\w:])::|(?<![\w.:>]))(?:a?sinh?
 
 def platform_maths(sources):
     """Lines in src/core/ and src/game/ that call the platform's transcendental functions: the
-    simulation uses core/math.hpp's, which give the same results on every machine (design doc 0002 §7.4)."""
+    simulation uses core/math.hpp's, which give the same results on every machine."""
     found = []
     for f in [f for f in sources if f.startswith(("src/core/", "src/game/")) and f.endswith((".cpp", ".hpp"))]:
         for n, line in enumerate((ROOT / f).read_text(encoding="utf-8").splitlines(), 1):
@@ -1365,7 +1365,7 @@ def check_api_docs(sources):
     run(["doxygen", "-"], input=config, text=True)
 
 
-# Shaders (design doc 0002 §8.8): HLSL in shaders/, compiled by `shaders` into committed binaries.
+# Shaders: HLSL in shaders/, compiled by `shaders` into committed binaries.
 SHADER_BIN = "shaders/bin"
 SHADER_MANIFEST = f"{SHADER_BIN}/sources.sha256"  # every source and output with its hash: `lint` finds stale binaries
 SHADER_HEADER = "src/gfx/generated/shaders.hpp"  # with the code that includes it; fmt and lint skip generated/
@@ -1382,7 +1382,7 @@ def shader_resources(reflection, space, name):
     textures, then storage buffers, numbered from 0; uniform buffers from 0 in `space + 1`."""
     if reflection.get("separate_images") or reflection.get("separate_samplers"):
         raise Fail(f"{name}: SDL_GPU's SPIR-V takes combined image samplers: give the texture and its sampler "
-                   "[[vk::combinedImageSampler]] and one [[vk::binding]] (design doc 0002 §8.8)")
+                   "[[vk::combinedImageSampler]] and one [[vk::binding]]")
     # Read-only storage only; read-write ones (u registers) need DXIL's separate numbering mapped too.
     writable = [r["name"] for kind in ("images", "ssbos") for r in reflection.get(kind, []) if not r.get("readonly")]
     if writable:
@@ -1393,8 +1393,7 @@ def shader_resources(reflection, space, name):
     found += [("ubos", r["set"], r["binding"]) for r in sorted(reflection.get("ubos", []), key=lambda r: r["binding"])]
     if found != expected:
         raise Fail(f"{name}: resources at (kind, space, register) {found}, but SDL_GPU expects {expected}: sampled textures, "
-                   f"storage textures and storage buffers in space{space} from register 0, uniform buffers in space{space + 1} "
-                   "(design doc 0002 §8.8)")
+                   f"storage textures and storage buffers in space{space} from register 0, uniform buffers in space{space + 1}")
     return {kind: len(reflection.get(kind, [])) for kind in ("textures", "images", "ssbos", "ubos")}
 
 
@@ -1451,10 +1450,10 @@ def lf_endings(path):
 
 def shaders_header(stages):
     """The generated header: each stage's binaries (embedded by XMake's utils.bin2c) and resource counts."""
-    lines = ["// Generated by `project_n shaders` from shaders/*.hlsl (design doc 0002 §8.8); don't edit.", "#pragma once", "",
+    lines = ["// Generated by `project_n shaders` from shaders/*.hlsl; don't edit.", "#pragma once", "",
              '#include "core/types.hpp"', "", "#include <array>", "#include <span>", "", "namespace gfx::shaders {", "",
              "/// One shader stage in every format SDL_GPU takes, with what it binds.", "struct Stage {",
-             "    /// The stage's name in GPU captures (RenderDoc, PIX, Xcode): <name>.<stage>.", "    const char* name;",
+             "    /// The stage's name in GPU captures (RenderDoc, PIX, Xcode): `<name>.<stage>`.", "    const char* name;",
              "    /// The HLSL entry point, which keeps its name in every format.", "    const char* entryPoint;",
              "    /// SPIR-V, for Vulkan; no terminating zero, like the other two.", "    std::span<const u8> spirv;",
              "    /// DXIL (shader model 6.0), for D3D12.", "    std::span<const u8> dxil;",
@@ -1481,7 +1480,7 @@ def cmd_shaders(args):
     """Compile shaders/<name>.<stage>.hlsl with DXC to SPIR-V and DXIL, then SPIRV-Cross to MSL, into shaders/bin/
     with the manifest, and the generated header into src/gfx/generated/. The outputs are committed with their sources."""
     if HOST == "macos":
-        raise Fail("conda-forge has no DXC or SPIRV-Cross for macOS: run `shaders` on Linux or Windows (design doc 0002 §8.8)")
+        raise Fail("conda-forge has no DXC or SPIRV-Cross for macOS: run `shaders` on Linux or Windows")
     if unequal_shader_pins():
         raise Fail(f"pin {', '.join(unequal_shader_pins())} to one version for linux-64 and win-64 in pixi.toml")
     sources = sorted((ROOT / "shaders").glob("*.hlsl"))
@@ -1519,7 +1518,7 @@ def cmd_shaders(args):
     print(f"shaders: {len(stages)} stage(s) in {SHADER_BIN}/ and {SHADER_HEADER}; commit them with their sources")
 
 
-# The atlas step (design doc 0002 §8.7, §9; 0002.3.1 §2): assigns every sprite in art/sprites.toml a page of the
+# The atlas step: assigns every sprite in art/sprites.toml a page of the
 # texture array and a region on it, and writes them with art/scenes.toml's scenes into the manifest the game reads.
 SPRITES_DIR = "assets/sprites"
 SPRITE_LIST = "art/sprites.toml"
@@ -1654,7 +1653,7 @@ def atlas_manifest(sprites, places, scenes):
 
 def atlas_header(sprites):
     """The generated header: the sprite names as SpriteId, and as text for checking the manifest against."""
-    lines = [f"// Generated by `project_n atlas` from {SPRITE_LIST} (design doc 0002.3.1 §2); don't edit.",
+    lines = [f"// Generated by `project_n atlas` from {SPRITE_LIST}; don't edit.",
              "#pragma once", "", '#include "core/types.hpp"', "", "#include <array>", "#include <string_view>", "",
              "namespace core::atlas {", "",
              "/// A sprite's stable ID: its place in art/sprites.toml, and in the manifest's sprites.",
@@ -1725,7 +1724,7 @@ def unreached_headers(sources, dependencies):
     return sorted(f for f in sources if f.endswith(".hpp") and f not in reached)
 
 
-# The clone's own git config (design doc 0001.1): the commit hooks, and Git LFS's filters run through Pixi, as any git
+# The clone's own git config: the commit hooks, and Git LFS's filters run through Pixi, as any git
 # (an editor's, a container's) runs them on large binary assets, not only ours.
 CLONE_CONFIG = {
     "core.hooksPath": ".githooks",
@@ -1905,7 +1904,7 @@ def cmd_lint(args):
     crossed = crossed_modules(sources)
     if crossed:
         raise Fail("a module includes only its own headers and those of the modules below it, and its internal/ headers "
-                   "stay inside it (design doc 0002 §4, MODULES in tools/project_n.py):\n" + "\n".join(crossed))
+                   "stay inside it (MODULES in tools/project_n.py):\n" + "\n".join(crossed))
     standard = standard_includes_in_sources(sources)
     if standard:
         raise Fail("standard headers come from the precompiled header, not from .cpp files (src/AGENTS.md):\n"
@@ -1920,7 +1919,7 @@ def cmd_lint(args):
                    + "\n".join(bypassed))
     maths = platform_maths(sources)
     if maths:
-        raise Fail("the simulation uses core::math (core/math.hpp), not the platform's maths functions (design doc 0002 §7.4):\n"
+        raise Fail("the simulation uses core::math (core/math.hpp), not the platform's maths functions:\n"
                    + "\n".join(maths))
     check_api_docs(sources)
     if unequal_shader_pins():
@@ -2246,7 +2245,7 @@ def record(recorder, game, out, **kwargs):
     """Run the command line `game`, which quits by itself, while Tracy's `recorder` (tracy-capture) records it into
     `out`; `kwargs` go to `run`. A failed or unfinished recording leaves no file."""
     out.parent.mkdir(parents=True, exist_ok=True)
-    # Nothing is clicked, so the game keeps the focus and never pauses itself (0002 §6). It quits by
+    # Nothing is clicked, so the game keeps the focus and never pauses itself. It quits by
     # itself; the recorder stops when the game disconnects, after Tracy has sent the rest.
     print("+", recorder, "-o", out, flush=True)
     recording = subprocess.Popen([recorder, "-o", str(out)], cwd=ROOT)
@@ -2265,17 +2264,17 @@ def record(recorder, game, out, **kwargs):
         raise
 
 
-# `measure`'s runs: name -> (game arguments, seconds before the game quits). The arena runs last as long as chunks 3, 4
-# and 4b profiled them; the world path quits the game when it ends (about 26 s), its limit only a safety net.
+# `measure`'s runs: name -> (game arguments, seconds before the game quits). The arena runs last as long as they did when first
+# profiled; the world path quits the game when it ends (about 26 s), its limit only a safety net.
 MEASURE_RUNS = {"world": (["--world", "--camera-path"], 60), "burst": (["--burst"], 20),
                 "swords": (["--cast-swords"], 70), "seals": (["--cast-swords", "--zoom", "2"], 30)}
 MEASURE_WORKERS = 2
-# Fixed conditions (the chunk 5a spec): the display's native size, and a present the display's refresh doesn't pace.
+# Fixed conditions: the display's native size, and a present the display's refresh doesn't pace.
 MEASURE_FLAGS = ["--fullscreen", "--workers", str(MEASURE_WORKERS), "--unpaced"]
 # The arena runs' numbers from before the job system could be pinned, printed beside the new ones.
-MEASURE_EARLIER = {"burst": "chunk 3: 0.43 ms median, 2.6 ms worst (main thread)",
-                   "swords": "chunk 4: 1,000 swords 1.31/2.31/2.60 ms (median/p99/worst frame, at a volley's peak)",
-                   "seals": "chunk 4b: ~685 µs median frame"}
+MEASURE_EARLIER = {"burst": "0.43 ms median, 2.6 ms worst (main thread)",
+                   "swords": "1,000 swords 1.31/2.31/2.60 ms (median/p99/worst frame, at a volley's peak)",
+                   "seals": "~685 µs median frame"}
 HITCH_MS = 16.7  # a frame whose work is longer misses a 60 Hz display's refresh
 NEW_GROUND_SECONDS = 0.5  # each camera segment's start, measured apart: the camera cuts or turns onto new ground there
 SETTLE_SECONDS = 2.0  # an arena run's start, left out: the scene loads (the camera path waits as long)
@@ -2729,7 +2728,7 @@ def cmd_commit_check(args):
     for problem in problems:
         print(f"commit-check: {problem}", file=sys.stderr)
     if problems:
-        print("See the git-commit skill or docs/design/0001 §11.", file=sys.stderr)
+        print("See the git-commit skill.", file=sys.stderr)
     return 1 if problems else 0
 
 
@@ -2913,7 +2912,7 @@ def branch_unmerged(branch):
     if capture(["git", "ls-remote", "--heads", "origin", branch]).strip():
         return f"{branch} is still on origin (its pull request isn't merged)"
     cherry = capture(["git", "cherry", "origin/main", branch]).splitlines()
-    if not cherry:  # never pushed either: a worktree just made, whose untracked build/ and plan ledger would go
+    if not cherry:  # never pushed either: a worktree just made, whose untracked build/ and session notes would go
         return f"{branch} has no commits of its own yet"
     if any(line.startswith("+") for line in cherry):
         return f"{branch} has commits not in origin/main"

@@ -116,7 +116,7 @@ if is_plat("windows") then
     add_cxxflags("/Zc:preprocessor")
     -- Static C++ runtime, like Linux: players need no Visual C++ Redistributable.
     set_runtimes("MT")
-    -- Reproducible binaries (S2), except in releasedbg: profiling builds never ship, and enabled
+    -- Reproducible binaries, except in releasedbg: profiling builds never ship, and enabled
     -- Tracy embeds full source paths, which /experimental:deterministic rejects (C5049).
     if not is_mode("releasedbg") then
         -- The linker otherwise stamps the link time into the PE header and debug directory, the
@@ -232,7 +232,7 @@ if is_plat("linux") then
 elseif is_plat("macosx") then
     local prefix = os.getenv("CONDA_PREFIX") or ""
     -- conda's libc++ (newer than the system's) as a dylib. Linked statically it clashed with the
-    -- system libc++ that libSystem loads anyway (a bad free at exit, S7). `artifact` ships
+    -- system libc++ that libSystem loads anyway (a bad free at exit). `artifact` ships
     -- libc++.1.dylib (Apache-2.0 WITH LLVM-exception) in the app bundle's Frameworks and drops the env rpath.
     add_ldflags("-Wl,-rpath,@executable_path/../Frameworks", "-Wl,-rpath," .. prefix .. "/lib")
     -- libc++'s availability markers describe the system's libc++ (std::to_chars needs macOS 13.3);
@@ -324,7 +324,7 @@ target("game_pch")
     -- Public: the log, profile and ECS facades' headers include their libraries.
     add_packages("quill-wine", "entt", is_mode("releasedbg") and "tracy_on" or "tracy_off", {public = true})
 
--- Modules (design doc 0002 §4): static libraries, each linking only the modules below it, so a
+-- Modules: static libraries, each linking only the modules below it, so a
 -- module that doesn't link a library can't use it. They share the game's precompiled header.
 target("core")
     set_kind("static")

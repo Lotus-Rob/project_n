@@ -1,4 +1,4 @@
-# Git LFS files through Pixi's git-lfs, not the runner's (docs/design/0001.1 §5). Every LFS download
+# Git LFS files through Pixi's git-lfs, not the runner's. Every LFS download
 # counts against the account's monthly bandwidth, so the objects are cached on what they are.
 name: Git LFS files
 description: Set the clone up (project_n setup) and fetch its Git LFS files, with the objects cached

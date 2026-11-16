@@ -1,4 +1,4 @@
-# The names NPCs are given (phase 6 chunk 5b2): each NPC's name is drawn from these by its stable ID and the game's seed
+# The names NPCs are given: each NPC's name is drawn from these by its stable ID and the game's seed
 # (core::NameOf), never stored. A surname is drawn by `weight` (its commonness; 1 when left out), then one given character
 # (3 in 10) or two (7 in 10), each uniform. `zh` is the characters, `pinyin` the lower-case ASCII reading the English form is
 # written from. Game data: hashed and read once at the start.
