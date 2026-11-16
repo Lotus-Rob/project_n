@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup gfx
-/// Drawing the world map (phase 6 chunk 5b1): the terrain tiles in view by the map's kinds and the look's variants, the
+/// Drawing the world map: the terrain tiles in view by the map's kinds and the look's variants, the
 /// river and road overlays by their neighbours, the bridges and fords, and a marker for each place in view. Pure: the
 /// renderer uploads what DrawTerrain() writes as one more sprite buffer and draws it under the snapshot's ground, and tests
 /// read it without a device.

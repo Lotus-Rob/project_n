@@ -35,7 +35,7 @@ namespace {
 #ifdef NDEBUG
 constexpr bool DEBUG_MODE = false;
 #else
-constexpr bool DEBUG_MODE = true; // SDL_GPU's validation, in debug builds only (§8.9)
+constexpr bool DEBUG_MODE = true; // SDL_GPU's validation, in debug builds only
 #endif
 
 // Ink on dark paper, behind the scene where a window wider or taller than the reference shows past it.
@@ -119,7 +119,7 @@ std::expected<internal::Gpu<SDL_GPUTexture>, core::Error> CreateGlyphPage(SDL_GP
     return page;
 }
 
-// A scene loading (design doc 0002.3.1 §5): its sprites decode on the job system, then upload a few each frame.
+// A scene loading: its sprites decode on the job system, then upload a few each frame.
 struct SceneLoad {
     SceneLoad(
         core::SceneId loading,
@@ -854,7 +854,7 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
     target.clear_color = BACKDROP;
     target.load_op = SDL_GPU_LOADOP_CLEAR;
     target.store_op = SDL_GPU_STOREOP_STORE;
-    target.cycle = true; // nothing loads the old contents (0002 §8.7)
+    target.cycle = true; // nothing loads the old contents
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &target, 1, nullptr);
     if (!Holds(snapshot.scene)) {
         SDL_EndGPURenderPass(pass);
@@ -864,7 +864,7 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
     const ClipTransform transform = WorldToClip(view.camera, sceneTarget.width, sceneTarget.height);
     const internal::SealTarget sealTarget{ .worldToClip = transform, .width = sceneTarget.width, .height = sceneTarget.height };
     const internal::GlowFrame glows = GlowFrameOf(snapshot, view);
-    // The ground and its decals, the seals on the ground, then the world over them (the phase 6 chunk 4b spec, "Drawing").
+    // The ground and its decals, the seals on the ground, then the world over them.
     const std::span<const core::Batch> batches{ snapshot.batches };
     const std::size_t groundBatches = std::min<std::size_t>(snapshot.groundBatches, batches.size());
     // The map under all of it: it is the ground of a scene that shows it, which publishes none.
@@ -884,13 +884,13 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
         );
     }
     // The upright and overhead seals over the creatures, capped in opacity, under all that follows: the swords fly out over
-    // them, and the health bars, damage numbers and HUD stay readable (the phase 6 chunk 4b spec, "Drawing").
+    // them, and the health bars, damage numbers and HUD stay readable.
     seals.DrawAbove(commands, pass, sealTarget, sprites);
     // The trails, then the overlay: the swords, each wearing its glow, the lance's bursts (additive) and the health bars, at
     // the render time; their instances hold no motion between ticks, so the overlay's alpha changes nothing.
     ribbons.Draw(commands, pass, transform);
     overlay.Draw(commands, pass, volleyDrawing.batches, sprites, transform, alpha, glows);
-    // Game text over the world, its outlines and the overlay (the phase 6 chunk 3 spec), placed in target pixels; then the
+    // Game text over the world, its outlines and the overlay, placed in target pixels; then the
     // HUD over all of it: its bars, then its lines.
     const f32 shadowShift = TEXT_SHADOW_BASE_PIXELS / static_cast<f32>(GLYPH_PAGE_SIZE); // a texel a base pixel
     const ClipTransform pixels = PixelsToClip(sceneTarget.width, sceneTarget.height);
@@ -938,7 +938,7 @@ std::expected<void, core::Error> Renderer::Impl::Frame(const internal::Frame& ac
     else if (const u64 failed = uploadFailures.Succeed(); failed > 0) {
         PN_LOG_INFO("uploads succeed again, after {} that failed", failed);
     }
-    // Without a swapchain texture (the window can't be shown), the copy still runs and nothing is drawn (§8.3).
+    // Without a swapchain texture (the window can't be shown), the copy still runs and nothing is drawn.
     std::expected<void, core::Error> drawn{};
     if (acquired.swapchain != nullptr) {
         drawn =
@@ -1007,7 +1007,7 @@ std::expected<Renderer, core::Error> Renderer::Create(
     }
     impl->claim = internal::Gpu<SDL_Window>{ impl->window, { device } };
 
-    // Rendering is uncapped (design doc 0002 §6), in PresentModeOrder(); vsync is always there.
+    // Rendering is uncapped, in PresentModeOrder(); vsync is always there.
     SDL_GPUPresentMode mode = SDL_GPU_PRESENTMODE_VSYNC;
     for (const PresentMode uncapped : PresentModeOrder(unpaced)) {
         SDL_GPUPresentMode candidate = SDL_GPU_PRESENTMODE_VSYNC;
@@ -1022,7 +1022,7 @@ std::expected<Renderer, core::Error> Renderer::Create(
             break;
         }
     }
-    // Always plain SDR, which SDL guarantees: the composite encodes sRGB itself (design doc 0002.4.1 §3).
+    // Always plain SDR, which SDL guarantees: the composite encodes sRGB itself.
     if (!SDL_SetGPUSwapchainParameters(device, impl->window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode)) {
         return std::unexpected{ core::Error{ std::format("SDL_SetGPUSwapchainParameters failed: {}", SDL_GetError()) } };
     }
@@ -1036,7 +1036,7 @@ std::expected<Renderer, core::Error> Renderer::Create(
         PN_LOG_WARNING("neither mailbox nor immediate presentation is available, so frames follow the display");
     }
 
-    // Pipelines are made at start-up (§8.8), so each backend checks the shaders when the game starts.
+    // Pipelines are made at start-up, so each backend checks the shaders when the game starts.
     std::expected<internal::SpriteRenderer, core::Error> instances =
         internal::SpriteRenderer::Create(device, internal::SCENE_FORMAT);
     if (!instances) {

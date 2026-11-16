@@ -1,7 +1,7 @@
 #include "sprite.hlsli"
 
-// The atlas pages as one texture array (§8.7), and each sprite's distance field at its place on them (gfx::FieldBlockOf()).
-// SDL_GPU's SPIR-V takes combined image samplers (§8.8).
+// The atlas pages as one texture array, and each sprite's distance field at its place on them (gfx::FieldBlockOf()).
+// SDL_GPU's SPIR-V takes combined image samplers.
 [[vk::combinedImageSampler]] [[vk::binding(0, 2)]] Texture2DArray<float4> atlas : register(t0, space2);
 [[vk::combinedImageSampler]] [[vk::binding(0, 2)]] SamplerState atlasSampler : register(s0, space2);
 [[vk::combinedImageSampler]] [[vk::binding(1, 2)]] Texture2DArray<float> field : register(t1, space2);

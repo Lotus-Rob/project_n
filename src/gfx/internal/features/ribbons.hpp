@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup gfx
-/// The swords' trails (the phase 6 chunk 4 spec): quads the main thread places along each sword's path in world units every
+/// The swords' trails: quads the main thread places along each sword's path in world units every
 /// frame (gfx/volley_draw.hpp), drawn additively from a cycled vertex buffer through the mesh path's vertex shader, fading
 /// along their length and softly across it.
 

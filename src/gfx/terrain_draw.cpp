@@ -12,9 +12,10 @@ namespace {
 
 using core::atlas::SpriteId;
 
-// The key of the map's tile variants: 5a's hash of column and row, whichever view finds the tile. Its seed and purpose are
+// The key of the map's tile variants: a hash of column and row, whichever view finds the tile. Its seed and purpose are
 // those of game/scenes/world.cpp's old noise (game can't be seen from gfx; game/random_purposes.hpp keeps the purpose, 9,
-// retired). Reduced by multiplying the hash's top half by the variant count, a two-variant kind keeps 5a's pick (the top bit).
+// retired). Reduced by multiplying the hash's top half by the variant count, a two-variant kind keeps the old noise's pick (the
+// top bit).
 constexpr u64 TERRAIN_SEED = 0x5eed;
 constexpr u32 TERRAIN_PURPOSE = 9;
 constexpr u32 VARIANT_DRAW = 2;

@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup gfx
-/// The camera (design doc 0002 §8.10): which part of the world the window shows, and the
+/// The camera: which part of the world the window shows, and the
 /// transform from world units to the GPU's clip space. Pure maths, tested without a device.
 
 #include "core/types.hpp"
@@ -39,7 +39,7 @@ struct View {
     /// What part of the world it shows.
     Camera camera{};
     /// The index in the snapshot's instances of the hovered entity's instance, which gets a pale
-    /// outline (design doc 0002.3 §3); none when nothing is hovered.
+    /// outline; none when nothing is hovered.
     std::optional<std::size_t> outlined = std::nullopt;
     /// The main thread's frame clock in seconds (app::FrameClock): wall time, which runs on while the game is paused,
     /// unfocused or loading a scene, when the render clock holds. Labels fade, cross-fade and glide by it, so they settle
@@ -73,7 +73,7 @@ struct ClipTransform {
 
 /// The transform for `camera` on a target `width` by `height` pixels: REFERENCE_SIZE scaled by
 /// the smaller of the two axis ratios fits the target, so the aspect ratio holds and a wider
-/// window shows more of the world (§8.10); the camera's centre lands at the target's centre.
+/// window shows more of the world; the camera's centre lands at the target's centre.
 [[nodiscard]] ClipTransform WorldToClip(const Camera& camera, u32 width, u32 height);
 
 /// The world point `transform` puts at clip-space position `clip`: WorldToClip()'s inverse.

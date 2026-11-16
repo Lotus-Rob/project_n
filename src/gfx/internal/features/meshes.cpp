@@ -23,7 +23,7 @@ Gpu<SDL_GPUGraphicsPipeline> CreateMeshPipeline(SDL_GPUDevice* device, SDL_GPUTe
     }
     SDL_GPUColorTargetDescription target{};
     target.format = format;
-    target.blend_state.enable_blend = true; // premultiplied over (§8.8)
+    target.blend_state.enable_blend = true; // premultiplied over
     target.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
     target.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
     target.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
@@ -164,7 +164,7 @@ std::expected<std::size_t, core::Error> MeshRenderer::Upload(SDL_GPUCopyPass* co
     if (fitting == 0) {
         return dropped;
     }
-    // Cycled: a frame in flight may still read what the transfer buffer and the vertex buffer held (§8.7).
+    // Cycled: a frame in flight may still read what the transfer buffer and the vertex buffer held.
     if (!CopyToBuffer(m_device, copy, m_transfer.get(), m_vertices.get(), std::as_bytes(vertices.first(fitting)), true)) {
         m_quads = 0;
         return std::unexpected{ core::Error{ std::format("the mesh vertices weren't uploaded: {}", SDL_GetError()) } };

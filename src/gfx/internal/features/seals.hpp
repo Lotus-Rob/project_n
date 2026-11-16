@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup gfx
-/// Drawing the seals (the phase 6 chunk 4b spec, "Drawing"): what gfx::DrawSeals() lays out each frame, its washes with
+/// Drawing the seals: what gfx::DrawSeals() lays out each frame, its washes with
 /// normal premultiplied blending, then its bands' lines additively, each layer's parts drawn as distance fields by the seal
 /// fragment shader from the table's pack (gfx::SealPack), which is uploaded only when the table is packed again; and its
 /// light, every particle placed by the light's vertex shader from its seal's record (gfx::SealParticleAt()), its ink drawn

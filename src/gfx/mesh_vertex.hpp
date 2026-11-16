@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup gfx
-/// What the mesh path draws (design doc 0002.4.2 §2): the vertices of textured, coloured quads placed in target pixels,
+/// What the mesh path draws: the vertices of textured, coloured quads placed in target pixels,
 /// and how many quads its buffer holds. Pure, tested without a device.
 
 #include "core/types.hpp"

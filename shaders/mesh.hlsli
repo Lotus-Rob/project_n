@@ -1,5 +1,5 @@
-// The mesh path (design doc 0002.4.2 §2): textured, coloured triangles the main thread places in target pixels.
-// Register spaces follow SDL_GPU's order (design doc 0002 §8.8): vertex uniforms in space1, fragment resources in space2,
+// The mesh path: textured, coloured triangles the main thread places in target pixels.
+// Register spaces follow SDL_GPU's order: vertex uniforms in space1, fragment resources in space2,
 // fragment uniforms in space3.
 
 struct VertexOut {

@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup gfx
-/// Drawing what the simulation reports but leaves to the main thread to place each frame (the phase 6 chunk 4 spec): the
+/// Drawing what the simulation reports but leaves to the main thread to place each frame: the
 /// flying swords at the render time, each wearing its glow and with its trail, the poison lance's bursts, and the enemies'
 /// health bars. Pure: the renderer uploads what these functions write as the overlay's sprite instances and the ribbons'
 /// vertices, and tests read them without a device.

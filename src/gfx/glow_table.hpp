@@ -2,8 +2,8 @@
 
 /// @file
 /// @ingroup gfx
-/// The glow table: every role's look, flattened for the shaders to read as a StructuredBuffer (design doc: the phase 6
-/// glow spec, "Drawing"). It changes only when the effects data or the palette does.
+/// The glow table: every role's look, flattened for the shaders to read as a StructuredBuffer. It changes only when the effects
+/// data or the palette does.
 
 #include "core/effects.hpp"
 #include "core/glow.hpp"

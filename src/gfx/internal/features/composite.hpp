@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup gfx
-/// The composite (design doc 0002.4.1 §3): the scene target drawn over the whole final pass's
+/// The composite: the scene target drawn over the whole final pass's
 /// target, encoded to sRGB by its shader, so the swapchain needn't be an sRGB one.
 
 #include "core/error.hpp"

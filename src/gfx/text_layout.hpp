@@ -2,10 +2,9 @@
 
 /// @file
 /// @ingroup gfx
-/// Text laid out into glyphs whose signed distance fields sit on the glyph cache's pages (the phase 6 chunk 3 spec,
-/// "The glyph cache: distance fields"; design doc 0002.4.2 §3): the CPU side of drawing game text, tested without a
-/// device. SDL3_ttf shapes and lays out; each glyph is rasterised once, at SDF_BASE_PIXELS, as a distance field that
-/// serves every size it's drawn at, and the renderer uploads what is new and draws the quads.
+/// Text laid out into glyphs whose signed distance fields sit on the glyph cache's pages: the CPU side of drawing game text,
+/// tested without a device. SDL3_ttf shapes and lays out; each glyph is rasterised once, at SDF_BASE_PIXELS, as a distance
+/// field that serves every size it's drawn at, and the renderer uploads what is new and draws the quads.
 
 #include "core/error.hpp"
 #include "core/frame.hpp"

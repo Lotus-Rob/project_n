@@ -2,8 +2,8 @@
 
 /// @file
 /// @ingroup gfx
-/// The sprites' texture array (design doc 0002 §8.7): every page of the atlas manifest as one layer
-/// of an SDL_GPU 2D array texture, filled a sprite at a time as scenes load (0002.3.1 §5).
+/// The sprites' texture array: every page of the atlas manifest as one layer
+/// of an SDL_GPU 2D array texture, filled a sprite at a time as scenes load.
 
 #include "core/error.hpp"
 #include "core/manifest.hpp"
