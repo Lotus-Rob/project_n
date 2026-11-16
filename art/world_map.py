@@ -127,6 +127,8 @@ CITIES = [
     ("marsh_town", (65, 71), 7_000, False),
     ("isle", (143, 58), 5_000, False),
 ]
+# What each city draws, as (cultivators, traders).
+DRAWS = {"capital": (3, 3), "port": (1, 6), "sect": (6, 1), "oasis": (1, 5), "marsh_town": (2, 2), "isle": (2, 3)}
 # The roads, between cities: each routed after the last, so later ones join earlier ones as real road networks grow.
 ROADS = [
     ("capital", "port"),
@@ -1244,6 +1246,15 @@ def write_yaml(kinds, rivers, roads, fords, cities, dangers):
     out.append("grid: |")
     for y in range(ROWS):
         out.append("  " + "".join(KINDS[kinds[index(x, y)]][1] for x in range(COLUMNS)))
+    out.append("# How people move: pace in ticks per unit of cost (a road tile, cost 4, takes 64 ticks on foot). Profile 0, on_foot, is the")
+    out.append("# one every traveller walks by; a profile may add all_kinds: <cost|impassable>, kinds: { <name>: <cost|impassable> } and")
+    out.append("# features: { road, river, bridge, ford }, laid over the kinds' costs above.")
+    out.append("profiles:")
+    out.append("  - { key: on_foot, ticks_per_cost: 16 }")
+    out.append("# The travellers between cities: the share of a city's people on the road (per thousand), the days they stay, how far")
+    out.append("# they will go (reach_base plus reach_per_power for each whole point of power, in cost units; starting values, tuned by")
+    out.append("# measurement) and the power from which one is a cultivator rather than a trader.")
+    out.append("travel: { share_per_mille: 40, stay_days: [2, 5], reach_base: 1500, reach_per_power: 40, cultivator_power: 5 }")
     out.append("# Each a polyline of [column, row] tile points; a road over a river is a bridge.")
     out.append("roads:")
     out.extend("  - " + flow_list(line, 4) for line in roads)
@@ -1255,7 +1266,8 @@ def write_yaml(kinds, rivers, roads, fords, cities, dangers):
     out.append("places:")
     for key, tile, people, start in cities:
         out.append(f"  - {{ key: {key}, kind: city, tile: [{tile[0]}, {tile[1]}], name: place_{key}, people: {people}"
-                   + (", start: true }" if start else " }"))
+                   + (", start: true" if start else "")
+                   + f", draws: {{ cultivators: {DRAWS[key][0]}, traders: {DRAWS[key][1]} }} }}")
     for key, sort, tile in dangers:
         out.append(f"  - {{ key: {key}, kind: danger, sort: {sort}, tile: [{tile[0]}, {tile[1]}], name: place_{key} }}")
     YAML_OUT.write_text("\n".join(out) + "\n", encoding="utf-8")

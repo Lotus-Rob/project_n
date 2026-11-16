@@ -13,6 +13,7 @@
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 
+#include <array>
 #include <expected>
 #include <span>
 #include <string>
@@ -70,6 +71,16 @@ struct TerrainKind {
     u16 cost = IMPASSABLE_COST;
 };
 
+/// The kinds of visitor a city draws, each with a draw of its own.
+enum class VisitorKind : u8 {
+    Cultivator, ///< A traveller strong enough to be a cultivator (TravelRules::cultivatorPower).
+    Trader,     ///< Any other traveller.
+};
+/// How many kinds of visitor there are.
+inline constexpr std::size_t VISITOR_KINDS = 2;
+/// The most a city's draw for one kind of visitor may be.
+inline constexpr u16 MOST_DRAW = 100;
+
 /// What a place is.
 enum class PlaceKind : u8 {
     City,   ///< A settlement: it owns a region and homes NPCs.
@@ -97,6 +108,34 @@ struct Place {
     u32 people = 0;
     /// Whether the player starts here (exactly one city).
     bool start = false;
+    /// How strongly the city draws each kind of visitor (by VisitorKind), each at most MOST_DRAW and not all 0 for a city;
+    /// Build zeroes a danger's, which draws no one.
+    std::array<u16, VISITOR_KINDS> draws{ 1, 1 };
+};
+
+/// The shipped share of a city's people on the road, in parts per thousand.
+inline constexpr u16 DEFAULT_SHARE_PER_MILLE = 40;
+/// The shipped fewest days a traveller stays.
+inline constexpr u8 DEFAULT_STAY_MIN_DAYS = 2;
+/// The shipped most days a traveller stays.
+inline constexpr u8 DEFAULT_STAY_MAX_DAYS = 5;
+/// The shipped power from which a traveller is a cultivator.
+inline constexpr f32 DEFAULT_CULTIVATOR_POWER = 5.0F;
+
+/// The rules the travellers between cities follow.
+struct TravelRules {
+    /// The share of a city's people on the road at once, in parts per thousand; at most 1,000.
+    u16 sharePerMille = DEFAULT_SHARE_PER_MILLE;
+    /// The fewest days a traveller stays in a city.
+    u8 stayMinDays = DEFAULT_STAY_MIN_DAYS;
+    /// The most days a traveller stays in a city; at least the fewest, and at least 1.
+    u8 stayMaxDays = DEFAULT_STAY_MAX_DAYS;
+    /// The base of how far a traveller will go, in cost units.
+    u32 reachBase = 0;
+    /// What each whole point of power adds to how far a traveller will go.
+    u32 reachPerPower = 0;
+    /// The power from which a traveller is a cultivator rather than a trader.
+    f32 cultivatorPower = DEFAULT_CULTIVATOR_POWER;
 };
 
 /// What a profile's steps cost on each feature, each at most MAX_WALK_COST or IMPASSABLE_COST.
@@ -181,6 +220,8 @@ struct WorldMapSource {
     /// The movement profiles, at most MOST_PROFILES; empty adds `on_foot` from the base costs. Profile WALKING is the
     /// one people walk by.
     std::vector<MovementProfile> profiles{};
+    /// The travellers' rules.
+    TravelRules travel{};
     /// Where each entry was written, for refusals to name; not hashed.
     SourceLines lines{};
     // NOLINTEND(readability-redundant-member-init)
@@ -293,6 +334,10 @@ public:
     [[nodiscard]] std::span<const std::vector<TilePoint>> Rivers() const {
         return m_source.rivers;
     }
+    /// The travellers' rules.
+    [[nodiscard]] const TravelRules& Travel() const {
+        return m_source.travel;
+    }
     /// The index of the start city.
     [[nodiscard]] u16 Start() const {
         return m_start;
@@ -300,7 +345,7 @@ public:
     /// The tiles `view` overlaps, clamped to the map's; empty when it misses the map.
     [[nodiscard]] TileSpan TilesIn(Rect view) const;
     /// A hash of the authored source: sizes, costs, kinds, grid, lines, fords and the places' keys, kinds, sorts, tiles,
-    /// name keys, people and start, and the movement profiles; never a place's resolved name.
+    /// name keys, people, start and draws, the movement profiles and the travel rules; never a place's resolved name.
     [[nodiscard]] u64 Hash() const;
 
 private:

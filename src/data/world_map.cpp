@@ -20,6 +20,9 @@ constexpr i64 MOST_PEOPLE = 100'000'000;
 // The least and the most a tile's side may be, in world units: it keeps every position finite and nonzero in an f32.
 constexpr f64 LEAST_TILE_SIZE = 1.0;
 constexpr f64 MOST_TILE_SIZE = 1'000'000.0;
+// The most a travel reach value or the cultivator threshold may be, and the most a share in parts per thousand.
+constexpr i64 MOST_REACH = 1'000'000;
+constexpr i64 MOST_PER_MILLE = 1'000;
 
 using Failure = std::unexpected<core::Error>;
 
@@ -84,6 +87,25 @@ std::expected<std::string, core::Error> Text(const YAML::Node& map, const char* 
     return node.Scalar();
 }
 
+// The cost of the kind `name` that `entry` holds: a whole number from 1 to just under IMPASSABLE_COST, or `impassable`.
+std::expected<u16, core::Error> KindCost(const YAML::Node& entry, const std::string& name) {
+    const YAML::Node cost = entry["cost"];
+    if (!cost) {
+        return RefuseMap(entry, std::format("kind {} has no cost", name));
+    }
+    if (cost.IsScalar() && cost.Scalar() == "impassable") {
+        return core::IMPASSABLE_COST;
+    }
+    const std::expected<i64, core::Error> whole = Whole(cost, std::format("kind {}'s cost", name), core::IMPASSABLE_COST - 1);
+    if (!whole) {
+        return std::unexpected{ whole.error() };
+    }
+    if (*whole == 0) {
+        return RefuseMap(cost, std::format("kind {}'s cost is 0: a step takes time, so a cost is at least 1", name));
+    }
+    return static_cast<u16>(*whole);
+}
+
 std::expected<void, core::Error> ReadKinds(
     const YAML::Node& root,
     core::WorldMapSource& source,
@@ -121,20 +143,11 @@ std::expected<void, core::Error> ReadKinds(
         if (std::ranges::any_of(source.kinds, [&](const core::TerrainKind& kind) { return kind.symbol == (*symbol)[0]; })) {
             return RefuseMap(entry, std::format("kind {}'s symbol '{}' is another kind's too", *name, *symbol));
         }
-        const YAML::Node cost = entry["cost"];
-        if (!cost) {
-            return RefuseMap(entry, std::format("kind {} has no cost", *name));
+        const std::expected<u16, core::Error> walk = KindCost(entry, *name);
+        if (!walk) {
+            return std::unexpected{ walk.error() };
         }
-        u16 walk = core::IMPASSABLE_COST;
-        if (!cost.IsScalar() || cost.Scalar() != "impassable") {
-            const std::expected<i64, core::Error> whole =
-                Whole(cost, std::format("kind {}'s cost", *name), core::IMPASSABLE_COST - 1);
-            if (!whole) {
-                return std::unexpected{ whole.error() };
-            }
-            walk = static_cast<u16>(*whole);
-        }
-        source.kinds.push_back({ .name = *name, .symbol = (*symbol)[0], .cost = walk });
+        source.kinds.push_back({ .name = *name, .symbol = (*symbol)[0], .cost = *walk });
         source.lines.kinds.push_back(LineOf(entry));
     }
     return {};
@@ -333,6 +346,268 @@ std::expected<void, core::Error> ReadPlaceTile(const YAML::Node& entry, const st
     return {};
 }
 
+// The cost `node` holds, a whole number up to core::MAX_WALK_COST or the word impassable, which `owner` names in refusals.
+std::expected<u16, core::Error> Cost(const YAML::Node& node, std::string_view owner) {
+    if (node.IsScalar() && node.Scalar() == "impassable") {
+        return core::IMPASSABLE_COST;
+    }
+    const std::expected<i64, core::Error> whole = Whole(node, owner, core::MAX_WALK_COST);
+    if (!whole) {
+        return std::unexpected{ whole.error() };
+    }
+    if (*whole == 0) {
+        return RefuseMap(node, std::format("{} is 0: a step takes time, so a cost is at least 1", owner));
+    }
+    return static_cast<u16>(*whole);
+}
+
+// Reads the optional map at `key` in `entry` into `apply(name, node)` for each of its entries.
+template<typename Apply>
+std::expected<void, core::Error> ReadEntries(const YAML::Node& entry, const char* key, std::string_view owner, Apply apply) {
+    const YAML::Node map = entry[key];
+    if (!map) {
+        return {};
+    }
+    if (!map.IsMap()) {
+        return RefuseMap(map, std::format("{}'s {} isn't a map", owner, key));
+    }
+    for (const auto& pair : map) {
+        if (auto applied = apply(pair.first.Scalar(), pair.second); !applied) {
+            return applied;
+        }
+    }
+    return {};
+}
+
+// Sets the cost of the feature `name`, one of road, river, bridge and ford, to what `node` holds.
+std::expected<void, core::Error> ReadFeature(
+    core::FeatureCosts& features,
+    const std::string& name,
+    const YAML::Node& node,
+    const std::string& owner
+) {
+    const std::array<std::pair<std::string_view, u16 core::FeatureCosts::*>, 4> known{ {
+        { "road", &core::FeatureCosts::road },
+        { "river", &core::FeatureCosts::river },
+        { "bridge", &core::FeatureCosts::bridge },
+        { "ford", &core::FeatureCosts::ford },
+    } };
+    const auto* const found = std::ranges::find(known, name, &decltype(known)::value_type::first);
+    if (found == known.end()) {
+        return RefuseMap(node, std::format("{} has no feature \"{}\": road, river, bridge or ford", owner, name));
+    }
+    const std::expected<u16, core::Error> cost = Cost(node, std::format("{}'s {} cost", owner, name));
+    if (!cost) {
+        return std::unexpected{ cost.error() };
+    }
+    features.*(found->second) = *cost;
+    return {};
+}
+
+// Reads one profile: its pace, then the base costs with the overrides of all_kinds, kinds and features laid over them.
+std::expected<core::MovementProfile, core::Error> ReadProfile(
+    const YAML::Node& entry,
+    const core::WorldMapSource& source,
+    std::vector<std::string>* warnings
+) {
+    const std::expected<std::string, core::Error> key = Text(entry, "key", "a profile");
+    if (!key) {
+        return std::unexpected{ key.error() };
+    }
+    const std::string owner = std::format("profile {}", *key);
+    internal::NoteUnknownKeys(
+        WORLD_READER, entry, owner, "key", { "key", "ticks_per_cost", "all_kinds", "kinds", "features" }, warnings
+    );
+    const std::expected<i64, core::Error> pace =
+        internal::WholeNumber(WORLD_READER, entry, owner, "ticks_per_cost", true, std::numeric_limits<u16>::max());
+    if (!pace) {
+        return std::unexpected{ pace.error() };
+    }
+    if (*pace == 0) {
+        return RefuseMap(entry["ticks_per_cost"], std::format("{} takes no ticks per cost", owner));
+    }
+    core::MovementProfile profile{ .key = *key,
+                                   .ticksPerCost = static_cast<u16>(*pace),
+                                   .kindCosts = {},
+                                   .features = { .road = source.roadCost,
+                                                 .river = core::IMPASSABLE_COST,
+                                                 .bridge = source.roadCost,
+                                                 .ford = source.fordCost } };
+    for (const core::TerrainKind& kind : source.kinds) {
+        profile.kindCosts.push_back(kind.cost);
+    }
+    if (const YAML::Node all = entry["all_kinds"]) {
+        const std::expected<u16, core::Error> cost = Cost(all, std::format("{}'s all_kinds cost", owner));
+        if (!cost) {
+            return std::unexpected{ cost.error() };
+        }
+        std::ranges::fill(profile.kindCosts, *cost);
+    }
+    const auto readKind = [&](const std::string& name, const YAML::Node& node) -> std::expected<void, core::Error> {
+        const auto found = std::ranges::find(source.kinds, name, &core::TerrainKind::name);
+        if (found == source.kinds.end()) {
+            return RefuseMap(node, std::format("{} has no terrain kind \"{}\"", owner, name));
+        }
+        const std::expected<u16, core::Error> cost = Cost(node, std::format("{}'s {} cost", owner, name));
+        if (!cost) {
+            return std::unexpected{ cost.error() };
+        }
+        profile.kindCosts[static_cast<std::size_t>(found - source.kinds.begin())] = *cost;
+        return {};
+    };
+    if (auto read = ReadEntries(entry, "kinds", owner, readKind); !read) {
+        return std::unexpected{ read.error() };
+    }
+    const auto readFeature = [&](const std::string& name, const YAML::Node& node) {
+        return ReadFeature(profile.features, name, node, owner);
+    };
+    if (auto read = ReadEntries(entry, "features", owner, readFeature); !read) {
+        return std::unexpected{ read.error() };
+    }
+    return profile;
+}
+
+// Reads the profiles, which the map needs at least one of, after the kinds they cost.
+std::expected<void, core::Error> ReadProfiles(
+    const YAML::Node& root,
+    core::WorldMapSource& source,
+    std::vector<std::string>* warnings
+) {
+    const std::expected<YAML::Node, core::Error> list = Sequence(root, "profiles");
+    if (!list) {
+        return std::unexpected{ list.error() };
+    }
+    if (!*list || list->size() == 0) {
+        return RefuseMap(root, "there are no profiles");
+    }
+    for (const YAML::Node& entry : *list) {
+        if (!entry.IsMap()) {
+            return RefuseMap(entry, "a profile isn't a map");
+        }
+        if (source.profiles.size() >= core::MOST_PROFILES) {
+            return RefuseMap(entry, std::format("too many profiles: at most {}", core::MOST_PROFILES));
+        }
+        std::expected<core::MovementProfile, core::Error> profile = ReadProfile(entry, source, warnings);
+        if (!profile) {
+            return std::unexpected{ profile.error() };
+        }
+        source.profiles.push_back(std::move(*profile));
+    }
+    return {};
+}
+
+// Reads the optional `stay_days: [fewest, most]` of `node`, the travel rules, into `travel`.
+std::expected<void, core::Error> ReadStayDays(const YAML::Node& node, core::TravelRules& travel) {
+    const YAML::Node days = node["stay_days"];
+    if (!days) {
+        return {};
+    }
+    if (!days.IsSequence() || days.size() != 2) {
+        return RefuseMap(days, "travel's stay_days isn't [fewest, most]");
+    }
+    const std::expected<i64, core::Error> fewest = Whole(days[0], "travel's fewest stay days", std::numeric_limits<u8>::max());
+    const std::expected<i64, core::Error> most = Whole(days[1], "travel's most stay days", std::numeric_limits<u8>::max());
+    if (!fewest || !most) {
+        return std::unexpected{ fewest ? most.error() : fewest.error() };
+    }
+    if (*fewest == 0 || *fewest > *most) {
+        return RefuseMap(days, "travel's stay_days aren't in order, 1 or more");
+    }
+    travel.stayMinDays = static_cast<u8>(*fewest);
+    travel.stayMaxDays = static_cast<u8>(*most);
+    return {};
+}
+
+// Reads the whole number at `key` in `node`, the travel rules, into `value` when it is there.
+std::expected<void, core::Error> ReadTravelWhole(const YAML::Node& node, const char* key, i64 limit, auto& value) {
+    const std::expected<i64, core::Error> whole = internal::WholeNumber(WORLD_READER, node, "travel", key, false, limit);
+    if (!whole) {
+        return std::unexpected{ whole.error() };
+    }
+    if (node[key]) {
+        value = static_cast<std::remove_reference_t<decltype(value)>>(*whole);
+    }
+    return {};
+}
+
+// Reads the optional `travel:` rules over the defaults of core::TravelRules.
+std::expected<void, core::Error> ReadTravel(
+    const YAML::Node& root,
+    core::TravelRules& travel,
+    std::vector<std::string>* warnings
+) {
+    const YAML::Node node = root["travel"];
+    if (!node) {
+        return {};
+    }
+    if (!node.IsMap()) {
+        return RefuseMap(node, "travel isn't a map");
+    }
+    internal::NoteUnknownKeys(
+        WORLD_READER,
+        node,
+        "travel",
+        "key",
+        { "share_per_mille", "stay_days", "reach_base", "reach_per_power", "cultivator_power" },
+        warnings
+    );
+    const std::expected<f64, core::Error> power = internal::TunedNumber(
+        WORLD_READER,
+        node,
+        "travel",
+        "cultivator_power",
+        static_cast<f64>(travel.cultivatorPower),
+        { .low = 0.0, .lowOpen = false, .high = static_cast<f64>(MOST_REACH) }
+    );
+    if (!power) {
+        return std::unexpected{ power.error() };
+    }
+    travel.cultivatorPower = static_cast<f32>(*power);
+    return ReadTravelWhole(node, "share_per_mille", MOST_PER_MILLE, travel.sharePerMille)
+        .and_then([&] { return ReadTravelWhole(node, "reach_base", MOST_REACH, travel.reachBase); })
+        .and_then([&] { return ReadTravelWhole(node, "reach_per_power", MOST_REACH, travel.reachPerPower); })
+        .and_then([&] { return ReadStayDays(node, travel); });
+}
+
+// Reads the optional `draws:` of `entry`, a place called `owner`, into `place`: a city's draw for each kind of visitor.
+std::expected<void, core::Error> ReadDraws(const YAML::Node& entry, const std::string& owner, core::Place& place) {
+    const YAML::Node draws = entry["draws"];
+    if (place.kind == core::PlaceKind::Danger) {
+        if (draws) {
+            return RefuseMap(draws, std::format("{} is a danger with draws", owner));
+        }
+        place.draws.fill(0);
+        return {};
+    }
+    if (!draws) {
+        return {};
+    }
+    if (!draws.IsMap()) {
+        return RefuseMap(draws, std::format("{}'s draws isn't a map", owner));
+    }
+    const std::array<std::pair<std::string_view, core::VisitorKind>, core::VISITOR_KINDS> kinds{ {
+        { "cultivators", core::VisitorKind::Cultivator },
+        { "traders", core::VisitorKind::Trader },
+    } };
+    place.draws.fill(0);
+    for (const auto& pair : draws) {
+        const auto* const found = std::ranges::find(kinds, pair.first.Scalar(), &decltype(kinds)::value_type::first);
+        if (found == kinds.end()) {
+            return RefuseMap(
+                pair.first,
+                std::format("{}'s draws has no visitor kind \"{}\": cultivators or traders", owner, pair.first.Scalar())
+            );
+        }
+        const std::expected<i64, core::Error> draw =
+            Whole(pair.second, std::format("{}'s {} draw", owner, found->first), core::MOST_DRAW);
+        if (!draw) {
+            return std::unexpected{ draw.error() };
+        }
+        place.draws.at(std::to_underlying(found->second)) = static_cast<u16>(*draw);
+    }
+    return {};
+}
+
 std::expected<void, core::Error> ReadPlaces(
     const YAML::Node& root,
     const core::Strings& strings,
@@ -355,12 +630,13 @@ std::expected<void, core::Error> ReadPlaces(
         place.key = *key;
         const std::string owner = std::format("place {}", place.key);
         internal::NoteUnknownKeys(
-            WORLD_READER, entry, owner, "key", { "key", "kind", "sort", "tile", "name", "people", "start" }, warnings
+            WORLD_READER, entry, owner, "key", { "key", "kind", "sort", "tile", "name", "people", "start", "draws" }, warnings
         );
         if (const std::expected<void, core::Error> read =
-                ReadPlaceKind(entry, owner, place).and_then([&] { return ReadPlaceTile(entry, owner, place); }).and_then([&] {
-                    return ReadPlaceName(entry, owner, strings, place);
-                });
+                ReadPlaceKind(entry, owner, place)
+                    .and_then([&] { return ReadPlaceTile(entry, owner, place); })
+                    .and_then([&] { return ReadPlaceName(entry, owner, strings, place); })
+                    .and_then([&] { return ReadDraws(entry, owner, place); });
             !read) {
             return read;
         }
@@ -389,6 +665,11 @@ std::expected<void, core::Error> ReadSizes(const YAML::Node& root, core::WorldMa
     if (!tile) {
         return std::unexpected{ tile.error() };
     }
+    for (const auto& [key, cost] : { std::pair{ "road_cost", *road }, std::pair{ "ford_cost", *ford } }) {
+        if (cost == 0) {
+            return RefuseMap(root[key], std::format("{} is 0: a step takes time, so a cost is at least 1", key));
+        }
+    }
     source.roadCost = static_cast<u16>(*road);
     source.fordCost = static_cast<u16>(*ford);
     source.tileSize = static_cast<f32>(*tile);
@@ -412,7 +693,17 @@ std::expected<core::WorldMap, core::Error> ParseWorldMap(
             root,
             "",
             "key",
-            { "road_cost", "ford_cost", "tile_size", "kinds", "grid", "roads", "rivers", "fords", "places" },
+            { "road_cost",
+              "ford_cost",
+              "tile_size",
+              "kinds",
+              "grid",
+              "roads",
+              "rivers",
+              "fords",
+              "places",
+              "profiles",
+              "travel" },
             warnings
         );
         core::WorldMapSource source;
@@ -424,6 +715,12 @@ std::expected<core::WorldMap, core::Error> ParseWorldMap(
             return std::unexpected{ std::move(read.error()) };
         }
         if (auto read = ReadGrid(root, yaml, source); !read) {
+            return std::unexpected{ std::move(read.error()) };
+        }
+        if (auto read = ReadProfiles(root, source, warnings); !read) {
+            return std::unexpected{ std::move(read.error()) };
+        }
+        if (auto read = ReadTravel(root, source.travel, warnings); !read) {
             return std::unexpected{ std::move(read.error()) };
         }
         if (auto read = ReadPolylines(root, "roads", source.roads, source.lines.roads); !read) {

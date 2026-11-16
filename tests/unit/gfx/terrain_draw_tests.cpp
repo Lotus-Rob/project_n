@@ -44,6 +44,8 @@ grid: |
 roads: [ [[0, 2], [4, 2]] ]
 rivers: [ [[3, 1], [3, 2]] ]
 fords: [ [3, 1] ]
+profiles:
+  - { key: on_foot, ticks_per_cost: 16 }
 places:
   - { key: capital, kind: city, tile: [0, 2], name: place_capital, people: 100, start: true }
   - { key: wolf_pass, kind: danger, sort: mountain_pass, tile: [4, 1], name: place_wolf_pass }
@@ -234,6 +236,8 @@ grid: |
   ...
 roads: [ [[1, 0], [1, 2]] ]
 rivers: [ [[0, 1], [2, 1]] ]
+profiles:
+  - { key: on_foot, ticks_per_cost: 16 }
 places:
   - { key: capital, kind: city, tile: [1, 0], name: place_capital, people: 100, start: true }
 )yaml";

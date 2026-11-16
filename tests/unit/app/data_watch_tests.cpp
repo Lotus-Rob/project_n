@@ -126,6 +126,9 @@ TEST_CASE("a part that can't be read is not reloaded") {
 }
 
 // A map of two meadow tiles, `name` the key of its one city's name.
+constexpr u16 ROAD_COST = 4;
+constexpr u16 FORD_COST = 30;
+
 std::shared_ptr<const core::WorldMap> TwoTiles(std::string_view name) {
     constexpr f32 TILE = 256.0F;
     constexpr u16 MEADOW_COST = 10;
@@ -133,6 +136,8 @@ std::shared_ptr<const core::WorldMap> TwoTiles(std::string_view name) {
     source.columns = 2;
     source.rows = 1;
     source.tileSize = TILE;
+    source.roadCost = ROAD_COST;
+    source.fordCost = FORD_COST;
     source.kinds = { { .name = "meadow", .symbol = '.', .cost = MEADOW_COST } };
     source.grid = { 0, 0 };
     source.places = { { .key = "capital",

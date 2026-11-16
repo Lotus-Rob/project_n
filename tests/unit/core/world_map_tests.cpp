@@ -285,6 +285,15 @@ TEST_CASE("Build refuses a map it can't use") {
     dearKind.kinds[MEADOW].cost = core::MAX_WALK_COST + 1;
     const std::string dearKindRefusal = Refusal(dearKind);
     CHECK(dearKindRefusal.contains("meadow"));
+    core::WorldMapSource freeKind = Source({ "0.." });
+    freeKind.kinds[MEADOW].cost = 0;
+    CHECK(Refusal(freeKind).contains("costs 0"));
+    core::WorldMapSource freeRoad = Source({ "0.." });
+    freeRoad.roadCost = 0;
+    CHECK(Refusal(freeRoad).contains("is 0"));
+    core::WorldMapSource freeFord = Source({ "0.." });
+    freeFord.fordCost = 0;
+    CHECK(Refusal(freeFord).contains("is 0"));
     core::WorldMapSource dearRoad = Source({ "0.." });
     dearRoad.roadCost = core::MAX_WALK_COST + 1;
     const std::string dearRoadRefusal = Refusal(dearRoad);
@@ -550,7 +559,7 @@ core::MovementProfile Profile(std::string key, u16 kindCost) {
     return { .key = std::move(key),
              .ticksPerCost = core::DEFAULT_TICKS_PER_COST,
              .kindCosts = std::vector<u16>(Source({ "0" }).kinds.size(), kindCost),
-             .features = {} };
+             .features = { .road = ROAD_COST, .river = core::IMPASSABLE_COST, .bridge = ROAD_COST, .ford = FORD_COST } };
 }
 
 TEST_CASE("a map built with no profiles walks on foot by exactly its base costs") {
@@ -636,6 +645,8 @@ TEST_CASE("Build refuses a profile it can't use") {
     CHECK(refusal([](auto& profiles) { profiles[0].kindCosts.pop_back(); }).contains("costs 3 terrain kinds"));
     CHECK(refusal([](auto& profiles) { profiles[0].kindCosts[0] = core::MAX_WALK_COST + 1; }).contains("a terrain kind over"));
     CHECK(refusal([](auto& profiles) { profiles[0].features.ford = core::MAX_WALK_COST + 1; }).contains("a feature over"));
+    CHECK(refusal([](auto& profiles) { profiles[0].kindCosts[0] = 0; }).contains("a terrain kind 0"));
+    CHECK(refusal([](auto& profiles) { profiles[0].features.road = 0; }).contains("a feature 0"));
     CHECK(refusal([](auto& profiles) { profiles.push_back(Profile("walk", 1)); }).contains("shares its key"));
     CHECK(refusal([](auto& profiles) { profiles[0].key = ""; }).contains("has no key"));
     CHECK(refusal([](auto& profiles) {
@@ -658,6 +669,56 @@ TEST_CASE("the hash changes with a profile's pace or cost") {
     CHECK(hashOf([](core::MovementProfile& profile) { profile.kindCosts[SAND] = 11; }) != reference);
     CHECK(hashOf([](core::MovementProfile& profile) { profile.features.road = 2; }) != reference);
     CHECK(hashOf([](core::MovementProfile& profile) { profile.key = "stroll"; }) != reference);
+}
+
+constexpr u16 PAST_PER_MILLE = 1'001;
+constexpr u8 STAY_AFTER_MAX = 6;
+constexpr f32 OTHER_POWER = 6.0F;
+
+TEST_CASE("a city draws one of each visitor by default, and Build zeroes a danger's draws") {
+    core::WorldMapSource source = Source({ "0.1", "..." });
+    source.places.push_back(
+        { .key = "cave", .kind = core::PlaceKind::Danger, .sort = "cave", .tile = { .column = 1, .row = 1 } }
+    );
+    const core::WorldMap map = MustBuild(std::move(source));
+    CHECK(map.Places()[0].draws == std::array<u16, core::VISITOR_KINDS>{ 1, 1 });
+    CHECK(map.Places()[2].draws == std::array<u16, core::VISITOR_KINDS>{ 0, 0 });
+}
+
+TEST_CASE("Build refuses a draw past the most and a city with no draw") {
+    core::WorldMapSource tooMuch = Source({ "0.1" });
+    tooMuch.places[1].draws = { 0, core::MOST_DRAW + 1 };
+    CHECK(Refusal(std::move(tooMuch)).contains("past the most, 100"));
+    core::WorldMapSource none = Source({ "0.1" });
+    none.places[1].draws = { 0, 0 };
+    CHECK(Refusal(std::move(none)).contains("draws no visitors"));
+}
+
+TEST_CASE("Build refuses travel rules out of order or past a thousand") {
+    core::WorldMapSource share = Source({ "0.1" });
+    share.travel.sharePerMille = PAST_PER_MILLE;
+    CHECK(Refusal(std::move(share)).contains("over a thousand"));
+    core::WorldMapSource backwards = Source({ "0.1" });
+    backwards.travel.stayMinDays = STAY_AFTER_MAX;
+    CHECK(Refusal(std::move(backwards)).contains("in order"));
+    core::WorldMapSource zero = Source({ "0.1" });
+    zero.travel.stayMinDays = 0;
+    CHECK(Refusal(std::move(zero)).contains("in order"));
+}
+
+TEST_CASE("the hash changes with a draw or a travel rule") {
+    const u64 reference = MustBuild(Source({ "0.1" })).Hash();
+    const auto hashOf = [](const std::function<void(core::WorldMapSource&)>& change) {
+        core::WorldMapSource source = Source({ "0.1" });
+        change(source);
+        return MustBuild(std::move(source)).Hash();
+    };
+    CHECK(hashOf([](core::WorldMapSource& data) { data.places[1].draws = { 1, 2 }; }) != reference);
+    CHECK(hashOf([](core::WorldMapSource& data) { data.travel.sharePerMille = 41; }) != reference);
+    CHECK(hashOf([](core::WorldMapSource& data) { data.travel.stayMaxDays = 6; }) != reference);
+    CHECK(hashOf([](core::WorldMapSource& data) { data.travel.reachBase = 1; }) != reference);
+    CHECK(hashOf([](core::WorldMapSource& data) { data.travel.reachPerPower = 1; }) != reference);
+    CHECK(hashOf([](core::WorldMapSource& data) { data.travel.cultivatorPower = OTHER_POWER; }) != reference);
 }
 
 } // namespace
