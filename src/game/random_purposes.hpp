@@ -22,8 +22,6 @@ inline constexpr u32 PURPOSE_BURST = 5;
 inline constexpr u32 PURPOSE_RESPAWN = 6;
 /// A cast drawing its volley's seed (core::Volley::seed), from which the volley draws its own numbers.
 inline constexpr u32 PURPOSE_VOLLEY = 7;
-/// A world walker drawing where it wanders and how (game/scenes/world.hpp).
-inline constexpr u32 PURPOSE_WALKER = 8;
 /// A world NPC drawing which tile of its city's region it lives on (game/scenes/world.cpp).
 inline constexpr u32 PURPOSE_HOME_TILE = 10;
 /// A world NPC drawing its starting power (game/npcs.hpp).

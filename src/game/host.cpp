@@ -634,6 +634,11 @@ std::optional<core::Vec2> Host::Portal() {
     return Running().Portal(context);
 }
 
+core::Rect Host::View() {
+    const Context context{ *this };
+    return Running().View(context);
+}
+
 bool Host::OnPortal() {
     const std::optional<core::Vec2> portal = Portal();
     if (!portal || m_player == core::StableId{}) {
@@ -1104,7 +1109,9 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
         PublishRoute(snapshot);
     }
     const u32 chunks = core::ChunkCount(looks.size(), PUBLISH_CHUNK);
-    core::Vec2 start = (traits.view.min + traits.view.max) * MIDDLE;
+    const Context context{ *this };
+    const core::Rect sceneView = Running().View(context);
+    core::Vec2 start = (sceneView.min + sceneView.max) * MIDDLE;
     if (m_player != core::StableId{}) {
         const Body& body = bodies.get(m_state[ACTIVE].Find(m_player));
         snapshot.follow = core::Follow{ .previous = body.previous, .current = body.current };
@@ -1113,7 +1120,6 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
     // Before the main thread's view arrives the camera's zoom and window are unknown, so cull as widely as any shows.
     const core::Rect area =
         view.value_or(core::Rect{ .min = start - core::WIDEST_HALF_VIEW, .max = start + core::WIDEST_HALF_VIEW });
-    const Context context{ *this };
     // The ground takes the first part whether or not there are entities; the journeys' parts follow the entities'.
     const u32 entityParts = std::max(chunks, 1U);
     const u32 journeyChunks = JourneyChunks();

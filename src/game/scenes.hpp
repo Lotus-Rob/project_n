@@ -27,7 +27,7 @@ inline constexpr core::SceneKey STRESS_SCENE{ 1 };
 inline constexpr core::SceneKey PAINTED_SCENE{ 2 };
 /// A still grid of map cells (game/scenes/cells.hpp).
 inline constexpr core::SceneKey CELLS_SCENE{ 3 };
-/// The world map: terrain tiles and wandering walkers (game/scenes/world.hpp).
+/// The world map: terrain tiles and the travellers on them (game/scenes/world.hpp).
 inline constexpr core::SceneKey WORLD_SCENE{ 4 };
 
 /// Every scene, in F2's order: a scene's index is its key.

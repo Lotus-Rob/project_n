@@ -64,7 +64,8 @@ struct SceneTraits {
     std::string_view name;
     /// With no player to follow, the area round whose centre a publish sent no view yet culls, as widely as a window shows
     /// (core::WIDEST_HALF_VIEW). App's camera starts a scene that follows nothing at gfx::REFERENCE_CENTRE, which this
-    /// must centre on (app's camera tests check every such scene).
+    /// must centre on (app's camera tests check every such scene). Empty for a scene whose view follows the game data
+    /// (`viewFromMap`).
     core::Rect view{};
     /// Where orbits return when the game data stops them circling the player.
     core::Vec2 home{};
@@ -88,6 +89,9 @@ struct SceneTraits {
     /// Whether it has a portal that Scene::Portal() places from the game data, rather than `portal`: the world's, which
     /// follows the map's start. Such a scene leaves `portal` empty and is walkable all the same (NextWalkableScene()).
     bool portalFromMap = false;
+    /// Whether Scene::View() takes its view from the game data, rather than `view`: the world's, which is the map's size.
+    /// Such a scene leaves `view` empty.
+    bool viewFromMap = false;
 };
 
 /// The host as a scene sees it: the state, what it draws with, and the spawns every scene shares.
@@ -155,6 +159,10 @@ public:
     /// Where its portal stands in this game, or none for a scene without one: SceneTraits::portal by default; a scene with
     /// SceneTraits::portalFromMap overrides it to follow the game data.
     [[nodiscard]] virtual std::optional<core::Vec2> Portal(const SceneContext& context) const;
+
+    /// Its view in this game (what SceneTraits::view stands for): SceneTraits::view by default; a scene with
+    /// SceneTraits::viewFromMap overrides it to follow the game data.
+    [[nodiscard]] virtual core::Rect View(const SceneContext& context) const;
 
     /// Adds its ground-layer content (core::Layer::Ground) to part `part` of `drawList`, just after the host began it for
     /// `view` (the area the publish culls to), so it draws under every entity. By default the painted ground (GROUND),

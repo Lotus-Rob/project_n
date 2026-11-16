@@ -72,13 +72,12 @@ enum class StringId : u16 {     // NOLINT(performance-enum-size): data strings n
     PoisonLance,                ///< The poison lance's name.
     Dash,                       ///< The dash's name.
     FlyingSwords,               ///< The flying swords' name.
-    WalkerName,                 ///< The name label of a walker on the world map.
     PortalLabel,                ///< The label over a portal.
     DateLine,                   ///< The HUD's date on the world map: `{month}` and `{day}` are filled in (FillDate()).
     DatePaused,                 ///< The mark after the date while the world is paused.
 };
 /// How many strings StringId names.
-inline constexpr std::size_t STRINGS = 51;
+inline constexpr std::size_t STRINGS = 50;
 /// The most strings a table holds, named and data together: StringId is 16 bits.
 inline constexpr std::size_t MOST_STRINGS = 0xFFFF;
 /// Each StringId's name in strings.yaml, in StringId's order.
@@ -129,7 +128,6 @@ inline constexpr std::array<std::string_view, STRINGS> STRING_NAMES{ { "cultivat
                                                                        "poison_lance",
                                                                        "dash",
                                                                        "flying_swords",
-                                                                       "walker_name",
                                                                        "portal_label",
                                                                        "date_line",
                                                                        "date_paused" } };

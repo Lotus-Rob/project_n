@@ -17,6 +17,10 @@ std::optional<core::Vec2> Scene::Portal(const SceneContext& /*context*/) const {
     return Traits().portal;
 }
 
+core::Rect Scene::View(const SceneContext& /*context*/) const {
+    return Traits().view;
+}
+
 void Scene::Respawn(SceneContext& /*context*/, const core::TickCounters& /*counters*/, u32 /*index*/) const {
 }
 

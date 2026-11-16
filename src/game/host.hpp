@@ -176,6 +176,9 @@ public:
     /// Where the running scene's portal stands in this game (Scene::Portal()), or none when it has none.
     [[nodiscard]] std::optional<core::Vec2> Portal();
 
+    /// The running scene's view in this game (Scene::View()): the map's size on the world map.
+    [[nodiscard]] core::Rect View();
+
     /// Whether the scene is a combat scene, where fights happen and casts act (SceneTraits::combat): the arena only.
     [[nodiscard]] bool IsCombatScene() const;
 
@@ -232,7 +235,7 @@ public:
     /// the world layer, so a crowd never hides it; with the game data's names (GameData::names) it carries a name label
     /// over its head (core::NameOf() of the state's seed and its ID, stacked by core::NameKey(): LabelPriority::Selected
     /// when selected, LabelPriority::Named otherwise), the labels following the player's in chunk order. Then the scene
-    /// adds its own (Scene::Publish(): the tablet's caption, the arena's showcase seals, the world's walker labels), then
+    /// adds its own (Scene::Publish(): the tablet's caption, the arena's showcase seals, the world's place names), then
     /// a scene with a portal adds its seal (PORTAL_SEAL at SceneTraits::portal, twice PORTAL_RADIUS in size, from tick 0
     /// and never ending, no showcase seal, so F8 never hides it) and its "Portal" caption over it, both whatever the view,
     /// as the seals are: one record each, whose look reaches past its point. After them come the volleys in flight with
