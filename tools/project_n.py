@@ -277,6 +277,80 @@ def build_dir(preset, mode, sanitizer="none", unity=False):
     return Path("build", "container", preset, leaf) if IN_CONTAINER else Path("build", preset, leaf)
 
 
+# Build trees nothing has used for this long are removed at the start of `build`, `test` and `check`: every preset,
+# mode and sanitizer keeps a full tree of its own, and nothing else ever removed them (build/ reached 57 GB).
+STALE_DAYS = 7
+# The native preset's everyday builds, never swept however long they rest.
+WARM_LEAVES = ("debug", "release")
+# Written into a build tree by each configure: the disk may be mounted noatime, so files' times can't say when a tree
+# was last read.
+USED_STAMP = ".project_n-used"
+
+
+def build_trees(build):
+    """Every tree a command builds in: build/<preset>/<leaf> and build/container/<preset>/<leaf>."""
+    trees = []
+    for parent in (build, build / "container"):
+        for preset in PRESETS:
+            if (parent / preset).is_dir():
+                trees += sorted(p for p in (parent / preset).iterdir() if p.is_dir())
+    return trees
+
+
+def mark_used(bdir, now):
+    bdir.mkdir(parents=True, exist_ok=True)
+    (bdir / USED_STAMP).write_text(repr(now), encoding="utf-8")
+
+
+def last_used(tree):
+    """When a command last configured the tree; for a tree from before the stamps (or a broken stamp), its newest
+    file's time."""
+    try:
+        return float((tree / USED_STAMP).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return max((p.stat().st_mtime for p in tree.rglob("*") if p.is_file()), default=0.0)
+
+
+def warm_trees(build):
+    return {build / NATIVE_PRESET / leaf for leaf in WARM_LEAVES}
+
+
+def tree_size(tree):
+    return sum(p.stat().st_size for p in tree.rglob("*") if p.is_file() and not p.is_symlink())
+
+
+def sweep_build(build, now, days=STALE_DAYS, keep=()):
+    """Remove the build trees unused for `days`, but the warm ones and `keep`; (tree, bytes) for each removed."""
+    spared = warm_trees(build) | {Path(k) for k in keep}
+    removed = []
+    for tree in build_trees(build) if build.is_dir() else ():
+        if tree in spared or last_used(tree) > now - days * 86400:
+            continue
+        size = tree_size(tree)
+        shutil.rmtree(tree)
+        if not any(tree.parent.iterdir()):
+            tree.parent.rmdir()
+        removed.append((tree, size))
+        print(f"sweep: removed {tree.relative_to(build.parent)} ({size / 2**30:.1f} GiB), unused for {days}+ days")
+    if removed:
+        print(f"sweep: freed {sum(s for _, s in removed) / 2**30:.1f} GiB")
+    return removed
+
+
+def own_trees(presets, mode, sanitizer="none", unity=False):
+    """The trees a command is about to build in, native and in the container, relative to ROOT."""
+    leaf = build_leaf(mode, sanitizer, unity)
+    return [Path("build", *parent, preset, leaf) for preset in presets for parent in ((), ("container",))]
+
+
+def sweep_here(keep=()):
+    """sweep_build on this checkout's build/, on the host only: CI starts clean, and a container re-entry already
+    swept on the host."""
+    if IN_CONTAINER or os.environ.get("GITHUB_ACTIONS"):
+        return
+    sweep_build(ROOT / "build", time.time(), keep=[ROOT / k for k in keep])
+
+
 def cold_ref():
     """CI is building main or a tag: every object compiles from source (the user's rule, spec 2026-11-13 §2)."""
     ref = os.environ.get("GITHUB_REF", "")
@@ -552,6 +626,7 @@ def reenter(preset, argv, interactive=False):
 def configure(preset, mode, sanitizer="none", unity=False):
     check_sanitizer(preset, sanitizer)
     p, bdir = PRESETS[preset], build_dir(preset, mode, sanitizer, unity)
+    mark_used(ROOT / bdir, time.time())
     # -v makes XMake install packages one at a time (else 4 in parallel). XMake installs
     # duplicate variants with the same build hash (libxcb, libx11 for SDL3) concurrently into one
     # directory and they corrupt each other; drop -v once that's fixed upstream.
@@ -592,6 +667,7 @@ def binary_path(preset, mode, name=APP):
 
 
 def cmd_build(args):
+    sweep_here(own_trees(list(PRESETS) if args.preset == "all" else [args.preset], args.mode, args.sanitizer))
     if args.preset == "all":
         return build_all(args)
     check_sanitizer(args.preset, args.sanitizer)
@@ -665,6 +741,7 @@ def cmd_test(args):
         raise Fail("pass --suite <test target> with --test or doctest arguments")
     extra = ([test_filter(args.test, args.target)] if args.test else []) + extra
     check_sanitizer(args.preset, args.sanitizer)
+    sweep_here(own_trees([args.preset], args.mode, args.sanitizer, args.unity))
     if needs_container(args.preset, args.container):
         argv = ["test", "--preset", args.preset, "--mode", args.mode, "--sanitizer", args.sanitizer, *(["--unity"] if args.unity else [])]
         argv += (["--target", args.target] if args.target else []) + (["--", *extra] if extra else [])
@@ -1847,6 +1924,7 @@ def cmd_check(args):
     format check covers what it misses (rebases and cherry-picks don't run it)."""
     if not clone_set_up():
         raise Fail("set the clone up first (the commit hooks, Git LFS's filters): pixi run project_n setup")
+    sweep_here()
     times = []
 
     def step(name, command, *step_args):
@@ -2687,6 +2765,9 @@ def cmd_shell(args):
 
 
 def cmd_clean(args):
+    if args.stale:
+        sweep_build(ROOT / "build", time.time(), days=args.days)
+        return
     for preset in [args.preset] if args.preset else PRESETS:
         for d in (ROOT / "build" / preset, ROOT / "build" / "container" / preset):
             shutil.rmtree(d, ignore_errors=True)
@@ -2898,6 +2979,9 @@ def make_parser():
     add("image", cmd_image, "build or pull container images if missing, and install MSVC for windows-msvc", preset="optional")
     add("shell", cmd_shell, "open a shell in a preset's container (to debug container failures)", preset="required")
     p = add("clean", cmd_clean, "remove build directories", preset="optional")
+    p.add_argument("--stale", action="store_true",
+                   help="only remove build trees unused for --days, but the native preset's debug and release (as build, test and check do)")
+    p.add_argument("--days", type=int, default=STALE_DAYS, help=f"with --stale: the age in days (default {STALE_DAYS})")
     p.add_argument("--packages", action="store_true", help="also remove XMake package dirs of other environments")
     p.add_argument("--images", action="store_true", help="also remove this project's container images other than the current tags")
     add("prune-worktrees", prune_worktrees,

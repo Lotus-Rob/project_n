@@ -2916,5 +2916,111 @@ class TidyCacheTest(unittest.TestCase):
         self.assertEqual(out.getvalue(), self.FINDING * 2)  # a cached result prints as a fresh one does
 
 
+DAY = 86400.0
+NOW = 1_800_000_000.0
+
+
+class BuildSweepTest(unittest.TestCase):
+    """Build trees unused for STALE_DAYS go; the native preset's everyday trees and the one about to build stay."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.build = Path(self.tmp.name) / "build"
+        native = mock.patch.object(project_n, "NATIVE_PRESET", "linux-clang")
+        native.start()
+        self.addCleanup(native.stop)
+        self.addCleanup(self.tmp.cleanup)
+
+    def tree(self, rel, stamp=None, file_age=None):
+        tree = self.build / rel
+        tree.mkdir(parents=True)
+        if stamp is not None:
+            project_n.mark_used(tree, stamp)
+        if file_age is not None:
+            f = tree / ".objs" / "a.o"
+            f.parent.mkdir(parents=True)
+            f.write_bytes(b"x")
+            os.utime(f, (NOW - file_age, NOW - file_age))
+        return tree
+
+    def sweep(self, **kwargs):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return [tree for tree, _ in project_n.sweep_build(self.build, NOW, **kwargs)]
+
+    def test_sweeps_a_tree_older_than_seven_days(self):
+        old = self.tree("linux-gcc/debug", stamp=NOW - 8 * DAY)
+        self.assertEqual(self.sweep(), [old])
+        self.assertFalse(old.exists())
+        self.assertFalse(old.parent.exists())  # an emptied preset folder goes too
+
+    def test_keeps_a_tree_used_today(self):
+        fresh = self.tree("linux-gcc/debug", stamp=NOW - 3600)
+        self.assertEqual(self.sweep(), [])
+        self.assertTrue(fresh.exists())
+
+    def test_keeps_warm_trees_however_old(self):
+        debug = self.tree("linux-clang/debug", stamp=NOW - 30 * DAY)
+        release = self.tree("linux-clang/release", stamp=NOW - 30 * DAY)
+        releasedbg = self.tree("linux-clang/releasedbg", stamp=NOW - 30 * DAY)
+        self.assertEqual(self.sweep(), [releasedbg])
+        self.assertTrue(debug.exists() and release.exists())
+
+    def test_keeps_the_tree_about_to_be_used(self):
+        old = self.tree("linux-gcc/release", stamp=NOW - 30 * DAY)
+        self.assertEqual(self.sweep(keep=[old]), [])
+
+    def test_sweeps_container_trees(self):
+        old = self.tree("container/windows-msvc/release", stamp=NOW - 8 * DAY)
+        self.assertEqual(self.sweep(), [old])
+
+    def test_a_shorter_age_on_request(self):
+        old = self.tree("linux-gcc/debug", stamp=NOW - 2 * DAY)
+        self.assertEqual(self.sweep(days=1), [old])
+
+    def test_unstamped_tree_uses_its_newest_file(self):
+        recent = self.tree("linux-gcc/debug", file_age=2 * DAY)
+        old = self.tree("linux-gcc/release", file_age=9 * DAY)
+        self.assertEqual(self.sweep(), [old])
+        self.assertTrue(recent.exists())
+
+    def test_unreadable_stamp_falls_back(self):
+        for text in ("garbage", ""):
+            with self.subTest(text=text):
+                tree = self.tree(f"linux-gcc/{text or 'empty'}", file_age=2 * DAY)
+                (tree / project_n.USED_STAMP).write_text(text)
+                self.assertEqual(project_n.last_used(tree), NOW - 2 * DAY)
+
+    def test_ignores_what_no_command_owns(self):
+        for rel in ("profiles/x", "measure/20261115", "coverage/x", "artifact/linux-gcc", "container/artifact/x"):
+            self.tree(rel, stamp=NOW - 30 * DAY)
+        self.assertEqual(self.sweep(), [])
+
+    def test_missing_or_empty_build_folder(self):
+        self.assertEqual(self.sweep(), [])
+        self.build.mkdir()
+        (self.build / "linux-gcc").mkdir()
+        (self.build / "linux-gcc" / "stray.txt").write_text("not a tree")
+        self.assertEqual(self.sweep(), [])
+
+    def test_sweep_here_skips_ci_and_containers(self):
+        for env, container in (({"GITHUB_ACTIONS": "true"}, False), ({}, True)):
+            with self.subTest(env=env, container=container), mock.patch.dict(os.environ, env), \
+                    mock.patch.object(project_n, "IN_CONTAINER", container), \
+                    mock.patch.object(project_n, "sweep_build") as sweep:
+                if not env:
+                    os.environ.pop("GITHUB_ACTIONS", None)
+                project_n.sweep_here()
+                sweep.assert_not_called()
+
+    def test_configure_stamps_its_tree(self):
+        with temp_repo({"xmake-requires.lock": "x"}) as root, mock.patch.object(project_n, "run"), \
+                mock.patch.object(project_n, "xmake_env", lambda bdir: {}), \
+                mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop(project_n.BUILD_CACHE_ENV, None)
+            project_n.configure("linux-gcc", "release")
+            self.assertGreater(project_n.last_used(root / "build" / "linux-gcc" / "release"), time.time() - 60)
+            self.assertTrue((root / "build" / "linux-gcc" / "release" / project_n.USED_STAMP).is_file())
+
+
 if __name__ == "__main__":
     unittest.main()
