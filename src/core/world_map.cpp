@@ -19,7 +19,7 @@ Error Refuse(std::string message) {
     return Error{ .message = std::move(message) };
 }
 
-// The tile `coordinate` lies in along an axis of `tiles`: -1 or `tiles` when it lies before or past the map.
+/// The tile `coordinate` lies in along an axis of `tiles`: -1 or `tiles` when it lies before or past the map.
 i64 TileOf(f32 coordinate, f32 tileSize, u32 tiles) {
     // fmin and fmax keep a huge or NaN coordinate from overflowing the conversion.
     return static_cast<i64>(std::floor(std::fmax(std::fmin(coordinate / tileSize, static_cast<f32>(tiles)), -1.0F)));
@@ -39,9 +39,9 @@ void HashLine(Hasher& hasher, const std::vector<TilePoint>& line) {
     }
 }
 
-// Calls `mark` with every tile a segment between two points passes through, 4-connected, starting from the endpoint
-// with the lower (row, column) so a segment and its reverse mark the same tiles: it steps along the axis whose next
-// tile boundary the segment crosses first, the column's on a tie.
+/// Calls `mark` with every tile a segment between two points passes through, 4-connected, starting from the endpoint
+/// with the lower (row, column) so a segment and its reverse mark the same tiles: it steps along the axis whose next
+/// tile boundary the segment crosses first, the column's on a tie.
 template<typename Mark>
 void Rasterise(TilePoint first, TilePoint second, const Mark& mark) {
     const bool swap = std::pair{ second.row, second.column } < std::pair{ first.row, first.column };
@@ -75,7 +75,7 @@ void Rasterise(TilePoint first, TilePoint second, const Mark& mark) {
     }
 }
 
-// "line L: " when `lines` knows entry `index`'s line, else nothing.
+/// "line L: " when `lines` knows entry `index`'s line, else nothing.
 std::string AtLine(const std::vector<u32>& lines, std::size_t index) {
     return index < lines.size() ? std::format("line {}: ", lines[index]) : std::string{};
 }
@@ -109,8 +109,8 @@ struct Entry {
     }
 };
 
-// One Dijkstra from every seed at cost 0, by StepCost. Ties go to the lower city, then the lower tile, so every tile
-// has one owner whatever the platform.
+/// One Dijkstra from every seed at cost 0, by StepCost. Ties go to the lower city, then the lower tile, so every tile
+/// has one owner whatever the platform.
 Reach Search(const WorldMap& map, std::span<const Seed> seeds) {
     const std::size_t tiles = static_cast<std::size_t>(map.Columns()) * map.Rows();
     Reach reach{ .cost = std::vector<u64>(tiles, std::numeric_limits<u64>::max()), .owner = std::vector<u16>(tiles, NO_PLACE) };
@@ -148,8 +148,8 @@ Reach Search(const WorldMap& map, std::span<const Seed> seeds) {
     return reach;
 }
 
-// Marks the tiles of every line in `lines` with `flag`; the error names a point off the map, or the first tile `blocked`
-// refuses.
+/// Marks the tiles of every line in `lines` with `flag`; the error names a point off the map, or the first tile `blocked`
+/// refuses.
 template<typename Blocked>
 std::expected<void, Error> MarkLines(
     const WorldMapSource& source,
@@ -201,7 +201,7 @@ std::expected<void, Error> MarkLines(
     return {};
 }
 
-// Whether the source's sizes, kinds and grid make a map.
+/// Whether the source's sizes, kinds and grid make a map.
 std::expected<void, Error> CheckShape(const WorldMapSource& source) {
     if (source.columns == 0 || source.rows == 0 || static_cast<u64>(source.columns) * source.rows > MAX_TILES) {
         return std::unexpected{ Refuse(std::format("the map is {} by {} tiles", source.columns, source.rows)) };
@@ -271,7 +271,7 @@ std::expected<void, Error> CheckShape(const WorldMapSource& source) {
     return {};
 }
 
-// Derives each tile's flags from the lines and the fords; ProfileLayer turns them into costs.
+/// Derives each tile's flags from the lines and the fords; ProfileLayer turns them into costs.
 std::expected<void, Error> DeriveTiles(const WorldMapSource& source, std::vector<u8>& flags) {
     const std::size_t tiles = flags.size();
     const auto never = [](std::size_t) { return false; };
@@ -318,8 +318,8 @@ std::expected<void, Error> DeriveTiles(const WorldMapSource& source, std::vector
     return {};
 }
 
-// Whether each profile can be used: at most MOST_PROFILES, each with a key of its own, a pace, one cost per kind, all costs
-// walkable or impassable.
+/// Whether each profile can be used: at most MOST_PROFILES, each with a key of its own, a pace, one cost per kind, all costs
+/// walkable or impassable.
 std::expected<void, Error> CheckProfiles(const WorldMapSource& source) {
     if (source.profiles.size() > MOST_PROFILES) {
         return std::unexpected{
@@ -375,7 +375,7 @@ std::expected<void, Error> CheckProfiles(const WorldMapSource& source) {
     return {};
 }
 
-// Whether the travel rules can be used: a share of at most a thousand, a stay of at least a day, in order.
+/// Whether the travel rules can be used: a share of at most a thousand, a stay of at least a day, in order.
 std::expected<void, Error> CheckTravel(const TravelRules& travel) {
     if (travel.sharePerMille > PER_MILLE) {
         return std::unexpected{
@@ -390,7 +390,7 @@ std::expected<void, Error> CheckTravel(const TravelRules& travel) {
     return {};
 }
 
-// The profile a map without any gets: on foot by the base costs.
+/// The profile a map without any gets: on foot by the base costs.
 MovementProfile OnFoot(const WorldMapSource& source) {
     MovementProfile profile{
         .key = "on_foot",
@@ -404,7 +404,7 @@ MovementProfile OnFoot(const WorldMapSource& source) {
     return profile;
 }
 
-// What entering each tile costs by `profile`, from the tiles' flags.
+/// What entering each tile costs by `profile`, from the tiles' flags.
 std::vector<u16> ProfileLayer(const WorldMapSource& source, const std::vector<u8>& flags, const MovementProfile& profile) {
     std::vector<u16> cost(flags.size(), 0);
     for (std::size_t tile = 0; tile < flags.size(); ++tile) {
@@ -434,8 +434,8 @@ struct PlaceLayer {
     u16 start = NO_PLACE;
 };
 
-// Whether place `index`'s kind suits what it says: a sort only for a danger, the start only for a city, people only for a
-// city (a danger's would be read and never spawned).
+/// Whether place `index`'s kind suits what it says: a sort only for a danger, the start only for a city, people only for a
+/// city (a danger's would be read and never spawned).
 std::expected<void, Error> CheckRole(const WorldMapSource& source, std::size_t index) {
     const Place& place = source.places[index];
     std::string problem;
@@ -462,7 +462,7 @@ std::expected<void, Error> CheckRole(const WorldMapSource& source, std::size_t i
     return {};
 }
 
-// Puts the places on their tiles, each on a walkable tile of its own, and finds the one start.
+/// Puts the places on their tiles, each on a walkable tile of its own, and finds the one start.
 std::expected<PlaceLayer, Error> PlaceTiles(const WorldMapSource& source, const std::vector<u16>& cost) {
     PlaceLayer layer{ .place = std::vector<u16>(cost.size(), NO_PLACE), .start = NO_PLACE };
     u64 people = 0;

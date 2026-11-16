@@ -122,7 +122,7 @@ struct GlowDrive {
     }
 };
 
-/// How one glow looks. The defaults are the user's tuned flying swords' aura, without a drive.
+/// How one glow looks. The defaults are the flying swords' aura, without a drive.
 struct GlowLook {
     /// Its colour.
     GlowColour colour{ .element = true };
@@ -206,7 +206,7 @@ inline constexpr f32 DEMO_FEATHER = 0.8F;
 /// The zoom shrink of a shipped demo glow.
 inline constexpr f32 DEMO_ZOOM_SHRINK = 0.6F;
 
-/// The shipped `sword_aura` and `bolt_aura` look: the user's tuned values.
+/// The shipped `sword_aura` and `bolt_aura` look.
 inline constexpr GlowLook SWORD_AURA{
     .drive = { .kind = DriveKind::Pulse, .periodSeconds = 1.6F, .depth = 0.9F, .curve = GlowCurve::Sine }
 };

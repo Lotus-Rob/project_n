@@ -24,7 +24,7 @@ constexpr const char* LOGGER_NAME = "root";
 constexpr const char* EARLY_LOGGER_NAME = "early";
 constexpr u32 KEPT_FILES = 10; // this run's and the 9 before it
 
-// The logger Start() created; null before it.
+/// The logger Start() created; null before it.
 std::atomic<quill::Logger*>& Started() {
     static std::atomic<quill::Logger*> logger{ nullptr };
     return logger;

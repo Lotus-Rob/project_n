@@ -10,40 +10,40 @@ namespace core {
 
 namespace {
 
-// The volley's own random numbers' purposes. They key on the volley's seed, not the game's, so they share no numbers with
-// game/random_purposes.hpp's.
-// How long a sword waits on its ring after its hold before it leaves (VolleyShape::departJitterTicks).
+/// The volley's own random numbers' purposes. They key on the volley's seed, not the game's, so they share no numbers with
+/// game/random_purposes.hpp's.
+/// How long a sword waits on its ring after its hold before it leaves (VolleyShape::departJitterTicks).
 constexpr u32 PURPOSE_DEPART = 1;
-// How far a sword's place round its ring strays from an even spacing (VolleyShape::angleJitter).
+/// How far a sword's place round its ring strays from an even spacing (VolleyShape::angleJitter).
 constexpr u32 PURPOSE_RING = 2;
-// A sword's share of the sweep (VolleyShape::sweepJitter).
+/// A sword's share of the sweep (VolleyShape::sweepJitter).
 constexpr u32 PURPOSE_BEND = 3;
-// Its draws put a target's index in the volley's targets where core::Random takes a stable ID: the order is fixed at
-// the cast, so the index is stable for the volley's life. Never an entity's ID there.
+/// Its draws put a target's index in the volley's targets where core::Random takes a stable ID: the order is fixed at
+/// the cast, so the index is stable for the volley's life. Never an entity's ID there.
 constexpr u32 PURPOSE_SPREAD = 4;
-// Where on its target a sword aims (AimOffset()): the way from the target's middle, then how far.
+/// Where on its target a sword aims (AimOffset()): the way from the target's middle, then how far.
 constexpr u32 PURPOSE_SCATTER_ANGLE = 5;
 constexpr u32 PURPOSE_SCATTER_REACH = 6;
-// How far in or out of its ring a sword's place lies (VolleyShape::scatter).
+/// How far in or out of its ring a sword's place lies (VolleyShape::scatter).
 constexpr u32 PURPOSE_BAND = 7;
-// Keyed on the wave, not a sword: how far round each ring's even spacing starts, so no two rings line up.
+/// Keyed on the wave, not a sword: how far round each ring's even spacing starts, so no two rings line up.
 constexpr u32 PURPOSE_WAVE_TURN = 8;
 
-// Not tuning data, though it shapes the bend: a cubic Bézier whose inner control points sit the same distance to one side
-// of its chord bends 3/4 of that distance at its middle, so this offset makes the bend exactly the shape's `sweep`.
+/// Not tuning data, though it shapes the bend: a cubic Bézier whose inner control points sit the same distance to one side
+/// of its chord bends 3/4 of that distance at its middle, so this offset makes the bend exactly the shape's `sweep`.
 constexpr f64 SIDE_ARM = 4.0 / 3.0;
-// Maths, not tuning: the inner control points sit a third of the way along the chord from each end, so a flight with no bend is
-// paced evenly.
+/// Maths, not tuning: the inner control points sit a third of the way along the chord from each end, so a flight with no bend
+/// is paced evenly.
 constexpr f64 THIRD = 1.0 / 3.0;
-// Maths: the middle of a random number's range [0, 1).
+/// Maths: the middle of a random number's range [0, 1).
 constexpr f64 HALF = 0.5;
-// Maths: the ring's angles, in radians.
+/// Maths: the ring's angles, in radians.
 constexpr f64 FULL_TURN = 2.0 * std::numbers::pi;
-// Maths: a cubic Hermite curve's coefficients of u² and u³ for a move from rest to rest: 3u² − 2u³.
+/// Maths: a cubic Hermite curve's coefficients of u² and u³ for a move from rest to rest: 3u² − 2u³.
 constexpr f64 HERMITE_SQUARE = 3.0;
 constexpr f64 HERMITE_CUBE = 2.0;
 
-// A position or direction in f64: the path is computed in f64 and rounded to f32 once.
+/// A position or direction in f64: the path is computed in f64 and rounded to f32 once.
 struct VolleyVector {
     f64 x = 0.0;
     f64 y = 0.0;
@@ -79,7 +79,7 @@ f64 Length(VolleyVector vec) {
     return std::sqrt(Dot(vec, vec));
 }
 
-// `vec` turned a quarter turn, the same way for every sword.
+/// `vec` turned a quarter turn, the same way for every sword.
 VolleyVector Sideways(VolleyVector vec) {
     return { .x = -vec.y, .y = vec.x };
 }
@@ -90,12 +90,12 @@ VolleyVector Rotate(VolleyVector vec, f64 radians) {
     return { .x = (cosine * vec.x) - (sine * vec.y), .y = (sine * vec.x) + (cosine * vec.y) };
 }
 
-// The signed angle that turns `start` to `finish`, from -π to π.
+/// The signed angle that turns `start` to `finish`, from -π to π.
 f64 AngleBetween(VolleyVector start, VolleyVector finish) {
     return math::Atan2(Cross(start, finish), Dot(start, finish));
 }
 
-// `vec` scaled to unit length, or `fallback` when it has none.
+/// `vec` scaled to unit length, or `fallback` when it has none.
 VolleyVector Unit(VolleyVector vec, VolleyVector fallback) {
     const f64 length = Length(vec);
     return length > 0.0 ? vec * (1.0 / length) : fallback;
@@ -105,8 +105,8 @@ VolleyVector Lerp(VolleyVector from, VolleyVector towards, f64 progress) {
     return from + ((towards - from) * progress);
 }
 
-// An easing from 0 to 1 as `progress` goes from 0 to 1 (clamped), starting and ending at the given speeds as multiples of
-// the average: a cubic Hermite curve, so it never jumps and its speed never does either.
+/// An easing from 0 to 1 as `progress` goes from 0 to 1 (clamped), starting and ending at the given speeds as multiples of
+/// the average: a cubic Hermite curve, so it never jumps and its speed never does either.
 f64 Ease(f64 progress, f64 startSpeed, f64 endSpeed) {
     const f64 time = std::clamp(progress, 0.0, 1.0);
     const f64 square = HERMITE_SQUARE - startSpeed - startSpeed - endSpeed;
@@ -114,18 +114,18 @@ f64 Ease(f64 progress, f64 startSpeed, f64 endSpeed) {
     return time * (startSpeed + (time * (square + (time * cube))));
 }
 
-// A random number's value in [-1/2, 1/2).
+/// A random number's value in [-1/2, 1/2).
 f64 Centred(u64 random) {
     return ToUnit(random) - HALF;
 }
 
-// A random number's value in [-1, 1): a jitter's share of its reach, either way.
+/// A random number's value in [-1, 1): a jitter's share of its reach, either way.
 f64 Either(u64 random) {
     const f64 centred = Centred(random);
     return centred + centred;
 }
 
-// What a sword's path depends on besides the time and the aim: drawn from the volley's seed, the same on every call.
+/// What a sword's path depends on besides the time and the aim: drawn from the volley's seed, the same on every call.
 struct SwordPlan {
     u64 launch = 0;          // it appears
     u64 departure = 0;       // it leaves its ring
@@ -134,18 +134,18 @@ struct SwordPlan {
     f64 bend = 1.0;          // this sword's share of the sweep
 };
 
-// A sword's wave and its place among that wave's swords.
+/// A sword's wave and its place among that wave's swords.
 struct WavePlace {
     u32 wave = 0;
     u32 index = 0;
     u32 size = 1;
 };
 
-// The first sword of `wave` (from 0 to the shape's `waves`, where it is the count): the swords before it share the count
-// as the rings before it share the rings' radii, so every ring is as closely packed round its circumference. Rounding
-// down each boundary sends each wave's leftover sword outwards. With no radius at all, every ring weighs the same. The
-// boundaries never fall as the wave rises (each step of the share is correctly rounded), and at the last wave the share
-// is the total over itself, exactly 1.
+/// The first sword of `wave` (from 0 to the shape's `waves`, where it is the count): the swords before it share the count
+/// as the rings before it share the rings' radii, so every ring is as closely packed round its circumference. Rounding
+/// down each boundary sends each wave's leftover sword outwards. With no radius at all, every ring weighs the same. The
+/// boundaries never fall as the wave rises (each step of the share is correctly rounded), and at the last wave the share
+/// is the total over itself, exactly 1.
 u32 WaveStart(const VolleyShape& shape, u32 wave) {
     const auto inner = static_cast<f64>(shape.ringRadius);
     const auto step = static_cast<f64>(shape.ringStep);
@@ -159,9 +159,9 @@ u32 WaveStart(const VolleyShape& shape, u32 wave) {
     return static_cast<u32>(static_cast<f64>(shape.count) * share);
 }
 
-// The swords split over the waves in order of index, inner first, each wave's share of them its ring's share of the
-// circumferences (WaveStart()). A wave takes a run of indices rather than every `waves`th one, so each still holds every
-// target's swords in turn (SwordTarget() starts a sword at `sword` modulo the targets).
+/// The swords split over the waves in order of index, inner first, each wave's share of them its ring's share of the
+/// circumferences (WaveStart()). A wave takes a run of indices rather than every `waves`th one, so each still holds every
+/// target's swords in turn (SwordTarget() starts a sword at `sword` modulo the targets).
 WavePlace PlaceInWave(const VolleyShape& shape, u32 sword) {
     PN_ASSERT(sword < shape.count, "a sword beyond its volley's count");
     PN_ASSERT(shape.waves >= 1, "a volley of no waves");
@@ -182,8 +182,8 @@ u64 VolleyDraw(const Volley& volley, u32 sword, u32 purpose) {
     return Random(volley.seed, 0, 0, purpose, sword);
 }
 
-// A wave's swords appear in order of index, which is clockwise round the ring (the even spacing's angle rises with it, and
-// world y grows downwards), so the ring draws itself in one sweep over the stagger.
+/// A wave's swords appear in order of index, which is clockwise round the ring (the even spacing's angle rises with it, and
+/// world y grows downwards), so the ring draws itself in one sweep over the stagger.
 u64 Launch(const Volley& volley, WavePlace place) {
     const u64 waveStart = volley.startTick + (static_cast<u64>(place.wave) * volley.shape.waveGapTicks);
     return waveStart + ((u64{ volley.shape.staggerTicks } * place.index) / place.size);
@@ -213,16 +213,16 @@ SwordPlan Plan(const Volley& volley, u32 sword) {
     };
 }
 
-// A sword's chain of targets: it starts at its own, `sword` modulo their count. When the one it flies at dies at least
-// the volley's commit window before the sword's `arrival`, it moves on to one of those alive at that tick; otherwise, or
-// when none is alive, the chain ends there. Each move is to a target that outlives the last, so the chain ends within
-// `count` links.
-//
-// The pick spreads the swords that move together evenly: they share their chain so far, and their spread indices (the
-// mixed-radix digits of `sword / count`, one used per move) count up through the group, so `index mod living` deals
-// them out in turn. An offset drawn from the target left and the move number starts each group's deal at a different
-// living target, so many small groups (many targets, few swords each, whose digits run out) don't all pile onto the
-// first living one. Calls `moved(tick, from)` at each move up to `time`, in order, and returns the target in force then.
+/// A sword's chain of targets: it starts at its own, `sword` modulo their count. When the one it flies at dies at least
+/// the volley's commit window before the sword's `arrival`, it moves on to one of those alive at that tick; otherwise, or
+/// when none is alive, the chain ends there. Each move is to a target that outlives the last, so the chain ends within
+/// `count` links.
+///
+/// The pick spreads the swords that move together evenly: they share their chain so far, and their spread indices (the
+/// mixed-radix digits of `sword / count`, one used per move) count up through the group, so `index mod living` deals
+/// them out in turn. An offset drawn from the target left and the move number starts each group's deal at a different
+/// living target, so many small groups (many targets, few swords each, whose digits run out) don't all pile onto the
+/// first living one. Calls `moved(tick, from)` at each move up to `time`, in order, and returns the target in force then.
 template<typename Moved>
 u32 WalkTargets(
     const Volley& volley,
@@ -272,11 +272,11 @@ VolleyVector Interpolated(const VolleyTarget& target, f32 alpha) {
     return previous + ((Widen(target.current) - previous) * static_cast<f64>(alpha));
 }
 
-// Where a swing that started at `swingStart` from `from` towards `towards` is at `time`: exactly `towards` once it's over,
-// which is by `arrival` at the latest (a move needs the volley's commit window before it, so the swing has time, and at
-// the shape's `retargetSpeed` when the targets are still within the tagged area). Its length follows the way to
-// `towards`, so a target that moves while the swing is under way changes it smoothly; its progress keeps rising while that
-// target moves slower than `retargetSpeed`.
+/// Where a swing that started at `swingStart` from `from` towards `towards` is at `time`: exactly `towards` once it's over,
+/// which is by `arrival` at the latest (a move needs the volley's commit window before it, so the swing has time, and at
+/// the shape's `retargetSpeed` when the targets are still within the tagged area). Its length follows the way to
+/// `towards`, so a target that moves while the swing is under way changes it smoothly; its progress keeps rising while that
+/// target moves slower than `retargetSpeed`.
 VolleyVector Swing(const VolleyShape& shape, VolleyVector from, VolleyVector towards, f64 swingStart, f64 time, u64 arrival) {
     const f64 ticks = std::min(
         std::max(static_cast<f64>(shape.retargetTicks), Length(towards - from) / static_cast<f64>(shape.retargetSpeed)),
@@ -286,11 +286,11 @@ VolleyVector Swing(const VolleyShape& shape, VolleyVector from, VolleyVector tow
     return progress >= 1.0 ? towards : Lerp(from, towards, Ease(progress, 0.0, 0.0));
 }
 
-// The flight from the ring to the aim: a cubic Bézier whose inner control points sit a third of the way along the chord
-// and equally far to the same side of it, so it bends like an arc, the same way for every sword, with the chord's
-// direction never reversed (no cusps, so no sudden turns). The bend, as a fraction of the chord, is the shape's `shortBend` on
-// short flights and falls so that a long flight bends by nearly the shape's sweep. Everything follows the chord smoothly, so
-// the curve follows a moving aim, and with no sweep it is the straight chord, evenly paced.
+/// The flight from the ring to the aim: a cubic Bézier whose inner control points sit a third of the way along the chord
+/// and equally far to the same side of it, so it bends like an arc, the same way for every sword, with the chord's
+/// direction never reversed (no cusps, so no sudden turns). The bend, as a fraction of the chord, is the shape's `shortBend` on
+/// short flights and falls so that a long flight bends by nearly the shape's sweep. Everything follows the chord smoothly, so
+/// the curve follows a moving aim, and with no sweep it is the straight chord, evenly paced.
 struct SwordFlight {
     VolleyVector start{};
     VolleyVector first{};
@@ -298,13 +298,13 @@ struct SwordFlight {
     VolleyVector end{};
 };
 
-// A point on a flight and the way it moves there (not unit length).
+/// A point on a flight and the way it moves there (not unit length).
 struct FlightPoint {
     VolleyVector position{};
     VolleyVector tangent{};
 };
 
-// The control points' offset from the chord's thirds, for a chord `chord`.
+/// The control points' offset from the chord's thirds, for a chord `chord`.
 VolleyVector Bend(VolleyVector chord, f64 sweep, f64 share, f64 shortBend) {
     if (sweep <= 0.0) {
         return {};
@@ -314,7 +314,7 @@ VolleyVector Bend(VolleyVector chord, f64 sweep, f64 share, f64 shortBend) {
     return Sideways(chord) * (SIDE_ARM * ratio);
 }
 
-// The way a flight from `ring` towards `aim` leaves the ring (not unit length).
+/// The way a flight from `ring` towards `aim` leaves the ring (not unit length).
 VolleyVector Leaving(VolleyVector ring, VolleyVector aim, f64 sweep, f64 share, f64 shortBend) {
     const VolleyVector chord = aim - ring;
     return (chord * THIRD) + Bend(chord, sweep, share, shortBend);
@@ -327,7 +327,7 @@ SwordFlight FlightTo(VolleyVector ring, VolleyVector aim, f64 sweep, f64 share, 
     return { .start = ring, .first = ring + third + side, .second = aim - third + side, .end = aim };
 }
 
-// De Casteljau's construction: its last segment is the tangent, and progress 0 gives the start exactly.
+/// De Casteljau's construction: its last segment is the tangent, and progress 0 gives the start exactly.
 FlightPoint Along(const SwordFlight& flight, f64 progress) {
     const VolleyVector startSide = Lerp(flight.start, flight.first, progress);
     const VolleyVector middle = Lerp(flight.first, flight.second, progress);

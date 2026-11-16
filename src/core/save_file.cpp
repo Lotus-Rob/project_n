@@ -14,7 +14,7 @@ constexpr u64 MAGIC = 0x0045'5641'535f'4e50ULL; // "PN_SAVE\0" as little-endian 
 constexpr u64 LZ4_MAX_RATIO = 255;
 constexpr std::size_t HEADER_BYTES = sizeof(u64) + sizeof(u32) + (3 * sizeof(u64));
 
-// LZ4 and the streams take chars: the one place bytes become chars.
+/// LZ4 and the streams take chars: the one place bytes become chars.
 const char* Chars(std::span<const std::byte> bytes) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): char APIs read bytes; chars may alias any object
     return reinterpret_cast<const char*>(bytes.data());
@@ -29,7 +29,7 @@ Error FileError(std::string_view what, const std::filesystem::path& path, std::s
     return { .message = std::format("{} {}: {}", what, path.string(), why) };
 }
 
-// LZ4 checks only that its input decompresses: a flipped bit inside a literal gets through.
+/// LZ4 checks only that its input decompresses: a flipped bit inside a literal gets through.
 u64 Checksum(std::span<const std::byte> bytes) {
     Hasher hasher;
     std::size_t offset = 0;

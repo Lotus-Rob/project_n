@@ -8,22 +8,22 @@ namespace core {
 
 namespace {
 
-// A day in a journey's signed ticks.
+/// A day in a journey's signed ticks.
 constexpr i64 DAY_TICKS = static_cast<i64>(TICKS_PER_DAY);
-// The purpose of a stay's day points, apart from every other use of core::Random.
+/// The purpose of a stay's day points, apart from every other use of core::Random.
 constexpr u32 STAY_PURPOSE = 0x5354'4159; // "STAY"
 constexpr u32 STAY_DRAW_X = 0;
 constexpr u32 STAY_DRAW_Y = 1;
-// A day point lies in a square of this side, in tiles, centred on the city's tile centre: its corners are 0.34 of a tile
-// out, within the 0.35 bound on how far a day point may stray, and so is every point between two of them.
+/// A day point lies in a square of this side, in tiles, centred on the city's tile centre: its corners are 0.34 of a tile
+/// out, within the 0.35 bound on how far a day point may stray, and so is every point between two of them.
 constexpr f64 STAY_SIDE = 0.48;
 constexpr f64 UNIT_MIDDLE = 0.5;
-// Members after the first stand on a hexagonal lattice this far apart, in world units.
+/// Members after the first stand on a hexagonal lattice this far apart, in world units.
 constexpr f32 MEMBER_SPACING = 24.0F;
 constexpr std::size_t HEX_SIDES = 6;
 constexpr f32 HEX_HALF = 0.5F;
 constexpr f32 HEX_HEIGHT = std::numbers::sqrt3_v<f32> * HEX_HALF;
-// The six unit steps of the lattice, a sixth of a turn apart.
+/// The six unit steps of the lattice, a sixth of a turn apart.
 constexpr std::array<Vec2, HEX_SIDES> HEX_STEPS{ { { .x = 1.0F, .y = 0.0F },
                                                    { .x = HEX_HALF, .y = HEX_HEIGHT },
                                                    { .x = -HEX_HALF, .y = HEX_HEIGHT },
@@ -31,17 +31,17 @@ constexpr std::array<Vec2, HEX_SIDES> HEX_STEPS{ { { .x = 1.0F, .y = 0.0F },
                                                    { .x = -HEX_HALF, .y = -HEX_HEIGHT },
                                                    { .x = HEX_HALF, .y = -HEX_HEIGHT } } };
 
-// The point `fraction` of the way from `from` to `target`.
+/// The point `fraction` of the way from `from` to `target`.
 Vec2 Between(Vec2 from, Vec2 target, f64 fraction) {
     return from + ((target - from) * static_cast<f32>(fraction));
 }
 
-// The point `leg` holds at its tile `index`: its origin for the first, the tile's centre after.
+/// The point `leg` holds at its tile `index`: its origin for the first, the tile's centre after.
 Vec2 LegPoint(const WorldMap& map, const Leg& leg, std::size_t index) {
     return index == 0 ? leg.origin : map.TileCentre(leg.tiles[index]);
 }
 
-// The ticks `part` starts and ends on.
+/// The ticks `part` starts and ends on.
 i64 PartStart(const JourneyPart& part) {
     return part.stay ? part.rest.startTick : part.leg.startTick;
 }
@@ -50,8 +50,8 @@ i64 PartEnd(const JourneyPart& part) {
     return part.stay ? part.rest.endTick : EndTick(part.leg);
 }
 
-// Where the walker of `stay` aims at its day point `day`: on the city's tile centre at its first (its start) and at any
-// day point at or past its end, else a point drawn round it.
+/// Where the walker of `stay` aims at its day point `day`: on the city's tile centre at its first (its start) and at any
+/// day point at or past its end, else a point drawn round it.
 Vec2 StayPoint(const WorldMap& map, const Stay& stay, Vec2 centre, i64 day) {
     if (day <= 0 || stay.startTick + (day * DAY_TICKS) >= stay.endTick) {
         return centre;
@@ -63,8 +63,8 @@ Vec2 StayPoint(const WorldMap& map, const Stay& stay, Vec2 centre, i64 day) {
     return centre + Vec2{ .x = offset(STAY_DRAW_X), .y = offset(STAY_DRAW_Y) };
 }
 
-// Where the walker of `stay` is at `tick`: from one day point to the next across each day, the last day running to the
-// stay's end, which may come before the day is whole.
+/// Where the walker of `stay` is at `tick`: from one day point to the next across each day, the last day running to the
+/// stay's end, which may come before the day is whole.
 Vec2 StayWhere(const WorldMap& map, const Stay& stay, i64 tick) {
     PN_ASSERT(stay.city < map.Places().size(), "a stay is in a place of the map");
     const auto cityCentre = [&] { return map.TileCentre(map.TileIndex(map.Places()[stay.city].tile)); };
@@ -79,8 +79,8 @@ Vec2 StayWhere(const WorldMap& map, const Stay& stay, i64 tick) {
     return Between(StayPoint(map, stay, centre, day), StayPoint(map, stay, centre, day + 1), fraction);
 }
 
-// Where member `member` stands from the journey's position: member 0 on it, the others filling the hexagonal lattice's
-// rings outwards, ring k holding 6k places, each ring walked from its corner on the right round its six sides.
+/// Where member `member` stands from the journey's position: member 0 on it, the others filling the hexagonal lattice's
+/// rings outwards, ring k holding 6k places, each ring walked from its corner on the right round its six sides.
 Vec2 MemberOffset(std::size_t member) {
     if (member == 0) {
         return {};

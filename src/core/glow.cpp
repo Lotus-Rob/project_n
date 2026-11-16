@@ -14,7 +14,7 @@ constexpr f32 THREE = 3.0F;
 constexpr f32 ONE_THIRD = 1.0F / 3.0F;
 constexpr f32 TWO_THIRDS = 2.0F / 3.0F;
 
-// The mean of `CurveAt(curve, t)` over t from 0 to 1: a pulse's beat sweeps t evenly, so this is its average strength.
+/// The mean of `CurveAt(curve, t)` over t from 0 to 1: a pulse's beat sweeps t evenly, so this is its average strength.
 f32 CurveMean(GlowCurve curve) {
     if (curve == GlowCurve::EaseIn) {
         return ONE_THIRD;

@@ -10,8 +10,8 @@ namespace core::math {
 
 namespace {
 
-// Polynomials are Taylor series, truncated where the next term falls below 2^-53 of the result
-// over the reduced range. Coefficients are exact reciprocals rounded once, at compile time.
+/// Polynomials are Taylor series, truncated where the next term falls below 2^-53 of the result
+/// over the reduced range. Coefficients are exact reciprocals rounded once, at compile time.
 template<std::size_t N>
 constexpr std::array<f64, N> ReciprocalFactorials(u32 first, u32 step) {
     std::array<f64, N> coefficients{};
@@ -25,13 +25,13 @@ constexpr std::array<f64, N> ReciprocalFactorials(u32 first, u32 step) {
     return coefficients;
 }
 
-// sin(r) = r(1 - r²/3! + r⁴/5! - ...), cos(r) = 1 - r²/2! + r⁴/4! - ..., for |r| <= π/4.
+/// sin(r) = r(1 - r²/3! + r⁴/5! - ...), cos(r) = 1 - r²/2! + r⁴/4! - ..., for |r| <= π/4.
 constexpr auto SIN = ReciprocalFactorials<9>(1, 2);
 constexpr auto COS = ReciprocalFactorials<10>(0, 2);
-// e^r = 1 + r + r²/2! + ..., for |r| <= ln(2)/2.
+/// e^r = 1 + r + r²/2! + ..., for |r| <= ln(2)/2.
 constexpr auto EXP = ReciprocalFactorials<15>(0, 1);
 
-// Horner's rule in `power`, with alternating signs when `alternate`.
+/// Horner's rule in `power`, with alternating signs when `alternate`.
 template<std::size_t N>
 f64 Horner(const std::array<f64, N>& coefficients, f64 power, bool alternate) {
     f64 sum = 0.0;
@@ -41,19 +41,19 @@ f64 Horner(const std::array<f64, N>& coefficients, f64 power, bool alternate) {
     return sum;
 }
 
-// 1 / (2n + 1) for the odd-power series of atan and atanh.
+/// 1 / (2n + 1) for the odd-power series of atan and atanh.
 f64 OddReciprocal(i32 term) {
     return 1.0 / static_cast<f64>((2 * term) + 1);
 }
 
-// π/2 in three parts (Cody and Waite): multiples of the first two are exact below 2^20.
+/// π/2 in three parts (Cody and Waite): multiples of the first two are exact below 2^20.
 constexpr f64 PIO2_1 = 1.57079632673412561417e+00;
 constexpr f64 PIO2_2 = 6.07710050630396597660e-11;
 constexpr f64 PIO2_3 = 2.02226624879595063154e-21;
 constexpr f64 TWO_OVER_PI = 2 / std::numbers::pi;
-// The reduction is exact only below 2^20 quarter turns; beyond, Sin and Cos are NaN.
+/// The reduction is exact only below 2^20 quarter turns; beyond, Sin and Cos are NaN.
 constexpr f64 SIN_COS_LIMIT = 0x1.0p20 * (std::numbers::pi / 2);
-// ln(2) in two parts: multiples of the first are exact below 2^11.
+/// ln(2) in two parts: multiples of the first are exact below 2^11.
 constexpr f64 LN2_HI = 6.93147180369123816490e-01; // NOLINT(modernize-use-std-numbers): ln(2)'s leading bits only
 constexpr f64 LN2_LO = 1.90821492927058770002e-10;
 constexpr f64 TAN_PI_12 = 2 - std::numbers::sqrt3;
@@ -61,7 +61,7 @@ constexpr f64 PI_OVER_6 = std::numbers::pi / 6;
 constexpr f64 EXP_MAX = 7.09782712893383973096e+02;
 constexpr f64 EXP_MIN = -7.45133219101941108420e+02;
 
-// sin for quadrant offset 0, cos for 1: angle = n·π/2 + r, and the quadrant picks the series.
+/// sin for quadrant offset 0, cos for 1: angle = n·π/2 + r, and the quadrant picks the series.
 f64 SinCos(f64 angle, i64 offset) {
     if (!(std::abs(angle) <= SIN_COS_LIMIT)) { // NaN fails too
         return std::numeric_limits<f64>::quiet_NaN();
@@ -74,8 +74,8 @@ f64 SinCos(f64 angle, i64 offset) {
     return quadrant >= 2 ? -value : value;
 }
 
-// atan for 0 <= ratio <= 1: past tan(π/12), atan(t) = π/6 + atan((t√3 - 1) / (t + √3)) brings the
-// argument within ±tan(π/12), where atan(u) = u - u³/3 + u⁵/5 - ...
+/// atan for 0 <= ratio <= 1: past tan(π/12), atan(t) = π/6 + atan((t√3 - 1) / (t + √3)) brings the
+/// argument within ±tan(π/12), where atan(u) = u - u³/3 + u⁵/5 - ...
 f64 AtanUnit(f64 ratio) {
     constexpr i32 TERMS = 15;
     f64 offset = 0.0;
@@ -185,7 +185,7 @@ f64 Atan2(f64 pointY, f64 pointX) {
 namespace {
 
 #ifdef __aarch64__
-// FPCR's flush-to-zero bit.
+/// FPCR's flush-to-zero bit.
 constexpr u64 FLUSH_BITS = u64{ 1 } << 24U;
 
 u64 Fpcr() {
@@ -203,7 +203,7 @@ void ClearFlushBits() {
     __asm__ volatile("msr fpcr, %0" : : "r"(fpcr));
 }
 #elif defined(__x86_64__) || defined(_M_X64)
-// MXCSR's flush-to-zero and denormals-are-zero bits.
+/// MXCSR's flush-to-zero and denormals-are-zero bits.
 constexpr u32 FLUSH_BITS = 0x8040;
 
 u32 FlushBits() {

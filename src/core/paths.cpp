@@ -6,7 +6,7 @@ namespace core {
 
 namespace {
 
-// Calls `visit(neighbour)` for each of the eight neighbours of `tile` on the map, in ascending tile index.
+/// Calls `visit(neighbour)` for each of the eight neighbours of `tile` on the map, in ascending tile index.
 template<typename Visit>
 void ForNeighbours(const WorldMap& map, u32 tile, const Visit& visit) {
     const TilePoint point = map.PointOf(tile);
@@ -26,8 +26,8 @@ void ForNeighbours(const WorldMap& map, u32 tile, const Visit& visit) {
 using RouteEntry = std::pair<u64, u32>; // (cost or f, tile)
 using RouteQueue = std::priority_queue<RouteEntry, std::vector<RouteEntry>, std::greater<>>;
 
-// The cheapest cost of entering any tile by `profile`: every tile's cost is one of its kinds' or features' costs, or a
-// cap of the terrain's by one, so none is lower. 0 when nothing is passable.
+/// The cheapest cost of entering any tile by `profile`: every tile's cost is one of its kinds' or features' costs, or a
+/// cap of the terrain's by one, so none is lower. 0 when nothing is passable.
 u32 CheapestEntry(const MovementProfile& profile) {
     u32 cheapest = IMPASSABLE_COST;
     for (const u16 cost : profile.kindCosts) {
@@ -39,8 +39,8 @@ u32 CheapestEntry(const MovementProfile& profile) {
     return cheapest == IMPASSABLE_COST ? 0 : cheapest;
 }
 
-// The cost of crossing `dColumn` by `dRow` tiles at best, with `cheapest` the least a step may cost: straight steps for
-// the difference, diagonals (seven fifths, rounded down as StepCost does) for the rest.
+/// The cost of crossing `dColumn` by `dRow` tiles at best, with `cheapest` the least a step may cost: straight steps for
+/// the difference, diagonals (seven fifths, rounded down as StepCost does) for the rest.
 u64 Estimate(u32 cheapest, i64 dColumn, i64 dRow) {
     const u64 along = static_cast<u64>(std::abs(dColumn));
     const u64 across = static_cast<u64>(std::abs(dRow));
