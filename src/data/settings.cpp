@@ -12,7 +12,7 @@ constexpr i32 MIN_WIDTH = 320;
 constexpr i32 MIN_HEIGHT = 200;
 constexpr i32 MAX_SIZE = 16'384;
 
-// Reads `key` into `value` when the map has it; yaml-cpp throws on a value of the wrong type.
+/// Reads `key` into `value` when the map has it; yaml-cpp throws on a value of the wrong type.
 template<typename T>
 void ReadIfPresent(const YAML::Node& map, const char* key, T& value) {
     if (const YAML::Node node = map[key]) {
@@ -20,7 +20,7 @@ void ReadIfPresent(const YAML::Node& map, const char* key, T& value) {
     }
 }
 
-// The line (from 1) of `key` in `root`: a null value's own mark lies after its key's line, and a scalar may sit below.
+/// The line (from 1) of `key` in `root`: a null value's own mark lies after its key's line, and a scalar may sit below.
 i32 KeyLine(const YAML::Node& root, std::string_view key) {
     for (const auto& entry : root) {
         if (entry.first.as<std::string>() == key) {
@@ -30,13 +30,13 @@ i32 KeyLine(const YAML::Node& root, std::string_view key) {
     return root.Mark().line + 1;
 }
 
-// Whether `node` holds some text to read (not nothing, an empty string or a list or map).
+/// Whether `node` holds some text to read (not nothing, an empty string or a list or map).
 bool HasText(const YAML::Node& node) {
     return node.IsScalar() && !node.Scalar().empty();
 }
 
-// The index in `names` of the text of `root`'s `key`; none, with a warning, for a name that isn't there (`what` names
-// the kind of name, `fallback` the choice used instead).
+/// The index in `names` of the text of `root`'s `key`; none, with a warning, for a name that isn't there (`what` names
+/// the kind of name, `fallback` the choice used instead).
 template<std::size_t N>
 std::optional<std::size_t> ReadName(
     const YAML::Node& root,
@@ -66,7 +66,7 @@ std::optional<std::size_t> ReadName(
     return std::nullopt;
 }
 
-// Reads a boolean setting; one that isn't a boolean keeps its default, with a warning.
+/// Reads a boolean setting; one that isn't a boolean keeps its default, with a warning.
 void ReadBoolean(const YAML::Node& root, const char* key, bool& value, std::vector<std::string>* warnings) {
     const YAML::Node node = root[key];
     if (!node) {

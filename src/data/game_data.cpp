@@ -19,7 +19,7 @@ std::unexpected<core::Error> Fail(const YAML::Node& node, std::string_view why) 
     return std::unexpected{ core::Error{ std::format("creatures line {}: {}", node.Mark().line + 1, why) } };
 }
 
-// `map`'s finite number at `key`, which `name` names in errors; yaml-cpp throws on one that isn't a number.
+/// `map`'s finite number at `key`, which `name` names in errors; yaml-cpp throws on one that isn't a number.
 std::expected<f32, core::Error> Number(const YAML::Node& map, std::string_view name, const char* key) {
     const YAML::Node node = map[key];
     if (!node) {

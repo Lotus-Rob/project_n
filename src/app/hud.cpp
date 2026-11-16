@@ -14,7 +14,7 @@ constexpr std::string_view SEPARATOR = "  ";
 // The specials' and the ultimate's keys, from Slot::Special1 on: their digits read the same in every language.
 constexpr std::array<std::string_view, 5> DIGIT_KEYS{ { "1", "2", "3", "4", "5" } };
 
-// The string naming the control that casts `slot`, if a string names it: the specials' and the ultimate's are digits.
+/// The string naming the control that casts `slot`, if a string names it: the specials' and the ultimate's are digits.
 std::optional<core::StringId> KeyOf(core::Slot slot) {
     if (slot == core::Slot::Generator) {
         return core::StringId::KeyLeftClick;
@@ -28,7 +28,7 @@ std::optional<core::StringId> KeyOf(core::Slot slot) {
     return std::nullopt;
 }
 
-// The string naming `ability`, or the empty slot's for None.
+/// The string naming `ability`, or the empty slot's for None.
 core::StringId NameOf(core::AbilityKind ability) {
     if (ability == core::AbilityKind::FireBolt) {
         return core::StringId::FireBolt;
@@ -45,7 +45,7 @@ core::StringId NameOf(core::AbilityKind ability) {
     return core::StringId::SlotEmpty;
 }
 
-// `value` over `most`, within 0 to 1; 0 with no most.
+/// `value` over `most`, within 0 to 1; 0 with no most.
 f32 FractionOf(i64 value, i64 most) {
     if (most <= 0) {
         return 0.0F;
@@ -106,7 +106,6 @@ void Hud::Build(
         inked ? core::ScaledColour(ink, layout.coolingInkOpacity) : m_colours.Of(core::UiColour::HudCooling);
     const f32 lineHeight = layout.lineHeight * m_text.scale;
     const core::Vec2 barSize{ .x = layout.barWidth * m_text.scale, .y = layout.barHeight * m_text.scale };
-    // From the bottom up: the slots' lines, then the Qi bar over them, then the health bar over it.
     const f32 firstSlot = static_cast<f32>(height) - layout.margin - (lineHeight * static_cast<f32>(core::SLOTS));
     const f32 qiTop = firstSlot - ((layout.barGap * m_text.scale) + barSize.y);
     const f32 healthTop = qiTop - ((layout.barGap * m_text.scale) + barSize.y);

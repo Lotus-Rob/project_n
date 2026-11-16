@@ -30,7 +30,7 @@ constexpr bool HOT_RELOAD = false;
 constexpr bool HOT_RELOAD = true; // debug builds reload the game data when its files change
 #endif
 
-// The controls that are simply an action for the logic, and what the log says when one is asked for.
+/// The controls that are simply an action for the logic, and what the log says when one is asked for.
 struct ActionControl {
     Control control = Control::Quit;
     core::ActionKind kind = core::ActionKind::Pause;
@@ -493,7 +493,6 @@ void App::HandleInput(const platform::WindowState& state) {
 
 void App::SendHeld() {
     PN_PROFILE_ZONE();
-    // While `--camera-path` runs, its scripted Move stands in for the player's.
     const core::HeldInput held{ .move = m_pathSeconds ? CameraPathMove(*m_pathSeconds) : m_bindings.Move() };
     if (held == m_held) {
         return;
@@ -537,7 +536,6 @@ void App::NoteDevice(const platform::InputEvent& input) {
 }
 
 void App::Cast(const platform::WindowState& state, const ControlEvent& control, platform::Device device, bool combat) {
-    // The clicked position for a mouse button; for a key, wherever the cursor is over the window.
     const std::optional<core::Vec2> cursor =
         device == platform::Device::Mouse ? std::optional{ control.position } : m_window.Cursor();
     const std::optional<core::Vec2> point = cursor.transform([&](core::Vec2 window) {

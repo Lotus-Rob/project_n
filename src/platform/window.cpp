@@ -10,7 +10,7 @@ namespace platform {
 
 namespace {
 
-// Keys by their place on the keyboard (scancodes), not their label: WASD stays under the left hand on AZERTY or Dvorak.
+/// Keys by their place on the keyboard (scancodes), not their label: WASD stays under the left hand on AZERTY or Dvorak.
 struct KeyCode {
     SDL_Scancode key = SDL_SCANCODE_UNKNOWN;
     InputCode code = InputCode::KeyW;
@@ -139,7 +139,7 @@ std::optional<InputEvent> PadButtonInput(const SDL_GamepadButtonEvent& button) {
                        .value = button.down ? 1.0F : 0.0F };
 }
 
-// The player's input in `event`, if it is one the game knows.
+/// The player's input in `event`, if it is one the game knows.
 std::optional<InputEvent> InputOf(const SDL_Event& event) {
     if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
         return KeyInput(event.key);
@@ -159,7 +159,7 @@ std::optional<InputEvent> InputOf(const SDL_Event& event) {
     return std::nullopt;
 }
 
-// The mode of the display `window` is on, or why it couldn't be read.
+/// The mode of the display `window` is on, or why it couldn't be read.
 std::expected<DisplayMode, core::Error> DisplayOf(SDL_Window* window) {
     const SDL_DisplayID display = SDL_GetDisplayForWindow(window);
     const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(display);
@@ -225,7 +225,7 @@ struct Window::Impl {
         PN_LOG_INFO("gamepad connected: {}", name != nullptr ? name : "unnamed");
     }
 
-    // Reads the display the window is on and logs it when it differs from the one last logged.
+    /// Reads the display the window is on and logs it when it differs from the one last logged.
     void ReadDisplay() {
         const std::expected<DisplayMode, core::Error> now = DisplayOf(window);
         if (!now) {

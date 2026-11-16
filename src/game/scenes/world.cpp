@@ -79,18 +79,18 @@ constexpr u32 DRAW_PACE = 5;
 constexpr u32 DRAW_DIRECTION = 6;
 constexpr u32 DRAW_REDRAW = 7; // a redraw's jitter: the next pair of draws after these, two to a redraw
 
-// A walker's random number `draw`, as a value in [0, 1).
+/// A walker's random number `draw`, as a value in [0, 1).
 f32 WalkerUnit(u64 seed, u32 walker, u32 draw) {
     return static_cast<f32>(core::ToUnit(core::Random(seed, 0, walker, PURPOSE_WALKER, draw)));
 }
 
-// The first draw of the pair that places a walker for its `redraw`th try: the jitter in its cell at try 0, then the next
-// pairs after the orbit's draws.
+/// The first draw of the pair that places a walker for its `redraw`th try: the jitter in its cell at try 0, then the next
+/// pairs after the orbit's draws.
 constexpr u32 RedrawDrawX(u32 redraw) {
     return redraw == 0 ? DRAW_CENTRE_X : DRAW_REDRAW + (2 * (redraw - 1));
 }
 
-// The `walker`th walker's orbit round `centre`: radius, wobble, starting angle, pace and direction drawn for it.
+/// The `walker`th walker's orbit round `centre`: radius, wobble, starting angle, pace and direction drawn for it.
 Orbit WalkerOrbit(u64 seed, u32 walker, core::Vec2 centre) {
     const f32 radius = ORBIT_RADIUS_MIN + (ORBIT_RADIUS_RANGE * WalkerUnit(seed, walker, DRAW_RADIUS));
     const f32 pace = PACE_MIN + (PACE_RANGE * WalkerUnit(seed, walker, DRAW_PACE));
@@ -104,8 +104,8 @@ Orbit WalkerOrbit(u64 seed, u32 walker, core::Vec2 centre) {
     };
 }
 
-// Where the `member`th walker of a grid of `columns` by `rows` cells over `area` circles: in its cell, row by row, at the
-// jitter `walker` draws.
+/// Where the `member`th walker of a grid of `columns` by `rows` cells over `area` circles: in its cell, row by row, at the
+/// jitter `walker` draws.
 core::Vec2 JitteredCellCentre(u64 seed, u32 walker, u32 member, u32 columns, u32 rows, const core::Rect& area, u32 redraw = 0) {
     const u32 drawX = RedrawDrawX(redraw);
     const u32 drawY = drawX + 1;
@@ -123,7 +123,7 @@ void SpawnWalker(SceneContext& context, const Orbit& orbit) {
     context.State()[ACTIVE].Entities().emplace<Orbit>(entity, orbit);
 }
 
-// Whether `point` lies within `area`, its edges included.
+/// Whether `point` lies within `area`, its edges included.
 bool Within(core::Vec2 point, const core::Rect& area) {
     return point.x >= area.min.x && point.x <= area.max.x && point.y >= area.min.y && point.y <= area.max.y;
 }
@@ -137,8 +137,8 @@ constexpr u64 PLACE_ENTITY_BASE = 1ULL << 40;
 // The gap between the city marker's lower edge and the name hanging from it, in world units.
 constexpr f32 PLACE_NAME_GAP = 8.0F;
 
-// Spawns the cities' people, city by city in place order, `npc` counting them all: the first seven tenths of a city's share
-// on its own tile, each of the rest on a tile of its region drawn for its running index; each starts with StartingPower().
+/// Spawns the cities' people, city by city in place order, `npc` counting them all: the first seven tenths of a city's share
+/// on its own tile, each of the rest on a tile of its region drawn for its running index; each starts with StartingPower().
 void SpawnPeople(SceneContext& context, const core::WorldMap& map) {
     const u64 seed = context.State().Seed();
     u32 npc = 0;

@@ -21,7 +21,7 @@ bool IsLowerLetter(char character) {
     return character >= 'a' && character <= 'z';
 }
 
-// The text at `key` in `entry`, non-empty, which `list` names in refusals.
+/// The text at `key` in `entry`, non-empty, which `list` names in refusals.
 std::expected<std::string, core::Error> Text(const YAML::Node& entry, const char* key, std::string_view list) {
     const YAML::Node node = entry[key];
     if (!node) {

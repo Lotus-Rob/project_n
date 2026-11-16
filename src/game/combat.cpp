@@ -13,7 +13,7 @@ namespace game {
 
 namespace {
 
-// Slow at both ends, in f64 so an arrival's path is the same bits on every run.
+/// Slow at both ends, in f64 so an arrival's path is the same bits on every run.
 f64 EaseInOut(f64 progress) {
     constexpr f64 THREE = 3.0;
     constexpr f64 TWO = 2.0;
@@ -39,7 +39,7 @@ f64 SquaredDistance(core::Vec2 start, core::Vec2 end) {
     return (across * across) + (down * down);
 }
 
-// How far above its foot `entity`'s sprite reaches, in world units.
+/// How far above its foot `entity`'s sprite reaches, in world units.
 f32 HeightOf(const core::Registry& entities, const core::Manifest& manifest, core::Entity entity) {
     const Look& look = entities.get<Look>(entity);
     return static_cast<f32>(manifest.Sprite(look.sprite).footY) * look.scale;
@@ -49,7 +49,7 @@ core::Vec2 Raised(core::Vec2 foot, f32 height) {
     return { .x = foot.x, .y = foot.y - height };
 }
 
-// Where the volleys aim at `entity`, its chest, at the previous tick and this one.
+/// Where the volleys aim at `entity`, its chest, at the previous tick and this one.
 struct Chest {
     core::Vec2 previous{};
     core::Vec2 current{};
@@ -61,14 +61,14 @@ Chest ChestOf(const core::Registry& entities, const core::Manifest& manifest, co
     return { .previous = Raised(body.previous, half), .current = Raised(body.current, half) };
 }
 
-// An enemy a cast tagged: the foxes are the only enemies so far.
+/// An enemy a cast tagged: the foxes are the only enemies so far.
 struct Tagged {
     core::StableId entity{};
     core::Vec2 chest{};
     f64 away = 0.0; // squared, from the point
 };
 
-// Every living enemy whose chest is within `radius` of `point`, in stable ID order.
+/// Every living enemy whose chest is within `radius` of `point`, in stable ID order.
 std::vector<Tagged> Tag(const core::Registry& entities, const core::Manifest& manifest, core::Vec2 point, f32 radius) {
     const f64 reach = static_cast<f64>(radius) * static_cast<f64>(radius);
     std::vector<Tagged> tagged;
@@ -86,7 +86,7 @@ std::vector<Tagged> Tag(const core::Registry& entities, const core::Manifest& ma
     return tagged;
 }
 
-// The ticks a bolt at `speed` world units a tick takes from `start` to `end`, ⌈distance / speed⌉: none at no speed.
+/// The ticks a bolt at `speed` world units a tick takes from `start` to `end`, ⌈distance / speed⌉: none at no speed.
 u32 FlightTicks(core::Vec2 start, core::Vec2 end, f32 speed) {
     if (!(speed > 0.0F)) {
         return 0;
@@ -96,13 +96,13 @@ u32 FlightTicks(core::Vec2 start, core::Vec2 end, f32 speed) {
     return ticks < MOST ? static_cast<u32>(ticks) : std::numeric_limits<u32>::max();
 }
 
-// The affliction a hit of `element` leaves: a poison's ticks are Poison hits, any other's a burn's.
+/// The affliction a hit of `element` leaves: a poison's ticks are Poison hits, any other's a burn's.
 AfflictionState& AfflictionOf(Afflictions& afflictions, core::HitKind element) {
     return element == core::HitKind::Poison ? afflictions.poison : afflictions.burn;
 }
 
-// Leaves `affliction` (its damage as cast) of `element` on `entity` for `use`, its first tick `period` after
-// `tick`: refreshing one there, whose use is added to `ending` if it was another's. Nothing for an affliction of no ticks.
+/// Leaves `affliction` (its damage as cast) of `element` on `entity` for `use`, its first tick `period` after
+/// `tick`: refreshing one there, whose use is added to `ending` if it was another's. Nothing for an affliction of no ticks.
 void Afflict(
     core::Registry& entities,
     core::Entity entity,
@@ -123,8 +123,8 @@ void Afflict(
     state = { .damage = affliction.damage, .ticksLeft = affliction.ticks, .use = use, .nextTick = tick + period };
 }
 
-// Deals each affliction due at `tick` on a living creature: a hit of its element and use at the creature's head. An
-// affliction's last tick adds its use to `ending`.
+/// Deals each affliction due at `tick` on a living creature: a hit of its element and use at the creature's head. An
+/// affliction's last tick adds its use to `ending`.
 void TickAfflictions(
     core::State& state,
     const core::Manifest& manifest,
@@ -167,7 +167,7 @@ void TickAfflictions(
     }
 }
 
-// Ends the afflictions of every dying creature, adding their uses to `ending`, and removes the spent ones.
+/// Ends the afflictions of every dying creature, adding their uses to `ending`, and removes the spent ones.
 void EndDyingAfflictions(core::Registry& entities, std::vector<u64>& ending) {
     std::vector<core::Entity> cured;
     for (auto [entity, afflictions] : entities.view<Afflictions>().each()) {
@@ -739,7 +739,7 @@ bool Combat::AimsAtCreatures(const core::State& state) const {
 
 namespace {
 
-// The respawns Combat::Save() wrote, failing `archive` on a count past what is left or ticks out of order.
+/// The respawns Combat::Save() wrote, failing `archive` on a count past what is left or ticks out of order.
 std::vector<u64> ReadRespawns(core::Reader& archive) {
     u64 count = 0;
     archive(count);
@@ -759,8 +759,8 @@ std::vector<u64> ReadRespawns(core::Reader& archive) {
     return respawns;
 }
 
-// The flashes Combat::Save() wrote, failing `archive` on a count past what is left, a point that isn't finite, no ticks
-// or an unknown element.
+/// The flashes Combat::Save() wrote, failing `archive` on a count past what is left, a point that isn't finite, no ticks
+/// or an unknown element.
 std::vector<core::Flash> ReadFlashes(core::Reader& archive) {
     u64 count = 0;
     archive(count);
@@ -781,7 +781,7 @@ std::vector<core::Flash> ReadFlashes(core::Reader& archive) {
     return flashes;
 }
 
-// The seals Combat::Save() wrote, failing `archive` on a count past what is left or a seal that can't be used.
+/// The seals Combat::Save() wrote, failing `archive` on a count past what is left or a seal that can't be used.
 std::vector<core::Seal> ReadSeals(core::Reader& archive) {
     u64 count = 0;
     archive(count);

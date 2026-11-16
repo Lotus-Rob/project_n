@@ -22,7 +22,7 @@ constexpr WorldScene WORLD_INSTANCE{};
 constexpr auto SCENE_LIST =
     std::to_array<const Scene*>({ &ARENA_INSTANCE, &STRESS_INSTANCE, &PAINTED_INSTANCE, &CELLS_INSTANCE, &WORLD_INSTANCE });
 
-// Each key constant names its scene's place, and every listed scene has one.
+/// Each key constant names its scene's place, and every listed scene has one.
 constexpr bool KeyedAt(core::SceneKey key, const Scene* scene) {
     return std::to_underlying(key) < SCENE_LIST.size() && SCENE_LIST.at(std::to_underlying(key)) == scene;
 }

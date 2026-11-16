@@ -20,8 +20,8 @@
 
 namespace {
 
-// `--<name>` for any scene of the atlas (art/scenes.toml) the game knows: `--stress`, `--painted`, `--cells`; the
-// arena by default.
+/// `--<name>` for any scene of the atlas (art/scenes.toml) the game knows: `--stress`, `--painted`, `--cells`; the
+/// arena by default.
 core::SceneKey ChooseScene(std::span<char*> args) {
     for (const std::string_view arg : args) {
         if (const std::optional<core::SceneKey> scene =
@@ -32,8 +32,8 @@ core::SceneKey ChooseScene(std::span<char*> args) {
     return game::ARENA_SCENE;
 }
 
-// `--quit-after SECONDS`: quit by itself, as on a quit request, so `project_n profile` records with no click into a
-// window that would take the focus. 0: never.
+/// `--quit-after SECONDS`: quit by itself, as on a quit request, so `project_n profile` records with no click into a
+/// window that would take the focus. 0: never.
 std::expected<u64, core::Error> QuitAfterNs(std::span<char*> args) {
     const auto flag = std::ranges::find(args, std::string_view{ "--quit-after" });
     if (flag == args.end()) {
@@ -43,7 +43,7 @@ std::expected<u64, core::Error> QuitAfterNs(std::span<char*> args) {
         .transform_error([](const core::Error& error) { return core::Error{ "--quit-after: " + error.message }; });
 }
 
-// The game data's folder: `assets/data/`, or in debug builds the source tree's while it exists.
+/// The game data's folder: `assets/data/`, or in debug builds the source tree's while it exists.
 std::filesystem::path DataFolder(const std::filesystem::path& assets) {
 #ifdef PN_SOURCE_DATA
     std::error_code error;
@@ -54,14 +54,14 @@ std::filesystem::path DataFolder(const std::filesystem::path& assets) {
     return assets / "data";
 }
 
-// A start-up failure: reported (logged and shown), and the game's exit status.
+/// A start-up failure: reported (logged and shown), and the game's exit status.
 i32 FailToStart(std::string_view what, const core::Error& error) {
     platform::ReportStartFailure(what, error);
     return 1;
 }
 
-// Opens the window (as `settings` say) and the renderer, then hands them to the app; a failure to start is reported, not
-// thrown.
+/// Opens the window (as `settings` say) and the renderer, then hands them to the app; a failure to start is reported, not
+/// thrown.
 i32 Run(const core::Settings& settings, app::Options options, bool fullscreen) {
     platform::RouteSdlLogs();
     std::expected<platform::Window, core::Error> window =

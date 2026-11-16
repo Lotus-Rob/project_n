@@ -18,7 +18,7 @@ std::unexpected<core::Error> Refuse(const YAML::Node& node, std::string_view why
     return std::unexpected{ core::Error{ std::format("manifest line {}: {}", node.Mark().line + 1, why) } };
 }
 
-// `map`'s field `key`, which must be there; yaml-cpp throws, with the line, when it isn't a T.
+/// `map`'s field `key`, which must be there; yaml-cpp throws, with the line, when it isn't a T.
 template<typename T>
 std::expected<T, core::Error> Field(const YAML::Node& map, const char* key) {
     const YAML::Node node = map[key];
@@ -28,7 +28,7 @@ std::expected<T, core::Error> Field(const YAML::Node& map, const char* key) {
     return node.as<T>();
 }
 
-// `map`'s list of `count` numbers at `key`.
+/// `map`'s list of `count` numbers at `key`.
 std::expected<std::vector<u16>, core::Error> Numbers(const YAML::Node& map, const char* key, std::size_t count) {
     const YAML::Node node = map[key];
     if (!node || !node.IsSequence() || node.size() != count) {

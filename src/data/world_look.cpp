@@ -16,14 +16,14 @@ Failure RefuseLook(const YAML::Node& node, std::string_view why) {
     return Failure{ internal::RefusalAt(LOOK_READER, node, why) };
 }
 
-// The sprites a look may name: those of the manifest, and among them those the scene showing the map loads.
+/// The sprites a look may name: those of the manifest, and among them those the scene showing the map loads.
 struct Atlas {
     const core::Manifest* manifest; // never null
     std::span<const core::atlas::SpriteId> resident;
 };
 
-// The sprite `node` names, which must be in the atlas, in the manifest and among the world scene's; `owner` names it in
-// refusals. The renderer would draw a sprite outside the world scene's from a page that isn't loaded.
+/// The sprite `node` names, which must be in the atlas, in the manifest and among the world scene's; `owner` names it in
+/// refusals. The renderer would draw a sprite outside the world scene's from a page that isn't loaded.
 std::expected<core::atlas::SpriteId, core::Error> LookSpriteAt(
     const YAML::Node& node,
     std::string_view owner,
@@ -43,8 +43,8 @@ std::expected<core::atlas::SpriteId, core::Error> LookSpriteAt(
     return *sprite;
 }
 
-// The sprites of the list `node` holds, which `owner` names in refusals: `count` of them, or any number from 1 when
-// `count` is 0.
+/// The sprites of the list `node` holds, which `owner` names in refusals: `count` of them, or any number from 1 when
+/// `count` is 0.
 std::expected<std::vector<core::atlas::SpriteId>, core::Error> SpriteList(
     const YAML::Node& node,
     std::string_view owner,
@@ -71,7 +71,7 @@ std::expected<std::vector<core::atlas::SpriteId>, core::Error> SpriteList(
     return sprites;
 }
 
-// The map at `key` in `root`, or a refusal when it is missing or isn't one.
+/// The map at `key` in `root`, or a refusal when it is missing or isn't one.
 std::expected<YAML::Node, core::Error> MapAt(const YAML::Node& root, const char* key) {
     const YAML::Node node = root[key];
     if (!node) {
@@ -83,7 +83,7 @@ std::expected<YAML::Node, core::Error> MapAt(const YAML::Node& root, const char*
     return std::expected<YAML::Node, core::Error>{ node };
 }
 
-// The sprite at `key` in `map`, which `owner` names in refusals.
+/// The sprite at `key` in `map`, which `owner` names in refusals.
 std::expected<core::atlas::SpriteId, core::Error> SpriteIn(
     const YAML::Node& map,
     const char* key,

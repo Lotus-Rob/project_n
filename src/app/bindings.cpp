@@ -28,7 +28,7 @@ f32 Length(core::Vec2 vec) {
     return std::hypot(vec.x, vec.y);
 }
 
-// The held direction of `control`'s keys, else its stick past the dead zone, at most 1 long.
+/// The held direction of `control`'s keys, else its stick past the dead zone, at most 1 long.
 core::Vec2 Held(const std::vector<Binding>& table, u64 heldKeys, Control control, core::Vec2 stick) {
     core::Vec2 keys{};
     for (const Binding& binding : table) {

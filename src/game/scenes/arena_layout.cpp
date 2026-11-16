@@ -66,7 +66,7 @@ constexpr std::array<u32, 6> ACTIVE_CELLS{
     { MAP_COLUMNS + 1, MAP_COLUMNS + 4, MAP_COLUMNS + 6, (3 * MAP_COLUMNS) + 2, (3 * MAP_COLUMNS) + 3, (3 * MAP_COLUMNS) + 5 }
 };
 
-// A point on the edge of `ground`, `unit` (0 to 1) of the way round it clockwise from its top-left corner.
+/// A point on the edge of `ground`, `unit` (0 to 1) of the way round it clockwise from its top-left corner.
 core::Vec2 EdgePoint(const core::Rect& ground, f64 unit) {
     const f64 width = static_cast<f64>(ground.max.x) - static_cast<f64>(ground.min.x);
     const f64 height = static_cast<f64>(ground.max.y) - static_cast<f64>(ground.min.y);

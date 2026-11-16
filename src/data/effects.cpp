@@ -15,8 +15,8 @@ core::Error RefuseEffects(const YAML::Node& node, std::string_view why) {
     return internal::RefusalAt("effects", node, why);
 }
 
-// Reads a map of numbers into f32 fields, remembering the first refusal: each `read` leaves its field as it was when its key
-// is absent.
+/// Reads a map of numbers into f32 fields, remembering the first refusal: each `read` leaves its field as it was when its key
+/// is absent.
 class EffectFields {
 public:
     EffectFields(const YAML::Node& map, std::string_view name)
@@ -26,7 +26,7 @@ public:
             map.IsMap() ? std::nullopt : std::optional<core::Error>{ RefuseEffects(map, std::format("{} isn't a map", name)) };
     }
 
-    // Sets `field` from `key` within `range`, in `scale` units of the file to one of the field.
+    /// Sets `field` from `key` within `range`, in `scale` units of the file to one of the field.
     void Read(const char* key, f32& field, const internal::Range& range, f64 scale = 1.0) {
         if (m_error) {
             return;
@@ -294,7 +294,7 @@ NamedGlows::iterator FindGlow(NamedGlows& named, const std::string& name) {
     return std::ranges::find_if(named, [&name](const auto& entry) { return entry.first == name; });
 }
 
-// Adds each glow of `glows` to `named`, replacing the one of its name.
+/// Adds each glow of `glows` to `named`, replacing the one of its name.
 std::expected<void, core::Error> ReadGlowTable(const YAML::Node& glows, std::vector<std::string>* warnings, NamedGlows& named) {
     if (!glows.IsMap()) {
         return std::unexpected{ RefuseEffects(glows, "glows isn't a map") };
@@ -319,7 +319,7 @@ std::expected<void, core::Error> ReadGlowTable(const YAML::Node& glows, std::vec
     return {};
 }
 
-// Fills `roleGlows` (by role) from `roles`: every role must name a glow of `named`.
+/// Fills `roleGlows` (by role) from `roles`: every role must name a glow of `named`.
 std::expected<void, core::Error> ReadRoles(
     const YAML::Node& roles,
     std::vector<std::string>* warnings,
@@ -353,7 +353,7 @@ std::expected<void, core::Error> ReadRoles(
     return {};
 }
 
-// The glows by name (the shipped ones, which `glows:` adds to or replaces) and which each role wears.
+/// The glows by name (the shipped ones, which `glows:` adds to or replaces) and which each role wears.
 std::expected<void, core::Error> ReadGlows(const YAML::Node& root, std::vector<std::string>* warnings, core::Effects& table) {
     NamedGlows named;
     named.reserve(core::SHIPPED_GLOW_COUNT);

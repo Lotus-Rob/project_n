@@ -25,14 +25,14 @@ constexpr u64 PROGRESS_LOOP = 300;  // 5 s
 constexpr u64 PROGRESS_FILL = 180;  // the value climbs over these, then the result shows
 constexpr u64 PROGRESS_RESULTS = 4;
 
-// The demo glow `sprite` wears in a scene whose traits list `glows`: none for the rest. The role isn't stored on the
-// entity: that would change what saves hold and the state hash, and a glow is presentation only.
+/// The demo glow `sprite` wears in a scene whose traits list `glows`: none for the rest. The role isn't stored on the
+/// entity: that would change what saves hold and the state hash, and a glow is presentation only.
 core::GlowRole DemoRoleOf(std::span<const DemoGlowSprite> glows, SpriteId sprite) {
     const auto found = std::ranges::find(glows, sprite, &DemoGlowSprite::sprite);
     return found == glows.end() ? core::GlowRole::None : found->role;
 }
 
-// A value rising linearly from 0 to 1 over `rise` ticks, then held.
+/// A value rising linearly from 0 to 1 over `rise` ticks, then held.
 f32 Rise(u64 age, u64 rise) {
     return std::min(static_cast<f32>(age) / static_cast<f32>(rise), 1.0F);
 }
@@ -81,9 +81,9 @@ using ActiveComponents = core::ComponentList<
 using WorldComponents = core::ComponentList<Npc, Needs, Met, Group>;
 
 constexpr u32 PUBLISH_CHUNK = 4'096; // entities packed per job chunk
-// Whether the active domain's combat components come as combat reads them: every creature has health and only
-// creatures do, a creature is dying exactly when its health is out, an arriving one has the body and orbit it
-// eases between, and only something with health is afflicted.
+/// Whether the active domain's combat components come as combat reads them: every creature has health and only
+/// creatures do, a creature is dying exactly when its health is out, an arriving one has the body and orbit it
+/// eases between, and only something with health is afflicted.
 bool CombatConsistent(const core::Registry& entities) {
     const auto hasHealth = [&entities](core::Entity entity) { return entities.all_of<Health>(entity); };
     const auto livesOrDies = [&entities](core::Entity entity) {
@@ -101,8 +101,8 @@ bool CombatConsistent(const core::Registry& entities) {
            std::ranges::all_of(entities.view<const Afflictions>(), hasHealth);
 }
 
-// Whether every NPC's cell and home suit the scene: with a world map, a tile on it and a city's place index; without,
-// no home.
+/// Whether every NPC's cell and home suit the scene: with a world map, a tile on it and a city's place index; without,
+/// no home.
 bool NpcsPlaced(const core::State& state, const core::WorldMap* map) {
     const auto placed = [map](const Npc& person) {
         if (map == nullptr) {
@@ -117,9 +117,9 @@ bool NpcsPlaced(const core::State& state, const core::WorldMap* map) {
     });
 }
 
-// Whether every entity has the components that code reads together with the ones it has: a save can
-// hold any mix, and a missing partner would be read anyway (the month step reads an Npc's Needs,
-// publishing a Look's Body, applying the game data a Creature's Look, deactivating an active Npc's Body).
+/// Whether every entity has the components that code reads together with the ones it has: a save can
+/// hold any mix, and a missing partner would be read anyway (the month step reads an Npc's Needs,
+/// publishing a Look's Body, applying the game data a Creature's Look, deactivating an active Npc's Body).
 bool Consistent(const core::State& state) {
     for (const core::DomainIndex domain : { ACTIVE, WORLD }) {
         const core::Registry& entities = state[domain].Entities();
@@ -145,8 +145,8 @@ bool Consistent(const core::State& state) {
 // The world clock's last tick: the first of the last month (LAST_MONTH), where the calendar ends.
 constexpr u64 CALENDAR_END = LAST_MONTH * TICKS_PER_MONTH;
 
-// Whether a saved world clock fits the month steps run: within the month after the last step, or at its end, the next
-// step due, and never past the calendar's end.
+/// Whether a saved world clock fits the month steps run: within the month after the last step, or at its end, the next
+/// step due, and never past the calendar's end.
 bool ClockFits(u64 worldTicks, u64 months) {
     const u64 month = worldTicks / TICKS_PER_MONTH;
     return worldTicks <= CALENDAR_END &&
@@ -238,7 +238,7 @@ core::GameData BuiltInData() {
     };
 }
 
-// What a scene's hooks reach the host through: only for the length of one call.
+/// What a scene's hooks reach the host through: only for the length of one call.
 class Host::Context final : public SceneContext {
 public:
     explicit Context(Host& host)
@@ -336,8 +336,8 @@ Host::Host(std::shared_ptr<const core::Manifest> manifest, core::SceneKey scene,
     Build(m_scene);
 }
 
-// Everything but the calendar (the world clock and the month steps run) and the game data starts afresh: the entities,
-// their IDs, the relationships, the selection, the world pause.
+/// Everything but the calendar (the world clock and the month steps run) and the game data starts afresh: the entities,
+/// their IDs, the relationships, the selection, the world pause.
 void Host::Build(core::SceneKey scene) {
     m_state = core::State{ DOMAINS, SEED };
     m_relationships = Relationships{};

@@ -27,10 +27,10 @@ constexpr SceneTraits ARENA_TRAITS{
 
 constexpr u32 USE_AURA = 1; // the aura's ability use source (core::AbilityUse)
 
-// The showcase seals: between them every part and placement seals.yaml can
-// describe. Scene content, as the props are: republished every tick, never saved. Their looks are seals.yaml's; here only
-// which seal stands where, and how large (its outer radius). Each has a clearing of its own: none reaches another, nor the
-// swords' seal a cast at the player's start raises (app's showcase_tests holds this), so no seal hides another.
+/// The showcase seals: between them every part and placement seals.yaml can
+/// describe. Scene content, as the props are: republished every tick, never saved. Their looks are seals.yaml's; here only
+/// which seal stands where, and how large (its outer radius). Each has a clearing of its own: none reaches another, nor the
+/// swords' seal a cast at the player's start raises (app's showcase_tests holds this), so no seal hides another.
 struct ShowcaseSeal {
     core::SealKey key = 0;
     core::Vec2 point{};

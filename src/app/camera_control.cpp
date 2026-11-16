@@ -15,7 +15,7 @@ f32 LengthSquared(core::Vec2 vec) {
     return (vec.x * vec.x) + (vec.y * vec.y);
 }
 
-// `vec` shortened to at most 1 long.
+/// `vec` shortened to at most 1 long.
 core::Vec2 AtMostOne(core::Vec2 vec) {
     const f32 length = std::sqrt(LengthSquared(vec));
     return length > 1.0F ? vec * (1.0F / length) : vec;
@@ -25,8 +25,8 @@ bool Inside(core::Vec2 cursor, i32 width, i32 height) {
     return cursor.x >= 0.0F && cursor.y >= 0.0F && cursor.x < static_cast<f32>(width) && cursor.y < static_cast<f32>(height);
 }
 
-// Where the cursor in the window's edge band points: each axis -1, 0 or 1, at most 1 long; zero clear of the band, and
-// unfocused or with the cursor outside the window.
+/// Where the cursor in the window's edge band points: each axis -1, 0 or 1, at most 1 long; zero clear of the band, and
+/// unfocused or with the cursor outside the window.
 core::Vec2 EdgeOf(const CameraInput& input) {
     if (!input.focused || !input.cursor || !Inside(*input.cursor, input.width, input.height)) {
         return {};
@@ -43,8 +43,8 @@ core::Vec2 EdgeOf(const CameraInput& input) {
     return AtMostOne({ .x = toward(input.cursor->x, width), .y = toward(input.cursor->y, height) });
 }
 
-// How far the camera moves by the pointer this frame: the world under where the drag's movement started comes under
-// the pointer.
+/// How far the camera moves by the pointer this frame: the world under where the drag's movement started comes under
+/// the pointer.
 core::Vec2 Dragged(const gfx::Camera& camera, const CameraInput& input) {
     if (!input.focused || !input.dragFrom || !input.cursor || !Inside(*input.cursor, input.width, input.height)) {
         return {};
@@ -53,7 +53,7 @@ core::Vec2 Dragged(const gfx::Camera& camera, const CameraInput& input) {
            WindowToWorld(camera, *input.cursor, input.width, input.height);
 }
 
-// The world the window's shorter side shows through `camera`: a screen, what pan speeds are counted in.
+/// The world the window's shorter side shows through `camera`: a screen, what pan speeds are counted in.
 f32 ScreenOf(const gfx::Camera& camera, const CameraInput& input) {
     const auto shorter = static_cast<f32>(std::max(std::min(input.width, input.height), 1));
     return shorter /

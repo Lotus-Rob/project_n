@@ -30,12 +30,12 @@ Failure RefuseMap(const YAML::Node& node, std::string_view why) {
     return Failure{ internal::RefusalAt(WORLD_READER, node, why) };
 }
 
-// The 1-based line `node` was written on, as the other readers report it.
+/// The 1-based line `node` was written on, as the other readers report it.
 u32 LineOf(const YAML::Node& node) {
     return static_cast<u32>(node.Mark().line) + 1;
 }
 
-// The whole number from 0 to `limit` that `node` holds, which `owner` names in refusals.
+/// The whole number from 0 to `limit` that `node` holds, which `owner` names in refusals.
 std::expected<i64, core::Error> Whole(const YAML::Node& node, std::string_view owner, i64 limit) {
     f64 value = 0.0;
     try {
@@ -50,7 +50,7 @@ std::expected<i64, core::Error> Whole(const YAML::Node& node, std::string_view o
     return static_cast<i64>(value);
 }
 
-// The tile `node` holds as [column, row].
+/// The tile `node` holds as [column, row].
 std::expected<core::TilePoint, core::Error> Point(const YAML::Node& node, std::string_view owner) {
     if (!node.IsSequence() || node.size() != 2) {
         return RefuseMap(node, std::format("{} has a point that isn't [column, row]", owner));
@@ -66,7 +66,7 @@ std::expected<core::TilePoint, core::Error> Point(const YAML::Node& node, std::s
     return core::TilePoint{ .column = static_cast<u32>(*column), .row = static_cast<u32>(*row) };
 }
 
-// The sequence at `key` in `root` (empty when absent), or a refusal when it isn't one.
+/// The sequence at `key` in `root` (empty when absent), or a refusal when it isn't one.
 std::expected<YAML::Node, core::Error> Sequence(const YAML::Node& root, const char* key) {
     const YAML::Node node = root[key];
     if (node && !node.IsSequence()) {
@@ -75,7 +75,7 @@ std::expected<YAML::Node, core::Error> Sequence(const YAML::Node& root, const ch
     return std::expected<YAML::Node, core::Error>{ node };
 }
 
-// The text at `key` in `map`, which `owner` names in refusals.
+/// The text at `key` in `map`, which `owner` names in refusals.
 std::expected<std::string, core::Error> Text(const YAML::Node& map, const char* key, std::string_view owner) {
     const YAML::Node node = map[key];
     if (!node) {
@@ -87,7 +87,7 @@ std::expected<std::string, core::Error> Text(const YAML::Node& map, const char* 
     return node.Scalar();
 }
 
-// The cost of the kind `name` that `entry` holds: a whole number from 1 to just under IMPASSABLE_COST, or `impassable`.
+/// The cost of the kind `name` that `entry` holds: a whole number from 1 to just under IMPASSABLE_COST, or `impassable`.
 std::expected<u16, core::Error> KindCost(const YAML::Node& entry, const std::string& name) {
     const YAML::Node cost = entry["cost"];
     if (!cost) {
@@ -229,7 +229,7 @@ std::expected<void, core::Error> ReadGrid(const YAML::Node& root, std::string_vi
     return {};
 }
 
-// Reads each polyline of the list `key` into `lines`, noting the line of each.
+/// Reads each polyline of the list `key` into `lines`, noting the line of each.
 std::expected<void, core::Error> ReadPolylines(
     const YAML::Node& root,
     const char* key,
@@ -274,7 +274,7 @@ std::expected<void, core::Error> ReadFords(const YAML::Node& root, core::WorldMa
     return {};
 }
 
-// Reads the kind of `entry`, a place called `owner`, into `place`.
+/// Reads the kind of `entry`, a place called `owner`, into `place`.
 std::expected<void, core::Error> ReadPlaceKind(const YAML::Node& entry, const std::string& owner, core::Place& place) {
     const std::expected<std::string, core::Error> kind = Text(entry, "kind", owner);
     if (!kind) {
@@ -298,7 +298,7 @@ std::expected<void, core::Error> ReadPlaceKind(const YAML::Node& entry, const st
     return {};
 }
 
-// Reads the name of `entry`, a place called `owner`, into `place`, looking its string up.
+/// Reads the name of `entry`, a place called `owner`, into `place`, looking its string up.
 std::expected<void, core::Error> ReadPlaceName(
     const YAML::Node& entry,
     const std::string& owner,
@@ -318,7 +318,7 @@ std::expected<void, core::Error> ReadPlaceName(
     return {};
 }
 
-// Reads the tile, the people and whether it starts of `entry`, a place called `owner`, into `place`.
+/// Reads the tile, the people and whether it starts of `entry`, a place called `owner`, into `place`.
 std::expected<void, core::Error> ReadPlaceTile(const YAML::Node& entry, const std::string& owner, core::Place& place) {
     if (!entry["tile"]) {
         return RefuseMap(entry, std::format("{} has no tile", owner));
@@ -346,7 +346,7 @@ std::expected<void, core::Error> ReadPlaceTile(const YAML::Node& entry, const st
     return {};
 }
 
-// The cost `node` holds, a whole number up to core::MAX_WALK_COST or the word impassable, which `owner` names in refusals.
+/// The cost `node` holds, a whole number up to core::MAX_WALK_COST or the word impassable, which `owner` names in refusals.
 std::expected<u16, core::Error> Cost(const YAML::Node& node, std::string_view owner) {
     if (node.IsScalar() && node.Scalar() == "impassable") {
         return core::IMPASSABLE_COST;
@@ -361,7 +361,7 @@ std::expected<u16, core::Error> Cost(const YAML::Node& node, std::string_view ow
     return static_cast<u16>(*whole);
 }
 
-// Reads the optional map at `key` in `entry` into `apply(name, node)` for each of its entries.
+/// Reads the optional map at `key` in `entry` into `apply(name, node)` for each of its entries.
 template<typename Apply>
 std::expected<void, core::Error> ReadEntries(const YAML::Node& entry, const char* key, std::string_view owner, Apply apply) {
     const YAML::Node map = entry[key];
@@ -379,7 +379,7 @@ std::expected<void, core::Error> ReadEntries(const YAML::Node& entry, const char
     return {};
 }
 
-// Sets the cost of the feature `name`, one of road, river, bridge and ford, to what `node` holds.
+/// Sets the cost of the feature `name`, one of road, river, bridge and ford, to what `node` holds.
 std::expected<void, core::Error> ReadFeature(
     core::FeatureCosts& features,
     const std::string& name,
@@ -404,7 +404,7 @@ std::expected<void, core::Error> ReadFeature(
     return {};
 }
 
-// Reads one profile: its pace, then the base costs with the overrides of all_kinds, kinds and features laid over them.
+/// Reads one profile: its pace, then the base costs with the overrides of all_kinds, kinds and features laid over them.
 std::expected<core::MovementProfile, core::Error> ReadProfile(
     const YAML::Node& entry,
     const core::WorldMapSource& source,
@@ -467,7 +467,7 @@ std::expected<core::MovementProfile, core::Error> ReadProfile(
     return profile;
 }
 
-// Reads the profiles, which the map needs at least one of, after the kinds they cost.
+/// Reads the profiles, which the map needs at least one of, after the kinds they cost.
 std::expected<void, core::Error> ReadProfiles(
     const YAML::Node& root,
     core::WorldMapSource& source,
@@ -502,7 +502,7 @@ std::expected<void, core::Error> ReadProfiles(
     return {};
 }
 
-// Reads the optional `stay_days: [fewest, most]` of `node`, the travel rules, into `travel`.
+/// Reads the optional `stay_days: [fewest, most]` of `node`, the travel rules, into `travel`.
 std::expected<void, core::Error> ReadStayDays(const YAML::Node& node, core::TravelRules& travel) {
     const YAML::Node days = node["stay_days"];
     if (!days) {
@@ -524,7 +524,7 @@ std::expected<void, core::Error> ReadStayDays(const YAML::Node& node, core::Trav
     return {};
 }
 
-// Reads the whole number at `key` in `node`, the travel rules, into `value` when it is there.
+/// Reads the whole number at `key` in `node`, the travel rules, into `value` when it is there.
 std::expected<void, core::Error> ReadTravelWhole(const YAML::Node& node, const char* key, i64 limit, auto& value) {
     const std::expected<i64, core::Error> whole = internal::WholeNumber(WORLD_READER, node, "travel", key, false, limit);
     if (!whole) {
@@ -536,7 +536,7 @@ std::expected<void, core::Error> ReadTravelWhole(const YAML::Node& node, const c
     return {};
 }
 
-// Reads the optional `travel:` rules over the defaults of core::TravelRules.
+/// Reads the optional `travel:` rules over the defaults of core::TravelRules.
 std::expected<void, core::Error> ReadTravel(
     const YAML::Node& root,
     core::TravelRules& travel,
@@ -575,7 +575,7 @@ std::expected<void, core::Error> ReadTravel(
         .and_then([&] { return ReadStayDays(node, travel); });
 }
 
-// Reads the optional `draws:` of `entry`, a place called `owner`, into `place`: a city's draw for each kind of visitor.
+/// Reads the optional `draws:` of `entry`, a place called `owner`, into `place`: a city's draw for each kind of visitor.
 std::expected<void, core::Error> ReadDraws(const YAML::Node& entry, const std::string& owner, core::Place& place) {
     const YAML::Node draws = entry["draws"];
     if (place.kind == core::PlaceKind::Danger) {
@@ -652,8 +652,8 @@ std::expected<void, core::Error> ReadPlaces(
     return {};
 }
 
-// Reads the costs and the tile size into `source`. A cost of 0 or over core::MAX_WALK_COST is refused here, on its own key's
-// line: Build refuses the same bounds (CheckShape) but, with no line for these two, without one, so the two must agree.
+/// Reads the costs and the tile size into `source`. A cost of 0 or over core::MAX_WALK_COST is refused here, on its own key's
+/// line: Build refuses the same bounds (CheckShape) but, with no line for these two, without one, so the two must agree.
 std::expected<void, core::Error> ReadSizes(const YAML::Node& root, core::WorldMapSource& source) {
     const std::expected<i64, core::Error> road =
         internal::WholeNumber(WORLD_READER, root, "the map", "road_cost", true, core::MAX_WALK_COST);
