@@ -112,7 +112,7 @@ TEST_CASE("a save made in world loads back into it") {
     constexpr core::HeldInput RIGHT{ .move = { .x = 1.0F, .y = 0.0F } };
     core::Jobs jobs{ 1 };
     game::Host saved(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
-    Tick(saved, At(1), { .actions = {}, .held = RIGHT }); // the walkers on their way, the cultivator off its start
+    Tick(saved, At(1), { .actions = {}, .held = RIGHT }); // the travellers on their way, the cultivator off its start
     const std::vector<std::byte> bytes = Saved(saved);
 
     game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
