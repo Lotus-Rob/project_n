@@ -964,7 +964,6 @@ DESIGN_REFERENCE_PATTERNS = (
     r"\bthe\s+spec\b|\bspec's\s+(?:outcome|history)\b|\b(?:chunk|phase|design)\s+(?:\d\w*\s+)?spec\b",
     r"\bdesign\s+(?:docs?|documents?)\b",
     r"(?<![.\d])\b000\d(?:\.\d+)*\b",
-    r"\(\s*[ODQ]\d{1,2}\s*\)",
     "\u00a7",
     r"(?<![/\w-])(?:[3-9]|1[01])[a-c]\d?(?:-look)?(?![\w/])",
     r"\bruling\b",
@@ -1056,10 +1055,15 @@ def hash_comments(text, values_only=False):
     `values_only` (YAML, TOML) a quote opens only where a value can start, so `Wanderer's rest  # note` still has its comment."""
     out = []
     for line, row in enumerate(text.splitlines(), 1):
-        quote = ""
+        quote, skip = "", False
         for i, c in enumerate(row):
-            if quote:
-                quote = "" if c == quote else quote
+            if skip:
+                skip = False
+            elif quote:
+                if c == quote and values_only and quote == "'" and row[i + 1:i + 2] == "'":
+                    skip = True  # YAML's escaped quote
+                elif c == quote:
+                    quote = ""
             elif c in "\"'" and (not values_only or not row[:i].rstrip() or row[:i].rstrip()[-1] in ":=-,[{"):
                 quote = c
             elif c == "#" and (i == 0 or row[i - 1].isspace()):
