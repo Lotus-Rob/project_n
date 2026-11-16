@@ -130,6 +130,19 @@ TEST_CASE("--month-step-at gives the second of the camera path a month passes at
     constexpr std::array<const char*, 4> START{ { "project_n", "--camera-path", "--month-step-at", "0" } };
     constexpr std::array<const char*, 2> WITHOUT{ { "project_n", "--camera-path" } };
     constexpr f32 LATE_SECOND = 15.5F;
+    constexpr std::array<const char*, 4> FLAG_FIRST{ { "project_n", "--month-step-at", "15.5", "--camera-path" } };
+    const std::expected<std::optional<f32>, core::Error> flagFirst = app::MonthStepAtOf(FLAG_FIRST);
+    REQUIRE(flagFirst.has_value());
+    CHECK(*flagFirst == std::optional<f32>{ LATE_SECOND });
+    // The path's last second is part of it: a step there is accepted.
+    const std::string last =
+        std::format("{}", std::ranges::fold_left(app::CameraPath(), 0.0F, [](f32 total, const app::CameraSegment& segment) {
+                        return total + segment.seconds;
+                    }));
+    const std::array<const char*, 4> atEndArgs{ { "project_n", "--camera-path", "--month-step-at", last.c_str() } };
+    const std::expected<std::optional<f32>, core::Error> atEnd = app::MonthStepAtOf(atEndArgs);
+    REQUIRE(atEnd.has_value());
+    CHECK(atEnd->has_value());
     const std::expected<std::optional<f32>, core::Error> late = app::MonthStepAtOf(LATE);
     const std::expected<std::optional<f32>, core::Error> start = app::MonthStepAtOf(START);
     const std::expected<std::optional<f32>, core::Error> without = app::MonthStepAtOf(WITHOUT);
