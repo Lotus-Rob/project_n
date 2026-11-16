@@ -13,6 +13,7 @@
 #include "core/frame.hpp"
 #include "core/game_data.hpp"
 #include "core/glow.hpp"
+#include "core/journey.hpp"
 #include "core/logic.hpp"
 #include "core/manifest.hpp"
 #include "core/state.hpp"
@@ -71,21 +72,29 @@ public:
     /// else. Otherwise selects what its Select actions name (nothing for a dying one), ignores Cast actions outside a combat
     /// scene (in one a Cast is Combat::Cast(): Qi, cooldown, the ability's effect; a dash moves the player in place of held
     /// movement), pauses or resumes the world for a ToggleWorldPause in a scene showing the world map (ignored elsewhere),
-    /// and walks the player's cultivator where `input`'s held movement points, unless the world is paused. When the player's
-    /// foot, on its way this tick, crosses the step area of the scene's portal (Scene::Portal(): an ellipse PORTAL_RADIUS
-    /// across and PORTAL_DEPTH_RATIO as deep, as its seal is drawn), it asks for the scene the portal leads to
-    /// (NextWalkableScene(); Requested()), ending every use still open, and does nothing more. Otherwise the world clock
-    /// moves a tick in a scene showing the world map, unless the world is paused, a month is due (MonthDue()) or the calendar
-    /// has ended (LAST_MONTH); it moves every entity on an Orbit to where it is at `counters.simulation`, advances combat
-    /// (Combat::Tick(): arrivals, removing the dead, which clears their selection, and the foxes due back, which the scene
-    /// respawns: Scene::Respawn()), and walks the active NPCs, whose decisions draw random numbers keyed on `counters.state`.
-    /// Then the scene takes its own part of the tick (Scene::Tick(): in the arena, the crystal's aura); a DebugBurst action
-    /// appends 4,000 hits round the foxes, which change nothing. Last, the volleys and afflictions strike (Combat::Strike()),
-    /// appending their hits. Each use ends with a UseEnded event. The events themselves change nothing in the state.
+    /// and sets the player's cultivator on a route for a WalkTo there (ignored elsewhere): the cheapest way on foot
+    /// (core::FindRoute() by core::WALKING) from the tile under its foot to the tile under the action's point, as a journey
+    /// of its own (PlayerRoute()) whose leg sets out from the foot itself on the world clock's tick. A WalkTo off the map
+    /// or to a tile it can't reach changes nothing; one to the tile it stands on ends its route, leaving it where it
+    /// stands. Then held movement ends its route and, unless the world is paused (when the cultivator stands, any route
+    /// held), walks it where it points, and a route places it where core::Where() puts it at the tick the world clock reaches
+    /// this tick, ending once the clock reaches the route's end, on its last tile's centre. When the player's foot, on its way
+    /// this tick, crosses the step area of the scene's portal (Scene::Portal(): an ellipse PORTAL_RADIUS across and
+    /// PORTAL_DEPTH_RATIO as deep, as its seal is drawn), it asks for the scene the portal leads to (NextWalkableScene();
+    /// Requested()), ending every use still open, and does nothing more. Otherwise the world clock moves a tick in a scene
+    /// showing the world map, unless the world is paused, a month is due (MonthDue()) or the calendar has ended (LAST_MONTH);
+    /// it moves every entity on an Orbit to where it is at `counters.simulation`, advances combat (Combat::Tick(): arrivals,
+    /// removing the dead, which clears their selection, and the foxes due back, which the scene respawns: Scene::Respawn()),
+    /// and walks the active NPCs, whose decisions draw random numbers keyed on `counters.state`. Then the scene takes its own
+    /// part of the tick (Scene::Tick(): in the arena, the crystal's aura); a DebugBurst action appends 4,000 hits round the
+    /// foxes, which change nothing. Last, the volleys and afflictions strike (Combat::Strike()), appending their hits. Each use
+    /// ends with a UseEnded event. The events themselves change nothing in the state.
     void Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) override;
 
     /// Lets a month pass for the world NPCs and counts it (Months()). A step asked for before the month is due (M, a debug
-    /// key) first moves the world clock on to the next month's first tick; the world pause holds either way. Once the
+    /// key) first moves the world clock on to the next month's first tick, and the player's cultivator on its route to where
+    /// the new tick puts it, standing there for the tick (its route ending if the tick is past its end); the world pause
+    /// holds either way. Once the
     /// calendar has ended (LAST_MONTH) the step runs uncounted, the clock standing still. In a scene showing the world map
     /// the journeys over by the clock's tick end (Travel::Finish()) and the new month's visits set out (Travel::Month(),
     /// keyed on `counters.state`), unless the clock is past half an i64's range, where journeys' ticks would run out; then
@@ -97,7 +106,7 @@ public:
     [[nodiscard]] bool MonthDue() const override;
 
     /// Sorts the state into canonical order and writes it, with the scene, the world clock, the month steps run, the world
-    /// pause, the relationships and the travel (the journeys and the journals), into `archive`.
+    /// pause, the relationships, the travel (the journeys and the journals) and the player's route, into `archive`.
     void Save(core::Writer& archive) override;
 
     /// Reads and checks the state Save() wrote at simulation tick `simulationTick` and holds it, changing nothing else:
@@ -105,7 +114,9 @@ public:
     /// False, holding nothing new, when the bytes are malformed, of another version, don't end where the state does, hold a
     /// flash or a seal that starts after `simulationTick`, a world clock outside the month after the month steps run (its
     /// end included) or past the calendar's end (LAST_MONTH's first tick), the world paused in a scene that shows no world
-    /// map, or travel that Travel::Load() refuses (any at all in a scene that shows no world map).
+    /// map, travel that Travel::Load() refuses (any at all in a scene that shows no world map), or a player's route that
+    /// isn't a journey of the player alone with one tile route leg by core::WALKING of a step at least that LegSound()
+    /// accepts, on the world map with its clock no further than journeys' ticks reach.
     [[nodiscard]] bool Load(core::Reader& archive, u64 simulationTick) override;
 
     /// A hash of everything Save() writes, in the state's current order.
@@ -136,8 +147,8 @@ public:
     [[nodiscard]] std::optional<core::SceneFacts> Requested() const override;
 
     /// Makes the scene Requested() names current: the state a load holds, its creatures taking the game data in use, or
-    /// else the scene asked for, rebuilt with the selection, the world pause and the travel cleared and the calendar kept. It
-    /// forgets both.
+    /// else the scene asked for, rebuilt with the selection, the world pause, the travel and the player's route cleared and
+    /// the calendar kept. It forgets both.
     void EnterScene() override;
 
     /// How many month steps have run.
@@ -193,6 +204,13 @@ public:
         return m_travel;
     }
 
+    /// The route the player's cultivator walks on the world map (core::ActionKind::WalkTo): a journey of the cultivator alone
+    /// with one tile route leg by core::WALKING, from the foot it set out from to the tile walked to; none while it walks
+    /// freely.
+    [[nodiscard]] const std::optional<core::Journey>& PlayerRoute() const {
+        return m_route;
+    }
+
     /// Publishes the scene's ground (Scene::PublishGround(): the painted ground, or the world's tiles), then a shadow under
     /// each entity that casts one, then the world's entities in foot-y order, then the effects, packed in fixed chunks on
     /// `jobs`: the bytes are the same whatever its worker count. Each entity's instance carries its ID, but a dying one's
@@ -203,7 +221,8 @@ public:
     /// the centre of the scene's view (SceneTraits::view); the painted ground is drawn whole either way, and the scene's
     /// hooks get the same area. The snapshot names the scene's camera (SceneTraits::camera) and, in a scene showing the
     /// world map, the calendar (core::CalendarView: the months and the day of the month the world clock has reached, and
-    /// the world pause). A scene with a player adds the
+    /// the world pause) and, while the player's cultivator walks a route, the route (core::Snapshot::route: its foot, then
+    /// the centres of the route's tiles it hasn't reached by the world clock). A scene with a player adds the
     /// player's and each living fox's name label over its head; a combat scene adds each living fox's health bar at its
     /// head and the player's casting state (core::Snapshot::caster). In a scene showing the world map each member of each
     /// journey under way at the world clock (core::Underway()) whose foot lies in the area is drawn as a villager with
@@ -242,6 +261,11 @@ private:
         std::vector<core::Event>& events
     );
     void ToggleWorldPause(u64 tick);
+    void WalkTo(core::Vec2 point, u64 tick);
+    void Move(core::Vec2 move, u64 worldTick, u64 tick);
+    void FollowRoute(u64 worldTick, u64 tick);
+    [[nodiscard]] Body& PlayerBody();
+    [[nodiscard]] const Body& PlayerBody() const;
     void SeedTravel();
     void CastAction(const core::Action& action, const core::TickCounters& counters, std::vector<core::Event>& events);
     void DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const;
@@ -250,6 +274,7 @@ private:
     void PublishPortal(core::Snapshot& snapshot);
     void PublishOverhead(core::Snapshot& snapshot) const;
     void PublishCaster(core::Snapshot& snapshot) const;
+    void PublishRoute(core::Snapshot& snapshot) const;
     // One job chunk of a publish: PUBLISH_CHUNK journeys' travellers into draw-list part `part` and their labels into
     // m_travellerLabels[chunk], sharing nothing else with the other chunks, so they run at once.
     void PublishJourneys(u32 chunk, u32 part, const core::Rect& area);
@@ -279,10 +304,11 @@ private:
     // The world clock when the last tick began, where travellers are drawn moving from. Presentation only, so never saved
     // or hashed: a load or a jump of the clock sets it to the clock, and travellers stand still for a frame.
     u64 m_worldTicksBefore = 0;
-    u64 m_months = 0;            // month steps run
-    bool m_worldPaused = false;  // the player's world pause
-    core::StableId m_player{};   // the cultivator the player walks; zero for none
-    core::StableId m_selected{}; // zero for none
+    u64 m_months = 0;                                    // month steps run
+    bool m_worldPaused = false;                          // the player's world pause
+    std::optional<core::Journey> m_route = std::nullopt; // the player's route; none while it walks freely
+    core::StableId m_player{};                           // the cultivator the player walks; zero for none
+    core::StableId m_selected{};                         // zero for none
 
     // The scene a CycleScene asked for, until it is entered.
     std::optional<core::SceneKey> m_requested = std::nullopt;
@@ -300,7 +326,8 @@ private:
             u64 loadedMonths,
             bool loadedWorldPaused,
             core::StableId loadedPlayer,
-            core::StableId loadedSelected
+            core::StableId loadedSelected,
+            std::optional<core::Journey> loadedRoute
         )
           : state(std::move(loadedState))
           , relationships(std::move(loadedRelationships))
@@ -311,7 +338,8 @@ private:
           , months(loadedMonths)
           , worldPaused(loadedWorldPaused)
           , player(loadedPlayer)
-          , selected(loadedSelected) {
+          , selected(loadedSelected)
+          , route(std::move(loadedRoute)) {
         }
 
         core::State state;
@@ -324,6 +352,7 @@ private:
         bool worldPaused;
         core::StableId player;
         core::StableId selected;
+        std::optional<core::Journey> route;
     };
     std::optional<Loaded> m_loaded = std::nullopt;
 };

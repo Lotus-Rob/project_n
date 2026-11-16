@@ -11,7 +11,8 @@ namespace core {
 
 namespace {
 
-constexpr u32 REPLAY_FORMAT = 4; // 2: actions carry their target, ticks their held input; 3: the game data's hash; 4: casts
+// 2: actions carry their target, ticks their held input; 3: the game data's hash; 4: casts; 5: walk-tos
+constexpr u32 REPLAY_FORMAT = 5;
 constexpr std::string_view VERSION = PN_GAME_VERSION; // from xmake.lua's set_version
 constexpr std::size_t MAX_ACTIONS_PER_TICK = 255;     // a tick's count is a byte
 
@@ -36,6 +37,26 @@ enum class HeldChange : u8 {
     Same,
     Changed,
 };
+
+/// Reads the fields `action`'s kind carries (a select's target, a cast's slot and point, a walk-to's point) into it;
+/// fails `archive` on a slot past the last or a point that isn't finite.
+void ReadFields(Reader& archive, Action& action) {
+    if (action.kind == ActionKind::Select) {
+        archive(action.target);
+    }
+    else if (action.kind == ActionKind::Cast) {
+        archive(action.slot, action.point);
+        if (std::to_underlying(action.slot) >= SLOTS || !IsFinite(action.point)) {
+            archive.Fail();
+        }
+    }
+    else if (action.kind == ActionKind::WalkTo) {
+        archive(action.point);
+        if (!IsFinite(action.point)) {
+            archive.Fail();
+        }
+    }
+}
 
 /// Reads the recorded ticks into `actions`, one after another, each tick's first action's index into
 /// `tickStarts` and its held input into `held`; fails `archive` on a tick that doesn't fit, an action
@@ -66,15 +87,7 @@ void ReadTicks(
                 break;
             }
             Action read{ .kind = static_cast<ActionKind>(kind) };
-            if (read.kind == ActionKind::Select) {
-                archive(read.target);
-            }
-            else if (read.kind == ActionKind::Cast) {
-                archive(read.slot, read.point);
-                if (std::to_underlying(read.slot) >= SLOTS || !IsFinite(read.point)) {
-                    archive.Fail();
-                }
-            }
+            ReadFields(archive, read);
             actions.push_back(read);
         }
         HeldChange change = HeldChange::Same;
@@ -149,6 +162,9 @@ std::vector<std::byte> Replay::FinishRecording() {
             }
             else if (m_actions[action].kind == ActionKind::Cast) {
                 archive(m_actions[action].slot, m_actions[action].point);
+            }
+            else if (m_actions[action].kind == ActionKind::WalkTo) {
+                archive(m_actions[action].point);
             }
         }
         if (m_held[tick] == last) {

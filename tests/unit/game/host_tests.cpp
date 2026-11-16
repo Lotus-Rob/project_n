@@ -1678,10 +1678,10 @@ core::StableId CultivatorAt(core::State& state, const core::GameData& data, core
     return stableId;
 }
 
-/// A host that has loaded and entered a world save at TRAVEL_CLOCK holding one visit along FirstRoad() per departure,
-/// its members world NPCs at home in the road's first city, and, with `player`, the player's cultivator on that city's
-/// tile centre: nothing else lives there.
-TravelWorld TravelWorldOf(std::span<const Departure> departures, bool player = false) {
+/// A host that has loaded and entered a world save at `clock` holding one visit along FirstRoad() per departure, its
+/// members world NPCs at home in the road's first city, and, with `player`, the player's cultivator on that city's tile
+/// centre: nothing else lives there.
+TravelWorld TravelWorldOf(std::span<const Departure> departures, bool player = false, u64 clock = TRAVEL_CLOCK) {
     TravelWorld world;
     world.map = test::ShippedWorld();
     const Road road = FirstRoad(*world.map);
@@ -1714,7 +1714,7 @@ TravelWorld TravelWorldOf(std::span<const Departure> departures, bool player = f
         game::WORLD_SCENE,
         test::WORLD_VERSION,
         test::ACTIVE_VERSION,
-        { .ticks = TRAVEL_CLOCK },
+        { .ticks = clock },
         travel
     );
     world.host = std::make_unique<game::Host>(test::TestManifest(), game::ARENA_SCENE, data);
@@ -1908,6 +1908,325 @@ TEST_CASE("a month step asked for early stands travellers where the new clock pu
     const core::Instance expected =
         core::MakeInstance(*test::TestManifest(), { .sprite = SpriteId::Villager, .previous = foot, .current = foot });
     CHECK(SameInstance(InstanceOf(Published(*world.host, NearHome(*world.map)), traveller), expected));
+}
+
+// How many tiles along the first road a walk-to below goes, and a tile farther on.
+constexpr std::size_t ROUTE_TILES = 4;
+constexpr std::size_t FARTHER = ROUTE_TILES + 2;
+// The ticks the cultivator walks a route before a test changes something: still on its first step.
+constexpr u64 WALKED = 10;
+
+/// `entity`'s body in `host`.
+game::Body BodyOf(const game::Host& host, core::StableId entity) {
+    const core::Domain& active = host.State()[game::ACTIVE];
+    return active.Entities().get<game::Body>(active.Find(entity));
+}
+
+/// Ticks `host` once at `tick` with a walk-to towards `point`, under `held` movement.
+void WalkTo(game::Host& host, u64 tick, core::Vec2 point, core::HeldInput held = {}) {
+    const std::array<core::Action, 1> walk{ { { .kind = core::ActionKind::WalkTo, .point = point } } };
+    std::vector<core::Event> events;
+    host.Tick(At(tick), { .actions = walk, .held = held }, events);
+}
+
+/// The leg a walk-to from `foot` towards `point` on `map` takes, set out on world tick `clock`: the cheapest way on foot
+/// from the foot's tile, starting from the foot itself. REQUIREs a step at least.
+core::Leg LegTo(const core::WorldMap& map, core::Vec2 foot, core::Vec2 point, u64 clock) {
+    const std::vector<u32> tiles = core::FindRoute(map, core::WALKING, map.TileAt(foot), map.TileAt(point));
+    REQUIRE(tiles.size() >= 2);
+    return core::MakeTileLeg(map, core::WALKING, static_cast<i64>(clock), foot, tiles);
+}
+
+/// Whether `route`, as a snapshot publishes one, is `foot` and then the centres of `leg`'s tiles from its `next`th on.
+bool RouteIs(
+    std::span<const core::Vec2> route,
+    const core::WorldMap& map,
+    core::Vec2 foot,
+    const core::Leg& leg,
+    std::size_t next
+) {
+    std::vector<core::Vec2> expected{ foot };
+    for (std::size_t tile = next; tile < leg.tiles.size(); ++tile) {
+        expected.push_back(map.TileCentre(leg.tiles[tile]));
+    }
+    return std::ranges::equal(route, expected, SamePoint);
+}
+
+/// The player's route in `host`; REQUIREs one.
+core::Journey RouteOf(const game::Host& host) {
+    REQUIRE(host.PlayerRoute().has_value());
+    return host.PlayerRoute().value_or(core::Journey{});
+}
+
+/// The leg of the player's route in `host`; REQUIREs a route of one leg.
+core::Leg RouteLegOf(const game::Host& host) {
+    const core::Journey route = RouteOf(host);
+    REQUIRE(route.parts.size() == 1);
+    REQUIRE_FALSE(route.parts.front().stay);
+    return route.parts.front().leg;
+}
+
+/// Whether `lhs` and `rhs` are the same leg, bit for bit.
+bool SameLeg(const core::Leg& lhs, const core::Leg& rhs) {
+    return lhs.shape == rhs.shape && lhs.profile == rhs.profile && lhs.startTick == rhs.startTick &&
+           SamePoint(lhs.origin, rhs.origin) && lhs.tiles == rhs.tiles && lhs.arrive == rhs.arrive;
+}
+
+/// The first road's tiles on the shipped map, with room for the walks below.
+std::vector<u32> RouteRoad(const core::WorldMap& map) {
+    const Road road = FirstRoad(map);
+    REQUIRE(road.tiles.size() > FARTHER);
+    return road.tiles;
+}
+
+TEST_CASE("a walk-to sends the cultivator along the route") {
+    const TravelWorld world = TravelWorldOf({}, true);
+    const core::WorldMap& map = *world.map;
+    const core::Vec2 start = FootOf(*world.host, world.player);
+    const core::Vec2 target = map.TileCentre(RouteRoad(map)[ROUTE_TILES]);
+    const core::Leg leg = LegTo(map, start, target, TRAVEL_CLOCK);
+
+    // It sets out from its foot, the route a journey of its own.
+    WalkTo(*world.host, 1, target);
+    const core::Vec2 first = core::Where(map, leg, TRAVEL_CLOCK + 1);
+    CHECK(SamePoint(BodyOf(*world.host, world.player).previous, start));
+    CHECK(SamePoint(BodyOf(*world.host, world.player).current, first));
+    const std::vector<core::StableId> alone{ world.player };
+    CHECK(RouteOf(*world.host).members == alone);
+    CHECK(SameLeg(RouteLegOf(*world.host), leg));
+    CHECK(RouteIs(Published(*world.host).route, map, first, leg, 1));
+
+    // Halfway between its second and third tiles, it has those two and the rest still to walk.
+    const u64 midway = TRAVEL_CLOCK + ((u64{ leg.arrive[1] } + u64{ leg.arrive[2] }) / 2);
+    TickRange(*world.host, 2, midway - TRAVEL_CLOCK);
+    const core::Vec2 there = core::Where(map, leg, static_cast<i64>(midway));
+    CHECK(SamePoint(FootOf(*world.host, world.player), there));
+    CHECK(RouteIs(Published(*world.host).route, map, there, leg, 2));
+
+    // On its end's tick it stands on the last tile's centre, the route done.
+    const auto end = static_cast<u64>(core::EndTick(leg));
+    TickRange(*world.host, midway - TRAVEL_CLOCK + 1, end - TRAVEL_CLOCK);
+    CHECK(SamePoint(FootOf(*world.host, world.player), map.TileCentre(leg.tiles.back())));
+    CHECK_FALSE(world.host->PlayerRoute().has_value());
+    CHECK(Published(*world.host).route.empty());
+
+    // Then it walks freely again.
+    TickRange(*world.host, end - TRAVEL_CLOCK + 1, end - TRAVEL_CLOCK + 1, HELD_RIGHT);
+    const core::Vec2 walked = map.TileCentre(leg.tiles.back()) + core::Vec2{ .x = test::ShippedData().cultivator.walkSpeed };
+    CHECK(SamePoint(FootOf(*world.host, world.player), walked));
+}
+
+TEST_CASE("held movement cancels a route") {
+    const TravelWorld world = TravelWorldOf({}, true);
+    const core::WorldMap& map = *world.map;
+    const core::Vec2 start = FootOf(*world.host, world.player);
+    const core::Vec2 target = map.TileCentre(RouteRoad(map)[ROUTE_TILES]);
+    const core::Leg leg = LegTo(map, start, target, TRAVEL_CLOCK);
+    WalkTo(*world.host, 1, target);
+    TickRange(*world.host, 2, WALKED);
+    const core::Vec2 onRoute = FootOf(*world.host, world.player);
+    REQUIRE(SamePoint(onRoute, core::Where(map, leg, static_cast<i64>(TRAVEL_CLOCK + WALKED))));
+
+    TickRange(*world.host, WALKED + 1, WALKED + 1, HELD_RIGHT);
+    const core::Vec2 walked = onRoute + core::Vec2{ .x = test::ShippedData().cultivator.walkSpeed };
+    CHECK_FALSE(world.host->PlayerRoute().has_value());
+    CHECK(SamePoint(BodyOf(*world.host, world.player).previous, onRoute));
+    CHECK(SamePoint(BodyOf(*world.host, world.player).current, walked));
+    CHECK(Published(*world.host).route.empty());
+
+    // Let go, it stands where it walked to rather than taking the route up again.
+    TickRange(*world.host, WALKED + 2, WALKED + 3);
+    CHECK(SamePoint(FootOf(*world.host, world.player), walked));
+}
+
+TEST_CASE("a second walk-to replaces the route from where the cultivator stands") {
+    const TravelWorld world = TravelWorldOf({}, true);
+    const core::WorldMap& map = *world.map;
+    const std::vector<u32> road = RouteRoad(map);
+    const core::Vec2 start = FootOf(*world.host, world.player);
+    const core::Leg leg = LegTo(map, start, map.TileCentre(road[ROUTE_TILES]), TRAVEL_CLOCK);
+    WalkTo(*world.host, 1, map.TileCentre(road[ROUTE_TILES]));
+    const u64 midway = TRAVEL_CLOCK + ((u64{ leg.arrive[1] } + u64{ leg.arrive[2] }) / 2);
+    TickRange(*world.host, 2, midway - TRAVEL_CLOCK);
+    const core::Vec2 there = FootOf(*world.host, world.player);
+
+    // From the tile under its foot and the foot itself: no walk back to the first route's start, no jump.
+    const core::Vec2 farther = map.TileCentre(road[FARTHER]);
+    const core::Leg next = LegTo(map, there, farther, midway);
+    REQUIRE(next.tiles.front() != leg.tiles.front());
+    WalkTo(*world.host, midway - TRAVEL_CLOCK + 1, farther);
+    CHECK(SamePoint(BodyOf(*world.host, world.player).previous, there));
+    CHECK(SamePoint(BodyOf(*world.host, world.player).current, core::Where(map, next, static_cast<i64>(midway + 1))));
+    CHECK(SameLeg(RouteLegOf(*world.host), next));
+}
+
+TEST_CASE("a walk-to the cultivator's own tile stops it where it stands") {
+    const TravelWorld world = TravelWorldOf({}, true);
+    const core::WorldMap& map = *world.map;
+    const core::Vec2 start = FootOf(*world.host, world.player);
+    const core::Vec2 target = map.TileCentre(RouteRoad(map)[ROUTE_TILES]);
+
+    // Standing on its tile, it starts no route.
+    WalkTo(*world.host, 1, start);
+    CHECK_FALSE(world.host->PlayerRoute().has_value());
+    CHECK(SamePoint(FootOf(*world.host, world.player), start));
+
+    // Walking, it stops on the spot, with no route left that never ends.
+    WalkTo(*world.host, 2, target);
+    TickRange(*world.host, 3, WALKED);
+    const core::Vec2 there = FootOf(*world.host, world.player);
+    REQUIRE_FALSE(SamePoint(there, start));
+    WalkTo(*world.host, WALKED + 1, there);
+    CHECK_FALSE(world.host->PlayerRoute().has_value());
+    CHECK(SamePoint(BodyOf(*world.host, world.player).previous, there));
+    CHECK(SamePoint(BodyOf(*world.host, world.player).current, there));
+    TickRange(*world.host, WALKED + 2, WALKED + 3);
+    CHECK(SamePoint(FootOf(*world.host, world.player), there));
+    CHECK(Published(*world.host).route.empty());
+}
+
+/// The centre of the first tile of `map` that no one can walk onto.
+core::Vec2 FirstImpassable(const core::WorldMap& map) {
+    for (u32 tile = 0; tile < map.Columns() * map.Rows(); ++tile) {
+        if (map.CostAt(tile, core::WALKING) == core::IMPASSABLE_COST) {
+            return map.TileCentre(tile);
+        }
+    }
+    FAIL("the map has no impassable tile");
+    return {};
+}
+
+TEST_CASE("a walk-to an impassable tile or off the map does nothing") {
+    const TravelWorld world = TravelWorldOf({}, true);
+    const core::WorldMap& map = *world.map;
+    const core::Vec2 start = FootOf(*world.host, world.player);
+    const core::Vec2 target = map.TileCentre(RouteRoad(map)[ROUTE_TILES]);
+    const core::Vec2 impassable = FirstImpassable(map);
+    const core::Vec2 offMap{ .x = -map.TileSize(), .y = map.TileSize() };
+
+    // Standing, it stays.
+    WalkTo(*world.host, 1, impassable);
+    WalkTo(*world.host, 2, offMap);
+    CHECK_FALSE(world.host->PlayerRoute().has_value());
+    CHECK(SamePoint(FootOf(*world.host, world.player), start));
+
+    // Walking, its route goes on as it was.
+    constexpr u64 SET_OUT = 3;
+    const core::Leg leg = LegTo(map, start, target, TRAVEL_CLOCK + SET_OUT - 1);
+    WalkTo(*world.host, SET_OUT, target);
+    WalkTo(*world.host, SET_OUT + 1, impassable);
+    WalkTo(*world.host, SET_OUT + 2, offMap);
+    CHECK(SameLeg(RouteLegOf(*world.host), leg));
+    CHECK(SamePoint(FootOf(*world.host, world.player), core::Where(map, leg, static_cast<i64>(TRAVEL_CLOCK + SET_OUT + 2))));
+}
+
+TEST_CASE("the paused world holds the cultivator on its route") {
+    const TravelWorld world = TravelWorldOf({}, true);
+    const core::WorldMap& map = *world.map;
+    const core::Vec2 start = FootOf(*world.host, world.player);
+    const core::Leg leg = LegTo(map, start, map.TileCentre(RouteRoad(map)[ROUTE_TILES]), TRAVEL_CLOCK);
+    REQUIRE(leg.arrive[1] > WALKED + 1);
+    WalkTo(*world.host, 1, map.TileCentre(leg.tiles.back()));
+    TickRange(*world.host, 2, WALKED);
+    const core::Vec2 held = core::Where(map, leg, static_cast<i64>(TRAVEL_CLOCK + WALKED));
+
+    // Paused, it stands, its route held.
+    constexpr u64 RESUMED = WALKED + 5;
+    TickWith(*world.host, WALKED + 1, core::ActionKind::ToggleWorldPause);
+    TickRange(*world.host, WALKED + 2, RESUMED - 1);
+    CHECK(SamePoint(BodyOf(*world.host, world.player).previous, held));
+    CHECK(SamePoint(BodyOf(*world.host, world.player).current, held));
+    CHECK(world.host->PlayerRoute().has_value());
+    CHECK(RouteIs(Published(*world.host).route, map, held, leg, 1));
+
+    // Resumed, it goes on from there.
+    TickWith(*world.host, RESUMED, core::ActionKind::ToggleWorldPause);
+    CHECK(SamePoint(BodyOf(*world.host, world.player).previous, held));
+    CHECK(
+        SamePoint(BodyOf(*world.host, world.player).current, core::Where(map, leg, static_cast<i64>(TRAVEL_CLOCK + WALKED + 1)))
+    );
+}
+
+TEST_CASE("held movement cancels a route while the world is paused too") {
+    const TravelWorld world = TravelWorldOf({}, true);
+    const core::WorldMap& map = *world.map;
+    WalkTo(*world.host, 1, map.TileCentre(RouteRoad(map)[ROUTE_TILES]));
+    TickRange(*world.host, 2, WALKED);
+    const core::Vec2 there = FootOf(*world.host, world.player);
+
+    // Paused, the held direction ends the route, and the cultivator still stands.
+    TickWith(*world.host, WALKED + 1, core::ActionKind::ToggleWorldPause, HELD_RIGHT);
+    CHECK_FALSE(world.host->PlayerRoute().has_value());
+    CHECK(SamePoint(BodyOf(*world.host, world.player).current, there));
+    CHECK(Published(*world.host).route.empty());
+
+    // Resumed, it walks where the held input points, not along the old route.
+    TickWith(*world.host, WALKED + 2, core::ActionKind::ToggleWorldPause, HELD_RIGHT);
+    const core::Vec2 walked = there + core::Vec2{ .x = test::ShippedData().cultivator.walkSpeed };
+    CHECK(SamePoint(BodyOf(*world.host, world.player).previous, there));
+    CHECK(SamePoint(BodyOf(*world.host, world.player).current, walked));
+}
+
+TEST_CASE("a month step carries the cultivator on along its route, and the pause holds through it") {
+    constexpr u64 MONTH = game::TICKS_PER_MONTH;
+    constexpr u64 BEFORE_MONTH = 40;
+    const TravelWorld world = TravelWorldOf({}, true, MONTH - BEFORE_MONTH);
+    const core::WorldMap& map = *world.map;
+    const core::Vec2 start = FootOf(*world.host, world.player);
+    const core::Leg leg = LegTo(map, start, map.TileCentre(RouteRoad(map)[ROUTE_TILES]), MONTH - BEFORE_MONTH);
+    REQUIRE(core::EndTick(leg) > static_cast<i64>(MONTH + 1)); // still walking past the step
+    REQUIRE(core::EndTick(leg) < static_cast<i64>(2 * MONTH));
+    WalkTo(*world.host, 1, map.TileCentre(leg.tiles.back()));
+
+    // M while paused: the clock jumps, the pause holds, and the cultivator stands where the new tick puts it, not streaking
+    // there.
+    TickWith(*world.host, 2, core::ActionKind::ToggleWorldPause);
+    StepMonth(*world.host, 3);
+    REQUIRE(world.host->WorldTicks() == MONTH);
+    CHECK(world.host->WorldPaused());
+    const core::Vec2 stepped = core::Where(map, leg, static_cast<i64>(MONTH));
+    CHECK(SamePoint(BodyOf(*world.host, world.player).previous, stepped));
+    CHECK(SamePoint(BodyOf(*world.host, world.player).current, stepped));
+    CHECK(world.host->PlayerRoute().has_value());
+    TickRange(*world.host, 3, 3);
+    CHECK(SamePoint(FootOf(*world.host, world.player), stepped));
+
+    // Resumed, it walks on from there.
+    TickWith(*world.host, 4, core::ActionKind::ToggleWorldPause);
+    CHECK(SamePoint(BodyOf(*world.host, world.player).previous, stepped));
+    CHECK(SamePoint(BodyOf(*world.host, world.player).current, core::Where(map, leg, static_cast<i64>(MONTH + 1))));
+
+    // M past the route's end leaves it on the last tile, the route done.
+    StepMonth(*world.host, 4);
+    REQUIRE(world.host->WorldTicks() == 2 * MONTH);
+    CHECK(SamePoint(BodyOf(*world.host, world.player).previous, map.TileCentre(leg.tiles.back())));
+    CHECK(SamePoint(BodyOf(*world.host, world.player).current, map.TileCentre(leg.tiles.back())));
+    CHECK_FALSE(world.host->PlayerRoute().has_value());
+}
+
+TEST_CASE("leaving the world map drops the route") {
+    const TravelWorld world = TravelWorldOf({}, true);
+    const core::WorldMap& map = *world.map;
+    WalkTo(*world.host, 1, map.TileCentre(RouteRoad(map)[ROUTE_TILES]));
+    TickRange(*world.host, 2, WALKED);
+    REQUIRE(world.host->PlayerRoute().has_value());
+    const u64 clock = world.host->WorldTicks();
+
+    TickWith(*world.host, WALKED + 1, core::ActionKind::CycleScene);
+    world.host->EnterScene();
+    REQUIRE(world.host->Current().key == game::ARENA_SCENE);
+    CHECK_FALSE(world.host->PlayerRoute().has_value());
+    TickRange(*world.host, WALKED + 2, WALKED + 3);
+
+    // Back round to the world map: still none, and the clock stood still all the way.
+    u64 tick = WALKED + 4;
+    while (world.host->Current().key != game::WORLD_SCENE) {
+        TickWith(*world.host, tick++, core::ActionKind::CycleScene);
+        world.host->EnterScene();
+    }
+    CHECK_FALSE(world.host->PlayerRoute().has_value());
+    CHECK(world.host->WorldTicks() == clock);
+    CHECK(Published(*world.host).route.empty());
 }
 
 } // namespace

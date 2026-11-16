@@ -9,6 +9,7 @@
 #include "core/archive.hpp"
 #include "core/frame.hpp"
 #include "core/hit.hpp"
+#include "core/journey.hpp"
 #include "core/seal.hpp"
 #include "core/stable_id.hpp"
 #include "core/state.hpp"
@@ -28,7 +29,7 @@
 namespace test {
 
 /// The host's save format (game/host.cpp's ARENA_FORMAT).
-inline constexpr u32 HOST_FORMAT = 5;
+inline constexpr u32 HOST_FORMAT = 6;
 /// The active domain's version in a host save (5: the NPCs' homes).
 inline constexpr u32 ACTIVE_VERSION = 5;
 /// The world domain's version in a host save (3: the travelling action, the journeys and the journals).
@@ -76,8 +77,8 @@ struct SavedClock {
 
 /// A save of `state` in `scene` with `player`: the format, the scene, the seed, the stable-ID counter, `clock`, the player and
 /// the selection (none), then each domain after its version (`activeVersion`, `worldVersion`), then no relationships,
-/// `travel`, no respawns waiting, `volley` if any (the flying swords' hits of 20, none resolved yet), `flash` if any and `seal`
-/// if any.
+/// `travel`, the player's `route` if any, no respawns waiting, `volley` if any (the flying swords' hits of 20, none resolved
+/// yet), `flash` if any and `seal` if any.
 [[nodiscard]] inline std::vector<std::byte> ArenaSave(
     const core::State& state,
     core::StableId player = {},
@@ -88,7 +89,8 @@ struct SavedClock {
     u32 worldVersion = WORLD_VERSION,
     u32 activeVersion = ACTIVE_VERSION,
     SavedClock clock = {},
-    const game::Travel& travel = game::Travel{}
+    const game::Travel& travel = game::Travel{},
+    const std::optional<core::Journey>& route = std::nullopt
 ) {
     constexpr u64 RELATIONSHIPS = 0;
     constexpr u64 RESPAWNS = 0;
@@ -111,6 +113,10 @@ struct SavedClock {
     core::SaveDomain(writer, state[game::WORLD], WorldComponents{});
     writer(RELATIONSHIPS);
     travel.Save(writer);
+    writer(route.has_value());
+    if (route) {
+        writer(*route);
+    }
     writer(RESPAWNS);
     writer(static_cast<u64>(volley ? 1 : 0));
     if (volley) {

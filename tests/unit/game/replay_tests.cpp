@@ -4,7 +4,7 @@
 // back in a fresh game in another scene (a load across scenes, waiting for each) with every hash matching, the last
 // one on the recording's final tick. A recorded fight is replayed the same way: every ability cast, foxes dying and
 // respawning, a save while the swords fly. So is the world scene on the shipped map, walked across a
-// month step.
+// month step, and the cultivator walked along routes there.
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
@@ -102,6 +102,10 @@ struct Session {
 
     void Cast(core::Slot slot, core::Vec2 point) {
         handover.SendInput({ .kind = core::ActionKind::Cast, .slot = slot, .point = point });
+    }
+
+    void WalkTo(core::Vec2 point) {
+        handover.SendInput({ .kind = core::ActionKind::WalkTo, .point = point });
     }
 
     // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
@@ -447,6 +451,69 @@ TEST_CASE("a world clock reaching its month's end runs the month step through th
     session.Burst(BURST);
     CHECK(session.host.WorldTicks() == game::TICKS_PER_MONTH + BURST); // the clock runs again
     CHECK(session.host.Months() == 1);
+}
+
+/// A save of the world scene with the player's cultivator alone in it, on the start city's tile centre.
+std::vector<std::byte> CultivatorOnTheMap() {
+    core::State state{ game::DOMAINS, test::EMPTY_SAVE_SEED };
+    const auto [player, entity] = state.Create(game::ACTIVE);
+    const core::Vec2 start = test::ShippedWorld()->StartCentre();
+    state[game::ACTIVE].Entities().emplace<game::Body>(entity, start, start);
+    return test::ArenaSave(
+        state, player, std::nullopt, std::nullopt, std::nullopt, game::WORLD_SCENE, test::WORLD_VERSION, test::ACTIVE_VERSION
+    );
+}
+
+TEST_CASE("a replay with walk-tos on the world map plays back with the same hashes") {
+    // The cultivator walks a route east, a second walk-to turns it mid-route, held movement cancels that, and a third sends
+    // it back to the start city: a fresh game plays it back with every hash matching, routes and all.
+    constexpr u64 WALK = 40;
+    constexpr u32 MAX_BURSTS = 100;
+    constexpr std::size_t HASHES = 3; // the last on the recording's final tick
+    constexpr core::Vec2 RIGHT{ .x = 1.0F, .y = 0.0F };
+    // Where the walk-tos go, in tiles from the start city's.
+    constexpr core::Vec2 EAST{ .x = 4.0F, .y = 0.0F };
+    constexpr core::Vec2 SOUTH_EAST{ .x = 2.0F, .y = 2.0F };
+    const f32 tile = test::ShippedWorld()->TileSize();
+    const core::Vec2 start = test::ShippedWorld()->StartCentre();
+    const std::vector<std::byte> begin = CultivatorOnTheMap();
+    const Folder folder{ "walk_to" };
+    {
+        Session recording(folder.Path(), begin);
+        REQUIRE(recording.started);
+        recording.Send(core::ActionKind::ToggleRecording);
+        recording.Burst(1);
+        recording.WalkTo(start + (EAST * tile));
+        recording.Burst(WALK);
+        REQUIRE(recording.host.PlayerRoute().has_value());
+        recording.WalkTo(start + (SOUTH_EAST * tile));
+        recording.Burst(WALK);
+        REQUIRE(recording.host.PlayerRoute().has_value());
+        recording.Hold(RIGHT);
+        recording.Burst(1);
+        recording.Hold({});
+        REQUIRE_FALSE(recording.host.PlayerRoute().has_value());
+        recording.WalkTo(start);
+        recording.Burst(WALK);
+        REQUIRE(recording.host.PlayerRoute().has_value());
+        // To a hash tick, so the recording's last state is checked.
+        recording.Burst(core::REPLAY_HASH_TICKS - (recording.logic.Counters().wall % core::REPLAY_HASH_TICKS));
+        REQUIRE(recording.logic.Counters().wall % core::REPLAY_HASH_TICKS == 0);
+        recording.Send(core::ActionKind::ToggleRecording);
+        recording.Burst(1);
+    } // its job system finishes writing the replay
+
+    Session playing(folder.Path(), begin);
+    REQUIRE(playing.started);
+    playing.Send(core::ActionKind::PlayReplay);
+    playing.Burst(1);
+    REQUIRE(playing.replay.Playing());
+    for (u32 bursts = 0; bursts < MAX_BURSTS && playing.replay.Playing(); ++bursts) {
+        playing.Burst(core::REPLAY_HASH_TICKS);
+    }
+    CHECK(playing.replay.AtEnd());
+    CHECK(playing.replay.HashCount() == HASHES);
+    CHECK(playing.replay.Matched() == playing.replay.HashCount());
 }
 
 } // namespace

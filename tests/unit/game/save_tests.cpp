@@ -1338,4 +1338,161 @@ TEST_CASE("a save made mid-journey loads to the same positions on the next tick"
     CHECK(farthest <= ONE_TICK_MOST);
 }
 
+// How many tiles of the first trip the player's routes below walk.
+constexpr std::size_t ROUTE_TILES = 4;
+
+/// The player's route along the first `tiles` tiles of `trip`, set out on world tick `startTick` from its first tile's
+/// centre: a journey of `player` alone with one leg.
+core::Journey RouteAlong(
+    const core::WorldMap& map,
+    const Trip& trip,
+    core::StableId player,
+    std::size_t tiles,
+    i64 startTick = 0
+) {
+    REQUIRE(trip.route.size() >= tiles);
+    const std::span<const u32> walked = std::span{ trip.route }.first(tiles);
+    core::Journey route;
+    route.members = { player };
+    route.parts.push_back(
+        { .stay = false, .leg = core::MakeTileLeg(map, core::WALKING, startTick, map.TileCentre(walked.front()), walked) }
+    );
+    return route;
+}
+
+/// The shipped map with a second movement profile after walking, so a route can name a profile that isn't walking.
+std::shared_ptr<const core::WorldMap> MapWithSecondProfile() {
+    constexpr std::string_view WALKING_PROFILE = "  - { key: on_foot, ticks_per_cost: 16 }\n";
+    constexpr std::string_view SECOND_PROFILE = "  - { key: ridden, ticks_per_cost: 8 }\n";
+    const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
+    REQUIRE(assets.has_value());
+    const std::filesystem::path folder = assets.value_or(std::filesystem::path{}) / "data";
+    std::ifstream file{ folder / "world.yaml", std::ios::binary };
+    std::string yaml{ std::istreambuf_iterator<char>{ file }, std::istreambuf_iterator<char>{} };
+    const std::size_t walking = yaml.find(WALKING_PROFILE);
+    REQUIRE(walking != std::string::npos);
+    yaml.insert(walking + WALKING_PROFILE.size(), SECOND_PROFILE);
+    const std::expected<core::Strings, core::Error> strings = data::LoadStrings(folder);
+    REQUIRE(strings.has_value());
+    std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(yaml, strings.value_or(core::Strings{}));
+    REQUIRE(map.has_value());
+    return std::make_shared<const core::WorldMap>(std::move(map).value());
+}
+
+/// Whether a host on `data` loads `bytes`.
+bool LoadsWith(const core::GameData& data, const std::vector<std::byte>& bytes) {
+    game::Host game(test::TestManifest(), game::ARENA_SCENE, data);
+    core::Reader reader{ bytes };
+    return game.Load(reader, SAVED_TICK);
+}
+
+std::vector<std::byte> JourneyBytes(const core::Journey& journey) {
+    return Written([&journey](core::Writer& writer) { writer(journey); });
+}
+
+TEST_CASE("a world save round-trips the player's route and hashes it, and one no player can walk is refused") {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const Trip trip = FirstTrip(*map);
+    REQUIRE(trip.route.size() >= ROUTE_TILES);
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::Vec2 home = map->TileCentre(trip.route.front());
+    const auto [player, entity] = state.Create(game::ACTIVE);
+    state[game::ACTIVE].Entities().emplace<game::Body>(entity, home, home);
+    const auto [other, otherEntity] = state.Create(game::ACTIVE);
+    state[game::ACTIVE].Entities().emplace<game::Body>(otherEntity, home, home);
+    const auto save =
+        [&state](const std::optional<core::Journey>& route, core::StableId walker, core::SceneKey scene = game::WORLD_SCENE) {
+            return ArenaSave(
+                state, walker, std::nullopt, std::nullopt, std::nullopt, scene, WORLD_VERSION, ACTIVE_VERSION, {}, {}, route
+            );
+        };
+    const core::Journey route = RouteAlong(*map, trip, player, ROUTE_TILES);
+
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    const std::vector<std::byte> bytes = save(route, player);
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene();
+    REQUIRE(loaded.PlayerRoute().has_value());
+    const bool sameRoute = JourneyBytes(loaded.PlayerRoute().value_or(core::Journey{})) == JourneyBytes(route);
+    CHECK(sameRoute);
+
+    // Hashed: the same save without the route, or with it set out a tick later, hashes otherwise.
+    game::Host bare(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    const std::vector<std::byte> bareBytes = save(std::nullopt, player);
+    core::Reader bareReader{ bareBytes };
+    REQUIRE(bare.Load(bareReader, SAVED_TICK));
+    bare.EnterScene();
+    CHECK(bare.StateHash() != loaded.StateHash());
+    game::Host later(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    const std::vector<std::byte> laterBytes = save(RouteAlong(*map, trip, player, ROUTE_TILES, 1), player);
+    core::Reader laterReader{ laterBytes };
+    REQUIRE(later.Load(laterReader, SAVED_TICK));
+    later.EnterScene();
+    CHECK(later.StateHash() != loaded.StateHash());
+
+    // Refused: off the world map, with no player, someone else's, of no step, a stay, or onto a tile past the map.
+    CHECK_FALSE(Loads(save(route, player, game::ARENA_SCENE)));
+    CHECK_FALSE(LoadsWithMap(save(route, {})));
+    CHECK_FALSE(LoadsWithMap(save(RouteAlong(*map, trip, other, ROUTE_TILES), player)));
+    CHECK_FALSE(LoadsWithMap(save(RouteAlong(*map, trip, player, 1), player)));
+    core::Journey stay = route;
+    stay.parts.front().stay = true;
+    CHECK_FALSE(LoadsWithMap(save(stay, player)));
+    core::Journey past = route;
+    past.parts.front().leg.tiles.back() = map->Columns() * map->Rows();
+    CHECK_FALSE(LoadsWithMap(save(past, player)));
+
+    // On a map with a second profile, a route by it is refused where the same route on foot loads.
+    core::GameData twoProfiles = test::ShippedData();
+    twoProfiles.world = MapWithSecondProfile();
+    REQUIRE(twoProfiles.world->Profiles().size() == 2);
+    core::Journey ridden = route;
+    ridden.parts.front().leg.profile = core::ProfileIndex{ 1 };
+    CHECK(LoadsWith(twoProfiles, save(route, player)));
+    CHECK_FALSE(LoadsWith(twoProfiles, save(ridden, player)));
+}
+
+TEST_CASE("a save made mid-route loads to the same position on the next tick") {
+    constexpr u64 WALKED = 90; // past the first tile, between two others
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const Trip trip = FirstTrip(*map);
+    REQUIRE(trip.route.size() >= ROUTE_TILES);
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::Vec2 home = map->TileCentre(trip.route.front());
+    const auto [player, entity] = state.Create(game::ACTIVE);
+    state[game::ACTIVE].Entities().emplace<game::Body>(entity, home, home);
+    const std::vector<std::byte> start =
+        ArenaSave(state, player, std::nullopt, std::nullopt, std::nullopt, game::WORLD_SCENE, WORLD_VERSION, ACTIVE_VERSION);
+    game::Host saved(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    core::Reader startReader{ start };
+    REQUIRE(saved.Load(startReader, SAVED_TICK));
+    saved.EnterScene();
+    const std::array<core::Action, 1> walk{ { { .kind = core::ActionKind::WalkTo,
+                                                .point = map->TileCentre(trip.route[ROUTE_TILES - 1]) } } };
+    Tick(saved, At(1), { .actions = walk, .held = {} });
+    for (u64 tick = 2; tick <= WALKED; ++tick) {
+        Tick(saved, At(tick), {});
+    }
+    REQUIRE(saved.PlayerRoute().has_value());
+    const core::Vec2 there =
+        saved.State()[game::ACTIVE].Entities().get<game::Body>(saved.State()[game::ACTIVE].Find(player)).current;
+
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    const std::vector<std::byte> bytes = Saved(saved);
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene();
+    CHECK(loaded.StateHash() == saved.StateHash());
+    Tick(saved, At(WALKED + 1), {});
+    Tick(loaded, At(WALKED + 1), {});
+    const auto bodyOf = [player](const game::Host& host) {
+        return host.State()[game::ACTIVE].Entities().get<game::Body>(host.State()[game::ACTIVE].Find(player));
+    };
+    CHECK(SamePoint(bodyOf(loaded).previous, there)); // no jump
+    CHECK(SamePoint(bodyOf(loaded).current, bodyOf(saved).current));
+    CHECK_FALSE(SamePoint(bodyOf(loaded).current, there)); // walking on
+    CHECK(loaded.StateHash() == saved.StateHash());
+}
+
 } // namespace

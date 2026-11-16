@@ -449,10 +449,12 @@ enum class ActionKind : u8 {
     SceneEntered,    ///< The main thread has played the way into scene change `change`: never in a replay.
     /// Pause the world's clock, or resume it, in a scene that shows the world map: the simulation ignores it elsewhere.
     ToggleWorldPause,
+    /// Walk the player's cultivator to the tile under the world point `point` by the cheapest way on foot, in a scene that
+    /// shows the world map: the simulation ignores it elsewhere.
+    WalkTo,
 };
-/// How many kinds ActionKind names (ToggleWorldPause is the last): a replay read from disk holds only
-/// kinds below this.
-inline constexpr u8 ACTION_KINDS = static_cast<u8>(std::to_underlying(ActionKind::ToggleWorldPause) + 1U);
+/// How many kinds ActionKind names (WalkTo is the last): a replay read from disk holds only kinds below this.
+inline constexpr u8 ACTION_KINDS = static_cast<u8>(std::to_underlying(ActionKind::WalkTo) + 1U);
 
 /// A player's or the main thread's request to the simulation, sent as input: a press, taken once.
 struct Action {
@@ -466,7 +468,7 @@ struct Action {
     SceneId scene{};
     /// The slot whose ability is cast (Cast); the first slot otherwise.
     Slot slot = Slot::Generator;
-    /// Where it is cast, in world units (Cast); the origin otherwise.
+    /// Where it is cast (Cast) or where to walk to (WalkTo), in world units; the origin otherwise.
     Vec2 point{};
     /// The scene change it answers (SceneLeft, SceneEntered); zero otherwise. A replay never holds it.
     u64 change = 0;
