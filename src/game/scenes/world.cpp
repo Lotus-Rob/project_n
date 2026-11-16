@@ -138,7 +138,7 @@ constexpr u64 PLACE_ENTITY_BASE = 1ULL << 40;
 constexpr f32 PLACE_NAME_GAP = 8.0F;
 
 // Spawns the cities' people, city by city in place order, `npc` counting them all: the first seven tenths of a city's share
-// on its own tile, each of the rest on a tile of its region drawn for its running index.
+// on its own tile, each of the rest on a tile of its region drawn for its running index; each starts with StartingPower().
 void SpawnPeople(SceneContext& context, const core::WorldMap& map) {
     const u64 seed = context.State().Seed();
     u32 npc = 0;
@@ -156,7 +156,9 @@ void SpawnPeople(SceneContext& context, const core::WorldMap& map) {
             if (member >= onCityTile && !region.empty()) {
                 tile = region[core::ToBelow(core::Random(seed, 0, npc, PURPOSE_HOME_TILE, 0), static_cast<u32>(region.size()))];
             }
-            SpawnNpc(context.State(), tile, city);
+            const core::StableId person = SpawnNpc(context.State(), tile, city);
+            const core::Entity entity = context.State()[WORLD].Find(person);
+            context.State()[WORLD].Entities().get<Npc>(entity).power = StartingPower(seed, person);
         }
     }
 }

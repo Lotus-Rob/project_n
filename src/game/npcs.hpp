@@ -195,6 +195,11 @@ private:
     // NOLINTEND(readability-redundant-member-init)
 };
 
+/// The power a world NPC starts with, drawn for its `identity` under `seed`: 80% in [0, 5) (mortals), 18% in [5, 50)
+/// (cultivators), 2% in [50, 500) (a rare few strong), uniform within each band. The same for the same arguments. Only the
+/// world scene uses it: the arena and the stress arena start every NPC at 0.
+[[nodiscard]] f32 StartingPower(u64 seed, core::StableId identity);
+
 /// Creates a world NPC in `cell`, rested and content, belonging to the city of place index `home` (NO_HOME: none).
 core::StableId SpawnNpc(core::State& state, u32 cell, u16 home = NO_HOME);
 /// Creates an aggregate of `members` people in `cell`.

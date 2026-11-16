@@ -27,6 +27,19 @@ f32 Unit(u64 random) {
     return static_cast<f32>(core::ToUnit(random));
 }
 
+// The starting power's bands: each is a share of 100 draws and a range [low, high).
+struct PowerBand {
+    u32 share;
+    f64 low;
+    f64 high;
+};
+constexpr u32 POWER_DRAWS = 100;
+constexpr std::array<PowerBand, 3> POWER_BANDS{ {
+    { .share = 80, .low = 0.0, .high = 5.0 },
+    { .share = 18, .low = 5.0, .high = 50.0 },
+    { .share = 2, .low = 50.0, .high = 500.0 },
+} };
+
 f32 Clamped(f32 need) {
     return std::clamp(need, 0.0F, 1.0F);
 }
@@ -86,6 +99,20 @@ void LiveMonth(
 }
 
 } // namespace
+
+f32 StartingPower(u64 seed, core::StableId identity) {
+    const u64 key = std::to_underlying(identity);
+    u32 pick = core::ToBelow(core::Random(seed, 0, key, PURPOSE_STARTING_POWER, 0), POWER_DRAWS);
+    for (const PowerBand& band : POWER_BANDS) {
+        if (pick < band.share) {
+            const f64 unit = core::ToUnit(core::Random(seed, 0, key, PURPOSE_STARTING_POWER, 1));
+            const f32 power = static_cast<f32>(band.low + ((band.high - band.low) * unit));
+            return std::min(power, std::nextafter(static_cast<f32>(band.high), 0.0F)); // rounding never reaches the top
+        }
+        pick -= band.share;
+    }
+    return 0.0F; // unreachable: the shares sum to POWER_DRAWS
+}
 
 core::Vec2 CellCentre(u32 cell) {
     const u32 column = cell % MAP_COLUMNS;

@@ -2,7 +2,10 @@
 #include "core/jobs.hpp"
 #include "core/state.hpp"
 #include "game/components.hpp"
+#include "game/host.hpp"
 #include "game/npcs.hpp"
+#include "game/scenes.hpp"
+#include "support/manifest.hpp"
 
 #include <doctest/doctest.h>
 
@@ -11,6 +14,8 @@ namespace {
 constexpr u64 SEED = 7;
 constexpr u32 CELL = 130;
 constexpr u32 MANY_WORKERS = 7;
+constexpr u64 FEW = 5;
+constexpr u64 MANY = 20;
 
 using Pair = std::pair<core::StableId, core::StableId>;
 
@@ -206,6 +211,42 @@ TEST_CASE("a month step stopped before it starts changes nothing") {
     for (const auto [entity, want] : state[game::WORLD].Entities().view<const game::Needs>().each()) {
         CHECK(want.company == 0.0F);
         CHECK(want.rest == 0.0F);
+    }
+}
+
+TEST_CASE("starting power is the same for the same identity and seed") {
+    for (u64 id = 1; id <= FEW; ++id) {
+        CHECK(Same(game::StartingPower(SEED, core::StableId{ id }), game::StartingPower(SEED, core::StableId{ id })));
+    }
+    // a different seed gives a different spread: some of the ids differ
+    u32 differing = 0;
+    for (u64 id = 1; id <= FEW; ++id) {
+        differing += Same(game::StartingPower(SEED, core::StableId{ id }), game::StartingPower(SEED + 1, core::StableId{ id }))
+                         ? 0U
+                         : 1U;
+    }
+    CHECK(differing > 0);
+}
+
+TEST_CASE("starting power lies in its bands") {
+    constexpr f32 STRONGEST = 500.0F;
+    for (u64 id = 1; id <= MANY; ++id) {
+        CAPTURE(id);
+        const f32 power = game::StartingPower(SEED, core::StableId{ id });
+        CHECK(power >= 0.0F);
+        CHECK(power < STRONGEST);
+    }
+}
+
+TEST_CASE("the arena's and stress's NPCs start without power") {
+    for (const core::SceneKey scene : { game::ARENA_SCENE, game::STRESS_SCENE }) {
+        game::Host const host(test::TestManifest(), scene);
+        u32 people = 0;
+        for (const auto [entity, person] : host.State()[game::WORLD].Entities().view<const game::Npc>().each()) {
+            CHECK(person.power == 0.0F);
+            ++people;
+        }
+        CHECK(people > 0);
     }
 }
 
