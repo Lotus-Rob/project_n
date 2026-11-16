@@ -1389,6 +1389,12 @@ class MeasureTest(unittest.TestCase):
         self.assertEqual(project_n.measure_runs("seals,world,seals"), ["seals", "world"])
         self.assertEqual(project_n.measure_runs(None), ["world", "burst", "swords", "seals"])
 
+    def test_world_run_raises_the_travel_share_the_busiest_view_case_counts_at(self):
+        self.assertEqual(project_n.MEASURE_RUNS["world"][0][-2:], ["--travel-share", str(project_n.MEASURE_TRAVEL_SHARE)])
+        case = (project_n.ROOT / "tests" / "unit" / "game" / "shipped_world_tests.cpp").read_text(encoding="utf-8")
+        shares = re.findall(r"constexpr u16 MEASURED_SHARE = (\d+);", case)
+        self.assertEqual(shares, [str(project_n.MEASURE_TRAVEL_SHARE)])
+
     PAUSED_LOG = ("21:00:00.1 [1] window.cpp:234  LOG_INFO     root  display: 2560x1440 at 165 Hz\n"
                   "21:00:05.1 [1] app.cpp:403     LOG_INFO     root  paused: the window is unfocused or minimised\n"
                   "21:00:05.1 [1] app.cpp:406     LOG_WARNING  root  the game paused during the camera path: from here it "

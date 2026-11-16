@@ -4,11 +4,13 @@
 #include "core/journey.hpp"
 #include "core/paths.hpp"
 #include "core/rect.hpp"
+#include "core/view_limits.hpp"
 #include "core/world_map.hpp"
 #include "game/host.hpp"
 #include "game/npcs.hpp"
 #include "game/scenes.hpp"
 #include "game/scenes/world.hpp"
+#include "game/travel.hpp"
 #include "support/manifest.hpp"
 #include "support/world.hpp"
 
@@ -142,6 +144,75 @@ TEST_CASE("the shipped roads carry a few thousand at once") {
     const auto counts = std::to_array({ start, firstMiddle, afterStep, secondMiddle, secondLast });
     CHECK(std::ranges::min(counts) >= FEWEST);
     CHECK(std::ranges::max(counts) <= MOST);
+}
+
+/// How many members of `host`'s journeys under way at world tick `tick` stand within `area`, on the road or in a stay.
+std::size_t TravellersIn(const game::Host& host, const core::WorldMap& map, const core::Rect& area, i64 tick) {
+    std::size_t inside = 0;
+    for (const core::Journey& journey : host.NpcTravel().Journeys()) {
+        if (!core::Underway(journey, tick)) {
+            continue;
+        }
+        for (std::size_t member = 0; member < journey.members.size(); ++member) {
+            inside += core::Contains(area, core::Where(map, journey, tick, member)) ? 1U : 0U;
+        }
+    }
+    return inside;
+}
+
+// `measure`'s world run looks over WORLD_BUSIEST at the widest view: the travellers there are its load, kept at 2,000 or
+// more so its runs stay comparable over time. The shipped share, 60 per thousand, puts 665 to 870 there over the first half
+// month, so the run raises it with `--travel-share`, through what main applies it with: at 200 the fewest is 2,276, at the
+// first tick, rising to 2,696.
+TEST_CASE("the busiest view holds at least 2,000 travellers") {
+    constexpr std::size_t FEWEST = 2'000;
+    constexpr u16 MEASURED_SHARE = 200; // `--travel-share` in measure's world run (MEASURE_RUNS in tools/project_n.py)
+    constexpr auto DAY = static_cast<i64>(game::TICKS_PER_DAY);
+    core::GameData data = test::ShippedData();
+    REQUIRE(game::SetTravelShare(data, MEASURED_SHARE).has_value());
+    const std::shared_ptr<const core::WorldMap> map = data.world;
+    const game::Host host(test::TestManifest(), game::WORLD_SCENE, data);
+    const core::Rect widest{ .min = game::WORLD_BUSIEST - core::WIDEST_HALF_VIEW,
+                             .max = game::WORLD_BUSIEST + core::WIDEST_HALF_VIEW };
+    struct Sample {
+        std::string_view why;
+        i64 tick;
+    };
+    // The first half month, all of it the travel the world's build seeds: its first ticks, a day's boundaries and middles,
+    // and its last tick.
+    const std::array<Sample, 20> samples{ {
+        { .why = "the new world's first tick", .tick = 0 },
+        { .why = "its second tick", .tick = 1 },
+        { .why = "the first day's middle", .tick = DAY / 2 },
+        { .why = "the first day's last tick", .tick = DAY - 1 },
+        { .why = "the second day's first tick", .tick = DAY },
+        { .why = "day 3", .tick = 2 * DAY },
+        { .why = "day 3's middle", .tick = (2 * DAY) + (DAY / 2) },
+        { .why = "day 4", .tick = 3 * DAY },
+        { .why = "day 5", .tick = 4 * DAY },
+        { .why = "day 5's last tick", .tick = (5 * DAY) - 1 },
+        { .why = "day 6", .tick = 5 * DAY },
+        { .why = "day 7's middle", .tick = (6 * DAY) + (DAY / 2) },
+        { .why = "day 8", .tick = 7 * DAY },
+        { .why = "day 9", .tick = 8 * DAY },
+        { .why = "day 10's middle", .tick = (9 * DAY) + (DAY / 2) },
+        { .why = "day 11", .tick = 10 * DAY },
+        { .why = "day 12", .tick = 11 * DAY },
+        { .why = "day 13's middle", .tick = (12 * DAY) + (DAY / 2) },
+        { .why = "day 14", .tick = 13 * DAY },
+        { .why = "the half month's last tick", .tick = (15 * DAY) - 1 },
+    } };
+    std::size_t lowest = std::numeric_limits<std::size_t>::max();
+    std::string_view lowestWhy;
+    for (const Sample& sample : samples) {
+        const std::size_t count = TravellersIn(host, *map, widest, sample.tick);
+        if (count < lowest) {
+            lowest = count;
+            lowestWhy = sample.why;
+        }
+    }
+    CAPTURE(lowestWhy);
+    CHECK(lowest >= FEWEST);
 }
 
 TEST_CASE("the month step with visits is the same on 1 and 4 workers") {

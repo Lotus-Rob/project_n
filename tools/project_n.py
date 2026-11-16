@@ -2413,10 +2413,13 @@ def record(recorder, game, out, **kwargs):
         raise
 
 
+# The world run's travel share, per thousand: the shipped one puts too few travellers in the widest view over the busiest
+# region; at this one the game tests' busiest-view case (its MEASURED_SHARE) counts 2,000 or more there.
+MEASURE_TRAVEL_SHARE = 200
 # `measure`'s runs: name -> (game arguments, seconds before the game quits). The arena runs last as long as they did when first
 # profiled; the world path quits the game when it ends (about 26 s), its limit only a safety net.
-MEASURE_RUNS = {"world": (["--world", "--camera-path"], 60), "burst": (["--burst"], 20),
-                "swords": (["--cast-swords"], 70), "seals": (["--cast-swords", "--zoom", "2"], 30)}
+MEASURE_RUNS = {"world": (["--world", "--camera-path", "--travel-share", str(MEASURE_TRAVEL_SHARE)], 60),
+                "burst": (["--burst"], 20), "swords": (["--cast-swords"], 70), "seals": (["--cast-swords", "--zoom", "2"], 30)}
 MEASURE_WORKERS = 2
 # Fixed conditions: the display's native size, and a present the display's refresh doesn't pace.
 MEASURE_FLAGS = ["--fullscreen", "--workers", str(MEASURE_WORKERS), "--unpaced"]

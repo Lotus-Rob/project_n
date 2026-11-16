@@ -706,6 +706,24 @@ TEST_CASE("Build refuses travel rules out of order or past a thousand") {
     CHECK(Refusal(std::move(zero)).contains("in order"));
 }
 
+TEST_CASE("a map with other travel rules keeps all else and hashes apart; past a thousand it is refused") {
+    constexpr u16 RAISED_SHARE = 200;
+    const core::WorldMap map = MustBuild(Source({ "0.1" }));
+    core::TravelRules raised = map.Travel();
+    raised.sharePerMille = RAISED_SHARE;
+    const std::expected<core::WorldMap, core::Error> other = map.WithTravel(raised);
+    REQUIRE(other.has_value());
+    CHECK(other->Travel().sharePerMille == RAISED_SHARE);
+    CHECK(other->Travel().stayMaxDays == map.Travel().stayMaxDays);
+    CHECK(other->Columns() == map.Columns());
+    CHECK(other->Places().size() == map.Places().size());
+    CHECK(other->Hash() != map.Hash());
+    raised.sharePerMille = PAST_PER_MILLE;
+    const std::expected<core::WorldMap, core::Error> refused = map.WithTravel(raised);
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error().message.contains("over a thousand"));
+}
+
 TEST_CASE("the hash changes with a draw or a travel rule") {
     const u64 reference = MustBuild(Source({ "0.1" })).Hash();
     const auto hashOf = [](const std::function<void(core::WorldMapSource&)>& change) {

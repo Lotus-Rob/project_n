@@ -12,7 +12,6 @@ constexpr u8 FLAG_RIVER = std::to_underlying(TileFlag::River);
 constexpr u8 FLAG_BRIDGE = std::to_underlying(TileFlag::Bridge);
 constexpr u8 FLAG_FORD = std::to_underlying(TileFlag::Ford);
 constexpr f32 TILE_MIDDLE = 0.5F; // the middle of a tile
-constexpr u16 PER_MILLE = 1'000;
 constexpr u32 MAX_TILES = 1U << 24;
 
 Error Refuse(std::string message) {
@@ -377,7 +376,7 @@ std::expected<void, Error> CheckProfiles(const WorldMapSource& source) {
 
 /// Whether the travel rules can be used: a share of at most a thousand, a stay of at least a day, in order.
 std::expected<void, Error> CheckTravel(const TravelRules& travel) {
-    if (travel.sharePerMille > PER_MILLE) {
+    if (travel.sharePerMille > MOST_SHARE_PER_MILLE) {
         return std::unexpected{
             Refuse(std::format("the travel share, {} per thousand, is over a thousand", travel.sharePerMille))
         };
@@ -534,6 +533,15 @@ std::expected<PlaceLayer, Error> PlaceTiles(const WorldMapSource& source, const 
 }
 
 } // namespace
+
+std::expected<WorldMap, Error> WorldMap::WithTravel(const TravelRules& travel) const {
+    if (auto checked = CheckTravel(travel); !checked) {
+        return std::unexpected{ checked.error() };
+    }
+    WorldMap map = *this;
+    map.m_source.travel = travel;
+    return map;
+}
 
 std::expected<WorldMap, Error> WorldMap::Build(WorldMapSource source) {
     if (auto shape = CheckShape(source); !shape) {

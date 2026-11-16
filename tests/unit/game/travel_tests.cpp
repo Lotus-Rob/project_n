@@ -1,6 +1,7 @@
 #include "core/archive.hpp"
 #include "core/calendar.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/game_data.hpp"
 #include "core/jobs.hpp"
 #include "core/journey.hpp"
 #include "core/paths.hpp"
@@ -796,6 +797,26 @@ TEST_CASE("a visit to the next tile over goes there and comes back") {
     // One meadow step at the default pace of 16 ticks a cost unit.
     CHECK(core::EndTick(journey.parts[0].leg) - core::StartTick(journey) == MEADOW_COST * 16);
     CHECK(SamePoint(core::Where(*map, journey, core::EndTick(journey)), map->TileCentre(0)));
+}
+
+TEST_CASE("a raised travel share replaces the map's and the data's hash; data without a map is refused") {
+    constexpr u16 RAISED_SHARE = 200;
+    core::GameData data{};
+    data.world = std::make_shared<const core::WorldMap>(TestMap());
+    const std::shared_ptr<const core::WorldMap> before = data.world;
+    const u64 hashBefore = data.Hash();
+    const std::expected<void, core::Error> raised = game::SetTravelShare(data, RAISED_SHARE);
+    REQUIRE(raised.has_value());
+    REQUIRE(data.world != nullptr);
+    CHECK(data.world->Travel().sharePerMille == RAISED_SHARE);
+    CHECK(data.world->Travel().stayMinDays == before->Travel().stayMinDays);
+    CHECK(before->Travel().sharePerMille == core::DEFAULT_SHARE_PER_MILLE); // the map read stays as it was
+    const u64 hashAfter = data.Hash();
+    CHECK(hashAfter != hashBefore);
+    core::GameData noMap{};
+    const std::expected<void, core::Error> refused = game::SetTravelShare(noMap, RAISED_SHARE);
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error().message.contains("world map"));
 }
 
 } // namespace

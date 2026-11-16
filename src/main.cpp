@@ -13,6 +13,7 @@
 #include "data/world_look.hpp"
 #include "data/world_map.hpp"
 #include "game/scenes.hpp"
+#include "game/travel.hpp"
 #include "gfx/renderer.hpp"
 #include "platform/paths.hpp"
 #include "platform/sdl_log.hpp"
@@ -60,9 +61,9 @@ i32 FailToStart(std::string_view what, const core::Error& error) {
     return 1;
 }
 
-/// Opens the window (as `settings` say) and the renderer, then hands them to the app; a failure to start is reported, not
-/// thrown.
-i32 Run(const core::Settings& settings, app::Options options, bool fullscreen) {
+/// Opens the window (as `settings` say) and the renderer, then hands them to the app, its world map's travel share set to
+/// `travelShare` when there is one; a failure to start is reported, not thrown.
+i32 Run(const core::Settings& settings, app::Options options, bool fullscreen, std::optional<u16> travelShare) {
     platform::RouteSdlLogs();
     std::expected<platform::Window, core::Error> window =
         platform::Window::Open("project_n", settings.windowWidth, settings.windowHeight, settings.fullscreen || fullscreen);
@@ -107,6 +108,13 @@ i32 Run(const core::Settings& settings, app::Options options, bool fullscreen) {
         return FailToStart("the game's data couldn't be read", world.error());
     }
     options.data.world = *world;
+    // Before the game starts, so the share goes through the data's hash as the map's own would.
+    if (travelShare) {
+        if (const std::expected<void, core::Error> set = game::SetTravelShare(options.data, *travelShare); !set) {
+            return FailToStart("the travel share couldn't be set", set.error());
+        }
+        PN_LOG_INFO("the world's travel share is {} per thousand", *travelShare);
+    }
     // The names are read once like the map: the data watch keeps them.
     std::expected<core::Names, core::Error> names = data::LoadNames(dataFolder / "names.yaml");
     if (!names) {
@@ -177,6 +185,11 @@ int main(int argc, char** argv) {
         PN_LOG_ERROR("{}", workers.error().message);
         return 1;
     }
+    const std::expected<std::optional<u16>, core::Error> travelShare = app::TravelShareOf(args);
+    if (!travelShare) {
+        PN_LOG_ERROR("{}", travelShare.error().message);
+        return 1;
+    }
     if (*workers != 0) {
         PN_LOG_INFO("the job system is pinned to {} workers", *workers);
     }
@@ -199,7 +212,8 @@ int main(int argc, char** argv) {
                     .saveSlot = userData ? *userData / "saves" / "quicksave.pns" : std::filesystem::path{},
                     .replaySlot = userData ? *userData / "saves" / "replay.pnr" : std::filesystem::path{},
                 },
-                app::HasFlag(args, "--fullscreen"));
+                app::HasFlag(args, "--fullscreen"),
+                *travelShare);
         PN_LOG_NOTICE("project_n stopped with status {}", status);
         return status;
     }

@@ -119,6 +119,8 @@ struct Place {
 
 /// The shipped share of a city's people on the road, in parts per thousand.
 inline constexpr u16 DEFAULT_SHARE_PER_MILLE = 40;
+/// The largest share of a city's people on the road, in parts per thousand: all of them.
+inline constexpr u16 MOST_SHARE_PER_MILLE = 1'000;
 /// The shipped fewest days a traveller stays.
 inline constexpr u8 DEFAULT_STAY_MIN_DAYS = 2;
 /// The shipped most days a traveller stays.
@@ -342,6 +344,9 @@ public:
     [[nodiscard]] const TravelRules& Travel() const {
         return m_source.travel;
     }
+    /// This map with `travel` for its travellers' rules, everything else alike; refused as Build refuses rules (a share
+    /// past MOST_SHARE_PER_MILLE, a stay out of order or of no days).
+    [[nodiscard]] std::expected<WorldMap, Error> WithTravel(const TravelRules& travel) const;
     /// The index of the start city.
     [[nodiscard]] u16 Start() const {
         return m_start;

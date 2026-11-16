@@ -115,6 +115,11 @@ struct Options {
 /// MAX_WORKERS.
 [[nodiscard]] std::expected<u32, core::Error> WorkersOf(std::span<const char* const> args);
 
+/// The travel share `--travel-share <per mille>` in the command line `args` asks the game data's world map to have
+/// (game::SetTravelShare()), none without it; an error ("--travel-share: ...") for a missing value, text that isn't a whole
+/// number, or a share past core::MOST_SHARE_PER_MILLE.
+[[nodiscard]] std::expected<std::optional<u16>, core::Error> TravelShareOf(std::span<const char* const> args);
+
 /// Watches a folder of files for changes (the game data).
 class DataWatch {
 public:
