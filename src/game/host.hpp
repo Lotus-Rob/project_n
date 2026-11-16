@@ -250,7 +250,11 @@ private:
     void PublishPortal(core::Snapshot& snapshot);
     void PublishOverhead(core::Snapshot& snapshot) const;
     void PublishCaster(core::Snapshot& snapshot) const;
-    void PublishTravellers(const core::Rect& area, u32 firstPart, u32 chunks, core::Jobs& jobs);
+    // One job chunk of a publish: PUBLISH_CHUNK journeys' travellers into draw-list part `part` and their labels into
+    // m_travellerLabels[chunk], sharing nothing else with the other chunks, so they run at once.
+    void PublishJourneys(u32 chunk, u32 part, const core::Rect& area);
+    // How many PUBLISH_CHUNK chunks of journeys a publish draws: none off the world map.
+    [[nodiscard]] u32 JourneyChunks() const;
     void ApplyData();
     [[nodiscard]] const core::CreatureData& DataOf(CreatureKind kind) const {
         return kind == CreatureKind::Fox ? m_data.fox : m_data.cultivator;
