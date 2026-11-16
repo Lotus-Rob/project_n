@@ -1,5 +1,6 @@
 #include "core/replay.hpp"
 
+#include "build_info.hpp"
 #include "core/archive.hpp"
 #include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep

@@ -257,6 +257,27 @@ add_requires("yaml-cpp 0.9.0") -- MIT; behind src/data/
 add_requires("tracy-libdl v0.14.1", {alias = "tracy_on", configs = {tracy_enable = true, only_localhost = true}}) -- BSD-3-Clause; profiling builds only
 add_requires("tracy-libdl 0.14.1", {alias = "tracy_off", configs = {tracy_enable = false, only_localhost = true}}) -- BSD-3-Clause; profiling builds only
 
+-- Values a few source files need, in a header generated into the build folder (src/build_info.hpp.in) rather than
+-- as defines: a define on one target would give it flags the others lack, and a precompiled header serves only
+-- sources compiled with the flags it was built with. Public through core, so every target has the same include path.
+target("build_info")
+    set_kind("headeronly")
+    set_configdir("$(builddir)/generated")
+    add_configfiles("src/build_info.hpp.in")
+    add_includedirs("$(builddir)/generated", {public = true})
+    -- The game's version, stamped into replays (core/replay.cpp), which play back only in the build that made them.
+    on_load(function (target)
+        import("core.project.project")
+        target:set("configvar", "PN_GAME_VERSION", project.version())
+    end)
+    if is_mode("debug") then
+        -- Debug builds read and watch the game data in the source tree, so an edit there reloads in
+        -- the running game (design doc 0002.3 §7); never in a build that ships.
+        set_configvar("PN_SOURCE_DATA", (path.join(os.projectdir(), "assets", "data"):gsub("\\", "/")))
+    end
+    -- Where the skipped "write the fight save seed" case writes (save_tests.cpp), whatever the working directory.
+    set_configvar("PN_FUZZ_CORPUS", (path.join(os.projectdir(), "tests", "fuzz", "corpus"):gsub("\\", "/")))
+
 -- Modules (design doc 0002 §4): static libraries, each linking only the modules below it, so a
 -- module that doesn't link a library can't use it. They share the game's precompiled header.
 target("core")
@@ -268,11 +289,7 @@ target("core")
     add_packages("quill-wine", "entt", is_mode("releasedbg") and "tracy_on" or "tracy_off", {public = true})
     add_packages("enkits") -- private: core/jobs.hpp hides it behind a pimpl
     add_packages("lz4") -- private: compresses saves in core/save_file.cpp
-    -- The game's version, stamped into replays (core/replay.cpp), which play back only in the build that made them.
-    on_load(function (target)
-        import("core.project.project")
-        target:add("defines", "PN_GAME_VERSION=\"" .. project.version() .. "\"")
-    end)
+    add_deps("build_info", {public = true})
 
 target("game")
     set_kind("static")
@@ -317,10 +334,5 @@ target("project_n")
     add_files("src/main.cpp")
     set_pcxxheader("src/pch.hpp")
     add_rules("assets")
-    if is_mode("debug") then
-        -- Debug builds read and watch the game data in the source tree, so an edit there reloads in
-        -- the running game (design doc 0002.3 §7); never in a build that ships.
-        add_defines('PN_SOURCE_DATA="' .. path.join(os.projectdir(), "assets", "data"):gsub("\\", "/") .. '"')
-    end
 
 includes("tests")

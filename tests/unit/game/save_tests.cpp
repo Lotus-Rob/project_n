@@ -1,3 +1,4 @@
+#include "build_info.hpp"
 #include "core/archive.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
