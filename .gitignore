@@ -2,7 +2,7 @@
 # Worktrees: superpowers' fallback folder and Claude Code's own
 .worktrees/
 .claude/worktrees/
-# superpowers' brainstorm companion: mockups and screenshots per session (decisions go into the spec)
+# superpowers' brainstorm companion: mockups and screenshots per session, scratch once the decision is written down
 .superpowers/brainstorm/
 .pixi/
 .xmake/

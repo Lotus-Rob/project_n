@@ -728,7 +728,7 @@ class ArtifactReferenceTest(unittest.TestCase):
 
 
 class ObjectCacheTest(unittest.TestCase):
-    """CI's object cache: warm on branch pushes, never read on main or a tag (the user's cold rule)."""
+    """CI's object cache: warm on branch pushes, never read on main or a tag (a cold cache never feeds a release)."""
 
     def setUp(self):
         self.tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
@@ -1896,6 +1896,79 @@ class SuppressionTest(unittest.TestCase):
                      "#pragma warning(disable: 4996)"):
             self.assertRegex(line, project_n.PRAGMA_RE)
         self.assertNotRegex("#pragma clang diagnostic push", project_n.PRAGMA_RE)
+
+
+REFERENCES_FOUND = {
+    "a phase and chunk": "// (the phase 6 chunk 4 spec)",
+    "a design doc section": "/// see design doc 0002 \u00a77.6",
+    "a design doc number alone": "// as 0002.3 does",
+    "a section written S": "// the 0002 S11 order",
+    "a chunk": "// chunk 4b",
+    "a phase in Python": "# phase 5's gate",
+    "a ruling": "// ruling R6a",
+    "a task": "// Task 7's test",
+    "a chunk name": "// 5b-look restyles it",
+    "a wave": "// wave C adds the rest",
+    "a date": "// measured 2026-11-15",
+    "the plan": "// per the plan, this goes first",
+    "the user's pointer": "int x = 0;  // the user's tuned value",
+    "a block comment": "/* chunk 5 */ int x = 0;",
+    "a later line of a block comment": "/*\n * why this order\n * (phase 4)\n */\nint x = 0;",
+    "a Python docstring": '"""Warm on branches (the user\'s cold rule)."""',
+}
+REFERENCES_NOT_FOUND = {
+    "code, not a comment": "int phase = 0;",
+    "a string literal": 'const char* const NAME = "chunk 4";',
+    "a string holding a comment mark": 'const char* const NAME = "// chunk 4";',
+    "a word without a digit": "// the third phase of the fight",
+    "a data chunk": "// one chunk of the file at a time",
+    "a suppression": "int x = 0;  // NOLINT(readability-magic-numbers): the C API's value",
+    "a texture format": "// an R8 texture holds the mask, in display P3",
+    "a hardware spec": "// the minimum spec's core count",
+    "a hash name": "// FNV-1a 64 of the bytes",
+    "a hex literal": "// 0x5b marks it",
+    "the user as a role": "// The user's own sanitizer options go last",
+    "a user to check": "# for the user to check and publish",
+    "a technique's user": "// its user's death ends it",
+}
+
+
+class DesignReferenceTest(unittest.TestCase):
+    """The comment check: code comments say why in their own words, never citing the design process."""
+
+    def test_each_reference_is_found(self):
+        for name, text in REFERENCES_FOUND.items():
+            with self.subTest(name):
+                path = "tools/a.py" if text.startswith(("#", '"""')) else "src/a.cpp"
+                self.assertTrue(project_n.design_references(path, text + "\n"), text)
+
+    def test_ordinary_text_is_not_found(self):
+        for name, text in REFERENCES_NOT_FOUND.items():
+            with self.subTest(name):
+                path = "tools/a.py" if text.startswith("#") else "src/a.cpp"
+                self.assertEqual(project_n.design_references(path, text + "\n"), [], text)
+
+    def test_a_python_string_is_not_a_comment(self):
+        self.assertEqual(project_n.design_references("tools/a.py", 'x = "# chunk 4"\n'), [])
+
+    def test_documentation_is_not_code(self):
+        self.assertEqual(project_n.design_reference_files(["docs/a.md", "AGENTS.md", "src/core/generated/atlas.hpp",
+                                                           "assets/manifest.yaml", "tests/fuzz/corpus/yaml/world",
+                                                           "src/core/a.cpp", "xmake.lua", "shaders/a.hlsl", ".vscode/settings.json"]),
+                         ["src/core/a.cpp", "xmake.lua", "shaders/a.hlsl", ".vscode/settings.json"])
+
+    def test_a_finding_names_the_line_and_the_rule(self):
+        found = project_n.design_references("src/a.cpp", "int a = 0;\n// chunk 4b\n")
+        self.assertEqual(len(found), 1)
+        self.assertTrue(found[0].startswith("src/a.cpp:2: "))
+        self.assertIn("own words", found[0])
+
+    def test_the_tree_has_none(self):
+        self.assertEqual(project_n.design_reference_findings(), [])
+
+    def test_a_yaml_comment_after_a_value(self):
+        self.assertTrue(project_n.design_references("assets/data/a.yaml", "key: 1  # phase 6 value\n"))
+        self.assertEqual(project_n.design_references("assets/data/a.yaml", "key: 'a # chunk 4'\n"), [])
 
 
 class SanitizerTest(unittest.TestCase):

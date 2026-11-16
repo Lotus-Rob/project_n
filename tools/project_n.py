@@ -5,6 +5,7 @@ Standard library only. See tools/AGENTS.md.
 """
 
 import argparse
+import ast
 import bisect
 import collections
 import concurrent.futures
@@ -12,6 +13,7 @@ import dataclasses
 import difflib
 import functools
 import hashlib
+import io
 import itertools
 import json
 import os
@@ -23,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tokenize
 import tomllib
 import urllib.request
 from pathlib import Path
@@ -254,7 +257,7 @@ def sha256(*paths):
 
 
 def needs_container(preset, force=False):
-    """The location rule (§2 D9): native when this host builds the preset, else its container."""
+    """The location rule: native when this host builds the preset, else its container."""
     if IN_CONTAINER:
         return False
     return force or PRESETS[preset]["host"] != HOST
@@ -950,6 +953,145 @@ def unexplained_suppressions(files):
         for p in (ROOT / d).rglob(".clang-tidy"):
             if not any(line.lstrip().startswith("#") for line in p.read_text(encoding="utf-8").splitlines()):
                 found.append(f"{p.relative_to(ROOT).as_posix()}: explain in a # comment why these checks can't be met")
+    return found
+
+
+# Code comments explain why in their own words; they never point into the design process. Documentation
+# (*.md, docs/) keeps its references. Each pattern needs a digit or a section mark, so ordinary prose
+# ("the third phase", "a chunk of the file") never matches; "P<digit>" is left out (display P3 is a real name).
+DESIGN_REFERENCE_PATTERNS = (
+    r"\b(?:phase|chunk)s?\s+\d",
+    r"\bthe\s+spec\b|\bspec's\s+(?:outcome|history)\b|\b(?:chunk|phase|design)\s+(?:\d\w*\s+)?spec\b",
+    r"\bdesign\s+(?:docs?|documents?)\b",
+    r"\b000\d(?:\.\d+)*\b",
+    "\u00a7",
+    r"\b(?:[3-9]|1[01])[a-c]\d?(?:-look)?\b",
+    r"\bruling\b",
+    r"\bR\d[a-z]\b",
+    r"\btasks?\s+\d",
+    r"(?-i:\bwaves?\s+[A-J]\b)",
+    r"\bthe\s+(?:plan|ledger|brainstorm)\b",
+    r"\b20\d\d-\d\d-\d\d\b",
+    r"\bthe\s+user's\s+(?!own\b)",
+)
+DESIGN_REFERENCE_RE = re.compile("|".join(DESIGN_REFERENCE_PATTERNS), re.IGNORECASE)
+DESIGN_REFERENCE_MESSAGE = ("code comments don't cite specs, chunks, phases, plans, rulings, tasks or design docs: "
+                            "say why in your own words")
+C_COMMENT_SUFFIXES = (".cpp", ".hpp", ".hlsl", ".hlsli", ".dox")
+HASH_COMMENT_SUFFIXES = (".py", ".yaml", ".yml", ".toml", ".sh", ".Containerfile")
+HASH_COMMENT_NAMES = ("Containerfile", "gdbinit", "pre-commit", "commit-msg", "pre-push", ".editorconfig", ".gitignore",
+                      ".gitattributes", ".containerignore", ".clang-format", ".clang-tidy", ".clangd")
+UNCHECKED_PREFIXES = ("docs/", "assets/sprites/", "assets/fonts/", "assets/manifest.yaml", "tests/fuzz/corpus/",
+                      "tests/reference/", "shaders/bin/", ".claude/")
+
+
+def comment_kind(path):
+    """How `path`'s comments are written: "c", "lua", "hash", or None for documentation, generated and data files."""
+    name = Path(path).name
+    if path.startswith(UNCHECKED_PREFIXES) or "/generated/" in path or name.endswith((".lock", ".md")):
+        return None
+    if path.endswith(C_COMMENT_SUFFIXES) or path.startswith(".vscode/") and path.endswith(".json"):
+        return "c"
+    if path.endswith(".lua"):
+        return "lua"
+    if path.endswith(HASH_COMMENT_SUFFIXES) or name in HASH_COMMENT_NAMES or "Containerfile" in name:
+        return "hash"
+    return None
+
+
+def design_reference_files(files):
+    return [f for f in files if comment_kind(f)]
+
+
+def c_comments(text, line_marker, block):
+    """(line, text) of each physical line of each comment in C-like source: `//` or `--` lines and block comments,
+    skipping string and character literals, C++ raw strings and digit separators."""
+    out, i, line, n = [], 0, 1, len(text)
+    while i < n:
+        c = text[i]
+        if c == "\n":
+            line += 1
+        elif text.startswith(line_marker, i) and not (block and text.startswith(block[0], i)):
+            end = text.find("\n", i)
+            end = n if end < 0 else end
+            out.append((line, text[i:end]))
+            i = end
+            continue
+        elif block and text.startswith(block[0], i):
+            end = text.find(block[1], i + len(block[0]))
+            end = n if end < 0 else end + len(block[1])
+            for k, part in enumerate(text[i:end].split("\n")):
+                out.append((line + k, part))
+            line += text.count("\n", i, end)
+            i = end
+            continue
+        elif c == '"' and line_marker == "//" and text[max(0, i - 1)] == "R":
+            m = re.compile(r'"([^()\\ ]{0,16})\(').match(text, i)
+            end = text.find(")" + m[1] + '"', i) if m else -1
+            if end >= 0:
+                end += len(m[1]) + 2
+                line += text.count("\n", i, end)
+                i = end
+                continue
+        elif c == '"' or (c == "'" and not text[max(0, i - 1)].isalnum()):
+            j = i + 1
+            while j < n and text[j] != c and text[j] != "\n":
+                j += 2 if text[j] == "\\" else 1
+            i = j
+        i += 1
+    return out
+
+
+def hash_comments(text):
+    """(line, text) of each `#` comment: one that starts a line or follows whitespace, outside quotes."""
+    out = []
+    for line, row in enumerate(text.splitlines(), 1):
+        quote = ""
+        for i, c in enumerate(row):
+            if quote:
+                quote = "" if c == quote else quote
+            elif c in "\"'":
+                quote = c
+            elif c == "#" and (i == 0 or row[i - 1].isspace()):
+                out.append((line, row[i:]))
+                break
+    return out
+
+
+def python_comments(text):
+    """(line, text) of each comment and each docstring line of Python source."""
+    out = [(t.start[0], t.string) for t in tokenize.generate_tokens(io.StringIO(text).readline) if t.type == tokenize.COMMENT]
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+            out += [(node.lineno + k, part) for k, part in enumerate(ast.get_source_segment(text, node).split("\n"))]
+    return out
+
+
+def design_references(path, text):
+    """`path:line: message` for each comment line of `text` that cites the design process."""
+    kind = comment_kind(path)
+    if not kind:
+        return []
+    if kind == "c":
+        comments = c_comments(text, "//", ("/*", "*/"))
+    elif kind == "lua":
+        comments = c_comments(text, "--", None)
+    elif path.endswith(".py"):
+        comments = python_comments(text)
+    else:
+        comments = hash_comments(text)
+    return [f"{path}:{line}: {DESIGN_REFERENCE_MESSAGE}" for line, body in sorted(set(comments))
+            if DESIGN_REFERENCE_RE.search(body)]
+
+
+def design_reference_findings(files=None):
+    """Findings in the given files, or in every tracked and unignored file of the repository."""
+    if files is None:
+        files = capture(["git", "ls-files", "--cached", "--others", "--exclude-standard"]).splitlines()
+    found = []
+    for f in design_reference_files(sorted(set(files))):
+        if (ROOT / f).is_file():
+            found += design_references(f, (ROOT / f).read_text(encoding="utf-8"))
     return found
 
 
@@ -1882,6 +2024,9 @@ def cmd_lint(args):
         return reenter(LINT_PRESET, ["lint", *(["--fix"] if args.fix else []), *(["--all"] if args.all else []),
                                      *(["--range", rng] if rng else [])])
     sources, changed = scoped_sources(args)
+    referencing = design_reference_findings(None if changed is None else sorted(changed))
+    if referencing:
+        raise Fail("\n".join(referencing))
     found = unexplained_suppressions(sources)
     if found:
         raise Fail("fix findings properly; a suppression is the last resort and must be narrow and explained:\n" + "\n".join(found))
@@ -2264,7 +2409,8 @@ MEASURE_EARLIER = {"burst": "0.43 ms median, 2.6 ms worst (main thread)",
                    "swords": "1,000 swords 1.31/2.31/2.60 ms (median/p99/worst frame, at a volley's peak)",
                    "seals": "~685 µs median frame"}
 HITCH_MS = 16.7  # a frame whose work is longer misses a 60 Hz display's refresh
-NEW_GROUND_SECONDS = 0.5  # each camera segment's start, measured apart: the camera cuts or turns onto new ground there
+# Each camera segment's start is measured apart: the camera cuts or turns onto new ground there.
+NEW_GROUND_SECONDS = 0.5
 SETTLE_SECONDS = 2.0  # an arena run's start, left out: the scene loads (the camera path waits as long)
 MS = 1_000_000  # nanoseconds
 FRAME_ZONE = ("Run", "src/app/app.cpp")  # App::Run's loop body: one zone a frame, on the main thread
