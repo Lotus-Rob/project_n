@@ -469,6 +469,16 @@ void App::HandleInput(const platform::WindowState& state) {
             m_showcase = !m_showcase;
             PN_LOG_INFO("the showcase seals {}", m_showcase ? "shown" : "hidden");
         }
+        else if (
+            const std::optional<core::Action> pause = DateLineClick(
+                control->control,
+                input.device == platform::Device::Mouse ? control->position : core::Vec2{ .x = -1.0F, .y = -1.0F },
+                m_hud.DateLineArea()
+            )
+        ) {
+            PN_LOG_INFO("the world's pause asked for by the date line");
+            m_handover.SendInput(*pause);
+        }
         else if (const core::Snapshot* drawn = m_display.Drawn(); SlotOf(control->control) && drawn != nullptr) {
             if (SelectsInstead(control->control, drawn->combat, control->alt)) {
                 Select(state, control->position);
@@ -689,6 +699,7 @@ bool App::Present(const platform::WindowState& state) {
                 // The window isn't made high-density, so its size in window coordinates is its size in pixels.
                 m_hud.Build(*drawn->caster, renderTick, static_cast<u32>(std::max(state.height, 0)), m_hudLines, m_hudBars);
             }
+            m_hud.BuildDate(drawn->calendar, static_cast<u32>(std::max(state.width, 0)), m_hudLines);
             // Labels on the frame clock, which runs while the game is paused; numbers on the render clock, which holds.
             gfx::View view =
                 FrameView(m_camera.Camera(), alpha, Hovered(state, *drawn, alpha), m_frameClock.Advance(platform::NowNs()));

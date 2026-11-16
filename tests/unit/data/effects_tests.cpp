@@ -141,6 +141,8 @@ TEST_CASE("each section sets its values, a trail in seconds as ticks, and leaves
     constexpr f32 FIVE = 5.0F;
     constexpr f32 TWENTY = 20.0F;
     constexpr f32 THIRTY = 30.0F;
+    constexpr f32 TWELVE = 12.0F;
+    constexpr f32 TWO_HUNDRED = 200.0F;
     constexpr f64 TWO_AND_A_HALF = 2.5;
     const std::expected<core::Effects, core::Error> effects = data::ParseEffects(
         "abilities:\n"
@@ -148,7 +150,7 @@ TEST_CASE("each section sets its values, a trail in seconds as ticks, and leaves
         "  poison_lance: { flash_start_scale: 1, flash_end_scale: 2, flash_intensity: 0.25 }\n"
         "health_bar: { rise: 9, width: 50, height: 8, fill_width: 46, fill_height: 5 }\n"
         "hud: { margin: 20, bar_width: 300, bar_height: 20, line_height: 30, bar_gap: 8, bar_text_inset: 4,\n"
-        "       bar_text_rise: 3, not_enough_qi: 2.5, cooling_ink_opacity: 0.5 }\n"
+        "       bar_text_rise: 3, not_enough_qi: 2.5, cooling_ink_opacity: 0.5, date_inset: 12, date_width: 200 }\n"
     );
     REQUIRE(effects.has_value());
     const core::SwordLook& bolt = effects->fireBolt;
@@ -165,6 +167,8 @@ TEST_CASE("each section sets its values, a trail in seconds as ticks, and leaves
     CHECK(effects->hud.lineHeight == THIRTY);
     CHECK(effects->hud.notEnoughQiSeconds == TWO_AND_A_HALF);
     CHECK(effects->hud.coolingInkOpacity == HALF);
+    CHECK(effects->hud.dateInset == TWELVE);
+    CHECK(effects->hud.dateWidth == TWO_HUNDRED);
     CHECK(effects->flyingSwords.swordScale == core::SwordLook{}.swordScale); // not mentioned
 }
 
@@ -173,7 +177,7 @@ TEST_CASE("a value out of range is refused, naming the key and its line") {
         std::string_view text;
         std::string_view says;
     };
-    constexpr std::array<Broken, 10> CASES{ {
+    constexpr std::array<Broken, 12> CASES{ {
         Broken{ .text = "abilities:\n  fire_bolt: { sword_scale: 0 }", .says = "fire_bolt's sword_scale" },
         Broken{ .text = "abilities:\n  flying_swords: { trail_intensity: -1 }", .says = "flying_swords's trail_intensity" },
         Broken{ .text = "abilities:\n  flying_swords: { trail: 0 }", .says = "flying_swords's trail" },
@@ -183,6 +187,8 @@ TEST_CASE("a value out of range is refused, naming the key and its line") {
         Broken{ .text = "health_bar: { width: 0 }", .says = "health_bar's width" },
         Broken{ .text = "hud: { not_enough_qi: -1 }", .says = "hud's not_enough_qi" },
         Broken{ .text = "hud: { bar_width: .nan }", .says = "hud's bar_width" },
+        Broken{ .text = "hud: { date_inset: -1 }", .says = "hud's date_inset" },
+        Broken{ .text = "hud: { date_width: 0 }", .says = "hud's date_width" },
         Broken{ .text = "hud: { margin: wide }", .says = "hud's margin isn't a number" },
     } };
     for (const Broken& broken : CASES) {

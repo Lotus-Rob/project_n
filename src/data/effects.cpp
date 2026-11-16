@@ -164,7 +164,9 @@ std::expected<void, core::Error> ReadHud(const YAML::Node& node, std::vector<std
           "bar_text_inset",
           "bar_text_rise",
           "not_enough_qi",
-          "cooling_ink_opacity" },
+          "cooling_ink_opacity",
+          "date_inset",
+          "date_width" },
         warnings
     );
     EffectFields fields(node, "hud");
@@ -177,6 +179,8 @@ std::expected<void, core::Error> ReadHud(const YAML::Node& node, std::vector<std
     fields.Read("bar_text_rise", layout.barTextRise, NOT_NEGATIVE);
     fields.Read("not_enough_qi", layout.notEnoughQiSeconds, POSITIVE);
     fields.Read("cooling_ink_opacity", layout.coolingInkOpacity, internal::FRACTION);
+    fields.Read("date_inset", layout.dateInset, NOT_NEGATIVE);
+    fields.Read("date_width", layout.dateWidth, POSITIVE);
     if (fields.Error()) {
         return std::unexpected{ *fields.Error() };
     }

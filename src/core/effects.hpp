@@ -66,6 +66,10 @@ inline constexpr f32 HUD_BAR_TEXT_INSET = 6.0F;
 inline constexpr f32 HUD_BAR_TEXT_RISE = 7.0F;
 /// The shipped `coolingInkOpacity` of HudLayout.
 inline constexpr f32 HUD_COOLING_INK_OPACITY = 0.55F;
+/// The shipped `dateInset` of HudLayout.
+inline constexpr f32 HUD_DATE_INSET = 16.0F;
+/// The shipped `dateWidth` of HudLayout.
+inline constexpr f32 HUD_DATE_WIDTH = 260.0F;
 
 } // namespace shipped
 
@@ -152,7 +156,7 @@ struct HealthBarLook {
     }
 };
 
-/// How the temporary HUD is laid out, in target pixels at text scale 1 (the text scale multiplies every one but the margin).
+/// How the temporary HUD is laid out, in target pixels at text scale 1 (the text scale multiplies every one but the margins).
 struct HudLayout {
     /// How far the HUD sits in from the target's left and bottom edges, whatever the text size; 0 or more.
     f32 margin = shipped::HUD_MARGIN;
@@ -173,15 +177,21 @@ struct HudLayout {
     /// How opaque a cooling slot's line is, from 0 to 1, in the text ink, when the text has neither outline nor shadow:
     /// fainter than the other slots' ink, beside the seconds it shows.
     f32 coolingInkOpacity = shipped::HUD_COOLING_INK_OPACITY;
+    /// How far the date line sits in from the target's top and right edges, whatever the text size; 0 or more.
+    f32 dateInset = shipped::HUD_DATE_INSET;
+    /// The width of the date line's box, above 0: its text is right-aligned in it, and a click anywhere in it hits the
+    /// line. Its height is `lineHeight`.
+    f32 dateWidth = shipped::HUD_DATE_WIDTH;
 
-    /// Whether every distance is finite and not negative (the sizes and the line height above 0), the warning's time is
-    /// finite and above 0 and the opacity is from 0 to 1.
+    /// Whether every distance is finite and not negative (the sizes, the line height and the date's width above 0), the
+    /// warning's time is finite and above 0 and the opacity is from 0 to 1.
     [[nodiscard]] bool Valid() const {
         const auto positive = [](f32 value) { return std::isfinite(value) && value > 0.0F; };
         const auto distance = [](f32 value) { return std::isfinite(value) && value >= 0.0F; };
         return distance(margin) && positive(barWidth) && positive(barHeight) && positive(lineHeight) && distance(barGap) &&
                distance(barTextInset) && distance(barTextRise) && std::isfinite(notEnoughQiSeconds) &&
-               notEnoughQiSeconds > 0.0 && distance(coolingInkOpacity) && coolingInkOpacity <= 1.0F;
+               notEnoughQiSeconds > 0.0 && distance(coolingInkOpacity) && coolingInkOpacity <= 1.0F && distance(dateInset) &&
+               positive(dateWidth);
     }
 
     /// Lists its fields for an archive (core/archive.hpp), which hashes them (Effects::Hash()).
@@ -196,7 +206,9 @@ struct HudLayout {
             self.barTextInset,
             self.barTextRise,
             self.notEnoughQiSeconds,
-            self.coolingInkOpacity
+            self.coolingInkOpacity,
+            self.dateInset,
+            self.dateWidth
         );
     }
 };

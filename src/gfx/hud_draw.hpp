@@ -26,6 +26,8 @@ struct HudLine {
     core::Vec2 topLeft{};
     /// Its colour, premultiplied and packed as core::UiColours' are.
     u32 colour = 0;
+    /// Whether `topLeft.x` is the box's right edge instead of its left, so the text ends there whatever its length.
+    bool alignRight = false;
 };
 
 /// One of the HUD's bars, in target pixels: its background, and over it from its left a fill `fraction` of its length,

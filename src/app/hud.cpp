@@ -55,6 +55,18 @@ f32 FractionOf(i64 value, i64 most) {
 
 } // namespace
 
+std::optional<core::Action> DateLineClick(Control control, core::Vec2 position, const std::optional<core::Rect>& area) {
+    if (control != Control::Primary || !area) {
+        return std::nullopt;
+    }
+    const bool inside =
+        position.x >= area->min.x && position.x < area->max.x && position.y >= area->min.y && position.y < area->max.y;
+    if (!inside) {
+        return std::nullopt;
+    }
+    return core::Action{ .kind = core::ActionKind::ToggleWorldPause };
+}
+
 Hud::Hud(std::shared_ptr<const core::Strings> strings, const gfx::TextOptions& text, const core::UiColours& colours)
   : m_strings{ std::move(strings) }
   , m_text{ text }
@@ -167,6 +179,36 @@ void Hud::Build(
           .fraction = FractionOf(caster.qi, caster.qiMax),
           .fill = m_colours.Of(core::UiColour::QiBar),
           .background = background }
+    );
+}
+
+std::optional<core::Rect> Hud::DateLineArea() const {
+    return m_dateArea;
+}
+
+void Hud::BuildDate(const std::optional<core::CalendarView>& calendar, u32 width, std::vector<gfx::HudLine>& lines) {
+    PN_PROFILE_ZONE();
+    if (!calendar) {
+        m_dateArea.reset();
+        return;
+    }
+    core::FillDate(m_date, Text(core::StringId::DateLine), calendar->month + 1, calendar->day + 1);
+    if (calendar->paused) {
+        m_date += SEPARATOR;
+        m_date += Text(core::StringId::DatePaused);
+    }
+    const f32 right = static_cast<f32>(width) - m_layout.dateInset;
+    const core::Vec2 size{ .x = m_layout.dateWidth * m_text.scale, .y = m_layout.lineHeight * m_text.scale };
+    m_dateArea = core::Rect{ .min = { .x = right - size.x, .y = m_layout.dateInset },
+                             .max = { .x = right, .y = m_layout.dateInset + size.y } };
+    // Over the ground, as the slots' lines are: the ink when the text has neither outline nor shadow.
+    const u32 text = m_colours.Of(core::UiColour::HudText);
+    const bool inked = !m_text.outline && !m_text.shadow;
+    lines.push_back(
+        { .text = m_date,
+          .topLeft = { .x = right, .y = m_layout.dateInset },
+          .colour = inked ? core::ScaledColour(m_colours.Of(core::UiColour::TextInk), core::OpacityOf(text)) : text,
+          .alignRight = true }
     );
 }
 

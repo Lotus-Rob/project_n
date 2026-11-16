@@ -6,11 +6,14 @@
 /// and each slot's control, ability and cooldown, at the bottom left. Pure: it lays out lines and bars in target pixels,
 /// which the renderer draws (gfx::HudDraw), and tests read them without a device.
 
+#include "app/bindings.hpp"
 #include "core/effects.hpp"
 #include "core/frame.hpp"
+#include "core/rect.hpp"
 #include "core/strings.hpp"
 #include "core/types.hpp"
 #include "core/ui_colours.hpp"
+#include "core/vec2.hpp"
 #include "gfx/hud_draw.hpp"
 #include "gfx/renderer.hpp"
 
@@ -21,6 +24,15 @@
 #include <vector>
 
 namespace app {
+
+/// The action a press of `control` at window position `position` sends when it lands in the date line's `area`: the world's
+/// pause toggled, and nothing else (the press is the HUD's, never the world's). None for another control, a position
+/// outside the area (its top and left edges in, its bottom and right out) or no area (no date line showing).
+[[nodiscard]] std::optional<core::Action> DateLineClick(
+    Control control,
+    core::Vec2 position,
+    const std::optional<core::Rect>& area
+);
 
 /// Lays out the temporary HUD each frame from the player's casting state (core::CasterView). At the bottom left, top to
 /// bottom: the health bar (core::UiColour::HealthBar on BarBackground) with "Health {value}/{max}" on it, the Qi bar (QiBar on
@@ -66,6 +78,17 @@ public:
         std::vector<gfx::HudBar>& bars
     );
 
+    /// Appends to `lines` the date line for `calendar` on a target `width` pixels wide, and keeps its area (DateLineArea()):
+    /// the month and day counted from 1 as StringId::DateLine says, and while the calendar is paused StringId::DatePaused
+    /// after it, in the slots' text colour. The line ends at the box's right edge, `dateInset` in from the top right; the
+    /// box is `dateWidth` wide and `lineHeight` tall, times the text scale. With no calendar (not the world map) it appends
+    /// nothing and the area is none. The text lives in the HUD, valid until the next BuildDate().
+    void BuildDate(const std::optional<core::CalendarView>& calendar, u32 width, std::vector<gfx::HudLine>& lines);
+
+    /// The date line's box from the last BuildDate(), in target pixels: what a click pauses by (DateLineClick()). None
+    /// while no date line shows.
+    [[nodiscard]] std::optional<core::Rect> DateLineArea() const;
+
 private:
     // The text of `string` in the HUD's language.
     [[nodiscard]] const std::string& Text(core::StringId string) const;
@@ -77,7 +100,11 @@ private:
     std::optional<f64> m_warnedUntil = std::nullopt; // the render tick the warning ends at
     // Each line's text, the bars' first: kept from frame to frame, so a frame allocates nothing once they have grown.
     std::array<std::string, 2 + core::SLOTS> m_texts{};
-    std::string m_seconds{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::optional<core::Rect> m_dateArea = std::nullopt;
+    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::string m_date{}; // the date line's text, kept likewise
+    std::string m_seconds{};
+    // NOLINTEND(readability-redundant-member-init)
 };
 
 } // namespace app

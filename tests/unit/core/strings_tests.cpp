@@ -47,4 +47,18 @@ TEST_CASE("the last string a table holds gets the last id") {
     CHECK(strings.text.size() == core::MOST_STRINGS);
 }
 
+TEST_CASE("a date fills its month and day, and leaves other braces") {
+    constexpr u64 MARCH = 3;
+    constexpr u32 TWELFTH = 12;
+    constexpr u64 LATER_MONTH = 14;
+    constexpr u32 LAST_DAY = 30;
+    std::string into = "something longer than the result";
+    core::FillDate(into, "Month {month}, day {day}", MARCH, TWELFTH);
+    CHECK(into == "Month 3, day 12");
+    core::FillDate(into, "{month}月{day}日", LATER_MONTH, LAST_DAY);
+    CHECK(into == "14月30日");
+    core::FillDate(into, "{value} {day} {", 1, 2);
+    CHECK(into == "{value} 2 {");
+}
+
 } // namespace

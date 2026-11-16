@@ -746,7 +746,12 @@ void Renderer::Impl::PlaceHudLines(std::span<const HudLine> lines) {
     PN_PROFILE_ZONE();
     const f32 pixels = HUD_PIXELS * textOptions.scale;
     for (const HudLine& line : lines) {
-        PlaceAt(text->Lay(line.text, core::TextDirection::LeftToRight), line.topLeft, pixels, line.colour);
+        const Layout& layout = text->Lay(line.text, core::TextDirection::LeftToRight);
+        core::Vec2 topLeft = line.topLeft;
+        if (line.alignRight) {
+            topLeft.x -= layout.width * (pixels / SDF_BASE_PIXELS);
+        }
+        PlaceAt(layout, topLeft, pixels, line.colour);
     }
 }
 
