@@ -165,6 +165,10 @@ else
         -- Padding is a codegen note, not a code issue, as MSVC's 4820 above: structs are laid out
         -- for reading, and a bool beside u64s shouldn't need hand-written padding.
         add_cxflags("-Wno-padded")
+    elseif get_config("toolchain") == "pixi-gcc" then
+        -- A target whose flags drift from the precompiled header's fails on the cause (GCC names the define),
+        -- not on the misleading warning from parsing the header's wrapper in its place.
+        add_cxxflags("-Winvalid-pch")
     end
 end
 
@@ -263,7 +267,7 @@ add_requires("tracy-libdl 0.14.1", {alias = "tracy_off", configs = {tracy_enable
 -- its own. A compiler accepts a precompiled header only from sources compiled with its flags, so the owner holds the
 -- flags its users share (the public packages, include paths and build_info). Toolchains not listed keep one per
 -- target, as XMake builds them.
-local SHARED_PCH_TOOLCHAINS = {["pixi-clang"] = true}
+local SHARED_PCH_TOOLCHAINS = {["pixi-clang"] = true, ["pixi-gcc"] = true}
 -- Rule scripts can't see this file's locals: every target carries the answer.
 set_values("shared_pch", SHARED_PCH_TOOLCHAINS[get_config("toolchain")] == true)
 
