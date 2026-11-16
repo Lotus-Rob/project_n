@@ -266,7 +266,8 @@ add_requires("tracy-libdl 0.14.1", {alias = "tracy_off", configs = {tracy_enable
 -- compiles before it is done, and every target using it (`shared_pch`) takes the owner's file instead of building
 -- its own. A compiler accepts a precompiled header only from sources compiled with its flags, so the owner holds the
 -- flags its users share (the public packages, include paths and build_info). Toolchains not listed keep one per
--- target, as XMake builds them.
+-- target, as XMake builds them. MSVC is one: cl refuses a precompiled header for any define or include path its build
+-- lacked (C4605, C4599), and nearly every target adds a private package's.
 local SHARED_PCH_TOOLCHAINS = {["pixi-clang"] = true, ["pixi-gcc"] = true}
 -- Rule scripts can't see this file's locals: every target carries the answer.
 set_values("shared_pch", SHARED_PCH_TOOLCHAINS[get_config("toolchain")] == true)
