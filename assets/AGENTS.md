@@ -1,0 +1,11 @@
+# assets/: what the game loads at runtime
+
+## Map
+- `sprites/`: images, with `PROVENANCE.md` · `fonts/`: the font, with its licence and `PROVENANCE.md` · `manifest.yaml`: the atlas, which `atlas` writes
+- `data/`: YAML data tables, game data (hashed) or presentation (not hashed); debug builds reload `effects.yaml`, `seals.yaml`, `world_look.yaml`, `creatures.yaml` and `abilities.yaml` when they change (`App::WatchData`), and read the others once at start. Each is read into, or mirrored by, C++:
+  - `creatures.yaml` and `abilities.yaml` (with its motion and `combat:` rules): game data, hashed; `game::BuiltInData()` mirrors them
+  - `effects.yaml`: presentation, not hashed, hot-reloaded: the effects' looks and the HUD's layout; `core::Effects{}` mirrors it
+  - `seals.yaml`: presentation, not hashed, hot-reloaded: each seal's look, read into `core::Seals`
+  - `world_look.yaml`: presentation, not hashed, hot-reloaded: which sprites draw each map kind, the road and river overlays, bridges, fords and markers; `data::LoadWorldLook` into `core::WorldLook`, checked against the map
+  - `world.yaml`: game data, hashed, read at start after the strings, not reloaded: the world map, `data::LoadWorldMap` into `core::GameData::world`; `art/world_map.py` generated it once and it is hand-tuned since (art/AGENTS.md)
+  - `strings.yaml`: the text in each language; not game data, so not hashed, and read once at start
