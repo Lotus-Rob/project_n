@@ -7,6 +7,7 @@
 /// place is of its volley. A leg is reached only through Where() and EndTick(), so a new leg shape is one more case
 /// there and nothing that uses legs changes. Ticks are signed, so a journey may have left before the clock's tick 0.
 
+#include "core/calendar.hpp"
 #include "core/stable_id.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
@@ -17,10 +18,6 @@
 #include <vector>
 
 namespace core {
-
-/// The ticks of a day of a stay: a stay lasts whole days and its walker drifts to a new point each day. The world
-/// clock's day (game::TICKS_PER_DAY), which core can't see.
-inline constexpr i64 STAY_DAY_TICKS = 180;
 
 /// How a leg moves its walker: the one question every shape answers is where the walker is at a tick, and when it ends.
 enum class LegShape : u8 {
@@ -52,7 +49,7 @@ struct Leg {
     }
 };
 
-/// Days spent in a city between legs, the walker drifting round its tile.
+/// Days (TICKS_PER_DAY ticks each) spent in a city between legs, the walker drifting round its tile.
 struct Stay {
     /// The city's place index.
     u16 city = NO_PLACE;
@@ -135,8 +132,9 @@ struct Journey {
 /// leg's as Where() of the leg; a stay drifts linearly from one point to the next each day, the points drawn per seed and
 /// day within 0.35 of a tile of the city's tile centre and on the centre at its start and end), held at the first part's
 /// start before the journey and at the last part's end after it. Member 0 stands on that position, the others round it
-/// on a hexagonal lattice 24 units apart (the first six on a ring 24 units out, the next twelve 48 units out). Continuous
-/// at every part's boundary; nothing for a journey without parts.
+/// on a hexagonal lattice 24 units apart, filling its rings outwards (the first six 24 units out, the second ring's twelve
+/// 41.6 to 48 units out). Continuous at every part's boundary; nothing for a journey without parts. `member` is below
+/// the members' count.
 [[nodiscard]] Vec2 Where(const WorldMap& map, const Journey& journey, i64 tick, std::size_t member = 0);
 
 /// Whether `journey` is underway at `tick`: from its start to the tick before its end.

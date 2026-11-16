@@ -8,6 +8,8 @@ namespace core {
 
 namespace {
 
+// A day in a journey's signed ticks.
+constexpr i64 DAY_TICKS = static_cast<i64>(TICKS_PER_DAY);
 // The purpose of a stay's day points, apart from every other use of core::Random.
 constexpr u32 STAY_PURPOSE = 0x5354'4159; // "STAY"
 constexpr u32 STAY_DRAW_X = 0;
@@ -51,7 +53,7 @@ i64 PartEnd(const JourneyPart& part) {
 // Where the walker of `stay` aims at its day point `day`: on the city's tile centre at its first (its start) and at any
 // day point at or past its end, else a point drawn round it.
 Vec2 StayPoint(const WorldMap& map, const Stay& stay, Vec2 centre, i64 day) {
-    if (day <= 0 || stay.startTick + (day * STAY_DAY_TICKS) >= stay.endTick) {
+    if (day <= 0 || stay.startTick + (day * DAY_TICKS) >= stay.endTick) {
         return centre;
     }
     const auto offset = [&](u32 draw) {
@@ -70,9 +72,9 @@ Vec2 StayWhere(const WorldMap& map, const Stay& stay, i64 tick) {
         return cityCentre();
     }
     const Vec2 centre = cityCentre();
-    const i64 day = (tick - stay.startTick) / STAY_DAY_TICKS;
-    const i64 dayStart = stay.startTick + (day * STAY_DAY_TICKS);
-    const i64 dayEnd = std::min(dayStart + STAY_DAY_TICKS, stay.endTick);
+    const i64 day = (tick - stay.startTick) / DAY_TICKS;
+    const i64 dayStart = stay.startTick + (day * DAY_TICKS);
+    const i64 dayEnd = std::min(dayStart + DAY_TICKS, stay.endTick);
     const f64 fraction = static_cast<f64>(tick - dayStart) / static_cast<f64>(dayEnd - dayStart);
     return Between(StayPoint(map, stay, centre, day), StayPoint(map, stay, centre, day + 1), fraction);
 }
@@ -151,6 +153,7 @@ Vec2 Where(const WorldMap& map, const Leg& leg, i64 tick) {
 }
 
 Vec2 Where(const WorldMap& map, const Journey& journey, i64 tick, std::size_t member) {
+    PN_ASSERT(member < journey.members.size(), "a journey places only its own members");
     if (journey.parts.empty()) {
         return {};
     }
@@ -185,7 +188,7 @@ Journey Visit(
     Leg outward = MakeTileLeg(map, WALKING, departTick, map.TileCentre(out.front()), out);
     const Stay stay{ .city = destination,
                      .startTick = EndTick(outward),
-                     .endTick = EndTick(outward) + (i64{ stayDays } * STAY_DAY_TICKS),
+                     .endTick = EndTick(outward) + (i64{ stayDays } * DAY_TICKS),
                      .seed = seed };
     const std::vector<u32> back{ out.rbegin(), out.rend() };
     Leg homeward = MakeTileLeg(map, WALKING, stay.endTick, map.TileCentre(out.back()), back);
