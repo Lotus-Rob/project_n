@@ -99,7 +99,7 @@ IMAGE_INPUTS = ("pixi.toml", "pixi.lock", "tools/env/activate.sh")
 IMAGE_IGNORE = "containers/.containerignore"  # the build context is the repo root; this admits only IMAGE_INPUTS
 CACHE_VOLUME = "project_n-xmake-cache"  # PROJECT_N_XMAKE_CACHE=<dir> bind-mounts a directory instead (CI caches it)
 # CI's compiled objects of our code, one folder per build (object_cache_dir), kept between runs by actions/cache.
-# Unset locally, where each build folder keeps XMake's own cache.
+# Unset locally, where each build folder keeps XMake's own cache, aged by sweep_build (CACHE_DAYS).
 BUILD_CACHE_ENV = "PROJECT_N_BUILD_CACHE"
 CONTAINER_BUILD_CACHE = "/home/dev/build-cache"  # where container_cmd mounts it
 # Toolchains whose CI builds use the object cache. Not pixi-gcc: with a precompiled header, GCC's preprocessed text
@@ -287,6 +287,11 @@ WARM_LEAVES = ("debug", "release")
 USED_STAMP = ".project_n-used"
 
 
+# XMake's build cache in a build folder never evicts (linux-clang debug's held 6 GB for 0.7 GB of objects), so entries
+# written longer ago than this go. With no read times, an old entry still in use is compiled once more.
+CACHE_DAYS = 14
+
+
 def build_trees(build):
     """Every tree a command builds in: build/<preset>/<leaf> and build/container/<preset>/<leaf>."""
     trees = []
@@ -319,12 +324,41 @@ def tree_size(tree):
     return sum(p.stat().st_size for p in tree.rglob("*") if p.is_file() and not p.is_symlink())
 
 
+def uses_build_cache(tree):
+    """Whether XMake reads this tree's build cache: Clang only, as xmake.lua keeps it off for GCC and for MSVC."""
+    return PRESETS[tree.parent.name]["toolchain"] == "pixi-clang"
+
+
+def age_build_cache(tree, now, days=CACHE_DAYS):
+    """Remove the tree's build cache entries written over `days` ago, each `<key>` with its `<key>.txt` (the
+    warnings), or the whole cache where nothing reads it; the removed sizes."""
+    cache = tree / ".build_cache"
+    if not cache.is_dir():
+        return []
+    files = [p for p in cache.rglob("*") if p.is_file()]
+    if not uses_build_cache(tree):
+        sizes = [p.stat().st_size for p in files]
+        shutil.rmtree(cache)
+        return sizes
+    cutoff = now - days * 86400
+    keys = {p.with_suffix("") if p.suffix == ".txt" else p for p in files}
+    old = {k for k in keys if (k.stat().st_mtime if k.exists() else k.with_suffix(".txt").stat().st_mtime) < cutoff}
+    removed = []
+    for p in files:
+        if (p.with_suffix("") if p.suffix == ".txt" else p) in old:
+            removed.append(p.stat().st_size)
+            p.unlink()
+    remove_empty_folders(cache)
+    return removed
+
+
 def sweep_build(build, now, days=STALE_DAYS, keep=()):
     """Remove the build trees unused for `days`, but the warm ones and `keep`; (tree, bytes) for each removed."""
     spared = warm_trees(build) | {Path(k) for k in keep}
-    removed = []
+    removed, cached = [], []
     for tree in build_trees(build) if build.is_dir() else ():
         if tree in spared or last_used(tree) > now - days * 86400:
+            cached += age_build_cache(tree, now)
             continue
         size = tree_size(tree)
         shutil.rmtree(tree)
@@ -332,6 +366,9 @@ def sweep_build(build, now, days=STALE_DAYS, keep=()):
             tree.parent.rmdir()
         removed.append((tree, size))
         print(f"sweep: removed {tree.relative_to(build.parent)} ({size / 2**30:.1f} GiB), unused for {days}+ days")
+    if cached:
+        print(f"sweep: removed {len(cached)} build cache files ({sum(cached) / 2**30:.1f} GiB) written over {CACHE_DAYS} days ago"
+              " or never read")
     if removed:
         print(f"sweep: freed {sum(s for _, s in removed) / 2**30:.1f} GiB")
     return removed
