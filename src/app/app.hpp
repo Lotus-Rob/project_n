@@ -11,6 +11,7 @@
 #include "app/cast.hpp"
 #include "app/damage_numbers.hpp"
 #include "app/hud.hpp"
+#include "app/target_cursor.hpp"
 #include "app/view.hpp"
 #include "core/effects.hpp"
 #include "core/error.hpp"
@@ -198,6 +199,16 @@ private:
     // Hands the camera's controls (drag, zoom, snap back) to it: true when `control` was one of them, pressed.
     [[nodiscard]] bool SteerCamera(const ControlEvent& control);
     void Click(const platform::WindowState& state, core::Vec2 position);
+    // Acts on the cursor's two controls: true when `control` was one.
+    [[nodiscard]] bool TakeCursorControl(Control control);
+    // Shows the target cursor on the followed cultivator's tile, or hides it; nothing shows off the world map.
+    void ToggleCursor();
+    // Hides the cursor, and the renderer's outline of it.
+    void HideCursor();
+    // Walks to the cursor's tile and hides it.
+    void ConfirmCursor();
+    // Steers the cursor by this frame's held movement and draws it; hides it when the scene stops showing the map.
+    void SteerCursor();
     void Cast(const platform::WindowState& state, const ControlEvent& control, platform::Device device, bool combat);
     void MoveCamera(const platform::WindowState& state, const core::Snapshot& drawn, f64 alpha);
     [[nodiscard]] bool Present(const platform::WindowState& state);
@@ -244,6 +255,8 @@ private:
     CameraControl m_camera;                                  // starts each scene at m_options.zoom
     Drag m_drag{};                                           // the camera's, by the pointer
     FrameClock m_frameClock{};                               // what labels fade by
+    TargetCursor m_cursor{};                                 // the keyboard and gamepad's way to set a route
+    u64 m_cursorNs = 0;                                      // when the cursor last steered
     core::HeldInput m_held{};                                // as last sent
     u64 m_cameraNs = 0;                                      // when the camera last moved on
     std::optional<u64> m_cameraChange = std::nullopt;        // the scene change the camera last showed
