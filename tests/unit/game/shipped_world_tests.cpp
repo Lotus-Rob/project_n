@@ -2,7 +2,9 @@
 #include "core/game_data.hpp"
 #include "core/jobs.hpp"
 #include "core/journey.hpp"
+#include "core/names.hpp"
 #include "core/paths.hpp"
+#include "core/rect.hpp"
 #include "core/world_map.hpp"
 #include "game/host.hpp"
 #include "game/npcs.hpp"
@@ -166,6 +168,46 @@ TEST_CASE("the month step with visits is the same on 1 and 4 workers") {
     CHECK(one.departures > 0);
     CHECK(one.departures == many.departures);
     CHECK(one.hash == many.hash);
+}
+
+TEST_CASE("publishing travellers is the same on 1 and 4 workers") {
+    constexpr u32 MANY_WORKERS = 4;
+    // More journeys than one publish chunk takes, so the travellers are packed in several.
+    constexpr std::size_t SEVERAL_CHUNKS = 4'097;
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    std::vector<core::Event> events;
+    host.Tick({ .wall = 1, .simulation = 1, .state = 1 }, {}, events);
+    REQUIRE(host.NpcTravel().Journeys().size() >= SEVERAL_CHUNKS);
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const core::Rect everywhere{
+        .min = {},
+        .max = { .x = static_cast<f32>(map->Columns()) * map->TileSize(),
+                 .y = static_cast<f32>(map->Rows()) * map->TileSize() },
+    };
+    std::vector<core::Snapshot> published;
+    for (const u32 workers : { 1U, MANY_WORKERS }) {
+        core::Jobs jobs{ workers };
+        core::Snapshot snapshot;
+        host.Publish(snapshot, jobs, everywhere);
+        published.push_back(std::move(snapshot));
+    }
+    const auto named = [](const core::Snapshot& snapshot) {
+        std::vector<std::tuple<core::StableId, u32, u64>> labels;
+        for (const core::TextItem& text : snapshot.texts) {
+            if (text.npcName) {
+                labels.emplace_back(text.entity, core::NameKey(*text.npcName), std::bit_cast<u64>(text.current));
+            }
+        }
+        return labels;
+    };
+    REQUIRE_FALSE(named(published[0]).empty());
+    CHECK(
+        std::ranges::equal(
+            std::as_bytes(std::span{ published[0].instances }), std::as_bytes(std::span{ published[1].instances })
+        )
+    );
+    CHECK(published[0].ids == published[1].ids);
+    CHECK(named(published[0]) == named(published[1]));
 }
 
 } // namespace
