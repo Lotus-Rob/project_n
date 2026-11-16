@@ -87,7 +87,7 @@ struct SealLookUniforms {
 };
 static_assert(sizeof(SealLookUniforms) == SEAL_LOOK_UNIFORM_BYTES, "the seal fragment shader's constant buffer is 16 bytes");
 
-// A colour target of `format` blending premultiplied alpha (§8.8): ink covers what is under it, light adds to it.
+// A colour target of `format` blending premultiplied alpha: ink covers what is under it, light adds to it.
 SDL_GPUColorTargetDescription SealBlendTarget(SDL_GPUTextureFormat format, bool ink) {
     SDL_GPUColorTargetDescription target{};
     target.format = format;
@@ -320,7 +320,7 @@ std::expected<std::size_t, core::Error> SealRenderer::Upload(SDL_GPUCopyPass* co
     PN_ASSERT(drawing.layers.size() <= MAX_SEAL_LAYERS_DRAWN, "a frame drew more seal layers than DrawSeals() can");
     const std::span<const SealGpuLayer> layers =
         std::span{ drawing.layers }.first(std::min<std::size_t>(drawing.layers.size(), MAX_SEAL_LAYERS_DRAWN));
-    // Cycled: a frame in flight may still read what the buffers held (§8.7).
+    // Cycled: a frame in flight may still read what the buffers held.
     if (!CopyToBuffer(m_device, copy, m_vertexTransfer.get(), m_vertices.get(), std::as_bytes(std::span{ m_quads }), true) ||
         !CopyToBuffer(m_device, copy, m_layerTransfer.get(), m_layers.get(), std::as_bytes(layers), true) ||
         (!m_lightRecords.empty() &&
@@ -395,7 +395,7 @@ void SealRenderer::DrawRuns(
         uniforms.wash = isWash ? 1U : 0U;
         SDL_PushGPUVertexUniformData(commands, 0, &uniforms, sizeof(uniforms));
         SDL_PushGPUFragmentUniformData(commands, 0, &look, sizeof(look));
-        // The run's vertices are reached through the vertex offset; no shader reads SV_VertexID (§8.5).
+        // The run's vertices are reached through the vertex offset; no shader reads SV_VertexID.
         SDL_DrawGPUIndexedPrimitives(pass, run.quads * QUAD_INDICES, 1, 0, static_cast<i32>(run.first * QUAD_VERTICES), 0);
     };
     // Ink, then light: the washes and the particles' ink under every seal's lines and the particles' light.
@@ -426,7 +426,7 @@ void SealRenderer::DrawLight(
                                       .ink = ink ? 1U : 0U };
     SDL_PushGPUVertexUniformData(commands, 0, &uniforms, sizeof(uniforms));
     // The plane's records are found through the uniform, the particles counted from 0 in the instance index; first_vertex
-    // and first_instance stay 0, as SDL needs for its built-in indices (§8.5).
+    // and first_instance stay 0, as SDL needs for its built-in indices.
     SDL_DrawGPUPrimitives(pass, SEAL_LIGHT_VERTICES, light.particles, 0, 0);
 }
 

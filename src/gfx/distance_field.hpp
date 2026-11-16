@@ -2,8 +2,8 @@
 
 /// @file
 /// @ingroup gfx
-/// A sprite's signed distance field: how far each texel lies from the sprite's edge, for the glows
-/// (spec 2026-11-12-phase6-glow-design.md, "Distance fields"). Pure, tested without a device.
+/// A sprite's signed distance field: how far each texel lies from the sprite's edge, for the glows. Pure, tested without a
+/// device.
 
 #include "core/types.hpp"
 

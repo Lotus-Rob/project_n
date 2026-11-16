@@ -42,7 +42,7 @@ enum class PresentMode : u8 {
 /// measurement wants nothing to wait). Vsync follows when neither is available, so it isn't listed.
 [[nodiscard]] std::span<const PresentMode> PresentModeOrder(bool unpaced);
 
-/// How game text is drawn (the phase 6 chunk 3 spec, "Settings" and "Accessibility"): from the settings at start-up.
+/// How game text is drawn: from the settings at start-up.
 struct TextOptions {
     /// The language labels and captions show in.
     core::Language language = core::Language::English;
@@ -54,10 +54,10 @@ struct TextOptions {
     f32 scale = 1.0F;
 };
 
-/// Draws into the game's window with SDL_GPU (design doc 0002 §8), blending in linear space (§8.4). The device, the window's
+/// Draws into the game's window with SDL_GPU, blending in linear space. The device, the window's
 /// swapchain, the pipelines, the empty sprite atlas and the glyph cache are made when it's created; each scene's sprites
-/// load into the atlas when the game needs them (design doc 0002.3.1 §5), and stay. Game text is drawn over the world from
-/// distance fields (the phase 6 chunk 3 spec): its size scales with the zoom, and its edges stay about a pixel wide.
+/// load into the atlas when the game needs them, and stay. Game text is drawn over the world from
+/// distance fields: its size scales with the zoom, and its edges stay about a pixel wide.
 class Renderer {
 public:
     /// Creates a GPU device for `window` and presents to it, with the empty sprite atlas `manifest` describes, whose
@@ -92,11 +92,11 @@ public:
     [[nodiscard]] std::expected<bool, core::Error> ContinueScene(u64 budgetNs);
 
     /// Acquires the window's next frame to draw into: waits while the GPU has its two frames in
-    /// flight and, with vsync, for the display. The time for alpha is read after it (§6); Draw()
+    /// flight and, with vsync, for the display. The time for alpha is read after it; Draw()
     /// follows before the next Acquire(). A failure is logged, and the Draw() after it does nothing.
     void Acquire();
     /// Draws `snapshot` into the frame Acquire() acquired as `view` shows it, and presents it. Uploads its instances only when
-    /// it isn't the snapshot drawn last (§8.3); a snapshot of a scene it doesn't hold draws the backdrop only. The seals on the
+    /// it isn't the snapshot drawn last; a snapshot of a scene it doesn't hold draws the backdrop only. The seals on the
     /// ground, with their light, draw over its ground and decals (Snapshot::groundBatches), under the rest
     /// (gfx/seal_draw.hpp, at the render time, as SetSeals() describes them). The view's outlined instance gets a pale outline
     /// drawn over everything, and the snapshot's selected instance a gold one; the gold wins where both fall on one. Over them
@@ -142,7 +142,7 @@ public:
     void SetWorld(std::shared_ptr<const core::WorldMap> map, const core::WorldLook& look);
 
     /// Draws glows for the reduce flashing setting from the next frame on (off until it is called): pulses hold still and
-    /// light glows dim (the phase 6 glow spec, "Accessibility").
+    /// light glows dim.
     void SetReduceFlashing(bool reduce);
 
     /// Draws as Draw() does, but into a picture `width` by `height` pixels instead of the window, waits for the GPU and

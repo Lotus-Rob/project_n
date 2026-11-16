@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup gfx
-/// The mesh path (design doc 0002.4.2 §2): textured, coloured quads the main thread places in target pixels each frame,
+/// The mesh path: textured, coloured quads the main thread places in target pixels each frame,
 /// drawn from a cycled vertex buffer with a static quad index buffer. Text is its first user: each quad's page is a
 /// glyph page of distance fields, which the fragment shader turns into the text, its outline and its shadow.
 

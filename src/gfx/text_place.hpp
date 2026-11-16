@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup gfx
-/// Where game text goes on the target and how large (the phase 6 chunk 3 spec, "Drawing: crisp at every size"): each
+/// Where game text goes on the target and how large: each
 /// kind of text has a size in world units, drawn at that size times the pixels a world unit covers (PixelsPerUnit():
 /// the window's fit and the zoom), so it keeps its proportion to the world at every window size, and its glyphs keep sub-pixel
 /// positions, never rounded, so moving text glides. Numbers, thousands at once, are composed from their characters'

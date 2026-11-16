@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup gfx
-/// One frame's command buffer and swapchain texture (design doc 0002 §8.3).
+/// One frame's command buffer and swapchain texture.
 
 #include "core/error.hpp"
 #include "core/types.hpp"
@@ -18,7 +18,7 @@ struct Frame {
     /// The frame's commands; submitted by SubmitFrame().
     SDL_GPUCommandBuffer* commands = nullptr;
     /// The window's texture to draw into, or null when the window can't be shown: then nothing is
-    /// drawn, but copies still run and the command buffer is still submitted (§8.3).
+    /// drawn, but copies still run and the command buffer is still submitted.
     SDL_GPUTexture* swapchain = nullptr;
     /// The swapchain texture's width in pixels.
     u32 width = 0;

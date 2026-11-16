@@ -3,7 +3,7 @@
 
 // The sprites' distance fields (gfx::SpriteArray::field): the seals' runes, flourishes and emblems are white sprites, so
 // their fields alone draw them, in their part's colour. Then the layers, parts and sprites (gfx::SealPack), as storage
-// buffers after the sampled texture (§8.8). SDL_GPU's SPIR-V takes combined image samplers.
+// buffers after the sampled texture. SDL_GPU's SPIR-V takes combined image samplers.
 [[vk::combinedImageSampler]] [[vk::binding(0, 2)]] Texture2DArray<float> field : register(t0, space2);
 [[vk::combinedImageSampler]] [[vk::binding(0, 2)]] SamplerState fieldSampler : register(s0, space2);
 [[vk::binding(1, 2)]] StructuredBuffer<SealLayer> layers : register(t1, space2);

@@ -1,6 +1,6 @@
 #include "composite.hlsli"
 
-// SDL_GPU's SPIR-V takes combined image samplers (design doc 0002 §8.8).
+// SDL_GPU's SPIR-V takes combined image samplers.
 [[vk::combinedImageSampler]] [[vk::binding(0, 2)]] Texture2D<float4> scene : register(t0, space2);
 [[vk::combinedImageSampler]] [[vk::binding(0, 2)]] SamplerState sceneSampler : register(s0, space2);
 

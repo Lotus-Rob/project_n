@@ -89,7 +89,7 @@ void QueueBlock(
     region.w = block.width;
     region.h = block.height;
     region.d = 1;
-    SDL_UploadToGPUTexture(copy, &source, &region, false); // never cycled: the whole array would be (§8.7)
+    SDL_UploadToGPUTexture(copy, &source, &region, false); // never cycled: the whole array would be
 }
 
 } // namespace
@@ -149,7 +149,7 @@ std::expected<DecodedSprite, core::Error> DecodeSprite(const std::filesystem::pa
             sprite.height
         ) } };
     }
-    if (!SDL_PremultiplySurfaceAlpha(rgba.get(), true)) { // in linear space, where the blending happens (§8.4)
+    if (!SDL_PremultiplySurfaceAlpha(rgba.get(), true)) { // in linear space, where the blending happens
         return std::unexpected{ core::Error{ std::format("{} wasn't premultiplied: {}", sprite.file, SDL_GetError()) } };
     }
     const u64 startNs = platform::NowNs();

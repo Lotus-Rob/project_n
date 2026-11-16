@@ -24,7 +24,7 @@ struct SnapshotId {
     friend bool operator==(const SnapshotId&, const SnapshotId&) = default;
 };
 
-/// Which snapshot's instances are in the storage buffer (design doc 0002 §8.3). A recorded copy counts only once its
+/// Which snapshot's instances are in the storage buffer. A recorded copy counts only once its
 /// command buffer is submitted, so a frame that fails to submit is uploaded again.
 class UploadedSnapshot {
 public:

@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup gfx
-/// Owners of SDL objects (design doc 0002 §8.2): GPU objects are released once, through the device
+/// Owners of SDL objects: GPU objects are released once, through the device
 /// that made it, and the device outlives them; other SDL objects through their destroy function.
 
 #include "core/log.hpp"

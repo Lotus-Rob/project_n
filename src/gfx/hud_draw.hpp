@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup gfx
-/// What the temporary HUD hands the renderer each frame (the phase 6 chunk 4 spec): lines of text and bars, placed in
+/// What the temporary HUD hands the renderer each frame: lines of text and bars, placed in
 /// target pixels, drawn over everything else. `app::Hud` lays them out; the renderer draws the bars through the overlay's
 /// sprites (DrawHudBars() in gfx/volley_draw.hpp) and the lines through the glyph cache.
 

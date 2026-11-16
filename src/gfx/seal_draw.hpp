@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup gfx
-/// Laying seals out (the phase 6 chunk 4b spec, "The view and the ground" and "Drawing"): each seal in play, from its record,
+/// Laying seals out: each seal in play, from its record,
 /// its look (core::Seals) and the render time, becomes the band geometry of its layers and the wash under them at the art's
 /// angle, its layers' records pointing at the parts each band's fragment shader draws, and its light's particle records. The
 /// parts and their sprites are packed once per table (PackSeals(), when the table loads or reloads), never per frame. Pure,

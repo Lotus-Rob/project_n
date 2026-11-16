@@ -1,6 +1,6 @@
 #include "mesh.hlsli"
 
-// An R8 page of distance fields (the glyph cache's). SDL_GPU's SPIR-V takes combined image samplers (design doc 0002 §8.8).
+// An R8 page of distance fields (the glyph cache's). SDL_GPU's SPIR-V takes combined image samplers.
 [[vk::combinedImageSampler]] [[vk::binding(0, 2)]] Texture2D<float> page : register(t0, space2);
 [[vk::combinedImageSampler]] [[vk::binding(0, 2)]] SamplerState pageSampler : register(s0, space2);
 

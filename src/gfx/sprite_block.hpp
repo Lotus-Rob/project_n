@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup gfx
-/// What a sprite writes onto its atlas page (design doc 0002 §8.7). Pure, tested without a device.
+/// What a sprite writes onto its atlas page. Pure, tested without a device.
 
 #include "core/manifest.hpp"
 #include "core/types.hpp"

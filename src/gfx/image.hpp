@@ -3,7 +3,7 @@
 /// @file
 /// @ingroup gfx
 /// Pictures in memory and on disk, for reading what the renderer drew and comparing it with a
-/// committed reference (design doc 0002 §8.9).
+/// committed reference.
 
 #include "core/error.hpp"
 #include "core/types.hpp"

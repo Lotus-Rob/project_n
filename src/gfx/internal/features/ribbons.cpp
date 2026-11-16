@@ -20,7 +20,7 @@ Gpu<SDL_GPUGraphicsPipeline> CreateRibbonPipeline(SDL_GPUDevice* device, SDL_GPU
     }
     SDL_GPUColorTargetDescription target{};
     target.format = format;
-    target.blend_state.enable_blend = true; // additive, as core::Pipeline::Additive (§8.8)
+    target.blend_state.enable_blend = true; // additive, as core::Pipeline::Additive
     target.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
     target.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
     target.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
@@ -96,7 +96,7 @@ std::expected<std::size_t, core::Error> RibbonRenderer::Upload(SDL_GPUCopyPass* 
         return dropped;
     }
     const std::span<const RibbonVertex> fitting = vertices.first(std::size_t{ m_quads } * QUAD_VERTICES);
-    // Cycled: a frame in flight may still read what the transfer buffer and the vertex buffer held (§8.7).
+    // Cycled: a frame in flight may still read what the transfer buffer and the vertex buffer held.
     if (!CopyToBuffer(m_device, copy, m_transfer.get(), m_vertices.get(), std::as_bytes(fitting), true)) {
         m_quads = 0;
         return std::unexpected{ core::Error{ std::format("the ribbon vertices weren't uploaded: {}", SDL_GetError()) } };

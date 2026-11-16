@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup gfx
-/// Drawing the snapshot's sprite instances (design doc 0002 §8.5): uploaded into a storage buffer
+/// Drawing the snapshot's sprite instances: uploaded into a storage buffer
 /// when the drawn snapshot changes, expanded into quads and interpolated by the vertex shader.
 
 #include "core/error.hpp"
@@ -22,7 +22,7 @@
 
 namespace gfx::internal {
 
-/// The most instances the storage buffer holds: the stress arena's 100,000 and some room (§8.1).
+/// The most instances the storage buffer holds: the stress arena's 100,000 and some room.
 inline constexpr u32 MAX_INSTANCES = 1U << 17U;
 
 /// The glow table (gfx::BuildGlowTable()) in a storage buffer the sprite shaders read.
@@ -52,7 +52,7 @@ private:
     Gpu<SDL_GPUTransferBuffer> m_transfer = nullptr;
 };
 
-/// What every glow a frame draws shares (the phase 6 glow spec, "Drawing").
+/// What every glow a frame draws shares.
 struct GlowFrame {
     /// The glow table's storage buffer (GlowTableBuffer::Buffer()); never null.
     SDL_GPUBuffer* table = nullptr;

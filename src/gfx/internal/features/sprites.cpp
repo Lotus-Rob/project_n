@@ -95,7 +95,7 @@ Gpu<SDL_GPUGraphicsPipeline> CreatePipeline(SDL_GPUDevice* device, SDL_GPUTextur
     }
     SDL_GPUColorTargetDescription target{};
     target.format = format;
-    // Premultiplied alpha's blends (§8.8): normal is ONE, ONE_MINUS_SRC_ALPHA; additive is ONE, ONE.
+    // Premultiplied alpha's blends: normal is ONE, ONE_MINUS_SRC_ALPHA; additive is ONE, ONE.
     const SDL_GPUBlendFactor destination =
         blend == core::Pipeline::Additive ? SDL_GPU_BLENDFACTOR_ONE : SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
     target.blend_state.enable_blend = true;
@@ -227,7 +227,7 @@ std::expected<std::size_t, core::Error> SpriteRenderer::Upload(
         return instances.size();
     }
     const std::span<const std::byte> bytes = std::as_bytes(fitting);
-    // Cycled: a frame in flight may still read what the transfer buffer and the storage buffer held (§8.7).
+    // Cycled: a frame in flight may still read what the transfer buffer and the storage buffer held.
     void* mapped = SDL_MapGPUTransferBuffer(m_device, m_transfer.get(), true);
     if (mapped == nullptr) {
         m_count = 0;
@@ -267,7 +267,7 @@ void SpriteRenderer::Draw(
         SDL_BindGPUGraphicsPipeline(pass, m_pipelines.at(static_cast<std::size_t>(batch.pipeline)).get());
         uniforms.firstInstance = batch.first;
         SDL_PushGPUVertexUniformData(commands, 0, &uniforms, sizeof(uniforms));
-        // first_vertex and first_instance stay 0: SDL warns they don't reach SV_VertexID and SV_InstanceID (§8.5).
+        // first_vertex and first_instance stay 0: SDL warns they don't reach SV_VertexID and SV_InstanceID.
         SDL_DrawGPUPrimitives(pass, VERTICES_PER_QUAD, std::min(batch.count, m_count - batch.first), 0, 0);
     }
 }

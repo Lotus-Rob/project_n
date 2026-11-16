@@ -1,7 +1,7 @@
-// Seals (the phase 6 chunk 4b spec, "Drawing"): each layer's band and each seal's wash, laid out on the CPU at the art's
+// Seals: each layer's band and each seal's wash, laid out on the CPU at the art's
 // angle (gfx/seal_draw.hpp) and drawn here, the parts of a layer as distance fields across its band; and each seal's light,
 // its particles placed by SealParticleAt below from their seal's record.
-// Register spaces follow SDL_GPU's order (design doc 0002 §8.8): vertex uniforms in space1, fragment resources in space2.
+// Register spaces follow SDL_GPU's order: vertex uniforms in space1, fragment resources in space2.
 
 #include "colour.hlsli"
 

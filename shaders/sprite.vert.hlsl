@@ -2,7 +2,7 @@
 #include "sprite.hlsli"
 
 // core::Instance (src/core/frame.hpp), 56 bytes. 16-bit fields come in pairs, low half first, and
-// are unpacked by hand: SDL_GPU's baseline doesn't guarantee native 16-bit types (§8.5).
+// are unpacked by hand: SDL_GPU's baseline doesn't guarantee native 16-bit types.
 struct Instance {
     float2 previous;  // the quad's centre at the previous tick, world units
     float2 current;   // and at this tick

@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup gfx
-/// The label pass (the phase 6 chunk 3 spec, "Labels: placement, stacking and priority"): each frame it places every
+/// The label pass: each frame it places every
 /// name label on the screen so they never crowd it. Overlapping labels of one name, chains of them included, stack
 /// into one "Name (+N)" over the creature nearest the group's middle, with room kept for that wider text; a label
 /// overlapping one of another name gives way to the higher priority (selected > hovered > player > named creatures >

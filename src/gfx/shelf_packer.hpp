@@ -2,8 +2,7 @@
 
 /// @file
 /// @ingroup gfx
-/// Packing glyphs onto the glyph cache's pages (design doc 0002.4.2 §3; the distance fields of the phase 6 chunk 3
-/// spec). Pure, tested without a device.
+/// Packing glyphs onto the glyph cache's pages. Pure, tested without a device.
 
 #include "core/types.hpp"
 
