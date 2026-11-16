@@ -308,6 +308,19 @@ struct Flash {
     }
 };
 
+/// The world's calendar as the simulation reports it, for the date line: derived from the world clock.
+struct CalendarView {
+    /// How many months have passed, from 0.
+    u64 month = 0;
+    /// The day of the month, from 0.
+    u32 day = 0;
+    /// Whether the player has paused the world.
+    bool paused = false;
+
+    /// Whether two views are alike, field by field.
+    friend constexpr bool operator==(const CalendarView&, const CalendarView&) = default;
+};
+
 /// One published snapshot of the game state: what the main thread draws until the next is due.
 struct Snapshot {
     /// The wall tick of the last tick in the burst that published it.
@@ -362,6 +375,8 @@ struct Snapshot {
     bool combat = false;
     /// The player's Qi, health and cooldowns in a combat scene with a player; none otherwise.
     std::optional<CasterView> caster = std::nullopt;
+    /// The world's calendar in a scene that shows the world map (`worldMap`); none elsewhere.
+    std::optional<CalendarView> calendar = std::nullopt;
     /// What the camera follows, if anything.
     std::optional<Follow> follow = std::nullopt;
     /// How the camera moves over the scene: Pan unless the simulation says otherwise.
@@ -426,10 +441,12 @@ enum class ActionKind : u8 {
     Cast,            ///< Use the ability in the slot `slot` at the world point `point`: one per press, in a combat scene.
     SceneLeft,       ///< The main thread has played the way out of scene change `change`: never in a replay.
     SceneEntered,    ///< The main thread has played the way into scene change `change`: never in a replay.
+    /// Pause the world's clock, or resume it, in a scene that shows the world map: the simulation ignores it elsewhere.
+    ToggleWorldPause,
 };
-/// How many kinds ActionKind names (SceneEntered is the last): a replay read from disk holds only
+/// How many kinds ActionKind names (ToggleWorldPause is the last): a replay read from disk holds only
 /// kinds below this.
-inline constexpr u8 ACTION_KINDS = static_cast<u8>(std::to_underlying(ActionKind::SceneEntered) + 1U);
+inline constexpr u8 ACTION_KINDS = static_cast<u8>(std::to_underlying(ActionKind::ToggleWorldPause) + 1U);
 
 /// A player's or the main thread's request to the simulation, sent as input: a press, taken once.
 struct Action {

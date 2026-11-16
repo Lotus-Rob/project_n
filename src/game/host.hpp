@@ -3,8 +3,9 @@
 /// @file
 /// @ingroup game
 /// The host every scene runs in (game/scene.hpp, listed in game/scenes.cpp): as the core::Simulation it owns the
-/// state's domains, the world NPCs and the calendar, the player's cultivator, the selection, combat, the game data,
-/// saving, loading and hashing, and the publishing every scene shares, and it knows no scene by name.
+/// state's domains, the world NPCs and the calendar (the world clock, the month steps, the world pause), the player's
+/// cultivator, the selection, combat, the game data, saving, loading and hashing, and the publishing every scene shares,
+/// and it knows no scene by name.
 
 #include "core/draw_list.hpp"
 #include "core/ecs.hpp"
@@ -25,6 +26,7 @@
 
 #include <memory>
 #include <optional>
+#include <span>
 #include <stop_token>
 #include <vector>
 
@@ -33,6 +35,16 @@ namespace game {
 /// The test bed's game data as built in: what `assets/data/creatures.yaml` ships, for runs that read
 /// no data files (tests, tools).
 [[nodiscard]] core::GameData BuiltInData();
+
+/// How many simulation ticks a day of world time lasts (3 s at 60 Hz).
+inline constexpr u64 TICKS_PER_DAY = 180;
+/// How many days a month lasts.
+inline constexpr u64 DAYS_PER_MONTH = 30;
+/// How many simulation ticks a month of world time lasts: its last ends in the month step (Host::MonthDue()).
+inline constexpr u64 TICKS_PER_MONTH = TICKS_PER_DAY * DAYS_PER_MONTH;
+/// The last month the world clock reaches, the last whose first tick a u64 holds: at that tick the calendar ends, the clock
+/// standing still and the month steps no longer counted, so neither ever wraps.
+inline constexpr u64 LAST_MONTH = ~u64{ 0 } / TICKS_PER_MONTH;
 
 /// The input of the demo glow `role` at simulation `tick` (the shrine's pulse, the stele's charge on a 3.2 s loop that rises,
 /// holds and releases, the crystal's progress on a 5 s loop that fills and then shows a result): pure and presentation only.
@@ -54,31 +66,41 @@ public:
 
     /// When `input` holds a CycleScene, asks for the next scene in the list's order (NextScene(): arena, stress, painted,
     /// cells, world, then the arena again; Requested()), ending every use still open (Combat::EndUses()), and does nothing
-    /// else. Otherwise walks the player's cultivator where `input`'s held movement points, selects what its Select actions name
-    /// (nothing for a dying one), ignores Cast actions outside a combat scene (in one a Cast is Combat::Cast(): Qi,
-    /// cooldown, the ability's effect; a dash moves the player in place of held movement). When the player's foot, on its way
-    /// this tick, crosses the step area of the scene's portal (Scene::Portal(): an ellipse PORTAL_RADIUS across and
-    /// PORTAL_DEPTH_RATIO as deep, as its seal is drawn), it asks for the scene the portal leads to
-    /// (NextWalkableScene(); Requested()), ending every use still open, and does nothing more. Otherwise it moves every entity
-    /// on an Orbit to where it is at `counters.simulation`, advances combat (Combat::Tick(): arrivals, removing the dead, which
-    /// clears their selection, and the foxes due back, which the scene respawns: Scene::Respawn()), and walks the active NPCs,
-    /// whose decisions draw random numbers keyed on `counters.state`. Then the scene takes its own part of the tick
-    /// (Scene::Tick(): in the arena, the crystal's aura); a DebugBurst action appends 4,000 hits round the foxes, which
-    /// change nothing. Last, the volleys and afflictions strike (Combat::Strike()), appending their hits. Each use ends with a
-    /// UseEnded event. The events themselves change nothing in the state.
+    /// else. Otherwise selects what its Select actions name (nothing for a dying one), ignores Cast actions outside a combat
+    /// scene (in one a Cast is Combat::Cast(): Qi, cooldown, the ability's effect; a dash moves the player in place of held
+    /// movement), pauses or resumes the world for a ToggleWorldPause in a scene showing the world map (ignored elsewhere),
+    /// and walks the player's cultivator where `input`'s held movement points, unless the world is paused. When the player's
+    /// foot, on its way this tick, crosses the step area of the scene's portal (Scene::Portal(): an ellipse PORTAL_RADIUS
+    /// across and PORTAL_DEPTH_RATIO as deep, as its seal is drawn), it asks for the scene the portal leads to
+    /// (NextWalkableScene(); Requested()), ending every use still open, and does nothing more. Otherwise the world clock
+    /// moves a tick in a scene showing the world map, unless the world is paused, a month is due (MonthDue()) or the calendar
+    /// has ended (LAST_MONTH); it moves every entity on an Orbit to where it is at `counters.simulation`, advances combat
+    /// (Combat::Tick(): arrivals, removing the dead, which clears their selection, and the foxes due back, which the scene
+    /// respawns: Scene::Respawn()), and walks the active NPCs, whose decisions draw random numbers keyed on `counters.state`.
+    /// Then the scene takes its own part of the tick (Scene::Tick(): in the arena, the crystal's aura); a DebugBurst action
+    /// appends 4,000 hits round the foxes, which change nothing. Last, the volleys and afflictions strike (Combat::Strike()),
+    /// appending their hits. Each use ends with a UseEnded event. The events themselves change nothing in the state.
     void Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) override;
 
-    /// Lets a month pass for the world NPCs (MonthStep).
+    /// Lets a month pass for the world NPCs (MonthStep) and counts it (Months()). A step asked for before the month is due
+    /// (M, a debug key) first moves the world clock on to the next month's first tick; the world pause holds either way. Once
+    /// the calendar has ended (LAST_MONTH) the step runs uncounted, the clock standing still.
     void AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs, const std::stop_token& stop) override;
 
-    /// Sorts the state into canonical order and writes it, with the scene, the months passed and
-    /// the relationships, into `archive`.
+    /// Whether the world clock has reached the end of the month after the last step run (TICKS_PER_MONTH a month): the
+    /// clock stands still until AdvanceCalendar() runs.
+    [[nodiscard]] bool MonthDue() const override;
+
+    /// Sorts the state into canonical order and writes it, with the scene, the world clock, the month steps run, the world
+    /// pause and the relationships, into `archive`.
     void Save(core::Writer& archive) override;
 
     /// Reads and checks the state Save() wrote at simulation tick `simulationTick` and holds it, changing nothing else:
     /// Requested() names its scene until EnterScene() makes it current, its creatures taking the game data in use then.
-    /// False, holding nothing new, when the bytes are malformed, of another version, don't end where the state does, or
-    /// hold a flash or a seal that starts after `simulationTick`.
+    /// False, holding nothing new, when the bytes are malformed, of another version, don't end where the state does, hold a
+    /// flash or a seal that starts after `simulationTick`, a world clock outside the month after the month steps run (its
+    /// end included) or past the calendar's end (LAST_MONTH's first tick), or the world paused in a scene that shows no world
+    /// map.
     [[nodiscard]] bool Load(core::Reader& archive, u64 simulationTick) override;
 
     /// A hash of everything Save() writes, in the state's current order.
@@ -109,12 +131,25 @@ public:
     [[nodiscard]] std::optional<core::SceneFacts> Requested() const override;
 
     /// Makes the scene Requested() names current: the state a load holds, its creatures taking the game data in use, or
-    /// else the scene asked for, rebuilt with the selection cleared. It forgets both.
+    /// else the scene asked for, rebuilt with the selection and the world pause cleared and the calendar kept. It forgets
+    /// both.
     void EnterScene() override;
 
-    /// How many months have passed.
+    /// How many month steps have run.
     [[nodiscard]] u64 Months() const {
         return m_months;
+    }
+
+    /// The world clock: the simulation ticks that ran in scenes showing the world map while the world wasn't paused and no
+    /// month was due, plus those a month step asked for early skipped. The calendar (core::CalendarView) derives from it.
+    [[nodiscard]] u64 WorldTicks() const {
+        return m_worldTicks;
+    }
+
+    /// Whether the player has paused the world (core::ActionKind::ToggleWorldPause): only in a scene showing the world map,
+    /// and only until the next scene is built.
+    [[nodiscard]] bool WorldPaused() const {
+        return m_worldPaused;
     }
 
     /// The game state: the scene's entities in the active domain, NPCs in the world domain.
@@ -156,7 +191,9 @@ public:
     /// culled to `view` (the main thread's window and its margin) or, with none yet, to the widest view a window shows
     /// (core::WIDEST_HALF_VIEW) round where the camera starts: the player's cultivator, which is the one to follow, or else
     /// the centre of the scene's view (SceneTraits::view); the painted ground is drawn whole either way, and the scene's
-    /// hooks get the same area. The snapshot names the scene's camera (SceneTraits::camera). A scene with a player adds the
+    /// hooks get the same area. The snapshot names the scene's camera (SceneTraits::camera) and, in a scene showing the
+    /// world map, the calendar (core::CalendarView: the months and the day of the month the world clock has reached, and
+    /// the world pause). A scene with a player adds the
     /// player's and each living fox's name label over its head; a combat scene adds each living fox's health bar at its
     /// head and the player's casting state (core::Snapshot::caster). Then the scene adds its own (Scene::Publish(): the
     /// tablet's caption, the arena's showcase seals, the world's walker labels), then a scene with a portal adds its seal
@@ -182,6 +219,12 @@ private:
     core::Entity SpawnPlayer(core::Vec2 foot);
     void Walk(core::Vec2 move);
     void Select(core::StableId target);
+    void TakeActions(
+        std::span<const core::Action> actions,
+        const core::TickCounters& counters,
+        std::vector<core::Event>& events
+    );
+    void ToggleWorldPause(u64 tick);
     void CastAction(const core::Action& action, const core::TickCounters& counters, std::vector<core::Event>& events);
     void DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const;
     void Leave(core::SceneKey next, std::vector<core::Event>& events);
@@ -206,7 +249,9 @@ private:
     core::GameData m_data;
     core::SceneKey m_scene;
     core::SceneId m_sceneId;     // m_scene's in the manifest
-    u64 m_months = 0;            // the calendar: months passed
+    u64 m_worldTicks = 0;        // the world clock
+    u64 m_months = 0;            // month steps run
+    bool m_worldPaused = false;  // the player's world pause
     core::StableId m_player{};   // the cultivator the player walks; zero for none
     core::StableId m_selected{}; // zero for none
 
@@ -221,7 +266,9 @@ private:
             Relationships loadedRelationships,
             Combat loadedCombat,
             core::SceneKey loadedScene,
+            u64 loadedWorldTicks,
             u64 loadedMonths,
+            bool loadedWorldPaused,
             core::StableId loadedPlayer,
             core::StableId loadedSelected
         )
@@ -229,7 +276,9 @@ private:
           , relationships(std::move(loadedRelationships))
           , combat(std::move(loadedCombat))
           , scene(loadedScene)
+          , worldTicks(loadedWorldTicks)
           , months(loadedMonths)
+          , worldPaused(loadedWorldPaused)
           , player(loadedPlayer)
           , selected(loadedSelected) {
         }
@@ -238,7 +287,9 @@ private:
         Relationships relationships;
         Combat combat;
         core::SceneKey scene;
+        u64 worldTicks;
         u64 months;
+        bool worldPaused;
         core::StableId player;
         core::StableId selected;
     };

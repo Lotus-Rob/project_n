@@ -56,8 +56,9 @@ constexpr core::Vec2 PORTAL_LABEL_RISE{ .x = 0.0F, .y = -PORTAL_RADIUS };
 constexpr f32 MIDDLE = 0.5F;
 
 // The host's part of a save: its format, then a version per domain, each changed with what its components save.
-// 2: the player and the selection; 3: the respawns waiting, the volleys and the flashes; 4: the seals
-constexpr u32 ARENA_FORMAT = 4;
+// 2: the player and the selection; 3: the respawns waiting, the volleys and the flashes; 4: the seals; 5: the world clock,
+// the month steps run and the world pause in place of the months passed
+constexpr u32 ARENA_FORMAT = 5;
 constexpr u32 ACTIVE_VERSION =
     5; // 2: creatures; 3: spin; 4: health, dying, arriving, caster, dashing, afflictions; 5: the NPCs' homes
 constexpr u32 WORLD_VERSION = 2; // 2: the NPCs' homes
@@ -139,6 +140,17 @@ bool Consistent(const core::State& state) {
         }
     }
     return CombatConsistent(state[ACTIVE].Entities()); // the world domain saves no combat components
+}
+
+// The world clock's last tick: the first of the last month (LAST_MONTH), where the calendar ends.
+constexpr u64 CALENDAR_END = LAST_MONTH * TICKS_PER_MONTH;
+
+// Whether a saved world clock fits the month steps run: within the month after the last step, or at its end, the next
+// step due, and never past the calendar's end.
+bool ClockFits(u64 worldTicks, u64 months) {
+    const u64 month = worldTicks / TICKS_PER_MONTH;
+    return worldTicks <= CALENDAR_END &&
+           (month == months || (month > months && month - months == 1 && worldTicks % TICKS_PER_MONTH == 0));
 }
 
 core::SceneId SceneIdOf(const core::Manifest& manifest, core::SceneKey scene) {
@@ -298,7 +310,9 @@ void Host::EnterScene() {
         m_combat = std::move(m_loaded->combat);
         m_scene = m_loaded->scene;
         m_sceneId = SceneIdOf(*m_manifest, m_scene);
+        m_worldTicks = m_loaded->worldTicks;
         m_months = m_loaded->months;
+        m_worldPaused = m_loaded->worldPaused;
         m_player = m_loaded->player;
         m_selected = m_loaded->selected;
         m_loaded.reset();
@@ -322,8 +336,8 @@ Host::Host(std::shared_ptr<const core::Manifest> manifest, core::SceneKey scene,
     Build(m_scene);
 }
 
-// Everything but the calendar and the game data starts afresh: the entities, their IDs, the relationships, the
-// selection.
+// Everything but the calendar (the world clock and the month steps run) and the game data starts afresh: the entities,
+// their IDs, the relationships, the selection, the world pause.
 void Host::Build(core::SceneKey scene) {
     m_state = core::State{ DOMAINS, SEED };
     m_relationships = Relationships{};
@@ -334,6 +348,7 @@ void Host::Build(core::SceneKey scene) {
     m_requested.reset();
     m_player = {};
     m_selected = {};
+    m_worldPaused = false;
     PN_ASSERT(
         !Running().Traits().worldMap || m_data.world != nullptr, "a world scene built without the world map: CheckScenes()"
     );
@@ -386,22 +401,18 @@ void Host::Tick(const core::TickCounters& counters, const core::TickInput& input
         Leave(next, events);
         return;
     }
-    for (const core::Action& action : input.actions) {
-        if (action.kind == core::ActionKind::Select) {
-            Select(action.target);
-        }
-        else if (action.kind == core::ActionKind::Cast) {
-            CastAction(action, counters, events);
-        }
-    }
+    TakeActions(input.actions, counters, events);
     if (!Combat::Dash(m_state, m_player, counters.simulation)) {
-        Walk(input.held.move);
+        Walk(m_worldPaused ? core::Vec2{} : input.held.move);
     }
     if (OnPortal()) {
         const core::SceneKey next = NextWalkableScene(m_scene);
         PN_LOG_INFO("tick {}: the cultivator steps through the portal to {}", counters.simulation, SceneName(next));
         Leave(next, events);
         return;
+    }
+    if (Running().Traits().worldMap && !m_worldPaused && !MonthDue() && m_worldTicks < CALENDAR_END) {
+        ++m_worldTicks;
     }
     core::Domain& active = m_state[ACTIVE];
     if (m_player != core::StableId{}) {
@@ -442,6 +453,33 @@ void Host::Tick(const core::TickCounters& counters, const core::TickInput& input
     }
     // Last, once everything that moves or kills this tick has.
     m_combat.Strike(m_state, *m_manifest, counters.simulation, events);
+}
+
+void Host::TakeActions(
+    std::span<const core::Action> actions,
+    const core::TickCounters& counters,
+    std::vector<core::Event>& events
+) {
+    for (const core::Action& action : actions) {
+        if (action.kind == core::ActionKind::Select) {
+            Select(action.target);
+        }
+        else if (action.kind == core::ActionKind::Cast) {
+            CastAction(action, counters, events);
+        }
+        else if (action.kind == core::ActionKind::ToggleWorldPause) {
+            ToggleWorldPause(counters.simulation);
+        }
+    }
+}
+
+void Host::ToggleWorldPause(u64 tick) {
+    if (!Running().Traits().worldMap) {
+        PN_LOG_DEBUG("tick {}: the world pause is ignored: the scene {} shows no world map", tick, Running().Traits().name);
+        return;
+    }
+    m_worldPaused = !m_worldPaused;
+    PN_LOG_INFO("tick {}: the world is {}", tick, m_worldPaused ? "paused" : "resumed");
 }
 
 void Host::Leave(core::SceneKey next, std::vector<core::Event>& events) {
@@ -615,7 +653,17 @@ void Host::Select(core::StableId target) {
 
 void Host::AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs, const std::stop_token& stop) {
     m_monthStep.Run(m_state, m_relationships, jobs, counters.state, stop);
-    ++m_months;
+    if (m_months < LAST_MONTH) {
+        // A step asked for early (M) moves the clock on to the next month's first tick, so the calendar keeps up with the
+        // steps.
+        m_worldTicks = std::max(m_worldTicks, (m_months + 1) * TICKS_PER_MONTH);
+        ++m_months;
+        PN_LOG_INFO("month {} begins at world tick {}", m_months + 1, m_worldTicks);
+    }
+}
+
+bool Host::MonthDue() const {
+    return m_worldTicks / TICKS_PER_MONTH > m_months;
 }
 
 template<typename Archive>
@@ -626,7 +674,9 @@ void Host::Write(Archive& archive) const {
         static_cast<u8>(std::to_underlying(m_scene)),
         m_state.Seed(),
         m_state.Ids().next,
+        m_worldTicks,
         m_months,
+        m_worldPaused,
         m_player,
         m_selected
     );
@@ -657,10 +707,12 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
     u8 scene = 0;
     u64 seed = 0;
     u64 next = 0;
+    u64 worldTicks = 0;
     u64 months = 0;
+    bool worldPaused = false;
     core::StableId player{};
     core::StableId selected{};
-    archive(format, scene, seed, next, months, player, selected);
+    archive(format, scene, seed, next, worldTicks, months, worldPaused, player, selected);
     // A scene that shows the world map can't run without it, so a save of one is refused by a game that lacks the map.
     if (format != ARENA_FORMAT || scene >= Scenes().size() ||
         (SceneOf(core::SceneKey{ scene }).Traits().worldMap && m_data.world == nullptr)) {
@@ -686,12 +738,22 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
     const bool npcsPlaced = NpcsPlaced(state, sceneHasMap ? m_data.world.get() : nullptr);
     const bool playerFound = player == core::StableId{} || (state.DomainOf(player) == ACTIVE &&
                                                             state[ACTIVE].Entities().all_of<Body>(state[ACTIVE].Find(player)));
-    if (archive.Failed() || archive.Remaining() != 0 || !Consistent(state) || !npcsPlaced || !playerFound ||
+    // The pause only holds where the world map shows, as a scene build clears it.
+    const bool calendarFits = ClockFits(worldTicks, months) && (!worldPaused || sceneHasMap);
+    if (archive.Failed() || archive.Remaining() != 0 || !Consistent(state) || !npcsPlaced || !playerFound || !calendarFits ||
         !combat.AimsAtCreatures(state) || !combat.FlashesStartBy(simulationTick) || !combat.SealsStartBy(simulationTick)) {
         return false;
     }
     m_loaded.emplace(
-        std::move(state), std::move(relationships), std::move(combat), core::SceneKey{ scene }, months, player, selected
+        std::move(state),
+        std::move(relationships),
+        std::move(combat),
+        core::SceneKey{ scene },
+        worldTicks,
+        months,
+        worldPaused,
+        player,
+        selected
     );
     return true;
 }
@@ -762,6 +824,13 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
     snapshot.combat = traits.combat;
     snapshot.camera = traits.camera;
     snapshot.worldMap = traits.worldMap;
+    if (traits.worldMap) {
+        snapshot.calendar = core::CalendarView{
+            .month = m_worldTicks / TICKS_PER_MONTH,
+            .day = static_cast<u32>((m_worldTicks % TICKS_PER_MONTH) / TICKS_PER_DAY),
+            .paused = m_worldPaused,
+        };
+    }
     const u32 chunks = core::ChunkCount(looks.size(), PUBLISH_CHUNK);
     core::Vec2 start = (traits.view.min + traits.view.max) * MIDDLE;
     if (m_player != core::StableId{}) {

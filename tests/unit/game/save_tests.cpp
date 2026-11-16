@@ -11,6 +11,7 @@
 #include "game/host.hpp"
 #include "game/npcs.hpp"
 #include "support/manifest.hpp"
+#include "support/saves.hpp"
 #include "support/world.hpp"
 
 #include <doctest/doctest.h>
@@ -409,88 +410,14 @@ TEST_CASE("a save with bytes after the state, or of another format, is refused")
     CHECK_FALSE(game.Load(otherReader, SAVED_TICK));
 }
 
-constexpr u32 FORMAT = 4;
-constexpr u32 ACTIVE_VERSION = 5; // 5: the NPCs' homes
-constexpr u32 WORLD_VERSION = 2;  // 2: the NPCs' homes
-using Active = core::ComponentList<
-    game::Body,
-    game::Look,
-    game::Orbit,
-    game::Spin,
-    game::Creature,
-    game::Npc,
-    game::Needs,
-    game::Met,
-    game::Wander,
-    game::Health,
-    game::Dying,
-    game::Arriving,
-    game::Caster,
-    game::Dashing,
-    game::Afflictions>;
-using World = core::ComponentList<game::Npc, game::Needs, game::Met, game::Group>;
-
-// A volley as game::Combat saves one: the cast, then its targets.
-struct SavedVolley {
-    core::Volley volley{};
-    std::vector<core::VolleyTarget> targets;
-};
-
-// An arena save of `state` with `player`, laid out as Host::Save writes one: format, scene, seed,
-// stable-ID counter, months, the player and the selection (none), then each domain after its version,
-// then no relationships, no respawns waiting, `volley` if any (the flying swords' hits of 20, none resolved yet),
-// `flash` if any and `seal` if any.
-// Its versions must follow game/host.cpp's, or every refusal below is the version's.
-std::vector<std::byte> ArenaSave(
-    const core::State& state,
-    core::StableId player = {},
-    const std::optional<SavedVolley>& volley = std::nullopt,
-    const std::optional<core::Flash>& flash = std::nullopt,
-    const std::optional<core::Seal>& seal = std::nullopt,
-    core::SceneKey scene = game::ARENA_SCENE,
-    u32 worldVersion = WORLD_VERSION,
-    u32 activeVersion = ACTIVE_VERSION
-) {
-    constexpr u64 MONTHS_PASSED = 0;
-    constexpr u64 RELATIONSHIPS = 0;
-    constexpr u64 RESPAWNS = 0;
-    std::vector<std::byte> bytes;
-    core::Writer writer{ bytes };
-    writer(
-        FORMAT,
-        static_cast<u8>(std::to_underlying(scene)),
-        state.Seed(),
-        state.Ids().next,
-        MONTHS_PASSED,
-        player,
-        core::StableId{}
-    );
-    writer(activeVersion);
-    core::SaveDomain(writer, state[game::ACTIVE], Active{});
-    writer(worldVersion);
-    core::SaveDomain(writer, state[game::WORLD], World{});
-    writer(RELATIONSHIPS);
-    writer(RESPAWNS);
-    writer(static_cast<u64>(volley ? 1 : 0));
-    if (volley) {
-        constexpr i64 DAMAGE = 20;
-        constexpr u32 RESOLVED = 0;
-        writer(volley->volley, core::AbilityKind::FlyingSwords, core::HitKind::Damage, DAMAGE, core::Affliction{}, RESOLVED);
-        writer(static_cast<u64>(volley->targets.size()));
-        for (const core::VolleyTarget& target : volley->targets) {
-            writer(target);
-        }
-    }
-    writer(static_cast<u64>(flash ? 1 : 0));
-    if (flash) {
-        writer(*flash);
-    }
-    writer(static_cast<u64>(seal ? 1 : 0));
-    if (seal) {
-        writer(*seal);
-    }
-    return bytes;
-}
+constexpr u32 FORMAT = test::HOST_FORMAT;
+using test::ACTIVE_VERSION;
+using test::ArenaSave;
+using test::SavedVolley;
+using test::WORLD_VERSION;
+using test::WorldSaveAt;
+using Active = test::ActiveComponents;
+using World = test::WorldComponents;
 
 // Whether a fresh host loads `bytes`, saved at `savedTick`; CHECKs that its state hash is the same afterwards, and that
 // it holds a state to enter exactly when it loaded one.
@@ -578,7 +505,9 @@ std::vector<std::byte> WithoutWorldTier(const game::Host& saved, const std::vect
             static_cast<u8>(std::to_underlying(game::ARENA_SCENE)),
             state.Seed(),
             state.Ids().next,
+            saved.WorldTicks(),
             saved.Months(),
+            saved.WorldPaused(),
             saved.Player(),
             saved.Selected()
         );
@@ -1018,8 +947,7 @@ TEST_CASE("a save with a seal that starts after its tick is refused, and one its
 
 // A save of the world scene with nothing in it: small, and it names a scene that needs the world map.
 std::vector<std::byte> EmptyWorldSave() {
-    const core::State state{ game::DOMAINS, STATE_SEED };
-    return ArenaSave(state, {}, std::nullopt, std::nullopt, std::nullopt, game::WORLD_SCENE);
+    return WorldSaveAt({});
 }
 
 TEST_CASE("a save naming the world scene is refused by a host without the world map, and loaded by one with it") {
@@ -1135,6 +1063,71 @@ TEST_CASE("an arena save still loads, its NPCs homeless, and one with a home is 
     constexpr u16 SOME_HOME = 0;
     static_cast<void>(game::SpawnNpc(homed, NPC_CELL, SOME_HOME));
     CHECK_FALSE(Loads(ArenaSave(homed)));
+}
+
+TEST_CASE("the clock and the pause are saved and loaded") {
+    constexpr u64 WALKED = 7;
+    core::Jobs jobs{ 1 };
+    game::Host saved(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    saved.AdvanceCalendar(At(1), jobs, {});
+    for (u64 tick = 2; tick < 2 + WALKED; ++tick) {
+        Tick(saved, At(tick), {});
+    }
+    const std::array<core::Action, 1> pause{ { { .kind = core::ActionKind::ToggleWorldPause } } };
+    Tick(saved, At(2 + WALKED), { .actions = pause, .held = {} });
+    REQUIRE(saved.WorldPaused());
+    const std::vector<std::byte> bytes = Saved(saved);
+
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
+    CHECK(loaded.WorldTicks() == 0); // held until the swap
+    loaded.EnterScene();
+    CHECK(loaded.WorldTicks() == game::TICKS_PER_MONTH + WALKED);
+    CHECK(loaded.Months() == 1);
+    CHECK(loaded.WorldPaused());
+    CHECK(loaded.StateHash() == saved.StateHash());
+
+    // Resumed alike, both clocks run on alike.
+    Tick(saved, At(3 + WALKED), { .actions = pause, .held = {} });
+    Tick(loaded, At(3 + WALKED), { .actions = pause, .held = {} });
+    Tick(saved, At(4 + WALKED), {});
+    Tick(loaded, At(4 + WALKED), {});
+    CHECK(loaded.WorldTicks() == game::TICKS_PER_MONTH + WALKED + 2); // from the resuming tick on
+    CHECK(loaded.StateHash() == saved.StateHash());
+}
+
+TEST_CASE("a save whose clock doesn't fit its month steps is refused") {
+    constexpr u64 MONTH = game::TICKS_PER_MONTH;
+    CHECK(LoadsWithMap(WorldSaveAt({ .ticks = (2 * MONTH) + 1, .months = 2 })));
+    CHECK(LoadsWithMap(WorldSaveAt({ .ticks = 2 * MONTH, .months = 1 })));             // its month due, saved before the step
+    CHECK(LoadsWithMap(WorldSaveAt({ .ticks = 2 * MONTH, .months = 2 })));             // the step just run
+    CHECK_FALSE(LoadsWithMap(WorldSaveAt({ .ticks = (2 * MONTH) + 1, .months = 1 }))); // past a month due
+    CHECK_FALSE(LoadsWithMap(WorldSaveAt({ .ticks = (2 * MONTH) - 1, .months = 2 }))); // a step run too early
+    CHECK_FALSE(LoadsWithMap(WorldSaveAt({ .ticks = 0, .months = ~u64{ 0 } })));       // the most steps
+    CHECK_FALSE(LoadsWithMap(WorldSaveAt({ .ticks = ~u64{ 0 }, .months = 0 })));       // the most ticks
+    // The calendar ends at its last month's first tick: a clock there loads, one past it doesn't.
+    constexpr u64 CALENDAR_END = game::LAST_MONTH * MONTH;
+    CHECK(LoadsWithMap(WorldSaveAt({ .ticks = CALENDAR_END, .months = game::LAST_MONTH })));
+    CHECK(LoadsWithMap(WorldSaveAt({ .ticks = CALENDAR_END, .months = game::LAST_MONTH - 1 }))); // its last step due
+    CHECK_FALSE(LoadsWithMap(WorldSaveAt({ .ticks = ~u64{ 0 }, .months = game::LAST_MONTH })));  // in the last month
+}
+
+TEST_CASE("a save paused off the world map is refused, and one paused on it is loaded") {
+    const core::State state{ game::DOMAINS, STATE_SEED };
+    CHECK(LoadsWithMap(WorldSaveAt({ .paused = true })));
+    const std::vector<std::byte> arena = ArenaSave(
+        state,
+        {},
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        game::ARENA_SCENE,
+        WORLD_VERSION,
+        ACTIVE_VERSION,
+        { .paused = true }
+    );
+    CHECK_FALSE(Loads(arena));
 }
 
 } // namespace
