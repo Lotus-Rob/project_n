@@ -142,7 +142,7 @@ struct SealLayer {
     /// Its frame's turn from the layer's zero, in degrees.
     f32 frameRotation = 0.0F;
     /// Its parts, at most MAX_SEAL_PARTS, in the data's order.
-    std::vector<SealPart> parts{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::vector<SealPart> parts;
 };
 
 /// A sprite at a seal's centre.
@@ -252,12 +252,11 @@ struct SealLook {
     /// Whether its layers appear from the innermost out, rather than the outermost in.
     bool innerFirst = false;
     /// Its layers, 1 to MAX_SEAL_LAYERS, in the data's order.
-    std::vector<SealLayer> layers{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::vector<SealLayer> layers;
     /// The sprite at its centre, if it has one.
     std::optional<SealEmblem> emblem = std::nullopt;
     /// The seals drawn on its rings.
-    std::vector<SealSatellite>
-        satellites{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::vector<SealSatellite> satellites;
     /// Its light.
     SealLight light{};
 };
@@ -277,12 +276,10 @@ struct Seals {
     f32 haloReach = shipped::SEAL_HALO_REACH;
     /// How strong that halo is at the part's edge, 0 to 1, fading to nothing at its reach.
     f32 haloStrength = shipped::SEAL_HALO_STRENGTH;
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The glyph sets scripts draw from, each one or more sprites, in the data's order.
-    std::vector<std::vector<atlas::SpriteId>> glyphSets{};
+    std::vector<std::vector<atlas::SpriteId>> glyphSets;
     /// Every seal's look by key, sorted by key.
-    std::vector<std::pair<SealKey, SealLook>> looks{};
-    // NOLINTEND(readability-redundant-member-init)
+    std::vector<std::pair<SealKey, SealLook>> looks;
 
     /// The look of the seal `key` names, or null when the table has none.
     [[nodiscard]] const SealLook* Find(SealKey key) const {

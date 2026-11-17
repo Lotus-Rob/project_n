@@ -253,8 +253,7 @@ struct Renderer::Impl {
     internal::Device device = nullptr; // first: destroyed after everything it made
     internal::Gpu<SDL_Window> claim = nullptr;
     internal::SpriteArray sprites{};
-    std::vector<internal::Gpu<SDL_GPUTexture>>
-        glyphPages{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::vector<internal::Gpu<SDL_GPUTexture>> glyphPages;
     std::unique_ptr<TextLayout> text = nullptr; // made by Create(): never null after
     std::shared_ptr<const core::Manifest> manifest = nullptr;
     std::shared_ptr<const core::Strings> strings = nullptr;
@@ -265,8 +264,8 @@ struct Renderer::Impl {
     core::Seals sealLooks{};                                  // empty until SetSeals(): no seal is drawn
     std::shared_ptr<const core::WorldMap> worldMap = nullptr; // null until SetWorld(): no map is drawn
     core::WorldLook worldLook{};
-    std::filesystem::path assets{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<bool> resident{};   // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::filesystem::path assets;
+    std::vector<bool> resident;
     std::optional<SceneLoad> load = std::nullopt;
     /// Features: what draws, each with its pipelines and buffers.
     internal::SpriteRenderer instances{};
@@ -303,24 +302,23 @@ struct Renderer::Impl {
     std::optional<u64> glowRecorded = std::nullopt;
     bool reduceFlashing = false;
     std::size_t glyphsRecorded = 0; // of the cache's pending fields, in the command buffer not yet submitted
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::string number{};                                   // a number's text, made again for each
-    NameTexts nameTexts{};                                  // the NPC names this frame's labels show, each composed once
-    std::unordered_map<u64, MeasuredStack> measuredNames{}; // a named label's stack width per NameKey and direction
-    std::vector<std::array<MeasuredStack, 2>> measured{};   // a label stack's width per string and direction, likewise
-    std::string stacked{};                                  // a label stack's text, likewise
-    LabelPass labels{};
-    CaptionFades captionFades{};
-    std::vector<LabelInput> labelInputs{};
-    std::vector<NumberOrigin> numberOrigins{}; // by entity: where this frame's tiny creatures' numbers start
-    std::vector<u32> numberPages{};            // the glyph page of each quad PlaceNumbers() placed this frame
-    std::vector<std::size_t> numberQuads{};    // PlaceNumbers()' scratch: each chunk's first quad
-    std::vector<MeshVertex> meshVertices{};
-    std::vector<internal::MeshRun> meshRuns{};
+    std::string number;             // a number's text, made again for each
+    NameTexts nameTexts;            // the NPC names this frame's labels show, each composed once
+    std::unordered_map<u64, MeasuredStack> measuredNames; // a named label's stack width per NameKey and direction
+    std::vector<std::array<MeasuredStack, 2>> measured;   // a label stack's width per string and direction, likewise
+    std::string stacked;                                  // a label stack's text, likewise
+    LabelPass labels;
+    CaptionFades captionFades;
+    std::vector<LabelInput> labelInputs;
+    std::vector<NumberOrigin> numberOrigins; // by entity: where this frame's tiny creatures' numbers start
+    std::vector<u32> numberPages;            // the glyph page of each quad PlaceNumbers() placed this frame
+    std::vector<std::size_t> numberQuads;    // PlaceNumbers()' scratch: each chunk's first quad
+    std::vector<MeshVertex> meshVertices;
+    std::vector<internal::MeshRun> meshRuns;
     /// What the terrain's buffer holds is what TerrainDrawing laid out for the tiles `span` reaches and the map and look
     /// `version` counts (SetWorld()): laid out and copied again only when that changes. Held once its commands are submitted.
     struct TerrainKey {
-        core::TileSpan span{};
+        core::TileSpan span;
         u64 version = 0;
         [[nodiscard]] bool operator==(const TerrainKey& other) const {
             return version == other.version && span.firstColumn == other.span.firstColumn &&
@@ -328,35 +326,34 @@ struct Renderer::Impl {
                    span.lastRow == other.span.lastRow;
         }
     };
-    TerrainDrawing terrainDrawing{};                      // the last layout, which the buffer holds when terrainShown
+    TerrainDrawing terrainDrawing;                        // the last layout, which the buffer holds when terrainShown
     std::optional<TerrainKey> terrainLaid = std::nullopt; // what terrainDrawing was laid out for
     std::optional<TerrainKey> terrainHeld = std::nullopt;
     std::optional<TerrainKey> terrainRecorded = std::nullopt;
     u64 worldVersion = 0;
-    TerrainDrawing routeDrawing{}; // this frame's route and cursor tile, laid out again each frame; held when routeShown
+    TerrainDrawing routeDrawing; // this frame's route and cursor tile, laid out again each frame; held when routeShown
     std::optional<core::Vec2> targetTile = std::nullopt; // SetTargetTile(): the cursor tile's centre, if it shows
     bool routeShown = false;                             // whether this frame draws the route buffer: it holds something
-    bool terrainShown = false;     // whether this frame draws the terrain: the snapshot shows the map and its buffer is current
-    VolleyDrawing volleyDrawing{}; // this frame's health bars and swords, placed at the render time, and the HUD's bars
-    SealDrawing sealDrawing{};     // this frame's seals, laid out at the render time
-    std::vector<core::SealKey> sealsMissing{}; // the seal keys the table lacked, each logged once
-    std::size_t hudRuns = 0;                   // meshRuns' first runs, which draw the HUD's lines
-    std::size_t openRun = 0;           // the first of meshRuns a quad may join: none of the HUD's takes the world's texts
-    std::vector<BarShown> barsShown{}; // by entity: how much of each creature's health bar shows, from its label
-    core::RepeatedFailure failures{};
-    core::RepeatedFailure overflows{};
-    core::RepeatedFailure meshOverflows{};
-    core::RepeatedFailure overlayOverflows{};
-    core::RepeatedFailure terrainOverflows{};
-    core::RepeatedFailure routeOverflows{};
-    core::RepeatedFailure ribbonOverflows{};
-    core::RepeatedFailure swordOverflows{};
-    core::RepeatedFailure sealOverflows{};
-    core::RepeatedFailure tinySealFailures{};
-    core::RepeatedFailure sealQuadOverflows{};
-    core::RepeatedFailure sealParticleOverflows{};
-    core::RepeatedFailure uploadFailures{};
-    // NOLINTEND(readability-redundant-member-init)
+    bool terrainShown = false;   // whether this frame draws the terrain: the snapshot shows the map and its buffer is current
+    VolleyDrawing volleyDrawing; // this frame's health bars and swords, placed at the render time, and the HUD's bars
+    SealDrawing sealDrawing;     // this frame's seals, laid out at the render time
+    std::vector<core::SealKey> sealsMissing; // the seal keys the table lacked, each logged once
+    std::size_t hudRuns = 0;                 // meshRuns' first runs, which draw the HUD's lines
+    std::size_t openRun = 0;                 // the first of meshRuns a quad may join: none of the HUD's takes the world's texts
+    std::vector<BarShown> barsShown;         // by entity: how much of each creature's health bar shows, from its label
+    core::RepeatedFailure failures;
+    core::RepeatedFailure overflows;
+    core::RepeatedFailure meshOverflows;
+    core::RepeatedFailure overlayOverflows;
+    core::RepeatedFailure terrainOverflows;
+    core::RepeatedFailure routeOverflows;
+    core::RepeatedFailure ribbonOverflows;
+    core::RepeatedFailure swordOverflows;
+    core::RepeatedFailure sealOverflows;
+    core::RepeatedFailure tinySealFailures;
+    core::RepeatedFailure sealQuadOverflows;
+    core::RepeatedFailure sealParticleOverflows;
+    core::RepeatedFailure uploadFailures;
 };
 
 std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* commands, const Shown& shown, core::Jobs& jobs) {

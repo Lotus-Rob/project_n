@@ -68,8 +68,7 @@ struct TilePoint {
 /// One kind of terrain: its name, the symbol the data writes it with, and what a step onto it costs.
 struct TerrainKind {
     /// Its name, as the data and the look name it.
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::string name{};
+    std::string name;
     /// The symbol its tiles are written with in the grid.
     char symbol = ' ';
     /// The cost of entering one of its tiles, from 1 to MAX_WALK_COST, or IMPASSABLE_COST.
@@ -95,17 +94,15 @@ enum class PlaceKind : u8 {
 /// A named spot on the map.
 struct Place {
     /// Its key in the data.
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::string key{};
+    std::string key;
     /// What it is.
     PlaceKind kind = PlaceKind::City;
     /// A danger's sort (a key the data names, not an enum); empty for a city.
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::string sort{};
+    std::string sort;
     /// The tile it stands on.
     TilePoint tile{};
     /// The key of its name in strings.yaml.
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
     std::string nameKey{};
     /// Its name, resolved by the reader: never hashed.
     StringId name{};
@@ -160,13 +157,11 @@ struct FeatureCosts {
 /// A way of moving: how long a unit of cost takes and what each terrain kind and feature costs.
 struct MovementProfile {
     /// Its key in the data.
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::string key{};
+    std::string key;
     /// The ticks one unit of cost takes; at least 1.
     u16 ticksPerCost = DEFAULT_TICKS_PER_COST;
     /// The cost of each terrain kind, one per kind, each from 1 to MAX_WALK_COST, or IMPASSABLE_COST.
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<u16> kindCosts{};
+    std::vector<u16> kindCosts;
     /// What the features cost.
     FeatureCosts features{};
 };
@@ -183,19 +178,16 @@ enum class TileFlag : u8 {
 /// indexed like the source's own (kinds, roads, rivers, fords, places), and may be empty or short, as it is for data
 /// built in code. Never hashed.
 struct SourceLines {
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for
-    // members whose default constructor is defaulted.
     /// The line of each terrain kind.
-    std::vector<u32> kinds{};
+    std::vector<u32> kinds;
     /// The line of each road.
-    std::vector<u32> roads{};
+    std::vector<u32> roads;
     /// The line of each river.
-    std::vector<u32> rivers{};
+    std::vector<u32> rivers;
     /// The line of each ford.
-    std::vector<u32> fords{};
+    std::vector<u32> fords;
     /// The line of each place.
-    std::vector<u32> places{};
-    // NOLINTEND(readability-redundant-member-init)
+    std::vector<u32> places;
 };
 
 /// What the data says, before Build derives the layers.
@@ -210,28 +202,25 @@ struct WorldMapSource {
     u16 roadCost = DEFAULT_ROAD_COST;
     /// What a ford costs, whatever the terrain.
     u16 fordCost = DEFAULT_FORD_COST;
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for
-    // members whose default constructor is defaulted.
     /// The terrain kinds.
-    std::vector<TerrainKind> kinds{};
+    std::vector<TerrainKind> kinds;
     /// One kind index per tile, row by row.
-    std::vector<u8> grid{};
+    std::vector<u8> grid;
     /// The roads, each a polyline of tile points.
-    std::vector<std::vector<TilePoint>> roads{};
+    std::vector<std::vector<TilePoint>> roads;
     /// The rivers, each a polyline of tile points.
-    std::vector<std::vector<TilePoint>> rivers{};
+    std::vector<std::vector<TilePoint>> rivers;
     /// The fords: tiles of a river.
-    std::vector<TilePoint> fords{};
+    std::vector<TilePoint> fords;
     /// The places.
-    std::vector<Place> places{};
+    std::vector<Place> places;
     /// The movement profiles, at most MOST_PROFILES; empty adds `on_foot` from the base costs. Profile WALKING is the
     /// one people walk by.
-    std::vector<MovementProfile> profiles{};
+    std::vector<MovementProfile> profiles;
     /// The travellers' rules.
-    TravelRules travel{};
+    TravelRules travel;
     /// Where each entry was written, for refusals to name; not hashed.
-    SourceLines lines{};
-    // NOLINTEND(readability-redundant-member-init)
+    SourceLines lines;
 };
 
 /// A block of tiles, by their first and last columns and rows, both included; empty when its first column or row lies
@@ -376,16 +365,13 @@ public:
 private:
     WorldMap() = default;
 
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for
-    // members whose default constructor is defaulted.
-    WorldMapSource m_source{};
-    std::vector<u8> m_flags{};
-    std::vector<u16> m_cost{};
-    std::vector<std::vector<u16>> m_profileCost{};
-    std::vector<u16> m_place{};
-    std::vector<u16> m_region{};
-    std::vector<std::vector<u32>> m_regionTiles{};
-    // NOLINTEND(readability-redundant-member-init)
+    WorldMapSource m_source;
+    std::vector<u8> m_flags;
+    std::vector<u16> m_cost;
+    std::vector<std::vector<u16>> m_profileCost;
+    std::vector<u16> m_place;
+    std::vector<u16> m_region;
+    std::vector<std::vector<u32>> m_regionTiles;
     u16 m_start = NO_PLACE;
 
     [[nodiscard]] u32 StepOver(const std::vector<u16>& costs, u32 from, u32 target) const;

@@ -179,8 +179,7 @@ private:
     /// One NPC's journal.
     struct Journal {
         core::StableId npc{};
-        // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-        std::vector<JournalEntry> entries{};
+        std::vector<JournalEntry> entries;
 
         template<typename Self, typename Archive>
         void Fields(this Self& self, Archive& archive) {
@@ -188,16 +187,14 @@ private:
         }
     };
 
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<core::Journey> m_journeys{};                          // by first member
-    std::vector<Journal> m_journals{};                                // by NPC
-    std::unordered_set<core::StableId> m_travellers{};                // every journey's members; looked up only, never
-                                                                      // iterated, so its order can't reach the state
-    std::vector<std::pair<core::StableId, JournalEntry>> m_written{}; // Finish()'s new entries, kept for its capacity
-    std::vector<Journal> m_merged{};                                  // Finish()'s output, swapped in, as m_written
-    std::vector<std::vector<core::Journey>> m_setOut{};               // per chunk of a month: the visits its NPCs make
-    std::vector<core::Journey> m_departing{};                         // a month's visits, gathered in chunk order
-    // NOLINTEND(readability-redundant-member-init)
+    std::vector<core::Journey> m_journeys;                          // by first member
+    std::vector<Journal> m_journals;                                // by NPC
+    std::unordered_set<core::StableId> m_travellers;                // every journey's members; looked up only, never
+                                                                    // iterated, so its order can't reach the state
+    std::vector<std::pair<core::StableId, JournalEntry>> m_written; // Finish()'s new entries, kept for its capacity
+    std::vector<Journal> m_merged;                                  // Finish()'s output, swapped in, as m_written
+    std::vector<std::vector<core::Journey>> m_setOut;               // per chunk of a month: the visits its NPCs make
+    std::vector<core::Journey> m_departing;                         // a month's visits, gathered in chunk order
 };
 
 } // namespace game

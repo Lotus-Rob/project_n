@@ -169,6 +169,9 @@ else
         -- A target whose flags drift from the precompiled header's fails on the cause (GCC names the define),
         -- not on the misleading warning from parsing the header's wrapper in its place.
         add_cxxflags("-Winvalid-pch")
+        -- "everything" brings -Weffc++; its useful items are covered by cppcoreguidelines-* and Clang's -Weverything,
+        -- and its member-initialiser item demands a `{}` that clang-tidy calls redundant.
+        add_cxxflags("-Wno-effc++")
     end
 end
 

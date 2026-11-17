@@ -149,11 +149,9 @@ private:
     u64 m_packVersion = 1;
     u64 m_packHeld = 0;
     std::optional<u64> m_packRecorded = std::nullopt;
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    SealPack m_pack{};
-    std::vector<SealVertex> m_quads{};              // the frame's lists end to end, as uploaded
-    std::vector<SealGpuParticles> m_lightRecords{}; // likewise the light's
-    // NOLINTEND(readability-redundant-member-init)
+    SealPack m_pack;
+    std::vector<SealVertex> m_quads;              // the frame's lists end to end, as uploaded
+    std::vector<SealGpuParticles> m_lightRecords; // likewise the light's
     Run m_groundWash{};
     Run m_groundLines{};
     Run m_aboveWash{};

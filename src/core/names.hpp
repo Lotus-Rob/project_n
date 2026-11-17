@@ -28,11 +28,9 @@ struct NameEntry {
 /// The surnames and given-name characters NPCs draw their names from (`names.yaml`).
 struct Names {
     /// The surnames, drawn by weight.
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<NameEntry> surnames{};
+    std::vector<NameEntry> surnames;
     /// The given-name characters, drawn uniformly.
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<NameEntry> given{};
+    std::vector<NameEntry> given;
 
     /// A hash of every entry: two tables hash alike when every text and weight is the same.
     [[nodiscard]] u64 Hash() const;

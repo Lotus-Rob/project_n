@@ -349,9 +349,11 @@ struct Snapshot {
     SceneChange sceneChange{};
     /// The sprites to draw, in drawing order. The buffer keeps its capacity from publish to
     /// publish: the publisher clears and refills it, never assigns a new one.
-    std::vector<Instance> instances{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
+    std::vector<Instance> instances{};
     /// The instances' batches, in drawing order, covering them all; refilled in place likewise.
-    std::vector<Batch> batches{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
+    std::vector<Batch> batches{};
     /// How many of `batches`, from the first, draw only the ground and its decals (core::Layer::Ground and Decals): the
     /// renderer draws the ground seals after them, under the world.
     u32 groundBatches = 0;
@@ -360,20 +362,26 @@ struct Snapshot {
     bool worldMap = false;
     /// The entity each instance draws, parallel to `instances` (zero for one that is no entity's:
     /// the ground, a shadow), for picking; refilled in place likewise.
-    std::vector<StableId> ids{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
+    std::vector<StableId> ids{};
     /// The texts drawn over the world, in drawing order; refilled in place likewise.
-    std::vector<TextItem> texts{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
+    std::vector<TextItem> texts{};
     /// The health of each living enemy in a combat scene; refilled in place likewise.
-    std::vector<HealthBar> healthBars{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
+    std::vector<HealthBar> healthBars{};
     /// The volleys in flight, the bolts among them, until their last sword has faded; refilled in place likewise.
-    std::vector<VolleyView> volleys{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
+    std::vector<VolleyView> volleys{};
     /// Every volley's targets, each volley's together (VolleyView::firstTarget); refilled in place likewise.
-    std::vector<VolleyTarget>
-        volleyTargets{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
+    std::vector<VolleyTarget> volleyTargets{};
     /// The bursts showing, each for its `ticks` from its start; refilled in place likewise.
-    std::vector<Flash> flashes{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
+    std::vector<Flash> flashes{};
     /// The seals in play, each from its start tick to the tick before its end; refilled in place likewise.
-    std::vector<Seal> seals{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
+    std::vector<Seal> seals{};
     /// Whether the scene is a combat scene, where casts act.
     bool combat = false;
     /// The player's Qi, health and cooldowns in a combat scene with a player; none otherwise.
@@ -382,7 +390,8 @@ struct Snapshot {
     std::optional<CalendarView> calendar = std::nullopt;
     /// The player's remaining route on the world map: its foot, then the centres of the tiles still to walk; refilled in
     /// place each publish and empty for none.
-    std::vector<Vec2> route{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
+    std::vector<Vec2> route{};
     /// What the camera follows, if anything.
     std::optional<Follow> follow = std::nullopt;
     /// How the camera moves over the scene: Pan unless the simulation says otherwise.
@@ -463,7 +472,7 @@ struct Action {
     /// The entity it is about (Select); zero otherwise.
     StableId target{};
     /// The game data to swap in (ReloadData); empty otherwise.
-    std::shared_ptr<const GameData> data{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::shared_ptr<const GameData> data = nullptr;
     /// The scene now resident (SceneResident); zero otherwise.
     SceneId scene{};
     /// The slot whose ability is cast (Cast); the first slot otherwise.

@@ -188,8 +188,7 @@ private:
     };
 
     // Each data string's ID by its key: Add keeps it, Find reads it.
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::unordered_map<std::string, StringId, KeyHash, std::equal_to<>> m_index{};
+    std::unordered_map<std::string, StringId, KeyHash, std::equal_to<>> m_index;
 };
 
 /// Writes `text` into `into` (replacing what it held, keeping its capacity) with `value` in place of each `{value}` and

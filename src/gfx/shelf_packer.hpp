@@ -53,8 +53,7 @@ private:
         u32 used = 0; // texels from its left edge
     };
 
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<Shelf> m_shelves{};
+    std::vector<Shelf> m_shelves;
     u32 m_pageSize = 0;
     u32 m_padding = 0;
     u32 m_pages = 0;

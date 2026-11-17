@@ -224,19 +224,17 @@ private:
     // `step`; `drawn` says whether it was drawn last frame (if not, it moves at once).
     [[nodiscard]] core::Vec2 Glide(Seen& seen, std::span<const LabelInput> labels, std::size_t over, f32 step, bool drawn);
 
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::unordered_map<core::StableId, Seen> m_seen{};
-    std::vector<Seen*> m_seenOf{};                   // per label: its entry in m_seen (whose elements stay put while it grows)
-    std::vector<std::vector<std::size_t>> m_cells{}; // per grid cell, row by row: the footprints touching it
-    std::vector<std::size_t> m_order{};
-    std::vector<std::size_t> m_role{}; // per label: the stack it is in, NONE when hidden, or OFF_SCREEN
-    std::vector<Stack> m_stacks{};
-    std::vector<Footprint> m_footprints{};
-    std::vector<std::size_t> m_joined{};
-    std::vector<std::size_t> m_rooms{}; // the members whose room a joining label still has to check
-    std::vector<PlacedLabel> m_placed{};
-    std::vector<Seen*> m_gone{}; // the labels whose items have gone, still fading out
-    // NOLINTEND(readability-redundant-member-init)
+    std::unordered_map<core::StableId, Seen> m_seen;
+    std::vector<Seen*> m_seenOf;                   // per label: its entry in m_seen (whose elements stay put while it grows)
+    std::vector<std::vector<std::size_t>> m_cells; // per grid cell, row by row: the footprints touching it
+    std::vector<std::size_t> m_order;
+    std::vector<std::size_t> m_role; // per label: the stack it is in, NONE when hidden, or OFF_SCREEN
+    std::vector<Stack> m_stacks;
+    std::vector<Footprint> m_footprints;
+    std::vector<std::size_t> m_joined;
+    std::vector<std::size_t> m_rooms; // the members whose room a joining label still has to check
+    std::vector<PlacedLabel> m_placed;
+    std::vector<Seen*> m_gone; // the labels whose items have gone, still fading out
     std::size_t m_columns = 0;
     std::size_t m_rows = 0;
     std::optional<f64> m_clock = std::nullopt;

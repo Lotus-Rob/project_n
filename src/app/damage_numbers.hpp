@@ -184,13 +184,11 @@ private:
     core::NumberMotion m_motion = core::NumberMotion::Bounce;
     bool m_dark = false; // read each kind's dark colour
     core::UiColours m_colours{};
-    std::size_t m_unsettled = 0; // the first of m_playing that Settle() hasn't given its scatter
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<Number> m_playing{};                             // in the order they were played
-    std::vector<Number> m_waiting{};                             // combined, until their use ends
-    std::unordered_map<Key, std::size_t, KeyHash> m_waitingOf{}; // each waiting number's index in m_waiting
-    std::unordered_map<Moment, u32, MomentHash> m_hitsIn{};      // the numbers started since Settle(), per target and tick
-    // NOLINTEND(readability-redundant-member-init)
+    std::size_t m_unsettled = 0;                               // the first of m_playing that Settle() hasn't given its scatter
+    std::vector<Number> m_playing;                             // in the order they were played
+    std::vector<Number> m_waiting;                             // combined, until their use ends
+    std::unordered_map<Key, std::size_t, KeyHash> m_waitingOf; // each waiting number's index in m_waiting
+    std::unordered_map<Moment, u32, MomentHash> m_hitsIn;      // the numbers started since Settle(), per target and tick
 };
 
 } // namespace app

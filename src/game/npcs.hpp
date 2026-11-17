@@ -190,10 +190,8 @@ public:
     void Load(core::Reader& archive, const core::State& state);
 
 private:
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<Relationship> m_edges{};
-    std::vector<Relationship> m_merged{}; // Merge()'s output, swapped in, to keep both capacities
-    // NOLINTEND(readability-redundant-member-init)
+    std::vector<Relationship> m_edges;
+    std::vector<Relationship> m_merged; // Merge()'s output, swapped in, to keep both capacities
 };
 
 /// The power a world NPC starts with, drawn for its `identity` under `seed`: 80% in [0, 5) (mortals), 18% in [5, 50)
@@ -249,11 +247,9 @@ public:
     );
 
 private:
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<std::pair<u32, core::StableId>> m_byCell{};                      // (cell, NPC), sorted
-    std::vector<std::vector<std::pair<core::StableId, core::StableId>>> m_met{}; // per chunk: (met, by)
-    std::vector<std::pair<core::StableId, core::StableId>> m_merged{};
-    // NOLINTEND(readability-redundant-member-init)
+    std::vector<std::pair<u32, core::StableId>> m_byCell;                      // (cell, NPC), sorted
+    std::vector<std::vector<std::pair<core::StableId, core::StableId>>> m_met; // per chunk: (met, by)
+    std::vector<std::pair<core::StableId, core::StableId>> m_merged;
 };
 
 } // namespace game

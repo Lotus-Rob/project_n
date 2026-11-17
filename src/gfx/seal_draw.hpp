@@ -390,18 +390,16 @@ struct SealPackedLook {
 /// it loads `seals.yaml` and on every reload, and uploads `parts` and `sprites` then; each frame DrawSeals() only points its
 /// layers at their look's parts.
 struct SealPack {
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// Every look's layers' parts, each layer's sorted by where their bands start, nearest the centre first (ties in the
     /// look's order: the seal fragment shader stops at the first part whose band starts past its pixel), then its
     /// emblem's.
-    std::vector<SealGpuPart> parts{};
+    std::vector<SealGpuPart> parts;
     /// The parts' sprites: every glyph set's first (its scripts share them), then each flourish's and emblem's.
-    std::vector<SealGpuSprite> sprites{};
+    std::vector<SealGpuSprite> sprites;
     /// Every look's layers, each look's together.
-    std::vector<SealPackedLayer> layers{};
+    std::vector<SealPackedLayer> layers;
     /// Every look, in core::Seals::looks' order.
-    std::vector<SealPackedLook> looks{};
-    // NOLINTEND(readability-redundant-member-init)
+    std::vector<SealPackedLook> looks;
 };
 
 /// The pack of `seals`' looks, their sprites' field blocks from `manifest` (gfx::FieldBlockOf() in UV of their page).
@@ -417,24 +415,22 @@ struct SealPack {
 /// in MeshVertex's corner order, and the layers and light records they index (the layers' parts are the table's SealPack). The
 /// renderer keeps one and clears it each frame, so its buffers keep their capacity.
 struct SealDrawing {
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The ground seals' washes, one quad a seal, and the shadows overhead seals cast on the ground
     /// (core::SealLook::washShadow), one quad each: drawn with normal premultiplied blending.
-    std::vector<SealVertex> groundWash{};
+    std::vector<SealVertex> groundWash;
     /// The ground seals' bands: their layers' quads, drawn additively over the washes.
-    std::vector<SealVertex> groundLines{};
+    std::vector<SealVertex> groundLines;
     /// The upright and overhead seals' washes.
-    std::vector<SealVertex> aboveWash{};
+    std::vector<SealVertex> aboveWash;
     /// The upright and overhead seals' bands.
-    std::vector<SealVertex> aboveLines{};
+    std::vector<SealVertex> aboveLines;
     /// Every drawn seal's layers, each seal's in its look's order, then its emblem's, then its shadow's.
-    std::vector<SealGpuLayer> layers{};
+    std::vector<SealGpuLayer> layers;
     /// One record for each drawn ground seal with light, its particles counted from the list's first: drawn after the ground
     /// seals' bands.
-    std::vector<SealGpuParticles> groundParticles{};
+    std::vector<SealGpuParticles> groundParticles;
     /// One record for each drawn upright or overhead seal with light: drawn after their bands.
-    std::vector<SealGpuParticles> aboveParticles{};
-    // NOLINTEND(readability-redundant-member-init)
+    std::vector<SealGpuParticles> aboveParticles;
     /// Seals left out, satellites included, past MAX_SEALS_DRAWN.
     std::size_t droppedSeals = 0;
     /// Seals left out, satellites included, whose size isn't a normal f32 (a satellite of a satellite of a tiny seal),

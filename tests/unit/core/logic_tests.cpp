@@ -111,18 +111,16 @@ public:
         snapshot.texts.push_back({});
     }
 
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<u64> ticks{};
-    std::size_t routeAtPublish = 0;      // the route's length as the last publish was handed the snapshot
-    bool fillRoute = false;              // whether a publish writes a route point
-    std::vector<u64> states{};           // the state counter at each tick
-    std::vector<u64> steps{};            // the state counter at each calendar step
-    std::vector<core::HeldInput> held{}; // the held input at each tick
-    std::vector<std::size_t> actions{};  // how many actions each tick took
-    std::vector<Call> calls{};
-    std::vector<std::optional<core::Rect>> views{}; // the view each publish was given
-    // NOLINTEND(readability-redundant-member-init)
-    std::size_t casts = 0; // how many Cast actions it was given
+    std::vector<u64> ticks;
+    std::size_t routeAtPublish = 0;    // the route's length as the last publish was handed the snapshot
+    bool fillRoute = false;            // whether a publish writes a route point
+    std::vector<u64> states;           // the state counter at each tick
+    std::vector<u64> steps;            // the state counter at each calendar step
+    std::vector<core::HeldInput> held; // the held input at each tick
+    std::vector<std::size_t> actions;  // how many actions each tick took
+    std::vector<Call> calls;
+    std::vector<std::optional<core::Rect>> views; // the view each publish was given
+    std::size_t casts = 0;                        // how many Cast actions it was given
     // After this many ticks a month is due (MonthDue()), until a calendar step runs; none is ever due by default.
     std::optional<std::size_t> dueAfter = std::nullopt;
     bool rejectLoads = false;
@@ -182,10 +180,8 @@ struct Unstarted {
         }
     }
 
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    core::GameHandover handover{};
-    Recorder simulation{};
-    // NOLINTEND(readability-redundant-member-init)
+    core::GameHandover handover;
+    Recorder simulation;
     core::Jobs jobs{ 1 };
     core::Saves saves;
     core::Saves replays;
