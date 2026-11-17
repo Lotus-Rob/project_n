@@ -251,6 +251,12 @@ void StackText(std::string& into, std::string_view stack, std::string_view name,
 /// StackText() into a new string.
 [[nodiscard]] std::string StackText(std::string_view stack, std::string_view name, u32 count);
 
+/// The largest count with as many decimal digits as `count` (9 for 1 to 9, 99 for 10 to 99, and so on; 0 stays 0; the
+/// 10-digit counts give u32's maximum). A stack is measured with it: the font's digits are tabular, so only the digit
+/// count sets a stack's width, and one text per digit count stays in the layout cache, where each count's own text
+/// would be laid out again whenever the label count moved.
+[[nodiscard]] u32 WidestCount(u32 count);
+
 /// Holds each caption back while its glyphs aren't all rasterised, then fades it in over LABEL_FADE_SECONDS, so a caption
 /// never draws with gaps. Captions are told apart by what they say. Main thread only.
 class CaptionFades {
