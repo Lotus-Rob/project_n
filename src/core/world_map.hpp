@@ -114,7 +114,7 @@ struct Place {
     bool start = false;
     /// How strongly the city draws each kind of visitor (by VisitorKind), each at most MOST_DRAW and not all 0 for a city;
     /// Build zeroes a danger's, which draws no one.
-    std::array<u16, VISITOR_KINDS> draws{ 1, 1 };
+    std::array<u16, VISITOR_KINDS> draws{ { 1, 1 } };
 };
 
 /// The shipped share of a city's people on the road, in parts per thousand.

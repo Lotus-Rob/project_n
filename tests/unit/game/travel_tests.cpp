@@ -70,7 +70,7 @@ core::WorldMap TestMap() {
 }
 
 // The top row from the home's tile to the destination's.
-constexpr std::array<u32, 7> ROAD_ROUTE{ 0, 1, 2, 3, 4, 5, 6 };
+constexpr std::array<u32, 7> ROAD_ROUTE{ { 0, 1, 2, 3, 4, 5, 6 } };
 
 /// `member`'s visit from the home to the destination and back along the road, leaving on `departTick`, staying `stayDays`.
 core::Journey VisitOf(const core::WorldMap& map, core::StableId member, i64 departTick, u32 stayDays = STAY_DAYS) {
@@ -345,7 +345,8 @@ TEST_CASE("a save naming a traveller who isn't there is refused") {
     core::State activated{ game::DOMAINS, STATE_SEED };
     const core::StableId homeless = game::SpawnNpc(activated, 0);
     game::Activate(activated, homeless);
-    CHECK_FALSE(Loads(BytesOf(VisitOf(map, homeless, 0)), activated, &map));
+    const bool homelessLoads = Loads(BytesOf(VisitOf(map, homeless, 0)), activated, &map);
+    CHECK_FALSE(homelessLoads);
 }
 
 TEST_CASE("a travel table with a city off the map, a tile off it, or arrive ticks not rising is refused") {
@@ -625,9 +626,12 @@ TEST_CASE("the strong reach far cities that mortals don't") {
     core::Paths paths{ map };
     game::Travel travel;
     VisitMonth(travel, state, *map, paths, 0);
-    CHECK(JourneysTo(travel, NEAR, mortals) == mortals.size());
-    CHECK(JourneysTo(travel, FAR, mortals) == 0);
-    CHECK(JourneysTo(travel, FAR, strong) > 0);
+    const std::size_t mortalsNear = JourneysTo(travel, NEAR, mortals);
+    const std::size_t mortalsFar = JourneysTo(travel, FAR, mortals);
+    const std::size_t strongFar = JourneysTo(travel, FAR, strong);
+    CHECK(mortalsNear == mortals.size());
+    CHECK(mortalsFar == 0);
+    CHECK(strongFar > 0);
 }
 
 TEST_CASE("a city's draw follows the visitor's kind") {
@@ -643,8 +647,10 @@ TEST_CASE("a city's draw follows the visitor's kind") {
     core::Paths paths{ map };
     game::Travel travel;
     VisitMonth(travel, state, *map, paths, 0);
-    CHECK(JourneysTo(travel, FAR, traders) == 0);
-    CHECK(JourneysTo(travel, FAR, cultivators) > 0);
+    const std::size_t tradersFar = JourneysTo(travel, FAR, traders);
+    const std::size_t cultivatorsFar = JourneysTo(travel, FAR, cultivators);
+    CHECK(tradersFar == 0);
+    CHECK(cultivatorsFar > 0);
 }
 
 TEST_CASE("nobody sets out twice at once") {
@@ -674,9 +680,10 @@ TEST_CASE("every visitor comes home") {
     const std::shared_ptr<const core::WorldMap> map = VisitMap();
     core::State state{ game::DOMAINS, STATE_SEED };
     // On the home city's tile, and on tiles round it off the road.
-    constexpr std::array<u32, 4> TILES_LIVED_ON{ 0, VISIT_COLUMNS + 1, 2 * VISIT_COLUMNS, (2 * VISIT_COLUMNS) + 3 };
+    constexpr std::array<u32, 4> TILES_LIVED_ON{ { 0, VISIT_COLUMNS + 1, 2 * VISIT_COLUMNS, (2 * VISIT_COLUMNS) + 3 } };
+    constexpr auto PER_TILE = static_cast<u32>(VISITORS / TILES_LIVED_ON.size());
     for (const u32 tile : TILES_LIVED_ON) {
-        static_cast<void>(Residents(state, VISITORS / TILES_LIVED_ON.size(), tile, HOME, MORTAL));
+        static_cast<void>(Residents(state, PER_TILE, tile, HOME, MORTAL));
     }
     core::Paths paths{ map };
     game::Travel travel;
@@ -756,7 +763,8 @@ TEST_CASE("an unreachable city is never chosen") {
     game::Travel travel;
     VisitMonth(travel, state, *map, paths, 0);
     CHECK(travel.Journeys().size() == VISITORS); // the islanders, who reach nowhere, stay
-    CHECK(JourneysTo(travel, ISLE, visitors) == 0);
+    const std::size_t toTheIsle = JourneysTo(travel, ISLE, visitors);
+    CHECK(toTheIsle == 0);
     CHECK_FALSE(travel.Travelling(islanders.front()));
 }
 

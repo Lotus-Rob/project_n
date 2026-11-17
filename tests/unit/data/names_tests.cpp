@@ -60,7 +60,8 @@ TEST_CASE("a names table it can't use is refused, naming its line") {
     CheckRefused(With("{ zh: 小, pinyin: xiao }", "{ zh: 小, pinyin: xiao, weight: 2 }"), FIRST_GIVEN_LINE, "weight");
     CheckRefused("given:\n  - { zh: 小, pinyin: xiao }\n", 1, "surnames");
     CheckRefused("- a\n", 1, "map");
-    CHECK_FALSE(data::ParseNames("surnames: [").has_value());
+    const std::expected<core::Names, core::Error> unclosed = data::ParseNames("surnames: [");
+    CHECK_FALSE(unclosed.has_value());
 }
 
 // A names table whose surnames list holds `count` entries.

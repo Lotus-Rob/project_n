@@ -74,7 +74,9 @@ DistanceMap DistanceMap::Build(const WorldMap& map, u32 goal, ProfileIndex profi
             }
         });
     }
-    return DistanceMap{ std::move(cost), goal, profile };
+    // Parentheses, not braces: MSVC can't promise left-to-right order for a braced list holding a moved vector.
+    DistanceMap distances(std::move(cost), goal, profile);
+    return distances;
 }
 
 std::vector<u32> RouteDown(const WorldMap& map, const DistanceMap& distances, u32 from) {
