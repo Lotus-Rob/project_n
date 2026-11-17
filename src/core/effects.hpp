@@ -179,8 +179,8 @@ struct HudLayout {
     f32 coolingInkOpacity = shipped::HUD_COOLING_INK_OPACITY;
     /// How far the date line sits in from the target's top and right edges, whatever the text size; 0 or more.
     f32 dateInset = shipped::HUD_DATE_INSET;
-    /// The width of the date line's box, above 0: its text is right-aligned in it, and a click anywhere in it hits the
-    /// line. Its height is `lineHeight`.
+    /// The least width of the date line's box, above 0; the box widens to the text when it is wider. Its text is
+    /// right-aligned in it, and a click anywhere in it hits the line. Its height is `lineHeight`.
     f32 dateWidth = shipped::HUD_DATE_WIDTH;
 
     /// Whether every distance is finite and not negative (the sizes, the line height and the date's width above 0), the

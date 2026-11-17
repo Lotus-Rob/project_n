@@ -191,7 +191,12 @@ std::optional<core::Rect> Hud::DateLineArea() const {
     return m_dateArea;
 }
 
-void Hud::BuildDate(const std::optional<core::CalendarView>& calendar, u32 width, std::vector<gfx::HudLine>& lines) {
+void Hud::BuildDate(
+    const std::optional<core::CalendarView>& calendar,
+    u32 width,
+    const TextWidth& textWidth,
+    std::vector<gfx::HudLine>& lines
+) {
     PN_PROFILE_ZONE();
     if (!calendar) {
         m_dateArea.reset();
@@ -203,7 +208,8 @@ void Hud::BuildDate(const std::optional<core::CalendarView>& calendar, u32 width
         m_date += Text(core::StringId::DatePaused);
     }
     const f32 right = static_cast<f32>(width) - m_layout.dateInset;
-    const core::Vec2 size{ .x = m_layout.dateWidth * m_text.scale, .y = m_layout.lineHeight * m_text.scale };
+    const core::Vec2 size{ .x = std::max(m_layout.dateWidth * m_text.scale, textWidth(m_date)),
+                           .y = m_layout.lineHeight * m_text.scale };
     m_dateArea = core::Rect{ .min = { .x = right - size.x, .y = m_layout.dateInset },
                              .max = { .x = right, .y = m_layout.dateInset + size.y } };
     // Over the ground, as the slots' lines are: the ink when the text has neither outline nor shadow.

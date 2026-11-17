@@ -731,6 +731,11 @@ TEST_CASE("the swords' seal mid-formation, under their rings") {
     CompareWithReference(Captured(renderer, snapshot, view, jobs), "seal_swords");
 }
 
+/// A text width below the date line's least box, whatever the text: the picture takes no click.
+f32 Narrow(std::string_view /*text*/) {
+    return 0.0F;
+}
+
 TEST_CASE("the HUD at zoom 1, one slot cooling down") {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs;
@@ -747,7 +752,7 @@ TEST_CASE("the HUD at zoom 1, one slot cooling down") {
     );
     // The date line too, paused, so its right-aligned text is in the picture.
     constexpr core::CalendarView PAUSED_MARCH_TWELFTH{ .month = 2, .day = 11, .paused = true };
-    hud.BuildDate(PAUSED_MARCH_TWELFTH, WIDTH, lines);
+    hud.BuildDate(PAUSED_MARCH_TWELFTH, WIDTH, Narrow, lines);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
     const gfx::Image drawn =

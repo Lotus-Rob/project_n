@@ -831,7 +831,12 @@ bool App::Present(const platform::WindowState& state) {
                 // The window isn't made high-density, so its size in window coordinates is its size in pixels.
                 m_hud.Build(*drawn->caster, renderTick, static_cast<u32>(std::max(state.height, 0)), m_hudLines, m_hudBars);
             }
-            m_hud.BuildDate(drawn->calendar, static_cast<u32>(std::max(state.width, 0)), m_hudLines);
+            m_hud.BuildDate(
+                drawn->calendar,
+                static_cast<u32>(std::max(state.width, 0)),
+                [this](std::string_view text) { return m_renderer.HudLineWidth(text); },
+                m_hudLines
+            );
             // Labels on the frame clock, which runs while the game is paused; numbers on the render clock, which holds.
             gfx::View view =
                 FrameView(m_camera.Camera(), alpha, Hovered(state, *drawn, alpha), m_frameClock.Advance(platform::NowNs()));

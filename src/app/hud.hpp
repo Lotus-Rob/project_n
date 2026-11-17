@@ -20,9 +20,11 @@
 #include "platform/window.hpp"
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace app {
@@ -37,6 +39,9 @@ namespace app {
     core::Vec2 position,
     const std::optional<core::Rect>& area
 );
+
+/// How wide a HUD line saying its text is drawn, in target pixels at the text scale (gfx::Renderer::HudLineWidth()).
+using TextWidth = std::function<f32(std::string_view)>;
 
 /// Lays out the temporary HUD each frame from the player's casting state (core::CasterView). At the bottom left, top to
 /// bottom: the health bar (core::UiColour::HealthBar on BarBackground) with "Health {value}/{max}" on it, the Qi bar (QiBar on
@@ -87,9 +92,15 @@ public:
     /// Appends to `lines` the date line for `calendar` on a target `width` pixels wide, and keeps its area (DateLineArea()):
     /// the month and day counted from 1 as StringId::DateLine says, and while the calendar is paused StringId::DatePaused
     /// after it, in the slots' text colour. The line ends at the box's right edge, `dateInset` in from the top right; the
-    /// box is `dateWidth` wide and `lineHeight` tall, times the text scale. With no calendar (not the world map) it appends
-    /// nothing and the area is none. The text lives in the HUD, valid until the next BuildDate().
-    void BuildDate(const std::optional<core::CalendarView>& calendar, u32 width, std::vector<gfx::HudLine>& lines);
+    /// box is `lineHeight` tall times the text scale, and as wide as `textWidth` says the line is, but never narrower than
+    /// `dateWidth` times the text scale, so all the text a player sees takes the click. With no calendar (not the world
+    /// map) it appends nothing and the area is none. The text lives in the HUD, valid until the next BuildDate().
+    void BuildDate(
+        const std::optional<core::CalendarView>& calendar,
+        u32 width,
+        const TextWidth& textWidth,
+        std::vector<gfx::HudLine>& lines
+    );
 
     /// The date line's box from the last BuildDate(), in target pixels: what a click pauses by (DateLineClick()). None
     /// while no date line shows.
