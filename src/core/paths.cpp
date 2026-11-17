@@ -6,23 +6,6 @@ namespace core {
 
 namespace {
 
-/// Calls `visit(neighbour)` for each of the eight neighbours of `tile` on the map, in ascending tile index.
-template<typename Visit>
-void ForNeighbours(const WorldMap& map, u32 tile, const Visit& visit) {
-    const TilePoint point = map.PointOf(tile);
-    for (i64 dRow = -1; dRow <= 1; ++dRow) {
-        for (i64 dColumn = -1; dColumn <= 1; ++dColumn) {
-            const i64 column = static_cast<i64>(point.column) + dColumn;
-            const i64 row = static_cast<i64>(point.row) + dRow;
-            if ((dRow == 0 && dColumn == 0) || column < 0 || row < 0 || std::cmp_greater_equal(column, map.Columns()) ||
-                std::cmp_greater_equal(row, map.Rows())) {
-                continue;
-            }
-            visit(map.TileIndex({ .column = static_cast<u32>(column), .row = static_cast<u32>(row) }));
-        }
-    }
-}
-
 using RouteEntry = std::pair<u64, u32>; // (cost or f, tile)
 using RouteQueue = std::priority_queue<RouteEntry, std::vector<RouteEntry>, std::greater<>>;
 
@@ -62,7 +45,7 @@ DistanceMap DistanceMap::Build(const WorldMap& map, u32 goal, ProfileIndex profi
         if (reached > cost[tile]) {
             continue; // a cheaper entry settled this tile
         }
-        ForNeighbours(map, tile, [&](u32 next) {
+        map.ForEachNeighbour(tile, [&](u32 next) {
             const u32 step = map.StepCost(next, tile, profile);
             if (step == IMPASSABLE_COST) {
                 return;
@@ -88,7 +71,7 @@ std::vector<u32> RouteDown(const WorldMap& map, const DistanceMap& distances, u3
     u32 tile = from;
     while (tile != distances.Goal() && route.size() <= most) {
         u32 best = UNREACHABLE;
-        ForNeighbours(map, tile, [&](u32 next) {
+        map.ForEachNeighbour(tile, [&](u32 next) {
             if (best != UNREACHABLE || distances.CostFrom(next) == UNREACHABLE) {
                 return; // neighbours come in tile order: the first that fits is the lowest
             }
@@ -146,7 +129,7 @@ std::vector<u32> FindRoute(const WorldMap& map, ProfileIndex profile, u32 from, 
             std::ranges::reverse(route);
             return route;
         }
-        ForNeighbours(map, tile, [&](u32 next) {
+        map.ForEachNeighbour(tile, [&](u32 next) {
             const u32 step = map.StepCost(tile, next, profile);
             if (step == IMPASSABLE_COST) {
                 return;

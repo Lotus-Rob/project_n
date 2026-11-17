@@ -13,6 +13,7 @@
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 
+#include <algorithm>
 #include <array>
 #include <expected>
 #include <span>
@@ -322,6 +323,21 @@ public:
     [[nodiscard]] u32 StepCost(u32 from, u32 target) const;
     /// What a step from `from` onto the adjacent `target` costs by `profile`: StepCost's rule over that profile's costs.
     [[nodiscard]] u32 StepCost(u32 from, u32 target, ProfileIndex profile) const;
+    /// Calls `visit(neighbour)` for each tile next to `tile`, the steps StepCost prices: eight, fewer on the map's
+    /// edges, in ascending tile index.
+    template<typename Visit>
+    void ForEachNeighbour(u32 tile, const Visit& visit) const {
+        const TilePoint point = PointOf(tile);
+        const u32 lastRow = std::min(point.row + 1, Rows() - 1);
+        const u32 lastColumn = std::min(point.column + 1, Columns() - 1);
+        for (u32 row = point.row == 0 ? 0 : point.row - 1; row <= lastRow; ++row) {
+            for (u32 column = point.column == 0 ? 0 : point.column - 1; column <= lastColumn; ++column) {
+                if (row != point.row || column != point.column) {
+                    visit(TileIndex({ .column = column, .row = row }));
+                }
+            }
+        }
+    }
     /// The passable tiles of the region of place `city`, in tile order; empty for a place that isn't a city.
     [[nodiscard]] std::span<const u32> RegionTiles(u16 city) const;
     /// The places.
