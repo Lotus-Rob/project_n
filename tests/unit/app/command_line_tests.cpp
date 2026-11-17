@@ -93,6 +93,9 @@ TEST_CASE("--travel-share sets the share of people on the road, in parts per tho
     constexpr std::array<const char*, 3> NONE{ { "project_n", "--travel-share", "0" } };
     constexpr std::array<const char*, 3> ALL{ { "project_n", "--travel-share", "1000" } };
     constexpr std::array<const char*, 2> WITHOUT{ { "project_n", "--world" } };
+    constexpr u16 RAISED_SHARE = 200;
+    constexpr u16 NO_SHARE = 0;
+    constexpr u16 WHOLE_SHARE = 1'000;
     const std::expected<std::optional<u16>, core::Error> raised = app::TravelShareOf(RAISED);
     const std::expected<std::optional<u16>, core::Error> none = app::TravelShareOf(NONE);
     const std::expected<std::optional<u16>, core::Error> all = app::TravelShareOf(ALL);
@@ -101,9 +104,9 @@ TEST_CASE("--travel-share sets the share of people on the road, in parts per tho
     REQUIRE(none.has_value());
     REQUIRE(all.has_value());
     REQUIRE(without.has_value());
-    CHECK(*raised == std::optional<u16>{ 200 });
-    CHECK(*none == std::optional<u16>{ 0 });
-    CHECK(*all == std::optional<u16>{ 1'000 });
+    CHECK(*raised == RAISED_SHARE);
+    CHECK(*none == NO_SHARE);
+    CHECK(*all == WHOLE_SHARE);
     CHECK_FALSE(without->has_value());
 }
 

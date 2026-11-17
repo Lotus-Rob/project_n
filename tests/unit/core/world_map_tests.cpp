@@ -287,13 +287,16 @@ TEST_CASE("Build refuses a map it can't use") {
     CHECK(dearKindRefusal.contains("meadow"));
     core::WorldMapSource freeKind = Source({ "0.." });
     freeKind.kinds[MEADOW].cost = 0;
-    CHECK(Refusal(freeKind).contains("costs 0"));
+    const std::string freeKindRefusal = Refusal(freeKind);
+    CHECK(freeKindRefusal.contains("costs 0"));
     core::WorldMapSource freeRoad = Source({ "0.." });
     freeRoad.roadCost = 0;
-    CHECK(Refusal(freeRoad).contains("the road cost is 0"));
+    const std::string freeRoadRefusal = Refusal(freeRoad);
+    CHECK(freeRoadRefusal.contains("the road cost is 0"));
     core::WorldMapSource freeFord = Source({ "0.." });
     freeFord.fordCost = 0;
-    CHECK(Refusal(freeFord).contains("the ford cost is 0"));
+    const std::string freeFordRefusal = Refusal(freeFord);
+    CHECK(freeFordRefusal.contains("the ford cost is 0"));
     core::WorldMapSource dearRoad = Source({ "0.." });
     dearRoad.roadCost = core::MAX_WALK_COST + 1;
     const std::string dearRoadRefusal = Refusal(dearRoad);
@@ -681,29 +684,34 @@ TEST_CASE("a city draws one of each visitor by default, and Build zeroes a dange
         { .key = "cave", .kind = core::PlaceKind::Danger, .sort = "cave", .tile = { .column = 1, .row = 1 } }
     );
     const core::WorldMap map = MustBuild(std::move(source));
-    CHECK(map.Places()[0].draws == std::array<u16, core::VISITOR_KINDS>{ 1, 1 });
-    CHECK(map.Places()[2].draws == std::array<u16, core::VISITOR_KINDS>{ 0, 0 });
+    CHECK(map.Places()[0].draws == std::array<u16, core::VISITOR_KINDS>{ { 1, 1 } });
+    CHECK(map.Places()[2].draws == std::array<u16, core::VISITOR_KINDS>{ { 0, 0 } });
 }
 
 TEST_CASE("Build refuses a draw past the most and a city with no draw") {
     core::WorldMapSource tooMuch = Source({ "0.1" });
-    tooMuch.places[1].draws = { 0, core::MOST_DRAW + 1 };
-    CHECK(Refusal(std::move(tooMuch)).contains("past the most, 100"));
+    tooMuch.places[1].draws = { { 0, core::MOST_DRAW + 1 } };
+    const std::string tooMuchRefusal = Refusal(std::move(tooMuch));
+    CHECK(tooMuchRefusal.contains("past the most, 100"));
     core::WorldMapSource none = Source({ "0.1" });
-    none.places[1].draws = { 0, 0 };
-    CHECK(Refusal(std::move(none)).contains("draws no visitors"));
+    none.places[1].draws = { { 0, 0 } };
+    const std::string noneRefusal = Refusal(std::move(none));
+    CHECK(noneRefusal.contains("draws no visitors"));
 }
 
 TEST_CASE("Build refuses travel rules out of order or past a thousand") {
     core::WorldMapSource share = Source({ "0.1" });
     share.travel.sharePerMille = PAST_PER_MILLE;
-    CHECK(Refusal(std::move(share)).contains("over a thousand"));
+    const std::string shareRefusal = Refusal(std::move(share));
+    CHECK(shareRefusal.contains("over a thousand"));
     core::WorldMapSource backwards = Source({ "0.1" });
     backwards.travel.stayMinDays = STAY_AFTER_MAX;
-    CHECK(Refusal(std::move(backwards)).contains("in order"));
+    const std::string backwardsRefusal = Refusal(std::move(backwards));
+    CHECK(backwardsRefusal.contains("in order"));
     core::WorldMapSource zero = Source({ "0.1" });
     zero.travel.stayMinDays = 0;
-    CHECK(Refusal(std::move(zero)).contains("in order"));
+    const std::string zeroRefusal = Refusal(std::move(zero));
+    CHECK(zeroRefusal.contains("in order"));
 }
 
 TEST_CASE("a map with other travel rules keeps all else and hashes apart; past a thousand it is refused") {
@@ -731,7 +739,7 @@ TEST_CASE("the hash changes with a draw or a travel rule") {
         change(source);
         return MustBuild(std::move(source)).Hash();
     };
-    CHECK(hashOf([](core::WorldMapSource& data) { data.places[1].draws = { 1, 2 }; }) != reference);
+    CHECK(hashOf([](core::WorldMapSource& data) { data.places[1].draws = { { 1, 2 } }; }) != reference);
     CHECK(hashOf([](core::WorldMapSource& data) { data.travel.sharePerMille = 41; }) != reference);
     CHECK(hashOf([](core::WorldMapSource& data) { data.travel.stayMaxDays = 6; }) != reference);
     CHECK(hashOf([](core::WorldMapSource& data) { data.travel.reachBase = 1; }) != reference);

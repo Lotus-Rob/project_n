@@ -1859,14 +1859,16 @@ TEST_CASE("a walk-to sends the cultivator along the route") {
     const std::vector<core::StableId> alone{ world.player };
     CHECK(RouteOf(*world.host).members == alone);
     CHECK(SameLeg(RouteLegOf(*world.host), leg));
-    CHECK(RouteIs(Published(*world.host).route, map, first, leg, 1));
+    const bool fromFirst = RouteIs(Published(*world.host).route, map, first, leg, 1);
+    CHECK(fromFirst);
 
     // Halfway between its second and third tiles, it has those two and the rest still to walk.
     const u64 midway = TRAVEL_CLOCK + ((u64{ leg.arrive[1] } + u64{ leg.arrive[2] }) / 2);
     TickRange(*world.host, 2, midway - TRAVEL_CLOCK);
     const core::Vec2 there = core::Where(map, leg, static_cast<i64>(midway));
     CHECK(SamePoint(FootOf(*world.host, world.player), there));
-    CHECK(RouteIs(Published(*world.host).route, map, there, leg, 2));
+    const bool fromThere = RouteIs(Published(*world.host).route, map, there, leg, 2);
+    CHECK(fromThere);
 
     // On its end's tick it stands on the last tile's centre, the route done.
     const auto end = static_cast<u64>(core::EndTick(leg));
@@ -2002,7 +2004,8 @@ TEST_CASE("the paused world holds the cultivator on its route") {
     CHECK(SamePoint(BodyOf(*world.host, world.player).previous, held));
     CHECK(SamePoint(BodyOf(*world.host, world.player).current, held));
     CHECK(world.host->PlayerRoute().has_value());
-    CHECK(RouteIs(Published(*world.host).route, map, held, leg, 1));
+    const bool fromHeld = RouteIs(Published(*world.host).route, map, held, leg, 1);
+    CHECK(fromHeld);
 
     // Resumed, it goes on from there.
     TickWith(*world.host, RESUMED, core::ActionKind::ToggleWorldPause);

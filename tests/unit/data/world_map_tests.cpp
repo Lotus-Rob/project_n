@@ -301,8 +301,8 @@ TEST_CASE("draws and travel rules read") {
     );
     const std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(travelled, Names());
     REQUIRE(map.has_value());
-    CHECK(map->Places()[0].draws == std::array<u16, core::VISITOR_KINDS>{ 3, 7 });
-    CHECK(map->Places()[1].draws == std::array<u16, core::VISITOR_KINDS>{ 0, 0 });
+    CHECK(map->Places()[0].draws == std::array<u16, core::VISITOR_KINDS>{ { 3, 7 } });
+    CHECK(map->Places()[1].draws == std::array<u16, core::VISITOR_KINDS>{ { 0, 0 } });
     CHECK(map->Travel().sharePerMille == 25);
     CHECK(map->Travel().stayMinDays == 1);
     CHECK(map->Travel().stayMaxDays == 9);
@@ -311,7 +311,7 @@ TEST_CASE("draws and travel rules read") {
     CHECK(map->Travel().cultivatorPower == doctest::Approx(TRAVEL_CULTIVATOR_POWER));
     const std::expected<core::WorldMap, core::Error> plain = data::ParseWorldMap(SMALL, Names());
     REQUIRE(plain.has_value());
-    CHECK(plain->Places()[0].draws == std::array<u16, core::VISITOR_KINDS>{ 1, 1 });
+    CHECK(plain->Places()[0].draws == std::array<u16, core::VISITOR_KINDS>{ { 1, 1 } });
     CHECK(plain->Travel().sharePerMille == 40);
     CHECK(plain->Travel().stayMaxDays == 5);
     CHECK(plain->Hash() != map->Hash());
@@ -408,12 +408,12 @@ TEST_CASE("the shipped world.yaml has on_foot as profile 0 at pace 16") {
         std::array<u16, core::VISITOR_KINDS> draws;
     };
     constexpr std::array<Drawn, 6> CITIES{ {
-        { .key = "capital", .draws = { 3, 3 } },
-        { .key = "port", .draws = { 1, 6 } },
-        { .key = "sect", .draws = { 6, 1 } },
-        { .key = "oasis", .draws = { 1, 5 } },
-        { .key = "marsh_town", .draws = { 2, 2 } },
-        { .key = "isle", .draws = { 2, 3 } },
+        { .key = "capital", .draws = { { 3, 3 } } },
+        { .key = "port", .draws = { { 1, 6 } } },
+        { .key = "sect", .draws = { { 6, 1 } } },
+        { .key = "oasis", .draws = { { 1, 5 } } },
+        { .key = "marsh_town", .draws = { { 2, 2 } } },
+        { .key = "isle", .draws = { { 2, 3 } } },
     } };
     for (std::size_t city = 0; city < CITIES.size(); ++city) {
         CAPTURE(city);

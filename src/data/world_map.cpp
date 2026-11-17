@@ -386,21 +386,18 @@ std::expected<void, core::Error> ReadFeature(
     const YAML::Node& node,
     const std::string& owner
 ) {
-    const std::array<std::pair<std::string_view, u16 core::FeatureCosts::*>, 4> known{ {
-        { "road", &core::FeatureCosts::road },
-        { "river", &core::FeatureCosts::river },
-        { "bridge", &core::FeatureCosts::bridge },
-        { "ford", &core::FeatureCosts::ford },
-    } };
-    const auto* const found = std::ranges::find(known, name, &decltype(known)::value_type::first);
-    if (found == known.end()) {
+    constexpr auto NAMES = std::to_array<std::string_view>({ "road", "river", "bridge", "ford" });
+    const std::array<u16*, NAMES.size()> costs{ { &features.road, &features.river, &features.bridge, &features.ford } };
+    // An index rather than an iterator: std::array's iterator is a pointer in libstdc++ and a class in MSVC's library.
+    const auto index = static_cast<std::size_t>(std::ranges::distance(NAMES.begin(), std::ranges::find(NAMES, name)));
+    if (index == NAMES.size()) {
         return RefuseMap(node, std::format("{} has no feature \"{}\": road, river, bridge or ford", owner, name));
     }
     const std::expected<u16, core::Error> cost = Cost(node, std::format("{}'s {} cost", owner, name));
     if (!cost) {
         return std::unexpected{ cost.error() };
     }
-    features.*(found->second) = *cost;
+    *costs.at(index) = *cost;
     return {};
 }
 
@@ -591,25 +588,26 @@ std::expected<void, core::Error> ReadDraws(const YAML::Node& entry, const std::s
     if (!draws.IsMap()) {
         return RefuseMap(draws, std::format("{}'s draws isn't a map", owner));
     }
-    const std::array<std::pair<std::string_view, core::VisitorKind>, core::VISITOR_KINDS> kinds{ {
-        { "cultivators", core::VisitorKind::Cultivator },
-        { "traders", core::VisitorKind::Trader },
-    } };
+    constexpr auto KIND_NAMES = std::to_array<std::string_view>({ "cultivators", "traders" });
+    constexpr auto KINDS = std::to_array({ core::VisitorKind::Cultivator, core::VisitorKind::Trader });
+    static_assert(KIND_NAMES.size() == core::VISITOR_KINDS && KINDS.size() == core::VISITOR_KINDS);
     place.draws.fill(0);
     for (const auto& pair : draws) {
-        const auto* const found = std::ranges::find(kinds, pair.first.Scalar(), &decltype(kinds)::value_type::first);
-        if (found == kinds.end()) {
+        const auto index = static_cast<std::size_t>(
+            std::ranges::distance(KIND_NAMES.begin(), std::ranges::find(KIND_NAMES, pair.first.Scalar()))
+        );
+        if (index == KIND_NAMES.size()) {
             return RefuseMap(
                 pair.first,
                 std::format("{}'s draws has no visitor kind \"{}\": cultivators or traders", owner, pair.first.Scalar())
             );
         }
         const std::expected<i64, core::Error> draw =
-            Whole(pair.second, std::format("{}'s {} draw", owner, found->first), core::MOST_DRAW);
+            Whole(pair.second, std::format("{}'s {} draw", owner, KIND_NAMES.at(index)), core::MOST_DRAW);
         if (!draw) {
             return std::unexpected{ draw.error() };
         }
-        place.draws.at(std::to_underlying(found->second)) = static_cast<u16>(*draw);
+        place.draws.at(std::to_underlying(KINDS.at(index))) = static_cast<u16>(*draw);
     }
     return {};
 }

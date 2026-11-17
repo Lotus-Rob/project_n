@@ -337,6 +337,8 @@ std::expected<void, Error> CheckProfiles(const WorldMapSource& source) {
             profile.key,
             &MovementProfile::key
         );
+        const auto featureCosts =
+            std::to_array({ profile.features.road, profile.features.river, profile.features.bridge, profile.features.ford });
         std::string problem;
         if (twin != source.profiles.begin() + static_cast<std::ptrdiff_t>(index)) {
             problem = std::format("shares its key with profile {}", twin - source.profiles.begin());
@@ -350,21 +352,13 @@ std::expected<void, Error> CheckProfiles(const WorldMapSource& source) {
         else if (std::ranges::contains(profile.kindCosts, 0)) {
             problem = "costs a terrain kind 0: a step takes time, so a cost is at least 1";
         }
-        else if (
-            std::ranges::contains(
-                std::array{ profile.features.road, profile.features.river, profile.features.bridge, profile.features.ford }, 0
-            )
-        ) {
+        else if (std::ranges::contains(featureCosts, 0)) {
             problem = "costs a feature 0: a step takes time, so a cost is at least 1";
         }
         else if (!std::ranges::all_of(profile.kindCosts, walkable)) {
             problem = std::format("costs a terrain kind over the most a step may cost, {}", MAX_WALK_COST);
         }
-        else if (!std::ranges::all_of(
-                     std::array{
-                         profile.features.road, profile.features.river, profile.features.bridge, profile.features.ford },
-                     walkable
-                 )) {
+        else if (!std::ranges::all_of(featureCosts, walkable)) {
             problem = std::format("costs a feature over the most a step may cost, {}", MAX_WALK_COST);
         }
         if (!problem.empty()) {

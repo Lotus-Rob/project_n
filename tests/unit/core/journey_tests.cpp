@@ -68,7 +68,7 @@ core::WorldMap TestMap() {
 }
 
 // The top row from the home's tile to the destination's: sand, five road tiles, then the destination's meadow.
-constexpr std::array<u32, 7> ROAD_ROUTE{ 0, 1, 2, 3, 4, 5, 6 };
+constexpr std::array<u32, 7> ROAD_ROUTE{ { 0, 1, 2, 3, 4, 5, 6 } };
 
 f32 Distance(core::Vec2 from, core::Vec2 target) {
     const core::Vec2 apart = target - from;
@@ -88,7 +88,7 @@ f32 LargestJump(const core::WorldMap& map, const core::Journey& journey, i64 fir
 TEST_CASE("a tile leg takes its cost in ticks") {
     const core::WorldMap map = TestMap();
     constexpr i64 START = 1'000;
-    constexpr std::array<u32, 3> SAND_THEN_ROAD{ 0, 1, 2 };
+    constexpr std::array<u32, 3> SAND_THEN_ROAD{ { 0, 1, 2 } };
     const core::Leg road = core::MakeTileLeg(map, core::WALKING, START, map.TileCentre(0), SAND_THEN_ROAD);
     CHECK(road.shape == core::LegShape::TileRoute);
     CHECK(road.profile == core::WALKING);
@@ -97,7 +97,7 @@ TEST_CASE("a tile leg takes its cost in ticks") {
     CHECK(road.arrive == std::vector<u32>{ 0, 64, 128 });
     CHECK(core::EndTick(road) == START + 128);
 
-    constexpr std::array<u32, 2> DIAGONAL_MEADOW{ 0, COLUMNS + 1 };
+    constexpr std::array<u32, 2> DIAGONAL_MEADOW{ { 0, COLUMNS + 1 } };
     const core::Leg diagonal = core::MakeTileLeg(map, core::WALKING, START, map.TileCentre(0), DIAGONAL_MEADOW);
     CHECK(diagonal.arrive == std::vector<u32>{ 0, 14 * 16 });
 }
@@ -184,26 +184,26 @@ TEST_CASE("a stay keeps its walker near the city's tile") {
     const core::Stay& stay = visit.parts[1].rest;
     const core::Vec2 centre = map.TileCentre(ROAD_ROUTE.back());
     // The stay's ends, each day point and the ticks either side of it, and the middles of a few days.
-    const std::array<i64, 20> ticks{ 0,
-                                     1,
-                                     DAY / 2,
-                                     DAY - 1,
-                                     DAY,
-                                     DAY + 1,
-                                     (DAY * 3) / 2,
-                                     (2 * DAY) - 1,
-                                     2 * DAY,
-                                     (2 * DAY) + 1,
-                                     (3 * DAY) - 1,
-                                     3 * DAY,
-                                     (3 * DAY) + 1,
-                                     (7 * DAY) / 2,
-                                     (4 * DAY) - 1,
-                                     4 * DAY,
-                                     (4 * DAY) + 1,
-                                     (9 * DAY) / 2,
-                                     (5 * DAY) - 1,
-                                     5 * DAY };
+    const std::array<i64, 20> ticks{ { 0,
+                                       1,
+                                       DAY / 2,
+                                       DAY - 1,
+                                       DAY,
+                                       DAY + 1,
+                                       (DAY * 3) / 2,
+                                       (2 * DAY) - 1,
+                                       2 * DAY,
+                                       (2 * DAY) + 1,
+                                       (3 * DAY) - 1,
+                                       3 * DAY,
+                                       (3 * DAY) + 1,
+                                       (7 * DAY) / 2,
+                                       (4 * DAY) - 1,
+                                       4 * DAY,
+                                       (4 * DAY) + 1,
+                                       (9 * DAY) / 2,
+                                       (5 * DAY) - 1,
+                                       5 * DAY } };
     f32 farthest = 0.0F;
     for (const i64 tick : ticks) {
         farthest = std::max(farthest, Distance(core::Where(map, visit, stay.startTick + tick), centre));
@@ -233,8 +233,8 @@ TEST_CASE("two members of one journey stand apart") {
 
 TEST_CASE("a journey places its legs exactly as Where of the leg does") {
     const core::WorldMap map = TestMap();
-    constexpr std::array<u32, 4> ALONG_THE_ROAD{ 0, 1, 2, 3 };
-    constexpr std::array<u32, 3> DOWN_THE_MEADOW{ 3, COLUMNS + 3, (2 * COLUMNS) + 3 };
+    constexpr std::array<u32, 4> ALONG_THE_ROAD{ { 0, 1, 2, 3 } };
+    constexpr std::array<u32, 3> DOWN_THE_MEADOW{ { 3, COLUMNS + 3, (2 * COLUMNS) + 3 } };
     const core::Leg first = core::MakeTileLeg(map, core::WALKING, 0, map.TileCentre(0), ALONG_THE_ROAD);
     const core::Leg second =
         core::MakeTileLeg(map, core::WALKING, core::EndTick(first), map.TileCentre(ALONG_THE_ROAD.back()), DOWN_THE_MEADOW);

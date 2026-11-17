@@ -65,7 +65,8 @@ core::WorldMap MapOfFiveByFour() {
 TEST_CASE("the cursor starts on the cultivator's tile") {
     const core::WorldMap map = MapOfFiveByFour();
     const core::Vec2 foot{ .x = COLUMN_CENTRE * TILE, .y = (ROW_CENTRE * TILE) + FOOT_OFFSET };
-    CHECK(app::CursorStart(true, foot, map) == MIDDLE);
+    const std::optional<u32> start = app::CursorStart(true, foot, map);
+    CHECK(start == MIDDLE);
     app::TargetCursor cursor;
     CHECK_FALSE(cursor.Shown());
     cursor.Show(MIDDLE, COLUMNS, ROWS);
@@ -74,8 +75,10 @@ TEST_CASE("the cursor starts on the cultivator's tile") {
 
 TEST_CASE("the cursor doesn't show off the world map or without a cultivator") {
     const core::WorldMap map = MapOfFiveByFour();
-    CHECK_FALSE(app::CursorStart(false, core::Vec2{}, map).has_value());
-    CHECK_FALSE(app::CursorStart(true, std::nullopt, map).has_value());
+    const std::optional<u32> offMap = app::CursorStart(false, core::Vec2{}, map);
+    const std::optional<u32> noCultivator = app::CursorStart(true, std::nullopt, map);
+    CHECK_FALSE(offMap.has_value());
+    CHECK_FALSE(noCultivator.has_value());
 }
 
 TEST_CASE("the cultivator doesn't walk while the cursor shows") {

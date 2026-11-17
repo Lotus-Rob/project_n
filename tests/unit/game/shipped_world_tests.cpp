@@ -79,14 +79,26 @@ TEST_CASE("the shipped world's people are mostly mortals, some cultivators, a ra
     CHECK(std::abs(share(strong) - STRONG_SHARE) <= TOLERANCE);
 }
 
+/// Two cities by place index: where a route starts and where it ends.
+struct CityPair {
+    u16 from = 0;
+    u16 target = 0;
+};
+
 // The search and the distance map are two programs for one answer; the shipped map's roads, river, fords and sand are
 // what could make them differ (the heuristic's floor against seven-fifths diagonals).
 TEST_CASE("the search costs the same as the distance map on the shipped map") {
     const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
     // Pairs of cities by place index: the capital, port, sect, oasis, marsh town.
-    const std::vector<std::pair<u16, u16>> pairs = { { 0, 1 }, { 1, 0 }, { 0, 2 }, { 2, 3 },
-                                                     { 3, 4 }, { 4, 0 }, { 1, 4 }, { 2, 0 } };
-    for (const auto& [from, target] : pairs) {
+    constexpr std::array<CityPair, 8> PAIRS{ { { .from = 0, .target = 1 },
+                                               { .from = 1, .target = 0 },
+                                               { .from = 0, .target = 2 },
+                                               { .from = 2, .target = 3 },
+                                               { .from = 3, .target = 4 },
+                                               { .from = 4, .target = 0 },
+                                               { .from = 1, .target = 4 },
+                                               { .from = 2, .target = 0 } } };
+    for (const auto& [from, target] : PAIRS) {
         CAPTURE(from);
         CAPTURE(target);
         const u32 start = map->TileIndex(map->Places()[from].tile);
