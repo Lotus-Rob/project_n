@@ -65,6 +65,15 @@ target("test_pch")
     add_deps("game_pch") -- the flags every module passes on
     add_packages("doctest")
 
+-- doctest's CHECK takes its operands through an expression template whose evaluation order MSVC can't promise
+-- left to right (4866, 4868), which is harmless for a check's operands; 5246 asks for double braces in arrays of
+-- aggregates, which test tables read worse with.
+local function test_warnings()
+    if is_plat("windows") then
+        add_cxflags("/wd4866", "/wd4868", "/wd5246")
+    end
+end
+
 -- `module` is the src/ module under test (default core); it brings the modules below it. `arena`: it builds hosts.
 local function unit_tests(name, files, module, arena)
     target(name)
@@ -80,6 +89,7 @@ local function unit_tests(name, files, module, arena)
         set_pcxxheader("unit/pch.hpp")
         add_rules("shared_pch", {owner = "test_pch"})
         add_packages("doctest")
+        test_warnings()
         add_file_tests(files)
         if is_plat("windows") and not is_host("windows") then
             on_test(test_under_wine)
@@ -118,6 +128,7 @@ target("reference_tests")
     set_pcxxheader("unit/pch.hpp")
     add_rules("shared_pch", {owner = "test_pch"})
     add_packages("doctest")
+    test_warnings()
 
 -- libFuzzer targets, one per tests/fuzz/<name>.cpp: linux-clang with AddressSanitizer only
 -- (`project_n fuzz <name>`). There each also replays its seed corpus (tests/fuzz/corpus/<name>/)
