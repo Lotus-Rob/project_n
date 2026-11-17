@@ -544,6 +544,24 @@ The plan ledger's calls, each with its reason and what it costs if wrong. Commit
 macros are empty elsewhere, so `test` and `lint` passed): "fix(app): pass the month step's Tracy message as a string view"
 and a `src/AGENTS.md` gotcha.
 
+**Finishing: the merge gate and the final review.**
+
+- **What only `check` builds:** GCC release's `-Weffc++` asked for initializers on default-initialised structs holding
+  vectors and pointers (`core::Names`, two test fixtures; folded into the commits that brought them, with the gotcha in
+  "docs(agents): say when GCC's -Weffc++ asks for a member's initializer"); MSVC's warnings in "refactor: build the world
+  map, routes and their tests clean on MSVC"; unity-build name clashes in "refactor(data): give the names reader's helpers
+  names of their own" and "refactor: keep file-local names apart for unity builds".
+- **The final whole-branch review** (Opus; GLM's second review was off by the user's choice after it timed out on this
+  branch) found one Important and five Minor issues, all fixed: "fix(game): keep home an NPC standing where walkers can't
+  step", "fix(game): let a walk-to on the map clear the selection", "fix(app): widen the date line's click box to its text",
+  "refactor(core): walk a tile's neighbours in one place", "refactor(core): give a journey part's start and end ticks one
+  home" and "test(tests): sample a walker's jumps at its arrivals, not every tick".
+- **RF1:** an NPC on a tile its walking profile can't enter stays home, rather than `WorldMap::Build` refusing such a map:
+  walking may be stricter than the base costs on purpose (the travel tests' isle, which walkers can't reach, is such a
+  map), and only the way back into that tile breaks. Cost if wrong: a Build refusal and a test map reworked.
+- **RF2:** the date line's box widens to its text but keeps `date_width` as its least width, so a short line stays an easy
+  target. Cost if wrong: drop `date_width` from `effects.yaml` and its reader.
+
 ### Rulings made in the comment cleanup (run on this branch before wave C)
 
 The user's rule (code comments never cite the design process; plain comments only explain why) was applied to the whole
