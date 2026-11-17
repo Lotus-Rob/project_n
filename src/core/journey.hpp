@@ -117,6 +117,12 @@ struct Journey {
 /// The tick `leg` ends on: its walker has reached its last tile.
 [[nodiscard]] i64 EndTick(const Leg& leg);
 
+/// The tick `part` starts on: its stay's start or its leg's.
+[[nodiscard]] i64 StartTick(const JourneyPart& part);
+
+/// The tick `part` ends on: its stay's end or its leg's (EndTick() of the leg).
+[[nodiscard]] i64 EndTick(const JourneyPart& part);
+
 /// The tick `journey` ends on: its last part's end, or 0 for a journey without parts.
 [[nodiscard]] i64 EndTick(const Journey& journey);
 
