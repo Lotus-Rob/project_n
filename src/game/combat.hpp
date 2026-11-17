@@ -335,12 +335,12 @@ private:
         i64 damage = 0;                // each hit's, as cast
         core::Affliction affliction{}; // what each hit leaves, its damage as cast; no ticks for none
         u32 resolved = 0;              // how many swords have arrived: the next is `order[resolved]`
-        // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+        // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
         std::vector<core::VolleyTarget> targets{};
         // Derived, never saved: the swords in arrival order (ties in sword order), their arrival ticks, the last.
-        // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+        // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
         std::vector<u32> order{};
-        // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+        // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
         std::vector<u64> arrivals{};
         u64 lastArrival = 0;
 
@@ -406,17 +406,12 @@ private:
     void EndReleased(const core::State& state, std::vector<u64>& ending, u64 tick, std::vector<core::Event>& events) const;
 
     core::CombatRules m_rules{};
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<u64> m_respawns{};
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<Flight> m_flights{};
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<core::Flash> m_flashes{};
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<core::Seal> m_seals{};
+    std::vector<u64> m_respawns;
+    std::vector<Flight> m_flights;
+    std::vector<core::Flash> m_flashes;
+    std::vector<core::Seal> m_seals;
     // Cast this tick, struck by its Strike(): empty between ticks, so never saved.
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<LanceStrike> m_strikes{};
+    std::vector<LanceStrike> m_strikes;
 };
 
 } // namespace game

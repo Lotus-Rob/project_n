@@ -228,7 +228,7 @@ struct Window::Impl {
 
     SDL_Window* window = nullptr;
     WindowState state{};
-    std::vector<SDL_Gamepad*> gamepads{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::vector<SDL_Gamepad*> gamepads;
 
     void OpenGamepad(SDL_JoystickID which) {
         SDL_Gamepad* gamepad = SDL_OpenGamepad(which);

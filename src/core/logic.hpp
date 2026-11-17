@@ -241,11 +241,8 @@ private:
     std::optional<SceneId> m_resident = std::nullopt;       // the scene the main thread said it holds last
     std::optional<Restored> m_restored = std::nullopt;      // a sound load or replay's, until its swap
     std::optional<ActionKind> m_heldPausing = std::nullopt; // the last Pause or Resume taken during a change, for the next tick
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for
-    // members whose default constructor is defaulted.
-    std::vector<Action> m_input{};
-    std::vector<Event> m_events{};
-    // NOLINTEND(readability-redundant-member-init)
+    std::vector<Action> m_input;
+    std::vector<Event> m_events;
     HeldInput m_held{}; // the tick's held input: live, or the replay's while one plays
 };
 

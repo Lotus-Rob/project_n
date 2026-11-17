@@ -126,7 +126,8 @@ struct Field {
     u32 glyph = 0;
     u32 width = 0;
     u32 height = 0;
-    std::vector<u8> texels{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
+    std::vector<u8> texels{};
 };
 
 /// The glyph's distance field (the alpha channel: SDL3_ttf's field glyphs are white), rows without gaps.
@@ -191,19 +192,17 @@ struct Fonts {
     }
 
     /// First, so the library quits after the fonts close.
-    TtfLibrary library{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    TtfLibrary library;
     /// Shapes on the main thread. Without SDF: SDL3_ttf 3.2.2 shapes a field font's glyphs top to bottom 8 pixels too
     /// far left and 8 or 16 too high by glyph, gives a space a blank field and widens the line by a spread, while a plain
     /// font's glyphs sit exactly where their fields' outlines do, less the spread, either way.
     Font shaping = nullptr;
-    core::Mutex fieldMutex{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    core::Mutex fieldMutex;
     /// Rasterises fields: the worker's batch, or Prewarm() on the main thread, one at a time.
     Font field PN_GUARDED_BY(fieldMutex) = nullptr;
-    core::Mutex queueMutex{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<u32> requests PN_GUARDED_BY(queueMutex){}; // glyphs for the worker, oldest first
-    std::vector<Field> done PN_GUARDED_BY(queueMutex){};   // its fields, not yet taken by EndFrame()
-    // NOLINTEND(readability-redundant-member-init)
+    core::Mutex queueMutex;
+    std::vector<u32> requests PN_GUARDED_BY(queueMutex); // glyphs for the worker, oldest first
+    std::vector<Field> done PN_GUARDED_BY(queueMutex);   // its fields, not yet taken by EndFrame()
 };
 
 /// Where a glyph the cache has seen stands.
@@ -255,15 +254,13 @@ struct TextLayout::Impl {
 
     std::unique_ptr<Fonts> fonts;
     ShelfPacker packer{ GLYPH_PAGE_SIZE, GLYPH_PADDING };
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::unordered_map<u32, CachedGlyph> glyphs{};           // by glyph index
-    std::unordered_map<std::string, CachedLayout> layouts{}; // by direction and text
-    std::string key{}; // Lay()'s lookup key, kept so a lookup allocates nothing once it has grown
-    std::vector<GlyphUpload> pending{};
-    std::vector<u32> wanted{};   // requested glyphs not yet handed to the worker
-    std::vector<Field> landed{}; // the worker's fields, taken from it
-    std::vector<u32> missing{};  // the characters warned about
-    // NOLINTEND(readability-redundant-member-init)
+    std::unordered_map<u32, CachedGlyph> glyphs;           // by glyph index
+    std::unordered_map<std::string, CachedLayout> layouts; // by direction and text
+    std::string key; // Lay()'s lookup key, kept so a lookup allocates nothing once it has grown
+    std::vector<GlyphUpload> pending;
+    std::vector<u32> wanted;   // requested glyphs not yet handed to the worker
+    std::vector<Field> landed; // the worker's fields, taken from it
+    std::vector<u32> missing;  // the characters warned about
     u64 frame = 0;
     u64 landings = 0; // how many times the worker's fields have landed
     /// The batch on the worker, if any. Last: destroyed first, so it's done before the fonts go.

@@ -67,11 +67,8 @@ public:
     void SortCanonical();
 
 private:
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for
-    // members whose default constructor is defaulted.
-    Registry m_registry{};
-    std::unordered_map<u64, Entity> m_entities{}; // looked up only, never iterated
-    // NOLINTEND(readability-redundant-member-init)
+    Registry m_registry;
+    std::unordered_map<u64, Entity> m_entities; // looked up only, never iterated
 };
 
 } // namespace core

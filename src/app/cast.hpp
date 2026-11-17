@@ -71,11 +71,9 @@ public:
 
 private:
     core::AbilityKind m_ability;
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<u64> m_presses{}; // waiting, oldest first
-    std::vector<u64> m_drawn{};   // the uses of the ability's volleys the last frame drew
-    std::vector<u64> m_drawing{}; // this frame's, kept to reuse its room
-    // NOLINTEND(readability-redundant-member-init)
+    std::vector<u64> m_presses; // waiting, oldest first
+    std::vector<u64> m_drawn;   // the uses of the ability's volleys the last frame drew
+    std::vector<u64> m_drawing; // this frame's, kept to reuse its room
 };
 
 /// The time from a Move press to the first frame that draws the player walking: the input latency of a step as the

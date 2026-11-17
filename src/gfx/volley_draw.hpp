@@ -72,16 +72,14 @@ static_assert(sizeof(RibbonVertex) == MESH_VERTEX_BYTES, "the ribbon pipeline re
 /// then the bursts, then the health bars, in world units; the HUD's draw its bars in target pixels, over the world's texts. The
 /// renderer keeps one and clears it each frame, so its buffers keep their capacity.
 struct VolleyDrawing {
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The overlay's sprites, drawn as the batches say, with the overlay's alpha a no-op: each has `previous == current`.
-    std::vector<core::Instance> instances{};
+    std::vector<core::Instance> instances;
     /// The instances' batches, in drawing order, covering them all; not in the instances' order.
-    std::vector<core::Batch> batches{};
+    std::vector<core::Batch> batches;
     /// The trails' vertices, TRAIL_SEGMENTS quads a sword, in sword order: drawn additively before the instances.
-    std::vector<RibbonVertex> ribbons{};
+    std::vector<RibbonVertex> ribbons;
     /// The HUD's batches (DrawHudBars()), placed in target pixels: not among `batches`.
-    std::vector<core::Batch> hud{};
-    // NOLINTEND(readability-redundant-member-init)
+    std::vector<core::Batch> hud;
     /// Swords left out, blade and trail, as the overlay or the trails had no room for them.
     std::size_t droppedSwords = 0;
 

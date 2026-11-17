@@ -1490,8 +1490,7 @@ constexpr f32 NEAR_HOME = 250.0F;
 struct Road {
     u16 from = core::NO_PLACE;
     u16 to = core::NO_PLACE;
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<u32> tiles{};
+    std::vector<u32> tiles;
     i64 outTicks = 0;
     i64 visitTicks = 0;
 };
@@ -1526,12 +1525,9 @@ struct Departure {
 
 /// A world on the shipped map and names, loaded from a save at TRAVEL_CLOCK, the journeys it holds and its player, if any.
 struct TravelWorld {
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::unique_ptr<game::Host> host{};
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<core::Journey> journeys{};
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::shared_ptr<const core::WorldMap> map{};
+    std::unique_ptr<game::Host> host;
+    std::vector<core::Journey> journeys;
+    std::shared_ptr<const core::WorldMap> map;
     core::StableId player{};
 };
 

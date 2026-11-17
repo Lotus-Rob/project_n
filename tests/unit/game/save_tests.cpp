@@ -1146,8 +1146,7 @@ constexpr u32 STAY_PURPOSE = 0x7e57;
 struct Trip {
     u16 home = core::NO_PLACE;
     u16 destination = core::NO_PLACE;
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<u32> route{};
+    std::vector<u32> route;
 };
 
 Trip FirstTrip(const core::WorldMap& map) {

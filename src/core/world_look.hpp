@@ -40,8 +40,7 @@ struct RouteLook {
 /// The sprites that draw the world map.
 struct WorldLook {
     /// The variants of each terrain kind, by the map's kind index; each has at least one.
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<std::vector<atlas::SpriteId>> kinds{};
+    std::vector<std::vector<atlas::SpriteId>> kinds;
     /// The road overlay by neighbour mask.
     std::array<atlas::SpriteId, LINE_MASKS> roads{};
     /// The river overlay by neighbour mask.
@@ -55,8 +54,7 @@ struct WorldLook {
     /// A city's marker.
     atlas::SpriteId cityMarker{};
     /// The marker of each danger sort, in the file's order (a sort is a key the data names, not an enum).
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<std::pair<std::string, atlas::SpriteId>> dangerMarkers{};
+    std::vector<std::pair<std::string, atlas::SpriteId>> dangerMarkers;
     /// The route line and the cursor's tile.
     RouteLook route{};
 

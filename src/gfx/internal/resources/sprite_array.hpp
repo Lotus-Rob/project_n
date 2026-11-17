@@ -34,12 +34,10 @@ struct SpriteArray {
 
 /// What DecodeSprite() makes of a sprite.
 struct DecodedSprite {
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The image, premultiplied.
-    Surface image{};
+    Surface image;
     /// The sprite's distance field (gfx::DistanceField()): its block of the field array, rows without gaps.
-    std::vector<u8> field{};
-    // NOLINTEND(readability-redundant-member-init)
+    std::vector<u8> field;
     /// How long computing the field took.
     u64 fieldNs = 0;
 };

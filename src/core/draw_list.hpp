@@ -116,12 +116,9 @@ private:
     // On its own cache line: chunks push to their parts at once, and the vectors' ends change each
     // time. Worth about 13% of a publish at 30 workers.
     struct alignas(CACHE_LINE_BYTES) Part {
-        // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-        // for members whose default constructor is defaulted.
-        std::vector<Instance> instances{};
-        std::vector<SortEntry> entries{}; // indices into this part's instances
-        std::vector<StableId> ids{};      // parallel to instances
-        // NOLINTEND(readability-redundant-member-init)
+        std::vector<Instance> instances;
+        std::vector<SortEntry> entries; // indices into this part's instances
+        std::vector<StableId> ids;      // parallel to instances
     };
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -129,15 +126,12 @@ private:
 
     Rect m_view{};
     u32 m_partCount = 0;
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for
-    // members whose default constructor is defaulted.
-    std::vector<Part> m_parts{}; // grows to the most parts asked for; only the first m_partCount are in use
-    std::vector<std::size_t> m_offsets{};
-    std::vector<Instance> m_instances{};
-    std::vector<StableId> m_ids{};
-    std::vector<SortEntry> m_entries{};
-    std::vector<SortEntry> m_scratch{};
-    // NOLINTEND(readability-redundant-member-init)
+    std::vector<Part> m_parts; // grows to the most parts asked for; only the first m_partCount are in use
+    std::vector<std::size_t> m_offsets;
+    std::vector<Instance> m_instances;
+    std::vector<StableId> m_ids;
+    std::vector<SortEntry> m_entries;
+    std::vector<SortEntry> m_scratch;
 };
 
 } // namespace core

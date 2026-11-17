@@ -29,12 +29,12 @@ struct GameSetup {
     core::SceneKey scene = game::ARENA_SCENE;
     /// The game data the host starts with.
     core::GameData data = game::BuiltInData();
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The save slot; no saves when empty.
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
     std::filesystem::path saveSlot{};
     /// The replay file; no replays when empty.
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
     std::filesystem::path replaySlot{};
-    // NOLINTEND(readability-redundant-member-init)
     /// When the first tick is due, on the clock `now` reads.
     u64 startNs = 0;
     /// The clock.

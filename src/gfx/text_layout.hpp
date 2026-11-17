@@ -63,7 +63,8 @@ struct Layout {
     /// Its height.
     f32 height = 0.0F;
     /// Its glyphs that draw anything and are rasterised, in drawing order.
-    std::vector<PlacedGlyph> glyphs{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
+    std::vector<PlacedGlyph> glyphs{};
     /// Whether every glyph is there: false while one is still being rasterised on the worker (and left out until then).
     bool complete = true;
 };
@@ -82,7 +83,7 @@ struct GlyphUpload {
     u32 height = 0;
     /// One byte of distance field a texel, in rows from the top without gaps: 128 on the glyph's outline, higher
     /// inside it, lower outside, reaching 0 SDF_SPREAD texels out.
-    std::vector<u8> field{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::vector<u8> field;
 };
 
 /// The game text's font, the glyph fields rasterised from it and the texts laid out with it. A glyph is rasterised

@@ -64,10 +64,8 @@ std::shared_ptr<const core::Strings> HudStrings() {
 }
 
 struct Built {
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<gfx::HudLine> lines{};
-    std::vector<gfx::HudBar> bars{};
-    // NOLINTEND(readability-redundant-member-init)
+    std::vector<gfx::HudLine> lines;
+    std::vector<gfx::HudBar> bars;
 };
 
 Built Build(app::Hud& hud, const core::CasterView& caster = CASTER, f64 renderTick = NOW) {

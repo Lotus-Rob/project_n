@@ -22,7 +22,7 @@ struct Image {
     /// Its height in pixels.
     u32 height = 0;
     /// `width` × `height` pixels, without gaps between rows.
-    std::vector<std::byte> rgba{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    std::vector<std::byte> rgba;
 };
 
 /// Reads the PNG at `file`, or says why it couldn't.

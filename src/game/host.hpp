@@ -288,15 +288,12 @@ private:
         return kind == CreatureKind::Fox ? m_data.fox : m_data.cultivator;
     }
 
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer for
-    // members whose default constructor is defaulted.
-    core::DrawList m_drawList{};
-    Relationships m_relationships{};
-    Travel m_travel{};
-    MonthStep m_monthStep{};
-    Combat m_combat{};
-    std::vector<std::vector<core::TextItem>> m_travellerLabels{}; // per publish chunk, kept for their capacity
-    // NOLINTEND(readability-redundant-member-init)
+    core::DrawList m_drawList;
+    Relationships m_relationships;
+    Travel m_travel;
+    MonthStep m_monthStep;
+    Combat m_combat;
+    std::vector<std::vector<core::TextItem>> m_travellerLabels; // per publish chunk, kept for their capacity
     std::optional<core::Paths> m_paths = std::nullopt; // the world map's distance maps, kept for the run; none without one
     std::shared_ptr<const core::Manifest> m_manifest;
     core::State m_state;

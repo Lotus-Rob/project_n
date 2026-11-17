@@ -104,17 +104,15 @@ private:
     };
 
     Mode m_mode = Mode::Off;
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<std::byte> m_bytes{};            // playing: the whole replay; recording: the start state
-    std::vector<Action> m_actions{};             // every tick's actions, one after another
-    std::vector<std::size_t> m_tickStarts{};     // each tick's first action in m_actions
-    std::vector<HeldInput> m_held{};             // each tick's held input
-    std::vector<std::pair<u64, u64>> m_hashes{}; // (wall tick, hash), by wall tick
-    std::span<const std::byte> m_start{};        // playing: the start state, inside m_bytes
-    // NOLINTEND(readability-redundant-member-init)
-    u64 m_dataHash = 0;         // recording: the game data's hash
-    std::size_t m_next = 0;     // playing: the next tick to feed
-    std::size_t m_nextHash = 0; // playing: the next hash to check
+    std::vector<std::byte> m_bytes;            // playing: the whole replay; recording: the start state
+    std::vector<Action> m_actions;             // every tick's actions, one after another
+    std::vector<std::size_t> m_tickStarts;     // each tick's first action in m_actions
+    std::vector<HeldInput> m_held;             // each tick's held input
+    std::vector<std::pair<u64, u64>> m_hashes; // (wall tick, hash), by wall tick
+    std::span<const std::byte> m_start;        // playing: the start state, inside m_bytes
+    u64 m_dataHash = 0;                        // recording: the game data's hash
+    std::size_t m_next = 0;                    // playing: the next tick to feed
+    std::size_t m_nextHash = 0;                // playing: the next hash to check
     u64 m_matched = 0;
 };
 

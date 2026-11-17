@@ -108,9 +108,7 @@ struct Session {
         handover.SendInput({ .kind = core::ActionKind::WalkTo, .point = point });
     }
 
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    core::GameHandover handover{};
-    // NOLINTEND(readability-redundant-member-init)
+    core::GameHandover handover;
     core::Jobs jobs{ WORKERS };
     core::Saves saves;
     core::Saves replays;

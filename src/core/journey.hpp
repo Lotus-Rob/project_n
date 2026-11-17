@@ -36,11 +36,9 @@ struct Leg {
     /// never jumps to a centre as a leg starts.
     Vec2 origin{};
     /// The route's tiles in order, from the one it starts on; never empty.
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<u32> tiles{};
+    std::vector<u32> tiles;
     /// The ticks from its start to reach each tile, one per tile: 0 for the first, then rising by each step's ticks.
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<u32> arrive{};
+    std::vector<u32> arrive;
 
     /// Lists its fields for an archive (core/archive.hpp).
     template<typename Self, typename Archive>
@@ -86,15 +84,13 @@ struct JourneyPart {
 /// Who travels together, and the parts of their journey in order, each starting on the tick the one before ends.
 struct Journey {
     /// The travellers, one or more: member 0 walks on the parts' positions, the others at fixed offsets from it.
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<StableId> members{};
+    std::vector<StableId> members;
     /// The city it sets out from, a place index.
     u16 home = NO_PLACE;
     /// The city it travels to, a place index.
     u16 destination = NO_PLACE;
     /// Its legs and stays in order; never empty.
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::vector<JourneyPart> parts{};
+    std::vector<JourneyPart> parts;
 
     /// Lists its fields for an archive (core/archive.hpp).
     template<typename Self, typename Archive>

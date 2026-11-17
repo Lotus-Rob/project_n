@@ -25,12 +25,10 @@ inline constexpr u32 MAX_TERRAIN_INSTANCES = 8'192;
 /// What the terrain draws: its sprite instances and the batches that draw them, in world units. The renderer keeps one, so
 /// its buffers keep their capacity.
 struct TerrainDrawing {
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The instances, each with `previous == current`: the map holds still between ticks.
-    std::vector<core::Instance> instances{};
+    std::vector<core::Instance> instances;
     /// The instances' batches in drawing order, covering them all: normal blend.
-    std::vector<core::Batch> batches{};
-    // NOLINTEND(readability-redundant-member-init)
+    std::vector<core::Batch> batches;
 };
 
 /// Replaces `into` with the drawing of the part of `map` that `view` overlaps (core::WorldMap::TilesIn()), each tile whole,

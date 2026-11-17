@@ -128,8 +128,7 @@ private:
     std::vector<Domain> m_domains;
     u64 m_seed;
     StableIdCounter m_ids{};
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::unordered_map<u64, DomainIndex> m_where{}; // looked up only, never iterated
+    std::unordered_map<u64, DomainIndex> m_where; // looked up only, never iterated
 };
 
 /// The component types a domain saves, in the order it saves them (SaveDomain, LoadDomain).

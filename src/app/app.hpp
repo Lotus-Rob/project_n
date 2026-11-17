@@ -96,16 +96,16 @@ struct Options {
     /// Let one month pass at this second of the camera path (`--month-step-at`, MonthStepAtOf()), logging `camera path:
     /// month step`, so the step's cost shows in a measurement; none for no step.
     std::optional<f32> monthStepAt = std::nullopt;
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// The player's settings, read from `settings.yaml`: the main thread's systems take theirs from it.
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
     core::Settings settings{};
     /// The save slot; empty when no folder for saves was found.
-    std::filesystem::path saveSlot{};
+    std::filesystem::path saveSlot;
     /// The replay file; empty when no folder for saves was found.
-    std::filesystem::path replaySlot{};
+    std::filesystem::path replaySlot;
     /// The folder the game data was read from, which debug builds watch to reload it; empty for none.
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
     std::filesystem::path dataFolder{};
-    // NOLINTEND(readability-redundant-member-init)
 };
 
 /// Whether the command line `args` holds `flag` (as in `--burst`) as one of its arguments.
@@ -250,17 +250,15 @@ private:
     Hud m_hud;               // likewise
     CastLatency m_swordsLatency{ core::AbilityKind::FlyingSwords };
     MoveLatency m_moveLatency{}; // `--camera-path`'s scripted press
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    core::GameHandover m_handover{};
-    core::GameDisplay m_display{};
-    std::vector<core::Event> m_incoming{};
-    std::vector<core::Event> m_pending{};        // taken, waiting for the render clock
-    std::vector<core::TextItem> m_numberTexts{}; // the damage numbers drawn this frame
-    std::vector<gfx::HudLine> m_hudLines{};      // the HUD drawn this frame
-    std::vector<gfx::HudBar> m_hudBars{};
-    std::vector<platform::InputEvent> m_inputs{};
-    Bindings m_bindings{};
-    // NOLINTEND(readability-redundant-member-init)
+    core::GameHandover m_handover;
+    core::GameDisplay m_display;
+    std::vector<core::Event> m_incoming;
+    std::vector<core::Event> m_pending;        // taken, waiting for the render clock
+    std::vector<core::TextItem> m_numberTexts; // the damage numbers drawn this frame
+    std::vector<gfx::HudLine> m_hudLines;      // the HUD drawn this frame
+    std::vector<gfx::HudBar> m_hudBars;
+    std::vector<platform::InputEvent> m_inputs;
+    Bindings m_bindings;
     CameraControl m_camera;                                  // starts each scene at m_options.zoom
     Drag m_drag{};                                           // the camera's, by the pointer
     FrameClock m_frameClock{};                               // what labels fade by
@@ -279,14 +277,13 @@ private:
     std::optional<f32> m_pathSeconds = std::nullopt;         // how far into it this frame is, while it runs
     std::optional<std::size_t> m_pathSegment = std::nullopt; // the segment last logged
     PathMonthStep m_monthStep;                               // `--month-step-at`'s one step
-    DataWatch m_dataWatch{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    DataWatch m_dataWatch;
     DeviceInUse m_device{};
     bool m_quit = false;
     bool m_showcase = true; // whether the arena's showcase seals are drawn (F8)
     bool m_paused = false;
     std::atomic<bool> m_logicFailed = false;
-    std::jthread m_logic{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer; last, so it
-                            // stops and joins before anything it uses goes
+    std::jthread m_logic; // last, so it stops and joins before anything it uses goes
 };
 
 } // namespace app

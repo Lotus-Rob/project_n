@@ -23,7 +23,8 @@ struct DisplayMode {
     /// SDL's ID for the display; 0 for none.
     u32 id = 0;
     /// The name the system gives it (a connector such as `DP-2` on Linux); empty when it has none.
-    std::string name{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
+    std::string name{};
     /// Its width in pixels.
     i32 width = 0;
     /// Its height in pixels.

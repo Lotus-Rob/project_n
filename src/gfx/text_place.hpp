@@ -75,8 +75,7 @@ public:
     void Clear();
 
 private:
-    // NOLINTNEXTLINE(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::unordered_map<u64, std::string> m_texts{};
+    std::unordered_map<u64, std::string> m_texts;
 };
 
 /// The colour `item` is drawn in, scaled by its opacity (premultiplied, so every channel): a label's and a caption's

@@ -75,12 +75,12 @@ struct Manifest {
     u32 mipLevels = 0;
     /// The texels between sprites, and from a sprite to its page's edge at least: each owns half (Edge()).
     u32 gutter = 0;
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
     /// Every sprite, indexed by atlas::SpriteId: as many as atlas::SPRITE_NAMES.
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
     std::vector<SpriteInfo> sprites{};
     /// Every scene, indexed by SceneId.
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
     std::vector<SceneInfo> scenes{};
-    // NOLINTEND(readability-redundant-member-init)
 
     /// Each sprite's share of the gutter: the texels past its region on every side that it writes and its field fills.
     [[nodiscard]] u32 Edge() const {

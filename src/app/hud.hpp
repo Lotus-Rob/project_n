@@ -118,10 +118,8 @@ private:
     // Each line's text, the bars' first: kept from frame to frame, so a frame allocates nothing once they have grown.
     std::array<std::string, 2 + core::SLOTS> m_texts{};
     std::optional<core::Rect> m_dateArea = std::nullopt;
-    // NOLINTBEGIN(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
-    std::string m_date{}; // the date line's text, kept likewise
-    std::string m_seconds{};
-    // NOLINTEND(readability-redundant-member-init)
+    std::string m_date; // the date line's text, kept likewise
+    std::string m_seconds;
 };
 
 } // namespace app

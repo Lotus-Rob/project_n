@@ -157,14 +157,14 @@ private:
         return m_free[--m_freeCount];
     }
 
-    mutable Mutex m_mutex{}; // NOLINT(readability-redundant-member-init): GCC's -Weffc++ requires an initializer
+    mutable Mutex m_mutex;
     std::array<State, BUFFERS> m_states{};
     std::array<State*, BUFFERS> m_free PN_GUARDED_BY(m_mutex){};
     std::size_t m_freeCount PN_GUARDED_BY(m_mutex) = 0;
     State* m_writing = m_states.data(); // the logic thread's alone
     State* m_ready PN_GUARDED_BY(m_mutex) = nullptr;
-    std::vector<Event> m_events PN_GUARDED_BY(m_mutex){};
-    std::vector<Input> m_input PN_GUARDED_BY(m_mutex){};
+    std::vector<Event> m_events PN_GUARDED_BY(m_mutex);
+    std::vector<Input> m_input PN_GUARDED_BY(m_mutex);
     Held m_held PN_GUARDED_BY(m_mutex){};
     std::optional<View> m_view PN_GUARDED_BY(m_mutex) = std::nullopt;
 };
