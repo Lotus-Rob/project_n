@@ -541,6 +541,11 @@ void Host::WalkTo(core::Vec2 point, u64 tick) {
         PN_LOG_DEBUG("tick {}: a walk-to is ignored: the scene {} shows no world map", tick, Running().Traits().name);
         return;
     }
+    // On the map a press on open ground walks rather than selecting nothing, so it must also be what lets a selection go.
+    if (m_selected != core::StableId{}) {
+        PN_LOG_INFO("tick {}: a walk-to lets go of the selected entity {}", tick, std::to_underlying(m_selected));
+        m_selected = {};
+    }
     if (m_player == core::StableId{}) {
         PN_LOG_DEBUG("tick {}: a walk-to is ignored: there is no cultivator to walk", tick);
         return;

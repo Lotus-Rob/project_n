@@ -1987,6 +1987,25 @@ TEST_CASE("a walk-to an impassable tile or off the map does nothing") {
     CHECK(SamePoint(FootOf(*world.host, world.player), core::Where(map, leg, static_cast<i64>(TRAVEL_CLOCK + SET_OUT + 2))));
 }
 
+TEST_CASE("a walk-to lets go of the selection, wherever it points") {
+    const TravelWorld world = TravelWorldOf({}, true);
+    const core::WorldMap& map = *world.map;
+    const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = world.player } } };
+    std::vector<core::Event> events;
+    const std::array<core::Vec2, 3> targets{
+        { map.TileCentre(RouteRoad(map)[ROUTE_TILES]), FirstImpassable(map), { .x = -map.TileSize(), .y = map.TileSize() } }
+    };
+    u64 tick = 1;
+    for (const core::Vec2 target : targets) {
+        CAPTURE(tick); // a tile it walks to, an impassable one, a point off the map
+        world.host->Tick(At(tick), { .actions = select, .held = {} }, events);
+        REQUIRE(world.host->Selected() == world.player);
+        WalkTo(*world.host, tick + 1, target);
+        CHECK(world.host->Selected() == core::StableId{});
+        tick += 2;
+    }
+}
+
 TEST_CASE("the paused world holds the cultivator on its route") {
     const TravelWorld world = TravelWorldOf({}, true);
     const core::WorldMap& map = *world.map;
