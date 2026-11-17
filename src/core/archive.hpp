@@ -22,6 +22,7 @@
 #include <concepts>
 #include <cstddef>
 #include <span>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -124,6 +125,14 @@ private:
 
     u64 m_hash = 0;
 };
+
+/// Mixes `text` into `hasher` as its length and then each of its characters, in order.
+inline void HashText(Hasher& hasher, std::string_view text) {
+    hasher(static_cast<u64>(text.size()));
+    for (const char character : text) {
+        hasher(character);
+    }
+}
 
 /// Reads values back from bytes a Writer wrote, checking each read: past the end, or a bool that
 /// is neither 0 nor 1, it fails, and every read after that fails too and leaves its value alone.

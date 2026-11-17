@@ -21,7 +21,7 @@ constexpr i64 MOST_PEOPLE = 100'000'000;
 constexpr f64 LEAST_TILE_SIZE = 1.0;
 constexpr f64 MOST_TILE_SIZE = 1'000'000.0;
 // The most a travel reach value or the cultivator threshold may be, and the most a share in parts per thousand.
-constexpr i64 MOST_REACH = 1'000'000;
+constexpr i64 MOST_TRAVEL_REACH = 1'000'000;
 constexpr i64 MOST_PER_MILLE = 1'000;
 
 using Failure = std::unexpected<core::Error>;
@@ -560,15 +560,15 @@ std::expected<void, core::Error> ReadTravel(
         "travel",
         "cultivator_power",
         static_cast<f64>(travel.cultivatorPower),
-        { .low = 0.0, .lowOpen = false, .high = static_cast<f64>(MOST_REACH) }
+        { .low = 0.0, .lowOpen = false, .high = static_cast<f64>(MOST_TRAVEL_REACH) }
     );
     if (!power) {
         return std::unexpected{ power.error() };
     }
     travel.cultivatorPower = static_cast<f32>(*power);
     return ReadTravelWhole(node, "share_per_mille", MOST_PER_MILLE, travel.sharePerMille)
-        .and_then([&] { return ReadTravelWhole(node, "reach_base", MOST_REACH, travel.reachBase); })
-        .and_then([&] { return ReadTravelWhole(node, "reach_per_power", MOST_REACH, travel.reachPerPower); })
+        .and_then([&] { return ReadTravelWhole(node, "reach_base", MOST_TRAVEL_REACH, travel.reachBase); })
+        .and_then([&] { return ReadTravelWhole(node, "reach_per_power", MOST_TRAVEL_REACH, travel.reachPerPower); })
         .and_then([&] { return ReadStayDays(node, travel); });
 }
 
