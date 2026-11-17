@@ -768,6 +768,24 @@ TEST_CASE("an unreachable city is never chosen") {
     CHECK_FALSE(travel.Travelling(islanders.front()));
 }
 
+TEST_CASE("an NPC standing where walkers can't step stays home") {
+    const std::shared_ptr<const core::WorldMap> map = VisitMap();
+    // Shallows, which the base costs cross and walkers can't: its way out is open, its way back would end entering it.
+    constexpr u32 SHALLOWS_TILE = (2 * VISIT_COLUMNS) - 2;
+    REQUIRE(map->CostAt(SHALLOWS_TILE) != core::IMPASSABLE_COST);
+    REQUIRE(map->CostAt(SHALLOWS_TILE, core::WALKING) == core::IMPASSABLE_COST);
+
+    core::State state{ game::DOMAINS, STATE_SEED };
+    static_cast<void>(Residents(state, VISITORS / 2, 0, HOME, MORTAL));
+    const std::vector<core::StableId> stranded = Residents(state, VISITORS / 2, SHALLOWS_TILE, HOME, MORTAL);
+    core::Paths paths{ map };
+    game::Travel travel;
+    VisitMonth(travel, state, *map, paths, 0);
+    CHECK(travel.Journeys().size() == VISITORS / 2);
+    CHECK_FALSE(travel.Travelling(stranded.front()));
+    CHECK_FALSE(travel.Travelling(stranded.back()));
+}
+
 TEST_CASE("the draw falls on the first city its share reaches") {
     const std::shared_ptr<const core::WorldMap> map = VisitMap();
     core::Paths paths{ map };
