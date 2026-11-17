@@ -24,13 +24,6 @@ i64 TileOf(f32 coordinate, f32 tileSize, u32 tiles) {
     return static_cast<i64>(std::floor(std::fmax(std::fmin(coordinate / tileSize, static_cast<f32>(tiles)), -1.0F)));
 }
 
-void HashText(Hasher& hasher, const std::string& text) {
-    hasher(static_cast<u64>(text.size()));
-    for (const char character : text) {
-        hasher(character);
-    }
-}
-
 void HashLine(Hasher& hasher, const std::vector<TilePoint>& line) {
     hasher(static_cast<u64>(line.size()));
     for (const TilePoint point : line) {

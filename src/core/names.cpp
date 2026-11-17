@@ -23,13 +23,6 @@ constexpr u32 FIRST_BITS = 10;
 constexpr u32 SECOND_MASK = (1U << 11U) - 1U;
 constexpr u32 PART_MASK = (1U << 10U) - 1U;
 
-void HashText(Hasher& hasher, const std::string& text) {
-    hasher(static_cast<u64>(text.size()));
-    for (const char character : text) {
-        hasher(character);
-    }
-}
-
 void HashTable(Hasher& hasher, const std::vector<NameEntry>& table) {
     hasher(static_cast<u64>(table.size()));
     for (const NameEntry& entry : table) {

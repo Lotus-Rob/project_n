@@ -523,7 +523,7 @@ std::string StackText(std::string_view stack, std::string_view name, u32 count) 
 }
 
 u32 WidestCount(u32 count) {
-    constexpr u32 DECIMAL = 10;
+    constexpr u32 RADIX = 10;
     constexpr u32 LARGEST_POWER = 1'000'000'000; // 10-digit counts end at u32's maximum, which 10^10 - 1 would overflow
     if (count == 0) {
         return 0;
@@ -531,9 +531,9 @@ u32 WidestCount(u32 count) {
     if (count >= LARGEST_POWER) {
         return std::numeric_limits<u32>::max();
     }
-    u32 widest = DECIMAL - 1;
-    for (u32 power = DECIMAL; count >= power; power *= DECIMAL) {
-        widest = (widest * DECIMAL) + (DECIMAL - 1);
+    u32 widest = RADIX - 1;
+    for (u32 power = RADIX; count >= power; power *= RADIX) {
+        widest = (widest * RADIX) + (RADIX - 1);
     }
     return widest;
 }
