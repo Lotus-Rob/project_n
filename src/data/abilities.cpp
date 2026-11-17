@@ -14,8 +14,8 @@ constexpr i64 MAX_WHOLE = 9'007'199'254'740'992;
 constexpr i64 MAX_AFFLICTION_TICKS = 1'000'000;
 constexpr f64 TICKS = static_cast<f64>(core::TICKS_PER_SECOND);
 
-// Named for its file: game_data.cpp and manifest.cpp have their own, and a unity build puts them in one translation
-// unit.
+// Named for its file: game_data.cpp and manifest.cpp have helpers of the same job, and the name says whose message
+// this one writes.
 std::unexpected<core::Error> RefuseAbilities(const YAML::Node& node, std::string_view why) {
     return std::unexpected{ core::Error{ std::format("abilities line {}: {}", node.Mark().line + 1, why) } };
 }

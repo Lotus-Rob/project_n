@@ -82,9 +82,7 @@ local function unit_tests(name, files, module, arena)
         if arena then
             with_manifest()
         end
-        -- Out of unity batches: doctest names test cases by __LINE__ under Clang 22 (__COUNTER__ is a
-        -- C2y extension there), so two files' cases on one line would clash. src/ stays in them.
-        add_files(files, {unity_ignored = true})
+        add_files(files)
         add_deps("test_pch")
         set_pcxxheader("unit/pch.hpp")
         add_rules("shared_pch", {owner = "test_pch"})
@@ -123,7 +121,7 @@ target("reference_tests")
     set_kind("binary")
     add_deps("app") -- the damage numbers it draws; it brings gfx and game
     with_manifest()
-    add_files("unit/gfx/main.cpp", "reference/*.cpp", {unity_ignored = true})
+    add_files("unit/gfx/main.cpp", "reference/*.cpp")
     add_deps("test_pch")
     set_pcxxheader("unit/pch.hpp")
     add_rules("shared_pch", {owner = "test_pch"})

@@ -268,12 +268,12 @@ def buildable_here(preset):
     return bool(PRESETS[preset]["image"]) or (PRESETS[preset]["host"] == HOST and not IN_CONTAINER)
 
 
-def build_leaf(mode, sanitizer="none", unity=False):
-    return (mode if sanitizer == "none" else f"{mode}-{sanitizer}") + ("-unity" if unity else "")
+def build_leaf(mode, sanitizer="none"):
+    return mode if sanitizer == "none" else f"{mode}-{sanitizer}"
 
 
-def build_dir(preset, mode, sanitizer="none", unity=False):
-    leaf = build_leaf(mode, sanitizer, unity)
+def build_dir(preset, mode, sanitizer="none"):
+    leaf = build_leaf(mode, sanitizer)
     return Path("build", "container", preset, leaf) if IN_CONTAINER else Path("build", preset, leaf)
 
 
@@ -389,10 +389,10 @@ def preset_trees(preset, leaf):
     return [Path("build", preset, leaf), Path("build", "container", preset, leaf)]
 
 
-def own_trees(presets, mode, sanitizer="none", unity=False, container=False):
+def own_trees(presets, mode, sanitizer="none", container=False):
     """The trees a command is about to build in, relative to ROOT: each preset's native one, or its container's where
     needs_container sends the command."""
-    leaf = build_leaf(mode, sanitizer, unity)
+    leaf = build_leaf(mode, sanitizer)
     return [preset_trees(preset, leaf)[1 if needs_container(preset, container) else 0] for preset in presets]
 
 
@@ -436,12 +436,12 @@ def build_cache_root():
     return Path(root).absolute() if root and not tag_ref() else None
 
 
-def object_cache_dir(preset, mode, sanitizer="none", unity=False):
+def object_cache_dir(preset, mode, sanitizer="none"):
     """CI's object cache for one build: <BUILD_CACHE_ENV>/<preset>-<leaf>, or None (unset, a tag, an uncached toolchain)."""
     root = build_cache_root()
     if not root or PRESETS[preset]["toolchain"] not in CI_CACHED_TOOLCHAINS:
         return None
-    return root / f"{preset}-{build_leaf(mode, sanitizer, unity)}"
+    return root / f"{preset}-{build_leaf(mode, sanitizer)}"
 
 
 def holds_objects(bdir):
@@ -679,21 +679,21 @@ def reenter(preset, argv, interactive=False):
     run(container_cmd(image, ["pixi", "run", "--quiet", "project_n", *argv], interactive, mounts))
 
 
-def configure(preset, mode, sanitizer="none", unity=False):
+def configure(preset, mode, sanitizer="none"):
     check_sanitizer(preset, sanitizer)
-    p, bdir = PRESETS[preset], build_dir(preset, mode, sanitizer, unity)
+    p, bdir = PRESETS[preset], build_dir(preset, mode, sanitizer)
     mark_used(ROOT / bdir, time.time())
     # -v makes XMake install packages one at a time (else 4 in parallel). XMake installs
     # duplicate variants with the same build hash (libxcb, libx11 for SDL3) concurrently into one
     # directory and they corrupt each other; drop -v once that's fixed upstream.
     cmd = ["xmake", "f", "-y", "-v", "-p", p["plat"], "-a", p["arch"], f"--toolchain={p['toolchain']}", "-m", mode,
-           "-o", bdir, f"--sanitizer={sanitizer}", *(["--unity_build=y"] if unity else [])]
+           "-o", bdir, f"--sanitizer={sanitizer}"]
     if p["toolchain"] == "msvc":
         cmd.append("--sdk=/opt/msvc" if IN_CONTAINER else f"--vs_toolset={VS_TOOLSET}")
     if cold_ref() and holds_objects(bdir):
         raise Fail(f"{bdir} already holds compiled objects, and CI builds {os.environ['GITHUB_REF']} from source: "
                    "delete the folder first (the cold rule, tools/AGENTS.md)")
-    cache = object_cache_dir(preset, mode, sanitizer, unity)
+    cache = object_cache_dir(preset, mode, sanitizer)
     # On main a build only writes, into an empty folder: it reads no object an earlier build of the run made.
     if cache and not (cold_ref() and cache.is_dir() and any(cache.iterdir())):
         cache.mkdir(parents=True, exist_ok=True)
@@ -704,10 +704,10 @@ def configure(preset, mode, sanitizer="none", unity=False):
     return bdir
 
 
-def build(preset, mode, sanitizer="none", unity=False):
-    bdir = configure(preset, mode, sanitizer, unity)
+def build(preset, mode, sanitizer="none"):
+    bdir = configure(preset, mode, sanitizer)
     run(["xmake", "build"], env=xmake_env(bdir))
-    if not IN_CONTAINER and sanitizer == "none" and not unity:  # unity's generated sources would confuse clangd
+    if not IN_CONTAINER and sanitizer == "none":
         # Native builds keep clangd current (.clangd reads build/; container paths would be wrong).
         run([*COMPDB, ROOT / "build"], env=xmake_env(bdir))
     return bdir
@@ -795,12 +795,12 @@ def cmd_test(args):
         raise Fail("pass --suite <test target> with --test or doctest arguments")
     extra = ([test_filter(args.test, args.target)] if args.test else []) + extra
     check_sanitizer(args.preset, args.sanitizer)
-    sweep_here(own_trees([args.preset], args.mode, args.sanitizer, args.unity, args.container))
+    sweep_here(own_trees([args.preset], args.mode, args.sanitizer, args.container))
     if needs_container(args.preset, args.container):
-        argv = ["test", "--preset", args.preset, "--mode", args.mode, "--sanitizer", args.sanitizer, *(["--unity"] if args.unity else [])]
+        argv = ["test", "--preset", args.preset, "--mode", args.mode, "--sanitizer", args.sanitizer]
         argv += (["--target", args.target] if args.target else []) + (["--", *extra] if extra else [])
         return reenter(args.preset, argv)
-    bdir = build(args.preset, args.mode, args.sanitizer, args.unity)
+    bdir = build(args.preset, args.mode, args.sanitizer)
     if PRESETS[args.preset]["plat"] == "windows" and args.sanitizer != "none" and HOST != "windows":
         # MSVC's ASan hot-patches system DLLs; Wine's (CET endbr64 prologues) can't be patched.
         print(f"test: built with {args.sanitizer} sanitizer; MSVC sanitizer runs need native Windows, not Wine")
@@ -2165,7 +2165,7 @@ def check_trees(args):
             trees.extend(own_trees([step_args[0].preset], "release", container=args.container))
         elif command is cmd_test or command is cmd_build:
             a = step_args[0]
-            trees.extend(own_trees([a.preset], a.mode, a.sanitizer, getattr(a, "unity", False), a.container))
+            trees.extend(own_trees([a.preset], a.mode, a.sanitizer, a.container))
 
     check_steps(args, collect)
     return trees
@@ -2182,25 +2182,20 @@ def check_steps(args, step):
     skipped = [p for p in PRESETS if not buildable_here(p) or (args.container and not PRESETS[p]["image"])]
     for preset in [p for p in PRESETS if p not in skipped]:
         step(f"test {preset} release", cmd_test, argparse.Namespace(
-            preset=preset, mode="release", sanitizer="none", container=args.container, target=None, test=None, args=[],
-            unity=False))
+            preset=preset, mode="release", sanitizer="none", container=args.container, target=None, test=None, args=[]))
     linux = next((p for p in PRESETS if PRESETS[p]["plat"] == "linux" and p not in skipped), None)
     if linux:
         step(f"reference {linux}", cmd_reference, argparse.Namespace(preset=linux, container=args.container, update=False))
-    # Unity builds are off (xmake.lua) but kept working: one test run with them on.
-    unity_preset = NATIVE_PRESET if NATIVE_PRESET not in skipped else next(p for p in PRESETS if p not in skipped)
-    step(f"unity test {unity_preset} debug", cmd_test, argparse.Namespace(
-        preset=unity_preset, mode="debug", sanitizer="none", container=args.container, target=None, test=None, args=[],
-        unity=True))
+    releasedbg_preset = NATIVE_PRESET if NATIVE_PRESET not in skipped else next(p for p in PRESETS if p not in skipped)
     # Profiling builds turn Tracy's zones on, code no other mode compiles: one build keeps it compiling.
-    step(f"build {unity_preset} releasedbg", cmd_build, argparse.Namespace(
-        preset=unity_preset, mode="releasedbg", sanitizer="none", container=args.container))
+    step(f"build {releasedbg_preset} releasedbg", cmd_build, argparse.Namespace(
+        preset=releasedbg_preset, mode="releasedbg", sanitizer="none", container=args.container))
     if args.sanitizers:
         for preset, sanitizers in SANITIZERS.items():
             for sanitizer in sanitizers if preset not in skipped else ():
                 step(f"test {preset} debug {sanitizer}", cmd_test, argparse.Namespace(
                     preset=preset, mode="debug", sanitizer=sanitizer, container=args.container, target=None, test=None,
-                    args=[], unity=False))
+                    args=[]))
     return skipped
 
 
@@ -2336,8 +2331,7 @@ def cmd_coverage(args):
         return reenter(preset, ["coverage"])
     for stale in (ROOT / build_dir(preset, "coverage")).rglob("*.gcda"):  # counts add up across runs
         stale.unlink()
-    cmd_test(argparse.Namespace(preset=preset, mode="coverage", sanitizer="none", container=False, target=None, test=None, args=[],
-                                unity=False))
+    cmd_test(argparse.Namespace(preset=preset, mode="coverage", sanitizer="none", container=False, target=None, test=None, args=[]))
     out = ROOT / "build" / "coverage"
     out.mkdir(parents=True, exist_ok=True)
     run(["gcovr", "--root", ROOT, "--filter", "src/", "--gcov-executable", "x86_64-conda-linux-gnu-gcov",
@@ -3167,7 +3161,6 @@ def make_parser():
                    help=f"[possible values: {', '.join(suites)}] run one test target, forwarding the arguments after --")
     p.add_argument("--test", help=f"[possible values: {', '.join(test_files)}] with --suite: only the cases of a test file, or with this in their name")
     p.add_argument("--list-tests", action="store_true", help="print what --test takes (of --suite's files, or of every suite's) and exit: shell completion calls it")
-    p.add_argument("--unity", action="store_true", help="with unity builds on (off by default; check runs this once)")
     p.add_argument("args", nargs=argparse.REMAINDER, help="-- <doctest arguments>, e.g. -- --test-case='*physics*'")
     p = add("run", cmd_run, "build and launch the game natively", preset="native", mode=True)
     p.add_argument("--debug", action="store_true", help="launch under the debugger (xmake run -d)")
