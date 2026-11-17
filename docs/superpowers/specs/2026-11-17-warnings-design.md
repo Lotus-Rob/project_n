@@ -1,7 +1,39 @@
 # Warnings: drop `-Weffc++`, relax tests, remove unity builds, release builds per task
 
-Date: 2026-11-17 · Status: **approved 2026-11-17** · Plan: `2026-11-17-warnings.md` · Amends: design doc 0001 (rules 15
-and 26)
+Date: 2026-11-17 · Status: implemented 2026-11-17 (approved the same day) · Plan: `2026-11-17-warnings.md` · Amends:
+design doc 0001 (rules 15 and 26)
+
+## Outcome (2026-11-17)
+
+Landed as five commits: "build(tests): relax MSVC evaluation-order and magic-number checks", "docs(agents): build GCC
+and MSVC release after each task", "build(xmake): drop GCC's -Weffc++ and the initialisers it forced",
+"build(tools)!: remove unity builds" and "docs(agents): say which builds show MSVC's warnings". The unity measurement
+behind the removal is the table under Approaches.
+
+Rulings and their evidence:
+
+- **24 members in 10 files keep `{}`**, each under `NOLINTNEXTLINE(readability-redundant-member-init)` with the reason:
+  a designated initialiser omits them, and Clang's `-Wmissing-designated-field-initializers` (which names one member
+  per site) warns without one. The compiler decided which: of the 96 pairs `-Weffc++` forced, every `{}` Clang didn't
+  name went, and a review's guess that more could go (`GameSetup`'s save and replay slots, `DisplayMode::name`) was
+  wrong, as `game_tests.cpp` and `window_tests.cpp` omit them. `Action::data` takes `= nullptr` instead. So
+  src/AGENTS.md's `-Weffc++` gotcha was replaced by this one rather than only deleted, as the Design said.
+- **No member was left uninitialised** by the removed `{}`: the final review read every affected type that isn't a
+  standard container; each scalar and pointer member has its own initialiser or a constructor that sets it.
+- **The unity self-tests were deleted, not loosened**: they tested the feature the branch removes; one new self-test
+  checks that `check` runs no unity step.
+- **Design doc 0001's 2026-11-01 Revised entry keeps "unity builds configured but off"**: the Revised line is a dated
+  record of what each revision did; rule 26 and the new Revised entry say they are gone.
+- **The per-task release builds applied from the first task on** (the user's decision): linux-gcc and windows-msvc
+  release passed at each of the three landings (Tasks 2 and 4, Task 1, Task 3), so no compiler error waited for
+  `check`.
+- **The final review's findings were all fixed**: eight half-sentences left by the removed `NOLINTBEGIN` blocks,
+  rule 26's figures (GCC release cold builds were 3% faster, not slower; one-file rebuilds were not "unchanged";
+  the agreed threshold is now stated), the removal of `test --unity` marked as breaking, a trailing comment the
+  removed NOLINT had split, two `{}` on `Handover`'s vectors tidy misses inside a class template, the commits
+  reshaped (the Clang initialisers folded into the `-Weffc++` commit, the formatting follow-up into the unity one),
+  and the MSVC gotchas' "only in `check`" (each task's windows-msvc build shows them now). `game/scene.hpp`'s older
+  suppression of the same kind took the standard one-line form.
 
 ## Why
 
