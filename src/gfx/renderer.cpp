@@ -674,7 +674,9 @@ void Renderer::Impl::MeasureStacks() {
     PN_PROFILE_ZONE();
     // A stack's count is below the number of labels, so the stack text with that many digits is as wide as any can be:
     // the font's digits are tabular (Noto Sans SC's '0' to '9' are all 555 units wide), so the digits' number decides.
-    const auto most = static_cast<u32>(labelInputs.size());
+    // Measuring the widest count of that length keeps the text, and so its cached layout, the same while the label
+    // count changes by a few each frame.
+    const u32 most = WidestCount(static_cast<u32>(labelInputs.size()));
     const std::string& stack = strings->Text(core::StringId::LabelStack, textOptions.language);
     measured.assign(strings->text.size(), {});
     measuredNames.clear();

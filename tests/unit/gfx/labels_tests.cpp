@@ -879,4 +879,43 @@ TEST_CASE("a caption fades out with its size below the readable size") {
     CHECK(gfx::CaptionOpacity(BETWEEN_AT_DOUBLE, DOUBLE) == doctest::Approx(HALF));
 }
 
+TEST_CASE("two counts with the same digits measure as the same stack text") {
+    constexpr u32 FIRST = 1130;
+    constexpr u32 SECOND = 1131;
+    const std::string first = gfx::StackText("{name} (+{count})", "Fox", gfx::WidestCount(FIRST));
+    const std::string second = gfx::StackText("{name} (+{count})", "Fox", gfx::WidestCount(SECOND));
+    CHECK(first == second);
+}
+
+TEST_CASE("a count gaining a digit measures as a different stack text") {
+    constexpr u32 THREE_DIGITS = 999;
+    constexpr u32 FOUR_DIGITS = 1000;
+    const std::string first = gfx::StackText("{name} (+{count})", "Fox", gfx::WidestCount(THREE_DIGITS));
+    const std::string second = gfx::StackText("{name} (+{count})", "Fox", gfx::WidestCount(FOUR_DIGITS));
+    CHECK(first != second);
+}
+
+TEST_CASE("the widest count is the largest with the count's digits") {
+    constexpr u32 NINES_4 = 9999;
+    CHECK(gfx::WidestCount(0) == 0);
+    CHECK(gfx::WidestCount(1) == 9);
+    CHECK(gfx::WidestCount(9) == 9);
+    CHECK(gfx::WidestCount(10) == 99);
+    CHECK(gfx::WidestCount(57) == 99);
+    CHECK(gfx::WidestCount(99) == 99);
+    CHECK(gfx::WidestCount(100) == 999);
+    CHECK(gfx::WidestCount(999) == 999);
+    CHECK(gfx::WidestCount(1000) == NINES_4);
+    CHECK(gfx::WidestCount(1131) == NINES_4);
+    CHECK(gfx::WidestCount(NINES_4) == NINES_4);
+    CHECK(gfx::WidestCount(10000) == 99999);
+}
+
+TEST_CASE("the widest count of a ten-digit count is the largest u32") {
+    constexpr u32 MAXIMUM = std::numeric_limits<u32>::max();
+    constexpr u32 BILLION = 1'000'000'000;
+    CHECK(gfx::WidestCount(BILLION) == MAXIMUM);
+    CHECK(gfx::WidestCount(MAXIMUM) == MAXIMUM);
+}
+
 } // namespace
