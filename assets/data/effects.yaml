@@ -16,7 +16,8 @@
 #   bar_height, line_height (slot to slot, above 0), bar_gap, bar_text_inset, bar_text_rise (0 or more), not_enough_qi
 #   (seconds the Qi bar warns after a refused cast, above 0), cooling_ink_opacity (a cooling slot's ink, 0 to 1),
 #   date_inset (the date line's distance in from the top and right edges, 0 or more) and date_width (its clickable box's
-#   width, above 0; the text is right-aligned in it and its height is line_height).
+#   least width, above 0: the box widens to the text when it is wider; the text is right-aligned in it and its height
+#   is line_height).
 abilities:
   fire_bolt:     { sword_scale: 1.0, trail: 0.1, trail_width: 5, trail_taper: 0.6, trail_intensity: 1 }
   flying_swords: { sword_scale: 0.9, trail: 0.1, trail_width: 5, trail_taper: 0.6, trail_intensity: 1 }

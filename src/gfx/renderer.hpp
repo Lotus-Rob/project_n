@@ -27,6 +27,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string_view>
 
 namespace gfx {
 
@@ -147,6 +148,10 @@ public:
     /// for no value; the route in the snapshot (core::Snapshot::route) draws with it (gfx/route_draw.hpp), between the map
     /// and the snapshot's ground. Nothing draws outside a snapshot that shows the map.
     void SetTargetTile(std::optional<core::Vec2> centre);
+
+    /// How wide a HUD line saying `line` draws now, in target pixels at the text scale (HudLine's size). A glyph not
+    /// rasterised yet counts nothing until it lands, a frame or two later.
+    [[nodiscard]] f32 HudLineWidth(std::string_view line);
 
     /// Draws glows for the reduce flashing setting from the next frame on (off until it is called): pulses hold still and
     /// light glows dim.

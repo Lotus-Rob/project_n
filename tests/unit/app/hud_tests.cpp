@@ -376,10 +376,15 @@ constexpr core::CalendarView FIRST_DAY{ .month = 0, .day = 0, .paused = false };
 constexpr core::CalendarView LAST_DAY_OF_THE_FOURTEENTH_MONTH{ .month = 13, .day = 29, .paused = false };
 constexpr u32 WIDTH = 1280;
 
+/// A text width below the date line's least box, whatever the text.
+f32 Narrow(std::string_view /*text*/) {
+    return 0.0F;
+}
+
 TEST_CASE("the date line shows the month and day in each language") {
     std::vector<gfx::HudLine> lines;
     app::Hud english = English();
-    english.BuildDate(MARCH_TWELFTH, WIDTH, lines);
+    english.BuildDate(MARCH_TWELFTH, WIDTH, Narrow, lines);
     REQUIRE(lines.size() == 1);
     CHECK(lines.front().text == "Month 3, day 12");
     CHECK(lines.front().alignRight);
@@ -387,38 +392,38 @@ TEST_CASE("the date line shows the month and day in each language") {
 
     lines.clear();
     app::Hud chinese(HudStrings(), { .language = core::Language::Chinese }, core::UiColours{});
-    chinese.BuildDate(MARCH_TWELFTH, WIDTH, lines);
+    chinese.BuildDate(MARCH_TWELFTH, WIDTH, Narrow, lines);
     REQUIRE(lines.size() == 1);
     CHECK(lines.front().text == "3月12日");
 
     // The first day of the first month, and a later year's month, read as plain numbers.
     lines.clear();
-    english.BuildDate(FIRST_DAY, WIDTH, lines);
+    english.BuildDate(FIRST_DAY, WIDTH, Narrow, lines);
     CHECK(lines.front().text == "Month 1, day 1");
     lines.clear();
-    english.BuildDate(LAST_DAY_OF_THE_FOURTEENTH_MONTH, WIDTH, lines);
+    english.BuildDate(LAST_DAY_OF_THE_FOURTEENTH_MONTH, WIDTH, Narrow, lines);
     CHECK(lines.front().text == "Month 14, day 30");
 }
 
 TEST_CASE("the date line marks a paused world") {
     std::vector<gfx::HudLine> lines;
     app::Hud english = English();
-    english.BuildDate(PAUSED_MARCH_TWELFTH, WIDTH, lines);
+    english.BuildDate(PAUSED_MARCH_TWELFTH, WIDTH, Narrow, lines);
     REQUIRE(lines.size() == 1);
     CHECK(lines.front().text == "Month 3, day 12  Paused");
     lines.clear();
     app::Hud chinese(HudStrings(), { .language = core::Language::Chinese }, core::UiColours{});
-    chinese.BuildDate(PAUSED_MARCH_TWELFTH, WIDTH, lines);
+    chinese.BuildDate(PAUSED_MARCH_TWELFTH, WIDTH, Narrow, lines);
     CHECK(lines.front().text == "3月12日  暂停");
 }
 
 TEST_CASE("no date line outside the world map") {
     std::vector<gfx::HudLine> lines;
     app::Hud hud = English();
-    hud.BuildDate(MARCH_TWELFTH, WIDTH, lines);
+    hud.BuildDate(MARCH_TWELFTH, WIDTH, Narrow, lines);
     REQUIRE(hud.DateLineArea().has_value());
     lines.clear();
-    hud.BuildDate(std::nullopt, WIDTH, lines);
+    hud.BuildDate(std::nullopt, WIDTH, Narrow, lines);
     CHECK(lines.empty());
     CHECK_FALSE(hud.DateLineArea().has_value());
     CHECK_FALSE(English().DateLineArea().has_value()); // before any build
@@ -428,7 +433,7 @@ TEST_CASE("the date line's area sits at the top right and grows with the text sc
     constexpr f32 DOUBLE = 2.0F;
     std::vector<gfx::HudLine> lines;
     app::Hud hud = English();
-    hud.BuildDate(MARCH_TWELFTH, WIDTH, lines);
+    hud.BuildDate(MARCH_TWELFTH, WIDTH, Narrow, lines);
     REQUIRE(hud.DateLineArea().has_value());
     const core::Rect area = hud.DateLineArea().value_or(core::Rect{});
     CHECK(area.max.x == static_cast<f32>(WIDTH) - HUD.dateInset);
@@ -439,12 +444,30 @@ TEST_CASE("the date line's area sits at the top right and grows with the text sc
 
     app::Hud big(HudStrings(), { .language = core::Language::English, .scale = DOUBLE }, core::UiColours{});
     lines.clear();
-    big.BuildDate(MARCH_TWELFTH, WIDTH, lines);
+    big.BuildDate(MARCH_TWELFTH, WIDTH, Narrow, lines);
     REQUIRE(big.DateLineArea().has_value());
     const core::Rect larger = big.DateLineArea().value_or(core::Rect{});
     CHECK(larger.max.x - larger.min.x == HUD.dateWidth * DOUBLE);
     CHECK(larger.max.y - larger.min.y == HUD.lineHeight * DOUBLE);
     CHECK(larger.max.x == area.max.x);
+}
+
+TEST_CASE("the date line's area widens to a text wider than its least box") {
+    // Wider than the least box: a long month number, another language or a large text scale.
+    constexpr f32 WIDE_TEXT = HUD.dateWidth + 100.0F;
+    std::vector<std::string> measured;
+    const app::TextWidth wide = [&measured](std::string_view text) {
+        measured.emplace_back(text);
+        return WIDE_TEXT;
+    };
+    std::vector<gfx::HudLine> lines;
+    app::Hud hud = English();
+    hud.BuildDate(PAUSED_MARCH_TWELFTH, WIDTH, wide, lines);
+    REQUIRE(hud.DateLineArea().has_value());
+    const core::Rect area = hud.DateLineArea().value_or(core::Rect{});
+    CHECK(area.max.x - area.min.x == WIDE_TEXT);
+    CHECK(area.max.x == static_cast<f32>(WIDTH) - HUD.dateInset); // still ending where the text ends
+    CHECK(measured == std::vector<std::string>{ "Month 3, day 12  Paused" });
 }
 
 // A date line's box and points around its edges.

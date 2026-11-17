@@ -223,6 +223,10 @@ struct Renderer::Impl {
     /// The HUD's lines, placed first, so the quads' room is theirs before the world's texts take any: the runs before
     /// hudRuns, drawn after every other text.
     void PlaceHudLines(std::span<const HudLine> lines);
+    /// How wide a HUD line laid out as `layout` draws, in target pixels at the text scale.
+    [[nodiscard]] f32 HudWidth(const Layout& layout) const {
+        return layout.width * (HUD_PIXELS * textOptions.scale / SDF_BASE_PIXELS);
+    }
     std::expected<void, core::Error> UploadGlyphs(SDL_GPUCopyPass* copy);
     /// The command buffer holding the last Upload() was submitted, or failed to be, or was cancelled.
     void Submitted(bool submitted);
@@ -784,7 +788,7 @@ void Renderer::Impl::PlaceHudLines(std::span<const HudLine> lines) {
         const Layout& layout = text->Lay(line.text, core::TextDirection::LeftToRight);
         core::Vec2 topLeft = line.topLeft;
         if (line.alignRight) {
-            topLeft.x -= layout.width * (pixels / SDF_BASE_PIXELS);
+            topLeft.x -= HudWidth(layout);
         }
         PlaceAt(layout, topLeft, pixels, line.colour);
     }
@@ -1287,6 +1291,10 @@ void Renderer::SetWorld(std::shared_ptr<const core::WorldMap> map, const core::W
     m_impl->worldMap = std::move(map);
     m_impl->worldLook = look;
     ++m_impl->worldVersion;
+}
+
+f32 Renderer::HudLineWidth(std::string_view line) {
+    return m_impl->HudWidth(m_impl->text->Lay(line, core::TextDirection::LeftToRight));
 }
 
 void Renderer::SetTargetTile(std::optional<core::Vec2> centre) {
