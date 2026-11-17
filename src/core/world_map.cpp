@@ -120,22 +120,12 @@ Reach Search(const WorldMap& map, std::span<const Seed> seeds) {
         settled.at(entry.tile) = true;
         reach.cost.at(entry.tile) = entry.cost;
         reach.owner.at(entry.tile) = entry.city;
-        const TilePoint point = map.PointOf(entry.tile);
-        for (i64 dRow = -1; dRow <= 1; ++dRow) {
-            for (i64 dColumn = -1; dColumn <= 1; ++dColumn) {
-                const i64 column = static_cast<i64>(point.column) + dColumn;
-                const i64 row = static_cast<i64>(point.row) + dRow;
-                if ((dRow == 0 && dColumn == 0) || column < 0 || row < 0 || std::cmp_greater_equal(column, map.Columns()) ||
-                    std::cmp_greater_equal(row, map.Rows())) {
-                    continue;
-                }
-                const u32 next = map.TileIndex({ .column = static_cast<u32>(column), .row = static_cast<u32>(row) });
-                const u32 step = map.StepCost(entry.tile, next);
-                if (step != IMPASSABLE_COST && !settled.at(next)) {
-                    queue.push({ .cost = entry.cost + u64{ step }, .city = entry.city, .tile = next });
-                }
+        map.ForEachNeighbour(entry.tile, [&](u32 next) {
+            const u32 step = map.StepCost(entry.tile, next);
+            if (step != IMPASSABLE_COST && !settled.at(next)) {
+                queue.push({ .cost = entry.cost + u64{ step }, .city = entry.city, .tile = next });
             }
-        }
+        });
     }
     return reach;
 }
