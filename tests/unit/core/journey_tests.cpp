@@ -139,7 +139,13 @@ TEST_CASE("a walker moves without a jump") {
     constexpr f32 FASTEST = TILE / 64.0F;
     constexpr f32 EPSILON = 0.01F;
 
-    CHECK(LargestJump(map, visit, DEPART - 1, core::EndTick(out) - 1) < FASTEST + EPSILON);
+    // Between two arrivals a walker keeps one speed, so a jump would show at an arrival: the ticks either side of each.
+    f32 largest = LargestJump(map, visit, DEPART - 1, DEPART);
+    for (const u32 arrive : out.arrive) {
+        const i64 arrival = out.startTick + i64{ arrive };
+        largest = std::max(largest, LargestJump(map, visit, arrival - 1, arrival));
+    }
+    CHECK(largest < FASTEST + EPSILON);
     CHECK(LargestJump(map, visit, core::EndTick(out) - 2, core::EndTick(out) - 1) < FASTEST + EPSILON);
     CHECK(LargestJump(map, visit, stay.startTick, stay.startTick + 1) < FASTEST + EPSILON);
     CHECK(LargestJump(map, visit, stay.endTick - 2, stay.endTick - 1) < FASTEST + EPSILON);
