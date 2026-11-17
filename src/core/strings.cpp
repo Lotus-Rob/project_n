@@ -11,8 +11,8 @@ constexpr std::string_view MOST_PLACEHOLDER = "{max}";
 constexpr std::string_view MONTH_PLACEHOLDER = "{month}";
 constexpr std::string_view DAY_PLACEHOLDER = "{day}";
 
-// Writes `text` into `into` with `first` as plain decimal in place of each `firstName` and `second` in place of each
-// `secondName`; a brace that starts neither stays.
+/// Writes `text` into `into` with `first` as plain decimal in place of each `firstName` and `second` in place of each
+/// `secondName`; a brace that starts neither stays.
 template<typename First, typename Second>
 void Fill(
     std::string& into,

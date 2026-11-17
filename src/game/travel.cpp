@@ -73,19 +73,11 @@ bool PartSound(const core::JourneyPart& part, const core::WorldMap& map) {
     return part.stay ? StaySound(part.rest, map) : LegSound(part.leg, map);
 }
 
-i64 PartStartTick(const core::JourneyPart& part) {
-    return part.stay ? part.rest.startTick : part.leg.startTick;
-}
-
-i64 PartEndTick(const core::JourneyPart& part) {
-    return part.stay ? part.rest.endTick : core::EndTick(part.leg);
-}
-
 /// Whether `journey`, read from a save, suits `state` and `map`: members, all world NPCs, between two cities, and parts,
 /// each sound and starting on the tick the one before ends.
 bool JourneySound(const core::Journey& journey, const core::State& state, const core::WorldMap& map) {
     const auto gap = [](const core::JourneyPart& before, const core::JourneyPart& after) {
-        return PartStartTick(after) != PartEndTick(before);
+        return core::StartTick(after) != core::EndTick(before);
     };
     return !journey.members.empty() &&
            std::ranges::all_of(journey.members, [&state](core::StableId npc) { return IsWorldNpc(state, npc); }) &&

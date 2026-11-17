@@ -41,15 +41,6 @@ Vec2 LegPoint(const WorldMap& map, const Leg& leg, std::size_t index) {
     return index == 0 ? leg.origin : map.TileCentre(leg.tiles[index]);
 }
 
-/// The ticks `part` starts and ends on.
-i64 PartStart(const JourneyPart& part) {
-    return part.stay ? part.rest.startTick : part.leg.startTick;
-}
-
-i64 PartEnd(const JourneyPart& part) {
-    return part.stay ? part.rest.endTick : EndTick(part.leg);
-}
-
 /// Where the walker of `stay` aims at its day point `day`: on the city's tile centre at its first (its start) and at any
 /// day point at or past its end, else a point drawn round it.
 Vec2 StayPoint(const WorldMap& map, const Stay& stay, Vec2 centre, i64 day) {
@@ -127,12 +118,20 @@ i64 EndTick(const Leg& leg) {
     return leg.arrive.empty() ? leg.startTick : leg.startTick + i64{ leg.arrive.back() };
 }
 
+i64 StartTick(const JourneyPart& part) {
+    return part.stay ? part.rest.startTick : part.leg.startTick;
+}
+
+i64 EndTick(const JourneyPart& part) {
+    return part.stay ? part.rest.endTick : EndTick(part.leg);
+}
+
 i64 EndTick(const Journey& journey) {
-    return journey.parts.empty() ? 0 : PartEnd(journey.parts.back());
+    return journey.parts.empty() ? 0 : EndTick(journey.parts.back());
 }
 
 i64 StartTick(const Journey& journey) {
-    return journey.parts.empty() ? 0 : PartStart(journey.parts.front());
+    return journey.parts.empty() ? 0 : StartTick(journey.parts.front());
 }
 
 Vec2 Where(const WorldMap& map, const Leg& leg, i64 tick) {
@@ -159,7 +158,7 @@ Vec2 Where(const WorldMap& map, const Journey& journey, i64 tick, std::size_t me
     }
     // The first part ending after `tick` holds it (the next part on a boundary, where both give the same point); past the
     // end, the last part holds its end.
-    const auto holding = std::ranges::find_if(journey.parts, [tick](const JourneyPart& part) { return PartEnd(part) > tick; });
+    const auto holding = std::ranges::find_if(journey.parts, [tick](const JourneyPart& part) { return EndTick(part) > tick; });
     const JourneyPart& part = holding == journey.parts.end() ? journey.parts.back() : *holding;
     const Vec2 position = part.stay ? StayWhere(map, part.rest, tick) : Where(map, part.leg, tick);
     return position + MemberOffset(member);
