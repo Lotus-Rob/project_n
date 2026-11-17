@@ -144,6 +144,10 @@ void SetOut(const VisitMonth& month, auto& npcs, const auto& ids, u32 chunk, std
         if (!IsCity(map, person.home) || month.travel->Travelling(npc)) {
             continue;
         }
+        // The way back would end by stepping onto this tile, which walkers can't enter: such an NPC has no way home.
+        if (map.CostAt(person.cell, core::WALKING) == core::IMPASSABLE_COST) {
+            continue;
+        }
         const u64 key = std::to_underlying(npc);
         const auto draw = [&month, key](u32 index) { return core::Random(month.key, 0, key, PURPOSE_VISIT, index); };
         if (core::ToBelow(draw(VISIT_DRAW_SETS_OUT), SHARE_WHOLE) >= rules.sharePerMille) {
