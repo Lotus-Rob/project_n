@@ -490,7 +490,7 @@ class CheckTest(unittest.TestCase):
     def test_check_prints_each_steps_time(self):
         out = self.container_check()[3]
         presets = [p for p in project_n.PRESETS if project_n.PRESETS[p]["image"]]
-        expected = ["selftest", "fmt", "lint", *(f"test {p} release" for p in presets), "reference", "unity test",
+        expected = ["selftest", "fmt", "lint", *(f"test {p} release" for p in presets), "reference",
                     "releasedbg", "total"]
         positions = [out.find(name) for name in expected]
         self.assertNotIn(-1, positions, out)
@@ -510,10 +510,10 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(len(references), 1)
         self.assertEqual(project_n.PRESETS[references[0].preset]["plat"], "linux")
 
-    def test_container_check_runs_unity_once_on_a_preset_with_an_image(self):
-        unity = [args for args in self.container_check()[0] if args.unity]
-        self.assertEqual(len(unity), 1)
-        self.assertTrue(project_n.PRESETS[unity[0].preset]["image"], unity[0].preset)
+    def test_check_runs_no_unity_step(self):
+        tests, builds, references, out = self.container_check()
+        self.assertNotIn("unity", out)
+        self.assertFalse([args for args in tests + builds + references if hasattr(args, "unity")])
 
     def test_check_builds_releasedbg_once(self):
         builds = self.container_check()[1]
@@ -768,8 +768,8 @@ class ObjectCacheTest(unittest.TestCase):
         with self.ci(self.tmp / "c", "refs/heads/ci-speed"):
             folder = self.tmp / "c" / "linux-clang-release"
             self.assertEqual(project_n.object_cache_dir("linux-clang", "release"), folder)
-            self.assertEqual(project_n.object_cache_dir("linux-clang", "debug", "address", unity=True),
-                             self.tmp / "c" / "linux-clang-debug-address-unity")
+            self.assertEqual(project_n.object_cache_dir("linux-clang", "debug", "address"),
+                             self.tmp / "c" / "linux-clang-debug-address")
             cmd = self.configured()
         self.assertIn("--build_cache=y", cmd)
         self.assertIn(f"--ccachedir={folder}", cmd)
@@ -2036,17 +2036,6 @@ class SanitizerTest(unittest.TestCase):
         self.assertEqual(project_n.build_dir("linux-gcc", "debug").name, "debug")
         self.assertEqual(project_n.build_dir("linux-gcc", "debug", "address").name, "debug-address")
 
-    def test_unity_builds_get_their_own_build_dir(self):
-        self.assertEqual(project_n.build_dir("linux-gcc", "debug", unity=True).name, "debug-unity")
-
-    def test_a_container_unity_run_passes_the_flag_on(self):
-        argvs = []
-        with mock.patch.object(project_n, "reenter", lambda preset, argv: argvs.append(argv)), \
-             mock.patch.object(project_n, "IN_CONTAINER", False):
-            project_n.cmd_test(project_n.argparse.Namespace(preset="linux-gcc", mode="debug", sanitizer="none", container=True,
-                                                            target=None, test=None, args=[], unity=True))
-        self.assertIn("--unity", argvs[0])
-
     def test_a_test_name_filters_by_file_or_else_by_case_name(self):
         self.assertEqual(project_n.test_filter("data_watch", "app_tests"),
                          "--source-file=*/data_watch_tests.cpp,*\\data_watch_tests.cpp")
@@ -2083,7 +2072,7 @@ class SanitizerTest(unittest.TestCase):
     def test_a_test_without_a_suite_is_refused(self):
         with self.assertRaises(project_n.Fail):
             project_n.cmd_test(project_n.argparse.Namespace(preset="linux-gcc", mode="debug", sanitizer="none", container=False,
-                                                            target=None, test="data_watch", args=[], unity=False))
+                                                            target=None, test="data_watch", args=[]))
 
     def test_piped_help_opens_each_options_help_with_its_choices_once(self):  # shell completers read the first line
         out = io.StringIO()
@@ -2162,8 +2151,7 @@ class TestFilesTest(unittest.TestCase):
         with mock.patch.multiple(project_n, build=lambda *a: Path("build"), xmake_env=lambda bdir: {},
                                  needs_container=lambda *a: False, run=lambda argv, env: ran.append(argv)):
             project_n.cmd_test(project_n.argparse.Namespace(preset=project_n.NATIVE_PRESET, mode="debug", sanitizer="none",
-                                                            container=False, target=target, test=test, args=list(args),
-                                                            unity=False))
+                                                            container=False, target=target, test=test, args=list(args)))
         return ran
 
     def test_a_suite_without_filters_runs_its_file_tests(self):
@@ -3196,7 +3184,7 @@ class BuildSweepTest(unittest.TestCase):
         twin = self.tree(Path("windows-msvc") / "release", stamp=time.time() - 30 * DAY)
         self.run_swept(project_n.cmd_test, argparse.Namespace(
             preset="windows-msvc", mode="release", sanitizer="none", container=False, target=None, test=None, args=[],
-            unity=False, list_tests=False), needs_container=lambda *a: True, reenter=lambda *a: None)
+            list_tests=False), needs_container=lambda *a: True, reenter=lambda *a: None)
         self.assertGreater(project_n.last_used(used), time.time() - 60)
         self.assertFalse(twin.exists())  # the run builds in the container, so the stale native tree goes
 
@@ -3222,13 +3210,12 @@ class BuildSweepTest(unittest.TestCase):
         used = []
 
         def record(args):
-            used.extend(project_n.own_trees([args.preset], args.mode, args.sanitizer, getattr(args, "unity", False),
-                                            args.container))
+            used.extend(project_n.own_trees([args.preset], args.mode, args.sanitizer, args.container))
 
         def record_reference(args):
             used.extend(project_n.own_trees([args.preset], "release", container=args.container))
 
-        leaves = ("debug", "release", "releasedbg", "debug-unity", "debug-address")
+        leaves = ("debug", "release", "releasedbg", "debug-address")
         created = [self.tree(Path(*parent, preset, leaf), stamp=time.time() - 30 * DAY)
                    for parent in ((), ("container",)) for preset in project_n.PRESETS for leaf in leaves]
         self.run_swept(project_n.cmd_check, argparse.Namespace(container=container, sanitizers=False),
