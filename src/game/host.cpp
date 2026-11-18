@@ -280,10 +280,10 @@ public:
     ~Context() override;
 
     [[nodiscard]] core::State& State() override {
-        return m_host->m_state;
+        return m_host->Live().state;
     }
     [[nodiscard]] const core::State& State() const override {
-        return m_host->m_state;
+        return m_host->Live().state;
     }
     [[nodiscard]] const core::Manifest& Manifest() const override {
         return *m_host->m_manifest;
@@ -337,16 +337,11 @@ std::optional<core::SceneFacts> Host::Requested() const {
 
 void Host::EnterScene() {
     if (m_loaded) {
-        m_state = std::move(m_loaded->state);
-        m_relationships = std::move(m_loaded->relationships);
-        m_travel = std::move(m_loaded->travel);
+        m_world = std::move(m_loaded->world);
         m_combat = std::move(m_loaded->combat);
         m_scene = m_loaded->scene;
         m_sceneId = SceneIdOf(*m_manifest, m_scene);
-        m_worldTicks = m_loaded->worldTicks;
-        m_worldTicksBefore = m_worldTicks;
-        m_months = m_loaded->months;
-        m_worldPaused = m_loaded->worldPaused;
+        m_worldTicksBefore = m_world.worldTicks;
         m_player = m_loaded->player;
         m_selected = m_loaded->selected;
         m_route = std::move(m_loaded->route);
@@ -364,7 +359,7 @@ void Host::EnterScene() {
 
 Host::Host(std::shared_ptr<const core::Manifest> manifest, core::SceneKey scene, core::GameData data)
   : m_manifest{ std::move(manifest) }
-  , m_state{ DOMAINS, SEED }
+  , m_world{ core::State{ DOMAINS, SEED } }
   , m_data{ std::move(data) }
   , m_scene{ scene }
   , m_sceneId{ SceneIdOf(*m_manifest, m_scene) } {
@@ -376,18 +371,23 @@ Host::Host(std::shared_ptr<const core::Manifest> manifest, core::SceneKey scene,
 
 void Host::SeedTravel() {
     PN_ASSERT(m_paths.has_value(), "travel seeded in a game without the world map");
-    if (!m_paths || m_months * TICKS_PER_MONTH > TRAVEL_END) {
+    WorldState& world = Live();
+    if (!m_paths || world.months * TICKS_PER_MONTH > TRAVEL_END) {
         return;
     }
-    m_travel.Seed(m_state, *m_data.world, *m_paths, m_state.Seed(), 0, static_cast<i64>(m_months * TICKS_PER_MONTH));
+    world.travel.Seed(
+        world.state, *m_data.world, *m_paths, world.state.Seed(), 0, static_cast<i64>(world.months * TICKS_PER_MONTH)
+    );
 }
 
 /// Everything but the calendar (the world clock and the month steps run) and the game data starts afresh: the entities,
 /// their IDs, the relationships, the travel, the selection, the world pause, the player's route.
 void Host::Build(core::SceneKey scene) {
-    m_state = core::State{ DOMAINS, SEED };
-    m_relationships = Relationships{};
-    m_travel = Travel{};
+    WorldState& world = Live();
+    WorldState fresh{ core::State{ DOMAINS, SEED } };
+    fresh.worldTicks = world.worldTicks;
+    fresh.months = world.months;
+    world = std::move(fresh);
     m_combat = Combat{};
     m_combat.SetRules(m_data.combat);
     m_scene = scene;
@@ -395,29 +395,29 @@ void Host::Build(core::SceneKey scene) {
     m_requested.reset();
     m_player = {};
     m_selected = {};
-    m_worldPaused = false;
     m_route.reset();
-    m_worldTicksBefore = m_worldTicks;
+    m_worldTicksBefore = world.worldTicks;
     PN_ASSERT(
         !Running().Traits().worldMap || m_data.world != nullptr, "a world scene built without the world map: CheckScenes()"
     );
     Context context{ *this };
     Running().Build(context);
     for (u32 npc = 0; npc < Running().Traits().worldNpcs; ++npc) {
-        SpawnNpc(m_state, npc % WORLD_CELLS);
+        SpawnNpc(world.state, npc % WORLD_CELLS);
     }
 }
 
 core::Entity Host::Spawn(core::Vec2 foot, const Look& look) {
-    const core::Entity entity = m_state.Create(ACTIVE, core::IdRange::Scene).second;
-    m_state[ACTIVE].Entities().emplace<Body>(entity, foot, foot);
-    m_state[ACTIVE].Entities().emplace<Look>(entity, look);
+    core::State& state = Live().state;
+    const core::Entity entity = state.Create(ACTIVE, core::IdRange::Scene).second;
+    state[ACTIVE].Entities().emplace<Body>(entity, foot, foot);
+    state[ACTIVE].Entities().emplace<Look>(entity, look);
     return entity;
 }
 
 core::Entity Host::SpawnFox(const Orbit& orbit, core::Vec2 foot) {
     const core::Entity entity = Spawn(foot, { .sprite = m_data.fox.sprite, .shadow = true });
-    core::Registry& entities = m_state[ACTIVE].Entities();
+    core::Registry& entities = Live().state[ACTIVE].Entities();
     entities.emplace<Orbit>(entity, orbit);
     entities.emplace<Creature>(entity, CreatureKind::Fox);
     entities.emplace<Health>(entity, m_data.fox.health, m_data.fox.health);
@@ -426,7 +426,7 @@ core::Entity Host::SpawnFox(const Orbit& orbit, core::Vec2 foot) {
 
 core::Entity Host::SpawnPlayer(core::Vec2 foot) {
     const core::Entity entity = Spawn(foot, { .sprite = m_data.cultivator.sprite, .shadow = true });
-    core::Registry& entities = m_state[ACTIVE].Entities();
+    core::Registry& entities = Live().state[ACTIVE].Entities();
     entities.emplace<Creature>(entity, CreatureKind::Cultivator);
     entities.emplace<Health>(entity, m_data.cultivator.health, m_data.cultivator.health);
     entities.emplace<Caster>(entity, m_data.abilities.qiStart);
@@ -436,7 +436,7 @@ core::Entity Host::SpawnPlayer(core::Vec2 foot) {
 
 void Host::CastAction(const core::Action& action, const core::TickCounters& counters, std::vector<core::Event>& events) {
     if (IsCombatScene()) {
-        m_combat.Cast(m_state, *m_manifest, m_data.abilities, m_player, action, counters, events);
+        m_combat.Cast(Live().state, *m_manifest, m_data.abilities, m_player, action, counters, events);
         return;
     }
     PN_LOG_DEBUG("tick {}: a cast is ignored: the scene {} is no combat scene", counters.simulation, Running().Traits().name);
@@ -444,7 +444,8 @@ void Host::CastAction(const core::Action& action, const core::TickCounters& coun
 
 void Host::Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) {
     PN_PROFILE_ZONE();
-    m_worldTicksBefore = m_worldTicks;
+    WorldState& world = Live();
+    m_worldTicksBefore = world.worldTicks;
     if (std::ranges::contains(input.actions, core::ActionKind::CycleScene, &core::Action::kind)) {
         const core::SceneKey next = NextScene(m_scene);
         PN_LOG_INFO("tick {}: the scene changes to {}", counters.simulation, SceneName(next));
@@ -452,10 +453,10 @@ void Host::Tick(const core::TickCounters& counters, const core::TickInput& input
         return;
     }
     TakeActions(input.actions, counters, events);
-    const bool clockRuns = Running().Traits().worldMap && !m_worldPaused && !MonthDue() && m_worldTicks < CALENDAR_END;
-    if (!Combat::Dash(m_state, m_player, counters.simulation)) {
+    const bool clockRuns = Running().Traits().worldMap && !world.paused && !MonthDue() && world.worldTicks < CALENDAR_END;
+    if (!Combat::Dash(world.state, m_player, counters.simulation)) {
         // A route walks to where the clock is by the end of the tick, so the portal sees the step it takes.
-        Move(input.held.move, clockRuns ? m_worldTicks + 1 : m_worldTicks, counters.simulation);
+        Move(input.held.move, clockRuns ? world.worldTicks + 1 : world.worldTicks, counters.simulation);
     }
     if (OnPortal()) {
         const core::SceneKey next = NextWalkableScene(m_scene);
@@ -464,9 +465,9 @@ void Host::Tick(const core::TickCounters& counters, const core::TickInput& input
         return;
     }
     if (clockRuns) {
-        ++m_worldTicks;
+        ++world.worldTicks;
     }
-    core::Domain& active = m_state[ACTIVE];
+    core::Domain& active = world.state[ACTIVE];
     if (m_player != core::StableId{}) {
         const core::Vec2 player = PlayerBody().current;
         for (auto [entity, creature, orbit] : active.Entities().view<const Creature, Orbit>().each()) {
@@ -483,13 +484,13 @@ void Host::Tick(const core::TickCounters& counters, const core::TickInput& input
         spin.previous = spin.current;
         spin.current = std::remainder(spin.current + spin.speed, TURN); // stays precise however long it turns
     }
-    const u32 respawns = m_combat.Tick(m_state, counters.simulation);
+    const u32 respawns = m_combat.Tick(world.state, counters.simulation);
     // Before the respawns, which circle the player if there still is one.
-    if (m_selected != core::StableId{} && !m_state.DomainOf(m_selected)) {
+    if (m_selected != core::StableId{} && !world.state.DomainOf(m_selected)) {
         PN_LOG_INFO("tick {}: the selected entity {} is gone", counters.simulation, std::to_underlying(m_selected));
         m_selected = {};
     }
-    if (m_player != core::StableId{} && !m_state.DomainOf(m_player)) {
+    if (m_player != core::StableId{} && !world.state.DomainOf(m_player)) {
         PN_LOG_INFO("tick {}: the player's cultivator died and is gone", counters.simulation);
         m_player = {};
     }
@@ -497,14 +498,14 @@ void Host::Tick(const core::TickCounters& counters, const core::TickInput& input
     for (u32 index = 0; index < respawns; ++index) {
         Running().Respawn(context, counters, index);
     }
-    DecideActive(active, m_state.Seed(), counters.state, counters.simulation);
+    DecideActive(active, world.state.Seed(), counters.state, counters.simulation);
     WalkActive(active);
     Running().Tick(context, counters, events);
     if (std::ranges::contains(input.actions, core::ActionKind::DebugBurst, &core::Action::kind)) {
         DebugBurst(counters, events);
     }
     // Last, once everything that moves or kills this tick has.
-    m_combat.Strike(m_state, *m_manifest, counters.simulation, events);
+    m_combat.Strike(world.state, *m_manifest, counters.simulation, events);
 }
 
 void Host::TakeActions(
@@ -533,8 +534,9 @@ void Host::ToggleWorldPause(u64 tick) {
         PN_LOG_DEBUG("tick {}: the world pause is ignored: the scene {} shows no world map", tick, Running().Traits().name);
         return;
     }
-    m_worldPaused = !m_worldPaused;
-    PN_LOG_INFO("tick {}: the world is {}", tick, m_worldPaused ? "paused" : "resumed");
+    bool& paused = Live().paused;
+    paused = !paused;
+    PN_LOG_INFO("tick {}: the world is {}", tick, paused ? "paused" : "resumed");
 }
 
 void Host::WalkTo(core::Vec2 point, u64 tick) {
@@ -551,7 +553,7 @@ void Host::WalkTo(core::Vec2 point, u64 tick) {
         PN_LOG_DEBUG("tick {}: a walk-to is ignored: there is no cultivator to walk", tick);
         return;
     }
-    if (m_worldTicks > TRAVEL_END) {
+    if (Live().worldTicks > TRAVEL_END) {
         PN_LOG_DEBUG("tick {}: a walk-to is ignored: the world clock is past where journeys can be timed", tick);
         return;
     }
@@ -579,7 +581,7 @@ void Host::WalkTo(core::Vec2 point, u64 tick) {
     core::Journey route;
     route.members = { m_player };
     route.parts.push_back(
-        { .stay = false, .leg = core::MakeTileLeg(map, core::WALKING, static_cast<i64>(m_worldTicks), foot, tiles) }
+        { .stay = false, .leg = core::MakeTileLeg(map, core::WALKING, static_cast<i64>(Live().worldTicks), foot, tiles) }
     );
     PN_LOG_INFO(
         "tick {}: the cultivator sets out for tile {}, {} tiles on, arriving at world tick {}",
@@ -596,7 +598,7 @@ void Host::Move(core::Vec2 move, u64 worldTick, u64 tick) {
         m_route.reset();
         PN_LOG_DEBUG("tick {}: held movement ends the cultivator's route", tick);
     }
-    if (m_worldPaused) {
+    if (Live().paused) {
         Walk({}); // the cultivator stands, any route held
         return;
     }
@@ -623,16 +625,18 @@ void Host::FollowRoute(u64 worldTick, u64 tick) {
 }
 
 Body& Host::PlayerBody() {
-    return m_state[ACTIVE].Entities().get<Body>(m_state[ACTIVE].Find(m_player));
+    core::Domain& active = Live().state[ACTIVE];
+    return active.Entities().get<Body>(active.Find(m_player));
 }
 
 const Body& Host::PlayerBody() const {
-    return m_state[ACTIVE].Entities().get<Body>(m_state[ACTIVE].Find(m_player));
+    const core::Domain& active = Live().state[ACTIVE];
+    return active.Entities().get<Body>(active.Find(m_player));
 }
 
 void Host::Leave(core::SceneKey next, std::vector<core::Event>& events) {
-    m_combat.EndUses(m_state, events); // nothing of this scene's goes on to hit
-    m_requested = next;                // the logic has it built after this tick
+    m_combat.EndUses(Live().state, events); // nothing of this scene's goes on to hit
+    m_requested = next;                     // the logic has it built after this tick
 }
 
 std::optional<core::Vec2> Host::Portal() {
@@ -652,7 +656,7 @@ bool Host::OnPortal() {
     }
     // The foot's whole path this tick, not only where it ends: a dash moves farther in a tick than the step area is deep.
     // Measured in the step area's own units, where it is the unit circle.
-    const Body& body = m_state[ACTIVE].Entities().get<Body>(m_state[ACTIVE].Find(m_player));
+    const Body& body = PlayerBody();
     const auto scaled = [&portal](core::Vec2 foot) {
         const core::Vec2 away = foot - *portal;
         return core::Vec2{ .x = away.x / PORTAL_RADIUS, .y = away.y / (PORTAL_RADIUS * PORTAL_DEPTH_RATIO) };
@@ -691,7 +695,7 @@ void Host::PublishOverhead(core::Snapshot& snapshot) const {
     if (m_player == core::StableId{}) {
         return;
     }
-    const core::Registry& entities = m_state[ACTIVE].Entities();
+    const core::Registry& entities = Live().state[ACTIVE].Entities();
     const bool combat = IsCombatScene();
     for (auto [entity, creature, body, look, stableId, health] :
          entities.view<const Creature, const Body, const Look, const core::StableId, const Health>().each()) {
@@ -730,16 +734,17 @@ void Host::PublishOverhead(core::Snapshot& snapshot) const {
 
 u32 Host::JourneyChunks() const {
     // Past TRAVEL_END the clock no longer fits the journeys' signed ticks.
-    if (!Running().Traits().worldMap || m_data.world == nullptr || m_worldTicks > TRAVEL_END) {
+    if (!Running().Traits().worldMap || m_data.world == nullptr || Live().worldTicks > TRAVEL_END) {
         return 0;
     }
-    return core::ChunkCount(m_travel.Journeys().size(), PUBLISH_CHUNK);
+    return core::ChunkCount(Live().travel.Journeys().size(), PUBLISH_CHUNK);
 }
 
 void Host::PublishJourneys(u32 chunk, u32 part, const core::Rect& area) {
     const core::WorldMap& map = *m_data.world;
-    const std::span<const core::Journey> journeys = m_travel.Journeys();
-    const auto now = static_cast<i64>(m_worldTicks);
+    const WorldState& world = Live();
+    const std::span<const core::Journey> journeys = world.travel.Journeys();
+    const auto now = static_cast<i64>(world.worldTicks);
     const auto before = static_cast<i64>(m_worldTicksBefore);
     const Look look{ .sprite = SpriteId::Villager, .shadow = true };
     const f32 height = static_cast<f32>(m_manifest->Sprite(look.sprite).footY) * look.scale;
@@ -779,7 +784,7 @@ void Host::PublishJourneys(u32 chunk, u32 part, const core::Rect& area) {
             if (names == nullptr) {
                 continue; // a game without names has nothing to call them
             }
-            const core::NpcName name = core::NameOf(*names, m_state.Seed(), traveller);
+            const core::NpcName name = core::NameOf(*names, world.state.Seed(), traveller);
             labels.push_back(
                 {
                     .kind = core::TextKind::Label,
@@ -801,8 +806,9 @@ void Host::PublishCaster(core::Snapshot& snapshot) const {
     if (m_player == core::StableId{} || !IsCombatScene()) {
         return;
     }
-    const core::Registry& entities = m_state[ACTIVE].Entities();
-    const core::Entity player = m_state[ACTIVE].Find(m_player);
+    const core::Domain& active = Live().state[ACTIVE];
+    const core::Registry& entities = active.Entities();
+    const core::Entity player = active.Find(m_player);
     const Caster* const caster = entities.try_get<Caster>(player);
     const Health* const health = entities.try_get<Health>(player);
     if (caster == nullptr || health == nullptr) {
@@ -823,7 +829,7 @@ void Host::PublishRoute(core::Snapshot& snapshot) const {
     if (!m_route || m_player == core::StableId{}) {
         return;
     }
-    const auto now = static_cast<i64>(m_worldTicks);
+    const auto now = static_cast<i64>(Live().worldTicks);
     snapshot.route.push_back(PlayerBody().current);
     for (const core::JourneyPart& part : m_route->parts) {
         for (std::size_t tile = 0; !part.stay && tile < part.leg.tiles.size(); ++tile) {
@@ -840,7 +846,7 @@ void Host::PublishRoute(core::Snapshot& snapshot) const {
 void Host::DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const {
     PN_PROFILE_ZONE();
     const u64 use = core::AbilityUse(counters.simulation, USE_DEBUG_BURST);
-    const core::Registry& entities = m_state[ACTIVE].Entities();
+    const core::Registry& entities = Live().state[ACTIVE].Entities();
     std::vector<core::Entity> foxes;
     for (auto [entity, creature] : entities.view<const Creature>().each()) {
         if (creature.kind == CreatureKind::Fox) {
@@ -856,7 +862,7 @@ void Host::DebugBurst(const core::TickCounters& counters, std::vector<core::Even
     for (u32 index = 0; !foxes.empty() && index < DEBUG_BURST_HITS; ++index) {
         const core::Entity fox = foxes.at(index % foxes.size());
         const core::StableId target = entities.get<core::StableId>(fox);
-        const u64 random = core::Random(m_state.Seed(), counters.state, std::to_underlying(target), PURPOSE_BURST, index);
+        const u64 random = core::Random(Live().state.Seed(), counters.state, std::to_underlying(target), PURPOSE_BURST, index);
         events.push_back(
             {
                 .kind = core::EventKind::Hit,
@@ -876,7 +882,7 @@ void Host::Walk(core::Vec2 move) {
     if (m_player == core::StableId{}) {
         return;
     }
-    core::Domain& active = m_state[ACTIVE];
+    core::Domain& active = Live().state[ACTIVE];
     Body& body = active.Entities().get<Body>(active.Find(m_player));
     body.previous = body.current; // every tick, so a cultivator standing still draws still
     body.current = body.current + (move * m_data.cultivator.walkSpeed);
@@ -884,65 +890,74 @@ void Host::Walk(core::Vec2 move) {
 
 void Host::Select(core::StableId target) {
     // A dying creature can't be picked, as its instance names none.
-    const bool dying =
-        m_state.DomainOf(target) == ACTIVE && m_state[ACTIVE].Entities().all_of<Dying>(m_state[ACTIVE].Find(target));
-    m_selected = m_state.DomainOf(target) && !dying ? target : core::StableId{};
+    const core::State& state = Live().state;
+    const bool dying = state.DomainOf(target) == ACTIVE && state[ACTIVE].Entities().all_of<Dying>(state[ACTIVE].Find(target));
+    m_selected = state.DomainOf(target) && !dying ? target : core::StableId{};
     PN_LOG_INFO(
         "selected {}", m_selected == core::StableId{} ? "nothing" : std::format("entity {}", std::to_underlying(target))
     );
 }
 
 void Host::AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs, const std::stop_token& stop) {
-    if (m_months < LAST_MONTH) {
+    WorldState& world = Live();
+    if (world.months < LAST_MONTH) {
         // A step asked for early (M) moves the clock on to the next month's first tick, so the calendar keeps up with the
         // steps.
-        const u64 nextMonth = (m_months + 1) * TICKS_PER_MONTH;
-        if (m_worldTicks < nextMonth) {
-            m_worldTicks = nextMonth;
-            m_worldTicksBefore = m_worldTicks; // rather than draw travellers streaking across the skipped days
+        const u64 nextMonth = (world.months + 1) * TICKS_PER_MONTH;
+        if (world.worldTicks < nextMonth) {
+            world.worldTicks = nextMonth;
+            m_worldTicksBefore = world.worldTicks; // rather than draw travellers streaking across the skipped days
             if (m_route) {
-                FollowRoute(m_worldTicks, counters.simulation);
+                FollowRoute(world.worldTicks, counters.simulation);
                 PlayerBody().previous = PlayerBody().current; // it stands there a frame, as the travellers do
             }
         }
-        ++m_months;
-        PN_LOG_INFO("month {} begins at world tick {}", m_months + 1, m_worldTicks);
+        ++world.months;
+        PN_LOG_INFO("month {} begins at world tick {}", world.months + 1, world.worldTicks);
     }
     // Journeys end and begin before the month's actions, so those back act again and those leaving sit the month out.
-    if (Running().Traits().worldMap && m_paths && m_worldTicks <= TRAVEL_END && !stop.stop_requested()) {
-        m_travel.Finish(static_cast<i64>(m_worldTicks), m_state);
-        m_travel.Month(
-            m_state, *m_data.world, *m_paths, jobs, m_state.Seed(), counters.state, static_cast<i64>(m_months * TICKS_PER_MONTH)
+    if (Running().Traits().worldMap && m_paths && world.worldTicks <= TRAVEL_END && !stop.stop_requested()) {
+        world.travel.Finish(static_cast<i64>(world.worldTicks), world.state);
+        world.travel.Month(
+            world.state,
+            *m_data.world,
+            *m_paths,
+            jobs,
+            world.state.Seed(),
+            counters.state,
+            static_cast<i64>(world.months * TICKS_PER_MONTH)
         );
     }
-    m_monthStep.Run(m_state, m_relationships, jobs, counters.state, stop);
+    m_monthStep.Run(world.state, world.relationships, jobs, counters.state, stop);
 }
 
 bool Host::MonthDue() const {
-    return m_worldTicks / TICKS_PER_MONTH > m_months;
+    const WorldState& world = Live();
+    return world.worldTicks / TICKS_PER_MONTH > world.months;
 }
 
 template<typename Archive>
 void Host::Write(Archive& archive) const {
+    const WorldState& world = Live();
     // The scene stays one byte, as the scene enum was.
     archive(
         ARENA_FORMAT,
         static_cast<u8>(std::to_underlying(m_scene)),
-        m_state.Seed(),
-        m_state.Ids().next,
-        m_state.SceneIds().next,
-        m_worldTicks,
-        m_months,
-        m_worldPaused,
+        world.state.Seed(),
+        world.state.Ids().next,
+        world.state.SceneIds().next,
+        world.worldTicks,
+        world.months,
+        world.paused,
         m_player,
         m_selected
     );
     archive(ACTIVE_VERSION);
-    core::SaveDomain(archive, m_state[ACTIVE], ActiveComponents{});
+    core::SaveDomain(archive, world.state[ACTIVE], ActiveComponents{});
     archive(WORLD_VERSION);
-    core::SaveDomain(archive, m_state[WORLD], WorldComponents{});
-    m_relationships.Save(archive);
-    m_travel.Save(archive);
+    core::SaveDomain(archive, world.state[WORLD], WorldComponents{});
+    world.relationships.Save(archive);
+    world.travel.Save(archive);
     archive(m_route.has_value());
     if (m_route) {
         archive(*m_route);
@@ -952,7 +967,7 @@ void Host::Write(Archive& archive) const {
 
 void Host::Save(core::Writer& archive) {
     PN_PROFILE_ZONE();
-    m_state.SortCanonical();
+    Live().state.SortCanonical();
     Write(archive);
 }
 
@@ -1024,19 +1039,13 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
         !combat.SealsStartBy(simulationTick)) {
         return false;
     }
-    m_loaded.emplace(
-        std::move(state),
-        std::move(relationships),
-        std::move(travel),
-        std::move(combat),
-        core::SceneKey{ scene },
-        worldTicks,
-        months,
-        worldPaused,
-        player,
-        selected,
-        std::move(route)
-    );
+    WorldState world{ std::move(state) };
+    world.relationships = std::move(relationships);
+    world.travel = std::move(travel);
+    world.worldTicks = worldTicks;
+    world.months = months;
+    world.paused = worldPaused;
+    m_loaded.emplace(std::move(world), std::move(combat), core::SceneKey{ scene }, player, selected, std::move(route));
     return true;
 }
 
@@ -1053,7 +1062,7 @@ void Host::SetData(const core::GameData& data) {
 
 void Host::ApplyData() {
     m_combat.SetRules(m_data.combat);
-    core::Registry& entities = m_state[ACTIVE].Entities();
+    core::Registry& entities = Live().state[ACTIVE].Entities();
     for (auto [entity, creature, look] : entities.view<const Creature, Look>().each()) {
         const core::CreatureData& kind = DataOf(creature.kind);
         look.sprite = kind.sprite;
@@ -1102,11 +1111,13 @@ core::GlowInput DemoGlow(core::GlowRole role, u64 tick) {
 void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::optional<core::Rect>& view) {
     PN_PROFILE_ZONE();
     // Fetched before the fork: a storage asked for the first time is made, which chunks mustn't race to do.
-    const auto& bodies = m_state[ACTIVE].Entities().storage<Body>();
-    const auto& looks = m_state[ACTIVE].Entities().storage<Look>();
-    const auto& ids = m_state[ACTIVE].Entities().storage<core::StableId>();
-    const auto& spins = m_state[ACTIVE].Entities().storage<Spin>();
-    const auto& dyings = m_state[ACTIVE].Entities().storage<Dying>();
+    WorldState& world = Live();
+    core::Domain& active = world.state[ACTIVE];
+    const auto& bodies = active.Entities().storage<Body>();
+    const auto& looks = active.Entities().storage<Look>();
+    const auto& ids = active.Entities().storage<core::StableId>();
+    const auto& spins = active.Entities().storage<Spin>();
+    const auto& dyings = active.Entities().storage<Dying>();
     const u64 tick = snapshot.simulationTick;
     const SceneTraits& traits = Running().Traits();
     const std::span<const DemoGlowSprite> demoGlows = traits.demoGlows;
@@ -1117,9 +1128,9 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
     snapshot.worldMap = traits.worldMap;
     if (traits.worldMap) {
         snapshot.calendar = core::CalendarView{
-            .month = m_worldTicks / TICKS_PER_MONTH,
-            .day = static_cast<u32>((m_worldTicks % TICKS_PER_MONTH) / TICKS_PER_DAY),
-            .paused = m_worldPaused,
+            .month = world.worldTicks / TICKS_PER_MONTH,
+            .day = static_cast<u32>((world.worldTicks % TICKS_PER_MONTH) / TICKS_PER_DAY),
+            .paused = world.paused,
         };
         PublishRoute(snapshot);
     }
@@ -1128,7 +1139,7 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
     const core::Rect sceneView = Running().View(context);
     core::Vec2 start = (sceneView.min + sceneView.max) * MIDDLE;
     if (m_player != core::StableId{}) {
-        const Body& body = bodies.get(m_state[ACTIVE].Find(m_player));
+        const Body& body = bodies.get(active.Find(m_player));
         snapshot.follow = core::Follow{ .previous = body.previous, .current = body.current };
         start = body.current;
     }
