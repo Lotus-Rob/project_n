@@ -842,6 +842,29 @@ def doctest_case_name(output):
     return m and m[1].strip()
 
 
+# Seconds one reference case may run. Without a bound a deadlocked case hangs the gate silently.
+REFERENCE_CASE_TIMEOUT = 300
+
+
+def reference_share(running):
+    """Threads each of `running` simultaneous reference processes gets: its slice of the cores. Every case at full
+    width over-subscribes the machine and exhausts a container's task cap, which deadlocks llvmpipe waiting for
+    rasterizer threads it couldn't create."""
+    return max(1, jobs() // max(1, running))
+
+
+def reference_case_name(exe, env, index):
+    """The name of the reference binary's `index`th case, from doctest's listing of that one position, or None."""
+    try:
+        result = subprocess.run([exe, f"--first={index}", f"--last={index}", "--list-test-cases"], cwd=ROOT, env=env,
+                                check=False, capture_output=True, encoding="utf-8", errors="replace", timeout=30)
+    except subprocess.TimeoutExpired:
+        return None
+    names = [line.strip() for line in result.stdout.splitlines()
+             if line.strip() and not line.startswith(("[doctest]", "==="))]
+    return names[0] if len(names) == 1 else None
+
+
 def run_reference_case(exe, env, index):
     """(output, return code) of the reference binary's `index`th case (1-based, doctest's order), stdout and stderr
     together. Cases are picked by position: some names hold commas, which --test-case would split on. --minimal drops
@@ -849,9 +872,15 @@ def run_reference_case(exe, env, index):
     # Its own runtime directory: without one every case makes Mesa create /tmp/xdg-runtime-mesa-<uid> at once, and the
     # loser crashes.
     with tempfile.TemporaryDirectory(prefix="project_n-xdg-") as runtime_dir:
-        result = subprocess.run([exe, f"--first={index}", f"--last={index}", "--minimal=true"], cwd=ROOT,
-                                env={**env, "XDG_RUNTIME_DIR": runtime_dir}, check=False, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, encoding="utf-8", errors="replace")
+        try:
+            result = subprocess.run([exe, f"--first={index}", f"--last={index}", "--minimal=true"], cwd=ROOT,
+                                    env={**env, "XDG_RUNTIME_DIR": runtime_dir}, check=False, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, encoding="utf-8", errors="replace",
+                                    timeout=REFERENCE_CASE_TIMEOUT)
+        except subprocess.TimeoutExpired as exc:
+            # subprocess.run has already killed the child.
+            partial = exc.output.decode("utf-8", errors="replace") if isinstance(exc.output, bytes) else exc.output or ""
+            return f"{partial}reference: case {index} timed out after {REFERENCE_CASE_TIMEOUT} s\n", -9
     return result.stdout, result.returncode
 
 
@@ -868,12 +897,14 @@ def run_references(preset, update=False, quiet=False):
     drawn.mkdir(parents=True)
     exe = binary_path(preset, "release", "reference_tests")
     count = reference_case_count(exe, env)
+    share = str(reference_share(min(jobs(), count)))
+    env = {**env, "LP_NUM_THREADS": share, "PROJECT_N_REFERENCE_WORKERS": share}
     # One process per case, all cores at once: a single process kept lavapipe on 1.4 of 32 cores (28 s for 25 cases).
     print(f"+ {exe} on {count} case(s), one process each, {jobs()} at a time", flush=True)
     with concurrent.futures.ThreadPoolExecutor(jobs()) as pool:
         results = list(pool.map(lambda index: run_reference_case(exe, env, index), range(1, count + 1)))
-    failed = [doctest_case_name(output) or f"case {index}" for index, (output, returncode) in enumerate(results, 1)
-              if returncode]
+    failed = [doctest_case_name(output) or reference_case_name(exe, env, index) or f"case {index}"
+              for index, (output, returncode) in enumerate(results, 1) if returncode]
     if not quiet or failed:
         for output, _ in results:
             print(output, end="", flush=True)
