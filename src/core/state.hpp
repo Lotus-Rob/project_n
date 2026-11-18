@@ -38,6 +38,10 @@ enum class IdRange : u8 {
 /// The first stable ID of the scene range; every world ID is below it.
 inline constexpr u64 SCENE_ID_BASE = u64{ 1 } << 62;
 
+/// The stable ID just past the scene range's last: a bound no session reaches, so the scene counter never wraps round
+/// to the world's IDs.
+inline constexpr u64 SCENE_ID_END = u64{ 1 } << 63;
+
 /// The game state's domains and identity: everything about entities that a save keeps.
 class State {
 public:
@@ -54,8 +58,13 @@ public:
       , m_seed{ seed }
       , m_ids{ ids }
       , m_sceneIds{ sceneIds } {
-        PN_ASSERT(ids.next >= 1 && ids.next <= SCENE_ID_BASE, "a world ID counter outside the world range");
-        PN_ASSERT(sceneIds.next >= SCENE_ID_BASE, "a scene ID counter outside the scene range");
+        PN_ASSERT(CountersFit(ids, sceneIds), "a stable-ID counter outside its range");
+    }
+
+    /// Whether `ids` (the world's counter) and `sceneIds` (the scene's) each have an ID of their own range left to hand
+    /// out: the world's next in [1, SCENE_ID_BASE), the scene's in [SCENE_ID_BASE, SCENE_ID_END).
+    [[nodiscard]] static constexpr bool CountersFit(StableIdCounter ids, StableIdCounter sceneIds) {
+        return ids.next >= 1 && ids.next < SCENE_ID_BASE && sceneIds.next >= SCENE_ID_BASE && sceneIds.next < SCENE_ID_END;
     }
 
     /// The domain `index`, which must exist.
@@ -97,8 +106,10 @@ public:
     /// Creates an entity with a new stable ID from `range` in domain `index`. Never inside a job chunk.
     std::pair<StableId, Entity> Create(DomainIndex index, IdRange range) {
         PN_ASSERT(range == IdRange::Scene || m_ids.next < SCENE_ID_BASE, "the world IDs ran into the scene range");
+        PN_ASSERT(range == IdRange::World || m_sceneIds.next < SCENE_ID_END, "the scene IDs ran past their range");
         const StableId stableId = range == IdRange::World ? m_ids.Allocate() : m_sceneIds.Allocate();
-        m_where.emplace(std::to_underlying(stableId), index);
+        const bool added = m_where.emplace(std::to_underlying(stableId), index).second;
+        PN_ASSERT(added, "a stable ID handed out twice");
         return { stableId, (*this)[index].Create(stableId) };
     }
 
@@ -109,7 +120,7 @@ public:
         const u64 key = std::to_underlying(stableId);
         const bool world = key != 0 && key < m_ids.next;
         const bool scene = key >= SCENE_ID_BASE && key < m_sceneIds.next;
-        if ((!world && !scene) || !m_where.emplace(key, index).second) {
+        if (!(world || scene) || !m_where.emplace(key, index).second) {
             return false;
         }
         static_cast<void>((*this)[index].Create(stableId));
