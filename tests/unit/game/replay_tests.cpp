@@ -454,7 +454,7 @@ TEST_CASE("a world clock reaching its month's end runs the month step through th
 /// A save of the world scene with the player's cultivator alone in it, on the start city's tile centre.
 std::vector<std::byte> CultivatorOnTheMap() {
     core::State state{ game::DOMAINS, test::EMPTY_SAVE_SEED };
-    const auto [player, entity] = state.Create(game::ACTIVE);
+    const auto [player, entity] = state.Create(game::ACTIVE, core::IdRange::Scene);
     const core::Vec2 start = test::ShippedWorld()->StartCentre();
     state[game::ACTIVE].Entities().emplace<game::Body>(entity, start, start);
     return test::ArenaSave(

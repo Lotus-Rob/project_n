@@ -134,6 +134,33 @@ TEST_CASE("a save made in world loads back into it") {
     CHECK(same);
 }
 
+TEST_CASE("the world scene's NPCs number from 1") {
+    const game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    const std::shared_ptr<const core::WorldMap> world = test::ShippedWorld();
+    const core::WorldMap& map = *world;
+    const auto city = std::ranges::find(map.Places(), core::PlaceKind::City, &core::Place::kind);
+    REQUIRE(city != map.Places().end());
+    const core::State& state = host.State();
+    const core::Entity first = state[game::WORLD].Find(core::StableId{ 1 });
+    REQUIRE(first != core::Entity{ entt::null });
+    CHECK(state[game::WORLD].Entities().get<game::Npc>(first).home == std::distance(map.Places().begin(), city));
+    CHECK(host.Player() == core::StableId{ core::SCENE_ID_BASE }); // the cultivator, spawned first, from the scene's range
+}
+
+TEST_CASE("a save keeps the scene counter") {
+    game::Host saved(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    Tick(saved, At(1), {});
+    const std::vector<std::byte> bytes = Saved(saved);
+
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    REQUIRE(loaded.State().SceneIds().next != saved.State().SceneIds().next); // the arena spawns more of its own
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene();
+    CHECK(loaded.State().SceneIds().next == saved.State().SceneIds().next);
+    CHECK(loaded.State().Ids().next == saved.State().Ids().next);
+}
+
 TEST_CASE("Load holds and changes nothing until EnterScene") {
     game::Host saved(test::TestManifest(), game::PAINTED_SCENE);
     Tick(saved, At(1), {});
@@ -510,6 +537,7 @@ std::vector<std::byte> WithoutWorldTier(const game::Host& saved, const std::vect
             static_cast<u8>(std::to_underlying(game::ARENA_SCENE)),
             state.Seed(),
             state.Ids().next,
+            state.SceneIds().next,
             saved.WorldTicks(),
             saved.Months(),
             saved.WorldPaused(),
@@ -594,12 +622,32 @@ constexpr u32 NPC_CELL = 3;
 TEST_CASE("a sound save built as the refusals below build theirs is loaded") {
     core::State state{ game::DOMAINS, STATE_SEED };
     static_cast<void>(game::SpawnNpc(state, NPC_CELL));
-    const core::Entity player = state.Create(game::ACTIVE).second;
+    const core::Entity player = state.Create(game::ACTIVE, core::IdRange::Scene).second;
     state[game::ACTIVE].Entities().emplace<game::Body>(player);
     game::Host game(test::TestManifest(), game::ARENA_SCENE);
     const std::vector<std::byte> bytes = ArenaSave(state, state[game::ACTIVE].Entities().get<core::StableId>(player));
     core::Reader reader{ bytes };
     CHECK(game.Load(reader, SAVED_TICK));
+}
+
+TEST_CASE("a save whose ID counters leave their ranges is refused, and the game is unchanged") {
+    // The world counter, then the scene's, follow the format, the scene and the seed.
+    constexpr std::size_t WORLD_AT = sizeof(u32) + sizeof(u8) + sizeof(u64);
+    constexpr std::size_t SCENE_AT = WORLD_AT + sizeof(u64);
+    const core::State state{ game::DOMAINS, STATE_SEED };
+    const std::vector<std::byte> sound = ArenaSave(state);
+    const auto with = [&sound](std::size_t offset, u64 next) {
+        std::vector<std::byte> bytes = sound;
+        std::ranges::copy(
+            std::bit_cast<std::array<std::byte, sizeof(u64)>>(next), bytes.begin() + static_cast<std::ptrdiff_t>(offset)
+        );
+        return bytes;
+    };
+    CHECK(Loads(sound));
+    CHECK(Loads(with(WORLD_AT, core::SCENE_ID_BASE))); // every world ID handed out
+    CHECK_FALSE(Loads(with(WORLD_AT, 0)));
+    CHECK_FALSE(Loads(with(WORLD_AT, core::SCENE_ID_BASE + 1)));
+    CHECK_FALSE(Loads(with(SCENE_AT, core::SCENE_ID_BASE - 1)));
 }
 
 TEST_CASE("a save whose player doesn't exist is refused, and the game is unchanged") {
@@ -611,14 +659,14 @@ TEST_CASE("a save whose player doesn't exist is refused, and the game is unchang
 
 TEST_CASE("a save whose player has no body is refused, and the game is unchanged") {
     core::State state{ game::DOMAINS, STATE_SEED };
-    const core::StableId player = state.Create(game::ACTIVE).first;
+    const core::StableId player = state.Create(game::ACTIVE, core::IdRange::Scene).first;
     const bool loaded = Loads(ArenaSave(state, player));
     CHECK_FALSE(loaded);
 }
 
 TEST_CASE("a save with a creature that has no look is refused, and the game is unchanged") {
     core::State state{ game::DOMAINS, STATE_SEED };
-    const core::Entity entity = state.Create(game::ACTIVE).second;
+    const core::Entity entity = state.Create(game::ACTIVE, core::IdRange::Scene).second;
     state[game::ACTIVE].Entities().emplace<game::Body>(entity);
     state[game::ACTIVE].Entities().emplace<game::Creature>(entity);
     const bool loaded = Loads(ArenaSave(state));
@@ -627,7 +675,7 @@ TEST_CASE("a save with a creature that has no look is refused, and the game is u
 
 // A fox as the arena makes one, standing at the origin, with `health`.
 core::Entity SpawnFox(core::State& state, game::Health health) {
-    const core::Entity entity = state.Create(game::ACTIVE).second;
+    const core::Entity entity = state.Create(game::ACTIVE, core::IdRange::Scene).second;
     state[game::ACTIVE].Entities().emplace<game::Body>(entity);
     state[game::ACTIVE].Entities().emplace<game::Look>(entity);
     state[game::ACTIVE].Entities().emplace<game::Creature>(entity, game::CreatureKind::Fox);
@@ -675,13 +723,14 @@ TEST_CASE("a save with a creature at no health that isn't dying, or dying with h
 
 TEST_CASE("a save with a caster that has no health, or a dash that has no body, is refused") {
     core::State caster{ game::DOMAINS, STATE_SEED };
-    caster[game::ACTIVE].Entities().emplace<game::Caster>(caster.Create(game::ACTIVE).second);
+    caster[game::ACTIVE].Entities().emplace<game::Caster>(caster.Create(game::ACTIVE, core::IdRange::Scene).second);
     const bool casterLoaded = Loads(ArenaSave(caster));
     CHECK_FALSE(casterLoaded);
 
     core::State dashing{ game::DOMAINS, STATE_SEED };
     dashing[game::ACTIVE].Entities().emplace<game::Dashing>(
-        dashing.Create(game::ACTIVE).second, game::Dashing{ .from = {}, .to = {}, .startTick = 0, .ticks = 1 }
+        dashing.Create(game::ACTIVE, core::IdRange::Scene).second,
+        game::Dashing{ .from = {}, .to = {}, .startTick = 0, .ticks = 1 }
     );
     const bool dashingLoaded = Loads(ArenaSave(dashing));
     CHECK_FALSE(dashingLoaded);
@@ -732,7 +781,7 @@ TEST_CASE("a save with a volley whose commit window is unresolved, with no targe
 
 TEST_CASE("a save with afflictions on something with no health is refused") {
     core::State state{ game::DOMAINS, STATE_SEED };
-    state[game::ACTIVE].Entities().emplace<game::Afflictions>(state.Create(game::ACTIVE).second);
+    state[game::ACTIVE].Entities().emplace<game::Afflictions>(state.Create(game::ACTIVE, core::IdRange::Scene).second);
     const bool loaded = Loads(ArenaSave(state));
     CHECK_FALSE(loaded);
 }
@@ -749,7 +798,7 @@ SavedVolley AimedAt(core::StableId target) {
 TEST_CASE("a save with a volley aiming at a living target that is no creature here is refused") {
     constexpr core::StableId MISSING{ 12'345 };
     core::State state{ game::DOMAINS, STATE_SEED };
-    const core::StableId bare = state.Create(game::ACTIVE).first; // no body, no look: nothing to aim at
+    const core::StableId bare = state.Create(game::ACTIVE, core::IdRange::Scene).first; // no body, no look: nothing to aim at
     const bool bareLoaded = Loads(ArenaSave(state, {}, AimedAt(bare)));
     CHECK_FALSE(bareLoaded);
     const bool missingLoaded = Loads(ArenaSave(state, {}, AimedAt(MISSING)));
@@ -874,7 +923,7 @@ TEST_CASE("a save with needs outside 0 to 1 is refused, and the game is unchange
 
 TEST_CASE("a save with something drawn but standing nowhere is refused, and the game is unchanged") {
     core::State state{ game::DOMAINS, STATE_SEED };
-    const core::Entity entity = state.Create(game::ACTIVE).second;
+    const core::Entity entity = state.Create(game::ACTIVE, core::IdRange::Scene).second;
     state[game::ACTIVE].Entities().emplace<game::Look>(entity);
 
     const bool loaded = Loads(ArenaSave(state));
@@ -1396,9 +1445,9 @@ TEST_CASE("a world save round-trips the player's route and hashes it, and one no
     REQUIRE(trip.route.size() >= ROUTE_TILES);
     core::State state{ game::DOMAINS, STATE_SEED };
     const core::Vec2 home = map->TileCentre(trip.route.front());
-    const auto [player, entity] = state.Create(game::ACTIVE);
+    const auto [player, entity] = state.Create(game::ACTIVE, core::IdRange::Scene);
     state[game::ACTIVE].Entities().emplace<game::Body>(entity, home, home);
-    const auto [other, otherEntity] = state.Create(game::ACTIVE);
+    const auto [other, otherEntity] = state.Create(game::ACTIVE, core::IdRange::Scene);
     state[game::ACTIVE].Entities().emplace<game::Body>(otherEntity, home, home);
     const auto save =
         [&state](const std::optional<core::Journey>& route, core::StableId walker, core::SceneKey scene = game::WORLD_SCENE) {
@@ -1460,7 +1509,7 @@ TEST_CASE("a save made mid-route loads to the same position on the next tick") {
     REQUIRE(trip.route.size() >= ROUTE_TILES);
     core::State state{ game::DOMAINS, STATE_SEED };
     const core::Vec2 home = map->TileCentre(trip.route.front());
-    const auto [player, entity] = state.Create(game::ACTIVE);
+    const auto [player, entity] = state.Create(game::ACTIVE, core::IdRange::Scene);
     state[game::ACTIVE].Entities().emplace<game::Body>(entity, home, home);
     const std::vector<std::byte> start =
         ArenaSave(state, player, std::nullopt, std::nullopt, std::nullopt, game::WORLD_SCENE, WORLD_VERSION, ACTIVE_VERSION);

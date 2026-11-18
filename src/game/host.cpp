@@ -66,8 +66,9 @@ constexpr f32 MIDDLE = 0.5F;
 
 // The host's part of a save: its format, then a version per domain, each changed with what its components save.
 // 2: the player and the selection; 3: the respawns waiting, the volleys and the flashes; 4: the seals; 5: the world clock,
-// the month steps run and the world pause in place of the months passed; 6: the player's route
-constexpr u32 ARENA_FORMAT = 6;
+// the month steps run and the world pause in place of the months passed; 6: the player's route; 7: the scene's own stable-ID
+// counter
+constexpr u32 ARENA_FORMAT = 7;
 constexpr u32 ACTIVE_VERSION =
     5; // 2: creatures; 3: spin; 4: health, dying, arriving, caster, dashing, afflictions; 5: the NPCs' homes
 constexpr u32 WORLD_VERSION = 3; // 2: the NPCs' homes; 3: the travelling action, the journeys and the journals
@@ -408,7 +409,7 @@ void Host::Build(core::SceneKey scene) {
 }
 
 core::Entity Host::Spawn(core::Vec2 foot, const Look& look) {
-    const core::Entity entity = m_state.Create(ACTIVE).second;
+    const core::Entity entity = m_state.Create(ACTIVE, core::IdRange::Scene).second;
     m_state[ACTIVE].Entities().emplace<Body>(entity, foot, foot);
     m_state[ACTIVE].Entities().emplace<Look>(entity, look);
     return entity;
@@ -929,6 +930,7 @@ void Host::Write(Archive& archive) const {
         static_cast<u8>(std::to_underlying(m_scene)),
         m_state.Seed(),
         m_state.Ids().next,
+        m_state.SceneIds().next,
         m_worldTicks,
         m_months,
         m_worldPaused,
@@ -967,18 +969,27 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
     u8 scene = 0;
     u64 seed = 0;
     u64 next = 0;
+    u64 sceneNext = 0;
     u64 worldTicks = 0;
     u64 months = 0;
     bool worldPaused = false;
     core::StableId player{};
     core::StableId selected{};
-    archive(format, scene, seed, next, worldTicks, months, worldPaused, player, selected);
+    archive(format, scene, seed, next, sceneNext, worldTicks, months, worldPaused, player, selected);
     // A scene that shows the world map can't run without it, so a save of one is refused by a game that lacks the map.
     if (format != ARENA_FORMAT || scene >= Scenes().size() ||
         (SceneOf(core::SceneKey{ scene }).Traits().worldMap && m_data.world == nullptr)) {
         archive.Fail();
     }
-    core::State state{ DOMAINS, seed, core::StableIdCounter{ .next = next } };
+    // Counters outside their ranges would let the two ranges' IDs meet; the state built in their place is thrown away.
+    const bool countersFit = next >= 1 && next <= core::SCENE_ID_BASE && sceneNext >= core::SCENE_ID_BASE;
+    if (!countersFit) {
+        archive.Fail();
+    }
+    core::State state =
+        countersFit
+            ? core::State{ DOMAINS, seed, core::StableIdCounter{ .next = next }, core::StableIdCounter{ .next = sceneNext } }
+            : core::State{ DOMAINS, seed };
     u32 version = 0;
     archive(version);
     if (version != ACTIVE_VERSION) {

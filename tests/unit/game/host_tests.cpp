@@ -1533,7 +1533,7 @@ struct TravelWorld {
 
 /// A cultivator of `data` for the player, standing at `foot` in `state`'s active domain.
 core::StableId CultivatorAt(core::State& state, const core::GameData& data, core::Vec2 foot) {
-    const auto [stableId, entity] = state.Create(game::ACTIVE);
+    const auto [stableId, entity] = state.Create(game::ACTIVE, core::IdRange::Scene);
     core::Registry& entities = state[game::ACTIVE].Entities();
     entities.emplace<game::Body>(entity, foot, foot);
     entities.emplace<game::Look>(entity, game::Look{ .sprite = data.cultivator.sprite, .shadow = true });

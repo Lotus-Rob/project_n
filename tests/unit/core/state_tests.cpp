@@ -8,6 +8,9 @@ namespace {
 constexpr core::DomainIndex ACTIVE{ 0 };
 constexpr core::DomainIndex WORLD{ 1 };
 constexpr u64 SEED = 42;
+constexpr u64 BASE = core::SCENE_ID_BASE;
+// The scene counter of a state that has handed out no scene ID yet.
+constexpr core::StableIdCounter NO_SCENE_IDS{ .next = BASE };
 
 struct Place {
     i32 cell = 0;
@@ -49,7 +52,7 @@ core::State Populated() {
     constexpr u32 ENTITIES = 6;
     core::State state{ 2, SEED };
     for (u32 i = 0; i < ENTITIES; ++i) {
-        const auto [stableId, entity] = state.Create(WORLD);
+        const auto [stableId, entity] = state.Create(WORLD, core::IdRange::World);
         state[WORLD].Entities().emplace<Health>(entity, POINTS * static_cast<i32>(i));
         if (i % 2 == 0) {
             state[WORLD].Entities().emplace<Tagged>(entity);
@@ -75,7 +78,7 @@ bool Loads(std::span<const std::byte> bytes, core::State& into) {
 
 TEST_CASE("the state knows which domain each stable ID is in") {
     core::State state{ 2, SEED };
-    const auto [npc, entity] = state.Create(WORLD);
+    const auto [npc, entity] = state.Create(WORLD, core::IdRange::World);
     CHECK(state.DomainOf(npc) == WORLD);
     CHECK(state[WORLD].Find(npc) == entity);
     CHECK(state[ACTIVE].Find(npc) == core::Entity{ entt::null });
@@ -87,17 +90,63 @@ TEST_CASE("the state knows which domain each stable ID is in") {
 
 TEST_CASE("stable IDs are unique across domains") {
     core::State state{ 2, SEED };
-    const core::StableId first = state.Create(ACTIVE).first;
-    const core::StableId second = state.Create(WORLD).first;
+    const core::StableId first = state.Create(ACTIVE, core::IdRange::World).first;
+    const core::StableId second = state.Create(WORLD, core::IdRange::World).first;
     CHECK(first != second);
     CHECK(state.Ids().next == 3);
+}
+
+TEST_CASE("scene entities number from the scene range, world ones from 1") {
+    core::State state{ 2, SEED };
+    const core::StableId firstWorld = state.Create(WORLD, core::IdRange::World).first;
+    const core::StableId firstScene = state.Create(ACTIVE, core::IdRange::Scene).first;
+    const core::StableId secondWorld = state.Create(WORLD, core::IdRange::World).first;
+    const core::StableId secondScene = state.Create(ACTIVE, core::IdRange::Scene).first;
+    CHECK(firstWorld == core::StableId{ 1 });
+    CHECK(secondWorld == core::StableId{ 2 });
+    CHECK(firstScene == core::StableId{ BASE });
+    CHECK(secondScene == core::StableId{ BASE + 1 });
+    CHECK(state.Ids().next == 3);
+    CHECK(state.SceneIds().next == BASE + 2);
+    CHECK(state.DomainOf(firstScene) == ACTIVE);
+}
+
+TEST_CASE("the two counters never meet or reuse an ID") {
+    // The world counter one short of the scene range: its last ID and the scene's first are still apart.
+    core::State state{ 2, SEED, core::StableIdCounter{ .next = BASE - 1 }, NO_SCENE_IDS };
+    const core::StableId world = state.Create(WORLD, core::IdRange::World).first;
+    const core::StableId scene = state.Create(ACTIVE, core::IdRange::Scene).first;
+    CHECK(world == core::StableId{ BASE - 1 });
+    CHECK(scene == core::StableId{ BASE });
+    CHECK(state.Ids().next == BASE);
+
+    // Destroyed IDs are never handed out again, in this state or in the next one the scene counter moves to.
+    state.Destroy(world);
+    state.Destroy(scene);
+    CHECK(state.Create(ACTIVE, core::IdRange::Scene).first == core::StableId{ BASE + 1 });
+    core::State next{ 2, SEED };
+    next.SetSceneIds(state.SceneIds());
+    CHECK(next.Create(ACTIVE, core::IdRange::Scene).first == core::StableId{ BASE + 2 });
+    CHECK(next.Create(WORLD, core::IdRange::World).first == core::StableId{ 1 });
+}
+
+TEST_CASE("Restore refuses an ID outside both ranges' handed-out parts") {
+    core::State state{ 2, SEED, core::StableIdCounter{ .next = 3 }, core::StableIdCounter{ .next = BASE + 2 } };
+    CHECK_FALSE(state.Restore(WORLD, core::StableId{ 0 }));
+    CHECK_FALSE(state.Restore(WORLD, core::StableId{ 3 }));         // the world counter's next
+    CHECK_FALSE(state.Restore(WORLD, core::StableId{ BASE - 1 }));  // the world range's last, never handed out
+    CHECK_FALSE(state.Restore(ACTIVE, core::StableId{ BASE + 2 })); // the scene counter's next
+    CHECK(state.Restore(WORLD, core::StableId{ 1 }));
+    CHECK(state.Restore(WORLD, core::StableId{ 2 }));
+    CHECK(state.Restore(ACTIVE, core::StableId{ BASE }));
+    CHECK(state.Restore(ACTIVE, core::StableId{ BASE + 1 }));
 }
 
 TEST_CASE("an entity moving between domains keeps its stable ID and derives its components") {
     constexpr i32 CELL = 7;
     constexpr f32 CELL_WIDTH = 10.0F;
     core::State state{ 2, SEED };
-    const auto [npc, was] = state.Create(WORLD);
+    const auto [npc, was] = state.Create(WORLD, core::IdRange::World);
     state[WORLD].Entities().emplace<Place>(was, CELL);
 
     const core::Entity moved =
@@ -115,7 +164,7 @@ TEST_CASE("an entity moving between domains keeps its stable ID and derives its 
 
 TEST_CASE("a domain loaded from a save iterates as the saved one, components and all") {
     const core::State saved = Populated();
-    core::State loaded{ 2, SEED, saved.Ids() };
+    core::State loaded{ 2, SEED, saved.Ids(), saved.SceneIds() };
     const std::vector<std::byte> bytes = SavedWorld(saved);
     const bool loads = Loads(bytes, loaded);
     REQUIRE(loads);
@@ -129,7 +178,7 @@ TEST_CASE("a domain loaded from a save iterates as the saved one, components and
 
 TEST_CASE("a save naming an ID the counter never handed out is malformed") {
     const core::State saved = Populated();
-    core::State loaded{ 2, SEED, core::StableIdCounter{ .next = 3 } };
+    core::State loaded{ 2, SEED, core::StableIdCounter{ .next = 3 }, NO_SCENE_IDS };
     const std::vector<std::byte> bytes = SavedWorld(saved);
     const bool loads = Loads(bytes, loaded);
     CHECK_FALSE(loads);
@@ -140,7 +189,7 @@ TEST_CASE("a save with the same entity twice is malformed") {
     std::vector<std::byte> bytes;
     core::Writer writer{ bytes };
     writer(u64{ 2 }, core::StableId{ TWICE }, core::StableId{ TWICE }, u64{ 0 }, u64{ 0 });
-    core::State loaded{ 2, SEED, core::StableIdCounter{ .next = 2 } };
+    core::State loaded{ 2, SEED, core::StableIdCounter{ .next = 2 }, NO_SCENE_IDS };
     const bool loads = Loads(bytes, loaded);
     CHECK_FALSE(loads);
 }
@@ -151,14 +200,14 @@ TEST_CASE("a component for an entity not in the domain, or a value it rejects, i
     std::vector<std::byte> missing;
     core::Writer toMissing{ missing };
     toMissing(u64{ 1 }, core::StableId{ 1 }, u64{ 1 }, core::StableId{ MISSING }, i32{ 0 }, u64{ 0 });
-    core::State first{ 2, SEED, core::StableIdCounter{ .next = 3 } };
+    core::State first{ 2, SEED, core::StableIdCounter{ .next = 3 }, NO_SCENE_IDS };
     const bool loadsMissing = Loads(missing, first);
     CHECK_FALSE(loadsMissing);
 
     std::vector<std::byte> invalid;
     core::Writer toInvalid{ invalid };
     toInvalid(u64{ 1 }, core::StableId{ 1 }, u64{ 1 }, core::StableId{ 1 }, NEGATIVE, u64{ 0 });
-    core::State second{ 2, SEED, core::StableIdCounter{ .next = 2 } };
+    core::State second{ 2, SEED, core::StableIdCounter{ .next = 2 }, NO_SCENE_IDS };
     const bool loadsInvalid = Loads(invalid, second);
     CHECK_FALSE(loadsInvalid);
 }
