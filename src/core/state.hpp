@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// The game state: its domains, the stable-ID counter, the seed, and the
+/// The game state: its domains, the stable-ID counters, the seed, and the
 /// map from stable ID to domain, so a command or relationship can reach an entity in any domain
 /// and an entity can move between domains without anything that names it noticing.
 
@@ -25,21 +25,37 @@ namespace core {
 enum class DomainIndex : u8 {
 };
 
+/// Which counter a new stable ID comes from.
+enum class IdRange : u8 {
+    /// The game's world (its NPCs and groups): from 1 up, so the world generated from a seed numbers alike whatever scenes
+    /// ran before it.
+    World,
+    /// A scene's own entities (the cultivator, a fight's creatures): from SCENE_ID_BASE up; the counter moves on to the
+    /// next state through State::SetSceneIds().
+    Scene,
+};
+
+/// The first stable ID of the scene range; every world ID is below it.
+inline constexpr u64 SCENE_ID_BASE = u64{ 1 } << 62;
+
 /// The game state's domains and identity: everything about entities that a save keeps.
 class State {
 public:
-    /// A state of `domains` empty domains, its random numbers drawn from `seed`.
+    /// A state of `domains` empty domains, its random numbers drawn from `seed`, both counters at their range's start.
     State(std::size_t domains, u64 seed)
       : m_domains(domains)
       , m_seed{ seed } {
     }
 
-    /// A state being loaded from a save: `domains` empty domains, `seed`, and the stable-ID counter
-    /// as saved; Restore() fills it.
-    State(std::size_t domains, u64 seed, StableIdCounter ids)
+    /// A state being loaded from a save: `domains` empty domains, `seed`, and the world's and the scene's stable-ID
+    /// counters as saved, each within its own range; Restore() fills it.
+    State(std::size_t domains, u64 seed, StableIdCounter ids, StableIdCounter sceneIds)
       : m_domains(domains)
       , m_seed{ seed }
-      , m_ids{ ids } {
+      , m_ids{ ids }
+      , m_sceneIds{ sceneIds } {
+        PN_ASSERT(ids.next >= 1 && ids.next <= SCENE_ID_BASE, "a world ID counter outside the world range");
+        PN_ASSERT(sceneIds.next >= SCENE_ID_BASE, "a scene ID counter outside the scene range");
     }
 
     /// The domain `index`, which must exist.
@@ -61,24 +77,39 @@ public:
         return m_seed;
     }
 
-    /// The counter new stable IDs come from.
+    /// The counter new world stable IDs (IdRange::World) come from.
     [[nodiscard]] const StableIdCounter& Ids() const {
         return m_ids;
     }
 
-    /// Creates an entity with a new stable ID in domain `index`. Never inside a job chunk.
-    std::pair<StableId, Entity> Create(DomainIndex index) {
-        const StableId stableId = m_ids.Allocate();
+    /// The counter new scene stable IDs (IdRange::Scene) come from.
+    [[nodiscard]] const StableIdCounter& SceneIds() const {
+        return m_sceneIds;
+    }
+
+    /// Takes over the scene counter `ids` of another state of the same session, so this one never hands out a scene ID
+    /// that one did. It never goes down.
+    void SetSceneIds(StableIdCounter ids) {
+        PN_ASSERT(ids.next >= m_sceneIds.next, "the scene ID counter went down, so scene IDs could repeat");
+        m_sceneIds = ids;
+    }
+
+    /// Creates an entity with a new stable ID from `range` in domain `index`. Never inside a job chunk.
+    std::pair<StableId, Entity> Create(DomainIndex index, IdRange range) {
+        PN_ASSERT(range == IdRange::Scene || m_ids.next < SCENE_ID_BASE, "the world IDs ran into the scene range");
+        const StableId stableId = range == IdRange::World ? m_ids.Allocate() : m_sceneIds.Allocate();
         m_where.emplace(std::to_underlying(stableId), index);
         return { stableId, (*this)[index].Create(stableId) };
     }
 
     /// Creates the entity for `stableId`, read from a save, in domain `index`. Returns false,
-    /// creating nothing, when the ID can't be one this state handed out (0, or not below the
-    /// counter) or is in the state already: the save is malformed.
+    /// creating nothing, when the ID can't be one this state handed out (0, or in neither range's
+    /// part below its counter) or is in the state already: the save is malformed.
     [[nodiscard]] bool Restore(DomainIndex index, StableId stableId) {
         const u64 key = std::to_underlying(stableId);
-        if (key == 0 || key >= m_ids.next || !m_where.emplace(key, index).second) {
+        const bool world = key != 0 && key < m_ids.next;
+        const bool scene = key >= SCENE_ID_BASE && key < m_sceneIds.next;
+        if ((!world && !scene) || !m_where.emplace(key, index).second) {
             return false;
         }
         static_cast<void>((*this)[index].Create(stableId));
@@ -128,6 +159,7 @@ private:
     std::vector<Domain> m_domains;
     u64 m_seed;
     StableIdCounter m_ids{};
+    StableIdCounter m_sceneIds{ .next = SCENE_ID_BASE };
     std::unordered_map<u64, DomainIndex> m_where; // looked up only, never iterated
 };
 

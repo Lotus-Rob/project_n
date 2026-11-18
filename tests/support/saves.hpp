@@ -29,7 +29,7 @@
 namespace test {
 
 /// The host's save format (game/host.cpp's ARENA_FORMAT).
-inline constexpr u32 HOST_FORMAT = 6;
+inline constexpr u32 HOST_FORMAT = 7;
 /// The active domain's version in a host save (5: the NPCs' homes).
 inline constexpr u32 ACTIVE_VERSION = 5;
 /// The world domain's version in a host save (3: the travelling action, the journeys and the journals).
@@ -75,7 +75,7 @@ struct SavedClock {
     bool paused = false;
 };
 
-/// A save of `state` in `scene` with `player`: the format, the scene, the seed, the stable-ID counter, `clock`, the player and
+/// A save of `state` in `scene` with `player`: the format, the scene, the seed, the stable-ID counters, `clock`, the player and
 /// the selection (none), then each domain after its version (`activeVersion`, `worldVersion`), then no relationships,
 /// `travel`, the player's `route` if any, no respawns waiting, `volley` if any (the flying swords' hits of 20, none resolved
 /// yet), `flash` if any and `seal` if any.
@@ -101,6 +101,7 @@ struct SavedClock {
         static_cast<u8>(std::to_underlying(scene)),
         state.Seed(),
         state.Ids().next,
+        state.SceneIds().next,
         clock.ticks,
         clock.months,
         clock.paused,

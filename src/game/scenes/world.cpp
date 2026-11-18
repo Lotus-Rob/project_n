@@ -25,7 +25,8 @@ constexpr SceneTraits WORLD_TRAITS{
 constexpr u32 TENTHS_ON_CITY_TILE = 7;
 constexpr u32 TENTH = 10;
 
-// The stable ID of the place `index`'s name label: far above any creature's, which count up from 1.
+// The stable ID of the place `index`'s name label: far above any world NPC's, which count up from 1, and below the scene's
+// own entities' range, so it names neither.
 constexpr u64 PLACE_ENTITY_BASE = 1ULL << 40;
 // The gap between the city marker's lower edge and the name hanging from it, in world units.
 constexpr f32 PLACE_NAME_GAP = 8.0F;

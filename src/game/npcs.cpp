@@ -194,14 +194,14 @@ void Relationships::Load(core::Reader& archive, const core::State& state) {
 }
 
 core::StableId SpawnNpc(core::State& state, u32 cell, u16 home, f32 power) {
-    const auto [stableId, entity] = state.Create(WORLD);
+    const auto [stableId, entity] = state.Create(WORLD, core::IdRange::World);
     state[WORLD].Entities().emplace<Npc>(entity, cell, home, Action::Rest, power);
     state[WORLD].Entities().emplace<Needs>(entity);
     return stableId;
 }
 
 core::StableId SpawnGroup(core::State& state, u32 cell, u32 members) {
-    const auto [stableId, entity] = state.Create(WORLD);
+    const auto [stableId, entity] = state.Create(WORLD, core::IdRange::World);
     state[WORLD].Entities().emplace<Group>(entity, cell, members);
     return stableId;
 }
