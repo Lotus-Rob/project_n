@@ -1,11 +1,15 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/jobs.hpp"
+#include "core/journey.hpp"
 #include "core/state.hpp"
 #include "game/components.hpp"
 #include "game/host.hpp"
 #include "game/npcs.hpp"
 #include "game/scenes.hpp"
+#include "game/travel.hpp"
 #include "support/manifest.hpp"
+#include "support/saves.hpp"
+#include "support/world.hpp"
 
 #include <doctest/doctest.h>
 
@@ -27,6 +31,40 @@ bool Same(f32 lhs, f32 rhs) {
 bool Same(core::Vec2 lhs, core::Vec2 rhs) {
     return Same(lhs.x, rhs.x) && Same(lhs.y, rhs.y);
 }
+
+constexpr u32 STAY_DAYS = 2;
+constexpr u32 STAY_SEED = 0x7e57;
+constexpr i64 LATER = 100'000;
+
+/// A world with an NPC on a journey under way after one finished, so it has a journal entry: `travel` holds both.
+struct Traveller {
+    core::State state{ game::DOMAINS, SEED };
+    std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    game::Travel travel;
+    core::StableId npc{};
+    core::StableId group{};
+
+    Traveller() {
+        std::vector<u16> cities;
+        for (std::size_t index = 0; index < map->Places().size() && cities.size() < 2; ++index) {
+            if (map->Places()[index].kind == core::PlaceKind::City) {
+                cities.push_back(static_cast<u16>(index));
+            }
+        }
+        REQUIRE(cities.size() == 2);
+        const std::vector<u32> tiles = core::FindRoute(
+            *map, core::WALKING, map->TileIndex(map->Places()[cities[0]].tile), map->TileIndex(map->Places()[cities[1]].tile)
+        );
+        REQUIRE(tiles.size() >= 3);
+        npc = game::SpawnNpc(state, tiles.front(), cities[0]);
+        group = game::SpawnGroup(state, tiles.front(), 0);
+        const core::Journey done = core::Visit(*map, tiles, npc, cities[0], cities[1], 0, STAY_DAYS, STAY_SEED);
+        travel.Start(done);
+        travel.Finish(core::EndTick(done), state);
+        travel.Start(core::Visit(*map, tiles, npc, cities[0], cities[1], LATER, STAY_DAYS, STAY_SEED));
+        state[game::WORLD].Entities().get<game::Npc>(state[game::WORLD].Find(npc)).action = game::Action::Travel;
+    }
+};
 
 TEST_CASE("a cell's centre lies in that cell") {
     CHECK(game::CellAt(game::CellCentre(CELL)) == CELL);
@@ -81,10 +119,45 @@ TEST_CASE("a group materialises into one world NPC per member, and an unmet NPC 
     const core::StableId other = game::SpawnGroup(state, CELL, 0);
     const std::array<Pair, 2> knows{ { { npcs[0], npcs[1] }, { npcs[1], npcs[0] } } };
     relationships.Merge(knows);
-    game::Fold(state, relationships, npcs[0], other);
+    game::Travel travel;
+    game::Fold(state, relationships, travel, npcs[0], other);
     CHECK_FALSE(state.DomainOf(npcs[0]).has_value());
     CHECK(state[game::WORLD].Entities().get<game::Group>(state[game::WORLD].Find(other)).members == 1);
     CHECK(relationships.All().empty());
+}
+
+TEST_CASE("a folded traveller leaves no journey or journal behind") {
+    Traveller world;
+    game::Relationships relationships;
+    REQUIRE(world.travel.Travelling(world.npc));
+    REQUIRE_FALSE(world.travel.JournalOf(world.npc).empty());
+
+    game::Fold(world.state, relationships, world.travel, world.npc, world.group);
+    CHECK_FALSE(world.travel.Travelling(world.npc));
+    CHECK(world.travel.Journeys().empty());
+    CHECK(world.travel.JournalOf(world.npc).empty());
+}
+
+TEST_CASE("a save after a fold loads") {
+    Traveller world;
+    game::Relationships relationships;
+    game::Fold(world.state, relationships, world.travel, world.npc, world.group);
+
+    const std::vector<std::byte> bytes = test::ArenaSave(
+        world.state,
+        {},
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        game::WORLD_SCENE,
+        test::WORLD_VERSION,
+        test::ACTIVE_VERSION,
+        {},
+        world.travel
+    );
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    core::Reader reader{ bytes };
+    CHECK(host.Load(reader, 0));
 }
 
 TEST_CASE("relationships merge into one sorted edge per pair, adding once per change") {

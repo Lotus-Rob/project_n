@@ -24,6 +24,8 @@
 
 namespace game {
 
+class Travel;
+
 /// The domain of the active region: the arena, or the world map around the player.
 inline constexpr core::DomainIndex ACTIVE{ 0 };
 /// The domain of everyone and everything else.
@@ -214,9 +216,9 @@ void Deactivate(core::State& state, core::StableId npc);
 /// Turns aggregate `group` into world NPCs in its cell, one per member, homeless (NO_HOME), and returns their stable IDs.
 /// Only in a scene without the world map, where a group's cell is a grid cell.
 std::vector<core::StableId> Materialise(core::State& state, core::StableId group);
-/// Folds world NPC `npc`, whom the player has never met, into aggregate `group`, forgetting
-/// its relationships so none names an ID that is gone.
-void Fold(core::State& state, Relationships& relationships, core::StableId npc, core::StableId group);
+/// Folds world NPC `npc`, whom the player has never met, into aggregate `group`, forgetting its relationships, journeys and
+/// journal so none names an ID that is gone.
+void Fold(core::State& state, Relationships& relationships, Travel& travel, core::StableId npc, core::StableId group);
 
 /// The active tier's decisions, time-sliced: each active NPC picks a new point in its cell to
 /// walk to once every DECISION_TICKS ticks, from random numbers keyed on `seed` and `stateCounter`.
