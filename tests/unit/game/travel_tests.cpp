@@ -482,6 +482,7 @@ constexpr u32 FAR_PEOPLE = 400;
 constexpr u32 ISLE_PEOPLE = 5'000;
 constexpr u16 NO_SUCH_CITY = 40;
 constexpr u32 OFF_MAP = 100'000;
+constexpr u32 SHALLOWS_TILE = (2 * VISIT_COLUMNS) - 2;
 constexpr u32 ISLE_TILE = (VISIT_COLUMNS * VISIT_ROWS) - 1;
 constexpr std::array<u16, core::VISITOR_KINDS> EVERYONE{ { 1, 1 } };
 // Draws by core::VisitorKind: cultivators, then traders.
@@ -773,7 +774,6 @@ TEST_CASE("an unreachable city is never chosen") {
 TEST_CASE("an NPC standing where walkers can't step stays home") {
     const std::shared_ptr<const core::WorldMap> map = VisitMap();
     // Shallows, which the base costs cross and walkers can't: its way out is open, its way back would end entering it.
-    constexpr u32 SHALLOWS_TILE = (2 * VISIT_COLUMNS) - 2;
     REQUIRE(map->CostAt(SHALLOWS_TILE) != core::IMPASSABLE_COST);
     REQUIRE(map->CostAt(SHALLOWS_TILE, core::WALKING) == core::IMPASSABLE_COST);
 
@@ -897,10 +897,13 @@ TEST_CASE("a travel table round-trips by plans") {
     // The members' months must still match the journeys.
     const core::State resting{ game::DOMAINS, STATE_SEED };
     game::Travel refused;
+    refused.Start(RoutedVisit(*map, paths, home, 0, DESTINATION, 3 * DAY));
+    const std::vector<std::byte> before = Bytes(refused);
     core::Reader again{ plans };
     CHECK_FALSE(refused.LoadPlans(again, resting, *map, paths));
     CHECK(again.Failed());
-    CHECK(refused.Journeys().empty());
+    const bool unchanged = Bytes(refused) == before;
+    CHECK(unchanged);
 }
 
 TEST_CASE("a plan to an unreachable city is refused") {
@@ -935,6 +938,9 @@ TEST_CASE("a plan to an unreachable city is refused") {
     core::VisitPlan fromTheIsle = reachable;
     fromTheIsle.from = ISLE_TILE;
     CHECK_FALSE(loads(fromTheIsle));
+    core::VisitPlan wadingIn = reachable;
+    wadingIn.from = SHALLOWS_TILE;
+    CHECK_FALSE(loads(wadingIn));
     core::VisitPlan nowhere = reachable;
     nowhere.destination = NO_SUCH_CITY;
     CHECK_FALSE(loads(nowhere));

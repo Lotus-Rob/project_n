@@ -319,6 +319,7 @@ std::vector<std::byte> BytesOf(const core::Journey& journey) {
 
 /// A visit's defining numbers, for a table of samples.
 struct Sample {
+    const char* why;
     u32 from;
     std::size_t members;
     u32 stayDays;
@@ -329,25 +330,76 @@ TEST_CASE("a visit rebuilt from its plan equals the visit") {
     const auto map = std::make_shared<const core::WorldMap>(TestMap());
     core::Paths paths{ map };
     constexpr u32 MONTH_DAYS = 40;
+    constexpr u32 THREE_DAYS = 3;
     constexpr i64 MONTH = static_cast<i64>(core::TICKS_PER_MONTH);
     constexpr u32 ROW_BELOW = COLUMNS * 2;
     constexpr u32 NEXT_TO_DESTINATION = ROAD_END;
-    const std::array<Sample, 12> samples{ {
-        { .from = 0, .members = 1, .stayDays = TWO_DAYS, .departTick = 0 },
-        { .from = 0, .members = 3, .stayDays = TWO_DAYS, .departTick = 0 },
-        { .from = 0, .members = 2, .stayDays = FIVE_DAYS, .departTick = 1 },
-        { .from = 0, .members = 1, .stayDays = 0, .departTick = 1'000 },
-        { .from = 0, .members = 1, .stayDays = MONTH_DAYS, .departTick = MONTH - 100 },
-        { .from = 0, .members = 2, .stayDays = MONTH_DAYS, .departTick = MONTH },
-        { .from = 0, .members = 1, .stayDays = TWO_DAYS, .departTick = BEFORE_ZERO },
-        { .from = 0, .members = 3, .stayDays = FIVE_DAYS, .departTick = -MONTH },
-        { .from = NEXT_TO_DESTINATION, .members = 1, .stayDays = TWO_DAYS, .departTick = 0 },
-        { .from = NEXT_TO_DESTINATION, .members = 2, .stayDays = MONTH_DAYS, .departTick = MONTH - 1 },
-        { .from = ROW_BELOW, .members = 1, .stayDays = FIVE_DAYS, .departTick = BEFORE_ZERO },
-        { .from = ROW_BELOW + 3, .members = 3, .stayDays = TWO_DAYS, .departTick = 12'345 },
+    constexpr u32 DESTINATION_TILE = COLUMNS - 1;
+    const std::array<Sample, 20> samples{ {
+        { .why = "one member, the whole road", .from = 0, .members = 1, .stayDays = TWO_DAYS, .departTick = 0 },
+        { .why = "three members", .from = 0, .members = 3, .stayDays = TWO_DAYS, .departTick = 0 },
+        { .why = "two members, a longer stay, leaving a tick in",
+          .from = 0,
+          .members = 2,
+          .stayDays = FIVE_DAYS,
+          .departTick = 1 },
+        { .why = "a stay of no days", .from = 0, .members = 1, .stayDays = 0, .departTick = 1'000 },
+        { .why = "a stay crossing a month", .from = 0, .members = 1, .stayDays = MONTH_DAYS, .departTick = MONTH - 100 },
+        { .why = "leaving on a month's first tick", .from = 0, .members = 2, .stayDays = MONTH_DAYS, .departTick = MONTH },
+        { .why = "leaving on a month's last tick", .from = 0, .members = 1, .stayDays = TWO_DAYS, .departTick = MONTH - 1 },
+        { .why = "a stay ending on a month boundary",
+          .from = DESTINATION_TILE,
+          .members = 1,
+          .stayDays = THREE_DAYS,
+          .departTick = MONTH - (THREE_DAYS * DAY) },
+        { .why = "a route of one tile, the destination's own",
+          .from = DESTINATION_TILE,
+          .members = 1,
+          .stayDays = TWO_DAYS,
+          .departTick = 0 },
+        { .why = "a one-tile route with a stay of no days",
+          .from = DESTINATION_TILE,
+          .members = 2,
+          .stayDays = 0,
+          .departTick = 7 },
+        { .why = "left shortly before tick 0", .from = 0, .members = 1, .stayDays = TWO_DAYS, .departTick = BEFORE_ZERO },
+        { .why = "left a month before tick 0, three members",
+          .from = 0,
+          .members = 3,
+          .stayDays = FIVE_DAYS,
+          .departTick = -MONTH },
+        { .why = "left on the tick before 0", .from = 0, .members = 1, .stayDays = THREE_DAYS, .departTick = -1 },
+        { .why = "a two-tile route", .from = NEXT_TO_DESTINATION, .members = 1, .stayDays = TWO_DAYS, .departTick = 0 },
+        { .why = "a two-tile route, a long stay, a month's last tick",
+          .from = NEXT_TO_DESTINATION,
+          .members = 2,
+          .stayDays = MONTH_DAYS,
+          .departTick = MONTH - 1 },
+        { .why = "from the meadow below the road, before tick 0",
+          .from = ROW_BELOW,
+          .members = 1,
+          .stayDays = FIVE_DAYS,
+          .departTick = BEFORE_ZERO },
+        { .why = "from the meadow, three members",
+          .from = ROW_BELOW + 3,
+          .members = 3,
+          .stayDays = TWO_DAYS,
+          .departTick = 12'345 },
+        { .why = "from the sand of the home's tile, a day in", .from = 0, .members = 1, .stayDays = 1, .departTick = DAY },
+        { .why = "from a meadow corner, a month in",
+          .from = (COLUMNS * ROWS) - 1,
+          .members = 2,
+          .stayDays = TWO_DAYS,
+          .departTick = MONTH },
+        { .why = "from the meadow row's start, a long stay",
+          .from = COLUMNS,
+          .members = 1,
+          .stayDays = MONTH_DAYS,
+          .departTick = 99 },
     } };
     const std::array<core::StableId, 3> everyone{ WALKER, SECOND, THIRD };
     for (const Sample& sample : samples) {
+        CAPTURE(sample.why);
         CAPTURE(sample.from);
         CAPTURE(sample.members);
         CAPTURE(sample.departTick);
@@ -405,6 +457,53 @@ TEST_CASE("a journey a visit didn't make has no plan") {
     core::Journey memberless = visit;
     memberless.members.clear();
     CHECK_FALSE(core::PlanOf(memberless).has_value());
+}
+
+TEST_CASE("a plan from where walkers can't step rebuilds to nothing") {
+    constexpr u8 SHALLOWS = 1;
+    constexpr u32 SHALLOWS_TILE = COLUMNS + 3;
+    core::WorldMapSource source;
+    source.columns = COLUMNS;
+    source.rows = ROWS;
+    source.tileSize = TILE;
+    source.roadCost = ROAD_COST;
+    source.fordCost = FORD_COST;
+    source.kinds = { { .name = "meadow", .symbol = '.', .cost = MEADOW_COST },
+                     { .name = "shallows", .symbol = '-', .cost = FORD_COST } };
+    source.grid.assign(static_cast<std::size_t>(COLUMNS) * ROWS, MEADOW);
+    source.grid[SHALLOWS_TILE] = SHALLOWS;
+    source.profiles = { { .key = "on_foot",
+                          .ticksPerCost = core::DEFAULT_TICKS_PER_COST,
+                          .kindCosts = { MEADOW_COST, core::IMPASSABLE_COST },
+                          .features = {} } };
+    for (const u16 city : { HOME, DESTINATION }) {
+        source.places.push_back(
+            { .key = std::format("city{}", city),
+              .kind = core::PlaceKind::City,
+              .sort = "",
+              .tile = { .column = city == HOME ? 0U : COLUMNS - 1, .row = 0 },
+              .nameKey = std::format("city_{}", city),
+              .name = {},
+              .people = PEOPLE,
+              .start = city == HOME }
+        );
+    }
+    auto built = core::WorldMap::Build(std::move(source));
+    REQUIRE(built.has_value());
+    const auto map = std::make_shared<const core::WorldMap>(*std::move(built));
+    REQUIRE(map->CostAt(SHALLOWS_TILE) != core::IMPASSABLE_COST);
+    REQUIRE(map->CostAt(SHALLOWS_TILE, core::WALKING) == core::IMPASSABLE_COST);
+    core::Paths paths{ map };
+    core::VisitPlan plan{ .members = { WALKER },
+                          .home = HOME,
+                          .destination = DESTINATION,
+                          .from = 0,
+                          .departTick = 0,
+                          .stayDays = TWO_DAYS,
+                          .seed = SEED };
+    CHECK_FALSE(core::Rebuild(*map, paths, plan).parts.empty());
+    plan.from = SHALLOWS_TILE;
+    CHECK(core::Rebuild(*map, paths, plan).parts.empty());
 }
 
 } // namespace

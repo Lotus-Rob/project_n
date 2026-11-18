@@ -476,7 +476,10 @@ bool Travel::LoadPlans(core::Reader& archive, const core::State& state, const co
         journeys.reserve(plans.size());
         for (const core::VisitPlan& plan : plans) {
             journeys.push_back(core::Rebuild(map, paths, plan));
-            sound = sound && !journeys.back().parts.empty() && core::StartTick(journeys.back()) == plan.departTick;
+            sound = !journeys.back().parts.empty() && core::StartTick(journeys.back()) == plan.departTick;
+            if (!sound) {
+                break;
+            }
         }
     }
     if (!sound) {
