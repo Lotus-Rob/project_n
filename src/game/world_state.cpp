@@ -57,6 +57,8 @@ void GenerateWorld(WorldState& world, const core::GameData& data, core::Paths* p
     if (paths != nullptr) { // with assertions off, a map without routes gives a world whose NPCs never set out
         world.travel.Seed(world.state, *data.world, *paths, world.state.Seed(), 0, 0);
     }
+    // A save sorts the state and a load gives it back sorted: a world that starts sorted iterates alike either way.
+    world.state.SortCanonical();
 }
 
 } // namespace game

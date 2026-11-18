@@ -10,23 +10,22 @@
 #include "core/world_map.hpp"
 #include "game/npcs.hpp"
 #include "game/travel.hpp"
+#include "support/world.hpp"
 
 #include <doctest/doctest.h>
 
 namespace {
 
-constexpr f32 TILE = 256.0F;
-constexpr u16 ROAD_COST = 4;
-constexpr u16 FORD_COST = 30;
-constexpr u16 MEADOW_COST = 10;
-constexpr u8 MEADOW = 0;
-constexpr u32 PEOPLE = 100;
-constexpr u32 COLUMNS = 7;
-constexpr u32 ROWS = 3;
-constexpr u32 TILES = COLUMNS * ROWS;
-constexpr u16 HOME = 0;
-constexpr u16 DESTINATION = 1;
-constexpr u32 ROAD_END = 5;
+using test::small::DESTINATION;
+using test::small::FORD_COST;
+using test::small::HOME;
+using test::small::MEADOW;
+using test::small::MEADOW_COST;
+using test::small::PEOPLE;
+using test::small::ROAD_COST;
+using test::small::TILE;
+using test::small::TILES;
+
 constexpr u64 STATE_SEED = 7;
 // Stands in for the game's journey draws: a stay's seed is keyed on the game's seed, as every draw is.
 constexpr u64 GAME_SEED = 0x5eed;
@@ -40,33 +39,10 @@ constexpr u8 DAYS_AWAY = 7;
 // Days between the departures of journeys one NPC makes in turn: each is over before the next sets out.
 constexpr i64 DAYS_APART = 10;
 
-// The test map, 7 by 3 tiles of meadow: city 0 (the home) at tile 0, a road over tiles 1 to 5 of the top row, and city
-// 1 (the destination) at tile 6, its right end. Its profile is the default on_foot at pace 16.
+// The small test map (test::SmallWorldMap()): city 0 (the home) at tile 0, a road over tiles 1 to 5 of the top row, and
+// city 1 (the destination) at tile 6, its right end. Its profile is the default on_foot at pace 16.
 core::WorldMap TestMap() {
-    core::WorldMapSource source;
-    source.columns = COLUMNS;
-    source.rows = ROWS;
-    source.tileSize = TILE;
-    source.roadCost = ROAD_COST;
-    source.fordCost = FORD_COST;
-    source.kinds = { { .name = "meadow", .symbol = '.', .cost = MEADOW_COST } };
-    source.grid.assign(static_cast<std::size_t>(TILES), MEADOW);
-    source.roads = { { { .column = 1, .row = 0 }, { .column = ROAD_END, .row = 0 } } };
-    for (const u16 city : { HOME, DESTINATION }) {
-        source.places.push_back(
-            { .key = std::format("city{}", city),
-              .kind = core::PlaceKind::City,
-              .sort = "",
-              .tile = { .column = city == HOME ? 0U : COLUMNS - 1, .row = 0 },
-              .nameKey = std::format("city_{}", city),
-              .name = {},
-              .people = PEOPLE,
-              .start = city == HOME }
-        );
-    }
-    auto built = core::WorldMap::Build(std::move(source));
-    REQUIRE(built.has_value());
-    return *std::move(built);
+    return test::SmallWorldMap();
 }
 
 // The top row from the home's tile to the destination's.
@@ -104,13 +80,25 @@ u64 Hash(const game::Travel& travel) {
     return hasher.Value();
 }
 
-/// Whether a fresh table loads `bytes` against `state` and `map`, the reader failing exactly when it doesn't.
+/// Whether `travel` takes the table `bytes` (journeys and journals laid out as Save() writes them) as its difference
+/// from no journeys at all, every journey written whole, checked against `state` and `map`; the reader fails exactly when
+/// it doesn't.
+bool LoadInto(game::Travel& travel, const std::vector<std::byte>& bytes, const core::State& state, const core::WorldMap* map) {
+    std::vector<std::byte> delta;
+    core::Writer writer{ delta };
+    writer(std::vector<u64>{}, std::vector<core::VisitPlan>{}); // no base journey gone, none written as its plan
+    delta.insert(delta.end(), bytes.begin(), bytes.end());
+    core::Reader reader{ delta };
+    const bool loaded = travel.LoadDelta(reader, game::Travel{}, state, map, nullptr);
+    CHECK(loaded != reader.Failed());
+    CHECK((!loaded || reader.Remaining() == 0));
+    return loaded;
+}
+
+/// Whether a fresh table loads `bytes` as LoadInto() does.
 bool Loads(const std::vector<std::byte>& bytes, const core::State& state, const core::WorldMap* map) {
     game::Travel travel;
-    core::Reader reader{ bytes };
-    const bool loaded = travel.Load(reader, state, map);
-    CHECK(loaded != reader.Failed());
-    return loaded;
+    return LoadInto(travel, bytes, state, map);
 }
 
 /// A table holding just `journey`.
@@ -305,9 +293,7 @@ TEST_CASE("travel and the journal are saved, loaded and hashed") {
     const std::vector<std::byte> bytes = Bytes(travel);
 
     game::Travel loaded;
-    core::Reader reader{ bytes };
-    REQUIRE(loaded.Load(reader, state, &map));
-    CHECK(reader.Remaining() == 0);
+    REQUIRE(LoadInto(loaded, bytes, state, &map));
     const bool sameBytes = Bytes(loaded) == bytes;
     CHECK(sameBytes);
     CHECK(Hash(loaded) == Hash(travel));
@@ -336,8 +322,7 @@ TEST_CASE("a save naming a traveller who isn't there is refused") {
     game::Travel kept;
     kept.Start(VisitOf(map, npc, 0));
     const std::vector<std::byte> before = Bytes(kept);
-    core::Reader reader{ bytes };
-    CHECK_FALSE(kept.Load(reader, empty, &map));
+    CHECK_FALSE(LoadInto(kept, bytes, empty, &map));
     const bool unchanged = Bytes(kept) == before;
     CHECK(unchanged);
 
@@ -847,11 +832,16 @@ TEST_CASE("a raised travel share replaces the map's and the data's hash; data wi
     CHECK(refused.error().message.contains("world map"));
 }
 
-/// `travel`'s journeys as plans, and its journals, as SavePlans() writes them.
-std::vector<std::byte> PlanBytes(const game::Travel& travel) {
+/// `travel` written as its difference from `base`, its journeys rebuilt over `map` and `paths`.
+std::vector<std::byte> DeltaBytes(
+    const game::Travel& travel,
+    const game::Travel& base,
+    const core::WorldMap& map,
+    core::Paths& paths
+) {
     std::vector<std::byte> bytes;
     core::Writer writer{ bytes };
-    travel.SavePlans(writer);
+    travel.SaveDelta(writer, base, &map, &paths);
     return bytes;
 }
 
@@ -868,42 +858,94 @@ core::Journey RoutedVisit(
     return core::Visit(map, route, member, HOME, destination, departTick, STAY_DAYS, 99);
 }
 
-TEST_CASE("a travel table round-trips by plans") {
+TEST_CASE("travel round-trips as its difference from a base, a journey its plan doesn't rebuild written whole") {
     const auto map = std::make_shared<const core::WorldMap>(TestMap());
     core::Paths paths{ map };
     core::State state{ game::DOMAINS, STATE_SEED };
-    const core::StableId home = Traveller(state);
-    const core::StableId away = Traveller(state);
+    const core::StableId ended = Traveller(state);
+    const core::StableId kept = Traveller(state);
+    const core::StableId planned = Traveller(state);
+    const core::StableId moved = Traveller(state);
     const core::StableId second = Traveller(state);
-    game::Travel travel;
-    Journeys(travel, state, *map, home, 2);
-    core::Journey pair = RoutedVisit(*map, paths, away, 0, DESTINATION, DAY);
+    const core::Journey endedVisit = RoutedVisit(*map, paths, ended, 0, DESTINATION, 0);
+    const core::Journey keptVisit = RoutedVisit(*map, paths, kept, 0, DESTINATION, 5 * DAY);
+    game::Travel base;
+    base.Start(endedVisit);
+    base.Start(keptVisit);
+    game::Travel travel = base;
+    travel.Finish(core::EndTick(endedVisit), state); // the base's first journey is over, its second under way
+    core::Journey pair = RoutedVisit(*map, paths, planned, 0, DESTINATION, DAY);
     pair.members.push_back(second);
     travel.Start(std::move(pair));
-    const std::vector<std::byte> plans = PlanBytes(travel);
-    CHECK(plans.size() < Bytes(travel).size());
+    // Its plan can't see where its first leg sets out from, so its plan rebuilds another journey.
+    core::Journey off = RoutedVisit(*map, paths, moved, 0, DESTINATION, 2 * DAY);
+    off.parts.front().leg.origin.x += 1.0F;
+    REQUIRE(core::PlanOf(off).has_value());
+    travel.Start(off);
+    const std::vector<std::byte> bytes = DeltaBytes(travel, base, *map, paths);
+
+    std::vector<u64> gone;
+    std::vector<core::VisitPlan> plans;
+    std::vector<core::Journey> whole;
+    core::Reader parts{ bytes };
+    parts(gone, plans, whole);
+    REQUIRE_FALSE(parts.Failed());
+    CHECK(gone == std::vector<u64>{ 0 });
+    REQUIRE(plans.size() == 1);
+    CHECK(plans.front().members == std::vector<core::StableId>{ planned, second });
+    REQUIRE(whole.size() == 1);
+    CHECK(whole.front().members.front() == moved);
 
     game::Travel loaded;
-    core::Reader reader{ plans };
-    REQUIRE(loaded.LoadPlans(reader, state, *map, paths));
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.LoadDelta(reader, base, state, map.get(), &paths));
     CHECK(reader.Remaining() == 0);
-    CHECK_FALSE(reader.Failed());
     const bool sameBytes = Bytes(loaded) == Bytes(travel);
     CHECK(sameBytes);
     CHECK(Hash(loaded) == Hash(travel));
-    CHECK(loaded.JournalOf(home).size() == 2);
-    CHECK(loaded.Travelling(second));
+    CHECK(loaded.JournalOf(ended).size() == 1);
+
+    // A table equal to its base writes nothing but empty lists.
+    const bool nothing = DeltaBytes(base, base, *map, paths) == std::vector<std::byte>(4 * sizeof(u64));
+    CHECK(nothing);
 
     // The members' months must still match the journeys.
     const core::State resting{ game::DOMAINS, STATE_SEED };
     game::Travel refused;
-    refused.Start(RoutedVisit(*map, paths, home, 0, DESTINATION, 3 * DAY));
+    refused.Start(RoutedVisit(*map, paths, kept, 0, DESTINATION, 3 * DAY));
     const std::vector<std::byte> before = Bytes(refused);
-    core::Reader again{ plans };
-    CHECK_FALSE(refused.LoadPlans(again, resting, *map, paths));
+    core::Reader again{ bytes };
+    CHECK_FALSE(refused.LoadDelta(again, base, resting, map.get(), &paths));
     CHECK(again.Failed());
     const bool unchanged = Bytes(refused) == before;
     CHECK(unchanged);
+}
+
+TEST_CASE("a difference naming a base journey past the base's, out of order or twice is refused") {
+    const auto map = std::make_shared<const core::WorldMap>(TestMap());
+    core::Paths paths{ map };
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::StableId first = game::SpawnNpc(state, 0, HOME);
+    const core::StableId second = game::SpawnNpc(state, 0, HOME);
+    game::Travel base;
+    base.Start(RoutedVisit(*map, paths, first, 0, DESTINATION, 0));
+    base.Start(RoutedVisit(*map, paths, second, 0, DESTINATION, DAY));
+    // Both base journeys gone, as their members are at home: the places named and nothing else.
+    const auto loads = [&](const std::vector<u64>& gone) {
+        std::vector<std::byte> bytes;
+        core::Writer writer{ bytes };
+        writer(gone, std::vector<core::VisitPlan>{}, std::vector<core::Journey>{}, u64{ 0 });
+        game::Travel travel;
+        core::Reader reader{ bytes };
+        const bool loaded = travel.LoadDelta(reader, base, state, map.get(), &paths);
+        CHECK(loaded != reader.Failed());
+        return loaded;
+    };
+    CHECK(loads({ 0, 1 }));
+    CHECK_FALSE(loads({ 0 })); // the second's member would be at home on a journey
+    CHECK_FALSE(loads({ 0, 1, 2 }));
+    CHECK_FALSE(loads({ 1, 0 }));
+    CHECK_FALSE(loads({ 0, 0, 1 }));
 }
 
 TEST_CASE("a plan to an unreachable city is refused") {
@@ -917,42 +959,41 @@ TEST_CASE("a plan to an unreachable city is refused") {
     const core::VisitPlan reachable{
         .members = { npc }, .home = HOME, .destination = NEAR, .from = 0, .departTick = 0, .stayDays = STAY_DAYS, .seed = 1
     };
-    const auto loads = [&](const core::VisitPlan& plan) {
+    // A table without a base holding only the visit `plan` makes, and no journals.
+    const auto loads = [&](const core::VisitPlan& plan, core::Paths* routes) {
         game::Travel travel;
         std::vector<std::byte> bytes;
         core::Writer writer{ bytes };
-        const std::vector<core::VisitPlan> plans{ plan };
-        writer(plans);
-        const std::vector<std::byte> noJournals;
-        writer(noJournals);
+        writer(std::vector<u64>{}, std::vector<core::VisitPlan>{ plan }, std::vector<core::Journey>{}, u64{ 0 });
         core::Reader reader{ bytes };
-        const bool loaded = travel.LoadPlans(reader, state, *map, paths);
+        const bool loaded = travel.LoadDelta(reader, game::Travel{}, state, map.get(), routes);
         CHECK(loaded != reader.Failed());
         return loaded;
     };
-    CHECK(loads(reachable));
+    CHECK(loads(reachable, &paths));
+    CHECK_FALSE(loads(reachable, nullptr)); // nothing to route it over
 
     core::VisitPlan toTheIsle = reachable;
     toTheIsle.destination = ISLE;
-    CHECK_FALSE(loads(toTheIsle));
+    CHECK_FALSE(loads(toTheIsle, &paths));
     core::VisitPlan fromTheIsle = reachable;
     fromTheIsle.from = ISLE_TILE;
-    CHECK_FALSE(loads(fromTheIsle));
+    CHECK_FALSE(loads(fromTheIsle, &paths));
     core::VisitPlan wadingIn = reachable;
     wadingIn.from = SHALLOWS_TILE;
-    CHECK_FALSE(loads(wadingIn));
+    CHECK_FALSE(loads(wadingIn, &paths));
     core::VisitPlan nowhere = reachable;
     nowhere.destination = NO_SUCH_CITY;
-    CHECK_FALSE(loads(nowhere));
+    CHECK_FALSE(loads(nowhere, &paths));
     core::VisitPlan offMap = reachable;
     offMap.from = OFF_MAP;
-    CHECK_FALSE(loads(offMap));
+    CHECK_FALSE(loads(offMap, &paths));
     core::VisitPlan nobody = reachable;
     nobody.members.clear();
-    CHECK_FALSE(loads(nobody));
+    CHECK_FALSE(loads(nobody, &paths));
     core::VisitPlan farFuture = reachable;
     farFuture.departTick = std::numeric_limits<i64>::max() - 1;
-    CHECK_FALSE(loads(farFuture));
+    CHECK_FALSE(loads(farFuture, &paths));
 }
 
 } // namespace

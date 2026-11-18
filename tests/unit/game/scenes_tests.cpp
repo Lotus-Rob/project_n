@@ -507,7 +507,8 @@ TEST_CASE("F2 through every scene twice keeps the world and never reuses a scene
 TEST_CASE("a world NPC brought into the world scene goes back to the world under its ID when the scene is left") {
     constexpr f32 POWER = 7.0F;
     constexpr game::Needs NEEDS{ .rest = 0.25F, .company = 0.5F };
-    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const core::GameData data = test::SmallData();
+    const std::shared_ptr<const core::WorldMap> map = data.world;
     const u16 city = map->Start();
     const u32 tile = map->TileIndex(map->Places()[city].tile);
     core::State state{ game::DOMAINS, test::EMPTY_SAVE_SEED };
@@ -525,7 +526,7 @@ TEST_CASE("a world NPC brought into the world scene goes back to the world under
     });
     const std::vector<std::byte> bytes =
         test::ArenaSave(state, {}, std::nullopt, std::nullopt, std::nullopt, game::WORLD_SCENE);
-    game::Host host(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
     core::Reader reader{ bytes };
     REQUIRE(host.Load(reader, 0));
     host.EnterScene();
@@ -557,6 +558,7 @@ bool InStepArea(core::Vec2 point, core::Vec2 portal) {
 /// A host with the shipped data that has loaded and entered a save of the world scene whose one entity is the player's
 /// cultivator standing at `foot`, the world clock at `clock` in the first month.
 std::unique_ptr<game::Host> CultivatorAt(core::Vec2 foot, u64 clock) {
+    const core::GameData data = test::ShippedData();
     core::State state{ game::DOMAINS, test::EMPTY_SAVE_SEED };
     const auto [player, entity] = state.Create(game::ACTIVE, core::IdRange::Scene);
     state[game::ACTIVE].Entities().emplace<game::Body>(entity, foot, foot);
@@ -569,9 +571,14 @@ std::unique_ptr<game::Host> CultivatorAt(core::Vec2 foot, u64 clock) {
         game::WORLD_SCENE,
         test::WORLD_VERSION,
         test::ACTIVE_VERSION,
-        { .ticks = clock }
+        { .ticks = clock },
+        game::Travel{},
+        std::nullopt,
+        game::Relationships{},
+        {},
+        &data
     );
-    auto host = std::make_unique<game::Host>(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    auto host = std::make_unique<game::Host>(test::TestManifest(), game::ARENA_SCENE, data);
     core::Reader reader{ bytes };
     REQUIRE(host->Load(reader, 0));
     host->EnterScene();

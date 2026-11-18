@@ -9,7 +9,6 @@
 /// kind of visitor each draws).
 
 #include "core/archive.hpp"
-#include "core/assert.hpp"
 #include "core/error.hpp"
 #include "core/game_data.hpp"
 #include "core/jobs.hpp"
@@ -145,51 +144,38 @@ public:
     /// count would give.
     void Seed(core::State& state, const core::WorldMap& map, core::Paths& paths, u64 seed, u64 stateCounter, i64 monthStart);
 
-    /// Writes the journeys and the journals into `archive` (a Writer or a Hasher).
+    /// Writes the journeys and the journals into `archive` (a Hasher, or a Writer for a test's table), every journey whole.
     template<typename Archive>
     void Save(Archive& archive) const {
         archive(m_journeys, m_journals);
     }
 
-    /// Replaces the journeys and journals with those Save() wrote, read from `archive`, checked against `state` and `map`
-    /// (none in a scene without the world map, where both must be empty). False, failing `archive` and changing nothing,
-    /// on a malformed table: journeys out of their first members' order, a journey without members or parts, a member that
-    /// isn't a world NPC of `state`, is in two journeys or is listed twice in one, a city or stay that isn't a city of
-    /// `map`, parts that don't follow on from each other, a leg of an unknown shape or profile, with a tile off the map, a
-    /// non-finite origin, arrive ticks not one per tile, from 0 and rising, or an end tick past an i64's range, a stay
-    /// ending before it starts, lasting more ticks than a u32 holds or ending within a day of an i64's most; journals out
-    /// of their NPCs' order, empty, for an NPC not in `state`, longer than its NPC keeps, or naming a city or profile `map`
-    /// lacks; or months that don't match the journeys: a member whose month isn't Action::Travel, or an NPC whose month is
-    /// Action::Travel on no journey (with or without the map).
-    [[nodiscard]] bool Load(core::Reader& archive, const core::State& state, const core::WorldMap* map);
+    /// Writes the table into `archive` as its difference from `base` (the table of the world as it was generated): the
+    /// places in `base`'s order of its journeys no longer under way exactly as they were, then each other journey, as the
+    /// core::VisitPlan that makes it (core::PlanOf()) when, over `map` and `paths`, core::Rebuild() gives it back exactly,
+    /// else whole, then the journals whole. Without a map and its paths every other journey is written whole.
+    void SaveDelta(core::Writer& archive, const Travel& base, const core::WorldMap* map, core::Paths* paths) const;
 
-    /// Writes the journeys as the plans that make them (core::PlanOf(), the legs left to LoadPlans()) and the journals whole
-    /// into `archive`. Every journey in the table is one core::Visit() made (Month() is the only producer); one that isn't
-    /// can't be written as a plan, so it is left out, and the months of its members then fail LoadPlans().
-    template<typename Archive>
-    void SavePlans(Archive& archive) const {
-        std::vector<core::VisitPlan> plans;
-        plans.reserve(m_journeys.size());
-        for (const core::Journey& journey : m_journeys) {
-            std::optional<core::VisitPlan> plan = core::PlanOf(journey);
-            PN_ASSERT(plan.has_value(), "every journey in the table is a visit");
-            if (plan.has_value()) {
-                plans.push_back(*std::move(plan));
-            }
-        }
-        archive(plans, m_journals);
-    }
-
-    /// Replaces the journeys and journals with those SavePlans() wrote, the journeys rebuilt over `map` and `paths`
-    /// (core::Rebuild()), checked against `state` and `map` as Load() does. False, failing `archive` and changing nothing,
-    /// on what Load() refuses of the rebuilt journeys, and on a plan with no member, a city that isn't one of `map`, a tile
-    /// off it, a route that is empty (the tile impassable or the destination unreachable), a departure too near an i64's
-    /// most for its journey's ticks to fit, or a rebuild that doesn't start at its VisitPlan's departure.
-    [[nodiscard]] bool LoadPlans(
+    /// Replaces the journeys and journals with those SaveDelta() wrote against `base`, its plans rebuilt over `map` and
+    /// `paths` (core::Rebuild()), checked against `state` and `map` (none in a scene without the world map, where the
+    /// table must be empty). False, failing `archive` and changing nothing, on a malformed table: base places out of
+    /// order, repeated or past `base`'s journeys; a plan with no `map` and `paths` to rebuild it, with no member, a city
+    /// that isn't one of `map`, a tile off it, a route that is empty (the tile impassable or the destination unreachable),
+    /// a departure too near an i64's most for its journey's ticks to fit, or a rebuild that doesn't start at its
+    /// departure; then, of the table made, journeys out of their first members' order, a journey without members or
+    /// parts, a member that isn't a world NPC of `state`, is in two journeys or is listed twice in one, a city or stay that
+    /// isn't a city of `map`, parts that don't follow on from each other, a leg of an unknown shape or profile, with a tile
+    /// off the map, a non-finite origin, arrive ticks not one per tile, from 0 and rising, or an end tick past an i64's
+    /// range, a stay ending before it starts, lasting more ticks than a u32 holds or ending within a day of an i64's most;
+    /// journals out of their NPCs' order, empty, for an NPC not in `state`, longer than its NPC keeps, or naming a city or
+    /// profile `map` lacks; or months that don't match the journeys: a member whose month isn't Action::Travel, or an NPC
+    /// whose month is Action::Travel on no journey (with or without the map).
+    [[nodiscard]] bool LoadDelta(
         core::Reader& archive,
+        const Travel& base,
         const core::State& state,
-        const core::WorldMap& map,
-        core::Paths& paths
+        const core::WorldMap* map,
+        core::Paths* paths
     );
 
 private:
@@ -217,7 +203,8 @@ private:
         }
     };
 
-    /// Replaces the journeys and journals with `journeys` and `journals`, read from `archive`, if they pass Load()'s checks.
+    /// Replaces the journeys and journals with `journeys` and `journals`, read from `archive`, if they pass LoadDelta()'s
+    /// checks on the table made.
     [[nodiscard]] bool Adopt(
         core::Reader& archive,
         const core::State& state,

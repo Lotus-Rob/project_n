@@ -430,7 +430,8 @@ TEST_CASE("a world clock reaching its month's end runs the month step through th
     // after that tick, publishing the transition, then runs it on the next.
     constexpr u64 BURST = 3;
     const Folder folder{ "month_end" };
-    const std::vector<std::byte> start = test::WorldSaveAt({ .ticks = game::TICKS_PER_MONTH - 1, .months = 0 });
+    const core::GameData shipped = test::ShippedData(); // what a Session started from a save runs on
+    const std::vector<std::byte> start = test::WorldSaveAt({ .ticks = game::TICKS_PER_MONTH - 1, .months = 0 }, &shipped);
     Session session(folder.Path(), start);
     REQUIRE(session.started);
     REQUIRE(session.host.Current().key == game::WORLD_SCENE);
@@ -455,10 +456,24 @@ TEST_CASE("a world clock reaching its month's end runs the month step through th
 std::vector<std::byte> CultivatorOnTheMap() {
     core::State state{ game::DOMAINS, test::EMPTY_SAVE_SEED };
     const auto [player, entity] = state.Create(game::ACTIVE, core::IdRange::Scene);
-    const core::Vec2 start = test::ShippedWorld()->StartCentre();
+    const core::GameData shipped = test::ShippedData(); // what a Session started from a save runs on
+    const core::Vec2 start = shipped.world->StartCentre();
     state[game::ACTIVE].Entities().emplace<game::Body>(entity, start, start);
     return test::ArenaSave(
-        state, player, std::nullopt, std::nullopt, std::nullopt, game::WORLD_SCENE, test::WORLD_VERSION, test::ACTIVE_VERSION
+        state,
+        player,
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        game::WORLD_SCENE,
+        test::WORLD_VERSION,
+        test::ACTIVE_VERSION,
+        {},
+        game::Travel{},
+        std::nullopt,
+        game::Relationships{},
+        {},
+        &shipped
     );
 }
 

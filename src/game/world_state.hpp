@@ -24,6 +24,13 @@ inline constexpr u32 GENERATOR_VERSION = 1;
 
 /// Everything a world is: its entities, relationships and travel, its world clock, the month steps run on it and the
 /// player's world pause.
+///
+/// Its order is part of what it is: a save sorts the state into canonical order and a load gives it back sorted, and
+/// GenerateWorld() leaves it sorted, so a game that saves runs on exactly as one that never did only while nothing
+/// creates, destroys or moves an entity of the game's world between saves, outside GenerateWorld() and a load. The month
+/// step and travel change components only, and no game scene brings an NPC into its own domain yet, so a scene build's
+/// Deactivate() moves none back. A change that does (folding or materialising NPCs in a game scene) must leave the
+/// world in canonical order again (core::State::SortCanonical()) before the tick ends.
 struct WorldState {
     /// A world of `worldState`'s entities, with no relationships, no travel, the calendar at its start, not paused.
     /// A constructor rather than an aggregate: core::State has no default, and MSVC warns (C4623) where an aggregate's
@@ -54,8 +61,10 @@ struct WorldState {
 /// and `data`: each city of the world map's `people` as world NPCs homed in it, city by city in place order, seven tenths
 /// on the city's tile and each of the rest on a tile of its region drawn for its running index, each with StartingPower();
 /// then the travel of the month before the calendar's start and of its first month (Travel::Seed(), over `paths`, which
-/// must route over that map), so the roads are busy from the first frame. Nothing else feeds it, so the same seed, data and
-/// GENERATOR_VERSION make the same world, entity for entity. Without a world map it makes nothing and `paths` may be null.
+/// must route over that map), so the roads are busy from the first frame. Its state is left in canonical order
+/// (core::State::SortCanonical()), as a save leaves it (WorldState says what keeps it so). Nothing else feeds it, so the same
+/// seed, data and GENERATOR_VERSION make the same world, entity for entity, in the same order. Without a world map it makes
+/// nothing and `paths` may be null.
 void GenerateWorld(WorldState& world, const core::GameData& data, core::Paths* paths);
 
 } // namespace game

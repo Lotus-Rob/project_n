@@ -130,6 +130,23 @@ TEST_CASE("the two counters never meet or reuse an ID") {
     CHECK(next.Create(WORLD, core::IdRange::World).first == core::StableId{ 1 });
 }
 
+TEST_CASE("a world counter moved on hands out from there, and IDs restored below it are taken") {
+    constexpr u64 MADE = 3;   // a world made with three entities
+    constexpr u64 SAVED = 10; // a save of it holds seven more handed out since
+    core::State state{ 2, SEED };
+    for (u64 made = 0; made < MADE; ++made) {
+        static_cast<void>(state.Create(WORLD, core::IdRange::World));
+    }
+    REQUIRE(state.Ids().next == MADE + 1);
+    state.SetIds(core::StableIdCounter{ .next = SAVED });
+    CHECK(state.Ids().next == SAVED);
+    CHECK(state.Restore(WORLD, core::StableId{ SAVED - 1 }));   // created since the world was made: below the counter
+    CHECK_FALSE(state.Restore(WORLD, core::StableId{ SAVED })); // never handed out
+    CHECK(state.Create(WORLD, core::IdRange::World).first == core::StableId{ SAVED });
+    state.SetIds(core::StableIdCounter{ .next = BASE - 1 }); // as far as it may go
+    CHECK(state.Create(WORLD, core::IdRange::World).first == core::StableId{ BASE - 1 });
+}
+
 TEST_CASE("counters fit only while each has an ID of its own range left to hand out") {
     const auto fit = [](u64 world, u64 scene) {
         return core::State::CountersFit(core::StableIdCounter{ .next = world }, core::StableIdCounter{ .next = scene });
