@@ -13,6 +13,10 @@
 /// their values, the places that lost it, and (unless it is empty) the places whose fields changed, a mask of changed
 /// fields for each, and then, field by field, each of those entities' new value of it, in place order. Every count
 /// and place is a u64.
+///
+/// A delta says nothing of order, which iteration follows: SaveDomainOrder() writes it beside, each storage as one
+/// byte when it holds the base's entities in the base's order (all a load of the delta leaves it in), else its
+/// entities' stable IDs in storage order.
 
 #include "core/archive.hpp"
 #include "core/assert.hpp"
@@ -355,6 +359,97 @@ void LoadComponentChanges(Reader& archive, Domain& domain, std::span<const Stabl
     }
 }
 
+/// Whether `now`'s storage of `Component` holds the entities of `base`'s, by stable ID, in the same order.
+template<typename Component>
+[[nodiscard]] bool SameOrder(const Domain& base, const Domain& now) {
+    const auto* before = base.Entities().storage<Component>();
+    const auto* after = now.Entities().storage<Component>();
+    const std::size_t count = after == nullptr ? 0 : after->size();
+    if ((before == nullptr ? 0 : before->size()) != count) {
+        return false;
+    }
+    for (std::size_t index = 0; index < count; ++index) {
+        if (base.Entities().get<StableId>((*before)[index]) != now.Entities().get<StableId>((*after)[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// Writes `Component`'s part of an order (SaveDomainOrder()): 1 when `now`'s storage of it is in `base`'s order, else
+/// 0, its size and its entities' stable IDs in storage order.
+template<typename Component, typename Archive>
+void SaveStorageOrder(Archive& archive, const Domain& base, const Domain& now) {
+    if (SameOrder<Component>(base, now)) {
+        archive(u8{ 1 });
+        return;
+    }
+    archive(u8{ 0 });
+    const Registry& registry = now.Entities();
+    const auto* storage = registry.storage<Component>();
+    const u64 count = storage == nullptr ? 0 : storage->size();
+    archive(count);
+    for (std::size_t index = 0; index < count; ++index) {
+        archive(registry.get<StableId>((*storage)[index]));
+    }
+}
+
+/// Reads the stable IDs of an order written for a storage of `size` entities into the entities `domain` has for them,
+/// in the order written; fails `archive`, returning what it read so far, unless there are exactly `size`, each an
+/// entity of the domain that `has(entity)` accepts, none twice.
+template<typename Has>
+[[nodiscard]] std::vector<Entity> ReadOrder(Reader& archive, const Domain& domain, std::size_t size, Has has) {
+    u64 count = 0;
+    archive(count);
+    std::vector<Entity> order;
+    if (archive.Failed() || count != size || count > archive.Remaining() / sizeof(StableId)) {
+        archive.Fail();
+        return order;
+    }
+    order.reserve(size);
+    for (u64 i = 0; i < count; ++i) {
+        StableId stableId{};
+        archive(stableId);
+        const Entity entity = archive.Failed() ? Entity{ entt::null } : domain.Find(stableId);
+        if (entity == Entity{ entt::null } || !has(entity)) {
+            archive.Fail();
+            return order;
+        }
+        order.push_back(entity);
+    }
+    // As many as the storage holds, each in it: a permutation of it unless one came twice.
+    std::vector<Entity> sorted = order;
+    std::ranges::sort(sorted);
+    if (std::ranges::adjacent_find(sorted) != sorted.end()) {
+        archive.Fail();
+    }
+    return order;
+}
+
+/// Reads `Component`'s part of an order (SaveDomainOrder()) and puts `domain`'s storage of it in the order read.
+template<typename Component>
+void LoadStorageOrder(Reader& archive, Domain& domain) {
+    u8 kept = 0;
+    archive(kept);
+    if (archive.Failed() || kept > 1) {
+        archive.Fail();
+        return;
+    }
+    if (kept == 1) {
+        return;
+    }
+    Registry& registry = domain.Entities();
+    const auto* present = std::as_const(registry).storage<Component>();
+    const std::size_t size = present == nullptr ? 0 : present->size();
+    const std::vector<Entity> order =
+        ReadOrder(archive, domain, size, [present](Entity entity) { return present->contains(entity); });
+    if (archive.Failed() || order.empty()) {
+        return;
+    }
+    // EnTT iterates a storage from its last element to its first, and sort_as() follows that direction.
+    registry.storage<Component>().sort_as(order.rbegin(), order.rend());
+}
+
 } // namespace detail
 
 /// Writes `now` as its difference from `base` into `archive` (a Writer or a Hasher), `Components` by their fields: the
@@ -446,6 +541,29 @@ template<typename... Components>
         .created = entities.created.size(),
         .changed = static_cast<u64>(std::ranges::count(changed, u8{ 1 })),
     };
+}
+
+/// Writes into `archive` (a Writer or a Hasher) the order of `now`'s storages, its stable IDs' and then each of
+/// `Components`', where a load of its delta from `base` (LoadDomainDelta()) wouldn't give it back: per storage, a u8 of 1
+/// when it holds `base`'s entities in `base`'s order (which a load leaves it in, as a delta changing none of them only
+/// replaces values), else 0, a u64 count and its entities' stable IDs in storage order.
+template<typename Archive, typename... Components>
+void SaveDomainOrder(Archive& archive, const Domain& base, const Domain& now, ComponentList<Components...> /*components*/) {
+    detail::SaveStorageOrder<StableId>(archive, base, now);
+    (detail::SaveStorageOrder<Components>(archive, base, now), ...);
+}
+
+/// Reads what SaveDomainOrder() wrote and puts `domain`'s storages, loaded from the base and the delta, in the order it
+/// gives: a storage written as the base's is left as it is, the others put in the order of the IDs written. Fails
+/// `archive` on anything malformed: a mark other than 0 or 1, a count other than the storage's size, an ID the storage
+/// lacks or given twice, or bytes running out. A domain whose order failed is to be thrown away.
+template<typename... Components>
+void LoadDomainOrder(Reader& archive, Domain& domain, ComponentList<Components...> /*components*/) {
+    if (archive.Failed()) {
+        return;
+    }
+    detail::LoadStorageOrder<StableId>(archive, domain);
+    ((archive.Failed() ? void() : detail::LoadStorageOrder<Components>(archive, domain)), ...);
 }
 
 } // namespace core

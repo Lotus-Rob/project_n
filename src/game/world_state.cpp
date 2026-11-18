@@ -4,11 +4,15 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/random.hpp"
 #include "core/world_map.hpp"
+#include "game/combat.hpp"
 #include "game/random_purposes.hpp"
 
 namespace game {
 
 namespace {
+
+// A dev scene's crowd stands on the cells of a 64 by 64 grid in turn.
+constexpr u32 WORLD_CELLS = 4'096;
 
 // Of every ten of a city's people, this many live on the city's own tile; the rest are spread over its region.
 constexpr u32 TENTHS_ON_CITY_TILE = 7;
@@ -57,8 +61,50 @@ void GenerateWorld(WorldState& world, const core::GameData& data, core::Paths* p
     if (paths != nullptr) { // with assertions off, a map without routes gives a world whose NPCs never set out
         world.travel.Seed(world.state, *data.world, *paths, world.state.Seed(), 0, 0);
     }
-    // A save sorts the state and a load gives it back sorted: a world that starts sorted iterates alike either way.
+    // Stable-ID order, which the month step and travel visit the NPCs in, rather than the order generation made them in.
     world.state.SortCanonical();
+}
+
+WorldContext::~WorldContext() = default; // out of line: the vtable's home
+
+core::Entity WorldContext::Spawn(core::Vec2 foot, const Look& look) {
+    core::State& state = m_world->state;
+    const core::Entity entity = state.Create(ACTIVE, core::IdRange::Scene).second;
+    state[ACTIVE].Entities().emplace<Body>(entity, foot, foot);
+    state[ACTIVE].Entities().emplace<Look>(entity, look);
+    return entity;
+}
+
+core::Entity WorldContext::SpawnFox(const Orbit& orbit, core::Vec2 foot) {
+    const core::Entity entity = Spawn(foot, { .sprite = m_data->fox.sprite, .shadow = true });
+    core::Registry& entities = m_world->state[ACTIVE].Entities();
+    entities.emplace<Orbit>(entity, orbit);
+    entities.emplace<Creature>(entity, CreatureKind::Fox);
+    entities.emplace<Health>(entity, m_data->fox.health, m_data->fox.health);
+    return entity;
+}
+
+core::Entity WorldContext::SpawnPlayer(core::Vec2 foot) {
+    const core::Entity entity = Spawn(foot, { .sprite = m_data->cultivator.sprite, .shadow = true });
+    core::Registry& entities = m_world->state[ACTIVE].Entities();
+    entities.emplace<Creature>(entity, CreatureKind::Cultivator);
+    entities.emplace<Health>(entity, m_data->cultivator.health, m_data->cultivator.health);
+    entities.emplace<Caster>(entity, m_data->abilities.qiStart);
+    *m_player = entities.get<core::StableId>(entity);
+    return entity;
+}
+
+void WorldContext::Damage(core::StableId target, i64 amount, u64 tick) {
+    Combat::Damage(m_world->state, target, amount, tick);
+}
+
+void BuildScratch(WorldState& world, const Scene& scene, SceneContext& context) {
+    PN_ASSERT(scene.Traits().devScene, "a game scene built as a dev scene's scratch world");
+    PN_ASSERT(&context.State() == &world.state, "a dev scene built into another world than its context's");
+    scene.Build(context);
+    for (u32 npc = 0; npc < scene.Traits().worldNpcs; ++npc) {
+        SpawnNpc(world.state, npc % WORLD_CELLS);
+    }
 }
 
 } // namespace game

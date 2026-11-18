@@ -110,15 +110,24 @@ inline constexpr u16 DANGER = 2;
 inline constexpr u32 ROAD_END = 5;
 /// The ticks per cost of the second profile SmallWorld(true) adds.
 inline constexpr u16 RIDDEN_TICKS_PER_COST = 8;
+/// The shipped map's travel rules, which TravellingSmallData() gives the small map: its two cities in each other's
+/// reach, so a month step sends visitors between them.
+inline constexpr core::TravelRules TRAVEL{ .sharePerMille = 60,
+                                           .stayMinDays = 2,
+                                           .stayMaxDays = 5,
+                                           .reachBase = 300,
+                                           .reachPerPower = 20,
+                                           .cultivatorPower = 5.0F };
 } // namespace small
 
 /// The small test map: 7 by 3 tiles of meadow but for impassable peaks on the last tile (the bottom row's right end),
 /// city small::HOME (the start) at tile 0, a road over tiles 1 to 5 of the top row and city small::DESTINATION at tile 6,
 /// its right end, each of small::PEOPLE, and a danger, small::DANGER, in the bottom row's middle. Its one profile is the
-/// default on_foot; with `secondProfile` a `ridden` one twice as fast follows it. A test binary that can't build it stops at
-/// once, as ShippedWorld() does.
-[[nodiscard]] inline core::WorldMap SmallWorldMap(bool secondProfile = false) {
+/// default on_foot; with `secondProfile` a `ridden` one twice as fast follows it. Its travellers follow `travel`: by
+/// default they reach nowhere, so nobody travels. A test binary that can't build it stops at once, as ShippedWorld() does.
+[[nodiscard]] inline core::WorldMap SmallWorldMap(bool secondProfile = false, const core::TravelRules& travel = {}) {
     core::WorldMapSource source;
+    source.travel = travel;
     source.columns = small::COLUMNS;
     source.rows = small::ROWS;
     source.tileSize = small::TILE;
@@ -174,9 +183,12 @@ inline constexpr u16 RIDDEN_TICKS_PER_COST = 8;
     return *std::move(built);
 }
 
-/// SmallWorldMap(`secondProfile`), shared as game data holds a map.
-[[nodiscard]] inline std::shared_ptr<const core::WorldMap> SmallWorld(bool secondProfile = false) {
-    return std::make_shared<const core::WorldMap>(SmallWorldMap(secondProfile));
+/// SmallWorldMap(`secondProfile`, `travel`), shared as game data holds a map.
+[[nodiscard]] inline std::shared_ptr<const core::WorldMap> SmallWorld(
+    bool secondProfile = false,
+    const core::TravelRules& travel = {}
+) {
+    return std::make_shared<const core::WorldMap>(SmallWorldMap(secondProfile, travel));
 }
 
 /// A names table of one surname and one given character.
@@ -192,6 +204,15 @@ inline constexpr u16 RIDDEN_TICKS_PER_COST = 8;
 [[nodiscard]] inline core::GameData SmallData(bool secondProfile = false) {
     core::GameData data = game::BuiltInData();
     data.world = SmallWorld(secondProfile);
+    data.names = SmallNames();
+    return data;
+}
+
+/// SmallData() whose map has the shipped travel rules (small::TRAVEL): a month step there sends visitors between its
+/// cities, so its world's journeys end and begin.
+[[nodiscard]] inline core::GameData TravellingSmallData() {
+    core::GameData data = game::BuiltInData();
+    data.world = SmallWorld(false, small::TRAVEL);
     data.names = SmallNames();
     return data;
 }

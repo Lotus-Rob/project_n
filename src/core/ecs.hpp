@@ -62,8 +62,8 @@ public:
     [[nodiscard]] Entity Find(StableId stableId) const;
 
     /// Sorts every component storage by stable ID, so iteration no longer depends on the order of
-    /// past creations and destructions: done at every save and when a recording starts, and a
-    /// load creates entities in this order.
+    /// past creations and destructions: done when a world is generated. A save never sorts: it keeps
+    /// the order the state runs in, which a load gives back.
     void SortCanonical();
 
 private:

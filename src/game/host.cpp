@@ -44,8 +44,6 @@ constexpr u32 DEBUG_BURST_HITS = 4'000;
 constexpr u32 DEBUG_BURST_MAX = 99;
 constexpr u32 USE_DEBUG_BURST = 2; // the burst's ability use source (core::AbilityUse); the arena's aura is 1
 
-// The world NPCs a scene asks for live over the map, a dozen to a cell.
-constexpr u32 WORLD_CELLS = 4'096;
 constexpr u64 SEED = 0x5eed;
 
 // The portal as drawn: a ground seal twice its step area (PORTAL_RADIUS), so the step lands on its inner rings, and its
@@ -69,13 +67,16 @@ constexpr f32 MIDDLE = 0.5F;
 // 2: the player and the selection; 3: the respawns waiting, the volleys and the flashes; 4: the seals; 5: the world clock,
 // the month steps run and the world pause in place of the months passed; 6: the player's route; 7: the scene's own stable-ID
 // counter; 8: the game's world, a dev scene's scratch world and the scene in sections of their own, and the place on the
-// world map the cultivator comes back to; 9: the game's world as its difference from the world its seed makes
-constexpr u32 ARENA_FORMAT = 9;
+// world map the cultivator comes back to; 9: the game's world as its difference from the world its seed makes; 10: every
+// storage in the order it ran in, never sorted for a save, and a dev scene's scratch world as its difference from its
+// entry build
+constexpr u32 ARENA_FORMAT = 10;
 constexpr u32 ACTIVE_VERSION =
     5; // 2: creatures; 3: spin; 4: health, dying, arriving, caster, dashing, afflictions; 5: the NPCs' homes
 // 2: the NPCs' homes; 3: the travelling action, the journeys and the journals; 4: the game's world as its difference from
-// its base, a dev scene's journeys as their difference from none
-constexpr u32 WORLD_VERSION = 4;
+// its base, a dev scene's journeys as their difference from none; 5: the world domain's order beside its difference, and a
+// dev scene's world as its difference from its entry build
+constexpr u32 WORLD_VERSION = 5;
 using ActiveComponents = core::ComponentList<
     Body,
     Look,
@@ -117,21 +118,26 @@ void HashWorld(core::Hasher& hasher, const WorldState& world) {
     world.travel.Save(hasher);
 }
 
-/// Writes a dev scene's scratch world's section of a save into `archive`, whole: as HashWorld() hashes it, but its travel
-/// as its difference from none (Travel::SaveDelta()), the one way a save's travel is read.
-void WriteScratch(core::Writer& archive, const WorldState& world) {
-    archive(world.state.Seed(), world.state.Ids().next);
+/// Writes a dev scene's scratch world's section of a save into `archive` as its difference from `base`, the world the
+/// scene's entry build made (BuildScratch()), whose seed it shares: the world stable-ID counter, the calendar, the pause
+/// and the place on the world map, then the world domain's difference (core::SaveDomainDelta()) and order
+/// (core::SaveDomainOrder()), the relationships whole and the travel as its difference from none (Travel::SaveDelta()),
+/// as no dev scene shows the world map.
+void WriteScratch(core::Writer& archive, const WorldState& world, const WorldState& base) {
+    archive(world.state.Ids().next);
     WriteClock(archive, world);
     archive(WORLD_VERSION);
-    core::SaveDomain(archive, world.state[WORLD], WorldComponents{});
+    core::SaveDomainDelta(archive, base.state[WORLD], world.state[WORLD], WorldComponents{});
+    core::SaveDomainOrder(archive, base.state[WORLD], world.state[WORLD], WorldComponents{});
     world.relationships.Save(archive);
     world.travel.SaveDelta(archive, Travel{}, nullptr, nullptr);
 }
 
 /// Writes the game's world's section of a save into `archive` as its difference from `base`, the world as it was made
 /// from data of base hash `baseHash`: the seed, GENERATOR_VERSION, `baseHash`, the world stable-ID counter, the calendar,
-/// the pause and the place on the world map, then the world domain's difference, the relationships whole and the
-/// travel's difference, its journeys rebuilt over `map` and `paths` (null without a map) to tell a plan from a whole one.
+/// the pause and the place on the world map, then the world domain's difference and order, the relationships whole and
+/// the travel's difference, its journeys rebuilt over `map` and `paths` (null without a map) to tell a plan from a whole
+/// one.
 void WriteGameWorld(
     core::Writer& archive,
     const WorldState& world,
@@ -144,6 +150,7 @@ void WriteGameWorld(
     WriteClock(archive, world);
     archive(WORLD_VERSION);
     core::SaveDomainDelta(archive, base.state[WORLD], world.state[WORLD], WorldComponents{});
+    core::SaveDomainOrder(archive, base.state[WORLD], world.state[WORLD], WorldComponents{});
     world.relationships.Save(archive);
     world.travel.SaveDelta(archive, base.travel, map, paths);
 }
@@ -175,33 +182,6 @@ void SetClock(WorldState& world, const Clock& clock) {
     world.mapPlace = clock.place;
 }
 
-/// Reads the section WriteScratch() wrote into a world whose state hands out scene IDs from `sceneIds`. Fails `archive`
-/// on anything malformed, and on any travel (a dev scene never shows the world map): a world read from a failed archive is
-/// to be thrown away.
-WorldState ReadScratch(core::Reader& archive, core::StableIdCounter sceneIds) {
-    u64 seed = 0;
-    u64 next = 0;
-    archive(seed, next);
-    const Clock clock = ReadClock(archive);
-    // Counters outside their ranges would let the two ranges' IDs meet; the state built in their place is thrown away.
-    const core::StableIdCounter ids{ .next = next };
-    const bool countersFit = core::State::CountersFit(ids, sceneIds);
-    if (!countersFit) {
-        archive.Fail();
-    }
-    WorldState world{ countersFit ? core::State{ DOMAINS, seed, ids, sceneIds } : core::State{ DOMAINS, seed } };
-    u32 version = 0;
-    archive(version);
-    if (version != WORLD_VERSION) {
-        archive.Fail();
-    }
-    core::LoadDomain(archive, world.state, WORLD, WorldComponents{});
-    world.relationships.Load(archive); // checked against the state once the scene's domain is read too (Within())
-    static_cast<void>(world.travel.LoadDelta(archive, Travel{}, world.state, nullptr, nullptr)); // a refusal fails `archive`
-    SetClock(world, clock);
-    return world;
-}
-
 /// Gives each entity of `into` that `from` has `Component` on (every one of them, by stable ID) a copy of it, in `from`'s
 /// storage order, so the copy iterates as the original does.
 template<typename Component>
@@ -229,13 +209,13 @@ void CopyStorages(const core::Domain& from, core::Domain& into, core::ComponentL
     (CopyStorage<Components>(from, into), ...);
 }
 
-/// A copy of `made`, a world as GenerateWorld() made it (its active domain empty): its world domain's entities and
-/// components (those a save holds) in the same storage order, its travel, relationships, calendar and counters. Far
-/// cheaper than making it again, which routes every journey, and the same world, as making it is a pure function of the
-/// seed and the data.
+/// A copy of `made`, a world as GenerateWorld() or BuildScratch() made it, without its scene: its world domain's entities
+/// and components (those a save holds) in the same storage order, its travel, relationships, calendar and world-ID
+/// counter, its active domain empty and its scene-ID counter at its range's start. Far cheaper than making it again,
+/// which routes every journey, and the same world, as making it is a pure function of the seed and the data.
 WorldState CopyOf(const WorldState& made) {
-    PN_ASSERT(made.state[ACTIVE].Entities().view<const core::StableId>().empty(), "a world copied with a scene in it");
-    WorldState copy{ core::State{ DOMAINS, made.state.Seed(), made.state.Ids(), made.state.SceneIds() } };
+    WorldState copy{ core::State{
+        DOMAINS, made.state.Seed(), made.state.Ids(), core::StableIdCounter{ .next = core::SCENE_ID_BASE } } };
     const core::Domain& from = made.state[WORLD];
     const auto* ids = from.Entities().storage<core::StableId>();
     for (std::size_t index = 0; ids != nullptr && index < ids->size(); ++index) {
@@ -256,7 +236,8 @@ WorldState CopyOf(const WorldState& made) {
 /// the base it was written against (in that order), the base made again (GenerateWorld()) from the section's seed and
 /// `data`, routed over `paths` (null without a map), and the world a copy of it. Fails `archive` on anything malformed, logging
 /// which of these refused it: another generator version, other world data (core::GameData::BaseHash()), a world-ID counter
-/// behind the base's, a world domain's difference core::LoadDomainDelta() refuses, or journeys Travel::LoadDelta() refuses.
+/// behind the base's, a world domain's difference core::LoadDomainDelta() or order core::LoadDomainOrder() refuses, or
+/// journeys Travel::LoadDelta() refuses.
 /// Nothing is made for a section refused before its difference is read; worlds read from a failed archive are to be thrown
 /// away.
 std::pair<WorldState, WorldState> ReadGameWorld(
@@ -317,14 +298,74 @@ std::pair<WorldState, WorldState> ReadGameWorld(
         PN_LOG_WARNING("save refused: its world's difference from the world its seed makes is malformed");
         return made;
     }
-    // In the order the saved world was sorted into, so the loaded one iterates as it did.
-    world.state.SortCanonical();
+    // In the order the saved world ran in, so the loaded one iterates as it did.
+    core::LoadDomainOrder(archive, world.state[WORLD], WorldComponents{});
+    if (archive.Failed()) {
+        PN_LOG_WARNING("save refused: its world's order is malformed");
+        return made;
+    }
     world.relationships.Load(archive); // checked against the state once the scene's domain is read too (Within())
     if (!archive.Failed() && !world.travel.LoadDelta(archive, generated.travel, world.state, data.world.get(), paths)) {
         PN_LOG_WARNING(
             "save refused: its journeys' difference from those its seed makes is malformed or doesn't fit its world"
         );
     }
+    SetClock(world, clock);
+    return made;
+}
+
+/// A dev scene's scratch world as the section WriteScratch() wrote holds it, its state handing out scene IDs from
+/// `sceneIds`, and the base it was written against (in that order), which `makeBase()` gives (the scene's entry build,
+/// BuildScratch()), and the world a copy of it. Fails `archive` on anything malformed, logging a world-ID counter behind
+/// the base's, or a world domain's difference or order that core::LoadDomainDelta() or core::LoadDomainOrder() refuses;
+/// and on any travel, as a dev scene never shows the world map. No base is asked for when the section is refused before
+/// its difference is read; worlds read from a failed archive are to be thrown away.
+template<typename MakeBase>
+std::pair<WorldState, std::shared_ptr<const WorldState>> ReadScratch(
+    core::Reader& archive,
+    core::StableIdCounter sceneIds,
+    const MakeBase& makeBase
+) {
+    u64 next = 0;
+    archive(next);
+    const Clock clock = ReadClock(archive);
+    u32 version = 0;
+    archive(version);
+    const core::StableIdCounter ids{ .next = next };
+    if (version != WORLD_VERSION || !core::State::CountersFit(ids, sceneIds)) {
+        archive.Fail();
+    }
+    if (archive.Failed()) {
+        // Parentheses, as MSVC warns that it can't keep a braced list's order with temporaries (C4868).
+        std::pair<WorldState, std::shared_ptr<const WorldState>> refused(WorldState(core::State(DOMAINS, SEED)), nullptr);
+        return refused;
+    }
+    std::shared_ptr<const WorldState> base = makeBase();
+    std::pair<WorldState, std::shared_ptr<const WorldState>> made(CopyOf(*base), std::move(base));
+    WorldState& world = made.first;
+    world.state.SetSceneIds(sceneIds);
+    if (ids.next < world.state.Ids().next) {
+        PN_LOG_WARNING(
+            "save refused: its scratch world's next ID, {}, is behind the {} its scene's build hands out",
+            ids.next,
+            world.state.Ids().next
+        );
+        archive.Fail();
+        return made;
+    }
+    world.state.SetIds(ids);
+    core::LoadDomainDelta(archive, world.state, WORLD, WorldComponents{});
+    if (archive.Failed()) {
+        PN_LOG_WARNING("save refused: its scratch world's difference from its scene's build is malformed");
+        return made;
+    }
+    core::LoadDomainOrder(archive, world.state[WORLD], WorldComponents{});
+    if (archive.Failed()) {
+        PN_LOG_WARNING("save refused: its scratch world's order is malformed");
+        return made;
+    }
+    world.relationships.Load(archive); // checked against the state once the scene's domain is read too (Within())
+    static_cast<void>(world.travel.LoadDelta(archive, Travel{}, world.state, nullptr, nullptr)); // a refusal fails `archive`
     SetClock(world, clock);
     return made;
 }
@@ -551,55 +592,6 @@ core::GameData BuiltInData() {
     };
 }
 
-/// What a scene's hooks reach the host through: only for the length of one call.
-class Host::Context final : public SceneContext {
-public:
-    explicit Context(Host& host)
-      : m_host{ &host } {
-    }
-    Context(const Context&) = delete;
-    Context& operator=(const Context&) = delete;
-    Context(Context&&) = delete;
-    Context& operator=(Context&&) = delete;
-    ~Context() override;
-
-    [[nodiscard]] core::State& State() override {
-        return m_host->Live().state;
-    }
-    [[nodiscard]] const core::State& State() const override {
-        return m_host->Live().state;
-    }
-    [[nodiscard]] const core::Manifest& Manifest() const override {
-        return *m_host->m_manifest;
-    }
-    [[nodiscard]] const core::GameData& Data() const override {
-        return m_host->m_data;
-    }
-    core::Entity Spawn(core::Vec2 foot, const Look& look) override {
-        return m_host->Spawn(foot, look);
-    }
-    core::Entity SpawnFox(const Orbit& orbit, core::Vec2 foot) override {
-        return m_host->SpawnFox(orbit, foot);
-    }
-    core::Entity SpawnPlayer(core::Vec2 foot) override {
-        return m_host->SpawnPlayer(foot);
-    }
-    [[nodiscard]] core::StableId Player() const override {
-        return m_host->m_player;
-    }
-    void Damage(core::StableId target, i64 amount, u64 tick) override {
-        m_host->Damage(target, amount, tick);
-    }
-    [[nodiscard]] std::optional<core::Vec2> MapPlace() const override {
-        return m_host->Live().mapPlace;
-    }
-
-private:
-    Host* m_host;
-};
-
-Host::Context::~Context() = default; // out of line: the vtable's home
-
 bool Host::IsCombatScene() const {
     return Running().Traits().combat;
 }
@@ -619,12 +611,31 @@ std::optional<core::SceneFacts> Host::Requested() const {
     return m_requested.transform([this](core::SceneKey scene) { return FactsOf(scene); });
 }
 
+WorldContext Host::LiveContext() {
+    return WorldContext{ Live(), *m_manifest, m_data, m_player };
+}
+
+std::shared_ptr<const WorldState> Host::ScratchBase(core::SceneKey scene) const {
+    if (m_scratchBase && scene == m_scratchBaseScene) {
+        return m_scratchBase;
+    }
+    auto built = std::make_shared<WorldState>(core::State{ DOMAINS, SEED });
+    core::StableId player{}; // the base's own, never the running scene's
+    WorldContext context{ *built, *m_manifest, m_data, player };
+    BuildScratch(*built, SceneOf(scene), context);
+    return built;
+}
+
 void Host::EnterScene() {
     if (m_loaded) {
         m_world = std::move(m_loaded->world);
         m_base = std::move(m_loaded->base);
         m_baseHash = m_loaded->baseHash;
         m_scratch = std::move(m_loaded->scratch);
+        if (m_loaded->scratchBase) { // a game scene's save keeps the last dev scene's base
+            m_scratchBase = std::move(m_loaded->scratchBase);
+            m_scratchBaseScene = m_loaded->scene;
+        }
         m_combat = std::move(m_loaded->combat);
         m_scene = m_loaded->scene;
         m_sceneId = SceneIdOf(*m_manifest, m_scene);
@@ -661,9 +672,11 @@ Host::Host(std::shared_ptr<const core::Manifest> manifest, core::SceneKey scene,
 }
 
 /// The running scene's fight, selection, player and route go, and so do its entities, the world NPCs it brought in going
-/// back to the game's world; a dev scene's scratch world goes whole. Then a dev scene gets a scratch world made afresh,
-/// its calendar at the start, and a game scene runs on the game's world, which keeps its calendar, its pause, its travel
-/// and its NPCs. The scene IDs carry on from the last scene's, so none is handed out twice in a session.
+/// back to the game's world; a dev scene's scratch world goes whole. Then a dev scene gets a scratch world made afresh
+/// (BuildScratch()), its calendar at the start, kept as it was made for its saves to be written against (the one kept from
+/// an earlier visit, which is the same world, when it was this scene), and a game scene
+/// runs on the game's world, which keeps its calendar, its pause, its travel and its NPCs. The scene IDs carry on from the
+/// last scene's, so none is handed out twice in a session.
 void Host::Build(core::SceneKey scene) {
     const core::StableIdCounter sceneIds = Live().state.SceneIds();
     if (!m_scratch) {
@@ -689,41 +702,20 @@ void Host::Build(core::SceneKey scene) {
     m_worldTicksBefore = world.worldTicks;
     PN_ASSERT(!traits.worldMap || m_data.world != nullptr, "a world scene built without the world map: CheckScenes()");
     PN_ASSERT(traits.devScene || traits.worldNpcs == 0, "a game scene spawning a crowd into the game's world");
-    Context context{ *this };
-    Running().Build(context);
+    WorldContext context = LiveContext();
+    if (traits.devScene) {
+        BuildScratch(world, Running(), context);
+        if (!m_scratchBase || m_scratchBaseScene != scene) {
+            m_scratchBase = std::make_shared<const WorldState>(CopyOf(world));
+            m_scratchBaseScene = scene;
+        }
+    }
+    else {
+        Running().Build(context);
+    }
     if (traits.worldMap) {
         world.mapPlace.reset(); // the cultivator stands there again, so its foot is where it is
     }
-    for (u32 npc = 0; npc < traits.worldNpcs; ++npc) {
-        SpawnNpc(world.state, npc % WORLD_CELLS);
-    }
-}
-
-core::Entity Host::Spawn(core::Vec2 foot, const Look& look) {
-    core::State& state = Live().state;
-    const core::Entity entity = state.Create(ACTIVE, core::IdRange::Scene).second;
-    state[ACTIVE].Entities().emplace<Body>(entity, foot, foot);
-    state[ACTIVE].Entities().emplace<Look>(entity, look);
-    return entity;
-}
-
-core::Entity Host::SpawnFox(const Orbit& orbit, core::Vec2 foot) {
-    const core::Entity entity = Spawn(foot, { .sprite = m_data.fox.sprite, .shadow = true });
-    core::Registry& entities = Live().state[ACTIVE].Entities();
-    entities.emplace<Orbit>(entity, orbit);
-    entities.emplace<Creature>(entity, CreatureKind::Fox);
-    entities.emplace<Health>(entity, m_data.fox.health, m_data.fox.health);
-    return entity;
-}
-
-core::Entity Host::SpawnPlayer(core::Vec2 foot) {
-    const core::Entity entity = Spawn(foot, { .sprite = m_data.cultivator.sprite, .shadow = true });
-    core::Registry& entities = Live().state[ACTIVE].Entities();
-    entities.emplace<Creature>(entity, CreatureKind::Cultivator);
-    entities.emplace<Health>(entity, m_data.cultivator.health, m_data.cultivator.health);
-    entities.emplace<Caster>(entity, m_data.abilities.qiStart);
-    m_player = entities.get<core::StableId>(entity);
-    return entity;
 }
 
 void Host::CastAction(const core::Action& action, const core::TickCounters& counters, std::vector<core::Event>& events) {
@@ -786,7 +778,7 @@ void Host::Tick(const core::TickCounters& counters, const core::TickInput& input
         PN_LOG_INFO("tick {}: the player's cultivator died and is gone", counters.simulation);
         m_player = {};
     }
-    Context context{ *this };
+    WorldContext context = LiveContext();
     for (u32 index = 0; index < respawns; ++index) {
         Running().Respawn(context, counters, index);
     }
@@ -946,12 +938,12 @@ void Host::Leave(core::SceneKey next, bool throughPortal, std::vector<core::Even
 }
 
 std::optional<core::Vec2> Host::Portal() {
-    const Context context{ *this };
+    const WorldContext context = LiveContext();
     return Running().Portal(context);
 }
 
 core::Rect Host::View() {
-    const Context context{ *this };
+    const WorldContext context = LiveContext();
     return Running().View(context);
 }
 
@@ -971,7 +963,7 @@ bool Host::OnPortal() {
 }
 
 bool Host::OnMapPortal(core::Vec2 point) {
-    const Context context{ *this };
+    const WorldContext context = LiveContext();
     return std::ranges::any_of(Scenes(), [&](const game::Scene* scene) {
         const std::optional<core::Vec2> portal = scene->Traits().worldMap ? scene->Portal(context) : std::nullopt;
         return portal.has_value() && InStepArea(point, *portal);
@@ -1258,16 +1250,14 @@ void Host::WriteScene(Archive& archive) const {
 
 void Host::Save(core::Writer& archive) {
     PN_PROFILE_ZONE();
-    // The game's world too while it is set aside, as a load gives it back sorted.
-    m_world.state.SortCanonical();
-    if (m_scratch) {
-        m_scratch->state.SortCanonical();
-    }
     // The scene stays one byte, as the scene enum was.
     archive(ARENA_FORMAT, static_cast<u8>(std::to_underlying(m_scene)), Live().state.SceneIds().next);
     WriteGameWorld(archive, m_world, m_base, m_baseHash, m_data.world.get(), m_paths ? &*m_paths : nullptr);
-    if (m_scratch) {
-        WriteScratch(archive, *m_scratch);
+    PN_ASSERT(
+        !m_scratch || (m_scratchBase && m_scratchBaseScene == m_scene), "a scratch world without the build it was made as"
+    );
+    if (m_scratch && m_scratchBase) {
+        WriteScratch(archive, *m_scratch, *m_scratchBase);
     }
     WriteScene(archive);
 }
@@ -1303,8 +1293,11 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
     const core::WorldMap* const map = m_data.world.get();
     auto [world, base] = ReadGameWorld(archive, sceneIds, m_data, m_paths ? &*m_paths : nullptr);
     std::optional<WorldState> scratch = std::nullopt;
+    std::shared_ptr<const WorldState> scratchBase;
     if (traits != nullptr && traits->devScene) {
-        scratch.emplace(ReadScratch(archive, sceneIds));
+        auto [read, built] = ReadScratch(archive, sceneIds, [this, scene] { return ScratchBase(core::SceneKey{ scene }); });
+        scratch.emplace(std::move(read));
+        scratchBase = std::move(built);
     }
     WorldState& running = scratch ? *scratch : world;
     core::StableId player{};
@@ -1342,6 +1335,7 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
         std::move(base),
         m_data.BaseHash(),
         std::move(scratch),
+        std::move(scratchBase),
         std::move(combat),
         core::SceneKey{ scene },
         player,
@@ -1437,7 +1431,7 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
         PublishRoute(snapshot);
     }
     const u32 chunks = core::ChunkCount(looks.size(), PUBLISH_CHUNK);
-    const Context context{ *this };
+    const WorldContext context = LiveContext();
     const core::Rect sceneView = Running().View(context);
     core::Vec2 start = (sceneView.min + sceneView.max) * MIDDLE;
     if (m_player != core::StableId{}) {

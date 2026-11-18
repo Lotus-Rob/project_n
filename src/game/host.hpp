@@ -115,25 +115,27 @@ public:
     /// clock stands still until AdvanceCalendar() runs.
     [[nodiscard]] bool MonthDue() const override;
 
-    /// Sorts the game's world's state, and a dev scene's scratch world's while one runs, into canonical order and writes
-    /// into `archive` a header (the scene and the session's scene-ID counter), then the game's world as its difference
-    /// from the world as it was made: the base's identity (the seed, GENERATOR_VERSION and the hash of the data it was
-    /// made from, core::GameData::BaseHash()), the world-ID counter, the world clock, the month steps run, the world
-    /// pause and the place on the map, the world domain's difference (core::SaveDomainDelta()), the relationships whole
-    /// and the travel's difference (Travel::SaveDelta(): its journeys rebuilt over the map to choose between a plan and a
-    /// whole journey); then, while a dev scene runs, its scratch world whole (its seed, world-ID counter, clock, month
-    /// steps, pause, place, world domain, relationships, and its travel as its difference from none); then the scene
-    /// (the player, the selection, the active domain, the player's route and the fight).
+    /// Writes into `archive` a header (the scene and the session's scene-ID counter), then the game's world as its
+    /// difference from the world as it was made: the base's identity (the seed, GENERATOR_VERSION and the hash of the data
+    /// it was made from, core::GameData::BaseHash()), the world-ID counter, the world clock, the month steps run, the
+    /// world pause and the place on the map, the world domain's difference (core::SaveDomainDelta()) and order
+    /// (core::SaveDomainOrder()), the relationships whole and the travel's difference (Travel::SaveDelta(): its journeys
+    /// rebuilt over the map to choose between a plan and a whole journey); then, while a dev scene runs, its scratch world
+    /// as its difference from the world the scene's entry build made (its world-ID counter, clock, month steps, pause,
+    /// place, its world domain's difference and order, its relationships, and its travel as its difference from none);
+    /// then the scene (the player, the selection, the active domain in storage order, the player's route and the fight).
+    /// It changes nothing, the order of every storage included, so a game that saves runs on as one that never did.
     void Save(core::Writer& archive) override;
 
     /// Reads and checks the state Save() wrote at simulation tick `simulationTick` and holds it, changing nothing else:
     /// Requested() names its scene until EnterScene() makes it current, its creatures taking the game data in use then.
     /// The game's world is made again from the save's seed and the game data in use (the base, kept as it was made), and
-    /// the save's difference applied to a copy of it, the world to run.
+    /// the save's difference applied to a copy of it, the world to run; a dev scene's scratch world likewise from the
+    /// scene's entry build (BuildScratch()). Each storage comes back in the order it was saved in.
     /// False, holding nothing new, when the bytes are malformed, of another version, from another GENERATOR_VERSION or
-    /// world data (core::GameData::BaseHash(); each logged, saying which), with a game's world that differs from its base
-    /// as no game could (core::LoadDomainDelta() or Travel::LoadDelta() refusing it, or a world-ID counter behind the
-    /// base's, each logged), don't end where the state does, hold a
+    /// world data (core::GameData::BaseHash(); each logged, saying which), with a game's world or a scratch world that
+    /// differs from its base as no game could (core::LoadDomainDelta(), core::LoadDomainOrder() or Travel::LoadDelta()
+    /// refusing it, or a world-ID counter behind the base's, each logged), don't end where the state does, hold a
     /// flash or a seal that starts after `simulationTick`, a world clock outside the month after the month steps run (its
     /// end included) or past the calendar's end (LAST_MONTH's first tick), relationships naming an NPC in neither domain,
     /// a place kept on the map that isn't a finite point or lies in its portal's step area, a world paused or keeping a
@@ -156,6 +158,12 @@ public:
     /// domain, relationships and travel, in the state's current order), whichever scene runs: unchanged by a dev scene,
     /// which runs on its own.
     [[nodiscard]] u64 WorldHash() const;
+
+    /// The world the last dev scene's entry build made (BuildScratch()), kept for saves of its scratch world written
+    /// against it and after the scene is left; null before any dev scene ran.
+    [[nodiscard]] const WorldState* KeptScratchBase() const {
+        return m_scratchBase.get();
+    }
 
     /// The hash of the game data in use.
     [[nodiscard]] u64 DataHash() const override {
@@ -283,8 +291,6 @@ private:
     template<typename Archive>
     void WriteScene(Archive& archive) const;
 
-    class Context; // the SceneContext a scene's hooks reach the host through
-
     [[nodiscard]] const game::Scene& Running() const {
         return SceneOf(m_scene);
     }
@@ -297,9 +303,12 @@ private:
     }
     void Build(core::SceneKey scene);
     [[nodiscard]] core::SceneFacts FactsOf(core::SceneKey scene) const;
-    core::Entity Spawn(core::Vec2 foot, const Look& look);
-    core::Entity SpawnFox(const Orbit& orbit, core::Vec2 foot);
-    core::Entity SpawnPlayer(core::Vec2 foot);
+    // The way the running scene's hooks reach the running world, its player the host's.
+    [[nodiscard]] WorldContext LiveContext();
+    // The world dev scene `scene`'s entry build makes (BuildScratch()): what a save of its scratch world is written
+    // against. The one kept from the last dev scene when it was that scene, else built afresh (its scene's entities left
+    // in it, unread).
+    [[nodiscard]] std::shared_ptr<const WorldState> ScratchBase(core::SceneKey scene) const;
     void Walk(core::Vec2 move);
     void Select(core::StableId target);
     void TakeActions(
@@ -343,6 +352,11 @@ private:
     WorldState m_base;  // the game's world as it was made, never ticked: what a save of it is written against
     u64 m_baseHash = 0; // the base hash of the data m_base was made from, which a save records
     std::optional<WorldState> m_scratch = std::nullopt; // the world a scene runs on in the game's place, if any
+    // The last dev scene's scratch world as its entry build made it (m_scratch's while one runs): what a save of it is
+    // written against. Never changed, and kept after the scene is left, so entering that scene again or loading a save
+    // of it shares it rather than building it again.
+    std::shared_ptr<const WorldState> m_scratchBase;
+    core::SceneKey m_scratchBaseScene = ARENA_SCENE; // the dev scene m_scratchBase was built as, when there is one
     core::GameData m_data;
     core::SceneKey m_scene;
     core::SceneId m_sceneId; // m_scene's in the manifest
@@ -364,6 +378,7 @@ private:
             WorldState loadedBase,
             u64 loadedBaseHash,
             std::optional<WorldState> loadedScratch,
+            std::shared_ptr<const WorldState> loadedScratchBase,
             Combat loadedCombat,
             core::SceneKey loadedScene,
             core::StableId loadedPlayer,
@@ -374,6 +389,7 @@ private:
           , base(std::move(loadedBase))
           , baseHash(loadedBaseHash)
           , scratch(std::move(loadedScratch))
+          , scratchBase(std::move(loadedScratchBase))
           , combat(std::move(loadedCombat))
           , scene(loadedScene)
           , player(loadedPlayer)
@@ -385,6 +401,7 @@ private:
         WorldState base;
         u64 baseHash;
         std::optional<WorldState> scratch;
+        std::shared_ptr<const WorldState> scratchBase;
         Combat combat;
         core::SceneKey scene;
         core::StableId player;

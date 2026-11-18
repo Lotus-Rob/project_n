@@ -51,8 +51,8 @@ public:
     /// the step as an AdvanceCalendar action does. It turns false once AdvanceCalendar() has run.
     [[nodiscard]] virtual bool MonthDue() const = 0;
 
-    /// Sorts the state into canonical order, which is part of the timeline,
-    /// and writes all of it into `archive`.
+    /// Writes all of the state into `archive`, changing nothing: its order is part of the timeline, so Load() gives every
+    /// part of it back in the order it had.
     virtual void Save(Writer& archive) = 0;
 
     /// Reads and checks the state Save() wrote, read from `archive` to its end, saved at simulation tick
@@ -150,7 +150,7 @@ public:
     /// - AdvanceCalendar, or a tick that ran the simulation after which it says a month is due (Simulation::MonthDue()):
     ///   the burst publishes the transition, and the next tick runs the step instead of taking input (input waits in the
     ///   handover);
-    /// - Save (frozen): the state is sorted, serialised and handed to the save system (before a
+    /// - Save (frozen): the state is serialised and handed to the save system (before a
     ///   ToggleRecording in the same tick takes effect);
     /// - Load (wins over Save): the save is read and checked, and, when sound, starts a scene change into it (above),
     ///   which ends none of the old scene's uses; a broken one is refused on its tick, which is frozen;

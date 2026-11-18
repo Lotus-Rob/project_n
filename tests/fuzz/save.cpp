@@ -1,9 +1,13 @@
 // The save reader (game::Host::Load, behind the save file's checksum): a save is untrusted, so any bytes are
-// refused or loaded into a state the game can enter, tick, publish and save again, never a crash. Seeded with the
-// painted scene's save and the arena's in the middle of a fight (a volley in flight, a lance's flash, burn and poison,
-// a fox dying, one easing in, a respawn waiting, the player dashing), its 5,000 world NPCs and their relationships
-// left out so each run is quick.
+// refused or loaded into a state the game can enter, tick, publish and save again, never a crash. One game serves every
+// input, in the arena on the small test map with travellers: a save's game world is a difference from a world made in a
+// moment, and a save of the arena shares the world the game's own arena was built as instead of building its 5,000 NPCs
+// again.
+// Seeded with the arena in the middle of a fight (a volley in flight, a lance's flash, burn and poison, a fox dying, one
+// easing in, a respawn waiting, the player dashing), the empty world scene, the world scene a month on (journeys of the
+// base ended, new ones by their plans) and the arena entered from that world mid-volley (both worlds' sections).
 #include "../support/manifest.hpp" // relative: lint has no compile flags for the fuzz targets, which only build with ASan
+#include "../support/world.hpp"
 #include "core/archive.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/jobs.hpp"
@@ -26,6 +30,41 @@ std::vector<std::byte> Bytes(const u8* data, std::size_t size) {
     return bytes;
 }
 
+// The game every input is loaded into. Each input starts from the same state, so a run repeats exactly: the game's own
+// first save, loaded and entered, and loaded and entered again after any input that loaded.
+class Game {
+public:
+    Game()
+      : m_host(test::TestManifest(), game::ARENA_SCENE, test::TravellingSmallData()) {
+        core::Writer writer{ m_start };
+        m_host.Save(writer);
+        Restart();
+    }
+
+    game::Host& Host() {
+        return m_host;
+    }
+
+    // Loads and enters the first save again.
+    void Restart() {
+        core::Reader reader{ m_start };
+        if (!m_host.Load(reader, SAVED_AT)) {
+            std::abort(); // every input after it would start from another state
+        }
+        m_host.EnterScene();
+    }
+
+private:
+    game::Host m_host;
+    std::vector<std::byte> m_start;
+};
+
+Game& TheGame() {
+    // Never destroyed: it lives as long as the process, and the fuzzer may end that from any thread.
+    [[clang::no_destroy]] static Game game;
+    return game;
+}
+
 } // namespace
 
 // Declared first: libFuzzer ships no header for it, and -Wmissing-prototypes requires one.
@@ -33,7 +72,8 @@ extern "C" i32 LLVMFuzzerTestOneInput(const u8* data, std::size_t size);
 
 extern "C" i32 LLVMFuzzerTestOneInput(const u8* data, std::size_t size) {
     std::vector<std::byte> bytes = Bytes(data, size);
-    game::Host host(test::TestManifest(), game::PAINTED_SCENE);
+    Game& fuzzGame = TheGame();
+    game::Host& host = fuzzGame.Host();
     core::Reader reader{ bytes };
     if (host.Load(reader, SAVED_AT)) {
         host.EnterScene(); // as the logic does at the swap
@@ -47,6 +87,7 @@ extern "C" i32 LLVMFuzzerTestOneInput(const u8* data, std::size_t size) {
         std::vector<std::byte> saved;
         core::Writer writer{ saved };
         host.Save(writer);
+        fuzzGame.Restart();
     }
     return 0;
 }

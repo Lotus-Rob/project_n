@@ -5,7 +5,8 @@
 /// cheaply (a world clock at a month's end, a refused mix of components). The format and versions must follow
 /// game/host.cpp's, or every load of them is refused for the version alone. The game's world is written as its
 /// difference from the world the loading game generates, so each save made for a game with the world map generates
-/// that world once: by default the small test map's (SmallData()), made in a moment.
+/// that world once: by default the small test map's (SmallData()), made in a moment; a dev scene's scratch world as its
+/// difference from the world the scene's entry build makes, so each such save builds that once.
 
 #include "core/abilities.hpp"
 #include "core/archive.hpp"
@@ -14,6 +15,7 @@
 #include "core/game_data.hpp"
 #include "core/hit.hpp"
 #include "core/journey.hpp"
+#include "core/manifest.hpp"
 #include "core/paths.hpp"
 #include "core/seal.hpp"
 #include "core/stable_id.hpp"
@@ -28,10 +30,12 @@
 #include "game/scenes.hpp"
 #include "game/travel.hpp"
 #include "game/world_state.hpp"
+#include "support/manifest.hpp"
 #include "support/world.hpp"
 
 #include <algorithm>
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -39,11 +43,11 @@
 namespace test {
 
 /// The host's save format (game/host.cpp's ARENA_FORMAT).
-inline constexpr u32 HOST_FORMAT = 9;
+inline constexpr u32 HOST_FORMAT = 10;
 /// The active domain's version in a host save (5: the NPCs' homes).
 inline constexpr u32 ACTIVE_VERSION = 5;
-/// The world domain's version in a host save (4: the game's world as its difference from the generated one).
-inline constexpr u32 WORLD_VERSION = 4;
+/// The world domain's version in a host save (5: its order beside its difference from the generated or built one).
+inline constexpr u32 WORLD_VERSION = 5;
 /// The active domain's saved components, in the host's order.
 using ActiveComponents = core::ComponentList<
     game::Body,
@@ -94,30 +98,57 @@ inline void WriteClock(core::Writer& writer, SavedClock clock, std::optional<cor
     }
 }
 
-/// Writes a dev scene's scratch world's section of a host save into `writer`, whole: `state`'s seed and world stable-ID
-/// counter, `clock`, no place on the world map, its world domain after `worldVersion`, `relationships`, then `travel`
-/// (each journey whole, as no base has any).
+/// The world dev scene `scene`'s entry build makes on `data` (game::BuildScratch()), which a save of its scratch world
+/// is written against, its scene's own entities drawing IDs from `sceneIds`.
+[[nodiscard]] inline game::WorldState ScratchBase(
+    core::SceneKey scene,
+    const core::GameData& data,
+    core::StableIdCounter sceneIds = { .next = core::SCENE_ID_BASE }
+) {
+    game::WorldState built{ core::State{ game::DOMAINS, EMPTY_SAVE_SEED, core::StableIdCounter{ .next = 1 }, sceneIds } };
+    core::StableId player{};
+    const std::shared_ptr<const core::Manifest> manifest = TestManifest();
+    game::WorldContext context{ built, *manifest, data, player };
+    game::BuildScratch(built, game::SceneOf(scene), context);
+    return built;
+}
+
+/// Writes dev scene `scene`'s scratch world's section of a host save into `writer`, as its difference from the world the
+/// scene's entry build makes on `data`: the world stable-ID counter (`state`'s, or the built world's where that is further
+/// on, as IDs are never handed out twice), `clock`, no place on the world map, then `state`'s world domain after
+/// `worldVersion` and in its own order, `relationships`, then `travel` (each journey whole, as no base has any).
 inline void WriteScratchSection(
     core::Writer& writer,
+    core::SceneKey scene,
+    const core::GameData& data,
     const core::State& state,
     u32 worldVersion,
     SavedClock clock,
     const game::Travel& travel,
     const game::Relationships& relationships = game::Relationships{}
 ) {
-    writer(state.Seed(), state.Ids().next);
+    const game::WorldState base = ScratchBase(scene, data);
+    writer(std::max(state.Ids().next, base.state.Ids().next));
     WriteClock(writer, clock, std::nullopt);
     writer(worldVersion);
-    core::SaveDomain(writer, state[game::WORLD], WorldComponents{});
+    core::SaveDomainDelta(writer, base.state[game::WORLD], state[game::WORLD], WorldComponents{});
+    core::SaveDomainOrder(writer, base.state[game::WORLD], state[game::WORLD], WorldComponents{});
     relationships.Save(writer);
     travel.SaveDelta(writer, game::Travel{}, nullptr, nullptr);
+}
+
+/// The world a new game on `data` makes from `seed`, its journeys routed over `paths` (null without a map).
+[[nodiscard]] inline game::WorldState GeneratedWorld(const core::GameData& data, u64 seed, core::Paths* paths) {
+    game::WorldState world{ core::State{ game::DOMAINS, seed } };
+    game::GenerateWorld(world, data, paths);
+    return world;
 }
 
 /// Writes the game's world's section of a host save into `writer`, as its difference from the world a game on `data`
 /// generates from `state`'s seed: the seed, game::GENERATOR_VERSION and `data`'s base hash, the world stable-ID counter
 /// (`state`'s, or the generated world's where that is further on, as IDs are never handed out twice), `clock`, `place`
-/// as the place kept on the world map (none if empty), then `state`'s world domain after `worldVersion`, `relationships`
-/// and `travel`, each against the generated world's.
+/// as the place kept on the world map (none if empty), then `state`'s world domain after `worldVersion` (in its own order),
+/// `relationships` and `travel`, each against the generated world's.
 inline void WriteGameWorldSection(
     core::Writer& writer,
     const core::State& state,
@@ -128,17 +159,17 @@ inline void WriteGameWorldSection(
     const game::Relationships& relationships = game::Relationships{},
     std::optional<core::Vec2> place = std::nullopt
 ) {
-    game::WorldState base{ core::State{ game::DOMAINS, state.Seed() } };
     std::optional<core::Paths> paths = std::nullopt;
     if (data.world != nullptr) {
         paths.emplace(data.world);
     }
     core::Paths* const routes = paths ? &*paths : nullptr;
-    game::GenerateWorld(base, data, routes);
+    const game::WorldState base = GeneratedWorld(data, state.Seed(), routes);
     writer(state.Seed(), game::GENERATOR_VERSION, data.BaseHash(), std::max(state.Ids().next, base.state.Ids().next));
     WriteClock(writer, clock, place);
     writer(worldVersion);
     core::SaveDomainDelta(writer, base.state[game::WORLD], state[game::WORLD], WorldComponents{});
+    core::SaveDomainOrder(writer, base.state[game::WORLD], state[game::WORLD], WorldComponents{});
     relationships.Save(writer);
     travel.SaveDelta(writer, base.travel, data.world.get(), routes);
 }
@@ -153,7 +184,8 @@ struct SetAside {
 
 /// A save of `state` in `scene` with `player`: the format, the scene and the scene stable-ID counter; then `state`'s world
 /// domain, `clock`, `travel` and `relationships` as the game's world (WriteGameWorldSection(), after `worldVersion`) in a
-/// game scene, or as the scratch world (WriteScratchSection()) in a dev scene after the game's world, empty but for
+/// game scene, or as the scratch world (WriteScratchSection(), against the scene's entry build on the same data) in a dev
+/// scene after the game's world, empty but for
 /// `setAside`; then the player, the selection (none), the active domain after `activeVersion`, the player's `route` if
 /// any, no respawns waiting, `volley` if any (the flying swords' hits of 20, none resolved yet), `flash` if any and `seal`
 /// if any. The game's world is written against the world a game on `data` generates, or, when null, on the small test data
@@ -187,7 +219,7 @@ struct SetAside {
         WriteGameWorldSection(
             writer, empty, baseData, WORLD_VERSION, asideClock, game::Travel{}, game::Relationships{}, setAside.place
         );
-        WriteScratchSection(writer, state, worldVersion, clock, travel, relationships);
+        WriteScratchSection(writer, scene, baseData, state, worldVersion, clock, travel, relationships);
     }
     else {
         WriteGameWorldSection(writer, state, baseData, worldVersion, clock, travel, relationships);
