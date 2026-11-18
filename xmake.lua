@@ -246,7 +246,17 @@ add_requires("libsdl3-wayland 3.4.16") -- zlib; xmake/repo: libsdl3 plus its Way
 add_requires("libsdl3_ttf-wayland 3.2.2", {configs = {harfbuzz = true}}) -- zlib (FreeType: FTL; HarfBuzz: Old MIT); behind gfx; xmake/repo: on our SDL
 add_requireconfs("libsdl3_ttf-wayland.libsdl3-wayland", {version = "3.4.16", override = true}) -- the game's one SDL
 add_requires("quill-wine 13.1.0") -- MIT; header-only; xmake/repo: quill plus Wine support
-add_requires("yaml-cpp 0.9.0") -- MIT; behind src/data/
+-- MIT; behind src/data/. Instrumented in AddressSanitizer builds on libc++ (Clang): libc++ marks a
+-- vector's spare capacity as poisoned, and the linker may hand yaml-cpp our instrumented copy of a
+-- vector's growth path while its own inlined push_back stays uninstrumented, so it writes elements
+-- the marks never see and ASan reports their next copy as a container overflow. GCC's libstdc++
+-- marks no vectors, and MSVC's marks are off (the sanitizer rule above). The lock holds both variants:
+-- a build requires one, and project_n writes back the other when XMake drops it.
+if get_config("sanitizer") == "address" and get_config("toolchain") == "pixi-clang" then
+    add_requires("yaml-cpp 0.9.0", {configs = {asan = true}})
+else
+    add_requires("yaml-cpp 0.9.0")
+end
 -- xmake/repo: tracy plus libdl for glibc 2.28. It collects
 -- in releasedbg; everywhere else its macros are empty and the library compiles to nothing.
 -- Localhost only: no profile data on the network. Keep the version equal to the viewer's in
