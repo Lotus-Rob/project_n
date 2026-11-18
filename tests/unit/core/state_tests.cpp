@@ -130,6 +130,19 @@ TEST_CASE("the two counters never meet or reuse an ID") {
     CHECK(next.Create(WORLD, core::IdRange::World).first == core::StableId{ 1 });
 }
 
+TEST_CASE("counters fit only while each has an ID of its own range left to hand out") {
+    const auto fit = [](u64 world, u64 scene) {
+        return core::State::CountersFit(core::StableIdCounter{ .next = world }, core::StableIdCounter{ .next = scene });
+    };
+    CHECK(fit(1, BASE));                          // a new state's
+    CHECK(fit(BASE - 1, core::SCENE_ID_END - 1)); // each with its last ID left
+    CHECK_FALSE(fit(0, BASE));                    // 0 means none
+    CHECK_FALSE(fit(BASE, BASE));                 // the world's next would be the scene's first
+    CHECK_FALSE(fit(1, BASE - 1));                // the scene's next would be the world's last
+    CHECK_FALSE(fit(1, core::SCENE_ID_END));      // past the scene range
+    CHECK_FALSE(fit(1, std::numeric_limits<u64>::max()));
+}
+
 TEST_CASE("Restore refuses an ID outside both ranges' handed-out parts") {
     core::State state{ 2, SEED, core::StableIdCounter{ .next = 3 }, core::StableIdCounter{ .next = BASE + 2 } };
     CHECK_FALSE(state.Restore(WORLD, core::StableId{ 0 }));

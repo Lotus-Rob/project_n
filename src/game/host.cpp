@@ -982,14 +982,13 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
         archive.Fail();
     }
     // Counters outside their ranges would let the two ranges' IDs meet; the state built in their place is thrown away.
-    const bool countersFit = next >= 1 && next <= core::SCENE_ID_BASE && sceneNext >= core::SCENE_ID_BASE;
+    const core::StableIdCounter ids{ .next = next };
+    const core::StableIdCounter sceneIds{ .next = sceneNext };
+    const bool countersFit = core::State::CountersFit(ids, sceneIds);
     if (!countersFit) {
         archive.Fail();
     }
-    core::State state =
-        countersFit
-            ? core::State{ DOMAINS, seed, core::StableIdCounter{ .next = next }, core::StableIdCounter{ .next = sceneNext } }
-            : core::State{ DOMAINS, seed };
+    core::State state = countersFit ? core::State{ DOMAINS, seed, ids, sceneIds } : core::State{ DOMAINS, seed };
     u32 version = 0;
     archive(version);
     if (version != ACTIVE_VERSION) {

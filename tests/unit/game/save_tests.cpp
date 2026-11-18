@@ -644,10 +644,14 @@ TEST_CASE("a save whose ID counters leave their ranges is refused, and the game 
         return bytes;
     };
     CHECK(Loads(sound));
-    CHECK(Loads(with(WORLD_AT, core::SCENE_ID_BASE))); // every world ID handed out
+    CHECK(Loads(with(WORLD_AT, core::SCENE_ID_BASE - 1))); // one world ID left to hand out
+    CHECK(Loads(with(SCENE_AT, core::SCENE_ID_END - 1)));  // one scene ID left to hand out
     CHECK_FALSE(Loads(with(WORLD_AT, 0)));
+    CHECK_FALSE(Loads(with(WORLD_AT, core::SCENE_ID_BASE))); // its next ID would be the scene range's first
     CHECK_FALSE(Loads(with(WORLD_AT, core::SCENE_ID_BASE + 1)));
     CHECK_FALSE(Loads(with(SCENE_AT, core::SCENE_ID_BASE - 1)));
+    CHECK_FALSE(Loads(with(SCENE_AT, core::SCENE_ID_END)));
+    CHECK_FALSE(Loads(with(SCENE_AT, std::numeric_limits<u64>::max()))); // would wrap round to the world's IDs
 }
 
 TEST_CASE("a save whose player doesn't exist is refused, and the game is unchanged") {
