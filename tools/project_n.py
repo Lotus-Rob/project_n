@@ -842,8 +842,10 @@ def doctest_case_name(output):
     return m and m[1].strip()
 
 
-# Seconds one reference case may run. Without a bound a deadlocked case hangs the gate silently.
-REFERENCE_CASE_TIMEOUT = 300
+# Seconds one reference case may run. Without a bound a deadlocked case hangs the gate silently. The slowest case took
+# 7.4 s in a 32-core container, where every case runs on its one-thread share; ten times that leaves room for a loaded
+# CI runner's slower cores (the cases always run a release build, never under a sanitizer).
+REFERENCE_CASE_TIMEOUT = 80
 
 
 def reference_share(running):

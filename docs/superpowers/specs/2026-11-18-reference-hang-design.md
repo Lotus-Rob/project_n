@@ -97,3 +97,18 @@ The user picked 1, with the timeout and one TSan run (2026-11-18).
 
 `pixi run project_n test`, `lint`, then `pixi run project_n check` and `pixi run project_n check --container` from
 the main checkout: the container gate is the one that hung, so it is this change's real test.
+
+## Outcome
+
+### Measurements (this host, 32 cores, 2026-11-18)
+
+- Native `pixi run project_n reference`, warm: before 10.4 s and 10.1 s (15.4 s cold); after 8.5 s, 8.3 s, 8.5 s.
+  With 48 cases on 32 cores every case runs on a one-thread share, and dropping the over-subscription made the run
+  faster, not slower.
+- `pixi run project_n reference --preset linux-gcc --container`: passed in 81.9 s wall (incremental container build
+  included), where before it hung for 65 minutes. The container cgroup's `pids.events` stayed `max 0` throughout;
+  `pids.current` peaked at 388 of the 2048 cap.
+- Slowest case in that container run: 7.4 s (cases 5 to 9, 7.1 s to 7.4 s; one run, so one sample per case).
+  `REFERENCE_CASE_TIMEOUT` is 80 s, about ten times that. A smaller CI runner gives each case one thread too, as on this
+  host (4 cores, 4 cases at once), so a case's time there scales with its cores' speed and load rather than with the
+  core count. That a tenfold margin covers this and the single sample is a judgement, not a measurement. The cases always run a release build, never a sanitizer one.
