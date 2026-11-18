@@ -26,6 +26,7 @@
 #include "game/scene.hpp"
 #include "game/scenes.hpp"
 #include "game/travel.hpp"
+#include "game/world_state.hpp"
 
 #include <memory>
 #include <optional>
@@ -153,24 +154,24 @@ public:
 
     /// How many month steps have run.
     [[nodiscard]] u64 Months() const {
-        return m_months;
+        return Live().months;
     }
 
     /// The world clock: the simulation ticks that ran in scenes showing the world map while the world wasn't paused and no
     /// month was due, plus those a month step asked for early skipped. The calendar (core::CalendarView) derives from it.
     [[nodiscard]] u64 WorldTicks() const {
-        return m_worldTicks;
+        return Live().worldTicks;
     }
 
     /// Whether the player has paused the world (core::ActionKind::ToggleWorldPause): only in a scene showing the world map,
     /// and only until the next scene is built.
     [[nodiscard]] bool WorldPaused() const {
-        return m_worldPaused;
+        return Live().paused;
     }
 
     /// The game state: the scene's entities in the active domain, NPCs in the world domain.
     [[nodiscard]] const core::State& State() const {
-        return m_state;
+        return Live().state;
     }
 
     /// Where the running scene's portal stands in this game (Scene::Portal()), or none when it has none.
@@ -194,17 +195,17 @@ public:
 
     /// Deals `amount` to `target` at simulation tick `tick` (Combat::Damage()): a negative amount heals.
     void Damage(core::StableId target, i64 amount, u64 tick) {
-        Combat::Damage(m_state, target, amount, tick);
+        Combat::Damage(Live().state, target, amount, tick);
     }
 
     /// What the NPCs think of each other.
     [[nodiscard]] const Relationships& NpcRelationships() const {
-        return m_relationships;
+        return Live().relationships;
     }
 
     /// The world NPCs' journeys under way and their travel journals.
     [[nodiscard]] const Travel& NpcTravel() const {
-        return m_travel;
+        return Live().travel;
     }
 
     /// The route the player's cultivator walks on the world map (core::ActionKind::WalkTo): a journey of the cultivator alone
@@ -251,6 +252,13 @@ private:
     [[nodiscard]] const game::Scene& Running() const {
         return SceneOf(m_scene);
     }
+    // The world the running scene plays on: the scratch one while there is one, the game's otherwise.
+    [[nodiscard]] WorldState& Live() {
+        return m_scratch ? *m_scratch : m_world;
+    }
+    [[nodiscard]] const WorldState& Live() const {
+        return m_scratch ? *m_scratch : m_world;
+    }
     void Build(core::SceneKey scene);
     [[nodiscard]] core::SceneFacts FactsOf(core::SceneKey scene) const;
     core::Entity Spawn(core::Vec2 foot, const Look& look);
@@ -289,23 +297,19 @@ private:
     }
 
     core::DrawList m_drawList;
-    Relationships m_relationships;
-    Travel m_travel;
     MonthStep m_monthStep;
     Combat m_combat;
     std::vector<std::vector<core::TextItem>> m_travellerLabels; // per publish chunk, kept for their capacity
     std::optional<core::Paths> m_paths = std::nullopt; // the world map's distance maps, kept for the run; none without one
     std::shared_ptr<const core::Manifest> m_manifest;
-    core::State m_state;
+    WorldState m_world;                                 // the game's world
+    std::optional<WorldState> m_scratch = std::nullopt; // the world a scene runs on in the game's place, if any
     core::GameData m_data;
     core::SceneKey m_scene;
     core::SceneId m_sceneId; // m_scene's in the manifest
-    u64 m_worldTicks = 0;    // the world clock
     // The world clock when the last tick began, where travellers are drawn moving from. Presentation only, so never saved
     // or hashed: a load or a jump of the clock sets it to the clock, and travellers stand still for a frame.
     u64 m_worldTicksBefore = 0;
-    u64 m_months = 0;                                    // month steps run
-    bool m_worldPaused = false;                          // the player's world pause
     std::optional<core::Journey> m_route = std::nullopt; // the player's route; none while it walks freely
     core::StableId m_player{};                           // the cultivator the player walks; zero for none
     core::StableId m_selected{};                         // zero for none
@@ -313,43 +317,28 @@ private:
     // The scene a CycleScene asked for, until it is entered.
     std::optional<core::SceneKey> m_requested = std::nullopt;
 
-    // A sound load's state, held until EnterScene() makes it current. A constructor, not an aggregate: core::State has no
+    // A sound load's state, held until EnterScene() makes it current. A constructor, not an aggregate: WorldState has no
     // default, and MSVC warns (C4623) where an aggregate's default constructor is implicitly deleted.
     struct Loaded {
         Loaded(
-            core::State loadedState,
-            Relationships loadedRelationships,
-            Travel loadedTravel,
+            WorldState loadedWorld,
             Combat loadedCombat,
             core::SceneKey loadedScene,
-            u64 loadedWorldTicks,
-            u64 loadedMonths,
-            bool loadedWorldPaused,
             core::StableId loadedPlayer,
             core::StableId loadedSelected,
             std::optional<core::Journey> loadedRoute
         )
-          : state(std::move(loadedState))
-          , relationships(std::move(loadedRelationships))
-          , travel(std::move(loadedTravel))
+          : world(std::move(loadedWorld))
           , combat(std::move(loadedCombat))
           , scene(loadedScene)
-          , worldTicks(loadedWorldTicks)
-          , months(loadedMonths)
-          , worldPaused(loadedWorldPaused)
           , player(loadedPlayer)
           , selected(loadedSelected)
           , route(std::move(loadedRoute)) {
         }
 
-        core::State state;
-        Relationships relationships;
-        Travel travel;
+        WorldState world;
         Combat combat;
         core::SceneKey scene;
-        u64 worldTicks;
-        u64 months;
-        bool worldPaused;
         core::StableId player;
         core::StableId selected;
         std::optional<core::Journey> route;
