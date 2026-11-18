@@ -550,13 +550,40 @@ class RunReferenceCaseTest(unittest.TestCase):
         (directory,) = self.run_cases(-11, indices=(1,))
         self.assertFalse(directory.exists())
 
+    def timed_out(self, output):
+        """Runs one case whose process outlives its bound, leaving `output` as what it printed; returns the result,
+        the timeout it was given and its runtime directory."""
+        seen = {}
+
+        def fake_run(argv, **kwargs):
+            seen["timeout"], seen["dir"] = kwargs["timeout"], Path(kwargs["env"]["XDG_RUNTIME_DIR"])
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"], output=output)
+        with mock.patch.object(project_n.subprocess, "run", fake_run):
+            result = project_n.run_reference_case("exe", {}, 7)
+        return result, seen["timeout"], seen["dir"]
+
+    def test_a_case_past_the_bound_fails_and_says_so(self):
+        (output, returncode), timeout, directory = self.timed_out(b"partial\n")
+        self.assertEqual(timeout, project_n.REFERENCE_CASE_TIMEOUT)
+        self.assertNotEqual(returncode, 0)
+        self.assertIn("partial", output)
+        self.assertIn(f"timed out after {project_n.REFERENCE_CASE_TIMEOUT} s", output)
+        self.assertFalse(directory.exists())
+
+    def test_a_timeout_without_output(self):
+        for captured in (None, "text"):
+            (output, returncode), _, _ = self.timed_out(captured)
+            self.assertNotEqual(returncode, 0)
+            self.assertIn("timed out after", output)
+
 
 class ReferenceTest(unittest.TestCase):
-    def references(self, update, committed=(), case=None, draws=None, quiet=False):
-        """Runs `run_references` in a temporary root holding the `committed` pictures, over three cases run by `case`
-        (index -> (output, return code)); by default case 2 draws a.png and fails. Case 1 first draws `draws` (name ->
-        bytes). Returns a.png's bytes or None; keeps the indices run, stdout and what it returned."""
-        ran, out = [], io.StringIO()
+    def references(self, update, committed=(), case=None, draws=None, quiet=False, count=3, cores=8, case_name=None):
+        """Runs `run_references` in a temporary root holding the `committed` pictures, over `count` cases run by `case`
+        (index -> (output, return code)) on `cores` cores; by default case 2 draws a.png and fails. Case 1 first draws
+        `draws` (name -> bytes). `case_name` stands in for `reference_case_name`. Returns a.png's bytes or None; keeps
+        the indices run, the environments they got, stdout and what it returned."""
+        ran, out, self.envs = [], io.StringIO(), []
 
         def draw_and_fail(index):
             if index == 2:
@@ -566,6 +593,7 @@ class ReferenceTest(unittest.TestCase):
 
         def run_case(exe, env, index):
             ran.append(index)
+            self.envs.append(env)
             for name, data in (draws or {}).items() if index == 1 else ():
                 (root / "build" / "reference" / name).write_bytes(data)
             return (case or draw_and_fail)(index)
@@ -576,8 +604,10 @@ class ReferenceTest(unittest.TestCase):
                 (root / "tests" / "reference" / name).write_bytes(b"committed")
             try:
                 with mock.patch.multiple(project_n, ROOT=root, capture=lambda argv: '{"environments_info": [{"name": "lavapipe", "prefix": "/lavapipe"}]}',
-                                         run=lambda argv, env=None: None, reference_case_count=lambda exe, env: 3,
-                                         run_reference_case=run_case, binary_path=lambda *args: Path("reference_tests")), \
+                                         run=lambda argv, env=None: None, reference_case_count=lambda exe, env: count,
+                                         run_reference_case=run_case, binary_path=lambda *args: Path("reference_tests"),
+                                         jobs=lambda: cores,
+                                         reference_case_name=case_name or (lambda exe, env, index: None)), \
                      contextlib.redirect_stdout(out):
                     self.returned = project_n.run_references("linux-gcc", update, quiet=quiet)
             finally:
@@ -612,6 +642,28 @@ class ReferenceTest(unittest.TestCase):
         self.assertIn("2 of 3", raised.exception.stderr)
         self.assertIn("the map cells at zoom 1", raised.exception.stderr)
         self.assertIn("case 3", raised.exception.stderr)  # crashed before doctest named it
+
+    def test_a_timed_out_case_is_named(self):
+        def case(index):
+            return (f"reference: case 2 timed out after {project_n.REFERENCE_CASE_TIMEOUT} s\n", -9) if index == 2 else ("", 0)
+        with self.assertRaises(subprocess.CalledProcessError) as raised:
+            self.references(update=False, case=case, case_name=lambda exe, env, index: "world_route" if index == 2 else None)
+        self.assertIn("world_route", raised.exception.stderr)
+        with self.assertRaises(subprocess.CalledProcessError) as raised:
+            self.references(update=False, case=case)
+        self.assertIn("case 2", raised.exception.stderr)
+
+    def test_each_case_gets_its_share(self):
+        for cores, count, share in ((32, 47, "1"), (8, 3, "2")):
+            self.references(update=False, case=lambda index: ("", 0), count=count, cores=cores)
+            for env in self.envs:
+                self.assertEqual(env["LP_NUM_THREADS"], share)
+                self.assertEqual(env["PROJECT_N_REFERENCE_WORKERS"], share)
+
+    def test_update_refuses_after_a_timeout(self):
+        with self.assertRaises(project_n.Fail):
+            self.references(update=True, committed=["a.png", "b.png"],
+                            case=lambda index: ("timed out\n", -9) if index == 2 else ("", 0))
 
     def test_outputs_print_in_case_order(self):
         def finish_out_of_order(index):
