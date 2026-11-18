@@ -1,4 +1,3 @@
-#include "build_info.hpp"
 #include "core/archive.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/delta.hpp"
@@ -9,7 +8,6 @@
 #include "core/paths.hpp"
 #include "core/random.hpp"
 #include "core/state.hpp"
-#include "core/tick_clock.hpp"
 #include "game/combat.hpp"
 #include "game/components.hpp"
 #include "game/host.hpp"
@@ -29,87 +27,17 @@ namespace {
 // The shipped combat rules (assets/data/abilities.yaml's `combat:` section, which a data test checks).
 constexpr core::CombatRules RULES{};
 
-constexpr u64 TICKS = 5;
-constexpr u64 MONTHS = 12; // enough for relationships to form
 // The simulation tick every save here is loaded as made at: past any tick they played to, so only a flash dated after it
 // is refused.
 constexpr u64 SAVED_TICK = 1'000;
 
-core::TickCounters At(u64 tick) {
-    return { .wall = tick, .simulation = tick, .state = tick };
-}
-
-// Ticks `host`, ignoring its events.
-void Tick(game::Host& host, const core::TickCounters& counters, const core::TickInput& input) {
-    std::vector<core::Event> events;
-    host.Tick(counters, input, events);
-}
-
-// The stress arena after some ticks and months: every component and the relationships in use.
-void Play(game::Host& host, core::Jobs& jobs, u64 from) {
-    for (u64 tick = from; tick < from + TICKS; ++tick) {
-        Tick(host, At(tick), {});
-    }
-    for (u64 month = 0; month < MONTHS; ++month) {
-        host.AdvanceCalendar(At(from + TICKS + month), jobs, {});
-    }
-}
-
-constexpr i64 FOX_HEALTH = 1'200;
-
-// The arena's foxes, in ID order.
-std::vector<core::StableId> Foxes(const game::Host& host) {
-    std::vector<core::StableId> foxes;
-    const core::Registry& entities = host.State()[game::ACTIVE].Entities();
-    for (auto [entity, creature, stable] : entities.view<const game::Creature, const core::StableId>().each()) {
-        if (creature.kind == game::CreatureKind::Fox) {
-            foxes.push_back(stable);
-        }
-    }
-    std::ranges::sort(foxes);
-    return foxes;
-}
-
-std::vector<std::byte> Saved(game::Host& host) {
-    std::vector<std::byte> bytes;
-    core::Writer writer{ bytes };
-    host.Save(writer);
-    return bytes;
-}
-
-std::vector<core::Instance> Published(game::Host& host, core::Jobs& jobs) {
-    core::Snapshot snapshot;
-    host.Publish(snapshot, jobs, std::nullopt);
-    return snapshot.instances;
-}
-
-bool SameBytes(std::span<const core::Instance> lhs, std::span<const core::Instance> rhs) {
-    return std::ranges::equal(std::as_bytes(lhs), std::as_bytes(rhs));
-}
-
-TEST_CASE("a game loaded from a save goes on exactly as the game that saved") {
-    core::Jobs jobs{ 1 };
-    game::Host saved(test::TestManifest(), game::STRESS_SCENE);
-    Play(saved, jobs, 1);
-    const std::vector<std::byte> bytes = Saved(saved);
-    REQUIRE_FALSE(saved.NpcRelationships().All().empty());
-
-    game::Host loaded(test::TestManifest(), game::ARENA_SCENE); // on the data that made the saved game's world
-    core::Reader reader{ bytes };
-    REQUIRE(loaded.Load(reader, SAVED_TICK));
-    loaded.EnterScene(); // as the logic does at the swap
-    CHECK(loaded.StateHash() == saved.StateHash());
-    CHECK(loaded.Months() == saved.Months());
-    CHECK(loaded.Scene() == saved.Scene());
-
-    Play(saved, jobs, 1 + TICKS + MONTHS);
-    Play(loaded, jobs, 1 + TICKS + MONTHS);
-    CHECK(loaded.StateHash() == saved.StateHash());
-    const std::vector<core::Instance> fromLoaded = Published(loaded, jobs);
-    const std::vector<core::Instance> fromSaved = Published(saved, jobs);
-    const bool same = SameBytes(fromLoaded, fromSaved);
-    CHECK(same);
-}
+using test::At;
+using test::FOX_HEALTH;
+using test::Foxes;
+using test::Published;
+using test::SameBytes;
+using test::Saved;
+using test::Tick;
 
 TEST_CASE("a save made in world loads back into it") {
     constexpr core::HeldInput RIGHT{ .move = { .x = 1.0F, .y = 0.0F } };
@@ -480,7 +408,6 @@ TEST_CASE("a save with bytes after the state, or of another format, is refused")
     CHECK_FALSE(game.Load(otherReader, SAVED_TICK));
 }
 
-constexpr u32 FORMAT = test::HOST_FORMAT;
 using test::ACTIVE_VERSION;
 using test::ArenaSave;
 using test::SavedVolley;
@@ -509,140 +436,6 @@ std::vector<std::byte> Written(const Write& write) {
     core::Writer writer{ part };
     write(writer);
     return part;
-}
-
-// The arena data of the mid-fight save: Qi full, enough for the swords and the lance.
-core::GameData FightData() {
-    core::GameData data = game::BuiltInData();
-    data.abilities.qiStart = data.abilities.qiMax;
-    return data;
-}
-
-// Plays `saved` (an arena scene made with FightData()) to the middle of a fight, as tests/fuzz/corpus/save/fight holds
-// it: the arena scene has no world tier, so its save is small. Casts are at the chest of one fox, whose tick-by-tick
-// history the numbers below arrange.
-void PlayFight(game::Host& saved) {
-    constexpr u64 FIRST_DEATH = 5;    // its fox respawns 210 ticks later and is still easing in at SAVED_AT
-    constexpr u64 SECOND_DEATH = 150; // removed by SAVED_AT, its respawn still waiting
-    constexpr u64 SWORDS_AT = 285;
-    constexpr u64 BOLT_AT = 270;
-    constexpr u64 LANCE_AT = 295; // its flash is still showing
-    constexpr u64 DASH_AT = 298;
-    constexpr u64 SAVED_AT = 300; // a third fox dies on this tick, so is still dissolving
-    constexpr std::size_t DYING = 5;
-    constexpr core::Vec2 FAR_RIGHT{ .x = 5'000.0F, .y = 0.0F };
-    const auto cast = [&saved](u64 tick, core::Slot slot, core::Vec2 point) {
-        const std::array<core::Action, 1> actions{ { { .kind = core::ActionKind::Cast, .slot = slot, .point = point } } };
-        Tick(saved, At(tick), { .actions = actions, .held = {} });
-    };
-    core::Vec2 chest{};
-    for (u64 tick = 1; tick < SAVED_AT; ++tick) {
-        if (tick == BOLT_AT) {
-            const core::Registry& entities = saved.State()[game::ACTIVE].Entities();
-            chest = entities.get<game::Body>(saved.State()[game::ACTIVE].Find(Foxes(saved).at(2))).current;
-            cast(tick, core::Slot::Generator, chest);
-        }
-        else if (tick == LANCE_AT) {
-            cast(tick, core::Slot::Spender, chest);
-        }
-        else if (tick == SWORDS_AT) {
-            cast(tick, core::Slot::Special1, chest);
-        }
-        else if (tick == DASH_AT) {
-            cast(tick, core::Slot::Movement, FAR_RIGHT);
-        }
-        else {
-            Tick(saved, At(tick), {});
-        }
-        if (tick == FIRST_DEATH || tick == SECOND_DEATH) {
-            saved.Damage(Foxes(saved).at(tick == FIRST_DEATH ? 0 : 1), FOX_HEALTH, tick);
-        }
-    }
-    Tick(saved, At(SAVED_AT), {});
-    saved.Damage(Foxes(saved).at(DYING), FOX_HEALTH, SAVED_AT);
-}
-
-// `full`, the save of `saved` (a dev scene in a game without the world map, so its game world is empty), with its scratch
-// world's world tier and relationships left out (about 200 KB of NPCs): the bytes before that world tier, an empty one,
-// no relationships, and what follows the relationships, which is the travel (none in the arena) and the scene. Empty if
-// `full` isn't laid out that way.
-std::vector<std::byte> WithoutWorldTier(const game::Host& saved, const std::vector<std::byte>& full) {
-    const core::State& state = saved.State();
-    const core::State bare{ game::DOMAINS, state.Seed() };
-    constexpr bool PLACED = false;
-    const auto head = Written([&](core::Writer& writer) {
-        writer(FORMAT, static_cast<u8>(std::to_underlying(game::ARENA_SCENE)), state.SceneIds().next);
-        // the game's world, generated empty without the world map
-        test::WriteGameWorldSection(writer, bare, game::BuiltInData(), WORLD_VERSION, {}, game::Travel{});
-        writer(state.Seed(), state.Ids().next, saved.WorldTicks(), saved.Months(), saved.WorldPaused(), PLACED);
-    });
-    const auto world = [](const core::State& source) {
-        return Written([&source](core::Writer& writer) {
-            writer(WORLD_VERSION);
-            core::SaveDomain(writer, source[game::WORLD], World{});
-        });
-    };
-    const auto relationships = [](const game::Relationships& source) {
-        return Written([&source](core::Writer& writer) { source.Save(writer); });
-    };
-    const std::vector<std::byte> fullWorld = world(state);
-    const std::vector<std::byte> fullRelationships = relationships(saved.NpcRelationships());
-    const std::size_t before = head.size() + fullWorld.size() + fullRelationships.size();
-    if (full.size() <= before || !std::equal(head.begin(), head.end(), full.begin())) {
-        return {};
-    }
-    std::vector<std::byte> bytes = head;
-    const std::vector<std::byte> bareWorld = world(bare);
-    const std::vector<std::byte> noRelationships = relationships(game::Relationships{});
-    bytes.insert(bytes.end(), bareWorld.begin(), bareWorld.end());
-    bytes.insert(bytes.end(), noRelationships.begin(), noRelationships.end());
-    bytes.insert(bytes.end(), full.begin() + static_cast<std::ptrdiff_t>(before), full.end());
-    return bytes;
-}
-
-TEST_CASE("the mid-fight save loads, and so does the fuzz seed cut from it") {
-    const core::GameData data = FightData();
-    game::Host saved(test::TestManifest(), game::ARENA_SCENE, data);
-    PlayFight(saved);
-    const core::Registry& entities = saved.State()[game::ACTIVE].Entities();
-    core::Jobs jobs{ 1 };
-    core::Snapshot snapshot;
-    saved.Publish(snapshot, jobs, std::nullopt);
-    REQUIRE(snapshot.volleys.size() >= 1);
-    REQUIRE(snapshot.flashes.size() >= 1);
-    CHECK_FALSE(entities.view<const game::Afflictions>().empty());
-    CHECK_FALSE(entities.view<const game::Dying>().empty());
-    CHECK_FALSE(entities.view<const game::Arriving>().empty());
-    CHECK_FALSE(entities.view<const game::Dashing>().empty());
-    const std::vector<std::byte> full = Saved(saved);
-    game::Host loadedFull(test::TestManifest(), game::CELLS_SCENE, data);
-    core::Reader fullReader{ full };
-    REQUIRE(loadedFull.Load(fullReader, SAVED_TICK));
-    loadedFull.EnterScene(); // as the logic does at the swap
-    CHECK(loadedFull.StateHash() == saved.StateHash());
-
-    const std::vector<std::byte> seed = WithoutWorldTier(saved, full);
-    constexpr std::size_t SMALL = 16'384;
-    REQUIRE_FALSE(seed.empty());
-    CHECK(seed.size() < SMALL);
-    game::Host loaded(test::TestManifest(), game::CELLS_SCENE, data);
-    core::Reader reader{ seed };
-    CHECK(loaded.Load(reader, SAVED_TICK));
-}
-
-// Not part of a run: `--test-case='write the fight save seed' --no-skip` (tests/AGENTS.md) writes the fuzz seed.
-TEST_CASE("write the fight save seed" * doctest::skip()) {
-    game::Host saved(test::TestManifest(), game::ARENA_SCENE, FightData());
-    PlayFight(saved);
-    const std::vector<std::byte> seed = WithoutWorldTier(saved, Saved(saved));
-    REQUIRE_FALSE(seed.empty());
-    const std::filesystem::path path = std::filesystem::path{ PN_FUZZ_CORPUS } / "save" / "fight";
-    std::ofstream file{ path, std::ios::binary };
-    std::ranges::transform(seed, std::ostreambuf_iterator<char>{ file }, [](std::byte byte) {
-        return static_cast<char>(std::to_integer<u8>(byte));
-    });
-    file.close();
-    CHECK(file.good());
 }
 
 constexpr u64 STATE_SEED = 7;
@@ -1033,53 +826,18 @@ TEST_CASE("a save with a seal that starts after its tick is refused, and one its
     CHECK_FALSE(fromLater);
 }
 
-// A save of the world scene with nothing in it, its game's world written against the one a game on `data` makes: it names
-// a scene that needs the world map, and against the built-in data, which makes nothing, it is small.
-std::vector<std::byte> EmptyWorldSave(const core::GameData& data) {
-    const core::State state{ game::DOMAINS, test::EMPTY_SAVE_SEED };
-    return ArenaSave(
-        state,
-        {},
-        std::nullopt,
-        std::nullopt,
-        std::nullopt,
-        game::WORLD_SCENE,
-        WORLD_VERSION,
-        ACTIVE_VERSION,
-        {},
-        game::Travel{},
-        std::nullopt,
-        game::Relationships{},
-        {},
-        &data
-    );
-}
-
 TEST_CASE("a save naming the world scene is refused by a host without the world map, and loaded by one with it") {
     const core::GameData builtIn = game::BuiltInData();
-    const std::vector<std::byte> bytes = EmptyWorldSave(builtIn);
+    const std::vector<std::byte> bytes = WorldSaveAt({}, &builtIn);
     game::Host without(test::TestManifest(), game::ARENA_SCENE, builtIn);
     core::Reader refused{ bytes };
     CHECK_FALSE(without.Load(refused, SAVED_TICK));
     CHECK_FALSE(without.Requested().has_value());
     const core::GameData withMap = test::SmallData();
     game::Host with(test::TestManifest(), game::ARENA_SCENE, withMap);
-    const std::vector<std::byte> mapped = EmptyWorldSave(withMap);
+    const std::vector<std::byte> mapped = WorldSaveAt({}, &withMap);
     core::Reader accepted{ mapped };
     CHECK(with.Load(accepted, SAVED_TICK));
-}
-
-// Not part of a run: `--test-case='write the world save seed' --no-skip` (tests/AGENTS.md) writes the fuzz seed that
-// reached the save target's host, which has no map, with a save naming the world scene.
-TEST_CASE("write the world save seed" * doctest::skip()) {
-    const std::vector<std::byte> seed = EmptyWorldSave(game::BuiltInData());
-    const std::filesystem::path path = std::filesystem::path{ PN_FUZZ_CORPUS } / "save" / "world";
-    std::ofstream file{ path, std::ios::binary };
-    std::ranges::transform(seed, std::ostreambuf_iterator<char>{ file }, [](std::byte byte) {
-        return static_cast<char>(std::to_integer<u8>(byte));
-    });
-    file.close();
-    CHECK(file.good());
 }
 
 // The index of the first place of `kind` on `map`.
@@ -1123,7 +881,7 @@ TEST_CASE("a world save round-trips the NPCs' homes") {
     CHECK(same);
 }
 
-TEST_CASE("a version-1, version-2 or version-3 world save is refused") {
+TEST_CASE("a version-1 to version-4 world save is refused") {
     const std::shared_ptr<const core::WorldMap> map = test::SmallWorld();
     const u16 city = FirstPlace(*map, core::PlaceKind::City);
     const u32 cell = map->TileIndex(map->Places()[city].tile);
@@ -1131,9 +889,11 @@ TEST_CASE("a version-1, version-2 or version-3 world save is refused") {
     constexpr u32 FIRST_VERSION = 1;
     constexpr u32 BEFORE_TRAVEL = 2;
     constexpr u32 WHOLE_WORLD = 3;
+    constexpr u32 UNORDERED = 4;
     CHECK_FALSE(LoadsWithMap(WorldSaveOf(cell, city, FIRST_VERSION)));
     CHECK_FALSE(LoadsWithMap(WorldSaveOf(cell, city, BEFORE_TRAVEL)));
     CHECK_FALSE(LoadsWithMap(WorldSaveOf(cell, city, WHOLE_WORLD)));
+    CHECK_FALSE(LoadsWithMap(WorldSaveOf(cell, city, UNORDERED)));
 }
 
 TEST_CASE("a version-4 active section is refused") {
@@ -1674,18 +1434,11 @@ TEST_CASE("a save made mid-route loads to the same position on the next tick") {
     CHECK(loaded.StateHash() == saved.StateHash());
 }
 
-/// The world a new game on `data` makes from `seed`, its journeys routed over `paths`.
-game::WorldState GeneratedWorld(const core::GameData& data, u64 seed, core::Paths& paths) {
-    game::WorldState world{ core::State{ game::DOMAINS, seed } };
-    game::GenerateWorld(world, data, &paths);
-    return world;
-}
-
 TEST_CASE("a new game's world delta changes no NPC") {
     const core::GameData data = test::ShippedData();
     const game::Host host(test::TestManifest(), game::WORLD_SCENE, data);
     core::Paths paths{ data.world };
-    const game::WorldState base = GeneratedWorld(data, host.State().Seed(), paths);
+    const game::WorldState base = test::GeneratedWorld(data, host.State().Seed(), &paths);
     const core::DeltaCounts counts = core::CountDelta(base.state[game::WORLD], host.State()[game::WORLD], World{});
     CHECK(counts.removed == 0);
     CHECK(counts.created == 0);
@@ -1703,96 +1456,6 @@ TEST_CASE("a new game's world delta changes no NPC") {
     CHECK(gone.empty());
     CHECK(plans.empty());
     CHECK(whole.empty());
-}
-
-TEST_CASE("a loaded world equals the saved one") {
-    const core::GameData data = test::ShippedData();
-    core::Jobs jobs{ 1 };
-    game::Host saved(test::TestManifest(), game::WORLD_SCENE, data);
-    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, data);
-    const auto roundTrips = [&] {
-        const std::vector<std::byte> bytes = Saved(saved);
-        core::Reader reader{ bytes };
-        if (!loaded.Load(reader, SAVED_TICK)) {
-            return false;
-        }
-        loaded.EnterScene();
-        return loaded.StateHash() == saved.StateHash() && loaded.WorldHash() == saved.WorldHash() &&
-               loaded.State().Ids().next == saved.State().Ids().next;
-    };
-    CHECK(roundTrips()); // tick 0
-
-    // Mid-month, the cultivator walking a route three tiles east.
-    const core::Vec2 east = data.world->StartCentre() + core::Vec2{ .x = 3.0F * data.world->TileSize(), .y = 0.0F };
-    const std::array<core::Action, 1> walk{ { { .kind = core::ActionKind::WalkTo, .point = east } } };
-    Tick(saved, At(1), { .actions = walk, .held = {} });
-    for (u64 tick = 2; tick <= 40; ++tick) {
-        Tick(saved, At(tick), {});
-    }
-    REQUIRE(saved.PlayerRoute().has_value());
-    CHECK(roundTrips());
-
-    // Mid-journey after a month step: the journeys the base seeded have ended, and new ones are under way.
-    saved.AdvanceCalendar(At(41), jobs, {});
-    for (u64 tick = 42; tick <= 50; ++tick) {
-        Tick(saved, At(tick), {});
-    }
-    REQUIRE_FALSE(saved.NpcTravel().Journeys().empty());
-    CHECK(roundTrips());
-
-    // After three month steps.
-    saved.AdvanceCalendar(At(51), jobs, {});
-    saved.AdvanceCalendar(At(52), jobs, {});
-    REQUIRE(saved.Months() == 3);
-    CHECK(roundTrips());
-}
-
-TEST_CASE("a loaded world carries on as the saved one") {
-    constexpr core::HeldInput RIGHT{ .move = { .x = 1.0F, .y = 0.0F } };
-    constexpr u64 BETWEEN = 3; // ticks between month steps
-    const core::GameData data = test::ShippedData();
-    for (const u32 workers : { 1U, 4U }) {
-        CAPTURE(workers);
-        core::Jobs jobs{ workers };
-        game::Host saved(test::TestManifest(), game::WORLD_SCENE, data);
-        game::Host neverSaved(test::TestManifest(), game::WORLD_SCENE, data);
-        for (game::Host* host : { &saved, &neverSaved }) {
-            Tick(*host, At(1), { .actions = {}, .held = RIGHT });
-            host->AdvanceCalendar(At(2), jobs, {});
-            Tick(*host, At(3), { .actions = {}, .held = RIGHT });
-        }
-        u64 tick = 4;
-        const std::vector<std::byte> bytes = Saved(saved);
-        game::Host loaded(test::TestManifest(), game::ARENA_SCENE, data);
-        core::Reader reader{ bytes };
-        REQUIRE(loaded.Load(reader, SAVED_TICK));
-        loaded.EnterScene();
-
-        // Counted rather than checked at each step, so the worst is asserted once.
-        u32 unlikeSaved = 0;
-        u32 unlikeNeverSaved = 0;
-        const auto compare = [&] {
-            unlikeSaved += loaded.StateHash() == saved.StateHash() ? 0U : 1U;
-            unlikeNeverSaved += loaded.StateHash() == neverSaved.StateHash() ? 0U : 1U;
-        };
-        compare();
-        for (u32 month = 0; month < 2; ++month) {
-            for (u64 step = 0; step < BETWEEN; ++step, ++tick) {
-                for (game::Host* host : { &saved, &neverSaved, &loaded }) {
-                    Tick(*host, At(tick), { .actions = {}, .held = RIGHT });
-                }
-                compare();
-            }
-            for (game::Host* host : { &saved, &neverSaved, &loaded }) {
-                host->AdvanceCalendar(At(tick), jobs, {});
-            }
-            ++tick;
-            compare();
-        }
-        CHECK(loaded.Months() == 3);
-        CHECK(unlikeSaved == 0);
-        CHECK(unlikeNeverSaved == 0);
-    }
 }
 
 TEST_CASE("a save from another generator or other world data is refused") {
@@ -1943,6 +1606,32 @@ TEST_CASE("a world save whose world ID counter is behind its base's is refused, 
     CHECK(LoadsWith(data, with(baseNext)));
     CHECK(LoadsWith(data, with(baseNext + 1)));       // an ID handed out since, its entity gone
     CHECK_FALSE(LoadsWith(data, with(baseNext - 1))); // the base's last NPC's ID would be handed out again
+    CHECK_FALSE(LoadsWith(data, with(1)));
+}
+
+TEST_CASE("an arena save whose scratch world's ID counter is behind its entry build's is refused, and one at it loads") {
+    const core::GameData data = game::BuiltInData(); // no map: the game's world is empty, its section's size known
+    game::Host saved(test::TestManifest(), game::ARENA_SCENE, data);
+    const u64 builtNext = saved.State().Ids().next; // the entry build's: its active NPCs, then its 5,000 world NPCs
+    const std::vector<std::byte> sound = Saved(saved);
+    // The scratch world's counter follows the format, the scene, the scene counter and the game's world's section.
+    const core::State empty{ game::DOMAINS, saved.State().Seed() }; // the game's world, made from the scratch world's seed
+    const std::size_t worldSection = Written([&](core::Writer& writer) {
+                                         test::WriteGameWorldSection(writer, empty, data, WORLD_VERSION, {}, game::Travel{});
+                                     }).size();
+    const std::size_t scratchAt = sizeof(u32) + sizeof(u8) + sizeof(u64) + worldSection;
+    const auto with = [&sound, scratchAt](u64 next) {
+        std::vector<std::byte> bytes = sound;
+        std::ranges::copy(
+            std::bit_cast<std::array<std::byte, sizeof(u64)>>(next), bytes.begin() + static_cast<std::ptrdiff_t>(scratchAt)
+        );
+        return bytes;
+    };
+    const bool atItsPlace = with(builtNext) == sound;
+    REQUIRE(atItsPlace);
+    CHECK(LoadsWith(data, with(builtNext)));
+    CHECK(LoadsWith(data, with(builtNext + 1)));       // an ID handed out since, its entity gone
+    CHECK_FALSE(LoadsWith(data, with(builtNext - 1))); // the entry build's last NPC's ID would be handed out again
     CHECK_FALSE(LoadsWith(data, with(1)));
 }
 

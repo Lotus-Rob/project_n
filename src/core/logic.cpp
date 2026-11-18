@@ -356,11 +356,11 @@ void Logic::TakeRestored(const Restored& restored) {
 
 void Logic::Save() {
     PN_PROFILE_ZONE();
-    std::vector<std::byte> state = Serialise(false);
     if (m_replay->Playing()) {
-        PN_LOG_DEBUG("a replayed save at tick {}: the state is sorted, as it was, and no file written", m_counters.wall);
+        PN_LOG_DEBUG("a replayed save at tick {}: no file written", m_counters.wall);
         return;
     }
+    std::vector<std::byte> state = Serialise(false);
     PN_LOG_INFO("saving the game at tick {}: {} bytes of state", m_counters.wall, state.size());
     m_saves->Write(std::move(state));
 }

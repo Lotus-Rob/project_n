@@ -137,6 +137,31 @@ std::vector<std::pair<u64, i32>> Visits(const core::State& state) {
     return visits;
 }
 
+/// `state`'s world domain as a save writes it whole, each storage in its own order: equal bytes, equal order.
+std::vector<std::byte> InOrder(const core::State& state) {
+    std::vector<std::byte> bytes;
+    core::Writer writer{ bytes };
+    core::SaveDomain(writer, state[WORLD], Saved{});
+    return bytes;
+}
+
+/// `now`'s order against `base` (SaveDomainOrder()), as bytes.
+template<typename... Components>
+std::vector<std::byte> Order(const core::State& base, const core::State& now, core::ComponentList<Components...> list) {
+    std::vector<std::byte> bytes;
+    core::Writer writer{ bytes };
+    core::SaveDomainOrder(writer, base[WORLD], now[WORLD], list);
+    return bytes;
+}
+
+/// Applies `bytes`, an order, to `into`'s world domain; false when it is refused or leaves bytes.
+template<typename... Components>
+bool OrderLoads(std::span<const std::byte> bytes, core::State& into, core::ComponentList<Components...> list) {
+    core::Reader reader{ bytes };
+    core::LoadDomainOrder(reader, into[WORLD], list);
+    return !reader.Failed() && reader.Remaining() == 0;
+}
+
 template<typename... T>
 std::vector<std::byte> Bytes(const T&... values) {
     std::vector<std::byte> bytes;
@@ -397,6 +422,84 @@ TEST_CASE("a malformed delta is refused") {
     }
     SUBCASE("a delta cut off after its first section") {
         CHECK_FALSE(Loads(Bytes(NONE), state, Short{}));
+    }
+}
+
+TEST_CASE("a domain's order round-trips beside its delta") {
+    const core::State base = Base();
+    core::State now = Base();
+    // A history that leaves every storage out of the base's order: an entity destroyed between two creations, a
+    // component gained and one lost.
+    const core::StableId first = now.Create(WORLD, core::IdRange::World).first;
+    now.Destroy(core::StableId{ 2 });
+    const auto [second, secondEntity] = now.Create(WORLD, core::IdRange::Scene);
+    now[WORLD].Entities().emplace<Health>(secondEntity, 3);
+    now[WORLD].Entities().emplace<Health>(now[WORLD].Find(first), 1);
+    now[WORLD].Entities().remove<Path>(Of(now, 1));
+    now[WORLD].Entities().emplace<Path>(Of(now, 4), std::vector<i32>{ 9 });
+    now[WORLD].Entities().emplace<Tagged>(Of(now, 3));
+    const std::vector<std::byte> delta = Delta(base, now, Saved{});
+    const std::vector<std::byte> order = Order(base, now, Saved{});
+
+    core::State unordered = Base(now.Ids(), now.SceneIds());
+    REQUIRE(Loads(delta, unordered, Saved{}));
+    REQUIRE(InOrder(unordered) != InOrder(now)); // the delta alone gives the same entities in another order
+
+    core::State loaded = Base(now.Ids(), now.SceneIds());
+    REQUIRE(Loads(delta, loaded, Saved{}));
+    CHECK(OrderLoads(order, loaded, Saved{}));
+    CHECK(InOrder(loaded) == InOrder(now));
+    CHECK(Visits(loaded) == Visits(now));
+}
+
+TEST_CASE("an order the base keeps is a byte a storage") {
+    const core::State base = Base();
+    core::State now = Base();
+    Get<Stats>(now, 2).speed = 40.0F; // a changed value keeps its place
+    // The stable IDs', then Health's, Stats's, Path's and Tagged's.
+    CHECK(Order(base, now, Saved{}) == Bytes(u8{ 1 }, u8{ 1 }, u8{ 1 }, u8{ 1 }, u8{ 1 }));
+    core::State loaded = Base();
+    REQUIRE(Loads(Delta(base, now, Saved{}), loaded, Saved{}));
+    CHECK(OrderLoads(Order(base, now, Saved{}), loaded, Saved{}));
+    CHECK(InOrder(loaded) == InOrder(now));
+}
+
+TEST_CASE("a malformed order is refused") {
+    // Short's order: the stable IDs', Stats's, then Tagged's (entities 2 and 4).
+    constexpr u8 KEPT = 1;
+    constexpr u8 LISTED = 0;
+    const auto key = [](u64 stableId) { return core::StableId{ stableId }; };
+    core::State state = Base();
+
+    SUBCASE("well formed: the stable IDs listed backwards (accepted)") {
+        const std::vector<std::byte> order = Bytes(LISTED, BASE_ENTITIES, key(5), key(4), key(3), key(2), key(1), KEPT, KEPT);
+        CHECK(OrderLoads(order, state, Short{}));
+        const auto* ids = std::as_const(state)[WORLD].Entities().storage<core::StableId>();
+        REQUIRE(ids != nullptr);
+        CHECK(ids->get((*ids)[0]) == key(5));
+        CHECK(ids->get((*ids)[4]) == key(1));
+    }
+    SUBCASE("a mark past 1") {
+        CHECK_FALSE(OrderLoads(Bytes(u8{ 2 }, KEPT, KEPT), state, Short{}));
+    }
+    SUBCASE("a count other than the storage's") {
+        CHECK_FALSE(OrderLoads(Bytes(LISTED, u64{ 4 }, key(1), key(2), key(3), key(4), KEPT, KEPT), state, Short{}));
+    }
+    SUBCASE("an ID given twice") {
+        CHECK_FALSE(
+            OrderLoads(Bytes(LISTED, BASE_ENTITIES, key(1), key(1), key(2), key(3), key(4), KEPT, KEPT), state, Short{})
+        );
+    }
+    SUBCASE("an ID the domain lacks") {
+        CHECK_FALSE(
+            OrderLoads(Bytes(LISTED, BASE_ENTITIES, key(1), key(2), key(3), key(4), key(9), KEPT, KEPT), state, Short{})
+        );
+    }
+    SUBCASE("an entity without the storage's component") {
+        CHECK_FALSE(OrderLoads(Bytes(KEPT, KEPT, LISTED, u64{ 2 }, key(1), key(2)), state, Short{}));
+    }
+    SUBCASE("bytes running out") {
+        CHECK_FALSE(OrderLoads(Bytes(LISTED, BASE_ENTITIES, key(1), key(2)), state, Short{}));
     }
 }
 

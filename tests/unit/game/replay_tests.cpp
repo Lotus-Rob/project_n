@@ -4,7 +4,7 @@
 // back in a fresh game in another scene (a load across scenes, waiting for each) with every hash matching, the last
 // one on the recording's final tick. A recorded fight is replayed the same way: every ability cast, foxes dying and
 // respawning, a save while the swords fly. So is the world scene on the shipped map, walked across a
-// month step, and the cultivator walked along routes there.
+// month step, and the cultivator walked along routes there; and a recording that starts from a world a month on.
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
@@ -379,6 +379,62 @@ TEST_CASE("a replay on the world scene plays back with the same hashes") {
     CHECK(playing.replay.Matched() == playing.replay.HashCount());
     CHECK(playing.host.Months() == 1);
     CHECK(playing.host.Current().key == game::WORLD_SCENE);
+}
+
+TEST_CASE("a replay recorded from a delta save plays back") {
+    // Recorded on the small test map, its travellers out, from a world a month on, so the replay starts from a save holding the
+    // world's difference from the one its seed makes: the cultivator walks, F2 goes to the arena, where a month of its own
+    // scratch world passes, and a save is made there; a fresh game in the arena plays it back with every hash matching.
+    constexpr u64 WALK = 40;
+    constexpr u64 BURST = 7;
+    constexpr u32 MAX_BURSTS = 100;
+    constexpr std::size_t HASHES = 2; // the last on the recording's final tick
+    constexpr core::Vec2 RIGHT{ .x = 1.0F, .y = 0.0F };
+    const core::GameData data = test::TravellingSmallData(); // its travellers out, so their journeys differ too
+    const Folder folder{ "delta" };
+    {
+        Session recording(folder.Path(), game::WORLD_SCENE, data);
+        recording.Send(core::ActionKind::AdvanceCalendar);
+        recording.Burst(BURST); // ends at the request
+        recording.Burst(BURST); // the month step
+        REQUIRE(recording.host.Months() == 1);
+        recording.Send(core::ActionKind::ToggleRecording);
+        recording.Burst(1);
+        recording.Hold(RIGHT);
+        recording.Burst(WALK);
+        recording.Hold({});
+        recording.Send(core::ActionKind::CycleScene); // to the arena
+        recording.Burst(BURST);                       // ends after the request: leaving, which the session reports
+        recording.Burst(BURST);                       // the arena is built: loading, and the session reports it resident
+        recording.Burst(BURST);                       // entering, which the session reports
+        recording.Burst(BURST);                       // takes that report: the arena runs
+        REQUIRE(recording.host.Current().key == game::ARENA_SCENE);
+        recording.Send(core::ActionKind::AdvanceCalendar);
+        recording.Burst(BURST);
+        recording.Burst(BURST);
+        REQUIRE(recording.host.Months() == 1); // the arena's own
+        recording.Send(core::ActionKind::Save);
+        recording.Burst(BURST);
+        // To a hash tick past the next window, so the arena after the save and the recording's last state are checked.
+        recording.Burst(core::REPLAY_HASH_TICKS);
+        recording.Burst(core::REPLAY_HASH_TICKS - (recording.logic.Counters().wall % core::REPLAY_HASH_TICKS));
+        REQUIRE(recording.logic.Counters().wall % core::REPLAY_HASH_TICKS == 0);
+        recording.Send(core::ActionKind::ToggleRecording);
+        recording.Burst(1);
+    } // its job system finishes writing the replay
+
+    Session playing(folder.Path(), game::ARENA_SCENE, data);
+    playing.Send(core::ActionKind::PlayReplay);
+    playing.Burst(1);
+    REQUIRE(playing.replay.Playing());
+    for (u32 bursts = 0; bursts < MAX_BURSTS && playing.replay.Playing(); ++bursts) {
+        playing.Burst(core::REPLAY_HASH_TICKS);
+    }
+    CHECK(playing.replay.AtEnd());
+    CHECK(playing.replay.HashCount() == HASHES);
+    CHECK(playing.replay.Matched() == playing.replay.HashCount());
+    CHECK(playing.host.Months() == 1);
+    CHECK(playing.host.Current().key == game::ARENA_SCENE);
 }
 
 TEST_CASE("a replay recorded through a portal plays back with the same hashes") {
