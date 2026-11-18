@@ -15,9 +15,11 @@
 #include <atomic>
 #include <bit>
 #include <cfenv>
+#include <charconv>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
 #include <exception>
 #include <expected>
 #include <filesystem>
