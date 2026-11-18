@@ -575,6 +575,32 @@ class RunReferenceCaseTest(unittest.TestCase):
             (output, returncode), _, _ = self.timed_out(captured)
             self.assertNotEqual(returncode, 0)
             self.assertIn("timed out after", output)
+            if captured:
+                self.assertIn(captured, output)
+
+
+class ReferenceCaseNameTest(unittest.TestCase):
+    def name(self, stdout=None, raises=None):
+        def fake_run(argv, **kwargs):
+            if raises:
+                raise raises
+            return subprocess.CompletedProcess(argv, 0, stdout)
+        with mock.patch.object(project_n.subprocess, "run", fake_run):
+            return project_n.reference_case_name("exe", {}, 3)
+
+    def listing(self, *names):
+        rule = "=" * 79
+        return ("[doctest] listing all test case names\n" + rule + "\n" + "".join(f"{n}\n" for n in names) + rule
+                + "\n[doctest] unskipped test cases passing the current filters: 47\n")
+
+    def test_the_one_listed_name_is_returned(self):
+        self.assertEqual(self.name(self.listing("the map cells, at zoom 1")), "the map cells, at zoom 1")
+
+    def test_a_listing_of_two_names_names_none(self):
+        self.assertIsNone(self.name(self.listing("one", "two")))
+
+    def test_a_listing_that_times_out_names_none(self):
+        self.assertIsNone(self.name(raises=subprocess.TimeoutExpired("exe", 30)))
 
 
 class ReferenceTest(unittest.TestCase):
@@ -656,6 +682,7 @@ class ReferenceTest(unittest.TestCase):
     def test_each_case_gets_its_share(self):
         for cores, count, share in ((32, 47, "1"), (8, 3, "2")):
             self.references(update=False, case=lambda index: ("", 0), count=count, cores=cores)
+            self.assertEqual(len(self.envs), count)
             for env in self.envs:
                 self.assertEqual(env["LP_NUM_THREADS"], share)
                 self.assertEqual(env["PROJECT_N_REFERENCE_WORKERS"], share)
