@@ -1346,7 +1346,7 @@ TEST_CASE("the world clock runs only on the world map and not while paused") {
     CHECK_FALSE(arena.WorldPaused()); // ignored off the map
 }
 
-TEST_CASE("a scene change clears the world pause, and the clock stands still away from the map") {
+TEST_CASE("the world keeps its pause and its clock through other scenes, which run on their own calendar") {
     constexpr u64 TICKS = 10;
     game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
     TickRange(host, 1, TICKS);
@@ -1355,9 +1355,19 @@ TEST_CASE("a scene change clears the world pause, and the clock stands still awa
     TickWith(host, TICKS + 2, core::ActionKind::CycleScene);
     host.EnterScene(); // the arena, as the logic does after the tick
     REQUIRE(host.Current().key == game::ARENA_SCENE);
-    CHECK_FALSE(host.WorldPaused());
+    CHECK_FALSE(host.WorldPaused()); // the arena's own world, never paused
     TickRange(host, TICKS + 3, TICKS + 2 + TICKS);
+    CHECK(host.WorldTicks() == 0); // its own clock, which stands still off the map
+
+    u64 tick = TICKS + 3 + TICKS;
+    while (host.Current().key != game::WORLD_SCENE) {
+        TickWith(host, tick++, core::ActionKind::CycleScene);
+        host.EnterScene();
+    }
+    CHECK(host.WorldPaused());
     CHECK(host.WorldTicks() == TICKS);
+    TickRange(host, tick, tick + TICKS);
+    CHECK(host.WorldTicks() == TICKS); // still paused
 }
 
 // A host with the shipped map that has loaded and entered an empty world save at `clock`: a world clock anywhere in a

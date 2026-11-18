@@ -168,7 +168,7 @@ void Relationships::Forget(core::StableId npc) {
     std::erase_if(m_edges, [npc](const Relationship& edge) { return edge.holder == npc || edge.subject == npc; });
 }
 
-void Relationships::Load(core::Reader& archive, const core::State& state) {
+void Relationships::Load(core::Reader& archive) {
     constexpr std::size_t EDGE_BYTES = (2 * sizeof(core::StableId)) + sizeof(f32);
     u64 count = 0;
     archive(count);
@@ -182,8 +182,7 @@ void Relationships::Load(core::Reader& archive, const core::State& state) {
         archive(edge);
         const bool ordered =
             edges.empty() || std::pair{ edges.back().holder, edges.back().subject } < std::pair{ edge.holder, edge.subject };
-        if (!ordered || edge.holder == edge.subject || !state.DomainOf(edge.holder) || !state.DomainOf(edge.subject) ||
-            !std::isfinite(edge.opinion)) {
+        if (!ordered || edge.holder == edge.subject || !std::isfinite(edge.opinion)) {
             archive.Fail();
         }
         edges.push_back(edge);
@@ -191,6 +190,12 @@ void Relationships::Load(core::Reader& archive, const core::State& state) {
     if (!archive.Failed()) {
         m_edges = std::move(edges);
     }
+}
+
+bool Relationships::Within(const core::State& state) const {
+    return std::ranges::all_of(m_edges, [&state](const Relationship& edge) {
+        return state.DomainOf(edge.holder).has_value() && state.DomainOf(edge.subject).has_value();
+    });
 }
 
 core::StableId SpawnNpc(core::State& state, u32 cell, u16 home, f32 power) {
@@ -224,8 +229,10 @@ void Activate(core::State& state, core::StableId npc) {
 void Deactivate(core::State& state, core::StableId npc) {
     state.Move(npc, WORLD, [](const core::Registry& from, core::Entity old, core::Registry& into, core::Entity moved) {
         Npc& person = into.emplace<Npc>(moved, from.get<Npc>(old));
-        PN_ASSERT(person.home == NO_HOME, "an NPC deactivated in a scene with the world map, whose cell isn't a grid cell");
-        person.cell = CellAt(from.get<Body>(old).current);
+        // A homed NPC's cell is a tile of the world map, which no scene's ground is laid out on, so it keeps the one it had.
+        if (person.home == NO_HOME) {
+            person.cell = CellAt(from.get<Body>(old).current);
+        }
         into.emplace<Needs>(moved, from.get<Needs>(old));
         if (from.all_of<Met>(old)) {
             into.emplace<Met>(moved);

@@ -103,6 +103,24 @@ TEST_CASE("an active NPC deactivates into the cell it walked to") {
     CHECK(state[game::WORLD].Entities().get<game::Npc>(state[game::WORLD].Find(npc)).cell == CELL + 1);
 }
 
+TEST_CASE("an NPC with a home deactivates onto the tile it had, wherever it stood") {
+    constexpr u16 HOME = 2;
+    core::State state{ game::DOMAINS, SEED };
+    const core::StableId npc = game::SpawnNpc(state, CELL, HOME);
+    // Brought into a scene whose ground isn't the map's, standing far from any point of its tile.
+    state.Move(npc, game::ACTIVE, [](const core::Registry& from, core::Entity old, core::Registry& into, core::Entity moved) {
+        into.emplace<game::Npc>(moved, from.get<game::Npc>(old));
+        into.emplace<game::Needs>(moved, from.get<game::Needs>(old));
+        into.emplace<game::Body>(moved, game::CellCentre(CELL + 1), game::CellCentre(CELL + 1));
+    });
+
+    game::Deactivate(state, npc);
+    REQUIRE(state.DomainOf(npc) == game::WORLD);
+    const game::Npc& person = state[game::WORLD].Entities().get<game::Npc>(state[game::WORLD].Find(npc));
+    CHECK(person.cell == CELL);
+    CHECK(person.home == HOME);
+}
+
 TEST_CASE("a group materialises into one world NPC per member, and an unmet NPC folds back") {
     constexpr u32 MEMBERS = 3;
     core::State state{ game::DOMAINS, SEED };

@@ -13,6 +13,7 @@
 #include "game/components.hpp"
 #include "game/host.hpp"
 #include "game/npcs.hpp"
+#include "game/scenes/world.hpp"
 #include "game/travel.hpp"
 #include "support/host.hpp"
 #include "support/manifest.hpp"
@@ -159,6 +160,41 @@ TEST_CASE("a save keeps the scene counter") {
     loaded.EnterScene();
     CHECK(loaded.State().SceneIds().next == saved.State().SceneIds().next);
     CHECK(loaded.State().Ids().next == saved.State().Ids().next);
+}
+
+TEST_CASE("a save made in a dev scene holds the game's world set aside, and where the cultivator comes back to") {
+    constexpr core::HeldInput RIGHT{ .move = { .x = 1.0F, .y = 0.0F } };
+    const std::array<core::Action, 1> cycle{ { { .kind = core::ActionKind::CycleScene } } };
+    core::Jobs jobs{ 1 };
+    game::Host saved(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    Tick(saved, At(1), { .actions = {}, .held = RIGHT });
+    saved.AdvanceCalendar(At(2), jobs, {}); // a world that differs from a new game's
+    const core::Vec2 foot = test::BodyOf(saved, saved.Player()).current;
+    Tick(saved, At(3), { .actions = cycle, .held = {} });
+    saved.EnterScene();
+    REQUIRE(saved.Current().key == game::ARENA_SCENE);
+    Tick(saved, At(4), {});
+    const std::vector<std::byte> bytes = Saved(saved);
+
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    REQUIRE(loaded.WorldHash() != saved.WorldHash());
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene();
+    CHECK(loaded.StateHash() == saved.StateHash());
+    CHECK(loaded.WorldHash() == saved.WorldHash());
+
+    // Both back round to the world map: the same world, the cultivator where it left it.
+    for (u64 tick = 5; saved.Current().key != game::WORLD_SCENE; ++tick) {
+        Tick(saved, At(tick), { .actions = cycle, .held = {} });
+        saved.EnterScene();
+        Tick(loaded, At(tick), { .actions = cycle, .held = {} });
+        loaded.EnterScene();
+    }
+    CHECK(loaded.Current().key == game::WORLD_SCENE);
+    CHECK(loaded.StateHash() == saved.StateHash());
+    CHECK(test::BodyOf(loaded, loaded.Player()).current.x == foot.x);
+    CHECK(test::BodyOf(loaded, loaded.Player()).current.y == foot.y);
 }
 
 TEST_CASE("Load holds and changes nothing until EnterScene") {
@@ -448,7 +484,6 @@ using test::ArenaSave;
 using test::SavedVolley;
 using test::WORLD_VERSION;
 using test::WorldSaveAt;
-using Active = test::ActiveComponents;
 using World = test::WorldComponents;
 
 // Whether a fresh host loads `bytes`, saved at `savedTick`; CHECKs that its state hash is the same afterwards, and that
@@ -525,27 +560,18 @@ void PlayFight(game::Host& saved) {
     saved.Damage(Foxes(saved).at(DYING), FOX_HEALTH, SAVED_AT);
 }
 
-// `full`, the save of `saved`, with the world tier and the relationships left out (about 200 KB of NPCs): the bytes before
-// the world tier, an empty one, no relationships, and what follows the relationships, which is the travel (none in the
-// arena) and combat. Empty if `full` isn't laid out that way.
+// `full`, the save of `saved` (a dev scene in a game without the world map, so its game world is empty), with its scratch
+// world's world tier and relationships left out (about 200 KB of NPCs): the bytes before that world tier, an empty one,
+// no relationships, and what follows the relationships, which is the travel (none in the arena) and the scene. Empty if
+// `full` isn't laid out that way.
 std::vector<std::byte> WithoutWorldTier(const game::Host& saved, const std::vector<std::byte>& full) {
     const core::State& state = saved.State();
     const core::State bare{ game::DOMAINS, state.Seed() };
+    constexpr bool PLACED = false;
     const auto head = Written([&](core::Writer& writer) {
-        writer(
-            FORMAT,
-            static_cast<u8>(std::to_underlying(game::ARENA_SCENE)),
-            state.Seed(),
-            state.Ids().next,
-            state.SceneIds().next,
-            saved.WorldTicks(),
-            saved.Months(),
-            saved.WorldPaused(),
-            saved.Player(),
-            saved.Selected()
-        );
-        writer(ACTIVE_VERSION);
-        core::SaveDomain(writer, state[game::ACTIVE], Active{});
+        writer(FORMAT, static_cast<u8>(std::to_underlying(game::ARENA_SCENE)), state.SceneIds().next);
+        test::WriteWorldSection(writer, bare, WORLD_VERSION, {}, game::Travel{}); // the game's world, generated empty
+        writer(state.Seed(), state.Ids().next, saved.WorldTicks(), saved.Months(), saved.WorldPaused(), PLACED);
     });
     const auto world = [](const core::State& source) {
         return Written([&source](core::Writer& writer) {
@@ -631,9 +657,9 @@ TEST_CASE("a sound save built as the refusals below build theirs is loaded") {
 }
 
 TEST_CASE("a save whose ID counters leave their ranges is refused, and the game is unchanged") {
-    // The world counter, then the scene's, follow the format, the scene and the seed.
-    constexpr std::size_t WORLD_AT = sizeof(u32) + sizeof(u8) + sizeof(u64);
-    constexpr std::size_t SCENE_AT = WORLD_AT + sizeof(u64);
+    // The scene counter follows the format and the scene; the game world's own counter, its seed.
+    constexpr std::size_t SCENE_AT = sizeof(u32) + sizeof(u8);
+    constexpr std::size_t WORLD_AT = SCENE_AT + sizeof(u64) + sizeof(u64);
     const core::State state{ game::DOMAINS, STATE_SEED };
     const std::vector<std::byte> sound = ArenaSave(state);
     const auto with = [&sound](std::size_t offset, u64 next) {
@@ -1188,6 +1214,82 @@ TEST_CASE("a save paused off the world map is refused, and one paused on it is l
         { .paused = true }
     );
     CHECK_FALSE(Loads(arena));
+}
+
+// A save of the arena whose game's world, set aside, is empty but for `setAside`.
+std::vector<std::byte> ArenaSetAside(const test::SetAside& setAside) {
+    const core::State state{ game::DOMAINS, STATE_SEED };
+    return ArenaSave(
+        state,
+        {},
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        game::ARENA_SCENE,
+        WORLD_VERSION,
+        ACTIVE_VERSION,
+        {},
+        game::Travel{},
+        std::nullopt,
+        game::Relationships{},
+        setAside
+    );
+}
+
+TEST_CASE("a game's world set aside paused or keeping a place on the map is refused by a game without the map") {
+    const core::Vec2 east = test::ShippedWorld()->StartCentre() + core::Vec2{ .x = 256.0F, .y = 0.0F };
+    CHECK(LoadsWithMap(ArenaSetAside({ .paused = true })));
+    CHECK_FALSE(Loads(ArenaSetAside({ .paused = true })));
+    CHECK(LoadsWithMap(ArenaSetAside({ .place = east })));
+    CHECK_FALSE(Loads(ArenaSetAside({ .place = east })));
+}
+
+TEST_CASE("a kept place on the map that isn't a finite point, or that lies on the portal, is refused") {
+    const core::Vec2 start = test::ShippedWorld()->StartCentre();
+    const core::Vec2 portal = start + game::WORLD_PORTAL_OFFSET;
+    constexpr f32 NOT_A_NUMBER = std::numeric_limits<f32>::quiet_NaN();
+    constexpr f32 INFINITE = std::numeric_limits<f32>::infinity();
+    CHECK_FALSE(LoadsWithMap(ArenaSetAside({ .place = core::Vec2{ .x = NOT_A_NUMBER, .y = start.y } })));
+    CHECK_FALSE(LoadsWithMap(ArenaSetAside({ .place = core::Vec2{ .x = start.x, .y = INFINITE } })));
+    CHECK_FALSE(LoadsWithMap(ArenaSetAside({ .place = portal })));
+    // Either side of the step area's rim, across.
+    CHECK_FALSE(LoadsWithMap(ArenaSetAside({ .place = portal + core::Vec2{ .x = 0.9F * game::PORTAL_RADIUS, .y = 0.0F } })));
+    CHECK(LoadsWithMap(ArenaSetAside({ .place = portal + core::Vec2{ .x = 1.1F * game::PORTAL_RADIUS, .y = 0.0F } })));
+}
+
+TEST_CASE("a save whose relationship names a world NPC brought into the scene loads") {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const u16 city = map->Start();
+    const u32 tile = map->TileIndex(map->Places()[city].tile);
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::StableId holder = game::SpawnNpc(state, tile, city);
+    const core::StableId subject = game::SpawnNpc(state, tile, city);
+    state.Move(
+        subject, game::ACTIVE, [&](const core::Registry& from, core::Entity old, core::Registry& into, core::Entity moved) {
+            into.emplace<game::Npc>(moved, from.get<game::Npc>(old));
+            into.emplace<game::Needs>(moved, from.get<game::Needs>(old));
+            const core::Vec2 foot = map->TileCentre(tile);
+            into.emplace<game::Body>(moved, foot, foot);
+        }
+    );
+    game::Relationships relationships;
+    const std::array<std::pair<core::StableId, core::StableId>, 1> met{ { { holder, subject } } };
+    relationships.Merge(met);
+    const std::vector<std::byte> bytes = ArenaSave(
+        state,
+        {},
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        game::WORLD_SCENE,
+        WORLD_VERSION,
+        ACTIVE_VERSION,
+        {},
+        game::Travel{},
+        std::nullopt,
+        relationships
+    );
+    CHECK(LoadsWithMap(bytes));
 }
 
 // A day in a journey's signed ticks.
