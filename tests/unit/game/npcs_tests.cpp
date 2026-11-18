@@ -143,6 +143,7 @@ TEST_CASE("a save after a fold loads") {
     game::Relationships relationships;
     game::Fold(world.state, relationships, world.travel, world.npc, world.group);
 
+    // Built here rather than by Host::Save(): a Host exposes its state and travel only as const, so it can't fold an NPC.
     const std::vector<std::byte> bytes = test::ArenaSave(
         world.state,
         {},
