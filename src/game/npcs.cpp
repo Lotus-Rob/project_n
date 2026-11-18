@@ -8,6 +8,7 @@
 #include "core/schedule.hpp"
 #include "game/components.hpp"
 #include "game/random_purposes.hpp"
+#include "game/travel.hpp"
 
 namespace game {
 
@@ -243,11 +244,12 @@ std::vector<core::StableId> Materialise(core::State& state, core::StableId group
     return npcs;
 }
 
-void Fold(core::State& state, Relationships& relationships, core::StableId npc, core::StableId group) {
+void Fold(core::State& state, Relationships& relationships, Travel& travel, core::StableId npc, core::StableId group) {
     core::Registry& world = state[WORLD].Entities();
     PN_ASSERT(!world.all_of<Met>(state[WORLD].Find(npc)), "an NPC the player has met folded into a group");
     ++world.get<Group>(state[WORLD].Find(group)).members;
     relationships.Forget(npc);
+    travel.Forget(npc);
     state.Destroy(npc);
 }
 
