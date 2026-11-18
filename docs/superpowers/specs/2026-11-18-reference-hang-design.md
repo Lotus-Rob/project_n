@@ -1,0 +1,99 @@
+# Reference hang: each case gets its share of the cores, a per-case timeout, one TSan run
+
+Date: 2026-11-18 · Status: approved · Plan: `2026-11-18-reference-hang.md`
+
+## Why
+
+`check --container` hung for 65 minutes in `reference` on this host (32 cores), on main as well as on the warnings
+branch: 20 of 47 case processes never finished, and nothing reported them. `subprocess.run` in `run_reference_case`
+waits forever, so a hung case hangs the whole gate. Natively `reference` passes in about 11 s, and CI's container jobs
+pass.
+
+## History
+
+- One process per case, all cores at once, was measured on the CI-speed branch: a single process kept lavapipe on 1.4
+  of 32 cores (28 s for 25 cases), parallel runs took 4 s. That stays: this design only sizes each process's threads.
+- Each case already has its own `XDG_RUNTIME_DIR` (commit "build(tools): give each reference case its own runtime
+  directory"): cases starting at once raced to create Mesa's shared temp directory.
+- tests/AGENTS.md already rules that a reference test never hangs (every wait has a bound that fails loudly); the
+  harness had no such bound around a whole case.
+- No Mesa bump or `LP_NUM_THREADS` setting was ever tried. Mesa is pinned at `mesa-lavapipe ==26.2.6` (pixi.toml).
+
+## Root cause (reproduced on main, 2026-11-18)
+
+Podman caps a container at 2048 tasks (`pids.max`). `reference` runs `jobs()` cases at once (32 here), and each
+starts about 31 `core::Jobs` workers (`Jobs::DefaultWorkers()`, one per core) and up to 32 llvmpipe rasterizer
+threads, plus Mesa's queue and disk-cache threads, Quill's backend and the main thread: well over 2048. The cgroup
+refused 160 thread creations (`pids.events: max 160`). Every hung case had fewer than 32 `llvmpipe-N` threads (0 to
+29). Their stacks: the main thread in `gfx::Renderer::Capture` → `SDL_CreateGPUTexture` → `lvp_CreateImageView`,
+waiting on the queue's lock. Lavapipe's queue thread holds it in `lvp_execute_cmd_buffer` → `llvmpipe_fence_finish`,
+waiting for a fence. The rasterizer threads that exist are idle. So llvmpipe waits for threads it never created.
+Natively there is no 2048 cap; CI runs about 4 cases at once on about 4 cores, far under it.
+
+## Why TSan didn't find it (verified)
+
+- `check --sanitizers` runs `cmd_test` (debug builds of the registered tests) for each sanitizer, and fuzz seeds.
+  `reference_tests` is built but not registered as a test (tests/xmake.lua), and `run_references` runs only the plain
+  release binary (`binary_path(preset, "release", ...)`). The reference cases never ran under any sanitizer.
+- Even if they had, the hang is not a data race. It is a refused `pthread_create` inside Mesa, which TSan doesn't
+  instrument, and nothing ever signals the wait. Natively, where TSan runs, the cap isn't there, so the hang never
+  happens.
+
+## Goals
+
+1. `reference` never deadlocks from thread exhaustion, natively or in a container, at any core count.
+2. A hung case fails the run within a bounded time and is named, and the other cases' results are still reported.
+3. One TSan run of the reference cases, to learn whether they find anything in our code, and a decision on whether
+   the gate should run them so.
+
+## Non-goals
+
+- No Mesa bug report (the user, 2026-11-18). No Mesa version change.
+- No change to how many cases run at once: the parallelism of the CI-speed decision stays.
+- No change to the game's own worker count outside the reference cases.
+
+## Approaches
+
+1. **Each case gets its share of the cores (picked).** `run_references` gives each case
+   `max(1, cores // cases running at once)` threads: `LP_NUM_THREADS` for llvmpipe and the same number of `core::Jobs`
+   workers in the reference cases. That's about 3 threads of drawing and work per case instead of about 60, far under
+   any cap, and it ends the over-subscription (32 processes × 60 threads on 32 cores).
+2. **Raise Podman's limit** (`--pids-limit=-1` in `container_cmd`). One line, but a host or CI runner with a lower
+   limit still deadlocks, and the over-subscription stays. Rejected.
+3. **Run fewer cases at once.** Slower everywhere, and it undoes the measured parallelism. Rejected.
+
+The user picked 1, with the timeout and one TSan run (2026-11-18).
+
+## Design
+
+- **Thread share.** `run_references` works out the share from `jobs()` and the number of cases actually run at once
+  (`min(jobs(), count)`), and passes it to each case: `LP_NUM_THREADS` in the environment, and the worker count the
+  reference cases give `core::Jobs`. When the reference binary runs by hand without it, the cases keep
+  `Jobs::DefaultWorkers()`, so nothing changes outside the harness. The mechanism (an environment variable read by a
+  helper in `tests/reference/`, or a doctest option) is the builder's call; one helper, used by every
+  `core::Jobs jobs;` in `tests/reference/reference_tests.cpp`.
+- **Timeout per case.** `run_reference_case` passes `timeout=` to `subprocess.run`. On expiry the case's process is
+  killed and counts as failed, with a message naming it ("timed out after N s") and whatever output it printed. The
+  other cases still finish and are reported. The bound is a named constant with a comment saying why it is that size:
+  a generous multiple of the slowest case measured in the container after the thread share (my call: measure, then
+  pick, about 10× the slowest case, never under 60 s). Self-tests in tools/test_project_n.py cover a case that times
+  out (named, counted as failed, the others still reported) and the share passed to each case, with a fake
+  subprocess, as the existing `run_reference_case` and `run_references` tests do.
+- **Measurement.** Before and after: native `reference` wall time (today about 11 s) and `reference --preset
+  linux-gcc --container` (today: hangs). The share must not make the native run slower; if it does, the plan comes
+  back here.
+- **One TSan run.** A thread-sanitizer build of `reference_tests` (linux-clang, the preset that supports `thread`),
+  run case by case on lavapipe the way `run_references` does, natively, once. Mesa and SDL are uninstrumented, so
+  reports inside them are noise to sort, not findings. Each report in our code is triaged: a real race is fixed
+  test-first, as any bug in `src/` (if one turns up, the scope grows and the user is told before going on). The result
+  and the decision (does the gate run the reference cases under TSan from now on, and how) go into this spec's
+  Outcome. A one-off run doesn't need new `project_n` options; if the decision is to gate it, that becomes its own
+  change.
+- **Docs.** tools/AGENTS.md (the reference runner: share and timeout) and tests/AGENTS.md (the never-hang rule now
+  also bounds whole cases; sanitizer coverage of the reference cases as decided) in the same commits. The backlog entry
+  in the project memory is removed when this merges.
+
+## Gates
+
+`pixi run project_n test`, `lint`, then `pixi run project_n check` and `pixi run project_n check --container` from
+the main checkout: the container gate is the one that hung, so it is this change's real test.
