@@ -5,6 +5,7 @@
 // core::GlowStrength() from tick to tick, and reduce flashing holds and dims it. So are the seals: a screen-wide seal's ink,
 // tile by tile, must not shimmer at sub-pixel camera offsets. So is the world map: its tiles and travellers at the smallest
 // zoom, the same way.
+#include "app/app.hpp"
 #include "app/damage_numbers.hpp"
 #include "app/hud.hpp"
 #include "app/view.hpp"
@@ -63,6 +64,50 @@ constexpr f32 CROWD_ORBIT = 50.0F;
 constexpr f32 CROWD_WOBBLE = 10.0F;
 // Zoomed out as far as a label still reads on the pictures' 1280 by 720 (10 pixels: 20 world units × 2/3 × 0.75).
 constexpr f32 CROWD_ZOOM = 0.75F;
+
+/// The worker count the harness sets in PROJECT_N_REFERENCE_WORKERS: a whole decimal from 1 to `app::MAX_WORKERS`.
+/// Unset (`text` null: a case run by hand) it is the game's default, `core::Jobs::DefaultWorkers()`.
+std::expected<u32, std::string> WorkersFrom(const char* text) {
+    if (text == nullptr) {
+        return core::Jobs::DefaultWorkers();
+    }
+    const std::string_view value{ text };
+    u32 workers = 0;
+    const char* last = std::to_address(value.end());
+    const auto [end, error] = std::from_chars(std::to_address(value.begin()), last, workers);
+    if (error != std::errc{} || end != last || workers < 1 || workers > app::MAX_WORKERS) {
+        return std::unexpected{
+            std::format("PROJECT_N_REFERENCE_WORKERS: '{}' isn't a count from 1 to {}", value, app::MAX_WORKERS)
+        };
+    }
+    return workers;
+}
+
+// Every case runs at once in its own process, so each takes its slice of the cores rather than all of them: a worker
+// per core in every process starves the software renderer's own threads.
+u32 ReferenceWorkers() {
+    constexpr const char* NAME = "PROJECT_N_REFERENCE_WORKERS";
+    std::optional<std::string> text;
+#ifdef _MSC_VER
+    // MSVC rejects getenv (C4996); _dupenv_s hands back a buffer to free.
+    char* buffer = nullptr;
+    std::size_t size = 0;
+    if (_dupenv_s(&buffer, &size, NAME) == 0 && buffer != nullptr) {
+        text = buffer;
+    }
+    std::free(buffer); // NOLINT(cppcoreguidelines-no-malloc,cppcoreguidelines-owning-memory): _dupenv_s allocates with malloc
+#else
+    // NOLINTNEXTLINE(concurrency-mt-unsafe): nothing in this process writes the environment, so no write can race the read
+    if (const char* value = std::getenv(NAME)) {
+        text = value;
+    }
+#endif
+    const auto workers = WorkersFrom(text ? text->c_str() : nullptr);
+    if (!workers) {
+        FAIL(workers.error());
+    }
+    return *workers;
+}
 
 struct View {
     std::string_view name;
@@ -188,7 +233,7 @@ void CompareWithReference(const gfx::Image& drawn, std::string_view name) {
 
 void CheckAgainstReference(const View& view) {
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     core::GameData data = test::ShippedData();
     if (view.crowd) {
         data.fox.orbitRadius = CROWD_ORBIT;
@@ -403,7 +448,7 @@ TEST_CASE("a fox dissolving, at half its progress") {
     constexpr u64 SHOWN_AT = AURA_TICK + (RULES.dyingTicks / 2);
     constexpr core::Vec2 CRYSTAL_FOOT{ .x = 420.0F, .y = 620.0F };
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     core::GameData data = game::BuiltInData();
     data.fox.health = 1;
     game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
@@ -462,7 +507,7 @@ core::Snapshot CastAndWait(core::Slot slot, u64 after, core::Jobs& jobs) {
 
 void CheckVolley(std::string_view name, u64 after, const gfx::View& view = { .showcase = false }) {
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     core::Snapshot snapshot = CastAndWait(core::Slot::Special1, after, jobs);
     snapshot.seals.clear(); // the seal the cast raises has its own picture, seal_swords, drawn with its look
     platform::Window window = OpenWindow();
@@ -493,7 +538,7 @@ TEST_CASE("the flying swords plunging, close up: the foxes they flew at died, so
     const u64 after = (middleWave * swords.waveGapTicks) + (swords.staggerTicks / 2) + swords.outTicks + swords.holdTicks +
                       (swords.departJitterTicks / 2) + swords.flightTicks + SINCE_ARRIVAL;
     {
-        core::Jobs jobs;
+        core::Jobs jobs{ ReferenceWorkers() };
         const core::Snapshot snapshot = CastAndWait(core::Slot::Special1, after, jobs);
         const auto dead = [](const core::VolleyTarget& target) { return target.diedTick != 0; };
         REQUIRE(std::ranges::all_of(snapshot.volleyTargets, dead));
@@ -504,7 +549,7 @@ TEST_CASE("the flying swords plunging, close up: the foxes they flew at died, so
 TEST_CASE("a fire bolt in flight, close up: its burn's colour shows on the pale ground") {
     constexpr u64 IN_FLIGHT = 6; // of about a dozen ticks to the foxes
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     const core::Snapshot snapshot = CastAndWait(core::Slot::Generator, IN_FLIGHT, jobs);
     const core::VolleyView& bolt = snapshot.volleys.front();
     REQUIRE(bolt.ability == core::AbilityKind::FireBolt);
@@ -524,7 +569,7 @@ constexpr u64 SINCE_LANCE = 4;
 
 TEST_CASE("the poison lance's burst, close up: a flash at the point in the poison's colour") {
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     const core::Snapshot snapshot = CastThenPublish(core::Slot::Spender, SINCE_LANCE, jobs);
     REQUIRE(snapshot.flashes.size() == 1);
     platform::Window window = OpenWindow();
@@ -536,7 +581,7 @@ TEST_CASE("the poison lance's burst, close up: a flash at the point in the poiso
 TEST_CASE("new effects change the next picture of the same snapshot, and the shipped ones bring it back") {
     constexpr f32 TIMES = 3.0F;
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     const core::Snapshot snapshot = CastThenPublish(core::Slot::Spender, SINCE_LANCE, jobs);
     REQUIRE(snapshot.flashes.size() == 1);
     platform::Window window = OpenWindow();
@@ -599,7 +644,7 @@ core::Snapshot ArenaWithSwordSeal(core::Jobs& jobs) {
 
 TEST_CASE("a seal on the pale ground: coloured lines glowing on their wash") {
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     const core::Snapshot snapshot = ArenaWithSwordSeal(jobs);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
@@ -610,7 +655,7 @@ TEST_CASE("a seal on the pale ground: coloured lines glowing on their wash") {
 TEST_CASE("new seals change the next picture of the same snapshot") {
     constexpr f32 WIDER = 4.0F;
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     const core::Snapshot snapshot = ArenaWithSwordSeal(jobs);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
@@ -650,7 +695,7 @@ TEST_CASE("an overhead seal's light on the pale ground: pillars falling from it,
                                      .sparkLife = 1.2,
                                      .sparkSize = 0.035F };
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest());
     core::Snapshot snapshot = Published(host, jobs, SEAL_TICK);
     core::Seal seal = SwordSeal(AMONG_THE_FOXES + BELOW, SIZE, SEAL_TICK - SINCE_RAISED);
@@ -675,7 +720,7 @@ TEST_CASE("an overhead seal's light on the pale ground: pillars falling from it,
 // The arena at rest at SEAL_TICK with its showcase seals, in the shipped looks, shown by `view` (the showcase drawn).
 void CheckShowcase(std::string_view name, const gfx::View& view) {
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest());
     const core::Snapshot snapshot = Published(host, jobs, SEAL_TICK);
     const bool shown = std::ranges::any_of(snapshot.seals, &core::Seal::showcase);
@@ -719,7 +764,7 @@ TEST_CASE("the swords' seal mid-formation, under their rings") {
     const u64 forming = (THIRD_WAVE * swords.waveGapTicks) + ((swords.staggerTicks + swords.outTicks) / 2);
     REQUIRE(forming < swords.outTicks + swords.holdTicks);
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     const core::Snapshot snapshot = CastAndWait(core::Slot::Special1, forming, jobs);
     const std::vector<core::Seal> raised = test::RaisedSeals(snapshot);
     REQUIRE(raised.size() == 1);
@@ -738,7 +783,7 @@ f32 Narrow(std::string_view /*text*/) {
 
 TEST_CASE("the HUD at zoom 1, one slot cooling down") {
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     const core::Snapshot snapshot = CastThenPublish(core::Slot::Spender, SINCE_LANCE, jobs);
     REQUIRE(snapshot.caster.has_value());
     std::expected<core::Strings, core::Error> strings = data::LoadStrings(Assets() / "data");
@@ -771,7 +816,7 @@ TEST_CASE("the hovered entity's pale outline and the selected one's gold, close 
 void CheckGlows(std::string_view name, f32 zoom, core::Vec2 centre) {
     constexpr u64 GLOW_TICK = 492;
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest(), game::ARENA_SCENE, game::BuiltInData());
     std::vector<core::Event> events;
     for (u64 tick = 1; tick <= GLOW_TICK; ++tick) {
@@ -862,7 +907,7 @@ std::vector<core::TextItem> NumberGrid(bool bare, const core::UiColours& colours
 // The grid of numbers over the arena at rest, at `zoom`; with `bare`, the outline and the shadow off.
 void CheckNumbers(std::string_view name, f32 zoom, bool bare = false) {
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest());
     const core::Snapshot snapshot = Published(host, jobs);
     platform::Window window = OpenWindow();
@@ -909,7 +954,7 @@ core::UiColours GarishColours() {
 // `bare`, the outline and the shadow are off, so labels, the caption and the numbers take the table's ink and dark colours.
 void CheckRecoloured(std::string_view name, bool bare) {
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest());
     std::vector<core::Event> events;
     // The fox spawned first: the lowest ID among them, as the outlines picture selects.
@@ -955,7 +1000,7 @@ TEST_CASE("a number on a creature too small to see starts from its label") {
     constexpr i32 ON_TINY = 77;
     constexpr i32 ON_SEEN = 33;
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest());
     core::Snapshot snapshot = Published(host, jobs);
     std::vector<core::TextItem*> foxes;
@@ -1118,7 +1163,7 @@ TEST_CASE("a label's ink is the same at sub-pixel camera offsets, over a dark an
     constexpr std::array<f32, 3> OFFSETS{ { 0.0F, 1.0F / 3.0F, 2.0F / 3.0F } }; // in pixels
     constexpr f64 MOST_CHANGE = 0.02;
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, ArenaScene(), jobs);
     for (const Ground ground : GROUNDS) {
@@ -1146,7 +1191,7 @@ TEST_CASE("a label following its creature doesn't step, over a dark and a pale g
     constexpr f32 MOVED = 8.0F; // world units in x between the two ticks
     constexpr f64 MOST_ERROR = 0.15;
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, ArenaScene(), jobs);
     for (const Ground ground : GROUNDS) {
@@ -1335,7 +1380,7 @@ TEST_CASE("each drive's drawn glow follows GlowStrength, also with start ticks a
           .second = { .role = DemoCharge, .tick = HALF_FADED } },
     } };
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest(), game::ARENA_SCENE, game::BuiltInData());
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, ArenaScene(), jobs);
@@ -1355,7 +1400,7 @@ TEST_CASE("reduce flashing holds a pulse at its average and dims light glows, an
     constexpr u64 HALF_FILLED = 90;
     using enum core::GlowRole;
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest(), game::ARENA_SCENE, game::BuiltInData());
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, ArenaScene(), jobs);
@@ -1499,7 +1544,7 @@ TEST_CASE("a screen-wide seal at the smallest zoom: no shimmer") {
     constexpr core::Vec2 PALE_FOOT{ .x = -3'000.0F, .y = -1'800.0F };
     constexpr f32 PALE_SCALE = 5.0F;
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, ArenaScene(), jobs);
     const core::Seals shipped = test::ShippedSeals();
@@ -1543,7 +1588,7 @@ TEST_CASE("the world's tiles and travellers at the smallest zoom: shimmer held t
     // the measure (the seals' 0.02 is about twice their 0.011).
     constexpr f64 MOST_CHANGE = 0.06;
     core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs;
+    core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
     // Over the busiest region, published culled to the unshifted picture's view, as the game sends it (its margin holds
     // the shifted one); the travellers' labels are hidden at this zoom.
@@ -1561,6 +1606,23 @@ TEST_CASE("the world's tiles and travellers at the smallest zoom: shimmer held t
     MESSAGE("world shimmer: ", change.worst);
     INFO("of ", change.measured, " tiles, the worst changed its ink by ", change.worst);
     CHECK(change.worst < MOST_CHANGE);
+}
+
+TEST_CASE("reference workers come from the harness") {
+    CHECK(WorkersFrom(nullptr) == core::Jobs::DefaultWorkers());
+    CHECK(WorkersFrom("1") == 1);
+    CHECK(WorkersFrom("3") == 3);
+    const auto top = WorkersFrom(std::to_string(app::MAX_WORKERS).c_str());
+    REQUIRE(top.has_value());
+    CHECK(*top == app::MAX_WORKERS);
+    const std::string pastTop = std::to_string(app::MAX_WORKERS + 1);
+    for (const char* bad : { "", "0", "x", "3x", "-1", pastTop.c_str() }) {
+        INFO("value '", bad, "'");
+        const auto workers = WorkersFrom(bad);
+        REQUIRE(!workers.has_value());
+        CHECK(workers.error().find("PROJECT_N_REFERENCE_WORKERS") != std::string::npos);
+        CHECK(workers.error().find(std::string{ "'" } + bad + "'") != std::string::npos);
+    }
 }
 
 } // namespace
