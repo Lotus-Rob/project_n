@@ -164,7 +164,8 @@ public:
     [[nodiscard]] bool Load(core::Reader& archive, const core::State& state, const core::WorldMap* map);
 
     /// Writes the journeys as the plans that make them (core::PlanOf(), the legs left to LoadPlans()) and the journals whole
-    /// into `archive`; every journey is a visit.
+    /// into `archive`. Every journey in the table is one core::Visit() made (Month() is the only producer); one that isn't
+    /// can't be written as a plan, so it is left out, and the months of its members then fail LoadPlans().
     template<typename Archive>
     void SavePlans(Archive& archive) const {
         std::vector<core::VisitPlan> plans;
@@ -172,7 +173,9 @@ public:
         for (const core::Journey& journey : m_journeys) {
             std::optional<core::VisitPlan> plan = core::PlanOf(journey);
             PN_ASSERT(plan.has_value(), "every journey in the table is a visit");
-            plans.push_back(*std::move(plan));
+            if (plan.has_value()) {
+                plans.push_back(*std::move(plan));
+            }
         }
         archive(plans, m_journals);
     }
@@ -222,6 +225,7 @@ private:
         std::vector<core::Journey> journeys,
         std::vector<Journal> journals
     );
+
     std::vector<core::Journey> m_journeys;                          // by first member
     std::vector<Journal> m_journals;                                // by NPC
     std::unordered_set<core::StableId> m_travellers;                // every journey's members; looked up only, never
