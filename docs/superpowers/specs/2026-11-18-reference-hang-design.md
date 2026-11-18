@@ -1,6 +1,7 @@
 # Reference hang: each case gets its share of the cores, a per-case timeout, one TSan run
 
-Date: 2026-11-18 · Status: approved · Plan: `2026-11-18-reference-hang.md`
+Date: 2026-11-18 · Status: **implemented 2026-11-18** (see Outcome; approved 2026-11-18)
+· Plan: `2026-11-18-reference-hang.md`
 
 ## Why
 
@@ -111,7 +112,8 @@ the main checkout: the container gate is the one that hung, so it is this change
 - Slowest case in that container run: 7.4 s (cases 5 to 9, 7.1 s to 7.4 s; one run, so one sample per case).
   `REFERENCE_CASE_TIMEOUT` is 80 s, about ten times that. A smaller CI runner gives each case one thread too, as on this
   host (4 cores, 4 cases at once), so a case's time there scales with its cores' speed and load rather than with the
-  core count. That a tenfold margin covers this and the single sample is a judgement, not a measurement. The cases always run a release build, never a sanitizer one.
+  core count. That a tenfold margin covers this and the single sample is a judgement, not a measurement. The cases
+  always run a release build, never a sanitizer one.
 
 ### ThreadSanitizer run (this host, 32 cores, 2026-11-18)
 
@@ -119,8 +121,9 @@ A one-off run by hand, outside the gate: the gate's reference step still runs th
 
 - Build: `pixi run project_n build --preset linux-clang --mode debug --sanitizer thread`, 26.8 s here (warm package
   and object caches; a cold one takes longer). Dependencies, Mesa and LLVM are not instrumented.
-- Run: a throwaway runner with `run_references`' environment (Pixi's lavapipe ICD and loader, `SDL_VIDEO_DRIVER=offscreen`,
-  a private `XDG_RUNTIME_DIR` per case), every case in its own process (`--first=i --last=i --minimal=true`), 8 at a
+- Run: a throwaway runner with `run_references`' environment (Pixi's lavapipe ICD and loader,
+  `SDL_VIDEO_DRIVER=offscreen`, a private `XDG_RUNTIME_DIR` per case), every case in its own process
+  (`--first=i --last=i --minimal=true`), 8 at a
   time (`jobs() // 4`), each with a 4-thread share (`LP_NUM_THREADS` and `PROJECT_N_REFERENCE_WORKERS`), a 1800 s
   bound, and `TSAN_OPTIONS=halt_on_error=0:second_deadlock_stack=1` with a log per case.
 - Result: all 48 cases ran in 55.5 s wall (6.7 s to 15.1 s each, against 7.4 s at most for the release cases in the
@@ -155,3 +158,31 @@ the rule. The run is cheap (a minute plus the build), so cost is not the reason:
   `check --sanitizers` covers.
 - This run found nothing in our code. A by-hand run like this one is worth repeating when the renderer starts sharing
   memory between threads on the CPU side.
+
+### Rulings made while building it
+
+Where the code departs from the plan, and the calls made on the way, each with what it costs if wrong:
+
+- **Windows reads the variable with `_dupenv_s`.** A review built the first version with msvc-wine's `cl` and found
+  `std::getenv` breaks windows-msvc under `/WX` (C4996); `ReferenceWorkers` uses `_dupenv_s` there and `std::getenv`
+  elsewhere. Cost if wrong: none, both builds pass.
+- **`WorkersFrom` also refuses more than `app::MAX_WORKERS`**, the bound the game's `--workers` already has, so a
+  mistyped value can't start thousands of threads. Not in the plan. Cost if wrong: none.
+- **The variable is read on every `ReferenceWorkers` call, not once.** Nothing in the process writes the environment,
+  so a read can't race a write, and a value read once would need a static the tests' own calls would share. Cost if
+  wrong: none.
+- **A timed-out case is named by listing it.** The plan made `reference_case_name` conditional on doctest's
+  `--list-test-cases` honouring `--first/--last` in run order; it does (checked on the release binary and in doctest
+  2.5.3's source), so a timed-out or crashed case is reported by its test name. Cost if wrong: a misnamed case in a
+  failure message.
+- **Task 3's two container runs became one.** The per-case timing was printed by the host-side runner, so a single run
+  gave the wall time, `pids.events` and each case's time; the print was removed before committing. Cost if wrong: none.
+- **The TSan run set `TSAN_OPTIONS=halt_on_error=0:second_deadlock_stack=1` itself.** The plan pointed at
+  `SANITIZER_ENV`'s TSan options, which don't exist (it has UBSan's and ASan's only); these collect every report rather
+  than stopping at the first. Cost if wrong: a rerun.
+- **Process:** Task 3 ran in the main checkout with a light review (it needs Podman and the whole machine, and a
+  container can't see a worktree's `.git`); the linux-gcc and windows-msvc release builds ran once after the first two
+  tasks landed, not per task (the first was Python only); a fix commit wrongly typed `fix(tests)` was folded into its
+  task's `test(tests)` commit, which also keeps every commit building on windows-msvc; and the last wording fix to the
+  sanitizer rule in tests/AGENTS.md got no second re-review (two sentences, checked by `doctor --docs` and `lint`, and
+  read again by the final review).
