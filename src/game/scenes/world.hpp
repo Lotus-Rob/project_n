@@ -24,11 +24,11 @@ inline constexpr core::Vec2 WORLD_BUSIEST{ .x = 33'000.0F, .y = 10'800.0F };
 /// the quiet country round the start, west of it and off the strip east of the start that `--camera-path` walks along.
 inline constexpr core::Vec2 WORLD_PORTAL_OFFSET{ .x = -560.0F, .y = -200.0F };
 
-/// The world map's scene: the cultivator walking it and the cities' people, over the map the renderer draws.
+/// The world map's scene: the cultivator walking it among the game's world's people, over the map the renderer draws.
 class WorldScene final : public Scene {
 public:
-    /// Named `world`, its view the map's, with creatures (the cultivator) and no grid of world NPCs (`worldNpcs` 0: Build
-    /// spawns the cities' people on the map instead), the camera following the cultivator until panned, and its portal a
+    /// Named `world`, a game scene (it runs on the game's world, whose cities' people GenerateWorld() made) with
+    /// creatures (the cultivator), its view the map's, the camera following the cultivator until panned, and its portal a
     /// short walk from the start, on the first screen.
     [[nodiscard]] const SceneTraits& Traits() const override;
 
@@ -38,9 +38,9 @@ public:
     /// The whole map, from its top left corner to its columns and rows of tiles; empty without a map.
     [[nodiscard]] core::Rect View(const SceneContext& context) const override;
 
-    /// The cultivator on the start city's tile centre, made the player; then each city's `people` as world NPCs homed in
-    /// it (seven tenths on the city's tile, the rest on drawn tiles of its region); last, the people set out on the visits
-    /// a month of travel would have them on (SceneContext::SeedTravel()), so the roads are busy from the first frame.
+    /// The cultivator, made the player, where it stood when it last left the map (SceneContext::MapPlace()), or on the
+    /// start city's tile centre in a game that hasn't left it yet. The world's people are the game's world's, never
+    /// spawned here.
     void Build(SceneContext& context) const override;
 
     /// The name of every place of the map whose tile centre lies within `view` (core::TextKind::Place), hung under the

@@ -17,6 +17,7 @@ constexpr SceneTraits STRESS_TRAITS{
     .home = ARENA_START,
     .creatures = true,
     .camera = core::CameraKind::Follow,
+    .devScene = true,
     .worldNpcs = 50'000,
     .portal = ARENA_PORTAL,
 };

@@ -8,7 +8,7 @@ namespace {
 
 using core::atlas::SpriteId;
 
-constexpr SceneTraits PAINTED_TRAITS{ .name = "painted", .view = GROUND };
+constexpr SceneTraits PAINTED_TRAITS{ .name = "painted", .view = GROUND, .devScene = true };
 
 struct PaintedSprite {
     SpriteId sprite = SpriteId{};

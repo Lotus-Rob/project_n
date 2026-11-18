@@ -67,8 +67,9 @@ constexpr f32 MIDDLE = 0.5F;
 // The host's part of a save: its format, then a version per domain, each changed with what its components save.
 // 2: the player and the selection; 3: the respawns waiting, the volleys and the flashes; 4: the seals; 5: the world clock,
 // the month steps run and the world pause in place of the months passed; 6: the player's route; 7: the scene's own stable-ID
-// counter
-constexpr u32 ARENA_FORMAT = 7;
+// counter; 8: the game's world, a dev scene's scratch world and the scene in sections of their own, and the place on the
+// world map the cultivator comes back to
+constexpr u32 ARENA_FORMAT = 8;
 constexpr u32 ACTIVE_VERSION =
     5; // 2: creatures; 3: spin; 4: health, dying, arriving, caster, dashing, afflictions; 5: the NPCs' homes
 constexpr u32 WORLD_VERSION = 3; // 2: the NPCs' homes; 3: the travelling action, the journeys and the journals
@@ -91,6 +92,99 @@ using ActiveComponents = core::ComponentList<
 using WorldComponents = core::ComponentList<Npc, Needs, Met, Group>;
 
 constexpr u32 PUBLISH_CHUNK = 4'096; // entities, or journeys, packed per job chunk
+
+/// Writes `world`'s section of a save whole into `archive` (a Writer or a Hasher): its seed, its world stable-ID counter,
+/// its calendar, its pause and its place on the world map, then its world domain, its relationships and its travel. Its
+/// active domain is the running scene's, written with the scene.
+template<typename Archive>
+void WriteWorld(Archive& archive, const WorldState& world) {
+    archive(
+        world.state.Seed(), world.state.Ids().next, world.worldTicks, world.months, world.paused, world.mapPlace.has_value()
+    );
+    if (world.mapPlace) {
+        archive(*world.mapPlace);
+    }
+    archive(WORLD_VERSION);
+    core::SaveDomain(archive, world.state[WORLD], WorldComponents{});
+    world.relationships.Save(archive);
+    world.travel.Save(archive);
+}
+
+/// Reads the section WriteWorld() wrote into a world whose state hands out scene IDs from `sceneIds`, its travel checked
+/// against `map` (null where none may be under way). Fails `archive` on anything malformed: a world read from a failed
+/// archive is to be thrown away.
+WorldState ReadWorld(core::Reader& archive, core::StableIdCounter sceneIds, const core::WorldMap* map) {
+    u64 seed = 0;
+    u64 next = 0;
+    u64 worldTicks = 0;
+    u64 months = 0;
+    bool paused = false;
+    bool placed = false;
+    archive(seed, next, worldTicks, months, paused, placed);
+    core::Vec2 place{};
+    if (placed) {
+        archive(place);
+    }
+    // Counters outside their ranges would let the two ranges' IDs meet; the state built in their place is thrown away.
+    const core::StableIdCounter ids{ .next = next };
+    const bool countersFit = core::State::CountersFit(ids, sceneIds);
+    if (!countersFit) {
+        archive.Fail();
+    }
+    WorldState world{ countersFit ? core::State{ DOMAINS, seed, ids, sceneIds } : core::State{ DOMAINS, seed } };
+    u32 version = 0;
+    archive(version);
+    if (version != WORLD_VERSION) {
+        archive.Fail();
+    }
+    core::LoadDomain(archive, world.state, WORLD, WorldComponents{});
+    world.relationships.Load(archive); // checked against the state once the scene's domain is read too (Within())
+    static_cast<void>(world.travel.Load(archive, world.state, map)); // a refusal fails `archive`
+    world.worldTicks = worldTicks;
+    world.months = months;
+    world.paused = paused;
+    if (placed) {
+        world.mapPlace = place;
+    }
+    return world;
+}
+
+/// `point` in the units of the step area round `portal`, where the step area is the unit circle.
+core::Vec2 StepAreaUnits(core::Vec2 point, core::Vec2 portal) {
+    const core::Vec2 away = point - portal;
+    return { .x = away.x / PORTAL_RADIUS, .y = away.y / (PORTAL_RADIUS * PORTAL_DEPTH_RATIO) };
+}
+
+/// Whether `point` lies in the step area round `portal`: an ellipse PORTAL_RADIUS across and PORTAL_DEPTH_RATIO as deep,
+/// as the portal's seal is drawn, its rim included.
+bool InStepArea(core::Vec2 point, core::Vec2 portal) {
+    const core::Vec2 units = StepAreaUnits(point, portal);
+    return (units.x * units.x) + (units.y * units.y) <= 1.0F;
+}
+
+/// Clears the running scene out of `state`: each world NPC it brought in goes back to the world domain under its stable
+/// ID (Deactivate()), and the scene's own entities are destroyed.
+void ClearScene(core::State& state) {
+    const auto* ids = std::as_const(state)[ACTIVE].Entities().storage<core::StableId>();
+    if (ids == nullptr) {
+        return;
+    }
+    std::vector<core::StableId> present;
+    present.reserve(ids->size());
+    for (std::size_t index = 0; index < ids->size(); ++index) {
+        present.push_back(ids->get((*ids)[index]));
+    }
+    for (const core::StableId entity : present) {
+        if (std::to_underlying(entity) >= core::SCENE_ID_BASE) {
+            state.Destroy(entity);
+            continue;
+        }
+        PN_ASSERT(
+            state[ACTIVE].Entities().all_of<Npc>(state[ACTIVE].Find(entity)), "a world entity in a scene that isn't an NPC"
+        );
+        Deactivate(state, entity);
+    }
+}
 
 /// Whether the active domain's combat components come as combat reads them: every creature has health and only
 /// creatures do, a creature is dying exactly when its health is out, an arriving one has the body and orbit it
@@ -165,6 +259,16 @@ bool ClockFits(u64 worldTicks, u64 months) {
     const u64 month = worldTicks / TICKS_PER_MONTH;
     return worldTicks <= CALENDAR_END &&
            (month == months || (month > months && month - months == 1 && worldTicks % TICKS_PER_MONTH == 0));
+}
+
+/// Whether `world`, read from a save, holds together for `map` (null for a world that never shows the world map: a dev
+/// scene's, or the game's in a game without the map): every NPC placed for it (NpcsPlaced()), its clock within its month
+/// steps (ClockFits()), and neither paused nor keeping a place on the map without one; a place kept is a finite point.
+bool WorldFits(const WorldState& world, const core::WorldMap* map) {
+    const bool placeFits =
+        !world.mapPlace || (map != nullptr && std::isfinite(world.mapPlace->x) && std::isfinite(world.mapPlace->y));
+    return NpcsPlaced(world.state, map) && ClockFits(world.worldTicks, world.months) && (!world.paused || map != nullptr) &&
+           placeFits;
 }
 
 /// Whether the player's route read from a save can be walked: none, or, on `map` (null where the scene shows none) with
@@ -306,8 +410,8 @@ public:
     void Damage(core::StableId target, i64 amount, u64 tick) override {
         m_host->Damage(target, amount, tick);
     }
-    void SeedTravel() override {
-        m_host->SeedTravel();
+    [[nodiscard]] std::optional<core::Vec2> MapPlace() const override {
+        return m_host->Live().mapPlace;
     }
 
 private:
@@ -338,14 +442,15 @@ std::optional<core::SceneFacts> Host::Requested() const {
 void Host::EnterScene() {
     if (m_loaded) {
         m_world = std::move(m_loaded->world);
+        m_scratch = std::move(m_loaded->scratch);
         m_combat = std::move(m_loaded->combat);
         m_scene = m_loaded->scene;
         m_sceneId = SceneIdOf(*m_manifest, m_scene);
-        m_worldTicksBefore = m_world.worldTicks;
         m_player = m_loaded->player;
         m_selected = m_loaded->selected;
         m_route = std::move(m_loaded->route);
         m_loaded.reset();
+        m_worldTicksBefore = Live().worldTicks;
         m_requested.reset(); // the load replaces the scene a CycleScene asked for
         ApplyData();
         return;
@@ -366,28 +471,19 @@ Host::Host(std::shared_ptr<const core::Manifest> manifest, core::SceneKey scene,
     if (m_data.world != nullptr) {
         m_paths.emplace(m_data.world);
     }
+    GenerateWorld(m_world, m_data, m_paths ? &*m_paths : nullptr);
     Build(m_scene);
 }
 
-void Host::SeedTravel() {
-    PN_ASSERT(m_paths.has_value(), "travel seeded in a game without the world map");
-    WorldState& world = Live();
-    if (!m_paths || world.months * TICKS_PER_MONTH > TRAVEL_END) {
-        return;
-    }
-    world.travel.Seed(
-        world.state, *m_data.world, *m_paths, world.state.Seed(), 0, static_cast<i64>(world.months * TICKS_PER_MONTH)
-    );
-}
-
-/// Everything but the calendar (the world clock and the month steps run) and the game data starts afresh: the entities,
-/// their IDs, the relationships, the travel, the selection, the world pause, the player's route.
+/// The running scene's fight, selection, player and route go, and so do its entities, the world NPCs it brought in going
+/// back to the game's world; a dev scene's scratch world goes whole. Then a dev scene gets a scratch world made afresh,
+/// its calendar at the start, and a game scene runs on the game's world, which keeps its calendar, its pause, its travel
+/// and its NPCs. The scene IDs carry on from the last scene's, so none is handed out twice in a session.
 void Host::Build(core::SceneKey scene) {
-    WorldState& world = Live();
-    WorldState fresh{ core::State{ DOMAINS, SEED } };
-    fresh.worldTicks = world.worldTicks;
-    fresh.months = world.months;
-    world = std::move(fresh);
+    const core::StableIdCounter sceneIds = Live().state.SceneIds();
+    if (!m_scratch) {
+        ClearScene(m_world.state);
+    }
     m_combat = Combat{};
     m_combat.SetRules(m_data.combat);
     m_scene = scene;
@@ -396,13 +492,24 @@ void Host::Build(core::SceneKey scene) {
     m_player = {};
     m_selected = {};
     m_route.reset();
+    const SceneTraits& traits = Running().Traits();
+    if (traits.devScene) {
+        m_scratch.emplace(core::State{ DOMAINS, SEED });
+    }
+    else {
+        m_scratch.reset();
+    }
+    WorldState& world = Live();
+    world.state.SetSceneIds(sceneIds);
     m_worldTicksBefore = world.worldTicks;
-    PN_ASSERT(
-        !Running().Traits().worldMap || m_data.world != nullptr, "a world scene built without the world map: CheckScenes()"
-    );
+    PN_ASSERT(!traits.worldMap || m_data.world != nullptr, "a world scene built without the world map: CheckScenes()");
+    PN_ASSERT(traits.devScene || traits.worldNpcs == 0, "a game scene spawning a crowd into the game's world");
     Context context{ *this };
     Running().Build(context);
-    for (u32 npc = 0; npc < Running().Traits().worldNpcs; ++npc) {
+    if (traits.worldMap) {
+        world.mapPlace.reset(); // the cultivator stands there again, so its foot is where it is
+    }
+    for (u32 npc = 0; npc < traits.worldNpcs; ++npc) {
         SpawnNpc(world.state, npc % WORLD_CELLS);
     }
 }
@@ -449,7 +556,7 @@ void Host::Tick(const core::TickCounters& counters, const core::TickInput& input
     if (std::ranges::contains(input.actions, core::ActionKind::CycleScene, &core::Action::kind)) {
         const core::SceneKey next = NextScene(m_scene);
         PN_LOG_INFO("tick {}: the scene changes to {}", counters.simulation, SceneName(next));
-        Leave(next, events);
+        Leave(next, false, events);
         return;
     }
     TakeActions(input.actions, counters, events);
@@ -461,7 +568,7 @@ void Host::Tick(const core::TickCounters& counters, const core::TickInput& input
     if (OnPortal()) {
         const core::SceneKey next = NextWalkableScene(m_scene);
         PN_LOG_INFO("tick {}: the cultivator steps through the portal to {}", counters.simulation, SceneName(next));
-        Leave(next, events);
+        Leave(next, true, events);
         return;
     }
     if (clockRuns) {
@@ -634,9 +741,23 @@ const Body& Host::PlayerBody() const {
     return active.Entities().get<Body>(active.Find(m_player));
 }
 
-void Host::Leave(core::SceneKey next, std::vector<core::Event>& events) {
+void Host::Leave(core::SceneKey next, bool throughPortal, std::vector<core::Event>& events) {
     m_combat.EndUses(Live().state, events); // nothing of this scene's goes on to hit
-    m_requested = next;                     // the logic has it built after this tick
+    if (Running().Traits().worldMap && m_player != core::StableId{}) {
+        // Where it stood before it touched the portal, so it never comes back onto the portal and straight out again.
+        const Body& body = PlayerBody();
+        const core::Vec2 place = throughPortal ? body.previous : body.current;
+        // A month step's jump can leave it standing in the step area, where a place kept would send it straight out.
+        if (OnMapPortal(place)) {
+            Live().mapPlace.reset();
+            PN_LOG_DEBUG("the cultivator left the world map from its portal, so it will come back to the start city");
+        }
+        else {
+            Live().mapPlace = place;
+            PN_LOG_DEBUG("the cultivator will come back to the world map at ({}, {})", place.x, place.y);
+        }
+    }
+    m_requested = next; // the logic has it built after this tick
 }
 
 std::optional<core::Vec2> Host::Portal() {
@@ -655,18 +776,21 @@ bool Host::OnPortal() {
         return false;
     }
     // The foot's whole path this tick, not only where it ends: a dash moves farther in a tick than the step area is deep.
-    // Measured in the step area's own units, where it is the unit circle.
+    // Its nearest point to the portal is found in the step area's own units, where the area is the unit circle.
     const Body& body = PlayerBody();
-    const auto scaled = [&portal](core::Vec2 foot) {
-        const core::Vec2 away = foot - *portal;
-        return core::Vec2{ .x = away.x / PORTAL_RADIUS, .y = away.y / (PORTAL_RADIUS * PORTAL_DEPTH_RATIO) };
-    };
-    const core::Vec2 from = scaled(body.previous);
-    const core::Vec2 path = scaled(body.current) - from;
+    const core::Vec2 from = StepAreaUnits(body.previous, *portal);
+    const core::Vec2 path = StepAreaUnits(body.current, *portal) - from;
     const f32 length = (path.x * path.x) + (path.y * path.y);
     const f32 along = length > 0.0F ? std::clamp(-((from.x * path.x) + (from.y * path.y)) / length, 0.0F, 1.0F) : 0.0F;
-    const core::Vec2 nearest = from + (path * along);
-    return (nearest.x * nearest.x) + (nearest.y * nearest.y) <= 1.0F;
+    return InStepArea(body.previous + ((body.current - body.previous) * along), *portal);
+}
+
+bool Host::OnMapPortal(core::Vec2 point) {
+    const Context context{ *this };
+    return std::ranges::any_of(Scenes(), [&](const game::Scene* scene) {
+        const std::optional<core::Vec2> portal = scene->Traits().worldMap ? scene->Portal(context) : std::nullopt;
+        return portal.has_value() && InStepArea(point, *portal);
+    });
 }
 
 void Host::PublishPortal(core::Snapshot& snapshot) {
@@ -937,27 +1061,18 @@ bool Host::MonthDue() const {
 }
 
 template<typename Archive>
-void Host::Write(Archive& archive) const {
-    const WorldState& world = Live();
+void Host::Write(Archive& archive, bool everyWorld) const {
+    const WorldState& running = Live();
     // The scene stays one byte, as the scene enum was.
-    archive(
-        ARENA_FORMAT,
-        static_cast<u8>(std::to_underlying(m_scene)),
-        world.state.Seed(),
-        world.state.Ids().next,
-        world.state.SceneIds().next,
-        world.worldTicks,
-        world.months,
-        world.paused,
-        m_player,
-        m_selected
-    );
-    archive(ACTIVE_VERSION);
-    core::SaveDomain(archive, world.state[ACTIVE], ActiveComponents{});
-    archive(WORLD_VERSION);
-    core::SaveDomain(archive, world.state[WORLD], WorldComponents{});
-    world.relationships.Save(archive);
-    world.travel.Save(archive);
+    archive(ARENA_FORMAT, static_cast<u8>(std::to_underlying(m_scene)), running.state.SceneIds().next);
+    if (!m_scratch || everyWorld) {
+        WriteWorld(archive, m_world);
+    }
+    if (m_scratch) {
+        WriteWorld(archive, *m_scratch);
+    }
+    archive(m_player, m_selected, ACTIVE_VERSION);
+    core::SaveDomain(archive, running.state[ACTIVE], ActiveComponents{});
     archive(m_route.has_value());
     if (m_route) {
         archive(*m_route);
@@ -968,13 +1083,19 @@ void Host::Write(Archive& archive) const {
 void Host::Save(core::Writer& archive) {
     PN_PROFILE_ZONE();
     Live().state.SortCanonical();
-    Write(archive);
+    Write(archive, true);
 }
 
 u64 Host::StateHash() const {
     PN_PROFILE_ZONE();
     core::Hasher hasher;
-    Write(hasher);
+    Write(hasher, false);
+    return hasher.Value();
+}
+
+u64 Host::WorldHash() const {
+    core::Hasher hasher;
+    WriteWorld(hasher, m_world);
     return hasher.Value();
 }
 
@@ -982,44 +1103,30 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
     PN_PROFILE_ZONE();
     u32 format = 0;
     u8 scene = 0;
-    u64 seed = 0;
-    u64 next = 0;
     u64 sceneNext = 0;
-    u64 worldTicks = 0;
-    u64 months = 0;
-    bool worldPaused = false;
+    archive(format, scene, sceneNext);
+    const bool sceneKnown = scene < Scenes().size();
+    const SceneTraits* const traits = sceneKnown ? &SceneOf(core::SceneKey{ scene }).Traits() : nullptr;
+    // A scene that shows the world map can't run without it, so a save of one is refused by a game that lacks the map.
+    if (format != ARENA_FORMAT || traits == nullptr || (traits->worldMap && m_data.world == nullptr)) {
+        archive.Fail();
+    }
+    const core::StableIdCounter sceneIds{ .next = sceneNext };
+    const core::WorldMap* const map = m_data.world.get();
+    WorldState world = ReadWorld(archive, sceneIds, map);
+    std::optional<WorldState> scratch = std::nullopt;
+    if (traits != nullptr && traits->devScene) {
+        scratch.emplace(ReadWorld(archive, sceneIds, nullptr)); // a dev scene never shows the map, so it has no travel
+    }
+    WorldState& running = scratch ? *scratch : world;
     core::StableId player{};
     core::StableId selected{};
-    archive(format, scene, seed, next, sceneNext, worldTicks, months, worldPaused, player, selected);
-    // A scene that shows the world map can't run without it, so a save of one is refused by a game that lacks the map.
-    if (format != ARENA_FORMAT || scene >= Scenes().size() ||
-        (SceneOf(core::SceneKey{ scene }).Traits().worldMap && m_data.world == nullptr)) {
-        archive.Fail();
-    }
-    // Counters outside their ranges would let the two ranges' IDs meet; the state built in their place is thrown away.
-    const core::StableIdCounter ids{ .next = next };
-    const core::StableIdCounter sceneIds{ .next = sceneNext };
-    const bool countersFit = core::State::CountersFit(ids, sceneIds);
-    if (!countersFit) {
-        archive.Fail();
-    }
-    core::State state = countersFit ? core::State{ DOMAINS, seed, ids, sceneIds } : core::State{ DOMAINS, seed };
     u32 version = 0;
-    archive(version);
+    archive(player, selected, version);
     if (version != ACTIVE_VERSION) {
         archive.Fail();
     }
-    core::LoadDomain(archive, state, ACTIVE, ActiveComponents{});
-    archive(version);
-    if (version != WORLD_VERSION) {
-        archive.Fail();
-    }
-    core::LoadDomain(archive, state, WORLD, WorldComponents{});
-    Relationships relationships;
-    relationships.Load(archive, state);
-    const bool sceneHasMap = scene < Scenes().size() && SceneOf(core::SceneKey{ scene }).Traits().worldMap;
-    Travel travel;
-    static_cast<void>(travel.Load(archive, state, sceneHasMap ? m_data.world.get() : nullptr)); // a refusal fails `archive`
+    core::LoadDomain(archive, running.state, ACTIVE, ActiveComponents{});
     bool walking = false;
     archive(walking);
     std::optional<core::Journey> route = std::nullopt;
@@ -1028,24 +1135,23 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
     }
     Combat combat;
     combat.Load(archive);
-    const bool npcsPlaced = NpcsPlaced(state, sceneHasMap ? m_data.world.get() : nullptr);
+    const bool sceneHasMap = traits != nullptr && traits->worldMap;
+    // Checked only now the scene's domain is read too, as a relationship may name a world NPC the scene brought in.
+    const bool worldsFit = Consistent(world.state) && WorldFits(world, map) && world.relationships.Within(world.state) &&
+                           (!world.mapPlace || !OnMapPortal(*world.mapPlace)) &&
+                           (!scratch || (Consistent(scratch->state) && WorldFits(*scratch, nullptr) &&
+                                         scratch->relationships.Within(scratch->state)));
+    const core::State& state = running.state;
     const bool playerFound = player == core::StableId{} || (state.DomainOf(player) == ACTIVE &&
                                                             state[ACTIVE].Entities().all_of<Body>(state[ACTIVE].Find(player)));
-    // The pause only holds where the world map shows, as a scene build clears it.
-    const bool calendarFits = ClockFits(worldTicks, months) && (!worldPaused || sceneHasMap);
-    const bool routeFits = RouteFits(route, player, sceneHasMap ? m_data.world.get() : nullptr, worldTicks);
-    if (archive.Failed() || archive.Remaining() != 0 || !Consistent(state) || !npcsPlaced || !playerFound || !calendarFits ||
-        !routeFits || !combat.AimsAtCreatures(state) || !combat.FlashesStartBy(simulationTick) ||
-        !combat.SealsStartBy(simulationTick)) {
+    const bool routeFits = RouteFits(route, player, sceneHasMap ? map : nullptr, running.worldTicks);
+    if (archive.Failed() || archive.Remaining() != 0 || !worldsFit || !playerFound || !routeFits ||
+        !combat.AimsAtCreatures(state) || !combat.FlashesStartBy(simulationTick) || !combat.SealsStartBy(simulationTick)) {
         return false;
     }
-    WorldState world{ std::move(state) };
-    world.relationships = std::move(relationships);
-    world.travel = std::move(travel);
-    world.worldTicks = worldTicks;
-    world.months = months;
-    world.paused = worldPaused;
-    m_loaded.emplace(std::move(world), std::move(combat), core::SceneKey{ scene }, player, selected, std::move(route));
+    m_loaded.emplace(
+        std::move(world), std::move(scratch), std::move(combat), core::SceneKey{ scene }, player, selected, std::move(route)
+    );
     return true;
 }
 

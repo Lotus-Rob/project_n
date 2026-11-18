@@ -21,6 +21,7 @@ constexpr SceneTraits ARENA_TRAITS{
     .creatures = true,
     .demoGlows = ARENA_DEMO_GLOWS,
     .camera = core::CameraKind::Follow,
+    .devScene = true,
     .worldNpcs = 5'000,
     .portal = ARENA_PORTAL,
 };

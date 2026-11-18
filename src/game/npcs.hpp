@@ -186,10 +186,13 @@ public:
         }
     }
 
-    /// Replaces the edges with those Save() wrote, read from `archive`, whose NPCs must all be in
-    /// `state`. Fails `archive`, changing nothing, on a malformed table: out of order, repeated,
-    /// an NPC about itself, a stable ID not in `state`, or an opinion that isn't finite.
-    void Load(core::Reader& archive, const core::State& state);
+    /// Replaces the edges with those Save() wrote, read from `archive`. Fails `archive`, changing nothing, on a malformed
+    /// table: out of order, repeated, an NPC about itself, or an opinion that isn't finite. Whether the NPCs it names are
+    /// there is Within()'s to say, once every domain they may be in is read.
+    void Load(core::Reader& archive);
+
+    /// Whether every NPC an edge names is in `state`, in any of its domains.
+    [[nodiscard]] bool Within(const core::State& state) const;
 
 private:
     std::vector<Relationship> m_edges;
@@ -210,8 +213,8 @@ core::StableId SpawnGroup(core::State& state, u32 cell, u32 members);
 /// Moves world NPC `npc` into the active tier, standing at its cell's centre. Only in a scene without the world map, where
 /// the cell is a grid cell (CellCentre()): `npc` has no home (NO_HOME, asserted).
 void Activate(core::State& state, core::StableId npc);
-/// Moves active NPC `npc` back into the world tier, in the grid cell it stands in (CellAt()). Only in a scene without the
-/// world map: `npc` has no home (NO_HOME, asserted).
+/// Moves active NPC `npc` back into the world tier under its stable ID, its needs and Met as they were: one without a home
+/// (NO_HOME) in the grid cell it stands in (CellAt()), one homed in a city of the world map on the tile it had.
 void Deactivate(core::State& state, core::StableId npc);
 /// Turns aggregate `group` into world NPCs in its cell, one per member, homeless (NO_HOME), and returns their stable IDs.
 /// Only in a scene without the world map, where a group's cell is a grid cell.

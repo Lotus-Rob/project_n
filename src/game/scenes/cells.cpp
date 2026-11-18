@@ -24,6 +24,7 @@ constexpr SceneTraits CELLS_TRAITS{
         .min = CELLS_MIN,
         .max = { .x = CELLS_MIN.x + (CELL_COLUMNS * GRID_CELL_SIZE), .y = CELLS_MIN.y + (CELL_ROWS * GRID_CELL_SIZE) },
     },
+    .devScene = true,
 };
 
 } // namespace

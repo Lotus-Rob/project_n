@@ -2,10 +2,11 @@
 
 /// @file
 /// @ingroup game
-/// The host every scene runs in (game/scene.hpp, listed in game/scenes.cpp): as the core::Simulation it owns the
-/// state's domains, the world NPCs, their journeys and travel journals (game/travel.hpp) and the calendar (the world clock, the
-/// month steps, the world pause), the player's cultivator, the selection, combat, the game data, saving, loading and hashing,
-/// and the publishing every scene shares, and it knows no scene by name.
+/// The host every scene runs in (game/scene.hpp, listed in game/scenes.cpp): as the core::Simulation it owns the game's
+/// world (game/world_state.hpp: the state's domains, the world NPCs, their journeys and travel journals (game/travel.hpp)
+/// and the calendar: the world clock, the month steps, the world pause), made once and kept across scene changes, and a
+/// dev scene's scratch world while one runs; the player's cultivator, the selection, combat, the game data, saving,
+/// loading and hashing, and the publishing every scene shares, and it knows no scene by name.
 
 #include "core/calendar.hpp"
 #include "core/draw_list.hpp"
@@ -59,9 +60,10 @@ inline constexpr u64 LAST_MONTH = ~u64{ 0 } / TICKS_PER_MONTH;
 /// every sprite.
 class Host final : public core::Simulation {
 public:
-    /// Builds `scene` with `data`'s creatures: the same entities, in the same places, every time. It
-    /// draws its sprites where `manifest` puts them; `manifest` and `data` must pass CheckScenes(): the world scene needs
-    /// `data.world`, which the default BuiltInData() lacks (build it with a map, and Load() refuses a save of it without).
+    /// Makes the game's world from the seed and `data` (GenerateWorld()), then builds `scene` with `data`'s creatures: the
+    /// same entities, in the same places, every time. It draws its sprites where `manifest` puts them; `manifest` and `data`
+    /// must pass CheckScenes(): the world scene needs `data.world`, which the default BuiltInData() lacks (build it with a map,
+    /// and Load() refuses a save of it without).
     explicit Host(
         std::shared_ptr<const core::Manifest> manifest,
         core::SceneKey scene = ARENA_SCENE,
@@ -69,30 +71,35 @@ public:
     );
 
     /// When `input` holds a CycleScene, asks for the next scene in the list's order (NextScene(): arena, stress, painted,
-    /// cells, world, then the arena again; Requested()), ending every use still open (Combat::EndUses()), and does nothing
-    /// else. Otherwise selects what its Select actions name (nothing for a dying one), ignores Cast actions outside a combat
-    /// scene (in one a Cast is Combat::Cast(): Qi, cooldown, the ability's effect; a dash moves the player in place of held
-    /// movement), pauses or resumes the world for a ToggleWorldPause in a scene showing the world map (ignored elsewhere),
-    /// and sets the player's cultivator on a route for a WalkTo there (ignored elsewhere): the cheapest way on foot
-    /// (core::FindRoute() by core::WALKING) from the tile under its foot to the tile under the action's point, as a journey
-    /// of its own (PlayerRoute()) whose leg sets out from the foot itself on the world clock's tick. A WalkTo off the map
-    /// or to a tile it can't reach changes nothing; one to the tile it stands on ends its route, leaving it where it
-    /// stands. Then held movement ends its route and, unless the world is paused (when the cultivator stands, any route
-    /// held), walks it where it points, and a route places it where core::Where() puts it at the tick the world clock reaches
-    /// this tick, ending once the clock reaches the route's end, on its last tile's centre. When the player's foot, on its way
-    /// this tick, crosses the step area of the scene's portal (Scene::Portal(): an ellipse PORTAL_RADIUS across and
-    /// PORTAL_DEPTH_RATIO as deep, as its seal is drawn), it asks for the scene the portal leads to (NextWalkableScene();
-    /// Requested()), ending every use still open, and does nothing more. Otherwise the world clock moves a tick in a scene
-    /// showing the world map, unless the world is paused, a month is due (MonthDue()) or the calendar has ended (LAST_MONTH);
-    /// it moves every entity on an Orbit to where it is at `counters.simulation`, advances combat (Combat::Tick(): arrivals,
-    /// removing the dead, which clears their selection, and the foxes due back, which the scene respawns: Scene::Respawn()),
-    /// and walks the active NPCs, whose decisions draw random numbers keyed on `counters.state`. Then the scene takes its own
-    /// part of the tick (Scene::Tick(): in the arena, the crystal's aura); a DebugBurst action appends 4,000 hits round the
-    /// foxes, which change nothing. Last, the volleys and afflictions strike (Combat::Strike()), appending their hits. Each use
-    /// ends with a UseEnded event. The events themselves change nothing in the state.
+    /// cells, world, then the arena again; Requested()), ending every use still open (Combat::EndUses()) and, on the world
+    /// map, keeping where the player's cultivator stands as the place it comes back to (none, so the start city, when that
+    /// lies in the portal's step area), and does nothing else. Otherwise
+    /// selects what its Select actions name (nothing for a dying one), ignores Cast actions outside a combat scene (in one a
+    /// Cast is Combat::Cast(): Qi, cooldown, the ability's effect; a dash moves the player in place of held movement), pauses
+    /// or resumes the world for a ToggleWorldPause in a scene showing the world map (ignored elsewhere), and sets the player's
+    /// cultivator on a route for a WalkTo there (ignored elsewhere): the cheapest way on foot (core::FindRoute() by
+    /// core::WALKING) from the tile under its foot to the tile under the action's point, as a journey of its own
+    /// (PlayerRoute()) whose leg sets out from the foot itself on the world clock's tick. A WalkTo off the map or to a tile it
+    /// can't reach changes nothing; one to the tile it stands on ends its route, leaving it where it stands. Then held movement
+    /// ends its route and, unless the world is paused (when the cultivator stands, any route held), walks it where it points,
+    /// and a route places it where core::Where() puts it at the tick the world clock reaches this tick, ending once the clock
+    /// reaches the route's end, on its last tile's centre. When the player's foot, on its way this tick, crosses the step area
+    /// of the scene's portal (Scene::Portal(): an ellipse PORTAL_RADIUS across and PORTAL_DEPTH_RATIO as deep, as its seal is
+    /// drawn), it asks for the scene the portal leads to (NextWalkableScene(); Requested()), ending every use still open and,
+    /// on the world map, keeping the point its foot stood on before this tick as the place it comes back to, off the portal
+    /// (none, so the start city, when a month step's jump had left it standing in the step area), and does nothing more.
+    /// Otherwise the world clock moves a tick in a scene showing the world map, unless the world is paused, a month is due
+    /// (MonthDue()) or the calendar has ended (LAST_MONTH); it moves every entity on an Orbit to where it is at
+    /// `counters.simulation`, advances combat (Combat::Tick(): arrivals, removing the dead, which clears their selection, and
+    /// the foxes due back, which the scene respawns: Scene::Respawn()), and walks the active NPCs, whose decisions draw random
+    /// numbers keyed on `counters.state`. Then the scene takes its own part of the tick (Scene::Tick(): in the arena, the
+    /// crystal's aura); a DebugBurst action appends 4,000 hits round the foxes, which change nothing. Last, the volleys and
+    /// afflictions strike (Combat::Strike()), appending their hits. Each use ends with a UseEnded event. The events themselves
+    /// change nothing in the state.
     void Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) override;
 
-    /// Lets a month pass for the world NPCs and counts it (Months()). A step asked for before the month is due (M, a debug
+    /// Lets a month pass for the running world's NPCs and counts it (Months()): a dev scene's scratch world while one
+    /// runs, never the game's world set aside meanwhile. A step asked for before the month is due (M, a debug
     /// key) first moves the world clock on to the next month's first tick, and the player's cultivator on its route to where
     /// the new tick puts it, standing there for the tick (its route ending if the tick is past its end); the world pause
     /// holds either way. Once the
@@ -106,27 +113,37 @@ public:
     /// clock stands still until AdvanceCalendar() runs.
     [[nodiscard]] bool MonthDue() const override;
 
-    /// Sorts the state into canonical order and writes it, with the scene, the world clock, the month steps run, the world
-    /// pause, the relationships, the travel (the journeys and the journals) and the player's route, into `archive`.
+    /// Sorts the running world's state into canonical order and writes into `archive` a header (the scene and the session's
+    /// scene-ID counter), then the game's world whole (its seed, world-ID counter, world clock, month steps run, world
+    /// pause, place on the map, world domain, relationships and travel: the journeys and the journals), then, while a dev
+    /// scene runs, its scratch world the same way, then the scene (the player, the selection, the active domain, the
+    /// player's route and the fight).
     void Save(core::Writer& archive) override;
 
     /// Reads and checks the state Save() wrote at simulation tick `simulationTick` and holds it, changing nothing else:
     /// Requested() names its scene until EnterScene() makes it current, its creatures taking the game data in use then.
     /// False, holding nothing new, when the bytes are malformed, of another version, don't end where the state does, hold a
     /// flash or a seal that starts after `simulationTick`, a world clock outside the month after the month steps run (its
-    /// end included) or past the calendar's end (LAST_MONTH's first tick), the world paused in a scene that shows no world
-    /// map, travel that Travel::Load() refuses (any at all in a scene that shows no world map), or a player's route that
+    /// end included) or past the calendar's end (LAST_MONTH's first tick), relationships naming an NPC in neither domain,
+    /// a place kept on the map that isn't a finite point or lies in its portal's step area, a world paused or keeping a
+    /// place on the map where it can't have shown the map (a dev scene's scratch world, or any in a game without the map),
+    /// travel that Travel::Load() refuses (any at all in a scratch world or a game without the map), or a player's route that
     /// isn't a journey of the player alone with one tile route leg by core::WALKING of a step at least that LegSound()
     /// accepts, on the world map with its clock no further than journeys' ticks reach.
     [[nodiscard]] bool Load(core::Reader& archive, u64 simulationTick) override;
 
-    /// A hash of everything Save() writes, in the state's current order.
+    /// A hash of everything Save() writes but the game's world while a dev scene runs, set aside where nothing changes it:
+    /// the running world and the scene, in the state's current order.
     [[nodiscard]] u64 StateHash() const override;
 
     /// Takes `data` for the cultivator's walk speed from the next tick, and gives every creature its
     /// kind's sprite, orbit (radius, wobble, speed) and most health (its health kept, but never above it) at once; a fox
     /// may jump to its new orbit.
     void SetData(const core::GameData& data) override;
+
+    /// A hash of the game's world's section of a save alone (its world domain, relationships, travel, calendar, pause,
+    /// place on the map and world-ID counter), whichever scene runs: unchanged by a dev scene, which runs on its own.
+    [[nodiscard]] u64 WorldHash() const;
 
     /// The hash of the game data in use.
     [[nodiscard]] u64 DataHash() const override {
@@ -147,29 +164,33 @@ public:
     /// otherwise.
     [[nodiscard]] std::optional<core::SceneFacts> Requested() const override;
 
-    /// Makes the scene Requested() names current: the state a load holds, its creatures taking the game data in use, or
-    /// else the scene asked for, rebuilt with the selection, the world pause, the travel and the player's route cleared and
-    /// the calendar kept. It forgets both.
+    /// Makes the scene Requested() names current: the worlds and the scene a load holds, its creatures taking the game data
+    /// in use, or else the scene asked for, built with the selection, the fight and the player's route cleared, the last
+    /// scene's entities gone and the world NPCs it brought in back in the world. A dev scene runs on a scratch world made
+    /// afresh (its own NPCs and calendar), a game scene on the game's world, kept as it was (its NPCs, travel, calendar
+    /// and pause), the world scene placing the cultivator where it last stood there. It forgets both.
     void EnterScene() override;
 
-    /// How many month steps have run.
+    /// How many month steps have run in the running world (a dev scene's own calendar while one runs).
     [[nodiscard]] u64 Months() const {
         return Live().months;
     }
 
     /// The world clock: the simulation ticks that ran in scenes showing the world map while the world wasn't paused and no
     /// month was due, plus those a month step asked for early skipped. The calendar (core::CalendarView) derives from it.
+    /// The running world's (a dev scene's own while one runs).
     [[nodiscard]] u64 WorldTicks() const {
         return Live().worldTicks;
     }
 
-    /// Whether the player has paused the world (core::ActionKind::ToggleWorldPause): only in a scene showing the world map,
-    /// and only until the next scene is built.
+    /// Whether the player has paused the running world (core::ActionKind::ToggleWorldPause): only in a scene showing the
+    /// world map. The game's world keeps its pause while other scenes run; a dev scene's world is never paused.
     [[nodiscard]] bool WorldPaused() const {
         return Live().paused;
     }
 
-    /// The game state: the scene's entities in the active domain, NPCs in the world domain.
+    /// The running world's state (a dev scene's scratch world while one runs): the scene's entities in the active domain,
+    /// NPCs in the world domain.
     [[nodiscard]] const core::State& State() const {
         return Live().state;
     }
@@ -244,8 +265,10 @@ public:
     void Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::optional<core::Rect>& view) override;
 
 private:
+    // Writes the save's sections: the header, the game's world (when `everyWorld`, or when it runs), the scratch world
+    // when a dev scene runs, then the scene.
     template<typename Archive>
-    void Write(Archive& archive) const;
+    void Write(Archive& archive, bool everyWorld) const;
 
     class Context; // the SceneContext a scene's hooks reach the host through
 
@@ -277,11 +300,12 @@ private:
     void FollowRoute(u64 worldTick, u64 tick);
     [[nodiscard]] Body& PlayerBody();
     [[nodiscard]] const Body& PlayerBody() const;
-    void SeedTravel();
     void CastAction(const core::Action& action, const core::TickCounters& counters, std::vector<core::Event>& events);
     void DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const;
-    void Leave(core::SceneKey next, std::vector<core::Event>& events);
+    void Leave(core::SceneKey next, bool throughPortal, std::vector<core::Event>& events);
     [[nodiscard]] bool OnPortal();
+    // Whether `point` lies in the step area of a scene showing the world map: no place the cultivator comes back to may.
+    [[nodiscard]] bool OnMapPortal(core::Vec2 point);
     void PublishPortal(core::Snapshot& snapshot);
     void PublishOverhead(core::Snapshot& snapshot) const;
     void PublishCaster(core::Snapshot& snapshot) const;
@@ -322,6 +346,7 @@ private:
     struct Loaded {
         Loaded(
             WorldState loadedWorld,
+            std::optional<WorldState> loadedScratch,
             Combat loadedCombat,
             core::SceneKey loadedScene,
             core::StableId loadedPlayer,
@@ -329,6 +354,7 @@ private:
             std::optional<core::Journey> loadedRoute
         )
           : world(std::move(loadedWorld))
+          , scratch(std::move(loadedScratch))
           , combat(std::move(loadedCombat))
           , scene(loadedScene)
           , player(loadedPlayer)
@@ -337,6 +363,7 @@ private:
         }
 
         WorldState world;
+        std::optional<WorldState> scratch;
         Combat combat;
         core::SceneKey scene;
         core::StableId player;

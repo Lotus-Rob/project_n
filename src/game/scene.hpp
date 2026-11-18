@@ -81,7 +81,11 @@ struct SceneTraits {
     /// Whether it shows the world map, which the renderer draws from the map and the look (core::Snapshot::worldMap), so
     /// it publishes no ground of its own: neither tiles nor the painted ground.
     bool worldMap = false;
-    /// How many world NPCs the host spawns after it builds.
+    /// Whether it is a dev scene, run on a scratch world of its own built afresh on each entry (its own NPCs, its own
+    /// calendar from the start), the game's world set aside untouched meanwhile; a game scene (false) runs on the game's
+    /// world, which outlives every scene change.
+    bool devScene = false;
+    /// How many world NPCs the host spawns into a dev scene's scratch world after it builds.
     u32 worldNpcs = 0;
     /// Where its portal stands, the foot point the cultivator steps onto to walk to the next walkable scene
     /// (NextWalkableScene()); none for a scene without a cultivator to walk.
@@ -132,9 +136,10 @@ public:
     /// Deals `amount` to `target` at simulation tick `tick` (Combat::Damage()): a negative amount heals.
     virtual void Damage(core::StableId target, i64 amount, u64 tick) = 0;
 
-    /// Sends the world NPCs spawned so far on the journeys a month of travel would have them on by the world clock's month
-    /// (Travel::Seed()), so the roads are busy from the first frame. Only in a scene showing the world map.
-    virtual void SeedTravel() = 0;
+    /// Where the player's cultivator is to stand when it comes back to the world map: where it stood when it left it (by a
+    /// portal, the point it stood on just before it stepped onto the portal), kept until it is back; none when it hasn't
+    /// left it since the game began.
+    [[nodiscard]] virtual std::optional<core::Vec2> MapPlace() const = 0;
 };
 
 /// One scene: its traits, how it builds, and its own behaviour through hooks the host calls. It holds no state, so its
@@ -144,8 +149,9 @@ public:
     /// Its traits, the same every call.
     [[nodiscard]] virtual const SceneTraits& Traits() const = 0;
 
-    /// Spawns its entities through `context` into a fresh state: the same entities, in the same order and places,
-    /// every time.
+    /// Spawns its own entities through `context` into the world it runs on (a dev scene's fresh scratch world, or the
+    /// game's world with the last scene cleared out of it): the same entities, in the same order, every time, and in the
+    /// same places but where the world keeps one (SceneContext::MapPlace()).
     virtual void Build(SceneContext& context) const = 0;
 
     /// Its own part of each tick at `counters`, after the active NPCs walk, appending any events it starts to `events`.
