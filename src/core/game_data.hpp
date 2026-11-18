@@ -76,6 +76,15 @@ struct GameData {
         hasher(*this, world ? world->Hash() : u64{ 0 }, names ? names->Hash() : u64{ 0 });
         return hasher.Value();
     }
+
+    /// A hash of the world map and the names alone, what a world generated from a seed is made of and named by: two
+    /// GameData hash alike here when their maps and names do, whatever their creatures, abilities and combat say, so an
+    /// edit to those leaves the worlds a seed makes, and the saves made against them, as they were.
+    [[nodiscard]] u64 BaseHash() const {
+        Hasher hasher;
+        hasher(world ? world->Hash() : u64{ 0 }, names ? names->Hash() : u64{ 0 });
+        return hasher.Value();
+    }
 };
 
 } // namespace core

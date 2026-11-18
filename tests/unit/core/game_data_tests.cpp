@@ -62,4 +62,32 @@ TEST_CASE("the game data's hash changes with the names") {
     CHECK(named.Hash() != plain.Hash());
 }
 
+TEST_CASE("the base hash follows the map and the names, and nothing else") {
+    core::Names table;
+    table.surnames = { { .characters = "王", .pinyin = "wang", .weight = 1 } };
+    table.given = { { .characters = "小", .pinyin = "xiao", .weight = 1 } };
+    core::Names other = table;
+    other.given[0].pinyin = "xiaoo";
+    core::GameData world;
+    world.world = Map(false);
+    world.names = std::make_shared<const core::Names>(table);
+    core::GameData sameWorld = world; // the same map and names read again, its fights retuned
+    sameWorld.world = Map(false);
+    sameWorld.names = std::make_shared<const core::Names>(table);
+    sameWorld.cultivator.walkSpeed = 9.0F;
+    sameWorld.fox.health = 7;
+    sameWorld.abilities.qiMax = 3;
+    sameWorld.combat.afflictionPeriod = 11;
+    core::GameData rocky = world;
+    rocky.world = Map(true);
+    core::GameData renamed = world;
+    renamed.names = std::make_shared<const core::Names>(other);
+    CHECK(sameWorld.BaseHash() == world.BaseHash());
+    CHECK(sameWorld.Hash() != world.Hash()); // the data itself is other data
+    CHECK(rocky.BaseHash() != world.BaseHash());
+    CHECK(renamed.BaseHash() != world.BaseHash());
+    CHECK(core::GameData{}.BaseHash() != world.BaseHash());
+    CHECK(core::GameData{}.BaseHash() == core::GameData{}.BaseHash());
+}
+
 } // namespace

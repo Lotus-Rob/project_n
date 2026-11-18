@@ -451,31 +451,84 @@ void Travel::Forget(core::StableId npc) {
     }
 }
 
-bool Travel::Load(core::Reader& archive, const core::State& state, const core::WorldMap* map) {
-    std::vector<core::Journey> journeys;
-    std::vector<Journal> journals;
-    archive(journeys, journals);
-    return Adopt(archive, state, map, std::move(journeys), std::move(journals));
+void Travel::SaveDelta(core::Writer& archive, const Travel& base, const core::WorldMap* map, core::Paths* paths) const {
+    PN_PROFILE_ZONE();
+    std::vector<std::byte> lhs;
+    std::vector<std::byte> rhs;
+    // Compared by the bytes they save, so a rebuild must give back every bit of a journey, its points included.
+    const auto same = [&lhs, &rhs](const core::Journey& one, const core::Journey& other) {
+        lhs.clear();
+        rhs.clear();
+        core::Writer{ lhs }(one);
+        core::Writer{ rhs }(other);
+        return lhs == rhs;
+    };
+    std::vector<u8> kept(m_journeys.size(), 0);
+    std::vector<u64> gone;
+    for (std::size_t place = 0; place < base.m_journeys.size(); ++place) {
+        const core::Journey& journey = base.m_journeys[place];
+        const auto found = std::ranges::lower_bound(m_journeys, Leader(journey), {}, Leader);
+        if (found != m_journeys.end() && Leader(*found) == Leader(journey) && same(*found, journey)) {
+            kept[static_cast<std::size_t>(found - m_journeys.begin())] = 1;
+        }
+        else {
+            gone.push_back(place);
+        }
+    }
+    std::vector<core::VisitPlan> plans;
+    std::vector<core::Journey> whole;
+    for (std::size_t index = 0; index < m_journeys.size(); ++index) {
+        if (kept[index] != 0) {
+            continue;
+        }
+        const core::Journey& journey = m_journeys[index];
+        std::optional<core::VisitPlan> plan = map != nullptr && paths != nullptr ? core::PlanOf(journey) : std::nullopt;
+        if (plan && same(core::Rebuild(*map, *paths, *plan), journey)) {
+            plans.push_back(*std::move(plan));
+        }
+        else {
+            whole.push_back(journey);
+        }
+    }
+    archive(gone, plans, whole, m_journals);
 }
 
-bool Travel::LoadPlans(core::Reader& archive, const core::State& state, const core::WorldMap& map, core::Paths& paths) {
+bool Travel::LoadDelta(
+    core::Reader& archive,
+    const Travel& base,
+    const core::State& state,
+    const core::WorldMap* map,
+    core::Paths* paths
+) {
+    std::vector<u64> gone;
     std::vector<core::VisitPlan> plans;
+    std::vector<core::Journey> whole;
     std::vector<Journal> journals;
-    archive(plans, journals);
+    archive(gone, plans, whole, journals);
     // Rebuilding asserts on what a plan names, so what it names is checked first; a departure this near an i64's most would
     // overflow its ticks (two legs of at most a u32's ticks, the stay and the day it must leave before the end).
     constexpr i64 LATEST_DEPARTURE = std::numeric_limits<i64>::max() - (2 * i64{ std::numeric_limits<u32>::max() }) -
                                      ((i64{ std::numeric_limits<u32>::max() } + 1) * DAY_TICKS);
-    const auto plannable = [&map](const core::VisitPlan& plan) {
-        return !plan.members.empty() && IsCity(map, plan.home) && IsCity(map, plan.destination) &&
-               plan.from < map.Columns() * map.Rows() && plan.departTick <= LATEST_DEPARTURE;
+    const auto plannable = [map](const core::VisitPlan& plan) {
+        return !plan.members.empty() && IsCity(*map, plan.home) && IsCity(*map, plan.destination) &&
+               plan.from < map->Columns() * map->Rows() && plan.departTick <= LATEST_DEPARTURE;
     };
+    bool sound = !archive.Failed() && std::ranges::adjacent_find(gone, std::greater_equal{}) == gone.end() &&
+                 (gone.empty() || gone.back() < base.m_journeys.size()) &&
+                 (plans.empty() || (map != nullptr && paths != nullptr && std::ranges::all_of(plans, plannable)));
     std::vector<core::Journey> journeys;
-    bool sound = !archive.Failed() && std::ranges::all_of(plans, plannable);
     if (sound) {
-        journeys.reserve(plans.size());
+        journeys.reserve(base.m_journeys.size() - gone.size() + plans.size() + whole.size());
+        auto nextGone = gone.begin();
+        for (std::size_t place = 0; place < base.m_journeys.size(); ++place) {
+            if (nextGone != gone.end() && *nextGone == place) {
+                ++nextGone;
+                continue;
+            }
+            journeys.push_back(base.m_journeys[place]);
+        }
         for (const core::VisitPlan& plan : plans) {
-            journeys.push_back(core::Rebuild(map, paths, plan));
+            journeys.push_back(core::Rebuild(*map, *paths, plan));
             sound = !journeys.back().parts.empty() && core::StartTick(journeys.back()) == plan.departTick;
             if (!sound) {
                 break;
@@ -486,7 +539,11 @@ bool Travel::LoadPlans(core::Reader& archive, const core::State& state, const co
         archive.Fail();
         return false;
     }
-    return Adopt(archive, state, &map, std::move(journeys), std::move(journals));
+    std::ranges::move(whole, std::back_inserter(journeys));
+    // A save lists the kept, the planned and the whole apart, each in its own order; the table keeps one. Two journeys
+    // led by one NPC sort in either order, and the check that follows refuses them.
+    std::ranges::sort(journeys, {}, Leader);
+    return Adopt(archive, state, map, std::move(journeys), std::move(journals));
 }
 
 bool Travel::Adopt(

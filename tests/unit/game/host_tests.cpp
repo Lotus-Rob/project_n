@@ -245,8 +245,8 @@ TEST_CASE("a cast outside a combat scene is ignored") {
         { { .kind = core::ActionKind::Cast, .slot = core::Slot::Generator, .point = { .x = 50.0F, .y = 60.0F } } }
     };
     for (const core::SceneKey scene : { game::STRESS_SCENE, game::PAINTED_SCENE, game::CELLS_SCENE, game::WORLD_SCENE }) {
-        game::Host casting(test::TestManifest(), scene, test::ShippedData());
-        game::Host idle(test::TestManifest(), scene, test::ShippedData());
+        game::Host casting(test::TestManifest(), scene, test::SmallData());
+        game::Host idle(test::TestManifest(), scene, test::SmallData());
         std::vector<core::Event> events;
         casting.Tick(COUNTERS, { .actions = cast, .held = {} }, events);
         Tick(idle, COUNTERS, { .actions = {}, .held = {} });
@@ -258,7 +258,7 @@ TEST_CASE("a cast outside a combat scene is ignored") {
 TEST_CASE("the arena is a combat scene and the others aren't") {
     for (const core::SceneKey scene :
          { game::ARENA_SCENE, game::STRESS_SCENE, game::PAINTED_SCENE, game::CELLS_SCENE, game::WORLD_SCENE }) {
-        game::Host host(test::TestManifest(), scene, test::ShippedData());
+        game::Host host(test::TestManifest(), scene, test::SmallData());
         const bool combat = scene == game::ARENA_SCENE;
         CHECK(host.IsCombatScene() == combat);
         CHECK(Published(host).combat == combat);
@@ -501,6 +501,7 @@ TEST_CASE("a world publish holds no tiles in view and no painted ground: the ren
     // A screen at zoom 1, off the tile grid on both axes: eight columns and five rows of tiles, which the map once published.
     constexpr core::Rect VIEW{ .min = { .x = 10'000.0F, .y = 5'000.0F }, .max = { .x = 11'920.0F, .y = 6'080.0F } };
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    // The shipped map, as VIEW lies far past the small test map's edge and a screen needs a map larger than one.
     game::Host host(manifest, game::WORLD_SCENE, test::ShippedData());
     const core::Snapshot snapshot = Published(host, VIEW);
     // The terrain sprites, which art/sprites.toml lists together.
@@ -596,7 +597,7 @@ TEST_CASE("each scene is found by its name") {
 
 TEST_CASE("F2's CycleScene visits every scene in order and back, clearing the selection") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
-    game::Host host(manifest, game::ARENA_SCENE, test::ShippedData());
+    game::Host host(manifest, game::ARENA_SCENE, test::SmallData());
     const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = host.Player() } } };
     Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
     REQUIRE(host.Selected() == host.Player());
@@ -1147,9 +1148,9 @@ TEST_CASE("glows leave the state hash alone") {
     CHECK(published.StateHash() == plain.StateHash());
 }
 
-// The portal's point in `scene`, which must have one.
+// The portal's point in `scene`, which must have one, in a game on the small test data (the world's follows its map).
 core::Vec2 PortalOf(core::SceneKey scene) {
-    game::Host host(test::TestManifest(), scene, test::ShippedData());
+    game::Host host(test::TestManifest(), scene, test::SmallData());
     const std::optional<core::Vec2> portal = host.Portal();
     REQUIRE(portal.has_value());
     return portal.value_or(core::Vec2{});
@@ -1166,7 +1167,7 @@ void StepTo(
 ) {
     const core::Vec2 away = target - FootOf(host, host.Player());
     const f32 distance = std::hypot(away.x, away.y);
-    core::GameData data = test::ShippedData();
+    core::GameData data = test::SmallData(); // the data the hosts here walk on, the walk speed aside
     data.cultivator.walkSpeed = distance;
     host.SetData(data);
     host.Tick(At(tick), { .actions = actions, .held = { .move = away * (1.0F / distance) } }, events);
@@ -1191,7 +1192,7 @@ constexpr std::array<std::pair<core::SceneKey, core::SceneKey>, 3> PORTAL_LEADS{
 TEST_CASE("stepping onto the portal asks for the next walkable scene") {
     for (const auto& [scene, next] : PORTAL_LEADS) {
         CAPTURE(game::SceneName(scene));
-        game::Host host(test::TestManifest(), scene, test::ShippedData());
+        game::Host host(test::TestManifest(), scene, test::SmallData());
         std::vector<core::Event> events;
         StepTo(host, 1, PortalOf(scene), events);
         const std::optional<core::SceneFacts> requested = host.Requested();
@@ -1288,7 +1289,7 @@ TEST_CASE("arriving through a portal lands off the next scene's portal") {
     constexpr u64 FIRST_TICKS = 3;
     for (const auto& [scene, next] : PORTAL_LEADS) {
         CAPTURE(game::SceneName(scene));
-        game::Host host(test::TestManifest(), scene, test::ShippedData());
+        game::Host host(test::TestManifest(), scene, test::SmallData());
         std::vector<core::Event> events;
         StepTo(host, 1, PortalOf(scene), events);
         REQUIRE(host.Requested().has_value());
@@ -1320,7 +1321,7 @@ void TickWith(game::Host& host, u64 tick, core::ActionKind kind, core::HeldInput
 
 TEST_CASE("the world clock runs only on the world map and not while paused") {
     constexpr u64 TICKS = 10;
-    game::Host world(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    game::Host world(test::TestManifest(), game::WORLD_SCENE, test::SmallData());
     TickRange(world, 1, TICKS);
     CHECK(world.WorldTicks() == TICKS);
     CHECK_FALSE(world.WorldPaused());
@@ -1348,7 +1349,7 @@ TEST_CASE("the world clock runs only on the world map and not while paused") {
 
 TEST_CASE("the world keeps its pause and its clock through other scenes, which run on their own calendar") {
     constexpr u64 TICKS = 10;
-    game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, test::SmallData());
     TickRange(host, 1, TICKS);
     TickWith(host, TICKS + 1, core::ActionKind::ToggleWorldPause);
     REQUIRE(host.WorldPaused());
@@ -1370,10 +1371,10 @@ TEST_CASE("the world keeps its pause and its clock through other scenes, which r
     CHECK(host.WorldTicks() == TICKS); // still paused
 }
 
-// A host with the shipped map that has loaded and entered an empty world save at `clock`: a world clock anywhere in a
+// A host with the small test map that has loaded and entered an empty world save at `clock`: a world clock anywhere in a
 // month without ticking the world scene there.
 std::unique_ptr<game::Host> WorldAt(test::SavedClock clock) {
-    auto host = std::make_unique<game::Host>(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    auto host = std::make_unique<game::Host>(test::TestManifest(), game::ARENA_SCENE, test::SmallData());
     const std::vector<std::byte> bytes = test::WorldSaveAt(clock);
     core::Reader reader{ bytes };
     REQUIRE(host->Load(reader, 0)); // at tick 0: it holds no flash or seal to date
@@ -1477,7 +1478,7 @@ TEST_CASE("the calendar ends at its last month's first tick, and a save of it lo
     std::vector<std::byte> bytes;
     core::Writer writer{ bytes };
     world->Save(writer);
-    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::SmallData());
     core::Reader reader{ bytes };
     CHECK(loaded.Load(reader, 0));
 }
@@ -1495,7 +1496,7 @@ constexpr i64 JUST_LEFT = 30;
 // city.
 constexpr f32 NEAR_HOME = 250.0F;
 
-/// The shipped map's first two cities, the walk from the first's tile to the second's, and how long the walk out and a
+/// `map`'s first two cities, the walk from the first's tile to the second's, and how long the walk out and a
 /// whole visit take.
 struct Road {
     u16 from = core::NO_PLACE;
@@ -1533,7 +1534,8 @@ struct Departure {
     u32 members = 1;
 };
 
-/// A world on the shipped map and names, loaded from a save at TRAVEL_CLOCK, the journeys it holds and its player, if any.
+/// A world on the small test map and the shipped names, loaded from a save at TRAVEL_CLOCK, the journeys it holds and its
+/// player, if any.
 struct TravelWorld {
     std::unique_ptr<game::Host> host;
     std::vector<core::Journey> journeys;
@@ -1558,10 +1560,12 @@ core::StableId CultivatorAt(core::State& state, const core::GameData& data, core
 /// centre: nothing else lives there.
 TravelWorld TravelWorldOf(std::span<const Departure> departures, bool player = false, u64 clock = TRAVEL_CLOCK) {
     TravelWorld world;
-    world.map = test::ShippedWorld();
+    // The shipped names, so a party's two members are named apart.
+    core::GameData data = test::SmallData();
+    data.names = test::ShippedNames();
+    world.map = data.world;
     const Road road = FirstRoad(*world.map);
     core::State state{ game::DOMAINS, TRAVEL_SEED };
-    const core::GameData data = test::ShippedData();
     if (player) {
         world.player = CultivatorAt(state, data, world.map->TileCentre(road.tiles.front()));
     }
@@ -1590,7 +1594,11 @@ TravelWorld TravelWorldOf(std::span<const Departure> departures, bool player = f
         test::WORLD_VERSION,
         test::ACTIVE_VERSION,
         { .ticks = clock },
-        travel
+        travel,
+        std::nullopt,
+        game::Relationships{},
+        {},
+        &data
     );
     world.host = std::make_unique<game::Host>(test::TestManifest(), game::ARENA_SCENE, data);
     core::Reader reader{ bytes };
@@ -1672,7 +1680,7 @@ TEST_CASE("travellers in view are drawn and labelled with their names") {
 }
 
 TEST_CASE("travellers outside the view are not published") {
-    const Road road = FirstRoad(*test::ShippedWorld());
+    const Road road = FirstRoad(*test::SmallWorld());
     const auto clock = static_cast<i64>(TRAVEL_CLOCK);
     const std::array<Departure, 2> departures{ {
         { .tick = clock - JUST_LEFT },                                                   // by its home
@@ -1688,7 +1696,7 @@ TEST_CASE("travellers outside the view are not published") {
 }
 
 TEST_CASE("a traveller still at home or home again isn't drawn") {
-    const Road road = FirstRoad(*test::ShippedWorld());
+    const Road road = FirstRoad(*test::SmallWorld());
     const auto clock = static_cast<i64>(TRAVEL_CLOCK);
     constexpr i64 SOON = 100;
     const std::array<Departure, 4> departures{ {
@@ -1843,7 +1851,7 @@ bool SameLeg(const core::Leg& lhs, const core::Leg& rhs) {
            SamePoint(lhs.origin, rhs.origin) && lhs.tiles == rhs.tiles && lhs.arrive == rhs.arrive;
 }
 
-/// The first road's tiles on the shipped map, with room for the walks below.
+/// The first road's tiles on `map`, with room for the walks below.
 std::vector<u32> RouteRoad(const core::WorldMap& map) {
     const Road road = FirstRoad(map);
     REQUIRE(road.tiles.size() > FARTHER);
@@ -1885,7 +1893,7 @@ TEST_CASE("a walk-to sends the cultivator along the route") {
 
     // Then it walks freely again.
     TickRange(*world.host, end - TRAVEL_CLOCK + 1, end - TRAVEL_CLOCK + 1, HELD_RIGHT);
-    const core::Vec2 walked = map.TileCentre(leg.tiles.back()) + core::Vec2{ .x = test::ShippedData().cultivator.walkSpeed };
+    const core::Vec2 walked = map.TileCentre(leg.tiles.back()) + core::Vec2{ .x = test::SmallData().cultivator.walkSpeed };
     CHECK(SamePoint(FootOf(*world.host, world.player), walked));
 }
 
@@ -1901,7 +1909,7 @@ TEST_CASE("held movement cancels a route") {
     REQUIRE(SamePoint(onRoute, core::Where(map, leg, static_cast<i64>(TRAVEL_CLOCK + WALKED))));
 
     TickRange(*world.host, WALKED + 1, WALKED + 1, HELD_RIGHT);
-    const core::Vec2 walked = onRoute + core::Vec2{ .x = test::ShippedData().cultivator.walkSpeed };
+    const core::Vec2 walked = onRoute + core::Vec2{ .x = test::SmallData().cultivator.walkSpeed };
     CHECK_FALSE(world.host->PlayerRoute().has_value());
     CHECK(SamePoint(BodyOf(*world.host, world.player).previous, onRoute));
     CHECK(SamePoint(BodyOf(*world.host, world.player).current, walked));
@@ -2055,7 +2063,7 @@ TEST_CASE("held movement cancels a route while the world is paused too") {
 
     // Resumed, it walks where the held input points, not along the old route.
     TickWith(*world.host, WALKED + 2, core::ActionKind::ToggleWorldPause, HELD_RIGHT);
-    const core::Vec2 walked = there + core::Vec2{ .x = test::ShippedData().cultivator.walkSpeed };
+    const core::Vec2 walked = there + core::Vec2{ .x = test::SmallData().cultivator.walkSpeed };
     CHECK(SamePoint(BodyOf(*world.host, world.player).previous, there));
     CHECK(SamePoint(BodyOf(*world.host, world.player).current, walked));
 }

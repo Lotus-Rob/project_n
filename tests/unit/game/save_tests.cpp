@@ -1,6 +1,7 @@
 #include "build_info.hpp"
 #include "core/archive.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/delta.hpp"
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
 #include "core/journey.hpp"
@@ -15,6 +16,7 @@
 #include "game/npcs.hpp"
 #include "game/scenes/world.hpp"
 #include "game/travel.hpp"
+#include "game/world_state.hpp"
 #include "support/host.hpp"
 #include "support/manifest.hpp"
 #include "support/saves.hpp"
@@ -92,7 +94,7 @@ TEST_CASE("a game loaded from a save goes on exactly as the game that saved") {
     const std::vector<std::byte> bytes = Saved(saved);
     REQUIRE_FALSE(saved.NpcRelationships().All().empty());
 
-    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE); // on the data that made the saved game's world
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
     loaded.EnterScene(); // as the logic does at the swap
@@ -202,7 +204,7 @@ TEST_CASE("Load holds and changes nothing until EnterScene") {
     Tick(saved, At(1), {});
     const std::vector<std::byte> bytes = Saved(saved);
 
-    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE);
     const u64 before = loaded.StateHash();
     const core::SceneId shown = loaded.Scene();
     core::Reader reader{ bytes };
@@ -570,7 +572,8 @@ std::vector<std::byte> WithoutWorldTier(const game::Host& saved, const std::vect
     constexpr bool PLACED = false;
     const auto head = Written([&](core::Writer& writer) {
         writer(FORMAT, static_cast<u8>(std::to_underlying(game::ARENA_SCENE)), state.SceneIds().next);
-        test::WriteWorldSection(writer, bare, WORLD_VERSION, {}, game::Travel{}); // the game's world, generated empty
+        // the game's world, generated empty without the world map
+        test::WriteGameWorldSection(writer, bare, game::BuiltInData(), WORLD_VERSION, {}, game::Travel{});
         writer(state.Seed(), state.Ids().next, saved.WorldTicks(), saved.Months(), saved.WorldPaused(), PLACED);
     });
     const auto world = [](const core::State& source) {
@@ -657,9 +660,10 @@ TEST_CASE("a sound save built as the refusals below build theirs is loaded") {
 }
 
 TEST_CASE("a save whose ID counters leave their ranges is refused, and the game is unchanged") {
-    // The scene counter follows the format and the scene; the game world's own counter, its seed.
+    // The scene counter follows the format and the scene; the game world's own counter, its seed, generator version and
+    // base hash.
     constexpr std::size_t SCENE_AT = sizeof(u32) + sizeof(u8);
-    constexpr std::size_t WORLD_AT = SCENE_AT + sizeof(u64) + sizeof(u64);
+    constexpr std::size_t WORLD_AT = SCENE_AT + sizeof(u64) + sizeof(u64) + sizeof(u32) + sizeof(u64);
     const core::State state{ game::DOMAINS, STATE_SEED };
     const std::vector<std::byte> sound = ArenaSave(state);
     const auto with = [&sound](std::size_t offset, u64 next) {
@@ -1029,26 +1033,46 @@ TEST_CASE("a save with a seal that starts after its tick is refused, and one its
     CHECK_FALSE(fromLater);
 }
 
-// A save of the world scene with nothing in it: small, and it names a scene that needs the world map.
-std::vector<std::byte> EmptyWorldSave() {
-    return WorldSaveAt({});
+// A save of the world scene with nothing in it, its game's world written against the one a game on `data` makes: it names
+// a scene that needs the world map, and against the built-in data, which makes nothing, it is small.
+std::vector<std::byte> EmptyWorldSave(const core::GameData& data) {
+    const core::State state{ game::DOMAINS, test::EMPTY_SAVE_SEED };
+    return ArenaSave(
+        state,
+        {},
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        game::WORLD_SCENE,
+        WORLD_VERSION,
+        ACTIVE_VERSION,
+        {},
+        game::Travel{},
+        std::nullopt,
+        game::Relationships{},
+        {},
+        &data
+    );
 }
 
 TEST_CASE("a save naming the world scene is refused by a host without the world map, and loaded by one with it") {
-    const std::vector<std::byte> bytes = EmptyWorldSave();
-    game::Host without(test::TestManifest(), game::ARENA_SCENE); // the built-in data has no map
+    const core::GameData builtIn = game::BuiltInData();
+    const std::vector<std::byte> bytes = EmptyWorldSave(builtIn);
+    game::Host without(test::TestManifest(), game::ARENA_SCENE, builtIn);
     core::Reader refused{ bytes };
     CHECK_FALSE(without.Load(refused, SAVED_TICK));
     CHECK_FALSE(without.Requested().has_value());
-    game::Host with(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
-    core::Reader accepted{ bytes };
+    const core::GameData withMap = test::SmallData();
+    game::Host with(test::TestManifest(), game::ARENA_SCENE, withMap);
+    const std::vector<std::byte> mapped = EmptyWorldSave(withMap);
+    core::Reader accepted{ mapped };
     CHECK(with.Load(accepted, SAVED_TICK));
 }
 
 // Not part of a run: `--test-case='write the world save seed' --no-skip` (tests/AGENTS.md) writes the fuzz seed that
 // reached the save target's host, which has no map, with a save naming the world scene.
 TEST_CASE("write the world save seed" * doctest::skip()) {
-    const std::vector<std::byte> seed = EmptyWorldSave();
+    const std::vector<std::byte> seed = EmptyWorldSave(game::BuiltInData());
     const std::filesystem::path path = std::filesystem::path{ PN_FUZZ_CORPUS } / "save" / "world";
     std::ofstream file{ path, std::ios::binary };
     std::ranges::transform(seed, std::ostreambuf_iterator<char>{ file }, [](std::byte byte) {
@@ -1058,7 +1082,7 @@ TEST_CASE("write the world save seed" * doctest::skip()) {
     CHECK(file.good());
 }
 
-// The index of the first place of `kind` on the shipped map.
+// The index of the first place of `kind` on `map`.
 u16 FirstPlace(const core::WorldMap& map, core::PlaceKind kind) {
     const auto places = map.Places();
     const auto found = std::ranges::find(places, kind, &core::Place::kind);
@@ -1073,17 +1097,17 @@ std::vector<std::byte> WorldSaveOf(u32 cell, u16 home, u32 worldVersion = WORLD_
     return ArenaSave(state, {}, std::nullopt, std::nullopt, std::nullopt, game::WORLD_SCENE, worldVersion, activeVersion);
 }
 
-// Whether a host with the shipped map loads `bytes`.
+// Whether a host with the small test map loads `bytes`.
 bool LoadsWithMap(const std::vector<std::byte>& bytes) {
-    game::Host game(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    game::Host game(test::TestManifest(), game::ARENA_SCENE, test::SmallData());
     core::Reader reader{ bytes };
     return game.Load(reader, SAVED_TICK);
 }
 
 TEST_CASE("a world save round-trips the NPCs' homes") {
-    game::Host saved(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    game::Host saved(test::TestManifest(), game::WORLD_SCENE, test::SmallData());
     const std::vector<std::byte> bytes = Saved(saved);
-    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::SmallData());
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
     loaded.EnterScene();
@@ -1099,19 +1123,21 @@ TEST_CASE("a world save round-trips the NPCs' homes") {
     CHECK(same);
 }
 
-TEST_CASE("a version-1 or version-2 world save is refused") {
-    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+TEST_CASE("a version-1, version-2 or version-3 world save is refused") {
+    const std::shared_ptr<const core::WorldMap> map = test::SmallWorld();
     const u16 city = FirstPlace(*map, core::PlaceKind::City);
     const u32 cell = map->TileIndex(map->Places()[city].tile);
     CHECK(LoadsWithMap(WorldSaveOf(cell, city)));
     constexpr u32 FIRST_VERSION = 1;
     constexpr u32 BEFORE_TRAVEL = 2;
+    constexpr u32 WHOLE_WORLD = 3;
     CHECK_FALSE(LoadsWithMap(WorldSaveOf(cell, city, FIRST_VERSION)));
     CHECK_FALSE(LoadsWithMap(WorldSaveOf(cell, city, BEFORE_TRAVEL)));
+    CHECK_FALSE(LoadsWithMap(WorldSaveOf(cell, city, WHOLE_WORLD)));
 }
 
 TEST_CASE("a version-4 active section is refused") {
-    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const std::shared_ptr<const core::WorldMap> map = test::SmallWorld();
     const u16 city = FirstPlace(*map, core::PlaceKind::City);
     const u32 cell = map->TileIndex(map->Places()[city].tile);
     constexpr u32 OLD_VERSION = 4;
@@ -1123,7 +1149,7 @@ TEST_CASE("a version-4 active section is refused") {
 }
 
 TEST_CASE("a world save naming a home past the map's cities is refused") {
-    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const std::shared_ptr<const core::WorldMap> map = test::SmallWorld();
     const u16 city = FirstPlace(*map, core::PlaceKind::City);
     const u32 cell = map->TileIndex(map->Places()[city].tile);
     const u16 pastPlaces = static_cast<u16>(map->Places().size());
@@ -1134,7 +1160,7 @@ TEST_CASE("a world save naming a home past the map's cities is refused") {
 }
 
 TEST_CASE("a world save with an NPC on a tile past the map is refused") {
-    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const std::shared_ptr<const core::WorldMap> map = test::SmallWorld();
     const u16 city = FirstPlace(*map, core::PlaceKind::City);
     const u32 tiles = map->Columns() * map->Rows();
     CHECK(LoadsWithMap(WorldSaveOf(tiles - 1, city)));
@@ -1154,7 +1180,7 @@ TEST_CASE("an arena save still loads, its NPCs homeless, and one with a home is 
 TEST_CASE("the clock and the pause are saved and loaded") {
     constexpr u64 WALKED = 7;
     core::Jobs jobs{ 1 };
-    game::Host saved(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    game::Host saved(test::TestManifest(), game::WORLD_SCENE, test::SmallData());
     saved.AdvanceCalendar(At(1), jobs, {});
     for (u64 tick = 2; tick < 2 + WALKED; ++tick) {
         Tick(saved, At(tick), {});
@@ -1164,7 +1190,7 @@ TEST_CASE("the clock and the pause are saved and loaded") {
     REQUIRE(saved.WorldPaused());
     const std::vector<std::byte> bytes = Saved(saved);
 
-    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::SmallData());
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
     CHECK(loaded.WorldTicks() == 0); // held until the swap
@@ -1216,8 +1242,9 @@ TEST_CASE("a save paused off the world map is refused, and one paused on it is l
     CHECK_FALSE(Loads(arena));
 }
 
-// A save of the arena whose game's world, set aside, is empty but for `setAside`.
-std::vector<std::byte> ArenaSetAside(const test::SetAside& setAside) {
+// A save of the arena whose game's world, set aside, is empty but for `setAside`, written against the world a game on
+// `data` generates (on the built-in data when null).
+std::vector<std::byte> ArenaSetAside(const test::SetAside& setAside, const core::GameData* data = nullptr) {
     const core::State state{ game::DOMAINS, STATE_SEED };
     return ArenaSave(
         state,
@@ -1232,33 +1259,37 @@ std::vector<std::byte> ArenaSetAside(const test::SetAside& setAside) {
         game::Travel{},
         std::nullopt,
         game::Relationships{},
-        setAside
+        setAside,
+        data
     );
 }
 
 TEST_CASE("a game's world set aside paused or keeping a place on the map is refused by a game without the map") {
-    const core::Vec2 east = test::ShippedWorld()->StartCentre() + core::Vec2{ .x = 256.0F, .y = 0.0F };
-    CHECK(LoadsWithMap(ArenaSetAside({ .paused = true })));
+    const core::GameData withMap = test::SmallData();
+    const core::Vec2 east = withMap.world->StartCentre() + core::Vec2{ .x = 256.0F, .y = 0.0F };
+    CHECK(LoadsWithMap(ArenaSetAside({ .paused = true }, &withMap)));
     CHECK_FALSE(Loads(ArenaSetAside({ .paused = true })));
-    CHECK(LoadsWithMap(ArenaSetAside({ .place = east })));
+    CHECK(LoadsWithMap(ArenaSetAside({ .place = east }, &withMap)));
     CHECK_FALSE(Loads(ArenaSetAside({ .place = east })));
 }
 
 TEST_CASE("a kept place on the map that isn't a finite point, or that lies on the portal, is refused") {
-    const core::Vec2 start = test::ShippedWorld()->StartCentre();
+    const core::GameData withMap = test::SmallData();
+    const core::Vec2 start = withMap.world->StartCentre();
     const core::Vec2 portal = start + game::WORLD_PORTAL_OFFSET;
     constexpr f32 NOT_A_NUMBER = std::numeric_limits<f32>::quiet_NaN();
     constexpr f32 INFINITE = std::numeric_limits<f32>::infinity();
-    CHECK_FALSE(LoadsWithMap(ArenaSetAside({ .place = core::Vec2{ .x = NOT_A_NUMBER, .y = start.y } })));
-    CHECK_FALSE(LoadsWithMap(ArenaSetAside({ .place = core::Vec2{ .x = start.x, .y = INFINITE } })));
-    CHECK_FALSE(LoadsWithMap(ArenaSetAside({ .place = portal })));
+    const auto keeping = [&withMap](core::Vec2 place) { return ArenaSetAside({ .place = place }, &withMap); };
+    CHECK_FALSE(LoadsWithMap(keeping(core::Vec2{ .x = NOT_A_NUMBER, .y = start.y })));
+    CHECK_FALSE(LoadsWithMap(keeping(core::Vec2{ .x = start.x, .y = INFINITE })));
+    CHECK_FALSE(LoadsWithMap(keeping(portal)));
     // Either side of the step area's rim, across.
-    CHECK_FALSE(LoadsWithMap(ArenaSetAside({ .place = portal + core::Vec2{ .x = 0.9F * game::PORTAL_RADIUS, .y = 0.0F } })));
-    CHECK(LoadsWithMap(ArenaSetAside({ .place = portal + core::Vec2{ .x = 1.1F * game::PORTAL_RADIUS, .y = 0.0F } })));
+    CHECK_FALSE(LoadsWithMap(keeping(portal + core::Vec2{ .x = 0.9F * game::PORTAL_RADIUS, .y = 0.0F })));
+    CHECK(LoadsWithMap(keeping(portal + core::Vec2{ .x = 1.1F * game::PORTAL_RADIUS, .y = 0.0F })));
 }
 
 TEST_CASE("a save whose relationship names a world NPC brought into the scene loads") {
-    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const std::shared_ptr<const core::WorldMap> map = test::SmallWorld();
     const u16 city = map->Start();
     const u32 tile = map->TileIndex(map->Places()[city].tile);
     core::State state{ game::DOMAINS, STATE_SEED };
@@ -1297,7 +1328,7 @@ constexpr i64 DAY = static_cast<i64>(core::TICKS_PER_DAY);
 // Stands in for the game's journey draws: a stay's seed is keyed on the state's seed, as every draw is.
 constexpr u32 STAY_PURPOSE = 0x7e57;
 
-/// The shipped map's first city and the next city after it, and the walk from the first's tile to the next's.
+/// `map`'s first city and the next city after it, and the walk from the first's tile to the next's.
 struct Trip {
     u16 home = core::NO_PLACE;
     u16 destination = core::NO_PLACE;
@@ -1361,7 +1392,7 @@ std::vector<std::byte> TravelBytes(const game::Travel& travel) {
 
 TEST_CASE("a world save round-trips travel and the journal, and hashes them") {
     constexpr u32 STAY_DAYS = 2;
-    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const std::shared_ptr<const core::WorldMap> map = test::SmallWorld();
     const Trip trip = FirstTrip(*map);
     core::State state{ game::DOMAINS, STATE_SEED };
     const core::StableId back = TravellerOn(state, *map, trip);
@@ -1373,7 +1404,7 @@ TEST_CASE("a world save round-trips travel and the journal, and hashes them") {
     travel.Start(VisitOf(*map, trip, away, DAY, STAY_DAYS));
     const std::vector<std::byte> bytes = TravelSave(state, travel);
 
-    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::SmallData());
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
     loaded.EnterScene();
@@ -1383,7 +1414,7 @@ TEST_CASE("a world save round-trips travel and the journal, and hashes them") {
     CHECK(loaded.NpcTravel().Travelling(away));
 
     // Saved again and loaded, it hashes the same.
-    game::Host reloaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    game::Host reloaded(test::TestManifest(), game::ARENA_SCENE, test::SmallData());
     const std::vector<std::byte> again = Saved(loaded);
     core::Reader againReader{ again };
     REQUIRE(reloaded.Load(againReader, SAVED_TICK));
@@ -1392,7 +1423,7 @@ TEST_CASE("a world save round-trips travel and the journal, and hashes them") {
 
     // The travel is hashed: the same save without the journal entry hashes otherwise. Its journey stays, as a traveller
     // without one is refused.
-    game::Host without(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    game::Host without(test::TestManifest(), game::ARENA_SCENE, test::SmallData());
     game::Travel unwritten;
     unwritten.Start(VisitOf(*map, trip, away, DAY, STAY_DAYS));
     const std::vector<std::byte> bare = TravelSave(state, unwritten);
@@ -1402,7 +1433,7 @@ TEST_CASE("a world save round-trips travel and the journal, and hashes them") {
     CHECK(without.StateHash() != loaded.StateHash());
 
     // And with the same journal and the journey leaving a day later, otherwise too.
-    game::Host later(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    game::Host later(test::TestManifest(), game::ARENA_SCENE, test::SmallData());
     game::Travel moved;
     const core::Journey sameEnded = VisitOf(*map, trip, back, 0, STAY_DAYS);
     moved.Start(sameEnded);
@@ -1417,7 +1448,7 @@ TEST_CASE("a world save round-trips travel and the journal, and hashes them") {
 
 TEST_CASE("a world save naming a traveller who isn't there is refused, and so is travel off the world map") {
     constexpr u32 STAY_DAYS = 2;
-    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const std::shared_ptr<const core::WorldMap> map = test::SmallWorld();
     const Trip trip = FirstTrip(*map);
     core::State state{ game::DOMAINS, STATE_SEED };
     const core::StableId npc = TravellerOn(state, *map, trip);
@@ -1437,7 +1468,7 @@ TEST_CASE("a world save naming a traveller who isn't there is refused, and so is
 }
 
 TEST_CASE("a save made mid-journey loads to the same positions on the next tick") {
-    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const std::shared_ptr<const core::WorldMap> map = test::SmallWorld();
     const Trip trip = FirstTrip(*map);
     core::State state{ game::DOMAINS, STATE_SEED };
     const core::StableId walking = TravellerOn(state, *map, trip);
@@ -1458,12 +1489,12 @@ TEST_CASE("a save made mid-journey loads to the same positions on the next tick"
     travel.Start(walk);
     travel.Start(stay);
 
-    game::Host saved(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    game::Host saved(test::TestManifest(), game::ARENA_SCENE, test::SmallData());
     const std::vector<std::byte> first = TravelSave(state, travel, savedAt);
     core::Reader firstReader{ first };
     REQUIRE(saved.Load(firstReader, SAVED_TICK));
     saved.EnterScene();
-    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::SmallData());
     const std::vector<std::byte> again = Saved(saved);
     core::Reader reader{ again };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
@@ -1515,25 +1546,6 @@ core::Journey RouteAlong(
     return route;
 }
 
-/// The shipped map with a second movement profile after walking, so a route can name a profile that isn't walking.
-std::shared_ptr<const core::WorldMap> MapWithSecondProfile() {
-    constexpr std::string_view WALKING_PROFILE = "  - { key: on_foot, ticks_per_cost: 16 }\n";
-    constexpr std::string_view SECOND_PROFILE = "  - { key: ridden, ticks_per_cost: 8 }\n";
-    const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
-    REQUIRE(assets.has_value());
-    const std::filesystem::path folder = assets.value_or(std::filesystem::path{}) / "data";
-    std::ifstream file{ folder / "world.yaml", std::ios::binary };
-    std::string yaml{ std::istreambuf_iterator<char>{ file }, std::istreambuf_iterator<char>{} };
-    const std::size_t walking = yaml.find(WALKING_PROFILE);
-    REQUIRE(walking != std::string::npos);
-    yaml.insert(walking + WALKING_PROFILE.size(), SECOND_PROFILE);
-    const std::expected<core::Strings, core::Error> strings = data::LoadStrings(folder);
-    REQUIRE(strings.has_value());
-    std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(yaml, strings.value_or(core::Strings{}));
-    REQUIRE(map.has_value());
-    return std::make_shared<const core::WorldMap>(std::move(map).value());
-}
-
 /// Whether a host on `data` loads `bytes`.
 bool LoadsWith(const core::GameData& data, const std::vector<std::byte>& bytes) {
     game::Host game(test::TestManifest(), game::ARENA_SCENE, data);
@@ -1546,7 +1558,7 @@ std::vector<std::byte> JourneyBytes(const core::Journey& journey) {
 }
 
 TEST_CASE("a world save round-trips the player's route and hashes it, and one no player can walk is refused") {
-    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const std::shared_ptr<const core::WorldMap> map = test::SmallWorld();
     const Trip trip = FirstTrip(*map);
     REQUIRE(trip.route.size() >= ROUTE_TILES);
     core::State state{ game::DOMAINS, STATE_SEED };
@@ -1555,15 +1567,32 @@ TEST_CASE("a world save round-trips the player's route and hashes it, and one no
     state[game::ACTIVE].Entities().emplace<game::Body>(entity, home, home);
     const auto [other, otherEntity] = state.Create(game::ACTIVE, core::IdRange::Scene);
     state[game::ACTIVE].Entities().emplace<game::Body>(otherEntity, home, home);
-    const auto save =
-        [&state](const std::optional<core::Journey>& route, core::StableId walker, core::SceneKey scene = game::WORLD_SCENE) {
-            return ArenaSave(
-                state, walker, std::nullopt, std::nullopt, std::nullopt, scene, WORLD_VERSION, ACTIVE_VERSION, {}, {}, route
-            );
-        };
+    const auto save = [&state](
+                          const std::optional<core::Journey>& route,
+                          core::StableId walker,
+                          core::SceneKey scene = game::WORLD_SCENE,
+                          const core::GameData* data = nullptr
+                      ) {
+        return ArenaSave(
+            state,
+            walker,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt,
+            scene,
+            WORLD_VERSION,
+            ACTIVE_VERSION,
+            {},
+            {},
+            route,
+            {},
+            {},
+            data
+        );
+    };
     const core::Journey route = RouteAlong(*map, trip, player, ROUTE_TILES);
 
-    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::SmallData());
     const std::vector<std::byte> bytes = save(route, player);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
@@ -1573,13 +1602,13 @@ TEST_CASE("a world save round-trips the player's route and hashes it, and one no
     CHECK(sameRoute);
 
     // Hashed: the same save without the route, or with it set out a tick later, hashes otherwise.
-    game::Host bare(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    game::Host bare(test::TestManifest(), game::ARENA_SCENE, test::SmallData());
     const std::vector<std::byte> bareBytes = save(std::nullopt, player);
     core::Reader bareReader{ bareBytes };
     REQUIRE(bare.Load(bareReader, SAVED_TICK));
     bare.EnterScene();
     CHECK(bare.StateHash() != loaded.StateHash());
-    game::Host later(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    game::Host later(test::TestManifest(), game::ARENA_SCENE, test::SmallData());
     const std::vector<std::byte> laterBytes = save(RouteAlong(*map, trip, player, ROUTE_TILES, 1), player);
     core::Reader laterReader{ laterBytes };
     REQUIRE(later.Load(laterReader, SAVED_TICK));
@@ -1599,18 +1628,17 @@ TEST_CASE("a world save round-trips the player's route and hashes it, and one no
     CHECK_FALSE(LoadsWithMap(save(past, player)));
 
     // On a map with a second profile, a route by it is refused where the same route on foot loads.
-    core::GameData twoProfiles = test::ShippedData();
-    twoProfiles.world = MapWithSecondProfile();
+    const core::GameData twoProfiles = test::SmallData(true);
     REQUIRE(twoProfiles.world->Profiles().size() == 2);
     core::Journey ridden = route;
     ridden.parts.front().leg.profile = core::ProfileIndex{ 1 };
-    CHECK(LoadsWith(twoProfiles, save(route, player)));
-    CHECK_FALSE(LoadsWith(twoProfiles, save(ridden, player)));
+    CHECK(LoadsWith(twoProfiles, save(route, player, game::WORLD_SCENE, &twoProfiles)));
+    CHECK_FALSE(LoadsWith(twoProfiles, save(ridden, player, game::WORLD_SCENE, &twoProfiles)));
 }
 
 TEST_CASE("a save made mid-route loads to the same position on the next tick") {
     constexpr u64 WALKED = 90; // past the first tile, between two others
-    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const std::shared_ptr<const core::WorldMap> map = test::SmallWorld();
     const Trip trip = FirstTrip(*map);
     REQUIRE(trip.route.size() >= ROUTE_TILES);
     core::State state{ game::DOMAINS, STATE_SEED };
@@ -1619,7 +1647,7 @@ TEST_CASE("a save made mid-route loads to the same position on the next tick") {
     state[game::ACTIVE].Entities().emplace<game::Body>(entity, home, home);
     const std::vector<std::byte> start =
         ArenaSave(state, player, std::nullopt, std::nullopt, std::nullopt, game::WORLD_SCENE, WORLD_VERSION, ACTIVE_VERSION);
-    game::Host saved(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    game::Host saved(test::TestManifest(), game::ARENA_SCENE, test::SmallData());
     core::Reader startReader{ start };
     REQUIRE(saved.Load(startReader, SAVED_TICK));
     saved.EnterScene();
@@ -1632,7 +1660,7 @@ TEST_CASE("a save made mid-route loads to the same position on the next tick") {
     REQUIRE(saved.PlayerRoute().has_value());
     const core::Vec2 there = test::BodyOf(saved, player).current;
 
-    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::ShippedData());
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::SmallData());
     const std::vector<std::byte> bytes = Saved(saved);
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_TICK));
@@ -1644,6 +1672,278 @@ TEST_CASE("a save made mid-route loads to the same position on the next tick") {
     CHECK(SamePoint(test::BodyOf(loaded, player).current, test::BodyOf(saved, player).current));
     CHECK_FALSE(SamePoint(test::BodyOf(loaded, player).current, there)); // walking on
     CHECK(loaded.StateHash() == saved.StateHash());
+}
+
+/// The world a new game on `data` makes from `seed`, its journeys routed over `paths`.
+game::WorldState GeneratedWorld(const core::GameData& data, u64 seed, core::Paths& paths) {
+    game::WorldState world{ core::State{ game::DOMAINS, seed } };
+    game::GenerateWorld(world, data, &paths);
+    return world;
+}
+
+TEST_CASE("a new game's world delta changes no NPC") {
+    const core::GameData data = test::ShippedData();
+    const game::Host host(test::TestManifest(), game::WORLD_SCENE, data);
+    core::Paths paths{ data.world };
+    const game::WorldState base = GeneratedWorld(data, host.State().Seed(), paths);
+    const core::DeltaCounts counts = core::CountDelta(base.state[game::WORLD], host.State()[game::WORLD], World{});
+    CHECK(counts.removed == 0);
+    CHECK(counts.created == 0);
+    CHECK(counts.changed == 0);
+    REQUIRE_FALSE(base.travel.Journeys().empty());
+    const std::vector<std::byte> journeys =
+        Written([&](core::Writer& writer) { host.NpcTravel().SaveDelta(writer, base.travel, data.world.get(), &paths); });
+    // The journals are written whole, as relationships are.
+    std::vector<u64> gone;
+    std::vector<core::VisitPlan> plans;
+    std::vector<core::Journey> whole;
+    core::Reader reader{ journeys };
+    reader(gone, plans, whole);
+    REQUIRE_FALSE(reader.Failed());
+    CHECK(gone.empty());
+    CHECK(plans.empty());
+    CHECK(whole.empty());
+}
+
+TEST_CASE("a loaded world equals the saved one") {
+    const core::GameData data = test::ShippedData();
+    core::Jobs jobs{ 1 };
+    game::Host saved(test::TestManifest(), game::WORLD_SCENE, data);
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, data);
+    const auto roundTrips = [&] {
+        const std::vector<std::byte> bytes = Saved(saved);
+        core::Reader reader{ bytes };
+        if (!loaded.Load(reader, SAVED_TICK)) {
+            return false;
+        }
+        loaded.EnterScene();
+        return loaded.StateHash() == saved.StateHash() && loaded.WorldHash() == saved.WorldHash() &&
+               loaded.State().Ids().next == saved.State().Ids().next;
+    };
+    CHECK(roundTrips()); // tick 0
+
+    // Mid-month, the cultivator walking a route three tiles east.
+    const core::Vec2 east = data.world->StartCentre() + core::Vec2{ .x = 3.0F * data.world->TileSize(), .y = 0.0F };
+    const std::array<core::Action, 1> walk{ { { .kind = core::ActionKind::WalkTo, .point = east } } };
+    Tick(saved, At(1), { .actions = walk, .held = {} });
+    for (u64 tick = 2; tick <= 40; ++tick) {
+        Tick(saved, At(tick), {});
+    }
+    REQUIRE(saved.PlayerRoute().has_value());
+    CHECK(roundTrips());
+
+    // Mid-journey after a month step: the journeys the base seeded have ended, and new ones are under way.
+    saved.AdvanceCalendar(At(41), jobs, {});
+    for (u64 tick = 42; tick <= 50; ++tick) {
+        Tick(saved, At(tick), {});
+    }
+    REQUIRE_FALSE(saved.NpcTravel().Journeys().empty());
+    CHECK(roundTrips());
+
+    // After three month steps.
+    saved.AdvanceCalendar(At(51), jobs, {});
+    saved.AdvanceCalendar(At(52), jobs, {});
+    REQUIRE(saved.Months() == 3);
+    CHECK(roundTrips());
+}
+
+TEST_CASE("a loaded world carries on as the saved one") {
+    constexpr core::HeldInput RIGHT{ .move = { .x = 1.0F, .y = 0.0F } };
+    constexpr u64 BETWEEN = 3; // ticks between month steps
+    const core::GameData data = test::ShippedData();
+    for (const u32 workers : { 1U, 4U }) {
+        CAPTURE(workers);
+        core::Jobs jobs{ workers };
+        game::Host saved(test::TestManifest(), game::WORLD_SCENE, data);
+        game::Host neverSaved(test::TestManifest(), game::WORLD_SCENE, data);
+        for (game::Host* host : { &saved, &neverSaved }) {
+            Tick(*host, At(1), { .actions = {}, .held = RIGHT });
+            host->AdvanceCalendar(At(2), jobs, {});
+            Tick(*host, At(3), { .actions = {}, .held = RIGHT });
+        }
+        u64 tick = 4;
+        const std::vector<std::byte> bytes = Saved(saved);
+        game::Host loaded(test::TestManifest(), game::ARENA_SCENE, data);
+        core::Reader reader{ bytes };
+        REQUIRE(loaded.Load(reader, SAVED_TICK));
+        loaded.EnterScene();
+
+        // Counted rather than checked at each step, so the worst is asserted once.
+        u32 unlikeSaved = 0;
+        u32 unlikeNeverSaved = 0;
+        const auto compare = [&] {
+            unlikeSaved += loaded.StateHash() == saved.StateHash() ? 0U : 1U;
+            unlikeNeverSaved += loaded.StateHash() == neverSaved.StateHash() ? 0U : 1U;
+        };
+        compare();
+        for (u32 month = 0; month < 2; ++month) {
+            for (u64 step = 0; step < BETWEEN; ++step, ++tick) {
+                for (game::Host* host : { &saved, &neverSaved, &loaded }) {
+                    Tick(*host, At(tick), { .actions = {}, .held = RIGHT });
+                }
+                compare();
+            }
+            for (game::Host* host : { &saved, &neverSaved, &loaded }) {
+                host->AdvanceCalendar(At(tick), jobs, {});
+            }
+            ++tick;
+            compare();
+        }
+        CHECK(loaded.Months() == 3);
+        CHECK(unlikeSaved == 0);
+        CHECK(unlikeNeverSaved == 0);
+    }
+}
+
+TEST_CASE("a save from another generator or other world data is refused") {
+    const core::GameData data = test::SmallData();
+    game::Host saved(test::TestManifest(), game::WORLD_SCENE, data);
+    const std::vector<std::byte> bytes = Saved(saved);
+    // The generator version follows the format, the scene, the scene counter and the seed; the base hash follows it.
+    constexpr std::size_t GENERATOR_AT = sizeof(u32) + sizeof(u8) + sizeof(u64) + sizeof(u64);
+    constexpr std::size_t BASE_AT = GENERATOR_AT + sizeof(u32);
+    const auto patched = [&bytes](std::size_t offset, std::span<const std::byte> patch) {
+        std::vector<std::byte> copy = bytes;
+        std::ranges::copy(patch, copy.begin() + static_cast<std::ptrdiff_t>(offset));
+        return copy;
+    };
+    const auto generator = [](u32 version) { return std::bit_cast<std::array<std::byte, sizeof(u32)>>(version); };
+    CHECK(LoadsWith(data, bytes));
+    CHECK_FALSE(LoadsWith(data, patched(GENERATOR_AT, generator(game::GENERATOR_VERSION + 1))));
+    CHECK_FALSE(LoadsWith(data, patched(GENERATOR_AT, generator(game::GENERATOR_VERSION - 1))));
+    const auto otherBase = std::bit_cast<std::array<std::byte, sizeof(u64)>>(data.BaseHash() + 1);
+    CHECK_FALSE(LoadsWith(data, patched(BASE_AT, otherBase)));
+
+    // Another map or other names generate another world; other fights don't.
+    core::GameData otherMap = data;
+    otherMap.world = test::SmallWorld(true);
+    CHECK_FALSE(LoadsWith(otherMap, bytes));
+    core::Names names = *data.names;
+    names.surnames.front().weight += 1;
+    core::GameData otherNames = data;
+    otherNames.names = std::make_shared<const core::Names>(std::move(names));
+    CHECK_FALSE(LoadsWith(otherNames, bytes));
+    core::GameData otherFights = data;
+    otherFights.abilities.qiMax += 10;
+    otherFights.fox.health += 100;
+    CHECK(LoadsWith(otherFights, bytes));
+}
+
+TEST_CASE("a save made on the world map mid-journey and mid-stay, loaded after a dev scene, has every traveller in place") {
+    constexpr u64 SAVED_AT = 10;
+    const std::array<core::Action, 1> cycle{ { { .kind = core::ActionKind::CycleScene } } };
+    const core::GameData data = test::ShippedData();
+    const core::WorldMap& map = *data.world;
+    core::Jobs jobs{ 1 };
+    game::Host saved(test::TestManifest(), game::WORLD_SCENE, data);
+    for (u64 tick = 1; tick <= SAVED_AT; ++tick) {
+        Tick(saved, At(tick), {});
+    }
+    const auto clock = static_cast<i64>(saved.WorldTicks());
+    const auto partOf = [clock](const core::Journey& journey) {
+        return std::ranges::find_if(journey.parts, [clock](const core::JourneyPart& part) {
+            return core::StartTick(part) <= clock && clock < core::EndTick(part);
+        });
+    };
+    const std::span<const core::Journey> journeys = saved.NpcTravel().Journeys();
+    const auto walking = std::ranges::count_if(journeys, [&](const core::Journey& journey) {
+        const auto part = partOf(journey);
+        return part != journey.parts.end() && !part->stay;
+    });
+    const auto staying = std::ranges::count_if(journeys, [&](const core::Journey& journey) {
+        const auto part = partOf(journey);
+        return part != journey.parts.end() && part->stay;
+    });
+    REQUIRE(walking > 0);
+    REQUIRE(staying > 0);
+    const std::vector<std::byte> bytes = Saved(saved);
+    const u64 savedWorld = saved.WorldHash();
+
+    // A game that went into the arena, where a month passed for its own world, loads the save there.
+    game::Host loaded(test::TestManifest(), game::WORLD_SCENE, data);
+    Tick(loaded, At(1), { .actions = cycle, .held = {} });
+    loaded.EnterScene();
+    REQUIRE(loaded.Current().key == game::ARENA_SCENE);
+    Tick(loaded, At(2), {});
+    loaded.AdvanceCalendar(At(3), jobs, {});
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene();
+    CHECK(loaded.WorldHash() == savedWorld);
+    CHECK(loaded.StateHash() == saved.StateHash());
+
+    Tick(saved, At(SAVED_AT + 1), {});
+    Tick(loaded, At(SAVED_AT + 1), {});
+    const auto next = static_cast<i64>(loaded.WorldTicks());
+    REQUIRE(loaded.NpcTravel().Journeys().size() == journeys.size());
+    u32 misplaced = 0; // counted, so the worst is asserted once
+    for (std::size_t index = 0; index < journeys.size(); ++index) {
+        const core::Journey& was = saved.NpcTravel().Journeys()[index];
+        const core::Journey& now = loaded.NpcTravel().Journeys()[index];
+        for (std::size_t member = 0; member < now.members.size(); ++member) {
+            const bool same = was.members.size() == now.members.size() && was.members[member] == now.members[member] &&
+                              SamePoint(core::Where(map, was, next, member), core::Where(map, now, next, member));
+            misplaced += same ? 0U : 1U;
+        }
+    }
+    CHECK(misplaced == 0);
+    const std::vector<core::Instance> fromLoaded = Published(loaded, jobs);
+    const std::vector<core::Instance> fromSaved = Published(saved, jobs);
+    const bool sameFrame = SameBytes(fromLoaded, fromSaved);
+    CHECK(sameFrame);
+}
+
+TEST_CASE("a data reload mid-game keeps the world and its base, and a save made after it loads") {
+    const core::GameData data = test::ShippedData();
+    core::Jobs jobs{ 1 };
+    game::Host saved(test::TestManifest(), game::WORLD_SCENE, data);
+    Tick(saved, At(1), {});
+    saved.AdvanceCalendar(At(2), jobs, {});
+    Tick(saved, At(3), {});
+    const u64 world = saved.WorldHash();
+
+    // As the debug data watch hands over an edited abilities.yaml.
+    core::GameData edited = data;
+    edited.abilities.qiMax += 25;
+    edited.abilities.qiStart += 5;
+    REQUIRE(edited.Hash() != data.Hash());
+    saved.SetData(edited);
+    CHECK(saved.DataHash() == edited.Hash());
+    CHECK(saved.WorldHash() == world); // not made again
+    CHECK(edited.BaseHash() == data.BaseHash());
+
+    const std::vector<std::byte> bytes = Saved(saved);
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, edited);
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene();
+    CHECK(loaded.StateHash() == saved.StateHash());
+    CHECK(loaded.WorldHash() == world);
+    CHECK(LoadsWith(data, bytes)); // a game on the data before the edit makes the same base
+}
+
+TEST_CASE("a world save whose world ID counter is behind its base's is refused, and one at it loads") {
+    // A new game's world counter is its base's: the next ID the world made from the seed hands out.
+    const core::GameData data = test::SmallData();
+    game::Host saved(test::TestManifest(), game::WORLD_SCENE, data);
+    const u64 baseNext = saved.State().Ids().next;
+    REQUIRE(baseNext > 1); // the base has NPCs, so a counter can fall behind it and still fit its range
+    const std::vector<std::byte> sound = Saved(saved);
+    // The game world's counter follows the format, the scene, the scene counter, the seed, the generator version and the
+    // base hash.
+    constexpr std::size_t WORLD_AT = sizeof(u32) + sizeof(u8) + sizeof(u64) + sizeof(u64) + sizeof(u32) + sizeof(u64);
+    const auto with = [&sound](u64 next) {
+        std::vector<std::byte> bytes = sound;
+        std::ranges::copy(
+            std::bit_cast<std::array<std::byte, sizeof(u64)>>(next), bytes.begin() + static_cast<std::ptrdiff_t>(WORLD_AT)
+        );
+        return bytes;
+    };
+    REQUIRE(with(baseNext) == sound);
+    CHECK(LoadsWith(data, with(baseNext)));
+    CHECK(LoadsWith(data, with(baseNext + 1)));       // an ID handed out since, its entity gone
+    CHECK_FALSE(LoadsWith(data, with(baseNext - 1))); // the base's last NPC's ID would be handed out again
+    CHECK_FALSE(LoadsWith(data, with(1)));
 }
 
 } // namespace

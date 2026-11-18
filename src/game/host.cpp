@@ -2,6 +2,7 @@
 
 #include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/delta.hpp"
 #include "core/instances.hpp"
 #include "core/log.hpp"
 #include "core/profile.hpp"
@@ -68,11 +69,13 @@ constexpr f32 MIDDLE = 0.5F;
 // 2: the player and the selection; 3: the respawns waiting, the volleys and the flashes; 4: the seals; 5: the world clock,
 // the month steps run and the world pause in place of the months passed; 6: the player's route; 7: the scene's own stable-ID
 // counter; 8: the game's world, a dev scene's scratch world and the scene in sections of their own, and the place on the
-// world map the cultivator comes back to
-constexpr u32 ARENA_FORMAT = 8;
+// world map the cultivator comes back to; 9: the game's world as its difference from the world its seed makes
+constexpr u32 ARENA_FORMAT = 9;
 constexpr u32 ACTIVE_VERSION =
     5; // 2: creatures; 3: spin; 4: health, dying, arriving, caster, dashing, afflictions; 5: the NPCs' homes
-constexpr u32 WORLD_VERSION = 3; // 2: the NPCs' homes; 3: the travelling action, the journeys and the journals
+// 2: the NPCs' homes; 3: the travelling action, the journeys and the journals; 4: the game's world as its difference from
+// its base, a dev scene's journeys as their difference from none
+constexpr u32 WORLD_VERSION = 4;
 using ActiveComponents = core::ComponentList<
     Body,
     Look,
@@ -93,38 +96,93 @@ using WorldComponents = core::ComponentList<Npc, Needs, Met, Group>;
 
 constexpr u32 PUBLISH_CHUNK = 4'096; // entities, or journeys, packed per job chunk
 
-/// Writes `world`'s section of a save whole into `archive` (a Writer or a Hasher): its seed, its world stable-ID counter,
-/// its calendar, its pause and its place on the world map, then its world domain, its relationships and its travel. Its
-/// active domain is the running scene's, written with the scene.
+/// Writes `world`'s calendar, pause and place on the world map into `archive` (a Writer or a Hasher).
 template<typename Archive>
-void WriteWorld(Archive& archive, const WorldState& world) {
-    archive(
-        world.state.Seed(), world.state.Ids().next, world.worldTicks, world.months, world.paused, world.mapPlace.has_value()
-    );
+void WriteClock(Archive& archive, const WorldState& world) {
+    archive(world.worldTicks, world.months, world.paused, world.mapPlace.has_value());
     if (world.mapPlace) {
         archive(*world.mapPlace);
     }
+}
+
+/// Hashes `world` whole into `hasher`: its seed, its world stable-ID counter, its calendar, its pause and its place on
+/// the world map, then its world domain, its relationships and its travel. Its active domain is the running scene's,
+/// hashed with the scene.
+void HashWorld(core::Hasher& hasher, const WorldState& world) {
+    hasher(world.state.Seed(), world.state.Ids().next);
+    WriteClock(hasher, world);
+    hasher(WORLD_VERSION);
+    core::SaveDomain(hasher, world.state[WORLD], WorldComponents{});
+    world.relationships.Save(hasher);
+    world.travel.Save(hasher);
+}
+
+/// Writes a dev scene's scratch world's section of a save into `archive`, whole: as HashWorld() hashes it, but its travel
+/// as its difference from none (Travel::SaveDelta()), the one way a save's travel is read.
+void WriteScratch(core::Writer& archive, const WorldState& world) {
+    archive(world.state.Seed(), world.state.Ids().next);
+    WriteClock(archive, world);
     archive(WORLD_VERSION);
     core::SaveDomain(archive, world.state[WORLD], WorldComponents{});
     world.relationships.Save(archive);
-    world.travel.Save(archive);
+    world.travel.SaveDelta(archive, Travel{}, nullptr, nullptr);
 }
 
-/// Reads the section WriteWorld() wrote into a world whose state hands out scene IDs from `sceneIds`, its travel checked
-/// against `map` (null where none may be under way). Fails `archive` on anything malformed: a world read from a failed
-/// archive is to be thrown away.
-WorldState ReadWorld(core::Reader& archive, core::StableIdCounter sceneIds, const core::WorldMap* map) {
-    u64 seed = 0;
-    u64 next = 0;
+/// Writes the game's world's section of a save into `archive` as its difference from `base`, the world as it was made
+/// from data of base hash `baseHash`: the seed, GENERATOR_VERSION, `baseHash`, the world stable-ID counter, the calendar,
+/// the pause and the place on the world map, then the world domain's difference, the relationships whole and the
+/// travel's difference, its journeys rebuilt over `map` and `paths` (null without a map) to tell a plan from a whole one.
+void WriteGameWorld(
+    core::Writer& archive,
+    const WorldState& world,
+    const WorldState& base,
+    u64 baseHash,
+    const core::WorldMap* map,
+    core::Paths* paths
+) {
+    archive(world.state.Seed(), GENERATOR_VERSION, baseHash, world.state.Ids().next);
+    WriteClock(archive, world);
+    archive(WORLD_VERSION);
+    core::SaveDomainDelta(archive, base.state[WORLD], world.state[WORLD], WorldComponents{});
+    world.relationships.Save(archive);
+    world.travel.SaveDelta(archive, base.travel, map, paths);
+}
+
+/// A world's calendar, pause and place on the world map, as a save holds them.
+struct Clock {
     u64 worldTicks = 0;
     u64 months = 0;
     bool paused = false;
+    std::optional<core::Vec2> place = std::nullopt;
+};
+
+/// Reads what WriteClock() wrote.
+Clock ReadClock(core::Reader& archive) {
+    Clock clock;
     bool placed = false;
-    archive(seed, next, worldTicks, months, paused, placed);
-    core::Vec2 place{};
+    archive(clock.worldTicks, clock.months, clock.paused, placed);
     if (placed) {
-        archive(place);
+        archive(clock.place.emplace());
     }
+    return clock;
+}
+
+/// Gives `world` the calendar, pause and place of `clock`.
+void SetClock(WorldState& world, const Clock& clock) {
+    world.worldTicks = clock.worldTicks;
+    world.months = clock.months;
+    world.paused = clock.paused;
+    world.mapPlace = clock.place;
+}
+
+/// Reads the section WriteScratch() wrote into a world whose state hands out scene IDs from `sceneIds`. Fails `archive`
+/// on anything malformed, and on any travel (a dev scene never shows the world map): a world read from a failed archive is
+/// to be thrown away.
+WorldState ReadScratch(core::Reader& archive, core::StableIdCounter sceneIds) {
+    u64 seed = 0;
+    u64 next = 0;
+    archive(seed, next);
+    const Clock clock = ReadClock(archive);
     // Counters outside their ranges would let the two ranges' IDs meet; the state built in their place is thrown away.
     const core::StableIdCounter ids{ .next = next };
     const bool countersFit = core::State::CountersFit(ids, sceneIds);
@@ -139,14 +197,136 @@ WorldState ReadWorld(core::Reader& archive, core::StableIdCounter sceneIds, cons
     }
     core::LoadDomain(archive, world.state, WORLD, WorldComponents{});
     world.relationships.Load(archive); // checked against the state once the scene's domain is read too (Within())
-    static_cast<void>(world.travel.Load(archive, world.state, map)); // a refusal fails `archive`
-    world.worldTicks = worldTicks;
-    world.months = months;
-    world.paused = paused;
-    if (placed) {
-        world.mapPlace = place;
-    }
+    static_cast<void>(world.travel.LoadDelta(archive, Travel{}, world.state, nullptr, nullptr)); // a refusal fails `archive`
+    SetClock(world, clock);
     return world;
+}
+
+/// Gives each entity of `into` that `from` has `Component` on (every one of them, by stable ID) a copy of it, in `from`'s
+/// storage order, so the copy iterates as the original does.
+template<typename Component>
+void CopyStorage(const core::Domain& from, core::Domain& into) {
+    const auto* storage = from.Entities().storage<Component>();
+    if (storage == nullptr) {
+        return;
+    }
+    core::Registry& target = into.Entities();
+    for (std::size_t index = 0; index < storage->size(); ++index) {
+        const core::Entity entity = (*storage)[index];
+        const core::Entity copied = into.Find(from.Entities().get<core::StableId>(entity));
+        if constexpr (std::is_empty_v<Component>) {
+            target.emplace<Component>(copied);
+        }
+        else {
+            target.emplace<Component>(copied, storage->get(entity));
+        }
+    }
+}
+
+/// CopyStorage() of each of `Components`, in their order.
+template<typename... Components>
+void CopyStorages(const core::Domain& from, core::Domain& into, core::ComponentList<Components...> /*components*/) {
+    (CopyStorage<Components>(from, into), ...);
+}
+
+/// A copy of `made`, a world as GenerateWorld() made it (its active domain empty): its world domain's entities and
+/// components (those a save holds) in the same storage order, its travel, relationships, calendar and counters. Far
+/// cheaper than making it again, which routes every journey, and the same world, as making it is a pure function of the
+/// seed and the data.
+WorldState CopyOf(const WorldState& made) {
+    PN_ASSERT(made.state[ACTIVE].Entities().view<const core::StableId>().empty(), "a world copied with a scene in it");
+    WorldState copy{ core::State{ DOMAINS, made.state.Seed(), made.state.Ids(), made.state.SceneIds() } };
+    const core::Domain& from = made.state[WORLD];
+    const auto* ids = from.Entities().storage<core::StableId>();
+    for (std::size_t index = 0; ids != nullptr && index < ids->size(); ++index) {
+        const bool restored = copy.state.Restore(WORLD, ids->get((*ids)[index]));
+        PN_ASSERT(restored, "a world's entity copied twice");
+    }
+    CopyStorages(from, copy.state[WORLD], WorldComponents{});
+    copy.relationships = made.relationships;
+    copy.travel = made.travel;
+    copy.worldTicks = made.worldTicks;
+    copy.months = made.months;
+    copy.paused = made.paused;
+    copy.mapPlace = made.mapPlace;
+    return copy;
+}
+
+/// The game's world as the section WriteGameWorld() wrote holds it, its state handing out scene IDs from `sceneIds`, and
+/// the base it was written against (in that order), the base made again (GenerateWorld()) from the section's seed and
+/// `data`, routed over `paths` (null without a map), and the world a copy of it. Fails `archive` on anything malformed, logging
+/// which of these refused it: another generator version, other world data (core::GameData::BaseHash()), a world-ID counter
+/// behind the base's, a world domain's difference core::LoadDomainDelta() refuses, or journeys Travel::LoadDelta() refuses.
+/// Nothing is made for a section refused before its difference is read; worlds read from a failed archive are to be thrown
+/// away.
+std::pair<WorldState, WorldState> ReadGameWorld(
+    core::Reader& archive,
+    core::StableIdCounter sceneIds,
+    const core::GameData& data,
+    core::Paths* paths
+) {
+    u64 seed = 0;
+    u32 generator = 0;
+    u64 baseHash = 0;
+    u64 next = 0;
+    archive(seed, generator, baseHash, next);
+    const Clock clock = ReadClock(archive);
+    u32 version = 0;
+    archive(version);
+    if (!archive.Failed() && generator != GENERATOR_VERSION) {
+        PN_LOG_WARNING(
+            "save refused: its world was made by world generator version {}, and this game's is {}",
+            generator,
+            GENERATOR_VERSION
+        );
+        archive.Fail();
+    }
+    if (!archive.Failed() && baseHash != data.BaseHash()) {
+        PN_LOG_WARNING(
+            "save refused: its world was made from other world data (its world map and names hash to {:016x}, this game's "
+            "to {:016x})",
+            baseHash,
+            data.BaseHash()
+        );
+        archive.Fail();
+    }
+    const core::StableIdCounter ids{ .next = next };
+    if (version != WORLD_VERSION || !core::State::CountersFit(ids, sceneIds)) {
+        archive.Fail();
+    }
+    WorldState base{ core::State{ DOMAINS, seed } };
+    if (archive.Failed()) {
+        // Parentheses, as MSVC warns that it can't keep a braced list's order with temporaries (C4868).
+        std::pair<WorldState, WorldState> refused(WorldState(core::State(DOMAINS, seed)), std::move(base));
+        return refused;
+    }
+    GenerateWorld(base, data, paths);
+    std::pair<WorldState, WorldState> made(CopyOf(base), std::move(base));
+    auto& [world, generated] = made;
+    world.state.SetSceneIds(sceneIds);
+    if (ids.next < world.state.Ids().next) {
+        PN_LOG_WARNING(
+            "save refused: its world's next ID, {}, is behind the {} its base hands out", ids.next, world.state.Ids().next
+        );
+        archive.Fail();
+        return made;
+    }
+    world.state.SetIds(ids);
+    core::LoadDomainDelta(archive, world.state, WORLD, WorldComponents{});
+    if (archive.Failed()) {
+        PN_LOG_WARNING("save refused: its world's difference from the world its seed makes is malformed");
+        return made;
+    }
+    // In the order the saved world was sorted into, so the loaded one iterates as it did.
+    world.state.SortCanonical();
+    world.relationships.Load(archive); // checked against the state once the scene's domain is read too (Within())
+    if (!archive.Failed() && !world.travel.LoadDelta(archive, generated.travel, world.state, data.world.get(), paths)) {
+        PN_LOG_WARNING(
+            "save refused: its journeys' difference from those its seed makes is malformed or doesn't fit its world"
+        );
+    }
+    SetClock(world, clock);
+    return made;
 }
 
 /// `point` in the units of the step area round `portal`, where the step area is the unit circle.
@@ -442,6 +622,8 @@ std::optional<core::SceneFacts> Host::Requested() const {
 void Host::EnterScene() {
     if (m_loaded) {
         m_world = std::move(m_loaded->world);
+        m_base = std::move(m_loaded->base);
+        m_baseHash = m_loaded->baseHash;
         m_scratch = std::move(m_loaded->scratch);
         m_combat = std::move(m_loaded->combat);
         m_scene = m_loaded->scene;
@@ -465,13 +647,16 @@ void Host::EnterScene() {
 Host::Host(std::shared_ptr<const core::Manifest> manifest, core::SceneKey scene, core::GameData data)
   : m_manifest{ std::move(manifest) }
   , m_world{ core::State{ DOMAINS, SEED } }
+  , m_base{ core::State{ DOMAINS, SEED } }
   , m_data{ std::move(data) }
   , m_scene{ scene }
   , m_sceneId{ SceneIdOf(*m_manifest, m_scene) } {
     if (m_data.world != nullptr) {
         m_paths.emplace(m_data.world);
     }
-    GenerateWorld(m_world, m_data, m_paths ? &*m_paths : nullptr);
+    GenerateWorld(m_base, m_data, m_paths ? &*m_paths : nullptr);
+    m_world = CopyOf(m_base);
+    m_baseHash = m_data.BaseHash();
     Build(m_scene);
 }
 
@@ -1061,18 +1246,9 @@ bool Host::MonthDue() const {
 }
 
 template<typename Archive>
-void Host::Write(Archive& archive, bool everyWorld) const {
-    const WorldState& running = Live();
-    // The scene stays one byte, as the scene enum was.
-    archive(ARENA_FORMAT, static_cast<u8>(std::to_underlying(m_scene)), running.state.SceneIds().next);
-    if (!m_scratch || everyWorld) {
-        WriteWorld(archive, m_world);
-    }
-    if (m_scratch) {
-        WriteWorld(archive, *m_scratch);
-    }
+void Host::WriteScene(Archive& archive) const {
     archive(m_player, m_selected, ACTIVE_VERSION);
-    core::SaveDomain(archive, running.state[ACTIVE], ActiveComponents{});
+    core::SaveDomain(archive, Live().state[ACTIVE], ActiveComponents{});
     archive(m_route.has_value());
     if (m_route) {
         archive(*m_route);
@@ -1082,20 +1258,32 @@ void Host::Write(Archive& archive, bool everyWorld) const {
 
 void Host::Save(core::Writer& archive) {
     PN_PROFILE_ZONE();
-    Live().state.SortCanonical();
-    Write(archive, true);
+    // The game's world too while it is set aside, as a load gives it back sorted.
+    m_world.state.SortCanonical();
+    if (m_scratch) {
+        m_scratch->state.SortCanonical();
+    }
+    // The scene stays one byte, as the scene enum was.
+    archive(ARENA_FORMAT, static_cast<u8>(std::to_underlying(m_scene)), Live().state.SceneIds().next);
+    WriteGameWorld(archive, m_world, m_base, m_baseHash, m_data.world.get(), m_paths ? &*m_paths : nullptr);
+    if (m_scratch) {
+        WriteScratch(archive, *m_scratch);
+    }
+    WriteScene(archive);
 }
 
 u64 Host::StateHash() const {
     PN_PROFILE_ZONE();
     core::Hasher hasher;
-    Write(hasher, false);
+    hasher(ARENA_FORMAT, static_cast<u8>(std::to_underlying(m_scene)), Live().state.SceneIds().next);
+    HashWorld(hasher, Live());
+    WriteScene(hasher);
     return hasher.Value();
 }
 
 u64 Host::WorldHash() const {
     core::Hasher hasher;
-    WriteWorld(hasher, m_world);
+    HashWorld(hasher, m_world);
     return hasher.Value();
 }
 
@@ -1113,10 +1301,10 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
     }
     const core::StableIdCounter sceneIds{ .next = sceneNext };
     const core::WorldMap* const map = m_data.world.get();
-    WorldState world = ReadWorld(archive, sceneIds, map);
+    auto [world, base] = ReadGameWorld(archive, sceneIds, m_data, m_paths ? &*m_paths : nullptr);
     std::optional<WorldState> scratch = std::nullopt;
     if (traits != nullptr && traits->devScene) {
-        scratch.emplace(ReadWorld(archive, sceneIds, nullptr)); // a dev scene never shows the map, so it has no travel
+        scratch.emplace(ReadScratch(archive, sceneIds));
     }
     WorldState& running = scratch ? *scratch : world;
     core::StableId player{};
@@ -1150,7 +1338,15 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
         return false;
     }
     m_loaded.emplace(
-        std::move(world), std::move(scratch), std::move(combat), core::SceneKey{ scene }, player, selected, std::move(route)
+        std::move(world),
+        std::move(base),
+        m_data.BaseHash(),
+        std::move(scratch),
+        std::move(combat),
+        core::SceneKey{ scene },
+        player,
+        selected,
+        std::move(route)
     );
     return true;
 }

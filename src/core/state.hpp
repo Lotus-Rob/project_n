@@ -103,6 +103,14 @@ public:
         m_sceneIds = ids;
     }
 
+    /// Moves the world counter on to `ids`, as a save of this state's world further on holds it, so the IDs it handed out
+    /// since are never handed out again. It never goes down, and stays below the scene range.
+    void SetIds(StableIdCounter ids) {
+        PN_ASSERT(ids.next >= m_ids.next, "the world ID counter went down, so world IDs could repeat");
+        PN_ASSERT(ids.next < SCENE_ID_BASE, "the world IDs ran into the scene range");
+        m_ids = ids;
+    }
+
     /// Creates an entity with a new stable ID from `range` in domain `index`. Never inside a job chunk.
     std::pair<StableId, Entity> Create(DomainIndex index, IdRange range) {
         PN_ASSERT(range == IdRange::Scene || m_ids.next < SCENE_ID_BASE, "the world IDs ran into the scene range");
