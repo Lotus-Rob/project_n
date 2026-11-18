@@ -180,6 +180,33 @@ struct ComponentList {};
 
 namespace detail {
 
+/// Reads a whole `Component` into `value`, failing `archive` when its type's `Valid()` (when it has one) rejects it.
+template<typename Component>
+void ReadWhole(Reader& archive, Component& value) {
+    archive(value);
+    if constexpr (requires { value.Valid(); }) {
+        if (!archive.Failed() && !value.Valid()) {
+            archive.Fail();
+        }
+    }
+}
+
+/// Gives `entity`, which lacks one, its `Component`, read whole from `archive` (nothing to read for an empty one);
+/// emplaces nothing when the read fails or the value is invalid.
+template<typename Component>
+void EmplaceRead(Reader& archive, Registry& registry, Entity entity) {
+    if constexpr (std::is_empty_v<Component>) {
+        registry.emplace<Component>(entity);
+    }
+    else {
+        Component value{};
+        ReadWhole(archive, value);
+        if (!archive.Failed()) {
+            registry.emplace<Component>(entity, std::move(value));
+        }
+    }
+}
+
 /// Writes `registry`'s `Component` storage into `archive`, in storage order: its size, then each
 /// entity's stable ID and (unless the component is empty) its value.
 template<typename Component, typename Archive>
@@ -213,21 +240,7 @@ void LoadStorage(Reader& archive, Domain& domain) {
             archive.Fail();
             return;
         }
-        if constexpr (std::is_empty_v<Component>) {
-            domain.Entities().emplace<Component>(entity);
-        }
-        else {
-            Component value{};
-            archive(value);
-            if constexpr (requires { value.Valid(); }) {
-                if (!value.Valid()) {
-                    archive.Fail();
-                }
-            }
-            if (!archive.Failed()) {
-                domain.Entities().emplace<Component>(entity, value);
-            }
-        }
+        EmplaceRead<Component>(archive, domain.Entities(), entity);
     }
 }
 
