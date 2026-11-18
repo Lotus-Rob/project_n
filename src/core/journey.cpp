@@ -198,4 +198,54 @@ Journey Visit(
     return journey;
 }
 
+std::optional<VisitPlan> PlanOf(const Journey& journey) {
+    if (journey.members.empty() || journey.parts.size() != 3) {
+        return std::nullopt;
+    }
+    const JourneyPart& first = journey.parts[0];
+    const JourneyPart& middle = journey.parts[1];
+    const JourneyPart& last = journey.parts[2];
+    const Leg& out = first.leg;
+    const Leg& back = last.leg;
+    const Stay& stay = middle.rest;
+    const bool shaped = !first.stay && middle.stay && !last.stay && out.shape == LegShape::TileRoute &&
+                        back.shape == LegShape::TileRoute && out.profile == WALKING && back.profile == WALKING &&
+                        !out.tiles.empty() &&
+                        std::ranges::equal(back.tiles.begin(), back.tiles.end(), out.tiles.rbegin(), out.tiles.rend());
+    if (!shaped || stay.city != journey.destination || stay.startTick != EndTick(out) || back.startTick != stay.endTick ||
+        stay.endTick < stay.startTick) {
+        return std::nullopt;
+    }
+    // Ordered, the difference of two i64s fits a u64.
+    const u64 span = static_cast<u64>(stay.endTick) - static_cast<u64>(stay.startTick);
+    const u64 days = span / static_cast<u64>(DAY_TICKS);
+    if (span % static_cast<u64>(DAY_TICKS) != 0 || days > std::numeric_limits<u32>::max()) {
+        return std::nullopt;
+    }
+    return VisitPlan{ .members = journey.members,
+                      .home = journey.home,
+                      .destination = journey.destination,
+                      .from = out.tiles.front(),
+                      .departTick = out.startTick,
+                      .stayDays = static_cast<u32>(days),
+                      .seed = stay.seed };
+}
+
+Journey Rebuild(const WorldMap& map, Paths& paths, const VisitPlan& plan) {
+    PN_ASSERT(!plan.members.empty(), "a plan has a member");
+    PN_ASSERT(plan.from < map.Columns() * map.Rows(), "a plan starts on a tile of the map");
+    Journey journey{ .members = plan.members, .home = plan.home, .destination = plan.destination, .parts = {} };
+    // Visit's way home ends by stepping onto this tile, which walkers can't enter.
+    if (map.CostAt(plan.from, WALKING) == IMPASSABLE_COST) {
+        return journey;
+    }
+    const std::vector<u32> route = RouteDown(map, paths.To(plan.destination, WALKING), plan.from);
+    if (route.empty()) {
+        return journey;
+    }
+    journey.parts =
+        Visit(map, route, plan.members.front(), plan.home, plan.destination, plan.departTick, plan.stayDays, plan.seed).parts;
+    return journey;
+}
+
 } // namespace core

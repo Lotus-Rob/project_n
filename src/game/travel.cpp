@@ -455,6 +455,44 @@ bool Travel::Load(core::Reader& archive, const core::State& state, const core::W
     std::vector<core::Journey> journeys;
     std::vector<Journal> journals;
     archive(journeys, journals);
+    return Adopt(archive, state, map, std::move(journeys), std::move(journals));
+}
+
+bool Travel::LoadPlans(core::Reader& archive, const core::State& state, const core::WorldMap& map, core::Paths& paths) {
+    std::vector<core::VisitPlan> plans;
+    std::vector<Journal> journals;
+    archive(plans, journals);
+    // Rebuilding asserts on what a plan names, so what it names is checked first; a departure this near an i64's most would
+    // overflow its ticks (two legs of at most a u32's ticks, the stay and the day it must leave before the end).
+    constexpr i64 LATEST_DEPARTURE = std::numeric_limits<i64>::max() - (2 * i64{ std::numeric_limits<u32>::max() }) -
+                                     ((i64{ std::numeric_limits<u32>::max() } + 1) * DAY_TICKS);
+    const auto plannable = [&map](const core::VisitPlan& plan) {
+        return !plan.members.empty() && IsCity(map, plan.home) && IsCity(map, plan.destination) &&
+               plan.from < map.Columns() * map.Rows() && plan.departTick <= LATEST_DEPARTURE;
+    };
+    std::vector<core::Journey> journeys;
+    bool sound = !archive.Failed() && std::ranges::all_of(plans, plannable);
+    if (sound) {
+        journeys.reserve(plans.size());
+        for (const core::VisitPlan& plan : plans) {
+            journeys.push_back(core::Rebuild(map, paths, plan));
+            sound = sound && !journeys.back().parts.empty() && core::StartTick(journeys.back()) == plan.departTick;
+        }
+    }
+    if (!sound) {
+        archive.Fail();
+        return false;
+    }
+    return Adopt(archive, state, &map, std::move(journeys), std::move(journals));
+}
+
+bool Travel::Adopt(
+    core::Reader& archive,
+    const core::State& state,
+    const core::WorldMap* map,
+    std::vector<core::Journey> journeys,
+    std::vector<Journal> journals
+) {
     const auto journeysSound = [&] {
         const bool ordered = std::ranges::adjacent_find(journeys, std::greater_equal{}, Leader) == journeys.end();
         return ordered &&
