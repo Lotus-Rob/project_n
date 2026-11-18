@@ -480,6 +480,8 @@ constexpr u32 FAR_COST = 80;
 constexpr u32 NEAR_PEOPLE = 100;
 constexpr u32 FAR_PEOPLE = 400;
 constexpr u32 ISLE_PEOPLE = 5'000;
+constexpr u16 NO_SUCH_CITY = 40;
+constexpr u32 OFF_MAP = 100'000;
 constexpr u32 ISLE_TILE = (VISIT_COLUMNS * VISIT_ROWS) - 1;
 constexpr std::array<u16, core::VISITOR_KINDS> EVERYONE{ { 1, 1 } };
 // Draws by core::VisitorKind: cultivators, then traders.
@@ -843,6 +845,108 @@ TEST_CASE("a raised travel share replaces the map's and the data's hash; data wi
     const std::expected<void, core::Error> refused = game::SetTravelShare(noMap, RAISED_SHARE);
     REQUIRE_FALSE(refused.has_value());
     CHECK(refused.error().message.contains("world map"));
+}
+
+/// `travel`'s journeys as plans, and its journals, as SavePlans() writes them.
+std::vector<std::byte> PlanBytes(const game::Travel& travel) {
+    std::vector<std::byte> bytes;
+    core::Writer writer{ bytes };
+    travel.SavePlans(writer);
+    return bytes;
+}
+
+/// A visit from `from` to `destination` along the walking route, `member` alone, leaving on `departTick`.
+core::Journey RoutedVisit(
+    const core::WorldMap& map,
+    core::Paths& paths,
+    core::StableId member,
+    u32 from,
+    u16 destination,
+    i64 departTick
+) {
+    const std::vector<u32> route = core::RouteDown(map, paths.To(destination, core::WALKING), from);
+    return core::Visit(map, route, member, HOME, destination, departTick, STAY_DAYS, 99);
+}
+
+TEST_CASE("a travel table round-trips by plans") {
+    const auto map = std::make_shared<const core::WorldMap>(TestMap());
+    core::Paths paths{ map };
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::StableId home = Traveller(state);
+    const core::StableId away = Traveller(state);
+    const core::StableId second = Traveller(state);
+    game::Travel travel;
+    Journeys(travel, state, *map, home, 2);
+    core::Journey pair = RoutedVisit(*map, paths, away, 0, DESTINATION, DAY);
+    pair.members.push_back(second);
+    travel.Start(std::move(pair));
+    const std::vector<std::byte> plans = PlanBytes(travel);
+    CHECK(plans.size() < Bytes(travel).size());
+
+    game::Travel loaded;
+    core::Reader reader{ plans };
+    REQUIRE(loaded.LoadPlans(reader, state, *map, paths));
+    CHECK(reader.Remaining() == 0);
+    CHECK_FALSE(reader.Failed());
+    const bool sameBytes = Bytes(loaded) == Bytes(travel);
+    CHECK(sameBytes);
+    CHECK(Hash(loaded) == Hash(travel));
+    CHECK(loaded.JournalOf(home).size() == 2);
+    CHECK(loaded.Travelling(second));
+
+    // The members' months must still match the journeys.
+    const core::State resting{ game::DOMAINS, STATE_SEED };
+    game::Travel refused;
+    core::Reader again{ plans };
+    CHECK_FALSE(refused.LoadPlans(again, resting, *map, paths));
+    CHECK(again.Failed());
+    CHECK(refused.Journeys().empty());
+}
+
+TEST_CASE("a plan to an unreachable city is refused") {
+    const std::shared_ptr<const core::WorldMap> map = VisitMap();
+    core::Paths paths{ map };
+    REQUIRE(paths.To(ISLE, core::WALKING).CostFrom(0) == core::UNREACHABLE);
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::StableId npc = game::SpawnNpc(state, 0, HOME);
+    state[game::WORLD].Entities().get<game::Npc>(state[game::WORLD].Find(npc)).action = game::Action::Travel;
+
+    const core::VisitPlan reachable{
+        .members = { npc }, .home = HOME, .destination = NEAR, .from = 0, .departTick = 0, .stayDays = STAY_DAYS, .seed = 1
+    };
+    const auto loads = [&](const core::VisitPlan& plan) {
+        game::Travel travel;
+        std::vector<std::byte> bytes;
+        core::Writer writer{ bytes };
+        const std::vector<core::VisitPlan> plans{ plan };
+        writer(plans);
+        const std::vector<std::byte> noJournals;
+        writer(noJournals);
+        core::Reader reader{ bytes };
+        const bool loaded = travel.LoadPlans(reader, state, *map, paths);
+        CHECK(loaded != reader.Failed());
+        return loaded;
+    };
+    CHECK(loads(reachable));
+
+    core::VisitPlan toTheIsle = reachable;
+    toTheIsle.destination = ISLE;
+    CHECK_FALSE(loads(toTheIsle));
+    core::VisitPlan fromTheIsle = reachable;
+    fromTheIsle.from = ISLE_TILE;
+    CHECK_FALSE(loads(fromTheIsle));
+    core::VisitPlan nowhere = reachable;
+    nowhere.destination = NO_SUCH_CITY;
+    CHECK_FALSE(loads(nowhere));
+    core::VisitPlan offMap = reachable;
+    offMap.from = OFF_MAP;
+    CHECK_FALSE(loads(offMap));
+    core::VisitPlan nobody = reachable;
+    nobody.members.clear();
+    CHECK_FALSE(loads(nobody));
+    core::VisitPlan farFuture = reachable;
+    farFuture.departTick = std::numeric_limits<i64>::max() - 1;
+    CHECK_FALSE(loads(farFuture));
 }
 
 } // namespace

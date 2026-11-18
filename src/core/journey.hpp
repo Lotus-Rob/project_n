@@ -8,12 +8,14 @@
 /// there and nothing that uses legs changes. Ticks are signed, so a journey may have left before the clock's tick 0.
 
 #include "core/calendar.hpp"
+#include "core/paths.hpp"
 #include "core/stable_id.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 #include "core/world_map.hpp"
 
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -156,5 +158,41 @@ struct Journey {
     u32 stayDays,
     u32 seed
 );
+
+/// What defines a visit: Visit() and the route it walks are a pure function of these and the map, so a save keeps them
+/// instead of the legs.
+struct VisitPlan {
+    /// The travellers, one or more; the first is the one Visit() was made for.
+    std::vector<StableId> members;
+    /// The city it sets out from, a place index.
+    u16 home = NO_PLACE;
+    /// The city it travels to, a place index.
+    u16 destination = NO_PLACE;
+    /// The tile its route starts on, and its way home ends on.
+    u32 from = 0;
+    /// The tick it leaves on.
+    i64 departTick = 0;
+    /// The whole days it stays in the destination.
+    u32 stayDays = 0;
+    /// The seed its stay's day points are drawn from.
+    u32 seed = 0;
+
+    /// Lists its fields for an archive (core/archive.hpp).
+    template<typename Self, typename Archive>
+    void Fields(this Self& self, Archive& archive) {
+        archive(self.members, self.home, self.destination, self.from, self.departTick, self.stayDays, self.seed);
+    }
+};
+
+/// The VisitPlan `journey` was made from, or none for a journey Visit() didn't make: members, then a walking leg, a stay in the
+/// destination of whole days and the leg home along the first one reversed, each starting on the tick the one before ends.
+/// What it can't see without a map (the legs' origins and arrive ticks) Rebuild() restores, so a caller that must be sure
+/// compares the rebuild with the journey.
+[[nodiscard]] std::optional<VisitPlan> PlanOf(const Journey& journey);
+
+/// The journey `plan` describes: the route down `paths`' walking map to its destination from its tile (RouteDown()), Visit()
+/// of the first member over it, then the other members appended. A journey without parts when the way is empty: the
+/// tile is impassable to walkers, or the destination out of reach. `plan` has a member, cities of `map` and a tile on it.
+[[nodiscard]] Journey Rebuild(const WorldMap& map, Paths& paths, const VisitPlan& plan);
 
 } // namespace core

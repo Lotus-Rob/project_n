@@ -1,6 +1,7 @@
 #include "core/archive.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/journey.hpp"
+#include "core/paths.hpp"
 #include "core/world_map.hpp"
 
 #include <doctest/doctest.h>
@@ -306,6 +307,104 @@ TEST_CASE("a journey is written and read back whole") {
     const core::Vec2 after = core::Where(map, read, 0, 1);
     CHECK(after.x == before.x);
     CHECK(after.y == before.y);
+}
+
+/// `journey` as an archive writes it: every field, so two journeys with equal bytes are equal field by field.
+std::vector<std::byte> BytesOf(const core::Journey& journey) {
+    std::vector<std::byte> bytes;
+    core::Writer writer{ bytes };
+    writer(journey);
+    return bytes;
+}
+
+/// A visit's defining numbers, for a table of samples.
+struct Sample {
+    u32 from;
+    std::size_t members;
+    u32 stayDays;
+    i64 departTick;
+};
+
+TEST_CASE("a visit rebuilt from its plan equals the visit") {
+    const auto map = std::make_shared<const core::WorldMap>(TestMap());
+    core::Paths paths{ map };
+    constexpr u32 MONTH_DAYS = 40;
+    constexpr i64 MONTH = static_cast<i64>(core::TICKS_PER_MONTH);
+    constexpr u32 ROW_BELOW = COLUMNS * 2;
+    constexpr u32 NEXT_TO_DESTINATION = ROAD_END;
+    const std::array<Sample, 12> samples{ {
+        { .from = 0, .members = 1, .stayDays = TWO_DAYS, .departTick = 0 },
+        { .from = 0, .members = 3, .stayDays = TWO_DAYS, .departTick = 0 },
+        { .from = 0, .members = 2, .stayDays = FIVE_DAYS, .departTick = 1 },
+        { .from = 0, .members = 1, .stayDays = 0, .departTick = 1'000 },
+        { .from = 0, .members = 1, .stayDays = MONTH_DAYS, .departTick = MONTH - 100 },
+        { .from = 0, .members = 2, .stayDays = MONTH_DAYS, .departTick = MONTH },
+        { .from = 0, .members = 1, .stayDays = TWO_DAYS, .departTick = BEFORE_ZERO },
+        { .from = 0, .members = 3, .stayDays = FIVE_DAYS, .departTick = -MONTH },
+        { .from = NEXT_TO_DESTINATION, .members = 1, .stayDays = TWO_DAYS, .departTick = 0 },
+        { .from = NEXT_TO_DESTINATION, .members = 2, .stayDays = MONTH_DAYS, .departTick = MONTH - 1 },
+        { .from = ROW_BELOW, .members = 1, .stayDays = FIVE_DAYS, .departTick = BEFORE_ZERO },
+        { .from = ROW_BELOW + 3, .members = 3, .stayDays = TWO_DAYS, .departTick = 12'345 },
+    } };
+    const std::array<core::StableId, 3> everyone{ WALKER, SECOND, THIRD };
+    for (const Sample& sample : samples) {
+        CAPTURE(sample.from);
+        CAPTURE(sample.members);
+        CAPTURE(sample.departTick);
+        const std::vector<u32> route = core::RouteDown(*map, paths.To(DESTINATION, core::WALKING), sample.from);
+        REQUIRE_FALSE(route.empty());
+        core::Journey visit = core::Visit(*map, route, WALKER, HOME, DESTINATION, sample.departTick, sample.stayDays, SEED);
+        visit.members.assign(everyone.begin(), std::next(everyone.begin(), static_cast<std::ptrdiff_t>(sample.members)));
+
+        REQUIRE(core::PlanOf(visit).has_value());
+        const core::VisitPlan plan = core::PlanOf(visit).value_or(core::VisitPlan{});
+        CHECK(plan.members == visit.members);
+        CHECK(plan.home == HOME);
+        CHECK(plan.destination == DESTINATION);
+        CHECK(plan.from == sample.from);
+        CHECK(plan.departTick == sample.departTick);
+        CHECK(plan.stayDays == sample.stayDays);
+        CHECK(plan.seed == SEED);
+        const core::Journey rebuilt = core::Rebuild(*map, paths, plan);
+        REQUIRE(rebuilt.parts.size() == 3);
+        CHECK(rebuilt.parts[0].leg.origin.x == visit.parts[0].leg.origin.x);
+        CHECK(rebuilt.parts[0].leg.origin.y == visit.parts[0].leg.origin.y);
+        CHECK(rebuilt.parts[2].leg.origin.x == visit.parts[2].leg.origin.x);
+        CHECK(rebuilt.parts[2].leg.origin.y == visit.parts[2].leg.origin.y);
+        const bool same = BytesOf(rebuilt) == BytesOf(visit);
+        CHECK(same);
+    }
+}
+
+TEST_CASE("a journey a visit didn't make has no plan") {
+    const auto map = std::make_shared<const core::WorldMap>(TestMap());
+    const core::Journey visit = core::Visit(*map, ROAD_ROUTE, WALKER, HOME, DESTINATION, 0, TWO_DAYS, SEED);
+    REQUIRE(core::PlanOf(visit).has_value());
+
+    core::Journey withoutParts = visit;
+    withoutParts.parts.clear();
+    CHECK_FALSE(core::PlanOf(withoutParts).has_value());
+
+    core::Journey legOnly = visit;
+    legOnly.parts.resize(1);
+    CHECK_FALSE(core::PlanOf(legOnly).has_value());
+
+    core::Journey otherWay = visit;
+    std::ranges::reverse(otherWay.parts[2].leg.tiles);
+    CHECK_FALSE(core::PlanOf(otherWay).has_value());
+
+    core::Journey gap = visit;
+    gap.parts[2].leg.startTick += 1;
+    CHECK_FALSE(core::PlanOf(gap).has_value());
+
+    core::Journey partialDay = visit;
+    partialDay.parts[1].rest.endTick += 1;
+    partialDay.parts[2].leg.startTick += 1;
+    CHECK_FALSE(core::PlanOf(partialDay).has_value());
+
+    core::Journey memberless = visit;
+    memberless.members.clear();
+    CHECK_FALSE(core::PlanOf(memberless).has_value());
 }
 
 } // namespace

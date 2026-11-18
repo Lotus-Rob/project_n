@@ -1,3 +1,4 @@
+#include "core/archive.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/game_data.hpp"
 #include "core/jobs.hpp"
@@ -285,6 +286,33 @@ TEST_CASE("publishing travellers is the same on 1 and 4 workers") {
     );
     CHECK(published[0].ids == published[1].ids);
     CHECK(std::ranges::equal(published[0].texts, published[1].texts, SameText));
+}
+
+// A save writes a journey as its plan and rebuilds it: every journey a new game starts must come back exactly.
+TEST_CASE("the shipped world's journeys rebuild exactly") {
+    const game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    core::Paths paths{ map };
+    const auto bytesOf = [](const core::Journey& journey) {
+        std::vector<std::byte> bytes;
+        core::Writer writer{ bytes };
+        writer(journey);
+        return bytes;
+    };
+    REQUIRE_FALSE(host.NpcTravel().Journeys().empty());
+    std::size_t different = 0;
+    std::size_t planless = 0;
+    for (const core::Journey& journey : host.NpcTravel().Journeys()) {
+        const std::optional<core::VisitPlan> plan = core::PlanOf(journey);
+        if (!plan) {
+            ++planless;
+            continue;
+        }
+        const bool same = bytesOf(core::Rebuild(*map, paths, *plan)) == bytesOf(journey);
+        different += same ? 0 : 1;
+    }
+    CHECK(planless == 0);
+    CHECK(different == 0);
 }
 
 } // namespace

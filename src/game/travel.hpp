@@ -9,6 +9,7 @@
 /// kind of visitor each draws).
 
 #include "core/archive.hpp"
+#include "core/assert.hpp"
 #include "core/error.hpp"
 #include "core/game_data.hpp"
 #include "core/jobs.hpp"
@@ -162,6 +163,32 @@ public:
     /// Action::Travel on no journey (with or without the map).
     [[nodiscard]] bool Load(core::Reader& archive, const core::State& state, const core::WorldMap* map);
 
+    /// Writes the journeys as the plans that make them (core::PlanOf(), the legs left to LoadPlans()) and the journals whole
+    /// into `archive`; every journey is a visit.
+    template<typename Archive>
+    void SavePlans(Archive& archive) const {
+        std::vector<core::VisitPlan> plans;
+        plans.reserve(m_journeys.size());
+        for (const core::Journey& journey : m_journeys) {
+            std::optional<core::VisitPlan> plan = core::PlanOf(journey);
+            PN_ASSERT(plan.has_value(), "every journey in the table is a visit");
+            plans.push_back(*std::move(plan));
+        }
+        archive(plans, m_journals);
+    }
+
+    /// Replaces the journeys and journals with those SavePlans() wrote, the journeys rebuilt over `map` and `paths`
+    /// (core::Rebuild()), checked against `state` and `map` as Load() does. False, failing `archive` and changing nothing,
+    /// on what Load() refuses of the rebuilt journeys, and on a plan with no member, a city that isn't one of `map`, a tile
+    /// off it, a route that is empty (the tile impassable or the destination unreachable), a departure too near an i64's
+    /// most for its journey's ticks to fit, or a rebuild that doesn't start at its VisitPlan's departure.
+    [[nodiscard]] bool LoadPlans(
+        core::Reader& archive,
+        const core::State& state,
+        const core::WorldMap& map,
+        core::Paths& paths
+    );
+
 private:
     /// Month(), forking its chunks over `jobs`, or running them in turn on the calling thread without one.
     void SendOut(
@@ -187,6 +214,14 @@ private:
         }
     };
 
+    /// Replaces the journeys and journals with `journeys` and `journals`, read from `archive`, if they pass Load()'s checks.
+    [[nodiscard]] bool Adopt(
+        core::Reader& archive,
+        const core::State& state,
+        const core::WorldMap* map,
+        std::vector<core::Journey> journeys,
+        std::vector<Journal> journals
+    );
     std::vector<core::Journey> m_journeys;                          // by first member
     std::vector<Journal> m_journals;                                // by NPC
     std::unordered_set<core::StableId> m_travellers;                // every journey's members; looked up only, never
