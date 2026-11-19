@@ -516,6 +516,8 @@ using GameDisplay = Display<Snapshot, Event, Action, HeldInput, ViewReport>;
 /// false if it fails; acquires now if it didn't before (the first snapshot), plays the `pending` events due by the
 /// render clock (PlayDue()) and, while `visible`, calls `draw(drawn, alpha)`; returns true. Hidden, D and the snapshot
 /// still advance and events still play. `prepare` is `bool(const Snapshot&)`, `draw` `void(const Snapshot&, f64)`.
+/// A false return can leave an acquire without its draw (a visible frame that already had a snapshot acquired before
+/// `prepare` failed), so the caller treats it as fatal and never presents again.
 template<typename Acquire, typename Now, typename Prepare, typename Play, typename Draw>
 bool PresentFrame(
     GameDisplay& display,
