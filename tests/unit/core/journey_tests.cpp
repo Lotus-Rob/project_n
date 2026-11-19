@@ -329,10 +329,10 @@ struct Sample {
 TEST_CASE("a visit rebuilt from its plan equals the visit") {
     const auto map = std::make_shared<const core::WorldMap>(TestMap());
     core::Paths paths{ map };
-    constexpr u32 MONTH_DAYS = 40;
+    constexpr u32 LONG_STAY_DAYS = 40; // longer than a month
     constexpr u32 THREE_DAYS = 3;
     constexpr i64 MONTH = static_cast<i64>(core::TICKS_PER_MONTH);
-    constexpr u32 ROW_BELOW = COLUMNS * 2;
+    constexpr u32 BOTTOM_ROW = COLUMNS * 2; // the bottom row's first tile
     constexpr u32 NEXT_TO_DESTINATION = ROAD_END;
     constexpr u32 DESTINATION_TILE = COLUMNS - 1;
     const std::array<Sample, 20> samples{ {
@@ -344,8 +344,8 @@ TEST_CASE("a visit rebuilt from its plan equals the visit") {
           .stayDays = FIVE_DAYS,
           .departTick = 1 },
         { .why = "a stay of no days", .from = 0, .members = 1, .stayDays = 0, .departTick = 1'000 },
-        { .why = "a stay crossing a month", .from = 0, .members = 1, .stayDays = MONTH_DAYS, .departTick = MONTH - 100 },
-        { .why = "leaving on a month's first tick", .from = 0, .members = 2, .stayDays = MONTH_DAYS, .departTick = MONTH },
+        { .why = "a stay crossing a month", .from = 0, .members = 1, .stayDays = LONG_STAY_DAYS, .departTick = MONTH - 100 },
+        { .why = "leaving on a month's first tick", .from = 0, .members = 2, .stayDays = LONG_STAY_DAYS, .departTick = MONTH },
         { .why = "leaving on a month's last tick", .from = 0, .members = 1, .stayDays = TWO_DAYS, .departTick = MONTH - 1 },
         { .why = "a stay ending on a month boundary",
           .from = DESTINATION_TILE,
@@ -373,15 +373,15 @@ TEST_CASE("a visit rebuilt from its plan equals the visit") {
         { .why = "a two-tile route, a long stay, a month's last tick",
           .from = NEXT_TO_DESTINATION,
           .members = 2,
-          .stayDays = MONTH_DAYS,
+          .stayDays = LONG_STAY_DAYS,
           .departTick = MONTH - 1 },
-        { .why = "from the meadow below the road, before tick 0",
-          .from = ROW_BELOW,
+        { .why = "from the bottom row's start, before tick 0",
+          .from = BOTTOM_ROW,
           .members = 1,
           .stayDays = FIVE_DAYS,
           .departTick = BEFORE_ZERO },
-        { .why = "from the meadow, three members",
-          .from = ROW_BELOW + 3,
+        { .why = "from the bottom row's fourth tile, three members",
+          .from = BOTTOM_ROW + 3,
           .members = 3,
           .stayDays = TWO_DAYS,
           .departTick = 12'345 },
@@ -391,10 +391,10 @@ TEST_CASE("a visit rebuilt from its plan equals the visit") {
           .members = 2,
           .stayDays = TWO_DAYS,
           .departTick = MONTH },
-        { .why = "from the meadow row's start, a long stay",
+        { .why = "from the middle row's start, a long stay",
           .from = COLUMNS,
           .members = 1,
-          .stayDays = MONTH_DAYS,
+          .stayDays = LONG_STAY_DAYS,
           .departTick = 99 },
     } };
     const std::array<core::StableId, 3> everyone{ WALKER, SECOND, THIRD };
@@ -403,6 +403,7 @@ TEST_CASE("a visit rebuilt from its plan equals the visit") {
         CAPTURE(sample.from);
         CAPTURE(sample.members);
         CAPTURE(sample.departTick);
+        CAPTURE(sample.stayDays);
         const std::vector<u32> route = core::RouteDown(*map, paths.To(DESTINATION, core::WALKING), sample.from);
         REQUIRE_FALSE(route.empty());
         core::Journey visit = core::Visit(*map, route, WALKER, HOME, DESTINATION, sample.departTick, sample.stayDays, SEED);
