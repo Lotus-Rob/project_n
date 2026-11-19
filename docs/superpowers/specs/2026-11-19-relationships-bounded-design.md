@@ -179,6 +179,17 @@ The times are from a second run of the case, after "test(game): log holders by e
 measurement" added the holders' counts; every size matched the first run's byte for byte, and the times differed by a few
 percent.
 
+A third run went on to 1000 h (40,000 months), with a 1000 h checkpoint added to the case's list for that run only (the
+case still stops at 250 h). Every load's hashes matched again, and the 1 h to 250 h sizes matched the second run's byte for
+byte. At 1000 h the raw save is 17.69 MB (17,692,006 bytes) and 4.17 MB on disk; a whole save is 25.3 MB raw and 4.79 MB
+on disk. The relationships are the same 373,990 (10,471,728 bytes), held by the same 3,680, 11,311 and 35,009 NPCs, and
+the journals the same 486,820 entries (4,673,480 bytes). Saving takes 49.2 + 29.7 ms, loading 60.5 ms and a month step
+6.0 ms. The on-disk size went down from 250 h's 4.25 MB, so it doesn't grow steadily with play time. It moves with the
+journeys' plan (282,808 bytes at 1000 h against 289,248 at 250 h), but not only with it: 50 h and 1000 h have nearly the
+same plan bytes (282,608 and 282,808) and differ by 93 KB on disk (4,077,845 and 4,170,869 bytes), so the compressed
+content of the other parts shifts too as the months go on. The raw sizes, which the limits bound, don't move. The 30,000
+months from 250 h to 1000 h took about 3 minutes.
+
 ### Rulings
 
 - The spec's "the same result for any worker count" is tested by running the month-step limit case, which reaches the
