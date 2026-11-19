@@ -2478,6 +2478,7 @@ PACED_TOLERANCE = 0.03
 EXPORT_SEP = "\x1f"
 SEGMENT_PREFIX = "camera path: "  # the Tracy message each camera path segment begins with (src/app/app.cpp)
 LATENCY_RE = re.compile(r"input latency: ([\d.]+) ms")
+DELAY_RE = re.compile(r"display delay: ([\d.]+) ms at the end, ([\d.]+) to ([\d.]+) ms over the run")
 SHIMMER_RE = re.compile(r"world shimmer: (\S+)")
 DISPLAY_RE = re.compile(r"display: (\d+x\d+ at \S+ Hz(?: \([^)\n]*\))?)")
 REFRESH_RE = re.compile(r"at ([\d.]+) Hz")
@@ -2530,6 +2531,7 @@ class MeasuredRun:
     latencies: list  # input latencies, ms
     reasons: list  # why its numbers can't be trusted; none when they can
     segments: list
+    delay: tuple = None  # the display delay's (at the end, least, greatest), ms; none when the log has none
 
 
 def measure_runs(text):
@@ -2656,6 +2658,22 @@ def input_latencies(log):
     return [float(ms) for ms in LATENCY_RE.findall(log)]
 
 
+def latency_summary(latencies):
+    """The note on a run's presses: their median and spread, or the one latency; none without any."""
+    if not latencies:
+        return None
+    if len(latencies) == 1:
+        return f"input latency {latencies[0]:g} ms over 1 press"
+    return (f"input latency median {statistics.median(latencies):.1f} ms, {min(latencies):.1f} to "
+            f"{max(latencies):.1f} ms over {len(latencies)} presses")
+
+
+def display_delay(log):
+    """The display delay (at the end, least, greatest) in ms the game logged, or none."""
+    found = DELAY_RE.findall(log)
+    return tuple(float(ms) for ms in found[-1]) if found else None
+
+
 def world_shimmer(output):
     """The world's shimmer the reference pictures' world case prints, if it did."""
     m = SHIMMER_RE.search(output)
@@ -2719,7 +2737,8 @@ def read_run(name, export, messages_text, text):
         work = frame_work(lines, timeline, hitches)
     reasons = untrusted_reasons(text, camera) + ([] if parts else ["no frames measured"])
     return MeasuredRun(name, display_mode(text), input_latencies(text), reasons,
-                       [segment_stats(label, timeline, work, frames, hitches) for label, frames in parts])
+                       [segment_stats(label, timeline, work, frames, hitches) for label, frames in parts],
+                       display_delay(text))
 
 
 def measure_table(results, shimmer):
@@ -2728,7 +2747,9 @@ def measure_table(results, shimmer):
     and trust beside its first row; then each hitch with its largest zones. `shimmer` is the world's shimmer as text."""
     rows = []
     for result in results:
-        notes = [f"display {result.display}", *(f"input latency {ms:g} ms" for ms in result.latencies),
+        notes = [f"display {result.display}", *([latency_summary(result.latencies)] if result.latencies else []),
+                 *([f"display delay {result.delay[0]:.1f} ms ({result.delay[1]:.1f} to {result.delay[2]:.1f})"]
+                   if result.delay else []),
                  *([f"earlier, unpinned: {MEASURE_EARLIER[result.name]}"] if result.name in MEASURE_EARLIER else []),
                  *([f"untrusted: {'; '.join(result.reasons)}"] if result.reasons else [])]
         first_of_run = True

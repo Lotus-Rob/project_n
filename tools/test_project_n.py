@@ -1444,6 +1444,21 @@ class MeasureTest(unittest.TestCase):
         self.assertEqual((start, round(took / self.MS), round(frame / self.MS)), (0, 30, 30))
         self.assertEqual([(name, round(ns / self.MS)) for name, ns in zones], [("Upload", 12), ("Place", 6), ("Draw", 4)])
 
+    def test_presses_and_display_delay_are_summarised(self):
+        self.assertEqual(project_n.latency_summary([31.1, 23.0, 25.5]),
+                         "input latency median 25.5 ms, 23.0 to 31.1 ms over 3 presses")
+        self.assertEqual(project_n.latency_summary([31.1]), "input latency 31.1 ms over 1 press")
+        self.assertIsNone(project_n.latency_summary([]))
+        log = "[1] app.cpp:1  LOG_INFO  root  display delay: 2.9 ms at the end, 2.6 to 10.0 ms over the run\n"
+        self.assertEqual(project_n.display_delay(log), (2.9, 2.6, 10.0))
+        self.assertIsNone(project_n.display_delay("no delay line\n"))
+        steady = project_n.Segment("whole run", 10, [("frame", (1.0, 2.0, 3.0))], 0.25, [])
+        run = project_n.MeasuredRun("world", "2560x1440 at 165 Hz", [31.1, 23.0, 25.5], [], [steady], (2.9, 2.6, 10.0))
+        row = next(line for line in project_n.measure_table([run], "x").splitlines() if line.startswith("world"))
+        self.assertIn("input latency median 25.5 ms, 23.0 to 31.1 ms over 3 presses", row)
+        self.assertIn("display delay 2.9 ms (2.6 to 10.0)", row)
+        self.assertNotIn("input latency 31.1 ms;", row)
+
     def test_latency_read_from_log(self):
         log = ("21:00:01.1 [1] app.cpp:338   LOG_INFO   root   input latency: 31.4 ms from a Move press to its first drawn frame\n"
                "21:00:02.1 [1] app.cpp:330   LOG_DEBUG  root   swords first drawn 12.0 ms after the press\n"
