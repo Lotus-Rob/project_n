@@ -83,7 +83,15 @@ bool PathMonthStep::Due(f32 seconds) {
 
 core::Vec2 CameraPathMove(f32 seconds) {
     const std::optional<std::size_t> index = CameraPathSegment(seconds);
-    return index && CameraPath()[*index].walks ? core::Vec2{ .x = 1.0F, .y = 0.0F } : core::Vec2{};
+    if (!index || !CameraPath()[*index].walks) {
+        return {};
+    }
+    f32 start = 0.0F;
+    for (const CameraSegment& segment : CameraPath().first(*index)) {
+        start += segment.seconds;
+    }
+    const f32 phase = std::fmod(seconds - start, CAMERA_PATH_STEP_SECONDS);
+    return phase < CAMERA_PATH_STAND_SECONDS ? core::Vec2{} : core::Vec2{ .x = 1.0F, .y = 0.0F };
 }
 
 } // namespace app
