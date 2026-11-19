@@ -106,9 +106,9 @@ linear pass over the table.
 
 ## Outcome
 
-The case `measure the shipped world's saves over hours of play` (skipped, release, linux-clang, unchanged) ran again on
-the bounded table, with one `Host::AdvanceCalendar()` per month on the usual workers, as in 5c1. Every checkpoint's load
-matched the saved `StateHash` and `WorldHash` (asserted). The run took under 3 minutes, against about 8 before. Times are
+The case `measure the shipped world's saves over hours of play` (skipped, release, linux-clang) ran again on the
+bounded table, the tables here from its second run (below), after the case changed to log the holder counts, with one
+`Host::AdvanceCalendar()` per month on the usual workers, as in 5c1. Every checkpoint's load matched the saved `StateHash` and `WorldHash` (asserted). The run took under 3 minutes, against about 8 before. Times are
 good to about 50% between runs (5c1's finding) and sizes are exact. The tables use 5c1's layout; 5c1's 250 h figures are
 beside them.
 
@@ -150,11 +150,11 @@ What is behind them:
 
 What it shows:
 
-1. **The table is bounded.** From 10 h on it holds 373,990 relationships (10.47 MB raw), 75% of the 14,000,008 bytes the
+1. **The table is bounded.** From 50 h on it holds 373,990 relationships (373,988 at 10 h; 10.47 MB raw), 75% of the 14,000,008 bytes the
    limits allow (50,000 NPCs at 10 edges of 28 bytes) and 59% of the raw save, not 99%. At 250 h the raw save is 17.7 MB
    against 755 MB, 4.25 MB on disk against 64.8 MB, 6.0 ms a month step against 65.6 ms, 80 ms to save against 1.8 s,
    and a 65 ms load against 1,369 ms. `MAX_SAVE_BYTES` is no longer in reach.
-2. **The month step and the save are flat.** The step went 3.7, 5.9, 6.0, 6.0, 6.0 ms and the save's size 17.69, 17.69,
+2. **The month step and the save are flat.** The step went 3.7, 5.9, 6.0, 6.0, 6.0 ms from 1 h to 250 h, and the save's size 17.69, 17.69,
    17.69, 17.70 MB from 10 h to 250 h. The journeys' plan (283,448, 282,608, 281,768, 289,248 bytes) moves up and down
    with the month: noise.
 3. **What the settled count is made of.** The case now also logs the NPCs by how many relationships they hold. From 10 h
