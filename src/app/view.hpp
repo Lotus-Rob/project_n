@@ -23,13 +23,14 @@ inline constexpr u64 FRAME_STEP_LIMIT_NS = core::NS_PER_SECOND / 10;
 
 /// How far past the window's view the logic publishes, on each side, as a fraction of the view's size on that axis
 /// (CullArea()). A snapshot culled to a view is drawn while the camera moves on, until a fresh view has culled a newer
-/// one: about 43 ms at most at 60 Hz (a publish interval for the view to reach the logic, core::DISPLAY_DELAY_START_NS,
-/// and another interval while that snapshot shows), or one frame when frames run longer, FRAME_STEP_LIMIT_NS at most.
-/// Zoom runs at most ZOOM_NOTCHES_PER_SECOND and one notch a frame (gfx::ZoomedBy(): a notch out shows 1.15 times as
-/// much world), so 1.3 notches in 43 ms, or one in a long frame, grow each side by at most 0.10 of the view; a pan at
-/// full speed at the new zoom moves at most 0.12 of it on either axis (PAN_SCREENS_PER_SECOND of the shorter side's
-/// world, 1.2 times as much, for a tenth of a second; CameraControl counts no more of a longer frame). A quarter covers
-/// both at once, 0.22, so nothing pops in at the window's edge; wider would publish more for no picture. The bound it
+/// one: about 50 ms at most at 60 Hz (a publish interval for the view to reach the logic, the display delay at its
+/// ceiling of core::TICK_NS, and another interval while that snapshot shows), or one frame when frames run longer,
+/// FRAME_STEP_LIMIT_NS at most. Zoom runs at most ZOOM_NOTCHES_PER_SECOND and one notch a frame (gfx::ZoomedBy(): a
+/// notch out shows 1.15 times as much world), so 1.5 notches in 50 ms, or one in a long frame, grow each side by at most
+/// 0.12 of the view; a pan at full speed at the new zoom moves at most 0.12 of it on either axis
+/// (PAN_SCREENS_PER_SECOND of the shorter side's world, 1.23 times as much, for a tenth of a second; CameraControl
+/// counts no more of a longer frame). A quarter covers both at once, 0.24, so nothing pops in at the window's edge;
+/// wider would publish more for no picture. The bound it
 /// guarantees: the camera may move about a quarter of the view while a snapshot shows and show nothing missing. A flick of a
 /// drag (which pans 1:1 with the cursor) faster than that, or a snap back from far away (a jump to the player), can show the
 /// edge for a frame or two until the next view culls a fresh publish (a known limit), and so can a window that grows by more
