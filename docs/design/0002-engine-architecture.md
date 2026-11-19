@@ -196,9 +196,13 @@ loop:
   poll events (SDL_WaitEventTimeout(TICK) while hidden or minimised)
     -> ui first, then actions into handover input (with picked stable IDs, §10)
   take handover events into the pending list (dropped if from an older epoch than the drawn snapshot's)
-  if held exists and due(held): adopt it          // adopt before replacing
-  if nothing held and a newer snapshot is waiting: take it (held); if due, adopt it
-  if visible: acquire the swapchain texture (§8.3)  // may block; time is sampled after it
+  if visible and a snapshot is drawn: acquire the swapchain texture (§8.3)  // may block; the clock is read after it
+  now = the clock, read once for the frame; D = the display delay at now
+  repeat, taking at most two:                     // adopts the newest due one; older due ones go back undrawn
+    if held exists: stop unless due(held); adopt it (the one it replaces goes back)
+    take the oldest waiting snapshot (held); stop if none waits
+  if nothing is drawn: continue
+  if visible and nothing was acquired (the first snapshot): acquire it now
   alpha = drawn.advanced ? clamp((now − drawn.scheduledTime − D) / TICK, 0, 1) : 1
   renderTick = drawn.simTick − 1 + alpha        // one clock for pictures, poses, particles and sounds
   of the pending events in the drawn snapshot's epoch: play those whose tick <= renderTick,
