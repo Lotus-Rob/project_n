@@ -27,15 +27,14 @@ inline constexpr u64 FRAME_STEP_LIMIT_NS = core::NS_PER_SECOND / 10;
 /// ceiling of core::TICK_NS, and another interval while that snapshot shows), or one frame when frames run longer,
 /// FRAME_STEP_LIMIT_NS at most. Zoom runs at most ZOOM_NOTCHES_PER_SECOND and one notch a frame (gfx::ZoomedBy(): a
 /// notch out shows 1.15 times as much world), so 1.5 notches in 50 ms, or one in a long frame, grow each side by at most
-/// 0.12 of the view; a pan at full speed at the new zoom moves at most 0.12 of it on either axis
-/// (PAN_SCREENS_PER_SECOND of the shorter side's world, 1.23 times as much, for a tenth of a second; CameraControl
-/// counts no more of a longer frame). A quarter covers both at once, 0.24, so nothing pops in at the window's edge;
-/// wider would publish more for no picture. The bound it
-/// guarantees: the camera may move about a quarter of the view while a snapshot shows and show nothing missing. A flick of a
-/// drag (which pans 1:1 with the cursor) faster than that, or a snap back from far away (a jump to the player), can show the
-/// edge for a frame or two until the next view culls a fresh publish (a known limit), and so can a window that grows by more
-/// than the margin at once (maximised, or made fullscreen), at its new edges. While a calendar step's transition shows, no
-/// fresh publish comes, so the camera holds still (HoldsCamera(), CameraInput::still).
+/// 0.12 of the view; a pan at full speed at the new zoom moves at most 0.12 of it on either axis (PAN_SCREENS_PER_SECOND of
+/// the shorter side's world, 1.23 times as much, for a tenth of a second; CameraControl counts no more of a longer frame). A
+/// quarter covers both at once, 0.24, so nothing pops in at the window's edge; wider would publish more for no picture. The
+/// bound it guarantees: the camera may move about a quarter of the view while a snapshot shows and show nothing missing. A
+/// flick of a drag (which pans 1:1 with the cursor) faster than that, or a snap back from far away (a jump to the player),
+/// can show the edge for a frame or two until the next view culls a fresh publish (a known limit), and so can a window that
+/// grows by more than the margin at once (maximised, or made fullscreen), at its new edges. While a calendar step's
+/// transition shows, no fresh publish comes, so the camera holds still (HoldsCamera(), CameraInput::still).
 inline constexpr f32 CULL_MARGIN = 0.25F;
 
 /// How many wheel notches a second the camera zooms by at most, however short the frames (CameraControl::Zoom()): one
