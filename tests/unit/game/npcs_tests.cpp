@@ -277,6 +277,28 @@ TEST_CASE("a met holder keeps the met number, in either domain") {
     CHECK(SubjectsOf(relationships, unmet) == Ids({ 6, 7 }));
 }
 
+TEST_CASE("a met holder that stays in the world keeps the met number too") {
+    constexpr game::RelationshipLimits LIMITS{ .kept = 2, .keptOnceMet = 4 };
+    core::State state{ game::DOMAINS, SEED };
+    SpawnMany(state, 12);
+    const core::StableId met{ 1 };
+    const core::StableId unmet{ 2 };
+    game::Relationships relationships;
+    for (u64 month = 1; month <= 5; ++month) {
+        const std::array subject{ core::StableId{ month + 2 } };
+        MeetIn(relationships, met, subject, month);
+        MeetIn(relationships, unmet, subject, month);
+    }
+    state[game::WORLD].Entities().emplace<game::Met>(state[game::WORLD].Find(met));
+    REQUIRE(state.DomainOf(met) == game::WORLD);
+    CHECK(game::IsMet(state, met));
+    CHECK_FALSE(game::IsMet(state, unmet));
+    CHECK_FALSE(game::IsMet(state, core::StableId{ 99 }));
+    relationships.Trim(state, LIMITS);
+    CHECK(SubjectsOf(relationships, met) == Ids({ 4, 5, 6, 7 }));
+    CHECK(SubjectsOf(relationships, unmet) == Ids({ 6, 7 }));
+}
+
 TEST_CASE("a holder over its limit keeps the stronger tie, then the lower ID, among those met the same month") {
     constexpr core::StableId HOLDER{ 1 };
     core::State state{ game::DOMAINS, SEED };
