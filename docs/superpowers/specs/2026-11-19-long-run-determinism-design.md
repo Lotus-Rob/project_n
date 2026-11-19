@@ -77,3 +77,17 @@ the Outcome.
 - Past divergences: the month step's wall tick depending on burst size (phase 4); saves sorting live domains, so a game
   that saved iterated unlike one that never did (5c1). The flaky `game_tests/replay` (once, 2026-11-16, under four
   parallel worktrees, never reproduced) may show itself in a long run; if it does, it is debugged, not retried.
+
+## Outcome
+
+### Hours-of-play case on a 1-worker host
+
+The shipped world's hours-of-play case now steps a second host on 1 worker beside the 4-worker one and compares
+`StateHash()` and `WorldHash()` at each checkpoint. One release run (linux-clang) took about 3 minutes, the first
+case's own sizes unchanged, and at all five checkpoints (1, 10, 50, 100 and 250 h; 40 to 10,000 months) both hashes
+agreed between 1 and 4 workers.
+
+The 1-worker month step cost 6.5 ms at the first checkpoint and 8.7 to 9.0 ms after; the 4-worker step, timed on its
+own, cost 4.5 ms and then 6.9 to 7.1 ms. The logged month step is now timed on exactly 4 workers, where it used the
+default worker count before, so it is not directly comparable with the times in the bounded relationships spec's
+Outcome.
