@@ -241,7 +241,7 @@ add_requireconfs("**|python|cmake|ninja|meson|autoconf|automake|libtool|m4|bison
 add_requires("doctest 2.5.3") -- MIT; tests only
 add_requires("entt v4.0.0") -- MIT; header-only
 add_requires("enkits v1.12") -- zlib; behind core/jobs.hpp
-add_requires("lz4 v1.10.0", {configs = {cmake = false}}) -- BSD-2-Clause; behind core/save_file.cpp
+add_requires("zstd v1.5.7", {configs = {cmake = false}}) -- BSD-3-Clause; behind core/save_file.cpp
 add_requires("libsdl3-wayland 3.4.16") -- zlib; xmake/repo: libsdl3 plus its Wayland build deps
 add_requires("libsdl3_ttf-wayland 3.2.2", {configs = {harfbuzz = true}}) -- zlib (FreeType: FTL; HarfBuzz: Old MIT); behind gfx; xmake/repo: on our SDL
 add_requireconfs("libsdl3_ttf-wayland.libsdl3-wayland", {version = "3.4.16", override = true}) -- the game's one SDL
@@ -338,7 +338,7 @@ target("core")
     set_pcxxheader("src/pch.hpp")
     add_rules("shared_pch", {owner = "game_pch"})
     add_packages("enkits") -- private: core/jobs.hpp hides it behind a pimpl
-    add_packages("lz4") -- private: compresses saves in core/save_file.cpp
+    add_packages("zstd") -- private: compresses saves in core/save_file.cpp
 
 target("game")
     set_kind("static")

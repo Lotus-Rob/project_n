@@ -2,7 +2,7 @@
 
 /// @file
 /// @ingroup core
-/// Save files on disk: a state's bytes, compressed with LZ4 behind a short
+/// Save files on disk: a state's bytes, compressed with Zstandard behind a short
 /// header with their checksum, written so that a crash never leaves a broken save, and read back with every size
 /// checked, since a file on disk is untrusted.
 
@@ -18,10 +18,10 @@
 namespace core {
 
 /// The file format's version: the header and compression around a state's bytes. The state's own
-/// format carries its own versions.
-inline constexpr u32 SAVE_FILE_VERSION = 1;
+/// format carries its own versions. 2: Zstandard replaced LZ4, whose files (version 1) are refused, not read.
+inline constexpr u32 SAVE_FILE_VERSION = 2;
 /// The largest state a save file holds, uncompressed: far beyond any state the game builds, and
-/// within what LZ4 compresses in one block.
+/// within what Zstandard compresses in one frame.
 inline constexpr std::size_t MAX_SAVE_BYTES = std::size_t{ 1 } << 30U;
 
 /// Writes `state` (at most MAX_SAVE_BYTES) compressed to `path`, creating its folder: into a

@@ -283,14 +283,6 @@
             },
             version = "1.2.5"
         },
-        ["lz4 v1.10.0#3ef3fffc"] = {
-            repo = {
-                branch = "master",
-                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
-                url = "https://github.com/xmake-io/xmake-repo.git"
-            },
-            version = "v1.10.0"
-        },
         ["m4#f56260b5"] = {
             repo = {
                 branch = "master",
@@ -428,6 +420,14 @@
                 url = "https://github.com/xmake-io/xmake-repo.git"
             },
             version = "v1.3.2"
+        },
+        ["zstd v1.5.7#3ef3fffc"] = {
+            repo = {
+                branch = "master",
+                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "v1.5.7"
         }
     },
     ["macosx|arm64"] = {
@@ -497,14 +497,6 @@
             },
             version = "3.2.2"
         },
-        ["lz4 v1.10.0#3ef3fffc"] = {
-            repo = {
-                branch = "master",
-                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
-                url = "https://github.com/xmake-io/xmake-repo.git"
-            },
-            version = "v1.10.0"
-        },
         ["ninja#f56260b5"] = {
             repo = {
                 branch = "master",
@@ -562,6 +554,14 @@
                 url = "https://github.com/xmake-io/xmake-repo.git"
             },
             version = "v1.3.2"
+        },
+        ["zstd v1.5.7#3ef3fffc"] = {
+            repo = {
+                branch = "master",
+                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "v1.5.7"
         }
     },
     ["windows|x64"] = {
@@ -622,14 +622,6 @@
                 url = "xmake/repo"
             },
             version = "3.2.2"
-        },
-        ["lz4 v1.10.0#3ef3fffc"] = {
-            repo = {
-                branch = "master",
-                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
-                url = "https://github.com/xmake-io/xmake-repo.git"
-            },
-            version = "v1.10.0"
         },
         ["meson#f56260b5"] = {
             repo = {
@@ -696,6 +688,14 @@
                 url = "https://github.com/xmake-io/xmake-repo.git"
             },
             version = "v1.3.2"
+        },
+        ["zstd v1.5.7#3ef3fffc"] = {
+            repo = {
+                branch = "master",
+                commit = "cf09fff02b4e75ef73083cc9e0e14963f78141ac",
+                url = "https://github.com/xmake-io/xmake-repo.git"
+            },
+            version = "v1.5.7"
         }
     }
 }
