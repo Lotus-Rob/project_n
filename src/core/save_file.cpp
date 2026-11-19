@@ -4,17 +4,21 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/profile.hpp"
 
-#include <lz4.h>
+#include <zstd.h>
 
 namespace core {
 
 namespace {
 
 constexpr u64 MAGIC = 0x0045'5641'535f'4e50ULL; // "PN_SAVE\0" as little-endian bytes
-constexpr u64 LZ4_MAX_RATIO = 255;
+/// Level 1: on the shipped world's three-month save it was smaller than level 3 and a third faster, and level 9 saved
+/// another 16% only at four times the time, which a save on a frozen tick doesn't spend.
+constexpr i32 COMPRESSION_LEVEL = 1;
+/// Zstandard's most extreme ratio: a block of one repeated byte takes 4 bytes and stands for 128 KiB.
+constexpr u64 MAX_RATIO = 32'768;
 constexpr std::size_t HEADER_BYTES = sizeof(u64) + sizeof(u32) + (3 * sizeof(u64));
 
-/// LZ4 and the streams take chars: the one place bytes become chars.
+/// The streams take chars: the one place bytes become chars.
 const char* Chars(std::span<const std::byte> bytes) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): char APIs read bytes; chars may alias any object
     return reinterpret_cast<const char*>(bytes.data());
@@ -29,7 +33,7 @@ Error FileError(std::string_view what, const std::filesystem::path& path, std::s
     return { .message = std::format("{} {}: {}", what, path.string(), why) };
 }
 
-/// LZ4 checks only that its input decompresses: a flipped bit inside a literal gets through.
+/// Zstandard's frames are written without a checksum, and a flipped bit inside a literal would decompress all the same.
 u64 Checksum(std::span<const std::byte> bytes) {
     Hasher hasher;
     std::size_t offset = 0;
@@ -51,14 +55,15 @@ std::expected<void, Error> WriteSaveFile(const std::filesystem::path& path, std:
     if (state.size() > MAX_SAVE_BYTES) {
         return std::unexpected{ FileError("couldn't save", path, std::format("{} bytes is over the limit", state.size())) };
     }
-    const auto bound = static_cast<std::size_t>(LZ4_compressBound(static_cast<i32>(state.size())));
-    std::vector<std::byte> compressed(bound);
-    const i32 count =
-        LZ4_compress_default(Chars(state), WritableChars(compressed), static_cast<i32>(state.size()), static_cast<i32>(bound));
-    if (count <= 0 && !state.empty()) {
-        return std::unexpected{ FileError("couldn't save", path, "LZ4 failed to compress it") };
+    std::vector<std::byte> compressed(ZSTD_compressBound(state.size()));
+    const std::size_t count =
+        ZSTD_compress(compressed.data(), compressed.size(), state.data(), state.size(), COMPRESSION_LEVEL);
+    if (ZSTD_isError(count) != 0U) {
+        return std::unexpected{
+            FileError("couldn't save", path, std::format("Zstandard failed: {}", ZSTD_getErrorName(count)))
+        };
     }
-    compressed.resize(static_cast<std::size_t>(std::max(count, 0)));
+    compressed.resize(count);
     std::vector<std::byte> file;
     file.reserve(HEADER_BYTES + compressed.size());
     Writer header{ file };
@@ -98,7 +103,7 @@ std::expected<std::vector<std::byte>, Error> ReadSaveFile(const std::filesystem:
     if (error) {
         return std::unexpected{ FileError("couldn't read", path, error.message()) };
     }
-    const auto bound = static_cast<u64>(LZ4_compressBound(static_cast<i32>(MAX_SAVE_BYTES)));
+    const u64 bound = ZSTD_compressBound(MAX_SAVE_BYTES);
     if (size < HEADER_BYTES || size > HEADER_BYTES + bound) {
         return std::unexpected{ FileError("not a save file:", path, std::format("{} bytes", size)) };
     }
@@ -126,19 +131,20 @@ std::expected<std::vector<std::byte>, Error> ReadSaveFile(const std::filesystem:
             FileError("can't read", path, std::format("its format is version {}, not {}", version, SAVE_FILE_VERSION))
         };
     }
-    // LZ4 expands at most 255 to 1, so a larger claim can't be real: refused before allocating it.
+    // Zstandard expands at most MAX_RATIO to 1, so a larger claim can't be real: refused before allocating it.
     if (stateBytes > MAX_SAVE_BYTES || compressedBytes != size - HEADER_BYTES || compressedBytes == 0 ||
-        stateBytes > compressedBytes * LZ4_MAX_RATIO) {
+        stateBytes > compressedBytes * MAX_RATIO) {
         return std::unexpected{ FileError("a broken save file:", path, "its sizes don't add up") };
     }
+    const std::span<const std::byte> body = std::span<const std::byte>{ file }.subspan(HEADER_BYTES);
+    // The frame states its own content size: a body that isn't a frame, or one holding another size than the header
+    // claims, is refused before a state that large is allocated for it (the ratio alone allows a small file 1 GiB).
+    if (ZSTD_getFrameContentSize(body.data(), body.size()) != stateBytes) {
+        return std::unexpected{ FileError("a broken save file:", path, "its contents don't decompress") };
+    }
     std::vector<std::byte> state(static_cast<std::size_t>(stateBytes));
-    const i32 decompressed = LZ4_decompress_safe(
-        Chars(std::span<const std::byte>{ file }.subspan(HEADER_BYTES)),
-        WritableChars(state),
-        static_cast<i32>(compressedBytes),
-        static_cast<i32>(stateBytes)
-    );
-    if (std::cmp_not_equal(decompressed, stateBytes)) {
+    const std::size_t decompressed = ZSTD_decompress(state.data(), state.size(), body.data(), body.size());
+    if (ZSTD_isError(decompressed) != 0U || decompressed != stateBytes) {
         return std::unexpected{ FileError("a broken save file:", path, "its contents don't decompress") };
     }
     if (Checksum(state) != checksum) {

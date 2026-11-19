@@ -159,6 +159,65 @@ TEST_CASE("a tiny save whose header claims a huge state is refused as sizes that
     CHECK(why == "its sizes don't add up");
 }
 
+TEST_CASE("a header whose state size the body doesn't hold is refused as undecompressable, however the ratio looks") {
+    constexpr u64 MAGIC = 0x0045'5641'535f'4e50ULL; // "PN_SAVE\0", as save_file.cpp writes it
+    constexpr u64 CLAIMED_STATE_BYTES = 100'000;    // within the ratio a 4-byte body could stand for
+    constexpr std::array<std::byte, 4> NOT_A_FRAME{};
+    constexpr u64 CHECKSUM = 0;
+    constexpr std::size_t SIZE = 10'000;
+    constexpr std::size_t STATE_BYTES_AT = sizeof(u64) + sizeof(u32); // after the magic and the version
+    const Scratch scratch{ "claim_not_held" };
+    std::filesystem::create_directories(scratch.Folder());
+    const std::filesystem::path path = scratch.Folder() / "slot.pns";
+    const auto why = [&path] {
+        const auto read = core::ReadSaveFile(path);
+        REQUIRE_FALSE(read.has_value());
+        const std::string& message = read.error().message;
+        return message.substr(message.rfind(": ") + 2);
+    };
+
+    std::vector<std::byte> file;
+    core::Writer header{ file };
+    header(MAGIC, core::SAVE_FILE_VERSION, CLAIMED_STATE_BYTES, u64{ NOT_A_FRAME.size() }, CHECKSUM);
+    file.insert(file.end(), NOT_A_FRAME.begin(), NOT_A_FRAME.end());
+    WriteRaw(path, file);
+    CHECK(why() == "its contents don't decompress");
+
+    // A real frame under a header that claims more state than the frame holds.
+    REQUIRE(core::WriteSaveFile(path, Pattern(SIZE)).has_value());
+    std::vector<std::byte> real = ReadRaw(path);
+    std::vector<std::byte> claim;
+    core::Writer{ claim }(u64{ SIZE * 2 });
+    std::ranges::copy(claim, real.begin() + STATE_BYTES_AT);
+    WriteRaw(path, real);
+    CHECK(why() == "its contents don't decompress");
+}
+
+// The container's version went up when Zstandard replaced LZ4: a file of the old framing, or of any other version, is
+// refused by name, not decompressed as the wrong format.
+TEST_CASE("a save of another file version, the LZ4 one included, is refused as its version") {
+    constexpr u64 MAGIC = 0x0045'5641'535f'4e50ULL; // "PN_SAVE\0", as save_file.cpp writes it
+    constexpr u32 LZ4_VERSION = 1;
+    constexpr u32 NEXT_VERSION = core::SAVE_FILE_VERSION + 1;
+    constexpr u64 STATE_BYTES = 16;
+    constexpr std::array<std::byte, 8> PAYLOAD{};
+    constexpr u64 CHECKSUM = 0;
+    const Scratch scratch{ "other_version" };
+    std::filesystem::create_directories(scratch.Folder());
+    const std::filesystem::path path = scratch.Folder() / "slot.pns";
+    for (const u32 version : { LZ4_VERSION, NEXT_VERSION }) {
+        std::vector<std::byte> file;
+        core::Writer header{ file };
+        header(MAGIC, version, STATE_BYTES, u64{ PAYLOAD.size() }, CHECKSUM);
+        file.insert(file.end(), PAYLOAD.begin(), PAYLOAD.end());
+        WriteRaw(path, file);
+
+        const auto read = core::ReadSaveFile(path);
+        REQUIRE_FALSE(read.has_value());
+        CHECK(read.error().message.contains(std::format("its format is version {}, not {}", version, core::SAVE_FILE_VERSION)));
+    }
+}
+
 TEST_CASE("a save whose final rename fails leaves no temporary file beside it") {
     constexpr std::size_t SIZE = 1'000;
     const Scratch scratch{ "rename_fails" };
