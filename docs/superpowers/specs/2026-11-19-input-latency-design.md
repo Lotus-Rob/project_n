@@ -1,6 +1,6 @@
 # Input latency: the snapshot picked after the GPU wait, an adaptive display delay, a probe of many presses
 
-Status: approved by the user (2026-11-19), not yet planned.
+Status: approved by the user (2026-11-19), being implemented; Design 8 approved by the user (2026-11-19).
 
 ## Intent
 
@@ -124,3 +124,71 @@ CPU isn't recorded, so no fixed D can be justified for slower machines.
 
 The reorder's details in `App::Present`, the adaptive delay's exact constants and which snapshots it counts (within the
 bounds above, with reasons), where `measure` prints the new numbers.
+
+## Design 8: the handover keeps a snapshot that may still be due (added 2026-11-19)
+
+Status: approved by the user (2026-11-19).
+
+**Why.** Design 6's timeline harness ("test(core): drive frames on a synthetic timeline") found that at 60 Hz the render
+time holds for up to a tick, then jumps about two. The state channel is newest-wins: `Handover::Publish` replaces a
+snapshot the main thread hasn't taken, and `Display` takes one only when it holds none. When two publishes land between
+two frames' clock readings, the first is never seen. That needs readings more than a publish interval apart, which 60 Hz
+gives in two ways: at start-up (the first snapshot's frame reads the clock before its acquire, so the next reading comes
+a period plus the acquire wait later, 20.17 ms), and in steady play whenever the frame's reading drifts into the band of
+publish latenesses (frames and ticks differ by 3.3 µs a frame, so the phase lingers there). Example, D = 3 ms: the reading
+at 3301.03 ms falls in tick 197's interval, but tick 198 (published at 3301.0) had replaced 197 (published at 3285.3,
+after the previous reading), so the frame shows tick 196 at alpha 1 and the next jumps to 198. 165 Hz and unpaced runs
+are immune: their readings are closer together than two publishes. The old frame order has the same gap at other
+phases, so this predates the branch: design doc 0002 §5 sized the pool at four on the premise "at most one snapshot is
+ever taken but not yet due", and nothing on record weighed a queue against replacing.
+
+**Approaches.**
+- **A. The handover queues two finished snapshots (picked by the user, 2026-11-19).** Snapshots wait in publish order,
+  at most two; a third publish drops the oldest waiting one. The main thread takes them oldest first. Fixes start-up
+  and steady play; one more buffer.
+- B. The logic thread replaces a waiting snapshot only once the newer one is already due. Keeps four buffers, but the
+  logic thread would need the main thread's adaptive D and clock, and it decides at publish time rather than at the
+  frame's reading, so it races. Rejected.
+- A change to `Display` alone can't work: the snapshot is gone before the main thread looks. A deeper queue (three or
+  more) helps only main-thread hitches, which jump the picture anyway.
+
+**Design.**
+1. **Handover.** The waiting slot becomes a queue of up to two snapshots in publish order. `Publish` appends; with two
+   already waiting it first returns the oldest to the free list (so a stalled main thread holds no backlog and the
+   steady state still allocates nothing). `TakeState` returns the oldest waiting snapshot, or null. `BUFFERS` goes from 4
+   to 5: one written, up to two waiting, up to two held by the main thread (drawn and held). The main thread still holds
+   at most two, and the assert says so.
+2. **Display.** `Update` repeats its step until it holds a snapshot that isn't due or none is waiting: adopt the held
+   snapshot if due (returning the drawn one), then take the next waiting one if it holds none. So one reading adopts the
+   newest due snapshot, returns any older one it skips undrawn, and holds the first one not yet due. The adoption rule
+   is unchanged (0002 §6): a snapshot is drawn from when it is due, exactly when the one before it reaches alpha 1.
+3. **Every taken snapshot counts once.** One `Update` may now take two snapshots. Each one whose tick advanced reports
+   its lateness to the adaptive delay once, and each published after it was due counts as a late adoption, as today.
+   The interface for that (`TakenLateness` giving up to two values, or `Update` handing them to the delay) is the
+   builder's.
+4. **Latency unchanged.** When a snapshot shows is still set only by D: the newest snapshot reaches the main thread as
+   soon as it is published, as today. The only frames that change are the ones that hold today, which now show the
+   snapshot that was lost, newer than the held picture.
+5. **Stale events.** `Publish`'s drop of undrained cosmetic events rests on "the render clock reaches at least the newest
+   tick minus one". With up to two waiting and one held, the drawn snapshot can be further behind the newest. The
+   builder re-derives that bound and corrects the margin and its comments, so `Publish` never drops an event `PlayDue`
+   would still play.
+6. **Memory.** One more snapshot buffer: about 5.6 MB of instances at 100,000 of 56 bytes, plus the distance-field
+   array; snapshots are culled to the view, so usually far less.
+
+**Tests.**
+- Handover: two publishes without a take give both, oldest first; three drop the oldest; buffers keep returning, so
+  publishing never runs out. The test "the state channel hands over only the newest snapshot" asserts the old rule, so it
+  is rewritten to the new one: a deliberate change of behaviour, not a loosened test. The threaded test keeps checking
+  that snapshots arrive in order.
+- Display: of two waiting snapshots, a due first and a not-yet-due second, the first is adopted and the second held;
+  with both due, the second is adopted and the first returned undrawn; each taken snapshot's lateness is reported
+  once, a frozen one's not at all.
+- The timeline harness's "render time never goes back, holds or jumps" case passes at 60 Hz in all eight phases,
+  start-up included, unchanged and with its bound unloosened; its latency cases still pass.
+
+**Docs.** 0002 §5's state channel ("newest wins") and buffer count, A4's "newest-wins state", and the handover's class
+comments describe the queue, with a line in the Revised row.
+
+**Left to the builder.** The queue's representation, `TakenLateness`'s new shape, and the corrected stale-event margin,
+each with its reason.
