@@ -27,6 +27,7 @@
 3. A snapshot published later than D (a hitch, a month step): late adoption counted, D rises, motion resumes without going back → Task 4's case "a lateness spike raises D and leaves no late adoption once risen".
 4. Time standing still or a first `Advance`: D never moves on zero or the first elapsed time, never divides by zero → Task 1's case "the first advance and a repeated time leave D where it is".
 5. A hitch of seconds between frames (debugger, suspend): D moves to its target, no further, never past floor or ceiling → Task 1's case "a long gap moves D to its target, never past it".
+6. A main thread that stops taking snapshots for many ticks (a window drag, a debugger): the queue keeps only the newest two, publishing never runs out of buffers, and once frames resume the newest due one is drawn → Task 7's cases "a third publish drops the oldest waiting snapshot" and "buffers return to the handover, so publishing never runs out".
 
 ## Waves
 
@@ -35,7 +36,8 @@
 | A | 1, 5 | nothing (core delay; camera path and `measure`, no shared file) |
 | B | 2 | Task 1's `DisplayDelay` |
 | C | 3, 4 | Task 2's `PresentFrame` (app wiring; core test harness, no shared file) |
-| D | 6 | everything (docs, `measure` run, Outcome) |
+| C2 | 7 | Task 4's harness, whose 60 Hz render-time case it turns green: in Task 4's worktree, rebased onto the branch head first; Task 4 and Task 7 are then reviewed side by side |
+| D | 6 | everything, Task 7 included (docs, `measure` run, Outcome) |
 
 ---
 
@@ -172,6 +174,32 @@ review: full · implementer: sonnet
 - [ ] **Step 3: Implement** `CameraPathMove` with the step (phase = `fmod(seconds − segment start, CAMERA_PATH_STEP_SECONDS)`, standing while phase < `CAMERA_PATH_STAND_SECONDS`), `latency_summary`, `display_delay` (a `DELAY_RE` beside `LATENCY_RE`), `MeasuredRun` gaining the delay, and the table notes. Update src/AGENTS.md's `--camera-path` text (the walk east in steps of 0.4 s with 0.1 s standing, eight presses, each logging its latency) and tools/AGENTS.md's `measure` lines (latency median and spread, display delay).
 - [ ] **Step 4: Run** both suites → PASS.
 - [ ] **Step 5: Gate and commit:** `test(app): step the camera path's walk for eight presses` and `build(tools): summarise measure's presses and display delay` (scopes as `SCOPES` allows).
+
+---
+
+### Task 7: the handover queues two snapshots (spec Design 8)
+
+review: full · implementer: opus
+
+**Files:**
+- Modify: `src/core/handover.hpp` (`Handover`: class comment, `BUFFERS`, `Publish`, `TakeState`, `PopFree`'s assert, the waiting slot; `Display::Update`, `TakenLateness`, class comment), `src/core/frame.hpp:540-546` (`PresentFrame`'s lateness hand-off, if `TakenLateness`'s shape changes), `docs/design/0002-engine-architecture.md` (§5's state channel row and Buffers bullet, A4's "newest-wins state", a Revised row line)
+- Test: `tests/unit/core/handover_tests.cpp`, `tests/unit/core/frame_timeline_tests.cpp` (unchanged; it must go green)
+
+**Interfaces:**
+- Consumes: Task 4's harness (`core_tests/frame_timeline`), Task 1's `DisplayDelay::Observe(u64 latenessNs)`, Task 2's `PresentFrame`.
+- Produces: `Handover::BUFFERS == 5`; `Handover::TakeState()` returns the oldest waiting snapshot (at most two wait; `Publish` with two waiting returns the oldest to the free list first); `Display::Update(handover, nowNs, delayNs)` unchanged in signature and return (whether a new snapshot was adopted), now adopting the newest due snapshot of all waiting; the latenesses of every snapshot one `Update` took (up to two) reach `DisplayDelay::Observe` once each, through whatever shape the implementer gives `TakenLateness` (say why in the report).
+
+- [ ] **Step 1: Write the failing tests** in `handover_tests.cpp` (`Publish(handover, sequence, scheduledNs, publishedNs)` is the file's helper):
+  - Rewrite "the state channel hands over only the newest snapshot" as "two publishes without a take are both handed over, oldest first": publish 1, 2 → `TakeState()` gives 1, then 2, then null. (The old rule changes on purpose: say so in the commit body.)
+  - "a third publish drops the oldest waiting snapshot": publish 1, 2, 3 → takes give 2, 3, null.
+  - "of two waiting snapshots the display adopts the due one and holds the next": publish 1 at `FIRST_NS`, 2 at `SECOND_NS`; `Update` at `FIRST_NS + HANDOVER_DELAY_NS` → returns true, `Drawn()->sequence == 1`; `Update` at `SECOND_NS + HANDOVER_DELAY_NS` → true, `Drawn()->sequence == 2`.
+  - "with two waiting snapshots due, the display adopts the newer and reports both latenesses": publish 1 at `FIRST_NS` published `FIRST_NS + 1000`, 2 at `SECOND_NS` published `SECOND_NS + 2000`; one `Update` at `SECOND_NS + HANDOVER_DELAY_NS` → `Drawn()->sequence == 2`, and the latenesses reported are exactly {1000, 2000}, each once (a second read gives none).
+  - "the display doesn't report the lateness of a snapshot whose tick didn't advance": extend with a second, advanced snapshot taken in the same `Update`: only its lateness is reported.
+  - "buffers return to the handover, so publishing never runs out": add a variant that publishes `3 * Handover::BUFFERS` snapshots with no `Update`, then one `Update` → the newest due one is drawn and nothing asserts.
+- [ ] **Step 2: Run** `pixi run project_n test --suite core_tests --test handover` → the new cases FAIL; `--test frame_timeline` → its render-time case FAILS at 60 Hz (as Task 4 left it).
+- [ ] **Step 3: Implement** the queue in `Handover` (two waiting snapshots in publish order, `BUFFERS = 5`, the assert "the main thread holds more than two snapshots" kept), `Display::Update`'s loop (adopt the held one if due; with none held take the next waiting one; repeat until the held one isn't due or none waits; a skipped one goes back undrawn; late adoptions counted per taken snapshot as today), and the lateness hand-off to `DisplayDelay` in `PresentFrame`. Re-derive `Publish`'s stale-event bound ("the render clock reaches at least the newest tick minus one"): with two waiting and one held, find how far behind the newest the render clock can be, correct `STALE_EVENT_TICKS + 1.0`'s margin and every comment stating it (`Publish`'s doc and body, 0002 §5's Events row) so `Publish` never drops an event `PlayDue` would still play; add a case to "undrained cosmetic events too far behind the newest to be played are dropped; others are kept" at the new boundary. Update the class comments and 0002 §5/A4 (state: up to two finished snapshots wait in order, a third drops the oldest; five buffers and why: one written, two waiting, two held), Revised row: `2026-11-19, phase 6 sweep: the state channel keeps two finished snapshots in order instead of only the newest, so a frame never misses one that is still due (§5)`.
+- [ ] **Step 4: Run** `pixi run project_n test --suite core_tests` → PASS, `frame_timeline` included: its render-time case passes at 60 Hz in all 8 phases, start-up included, with its bound and code unchanged; its latency cases still pass.
+- [ ] **Step 5: Gate and commit:** `pixi run project_n test`, `pixi run project_n lint --range <task base>..HEAD`; commit `fix(core): keep two waiting snapshots so a frame never misses a due one` (test and fix together), and the docs with it or as `docs(design): ...`.
 
 ---
 
