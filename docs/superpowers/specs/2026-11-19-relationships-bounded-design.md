@@ -18,7 +18,7 @@ met it, the oldest dropped first. The limits must be easy to change.
 
 1. Each NPC holds at most `RELATIONSHIP_LENGTH` relationships (10), or `MET_RELATIONSHIP_LENGTH` (50) once it has `Met`,
    the same numbers the travel journal keeps (`JOURNAL_LENGTH`, `MET_JOURNAL_LENGTH` in `game/travel.hpp`). The table is
-   then at most about 50,000 × 10 edges for the shipped world, about 12 MB raw.
+   then at most about 50,000 × 10 edges for the shipped world, about 14 MB raw.
 2. When an NPC is over its limit, it forgets the subjects it met least recently.
 3. Each limit is one named constant, and changing either one later orphans no save.
 4. 5c1's skipped case `measure the shipped world's saves over hours of play` (tests/unit/game/shipped_world_tests.cpp),
@@ -55,8 +55,8 @@ Where the limits live, the user picked 1:
 
 ## Design
 
-- **A last-met month on each edge.** `Relationship` gains `lastMet` (u32), the world's `months` count at the month step
-  that last added to the edge. An edge is then 24 raw bytes, not 20 (Goal 1's 12 MB assumes 24).
+- **A last-met month on each edge.** `Relationship` gains `lastMet` (u64, as the world's `months` count is), that count at the
+  month step that last added to the edge. An edge is then 28 raw bytes, not 20 (Goal 1's 14 MB assumes 28).
   Dropping by opinion instead wouldn't work: nearly every opinion is 1, so a new acquaintance would push out an old one
   by ID, not by time.
 - **The limits.** `RELATIONSHIP_LENGTH = 10` and `MET_RELATIONSHIP_LENGTH = 50` in `game/npcs.hpp`, documented as
