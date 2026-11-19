@@ -511,7 +511,7 @@ using GameDisplay = Display<Snapshot, Event, Action, HeldInput, ViewReport>;
 
 /// The main loop's frame. While `visible` and a snapshot is drawn, first `acquire()`s the swapchain texture, which may
 /// block. Then reads `now()` (ns) once, for all of the frame: D from `delay` (DisplayDelay::Advance()), the snapshot to
-/// draw (`display`'s Display::Update() from `handover`; a snapshot it takes tells `delay` its lateness), alpha and the
+/// draw (`display`'s Display::Update() from `handover`; each snapshot it takes tells `delay` its lateness), alpha and the
 /// render clock. With nothing drawn yet, returns true having acquired nothing. Else calls `prepare(drawn)` and returns
 /// false if it fails; acquires now if it didn't before (the first snapshot), plays the `pending` events due by the
 /// render clock (PlayDue()) and, while `visible`, calls `draw(drawn, alpha)`; returns true. Hidden, D and the snapshot
@@ -541,7 +541,7 @@ bool PresentFrame(
     const u64 nowNs = now();
     const u64 delayNs = delay.Advance(nowNs);
     static_cast<void>(display.Update(handover, nowNs, delayNs));
-    if (const std::optional<u64> lateness = display.TakenLateness()) {
+    while (const std::optional<u64> lateness = display.TakenLateness()) {
         delay.Observe(*lateness);
     }
     const Snapshot* drawn = display.Drawn();

@@ -35,15 +35,28 @@ void Publish(Handover& handover, u64 sequence, u64 scheduledNs, u64 publishedNs 
     handover.Publish(none);
 }
 
-TEST_CASE("the state channel hands over only the newest snapshot") {
+/// The sequences TakeState() gives until it gives none.
+std::vector<u64> TakeAll(Handover& handover) {
+    std::vector<u64> taken;
+    while (const State* state = handover.TakeState()) {
+        taken.push_back(state->sequence);
+    }
+    return taken;
+}
+
+TEST_CASE("two publishes without a take are both handed over, oldest first") {
     Handover handover;
     Publish(handover, 1, 0);
     Publish(handover, 2, 0);
+    CHECK(TakeAll(handover) == std::vector<u64>{ 1, 2 });
+}
 
-    const State* taken = handover.TakeState();
-    REQUIRE(taken != nullptr);
-    CHECK(taken->sequence == 2);
-    CHECK(handover.TakeState() == nullptr);
+TEST_CASE("a third publish drops the oldest waiting snapshot") {
+    Handover handover;
+    Publish(handover, 1, 0);
+    Publish(handover, 2, 0);
+    Publish(handover, 3, 0);
+    CHECK(TakeAll(handover) == std::vector<u64>{ 2, 3 });
 }
 
 TEST_CASE("ReadView gives the latest view, none before the first") {
@@ -127,6 +140,32 @@ TEST_CASE("a newer snapshot doesn't displace a held one that is due") {
     CHECK(display.Drawn()->sequence == 2);
 }
 
+TEST_CASE("of two waiting snapshots the display adopts the due one and holds the next") {
+    Handover handover;
+    Display display;
+    Publish(handover, 1, FIRST_NS);
+    Publish(handover, 2, SECOND_NS);
+
+    CHECK(display.Update(handover, FIRST_NS + HANDOVER_DELAY_NS, HANDOVER_DELAY_NS));
+    CHECK(display.Drawn()->sequence == 1);
+    CHECK(display.Update(handover, SECOND_NS + HANDOVER_DELAY_NS, HANDOVER_DELAY_NS));
+    CHECK(display.Drawn()->sequence == 2);
+}
+
+TEST_CASE("with two waiting snapshots due, the display adopts the newer and reports both latenesses") {
+    Handover handover;
+    Display display;
+    Publish(handover, 1, FIRST_NS, FIRST_NS + 1000);
+    Publish(handover, 2, SECOND_NS, SECOND_NS + 2000);
+
+    CHECK(display.Update(handover, SECOND_NS + HANDOVER_DELAY_NS, HANDOVER_DELAY_NS));
+    REQUIRE(display.Drawn() != nullptr);
+    CHECK(display.Drawn()->sequence == 2);
+    CHECK(display.TakenLateness() == 1000);
+    CHECK(display.TakenLateness() == 2000);
+    CHECK_FALSE(display.TakenLateness());
+}
+
 TEST_CASE("a snapshot published after it was due counts as late") {
     Handover handover;
     Display display;
@@ -168,8 +207,12 @@ TEST_CASE("the display doesn't report the lateness of a snapshot whose tick didn
     handover.Writing() = { .sequence = 1, .scheduledNs = FIRST_NS, .publishedNs = LATE_NS, .advanced = false };
     std::vector<Event> none;
     handover.Publish(none);
+    Publish(handover, 2, SECOND_NS, LATE_NS); // advanced, and taken in the same Update()
+
     static_cast<void>(display.Update(handover, LATE_NS, HANDOVER_DELAY_NS));
     REQUIRE(display.Drawn() != nullptr);
+    CHECK(display.Drawn()->sequence == 2);
+    CHECK(display.TakenLateness() == LATE_NS - SECOND_NS);
     CHECK_FALSE(display.TakenLateness());
 }
 
@@ -181,6 +224,18 @@ TEST_CASE("buffers return to the handover, so publishing never runs out") {
         static_cast<void>(display.Update(handover, (sequence * FIRST_NS) + HANDOVER_DELAY_NS, HANDOVER_DELAY_NS));
     }
     CHECK(display.Drawn()->sequence == 2 * Handover::BUFFERS);
+}
+
+TEST_CASE("buffers return to the handover while the main thread takes none") {
+    constexpr u64 PUBLISHES = 3 * Handover::BUFFERS;
+    Handover handover;
+    Display display;
+    for (u64 sequence = 1; sequence <= PUBLISHES; ++sequence) {
+        Publish(handover, sequence, sequence * FIRST_NS);
+    }
+    CHECK(display.Update(handover, (PUBLISHES * FIRST_NS) + HANDOVER_DELAY_NS, HANDOVER_DELAY_NS));
+    REQUIRE(display.Drawn() != nullptr);
+    CHECK(display.Drawn()->sequence == PUBLISHES);
 }
 
 std::vector<u64> Played(std::vector<Event>& pending, u64 epoch, f64 renderTick) {
@@ -214,9 +269,10 @@ TEST_CASE("cosmetic events far behind the render clock are dropped; others still
 
 TEST_CASE("undrained cosmetic events too far behind the newest to be played are dropped; others are kept") {
     Handover handover;
-    // The render clock reaches at least a published tick minus one, so an event STALE_EVENT_TICKS + 1 behind the
-    // newest may still play; one further behind can't.
-    constexpr u64 NEWEST = 3 + static_cast<u64>(core::STALE_EVENT_TICKS);
+    // The older of two waiting snapshots may be a whole burst behind the newest, and the render clock enters it a tick
+    // before its own, so an event STALE_EVENT_TICKS + MAX_CATCH_UP + 1 behind the newest may still play; one further
+    // behind can't.
+    constexpr u64 NEWEST = 2 + static_cast<u64>(core::STALE_EVENT_TICKS) + core::MAX_CATCH_UP + 1;
     std::vector<Event> first{ { .tick = 1, .cosmetic = true }, { .tick = 1 }, { .tick = 2, .cosmetic = true } };
     handover.Publish(first);
     std::vector<Event> second{ { .tick = NEWEST, .cosmetic = true } };
