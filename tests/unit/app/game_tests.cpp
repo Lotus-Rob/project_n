@@ -23,7 +23,7 @@ u64 FakeNow() {
     return FakeTime();
 }
 
-// The newest snapshot the handover holds now; the older one that may wait with it is taken too.
+/// The newest snapshot the handover holds now; the older one that may wait with it is taken too.
 core::Snapshot Taken(core::GameHandover& handover) {
     core::Snapshot* published = handover.TakeState();
     REQUIRE(published != nullptr);
