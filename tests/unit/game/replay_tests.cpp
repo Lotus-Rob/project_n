@@ -4,15 +4,20 @@
 // back in a fresh game in another scene (a load across scenes, waiting for each) with every hash matching, the last
 // one on the recording's final tick. A recorded fight is replayed the same way: every ability cast, foxes dying and
 // respawning, a save while the swords fly. So is the world scene on the shipped map, walked across a
-// month step, and the cultivator walked along routes there; and a recording that starts from a world a month on.
+// month step, and the cultivator walked along routes there; and a recording that starts from a world a month on. A
+// skipped long run ticks two games through an hour of seeded walk-tos, one on 1 worker and one on 4, and compares their
+// hashes as they go.
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
+#include "core/log.hpp"
 #include "core/logic.hpp"
+#include "core/random.hpp"
 #include "core/replay.hpp"
 #include "core/saves.hpp"
 #include "core/scene_reports.hpp"
 #include "core/tick_clock.hpp"
+#include "core/world_map.hpp"
 #include "game/host.hpp"
 #include "support/manifest.hpp"
 #include "support/saves.hpp"
@@ -46,9 +51,11 @@ struct Session {
     explicit Session(
         const std::filesystem::path& folder,
         core::SceneKey scene = game::ARENA_SCENE,
-        const core::GameData& data = test::ShippedData()
+        const core::GameData& data = test::ShippedData(),
+        u32 workers = WORKERS
     )
-      : saves(folder / "slot.pns", jobs)
+      : jobs{ workers }
+      , saves(folder / "slot.pns", jobs)
       , replays(folder / "replay.pnr", jobs)
       , host(test::TestManifest(), scene, data) { // parentheses: MSVC C4868
         Start();
@@ -583,6 +590,78 @@ TEST_CASE("a replay with walk-tos on the world map plays back with the same hash
     CHECK(playing.replay.AtEnd());
     CHECK(playing.replay.HashCount() == HASHES);
     CHECK(playing.replay.Matched() == playing.replay.HashCount());
+}
+
+TEST_CASE("the world ticked through an hour of walk-tos is the same on 1 and 4 workers" * doctest::skip()) {
+    // Two games on the shipped map, one on 1 worker and one on 4, are sent the same walk-tos at the same wall ticks and
+    // ticked through the logic, month steps and all, comparing both hashes after every burst so a divergence stops the
+    // run where it starts. The destinations come from the seed and the walk-to's index alone: a draw reading either
+    // game would feed a divergence back into the input.
+    constexpr u64 TICKS = 216'000;
+    constexpr u64 WALK_EVERY = 3'600; // a walk-to each minute of play
+    constexpr u64 LOG_EVERY = 21'600;
+    constexpr u64 SEED = 0xC0FFEE;
+    constexpr u32 PURPOSE = 1; // the only draw the script makes
+    // Bursts end early only at a month's request, so twice the even split is far more than the run needs.
+    constexpr u64 MAX_BURSTS = 2 * TICKS / core::REPLAY_HASH_TICKS;
+    const Folder folderOne{ "hour_one_worker" };
+    const Folder folderMany{ "hour_many_workers" };
+    Session one(folderOne.Path(), game::WORLD_SCENE, test::ShippedData(), 1);
+    Session many(folderMany.Path(), game::WORLD_SCENE, test::ShippedData(), 4);
+    REQUIRE(one.host.Current().key == game::WORLD_SCENE);
+    REQUIRE(many.host.Current().key == game::WORLD_SCENE);
+    REQUIRE(one.host.StateHash() == many.host.StateHash());
+    REQUIRE(one.host.WorldHash() == many.host.WorldHash());
+
+    const std::shared_ptr<const core::WorldMap> world = test::ShippedWorld();
+    const core::WorldMap& map = *world;
+    const std::span<const core::Place> places = map.Places();
+    u32 walks = 0;
+    u64 nextWalk = 0;
+    u64 nextLog = LOG_EVERY;
+    u64 bursts = 0;
+    for (u64 tick = many.logic.Counters().wall; tick < TICKS; tick = many.logic.Counters().wall) {
+        ++bursts;
+        REQUIRE_MESSAGE(bursts <= MAX_BURSTS, "the wall clock never reached tick ", TICKS, ": it stands at ", tick);
+        if (tick >= nextWalk) {
+            const u32 drawn = core::ToBelow(core::Random(SEED, 0, 0, PURPOSE, walks), static_cast<u32>(places.size()));
+            const core::Vec2 centre = map.TileCentre(map.TileIndex(places[drawn].tile));
+            // A walk-to onto the cultivator's own tile only stops it, so it sets no route.
+            const bool away = map.TileAt(centre) != map.TileAt(FootOf(many.host, many.host.Player()));
+            one.WalkTo(centre);
+            many.WalkTo(centre);
+            ++walks;
+            nextWalk += WALK_EVERY;
+            if (away) {
+                // One tick, so a place next door is not reached and its route ended before the check: a walk-to the
+                // host ignored would otherwise leave the run passing while the cultivator stands still.
+                one.Burst(1);
+                many.Burst(1);
+                REQUIRE_MESSAGE(many.host.PlayerRoute().has_value(), "walk-to ", walks, " to place ", drawn, " set no route");
+                tick = many.logic.Counters().wall;
+            }
+        }
+        // To the next hash tick; a month's request ends a burst early, and the next realigns.
+        const u64 burst = core::REPLAY_HASH_TICKS - (tick % core::REPLAY_HASH_TICKS);
+        one.Burst(burst);
+        many.Burst(burst);
+        const u64 wall = many.logic.Counters().wall;
+        REQUIRE_MESSAGE(one.logic.Counters().wall == wall, "parted by wall tick ", wall);
+        REQUIRE_MESSAGE(one.host.StateHash() == many.host.StateHash(), "parted by wall tick ", wall);
+        REQUIRE_MESSAGE(one.host.WorldHash() == many.host.WorldHash(), "parted by wall tick ", wall);
+        if (wall >= nextLog) {
+            PN_LOG_INFO(
+                "wall tick {}: {} months, StateHash {:016x} WorldHash {:016x} alike on 1 and 4 workers, {} walk-tos sent",
+                wall,
+                many.host.Months(),
+                many.host.StateHash(),
+                many.host.WorldHash(),
+                walks
+            );
+            nextLog += LOG_EVERY;
+        }
+    }
+    CHECK(many.host.Months() >= (TICKS / game::TICKS_PER_MONTH) - 1);
 }
 
 } // namespace
