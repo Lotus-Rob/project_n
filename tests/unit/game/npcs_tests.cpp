@@ -222,6 +222,7 @@ std::vector<core::StableId> SubjectsOf(const game::Relationships& relationships,
     return subjects;
 }
 
+/// Stable IDs from raw values, in order.
 std::vector<core::StableId> Ids(std::initializer_list<u64> values) {
     std::vector<core::StableId> ids;
     for (const u64 value : values) {
@@ -401,19 +402,26 @@ TEST_CASE("a month step gives the same world with one worker and with many") {
     CHECK(same);
     REQUIRE(oneRelationships.All().size() == manyRelationships.All().size());
     CHECK(std::ranges::equal(oneRelationships.All(), manyRelationships.All(), [](const auto& lhs, const auto& rhs) {
-        return lhs.holder == rhs.holder && lhs.subject == rhs.subject && Same(lhs.opinion, rhs.opinion);
+        return lhs.holder == rhs.holder && lhs.subject == rhs.subject && Same(lhs.opinion, rhs.opinion) &&
+               lhs.lastMet == rhs.lastMet;
     }));
 }
 
-TEST_CASE("month steps keep every NPC within its limit") {
+TEST_CASE("month steps keep every NPC within its limit, the same with one worker and with many") {
     constexpr u32 NPCS = 320; // twenty to each of the sixteen cells
     constexpr u32 MONTHS = 40;
-    const auto [state, relationships] = Stepped(NPCS, MONTHS, 1);
+    const auto [state, one] = Stepped(NPCS, MONTHS, 1);
+    const auto [manyState, many] = Stepped(NPCS, MONTHS, MANY_WORKERS);
     std::size_t largest = 0;
-    for (const game::Relationship& edge : relationships.All()) {
-        largest = std::max(largest, relationships.Of(edge.holder).size());
+    for (const game::Relationship& edge : one.All()) {
+        largest = std::max(largest, one.Of(edge.holder).size());
     }
     CHECK(largest == game::RELATIONSHIP_LENGTH);
+    REQUIRE(one.All().size() == many.All().size());
+    CHECK(std::ranges::equal(one.All(), many.All(), [](const auto& lhs, const auto& rhs) {
+        return lhs.holder == rhs.holder && lhs.subject == rhs.subject && Same(lhs.opinion, rhs.opinion) &&
+               lhs.lastMet == rhs.lastMet;
+    }));
 }
 
 /// Edges for the save cases: holder 1 meets 2 in month 2 and 3 in month 5; holder 4 meets 1 in month 3.

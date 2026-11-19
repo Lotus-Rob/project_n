@@ -262,11 +262,41 @@ TEST_CASE("write the fight save seed" * doctest::skip()) {
     WriteSeed("fight", Saved(saved));
 }
 
-// Not part of a run: `--test-case='write the world save seed' --no-skip` (tests/AGENTS.md) writes the fuzz seed of the
-// world scene with nothing in it, its NPCs as the small test map makes them, which the save target's game loads.
-TEST_CASE("write the world save seed" * doctest::skip()) {
+/// The save of the world scene on the small test map with two NPCs on the start city's tile and one relationship between
+/// them: the save target's seed of the edge layout, which a month step on that map doesn't reach.
+std::vector<std::byte> WorldSeed() {
+    constexpr u64 MET_IN = 1;
     const core::GameData data = test::TravellingSmallData();
-    WriteSeed("world", test::WorldSaveAt({}, &data));
+    const u16 city = data.world->Start();
+    const u32 tile = data.world->TileIndex(data.world->Places()[city].tile);
+    core::State state{ game::DOMAINS, test::EMPTY_SAVE_SEED };
+    const core::StableId holder = game::SpawnNpc(state, tile, city);
+    const core::StableId subject = game::SpawnNpc(state, tile, city);
+    game::Relationships relationships;
+    const std::array<std::pair<core::StableId, core::StableId>, 1> met{ { { holder, subject } } };
+    relationships.Merge(met, MET_IN);
+    return test::ArenaSave(
+        state,
+        {},
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        game::WORLD_SCENE,
+        test::WORLD_VERSION,
+        test::ACTIVE_VERSION,
+        { .ticks = MET_IN * game::TICKS_PER_MONTH, .months = MET_IN },
+        game::Travel{},
+        std::nullopt,
+        relationships,
+        {},
+        &data
+    );
+}
+
+// Not part of a run: `--test-case='write the world save seed' --no-skip` (tests/AGENTS.md) writes the fuzz seed of the
+// world scene with two NPCs and a relationship, which the save target's game loads.
+TEST_CASE("write the world save seed" * doctest::skip()) {
+    WriteSeed("world", WorldSeed());
 }
 
 TEST_CASE("an arena save mid-fight loads and carries on as the saved one") {
@@ -457,8 +487,7 @@ TEST_CASE("the save fuzz target's seeds load in its game") {
     game::Host fight(test::TestManifest(), game::ARENA_SCENE, FightData());
     PlayFight(fight);
     CHECK(FuzzGameLoads(Saved(fight)));
-    const core::GameData small = test::TravellingSmallData();
-    CHECK(FuzzGameLoads(test::WorldSaveAt({}, &small)));
+    CHECK(FuzzGameLoads(WorldSeed()));
     const std::vector<std::byte> delta = DeltaSeed();
     CHECK(FuzzGameLoads(delta));
     const std::vector<std::byte> scratch = ScratchSeed();
