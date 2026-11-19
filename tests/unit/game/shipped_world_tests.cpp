@@ -540,11 +540,12 @@ LongSave MeasureLongSave(const game::Host& host, const game::Host& base, std::sp
     return save;
 }
 
-// Not part of a run: `--test-case='measure the shipped world's saves over hours of play' --no-skip` (tests/AGENTS.md)
-// runs the shipped world on month by month, as M does (AdvanceCalendar() on the usual workers; each call moves the clock
+// Not part of a run: `--test-case="measure the shipped world's saves over hours of play" --no-skip` (tests/AGENTS.md)
+// runs the shipped world on month by month, as M does (AdvanceCalendar() on 4 workers; each call moves the clock
 // to the next month's first tick, which is the state the clock reaches by playing the month), and logs the save's parts, the
 // counts behind them and the times at 1, 10, 50, 100 and 250 hours of unpaused play on the world map (a month is 90 s at 60
-// ticks a second). Release builds only say anything about the times. It runs for a long while: watch its log.
+// ticks a second). It also steps a 1-worker host alongside and compares its hashes with the 4-worker host's at each
+// checkpoint. Release builds only say anything about the times. It runs for a long while: watch its log.
 TEST_CASE("measure the shipped world's saves over hours of play" * doctest::skip()) {
     using Clock = std::chrono::steady_clock;
     struct Checkpoint {
@@ -563,15 +564,42 @@ TEST_CASE("measure the shipped world's saves over hours of play" * doctest::skip
     const std::filesystem::path wholePath = std::filesystem::temp_directory_path() / "project_n_measure_hours_whole.bin";
     game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
     const game::Host base(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
-    core::Jobs jobs;
+    game::Host oneWorker(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    constexpr u32 MANY_WORKERS = 4;
+    core::Jobs jobs{ MANY_WORKERS };
+    core::Jobs oneJob{ 1 };
     u32 month = 0;
     for (const Checkpoint& checkpoint : CHECKPOINTS) {
         const Clock::time_point stepsStart = Clock::now();
         const u32 stretch = checkpoint.months - month;
+        const u32 stretchStart = month;
         for (; month < checkpoint.months; ++month) {
             host.AdvanceCalendar({ .wall = month + 1, .simulation = month + 1, .state = month + 1 }, jobs, {});
         }
         const f64 stepMs = milliseconds(Clock::now() - stepsStart) / stretch;
+
+        const Clock::time_point oneStart = Clock::now();
+        for (u32 step = stretchStart; step < checkpoint.months; ++step) {
+            oneWorker.AdvanceCalendar({ .wall = step + 1, .simulation = step + 1, .state = step + 1 }, oneJob, {});
+        }
+        const f64 oneStepMs = milliseconds(Clock::now() - oneStart) / stretch;
+        const u64 state = host.StateHash();
+        const u64 world = host.WorldHash();
+        const u64 oneState = oneWorker.StateHash();
+        const u64 oneWorld = oneWorker.WorldHash();
+        const bool alike = oneState == state && oneWorld == world;
+        CAPTURE(checkpoint.hours); // when the two runs parted
+        CHECK(oneState == state);
+        CHECK(oneWorld == world);
+        PN_LOG_INFO(
+            "{} h: StateHash {:016x} WorldHash {:016x} on {} and 1 workers{}, 1-worker month step {:.1f} ms",
+            checkpoint.hours,
+            state,
+            world,
+            MANY_WORKERS,
+            alike ? " (alike)" : " (DIFFERENT)",
+            oneStepMs
+        );
 
         std::vector<std::byte> bytes;
         const Clock::time_point serialiseStart = Clock::now();
