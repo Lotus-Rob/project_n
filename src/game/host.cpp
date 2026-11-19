@@ -443,12 +443,27 @@ bool NpcsPlaced(const core::State& state, const core::WorldMap* map) {
     });
 }
 
+/// Whether every ID in `entities`, the registry of domain `domain`, is in the range its domain holds: only world-range
+/// IDs in the world domain, and in the active domain a world-range ID only on an NPC.
+bool IdsSuitDomain(const core::Registry& entities, core::DomainIndex domain) {
+    return std::ranges::all_of(entities.view<const core::StableId>().each(), [&](const auto& row) {
+        const bool worldRange = std::to_underlying(std::get<1>(row)) < core::SCENE_ID_BASE;
+        if (domain == WORLD) {
+            return worldRange;
+        }
+        return !worldRange || entities.all_of<Npc>(std::get<0>(row));
+    });
+}
+
 /// Whether every entity has the components that code reads together with the ones it has: a save can
 /// hold any mix, and a missing partner would be read anyway (the month step reads an Npc's Needs,
 /// publishing a Look's Body, applying the game data a Creature's Look, deactivating an active Npc's Body).
 bool Consistent(const core::State& state) {
     for (const core::DomainIndex domain : { ACTIVE, WORLD }) {
         const core::Registry& entities = state[domain].Entities();
+        if (!IdsSuitDomain(entities, domain)) {
+            return false;
+        }
         for (const core::Entity entity : entities.view<const Npc>()) {
             if (!entities.all_of<Needs>(entity) || (domain == ACTIVE && !entities.all_of<Body>(entity))) {
                 return false;

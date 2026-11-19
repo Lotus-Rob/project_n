@@ -194,7 +194,10 @@ void Relationships::Load(core::Reader& archive) {
 
 bool Relationships::Within(const core::State& state) const {
     return std::ranges::all_of(m_edges, [&state](const Relationship& edge) {
-        return state.DomainOf(edge.holder).has_value() && state.DomainOf(edge.subject).has_value();
+        const auto isNpcId = [&state](core::StableId npc) {
+            return std::to_underlying(npc) < core::SCENE_ID_BASE && state.DomainOf(npc).has_value();
+        };
+        return isNpcId(edge.holder) && isNpcId(edge.subject);
     });
 }
 

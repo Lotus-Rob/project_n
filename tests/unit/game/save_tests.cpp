@@ -1083,6 +1083,50 @@ TEST_CASE("a save whose relationship names a world NPC brought into the scene lo
     CHECK(LoadsWithMap(bytes));
 }
 
+/// A save of the world scene holding `state` and `relationships`, as the small test map's game loads it.
+std::vector<std::byte> WorldSceneSave(const core::State& state, const game::Relationships& relationships = {}) {
+    return ArenaSave(
+        state,
+        {},
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        game::WORLD_SCENE,
+        WORLD_VERSION,
+        ACTIVE_VERSION,
+        {},
+        game::Travel{},
+        std::nullopt,
+        relationships
+    );
+}
+
+TEST_CASE("a save whose scene holds a world ID that isn't an NPC is refused") {
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::Entity stray = state.Create(game::ACTIVE, core::IdRange::World).second;
+    state[game::ACTIVE].Entities().emplace<game::Body>(stray);
+    state[game::ACTIVE].Entities().emplace<game::Look>(stray);
+    CHECK_FALSE(LoadsWithMap(WorldSceneSave(state)));
+}
+
+TEST_CASE("a save whose world holds a scene ID is refused") {
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::Entity stray = state.Create(game::WORLD, core::IdRange::Scene).second;
+    state[game::WORLD].Entities().emplace<game::Body>(stray);
+    CHECK_FALSE(LoadsWithMap(WorldSceneSave(state)));
+}
+
+TEST_CASE("a save whose relationship names a scene ID is refused") {
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::StableId holder = game::SpawnNpc(state, NPC_CELL, FirstPlace(*test::SmallData().world, core::PlaceKind::City));
+    const auto [cultivator, entity] = state.Create(game::ACTIVE, core::IdRange::Scene);
+    state[game::ACTIVE].Entities().emplace<game::Body>(entity);
+    game::Relationships relationships;
+    const std::array<std::pair<core::StableId, core::StableId>, 1> met{ { { holder, cultivator } } };
+    relationships.Merge(met);
+    CHECK_FALSE(LoadsWithMap(WorldSceneSave(state, relationships)));
+}
+
 // A day in a journey's signed ticks.
 constexpr i64 DAY = static_cast<i64>(core::TICKS_PER_DAY);
 // Stands in for the game's journey draws: a stay's seed is keyed on the state's seed, as every draw is.
