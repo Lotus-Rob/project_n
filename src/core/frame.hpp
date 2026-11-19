@@ -525,7 +525,7 @@ void PresentFrame(
     if (visible) {
         acquire();
     }
-    const f64 alpha = Alpha(drawn.scheduledNs, now(), DEFAULT_DISPLAY_DELAY_NS, drawn.advanced);
+    const f64 alpha = Alpha(drawn.scheduledNs, now(), DISPLAY_DELAY_START_NS, drawn.advanced);
     PlayDue(pending, drawn.epoch, RenderTick(drawn.simulationTick, alpha), play);
     if (visible) {
         draw(alpha);

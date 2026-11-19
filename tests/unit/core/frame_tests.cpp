@@ -6,7 +6,7 @@
 namespace {
 
 constexpr u64 SCHEDULED_NS = 1'000'000'000;
-constexpr u64 BEFORE_ACQUIRE_NS = SCHEDULED_NS + core::DEFAULT_DISPLAY_DELAY_NS; // alpha 0
+constexpr u64 BEFORE_ACQUIRE_NS = SCHEDULED_NS + core::DISPLAY_DELAY_START_NS; // alpha 0
 constexpr u64 AFTER_ACQUIRE_NS = BEFORE_ACQUIRE_NS + (core::TICK_NS / 2);
 constexpr f64 AFTER_ACQUIRE_ALPHA = 0.5;
 

@@ -620,7 +620,7 @@ void App::Click(const platform::WindowState& state, core::Vec2 position) {
         return;
     }
     // The picture the player clicked on: the drawn snapshot at the render clock, as the camera shows it.
-    const f64 alpha = core::Alpha(drawn->scheduledNs, platform::NowNs(), core::DEFAULT_DISPLAY_DELAY_NS, drawn->advanced);
+    const f64 alpha = core::Alpha(drawn->scheduledNs, platform::NowNs(), core::DISPLAY_DELAY_START_NS, drawn->advanced);
     const core::Vec2 point = WindowToWorld(m_camera.Camera(), position, state.width, state.height);
     const core::StableId target = Pick(*drawn, alpha, point);
     HideCursor();
@@ -787,7 +787,7 @@ bool App::Present(const platform::WindowState& state) {
     // Events are drained every iteration, drawing or not, so the queue never grows.
     m_handover.TakeEvents(m_incoming);
     m_pending.insert(m_pending.end(), m_incoming.begin(), m_incoming.end());
-    static_cast<void>(m_display.Update(m_handover, platform::NowNs(), core::DEFAULT_DISPLAY_DELAY_NS));
+    static_cast<void>(m_display.Update(m_handover, platform::NowNs(), core::DISPLAY_DELAY_START_NS));
     const core::Snapshot* drawn = m_display.Drawn();
     if (drawn == nullptr) {
         return true;
