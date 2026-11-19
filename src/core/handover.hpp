@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <iterator>
 #include <mutex>
 #include <optional>
 #include <utility>
@@ -79,12 +80,13 @@ public:
         }
         else {
             // The main thread hasn't drained the last ones: the rare path that copies under the lock. Cosmetic events
-            // PlayDue() would drop are dropped here, so a stalled main thread doesn't grow the queue. The snapshots it
-            // holds are older than these events, so the render clock (RenderTick()) first reaches them by adopting a
-            // waiting snapshot: at worst the older of two, a burst of up to MAX_CATCH_UP ticks behind the newest,
-            // drawn from its tick minus one. So those more than STALE_EVENT_TICKS + MAX_CATCH_UP + 1 behind the
-            // newest can't play. An older epoch's are kept: its snapshot may still be drawn, and nothing adds to them
-            // once a newer epoch has begun. Other events still accumulate; their coalescing arrives with their kinds.
+            // PlayDue() would drop are dropped here, so a stalled main thread doesn't grow the queue. Each frame drains
+            // the events after taking snapshots, so the snapshots it holds are older than these events, and the render
+            // clock (RenderTick()) first reaches them by adopting a waiting snapshot: at worst the older of two, a burst of up
+            // to MAX_CATCH_UP ticks behind the newest, drawn from its tick minus one. So those more than STALE_EVENT_TICKS +
+            // MAX_CATCH_UP + 1 behind the newest can't play. An older epoch's are kept: its snapshot may still be drawn, and
+            // nothing adds to them once a newer epoch has begun. Other events still accumulate; their coalescing arrives with
+            // their kinds.
             m_events.insert(m_events.end(), events.begin(), events.end());
             events.clear();
             const u64 epoch = m_events.back().epoch;
@@ -149,13 +151,25 @@ public:
         m_free[m_freeCount++] = state;
     }
 
-    /// Main thread: moves the events published since the last call into `into`, replacing its
-    /// contents.
+    /// Main thread: moves the events published since they were last taken (by this or AppendEvents())
+    /// into `into`, replacing its contents.
     void TakeEvents(std::vector<Event>& into) PN_REQUIRES(!m_mutex) {
         PN_PROFILE_ZONE();
         into.clear();
         const std::scoped_lock lock{ m_mutex };
         std::swap(into, m_events);
+    }
+
+    /// Main thread: moves the events published since they were last taken (by this or TakeEvents())
+    /// to the end of `pending`, in order. The buffers keep their capacity, so the steady state allocates nothing.
+    void AppendEvents(std::vector<Event>& pending) PN_REQUIRES(!m_mutex) {
+        PN_PROFILE_ZONE();
+        {
+            const std::scoped_lock lock{ m_mutex };
+            std::swap(m_drained, m_events);
+        }
+        pending.insert(pending.end(), std::make_move_iterator(m_drained.begin()), std::make_move_iterator(m_drained.end()));
+        m_drained.clear();
     }
 
 private:
@@ -182,6 +196,7 @@ private:
     std::array<State*, WAITING> m_waiting PN_GUARDED_BY(m_mutex){}; // oldest first
     std::size_t m_waitingCount PN_GUARDED_BY(m_mutex) = 0;
     std::vector<Event> m_events PN_GUARDED_BY(m_mutex);
+    std::vector<Event> m_drained; // the main thread's alone: AppendEvents()'s spare, always empty between calls
     std::vector<Input> m_input PN_GUARDED_BY(m_mutex);
     Held m_held PN_GUARDED_BY(m_mutex){};
     std::optional<View> m_view PN_GUARDED_BY(m_mutex) = std::nullopt;

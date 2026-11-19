@@ -790,9 +790,7 @@ bool App::LoadScene(core::SceneId wanted) {
 
 bool App::Present(const platform::WindowState& state) {
     PN_PROFILE_ZONE();
-    // Events are drained every iteration, drawing or not, so the queue never grows.
-    m_handover.TakeEvents(m_incoming);
-    m_pending.insert(m_pending.end(), m_incoming.begin(), m_incoming.end());
+    // PresentFrame drains the events every iteration, drawing or not, so the queue never grows.
     const bool presented = core::PresentFrame(
         m_display,
         m_handover,
