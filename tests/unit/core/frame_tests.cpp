@@ -89,6 +89,7 @@ TEST_CASE("a snapshot that becomes due during the acquire is the one drawn") {
     // Due 2 ms after the frame starts, while the acquire waits 3.5 ms.
     const Outcome outcome =
         screen.Present({ .beforeNs = SECOND_NS + DELAY_NS - (2 * ONE_MS), .afterNs = SECOND_NS + DELAY_NS + (3 * ONE_MS / 2) });
+    CHECK(outcome.acquires == 1);
     CHECK(outcome.drawnTick == 2);
     CHECK(outcome.alpha == doctest::Approx(0.09)); // 1.5 ms into a 16.7 ms tick
 }
@@ -99,6 +100,7 @@ TEST_CASE("a frame reads the time for alpha after the swapchain acquire") {
     static_cast<void>(screen.Present({ .beforeNs = FIRST_NS + DELAY_NS })); // alpha 0
     const Outcome outcome =
         screen.Present({ .beforeNs = FIRST_NS + DELAY_NS, .afterNs = FIRST_NS + DELAY_NS + (core::TICK_NS / 2) });
+    CHECK(outcome.acquires == 1);
     CHECK(outcome.alpha == doctest::Approx(0.5));
     CHECK(outcome.clockReads == 1);
 }
@@ -160,6 +162,16 @@ TEST_CASE("a failed prepare draws nothing") {
     const Outcome outcome = screen.Present({ .beforeNs = FIRST_NS + DELAY_NS, .prepared = false });
     CHECK_FALSE(outcome.presented);
     CHECK(outcome.acquires == 0); // nothing was acquired that a draw doesn't follow
+    CHECK_FALSE(outcome.drawnTick);
+}
+
+TEST_CASE("a failed prepare once a snapshot is drawn leaves its acquire undrawn") {
+    Screen screen;
+    screen.Publish(1, FIRST_NS);
+    static_cast<void>(screen.Present({ .beforeNs = FIRST_NS + DELAY_NS }));
+    const Outcome outcome = screen.Present({ .beforeNs = FIRST_NS + DELAY_NS + ONE_MS, .prepared = false });
+    CHECK_FALSE(outcome.presented);
+    CHECK(outcome.acquires == 1); // the acquire came before the choice, so the caller must present no more
     CHECK_FALSE(outcome.drawnTick);
 }
 
