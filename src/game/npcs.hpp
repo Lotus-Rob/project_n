@@ -191,7 +191,8 @@ public:
     /// there is Within()'s to say, once every domain they may be in is read.
     void Load(core::Reader& archive);
 
-    /// Whether every NPC an edge names is in `state`, in any of its domains.
+    /// Whether every NPC an edge names is in `state`, in any of its domains, under a world-range ID (an NPC's, never a
+    /// scene entity's, which a scene change destroys).
     [[nodiscard]] bool Within(const core::State& state) const;
 
 private:
