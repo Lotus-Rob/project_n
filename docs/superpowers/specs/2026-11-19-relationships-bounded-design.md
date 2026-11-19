@@ -1,6 +1,6 @@
 # Relationships bounded: NPCs forget the people they met longest ago
 
-Status: approved design, not yet implemented.
+Status: implemented.
 
 ## Intent
 
@@ -103,3 +103,72 @@ linear pass over the table.
 - 5c1 (spec `2026-11-16-phase6-chunk5c1-world-kept-delta-saves-design.md`, "Saves over hours of play" and R23) measured
   the growth and fixed nothing, by the user's ruling (2026-11-19): this work gets its own branch, right after 5c1.
 - No cap or decay was tried or rejected before.
+
+## Outcome
+
+The case `measure the shipped world's saves over hours of play` (skipped, release, linux-clang, unchanged) ran again on
+the bounded table, with one `Host::AdvanceCalendar()` per month on the usual workers, as in 5c1. Every checkpoint's load
+matched the saved `StateHash` and `WorldHash` (asserted). The run took under 3 minutes, against about 8 before. Times are
+good to about 50% between runs (5c1's finding) and sizes are exact. The tables use 5c1's layout; 5c1's 250 h figures are
+beside them.
+
+| | 1 h | 10 h | 50 h | 100 h | 250 h | 5c1's 250 h |
+|---|---|---|---|---|---|---|
+| months | 40 | 400 | 2,000 | 4,000 | 10,000 | 10,000 |
+| **raw save** | 8.87 MB | 17.7 MB | 17.7 MB | 17.7 MB | 17.7 MB | 755 MB |
+| **on disk (zstd)** | **1.75 MB** | **4.00 MB** | **4.08 MB** | **4.12 MB** | **4.25 MB** | 64.8 MB |
+| a whole (non-delta) save, raw | 15.2 MB | 25.2 MB | 25.3 MB | 25.3 MB | 25.5 MB | 763 MB |
+| a whole save, on disk | 2.28 MB | 4.58 MB | 4.64 MB | 4.70 MB | 4.84 MB | 65.2 MB |
+| save: serialise + write | 37.5 + 15.6 ms | 50.4 + 30.7 ms | 49.4 + 30.6 ms | 50.1 + 30.2 ms | 49.8 + 30.5 ms | 688 + 1,078 ms |
+| load (regeneration included) | 56.0 ms | 65.0 ms | 60.8 ms | 60.4 ms | 65.2 ms | 1,369 ms |
+| month step, mean over the stretch since the last checkpoint | 3.8 ms | 5.9 ms | 6.2 ms | 6.2 ms | 6.2 ms | 65.6 ms |
+
+Parts of the raw save (bytes):
+
+| part | 1 h | 10 h | 50 h | 100 h | 250 h |
+|---|---|---|---|---|---|
+| game world: changed fields (50,000 NPCs) | 2,222,619 | 2,222,386 | 2,222,147 | 2,222,399 | 2,222,340 |
+| game world: created NPCs, gone NPCs | 0 | 0 | 0 | 0 | 0 |
+| game world: storage order | 5 | 5 | 5 | 5 | 5 |
+| journeys gone from the base's | 41,176 | 41,176 | 41,176 | 41,176 | 41,176 |
+| journeys by plan | 265,088 | 283,448 | 282,608 | 281,768 | 289,248 |
+| journeys written whole | 8 (none) | 8 | 8 | 8 | 8 |
+| journals | 1,510,368 | 4,672,672 | 4,673,480 | 4,673,480 | 4,673,480 |
+| **relationships** | 4,829,280 | 10,471,672 | 10,471,728 | 10,471,728 | 10,471,728 |
+| header, scene, combat | 406 | 406 | 406 | 406 | 406 |
+
+What is behind them:
+
+| count | 1 h | 10 h | 50 h | 100 h | 250 h |
+|---|---|---|---|---|---|
+| NPCs alive (base 50,000), created, gone | 50,000, 0, 0 | 50,000, 0, 0 | 50,000, 0, 0 | 50,000, 0, 0 | 50,000, 0, 0 |
+| NPCs with a changed field | 50,000 | 50,000 | 50,000 | 50,000 | 50,000 |
+| journeys under way (base's gone: 5,146) | 6,627 | 7,086 | 7,065 | 7,044 | 7,231 |
+| journal entries | 102,465 | 486,719 | 486,820 | 486,820 | 486,820 |
+| relationships | 172,474 | 373,988 | 373,990 | 373,990 | 373,990 |
+
+What it shows:
+
+1. **The table is bounded.** From 10 h on it holds 373,990 relationships (10.47 MB raw), under the 500,000 the limits allow
+   (nobody is met) and the 14,000,008 bytes expected. It is 59% of the raw save, not 99%. At 250 h the raw save is 17.7 MB
+   against 755 MB, 4.25 MB on disk against 64.8 MB, 6.2 ms a month step against 65.6 ms, 80 ms to
+   save against 1.8 s, and a 65 ms load against 1,369 ms. `MAX_SAVE_BYTES` is no longer in reach.
+2. **The month step and the save are flat.** The step went 3.8, 5.9, 6.2, 6.2, 6.2 ms and the save's size 17.69, 17.69,
+   17.69, 17.70 MB from 10 h to 250 h: the only growth is the journeys' plan (about 6 KB) and noise.
+3. **Months NPCs took to fill.** The checkpoints only bracket it: 172,474 relationships at 40 months, 373,988 at 400, and
+   373,990 for every checkpoint after, so the table was full somewhere between 1 h and 10 h. From the 40-month count,
+   which is before any NPC reaches its limit, the rate is 4,312 new edges a month, 0.086 per NPC; at that rate a limit of
+   10 is reached in about 116 months (about 3 h). The spec's 0.07 a month gives about 143 months (about 4 h). I used the
+   rate computed from the checkpoint, not the spec's, and the two agree with "3 to 4 hours". The checkpoints can't show
+   the month itself.
+4. **The delta still pays a little.** Against a whole save it saves 42% raw and 23% on disk at 1 h (1.75 against
+   2.28 MB), 31% and 12% at 250 h (4.25 against 4.84 MB). The NPCs' part (2.2 MB) and the journals (4.67 MB) are now most
+   of the rest.
+
+### Rulings
+
+- The spec's "the same result for any worker count" is tested by running the month-step limit case, which reaches the
+  limit, with one worker and with many and comparing whole tables. The existing 5,000-NPC worker-count case never reaches
+  the limit, so it never trims.
+- The world save fuzz seed now carries two NPCs and one relationship edge, so seeds exercise the edge layout and the
+  last-met check. A month step on the small map makes no edges, so the delta seed couldn't carry one.
