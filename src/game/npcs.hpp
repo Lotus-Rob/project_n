@@ -150,12 +150,27 @@ struct Relationship {
     core::StableId subject{};
     /// How much `holder` likes `subject`.
     f32 opinion = 0.0F;
+    /// The month (the calendar's months passed) of their latest meeting.
+    u64 lastMet = 0;
 
     /// Lists its fields for an archive (core/archive.hpp).
     template<typename Self, typename Archive>
     void Fields(this Self& self, Archive& archive) {
-        archive(self.holder, self.subject, self.opinion);
+        archive(self.holder, self.subject, self.opinion, self.lastMet);
     }
+};
+
+/// How many relationships an NPC keeps, the same as its travel journal's (`JOURNAL_LENGTH`).
+inline constexpr std::size_t RELATIONSHIP_LENGTH = 10;
+/// How many it keeps once it has `Met` the player (`MET_JOURNAL_LENGTH`).
+inline constexpr std::size_t MET_RELATIONSHIP_LENGTH = 50;
+
+/// How many relationships Relationships::Trim() keeps per holder.
+struct RelationshipLimits {
+    /// For an NPC without `Met`.
+    std::size_t kept = RELATIONSHIP_LENGTH;
+    /// For an NPC with `Met`.
+    std::size_t keptOnceMet = MET_RELATIONSHIP_LENGTH;
 };
 
 /// Every relationship as one edge table, sorted by holder then subject, so one NPC's
@@ -171,8 +186,14 @@ public:
     [[nodiscard]] std::span<const Relationship> Of(core::StableId holder) const;
 
     /// Adds 1 to each (holder, subject)'s opinion, once per pair given (repeats add again),
-    /// creating missing edges at 0 first. `changes` must be sorted by holder, then subject.
-    void Merge(std::span<const std::pair<core::StableId, core::StableId>> changes);
+    /// creating missing edges at 0 first, and sets `lastMet` to `month` on each edge it adds to. `changes` must be sorted
+    /// by holder, then subject.
+    void Merge(std::span<const std::pair<core::StableId, core::StableId>> changes, u64 month);
+
+    /// Cuts every holder down to the limit for its kind (`limits.keptOnceMet` with `Met` in `state`, else `limits.kept`),
+    /// keeping the edges met most recently; among those met the same month the higher opinion, then the lower subject ID.
+    /// The edges stay sorted. A holder not in `state`'s domains counts as unmet.
+    void Trim(const core::State& state, RelationshipLimits limits = {});
 
     /// Drops every edge holding or naming `npc`, which is leaving the state.
     void Forget(core::StableId npc);
@@ -187,9 +208,10 @@ public:
     }
 
     /// Replaces the edges with those Save() wrote, read from `archive`. Fails `archive`, changing nothing, on a malformed
-    /// table: out of order, repeated, an NPC about itself, or an opinion that isn't finite. Whether the NPCs it names are
-    /// there is Within()'s to say, once every domain they may be in is read.
-    void Load(core::Reader& archive);
+    /// table: out of order, repeated, an NPC about itself, an opinion that isn't finite, or an edge last met after month
+    /// `months` (the calendar's). A holder over its limit loads whole: the next Trim() cuts it. Whether the NPCs it names
+    /// are there is Within()'s to say, once every domain they may be in is read.
+    void Load(core::Reader& archive, u64 months);
 
     /// Whether every NPC an edge names is in `state`, in any of its domains, under a world-range ID (an NPC's, never a
     /// scene entity's, which a scene change destroys).
@@ -197,7 +219,7 @@ public:
 
 private:
     std::vector<Relationship> m_edges;
-    std::vector<Relationship> m_merged; // Merge()'s output, swapped in, to keep both capacities
+    std::vector<Relationship> m_merged; // Merge()'s and Trim()'s output, swapped in, to keep both capacities
 };
 
 /// The power a world NPC starts with, drawn for its `identity` under `seed`: 80% in [0, 5) (mortals), 18% in [5, 50)
@@ -240,15 +262,16 @@ public:
     /// NPCs per chunk: the unit of determinism, independent of the worker count.
     static constexpr u32 CHUNK = 1'024;
 
-    /// Runs one month for every world NPC on `jobs`, from random numbers keyed on the state's seed
+    /// Runs month `month` for every world NPC on `jobs`, from random numbers keyed on the state's seed
     /// and `stateCounter`. On the thread that created `jobs`. Once `stop` is requested, chunks not
-    /// yet started are skipped and nothing is merged: the month is left half done, for a game
-    /// that is closing.
+    /// yet started are skipped and nothing is merged or trimmed: the month is left half done, for a game
+    /// that is closing. Afterwards no NPC holds more relationships than its limit.
     void Run(
         core::State& state,
         Relationships& relationships,
         core::Jobs& jobs,
         u64 stateCounter,
+        u64 month,
         const std::stop_token& stop = {}
     );
 

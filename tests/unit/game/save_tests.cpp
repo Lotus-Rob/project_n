@@ -1065,7 +1065,7 @@ TEST_CASE("a save whose relationship names a world NPC brought into the scene lo
     );
     game::Relationships relationships;
     const std::array<std::pair<core::StableId, core::StableId>, 1> met{ { { holder, subject } } };
-    relationships.Merge(met);
+    relationships.Merge(met, 0);
     const std::vector<std::byte> bytes = ArenaSave(
         state,
         {},
@@ -1123,7 +1123,7 @@ TEST_CASE("a save whose relationship names a scene ID is refused") {
     state[game::ACTIVE].Entities().emplace<game::Body>(entity);
     game::Relationships relationships;
     const std::array<std::pair<core::StableId, core::StableId>, 1> met{ { { holder, cultivator } } };
-    relationships.Merge(met);
+    relationships.Merge(met, 0);
     CHECK_FALSE(LoadsWithMap(WorldSceneSave(state, relationships)));
 }
 
