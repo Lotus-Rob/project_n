@@ -71,7 +71,7 @@ TEST_CASE("D doesn't fall before a second of samples") {
     static_cast<void>(delay.Advance(START_NS));
     CHECK(delay.Advance(START_NS + core::NS_PER_SECOND) == core::DISPLAY_DELAY_START_NS);
     delay.Observe(0);
-    CHECK(delay.Advance(START_NS + (2 * core::NS_PER_SECOND)) < core::DISPLAY_DELAY_START_NS);
+    CHECK(delay.Advance(START_NS + (2 * core::NS_PER_SECOND)) == core::DISPLAY_DELAY_FLOOR_NS);
 }
 
 TEST_CASE("floor and ceiling hold") {
@@ -116,6 +116,6 @@ TEST_CASE("Lowest and Highest cover the range D took") {
         delay.Observe(20 * ONE_MS);
     }
     static_cast<void>(delay.Advance(START_NS + (2 * core::NS_PER_SECOND)));
-    CHECK(delay.Highest() > core::DISPLAY_DELAY_START_NS);
+    CHECK(delay.Highest() == core::TICK_NS);
     CHECK(delay.Lowest() == 3'400'000);
 }
