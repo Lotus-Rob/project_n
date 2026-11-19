@@ -238,6 +238,25 @@ TEST_CASE("buffers return to the handover while the main thread takes none") {
     CHECK(display.Drawn()->sequence == PUBLISHES);
 }
 
+TEST_CASE("publishing goes on with one snapshot written, two waiting, one held and one drawn") {
+    Handover handover;
+    Display display;
+    Publish(handover, 1, FIRST_NS);
+    CHECK(display.Update(handover, FIRST_NS + HANDOVER_DELAY_NS, HANDOVER_DELAY_NS));
+    Publish(handover, 2, 2 * FIRST_NS);
+    CHECK_FALSE(display.Update(handover, (2 * FIRST_NS) + HANDOVER_DELAY_NS - 1, HANDOVER_DELAY_NS)); // held
+    Publish(handover, 3, 3 * FIRST_NS);
+    Publish(handover, 4, 4 * FIRST_NS);
+    Publish(handover, 5, 5 * FIRST_NS); // drops 3, and every buffer is in use
+
+    CHECK(display.Update(handover, (5 * FIRST_NS) + HANDOVER_DELAY_NS, HANDOVER_DELAY_NS));
+    REQUIRE(display.Drawn() != nullptr);
+    CHECK(display.Drawn()->sequence == 5);
+    Publish(handover, 6, 6 * FIRST_NS);
+    CHECK(display.Update(handover, (6 * FIRST_NS) + HANDOVER_DELAY_NS, HANDOVER_DELAY_NS));
+    CHECK(display.Drawn()->sequence == 6);
+}
+
 std::vector<u64> Played(std::vector<Event>& pending, u64 epoch, f64 renderTick) {
     std::vector<u64> played;
     core::PlayDue(pending, epoch, renderTick, [&played](const Event& event) { played.push_back(event.tick); });
