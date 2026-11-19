@@ -40,9 +40,7 @@ JournalEntry EntryOf(const core::Journey& journey) {
 
 /// How many entries `npc`'s journal keeps: more for an NPC the player has met.
 std::size_t JournalLength(const core::State& state, core::StableId npc) {
-    const std::optional<core::DomainIndex> domain = state.DomainOf(npc);
-    const bool met = domain && state[*domain].Entities().all_of<Met>(state[*domain].Find(npc));
-    return met ? MET_JOURNAL_LENGTH : JOURNAL_LENGTH;
+    return IsMet(state, npc) ? MET_JOURNAL_LENGTH : JOURNAL_LENGTH;
 }
 
 /// Whether `place` is a city of `map`.
