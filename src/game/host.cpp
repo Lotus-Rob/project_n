@@ -75,8 +75,8 @@ constexpr u32 ACTIVE_VERSION =
     5; // 2: creatures; 3: spin; 4: health, dying, arriving, caster, dashing, afflictions; 5: the NPCs' homes
 // 2: the NPCs' homes; 3: the travelling action, the journeys and the journals; 4: the game's world as its difference from
 // its base, a dev scene's journeys as their difference from none; 5: the world domain's order beside its difference, and a
-// dev scene's world as its difference from its entry build
-constexpr u32 WORLD_VERSION = 5;
+// dev scene's world as its difference from its entry build; 6: each relationship's last-met month
+constexpr u32 WORLD_VERSION = 6;
 using ActiveComponents = core::ComponentList<
     Body,
     Look,
@@ -304,7 +304,7 @@ std::pair<WorldState, WorldState> ReadGameWorld(
         PN_LOG_WARNING("save refused: its world's order is malformed");
         return made;
     }
-    world.relationships.Load(archive); // checked against the state once the scene's domain is read too (Within())
+    world.relationships.Load(archive, clock.months); // checked against the state once the scene's domain is read too (Within())
     if (!archive.Failed() && !world.travel.LoadDelta(archive, generated.travel, world.state, data.world.get(), paths)) {
         PN_LOG_WARNING(
             "save refused: its journeys' difference from those its seed makes is malformed or doesn't fit its world"
@@ -364,7 +364,7 @@ std::pair<WorldState, std::shared_ptr<const WorldState>> ReadScratch(
         PN_LOG_WARNING("save refused: its scratch world's order is malformed");
         return made;
     }
-    world.relationships.Load(archive); // checked against the state once the scene's domain is read too (Within())
+    world.relationships.Load(archive, clock.months); // checked against the state once the scene's domain is read too (Within())
     static_cast<void>(world.travel.LoadDelta(archive, Travel{}, world.state, nullptr, nullptr)); // a refusal fails `archive`
     SetClock(world, clock);
     return made;
@@ -1244,7 +1244,7 @@ void Host::AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs,
             static_cast<i64>(world.months * TICKS_PER_MONTH)
         );
     }
-    m_monthStep.Run(world.state, world.relationships, jobs, counters.state, stop);
+    m_monthStep.Run(world.state, world.relationships, jobs, counters.state, world.months, stop);
 }
 
 bool Host::MonthDue() const {

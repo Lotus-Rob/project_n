@@ -141,7 +141,7 @@ std::span<const Relationship> Relationships::Of(core::StableId holder) const {
     );
 }
 
-void Relationships::Merge(std::span<const std::pair<core::StableId, core::StableId>> changes) {
+void Relationships::Merge(std::span<const std::pair<core::StableId, core::StableId>> changes, u64 month) {
     m_merged.clear();
     auto edge = m_edges.begin();
     for (const auto& [holder, subject] : changes) {
@@ -159,8 +159,39 @@ void Relationships::Merge(std::span<const std::pair<core::StableId, core::Stable
             );
         }
         m_merged.back().opinion += 1.0F;
+        m_merged.back().lastMet = month;
     }
     m_merged.insert(m_merged.end(), edge, m_edges.end());
+    std::swap(m_edges, m_merged);
+}
+
+void Relationships::Trim(const core::State& state, RelationshipLimits limits) {
+    m_merged.clear();
+    // Best first: met latest, then the stronger tie, then the lower ID.
+    const auto better = [](const Relationship& lhs, const Relationship& rhs) {
+        return std::tie(rhs.lastMet, rhs.opinion, lhs.subject) < std::tie(lhs.lastMet, lhs.opinion, rhs.subject);
+    };
+    auto first = m_edges.begin();
+    while (first != m_edges.end()) {
+        const auto last =
+            std::find_if(first, m_edges.end(), [&](const Relationship& edge) { return edge.holder != first->holder; });
+        const auto length = static_cast<std::size_t>(last - first);
+        if (length <= limits.kept) {
+            m_merged.insert(m_merged.end(), first, last);
+        }
+        else {
+            const std::optional<core::DomainIndex> domain = state.DomainOf(first->holder);
+            const bool met = domain && state[*domain].Entities().all_of<Met>(state[*domain].Find(first->holder));
+            const std::size_t keep = std::min(length, met ? limits.keptOnceMet : limits.kept);
+            const auto out = m_merged.size();
+            m_merged.insert(m_merged.end(), first, last);
+            const auto begin = m_merged.begin() + static_cast<std::ptrdiff_t>(out);
+            std::ranges::nth_element(begin, begin + static_cast<std::ptrdiff_t>(keep), m_merged.end(), better);
+            m_merged.erase(begin + static_cast<std::ptrdiff_t>(keep), m_merged.end());
+            std::ranges::sort(begin, m_merged.end(), {}, &Relationship::subject);
+        }
+        first = last;
+    }
     std::swap(m_edges, m_merged);
 }
 
@@ -168,8 +199,8 @@ void Relationships::Forget(core::StableId npc) {
     std::erase_if(m_edges, [npc](const Relationship& edge) { return edge.holder == npc || edge.subject == npc; });
 }
 
-void Relationships::Load(core::Reader& archive) {
-    constexpr std::size_t EDGE_BYTES = (2 * sizeof(core::StableId)) + sizeof(f32);
+void Relationships::Load(core::Reader& archive, u64 months) {
+    constexpr std::size_t EDGE_BYTES = (2 * sizeof(core::StableId)) + sizeof(f32) + sizeof(u64);
     u64 count = 0;
     archive(count);
     if (count > archive.Remaining() / EDGE_BYTES) {
@@ -182,7 +213,7 @@ void Relationships::Load(core::Reader& archive) {
         archive(edge);
         const bool ordered =
             edges.empty() || std::pair{ edges.back().holder, edges.back().subject } < std::pair{ edge.holder, edge.subject };
-        if (!ordered || edge.holder == edge.subject || !std::isfinite(edge.opinion)) {
+        if (!ordered || edge.holder == edge.subject || !std::isfinite(edge.opinion) || edge.lastMet > months) {
             archive.Fail();
         }
         edges.push_back(edge);
@@ -293,6 +324,7 @@ void MonthStep::Run(
     Relationships& relationships,
     core::Jobs& jobs,
     u64 stateCounter,
+    u64 month,
     const std::stop_token& stop
 ) {
     PN_PROFILE_ZONE();
@@ -349,7 +381,8 @@ void MonthStep::Run(
         Needs& want = needs.get(state[WORLD].Find(target));
         want.company = Clamped(want.company - COMPANY_FROM_MEETING);
     }
-    relationships.Merge(m_merged);
+    relationships.Merge(m_merged, month);
+    relationships.Trim(state);
     PN_LOG_DEBUG("Month step: {} world NPCs, {} meetings", npcs.size(), m_merged.size());
 }
 

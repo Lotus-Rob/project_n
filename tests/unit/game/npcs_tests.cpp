@@ -136,7 +136,7 @@ TEST_CASE("a group materialises into one world NPC per member, and an unmet NPC 
 
     const core::StableId other = game::SpawnGroup(state, CELL, 0);
     const std::array<Pair, 2> knows{ { { npcs[0], npcs[1] }, { npcs[1], npcs[0] } } };
-    relationships.Merge(knows);
+    relationships.Merge(knows, 0);
     game::Travel travel;
     game::Fold(state, relationships, travel, npcs[0], other);
     CHECK_FALSE(state.DomainOf(npcs[0]).has_value());
@@ -190,9 +190,9 @@ TEST_CASE("relationships merge into one sorted edge per pair, adding once per ch
     constexpr core::StableId THIRD{ 3 };
     game::Relationships relationships;
     const std::array<Pair, 2> before{ { { SECOND, FIRST }, { SECOND, THIRD } } };
-    relationships.Merge(before);
+    relationships.Merge(before, 0);
     const std::array<Pair, 3> after{ { { FIRST, THIRD }, { SECOND, THIRD }, { SECOND, THIRD } } };
-    relationships.Merge(after);
+    relationships.Merge(after, 0);
 
     REQUIRE(relationships.All().size() == 3);
     CHECK(relationships.Of(FIRST).size() == 1);
@@ -201,6 +201,119 @@ TEST_CASE("relationships merge into one sorted edge per pair, adding once per ch
     CHECK(relationships.Of(SECOND)[0].opinion == 1.0F);
     CHECK(relationships.Of(SECOND)[1].subject == THIRD);
     CHECK(relationships.Of(SECOND)[1].opinion == doctest::Approx(3));
+}
+
+/// `holder` met by each of `subjects` in `month`, one Merge for them all.
+void MeetIn(game::Relationships& relationships, core::StableId holder, std::span<const core::StableId> subjects, u64 month) {
+    std::vector<Pair> changes;
+    for (const core::StableId subject : subjects) {
+        changes.emplace_back(holder, subject);
+    }
+    std::ranges::sort(changes);
+    relationships.Merge(changes, month);
+}
+
+/// The subjects `holder` holds, in order.
+std::vector<core::StableId> SubjectsOf(const game::Relationships& relationships, core::StableId holder) {
+    std::vector<core::StableId> subjects;
+    for (const game::Relationship& edge : relationships.Of(holder)) {
+        subjects.push_back(edge.subject);
+    }
+    return subjects;
+}
+
+std::vector<core::StableId> Ids(std::initializer_list<u64> values) {
+    std::vector<core::StableId> ids;
+    for (const u64 value : values) {
+        ids.push_back(core::StableId{ value });
+    }
+    return ids;
+}
+
+/// `count` NPCs spawned into `state`; their IDs are 1 to `count`.
+void SpawnMany(core::State& state, u32 count) {
+    for (u32 npc = 0; npc < count; ++npc) {
+        game::SpawnNpc(state, CELL);
+    }
+}
+
+TEST_CASE("a holder past its limit forgets the subjects it met longest ago") {
+    constexpr core::StableId HOLDER{ 1 };
+    core::State state{ game::DOMAINS, SEED };
+    SpawnMany(state, 12);
+    game::Relationships relationships;
+    for (u64 month = 1; month <= 10; ++month) {
+        const std::array subject{ core::StableId{ month + 1 } };
+        MeetIn(relationships, HOLDER, subject, month);
+    }
+    relationships.Trim(state);
+    CHECK(relationships.Of(HOLDER).size() == game::RELATIONSHIP_LENGTH);
+
+    const std::array newest{ core::StableId{ 12 } };
+    MeetIn(relationships, HOLDER, newest, 11);
+    relationships.Trim(state);
+    CHECK(SubjectsOf(relationships, HOLDER) == Ids({ 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 }));
+}
+
+TEST_CASE("a met holder keeps the met number, in either domain") {
+    constexpr game::RelationshipLimits LIMITS{ .kept = 2, .keptOnceMet = 4 };
+    core::State state{ game::DOMAINS, SEED };
+    SpawnMany(state, 12);
+    const core::StableId met{ 1 };
+    const core::StableId unmet{ 2 };
+    game::Relationships relationships;
+    for (u64 month = 1; month <= 5; ++month) {
+        const std::array subject{ core::StableId{ month + 2 } };
+        MeetIn(relationships, met, subject, month);
+        MeetIn(relationships, unmet, subject, month);
+    }
+    state[game::WORLD].Entities().emplace<game::Met>(state[game::WORLD].Find(met));
+    game::Activate(state, met);
+    REQUIRE(state.DomainOf(met) == game::ACTIVE);
+    REQUIRE(state.DomainOf(unmet) == game::WORLD);
+    relationships.Trim(state, LIMITS);
+    CHECK(SubjectsOf(relationships, met) == Ids({ 4, 5, 6, 7 }));
+    CHECK(SubjectsOf(relationships, unmet) == Ids({ 6, 7 }));
+}
+
+TEST_CASE("a holder over its limit keeps the stronger tie, then the lower ID, among those met the same month") {
+    constexpr core::StableId HOLDER{ 1 };
+    core::State state{ game::DOMAINS, SEED };
+    SpawnMany(state, 5);
+    game::Relationships relationships;
+    const std::array<Pair, 3> together{
+        { { HOLDER, core::StableId{ 3 } }, { HOLDER, core::StableId{ 4 } }, { HOLDER, core::StableId{ 5 } } }
+    };
+    relationships.Merge(together, 3);
+    const std::array<Pair, 1> again{ { { HOLDER, core::StableId{ 5 } } } };
+    relationships.Merge(again, 3);
+    relationships.Trim(state, { .kept = 2 });
+    CHECK(SubjectsOf(relationships, HOLDER) == Ids({ 3, 5 }));
+}
+
+TEST_CASE("a lowered limit trims a holder the month left alone") {
+    constexpr core::StableId HOLDER{ 1 };
+    core::State state{ game::DOMAINS, SEED };
+    SpawnMany(state, 6);
+    game::Relationships relationships;
+    for (u64 month = 1; month <= 5; ++month) {
+        const std::array subject{ core::StableId{ month + 1 } };
+        MeetIn(relationships, HOLDER, subject, month);
+    }
+    relationships.Trim(state, { .kept = 3 });
+    CHECK(SubjectsOf(relationships, HOLDER) == Ids({ 4, 5, 6 }));
+}
+
+TEST_CASE("merging stamps each edge it adds to with the month") {
+    constexpr core::StableId HOLDER{ 1 };
+    game::Relationships relationships;
+    const std::array<Pair, 2> first{ { { HOLDER, core::StableId{ 2 } }, { HOLDER, core::StableId{ 3 } } } };
+    relationships.Merge(first, 1);
+    const std::array<Pair, 1> second{ { { HOLDER, core::StableId{ 2 } } } };
+    relationships.Merge(second, 4);
+    REQUIRE(relationships.Of(HOLDER).size() == 2);
+    CHECK(relationships.Of(HOLDER)[0].lastMet == 4);
+    CHECK(relationships.Of(HOLDER)[1].lastMet == 1);
 }
 
 TEST_CASE("an active NPC walks towards its target and stops there") {
@@ -250,7 +363,7 @@ std::pair<core::State, game::Relationships> Stepped(u32 npcs, u32 months, u32 wo
     game::MonthStep step;
     core::Jobs jobs{ workers };
     for (u64 month = 1; month <= months; ++month) {
-        step.Run(state, relationships, jobs, month);
+        step.Run(state, relationships, jobs, month, month);
     }
     return { std::move(state), std::move(relationships) };
 }
@@ -292,6 +405,75 @@ TEST_CASE("a month step gives the same world with one worker and with many") {
     }));
 }
 
+TEST_CASE("month steps keep every NPC within its limit") {
+    constexpr u32 NPCS = 320; // twenty to each of the sixteen cells
+    constexpr u32 MONTHS = 40;
+    const auto [state, relationships] = Stepped(NPCS, MONTHS, 1);
+    std::size_t largest = 0;
+    for (const game::Relationship& edge : relationships.All()) {
+        largest = std::max(largest, relationships.Of(edge.holder).size());
+    }
+    CHECK(largest == game::RELATIONSHIP_LENGTH);
+}
+
+/// Edges for the save cases: holder 1 meets 2 in month 2 and 3 in month 5; holder 4 meets 1 in month 3.
+game::Relationships SavedTable() {
+    game::Relationships relationships;
+    const std::array<Pair, 1> first{ { { core::StableId{ 4 }, core::StableId{ 1 } } } };
+    relationships.Merge(first, 3);
+    const std::array<Pair, 1> second{ { { core::StableId{ 1 }, core::StableId{ 2 } } } };
+    relationships.Merge(second, 2);
+    const std::array<Pair, 1> third{ { { core::StableId{ 1 }, core::StableId{ 3 } } } };
+    relationships.Merge(third, 5);
+    return relationships;
+}
+
+TEST_CASE("relationships load as saved, last-met months included") {
+    const game::Relationships saved = SavedTable();
+    std::vector<std::byte> bytes;
+    core::Writer writer{ bytes };
+    saved.Save(writer);
+    core::Reader reader{ bytes };
+    game::Relationships loaded;
+    loaded.Load(reader, 5);
+    CHECK_FALSE(reader.Failed());
+    REQUIRE(loaded.All().size() == saved.All().size());
+    CHECK(std::ranges::equal(loaded.All(), saved.All(), [](const auto& lhs, const auto& rhs) {
+        return lhs.holder == rhs.holder && lhs.subject == rhs.subject && Same(lhs.opinion, rhs.opinion) &&
+               lhs.lastMet == rhs.lastMet;
+    }));
+}
+
+TEST_CASE("a load keeps a holder over the limit") {
+    constexpr u64 EDGES = 12;
+    game::Relationships saved;
+    for (u64 subject = 2; subject < 2 + EDGES; ++subject) {
+        const std::array<Pair, 1> met{ { { core::StableId{ 1 }, core::StableId{ subject } } } };
+        saved.Merge(met, 1);
+    }
+    std::vector<std::byte> bytes;
+    core::Writer writer{ bytes };
+    saved.Save(writer);
+    core::Reader reader{ bytes };
+    game::Relationships loaded;
+    loaded.Load(reader, 1);
+    CHECK_FALSE(reader.Failed());
+    CHECK(loaded.Of(core::StableId{ 1 }).size() == EDGES);
+}
+
+TEST_CASE("a relationship last met after the calendar is refused") {
+    const game::Relationships saved = SavedTable();
+    std::vector<std::byte> bytes;
+    core::Writer writer{ bytes };
+    saved.Save(writer);
+    core::Reader reader{ bytes };
+    game::Relationships loaded = SavedTable();
+    const std::size_t before = loaded.All().size();
+    loaded.Load(reader, 4); // one month short of the latest
+    CHECK(reader.Failed());
+    CHECK(loaded.All().size() == before);
+}
+
 TEST_CASE("a traveller sits the month out and nobody meets it") {
     constexpr u32 NPCS = 64;
     constexpr u64 MONTHS = 12;
@@ -308,7 +490,7 @@ TEST_CASE("a traveller sits the month out and nobody meets it") {
     game::MonthStep step;
     core::Jobs jobs{ 1 };
     for (u64 month = 1; month <= MONTHS; ++month) {
-        step.Run(state, relationships, jobs, month);
+        step.Run(state, relationships, jobs, month, month);
     }
     REQUIRE_FALSE(relationships.All().empty()); // those at home met each other
     const auto& world = state[game::WORLD].Entities();
@@ -335,7 +517,7 @@ TEST_CASE("a month step stopped before it starts changes nothing") {
     core::Jobs jobs{ 1 };
     std::stop_source stop;
     stop.request_stop();
-    step.Run(state, relationships, jobs, 1, stop.get_token());
+    step.Run(state, relationships, jobs, 1, 1, stop.get_token());
     CHECK(relationships.All().empty());
     for (const auto [entity, want] : state[game::WORLD].Entities().view<const game::Needs>().each()) {
         CHECK(want.company == 0.0F);
