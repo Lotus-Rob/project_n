@@ -417,6 +417,11 @@ struct LongSave {
     std::size_t journeys = 0;
     std::size_t journalEntries = 0;
     std::size_t relationships = 0;
+    // Holders by how many edges they hold; nobody is met in this run, so the limit is the unmet one
+    std::size_t holdersNone = 0;
+    std::size_t holdersSome = 0;
+    std::size_t holdersAtLimit = 0;
+    std::size_t holdersOverLimit = 0;
     std::size_t goneJourneys = 0;
     std::size_t plannedJourneys = 0;
     std::size_t wholeJourneys = 0;
@@ -442,6 +447,25 @@ LongSave MeasureLongSave(const game::Host& host, const game::Host& base, std::sp
     save.total = saved.size();
     save.delta = core::CountDelta(before, now, test::WorldComponents{});
     save.relationships = host.NpcRelationships().All().size();
+    // A run of the sorted edge table is one holder's edges; a holder with none has no run, so it counts as the rest.
+    const std::span<const game::Relationship> edges = host.NpcRelationships().All();
+    for (std::size_t first = 0; first < edges.size();) {
+        std::size_t last = first;
+        while (last < edges.size() && edges[last].holder == edges[first].holder) {
+            ++last;
+        }
+        const std::size_t held = last - first;
+        if (held < game::RELATIONSHIP_LENGTH) {
+            ++save.holdersSome;
+        }
+        else if (held == game::RELATIONSHIP_LENGTH) {
+            ++save.holdersAtLimit;
+        }
+        else {
+            ++save.holdersOverLimit;
+        }
+        first = last;
+    }
     save.journeys = host.NpcTravel().Journeys().size();
     save.domain = Written([&](core::Writer& writer) { core::SaveDomainDelta(writer, before, now, test::WorldComponents{}); });
     save.order = Written([&](core::Writer& writer) { core::SaveDomainOrder(writer, before, now, test::WorldComponents{}); });
@@ -457,6 +481,7 @@ LongSave MeasureLongSave(const game::Host& host, const game::Host& base, std::sp
             journalWriter(stable, std::vector<game::JournalEntry>{ entries.begin(), entries.end() });
         }
     }
+    save.holdersNone = save.npcs - save.holdersSome - save.holdersAtLimit - save.holdersOverLimit;
     save.journals = journals.size() + sizeof(u64); // and the count of NPCs that Travel writes before them
 
     // The journeys as Travel::SaveDelta() sorts them: the base's that are gone, then the others by plan or whole.
@@ -609,6 +634,15 @@ TEST_CASE("measure the shipped world's saves over hours of play" * doctest::skip
             save.relationships,
             save.wholeSave.size(),
             wholeOnDisk
+        );
+        PN_LOG_INFO(
+            "  holders by edges: none {}, 1 to {} {}, exactly {} {}, more {}",
+            save.holdersNone,
+            game::RELATIONSHIP_LENGTH - 1,
+            save.holdersSome,
+            game::RELATIONSHIP_LENGTH,
+            save.holdersAtLimit,
+            save.holdersOverLimit
         );
     }
     std::filesystem::remove(path);
