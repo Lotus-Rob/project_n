@@ -1,6 +1,6 @@
 # Input latency: the snapshot picked after the GPU wait, an adaptive display delay, a probe of many presses
 
-Status: approved design, not yet planned.
+Status: approved by the user (2026-11-19), not yet planned.
 
 ## Intent
 
@@ -95,13 +95,28 @@ CPU isn't recorded, so no fixed D can be justified for slower machines.
    logs its latency as today. `measure` reports their median and spread, and the run's D, in its table. Builder's call
    recorded here: the follow segment's smoothness numbers become stop-start, so they aren't comparable with runs before
    this branch; the spec's Outcome says so.
-6. **Docs.** 0002 §6 revised: D adapts at run time (its rule, floor, ceiling and why), with a line in the Revised row;
+6. **Synthetic tests (the user, 2026-11-19: "ensure its tested synthetically").** Beside the unit cases, a doctest
+   timeline harness with a fake clock and no window or GPU drives the real `core::Handover`, `core::Display`,
+   `core::PresentFrame` and the adaptive delay through a synthetic schedule: ticks every `TICK_NS` with a chosen publish
+   lateness each, frames at a chosen period with a chosen acquire wait, and presses that move a followed point from the
+   next tick on (as `Host::Walk` does). It checks, over small representative sets of frame periods (60, 165 Hz,
+   unpaced), acquire waits and press phases, never sweeps:
+   - latency: a press's first frame showing movement comes no later than the wait for its tick plus D plus one frame
+     period after it; with the old order (snapshot picked before the acquire) the same schedule loses up to a frame,
+     so the case fails on today's code;
+   - smoothness: the drawn render time (the drawn snapshot's tick less one plus alpha) never goes back, and never holds
+     or jumps across an adoption, also while D moves;
+   - the delay: steady lateness brings D to its percentile plus margin; a lateness spike raises it with no late adoption
+     once risen; it falls slowly afterwards; floor and ceiling hold;
+   - the probe: a run of synthetic presses gives the median and spread `measure` reports.
+7. **Docs.** 0002 §6 revised: D adapts at run time (its rule, floor, ceiling and why), with a line in the Revised row;
    src/AGENTS.md's `--camera-path` description and tools/AGENTS.md's `measure` lines updated.
 
 ## Done when
 
 - The new tests pass (frame order; the adaptive delay with small representative cases: steady lateness, a late spike,
-  slow fall, floor and ceiling, continuity of alpha across adoption while D moves); `check` passes.
+  slow fall, floor and ceiling, continuity of alpha across adoption while D moves; the synthetic timeline harness of
+  Design 6, whose latency case fails before the reorder); `check` passes.
 - A `measure --runs world` on the dev machine reports 8 latencies with median and spread, and D, against 31.1 ms today,
   with 0 late adoptions; the numbers go in this spec's Outcome.
 
