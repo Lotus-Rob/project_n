@@ -137,12 +137,12 @@ public:
     /// differs from its base as no game could (core::LoadDomainDelta(), core::LoadDomainOrder() or Travel::LoadDelta()
     /// refusing it, or a world-ID counter behind the base's, each logged), don't end where the state does, hold a
     /// flash or a seal that starts after `simulationTick`, a world clock outside the month after the month steps run (its
-    /// end included) or past the calendar's end (LAST_MONTH's first tick), relationships naming an NPC in neither domain,
-    /// a place kept on the map that isn't a finite point or lies in its portal's step area, a world paused or keeping a
-    /// place on the map where it can't have shown the map (a dev scene's scratch world, or any in a game without the map),
-    /// travel that Travel::LoadDelta() refuses (any at all in a scratch world or a game without the map), or a player's route
-    /// that isn't a journey of the player alone with one tile route leg by core::WALKING of a step at least that LegSound()
-    /// accepts, on the world map with its clock no further than journeys' ticks reach.
+    /// end included) or past the calendar's end (LAST_MONTH's first tick), relationships naming an NPC in neither domain or
+    /// last met after their world's calendar, a place kept on the map that isn't a finite point or lies in its portal's step
+    /// area, a world paused or keeping a place on the map where it can't have shown the map (a dev scene's scratch world, or
+    /// any in a game without the map), travel that Travel::LoadDelta() refuses (any at all in a scratch world or a game without
+    /// the map), or a player's route that isn't a journey of the player alone with one tile route leg by core::WALKING of a
+    /// step at least that LegSound() accepts, on the world map with its clock no further than journeys' ticks reach.
     [[nodiscard]] bool Load(core::Reader& archive, u64 simulationTick) override;
 
     /// A hash of everything Save() writes but the game's world while a dev scene runs, set aside where nothing changes it:
