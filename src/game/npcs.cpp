@@ -165,9 +165,15 @@ void Relationships::Merge(std::span<const std::pair<core::StableId, core::Stable
     std::swap(m_edges, m_merged);
 }
 
+bool IsMet(const core::State& state, core::StableId npc) {
+    const std::optional<core::DomainIndex> domain = state.DomainOf(npc);
+    return domain && state[*domain].Entities().all_of<Met>(state[*domain].Find(npc));
+}
+
 void Relationships::Trim(const core::State& state, RelationshipLimits limits) {
+    PN_ASSERT(limits.keptOnceMet >= limits.kept, "a met NPC keeps fewer relationships than one never met");
     m_merged.clear();
-    // Best first: met latest, then the stronger tie, then the lower ID.
+    /// Whether `lhs` is kept before `rhs`: met latest, then the stronger tie, then the lower ID.
     const auto better = [](const Relationship& lhs, const Relationship& rhs) {
         return std::tie(rhs.lastMet, rhs.opinion, lhs.subject) < std::tie(lhs.lastMet, lhs.opinion, rhs.subject);
     };
@@ -180,9 +186,7 @@ void Relationships::Trim(const core::State& state, RelationshipLimits limits) {
             m_merged.insert(m_merged.end(), first, last);
         }
         else {
-            const std::optional<core::DomainIndex> domain = state.DomainOf(first->holder);
-            const bool met = domain && state[*domain].Entities().all_of<Met>(state[*domain].Find(first->holder));
-            const std::size_t keep = std::min(length, met ? limits.keptOnceMet : limits.kept);
+            const std::size_t keep = std::min(length, IsMet(state, first->holder) ? limits.keptOnceMet : limits.kept);
             const auto out = m_merged.size();
             m_merged.insert(m_merged.end(), first, last);
             const auto begin = m_merged.begin() + static_cast<std::ptrdiff_t>(out);

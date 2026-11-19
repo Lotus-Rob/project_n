@@ -106,6 +106,9 @@ struct Needs {
 /// A tag: the player has met this NPC, so it never folds back into a group.
 struct Met {};
 
+/// Whether the player has met `npc` (it has `Met`), in whichever domain it is in; false for an NPC in neither.
+[[nodiscard]] bool IsMet(const core::State& state, core::StableId npc);
+
 /// An aggregate: people in one cell nobody has met, kept as a count until the player comes near.
 struct Group {
     /// The map cell they live in.
@@ -160,16 +163,17 @@ struct Relationship {
     }
 };
 
-/// How many relationships an NPC keeps, the same as its travel journal's (`JOURNAL_LENGTH`).
+/// How many relationships an NPC keeps: chosen to match its travel journal's length (`JOURNAL_LENGTH`), though each
+/// limit changes on its own.
 inline constexpr std::size_t RELATIONSHIP_LENGTH = 10;
-/// How many it keeps once it has `Met` the player (`MET_JOURNAL_LENGTH`).
+/// How many it keeps once it has `Met` the player, chosen to match `MET_JOURNAL_LENGTH`.
 inline constexpr std::size_t MET_RELATIONSHIP_LENGTH = 50;
 
 /// How many relationships Relationships::Trim() keeps per holder.
 struct RelationshipLimits {
     /// For an NPC without `Met`.
     std::size_t kept = RELATIONSHIP_LENGTH;
-    /// For an NPC with `Met`.
+    /// For an NPC with `Met`; at least `kept`, which Relationships::Trim() relies on to skip looking a holder up.
     std::size_t keptOnceMet = MET_RELATIONSHIP_LENGTH;
 };
 
