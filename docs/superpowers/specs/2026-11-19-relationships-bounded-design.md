@@ -119,9 +119,9 @@ beside them.
 | **on disk (zstd)** | **1.75 MB** | **4.00 MB** | **4.08 MB** | **4.12 MB** | **4.25 MB** | 64.8 MB |
 | a whole (non-delta) save, raw | 15.2 MB | 25.2 MB | 25.3 MB | 25.3 MB | 25.5 MB | 763 MB |
 | a whole save, on disk | 2.28 MB | 4.58 MB | 4.64 MB | 4.70 MB | 4.84 MB | 65.2 MB |
-| save: serialise + write | 37.5 + 15.6 ms | 50.4 + 30.7 ms | 49.4 + 30.6 ms | 50.1 + 30.2 ms | 49.8 + 30.5 ms | 688 + 1,078 ms |
-| load (regeneration included) | 56.0 ms | 65.0 ms | 60.8 ms | 60.4 ms | 65.2 ms | 1,369 ms |
-| month step, mean over the stretch since the last checkpoint | 3.8 ms | 5.9 ms | 6.2 ms | 6.2 ms | 6.2 ms | 65.6 ms |
+| save: serialise + write | 38.7 + 15.7 ms | 49.9 + 30.8 ms | 49.1 + 30.0 ms | 49.3 + 30.2 ms | 49.7 + 30.2 ms | 688 + 1,078 ms |
+| load (regeneration included) | 56.7 ms | 67.9 ms | 61.7 ms | 61.2 ms | 65.2 ms | 1,369 ms |
+| month step, mean over the stretch since the last checkpoint | 3.7 ms | 5.9 ms | 6.0 ms | 6.0 ms | 6.0 ms | 65.6 ms |
 
 Parts of the raw save (bytes):
 
@@ -146,24 +146,38 @@ What is behind them:
 | journeys under way (base's gone: 5,146) | 6,627 | 7,086 | 7,065 | 7,044 | 7,231 |
 | journal entries | 102,465 | 486,719 | 486,820 | 486,820 | 486,820 |
 | relationships | 172,474 | 373,988 | 373,990 | 373,990 | 373,990 |
+| holders: none, 1 to 9, exactly 10 | 4,268, 45,178, 554 | 3,680, 11,311, 35,009 | 3,680, 11,311, 35,009 | 3,680, 11,311, 35,009 | 3,680, 11,311, 35,009 |
 
 What it shows:
 
-1. **The table is bounded.** From 10 h on it holds 373,990 relationships (10.47 MB raw), under the 500,000 the limits allow
-   (nobody is met) and the 14,000,008 bytes expected. It is 59% of the raw save, not 99%. At 250 h the raw save is 17.7 MB
-   against 755 MB, 4.25 MB on disk against 64.8 MB, 6.2 ms a month step against 65.6 ms, 80 ms to
-   save against 1.8 s, and a 65 ms load against 1,369 ms. `MAX_SAVE_BYTES` is no longer in reach.
-2. **The month step and the save are flat.** The step went 3.8, 5.9, 6.2, 6.2, 6.2 ms and the save's size 17.69, 17.69,
-   17.69, 17.70 MB from 10 h to 250 h: the only growth is the journeys' plan (about 6 KB) and noise.
-3. **Months NPCs took to fill.** The checkpoints only bracket it: 172,474 relationships at 40 months, 373,988 at 400, and
-   373,990 for every checkpoint after, so the table was full somewhere between 1 h and 10 h. From the 40-month count,
-   which is before any NPC reaches its limit, the rate is 4,312 new edges a month, 0.086 per NPC; at that rate a limit of
-   10 is reached in about 116 months (about 3 h). The spec's 0.07 a month gives about 143 months (about 4 h). I used the
-   rate computed from the checkpoint, not the spec's, and the two agree with "3 to 4 hours". The checkpoints can't show
-   the month itself.
-4. **The delta still pays a little.** Against a whole save it saves 42% raw and 23% on disk at 1 h (1.75 against
-   2.28 MB), 31% and 12% at 250 h (4.25 against 4.84 MB). The NPCs' part (2.2 MB) and the journals (4.67 MB) are now most
-   of the rest.
+1. **The table is bounded.** From 10 h on it holds 373,990 relationships (10.47 MB raw), 75% of the 14,000,008 bytes the
+   limits allow (50,000 NPCs at 10 edges of 28 bytes) and 59% of the raw save, not 99%. At 250 h the raw save is 17.7 MB
+   against 755 MB, 4.25 MB on disk against 64.8 MB, 6.0 ms a month step against 65.6 ms, 80 ms to save against 1.8 s,
+   and a 65 ms load against 1,369 ms. `MAX_SAVE_BYTES` is no longer in reach.
+2. **The month step and the save are flat.** The step went 3.7, 5.9, 6.0, 6.0, 6.0 ms and the save's size 17.69, 17.69,
+   17.69, 17.70 MB from 10 h to 250 h. The journeys' plan (283,448, 282,608, 281,768, 289,248 bytes) moves up and down
+   with the month: noise.
+3. **What the settled count is made of.** The case now also logs the NPCs by how many relationships they hold. From 10 h
+   on, 35,009 NPCs hold exactly 10, 11,311 hold 1 to 9 and 3,680 hold none (nobody holds more; nobody is met, so 10 is
+   the limit for all). The count (373,990 = 35,009 x 10 + 23,900 in the middle group) did not change from 50 h to 250 h,
+   nor did the three groups. So the table is not full: 30% of NPCs sit below the limit or at none, and they stay there,
+   which an NPC that was still being met would not. At 1 h the groups were 4,268, 45,178 and 554.
+   The code points to why, but I did not measure it. `LiveMonth` draws a Socialise partner only from the NPCs in the
+   same cell, and the edge is made for the one drawn (`met.emplace_back(partner, self)` makes the partner the holder), so
+   an NPC is met only by those in its own cell. An NPC alone in its cell can't be drawn and meets nobody (its own
+   Socialise turns into Rest), so it holds none; one in a small cell can hold at most as many subjects as the cell has
+   other NPCs, so below 10 when it has fewer. The 3,680 would be the lone ones and the 11,311 those in small cells. I did
+   not log cell sizes, so this is a reading of the code that the numbers fit, not a result.
+4. **Goal 4's "about 3 to 4 hours" is neither confirmed nor refuted.** The count stopped growing somewhere between 1 h
+   (40 months, 172,474) and 10 h (400 months, 373,988); the checkpoints can't say which month. The fill time of the NPCs
+   that do reach 10 is not measured either, and the 0.07 new edges per NPC a month the spec used was not checked.
+5. **The delta still pays a little.** Against a whole save it saves 42% raw and 23% on disk at 1 h (1.75 against
+   2.28 MB), 31% and 12% at 250 h (4.25 against 4.84 MB). The NPCs' part (2.2 MB) and the journals (4.67 MB) are now
+   most of the rest.
+
+The times are from a second run of the case, after "test(game): log holders by edge count in the long-play save
+measurement" added the holders' counts; every size matched the first run's byte for byte, and the times differed by a few
+percent.
 
 ### Rulings
 
