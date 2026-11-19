@@ -1,10 +1,14 @@
 #include "core/archive.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/delta.hpp"
 #include "core/game_data.hpp"
 #include "core/jobs.hpp"
 #include "core/journey.hpp"
+#include "core/log.hpp"
 #include "core/paths.hpp"
 #include "core/rect.hpp"
+#include "core/save_file.hpp"
+#include "core/state.hpp"
 #include "core/view_limits.hpp"
 #include "core/world_map.hpp"
 #include "game/host.hpp"
@@ -13,6 +17,7 @@
 #include "game/scenes/world.hpp"
 #include "game/travel.hpp"
 #include "support/manifest.hpp"
+#include "support/saves.hpp"
 #include "support/world.hpp"
 
 #include <doctest/doctest.h>
@@ -313,6 +318,301 @@ TEST_CASE("the shipped world's journeys rebuild exactly") {
     }
     CHECK(planless == 0);
     CHECK(different == 0);
+}
+
+/// How many bytes `write` puts in a Writer.
+template<typename Write>
+std::size_t Written(const Write& write) {
+    std::vector<std::byte> bytes;
+    core::Writer writer{ bytes };
+    write(writer);
+    return bytes.size();
+}
+
+/// What a save of the shipped world holds, part by part, in bytes.
+struct SaveParts {
+    std::size_t total = 0;
+    std::size_t domain = 0;        // the NPCs' changed fields, gone and created
+    std::size_t order = 0;         // the storage-order record
+    std::size_t relationships = 0; // whole
+    std::size_t journeys = 0;      // the travel as its difference from the new game's, journals whole
+};
+
+/// The sizes of the parts of `host`'s save, measured by writing each as the save does against `base`, a new game's host.
+SaveParts PartsOf(const game::Host& host, const game::Host& base, std::size_t total) {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    core::Paths paths{ map };
+    return {
+        .total = total,
+        .domain = Written([&](core::Writer& writer) {
+            core::SaveDomainDelta(writer, base.State()[game::WORLD], host.State()[game::WORLD], test::WorldComponents{});
+        }),
+        .order = Written([&](core::Writer& writer) {
+            core::SaveDomainOrder(writer, base.State()[game::WORLD], host.State()[game::WORLD], test::WorldComponents{});
+        }),
+        .relationships = Written([&](core::Writer& writer) { host.NpcRelationships().Save(writer); }),
+        .journeys =
+            Written([&](core::Writer& writer) { host.NpcTravel().SaveDelta(writer, base.NpcTravel(), map.get(), &paths); }),
+    };
+}
+
+// Not part of a run: `--test-case='measure the shipped world's saves' --no-skip` (tests/AGENTS.md) prints how big the
+// shipped world's save is, raw and on disk, and how long it takes to save and load, at a new game and after one, two and
+// three month steps. Release builds only say anything about the times.
+TEST_CASE("measure the shipped world's saves" * doctest::skip()) {
+    using Clock = std::chrono::steady_clock;
+    constexpr u32 STEPS = 3;
+    const auto milliseconds = [](Clock::duration span) { return std::chrono::duration<f64, std::milli>(span).count(); };
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "project_n_measure_save.bin";
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    const game::Host base(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    core::Jobs jobs{ 2 };
+    PN_LOG_INFO("step  raw B  disk B  save ms  write ms  load ms  domain B  order B  relationships B  journeys B");
+    for (u32 step = 0; step <= STEPS; ++step) {
+        if (step > 0) {
+            host.AdvanceCalendar({ .wall = step, .simulation = step, .state = step }, jobs, {});
+        }
+        std::vector<std::byte> bytes;
+        const Clock::time_point serialiseStart = Clock::now();
+        core::Writer writer{ bytes };
+        host.Save(writer);
+        const Clock::time_point serialised = Clock::now();
+        REQUIRE(core::WriteSaveFile(path, bytes).has_value());
+        const Clock::time_point written = Clock::now();
+        const std::uintmax_t onDisk = std::filesystem::file_size(path);
+
+        game::Host loaded(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+        const Clock::time_point loadStart = Clock::now();
+        const auto read = core::ReadSaveFile(path);
+        REQUIRE(read.has_value());
+        core::Reader reader{ *read };
+        REQUIRE(loaded.Load(reader, 1));
+        loaded.EnterScene();
+        const Clock::time_point loadEnd = Clock::now();
+        CHECK(loaded.StateHash() == host.StateHash());
+
+        const SaveParts parts = PartsOf(host, base, bytes.size());
+        PN_LOG_INFO(
+            "{}  {}  {}  {:.1f}  {:.1f}  {:.1f}  {}  {}  {}  {}",
+            step,
+            parts.total,
+            onDisk,
+            milliseconds(serialised - serialiseStart),
+            milliseconds(written - serialised),
+            milliseconds(loadEnd - loadStart),
+            parts.domain,
+            parts.order,
+            parts.relationships,
+            parts.journeys
+        );
+    }
+    std::filesystem::remove(path);
+}
+
+/// What the shipped world's save holds after months of play, as the sizes of its parts and what is behind them.
+struct LongSave {
+    // Counts
+    std::size_t npcs = 0;
+    core::DeltaCounts delta;
+    std::size_t journeys = 0;
+    std::size_t journalEntries = 0;
+    std::size_t relationships = 0;
+    std::size_t goneJourneys = 0;
+    std::size_t plannedJourneys = 0;
+    std::size_t wholeJourneys = 0;
+    // Bytes, raw
+    std::size_t total = 0;
+    std::size_t domain = 0;
+    std::size_t order = 0;
+    std::size_t journeyGone = 0;
+    std::size_t journeyPlans = 0;
+    std::size_t journeyWhole = 0;
+    std::size_t journals = 0;
+    std::size_t relationshipBytes = 0;
+    std::vector<std::byte> wholeSave; // the same save with the domain, relationships and travel written whole
+};
+
+/// Measures `host`'s save against `base`, a new game's host, by writing each part as the save does.
+LongSave MeasureLongSave(const game::Host& host, const game::Host& base, std::span<const std::byte> saved) {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    core::Paths paths{ map };
+    const core::Domain& now = host.State()[game::WORLD];
+    const core::Domain& before = base.State()[game::WORLD];
+    LongSave save;
+    save.total = saved.size();
+    save.delta = core::CountDelta(before, now, test::WorldComponents{});
+    save.relationships = host.NpcRelationships().All().size();
+    save.journeys = host.NpcTravel().Journeys().size();
+    save.domain = Written([&](core::Writer& writer) { core::SaveDomainDelta(writer, before, now, test::WorldComponents{}); });
+    save.order = Written([&](core::Writer& writer) { core::SaveDomainOrder(writer, before, now, test::WorldComponents{}); });
+    save.relationshipBytes = Written([&](core::Writer& writer) { host.NpcRelationships().Save(writer); });
+
+    std::vector<std::byte> journals; // each NPC's id and entries, as Travel writes its journals
+    core::Writer journalWriter{ journals };
+    for (const auto [entity, stable, person] : now.Entities().view<const core::StableId, const game::Npc>().each()) {
+        const std::span<const game::JournalEntry> entries = host.NpcTravel().JournalOf(stable);
+        ++save.npcs;
+        save.journalEntries += entries.size();
+        if (!entries.empty()) {
+            journalWriter(stable, std::vector<game::JournalEntry>{ entries.begin(), entries.end() });
+        }
+    }
+    save.journals = journals.size() + sizeof(u64); // and the count of NPCs that Travel writes before them
+
+    // The journeys as Travel::SaveDelta() sorts them: the base's that are gone, then the others by plan or whole.
+    const auto bytesOf = [](const core::Journey& journey) {
+        std::vector<std::byte> bytes;
+        core::Writer{ bytes }(journey);
+        return bytes;
+    };
+    std::unordered_map<u64, std::vector<std::byte>> current;
+    for (const core::Journey& journey : host.NpcTravel().Journeys()) {
+        current.emplace(std::to_underlying(journey.members.front()), bytesOf(journey));
+    }
+    std::unordered_set<u64> kept;
+    std::vector<u64> gone;
+    u64 place = 0;
+    for (const core::Journey& journey : base.NpcTravel().Journeys()) {
+        const auto found = current.find(std::to_underlying(journey.members.front()));
+        if (found != current.end() && found->second == bytesOf(journey)) {
+            kept.insert(std::to_underlying(journey.members.front()));
+        }
+        else {
+            gone.push_back(place);
+        }
+        ++place;
+    }
+    std::vector<core::VisitPlan> plans;
+    std::vector<core::Journey> whole;
+    for (const core::Journey& journey : host.NpcTravel().Journeys()) {
+        if (kept.contains(std::to_underlying(journey.members.front()))) {
+            continue;
+        }
+        const std::optional<core::VisitPlan> plan = core::PlanOf(journey);
+        if (plan && bytesOf(core::Rebuild(*map, paths, *plan)) == bytesOf(journey)) {
+            plans.push_back(*plan);
+        }
+        else {
+            whole.push_back(journey);
+        }
+    }
+    save.goneJourneys = gone.size();
+    save.plannedJourneys = plans.size();
+    save.wholeJourneys = whole.size();
+    save.journeyGone = Written([&](core::Writer& writer) { writer(gone); });
+    save.journeyPlans = Written([&](core::Writer& writer) { writer(plans); });
+    save.journeyWhole = Written([&](core::Writer& writer) { writer(whole); });
+
+    // The same save with nothing as a difference: the domain whole, every journey whole, then as many of the real save's
+    // last bytes as its header, clock and scene take. Only their size is matched: what stands in is not them.
+    const std::size_t rest = save.total - save.domain - save.order - save.journeyGone - save.journeyPlans - save.journeyWhole -
+                             save.journals - save.relationshipBytes;
+    core::Writer wholeWriter{ save.wholeSave };
+    core::SaveDomain(wholeWriter, now, test::WorldComponents{});
+    host.NpcRelationships().Save(wholeWriter);
+    host.NpcTravel().Save(wholeWriter);
+    save.wholeSave.insert(save.wholeSave.end(), saved.last(rest).begin(), saved.last(rest).end());
+    return save;
+}
+
+// Not part of a run: `--test-case='measure the shipped world's saves over hours of play' --no-skip` (tests/AGENTS.md)
+// runs the shipped world on month by month, as M does (AdvanceCalendar() on the usual workers; each call moves the clock
+// to the next month's first tick, which is the state the clock reaches by playing the month), and logs the save's parts, the
+// counts behind them and the times at 1, 10, 50, 100 and 250 hours of unpaused play on the world map (a month is 90 s at 60
+// ticks a second). Release builds only say anything about the times. It runs for a long while: watch its log.
+TEST_CASE("measure the shipped world's saves over hours of play" * doctest::skip()) {
+    using Clock = std::chrono::steady_clock;
+    struct Checkpoint {
+        u32 hours;
+        u32 months;
+    };
+    constexpr std::array<Checkpoint, 5> CHECKPOINTS{ {
+        { .hours = 1, .months = 40 },
+        { .hours = 10, .months = 400 },
+        { .hours = 50, .months = 2'000 },
+        { .hours = 100, .months = 4'000 },
+        { .hours = 250, .months = 10'000 },
+    } };
+    const auto milliseconds = [](Clock::duration span) { return std::chrono::duration<f64, std::milli>(span).count(); };
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "project_n_measure_hours.bin";
+    const std::filesystem::path wholePath = std::filesystem::temp_directory_path() / "project_n_measure_hours_whole.bin";
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    const game::Host base(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    core::Jobs jobs;
+    u32 month = 0;
+    for (const Checkpoint& checkpoint : CHECKPOINTS) {
+        const Clock::time_point stepsStart = Clock::now();
+        const u32 stretch = checkpoint.months - month;
+        for (; month < checkpoint.months; ++month) {
+            host.AdvanceCalendar({ .wall = month + 1, .simulation = month + 1, .state = month + 1 }, jobs, {});
+        }
+        const f64 stepMs = milliseconds(Clock::now() - stepsStart) / stretch;
+
+        std::vector<std::byte> bytes;
+        const Clock::time_point serialiseStart = Clock::now();
+        core::Writer writer{ bytes };
+        host.Save(writer);
+        const Clock::time_point serialised = Clock::now();
+        REQUIRE(core::WriteSaveFile(path, bytes).has_value());
+        const Clock::time_point written = Clock::now();
+        const std::uintmax_t onDisk = std::filesystem::file_size(path);
+
+        game::Host loaded(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+        const Clock::time_point loadStart = Clock::now();
+        const auto read = core::ReadSaveFile(path);
+        REQUIRE(read.has_value());
+        core::Reader reader{ *read };
+        REQUIRE(loaded.Load(reader, 1));
+        loaded.EnterScene();
+        const f64 loadMs = milliseconds(Clock::now() - loadStart);
+        CHECK(loaded.StateHash() == host.StateHash());
+        CHECK(loaded.WorldHash() == host.WorldHash());
+
+        const LongSave save = MeasureLongSave(host, base, bytes);
+        REQUIRE(core::WriteSaveFile(wholePath, save.wholeSave).has_value());
+        const std::uintmax_t wholeOnDisk = std::filesystem::file_size(wholePath);
+        PN_LOG_INFO(
+            "{} h = {} months: raw {} B, on disk {} B, save {:.1f} + {:.1f} ms, load {:.1f} ms, month step {:.1f} ms",
+            checkpoint.hours,
+            checkpoint.months,
+            save.total,
+            onDisk,
+            milliseconds(serialised - serialiseStart),
+            milliseconds(written - serialised),
+            loadMs,
+            stepMs
+        );
+        PN_LOG_INFO(
+            "  bytes: domain {}, order {}, journeys gone {} planned {} whole {}, journals {}, relationships {}, rest {}",
+            save.domain,
+            save.order,
+            save.journeyGone,
+            save.journeyPlans,
+            save.journeyWhole,
+            save.journals,
+            save.relationshipBytes,
+            save.total - save.domain - save.order - save.journeyGone - save.journeyPlans - save.journeyWhole - save.journals -
+                save.relationshipBytes
+        );
+        PN_LOG_INFO(
+            "  counts: npcs {}, changed {}, created {}, gone {}, journeys {} (base gone {}, planned {}, whole {}), journal "
+            "entries {}, relationships {}; whole save raw {} B, on disk {} B",
+            save.npcs,
+            save.delta.changed,
+            save.delta.created,
+            save.delta.removed,
+            save.journeys,
+            save.goneJourneys,
+            save.plannedJourneys,
+            save.wholeJourneys,
+            save.journalEntries,
+            save.relationships,
+            save.wholeSave.size(),
+            wholeOnDisk
+        );
+    }
+    std::filesystem::remove(path);
+    std::filesystem::remove(wholePath);
 }
 
 } // namespace
