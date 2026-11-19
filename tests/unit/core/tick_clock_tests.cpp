@@ -6,7 +6,7 @@
 namespace {
 
 constexpr u64 START_NS = 5 * core::NS_PER_SECOND;
-constexpr u64 DELAY_NS = core::DEFAULT_DISPLAY_DELAY_NS;
+constexpr u64 DELAY_NS = core::DISPLAY_DELAY_START_NS;
 
 TEST_CASE("the schedule doesn't drift: 60 ticks take exactly one second") {
     CHECK(core::TickTime(START_NS, core::TICKS_PER_SECOND) == START_NS + core::NS_PER_SECOND);

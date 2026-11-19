@@ -25,9 +25,9 @@ inline constexpr u64 TICK_NS = NS_PER_SECOND / TICKS_PER_SECOND;
 inline constexpr u64 MAX_CATCH_UP = 3;
 /// How long ticks may run late before it counts as sustained overload.
 inline constexpr u64 OVERLOAD_NS = NS_PER_SECOND;
-/// The display delay D: how long after its scheduled time a snapshot starts to show, so tick run
-/// times can vary without judder. A provisional value, to be set from measured tick times.
-inline constexpr u64 DEFAULT_DISPLAY_DELAY_NS = 10'000'000;
+/// The display delay D (how long after its scheduled time a snapshot starts to show, so tick run
+/// times can vary without judder) before any lateness is known; DisplayDelay adapts it from there.
+inline constexpr u64 DISPLAY_DELAY_START_NS = 10'000'000;
 
 /// The scheduled time of the tick `index` ticks after `originNs`, exact to the nanosecond: no
 /// rounding error builds up however many ticks pass.

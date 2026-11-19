@@ -23,7 +23,7 @@ inline constexpr u64 FRAME_STEP_LIMIT_NS = core::NS_PER_SECOND / 10;
 
 /// How far past the window's view the logic publishes, on each side, as a fraction of the view's size on that axis
 /// (CullArea()). A snapshot culled to a view is drawn while the camera moves on, until a fresh view has culled a newer
-/// one: about 43 ms at most at 60 Hz (a publish interval for the view to reach the logic, core::DEFAULT_DISPLAY_DELAY_NS,
+/// one: about 43 ms at most at 60 Hz (a publish interval for the view to reach the logic, core::DISPLAY_DELAY_START_NS,
 /// and another interval while that snapshot shows), or one frame when frames run longer, FRAME_STEP_LIMIT_NS at most.
 /// Zoom runs at most ZOOM_NOTCHES_PER_SECOND and one notch a frame (gfx::ZoomedBy(): a notch out shows 1.15 times as
 /// much world), so 1.3 notches in 43 ms, or one in a long frame, grow each side by at most 0.10 of the view; a pan at
