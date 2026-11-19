@@ -12,6 +12,7 @@
 #include "core/tick_clock.hpp"
 #include "core/types.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <mutex>
@@ -24,20 +25,23 @@ namespace core {
 /// How far behind the render clock a cosmetic event may fall before it is dropped, not played.
 inline constexpr f64 STALE_EVENT_TICKS = 30.0;
 
-/// The channels between the threads. State (logic to main) is newest-wins: a snapshot may be
-/// skipped, since each one is complete. Events (logic to main) and input (main to logic)
-/// accumulate: none is lost or delivered twice, and each arrives in the order sent. Held input
-/// (main to logic) is newest-wins too: a value the logic reads as often as it likes. So is the view
-/// (main to logic), of which there is none until the first is sent.
+/// The channels between the threads. State (logic to main) keeps the two newest finished snapshots
+/// waiting, in the order published: a third drops the oldest, which is harmless, since each one is
+/// complete. Events (logic to main) and input (main to logic) accumulate: none is lost or delivered
+/// twice, and each arrives in the order sent. Held input (main to logic) is newest-wins: a value the
+/// logic reads as often as it likes. So is the view (main to logic), of which there is none until
+/// the first is sent.
 ///
-/// The state channel rotates four `State` buffers: one the logic writes, one finished and waiting,
-/// and up to two the main thread holds (one taken but not yet due, one drawn). Buffers and
+/// The state channel rotates five `State` buffers: one the logic writes, up to two finished and
+/// waiting, and up to two the main thread holds (one taken but not yet due, one drawn). Buffers and
 /// vectors keep their capacity, so the steady state allocates nothing.
 template<typename State, typename Event, typename Input, typename Held, typename View>
 class Handover {
 public:
+    /// The most finished snapshots waiting for the main thread to take them.
+    static constexpr std::size_t WAITING = 2;
     /// The number of `State` buffers.
-    static constexpr std::size_t BUFFERS = 4;
+    static constexpr std::size_t BUFFERS = 5;
 
     Handover() {
         for (std::size_t i = 1; i < BUFFERS; ++i) {
@@ -57,33 +61,36 @@ public:
         return *m_writing;
     }
 
-    /// Logic thread: makes Writing() the newest snapshot, replacing one the main thread hasn't
-    /// taken, and appends `events` to the event channel, leaving `events` empty. While the main thread hasn't taken
-    /// the earlier events, drops the cosmetic ones of the newest epoch PlayDue() would drop anyway: more than
-    /// STALE_EVENT_TICKS + 1 behind the newest, since the render clock reaches at least the newest tick minus one.
+    /// Logic thread: makes Writing() the newest waiting snapshot, first dropping the oldest when WAITING snapshots
+    /// already wait, and appends `events` to the event channel, leaving `events` empty. While the main thread hasn't
+    /// taken the earlier events, drops the cosmetic ones of the newest epoch PlayDue() would drop anyway: more than
+    /// STALE_EVENT_TICKS + MAX_CATCH_UP + 1 behind the newest, since the render clock reaches at least the older
+    /// waiting snapshot's tick minus one before it reaches them, and that snapshot is at most a burst of MAX_CATCH_UP
+    /// ticks behind the newest.
     void Publish(std::vector<Event>& events) PN_REQUIRES(!m_mutex) {
         PN_PROFILE_ZONE();
         const std::scoped_lock lock{ m_mutex };
-        if (m_ready != nullptr) {
-            m_free[m_freeCount++] = m_ready;
+        if (m_waitingCount == WAITING) {
+            m_free[m_freeCount++] = PopWaiting();
         }
-        m_ready = std::exchange(m_writing, PopFree());
+        m_waiting[m_waitingCount++] = std::exchange(m_writing, PopFree());
         if (m_events.empty()) {
             std::swap(m_events, events);
         }
         else {
             // The main thread hasn't drained the last ones: the rare path that copies under the lock. Cosmetic events
-            // PlayDue() would drop are dropped here, so a stalled main thread doesn't grow the queue: the render
-            // clock (RenderTick()) reaches at least the newest tick minus one, so those more than STALE_EVENT_TICKS + 1
-            // behind it can't play. An older epoch's are kept: its snapshot may still be drawn, and nothing adds to
-            // them once a newer epoch has begun. Other events still accumulate; their coalescing arrives
-            // with their kinds.
+            // PlayDue() would drop are dropped here, so a stalled main thread doesn't grow the queue. The snapshots it
+            // holds are older than these events, so the render clock (RenderTick()) first reaches them by adopting a
+            // waiting snapshot: at worst the older of two, a burst of up to MAX_CATCH_UP ticks behind the newest,
+            // drawn from its tick minus one. So those more than STALE_EVENT_TICKS + MAX_CATCH_UP + 1 behind the
+            // newest can't play. An older epoch's are kept: its snapshot may still be drawn, and nothing adds to them
+            // once a newer epoch has begun. Other events still accumulate; their coalescing arrives with their kinds.
             m_events.insert(m_events.end(), events.begin(), events.end());
             events.clear();
             const u64 epoch = m_events.back().epoch;
             const auto tick = static_cast<f64>(m_events.back().tick);
             std::erase_if(m_events, [epoch, tick](const Event& event) {
-                return event.cosmetic && event.epoch == epoch && tick - static_cast<f64>(event.tick) > STALE_EVENT_TICKS + 1.0;
+                return event.cosmetic && event.epoch == epoch && tick - static_cast<f64>(event.tick) > STALE_MARGIN_TICKS;
             });
         }
     }
@@ -127,12 +134,12 @@ public:
         return m_view;
     }
 
-    /// Main thread: the newest snapshot not taken yet, or null. The main thread owns it until it
-    /// gives it back with ReturnState(), and holds at most two at once.
+    /// Main thread: the oldest waiting snapshot, or null when none waits. The main thread owns it
+    /// until it gives it back with ReturnState(), and holds at most two at once.
     [[nodiscard]] State* TakeState() PN_REQUIRES(!m_mutex) {
         PN_PROFILE_ZONE();
         const std::scoped_lock lock{ m_mutex };
-        return std::exchange(m_ready, nullptr);
+        return m_waitingCount == 0 ? nullptr : PopWaiting();
     }
 
     /// Main thread: gives back a snapshot from TakeState() that it no longer draws.
@@ -152,17 +159,28 @@ public:
     }
 
 private:
+    // How far behind the newest event a cosmetic one of its epoch may be and still play.
+    static constexpr f64 STALE_MARGIN_TICKS = STALE_EVENT_TICKS + static_cast<f64>(MAX_CATCH_UP) + 1.0;
+
     State* PopFree() PN_REQUIRES(m_mutex) {
         PN_ASSERT(m_freeCount > 0, "the main thread holds more than two snapshots");
         return m_free[--m_freeCount];
+    }
+
+    State* PopWaiting() PN_REQUIRES(m_mutex) {
+        State* oldest = m_waiting[0];
+        std::shift_left(m_waiting.begin(), m_waiting.end(), 1);
+        --m_waitingCount;
+        return oldest;
     }
 
     mutable Mutex m_mutex;
     std::array<State, BUFFERS> m_states{};
     std::array<State*, BUFFERS> m_free PN_GUARDED_BY(m_mutex){};
     std::size_t m_freeCount PN_GUARDED_BY(m_mutex) = 0;
-    State* m_writing = m_states.data(); // the logic thread's alone
-    State* m_ready PN_GUARDED_BY(m_mutex) = nullptr;
+    State* m_writing = m_states.data();                             // the logic thread's alone
+    std::array<State*, WAITING> m_waiting PN_GUARDED_BY(m_mutex){}; // oldest first
+    std::size_t m_waitingCount PN_GUARDED_BY(m_mutex) = 0;
     std::vector<Event> m_events PN_GUARDED_BY(m_mutex);
     std::vector<Input> m_input PN_GUARDED_BY(m_mutex);
     Held m_held PN_GUARDED_BY(m_mutex){};
@@ -171,36 +189,39 @@ private:
 
 /// The main thread's side of the state channel: the snapshot it draws, and a newer one it has
 /// taken but that isn't due yet. A snapshot is adopted (drawn) only once it is due (IsDue()), so
-/// the picture moves from one snapshot into the next without judder. `State` has a
-/// `u64 scheduledNs`, the `u64 publishedNs` the logic thread published it at, and `bool advanced`, whether the
-/// simulation ran in its tick.
+/// the picture moves from one snapshot into the next without judder; of several due at once the
+/// newest is adopted and the older ones go back undrawn. `State` has a `u64 scheduledNs`, the
+/// `u64 publishedNs` the logic thread published it at, and `bool advanced`, whether the simulation
+/// ran in its tick.
 template<typename State, typename Event, typename Input, typename Held, typename View>
 class Display {
 public:
-    /// Adopts the held snapshot if it is due at `nowNs`; then, with none held, takes the newest
-    /// waiting one and adopts it too if due. Returns whether a new snapshot was adopted (to upload).
+    /// Until it holds a snapshot not due at `nowNs` or none waits: adopts the held snapshot if due,
+    /// then with none held takes the oldest waiting one. So it adopts the newest due snapshot and
+    /// holds the first that isn't due. Returns whether a new snapshot was adopted (to upload).
     bool Update(Handover<State, Event, Input, Held, View>& handover, u64 nowNs, u64 delayNs) {
         PN_PROFILE_ZONE();
-        m_takenLateness.reset();
+        m_takenCount = 0;
+        m_takenRead = 0;
         bool adopted = false;
-        if (m_held != nullptr && IsDue(m_held->scheduledNs, nowNs, delayNs)) {
-            Adopt(handover);
-            adopted = true;
-        }
-        if (m_held == nullptr) {
-            m_held = handover.TakeState();
-            if (m_held != nullptr && IsDue(m_held->scheduledNs, m_held->publishedNs, delayNs)) {
-                ++m_lateAdoptions;
-            }
-            // A frozen tick's snapshot shows what the one before it ends on, so its lateness can't be seen; and the
-            // stalls (a month, a save, a load) publish one only once they end, as late as the stall was long.
-            if (m_held != nullptr && m_held->advanced) {
-                m_takenLateness = m_held->publishedNs > m_held->scheduledNs ? m_held->publishedNs - m_held->scheduledNs : 0;
-            }
-            if (m_held != nullptr && IsDue(m_held->scheduledNs, nowNs, delayNs)) {
+        // Taking at most as many as can wait at once leaves room for their latenesses, and a logic thread that
+        // publishes meanwhile can't keep one frame taking.
+        for (std::size_t taken = 0;; ++taken) {
+            if (m_held != nullptr) {
+                if (!IsDue(m_held->scheduledNs, nowNs, delayNs)) {
+                    break;
+                }
                 Adopt(handover);
                 adopted = true;
             }
+            if (taken == WAITING) {
+                break;
+            }
+            m_held = handover.TakeState();
+            if (m_held == nullptr) {
+                break;
+            }
+            Took(*m_held, delayNs);
         }
         return adopted;
     }
@@ -215,13 +236,29 @@ public:
         return m_lateAdoptions;
     }
 
-    /// How long after its scheduled time the snapshot the last Update() took was published (0 for one published
-    /// before it), if that Update() took one whose tick advanced; reading clears it.
+    /// How long after its scheduled time a snapshot the last Update() took was published (0 for one published
+    /// before it): each call gives the next of those whose tick advanced, oldest first, once each, then none.
     [[nodiscard]] std::optional<u64> TakenLateness() {
-        return std::exchange(m_takenLateness, std::nullopt);
+        if (m_takenRead == m_takenCount) {
+            return std::nullopt;
+        }
+        return m_takenLateness[m_takenRead++];
     }
 
 private:
+    static constexpr std::size_t WAITING = Handover<State, Event, Input, Held, View>::WAITING;
+
+    void Took(const State& state, u64 delayNs) {
+        if (IsDue(state.scheduledNs, state.publishedNs, delayNs)) {
+            ++m_lateAdoptions;
+        }
+        // A frozen tick's snapshot shows what the one before it ends on, so its lateness can't be seen; and the
+        // stalls (a month, a save, a load) publish one only once they end, as late as the stall was long.
+        if (state.advanced) {
+            m_takenLateness[m_takenCount++] = state.publishedNs > state.scheduledNs ? state.publishedNs - state.scheduledNs : 0;
+        }
+    }
+
     void Adopt(Handover<State, Event, Input, Held, View>& handover) {
         if (m_drawn != nullptr) {
             handover.ReturnState(m_drawn);
@@ -232,7 +269,9 @@ private:
     State* m_drawn = nullptr;
     State* m_held = nullptr;
     u64 m_lateAdoptions = 0;
-    std::optional<u64> m_takenLateness = std::nullopt;
+    std::array<u64, WAITING> m_takenLateness{};
+    std::size_t m_takenCount = 0; // latenesses the last Update() recorded
+    std::size_t m_takenRead = 0;  // of those, the ones TakenLateness() gave
 };
 
 /// Plays, in order, the `pending` events of the drawn snapshot's `epoch` whose tick the render
