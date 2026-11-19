@@ -51,6 +51,13 @@ struct CameraSegment {
 /// start-up and the scene's first frames stay out of what it measures.
 inline constexpr u64 CAMERA_PATH_DELAY_NS = 2 * core::NS_PER_SECOND;
 
+/// How long one step of a walking segment lasts: the Move stands, then points east.
+inline constexpr f32 CAMERA_PATH_STEP_SECONDS = 0.5F;
+
+/// How long the Move stands at the start of each step of a walking segment, so each step's press starts from a standing
+/// cultivator.
+inline constexpr f32 CAMERA_PATH_STAND_SECONDS = 0.1F;
+
 /// The path's segments, in order, made for the world map: `follow` (4 s, the cultivator walking east), `pan` (4 s, 3
 /// screens on east), `zoom in and out` (4 s, in to the closest zoom halfway, then out to the farthest), `widest view`
 /// (6 s at the farthest zoom over the busiest region, game::WORLD_BUSIEST) and `labels` (4 s at zoom 0.6 there, where
@@ -88,8 +95,9 @@ private:
 /// Whether the path is over `seconds` into it, past its last segment's end: the run quits.
 [[nodiscard]] bool CameraPathOver(f32 seconds);
 
-/// Where the path's scripted Move points `seconds` into it: east through a segment that walks (CameraSegment::walks),
-/// nowhere elsewhere. The logic sees it as it sees the player's Move.
+/// Where the path's scripted Move points `seconds` into it: through a segment that walks (CameraSegment::walks), east
+/// after the first CAMERA_PATH_STAND_SECONDS of every CAMERA_PATH_STEP_SECONDS, nowhere before that or elsewhere. The
+/// logic sees it as it sees the player's Move.
 [[nodiscard]] core::Vec2 CameraPathMove(f32 seconds);
 
 } // namespace app

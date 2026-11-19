@@ -20,10 +20,17 @@ TEST_CASE("the camera path ends with a quit after its last segment") {
     CHECK_FALSE(app::CameraPathSegment(AFTER));
 }
 
-TEST_CASE("the camera path holds Move from its start through its follow segment only") {
+TEST_CASE("the camera path walks east in steps through its follow segment only") {
     constexpr f32 FOLLOW_END = 4.0F;
     constexpr f32 PANNING = 4.05F;
-    for (const f32 seconds : { 0.0F, FOLLOW_END }) {
+    // Standing for the first tenth of every half second, east for the rest.
+    for (const f32 seconds : { 0.0F, 0.05F, 0.55F, 3.55F, FOLLOW_END }) {
+        CAPTURE(seconds);
+        const core::Vec2 move = app::CameraPathMove(seconds);
+        CHECK(move.x == 0.0F);
+        CHECK(move.y == 0.0F);
+    }
+    for (const f32 seconds : { 0.1F, 0.3F, 0.6F, 3.95F }) {
         CAPTURE(seconds);
         const core::Vec2 move = app::CameraPathMove(seconds);
         CHECK(move.x == 1.0F); // east
@@ -35,6 +42,18 @@ TEST_CASE("the camera path holds Move from its start through its follow segment 
         CHECK(move.x == 0.0F);
         CHECK(move.y == 0.0F);
     }
+}
+
+TEST_CASE("the follow segment makes eight presses") {
+    constexpr i32 SAMPLES_PER_SECOND = 600;
+    i32 presses = 0;
+    bool eastBefore = false;
+    for (i32 i = 0; i <= static_cast<i32>(LAST) * SAMPLES_PER_SECOND; ++i) {
+        const bool east = app::CameraPathMove(static_cast<f32>(i) / static_cast<f32>(SAMPLES_PER_SECOND)).x > 0.0F;
+        presses += (east && !eastBefore) ? 1 : 0;
+        eastBefore = east;
+    }
+    CHECK(presses == 8);
 }
 
 TEST_CASE("the camera path's walk east from the world's start keeps clear of the world's portal") {
