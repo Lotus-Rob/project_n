@@ -76,6 +76,11 @@ std::string_view DeviceName(platform::Device device, platform::GamepadFamily fam
     return "a gamepad";
 }
 
+/// `durationNs` nanoseconds in milliseconds, for the log.
+f64 Milliseconds(u64 durationNs) {
+    return static_cast<f64>(durationNs) / static_cast<f64>(core::NS_PER_MS);
+}
+
 } // namespace
 
 DataWatch::DataWatch(std::filesystem::path folder)
@@ -318,6 +323,12 @@ i32 App::Run() {
         }
     }
     PN_LOG_INFO("shutting down; {} snapshots were published after they were due", m_display.LateAdoptions());
+    PN_LOG_INFO(
+        "display delay: {:.1f} ms at the end, {:.1f} to {:.1f} ms over the run",
+        Milliseconds(m_delay.Current()),
+        Milliseconds(m_delay.Lowest()),
+        Milliseconds(m_delay.Highest())
+    );
     return 0;
 }
 
@@ -399,18 +410,13 @@ void App::MeasureLatency(const core::Snapshot& drawn, f64 alpha) {
     PN_PROFILE_ZONE();
     const u64 nowNs = platform::NowNs();
     if (const std::optional<u64> latency = m_swordsLatency.Drawn(drawn.volleys, nowNs)) {
-        PN_LOG_DEBUG(
-            "swords first drawn {:.1f} ms after the press", static_cast<f64>(*latency) / static_cast<f64>(core::NS_PER_MS)
-        );
+        PN_LOG_DEBUG("swords first drawn {:.1f} ms after the press", Milliseconds(*latency));
     }
     if (!drawn.follow) {
         return;
     }
     if (const std::optional<u64> latency = m_moveLatency.Drawn(*drawn.follow, alpha, nowNs)) {
-        PN_LOG_INFO(
-            "input latency: {:.1f} ms from a Move press to its first drawn frame",
-            static_cast<f64>(*latency) / static_cast<f64>(core::NS_PER_MS)
-        );
+        PN_LOG_INFO("input latency: {:.1f} ms from a Move press to its first drawn frame", Milliseconds(*latency));
     }
 }
 
@@ -795,6 +801,8 @@ bool App::Present(const platform::WindowState& state) {
         state.visible,
         [this] { m_renderer.Acquire(); },
         platform::NowNs,
+        // A scene's upload step can hold the acquired image for LOAD_BUDGET_NS before the draw; that delays nothing that
+        // moves, as the logic runs no tick until the scene is resident.
         [this](const core::Snapshot& drawn) {
             if (!LoadScene(drawn.scene)) {
                 return false;
