@@ -14,6 +14,7 @@
 #include "app/hud.hpp"
 #include "app/target_cursor.hpp"
 #include "app/view.hpp"
+#include "core/display_delay.hpp"
 #include "core/effects.hpp"
 #include "core/error.hpp"
 #include "core/frame.hpp"
@@ -252,6 +253,7 @@ private:
     MoveLatency m_moveLatency{}; // `--camera-path`'s scripted press
     core::GameHandover m_handover;
     core::GameDisplay m_display;
+    core::DisplayDelay m_delay; // presentation only: never sent to the logic thread
     std::vector<core::Event> m_incoming;
     std::vector<core::Event> m_pending;        // taken, waiting for the render clock
     std::vector<core::TextItem> m_numberTexts; // the damage numbers drawn this frame
