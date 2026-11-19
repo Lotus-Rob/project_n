@@ -396,6 +396,9 @@ Findings (nothing was fixed; the controller and the user decide):
    the journals (10 entries an NPC, 4.67 MB from about 10 h on; a met NPC keeps 50, so the player meeting people raises it
    to at most 50 each), and the header, scene and combat (406 B).
 
+Finding 1 was fixed afterwards: the bounded table's figures at the same checkpoints are in the Outcome of
+`2026-11-19-relationships-bounded-design.md`.
+
 ### Rulings and their reasons
 
 - **R1: format numbers.** `ARENA_FORMAT` goes up by one from whatever the task's base held (the plan's numbers predate
