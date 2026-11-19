@@ -11,12 +11,14 @@ constexpr u64 FIRST_NS = 1'000'000'000;                // the first snapshot's s
 constexpr u64 SECOND_NS = FIRST_NS + core::TICK_NS;    // the next tick's
 
 /// One frame's clock and window: the clock reads `beforeNs` until the acquire returns, then `afterNs` (the acquire's
-/// wait); `afterNs` 0 means the acquire doesn't wait.
+/// wait); `afterNs` 0 means the acquire doesn't wait. A nonzero `publishedInAcquire` is the tick of a snapshot the logic
+/// publishes while the acquire waits, with Screen::events.
 struct Frame {
     u64 beforeNs = 0;
     u64 afterNs = 0;
     bool visible = true;
     bool prepared = true;
+    u64 publishedInAcquire = 0;
 };
 
 /// What one PresentFrame() call did.
@@ -38,16 +40,16 @@ struct Screen {
     core::GameDisplay display;
     core::DisplayDelay delay;
     std::vector<core::Event> pending;
+    std::vector<core::Event> events; // the next Publish() hands these over
 
-    /// Publishes a snapshot of `tick`, scheduled at `scheduledNs` and published `latenessNs` after it.
+    /// Publishes a snapshot of `tick`, scheduled at `scheduledNs` and published `latenessNs` after it, with `events`.
     void Publish(u64 tick, u64 scheduledNs, u64 latenessNs = 0, bool advanced = true) {
         core::Snapshot& snapshot = handover.Writing();
         snapshot.simulationTick = tick;
         snapshot.scheduledNs = scheduledNs;
         snapshot.publishedNs = scheduledNs + latenessNs;
         snapshot.advanced = advanced;
-        std::vector<core::Event> none;
-        handover.Publish(none);
+        handover.Publish(events);
     }
 
     Outcome Present(const Frame& frame) {
@@ -63,6 +65,9 @@ struct Screen {
                 ++outcome.acquires;
                 outcome.chosenBeforeAcquire = outcome.chosenBeforeAcquire && display.Drawn() != nullptr;
                 nowNs = std::max(nowNs, frame.afterNs);
+                if (frame.publishedInAcquire != 0) {
+                    Publish(frame.publishedInAcquire, core::TickTime(FIRST_NS, frame.publishedInAcquire - 1));
+                }
             },
             [&] {
                 ++outcome.clockReads;
@@ -92,6 +97,27 @@ TEST_CASE("a snapshot that becomes due during the acquire is the one drawn") {
     CHECK(outcome.acquires == 1);
     CHECK(outcome.drawnTick == 2);
     CHECK(outcome.alpha == doctest::Approx(0.09)); // 1.5 ms into a 16.7 ms tick
+}
+
+TEST_CASE("a frame drains the events of every snapshot it takes, even one published during its acquire") {
+    Screen screen;
+    screen.Publish(1, FIRST_NS);
+    static_cast<void>(screen.Present({ .beforeNs = FIRST_NS + DELAY_NS }));
+    screen.events = { { .tick = 2 } };
+
+    const Outcome taking = screen.Present(
+        { .beforeNs = SECOND_NS, .afterNs = SECOND_NS + DELAY_NS + (core::TICK_NS / 2), .publishedInAcquire = 2 }
+    );
+    CHECK(taking.drawnTick == 2);
+    CHECK(taking.played.empty()); // the render clock at tick 1.5
+    REQUIRE(screen.pending.size() == 1);
+    CHECK(screen.pending[0].tick == 2);
+    std::vector<core::Event> undrained;
+    screen.handover.TakeEvents(undrained);
+    CHECK(undrained.empty());
+
+    const Outcome later = screen.Present({ .beforeNs = SECOND_NS + DELAY_NS + core::TICK_NS + 1 });
+    CHECK(later.played == std::vector<u64>{ 2 });
 }
 
 TEST_CASE("a frame reads the time for alpha after the swapchain acquire") {

@@ -512,7 +512,8 @@ using GameDisplay = Display<Snapshot, Event, Action, HeldInput, ViewReport>;
 /// The main loop's frame. While `visible` and a snapshot is drawn, first `acquire()`s the swapchain texture, which may
 /// block. Then reads `now()` (ns) once, for all of the frame: D from `delay` (DisplayDelay::Advance()), the snapshot to
 /// draw (`display`'s Display::Update() from `handover`; each snapshot it takes tells `delay` its lateness), alpha and the
-/// render clock. With nothing drawn yet, returns true having acquired nothing. Else calls `prepare(drawn)` and returns
+/// render clock. After the takes it moves the events published so far to the end of `pending`, every frame, drawing or
+/// not. With nothing drawn yet, returns true having acquired nothing. Else calls `prepare(drawn)` and returns
 /// false if it fails; acquires now if it didn't before (the first snapshot), plays the `pending` events due by the
 /// render clock (PlayDue()) and, while `visible`, calls `draw(drawn, alpha)`; returns true. Hidden, D and the snapshot
 /// still advance and events still play. `prepare` is `bool(const Snapshot&)`, `draw` `void(const Snapshot&, f64)`.
@@ -544,6 +545,9 @@ bool PresentFrame(
     while (const std::optional<u64> lateness = display.TakenLateness()) {
         delay.Observe(*lateness);
     }
+    // Drained after the takes, so every snapshot the display holds has its events in `pending`, even one published
+    // during the acquire: the handover drops undrained cosmetic events on that promise.
+    handover.AppendEvents(pending);
     const Snapshot* drawn = display.Drawn();
     if (drawn == nullptr) {
         return true;
