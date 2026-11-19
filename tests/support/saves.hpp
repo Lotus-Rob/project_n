@@ -209,7 +209,12 @@ struct SetAside {
 ) {
     constexpr u64 RESPAWNS = 0;
     const game::SceneTraits& traits = game::SceneOf(scene).Traits();
-    const core::GameData baseData = data != nullptr ? *data : traits.worldMap ? SmallData() : game::BuiltInData();
+    const core::GameData baseData = [&]() -> core::GameData {
+        if (data != nullptr) {
+            return *data;
+        }
+        return traits.worldMap ? SmallData() : game::BuiltInData();
+    }();
     std::vector<std::byte> bytes;
     core::Writer writer{ bytes };
     writer(HOST_FORMAT, static_cast<u8>(std::to_underlying(scene)), state.SceneIds().next);
