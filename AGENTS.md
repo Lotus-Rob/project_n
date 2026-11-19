@@ -82,4 +82,5 @@ Propose a skill when a workflow repeats (superpowers writing-skills): add it to 
 |---|---|---|---|
 
 ## Gotchas
+- A clang-tidy finding in a header under `tests/` that only `lint --container` or CI's lint job reports: `.clang-tidy`'s `HeaderFilterRegex: 'src/.*'` matches every header under the container's `/src` source root, but no host path outside `src/`. Run `lint --container` from a main checkout when you change a header under `tests/`.
 - GCC release (LTO) links failing with undefined references into a module library: our libraries need `gcc-ar`, which indexes LTO bytecode. xmake.lua's `lto` rule sets it per target, never in the toolchain: XMake hands autotools packages no `ARFLAGS` for `gcc-ar`, so their static archives fail (`ar: invalid option -- '.'`).
