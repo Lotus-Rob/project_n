@@ -1457,7 +1457,9 @@ class MeasureTest(unittest.TestCase):
         row = next(line for line in project_n.measure_table([run], "x").splitlines() if line.startswith("world"))
         self.assertIn("input latency median 25.5 ms, 23.0 to 31.1 ms over 3 presses", row)
         self.assertIn("display delay 2.9 ms (2.6 to 10.0)", row)
-        self.assertNotIn("input latency 31.1 ms;", row)
+        self.assertNotIn("input latency 23", row)
+        self.assertNotIn("input latency 25.5 ms", row)
+        self.assertNotIn("input latency 31.1 ms", row)
 
     def test_latency_read_from_log(self):
         log = ("21:00:01.1 [1] app.cpp:338   LOG_INFO   root   input latency: 31.4 ms from a Move press to its first drawn frame\n"

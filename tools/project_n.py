@@ -2531,7 +2531,7 @@ class MeasuredRun:
     latencies: list  # input latencies, ms
     reasons: list  # why its numbers can't be trusted; none when they can
     segments: list
-    delay: tuple = None  # the display delay's (at the end, least, greatest), ms; none when the log has none
+    delay: tuple[float, float, float] | None = None  # the display delay's (at the end, least, greatest), ms; none when the log has none
 
 
 def measure_runs(text):
@@ -2663,7 +2663,7 @@ def latency_summary(latencies):
     if not latencies:
         return None
     if len(latencies) == 1:
-        return f"input latency {latencies[0]:g} ms over 1 press"
+        return f"input latency {latencies[0]:.1f} ms over 1 press"
     return (f"input latency median {statistics.median(latencies):.1f} ms, {min(latencies):.1f} to "
             f"{max(latencies):.1f} ms over {len(latencies)} presses")
 
@@ -2747,7 +2747,7 @@ def measure_table(results, shimmer):
     and trust beside its first row; then each hitch with its largest zones. `shimmer` is the world's shimmer as text."""
     rows = []
     for result in results:
-        notes = [f"display {result.display}", *([latency_summary(result.latencies)] if result.latencies else []),
+        notes = [f"display {result.display}", *([note] if (note := latency_summary(result.latencies)) else []),
                  *([f"display delay {result.delay[0]:.1f} ms ({result.delay[1]:.1f} to {result.delay[2]:.1f})"]
                    if result.delay else []),
                  *([f"earlier, unpinned: {MEASURE_EARLIER[result.name]}"] if result.name in MEASURE_EARLIER else []),
