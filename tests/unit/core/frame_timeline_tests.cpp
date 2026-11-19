@@ -116,6 +116,8 @@ private:
     }
 
     void AdvanceTo(u64 nowNs) {
+        // A wait of a whole frame or more would step the clock back and skew every verdict silently.
+        REQUIRE(nowNs >= m_nowNs);
         m_nowNs = nowNs;
         while (core::TickTime(ORIGIN_NS, m_nextTick) + m_schedule.lateness(m_nextTick) <= m_nowNs) {
             Publish(m_nextTick++);
@@ -165,7 +167,7 @@ private:
     core::Follow m_follow{}; // starts at the origin, where any movement at all shows in a float
     std::vector<DrawnFrame> m_draws;
     u64 m_nowNs = 0;
-    u64 m_readNs = 0; // the clock reading the frame's alpha came from: the first snapshot is acquired for after it
+    u64 m_readNs = 0; // the clock reading the frame's alpha came from: the first snapshot's acquire comes after it
     u64 m_nextFrameNs = 0;
     u64 m_nextTick = 1;
 };
@@ -191,7 +193,7 @@ constexpr u64 PhaseNs(u64 phase) {
     return ((2 * phase) + 1) * core::TICK_NS / (2 * PHASES);
 }
 
-/// Tick plus publish times like the dev machine's, cycling 1.0 to 2.0 ms in tenths: 99th percentile 2.0 ms.
+/// Publish lateness like the dev machine's, cycling 1.0 to 2.0 ms in tenths: 99th percentile 2.0 ms.
 u64 Steady(u64 tick) {
     return ONE_MS + ((tick % 11) * ONE_MS / 10);
 }
@@ -252,7 +254,7 @@ struct Latency {
 constexpr u64 PRESS_TICK = 2 * TICKS_PER_SECOND; // D has settled by then
 
 /// The press `phaseNs` into the tick after PRESS_TICK. The main loop reads input at a frame's start, so frames run in
-/// step with the press, and its phase in the tick sets the frame grid's against the ticks.
+/// step with the press, and its phase in the tick sets where the frame grid falls against the ticks.
 Latency PressLatency(const Rate& rate, u64 phaseNs, bool oldOrder) {
     const u64 pressNs = core::TickTime(ORIGIN_NS, PRESS_TICK) + phaseNs;
     Timeline timeline{ { .framePeriodNs = rate.periodNs,
@@ -359,8 +361,8 @@ TEST_CASE("steady lateness settles D, with no late adoption") {
 constexpr u64 SPIKE_FIRST_TICK = 15 * TICKS_PER_SECOND;
 constexpr u64 SPIKE_END_TICK = SPIKE_FIRST_TICK + (2 * TICKS_PER_SECOND);
 constexpr u64 SPIKE_LATENESS_NS = 6 * ONE_MS;
-// The window holds the spike's latenesses for its 600 snapshots, ten seconds, before the target drops; D then takes
-// a fifth of a second to fall the 4 ms at its slow rate.
+// The target drops only once the window has nearly refilled, about ten seconds; D then takes a fifth of a second to
+// fall the 4 ms at its slow rate.
 constexpr u64 FALLEN_TICK = SPIKE_END_TICK + (10 * TICKS_PER_SECOND) + (TICKS_PER_SECOND / 2);
 
 /// Steady, but for two seconds of 6 ms from 15 s in.
