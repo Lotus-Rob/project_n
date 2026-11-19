@@ -441,14 +441,15 @@ Findings (nothing was fixed; the controller and the user decide):
   in the commit body); the fuzz host takes a small map (`test::TravellingSmallData`) with travellers so the delta's gone and
   planned-journey branches and the counter-behind-base refusal are reachable. The delta and scratch seeds each hold a gone
   journey, a planned one and changed NPCs, asserted in their writer cases.
-- **R17: stress.** The stress arena's exactness test compares 60 ticks tick by tick, not the plan's 600: a stress tick only
-  turns orbits as a function of the tick, so an order or state divergence shows from tick 1; the arena's 600 ticks through
-  deaths and respawns carry the long run (600 stress ticks on three hosts cost about 67 s in debug).
+- **R17: stress** (its 60 ticks since cut to 10: R25). The stress arena's exactness test compares 60 ticks tick by tick, not
+  the plan's 600: a stress tick only turns orbits as a function of the tick, so an order or state divergence shows from
+  tick 1; the arena's 600 ticks through deaths and respawns carry the long run (600 stress ticks on three hosts cost about
+  67 s in debug).
 - **R18: the kept base.** Leaving a dev scene keeps its scratch base for the next entry, which relies on the dev scene's
   world build being independent of the scene counter and `GameData`; a test shows, for every dev scene, that the kept base
   equals a fresh entry build, also after `SetData` with edited creatures.
-- **R19: stress hashes** are compared every tick (31.6 s in debug, its own file, in parallel with the rest, whole run
-  32.1 s), because the spec's Testing says "tick by tick".
+- **R19: stress hashes** (its time since cut: R25) are compared every tick (31.6 s in debug, its own file, in parallel
+  with the rest, whole run 32.1 s), because the spec's Testing says "tick by tick".
 - **R20/R21:** this task's: zstd's win was reported to the user instead of adopted unasked (a dependency change), who
   chose it on 2026-11-19; and R15 is recorded here.
 - **R22: zstd replaces LZ4** (the user, 2026-11-19; see "The compressor"). One compressor, level 1; the save file's version
@@ -460,6 +461,21 @@ Findings (nothing was fixed; the controller and the user decide):
   ticks, 5,400 ticks, 90 s at 60 Hz, so 1 h is 40 months and 250 h is 10,000: an upper bound for a player on the world
   map, unpaused, with no M jumps. Months are advanced by the path M takes (`Host::AdvanceCalendar`), not tick by tick. The
   findings are reported, not fixed. Cost: a run of about 8 minutes, on request, not in the suite.
+- **R25: stress at 10 ticks** (the final review; supersedes R17's 60 and R19's time). R17's own reason holds at 10: a
+  stress tick only turns orbits, so a divergence shows from the first tick, and each of the 10 is still compared, on both
+  worker counts. The file had set the suite's wall time: save_stress 31.8 s to 10.7 s in debug, the whole run 32 s to 27 s.
+  Cost: a stress-only divergence after tick 10 goes unseen; the arena's 600 ticks carry the long run.
+- **R26: Load refuses IDs outside their domain** (the final review's one Important finding, fixed test-first in "fix(game):
+  refuse a save whose IDs don't match their domains"). A scene build clears the last scene by sending its world-range
+  entities back as NPCs and destroying its scene-range ones, so a save holding a world-range entity in the scene that isn't
+  an NPC, a scene-range entity in the world domain, or a relationship naming a scene-range ID loaded and then broke the next
+  scene change (an assertion, undefined behaviour in release, or a save its own game refused). The fuzz target still never
+  changes scene after a load: each input would then build the next scene (stress: 50,000 NPCs), so unit cases cover it.
+- **R27: left as it is** (the final review's triage). The arena fuzz input's ~155 ms belongs with the index-by-index delta
+  compare named under "The aims"; caching every dev scene's base in the host would keep a 50,000-NPC stress base in the
+  game's memory for a fuzz-only gain; XMake's "warning: Ascend SDK not found" comes from XMake 3.1.2 checking its ascendc
+  toolchain on every Linux configure, predates zstd and has no setting to quieten it; the hand-written `macosx|arm64` zstd
+  lock entry matches the machine-written ones (the same config hash on every platform). GLM's review found nothing.
 - Accepted: worker sequencing in the exactness tests (`Host::Tick` takes no job system, so a month step and a publish
   fork on both worker counts rather than a whole sequence per count); `feat(game)!` BREAKING footers as precedent for
   format changes.
