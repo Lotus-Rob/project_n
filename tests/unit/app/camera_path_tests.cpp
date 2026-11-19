@@ -57,9 +57,9 @@ TEST_CASE("the follow segment makes eight presses") {
 }
 
 TEST_CASE("the camera path's walk east from the world's start keeps clear of the world's portal") {
-    // Every walking segment's Move points east, at the built-in game data's walk speed (world units a tick), so the foot
-    // stays on the strip from the start to this far east of it; the portal's step area, and a radius to spare, stay off it,
-    // or a measured run would change scene partway.
+    // Move points east for at most the walking segments' length, at the built-in game data's walk speed (world units a
+    // tick), so the foot stays on the strip from the start to this far east of it; the portal's step area, and a radius to
+    // spare, stay off it, or a measured run would change scene partway.
     f32 walking = 0.0F;
     for (const app::CameraSegment& segment : app::CameraPath()) {
         walking += segment.walks ? segment.seconds : 0.0F;
