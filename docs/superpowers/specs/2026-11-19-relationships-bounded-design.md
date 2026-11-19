@@ -107,10 +107,10 @@ linear pass over the table.
 ## Outcome
 
 The case `measure the shipped world's saves over hours of play` (skipped, release, linux-clang) ran again on the
-bounded table, the tables here from its second run (below), after the case changed to log the holder counts, with one
-`Host::AdvanceCalendar()` per month on the usual workers, as in 5c1. Every checkpoint's load matched the saved `StateHash` and `WorldHash` (asserted). The run took under 3 minutes, against about 8 before. Times are
-good to about 50% between runs (5c1's finding) and sizes are exact. The tables use 5c1's layout; 5c1's 250 h figures are
-beside them.
+bounded table, with one `Host::AdvanceCalendar()` per month on the usual workers, as in 5c1; the tables are from its
+second run (below), after the case changed to log the holder counts. Every checkpoint's load matched the saved
+`StateHash` and `WorldHash` (asserted). The run took under 3 minutes, against about 8 before. Times are good to about
+50% between runs (5c1's finding) and sizes are exact. The tables use 5c1's layout; 5c1's 250 h figures are beside them.
 
 | | 1 h | 10 h | 50 h | 100 h | 250 h | 5c1's 250 h |
 |---|---|---|---|---|---|---|
@@ -150,13 +150,13 @@ What is behind them:
 
 What it shows:
 
-1. **The table is bounded.** From 50 h on it holds 373,990 relationships (373,988 at 10 h; 10.47 MB raw), 75% of the 14,000,008 bytes the
-   limits allow (50,000 NPCs at 10 edges of 28 bytes) and 59% of the raw save, not 99%. At 250 h the raw save is 17.7 MB
-   against 755 MB, 4.25 MB on disk against 64.8 MB, 6.0 ms a month step against 65.6 ms, 80 ms to save against 1.8 s,
-   and a 65 ms load against 1,369 ms. `MAX_SAVE_BYTES` is no longer in reach.
-2. **The month step and the save are flat.** The step went 3.7, 5.9, 6.0, 6.0, 6.0 ms from 1 h to 250 h, and the save's size 17.69, 17.69,
-   17.69, 17.70 MB from 10 h to 250 h. The journeys' plan (283,448, 282,608, 281,768, 289,248 bytes) moves up and down
-   with the month: noise.
+1. **The table is bounded.** From 50 h on it holds 373,990 relationships (373,988 at 10 h; 10.47 MB raw), 75% of the
+   14,000,008 bytes the limits allow (50,000 NPCs at 10 edges of 28 bytes) and 59% of the raw save, not 99%. At 250 h
+   the raw save is 17.7 MB against 755 MB, 4.25 MB on disk against 64.8 MB, 6.0 ms a month step against 65.6 ms, 80 ms
+   to save against 1.8 s, and a 65 ms load against 1,369 ms. `MAX_SAVE_BYTES` is no longer in reach.
+2. **The month step and the save are flat.** The step went 3.7, 5.9, 6.0, 6.0, 6.0 ms from 1 h to 250 h, and the
+   save's size 17.69, 17.69, 17.69, 17.70 MB from 10 h to 250 h. The journeys' plan (283,448, 282,608, 281,768, 289,248
+   bytes) moves up and down with the month: noise.
 3. **What the settled count is made of.** The case now also logs the NPCs by how many relationships they hold. From 10 h
    on, 35,009 NPCs hold exactly 10, 11,311 hold 1 to 9 and 3,680 hold none (nobody holds more; nobody is met, so 10 is
    the limit for all). The count (373,990 = 35,009 x 10 + 23,900 in the middle group) did not change from 50 h to 250 h,
@@ -197,3 +197,14 @@ months from 250 h to 1000 h took about 3 minutes.
   the limit, so it never trims.
 - The world save fuzz seed now carries two NPCs and one relationship edge, so seeds exercise the edge layout and the
   last-met check. A month step on the small map makes no edges, so the delta seed couldn't carry one.
+- **The final review** (whole branch, on the strongest model) found nothing Critical or Important and eight Minor
+  findings, all fixed: one met lookup, `IsMet`, now serves both the relationship limit and the travel journal's; `Trim`
+  asserts that the met limit is at least the other, which its shortcut past the lookup relies on; a met NPC in the world
+  domain is tested to keep the met number; and the docs (the limits' link to the journal's, `Host::Load`'s refusals,
+  src/AGENTS.md, this Outcome) say what the code does. GLM's review found nothing.
+- **Left as they are** (the final review's triage): forgetting is one-sided (an NPC can drop one that still keeps it),
+  as the limit is per holder and relationships are a placeholder until the game design says what they are; `Trim` copies
+  the whole table every month, as `Merge` already did, at 6.0 ms a step; nothing in today's game adds `Met`, so only tests
+  reach the met limit until the player can meet NPCs; a save of the old world section version is refused, not migrated,
+  as at earlier version bumps. A refused save's relationship table or world version is not logged, as before this
+  branch; that is in the backlog.
