@@ -21,9 +21,9 @@ constexpr u64 SAVED_TICK = 1'000;
 
 TEST_CASE("a stress save loads and carries on as the saved one") {
     constexpr u64 PLAYED = 5;
-    // Fewer ticks than the arena's, each compared: a stress tick only turns orbits, each a function of the tick, so a
-    // difference shows from the first, and the arena's fight carries the long run.
-    constexpr u64 TICKS_ON = 60;
+    // Few ticks, each compared: a stress tick only turns orbits as a function of the tick, so a state or order
+    // divergence shows from the first, and the arena's 600 ticks through deaths and respawns carry the long-run check.
+    constexpr u64 TICKS_ON = 10;
     core::Jobs jobs{ 1 };
     game::Host saved(test::TestManifest(), game::STRESS_SCENE);
     game::Host neverSaved(test::TestManifest(), game::STRESS_SCENE);
