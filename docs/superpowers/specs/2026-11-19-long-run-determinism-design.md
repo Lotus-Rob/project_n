@@ -1,14 +1,14 @@
 # Long-run determinism: the same long game twice, compared
 
-Status: approved design, not yet implemented.
+Status: implemented.
 
 ## Intent
 
-The engine promises that one build, given the same state and inputs, plays the same on any machine and any worker
-count (design doc 0002, goal 5 and §7.4). Nothing checks that over a long game: the longest runs compared today are 40
-months on 320 NPCs, one month of the shipped world, and replays of a few hundred ticks. A divergence that needs hours
-of play to appear (an order that drifts, a draw keyed on the wrong thing, a merge that depends on scheduling) would go
-unseen until a player's replay or save broke. This adds long runs that compare two games as they go, run only when asked.
+The engine promises that one build, given the same state and inputs, plays the same on any machine and any worker count
+(design doc 0002, goal 5 and §7.4). Nothing checks that over a long game: the longest runs compared today are 40 months
+on 320 NPCs, one month of the shipped world, and replays of a few hundred ticks. A divergence that needs hours of play
+to appear (an order that drifts, a draw keyed on the wrong thing, a merge that depends on scheduling) would go unseen
+until a player's replay or save broke. This adds long runs that compare two games as they go, run only when asked.
 
 ## Goals
 
@@ -83,11 +83,39 @@ the Outcome.
 ### Hours-of-play case on a 1-worker host
 
 The shipped world's hours-of-play case now steps a second host on 1 worker beside the 4-worker one and compares
-`StateHash()` and `WorldHash()` at each checkpoint. One release run (linux-clang) took about 3 minutes, the first
-case's own sizes unchanged, and at all five checkpoints (1, 10, 50, 100 and 250 h; 40 to 10,000 months) both hashes
-agreed between 1 and 4 workers.
+`StateHash()` and `WorldHash()` at each checkpoint. One release run (linux-clang) took about 3 minutes, its logged save
+sizes as in earlier runs, and at all five checkpoints (1, 10, 50, 100 and 250 h; 40 to 10,000 months) both hashes agreed
+between 1 and 4 workers.
 
 The 1-worker month step cost 6.5 ms at the first checkpoint and 8.7 to 9.0 ms after; the 4-worker step, timed on its
 own, cost 4.5 ms and then 6.9 to 7.1 ms. The logged month step is now timed on exactly 4 workers, where it used the
 default worker count before, so it is not directly comparable with the times in the bounded relationships spec's
 Outcome.
+
+### An hour of walk-tos on 1 and 4 workers
+
+The new case "the world ticked through an hour of walk-tos is the same on 1 and 4 workers" (replay_tests.cpp, skipped)
+builds two games on the world scene, the replay `Session` now taking a worker count, and ticks both through the logic in
+bursts up to each `core::REPLAY_HASH_TICKS` tick. Each minute of play (3,600 wall ticks) both are sent the same walk-to:
+the centre of a place drawn from a fixed seed and the walk-to's index alone, out of all the shipped map's places (its
+six cities and twenty dangers, every one of which a probe found reachable on foot from every other). A walk-to away from
+the cultivator's tile is followed by one tick on both games, after which the cultivator must have a route: the probe was
+a one-off, and this keeps a place the map later cuts off from passing unseen as a run that walks less (one tick, so a
+neighbouring place is not reached and its route ended before the check). After each burst the wall ticks, `StateHash()`
+and `WorldHash()` must be alike, or the run stops naming the wall tick; every 21,600 ticks it logs both hashes.
+
+The tick cost, measured first on 6 minutes of play (21,600 ticks) in release (linux-clang), was about 0.31 s per 1,000
+ticks for both games together, so the case runs the full hour, 216,000 ticks. Its run took about 1 minute 45 seconds:
+the nine stretches after the first averaged about 0.49 s per 1,000 ticks (not looked into: not a gate). Over the hour
+the world passed 39 months and the script sent 60 walk-tos, and at all ten checkpoints (every 21,600 ticks) both hashes
+agreed between 1 and 4 workers.
+
+The final review's fixes (every walk-to's route checked, the hours case naming its checkpoint on a failure, the run
+commands in tests/AGENTS.md) were rerun once in release: the hour of walk-tos took about 1 minute 40 seconds, set a
+route on every walk-to away from the cultivator's tile and agreed at all ten checkpoints; the hours case agreed at all
+five.
+
+### Plan corrections
+
+The plan's test commands named `--suite game`, which is the game program; the test target is `game_tests`. Both tasks
+also ran the full `test`, so nothing went unrun.
