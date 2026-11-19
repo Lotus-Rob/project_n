@@ -172,7 +172,8 @@ private:
 /// The main thread's side of the state channel: the snapshot it draws, and a newer one it has
 /// taken but that isn't due yet. A snapshot is adopted (drawn) only once it is due (IsDue()), so
 /// the picture moves from one snapshot into the next without judder. `State` has a
-/// `u64 scheduledNs` and the `u64 publishedNs` the logic thread published it at.
+/// `u64 scheduledNs`, the `u64 publishedNs` the logic thread published it at, and `bool advanced`, whether the
+/// simulation ran in its tick.
 template<typename State, typename Event, typename Input, typename Held, typename View>
 class Display {
 public:
@@ -180,6 +181,7 @@ public:
     /// waiting one and adopts it too if due. Returns whether a new snapshot was adopted (to upload).
     bool Update(Handover<State, Event, Input, Held, View>& handover, u64 nowNs, u64 delayNs) {
         PN_PROFILE_ZONE();
+        m_takenLateness.reset();
         bool adopted = false;
         if (m_held != nullptr && IsDue(m_held->scheduledNs, nowNs, delayNs)) {
             Adopt(handover);
@@ -189,6 +191,11 @@ public:
             m_held = handover.TakeState();
             if (m_held != nullptr && IsDue(m_held->scheduledNs, m_held->publishedNs, delayNs)) {
                 ++m_lateAdoptions;
+            }
+            // A frozen tick's snapshot shows what the one before it ends on, so its lateness can't be seen; and the
+            // stalls (a month, a save, a load) publish one only once they end, as late as the stall was long.
+            if (m_held != nullptr && m_held->advanced) {
+                m_takenLateness = m_held->publishedNs > m_held->scheduledNs ? m_held->publishedNs - m_held->scheduledNs : 0;
             }
             if (m_held != nullptr && IsDue(m_held->scheduledNs, nowNs, delayNs)) {
                 Adopt(handover);
@@ -208,6 +215,12 @@ public:
         return m_lateAdoptions;
     }
 
+    /// How long after its scheduled time the snapshot the last Update() took was published (0 for one published
+    /// before it), if that Update() took one whose tick advanced; reading clears it.
+    [[nodiscard]] std::optional<u64> TakenLateness() {
+        return std::exchange(m_takenLateness, std::nullopt);
+    }
+
 private:
     void Adopt(Handover<State, Event, Input, Held, View>& handover) {
         if (m_drawn != nullptr) {
@@ -219,6 +232,7 @@ private:
     State* m_drawn = nullptr;
     State* m_held = nullptr;
     u64 m_lateAdoptions = 0;
+    std::optional<u64> m_takenLateness = std::nullopt;
 };
 
 /// Plays, in order, the `pending` events of the drawn snapshot's `epoch` whose tick the render

@@ -6,6 +6,7 @@
 /// thread through core::Handover, and the input it gets back: timing and pausing, instances, view models and events.
 
 #include "core/abilities.hpp"
+#include "core/display_delay.hpp"
 #include "core/game_data.hpp"
 #include "core/handover.hpp"
 #include "core/hit.hpp"
@@ -508,28 +509,55 @@ using GameHandover = Handover<Snapshot, Event, Action, HeldInput, ViewReport>;
 /// The main thread's side of GameHandover's state channel.
 using GameDisplay = Display<Snapshot, Event, Action, HeldInput, ViewReport>;
 
-/// The main loop's frame once `drawn` is chosen: while `visible`, `acquire()`s the swapchain
-/// texture, which may block; then reads `now()` (ns) once for alpha and the render clock, plays the `pending` events due
-/// by it (PlayDue()) and, while `visible`, calls `draw(alpha)`. Hidden, the clock and events still advance.
-template<typename Acquire, typename Now, typename Play, typename Draw>
-void PresentFrame(
-    const Snapshot& drawn,
+/// The main loop's frame. While `visible` and a snapshot is drawn, first `acquire()`s the swapchain texture, which may
+/// block. Then reads `now()` (ns) once, for all of the frame: D from `delay` (DisplayDelay::Advance()), the snapshot to
+/// draw (`display`'s Display::Update() from `handover`; a snapshot it takes tells `delay` its lateness), alpha and the
+/// render clock. With nothing drawn yet, returns true having acquired nothing. Else calls `prepare(drawn)` and returns
+/// false if it fails; acquires now if it didn't before (the first snapshot), plays the `pending` events due by the
+/// render clock (PlayDue()) and, while `visible`, calls `draw(drawn, alpha)`; returns true. Hidden, D and the snapshot
+/// still advance and events still play. `prepare` is `bool(const Snapshot&)`, `draw` `void(const Snapshot&, f64)`.
+template<typename Acquire, typename Now, typename Prepare, typename Play, typename Draw>
+bool PresentFrame(
+    GameDisplay& display,
+    GameHandover& handover,
+    DisplayDelay& delay,
     std::vector<Event>& pending,
     bool visible,
     Acquire acquire,
     Now now,
+    Prepare prepare,
     Play play,
     Draw draw
 ) {
     PN_PROFILE_ZONE();
-    if (visible) {
+    // The acquire can wait most of a frame: the snapshot is chosen after it, so one that falls due meanwhile is drawn
+    // now, not a frame later. Before the first snapshot there may be nothing to draw, and an acquire must be drawn.
+    const bool acquired = visible && display.Drawn() != nullptr;
+    if (acquired) {
         acquire();
     }
-    const f64 alpha = Alpha(drawn.scheduledNs, now(), DISPLAY_DELAY_START_NS, drawn.advanced);
-    PlayDue(pending, drawn.epoch, RenderTick(drawn.simulationTick, alpha), play);
-    if (visible) {
-        draw(alpha);
+    const u64 nowNs = now();
+    const u64 delayNs = delay.Advance(nowNs);
+    static_cast<void>(display.Update(handover, nowNs, delayNs));
+    if (const std::optional<u64> lateness = display.TakenLateness()) {
+        delay.Observe(*lateness);
     }
+    const Snapshot* drawn = display.Drawn();
+    if (drawn == nullptr) {
+        return true;
+    }
+    if (!prepare(*drawn)) {
+        return false;
+    }
+    if (visible && !acquired) {
+        acquire();
+    }
+    const f64 alpha = Alpha(drawn->scheduledNs, nowNs, delayNs, drawn->advanced);
+    PlayDue(pending, drawn->epoch, RenderTick(drawn->simulationTick, alpha), play);
+    if (visible) {
+        draw(*drawn, alpha);
+    }
+    return true;
 }
 
 } // namespace core

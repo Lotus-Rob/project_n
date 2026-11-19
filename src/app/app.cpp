@@ -620,7 +620,7 @@ void App::Click(const platform::WindowState& state, core::Vec2 position) {
         return;
     }
     // The picture the player clicked on: the drawn snapshot at the render clock, as the camera shows it.
-    const f64 alpha = core::Alpha(drawn->scheduledNs, platform::NowNs(), core::DISPLAY_DELAY_START_NS, drawn->advanced);
+    const f64 alpha = core::Alpha(drawn->scheduledNs, platform::NowNs(), m_delay.Current(), drawn->advanced);
     const core::Vec2 point = WindowToWorld(m_camera.Camera(), position, state.width, state.height);
     const core::StableId target = Pick(*drawn, alpha, point);
     HideCursor();
@@ -787,65 +787,69 @@ bool App::Present(const platform::WindowState& state) {
     // Events are drained every iteration, drawing or not, so the queue never grows.
     m_handover.TakeEvents(m_incoming);
     m_pending.insert(m_pending.end(), m_incoming.begin(), m_incoming.end());
-    static_cast<void>(m_display.Update(m_handover, platform::NowNs(), core::DISPLAY_DELAY_START_NS));
-    const core::Snapshot* drawn = m_display.Drawn();
-    if (drawn == nullptr) {
-        return true;
-    }
-    if (!LoadScene(drawn->scene)) {
-        return false;
-    }
-    // Nothing draws the ways out of and into a scene yet: each is reported played as soon as it shows.
-    if (const std::optional<core::Action> report = m_sceneReports.Answer(drawn->sceneChange)) {
-        m_handover.SendInput(*report);
-    }
-    if (m_numbersEpoch != drawn->epoch) {
-        m_numbers.Clear(); // a new timeline: none of the old one's hits happened in it
-        m_hud.Clear();     // nor its refused casts
-        m_numbersEpoch = drawn->epoch;
-    }
-    core::PresentFrame(
-        *drawn,
+    const bool presented = core::PresentFrame(
+        m_display,
+        m_handover,
+        m_delay,
         m_pending,
         state.visible,
         [this] { m_renderer.Acquire(); },
         platform::NowNs,
+        [this](const core::Snapshot& drawn) {
+            if (!LoadScene(drawn.scene)) {
+                return false;
+            }
+            // Nothing draws the ways out of and into a scene yet: each is reported played as soon as it shows.
+            if (const std::optional<core::Action> report = m_sceneReports.Answer(drawn.sceneChange)) {
+                m_handover.SendInput(*report);
+            }
+            if (m_numbersEpoch != drawn.epoch) {
+                m_numbers.Clear(); // a new timeline: none of the old one's hits happened in it
+                m_hud.Clear();     // nor its refused casts
+                m_numbersEpoch = drawn.epoch;
+            }
+            return true;
+        },
         // Audio and particles will play the events too.
         [this](const core::Event& event) {
             m_numbers.Play(event);
             m_hud.Play(event, static_cast<f64>(event.tick));
         },
-        [this, drawn, &state](f64 alpha) {
-            MoveCamera(state, *drawn, alpha);
+        [this, &state](const core::Snapshot& drawn, f64 alpha) {
+            MoveCamera(state, drawn, alpha);
             // Only drawn frames send one: hidden, the logic keeps the last view, and the first frame back sends a fresh one.
             m_handover.SendView(
                 { .area = CullArea(m_camera.Camera(), state.width, state.height),
-                  .change = core::ShownChange(drawn->sceneChange) }
+                  .change = core::ShownChange(drawn.sceneChange) }
             );
-            const f64 renderTick = core::RenderTick(drawn->simulationTick, alpha);
+            const f64 renderTick = core::RenderTick(drawn.simulationTick, alpha);
             m_numberTexts.clear();
             m_numbers.Texts(renderTick, m_numberTexts);
             m_hudLines.clear();
             m_hudBars.clear();
-            if (drawn->caster) {
+            if (drawn.caster) {
                 // The window isn't made high-density, so its size in window coordinates is its size in pixels.
-                m_hud.Build(*drawn->caster, renderTick, static_cast<u32>(std::max(state.height, 0)), m_hudLines, m_hudBars);
+                m_hud.Build(*drawn.caster, renderTick, static_cast<u32>(std::max(state.height, 0)), m_hudLines, m_hudBars);
             }
             m_hud.BuildDate(
-                drawn->calendar,
+                drawn.calendar,
                 static_cast<u32>(std::max(state.width, 0)),
                 [this](std::string_view text) { return m_renderer.HudLineWidth(text); },
                 m_hudLines
             );
             // Labels on the frame clock, which runs while the game is paused; numbers on the render clock, which holds.
             gfx::View view =
-                FrameView(m_camera.Camera(), alpha, Hovered(state, *drawn, alpha), m_frameClock.Advance(platform::NowNs()));
+                FrameView(m_camera.Camera(), alpha, Hovered(state, drawn, alpha), m_frameClock.Advance(platform::NowNs()));
             view.showcase = m_showcase;
-            m_renderer.Draw(*drawn, view, m_jobs, m_numberTexts, { .lines = m_hudLines, .bars = m_hudBars });
-            MeasureLatency(*drawn, alpha);
+            m_renderer.Draw(drawn, view, m_jobs, m_numberTexts, { .lines = m_hudLines, .bars = m_hudBars });
+            MeasureLatency(drawn, alpha);
             PN_PROFILE_FRAME();
         }
     );
+    const core::Snapshot* drawn = m_display.Drawn();
+    if (!presented || drawn == nullptr) {
+        return presented;
+    }
     if (!state.visible) {
         // Hidden, numbers still age out, so the pool doesn't grow while nothing is drawn: by the earliest the render
         // clock can be at for this snapshot, which is near enough for numbers no one sees.

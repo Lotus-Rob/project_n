@@ -9,6 +9,7 @@ struct State {
     u64 sequence = 0;
     u64 scheduledNs = 0;
     u64 publishedNs = 0;
+    bool advanced = true;
 };
 
 struct Event {
@@ -142,6 +143,34 @@ TEST_CASE("a snapshot published on time but taken late doesn't count as late") {
 
     CHECK(display.Update(handover, LATE_NS, HANDOVER_DELAY_NS));
     CHECK(display.LateAdoptions() == 0);
+}
+
+TEST_CASE("the display reports the lateness of the snapshot it took, once") {
+    Handover handover;
+    Display display;
+    Publish(handover, 1, FIRST_NS, LATE_NS);
+    static_cast<void>(display.Update(handover, LATE_NS, HANDOVER_DELAY_NS));
+    CHECK(display.TakenLateness() == LATE_NS - FIRST_NS);
+    CHECK_FALSE(display.TakenLateness());
+    static_cast<void>(display.Update(handover, LATE_NS, HANDOVER_DELAY_NS)); // nothing new to take
+    CHECK_FALSE(display.TakenLateness());
+
+    handover.Writing() = { .sequence = 2, .scheduledNs = SECOND_NS, .publishedNs = SECOND_NS - 1 }; // published early
+    std::vector<Event> none;
+    handover.Publish(none);
+    static_cast<void>(display.Update(handover, SECOND_NS, HANDOVER_DELAY_NS));
+    CHECK(display.TakenLateness() == 0);
+}
+
+TEST_CASE("the display doesn't report the lateness of a snapshot whose tick didn't advance") {
+    Handover handover;
+    Display display;
+    handover.Writing() = { .sequence = 1, .scheduledNs = FIRST_NS, .publishedNs = LATE_NS, .advanced = false };
+    std::vector<Event> none;
+    handover.Publish(none);
+    static_cast<void>(display.Update(handover, LATE_NS, HANDOVER_DELAY_NS));
+    REQUIRE(display.Drawn() != nullptr);
+    CHECK_FALSE(display.TakenLateness());
 }
 
 TEST_CASE("buffers return to the handover, so publishing never runs out") {
