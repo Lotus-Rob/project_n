@@ -279,35 +279,51 @@ TEST_CASE("the shipped look loads clean against the shipped map and the small on
     CHECK(warnings.empty());
 }
 
-TEST_CASE("the shipped look covers the shipped map") {
-    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+// The shipped look, loaded against the shipped map.
+struct Shipped {
+    std::shared_ptr<const core::Manifest> manifest;
+    std::shared_ptr<const core::WorldMap> map;
+    core::WorldLook look;
+};
+
+Shipped ShippedLook() {
+    Shipped shipped{ .manifest = test::TestManifest(), .map = nullptr, .look = {} };
     const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
     REQUIRE(assets.has_value());
     const std::expected<core::Strings, core::Error> strings = data::LoadStrings(*assets / "data");
     REQUIRE(strings.has_value());
     const auto world = data::LoadWorldMap(*assets / "data", *strings);
     REQUIRE(world.has_value());
-    const core::WorldMap& map = **world;
-    const std::expected<core::WorldLook, core::Error> look = data::LoadWorldLook(*assets / "data", *manifest, map);
+    shipped.map = *world;
+    std::expected<core::WorldLook, core::Error> look = data::LoadWorldLook(*assets / "data", *shipped.manifest, *shipped.map);
     REQUIRE(look.has_value());
+    shipped.look = std::move(*look);
+    return shipped;
+}
+
+TEST_CASE("the shipped look covers the shipped map") {
+    const Shipped shipped = ShippedLook();
+    const std::shared_ptr<const core::Manifest>& manifest = shipped.manifest;
+    const core::WorldMap& map = *shipped.map;
+    const core::WorldLook& look = shipped.look;
     // Every kind the map declares has a look with a variant: the terrain draws no tile bare.
-    REQUIRE(look->kinds.size() >= map.Kinds().size());
+    REQUIRE(look.kinds.size() >= map.Kinds().size());
     for (std::size_t kind = 0; kind < map.Kinds().size(); ++kind) {
         CAPTURE(map.Kinds()[kind].name);
-        CHECK_FALSE(look->kinds[kind].empty());
+        CHECK_FALSE(look.kinds[kind].empty());
     }
     // Every sprite the look names is one the world scene loads, or the renderer would draw from a page that isn't resident.
     const std::optional<core::SceneId> worldScene = manifest->SceneNamed("world");
     REQUIRE(worldScene.has_value());
     const core::SceneId worldId = worldScene.value_or(core::SceneId{});
     const std::vector<core::atlas::SpriteId>& resident = manifest->Scene(worldId).sprites;
-    std::vector<core::atlas::SpriteId> named = { look->bridgeAcross, look->bridgeDown, look->ford, look->cityMarker };
-    named.insert(named.end(), look->roads.begin(), look->roads.end());
-    named.insert(named.end(), look->rivers.begin(), look->rivers.end());
-    for (const std::vector<core::atlas::SpriteId>& variants : look->kinds) {
+    std::vector<core::atlas::SpriteId> named = { look.bridgeAcross, look.bridgeDown, look.ford, look.cityMarker };
+    named.insert(named.end(), look.roads.begin(), look.roads.end());
+    named.insert(named.end(), look.rivers.begin(), look.rivers.end());
+    for (const std::vector<core::atlas::SpriteId>& variants : look.kinds) {
         named.insert(named.end(), variants.begin(), variants.end());
     }
-    for (const auto& [sort, sprite] : look->dangerMarkers) {
+    for (const auto& [sort, sprite] : look.dangerMarkers) {
         named.push_back(sprite);
     }
     CHECK(std::ranges::all_of(named, [&](core::atlas::SpriteId sprite) { return std::ranges::contains(resident, sprite); }));
@@ -315,14 +331,10 @@ TEST_CASE("the shipped look covers the shipped map") {
     for (const core::Place& place : map.Places()) {
         if (place.kind == core::PlaceKind::Danger) {
             CAPTURE(place.key);
-            CHECK(
-                std::ranges::contains(look->dangerMarkers, place.sort, &std::pair<std::string, core::atlas::SpriteId>::first)
-            );
+            CHECK(std::ranges::contains(look.dangerMarkers, place.sort, &std::pair<std::string, core::atlas::SpriteId>::first));
         }
     }
 }
-
-} // namespace
 
 TEST_CASE("a small look's fog reads the written values") {
     const std::expected<core::WorldLook, core::Error> look = Parse(SMALL_LOOK);
@@ -344,16 +356,7 @@ TEST_CASE("a small look's fog reads the written values") {
 }
 
 TEST_CASE("the shipped look's fog has 16 clouds and the written values") {
-    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
-    const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
-    REQUIRE(assets.has_value());
-    const std::expected<core::Strings, core::Error> strings = data::LoadStrings(*assets / "data");
-    REQUIRE(strings.has_value());
-    const auto world = data::LoadWorldMap(*assets / "data", *strings);
-    REQUIRE(world.has_value());
-    const std::expected<core::WorldLook, core::Error> look = data::LoadWorldLook(*assets / "data", *manifest, **world);
-    REQUIRE(look.has_value());
-    const core::FogLook& fog = look->fog;
+    const core::FogLook fog = ShippedLook().look.fog;
     REQUIRE(fog.clouds.size() == 16);
     CHECK(fog.clouds.front() == core::atlas::SpriteId::Cloud0);
     CHECK(fog.clouds.back() == core::atlas::SpriteId::Cloud15);
@@ -434,3 +437,18 @@ TEST_CASE("the look's hash changes with a fog value") {
     CHECK(first->Hash() != shade->Hash());
     CHECK(first->Hash() != clouds->Hash());
 }
+
+TEST_CASE("an unknown key in the fog's sections warns") {
+    std::vector<std::string> warnings;
+    const std::string text = With("period: 5.0 }", "period: 5.0, wobble: 1 }");
+    REQUIRE(Parse(text, &warnings).has_value());
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0] == std::format("world_look line {}: bob has no key wobble; it is ignored", LineOf(text, "bob:")));
+    std::vector<std::string> tints;
+    const std::string drain = With("sepia: [150, 130, 100] }", "sepia: [150, 130, 100], tone: 1 }");
+    REQUIRE(Parse(drain, &tints).has_value());
+    REQUIRE(tints.size() == 1);
+    CHECK(tints[0].contains("drain has no key tone"));
+}
+
+} // namespace
