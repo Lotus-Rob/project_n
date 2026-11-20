@@ -45,13 +45,16 @@ TEST_CASE("the camera path walks east in steps through its follow segment only")
 }
 
 TEST_CASE("the follow segment makes eight presses") {
-    constexpr i32 SAMPLES_PER_SECOND = 600;
+    // The middle of each step's stand and of its walk, over the segment's steps and the first step's worth after it.
+    constexpr f32 STAND_MIDDLE = app::CAMERA_PATH_STAND_SECONDS / 2.0F;
+    constexpr f32 WALK_MIDDLE = (app::CAMERA_PATH_STAND_SECONDS + app::CAMERA_PATH_STEP_SECONDS) / 2.0F;
+    constexpr i32 STEPS = 9;
     i32 presses = 0;
-    bool eastBefore = false;
-    for (i32 i = 0; i <= static_cast<i32>(LAST) * SAMPLES_PER_SECOND; ++i) {
-        const bool east = app::CameraPathMove(static_cast<f32>(i) / static_cast<f32>(SAMPLES_PER_SECOND)).x > 0.0F;
-        presses += (east && !eastBefore) ? 1 : 0;
-        eastBefore = east;
+    for (i32 step = 0; step < STEPS; ++step) {
+        const f32 start = static_cast<f32>(step) * app::CAMERA_PATH_STEP_SECONDS;
+        const bool standing = app::CameraPathMove(start + STAND_MIDDLE).x == 0.0F;
+        const bool walking = app::CameraPathMove(start + WALK_MIDDLE).x > 0.0F;
+        presses += (standing && walking) ? 1 : 0;
     }
     CHECK(presses == 8);
 }
