@@ -780,7 +780,7 @@ def test_programs():
 FUZZ_PRESET = ("linux-clang", "address")  # the only build that makes the fuzz targets (tests/xmake.lua)
 
 
-def check_test_target(target, test, extra, preset, sanitizer):
+def check_test_target(target, test, extra, preset, sanitizer, mode="debug", container=False):
     """Refuse a `test --suite` that would run no test: `xmake run` of a library or the game exits 0 having tested
     nothing, and a fuzz target run bare fuzzes forever."""
     if target is None:
@@ -790,8 +790,9 @@ def check_test_target(target, test, extra, preset, sanitizer):
             raise Fail(f"{target} replays its seeds and takes no --test or doctest arguments; fuzz it with "
                        f"`pixi run project_n fuzz {target.removeprefix('fuzz_')}`")
         if (preset, sanitizer) != FUZZ_PRESET:
-            raise Fail(f"{target} is built only with linux-clang and AddressSanitizer: "
-                       f"`pixi run project_n test --preset {FUZZ_PRESET[0]} --sanitizer {FUZZ_PRESET[1]} --suite {target}`")
+            asked = (f" --mode {mode}" if mode != "debug" else "") + (" --container" if container else "")
+            raise Fail(f"{target} is built only with linux-clang and AddressSanitizer: `pixi run project_n test "
+                       f"--preset {FUZZ_PRESET[0]} --sanitizer {FUZZ_PRESET[1]}{asked} --suite {target}`")
         return
     suites = test_names()
     if target in suites:
@@ -838,7 +839,7 @@ def cmd_test(args):
     extra = args.args[1:] if args.args[:1] == ["--"] else args.args
     if (extra or args.test) and not args.target:
         raise Fail("pass --suite <test target> with --test or doctest arguments")
-    check_test_target(args.target, args.test, extra, args.preset, args.sanitizer)
+    check_test_target(args.target, args.test, extra, args.preset, args.sanitizer, args.mode, args.container)
     extra = ([test_filter(args.test, args.target)] if args.test else []) + extra
     check_sanitizer(args.preset, args.sanitizer)
     sweep_here(own_trees([args.preset], args.mode, args.sanitizer, args.container))

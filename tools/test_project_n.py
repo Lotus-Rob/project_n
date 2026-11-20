@@ -2303,6 +2303,19 @@ class TestFilesTest(unittest.TestCase):
         patched["reenter"].assert_not_called()
         patched["build"].assert_not_called()
 
+    def test_a_fuzz_suite_reaches_its_container_with_its_target(self):
+        with mock.patch.multiple(project_n, needs_container=lambda *a: True, reenter=mock.DEFAULT) as patched:
+            project_n.cmd_test(project_n.argparse.Namespace(preset="linux-clang", mode="debug", sanitizer="address",
+                                                            container=True, target="fuzz_yaml", test=None, args=[]))
+        patched["reenter"].assert_called_once_with("linux-clang", ["test", "--preset", "linux-clang", "--mode", "debug",
+                                                                   "--sanitizer", "address", "--target", "fuzz_yaml"])
+
+    def test_a_fuzz_refusal_keeps_the_mode_and_container_asked_for(self):
+        with mock.patch.multiple(project_n, needs_container=lambda *a: False, build=mock.DEFAULT), \
+             self.assertRaisesRegex(project_n.Fail, r"--mode release --container --suite fuzz_yaml"):
+            project_n.cmd_test(project_n.argparse.Namespace(preset="linux-clang", mode="release", sanitizer="none",
+                                                            container=True, target="fuzz_yaml", test=None, args=[]))
+
     def test_listing_a_fuzz_suite_prints_nothing(self):  # it has no test files for --test
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
@@ -2310,8 +2323,9 @@ class TestFilesTest(unittest.TestCase):
         self.assertEqual(out.getvalue().strip(), "")
 
     def test_every_fuzz_file_and_program_is_a_known_name(self):
-        self.assertEqual(project_n.fuzz_suites(),
-                         sorted("fuzz_" + f.stem for f in (project_n.ROOT / "tests" / "fuzz").glob("*.cpp")))
+        # Every fuzz target keeps its seeds in a corpus folder of its own name (tests/AGENTS.md).
+        corpora = (project_n.ROOT / "tests" / "fuzz" / "corpus").iterdir()
+        self.assertEqual(project_n.fuzz_suites(), sorted("fuzz_" + d.name for d in corpora if d.is_dir()))
         self.assertIn("headless_bench", project_n.test_programs())
         self.assertIn("reference_tests", project_n.test_programs())
         self.assertNotIn("test_pch", project_n.test_programs())
