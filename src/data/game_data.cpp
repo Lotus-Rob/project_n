@@ -15,7 +15,8 @@ using core::atlas::SpriteId;
 // The most health a creature has: below 2^53, which an f64 holds exactly.
 constexpr i64 MAX_HEALTH = 9'007'199'254'740'992;
 
-// The most tiles a creature sees: a diamond that size stays well inside the largest map.
+// The most tiles a creature sees: a cap that keeps a typo from lighting most of the map at once. Exploring clips to the
+// map, so any size is safe.
 constexpr i64 MAX_SIGHT = 64;
 
 std::unexpected<core::Error> Fail(const YAML::Node& node, std::string_view why) {

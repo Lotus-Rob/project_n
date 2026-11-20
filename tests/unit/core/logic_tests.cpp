@@ -373,6 +373,7 @@ TEST_CASE("a publish starts with the fog off and keeps its buffer") {
 TEST_CASE("the publish hears the latest view's debug sight, and none before a view") {
     constexpr core::Rect AREA{ .min = { .x = 0.0F, .y = 0.0F }, .max = { .x = 100.0F, .y = 100.0F } };
     Rig rig;
+    rig.simulation.debugSight = true; // so a false below proves the logic sent one
     static_cast<void>(rig.Burst(1));
     CHECK_FALSE(rig.simulation.debugSightAtPublish);
     rig.handover.SendView({ .area = AREA, .change = 1, .debugSight = true });
