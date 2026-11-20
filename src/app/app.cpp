@@ -322,7 +322,7 @@ i32 App::Run() {
             return 1;
         }
     }
-    PN_LOG_INFO("shutting down; {} snapshots were published after they were due", m_display.LateAdoptions());
+    PN_LOG_INFO("shutting down; {} snapshots that moved were published after they were due", m_display.LateAdoptions());
     PN_LOG_INFO(
         "display delay: {:.1f} ms at the end, {:.1f} to {:.1f} ms over the run",
         Milliseconds(m_delay.Current()),
