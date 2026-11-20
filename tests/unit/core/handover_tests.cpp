@@ -331,6 +331,23 @@ TEST_CASE("undrained cosmetic events of an older epoch are kept: its snapshot ma
     CHECK(taken[1].epoch == 1);
 }
 
+TEST_CASE("events published before a take stay with it, so a publish before the frame drains drops none of them") {
+    Handover handover;
+    // The frame takes a snapshot whose events are far behind (after a stall), and the logic publishes again before the
+    // frame drains them: the render clock enters that snapshot, so they may still play.
+    constexpr u64 NEWEST = 2 + static_cast<u64>(core::STALE_EVENT_TICKS) + core::MAX_CATCH_UP + 1;
+    std::vector<Event> first{ { .tick = 1, .cosmetic = true } };
+    handover.Publish(first);
+    REQUIRE(handover.TakeState() != nullptr);
+    std::vector<Event> second{ { .tick = NEWEST, .cosmetic = true } };
+    handover.Publish(second);
+    std::vector<Event> pending;
+    handover.AppendEvents(pending);
+    REQUIRE(pending.size() == 2);
+    CHECK(pending[0].tick == 1);
+    CHECK(pending[1].tick == NEWEST);
+}
+
 struct NamedEvent {
     u64 tick = 0;
     u64 epoch = 0;
@@ -389,7 +406,8 @@ TEST_CASE("the handover is safe between a logic and a main thread") {
             inOrder = inOrder && drawn->sequence >= lastSequence;
             lastSequence = drawn->sequence;
         }
-        handover.TakeEvents(taken);
+        taken.clear();
+        handover.AppendEvents(taken);
         for (const Event& event : taken) {
             inOrder = inOrder && event.tick == nextEvent;
             ++nextEvent;

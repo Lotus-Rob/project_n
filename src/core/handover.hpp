@@ -65,9 +65,10 @@ public:
     /// Logic thread: makes Writing() the newest waiting snapshot, first dropping the oldest when WAITING snapshots
     /// already wait, and appends `events` to the event channel, leaving `events` empty. While the main thread hasn't
     /// taken the earlier events, drops the cosmetic ones of the newest epoch PlayDue() would drop anyway: more than
-    /// STALE_EVENT_TICKS + MAX_CATCH_UP + 1 behind the newest, since the render clock reaches at least the older
-    /// waiting snapshot's tick minus one before it reaches them, and that snapshot is at most a burst of MAX_CATCH_UP
-    /// ticks behind the newest.
+    /// STALE_EVENT_TICKS + MAX_CATCH_UP + 1 behind the newest. Those events came with snapshots still waiting, as
+    /// TakeState() takes the events with each snapshot, so the render clock reaches at least the older waiting
+    /// snapshot's tick minus one before it reaches them, and that snapshot is at most a burst of MAX_CATCH_UP ticks
+    /// behind the newest.
     void Publish(std::vector<Event>& events) PN_REQUIRES(!m_mutex) {
         PN_PROFILE_ZONE();
         const std::scoped_lock lock{ m_mutex };
@@ -80,11 +81,11 @@ public:
         }
         else {
             // The main thread hasn't drained the last ones: the rare path that copies under the lock. Cosmetic events
-            // PlayDue() would drop are dropped here, so a stalled main thread doesn't grow the queue. Each frame drains
-            // the events after taking snapshots, so the snapshots it holds are older than these events, and the render
-            // clock (RenderTick()) first reaches them by adopting a waiting snapshot: at worst the older of two, a burst of up
-            // to MAX_CATCH_UP ticks behind the newest, drawn from its tick minus one. So those more than STALE_EVENT_TICKS +
-            // MAX_CATCH_UP + 1 behind the newest can't play. An older epoch's are kept: its snapshot may still be drawn, and
+            // PlayDue() would drop are dropped here, so a stalled main thread doesn't grow the queue. Each take moves the
+            // events out with its snapshot, so these came with snapshots still waiting, and the render clock (RenderTick())
+            // first reaches them by adopting one: at worst the older of two, a burst of up to MAX_CATCH_UP ticks behind the
+            // newest, drawn from its tick minus one. So those more than STALE_EVENT_TICKS + MAX_CATCH_UP + 1 behind the
+            // newest can't play. An older epoch's are kept: its snapshot may still be drawn, and
             // nothing adds to them once a newer epoch has begun. Other events still accumulate; their coalescing arrives with
             // their kinds.
             m_events.insert(m_events.end(), events.begin(), events.end());
@@ -137,11 +138,18 @@ public:
     }
 
     /// Main thread: the oldest waiting snapshot, or null when none waits. The main thread owns it
-    /// until it gives it back with ReturnState(), and holds at most two at once.
+    /// until it gives it back with ReturnState(), and holds at most two at once. The events published so far
+    /// go with it: the next AppendEvents() or TakeEvents() gives them.
     [[nodiscard]] State* TakeState() PN_REQUIRES(!m_mutex) {
         PN_PROFILE_ZONE();
         const std::scoped_lock lock{ m_mutex };
-        return m_waitingCount == 0 ? nullptr : PopWaiting();
+        if (m_waitingCount == 0) {
+            return nullptr;
+        }
+        // Taken in the same lock as the snapshot, so a publish before the frame drains can't count them among the
+        // waiting snapshots' events and drop one the render clock is about to reach.
+        MoveEventsToDrained();
+        return PopWaiting();
     }
 
     /// Main thread: gives back a snapshot from TakeState() that it no longer draws.
@@ -151,22 +159,20 @@ public:
         m_free[m_freeCount++] = state;
     }
 
-    /// Main thread: moves the events published since they were last taken (by this or AppendEvents())
+    /// Main thread: moves the events published since they were last given (by this or AppendEvents())
     /// into `into`, replacing its contents.
     void TakeEvents(std::vector<Event>& into) PN_REQUIRES(!m_mutex) {
-        PN_PROFILE_ZONE();
         into.clear();
-        const std::scoped_lock lock{ m_mutex };
-        std::swap(into, m_events);
+        AppendEvents(into);
     }
 
-    /// Main thread: moves the events published since they were last taken (by this or TakeEvents())
+    /// Main thread: moves the events published since they were last given (by this or TakeEvents())
     /// to the end of `pending`, in order. The buffers keep their capacity, so the steady state allocates nothing.
     void AppendEvents(std::vector<Event>& pending) PN_REQUIRES(!m_mutex) {
         PN_PROFILE_ZONE();
         {
             const std::scoped_lock lock{ m_mutex };
-            std::swap(m_drained, m_events);
+            MoveEventsToDrained();
         }
         pending.insert(pending.end(), std::make_move_iterator(m_drained.begin()), std::make_move_iterator(m_drained.end()));
         m_drained.clear();
@@ -179,6 +185,17 @@ private:
     State* PopFree() PN_REQUIRES(m_mutex) {
         PN_ASSERT(m_freeCount > 0, "the main thread holds more than two snapshots");
         return m_free[--m_freeCount];
+    }
+
+    // Only the main thread calls this, the one thread that touches m_drained.
+    void MoveEventsToDrained() PN_REQUIRES(m_mutex) {
+        if (m_drained.empty()) {
+            std::swap(m_drained, m_events);
+            return;
+        }
+        // A second take in one frame after a publish: rare, so the copy under the lock is fine.
+        m_drained.insert(m_drained.end(), std::make_move_iterator(m_events.begin()), std::make_move_iterator(m_events.end()));
+        m_events.clear();
     }
 
     State* PopWaiting() PN_REQUIRES(m_mutex) {
@@ -196,7 +213,7 @@ private:
     std::array<State*, WAITING> m_waiting PN_GUARDED_BY(m_mutex){}; // oldest first
     std::size_t m_waitingCount PN_GUARDED_BY(m_mutex) = 0;
     std::vector<Event> m_events PN_GUARDED_BY(m_mutex);
-    std::vector<Event> m_drained; // the main thread's alone: AppendEvents()'s spare, always empty between calls
+    std::vector<Event> m_drained; // the main thread's alone: events taken with snapshots, not yet given
     std::vector<Input> m_input PN_GUARDED_BY(m_mutex);
     Held m_held PN_GUARDED_BY(m_mutex){};
     std::optional<View> m_view PN_GUARDED_BY(m_mutex) = std::nullopt;
