@@ -63,7 +63,7 @@ TEST_CASE("a newly explored tile eases to explored over the fade time and holds"
     CHECK(Value(fade, CENTRE_TILE, 0) == 0);
     const core::Snapshot next = Shows(2, std::nullopt, CENTRE_TILE);
     fade.Update(next, map, QUARTER, FADE);
-    CHECK(Value(fade, CENTRE_TILE, 0) == doctest::Approx(127.5).epsilon(0.02));
+    CHECK(Value(fade, CENTRE_TILE, 0) == 128);
     fade.Update(next, map, QUARTER, FADE);
     CHECK(Value(fade, CENTRE_TILE, 0) == 255);
     fade.Update(next, map, 1.0F, FADE);
@@ -102,10 +102,15 @@ TEST_CASE("debug sight puts every tile in sight and explores none") {
     snapshot.fog.debugSight = true;
     app::FogFade fade;
     fade.Update(snapshot, map, 0.0F, FADE);
-    for (u32 tile = 0; tile < TILES; ++tile) {
-        CHECK(Value(fade, tile, 1) == 255);
-        CHECK(Value(fade, tile, 0) == (tile == CENTRE_TILE ? 255 : 0));
+    const auto values = fade.Frame().values;
+    std::size_t inSight = 0;
+    std::size_t explored = 0;
+    for (std::size_t tile = 0; tile < TILES; ++tile) {
+        explored += values[tile * 2] == 255 ? 1 : 0;
+        inSight += values[(tile * 2) + 1] == 255 ? 1 : 0;
     }
+    CHECK(inSight == TILES);
+    CHECK(explored == 1);
 }
 
 TEST_CASE("leaving sight eases out while explored stays") {
@@ -115,10 +120,20 @@ TEST_CASE("leaving sight eases out while explored stays") {
     CHECK(Value(fade, CENTRE_TILE, 1) == 255);
     const core::Snapshot gone = Shows(1, FIRST_TILE, CENTRE_TILE);
     fade.Update(gone, map, QUARTER, FADE);
-    CHECK(Value(fade, CENTRE_TILE, 1) == doctest::Approx(127.5).epsilon(0.02));
+    CHECK(Value(fade, CENTRE_TILE, 1) == 128);
     CHECK(Value(fade, CENTRE_TILE, 0) == 255);
     fade.Update(gone, map, QUARTER, FADE);
     CHECK(Value(fade, CENTRE_TILE, 1) == 0);
+    CHECK(Value(fade, CENTRE_TILE, 0) == 255);
+}
+
+TEST_CASE("targets are recomputed only when the version, player, radius or debug sight change") {
+    const core::WorldMap map = SmallMap();
+    app::FogFade fade;
+    fade.Update(Shows(1, std::nullopt, FIRST_TILE), map, 0.0F, FADE);
+    fade.Update(Shows(1, std::nullopt, CENTRE_TILE), map, 1.0F, FADE);
+    CHECK(Value(fade, CENTRE_TILE, 0) == 0);
+    fade.Update(Shows(2, std::nullopt, CENTRE_TILE), map, 1.0F, FADE);
     CHECK(Value(fade, CENTRE_TILE, 0) == 255);
 }
 
