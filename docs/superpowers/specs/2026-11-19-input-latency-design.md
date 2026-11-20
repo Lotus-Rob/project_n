@@ -1,6 +1,6 @@
 # Input latency: the snapshot picked after the GPU wait, an adaptive display delay, a probe of many presses
 
-Status: approved by the user (2026-11-19), being implemented; Design 8 approved by the user (2026-11-19).
+Status: implemented 2026-11-19 (approved by the user 2026-11-19; Design 8 approved by the user 2026-11-19).
 
 ## Intent
 
@@ -164,6 +164,8 @@ ever taken but not yet due", and nothing on record weighed a queue against repla
    is unchanged (0002 §6): a snapshot is drawn from when it is due, exactly when the one before it reaches alpha 1.
 3. **Every taken snapshot counts once.** One `Update` may now take two snapshots. Each one whose tick advanced reports
    its lateness to the adaptive delay once, and each published after it was due counts as a late adoption, as today.
+   *Amended 2026-11-20 (the user): only snapshots whose tick advanced count as late, the same rule as the delay's; see
+   the Outcome.*
    The interface for that (`TakenLateness` giving up to two values, or `Update` handing them to the delay) is the
    builder's.
 4. **Latency unchanged.** When a snapshot shows is still set only by D: the newest snapshot reaches the main thread as
@@ -192,3 +194,83 @@ comments describe the queue, with a line in the Revised row.
 
 **Left to the builder.** The queue's representation, `TakenLateness`'s new shape, and the corrected stale-event margin,
 each with its reason.
+
+## Outcome
+
+Implemented on branch `input-latency` in seven tasks, 2026-11-19 (the frame order is "fix(core): pick a frame's
+snapshot after the swapchain wait", the adaptive delay "refactor(core): add an adaptive display delay", the queue "fix(core):
+keep two waiting snapshots so a frame never misses a due one"). The plan's ledger (`.superpowers/sdd/`, gitignored) held
+the rulings below; they are kept here with their reasons.
+
+### Measured
+
+`pixi run project_n measure --runs world` on the dev machine, 2026-11-20: releasedbg, fullscreen 2560x1440 at 165.1 Hz,
+2 workers, unpaced, under Tracy (26.7 s, about 4,440 frames a run). Three runs: the first and second before the
+late-adoption fix below (the first without `--keep`, so its game log and late count are gone), the third after it.
+
+| | run 1 | run 2 | run 3 (branch head) | 5b2 (before) | 5a |
+|---|---|---|---|---|---|
+| Move press to its first drawn frame, 8 presses | median 12.2 ms, 10.9 to 14.1 | median 12.4 ms, 6.9 to 15.7 | median 12.2 ms, 11.8 to 16.5 | 31.1 ms (1 press) | 23.8 ms (1 press) |
+| display delay D: at the end (range over the run) | 3.4 ms (2.8 to 10.0) | 3.4 ms (2.9 to 10.0) | 3.4 ms (3.1 to 10.0) | 10 ms, fixed | 10 ms, fixed |
+| late adoptions | not kept | 1 (the month step's frozen snapshot) | 0 | 0 | |
+
+Run 3's presses, in order: 11.8, 11.9, 12.7, 12.1, 16.5, 12.1, 15.6, 12.3 ms. About 10 ms of the 19 ms saved is D
+falling from 10 ms to about 3 ms; the rest is the frame no longer drawing the old snapshot after the GPU wait (the
+Evidence's 4.3 ms). The spread is the wait for the next tick, which 8 presses now sample at different phases instead
+of one. Publish lateness over run 2 (from its Tracy capture): p50 1.45 ms, p99 2.29 ms, worst 2.63 ms outside the
+month step, so D's 3.4 ms is the p99 plus 1 ms as designed. Frame times are unchanged in shape (median 6.0 ms in every
+segment, p99 under 10 ms outside the month step, the month step's two main-thread hitches at 17.26 and 17.32 s in every
+run); run 3 also had one in the widest view at 14.26 s (20.8 ms of work, 14.4 ms of it text layout's `Make`), on the
+main thread, which this branch didn't touch. The follow segment's numbers are stop-start now (below), so not
+comparable with earlier runs.
+
+### Rulings and the builder's calls
+
+- **The constants are the spec's, untuned:** window 600, 99th percentile, margin 1 ms, floor 2 ms, ceiling a tick, rise
+  10% and fall 2% of elapsed time, start 10 ms, and D falls only after 60 observed snapshots (the first second after a
+  start or load is slow and unrepresentative). Nothing measured asked for a change.
+- **Which snapshots count:** only those whose tick advanced; an early one counts as lateness 0. A frozen snapshot shows
+  the transforms the one before it ends on at alpha 1, so its lateness can't show as a judder; and every expected stall
+  (month step, save, load, replay toggle, waiting for a resident scene) publishes a frozen snapshot after the stall, so
+  this one rule keeps all of them, the Evidence's 20.7 ms outlier included, out of D with no extra flag. Catch-up bursts
+  after a hitch advance and count: their lateness is real.
+- **Display owns the frozen-snapshot rule** (through the snapshot's `advanced`), not the caller: only Display sees each
+  snapshot it takes, and a taken one may be held rather than drawn. Moving the rule would need a wider interface for no
+  gain.
+- **`PresentFrame` returning false is fatal to the frame:** an acquire may be left undrawn, so the caller must not present
+  again; tested, also for a prepare failure in steady play.
+- **Scene loading stays inside the frame, after the acquire:** a loading frame draws only the backdrop and holds the
+  swapchain image for up to the 2 ms load budget. That adds to its CPU time instead of overlapping the wait, at worst one
+  missed vblank on a slow machine during uploads; those frames are frozen, so D never sees them.
+- **The cull margin** (`app/view.hpp`) now reasons from D's ceiling, a tick: 16.67 + 16.67 + 16.67 = 50 ms of zoom, 1.5
+  notches, 0.117 of the view a side; with the pan's worst case 0.24, still inside the 0.25 margin, which stays.
+- **The timeline harness** runs 60 Hz and 165 Hz with a 3.5 ms acquire wait and unpaced 1 ms frames, each at 8 phases
+  `(2i+1)·TICK/16`, with steady lateness 1.0 to 2.0 ms (target exactly 3 ms). New order: worst latency margin +0.542 ms
+  at 60 and 165 Hz, +0.042 ms unpaced. The old order (snapshot picked before the acquire) fails as required: −1.545 ms at
+  60 Hz, and 5 of 8 phases at 165 Hz, worst −3.435 ms. The spike case checks D is back at 10.5 s, not 10: the window
+  holds the spike for exactly 10 s and D then needs about 200 ms at 2% to fall, which "falls slowly afterwards" allows.
+- **The 60 Hz snapshot drop** the harness found predates this branch (newest-wins handover); the user had it fixed here
+  (Design 8). The queue is a two-slot array, oldest first, under the handover's mutex: a ring saves nothing at depth two.
+  `Update` takes at most two snapshots a call, so the lateness store always has room, and a logic thread publishing
+  during the loop can't keep one frame taking forever; a snapshot left by that bound is taken the next frame.
+  `TakenLateness` gives one value a call, drained by `PresentFrame`'s loop, so the harness's single-value use stands.
+- **The stale-event margin is 30 + 3 + 1 = 34 ticks** (was 31): with the queue the render clock may first reach undrained
+  events by adopting the older of two waiting snapshots, up to a burst (3 ticks) behind the newest, drawn from its tick
+  minus one.
+- **Events drain after the frame's snapshots are taken**, inside `PresentFrame` (the review found the drain ran before
+  `Display::Update`, leaving a gap where a just-taken snapshot's events weren't yet pending); the stale drop relies on it.
+  Fixed test-first in this branch rather than deferred.
+- **Late adoptions count only advanced snapshots** (the user, 2026-11-20, amending Design 8's item 3). The first
+  `--keep` measure run logged 1 late adoption: the month step's frozen snapshot, published when its 26.8 ms stall ended
+  (every other snapshot was under 2.7 ms late, p99 2.29 ms, from the run's Tracy capture). Before the queue the next
+  tick's snapshot, published about 1.5 ms later, usually replaced it before a frame took it, so it was never counted;
+  the queue keeps it. It moves nothing on screen, so counting it hid nothing real and broke "0 late adoptions"; the
+  counter now follows the delay's rule (fixed test-first: "a late snapshot whose tick didn't advance doesn't count as
+  late").
+- **`game_tests`' `Taken()` helper** changed with the handover: it encoded the newest-wins rule.
+- **The probe's 8 presses** depend on the cultivator stopping dead and the 0.1 s stand outlasting a tick plus D plus a
+  frame; all three runs above logged 8.
+- **`measure`'s delay pattern** reads only non-negative finite numbers: D is clamped to [2 ms, a tick], so the log never
+  prints anything else.
+- **Not comparable with earlier runs:** the follow segment now walks stop-start (0.4 s walking, 0.1 s standing), so its
+  smoothness numbers (frame percentiles, hitches, shimmer) can't be set beside runs before this branch.
