@@ -12,6 +12,7 @@
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 #include "gfx/camera.hpp"
+#include "gfx/fog.hpp"
 
 #include <cstddef>
 #include <optional>
@@ -81,10 +82,16 @@ private:
 /// The index of the instance drawn on top at `world` in `snapshot` interpolated by `alpha`: the last
 /// in drawing order with an ID whose quad, turned by its interpolated rotation, contains the point, or
 /// none. Transparent pixels count as hits, until sprites with much empty space overlap
-/// enough to matter.
-[[nodiscard]] std::optional<std::size_t> PickInstance(const core::Snapshot& snapshot, f64 alpha, core::Vec2 world);
+/// enough to matter. An instance fading out of sight (core::INSTANCE_SIGHT_FADE) that `fog` draws at under half opacity
+/// at its foot is skipped: what can't be seen can't be pointed at.
+[[nodiscard]] std::optional<std::size_t> PickInstance(
+    const core::Snapshot& snapshot,
+    f64 alpha,
+    core::Vec2 world,
+    const gfx::FogFrame& fog
+);
 
 /// The entity of PickInstance()'s instance, or zero for none.
-[[nodiscard]] core::StableId Pick(const core::Snapshot& snapshot, f64 alpha, core::Vec2 world);
+[[nodiscard]] core::StableId Pick(const core::Snapshot& snapshot, f64 alpha, core::Vec2 world, const gfx::FogFrame& fog);
 
 } // namespace app

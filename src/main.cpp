@@ -209,6 +209,7 @@ int main(int argc, char** argv) {
                     .scene = scene,
                     .quitAfterNs = *quitAfterNs,
                     .burst = app::HasFlag(args, "--burst"),
+                    .debugSight = app::HasFlag(args, "--debug-sight"),
                     .zoom = *zoom,
                     .castSwords = app::HasFlag(args, "--cast-swords"),
                     .workers = *workers,

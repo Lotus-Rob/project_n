@@ -55,7 +55,14 @@ bool HoldsCamera(const core::Snapshot* drawn) {
     return drawn == nullptr || drawn->transition;
 }
 
-std::optional<std::size_t> PickInstance(const core::Snapshot& snapshot, f64 alpha, core::Vec2 world) {
+namespace {
+
+// Below this opacity a walker fading into the fog's edge is as good as gone.
+constexpr f32 SIGHT_PICK_OPACITY = 0.5F;
+
+} // namespace
+
+std::optional<std::size_t> PickInstance(const core::Snapshot& snapshot, f64 alpha, core::Vec2 world, const gfx::FogFrame& fog) {
     PN_PROFILE_ZONE();
     constexpr u32 LOW_HALF = 0xFFFFU;
     constexpr u32 HIGH_SHIFT = 16;
@@ -65,6 +72,10 @@ std::optional<std::size_t> PickInstance(const core::Snapshot& snapshot, f64 alph
             continue;
         }
         const core::Instance& instance = snapshot.instances[i];
+        if ((instance.flags & core::INSTANCE_SIGHT_FADE) != 0 &&
+            gfx::SightFade(fog, core::SightPoint(instance, alpha)) < SIGHT_PICK_OPACITY) {
+            continue;
+        }
         const core::Vec2 offset = world - Interpolated(instance.previous, instance.current, alpha);
         const f32 previousAngle = core::UnpackHalf(static_cast<u16>(instance.rotation & LOW_HALF));
         const f32 angle =
@@ -85,8 +96,8 @@ std::optional<std::size_t> PickInstance(const core::Snapshot& snapshot, f64 alph
     return std::nullopt;
 }
 
-core::StableId Pick(const core::Snapshot& snapshot, f64 alpha, core::Vec2 world) {
-    const std::optional<std::size_t> picked = PickInstance(snapshot, alpha, world);
+core::StableId Pick(const core::Snapshot& snapshot, f64 alpha, core::Vec2 world, const gfx::FogFrame& fog) {
+    const std::optional<std::size_t> picked = PickInstance(snapshot, alpha, world, fog);
     return picked ? snapshot.ids[*picked] : core::StableId{};
 }
 

@@ -244,7 +244,8 @@ App::App(platform::Window window, gfx::Renderer renderer, Options options)
     )
   , m_camera{ m_options.zoom }
   , m_cameraNs{ m_startNs }
-  , m_monthStep{ m_options.monthStepAt } {
+  , m_monthStep{ m_options.monthStepAt }
+  , m_debugSight{ m_options.debugSight } {
     m_numberTexts.reserve(NUMBER_RESERVE);
     ApplyEffects(m_options.effects);
     m_renderer.SetSeals(m_options.seals);
@@ -518,11 +519,7 @@ void App::HandleInput(const platform::WindowState& state) {
         if (control->control == Control::Quit) {
             m_quit = true;
         }
-        else if (control->control == Control::ToggleShowcase) {
-            m_showcase = !m_showcase;
-            PN_LOG_INFO("the showcase seals {}", m_showcase ? "shown" : "hidden");
-        }
-        else if (TakeCursorControl(control->control)) {
+        else if (TakeDisplayToggle(control->control) || TakeCursorControl(control->control)) {
             continue;
         }
         else if (
@@ -628,7 +625,7 @@ void App::Click(const platform::WindowState& state, core::Vec2 position) {
     // The picture the player clicked on: the drawn snapshot at the render clock, as the camera shows it.
     const f64 alpha = core::Alpha(drawn->scheduledNs, platform::NowNs(), m_delay.Current(), drawn->advanced);
     const core::Vec2 point = WindowToWorld(m_camera.Camera(), position, state.width, state.height);
-    const core::StableId target = Pick(*drawn, alpha, point);
+    const core::StableId target = Pick(*drawn, alpha, point, m_fog.Frame());
     HideCursor();
     const core::Action action = ClickAction(drawn->worldMap, target, point);
     if (action.kind == core::ActionKind::WalkTo) {
@@ -638,6 +635,20 @@ void App::Click(const platform::WindowState& state, core::Vec2 position) {
         PN_LOG_DEBUG("clicked on entity {}", std::to_underlying(target));
     }
     m_handover.SendInput(action);
+}
+
+bool App::TakeDisplayToggle(Control control) {
+    if (control == Control::ToggleDebugSight) {
+        m_debugSight = !m_debugSight;
+        PN_LOG_INFO("the debug sight {}", m_debugSight ? "on" : "off");
+        return true;
+    }
+    if (control == Control::ToggleShowcase) {
+        m_showcase = !m_showcase;
+        PN_LOG_INFO("the showcase seals {}", m_showcase ? "shown" : "hidden");
+        return true;
+    }
+    return false;
 }
 
 bool App::TakeCursorControl(Control control) {
@@ -720,7 +731,7 @@ std::optional<std::size_t> App::Hovered(const platform::WindowState& state, cons
     if (!cursor || m_device.Used() == platform::Device::Gamepad) {
         return std::nullopt; // a gamepad has no cursor to hover with
     }
-    return PickInstance(drawn, alpha, WindowToWorld(m_camera.Camera(), *cursor, state.width, state.height));
+    return PickInstance(drawn, alpha, WindowToWorld(m_camera.Camera(), *cursor, state.width, state.height), m_fog.Frame());
 }
 
 void App::MoveCamera(const platform::WindowState& state, const core::Snapshot& drawn, f64 alpha) {
@@ -826,7 +837,8 @@ bool App::Present(const platform::WindowState& state) {
             // Only drawn frames send one: hidden, the logic keeps the last view, and the first frame back sends a fresh one.
             m_handover.SendView(
                 { .area = CullArea(m_camera.Camera(), state.width, state.height),
-                  .change = core::ShownChange(drawn.sceneChange) }
+                  .change = core::ShownChange(drawn.sceneChange),
+                  .debugSight = m_debugSight }
             );
             const f64 renderTick = core::RenderTick(drawn.simulationTick, alpha);
             m_numberTexts.clear();
@@ -843,10 +855,16 @@ bool App::Present(const platform::WindowState& state) {
                 [this](std::string_view text) { return m_renderer.HudLineWidth(text); },
                 m_hudLines
             );
-            // Labels on the frame clock, which runs while the game is paused; numbers on the render clock, which holds.
-            gfx::View view =
-                FrameView(m_camera.Camera(), alpha, Hovered(state, drawn, alpha), m_frameClock.Advance(platform::NowNs()));
+            // Labels and the fog on the frame clock, which runs while the game is paused; numbers on the render clock, which
+            // holds.
+            const f64 frameSeconds = m_frameClock.Advance(platform::NowNs());
+            if (const core::WorldMap* map = m_options.data.world.get(); map != nullptr) {
+                m_fog.Update(drawn, *map, static_cast<f32>(frameSeconds - m_frameSeconds), m_options.worldLook.fog.fadeSeconds);
+            }
+            m_frameSeconds = frameSeconds;
+            gfx::View view = FrameView(m_camera.Camera(), alpha, Hovered(state, drawn, alpha), frameSeconds);
             view.showcase = m_showcase;
+            view.fog = m_fog.Frame();
             m_renderer.Draw(drawn, view, m_jobs, m_numberTexts, { .lines = m_hudLines, .bars = m_hudBars });
             MeasureLatency(drawn, alpha);
             PN_PROFILE_FRAME();

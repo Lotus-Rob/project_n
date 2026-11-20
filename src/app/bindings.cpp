@@ -97,6 +97,7 @@ Bindings::Bindings()
       { .code = InputCode::PadSouth, .control = Control::Confirm },
       { .code = InputCode::KeyM, .control = Control::AdvanceCalendar },
       { .code = InputCode::KeyF2, .control = Control::CycleScene },
+      { .code = InputCode::KeyF3, .control = Control::ToggleDebugSight },
       { .code = InputCode::KeyF5, .control = Control::Save },
       { .code = InputCode::KeyF9, .control = Control::Load },
       { .code = InputCode::KeyF6, .control = Control::ToggleRecording },

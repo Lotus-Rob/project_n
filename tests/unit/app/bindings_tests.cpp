@@ -308,6 +308,14 @@ TEST_CASE("F8 shows or hides the arena's showcase seals") {
     CHECK(down.value_or(app::ControlEvent{}).pressed);
 }
 
+TEST_CASE("F3 toggles the debug sight") {
+    app::Bindings bindings;
+    const std::optional<app::ControlEvent> down = bindings.Handle(Key(InputCode::KeyF3, true));
+    REQUIRE(down.has_value());
+    CHECK(down.value_or(app::ControlEvent{}).control == app::Control::ToggleDebugSight);
+    CHECK(down.value_or(app::ControlEvent{}).pressed);
+}
+
 TEST_CASE("P and the gamepad's Back pause the world") {
     app::Bindings bindings;
     const std::optional<app::ControlEvent> key = bindings.Handle(Key(InputCode::KeyP, true));
