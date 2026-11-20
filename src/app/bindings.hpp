@@ -16,31 +16,32 @@ namespace app {
 
 /// What the player can ask for, whatever the device.
 enum class Control : u8 {
-    Move,            ///< Walk, or pan without a follow target: an axis pair, held.
-    PanCamera,       ///< Pan the roaming camera: an axis pair, held (Bindings::Pan()).
-    DragCamera,      ///< Drag the roaming camera by the pointer: a button.
-    SnapBack,        ///< Bring the camera back to the player: a button.
-    Primary,         ///< The left button: casts the generator, or selects what is under the pointer.
-    Secondary,       ///< The right button: casts the spender, or outside combat drags the camera (DragsCamera()).
-    Movement,        ///< Space: casts the movement ability.
-    Special1,        ///< Key 1.
-    Special2,        ///< Key 2.
-    Special3,        ///< Key 3.
-    Special4,        ///< Key 4.
-    Ultimate,        ///< Key 5.
-    Zoom,            ///< Zoom the camera by `value` notches.
-    Quit,            ///< Leave the game.
-    PauseWorld,      ///< Pause or resume the world map's clock: P and the gamepad's Back.
-    AdvanceCalendar, ///< Let a month pass (a debug key).
-    Save,            ///< Save the game (a debug key).
-    Load,            ///< Load the save (a debug key).
-    ToggleRecording, ///< Start or finish recording a replay (a debug key).
-    PlayReplay,      ///< Play the replay or stop it (a debug key).
-    CycleScene,      ///< Switch to the next scene (a debug key).
-    DebugBurst,      ///< Hit every fox thousands of times (a debug key).
-    TargetCursor,    ///< Show the target cursor, or hide it: T and the gamepad's Y.
-    Confirm,         ///< Walk to the target cursor's tile: Enter and the gamepad's A.
-    ToggleShowcase,  ///< Hide or show the arena's showcase seals (a debug key).
+    Move,             ///< Walk, or pan without a follow target: an axis pair, held.
+    PanCamera,        ///< Pan the roaming camera: an axis pair, held (Bindings::Pan()).
+    DragCamera,       ///< Drag the roaming camera by the pointer: a button.
+    SnapBack,         ///< Bring the camera back to the player: a button.
+    Primary,          ///< The left button: casts the generator, or selects what is under the pointer.
+    Secondary,        ///< The right button: casts the spender, or outside combat drags the camera (DragsCamera()).
+    Movement,         ///< Space: casts the movement ability.
+    Special1,         ///< Key 1.
+    Special2,         ///< Key 2.
+    Special3,         ///< Key 3.
+    Special4,         ///< Key 4.
+    Ultimate,         ///< Key 5.
+    Zoom,             ///< Zoom the camera by `value` notches.
+    Quit,             ///< Leave the game.
+    PauseWorld,       ///< Pause or resume the world map's clock: P and the gamepad's Back.
+    AdvanceCalendar,  ///< Let a month pass (a debug key).
+    Save,             ///< Save the game (a debug key).
+    Load,             ///< Load the save (a debug key).
+    ToggleRecording,  ///< Start or finish recording a replay (a debug key).
+    PlayReplay,       ///< Play the replay or stop it (a debug key).
+    CycleScene,       ///< Switch to the next scene (a debug key).
+    DebugBurst,       ///< Hit every fox thousands of times (a debug key).
+    TargetCursor,     ///< Show the target cursor, or hide it: T and the gamepad's Y.
+    Confirm,          ///< Walk to the target cursor's tile: Enter and the gamepad's A.
+    ToggleShowcase,   ///< Hide or show the arena's showcase seals (a debug key).
+    ToggleDebugSight, ///< See the whole world map through the fog, or stop (a debug key).
 };
 
 /// A control pressed or released.
@@ -107,9 +108,9 @@ public:
     /// camera, the middle button drags it, C, the right stick's click and a middle click that drags nothing (Drag::Release())
     /// snap it back; the left button casts or selects, the right casts, Space and 1 to 5 cast; the wheel, the shoulder buttons
     /// and `-` and `=` zoom (every camera action by mouse, keyboard and gamepad); Escape quits; P and the gamepad's Back pause
-    /// the world; T and the gamepad's Y show or hide the target cursor, Enter and the gamepad's A walk to its tile; M, F2, F5,
-    /// F9, F6 and F10 are the debug keys. Code, not data; bindings become data (a YAML table the player's rebinds save over)
-    /// when rebinding lands with the settings screen.
+    /// the world; T and the gamepad's Y show or hide the target cursor, Enter and the gamepad's A walk to its tile; M, F2, F3,
+    /// F5, F9, F6 and F10 are the debug keys. Code, not data; bindings become data (a YAML table the player's rebinds save
+    /// over) when rebinding lands with the settings screen.
     Bindings();
 
     /// The control `input` presses or releases, if any. Movement inputs update Move() instead and

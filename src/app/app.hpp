@@ -11,6 +11,7 @@
 #include "app/camera_path.hpp"
 #include "app/cast.hpp"
 #include "app/damage_numbers.hpp"
+#include "app/fog_fade.hpp"
 #include "app/hud.hpp"
 #include "app/target_cursor.hpp"
 #include "app/view.hpp"
@@ -78,6 +79,8 @@ struct Options {
     /// Send a debug burst of hits once a second (`--burst`), so a profile run sees the damage numbers' stress without a key
     /// press.
     bool burst = false;
+    /// Start with the whole world map seen through the fog (`--debug-sight`); F3 flips it.
+    bool debugSight = false;
     /// The zoom every scene starts at (`--zoom`), from gfx::MIN_ZOOM to gfx::MAX_ZOOM, so a profile run can draw at either
     /// end; the wheel still changes it.
     f32 zoom = 1.0F;
@@ -209,6 +212,8 @@ private:
     // Hands the camera's controls (drag, zoom, snap back) to it: true when `control` was one of them, pressed.
     [[nodiscard]] bool SteerCamera(const ControlEvent& control);
     void Click(const platform::WindowState& state, core::Vec2 position);
+    // Acts on the debug keys that change only what the main thread draws: true when `control` was one.
+    [[nodiscard]] bool TakeDisplayToggle(Control control);
     // Acts on the cursor's two controls: true when `control` was one.
     [[nodiscard]] bool TakeCursorControl(Control control);
     // Shows the target cursor on the followed cultivator's tile, or hides it; nothing shows off the world map.
@@ -263,6 +268,8 @@ private:
     CameraControl m_camera;                                  // starts each scene at m_options.zoom
     Drag m_drag{};                                           // the camera's, by the pointer
     FrameClock m_frameClock{};                               // what labels fade by
+    f64 m_frameSeconds = 0.0;                                // the frame clock at the last drawn frame
+    FogFade m_fog{};                                         // the world map's fog as drawn
     TargetCursor m_cursor{};                                 // the keyboard and gamepad's way to set a route
     u64 m_cursorNs = 0;                                      // when the cursor last steered
     core::HeldInput m_held{};                                // as last sent
@@ -281,7 +288,8 @@ private:
     DataWatch m_dataWatch;
     DeviceInUse m_device{};
     bool m_quit = false;
-    bool m_showcase = true; // whether the arena's showcase seals are drawn (F8)
+    bool m_showcase = true;    // whether the arena's showcase seals are drawn (F8)
+    bool m_debugSight = false; // whether the whole map shows through the fog (F3, `--debug-sight`)
     bool m_paused = false;
     std::atomic<bool> m_logicFailed = false;
     std::jthread m_logic; // last, so it stops and joins before anything it uses goes
