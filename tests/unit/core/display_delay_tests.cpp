@@ -8,14 +8,12 @@ namespace {
 constexpr u64 ONE_MS = core::NS_PER_MS;
 constexpr u64 START_NS = core::NS_PER_SECOND;
 
-// 600 samples cycling 1.0 ... 1.8 ms with 6 of 2.4 ms: the 99th percentile is 2.4 ms.
+/// Observes 600 samples cycling 1.0 ... 1.8 ms with 6 of 2.4 ms: the 99th percentile is 2.4 ms.
 void ObserveSteady(core::DisplayDelay& delay) {
     for (std::size_t i = 0; i < core::DISPLAY_DELAY_WINDOW; ++i) {
         delay.Observe(i % 100 == 0 ? 2'400'000 : 1'000'000 + ((i % 5) * 200'000));
     }
 }
-
-} // namespace
 
 TEST_CASE("D starts at the start value with nothing observed") {
     core::DisplayDelay delay;
@@ -119,3 +117,5 @@ TEST_CASE("Lowest and Highest cover the range D took") {
     CHECK(delay.Highest() == core::TICK_NS);
     CHECK(delay.Lowest() == 3'400'000);
 }
+
+} // namespace
