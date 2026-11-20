@@ -62,13 +62,17 @@ struct Instance {
     u32 glowValue = 0;
     /// The low 32 bits of the glow's start tick.
     u32 glowStart = 0;
-    /// Unused: DXC's SPIR-V StructuredBuffer stride is a multiple of 8 when the struct holds a float2, so without this word
-    /// the shader's stride (56) would not match the 52 bytes of fields.
-    u32 reserved = 0;
+    /// SpriteDraw::flags: INSTANCE_FOGGED_LAND and INSTANCE_SIGHT_FADE. This word also keeps the shader's stride (56) at a
+    /// multiple of 8, as DXC's SPIR-V StructuredBuffer needs when the struct holds a float2.
+    u32 flags = 0;
 };
 /// The bytes of one Instance, which the shader's StructuredBuffer reads with the same layout.
 inline constexpr std::size_t INSTANCE_BYTES = 56;
 static_assert(sizeof(Instance) == INSTANCE_BYTES, "the shader reads instances as 56 bytes");
+/// Instance::flags bit: the sprite stands on the land, so the fog's cloud covers it where its tile is unexplored.
+inline constexpr u32 INSTANCE_FOGGED_LAND = 1U;
+/// Instance::flags bit: the sprite fades out of the player's sight and into the fog's edge.
+inline constexpr u32 INSTANCE_SIGHT_FADE = 2U;
 
 /// How a batch of instances blends onto what is drawn under it: one
 /// pipeline each.
@@ -141,6 +145,9 @@ struct ViewReport {
     Rect area{};
     /// The change that entered the scene it shows (ShownChange()): only a publish of that scene culls to it.
     u64 change = 0;
+    /// Whether the player has turned on seeing the whole map through the fog: a debugging aid, heard whatever scene the
+    /// view is of.
+    bool debugSight = false;
 };
 
 /// How the camera moves over a scene.
@@ -199,6 +206,13 @@ enum class TextAlign : u8 {
 /// Opaque white, premultiplied and packed as TextItem::colour: a text's colour unless it names another.
 inline constexpr u32 TEXT_WHITE = 0xFFFF'FFFFU;
 
+/// How the fog hides a text.
+enum class TextFog : u8 {
+    None,     ///< Always shown.
+    Sight,    ///< Shown only where its anchor is in the player's sight.
+    Explored, ///< Shown only where its anchor's tile has been explored.
+};
+
 /// A text the main thread draws over the world: its size in world units scales with the
 /// zoom, and its anchor interpolates by the render clock's alpha, as instances do.
 struct TextItem {
@@ -237,6 +251,8 @@ struct TextItem {
     u32 nameKey = 0;
     /// Of a Label or a Place: which wins where labels overlap.
     LabelPriority priority = LabelPriority::Rest;
+    /// How the fog hides it.
+    TextFog fog = TextFog::None;
     /// Of a Number: its premultiplied linear colour (the scene is drawn in linear space): red in the low byte, then green,
     /// blue and alpha. A Label and a Caption leave it alone: the renderer draws them in core::UiColours' colours.
     u32 colour = TEXT_WHITE;
@@ -325,6 +341,23 @@ struct CalendarView {
     friend constexpr bool operator==(const CalendarView&, const CalendarView&) = default;
 };
 
+/// The fog of war on the world map, as the main thread draws it.
+struct FogView {
+    /// Whether the scene has fog: false elsewhere, where the rest is stale.
+    bool on = false;
+    /// Changes whenever `explored` does, so the renderer uploads it only then.
+    u64 version = 0;
+    /// The explored tiles, one bit each, row by row (core/fog.hpp); refilled in place, its capacity kept.
+    // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
+    std::vector<u64> explored{};
+    /// The tile the player stands on, the centre of its sight; none without a player.
+    std::optional<u32> playerTile = std::nullopt;
+    /// How far the player sees, in tiles.
+    u32 sightRadius = 0;
+    /// Whether the debug aid shows the whole map: the fog is drawn as if everything were explored and in sight.
+    bool debugSight = false;
+};
+
 /// One published snapshot of the game state: what the main thread draws until the next is due.
 struct Snapshot {
     /// The wall tick of the last tick in the burst that published it.
@@ -389,6 +422,8 @@ struct Snapshot {
     std::optional<CasterView> caster = std::nullopt;
     /// The world's calendar in a scene that shows the world map (`worldMap`); none elsewhere.
     std::optional<CalendarView> calendar = std::nullopt;
+    /// The fog of war on the world map; `on` is false until the simulation turns it on, each publish.
+    FogView fog{};
     /// The player's remaining route on the world map: its foot, then the centres of the tiles still to walk; refilled in
     /// place each publish and empty for none.
     // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one

@@ -14,6 +14,8 @@ u64 PublishedClock() {
     return PUBLISHED_NS;
 }
 
+constexpr std::size_t FOG_WORDS = 4;
+
 constexpr core::SceneId OTHER_SCENE{ 1 };
 constexpr core::SceneKey OTHER_KEY{ 1 };
 
@@ -91,8 +93,18 @@ public:
         loaded.reset();
         requested.reset();
     }
+    void SetDebugSight(bool enabled) override {
+        debugSight = enabled;
+    }
     void Publish(core::Snapshot& snapshot, core::Jobs& /*jobs*/, const std::optional<core::Rect>& view) override {
         calls.push_back(Call::Publish);
+        debugSightAtPublish = debugSight;
+        fogOnAtPublish = snapshot.fog.on;
+        fogCapacityAtPublish = snapshot.fog.explored.capacity();
+        if (fillFog) {
+            snapshot.fog.on = true;
+            snapshot.fog.explored.assign(FOG_WORDS, 0);
+        }
         views.push_back(view);
         ++publishes;
         ticksAtPublish = ticks.size();
@@ -137,6 +149,11 @@ public:
     std::optional<Loaded> loaded = std::nullopt;
     core::SceneFacts asks{ .key = OTHER_KEY, .sprites = OTHER_SCENE }; // the scene a CycleScene asks for
     bool followCamera = false;
+    bool debugSight = false;          // what SetDebugSight last heard
+    bool debugSightAtPublish = false; // what it had heard when the last publish ran
+    bool fogOnAtPublish = false;      // the snapshot's fog as the last publish was handed it
+    std::size_t fogCapacityAtPublish = 0;
+    bool fillFog = false; // whether a publish turns the fog on with a bitset
     core::CameraKind cameraAtPublish = core::CameraKind::Pan;
     std::size_t publishes = 0;
     std::size_t ticksAtPublish = 0;
@@ -338,6 +355,35 @@ TEST_CASE("each publish starts with no route, whatever the publish before said")
         CHECK(rig.Burst(1).snapshot.route.size() == 1);
         CHECK(rig.simulation.routeAtPublish == 0);
     }
+}
+
+TEST_CASE("a publish starts with the fog off and keeps its buffer") {
+    Rig rig;
+    rig.simulation.fillFog = true;
+    // By the time there have been more bursts than buffers, every write reuses a buffer a fog was published in.
+    for (u64 burst = 0; burst < 2 * core::GameHandover::BUFFERS; ++burst) {
+        CHECK(rig.Burst(1).snapshot.fog.on);
+        CHECK_FALSE(rig.simulation.fogOnAtPublish);
+        if (burst >= core::GameHandover::BUFFERS) {
+            CHECK(rig.simulation.fogCapacityAtPublish >= FOG_WORDS);
+        }
+    }
+}
+
+TEST_CASE("the publish hears the latest view's debug sight, and none before a view") {
+    constexpr core::Rect AREA{ .min = { .x = 0.0F, .y = 0.0F }, .max = { .x = 100.0F, .y = 100.0F } };
+    Rig rig;
+    static_cast<void>(rig.Burst(1));
+    CHECK_FALSE(rig.simulation.debugSightAtPublish);
+    rig.handover.SendView({ .area = AREA, .change = 1, .debugSight = true });
+    static_cast<void>(rig.Burst(1));
+    CHECK(rig.simulation.debugSightAtPublish);
+    rig.handover.SendView({ .area = AREA, .change = 99, .debugSight = true }); // another scene's: still heard
+    static_cast<void>(rig.Burst(1));
+    CHECK(rig.simulation.debugSightAtPublish);
+    rig.handover.SendView({ .area = AREA, .change = 1, .debugSight = false });
+    static_cast<void>(rig.Burst(1));
+    CHECK_FALSE(rig.simulation.debugSightAtPublish);
 }
 
 TEST_CASE("a calendar step asked for ends the burst at once and publishes the transition first") {

@@ -58,10 +58,16 @@ struct SpriteDraw {
     f32 widthScale = 1.0F;
     /// The glow it wears round its edge (core/glow.hpp); none by default.
     GlowInput glow{};
+    /// Instance::flags: INSTANCE_FOGGED_LAND and INSTANCE_SIGHT_FADE.
+    u32 flags = 0;
 };
 
 /// The instance that draws `draw`: its quad placed so the sprite's foot point lands on its
 /// position, with the sprite's page and region from `manifest`.
 [[nodiscard]] Instance MakeInstance(const Manifest& manifest, const SpriteDraw& draw);
+
+/// Where the fog tests `instance`: the bottom centre of its quad, unrotated, at `alpha` of the way from its previous
+/// centre to its current one.
+[[nodiscard]] Vec2 SightPoint(const Instance& instance, f64 alpha);
 
 } // namespace core

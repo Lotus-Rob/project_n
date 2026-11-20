@@ -212,4 +212,20 @@ TEST_CASE("every half but NaN unpacks to the f32 that packs back to it") {
     CHECK(core::UnpackHalf(core::PackHalf(EXACT)) == EXACT);
 }
 
+TEST_CASE("a sight point is the bottom centre of the quad between its ticks") {
+    const u32 size = core::PackPair(core::PackHalf(64.0F), core::PackHalf(128.0F));
+    const core::Instance still{ .previous = { .x = 100.0F, .y = 100.0F },
+                                .current = { .x = 100.0F, .y = 100.0F },
+                                .size = size };
+    const core::Vec2 whole = core::SightPoint(still, 1.0);
+    CHECK(whole.x == doctest::Approx(100.0F));
+    CHECK(whole.y == doctest::Approx(164.0F));
+    const core::Instance moved{ .previous = { .x = 100.0F, .y = 100.0F },
+                                .current = { .x = 200.0F, .y = 140.0F },
+                                .size = size };
+    const core::Vec2 half = core::SightPoint(moved, 0.5);
+    CHECK(half.x == doctest::Approx(150.0F));
+    CHECK(half.y == doctest::Approx(184.0F));
+}
+
 } // namespace
