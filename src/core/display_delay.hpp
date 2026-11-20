@@ -21,8 +21,8 @@ inline constexpr u64 DISPLAY_DELAY_FLOOR_NS = 2'000'000;
 inline constexpr u64 DISPLAY_DELAY_MARGIN_NS = 1'000'000;
 /// Snapshots whose lateness the percentile covers: ten seconds at 60 a second.
 inline constexpr std::size_t DISPLAY_DELAY_WINDOW = 600;
-/// Snapshots observed before D may fall: the first second after a start or load is slow and
-/// unrepresentative.
+/// Snapshots observed before D may fall: the first second after the start is slow and
+/// unrepresentative. A load keeps the D the run had settled on.
 inline constexpr std::size_t DISPLAY_DELAY_SETTLED = 60;
 /// The most D falls, as a share of the time passed: a fall is never noticed as a jump.
 inline constexpr f64 DISPLAY_DELAY_FALL_RATE = 0.02;
