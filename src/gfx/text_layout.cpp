@@ -225,6 +225,12 @@ struct CachedLayout {
     u64 landings = 0;   // Impl::landings when it was made
 };
 
+/// How a layout is asked for: Lay() always gets one, TryLay() only within the frame's budget.
+enum class Asking : u8 {
+    Always,
+    InBudget
+};
+
 } // namespace
 
 struct TextLayout::Impl {
@@ -249,6 +255,12 @@ struct TextLayout::Impl {
     std::optional<Layout> Shape(std::string_view text, core::TextDirection direction, const Visit& visit);
     void WarnMissing(std::string_view text);
     Layout Make(std::string_view text, core::TextDirection direction);
+    /// The cached entry for `text` running `direction`, or `layouts.end()`.
+    std::unordered_map<std::string, CachedLayout>::iterator Find(std::string_view text, core::TextDirection direction);
+    /// The layout of `text` running `direction`, made when none is cached or the cached one misses a glyph that has
+    /// landed since, and stamped as used. Asked `Asking::InBudget`, it makes nothing once the frame's budget is spent:
+    /// the cached layout as it is, or null when there is none. Asked `Asking::Always`, never null.
+    const Layout* Get(std::string_view text, core::TextDirection direction, Asking asking);
     void Place(Field field);
     void Exchange(core::Jobs& jobs);
 
@@ -256,12 +268,12 @@ struct TextLayout::Impl {
     ShelfPacker packer{ GLYPH_PAGE_SIZE, GLYPH_PADDING };
     std::unordered_map<u32, CachedGlyph> glyphs;           // by glyph index
     std::unordered_map<std::string, CachedLayout> layouts; // by direction and text
-    std::string key; // Lay()'s lookup key, kept so a lookup allocates nothing once it has grown
+    std::string key; // Find()'s lookup key, kept so a lookup allocates nothing once it has grown
     std::vector<GlyphUpload> pending;
     std::vector<u32> wanted;   // requested glyphs not yet handed to the worker
     std::vector<Field> landed; // the worker's fields, taken from it
     std::vector<u32> missing;  // the characters warned about
-    f64 clock = 0.0;           // the frame clock of the frame in progress
+    f64 clock = 0.0;           // the frame clock EndFrame() was last given, which stamps each use
     u64 budgetNs = LAYOUT_BUDGET_NS;
     std::chrono::steady_clock::time_point firstMake; // this frame's first make, once made
     bool made = false;                               // whether this frame has made a layout, so firstMake is set
@@ -496,60 +508,58 @@ void TextLayout::PrewarmNames(const core::Strings& strings, const core::Names& n
     PN_LOG_INFO("name glyphs rasterised ahead of time: {}, in {:.0f} ms", rasterised, took.count());
 }
 
-/// No zone: it runs once per text, tens of times a frame, and a zone costs more than a hit; a miss's Make() has one.
-const Layout& TextLayout::Lay(std::string_view text, core::TextDirection direction) {
-    std::string& key = m_impl->key;
+std::unordered_map<std::string, CachedLayout>::iterator TextLayout::Impl::Find(
+    std::string_view text,
+    core::TextDirection direction
+) {
     key.assign(1, static_cast<char>(direction));
     key += text;
-    auto cached = m_impl->layouts.find(key);
-    if (cached == m_impl->layouts.end()) {
-        cached = m_impl->layouts.emplace(key, CachedLayout{ .layout = m_impl->Make(text, direction) }).first;
-        cached->second.landings = m_impl->landings;
-    }
-    else if (!cached->second.layout.complete && cached->second.landings != m_impl->landings) {
-        cached->second.layout = m_impl->Make(text, direction);
-        cached->second.landings = m_impl->landings;
-    }
-    cached->second.lastUsed = m_impl->clock;
-    return cached->second.layout;
+    return layouts.find(key);
 }
 
-/// No zone, as Lay().
-const Layout* TextLayout::TryLay(std::string_view text, core::TextDirection direction) {
-    Impl& impl = *m_impl;
-    std::string& key = impl.key;
-    key.assign(1, static_cast<char>(direction));
-    key += text;
-    auto cached = impl.layouts.find(key);
-    const bool isNew = cached == impl.layouts.end();
-    const bool stale = !isNew && !cached->second.layout.complete && cached->second.landings != impl.landings;
-    if ((isNew || stale) && !impl.spent) {
-        if (!impl.made) {
-            impl.firstMake = std::chrono::steady_clock::now();
-            impl.made = true;
+const Layout* TextLayout::Impl::Get(std::string_view text, core::TextDirection direction, Asking asking) {
+    auto cached = Find(text, direction);
+    const bool isNew = cached == layouts.end();
+    const bool stale = !isNew && !cached->second.layout.complete && cached->second.landings != landings;
+    const bool budgeted = asking == Asking::InBudget;
+    if ((isNew || stale) && !(budgeted && spent)) {
+        if (budgeted && !made) {
+            firstMake = std::chrono::steady_clock::now();
+            made = true;
         }
         if (isNew) {
-            cached = impl.layouts.emplace(key, CachedLayout{ .layout = impl.Make(text, direction) }).first;
+            cached = layouts.emplace(key, CachedLayout{ .layout = Make(text, direction) }).first;
         }
         else {
-            cached->second.layout = impl.Make(text, direction);
+            cached->second.layout = Make(text, direction);
         }
-        cached->second.landings = impl.landings;
-        const std::chrono::nanoseconds took = std::chrono::steady_clock::now() - impl.firstMake;
-        impl.spent = std::cmp_greater_equal(took.count(), impl.budgetNs);
+        cached->second.landings = landings;
+        if (budgeted) {
+            const std::chrono::nanoseconds took = std::chrono::steady_clock::now() - firstMake;
+            spent = std::cmp_greater_equal(took.count(), budgetNs);
+        }
     }
     else if (isNew) {
         return nullptr;
     }
-    cached->second.lastUsed = impl.clock;
+    cached->second.lastUsed = clock;
     return &cached->second.layout;
 }
 
+/// No zone: it runs once per text, tens of times a frame, and a zone costs more than a hit; a miss's Make() has one.
+const Layout& TextLayout::Lay(std::string_view text, core::TextDirection direction) {
+    const Layout* layout = m_impl->Get(text, direction, Asking::Always);
+    PN_ASSERT(layout != nullptr, "an unbudgeted ask always gives a layout");
+    return *layout;
+}
+
+/// No zone, as Lay().
+const Layout* TextLayout::TryLay(std::string_view text, core::TextDirection direction) {
+    return m_impl->Get(text, direction, Asking::InBudget);
+}
+
 const Layout* TextLayout::Cached(std::string_view text, core::TextDirection direction) {
-    std::string& key = m_impl->key;
-    key.assign(1, static_cast<char>(direction));
-    key += text;
-    const auto cached = m_impl->layouts.find(key);
+    const auto cached = m_impl->Find(text, direction);
     if (cached == m_impl->layouts.end()) {
         return nullptr;
     }
