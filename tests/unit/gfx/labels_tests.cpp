@@ -957,6 +957,16 @@ TEST_CASE("waiting labels go highest priority first, then nearest the middle") {
     CHECK(Items(waiting) == std::vector<std::size_t>{ 4, 3, 1, 0, 2 });
 }
 
+TEST_CASE("nearest the middle counts the height off it too") {
+    std::array waiting{ gfx::WaitingLabel{ .item = 0,
+                                           .entity = core::StableId{ 1 },
+                                           .priority = core::LabelPriority::Rest,
+                                           .anchor = { .x = 640.0F, .y = 390.0F } },
+                        WaitingAt(1, 2, core::LabelPriority::Rest, 20.0F) };
+    gfx::OrderWaiting(waiting, { .x = 640.0F, .y = 360.0F });
+    CHECK(Items(waiting) == std::vector<std::size_t>{ 1, 0 });
+}
+
 TEST_CASE("a selected label goes first however far from the middle") {
     std::array waiting{ WaitingAt(0, 1, core::LabelPriority::Rest, 5.0F),
                         WaitingAt(1, 2, core::LabelPriority::Rest, -12.0F),
