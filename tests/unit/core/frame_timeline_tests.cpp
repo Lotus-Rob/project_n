@@ -103,7 +103,7 @@ private:
     void OldFrame() {
         const u64 delayNs = m_delay.Advance(m_nowNs);
         static_cast<void>(m_display.Update(m_handover, m_nowNs, delayNs));
-        if (const std::optional<u64> lateness = m_display.TakenLateness()) {
+        while (const std::optional<u64> lateness = m_display.TakenLateness()) {
             m_delay.Observe(*lateness);
         }
         const core::Snapshot* drawn = m_display.Drawn();
@@ -301,6 +301,24 @@ TEST_CASE("a press shows no later than its tick's wait plus D plus a frame") {
         CAPTURE(worst.delayNs);
         CHECK(worst.marginNs >= 0);
     }
+}
+
+TEST_CASE("eight presses over a tick have a median of half a tick plus D plus at most a frame, spread over the tick") {
+    const Rate& rate = RATES[1]; // the dev machine's display
+    std::array<u64, PHASES> latencies{};
+    for (u64 phase = 0; phase < PHASES; ++phase) {
+        latencies.at(phase) = PressLatency(rate, PhaseNs(phase), false).latencyNs;
+    }
+    std::ranges::sort(latencies);
+    const u64 medianNs = (latencies[(PHASES / 2) - 1] + latencies[PHASES / 2]) / 2;
+    const u64 spreadNs = latencies.back() - latencies.front();
+    // The tick's wait runs from nearly a tick down to nearly none over the phases; a frame's grid adds up to a period.
+    constexpr u64 PHASES_SPAN_NS = (PHASES - 1) * core::TICK_NS / PHASES;
+    CAPTURE(medianNs);
+    CAPTURE(spreadNs);
+    CHECK(medianNs <= (core::TICK_NS / 2) + STEADY_TARGET_NS + SETTLE_TOLERANCE_NS + rate.periodNs);
+    CHECK(spreadNs + rate.periodNs >= PHASES_SPAN_NS);
+    CHECK(spreadNs <= PHASES_SPAN_NS + rate.periodNs);
 }
 
 TEST_CASE("the schedules catch a snapshot picked before the acquire") {
