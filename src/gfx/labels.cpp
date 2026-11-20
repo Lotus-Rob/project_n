@@ -112,7 +112,7 @@ void LabelPass::Resolve(std::span<const LabelInput> labels, u32 width, u32 heigh
         }
         // One too small to read is a stack of its own that covers no room and joins none, so it fades out where it is
         // and never hides a readable label: a player's at the widest zoom doesn't hide a place's name.
-        if (label.pixels < LABEL_MIN_PIXELS * scale) {
+        if (!Readable(label.pixels, scale)) {
             m_role[index] = m_stacks.size();
             m_stacks.push_back({ .head = index, .into = m_role[index], .members = 1, .sum = label.anchor });
             continue;
@@ -276,7 +276,7 @@ void LabelPass::Fade(std::span<const LabelInput> labels, f32 step, f32 scale, bo
             drawnAt = Glide(seen, labels, index, step, drawn);
             Count(seen, seen.count, step, drawn);
         }
-        const f32 target = head && label.complete && label.pixels >= LABEL_MIN_PIXELS * scale ? 1.0F : 0.0F;
+        const f32 target = head && label.complete && Readable(label.pixels, scale) ? 1.0F : 0.0F;
         seen.opacity = seen.fresh && first ? target : Toward(seen.opacity, target, step);
         seen.drawn = drawnAt;
         if (head || seen.opacity > 0.0F) {
@@ -484,6 +484,25 @@ void LabelPass::Cover(const Box& box, std::size_t stack, std::size_t member) {
             m_cells[(row * m_columns) + column].push_back(footprint);
         }
     }
+}
+
+bool Readable(f32 pixels, f32 scale) {
+    return pixels >= LABEL_MIN_PIXELS * scale;
+}
+
+void OrderWaiting(std::span<WaitingLabel> waiting, core::Vec2 middle) {
+    PN_PROFILE_ZONE();
+    std::ranges::sort(waiting, [middle](const WaitingLabel& first, const WaitingLabel& second) {
+        if (first.priority != second.priority) {
+            return first.priority > second.priority;
+        }
+        const f32 firstDistance = Squared(first.anchor - middle);
+        const f32 secondDistance = Squared(second.anchor - middle);
+        if (firstDistance < secondDistance || secondDistance < firstDistance) {
+            return firstDistance < secondDistance;
+        }
+        return std::to_underlying(first.entity) < std::to_underlying(second.entity);
+    });
 }
 
 void StackText(std::string& into, std::string_view stack, std::string_view name, u32 count) {

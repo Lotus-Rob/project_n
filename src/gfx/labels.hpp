@@ -241,6 +241,27 @@ private:
     u64 m_frame = 0;
 };
 
+/// Whether a label drawn at `pixels` (TextPixels()) with text scaled by `scale` is large enough to read: from
+/// LABEL_MIN_PIXELS × `scale` up. One that isn't fades out, covers no room and joins no stack.
+[[nodiscard]] bool Readable(f32 pixels, f32 scale);
+
+/// A label whose name or stack text isn't laid out yet, waiting its turn for the frame's layout budget.
+struct WaitingLabel {
+    /// Its index in the caller's list.
+    std::size_t item = 0;
+    /// The entity it names.
+    core::StableId entity{};
+    /// Its priority, already raised for the hovered and selected entities.
+    core::LabelPriority priority = core::LabelPriority::Rest;
+    /// Where it hangs on the screen, in pixels from the top left.
+    core::Vec2 anchor{};
+};
+
+/// Sorts `waiting` into the order its labels are laid out in: highest priority first, then nearest `middle` (the
+/// screen's), then by entity, so the labels that matter most and those where the player looks come first, and equal
+/// turns fall the same way every frame.
+void OrderWaiting(std::span<WaitingLabel> waiting, core::Vec2 middle);
+
 /// `stack` (core::StringId::LabelStack's text) with its first `{name}` replaced by `name` and its first `{count}` by
 /// `count` in decimal digits, written into `into` (cleared first, its capacity kept); a placeholder it lacks is left
 /// out, so a bad strings table can't throw.

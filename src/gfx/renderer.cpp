@@ -155,6 +155,38 @@ struct MeasuredStack {
     bool complete = false;
 };
 
+/// A label stack's widths in a frame, at each count it is measured at.
+struct StackWidths {
+    MeasuredStack widest;  // at the frame's widest count
+    MeasuredStack earlier; // at the widest count before it changed
+};
+
+/// A waiting label's index in the frame's label inputs while it hasn't gone in.
+constexpr std::size_t NOT_IN = std::numeric_limits<std::size_t>::max();
+
+/// Which count a label's stack text is measured at.
+enum class StackCount : u8 {
+    Widest,  ///< the frame's widest (WidestCount() of its label count): what a stack's room is kept for
+    Earlier, ///< the widest before it last changed: stands in, from the cache only, while the frame's is laid out
+};
+
+/// Where a text not yet measured this frame gets its layout.
+enum class Laying : u8 {
+    CachedOnly, ///< only from the cache, complete, never made: a label laid out at once, without spending the budget
+    InBudget,   ///< TextLayout::TryLay(), within the frame's budget: a label's turn
+};
+
+/// `item`'s label priority, raised to the hovered or selected priority when it names those.
+core::LabelPriority PriorityOf(const core::TextItem& item, core::StableId hovered, core::StableId selected) {
+    if (item.entity != core::StableId{} && item.entity == selected) {
+        return core::LabelPriority::Selected;
+    }
+    if (item.entity != core::StableId{} && item.entity == hovered) {
+        return std::max(item.priority, core::LabelPriority::Hovered);
+    }
+    return item.priority;
+}
+
 } // namespace
 
 struct Renderer::Impl {
@@ -207,11 +239,32 @@ struct Renderer::Impl {
     /// `item`, a number running top to bottom, shaped and drawn at `pixels`, moved by its scatter and risen by its lift
     /// from its anchor, or from its creature's NumberOrigin. Numbers across are composed instead (PlaceNumbers()).
     void PlaceNumber(const core::TextItem& item);
-    /// The label pass's input for `item`, a label, raised to the hovered or selected priority when it names those.
-    LabelInput LabelOf(const core::TextItem& item, core::StableId hovered, core::StableId selected);
-    /// Each label's stackWidth: its name as a stack with as many digits as the frame's count can have; a label whose stack
-    /// text isn't complete isn't either.
-    void MeasureStacks();
+    /// Puts labelItems into labelInputs. One too small to read goes in only when its name is cached, and measures no
+    /// stack text: it covers no room. A readable one whose name and stack text are cached and complete goes in at once;
+    /// so does one whose stack text at the widest count isn't but at the earlier count is, which then waits its turn to
+    /// lay out the new text. The others wait and take their turns (OrderWaiting()) laying out their name, then their
+    /// stack text, within the frame's layout budget, until it is spent: that label and every later one stay out this
+    /// frame (or keep the earlier stack width).
+    void GatherLabels(core::StableId hovered, core::StableId selected);
+    /// GatherLabels()' turns: the waiting labels in OrderWaiting()'s order, each laying out what it lacks within the
+    /// frame's layout budget, until it is spent.
+    void TakeTurns();
+    /// The label pass's input for `item`, a label at `priority` whose anchor point is at `anchor` (TextAnchor()), laid out
+    /// as `layout`, its stack text measured as `stack`; without one it keeps no room for a stack.
+    [[nodiscard]] LabelInput LabelOf(
+        const core::TextItem& item,
+        core::LabelPriority priority,
+        core::Vec2 anchor,
+        const Layout& layout,
+        std::optional<MeasuredStack> stack
+    ) const;
+    /// The pixel size `item`, a label or a place's name, is drawn at this frame.
+    [[nodiscard]] f32 LabelPixels(const core::TextItem& item) const {
+        return item.kind == core::TextKind::Place ? textFrame.placePixels : textFrame.labelPixels;
+    }
+    /// How wide `item`'s name is as a stack counting `count` (stackCount or earlierStackCount): measured once a frame per
+    /// name, direction and count, then kept, laid out as `laying` says the first time; none when that gives no layout.
+    [[nodiscard]] std::optional<MeasuredStack> StackOf(const core::TextItem& item, StackCount count, Laying laying);
     /// A label, `item`, showing `count` (its name, or the stack with that count) at `opacity` of its colour, its box's
     /// bottom middle at `anchor`, drawn at `pixels`.
     void PlaceLabel(const core::TextItem& item, u32 count, f32 opacity, core::Vec2 anchor, f32 pixels);
@@ -279,8 +332,8 @@ struct Renderer::Impl {
     internal::Compositor compositor{};
     internal::SceneTarget sceneTarget{};
     /// What every text of a frame shares, worked out once a frame by PlaceTexts(): the functions it calls for each text
-    /// (TextOf(), LabelOf(), PlaceText(), PlaceNumber(), PlaceLabel(), PlaceLayout()) read it and have no zones, as a
-    /// zone costs more than one text's work (src/AGENTS.md); PlaceTexts()' zone measures them.
+    /// (TextOf(), LabelOf(), LabelPixels(), StackOf(), PlaceText(), PlaceNumber(), PlaceLabel(), PlaceLayout()) read it
+    /// and have no zones, as a zone costs more than one text's work (src/AGENTS.md); PlaceTexts()' zone measures them.
     struct TextFrame {
         ClipTransform clip{};
         f32 alpha = 1.0F;
@@ -304,11 +357,16 @@ struct Renderer::Impl {
     std::size_t glyphsRecorded = 0; // of the cache's pending fields, in the command buffer not yet submitted
     std::string number;             // a number's text, made again for each
     NameTexts nameTexts;            // the NPC names this frame's labels show, each composed once
-    std::unordered_map<u64, MeasuredStack> measuredNames; // a named label's stack width per NameKey and direction
-    std::vector<std::array<MeasuredStack, 2>> measured;   // a label stack's width per string and direction, likewise
-    std::string stacked;                                  // a label stack's text, likewise
+    std::unordered_map<u64, StackWidths> measuredNames; // a named label's stack widths per NameKey and direction
+    std::vector<std::array<StackWidths, 2>> measured;   // a label stack's widths per string and direction, likewise
+    std::string stacked;                                // a label stack's text, likewise
+    u32 stackCount = 0;                                 // the widest count of the last frame that had labels (WidestCount())
+    u32 earlierStackCount = 0;                          // the widest count before stackCount changed to what it is
     LabelPass labels;
     CaptionFades captionFades;
+    std::vector<const core::TextItem*> labelItems; // the frame's labels and place names, in the snapshot's order
+    std::vector<WaitingLabel> waitingLabels;       // the labels in labelItems not laid out yet, in their turns
+    std::vector<std::size_t> waitingInputs;        // per label in labelItems: its index in labelInputs while it waits
     std::vector<LabelInput> labelInputs;
     std::vector<NumberOrigin> numberOrigins; // by entity: where this frame's tiny creatures' numbers start
     std::vector<u32> numberPages;            // the glyph page of each quad PlaceNumbers() placed this frame
@@ -575,7 +633,7 @@ void Renderer::Impl::PlaceTexts(const Shown& shown, core::Jobs& jobs) {
                   .captionPixels = TextPixels(core::TextKind::Caption, perUnit, textOptions.scale),
                   .numberPixels = TextPixels(core::TextKind::Number, perUnit, textOptions.scale) };
     const f32 captionOpacity = CaptionOpacity(textFrame.captionPixels, textOptions.scale);
-    labelInputs.clear();
+    labelItems.clear();
     captionFades.Begin(shown.view->frameClock);
     for (const std::span<const core::TextItem> texts : { std::span<const core::TextItem>{ snapshot.texts }, shown.extra }) {
         for (const core::TextItem& item : texts) {
@@ -584,11 +642,11 @@ void Renderer::Impl::PlaceTexts(const Shown& shown, core::Jobs& jobs) {
                 PlaceText(item, layout, captionOpacity * captionFades.Opacity(item.string, layout.complete));
             }
             else if (item.kind == core::TextKind::Label || item.kind == core::TextKind::Place) {
-                labelInputs.push_back(LabelOf(item, hovered, selected));
+                labelItems.push_back(&item);
             }
         }
     }
-    MeasureStacks();
+    GatherLabels(hovered, selected);
     // A label whose item has gone draws as the pass kept it, fading out.
     for (const PlacedLabel& placed :
          labels.Place(labelInputs, shown.width, shown.height, shown.view->frameClock, textOptions.scale)) {
@@ -671,29 +729,100 @@ void Renderer::Impl::PlaceNumber(const core::TextItem& item) {
     );
 }
 
-void Renderer::Impl::MeasureStacks() {
+void Renderer::Impl::GatherLabels(core::StableId hovered, core::StableId selected) {
     PN_PROFILE_ZONE();
     // A stack's count is below the number of labels, so the stack text with that many digits is as wide as any can be:
     // the font's digits are tabular (Noto Sans SC's '0' to '9' are all 555 units wide), so the digits' number decides.
     // Measuring the widest count of that length keeps the text, and so its cached layout, the same while the label
-    // count changes by a few each frame.
-    const u32 most = WidestCount(static_cast<u32>(labelInputs.size()));
-    const std::string& stack = strings->Text(core::StringId::LabelStack, textOptions.language);
+    // count changes by a few each frame. When it gains or loses a digit, every stack text is new at once: the earlier
+    // count's stands in until each label's turn lays the new one out, so labels on the screen never wait for theirs.
+    if (const u32 widest = WidestCount(static_cast<u32>(labelItems.size())); widest != 0 && widest != stackCount) {
+        earlierStackCount = stackCount;
+        stackCount = widest;
+    }
     measured.assign(strings->text.size(), {});
     measuredNames.clear();
-    for (LabelInput& label : labelInputs) {
-        const core::TextItem& item = label.item;
-        MeasuredStack& stackText =
-            item.npcName ? measuredNames[(u64{ core::NameKey(*item.npcName) } << 1U) | std::to_underlying(item.direction)]
-                         : measured.at(std::to_underlying(item.string)).at(std::to_underlying(item.direction));
-        if (stackText.width < 0.0F) {
-            StackText(stacked, stack, TextOf(item), most);
-            const Layout& layout = text->Lay(stacked, item.direction);
-            stackText = { .width = layout.width, .complete = layout.complete };
+    labelInputs.clear();
+    waitingLabels.clear();
+    waitingInputs.assign(labelItems.size(), NOT_IN);
+    for (std::size_t index = 0; index < labelItems.size(); ++index) {
+        const core::TextItem& item = *labelItems[index];
+        const core::LabelPriority priority = PriorityOf(item, hovered, selected);
+        const core::Vec2 anchor = TextAnchor(item, textFrame.clip, textFrame.alpha, textFrame.width, textFrame.height);
+        const Layout* name = text->Cached(TextOf(item), item.direction);
+        if (!Readable(LabelPixels(item), textOptions.scale)) {
+            // It only fades out, so it isn't worth a turn of the budget, and needs no stack text.
+            if (name != nullptr) {
+                labelInputs.push_back(LabelOf(item, priority, anchor, *name, std::nullopt));
+            }
+            continue;
         }
-        label.stackWidth = stackText.width * (label.pixels / SDF_BASE_PIXELS);
-        label.complete = label.complete && stackText.complete;
+        // A cached layout missing a glyph waits, as its turn makes it again once the glyph has landed.
+        const bool named = name != nullptr && name->complete;
+        if (const std::optional<MeasuredStack> stack =
+                named ? StackOf(item, StackCount::Widest, Laying::CachedOnly) : std::nullopt) {
+            labelInputs.push_back(LabelOf(item, priority, anchor, *name, stack));
+            continue;
+        }
+        if (const std::optional<MeasuredStack> earlier =
+                named && earlierStackCount != 0 ? StackOf(item, StackCount::Earlier, Laying::CachedOnly) : std::nullopt) {
+            waitingInputs[index] = labelInputs.size();
+            labelInputs.push_back(LabelOf(item, priority, anchor, *name, earlier));
+        }
+        waitingLabels.push_back({ .item = index, .entity = item.entity, .priority = priority, .anchor = anchor });
     }
+    TakeTurns();
+}
+
+void Renderer::Impl::TakeTurns() {
+    constexpr f32 HALF = 0.5F;
+    OrderWaiting(
+        waitingLabels, { .x = static_cast<f32>(textFrame.width) * HALF, .y = static_cast<f32>(textFrame.height) * HALF }
+    );
+    for (const WaitingLabel& waiting : waitingLabels) {
+        const core::TextItem& item = *labelItems[waiting.item];
+        if (const std::size_t input = waitingInputs[waiting.item]; input != NOT_IN) {
+            const std::optional<MeasuredStack> stack = StackOf(item, StackCount::Widest, Laying::InBudget);
+            if (!stack) {
+                break; // the budget is spent: the rest keep their turns for the frames after
+            }
+            // One still missing a glyph would fade the label out; the earlier width serves until it is complete.
+            if (stack->complete) {
+                LabelInput& label = labelInputs[input];
+                label.stackWidth = stack->width * (label.pixels / SDF_BASE_PIXELS);
+            }
+            continue;
+        }
+        const Layout* name = text->TryLay(TextOf(item), item.direction);
+        const std::optional<MeasuredStack> stack =
+            name != nullptr ? StackOf(item, StackCount::Widest, Laying::InBudget) : std::nullopt;
+        if (!stack) {
+            break;
+        }
+        labelInputs.push_back(LabelOf(item, waiting.priority, waiting.anchor, *name, stack));
+    }
+}
+
+std::optional<MeasuredStack> Renderer::Impl::StackOf(const core::TextItem& item, StackCount count, Laying laying) {
+    StackWidths& widths = item.npcName
+                              ? measuredNames[(u64{ core::NameKey(*item.npcName) } << 1U) | std::to_underlying(item.direction)]
+                              : measured.at(std::to_underlying(item.string)).at(std::to_underlying(item.direction));
+    MeasuredStack& stackText = count == StackCount::Widest ? widths.widest : widths.earlier;
+    if (stackText.width < 0.0F) {
+        StackText(
+            stacked,
+            strings->Text(core::StringId::LabelStack, textOptions.language),
+            TextOf(item),
+            count == StackCount::Widest ? stackCount : earlierStackCount
+        );
+        const Layout* layout =
+            laying == Laying::InBudget ? text->TryLay(stacked, item.direction) : text->Cached(stacked, item.direction);
+        if (layout == nullptr || (laying == Laying::CachedOnly && !layout->complete)) {
+            return std::nullopt;
+        }
+        stackText = { .width = layout->width, .complete = layout->complete };
+    }
+    return stackText;
 }
 
 void Renderer::Impl::PlaceLabel(const core::TextItem& item, u32 count, f32 opacity, core::Vec2 anchor, f32 pixels) {
@@ -716,20 +845,16 @@ void Renderer::Impl::PlaceLabel(const core::TextItem& item, u32 count, f32 opaci
     );
 }
 
-LabelInput Renderer::Impl::LabelOf(const core::TextItem& item, core::StableId hovered, core::StableId selected) {
-    const f32 perUnit = textFrame.perUnit;
-    const f32 pixels = item.kind == core::TextKind::Place ? textFrame.placePixels : textFrame.labelPixels;
-    const Layout& layout = text->Lay(TextOf(item), item.direction);
+LabelInput Renderer::Impl::LabelOf(
+    const core::TextItem& item,
+    core::LabelPriority priority,
+    core::Vec2 anchor,
+    const Layout& layout,
+    std::optional<MeasuredStack> stack
+) const {
+    const f32 pixels = LabelPixels(item);
     const f32 scale = pixels / SDF_BASE_PIXELS;
-    core::LabelPriority priority = item.priority;
-    if (item.entity != core::StableId{} && item.entity == selected) {
-        priority = core::LabelPriority::Selected;
-    }
-    else if (item.entity != core::StableId{} && item.entity == hovered) {
-        priority = std::max(priority, core::LabelPriority::Hovered);
-    }
     const f32 height = layout.height * scale;
-    core::Vec2 anchor = TextAnchor(item, textFrame.clip, textFrame.alpha, textFrame.width, textFrame.height);
     if (item.align == core::TextAlign::TopCentre) {
         anchor.y += height; // the pass takes the middle of a box's bottom edge
     }
@@ -739,9 +864,10 @@ LabelInput Renderer::Impl::LabelOf(const core::TextItem& item, core::StableId ho
              .anchor = anchor,
              .width = layout.width * scale,
              .height = height,
+             .stackWidth = stack ? stack->width * scale : 0.0F,
              .pixels = pixels,
-             .entityPixels = item.height * perUnit,
-             .complete = layout.complete,
+             .entityPixels = item.height * textFrame.perUnit,
+             .complete = layout.complete && (!stack || stack->complete),
              .item = item };
 }
 
@@ -1348,8 +1474,12 @@ std::expected<Image, core::Error> Renderer::Capture(
     if (commands == nullptr) {
         return std::unexpected{ core::Error{ std::format("nothing to capture into: {}", SDL_GetError()) } };
     }
+    // A picture has every label: none waits for a later frame's budget.
+    m_impl->text->SetLayoutBudget(std::numeric_limits<u64>::max());
+    std::expected<void, core::Error> uploaded = m_impl->Upload(commands, shown, jobs);
+    m_impl->text->SetLayoutBudget(LAYOUT_BUDGET_NS);
     return AfterUpload(
-        m_impl->Upload(commands, shown, jobs),
+        std::move(uploaded),
         [this, commands] {
             SDL_CancelGPUCommandBuffer(commands); // allowed: no swapchain texture is acquired
             m_impl->Submitted(false);
