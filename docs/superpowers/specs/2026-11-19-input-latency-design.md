@@ -227,8 +227,10 @@ comparable with earlier runs.
 ### Rulings and the builder's calls
 
 - **The constants are the spec's, untuned:** window 600, 99th percentile, margin 1 ms, floor 2 ms, ceiling a tick, rise
-  10% and fall 2% of elapsed time, start 10 ms, and D falls only after 60 observed snapshots (the first second after a
-  start or load is slow and unrepresentative). Nothing measured asked for a change.
+  10% and fall 2% of elapsed time, start 10 ms, and D falls only after 60 observed snapshots (the first second after the
+  start is slow and unrepresentative). Nothing measured asked for a change. The gate never resets: a load keeps the D the
+  run settled on. The final review found the docs claiming it covered loads too; the wording was corrected rather than a
+  reset added, as only falling is gated and a load's slow first ticks can only push D up.
 - **Which snapshots count:** only those whose tick advanced; an early one counts as lateness 0. A frozen snapshot shows
   the transforms the one before it ends on at alpha 1, so its lateness can't show as a judder; and every expected stall
   (month step, save, load, replay toggle, waiting for a resident scene) publishes a frozen snapshot after the stall, so
@@ -253,13 +255,18 @@ comparable with earlier runs.
   (Design 8). The queue is a two-slot array, oldest first, under the handover's mutex: a ring saves nothing at depth two.
   `Update` takes at most two snapshots a call, so the lateness store always has room, and a logic thread publishing
   during the loop can't keep one frame taking forever; a snapshot left by that bound is taken the next frame.
-  `TakenLateness` gives one value a call, drained by `PresentFrame`'s loop, so the harness's single-value use stands.
+  `TakenLateness` gives one value a call, drained by `PresentFrame`'s loop; the final review had the harness's old-order
+  control drain it the same way, as it read only the first of two.
 - **The stale-event margin is 30 + 3 + 1 = 34 ticks** (was 31): with the queue the render clock may first reach undrained
   events by adopting the older of two waiting snapshots, up to a burst (3 ticks) behind the newest, drawn from its tick
   minus one.
-- **Events drain after the frame's snapshots are taken**, inside `PresentFrame` (the review found the drain ran before
-  `Display::Update`, leaving a gap where a just-taken snapshot's events weren't yet pending); the stale drop relies on it.
-  Fixed test-first in this branch rather than deferred.
+- **Events go with each snapshot taken, in the same lock** (`TakeState` moves them to the main thread's side of the
+  handover; `PresentFrame`'s drain after the takes hands them to `pending`); the stale drop relies on it. Task 7's review
+  found the drain ran before `Display::Update`, and moving it after the takes still left a gap: the final review traced a
+  publish landing between a take and the drain, after a stall, dropping an event about 28 ticks behind the render clock,
+  which `PlayDue` would have played; no fixed margin covers k publishes in that gap. Draining under the take's lock closes
+  it, so undrained events always belong to snapshots still waiting and the 34-tick bound holds. Both fixed test-first in
+  this branch rather than deferred.
 - **Late adoptions count only advanced snapshots** (the user, 2026-11-20, amending Design 8's item 3). The first
   `--keep` measure run logged 1 late adoption: the month step's frozen snapshot, published when its 26.8 ms stall ended
   (every other snapshot was under 2.7 ms late, p99 2.29 ms, from the run's Tracy capture). Before the queue the next
@@ -268,6 +275,10 @@ comparable with earlier runs.
   counter now follows the delay's rule (fixed test-first: "a late snapshot whose tick didn't advance doesn't count as
   late").
 - **`game_tests`' `Taken()` helper** changed with the handover: it encoded the newest-wins rule.
+- **The synthetic probe** (spec Design 6's fourth bullet, which the plan had left out; added after the final review):
+  8 presses at 165 Hz, one at each of the 8 phases, give a median of 15.62 ms and a spread of 12.12 ms, checked against
+  half a tick + D + a frame and the phases' span ± a frame. It sits above the game's 12.2 ms because the harness's acquire
+  waits 3.5 ms every frame.
 - **The probe's 8 presses** depend on the cultivator stopping dead and the 0.1 s stand outlasting a tick plus D plus a
   frame; all three runs above logged 8.
 - **`measure`'s delay pattern** reads only non-negative finite numbers: D is clamped to [2 ms, a tick], so the log never
