@@ -1,9 +1,9 @@
 # Phase 6, chunk 5b3: fog and sight on the world map
 
-Date: 2026-11-20 · Status: **approved** · Plan: none yet · Chunk spec: `2026-11-10-phase6-chunk5-world-map-design.md` · Phase
-spec: `2026-11-10-phase6-design.md` · Builds on: `2026-11-15-phase6-chunk5b1-map-design.md`,
-`2026-11-15-phase6-chunk5b2-moving-design.md` and `2026-11-16-phase6-chunk5c1-world-kept-delta-saves-design.md` (their
-Outcomes)
+Date: 2026-11-20 · Status: **approved** · Plan: `2026-11-20-phase6-chunk5b3-fog.md` · Chunk spec:
+`2026-11-10-phase6-chunk5-world-map-design.md` · Phase spec: `2026-11-10-phase6-design.md` · Builds on:
+`2026-11-15-phase6-chunk5b1-map-design.md`, `2026-11-15-phase6-chunk5b2-moving-design.md` and
+`2026-11-16-phase6-chunk5c1-world-kept-delta-saves-design.md` (their Outcomes)
 
 ## In short
 
