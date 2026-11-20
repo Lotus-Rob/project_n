@@ -21,15 +21,14 @@ class FogFade {
 public:
     /// Moves every value `seconds` closer to its target from `snapshot`'s fog on `map`, a full range taking `fadeSeconds`
     /// (linearly: the shaders shape it). Nothing is touched while no value moves. The values snap to their targets on the
-    /// first fog seen, a new epoch, a new scene change and when the debug sight switches, and while `fadeSeconds` is not
-    /// positive.
+    /// first fog seen, a new epoch, a new scene change and when the debug sight switches. `fadeSeconds` must be positive.
     void Update(const core::Snapshot& snapshot, const core::WorldMap& map, f32 seconds, f32 fadeSeconds);
 
     /// The values to draw: no columns while the snapshot had no fog. Valid until the next Update().
     [[nodiscard]] gfx::FogFrame Frame() const;
 
 private:
-    /// What the targets were computed from, which they are recomputed only when it changes.
+    /// What the targets were computed from; they are recomputed only when it changes.
     struct Source {
         u64 version = 0;
         std::optional<u32> playerTile = std::nullopt;
@@ -55,11 +54,9 @@ private:
     u32 m_rows = 0;
     f32 m_tileSize = 0.0F;
     u64 m_revision = 0;
-    // NOLINTBEGIN(readability-redundant-member-init): designated initializers omit them; Clang warns without one
-    std::vector<f32> m_current{};
-    std::vector<f32> m_target{};
-    std::vector<u8> m_bytes{};
-    // NOLINTEND(readability-redundant-member-init)
+    std::vector<f32> m_current;
+    std::vector<f32> m_target;
+    std::vector<u8> m_bytes;
 };
 
 } // namespace app

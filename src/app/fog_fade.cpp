@@ -1,5 +1,6 @@
 #include "app/fog_fade.hpp"
 
+#include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/fog.hpp"
 #include "core/profile.hpp"
@@ -41,18 +42,18 @@ void FogFade::Ease(f32 step) {
     bool changed = false;
     bool moving = false;
     for (std::size_t i = 0; i < m_current.size(); ++i) {
-        f32& value = m_current.at(i);
-        const f32 delta = m_target.at(i) - value;
+        f32& value = m_current[i];
+        const f32 delta = m_target[i] - value;
         if (std::abs(delta) <= step) {
-            value = m_target.at(i);
+            value = m_target[i];
         }
         else {
             value += std::copysign(step, delta);
             moving = true;
         }
         const u8 byte = ToByte(value);
-        if (byte != m_bytes.at(i)) {
-            m_bytes.at(i) = byte;
+        if (byte != m_bytes[i]) {
+            m_bytes[i] = byte;
             changed = true;
         }
     }
@@ -64,6 +65,7 @@ void FogFade::Ease(f32 step) {
 
 void FogFade::Update(const core::Snapshot& snapshot, const core::WorldMap& map, f32 seconds, f32 fadeSeconds) {
     PN_PROFILE_ZONE();
+    PN_ASSERT(fadeSeconds > 0.0F, "the fog fades over some time");
     const core::FogView& fog = snapshot.fog;
     if (!fog.on) {
         m_on = false;
@@ -80,7 +82,7 @@ void FogFade::Update(const core::Snapshot& snapshot, const core::WorldMap& map, 
     };
     const bool snap = !m_seeded || snapshot.epoch != m_epoch || snapshot.sceneChange.change != m_change ||
                       source.debugSight != m_source.debugSight || source.columns != m_source.columns ||
-                      source.rows != m_source.rows || fadeSeconds <= 0.0F;
+                      source.rows != m_source.rows;
     m_on = true;
     m_columns = map.Columns();
     m_rows = map.Rows();
