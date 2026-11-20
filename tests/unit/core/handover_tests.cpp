@@ -175,6 +175,20 @@ TEST_CASE("a snapshot published after it was due counts as late") {
     CHECK(display.LateAdoptions() == 1);
 }
 
+TEST_CASE("a late snapshot whose tick didn't advance doesn't count as late") {
+    Handover handover;
+    Display display;
+    handover.Writing() = { .sequence = 1, .scheduledNs = FIRST_NS, .publishedNs = LATE_NS, .advanced = false };
+    std::vector<Event> none;
+    handover.Publish(none);
+    Publish(handover, 2, LATE_NS); // the tick after the stall, on time
+
+    CHECK(display.Update(handover, LATE_NS, HANDOVER_DELAY_NS));
+    REQUIRE(display.Drawn() != nullptr);
+    CHECK(display.Drawn()->sequence == 1);
+    CHECK(display.LateAdoptions() == 0);
+}
+
 TEST_CASE("a snapshot published on time but taken late doesn't count as late") {
     Handover handover;
     Display display;

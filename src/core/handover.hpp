@@ -246,7 +246,8 @@ public:
         return m_drawn;
     }
 
-    /// Snapshots published after they were due: their tick took longer than the display delay.
+    /// Snapshots whose tick advanced and that were published after they were due: their tick took longer than the
+    /// display delay. A frozen snapshot never counts: it moves nothing, and a stall publishes one only once it ends.
     [[nodiscard]] u64 LateAdoptions() const {
         return m_lateAdoptions;
     }
@@ -264,14 +265,15 @@ private:
     static constexpr std::size_t WAITING = Handover<State, Event, Input, Held, View>::WAITING;
 
     void Took(const State& state, u64 delayNs) {
+        // A frozen tick's snapshot shows what the one before it ends on, so its lateness can't be seen; and the
+        // stalls (a month, a save, a load) publish one only once they end, as late as the stall was long.
+        if (!state.advanced) {
+            return;
+        }
         if (IsDue(state.scheduledNs, state.publishedNs, delayNs)) {
             ++m_lateAdoptions;
         }
-        // A frozen tick's snapshot shows what the one before it ends on, so its lateness can't be seen; and the
-        // stalls (a month, a save, a load) publish one only once they end, as late as the stall was long.
-        if (state.advanced) {
-            m_takenLateness[m_takenCount++] = state.publishedNs > state.scheduledNs ? state.publishedNs - state.scheduledNs : 0;
-        }
+        m_takenLateness[m_takenCount++] = state.publishedNs > state.scheduledNs ? state.publishedNs - state.scheduledNs : 0;
     }
 
     void Adopt(Handover<State, Event, Input, Held, View>& handover) {
