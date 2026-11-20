@@ -1,6 +1,6 @@
 # Test suite names: refuse a name that runs no test, replay fuzz seeds as a suite
 
-Date: 2026-11-20 · Status: **approved 2026-11-20** · Plan: `2026-11-20-test-suite-names.md`
+Date: 2026-11-20 · Status: **implemented 2026-11-20** (see Outcome; approved 2026-11-20) · Plan: `2026-11-20-test-suite-names.md`
 
 ## Why
 
@@ -54,3 +54,24 @@ forever instead of replaying its seeds; replaying one target's seeds today needs
 How the standalone programs are found (reading tests/xmake.lua's `target("…")` blocks of `set_kind("binary")` that
 aren't suites is one way), the refusal messages' wording, and where the checks sit in `cmd_test` (before the build, so
 a refusal is instant; a container run re-enters `cmd_test` and checks again, harmlessly).
+
+## Outcome
+
+Built as designed in one task (commit "build(tools): refuse test suite names that run no test"), executed inline.
+`check_test_target` refuses before anything sweeps, builds or starts a container; `fuzz_suites()` and
+`test_programs()` read `tests/fuzz/*.cpp` and tests/xmake.lua, so nothing is listed by hand.
+
+- **Measured:** `test --preset linux-clang --sanitizer address --suite fuzz_yaml` replayed `fuzz_yaml/corpus` in 0.9 s
+  (26 s with the build); `test --suite core` is refused in under a second, listing every valid name, and exits 1.
+- **Ruling (the test of a program refusing `--test`):** it uses `--test physics`, not `--test save`. `save` names a
+  game_tests file, so the older `test_filter` refused it already and the test passed before the fix; a case name
+  reaches the new rule.
+- **Final review** (Opus, whole branch; GLM glm-5.3 found nothing): no Critical or Important findings, three Minor, all
+  fixed (commit "build(tools): keep the asked mode and container in the fuzz refusal"): the fuzz refusal's printed
+  command now keeps `--mode` and `--container`; the known-name test compares the fuzz suites with the corpus folders,
+  not with the glob they come from; a fuzz suite's container run is tested to re-enter with its target. Sonnet's
+  re-review of the fix was clean.
+- **Set aside by the review, standing:** `--suite reference_tests` runs on the host's GPU, not lavapipe (changing
+  `reference` was a non-goal); `--list-tests` with an unknown name prints nothing (a completion helper, where silence
+  is the right failure); `test_programs()` needs `set_kind("binary")` on the line after `target(...)`, and a program it
+  misses is refused loudly, never run silently.
