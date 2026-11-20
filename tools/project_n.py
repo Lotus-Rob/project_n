@@ -761,6 +761,51 @@ def test_names():
     return suites
 
 
+def fuzz_targets():
+    """The libFuzzer targets, one per tests/fuzz/<name>.cpp: what `fuzz` takes."""
+    return sorted(f.stem for f in (ROOT / "tests" / "fuzz").glob("*.cpp"))
+
+
+def fuzz_suites():
+    """The fuzz targets as `test --suite` names: each replays its seed corpus as its one test (tests/xmake.lua)."""
+    return [f"fuzz_{name}" for name in fuzz_targets()]
+
+
+def test_programs():
+    """tests/xmake.lua's binary targets that are no suite (`headless_bench`): `test --suite` runs them as they are."""
+    text = (ROOT / "tests" / "xmake.lua").read_text()
+    return sorted(set(re.findall(r'^target\("(\w+)"\)\n\s+set_kind\("binary"\)', text, re.MULTILINE)) - set(test_names()))
+
+
+FUZZ_PRESET = ("linux-clang", "address")  # the only build that makes the fuzz targets (tests/xmake.lua)
+
+
+def check_test_target(target, test, extra, preset, sanitizer):
+    """Refuse a `test --suite` that would run no test: `xmake run` of a library or the game exits 0 having tested
+    nothing, and a fuzz target run bare fuzzes forever."""
+    if target is None:
+        return
+    if target in fuzz_suites():
+        if test or extra:
+            raise Fail(f"{target} replays its seeds and takes no --test or doctest arguments; fuzz it with "
+                       f"`pixi run project_n fuzz {target.removeprefix('fuzz_')}`")
+        if (preset, sanitizer) != FUZZ_PRESET:
+            raise Fail(f"{target} is built only with linux-clang and AddressSanitizer: "
+                       f"`pixi run project_n test --preset {FUZZ_PRESET[0]} --sanitizer {FUZZ_PRESET[1]} --suite {target}`")
+        return
+    suites = test_names()
+    if target in suites:
+        return
+    if target in test_programs():
+        if test:
+            raise Fail(f"{target} is no doctest suite: --test needs one of {', '.join(suites)}")
+        return
+    if target == "project_n":
+        raise Fail("project_n is the game, not a test: `pixi run project_n run`")
+    raise Fail(f"{target} is no test suite; --suite takes {', '.join(suites)}, the fuzz suites "
+               f"{', '.join(fuzz_suites())} or the test programs {', '.join(test_programs())}")
+
+
 def all_test_files(suites):
     return sorted({n for names in suites.values() for n in names})
 
@@ -793,6 +838,7 @@ def cmd_test(args):
     extra = args.args[1:] if args.args[:1] == ["--"] else args.args
     if (extra or args.test) and not args.target:
         raise Fail("pass --suite <test target> with --test or doctest arguments")
+    check_test_target(args.target, args.test, extra, args.preset, args.sanitizer)
     extra = ([test_filter(args.test, args.target)] if args.test else []) + extra
     check_sanitizer(args.preset, args.sanitizer)
     sweep_here(own_trees([args.preset], args.mode, args.sanitizer, args.container))
@@ -805,7 +851,7 @@ def cmd_test(args):
         # MSVC's ASan hot-patches system DLLs; Wine's (CET endbr64 prologues) can't be patched.
         print(f"test: built with {args.sanitizer} sanitizer; MSVC sanitizer runs need native Windows, not Wine")
         return
-    if args.target in test_names() and not extra:
+    if args.target in (*test_names(), *fuzz_suites()) and not extra:
         # Each test file is a test of its own (tests/xmake.lua), so a suite's files run in parallel.
         run(["xmake", "test", "--output-on-failure", f"{args.target}/*"], env=xmake_env(bdir))
     elif args.target:
@@ -3212,7 +3258,7 @@ def make_parser():
     suites = test_names()  # in the help only, not `choices`: any target and any case name are valid
     test_files = all_test_files(suites)
     p.add_argument("--suite", "--target", dest="target",
-                   help=f"[possible values: {', '.join(suites)}] run one test target, forwarding the arguments after --")
+                   help=f"[possible values: {', '.join((*suites, *test_programs(), *fuzz_suites()))}] run one test target, forwarding the arguments after --")
     p.add_argument("--test", help=f"[possible values: {', '.join(test_files)}] with --suite: only the cases of a test file, or with this in their name")
     p.add_argument("--list-tests", action="store_true", help="print what --test takes (of --suite's files, or of every suite's) and exit: shell completion calls it")
     p.add_argument("args", nargs=argparse.REMAINDER, help="-- <doctest arguments>, e.g. -- --test-case='*physics*'")
@@ -3236,7 +3282,7 @@ def make_parser():
     group.add_argument("--range", help="validate every commit in a git range, e.g. main..HEAD")
     add("coverage", cmd_coverage, "test coverage of src/ (linux-gcc, gcovr): build/coverage/index.html", container=True)
     p = add("fuzz", cmd_fuzz, "fuzz a libFuzzer target from tests/fuzz/ (linux-clang, AddressSanitizer)", container=True)
-    p.add_argument("target", choices=sorted(f.stem for f in (ROOT / "tests" / "fuzz").glob("*.cpp")))
+    p.add_argument("target", choices=fuzz_targets())
     p.add_argument("--time", type=int, default=60, help="seconds to fuzz (default 60)")
     add("docs", cmd_docs, "API reference from doc comments with Doxygen: build/docs/html/")
     p = add("reference", cmd_reference, "compare pictures of fixed scenes with tests/reference/ on software Vulkan (Linux)",

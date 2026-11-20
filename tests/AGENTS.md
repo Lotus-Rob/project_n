@@ -29,7 +29,8 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
 - `pixi run project_n test --preset linux-clang --sanitizer address` (also `run --sanitizer ...` for the game)
 - `pixi run project_n reference` · `pixi run project_n reference --update`: take this run's pictures as the references
 - `pixi run project_n fuzz <name> [--time 60]`: new inputs and crash files land in `build/fuzz/<name>/`
-- `pixi run project_n test --suite app_tests [--test data_watch]`: one test target (`--target` is the same), its files' tests in parallel; `--test` (or doctest arguments) runs the binary once instead and keeps the cases of the test file it names, else the cases with it in their name
+- `pixi run project_n test --preset linux-clang --sanitizer address --suite fuzz_<name>`: replays one fuzz target's seeds once (`-runs=0`); any other preset or sanitizer is refused with this command
+- `pixi run project_n test --suite app_tests [--test data_watch]`: one test target (`--target` is the same), its files' tests in parallel; a name that is no suite, fuzz suite or test program (`headless_bench`, `reference_tests`) is refused, so a run never passes having tested nothing; `--test` (or doctest arguments) runs the binary once instead and keeps the cases of the test file it names, else the cases with it in their name
 - `pixi run project_n test --mode release --target game_tests -- --test-case="the world ticked through an hour of walk-tos is the same on 1 and 4 workers" --no-skip`: a skipped long run or measurement by name (likewise `"measure the shipped world's saves over hours of play"`); double quotes, as names hold apostrophes
 - `pixi run project_n test --preset linux-clang` · one target with doctest arguments:
   `pixi run project_n test --preset linux-clang --target core_tests -- --test-case='*expected*'`
