@@ -8,6 +8,7 @@
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 #include "core/view_limits.hpp"
+#include "gfx/fog.hpp"
 
 #include <cstddef>
 #include <optional>
@@ -49,6 +50,8 @@ struct View {
     /// Whether it draws the seals a scene shows as its content (core::Seal::showcase): the arena's showcase, which a debug
     /// key hides and shows. Seals raised in play draw either way.
     bool showcase = true;
+    /// The fog over the world map; none (no columns) elsewhere.
+    FogFrame fog{};
 };
 
 /// `zoom` after `notches` of the mouse wheel: each one multiplies it by the same factor, and the
