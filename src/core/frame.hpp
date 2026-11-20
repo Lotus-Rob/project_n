@@ -545,8 +545,8 @@ bool PresentFrame(
     while (const std::optional<u64> lateness = display.TakenLateness()) {
         delay.Observe(*lateness);
     }
-    // Drained after the takes, so every snapshot the display holds has its events in `pending`, even one published
-    // during the acquire: the handover drops undrained cosmetic events on that promise.
+    // After the takes, so every snapshot the display holds has its events in `pending` before they play, even one
+    // published during the acquire.
     handover.AppendEvents(pending);
     const Snapshot* drawn = display.Drawn();
     if (drawn == nullptr) {
