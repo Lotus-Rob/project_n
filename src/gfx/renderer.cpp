@@ -420,7 +420,7 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     const std::expected<std::size_t, core::Error> sealQuadsDropped = seals.Upload(copy, sealDrawing);
     SDL_EndGPUCopyPass(copy);
     SDL_PopGPUDebugGroup(commands);
-    text->EndFrame(jobs);
+    text->EndFrame(jobs, shown.view->frameClock);
     if (quadsDropped) {
         ReportOverflow(meshOverflows, *quadsDropped, "text quads", MAX_MESH_QUADS);
     }

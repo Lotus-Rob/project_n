@@ -18,6 +18,8 @@ constexpr u8 FIELD_EDGE = 128; // FreeType's distance fields: the outline, insid
 constexpr std::string_view FONT_FILE = "NotoSansSC-Regular.otf";
 // A blocked background job gives up after this, so a glyph batch queued behind it fails the test rather than hanging it.
 constexpr std::chrono::seconds PATIENCE{ 10 };
+constexpr f64 FRAME = 1.0 / 60.0; // a frame clock a frame in
+constexpr u64 UNLIMITED = std::numeric_limits<u64>::max();
 
 std::filesystem::path Assets() {
     const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
@@ -42,6 +44,11 @@ gfx::TextLayout WarmedWith(std::string_view text) {
     strings.text.at(0).at(0) = text;
     layout.Prewarm(strings);
     return layout;
+}
+
+/// A cache with every letter and digit rasterised, so Latin texts lay out complete.
+gfx::TextLayout WarmedLetters() {
+    return WarmedWith("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789");
 }
 
 // The label stack `stack` (core::StringId::LabelStack's text) filled in with `name` and `count`.
@@ -277,8 +284,8 @@ TEST_CASE("a glyph not pre-warmed is drawn once the worker has rasterised it") {
     CHECK_FALSE(before.complete);
     CHECK(before.glyphs.empty());
     CHECK(text.Pending().empty());
-    text.EndFrame(jobs); // asks the worker
-    text.Flush(jobs);    // waits for it, and takes what it rasterised
+    text.EndFrame(jobs, FRAME); // asks the worker
+    text.Flush(jobs);           // waits for it, and takes what it rasterised
     const gfx::Layout& after = text.Lay(CRANE, ACROSS);
     CHECK(after.complete);
     CHECK(after.glyphs.size() == 1);
@@ -299,7 +306,7 @@ TEST_CASE("a glyph lands while another background job holds a worker") {
     });
     gfx::TextLayout text = OpenFonts();
     static_cast<void>(text.Lay(CRANE, ACROSS));
-    text.EndFrame(jobs);
+    text.EndFrame(jobs, FRAME);
     text.Flush(jobs);
     const bool landed = text.Lay(CRANE, ACROSS).complete;
     const bool landedFirst = !gaveUp.load();
@@ -316,7 +323,7 @@ TEST_CASE("a cache destroyed while the worker rasterises for it lets the next on
     {
         gfx::TextLayout text = OpenFonts();
         static_cast<void>(text.Lay(BIRDS, ACROSS));
-        text.EndFrame(jobs); // the worker starts on nine glyphs, a few milliseconds each
+        text.EndFrame(jobs, FRAME); // the worker starts on nine glyphs, a few milliseconds each
     } // gone with most of them still waiting
     gfx::TextLayout again = OpenFonts();
     static_cast<void>(again.Lay(CRANE, ACROSS));
@@ -436,6 +443,88 @@ TEST_CASE("a character the font lacks draws nothing and is never asked of the wo
     CHECK(layout.glyphs.empty());
     CHECK(layout.complete);
     CHECK(text.Pending().empty());
+}
+
+TEST_CASE("a spent budget makes one layout a frame and serves cached ones") {
+    core::Jobs jobs{ 1 };
+    gfx::TextLayout text = WarmedLetters();
+    text.SetLayoutBudget(0);
+    CHECK(text.TryLay("Alpha", ACROSS) != nullptr);
+    CHECK(text.TryLay("Beta", ACROSS) == nullptr);
+    CHECK(text.TryLay("Alpha", ACROSS) != nullptr);
+    CHECK(text.Cached("Beta", ACROSS) == nullptr);
+    text.EndFrame(jobs, 0.1);
+    CHECK(text.TryLay("Beta", ACROSS) != nullptr);
+    CHECK(text.TryLay("Gamma", ACROSS) == nullptr);
+}
+
+TEST_CASE("an unlimited budget lays out every text") {
+    gfx::TextLayout text = WarmedLetters();
+    text.SetLayoutBudget(0);
+    text.SetLayoutBudget(UNLIMITED);
+    for (const std::string_view name : { "T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9" }) {
+        CHECK(text.TryLay(name, ACROSS) != nullptr);
+    }
+}
+
+TEST_CASE("Cached never makes a layout") {
+    gfx::TextLayout text = WarmedLetters();
+    CHECK(text.Cached("Delta", ACROSS) == nullptr);
+    CHECK(text.Cached("Delta", ACROSS) == nullptr);
+    const f32 width = text.Lay("Delta", ACROSS).width;
+    const gfx::Layout* cached = text.Cached("Delta", ACROSS);
+    REQUIRE(cached != nullptr);
+    CHECK(cached->width == width);
+}
+
+TEST_CASE("Lay still makes a layout once the budget is spent") {
+    gfx::TextLayout text = WarmedLetters();
+    text.SetLayoutBudget(0);
+    CHECK(text.TryLay("A1", ACROSS) != nullptr);
+    CHECK(text.TryLay("B1", ACROSS) == nullptr);
+    CHECK(text.Lay("B1", ACROSS).width > 0.0F);
+    CHECK(text.TryLay("B1", ACROSS) != nullptr);
+}
+
+TEST_CASE("a cached incomplete layout is served while the budget is spent") {
+    constexpr std::string_view CRANE = "鹤";
+    core::Jobs jobs{ 1 };
+    gfx::TextLayout text = WarmedLetters();
+    CHECK(text.TryLay(CRANE, ACROSS) != nullptr);
+    text.EndFrame(jobs, FRAME);
+    text.Flush(jobs);
+    text.SetLayoutBudget(0);
+    CHECK(text.TryLay("Epsilon", ACROSS) != nullptr);
+    const gfx::Layout* served = text.TryLay(CRANE, ACROSS);
+    REQUIRE(served != nullptr);
+    CHECK_FALSE(served->complete);
+    text.EndFrame(jobs, 2 * FRAME);
+    const gfx::Layout* later = text.TryLay(CRANE, ACROSS);
+    REQUIRE(later != nullptr);
+    CHECK(later->complete);
+}
+
+TEST_CASE("a layout unused for five seconds is forgotten") {
+    core::Jobs jobs{ 1 };
+    gfx::TextLayout text = WarmedLetters();
+    static_cast<void>(text.Lay("Zeta", ACROSS));
+    text.EndFrame(jobs, 4.0);
+    CHECK(text.Cached("Zeta", ACROSS) != nullptr);
+    text.EndFrame(jobs, 8.9);
+    CHECK(text.Cached("Zeta", ACROSS) != nullptr);
+    text.EndFrame(jobs, 14.0);
+    CHECK(text.Cached("Zeta", ACROSS) == nullptr);
+}
+
+TEST_CASE("a clock that goes back forgets nothing in use") {
+    core::Jobs jobs{ 1 };
+    gfx::TextLayout text = WarmedLetters();
+    text.EndFrame(jobs, 100.0);
+    static_cast<void>(text.Lay("Eta", ACROSS));
+    text.EndFrame(jobs, 2.0);
+    CHECK(text.Cached("Eta", ACROSS) != nullptr);
+    text.EndFrame(jobs, 3.0);
+    CHECK(text.Cached("Eta", ACROSS) != nullptr);
 }
 
 } // namespace
