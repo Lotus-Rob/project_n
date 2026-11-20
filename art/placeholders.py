@@ -1383,6 +1383,59 @@ def target_tile():
     return canvas
 
 
+CLOUDS = 16
+CLOUD_BODY = (242, 236, 222)
+CLOUD_INK = (92, 78, 66)
+
+
+def cloud_draw(variant, index):
+    """The variant's `index`th draw in [0, 1): integer hashing only, so a cloud is the same on every host."""
+    return hash01(variant, 17, index)
+
+
+def cloud_parts(x, y, wid, variant):
+    """The lobes of a curl cloud: a base of two and two to four bumps on top, as (x, y, radius)."""
+    half = wid / 2.0
+    draw = lambda index: cloud_draw(variant, index)
+    parts = [(x - (0.35 + 0.2 * draw(1)) * half, y + 0.05 * half, (0.36 + 0.12 * draw(2)) * half),
+             (x + (0.35 + 0.2 * draw(3)) * half, y + 0.05 * half, (0.36 + 0.12 * draw(4)) * half)]
+    for bump in range(2 + int(draw(5) * 3)):
+        parts.append((x + (draw(10 + bump) - 0.5) * 0.9 * half, y - (0.1 + 0.3 * draw(20 + bump)) * half,
+                      (0.3 + 0.25 * draw(30 + bump)) * half))
+    return parts
+
+
+def cloud(variant):
+    """A 祥云 curl cloud: cream body, ink outline, one or two ink spirals; 256 by 176 with its foot at the centre.
+
+    The lobes' centre sits below the foot so the tallest bump and the lowest lobe both stay on the sprite.
+    """
+    canvas = Canvas(256, 176)
+    wid, cx, cy = 228.0, 128.0, 109.0
+    line = wid * 0.022
+    parts = cloud_parts(cx, cy, wid, variant)
+
+    def coverage(x, y):
+        edge = min(math.sqrt((x - px) ** 2 + (y - py) ** 2) - r for px, py, r in parts)
+        outer = min(1.0, max(0.0, line + 0.5 - edge))
+        if outer <= 0.0:
+            return None
+        inner = min(1.0, max(0.0, 0.5 - edge))
+        return mix(CLOUD_INK, CLOUD_BODY, inner), outer
+    canvas.shape((0, 0, 255, 175), coverage)
+    for n in range(1 if cloud_draw(variant, 40) < 0.75 else 2):
+        sx = cx + (cloud_draw(variant, 41 + n) - 0.5) * 0.45 * wid
+        sy = cy + (cloud_draw(variant, 43 + n) - 0.6) * 0.18 * wid
+        radius = wid * (0.09 + 0.09 * cloud_draw(variant, 45 + n))
+        turns = 1.0 + 1.2 * cloud_draw(variant, 47 + n)
+        steps = 60
+        # tan(half the step's angle) is the angle's half to well under a percent at this step
+        step_t = (math.pi * turns / steps) * (-1.0 if cloud_draw(variant, 49 + n) < 0.5 else 1.0)
+        points = [(x, sy + (y - sy) * 0.8) for x, y in spiral(sx, sy, radius * 0.15, radius, steps, step_t)]
+        canvas.stroke(points[::-1], line, line, CLOUD_INK, 1.0)
+    return canvas
+
+
 # name -> (painter, opaque); the names are those in art/sprites.toml.
 PLACEHOLDERS = {
     "ground": (ground, True),
@@ -1423,6 +1476,7 @@ PLACEHOLDERS = {
     "route_dot": (route_dot, False),
     "route_marker": (route_marker, False),
     "target_tile": (target_tile, False),
+    **{f"cloud_{i}": ((lambda i=i: cloud(i)), False) for i in range(CLOUDS)},
 }
 
 

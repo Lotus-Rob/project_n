@@ -45,4 +45,6 @@ sprites = [
     "river_11", "river_12", "river_13", "river_14", "river_15", "bridge_h", "bridge_v", "ford", "marker_city",
     "marker_haunted_forest", "marker_mountain_pass", "marker_shrine", "marker_cave", "marker_cliff",
     "marker_corrupt_village", "route_dot", "route_marker", "target_tile",
+    "cloud_0", "cloud_1", "cloud_2", "cloud_3", "cloud_4", "cloud_5", "cloud_6", "cloud_7",
+    "cloud_8", "cloud_9", "cloud_10", "cloud_11", "cloud_12", "cloud_13", "cloud_14", "cloud_15",
 ]

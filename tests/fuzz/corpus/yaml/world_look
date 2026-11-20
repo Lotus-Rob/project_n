@@ -11,3 +11,12 @@ markers:
   city: marker_city
   mountain_pass: marker_mountain_pass
 route: { dot: route_dot, spacing: 48, marker: route_marker, cursor: target_tile }
+fog:
+  clouds: [cloud_0, cloud_1]
+  cloud_width: 1.15
+  bob: { amplitude: 0.03, period: 4.0 }
+  drift: 0.3
+  fade_seconds: 0.5
+  drain: { strength: 0.85, sepia: [160, 138, 106] }
+  mist: { colour: [239, 233, 220], strength: 0.25 }
+  shade: [214, 206, 192]

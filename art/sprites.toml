@@ -404,3 +404,51 @@ foot = [24, 24]
 
 [target_tile]
 foot = [128, 128]
+
+[cloud_0]
+foot = [128, 88]
+
+[cloud_1]
+foot = [128, 88]
+
+[cloud_2]
+foot = [128, 88]
+
+[cloud_3]
+foot = [128, 88]
+
+[cloud_4]
+foot = [128, 88]
+
+[cloud_5]
+foot = [128, 88]
+
+[cloud_6]
+foot = [128, 88]
+
+[cloud_7]
+foot = [128, 88]
+
+[cloud_8]
+foot = [128, 88]
+
+[cloud_9]
+foot = [128, 88]
+
+[cloud_10]
+foot = [128, 88]
+
+[cloud_11]
+foot = [128, 88]
+
+[cloud_12]
+foot = [128, 88]
+
+[cloud_13]
+foot = [128, 88]
+
+[cloud_14]
+foot = [128, 88]
+
+[cloud_15]
+foot = [128, 88]
