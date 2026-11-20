@@ -1429,7 +1429,7 @@ def cloud(variant):
         radius = wid * (0.09 + 0.09 * cloud_draw(variant, 45 + n))
         turns = 1.0 + 1.2 * cloud_draw(variant, 47 + n)
         steps = 60
-        # tan(half the step's angle) is the angle's half to well under a percent at this step
+        # 60 steps turn by a small angle each, so tan(angle / 2) is angle / 2 closely enough and the chords stay smooth
         step_t = (math.pi * turns / steps) * (-1.0 if cloud_draw(variant, 49 + n) < 0.5 else 1.0)
         points = [(x, sy + (y - sy) * 0.8) for x, y in spiral(sx, sy, radius * 0.15, radius, steps, step_t)]
         canvas.stroke(points[::-1], line, line, CLOUD_INK, 1.0)
