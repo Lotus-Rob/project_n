@@ -2242,11 +2242,11 @@ class TestFilesTest(unittest.TestCase):
             self.assertNotIn("rest", stems, suite)
 
     @staticmethod
-    def ran(target, test=None, args=()):
+    def ran(target, test=None, args=(), preset=project_n.NATIVE_PRESET, sanitizer="none"):
         ran = []
         with mock.patch.multiple(project_n, build=lambda *a: Path("build"), xmake_env=lambda bdir: {},
                                  needs_container=lambda *a: False, run=lambda argv, env: ran.append(argv)):
-            project_n.cmd_test(project_n.argparse.Namespace(preset=project_n.NATIVE_PRESET, mode="debug", sanitizer="none",
+            project_n.cmd_test(project_n.argparse.Namespace(preset=preset, mode="debug", sanitizer=sanitizer,
                                                             container=False, target=target, test=test, args=list(args)))
         return ran
 
@@ -2260,6 +2260,62 @@ class TestFilesTest(unittest.TestCase):
 
     def test_a_target_that_is_no_suite_runs_its_binary(self):  # the benchmark registers no test
         self.assertEqual(self.ran("headless_bench"), [["xmake", "run", "headless_bench"]])
+
+    def test_a_fuzz_suite_replays_its_seeds(self):
+        self.assertEqual(self.ran("fuzz_yaml", preset="linux-clang", sanitizer="address"),
+                         [["xmake", "test", "--output-on-failure", "fuzz_yaml/*"]])
+
+    def test_a_fuzz_suite_elsewhere_is_refused_with_the_command(self):  # only that build makes the fuzz targets
+        for preset, sanitizer in (("linux-clang", "none"), ("linux-gcc", "address"), ("linux-clang", "thread")):
+            with self.assertRaisesRegex(project_n.Fail, r"--preset linux-clang --sanitizer address"):
+                self.ran("fuzz_yaml", preset=preset, sanitizer=sanitizer)
+
+    def test_a_fuzz_suite_takes_no_test_or_doctest_arguments(self):
+        with self.assertRaisesRegex(project_n.Fail, "fuzz_save"):
+            self.ran("fuzz_save", test="save", preset="linux-clang", sanitizer="address")
+        with self.assertRaisesRegex(project_n.Fail, "fuzz_save"):
+            self.ran("fuzz_save", args=["--", "-runs=10"], preset="linux-clang", sanitizer="address")
+
+    def test_a_name_that_is_no_suite_is_refused(self):  # `--suite core` ran the core library and passed
+        for name in ("core", "game", "fuzz_nothing"):
+            with self.assertRaises(project_n.Fail) as refused:
+                self.ran(name)
+            for valid in ("core_tests", "game_tests", "headless_bench", "reference_tests", "fuzz_yaml"):
+                self.assertIn(valid, str(refused.exception), name)
+
+    def test_the_game_is_pointed_at_run(self):
+        with self.assertRaisesRegex(project_n.Fail, r"project_n run"):
+            self.ran("project_n")
+
+    def test_a_program_takes_no_test(self):
+        with self.assertRaisesRegex(project_n.Fail, "headless_bench is no doctest suite"):
+            self.ran("headless_bench", test="physics")  # a case name, not a file: test_filter takes it
+
+    def test_a_program_keeps_its_arguments(self):
+        self.assertEqual(self.ran("headless_bench", args=["--", "--ticks", "10"]),
+                         [["xmake", "run", "headless_bench", "--ticks", "10"]])
+
+    def test_a_refused_name_never_reaches_a_container(self):
+        with mock.patch.multiple(project_n, needs_container=lambda *a: True, reenter=mock.DEFAULT,
+                                 build=mock.DEFAULT) as patched, self.assertRaises(project_n.Fail):
+            project_n.cmd_test(project_n.argparse.Namespace(preset="linux-clang", mode="debug", sanitizer="none",
+                                                            container=True, target="core", test=None, args=[]))
+        patched["reenter"].assert_not_called()
+        patched["build"].assert_not_called()
+
+    def test_listing_a_fuzz_suite_prints_nothing(self):  # it has no test files for --test
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            project_n.cmd_test(project_n.argparse.Namespace(list_tests=True, target="fuzz_yaml"))
+        self.assertEqual(out.getvalue().strip(), "")
+
+    def test_every_fuzz_file_and_program_is_a_known_name(self):
+        self.assertEqual(project_n.fuzz_suites(),
+                         sorted("fuzz_" + f.stem for f in (project_n.ROOT / "tests" / "fuzz").glob("*.cpp")))
+        self.assertIn("headless_bench", project_n.test_programs())
+        self.assertIn("reference_tests", project_n.test_programs())
+        self.assertNotIn("test_pch", project_n.test_programs())
+        self.assertTrue(set(project_n.test_programs()).isdisjoint(project_n.test_names()))
 
 
 class HelpersTest(unittest.TestCase):
