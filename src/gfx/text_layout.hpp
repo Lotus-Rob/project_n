@@ -146,7 +146,7 @@ public:
     /// no batch is running, starts one on `jobs` as low-priority work (Jobs::Start), which never waits behind a
     /// background job such as a save nor holds one up. One batch at a time: the worker's font is used by one thread.
     /// Never waits. `jobs` must outlive this cache. `clock` is the frame clock in seconds (View::frameClock) of the
-    /// frame that begins; a layout is stamped with the clock of the frame it is asked for in (0 before the first
+    /// frame that ends; each layout asked for until the next EndFrame() is stamped with it (0 before the first
     /// EndFrame()).
     void EndFrame(core::Jobs& jobs, f64 clock);
 
