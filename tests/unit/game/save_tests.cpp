@@ -1679,4 +1679,80 @@ TEST_CASE("an arena save whose scratch world's ID counter is behind its entry bu
     CHECK_FALSE(LoadsWith(data, with(1)));
 }
 
+/// The explored tiles of `host`'s game world, copied.
+std::vector<u64> ExploredOf(const game::Host& host) {
+    const std::span<const u64> explored = host.ExploredTiles();
+    return { explored.begin(), explored.end() };
+}
+
+TEST_CASE("explored tiles and the sight radius survive a save and load") {
+    core::GameData data = test::SmallData();
+    data.cultivator.sight = 1;
+    const core::WorldMap& map = *data.world;
+    game::Host saved(test::TestManifest(), game::WORLD_SCENE, data);
+    saved.SetSightRadius(2);
+    Tick(saved, At(1), {}); // round the start by the grown radius
+    const core::Vec2 far = map.TileCentre(map.TileIndex({ .column = test::small::COLUMNS - 1, .row = 1 }));
+    saved.Explore({ .min = far, .max = far }); // a tile out on its own
+    const std::vector<std::byte> bytes = Saved(saved);
+
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, data);
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene();
+    CHECK(ExploredOf(loaded) == ExploredOf(saved));
+    CHECK(loaded.SightRadius() == 2);
+    CHECK(loaded.WorldHash() == saved.WorldHash());
+
+    // A dev scene's save holds them too, with the game's world set aside.
+    const std::array<core::Action, 1> cycle{ { { .kind = core::ActionKind::CycleScene } } };
+    Tick(saved, At(2), { .actions = cycle, .held = {} });
+    saved.EnterScene();
+    REQUIRE(saved.Current().key == game::ARENA_SCENE);
+    const std::vector<std::byte> aside = Saved(saved);
+    game::Host loadedAside(test::TestManifest(), game::ARENA_SCENE, data);
+    core::Reader asideReader{ aside };
+    REQUIRE(loadedAside.Load(asideReader, SAVED_TICK));
+    loadedAside.EnterScene();
+    CHECK(ExploredOf(loadedAside) == ExploredOf(saved));
+    CHECK(loadedAside.SightRadius() == 2);
+    CHECK(loadedAside.WorldHash() == saved.WorldHash());
+}
+
+TEST_CASE("a load refuses explored bits of the wrong size") {
+    // The small map's 21 tiles fit one word.
+    constexpr u32 TILES = test::small::TILES;
+    const auto exploring = [](std::vector<u64> explored) { return WorldSaveAt({ .explored = std::move(explored) }); };
+    CHECK(LoadsWithMap(exploring({ u64{ 1 } << (TILES - 1) }))); // the last tile
+    CHECK_FALSE(LoadsWithMap(exploring({})));                    // a word short
+    CHECK_FALSE(LoadsWithMap(exploring({ 0, 0 })));              // a word too many
+    CHECK_FALSE(LoadsWithMap(exploring({ u64{ 1 } << TILES }))); // a bit past the last tile
+    CHECK_FALSE(LoadsWithMap(exploring({ ~u64{ 0 } })));
+
+    // A dev scene's scratch world never shows the map, so it has no tiles to explore and no sight.
+    const core::GameData data = test::SmallData();
+    const core::State state{ game::DOMAINS, STATE_SEED };
+    const auto scratch = [&](const test::SavedClock& clock) {
+        return ArenaSave(
+            state,
+            {},
+            std::nullopt,
+            std::nullopt,
+            std::nullopt,
+            game::ARENA_SCENE,
+            WORLD_VERSION,
+            ACTIVE_VERSION,
+            clock,
+            game::Travel{},
+            std::nullopt,
+            game::Relationships{},
+            {},
+            &data
+        );
+    };
+    CHECK(LoadsWithMap(scratch({})));
+    CHECK_FALSE(LoadsWithMap(scratch({ .explored = std::vector<u64>{ 0 } })));
+    CHECK_FALSE(LoadsWithMap(scratch({ .sight = 3 })));
+}
+
 } // namespace

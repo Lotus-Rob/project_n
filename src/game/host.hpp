@@ -3,8 +3,9 @@
 /// @file
 /// @ingroup game
 /// The host every scene runs in (game/scene.hpp, listed in game/scenes.cpp): as the core::Simulation it owns the game's
-/// world (game/world_state.hpp: the state's domains, the world NPCs, their journeys and travel journals (game/travel.hpp)
-/// and the calendar: the world clock, the month steps, the world pause), made once and kept across scene changes, with
+/// world (game/world_state.hpp: the state's domains, the world NPCs, their journeys and travel journals (game/travel.hpp),
+/// the calendar: the world clock, the month steps, the world pause, and what the player has explored of the world map
+/// and how far its cultivator sees), made once and kept across scene changes, with
 /// that world as it was made, which saves are written against, and a dev scene's scratch world while one runs; the player's
 /// cultivator, the selection, combat, the game data, saving, loading and hashing, and the publishing every scene shares, and it
 /// knows no scene by name.
@@ -18,6 +19,7 @@
 #include "core/journey.hpp"
 #include "core/logic.hpp"
 #include "core/manifest.hpp"
+#include "core/rect.hpp"
 #include "core/state.hpp"
 #include "core/tick_clock.hpp"
 #include "core/types.hpp"
@@ -90,6 +92,8 @@ public:
     /// drawn), it asks for the scene the portal leads to (NextWalkableScene(); Requested()), ending every use still open and,
     /// on the world map, keeping the point its foot stood on before this tick as the place it comes back to, off the portal
     /// (none, so the start city, when a month step's jump had left it standing in the step area), and does nothing more.
+    /// Before that check, on the world map, the player's cultivator explores every tile within the sight radius
+    /// (SightRadius()) of each tile its route reached this tick and of the tile under its foot (ExploredTiles()).
     /// Otherwise the world clock moves a tick in a scene showing the world map, unless the world is paused, a month is due
     /// (MonthDue()) or the calendar has ended (LAST_MONTH); it moves every entity on an Orbit to where it is at
     /// `counters.simulation`, advances combat (Combat::Tick(): arrivals, removing the dead, which clears their selection, and
@@ -103,8 +107,9 @@ public:
     /// Lets a month pass for the running world's NPCs and counts it (Months()): a dev scene's scratch world while one
     /// runs, never the game's world set aside meanwhile. A step asked for before the month is due (M, a debug
     /// key) first moves the world clock on to the next month's first tick, and the player's cultivator on its route to where
-    /// the new tick puts it, standing there for the tick (its route ending if the tick is past its end); the world pause
-    /// holds either way. Once the
+    /// the new tick puts it, standing there for the tick (its route ending if the tick is past its end) and exploring round
+    /// every tile of the route it reached on the way and the one under its foot, as a tick does; the world pause holds
+    /// either way. Once the
     /// calendar has ended (LAST_MONTH) the step runs uncounted, the clock standing still. In a scene showing the world map
     /// the journeys over by the clock's tick end (Travel::Finish()) and the new month's visits set out (Travel::Month(),
     /// keyed on `counters.state`), unless the clock is past half an i64's range, where journeys' ticks would run out; then
@@ -118,13 +123,14 @@ public:
     /// Writes into `archive` a header (the scene and the session's scene-ID counter), then the game's world as its
     /// difference from the world as it was made: the base's identity (the seed, GENERATOR_VERSION and the hash of the data
     /// it was made from, core::GameData::BaseHash()), the world-ID counter, the world clock, the month steps run, the
-    /// world pause and the place on the map, the world domain's difference (core::SaveDomainDelta()) and order
-    /// (core::SaveDomainOrder()), the relationships whole and the travel's difference (Travel::SaveDelta(): its journeys
-    /// rebuilt over the map to choose between a plan and a whole journey); then, while a dev scene runs, its scratch world
-    /// as its difference from the world the scene's entry build made (its world-ID counter, clock, month steps, pause,
-    /// place, its world domain's difference and order, its relationships, and its travel as its difference from none);
-    /// then the scene (the player, the selection, the active domain in storage order, the player's route and the fight).
-    /// It changes nothing, the order of every storage included, so a game that saves runs on as one that never did.
+    /// world pause, the place on the map, the sight radius and the explored tiles whole, the world domain's difference
+    /// (core::SaveDomainDelta()) and order (core::SaveDomainOrder()), the relationships whole and the travel's difference
+    /// (Travel::SaveDelta(): its journeys rebuilt over the map to choose between a plan and a whole journey); then, while a dev
+    /// scene runs, its scratch world as its difference from the world the scene's entry build made (its world-ID counter,
+    /// clock, month steps, pause, place, its world domain's difference and order, its relationships, and its travel as its
+    /// difference from none); then the scene (the player, the selection, the active domain in storage order, the player's route
+    /// and the fight). It changes nothing, the order of every storage included, so a game that saves runs on as one that never
+    /// did.
     void Save(core::Writer& archive) override;
 
     /// Reads and checks the state Save() wrote at simulation tick `simulationTick` and holds it, changing nothing else:
@@ -139,10 +145,12 @@ public:
     /// flash or a seal that starts after `simulationTick`, a world clock outside the month after the month steps run (its
     /// end included) or past the calendar's end (LAST_MONTH's first tick), relationships naming an NPC in neither domain or
     /// last met after their world's calendar, a place kept on the map that isn't a finite point or lies in its portal's step
-    /// area, a world paused or keeping a place on the map where it can't have shown the map (a dev scene's scratch world, or
-    /// any in a game without the map), travel that Travel::LoadDelta() refuses (any at all in a scratch world or a game without
-    /// the map), or a player's route that isn't a journey of the player alone with one tile route leg by core::WALKING of a
-    /// step at least that LegSound() accepts, on the world map with its clock no further than journeys' ticks reach.
+    /// area, explored tiles that don't fit the map (core::FogBitsFit(): the wrong number of words, or a bit past its last
+    /// tile), a world paused, keeping a place on the map, exploring or seeing any distance where it can't have shown the
+    /// map (a dev scene's scratch world, or any in a game without the map), travel that Travel::LoadDelta() refuses (any at all
+    /// in a scratch world or a game without the map), or a player's route that isn't a journey of the player alone with one
+    /// tile route leg by core::WALKING of a step at least that LegSound() accepts, on the world map with its clock no further
+    /// than journeys' ticks reach.
     [[nodiscard]] bool Load(core::Reader& archive, u64 simulationTick) override;
 
     /// A hash of everything Save() writes but the game's world while a dev scene runs, set aside where nothing changes it:
@@ -154,9 +162,9 @@ public:
     /// may jump to its new orbit.
     void SetData(const core::GameData& data) override;
 
-    /// A hash of the game's world alone, whole (its seed, world-ID counter, calendar, pause, place on the map, world
-    /// domain, relationships and travel, in the state's current order), whichever scene runs: unchanged by a dev scene,
-    /// which runs on its own.
+    /// A hash of the game's world alone, whole (its seed, world-ID counter, calendar, pause, place on the map, sight
+    /// radius, explored tiles, world domain, relationships and travel, in the state's current order), whichever scene runs:
+    /// unchanged by a dev scene, which runs on its own.
     [[nodiscard]] u64 WorldHash() const;
 
     /// The world the last dev scene's entry build made (BuildScratch()), kept for saves of its scratch world written
@@ -250,6 +258,35 @@ public:
         return Live().travel;
     }
 
+    /// The tiles of the world map the player has explored, one bit each, row by row (core/fog.hpp): the game's world's,
+    /// whichever scene runs (as many words as the map's tiles need; none in a game without the map).
+    [[nodiscard]] std::span<const u64> ExploredTiles() const {
+        return m_world.explored;
+    }
+
+    /// How far the player's cultivator sees over the world map, in tiles: the game's world's, the game data's cultivator's
+    /// (core::CreatureData::sight) in a new game, 0 in a game without the map.
+    [[nodiscard]] u32 SightRadius() const {
+        return m_world.sightRadius;
+    }
+
+    /// Sets how far the player's cultivator sees over the world map: on the map, the next tick explores round its foot
+    /// by it.
+    void SetSightRadius(u32 radius) {
+        m_world.sightRadius = radius;
+    }
+
+    /// Explores every tile of the world map under `area`, its edges included, in the game's world: nothing for an area
+    /// wholly off the map or with a NaN corner, or in a game without the map. For harnesses; the game explores only round
+    /// the cultivator (Tick()).
+    void Explore(const core::Rect& area);
+
+    /// Changes whenever the explored tiles do and at each EnterScene(), never otherwise, so a publish can tell when to hand
+    /// them on. Never saved or hashed.
+    [[nodiscard]] u64 FogVersion() const {
+        return m_fogVersion;
+    }
+
     /// The route the player's cultivator walks on the world map (core::ActionKind::WalkTo): a journey of the cultivator alone
     /// with one tile route leg by core::WALKING, from the foot it set out from to the tile walked to; none while it walks
     /// freely.
@@ -319,7 +356,17 @@ private:
     void ToggleWorldPause(u64 tick);
     void WalkTo(core::Vec2 point, u64 tick);
     void Move(core::Vec2 move, u64 worldTick, u64 tick);
-    void FollowRoute(u64 worldTick, u64 tick);
+    // Places the player on its route at world tick `worldTick`, exploring round each of its tiles reached after
+    // `fromTick` (ExploreRoute()).
+    void FollowRoute(u64 fromTick, u64 worldTick, u64 tick);
+    // Whether the game's world's explored tiles are the size its map's fog takes, so exploring can write them.
+    [[nodiscard]] bool FogFits() const;
+    // Explores every tile within the sight radius of `tile` in the game's world, a new fog version when that uncovers any.
+    void ExploreRound(u32 tile);
+    // ExploreRound() of the tile under the player's foot, in a scene showing the world map with a player; nothing else.
+    void ExploreRoundFoot();
+    // ExploreRound() of each tile `route`'s legs reach after world tick `fromTick` and by `toTick`.
+    void ExploreRoute(const core::Journey& route, i64 fromTick, i64 toTick);
     [[nodiscard]] Body& PlayerBody();
     [[nodiscard]] const Body& PlayerBody() const;
     void CastAction(const core::Action& action, const core::TickCounters& counters, std::vector<core::Event>& events);
@@ -363,6 +410,9 @@ private:
     // The world clock when the last tick began, where travellers are drawn moving from. Presentation only, so never saved
     // or hashed: a load or a jump of the clock sets it to the clock, and travellers stand still for a frame.
     u64 m_worldTicksBefore = 0;
+    // Counts the changes of the game's world's explored tiles and the scenes entered, for the publish to tell when to hand
+    // the fog on. Presentation only, so never saved or hashed.
+    u64 m_fogVersion = 0;
     std::optional<core::Journey> m_route = std::nullopt; // the player's route; none while it walks freely
     core::StableId m_player{};                           // the cultivator the player walks; zero for none
     core::StableId m_selected{};                         // zero for none

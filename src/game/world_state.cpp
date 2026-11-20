@@ -2,6 +2,7 @@
 
 #include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/fog.hpp"
 #include "core/random.hpp"
 #include "core/world_map.hpp"
 #include "game/combat.hpp"
@@ -57,9 +58,12 @@ void GenerateWorld(WorldState& world, const core::GameData& data, core::Paths* p
         return;
     }
     PN_ASSERT(paths != nullptr, "a world with a map generated without its routes");
-    SpawnPeople(world.state, *data.world);
+    const core::WorldMap& map = *data.world;
+    world.explored.assign(core::FogWords(static_cast<std::size_t>(map.Columns()) * map.Rows()), 0);
+    world.sightRadius = data.cultivator.sight;
+    SpawnPeople(world.state, map);
     if (paths != nullptr) { // with assertions off, a map without routes gives a world whose NPCs never set out
-        world.travel.Seed(world.state, *data.world, *paths, world.state.Seed(), 0, 0);
+        world.travel.Seed(world.state, map, *paths, world.state.Seed(), 0, 0);
     }
     // Stable-ID order, which the month step and travel visit the NPCs in, rather than the order generation made them in.
     world.state.SortCanonical();
