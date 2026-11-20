@@ -13,6 +13,10 @@
 
 namespace core {
 
+/// The farthest any sight reaches, in tiles: a cap that keeps a typo in the game data from uncovering most of the map at
+/// once, and keeps a tile's row or column plus the radius far from wrapping in ExploreAround().
+inline constexpr u32 MAX_SIGHT = 64;
+
 /// The words of 64 bits a bitset of `tiles` tiles needs.
 [[nodiscard]] constexpr std::size_t FogWords(std::size_t tiles) {
     constexpr std::size_t WORD_BITS = 64;

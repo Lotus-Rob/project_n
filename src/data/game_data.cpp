@@ -1,6 +1,7 @@
 #include "data/game_data.hpp"
 
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/fog.hpp"
 #include "core/log.hpp"
 #include "core/manifest.hpp"
 #include "data/abilities.hpp"
@@ -14,10 +15,6 @@ using core::atlas::SpriteId;
 
 // The most health a creature has: below 2^53, which an f64 holds exactly.
 constexpr i64 MAX_HEALTH = 9'007'199'254'740'992;
-
-// The most tiles a creature sees: a cap that keeps a typo from lighting most of the map at once. Exploring clips to the
-// map, so any size is safe.
-constexpr i64 MAX_SIGHT = 64;
 
 std::unexpected<core::Error> Fail(const YAML::Node& node, std::string_view why) {
     return std::unexpected{ core::Error{ std::format("creatures line {}: {}", node.Mark().line + 1, why) } };
@@ -69,7 +66,8 @@ std::expected<core::CreatureData, core::Error> Creature(
         return Fail(node["health"], std::format("{}'s health is below 1", name)); // it would be born dying
     }
     creature.health = *health;
-    const std::expected<i64, core::Error> sight = internal::WholeNumber("creatures", node, name, "sight", false, MAX_SIGHT);
+    const std::expected<i64, core::Error> sight =
+        internal::WholeNumber("creatures", node, name, "sight", false, core::MAX_SIGHT);
     if (!sight) {
         return std::unexpected{ sight.error() };
     }

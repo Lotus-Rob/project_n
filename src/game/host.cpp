@@ -512,13 +512,15 @@ bool ClockFits(u64 worldTicks, u64 months) {
 
 /// Whether `world`, read from a save, holds together for `map` (null for a world that never shows the world map: a dev
 /// scene's, or the game's in a game without the map): every NPC placed for it (NpcsPlaced()), its clock within its month
-/// steps (ClockFits()), its explored tiles the map's (core::FogBitsFit(): none without one), and neither paused, keeping
-/// a place on the map nor seeing any distance without one; a place kept is a finite point.
+/// steps (ClockFits()), its explored tiles the map's (core::FogBitsFit(): none without one), its sight no farther than
+/// core::MAX_SIGHT, and neither paused, keeping a place on the map nor seeing any distance without one; a place kept is
+/// a finite point.
 bool WorldFits(const WorldState& world, const core::WorldMap* map) {
     const bool placeFits =
         !world.mapPlace || (map != nullptr && std::isfinite(world.mapPlace->x) && std::isfinite(world.mapPlace->y));
     const std::size_t tiles = map != nullptr ? static_cast<std::size_t>(map->Columns()) * map->Rows() : 0;
-    const bool fogFits = core::FogBitsFit(world.explored, tiles) && (world.sightRadius == 0 || map != nullptr);
+    const bool fogFits = core::FogBitsFit(world.explored, tiles) && world.sightRadius <= core::MAX_SIGHT &&
+                         (world.sightRadius == 0 || map != nullptr);
     return NpcsPlaced(world.state, map) && ClockFits(world.worldTicks, world.months) && (!world.paused || map != nullptr) &&
            placeFits && fogFits;
 }
@@ -1227,6 +1229,11 @@ void Host::Walk(core::Vec2 move) {
     Body& body = active.Entities().get<Body>(active.Find(m_player));
     body.previous = body.current; // every tick, so a cultivator standing still draws still
     body.current = body.current + (move * m_data.cultivator.walkSpeed);
+}
+
+void Host::SetSightRadius(u32 radius) {
+    PN_ASSERT(radius <= core::MAX_SIGHT, "a sight radius past the farthest any sight reaches");
+    m_world.sightRadius = std::min(radius, core::MAX_SIGHT); // with assertions off, held to what a load accepts
 }
 
 void Host::Explore(const core::Rect& area) {
