@@ -155,6 +155,10 @@ TEST_CASE("a creature's sight is read, absent is 0, and a negative one refused")
     CHECK(seen->cultivator.sight == 3);
     CHECK(seen->fox.sight == 0);
     CHECK(seen->Hash() != none->Hash());
+    const std::expected<core::GameData, core::Error> widest =
+        data::ParseGameData(With("walk_speed: 4.0", "walk_speed: 4.0\n  sight: 64"), ABILITIES);
+    REQUIRE(widest.has_value());
+    CHECK(widest->cultivator.sight == 64);
     CHECK(ErrorFor(With("walk_speed: 4.0", "walk_speed: 4.0\n  sight: -1")).message.contains("cultivator's sight"));
     CHECK(ErrorFor(With("walk_speed: 4.0", "walk_speed: 4.0\n  sight: 65")).message.contains("cultivator's sight"));
     CHECK(ErrorFor(With("walk_speed: 4.0", "walk_speed: 4.0\n  sight: 2.5")).message.contains("cultivator's sight"));
