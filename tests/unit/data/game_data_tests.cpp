@@ -145,6 +145,21 @@ TEST_CASE("malformed creatures are errors naming the line") {
     CHECK(notAMap.message.contains("not a map"));
 }
 
+TEST_CASE("a creature's sight is read, absent is 0, and a negative one refused") {
+    const std::expected<core::GameData, core::Error> none = data::ParseGameData(CREATURES, ABILITIES);
+    REQUIRE(none.has_value());
+    CHECK(none->cultivator.sight == 0);
+    const std::expected<core::GameData, core::Error> seen =
+        data::ParseGameData(With("walk_speed: 4.0", "walk_speed: 4.0\n  sight: 3"), ABILITIES);
+    REQUIRE(seen.has_value());
+    CHECK(seen->cultivator.sight == 3);
+    CHECK(seen->fox.sight == 0);
+    CHECK(seen->Hash() != none->Hash());
+    CHECK(ErrorFor(With("walk_speed: 4.0", "walk_speed: 4.0\n  sight: -1")).message.contains("cultivator's sight"));
+    CHECK(ErrorFor(With("walk_speed: 4.0", "walk_speed: 4.0\n  sight: 65")).message.contains("cultivator's sight"));
+    CHECK(ErrorFor(With("walk_speed: 4.0", "walk_speed: 4.0\n  sight: 2.5")).message.contains("cultivator's sight"));
+}
+
 TEST_CASE("a missing data folder is an error") {
     const std::expected<core::GameData, core::Error> data =
         data::LoadGameData(std::filesystem::temp_directory_path() / "project_n_no_such_data_folder");

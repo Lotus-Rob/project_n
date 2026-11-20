@@ -35,12 +35,21 @@ struct CreatureData {
     f32 orbitSpeed = 0.0F;
     /// Whether its orbit circles the player, wherever the player walks, rather than the player's starting point.
     bool orbitsPlayer = false;
+    /// How far it sees over the world map, in tiles; 0 for no sight.
+    u32 sight = 0;
 
     /// Lists its fields for an archive (core/archive.hpp).
     template<typename Self, typename Archive>
     void Fields(this Self& self, Archive& archive) {
         archive(
-            self.sprite, self.health, self.walkSpeed, self.orbitRadius, self.orbitWobble, self.orbitSpeed, self.orbitsPlayer
+            self.sprite,
+            self.health,
+            self.walkSpeed,
+            self.orbitRadius,
+            self.orbitWobble,
+            self.orbitSpeed,
+            self.orbitsPlayer,
+            self.sight
         );
     }
 };

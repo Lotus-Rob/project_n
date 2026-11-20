@@ -86,6 +86,11 @@ public:
     /// have been loaded or asked for.
     virtual void EnterScene() = 0;
 
+    /// Tells it whether the player has turned on seeing the whole map through the fog, before each Publish(); it changes
+    /// only what is published. Does nothing by default.
+    virtual void SetDebugSight(bool /*on*/) {
+    }
+
     /// Writes what the state looks like now into `snapshot`'s drawing data: its instances, batches
     /// and IDs arrive empty, with their capacity kept, and it follows nothing until set. Called once per burst, after its last
     /// tick, on the thread that created `jobs`, whose workers it may fork. `view` is the world the main thread's window

@@ -123,7 +123,17 @@ Instance MakeInstance(const Manifest& manifest, const SpriteDraw& draw) {
         .glow = glowing ? PackGlow(glow) : 0U,
         .glowValue = glowing ? PackPair(PackUnorm16(glow.previousValue), PackUnorm16(glow.currentValue)) : 0U,
         .glowStart = glowing ? static_cast<u32>(glow.startTick) : 0U,
+        .flags = draw.flags,
     };
+}
+
+Vec2 SightPoint(const Instance& instance, f64 alpha) {
+    constexpr u32 HIGH_HALF = 16;
+    const auto height = UnpackHalf(static_cast<u16>(instance.size >> HIGH_HALF));
+    constexpr f32 HALF = 0.5F;
+    const auto blend = static_cast<f32>(alpha);
+    const Vec2 centre = instance.previous + ((instance.current - instance.previous) * blend);
+    return { .x = centre.x, .y = centre.y + (height * HALF) };
 }
 
 } // namespace core

@@ -532,7 +532,8 @@ core::SceneId SceneIdOf(const core::Manifest& manifest, core::SceneKey scene) {
 // pointer and so is neither a constant expression nor free to destroy at exit.
 constexpr core::CreatureData BUILT_IN_CULTIVATOR{ .sprite = SpriteId::Cultivator,
                                                   .health = 1'000,
-                                                  .walkSpeed = 4.0F }; // 240 world units a second at full stick
+                                                  .walkSpeed = 4.0F, // 240 world units a second at full stick
+                                                  .sight = 3 };
 // A lap in about 17 seconds.
 constexpr core::CreatureData BUILT_IN_FOX{ .sprite = SpriteId::Fox,
                                            .health = 1'200,
