@@ -19,6 +19,7 @@
 #include "core/tick_clock.hpp"
 #include "core/world_map.hpp"
 #include "game/host.hpp"
+#include "support/fog.hpp"
 #include "support/manifest.hpp"
 #include "support/saves.hpp"
 #include "support/seals.hpp"
@@ -27,6 +28,9 @@
 #include <doctest/doctest.h>
 
 namespace {
+
+using test::ExploredCount;
+using test::ExploredOf;
 
 constexpr u32 WORKERS = 2;
 
@@ -348,6 +352,8 @@ TEST_CASE("a replay on the world scene plays back with the same hashes") {
     {
         Session recording(folder.Path(), game::WORLD_SCENE);
         REQUIRE(recording.host.Player() != core::StableId{});
+        // A new game has explored the whole diamond of its sight round the start city, which lies clear of the map's edges.
+        CHECK(ExploredCount(recording.host.ExploredTiles()) == 25);
         recording.Send(core::ActionKind::ToggleRecording);
         recording.Burst(1);
         const core::Vec2 start = FootOf(recording.host, recording.host.Player());
@@ -590,12 +596,6 @@ TEST_CASE("a replay with walk-tos on the world map plays back with the same hash
     CHECK(playing.replay.AtEnd());
     CHECK(playing.replay.HashCount() == HASHES);
     CHECK(playing.replay.Matched() == playing.replay.HashCount());
-}
-
-/// The explored tiles of `host`'s game world, copied.
-std::vector<u64> ExploredOf(const game::Host& host) {
-    const std::span<const u64> explored = host.ExploredTiles();
-    return { explored.begin(), explored.end() };
 }
 
 TEST_CASE("a replay recorded while walking plays back exploring the same tiles") {

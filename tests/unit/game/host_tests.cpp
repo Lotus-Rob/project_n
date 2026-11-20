@@ -16,6 +16,7 @@
 #include "game/host.hpp"
 #include "game/npcs.hpp"
 #include "platform/paths.hpp"
+#include "support/fog.hpp"
 #include "support/host.hpp"
 #include "support/manifest.hpp"
 #include "support/saves.hpp"
@@ -2189,39 +2190,9 @@ core::GameData SmallDataSeeing(u32 sight) {
     return data;
 }
 
-/// The bits of every tile of `map` within `radius` tiles of any of `centres`, by Manhattan distance, worked out tile by
-/// tile rather than by the fog's own rules.
-std::vector<u64> Diamonds(const core::WorldMap& map, std::span<const u32> centres, u32 radius) {
-    const u32 tiles = map.Columns() * map.Rows();
-    std::vector<u64> bits(core::FogWords(tiles), 0);
-    const auto gap = [](u32 first, u32 second) { return first > second ? first - second : second - first; };
-    for (u32 tile = 0; tile < tiles; ++tile) {
-        const core::TilePoint point = map.PointOf(tile);
-        const bool seen = std::ranges::any_of(centres, [&](u32 centre) {
-            const core::TilePoint from = map.PointOf(centre);
-            return gap(from.column, point.column) + gap(from.row, point.row) <= radius;
-        });
-        if (seen) {
-            bits[tile / 64] |= u64{ 1 } << (tile % 64);
-        }
-    }
-    return bits;
-}
-
-/// How many tiles `bits` holds explored.
-u32 ExploredCount(std::span<const u64> bits) {
-    u32 count = 0;
-    for (const u64 word : bits) {
-        count += static_cast<u32>(std::popcount(word));
-    }
-    return count;
-}
-
-/// The explored tiles of `host`'s game world, copied.
-std::vector<u64> ExploredOf(const game::Host& host) {
-    const std::span<const u64> explored = host.ExploredTiles();
-    return { explored.begin(), explored.end() };
-}
+using test::Diamonds;
+using test::ExploredCount;
+using test::ExploredOf;
 
 /// A rectangle of no size on `tile`'s centre of `map`: Host::Explore() of it explores that tile alone.
 core::Rect OnTile(const core::WorldMap& map, u32 tile) {
@@ -2386,6 +2357,44 @@ TEST_CASE("coming back to the world map explores round where the cultivator land
     TickWith(host, tick++, core::ActionKind::CycleScene);
     host.EnterScene();
     CHECK(host.FogVersion() > version);
+}
+
+TEST_CASE("leaving the world map through its portal and coming back keeps the explored tiles and explores the landing") {
+    const core::GameData data = SmallDataSeeing(1);
+    const core::WorldMap& map = *data.world;
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, data);
+    std::vector<core::Event> events;
+    // A step out to a tile of its own, then one onto the portal, which keeps that tile's centre as where it comes back.
+    const std::vector<u32> landing{ map.TileIndex({ .column = 3, .row = 1 }) };
+    StepTo(host, 1, map.TileCentre(landing.front()), events);
+    const std::vector<u64> before = ExploredOf(host);
+    REQUIRE(core::IsExplored(before, landing.front()));
+    const std::optional<core::Vec2> worldPortal = host.Portal();
+    REQUIRE(worldPortal.has_value());
+    StepTo(host, 2, worldPortal.value_or(core::Vec2{}), events);
+    REQUIRE(host.Requested().has_value());
+    host.EnterScene();
+    REQUIRE(host.Current().key == game::ARENA_SCENE);
+    CHECK(ExploredOf(host) == before);
+
+    // Its sight grows while it is away, then the arena's and the stress arena's portals lead back to the world.
+    host.SetSightRadius(2);
+    u64 tick = 3;
+    while (host.Current().key != game::WORLD_SCENE) {
+        const std::optional<core::Vec2> portal = host.Portal();
+        REQUIRE(portal.has_value());
+        StepTo(host, tick++, portal.value_or(core::Vec2{}), events);
+        REQUIRE(host.Requested().has_value());
+        host.EnterScene();
+    }
+    REQUIRE(map.TileAt(FootOf(host, host.Player())) == landing.front());
+
+    // Entered, before any tick: what it had explored, and the grown diamond round where it landed.
+    std::vector<u64> expected = Diamonds(map, landing, 2);
+    for (std::size_t word = 0; word < expected.size(); ++word) {
+        expected[word] |= before[word];
+    }
+    CHECK(ExploredOf(host) == expected);
 }
 
 TEST_CASE("the world's hash changes with an explored tile and with the radius") {

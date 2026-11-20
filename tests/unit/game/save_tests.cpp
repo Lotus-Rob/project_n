@@ -15,6 +15,7 @@
 #include "game/scenes/world.hpp"
 #include "game/travel.hpp"
 #include "game/world_state.hpp"
+#include "support/fog.hpp"
 #include "support/host.hpp"
 #include "support/manifest.hpp"
 #include "support/saves.hpp"
@@ -1679,11 +1680,7 @@ TEST_CASE("an arena save whose scratch world's ID counter is behind its entry bu
     CHECK_FALSE(LoadsWith(data, with(1)));
 }
 
-/// The explored tiles of `host`'s game world, copied.
-std::vector<u64> ExploredOf(const game::Host& host) {
-    const std::span<const u64> explored = host.ExploredTiles();
-    return { explored.begin(), explored.end() };
-}
+using test::ExploredOf;
 
 TEST_CASE("explored tiles and the sight radius survive a save and load") {
     core::GameData data = test::SmallData();
@@ -1753,6 +1750,13 @@ TEST_CASE("a load refuses explored bits of the wrong size") {
     CHECK(LoadsWithMap(scratch({})));
     CHECK_FALSE(LoadsWithMap(scratch({ .explored = std::vector<u64>{ 0 } })));
     CHECK_FALSE(LoadsWithMap(scratch({ .sight = 3 })));
+}
+
+TEST_CASE("a load refuses a sight radius past the farthest any sight reaches") {
+    CHECK(LoadsWithMap(WorldSaveAt({ .sight = 0 })));
+    CHECK(LoadsWithMap(WorldSaveAt({ .sight = core::MAX_SIGHT })));
+    CHECK_FALSE(LoadsWithMap(WorldSaveAt({ .sight = core::MAX_SIGHT + 1 })));
+    CHECK_FALSE(LoadsWithMap(WorldSaveAt({ .sight = ~u32{ 0 } }))); // where a row plus the radius would wrap
 }
 
 } // namespace
