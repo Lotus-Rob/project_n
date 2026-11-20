@@ -2,7 +2,8 @@
 
 /// @file
 /// @ingroup game
-/// A world's state in one place: the entities, what the NPCs think of each other, their travel and the calendar, so a
+/// A world's state in one place: the entities, what the NPCs think of each other, their travel, the calendar and what the
+/// player has explored of the world map, so a
 /// host can keep one world while a scene runs on another; how the game's world and a dev scene's are made, and a scene's
 /// way into a world.
 
@@ -21,6 +22,7 @@
 
 #include <optional>
 #include <utility>
+#include <vector>
 
 namespace game {
 
@@ -28,8 +30,8 @@ namespace game {
 /// makes (StartingPower() included), as a world made by another version is another world.
 inline constexpr u32 GENERATOR_VERSION = 1;
 
-/// Everything a world is: its entities, relationships and travel, its world clock, the month steps run on it and the
-/// player's world pause.
+/// Everything a world is: its entities, relationships and travel, its world clock, the month steps run on it, the
+/// player's world pause, and the tiles of the world map the player has explored and how far the cultivator sees.
 ///
 /// Its order is part of what it is, as iteration follows it: a save leaves it as it is and holds it (the active domain
 /// written whole in storage order, the world domain's order beside its difference from the world it was made as:
@@ -59,13 +61,20 @@ struct WorldState {
     /// Where the player's cultivator comes back to on the world map, kept from when it left the map until it is back
     /// there; none while it stands on the map, or in a game that hasn't left it.
     std::optional<core::Vec2> mapPlace;
+    /// The world map's tiles the player has explored, one bit each, row by row (core/fog.hpp): as many words as the map's
+    /// tiles need in the game's world of a game with the map, none in any other world.
+    std::vector<u64> explored;
+    /// How far the player's cultivator sees over the world map, in tiles (core::ExploreAround()): 0 in a world without
+    /// the map.
+    u32 sightRadius = 0;
 };
 
 /// Makes the game's world in `world`, which must be fresh (no entities, its calendar at the start), from its state's seed
 /// and `data`: each city of the world map's `people` as world NPCs homed in it, city by city in place order, seven tenths
 /// on the city's tile and each of the rest on a tile of its region drawn for its running index, each with StartingPower();
 /// then the travel of the month before the calendar's start and of its first month (Travel::Seed(), over `paths`, which
-/// must route over that map), so the roads are busy from the first frame. Its state is left in canonical order
+/// must route over that map), so the roads are busy from the first frame; none of the map explored yet, and the sight
+/// radius the game data's cultivator's (core::CreatureData::sight). Its state is left in canonical order
 /// (core::State::SortCanonical()). Nothing else feeds it, so the same
 /// seed, data and GENERATOR_VERSION make the same world, entity for entity, in the same order. Without a world map it makes
 /// nothing and `paths` may be null.

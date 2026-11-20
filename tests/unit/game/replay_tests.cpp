@@ -4,9 +4,9 @@
 // back in a fresh game in another scene (a load across scenes, waiting for each) with every hash matching, the last
 // one on the recording's final tick. A recorded fight is replayed the same way: every ability cast, foxes dying and
 // respawning, a save while the swords fly. So is the world scene on the shipped map, walked across a
-// month step, and the cultivator walked along routes there; and a recording that starts from a world a month on. A
-// skipped long run ticks two games through an hour of seeded walk-tos, one on 1 worker and one on 4, and compares their
-// hashes as they go.
+// month step, and the cultivator walked along routes there, exploring the same tiles; and a recording that starts from a
+// world a month on. A skipped long run ticks two games through an hour of seeded walk-tos, one on 1 worker and one on 4,
+// and compares their hashes as they go.
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
@@ -590,6 +590,60 @@ TEST_CASE("a replay with walk-tos on the world map plays back with the same hash
     CHECK(playing.replay.AtEnd());
     CHECK(playing.replay.HashCount() == HASHES);
     CHECK(playing.replay.Matched() == playing.replay.HashCount());
+}
+
+/// The explored tiles of `host`'s game world, copied.
+std::vector<u64> ExploredOf(const game::Host& host) {
+    const std::span<const u64> explored = host.ExploredTiles();
+    return { explored.begin(), explored.end() };
+}
+
+TEST_CASE("a replay recorded while walking plays back exploring the same tiles") {
+    // The cultivator walks a route east, past the start city's sight, to its end and stands there: a fresh game plays it
+    // back with every hash matching, and has explored the same tiles.
+    constexpr u64 STEP = 60;
+    constexpr u32 MAX_STEPS = 100;
+    constexpr u32 MAX_BURSTS = 100;
+    constexpr core::Vec2 EAST{ .x = 4.0F, .y = 0.0F }; // in tiles from the start city's
+    const f32 tile = test::ShippedWorld()->TileSize();
+    const core::Vec2 start = test::ShippedWorld()->StartCentre();
+    const std::vector<std::byte> begin = CultivatorOnTheMap();
+    const Folder folder{ "exploring" };
+    std::vector<u64> explored;
+    {
+        Session recording(folder.Path(), begin);
+        REQUIRE(recording.started);
+        recording.Send(core::ActionKind::ToggleRecording);
+        recording.Burst(1);
+        const std::vector<u64> before = ExploredOf(recording.host);
+        recording.WalkTo(start + (EAST * tile));
+        recording.Burst(1);
+        REQUIRE(recording.host.PlayerRoute().has_value());
+        for (u32 steps = 0; steps < MAX_STEPS && recording.host.PlayerRoute().has_value(); ++steps) {
+            recording.Burst(STEP);
+        }
+        REQUIRE_FALSE(recording.host.PlayerRoute().has_value());
+        // To a hash tick, so the recording's last state is checked.
+        recording.Burst(core::REPLAY_HASH_TICKS - (recording.logic.Counters().wall % core::REPLAY_HASH_TICKS));
+        REQUIRE(recording.logic.Counters().wall % core::REPLAY_HASH_TICKS == 0);
+        explored = ExploredOf(recording.host);
+        REQUIRE(explored != before); // the walk uncovered tiles
+        recording.Send(core::ActionKind::ToggleRecording);
+        recording.Burst(1);
+    } // its job system finishes writing the replay
+
+    Session playing(folder.Path(), begin);
+    REQUIRE(playing.started);
+    playing.Send(core::ActionKind::PlayReplay);
+    playing.Burst(1);
+    REQUIRE(playing.replay.Playing());
+    for (u32 bursts = 0; bursts < MAX_BURSTS && playing.replay.Playing(); ++bursts) {
+        playing.Burst(core::REPLAY_HASH_TICKS);
+    }
+    CHECK(playing.replay.AtEnd());
+    CHECK(playing.replay.HashCount() > 0);
+    CHECK(playing.replay.Matched() == playing.replay.HashCount());
+    CHECK(ExploredOf(playing.host) == explored);
 }
 
 TEST_CASE("the world ticked through an hour of walk-tos is the same on 1 and 4 workers" * doctest::skip()) {

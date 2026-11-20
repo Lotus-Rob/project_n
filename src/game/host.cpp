@@ -3,6 +3,7 @@
 #include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/delta.hpp"
+#include "core/fog.hpp"
 #include "core/instances.hpp"
 #include "core/log.hpp"
 #include "core/profile.hpp"
@@ -75,8 +76,9 @@ constexpr u32 ACTIVE_VERSION =
     5; // 2: creatures; 3: spin; 4: health, dying, arriving, caster, dashing, afflictions; 5: the NPCs' homes
 // 2: the NPCs' homes; 3: the travelling action, the journeys and the journals; 4: the game's world as its difference from
 // its base, a dev scene's journeys as their difference from none; 5: the world domain's order beside its difference, and a
-// dev scene's world as its difference from its entry build; 6: each relationship's last-met month
-constexpr u32 WORLD_VERSION = 6;
+// dev scene's world as its difference from its entry build; 6: each relationship's last-met month; 7: the explored tiles and
+// the sight radius
+constexpr u32 WORLD_VERSION = 7;
 using ActiveComponents = core::ComponentList<
     Body,
     Look,
@@ -97,18 +99,20 @@ using WorldComponents = core::ComponentList<Npc, Needs, Met, Group>;
 
 constexpr u32 PUBLISH_CHUNK = 4'096; // entities, or journeys, packed per job chunk
 
-/// Writes `world`'s calendar, pause and place on the world map into `archive` (a Writer or a Hasher).
+/// Writes `world`'s calendar, pause, place on the world map, sight radius and explored tiles (their word count, then the
+/// words) into `archive` (a Writer or a Hasher).
 template<typename Archive>
 void WriteClock(Archive& archive, const WorldState& world) {
     archive(world.worldTicks, world.months, world.paused, world.mapPlace.has_value());
     if (world.mapPlace) {
         archive(*world.mapPlace);
     }
+    archive(world.sightRadius, world.explored);
 }
 
-/// Hashes `world` whole into `hasher`: its seed, its world stable-ID counter, its calendar, its pause and its place on
-/// the world map, then its world domain, its relationships and its travel. Its active domain is the running scene's,
-/// hashed with the scene.
+/// Hashes `world` whole into `hasher`: its seed, its world stable-ID counter, its calendar, its pause, its place on the
+/// world map, its sight radius and its explored tiles, then its world domain, its relationships and its travel. Its active
+/// domain is the running scene's, hashed with the scene.
 void HashWorld(core::Hasher& hasher, const WorldState& world) {
     hasher(world.state.Seed(), world.state.Ids().next);
     WriteClock(hasher, world);
@@ -119,10 +123,10 @@ void HashWorld(core::Hasher& hasher, const WorldState& world) {
 }
 
 /// Writes a dev scene's scratch world's section of a save into `archive` as its difference from `base`, the world the
-/// scene's entry build made (BuildScratch()), whose seed it shares: the world stable-ID counter, the calendar, the pause
-/// and the place on the world map, then the world domain's difference (core::SaveDomainDelta()) and order
-/// (core::SaveDomainOrder()), the relationships whole and the travel as its difference from none (Travel::SaveDelta()),
-/// as no dev scene shows the world map.
+/// scene's entry build made (BuildScratch()), whose seed it shares: the world stable-ID counter, the calendar, the pause,
+/// the place on the world map, the sight radius and the explored tiles, then the world domain's difference
+/// (core::SaveDomainDelta()) and order (core::SaveDomainOrder()), the relationships whole and the travel as its difference from
+/// none (Travel::SaveDelta()), as no dev scene shows the world map.
 void WriteScratch(core::Writer& archive, const WorldState& world, const WorldState& base) {
     archive(world.state.Ids().next);
     WriteClock(archive, world);
@@ -135,7 +139,8 @@ void WriteScratch(core::Writer& archive, const WorldState& world, const WorldSta
 
 /// Writes the game's world's section of a save into `archive` as its difference from `base`, the world as it was made
 /// from data of base hash `baseHash`: the seed, GENERATOR_VERSION, `baseHash`, the world stable-ID counter, the calendar,
-/// the pause and the place on the world map, then the world domain's difference and order, the relationships whole and
+/// the pause, the place on the world map, the sight radius and the explored tiles whole, then the world domain's
+/// difference and order, the relationships whole and
 /// the travel's difference, its journeys rebuilt over `map` and `paths` (null without a map) to tell a plan from a whole
 /// one.
 void WriteGameWorld(
@@ -155,12 +160,14 @@ void WriteGameWorld(
     world.travel.SaveDelta(archive, base.travel, map, paths);
 }
 
-/// A world's calendar, pause and place on the world map, as a save holds them.
+/// A world's calendar, pause, place on the world map, sight radius and explored tiles, as a save holds them.
 struct Clock {
     u64 worldTicks = 0;
     u64 months = 0;
     bool paused = false;
     std::optional<core::Vec2> place = std::nullopt;
+    u32 sightRadius = 0;
+    std::vector<u64> explored;
 };
 
 /// Reads what WriteClock() wrote.
@@ -171,15 +178,18 @@ Clock ReadClock(core::Reader& archive) {
     if (placed) {
         archive(clock.place.emplace());
     }
+    archive(clock.sightRadius, clock.explored);
     return clock;
 }
 
-/// Gives `world` the calendar, pause and place of `clock`.
-void SetClock(WorldState& world, const Clock& clock) {
+/// Gives `world` the calendar, pause, place, sight radius and explored tiles of `clock`.
+void SetClock(WorldState& world, Clock clock) {
     world.worldTicks = clock.worldTicks;
     world.months = clock.months;
     world.paused = clock.paused;
     world.mapPlace = clock.place;
+    world.sightRadius = clock.sightRadius;
+    world.explored = std::move(clock.explored);
 }
 
 /// Gives each entity of `into` that `from` has `Component` on (every one of them, by stable ID) a copy of it, in `from`'s
@@ -210,9 +220,10 @@ void CopyStorages(const core::Domain& from, core::Domain& into, core::ComponentL
 }
 
 /// A copy of `made`, a world as GenerateWorld() or BuildScratch() made it, without its scene: its world domain's entities
-/// and components (those a save holds) in the same storage order, its travel, relationships, calendar and world-ID
-/// counter, its active domain empty and its scene-ID counter at its range's start. Far cheaper than making it again,
-/// which routes every journey, and the same world, as making it is a pure function of the seed and the data.
+/// and components (those a save holds) in the same storage order, its travel, relationships, calendar, place on the
+/// world map, explored tiles, sight radius and world-ID counter, its active domain empty and its scene-ID counter at its
+/// range's start. Far cheaper than making it again, which routes every journey, and the same world, as making it is a pure
+/// function of the seed and the data.
 WorldState CopyOf(const WorldState& made) {
     WorldState copy{ core::State{
         DOMAINS, made.state.Seed(), made.state.Ids(), core::StableIdCounter{ .next = core::SCENE_ID_BASE } } };
@@ -229,6 +240,8 @@ WorldState CopyOf(const WorldState& made) {
     copy.months = made.months;
     copy.paused = made.paused;
     copy.mapPlace = made.mapPlace;
+    copy.explored = made.explored;
+    copy.sightRadius = made.sightRadius;
     return copy;
 }
 
@@ -251,7 +264,7 @@ std::pair<WorldState, WorldState> ReadGameWorld(
     u64 baseHash = 0;
     u64 next = 0;
     archive(seed, generator, baseHash, next);
-    const Clock clock = ReadClock(archive);
+    Clock clock = ReadClock(archive);
     u32 version = 0;
     archive(version);
     if (!archive.Failed() && generator != GENERATOR_VERSION) {
@@ -310,7 +323,7 @@ std::pair<WorldState, WorldState> ReadGameWorld(
             "save refused: its journeys' difference from those its seed makes is malformed or doesn't fit its world"
         );
     }
-    SetClock(world, clock);
+    SetClock(world, std::move(clock));
     return made;
 }
 
@@ -328,7 +341,7 @@ std::pair<WorldState, std::shared_ptr<const WorldState>> ReadScratch(
 ) {
     u64 next = 0;
     archive(next);
-    const Clock clock = ReadClock(archive);
+    Clock clock = ReadClock(archive);
     u32 version = 0;
     archive(version);
     const core::StableIdCounter ids{ .next = next };
@@ -366,7 +379,7 @@ std::pair<WorldState, std::shared_ptr<const WorldState>> ReadScratch(
     }
     world.relationships.Load(archive, clock.months); // checked against the state once the scene's domain is read too (Within())
     static_cast<void>(world.travel.LoadDelta(archive, Travel{}, world.state, nullptr, nullptr)); // a refusal fails `archive`
-    SetClock(world, clock);
+    SetClock(world, std::move(clock));
     return made;
 }
 
@@ -499,12 +512,22 @@ bool ClockFits(u64 worldTicks, u64 months) {
 
 /// Whether `world`, read from a save, holds together for `map` (null for a world that never shows the world map: a dev
 /// scene's, or the game's in a game without the map): every NPC placed for it (NpcsPlaced()), its clock within its month
-/// steps (ClockFits()), and neither paused nor keeping a place on the map without one; a place kept is a finite point.
+/// steps (ClockFits()), its explored tiles the map's (core::FogBitsFit(): none without one), and neither paused, keeping
+/// a place on the map nor seeing any distance without one; a place kept is a finite point.
 bool WorldFits(const WorldState& world, const core::WorldMap* map) {
     const bool placeFits =
         !world.mapPlace || (map != nullptr && std::isfinite(world.mapPlace->x) && std::isfinite(world.mapPlace->y));
+    const std::size_t tiles = map != nullptr ? static_cast<std::size_t>(map->Columns()) * map->Rows() : 0;
+    const bool fogFits = core::FogBitsFit(world.explored, tiles) && (world.sightRadius == 0 || map != nullptr);
     return NpcsPlaced(world.state, map) && ClockFits(world.worldTicks, world.months) && (!world.paused || map != nullptr) &&
-           placeFits;
+           placeFits && fogFits;
+}
+
+/// The world `map` covers, in world units, from its top-left tile's corner to its bottom-right tile's.
+core::Rect MapArea(const core::WorldMap& map) {
+    return { .min = {},
+             .max = { .x = static_cast<f32>(map.Columns()) * map.TileSize(),
+                      .y = static_cast<f32>(map.Rows()) * map.TileSize() } };
 }
 
 /// Whether the player's route read from a save can be walked: none, or, on `map` (null where the scene shows none) with
@@ -643,6 +666,7 @@ std::shared_ptr<const WorldState> Host::ScratchBase(core::SceneKey scene) const 
 }
 
 void Host::EnterScene() {
+    ++m_fogVersion; // a scene entered, or a load, hands the fog on afresh
     if (m_loaded) {
         m_world = std::move(m_loaded->world);
         m_base = std::move(m_loaded->base);
@@ -731,6 +755,7 @@ void Host::Build(core::SceneKey scene) {
     }
     if (traits.worldMap) {
         world.mapPlace.reset(); // the cultivator stands there again, so its foot is where it is
+        ExploreRoundFoot();
     }
 }
 
@@ -758,6 +783,7 @@ void Host::Tick(const core::TickCounters& counters, const core::TickInput& input
         // A route walks to where the clock is by the end of the tick, so the portal sees the step it takes.
         Move(input.held.move, clockRuns ? world.worldTicks + 1 : world.worldTicks, counters.simulation);
     }
+    ExploreRoundFoot();
     if (OnPortal()) {
         const core::SceneKey next = NextWalkableScene(m_scene);
         PN_LOG_INFO("tick {}: the cultivator steps through the portal to {}", counters.simulation, SceneName(next));
@@ -858,10 +884,7 @@ void Host::WalkTo(core::Vec2 point, u64 tick) {
         return;
     }
     const core::WorldMap& map = *m_data.world;
-    const core::Rect area{ .min = {},
-                           .max = { .x = static_cast<f32>(map.Columns()) * map.TileSize(),
-                                    .y = static_cast<f32>(map.Rows()) * map.TileSize() } };
-    if (!core::Contains(area, point)) {
+    if (!core::Contains(MapArea(map), point)) {
         PN_LOG_DEBUG("tick {}: a walk-to ({}, {}) off the map is ignored", tick, point.x, point.y);
         return;
     }
@@ -903,13 +926,13 @@ void Host::Move(core::Vec2 move, u64 worldTick, u64 tick) {
         return;
     }
     if (m_route) {
-        FollowRoute(worldTick, tick);
+        FollowRoute(Live().worldTicks, worldTick, tick);
         return;
     }
     Walk(move);
 }
 
-void Host::FollowRoute(u64 worldTick, u64 tick) {
+void Host::FollowRoute(u64 fromTick, u64 worldTick, u64 tick) {
     if (!m_route || m_player == core::StableId{}) {
         return;
     }
@@ -918,6 +941,7 @@ void Host::FollowRoute(u64 worldTick, u64 tick) {
     const auto clock = static_cast<i64>(worldTick);
     body.previous = body.current;
     body.current = core::Where(*m_data.world, route, clock);
+    ExploreRoute(route, static_cast<i64>(fromTick), clock);
     if (clock >= core::EndTick(route)) {
         PN_LOG_DEBUG("tick {}: the cultivator reaches the end of its route", tick);
         m_route.reset();
@@ -1205,6 +1229,71 @@ void Host::Walk(core::Vec2 move) {
     body.current = body.current + (move * m_data.cultivator.walkSpeed);
 }
 
+void Host::Explore(const core::Rect& area) {
+    if (m_data.world == nullptr) {
+        return;
+    }
+    const core::WorldMap& map = *m_data.world;
+    const core::Rect covered = MapArea(map);
+    // Written so that a NaN corner fails it too.
+    const bool onMap = area.max.x >= covered.min.x && area.max.y >= covered.min.y && area.min.x <= covered.max.x &&
+                       area.min.y <= covered.max.y;
+    if (!onMap || !FogFits()) {
+        return;
+    }
+    const core::TilePoint first = map.PointOf(map.TileAt(area.min));
+    const core::TilePoint last = map.PointOf(map.TileAt(area.max));
+    u32 added = 0;
+    for (u32 row = first.row; row <= last.row; ++row) {
+        for (u32 column = first.column; column <= last.column; ++column) {
+            added += core::ExploreAround(m_world.explored, map, map.TileIndex({ .column = column, .row = row }), 0);
+        }
+    }
+    if (added > 0) {
+        ++m_fogVersion;
+        PN_LOG_DEBUG("{} tiles explored by hand", added);
+    }
+}
+
+bool Host::FogFits() const {
+    const core::WorldMap* const map = m_data.world.get();
+    const bool fits =
+        map != nullptr && m_world.explored.size() == core::FogWords(static_cast<std::size_t>(map->Columns()) * map->Rows());
+    PN_ASSERT(fits, "the game's world explores a map its explored tiles weren't sized for");
+    return fits;
+}
+
+void Host::ExploreRound(u32 tile) {
+    if (FogFits() && core::ExploreAround(m_world.explored, *m_data.world, tile, m_world.sightRadius) > 0) {
+        ++m_fogVersion;
+    }
+}
+
+void Host::ExploreRoundFoot() {
+    if (!Running().Traits().worldMap || m_player == core::StableId{}) {
+        return;
+    }
+    ExploreRound(m_data.world->TileAt(PlayerBody().current));
+}
+
+void Host::ExploreRoute(const core::Journey& route, i64 fromTick, i64 toTick) {
+    for (const core::JourneyPart& part : route.parts) {
+        if (part.stay) {
+            continue;
+        }
+        const core::Leg& leg = part.leg;
+        for (std::size_t index = 0; index < leg.tiles.size() && index < leg.arrive.size(); ++index) {
+            const i64 reached = leg.startTick + i64{ leg.arrive[index] };
+            if (reached > toTick) {
+                break; // the rest lie further on, as arrivals only rise
+            }
+            if (reached > fromTick) {
+                ExploreRound(leg.tiles[index]);
+            }
+        }
+    }
+}
+
 void Host::Select(core::StableId target) {
     // A dying creature can't be picked, as its instance names none.
     const core::State& state = Live().state;
@@ -1222,11 +1311,13 @@ void Host::AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs,
         // steps.
         const u64 nextMonth = (world.months + 1) * TICKS_PER_MONTH;
         if (world.worldTicks < nextMonth) {
+            const u64 jumpedFrom = world.worldTicks;
             world.worldTicks = nextMonth;
             m_worldTicksBefore = world.worldTicks; // rather than draw travellers streaking across the skipped days
             if (m_route) {
-                FollowRoute(world.worldTicks, counters.simulation);
+                FollowRoute(jumpedFrom, world.worldTicks, counters.simulation);
                 PlayerBody().previous = PlayerBody().current; // it stands there a frame, as the travellers do
+                ExploreRoundFoot();
             }
         }
         ++world.months;

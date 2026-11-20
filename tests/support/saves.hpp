@@ -46,8 +46,8 @@ namespace test {
 inline constexpr u32 HOST_FORMAT = 10;
 /// The active domain's version in a host save (5: the NPCs' homes).
 inline constexpr u32 ACTIVE_VERSION = 5;
-/// The world domain's version in a host save (6: each relationship's last-met month).
-inline constexpr u32 WORLD_VERSION = 6;
+/// The world domain's version in a host save (7: the explored tiles and the sight radius).
+inline constexpr u32 WORLD_VERSION = 7;
 /// The active domain's saved components, in the host's order.
 using ActiveComponents = core::ComponentList<
     game::Body,
@@ -79,7 +79,7 @@ struct SavedVolley {
     std::vector<core::VolleyTarget> targets;
 };
 
-/// The world clock, the month steps run and the world pause, as a save holds them.
+/// The world clock, the month steps run, the world pause, the sight radius and the explored tiles, as a save holds them.
 struct SavedClock {
     /// The world clock (game::Host::WorldTicks()).
     u64 ticks = 0;
@@ -87,15 +87,28 @@ struct SavedClock {
     u64 months = 0;
     /// The world pause (game::Host::WorldPaused()).
     bool paused = false;
+    /// The sight radius (game::Host::SightRadius()); none for the world's base's: the game data's in the game's world, 0 in
+    /// a scratch world.
+    std::optional<u32> sight = std::nullopt;
+    /// The explored tiles' words (game::Host::ExploredTiles()); none for the world's base's: none explored, sized to the map
+    /// in the game's world, no words in a scratch world.
+    std::optional<std::vector<u64>> explored = std::nullopt;
 };
 
-/// Writes the clock, the world pause and `place` as the place kept on the world map (none if empty), as both world
-/// sections of a host save hold them.
-inline void WriteClock(core::Writer& writer, SavedClock clock, std::optional<core::Vec2> place) {
+/// Writes the clock, the world pause, `place` as the place kept on the world map (none if empty), `sight` and `explored`,
+/// as both world sections of a host save hold them.
+inline void WriteClock(
+    core::Writer& writer,
+    const SavedClock& clock,
+    std::optional<core::Vec2> place,
+    u32 sight,
+    const std::vector<u64>& explored
+) {
     writer(clock.ticks, clock.months, clock.paused, place.has_value());
     if (place) {
         writer(*place);
     }
+    writer(sight, explored);
 }
 
 /// The world dev scene `scene`'s entry build makes on `data` (game::BuildScratch()), which a save of its scratch world
@@ -123,13 +136,13 @@ inline void WriteScratchSection(
     const core::GameData& data,
     const core::State& state,
     u32 worldVersion,
-    SavedClock clock,
+    const SavedClock& clock,
     const game::Travel& travel,
     const game::Relationships& relationships = game::Relationships{}
 ) {
     const game::WorldState base = ScratchBase(scene, data);
     writer(std::max(state.Ids().next, base.state.Ids().next));
-    WriteClock(writer, clock, std::nullopt);
+    WriteClock(writer, clock, std::nullopt, clock.sight.value_or(base.sightRadius), clock.explored.value_or(base.explored));
     writer(worldVersion);
     core::SaveDomainDelta(writer, base.state[game::WORLD], state[game::WORLD], WorldComponents{});
     core::SaveDomainOrder(writer, base.state[game::WORLD], state[game::WORLD], WorldComponents{});
@@ -146,15 +159,16 @@ inline void WriteScratchSection(
 
 /// Writes the game's world's section of a host save into `writer`, as its difference from the world a game on `data`
 /// generates from `state`'s seed: the seed, game::GENERATOR_VERSION and `data`'s base hash, the world stable-ID counter
-/// (`state`'s, or the generated world's where that is further on, as IDs are never handed out twice), `clock`, `place`
-/// as the place kept on the world map (none if empty), then `state`'s world domain after `worldVersion` (in its own order),
-/// `relationships` and `travel`, each against the generated world's.
+/// (`state`'s, or the generated world's where that is further on, as IDs are never handed out twice), `clock` (by default
+/// the generated world's sight and explored tiles: none), `place` as the place kept on the world map (none if empty), then
+/// `state`'s world domain after `worldVersion` (in its own order), `relationships` and `travel`, each against the generated
+/// world's.
 inline void WriteGameWorldSection(
     core::Writer& writer,
     const core::State& state,
     const core::GameData& data,
     u32 worldVersion,
-    SavedClock clock,
+    const SavedClock& clock,
     const game::Travel& travel,
     const game::Relationships& relationships = game::Relationships{},
     std::optional<core::Vec2> place = std::nullopt
@@ -166,7 +180,7 @@ inline void WriteGameWorldSection(
     core::Paths* const routes = paths ? &*paths : nullptr;
     const game::WorldState base = GeneratedWorld(data, state.Seed(), routes);
     writer(state.Seed(), game::GENERATOR_VERSION, data.BaseHash(), std::max(state.Ids().next, base.state.Ids().next));
-    WriteClock(writer, clock, place);
+    WriteClock(writer, clock, place, clock.sight.value_or(base.sightRadius), clock.explored.value_or(base.explored));
     writer(worldVersion);
     core::SaveDomainDelta(writer, base.state[game::WORLD], state[game::WORLD], WorldComponents{});
     core::SaveDomainOrder(writer, base.state[game::WORLD], state[game::WORLD], WorldComponents{});
@@ -200,7 +214,7 @@ struct SetAside {
     core::SceneKey scene = game::ARENA_SCENE,
     u32 worldVersion = WORLD_VERSION,
     u32 activeVersion = ACTIVE_VERSION,
-    SavedClock clock = {},
+    const SavedClock& clock = {},
     const game::Travel& travel = game::Travel{},
     const std::optional<core::Journey>& route = std::nullopt,
     const game::Relationships& relationships = game::Relationships{},
@@ -260,7 +274,7 @@ struct SetAside {
 /// A save of the world scene with nothing in it, at `clock`, written against the world a game on `data` makes (the small
 /// test data when null, as ArenaSave()): a host on that data loads it and runs its clock from there without a month of
 /// ticks first.
-[[nodiscard]] inline std::vector<std::byte> WorldSaveAt(SavedClock clock, const core::GameData* data = nullptr) {
+[[nodiscard]] inline std::vector<std::byte> WorldSaveAt(const SavedClock& clock, const core::GameData* data = nullptr) {
     const core::State state{ game::DOMAINS, EMPTY_SAVE_SEED };
     return ArenaSave(
         state,

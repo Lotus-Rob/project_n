@@ -1,6 +1,7 @@
 #include "core/archive.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/draw_list.hpp"
+#include "core/fog.hpp"
 #include "core/instances.hpp"
 #include "core/jobs.hpp"
 #include "core/journey.hpp"
@@ -1373,7 +1374,7 @@ TEST_CASE("the world keeps its pause and its clock through other scenes, which r
 
 // A host with the small test map that has loaded and entered an empty world save at `clock`: a world clock anywhere in a
 // month without ticking the world scene there.
-std::unique_ptr<game::Host> WorldAt(test::SavedClock clock) {
+std::unique_ptr<game::Host> WorldAt(const test::SavedClock& clock) {
     auto host = std::make_unique<game::Host>(test::TestManifest(), game::ARENA_SCENE, test::SmallData());
     const std::vector<std::byte> bytes = test::WorldSaveAt(clock);
     core::Reader reader{ bytes };
@@ -2179,6 +2180,260 @@ TEST_CASE("leaving the world map drops the route") {
     CHECK_FALSE(world.host->PlayerRoute().has_value());
     CHECK(world.host->WorldTicks() == clock);
     CHECK(Published(*world.host).route.empty());
+}
+
+/// The small test data with the cultivator's sight cut to `sight`, so a walk along its top row leaves tiles unexplored.
+core::GameData SmallDataSeeing(u32 sight) {
+    core::GameData data = test::SmallData();
+    data.cultivator.sight = sight;
+    return data;
+}
+
+/// The bits of every tile of `map` within `radius` tiles of any of `centres`, by Manhattan distance, worked out tile by
+/// tile rather than by the fog's own rules.
+std::vector<u64> Diamonds(const core::WorldMap& map, std::span<const u32> centres, u32 radius) {
+    const u32 tiles = map.Columns() * map.Rows();
+    std::vector<u64> bits(core::FogWords(tiles), 0);
+    const auto gap = [](u32 first, u32 second) { return first > second ? first - second : second - first; };
+    for (u32 tile = 0; tile < tiles; ++tile) {
+        const core::TilePoint point = map.PointOf(tile);
+        const bool seen = std::ranges::any_of(centres, [&](u32 centre) {
+            const core::TilePoint from = map.PointOf(centre);
+            return gap(from.column, point.column) + gap(from.row, point.row) <= radius;
+        });
+        if (seen) {
+            bits[tile / 64] |= u64{ 1 } << (tile % 64);
+        }
+    }
+    return bits;
+}
+
+/// How many tiles `bits` holds explored.
+u32 ExploredCount(std::span<const u64> bits) {
+    u32 count = 0;
+    for (const u64 word : bits) {
+        count += static_cast<u32>(std::popcount(word));
+    }
+    return count;
+}
+
+/// The explored tiles of `host`'s game world, copied.
+std::vector<u64> ExploredOf(const game::Host& host) {
+    const std::span<const u64> explored = host.ExploredTiles();
+    return { explored.begin(), explored.end() };
+}
+
+/// A rectangle of no size on `tile`'s centre of `map`: Host::Explore() of it explores that tile alone.
+core::Rect OnTile(const core::WorldMap& map, u32 tile) {
+    const core::Vec2 centre = map.TileCentre(tile);
+    return { .min = centre, .max = centre };
+}
+
+TEST_CASE("a new game explores the start diamond and nothing else") {
+    const core::GameData data = test::SmallData();
+    const core::WorldMap& map = *data.world;
+    const game::Host host(test::TestManifest(), game::WORLD_SCENE, data);
+    CHECK(host.SightRadius() == data.cultivator.sight);
+    const std::vector<u32> start{ map.TileAt(map.StartCentre()) };
+    const std::vector<u64> diamond = Diamonds(map, start, data.cultivator.sight);
+    CHECK(ExploredOf(host) == diamond);
+    // The start city lies in the map's corner, so the diamond is clipped to the 9 tiles within 3 of it.
+    CHECK(ExploredCount(host.ExploredTiles()) == 9);
+
+    // A game that has never shown the map has explored nothing, and one without the map has no tiles to explore.
+    const game::Host arena(test::TestManifest(), game::ARENA_SCENE, data);
+    CHECK(ExploredCount(arena.ExploredTiles()) == 0);
+    CHECK(arena.ExploredTiles().size() == core::FogWords(test::small::TILES));
+    const game::Host mapless(test::TestManifest());
+    CHECK(mapless.ExploredTiles().empty());
+    CHECK(mapless.SightRadius() == 0);
+}
+
+TEST_CASE("walking a route explores within sight of every tile on it") {
+    const core::GameData data = SmallDataSeeing(1);
+    const core::WorldMap& map = *data.world;
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, data);
+    WalkTo(host, 1, map.TileCentre(test::small::COLUMNS - 1)); // along the top row to its far end
+    const core::Leg leg = RouteLegOf(host);
+    REQUIRE(leg.tiles.size() == test::small::COLUMNS);
+    const auto end = static_cast<u64>(core::EndTick(leg));
+
+    // As its foot first stands on the route's fourth tile: round the tiles it passed and that one, nothing ahead.
+    constexpr std::size_t FOURTH = 3;
+    u64 tick = 2;
+    for (; tick <= end && map.TileAt(FootOf(host, host.Player())) != leg.tiles[FOURTH]; ++tick) {
+        TickRange(host, tick, tick);
+    }
+    REQUIRE(map.TileAt(FootOf(host, host.Player())) == leg.tiles[FOURTH]);
+    CHECK(ExploredOf(host) == Diamonds(map, std::span{ leg.tiles }.first(FOURTH + 1), 1));
+
+    // At its end: round every tile of the route, and the bottom row beyond sight left under cloud.
+    TickRange(host, tick, end);
+    REQUIRE_FALSE(host.PlayerRoute().has_value());
+    CHECK(ExploredOf(host) == Diamonds(map, leg.tiles, 1));
+    CHECK_FALSE(core::IsExplored(host.ExploredTiles(), map.TileIndex({ .column = 0, .row = test::small::ROWS - 1 })));
+}
+
+TEST_CASE("a month's jump along a route explores every tile it passes") {
+    constexpr u64 MONTH = game::TICKS_PER_MONTH;
+    constexpr std::size_t FOURTH = 3;
+    // The walk sets out a little before the month's end, so the jump carries it past its fourth tile's centre, a quarter
+    // of the way on to the fifth: several tiles in one go, and still short of the end.
+    const core::GameData probeData = test::SmallData();
+    const core::WorldMap& probeMap = *probeData.world;
+    const core::Leg probe = LegTo(probeMap, probeMap.StartCentre(), probeMap.TileCentre(test::small::COLUMNS - 1), 0);
+    REQUIRE(probe.tiles.size() > FOURTH + 1);
+    const u64 walked = probe.arrive[FOURTH] + ((probe.arrive[FOURTH + 1] - probe.arrive[FOURTH]) / 4);
+    const TravelWorld world = TravelWorldOf({}, true, MONTH - walked);
+    const core::WorldMap& map = *world.map;
+    world.host->SetSightRadius(1);
+    WalkTo(*world.host, 1, map.TileCentre(test::small::COLUMNS - 1));
+    const core::Leg leg = RouteLegOf(*world.host);
+    REQUIRE(leg.tiles == probe.tiles);
+    const std::vector<u32> first{ leg.tiles.front() };
+    REQUIRE(ExploredOf(*world.host) == Diamonds(map, first, 1));
+
+    StepMonth(*world.host, 2);
+    REQUIRE(world.host->WorldTicks() == MONTH);
+    REQUIRE(map.TileAt(FootOf(*world.host, world.player)) == leg.tiles[FOURTH]);
+    CHECK(ExploredOf(*world.host) == Diamonds(map, std::span{ leg.tiles }.first(FOURTH + 1), 1));
+
+    // The next jump carries it to the route's end, round every tile of it.
+    StepMonth(*world.host, 3);
+    REQUIRE_FALSE(world.host->PlayerRoute().has_value());
+    CHECK(ExploredOf(*world.host) == Diamonds(map, leg.tiles, 1));
+}
+
+TEST_CASE("a grown sight radius explores the new ring at the next tick") {
+    const core::GameData data = SmallDataSeeing(1);
+    const core::WorldMap& map = *data.world;
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, data);
+    const std::vector<u32> start{ map.TileAt(map.StartCentre()) };
+    const std::vector<u64> before = ExploredOf(host);
+    const u64 version = host.FogVersion();
+
+    host.SetSightRadius(2);
+    CHECK(host.SightRadius() == 2);
+    CHECK(ExploredOf(host) == before); // not until the tick
+    CHECK(host.FogVersion() == version);
+    TickRange(host, 1, 1);
+    CHECK(ExploredOf(host) == Diamonds(map, start, 2));
+    CHECK(host.FogVersion() > version);
+
+    // A tick that uncovers nothing new leaves the fog's version alone.
+    const u64 grown = host.FogVersion();
+    TickRange(host, 2, 2);
+    CHECK(host.FogVersion() == grown);
+}
+
+TEST_CASE("a dev scene's world has no explored tiles and leaves the game's alone") {
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, test::SmallData());
+    const std::vector<u64> explored = ExploredOf(host);
+    REQUIRE(ExploredCount(explored) > 0);
+    TickWith(host, 1, core::ActionKind::CycleScene);
+    host.EnterScene();
+    REQUIRE(host.Current().key == game::ARENA_SCENE);
+    REQUIRE(host.KeptScratchBase() != nullptr);
+    CHECK(host.KeptScratchBase()->explored.empty());
+    CHECK(host.KeptScratchBase()->sightRadius == 0);
+
+    // The cultivator walks the arena, and the game's world, set aside, keeps what it had explored.
+    constexpr u64 WALK = 20;
+    TickRange(host, 2, 1 + WALK, HELD_RIGHT);
+    CHECK(ExploredOf(host) == explored);
+}
+
+TEST_CASE("coming back to the world map explores round where the cultivator lands") {
+    const core::GameData data = SmallDataSeeing(1);
+    const core::WorldMap& map = *data.world;
+    // A game in the arena whose world, set aside, has explored nothing and keeps a place on the bottom row's far side.
+    const std::vector<u32> landing{ map.TileIndex({ .column = test::small::COLUMNS - 2, .row = test::small::ROWS - 1 }) };
+    const core::State state{ game::DOMAINS, test::EMPTY_SAVE_SEED };
+    const std::vector<std::byte> bytes = test::ArenaSave(
+        state,
+        {},
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        game::ARENA_SCENE,
+        test::WORLD_VERSION,
+        test::ACTIVE_VERSION,
+        {},
+        game::Travel{},
+        std::nullopt,
+        game::Relationships{},
+        { .place = map.TileCentre(landing.front()) },
+        &data
+    );
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
+    core::Reader reader{ bytes };
+    REQUIRE(host.Load(reader, 0));
+    host.EnterScene();
+    REQUIRE(ExploredCount(host.ExploredTiles()) == 0);
+
+    // Entered, before any tick: round the tile it lands on, and nothing round the start city.
+    u64 tick = 1;
+    while (host.Current().key != game::WORLD_SCENE) {
+        TickWith(host, tick++, core::ActionKind::CycleScene);
+        host.EnterScene();
+    }
+    const u64 version = host.FogVersion();
+    REQUIRE(map.TileAt(FootOf(host, host.Player())) == landing.front());
+    CHECK(ExploredOf(host) == Diamonds(map, landing, 1));
+    CHECK_FALSE(core::IsExplored(host.ExploredTiles(), map.TileAt(map.StartCentre())));
+
+    // Each scene entered counts a new fog version, as the publish must hand the fog on again.
+    TickWith(host, tick++, core::ActionKind::CycleScene);
+    host.EnterScene();
+    CHECK(host.FogVersion() > version);
+}
+
+TEST_CASE("the world's hash changes with an explored tile and with the radius") {
+    const core::GameData data = SmallDataSeeing(1);
+    const core::WorldMap& map = *data.world;
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, data);
+    const u32 far = map.TileIndex({ .column = test::small::COLUMNS - 1, .row = test::small::ROWS - 1 });
+    REQUIRE_FALSE(core::IsExplored(host.ExploredTiles(), far));
+    const u64 unexplored = host.WorldHash();
+    const u64 version = host.FogVersion();
+
+    host.Explore(OnTile(map, far));
+    CHECK(core::IsExplored(host.ExploredTiles(), far));
+    CHECK(ExploredCount(host.ExploredTiles()) == 4); // the start's diamond of 3, and that tile alone
+    const u64 explored = host.WorldHash();
+    CHECK(explored != unexplored);
+    CHECK(host.FogVersion() > version);
+
+    // A tile explored already changes nothing.
+    const u64 exploredVersion = host.FogVersion();
+    host.Explore(OnTile(map, far));
+    CHECK(host.WorldHash() == explored);
+    CHECK(host.FogVersion() == exploredVersion);
+
+    host.SetSightRadius(2);
+    CHECK(host.WorldHash() != explored);
+}
+
+TEST_CASE("exploring an area explores every tile it covers, edges included, and none off the map") {
+    const core::GameData data = SmallDataSeeing(0);
+    const core::WorldMap& map = *data.world;
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, data);
+    REQUIRE(ExploredCount(host.ExploredTiles()) == 1); // the start's own tile
+
+    // From the bottom row's second tile's centre to the third's left edge: both tiles.
+    const u32 second = map.TileIndex({ .column = 1, .row = test::small::ROWS - 1 });
+    const u32 third = map.TileIndex({ .column = 2, .row = test::small::ROWS - 1 });
+    const core::Vec2 edge{ .x = 2.0F * test::small::TILE, .y = map.TileCentre(third).y };
+    host.Explore({ .min = map.TileCentre(second), .max = edge });
+    CHECK(core::IsExplored(host.ExploredTiles(), second));
+    CHECK(core::IsExplored(host.ExploredTiles(), third));
+    CHECK(ExploredCount(host.ExploredTiles()) == 3);
+
+    // An area wholly off the map, or not a number, explores nothing.
+    host.Explore({ .min = { .x = -2.0F * test::small::TILE, .y = 0.0F }, .max = { .x = -test::small::TILE, .y = 0.0F } });
+    constexpr f32 NOT_A_NUMBER = std::numeric_limits<f32>::quiet_NaN();
+    host.Explore({ .min = { .x = NOT_A_NUMBER, .y = 0.0F }, .max = { .x = NOT_A_NUMBER, .y = 0.0F } });
+    CHECK(ExploredCount(host.ExploredTiles()) == 3);
 }
 
 } // namespace
