@@ -221,8 +221,8 @@ struct CachedGlyph {
 
 struct CachedLayout {
     Layout layout{};
-    u64 lastUsed = 0;
-    u64 landings = 0; // Impl::landings when it was made
+    f64 lastUsed = 0.0; // the frame clock of the last frame that asked for it
+    u64 landings = 0;   // Impl::landings when it was made
 };
 
 } // namespace
@@ -261,8 +261,12 @@ struct TextLayout::Impl {
     std::vector<u32> wanted;   // requested glyphs not yet handed to the worker
     std::vector<Field> landed; // the worker's fields, taken from it
     std::vector<u32> missing;  // the characters warned about
-    u64 frame = 0;
-    u64 landings = 0; // how many times the worker's fields have landed
+    f64 clock = 0.0;           // the frame clock of the frame in progress
+    u64 budgetNs = LAYOUT_BUDGET_NS;
+    std::chrono::steady_clock::time_point firstMake; // this frame's first make, once made
+    bool made = false;                               // whether this frame has made a layout, so firstMake is set
+    bool spent = false;                              // whether this frame's budget is spent
+    u64 landings = 0;                                // how many times the worker's fields have landed
     /// The batch on the worker, if any. Last: destroyed first, so it's done before the fonts go.
     std::optional<core::Jobs::Pending> batch = std::nullopt;
 };
@@ -506,15 +510,64 @@ const Layout& TextLayout::Lay(std::string_view text, core::TextDirection directi
         cached->second.layout = m_impl->Make(text, direction);
         cached->second.landings = m_impl->landings;
     }
-    cached->second.lastUsed = m_impl->frame;
+    cached->second.lastUsed = m_impl->clock;
     return cached->second.layout;
 }
 
-void TextLayout::EndFrame(core::Jobs& jobs) {
+/// No zone, as Lay().
+const Layout* TextLayout::TryLay(std::string_view text, core::TextDirection direction) {
+    Impl& impl = *m_impl;
+    std::string& key = impl.key;
+    key.assign(1, static_cast<char>(direction));
+    key += text;
+    auto cached = impl.layouts.find(key);
+    const bool isNew = cached == impl.layouts.end();
+    const bool stale = !isNew && !cached->second.layout.complete && cached->second.landings != impl.landings;
+    if ((isNew || stale) && !impl.spent) {
+        if (!impl.made) {
+            impl.firstMake = std::chrono::steady_clock::now();
+            impl.made = true;
+        }
+        if (isNew) {
+            cached = impl.layouts.emplace(key, CachedLayout{ .layout = impl.Make(text, direction) }).first;
+        }
+        else {
+            cached->second.layout = impl.Make(text, direction);
+        }
+        cached->second.landings = impl.landings;
+        const std::chrono::nanoseconds took = std::chrono::steady_clock::now() - impl.firstMake;
+        impl.spent = std::cmp_greater_equal(took.count(), impl.budgetNs);
+    }
+    else if (isNew) {
+        return nullptr;
+    }
+    cached->second.lastUsed = impl.clock;
+    return &cached->second.layout;
+}
+
+const Layout* TextLayout::Cached(std::string_view text, core::TextDirection direction) {
+    std::string& key = m_impl->key;
+    key.assign(1, static_cast<char>(direction));
+    key += text;
+    const auto cached = m_impl->layouts.find(key);
+    if (cached == m_impl->layouts.end()) {
+        return nullptr;
+    }
+    cached->second.lastUsed = m_impl->clock;
+    return &cached->second.layout;
+}
+
+void TextLayout::SetLayoutBudget(u64 nanoseconds) {
+    m_impl->budgetNs = nanoseconds;
+}
+
+void TextLayout::EndFrame(core::Jobs& jobs, f64 clock) {
     PN_PROFILE_ZONE();
     Impl& impl = *m_impl;
-    ++impl.frame;
-    std::erase_if(impl.layouts, [&impl](const auto& entry) { return entry.second.lastUsed + LAYOUT_FRAMES < impl.frame; });
+    impl.clock = clock;
+    impl.made = false;
+    impl.spent = false;
+    std::erase_if(impl.layouts, [&impl](const auto& entry) { return entry.second.lastUsed < impl.clock - LAYOUT_SECONDS; });
     impl.Exchange(jobs);
 }
 

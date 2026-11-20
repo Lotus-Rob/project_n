@@ -11,6 +11,7 @@
 #include "core/jobs.hpp"
 #include "core/names.hpp"
 #include "core/strings.hpp"
+#include "core/tick_clock.hpp"
 #include "core/types.hpp"
 
 #include <cstddef>
@@ -26,8 +27,11 @@ namespace gfx {
 
 /// The width and height of every glyph page, in texels (R8: one byte of distance field a texel).
 inline constexpr u32 GLYPH_PAGE_SIZE = 2048;
-/// A layout not asked for in this many frames is forgotten.
-inline constexpr u64 LAYOUT_FRAMES = 300;
+/// How long a frame may spend making new layouts in TryLay() before it makes no more: spent once the time since the
+/// frame's first make reaches it, checked after each, so a frame always makes one.
+inline constexpr u64 LAYOUT_BUDGET_NS = 2 * core::NS_PER_MS;
+/// A layout not asked for since this many seconds of frame clock before the frame that ends is forgotten.
+inline constexpr f64 LAYOUT_SECONDS = 5.0;
 /// The size every glyph's field is rasterised at, in pixels: a layout's base pixels. Drawn at `pixels`, a layout scales
 /// by `pixels / SDF_BASE_PIXELS`.
 inline constexpr f32 SDF_BASE_PIXELS = 48.0F;
@@ -123,11 +127,28 @@ public:
     /// logged. The reference holds until the next EndFrame().
     [[nodiscard]] const Layout& Lay(std::string_view text, core::TextDirection direction);
 
-    /// Ends a frame: forgets the layouts not asked for in the last LAYOUT_FRAMES, moves the fields the worker has
-    /// finished into Pending(), and if glyphs wait to be rasterised and no batch is running, starts one on `jobs` as
-    /// low-priority work (Jobs::Start), which never waits behind a background job such as a save nor holds one up. One
-    /// batch at a time: the worker's font is used by one thread. Never waits. `jobs` must outlive this cache.
-    void EndFrame(core::Jobs& jobs);
+    /// As Lay(), except that once this frame's budget is spent (LAYOUT_BUDGET_NS, SetLayoutBudget()) it makes nothing:
+    /// a text not cached gives null, and a cached incomplete one whose glyph has landed is given as it is, made again
+    /// on a later frame. The budget is spent when the time since the frame's first make reaches it, checked after each
+    /// make, so a frame always makes at least one. A cached layout is given free. The pointer holds until the next
+    /// EndFrame().
+    [[nodiscard]] const Layout* TryLay(std::string_view text, core::TextDirection direction);
+
+    /// The cached layout of `text` running `direction`, or null; it never makes one, and counts as asked for.
+    [[nodiscard]] const Layout* Cached(std::string_view text, core::TextDirection direction);
+
+    /// The time TryLay() may spend making layouts in a frame, from now on; `std::numeric_limits<u64>::max()` lifts it.
+    /// Lay() never counts against it.
+    void SetLayoutBudget(u64 nanoseconds);
+
+    /// Ends a frame: forgets the layouts not asked for since more than LAYOUT_SECONDS before `clock`, resets the
+    /// frame's budget, moves the fields the worker has finished into Pending(), and if glyphs wait to be rasterised and
+    /// no batch is running, starts one on `jobs` as low-priority work (Jobs::Start), which never waits behind a
+    /// background job such as a save nor holds one up. One batch at a time: the worker's font is used by one thread.
+    /// Never waits. `jobs` must outlive this cache. `clock` is the frame clock in seconds (View::frameClock) of the
+    /// frame that begins; a layout is stamped with the clock of the frame it is asked for in (0 before the first
+    /// EndFrame()).
+    void EndFrame(core::Jobs& jobs, f64 clock);
 
     /// Waits until every glyph asked for so far is rasterised, and moves them all into Pending(): for a capture that
     /// must not miss a glyph, and for tests. While it waits, the job system may run other queued work (a save, a
