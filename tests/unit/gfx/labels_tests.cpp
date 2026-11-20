@@ -918,4 +918,62 @@ TEST_CASE("the widest count of a ten-digit count is the largest u32") {
     CHECK(gfx::WidestCount(MAXIMUM) == MAXIMUM);
 }
 
+TEST_CASE("a label is readable from the minimum size up") {
+    CHECK(gfx::Readable(gfx::LABEL_MIN_PIXELS, 1.0F));
+    CHECK_FALSE(gfx::Readable(gfx::LABEL_MIN_PIXELS - 0.5F, 1.0F));
+    CHECK(gfx::Readable(13.0F, 1.0F));
+}
+
+TEST_CASE("readability follows the text scale") {
+    CHECK_FALSE(gfx::Readable(13.0F, 1.5F));
+    CHECK(gfx::Readable(13.5F, 1.5F));
+    CHECK(gfx::Readable(7.0F, 0.75F));
+}
+
+/// A label waiting to be laid out, `distance` pixels right of the screen's middle (640, 360).
+gfx::WaitingLabel WaitingAt(std::size_t item, u64 entity, core::LabelPriority priority, f32 distance) {
+    return { .item = item,
+             .entity = core::StableId{ entity },
+             .priority = priority,
+             .anchor = { .x = 640.0F + distance, .y = 360.0F } };
+}
+
+/// The items of `waiting`, in its order.
+std::vector<std::size_t> Items(std::span<const gfx::WaitingLabel> waiting) {
+    std::vector<std::size_t> items;
+    for (const gfx::WaitingLabel& label : waiting) {
+        items.push_back(label.item);
+    }
+    return items;
+}
+
+TEST_CASE("waiting labels go highest priority first, then nearest the middle") {
+    std::array waiting{ WaitingAt(0, 1, core::LabelPriority::Rest, 10.0F),
+                        WaitingAt(1, 2, core::LabelPriority::Named, 300.0F),
+                        WaitingAt(2, 3, core::LabelPriority::Rest, 50.0F),
+                        WaitingAt(3, 4, core::LabelPriority::Named, 20.0F),
+                        WaitingAt(4, 5, core::LabelPriority::Place, 400.0F) };
+    gfx::OrderWaiting(waiting, { .x = 640.0F, .y = 360.0F });
+    CHECK(Items(waiting) == std::vector<std::size_t>{ 4, 3, 1, 0, 2 });
+}
+
+TEST_CASE("a selected label goes first however far from the middle") {
+    std::array waiting{ WaitingAt(0, 1, core::LabelPriority::Rest, 5.0F),
+                        WaitingAt(1, 2, core::LabelPriority::Rest, -12.0F),
+                        gfx::WaitingLabel{ .item = 2,
+                                           .entity = core::StableId{ 3 },
+                                           .priority = core::LabelPriority::Selected,
+                                           .anchor = { .x = 0.0F, .y = 0.0F } },
+                        WaitingAt(3, 4, core::LabelPriority::Rest, 20.0F),
+                        WaitingAt(4, 5, core::LabelPriority::Rest, -30.0F) };
+    gfx::OrderWaiting(waiting, { .x = 640.0F, .y = 360.0F });
+    CHECK(waiting.front().item == 2);
+}
+
+TEST_CASE("equal turns fall back to the entity") {
+    std::array waiting{ WaitingAt(0, 9, core::LabelPriority::Rest, 10.0F), WaitingAt(1, 4, core::LabelPriority::Rest, -10.0F) };
+    gfx::OrderWaiting(waiting, { .x = 640.0F, .y = 360.0F });
+    CHECK(Items(waiting) == std::vector<std::size_t>{ 1, 0 });
+}
+
 } // namespace
