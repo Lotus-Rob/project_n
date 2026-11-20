@@ -45,6 +45,15 @@ markers:
   city: marker_city
   mountain_pass: marker_mountain_pass
 route: { dot: route_dot, spacing: 40, marker: route_marker, cursor: target_tile }
+fog:
+  clouds: [cloud_0, cloud_1, cloud_2]
+  cloud_width: 1.2
+  bob: { amplitude: 0.04, period: 5.0 }
+  drift: 0.25
+  fade_seconds: 0.6
+  drain: { strength: 0.8, sepia: [150, 130, 100] }
+  mist: { colour: [240, 230, 220], strength: 0.3 }
+  shade: [210, 200, 190]
 )yaml";
 
 constexpr std::size_t MASKS = 16;
@@ -314,3 +323,114 @@ TEST_CASE("the shipped look covers the shipped map") {
 }
 
 } // namespace
+
+TEST_CASE("a small look's fog reads the written values") {
+    const std::expected<core::WorldLook, core::Error> look = Parse(SMALL_LOOK);
+    REQUIRE(look.has_value());
+    const core::FogLook& fog = look->fog;
+    CHECK(
+        fog.clouds == std::vector{ core::atlas::SpriteId::Cloud0, core::atlas::SpriteId::Cloud1, core::atlas::SpriteId::Cloud2 }
+    );
+    CHECK(fog.cloudWidth == doctest::Approx(1.2F));
+    CHECK(fog.bobAmplitude == doctest::Approx(0.04F));
+    CHECK(fog.bobPeriod == doctest::Approx(5.0F));
+    CHECK(fog.drift == doctest::Approx(0.25F));
+    CHECK(fog.fadeSeconds == doctest::Approx(0.6F));
+    CHECK(fog.drain == doctest::Approx(0.8F));
+    CHECK(fog.sepia == std::array<u8, 3>{ 150, 130, 100 });
+    CHECK(fog.mist == std::array<u8, 3>{ 240, 230, 220 });
+    CHECK(fog.mistStrength == doctest::Approx(0.3F));
+    CHECK(fog.shade == std::array<u8, 3>{ 210, 200, 190 });
+}
+
+TEST_CASE("the shipped look's fog has 16 clouds and the written values") {
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
+    REQUIRE(assets.has_value());
+    const std::expected<core::Strings, core::Error> strings = data::LoadStrings(*assets / "data");
+    REQUIRE(strings.has_value());
+    const auto world = data::LoadWorldMap(*assets / "data", *strings);
+    REQUIRE(world.has_value());
+    const std::expected<core::WorldLook, core::Error> look = data::LoadWorldLook(*assets / "data", *manifest, **world);
+    REQUIRE(look.has_value());
+    const core::FogLook& fog = look->fog;
+    REQUIRE(fog.clouds.size() == 16);
+    CHECK(fog.clouds.front() == core::atlas::SpriteId::Cloud0);
+    CHECK(fog.clouds.back() == core::atlas::SpriteId::Cloud15);
+    CHECK(fog.cloudWidth == doctest::Approx(1.15F));
+    CHECK(fog.bobAmplitude == doctest::Approx(0.03F));
+    CHECK(fog.bobPeriod == doctest::Approx(4.0F));
+    CHECK(fog.drift == doctest::Approx(0.3F));
+    CHECK(fog.fadeSeconds == doctest::Approx(0.5F));
+    CHECK(fog.drain == doctest::Approx(0.85F));
+    CHECK(fog.sepia == std::array<u8, 3>{ 160, 138, 106 });
+    CHECK(fog.mist == std::array<u8, 3>{ 239, 233, 220 });
+    CHECK(fog.mistStrength == doctest::Approx(0.25F));
+    CHECK(fog.shade == std::array<u8, 3>{ 214, 206, 192 });
+}
+
+TEST_CASE("a look without fog is refused") {
+    std::string text{ SMALL_LOOK };
+    text.erase(text.find("fog:"));
+    const std::expected<core::WorldLook, core::Error> look = Parse(text);
+    REQUIRE_FALSE(look.has_value());
+    CHECK(look.error().message == "world_look line 1: the look has no fog");
+}
+
+TEST_CASE("a fog cloud outside the world scene's sprites is refused") {
+    const std::string text = With("[cloud_0, cloud_1, cloud_2]", "[cloud_0, cell_plain]");
+    const std::expected<core::WorldLook, core::Error> look = Parse(text);
+    REQUIRE_FALSE(look.has_value());
+    CHECK(
+        look.error().message ==
+        std::format(
+            "world_look line {}: fog clouds names the sprite \"cell_plain\", which the world scene doesn't load",
+            LineOf(text, "cell_plain")
+        )
+    );
+}
+
+TEST_CASE("fog values out of range are refused, each naming its key") {
+    struct Broken {
+        std::string_view why;
+        std::string text;
+        std::string key;
+    };
+    const std::vector<Broken> cases{
+        { .why = "no clouds", .text = With("[cloud_0, cloud_1, cloud_2]", "[]"), .key = "fog clouds has no sprite" },
+        { .why = "a cloud width of zero", .text = With("cloud_width: 1.2", "cloud_width: 0"), .key = "fog's cloud_width" },
+        { .why = "a bob period of zero", .text = With("period: 5.0", "period: 0"), .key = "bob's period" },
+        { .why = "a bob amplitude past a half", .text = With("amplitude: 0.04", "amplitude: 0.6"), .key = "bob's amplitude" },
+        { .why = "a drift past two tiles", .text = With("drift: 0.25", "drift: 3"), .key = "fog's drift" },
+        { .why = "a fade of zero", .text = With("fade_seconds: 0.6", "fade_seconds: 0"), .key = "fog's fade_seconds" },
+        { .why = "a drain strength of 1.5", .text = With("strength: 0.8", "strength: 1.5"), .key = "drain's strength" },
+        { .why = "a mist strength of 1.5", .text = With("strength: 0.3", "strength: 1.5"), .key = "mist's strength" },
+        { .why = "a sepia of 256", .text = With("[150, 130, 100]", "[256, 130, 100]"), .key = "drain's sepia" },
+        { .why = "a mist colour of two numbers", .text = With("[240, 230, 220]", "[240, 230]"), .key = "mist's colour" },
+        { .why = "a shade of 256", .text = With("[210, 200, 190]", "[210, 200, 256]"), .key = "fog's shade" },
+        { .why = "no drain",
+          .text = With("  drain: { strength: 0.8, sepia: [150, 130, 100] }\n", ""),
+          .key = "fog has no drain" },
+    };
+    for (const Broken& broken : cases) {
+        CAPTURE(broken.why);
+        const std::expected<core::WorldLook, core::Error> look = Parse(broken.text);
+        REQUIRE_FALSE(look.has_value());
+        CHECK(look.error().message.starts_with("world_look line "));
+        CHECK(look.error().message.contains(broken.key));
+    }
+}
+
+TEST_CASE("the look's hash changes with a fog value") {
+    const std::expected<core::WorldLook, core::Error> first = Parse(SMALL_LOOK);
+    const std::expected<core::WorldLook, core::Error> drift = Parse(With("drift: 0.25", "drift: 0.5"));
+    const std::expected<core::WorldLook, core::Error> shade = Parse(With("[210, 200, 190]", "[210, 200, 191]"));
+    const std::expected<core::WorldLook, core::Error> clouds = Parse(With("cloud_2]", "cloud_3]"));
+    REQUIRE(first.has_value());
+    REQUIRE(drift.has_value());
+    REQUIRE(shade.has_value());
+    REQUIRE(clouds.has_value());
+    CHECK(first->Hash() != drift->Hash());
+    CHECK(first->Hash() != shade->Hash());
+    CHECK(first->Hash() != clouds->Hash());
+}

@@ -140,10 +140,26 @@ enum class SpriteId : u16 { // NOLINT(performance-enum-size): stable IDs outgrow
     RouteDot, ///< assets/sprites/route_dot.png
     RouteMarker, ///< assets/sprites/route_marker.png
     TargetTile, ///< assets/sprites/target_tile.png
+    Cloud0, ///< assets/sprites/cloud_0.png
+    Cloud1, ///< assets/sprites/cloud_1.png
+    Cloud2, ///< assets/sprites/cloud_2.png
+    Cloud3, ///< assets/sprites/cloud_3.png
+    Cloud4, ///< assets/sprites/cloud_4.png
+    Cloud5, ///< assets/sprites/cloud_5.png
+    Cloud6, ///< assets/sprites/cloud_6.png
+    Cloud7, ///< assets/sprites/cloud_7.png
+    Cloud8, ///< assets/sprites/cloud_8.png
+    Cloud9, ///< assets/sprites/cloud_9.png
+    Cloud10, ///< assets/sprites/cloud_10.png
+    Cloud11, ///< assets/sprites/cloud_11.png
+    Cloud12, ///< assets/sprites/cloud_12.png
+    Cloud13, ///< assets/sprites/cloud_13.png
+    Cloud14, ///< assets/sprites/cloud_14.png
+    Cloud15, ///< assets/sprites/cloud_15.png
 };
 
 /// Every sprite's name, indexed by SpriteId: the manifest must list the same, in this order.
-inline constexpr std::array<std::string_view, 130> SPRITE_NAMES{ {
+inline constexpr std::array<std::string_view, 146> SPRITE_NAMES{ {
     "ground",
     "rock_large",
     "rock_small",
@@ -274,6 +290,22 @@ inline constexpr std::array<std::string_view, 130> SPRITE_NAMES{ {
     "route_dot",
     "route_marker",
     "target_tile",
+    "cloud_0",
+    "cloud_1",
+    "cloud_2",
+    "cloud_3",
+    "cloud_4",
+    "cloud_5",
+    "cloud_6",
+    "cloud_7",
+    "cloud_8",
+    "cloud_9",
+    "cloud_10",
+    "cloud_11",
+    "cloud_12",
+    "cloud_13",
+    "cloud_14",
+    "cloud_15",
 } };
 
 } // namespace core::atlas

@@ -226,6 +226,171 @@ std::expected<void, core::Error> ReadRoute(
     return {};
 }
 
+/// The colour at `key` in `map`: three whole numbers from 0 to 255, which `owner` names in refusals.
+std::expected<std::array<u8, 3>, core::Error> ColourIn(const YAML::Node& map, const char* key, std::string_view owner) {
+    const YAML::Node node = map[key];
+    if (!node) {
+        return RefuseLook(map, std::format("{} has no {}", owner, key));
+    }
+    const auto refuse = [&] {
+        return RefuseLook(node, std::format("{}'s {} isn't three whole numbers from 0 to 255", owner, key));
+    };
+    if (!node.IsSequence() || node.size() != 3) {
+        return refuse();
+    }
+    std::array<u8, 3> colour{};
+    for (std::size_t channel = 0; channel < colour.size(); ++channel) {
+        i32 value = 0;
+        if (!YAML::convert<i32>::decode(node[channel], value) || !std::in_range<u8>(value)) {
+            return refuse();
+        }
+        colour[channel] = static_cast<u8>(value);
+    }
+    return colour;
+}
+
+/// The map at `key` in `map`, which `owner` names in refusals.
+std::expected<YAML::Node, core::Error> SubMapIn(const YAML::Node& map, const char* key, std::string_view owner) {
+    const YAML::Node node = map[key];
+    if (!node) {
+        return RefuseLook(map, std::format("{} has no {}", owner, key));
+    }
+    if (!node.IsMap()) {
+        return RefuseLook(node, std::format("{}'s {} isn't a map", owner, key));
+    }
+    return std::expected<YAML::Node, core::Error>{ node };
+}
+
+constexpr internal::Range CLOUD_WIDTH{ .low = 0.0, .lowOpen = true, .high = 4.0 };
+constexpr internal::Range BOB_AMPLITUDE{ .low = 0.0, .lowOpen = false, .high = 0.5 };
+constexpr internal::Range POSITIVE{ .low = 0.0, .lowOpen = true };
+constexpr internal::Range DRIFT{ .low = 0.0, .lowOpen = false, .high = 2.0 };
+constexpr internal::Range FADE{ .low = 0.0, .lowOpen = true, .high = 5.0 };
+
+/// The number at `key` in `map` within `range`, which `owner` names in refusals, as an f32.
+std::expected<f32, core::Error> FogNumber(
+    const YAML::Node& map,
+    std::string_view owner,
+    const char* key,
+    const internal::Range& range
+) {
+    return internal::RequiredNumber(LOOK_READER, map, owner, key, range).transform([](f64 value) {
+        return static_cast<f32>(value);
+    });
+}
+
+/// The strength (a fraction) and colour of the map `section` of `fog`, whose colour is named `colourKey`.
+struct Tint {
+    f32 strength;
+    std::array<u8, 3> colour;
+};
+
+std::expected<Tint, core::Error> TintIn(
+    const YAML::Node& fog,
+    const char* section,
+    const char* strengthKey,
+    const char* colourKey
+) {
+    const std::expected<YAML::Node, core::Error> map = SubMapIn(fog, section, "fog");
+    if (!map) {
+        return std::unexpected{ map.error() };
+    }
+    const std::expected<f32, core::Error> strength = FogNumber(*map, section, strengthKey, internal::FRACTION);
+    if (!strength) {
+        return std::unexpected{ strength.error() };
+    }
+    return ColourIn(*map, colourKey, section).transform([&](const std::array<u8, 3>& colour) {
+        return Tint{ .strength = *strength, .colour = colour };
+    });
+}
+
+std::expected<void, core::Error> ReadFogMotion(const YAML::Node& node, core::FogLook& fog) {
+    const std::expected<f32, core::Error> width = FogNumber(node, "fog", "cloud_width", CLOUD_WIDTH);
+    if (!width) {
+        return std::unexpected{ width.error() };
+    }
+    const std::expected<YAML::Node, core::Error> bob = SubMapIn(node, "bob", "fog");
+    if (!bob) {
+        return std::unexpected{ bob.error() };
+    }
+    const std::expected<f32, core::Error> amplitude = FogNumber(*bob, "bob", "amplitude", BOB_AMPLITUDE);
+    if (!amplitude) {
+        return std::unexpected{ amplitude.error() };
+    }
+    const std::expected<f32, core::Error> period = FogNumber(*bob, "bob", "period", POSITIVE);
+    if (!period) {
+        return std::unexpected{ period.error() };
+    }
+    const std::expected<f32, core::Error> drift = FogNumber(node, "fog", "drift", DRIFT);
+    if (!drift) {
+        return std::unexpected{ drift.error() };
+    }
+    const std::expected<f32, core::Error> fade = FogNumber(node, "fog", "fade_seconds", FADE);
+    if (!fade) {
+        return std::unexpected{ fade.error() };
+    }
+    fog.cloudWidth = *width;
+    fog.bobAmplitude = *amplitude;
+    fog.bobPeriod = *period;
+    fog.drift = *drift;
+    fog.fadeSeconds = *fade;
+    return {};
+}
+
+std::expected<void, core::Error> ReadFogColours(const YAML::Node& node, core::FogLook& fog) {
+    const std::expected<Tint, core::Error> drain = TintIn(node, "drain", "strength", "sepia");
+    if (!drain) {
+        return std::unexpected{ drain.error() };
+    }
+    const std::expected<Tint, core::Error> mist = TintIn(node, "mist", "strength", "colour");
+    if (!mist) {
+        return std::unexpected{ mist.error() };
+    }
+    const std::expected<std::array<u8, 3>, core::Error> shade = ColourIn(node, "shade", "fog");
+    if (!shade) {
+        return std::unexpected{ shade.error() };
+    }
+    fog.drain = drain->strength;
+    fog.sepia = drain->colour;
+    fog.mistStrength = mist->strength;
+    fog.mist = mist->colour;
+    fog.shade = *shade;
+    return {};
+}
+
+std::expected<void, core::Error> ReadFog(
+    const YAML::Node& root,
+    const Atlas& atlas,
+    std::vector<std::string>* warnings,
+    core::FogLook& fog
+) {
+    const std::expected<YAML::Node, core::Error> node = MapAt(root, "fog");
+    if (!node) {
+        return std::unexpected{ node.error() };
+    }
+    internal::NoteUnknownKeys(
+        LOOK_READER,
+        *node,
+        "fog",
+        "key",
+        { "clouds", "cloud_width", "bob", "drift", "fade_seconds", "drain", "mist", "shade" },
+        warnings
+    );
+    if (!(*node)["clouds"]) {
+        return RefuseLook(*node, "fog has no clouds");
+    }
+    std::expected<std::vector<core::atlas::SpriteId>, core::Error> sprites =
+        SpriteList((*node)["clouds"], "fog clouds", atlas, 0);
+    if (!sprites) {
+        return std::unexpected{ sprites.error() };
+    }
+    fog.clouds = std::move(*sprites);
+    if (auto read = ReadFogMotion(*node, fog); !read) {
+        return read;
+    }
+    return ReadFogColours(*node, fog);
+}
+
 } // namespace
 
 std::expected<core::WorldLook, core::Error> ParseWorldLook(
@@ -245,7 +410,7 @@ std::expected<core::WorldLook, core::Error> ParseWorldLook(
         }
         const Atlas atlas{ .manifest = &manifest, .resident = manifest.Scene(*scene).sprites };
         internal::NoteUnknownKeys(
-            LOOK_READER, root, "", "key", { "kinds", "roads", "rivers", "bridge", "ford", "markers", "route" }, warnings
+            LOOK_READER, root, "", "key", { "kinds", "roads", "rivers", "bridge", "ford", "markers", "route", "fog" }, warnings
         );
         core::WorldLook look;
         if (auto read = ReadLookKinds(root, atlas, map, look); !read) {
@@ -285,6 +450,9 @@ std::expected<core::WorldLook, core::Error> ParseWorldLook(
             return std::unexpected{ std::move(read.error()) };
         }
         if (auto read = ReadRoute(root, atlas, warnings, look.route); !read) {
+            return std::unexpected{ std::move(read.error()) };
+        }
+        if (auto read = ReadFog(root, atlas, warnings, look.fog); !read) {
             return std::unexpected{ std::move(read.error()) };
         }
         return look;

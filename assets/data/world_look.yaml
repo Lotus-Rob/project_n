@@ -9,6 +9,12 @@
 # markers: `city` and one sprite per danger sort the map uses (a sort the map doesn't use is ignored)
 # route:   the player's route and the target cursor: `dot` every `spacing` world units along the line, `marker` on its
 #          end, `cursor` on the cursor's tile
+# fog:     the clouds over unexplored land and the colours of explored land's edge (required): `clouds` the sprites to
+#          pick from, `cloud_width` a cloud's width in cell spacings before its own 0.85 to 1.45 draw, `bob` the
+#          amplitude (cell spacings) and period (seconds) of its up and down, `drift` how far an uncovered cloud
+#          drifts in tiles, `fade_seconds` how long it takes to fade, `drain` how much colour land seen but not near
+#          loses (`strength`, 0 to 1) toward `sepia`, `mist` a colour laid over it at `strength` (0 to 1), `shade` the
+#          colour under the clouds so no land shows between them; colours are sRGB, three numbers 0 to 255
 kinds:
   deep_water: [terrain_water_0, terrain_water_1]
   shallows: [terrain_shallows_0, terrain_shallows_1]
@@ -36,3 +42,12 @@ markers:
   cliff: marker_cliff
   corrupt_village: marker_corrupt_village
 route: { dot: route_dot, spacing: 48, marker: route_marker, cursor: target_tile }
+fog:
+  clouds: [cloud_0, cloud_1, cloud_2, cloud_3, cloud_4, cloud_5, cloud_6, cloud_7, cloud_8, cloud_9, cloud_10, cloud_11, cloud_12, cloud_13, cloud_14, cloud_15]
+  cloud_width: 1.15
+  bob: { amplitude: 0.03, period: 4.0 }
+  drift: 0.3
+  fade_seconds: 0.5
+  drain: { strength: 0.85, sepia: [160, 138, 106] }
+  mist: { colour: [239, 233, 220], strength: 0.25 }
+  shade: [214, 206, 192]
