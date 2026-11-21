@@ -154,6 +154,26 @@ bool ReachesExplored(const Field& field, const core::Instance& instance) {
     return false;
 }
 
+/// The cloud of `drawing` wearing `cloud`'s sprite the same way round whose foot lies nearest `cloud`'s: the same cloud
+/// in another drawing, as long as it is drawn there, whatever its size and place became; null when none is.
+const core::Instance* Nearest(const gfx::CloudDrawing& drawing, const core::Instance& cloud) {
+    constexpr u32 SIGN = 0x8000U; // the width's sign: mirrored or not
+    const core::Vec2 foot = Foot(cloud);
+    f32 best = std::numeric_limits<f32>::max();
+    const core::Instance* nearest = nullptr;
+    for (const core::Instance& other : drawing.instances) {
+        if (other.regionMin == cloud.regionMin && (other.size & SIGN) == (cloud.size & SIGN)) {
+            const core::Vec2 gap = Foot(other) - foot;
+            const f32 distance = std::hypot(gap.x, gap.y);
+            if (distance < best) {
+                best = distance;
+                nearest = &other;
+            }
+        }
+    }
+    return nearest;
+}
+
 std::shared_ptr<const core::WorldMap> ShippedMap() {
     std::expected<std::shared_ptr<const core::WorldMap>, core::Error> map =
         platform::AssetsDirectory().and_then([](const std::filesystem::path& assets) {
@@ -330,30 +350,98 @@ TEST_CASE("a cloud's box eases in as its neighbour uncovers, never jumping") {
     const gfx::CloudDrawing explored = drawnWith(FULL);
     Field uncovered{ 2, 1 };
     uncovered.Set(1, 0, FULL);
-    // Only the left tile's clouds are left once the right one is explored; each keeps its sprite and size throughout.
-    const auto find = [](const gfx::CloudDrawing& drawing, const core::Instance& cloud) {
-        const auto same = [&](const core::Instance& other) {
-            return other.size == cloud.size && other.regionMin == cloud.regionMin;
-        };
-        const auto found = std::ranges::find_if(drawing.instances, same);
-        REQUIRE(found != drawing.instances.end());
-        return Foot(*found);
-    };
+    // Only the left tile's clouds are left once the right one is explored.
     REQUIRE_FALSE(explored.instances.empty());
     f32 firstStep = 0.0F;
     f32 wholeWay = 0.0F;
     std::size_t reaching = 0;
+    std::size_t lost = 0;
     for (const core::Instance& cloud : explored.instances) {
-        const core::Vec2 before = find(covered, cloud);
-        const core::Vec2 barely = find(starting, cloud) - before;
+        const core::Instance* const was = Nearest(covered, cloud);
+        const core::Instance* const began = Nearest(starting, cloud);
+        if (was == nullptr || began == nullptr) {
+            ++lost;
+            continue;
+        }
+        const core::Vec2 before = Foot(*was);
+        const core::Vec2 barely = Foot(*began) - before;
         const core::Vec2 after = Foot(cloud) - before;
         firstStep = std::max(firstStep, std::hypot(barely.x, barely.y));
         wholeWay = std::max(wholeWay, std::hypot(after.x, after.y));
         reaching += ReachesExplored(uncovered, cloud) ? 1 : 0;
     }
+    CHECK(lost == 0);
     CHECK(wholeWay > 10.0F); // some cloud did reach over and was pulled in
     CHECK(firstStep < 2.0F); // a hundredth of the way, where a jump would be most of that
     CHECK(reaching == 0);
+}
+
+/// Diagonal stripes four tiles apart: an uncovering stripe at `uncovering`, two unexplored, then an explored one. A cloud
+/// on the first unexplored stripe is pulled down by the uncovering tile above it, towards the explored tile past its cell's
+/// lower corner.
+Field Stripes(u8 uncovering) {
+    Field field{ SIDE, SIDE };
+    for (u32 row = 0; row < SIDE; ++row) {
+        for (u32 column = 0; column < SIDE; ++column) {
+            const u32 stripe = (column + row) % 4;
+            if (stripe == 0) {
+                field.Set(column, row, uncovering);
+            }
+            else if (stripe == 3) {
+                field.Set(column, row, FULL);
+            }
+        }
+    }
+    return field;
+}
+
+/// The most any whole cloud of a drawing moved or changed width since the drawing before, in cells.
+struct Steps {
+    f32 foot = 0.0F;
+    f32 width = 0.0F;
+    std::size_t followed = 0;
+    std::size_t lost = 0;
+
+    /// Measures each cloud `now` draws whole against `before`, which drew it too, if more faintly (only fading clouds
+    /// come and go).
+    void Measure(const gfx::CloudDrawing& before, const gfx::CloudDrawing& now, f32 cell) {
+        for (const core::Instance& cloud : now.instances) {
+            if (Opacity(cloud) < 1.0F) {
+                continue;
+            }
+            ++followed;
+            const core::Instance* const then = Nearest(before, cloud);
+            if (then == nullptr) {
+                ++lost;
+                continue;
+            }
+            const core::Vec2 moved = Foot(cloud) - Foot(*then);
+            foot = std::max(foot, std::hypot(moved.x, moved.y) / cell);
+            width = std::max(width, std::fabs(Size(cloud).x - Size(*then).x) / cell);
+        }
+    }
+};
+
+TEST_CASE("a cloud's box eases in beside an explored corner, never jumping") {
+    constexpr u32 STEPS = 40;
+    const core::FogLook look = StillLook();
+    Steps steps;
+    for (const f32 zoom : { 1.0F, 0.5F, 0.25F }) {
+        const f32 cell = HALF * TILE / zoom; // the top level's cell at this zoom
+        gfx::CloudDrawing before = Drawn(Stripes(0), look, WindowAt(MIDDLE, zoom), zoom);
+        for (u32 step = 1; step <= STEPS; ++step) {
+            gfx::CloudDrawing now = Drawn(Stripes(static_cast<u8>((step * FULL) / STEPS)), look, WindowAt(MIDDLE, zoom), zoom);
+            steps.Measure(before, now, cell);
+            before = std::move(now);
+        }
+    }
+    CAPTURE(steps.foot);
+    CAPTURE(steps.width);
+    CHECK(steps.followed > 0);
+    CHECK(steps.lost == 0);
+    // A fortieth of the way moves a cloud at most a fortieth of its reach past its cell, under a tenth of a cell.
+    CHECK(steps.foot < 0.06F);
+    CHECK(steps.width < 0.06F);
 }
 
 TEST_CASE("a tile halfway uncovered draws its clouds at half opacity, drifted half their distance") {

@@ -1,5 +1,6 @@
 #include "gfx/cloud_draw.hpp"
 
+#include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/instances.hpp"
 #include "core/math.hpp"
@@ -14,7 +15,7 @@ namespace {
 /// A level-0 cell's side in tiles: about two clouds across a tile close up.
 constexpr f32 FINEST_CELL = 0.5F;
 /// Past this level (a zoom under 1/256) the clouds stop growing; no view reaches it.
-constexpr f32 TOP_LEVEL = 8.0F;
+constexpr u32 TOP_LEVEL = 8;
 /// Where between two levels their cross-fade starts, and over how much of the step it runs.
 constexpr f32 FADE_START = 0.35F;
 constexpr f32 FADE_SPAN = 0.3F;
@@ -75,13 +76,6 @@ struct Tiles {
     i64 endRow = 0;
 };
 
-/// A cloud laid out, waiting to be ordered: where it rests (before its bob and drift) orders it.
-struct Cloud {
-    core::Instance instance{};
-    core::Vec2 rest{};
-    u64 order = 0;
-};
-
 /// A box in world units.
 struct Box {
     f32 left = 0.0F;
@@ -97,7 +91,7 @@ struct Pass {
     const core::Manifest* manifest = nullptr;
     /// How far through its bob a cloud that starts at rest is, in turns.
     f64 bobTurn = 0.0;
-    std::vector<Cloud>* clouds = nullptr;
+    std::vector<CloudDrawing::Laid>* clouds = nullptr;
 };
 
 /// The explored value of the tile at `column` and `row`, 0 to 1; tiles off the map count as explored.
@@ -147,20 +141,25 @@ f32 Unit(const Cell& cell, u32 anchor, u32 purpose) {
     return static_cast<f32>(core::ToUnit(Draw(cell, anchor, purpose)));
 }
 
-/// The tiles beyond `side` of `own` that `box` reaches into.
-Tiles Beyond(const Tiles& own, const Box& box, f32 tile, std::size_t side) {
+/// The tiles beyond `side` of `own` that the free box `free` reaches past, across every row (or column) the box could
+/// come to cover once moved in: those `free` covers and those of `own`. None when `free` stays within that side.
+Tiles Strip(const Tiles& own, const Box& free, f32 tile, std::size_t side) {
     const auto floorTile = [tile](f32 edge) { return static_cast<i64>(std::floor(edge / tile)); };
     const auto ceilTile = [tile](f32 edge) { return static_cast<i64>(std::ceil(edge / tile)); };
-    if (side == LEFT || side == RIGHT) {
-        const i64 top = floorTile(box.top);
-        const i64 bottom = ceilTile(box.bottom);
-        return side == LEFT ? Tiles{ .column = floorTile(box.left), .row = top, .endColumn = own.column, .endRow = bottom }
-                            : Tiles{ .column = own.endColumn, .row = top, .endColumn = ceilTile(box.right), .endRow = bottom };
+    const i64 top = std::min(own.row, floorTile(free.top));
+    const i64 bottom = std::max(own.endRow, ceilTile(free.bottom));
+    const i64 left = std::min(own.column, floorTile(free.left));
+    const i64 right = std::max(own.endColumn, ceilTile(free.right));
+    if (side == LEFT) {
+        return { .column = left, .row = top, .endColumn = own.column, .endRow = bottom };
     }
-    const i64 left = floorTile(box.left);
-    const i64 right = ceilTile(box.right);
-    return side == TOP ? Tiles{ .column = left, .row = floorTile(box.top), .endColumn = right, .endRow = own.row }
-                       : Tiles{ .column = left, .row = own.endRow, .endColumn = right, .endRow = ceilTile(box.bottom) };
+    if (side == RIGHT) {
+        return { .column = own.endColumn, .row = top, .endColumn = right, .endRow = bottom };
+    }
+    if (side == TOP) {
+        return { .column = left, .row = top, .endColumn = right, .endRow = own.row };
+    }
+    return { .column = left, .row = own.endRow, .endColumn = right, .endRow = bottom };
 }
 
 /// Where a cloud stands and how large, and how far its sprite reaches from its foot each way at scale 1.
@@ -180,25 +179,23 @@ Box BoxOf(const Fit& fit) {
              .bottom = fit.foot.y + (fit.reach.bottom * fit.scale) + fit.bob };
 }
 
-/// How hard each side's neighbours pull the box back inside its cell's tiles, 0 to 1: the largest explored value of the
-/// tiles beyond it that the box reaches, so the box eases in as they uncover rather than jumping at the first sign.
+/// How hard each side's neighbours pull the box back inside its cell's tiles, 0 to 1.
 using Pulls = std::array<f32, SIDES>;
 
-/// How far each side of the box may reach under `pulls`: its cell's edge less what the pull leaves of the box's own reach
-/// past it. With no pull the limit lies at the free box's edge, or a whole box beyond the cell for a side that doesn't
-/// reach past it, which nothing can push the box to; with a full pull it is the cell's edge.
+/// How far each side of the box may reach under `pulls`. A side the free box reaches past its cell's edge may reach that
+/// far less the pull's share of it: all of it with no pull, none with a full one. Any other side stays within the edge,
+/// as the free box already does, so moving in on one side never carries it past another into tiles no pull was taken
+/// from.
 Box Limits(const Box& free, const Box& own, const Pulls& pulls) {
-    const f32 wide = free.right - free.left;
-    const f32 high = free.bottom - free.top;
-    const auto slack = [](f32 past, f32 span) { return past > 0.0F ? past : span; };
-    return { .left = own.left - ((1.0F - pulls[LEFT]) * slack(own.left - free.left, wide)),
-             .right = own.right + ((1.0F - pulls[RIGHT]) * slack(free.right - own.right, wide)),
-             .top = own.top - ((1.0F - pulls[TOP]) * slack(own.top - free.top, high)),
-             .bottom = own.bottom + ((1.0F - pulls[BOTTOM]) * slack(free.bottom - own.bottom, high)) };
+    const auto limit = [](f32 edge, f32 past, f32 pull) { return past > 0.0F ? edge + ((1.0F - pull) * past) : edge; };
+    return { .left = -limit(-own.left, own.left - free.left, pulls[LEFT]),
+             .right = limit(own.right, free.right - own.right, pulls[RIGHT]),
+             .top = -limit(-own.top, own.top - free.top, pulls[TOP]),
+             .bottom = limit(own.bottom, free.bottom - own.bottom, pulls[BOTTOM]) };
 }
 
 /// The cloud of `fit` kept within `limits`, bob included: shrunk about its foot only as far as the room between two
-/// facing limits needs, then moved in.
+/// facing limits needs, then moved in. A scale of 0 means no room at all.
 Fit Settle(Fit fit, const Box& limits) {
     const f32 wide = (fit.reach.left + fit.reach.right) * fit.scale;
     const f32 high = (fit.reach.top + fit.reach.bottom) * fit.scale;
@@ -228,13 +225,9 @@ Fit Settle(Fit fit, const Box& limits) {
     return fit;
 }
 
-/// Rounds of settling a cloud: each raises some side's pull to a tile's value, and a box meets new tiles only on the
-/// few sides it was moved towards.
-constexpr std::size_t SETTLE_ROUNDS = 8;
-
 /// The cloud of `start` placed so its box, bob included, never reaches past its cell's tiles into an explored tile or
-/// off the map, and eases back from tiles being uncovered. Settling with a stronger pull can push the box out on another
-/// side, into tiles that pull it in turn, so this repeats until no pull grows.
+/// off the map, and eases back as the tiles past it uncover. Each side's pull is the largest explored value of every tile
+/// past that side the box could come to reach, so it follows the fog alone and never jumps as the box moves.
 Fit Clamp(const FogFrame& fog, const Tiles& own, const Fit& start) {
     const f32 tile = fog.tileSize;
     const Box ownBox{ .left = static_cast<f32>(own.column) * tile,
@@ -243,26 +236,10 @@ Fit Clamp(const FogFrame& fog, const Tiles& own, const Fit& start) {
                       .bottom = static_cast<f32>(own.endRow) * tile };
     const Box free = BoxOf(start);
     Pulls pulls{};
-    Fit fit = start;
-    for (std::size_t round = 0; round < SETTLE_ROUNDS; ++round) {
-        fit = Settle(start, Limits(free, ownBox, pulls));
-        const Box box = BoxOf(fit);
-        const std::array<bool, SIDES> over{
-            (box.left < ownBox.left), (box.right > ownBox.right), (box.top < ownBox.top), (box.bottom > ownBox.bottom)
-        };
-        bool growing = false;
-        for (std::size_t side = 0; side < SIDES; ++side) {
-            const f32 pull = over.at(side) ? MostExplored(fog, Beyond(own, box, tile, side)) : 0.0F;
-            if (pull > pulls.at(side)) {
-                pulls.at(side) = pull;
-                growing = true;
-            }
-        }
-        if (!growing) {
-            break;
-        }
+    for (std::size_t side = 0; side < SIDES; ++side) {
+        pulls.at(side) = MostExplored(fog, Strip(own, free, tile, side));
     }
-    return fit;
+    return Settle(start, Limits(free, ownBox, pulls));
 }
 
 /// Adds the clouds of `cell` at `opacity`, `explored` being the largest explored value of its tiles.
@@ -301,6 +278,9 @@ void PlaceClouds(const Pass& pass, const Cell& cell, f32 opacity, f32 explored) 
                                     .bottom = static_cast<f32>(info.height) - static_cast<f32>(info.footY) },
                          .bob = look.bobAmplitude * side };
         const Fit fit = Clamp(fog, own, start);
+        if (!(fit.scale > 0.0F)) {
+            continue;
+        }
         const f64 turn = pass.bobTurn + static_cast<f64>(Unit(cell, anchor, PHASE));
         const f32 bob = fit.bob * static_cast<f32>(core::math::Sin(TURN * (turn - std::floor(turn))));
         const f32 heading = TURN_F * Unit(cell, anchor, DRIFT);
@@ -342,13 +322,18 @@ Spread SpreadOf(const FogFrame& fog, const Tiles& tiles) {
     return spread;
 }
 
+/// The most cells waiting at once while one top cell is walked: each visit swaps a cell for its four children one level
+/// down, so at most three of each level wait beside the one being split.
+constexpr std::size_t MOST_PENDING = 1 + (3 * (TOP_LEVEL + 1));
+
 /// Adds the clouds `top` and the cells under it draw: each draws what its tiles leave covered and hands the rest of what
-/// reaches it to its four children. `pending` is scratch space, empty before and after.
-void Descend(const Pass& pass, const Cell& top, std::vector<Cell>& pending) {
-    pending.push_back(top);
-    while (!pending.empty()) {
-        const Cell cell = pending.back();
-        pending.pop_back();
+/// reaches it to its four children.
+void Descend(const Pass& pass, const Cell& top) {
+    std::array<Cell, MOST_PENDING> pending{};
+    std::size_t waiting = 0;
+    pending.at(waiting++) = top;
+    while (waiting > 0) {
+        const Cell cell = pending.at(--waiting);
         const Spread spread = SpreadOf(*pass.fog, TilesOf(cell));
         if (spread.least >= 1.0F) {
             continue; // every tile under it is explored, so no cell below draws
@@ -359,13 +344,12 @@ void Descend(const Pass& pass, const Cell& top, std::vector<Cell>& pending) {
         }
         const f32 handed = cell.reach * spread.most;
         if (cell.level > 0 && handed >= LEAST_OPACITY) {
+            PN_ASSERT(waiting + 4 <= pending.size(), "a cloud cell's children overflow the walk");
             for (u32 child = 0; child < 4; ++child) {
-                pending.push_back(
-                    { .column = (cell.column * 2) + (child & 1U),
-                      .row = (cell.row * 2) + (child >> 1U),
-                      .level = cell.level - 1,
-                      .reach = handed }
-                );
+                pending.at(waiting++) = { .column = (cell.column * 2) + (child & 1U),
+                                          .row = (cell.row * 2) + (child >> 1U),
+                                          .level = cell.level - 1,
+                                          .reach = handed };
             }
         }
     }
@@ -389,10 +373,9 @@ void Lay(const Pass& pass, core::Rect view, u32 level, f32 opacity) {
     if (firstX > endX || firstY > endY) {
         return;
     }
-    std::vector<Cell> pending;
     for (auto row = static_cast<u32>(firstY); row <= static_cast<u32>(endY); ++row) {
         for (auto column = static_cast<u32>(firstX); column <= static_cast<u32>(endX); ++column) {
-            Descend(pass, { .column = column, .row = row, .level = level, .reach = opacity }, pending);
+            Descend(pass, { .column = column, .row = row, .level = level, .reach = opacity });
         }
     }
 }
@@ -418,11 +401,12 @@ void DrawClouds(
     if (fog.columns == 0 || fog.rows == 0 || !(fog.tileSize > 0.0F) || look.clouds.empty() || !(zoom > 0.0F)) {
         return;
     }
-    const f32 level = std::min(CloudLevel(zoom), TOP_LEVEL);
+    const f32 level = std::min(CloudLevel(zoom), static_cast<f32>(TOP_LEVEL));
     const f32 lower = std::floor(level);
     const f32 blend = std::clamp((level - lower - FADE_START) / FADE_SPAN, 0.0F, 1.0F);
     const f64 cycles = look.bobPeriod > 0.0F ? seconds / static_cast<f64>(look.bobPeriod) : 0.0;
-    std::vector<Cloud> clouds;
+    std::vector<CloudDrawing::Laid>& clouds = into.laid;
+    clouds.clear();
     const Pass pass{
         .fog = &fog, .look = &look, .manifest = &manifest, .bobTurn = cycles - std::floor(cycles), .clouds = &clouds
     };
@@ -432,7 +416,7 @@ void DrawClouds(
         Lay(pass, view, lowerLevel + 1, blend);
     }
     // The hash breaks ties, so the order never hangs on which cell the view reached first.
-    std::ranges::sort(clouds, [](const Cloud& lhs, const Cloud& rhs) {
+    std::ranges::sort(clouds, [](const CloudDrawing::Laid& lhs, const CloudDrawing::Laid& rhs) {
         if (lhs.rest.y < rhs.rest.y || rhs.rest.y < lhs.rest.y) {
             return lhs.rest.y < rhs.rest.y;
         }
