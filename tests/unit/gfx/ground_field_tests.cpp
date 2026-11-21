@@ -11,7 +11,7 @@ constexpr u32 ROWS = 4;
 constexpr u8 LAKE = 1;
 constexpr std::array<u8, 1> WATER{ { LAKE } };
 
-// A 2 x 2 lake at columns 3 and 4, rows 1 and 2, inside meadow.
+/// A 6 x 4 map with a 2 x 2 lake at columns 3 and 4, rows 1 and 2, inside meadow.
 core::WorldMap LakeMap() {
     std::array<u8, std::size_t{ COLUMNS } * ROWS> grid{};
     for (u32 row = 1; row <= 2; ++row) {
@@ -22,14 +22,14 @@ core::WorldMap LakeMap() {
     return test::MapOfTiles(COLUMNS, ROWS, grid);
 }
 
-// The shore byte of the tile at `column`, `row`.
+/// The shore byte of the tile at `column`, `row`.
 u8 ShoreAt(const std::vector<u8>& texels, u32 column, u32 row, u32 columns = COLUMNS) {
     return texels.at((((std::size_t{ row } * columns) + column) * 2) + 1);
 }
 
-// The kind byte of the tile at `column`, `row`.
-u8 KindAt(const std::vector<u8>& texels, u32 column, u32 row) {
-    return texels.at(((std::size_t{ row } * COLUMNS) + column) * 2);
+/// The kind byte of the tile at `column`, `row`.
+u8 KindAt(const std::vector<u8>& texels, u32 column, u32 row, u32 columns = COLUMNS) {
+    return texels.at(((std::size_t{ row } * columns) + column) * 2);
 }
 
 TEST_CASE("a shore's two sides read half a tile either way") {
@@ -65,10 +65,11 @@ TEST_CASE("distances clamp at four tiles") {
     gfx::GroundTexels(map, WATER, texels);
     CHECK(ShoreAt(texels, 0, 0, LENGTH) == 255);
     CHECK(ShoreAt(texels, 6, 0, LENGTH) == 255);
+    CHECK(ShoreAt(texels, 7, 0, LENGTH) == 240);
     CHECK(ShoreAt(texels, 10, 0, LENGTH) == 144);
 }
 
-TEST_CASE("a lake with no land reads the water clamp") {
+TEST_CASE("a map all of water reads the water clamp") {
     const core::WorldMap map = test::MapOfTiles(2, 1, std::array<u8, 2>{ { 0, LAKE } });
     std::vector<u8> texels;
     gfx::GroundTexels(map, std::array<u8, 2>{ { 0, LAKE } }, texels);
@@ -92,11 +93,13 @@ TEST_CASE("a map without water reads the clamp everywhere") {
     std::vector<u8> texels;
     gfx::GroundTexels(map, WATER, texels);
     REQUIRE(texels.size() == std::size_t{ COLUMNS } * ROWS * 2);
+    u8 lowest = 255;
     for (u32 row = 0; row < ROWS; ++row) {
         for (u32 column = 0; column < COLUMNS; ++column) {
-            CHECK(ShoreAt(texels, column, row) == 255);
+            lowest = std::min(lowest, ShoreAt(texels, column, row));
         }
     }
+    CHECK(lowest == 255);
 }
 
 TEST_CASE("no water kind named reads the clamp on a map with a lake") {
