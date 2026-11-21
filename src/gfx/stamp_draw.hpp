@@ -13,14 +13,16 @@
 
 namespace gfx {
 
-/// Appends to `into` the stamps, place paintings and mist puffs of the tiles in `span` (past the instances already there,
-/// each batch with its own `first`), at the camera's `zoom`:
+/// Appends to `into`, past the instances already there, the stamps, place paintings and mist puffs of the tiles in `span` at
+/// the camera's `zoom`, each batch with its own `first`. `span` is widened first by as far as a stamp or a puff can reach from
+/// its tile (taken from `look` and `manifest`, and kept on the map), so one standing just past the view that shows in it is
+/// laid out whole and never pops in. In drawing order:
 ///
 /// - one normal batch of the stamps and the paintings together, sorted by foot (y, then x, then tile index) so nearer
 ///   things cover farther ones;
 /// - then one normal batch of the mist puffs, laid among the stamps.
 ///
-/// Each tile of `span` has a stamp with the chance of its kind's density, its sprite, mirroring, width and place within the
+/// Each tile has a stamp with the chance of its kind's density, its sprite, mirroring, width and place within the
 /// tile all fixed by a hash of the tile (never the view). A kind that thins out below a zoom shows each stamp by its own
 /// fixed rank, so lowering the zoom fades the lowest-ranked ones out one after another and never reshuffles any. A place
 /// within reach of `span` is drawn as its painting (its own, else its sort's, else the city's) centred on its tile, though
