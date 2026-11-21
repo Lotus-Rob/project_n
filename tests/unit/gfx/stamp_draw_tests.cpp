@@ -244,7 +244,7 @@ TEST_CASE("thinning drops the lowest-ranked stamps first, the same ones each tim
     CHECK(dropped == 0);
 }
 
-TEST_CASE("a stamp's opacity moves by at most 0.1 between zooms 0.4% apart") {
+TEST_CASE("a stamp's opacity moves by at most 0.1 between zooms 1% apart") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const core::WorldMap map = test::MeadowMap(MAP_SIDE, MAP_SIDE);
     const core::WorldLook look = MeadowLook(1.0F, 0.5F);
@@ -252,7 +252,7 @@ TEST_CASE("a stamp's opacity moves by at most 0.1 between zooms 0.4% apart") {
     f32 largest = 0.0F;
     for (const f32 zoom : ZOOMS) {
         const gfx::TerrainDrawing near = Laid(map, look, *manifest, FAR_SPAN, zoom);
-        const gfx::TerrainDrawing next = Laid(map, look, *manifest, FAR_SPAN, zoom * 1.004F);
+        const gfx::TerrainDrawing next = Laid(map, look, *manifest, FAR_SPAN, zoom * 1.01F);
         for (const core::Instance& instance : near.instances) {
             const core::Vec2 foot = FootOf(instance);
             for (const core::Instance& other : next.instances) {
