@@ -1,6 +1,6 @@
 # Phase 6, chunk 5b3: fog and sight on the world map
 
-Date: 2026-11-20 · Status: **approved** · Plan: `2026-11-20-phase6-chunk5b3-fog.md` · Chunk spec:
+Date: 2026-11-20 · Status: **implemented 2026-11-21** (see Outcome; approved 2026-11-20) · Plan: `2026-11-20-phase6-chunk5b3-fog.md` · Chunk spec:
 `2026-11-10-phase6-chunk5-world-map-design.md` · Phase spec: `2026-11-10-phase6-design.md` · Builds on:
 `2026-11-15-phase6-chunk5b1-map-design.md`, `2026-11-15-phase6-chunk5b2-moving-design.md` and
 `2026-11-16-phase6-chunk5c1-world-kept-delta-saves-design.md` (their Outcomes)
@@ -260,3 +260,87 @@ pipeline gets its sampler; the cloud sprites' size and how the placeholders are 
 numbers (starting from `mockup-scripts/lod.py`); how walker and label opacity reaches the GPU (the main thread scaling
 the flagged instances' colour before upload, or the vertex shader reading the fog texture); the save layout of the
 flags; how the debug sight travels with the view report; commit split and order.
+
+## Outcome
+
+Measured on the dev PC (2560x1440 at 165.1 Hz, fullscreen, 2 workers, unpaced, releasedbg), the world run of `measure`,
+both runs trusted on the first try. This branch's run uses `--debug-sight`, so it draws every traveller as main's did;
+main's run was taken by switching this checkout to main and back, with main's own `measure` and flags (it has no fog).
+Every figure is this branch / main, in ms.
+
+| segment | frame median | frame p99 | frame worst | main-thread work median | work p99 | work worst | GPU wait |
+|---|---|---|---|---|---|---|---|
+| follow: first 0.5 s | 6.11 / 6.09 | - | 8.32 / 7.36 | 3.30 / 2.90 | - | 4.49 / 4.25 | 45% / 53% |
+| follow: rest | 6.03 / 6.07 | 9.30 / 8.77 | 10.61 / 9.75 | 3.76 / 3.16 | 6.94 / 5.67 | 7.72 / 6.43 | 37% / 49% |
+| pan: first 0.5 s | 5.97 / 6.02 | - | 11.96 / 10.02 | 3.72 / 3.36 | - | 9.37 / 6.49 | 31% / 40% |
+| pan: rest | 6.09 / 6.05 | 9.62 / 8.94 | 11.17 / 9.91 | 2.64 / 2.15 | 6.01 / 5.81 | 6.89 / 6.55 | 52% / 60% |
+| zoom in and out: first 0.5 s | 5.99 / 6.10 | - | 10.38 / 10.20 | 2.40 / 1.58 | - | 6.63 / 5.68 | 56% / 69% |
+| zoom in and out: rest | 6.10 / 6.05 | 9.12 / 9.61 | 9.80 / 11.95 | 2.70 / 2.01 | 6.43 / 6.20 | 7.60 / 8.50 | 52% / 61% |
+| widest view: first 0.5 s | 6.07 / 6.02 | - | 10.00 / 11.06 | 3.24 / 2.79 | - | 5.33 / 6.19 | 52% / 50% |
+| widest view: rest | 6.09 / 6.00 | 9.06 / 9.24 | 10.74 / 10.85 | 3.62 / 2.59 | 6.53 / 5.41 | 7.67 / 6.53 | 38% / 55% |
+| month step: first 0.5 s | 5.91 / 6.11 | - | 57.21 / 57.65 | 3.88 / 3.05 | - | 6.91 / 5.77 | 29% / 41% |
+| month step: rest | 5.98 / 6.01 | 9.25 / 9.64 | 10.85 / 10.79 | 3.65 / 2.54 | 6.95 / 5.80 | 7.60 / 6.35 | 40% / 57% |
+| labels: first 0.5 s | 6.04 / 6.08 | - | 8.91 / 8.85 | 3.64 / 3.06 | - | 7.03 / 5.24 | 34% / 51% |
+| labels: rest | 6.08 / 5.97 | 9.39 / 9.09 | 11.49 / 10.97 | 3.61 / 3.12 | 6.67 / 5.93 | 7.58 / 7.64 | 34% / 44% |
+
+What changed: the frame time did not. Every median sits at the display's 6.06 ms refresh (the runs are paced), the p99
+differs by under 0.7 ms either way and within the noise of the two runs (it is lower on this branch in three segments:
+zoom in and out, widest view and month step; higher in follow by 0.53 ms, pan by 0.68 and labels by 0.30), and no frame
+went over the hitch line except the month step's one, which both runs show alike (57.21 / 57.65 ms; the logic and worker
+threads carry it, the main thread's worst there is 6.91 / 5.77 ms). What the fog does cost is on the main thread's work:
+its median is 0.4 to 1.1 ms higher than main's (widest view, rest: 3.62 / 2.59 ms; month step, rest: 3.65 / 2.54 ms) and
+its p99 0.2 to 1.3 ms higher, which the paced frame hides inside the wait for the GPU (the GPU share mostly drops, by 8
+to 17 points, but rose from 50% to 52% in the widest view's first half second). The profile gives part of the cause: in
+the 30 s capture `GatherLabels` averages about 0.135 ms a frame and `DrawClouds` about 0.125 ms, roughly 0.26 ms of the
+rise together. No profile of main was taken, so what the rest comes from is unexplained. Input latency was 11.9 ms
+median (11.1 to 26.1 over 8 presses) against main's 12.2 ms (5.4 to 13.5); one slow press is the single figure that is
+worse, and one run each cannot say if it is more than noise. The display delay was the same (3.6 ms, 3.0 to 10.0).
+
+**Cloud layout time** (target: under 0.2 ms on the main thread at the widest view). A 30 s `profile` run with `--world
+--debug-sight --zoom 0.25` (the widest zoom held, no camera path) records `DrawClouds`, the layout, at a median of 0.116
+ms (mean 0.125, p99 0.247, worst 0.550 over 49,074 frames), and `UploadClouds` (the copy) at 0.001 ms. The median and
+the mean meet the target; the p99 and worst frames do not, by 0.05 and 0.35 ms. The month step's hitch shows
+`DrawClouds` at 0.38 ms among its largest zones, the same tail. The tail never shows in the frame times above (no hitch
+but the month step's). Plainly: the median meets the target; the p99 and worst frames miss it.
+
+**Shimmer** (`reference`, run first by `measure`): the clouds' first measurement was 0.0204705, the bound set at 0.0256
+(about 1.25 times); the world's shimmer with the fog frame in the guard was 0.0481872 against its bound 0.06. Main's
+world shimmer is the same 0.0481872, so the fog moved no world pixel in the guarded frames.
+
+### Rulings made while building
+
+Rules and saves:
+- The sight cap (`MAX_SIGHT`, 64) lives in core, shared by the creature table's reader and the save loader's fit check,
+  and `SetSightRadius` asserts it: game code must not reach into data's private constant.
+- A non-positive fade length is a precondition (asserted), not a path that snaps: the table's reader already refuses
+  `fade_seconds <= 0`, so a caller passing it is a bug.
+- The `creatures` YAML fuzz seed gets the `sight:` key on its cultivator, so the fuzzer reaches the new field.
+
+Fade and clouds:
+- Each side of a cloud's box is blended with the neighbouring tile's eased explored value (0 leaves the box alone, 1
+  moves it fully in), so the box eases with the uncover and never jumps. The design's no-pops goal outranked the plan's
+  wording ("above 0"); at full explored the box stays wholly inside unexplored tiles, as the design demands. The price
+  is a cloud edge overlapping a tile that is still fading, for the half second of the fade.
+- Land off the map counts as explored, so cells on the map's border split into finer clouds. That shows no pop and no
+  gap, and costs a somewhat busier border zoomed out; kept as built.
+
+Drawing:
+- A label hidden entirely by fog is skipped when labels are gathered: an invisible label must not claim space from a
+  visible one (the anti-goals: no popping, no overlap). Three lines to remove if wrong.
+- The fog's colours go in their own fragment uniform buffer, because SDL_GPU's fragment stage cannot read the vertex
+  uniforms; the sight point is interpolated on its own so the twelve existing pictures stay unmoved. The fog texture is
+  UNORM, not sRGB, so the CPU's division by 255 matches the GPU's sample.
+- The target tile cursor is drawn by its own function with its own buffer, so the cursor and the route show over the
+  clouds.
+
+Pictures and tooling:
+- The reference harness's `View` gained `exploreAll` and `debugSight` early, with the six world pictures and the world
+  shimmer guard setting both, so `reference` stayed green and kept gating the drawing work; the fog frame, the new
+  pictures, the cloud case and `measure` came after.
+- The `fog_uncovering` picture also carries a walk whose route runs into unexplored land with the target cursor on its
+  far end, so one picture shows the route under the clouds and the cursor over them.
+- The cloud shimmer keeps the fogless world as its baseline, with a comment saying why: it measures what the fog adds
+  over the same land, and the shade depends on the terrain beneath. A terrain shimmer regression would fail the cloud
+  bound as well as the world guard.
+- The new pictures' commits use the scope `tests`, because `reference` is not one of `SCOPES`.
+- The world run of `measure` turns the debug sight on and reports the cloud shimmer in its first line.
