@@ -127,8 +127,52 @@ SpriteId PaintingOf(const core::PlaceLook& places, const core::Place& place) {
     return places.city;
 }
 
+/// How far, in tiles, what the tiles of a span draw can reach past them: a stamp stands up from its foot (the tallest and the
+/// widest the look can make one, strayed by the jitter) and a puff round it reaches further. A stamp or puff on a tile this
+/// far outside a view may still show inside it, so those tiles are laid out too.
+u32 StampReach(const Pass& pass) {
+    f32 tallest = 0.0F;
+    f32 mostHalfWidth = 0.0F;
+    f32 jitter = 0.0F;
+    f32 mistWidth = 0.0F;
+    for (const core::KindLook& kind : pass.look->kinds) {
+        const core::StampLook& stamps = kind.stamps;
+        if (stamps.sprites.empty()) {
+            continue;
+        }
+        const f32 widest = std::max(stamps.size[0], stamps.size[1]);
+        for (const SpriteId sprite : stamps.sprites) {
+            const core::Vec2 size = SizeOf(*pass.manifest, sprite);
+            tallest = std::max(tallest, widest * size.y / size.x);
+        }
+        mostHalfWidth = std::max(mostHalfWidth, HALF * widest);
+        jitter = std::max(jitter, stamps.jitter);
+        if (stamps.mist) {
+            mistWidth = std::max(mistWidth, widest);
+        }
+    }
+    f32 puffHalf = 0.0F;
+    const core::MistLook& mist = pass.look->mist;
+    for (const SpriteId sprite : mist.sprites) {
+        const core::Vec2 size = SizeOf(*pass.manifest, sprite);
+        const f32 width = std::max(mist.width[0], mist.width[1]) * mistWidth;
+        puffHalf = std::max(puffHalf, HALF * width * std::max(1.0F, size.y / size.x));
+    }
+    return static_cast<u32>(std::ceil(std::max(tallest, mostHalfWidth) + jitter + puffHalf));
+}
+
+/// `span` widened by `reach` tiles on every side, kept on the map.
+core::TileSpan Widened(const core::WorldMap& map, core::TileSpan span, u32 reach) {
+    return { .firstColumn = span.firstColumn - std::min(span.firstColumn, reach),
+             .lastColumn = std::min(span.lastColumn + reach, map.Columns() - 1),
+             .firstRow = span.firstRow - std::min(span.firstRow, reach),
+             .lastRow = std::min(span.lastRow + reach, map.Rows() - 1) };
+}
+
 /// The paintings of the places whose tiles lie within the largest painting's reach of the span, each centred on its tile.
 std::vector<Painting> Paintings(const Pass& pass) {
+    // A painting centred on its tile spans at most this many tiles each way, and a stamp's foot strays under half a tile out of
+    // its own tile (the jitter is below 1 and a draw below 1), so no place past the margin reaches a foot of the span.
     const auto margin = static_cast<i64>(std::ceil(LargestHalf(pass) / pass.map->TileSize()));
     std::vector<Painting> paintings;
     for (const core::Place& place : pass.map->Places()) {
@@ -258,6 +302,8 @@ void DrawStamps(
     if (span.firstColumn > span.lastColumn || span.firstRow > span.lastRow) {
         return;
     }
+    const Pass reached{ .map = &map, .look = &look, .manifest = &manifest, .span = span, .zoom = zoom };
+    span = Widened(map, span, StampReach(reached));
     const Pass pass{ .map = &map, .look = &look, .manifest = &manifest, .span = span, .zoom = zoom };
     const std::vector<Painting> paintings = Paintings(pass);
     std::vector<Laid> things;
