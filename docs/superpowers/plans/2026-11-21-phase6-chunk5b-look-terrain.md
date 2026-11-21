@@ -107,6 +107,7 @@ order, Anti-goals, Calls). The look's starting values and the picked pictures co
 | D | 7 (the switch-over, full) | Tasks 5, 6 (`gfx/terrain_draw.*`, `gfx/renderer.cpp`, `shaders/`, `core/frame.hpp`, the look, `art/`, pictures) |
 | E | 8 (shimmer guards, full) | Task 7 (`tests/reference/`, `gfx/camera.hpp`'s `View`, `tools/project_n.py`) |
 | F | 9 (measurements and Outcome, light) | everything; runs alone, when the user says the display is free |
+| G | 10 (the cloud shade, full; added by the user after approval) | Task 9 (`shaders/`, `gfx/ground.*`, `gfx/renderer.cpp`, the labels' fade, pictures, the spec's Outcome) |
 
 ---
 
@@ -476,3 +477,40 @@ order, Anti-goals, Calls). The look's starting values and the picked pictures co
 - [ ] **Step 2:** Write the Outcome: the table branch / main, the layout times against the 0.2 ms median target, the
   shimmer values against their bounds, the ledger's rulings with their measurements; mark the spec implemented.
 - [ ] **Step 3: Commit** `docs(design): record the painted terrain's outcome`.
+
+### Task 10: the cloud shade hides walkers and their names
+
+**review: full** (rendering, fog, drawing order) · **implementer: opus**
+
+Added after the plan was approved (the user, 2026-11-21): with the debug sight on (`measure`, the reference cases, F3),
+walkers on unexplored land show through the gaps between clouds, and their names draw over the clouds. The terrain's
+unexplored shade lies under the walkers, and texts draw after the clouds. In play nothing changes: walkers are published
+only in sight, which is always explored.
+
+**Files:**
+- Modify: `shaders/ground.frag.hlsl` (or the ground's shared `*.hlsli`), `src/gfx/ground.*` /
+  `src/gfx/internal/features/ground.*` (a new mode), `src/gfx/renderer.cpp` (the pass, the labels' fade), whatever
+  holds a walker label's opacity (the text items or their placement), `shaders/bin/`, `src/gfx/generated/`,
+  `tests/reference/*.png`, `src/AGENTS.md` (the world map's drawing order), the spec (Decisions, drawing order, Outcome)
+- Test: `tests/reference/reference_tests.cpp` (one new case), a unit test where the label fade is computed
+
+**Interfaces:**
+- The ground pipeline gains a cloud-shade mode: one full-view pass drawing the clouds' shade colour, opaque where a
+  tile is unexplored, its alpha from the fog texture's eased explored value with the same edge as the terrain's
+  unexplored shade (behind the edge row of clouds, so it never shows a square tile edge); nothing where explored.
+- Drawing order becomes: … → the snapshot's ground, decals and entities (and their glows) → **cloud shade** → clouds →
+  target cursor → overlay, texts. The route stays under it (it already runs under the clouds).
+- A walker's name (and any world-anchored text naming a thing on the map) is drawn at its opacity times its tile's eased
+  explored value, so it is never drawn on unexplored land and fades in with its tile like a place name.
+
+- [ ] **Step 1: Write the failing tests:** a reference case drawn like `world_close` with the debug sight on and part of
+  the view unexplored, a walker and its name on an unexplored tile: no walker, shadow or name pixels there (assert on
+  the walker's screen box against the same frame with that walker removed), and a walker on explored land still drawn;
+  a unit test that a walker label on an unexplored tile gets opacity 0 and on an explored one its usual opacity.
+- [ ] **Step 2: Run** `pixi run project_n reference` and the unit suite: FAIL.
+- [ ] **Step 3: Implement**; `pixi run project_n shaders`.
+- [ ] **Step 4: Run** `pixi run project_n test`, `pixi run project_n reference` (look at every changed picture by eye;
+  the shimmer guards must still hold their bounds; `reference --update` after), `lint --range <base>..HEAD`, and the
+  windows-msvc release build.
+- [ ] **Step 5: Commit** `fix(gfx): hide walkers and their names under the clouds`, and add the decision and its
+  result to the spec's Decisions and Outcome.
