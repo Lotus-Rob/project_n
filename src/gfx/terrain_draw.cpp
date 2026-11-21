@@ -40,9 +40,13 @@ struct Pass {
     core::TileSpan span{};
     TerrainDrawing* into = nullptr;
 
-    /// `sprite` with its foot at `foot`, standing still.
+    /// `sprite` with its foot at `foot`, standing still, on the land the fog covers.
     void Add(SpriteId sprite, core::Vec2 foot) const {
-        into->instances.push_back(core::MakeInstance(*manifest, { .sprite = sprite, .previous = foot, .current = foot }));
+        into->instances.push_back(
+            core::MakeInstance(
+                *manifest, { .sprite = sprite, .previous = foot, .current = foot, .flags = core::INSTANCE_FOGGED_LAND }
+            )
+        );
     }
     [[nodiscard]] core::Vec2 Corner(u32 column, u32 row) const {
         const f32 side = map->TileSize();

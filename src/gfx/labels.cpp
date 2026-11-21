@@ -587,4 +587,15 @@ f32 CaptionOpacity(f32 pixels, f32 scale) {
     return ramp * ramp * (SMOOTHSTEP_SQUARE - (SMOOTHSTEP_CUBE * ramp));
 }
 
+f32 FogOpacity(const core::TextItem& item, const FogFrame& fog, f32 alpha) {
+    const core::Vec2 anchor = item.previous + ((item.current - item.previous) * alpha);
+    if (item.fog == core::TextFog::Sight) {
+        return SightFade(fog, { .x = anchor.x, .y = anchor.y + item.height });
+    }
+    if (item.fog == core::TextFog::Explored) {
+        return TileExplored(fog, anchor);
+    }
+    return 1.0F;
+}
+
 } // namespace gfx

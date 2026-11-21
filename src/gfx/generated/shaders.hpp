@@ -256,15 +256,15 @@ inline constexpr Stage SEAL_LIGHT_VERT{
 };
 
 /// shaders/bin/sprite.frag.spv, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 5212> SPRITE_FRAG_SPIRV{{
+inline constexpr std::array<u8, 7920> SPRITE_FRAG_SPIRV{{
 #include "sprite.frag.spv.h"
 }};
 /// shaders/bin/sprite.frag.dxil, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 6864> SPRITE_FRAG_DXIL{{
+inline constexpr std::array<u8, 9008> SPRITE_FRAG_DXIL{{
 #include "sprite.frag.dxil.h"
 }};
 /// shaders/bin/sprite.frag.msl, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 5419> SPRITE_FRAG_MSL{{
+inline constexpr std::array<u8, 7076> SPRITE_FRAG_MSL{{
 #include "sprite.frag.msl.h"
 }};
 /// shaders/sprite.frag.hlsl.
@@ -274,22 +274,22 @@ inline constexpr Stage SPRITE_FRAG{
     .spirv = SPRITE_FRAG_SPIRV,
     .dxil = SPRITE_FRAG_DXIL,
     .msl = SPRITE_FRAG_MSL,
-    .samplers = 2,
+    .samplers = 3,
     .storageTextures = 0,
     .storageBuffers = 0,
-    .uniformBuffers = 0,
+    .uniformBuffers = 1,
 };
 
 /// shaders/bin/sprite.vert.spv, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 13848> SPRITE_VERT_SPIRV{{
+inline constexpr std::array<u8, 14244> SPRITE_VERT_SPIRV{{
 #include "sprite.vert.spv.h"
 }};
 /// shaders/bin/sprite.vert.dxil, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 9700> SPRITE_VERT_DXIL{{
+inline constexpr std::array<u8, 10132> SPRITE_VERT_DXIL{{
 #include "sprite.vert.dxil.h"
 }};
 /// shaders/bin/sprite.vert.msl, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 12643> SPRITE_VERT_MSL{{
+inline constexpr std::array<u8, 13116> SPRITE_VERT_MSL{{
 #include "sprite.vert.msl.h"
 }};
 /// shaders/sprite.vert.hlsl.

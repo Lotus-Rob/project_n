@@ -327,6 +327,7 @@ struct Renderer::Impl {
     internal::SpriteRenderer route{};   // the player's route and the cursor's tile (TerrainDrawing), over the map
     internal::SpriteRenderer overlay{}; // the per-frame sprites: swords, bursts and health bars (VolleyDrawing)
     internal::GlowTableBuffer glowTable{};
+    internal::FogTexture fog{}; // the world map's fog, which every sprite draw is shaded by
     internal::RibbonRenderer ribbons{};
     internal::SealRenderer seals{}; // with the table's pack
     internal::Compositor compositor{};
@@ -344,6 +345,7 @@ struct Renderer::Impl {
         f32 placePixels = 0.0F;
         f32 captionPixels = 0.0F;
         f32 numberPixels = 0.0F;
+        FogFrame fog{}; // the view's: labels fade by it (FogOpacity())
     };
     TextFrame textFrame{};
     /// Per-frame state: the frame in flight, what its uploads hold, and the failures being counted.
@@ -476,6 +478,7 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     const std::expected<std::size_t, core::Error> overlayDropped = overlay.Upload(copy, volleyDrawing.instances);
     const std::expected<std::size_t, core::Error> ribbonsDropped = ribbons.Upload(copy, volleyDrawing.ribbons);
     const std::expected<std::size_t, core::Error> sealQuadsDropped = seals.Upload(copy, sealDrawing);
+    const std::expected<void, core::Error> fogCopied = fog.Update(copy, shown.view->fog, worldLook.fog);
     SDL_EndGPUCopyPass(copy);
     SDL_PopGPUDebugGroup(commands);
     text->EndFrame(jobs, shown.view->frameClock);
@@ -513,7 +516,10 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     }
     const auto copied = [](std::size_t /*dropped*/) {};
     return core::Combine(
-        core::Combine(core::Combine(core::Combine(instancesCopied, glowsCopied), glyphs), quadsDropped.transform(copied)),
+        core::Combine(
+            core::Combine(core::Combine(core::Combine(instancesCopied, glowsCopied), glyphs), quadsDropped.transform(copied)),
+            fogCopied
+        ),
         core::Combine(
             core::Combine(overlayDropped.transform(copied), ribbonsDropped.transform(copied)),
             core::Combine(
@@ -631,7 +637,8 @@ void Renderer::Impl::PlaceTexts(const Shown& shown, core::Jobs& jobs) {
                   .labelPixels = TextPixels(core::TextKind::Label, perUnit, textOptions.scale),
                   .placePixels = TextPixels(core::TextKind::Place, perUnit, textOptions.scale),
                   .captionPixels = TextPixels(core::TextKind::Caption, perUnit, textOptions.scale),
-                  .numberPixels = TextPixels(core::TextKind::Number, perUnit, textOptions.scale) };
+                  .numberPixels = TextPixels(core::TextKind::Number, perUnit, textOptions.scale),
+                  .fog = shown.view->fog };
     const f32 captionOpacity = CaptionOpacity(textFrame.captionPixels, textOptions.scale);
     labelItems.clear();
     captionFades.Begin(shown.view->frameClock);
@@ -652,8 +659,9 @@ void Renderer::Impl::PlaceTexts(const Shown& shown, core::Jobs& jobs) {
          labels.Place(labelInputs, shown.width, shown.height, shown.view->frameClock, textOptions.scale)) {
         const core::TextItem& item = placed.label->item;
         const f32 pixels = placed.label->pixels;
-        PlaceLabel(item, placed.previous, placed.opacity * (1.0F - placed.change), placed.anchor, pixels);
-        PlaceLabel(item, placed.count, placed.opacity * placed.change, placed.anchor, pixels);
+        const f32 opacity = placed.opacity * FogOpacity(item, textFrame.fog, textFrame.alpha);
+        PlaceLabel(item, placed.previous, opacity * (1.0F - placed.change), placed.anchor, pixels);
+        PlaceLabel(item, placed.count, opacity * placed.change, placed.anchor, pixels);
         barsShown.push_back({ .entity = placed.label->entity, .opacity = BarOpacity(placed) });
     }
     std::ranges::sort(barsShown, {}, [](const BarShown& bar) { return std::to_underlying(bar.entity); });
@@ -747,6 +755,10 @@ void Renderer::Impl::GatherLabels(core::StableId hovered, core::StableId selecte
     waitingInputs.assign(labelItems.size(), NOT_IN);
     for (std::size_t index = 0; index < labelItems.size(); ++index) {
         const core::TextItem& item = *labelItems[index];
+        // One the fog hides wholly would still take room and win overlaps against labels that show.
+        if (FogOpacity(item, textFrame.fog, textFrame.alpha) <= 0.0F) {
+            continue;
+        }
         const core::LabelPriority priority = PriorityOf(item, hovered, selected);
         const core::Vec2 anchor = TextAnchor(item, textFrame.clip, textFrame.alpha, textFrame.width, textFrame.height);
         const Layout* name = text->Cached(TextOf(item), item.direction);
@@ -969,6 +981,7 @@ void Renderer::Impl::Submitted(bool submitted) {
     PN_PROFILE_ZONE();
     uploaded.Submitted(submitted);
     seals.Submitted(submitted);
+    fog.Submitted(submitted);
     if (submitted && terrainRecorded) {
         terrainHeld = terrainRecorded;
     }
@@ -1035,22 +1048,24 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
     const std::size_t groundBatches = std::min<std::size_t>(snapshot.groundBatches, batches.size());
     // The map under all of it: it is the ground of a scene that shows it, which publishes none.
     if (terrainShown) {
-        terrain.Draw(commands, pass, terrainDrawing.batches, sprites, transform, alpha, glows);
+        terrain.Draw(commands, pass, terrainDrawing.batches, sprites, transform, alpha, glows, fog);
     }
     // Over the map, under the ground and everything on it: the line is the map's, not a thing standing on it.
     if (routeShown) {
-        route.Draw(commands, pass, routeDrawing.batches, sprites, transform, alpha, glows);
+        route.Draw(commands, pass, routeDrawing.batches, sprites, transform, alpha, glows, fog);
     }
-    instances.Draw(commands, pass, batches.first(groundBatches), sprites, transform, alpha, glows);
+    instances.Draw(commands, pass, batches.first(groundBatches), sprites, transform, alpha, glows, fog);
     seals.DrawGround(commands, pass, sealTarget, sprites);
-    instances.Draw(commands, pass, batches.subspan(groundBatches), sprites, transform, alpha, glows);
+    instances.Draw(commands, pass, batches.subspan(groundBatches), sprites, transform, alpha, glows, fog);
     if (snapshot.selected) {
-        instances.DrawGlowOnly(commands, pass, *snapshot.selected, core::GlowRole::Selected, sprites, transform, alpha, glows);
+        instances.DrawGlowOnly(
+            commands, pass, *snapshot.selected, core::GlowRole::Selected, sprites, transform, alpha, glows, fog
+        );
     }
     // Hovering the selected entity keeps its gold: the selection is what a click changed.
     if (outlined && *outlined < snapshot.instances.size() && *outlined != snapshot.selected) {
         instances.DrawGlowOnly(
-            commands, pass, static_cast<u32>(*outlined), core::GlowRole::Hover, sprites, transform, alpha, glows
+            commands, pass, static_cast<u32>(*outlined), core::GlowRole::Hover, sprites, transform, alpha, glows, fog
         );
     }
     // The upright and overhead seals over the creatures, capped in opacity, under all that follows: the swords fly out over
@@ -1058,7 +1073,7 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
     seals.DrawAbove(commands, pass, sealTarget, sprites);
     // The overlay's instances hold no motion between ticks, so its alpha changes nothing.
     ribbons.Draw(commands, pass, transform);
-    overlay.Draw(commands, pass, volleyDrawing.batches, sprites, transform, alpha, glows);
+    overlay.Draw(commands, pass, volleyDrawing.batches, sprites, transform, alpha, glows, fog);
     const f32 shadowShift = TEXT_SHADOW_BASE_PIXELS / static_cast<f32>(GLYPH_PAGE_SIZE); // a texel a base pixel
     const ClipTransform pixels = PixelsToClip(sceneTarget.width, sceneTarget.height);
     const internal::TextStyle style{ .outline = textOptions.outline ? 1.0F : 0.0F,
@@ -1069,7 +1084,7 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
     const std::span<const internal::MeshRun> runs{ meshRuns };
     const std::size_t hudRun = std::min(hudRuns, runs.size());
     meshes.Draw(commands, pass, runs.subspan(hudRun), pixels, style);
-    overlay.Draw(commands, pass, volleyDrawing.hud, sprites, pixels, alpha, glows);
+    overlay.Draw(commands, pass, volleyDrawing.hud, sprites, pixels, alpha, glows, fog);
     meshes.Draw(commands, pass, runs.first(hudRun), pixels, style);
     SDL_EndGPURenderPass(pass);
     SDL_PopGPUDebugGroup(commands);
@@ -1239,6 +1254,11 @@ std::expected<Renderer, core::Error> Renderer::Create(
         return std::unexpected{ std::move(glowTable.error()) };
     }
     impl->glowTable = std::move(*glowTable);
+    std::expected<internal::FogTexture, core::Error> fog = internal::FogTexture::Create(device);
+    if (!fog) {
+        return std::unexpected{ std::move(fog.error()) };
+    }
+    impl->fog = std::move(*fog);
     std::expected<internal::RibbonRenderer, core::Error> ribbons =
         internal::RibbonRenderer::Create(device, internal::SCENE_FORMAT);
     if (!ribbons) {

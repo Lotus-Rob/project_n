@@ -18,6 +18,7 @@
 #include "core/strings.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
+#include "gfx/fog.hpp"
 
 #include <cstddef>
 #include <optional>
@@ -303,5 +304,10 @@ private:
 /// LABEL_MIN_PIXELS × scale up, none below three quarters of that, and a smooth ramp between, so a caption too small to
 /// read fades out with the zoom rather than blurring into a block. No time state: the zoom itself changes smoothly.
 [[nodiscard]] f32 CaptionOpacity(f32 pixels, f32 scale);
+
+/// How much of `item` the fog lets show, from 0 to 1, its anchor taken `alpha` of the way from its previous to its current
+/// one: a core::TextFog::Sight label by SightFade() at its entity's foot (the anchor `height` lower), a
+/// core::TextFog::Explored one by TileExplored() at its anchor, and any other wholly.
+[[nodiscard]] f32 FogOpacity(const core::TextItem& item, const FogFrame& fog, f32 alpha);
 
 } // namespace gfx
