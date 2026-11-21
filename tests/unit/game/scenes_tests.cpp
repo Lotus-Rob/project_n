@@ -201,7 +201,8 @@ TEST_CASE("each place in view publishes its name, in its own kind, and none outs
     CHECK(places.front().align == core::TextAlign::TopCentre);
     CHECK(places.front().current.y == start.y + static_cast<f32>(marker.height - marker.footY) + PLACE_NAME_GAP);
     CHECK(places.front().current.y > start.y); // whatever the offset, the name hangs below the tile's centre
-    // The whole map in view: every place, each with an entity and a key of its own.
+    // The whole map in view and explored: every place, each with an entity and a key of its own.
+    host.Explore(host.View());
     core::Snapshot wide;
     host.Publish(wide, jobs, host.View());
     std::vector<u32> keys;
@@ -219,6 +220,36 @@ TEST_CASE("each place in view publishes its name, in its own kind, and none outs
     CHECK(std::ranges::adjacent_find(entities) == entities.end());
     // None of them is a creature's: the creatures' IDs count up from 1, as far as the NPCs go.
     CHECK(std::to_underlying(entities.front()) > 1'000'000);
+}
+
+/// Each place name `host` publishes over the whole map, in publishing order: its anchor's x and how the fog hides it.
+std::vector<std::pair<f32, core::TextFog>> PlaceNamesAt(game::Host& host) {
+    core::Jobs jobs{ 1 };
+    core::Snapshot snapshot;
+    host.Publish(snapshot, jobs, host.View());
+    std::vector<std::pair<f32, core::TextFog>> named;
+    for (const core::TextItem& text : snapshot.texts) {
+        if (text.kind == core::TextKind::Place) {
+            named.emplace_back(text.current.x, text.fog);
+        }
+    }
+    return named;
+}
+
+TEST_CASE("a place's name is published only once its tile is explored") {
+    const core::GameData data = test::SmallData();
+    const core::WorldMap& map = *data.world;
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, data);
+    const core::Vec2 home = map.TileCentre(map.TileIndex(map.Places()[test::small::HOME].tile));
+    const core::Vec2 destination = map.TileCentre(map.TileIndex(map.Places()[test::small::DESTINATION].tile));
+    // A new game has explored round the start city alone: the destination, 6 tiles off, and the danger, 5, are under cloud.
+    const std::vector<std::pair<f32, core::TextFog>> first{ { home.x, core::TextFog::Explored } };
+    CHECK(PlaceNamesAt(host) == first);
+
+    host.Explore({ .min = destination, .max = destination });
+    const std::vector<std::pair<f32, core::TextFog>> both{ { home.x, core::TextFog::Explored },
+                                                           { destination.x, core::TextFog::Explored } };
+    CHECK(PlaceNamesAt(host) == both);
 }
 
 TEST_CASE("the world scene's NPCs live in their cities and regions") {
@@ -344,6 +375,22 @@ u64 HighestWorldId(const game::Host& host) {
         highest = std::max(highest, std::to_underlying(stableId));
     }
     return highest;
+}
+
+TEST_CASE("a dev scene publishes no fog") {
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, test::SmallData());
+    core::Jobs jobs{ 1 };
+    core::Snapshot world;
+    host.Publish(world, jobs, std::nullopt);
+    REQUIRE(world.fog.on);
+
+    // The game's world keeps what it explored, set aside, and the debug sight is on: still no fog over the arena.
+    CycleTo(host, 1, game::ARENA_SCENE);
+    REQUIRE_FALSE(host.ExploredTiles().empty());
+    host.SetDebugSight(true);
+    core::Snapshot arena;
+    host.Publish(arena, jobs, std::nullopt);
+    CHECK_FALSE(arena.fog.on);
 }
 
 TEST_CASE("leaving the world map and coming back keeps the world") {

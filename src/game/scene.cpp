@@ -9,6 +9,10 @@ namespace game {
 
 SceneContext::~SceneContext() = default;
 
+bool SceneContext::Explored(u32 /*tile*/) const {
+    return true;
+}
+
 void Scene::
     Tick(SceneContext& /*context*/, const core::TickCounters& /*counters*/, std::vector<core::Event>& /*events*/) const {
 }
