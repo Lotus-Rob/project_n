@@ -938,7 +938,7 @@ constexpr f32 WALKER_HEIGHT = 40.0F;
 /// A 3 x 3 fog field of 100-unit tiles: the top row explored, the top left tile in sight, and the top middle tile a fifth
 /// explored (51 of 255) and out of sight.
 struct LabelFog {
-    std::array<u8, std::size_t{ FOG_SIDE } * FOG_SIDE * 2> values{ 255, 255, 51, 0, 255, 0 };
+    std::array<u8, std::size_t{ FOG_SIDE } * FOG_SIDE * 2> values{ { 255, 255, 51, 0, 255, 0 } };
     gfx::FogFrame frame{ .columns = FOG_SIDE, .rows = FOG_SIDE, .tileSize = FOG_TILE, .values = values, .revision = 1 };
 };
 

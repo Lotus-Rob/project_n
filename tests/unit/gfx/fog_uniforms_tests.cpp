@@ -10,7 +10,7 @@ constexpr u32 COLUMNS = 6;
 constexpr u32 ROWS = 4;
 constexpr f32 TILE = 256.0F;
 /// Rec. 709's weights of linear red, green and blue in luminance, as the sprite shader drains by them.
-constexpr std::array<f32, 3> LUMINANCE{ 0.2126F, 0.7152F, 0.0722F };
+constexpr std::array<f32, 3> LUMINANCE{ { 0.2126F, 0.7152F, 0.0722F } };
 
 /// The shipped look's fog colours and strengths.
 core::FogLook Look() {
@@ -36,7 +36,7 @@ TEST_CASE("fog uniforms are off without tiles to shade") {
 TEST_CASE("fog uniforms carry the map and the look's strengths") {
     const gfx::FogUniforms uniforms = gfx::FogUniformsOf(Fog(TILE), Look());
     CHECK(uniforms.on == 1);
-    CHECK(uniforms.mapSize == std::array<f32, 2>{ 6.0F, 4.0F });
+    CHECK(uniforms.mapSize == std::array<f32, 2>{ { 6.0F, 4.0F } });
     CHECK(uniforms.tileSize == TILE);
     CHECK(uniforms.sepia[3] == doctest::Approx(0.85F));
     CHECK(uniforms.mist[3] == doctest::Approx(0.25F));
