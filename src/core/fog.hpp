@@ -8,6 +8,7 @@
 #include "core/types.hpp"
 #include "core/world_map.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <span>
 
@@ -31,6 +32,23 @@ inline constexpr u32 MAX_SIGHT = 64;
 
 /// Whether `tile` lies within `radius` tiles of `from`, by TileDistance().
 [[nodiscard]] bool InSight(const WorldMap& map, u32 from, u32 tile, u32 radius);
+
+/// Calls `visit(tile)` with the index of every tile within `radius` of `centre`, clipped to the map, row by row. The
+/// diamond ExploreAround() marks and InSight() tests, walked without testing the tiles outside it.
+template<typename Visit>
+void ForEachInSight(const WorldMap& map, u32 centre, u32 radius, Visit visit) {
+    const TilePoint middle = map.PointOf(centre);
+    const u32 firstRow = middle.row > radius ? middle.row - radius : 0;
+    const u32 lastRow = std::min(map.Rows() - 1, middle.row + radius);
+    for (u32 row = firstRow; row <= lastRow; ++row) {
+        const u32 reach = radius - (row > middle.row ? row - middle.row : middle.row - row);
+        const u32 firstColumn = middle.column > reach ? middle.column - reach : 0;
+        const u32 lastColumn = std::min(map.Columns() - 1, middle.column + reach);
+        for (u32 column = firstColumn; column <= lastColumn; ++column) {
+            visit(map.TileIndex({ .column = column, .row = row }));
+        }
+    }
+}
 
 /// Sets the bit of every tile within `radius` of `centre`, clipped to the map, and returns how many were not set before.
 /// `bits` must hold exactly the map's tiles' words.

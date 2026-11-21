@@ -20,13 +20,28 @@ u8 ToByte(f32 value) {
 void FogFade::SetTargets(const core::Snapshot& snapshot, const core::WorldMap& map) {
     const core::FogView& fog = snapshot.fog;
     const std::size_t tiles = std::size_t{ map.Columns() } * map.Rows();
-    m_target.resize(tiles * 2);
-    m_moving = true;
+    m_target.assign(tiles * 2, 0.0F);
     for (std::size_t tile = 0; tile < tiles; ++tile) {
-        const auto index = static_cast<u32>(tile);
-        m_target.at(tile * 2) = core::IsExplored(fog.explored, index) ? 1.0F : 0.0F;
-        const bool inSight = fog.debugSight || (fog.playerTile && core::InSight(map, *fog.playerTile, index, fog.sightRadius));
-        m_target.at((tile * 2) + 1) = inSight ? 1.0F : 0.0F;
+        m_target[tile * 2] = core::IsExplored(fog.explored, static_cast<u32>(tile)) ? 1.0F : 0.0F;
+    }
+    if (fog.debugSight) {
+        for (std::size_t tile = 0; tile < tiles; ++tile) {
+            m_target[(tile * 2) + 1] = 1.0F;
+        }
+    }
+    else if (fog.playerTile) {
+        core::ForEachInSight(map, *fog.playerTile, fog.sightRadius, [this](u32 tile) {
+            m_target[(std::size_t{ tile } * 2) + 1] = 1.0F;
+        });
+    }
+}
+
+void FogFade::FindMovers() {
+    m_movers.clear();
+    for (std::size_t i = 0; i < m_current.size(); ++i) {
+        if (std::abs(m_target[i] - m_current[i]) > 0.0F) {
+            m_movers.push_back(static_cast<u32>(i));
+        }
     }
 }
 
@@ -34,30 +49,30 @@ void FogFade::Snap() {
     m_current = m_target;
     m_bytes.resize(m_current.size());
     std::ranges::transform(m_current, m_bytes.begin(), ToByte);
-    m_moving = false;
+    m_movers.clear();
     ++m_revision;
 }
 
 void FogFade::Ease(f32 step) {
     bool changed = false;
-    bool moving = false;
-    for (std::size_t i = 0; i < m_current.size(); ++i) {
-        f32& value = m_current[i];
-        const f32 delta = m_target[i] - value;
+    std::size_t kept = 0;
+    for (const u32 index : m_movers) {
+        f32& value = m_current[index];
+        const f32 delta = m_target[index] - value;
         if (std::abs(delta) <= step) {
-            value = m_target[i];
+            value = m_target[index];
         }
         else {
             value += std::copysign(step, delta);
-            moving = true;
+            m_movers[kept++] = index;
         }
         const u8 byte = ToByte(value);
-        if (byte != m_bytes[i]) {
-            m_bytes[i] = byte;
+        if (byte != m_bytes[index]) {
+            m_bytes[index] = byte;
             changed = true;
         }
     }
-    m_moving = moving;
+    m_movers.resize(kept);
     if (changed) {
         ++m_revision;
     }
@@ -90,6 +105,9 @@ void FogFade::Update(const core::Snapshot& snapshot, const core::WorldMap& map, 
     if (snap || source != m_source) {
         m_source = source;
         SetTargets(snapshot, map);
+        if (!snap) {
+            FindMovers();
+        }
     }
     if (snap) {
         m_seeded = true;
@@ -98,7 +116,7 @@ void FogFade::Update(const core::Snapshot& snapshot, const core::WorldMap& map, 
         Snap();
         return;
     }
-    if (m_moving) {
+    if (!m_movers.empty()) {
         Ease(seconds / fadeSeconds);
     }
 }

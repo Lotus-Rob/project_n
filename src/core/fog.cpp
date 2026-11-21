@@ -31,22 +31,13 @@ bool InSight(const WorldMap& map, u32 from, u32 tile, u32 radius) {
 u32 ExploreAround(std::span<u64> bits, const WorldMap& map, u32 centre, u32 radius) {
     const std::size_t tiles = static_cast<std::size_t>(map.Columns()) * map.Rows();
     PN_ASSERT(bits.size() == FogWords(tiles), "the bitset holds one bit per tile of the map");
-    const TilePoint middle = map.PointOf(centre);
-    const u32 firstRow = middle.row > radius ? middle.row - radius : 0;
-    const u32 lastRow = std::min(map.Rows() - 1, middle.row + radius);
     u32 added = 0;
-    for (u32 row = firstRow; row <= lastRow; ++row) {
-        const u32 reach = radius - Gap(row, middle.row);
-        const u32 firstColumn = middle.column > reach ? middle.column - reach : 0;
-        const u32 lastColumn = std::min(map.Columns() - 1, middle.column + reach);
-        for (u32 column = firstColumn; column <= lastColumn; ++column) {
-            const u32 tile = map.TileIndex({ .column = column, .row = row });
-            const u64 bit = u64{ 1 } << (tile % WORD_BITS);
-            u64& word = bits[tile / WORD_BITS];
-            added += (word & bit) == 0 ? 1U : 0U;
-            word |= bit;
-        }
-    }
+    ForEachInSight(map, centre, radius, [&](u32 tile) {
+        const u64 bit = u64{ 1 } << (tile % WORD_BITS);
+        u64& word = bits[tile / WORD_BITS];
+        added += (word & bit) == 0 ? 1U : 0U;
+        word |= bit;
+    });
     return added;
 }
 
