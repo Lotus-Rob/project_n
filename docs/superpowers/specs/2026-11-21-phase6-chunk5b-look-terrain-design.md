@@ -278,18 +278,20 @@ and back, with main's own `measure`. Every figure is this branch / main, in ms.
 | labels: first 0.5 s | 6.05 / 6.08 | - | 9.44 / 8.83 | 4.25 / 3.34 | - | 7.30 / 7.78 | 25% / 38% |
 | labels: rest | 5.98 / 6.08 | 9.57 / 9.31 | 10.31 / 10.08 | 4.19 / 3.19 | 7.65 / 5.70 | 8.66 / 6.03 | 30% / 52% |
 
-**Frame time (Goal 11): no change.** Every median sits at the display's 6.06 ms refresh (both runs are paced), the p99
-differs by under 0.8 ms either way (lower on this branch in four segments: follow, zoom in and out, widest view and month step; higher in pan by 0.13
-ms and labels by 0.26), and the only hitch is the month step's one, which both runs show alike (55.23 / 56.54 ms, carried by the
-logic and worker threads; the main thread's worst there is 7.38 / 6.28). What the painted terrain costs is the main
-thread's work, 0.4 to 1.0 ms more at the median (widest view, rest: 4.02 / 3.37; labels, rest: 4.19 / 3.19) and up to 2
-ms at the p99 (labels, rest: 7.65 / 5.70), which the paced frame hides inside the wait for the GPU (the GPU's share is
-lower in every segment, by 6 to 22 points). Input latency was 12.6 ms median (11.9 to 17.8 over 8 presses) against main's
-14.2 ms (11.3 to 20.7); the display delay the same (3.7 ms, 3.0 to 10.0 / 3.1 to 10.0). The main-thread rise is
-unexplained beyond the layout times below (which are 0.03 ms), the extra uploads and pass setup; the 165 Hz display
-shows no frame it costs.
+**Frame time (Goal 11): unchanged on screen, the main thread's work is not.** Every median sits at the display's 6.06 ms
+refresh (both runs are paced), the p99 differs by under 0.8 ms either way (lower on this branch in four segments:
+follow, zoom in and out, widest view and month step; higher in pan by 0.13 ms and labels by 0.26), and the only hitch
+is the month step's one, which both runs show alike (55.23 / 56.54 ms, carried by the logic and worker threads; the
+main thread's worst there is 7.38 / 6.28). The main thread's work is higher in all 12 segments, by 0.4 to 1.0 ms at the
+median (widest view, rest: 4.02 / 3.37; labels, rest: 4.19 / 3.19) and by up to 2 ms at the p99 (labels, rest: 7.65 /
+5.70). That rise is real and consistent, not noise. The layout accounts for about 0.03 ms of it (below); the rest is not
+attributed, as no profile of the rest was taken. The paced frame time shows no effect (the GPU's wait share is lower in
+every segment, by 6 to 22 points), but the rise would cut the main thread's headroom if the frame budget tightened.
+Input latency was 12.6 ms median (11.9 to 17.8 over 8 presses) against main's 14.2 ms (11.3 to 20.7); the display delay
+the same (3.7 ms, 3.0 to 10.0 / 3.1 to 10.0).
 
-**Layout time (Goal 11: under 0.2 ms median at the widest view).** `DrawTerrain` relays the terrain buffer on every zoom
+**Layout time** (Goal 11: under 0.2 ms median at the widest view; measured over the zoom segment, which covers it).
+`DrawTerrain` relays the terrain buffer on every zoom
 change, so every frame of a smooth zoom, and holds it while the view and zoom stay put. A 30 s `profile` run at the fixed
 `--world --debug-sight --zoom 0.25` therefore holds one call each (`DrawTerrain` 0.035 ms, `DrawStamps` 0.029 ms): no
 median to take. `profile` takes no zoom-changing game args, so the per-call times come from `measure`'s capture (one
@@ -322,8 +324,9 @@ tile edges.
 **Markers on drained land** (the by-eye check: no reference picture shows one, because travellers cover every marker): a
 temporary reference case (explored everywhere, the debug sight off, zoom 0.5 over the capital; not committed) shows the
 drained land as sepia paper with each danger site's marker, a red or amber pin, in its own colour over it, and the portal
-in colour, while the ground, river and stamps around them are drained. Markers take the fog's shade only, never the drain,
-as Goal 6 asks.
+in colour, while the ground, river and stamps around them are drained. Markers take the fog's shade only, never the drain
+(Calls made here: "Markers stay undrained"). The markers are tiny at that size, so the verdict rests on the picture and
+three crops of it judged by eye.
 
 ### Rulings made while building
 
@@ -376,6 +379,14 @@ Shimmer and art:
 - Forest clumps are drawn smaller to fit the margin (81% for three trees, 58% for five); 13 reference pictures moved and
   were judged by eye.
 - The world cases' names that still said "tiles" were renamed to what they draw.
+
+Build and checks:
+- The six single-braced fog comparisons at `world_look_tests.cpp:414-434` stay: they come from main (`feat(data): give
+  the world look clouds and fog colours`), MSVC has built them green on main and on this branch, and the warning
+  (C5246) fires on member initialisers, not on prvalue temporaries in a comparison; if wrong, MSVC's next build names
+  them.
+- Task 6's by-eye check used `reference` pictures with the terrain buffer switched off locally (uncommitted), never the
+  live game, because the display was not freed for this work until the measurements; if wrong, one more look.
 
 Stood as built (noted, not fixed):
 - The capital's stacked roofs show a double outline near the spire, and the shrine's torii posts overlap the hut
