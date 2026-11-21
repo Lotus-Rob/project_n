@@ -6,6 +6,7 @@
 #include "core/profile.hpp"
 #include "core/repeated_failure.hpp"
 #include "core/tick_clock.hpp"
+#include "gfx/cloud_draw.hpp"
 #include "gfx/glow_table.hpp"
 #include "gfx/internal/features/composite.hpp"
 #include "gfx/internal/features/meshes.hpp"
@@ -217,9 +218,12 @@ struct Renderer::Impl {
     /// Lays out and copies the world map's tiles for the world `shown` shows, when it shows the map and they differ from what
     /// the buffer holds; returns how many instances didn't fit.
     std::expected<std::size_t, core::Error> UploadTerrain(SDL_GPUCopyPass* copy, const Shown& shown);
-    /// Lays out the route and the cursor tile for the frame and copies them, none when neither shows; the buffer's overflow, if
-    /// any.
+    /// Lays out the route and the cursor tile for the frame and copies each into its buffer, none when neither shows; the
+    /// route's overflow, if any.
     std::expected<std::size_t, core::Error> UploadRoute(SDL_GPUCopyPass* copy, const Shown& shown);
+    /// Lays out the fog's clouds for the view and the frame clock and copies them, none without fog on the world map; the
+    /// buffer's overflow, if any.
+    std::expected<std::size_t, core::Error> UploadClouds(SDL_GPUCopyPass* copy, const Shown& shown);
     /// Lays out the snapshot's seals at the render time into sealDrawing, its showcase seals only when `showcase`, and logs
     /// once each seal key the table lacks among those drawn.
     void LaySeals(const core::Snapshot& snapshot, f64 renderTick, bool showcase);
@@ -324,7 +328,9 @@ struct Renderer::Impl {
     internal::SpriteRenderer instances{};
     internal::MeshRenderer meshes{};
     internal::SpriteRenderer terrain{}; // the world map's tiles, overlays and markers (TerrainDrawing)
-    internal::SpriteRenderer route{};   // the player's route and the cursor's tile (TerrainDrawing), over the map
+    internal::SpriteRenderer route{};   // the player's route (TerrainDrawing), over the map
+    internal::SpriteRenderer clouds{};  // the fog's clouds (CloudDrawing), over the world's sprites
+    internal::SpriteRenderer cursor{};  // the cursor's tile (TerrainDrawing), over the clouds
     internal::SpriteRenderer overlay{}; // the per-frame sprites: swords, bursts and health bars (VolleyDrawing)
     internal::GlowTableBuffer glowTable{};
     internal::FogTexture fog{}; // the world map's fog, which every sprite draw is shaded by
@@ -391,7 +397,11 @@ struct Renderer::Impl {
     std::optional<TerrainKey> terrainHeld = std::nullopt;
     std::optional<TerrainKey> terrainRecorded = std::nullopt;
     u64 worldVersion = 0;
-    TerrainDrawing routeDrawing; // this frame's route and cursor tile, laid out again each frame; held when routeShown
+    TerrainDrawing routeDrawing;  // this frame's route, laid out again each frame; held when routeShown
+    TerrainDrawing targetDrawing; // this frame's cursor tile, laid out again each frame; held when targetShown
+    CloudDrawing cloudDrawing;    // this frame's clouds, laid out again each frame; held when cloudsShown
+    bool targetShown = false;     // whether this frame draws the cursor's tile
+    bool cloudsShown = false;     // whether this frame draws the clouds
     std::optional<core::Vec2> targetTile = std::nullopt; // SetTargetTile(): the cursor tile's centre, if it shows
     bool routeShown = false;                             // whether this frame draws the route buffer: it holds something
     bool terrainShown = false;   // whether this frame draws the terrain: the snapshot shows the map and its buffer is current
@@ -407,6 +417,7 @@ struct Renderer::Impl {
     core::RepeatedFailure overlayOverflows;
     core::RepeatedFailure terrainOverflows;
     core::RepeatedFailure routeOverflows;
+    core::RepeatedFailure cloudOverflows;
     core::RepeatedFailure ribbonOverflows;
     core::RepeatedFailure swordOverflows;
     core::RepeatedFailure sealOverflows;
@@ -475,6 +486,7 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
         meshes.Upload(copy, glyphs ? std::span<const MeshVertex>{ meshVertices } : std::span<const MeshVertex>{});
     const std::expected<std::size_t, core::Error> terrainDropped = UploadTerrain(copy, shown);
     const std::expected<std::size_t, core::Error> routeDropped = UploadRoute(copy, shown);
+    const std::expected<std::size_t, core::Error> cloudsDropped = UploadClouds(copy, shown);
     const std::expected<std::size_t, core::Error> overlayDropped = overlay.Upload(copy, volleyDrawing.instances);
     const std::expected<std::size_t, core::Error> ribbonsDropped = ribbons.Upload(copy, volleyDrawing.ribbons);
     const std::expected<std::size_t, core::Error> sealQuadsDropped = seals.Upload(copy, sealDrawing);
@@ -490,6 +502,9 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     }
     if (routeDropped) {
         ReportOverflow(routeOverflows, *routeDropped, "route instances", MAX_ROUTE_INSTANCES);
+    }
+    if (cloudsDropped) {
+        ReportOverflow(cloudOverflows, *cloudsDropped, "cloud instances", MAX_CLOUD_INSTANCES);
     }
     if (overlayDropped) {
         ReportOverflow(overlayOverflows, *overlayDropped, "overlay instances", MAX_OVERLAY_INSTANCES);
@@ -524,7 +539,10 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
             core::Combine(overlayDropped.transform(copied), ribbonsDropped.transform(copied)),
             core::Combine(
                 sealQuadsDropped.transform(copied),
-                core::Combine(terrainDropped.transform(copied), routeDropped.transform(copied))
+                core::Combine(
+                    core::Combine(terrainDropped.transform(copied), routeDropped.transform(copied)),
+                    cloudsDropped.transform(copied)
+                )
             )
         )
     );
@@ -558,17 +576,43 @@ std::expected<std::size_t, core::Error> Renderer::Impl::UploadTerrain(SDL_GPUCop
 std::expected<std::size_t, core::Error> Renderer::Impl::UploadRoute(SDL_GPUCopyPass* copy, const Shown& shown) {
     PN_PROFILE_ZONE();
     routeShown = false;
+    targetShown = false;
     if (!shown.snapshot->worldMap || worldMap == nullptr || !Holds(shown.snapshot->scene)) {
         return std::size_t{ 0 };
     }
     routeDrawing.instances.clear();
     routeDrawing.batches.clear();
-    DrawRoute(shown.snapshot->route, targetTile, worldLook.route, *manifest, routeDrawing);
+    DrawRoute(shown.snapshot->route, worldLook.route, *manifest, routeDrawing);
+    targetDrawing.instances.clear();
+    targetDrawing.batches.clear();
+    DrawTargetTile(targetTile, worldLook.route, *manifest, targetDrawing);
+    if (!targetDrawing.instances.empty()) {
+        // One instance in a buffer of one: it can't overflow.
+        targetShown = cursor.Upload(copy, targetDrawing.instances).has_value();
+    }
     if (routeDrawing.instances.empty()) {
         return std::size_t{ 0 };
     }
     const std::expected<std::size_t, core::Error> dropped = route.Upload(copy, routeDrawing.instances);
     routeShown = dropped.has_value();
+    return dropped;
+}
+
+std::expected<std::size_t, core::Error> Renderer::Impl::UploadClouds(SDL_GPUCopyPass* copy, const Shown& shown) {
+    PN_PROFILE_ZONE();
+    cloudsShown = false;
+    if (!shown.snapshot->worldMap || worldMap == nullptr || !Holds(shown.snapshot->scene) || shown.view->fog.columns == 0) {
+        return std::size_t{ 0 };
+    }
+    const ClipTransform transform = WorldToClip(shown.view->camera, std::max(shown.width, 1U), std::max(shown.height, 1U));
+    const core::Rect view{ .min = ClipToWorld(transform, { .x = -1.0F, .y = 1.0F }),
+                           .max = ClipToWorld(transform, { .x = 1.0F, .y = -1.0F }) };
+    DrawClouds(shown.view->fog, worldLook.fog, *manifest, view, shown.view->camera.zoom, shown.view->frameClock, cloudDrawing);
+    if (cloudDrawing.instances.empty()) {
+        return std::size_t{ 0 };
+    }
+    const std::expected<std::size_t, core::Error> dropped = clouds.Upload(copy, cloudDrawing.instances);
+    cloudsShown = dropped.has_value();
     return dropped;
 }
 
@@ -1068,6 +1112,14 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
             commands, pass, static_cast<u32>(*outlined), core::GlowRole::Hover, sprites, transform, alpha, glows, fog
         );
     }
+    // The clouds hide what is unexplored, so they come after the things standing on the map, and the cursor's tile after
+    // them: the player always sees where the click will go.
+    if (cloudsShown) {
+        clouds.Draw(commands, pass, cloudDrawing.batches, sprites, transform, alpha, glows, fog);
+    }
+    if (targetShown) {
+        cursor.Draw(commands, pass, targetDrawing.batches, sprites, transform, alpha, glows, fog);
+    }
     // The upright and overhead seals over the creatures, capped in opacity, under all that follows: the swords fly out over
     // them, and the health bars, damage numbers and HUD stay readable.
     seals.DrawAbove(commands, pass, sealTarget, sprites);
@@ -1248,6 +1300,18 @@ std::expected<Renderer, core::Error> Renderer::Create(
         return std::unexpected{ std::move(route.error()) };
     }
     impl->route = std::move(*route);
+    std::expected<internal::SpriteRenderer, core::Error> clouds =
+        internal::SpriteRenderer::Create(device, internal::SCENE_FORMAT, MAX_CLOUD_INSTANCES, "cloud instances");
+    if (!clouds) {
+        return std::unexpected{ std::move(clouds.error()) };
+    }
+    impl->clouds = std::move(*clouds);
+    std::expected<internal::SpriteRenderer, core::Error> cursor =
+        internal::SpriteRenderer::Create(device, internal::SCENE_FORMAT, MAX_TARGET_INSTANCES, "target instances");
+    if (!cursor) {
+        return std::unexpected{ std::move(cursor.error()) };
+    }
+    impl->cursor = std::move(*cursor);
     std::expected<internal::GlowTableBuffer, core::Error> glowTable =
         internal::GlowTableBuffer::Create(device, BuildGlowTable(impl->effects, impl->uiColours));
     if (!glowTable) {
