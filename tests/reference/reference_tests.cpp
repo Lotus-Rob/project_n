@@ -125,6 +125,12 @@ struct View {
     bool asInGame = false;
     // A click's WalkTo there, sent on the first tick: the picture shows the cultivator on its route at `ticks`.
     std::optional<core::Vec2> walkTo = std::nullopt;
+    // Before publishing, the world map explored under the picture's view and its margin (Host::Explore()), so every place
+    // in it is named.
+    bool exploreAll = false;
+    // Published with the debug sight on (Host::SetDebugSight()), so every traveller in view is drawn, wherever the
+    // cultivator stands.
+    bool debugSight = false;
     // The picture's size; `refit` and the measures assume WIDTH by HEIGHT.
     u32 width = WIDTH;
     u32 height = HEIGHT;
@@ -271,9 +277,12 @@ void CheckAgainstReference(const View& view) {
     // The view sent is the camera's, and only a fixed centre is known before publishing (outlines and crowd follow).
     REQUIRE((!view.asInGame || view.centre.has_value()));
     const gfx::Camera centred{ .centre = view.centre.value_or(gfx::REFERENCE_CENTRE), .zoom = view.zoom };
-    const std::optional<core::Rect> sent =
-        view.asInGame ? std::optional{ app::CullArea(centred, static_cast<i32>(view.width), static_cast<i32>(view.height)) }
-                      : std::nullopt;
+    const core::Rect area = app::CullArea(centred, static_cast<i32>(view.width), static_cast<i32>(view.height));
+    if (view.exploreAll) {
+        host.Explore(area);
+    }
+    host.SetDebugSight(view.debugSight);
+    const std::optional<core::Rect> sent = view.asInGame ? std::optional{ area } : std::nullopt;
     const core::Snapshot snapshot = Published(host, jobs, view.asInGame ? view.ticks : 0, sent);
 
     platform::Window window = OpenWindow();
@@ -349,7 +358,9 @@ TEST_CASE("the world at the smallest zoom over its busiest region: tiles and tra
           .ticks = TWO_SECONDS,
           .zoom = gfx::MIN_ZOOM,
           .centre = game::WORLD_BUSIEST,
-          .asInGame = true }
+          .asInGame = true,
+          .exploreAll = true,
+          .debugSight = true }
     );
 }
 
@@ -361,6 +372,8 @@ TEST_CASE("the world at a middle zoom over its busiest region: travellers with t
           .zoom = LABELS_ZOOM,
           .centre = game::WORLD_BUSIEST,
           .asInGame = true,
+          .exploreAll = true,
+          .debugSight = true,
           .width = FULL_HD_WIDTH,
           .height = FULL_HD_HEIGHT }
     );
@@ -373,7 +386,9 @@ TEST_CASE("the world at the largest zoom: the cultivator at the start and the po
           .ticks = TWO_SECONDS,
           .zoom = gfx::MAX_ZOOM,
           .centre = StartAndPortal(),
-          .asInGame = true }
+          .asInGame = true,
+          .exploreAll = true,
+          .debugSight = true }
     );
 }
 
@@ -396,6 +411,8 @@ TEST_CASE("the world's capital at a middle zoom: its name, roads, the river and 
           .zoom = LABELS_ZOOM,
           .centre = shows ? capital : capital + ((bridge - capital) * static_cast<f32>(HALFWAY)),
           .asInGame = true,
+          .exploreAll = true,
+          .debugSight = true,
           .width = FULL_HD_WIDTH,
           .height = FULL_HD_HEIGHT }
     );
@@ -412,6 +429,8 @@ TEST_CASE("the world at the smallest zoom over the capital: its name reads under
           .zoom = gfx::MIN_ZOOM,
           .centre = map->StartCentre(),
           .asInGame = true,
+          .exploreAll = true,
+          .debugSight = true,
           .width = FULL_HD_WIDTH,
           .height = FULL_HD_HEIGHT }
     );
@@ -434,6 +453,8 @@ TEST_CASE("the world at a middle zoom with the cultivator mid-route: the route l
           .centre = map->StartCentre() + ((target - map->StartCentre()) * static_cast<f32>(HALFWAY)),
           .asInGame = true,
           .walkTo = target,
+          .exploreAll = true,
+          .debugSight = true,
           .width = FULL_HD_WIDTH,
           .height = FULL_HD_HEIGHT }
     );
@@ -1593,8 +1614,11 @@ TEST_CASE("the world's tiles and travellers at the smallest zoom: shimmer held t
     // Over the busiest region, published culled to the unshifted picture's view, as the game sends it (its margin holds
     // the shifted one); the travellers' labels are hidden at this zoom.
     const gfx::Camera far{ .centre = game::WORLD_BUSIEST, .zoom = gfx::MIN_ZOOM };
-    const core::Snapshot world =
-        Published(host, jobs, 0, app::CullArea(far, static_cast<i32>(WIDTH), static_cast<i32>(HEIGHT)));
+    const core::Rect area = app::CullArea(far, static_cast<i32>(WIDTH), static_cast<i32>(HEIGHT));
+    // Explored and seen whole, as the world's pictures are: the travellers far from the cultivator are drawn.
+    host.Explore(area);
+    host.SetDebugSight(true);
+    const core::Snapshot world = Published(host, jobs, 0, area);
     const core::Snapshot backdrop{ .wallTick = world.wallTick + 1,
                                    .simulationTick = world.simulationTick,
                                    .scene = world.scene };
