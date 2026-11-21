@@ -39,7 +39,7 @@ struct GroundUniforms {
     f32 grain = 0.0F;
     /// How far noise moves the edge between two kinds.
     f32 edgeWarp = 0.0F;
-    /// How wide that edge blends (a tile at most: wider blends as a tile).
+    /// How wide that edge blends, at most a tile (the look's reader refuses more).
     f32 edgeSoft = 0.0F;
     /// How unevenly a wash pools, from 0 to 1.
     f32 blotch = 0.0F;
@@ -103,5 +103,10 @@ static_assert(
 /// The rivers' painted shape for `look` on `map`: its widths in world units, the core opaque in its colour and the edge
 /// in its colour at its strength, premultiplied.
 [[nodiscard]] RiverShape RiverShapeOf(const core::WorldMap& map, const core::RiverLook& look);
+
+/// Where `shape`'s edge band starts fading out toward its sides, as a share of its half width from its middle: where the
+/// core ends (the core's width over the edge's), so the rim shows whole beside the core and fades to nothing at the band's
+/// side; 1, no fade, when the core is as wide as the edge or the edge has no width.
+[[nodiscard]] f32 RimStart(const RiverShape& shape);
 
 } // namespace gfx

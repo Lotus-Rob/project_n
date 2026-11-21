@@ -81,15 +81,15 @@ inline constexpr Stage COMPOSITE_VERT{
 };
 
 /// shaders/bin/ground.frag.spv, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 32488> GROUND_FRAG_SPIRV{{
+inline constexpr std::array<u8, 32484> GROUND_FRAG_SPIRV{{
 #include "ground.frag.spv.h"
 }};
 /// shaders/bin/ground.frag.dxil, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 12820> GROUND_FRAG_DXIL{{
+inline constexpr std::array<u8, 12804> GROUND_FRAG_DXIL{{
 #include "ground.frag.dxil.h"
 }};
 /// shaders/bin/ground.frag.msl, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 29314> GROUND_FRAG_MSL{{
+inline constexpr std::array<u8, 29310> GROUND_FRAG_MSL{{
 #include "ground.frag.msl.h"
 }};
 /// shaders/ground.frag.hlsl.
@@ -206,15 +206,15 @@ inline constexpr Stage RIBBON_FRAG{
 };
 
 /// shaders/bin/river.frag.spv, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 2968> RIVER_FRAG_SPIRV{{
+inline constexpr std::array<u8, 3572> RIVER_FRAG_SPIRV{{
 #include "river.frag.spv.h"
 }};
 /// shaders/bin/river.frag.dxil, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 5568> RIVER_FRAG_DXIL{{
+inline constexpr std::array<u8, 5888> RIVER_FRAG_DXIL{{
 #include "river.frag.dxil.h"
 }};
 /// shaders/bin/river.frag.msl, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 1685> RIVER_FRAG_MSL{{
+inline constexpr std::array<u8, 2085> RIVER_FRAG_MSL{{
 #include "river.frag.msl.h"
 }};
 /// shaders/river.frag.hlsl.
@@ -227,7 +227,7 @@ inline constexpr Stage RIVER_FRAG{
     .samplers = 1,
     .storageTextures = 0,
     .storageBuffers = 0,
-    .uniformBuffers = 1,
+    .uniformBuffers = 2,
 };
 
 /// shaders/bin/river.vert.spv, embedded by XMake's utils.bin2c.

@@ -72,10 +72,6 @@ static_assert(
     "the shader's fog constant buffer starts each colour on its own 16-byte row"
 );
 
-/// The linear red, green and blue of the sRGB colour `srgb`, each as the 8-bit linear byte core::FromSrgb() gives over 255,
-/// as every world map colour reaches its shader.
-[[nodiscard]] std::array<f32, 3> LinearOf(const std::array<u8, 3>& srgb);
-
 /// The uniforms that shade by `fog` in `look`'s colours and strengths; off when `fog` has no tiles.
 [[nodiscard]] FogUniforms FogUniformsOf(const FogFrame& fog, const core::FogLook& look);
 

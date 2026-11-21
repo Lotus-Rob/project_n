@@ -353,7 +353,7 @@ fragment FragmentMain_out FragmentMain(FragmentMain_in in [[stage_in]], constant
             continue;
         }
         float2 _805 = _459 + ((float2(0.5 + (_469 / _467), 0.5 + (_638 / _636)) - float2(0.5)) * (2.0 * ground.edgeWarp));
-        float _808 = fast::clamp(ground.edgeSoft, 0.0199999995529651641845703125, 1.0);
+        float _808 = precise::max(ground.edgeSoft, 0.0199999995529651641845703125);
         float2 _809 = _805 - float2(0.5);
         float2 _810 = floor(_809);
         float2 _811 = _809 - _810;

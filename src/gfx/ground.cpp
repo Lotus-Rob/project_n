@@ -3,7 +3,7 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/profile.hpp"
 #include "core/ui_colours.hpp"
-#include "gfx/fog.hpp"
+#include "gfx/colour.hpp"
 
 namespace gfx {
 
@@ -66,6 +66,13 @@ RiverShape RiverShapeOf(const core::WorldMap& map, const core::RiverLook& look) 
              .edgeWidth = look.edge * map.TileSize(),
              .coreColour = core::FromSrgb(look.colour[0], look.colour[1], look.colour[2], core::OPAQUE_ALPHA),
              .edgeColour = core::FromSrgb(look.edgeColour[0], look.edgeColour[1], look.edgeColour[2], edgeAlpha) };
+}
+
+f32 RimStart(const RiverShape& shape) {
+    if (shape.edgeWidth <= 0.0F) {
+        return 1.0F;
+    }
+    return std::clamp(shape.coreWidth / shape.edgeWidth, 0.0F, 1.0F);
 }
 
 } // namespace gfx

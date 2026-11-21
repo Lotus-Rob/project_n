@@ -196,7 +196,7 @@ float3 Painted(float2 world, float pixel) {
                              Fbm(tile / WARP_CELL_TILES, tilePixels * WARP_CELL_TILES, SEED_WARP_DOWN, WARP_OCTAVES)
                          ) - 0.5) * (2.0 * ground.edgeWarp);
     const float2 at = tile + warp;
-    const float soft = clamp(ground.edgeSoft, LEAST_SOFT, 1.0);
+    const float soft = max(ground.edgeSoft, LEAST_SOFT);
     const float shore = ShoreAt(at);
     // Half a tile from the shore the distance is past either end of the blend, so open water and open land are whole.
     const float wet = 1.0 - Ramp(-0.5 * soft, 0.5 * soft, shore);
