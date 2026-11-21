@@ -132,6 +132,44 @@ TEST_CASE("a tributary ending past the main river ends on the main river's middl
     CHECK(std::abs(end.y - mainMiddle) < 1.0F);
 }
 
+TEST_CASE("a tributary stopping short of the main river runs on to its middle") {
+    // The main river runs from (0, 4) to (7, 3), so at the tributary's column 4 its middle lies 4/7 of a tile above row 4's
+    // centre, and the tributary's last waypoint, (4, 3)'s centre, lies under half a tile short of it.
+    const core::WorldMap map = test::MeadowMap(
+        8,
+        8,
+        { { { .column = 0, .row = 4 }, { .column = 7, .row = 3 } }, { { .column = 4, .row = 0 }, { .column = 4, .row = 3 } } }
+    );
+    const std::vector<gfx::RibbonVertex> vertices = Draw(map);
+    const core::Vec2 end = Midline(vertices, (vertices.size() / gfx::QUAD_VERTICES) - 1, true);
+    const f32 mainMiddle = Middle(4, 4).y - (TILE * 4.0F / 7.0F);
+    CHECK(end.x == doctest::Approx(Middle(4, 0).x));
+    CHECK(std::abs(end.y - mainMiddle) < 1.0F);
+}
+
+TEST_CASE("a river a tributary joins a tile before its end still runs on into the water") {
+    // A lake over columns 15 and 16; the tributary comes down column 13 and ends on the main river, which ends at (14, 5).
+    constexpr u32 COLUMNS = 17;
+    constexpr u32 ROWS = 8;
+    std::array<u8, std::size_t{ COLUMNS } * ROWS> grid{};
+    for (u32 row = 0; row < ROWS; ++row) {
+        grid.at((row * COLUMNS) + 15) = LAKE;
+        grid.at((row * COLUMNS) + 16) = LAKE;
+    }
+    const core::WorldMap map = test::MapOfTiles(
+        COLUMNS,
+        ROWS,
+        grid,
+        { { { .column = 13, .row = 0 }, { .column = 13, .row = 5 } },
+          { { .column = 0, .row = 5 }, { .column = 14, .row = 5 } } }
+    );
+    const std::vector<gfx::RibbonVertex> vertices = Draw(map, LAKE_WATER);
+    // The main river is listed last, so its core's last quad is the last of all.
+    const core::Vec2 end = Midline(vertices, (vertices.size() / gfx::QUAD_VERTICES) - 1, true);
+    CHECK(end.x == doctest::Approx(16.0F * TILE));
+    CHECK(end.y == doctest::Approx(Middle(0, 5).y));
+}
+
 TEST_CASE("a river ending two tiles from another keeps its end") {
     const core::WorldMap map = test::MeadowMap(
         8,
@@ -203,6 +241,19 @@ TEST_CASE("the shipped rivers fit the river buffer") {
         bands += (vertices[quad * gfx::QUAD_VERTICES].uv & 0xFFFFU) == 0 ? 1 : 0;
     }
     CHECK(bands == 2 * map->Rivers().size());
+    // And none was cut short: each segment's quads are there, but where a river's end moved back onto another river, which
+    // costs it at most one tile's worth of quads in each band.
+    std::size_t expected = 0;
+    for (const std::vector<TilePoint>& river : map->Rivers()) {
+        for (std::size_t point = 1; point < river.size(); ++point) {
+            const f32 across = static_cast<f32>(river[point].column) - static_cast<f32>(river[point - 1].column);
+            const f32 down = static_cast<f32>(river[point].row) - static_cast<f32>(river[point - 1].row);
+            const std::size_t tiles = std::max<std::size_t>(1, static_cast<std::size_t>(std::ceil(std::hypot(across, down))));
+            expected += std::size_t{ 2 } * gfx::RIVER_STEPS * tiles;
+        }
+    }
+    const std::size_t joinLoss = map->Rivers().size() * std::size_t{ 2 } * gfx::RIVER_STEPS;
+    CHECK((vertices.size() / gfx::QUAD_VERTICES) + joinLoss >= expected);
 }
 
 TEST_CASE("rivers past the buffer are left out whole, the later ones first") {

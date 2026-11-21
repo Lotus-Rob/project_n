@@ -116,7 +116,9 @@ std::optional<f32> Meeting(core::Vec2 from, core::Vec2 toward, core::Vec2 start,
 }
 
 /// The point where the last stretch of `waypoints` (run on or cut short) meets the middle of one of `others`' lines but
-/// the river's own (`own`), the nearest to its end and within JOIN_TILES of it; none when it meets none there.
+/// the river's own (`own`), the nearest to its end and within JOIN_TILES of it; none when it meets none there. A meeting
+/// within JOIN_TILES of the other line's own end doesn't count: there the other river flows into this one, not this one
+/// into it, and this one keeps its end (and its way on into water).
 std::optional<core::Vec2> Join(
     const std::vector<core::Vec2>& waypoints,
     std::size_t own,
@@ -129,14 +131,20 @@ std::optional<core::Vec2> Join(
     std::optional<core::Vec2> nearest;
     f32 nearestApart = reach;
     for (std::size_t other = 0; other < others.size(); ++other) {
+        if (other == own) {
+            continue;
+        }
         const std::vector<core::Vec2>& line = others[other];
-        for (std::size_t point = 1; other != own && point < line.size(); ++point) {
+        for (std::size_t point = 1; point < line.size(); ++point) {
             const std::optional<f32> share = Meeting(from, last, line[point - 1], line[point]);
             if (!share || *share <= 0.0F) {
                 continue;
             }
             const core::Vec2 meets = Lerp(from, last, *share);
             const f32 apart = Length(meets - last);
+            if (Length(meets - line.back()) <= reach) {
+                continue;
+            }
             if (apart <= nearestApart) {
                 nearest = meets;
                 nearestApart = apart;
