@@ -218,8 +218,8 @@ struct Renderer::Impl {
     /// first, drawn last) and the glyph fields they need; then ends the glyph cache's frame. A recorded copy counts as
     /// uploaded only once its commands are submitted (Submitted()): a dropped buffer must upload again.
     std::expected<void, core::Error> Upload(SDL_GPUCommandBuffer* commands, const Shown& shown, core::Jobs& jobs);
-    /// Lays out and copies the world map's tiles for the world `shown` shows, when it shows the map and they differ from what
-    /// the buffer holds; returns how many instances didn't fit.
+    /// Lays out and copies the world map's sprites (DrawTerrain()) for the world `shown` shows at its zoom, when it shows the
+    /// map and they differ from what the buffer holds; returns how many instances didn't fit.
     std::expected<std::size_t, core::Error> UploadTerrain(SDL_GPUCopyPass* copy, const Shown& shown);
     /// Builds and copies the world map's ground field and rivers when the map or the look changed, and works out the part
     /// of the view the ground covers and its uniforms, when `shown` shows the map; nothing of either draws otherwise.
@@ -339,7 +339,7 @@ struct Renderer::Impl {
     internal::MeshRenderer meshes{};
     internal::GroundRenderer ground{};  // the world map's painted ground, under everything on it
     internal::RiverRenderer rivers{};   // the world map's rivers, over the ground
-    internal::SpriteRenderer terrain{}; // the world map's tiles, overlays and markers (TerrainDrawing)
+    internal::SpriteRenderer terrain{}; // the world map's roads, crossings, stamps and markers (TerrainDrawing)
     internal::SpriteRenderer route{};   // the player's route (TerrainDrawing), over the map
     internal::SpriteRenderer clouds{};  // the fog's clouds (CloudDrawing), over the world's sprites
     internal::SpriteRenderer cursor{};  // the cursor's tile (TerrainDrawing), over the clouds
@@ -393,15 +393,17 @@ struct Renderer::Impl {
     std::vector<std::size_t> numberQuads;    // PlaceNumbers()' scratch: each chunk's first quad
     std::vector<MeshVertex> meshVertices;
     std::vector<internal::MeshRun> meshRuns;
-    /// What the terrain's buffer holds is what TerrainDrawing laid out for the tiles `span` reaches and the map and look
-    /// `version` counts (SetWorld()): laid out and copied again only when that changes. Held once its commands are submitted.
+    /// What the terrain's buffer holds is what TerrainDrawing laid out for the tiles `span` reaches at `zoom` (stamps thin
+    /// out with it) and the map and look `version` counts (SetWorld()): laid out and copied again only when that changes.
+    /// Held once its commands are submitted.
     struct TerrainKey {
         core::TileSpan span;
+        f32 zoom = 1.0F;
         u64 version = 0;
         [[nodiscard]] bool operator==(const TerrainKey& other) const {
-            return version == other.version && span.firstColumn == other.span.firstColumn &&
-                   span.lastColumn == other.span.lastColumn && span.firstRow == other.span.firstRow &&
-                   span.lastRow == other.span.lastRow;
+            return version == other.version && std::bit_cast<u32>(zoom) == std::bit_cast<u32>(other.zoom) &&
+                   span.firstColumn == other.span.firstColumn && span.lastColumn == other.span.lastColumn &&
+                   span.firstRow == other.span.firstRow && span.lastRow == other.span.lastRow;
         }
     };
     TerrainDrawing terrainDrawing;                        // the last layout, which the buffer holds when terrainShown
@@ -419,6 +421,7 @@ struct Renderer::Impl {
     bool terrainShown = false; // whether this frame draws the terrain: the snapshot shows the map and its buffer is current
     std::optional<core::Rect> groundQuad = std::nullopt; // the part of this frame's view the ground and rivers cover, if any
     GroundUniforms groundUniforms{};                     // what this frame's ground is painted by
+    GroundUniforms veilUniforms{};                       // what this frame's veil is painted by
     VolleyDrawing volleyDrawing; // this frame's health bars and swords, placed at the render time, and the HUD's bars
     SealDrawing sealDrawing;     // this frame's seals, laid out at the render time
     std::vector<core::SealKey> sealsMissing; // the seal keys the table lacked, each logged once
@@ -577,12 +580,13 @@ std::expected<std::size_t, core::Error> Renderer::Impl::UploadTerrain(SDL_GPUCop
     }
     // The world the camera shows, whole tiles of it: nothing culls ahead, so the map never lags the camera.
     const core::Rect view = ViewRect(shown);
-    const TerrainKey key{ .span = worldMap->TilesIn(view), .version = worldVersion };
+    const f32 zoom = shown.view->camera.zoom;
+    const TerrainKey key{ .span = worldMap->TilesIn(view), .zoom = zoom, .version = worldVersion };
     if (terrainHeld == key && terrainLaid == key) {
         terrainShown = true;
         return std::size_t{ 0 };
     }
-    DrawTerrain(*worldMap, worldLook, *manifest, view, terrainDrawing);
+    DrawTerrain(*worldMap, worldLook, *manifest, view, zoom, terrainDrawing);
     terrainLaid = key;
     const std::expected<std::size_t, core::Error> dropped = terrain.Upload(copy, terrainDrawing.instances);
     if (dropped) {
@@ -604,6 +608,8 @@ std::expected<void, core::Error> Renderer::Impl::UploadGround(SDL_GPUCopyPass* c
     groundQuad = GroundQuad(ViewRect(shown), *worldMap);
     groundUniforms = GroundUniformsOf(*worldMap, worldLook, GROUND_MODE_GROUND);
     groundUniforms.zoom = shown.view->camera.zoom;
+    veilUniforms = groundUniforms;
+    veilUniforms.mode = GROUND_MODE_VEIL;
     return core::Combine(field, laid);
 }
 
@@ -1145,13 +1151,22 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
     const std::span<const core::Batch> batches{ snapshot.batches };
     const std::size_t groundBatches = std::min<std::size_t>(snapshot.groundBatches, batches.size());
     // The map under all of it: it is the ground of a scene that shows it, which publishes none. Its painted ground first,
-    // then the rivers on it, then the tiles and what lies on them; none of it where the view misses the map.
+    // then the rivers on it, then the roads, crossings, stamps and paintings, the veil's haze over them all, and the places'
+    // markers above the haze so every place reads; none of it where the view misses the map.
     if (groundQuad) {
         ground.Draw(commands, pass, transform, *groundQuad, groundUniforms, fog);
         rivers.Draw(commands, pass, transform, fog);
     }
+    const std::span<const core::Batch> terrainBatches{ terrainDrawing.batches };
+    const std::size_t underVeil = std::min<std::size_t>(terrainDrawing.markersFrom, terrainBatches.size());
     if (terrainShown) {
-        terrain.Draw(commands, pass, terrainDrawing.batches, sprites, transform, alpha, glows, fog);
+        terrain.Draw(commands, pass, terrainBatches.first(underVeil), sprites, transform, alpha, glows, fog);
+    }
+    if (groundQuad) {
+        ground.Draw(commands, pass, transform, *groundQuad, veilUniforms, fog);
+    }
+    if (terrainShown) {
+        terrain.Draw(commands, pass, terrainBatches.subspan(underVeil), sprites, transform, alpha, glows, fog);
     }
     // Over the map, under the ground and everything on it: the line is the map's, not a thing standing on it.
     if (routeShown) {

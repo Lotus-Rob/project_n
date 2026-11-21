@@ -62,8 +62,8 @@ struct Instance {
     u32 glowValue = 0;
     /// The low 32 bits of the glow's start tick.
     u32 glowStart = 0;
-    /// SpriteDraw::flags: INSTANCE_FOGGED_LAND and INSTANCE_SIGHT_FADE. This word also keeps the shader's stride (56) at a
-    /// multiple of 8, as DXC's SPIR-V StructuredBuffer needs when the struct holds a float2.
+    /// SpriteDraw::flags: INSTANCE_FOGGED_LAND, INSTANCE_SIGHT_FADE and INSTANCE_FOG_SHADE. This word also keeps the shader's
+    /// stride (56) at a multiple of 8, as DXC's SPIR-V StructuredBuffer needs when the struct holds a float2.
     u32 flags = 0;
 };
 /// The bytes of one Instance, which the shader's StructuredBuffer reads with the same layout.
@@ -73,6 +73,10 @@ static_assert(sizeof(Instance) == INSTANCE_BYTES, "the shader reads instances as
 inline constexpr u32 INSTANCE_FOGGED_LAND = 1U;
 /// Instance::flags bit: the sprite fades out of the player's sight and into the fog's edge.
 inline constexpr u32 INSTANCE_SIGHT_FADE = 2U;
+/// Instance::flags bit: the sprite stands on the land but stays in colour out of sight, so the fog only shades it where its
+/// tile is unexplored, hiding it under the clouds, and never drains or mists it (a place's marker). INSTANCE_FOGGED_LAND
+/// wins over it.
+inline constexpr u32 INSTANCE_FOG_SHADE = 4U;
 
 /// How a batch of instances blends onto what is drawn under it: one
 /// pipeline each.

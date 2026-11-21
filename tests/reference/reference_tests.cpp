@@ -540,6 +540,66 @@ TEST_CASE("the world at a middle zoom with the cultivator mid-route: the route l
     );
 }
 
+/// The tile centre of the place `key` in `map`.
+core::Vec2 PlaceCentre(const core::WorldMap& map, std::string_view key) {
+    const std::span<const core::Place> places = map.Places();
+    const auto place = std::ranges::find(places, key, &core::Place::key);
+    REQUIRE(place != places.end());
+    return map.TileCentre(map.TileIndex(place->tile));
+}
+
+/// The tile centre of the last waypoint, of all `map`'s rivers, nearest `point`: where the river runs out.
+core::Vec2 RiverEndNearest(const core::WorldMap& map, core::Vec2 point) {
+    std::optional<core::Vec2> nearest;
+    const auto distance = [&](core::Vec2 end) { return std::hypot(end.x - point.x, end.y - point.y); };
+    for (const std::vector<core::TilePoint>& river : map.Rivers()) {
+        const core::Vec2 end = map.TileCentre(map.TileIndex(river.back()));
+        if (!nearest || distance(end) < distance(*nearest)) {
+            nearest = end;
+        }
+    }
+    REQUIRE(nearest.has_value());
+    return nearest.value_or(core::Vec2{});
+}
+
+// The coast by the port at zoom 1, as the world's pictures are drawn: centred between the port and the end of the river
+// that runs out beside it, so the river's mouth into the sea, the shore, the water deepening away from it and the port's
+// painting all show.
+TEST_CASE("the world's coast by the port at zoom 1: a river's mouth, the shore, deep water and the port's painting") {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const core::Vec2 port = PlaceCentre(*map, "port");
+    CheckAgainstReference(
+        { .name = "world_coast",
+          .scene = game::WORLD_SCENE,
+          .ticks = TWO_SECONDS,
+          .zoom = 1.0F,
+          .centre = port + ((RiverEndNearest(*map, port) - port) * static_cast<f32>(HALFWAY)),
+          .asInGame = true,
+          .exploreAll = true,
+          .debugSight = true }
+    );
+}
+
+// How far from the sect the mountains' picture is centred, in tiles: east and down, over the range of peaks below it, with
+// the sect's painting whole at the picture's left edge.
+constexpr core::Vec2 MOUNTAINS_FROM_SECT{ .x = 2.5F, .y = 1.0F };
+
+// The mountains by the sect at zoom 1, as the world's pictures are drawn: ranges of peaks, rock and snow overlapping, the
+// sect's painting among them, mist at their feet and the veil over them.
+TEST_CASE("the world's mountains by the sect at zoom 1: overlapping ranges, the sect's painting, mist and the veil") {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    CheckAgainstReference(
+        { .name = "world_mountains",
+          .scene = game::WORLD_SCENE,
+          .ticks = TWO_SECONDS,
+          .zoom = 1.0F,
+          .centre = PlaceCentre(*map, "sect") + (MOUNTAINS_FROM_SECT * map->TileSize()),
+          .asInGame = true,
+          .exploreAll = true,
+          .debugSight = true }
+    );
+}
+
 constexpr u64 FOG_PATH_BACK_TICK = 900;
 constexpr u64 FOG_PATH_TICKS = 1800;
 constexpr f32 FOG_PATH_TILES = 4.0F;

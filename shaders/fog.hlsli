@@ -23,6 +23,11 @@ struct Fog {
 };
 ConstantBuffer<Fog> fog : register(b0, space3);
 
+/// The fog flags of a sprite instance: core::INSTANCE_FOGGED_LAND, core::INSTANCE_SIGHT_FADE and core::INSTANCE_FOG_SHADE.
+static const uint INSTANCE_FOGGED_LAND = 1;
+static const uint INSTANCE_SIGHT_FADE = 2;
+static const uint INSTANCE_FOG_SHADE = 4;
+
 /// Rec. 709's weights of linear red, green and blue in luminance: FOG_LUMINANCE in src/gfx/fog.cpp.
 static const float3 LUMINANCE = float3(0.2126, 0.7152, 0.0722);
 

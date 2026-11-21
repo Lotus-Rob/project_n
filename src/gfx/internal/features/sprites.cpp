@@ -64,10 +64,12 @@ static_assert(
 
 constexpr u32 GLOW_TABLE_BYTES = static_cast<u32>(GLOW_RECORD_BYTES * core::GLOW_ROLES);
 
-constexpr u32 SHADER_FOGGED_LAND = 1; // sprite.frag.hlsl's INSTANCE_FOGGED_LAND
-constexpr u32 SHADER_SIGHT_FADE = 2;  // sprite.frag.hlsl's INSTANCE_SIGHT_FADE
-static_assert(core::INSTANCE_FOGGED_LAND == SHADER_FOGGED_LAND, "sprite.frag.hlsl's INSTANCE_FOGGED_LAND is core's");
-static_assert(core::INSTANCE_SIGHT_FADE == SHADER_SIGHT_FADE, "sprite.frag.hlsl's INSTANCE_SIGHT_FADE is core's");
+constexpr u32 SHADER_FOGGED_LAND = 1; // fog.hlsli's INSTANCE_FOGGED_LAND
+constexpr u32 SHADER_SIGHT_FADE = 2;  // fog.hlsli's INSTANCE_SIGHT_FADE
+constexpr u32 SHADER_FOG_SHADE = 4;   // fog.hlsli's INSTANCE_FOG_SHADE
+static_assert(core::INSTANCE_FOGGED_LAND == SHADER_FOGGED_LAND, "fog.hlsli's INSTANCE_FOGGED_LAND is core's");
+static_assert(core::INSTANCE_SIGHT_FADE == SHADER_SIGHT_FADE, "fog.hlsli's INSTANCE_SIGHT_FADE is core's");
+static_assert(core::INSTANCE_FOG_SHADE == SHADER_FOG_SHADE, "fog.hlsli's INSTANCE_FOG_SHADE is core's");
 /// Two bytes a texel: explored, then in sight, as FogFrame::values holds them.
 constexpr u32 FOG_TEXEL_BYTES = 2;
 constexpr u8 FOG_FULL = 255;

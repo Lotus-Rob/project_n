@@ -3,9 +3,8 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/instances.hpp"
 #include "core/profile.hpp"
-#include "core/random.hpp"
 #include "core/vec2.hpp"
-#include "gfx/tile_hash.hpp"
+#include "gfx/stamp_draw.hpp"
 
 namespace gfx {
 
@@ -13,17 +12,12 @@ namespace {
 
 using core::atlas::SpriteId;
 
-/// A variant comes from a random number's top half, scaled to the variant count: a two-variant kind keeps the old noise's
-/// pick (the top bit).
-constexpr u32 VARIANT_SHIFT = 32;
-
 constexpr u32 NORTH = 1;
 constexpr u32 EAST = 2;
 constexpr u32 SOUTH = 4;
 constexpr u32 WEST = 8;
 
 constexpr u8 ROAD = std::to_underlying(core::TileFlag::Road);
-constexpr u8 RIVER = std::to_underlying(core::TileFlag::River);
 constexpr u8 BRIDGE = std::to_underlying(core::TileFlag::Bridge);
 constexpr u8 FORD = std::to_underlying(core::TileFlag::Ford);
 
@@ -35,12 +29,10 @@ struct Pass {
     core::TileSpan span{};
     TerrainDrawing* into = nullptr;
 
-    /// `sprite` with its foot at `foot`, standing still, on the land the fog covers.
-    void Add(SpriteId sprite, core::Vec2 foot) const {
+    /// `sprite` with its foot at `foot`, standing still, with the fog flags `flags`.
+    void Add(SpriteId sprite, core::Vec2 foot, u32 flags = core::INSTANCE_FOGGED_LAND) const {
         into->instances.push_back(
-            core::MakeInstance(
-                *manifest, { .sprite = sprite, .previous = foot, .current = foot, .flags = core::INSTANCE_FOGGED_LAND }
-            )
+            core::MakeInstance(*manifest, { .sprite = sprite, .previous = foot, .current = foot, .flags = flags })
         );
     }
     [[nodiscard]] core::Vec2 Corner(u32 column, u32 row) const {
@@ -77,19 +69,13 @@ struct Pass {
     }
 };
 
-/// The variant of `variants` that the tile at `column` and `row` wears.
-SpriteId VariantOf(const std::vector<core::atlas::SpriteId>& variants, u32 column, u32 row) {
-    const u64 pick = core::Random(TERRAIN_SEED, 0, TileKey(column, row), TERRAIN_PURPOSE, VARIANT_DRAW) >> VARIANT_SHIFT;
-    return variants[(pick * variants.size()) >> VARIANT_SHIFT];
-}
-
-void AddTiles(const Pass& pass) {
-    pass.ForTiles([&](u32 column, u32 row, u8 /*flags*/) {
-        const u8 kind = pass.map->KindAt(pass.map->TileIndex({ .column = column, .row = row }));
-        if (kind < pass.look->kinds.size() && !pass.look->kinds[kind].variants.empty()) {
-            pass.Add(VariantOf(pass.look->kinds[kind].variants, column, row), pass.Corner(column, row));
-        }
-    });
+/// Closes a batch of the instances added since the last batch ended, if there are any.
+void CloseBatch(TerrainDrawing& into) {
+    const u32 first = into.batches.empty() ? 0 : into.batches.back().first + into.batches.back().count;
+    const auto end = static_cast<u32>(into.instances.size());
+    if (end > first) {
+        into.batches.push_back({ .first = first, .count = end - first, .pipeline = core::Pipeline::Normal });
+    }
 }
 
 void AddLines(const Pass& pass, u8 flag, const std::array<SpriteId, core::LINE_MASKS>& sprites) {
@@ -129,7 +115,7 @@ void AddMarkers(const Pass& pass) {
             return found == pass.look->dangerMarkers.end() ? nullptr : &found->second;
         }();
         if (marker != nullptr) {
-            pass.Add(*marker, pass.map->TileCentre(pass.map->TileIndex(place.tile)));
+            pass.Add(*marker, pass.map->TileCentre(pass.map->TileIndex(place.tile)), core::INSTANCE_FOG_SHADE);
         }
     }
 }
@@ -141,26 +127,28 @@ void DrawTerrain(
     const core::WorldLook& look,
     const core::Manifest& manifest,
     core::Rect view,
+    f32 zoom,
     TerrainDrawing& into
 ) {
     PN_PROFILE_ZONE();
     into.instances.clear();
     into.batches.clear();
+    into.roadBatches = 0;
+    into.markersFrom = 0;
     const core::TileSpan span = map.TilesIn(view);
     if (span.firstColumn > span.lastColumn || span.firstRow > span.lastRow) {
         return;
     }
     const Pass pass{ .map = &map, .look = &look, .manifest = &manifest, .span = span, .into = &into };
-    AddTiles(pass);
-    AddLines(pass, RIVER, look.rivers);
     AddLines(pass, ROAD, look.roads);
+    CloseBatch(into);
+    into.roadBatches = static_cast<u32>(into.batches.size());
     AddCrossings(pass);
+    CloseBatch(into);
+    DrawStamps(map, look, manifest, span, zoom, into);
+    into.markersFrom = static_cast<u32>(into.batches.size());
     AddMarkers(pass);
-    if (!into.instances.empty()) {
-        into.batches.push_back(
-            { .first = 0, .count = static_cast<u32>(into.instances.size()), .pipeline = core::Pipeline::Normal }
-        );
-    }
+    CloseBatch(into);
 }
 
 } // namespace gfx

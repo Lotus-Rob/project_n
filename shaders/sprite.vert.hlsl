@@ -15,7 +15,7 @@ struct Instance {
     uint glow;        // role (bits 0-7), result (8-15), element (16-23), released (bit 24); 0 for no glow
     uint glowValue;   // two unorm16: the glow's value at the previous tick, then at this one
     uint glowStart;   // the glow's start tick, low 32 bits
-    uint flags;       // INSTANCE_FOGGED_LAND and INSTANCE_SIGHT_FADE; 56 bytes in all, a multiple of 8 as SPIR-V needs
+    uint flags;       // INSTANCE_FOGGED_LAND, INSTANCE_SIGHT_FADE and INSTANCE_FOG_SHADE; 56 bytes in all, a multiple of 8 as SPIR-V needs
 };
 
 /// gfx::GlowRecord (src/gfx/glow_table.hpp), 96 bytes: one role's glow; the table is indexed by core::GlowRole.

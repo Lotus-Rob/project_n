@@ -2,17 +2,13 @@ kinds:
   deep_water:
     wash: [88, 124, 148]
     strength: 0.68
-    variants: [terrain_water_0]
     stamps: { sprites: [stamp_water_0, stamp_water_1], density: 0.08, size: [0.7, 0.9], jitter: 0.15, thin_below: 0.5, mist: false }
   meadow:
     wash: [196, 204, 146]
     strength: 0.1
-    variants: [terrain_meadow_0, terrain_meadow_1]
     stamps: { sprites: [stamp_meadow_0], density: 0.03, size: [0.6, 0.9], jitter: 0.2, thin_below: 0, mist: true }
 roads:
   [road_0, road_1, road_2, road_3, road_4, road_5, road_6, road_7, road_8, road_9, road_10, road_11, road_12, road_13, road_14, road_15]
-rivers:
-  [river_0, river_1, river_2, river_3, river_4, river_5, river_6, river_7, river_8, river_9, river_10, river_11, river_12, river_13, river_14, river_15]
 bridge: { across: bridge_h, down: bridge_v }
 ford: ford
 markers:

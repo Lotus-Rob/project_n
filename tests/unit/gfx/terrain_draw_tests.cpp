@@ -1,7 +1,6 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/instances.hpp"
 #include "core/manifest.hpp"
-#include "core/random.hpp"
 #include "core/view_limits.hpp"
 #include "core/world_look.hpp"
 #include "core/world_map.hpp"
@@ -20,14 +19,7 @@ using core::atlas::SpriteId;
 
 constexpr f32 TILE = 256.0F;
 constexpr f32 HALF = 0.5F;
-constexpr u32 SMALL_COLUMNS = 5;
-// A tile of the shipped map the variant case follows; the neighbouring tiles it draws beside.
-// The wide view's first and last columns and rows (TilesRect(WIDE_FIRST, WIDE_LAST_COLUMN, WIDE_FIRST, WIDE_LAST_ROW)).
-constexpr u32 WIDE_FIRST = 10;
-constexpr u32 WIDE_LAST_COLUMN = 30;
-constexpr u32 WIDE_LAST_ROW = 20;
-constexpr std::size_t WIDE_COLUMNS = WIDE_LAST_COLUMN - WIDE_FIRST + 1;
-constexpr core::TilePoint SAMPLE{ .column = 12, .row = 12 };
+constexpr u32 PAGE_MASK = 0xFFFFU;
 
 // Deep water over a meadow with a river down column 3, a road along row 2 (bridging the river at (3, 2)), a ford at (3, 1)
 // and two places: the capital on the road's west end and a mountain pass in the east.
@@ -55,17 +47,13 @@ constexpr std::string_view SMALL_LOOK = R"yaml(kinds:
   deep_water:
     wash: [88, 124, 148]
     strength: 0.68
-    variants: [terrain_water_0]
     stamps: { sprites: [stamp_water_0], density: 0.08, size: [0.7, 0.9], jitter: 0.15, thin_below: 0.5, mist: false }
   meadow:
     wash: [196, 204, 146]
     strength: 0.1
-    variants: [terrain_meadow_0, terrain_meadow_1]
     stamps: { sprites: [stamp_meadow_0], density: 0.03, size: [0.6, 0.9], jitter: 0.2, thin_below: 0, mist: true }
 roads:
   [road_0, road_1, road_2, road_3, road_4, road_5, road_6, road_7, road_8, road_9, road_10, road_11, road_12, road_13, road_14, road_15]
-rivers:
-  [river_0, river_1, river_2, river_3, river_4, river_5, river_6, river_7, river_8, river_9, river_10, river_11, river_12, river_13, river_14, river_15]
 bridge: { across: bridge_h, down: bridge_v }
 ford: ford
 markers:
@@ -121,12 +109,14 @@ core::Rect TilesRect(u32 firstColumn, u32 lastColumn, u32 firstRow, u32 lastRow)
              .max = { .x = (static_cast<f32>(lastColumn) * TILE) + inset, .y = (static_cast<f32>(lastRow) * TILE) + inset } };
 }
 
-// The instance that draws `sprite` with its foot at `foot`, as the terrain places everything: standing still, on the land
-// the fog covers.
-core::Instance Placed(const core::Manifest& manifest, SpriteId sprite, core::Vec2 foot) {
-    return core::MakeInstance(
-        manifest, { .sprite = sprite, .previous = foot, .current = foot, .flags = core::INSTANCE_FOGGED_LAND }
-    );
+/// The instance that draws `sprite` with its foot at `foot`, standing still, with the fog flags `flags`.
+core::Instance Placed(
+    const core::Manifest& manifest,
+    SpriteId sprite,
+    core::Vec2 foot,
+    u32 flags = core::INSTANCE_FOGGED_LAND
+) {
+    return core::MakeInstance(manifest, { .sprite = sprite, .previous = foot, .current = foot, .flags = flags });
 }
 
 core::Vec2 Corner(u32 column, u32 row) {
@@ -141,125 +131,150 @@ bool Same(const core::Instance& lhs, const core::Instance& rhs) {
     return std::ranges::equal(std::as_bytes(std::span{ &lhs, 1 }), std::as_bytes(std::span{ &rhs, 1 }));
 }
 
-// Whether `instance` is `sprite` at `foot`.
+/// Whether `instance` is `sprite` at `foot`, on the land the fog covers.
 bool Is(const core::Manifest& manifest, const core::Instance& instance, SpriteId sprite, core::Vec2 foot) {
     return Same(instance, Placed(manifest, sprite, foot));
 }
 
-// Whether `instance` is one of the two meadow variants at `foot`.
-bool IsMeadow(const core::Manifest& manifest, const core::Instance& instance, core::Vec2 foot) {
-    return Is(manifest, instance, SpriteId::TerrainMeadow0, foot) || Is(manifest, instance, SpriteId::TerrainMeadow1, foot);
+/// Whether `instance` shows `sprite`, wherever and however it stands: the same region of the same atlas page.
+bool Shows(const core::Manifest& manifest, const core::Instance& instance, SpriteId sprite) {
+    const core::Instance made = core::MakeInstance(manifest, { .sprite = sprite });
+    return instance.regionMin == made.regionMin && (instance.layerFlags & PAGE_MASK) == (made.layerFlags & PAGE_MASK);
+}
+
+/// Every sprite `look` names for the terrain to draw: road overlays, crossings, stamps, mist, paintings and markers.
+std::vector<SpriteId> LookSprites(const core::WorldLook& look) {
+    std::vector<SpriteId> sprites{ look.roads.begin(), look.roads.end() };
+    sprites.insert(sprites.end(), { look.bridgeAcross, look.bridgeDown, look.ford, look.cityMarker, look.places.city });
+    for (const core::KindLook& kind : look.kinds) {
+        sprites.insert(sprites.end(), kind.stamps.sprites.begin(), kind.stamps.sprites.end());
+    }
+    sprites.insert(sprites.end(), look.mist.sprites.begin(), look.mist.sprites.end());
+    for (const auto& named : { look.dangerMarkers, look.places.dangers, look.places.byKey }) {
+        for (const auto& [name, sprite] : named) {
+            sprites.push_back(sprite);
+        }
+    }
+    return sprites;
+}
+
+/// The instances of `drawing`'s batch `batch`.
+std::span<const core::Instance> BatchOf(const gfx::TerrainDrawing& drawing, std::size_t batch) {
+    const core::Batch& run = drawing.batches.at(batch);
+    return std::span{ drawing.instances }.subspan(run.first, run.count);
+}
+
+/// The instances of `drawing`'s marker batches, the last ones.
+std::span<const core::Instance> MarkersOf(const gfx::TerrainDrawing& drawing) {
+    if (drawing.markersFrom >= drawing.batches.size()) {
+        return {};
+    }
+    return std::span{ drawing.instances }.subspan(drawing.batches[drawing.markersFrom].first);
+}
+
+/// Whether `drawing`'s batches cover its instances in order, one after another, every batch normal blend.
+bool Covers(const gfx::TerrainDrawing& drawing) {
+    u32 next = 0;
+    for (const core::Batch& batch : drawing.batches) {
+        if (batch.first != next || batch.count == 0 || batch.pipeline != core::Pipeline::Normal) {
+            return false;
+        }
+        next += batch.count;
+    }
+    return next == drawing.instances.size();
 }
 
 gfx::TerrainDrawing Drawn(
     const core::WorldMap& map,
     const core::WorldLook& look,
     const core::Manifest& manifest,
-    core::Rect view
+    core::Rect view,
+    f32 zoom = 1.0F
 ) {
     gfx::TerrainDrawing drawing;
-    gfx::DrawTerrain(map, look, manifest, view, drawing);
+    gfx::DrawTerrain(map, look, manifest, view, zoom, drawing);
     return drawing;
 }
 
-TEST_CASE("the terrain draws the tiles in view by the map's kinds and the look's variants") {
+TEST_CASE("the terrain draws no tiles and no river overlays") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const core::WorldMap map = SmallMap();
     const core::WorldLook look = SmallLook(*manifest, map);
-    // Columns 0 and 1, rows 0 and 1: deep water above, meadow below.
-    const gfx::TerrainDrawing drawing = Drawn(map, look, *manifest, TilesRect(0, 1, 0, 1));
-    REQUIRE(drawing.instances.size() == 4);
-    CHECK(Is(*manifest, drawing.instances[0], SpriteId::TerrainWater0, Corner(0, 0)));
-    CHECK(Is(*manifest, drawing.instances[1], SpriteId::TerrainWater0, Corner(1, 0)));
-    CHECK(IsMeadow(*manifest, drawing.instances[2], Corner(0, 1)));
-    CHECK(IsMeadow(*manifest, drawing.instances[3], Corner(1, 1)));
-    REQUIRE(drawing.batches.size() == 1);
-    CHECK(drawing.batches[0].first == 0);
-    CHECK(drawing.batches[0].count == 4);
-    CHECK(drawing.batches[0].pipeline == core::Pipeline::Normal);
+    // The whole map: the ground and river pipelines paint every tile and the river, so each instance is one of the look's
+    // road overlays, crossings, stamps, puffs, paintings or markers.
+    const gfx::TerrainDrawing drawing = Drawn(map, look, *manifest, TilesRect(0, 4, 0, 2));
+    const std::vector<SpriteId> named = LookSprites(look);
+    REQUIRE_FALSE(drawing.instances.empty());
+    CHECK(std::ranges::all_of(drawing.instances, [&](const core::Instance& instance) {
+        return std::ranges::any_of(named, [&](SpriteId sprite) { return Shows(*manifest, instance, sprite); });
+    }));
+    CHECK(Covers(drawing));
 }
 
-TEST_CASE("a tile's variant depends on its place only, so a view never changes it") {
+TEST_CASE("road overlays lead and markers close the terrain's batches") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
-    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
-    std::expected<core::WorldLook, core::Error> look =
-        platform::AssetsDirectory().and_then([&](const std::filesystem::path& assets) {
-            return data::LoadWorldLook(assets / "data", *manifest, *map);
-        });
-    REQUIRE(look.has_value());
-    const gfx::TerrainDrawing wide =
-        Drawn(*map, *look, *manifest, TilesRect(WIDE_FIRST, WIDE_LAST_COLUMN, WIDE_FIRST, WIDE_LAST_ROW));
-    const gfx::TerrainDrawing narrow =
-        Drawn(*map, *look, *manifest, TilesRect(SAMPLE.column, SAMPLE.column + 2, SAMPLE.row, SAMPLE.row + 2));
-    // The narrow view's first tile, (12, 12), is the wide view's tile at row 2, column 2 of its span.
-    const std::size_t wideIndex = (std::size_t{ 2 } * WIDE_COLUMNS) + 2;
-    CHECK(Same(narrow.instances.front(), wide.instances.at(wideIndex)));
-    // The pick two-variant kinds keep: the top bit of the hash of column and row.
-    constexpr u64 SEED = 0x5eed;
-    constexpr u32 PURPOSE = 9;
-    constexpr u32 DRAW = 2;
-    constexpr u32 TOP_BIT = 63;
-    constexpr u32 COLUMN_SHIFT = 32;
-    std::size_t checked = 0;
-    std::size_t mismatches = 0;
-    std::array<bool, 2> seen{};
-    for (u32 row = WIDE_FIRST; row <= WIDE_LAST_ROW; ++row) {
-        for (u32 column = WIDE_FIRST; column <= WIDE_LAST_COLUMN; ++column) {
-            const std::vector<SpriteId>& kind =
-                look->kinds.at(map->KindAt(map->TileIndex({ .column = column, .row = row }))).variants;
-            if (kind.size() != 2) {
-                continue;
-            }
-            const u64 key = (u64{ column } << COLUMN_SHIFT) | row;
-            const u64 bit = core::Random(SEED, 0, key, PURPOSE, DRAW) >> TOP_BIT;
-            const std::size_t index = (std::size_t{ row - WIDE_FIRST } * WIDE_COLUMNS) + (column - WIDE_FIRST);
-            if (!Is(*manifest, wide.instances.at(index), kind.at(bit), Corner(column, row))) {
-                ++mismatches;
-            }
-            seen.at(bit) = true;
-            ++checked;
-        }
-    }
-    // Each tile of a two-variant kind wears that pick (asserted once, for all), and both variants occur among them.
-    CHECK(checked > 0);
-    CHECK(mismatches == 0);
-    CHECK(seen.at(0));
-    CHECK(seen.at(1));
+    const core::WorldMap map = SmallMap();
+    const core::WorldLook look = SmallLook(*manifest, map);
+    const gfx::TerrainDrawing drawing = Drawn(map, look, *manifest, TilesRect(0, 4, 0, 2));
+    REQUIRE(Covers(drawing));
+    // Roads, crossings, the stamps and paintings (the two places' paintings at least), then the markers.
+    REQUIRE(drawing.batches.size() >= 4);
+    CHECK(drawing.roadBatches == 1);
+    CHECK(BatchOf(drawing, 0).size() == 5);
+    const std::span<const core::Instance> crossings = BatchOf(drawing, 1);
+    REQUIRE(crossings.size() == 2);
+    CHECK(Is(*manifest, crossings[0], SpriteId::Ford, Corner(3, 1)));
+    CHECK(Is(*manifest, crossings[1], SpriteId::BridgeH, Corner(3, 2)));
+    CHECK(drawing.markersFrom == drawing.batches.size() - 1);
+    const std::span<const core::Instance> markers = MarkersOf(drawing);
+    REQUIRE(markers.size() == 2);
+    CHECK(Shows(*manifest, markers[0], SpriteId::MarkerCity));
+    CHECK(Shows(*manifest, markers[1], SpriteId::MarkerMountainPass));
+    // Row 0 alone, open water: no road leads and no marker closes, though the places' paintings reach in from below.
+    const gfx::TerrainDrawing water = Drawn(map, look, *manifest, TilesRect(0, 4, 0, 0));
+    CHECK(Covers(water));
+    CHECK(water.roadBatches == 0);
+    CHECK(water.markersFrom == water.batches.size());
+    CHECK(MarkersOf(water).empty());
+}
+
+TEST_CASE("markers are hidden under cloud but not drained") {
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    const core::WorldMap map = SmallMap();
+    const core::WorldLook look = SmallLook(*manifest, map);
+    const gfx::TerrainDrawing drawing = Drawn(map, look, *manifest, TilesRect(0, 4, 0, 2));
+    const std::span<const core::Instance> markers = MarkersOf(drawing);
+    REQUIRE(markers.size() == 2);
+    CHECK(Same(markers[0], Placed(*manifest, SpriteId::MarkerCity, Middle(0, 2), core::INSTANCE_FOG_SHADE)));
+    CHECK(Same(markers[1], Placed(*manifest, SpriteId::MarkerMountainPass, Middle(4, 1), core::INSTANCE_FOG_SHADE)));
+    // Everything under the markers is land: drained, misted and shaded together.
+    const std::span<const core::Instance> land =
+        std::span{ drawing.instances }.first(drawing.batches.at(drawing.markersFrom).first);
+    REQUIRE_FALSE(land.empty());
+    CHECK(std::ranges::all_of(land, [](const core::Instance& instance) {
+        return instance.flags == core::INSTANCE_FOGGED_LAND;
+    }));
 }
 
 TEST_CASE("a road tile draws the overlay its neighbours choose") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const core::WorldMap map = SmallMap();
     const core::WorldLook look = SmallLook(*manifest, map);
-    // Row 2, all five tiles: meadow; the river's overlay on (3, 2); the road along it; the bridge; the capital's marker.
+    // Row 2, all five tiles: the road along it, the bridge, the capital's marker.
     const gfx::TerrainDrawing drawing = Drawn(map, look, *manifest, TilesRect(0, 4, 2, 2));
-    REQUIRE(drawing.instances.size() == 13);
-    for (u32 column = 0; column < SMALL_COLUMNS; ++column) {
-        CHECK(IsMeadow(*manifest, drawing.instances[column], Corner(column, 2)));
-    }
-    // The river runs north from (3, 2) to the ford at (3, 1): its north neighbour only (1).
-    CHECK(Is(*manifest, drawing.instances[5], SpriteId::River1, Corner(3, 2)));
+    REQUIRE(drawing.roadBatches == 1);
+    const std::span<const core::Instance> roads = BatchOf(drawing, 0);
+    REQUIRE(roads.size() == 5);
     // The road runs east to west: the west end has its east neighbour (2), the middle both (2 | 8), the east end its west (8).
-    CHECK(Is(*manifest, drawing.instances[6], SpriteId::Road2, Corner(0, 2)));
+    CHECK(Is(*manifest, roads[0], SpriteId::Road2, Corner(0, 2)));
     for (u32 column = 1; column < 4; ++column) {
-        CHECK(Is(*manifest, drawing.instances[6 + column], SpriteId::Road10, Corner(column, 2)));
+        CHECK(Is(*manifest, roads[column], SpriteId::Road10, Corner(column, 2)));
     }
-    CHECK(Is(*manifest, drawing.instances[10], SpriteId::Road8, Corner(4, 2)));
-    // The bridge where the road crosses the river, east to west: after the river and the road, over both.
-    CHECK(Is(*manifest, drawing.instances[11], SpriteId::BridgeH, Corner(3, 2)));
-    CHECK(Is(*manifest, drawing.instances[12], SpriteId::MarkerCity, Middle(0, 2)));
-}
-
-TEST_CASE("every terrain instance is flagged as fogged land") {
-    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
-    const core::WorldMap map = SmallMap();
-    const core::WorldLook look = SmallLook(*manifest, map);
-    // The whole map: tiles, both overlays, the bridge, the ford and both markers.
-    const gfx::TerrainDrawing drawing = Drawn(map, look, *manifest, TilesRect(0, 4, 0, 2));
-    REQUIRE(drawing.instances.size() == 26);
-    CHECK(std::ranges::all_of(drawing.instances, [](const core::Instance& instance) {
-        return instance.flags == core::INSTANCE_FOGGED_LAND;
-    }));
+    CHECK(Is(*manifest, roads[4], SpriteId::Road8, Corner(4, 2)));
+    // The bridge where the road crosses the river, east to west, over the road.
+    const std::span<const core::Instance> crossings = BatchOf(drawing, 1);
+    REQUIRE(crossings.size() == 1);
+    CHECK(Is(*manifest, crossings[0], SpriteId::BridgeH, Corner(3, 2)));
 }
 
 TEST_CASE("a bridge whose road runs north to south draws the downward bridge") {
@@ -286,24 +301,25 @@ places:
     REQUIRE(map.has_value());
     core::WorldLook look = SmallLook(*manifest, SmallMap());
     look.kinds.resize(1);
-    look.kinds[0].variants = { SpriteId::TerrainMeadow0 };
     const gfx::TerrainDrawing drawing = Drawn(*map, look, *manifest, TilesRect(1, 1, 1, 1));
-    // The tile, its river overlay (east and west: 2 | 8), its road (north and south: 1 | 4), the downward bridge.
-    REQUIRE(drawing.instances.size() >= 4);
-    CHECK(Is(*manifest, drawing.instances[1], SpriteId::River10, Corner(1, 1)));
-    CHECK(Is(*manifest, drawing.instances[2], SpriteId::Road5, Corner(1, 1)));
-    CHECK(Is(*manifest, drawing.instances[3], SpriteId::BridgeV, Corner(1, 1)));
+    // The tile's road (north and south: 1 | 4), then the downward bridge over it.
+    REQUIRE(drawing.roadBatches == 1);
+    REQUIRE(BatchOf(drawing, 0).size() == 1);
+    CHECK(Is(*manifest, BatchOf(drawing, 0)[0], SpriteId::Road5, Corner(1, 1)));
+    REQUIRE(BatchOf(drawing, 1).size() == 1);
+    CHECK(Is(*manifest, BatchOf(drawing, 1)[0], SpriteId::BridgeV, Corner(1, 1)));
 }
 
-TEST_CASE("a ford draws the river, then the ford") {
+TEST_CASE("a ford draws on its tile, with no road before it") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const core::WorldMap map = SmallMap();
     const core::WorldLook look = SmallLook(*manifest, map);
-    // Row 1: the tiles, the river's overlay on (3, 1) (south neighbour only: 4), its ford, the pass's marker.
+    // Row 1: no road, so the ford's crossing batch comes first.
     const gfx::TerrainDrawing drawing = Drawn(map, look, *manifest, TilesRect(0, 4, 1, 1));
-    REQUIRE(drawing.instances.size() == 8);
-    CHECK(Is(*manifest, drawing.instances[5], SpriteId::River4, Corner(3, 1)));
-    CHECK(Is(*manifest, drawing.instances[6], SpriteId::Ford, Corner(3, 1)));
+    CHECK(drawing.roadBatches == 0);
+    REQUIRE_FALSE(drawing.batches.empty());
+    REQUIRE(BatchOf(drawing, 0).size() == 1);
+    CHECK(Is(*manifest, BatchOf(drawing, 0)[0], SpriteId::Ford, Corner(3, 1)));
 }
 
 TEST_CASE("a place's marker draws at its tile's centre") {
@@ -311,24 +327,25 @@ TEST_CASE("a place's marker draws at its tile's centre") {
     const core::WorldMap map = SmallMap();
     const core::WorldLook look = SmallLook(*manifest, map);
     const gfx::TerrainDrawing drawing = Drawn(map, look, *manifest, TilesRect(0, 4, 1, 1));
-    REQUIRE(drawing.instances.size() == 8);
-    CHECK(Is(*manifest, drawing.instances[7], SpriteId::MarkerMountainPass, Middle(4, 1)));
     // A place off the view's tiles draws no marker: the capital stands in row 2.
-    CHECK(std::ranges::none_of(drawing.instances, [&](const core::Instance& instance) {
-        return Is(*manifest, instance, SpriteId::MarkerCity, Middle(0, 2));
-    }));
+    const std::span<const core::Instance> markers = MarkersOf(drawing);
+    REQUIRE(markers.size() == 1);
+    CHECK(Same(markers[0], Placed(*manifest, SpriteId::MarkerMountainPass, Middle(4, 1), core::INSTANCE_FOG_SHADE)));
 }
 
-TEST_CASE("a view past the map's edge draws only tiles on the map, and one wholly off it draws nothing") {
+TEST_CASE("a view past the map's edge draws only what stands on the map, and one wholly off it draws nothing") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const core::WorldMap map = SmallMap();
     const core::WorldLook look = SmallLook(*manifest, map);
-    // Past the east edge: only columns 3 and 4 of row 0, water.
-    constexpr core::Rect PAST_EAST{ .min = { .x = 900.0F, .y = 10.0F }, .max = { .x = 5'000.0F, .y = 100.0F } };
+    // Past the east edge: only columns 3 and 4 of rows 0 and 1, the ford and the pass but no road.
+    constexpr core::Rect PAST_EAST{ .min = { .x = 900.0F, .y = 10.0F }, .max = { .x = 5'000.0F, .y = 300.0F } };
     const gfx::TerrainDrawing east = Drawn(map, look, *manifest, PAST_EAST);
-    REQUIRE(east.instances.size() == 2);
-    CHECK(Is(*manifest, east.instances[0], SpriteId::TerrainWater0, Corner(3, 0)));
-    CHECK(Is(*manifest, east.instances[1], SpriteId::TerrainWater0, Corner(4, 0)));
+    CHECK(Covers(east));
+    CHECK(east.roadBatches == 0);
+    REQUIRE(BatchOf(east, 0).size() == 1);
+    CHECK(Is(*manifest, BatchOf(east, 0)[0], SpriteId::Ford, Corner(3, 1)));
+    REQUIRE(MarkersOf(east).size() == 1);
+    CHECK(Shows(*manifest, MarkersOf(east)[0], SpriteId::MarkerMountainPass));
     // Wholly off the map in each direction: nothing, not even a batch.
     constexpr std::array<core::Rect, 4> OFF{ {
         { .min = { .x = -3'000.0F, .y = 0.0F }, .max = { .x = -1'000.0F, .y = 600.0F } },
@@ -340,23 +357,33 @@ TEST_CASE("a view past the map's edge draws only tiles on the map, and one wholl
         const gfx::TerrainDrawing drawing = Drawn(map, look, *manifest, view);
         CHECK(drawing.instances.empty());
         CHECK(drawing.batches.empty());
+        CHECK(drawing.roadBatches == 0);
+        CHECK(drawing.markersFrom == 0);
     }
     // A drawing is replaced by the next, never added to.
     gfx::TerrainDrawing reused = Drawn(map, look, *manifest, TilesRect(0, 4, 0, 2));
     REQUIRE_FALSE(reused.instances.empty());
-    gfx::DrawTerrain(map, look, *manifest, OFF[0], reused);
+    gfx::DrawTerrain(map, look, *manifest, OFF[0], 1.0F, reused);
     CHECK(reused.instances.empty());
     CHECK(reused.batches.empty());
+    CHECK(reused.roadBatches == 0);
+    CHECK(reused.markersFrom == 0);
 }
 
-TEST_CASE("a look short of the map's kinds draws the tile bare, never past a table") {
+TEST_CASE("a look short of the map's kinds draws no stamp there, never past a table") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const core::WorldMap map = SmallMap();
     core::WorldLook look = SmallLook(*manifest, map);
-    look.kinds.resize(1);
-    look.kinds[0].variants.clear();
-    const gfx::TerrainDrawing drawing = Drawn(map, look, *manifest, TilesRect(0, 1, 0, 1));
-    CHECK(drawing.instances.empty());
+    std::vector<SpriteId> stamps;
+    for (const core::KindLook& kind : look.kinds) {
+        stamps.insert(stamps.end(), kind.stamps.sprites.begin(), kind.stamps.sprites.end());
+    }
+    look.kinds.clear();
+    const gfx::TerrainDrawing drawing = Drawn(map, look, *manifest, TilesRect(0, 4, 0, 2));
+    CHECK(Covers(drawing));
+    CHECK(std::ranges::none_of(drawing.instances, [&](const core::Instance& instance) {
+        return std::ranges::any_of(stamps, [&](SpriteId sprite) { return Shows(*manifest, instance, sprite); });
+    }));
 }
 
 TEST_CASE("the widest view of the shipped map stays within MAX_TERRAIN_INSTANCES") {
@@ -379,19 +406,21 @@ TEST_CASE("the widest view of the shipped map stays within MAX_TERRAIN_INSTANCES
         centres.push_back(map->TileCentre(map->TileIndex(place.tile)));
     }
     std::size_t most = 0;
+    bool covered = true;
     for (const core::Vec2 centre : centres) {
-        const gfx::TerrainDrawing drawing =
-            Drawn(*map, *look, *manifest, { .min = centre - core::WIDEST_HALF_VIEW, .max = centre + core::WIDEST_HALF_VIEW });
-        most = std::max(most, drawing.instances.size());
-        u32 batched = 0;
-        for (const core::Batch& batch : drawing.batches) {
-            batched += batch.count;
+        // The farthest zoom thins the small stamps out; the nearest keeps every one.
+        for (const f32 zoom : { 0.25F, 1.0F }) {
+            const gfx::TerrainDrawing drawing = Drawn(
+                *map, *look, *manifest, { .min = centre - core::WIDEST_HALF_VIEW, .max = centre + core::WIDEST_HALF_VIEW }, zoom
+            );
+            most = std::max(most, drawing.instances.size());
+            covered = covered && Covers(drawing);
         }
-        CHECK(batched == drawing.instances.size());
     }
     CAPTURE(most);
     CHECK(most <= gfx::MAX_TERRAIN_INSTANCES);
     CHECK(most > 0);
+    CHECK(covered);
 }
 
 } // namespace

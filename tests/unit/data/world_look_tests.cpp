@@ -36,17 +36,13 @@ constexpr std::string_view SMALL_LOOK = R"yaml(kinds:
   deep_water:
     wash: [88, 124, 148]
     strength: 0.68
-    variants: [terrain_water_0]
     stamps: { sprites: [stamp_water_0, stamp_water_1], density: 0.08, size: [0.7, 0.9], jitter: 0.15, thin_below: 0.5, mist: false }
   meadow:
     wash: [196, 204, 146]
     strength: 0.1
-    variants: [terrain_meadow_0, terrain_meadow_1]
     stamps: { sprites: [stamp_meadow_0], density: 0.03, size: [0.6, 0.9], jitter: 0.2, thin_below: 0, mist: true }
 roads:
   [road_0, road_1, road_2, road_3, road_4, road_5, road_6, road_7, road_8, road_9, road_10, road_11, road_12, road_13, road_14, road_15]
-rivers:
-  [river_0, river_1, river_2, river_3, river_4, river_5, river_6, river_7, river_8, river_9, river_10, river_11, river_12, river_13, river_14, river_15]
 bridge: { across: bridge_h, down: bridge_v }
 ford: ford
 markers:
@@ -100,19 +96,19 @@ std::string With(std::string_view from, std::string_view replacement) {
     return text.replace(where, from.size(), replacement);
 }
 
-// A kind called `name` with the variants `variants`, to put in the look's `kinds:` before meadow.
-std::string ExtraKind(std::string_view name, std::string_view variants) {
+// A kind called `name` with the stamp sprites `sprites`, to put in the look's `kinds:` before meadow.
+std::string ExtraKind(std::string_view name, std::string_view sprites) {
     return std::format(
-        "  {}:\n    wash: [236, 239, 242]\n    strength: 0.2\n    variants: {}\n"
-        "    stamps: {{ sprites: [stamp_snow_0], density: 0.3, size: [1.2, 1.7], jitter: 0.3, thin_below: 0, mist: true }}\n",
+        "  {}:\n    wash: [236, 239, 242]\n    strength: 0.2\n"
+        "    stamps: {{ sprites: {}, density: 0.3, size: [1.2, 1.7], jitter: 0.3, thin_below: 0, mist: true }}\n",
         name,
-        variants
+        sprites
     );
 }
 
 // SMALL_LOOK with the kind `snow` added.
-std::string WithSnow(std::string_view variants) {
-    return With("  meadow:\n", ExtraKind("snow", variants) + "  meadow:\n");
+std::string WithSnow(std::string_view sprites) {
+    return With("  meadow:\n", ExtraKind("snow", sprites) + "  meadow:\n");
 }
 
 // SMALL_LOOK without its meadow kind.
@@ -141,12 +137,11 @@ TEST_CASE("a small look parses against a small map") {
     const std::expected<core::WorldLook, core::Error> look = Parse(SMALL_LOOK);
     REQUIRE(look.has_value());
     REQUIRE(look->kinds.size() == 2);
-    CHECK(look->kinds[0].variants == std::vector{ core::atlas::SpriteId::TerrainWater0 });
     CHECK(
-        look->kinds[1].variants == std::vector{ core::atlas::SpriteId::TerrainMeadow0, core::atlas::SpriteId::TerrainMeadow1 }
+        look->kinds[0].stamps.sprites == std::vector{ core::atlas::SpriteId::StampWater0, core::atlas::SpriteId::StampWater1 }
     );
+    CHECK(look->kinds[1].stamps.sprites == std::vector{ core::atlas::SpriteId::StampMeadow0 });
     CHECK(look->roads.front() == core::atlas::SpriteId::Road0);
-    CHECK(look->rivers.front() == core::atlas::SpriteId::River0);
     CHECK(look->roads.size() == MASKS);
     CHECK(look->bridgeAcross == core::atlas::SpriteId::BridgeH);
     CHECK(look->bridgeDown == core::atlas::SpriteId::BridgeV);
@@ -169,21 +164,14 @@ TEST_CASE("the look reader refuses what the map can't be drawn by, naming the li
     };
     const std::string noMeadow = WithoutMeadow();
     const std::string noPass = With("  mountain_pass: marker_mountain_pass\n", "");
-    const std::string badSprite = With("terrain_water_0", "terrain_lava_0");
+    const std::string badSprite = With("[stamp_water_0,", "[stamp_lava_0,");
     std::string fifteenRoads{ SMALL_LOOK };
     fifteenRoads.replace(fifteenRoads.find(", road_15"), std::string_view{ ", road_15" }.size(), "");
-    std::string fifteenRivers{ SMALL_LOOK };
-    fifteenRivers.replace(fifteenRivers.find(", river_15"), std::string_view{ ", river_15" }.size(), "");
     const std::vector<Broken> cases{
         { .why = "a kind of the map with no look",
           .text = noMeadow,
           .says = std::format(
               "world_look line {}: the map's kind meadow has no look in kinds", LineOf(SMALL_LOOK, "deep_water:")
-          ) },
-        { .why = "a kind with no variant",
-          .text = With("variants: [terrain_water_0]", "variants: []"),
-          .says = std::format(
-              "world_look line {}: kind deep_water variants has no sprite", LineOf(SMALL_LOOK, "variants: [terrain_water_0]")
           ) },
         { .why = "a danger sort the map uses with no marker",
           .text = noPass,
@@ -193,14 +181,14 @@ TEST_CASE("the look reader refuses what the map can't be drawn by, naming the li
         { .why = "a sprite the manifest lacks",
           .text = badSprite,
           .says = std::format(
-              "world_look line {}: kind deep_water variants names the sprite \"terrain_lava_0\", which isn't in the atlas",
-              LineOf(SMALL_LOOK, "variants: [terrain_water_0]")
+              "world_look line {}: kind deep_water stamps sprites names the sprite \"stamp_lava_0\", which isn't in the atlas",
+              LineOf(SMALL_LOOK, "stamps: { sprites: [stamp_water_0")
           ) },
         { .why = "an unused kind naming a sprite the manifest lacks",
-          .text = WithSnow("[terrain_lava_0]"),
+          .text = WithSnow("[stamp_lava_0]"),
           .says = std::format(
-              "world_look line {}: kind snow variants names the sprite \"terrain_lava_0\", which isn't in the atlas",
-              LineOf(WithSnow("[terrain_lava_0]"), "variants: [terrain_lava_0]")
+              "world_look line {}: kind snow stamps sprites names the sprite \"stamp_lava_0\", which isn't in the atlas",
+              LineOf(WithSnow("[stamp_lava_0]"), "stamps: { sprites: [stamp_lava_0]")
           ) },
         { .why = "an unused marker naming a sprite the manifest lacks",
           .text = With("  mountain_pass:", "  cave: marker_nowhere\n  mountain_pass:"),
@@ -211,9 +199,6 @@ TEST_CASE("the look reader refuses what the map can't be drawn by, naming the li
         { .why = "a road list not 16 long",
           .text = fifteenRoads,
           .says = std::format("world_look line {}: roads has 15 sprites, not 16", LineOf(SMALL_LOOK, "[road_0")) },
-        { .why = "a river list not 16 long",
-          .text = fifteenRivers,
-          .says = std::format("world_look line {}: rivers has 15 sprites, not 16", LineOf(SMALL_LOOK, "[river_0")) },
         { .why = "a missing bridge",
           .text = With("bridge: { across: bridge_h, down: bridge_v }\n", ""),
           .says = "world_look line 1: the look has no bridge" },
@@ -226,8 +211,9 @@ TEST_CASE("the look reader refuses what the map can't be drawn by, naming the li
         { .why = "an unused kind naming a sprite the world scene doesn't load",
           .text = WithSnow("[cell_snow]"),
           .says = std::format(
-              "world_look line {}: kind snow variants names the sprite \"cell_snow\", which the world scene doesn't load",
-              LineOf(WithSnow("[cell_snow]"), "variants: [cell_snow]")
+              "world_look line {}: kind snow stamps sprites names the sprite \"cell_snow\", which the world scene doesn't "
+              "load",
+              LineOf(WithSnow("[cell_snow]"), "stamps: { sprites: [cell_snow]")
           ) },
         { .why = "a marker with an unknown sprite",
           .text = With("marker_city", "marker_nowhere"),
@@ -283,10 +269,23 @@ TEST_CASE("a kind or marker the map doesn't use is accepted silently") {
     CHECK(look->kinds.size() == 2); // by the map's kinds
     CHECK(warnings.size() == 1);    // only the typo'd top-level key
     std::vector<std::string> plain;
-    const std::expected<core::WorldLook, core::Error> extra = Parse(WithSnow("[terrain_snow_0]"), &plain);
+    const std::expected<core::WorldLook, core::Error> extra = Parse(WithSnow("[stamp_snow_0]"), &plain);
     REQUIRE(extra.has_value());
     CHECK(plain.empty());
     CHECK(extra->kinds.size() == 2);
+}
+
+TEST_CASE("a kind with variants warns that the key is unknown, and the look still reads") {
+    std::vector<std::string> warnings;
+    const std::string text = With("    strength: 0.68\n", "    strength: 0.68\n    variants: [stamp_water_0]\n");
+    const std::expected<core::WorldLook, core::Error> look = Parse(text, &warnings);
+    REQUIRE(look.has_value());
+    REQUIRE(warnings.size() == 1);
+    CHECK(
+        warnings[0] ==
+        std::format("world_look line {}: kind deep_water has no key variants; it is ignored", LineOf(text, "variants:"))
+    );
+    CHECK(look->kinds[0].stamps.sprites.front() == core::atlas::SpriteId::StampWater0);
 }
 
 TEST_CASE("an unknown key warns, at the top and in the bridge") {
@@ -301,7 +300,8 @@ TEST_CASE("an unknown key warns, at the top and in the bridge") {
 TEST_CASE("a look hashes by its sprites") {
     const std::expected<core::WorldLook, core::Error> first = Parse(SMALL_LOOK);
     const std::expected<core::WorldLook, core::Error> same = Parse(SMALL_LOOK);
-    const std::expected<core::WorldLook, core::Error> other = Parse(With("terrain_meadow_1", "terrain_grass_1"));
+    const std::expected<core::WorldLook, core::Error> other =
+        Parse(With("[stamp_water_0, stamp_water_1]", "[stamp_water_0, stamp_water_2]"));
     REQUIRE(first.has_value());
     REQUIRE(same.has_value());
     REQUIRE(other.has_value());
@@ -359,11 +359,11 @@ TEST_CASE("the shipped look covers the shipped map") {
     const std::shared_ptr<const core::Manifest>& manifest = shipped.manifest;
     const core::WorldMap& map = *shipped.map;
     const core::WorldLook& look = shipped.look;
-    // Every kind the map declares has a look with a variant: the terrain draws no tile bare.
+    // Every kind the map declares has a look with stamps to pick from.
     REQUIRE(look.kinds.size() >= map.Kinds().size());
     for (std::size_t kind = 0; kind < map.Kinds().size(); ++kind) {
         CAPTURE(map.Kinds()[kind].name);
-        CHECK_FALSE(look.kinds[kind].variants.empty());
+        CHECK_FALSE(look.kinds[kind].stamps.sprites.empty());
     }
     // Every sprite the look names is one the world scene loads, or the renderer would draw from a page that isn't resident.
     const std::optional<core::SceneId> worldScene = manifest->SceneNamed("world");
@@ -372,9 +372,7 @@ TEST_CASE("the shipped look covers the shipped map") {
     const std::vector<core::atlas::SpriteId>& resident = manifest->Scene(worldId).sprites;
     std::vector<core::atlas::SpriteId> named = { look.bridgeAcross, look.bridgeDown, look.ford, look.cityMarker };
     named.insert(named.end(), look.roads.begin(), look.roads.end());
-    named.insert(named.end(), look.rivers.begin(), look.rivers.end());
     for (const core::KindLook& kind : look.kinds) {
-        named.insert(named.end(), kind.variants.begin(), kind.variants.end());
         named.insert(named.end(), kind.stamps.sprites.begin(), kind.stamps.sprites.end());
     }
     named.insert(named.end(), look.mist.sprites.begin(), look.mist.sprites.end());
@@ -565,7 +563,6 @@ TEST_CASE("the shipped forest's stamps read as written") {
     const core::KindLook& kind = shipped.look.kinds[forest];
     CHECK(kind.wash == std::array<u8, 3>{ { 66, 102, 74 } });
     CHECK(kind.strength == doctest::Approx(0.12F));
-    CHECK(kind.variants.size() == 2);
     REQUIRE(kind.stamps.sprites.size() == 4);
     CHECK(kind.stamps.sprites.front() == core::atlas::SpriteId::StampForest0);
     CHECK(kind.stamps.sprites.back() == core::atlas::SpriteId::StampForest3);
@@ -580,11 +577,11 @@ TEST_CASE("the shipped forest's stamps read as written") {
 TEST_CASE("a look with more kinds than the ground's table is refused") {
     std::string extras;
     for (u32 index = 0; index < core::MAX_GROUND_KINDS - 2; ++index) {
-        extras += ExtraKind(std::format("spare_{}", index), "[terrain_snow_0]");
+        extras += ExtraKind(std::format("spare_{}", index), "[stamp_snow_0]");
     }
     // Two kinds of the map and 14 spares fill the table; one more is refused.
     CHECK(Parse(With("  meadow:\n", extras + "  meadow:\n")).has_value());
-    const std::string text = With("  meadow:\n", extras + ExtraKind("spare_last", "[terrain_snow_0]") + "  meadow:\n");
+    const std::string text = With("  meadow:\n", extras + ExtraKind("spare_last", "[stamp_snow_0]") + "  meadow:\n");
     const std::expected<core::WorldLook, core::Error> look = Parse(text);
     REQUIRE_FALSE(look.has_value());
     CHECK(look.error().message.starts_with(std::format("world_look line {}: ", LineOf(text, "deep_water:"))));

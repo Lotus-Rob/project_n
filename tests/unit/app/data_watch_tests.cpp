@@ -175,15 +175,15 @@ TEST_CASE("keeping the map leaves a game data that couldn't be read as it was") 
     CHECK(read.error().message == "broken");
 }
 
-// A look whose meadow has the one variant `variant`.
-core::WorldLook LookOf(core::atlas::SpriteId variant) {
+// A look whose meadow has the one stamp sprite `stamp`.
+core::WorldLook LookOf(core::atlas::SpriteId stamp) {
     core::WorldLook look;
-    look.kinds = { { .variants = { variant } } };
+    look.kinds = { { .stamps = { .sprites = { stamp } } } };
     return look;
 }
 
 TEST_CASE("a look that couldn't be read leaves the running one, and reports no change") {
-    core::WorldLook current = LookOf(core::atlas::SpriteId::TerrainMeadow0);
+    core::WorldLook current = LookOf(core::atlas::SpriteId::StampMeadow0);
     const u64 before = current.Hash();
     const bool replaced = app::KeepLook(current, std::unexpected{ core::Error{ "broken" } });
     CHECK_FALSE(replaced);
@@ -191,8 +191,8 @@ TEST_CASE("a look that couldn't be read leaves the running one, and reports no c
 }
 
 TEST_CASE("a different look replaces the running one, and reports the change") {
-    core::WorldLook current = LookOf(core::atlas::SpriteId::TerrainMeadow0);
-    const core::WorldLook edited = LookOf(core::atlas::SpriteId::TerrainMeadow1);
+    core::WorldLook current = LookOf(core::atlas::SpriteId::StampMeadow0);
+    const core::WorldLook edited = LookOf(core::atlas::SpriteId::StampMeadow1);
     const bool replaced = app::KeepLook(current, edited);
     CHECK(replaced);
     CHECK(current.Hash() == edited.Hash());
@@ -231,8 +231,8 @@ TEST_CASE("the look's sprites are checked against the world scene's") {
 }
 
 TEST_CASE("an identical look changes nothing") {
-    core::WorldLook current = LookOf(core::atlas::SpriteId::TerrainMeadow0);
-    const bool replaced = app::KeepLook(current, LookOf(core::atlas::SpriteId::TerrainMeadow0));
+    core::WorldLook current = LookOf(core::atlas::SpriteId::StampMeadow0);
+    const bool replaced = app::KeepLook(current, LookOf(core::atlas::SpriteId::StampMeadow0));
     CHECK_FALSE(replaced);
 }
 

@@ -58,7 +58,7 @@ struct SpriteDraw {
     f32 widthScale = 1.0F;
     /// The glow it wears round its edge (core/glow.hpp); none by default.
     GlowInput glow{};
-    /// Instance::flags: INSTANCE_FOGGED_LAND and INSTANCE_SIGHT_FADE.
+    /// Instance::flags: INSTANCE_FOGGED_LAND, INSTANCE_SIGHT_FADE and INSTANCE_FOG_SHADE.
     u32 flags = 0;
 };
 
