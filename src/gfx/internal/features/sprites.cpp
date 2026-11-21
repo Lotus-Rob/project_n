@@ -2,6 +2,7 @@
 
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/profile.hpp"
+#include "core/ui_colours.hpp"
 #include "gfx/internal/resources/shaders.hpp"
 
 namespace gfx::internal {
@@ -64,6 +65,84 @@ static_assert(
 
 constexpr u32 GLOW_TABLE_BYTES = static_cast<u32>(GLOW_RECORD_BYTES * core::GLOW_ROLES);
 
+/// sprite.frag.hlsl's LUMINANCE: Rec. 709's weights of linear red, green and blue.
+constexpr std::array<f32, 3> FOG_LUMINANCE{ 0.2126F, 0.7152F, 0.0722F };
+constexpr u32 SHADER_FOGGED_LAND = 1; // sprite.frag.hlsl's INSTANCE_FOGGED_LAND
+constexpr u32 SHADER_SIGHT_FADE = 2;  // sprite.frag.hlsl's INSTANCE_SIGHT_FADE
+static_assert(core::INSTANCE_FOGGED_LAND == SHADER_FOGGED_LAND, "sprite.frag.hlsl's INSTANCE_FOGGED_LAND is core's");
+static_assert(core::INSTANCE_SIGHT_FADE == SHADER_SIGHT_FADE, "sprite.frag.hlsl's INSTANCE_SIGHT_FADE is core's");
+/// Two bytes a texel: explored, then in sight, as FogFrame::values holds them.
+constexpr u32 FOG_TEXEL_BYTES = 2;
+constexpr u8 FOG_FULL = 255;
+constexpr f32 CHANNEL_MAX = 255.0F;
+constexpr u32 CHANNEL_BITS = 8;
+constexpr u32 CHANNEL_MASK = 0xFFU;
+
+/// The linear red, green and blue of the sRGB colour `srgb`.
+std::array<f32, 3> LinearOf(const std::array<u8, 3>& srgb) {
+    const u32 packed = core::FromSrgb(srgb[0], srgb[1], srgb[2], FOG_FULL);
+    std::array<f32, 3> linear{};
+    for (u32 channel = 0; channel < linear.size(); ++channel) {
+        linear.at(channel) = static_cast<f32>((packed >> (channel * CHANNEL_BITS)) & CHANNEL_MASK) / CHANNEL_MAX;
+    }
+    return linear;
+}
+
+Gpu<SDL_GPUTexture> CreateFogTexture(SDL_GPUDevice* device, u32 columns, u32 rows, const char* name) {
+    SDL_GPUTextureCreateInfo info{};
+    info.type = SDL_GPU_TEXTURETYPE_2D;
+    // UNORM, not sRGB: the shader must read a byte as FogSample() does, divided by 255.
+    info.format = SDL_GPU_TEXTUREFORMAT_R8G8_UNORM;
+    info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    info.width = columns;
+    info.height = rows;
+    info.layer_count_or_depth = 1;
+    info.num_levels = 1;
+    info.sample_count = SDL_GPU_SAMPLECOUNT_1;
+    info.props = SDL_CreateProperties();
+    SDL_SetStringProperty(info.props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING, name);
+    Gpu<SDL_GPUTexture> texture{ SDL_CreateGPUTexture(device, &info), { device } };
+    SDL_DestroyProperties(info.props);
+    return texture;
+}
+
+Gpu<SDL_GPUTransferBuffer> CreateTransfer(SDL_GPUDevice* device, u32 bytes) {
+    SDL_GPUTransferBufferCreateInfo info{};
+    info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    info.size = bytes;
+    return Gpu<SDL_GPUTransferBuffer>{ SDL_CreateGPUTransferBuffer(device, &info), { device } };
+}
+
+/// Copies `bytes` through `transfer` into the whole of `texture`, `columns` × `rows` texels, in `copy`, both cycled, so
+/// frames in flight keep what they read. False when the transfer buffer can't be mapped.
+bool CopyFog(
+    SDL_GPUDevice* device,
+    SDL_GPUCopyPass* copy,
+    SDL_GPUTransferBuffer* transfer,
+    SDL_GPUTexture* texture,
+    std::span<const u8> bytes,
+    u32 columns,
+    u32 rows
+) {
+    void* mapped = SDL_MapGPUTransferBuffer(device, transfer, true);
+    if (mapped == nullptr) {
+        return false;
+    }
+    std::ranges::copy(std::as_bytes(bytes), BytesAt(mapped, bytes.size()).begin());
+    SDL_UnmapGPUTransferBuffer(device, transfer);
+    SDL_GPUTextureTransferInfo source{};
+    source.transfer_buffer = transfer;
+    source.pixels_per_row = columns;
+    source.rows_per_layer = rows;
+    SDL_GPUTextureRegion region{};
+    region.texture = texture;
+    region.w = columns;
+    region.h = rows;
+    region.d = 1;
+    SDL_UploadToGPUTexture(copy, &source, &region, true);
+    return true;
+}
+
 /// What every draw of a frame pushes, before its batch's first instance.
 DrawUniforms UniformsOf(const ClipTransform& transform, f32 alpha, const GlowFrame& glows) {
     return { .worldToClip = { transform.scaleX, transform.scaleY, transform.offsetX, transform.offsetY },
@@ -76,15 +155,25 @@ DrawUniforms UniformsOf(const ClipTransform& transform, f32 alpha, const GlowFra
              .texelUv = glows.texelUv };
 }
 
-/// Binds the vertex stage's instances and glow table, and the fragment stage's atlas and distance fields.
-void Bind(SDL_GPURenderPass* pass, SDL_GPUBuffer* instances, const SpriteArray& sprites, const GlowFrame& glows) {
+/// Binds the vertex stage's instances and glow table, and the fragment stage's atlas, distance fields and fog, and pushes
+/// the fog's uniforms.
+void Bind(
+    SDL_GPUCommandBuffer* commands,
+    SDL_GPURenderPass* pass,
+    SDL_GPUBuffer* instances,
+    const SpriteArray& sprites,
+    const GlowFrame& glows,
+    const FogTexture& fog
+) {
     const std::array<SDL_GPUBuffer*, 2> storage{ instances, glows.table };
     SDL_BindGPUVertexStorageBuffers(pass, 0, storage.data(), static_cast<u32>(storage.size()));
-    const std::array<SDL_GPUTextureSamplerBinding, 2> textures{ {
+    const std::array<SDL_GPUTextureSamplerBinding, 3> textures{ {
         { .texture = sprites.texture.get(), .sampler = sprites.sampler.get() },
         { .texture = sprites.field.get(), .sampler = sprites.fieldSampler.get() },
+        fog.Binding(),
     } };
     SDL_BindGPUFragmentSamplers(pass, 0, textures.data(), static_cast<u32>(textures.size()));
+    SDL_PushGPUFragmentUniformData(commands, 0, &fog.Uniforms(), sizeof(FogUniforms));
 }
 
 Gpu<SDL_GPUGraphicsPipeline> CreatePipeline(SDL_GPUDevice* device, SDL_GPUTextureFormat format, core::Pipeline blend) {
@@ -182,6 +271,110 @@ std::expected<void, core::Error> GlowTableBuffer::Upload(
     return {};
 }
 
+FogUniforms FogUniformsOf(const FogFrame& fog, const core::FogLook& look) {
+    if (fog.columns == 0 || fog.rows == 0 || fog.tileSize <= 0.0F) {
+        return {};
+    }
+    const std::array<f32, 3> sepia = LinearOf(look.sepia);
+    const f32 luminance = (sepia[0] * FOG_LUMINANCE[0]) + (sepia[1] * FOG_LUMINANCE[1]) + (sepia[2] * FOG_LUMINANCE[2]);
+    // Over its own luminance, a colour's luminance times the tint keeps that luminance in the sepia's hue.
+    const f32 over = luminance > 0.0F ? 1.0F / luminance : 0.0F;
+    const std::array<f32, 3> mist = LinearOf(look.mist);
+    const std::array<f32, 3> shade = LinearOf(look.shade);
+    return { .mapSize = { static_cast<f32>(fog.columns), static_cast<f32>(fog.rows) },
+             .tileSize = fog.tileSize,
+             .on = 1,
+             .sepia = { sepia[0] * over, sepia[1] * over, sepia[2] * over, look.drain },
+             .mist = { mist[0], mist[1], mist[2], look.mistStrength },
+             .shade = { shade[0], shade[1], shade[2], 0.0F } };
+}
+
+std::expected<FogTexture, core::Error> FogTexture::Create(SDL_GPUDevice* device) {
+    FogTexture fog;
+    fog.m_device = device;
+    fog.m_clear = CreateFogTexture(device, 1, 1, "no fog");
+    const Gpu<SDL_GPUTransferBuffer> transfer = CreateTransfer(device, FOG_TEXEL_BYTES);
+    SDL_GPUSamplerCreateInfo info{};
+    info.min_filter = SDL_GPU_FILTER_LINEAR;
+    info.mag_filter = SDL_GPU_FILTER_LINEAR;
+    info.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+    info.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+    info.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+    info.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+    info.props = SDL_CreateProperties();
+    SDL_SetStringProperty(info.props, SDL_PROP_GPU_SAMPLER_CREATE_NAME_STRING, "fog");
+    fog.m_sampler = Gpu<SDL_GPUSampler>{ SDL_CreateGPUSampler(device, &info), { device } };
+    SDL_DestroyProperties(info.props);
+    SDL_GPUCommandBuffer* commands = fog.m_clear == nullptr || transfer == nullptr || fog.m_sampler == nullptr
+                                         ? nullptr
+                                         : SDL_AcquireGPUCommandBuffer(device);
+    if (commands == nullptr) {
+        return std::unexpected{ core::Error{ std::format("the fog texture wasn't created: {}", SDL_GetError()) } };
+    }
+    // Filled before any frame binds it, so no draw reads it undefined.
+    SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
+    constexpr std::array<u8, FOG_TEXEL_BYTES> CLEAR{ FOG_FULL, FOG_FULL };
+    const bool copied = CopyFog(device, copy, transfer.get(), fog.m_clear.get(), CLEAR, 1, 1);
+    SDL_EndGPUCopyPass(copy);
+    if (!copied) {
+        SDL_CancelGPUCommandBuffer(commands);
+        return std::unexpected{ core::Error{ std::format("the fog texture wasn't uploaded: {}", SDL_GetError()) } };
+    }
+    if (!SDL_SubmitGPUCommandBuffer(commands)) {
+        return std::unexpected{ core::Error{ std::format("the fog texture wasn't uploaded: {}", SDL_GetError()) } };
+    }
+    return fog;
+}
+
+std::expected<void, core::Error> FogTexture::Update(SDL_GPUCopyPass* copy, const FogFrame& fog, const core::FogLook& look) {
+    PN_PROFILE_ZONE();
+    m_uniforms = FogUniformsOf(fog, look);
+    if (m_uniforms.on == 0) {
+        return {};
+    }
+    const std::size_t bytes = std::size_t{ fog.columns } * fog.rows * FOG_TEXEL_BYTES;
+    if (fog.values.size() < bytes) {
+        m_uniforms.on = 0;
+        return std::unexpected{ core::Error{ std::format(
+            "the fog has {} values for {} by {} tiles, so it isn't drawn", fog.values.size(), fog.columns, fog.rows
+        ) } };
+    }
+    if (m_field == nullptr || fog.columns != m_columns || fog.rows != m_rows) {
+        m_held.reset();
+        m_columns = fog.columns;
+        m_rows = fog.rows;
+        m_field = CreateFogTexture(m_device, m_columns, m_rows, "fog");
+        m_transfer = CreateTransfer(m_device, static_cast<u32>(bytes));
+        if (m_field == nullptr || m_transfer == nullptr) {
+            m_field.reset();
+            m_uniforms.on = 0;
+            return std::unexpected{ core::Error{
+                std::format("the fog's {} by {} texture wasn't created: {}", m_columns, m_rows, SDL_GetError()) } };
+        }
+    }
+    if (m_held == fog.revision) {
+        return {};
+    }
+    if (!CopyFog(m_device, copy, m_transfer.get(), m_field.get(), fog.values.first(bytes), m_columns, m_rows)) {
+        // The texture may hold older values, or none yet: the frame draws without the fog rather than with them.
+        m_uniforms.on = 0;
+        return std::unexpected{ core::Error{ std::format("the fog wasn't uploaded: {}", SDL_GetError()) } };
+    }
+    m_recorded = fog.revision;
+    return {};
+}
+
+void FogTexture::Submitted(bool submitted) {
+    if (submitted && m_recorded) {
+        m_held = m_recorded;
+    }
+    m_recorded.reset();
+}
+
+SDL_GPUTextureSamplerBinding FogTexture::Binding() const {
+    return { .texture = m_uniforms.on != 0 ? m_field.get() : m_clear.get(), .sampler = m_sampler.get() };
+}
+
 std::expected<SpriteRenderer, core::Error> SpriteRenderer::Create(
     SDL_GPUDevice* device,
     SDL_GPUTextureFormat format,
@@ -251,13 +444,14 @@ void SpriteRenderer::Draw(
     const SpriteArray& sprites,
     const ClipTransform& transform,
     f32 alpha,
-    const GlowFrame& glows
+    const GlowFrame& glows,
+    const FogTexture& fog
 ) const {
     PN_PROFILE_ZONE();
     if (m_count == 0) {
         return;
     }
-    Bind(pass, m_instances.get(), sprites, glows);
+    Bind(commands, pass, m_instances.get(), sprites, glows, fog);
     DrawUniforms uniforms = UniformsOf(transform, alpha, glows);
     for (const core::Batch& batch : batches) {
         if (batch.first >= m_count) {
@@ -280,13 +474,14 @@ void SpriteRenderer::DrawGlowOnly(
     const SpriteArray& sprites,
     const ClipTransform& transform,
     f32 alpha,
-    const GlowFrame& glows
+    const GlowFrame& glows,
+    const FogTexture& fog
 ) const {
     PN_PROFILE_ZONE();
     if (instance >= m_count || role == core::GlowRole::None) {
         return;
     }
-    Bind(pass, m_instances.get(), sprites, glows);
+    Bind(commands, pass, m_instances.get(), sprites, glows, fog);
     SDL_BindGPUGraphicsPipeline(pass, m_pipelines.at(static_cast<std::size_t>(core::Pipeline::Normal)).get());
     DrawUniforms uniforms = UniformsOf(transform, alpha, glows);
     uniforms.firstInstance = instance;

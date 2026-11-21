@@ -108,9 +108,12 @@ core::Rect TilesRect(u32 firstColumn, u32 lastColumn, u32 firstRow, u32 lastRow)
              .max = { .x = (static_cast<f32>(lastColumn) * TILE) + inset, .y = (static_cast<f32>(lastRow) * TILE) + inset } };
 }
 
-// The instance that draws `sprite` with its foot at `foot`, as the terrain places everything: standing still.
+// The instance that draws `sprite` with its foot at `foot`, as the terrain places everything: standing still, on the land
+// the fog covers.
 core::Instance Placed(const core::Manifest& manifest, SpriteId sprite, core::Vec2 foot) {
-    return core::MakeInstance(manifest, { .sprite = sprite, .previous = foot, .current = foot });
+    return core::MakeInstance(
+        manifest, { .sprite = sprite, .previous = foot, .current = foot, .flags = core::INSTANCE_FOGGED_LAND }
+    );
 }
 
 core::Vec2 Corner(u32 column, u32 row) {
@@ -231,6 +234,18 @@ TEST_CASE("a road tile draws the overlay its neighbours choose") {
     // The bridge where the road crosses the river, east to west: after the river and the road, over both.
     CHECK(Is(*manifest, drawing.instances[11], SpriteId::BridgeH, Corner(3, 2)));
     CHECK(Is(*manifest, drawing.instances[12], SpriteId::MarkerCity, Middle(0, 2)));
+}
+
+TEST_CASE("every terrain instance is flagged as fogged land") {
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    const core::WorldMap map = SmallMap();
+    const core::WorldLook look = SmallLook(*manifest, map);
+    // The whole map: tiles, both overlays, the bridge, the ford and both markers.
+    const gfx::TerrainDrawing drawing = Drawn(map, look, *manifest, TilesRect(0, 4, 0, 2));
+    REQUIRE(drawing.instances.size() == 26);
+    CHECK(std::ranges::all_of(drawing.instances, [](const core::Instance& instance) {
+        return instance.flags == core::INSTANCE_FOGGED_LAND;
+    }));
 }
 
 TEST_CASE("a bridge whose road runs north to south draws the downward bridge") {

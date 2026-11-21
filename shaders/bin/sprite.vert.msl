@@ -16,7 +16,7 @@ struct Instance
     uint glow;
     uint glowValue;
     uint glowStart;
-    uint reserved;
+    uint flags;
 };
 
 struct type_StructuredBuffer_Instance
@@ -74,318 +74,329 @@ struct VertexMain_out
     float out_var_TEXCOORD5 [[user(locn5)]];
     float4 out_var_TEXCOORD6 [[user(locn6)]];
     float2 out_var_TEXCOORD7 [[user(locn7)]];
+    float2 out_var_TEXCOORD8 [[user(locn8)]];
+    uint out_var_TEXCOORD9 [[user(locn9)]];
+    float2 out_var_TEXCOORD10 [[user(locn10)]];
     float4 gl_Position [[position]];
 };
 
 vertex VertexMain_out VertexMain(constant type_ConstantBuffer_Draw& draw [[buffer(0)]], const device type_StructuredBuffer_Instance& instances [[buffer(1)]], const device type_StructuredBuffer_GlowRecord& glows [[buffer(2)]], uint gl_VertexIndex [[vertex_id]], uint gl_InstanceIndex [[instance_id]])
 {
     VertexMain_out out = {};
-    uint _105 = draw.firstInstance + gl_InstanceIndex;
-    float2 _133 = float2(float(gl_VertexIndex & 1u), float(gl_VertexIndex >> 1u));
-    float _141 = mix(float2(as_type<half2>(instances._m0[_105].rotation)).x, float2(as_type<half2>(instances._m0[_105].rotation >> 16u)).x, draw.alpha);
-    float _142 = sin(_141);
-    float _143 = cos(_141);
-    float2 _149 = float2(float(instances._m0[_105].regionMin & 65535u), float(instances._m0[_105].regionMin >> 16u)) * float2(1.525902189314365386962890625e-05);
-    float2 _155 = float2(float(instances._m0[_105].regionMax & 65535u), float(instances._m0[_105].regionMax >> 16u)) * float2(1.525902189314365386962890625e-05);
-    bool _164 = draw.glowOnlyRole != 0u;
-    float4 _180;
-    if (_164)
+    uint _108 = draw.firstInstance + gl_InstanceIndex;
+    float2 _138 = float2(float(gl_VertexIndex & 1u), float(gl_VertexIndex >> 1u));
+    float _146 = mix(float2(as_type<half2>(instances._m0[_108].rotation)).x, float2(as_type<half2>(instances._m0[_108].rotation >> 16u)).x, draw.alpha);
+    float _147 = sin(_146);
+    float _148 = cos(_146);
+    float2 _154 = float2(float(instances._m0[_108].regionMin & 65535u), float(instances._m0[_108].regionMin >> 16u)) * float2(1.525902189314365386962890625e-05);
+    float2 _160 = float2(float(instances._m0[_108].regionMax & 65535u), float(instances._m0[_108].regionMax >> 16u)) * float2(1.525902189314365386962890625e-05);
+    float2 _164 = float2(as_type<half2>(instances._m0[_108].size >> 16u));
+    float _165 = _164.x;
+    bool _169 = draw.glowOnlyRole != 0u;
+    float4 _185;
+    if (_169)
     {
-        _180 = float4(1.0);
+        _185 = float4(1.0);
     }
     else
     {
-        _180 = float4(float(instances._m0[_105].colour & 255u), float((instances._m0[_105].colour >> 8u) & 255u), float((instances._m0[_105].colour >> 16u) & 255u), float(instances._m0[_105].colour >> 24u)) * float4(0.0039215688593685626983642578125);
+        _185 = float4(float(instances._m0[_108].colour & 255u), float((instances._m0[_108].colour >> 8u) & 255u), float((instances._m0[_108].colour >> 16u) & 255u), float(instances._m0[_108].colour >> 24u)) * float4(0.0039215688593685626983642578125);
     }
-    float _187;
-    if (_164)
+    float _192;
+    if (_169)
     {
-        _187 = 0.0;
-    }
-    else
-    {
-        _187 = float(instances._m0[_105].layerFlags >> 16u) * 1.525902189314365386962890625e-05;
-    }
-    uint _188 = _164 ? 0u : instances._m0[_105].glow;
-    uint _193;
-    if (_164)
-    {
-        _193 = draw.glowOnlyRole;
+        _192 = 0.0;
     }
     else
     {
-        _193 = instances._m0[_105].glow & 255u;
+        _192 = float(instances._m0[_108].layerFlags >> 16u) * 1.525902189314365386962890625e-05;
     }
-    bool _198;
-    if (_193 != 0u)
+    uint _193 = _169 ? 0u : instances._m0[_108].glow;
+    uint _198;
+    if (_169)
     {
-        _198 = _193 < 8u;
+        _198 = draw.glowOnlyRole;
     }
     else
     {
-        _198 = false;
+        _198 = instances._m0[_108].glow & 255u;
     }
-    float2 _478;
-    float4 _479;
-    float _480;
-    if (_198)
+    bool _203;
+    if (_198 != 0u)
     {
-        float _234 = precise::min(glows._m0[_193].size * powr(1.0 / draw.zoom, glows._m0[_193].zoomShrink), 16.0);
-        uint _239 = (_188 >> 8u) & 255u;
-        bool _244 = draw.reduceFlashing != 0u;
-        uint _251;
-        if (glows._m0[_193].colour != 0u)
+        _203 = _198 < 8u;
+    }
+    else
+    {
+        _203 = false;
+    }
+    float2 _483;
+    float4 _484;
+    float _485;
+    if (_203)
+    {
+        float _239 = precise::min(glows._m0[_198].size * powr(1.0 / draw.zoom, glows._m0[_198].zoomShrink), 16.0);
+        uint _244 = (_193 >> 8u) & 255u;
+        bool _249 = draw.reduceFlashing != 0u;
+        uint _256;
+        if (glows._m0[_198].colour != 0u)
         {
-            _251 = glows._m0[_193].colour;
+            _256 = glows._m0[_198].colour;
         }
         else
         {
-            _251 = draw.elementColours[min(((_188 >> 16u) & 255u), 3u)];
+            _256 = draw.elementColours[min(((_193 >> 16u) & 255u), 3u)];
         }
-        bool _252 = glows._m0[_193].driveKind == 3u;
-        bool _256;
-        if (_252)
+        bool _257 = glows._m0[_198].driveKind == 3u;
+        bool _261;
+        if (_257)
         {
-            _256 = _239 != 0u;
+            _261 = _244 != 0u;
         }
         else
         {
-            _256 = false;
+            _261 = false;
         }
-        bool _260;
-        if (_256)
+        bool _265;
+        if (_261)
         {
-            _260 = _239 <= glows._m0[_193].resultCount;
+            _265 = _244 <= glows._m0[_198].resultCount;
         }
         else
         {
-            _260 = false;
+            _265 = false;
         }
-        uint _266;
-        if (_260)
+        uint _271;
+        if (_265)
         {
-            _266 = glows._m0[_193].results[_239 - 1u];
+            _271 = glows._m0[_198].results[_244 - 1u];
         }
         else
         {
-            _266 = _251;
+            _271 = _256;
         }
-        float2 _284 = float2(float(instances._m0[_105].glowValue & 65535u), float(instances._m0[_105].glowValue >> 16u)) * float2(1.525902189314365386962890625e-05);
-        float _292 = float(int(draw.glowTick - instances._m0[_105].glowStart)) + draw.glowFraction;
-        float _295 = mix(_284.x, _284.y, draw.alpha);
-        float _453;
+        float2 _289 = float2(float(instances._m0[_108].glowValue & 65535u), float(instances._m0[_108].glowValue >> 16u)) * float2(1.525902189314365386962890625e-05);
+        float _297 = float(int(draw.glowTick - instances._m0[_108].glowStart)) + draw.glowFraction;
+        float _300 = mix(_289.x, _289.y, draw.alpha);
+        float _458;
         do
         {
-            if (glows._m0[_193].driveKind == 1u)
+            if (glows._m0[_198].driveKind == 1u)
             {
-                if (_244)
+                if (_249)
                 {
-                    float _311;
+                    float _316;
                     do
                     {
-                        if (glows._m0[_193].curve == 1u)
+                        if (glows._m0[_198].curve == 1u)
                         {
-                            _311 = 0.3333333432674407958984375;
+                            _316 = 0.3333333432674407958984375;
                             break;
                         }
-                        if (glows._m0[_193].curve == 2u)
+                        if (glows._m0[_198].curve == 2u)
                         {
-                            _311 = 0.666666686534881591796875;
+                            _316 = 0.666666686534881591796875;
                             break;
                         }
-                        _311 = 0.5;
+                        _316 = 0.5;
                         break;
                     } while(false);
-                    _453 = 1.0 - (glows._m0[_193].depth * (1.0 - _311));
+                    _458 = 1.0 - (glows._m0[_198].depth * (1.0 - _316));
                     break;
                 }
-                float _315 = _292 / glows._m0[_193].periodTicks;
-                float _348;
+                float _320 = _297 / glows._m0[_198].periodTicks;
+                float _353;
                 do
                 {
-                    float _323 = fast::clamp(abs((2.0 * (_315 - floor(_315))) - 1.0), 0.0, 1.0);
-                    if (glows._m0[_193].curve == 1u)
+                    float _328 = fast::clamp(abs((2.0 * (_320 - floor(_320))) - 1.0), 0.0, 1.0);
+                    if (glows._m0[_198].curve == 1u)
                     {
-                        _348 = _323 * _323;
+                        _353 = _328 * _328;
                         break;
                     }
-                    if (glows._m0[_193].curve == 2u)
+                    if (glows._m0[_198].curve == 2u)
                     {
-                        float _331 = 1.0 - _323;
-                        _348 = 1.0 - (_331 * _331);
+                        float _336 = 1.0 - _328;
+                        _353 = 1.0 - (_336 * _336);
                         break;
                     }
-                    if (glows._m0[_193].curve == 3u)
+                    if (glows._m0[_198].curve == 3u)
                     {
-                        _348 = (_323 * _323) * (3.0 - (2.0 * _323));
+                        _353 = (_328 * _328) * (3.0 - (2.0 * _328));
                         break;
                     }
-                    if (glows._m0[_193].curve == 4u)
+                    if (glows._m0[_198].curve == 4u)
                     {
-                        _348 = (1.0 - cos(3.1415927410125732421875 * _323)) * 0.5;
+                        _353 = (1.0 - cos(3.1415927410125732421875 * _328)) * 0.5;
                         break;
                     }
-                    _348 = _323;
+                    _353 = _328;
                     break;
                 } while(false);
-                _453 = 1.0 - (glows._m0[_193].depth * (1.0 - _348));
+                _458 = 1.0 - (glows._m0[_198].depth * (1.0 - _353));
                 break;
             }
-            if (glows._m0[_193].driveKind == 2u)
+            if (glows._m0[_198].driveKind == 2u)
             {
-                float _382;
+                float _387;
                 do
                 {
-                    float _357 = fast::clamp(_295, 0.0, 1.0);
-                    if (glows._m0[_193].curve == 1u)
+                    float _362 = fast::clamp(_300, 0.0, 1.0);
+                    if (glows._m0[_198].curve == 1u)
                     {
-                        _382 = _357 * _357;
+                        _387 = _362 * _362;
                         break;
                     }
-                    if (glows._m0[_193].curve == 2u)
+                    if (glows._m0[_198].curve == 2u)
                     {
-                        float _365 = 1.0 - _357;
-                        _382 = 1.0 - (_365 * _365);
+                        float _370 = 1.0 - _362;
+                        _387 = 1.0 - (_370 * _370);
                         break;
                     }
-                    if (glows._m0[_193].curve == 3u)
+                    if (glows._m0[_198].curve == 3u)
                     {
-                        _382 = (_357 * _357) * (3.0 - (2.0 * _357));
+                        _387 = (_362 * _362) * (3.0 - (2.0 * _362));
                         break;
                     }
-                    if (glows._m0[_193].curve == 4u)
+                    if (glows._m0[_198].curve == 4u)
                     {
-                        _382 = (1.0 - cos(3.1415927410125732421875 * _357)) * 0.5;
+                        _387 = (1.0 - cos(3.1415927410125732421875 * _362)) * 0.5;
                         break;
                     }
-                    _382 = _357;
+                    _387 = _362;
                     break;
                 } while(false);
-                if (((_188 >> 24u) & 1u) == 0u)
+                if (((_193 >> 24u) & 1u) == 0u)
                 {
-                    _453 = _382;
+                    _458 = _387;
                     break;
                 }
-                float _415;
+                float _420;
                 do
                 {
-                    float _390 = fast::clamp(precise::min(_292 / glows._m0[_193].fadeTicks, 1.0), 0.0, 1.0);
-                    if (glows._m0[_193].fadeCurve == 1u)
+                    float _395 = fast::clamp(precise::min(_297 / glows._m0[_198].fadeTicks, 1.0), 0.0, 1.0);
+                    if (glows._m0[_198].fadeCurve == 1u)
                     {
-                        _415 = _390 * _390;
+                        _420 = _395 * _395;
                         break;
                     }
-                    if (glows._m0[_193].fadeCurve == 2u)
+                    if (glows._m0[_198].fadeCurve == 2u)
                     {
-                        float _398 = 1.0 - _390;
-                        _415 = 1.0 - (_398 * _398);
+                        float _403 = 1.0 - _395;
+                        _420 = 1.0 - (_403 * _403);
                         break;
                     }
-                    if (glows._m0[_193].fadeCurve == 3u)
+                    if (glows._m0[_198].fadeCurve == 3u)
                     {
-                        _415 = (_390 * _390) * (3.0 - (2.0 * _390));
+                        _420 = (_395 * _395) * (3.0 - (2.0 * _395));
                         break;
                     }
-                    if (glows._m0[_193].fadeCurve == 4u)
+                    if (glows._m0[_198].fadeCurve == 4u)
                     {
-                        _415 = (1.0 - cos(3.1415927410125732421875 * _390)) * 0.5;
+                        _420 = (1.0 - cos(3.1415927410125732421875 * _395)) * 0.5;
                         break;
                     }
-                    _415 = _390;
+                    _420 = _395;
                     break;
                 } while(false);
-                _453 = _382 * (1.0 - _415);
+                _458 = _387 * (1.0 - _420);
                 break;
             }
-            if (_252)
+            if (_257)
             {
-                float _452;
-                if (_239 == 0u)
+                float _457;
+                if (_244 == 0u)
                 {
-                    float _451;
+                    float _456;
                     do
                     {
-                        float _426 = fast::clamp(_295, 0.0, 1.0);
-                        if (glows._m0[_193].curve == 1u)
+                        float _431 = fast::clamp(_300, 0.0, 1.0);
+                        if (glows._m0[_198].curve == 1u)
                         {
-                            _451 = _426 * _426;
+                            _456 = _431 * _431;
                             break;
                         }
-                        if (glows._m0[_193].curve == 2u)
+                        if (glows._m0[_198].curve == 2u)
                         {
-                            float _434 = 1.0 - _426;
-                            _451 = 1.0 - (_434 * _434);
+                            float _439 = 1.0 - _431;
+                            _456 = 1.0 - (_439 * _439);
                             break;
                         }
-                        if (glows._m0[_193].curve == 3u)
+                        if (glows._m0[_198].curve == 3u)
                         {
-                            _451 = (_426 * _426) * (3.0 - (2.0 * _426));
+                            _456 = (_431 * _431) * (3.0 - (2.0 * _431));
                             break;
                         }
-                        if (glows._m0[_193].curve == 4u)
+                        if (glows._m0[_198].curve == 4u)
                         {
-                            _451 = (1.0 - cos(3.1415927410125732421875 * _426)) * 0.5;
+                            _456 = (1.0 - cos(3.1415927410125732421875 * _431)) * 0.5;
                             break;
                         }
-                        _451 = _426;
+                        _456 = _431;
                         break;
                     } while(false);
-                    _452 = _451;
+                    _457 = _456;
                 }
                 else
                 {
-                    _452 = 1.0;
+                    _457 = 1.0;
                 }
-                _453 = _452;
+                _458 = _457;
                 break;
             }
-            _453 = 1.0;
+            _458 = 1.0;
             break;
         } while(false);
-        bool _457;
-        if (_244)
+        bool _462;
+        if (_249)
         {
-            _457 = glows._m0[_193].blend != 1u;
+            _462 = glows._m0[_198].blend != 1u;
         }
         else
         {
-            _457 = false;
+            _462 = false;
         }
-        float4 _466 = (float4(float(_266 & 255u), float((_266 >> 8u) & 255u), float((_266 >> 16u) & 255u), float(_266 >> 24u)) * float4(0.0039215688593685626983642578125)) * ((((_453 * (glows._m0[_193].opacity * (_457 ? 0.5 : 1.0))) * _180.w) * _180.w) * (1.0 - _187));
-        float4 _471;
-        if (glows._m0[_193].blend != 1u)
+        float4 _471 = (float4(float(_271 & 255u), float((_271 >> 8u) & 255u), float((_271 >> 16u) & 255u), float(_271 >> 24u)) * float4(0.0039215688593685626983642578125)) * ((((_458 * (glows._m0[_198].opacity * (_462 ? 0.5 : 1.0))) * _185.w) * _185.w) * (1.0 - _192));
+        float4 _476;
+        if (glows._m0[_198].blend != 1u)
         {
-            float4 _470 = _466;
-            _470.w = 0.0;
-            _471 = _470;
+            float4 _475 = _471;
+            _475.w = 0.0;
+            _476 = _475;
         }
         else
         {
-            _471 = _466;
+            _476 = _471;
         }
-        _478 = float2(_234, _234 * (1.0 - glows._m0[_193].feather));
-        _479 = _471;
-        _480 = _234 * draw.texelUv;
+        _483 = float2(_239, _239 * (1.0 - glows._m0[_198].feather));
+        _484 = _476;
+        _485 = _239 * draw.texelUv;
     }
     else
     {
-        _478 = float2(0.0);
-        _479 = float4(0.0);
-        _480 = 0.0;
+        _483 = float2(0.0);
+        _484 = float4(0.0);
+        _485 = 0.0;
     }
-    float2 _489 = (_133 - float2(0.5)) * (float2(float2(as_type<half2>(instances._m0[_105].size)).x, float2(as_type<half2>(instances._m0[_105].size >> 16u)).x) * (float2(1.0) + (float2(2.0 * _480) / precise::max(_155 - _149, float2(9.9999999747524270787835121154785e-07)))));
-    float _490 = _489.x;
-    float _492 = _489.y;
-    float2 _511 = float2(_480);
-    out.gl_Position = float4(((mix(instances._m0[_105].previous, instances._m0[_105].current, float2(draw.alpha)) + float2((_490 * _143) - (_492 * _142), (_490 * _142) + (_492 * _143))) * draw.worldToClip.xy) + draw.worldToClip.zw, 0.0, 1.0);
-    out.out_var_TEXCOORD0 = mix(_149 - _511, _155 + _511, _133);
-    out.out_var_TEXCOORD1 = instances._m0[_105].layerFlags & 65535u;
-    out.out_var_TEXCOORD2 = _180;
-    out.out_var_TEXCOORD3 = float4(_149, _155);
-    out.out_var_TEXCOORD4 = uint(int(_164));
-    out.out_var_TEXCOORD5 = _187;
-    out.out_var_TEXCOORD6 = _479;
-    out.out_var_TEXCOORD7 = _478;
+    float2 _494 = (_138 - float2(0.5)) * (float2(float2(as_type<half2>(instances._m0[_108].size)).x, _165) * (float2(1.0) + (float2(2.0 * _485) / precise::max(_160 - _154, float2(9.9999999747524270787835121154785e-07)))));
+    float _495 = _494.x;
+    float _497 = _494.y;
+    float2 _504 = float2(draw.alpha);
+    float2 _506 = mix(instances._m0[_108].previous, instances._m0[_108].current, _504) + float2((_495 * _148) - (_497 * _147), (_495 * _147) + (_497 * _148));
+    float2 _516 = float2(_485);
+    float2 _529 = float2(0.0, _165 * 0.5);
+    out.gl_Position = float4((_506 * draw.worldToClip.xy) + draw.worldToClip.zw, 0.0, 1.0);
+    out.out_var_TEXCOORD0 = mix(_154 - _516, _160 + _516, _138);
+    out.out_var_TEXCOORD1 = instances._m0[_108].layerFlags & 65535u;
+    out.out_var_TEXCOORD2 = _185;
+    out.out_var_TEXCOORD3 = float4(_154, _160);
+    out.out_var_TEXCOORD4 = uint(int(_169));
+    out.out_var_TEXCOORD5 = _192;
+    out.out_var_TEXCOORD6 = _484;
+    out.out_var_TEXCOORD7 = _483;
+    out.out_var_TEXCOORD8 = _506;
+    out.out_var_TEXCOORD9 = instances._m0[_108].flags;
+    out.out_var_TEXCOORD10 = mix(instances._m0[_108].previous + _529, instances._m0[_108].current + _529, _504);
     return out;
 }
 

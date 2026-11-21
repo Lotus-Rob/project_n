@@ -20,4 +20,10 @@ struct VertexOut {
     /// How far past the sprite's edge the glow reaches and where its fade begins, in the sprite's texels; the reach is 0
     /// without a glow, which keeps the field unread.
     nointerpolation float2 glowShape : TEXCOORD7;
+    /// Where the pixel lies in the world, for the fog's sample.
+    float2 world : TEXCOORD8;
+    /// core::Instance::flags: how the fog treats the sprite.
+    nointerpolation uint fogFlags : TEXCOORD9;
+    /// core::SightPoint(): the one point whose sight fades the whole sprite.
+    nointerpolation float2 sightPoint : TEXCOORD10;
 };

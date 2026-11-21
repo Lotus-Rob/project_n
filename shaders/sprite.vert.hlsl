@@ -15,7 +15,7 @@ struct Instance {
     uint glow;        // role (bits 0-7), result (8-15), element (16-23), released (bit 24); 0 for no glow
     uint glowValue;   // two unorm16: the glow's value at the previous tick, then at this one
     uint glowStart;   // the glow's start tick, low 32 bits
-    uint reserved;    // pads the struct to 56 bytes, a multiple of 8 as SPIR-V's buffer layout needs
+    uint flags;       // INSTANCE_FOGGED_LAND and INSTANCE_SIGHT_FADE; 56 bytes in all, a multiple of 8 as SPIR-V needs
 };
 
 /// gfx::GlowRecord (src/gfx/glow_table.hpp), 96 bytes: one role's glow; the table is indexed by core::GlowRole.
@@ -206,5 +206,11 @@ VertexOut VertexMain(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceI
     output.colour = colour;
     output.glowColour = glowColour;
     output.glowShape = glowShape;
+    output.world = world;
+    output.fogFlags = instance.flags;
+    // The unrotated, ungrown quad's bottom middle, as core::SightPoint() takes it. Interpolated on its own: sharing the
+    // centre `world` is made from lets the compiler round the quad's corners differently, which moves drawn pixels.
+    const float2 foot = float2(0.0, size.y * 0.5);
+    output.sightPoint = lerp(instance.previous + foot, instance.current + foot, draw.alpha);
     return output;
 }

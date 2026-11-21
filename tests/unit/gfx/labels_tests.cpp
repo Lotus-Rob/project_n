@@ -1,6 +1,7 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
 #include "core/stable_id.hpp"
+#include "gfx/fog.hpp"
 #include "gfx/labels.hpp"
 #include "gfx/text_place.hpp"
 
@@ -928,6 +929,62 @@ TEST_CASE("readability follows the text scale") {
     CHECK_FALSE(gfx::Readable(13.0F, 1.5F));
     CHECK(gfx::Readable(13.5F, 1.5F));
     CHECK(gfx::Readable(7.0F, 0.75F));
+}
+
+constexpr f32 FOG_TILE = 100.0F;
+constexpr u32 FOG_SIDE = 3;
+constexpr f32 WALKER_HEIGHT = 40.0F;
+
+/// A 3 x 3 fog field of 100-unit tiles: the top row explored, the top left tile in sight, and the top middle tile a fifth
+/// explored (51 of 255) and out of sight.
+struct LabelFog {
+    std::array<u8, std::size_t{ FOG_SIDE } * FOG_SIDE * 2> values{ 255, 255, 51, 0, 255, 0 };
+    gfx::FogFrame frame{ .columns = FOG_SIDE, .rows = FOG_SIDE, .tileSize = FOG_TILE, .values = values, .revision = 1 };
+};
+
+/// A walker's label as the world map publishes one: anchored over its head, its foot `height` below, moving from
+/// `previousFoot` to `currentFoot`.
+core::TextItem WalkerLabel(core::Vec2 previousFoot, core::Vec2 currentFoot) {
+    const core::Vec2 head{ .x = 0.0F, .y = -WALKER_HEIGHT };
+    return { .kind = core::TextKind::Label,
+             .previous = previousFoot + head,
+             .current = currentFoot + head,
+             .offset = { .x = 0.0F, .y = -12.0F },
+             .height = WALKER_HEIGHT,
+             .fog = core::TextFog::Sight };
+}
+
+TEST_CASE("a walker's label fades with sight at its foot") {
+    const LabelFog fog;
+    const core::Vec2 inSight{ .x = 50.0F, .y = 50.0F };
+    CHECK(gfx::FogOpacity(WalkerLabel(inSight, inSight), fog.frame, 1.0F) == doctest::Approx(1.0F));
+    // Its head is in sight, but its foot stands on the tile below, out of it.
+    const core::Vec2 below{ .x = 50.0F, .y = 130.0F };
+    CHECK(gfx::FogOpacity(WalkerLabel(below, below), fog.frame, 1.0F) == doctest::Approx(0.0F));
+    // Halfway from the tile's centre to sight's edge at the render time, a quarter tile inside it, where the fade is half.
+    const core::Vec2 atEdge{ .x = 100.0F, .y = 50.0F };
+    CHECK(gfx::FogOpacity(WalkerLabel(inSight, atEdge), fog.frame, 0.5F) == doctest::Approx(0.5F));
+}
+
+TEST_CASE("a place's name fades in with its own tile") {
+    const LabelFog fog;
+    // Hung just inside the fifth-explored tile, beside a tile explored whole: its own tile alone counts.
+    const core::Vec2 anchor{ .x = 105.0F, .y = 50.0F };
+    const core::TextItem name{
+        .kind = core::TextKind::Place, .previous = anchor, .current = anchor, .fog = core::TextFog::Explored
+    };
+    CHECK(gfx::FogOpacity(name, fog.frame, 1.0F) == doctest::Approx(0.2F));
+}
+
+TEST_CASE("a label with no fog keeps its opacity") {
+    const LabelFog fog;
+    // On an unexplored tile out of sight.
+    const core::Vec2 hidden{ .x = 250.0F, .y = 250.0F };
+    core::TextItem label = WalkerLabel(hidden, hidden);
+    label.fog = core::TextFog::None;
+    CHECK(gfx::FogOpacity(label, fog.frame, 1.0F) == doctest::Approx(1.0F));
+    // A walker's label off the world map, where the view has no fog.
+    CHECK(gfx::FogOpacity(WalkerLabel(hidden, hidden), gfx::FogFrame{}, 1.0F) == doctest::Approx(1.0F));
 }
 
 /// A label waiting to be laid out, `distance` pixels right of the screen's middle (640, 360).
