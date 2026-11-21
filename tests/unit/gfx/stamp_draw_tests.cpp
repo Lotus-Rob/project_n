@@ -42,7 +42,7 @@ core::WorldLook MeadowLook(f32 density, f32 thinBelow = 0.0F, bool mist = false,
                              .thinBelow = thinBelow,
                              .mist = mist };
     look.mist = { .sprites = { SpriteId::Mist0, SpriteId::Mist1 },
-                  .colour = { 246, 244, 238 },
+                  .colour = { { 246, 244, 238 } },
                   .strength = 0.9F,
                   .chance = mistChance,
                   .width = { { 1.0F, 1.4F } } };
