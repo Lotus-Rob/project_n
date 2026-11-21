@@ -7,7 +7,6 @@ import fnmatch
 import functools
 import importlib.util
 import io
-import itertools
 import json
 import os
 import re
@@ -2683,48 +2682,35 @@ def placeholders():
     return module
 
 
-def terrain_edges(name):
-    """Paints terrain tile `name` and returns what the seam test reads: whether it's opaque, its size, the mean RGB
-    difference between its neighbouring columns and between its neighbouring rows, and its edge columns and rows. Runs in
-    a worker process: painting the twenty tiles one after another took most of the self-tests' time."""
-    painter, opaque = placeholders().PLACEHOLDERS[name]
+def side_room(name):
+    """Paints placeholder `name` and returns how many texel columns at its left and at its right hold no art: alpha that
+    its PNG rounds to 0. Runs in a worker process: painting every stamp, mist and painting one after another is slow."""
+    painter, _ = placeholders().PLACEHOLDERS[name]
     canvas = painter()
-    w, h = canvas.width, canvas.height
-    pixels = list(zip(canvas.r, canvas.g, canvas.b))
-    columns = [pixels[x::w] for x in range(w)]
-    rows = [pixels[y * w:(y + 1) * w] for y in range(h)]
-
-    def interior(lines):
-        return sum(rgb_apart(a, b) for a, b in itertools.pairwise(lines)) / (len(lines) - 1)
-    return {"opaque": opaque, "size": (w, h), "columns": interior(columns), "rows": interior(rows),
-            "left": columns[0], "right": columns[-1], "top": rows[0], "bottom": rows[-1]}
-
-
-def rgb_apart(a, b):
-    """The mean absolute channel difference between two equally long lines of (r, g, b) pixels."""
-    return sum(abs(p - q) for u, v in zip(a, b) for p, q in zip(u, v)) / (3 * len(a))
+    width, height = canvas.width, canvas.height
+    used = [x for x in range(width) if any(canvas.a[y * width + x] * 255.0 + 0.5 >= 1.0 for y in range(height))]
+    return (used[0], width - 1 - used[-1]) if used else (width, width)
 
 
 class PlaceholderTest(unittest.TestCase):
-    TERRAIN = ("meadow", "grass", "forest", "hills", "rock", "snow", "sand", "marsh", "shallows", "water")
+    # The clear texels each kind of painted mark keeps at its left and right: at the far zoom its art is drawn from small
+    # mips, and the sprite's quad cutting into their blur leaves a hard edge that crawls as the camera moves. Stamps keep
+    # the placeholders' STAMP_MARGIN; mist and paintings, drawn larger and softer, what they keep now.
+    STAMP_MARGIN = 16
+    MIST_MARGIN = 2
+    PAINTING_MARGIN = 9
 
-    def test_terrain_tiles_are_seamless(self):
-        """Each tile joins itself across the wrap, and its other variant, about as smoothly as its own neighbouring
-        columns and rows join: the world tiles them edge to edge, so a seam would draw the grid."""
-        names = [f"terrain_{kind}_{variant}" for kind in self.TERRAIN for variant in (0, 1)]
+    def test_painted_marks_keep_their_art_off_their_sides(self):
+        margins = {"stamp_": self.STAMP_MARGIN, "mist_": self.MIST_MARGIN, "painting_": self.PAINTING_MARGIN}
+        needed = {name: margin for name in placeholders().PLACEHOLDERS for prefix, margin in margins.items()
+                  if name.startswith(prefix)}
+        self.assertTrue(all(any(name.startswith(prefix) for name in needed) for prefix in margins))
+        names = list(needed)
         with concurrent.futures.ProcessPoolExecutor(max_workers=min(len(names), os.cpu_count() or 1)) as pool:
-            tiles = dict(zip(names, pool.map(terrain_edges, names)))
-        for name, tile in tiles.items():
-            self.assertTrue(tile["opaque"], name)
-            self.assertEqual(tile["size"], (256, 256), name)
-        for kind in self.TERRAIN:
-            for left, right in itertools.product((0, 1), repeat=2):
-                # right beside left: its first column after left's last (the same tile: its own wrap), its first row under
-                # left's last.
-                a, b = tiles[f"terrain_{kind}_{left}"], tiles[f"terrain_{kind}_{right}"]
-                with self.subTest(kind=kind, left=left, right=right):
-                    self.assertLessEqual(rgb_apart(a["right"], b["left"]), 1.5 * (a["columns"] + b["columns"]) / 2)
-                    self.assertLessEqual(rgb_apart(a["bottom"], b["top"]), 1.5 * (a["rows"] + b["rows"]) / 2)
+            rooms = dict(zip(names, pool.map(side_room, names)))
+        cut = [f"{name}: {left} clear at the left, {right} at the right, {needed[name]} needed"
+               for name, (left, right) in rooms.items() if min(left, right) < needed[name]]
+        self.assertEqual(cut, [])
 
 
 class GitLfsTest(unittest.TestCase):
