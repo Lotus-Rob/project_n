@@ -145,8 +145,9 @@ public:
     void SetWorld(std::shared_ptr<const core::WorldMap> map, const core::WorldLook& look);
 
     /// Draws the outline of the tile centred on `centre` (the target cursor) over the world map from the next frame on, none
-    /// for no value; the route in the snapshot (core::Snapshot::route) draws with it (gfx/route_draw.hpp), between the map
-    /// and the snapshot's ground. Nothing draws outside a snapshot that shows the map.
+    /// for no value; it draws over the fog's clouds, while the route in the snapshot (core::Snapshot::route,
+    /// gfx/route_draw.hpp) draws between the map and the snapshot's ground. Nothing draws outside a snapshot that shows the
+    /// map.
     void SetTargetTile(std::optional<core::Vec2> centre);
 
     /// How wide a HUD line saying `line` draws now, in target pixels at the text scale (HudLine's size). A glyph not

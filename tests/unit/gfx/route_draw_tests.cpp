@@ -12,8 +12,6 @@ namespace {
 using core::atlas::SpriteId;
 
 constexpr f32 SPACING = 48.0F;
-constexpr f32 TILE = 256.0F;
-constexpr f32 HALF = 0.5F;
 
 // The L-shaped route: east for 100 from START, then south for 50.
 constexpr core::Vec2 START{ .x = 10.0F, .y = 20.0F };
@@ -32,7 +30,7 @@ constexpr std::size_t SHORT_DOTS = 2;
 
 constexpr core::Vec2 CURSOR_TILE{ .x = 3.5F * 256.0F, .y = 2.5F * 256.0F }; // the middle of the tile at column 3, row 2
 constexpr core::Vec2 ONE_STEP_END{ .x = 40.0F, .y = 0.0F };                 // under one spacing: only the first dot
-constexpr std::size_t APPENDED = 3;                                         // one dot, the end marker and the cursor's outline
+constexpr std::size_t APPENDED = 2;                                         // one dot and the end marker
 constexpr std::size_t ALREADY_THERE = 7; // instances and their batch the route's draw is appended to
 
 core::RouteLook Look() {
@@ -48,9 +46,15 @@ bool Is(const core::Manifest& manifest, const core::Instance& instance, SpriteId
     return std::ranges::equal(std::as_bytes(std::span{ &instance, 1 }), std::as_bytes(std::span{ &expected, 1 }));
 }
 
-gfx::TerrainDrawing Drawn(std::span<const core::Vec2> route, std::optional<core::Vec2> cursor, const core::Manifest& manifest) {
+gfx::TerrainDrawing Drawn(std::span<const core::Vec2> route, const core::Manifest& manifest) {
     gfx::TerrainDrawing drawing;
-    gfx::DrawRoute(route, cursor, Look(), manifest, drawing);
+    gfx::DrawRoute(route, Look(), manifest, drawing);
+    return drawing;
+}
+
+gfx::TerrainDrawing Targeted(std::optional<core::Vec2> cursor, const core::Manifest& manifest) {
+    gfx::TerrainDrawing drawing;
+    gfx::DrawTargetTile(cursor, Look(), manifest, drawing);
     return drawing;
 }
 
@@ -59,7 +63,7 @@ gfx::TerrainDrawing Drawn(std::span<const core::Vec2> route, std::optional<core:
 TEST_CASE("route dots fall every spacing along the line") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const std::vector<core::Vec2> route{ START, CORNER, L_END };
-    const gfx::TerrainDrawing drawing = Drawn(route, std::nullopt, *manifest);
+    const gfx::TerrainDrawing drawing = Drawn(route, *manifest);
     REQUIRE(drawing.instances.size() == L_DOTS + 1);
     CHECK(Is(*manifest, drawing.instances[0], SpriteId::RouteDot, START));
     CHECK(Is(*manifest, drawing.instances[1], SpriteId::RouteDot, SECOND_DOT));
@@ -75,7 +79,7 @@ TEST_CASE("route dots fall every spacing along the line") {
 TEST_CASE("the marker sits on the route's end") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const std::vector<core::Vec2> route{ core::Vec2{}, SHORT_CORNER, SHORT_END };
-    const gfx::TerrainDrawing drawing = Drawn(route, std::nullopt, *manifest);
+    const gfx::TerrainDrawing drawing = Drawn(route, *manifest);
     REQUIRE(drawing.instances.size() == SHORT_DOTS + 1);
     CHECK(Is(*manifest, drawing.instances.back(), SpriteId::RouteMarker, SHORT_END));
 }
@@ -84,7 +88,7 @@ TEST_CASE("nothing is drawn without a route or a cursor") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const std::vector<core::Vec2> lone{ START };
     for (const std::span<const core::Vec2> route : { std::span<const core::Vec2>{}, std::span<const core::Vec2>{ lone } }) {
-        const gfx::TerrainDrawing drawing = Drawn(route, std::nullopt, *manifest);
+        const gfx::TerrainDrawing drawing = Drawn(route, *manifest);
         CHECK(drawing.instances.empty());
         CHECK(drawing.batches.empty());
     }
@@ -93,23 +97,41 @@ TEST_CASE("nothing is drawn without a route or a cursor") {
 TEST_CASE("the cursor's tile draws its outline") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const core::Vec2 centre = CURSOR_TILE;
-    const gfx::TerrainDrawing drawing = Drawn({}, centre, *manifest);
+    const gfx::TerrainDrawing drawing = Targeted(centre, *manifest);
     REQUIRE(drawing.instances.size() == 1);
     CHECK(Is(*manifest, drawing.instances[0], SpriteId::TargetTile, centre));
     CHECK(drawing.batches.size() == 1);
 }
 
-TEST_CASE("the cursor draws after the route and its batch covers only what was appended") {
+TEST_CASE("no cursor draws no target tile") {
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    const gfx::TerrainDrawing drawing = Targeted(std::nullopt, *manifest);
+    CHECK(drawing.instances.empty());
+    CHECK(drawing.batches.empty());
+}
+
+TEST_CASE("the target tile is laid out apart from the route's dots") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const std::vector<core::Vec2> route{ core::Vec2{}, ONE_STEP_END };
-    const core::Vec2 centre{ .x = HALF * TILE, .y = HALF * TILE };
+    const gfx::TerrainDrawing dots = Drawn(route, *manifest);
+    REQUIRE(dots.instances.size() == APPENDED);
+    for (const core::Instance& instance : dots.instances) {
+        CHECK_FALSE(Is(*manifest, instance, SpriteId::TargetTile, CURSOR_TILE));
+    }
+    const gfx::TerrainDrawing target = Targeted(CURSOR_TILE, *manifest);
+    REQUIRE(target.instances.size() == 1);
+    CHECK(Is(*manifest, target.instances[0], SpriteId::TargetTile, CURSOR_TILE));
+}
+
+TEST_CASE("the route's batch covers only what was appended") {
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    const std::vector<core::Vec2> route{ core::Vec2{}, ONE_STEP_END };
     gfx::TerrainDrawing drawing;
     drawing.instances.resize(ALREADY_THERE);
     drawing.batches.push_back({ .first = 0, .count = ALREADY_THERE, .pipeline = core::Pipeline::Normal });
-    gfx::DrawRoute(route, centre, Look(), *manifest, drawing);
-    // One dot, the marker and the cursor after the seven already there.
+    gfx::DrawRoute(route, Look(), *manifest, drawing);
     REQUIRE(drawing.instances.size() == ALREADY_THERE + APPENDED);
-    CHECK(Is(*manifest, drawing.instances[ALREADY_THERE + APPENDED - 1], SpriteId::TargetTile, centre));
+    CHECK(Is(*manifest, drawing.instances[ALREADY_THERE + APPENDED - 1], SpriteId::RouteMarker, ONE_STEP_END));
     REQUIRE(drawing.batches.size() == 2);
     CHECK(drawing.batches[1].first == ALREADY_THERE);
     CHECK(drawing.batches[1].count == APPENDED);
@@ -119,7 +141,7 @@ TEST_CASE("a route longer than the buffer keeps its end marker") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const f32 far = SPACING * static_cast<f32>(gfx::MAX_ROUTE_INSTANCES + gfx::MAX_ROUTE_INSTANCES);
     const std::vector<core::Vec2> route{ core::Vec2{}, { .x = far, .y = 0.0F } };
-    const gfx::TerrainDrawing drawing = Drawn(route, std::nullopt, *manifest);
-    CHECK(drawing.instances.size() == gfx::MAX_ROUTE_INSTANCES - 1);
+    const gfx::TerrainDrawing drawing = Drawn(route, *manifest);
+    CHECK(drawing.instances.size() == gfx::MAX_ROUTE_INSTANCES);
     CHECK(Is(*manifest, drawing.instances.back(), SpriteId::RouteMarker, { .x = far, .y = 0.0F }));
 }
