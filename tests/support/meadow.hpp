@@ -9,22 +9,32 @@
 
 #include <cstdlib>
 #include <expected>
+#include <span>
 #include <utility>
+#include <vector>
 
 namespace test {
 
-/// A map of `columns` by `rows` tiles of meadow with one city (the start) at tile 0: all a map needs to build. Stops at
-/// once if it can't be built, as SmallWorldMap() does.
-[[nodiscard]] inline core::WorldMap MeadowMap(u32 columns, u32 rows) {
+/// A map of `columns` by `rows` tiles with one city (the start) at tile 0: all a map needs to build. `grid` gives each
+/// tile's kind index (0 meadow, 1 lake), or is empty for all meadow; tile 0 should stay meadow, which the city stands
+/// on. Stops at once if it can't be built, as SmallWorldMap() does.
+[[nodiscard]] inline core::WorldMap MapOfTiles(u32 columns, u32 rows, std::span<const u8> grid) {
     constexpr f32 TILE_SIZE = 256.0F;
     constexpr u16 MEADOW_COST = 10;
+    constexpr u16 LAKE_COST = 40;
     constexpr u32 PEOPLE = 100;
     core::WorldMapSource source;
     source.columns = columns;
     source.rows = rows;
     source.tileSize = TILE_SIZE;
     source.kinds = { { .name = "meadow", .symbol = '.', .cost = MEADOW_COST } };
-    source.grid.assign(static_cast<std::size_t>(columns) * rows, 0);
+    if (grid.empty()) {
+        source.grid.assign(static_cast<std::size_t>(columns) * rows, 0);
+    }
+    else {
+        source.kinds.push_back({ .name = "lake", .symbol = '~', .cost = LAKE_COST });
+        source.grid.assign(grid.begin(), grid.end());
+    }
     source.places.push_back(
         { .key = "city",
           .kind = core::PlaceKind::City,
@@ -40,6 +50,11 @@ namespace test {
         std::abort(); // every test after would fail for the same reason
     }
     return *std::move(built);
+}
+
+/// A map of `columns` by `rows` tiles of meadow with one city (the start) at tile 0.
+[[nodiscard]] inline core::WorldMap MeadowMap(u32 columns, u32 rows) {
+    return MapOfTiles(columns, rows, {});
 }
 
 } // namespace test
