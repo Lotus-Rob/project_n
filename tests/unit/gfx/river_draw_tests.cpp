@@ -17,9 +17,13 @@ constexpr u32 CORE_COLOUR = 0xFF'11'22'33;
 constexpr u32 EDGE_COLOUR = 0xFF'44'55'66;
 constexpr gfx::RiverShape SHAPE{ .coreWidth = CORE, .edgeWidth = EDGE, .coreColour = CORE_COLOUR, .edgeColour = EDGE_COLOUR };
 
-std::vector<gfx::RibbonVertex> Draw(const core::WorldMap& map) {
+/// The kind index MapOfTiles() gives its lake tiles: water.
+constexpr u8 LAKE = 1;
+constexpr std::array<u8, 1> LAKE_WATER{ { LAKE } };
+
+std::vector<gfx::RibbonVertex> Draw(const core::WorldMap& map, std::span<const u8> water = {}) {
     std::vector<gfx::RibbonVertex> vertices;
-    gfx::DrawRivers(map, SHAPE, vertices);
+    gfx::DrawRivers(map, SHAPE, water, vertices);
     return vertices;
 }
 
@@ -113,9 +117,79 @@ TEST_CASE("a tributary's end lies inside the main river's core") {
     CHECK(end.x < Middle(7, 4).x);
 }
 
+TEST_CASE("a tributary ending past the main river ends on the main river's middle") {
+    // The main river runs from (0, 4) to (7, 5), so at the tributary's column 4 its middle lies 4/7 of a tile below row 4's
+    // centre, and the tributary's last waypoint, (4, 5)'s centre, lies under half a tile past it.
+    const core::WorldMap map = test::MeadowMap(
+        8,
+        8,
+        { { { .column = 0, .row = 4 }, { .column = 7, .row = 5 } }, { { .column = 4, .row = 0 }, { .column = 4, .row = 5 } } }
+    );
+    const std::vector<gfx::RibbonVertex> vertices = Draw(map);
+    const core::Vec2 end = Midline(vertices, (vertices.size() / gfx::QUAD_VERTICES) - 1, true);
+    const f32 mainMiddle = Middle(4, 4).y + (TILE * 4.0F / 7.0F);
+    CHECK(end.x == doctest::Approx(Middle(4, 0).x));
+    CHECK(std::abs(end.y - mainMiddle) < 1.0F);
+}
+
+TEST_CASE("a river ending two tiles from another keeps its end") {
+    const core::WorldMap map = test::MeadowMap(
+        8,
+        8,
+        { { { .column = 0, .row = 4 }, { .column = 7, .row = 4 } }, { { .column = 4, .row = 0 }, { .column = 4, .row = 2 } } }
+    );
+    const std::vector<gfx::RibbonVertex> vertices = Draw(map);
+    const core::Vec2 end = Midline(vertices, (vertices.size() / gfx::QUAD_VERTICES) - 1, true);
+    CHECK(Distance(end, Middle(4, 2)) < 1.0F);
+}
+
+TEST_CASE("a river ending short of water runs on a tile into it, fading out") {
+    // Meadow, with a lake over columns 6 and 7; the river stops at column 4, so water lies a tile and a half ahead of its end.
+    constexpr u32 COLUMNS = 8;
+    constexpr u32 ROWS = 3;
+    std::array<u8, std::size_t{ COLUMNS } * ROWS> grid{};
+    for (u32 row = 0; row < ROWS; ++row) {
+        grid.at((row * COLUMNS) + 6) = LAKE;
+        grid.at((row * COLUMNS) + 7) = LAKE;
+    }
+    const core::WorldMap map =
+        test::MapOfTiles(COLUMNS, ROWS, grid, { { { .column = 1, .row = 1 }, { .column = 4, .row = 1 } } });
+    const std::vector<gfx::RibbonVertex> mouth = Draw(map, LAKE_WATER);
+    const core::Vec2 end = Midline(mouth, (mouth.size() / gfx::QUAD_VERTICES) - 1, true);
+    CHECK(end.x == doctest::Approx(7.0F * TILE));
+    CHECK(end.y == doctest::Approx(Middle(0, 1).y));
+    // Whole up to the water, nothing at the end: its first core corner and its last.
+    const std::size_t cores = mouth.size() / 2;
+    CHECK(mouth[cores].colour == CORE_COLOUR);
+    CHECK(mouth.back().colour == 0);
+    CHECK(mouth[cores - 1].colour == 0);
+    // Without water kinds the river ends where its waypoints do.
+    const std::vector<gfx::RibbonVertex> dry = Draw(map);
+    CHECK(Distance(Midline(dry, (dry.size() / gfx::QUAD_VERTICES) - 1, true), Middle(4, 1)) < 1.0F);
+}
+
+TEST_CASE("a river ending more than three tiles short of water keeps its end") {
+    constexpr u32 COLUMNS = 8;
+    constexpr u32 ROWS = 3;
+    std::array<u8, std::size_t{ COLUMNS } * ROWS> grid{};
+    for (u32 row = 0; row < ROWS; ++row) {
+        grid.at((row * COLUMNS) + 7) = LAKE;
+    }
+    const core::WorldMap map =
+        test::MapOfTiles(COLUMNS, ROWS, grid, { { { .column = 1, .row = 1 }, { .column = 3, .row = 1 } } });
+    const std::vector<gfx::RibbonVertex> vertices = Draw(map, LAKE_WATER);
+    CHECK(Distance(Midline(vertices, (vertices.size() / gfx::QUAD_VERTICES) - 1, true), Middle(3, 1)) < 1.0F);
+}
+
 TEST_CASE("the shipped rivers fit the river buffer") {
     const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
-    const std::vector<gfx::RibbonVertex> vertices = Draw(*map);
+    // With the shipped look's water kinds, so the rivers run on into the sea as they are drawn.
+    const std::span<const core::TerrainKind> kinds = map->Kinds();
+    const auto indexOf = [&](std::string_view name) {
+        return static_cast<u8>(std::ranges::find(kinds, name, &core::TerrainKind::name) - kinds.begin());
+    };
+    const std::array<u8, 2> water{ { indexOf("shallows"), indexOf("deep_water") } };
+    const std::vector<gfx::RibbonVertex> vertices = Draw(*map, water);
     bool finite = true;
     for (const gfx::RibbonVertex& vertex : vertices) {
         finite = finite && std::isfinite(vertex.x) && std::isfinite(vertex.y);
@@ -123,17 +197,12 @@ TEST_CASE("the shipped rivers fit the river buffer") {
     CHECK(finite);
     CHECK(vertices.size() > 0);
     CHECK(vertices.size() <= std::size_t{ gfx::MAX_RIVER_QUADS } * gfx::QUAD_VERTICES);
-    // Nothing was left out: the whole map's length is there.
-    std::size_t expected = 0;
-    for (const std::vector<TilePoint>& river : map->Rivers()) {
-        for (std::size_t point = 1; point < river.size(); ++point) {
-            const f32 across = static_cast<f32>(river[point].column) - static_cast<f32>(river[point - 1].column);
-            const f32 down = static_cast<f32>(river[point].row) - static_cast<f32>(river[point - 1].row);
-            const std::size_t tiles = std::max<std::size_t>(1, static_cast<std::size_t>(std::ceil(std::hypot(across, down))));
-            expected += std::size_t{ 2 } * gfx::RIVER_STEPS * tiles;
-        }
+    // Nothing was left out: each river's two bands are there, each starting with a quad at `u` 0.
+    std::size_t bands = 0;
+    for (std::size_t quad = 0; quad < vertices.size() / gfx::QUAD_VERTICES; ++quad) {
+        bands += (vertices[quad * gfx::QUAD_VERTICES].uv & 0xFFFFU) == 0 ? 1 : 0;
     }
-    CHECK(vertices.size() == expected * gfx::QUAD_VERTICES);
+    CHECK(bands == 2 * map->Rivers().size());
 }
 
 TEST_CASE("rivers past the buffer are left out whole, the later ones first") {

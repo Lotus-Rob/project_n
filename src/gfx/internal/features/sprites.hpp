@@ -139,8 +139,9 @@ public:
     /// of their instances), textured from `sprites`, placed by `transform` and interpolated by `alpha` (0:
     /// previous tick, 1: this tick). An instance wearing a glow draws it under itself, its quad grown by the glow's reach,
     /// as `glows` says; one without draws as before, reading no field. While `fog` is on, an instance flagged
-    /// core::INSTANCE_FOGGED_LAND is drained, veiled and shaded by its pixels' fog, and one flagged
-    /// core::INSTANCE_SIGHT_FADE fades with the sight at its core::SightPoint(). Instances past what fitted aren't drawn.
+    /// core::INSTANCE_FOGGED_LAND is drained, veiled and shaded by its pixels' fog, one flagged core::INSTANCE_FOG_SHADE
+    /// only shaded, and one flagged core::INSTANCE_SIGHT_FADE fades with the sight at its core::SightPoint(). Instances past
+    /// what fitted aren't drawn.
     void Draw(
         SDL_GPUCommandBuffer* commands,
         SDL_GPURenderPass* pass,

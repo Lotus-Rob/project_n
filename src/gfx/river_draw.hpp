@@ -9,6 +9,7 @@
 #include "core/world_map.hpp"
 #include "gfx/volley_draw.hpp"
 
+#include <span>
 #include <vector>
 
 namespace gfx {
@@ -35,9 +36,12 @@ struct RiverShape {
 /// Replaces `into` with the quads of every river's edge band, then of every river's core band, each river a centripetal
 /// Catmull-Rom spline through its polyline's tile centres, ends included, arriving along the end segments. Each segment
 /// takes RIVER_STEPS times its length in tiles (at least one tile) of quads per band, as whole quads in MeshVertex's corner
-/// order with `u` running 0 to 1 along the river and `v` 0 on one side and 1 on the other. A river of fewer than two
-/// distinct points draws nothing; rivers that would take the quads past MAX_RIVER_QUADS are left out whole, the later ones
-/// first.
-void DrawRivers(const core::WorldMap& map, const RiverShape& shape, std::vector<RibbonVertex>& into);
+/// order with `u` running 0 to 1 along the river and `v` 0 on one side and 1 on the other. A river's end is drawn where it
+/// flows on, though its waypoints stop short or overshoot: where its last stretch meets another river's middle, when that
+/// lies within a tile of the end; else, when the end isn't on water, a tile into the first tile of a kind in `water` within
+/// three tiles straight ahead (none for an empty `water`), both bands fading out over that last tile. Only the drawing changes:
+/// the map is as it was. A river of fewer than two distinct points draws nothing; rivers that would take the quads past
+/// MAX_RIVER_QUADS are left out whole, the later ones first.
+void DrawRivers(const core::WorldMap& map, const RiverShape& shape, std::span<const u8> water, std::vector<RibbonVertex>& into);
 
 } // namespace gfx

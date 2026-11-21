@@ -14,8 +14,6 @@ namespace gfx {
 inline constexpr u64 TERRAIN_SEED = 0x5eed;
 /// The purpose of the map's tile draws (game/random_purposes.hpp keeps the number, 9, retired).
 inline constexpr u32 TERRAIN_PURPOSE = 9;
-/// The draw of a tile's variant: the first draw a tile ever had.
-inline constexpr u32 VARIANT_DRAW = 2;
 
 /// The key of the tile at `column` and `row` in a draw.
 [[nodiscard]] constexpr u64 TileKey(u32 column, u32 row) {

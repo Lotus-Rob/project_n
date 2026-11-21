@@ -42,29 +42,7 @@ updates its row in the same commit (what made it, when, and who) and takes it ou
 | rune_00.png to rune_23.png | `art/placeholders.py` (procedural placeholder) | 2026-11-13 | the seals' invented runes, 2 to 5 strokes on a 3 x 4 grid; white, tinted by the seal; `./dev atlas --placeholders` redraws them byte for byte |
 | flourish_flame_0.png to flourish_flame_2.png | `art/placeholders.py` (procedural placeholder) | 2026-11-13 | the seals' flame flourishes, 256 x 128; white; as above |
 | emblem_lotus.png, emblem_swords.png, emblem_eye.png, emblem_spiral.png | `art/placeholders.py` (procedural placeholder) | 2026-11-13 | the seals' emblems, 256 x 256, abstract and original; white; as above |
-| terrain_meadow_0.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | the world's terrain, ten kinds with two variants each; opaque 256 x 256, seamless with itself and its other variant; `./dev atlas --placeholders` redraws it byte for byte |
-| terrain_meadow_1.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | as above |
-| terrain_grass_0.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | as above |
-| terrain_grass_1.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | as above |
-| terrain_forest_0.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | as above |
-| terrain_forest_1.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | as above |
-| terrain_hills_0.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | as above |
-| terrain_hills_1.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | as above |
-| terrain_rock_0.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | as above |
-| terrain_rock_1.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | as above |
-| terrain_snow_0.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | as above |
-| terrain_snow_1.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | as above |
-| terrain_sand_0.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | as above |
-| terrain_sand_1.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | as above |
-| terrain_marsh_0.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | as above |
-| terrain_marsh_1.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | as above |
-| terrain_shallows_0.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | as above |
-| terrain_shallows_1.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | as above |
-| terrain_water_0.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | as above |
-| terrain_water_1.png | `art/placeholders.py` (procedural placeholder) | 2026-11-14 | as above |
-| terrain_peaks_0.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| terrain_peaks_1.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| road_0.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
+| road_0.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | the world map's road overlays, one per neighbour mask; 256 x 256, laid from their top-left corners; `./dev atlas --placeholders` redraws it byte for byte |
 | road_1.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
 | road_2.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
 | road_3.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
@@ -80,22 +58,6 @@ updates its row in the same commit (what made it, when, and who) and takes it ou
 | road_13.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
 | road_14.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
 | road_15.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| river_0.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| river_1.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| river_2.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| river_3.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| river_4.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| river_5.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| river_6.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| river_7.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| river_8.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| river_9.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| river_10.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| river_11.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| river_12.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| river_13.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| river_14.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| river_15.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
 | bridge_h.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
 | bridge_v.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
 | ford.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |

@@ -33,7 +33,7 @@ inline constexpr u32 PURPOSE_VISIT_MONTH = 12;
 inline constexpr u32 PURPOSE_VISIT = 13;
 /// A visit drawing its journey's own seed (core::Stay::seed), from which its stay draws its points.
 inline constexpr u32 PURPOSE_JOURNEY_SEED = 14;
-// 9 is retired from game (the old world terrain noise): gfx/terrain_draw.cpp keys the world map's tile variants with it, so
-// nothing here may reuse it.
+// 9 is retired from game (the old world terrain noise): gfx/tile_hash.hpp keys the world map's stamps with it, so nothing
+// here may reuse it.
 
 } // namespace game

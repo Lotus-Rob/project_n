@@ -465,11 +465,9 @@ TEST_CASE("the widest 32:9 view of the shipped map fits the terrain buffer") {
                                  .y = (static_cast<f32>(tile.row) + 0.5F) * side };
         const core::Rect view{ .min = { .x = centre.x - half.x, .y = centre.y - half.y },
                                .max = { .x = centre.x + half.x, .y = centre.y + half.y } };
-        gfx::TerrainDrawing terrain;
-        gfx::DrawTerrain(*map, *look, *manifest, view, terrain);
         for (const f32 zoom : { 0.25F, 1.0F }) {
-            gfx::TerrainDrawing drawing = terrain;
-            gfx::DrawStamps(*map, *look, *manifest, map->TilesIn(view), zoom, drawing);
+            gfx::TerrainDrawing drawing;
+            gfx::DrawTerrain(*map, *look, *manifest, view, zoom, drawing);
             most = std::max(most, drawing.instances.size());
         }
     }

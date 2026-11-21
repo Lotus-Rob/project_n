@@ -506,9 +506,9 @@ TEST_CASE("a world publish holds no tiles in view and no painted ground: the ren
     // The shipped map, as VIEW lies far past the small test map's edge and a screen needs a map larger than one.
     game::Host host(manifest, game::WORLD_SCENE, test::ShippedData());
     const core::Snapshot snapshot = Published(host, VIEW);
-    // The terrain sprites, which art/sprites.toml lists together.
+    // The terrain's stamp sprites, which art/sprites.toml lists together.
     std::vector<core::Instance> terrain;
-    for (auto id = std::to_underlying(SpriteId::TerrainMeadow0); id <= std::to_underlying(SpriteId::TerrainWater1); ++id) {
+    for (auto id = std::to_underlying(SpriteId::StampForest0); id <= std::to_underlying(SpriteId::StampWater3); ++id) {
         terrain.push_back(core::MakeInstance(*manifest, { .sprite = static_cast<SpriteId>(id) }));
     }
     CHECK(snapshot.worldMap);

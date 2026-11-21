@@ -72,7 +72,8 @@ std::expected<void, core::Error> RiverRenderer::Update(
     }
     const RiverShape shape = RiverShapeOf(map, look.river);
     // DrawRivers() leaves out whole the rivers past MAX_RIVER_QUADS, and logs it.
-    DrawRivers(map, shape, m_laid);
+    const std::array<u8, 2> water{ { look.ground.shallowKind, look.ground.deepKind } };
+    DrawRivers(map, shape, water, m_laid);
     m_quads = static_cast<u32>(m_laid.size() / QUAD_VERTICES);
     m_rimStart = RimStart(shape);
     // Cycled: a frame in flight may still read what the transfer buffer and the vertex buffer held.

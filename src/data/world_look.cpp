@@ -273,7 +273,7 @@ std::expected<core::KindLook, core::Error> ReadKind(
     if (!node.IsMap()) {
         return RefuseLook(node, std::format("{} isn't a map", owner));
     }
-    internal::NoteUnknownKeys(LOOK_READER, node, owner, "key", { "wash", "strength", "variants", "stamps" }, warnings);
+    internal::NoteUnknownKeys(LOOK_READER, node, owner, "key", { "wash", "strength", "stamps" }, warnings);
     const std::expected<std::array<u8, 3>, core::Error> wash = ColourIn(node, "wash", owner);
     if (!wash) {
         return std::unexpected{ wash.error() };
@@ -281,14 +281,6 @@ std::expected<core::KindLook, core::Error> ReadKind(
     const std::expected<f32, core::Error> strength = NumberIn(node, owner, "strength", internal::FRACTION);
     if (!strength) {
         return std::unexpected{ strength.error() };
-    }
-    if (!node["variants"]) {
-        return RefuseLook(node, std::format("{} has no variants", owner));
-    }
-    std::expected<std::vector<core::atlas::SpriteId>, core::Error> variants =
-        SpriteList(node["variants"], std::format("{} variants", owner), atlas, 0);
-    if (!variants) {
-        return std::unexpected{ variants.error() };
     }
     const std::expected<YAML::Node, core::Error> stamps = MapAt(node, "stamps", owner);
     if (!stamps) {
@@ -298,7 +290,7 @@ std::expected<core::KindLook, core::Error> ReadKind(
     if (!read) {
         return std::unexpected{ read.error() };
     }
-    return core::KindLook{ .wash = *wash, .strength = *strength, .stamps = std::move(*read), .variants = std::move(*variants) };
+    return core::KindLook{ .wash = *wash, .strength = *strength, .stamps = std::move(*read) };
 }
 
 std::expected<void, core::Error> ReadLookKinds(
@@ -897,19 +889,7 @@ std::expected<core::WorldLook, core::Error> ParseWorldLook(
             root,
             "",
             "key",
-            { "kinds",
-              "roads",
-              "rivers",
-              "bridge",
-              "ford",
-              "markers",
-              "route",
-              "fog",
-              "ground",
-              "veil",
-              "mist",
-              "river",
-              "places" },
+            { "kinds", "roads", "bridge", "ford", "markers", "route", "fog", "ground", "veil", "mist", "river", "places" },
             warnings
         );
         core::WorldLook look;
@@ -917,9 +897,6 @@ std::expected<core::WorldLook, core::Error> ParseWorldLook(
             return std::unexpected{ std::move(read.error()) };
         }
         if (auto read = ReadMasks(root, "roads", atlas, look.roads); !read) {
-            return std::unexpected{ std::move(read.error()) };
-        }
-        if (auto read = ReadMasks(root, "rivers", atlas, look.rivers); !read) {
             return std::unexpected{ std::move(read.error()) };
         }
         const std::expected<YAML::Node, core::Error> bridge = MapAt(root, "bridge");

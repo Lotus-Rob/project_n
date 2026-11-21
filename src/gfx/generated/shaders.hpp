@@ -356,15 +356,15 @@ inline constexpr Stage SEAL_LIGHT_VERT{
 };
 
 /// shaders/bin/sprite.frag.spv, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 8100> SPRITE_FRAG_SPIRV{{
+inline constexpr std::array<u8, 8892> SPRITE_FRAG_SPIRV{{
 #include "sprite.frag.spv.h"
 }};
 /// shaders/bin/sprite.frag.dxil, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 9008> SPRITE_FRAG_DXIL{{
+inline constexpr std::array<u8, 9200> SPRITE_FRAG_DXIL{{
 #include "sprite.frag.dxil.h"
 }};
 /// shaders/bin/sprite.frag.msl, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 7320> SPRITE_FRAG_MSL{{
+inline constexpr std::array<u8, 8011> SPRITE_FRAG_MSL{{
 #include "sprite.frag.msl.h"
 }};
 /// shaders/sprite.frag.hlsl.

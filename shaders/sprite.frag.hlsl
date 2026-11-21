@@ -9,10 +9,6 @@
 #define FOG_TEXTURE_SLOT 2
 #include "fog.hlsli"
 
-/// core::INSTANCE_FOGGED_LAND and core::INSTANCE_SIGHT_FADE.
-static const uint INSTANCE_FOGGED_LAND = 1;
-static const uint INSTANCE_SIGHT_FADE = 2;
-
 /// A dissolve's blocks are this many screen pixels square, so it stays crisp at every zoom.
 static const float DISSOLVE_BLOCK_PIXELS = 4.0;
 
@@ -68,14 +64,17 @@ float4 Glowing(VertexOut input, float2 uvPerPixel) {
     return sprite + input.glowColour * (coverage * (1.0 - sprite.a));
 }
 
-/// `colour` (premultiplied) as the fog leaves it: land drained, veiled and shaded by its tile's state, and a sprite fading
-/// with sight at its sight point.
+/// `colour` (premultiplied) as the fog leaves it: land drained, veiled and shaded by its tile's state, a thing that keeps
+/// its colour only shaded, and a sprite fading with sight at its sight point.
 float4 Fogged(float4 colour, VertexOut input) {
     if (fog.on == 0) {
         return colour;
     }
     if ((input.fogFlags & INSTANCE_FOGGED_LAND) != 0) {
         colour = FoggedLand(colour.rgb, colour.a, input.world);
+    }
+    else if ((input.fogFlags & INSTANCE_FOG_SHADE) != 0) {
+        colour = FogShaded(colour.rgb, colour.a, input.world);
     }
     if ((input.fogFlags & INSTANCE_SIGHT_FADE) != 0) {
         colour *= smoothstep(0.5, 1.0, FogAt(input.sightPoint).y);

@@ -96,9 +96,9 @@ TEST_CASE("only the world scene shows the map") {
     host.Publish(snapshot, jobs, std::nullopt);
     CHECK(snapshot.worldMap);
     const core::Instance ground = core::MakeInstance(*manifest, { .sprite = core::atlas::SpriteId::Ground });
-    const core::Instance tile = core::MakeInstance(*manifest, { .sprite = core::atlas::SpriteId::TerrainMeadow0 });
+    const core::Instance stamp = core::MakeInstance(*manifest, { .sprite = core::atlas::SpriteId::StampMeadow0 });
     CHECK(std::ranges::none_of(snapshot.instances, [&](const core::Instance& instance) {
-        return instance.regionMin == ground.regionMin || instance.regionMin == tile.regionMin;
+        return instance.regionMin == ground.regionMin || instance.regionMin == stamp.regionMin;
     }));
     core::Snapshot arena;
     game::Host arenaHost(manifest, game::ARENA_SCENE);

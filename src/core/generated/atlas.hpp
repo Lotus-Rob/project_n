@@ -73,28 +73,6 @@ enum class SpriteId : u16 { // NOLINT(performance-enum-size): stable IDs outgrow
     EmblemSwords, ///< assets/sprites/emblem_swords.png
     EmblemEye, ///< assets/sprites/emblem_eye.png
     EmblemSpiral, ///< assets/sprites/emblem_spiral.png
-    TerrainMeadow0, ///< assets/sprites/terrain_meadow_0.png
-    TerrainMeadow1, ///< assets/sprites/terrain_meadow_1.png
-    TerrainGrass0, ///< assets/sprites/terrain_grass_0.png
-    TerrainGrass1, ///< assets/sprites/terrain_grass_1.png
-    TerrainForest0, ///< assets/sprites/terrain_forest_0.png
-    TerrainForest1, ///< assets/sprites/terrain_forest_1.png
-    TerrainHills0, ///< assets/sprites/terrain_hills_0.png
-    TerrainHills1, ///< assets/sprites/terrain_hills_1.png
-    TerrainRock0, ///< assets/sprites/terrain_rock_0.png
-    TerrainRock1, ///< assets/sprites/terrain_rock_1.png
-    TerrainSnow0, ///< assets/sprites/terrain_snow_0.png
-    TerrainSnow1, ///< assets/sprites/terrain_snow_1.png
-    TerrainSand0, ///< assets/sprites/terrain_sand_0.png
-    TerrainSand1, ///< assets/sprites/terrain_sand_1.png
-    TerrainMarsh0, ///< assets/sprites/terrain_marsh_0.png
-    TerrainMarsh1, ///< assets/sprites/terrain_marsh_1.png
-    TerrainShallows0, ///< assets/sprites/terrain_shallows_0.png
-    TerrainShallows1, ///< assets/sprites/terrain_shallows_1.png
-    TerrainWater0, ///< assets/sprites/terrain_water_0.png
-    TerrainWater1, ///< assets/sprites/terrain_water_1.png
-    TerrainPeaks0, ///< assets/sprites/terrain_peaks_0.png
-    TerrainPeaks1, ///< assets/sprites/terrain_peaks_1.png
     Road0, ///< assets/sprites/road_0.png
     Road1, ///< assets/sprites/road_1.png
     Road2, ///< assets/sprites/road_2.png
@@ -111,22 +89,6 @@ enum class SpriteId : u16 { // NOLINT(performance-enum-size): stable IDs outgrow
     Road13, ///< assets/sprites/road_13.png
     Road14, ///< assets/sprites/road_14.png
     Road15, ///< assets/sprites/road_15.png
-    River0, ///< assets/sprites/river_0.png
-    River1, ///< assets/sprites/river_1.png
-    River2, ///< assets/sprites/river_2.png
-    River3, ///< assets/sprites/river_3.png
-    River4, ///< assets/sprites/river_4.png
-    River5, ///< assets/sprites/river_5.png
-    River6, ///< assets/sprites/river_6.png
-    River7, ///< assets/sprites/river_7.png
-    River8, ///< assets/sprites/river_8.png
-    River9, ///< assets/sprites/river_9.png
-    River10, ///< assets/sprites/river_10.png
-    River11, ///< assets/sprites/river_11.png
-    River12, ///< assets/sprites/river_12.png
-    River13, ///< assets/sprites/river_13.png
-    River14, ///< assets/sprites/river_14.png
-    River15, ///< assets/sprites/river_15.png
     BridgeH, ///< assets/sprites/bridge_h.png
     BridgeV, ///< assets/sprites/bridge_v.png
     Ford, ///< assets/sprites/ford.png
@@ -211,7 +173,7 @@ enum class SpriteId : u16 { // NOLINT(performance-enum-size): stable IDs outgrow
 };
 
 /// Every sprite's name, indexed by SpriteId: the manifest must list the same, in this order.
-inline constexpr std::array<std::string_view, 198> SPRITE_NAMES{ {
+inline constexpr std::array<std::string_view, 160> SPRITE_NAMES{ {
     "ground",
     "rock_large",
     "rock_small",
@@ -275,28 +237,6 @@ inline constexpr std::array<std::string_view, 198> SPRITE_NAMES{ {
     "emblem_swords",
     "emblem_eye",
     "emblem_spiral",
-    "terrain_meadow_0",
-    "terrain_meadow_1",
-    "terrain_grass_0",
-    "terrain_grass_1",
-    "terrain_forest_0",
-    "terrain_forest_1",
-    "terrain_hills_0",
-    "terrain_hills_1",
-    "terrain_rock_0",
-    "terrain_rock_1",
-    "terrain_snow_0",
-    "terrain_snow_1",
-    "terrain_sand_0",
-    "terrain_sand_1",
-    "terrain_marsh_0",
-    "terrain_marsh_1",
-    "terrain_shallows_0",
-    "terrain_shallows_1",
-    "terrain_water_0",
-    "terrain_water_1",
-    "terrain_peaks_0",
-    "terrain_peaks_1",
     "road_0",
     "road_1",
     "road_2",
@@ -313,22 +253,6 @@ inline constexpr std::array<std::string_view, 198> SPRITE_NAMES{ {
     "road_13",
     "road_14",
     "road_15",
-    "river_0",
-    "river_1",
-    "river_2",
-    "river_3",
-    "river_4",
-    "river_5",
-    "river_6",
-    "river_7",
-    "river_8",
-    "river_9",
-    "river_10",
-    "river_11",
-    "river_12",
-    "river_13",
-    "river_14",
-    "river_15",
     "bridge_h",
     "bridge_v",
     "ford",

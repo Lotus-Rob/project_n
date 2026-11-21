@@ -2,9 +2,10 @@
 
 /// @file
 /// @ingroup core
-/// The world map's look: which sprites draw each terrain kind, the road and river overlays, the
-/// crossings and the markers, read from `assets/data/world_look.yaml`. Presentation, not game data: it is never hashed
-/// into the game data or saved, `game` never sees it, and the main thread reloads it as the file is edited.
+/// The world map's look: each terrain kind's wash and stamps, the paper, water, rivers, mist and veil, the road overlays,
+/// the crossings, the place paintings and markers, the route and the fog, read from `assets/data/world_look.yaml`.
+/// Presentation, not game data: it is never hashed into the game data or saved, `game` never sees it, and the main thread
+/// reloads it as the file is edited.
 
 #include "core/archive.hpp"
 #include "core/types.hpp"
@@ -18,8 +19,8 @@
 
 namespace core {
 
-/// How many sprites a road or river list holds: one for each combination of its four neighbours (bits 1, 2, 4, 8 for
-/// north, east, south and west).
+/// How many sprites the road list holds: one for each combination of its four neighbours (bits 1, 2, 4, 8 for north, east,
+/// south and west).
 inline constexpr u32 LINE_MASKS = 16;
 
 /// The distance between a route's dots in a look nothing has read yet, in world units.
@@ -98,7 +99,7 @@ struct StampLook {
     bool mist = false;
 };
 
-/// How one terrain kind looks: its wash and its stamps, and the tiles it draws until the stamps replace them.
+/// How one terrain kind looks: its wash and its stamps.
 struct KindLook {
     /// The colour the kind's ground is washed with (sRGB).
     std::array<u8, 3> wash{};
@@ -106,8 +107,6 @@ struct KindLook {
     f32 strength = 0.0F;
     /// The stamps over the kind.
     StampLook stamps{};
-    /// The tile sprites that draw the kind for now, at least one; a tile picks by its place.
-    std::vector<atlas::SpriteId> variants;
 };
 
 /// The paper under the map and how washes meet. Colours are sRGB, lengths in tiles.
@@ -196,8 +195,6 @@ struct WorldLook {
     std::vector<KindLook> kinds;
     /// The road overlay by neighbour mask.
     std::array<atlas::SpriteId, LINE_MASKS> roads{};
-    /// The river overlay by neighbour mask.
-    std::array<atlas::SpriteId, LINE_MASKS> rivers{};
     /// A road across a river, where the road runs east to west.
     atlas::SpriteId bridgeAcross{};
     /// A road across a river, where the road runs north to south.
@@ -260,12 +257,8 @@ struct WorldLook {
                 kind.stamps.thinBelow,
                 kind.stamps.mist
             );
-            sprites(kind.variants);
         }
         for (const atlas::SpriteId sprite : roads) {
-            hasher(sprite);
-        }
-        for (const atlas::SpriteId sprite : rivers) {
             hasher(sprite);
         }
         hasher(bridgeAcross, bridgeDown, ford, cityMarker);
