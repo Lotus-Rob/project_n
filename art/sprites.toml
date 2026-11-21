@@ -448,16 +448,16 @@ foot = [115, 90]
 foot = [115, 90]
 
 [stamp_water_0]
-foot = [115, 70]
+foot = [115, 100]
 
 [stamp_water_1]
-foot = [115, 70]
+foot = [115, 100]
 
 [stamp_water_2]
-foot = [115, 70]
+foot = [115, 100]
 
 [stamp_water_3]
-foot = [115, 70]
+foot = [115, 100]
 
 [mist_0]
 foot = [192, 64]
