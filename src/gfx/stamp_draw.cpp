@@ -248,7 +248,7 @@ void LayStamp(
         return;
     }
     const f32 opacity = Opacity(pass, stamps, column, row);
-    const u32 colour = opacity >= 1.0F ? core::OPAQUE_WHITE : Premultiplied({ 255, 255, 255 }, opacity);
+    const u32 colour = opacity >= 1.0F ? core::OPAQUE_WHITE : Premultiplied({ { 255, 255, 255 } }, opacity);
     if ((colour >> ALPHA_SHIFT) == 0) {
         return;
     }
