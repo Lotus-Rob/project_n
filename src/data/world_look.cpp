@@ -195,7 +195,7 @@ std::expected<std::array<f32, 2>, core::Error> PairIn(
     if (order == Order::Rising ? values[0] > values[1] : values[0] < values[1]) {
         return refuse();
     }
-    return std::array<f32, 2>{ static_cast<f32>(values[0]), static_cast<f32>(values[1]) };
+    return std::array<f32, 2>{ { static_cast<f32>(values[0]), static_cast<f32>(values[1]) } };
 }
 
 /// The true or false at `key` in `map`, which `owner` names in refusals.
