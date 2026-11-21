@@ -52,8 +52,16 @@ places:
 )yaml";
 
 constexpr std::string_view SMALL_LOOK = R"yaml(kinds:
-  deep_water: [terrain_water_0]
-  meadow: [terrain_meadow_0, terrain_meadow_1]
+  deep_water:
+    wash: [88, 124, 148]
+    strength: 0.68
+    variants: [terrain_water_0]
+    stamps: { sprites: [stamp_water_0], density: 0.08, size: [0.7, 0.9], jitter: 0.15, thin_below: 0.5, mist: false }
+  meadow:
+    wash: [196, 204, 146]
+    strength: 0.1
+    variants: [terrain_meadow_0, terrain_meadow_1]
+    stamps: { sprites: [stamp_meadow_0], density: 0.03, size: [0.6, 0.9], jitter: 0.2, thin_below: 0, mist: true }
 roads:
   [road_0, road_1, road_2, road_3, road_4, road_5, road_6, road_7, road_8, road_9, road_10, road_11, road_12, road_13, road_14, road_15]
 rivers:
@@ -73,6 +81,22 @@ fog:
   drain: { strength: 0.85, sepia: [160, 138, 106] }
   mist: { colour: [239, 233, 220], strength: 0.25 }
   shade: [214, 206, 192]
+ground:
+  paper: [240, 235, 222]
+  grain: 0.04
+  edge_warp: 0.45
+  edge_soft: 0.5
+  blotch: 0.5
+  water: { shallow: meadow, deep: deep_water, depth_tiles: 2.5 }
+  shore: { colour: [70, 104, 112], strength: 0.55, width: 0.12 }
+  grid: { colour: [90, 80, 70], strength: 0.09, fade: [0.6, 0.35] }
+veil: { colour: [246, 244, 238], scale: 3.0, strength: 0.55 }
+mist: { sprites: [mist_0], colour: [246, 244, 238], strength: 0.9, chance: 0.7, width: [1.0, 1.4] }
+river: { width: 0.38, edge: 0.5, colour: [128, 172, 176], edge_colour: [70, 104, 112], edge_strength: 0.67 }
+places:
+  city: painting_city
+  dangers: { mountain_pass: painting_mountain_pass }
+  by_key: { capital: painting_capital }
 )yaml";
 
 core::WorldMap SmallMap() {
@@ -181,7 +205,8 @@ TEST_CASE("a tile's variant depends on its place only, so a view never changes i
     std::array<bool, 2> seen{};
     for (u32 row = WIDE_FIRST; row <= WIDE_LAST_ROW; ++row) {
         for (u32 column = WIDE_FIRST; column <= WIDE_LAST_COLUMN; ++column) {
-            const std::vector<SpriteId>& kind = look->kinds.at(map->KindAt(map->TileIndex({ .column = column, .row = row })));
+            const std::vector<SpriteId>& kind =
+                look->kinds.at(map->KindAt(map->TileIndex({ .column = column, .row = row }))).variants;
             if (kind.size() != 2) {
                 continue;
             }
@@ -261,7 +286,7 @@ places:
     REQUIRE(map.has_value());
     core::WorldLook look = SmallLook(*manifest, SmallMap());
     look.kinds.resize(1);
-    look.kinds[0] = { SpriteId::TerrainMeadow0 };
+    look.kinds[0].variants = { SpriteId::TerrainMeadow0 };
     const gfx::TerrainDrawing drawing = Drawn(*map, look, *manifest, TilesRect(1, 1, 1, 1));
     // The tile, its river overlay (east and west: 2 | 8), its road (north and south: 1 | 4), the downward bridge.
     REQUIRE(drawing.instances.size() >= 4);
@@ -329,7 +354,7 @@ TEST_CASE("a look short of the map's kinds draws the tile bare, never past a tab
     const core::WorldMap map = SmallMap();
     core::WorldLook look = SmallLook(*manifest, map);
     look.kinds.resize(1);
-    look.kinds[0].clear();
+    look.kinds[0].variants.clear();
     const gfx::TerrainDrawing drawing = Drawn(map, look, *manifest, TilesRect(0, 1, 0, 1));
     CHECK(drawing.instances.empty());
 }

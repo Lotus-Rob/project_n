@@ -1,12 +1,27 @@
 # The world map's look: presentation, not hashed or saved, reloaded live by debug builds (a broken
 # edit keeps the old look). It says which sprites draw the map; world.yaml says what the map is.
 #
-# kinds:   each terrain kind of world.yaml by name, a list of variant sprites (at least one; a tile picks by its place)
+# kinds:   each terrain kind of world.yaml by name (at most 16): `wash` its colour and `strength` (0 to 1), `variants`
+#          the tile sprites that draw it for now (at least one; a tile picks by its place), `stamps` the painted stamps
+#          over it: `sprites`, `density` (0 to 1), `size` the least and greatest width in tiles, `jitter` (0 to 1) how far
+#          one strays from its cell, `thin_below` the zoom (0 to 2) under which they thin out (0 never), `mist` whether
+#          mist gathers among them
 # roads:   16 sprites, by which of a tile's north, east, south and west neighbours carry a road (bits 1, 2, 4, 8)
 # rivers:  16 sprites, the same for rivers
 # bridge:  a road over a river: `across` where the road runs east to west, `down` where it runs north to south
 # ford:    drawn over the river at a ford
 # markers: `city` and one sprite per danger sort the map uses (a sort the map doesn't use is ignored)
+# ground:  the paper under the map: `paper` colour, `grain` its fibre's strength, `edge_warp` and `edge_soft` how far
+#          noise moves the edge between two kinds and how wide it blends (tiles), `blotch` how unevenly a wash pools,
+#          `water` the map's `shallow` and `deep` kinds and the `depth_tiles` (up to 4) between them, `shore` the line
+#          at the water's edge (`colour`, `strength`, `width`), `grid` the tile grid (`colour`, `strength`, `fade` the
+#          zoom where it is whole and then where it is gone, the first not below the second)
+# veil:    the haze over the ground: `colour`, patch `scale` in tiles, `strength` (0 to 1)
+# mist:    the puffs among stamps: `sprites`, `colour`, `strength`, `chance` of one beside a stamp, `width` the least and
+#          greatest as a share of the stamp's width
+# river:   the ribbon: `width` and `edge` in tiles, `colour`, `edge_colour`, `edge_strength` (0 to 1)
+# places:  paintings for places: `city`, `dangers` one per danger sort the map uses (a sort it doesn't use is ignored),
+#          `by_key` for the places with a key of their own (a key no place has is refused)
 # route:   the player's route and the target cursor: `dot` every `spacing` world units along the line, `marker` on its
 #          end, `cursor` on the cursor's tile
 # fog:     the clouds over unexplored land and the colours of explored land's edge (required): `clouds` the sprites to
@@ -16,17 +31,127 @@
 #          loses (`strength`, 0 to 1) toward `sepia`, `mist` a colour laid over it at `strength` (0 to 1), `shade` the
 #          colour under the clouds so no land shows between them; colours are sRGB, three numbers 0 to 255
 kinds:
-  deep_water: [terrain_water_0, terrain_water_1]
-  shallows: [terrain_shallows_0, terrain_shallows_1]
-  sand: [terrain_sand_0, terrain_sand_1]
-  marsh: [terrain_marsh_0, terrain_marsh_1]
-  meadow: [terrain_meadow_0, terrain_meadow_1]
-  grassland: [terrain_grass_0, terrain_grass_1]
-  forest: [terrain_forest_0, terrain_forest_1]
-  hills: [terrain_hills_0, terrain_hills_1]
-  rock: [terrain_rock_0, terrain_rock_1]
-  snow: [terrain_snow_0, terrain_snow_1]
-  peaks: [terrain_peaks_0, terrain_peaks_1]
+  deep_water:
+    wash: [88, 124, 148]
+    strength: 0.68
+    variants: [terrain_water_0, terrain_water_1]
+    stamps:
+      sprites: [stamp_water_0, stamp_water_1, stamp_water_2, stamp_water_3]
+      density: 0.08
+      size: [0.7, 0.9]
+      jitter: 0.15
+      thin_below: 0.5
+      mist: false
+  shallows:
+    wash: [138, 178, 178]
+    strength: 0.48
+    variants: [terrain_shallows_0, terrain_shallows_1]
+    stamps:
+      sprites: [stamp_water_0, stamp_water_1, stamp_water_2, stamp_water_3]
+      density: 0.08
+      size: [0.7, 0.9]
+      jitter: 0.15
+      thin_below: 0.5
+      mist: false
+  sand:
+    wash: [216, 192, 142]
+    strength: 0.25
+    variants: [terrain_sand_0, terrain_sand_1]
+    stamps:
+      sprites: [stamp_sand_0, stamp_sand_1, stamp_sand_2, stamp_sand_3]
+      density: 0.15
+      size: [0.6, 0.9]
+      jitter: 0.15
+      thin_below: 0.5
+      mist: true
+  marsh:
+    wash: [124, 138, 98]
+    strength: 0.16
+    variants: [terrain_marsh_0, terrain_marsh_1]
+    stamps:
+      sprites: [stamp_marsh_0, stamp_marsh_1, stamp_marsh_2, stamp_marsh_3]
+      density: 0.35
+      size: [0.6, 0.9]
+      jitter: 0.15
+      thin_below: 0.5
+      mist: true
+  meadow:
+    wash: [196, 204, 146]
+    strength: 0.0
+    variants: [terrain_meadow_0, terrain_meadow_1]
+    stamps:
+      sprites: [stamp_meadow_0, stamp_meadow_1, stamp_meadow_2, stamp_meadow_3]
+      density: 0.03
+      size: [0.6, 0.9]
+      jitter: 0.15
+      thin_below: 0.5
+      mist: true
+  grassland:
+    wash: [152, 178, 112]
+    strength: 0.03
+    variants: [terrain_grass_0, terrain_grass_1]
+    stamps:
+      sprites: [stamp_grass_0, stamp_grass_1, stamp_grass_2, stamp_grass_3]
+      density: 0.08
+      size: [0.6, 0.9]
+      jitter: 0.15
+      thin_below: 0.5
+      mist: true
+  forest:
+    wash: [66, 102, 74]
+    strength: 0.12
+    variants: [terrain_forest_0, terrain_forest_1]
+    stamps:
+      sprites: [stamp_forest_0, stamp_forest_1, stamp_forest_2, stamp_forest_3]
+      density: 0.45
+      size: [1.0, 1.3]
+      jitter: 0.15
+      thin_below: 0
+      mist: true
+  hills:
+    wash: [172, 146, 110]
+    strength: 0.12
+    variants: [terrain_hills_0, terrain_hills_1]
+    stamps:
+      sprites: [stamp_hills_0, stamp_hills_1, stamp_hills_2, stamp_hills_3]
+      density: 0.4
+      size: [0.9, 1.2]
+      jitter: 0.15
+      thin_below: 0
+      mist: true
+  rock:
+    wash: [128, 124, 120]
+    strength: 0.2
+    variants: [terrain_rock_0, terrain_rock_1]
+    stamps:
+      sprites: [stamp_rock_0, stamp_rock_1, stamp_rock_2, stamp_rock_3]
+      density: 0.6
+      size: [0.8, 1.1]
+      jitter: 0.2
+      thin_below: 0
+      mist: true
+  snow:
+    wash: [236, 239, 242]
+    strength: 0.2
+    variants: [terrain_snow_0, terrain_snow_1]
+    stamps:
+      sprites: [stamp_snow_0, stamp_snow_1, stamp_snow_2, stamp_snow_3]
+      density: 0.35
+      size: [1.2, 1.7]
+      jitter: 0.3
+      thin_below: 0
+      mist: true
+  peaks:
+    wash: [88, 132, 126]
+    strength: 0.28
+    variants: [terrain_peaks_0, terrain_peaks_1]
+    stamps:
+      sprites: [stamp_peaks_0, stamp_peaks_1, stamp_peaks_2, stamp_peaks_3]
+      density: 0.6
+      size: [1.2, 1.7]
+      jitter: 0.3
+      thin_below: 0
+      mist: true
 roads:
   [road_0, road_1, road_2, road_3, road_4, road_5, road_6, road_7, road_8, road_9, road_10, road_11, road_12, road_13, road_14, road_15]
 rivers:
@@ -51,3 +176,25 @@ fog:
   drain: { strength: 0.85, sepia: [160, 138, 106] }
   mist: { colour: [239, 233, 220], strength: 0.25 }
   shade: [214, 206, 192]
+ground:
+  paper: [240, 235, 222]
+  grain: 0.04
+  edge_warp: 0.45
+  edge_soft: 0.5
+  blotch: 0.5
+  water: { shallow: shallows, deep: deep_water, depth_tiles: 3.0 }
+  shore: { colour: [70, 104, 112], strength: 0.55, width: 0.12 }
+  grid: { colour: [90, 80, 70], strength: 0.09, fade: [0.6, 0.35] }
+veil: { colour: [246, 244, 238], scale: 3.0, strength: 0.55 }
+mist: { sprites: [mist_0, mist_1, mist_2, mist_3], colour: [246, 244, 238], strength: 0.9, chance: 1.0, width: [1.0, 1.4] }
+river: { width: 0.38, edge: 0.5, colour: [128, 172, 176], edge_colour: [70, 104, 112], edge_strength: 0.67 }
+places:
+  city: painting_city
+  dangers:
+    haunted_forest: painting_haunted_forest
+    mountain_pass: painting_mountain_pass
+    shrine: painting_shrine
+    cave: painting_cave
+    cliff: painting_cliff
+    corrupt_village: painting_corrupt_village
+  by_key: { capital: painting_capital }

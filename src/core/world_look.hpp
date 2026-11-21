@@ -79,10 +79,121 @@ struct FogLook {
     std::array<u8, 3> shade{};
 };
 
+/// How many terrain kinds the ground's table holds: the most a look may describe, and so the most a map may have.
+inline constexpr u32 MAX_GROUND_KINDS = 16;
+
+/// The painted stamps scattered over one terrain kind. Lengths in tiles.
+struct StampLook {
+    /// The stamp sprites of the kind's family; a stamp picks one by its place.
+    std::vector<atlas::SpriteId> sprites;
+    /// How many stamps a tile gets on average.
+    f32 density = 0.0F;
+    /// The least and greatest width of a stamp, in tiles.
+    std::array<f32, 2> size{ 1.0F, 1.0F };
+    /// How far a stamp strays from its cell's centre, as a share of the cell, from 0 to 1.
+    f32 jitter = 0.0F;
+    /// The zoom below which stamps thin out, from 0 (never) to 2.
+    f32 thinBelow = 0.0F;
+    /// Whether mist gathers among the kind's stamps.
+    bool mist = false;
+};
+
+/// How one terrain kind looks: its wash and its stamps, and the tiles it draws until the stamps replace them.
+struct KindLook {
+    /// The colour the kind's ground is washed with (sRGB).
+    std::array<u8, 3> wash{};
+    /// How strongly the wash shows, from 0 to 1.
+    f32 strength = 0.0F;
+    /// The stamps over the kind.
+    StampLook stamps{};
+    /// The tile sprites that draw the kind for now, at least one; a tile picks by its place.
+    std::vector<atlas::SpriteId> variants;
+};
+
+/// The paper under the map and how washes meet. Colours are sRGB, lengths in tiles.
+struct GroundLook {
+    /// The paper's colour.
+    std::array<u8, 3> paper{};
+    /// The paper fibre's strength, from 0 to 1.
+    f32 grain = 0.0F;
+    /// How far noise moves the edge between two kinds.
+    f32 edgeWarp = 0.0F;
+    /// How wide that edge blends.
+    f32 edgeSoft = 0.0F;
+    /// How unevenly a wash pools, from 0 to 1.
+    f32 blotch = 0.0F;
+    /// The map's kind (by index) that is shallow water.
+    u8 shallowKind = 0;
+    /// The map's kind (by index) that is deep water.
+    u8 deepKind = 0;
+    /// How many tiles from the shore the water takes to turn from shallow to deep.
+    f32 depthTiles = 0.0F;
+    /// The shore line's colour.
+    std::array<u8, 3> shore{};
+    /// How strongly the shore line shows, from 0 to 1.
+    f32 shoreStrength = 0.0F;
+    /// The shore line's width.
+    f32 shoreWidth = 0.0F;
+    /// The tile grid's colour.
+    std::array<u8, 3> grid{};
+    /// How strongly the grid shows, from 0 to 1.
+    f32 gridStrength = 0.0F;
+    /// The zoom where the grid is whole, then the zoom where it is gone.
+    std::array<f32, 2> gridFade{};
+};
+
+/// The haze that softens the ground between its stamps.
+struct VeilLook {
+    /// The haze's colour (sRGB).
+    std::array<u8, 3> colour{};
+    /// The size of the haze's patches, in tiles.
+    f32 scale = 0.0F;
+    /// How strongly it shows, from 0 to 1.
+    f32 strength = 0.0F;
+};
+
+/// The mist puffs that gather among the stamps of the kinds that ask for them.
+struct MistLook {
+    /// The puff sprites; a puff picks one by its place.
+    std::vector<atlas::SpriteId> sprites;
+    /// The puffs' colour (sRGB).
+    std::array<u8, 3> colour{};
+    /// How strongly they show, from 0 to 1.
+    f32 strength = 0.0F;
+    /// The chance of a puff beside a stamp, from 0 to 1.
+    f32 chance = 0.0F;
+    /// The least and greatest width of a puff, as a share of its stamp's width.
+    std::array<f32, 2> width{};
+};
+
+/// The painted river ribbon. Lengths in tiles, colours sRGB.
+struct RiverLook {
+    /// The ribbon's width.
+    f32 width = 0.0F;
+    /// The width of its bank.
+    f32 edge = 0.0F;
+    /// The water's colour.
+    std::array<u8, 3> colour{};
+    /// The bank's colour.
+    std::array<u8, 3> edgeColour{};
+    /// How strongly the bank shows, from 0 to 1.
+    f32 edgeStrength = 0.0F;
+};
+
+/// The paintings that stand for places.
+struct PlaceLook {
+    /// A city's painting.
+    atlas::SpriteId city{};
+    /// The painting of each danger sort, in the file's order.
+    std::vector<std::pair<std::string, atlas::SpriteId>> dangers;
+    /// The painting of the place with a given key, which stands in for its sort's or the city's.
+    std::vector<std::pair<std::string, atlas::SpriteId>> byKey;
+};
+
 /// The sprites that draw the world map.
 struct WorldLook {
-    /// The variants of each terrain kind, by the map's kind index; each has at least one.
-    std::vector<std::vector<atlas::SpriteId>> kinds;
+    /// The look of each terrain kind, by the map's kind index.
+    std::vector<KindLook> kinds;
     /// The road overlay by neighbour mask.
     std::array<atlas::SpriteId, LINE_MASKS> roads{};
     /// The river overlay by neighbour mask.
@@ -101,16 +212,55 @@ struct WorldLook {
     RouteLook route{};
     /// The fog's clouds and colours.
     FogLook fog{};
+    /// The paper under the map and how washes meet.
+    GroundLook ground{};
+    /// The haze over the ground.
+    VeilLook veil{};
+    /// The mist puffs among the stamps.
+    MistLook mist{};
+    /// The river ribbon.
+    RiverLook river{};
+    /// The paintings of the places.
+    PlaceLook places{};
 
     /// A hash of every value, so a reload can tell an edit from none. Not part of the game data's hash.
     [[nodiscard]] u64 Hash() const {
         Hasher hasher;
-        hasher(static_cast<u64>(kinds.size()));
-        for (const std::vector<atlas::SpriteId>& variants : kinds) {
-            hasher(static_cast<u64>(variants.size()));
-            for (const atlas::SpriteId sprite : variants) {
+        const auto sprites = [&](const std::vector<atlas::SpriteId>& list) {
+            hasher(static_cast<u64>(list.size()));
+            for (const atlas::SpriteId sprite : list) {
                 hasher(sprite);
             }
+        };
+        const auto colour = [&](const std::array<u8, 3>& channels) {
+            for (const u8 channel : channels) {
+                hasher(channel);
+            }
+        };
+        const auto named = [&](const std::vector<std::pair<std::string, atlas::SpriteId>>& list) {
+            hasher(static_cast<u64>(list.size()));
+            for (const auto& [name, sprite] : list) {
+                hasher(static_cast<u64>(name.size()));
+                for (const char character : name) {
+                    hasher(character);
+                }
+                hasher(sprite);
+            }
+        };
+        hasher(static_cast<u64>(kinds.size()));
+        for (const KindLook& kind : kinds) {
+            colour(kind.wash);
+            hasher(kind.strength);
+            sprites(kind.stamps.sprites);
+            hasher(
+                kind.stamps.density,
+                kind.stamps.size[0],
+                kind.stamps.size[1],
+                kind.stamps.jitter,
+                kind.stamps.thinBelow,
+                kind.stamps.mist
+            );
+            sprites(kind.variants);
         }
         for (const atlas::SpriteId sprite : roads) {
             hasher(sprite);
@@ -133,11 +283,26 @@ struct WorldLook {
             hasher(sprite);
         }
         hasher(fog.cloudWidth, fog.bobAmplitude, fog.bobPeriod, fog.drift, fog.fadeSeconds, fog.drain, fog.mistStrength);
-        for (const std::array<u8, 3>& colour : { fog.sepia, fog.mist, fog.shade }) {
-            for (const u8 channel : colour) {
-                hasher(channel);
-            }
-        }
+        colour(fog.sepia);
+        colour(fog.mist);
+        colour(fog.shade);
+        colour(ground.paper);
+        hasher(ground.grain, ground.edgeWarp, ground.edgeSoft, ground.blotch, ground.shallowKind, ground.deepKind);
+        hasher(ground.depthTiles, ground.shoreStrength, ground.shoreWidth, ground.gridStrength);
+        hasher(ground.gridFade[0], ground.gridFade[1]);
+        colour(ground.shore);
+        colour(ground.grid);
+        colour(veil.colour);
+        hasher(veil.scale, veil.strength);
+        sprites(mist.sprites);
+        colour(mist.colour);
+        hasher(mist.strength, mist.chance, mist.width[0], mist.width[1]);
+        hasher(river.width, river.edge, river.edgeStrength);
+        colour(river.colour);
+        colour(river.edgeColour);
+        hasher(places.city);
+        named(places.dangers);
+        named(places.byKey);
         return hasher.Value();
     }
 };

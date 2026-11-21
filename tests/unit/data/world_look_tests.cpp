@@ -33,8 +33,16 @@ places:
 )yaml";
 
 constexpr std::string_view SMALL_LOOK = R"yaml(kinds:
-  deep_water: [terrain_water_0]
-  meadow: [terrain_meadow_0, terrain_meadow_1]
+  deep_water:
+    wash: [88, 124, 148]
+    strength: 0.68
+    variants: [terrain_water_0]
+    stamps: { sprites: [stamp_water_0, stamp_water_1], density: 0.08, size: [0.7, 0.9], jitter: 0.15, thin_below: 0.5, mist: false }
+  meadow:
+    wash: [196, 204, 146]
+    strength: 0.1
+    variants: [terrain_meadow_0, terrain_meadow_1]
+    stamps: { sprites: [stamp_meadow_0], density: 0.03, size: [0.6, 0.9], jitter: 0.2, thin_below: 0, mist: true }
 roads:
   [road_0, road_1, road_2, road_3, road_4, road_5, road_6, road_7, road_8, road_9, road_10, road_11, road_12, road_13, road_14, road_15]
 rivers:
@@ -54,6 +62,22 @@ fog:
   drain: { strength: 0.8, sepia: [150, 130, 100] }
   mist: { colour: [240, 230, 220], strength: 0.3 }
   shade: [210, 200, 190]
+ground:
+  paper: [240, 235, 222]
+  grain: 0.04
+  edge_warp: 0.45
+  edge_soft: 0.5
+  blotch: 0.5
+  water: { shallow: meadow, deep: deep_water, depth_tiles: 2.5 }
+  shore: { colour: [70, 104, 112], strength: 0.55, width: 0.12 }
+  grid: { colour: [90, 80, 70], strength: 0.09, fade: [0.6, 0.35] }
+veil: { colour: [246, 244, 238], scale: 3.0, strength: 0.55 }
+mist: { sprites: [mist_0, mist_1], colour: [246, 244, 238], strength: 0.9, chance: 0.7, width: [1.0, 1.4] }
+river: { width: 0.38, edge: 0.5, colour: [128, 172, 176], edge_colour: [70, 104, 112], edge_strength: 0.67 }
+places:
+  city: painting_city
+  dangers: { mountain_pass: painting_mountain_pass }
+  by_key: { capital: painting_capital }
 )yaml";
 
 constexpr std::size_t MASKS = 16;
@@ -76,6 +100,31 @@ std::string With(std::string_view from, std::string_view replacement) {
     return text.replace(where, from.size(), replacement);
 }
 
+// A kind called `name` with the variants `variants`, to put in the look's `kinds:` before meadow.
+std::string ExtraKind(std::string_view name, std::string_view variants) {
+    return std::format(
+        "  {}:\n    wash: [236, 239, 242]\n    strength: 0.2\n    variants: {}\n"
+        "    stamps: {{ sprites: [stamp_snow_0], density: 0.3, size: [1.2, 1.7], jitter: 0.3, thin_below: 0, mist: true }}\n",
+        name,
+        variants
+    );
+}
+
+// SMALL_LOOK with the kind `snow` added.
+std::string WithSnow(std::string_view variants) {
+    return With("  meadow:\n", ExtraKind("snow", variants) + "  meadow:\n");
+}
+
+// SMALL_LOOK without its meadow kind.
+std::string WithoutMeadow() {
+    std::string text{ SMALL_LOOK };
+    const std::size_t first = text.find("  meadow:\n");
+    const std::size_t last = text.find("roads:");
+    REQUIRE(first != std::string::npos);
+    REQUIRE(last != std::string::npos);
+    return text.erase(first, last - first);
+}
+
 // The line of `text` (1-based) that `needle` first appears on.
 u32 LineOf(std::string_view text, std::string_view needle) {
     const std::size_t where = text.find(needle);
@@ -92,8 +141,10 @@ TEST_CASE("a small look parses against a small map") {
     const std::expected<core::WorldLook, core::Error> look = Parse(SMALL_LOOK);
     REQUIRE(look.has_value());
     REQUIRE(look->kinds.size() == 2);
-    CHECK(look->kinds[0] == std::vector{ core::atlas::SpriteId::TerrainWater0 });
-    CHECK(look->kinds[1] == std::vector{ core::atlas::SpriteId::TerrainMeadow0, core::atlas::SpriteId::TerrainMeadow1 });
+    CHECK(look->kinds[0].variants == std::vector{ core::atlas::SpriteId::TerrainWater0 });
+    CHECK(
+        look->kinds[1].variants == std::vector{ core::atlas::SpriteId::TerrainMeadow0, core::atlas::SpriteId::TerrainMeadow1 }
+    );
     CHECK(look->roads.front() == core::atlas::SpriteId::Road0);
     CHECK(look->rivers.front() == core::atlas::SpriteId::River0);
     CHECK(look->roads.size() == MASKS);
@@ -116,7 +167,7 @@ TEST_CASE("the look reader refuses what the map can't be drawn by, naming the li
         std::string text;
         std::string says;
     };
-    const std::string noMeadow = With("  meadow: [terrain_meadow_0, terrain_meadow_1]\n", "");
+    const std::string noMeadow = WithoutMeadow();
     const std::string noPass = With("  mountain_pass: marker_mountain_pass\n", "");
     const std::string badSprite = With("terrain_water_0", "terrain_lava_0");
     std::string fifteenRoads{ SMALL_LOOK };
@@ -130,8 +181,10 @@ TEST_CASE("the look reader refuses what the map can't be drawn by, naming the li
               "world_look line {}: the map's kind meadow has no look in kinds", LineOf(SMALL_LOOK, "deep_water:")
           ) },
         { .why = "a kind with no variant",
-          .text = With("[terrain_water_0]", "[]"),
-          .says = std::format("world_look line {}: kind deep_water has no sprite", LineOf(SMALL_LOOK, "deep_water:")) },
+          .text = With("variants: [terrain_water_0]", "variants: []"),
+          .says = std::format(
+              "world_look line {}: kind deep_water variants has no sprite", LineOf(SMALL_LOOK, "variants: [terrain_water_0]")
+          ) },
         { .why = "a danger sort the map uses with no marker",
           .text = noPass,
           .says = std::format(
@@ -140,14 +193,14 @@ TEST_CASE("the look reader refuses what the map can't be drawn by, naming the li
         { .why = "a sprite the manifest lacks",
           .text = badSprite,
           .says = std::format(
-              "world_look line {}: kind deep_water names the sprite \"terrain_lava_0\", which isn't in the atlas",
-              LineOf(SMALL_LOOK, "deep_water:")
+              "world_look line {}: kind deep_water variants names the sprite \"terrain_lava_0\", which isn't in the atlas",
+              LineOf(SMALL_LOOK, "variants: [terrain_water_0]")
           ) },
         { .why = "an unused kind naming a sprite the manifest lacks",
-          .text = With("  meadow:", "  snow: [terrain_lava_0]\n  meadow:"),
+          .text = WithSnow("[terrain_lava_0]"),
           .says = std::format(
-              "world_look line {}: kind snow names the sprite \"terrain_lava_0\", which isn't in the atlas",
-              LineOf(With("  meadow:", "  snow: [terrain_lava_0]\n  meadow:"), "snow:")
+              "world_look line {}: kind snow variants names the sprite \"terrain_lava_0\", which isn't in the atlas",
+              LineOf(WithSnow("[terrain_lava_0]"), "variants: [terrain_lava_0]")
           ) },
         { .why = "an unused marker naming a sprite the manifest lacks",
           .text = With("  mountain_pass:", "  cave: marker_nowhere\n  mountain_pass:"),
@@ -171,10 +224,10 @@ TEST_CASE("the look reader refuses what the map can't be drawn by, naming the li
               LineOf(SMALL_LOOK, "ford: ford")
           ) },
         { .why = "an unused kind naming a sprite the world scene doesn't load",
-          .text = With("  meadow:", "  snow: [cell_snow]\n  meadow:"),
+          .text = WithSnow("[cell_snow]"),
           .says = std::format(
-              "world_look line {}: kind snow names the sprite \"cell_snow\", which the world scene doesn't load",
-              LineOf(With("  meadow:", "  snow: [cell_snow]\n  meadow:"), "snow:")
+              "world_look line {}: kind snow variants names the sprite \"cell_snow\", which the world scene doesn't load",
+              LineOf(WithSnow("[cell_snow]"), "variants: [cell_snow]")
           ) },
         { .why = "a marker with an unknown sprite",
           .text = With("marker_city", "marker_nowhere"),
@@ -230,8 +283,7 @@ TEST_CASE("a kind or marker the map doesn't use is accepted silently") {
     CHECK(look->kinds.size() == 2); // by the map's kinds
     CHECK(warnings.size() == 1);    // only the typo'd top-level key
     std::vector<std::string> plain;
-    const std::expected<core::WorldLook, core::Error> extra =
-        Parse(With("  meadow:", "  snow: [terrain_snow_0]\n  meadow:"), &plain);
+    const std::expected<core::WorldLook, core::Error> extra = Parse(WithSnow("[terrain_snow_0]"), &plain);
     REQUIRE(extra.has_value());
     CHECK(plain.empty());
     CHECK(extra->kinds.size() == 2);
@@ -257,13 +309,10 @@ TEST_CASE("a look hashes by its sprites") {
     CHECK(first->Hash() != other->Hash());
 }
 
-TEST_CASE("the shipped look loads clean against the shipped map and the small one") {
+TEST_CASE("the shipped look loads clean against the shipped map") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
     REQUIRE(assets.has_value());
-    const std::expected<core::WorldLook, core::Error> small = data::LoadWorldLook(*assets / "data", *manifest, SmallMap());
-    REQUIRE(small.has_value());
-    CHECK(small->kinds.size() == 2);
     const std::expected<core::Strings, core::Error> strings = data::LoadStrings(*assets / "data");
     REQUIRE(strings.has_value());
     const auto world = data::LoadWorldMap(*assets / "data", *strings);
@@ -296,7 +345,7 @@ Shipped ShippedLook() {
     REQUIRE(world.has_value());
     shipped.map = *world;
     std::expected<core::WorldLook, core::Error> look = data::LoadWorldLook(*assets / "data", *shipped.manifest, *shipped.map);
-    REQUIRE(look.has_value());
+    REQUIRE_MESSAGE(look.has_value(), look.error().message);
     shipped.look = std::move(*look);
     return shipped;
 }
@@ -310,7 +359,7 @@ TEST_CASE("the shipped look covers the shipped map") {
     REQUIRE(look.kinds.size() >= map.Kinds().size());
     for (std::size_t kind = 0; kind < map.Kinds().size(); ++kind) {
         CAPTURE(map.Kinds()[kind].name);
-        CHECK_FALSE(look.kinds[kind].empty());
+        CHECK_FALSE(look.kinds[kind].variants.empty());
     }
     // Every sprite the look names is one the world scene loads, or the renderer would draw from a page that isn't resident.
     const std::optional<core::SceneId> worldScene = manifest->SceneNamed("world");
@@ -320,8 +369,17 @@ TEST_CASE("the shipped look covers the shipped map") {
     std::vector<core::atlas::SpriteId> named = { look.bridgeAcross, look.bridgeDown, look.ford, look.cityMarker };
     named.insert(named.end(), look.roads.begin(), look.roads.end());
     named.insert(named.end(), look.rivers.begin(), look.rivers.end());
-    for (const std::vector<core::atlas::SpriteId>& variants : look.kinds) {
-        named.insert(named.end(), variants.begin(), variants.end());
+    for (const core::KindLook& kind : look.kinds) {
+        named.insert(named.end(), kind.variants.begin(), kind.variants.end());
+        named.insert(named.end(), kind.stamps.sprites.begin(), kind.stamps.sprites.end());
+    }
+    named.insert(named.end(), look.mist.sprites.begin(), look.mist.sprites.end());
+    named.push_back(look.places.city);
+    for (const auto& [sort, sprite] : look.places.dangers) {
+        named.push_back(sprite);
+    }
+    for (const auto& [key, sprite] : look.places.byKey) {
+        named.push_back(sprite);
     }
     for (const auto& [sort, sprite] : look.dangerMarkers) {
         named.push_back(sprite);
@@ -449,6 +507,188 @@ TEST_CASE("an unknown key in the fog's sections warns") {
     REQUIRE(Parse(drain, &tints).has_value());
     REQUIRE(tints.size() == 1);
     CHECK(tints[0].contains("drain has no key tone"));
+}
+
+TEST_CASE("the shipped look's ground, veil, mist, river and places read as written") {
+    const Shipped shipped = ShippedLook();
+    const core::WorldLook& look = shipped.look;
+    const std::span<const core::TerrainKind> kinds = shipped.map->Kinds();
+    const auto indexOf = [&](std::string_view name) {
+        return static_cast<u8>(std::ranges::find(kinds, name, &core::TerrainKind::name) - kinds.begin());
+    };
+    CHECK(look.ground.paper == std::array<u8, 3>{ 240, 235, 222 });
+    CHECK(look.ground.grain == doctest::Approx(0.04F));
+    CHECK(look.ground.edgeWarp == doctest::Approx(0.45F));
+    CHECK(look.ground.edgeSoft == doctest::Approx(0.5F));
+    CHECK(look.ground.blotch == doctest::Approx(0.5F));
+    CHECK(look.ground.shallowKind == indexOf("shallows"));
+    CHECK(look.ground.deepKind == indexOf("deep_water"));
+    CHECK(look.ground.depthTiles == doctest::Approx(3.0F));
+    CHECK(look.ground.shore == std::array<u8, 3>{ 70, 104, 112 });
+    CHECK(look.ground.shoreStrength == doctest::Approx(0.55F));
+    CHECK(look.ground.shoreWidth == doctest::Approx(0.12F));
+    CHECK(look.ground.grid == std::array<u8, 3>{ 90, 80, 70 });
+    CHECK(look.ground.gridStrength == doctest::Approx(0.09F));
+    CHECK(look.ground.gridFade[0] == doctest::Approx(0.6F));
+    CHECK(look.ground.gridFade[1] == doctest::Approx(0.35F));
+    CHECK(look.veil.colour == std::array<u8, 3>{ 246, 244, 238 });
+    CHECK(look.veil.scale == doctest::Approx(3.0F));
+    CHECK(look.veil.strength == doctest::Approx(0.55F));
+    REQUIRE(look.mist.sprites.size() == 4);
+    CHECK(look.mist.sprites.front() == core::atlas::SpriteId::Mist0);
+    CHECK(look.mist.strength == doctest::Approx(0.9F));
+    CHECK(look.mist.chance == doctest::Approx(1.0F));
+    CHECK(look.mist.width[0] == doctest::Approx(1.0F));
+    CHECK(look.mist.width[1] == doctest::Approx(1.4F));
+    CHECK(look.river.width == doctest::Approx(0.38F));
+    CHECK(look.river.edge == doctest::Approx(0.5F));
+    CHECK(look.river.colour == std::array<u8, 3>{ 128, 172, 176 });
+    CHECK(look.river.edgeColour == std::array<u8, 3>{ 70, 104, 112 });
+    CHECK(look.river.edgeStrength == doctest::Approx(0.67F));
+    CHECK(look.places.city == core::atlas::SpriteId::PaintingCity);
+    CHECK(look.places.dangers.size() == 6);
+    REQUIRE(look.places.byKey.size() == 1);
+    CHECK(look.places.byKey[0].first == "capital");
+    CHECK(look.places.byKey[0].second == core::atlas::SpriteId::PaintingCapital);
+}
+
+TEST_CASE("the shipped forest's stamps read as written") {
+    const Shipped shipped = ShippedLook();
+    const std::span<const core::TerrainKind> kinds = shipped.map->Kinds();
+    const std::size_t forest =
+        static_cast<std::size_t>(std::ranges::find(kinds, "forest", &core::TerrainKind::name) - kinds.begin());
+    REQUIRE(forest < shipped.look.kinds.size());
+    const core::KindLook& kind = shipped.look.kinds[forest];
+    CHECK(kind.wash == std::array<u8, 3>{ 66, 102, 74 });
+    CHECK(kind.strength == doctest::Approx(0.12F));
+    CHECK(kind.variants.size() == 2);
+    REQUIRE(kind.stamps.sprites.size() == 4);
+    CHECK(kind.stamps.sprites.front() == core::atlas::SpriteId::StampForest0);
+    CHECK(kind.stamps.sprites.back() == core::atlas::SpriteId::StampForest3);
+    CHECK(kind.stamps.density == doctest::Approx(0.45F));
+    CHECK(kind.stamps.size[0] == doctest::Approx(1.0F));
+    CHECK(kind.stamps.size[1] == doctest::Approx(1.3F));
+    CHECK(kind.stamps.jitter == doctest::Approx(0.15F));
+    CHECK(kind.stamps.thinBelow == doctest::Approx(0.0F));
+    CHECK(kind.stamps.mist);
+}
+
+TEST_CASE("a look with more kinds than the ground's table is refused") {
+    std::string extras;
+    for (u32 index = 0; index < core::MAX_GROUND_KINDS - 2; ++index) {
+        extras += ExtraKind(std::format("spare_{}", index), "[terrain_snow_0]");
+    }
+    // Two kinds of the map and 14 spares fill the table; one more is refused.
+    CHECK(Parse(With("  meadow:\n", extras + "  meadow:\n")).has_value());
+    const std::string text = With("  meadow:\n", extras + ExtraKind("spare_last", "[terrain_snow_0]") + "  meadow:\n");
+    const std::expected<core::WorldLook, core::Error> look = Parse(text);
+    REQUIRE_FALSE(look.has_value());
+    CHECK(look.error().message.starts_with(std::format("world_look line {}: ", LineOf(text, "deep_water:"))));
+    CHECK(look.error().message.contains("more than the 16"));
+}
+
+TEST_CASE("a map kind missing from the look is refused, naming it") {
+    const std::expected<core::WorldLook, core::Error> look = Parse(WithoutMeadow());
+    REQUIRE_FALSE(look.has_value());
+    CHECK(look.error().message.contains("the map's kind meadow has no look"));
+}
+
+TEST_CASE("ground values out of range are refused, each naming its key") {
+    struct Broken {
+        std::string_view why;
+        std::string text;
+        std::string key;
+    };
+    const std::vector<Broken> cases{
+        { .why = "a kind strength of 1.5",
+          .text = With("strength: 0.68", "strength: 1.5"),
+          .key = "kind deep_water's strength" },
+        { .why = "a wash of 256",
+          .text = With("wash: [88, 124, 148]", "wash: [256, 124, 148]"),
+          .key = "kind deep_water's wash" },
+        { .why = "stamp sizes out of order", .text = With("size: [0.7, 0.9]", "size: [0.9, 0.6]"), .key = "stamps's size" },
+        { .why = "a stamp size of zero", .text = With("size: [0.7, 0.9]", "size: [0, 0.9]"), .key = "stamps's size" },
+        { .why = "a stamp density of 1.5", .text = With("density: 0.08", "density: 1.5"), .key = "stamps's density" },
+        { .why = "a stamp jitter of 2", .text = With("jitter: 0.15", "jitter: 2"), .key = "stamps's jitter" },
+        { .why = "a thin_below of 3", .text = With("thin_below: 0.5", "thin_below: 3"), .key = "stamps's thin_below" },
+        { .why = "a mist flag that isn't one", .text = With("mist: false", "mist: maybe"), .key = "stamps's mist" },
+        { .why = "no stamps",
+          .text = With("sprites: [stamp_water_0, stamp_water_1]", "sprites: []"),
+          .key = "stamps sprites has no sprite" },
+        { .why = "a depth of zero", .text = With("depth_tiles: 2.5", "depth_tiles: 0"), .key = "water's depth_tiles" },
+        { .why = "a depth past four", .text = With("depth_tiles: 2.5", "depth_tiles: 4.5"), .key = "water's depth_tiles" },
+        { .why = "a water kind the map lacks", .text = With("shallow: meadow", "shallow: lava"), .key = "water's shallow" },
+        { .why = "a paper of 256", .text = With("paper: [240, 235, 222]", "paper: [240, 235, 256]"), .key = "ground's paper" },
+        { .why = "a blotch of 1.5", .text = With("blotch: 0.5", "blotch: 1.5"), .key = "ground's blotch" },
+        { .why = "an edge_soft of zero", .text = With("edge_soft: 0.5", "edge_soft: 0"), .key = "ground's edge_soft" },
+        { .why = "a grid fade that rises", .text = With("fade: [0.6, 0.35]", "fade: [0.35, 0.6]"), .key = "grid's fade" },
+        { .why = "a grid fade past two", .text = With("fade: [0.6, 0.35]", "fade: [2.5, 0.35]"), .key = "grid's fade" },
+        { .why = "a shore width of zero", .text = With("width: 0.12", "width: 0"), .key = "shore's width" },
+        { .why = "a veil scale of zero", .text = With("scale: 3.0", "scale: 0"), .key = "veil's scale" },
+        { .why = "a mist width out of order", .text = With("width: [1.0, 1.4]", "width: [1.4, 1.0]"), .key = "mist's width" },
+        { .why = "a mist chance of 1.5", .text = With("chance: 0.7", "chance: 1.5"), .key = "mist's chance" },
+        { .why = "a river edge strength of 1.5",
+          .text = With("edge_strength: 0.67", "edge_strength: 1.5"),
+          .key = "river's edge_strength" },
+        { .why = "a river width of zero", .text = With("width: 0.38", "width: 0"), .key = "river's width" },
+        { .why = "no river",
+          .text = With(
+              "river: { width: 0.38, edge: 0.5, colour: [128, 172, 176], edge_colour: [70, 104, 112], edge_strength: 0.67 }\n",
+              ""
+          ),
+          .key = "the look has no river" },
+        { .why = "no ground", .text = With("ground:\n", "grounds:\n"), .key = "the look has no ground" },
+    };
+    for (const Broken& broken : cases) {
+        CAPTURE(broken.why);
+        const std::expected<core::WorldLook, core::Error> look = Parse(broken.text);
+        REQUIRE_FALSE(look.has_value());
+        CHECK(look.error().message.starts_with("world_look line "));
+        CHECK(look.error().message.contains(broken.key));
+    }
+}
+
+TEST_CASE("a painting for a place key no place has is refused") {
+    const std::string text =
+        With("by_key: { capital: painting_capital }", "by_key: { capital: painting_capital, nowhere: painting_cave }");
+    const std::expected<core::WorldLook, core::Error> look = Parse(text);
+    REQUIRE_FALSE(look.has_value());
+    CHECK(look.error().message.starts_with(std::format("world_look line {}: ", LineOf(text, "by_key:"))));
+    CHECK(look.error().message.contains("nowhere"));
+}
+
+TEST_CASE("a danger sort the map lacks is ignored and one it uses needs a painting") {
+    std::vector<std::string> warnings;
+    const std::expected<core::WorldLook, core::Error> extra =
+        Parse(With("dangers: { mountain_pass:", "dangers: { cave: painting_cave, mountain_pass:"), &warnings);
+    REQUIRE(extra.has_value());
+    CHECK(warnings.empty());
+    const std::expected<core::WorldLook, core::Error> missing =
+        Parse(With("dangers: { mountain_pass: painting_mountain_pass }", "dangers: { cave: painting_cave }"));
+    REQUIRE_FALSE(missing.has_value());
+    CHECK(missing.error().message.contains("the map's danger sort mountain_pass has no painting"));
+}
+
+TEST_CASE("the look's hash changes with a stamp density") {
+    const std::expected<core::WorldLook, core::Error> first = Parse(SMALL_LOOK);
+    REQUIRE(first.has_value());
+    const std::vector<std::string> edits{
+        With("density: 0.08", "density: 0.09"),
+        With("wash: [88, 124, 148]", "wash: [88, 124, 149]"),
+        With("paper: [240, 235, 222]", "paper: [240, 235, 221]"),
+        With("shallow: meadow", "shallow: deep_water"),
+        With("scale: 3.0", "scale: 3.5"),
+        With("chance: 0.7", "chance: 0.6"),
+        With("edge: 0.5", "edge: 0.6"),
+        With("city: painting_city", "city: painting_cave"),
+        With("capital: painting_capital", "capital: painting_cave"),
+        With("stamp_meadow_0]", "stamp_meadow_1]"),
+    };
+    for (const std::string& text : edits) {
+        const std::expected<core::WorldLook, core::Error> edited = Parse(text);
+        REQUIRE(edited.has_value());
+        CHECK(first->Hash() != edited->Hash());
+    }
 }
 
 } // namespace

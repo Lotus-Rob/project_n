@@ -178,7 +178,7 @@ TEST_CASE("keeping the map leaves a game data that couldn't be read as it was") 
 // A look whose meadow has the one variant `variant`.
 core::WorldLook LookOf(core::atlas::SpriteId variant) {
     core::WorldLook look;
-    look.kinds = { { variant } };
+    look.kinds = { { .variants = { variant } } };
     return look;
 }
 
