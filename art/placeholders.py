@@ -1212,7 +1212,7 @@ def stamp_ripples(canvas, x, y, s, rng):
         ink(canvas, arc, max(2.0, s * 0.025), (232, 242, 246), 0.9)
 
 
-# Room in texels a stamp leaves clear at its sides: at the far zoom its art is drawn from small mips, blurred about this
+# Room in texels a stamp leaves clear at its sides and top: at the far zoom its art is drawn from small mips, blurred about this
 # far out, and the sprite's quad cutting into that blur would leave a hard edge that crawls as the camera moves.
 STAMP_MARGIN = 16
 # kind -> (width, height): each as wide as 256 times its largest size on the map.
@@ -1220,28 +1220,73 @@ STAMPS = {"forest": (333, 230), "hills": (307, 130), "peaks": (435, 300), "snow"
           "marsh": (230, 100), "sand": (230, 90), "grass": (230, 90), "meadow": (230, 90), "water": (230, 100)}
 
 
+# How a forest clump is fitted inside STAMP_MARGIN. Its trees shrink by the first scale that keeps the tallest under the
+# top's margin; then, if it still reaches into a side's, (spread, scale) are tried in turn: its spacing closes first, as
+# overlapping crowns still read as one clump, and only then do its trees shrink further.
+FOREST_SCALES = (1.0, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5)
+FOREST_SPREADS = (1.0, 0.9, 0.8, 0.7, 0.6, 0.5)
+
+
+def forest_clump(canvas, x, y, bottom, spacing, height, count, seed, spread, scale):
+    """`count` trees, broad ones and pines, side by side about `x`, their feet up to 0.18 `height` above `y` and their
+    trunks' round ends a texel above `bottom`: `spacing` apart times `spread`, sized from `height` times `scale`, every
+    random draw from `seed`."""
+    rng = random.Random(seed)
+    for i in range(count):
+        fx = x + ((i - (count - 1) / 2.0) * spacing + rng.uniform(-8, 8)) * spread
+        fy = y - rng.uniform(0.0, 0.18) * height
+        size = height * rng.uniform(0.62, 0.8) * scale
+        fy = min(fy, bottom - 1.0 - size * 0.035)
+        if rng.random() < 0.4:
+            stamp_pine(canvas, fx, fy, size)
+        else:
+            stamp_tree(canvas, fx, fy, size, rng)
+
+
+def forest(width, height, variant, seed):
+    """A forest stamp: 3 to 5 trees as large and as wide apart as STAMP_MARGIN allows (FOREST_SCALES, FOREST_SPREADS),
+    measured on a sheet large enough that nothing they draw is cut."""
+    count, pad = 3 + variant % 3, width // 2
+
+    def drawn(spread, scale):
+        trial = Canvas(width + 2 * pad, height + 2 * pad)
+        forest_clump(trial, pad + width / 2.0, pad + height - 6.0, pad + height, width * 0.22, height, count, seed, spread,
+                     scale)
+        alpha = [[trial.a[row * trial.width + column] * 255.0 + 0.5 >= 1.0 for column in range(trial.width)]
+                 for row in range(trial.height)]
+        columns = [column for column in range(trial.width) if any(row[column] for row in alpha)]
+        top = next(row for row in range(trial.height) if any(alpha[row]))
+        return trial, columns[0] - pad, pad + width - 1 - columns[-1], top - pad
+
+    tallest = next((scale for scale in FOREST_SCALES if drawn(1.0, scale)[3] >= STAMP_MARGIN), None)
+    fits = [(spread, tallest) for spread in FOREST_SPREADS] + \
+           [(FOREST_SPREADS[-1], scale) for scale in FOREST_SCALES if tallest is not None and scale < tallest]
+    for spread, scale in fits:
+        trial, left, right, _ = drawn(spread, scale)
+        if min(left, right) >= STAMP_MARGIN:
+            break
+    else:
+        raise ValueError(f"no fit keeps forest variant {variant} inside its margin")
+    canvas = Canvas(width, height)
+    for row in range(height):
+        start, inside = (row + pad) * trial.width + pad, row * width
+        for channel, out in ((trial.r, canvas.r), (trial.g, canvas.g), (trial.b, canvas.b), (trial.a, canvas.a)):
+            out[inside:inside + width] = channel[start:start + width]
+    return canvas
+
+
 def stamp(kind, variant):
     """Marks of one terrain kind, drawn in an area as wide as the kind's largest stamp, the foot at the bottom centre."""
     width, height = STAMPS[kind]
-    canvas = Canvas(width, height)
-    rng = random.Random(900 + 17 * variant + sum(map(ord, kind)))
-    x, y = width / 2.0, height - 6.0
+    seed = 900 + 17 * variant + sum(map(ord, kind))
     if kind == "forest":
-        count = 3 + variant % 3
-        # A crowded clump shrinks, spacing and trees alike, rather than reach into STAMP_MARGIN.
-        # The widest tree reaches past its trunk by its crown's offset and radius and its rim (stamp_tree()).
-        spacing, jitter, widest = width * 0.22, 8.0, height * 0.8 * (0.2 + 0.34 + 0.03)
-        fit = min(1.0, (x - STAMP_MARGIN) / (spacing * (count - 1) / 2.0 + jitter + widest))
-        for i in range(count):
-            fx = x + ((i - (count - 1) / 2.0) * spacing + rng.uniform(-jitter, jitter)) * fit
-            fy = y - rng.uniform(0.0, 0.18) * height
-            size = height * rng.uniform(0.62, 0.8) * fit
-            if rng.random() < 0.4:
-                stamp_pine(canvas, fx, fy, size)
-            else:
-                stamp_tree(canvas, fx, fy, size, rng)
-    elif kind == "peaks":
-        stamp_mountain(canvas, x - width * 0.12, y, width * 0.52, height * 0.95, (96, 140, 130), (34, 60, 58),
+        return forest(width, height, variant, seed)
+    canvas = Canvas(width, height)
+    rng = random.Random(seed)
+    x, y = width / 2.0, height - 6.0
+    if kind == "peaks":
+        # Their summits STAMP_MARGIN below the top, too: the cut would crawl there as at the sides.
+        stamp_mountain(canvas, x - width * 0.12, y, width * 0.52, height * 0.9, (96, 140, 130), (34, 60, 58),
                        variant % 2 == 0)
         stamp_mountain(canvas, x + width * 0.2, y - 2, width * 0.42, height * 0.62, (120, 158, 140), (40, 66, 60))
         if variant >= 2:
@@ -1251,7 +1296,7 @@ def stamp(kind, variant):
             stamp_mountain(canvas, width - STAMP_MARGIN - reach, y, third, height * 0.35, (108, 148, 134), (40, 66, 60),
                            True)
     elif kind == "snow":
-        stamp_mountain(canvas, x + rng.uniform(-20, 20), y, width * 0.62, height * 0.92, (214, 222, 230),
+        stamp_mountain(canvas, x + rng.uniform(-20, 20), y, width * 0.62, height * 0.88, (214, 222, 230),
                        (90, 100, 112), True)
     elif kind == "rock":
         stamp_rocks(canvas, x, y, width * 0.8, rng)
@@ -1299,8 +1344,15 @@ def mist(variant):
     return canvas
 
 
+# Texels a painting's ground wash leaves clear under it: the wash is as wide as the sheet, and the sprite's quad cutting it
+# at the bottom would leave a long hard edge that crawls as the camera moves.
+WASH_ROOM = 4
+
+
 def ground_wash(canvas, cx, cy, rx, ry):
-    blob(canvas, cx, cy, rx, ry, (196, 184, 150), 0.45, rim=None)
+    """The ground under a painting, an ellipse centred at (`cx`, `cy`), raised as far as it takes to end WASH_ROOM
+    texels above the sheet's bottom."""
+    blob(canvas, cx, min(cy, canvas.height - WASH_ROOM - ry), rx, ry, (196, 184, 150), 0.45, rim=None)
 
 
 def roof(canvas, x, y, w, h, colour=(70, 68, 78), lw=2.5):
@@ -1385,7 +1437,7 @@ def painting_shrine():
     ground_wash(canvas, 128, 246, 100, 12)
     house(canvas, 128, 236, 150, 110, 1.0, (206, 192, 168), VERMILION)
     for x in (62, 194):
-        ink(canvas, [(x, 246), (x, 60)], 14, VERMILION, 0.95)
+        ink(canvas, [(x, 244), (x, 60)], 14, VERMILION, 0.95)
     ink(canvas, [(44, 66), (212, 66)], 15, VERMILION, 0.95)
     ink(canvas, [(32, 42), (224, 42)], 14, WASH_INK, 0.9)
     ink(canvas, [(62, 110), (194, 110)], 8, WASH_INK, 0.85)
