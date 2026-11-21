@@ -118,7 +118,7 @@ TEST_CASE("a walker drawn at under half opacity can't be picked and one over hal
     CHECK(app::Pick(snapshot, 1.0, ORIGIN, justOver) == WALKER);
 }
 
-TEST_CASE("a faded walker on top lets the instance under it be picked, and a missed one is never looked up") {
+TEST_CASE("a faded walker on top lets the instance under it be picked, and a point off every quad picks nothing") {
     constexpr core::StableId GROUND{ 1 };
     constexpr core::StableId WALKER{ 2 };
     constexpr core::Vec2 FAR{ .x = 1'000.0F, .y = 0.0F };

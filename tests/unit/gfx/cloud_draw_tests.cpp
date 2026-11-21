@@ -439,8 +439,8 @@ TEST_CASE("a cloud's box eases in beside an explored corner, never jumping") {
     CAPTURE(steps.width);
     CHECK(steps.followed > 0);
     CHECK(steps.lost == 0);
-    // An eighth of the way moves a cloud at most an eighth of its reach past its cell: under 0.3 of a cell, the rate of
-    // 0.06 a fortieth of the way.
+    // The clamp moves a cloud in proportion to its neighbours' fade, so an eighth of the fade moves it under 0.3 of a
+    // cell; a jump would show as a single step far above that.
     CHECK(steps.foot < 0.3F);
     CHECK(steps.width < 0.3F);
 }
