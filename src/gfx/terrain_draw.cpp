@@ -5,6 +5,7 @@
 #include "core/profile.hpp"
 #include "core/random.hpp"
 #include "core/vec2.hpp"
+#include "gfx/tile_hash.hpp"
 
 namespace gfx {
 
@@ -12,15 +13,9 @@ namespace {
 
 using core::atlas::SpriteId;
 
-/// The key of the map's tile variants: a hash of column and row, whichever view finds the tile. Its seed and purpose are
-/// those of game/scenes/world.cpp's old noise (game can't be seen from gfx; game/random_purposes.hpp keeps the purpose, 9,
-/// retired). Reduced by multiplying the hash's top half by the variant count, a two-variant kind keeps the old noise's pick
-/// (the top bit).
-constexpr u64 TERRAIN_SEED = 0x5eed;
-constexpr u32 TERRAIN_PURPOSE = 9;
-constexpr u32 VARIANT_DRAW = 2;
-constexpr u32 COLUMN_SHIFT = 32;
-constexpr u32 VARIANT_SHIFT = 32; // a variant comes from a random number's top half, scaled to the variant count
+/// A variant comes from a random number's top half, scaled to the variant count: a two-variant kind keeps the old noise's
+/// pick (the top bit).
+constexpr u32 VARIANT_SHIFT = 32;
 
 constexpr u32 NORTH = 1;
 constexpr u32 EAST = 2;
@@ -84,8 +79,7 @@ struct Pass {
 
 /// The variant of `variants` that the tile at `column` and `row` wears.
 SpriteId VariantOf(const std::vector<core::atlas::SpriteId>& variants, u32 column, u32 row) {
-    const u64 key = (u64{ column } << COLUMN_SHIFT) | row;
-    const u64 pick = core::Random(TERRAIN_SEED, 0, key, TERRAIN_PURPOSE, VARIANT_DRAW) >> VARIANT_SHIFT;
+    const u64 pick = core::Random(TERRAIN_SEED, 0, TileKey(column, row), TERRAIN_PURPOSE, VARIANT_DRAW) >> VARIANT_SHIFT;
     return variants[(pick * variants.size()) >> VARIANT_SHIFT];
 }
 
