@@ -5,7 +5,6 @@
 #include "core/view_limits.hpp"
 #include "core/world_look.hpp"
 #include "core/world_map.hpp"
-#include "data/strings.hpp"
 #include "data/world_look.hpp"
 #include "data/world_map.hpp"
 #include "gfx/terrain_draw.hpp"
