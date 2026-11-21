@@ -33,6 +33,14 @@ struct Camera {
     f32 zoom = 1.0F;
 };
 
+/// Which parts of the world map's terrain a frame draws. Only the shimmer measure sets anything but All: it holds the
+/// painted ground's crawl against the same frame as flat paper, without the road overlays, whose shimmer is their own.
+enum class TerrainParts : u8 {
+    All,         ///< The ground, rivers, every terrain sprite and the veil.
+    AllButRoads, ///< All but the road overlays.
+    PaperOnly,   ///< The ground as flat paper (GROUND_MODE_PAPER), and nothing else of the terrain.
+};
+
 /// How a frame shows a snapshot: the camera, the render clock, the frame clock and what the pointer hovers.
 struct View {
     /// The render clock's progress from the snapshot's previous tick (0) to its own (1).
@@ -52,6 +60,8 @@ struct View {
     bool showcase = true;
     /// The fog over the world map; none (no columns) elsewhere.
     FogFrame fog{};
+    /// Which parts of the world map's terrain it draws: all of them but for the shimmer measure (TerrainParts).
+    TerrainParts terrainParts = TerrainParts::All;
 };
 
 /// `zoom` after `notches` of the mouse wheel: each one multiplies it by the same factor, and the

@@ -606,7 +606,8 @@ std::expected<void, core::Error> Renderer::Impl::UploadGround(SDL_GPUCopyPass* c
     const std::expected<void, core::Error> field = ground.Update(copy, *worldMap, worldLook, worldVersion);
     const std::expected<void, core::Error> laid = rivers.Update(copy, *worldMap, worldLook, worldVersion);
     groundQuad = GroundQuad(ViewRect(shown), *worldMap);
-    groundUniforms = GroundUniformsOf(*worldMap, worldLook, GROUND_MODE_GROUND);
+    const bool paperOnly = shown.view->terrainParts == TerrainParts::PaperOnly;
+    groundUniforms = GroundUniformsOf(*worldMap, worldLook, paperOnly ? GROUND_MODE_PAPER : GROUND_MODE_GROUND);
     groundUniforms.zoom = shown.view->camera.zoom;
     veilUniforms = groundUniforms;
     veilUniforms.mode = GROUND_MODE_VEIL;
@@ -1152,20 +1153,26 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
     const std::size_t groundBatches = std::min<std::size_t>(snapshot.groundBatches, batches.size());
     // The map under all of it: it is the ground of a scene that shows it, which publishes none. Its painted ground first,
     // then the rivers on it, then the roads, crossings, stamps and paintings, the veil's haze over them all, and the places'
-    // markers above the haze so every place reads; none of it where the view misses the map.
+    // markers above the haze so every place reads; none of it where the view misses the map. Plain paper alone, its
+    // groundUniforms in the paper mode, when the view asks for nothing else.
+    const bool paperOnly = view.terrainParts == TerrainParts::PaperOnly;
     if (groundQuad) {
         ground.Draw(commands, pass, transform, *groundQuad, groundUniforms, fog);
+    }
+    if (groundQuad && !paperOnly) {
         rivers.Draw(commands, pass, transform, fog);
     }
     const std::span<const core::Batch> terrainBatches{ terrainDrawing.batches };
     const std::size_t underVeil = std::min<std::size_t>(terrainDrawing.markersFrom, terrainBatches.size());
-    if (terrainShown) {
-        terrain.Draw(commands, pass, terrainBatches.first(underVeil), sprites, transform, alpha, glows, fog);
+    const std::size_t roads =
+        view.terrainParts == TerrainParts::AllButRoads ? std::min<std::size_t>(terrainDrawing.roadBatches, underVeil) : 0;
+    if (terrainShown && !paperOnly) {
+        terrain.Draw(commands, pass, terrainBatches.first(underVeil).subspan(roads), sprites, transform, alpha, glows, fog);
     }
-    if (groundQuad) {
+    if (groundQuad && !paperOnly) {
         ground.Draw(commands, pass, transform, *groundQuad, veilUniforms, fog);
     }
-    if (terrainShown) {
+    if (terrainShown && !paperOnly) {
         terrain.Draw(commands, pass, terrainBatches.subspan(underVeil), sprites, transform, alpha, glows, fog);
     }
     // Over the map, under the ground and everything on it: the line is the map's, not a thing standing on it.
