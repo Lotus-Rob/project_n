@@ -1,6 +1,7 @@
 # Phase 6, chunk 5b-look, part 1: the world map's terrain
 
-Date: 2026-11-21 · Status: **approved 2026-11-21** · Chunk spec: `2026-11-10-phase6-chunk5-world-map-design.md` · Phase spec:
+Date: 2026-11-21 · Status: **implemented 2026-11-21** (see Outcome; approved 2026-11-21) · Plan:
+`2026-11-21-phase6-chunk5b-look-terrain.md` · Chunk spec: `2026-11-10-phase6-chunk5-world-map-design.md` · Phase spec:
 `2026-11-10-phase6-design.md` · Builds on: `2026-11-15-phase6-chunk5b1-map-design.md` and
 `2026-11-20-phase6-chunk5b3-fog-design.md` (their Outcomes) · Followed by: 5b-look part 2 (travellers) and part 3
 (sharpness), each its own spec
@@ -255,3 +256,134 @@ kinds, with a limit tested against the shipped map); the ribbon variant's vertex
 layout lives (a pure `gfx` function beside `DrawTerrain`, or inside it); the exact stamp sizes, jitters and the
 placeholder art's drawing (starting from `look.py` in `refs/5b-look-preview/`); the `world_look.yaml` layout of the new
 sections; the shimmer cases' regions; commit split and order.
+
+## Outcome
+
+Measured on the dev PC (2560x1440 at 165.1 Hz, fullscreen, 2 workers, unpaced, releasedbg), the world run of `measure`
+(with `--debug-sight`), both runs trusted on the first try. Main's run was taken by switching the main checkout to main
+and back, with main's own `measure`. Every figure is this branch / main, in ms.
+
+| segment | frame median | frame p99 | frame worst | main-thread work median | work p99 | work worst | GPU wait |
+|---|---|---|---|---|---|---|---|
+| follow: first 0.5 s | 6.07 / 6.09 | - | 7.70 / 7.49 | 3.71 / 3.23 | - | 4.43 / 4.55 | 39% / 45% |
+| follow: rest | 5.94 / 6.05 | 9.24 / 9.56 | 10.68 / 10.28 | 4.28 / 3.68 | 7.42 / 6.83 | 8.77 / 7.49 | 30% / 36% |
+| pan: first 0.5 s | 5.96 / 6.05 | - | 9.86 / 10.05 | 4.20 / 3.52 | - | 7.02 / 6.35 | 29% / 40% |
+| pan: rest | 5.99 / 6.02 | 9.41 / 9.28 | 9.87 / 10.02 | 3.40 / 2.67 | 7.00 / 5.98 | 7.53 / 6.53 | 39% / 54% |
+| zoom in and out: first 0.5 s | 6.09 / 6.01 | - | 9.36 / 8.72 | 2.83 / 2.46 | - | 5.85 / 4.70 | 50% / 57% |
+| zoom in and out: rest | 6.05 / 6.02 | 9.30 / 10.03 | 10.72 / 11.21 | 3.11 / 2.50 | 7.88 / 6.47 | 9.27 / 8.07 | 43% / 54% |
+| widest view: first 0.5 s | 6.09 / 6.12 | - | 9.30 / 8.14 | 3.98 / 3.39 | - | 7.20 / 5.90 | 30% / 44% |
+| widest view: rest | 6.01 / 6.09 | 9.31 / 10.08 | 10.22 / 10.87 | 4.02 / 3.37 | 6.88 / 6.27 | 8.10 / 7.63 | 34% / 44% |
+| month step: first 0.5 s | 6.05 / 6.10 | - | 55.23 / 56.54 | 4.25 / 3.75 | - | 7.38 / 6.28 | 26% / 33% |
+| month step: rest | 5.99 / 6.03 | 9.16 / 9.50 | 9.92 / 10.20 | 4.26 / 3.62 | 7.07 / 6.82 | 7.51 / 7.19 | 27% / 37% |
+| labels: first 0.5 s | 6.05 / 6.08 | - | 9.44 / 8.83 | 4.25 / 3.34 | - | 7.30 / 7.78 | 25% / 38% |
+| labels: rest | 5.98 / 6.08 | 9.57 / 9.31 | 10.31 / 10.08 | 4.19 / 3.19 | 7.65 / 5.70 | 8.66 / 6.03 | 30% / 52% |
+
+**Frame time (Goal 11): no change.** Every median sits at the display's 6.06 ms refresh (both runs are paced), the p99
+differs by under 0.8 ms either way (lower on this branch in four segments: follow, zoom in and out, widest view and month step; higher in pan by 0.13
+ms and labels by 0.26), and the only hitch is the month step's one, which both runs show alike (55.23 / 56.54 ms, carried by the
+logic and worker threads; the main thread's worst there is 7.38 / 6.28). What the painted terrain costs is the main
+thread's work, 0.4 to 1.0 ms more at the median (widest view, rest: 4.02 / 3.37; labels, rest: 4.19 / 3.19) and up to 2
+ms at the p99 (labels, rest: 7.65 / 5.70), which the paced frame hides inside the wait for the GPU (the GPU's share is
+lower in every segment, by 6 to 22 points). Input latency was 12.6 ms median (11.9 to 17.8 over 8 presses) against main's
+14.2 ms (11.3 to 20.7); the display delay the same (3.7 ms, 3.0 to 10.0 / 3.1 to 10.0). The main-thread rise is
+unexplained beyond the layout times below (which are 0.03 ms), the extra uploads and pass setup; the 165 Hz display
+shows no frame it costs.
+
+**Layout time (Goal 11: under 0.2 ms median at the widest view).** `DrawTerrain` relays the terrain buffer on every zoom
+change, so every frame of a smooth zoom, and holds it while the view and zoom stay put. A 30 s `profile` run at the fixed
+`--world --debug-sight --zoom 0.25` therefore holds one call each (`DrawTerrain` 0.035 ms, `DrawStamps` 0.029 ms): no
+median to take. `profile` takes no zoom-changing game args, so the per-call times come from `measure`'s capture (one
+Tracy trace with the camera path's zoom in and out, then the widest view), read with `tracy-csvexport -u` (each zone's
+calls): in its 4 s zoom segment `DrawTerrain` is called 659 times, at a median of 0.026 ms (p99 0.060, worst 0.101) and
+`DrawStamps`, which it contains, 0.022 ms (p99 0.050, worst 0.091); the whole capture's 693 calls give the same (median
+0.026, p99 0.063, worst 0.101 ms). The median is a seventh of the target and the worst frame half of it. The same
+capture's `UploadTerrain` is 0.002 ms at the median (p99 0.062, worst 0.19).
+
+**The ground field's rebuild** has no zone of its own; it runs inside `UploadGround` (the field with the rivers' ribbons)
+once per map or look change. That call's worst in both captures is 1.34 to 1.35 ms, the first frame of the world scene;
+afterwards `UploadGround` is 0.004 ms at the median at a fixed zoom (0.020 ms across the camera path, where it also sets
+the zoom uniform). The ground pass `DrawGround` takes 0.002 ms and `GroundUniformsOf` 0.002 ms a frame at a fixed zoom,
+and the rivers' draw 0.001 ms.
+
+**Shimmer (Goal 10)** (`reference`, run first by `measure`; each bound is the first measurement plus the guards' usual
+margin, about 1.25 times, never above 0.02 for the three ground cases):
+
+| case | main | measured | bound |
+|---|---|---|---|
+| world, zoom 0.25 | 0.0481872 | 0.00204363 | 0.0026 (was 0.06) |
+| clouds | 0.0204705 | 0.016509 | 0.0206 (cap 0.0256; 0.0291 after the switch-over) |
+| ground, zoom 1 | - | 0.01167 | 0.0146 |
+| ground, zoom 0.5 | - | 0.00606704 | 0.0076 |
+| ground, zoom 0.25 | - | 0.00396805 | 0.0050 |
+
+All five are within the spec's goal, 0.02, and the world case fell by a factor of 24: the ground is no longer a grid of
+tile edges.
+
+**Markers on drained land** (the by-eye check: no reference picture shows one, because travellers cover every marker): a
+temporary reference case (explored everywhere, the debug sight off, zoom 0.5 over the capital; not committed) shows the
+drained land as sepia paper with each danger site's marker, a red or amber pin, in its own colour over it, and the portal
+in colour, while the ground, river and stamps around them are drained. Markers take the fog's shade only, never the drain,
+as Goal 6 asks.
+
+### Rulings made while building
+
+Rivers and the ground:
+- Rivers' spline steps are per tile of segment length: `RIVER_STEPS = 4` quads per band per tile, `MAX_RIVER_QUADS =
+  8,192`. The plan's per-segment reading left quads up to 1.7 tiles long, which kink at bends at zoom 1, and per tile at
+  8 steps overflowed the cap. 4 per tile gives 64 px quads and 3,448 quads for the shipped map (42% of the cap); a
+  constant change and a 0.8 MB buffer if wrong. (The user accepted this, 2026-11-21.)
+- "Tile centres" in the river spec means the polyline's stored waypoints' tiles, not every tile the river crosses: rivers
+  are stored as sparse waypoints.
+- The reader's limits narrow to what the shader can show: `edge_soft` (0, 1], `depth_tiles` (0, 3.5] (the field clamps at
+  4 tiles and the shore at -0.5); `edge_warp` [0, 2], shore width and river width and edge (0, 2]; a stamp's size at most
+  4 tiles and a mist width at most 2 (shipped maxima 1.7 and 1.4) so stamp layout can rely on a bounded footprint;
+  `water`'s shallow and deep kinds must differ. (The user accepted the limits.)
+- A river's edge band fades softly outward (its alpha falls across the ribbon from the core to the outer side, still
+  anti-aliased): the spec asks for a darker soft edge, and a flat rim read as a hard grey stripe.
+- River ends are fixed in presentation (`river_draw`), `world.yaml` untouched: an end on a joined river's middle, and a
+  run that stops at most 3 tiles short of water carried a tile in and faded. A tributary meeting the main river within a
+  tile of the main river's own end keeps its waypoint end, without a join: rivers carry no flow direction, so that meeting
+  can't be told from the main river joining the tributary; it costs at most a tile's gap or overshoot at a confluence
+  right at a mouth, and no shipped river has one (if wrong, rivers need a flow order, a data change). The shipped-rivers
+  test allows one tile per river and still fails on a band cut short by more.
+- Rims darkening where two rivers' edge bands overlap was not visible in the pictures once the tiles went.
+
+Reader and refusals:
+- A danger sort the map uses with no painting is refused, as markers are: a place with no painting would draw nothing once
+  the tiles go; the two readers stay alike.
+- A kind with `variants:` is no longer refused but warned as an unknown key while the look still reads: every look section
+  notes unknown keys and reads on, and the plan assumed a refusal the reader never makes.
+- `world_look.cpp`'s growth (about 450 lines) is noted, not split.
+
+Stamps:
+- A stamp's thinning fade spans 0.3 of `shown` and ranks spread over the rest (`rank = TileUnit(c, r, 9) * 0.7`, opacity
+  `smoothstep(rank, rank + 0.3, shown)`); the test stays at zooms 1% apart and at most 0.1 of opacity. `shown` moves by up
+  to 0.02 per 1% of zoom and smoothstep's steepest slope is 1.5 / width, so 0.1 needs a width of 0.3; the test is not
+  loosened.
+- `DrawStamps` lays stamps and puffs out over the span widened by a reach computed from the look and manifest (the tallest
+  stamp's height and half-width at its largest size, plus jitter, plus the widest puff's half-size), clamped to the map,
+  and the paintings' cull widens by the same reach: the plan's one tile of span popped tall stamps in at every view edge.
+- The terrain buffer is relaid on each zoom change (the layout key gains the zoom), the cost measured above.
+
+Shimmer and art:
+- The cloud case overran its cap (0.0291 against 0.0256) after the switch-over; the cause was forest and peak stamps' art
+  cut by the sides of their quads, crawling at zoom 0.25. The placeholder art (`art/placeholders.py`) now keeps 16
+  texels clear of the sides for stamps, 2 for mist and 9 for paintings (the paintings' bottom row and the stamps' foot row
+  too); no shader or look change. The cloud case fell to 0.0165 and was re-set to 0.0206.
+- `test_terrain_tiles_are_seamless` (tools self-test) is replaced by a guard on the margins above (every stamp, mist and
+  painting keeps its art clear of its sprite's left and right sides, and the painted marks their bottom edge as well),
+  not just deleted: its subject, the tile sprites, is gone. Removing a test for removed art is not loosening one.
+- Forest clumps are drawn smaller to fit the margin (81% for three trees, 58% for five); 13 reference pictures moved and
+  were judged by eye.
+- The world cases' names that still said "tiles" were renamed to what they draw.
+
+Stood as built (noted, not fixed):
+- The capital's stacked roofs show a double outline near the spire, and the shrine's torii posts overlap the hut
+  (placeholder cosmetics).
+- The tributary test's x bounds are loose: it proves "not a waypoint", not "near x = 4".
+- `renderer.cpp`'s world-map upload block (terrain, ground, route, clouds) could move to its own file; `ribbons.hpp` in
+  the features includes two headers clangd reports unused.
+- Gotcha for AGENTS.md: GCC and Clang accept single-braced `std::array` and `std::array`-like initialisers (a
+  `StampLook::size{ 1.0F, 1.0F }`) that MSVC's C5246 rejects; run the windows-msvc release build before reporting.
+- The `fog_explored_path` picture's drained paper reads strongly sepia: a look value (`drain.strength`) for the user.
+- Not visible in stills: that nothing pops while panning or zooming; the unit tests hold it.
