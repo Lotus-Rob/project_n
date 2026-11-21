@@ -16,6 +16,11 @@ constexpr f32 SMOOTH_B = 2.0F;
 /// fog.hlsli's LUMINANCE: Rec. 709's weights of linear red, green and blue.
 constexpr std::array<f32, 3> FOG_LUMINANCE{ { 0.2126F, 0.7152F, 0.0722F } };
 
+/// `along`, from 0 to 1, eased so both ends are flat (smoothstep), as the shaders ease their fades.
+f32 Smoothstep(f32 along) {
+    return along * along * (SMOOTH_A - (SMOOTH_B * along));
+}
+
 f32 Texel(const FogFrame& fog, u32 column, u32 row, u32 channel) {
     const std::size_t index = (((std::size_t{ row } * fog.columns) + column) * 2) + channel;
     return index < fog.values.size() ? static_cast<f32>(fog.values[index]) / BYTE_RANGE : 1.0F;
@@ -45,13 +50,11 @@ f32 FogSample(const FogFrame& fog, core::Vec2 world, u32 channel) {
 
 f32 SightFade(const FogFrame& fog, core::Vec2 world) {
     const f32 sample = FogSample(fog, world, FOG_IN_SIGHT);
-    const f32 along = std::clamp((sample - SIGHT_EDGE) / (1.0F - SIGHT_EDGE), 0.0F, 1.0F);
-    return along * along * (SMOOTH_A - (SMOOTH_B * along));
+    return Smoothstep(std::clamp((sample - SIGHT_EDGE) / (1.0F - SIGHT_EDGE), 0.0F, 1.0F));
 }
 
 f32 ExploredFade(const FogFrame& fog, core::Vec2 world) {
-    const f32 along = std::clamp(FogSample(fog, world, FOG_EXPLORED) / SHADE_EDGE, 0.0F, 1.0F);
-    return along * along * (SMOOTH_A - (SMOOTH_B * along));
+    return Smoothstep(std::clamp(FogSample(fog, world, FOG_EXPLORED) / SHADE_EDGE, 0.0F, 1.0F));
 }
 
 f32 TileExplored(const FogFrame& fog, core::Vec2 world) {
