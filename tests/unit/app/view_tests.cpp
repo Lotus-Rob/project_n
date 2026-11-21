@@ -88,7 +88,7 @@ TEST_CASE("picking turns with a rotated instance, as alpha draws it") {
     CHECK(app::Pick(snapshot, 1.0, ALONG_X, NO_FOG) == core::StableId{});
 }
 
-// A one-tile fog over `values` (explored, then in sight, each 0 to 255), which every point of the map then samples.
+/// A one-tile fog over `values` (explored, then in sight, each 0 to 255), which every point of the map then samples.
 gfx::FogFrame OneTile(const std::array<u8, 2>& values) {
     return { .columns = 1, .rows = 1, .tileSize = 256.0F, .values = values, .revision = 1 };
 }
@@ -116,6 +116,23 @@ TEST_CASE("a walker drawn at under half opacity can't be picked and one over hal
     const gfx::FogFrame justOver = OneTile(justOverBytes);
     CHECK(gfx::SightFade(justOver, ORIGIN) > HALF);
     CHECK(app::Pick(snapshot, 1.0, ORIGIN, justOver) == WALKER);
+}
+
+TEST_CASE("a faded walker on top lets the instance under it be picked, and a missed one is never looked up") {
+    constexpr core::StableId GROUND{ 1 };
+    constexpr core::StableId WALKER{ 2 };
+    constexpr core::Vec2 FAR{ .x = 1'000.0F, .y = 0.0F };
+    core::Snapshot snapshot;
+    snapshot.instances = { Quad(ORIGIN, ORIGIN), Quad(ORIGIN, ORIGIN) };
+    snapshot.instances.back().flags = core::INSTANCE_SIGHT_FADE;
+    snapshot.ids = { GROUND, WALKER };
+    const std::array<u8, 2> unseenBytes{ 255, 0 };
+    const std::array<u8, 2> seenBytes{ 255, 255 };
+    const gfx::FogFrame unseen = OneTile(unseenBytes);
+    const gfx::FogFrame seen = OneTile(seenBytes);
+    CHECK(app::PickInstance(snapshot, 1.0, ORIGIN, unseen) == std::optional<std::size_t>{ 0 });
+    CHECK(app::PickInstance(snapshot, 1.0, ORIGIN, seen) == std::optional<std::size_t>{ 1 });
+    CHECK_FALSE(app::PickInstance(snapshot, 1.0, FAR, unseen).has_value());
 }
 
 TEST_CASE("an instance without the sight fade is picked whatever the fog says") {

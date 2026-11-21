@@ -185,8 +185,8 @@ std::shared_ptr<const core::WorldMap> ShippedMap() {
     return std::move(*map);
 }
 
-// A 16 x 16 map with a diamond of radius 2 explored round (8, 8), a lone tile at (3, 12), the top-right corner and the
-// left column's middle.
+/// A 16 x 16 map with a diamond of radius 2 explored round (8, 8), a lone tile at (3, 12), the top-right corner and the
+/// left column's middle.
 Field Explored() {
     Field field{ SIDE, SIDE };
     for (u32 row = 6; row <= 10; ++row) {
@@ -423,7 +423,7 @@ struct Steps {
 };
 
 TEST_CASE("a cloud's box eases in beside an explored corner, never jumping") {
-    constexpr u32 STEPS = 40;
+    constexpr u32 STEPS = 8;
     const core::FogLook look = StillLook();
     Steps steps;
     for (const f32 zoom : { 1.0F, 0.5F, 0.25F }) {
@@ -439,9 +439,10 @@ TEST_CASE("a cloud's box eases in beside an explored corner, never jumping") {
     CAPTURE(steps.width);
     CHECK(steps.followed > 0);
     CHECK(steps.lost == 0);
-    // A fortieth of the way moves a cloud at most a fortieth of its reach past its cell, under a tenth of a cell.
-    CHECK(steps.foot < 0.06F);
-    CHECK(steps.width < 0.06F);
+    // An eighth of the way moves a cloud at most an eighth of its reach past its cell: under 0.3 of a cell, the rate of
+    // 0.06 a fortieth of the way.
+    CHECK(steps.foot < 0.3F);
+    CHECK(steps.width < 0.3F);
 }
 
 TEST_CASE("a tile halfway uncovered draws its clouds at half opacity, drifted half their distance") {

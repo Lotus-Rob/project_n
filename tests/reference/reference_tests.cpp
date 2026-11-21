@@ -263,8 +263,8 @@ struct WorldFog {
     f32 fadeSeconds = test::ShippedWorldLook(*test::TestManifest(), *map).fog.fadeSeconds;
 };
 
-// Ticks `host` through `view`'s ticks, sending its walks; with `view.fogEased` the fog eases tick by tick and the last tick
-// that explored new land must lie exactly FADE_TICKS - 1 ticks before the picture, so it shows a quarter second of fade.
+/// Ticks `host` through `view`'s ticks, sending its walks; with `view.fogEased` the fog eases tick by tick and the last
+/// tick that explored new land must lie exactly FADE_TICKS - 1 ticks before the picture, so it shows a quarter second of fade.
 void TickToPicture(
     const View& view,
     game::Host& host,
@@ -547,9 +547,9 @@ constexpr f32 FOG_PATH_TILES = 4.0F;
 constexpr u64 FOG_UNCOVER_TICKS = 190;
 constexpr f32 FOG_UNCOVER_TILES = 8.0F;
 
-// A new game's start: the cultivator's diamond of sight over the land it has explored, the clouds past it. Drawn as the game
-// draws it, with the fog but no debug sight and nothing explored by the view; the zooms are the clouds' levels: 1 and 0.4 and
-// 0.25 show one level alone, 0.71 two at once.
+/// A new game's start: the cultivator's diamond of sight over the land it has explored, the clouds past it. Drawn as the
+/// game draws it, with the fog but no debug sight and nothing explored by the view; the zooms are the clouds' levels: 1
+/// and 0.4 and 0.25 show one level alone, 0.71 two at once.
 void CheckFogStart(std::string_view name, f32 zoom) {
     CheckAgainstReference(
         { .name = name,

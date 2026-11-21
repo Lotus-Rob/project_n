@@ -1,38 +1,21 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/fog.hpp"
 
+#include "support/meadow.hpp"
+
 #include <doctest/doctest.h>
 
 namespace {
 
 constexpr u32 SIDE = 20;
 constexpr u32 RADIUS = 3;
-constexpr std::size_t TILES = std::size_t{ SIDE } * SIDE;
 
-// A meadow of SIDE x SIDE tiles with one city, which is all a map needs to build.
+/// The square test map: SIDE by SIDE tiles of meadow.
 core::WorldMap SquareMap() {
-    core::WorldMapSource source;
-    source.columns = SIDE;
-    source.rows = SIDE;
-    source.tileSize = 256.0F;
-    source.kinds = { { .name = "meadow", .symbol = '.', .cost = 10 } };
-    source.grid.assign(TILES, 0);
-    source.places.push_back(
-        { .key = "city",
-          .kind = core::PlaceKind::City,
-          .sort = "",
-          .tile = { .column = 0, .row = 0 },
-          .nameKey = "city",
-          .name = {},
-          .people = 100,
-          .start = true }
-    );
-    auto built = core::WorldMap::Build(std::move(source));
-    REQUIRE(built.has_value());
-    return *std::move(built);
+    return test::MeadowMap(SIDE, SIDE);
 }
 
-// How many tiles `centre` explores on a fresh bitset of the map.
+/// How many tiles `centre` explores on a fresh bitset of the map.
 u32 Explored(const core::WorldMap& map, core::TilePoint centre, u32 radius, std::vector<u64>& bits) {
     bits.assign(core::FogWords(static_cast<std::size_t>(map.Columns()) * map.Rows()), 0);
     return core::ExploreAround(bits, map, map.TileIndex(centre), radius);
