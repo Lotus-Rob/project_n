@@ -92,8 +92,8 @@ SpriteId VariantOf(const std::vector<core::atlas::SpriteId>& variants, u32 colum
 void AddTiles(const Pass& pass) {
     pass.ForTiles([&](u32 column, u32 row, u8 /*flags*/) {
         const u8 kind = pass.map->KindAt(pass.map->TileIndex({ .column = column, .row = row }));
-        if (kind < pass.look->kinds.size() && !pass.look->kinds[kind].empty()) {
-            pass.Add(VariantOf(pass.look->kinds[kind], column, row), pass.Corner(column, row));
+        if (kind < pass.look->kinds.size() && !pass.look->kinds[kind].variants.empty()) {
+            pass.Add(VariantOf(pass.look->kinds[kind].variants, column, row), pass.Corner(column, row));
         }
     });
 }
