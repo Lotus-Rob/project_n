@@ -11,6 +11,7 @@
 #include "gfx/terrain_draw.hpp"
 #include "platform/paths.hpp"
 #include "support/manifest.hpp"
+#include "support/shipped_world.hpp"
 
 #include <doctest/doctest.h>
 
@@ -90,17 +91,6 @@ core::WorldLook SmallLook(const core::Manifest& manifest, const core::WorldMap& 
     return std::move(*look);
 }
 
-std::shared_ptr<const core::WorldMap> ShippedMap() {
-    std::expected<std::shared_ptr<const core::WorldMap>, core::Error> map =
-        platform::AssetsDirectory().and_then([](const std::filesystem::path& assets) {
-            return data::LoadStrings(assets / "data").and_then([&](const core::Strings& strings) {
-                return data::LoadWorldMap(assets / "data", strings);
-            });
-        });
-    REQUIRE(map.has_value());
-    return std::move(*map);
-}
-
 // The world rectangle of `columns` and `rows`, inside their tiles: the first column and row to the last, both included.
 core::Rect TilesRect(u32 firstColumn, u32 lastColumn, u32 firstRow, u32 lastRow) {
     const f32 inset = 10.0F;
@@ -168,7 +158,7 @@ TEST_CASE("the terrain draws the tiles in view by the map's kinds and the look's
 
 TEST_CASE("a tile's variant depends on its place only, so a view never changes it") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
-    const std::shared_ptr<const core::WorldMap> map = ShippedMap();
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
     std::expected<core::WorldLook, core::Error> look =
         platform::AssetsDirectory().and_then([&](const std::filesystem::path& assets) {
             return data::LoadWorldLook(assets / "data", *manifest, *map);
@@ -347,7 +337,7 @@ TEST_CASE("a look short of the map's kinds draws the tile bare, never past a tab
 
 TEST_CASE("the widest view of the shipped map stays within MAX_TERRAIN_INSTANCES") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
-    const std::shared_ptr<const core::WorldMap> map = ShippedMap();
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
     std::expected<core::WorldLook, core::Error> look =
         platform::AssetsDirectory().and_then([&](const std::filesystem::path& assets) {
             return data::LoadWorldLook(assets / "data", *manifest, *map);

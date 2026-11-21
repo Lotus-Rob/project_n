@@ -6,12 +6,10 @@
 #include "core/view_limits.hpp"
 #include "core/world_look.hpp"
 #include "core/world_map.hpp"
-#include "data/strings.hpp"
-#include "data/world_map.hpp"
 #include "gfx/cloud_draw.hpp"
 #include "gfx/fog.hpp"
-#include "platform/paths.hpp"
 #include "support/manifest.hpp"
+#include "support/shipped_world.hpp"
 
 #include <doctest/doctest.h>
 
@@ -172,17 +170,6 @@ const core::Instance* Nearest(const gfx::CloudDrawing& drawing, const core::Inst
         }
     }
     return nearest;
-}
-
-std::shared_ptr<const core::WorldMap> ShippedMap() {
-    std::expected<std::shared_ptr<const core::WorldMap>, core::Error> map =
-        platform::AssetsDirectory().and_then([](const std::filesystem::path& assets) {
-            return data::LoadStrings(assets / "data").and_then([&](const core::Strings& strings) {
-                return data::LoadWorldMap(assets / "data", strings);
-            });
-        });
-    REQUIRE(map.has_value());
-    return std::move(*map);
 }
 
 /// A 16 x 16 map with a diamond of radius 2 explored round (8, 8), a lone tile at (3, 12), the top-right corner and the
@@ -509,7 +496,7 @@ TEST_CASE("clouds are drawn back to front by their foot") {
 }
 
 TEST_CASE("a 32:9 view at zoom 0.25 over the shipped map, all unexplored, stays within the buffer") {
-    const std::shared_ptr<const core::WorldMap> map = ShippedMap();
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
     REQUIRE(map->TileSize() == TILE);
     const Field field{ map->Columns(), map->Rows() };
     const core::FogLook look = StillLook();
