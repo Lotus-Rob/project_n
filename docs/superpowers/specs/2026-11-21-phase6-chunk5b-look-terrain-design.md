@@ -375,7 +375,6 @@ The cloud shade:
   removing it would touch the sprite, river and ground shaders and the markers' shade-only flag for a slightly lighter
   band behind the clouds' edge row; the denser band shows only in their gaps.
 
-
 Rivers and the ground:
 - Rivers' spline steps are per tile of segment length: `RIVER_STEPS = 4` quads per band per tile, `MAX_RIVER_QUADS =
   8,192`. The plan's per-segment reading left quads up to 1.7 tiles long, which kink at bends at zoom 1, and per tile at
