@@ -1479,7 +1479,7 @@ def stamp_tree(canvas, x, y, s, rng):
              rim_width=max(1.5, s * 0.03))
 
 
-def stamp_pine(canvas, x, y, s, rng):
+def stamp_pine(canvas, x, y, s):
     ink(canvas, [(x, y), (x, y - s * 0.9)], max(2.0, s * 0.06), alpha=0.85)
     for i in range(4):
         yy, w = y - s * (0.3 + i * 0.17), s * (0.36 - i * 0.07)
@@ -1534,11 +1534,12 @@ def stamp_tufts(canvas, x, y, s, rng):
 
 
 def stamp_flowers(canvas, x, y, s, rng):
-    for _ in range(6):
-        xx, yy = x + rng.uniform(-0.4, 0.4) * s, y - rng.uniform(0.05, 0.3) * s
-        ink(canvas, [(xx, yy + s * 0.07), (xx, yy)], max(1.5, s * 0.02), (90, 120, 66), 0.8)
-        petal = (214, 120, 120) if rng.random() < 0.6 else (230, 196, 110)
-        blob(canvas, xx, yy, s * 0.04, s * 0.04, petal, 0.95, rim=None)
+    for _ in range(11):
+        xx, yy = x + rng.uniform(-0.42, 0.42) * s, y - rng.uniform(0.12, 0.5) * s * 0.5
+        ink(canvas, [(xx, yy + s * 0.08), (xx, yy)], max(2.0, s * 0.02), (90, 120, 66), 0.85)
+        petal = (214, 120, 120) if rng.random() < 0.6 else (232, 190, 96)
+        blob(canvas, xx, yy, s * 0.05, s * 0.05, petal, 0.95, rim=WASH_INK, rim_alpha=0.45, rim_width=1.5)
+        blob(canvas, xx, yy, s * 0.02, s * 0.02, (250, 238, 190), 1.0, rim=None)
 
 
 def stamp_ripples(canvas, x, y, s, rng):
@@ -1565,7 +1566,11 @@ def stamp(kind, variant):
         for i in range(count):
             fx = x + (i - (count - 1) / 2.0) * width * 0.22 + rng.uniform(-8, 8)
             fy = y - rng.uniform(0.0, 0.18) * height
-            (stamp_pine if rng.random() < 0.4 else stamp_tree)(canvas, fx, fy, height * rng.uniform(0.62, 0.8), rng)
+            size = height * rng.uniform(0.62, 0.8)
+            if rng.random() < 0.4:
+                stamp_pine(canvas, fx, fy, size)
+            else:
+                stamp_tree(canvas, fx, fy, size, rng)
     elif kind == "peaks":
         stamp_mountain(canvas, x - width * 0.12, y, width * 0.52, height * 0.95, (96, 140, 130), (34, 60, 58),
                        variant % 2 == 0)
@@ -1593,17 +1598,30 @@ def stamp(kind, variant):
     return canvas
 
 
+# Each mist is a few overlapping puffs as (centre x, centre y, half width, half height) in a 384 by 128 sheet; one
+# puff always sits at the centre, so the alpha there is 1.
+MISTS = [
+    [(192, 64, 190, 62)],
+    [(192, 64, 130, 60), (92, 72, 90, 48), (292, 58, 90, 50)],
+    [(192, 64, 110, 62), (192, 74, 190, 32)],
+    [(192, 64, 70, 60), (130, 76, 126, 50), (280, 52, 100, 46)],
+]
+
+
 def mist(variant):
-    """A soft white ellipse, 384 by 128, from opaque at the centre to clear at the rim; the look tints it."""
+    """Soft white puffs, 384 by 128, opaque at the centre and clear at the rim; the look tints them."""
     canvas = Canvas(384, 128)
-    squash = 0.9 + 0.1 * variant
+    puffs = MISTS[variant]
 
     def coverage(x, y):
-        d = math.sqrt(((x - 192.0) / 192.0) ** 2 + ((y - 64.0) / (64.0 * squash)) ** 2)
-        if d >= 1.0:
+        alpha = 0.0
+        for px, py, rx, ry in puffs:
+            d = math.sqrt(((x - px) / rx) ** 2 + ((y - py) / ry) ** 2)
+            alpha = max(alpha, 1.0 - d)
+        if alpha <= 0.0:
             return None
-        wobble = 1.0 + 0.16 * (noise(x / 60.0, y / 40.0, 300 + variant) - 0.5)
-        return (255, 255, 255), max(0.0, min(1.0, 1.0 - d * wobble)) ** 0.8
+        wobble = 1.0 + 0.2 * (noise(x / 50.0, y / 30.0, 300 + variant) - 0.5)
+        return (255, 255, 255), min(1.0, alpha * wobble) ** 0.8
     canvas.shape((0, 0, 383, 127), coverage)
     return canvas
 
@@ -1625,21 +1643,22 @@ def house(canvas, x, y, w, h, k, colour=(214, 204, 182), roof_colour=(70, 68, 78
 
 
 def painting_city(size, tiers):
-    """A walled city in ink and wash: wall with battlements, corner towers, a gate and roofs behind; `tiers` more
-    rooftops stack up behind for the capital."""
+    """A walled city in ink and wash that fills its sheet: wall with battlements, corner towers, a gate, a keep and
+    roofs behind; `tiers` rooftops and a stacked keep roof make the capital."""
     k = size / 512.0
     canvas = Canvas(size, size)
     cx, base = size / 2.0, size - 8.0 * k
     ground_wash(canvas, cx, base - 4 * k, 240 * k, 28 * k)
-    top = base - 150 * k
+    top = base - 190 * k
     if tiers:
         for i in range(tiers):
-            house(canvas, cx + (i - (tiers - 1) / 2.0) * 84 * k, top - 8 * k - i % 2 * 30 * k, 70 * k, 60 * k, k)
-        house(canvas, cx, top - 8 * k, 120 * k, 200 * k, k, (206, 192, 168), VERMILION)
-        roof(canvas, cx, top - 250 * k, 150 * k, 70 * k, VERMILION, 2.5 * k)
+            house(canvas, cx + (i - (tiers - 1) / 2.0) * 84 * k, top - 8 * k - i % 2 * 30 * k, 70 * k, 80 * k, k)
+        house(canvas, cx, top - 8 * k, 140 * k, 150 * k, k, (206, 192, 168), VERMILION)
+        roof(canvas, cx, top - 208 * k, 100 * k, 60 * k, VERMILION, 2.5 * k)
     else:
-        for dx, w, h in ((-110, 80, 50), (100, 90, 56), (0, 110, 70)):
+        for dx, w, h in ((-150, 110, 100), (150, 110, 90)):
             house(canvas, cx + dx * k, top - 8 * k, w * k, h * k, k)
+        house(canvas, cx, top - 8 * k, 150 * k, 150 * k, k, (206, 192, 168), VERMILION)
     poly(canvas, [(cx - 220 * k, base), (cx - 220 * k, top), (cx + 220 * k, top), (cx + 220 * k, base)],
          (200, 190, 170), 0.98, width=3 * k)
     for i in range(-10, 10):
@@ -1648,15 +1667,15 @@ def painting_city(size, tiers):
              (200, 190, 170), 0.98, width=2 * k)
     for dx in (-190, 190):
         tx = cx + dx * k
-        poly(canvas, [(tx - 40 * k, base), (tx - 40 * k, top - 40 * k), (tx + 40 * k, top - 40 * k),
+        poly(canvas, [(tx - 40 * k, base), (tx - 40 * k, top - 70 * k), (tx + 40 * k, top - 70 * k),
                       (tx + 40 * k, base)], (190, 180, 160), 0.98, width=3 * k)
-        roof(canvas, tx, top - 40 * k, 90 * k, 60 * k, (70, 68, 78), 3 * k)
+        roof(canvas, tx, top - 70 * k, 90 * k, 70 * k, (70, 68, 78), 3 * k)
     for x in range(-200, 201, 40):
         ink(canvas, [(cx + x * k, top + 12 * k), (cx + x * k, base - 6 * k)], 1.5 * k, WASH_INK, 0.2)
-    gate = [(cx - 30 * k, base), (cx - 30 * k, top + 50 * k), (cx - 18 * k, top + 28 * k), (cx, top + 20 * k),
-            (cx + 18 * k, top + 28 * k), (cx + 30 * k, top + 50 * k), (cx + 30 * k, base)]
+    gate = [(cx - 30 * k, base), (cx - 30 * k, top + 70 * k), (cx - 18 * k, top + 42 * k), (cx, top + 30 * k),
+            (cx + 18 * k, top + 42 * k), (cx + 30 * k, top + 70 * k), (cx + 30 * k, base)]
     poly(canvas, gate, (40, 36, 36), 0.97, width=3 * k)
-    roof(canvas, cx, top + 10 * k, 100 * k, 40 * k, VERMILION, 3 * k)
+    roof(canvas, cx, top + 18 * k, 100 * k, 40 * k, VERMILION, 3 * k)
     return canvas
 
 
@@ -1691,21 +1710,21 @@ def painting_mountain_pass():
 def painting_shrine():
     canvas = Canvas(256, 256)
     ground_wash(canvas, 128, 246, 100, 12)
-    house(canvas, 128, 200, 80, 60, 1.0, (206, 192, 168), VERMILION)
-    for x in (70, 186):
-        ink(canvas, [(x, 246), (x, 100)], 14, VERMILION, 0.95)
-    ink(canvas, [(52, 104), (204, 104)], 15, VERMILION, 0.95)
-    ink(canvas, [(40, 84), (216, 84)], 14, WASH_INK, 0.9)
-    ink(canvas, [(70, 140), (186, 140)], 8, WASH_INK, 0.85)
+    house(canvas, 128, 236, 150, 110, 1.0, (206, 192, 168), VERMILION)
+    for x in (62, 194):
+        ink(canvas, [(x, 246), (x, 60)], 14, VERMILION, 0.95)
+    ink(canvas, [(44, 66), (212, 66)], 15, VERMILION, 0.95)
+    ink(canvas, [(32, 42), (224, 42)], 14, WASH_INK, 0.9)
+    ink(canvas, [(62, 110), (194, 110)], 8, WASH_INK, 0.85)
     return canvas
 
 
 def painting_cave():
     canvas = Canvas(256, 256)
     ground_wash(canvas, 128, 246, 112, 12)
-    blob(canvas, 128, 240, 112, 170, (122, 118, 110), 0.97, rim_alpha=0.85, rim_width=4, clip=240)
-    blob(canvas, 128, 240, 42, 70, (30, 28, 30), 0.97, rim_alpha=0.9, rim_width=3, clip=240)
-    for x, y in ((70, 150), (190, 160), (96, 100), (160, 110)):
+    blob(canvas, 128, 240, 112, 205, (122, 118, 110), 0.97, rim_alpha=0.85, rim_width=4, clip=240)
+    blob(canvas, 128, 240, 46, 90, (30, 28, 30), 0.97, rim_alpha=0.9, rim_width=3, clip=240)
+    for x, y in ((70, 130), (190, 140), (96, 70), (160, 80)):
         ink(canvas, [(x, y), (x + 14, y + 22), (x + 4, y + 40)], 3, WASH_INK, 0.5)
     return canvas
 
@@ -1724,10 +1743,10 @@ def painting_corrupt_village():
     canvas = Canvas(256, 256)
     ground_wash(canvas, 128, 244, 112, 14)
     blob(canvas, 128, 150, 100, 90, (120, 96, 110), 0.25, rim=None)
-    house(canvas, 80, 236, 76, 52, 1.0, (170, 160, 150), (56, 52, 58))
-    house(canvas, 176, 232, 92, 70, 1.0, (160, 150, 142), (56, 52, 58))
-    ink(canvas, [(150, 100), (206, 156)], 7, VERMILION, 0.95)
-    ink(canvas, [(206, 100), (150, 156)], 7, VERMILION, 0.95)
+    house(canvas, 76, 238, 90, 90, 1.0, (170, 160, 150), (56, 52, 58))
+    house(canvas, 174, 236, 110, 120, 1.0, (160, 150, 142), (56, 52, 58))
+    ink(canvas, [(130, 60), (220, 130)], 7, VERMILION, 0.95)
+    ink(canvas, [(220, 60), (130, 130)], 7, VERMILION, 0.95)
     return canvas
 
 
