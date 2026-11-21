@@ -3,6 +3,7 @@
 #include "core/fog.hpp"
 #include "core/frame.hpp"
 #include "core/world_map.hpp"
+#include "support/meadow.hpp"
 
 #include <doctest/doctest.h>
 
@@ -14,29 +15,12 @@ constexpr f32 FADE = 0.5F;
 constexpr f32 QUARTER = 0.25F;
 constexpr u32 CENTRE_TILE = 12; // column 2, row 2
 constexpr u32 FIRST_TILE = 0;
+constexpr u32 NEIGHBOUR_TILE = 13; // column 3, row 2: next to the centre
 constexpr u32 RADIUS = 1;
 
-// A meadow of SIDE x SIDE tiles with one city, which is all a map needs to build.
+/// The test map: SIDE by SIDE tiles of meadow.
 core::WorldMap SmallMap() {
-    core::WorldMapSource source;
-    source.columns = SIDE;
-    source.rows = SIDE;
-    source.tileSize = 256.0F;
-    source.kinds = { { .name = "meadow", .symbol = '.', .cost = 10 } };
-    source.grid.assign(TILES, 0);
-    source.places.push_back(
-        { .key = "city",
-          .kind = core::PlaceKind::City,
-          .sort = "",
-          .tile = { .column = 0, .row = 0 },
-          .nameKey = "city",
-          .name = {},
-          .people = 100,
-          .start = true }
-    );
-    auto built = core::WorldMap::Build(std::move(source));
-    REQUIRE(built.has_value());
-    return *std::move(built);
+    return test::MeadowMap(SIDE, SIDE);
 }
 
 core::Snapshot Shows(u64 version, std::optional<u32> player, u32 explored) {
@@ -135,6 +119,19 @@ TEST_CASE("targets are recomputed only when the version, player, radius or debug
     CHECK(Value(fade, CENTRE_TILE, 0) == 0);
     fade.Update(Shows(2, std::nullopt, CENTRE_TILE), map, 1.0F, FADE);
     CHECK(Value(fade, CENTRE_TILE, 0) == 255);
+
+    // The sight alone changes under the same version: the radius, then the player's tile.
+    app::FogFade sight;
+    sight.Update(Shows(1, CENTRE_TILE, FIRST_TILE), map, 0.0F, FADE);
+    CHECK(Value(sight, NEIGHBOUR_TILE, 1) == 255);
+    core::Snapshot narrower = Shows(1, CENTRE_TILE, FIRST_TILE);
+    narrower.fog.sightRadius = 0;
+    sight.Update(narrower, map, 1.0F, FADE);
+    CHECK(Value(sight, NEIGHBOUR_TILE, 1) == 0);
+    CHECK(Value(sight, CENTRE_TILE, 1) == 255);
+    sight.Update(Shows(1, FIRST_TILE, FIRST_TILE), map, 1.0F, FADE);
+    CHECK(Value(sight, CENTRE_TILE, 1) == 0);
+    CHECK(Value(sight, FIRST_TILE, 1) == 255);
 }
 
 TEST_CASE("a settled field keeps its revision") {

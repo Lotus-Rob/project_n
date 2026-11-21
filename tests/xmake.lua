@@ -79,6 +79,7 @@ local function unit_tests(name, files, module, arena)
     target(name)
         set_kind("binary")
         add_deps(module or "core")
+        add_includedirs(os.scriptdir()) -- support/<name>.hpp
         if arena then
             with_manifest()
         end
