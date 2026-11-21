@@ -448,20 +448,28 @@ TEST_CASE("the widest 32:9 view of the shipped map fits the terrain buffer") {
     REQUIRE(look.has_value());
     const core::Vec2 half{ .x = core::WIDEST_HALF_VIEW.x, .y = core::WIDEST_HALF_VIEW.x * 9.0F / 32.0F };
     const f32 side = map->TileSize();
-    // The window shows 60 by 17 tiles, so centres half a window apart put every part of the map within a quarter window of
-    // one, and the densest places (peaks and rock, 0.6 a tile) show in some of them. Zoom 1 shows every stamp, thinned or not.
-    constexpr u32 STRIDE_COLUMNS = 30;
-    constexpr u32 STRIDE_ROWS = 8;
+    // The window shows 60 by 17 tiles; these are the tile centres where the shipped map is busiest, each for its reason.
+    constexpr std::array<core::TilePoint, 4> CENTRES{ {
+        // The densest window by expected stamps (about 430, forest-heavy), the south-west corner.
+        { .column = 30, .row = 76 },
+        // The densest of peaks, rock and snow (0.6 and 0.35 a tile), the stamps that stand tallest.
+        { .column = 33, .row = 54 },
+        // The most places in one window (six), so the most paintings over the stamps.
+        { .column = 57, .row = 21 },
+        // The start, beside the capital's 768 square painting.
+        { .column = 75, .row = 42 },
+    } };
     std::size_t most = 0;
-    for (u32 row = 0; row < map->Rows(); row += STRIDE_ROWS) {
-        for (u32 column = 0; column < map->Columns(); column += STRIDE_COLUMNS) {
-            const core::Vec2 centre{ .x = (static_cast<f32>(column) + 0.5F) * side,
-                                     .y = (static_cast<f32>(row) + 0.5F) * side };
-            const core::Rect view{ .min = { .x = centre.x - half.x, .y = centre.y - half.y },
-                                   .max = { .x = centre.x + half.x, .y = centre.y + half.y } };
-            gfx::TerrainDrawing drawing;
-            gfx::DrawTerrain(*map, *look, *manifest, view, drawing);
-            gfx::DrawStamps(*map, *look, *manifest, map->TilesIn(view), 1.0F, drawing);
+    for (const core::TilePoint& tile : CENTRES) {
+        const core::Vec2 centre{ .x = (static_cast<f32>(tile.column) + 0.5F) * side,
+                                 .y = (static_cast<f32>(tile.row) + 0.5F) * side };
+        const core::Rect view{ .min = { .x = centre.x - half.x, .y = centre.y - half.y },
+                               .max = { .x = centre.x + half.x, .y = centre.y + half.y } };
+        gfx::TerrainDrawing terrain;
+        gfx::DrawTerrain(*map, *look, *manifest, view, terrain);
+        for (const f32 zoom : { 0.25F, 1.0F }) {
+            gfx::TerrainDrawing drawing = terrain;
+            gfx::DrawStamps(*map, *look, *manifest, map->TilesIn(view), zoom, drawing);
             most = std::max(most, drawing.instances.size());
         }
     }
