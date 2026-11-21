@@ -108,6 +108,7 @@ order, Anti-goals, Calls). The look's starting values and the picked pictures co
 | E | 8 (shimmer guards, full) | Task 7 (`tests/reference/`, `gfx/camera.hpp`'s `View`, `tools/project_n.py`) |
 | F | 9 (measurements and Outcome, light) | everything; runs alone, when the user says the display is free |
 | G | 10 (the cloud shade, full; added by the user after approval) | Task 9 (`shaders/`, `gfx/ground.*`, `gfx/renderer.cpp`, the labels' fade, pictures, the spec's Outcome) |
+| H | 11 (the main thread's rise, full; added by the user after approval) | Task 10; runs alone, when the user says the display is free (`profile`, `measure`; whatever file holds the cost) |
 
 ---
 
@@ -514,3 +515,32 @@ only in sight, which is always explored.
   windows-msvc release build.
 - [ ] **Step 5: Commit** `fix(gfx): hide walkers and their names under the clouds`, and add the decision and its
   result to the spec's Decisions and Outcome.
+
+### Task 11: where the main thread's rise goes
+
+**review: full** (a profiling verdict, and a fix if one is due) · **implementer: opus** · runs alone, when the user says
+the display is free
+
+Added after the plan was approved (the user, 2026-11-21): the Outcome's frame-time table shows the main thread's work
+higher than main's in all 12 segments, by 0.4 to 1.0 ms at the median and up to 2 ms at the p99, and the terrain's
+layout explains only about 0.03 ms of it. Find where the rest goes before the merge, fix it if it is a real cost, and
+record the finding. Task 10's cloud-shade pass is new since that measurement and is measured here too.
+
+**Files:**
+- Modify: whatever holds the cost, if a fix is due (`src/gfx/`, `shaders/` with `shaders/bin/` and `src/gfx/generated/`)
+- Modify: `docs/superpowers/specs/2026-11-21-phase6-chunk5b-look-terrain-design.md` (Outcome: the attribution, any fix
+  and the numbers after it)
+- Test: a unit test for any fix that changes behaviour (none for a pure cost change; the measurement is its evidence)
+
+- [ ] **Step 1: Profile both sides alike:** `pixi run project_n profile --seconds 30 -- --world --debug-sight` on this
+  branch and on main (switching the main checkout as Task 9 did; same arguments, same monitor), then compare the main
+  thread's zones by self time, branch against main, with `tracy-csvexport` through the saved captures; where zones don't
+  explain the rise, add `PN_PROFILE_ZONE`s on the branch's new per-frame work (ground, rivers, stamps, the cloud shade's
+  recording, uploads) and profile again.
+- [ ] **Step 2: Decide:** name the zones that carry the rise with their medians on both sides. A real cost (work done
+  each frame that could be done on change, an upload or relayout repeated, a needless wait) gets fixed; a cost the
+  design needs is recorded as such with its size.
+- [ ] **Step 3: If fixed:** `pixi run project_n test`, `pixi run project_n reference`, `lint --range <base>..HEAD`, then
+  `pixi run project_n measure --runs world` to show the main thread's work against Task 9's table.
+- [ ] **Step 4: Commit** the fix (`perf(gfx): ...`, if any) and `docs(design): attribute the main thread's rise`
+  (the Outcome's frame-time paragraph rewritten with the attribution and the numbers after any fix).
