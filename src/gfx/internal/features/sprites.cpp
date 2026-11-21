@@ -278,7 +278,7 @@ std::expected<FogTexture, core::Error> FogTexture::Create(SDL_GPUDevice* device)
     }
     // Filled before any frame binds it, so no draw reads it undefined.
     SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
-    constexpr std::array<u8, FOG_TEXEL_BYTES> CLEAR{ FOG_FULL, FOG_FULL };
+    constexpr std::array<u8, FOG_TEXEL_BYTES> CLEAR{ { FOG_FULL, FOG_FULL } };
     const bool copied = CopyFog(device, copy, transfer.get(), fog.m_clear.get(), CLEAR, 1, 1);
     SDL_EndGPUCopyPass(copy);
     if (!copied) {

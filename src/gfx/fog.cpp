@@ -13,7 +13,7 @@ constexpr f32 CENTRE = 0.5F;
 constexpr f32 SMOOTH_A = 3.0F; // smoothstep: t * t * (3 - 2t)
 constexpr f32 SMOOTH_B = 2.0F;
 /// sprite.frag.hlsl's LUMINANCE: Rec. 709's weights of linear red, green and blue.
-constexpr std::array<f32, 3> FOG_LUMINANCE{ 0.2126F, 0.7152F, 0.0722F };
+constexpr std::array<f32, 3> FOG_LUMINANCE{ { 0.2126F, 0.7152F, 0.0722F } };
 constexpr u8 FOG_FULL = 255;
 constexpr u32 CHANNEL_BITS = 8;
 constexpr u32 CHANNEL_MASK = 0xFFU;
