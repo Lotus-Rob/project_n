@@ -104,4 +104,17 @@ TEST_CASE("a river's shape is its look in world units") {
     CHECK((shape.edgeColour >> 24U) == 171);
 }
 
+TEST_CASE("a river's rim fades from where its core ends") {
+    // The shipped shape: a core 0.38 tile wide in an edge 0.5 wide.
+    CHECK(
+        gfx::RimStart({ .coreWidth = 97.28F, .edgeWidth = 128.0F, .coreColour = 0, .edgeColour = 0 }) == doctest::Approx(0.76F)
+    );
+    // A core as wide as the edge, or wider, leaves no rim to fade.
+    CHECK(gfx::RimStart({ .coreWidth = 128.0F, .edgeWidth = 128.0F, .coreColour = 0, .edgeColour = 0 }) == 1.0F);
+    CHECK(gfx::RimStart({ .coreWidth = 200.0F, .edgeWidth = 128.0F, .coreColour = 0, .edgeColour = 0 }) == 1.0F);
+    // An edge of no width has nothing to fade, and no core fades from the middle.
+    CHECK(gfx::RimStart({ .coreWidth = 50.0F, .edgeWidth = 0.0F, .coreColour = 0, .edgeColour = 0 }) == 1.0F);
+    CHECK(gfx::RimStart({ .coreWidth = 0.0F, .edgeWidth = 128.0F, .coreColour = 0, .edgeColour = 0 }) == 0.0F);
+}
+
 } // namespace
