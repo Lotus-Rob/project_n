@@ -1211,29 +1211,30 @@ def river(mask):
 
 
 def plank_bridge(across):
-    """A plank deck over the river with ink rails; the road runs along `across` ('h': east-west, 'v': north-south)."""
+    """A plank deck spanning the river's half-tile band, with ink rails; the road runs along `across` ('h':
+    east-west, 'v': north-south)."""
     canvas = Canvas(TILE, TILE)
 
     def at(a, b):
         return (MID + a, MID + b) if across == "h" else (MID + b, MID + a)
-    for a in range(-34, 35, 8):
-        canvas.stroke([at(a, -15), at(a, 15)], 6.5, 6.5, PLANK, 1.0, 0.1, 40 + a)
-    canvas.stroke([at(-38, -17), at(38, -17)], 4.0, 4.0, INK, 0.85, 0.15, 5)
-    canvas.stroke([at(-38, 17), at(38, 17)], 4.0, 4.0, INK, 0.85, 0.15, 6)
-    for a in (-38, 38):
-        for b in (-17, 17):
+    for a in range(-64, 65, 8):
+        canvas.stroke([at(a, -21), at(a, 21)], 6.5, 6.5, PLANK, 1.0, 0.1, 40 + a)
+    canvas.stroke([at(-70, -24), at(70, -24)], 4.0, 4.0, INK, 0.85, 0.15, 5)
+    canvas.stroke([at(-70, 24), at(70, 24)], 4.0, 4.0, INK, 0.85, 0.15, 6)
+    for a in (-70, 70):
+        for b in (-24, 24):
             x, y = at(a, b)
             canvas.dab(x, y, 5.5, INK, 0.9, dry=0.1, seed=a + b)
     return canvas
 
 
 def ford():
-    """Pale shallows with stepping stones, over the river; it reads the same across either way."""
+    """Pale shallows with stepping stones spanning the river's half-tile band; it reads the same across either way."""
     canvas = Canvas(TILE, TILE)
-    canvas.dab(MID, MID, 48, (188, 214, 196), 0.55, soft=1.0, dry=0.3, seed=7)
+    canvas.dab(MID, MID, 70, (188, 214, 196), 0.55, soft=1.0, dry=0.3, seed=7)
     rng = random.Random(62)
-    for i in range(7):
-        x, y = MID + (i - 3) * 13.0 + rng.uniform(-3, 3), MID + (i % 2 - 0.5) * 20.0 + rng.uniform(-3, 3)
+    for i in range(10):
+        x, y = MID + (i - 4.5) * 13.0 + rng.uniform(-3, 3), MID + (i % 2 - 0.5) * 20.0 + rng.uniform(-3, 3)
         r = rng.uniform(6.0, 8.5)
         canvas.dab(x + 2, y + 3, r, INK, 0.35, dry=0.0, seed=i)
         canvas.dab(x, y, r, (160, 156, 148), 1.0, dry=0.2, seed=i + 9)
@@ -1384,8 +1385,8 @@ def target_tile():
 
 
 CLOUDS = 16
-CLOUD_BODY = (242, 236, 222)
-CLOUD_INK = (92, 78, 66)
+CLOUD_BODY = (240, 235, 222)
+CLOUD_INK = (120, 104, 90)
 
 
 def cloud_draw(variant, index):
@@ -1436,6 +1437,305 @@ def cloud(variant):
     return canvas
 
 
+# The painted terrain's marks: sparse stamps, mist and places over a paper ground, each on a transparent sheet.
+
+WASH_INK = (40, 38, 36)
+
+
+def blob(canvas, cx, cy, rx, ry, colour, alpha, rim=WASH_INK, rim_alpha=0.6, rim_width=2.0, clip=None):
+    """A soft-edged ellipse with an ink rim; `clip` cuts it off below that y, leaving a dome."""
+    def coverage(x, y):
+        if clip is not None and y > clip:
+            return None
+        d = math.sqrt(((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2)
+        edge = (1.0 - d) * min(rx, ry)
+        outer = min(1.0, max(0.0, edge + 0.5))
+        if outer <= 0.0:
+            return None
+        if rim is None:
+            return colour, alpha * outer
+        t = min(1.0, max(0.0, edge - rim_width + 0.5))
+        return mix(rim, colour, t), (rim_alpha + (alpha - rim_alpha) * t) * outer
+    canvas.shape((cx - rx - 1, cy - ry - 1, cx + rx + 1, cy + ry + 1), coverage)
+
+
+def poly(canvas, points, colour, alpha=1.0, rim=WASH_INK, rim_alpha=0.7, width=2.0):
+    fill(canvas, points, colour, alpha)
+    if rim:
+        canvas.stroke(points + points[:1], width, width, rim, rim_alpha, 0.1, int(points[0][0] * 3 + points[0][1]))
+
+
+def ink(canvas, points, width=2.0, colour=WASH_INK, alpha=0.75):
+    canvas.stroke(points, width, width, colour, alpha, 0.1, int(points[0][0] * 5 + points[0][1]))
+
+
+def stamp_tree(canvas, x, y, s, rng):
+    ink(canvas, [(x, y), (x + rng.uniform(-1, 1) * s * 0.06, y - s * 0.55)], max(2.0, s * 0.07), alpha=0.85)
+    tint = (66, 108, 76)
+    for i in range(3):
+        cx, cy, r = x + rng.uniform(-0.2, 0.2) * s, y - s * (0.45 + i * 0.18), s * (0.34 - i * 0.07)
+        shade = 0.82 + 0.1 * i
+        blob(canvas, cx, cy, r, r * 0.72, tuple(c * shade for c in tint), 0.92, rim_alpha=0.6,
+             rim_width=max(1.5, s * 0.03))
+
+
+def stamp_pine(canvas, x, y, s, rng):
+    ink(canvas, [(x, y), (x, y - s * 0.9)], max(2.0, s * 0.06), alpha=0.85)
+    for i in range(4):
+        yy, w = y - s * (0.3 + i * 0.17), s * (0.36 - i * 0.07)
+        poly(canvas, [(x - w, yy), (x + w, yy), (x, yy - s * 0.24)], (50, 88, 72), 0.93, rim_alpha=0.6,
+             width=max(1.5, s * 0.03))
+
+
+def stamp_mountain(canvas, x, y, w, h, body, ridge, snowcap=False):
+    pts = [(x - w / 2, y), (x - w * 0.12, y - h * 0.8), (x, y - h), (x + w * 0.18, y - h * 0.7), (x + w / 2, y)]
+    poly(canvas, pts, body, 0.95, rim=ridge, rim_alpha=0.85, width=max(2.0, w * 0.03))
+    poly(canvas, [(x, y - h), (x + w * 0.18, y - h * 0.7), (x + w / 2, y), (x + w * 0.05, y)],
+         tuple(c * 0.8 for c in body), 0.35, rim=None)
+    ink(canvas, [(x, y - h), (x - w * 0.05, y - h * 0.5), (x + w * 0.04, y - h * 0.2)], max(1.5, w * 0.02), ridge, 0.55)
+    if snowcap:
+        poly(canvas, [(x - w * 0.12, y - h * 0.8), (x, y - h), (x + w * 0.14, y - h * 0.76), (x, y - h * 0.7)],
+             (250, 250, 252), 0.98, rim=ridge, rim_alpha=0.5, width=max(1.5, w * 0.02))
+
+
+def stamp_hill(canvas, x, y, w, h):
+    blob(canvas, x, y, w / 2, h, (180, 154, 116), 0.88, rim_alpha=0.75, rim_width=max(2.0, w * 0.03), clip=y)
+
+
+def stamp_rocks(canvas, x, y, s, rng):
+    for _ in range(3):
+        cx, cy, r = x + rng.uniform(-0.38, 0.38) * s, y - rng.uniform(0.0, 0.3) * s * 0.5, s * rng.uniform(0.12, 0.2)
+        poly(canvas, [(cx - r, cy), (cx - r * 0.6, cy - r * 1.2), (cx + r * 0.3, cy - r * 1.4), (cx + r, cy)],
+             (116, 112, 108), 0.95, rim_alpha=0.85, width=max(2.0, r * 0.14))
+
+
+def stamp_reeds(canvas, x, y, s, rng):
+    blob(canvas, x, y - s * 0.03, s * 0.35, s * 0.07, (124, 156, 154), 0.55, rim=None)
+    for _ in range(9):
+        xx = x + rng.uniform(-0.38, 0.38) * s
+        ink(canvas, [(xx, y), (xx + rng.uniform(-0.06, 0.06) * s, y - s * rng.uniform(0.25, 0.5))],
+            max(2.0, s * 0.03), (74, 84, 52), 0.9)
+
+
+def stamp_dunes(canvas, x, y, s, rng):
+    for i in range(2):
+        base = y - i * s * 0.2
+        dx = rng.uniform(-0.12, 0.12) * s
+        blob(canvas, x + dx, base, s * 0.36, s * 0.16, (226, 204, 156), 0.7, rim=(150, 118, 70), rim_alpha=0.75,
+             rim_width=max(2.0, s * 0.02), clip=base)
+
+
+def stamp_tufts(canvas, x, y, s, rng):
+    for _ in range(4):
+        xx, yy = x + rng.uniform(-0.38, 0.38) * s, y - rng.uniform(0.0, 0.2) * s
+        for k in (-1, 0, 1):
+            ink(canvas, [(xx, yy), (xx + k * s * 0.06, yy - s * rng.uniform(0.12, 0.2))], max(2.0, s * 0.03),
+                (80, 114, 60), 0.9)
+
+
+def stamp_flowers(canvas, x, y, s, rng):
+    for _ in range(6):
+        xx, yy = x + rng.uniform(-0.4, 0.4) * s, y - rng.uniform(0.05, 0.3) * s
+        ink(canvas, [(xx, yy + s * 0.07), (xx, yy)], max(1.5, s * 0.02), (90, 120, 66), 0.8)
+        petal = (214, 120, 120) if rng.random() < 0.6 else (230, 196, 110)
+        blob(canvas, xx, yy, s * 0.04, s * 0.04, petal, 0.95, rim=None)
+
+
+def stamp_ripples(canvas, x, y, s, rng):
+    for i in range(3):
+        xx, yy = x + rng.uniform(-0.3, 0.3) * s, y - s * 0.1 - i * s * 0.12
+        arc = bezier((xx - s * 0.2, yy), (xx, yy - s * 0.1), (xx + s * 0.2, yy), steps=16)
+        ink(canvas, [(px, py + 2) for px, py in arc], max(2.0, s * 0.025), (70, 104, 118), 0.35)
+        ink(canvas, arc, max(2.0, s * 0.025), (232, 242, 246), 0.9)
+
+
+# kind -> (width, height): each as wide as 256 times its largest size on the map.
+STAMPS = {"forest": (333, 230), "hills": (307, 130), "peaks": (435, 300), "snow": (435, 260), "rock": (282, 120),
+          "marsh": (230, 100), "sand": (230, 90), "grass": (230, 90), "meadow": (230, 90), "water": (230, 70)}
+
+
+def stamp(kind, variant):
+    """Marks of one terrain kind, drawn in an area as wide as the kind's largest stamp, the foot at the bottom centre."""
+    width, height = STAMPS[kind]
+    canvas = Canvas(width, height)
+    rng = random.Random(900 + 17 * variant + sum(map(ord, kind)))
+    x, y = width / 2.0, height - 6.0
+    if kind == "forest":
+        count = 3 + variant % 3
+        for i in range(count):
+            fx = x + (i - (count - 1) / 2.0) * width * 0.22 + rng.uniform(-8, 8)
+            fy = y - rng.uniform(0.0, 0.18) * height
+            (stamp_pine if rng.random() < 0.4 else stamp_tree)(canvas, fx, fy, height * rng.uniform(0.62, 0.8), rng)
+    elif kind == "peaks":
+        stamp_mountain(canvas, x - width * 0.12, y, width * 0.52, height * 0.95, (96, 140, 130), (34, 60, 58),
+                       variant % 2 == 0)
+        stamp_mountain(canvas, x + width * 0.2, y - 2, width * 0.42, height * 0.62, (120, 158, 140), (40, 66, 60))
+        if variant >= 2:
+            stamp_mountain(canvas, x + width * 0.4, y, width * 0.2, height * 0.35, (108, 148, 134), (40, 66, 60), True)
+    elif kind == "snow":
+        stamp_mountain(canvas, x + rng.uniform(-20, 20), y, width * 0.62, height * 0.92, (214, 222, 230),
+                       (90, 100, 112), True)
+    elif kind == "rock":
+        stamp_rocks(canvas, x, y, width * 0.8, rng)
+    elif kind == "hills":
+        stamp_hill(canvas, x - width * 0.16, y, width * 0.52, height * 0.8)
+        stamp_hill(canvas, x + width * 0.22, y - 2, width * 0.4, height * 0.58)
+    elif kind == "marsh":
+        stamp_reeds(canvas, x, y, height * 1.1, rng)
+    elif kind == "sand":
+        stamp_dunes(canvas, x, y, width * 0.7, rng)
+    elif kind == "grass":
+        stamp_tufts(canvas, x, y, width * 0.8, rng)
+    elif kind == "meadow":
+        stamp_flowers(canvas, x, y, width * 0.8, rng)
+    elif kind == "water":
+        stamp_ripples(canvas, x, y, width * 0.8, rng)
+    return canvas
+
+
+def mist(variant):
+    """A soft white ellipse, 384 by 128, from opaque at the centre to clear at the rim; the look tints it."""
+    canvas = Canvas(384, 128)
+    squash = 0.9 + 0.1 * variant
+
+    def coverage(x, y):
+        d = math.sqrt(((x - 192.0) / 192.0) ** 2 + ((y - 64.0) / (64.0 * squash)) ** 2)
+        if d >= 1.0:
+            return None
+        wobble = 1.0 + 0.16 * (noise(x / 60.0, y / 40.0, 300 + variant) - 0.5)
+        return (255, 255, 255), max(0.0, min(1.0, 1.0 - d * wobble)) ** 0.8
+    canvas.shape((0, 0, 383, 127), coverage)
+    return canvas
+
+
+def ground_wash(canvas, cx, cy, rx, ry):
+    blob(canvas, cx, cy, rx, ry, (196, 184, 150), 0.45, rim=None)
+
+
+def roof(canvas, x, y, w, h, colour=(70, 68, 78), lw=2.5):
+    """An upturned eave roof over the span x - w/2 .. x + w/2, its ridge h above y."""
+    poly(canvas, [(x - w * 0.62, y + h * 0.15), (x - w * 0.5, y), (x - w * 0.12, y - h * 0.8), (x, y - h),
+                  (x + w * 0.12, y - h * 0.8), (x + w * 0.5, y), (x + w * 0.62, y + h * 0.15), (x, y + h * 0.05)],
+         colour, 0.97, rim_alpha=0.85, width=lw)
+
+
+def house(canvas, x, y, w, h, k, colour=(214, 204, 182), roof_colour=(70, 68, 78)):
+    poly(canvas, [(x - w / 2, y), (x - w / 2, y - h), (x + w / 2, y - h), (x + w / 2, y)], colour, 0.97, width=2.5 * k)
+    roof(canvas, x, y - h, w * 1.05, h * 0.8, roof_colour, 2.5 * k)
+
+
+def painting_city(size, tiers):
+    """A walled city in ink and wash: wall with battlements, corner towers, a gate and roofs behind; `tiers` more
+    rooftops stack up behind for the capital."""
+    k = size / 512.0
+    canvas = Canvas(size, size)
+    cx, base = size / 2.0, size - 8.0 * k
+    ground_wash(canvas, cx, base - 4 * k, 240 * k, 28 * k)
+    top = base - 150 * k
+    if tiers:
+        for i in range(tiers):
+            house(canvas, cx + (i - (tiers - 1) / 2.0) * 84 * k, top - 8 * k - i % 2 * 30 * k, 70 * k, 60 * k, k)
+        house(canvas, cx, top - 8 * k, 120 * k, 200 * k, k, (206, 192, 168), VERMILION)
+        roof(canvas, cx, top - 250 * k, 150 * k, 70 * k, VERMILION, 2.5 * k)
+    else:
+        for dx, w, h in ((-110, 80, 50), (100, 90, 56), (0, 110, 70)):
+            house(canvas, cx + dx * k, top - 8 * k, w * k, h * k, k)
+    poly(canvas, [(cx - 220 * k, base), (cx - 220 * k, top), (cx + 220 * k, top), (cx + 220 * k, base)],
+         (200, 190, 170), 0.98, width=3 * k)
+    for i in range(-10, 10):
+        x = cx + (i + 0.5) * 22 * k
+        poly(canvas, [(x - 9 * k, top), (x - 9 * k, top - 14 * k), (x + 9 * k, top - 14 * k), (x + 9 * k, top)],
+             (200, 190, 170), 0.98, width=2 * k)
+    for dx in (-190, 190):
+        tx = cx + dx * k
+        poly(canvas, [(tx - 40 * k, base), (tx - 40 * k, top - 40 * k), (tx + 40 * k, top - 40 * k),
+                      (tx + 40 * k, base)], (190, 180, 160), 0.98, width=3 * k)
+        roof(canvas, tx, top - 40 * k, 90 * k, 60 * k, (70, 68, 78), 3 * k)
+    for x in range(-200, 201, 40):
+        ink(canvas, [(cx + x * k, top + 12 * k), (cx + x * k, base - 6 * k)], 1.5 * k, WASH_INK, 0.2)
+    gate = [(cx - 30 * k, base), (cx - 30 * k, top + 50 * k), (cx - 18 * k, top + 28 * k), (cx, top + 20 * k),
+            (cx + 18 * k, top + 28 * k), (cx + 30 * k, top + 50 * k), (cx + 30 * k, base)]
+    poly(canvas, gate, (40, 36, 36), 0.97, width=3 * k)
+    roof(canvas, cx, top + 10 * k, 100 * k, 40 * k, VERMILION, 3 * k)
+    return canvas
+
+
+def painting_capital():
+    return painting_city(768, 5)
+
+
+def painting_haunted_forest():
+    canvas = Canvas(256, 256)
+    ground_wash(canvas, 128, 244, 110, 14)
+    blob(canvas, 128, 120, 60, 80, (210, 214, 222), 0.35, rim=None)
+    for x, y, s in ((70, 240, 1.0), (128, 246, 1.25), (188, 238, 0.9)):
+        ink(canvas, [(x, y), (x + 4 * s, y - 70 * s), (x - 6 * s, y - 130 * s)], 9 * s, WASH_INK, 0.9)
+        for dx, dy, ex, ey in ((4, -70, 38, -112), (4, -70, -30, -100), (-6, -130, 18, -170), (-6, -130, -26, -160)):
+            ink(canvas, [(x + dx * s, y + dy * s), (x + ex * s, y + ey * s)], 4.5 * s, WASH_INK, 0.85)
+    for x, y in ((118, 150), (140, 150)):
+        blob(canvas, x, y, 5, 5, VERMILION, 1.0, rim=None)
+    return canvas
+
+
+def painting_mountain_pass():
+    canvas = Canvas(256, 256)
+    ground_wash(canvas, 128, 246, 112, 12)
+    stamp_mountain(canvas, 78, 240, 150, 190, (96, 140, 130), (34, 60, 58), True)
+    stamp_mountain(canvas, 190, 240, 130, 160, (110, 150, 136), (34, 60, 58), True)
+    path = [(128, 248), (140, 220), (118, 196), (136, 170), (128, 150)]
+    ink(canvas, path, 9, (150, 112, 70), 0.9)
+    ink(canvas, path, 3, VERMILION, 0.9)
+    return canvas
+
+
+def painting_shrine():
+    canvas = Canvas(256, 256)
+    ground_wash(canvas, 128, 246, 100, 12)
+    house(canvas, 128, 200, 80, 60, 1.0, (206, 192, 168), VERMILION)
+    for x in (70, 186):
+        ink(canvas, [(x, 246), (x, 100)], 14, VERMILION, 0.95)
+    ink(canvas, [(52, 104), (204, 104)], 15, VERMILION, 0.95)
+    ink(canvas, [(40, 84), (216, 84)], 14, WASH_INK, 0.9)
+    ink(canvas, [(70, 140), (186, 140)], 8, WASH_INK, 0.85)
+    return canvas
+
+
+def painting_cave():
+    canvas = Canvas(256, 256)
+    ground_wash(canvas, 128, 246, 112, 12)
+    blob(canvas, 128, 240, 112, 170, (122, 118, 110), 0.97, rim_alpha=0.85, rim_width=4, clip=240)
+    blob(canvas, 128, 240, 42, 70, (30, 28, 30), 0.97, rim_alpha=0.9, rim_width=3, clip=240)
+    for x, y in ((70, 150), (190, 160), (96, 100), (160, 110)):
+        ink(canvas, [(x, y), (x + 14, y + 22), (x + 4, y + 40)], 3, WASH_INK, 0.5)
+    return canvas
+
+
+def painting_cliff():
+    canvas = Canvas(256, 256)
+    ground_wash(canvas, 128, 248, 108, 10)
+    face = [(30, 244), (24, 90), (70, 70), (96, 40), (140, 52), (176, 36), (226, 80), (228, 244)]
+    poly(canvas, face, (130, 124, 112), 0.97, width=4)
+    for x in (62, 100, 140, 180, 206):
+        ink(canvas, [(x, 70 + x % 23), (x - 8, 140), (x + 4, 190), (x - 4, 240)], 4, WASH_INK, 0.55)
+    return canvas
+
+
+def painting_corrupt_village():
+    canvas = Canvas(256, 256)
+    ground_wash(canvas, 128, 244, 112, 14)
+    blob(canvas, 128, 150, 100, 90, (120, 96, 110), 0.25, rim=None)
+    house(canvas, 80, 236, 76, 52, 1.0, (170, 160, 150), (56, 52, 58))
+    house(canvas, 176, 232, 92, 70, 1.0, (160, 150, 142), (56, 52, 58))
+    ink(canvas, [(150, 100), (206, 156)], 7, VERMILION, 0.95)
+    ink(canvas, [(206, 100), (150, 156)], 7, VERMILION, 0.95)
+    return canvas
+
+
+SORT_PAINTINGS = {"haunted_forest": painting_haunted_forest, "mountain_pass": painting_mountain_pass,
+                  "shrine": painting_shrine, "cave": painting_cave, "cliff": painting_cliff,
+                  "corrupt_village": painting_corrupt_village}
+
+
 # name -> (painter, opaque); the names are those in art/sprites.toml.
 PLACEHOLDERS = {
     "ground": (ground, True),
@@ -1477,6 +1777,11 @@ PLACEHOLDERS = {
     "route_marker": (route_marker, False),
     "target_tile": (target_tile, False),
     **{f"cloud_{i}": ((lambda i=i: cloud(i)), False) for i in range(CLOUDS)},
+    **{f"stamp_{kind}_{i}": ((lambda kind=kind, i=i: stamp(kind, i)), False) for kind in STAMPS for i in range(4)},
+    **{f"mist_{i}": ((lambda i=i: mist(i)), False) for i in range(4)},
+    "painting_city": (lambda: painting_city(512, 0), False),
+    "painting_capital": (painting_capital, False),
+    **{f"painting_{sort}": (painter, False) for sort, painter in SORT_PAINTINGS.items()},
 }
 
 

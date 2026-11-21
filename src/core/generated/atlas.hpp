@@ -156,10 +156,62 @@ enum class SpriteId : u16 { // NOLINT(performance-enum-size): stable IDs outgrow
     Cloud13, ///< assets/sprites/cloud_13.png
     Cloud14, ///< assets/sprites/cloud_14.png
     Cloud15, ///< assets/sprites/cloud_15.png
+    StampForest0, ///< assets/sprites/stamp_forest_0.png
+    StampForest1, ///< assets/sprites/stamp_forest_1.png
+    StampForest2, ///< assets/sprites/stamp_forest_2.png
+    StampForest3, ///< assets/sprites/stamp_forest_3.png
+    StampHills0, ///< assets/sprites/stamp_hills_0.png
+    StampHills1, ///< assets/sprites/stamp_hills_1.png
+    StampHills2, ///< assets/sprites/stamp_hills_2.png
+    StampHills3, ///< assets/sprites/stamp_hills_3.png
+    StampPeaks0, ///< assets/sprites/stamp_peaks_0.png
+    StampPeaks1, ///< assets/sprites/stamp_peaks_1.png
+    StampPeaks2, ///< assets/sprites/stamp_peaks_2.png
+    StampPeaks3, ///< assets/sprites/stamp_peaks_3.png
+    StampSnow0, ///< assets/sprites/stamp_snow_0.png
+    StampSnow1, ///< assets/sprites/stamp_snow_1.png
+    StampSnow2, ///< assets/sprites/stamp_snow_2.png
+    StampSnow3, ///< assets/sprites/stamp_snow_3.png
+    StampRock0, ///< assets/sprites/stamp_rock_0.png
+    StampRock1, ///< assets/sprites/stamp_rock_1.png
+    StampRock2, ///< assets/sprites/stamp_rock_2.png
+    StampRock3, ///< assets/sprites/stamp_rock_3.png
+    StampMarsh0, ///< assets/sprites/stamp_marsh_0.png
+    StampMarsh1, ///< assets/sprites/stamp_marsh_1.png
+    StampMarsh2, ///< assets/sprites/stamp_marsh_2.png
+    StampMarsh3, ///< assets/sprites/stamp_marsh_3.png
+    StampSand0, ///< assets/sprites/stamp_sand_0.png
+    StampSand1, ///< assets/sprites/stamp_sand_1.png
+    StampSand2, ///< assets/sprites/stamp_sand_2.png
+    StampSand3, ///< assets/sprites/stamp_sand_3.png
+    StampGrass0, ///< assets/sprites/stamp_grass_0.png
+    StampGrass1, ///< assets/sprites/stamp_grass_1.png
+    StampGrass2, ///< assets/sprites/stamp_grass_2.png
+    StampGrass3, ///< assets/sprites/stamp_grass_3.png
+    StampMeadow0, ///< assets/sprites/stamp_meadow_0.png
+    StampMeadow1, ///< assets/sprites/stamp_meadow_1.png
+    StampMeadow2, ///< assets/sprites/stamp_meadow_2.png
+    StampMeadow3, ///< assets/sprites/stamp_meadow_3.png
+    StampWater0, ///< assets/sprites/stamp_water_0.png
+    StampWater1, ///< assets/sprites/stamp_water_1.png
+    StampWater2, ///< assets/sprites/stamp_water_2.png
+    StampWater3, ///< assets/sprites/stamp_water_3.png
+    Mist0, ///< assets/sprites/mist_0.png
+    Mist1, ///< assets/sprites/mist_1.png
+    Mist2, ///< assets/sprites/mist_2.png
+    Mist3, ///< assets/sprites/mist_3.png
+    PaintingCity, ///< assets/sprites/painting_city.png
+    PaintingCapital, ///< assets/sprites/painting_capital.png
+    PaintingHauntedForest, ///< assets/sprites/painting_haunted_forest.png
+    PaintingMountainPass, ///< assets/sprites/painting_mountain_pass.png
+    PaintingShrine, ///< assets/sprites/painting_shrine.png
+    PaintingCave, ///< assets/sprites/painting_cave.png
+    PaintingCliff, ///< assets/sprites/painting_cliff.png
+    PaintingCorruptVillage, ///< assets/sprites/painting_corrupt_village.png
 };
 
 /// Every sprite's name, indexed by SpriteId: the manifest must list the same, in this order.
-inline constexpr std::array<std::string_view, 146> SPRITE_NAMES{ {
+inline constexpr std::array<std::string_view, 198> SPRITE_NAMES{ {
     "ground",
     "rock_large",
     "rock_small",
@@ -306,6 +358,58 @@ inline constexpr std::array<std::string_view, 146> SPRITE_NAMES{ {
     "cloud_13",
     "cloud_14",
     "cloud_15",
+    "stamp_forest_0",
+    "stamp_forest_1",
+    "stamp_forest_2",
+    "stamp_forest_3",
+    "stamp_hills_0",
+    "stamp_hills_1",
+    "stamp_hills_2",
+    "stamp_hills_3",
+    "stamp_peaks_0",
+    "stamp_peaks_1",
+    "stamp_peaks_2",
+    "stamp_peaks_3",
+    "stamp_snow_0",
+    "stamp_snow_1",
+    "stamp_snow_2",
+    "stamp_snow_3",
+    "stamp_rock_0",
+    "stamp_rock_1",
+    "stamp_rock_2",
+    "stamp_rock_3",
+    "stamp_marsh_0",
+    "stamp_marsh_1",
+    "stamp_marsh_2",
+    "stamp_marsh_3",
+    "stamp_sand_0",
+    "stamp_sand_1",
+    "stamp_sand_2",
+    "stamp_sand_3",
+    "stamp_grass_0",
+    "stamp_grass_1",
+    "stamp_grass_2",
+    "stamp_grass_3",
+    "stamp_meadow_0",
+    "stamp_meadow_1",
+    "stamp_meadow_2",
+    "stamp_meadow_3",
+    "stamp_water_0",
+    "stamp_water_1",
+    "stamp_water_2",
+    "stamp_water_3",
+    "mist_0",
+    "mist_1",
+    "mist_2",
+    "mist_3",
+    "painting_city",
+    "painting_capital",
+    "painting_haunted_forest",
+    "painting_mountain_pass",
+    "painting_shrine",
+    "painting_cave",
+    "painting_cliff",
+    "painting_corrupt_village",
 } };
 
 } // namespace core::atlas
