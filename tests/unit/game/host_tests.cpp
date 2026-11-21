@@ -2511,6 +2511,8 @@ TEST_CASE("with the debug sight every walker in view is published") {
     const core::Snapshot unseen = Published(*alone.host, alone.host->View());
     CHECK_FALSE(Shows(unseen, alone.journeys[0].members.front()));
     CHECK_FALSE(Shows(unseen, alone.journeys[1].members.front()));
+    CHECK(unseen.fog.on);
+    CHECK(unseen.fog.playerTile == std::nullopt);
 }
 
 TEST_CASE("walkers and their shadows and labels are flagged to fade with sight") {
@@ -2576,10 +2578,12 @@ TEST_CASE("the fog in the snapshot follows exploring") {
 
 TEST_CASE("debug sight changes no state: the same ticks hash alike with it on and off") {
     constexpr u64 TICKS = 300;
+    // The ticks the debug sight goes on and off again for one host, mid-route with the walker selected.
+    constexpr u64 SIGHT_ON = 100;
+    constexpr u64 SIGHT_OFF = 200;
     const std::array<Departure, 1> departures{ { { .tick = static_cast<i64>(TRAVEL_CLOCK) - JUST_LEFT } } };
     const TravelWorld seen = TravelWorldOf(departures, true);
     const TravelWorld shown = TravelWorldOf(departures, true);
-    shown.host->SetDebugSight(true);
     const core::WorldMap& map = *seen.map;
     const core::StableId chosen = seen.journeys.front().members.front();
     // The cultivator walks down to the bottom row while the walker it selects heads east along the top: out of sight.
@@ -2591,6 +2595,9 @@ TEST_CASE("debug sight changes no state: the same ticks hash alike with it on an
         std::vector<core::Event> events;
         host->Tick(At(2), { .actions = select, .held = {} }, events);
         for (u64 tick = 3; tick <= TICKS; ++tick) {
+            if (host == shown.host.get() && (tick == SIGHT_ON || tick == SIGHT_OFF)) {
+                host->SetDebugSight(tick == SIGHT_ON);
+            }
             TickRange(*host, tick, tick);
             static_cast<void>(Published(*host, host->View()));
         }
@@ -2598,8 +2605,10 @@ TEST_CASE("debug sight changes no state: the same ticks hash alike with it on an
     CHECK(seen.host->StateHash() == shown.host->StateHash());
     CHECK(seen.host->Selected() == chosen);
     CHECK(shown.host->Selected() == chosen);
-    // Out of sight, the walker is kept selected though it isn't drawn.
+    // Out of sight, the walker is kept selected though it isn't drawn, and the debug sight draws it again.
     CHECK_FALSE(Shows(Published(*seen.host, seen.host->View()), chosen));
+    CHECK_FALSE(Shows(Published(*shown.host, shown.host->View()), chosen));
+    shown.host->SetDebugSight(true);
     CHECK(Shows(Published(*shown.host, shown.host->View()), chosen));
 }
 
