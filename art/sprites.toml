@@ -452,3 +452,159 @@ foot = [128, 88]
 
 [cloud_15]
 foot = [128, 88]
+
+[stamp_forest_0]
+foot = [166, 230]
+
+[stamp_forest_1]
+foot = [166, 230]
+
+[stamp_forest_2]
+foot = [166, 230]
+
+[stamp_forest_3]
+foot = [166, 230]
+
+[stamp_hills_0]
+foot = [153, 130]
+
+[stamp_hills_1]
+foot = [153, 130]
+
+[stamp_hills_2]
+foot = [153, 130]
+
+[stamp_hills_3]
+foot = [153, 130]
+
+[stamp_peaks_0]
+foot = [217, 300]
+
+[stamp_peaks_1]
+foot = [217, 300]
+
+[stamp_peaks_2]
+foot = [217, 300]
+
+[stamp_peaks_3]
+foot = [217, 300]
+
+[stamp_snow_0]
+foot = [217, 260]
+
+[stamp_snow_1]
+foot = [217, 260]
+
+[stamp_snow_2]
+foot = [217, 260]
+
+[stamp_snow_3]
+foot = [217, 260]
+
+[stamp_rock_0]
+foot = [141, 120]
+
+[stamp_rock_1]
+foot = [141, 120]
+
+[stamp_rock_2]
+foot = [141, 120]
+
+[stamp_rock_3]
+foot = [141, 120]
+
+[stamp_marsh_0]
+foot = [115, 100]
+
+[stamp_marsh_1]
+foot = [115, 100]
+
+[stamp_marsh_2]
+foot = [115, 100]
+
+[stamp_marsh_3]
+foot = [115, 100]
+
+[stamp_sand_0]
+foot = [115, 90]
+
+[stamp_sand_1]
+foot = [115, 90]
+
+[stamp_sand_2]
+foot = [115, 90]
+
+[stamp_sand_3]
+foot = [115, 90]
+
+[stamp_grass_0]
+foot = [115, 90]
+
+[stamp_grass_1]
+foot = [115, 90]
+
+[stamp_grass_2]
+foot = [115, 90]
+
+[stamp_grass_3]
+foot = [115, 90]
+
+[stamp_meadow_0]
+foot = [115, 90]
+
+[stamp_meadow_1]
+foot = [115, 90]
+
+[stamp_meadow_2]
+foot = [115, 90]
+
+[stamp_meadow_3]
+foot = [115, 90]
+
+[stamp_water_0]
+foot = [115, 70]
+
+[stamp_water_1]
+foot = [115, 70]
+
+[stamp_water_2]
+foot = [115, 70]
+
+[stamp_water_3]
+foot = [115, 70]
+
+[mist_0]
+foot = [192, 64]
+
+[mist_1]
+foot = [192, 64]
+
+[mist_2]
+foot = [192, 64]
+
+[mist_3]
+foot = [192, 64]
+
+[painting_city]
+foot = [256, 512]
+
+[painting_capital]
+foot = [384, 768]
+
+[painting_haunted_forest]
+foot = [128, 256]
+
+[painting_mountain_pass]
+foot = [128, 256]
+
+[painting_shrine]
+foot = [128, 256]
+
+[painting_cave]
+foot = [128, 256]
+
+[painting_cliff]
+foot = [128, 256]
+
+[painting_corrupt_village]
+foot = [128, 256]
