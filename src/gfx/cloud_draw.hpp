@@ -29,6 +29,8 @@ struct CloudDrawing {
     std::vector<core::Instance> instances;
     /// One normal-blend batch covering every instance, or none when there are none.
     std::vector<core::Batch> batches;
+    /// How many clouds past MAX_CLOUD_INSTANCES the last call left out, the farthest back first; 0 when all fit.
+    std::size_t dropped = 0;
 
     /// A cloud laid out but not yet ordered: DrawClouds()'s own scratch.
     struct Laid {

@@ -398,6 +398,7 @@ void DrawClouds(
     PN_PROFILE_ZONE();
     into.instances.clear();
     into.batches.clear();
+    into.dropped = 0;
     if (fog.columns == 0 || fog.rows == 0 || !(fog.tileSize > 0.0F) || look.clouds.empty() || !(zoom > 0.0F)) {
         return;
     }
@@ -426,6 +427,7 @@ void DrawClouds(
         return lhs.order < rhs.order;
     });
     const std::size_t dropped = clouds.size() > MAX_CLOUD_INSTANCES ? clouds.size() - MAX_CLOUD_INSTANCES : 0;
+    into.dropped = dropped;
     into.instances.reserve(clouds.size() - dropped);
     for (std::size_t cloud = dropped; cloud < clouds.size(); ++cloud) {
         into.instances.push_back(clouds[cloud].instance);
