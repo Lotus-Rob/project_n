@@ -1426,7 +1426,7 @@ class MeasureTest(unittest.TestCase):
         self.assertFalse(project_n.paced(segment(6.06), "unknown"))
         table = project_n.measure_table([project_n.MeasuredRun("burst", "2560x1440 at 165 Hz", [], [], [segment(6.06)]),
                                          project_n.MeasuredRun("swords", "2560x1440 at 165 Hz", [], [], [segment(1.2)])],
-                                        "not measured (no world run)")
+                                        "not measured (no world run)", "not measured (no world run)")
         rows = {line.split()[0]: line for line in table.splitlines() if line.startswith(("burst", "swords"))}
         self.assertIn("87% paced", rows["burst"])
         self.assertNotIn("paced", rows["swords"])
@@ -1454,7 +1454,7 @@ class MeasureTest(unittest.TestCase):
         self.assertIsNone(project_n.display_delay("no delay line\n"))
         steady = project_n.Segment("whole run", 10, [("frame", (1.0, 2.0, 3.0))], 0.25, [])
         run = project_n.MeasuredRun("world", "2560x1440 at 165 Hz", [31.1, 23.0, 25.5], [], [steady], (2.9, 2.6, 10.0))
-        row = next(line for line in project_n.measure_table([run], "x").splitlines() if line.startswith("world"))
+        row = next(line for line in project_n.measure_table([run], "x", "y").splitlines() if line.startswith("world"))
         self.assertIn("input latency median 25.5 ms, 23.0 to 31.1 ms over 3 presses", row)
         self.assertIn("display delay 2.9 ms (2.6 to 10.0)", row)
         self.assertNotIn("input latency 23", row)
@@ -1574,6 +1574,14 @@ class MeasureTest(unittest.TestCase):
             left = list((Path(tmp) / "build" / "measure").glob("*"))
         return status, out.getvalue(), err.getvalue(), left
 
+    def test_a_missing_cloud_shimmer_is_reported_apart_from_the_world_s(self):
+        def world_only(preset, quiet=False):
+            return "MESSAGE: world shimmer: 0.031\n"
+        steady = project_n.Segment("whole run", 10, [("frame", (1.0, None, 3.0))], 0.25, [])
+        out = self.measure({"world": project_n.MeasuredRun("world", "unknown", [], [], [steady])}, world_only)[1]
+        self.assertIn("world shimmer: 0.031 (the reference pictures' world case); "
+                      "cloud shimmer: not measured (the reference pictures printed none)", out)
+
     def test_a_failing_reference_case_leaves_the_shimmer_unmeasured_and_runs_on(self):
         def fail(preset, quiet=False):
             raise subprocess.CalledProcessError(1, ["reference_tests"], stderr="reference: 1 of 44 case(s) failed: world\n")
@@ -1592,7 +1600,7 @@ class MeasureTest(unittest.TestCase):
             measured = project_n.read_run("world", export, self.messages(("perf_event_paranoid: 2", 1000)),
                                           "display: 2560x1440 at 165 Hz\ncamera path finished: quitting\n")
         self.assertEqual((measured.reasons, measured.segments), (["no frames measured"], []))
-        row = next(line for line in project_n.measure_table([measured], "x").splitlines() if line.startswith("world"))
+        row = next(line for line in project_n.measure_table([measured], "x", "y").splitlines() if line.startswith("world"))
         self.assertIn("display 2560x1440 at 165 Hz; untrusted: no frames measured", row)
 
     def test_the_game_starts_as_profile_starts_it(self):

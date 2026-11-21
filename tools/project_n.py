@@ -2795,11 +2795,11 @@ def read_run(name, export, messages_text, text):
                        display_delay(text))
 
 
-def measure_table(results, shimmer):
+def measure_table(results, shimmer, cloud):
     """The table `measure` prints: per run and segment the frame time, its work and each thread's (ms), the GPU's share
     (marked paced when the display set the pace) and the hitches; each run's display, input latency, earlier numbers
-    and trust beside its first row; then each hitch with its largest zones. `shimmer` is the world's shimmer as text, then
-    the clouds' after `; cloud shimmer:` when measured."""
+    and trust beside its first row; then each hitch with its largest zones. `shimmer` and `cloud` are the world's and the
+    clouds' shimmer as text."""
     rows = []
     for result in results:
         notes = [f"display {result.display}", *([note] if (note := latency_summary(result.latencies)) else []),
@@ -2826,7 +2826,7 @@ def measure_table(results, shimmer):
     def line(row):
         cells = [cell.rjust(width) if c in numeric else cell.ljust(width) for c, (cell, width) in enumerate(zip(row, widths))]
         return "  ".join([*cells, row[-1]]).rstrip()
-    out = [f"measure: {MEASURE_WORKERS} workers, unpaced, fullscreen at native size; world shimmer: {shimmer}",
+    out = [f"measure: {MEASURE_WORKERS} workers, unpaced, fullscreen at native size; world shimmer: {shimmer}; cloud shimmer: {cloud}",
            line(header), *map(line, rows),
            (f"p99 —: fewer than {P99_FRAMES} frames, where it would be the worst. GPU: the share of the frame time spent "
             f"waiting for the next swapchain image ({GPU_WAIT_ZONE}); paced: the median frame is within "
@@ -2854,7 +2854,7 @@ def cmd_measure(args):
             printed = run_references(NATIVE_PRESET, quiet=True)
             value, clouds = world_shimmer(printed), cloud_shimmer(printed)
         except (Fail, subprocess.CalledProcessError) as e:  # a picture failing its bound mustn't stop the runs
-            print(f"measure: the world's shimmer isn't measured: {getattr(e, 'stderr', None) or e}".rstrip(),
+            print(f"measure: the world's and the clouds' shimmer aren't measured: {getattr(e, 'stderr', None) or e}".rstrip(),
                   file=sys.stderr)
             shimmer = cloud = "not measured (reference failed)"
         else:
@@ -2877,7 +2877,7 @@ def cmd_measure(args):
         print(f"measure: the runs' captures, exports and game logs are kept in {folder}")
     else:
         shutil.rmtree(folder)
-    print(measure_table(results, f"{shimmer}; cloud shimmer: {cloud}"))
+    print(measure_table(results, shimmer, cloud))
     if untrusted:
         print(f"measure: warning: {len(untrusted)} of {len(results)} runs untrusted: {', '.join(untrusted)}; "
               "run again with the window focused and nothing else animating", file=sys.stderr)
