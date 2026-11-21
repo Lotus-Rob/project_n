@@ -19,7 +19,10 @@ namespace test {
 /// to build. `grid` gives each tile's kind index (0 meadow, 1 lake), or is empty for all meadow; tile 0 should stay
 /// meadow, which the city stands on. Stops at once if it can't be built, as SmallWorldMap() does.
 [[nodiscard]] inline core::WorldMap MapOfTiles(
-    u32 columns, u32 rows, std::span<const u8> grid, std::vector<std::vector<core::TilePoint>> rivers = {}
+    u32 columns,
+    u32 rows,
+    std::span<const u8> grid,
+    std::vector<std::vector<core::TilePoint>> rivers = {}
 ) {
     constexpr f32 TILE_SIZE = 256.0F;
     constexpr u16 MEADOW_COST = 10;
@@ -56,9 +59,7 @@ namespace test {
 }
 
 /// A map of `columns` by `rows` tiles of meadow with one city (the start) at tile 0 and `rivers` running over it.
-[[nodiscard]] inline core::WorldMap MeadowMap(
-    u32 columns, u32 rows, std::vector<std::vector<core::TilePoint>> rivers = {}
-) {
+[[nodiscard]] inline core::WorldMap MeadowMap(u32 columns, u32 rows, std::vector<std::vector<core::TilePoint>> rivers = {}) {
     return MapOfTiles(columns, rows, {}, std::move(rivers));
 }
 
