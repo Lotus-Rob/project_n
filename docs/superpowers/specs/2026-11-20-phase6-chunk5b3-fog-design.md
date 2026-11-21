@@ -290,16 +290,22 @@ went over the hitch line except the month step's one, which both runs show alike
 threads carry it, the main thread's worst there is 6.91 / 5.77 ms). What the fog does cost is on the main thread's work:
 its median is 0.4 to 1.1 ms higher than main's (widest view, rest: 3.62 / 2.59 ms; month step, rest: 3.65 / 2.54 ms) and
 its p99 0.2 to 1.3 ms higher, which the paced frame hides inside the wait for the GPU (the GPU share mostly drops, by 8
-to 17 points, but rose from 50% to 52% in the widest view's first half second). The profile gives part of the cause: in
-the 30 s capture `GatherLabels` averages about 0.135 ms a frame and `DrawClouds` about 0.125 ms, roughly 0.26 ms of the
-rise together. No profile of main was taken, so what the rest comes from is unexplained. Input latency was 11.9 ms
-median (11.1 to 26.1 over 8 presses) against main's 12.2 ms (5.4 to 13.5); one slow press is the single figure that is
-worse, and one run each cannot say if it is more than noise. The display delay was the same (3.6 ms, 3.0 to 10.0).
+to 17 points, but rose from 50% to 52% in the widest view's first half second). The profile explains only `DrawClouds`,
+which averages about 0.125 ms a frame in the 30 s `--world --debug-sight --zoom 0.25` capture (not `measure`'s world
+run); the rest of the rise is unexplained. `GatherLabels` (about 0.135 ms a frame there) is no fog cost: it already
+exists on main, and only its growth could be the fog's, which no profile of main can say. The fog's own new zones in the
+same capture: `FogFade::Update` has a median and mean under 0.001 ms (worst 0.205 ms) and `PickInstance` never ran
+(nothing hovered); the fog texture's upload has no zone of its own. The debug sight pins every in-sight value to 1, so
+normal play's sight-fade cost is unmeasured. These numbers were taken before the per-frame trims
+(`perf(app): trim the fog's per-frame work on the main thread` and
+`perf(app): test a pick's quad before its sight fade`). Input latency was 11.9 ms median (11.1 to 26.1 over 8 presses)
+against main's 12.2 ms (5.4 to 13.5); one slow press is the single figure that is worse, and one run each cannot say if
+it is more than noise. The display delay was the same (3.6 ms, 3.0 to 10.0).
 
-**Cloud layout time** (target: under 0.2 ms on the main thread at the widest view). A 30 s `profile` run with `--world
---debug-sight --zoom 0.25` (the widest zoom held, no camera path) records `DrawClouds`, the layout, at a median of 0.116
-ms (mean 0.125, p99 0.247, worst 0.550 over 49,074 frames), and `UploadClouds` (the copy) at 0.001 ms. The median and
-the mean meet the target; the p99 and worst frames do not, by 0.05 and 0.35 ms. The month step's hitch shows
+**Cloud layout time** (target: under 0.2 ms on the main thread at the widest view). A 30 s `profile` run with
+`--world --debug-sight --zoom 0.25` (the widest zoom held, no camera path) records `DrawClouds`, the layout, at a median
+of 0.116 ms (mean 0.125, p99 0.247, worst 0.550 over 49,074 frames), and `UploadClouds` (the copy) at 0.001 ms. The
+median and the mean meet the target; the p99 and worst frames do not, by 0.05 and 0.35 ms. The month step's hitch shows
 `DrawClouds` at 0.38 ms among its largest zones, the same tail. The tail never shows in the frame times above (no hitch
 but the month step's). Plainly: the median meets the target; the p99 and worst frames miss it.
 
@@ -344,3 +350,10 @@ Pictures and tooling:
   bound as well as the world guard.
 - The new pictures' commits use the scope `tests`, because `reference` is not one of `SCOPES`.
 - The world run of `measure` turns the debug sight on and reports the cloud shimmer in its first line.
+
+Stood as built:
+- The cloud clamp's strip joins the free box's span with the cell's own, so it can count a corner tile the settled box
+  would not reach. That only pulls a cloud in earlier and never over explored land.
+- Metal's fragment uniform buffer (space3) and third texture slot follow `mesh.frag`'s and `seal.frag`'s convention, but
+  stay unproven until a macOS run.
+- Map sizes that are not a whole number of cloud cells give finer clouds along the far edges.

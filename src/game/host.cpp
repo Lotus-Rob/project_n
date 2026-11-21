@@ -140,9 +140,8 @@ void WriteScratch(core::Writer& archive, const WorldState& world, const WorldSta
 /// Writes the game's world's section of a save into `archive` as its difference from `base`, the world as it was made
 /// from data of base hash `baseHash`: the seed, GENERATOR_VERSION, `baseHash`, the world stable-ID counter, the calendar,
 /// the pause, the place on the world map, the sight radius and the explored tiles whole, then the world domain's
-/// difference and order, the relationships whole and
-/// the travel's difference, its journeys rebuilt over `map` and `paths` (null without a map) to tell a plan from a whole
-/// one.
+/// difference and order, the relationships whole and the travel's difference, its journeys rebuilt over `map` and `paths`
+/// (null without a map) to tell a plan from a whole one.
 void WriteGameWorld(
     core::Writer& archive,
     const WorldState& world,

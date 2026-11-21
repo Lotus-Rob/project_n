@@ -79,7 +79,7 @@ struct Options {
     /// Send a debug burst of hits once a second (`--burst`), so a profile run sees the damage numbers' stress without a key
     /// press.
     bool burst = false;
-    /// Start with the whole world map seen through the fog (`--debug-sight`); F3 flips it.
+    /// Start with every tile of the world map in sight (`--debug-sight`), unexplored land still under cloud; F3 flips it.
     bool debugSight = false;
     /// The zoom every scene starts at (`--zoom`), from gfx::MIN_ZOOM to gfx::MAX_ZOOM, so a profile run can draw at either
     /// end; the wheel still changes it.
@@ -288,8 +288,9 @@ private:
     DataWatch m_dataWatch;
     DeviceInUse m_device{};
     bool m_quit = false;
-    bool m_showcase = true;    // whether the arena's showcase seals are drawn (F8)
-    bool m_debugSight = false; // whether the whole map shows through the fog (F3, `--debug-sight`)
+    bool m_showcase = true; // whether the arena's showcase seals are drawn (F8)
+    bool m_debugSight =
+        false; // whether every tile counts as in sight, unexplored land staying under cloud (F3, `--debug-sight`)
     bool m_paused = false;
     std::atomic<bool> m_logicFailed = false;
     std::jthread m_logic; // last, so it stops and joins before anything it uses goes

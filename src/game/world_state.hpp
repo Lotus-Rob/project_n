@@ -3,9 +3,8 @@
 /// @file
 /// @ingroup game
 /// A world's state in one place: the entities, what the NPCs think of each other, their travel, the calendar and what the
-/// player has explored of the world map, so a
-/// host can keep one world while a scene runs on another; how the game's world and a dev scene's are made, and a scene's
-/// way into a world.
+/// player has explored of the world map, so a host can keep one world while a scene runs on another; how the game's world
+/// and a dev scene's are made, and a scene's way into a world.
 
 #include "core/ecs.hpp"
 #include "core/game_data.hpp"
