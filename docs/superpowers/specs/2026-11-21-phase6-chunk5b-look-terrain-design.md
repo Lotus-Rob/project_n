@@ -154,7 +154,8 @@ paintings only (a cave or shrine is a few pixels at zoom 0.25, against accessibi
 **Ground pass** (paper, washes, water, grid; fog) → **rivers** (ribbons) → road overlays, bridges, fords (as today) →
 **stamps, mountain ranges and place paintings** (one sorted batch) → **mist puffs** → **veil pass** → **markers** →
 route → the
-snapshot's ground, decals and entities → clouds → target cursor → overlay, text, HUD.
+snapshot's ground, decals and entities (and their glows) → **cloud shade** → clouds → target cursor → overlay, text,
+HUD.
 
 ## Non-goals
 
@@ -198,6 +199,14 @@ The user's, 2026-11-21:
 9. **Recorded for later:** roads that switchback up mountains and branch into trails; roads drawn from the road's tile
    chain (rounded corners, steady wobble, thin quiet ink, square to bridges) with travellers walking the same line, in
    part 2.
+
+Added after the plan was approved (the user, 2026-11-21):
+
+10. **The clouds hide walkers and their names.** With the debug sight on (`measure`, the reference cases, F3), walkers
+    on unexplored land showed through the gaps between clouds and their names drew over the clouds: the terrain's
+    unexplored shade lies under the walkers, and texts draw after the clouds. An opaque shade layer goes under the
+    clouds, over everything standing on the map, and a walker's name shows only as far as that shade leaves it. In play
+    nothing changes: walkers are published only round sight, and land in sight is explored.
 
 ## Calls made here (not the user's; check them)
 
@@ -328,7 +337,44 @@ in colour, while the ground, river and stamps around them are drained. Markers t
 (Calls made here: "Markers stay undrained"). The markers are tiny at that size, so the verdict rests on the picture and
 three crops of it judged by eye.
 
+**The cloud shade** (Decision 10; commit `fix(gfx): hide walkers and their names under the clouds`). The ground
+pipeline gains a fourth mode, `GROUND_MODE_CLOUD_SHADE`, drawn once more over the map's part of the view after the
+snapshot's entities and their glows and before the clouds, only while the view has fog: the look's shade colour at the
+cover `UnexploredShade()` gives (`shaders/fog.hlsli`, shared with the land's own shade): opaque where the fog texture's
+explored sample is 0, none from half explored on, so its edge is the land's and sits behind the clouds' edge row with no
+square tile edge. A walker's label (`core::TextFog::Sight`) is drawn at `SightFade()` times `ExploredFade()` at its foot
+(`gfx/fog.hpp`: the same eased explored sample, on the CPU). The new reference case `fog_debug_sight` (the start at
+zoom 0.6 with the debug sight on, nothing explored by the view) draws the frame again with a walker standing wholly on
+unexplored land taken out (its villager and shadow drawn clear, its label removed) and finds it the same to the last bit
+across the whole picture, which holds the walker's box: the shade is exactly opaque there, so no tolerance is needed;
+the same frame without a walker on explored land differs in that walker's box. Before the fix the first comparison
+differed in 2,318 pixels.
+- What changed in the pictures: the six fog pictures (`fog_start_close`, `_step`, `_middle`, `_widest`,
+  `fog_explored_path`, `fog_uncovering`) by at most 23 levels, all in the shaded band between the explored land's edge
+  and the next tile centre, seen through the clouds' gaps: land there takes its own shade and then the cloud shade
+  over it, so the band is a little denser (where its own shade covered half, now three quarters). Judged by eye on
+  crops and difference images: no tile edge, no label or walker in play moved. In `fog_uncovering` the route's dots on
+  unexplored land are under the shade as well as the clouds. The shimmer guards are unchanged to the digit (world
+  0.00204363, clouds 0.016509, ground 0.01167 / 0.00606704 / 0.00396805).
+- Cost: one more full-view pass with a single fog sample per pixel, lighter than the veil pass beside it (no noise).
+  Not measured: `measure` takes the display, and the branch's main-thread question is profiled separately.
+
 ### Rulings made while building
+
+The cloud shade:
+- A walker's name fades by the shade's own eased sample at its foot (`ExploredFade()`), not by its tile's explored value
+  alone (`TileExplored()`, as a place's name does), as the plan read. The tile-alone rule changed play: where sight's
+  diamond steps diagonally, the in-sight sample passes a half inside unexplored tiles, so a walker there still shows
+  faintly while leaving sight; under the tile-alone rule its name popped off as its foot crossed the tile's edge (two
+  names vanished from `fog_start_close` and `fog_explored_path`). The shade's sample is 1 wherever sight shows anything
+  (explored is at least in sight in every texel, and stays so under the linear filter), so play is untouched, and the
+  name hides exactly as far as the shade covers its walker. Under the debug sight a walker in the clouds' edge row keeps
+  a faint name over the clouds, as faint as the walker shows through their gaps. If wrong, one line in `FogOpacity()`
+  and the two pictures.
+- The shade is laid over land that has already taken its own shade rather than taking that shade off the land:
+  removing it would touch the sprite, river and ground shaders and the markers' shade-only flag for a slightly lighter
+  band behind the clouds' edge row; the denser band shows only in their gaps.
+
 
 Rivers and the ground:
 - Rivers' spline steps are per tile of segment length: `RIVER_STEPS = 4` quads per band per tile, `MAX_RIVER_QUADS =
