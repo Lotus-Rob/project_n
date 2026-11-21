@@ -57,6 +57,9 @@ struct Range {
     f64 high = std::numeric_limits<f64>::infinity();
 };
 
+/// `range` in words for a refusal: "a number above 0 and up to 4".
+[[nodiscard]] std::string DescribeRange(const Range& range);
+
 /// A fraction: from 0 to 1, both included.
 inline constexpr Range FRACTION{ .low = 0.0, .lowOpen = false, .high = 1.0 };
 

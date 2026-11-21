@@ -42,7 +42,9 @@ std::unexpected<core::Error> Refuse(std::string_view what, const YAML::Node& nod
 // The most seconds a time may be: well within a u32's ticks.
 constexpr f64 MOST_SECONDS = 1'000'000.0;
 
-std::string Describe(const Range& range) {
+} // namespace
+
+std::string DescribeRange(const Range& range) {
     const bool bounded = std::isfinite(range.high);
     if (range.lowOpen) {
         return bounded ? std::format("a number above {} and up to {}", range.low, range.high)
@@ -51,8 +53,6 @@ std::string Describe(const Range& range) {
     return bounded ? std::format("a number from {} to {}", range.low, range.high)
                    : std::format("a number of {} or more", range.low);
 }
-
-} // namespace
 
 std::expected<i64, core::Error> WholeNumber(
     std::string_view what,
@@ -104,7 +104,7 @@ std::expected<f64, core::Error> TunedNumber(
     }
     const bool low = range.lowOpen ? value > range.low : value >= range.low;
     if (!std::isfinite(value) || !low || value > range.high) {
-        return Refuse(what, node, std::format("{}'s {} isn't {}", name, key, Describe(range)));
+        return Refuse(what, node, std::format("{}'s {} isn't {}", name, key, DescribeRange(range)));
     }
     return value;
 }

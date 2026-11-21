@@ -127,6 +127,11 @@ constexpr internal::Range CLOUD_WIDTH{ .low = 0.0, .lowOpen = true, .high = 4.0 
 constexpr internal::Range BOB_AMPLITUDE{ .low = 0.0, .lowOpen = false, .high = 0.5 };
 constexpr internal::Range POSITIVE{ .low = 0.0, .lowOpen = true };
 constexpr internal::Range DRIFT{ .low = 0.0, .lowOpen = false, .high = 2.0 };
+constexpr internal::Range UP_TO_TWO{ .low = 0.0, .lowOpen = false, .high = 2.0 };
+constexpr internal::Range ABOVE_ZERO_TO_TWO{ .low = 0.0, .lowOpen = true, .high = 2.0 };
+constexpr internal::Range DEPTH_TILES{ .low = 0.0, .lowOpen = true, .high = 4.0 };
+constexpr internal::Range STAMP_SIZE{ .low = 0.0, .lowOpen = true, .high = 4.0 };
+constexpr internal::Range PUFF_WIDTH{ .low = 0.0, .lowOpen = true, .high = 2.0 };
 constexpr internal::Range FADE{ .low = 0.0, .lowOpen = true, .high = 5.0 };
 
 /// The number at `key` in `map` within `range`, which `owner` names in refusals, as an f32.
@@ -141,17 +146,15 @@ std::expected<f32, core::Error> NumberIn(
     });
 }
 
-constexpr internal::Range UP_TO_TWO{ .low = 0.0, .lowOpen = false, .high = 2.0 };
-constexpr internal::Range ABOVE_ZERO_TO_TWO{ .low = 0.0, .lowOpen = true, .high = 2.0 };
-constexpr internal::Range DEPTH_TILES{ .low = 0.0, .lowOpen = true, .high = 4.0 };
-
-/// Two numbers at `key` in `map`, each within `range`, which `owner` names in refusals. `order` says how they relate: the
-/// first no more than the second, or the first no less.
+/// How the two numbers of a pair relate.
 enum class Order : u8 {
+    /// The first is no more than the second.
     Rising,
+    /// The first is no less than the second.
     Falling
 };
 
+/// Two numbers at `key` in `map`, each within `range` and related as `order` says, which `owner` names in refusals.
 std::expected<std::array<f32, 2>, core::Error> PairIn(
     const YAML::Node& map,
     const char* key,
@@ -167,9 +170,10 @@ std::expected<std::array<f32, 2>, core::Error> PairIn(
         return RefuseLook(
             node,
             std::format(
-                "{}'s {} isn't two numbers within range, the first {} the second",
+                "{}'s {} isn't two numbers, each {}, the first {} the second",
                 owner,
                 key,
+                internal::DescribeRange(range),
                 order == Order::Rising ? "no more than" : "no less than"
             )
         );
@@ -229,7 +233,7 @@ std::expected<core::StampLook, core::Error> ReadStamps(
     if (!density) {
         return std::unexpected{ density.error() };
     }
-    const std::expected<std::array<f32, 2>, core::Error> size = PairIn(node, "size", owner, POSITIVE, Order::Rising);
+    const std::expected<std::array<f32, 2>, core::Error> size = PairIn(node, "size", owner, STAMP_SIZE, Order::Rising);
     if (!size) {
         return std::unexpected{ size.error() };
     }
@@ -585,6 +589,9 @@ std::expected<void, core::Error> ReadWater(
     if (!deep) {
         return std::unexpected{ deep.error() };
     }
+    if (*shallow == *deep) {
+        return RefuseLook((*water)["deep"], "water's deep is the same kind as its shallow");
+    }
     const std::expected<f32, core::Error> depth = NumberIn(*water, "water", "depth_tiles", DEPTH_TILES);
     if (!depth) {
         return std::unexpected{ depth.error() };
@@ -747,7 +754,7 @@ std::expected<void, core::Error> ReadMist(
     if (!chance) {
         return std::unexpected{ chance.error() };
     }
-    const std::expected<std::array<f32, 2>, core::Error> width = PairIn(*node, "width", "mist", POSITIVE, Order::Rising);
+    const std::expected<std::array<f32, 2>, core::Error> width = PairIn(*node, "width", "mist", PUFF_WIDTH, Order::Rising);
     if (!width) {
         return std::unexpected{ width.error() };
     }
@@ -787,14 +794,14 @@ std::expected<void, core::Error> ReadRiver(const YAML::Node& root, std::vector<s
     return {};
 }
 
-/// The paintings `node` names by sort or key, in the file's order; `owner` names them in refusals and `known` says
-/// whether a name belongs to the map (one that doesn't is refused when `refuseUnknown`, kept and ignored otherwise).
+/// The paintings `node` names by sort or key, in the file's order; `owner` names them in refusals. When `known` is given,
+/// a name it rejects is refused.
+template<typename Known>
 std::expected<std::vector<std::pair<std::string, core::atlas::SpriteId>>, core::Error> PaintingsIn(
     const YAML::Node& node,
     std::string_view owner,
     const Atlas& atlas,
-    const std::function<bool(const std::string&)>& known,
-    bool refuseUnknown
+    const Known& known
 ) {
     if (!node.IsMap()) {
         return RefuseLook(node, std::format("{} isn't a map", owner));
@@ -807,8 +814,10 @@ std::expected<std::vector<std::pair<std::string, core::atlas::SpriteId>>, core::
         if (!sprite) {
             return std::unexpected{ sprite.error() };
         }
-        if (!known(name) && refuseUnknown) {
-            return RefuseLook(entry.first, std::format("{} names {}, which no place of the map has", owner, name));
+        if constexpr (!std::is_same_v<Known, std::nullptr_t>) {
+            if (!known(name)) {
+                return RefuseLook(entry.first, std::format("{} names {}, which no place of the map has", owner, name));
+            }
         }
         paintings.emplace_back(name, *sprite);
     }
@@ -839,19 +848,14 @@ std::expected<void, core::Error> ReadPlaces(
     if (!byKey) {
         return std::unexpected{ byKey.error() };
     }
-    const auto isSort = [&](const std::string& sort) {
-        return std::ranges::any_of(map.Places(), [&](const core::Place& place) {
-            return place.kind == core::PlaceKind::Danger && place.sort == sort;
-        });
-    };
     const auto isKey = [&](const std::string& key) {
         return std::ranges::any_of(map.Places(), [&](const core::Place& place) { return place.key == key; });
     };
-    auto dangerPaintings = PaintingsIn(*dangers, "painting", atlas, isSort, false);
+    auto dangerPaintings = PaintingsIn(*dangers, "painting", atlas, nullptr);
     if (!dangerPaintings) {
         return std::unexpected{ dangerPaintings.error() };
     }
-    auto keyPaintings = PaintingsIn(*byKey, "painting for key", atlas, isKey, true);
+    auto keyPaintings = PaintingsIn(*byKey, "painting for key", atlas, isKey);
     if (!keyPaintings) {
         return std::unexpected{ keyPaintings.error() };
     }
