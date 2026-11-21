@@ -254,28 +254,60 @@ void CompareWithReference(const gfx::Image& drawn, std::string_view name) {
 
 constexpr f32 TICK_SECONDS = 1.0F / static_cast<f32>(core::TICKS_PER_SECOND);
 
-// Ticks `host` through `view`'s ticks, sending its walks; with `view.fogEased` the fog eases tick by tick, so the picture
-// after the last shows a fade partway.
+// A quarter second of ticks: how far into a tile's uncover `fog_uncovering` is drawn.
+constexpr u64 FADE_TICKS = core::TICKS_PER_SECOND / 4;
+
+/// The shipped world map and the seconds its fog takes to fade, for the cases on the world scene.
+struct WorldFog {
+    std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    f32 fadeSeconds = test::ShippedWorldLook(*test::TestManifest(), *map).fog.fadeSeconds;
+};
+
+// Ticks `host` through `view`'s ticks, sending its walks; with `view.fogEased` the fog eases tick by tick and the last tick
+// that explored new land must lie exactly FADE_TICKS - 1 ticks before the picture, so it shows a quarter second of fade.
 void TickToPicture(
     const View& view,
     game::Host& host,
     core::Jobs& jobs,
     const std::optional<core::Rect>& sent,
-    app::FogFade& fog
+    app::FogFade& fog,
+    const WorldFog* world
 ) {
-    const std::shared_ptr<const core::WorldMap> world = test::ShippedWorld();
-    const f32 fadeSeconds = test::ShippedWorldLook(*test::TestManifest(), *world).fog.fadeSeconds;
     std::vector<core::Event> events; // the hits the ticks start, which no picture shows
+    u64 version = 0;
+    u64 lastExplored = 0;
     for (u64 tick = 1; tick <= view.ticks; ++tick) {
         const auto walk = std::ranges::find(view.walks, tick, &Walk::tick);
+        if (walk != view.walks.end() && tick > 1) {
+            REQUIRE_MESSAGE(!host.PlayerRoute().has_value(), "the route before tick ", tick, " was still running");
+        }
         const std::array<core::Action, 1> actions{ { { .kind = core::ActionKind::WalkTo,
                                                        .point = walk == view.walks.end() ? core::Vec2{} : walk->to } } };
         const core::TickInput input =
             walk != view.walks.end() ? core::TickInput{ .actions = actions, .held = {} } : core::TickInput{};
         host.Tick({ .wall = tick, .simulation = tick, .state = tick }, input, events);
-        if (view.fogEased && tick < view.ticks) {
-            fog.Update(Published(host, jobs, tick, sent), *world, TICK_SECONDS, fadeSeconds);
+        if (view.fogEased) {
+            const core::Snapshot published = Published(host, jobs, tick, sent);
+            if (published.fog.version != version) {
+                version = published.fog.version;
+                lastExplored = tick;
+            }
+            if (tick < view.ticks) {
+                fog.Update(published, *world->map, TICK_SECONDS, world->fadeSeconds);
+            }
         }
+    }
+    if (view.fogEased) {
+        const bool inTime = lastExplored > 1 && view.ticks - lastExplored + 1 == FADE_TICKS;
+        REQUIRE_MESSAGE(
+            inTime,
+            "the last tile explored at tick ",
+            lastExplored,
+            " isn't a quarter second before tick ",
+            view.ticks,
+            ": set the picture's ticks to ",
+            lastExplored + FADE_TICKS - 1
+        );
     }
 }
 
@@ -294,12 +326,14 @@ void CheckAgainstReference(const View& view) {
     const gfx::Camera centred{ .centre = view.centre.value_or(gfx::REFERENCE_CENTRE), .zoom = view.zoom };
     const core::Rect area = app::CullArea(centred, static_cast<i32>(view.width), static_cast<i32>(view.height));
     const std::optional<core::Rect> sent = view.asInGame ? std::optional{ area } : std::nullopt;
-    const std::shared_ptr<const core::WorldMap> world = test::ShippedWorld();
+    // Only the world scene has fog; loading its map and look costs a second the others needn't pay.
+    const std::optional<WorldFog> world =
+        view.scene == game::WORLD_SCENE ? std::optional<WorldFog>{ std::in_place } : std::nullopt;
+    REQUIRE((world || !(view.fogEased || view.cursorOnTarget)));
     app::FogFade fog;
-    const f32 fadeSeconds = test::ShippedWorldLook(*test::TestManifest(), *world).fog.fadeSeconds;
-    TickToPicture(view, host, jobs, sent, fog);
-    if (!view.walks.empty() && !view.walkEnded) {
-        REQUIRE(host.PlayerRoute().has_value());
+    TickToPicture(view, host, jobs, sent, fog, world ? &*world : nullptr);
+    if (!view.walks.empty()) {
+        REQUIRE(host.PlayerRoute().has_value() != view.walkEnded);
     }
     if (view.outlines) {
         // The fox spawned first: the lowest ID among them.
@@ -323,8 +357,9 @@ void CheckAgainstReference(const View& view) {
     }
     host.SetDebugSight(view.debugSight);
     const core::Snapshot snapshot = Published(host, jobs, view.asInGame ? view.ticks : 0, sent);
-    if (snapshot.worldMap) {
-        fog.Update(snapshot, *world, view.fogEased ? TICK_SECONDS : 0.0F, fadeSeconds);
+    REQUIRE((world.has_value() || !snapshot.worldMap));
+    if (world && snapshot.worldMap) {
+        fog.Update(snapshot, *world->map, view.fogEased ? TICK_SECONDS : 0.0F, world->fadeSeconds);
     }
 
     platform::Window window = OpenWindow();
@@ -342,8 +377,8 @@ void CheckAgainstReference(const View& view) {
     if (view.centre) {
         shown.camera.centre = *view.centre;
     }
-    if (view.cursorOnTarget) {
-        renderer.SetTargetTile(world->TileCentre(world->TileAt(view.walks.back().to)));
+    if (view.cursorOnTarget && world) {
+        renderer.SetTargetTile(world->map->TileCentre(world->map->TileAt(view.walks.back().to)));
     }
     if (view.refit) {
         static_cast<void>(Captured(renderer, snapshot, shown, jobs, WIDTH / 2, HEIGHT / 3));
@@ -505,10 +540,10 @@ TEST_CASE("the world at a middle zoom with the cultivator mid-route: the route l
     );
 }
 
-constexpr u64 FOG_PATH_BACK_TICK = 600;
-constexpr u64 FOG_PATH_TICKS = 1200;
+constexpr u64 FOG_PATH_BACK_TICK = 900;
+constexpr u64 FOG_PATH_TICKS = 1800;
 constexpr f32 FOG_PATH_TILES = 4.0F;
-// The cultivator's third step, which explores a new row of tiles at tick 176, drawn after 15 eased ticks: a quarter second.
+// The cultivator's third step explores a new row of tiles at tick 176; TickToPicture checks this is a quarter second before.
 constexpr u64 FOG_UNCOVER_TICKS = 190;
 constexpr f32 FOG_UNCOVER_TILES = 8.0F;
 
@@ -1747,13 +1782,17 @@ TEST_CASE("the world's tiles and travellers at the smallest zoom: shimmer held t
     host.Explore(area);
     host.SetDebugSight(true);
     const core::Snapshot world = Published(host, jobs, 0, area);
+    // Snapped, as the game draws the fog on entering the scene: the whole view explored and seen.
+    const WorldFog look;
+    app::FogFade fade;
+    fade.Update(world, *look.map, 0.0F, look.fadeSeconds);
     const core::Snapshot backdrop{ .wallTick = world.wallTick + 1,
                                    .simulationTick = world.simulationTick,
                                    .scene = world.scene };
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, world.scene, jobs);
     // Over the dark backdrop the lit ground's ink is negative (lighter); the ratios don't mind.
-    const TileChange change = WorstTileChange(QuarterPixelApart(renderer, world, backdrop, far, jobs));
+    const TileChange change = WorstTileChange(QuarterPixelApart(renderer, world, backdrop, far, jobs, fade.Frame()));
     // The line `project_n measure` reads from the reference run's output.
     MESSAGE("world shimmer: ", change.worst);
     INFO("of ", change.measured, " tiles, the worst changed its ink by ", change.worst);
@@ -1772,11 +1811,13 @@ TEST_CASE("the fog's clouds at the smallest zoom: shimmer held to its bound") {
     const gfx::Camera far{ .centre = game::WORLD_BUSIEST, .zoom = gfx::MIN_ZOOM };
     const core::Rect area = app::CullArea(far, static_cast<i32>(WIDTH), static_cast<i32>(HEIGHT));
     const core::Snapshot world = Published(host, jobs, 0, area);
-    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const WorldFog look;
     app::FogFade fade;
-    fade.Update(world, *map, 0.0F, test::ShippedWorldLook(*test::TestManifest(), *map).fog.fadeSeconds);
+    fade.Update(world, *look.map, 0.0F, look.fadeSeconds);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, world.scene, jobs);
+    // Against the fogless world, so the terrain's own shimmer (the world case guards it) is part of the change wherever clouds
+    // cover it; the shade depends on the terrain beneath, so the same land is the fair baseline.
     const TileChange change = WorstTileChange(QuarterPixelApart(renderer, world, world, far, jobs, fade.Frame()));
     // The line `project_n measure` reads from the reference run's output.
     MESSAGE("cloud shimmer: ", change.worst);
