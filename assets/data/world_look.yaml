@@ -12,9 +12,9 @@
 # ford:    drawn over the river at a ford
 # markers: `city` and one sprite per danger sort the map uses (a sort the map doesn't use is ignored)
 # ground:  the paper under the map: `paper` colour, `grain` its fibre's strength, `edge_warp` and `edge_soft` how far
-#          noise moves the edge between two kinds and how wide it blends (tiles), `blotch` how unevenly a wash pools,
-#          `water` the map's `shallow` and `deep` kinds and the `depth_tiles` (up to 4) between them, `shore` the line
-#          at the water's edge (`colour`, `strength`, `width`), `grid` the tile grid (`colour`, `strength`, `fade` the
+#          noise moves the edge between two kinds and how wide it blends (tiles, the blend up to 1), `blotch` how
+#          unevenly a wash pools, `water` the map's `shallow` and `deep` kinds and the `depth_tiles` (up to 3.5) between
+#          them, `shore` the line at the water's edge (`colour`, `strength`, `width`), `grid` the tile grid (`colour`, `strength`, `fade` the
 #          zoom where it is whole and then where it is gone, the first not below the second)
 # veil:    the haze over the ground: `colour`, patch `scale` in tiles, `strength` (0 to 1)
 # mist:    the puffs among stamps: `sprites`, `colour`, `strength`, `chance` of one beside a stamp, `width` the least and
