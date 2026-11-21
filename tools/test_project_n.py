@@ -2682,34 +2682,43 @@ def placeholders():
     return module
 
 
-def side_room(name):
-    """Paints placeholder `name` and returns how many texel columns at its left and at its right hold no art: alpha that
-    its PNG rounds to 0. Runs in a worker process: painting every stamp, mist and painting one after another is slow."""
+def clear_room(name):
+    """Paints placeholder `name` and returns how many texel columns at its left and right, and rows at its top and
+    bottom, hold no art: alpha that its PNG rounds to 0. Runs in a worker process: painting every stamp, mist and
+    painting one after another is slow."""
     painter, _ = placeholders().PLACEHOLDERS[name]
     canvas = painter()
     width, height = canvas.width, canvas.height
-    used = [x for x in range(width) if any(canvas.a[y * width + x] * 255.0 + 0.5 >= 1.0 for y in range(height))]
-    return (used[0], width - 1 - used[-1]) if used else (width, width)
+    art = [[canvas.a[y * width + x] * 255.0 + 0.5 >= 1.0 for x in range(width)] for y in range(height)]
+    columns = [x for x in range(width) if any(row[x] for row in art)]
+    rows = [y for y in range(height) if any(art[y])]
+    if not columns:
+        return width, width, height, height
+    return columns[0], width - 1 - columns[-1], rows[0], height - 1 - rows[-1]
 
 
 class PlaceholderTest(unittest.TestCase):
-    # The clear texels each kind of painted mark keeps at its left and right: at the far zoom its art is drawn from small
-    # mips, and the sprite's quad cutting into their blur leaves a hard edge that crawls as the camera moves. Stamps keep
-    # the placeholders' STAMP_MARGIN; mist and paintings, drawn larger and softer, what they keep now.
-    STAMP_MARGIN = 16
-    MIST_MARGIN = 2
-    PAINTING_MARGIN = 9
+    maxDiff = None  # a failure lists every mark cut, each on its own line
 
-    def test_painted_marks_keep_their_art_off_their_sides(self):
-        margins = {"stamp_": self.STAMP_MARGIN, "mist_": self.MIST_MARGIN, "painting_": self.PAINTING_MARGIN}
-        needed = {name: margin for name in placeholders().PLACEHOLDERS for prefix, margin in margins.items()
+    def test_painted_marks_keep_their_art_off_their_edges(self):
+        """At the far zoom a mark's art is drawn from small mips, and the sprite's quad cutting into their blur leaves a
+        hard edge that crawls as the camera moves, so each kind of mark keeps clear texels at its left and right, top
+        and bottom. Stamps keep the placeholders' STAMP_MARGIN at the sides and top, and paintings their WASH_ROOM under
+        them; the rest is what each kind keeps now: a stamp stands on its sheet's bottom edge, its foot, so room below
+        would float it above its tile, and mist and paintings are drawn larger and softer."""
+        module = placeholders()
+        margins = {"stamp_": (module.STAMP_MARGIN, module.STAMP_MARGIN, 1), "mist_": (2, 2, 2),
+                   "painting_": (9, 19, module.WASH_ROOM)}
+        needed = {name: margin for name in module.PLACEHOLDERS for prefix, margin in margins.items()
                   if name.startswith(prefix)}
         self.assertTrue(all(any(name.startswith(prefix) for name in needed) for prefix in margins))
         names = list(needed)
         with concurrent.futures.ProcessPoolExecutor(max_workers=min(len(names), os.cpu_count() or 1)) as pool:
-            rooms = dict(zip(names, pool.map(side_room, names)))
-        cut = [f"{name}: {left} clear at the left, {right} at the right, {needed[name]} needed"
-               for name, (left, right) in rooms.items() if min(left, right) < needed[name]]
+            rooms = dict(zip(names, pool.map(clear_room, names)))
+        cut = [f"{name}: {left} clear at the left, {right} at the right, {top} at the top, {bottom} at the bottom; "
+               f"{needed[name][0]}, {needed[name][1]} and {needed[name][2]} needed"
+               for name, (left, right, top, bottom) in rooms.items()
+               if min(left, right) < needed[name][0] or top < needed[name][1] or bottom < needed[name][2]]
         self.assertEqual(cut, [])
 
 
