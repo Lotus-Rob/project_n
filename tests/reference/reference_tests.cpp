@@ -3,8 +3,8 @@
 // where `--update` takes it from. Game text is also measured on the pictures: a label's ink must not shimmer at sub-pixel
 // camera offsets, nor step while its creature moves. So are the glows' drives: a demo glow's drawn amount follows
 // core::GlowStrength() from tick to tick, and reduce flashing holds and dims it. So are the seals: a screen-wide seal's ink,
-// tile by tile, must not shimmer at sub-pixel camera offsets. So is the world map: its tiles and travellers at the smallest
-// zoom, the same way.
+// tile by tile, must not shimmer at sub-pixel camera offsets. So is the world map: its terrain and travellers at the
+// smallest zoom, the fog's clouds over it, and its painted ground alone at three zooms, the same way.
 #include "app/app.hpp"
 #include "app/damage_numbers.hpp"
 #include "app/hud.hpp"
@@ -431,7 +431,7 @@ constexpr u32 FULL_HD_HEIGHT = 1080;
 // The world's pictures are drawn as in the game: centred on the busiest region, the widest one reaches past the widest view
 // round the start, the fallback culled to without a view sent. Two seconds in, the travellers have walked on from where
 // the world's build set them and the portal's seal has appeared.
-TEST_CASE("the world at the smallest zoom over its busiest region: tiles and travellers to the edges") {
+TEST_CASE("the world at the smallest zoom over its busiest region: the painted ground and travellers to the edges") {
     CheckAgainstReference(
         { .name = "world_widest",
           .scene = game::WORLD_SCENE,
@@ -1732,27 +1732,27 @@ std::vector<f64> TileInks(std::span<const f64> ink, f64 shift) {
     return tiles;
 }
 
-// The tiles' inks (TileInks()) that `with` adds over `without` seen through `camera`, then through it moved a quarter
-// pixel right and down; `fog` shades and clouds only the picture of `with`.
+// The tiles' inks (TileInks()) that `with` drawn as `withView` shows it adds over `without` drawn as `withoutView` shows it,
+// both through `withView`'s camera, then through it moved a quarter pixel right and down.
 std::array<std::vector<f64>, 2> QuarterPixelApart(
     gfx::Renderer& renderer,
     const core::Snapshot& with,
     const core::Snapshot& without,
-    const gfx::Camera& camera,
-    core::Jobs& jobs,
-    const gfx::FogFrame& fog = {}
+    const gfx::View& withView,
+    const gfx::View& withoutView,
+    core::Jobs& jobs
 ) {
     constexpr f32 QUARTER_PIXEL = 0.25F;
-    const f32 worldPerPixel = 1.0F / gfx::PixelsPerUnit(camera, WIDTH, HEIGHT);
+    const f32 worldPerPixel = 1.0F / gfx::PixelsPerUnit(withView.camera, WIDTH, HEIGHT);
     std::array<std::vector<f64>, 2> tiles{};
     for (std::size_t shot = 0; shot < tiles.size(); ++shot) {
         const f32 offset = shot == 0 ? 0.0F : QUARTER_PIXEL;
-        gfx::View view{ .camera = camera };
-        view.camera.centre = view.camera.centre + (core::Vec2{ .x = offset, .y = offset } * worldPerPixel);
-        gfx::View fogged = view;
-        fogged.fog = fog;
-        const gfx::Image drawn = Captured(renderer, with, fogged, jobs);
-        const gfx::Image bare = Captured(renderer, without, view, jobs);
+        gfx::View shown = withView;
+        shown.camera.centre = shown.camera.centre + (core::Vec2{ .x = offset, .y = offset } * worldPerPixel);
+        gfx::View under = withoutView;
+        under.camera = shown.camera;
+        const gfx::Image drawn = Captured(renderer, with, shown, jobs);
+        const gfx::Image bare = Captured(renderer, without, under, jobs);
         tiles.at(shot) = TileInks(InkPerPixel(drawn, bare), static_cast<f64>(offset));
     }
     return tiles;
@@ -1817,20 +1817,19 @@ TEST_CASE("a screen-wide seal at the smallest zoom: no shimmer") {
         core::Snapshot with = without;
         with.wallTick = ++uploads;
         with.seals.push_back(SwordSeal(gfx::REFERENCE_CENTRE, SCREEN_WIDE, SEAL_TICK - SINCE_RAISED));
-        const TileChange change = WorstTileChange(QuarterPixelApart(renderer, with, without, { .zoom = gfx::MIN_ZOOM }, jobs));
+        const gfx::View seen{ .camera = { .zoom = gfx::MIN_ZOOM } };
+        const TileChange change = WorstTileChange(QuarterPixelApart(renderer, with, without, seen, seen, jobs));
         INFO(Over(ground), ": of ", change.measured, " tiles, the worst changed its ink by ", change.worst);
         CHECK(change.worst < MOST_CHANGE);
     }
 }
 
-// A regression guard, not a proof of no shimmer: the tiles shimmer today, above the 0.02 the labels and seals hold.
-TEST_CASE("the world's tiles and travellers at the smallest zoom: shimmer held to its bound") {
-    // Measured 0.0482 on the data-driven world map with its travellers. It is the ground's, not the travellers': the worst
-    // tiles sit where two kinds of terrain meet, whose hard tile-quad edges step a whole pixel at a time (the dark forest's
-    // small ink over the dark backdrop weighs its tiles' changes more), so the harbour's longer shore adds some. The fix is a
-    // world map look that blends between kinds, which must bring this to 0.02 or under and tighten the bound. About 1.25 times
-    // the measure (the seals' 0.02 is about twice their 0.011).
-    constexpr f64 MOST_CHANGE = 0.06;
+// A regression guard for the map and its travellers together. Over the dark backdrop the paper's large even ink dilutes the
+// crawl of the ground's detail, which the ground's own cases below measure against flat paper instead.
+TEST_CASE("the world's painted ground and travellers at the smallest zoom: shimmer held to its bound") {
+    // Measured 0.00204 over the painted ground with its travellers; about 1.25 times that (the seals' 0.02 is about twice
+    // their 0.011).
+    constexpr f64 MOST_CHANGE = 0.0026;
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
@@ -1852,7 +1851,9 @@ TEST_CASE("the world's tiles and travellers at the smallest zoom: shimmer held t
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, world.scene, jobs);
     // Over the dark backdrop the lit ground's ink is negative (lighter); the ratios don't mind.
-    const TileChange change = WorstTileChange(QuarterPixelApart(renderer, world, backdrop, far, jobs, fade.Frame()));
+    const gfx::View fogged{ .camera = far, .fog = fade.Frame() };
+    const gfx::View bare{ .camera = far };
+    const TileChange change = WorstTileChange(QuarterPixelApart(renderer, world, backdrop, fogged, bare, jobs));
     // The line `project_n measure` reads from the reference run's output.
     MESSAGE("world shimmer: ", change.worst);
     INFO("of ", change.measured, " tiles, the worst changed its ink by ", change.worst);
@@ -1862,8 +1863,8 @@ TEST_CASE("the world's tiles and travellers at the smallest zoom: shimmer held t
 // What the fog's clouds and shade add over a fogless picture of the same unexplored land, at the smallest zoom, where the
 // clouds' fine detail sits near a pixel.
 TEST_CASE("the fog's clouds at the smallest zoom: shimmer held to its bound") {
-    // Measured 0.0205 (clouds at rest, the frame clock at 0); about 1.25 times that, as the world's bound is.
-    constexpr f64 MOST_CHANGE = 0.0256;
+    // Measured 0.0165 (clouds at rest, the frame clock at 0); about 1.25 times that, as the world's bound is.
+    constexpr f64 MOST_CHANGE = 0.0206;
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
@@ -1878,9 +1879,76 @@ TEST_CASE("the fog's clouds at the smallest zoom: shimmer held to its bound") {
     gfx::Renderer renderer = RendererFor(window, world.scene, jobs);
     // Against the fogless world, so the terrain's own shimmer (the world case guards it) is part of the change wherever clouds
     // cover it; the shade depends on the terrain beneath, so the same land is the fair baseline.
-    const TileChange change = WorstTileChange(QuarterPixelApart(renderer, world, world, far, jobs, fade.Frame()));
+    const gfx::View fogged{ .camera = far, .fog = fade.Frame() };
+    const gfx::View fogless{ .camera = far };
+    const TileChange change = WorstTileChange(QuarterPixelApart(renderer, world, world, fogged, fogless, jobs));
     // The line `project_n measure` reads from the reference run's output.
     MESSAGE("cloud shimmer: ", change.worst);
+    INFO("of ", change.measured, " tiles, the worst changed its ink by ", change.worst);
+    CHECK(change.worst < MOST_CHANGE);
+}
+
+/// The painted ground's shimmer at `zoom` over the busiest region, explored and seen whole (the debug sight, as the world's
+/// case): what the ground, the veil, rivers, stamps, mist, paintings, crossings and markers add over the same frame painted
+/// as flat paper, a quarter pixel apart. The snapshot's instances, batches and texts are cleared, so no traveller, cultivator
+/// or label is drawn, and the road overlays are left out (gfx::TerrainParts::AllButRoads): their shimmer is their own. Over
+/// paper rather than the dark backdrop, so the paper's large even ink doesn't dilute the crawl of the grid's, shores',
+/// rivers' and stamps' edges.
+TileChange GroundShimmer(f32 zoom) {
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs{ ReferenceWorkers() };
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    const gfx::Camera camera{ .centre = game::WORLD_BUSIEST, .zoom = zoom };
+    const core::Rect area = app::CullArea(camera, static_cast<i32>(WIDTH), static_cast<i32>(HEIGHT));
+    host.Explore(area);
+    host.SetDebugSight(true);
+    core::Snapshot ground = Published(host, jobs, 0, area);
+    ground.instances.clear();
+    ground.batches.clear();
+    ground.ids.clear();
+    ground.texts.clear();
+    ground.groundBatches = 0;
+    const WorldFog look;
+    app::FogFade fade;
+    fade.Update(ground, *look.map, 0.0F, look.fadeSeconds);
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, ground.scene, jobs);
+    gfx::View painted{ .camera = camera, .fog = fade.Frame() };
+    painted.terrainParts = gfx::TerrainParts::AllButRoads;
+    gfx::View paper = painted;
+    paper.terrainParts = gfx::TerrainParts::PaperOnly;
+    return WorstTileChange(QuarterPixelApart(renderer, ground, ground, painted, paper, jobs));
+}
+
+TEST_CASE("the ground at zoom 1: shimmer held to its bound") {
+    constexpr f32 ZOOM = 1.0F;
+    // Measured 0.0118; about 1.25 times that.
+    constexpr f64 MOST_CHANGE = 0.0147;
+    const TileChange change = GroundShimmer(ZOOM);
+    // The line `project_n measure` reads from the reference run's output.
+    MESSAGE("ground shimmer ", ZOOM, ": ", change.worst);
+    INFO("of ", change.measured, " tiles, the worst changed its ink by ", change.worst);
+    CHECK(change.worst < MOST_CHANGE);
+}
+
+TEST_CASE("the ground at zoom 0.5: shimmer held to its bound") {
+    constexpr f32 ZOOM = 0.5F;
+    // Measured 0.00847; about 1.25 times that.
+    constexpr f64 MOST_CHANGE = 0.0106;
+    const TileChange change = GroundShimmer(ZOOM);
+    // The line `project_n measure` reads from the reference run's output.
+    MESSAGE("ground shimmer ", ZOOM, ": ", change.worst);
+    INFO("of ", change.measured, " tiles, the worst changed its ink by ", change.worst);
+    CHECK(change.worst < MOST_CHANGE);
+}
+
+TEST_CASE("the ground at zoom 0.25: shimmer held to its bound") {
+    constexpr f32 ZOOM = 0.25F;
+    // Measured 0.00567; about 1.25 times that.
+    constexpr f64 MOST_CHANGE = 0.0071;
+    const TileChange change = GroundShimmer(ZOOM);
+    // The line `project_n measure` reads from the reference run's output.
+    MESSAGE("ground shimmer ", ZOOM, ": ", change.worst);
     INFO("of ", change.measured, " tiles, the worst changed its ink by ", change.worst);
     CHECK(change.worst < MOST_CHANGE);
 }

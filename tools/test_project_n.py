@@ -1426,7 +1426,8 @@ class MeasureTest(unittest.TestCase):
         self.assertFalse(project_n.paced(segment(6.06), "unknown"))
         table = project_n.measure_table([project_n.MeasuredRun("burst", "2560x1440 at 165 Hz", [], [], [segment(6.06)]),
                                          project_n.MeasuredRun("swords", "2560x1440 at 165 Hz", [], [], [segment(1.2)])],
-                                        "not measured (no world run)", "not measured (no world run)")
+                                        "not measured (no world run)", "not measured (no world run)",
+                                        "not measured (no world run)")
         rows = {line.split()[0]: line for line in table.splitlines() if line.startswith(("burst", "swords"))}
         self.assertIn("87% paced", rows["burst"])
         self.assertNotIn("paced", rows["swords"])
@@ -1454,7 +1455,7 @@ class MeasureTest(unittest.TestCase):
         self.assertIsNone(project_n.display_delay("no delay line\n"))
         steady = project_n.Segment("whole run", 10, [("frame", (1.0, 2.0, 3.0))], 0.25, [])
         run = project_n.MeasuredRun("world", "2560x1440 at 165 Hz", [31.1, 23.0, 25.5], [], [steady], (2.9, 2.6, 10.0))
-        row = next(line for line in project_n.measure_table([run], "x", "y").splitlines() if line.startswith("world"))
+        row = next(line for line in project_n.measure_table([run], "x", "y", "z").splitlines() if line.startswith("world"))
         self.assertIn("input latency median 25.5 ms, 23.0 to 31.1 ms over 3 presses", row)
         self.assertIn("display delay 2.9 ms (2.6 to 10.0)", row)
         self.assertNotIn("input latency 23", row)
@@ -1491,6 +1492,17 @@ class MeasureTest(unittest.TestCase):
         self.assertEqual(project_n.cloud_shimmer(output), 0.0204705)
         self.assertEqual(project_n.world_shimmer(output), 0.0308694)
         self.assertIsNone(project_n.cloud_shimmer("world shimmer: 0.03\n"))
+
+    def test_ground_shimmer_read_from_reference_output_by_zoom(self):
+        output = ("tests/reference/reference_tests.cpp:212: MESSAGE: world shimmer: 0.0308694\n"
+                  "tests/reference/reference_tests.cpp:300: MESSAGE: cloud shimmer: 0.0204705\n"
+                  "tests/reference/reference_tests.cpp:340: MESSAGE: ground shimmer 1: 0.0123\n"
+                  "tests/reference/reference_tests.cpp:350: MESSAGE: ground shimmer 0.5: 0.0101\n"
+                  "tests/reference/reference_tests.cpp:360: MESSAGE: ground shimmer 0.25: 0.00875\n")
+        self.assertEqual(project_n.ground_shimmer(output), [("1", 0.0123), ("0.5", 0.0101), ("0.25", 0.00875)])
+        self.assertEqual(project_n.world_shimmer(output), 0.0308694)
+        self.assertEqual(project_n.cloud_shimmer(output), 0.0204705)
+        self.assertEqual(project_n.ground_shimmer("world shimmer: 0.03\ncloud shimmer: 0.02\n"), [])
 
     def test_the_world_run_turns_the_debug_sight_on(self):
         self.assertIn("--debug-sight", project_n.MEASURE_RUNS["world"][0])
@@ -1547,7 +1559,9 @@ class MeasureTest(unittest.TestCase):
 
         def run_references(preset, quiet=False):
             asked.append(quiet)
-            return "[INFO] a case's game log\nMESSAGE: world shimmer: 0.031\nMESSAGE: cloud shimmer: 0.021\n"
+            return ("[INFO] a case's game log\nMESSAGE: world shimmer: 0.031\nMESSAGE: cloud shimmer: 0.021\n"
+                    "MESSAGE: ground shimmer 1: 0.012\nMESSAGE: ground shimmer 0.5: 0.01\n"
+                    "MESSAGE: ground shimmer 0.25: 0.008\n")
         status, out, err, left = self.measure(measured, run_references)
         self.assertEqual(asked, [True])  # the cases' output stays out of the table's way
         self.assertNotIn("a case's game log", out)
@@ -1557,6 +1571,8 @@ class MeasureTest(unittest.TestCase):
         self.assertNotIn("untrusted", next(line for line in out.splitlines() if line.startswith("burst ")))
         self.assertIn("world shimmer: 0.031", out)
         self.assertIn("cloud shimmer: 0.021", out)
+        header = next(line for line in out.splitlines() if line.startswith(f"measure: {project_n.MEASURE_WORKERS} workers"))
+        self.assertIn("ground shimmer: 0.012 at zoom 1, 0.01 at zoom 0.5, 0.008 at zoom 0.25", header)
         self.assertIn("1 of 2 runs untrusted: world", err)
         self.assertEqual(len(left), 1)  # kept even without --keep: the game log says why it is untrusted
         self.assertIn(f"game logs are kept in {left[0]}", out)
@@ -1580,7 +1596,8 @@ class MeasureTest(unittest.TestCase):
         steady = project_n.Segment("whole run", 10, [("frame", (1.0, None, 3.0))], 0.25, [])
         out = self.measure({"world": project_n.MeasuredRun("world", "unknown", [], [], [steady])}, world_only)[1]
         self.assertIn("world shimmer: 0.031 (the reference pictures' world case); "
-                      "cloud shimmer: not measured (the reference pictures printed none)", out)
+                      "cloud shimmer: not measured (the reference pictures printed none); "
+                      "ground shimmer: not measured (the reference pictures printed none)", out)
 
     def test_a_failing_reference_case_leaves_the_shimmer_unmeasured_and_runs_on(self):
         def fail(preset, quiet=False):
@@ -1589,7 +1606,8 @@ class MeasureTest(unittest.TestCase):
         status, out, err, left = self.measure({"world": project_n.MeasuredRun("world", "unknown", [], [], [steady])}, fail)
         self.assertEqual(left, [])  # a trusted run without --keep leaves nothing
         self.assertIsNone(status)
-        self.assertIn("world shimmer: not measured (reference failed); cloud shimmer: not measured (reference failed)", out)
+        self.assertIn("world shimmer: not measured (reference failed); cloud shimmer: not measured (reference failed); "
+                      "ground shimmer: not measured (reference failed)", out)
         self.assertIn("world  whole run", out)
         self.assertIn("1 of 44 case(s) failed", err)
 
@@ -1600,7 +1618,7 @@ class MeasureTest(unittest.TestCase):
             measured = project_n.read_run("world", export, self.messages(("perf_event_paranoid: 2", 1000)),
                                           "display: 2560x1440 at 165 Hz\ncamera path finished: quitting\n")
         self.assertEqual((measured.reasons, measured.segments), (["no frames measured"], []))
-        row = next(line for line in project_n.measure_table([measured], "x", "y").splitlines() if line.startswith("world"))
+        row = next(line for line in project_n.measure_table([measured], "x", "y", "z").splitlines() if line.startswith("world"))
         self.assertIn("display 2560x1440 at 165 Hz; untrusted: no frames measured", row)
 
     def test_the_game_starts_as_profile_starts_it(self):
