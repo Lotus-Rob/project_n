@@ -2496,7 +2496,7 @@ MEASURE_MONTH_STEP_AT = 15
 # `measure`'s runs: name -> (game arguments, seconds before the game quits). The arena runs last as long as they did when first
 # profiled; the world path quits the game when it ends (about 26 s), its limit only a safety net.
 MEASURE_RUNS = {"world": (["--world", "--camera-path", "--travel-share", str(MEASURE_TRAVEL_SHARE),
-                       "--month-step-at", str(MEASURE_MONTH_STEP_AT)], 60),
+                       "--month-step-at", str(MEASURE_MONTH_STEP_AT), "--debug-sight"], 60),
                 "burst": (["--burst"], 20), "swords": (["--cast-swords"], 70), "seals": (["--cast-swords", "--zoom", "2"], 30)}
 MEASURE_WORKERS = 2
 # Fixed conditions: the display's native size, and a present the display's refresh doesn't pace.
@@ -2527,6 +2527,7 @@ SEGMENT_PREFIX = "camera path: "  # the Tracy message each camera path segment b
 LATENCY_RE = re.compile(r"input latency: ([\d.]+) ms")
 DELAY_RE = re.compile(r"display delay: ([\d.]+) ms at the end, ([\d.]+) to ([\d.]+) ms over the run")
 SHIMMER_RE = re.compile(r"world shimmer: (\S+)")
+CLOUD_SHIMMER_RE = re.compile(r"cloud shimmer: (\S+)")
 DISPLAY_RE = re.compile(r"display: (\d+x\d+ at \S+ Hz(?: \([^)\n]*\))?)")
 REFRESH_RE = re.compile(r"at ([\d.]+) Hz")
 PAUSED_RE = re.compile(r"paused: the window is unfocused or minimised")
@@ -2727,6 +2728,12 @@ def world_shimmer(output):
     return m and float(m[1])
 
 
+def cloud_shimmer(output):
+    """The fog's clouds' shimmer the reference pictures' cloud case prints, if it did."""
+    m = CLOUD_SHIMMER_RE.search(output)
+    return m and float(m[1])
+
+
 def display_mode(log):
     """The display the game's window ended on: the log's last display line, as the game logs one again whenever the
     window moves to another display (a compositor may place a new window elsewhere than SDL opened it)."""
@@ -2791,7 +2798,8 @@ def read_run(name, export, messages_text, text):
 def measure_table(results, shimmer):
     """The table `measure` prints: per run and segment the frame time, its work and each thread's (ms), the GPU's share
     (marked paced when the display set the pace) and the hitches; each run's display, input latency, earlier numbers
-    and trust beside its first row; then each hitch with its largest zones. `shimmer` is the world's shimmer as text."""
+    and trust beside its first row; then each hitch with its largest zones. `shimmer` is the world's shimmer as text, then
+    the clouds' after `; cloud shimmer:` when measured."""
     rows = []
     for result in results:
         notes = [f"display {result.display}", *([note] if (note := latency_summary(result.latencies)) else []),
@@ -2837,19 +2845,23 @@ def measure_table(results, shimmer):
 def cmd_measure(args):
     runs = measure_runs(args.runs)
     shimmer = "not measured (no world run)"
+    cloud = shimmer
     if "world" in runs and HOST != "linux":
-        shimmer = "not measured (the reference pictures run on Linux only)"
+        shimmer = cloud = "not measured (the reference pictures run on Linux only)"
     elif "world" in runs:
         build(NATIVE_PRESET, "release")
         try:
-            value = world_shimmer(run_references(NATIVE_PRESET, quiet=True))
+            printed = run_references(NATIVE_PRESET, quiet=True)
+            value, clouds = world_shimmer(printed), cloud_shimmer(printed)
         except (Fail, subprocess.CalledProcessError) as e:  # a picture failing its bound mustn't stop the runs
             print(f"measure: the world's shimmer isn't measured: {getattr(e, 'stderr', None) or e}".rstrip(),
                   file=sys.stderr)
-            shimmer = "not measured (reference failed)"
+            shimmer = cloud = "not measured (reference failed)"
         else:
             shimmer = (f"{value:g} (the reference pictures' world case)" if value is not None
                        else "not measured (the reference pictures printed none)")
+            cloud = (f"{clouds:g} (the reference pictures' cloud case)" if clouds is not None
+                     else "not measured (the reference pictures printed none)")
     bdir = build(NATIVE_PRESET, "releasedbg")
     tools = {program: profiler_tool(program, package)
              for program, package in (("tracy-capture", "tracy-profiler-capture"), ("tracy-csvexport", "tracy-profiler-csvexport"))}
@@ -2865,7 +2877,7 @@ def cmd_measure(args):
         print(f"measure: the runs' captures, exports and game logs are kept in {folder}")
     else:
         shutil.rmtree(folder)
-    print(measure_table(results, shimmer))
+    print(measure_table(results, f"{shimmer}; cloud shimmer: {cloud}"))
     if untrusted:
         print(f"measure: warning: {len(untrusted)} of {len(results)} runs untrusted: {', '.join(untrusted)}; "
               "run again with the window focused and nothing else animating", file=sys.stderr)
