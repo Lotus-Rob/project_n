@@ -1212,9 +1212,12 @@ def stamp_ripples(canvas, x, y, s, rng):
         ink(canvas, arc, max(2.0, s * 0.025), (232, 242, 246), 0.9)
 
 
+# Room in texels a stamp leaves clear at its sides: at the far zoom its art is drawn from small mips, blurred about this
+# far out, and the sprite's quad cutting into that blur would leave a hard edge that crawls as the camera moves.
+STAMP_MARGIN = 16
 # kind -> (width, height): each as wide as 256 times its largest size on the map.
 STAMPS = {"forest": (333, 230), "hills": (307, 130), "peaks": (435, 300), "snow": (435, 260), "rock": (282, 120),
-          "marsh": (230, 100), "sand": (230, 90), "grass": (230, 90), "meadow": (230, 90), "water": (230, 70)}
+          "marsh": (230, 100), "sand": (230, 90), "grass": (230, 90), "meadow": (230, 90), "water": (230, 100)}
 
 
 def stamp(kind, variant):
@@ -1225,10 +1228,14 @@ def stamp(kind, variant):
     x, y = width / 2.0, height - 6.0
     if kind == "forest":
         count = 3 + variant % 3
+        # A crowded clump shrinks, spacing and trees alike, rather than reach into STAMP_MARGIN.
+        # The widest tree reaches past its trunk by its crown's offset and radius and its rim (stamp_tree()).
+        spacing, jitter, widest = width * 0.22, 8.0, height * 0.8 * (0.2 + 0.34 + 0.03)
+        fit = min(1.0, (x - STAMP_MARGIN) / (spacing * (count - 1) / 2.0 + jitter + widest))
         for i in range(count):
-            fx = x + (i - (count - 1) / 2.0) * width * 0.22 + rng.uniform(-8, 8)
+            fx = x + ((i - (count - 1) / 2.0) * spacing + rng.uniform(-jitter, jitter)) * fit
             fy = y - rng.uniform(0.0, 0.18) * height
-            size = height * rng.uniform(0.62, 0.8)
+            size = height * rng.uniform(0.62, 0.8) * fit
             if rng.random() < 0.4:
                 stamp_pine(canvas, fx, fy, size)
             else:
@@ -1238,7 +1245,11 @@ def stamp(kind, variant):
                        variant % 2 == 0)
         stamp_mountain(canvas, x + width * 0.2, y - 2, width * 0.42, height * 0.62, (120, 158, 140), (40, 66, 60))
         if variant >= 2:
-            stamp_mountain(canvas, x + width * 0.4, y, width * 0.2, height * 0.35, (108, 148, 134), (40, 66, 60), True)
+            third = width * 0.2
+            # Its foot's half-width and its rim (stamp_mountain()) inside the margin.
+            reach = third / 2.0 + max(2.0, third * 0.03)
+            stamp_mountain(canvas, width - STAMP_MARGIN - reach, y, third, height * 0.35, (108, 148, 134), (40, 66, 60),
+                           True)
     elif kind == "snow":
         stamp_mountain(canvas, x + rng.uniform(-20, 20), y, width * 0.62, height * 0.92, (214, 222, 230),
                        (90, 100, 112), True)
@@ -1361,8 +1372,8 @@ def painting_haunted_forest():
 def painting_mountain_pass():
     canvas = Canvas(256, 256)
     ground_wash(canvas, 128, 246, 112, 12)
-    stamp_mountain(canvas, 78, 240, 150, 190, (96, 140, 130), (34, 60, 58), True)
-    stamp_mountain(canvas, 190, 240, 130, 160, (110, 150, 136), (34, 60, 58), True)
+    stamp_mountain(canvas, 80, 240, 128, 190, (96, 140, 130), (34, 60, 58), True)
+    stamp_mountain(canvas, 182, 240, 116, 160, (110, 150, 136), (34, 60, 58), True)
     path = [(128, 248), (140, 220), (118, 196), (136, 170), (128, 150)]
     ink(canvas, path, 9, (150, 112, 70), 0.9)
     ink(canvas, path, 3, VERMILION, 0.9)

@@ -148,10 +148,10 @@ sprites:  # in art/sprites.toml order: a sprite's index is its SpriteId
   - { name: stamp_meadow_1, file: sprites/stamp_meadow_1.png, page: 2, region: [1120, 1520, 230, 90], foot: [115, 90] }
   - { name: stamp_meadow_2, file: sprites/stamp_meadow_2.png, page: 2, region: [1392, 1520, 230, 90], foot: [115, 90] }
   - { name: stamp_meadow_3, file: sprites/stamp_meadow_3.png, page: 2, region: [1664, 1520, 230, 90], foot: [115, 90] }
-  - { name: stamp_water_0, file: sprites/stamp_water_0.png, page: 2, region: [32, 1648, 230, 70], foot: [115, 70] }
-  - { name: stamp_water_1, file: sprites/stamp_water_1.png, page: 2, region: [304, 1648, 230, 70], foot: [115, 70] }
-  - { name: stamp_water_2, file: sprites/stamp_water_2.png, page: 2, region: [576, 1648, 230, 70], foot: [115, 70] }
-  - { name: stamp_water_3, file: sprites/stamp_water_3.png, page: 2, region: [848, 1648, 230, 70], foot: [115, 70] }
+  - { name: stamp_water_0, file: sprites/stamp_water_0.png, page: 2, region: [32, 1648, 230, 100], foot: [115, 100] }
+  - { name: stamp_water_1, file: sprites/stamp_water_1.png, page: 2, region: [304, 1648, 230, 100], foot: [115, 100] }
+  - { name: stamp_water_2, file: sprites/stamp_water_2.png, page: 2, region: [576, 1648, 230, 100], foot: [115, 100] }
+  - { name: stamp_water_3, file: sprites/stamp_water_3.png, page: 2, region: [848, 1648, 230, 100], foot: [115, 100] }
   - { name: mist_0, file: sprites/mist_0.png, page: 2, region: [1120, 1648, 384, 128], foot: [192, 64] }
   - { name: mist_1, file: sprites/mist_1.png, page: 2, region: [1536, 1648, 384, 128], foot: [192, 64] }
   - { name: mist_2, file: sprites/mist_2.png, page: 2, region: [32, 1808, 384, 128], foot: [192, 64] }
