@@ -966,6 +966,31 @@ TEST_CASE("a walker's label fades with sight at its foot") {
     CHECK(gfx::FogOpacity(WalkerLabel(inSight, atEdge), fog.frame, 0.5F) == doctest::Approx(0.5F));
 }
 
+/// The same 3 x 3 field with every tile in sight, as the debug sight sees it: the top left tile explored, the top middle
+/// tile a fifth explored (51 of 255) and the rest never explored.
+struct DebugSightFog {
+    std::array<u8, std::size_t{ FOG_SIDE } * FOG_SIDE * 2> values{
+        { 255, 255, 51, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255 }
+    };
+    gfx::FogFrame frame{ .columns = FOG_SIDE, .rows = FOG_SIDE, .tileSize = FOG_TILE, .values = values, .revision = 1 };
+};
+
+TEST_CASE("a walker's label in sight shows only as far as the clouds' shade leaves its foot uncovered") {
+    const DebugSightFog fog;
+    const core::Vec2 explored{ .x = 50.0F, .y = 50.0F };
+    CHECK(gfx::FogOpacity(WalkerLabel(explored, explored), fog.frame, 1.0F) == doctest::Approx(1.0F));
+    // On land never explored, a tile from any explored.
+    const core::Vec2 unexplored{ .x = 50.0F, .y = 250.0F };
+    CHECK(gfx::FogOpacity(WalkerLabel(unexplored, unexplored), fog.frame, 1.0F) == doctest::Approx(0.0F));
+    // Its head in the explored tile above, its foot on the unexplored one below, 0.2 of a tile past their edge: the
+    // sample there is 0.3, so the shade covers about a third of it.
+    const core::Vec2 pastEdge{ .x = 50.0F, .y = 120.0F };
+    CHECK(gfx::FogOpacity(WalkerLabel(pastEdge, pastEdge), fog.frame, 1.0F) == doctest::Approx(0.648F));
+    // At the centre of a tile a fifth explored, fading in with it.
+    const core::Vec2 fading{ .x = 150.0F, .y = 50.0F };
+    CHECK(gfx::FogOpacity(WalkerLabel(fading, fading), fog.frame, 1.0F) == doctest::Approx(0.352F));
+}
+
 TEST_CASE("a place's name fades in with its own tile") {
     const LabelFog fog;
     // Hung just inside the fifth-explored tile, beside a tile explored whole: its own tile alone counts.

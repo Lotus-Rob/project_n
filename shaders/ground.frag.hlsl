@@ -239,6 +239,11 @@ float4 FragmentMain(GroundVertexOut input) : SV_Target0 {
     if (ground.mode == GROUND_MODE_PAPER) {
         return FoggedLand(ground.paper, 1.0, input.world);
     }
+    if (ground.mode == GROUND_MODE_CLOUD_SHADE) {
+        // Opaque over land never explored, so nothing drawn on it shows through the gaps between the clouds.
+        const float cover = fog.on == 0 ? 0.0 : UnexploredShade(FogAt(input.world).x);
+        return float4(fog.shade.rgb * cover, cover);
+    }
     if (ground.mode == GROUND_MODE_VEIL) {
         const float4 veil = Veil(input.world, pixel);
         return FoggedLand(veil.rgb, veil.a, input.world);

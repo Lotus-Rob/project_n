@@ -37,11 +37,15 @@ float2 FogAt(float2 world) {
     return fogField.SampleLevel(fogSampler, world / (fog.mapSize * fog.tileSize), 0.0);
 }
 
-/// `rgb`, premultiplied by `alpha`, shaded at a pixel whose fog reads `explored`: wholly the shade colour where unexplored,
-/// none of it from half explored on, the value at an unexplored tile's edge, so the shade stays under its edge row of
-/// clouds.
+/// How much of the shade colour covers a pixel whose fog reads `explored`, 0 to 1: all of it where unexplored, none from
+/// half explored on, the value at an unexplored tile's edge, so the shade stays under its edge row of clouds.
+float UnexploredShade(float explored) {
+    return 1.0 - smoothstep(0.0, 0.5, explored);
+}
+
+/// `rgb`, premultiplied by `alpha`, shaded at a pixel whose fog reads `explored` (UnexploredShade()).
 float3 ShadedUnexplored(float3 rgb, float alpha, float explored) {
-    return lerp(rgb, fog.shade.rgb * alpha, 1.0 - smoothstep(0.0, 0.5, explored));
+    return lerp(rgb, fog.shade.rgb * alpha, UnexploredShade(explored));
 }
 
 /// Land at `world`, its colour `rgb` premultiplied by `alpha`, as the fog leaves it: drained toward sepia and veiled in

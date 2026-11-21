@@ -62,6 +62,16 @@ TEST_CASE("sight fades from full half a tile inside its edge to nothing at the e
     CHECK(gfx::SightFade(field.frame, { .x = 2.0F * TILE, .y = rowY }) == doctest::Approx(0.0F));
 }
 
+TEST_CASE("the clouds' shade uncovers land from nothing at an unexplored tile's centre to all at its edge") {
+    const Field field;
+    const f32 rowY = Centre(0, 0).y;
+    CHECK(gfx::ExploredFade(field.frame, Centre(2, 0)) == doctest::Approx(0.0F));
+    // A quarter tile past the explored land's edge the sample is a quarter, halfway up the fade.
+    CHECK(gfx::ExploredFade(field.frame, { .x = (2.0F * TILE) + (0.25F * TILE), .y = rowY }) == doctest::Approx(0.5F));
+    CHECK(gfx::ExploredFade(field.frame, { .x = 2.0F * TILE, .y = rowY }) == doctest::Approx(1.0F));
+    CHECK(gfx::ExploredFade(field.frame, Centre(0, 0)) == doctest::Approx(1.0F));
+}
+
 TEST_CASE("a place's tile fades by its own value, whatever its neighbours") {
     const Field field;
     // Column 1 is explored, column 2 not: a point at column 1's edge samples half, but its tile is 1.
@@ -77,6 +87,7 @@ TEST_CASE("no fog fades and shades nothing") {
     CHECK(gfx::FogSample(none, Centre(1, 1), EXPLORED) == doctest::Approx(1.0F));
     CHECK(gfx::SightFade(none, Centre(1, 1)) == doctest::Approx(1.0F));
     CHECK(gfx::TileExplored(none, Centre(1, 1)) == doctest::Approx(1.0F));
+    CHECK(gfx::ExploredFade(none, Centre(1, 1)) == doctest::Approx(1.0F));
 }
 
 } // namespace

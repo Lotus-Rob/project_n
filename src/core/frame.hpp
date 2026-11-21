@@ -213,7 +213,7 @@ inline constexpr u32 TEXT_WHITE = 0xFFFF'FFFFU;
 /// How the fog hides a text.
 enum class TextFog : u8 {
     None,     ///< Always shown.
-    Sight,    ///< Shown only where its anchor is in the player's sight.
+    Sight,    ///< Shown only where its anchor is in the player's sight and not on land the clouds hide.
     Explored, ///< Shown only where its anchor's tile has been explored.
 };
 

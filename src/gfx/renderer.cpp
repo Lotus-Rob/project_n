@@ -422,6 +422,7 @@ struct Renderer::Impl {
     std::optional<core::Rect> groundQuad = std::nullopt; // the part of this frame's view the ground and rivers cover, if any
     GroundUniforms groundUniforms{};                     // what this frame's ground is painted by
     GroundUniforms veilUniforms{};                       // what this frame's veil is painted by
+    GroundUniforms cloudShadeUniforms{};                 // what this frame's shade under the clouds is painted by
     VolleyDrawing volleyDrawing; // this frame's health bars and swords, placed at the render time, and the HUD's bars
     SealDrawing sealDrawing;     // this frame's seals, laid out at the render time
     std::vector<core::SealKey> sealsMissing; // the seal keys the table lacked, each logged once
@@ -611,6 +612,8 @@ std::expected<void, core::Error> Renderer::Impl::UploadGround(SDL_GPUCopyPass* c
     groundUniforms.zoom = shown.view->camera.zoom;
     veilUniforms = groundUniforms;
     veilUniforms.mode = GROUND_MODE_VEIL;
+    cloudShadeUniforms = groundUniforms;
+    cloudShadeUniforms.mode = GROUND_MODE_CLOUD_SHADE;
     return core::Combine(field, laid);
 }
 
@@ -1194,7 +1197,11 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
         );
     }
     // The clouds hide what is unexplored, so they come after the things standing on the map, and the cursor's tile after
-    // them: the player always sees where the click will go.
+    // them: the player always sees where the click will go. Under them the shade they cast hides what stands on
+    // unexplored land, which would otherwise show through their gaps (only the debug sight draws walkers there).
+    if (groundQuad && view.fog.columns != 0) {
+        ground.Draw(commands, pass, transform, *groundQuad, cloudShadeUniforms, fog);
+    }
     if (cloudsShown) {
         clouds.Draw(commands, pass, cloudDrawing.batches, sprites, transform, alpha, glows, fog);
     }

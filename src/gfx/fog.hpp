@@ -43,6 +43,11 @@ inline constexpr u32 FOG_IN_SIGHT = 1;
 /// How far `world` shows through sight, 0 to 1: the in-sight sample eased from nothing at half to full.
 [[nodiscard]] f32 SightFade(const FogFrame& fog, core::Vec2 world);
 
+/// How far the shade under the clouds leaves `world` uncovered, 0 to 1: the explored sample eased from nothing where
+/// unexplored to full at half explored, the value at an unexplored tile's edge, as `UnexploredShade` in
+/// shaders/fog.hlsli covers it. It is 1 wherever SightFade() is above 0, as land in sight is explored.
+[[nodiscard]] f32 ExploredFade(const FogFrame& fog, core::Vec2 world);
+
 /// The explored value of the tile under `world` alone, 0 to 1, whatever its neighbours; 1 with no fog or off the map.
 [[nodiscard]] f32 TileExplored(const FogFrame& fog, core::Vec2 world);
 

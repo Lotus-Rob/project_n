@@ -590,7 +590,11 @@ f32 CaptionOpacity(f32 pixels, f32 scale) {
 f32 FogOpacity(const core::TextItem& item, const FogFrame& fog, f32 alpha) {
     const core::Vec2 anchor = item.previous + ((item.current - item.previous) * alpha);
     if (item.fog == core::TextFog::Sight) {
-        return SightFade(fog, { .x = anchor.x, .y = anchor.y + item.height });
+        // In sight is not enough: the debug sight sees land never explored, where the clouds' shade hides the walker, so
+        // its name shows only as far as the shade leaves its foot uncovered. In play the shade never reaches a walker
+        // sight shows, as land in sight is explored.
+        const core::Vec2 foot{ .x = anchor.x, .y = anchor.y + item.height };
+        return SightFade(fog, foot) * ExploredFade(fog, foot);
     }
     if (item.fog == core::TextFog::Explored) {
         return TileExplored(fog, anchor);

@@ -50,7 +50,8 @@ struct Ground {
     float4 washes[16]; // by kind index: rgb, then strength (core::MAX_GROUND_KINDS)
 };
 
-/// gfx::GROUND_MODE_GROUND, GROUND_MODE_VEIL and GROUND_MODE_PAPER.
+/// gfx::GROUND_MODE_GROUND, GROUND_MODE_VEIL, GROUND_MODE_PAPER and GROUND_MODE_CLOUD_SHADE.
 static const uint GROUND_MODE_GROUND = 0;
 static const uint GROUND_MODE_VEIL = 1;
 static const uint GROUND_MODE_PAPER = 2;
+static const uint GROUND_MODE_CLOUD_SHADE = 3;

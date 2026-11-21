@@ -17,6 +17,7 @@
 #include "core/instances.hpp"
 #include "core/jobs.hpp"
 #include "core/math.hpp"
+#include "core/rect.hpp"
 #include "core/seal.hpp"
 #include "core/seals.hpp"
 #include "core/settings.hpp"
@@ -29,6 +30,7 @@
 #include "game/host.hpp"
 #include "game/scenes/world.hpp"
 #include "gfx/camera.hpp"
+#include "gfx/fog.hpp"
 #include "gfx/image.hpp"
 #include "gfx/renderer.hpp"
 #include "gfx/sprite_block.hpp"
@@ -311,7 +313,12 @@ void TickToPicture(
     }
 }
 
-void CheckAgainstReference(const View& view) {
+/// What a case checks on its picture once it matches the reference: with the renderer, snapshot, view and jobs it was
+/// drawn with, so it can draw the same frame changed.
+using AfterPicture =
+    std::function<void(gfx::Renderer&, const core::Snapshot&, const gfx::View&, core::Jobs&, const gfx::Image&)>;
+
+void CheckAgainstReference(const View& view, const AfterPicture& after = {}) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
     core::GameData data = test::ShippedData();
@@ -383,7 +390,11 @@ void CheckAgainstReference(const View& view) {
     if (view.refit) {
         static_cast<void>(Captured(renderer, snapshot, shown, jobs, WIDTH / 2, HEIGHT / 3));
     }
-    CompareWithReference(Captured(renderer, snapshot, shown, jobs, view.width, view.height), view.name);
+    const gfx::Image drawn = Captured(renderer, snapshot, shown, jobs, view.width, view.height);
+    CompareWithReference(drawn, view.name);
+    if (after) {
+        after(renderer, snapshot, shown, jobs, drawn);
+    }
 }
 
 TEST_CASE("the painted scene: sprites, shadows and overlapping glows, after a smaller picture") {
@@ -677,6 +688,171 @@ TEST_CASE("the fog uncovering a new tile: a quarter second into its fade, the ro
           .fogEased = true,
           .width = FULL_HD_WIDTH,
           .height = FULL_HD_HEIGHT }
+    );
+}
+
+/// A walker the world map draws: its villager, its shadow and its name label, by their places in a snapshot, and the
+/// world rectangle its villager and shadow cover.
+struct Walker {
+    std::size_t body = 0;
+    std::size_t shadow = 0;
+    std::size_t label = 0;
+    core::Rect area{};
+};
+
+/// The world rectangle `instance` covers at the tick: its quad, unrotated, about its current centre.
+core::Rect InstanceArea(const core::Instance& instance) {
+    constexpr u32 HALF_BITS = 16;
+    constexpr u32 LOW_HALF = 0xFFFFU;
+    const core::Vec2 half = core::Vec2{ .x = core::UnpackHalf(static_cast<u16>(instance.size & LOW_HALF)),
+                                        .y = core::UnpackHalf(static_cast<u16>(instance.size >> HALF_BITS)) } *
+                            static_cast<f32>(HALFWAY);
+    return { .min = instance.current - half, .max = instance.current + half };
+}
+
+/// Every walker `snapshot` names, found by its label: the villager carrying the label's entity and the shadow at the
+/// label's foot.
+std::vector<Walker> WalkersIn(const core::Snapshot& snapshot) {
+    // The shadow's foot is the label's anchor moved down by its height, so the two may differ in the last bits.
+    constexpr f32 SAME_POINT = 0.01F;
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    std::vector<Walker> walkers;
+    for (std::size_t label = 0; label < snapshot.texts.size(); ++label) {
+        const core::TextItem& item = snapshot.texts[label];
+        if (item.fog != core::TextFog::Sight || !item.npcName) {
+            continue;
+        }
+        const core::Vec2 foot{ .x = item.current.x, .y = item.current.y + item.height };
+        const core::Instance expected =
+            core::MakeInstance(*manifest, { .sprite = core::atlas::SpriteId::Shadow, .current = foot });
+        const auto body = std::ranges::find(snapshot.ids, item.entity);
+        const auto shadow = std::ranges::find_if(snapshot.instances, [&](const core::Instance& instance) {
+            return instance.regionMin == expected.regionMin && instance.regionMax == expected.regionMax &&
+                   std::abs(instance.current.x - expected.current.x) < SAME_POINT &&
+                   std::abs(instance.current.y - expected.current.y) < SAME_POINT;
+        });
+        REQUIRE(body != snapshot.ids.end());
+        REQUIRE(shadow != snapshot.instances.end());
+        const auto bodyIndex = static_cast<std::size_t>(body - snapshot.ids.begin());
+        const core::Rect bodyArea = InstanceArea(snapshot.instances.at(bodyIndex));
+        const core::Rect shadowArea = InstanceArea(*shadow);
+        walkers.push_back(
+            { .body = bodyIndex,
+              .shadow = static_cast<std::size_t>(shadow - snapshot.instances.begin()),
+              .label = label,
+              .area = {
+                  .min = { .x = std::min(bodyArea.min.x, shadowArea.min.x), .y = std::min(bodyArea.min.y, shadowArea.min.y) },
+                  .max = { .x = std::max(bodyArea.max.x, shadowArea.max.x),
+                           .y = std::max(bodyArea.max.y, shadowArea.max.y) } } }
+        );
+    }
+    return walkers;
+}
+
+/// Whether every tile whose explored value reaches into `area` through the fog's linear filter (the tiles whose centres
+/// lie within a tile of it) is on the map and holds `explored` in `fog`: 0 for never explored, 255 for explored whole.
+bool AllTilesHold(const gfx::FogFrame& fog, const core::Rect& area, u8 explored) {
+    const auto first = [&](f32 edge) {
+        return static_cast<i64>(std::floor((edge / fog.tileSize) - static_cast<f32>(HALFWAY)));
+    };
+    for (i64 row = first(area.min.y); row <= first(area.max.y) + 1; ++row) {
+        for (i64 column = first(area.min.x); column <= first(area.max.x) + 1; ++column) {
+            if (row < 0 || column < 0 || row >= i64{ fog.rows } || column >= i64{ fog.columns }) {
+                return false;
+            }
+            const auto tile = static_cast<std::size_t>((row * i64{ fog.columns }) + column);
+            if (fog.values[(tile * 2) + gfx::FOG_EXPLORED] != explored) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+/// `area` in the pixels of a `width` by `height` picture drawn with `camera`, if it lies wholly inside the picture.
+std::optional<core::Rect> PixelsOf(const core::Rect& area, const gfx::Camera& camera, u32 width, u32 height) {
+    const f32 perUnit = gfx::PixelsPerUnit(camera, width, height);
+    const core::Vec2 middle =
+        core::Vec2{ .x = static_cast<f32>(width), .y = static_cast<f32>(height) } * static_cast<f32>(HALFWAY);
+    const core::Rect pixels{ .min = middle + ((area.min - camera.centre) * perUnit),
+                             .max = middle + ((area.max - camera.centre) * perUnit) };
+    if (pixels.min.x < 0.0F || pixels.min.y < 0.0F || pixels.max.x > static_cast<f32>(width) ||
+        pixels.max.y > static_cast<f32>(height)) {
+        return std::nullopt;
+    }
+    return pixels;
+}
+
+/// How many pixels inside `box` (pixels, wholly in the pictures) differ in any channel between two pictures of one size.
+std::size_t DifferingPixelsIn(const gfx::Image& first, const gfx::Image& second, const core::Rect& box) {
+    REQUIRE(first.width == second.width);
+    REQUIRE(first.height == second.height);
+    std::size_t differing = 0;
+    for (auto row = static_cast<u32>(box.min.y); row < static_cast<u32>(std::ceil(box.max.y)); ++row) {
+        for (auto column = static_cast<u32>(box.min.x); column < static_cast<u32>(std::ceil(box.max.x)); ++column) {
+            const std::size_t offset = ((std::size_t{ row } * first.width) + column) * gfx::BYTES_PER_TEXEL;
+            const auto pixel = [offset](const gfx::Image& image) {
+                return std::span{ image.rgba }.subspan(offset, gfx::BYTES_PER_TEXEL);
+            };
+            if (!std::ranges::equal(pixel(first), pixel(second))) {
+                ++differing;
+            }
+        }
+    }
+    return differing;
+}
+
+/// `snapshot` with `walker` taken out: its villager and shadow drawn clear and its label gone.
+core::Snapshot Without(const core::Snapshot& snapshot, const Walker& walker) {
+    core::Snapshot without = snapshot;
+    // Premultiplied, a clear colour adds nothing, and the batches stay as they were.
+    without.instances.at(walker.body).colour = 0;
+    without.instances.at(walker.shadow).colour = 0;
+    without.texts.erase(without.texts.begin() + static_cast<std::ptrdiff_t>(walker.label));
+    // Another snapshot to the renderer, so it uploads the changed instances.
+    ++without.wallTick;
+    return without;
+}
+
+// The start with the debug sight on and nothing explored but what the cultivator has seen: every walker in view is
+// published, those past the explored land too. Under the clouds no walker, shadow or name may show, through the clouds'
+// gaps or over them: the frame with such a walker taken out is the same to the last bit, everywhere (which holds its
+// box), as the shade under the clouds is opaque there and its name is not drawn. A walker on explored land still draws.
+TEST_CASE("the debug sight past the explored land: walkers there and their names hide under the clouds") {
+    CheckAgainstReference(
+        { .name = "fog_debug_sight",
+          .scene = game::WORLD_SCENE,
+          .ticks = TWO_SECONDS,
+          .zoom = LABELS_ZOOM,
+          .centre = test::ShippedWorld()->StartCentre(),
+          .asInGame = true,
+          .debugSight = true,
+          .width = FULL_HD_WIDTH,
+          .height = FULL_HD_HEIGHT },
+        [](gfx::Renderer& renderer,
+           const core::Snapshot& snapshot,
+           const gfx::View& shown,
+           core::Jobs& jobs,
+           const gfx::Image& drawn) {
+            const std::vector<Walker> walkers = WalkersIn(snapshot);
+            const auto inPicture = [&](const Walker& walker) {
+                return PixelsOf(walker.area, shown.camera, drawn.width, drawn.height).has_value();
+            };
+            const auto hidden = std::ranges::find_if(walkers, [&](const Walker& walker) {
+                return inPicture(walker) && AllTilesHold(shown.fog, walker.area, 0);
+            });
+            const auto seen = std::ranges::find_if(walkers, [&](const Walker& walker) {
+                return inPicture(walker) && AllTilesHold(shown.fog, walker.area, 255);
+            });
+            REQUIRE_MESSAGE(hidden != walkers.end(), "no walker in the picture stands wholly on land never explored");
+            REQUIRE_MESSAGE(seen != walkers.end(), "no walker in the picture stands wholly on explored land");
+            const gfx::Image withoutHidden =
+                Captured(renderer, Without(snapshot, *hidden), shown, jobs, drawn.width, drawn.height);
+            CHECK(gfx::DifferingPixels(drawn, withoutHidden, 0) == 0);
+            const gfx::Image withoutSeen = Captured(renderer, Without(snapshot, *seen), shown, jobs, drawn.width, drawn.height);
+            const std::optional<core::Rect> seenBox = PixelsOf(seen->area, shown.camera, drawn.width, drawn.height);
+            CHECK(DifferingPixelsIn(drawn, withoutSeen, seenBox.value_or(core::Rect{})) > 0);
+        }
     );
 }
 

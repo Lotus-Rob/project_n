@@ -306,8 +306,9 @@ private:
 [[nodiscard]] f32 CaptionOpacity(f32 pixels, f32 scale);
 
 /// How much of `item` the fog lets show, from 0 to 1, its anchor taken `alpha` of the way from its previous to its current
-/// one: a core::TextFog::Sight label by SightFade() at its entity's foot (the anchor `height` lower), a
-/// core::TextFog::Explored one by TileExplored() at its anchor, and any other wholly.
+/// one: a core::TextFog::Sight label by SightFade() times ExploredFade() at its entity's foot (the anchor `height` lower),
+/// so it shows only as far as the shade under the clouds leaves its entity uncovered, a core::TextFog::Explored one by
+/// TileExplored() at its anchor, and any other wholly.
 [[nodiscard]] f32 FogOpacity(const core::TextItem& item, const FogFrame& fog, f32 alpha);
 
 } // namespace gfx
