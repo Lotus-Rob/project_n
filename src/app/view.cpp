@@ -72,10 +72,6 @@ std::optional<std::size_t> PickInstance(const core::Snapshot& snapshot, f64 alph
             continue;
         }
         const core::Instance& instance = snapshot.instances[i];
-        if ((instance.flags & core::INSTANCE_SIGHT_FADE) != 0 &&
-            gfx::SightFade(fog, core::SightPoint(instance, alpha)) < SIGHT_PICK_OPACITY) {
-            continue;
-        }
         const core::Vec2 offset = world - Interpolated(instance.previous, instance.current, alpha);
         const f32 previousAngle = core::UnpackHalf(static_cast<u16>(instance.rotation & LOW_HALF));
         const f32 angle =
@@ -89,9 +85,16 @@ std::optional<std::size_t> PickInstance(const core::Snapshot& snapshot, f64 alph
         const f32 alongHeight = (offset.y * cosine) - (offset.x * sine);
         const f32 halfWidth = core::UnpackHalf(static_cast<u16>(instance.size & LOW_HALF)) / 2.0F;
         const f32 halfHeight = core::UnpackHalf(static_cast<u16>(instance.size >> HIGH_SHIFT)) / 2.0F;
-        if (std::abs(alongWidth) <= halfWidth && std::abs(alongHeight) <= halfHeight) {
-            return i;
+        if (std::abs(alongWidth) > halfWidth || std::abs(alongHeight) > halfHeight) {
+            continue;
         }
+        // Looked up only for a hit: the fade's lookup costs more than the quad test, and a faded hit lets a lower
+        // instance show through.
+        if ((instance.flags & core::INSTANCE_SIGHT_FADE) != 0 &&
+            gfx::SightFade(fog, core::SightPoint(instance, alpha)) < SIGHT_PICK_OPACITY) {
+            continue;
+        }
+        return i;
     }
     return std::nullopt;
 }
