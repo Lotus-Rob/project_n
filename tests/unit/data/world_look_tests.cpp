@@ -520,7 +520,7 @@ TEST_CASE("the shipped look's ground, veil, mist, river and places read as writt
     const auto indexOf = [&](std::string_view name) {
         return static_cast<u8>(std::ranges::find(kinds, name, &core::TerrainKind::name) - kinds.begin());
     };
-    CHECK(look.ground.paper == std::array<u8, 3>{ 240, 235, 222 });
+    CHECK(look.ground.paper == std::array<u8, 3>{ { 240, 235, 222 } });
     CHECK(look.ground.grain == doctest::Approx(0.04F));
     CHECK(look.ground.edgeWarp == doctest::Approx(0.45F));
     CHECK(look.ground.edgeSoft == doctest::Approx(0.5F));
@@ -528,14 +528,14 @@ TEST_CASE("the shipped look's ground, veil, mist, river and places read as writt
     CHECK(look.ground.shallowKind == indexOf("shallows"));
     CHECK(look.ground.deepKind == indexOf("deep_water"));
     CHECK(look.ground.depthTiles == doctest::Approx(3.0F));
-    CHECK(look.ground.shore == std::array<u8, 3>{ 70, 104, 112 });
+    CHECK(look.ground.shore == std::array<u8, 3>{ { 70, 104, 112 } });
     CHECK(look.ground.shoreStrength == doctest::Approx(0.55F));
     CHECK(look.ground.shoreWidth == doctest::Approx(0.12F));
-    CHECK(look.ground.grid == std::array<u8, 3>{ 90, 80, 70 });
+    CHECK(look.ground.grid == std::array<u8, 3>{ { 90, 80, 70 } });
     CHECK(look.ground.gridStrength == doctest::Approx(0.09F));
     CHECK(look.ground.gridFade[0] == doctest::Approx(0.6F));
     CHECK(look.ground.gridFade[1] == doctest::Approx(0.35F));
-    CHECK(look.veil.colour == std::array<u8, 3>{ 246, 244, 238 });
+    CHECK(look.veil.colour == std::array<u8, 3>{ { 246, 244, 238 } });
     CHECK(look.veil.scale == doctest::Approx(3.0F));
     CHECK(look.veil.strength == doctest::Approx(0.55F));
     REQUIRE(look.mist.sprites.size() == 4);
@@ -546,8 +546,8 @@ TEST_CASE("the shipped look's ground, veil, mist, river and places read as writt
     CHECK(look.mist.width[1] == doctest::Approx(1.4F));
     CHECK(look.river.width == doctest::Approx(0.38F));
     CHECK(look.river.edge == doctest::Approx(0.5F));
-    CHECK(look.river.colour == std::array<u8, 3>{ 128, 172, 176 });
-    CHECK(look.river.edgeColour == std::array<u8, 3>{ 70, 104, 112 });
+    CHECK(look.river.colour == std::array<u8, 3>{ { 128, 172, 176 } });
+    CHECK(look.river.edgeColour == std::array<u8, 3>{ { 70, 104, 112 } });
     CHECK(look.river.edgeStrength == doctest::Approx(0.67F));
     CHECK(look.places.city == core::atlas::SpriteId::PaintingCity);
     CHECK(look.places.dangers.size() == 6);
@@ -563,7 +563,7 @@ TEST_CASE("the shipped forest's stamps read as written") {
         static_cast<std::size_t>(std::ranges::find(kinds, "forest", &core::TerrainKind::name) - kinds.begin());
     REQUIRE(forest < shipped.look.kinds.size());
     const core::KindLook& kind = shipped.look.kinds[forest];
-    CHECK(kind.wash == std::array<u8, 3>{ 66, 102, 74 });
+    CHECK(kind.wash == std::array<u8, 3>{ { 66, 102, 74 } });
     CHECK(kind.strength == doctest::Approx(0.12F));
     CHECK(kind.variants.size() == 2);
     REQUIRE(kind.stamps.sprites.size() == 4);

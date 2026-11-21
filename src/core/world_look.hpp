@@ -89,7 +89,7 @@ struct StampLook {
     /// How many stamps a tile gets on average.
     f32 density = 0.0F;
     /// The least and greatest width of a stamp, in tiles.
-    std::array<f32, 2> size{ 1.0F, 1.0F };
+    std::array<f32, 2> size{ { 1.0F, 1.0F } };
     /// How far a stamp strays from its cell's centre, as a share of the cell, from 0 to 1.
     f32 jitter = 0.0F;
     /// The zoom below which stamps thin out, from 0 (never) to 2.
