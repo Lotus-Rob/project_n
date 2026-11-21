@@ -309,10 +309,14 @@ TEST_CASE("a look hashes by its sprites") {
     CHECK(first->Hash() != other->Hash());
 }
 
-TEST_CASE("the shipped look loads clean against the shipped map") {
+TEST_CASE("the shipped look loads clean against the shipped map and is refused by a map lacking its water kinds") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
     REQUIRE(assets.has_value());
+    const std::expected<core::WorldLook, core::Error> small = data::LoadWorldLook(*assets / "data", *manifest, SmallMap());
+    REQUIRE_FALSE(small.has_value());
+    CHECK(small.error().message.starts_with("world_look line "));
+    CHECK(small.error().message.contains("water's shallow \"shallows\" isn't a kind of the map"));
     const std::expected<core::Strings, core::Error> strings = data::LoadStrings(*assets / "data");
     REQUIRE(strings.has_value());
     const auto world = data::LoadWorldMap(*assets / "data", *strings);
@@ -607,6 +611,7 @@ TEST_CASE("ground values out of range are refused, each naming its key") {
           .text = With("wash: [88, 124, 148]", "wash: [256, 124, 148]"),
           .key = "kind deep_water's wash" },
         { .why = "stamp sizes out of order", .text = With("size: [0.7, 0.9]", "size: [0.9, 0.6]"), .key = "stamps's size" },
+        { .why = "a stamp size past four tiles", .text = With("size: [0.7, 0.9]", "size: [0.7, 4.5]"), .key = "stamps's size" },
         { .why = "a stamp size of zero", .text = With("size: [0.7, 0.9]", "size: [0, 0.9]"), .key = "stamps's size" },
         { .why = "a stamp density of 1.5", .text = With("density: 0.08", "density: 1.5"), .key = "stamps's density" },
         { .why = "a stamp jitter of 2", .text = With("jitter: 0.15", "jitter: 2"), .key = "stamps's jitter" },
@@ -626,6 +631,8 @@ TEST_CASE("ground values out of range are refused, each naming its key") {
         { .why = "a shore width of zero", .text = With("width: 0.12", "width: 0"), .key = "shore's width" },
         { .why = "a veil scale of zero", .text = With("scale: 3.0", "scale: 0"), .key = "veil's scale" },
         { .why = "a mist width out of order", .text = With("width: [1.0, 1.4]", "width: [1.4, 1.0]"), .key = "mist's width" },
+        { .why = "a mist width past two", .text = With("width: [1.0, 1.4]", "width: [1.0, 2.5]"), .key = "mist's width" },
+        { .why = "water's two kinds the same", .text = With("deep: deep_water", "deep: meadow"), .key = "water's deep" },
         { .why = "a mist chance of 1.5", .text = With("chance: 0.7", "chance: 1.5"), .key = "mist's chance" },
         { .why = "a river edge strength of 1.5",
           .text = With("edge_strength: 0.67", "edge_strength: 1.5"),
@@ -645,6 +652,24 @@ TEST_CASE("ground values out of range are refused, each naming its key") {
         REQUIRE_FALSE(look.has_value());
         CHECK(look.error().message.starts_with("world_look line "));
         CHECK(look.error().message.contains(broken.key));
+    }
+}
+
+TEST_CASE("ground refusals name the line of the value") {
+    const std::string size = With("size: [0.7, 0.9]", "size: [0.9, 0.6]");
+    const std::string water = With("shallow: meadow", "shallow: lava");
+    const std::string fade = With("fade: [0.6, 0.35]", "fade: [0.35, 0.6]");
+    const std::string same = With("deep: deep_water", "deep: meadow");
+    const std::vector<std::pair<std::string, u32>> cases{
+        { size, LineOf(size, "size: [0.9, 0.6]") },
+        { water, LineOf(water, "shallow: lava") },
+        { fade, LineOf(fade, "fade: [0.35, 0.6]") },
+        { same, LineOf(same, "deep: meadow") },
+    };
+    for (const auto& [text, line] : cases) {
+        const std::expected<core::WorldLook, core::Error> look = Parse(text);
+        REQUIRE_FALSE(look.has_value());
+        CHECK(look.error().message.starts_with(std::format("world_look line {}: ", line)));
     }
 }
 
@@ -676,7 +701,7 @@ TEST_CASE("the look's hash changes with a stamp density") {
         With("density: 0.08", "density: 0.09"),
         With("wash: [88, 124, 148]", "wash: [88, 124, 149]"),
         With("paper: [240, 235, 222]", "paper: [240, 235, 221]"),
-        With("shallow: meadow", "shallow: deep_water"),
+        With("depth_tiles: 2.5", "depth_tiles: 3.5"),
         With("scale: 3.0", "scale: 3.5"),
         With("chance: 0.7", "chance: 0.6"),
         With("edge: 0.5", "edge: 0.6"),
