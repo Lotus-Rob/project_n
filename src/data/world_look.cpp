@@ -129,7 +129,12 @@ constexpr internal::Range POSITIVE{ .low = 0.0, .lowOpen = true };
 constexpr internal::Range DRIFT{ .low = 0.0, .lowOpen = false, .high = 2.0 };
 constexpr internal::Range UP_TO_TWO{ .low = 0.0, .lowOpen = false, .high = 2.0 };
 constexpr internal::Range ABOVE_ZERO_TO_TWO{ .low = 0.0, .lowOpen = true, .high = 2.0 };
-constexpr internal::Range DEPTH_TILES{ .low = 0.0, .lowOpen = true, .high = 4.0 };
+/// How wide the edge between two kinds may blend, in tiles: the ground shader blends an edge only with the tiles on
+/// either side of it, so anything wider would look the same as one tile.
+constexpr internal::Range EDGE_SOFT{ .low = 0.0, .lowOpen = true, .high = 1.0 };
+/// How far from the shore water may take to turn deep, in tiles: the shore distance stops at 4 tiles and the shoreline
+/// lies half a tile from the first water tile's centre, so past 3.5 the deep colour would never be reached.
+constexpr internal::Range DEPTH_TILES{ .low = 0.0, .lowOpen = true, .high = 3.5 };
 constexpr internal::Range STAMP_SIZE{ .low = 0.0, .lowOpen = true, .high = 4.0 };
 constexpr internal::Range PUFF_WIDTH{ .low = 0.0, .lowOpen = true, .high = 2.0 };
 constexpr internal::Range FADE{ .low = 0.0, .lowOpen = true, .high = 5.0 };
@@ -680,7 +685,7 @@ std::expected<void, core::Error> ReadGround(
     if (!warp) {
         return std::unexpected{ warp.error() };
     }
-    const std::expected<f32, core::Error> soft = NumberIn(*ground, "ground", "edge_soft", ABOVE_ZERO_TO_TWO);
+    const std::expected<f32, core::Error> soft = NumberIn(*ground, "ground", "edge_soft", EDGE_SOFT);
     if (!soft) {
         return std::unexpected{ soft.error() };
     }
