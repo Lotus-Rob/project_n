@@ -1893,8 +1893,9 @@ TEST_CASE("the fog's clouds at the smallest zoom: shimmer held to its bound") {
 /// as flat paper, a quarter pixel apart. The snapshot's instances, batches and texts are cleared, so no traveller, cultivator
 /// or label is drawn, and the road overlays are left out (gfx::TerrainParts::AllButRoads): their shimmer is their own. Over
 /// paper rather than the dark backdrop, so the paper's large even ink doesn't dilute the crawl of the grid's, shores',
-/// rivers' and stamps' edges.
-TileChange GroundShimmer(f32 zoom) {
+/// rivers' and stamps' edges. Prints `ground shimmer <zoom>: <value>` and checks the worst tile changed less than
+/// `mostChange`.
+void CheckGroundShimmer(f32 zoom, f64 mostChange) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
@@ -1917,40 +1918,26 @@ TileChange GroundShimmer(f32 zoom) {
     painted.terrainParts = gfx::TerrainParts::AllButRoads;
     gfx::View paper = painted;
     paper.terrainParts = gfx::TerrainParts::PaperOnly;
-    return WorstTileChange(QuarterPixelApart(renderer, ground, ground, painted, paper, jobs));
+    const TileChange change = WorstTileChange(QuarterPixelApart(renderer, ground, ground, painted, paper, jobs));
+    // The line `project_n measure` reads from the reference run's output.
+    MESSAGE("ground shimmer ", zoom, ": ", change.worst);
+    INFO("of ", change.measured, " tiles, the worst changed its ink by ", change.worst);
+    CHECK(change.worst < mostChange);
 }
 
 TEST_CASE("the ground at zoom 1: shimmer held to its bound") {
-    constexpr f32 ZOOM = 1.0F;
-    // Measured 0.0118; about 1.25 times that.
-    constexpr f64 MOST_CHANGE = 0.0147;
-    const TileChange change = GroundShimmer(ZOOM);
-    // The line `project_n measure` reads from the reference run's output.
-    MESSAGE("ground shimmer ", ZOOM, ": ", change.worst);
-    INFO("of ", change.measured, " tiles, the worst changed its ink by ", change.worst);
-    CHECK(change.worst < MOST_CHANGE);
+    // Measured 0.0117; about 1.25 times that.
+    CheckGroundShimmer(1.0F, 0.0146);
 }
 
 TEST_CASE("the ground at zoom 0.5: shimmer held to its bound") {
-    constexpr f32 ZOOM = 0.5F;
-    // Measured 0.00847; about 1.25 times that.
-    constexpr f64 MOST_CHANGE = 0.0106;
-    const TileChange change = GroundShimmer(ZOOM);
-    // The line `project_n measure` reads from the reference run's output.
-    MESSAGE("ground shimmer ", ZOOM, ": ", change.worst);
-    INFO("of ", change.measured, " tiles, the worst changed its ink by ", change.worst);
-    CHECK(change.worst < MOST_CHANGE);
+    // Measured 0.00607; about 1.25 times that.
+    CheckGroundShimmer(0.5F, 0.0076);
 }
 
 TEST_CASE("the ground at zoom 0.25: shimmer held to its bound") {
-    constexpr f32 ZOOM = 0.25F;
-    // Measured 0.00567; about 1.25 times that.
-    constexpr f64 MOST_CHANGE = 0.0071;
-    const TileChange change = GroundShimmer(ZOOM);
-    // The line `project_n measure` reads from the reference run's output.
-    MESSAGE("ground shimmer ", ZOOM, ": ", change.worst);
-    INFO("of ", change.measured, " tiles, the worst changed its ink by ", change.worst);
-    CHECK(change.worst < MOST_CHANGE);
+    // Measured 0.00397; about 1.25 times that.
+    CheckGroundShimmer(0.25F, 0.0050);
 }
 
 TEST_CASE("reference workers come from the harness") {
