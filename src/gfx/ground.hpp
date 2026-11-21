@@ -23,6 +23,9 @@ inline constexpr u32 GROUND_MODE_GROUND = 0;
 inline constexpr u32 GROUND_MODE_VEIL = 1;
 /// GroundUniforms::mode: only the paper's colour, opaque.
 inline constexpr u32 GROUND_MODE_PAPER = 2;
+/// GroundUniforms::mode: only the fog's shade colour, laid over what is drawn: opaque where land is unexplored, fading out
+/// toward its edge as the land's own shade does (shaders/fog.hlsli), none where explored or without fog.
+inline constexpr u32 GROUND_MODE_CLOUD_SHADE = 3;
 
 /// What the ground fragment shader paints with: `Ground` in shaders/ground.hlsli, rows of 16 bytes. Colours are linear
 /// red, green and blue; lengths in tiles unless a field says otherwise.
@@ -31,7 +34,7 @@ struct GroundUniforms {
     std::array<f32, 2> mapSize{};
     /// A tile's side in world units.
     f32 tileSize = 0.0F;
-    /// What the draw paints: GROUND_MODE_GROUND, GROUND_MODE_VEIL or GROUND_MODE_PAPER.
+    /// What the draw paints: GROUND_MODE_GROUND, GROUND_MODE_VEIL, GROUND_MODE_PAPER or GROUND_MODE_CLOUD_SHADE.
     u32 mode = GROUND_MODE_GROUND;
     /// The paper's colour.
     std::array<f32, 3> paper{};

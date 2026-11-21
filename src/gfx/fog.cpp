@@ -9,6 +9,7 @@ namespace {
 
 constexpr f32 BYTE_RANGE = 255.0F;
 constexpr f32 SIGHT_EDGE = 0.5F;
+constexpr f32 SHADE_EDGE = 0.5F; // fog.hlsli's UnexploredShade(): no shade from half explored on
 constexpr f32 CENTRE = 0.5F;
 constexpr f32 SMOOTH_A = 3.0F; // smoothstep: t * t * (3 - 2t)
 constexpr f32 SMOOTH_B = 2.0F;
@@ -45,6 +46,11 @@ f32 FogSample(const FogFrame& fog, core::Vec2 world, u32 channel) {
 f32 SightFade(const FogFrame& fog, core::Vec2 world) {
     const f32 sample = FogSample(fog, world, FOG_IN_SIGHT);
     const f32 along = std::clamp((sample - SIGHT_EDGE) / (1.0F - SIGHT_EDGE), 0.0F, 1.0F);
+    return along * along * (SMOOTH_A - (SMOOTH_B * along));
+}
+
+f32 ExploredFade(const FogFrame& fog, core::Vec2 world) {
+    const f32 along = std::clamp(FogSample(fog, world, FOG_EXPLORED) / SHADE_EDGE, 0.0F, 1.0F);
     return along * along * (SMOOTH_A - (SMOOTH_B * along));
 }
 

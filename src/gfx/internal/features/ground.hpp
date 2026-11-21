@@ -23,8 +23,8 @@
 
 namespace gfx::internal {
 
-/// The ground pipeline (premultiplied over: opaque for the ground and the paper, the veil laid over what is drawn), the
-/// ground field's texture and its two samplers.
+/// The ground pipeline (premultiplied over: opaque for the ground and the paper, the veil and the cloud shade laid over
+/// what is drawn), the ground field's texture and its two samplers.
 class GroundRenderer {
 public:
     /// Creates the pipeline for colour targets of `format` and the samplers, or says why it couldn't. Nothing draws until
