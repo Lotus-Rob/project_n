@@ -11,15 +11,9 @@ namespace {
 
 /// Swords a job chunk draws: enough work to be worth a worker's wake, few enough that a volley of 1,000 spreads.
 constexpr u32 SWORD_CHUNK = 256;
-/// A tangent shorter than this, in world units, is too short to say which way the trail runs there.
-constexpr f32 SHORTEST_TANGENT = 1e-4F;
 constexpr u32 TRAIL_POINTS = TRAIL_SEGMENTS + 1;
 /// A bar's middle, down from its top as a fraction of its height: where the solid square's foot goes.
 constexpr f32 BAR_MIDDLE = 0.5F;
-
-f32 Length(core::Vec2 vec) {
-    return std::hypot(vec.x, vec.y);
-}
 
 /// The clockwise rotation that turns a sprite pointing up (towards -y, as world y grows downwards) to `heading`.
 f32 RotationTo(core::Vec2 heading) {
@@ -65,28 +59,21 @@ void DrawTrail(
     for (u32 point = 0; point < TRAIL_POINTS; ++point) {
         // Across the way the trail runs there, from its neighbours, so the ribbon bends with the path without twisting.
         const core::Vec2 runs = points.at(point == 0 ? 0 : point - 1) - points.at(std::min(point + 1, TRAIL_SEGMENTS));
-        const f32 length = Length(runs);
-        const core::Vec2 along = length > SHORTEST_TANGENT ? runs * (1.0F / length) : head.heading;
+        const core::Vec2 along = HeadingOf(runs, head.heading);
         const f32 back = static_cast<f32>(point) / static_cast<f32>(TRAIL_SEGMENTS);
-        const core::Vec2 side =
-            core::Vec2{ .x = -along.y, .y = along.x } * (look.trailWidth * (1.0F - (look.trailTaper * back)) * 0.5F);
+        const core::Vec2 side = SideOf(along, look.trailWidth * (1.0F - (look.trailTaper * back)));
         lefts.at(point) = points.at(point) + side;
         rights.at(point) = points.at(point) - side;
     }
-    const auto vertex = [colour](core::Vec2 position, f32 back, f32 across) {
-        return RibbonVertex{ .x = position.x,
-                             .y = position.y,
-                             .uv = core::PackPair(core::PackUnorm16(back), core::PackUnorm16(across)),
-                             .colour = colour };
-    };
     for (u32 quad = 0; quad < TRAIL_SEGMENTS; ++quad) {
         const f32 near = static_cast<f32>(quad) / static_cast<f32>(TRAIL_SEGMENTS);
         const f32 far = static_cast<f32>(quad + 1) / static_cast<f32>(TRAIL_SEGMENTS);
-        const std::span<RibbonVertex> corners = trail.subspan(std::size_t{ quad } * QUAD_VERTICES, QUAD_VERTICES);
-        corners[0] = vertex(lefts.at(quad), near, 0.0F);
-        corners[1] = vertex(rights.at(quad), near, 1.0F);
-        corners[2] = vertex(lefts.at(quad + 1), far, 0.0F);
-        corners[3] = vertex(rights.at(quad + 1), far, 1.0F);
+        WriteRibbonQuad(
+            trail.subspan(std::size_t{ quad } * QUAD_VERTICES, QUAD_VERTICES),
+            { .left = lefts.at(quad), .right = rights.at(quad), .along = near },
+            { .left = lefts.at(quad + 1), .right = rights.at(quad + 1), .along = far },
+            colour
+        );
     }
 }
 

@@ -100,16 +100,17 @@ TEST_CASE("edges come before cores") {
 }
 
 TEST_CASE("a tributary's end lies inside the main river's core") {
-    // The tributary ends on the main river's middle point.
+    // The main river has no waypoint at the tributary's end tile (4, 4): it crosses it between its two.
     const core::WorldMap map = test::MeadowMap(
         8,
         8,
-        { { { .column = 0, .row = 4 }, { .column = 4, .row = 4 }, { .column = 7, .row = 4 } },
-          { { .column = 4, .row = 0 }, { .column = 4, .row = 4 } } }
+        { { { .column = 0, .row = 4 }, { .column = 7, .row = 4 } }, { { .column = 4, .row = 0 }, { .column = 4, .row = 4 } } }
     );
     const std::vector<gfx::RibbonVertex> vertices = Draw(map);
-    const std::size_t quads = vertices.size() / gfx::QUAD_VERTICES;
-    CHECK(Distance(Midline(vertices, quads - 1, true), Middle(4, 4)) < CORE / 2.0F);
+    const core::Vec2 end = Midline(vertices, (vertices.size() / gfx::QUAD_VERTICES) - 1, true);
+    CHECK(std::abs(end.y - Middle(0, 4).y) < CORE / 2.0F);
+    CHECK(end.x > Middle(0, 4).x);
+    CHECK(end.x < Middle(7, 4).x);
 }
 
 TEST_CASE("the shipped rivers fit the river buffer") {
@@ -136,11 +137,14 @@ TEST_CASE("the shipped rivers fit the river buffer") {
 }
 
 TEST_CASE("rivers past the buffer are left out whole, the later ones first") {
-    // Each of these takes 2 * 255 * RIVER_STEPS quads: four fit, the fifth does not.
-    const std::vector<TilePoint> river{ { .column = 0, .row = 1 }, { .column = 255, .row = 1 } };
-    const core::WorldMap map = test::MeadowMap(256, 3, { river, river, river, river, river });
+    constexpr u32 LENGTH = 255;
+    constexpr u32 QUADS_PER_RIVER = 2 * LENGTH * gfx::RIVER_STEPS;
+    constexpr u32 FIT = gfx::MAX_RIVER_QUADS / QUADS_PER_RIVER;
+    static_assert(FIT >= 1, "a river this long must fit the buffer at least once");
+    const std::vector<TilePoint> river{ { .column = 0, .row = 1 }, { .column = LENGTH, .row = 1 } };
+    const core::WorldMap map = test::MeadowMap(LENGTH + 1, 3, std::vector(FIT + 1, river));
     const std::size_t quads = Draw(map).size() / gfx::QUAD_VERTICES;
-    CHECK(quads == 4 * 2 * 255 * gfx::RIVER_STEPS);
+    CHECK(quads == std::size_t{ FIT } * QUADS_PER_RIVER);
 }
 
 TEST_CASE("a one-point river draws nothing") {
@@ -156,8 +160,11 @@ TEST_CASE("repeated points make the same river as each point once") {
     const std::vector<gfx::RibbonVertex> expected = Draw(once);
     const std::vector<gfx::RibbonVertex> got = Draw(twice);
     REQUIRE(got.size() == expected.size());
-    CHECK(Distance(Corner(got.back()), Corner(expected.back())) < 0.01F);
-    CHECK(Distance(Corner(got[got.size() / 2]), Corner(expected[got.size() / 2])) < 0.01F);
+    f32 worst = 0.0F;
+    for (std::size_t vertex = 0; vertex < got.size(); ++vertex) {
+        worst = std::max(worst, Distance(Corner(got[vertex]), Corner(expected[vertex])));
+    }
+    CHECK(worst < 0.01F);
 }
 
 } // namespace

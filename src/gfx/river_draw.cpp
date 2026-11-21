@@ -1,8 +1,9 @@
 #include "gfx/river_draw.hpp"
 
 #include "core/cxx23.hpp" // IWYU pragma: keep
-#include "core/instances.hpp"
+#include "core/log.hpp"
 #include "core/vec2.hpp"
+#include "gfx/ribbon.hpp"
 
 namespace gfx {
 
@@ -11,14 +12,8 @@ namespace {
 /// The spline's knot spacing grows as distance to this power: a half is the centripetal parametrisation, which never
 /// loops or cusps within a segment.
 constexpr f32 KNOT_POWER = 0.5F;
-/// Directions shorter than this (in world units) are no direction at all.
-constexpr f32 SHORTEST_TANGENT = 1.0e-4F;
 /// Where in a tile its centre lies, as a fraction of its size.
 constexpr f32 TILE_CENTRE = 0.5F;
-
-f32 Length(core::Vec2 vec) {
-    return std::hypot(vec.x, vec.y);
-}
 
 core::Vec2 Lerp(core::Vec2 from, core::Vec2 target, f32 amount) {
     return from + ((target - from) * amount);
@@ -103,27 +98,22 @@ void AddBand(const std::vector<core::Vec2>& line, f32 width, u32 colour, std::ve
     for (std::size_t point = 0; point <= last; ++point) {
         // From the neighbours, so the band bends with the line without twisting; a stall keeps the last direction.
         const core::Vec2 runs = line[std::min(point + 1, last)] - line[point == 0 ? 0 : point - 1];
-        const f32 length = Length(runs);
-        if (length > SHORTEST_TANGENT) {
-            heading = runs * (1.0F / length);
-        }
-        const core::Vec2 side = core::Vec2{ .x = -heading.y, .y = heading.x } * (width * 0.5F);
+        heading = HeadingOf(runs, heading);
+        const core::Vec2 side = SideOf(heading, width);
         lefts.push_back(line[point] + side);
         rights.push_back(line[point] - side);
     }
-    const auto vertex = [colour](core::Vec2 position, f32 along, f32 across) {
-        return RibbonVertex{ .x = position.x,
-                             .y = position.y,
-                             .uv = core::PackPair(core::PackUnorm16(along), core::PackUnorm16(across)),
-                             .colour = colour };
-    };
+    const std::size_t first = into.size();
+    into.resize(first + (last * QUAD_VERTICES));
     for (std::size_t quad = 0; quad < last; ++quad) {
-        const f32 near = static_cast<f32>(quad) / static_cast<f32>(last);
-        const f32 far = static_cast<f32>(quad + 1) / static_cast<f32>(last);
-        into.push_back(vertex(lefts[quad], near, 0.0F));
-        into.push_back(vertex(rights[quad], near, 1.0F));
-        into.push_back(vertex(lefts[quad + 1], far, 0.0F));
-        into.push_back(vertex(rights[quad + 1], far, 1.0F));
+        WriteRibbonQuad(
+            std::span{ into }.subspan(first + (quad * QUAD_VERTICES), QUAD_VERTICES),
+            { .left = lefts[quad], .right = rights[quad], .along = static_cast<f32>(quad) / static_cast<f32>(last) },
+            { .left = lefts[quad + 1],
+              .right = rights[quad + 1],
+              .along = static_cast<f32>(quad + 1) / static_cast<f32>(last) },
+            colour
+        );
     }
 }
 
@@ -133,7 +123,9 @@ void DrawRivers(const core::WorldMap& map, const RiverShape& shape, std::vector<
     into.clear();
     std::vector<std::vector<core::Vec2>> lines;
     std::size_t quads = 0;
-    for (const std::vector<core::TilePoint>& river : map.Rivers()) {
+    const std::span<const std::vector<core::TilePoint>> rivers = map.Rivers();
+    for (std::size_t index = 0; index < rivers.size(); ++index) {
+        const std::vector<core::TilePoint>& river = rivers[index];
         const std::vector<core::Vec2> waypoints = Waypoints(river, map.TileSize());
         if (waypoints.size() < 2) {
             continue;
@@ -141,6 +133,12 @@ void DrawRivers(const core::WorldMap& map, const RiverShape& shape, std::vector<
         std::vector<core::Vec2> line = Midline(waypoints, map.TileSize());
         const std::size_t taken = 2 * (line.size() - 1);
         if (quads + taken > MAX_RIVER_QUADS) {
+            PN_LOG_WARNING(
+                "{} of {} rivers left out: drawing them takes more than {} quads",
+                rivers.size() - index,
+                rivers.size(),
+                MAX_RIVER_QUADS
+            );
             break;
         }
         quads += taken;

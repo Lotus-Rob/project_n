@@ -17,6 +17,7 @@
 #include "gfx/hud_draw.hpp"
 #include "gfx/labels.hpp"
 #include "gfx/mesh_vertex.hpp"
+#include "gfx/ribbon.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -51,21 +52,6 @@ inline constexpr u32 TRAIL_VERTICES = TRAIL_SEGMENTS * QUAD_VERTICES;
 }
 /// The most swords one frame draws, with nothing else placed: SwordRoom() of an empty frame.
 inline constexpr std::size_t MAX_DRAWN_SWORDS = SwordRoom(0, 0);
-
-/// One corner of a trail's quad, as the ribbon pipeline reads it: the layout of MeshVertex (16 bytes), placed in world
-/// units.
-struct RibbonVertex {
-    /// Its x in world units.
-    f32 x = 0.0F;
-    /// Its y in world units, growing downwards.
-    f32 y = 0.0F;
-    /// Where it is on the trail, two unorm16: u along it, from 0 at the sword to 1 at its tail, then v across it, from 0
-    /// on one edge to 1 on the other.
-    u32 uv = 0;
-    /// The premultiplied colour the trail is drawn in: red in the low byte, then green, blue and alpha.
-    u32 colour = 0;
-};
-static_assert(sizeof(RibbonVertex) == MESH_VERTEX_BYTES, "the ribbon pipeline reads vertices as the mesh path's");
 
 /// What one frame draws over the snapshot: the overlay's sprite instances and their batches, the HUD's batches among the same
 /// instances, and the trails' quads (QUAD_VERTICES corners each, in MeshVertex's corner order). The batches draw every sword,
