@@ -84,7 +84,7 @@ TEST_CASE("the marker sits on the route's end") {
     CHECK(Is(*manifest, drawing.instances.back(), SpriteId::RouteMarker, SHORT_END));
 }
 
-TEST_CASE("nothing is drawn without a route or a cursor") {
+TEST_CASE("nothing is drawn without a route of two points") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const std::vector<core::Vec2> lone{ START };
     for (const std::span<const core::Vec2> route : { std::span<const core::Vec2>{}, std::span<const core::Vec2>{ lone } }) {

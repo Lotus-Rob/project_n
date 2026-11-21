@@ -218,6 +218,8 @@ struct Renderer::Impl {
     /// Lays out and copies the world map's tiles for the world `shown` shows, when it shows the map and they differ from what
     /// the buffer holds; returns how many instances didn't fit.
     std::expected<std::size_t, core::Error> UploadTerrain(SDL_GPUCopyPass* copy, const Shown& shown);
+    /// The world the camera shows, as a rectangle, for the window's size.
+    static core::Rect ViewRect(const Shown& shown);
     /// Lays out the route and the cursor tile for the frame and copies each into its buffer, none when neither shows; the
     /// route's overflow, if any.
     std::expected<std::size_t, core::Error> UploadRoute(SDL_GPUCopyPass* copy, const Shown& shown);
@@ -548,6 +550,12 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     );
 }
 
+core::Rect Renderer::Impl::ViewRect(const Shown& shown) {
+    const ClipTransform transform = WorldToClip(shown.view->camera, std::max(shown.width, 1U), std::max(shown.height, 1U));
+    return { .min = ClipToWorld(transform, { .x = -1.0F, .y = 1.0F }),
+             .max = ClipToWorld(transform, { .x = 1.0F, .y = -1.0F }) };
+}
+
 std::expected<std::size_t, core::Error> Renderer::Impl::UploadTerrain(SDL_GPUCopyPass* copy, const Shown& shown) {
     PN_PROFILE_ZONE();
     terrainShown = false;
@@ -555,9 +563,7 @@ std::expected<std::size_t, core::Error> Renderer::Impl::UploadTerrain(SDL_GPUCop
         return std::size_t{ 0 };
     }
     // The world the camera shows, whole tiles of it: nothing culls ahead, so the map never lags the camera.
-    const ClipTransform transform = WorldToClip(shown.view->camera, std::max(shown.width, 1U), std::max(shown.height, 1U));
-    const core::Rect view{ .min = ClipToWorld(transform, { .x = -1.0F, .y = 1.0F }),
-                           .max = ClipToWorld(transform, { .x = 1.0F, .y = -1.0F }) };
+    const core::Rect view = ViewRect(shown);
     const TerrainKey key{ .span = worldMap->TilesIn(view), .version = worldVersion };
     if (terrainHeld == key && terrainLaid == key) {
         terrainShown = true;
@@ -587,8 +593,12 @@ std::expected<std::size_t, core::Error> Renderer::Impl::UploadRoute(SDL_GPUCopyP
     targetDrawing.batches.clear();
     DrawTargetTile(targetTile, worldLook.route, *manifest, targetDrawing);
     if (!targetDrawing.instances.empty()) {
-        // One instance in a buffer of one: it can't overflow.
-        targetShown = cursor.Upload(copy, targetDrawing.instances).has_value();
+        // One instance in a buffer of one: it can't overflow, only fail.
+        const std::expected<std::size_t, core::Error> placed = cursor.Upload(copy, targetDrawing.instances);
+        targetShown = placed.has_value();
+        if (!placed) {
+            return placed;
+        }
     }
     if (routeDrawing.instances.empty()) {
         return std::size_t{ 0 };
@@ -604,16 +614,14 @@ std::expected<std::size_t, core::Error> Renderer::Impl::UploadClouds(SDL_GPUCopy
     if (!shown.snapshot->worldMap || worldMap == nullptr || !Holds(shown.snapshot->scene) || shown.view->fog.columns == 0) {
         return std::size_t{ 0 };
     }
-    const ClipTransform transform = WorldToClip(shown.view->camera, std::max(shown.width, 1U), std::max(shown.height, 1U));
-    const core::Rect view{ .min = ClipToWorld(transform, { .x = -1.0F, .y = 1.0F }),
-                           .max = ClipToWorld(transform, { .x = 1.0F, .y = -1.0F }) };
+    const core::Rect view = ViewRect(shown);
     DrawClouds(shown.view->fog, worldLook.fog, *manifest, view, shown.view->camera.zoom, shown.view->frameClock, cloudDrawing);
     if (cloudDrawing.instances.empty()) {
         return std::size_t{ 0 };
     }
     const std::expected<std::size_t, core::Error> dropped = clouds.Upload(copy, cloudDrawing.instances);
     cloudsShown = dropped.has_value();
-    return dropped;
+    return dropped.transform([&](std::size_t left) { return left + cloudDrawing.dropped; });
 }
 
 void Renderer::Impl::LaySeals(const core::Snapshot& snapshot, f64 renderTick, bool showcase) {

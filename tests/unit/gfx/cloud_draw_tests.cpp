@@ -529,7 +529,9 @@ TEST_CASE("a 32:9 view at zoom 0.25 over the shipped map, all unexplored, stays 
             const f32 high = core::REFERENCE_SIZE.y / sample.zoom;
             const core::Vec2 half{ .x = high * (32.0F / 9.0F) * HALF, .y = high * HALF };
             const core::Rect view{ .min = centre - half, .max = centre + half };
-            const std::size_t count = Drawn(field, look, view, sample.zoom).instances.size();
+            const gfx::CloudDrawing drawing = Drawn(field, look, view, sample.zoom);
+            const std::size_t count = drawing.instances.size();
+            CHECK(drawing.dropped == 0);
             most = std::max(most, count);
             widest = sample.widest ? std::max(widest, count) : widest;
         }
@@ -538,6 +540,15 @@ TEST_CASE("a 32:9 view at zoom 0.25 over the shipped map, all unexplored, stays 
     CAPTURE(most);
     CHECK(widest > 0);
     CHECK(most <= gfx::MAX_CLOUD_INSTANCES);
+}
+
+TEST_CASE("clouds past the buffer are counted as dropped, the farthest back first") {
+    constexpr u32 WIDE = 100; // tiles across: 200 x 200 level-0 cells in view, far more clouds than the buffer holds
+    const Field field{ WIDE, WIDE };
+    const gfx::CloudDrawing drawing = Drawn(field, StillLook(), { .min = {}, .max = AtTiles(WIDE, WIDE) }, 1.0F);
+    CHECK(drawing.instances.size() == gfx::MAX_CLOUD_INSTANCES);
+    CHECK(drawing.dropped > 0);
+    CHECK(drawing.laid.size() == drawing.instances.size() + drawing.dropped);
 }
 
 TEST_CASE("the bob moves a cloud by at most its amplitude") {
