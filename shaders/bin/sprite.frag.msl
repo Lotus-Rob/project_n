@@ -147,40 +147,51 @@ fragment FragmentMain_out FragmentMain(FragmentMain_in in [[stage_in]], constant
         _248 = _247;
         break;
     } while(false);
-    float4 _320;
+    float4 _328;
     do
     {
-        if (fog.on == 0u)
+        bool _253 = fog.on == 0u;
+        if (_253)
         {
-            _320 = _248;
+            _328 = _248;
             break;
         }
-        float4 _303;
+        float4 _311;
         if ((in.in_var_TEXCOORD9 & 1u) != 0u)
         {
-            float4 _267 = fogField.sample(fogFieldSmplr, (in.in_var_TEXCOORD8 / (fog.mapSize * fog.tileSize)), level(0.0));
-            float _268 = _267.x;
-            float _271 = _268 * (1.0 - _267.y);
-            float3 _301 = mix(mix(mix(_248.xyz, mix(_248.xyz, fog.sepia.xyz * dot(_248.xyz, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875)), float3(fog.sepia.w)), float3(_271)), fog.mist.xyz * _248.w, float3(fog.mist.w * _271)), fog.shade.xyz * _248.w, float3(1.0 - smoothstep(0.0, 0.5, _268)));
-            _303 = float4(_301.x, _301.y, _301.z, _248.w);
+            float4 _310;
+            do
+            {
+                if (_253)
+                {
+                    _310 = _248;
+                    break;
+                }
+                float4 _273 = fogField.sample(fogFieldSmplr, (in.in_var_TEXCOORD8 / (fog.mapSize * fog.tileSize)), level(0.0));
+                float _274 = _273.x;
+                float _277 = _274 * (1.0 - _273.y);
+                _310 = float4(mix(mix(mix(_248.xyz, mix(_248.xyz, fog.sepia.xyz * dot(_248.xyz, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875)), float3(fog.sepia.w)), float3(_277)), fog.mist.xyz * _248.w, float3(fog.mist.w * _277)), fog.shade.xyz * _248.w, float3(1.0 - smoothstep(0.0, 0.5, _274))), _248.w);
+                break;
+            } while(false);
+            _311 = _310;
         }
         else
         {
-            _303 = _248;
+            _311 = _248;
         }
-        float4 _319;
+        float4 _327;
         if ((in.in_var_TEXCOORD9 & 2u) != 0u)
         {
-            _319 = _303 * smoothstep(0.5, 1.0, fogField.sample(fogFieldSmplr, (in.in_var_TEXCOORD10 / (fog.mapSize * fog.tileSize)), level(0.0)).y);
+            _327 = _311 * smoothstep(0.5, 1.0, fogField.sample(fogFieldSmplr, (in.in_var_TEXCOORD10 / (fog.mapSize * fog.tileSize)), level(0.0)).y);
         }
         else
         {
-            _319 = _303;
+            _327 = _311;
         }
-        _320 = _319;
+        _328 = _327;
         break;
     } while(false);
-    out.out_var_SV_Target0 = _320;
+    out.out_var_SV_Target0 = _328;
     return out;
 }
 

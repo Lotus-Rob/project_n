@@ -8,9 +8,12 @@
 #include "core/tick_clock.hpp"
 #include "gfx/cloud_draw.hpp"
 #include "gfx/glow_table.hpp"
+#include "gfx/ground.hpp"
 #include "gfx/internal/features/composite.hpp"
+#include "gfx/internal/features/ground.hpp"
 #include "gfx/internal/features/meshes.hpp"
 #include "gfx/internal/features/ribbons.hpp"
+#include "gfx/internal/features/rivers.hpp"
 #include "gfx/internal/features/seals.hpp"
 #include "gfx/internal/features/sprites.hpp"
 #include "gfx/internal/frame/frame.hpp"
@@ -218,6 +221,11 @@ struct Renderer::Impl {
     /// Lays out and copies the world map's tiles for the world `shown` shows, when it shows the map and they differ from what
     /// the buffer holds; returns how many instances didn't fit.
     std::expected<std::size_t, core::Error> UploadTerrain(SDL_GPUCopyPass* copy, const Shown& shown);
+    /// Builds and copies the world map's ground field and rivers when the map or the look changed, and works out the part
+    /// of the view the ground covers and its uniforms, when `shown` shows the map; nothing of either draws otherwise.
+    std::expected<void, core::Error> UploadGround(SDL_GPUCopyPass* copy, const Shown& shown);
+    /// Creates the world map's ground and river pipelines on `gpu`, or says why it couldn't.
+    std::expected<void, core::Error> CreateGround(SDL_GPUDevice* gpu);
     /// The world the camera shows, as a rectangle, for the window's size.
     static core::Rect ViewRect(const Shown& shown);
     /// Lays out the route and the cursor tile for the frame and copies each into its buffer, none when neither shows; the
@@ -329,6 +337,8 @@ struct Renderer::Impl {
     /// Features: what draws, each with its pipelines and buffers.
     internal::SpriteRenderer instances{};
     internal::MeshRenderer meshes{};
+    internal::GroundRenderer ground{};  // the world map's painted ground, under everything on it
+    internal::RiverRenderer rivers{};   // the world map's rivers, over the ground
     internal::SpriteRenderer terrain{}; // the world map's tiles, overlays and markers (TerrainDrawing)
     internal::SpriteRenderer route{};   // the player's route (TerrainDrawing), over the map
     internal::SpriteRenderer clouds{};  // the fog's clouds (CloudDrawing), over the world's sprites
@@ -406,7 +416,9 @@ struct Renderer::Impl {
     bool cloudsShown = false;     // whether this frame draws the clouds
     std::optional<core::Vec2> targetTile = std::nullopt; // SetTargetTile(): the cursor tile's centre, if it shows
     bool routeShown = false;                             // whether this frame draws the route buffer: it holds something
-    bool terrainShown = false;   // whether this frame draws the terrain: the snapshot shows the map and its buffer is current
+    bool terrainShown = false; // whether this frame draws the terrain: the snapshot shows the map and its buffer is current
+    std::optional<core::Rect> groundQuad = std::nullopt; // the part of this frame's view the ground and rivers cover, if any
+    GroundUniforms groundUniforms{};                     // what this frame's ground is painted by
     VolleyDrawing volleyDrawing; // this frame's health bars and swords, placed at the render time, and the HUD's bars
     SealDrawing sealDrawing;     // this frame's seals, laid out at the render time
     std::vector<core::SealKey> sealsMissing; // the seal keys the table lacked, each logged once
@@ -486,6 +498,7 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     // Every frame: texts move with the camera and the render clock, unlike the instances.
     const std::expected<std::size_t, core::Error> quadsDropped =
         meshes.Upload(copy, glyphs ? std::span<const MeshVertex>{ meshVertices } : std::span<const MeshVertex>{});
+    const std::expected<void, core::Error> groundCopied = UploadGround(copy, shown);
     const std::expected<std::size_t, core::Error> terrainDropped = UploadTerrain(copy, shown);
     const std::expected<std::size_t, core::Error> routeDropped = UploadRoute(copy, shown);
     const std::expected<std::size_t, core::Error> cloudsDropped = UploadClouds(copy, shown);
@@ -535,7 +548,7 @@ std::expected<void, core::Error> Renderer::Impl::Upload(SDL_GPUCommandBuffer* co
     return core::Combine(
         core::Combine(
             core::Combine(core::Combine(core::Combine(instancesCopied, glowsCopied), glyphs), quadsDropped.transform(copied)),
-            fogCopied
+            core::Combine(fogCopied, groundCopied)
         ),
         core::Combine(
             core::Combine(overlayDropped.transform(copied), ribbonsDropped.transform(copied)),
@@ -577,6 +590,37 @@ std::expected<std::size_t, core::Error> Renderer::Impl::UploadTerrain(SDL_GPUCop
         terrainShown = true;
     }
     return dropped;
+}
+
+std::expected<void, core::Error> Renderer::Impl::UploadGround(SDL_GPUCopyPass* copy, const Shown& shown) {
+    PN_PROFILE_ZONE();
+    groundQuad.reset();
+    if (!shown.snapshot->worldMap || worldMap == nullptr || !Holds(shown.snapshot->scene)) {
+        return {};
+    }
+    // SetWorld() counts each new map or look, which is all the field and the rivers are built from.
+    const std::expected<void, core::Error> field = ground.Update(copy, *worldMap, worldLook, worldVersion);
+    const std::expected<void, core::Error> laid = rivers.Update(copy, *worldMap, worldLook, worldVersion);
+    groundQuad = GroundQuad(ViewRect(shown), *worldMap);
+    groundUniforms = GroundUniformsOf(*worldMap, worldLook, GROUND_MODE_GROUND);
+    groundUniforms.zoom = shown.view->camera.zoom;
+    return core::Combine(field, laid);
+}
+
+std::expected<void, core::Error> Renderer::Impl::CreateGround(SDL_GPUDevice* gpu) {
+    std::expected<internal::GroundRenderer, core::Error> madeGround =
+        internal::GroundRenderer::Create(gpu, internal::SCENE_FORMAT);
+    if (!madeGround) {
+        return std::unexpected{ std::move(madeGround.error()) };
+    }
+    ground = std::move(*madeGround);
+    std::expected<internal::RiverRenderer, core::Error> madeRivers =
+        internal::RiverRenderer::Create(gpu, internal::SCENE_FORMAT);
+    if (!madeRivers) {
+        return std::unexpected{ std::move(madeRivers.error()) };
+    }
+    rivers = std::move(*madeRivers);
+    return {};
 }
 
 std::expected<std::size_t, core::Error> Renderer::Impl::UploadRoute(SDL_GPUCopyPass* copy, const Shown& shown) {
@@ -1034,6 +1078,8 @@ void Renderer::Impl::Submitted(bool submitted) {
     uploaded.Submitted(submitted);
     seals.Submitted(submitted);
     fog.Submitted(submitted);
+    ground.Submitted(submitted);
+    rivers.Submitted(submitted);
     if (submitted && terrainRecorded) {
         terrainHeld = terrainRecorded;
     }
@@ -1098,7 +1144,12 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
     const internal::GlowFrame glows = GlowFrameOf(snapshot, view);
     const std::span<const core::Batch> batches{ snapshot.batches };
     const std::size_t groundBatches = std::min<std::size_t>(snapshot.groundBatches, batches.size());
-    // The map under all of it: it is the ground of a scene that shows it, which publishes none.
+    // The map under all of it: it is the ground of a scene that shows it, which publishes none. Its painted ground first,
+    // then the rivers on it, then the tiles and what lies on them; none of it where the view misses the map.
+    if (groundQuad) {
+        ground.Draw(commands, pass, transform, *groundQuad, groundUniforms, fog);
+        rivers.Draw(commands, pass, transform, fog);
+    }
     if (terrainShown) {
         terrain.Draw(commands, pass, terrainDrawing.batches, sprites, transform, alpha, glows, fog);
     }
@@ -1296,6 +1347,9 @@ std::expected<Renderer, core::Error> Renderer::Create(
         return std::unexpected{ std::move(overlay.error()) };
     }
     impl->overlay = std::move(*overlay);
+    if (std::expected<void, core::Error> ground = impl->CreateGround(device); !ground) {
+        return std::unexpected{ std::move(ground.error()) };
+    }
     std::expected<internal::SpriteRenderer, core::Error> terrain =
         internal::SpriteRenderer::Create(device, internal::SCENE_FORMAT, MAX_TERRAIN_INSTANCES, "terrain instances");
     if (!terrain) {

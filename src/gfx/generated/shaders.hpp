@@ -80,6 +80,56 @@ inline constexpr Stage COMPOSITE_VERT{
     .uniformBuffers = 0,
 };
 
+/// shaders/bin/ground.frag.spv, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 32488> GROUND_FRAG_SPIRV{{
+#include "ground.frag.spv.h"
+}};
+/// shaders/bin/ground.frag.dxil, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 12820> GROUND_FRAG_DXIL{{
+#include "ground.frag.dxil.h"
+}};
+/// shaders/bin/ground.frag.msl, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 29314> GROUND_FRAG_MSL{{
+#include "ground.frag.msl.h"
+}};
+/// shaders/ground.frag.hlsl.
+inline constexpr Stage GROUND_FRAG{
+    .name = "ground.frag",
+    .entryPoint = "FragmentMain",
+    .spirv = GROUND_FRAG_SPIRV,
+    .dxil = GROUND_FRAG_DXIL,
+    .msl = GROUND_FRAG_MSL,
+    .samplers = 3,
+    .storageTextures = 0,
+    .storageBuffers = 0,
+    .uniformBuffers = 2,
+};
+
+/// shaders/bin/ground.vert.spv, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 1220> GROUND_VERT_SPIRV{{
+#include "ground.vert.spv.h"
+}};
+/// shaders/bin/ground.vert.dxil, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 3680> GROUND_VERT_DXIL{{
+#include "ground.vert.dxil.h"
+}};
+/// shaders/bin/ground.vert.msl, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 693> GROUND_VERT_MSL{{
+#include "ground.vert.msl.h"
+}};
+/// shaders/ground.vert.hlsl.
+inline constexpr Stage GROUND_VERT{
+    .name = "ground.vert",
+    .entryPoint = "VertexMain",
+    .spirv = GROUND_VERT_SPIRV,
+    .dxil = GROUND_VERT_DXIL,
+    .msl = GROUND_VERT_MSL,
+    .samplers = 0,
+    .storageTextures = 0,
+    .storageBuffers = 0,
+    .uniformBuffers = 1,
+};
+
 /// shaders/bin/mesh.frag.spv, embedded by XMake's utils.bin2c.
 inline constexpr std::array<u8, 4604> MESH_FRAG_SPIRV{{
 #include "mesh.frag.spv.h"
@@ -153,6 +203,56 @@ inline constexpr Stage RIBBON_FRAG{
     .storageTextures = 0,
     .storageBuffers = 0,
     .uniformBuffers = 0,
+};
+
+/// shaders/bin/river.frag.spv, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 2968> RIVER_FRAG_SPIRV{{
+#include "river.frag.spv.h"
+}};
+/// shaders/bin/river.frag.dxil, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 5568> RIVER_FRAG_DXIL{{
+#include "river.frag.dxil.h"
+}};
+/// shaders/bin/river.frag.msl, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 1685> RIVER_FRAG_MSL{{
+#include "river.frag.msl.h"
+}};
+/// shaders/river.frag.hlsl.
+inline constexpr Stage RIVER_FRAG{
+    .name = "river.frag",
+    .entryPoint = "FragmentMain",
+    .spirv = RIVER_FRAG_SPIRV,
+    .dxil = RIVER_FRAG_DXIL,
+    .msl = RIVER_FRAG_MSL,
+    .samplers = 1,
+    .storageTextures = 0,
+    .storageBuffers = 0,
+    .uniformBuffers = 1,
+};
+
+/// shaders/bin/river.vert.spv, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 1240> RIVER_VERT_SPIRV{{
+#include "river.vert.spv.h"
+}};
+/// shaders/bin/river.vert.dxil, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 4156> RIVER_VERT_DXIL{{
+#include "river.vert.dxil.h"
+}};
+/// shaders/bin/river.vert.msl, embedded by XMake's utils.bin2c.
+inline constexpr std::array<u8, 925> RIVER_VERT_MSL{{
+#include "river.vert.msl.h"
+}};
+/// shaders/river.vert.hlsl.
+inline constexpr Stage RIVER_VERT{
+    .name = "river.vert",
+    .entryPoint = "VertexMain",
+    .spirv = RIVER_VERT_SPIRV,
+    .dxil = RIVER_VERT_DXIL,
+    .msl = RIVER_VERT_MSL,
+    .samplers = 0,
+    .storageTextures = 0,
+    .storageBuffers = 0,
+    .uniformBuffers = 1,
 };
 
 /// shaders/bin/seal.frag.spv, embedded by XMake's utils.bin2c.
@@ -256,7 +356,7 @@ inline constexpr Stage SEAL_LIGHT_VERT{
 };
 
 /// shaders/bin/sprite.frag.spv, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 7920> SPRITE_FRAG_SPIRV{{
+inline constexpr std::array<u8, 8100> SPRITE_FRAG_SPIRV{{
 #include "sprite.frag.spv.h"
 }};
 /// shaders/bin/sprite.frag.dxil, embedded by XMake's utils.bin2c.
@@ -264,7 +364,7 @@ inline constexpr std::array<u8, 9008> SPRITE_FRAG_DXIL{{
 #include "sprite.frag.dxil.h"
 }};
 /// shaders/bin/sprite.frag.msl, embedded by XMake's utils.bin2c.
-inline constexpr std::array<u8, 7076> SPRITE_FRAG_MSL{{
+inline constexpr std::array<u8, 7320> SPRITE_FRAG_MSL{{
 #include "sprite.frag.msl.h"
 }};
 /// shaders/sprite.frag.hlsl.
