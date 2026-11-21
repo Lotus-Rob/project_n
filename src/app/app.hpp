@@ -212,7 +212,7 @@ private:
     // Hands the camera's controls (drag, zoom, snap back) to it: true when `control` was one of them, pressed.
     [[nodiscard]] bool SteerCamera(const ControlEvent& control);
     void Click(const platform::WindowState& state, core::Vec2 position);
-    // Acts on the debug keys that change only what the main thread draws: true when `control` was one.
+    // Acts on the debug keys that change only what is drawn, never the simulation: true when `control` was one.
     [[nodiscard]] bool TakeDisplayToggle(Control control);
     // Acts on the cursor's two controls: true when `control` was one.
     [[nodiscard]] bool TakeCursorControl(Control control);

@@ -20,7 +20,7 @@ constexpr core::Vec2 ORIGIN{};
 constexpr core::Vec2 MOVED{ .x = 200.0F, .y = 0.0F };
 constexpr f64 HALFWAY = 0.5;
 constexpr f32 HALF = 0.5F;
-const gfx::FogFrame noFog{};
+constexpr gfx::FogFrame NO_FOG{};
 
 TEST_CASE("the camera follows the target's foot interpolated by alpha") {
     const core::Follow follow{ .previous = ORIGIN, .current = MOVED };
@@ -47,8 +47,8 @@ TEST_CASE("picking takes the instance drawn on top") {
     core::Snapshot snapshot;
     snapshot.instances = { Quad(ORIGIN, ORIGIN), Quad(ORIGIN, ORIGIN) };
     snapshot.ids = { UNDER, OVER };
-    CHECK(app::Pick(snapshot, 1.0, ORIGIN, noFog) == OVER);
-    CHECK(app::PickInstance(snapshot, 1.0, ORIGIN, noFog) == std::optional<std::size_t>{ 1 }); // what hover outlines
+    CHECK(app::Pick(snapshot, 1.0, ORIGIN, NO_FOG) == OVER);
+    CHECK(app::PickInstance(snapshot, 1.0, ORIGIN, NO_FOG) == std::optional<std::size_t>{ 1 }); // what hover outlines
 }
 
 TEST_CASE("picking skips instances without an ID, and misses where nothing is drawn") {
@@ -57,8 +57,8 @@ TEST_CASE("picking skips instances without an ID, and misses where nothing is dr
     core::Snapshot snapshot;
     snapshot.instances = { Quad(ORIGIN, ORIGIN), Quad(ORIGIN, ORIGIN) };
     snapshot.ids = { ENTITY, core::StableId{} };
-    CHECK(app::Pick(snapshot, 1.0, ORIGIN, noFog) == ENTITY);
-    CHECK(app::Pick(snapshot, 1.0, FAR, noFog) == core::StableId{});
+    CHECK(app::Pick(snapshot, 1.0, ORIGIN, NO_FOG) == ENTITY);
+    CHECK(app::Pick(snapshot, 1.0, FAR, NO_FOG) == core::StableId{});
 }
 
 TEST_CASE("picking hits a moving instance where alpha draws it") {
@@ -66,9 +66,9 @@ TEST_CASE("picking hits a moving instance where alpha draws it") {
     core::Snapshot snapshot;
     snapshot.instances = { Quad(ORIGIN, MOVED) };
     snapshot.ids = { MOVING };
-    CHECK(app::Pick(snapshot, 0.0, ORIGIN, noFog) == MOVING);
-    CHECK(app::Pick(snapshot, 1.0, ORIGIN, noFog) == core::StableId{});
-    CHECK(app::Pick(snapshot, 1.0, MOVED, noFog) == MOVING);
+    CHECK(app::Pick(snapshot, 0.0, ORIGIN, NO_FOG) == MOVING);
+    CHECK(app::Pick(snapshot, 1.0, ORIGIN, NO_FOG) == core::StableId{});
+    CHECK(app::Pick(snapshot, 1.0, MOVED, NO_FOG) == MOVING);
 }
 
 TEST_CASE("picking turns with a rotated instance, as alpha draws it") {
@@ -82,16 +82,14 @@ TEST_CASE("picking turns with a rotated instance, as alpha draws it") {
     snapshot.instances = { { .size = core::PackPair(core::PackHalf(LENGTH), core::PackHalf(THICKNESS)),
                              .rotation = core::PackPair(core::PackHalf(0.0F), core::PackHalf(QUARTER_TURN)) } };
     snapshot.ids = { TURNING };
-    CHECK(app::Pick(snapshot, 0.0, ALONG_X, noFog) == TURNING); // not turned yet: lying along x
-    CHECK(app::Pick(snapshot, 0.0, ALONG_Y, noFog) == core::StableId{});
-    CHECK(app::Pick(snapshot, 1.0, ALONG_Y, noFog) == TURNING); // a quarter turn: standing along y
-    CHECK(app::Pick(snapshot, 1.0, ALONG_X, noFog) == core::StableId{});
+    CHECK(app::Pick(snapshot, 0.0, ALONG_X, NO_FOG) == TURNING); // not turned yet: lying along x
+    CHECK(app::Pick(snapshot, 0.0, ALONG_Y, NO_FOG) == core::StableId{});
+    CHECK(app::Pick(snapshot, 1.0, ALONG_Y, NO_FOG) == TURNING); // a quarter turn: standing along y
+    CHECK(app::Pick(snapshot, 1.0, ALONG_X, NO_FOG) == core::StableId{});
 }
 
-// A one-tile fog whose single tile is `inSight` (0 to 255) in sight, which every point of the map then samples.
-gfx::FogFrame OneTile(u8 inSight) {
-    static std::array<u8, 2> values{};
-    values = { u8{ 255 }, inSight };
+// A one-tile fog over `values` (explored, then in sight, each 0 to 255), which every point of the map then samples.
+gfx::FogFrame OneTile(const std::array<u8, 2>& values) {
     return { .columns = 1, .rows = 1, .tileSize = 256.0F, .values = values, .revision = 1 };
 }
 
@@ -101,13 +99,23 @@ TEST_CASE("a walker drawn at under half opacity can't be picked and one over hal
     snapshot.instances = { Quad(ORIGIN, ORIGIN) };
     snapshot.instances.front().flags = core::INSTANCE_SIGHT_FADE;
     snapshot.ids = { WALKER };
-    const gfx::FogFrame unseen = OneTile(0);
+    const std::array<u8, 2> unseenBytes{ 255, 0 };
+    const std::array<u8, 2> seenBytes{ 255, 255 };
+    const std::array<u8, 2> justUnderBytes{ 255, 184 }; // sample about 0.72: fade about 0.41
+    const std::array<u8, 2> justOverBytes{ 255, 200 };  // sample about 0.78: fade about 0.60
+    const gfx::FogFrame unseen = OneTile(unseenBytes);
     CHECK(gfx::SightFade(unseen, ORIGIN) < HALF);
     CHECK(app::Pick(snapshot, 1.0, ORIGIN, unseen) == core::StableId{});
     CHECK_FALSE(app::PickInstance(snapshot, 1.0, ORIGIN, unseen).has_value());
-    const gfx::FogFrame seen = OneTile(255);
+    const gfx::FogFrame seen = OneTile(seenBytes);
     CHECK(gfx::SightFade(seen, ORIGIN) > HALF);
     CHECK(app::Pick(snapshot, 1.0, ORIGIN, seen) == WALKER);
+    const gfx::FogFrame justUnder = OneTile(justUnderBytes);
+    CHECK(gfx::SightFade(justUnder, ORIGIN) < HALF);
+    CHECK(app::Pick(snapshot, 1.0, ORIGIN, justUnder) == core::StableId{});
+    const gfx::FogFrame justOver = OneTile(justOverBytes);
+    CHECK(gfx::SightFade(justOver, ORIGIN) > HALF);
+    CHECK(app::Pick(snapshot, 1.0, ORIGIN, justOver) == WALKER);
 }
 
 TEST_CASE("an instance without the sight fade is picked whatever the fog says") {
@@ -115,7 +123,8 @@ TEST_CASE("an instance without the sight fade is picked whatever the fog says") 
     core::Snapshot snapshot;
     snapshot.instances = { Quad(ORIGIN, ORIGIN) };
     snapshot.ids = { TREE };
-    const gfx::FogFrame unseen = OneTile(0);
+    const std::array<u8, 2> unseenBytes{ 255, 0 };
+    const gfx::FogFrame unseen = OneTile(unseenBytes);
     CHECK(app::Pick(snapshot, 1.0, ORIGIN, unseen) == TREE);
 }
 
@@ -125,7 +134,7 @@ TEST_CASE("without fog every instance is pickable as before") {
     snapshot.instances = { Quad(ORIGIN, ORIGIN) };
     snapshot.instances.front().flags = core::INSTANCE_SIGHT_FADE;
     snapshot.ids = { WALKER };
-    CHECK(app::Pick(snapshot, 1.0, ORIGIN, noFog) == WALKER);
+    CHECK(app::Pick(snapshot, 1.0, ORIGIN, NO_FOG) == WALKER);
 }
 
 constexpr i32 WINDOW_WIDTH = 1280;
