@@ -39,7 +39,7 @@ void AddDots(
     }
 }
 
-// One normal batch over what was appended since `first`, none when nothing was.
+/// One normal batch over what was appended since `first`, none when nothing was.
 void Close(std::size_t first, TerrainDrawing& into) {
     if (into.instances.size() > first) {
         into.batches.push_back(

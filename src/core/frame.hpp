@@ -354,7 +354,7 @@ struct FogView {
     std::optional<u32> playerTile = std::nullopt;
     /// How far the player sees, in tiles.
     u32 sightRadius = 0;
-    /// Whether the debug aid shows the whole map: the fog is drawn as if everything were explored and in sight.
+    /// Whether the debug aid is on: every tile counts as in sight, and the land not yet explored stays under cloud.
     bool debugSight = false;
 };
 

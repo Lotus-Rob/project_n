@@ -147,11 +147,10 @@ public:
     /// last met after their world's calendar, a place kept on the map that isn't a finite point or lies in its portal's step
     /// area, explored tiles that don't fit the map (core::FogBitsFit(): the wrong number of words, or a bit past its last
     /// tile), a sight radius past core::MAX_SIGHT, a world paused, keeping a place on the map, exploring or seeing any
-    /// distance where it can't have shown the
-    /// map (a dev scene's scratch world, or any in a game without the map), travel that Travel::LoadDelta() refuses (any at all
-    /// in a scratch world or a game without the map), or a player's route that isn't a journey of the player alone with one
-    /// tile route leg by core::WALKING of a step at least that LegSound() accepts, on the world map with its clock no further
-    /// than journeys' ticks reach.
+    /// distance where it can't have shown the map (a dev scene's scratch world, or any in a game without the map), travel
+    /// that Travel::LoadDelta() refuses (any at all in a scratch world or a game without the map), or a player's route
+    /// that isn't a journey of the player alone with one tile route leg by core::WALKING of a step at least that
+    /// LegSound() accepts, on the world map with its clock no further than journeys' ticks reach.
     [[nodiscard]] bool Load(core::Reader& archive, u64 simulationTick) override;
 
     /// A hash of everything Save() writes but the game's world while a dev scene runs, set aside where nothing changes it:
@@ -271,8 +270,8 @@ public:
         return m_world.sightRadius;
     }
 
-    /// Sets how far the player's cultivator sees over the world map, at most core::MAX_SIGHT tiles: on the map, the next
-    /// tick explores round its foot by it.
+    /// Sets how far the player's cultivator sees over the world map: on the map, the next tick explores round its foot
+    /// by it. A `radius` past core::MAX_SIGHT is a bug (asserted); with assertions off it is held to core::MAX_SIGHT.
     void SetSightRadius(u32 radius);
 
     /// Explores every tile of the world map under `area`, its edges included, in the game's world: nothing for an area
