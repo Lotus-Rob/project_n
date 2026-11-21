@@ -2,7 +2,6 @@
 
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/profile.hpp"
-#include "core/ui_colours.hpp"
 #include "gfx/internal/resources/shaders.hpp"
 
 namespace gfx::internal {
@@ -65,8 +64,6 @@ static_assert(
 
 constexpr u32 GLOW_TABLE_BYTES = static_cast<u32>(GLOW_RECORD_BYTES * core::GLOW_ROLES);
 
-/// sprite.frag.hlsl's LUMINANCE: Rec. 709's weights of linear red, green and blue.
-constexpr std::array<f32, 3> FOG_LUMINANCE{ 0.2126F, 0.7152F, 0.0722F };
 constexpr u32 SHADER_FOGGED_LAND = 1; // sprite.frag.hlsl's INSTANCE_FOGGED_LAND
 constexpr u32 SHADER_SIGHT_FADE = 2;  // sprite.frag.hlsl's INSTANCE_SIGHT_FADE
 static_assert(core::INSTANCE_FOGGED_LAND == SHADER_FOGGED_LAND, "sprite.frag.hlsl's INSTANCE_FOGGED_LAND is core's");
@@ -74,20 +71,6 @@ static_assert(core::INSTANCE_SIGHT_FADE == SHADER_SIGHT_FADE, "sprite.frag.hlsl'
 /// Two bytes a texel: explored, then in sight, as FogFrame::values holds them.
 constexpr u32 FOG_TEXEL_BYTES = 2;
 constexpr u8 FOG_FULL = 255;
-constexpr f32 CHANNEL_MAX = 255.0F;
-constexpr u32 CHANNEL_BITS = 8;
-constexpr u32 CHANNEL_MASK = 0xFFU;
-
-/// The linear red, green and blue of the sRGB colour `srgb`.
-std::array<f32, 3> LinearOf(const std::array<u8, 3>& srgb) {
-    const u32 packed = core::FromSrgb(srgb[0], srgb[1], srgb[2], FOG_FULL);
-    std::array<f32, 3> linear{};
-    for (u32 channel = 0; channel < linear.size(); ++channel) {
-        linear.at(channel) = static_cast<f32>((packed >> (channel * CHANNEL_BITS)) & CHANNEL_MASK) / CHANNEL_MAX;
-    }
-    return linear;
-}
-
 Gpu<SDL_GPUTexture> CreateFogTexture(SDL_GPUDevice* device, u32 columns, u32 rows, const char* name) {
     SDL_GPUTextureCreateInfo info{};
     info.type = SDL_GPU_TEXTURETYPE_2D;
@@ -271,24 +254,6 @@ std::expected<void, core::Error> GlowTableBuffer::Upload(
     return {};
 }
 
-FogUniforms FogUniformsOf(const FogFrame& fog, const core::FogLook& look) {
-    if (fog.columns == 0 || fog.rows == 0 || fog.tileSize <= 0.0F) {
-        return {};
-    }
-    const std::array<f32, 3> sepia = LinearOf(look.sepia);
-    const f32 luminance = (sepia[0] * FOG_LUMINANCE[0]) + (sepia[1] * FOG_LUMINANCE[1]) + (sepia[2] * FOG_LUMINANCE[2]);
-    // Over its own luminance, a colour's luminance times the tint keeps that luminance in the sepia's hue.
-    const f32 over = luminance > 0.0F ? 1.0F / luminance : 0.0F;
-    const std::array<f32, 3> mist = LinearOf(look.mist);
-    const std::array<f32, 3> shade = LinearOf(look.shade);
-    return { .mapSize = { static_cast<f32>(fog.columns), static_cast<f32>(fog.rows) },
-             .tileSize = fog.tileSize,
-             .on = 1,
-             .sepia = { sepia[0] * over, sepia[1] * over, sepia[2] * over, look.drain },
-             .mist = { mist[0], mist[1], mist[2], look.mistStrength },
-             .shade = { shade[0], shade[1], shade[2], 0.0F } };
-}
-
 std::expected<FogTexture, core::Error> FogTexture::Create(SDL_GPUDevice* device) {
     FogTexture fog;
     fog.m_device = device;
@@ -356,8 +321,11 @@ std::expected<void, core::Error> FogTexture::Update(SDL_GPUCopyPass* copy, const
         return {};
     }
     if (!CopyFog(m_device, copy, m_transfer.get(), m_field.get(), fog.values.first(bytes), m_columns, m_rows)) {
-        // The texture may hold older values, or none yet: the frame draws without the fog rather than with them.
-        m_uniforms.on = 0;
+        // The last submitted values are only a little stale, and dropping the fog would show the whole map for a frame;
+        // with none held yet the texture is undefined, so the frame draws without the fog.
+        if (!m_held) {
+            m_uniforms.on = 0;
+        }
         return std::unexpected{ core::Error{ std::format("the fog wasn't uploaded: {}", SDL_GetError()) } };
     }
     m_recorded = fog.revision;

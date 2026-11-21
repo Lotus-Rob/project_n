@@ -74,28 +74,6 @@ struct GlowFrame {
     f32 texelUv = 0.0F;
 };
 
-/// What the sprite fragment shader shades and fades by the fog with: `Fog` in shaders/sprite.frag.hlsl, rows of 16 bytes.
-struct FogUniforms {
-    /// The field's tiles across, then down.
-    std::array<f32, 2> mapSize{};
-    /// A tile's side in world units.
-    f32 tileSize = 0.0F;
-    /// 1 while the view has fog; 0 leaves every sprite as it is.
-    u32 on = 0;
-    /// Linear red, green and blue of the sepia colour over its own luminance, then how far the colour drains.
-    std::array<f32, 4> sepia{};
-    /// The mist's linear red, green and blue, then how much of it shows.
-    std::array<f32, 4> mist{};
-    /// The linear red, green and blue under the clouds, then an unused 0.
-    std::array<f32, 4> shade{};
-};
-/// The bytes of FogUniforms, as the shader's constant buffer holds them.
-inline constexpr std::size_t FOG_UNIFORM_BYTES = 64;
-static_assert(sizeof(FogUniforms) == FOG_UNIFORM_BYTES, "the shader's fog constant buffer is 64 bytes");
-
-/// The uniforms that shade by `fog` in `look`'s colours and strengths; off when `fog` has no tiles.
-[[nodiscard]] FogUniforms FogUniformsOf(const FogFrame& fog, const core::FogLook& look);
-
 /// The fog's values as a two-channel texture with a texel per tile (explored, then in sight), which every sprite draw
 /// binds, and the uniforms its frame shades by. With no fog it binds a 1 × 1 texture, explored and in sight.
 class FogTexture {
