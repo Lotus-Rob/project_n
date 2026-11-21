@@ -316,6 +316,46 @@ TEST_CASE("no cloud's box reaches into an explored tile or past the map") {
     CHECK(reaching == 0);
 }
 
+TEST_CASE("a cloud's box eases in as its neighbour uncovers, never jumping") {
+    // Two tiles side by side: the left tile's clouds that reach over into the right one are pulled back as it uncovers.
+    const core::FogLook look = StillLook();
+    const core::Rect view = WindowAt(AtTiles(1.0F, HALF), 1.0F);
+    const auto drawnWith = [&](u8 right) {
+        Field field{ 2, 1 };
+        field.Set(1, 0, right);
+        return Drawn(field, look, view, 1.0F);
+    };
+    const gfx::CloudDrawing covered = drawnWith(0);
+    const gfx::CloudDrawing starting = drawnWith(3); // about 0.01 uncovered
+    const gfx::CloudDrawing explored = drawnWith(FULL);
+    Field uncovered{ 2, 1 };
+    uncovered.Set(1, 0, FULL);
+    // Only the left tile's clouds are left once the right one is explored; each keeps its sprite and size throughout.
+    const auto find = [](const gfx::CloudDrawing& drawing, const core::Instance& cloud) {
+        const auto same = [&](const core::Instance& other) {
+            return other.size == cloud.size && other.regionMin == cloud.regionMin;
+        };
+        const auto found = std::ranges::find_if(drawing.instances, same);
+        REQUIRE(found != drawing.instances.end());
+        return Foot(*found);
+    };
+    REQUIRE_FALSE(explored.instances.empty());
+    f32 firstStep = 0.0F;
+    f32 wholeWay = 0.0F;
+    std::size_t reaching = 0;
+    for (const core::Instance& cloud : explored.instances) {
+        const core::Vec2 before = find(covered, cloud);
+        const core::Vec2 barely = find(starting, cloud) - before;
+        const core::Vec2 after = Foot(cloud) - before;
+        firstStep = std::max(firstStep, std::hypot(barely.x, barely.y));
+        wholeWay = std::max(wholeWay, std::hypot(after.x, after.y));
+        reaching += ReachesExplored(uncovered, cloud) ? 1 : 0;
+    }
+    CHECK(wholeWay > 10.0F); // some cloud did reach over and was pulled in
+    CHECK(firstStep < 2.0F); // a hundredth of the way, where a jump would be most of that
+    CHECK(reaching == 0);
+}
+
 TEST_CASE("a tile halfway uncovered draws its clouds at half opacity, drifted half their distance") {
     constexpr u8 HALFWAY = 128;
     const core::FogLook look = StillLook();

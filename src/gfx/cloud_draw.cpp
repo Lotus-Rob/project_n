@@ -110,16 +110,16 @@ f32 Explored(const FogFrame& fog, i64 column, i64 row) {
     return index < fog.values.size() ? static_cast<f32>(fog.values[index]) / BYTE_RANGE : 1.0F;
 }
 
-/// Whether any tile from `tiles`' first column and row up to (not including) its ends is explored at all or off the map.
-bool AnyExplored(const FogFrame& fog, const Tiles& tiles) {
+/// The largest explored value of the tiles from `tiles`' first column and row up to (not including) its ends, 0 to 1;
+/// tiles off the map count as explored, and no tiles give 0.
+f32 MostExplored(const FogFrame& fog, const Tiles& tiles) {
+    f32 most = 0.0F;
     for (i64 row = tiles.row; row < tiles.endRow; ++row) {
         for (i64 column = tiles.column; column < tiles.endColumn; ++column) {
-            if (Explored(fog, column, row) > 0.0F) {
-                return true;
-            }
+            most = std::max(most, Explored(fog, column, row));
         }
     }
-    return false;
+    return most;
 }
 
 /// The tiles a cell touches: a level-0 cell lies within one tile, a level-l cell above it covers 2^(l-1) tiles a side.
@@ -180,59 +180,85 @@ Box BoxOf(const Fit& fit) {
              .bottom = fit.foot.y + (fit.reach.bottom * fit.scale) + fit.bob };
 }
 
-/// The cloud's box with the sides in `closed` kept inside `own`: shrunk first about its foot only as far as two closed
-/// sides facing each other need, then moved in.
-Fit Settle(Fit fit, const Box& own, const std::array<bool, SIDES>& closed) {
-    const f32 wide = fit.reach.left + fit.reach.right;
-    const f32 high = fit.reach.top + fit.reach.bottom;
-    if (closed[LEFT] && closed[RIGHT] && wide * fit.scale > own.right - own.left) {
-        fit.scale = (own.right - own.left) / wide;
+/// How hard each side's neighbours pull the box back inside its cell's tiles, 0 to 1: the largest explored value of the
+/// tiles beyond it that the box reaches, so the box eases in as they uncover rather than jumping at the first sign.
+using Pulls = std::array<f32, SIDES>;
+
+/// How far each side of the box may reach under `pulls`: its cell's edge less what the pull leaves of the box's own reach
+/// past it. With no pull the limit lies at the free box's edge, or a whole box beyond the cell for a side that doesn't
+/// reach past it, which nothing can push the box to; with a full pull it is the cell's edge.
+Box Limits(const Box& free, const Box& own, const Pulls& pulls) {
+    const f32 wide = free.right - free.left;
+    const f32 high = free.bottom - free.top;
+    const auto slack = [](f32 past, f32 span) { return past > 0.0F ? past : span; };
+    return { .left = own.left - ((1.0F - pulls[LEFT]) * slack(own.left - free.left, wide)),
+             .right = own.right + ((1.0F - pulls[RIGHT]) * slack(free.right - own.right, wide)),
+             .top = own.top - ((1.0F - pulls[TOP]) * slack(own.top - free.top, high)),
+             .bottom = own.bottom + ((1.0F - pulls[BOTTOM]) * slack(free.bottom - own.bottom, high)) };
+}
+
+/// The cloud of `fit` kept within `limits`, bob included: shrunk about its foot only as far as the room between two
+/// facing limits needs, then moved in.
+Fit Settle(Fit fit, const Box& limits) {
+    const f32 wide = (fit.reach.left + fit.reach.right) * fit.scale;
+    const f32 high = (fit.reach.top + fit.reach.bottom) * fit.scale;
+    const f32 across = limits.right - limits.left;
+    const f32 down = std::max(0.0F, limits.bottom - limits.top - (2.0F * fit.bob));
+    f32 shrink = 1.0F;
+    if (wide > across) {
+        shrink = across / wide;
     }
-    const f32 room = std::max(0.0F, own.bottom - own.top - (2.0F * fit.bob));
-    if (closed[TOP] && closed[BOTTOM] && high * fit.scale > room) {
-        fit.scale = std::min(fit.scale, room / high);
+    if (high > down) {
+        shrink = std::min(shrink, down / high);
     }
+    fit.scale *= std::max(0.0F, shrink);
     const Box box = BoxOf(fit);
-    if (closed[LEFT] && box.left < own.left) {
-        fit.foot.x += own.left - box.left;
+    if (box.left < limits.left) {
+        fit.foot.x += limits.left - box.left;
     }
-    else if (closed[RIGHT] && box.right > own.right) {
-        fit.foot.x -= box.right - own.right;
+    else if (box.right > limits.right) {
+        fit.foot.x -= box.right - limits.right;
     }
-    if (closed[TOP] && box.top < own.top) {
-        fit.foot.y += own.top - box.top;
+    if (box.top < limits.top) {
+        fit.foot.y += limits.top - box.top;
     }
-    else if (closed[BOTTOM] && box.bottom > own.bottom) {
-        fit.foot.y -= box.bottom - own.bottom;
+    else if (box.bottom > limits.bottom) {
+        fit.foot.y -= box.bottom - limits.bottom;
     }
     return fit;
 }
 
-/// The cloud of `fit` placed so its box, bob included, never reaches past its cell's tiles into a tile that is explored at
-/// all or off the map. A side closes once its box would reach such a tile; settling again with it closed can push the box
-/// further out on another side, so this repeats until no side closes, at most once for each.
+/// Rounds of settling a cloud: each raises some side's pull to a tile's value, and a box meets new tiles only on the
+/// few sides it was moved towards.
+constexpr std::size_t SETTLE_ROUNDS = 8;
+
+/// The cloud of `start` placed so its box, bob included, never reaches past its cell's tiles into an explored tile or
+/// off the map, and eases back from tiles being uncovered. Settling with a stronger pull can push the box out on another
+/// side, into tiles that pull it in turn, so this repeats until no pull grows.
 Fit Clamp(const FogFrame& fog, const Tiles& own, const Fit& start) {
     const f32 tile = fog.tileSize;
     const Box ownBox{ .left = static_cast<f32>(own.column) * tile,
                       .right = static_cast<f32>(own.endColumn) * tile,
                       .top = static_cast<f32>(own.row) * tile,
                       .bottom = static_cast<f32>(own.endRow) * tile };
-    std::array<bool, SIDES> closed{};
+    const Box free = BoxOf(start);
+    Pulls pulls{};
     Fit fit = start;
-    for (std::size_t round = 0; round <= SIDES; ++round) {
-        fit = Settle(start, ownBox, closed);
+    for (std::size_t round = 0; round < SETTLE_ROUNDS; ++round) {
+        fit = Settle(start, Limits(free, ownBox, pulls));
         const Box box = BoxOf(fit);
         const std::array<bool, SIDES> over{
             (box.left < ownBox.left), (box.right > ownBox.right), (box.top < ownBox.top), (box.bottom > ownBox.bottom)
         };
-        bool closing = false;
+        bool growing = false;
         for (std::size_t side = 0; side < SIDES; ++side) {
-            if (!closed.at(side) && over.at(side) && AnyExplored(fog, Beyond(own, box, tile, side))) {
-                closed.at(side) = true;
-                closing = true;
+            const f32 pull = over.at(side) ? MostExplored(fog, Beyond(own, box, tile, side)) : 0.0F;
+            if (pull > pulls.at(side)) {
+                pulls.at(side) = pull;
+                growing = true;
             }
         }
-        if (!closing) {
+        if (!growing) {
             break;
         }
     }

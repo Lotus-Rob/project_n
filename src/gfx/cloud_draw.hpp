@@ -45,7 +45,8 @@ struct CloudDrawing {
 ///
 /// Each cell's two or three clouds come from a hash of its column, row and level: their places, widths, sprites and mirror
 /// flips, so the same view, or one panned away and back, gives the same clouds. A cloud whose box would reach past its
-/// cell's tiles into explored land or off the map is moved in, then shrunk, so its box (with its bob) stays inside them.
+/// cell's tiles into explored land or off the map is moved in, then shrunk, so its box (with its bob) stays inside them;
+/// over a tile being uncovered it is pulled in only as far as the tile's eased value, so it eases in rather than jumping.
 /// Each bobs up and down by FogLook::bobAmplitude of its cell with its own phase, and drifts its own way as its cell is
 /// uncovered.
 ///
