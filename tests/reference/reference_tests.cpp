@@ -109,6 +109,14 @@ u32 ReferenceWorkers() {
     return *workers;
 }
 
+/// A click's WalkTo to `to`, sent on simulation tick `tick`.
+struct Walk {
+    u64 tick = 1;
+    core::Vec2 to{};
+};
+
+constexpr std::span<const Walk> NO_WALKS{};
+
 struct View {
     std::string_view name;
     core::SceneKey scene = game::ARENA_SCENE;
@@ -123,8 +131,15 @@ struct View {
     // picture's view and its margin (app::CullArea()) instead of to the widest view round where the camera starts (a map
     // larger than that needs it).
     bool asInGame = false;
-    // A click's WalkTo there, sent on the first tick: the picture shows the cultivator on its route at `ticks`.
-    std::optional<core::Vec2> walkTo = std::nullopt;
+    // The clicks' WalkTos, each sent on its tick: the picture shows the cultivator on the last route at `ticks`, which
+    // must still run unless `walkEnded`.
+    std::span<const Walk> walks = NO_WALKS;
+    bool walkEnded = false;
+    // The target cursor drawn on the last walk's end, over the fog's clouds.
+    bool cursorOnTarget = false;
+    // The fog eased a tick at a time from the first tick, so the picture shows a fade partway; otherwise it snaps to the
+    // snapshot, as on entering the scene.
+    bool fogEased = false;
     // Before publishing, the world map explored under the picture's view and its margin (Host::Explore()), so every place
     // in it is named.
     bool exploreAll = false;
@@ -237,6 +252,33 @@ void CompareWithReference(const gfx::Image& drawn, std::string_view name) {
     CHECK(differing <= ALLOWED_PIXELS);
 }
 
+constexpr f32 TICK_SECONDS = 1.0F / static_cast<f32>(core::TICKS_PER_SECOND);
+
+// Ticks `host` through `view`'s ticks, sending its walks; with `view.fogEased` the fog eases tick by tick, so the picture
+// after the last shows a fade partway.
+void TickToPicture(
+    const View& view,
+    game::Host& host,
+    core::Jobs& jobs,
+    const std::optional<core::Rect>& sent,
+    app::FogFade& fog
+) {
+    const std::shared_ptr<const core::WorldMap> world = test::ShippedWorld();
+    const f32 fadeSeconds = test::ShippedWorldLook(*test::TestManifest(), *world).fog.fadeSeconds;
+    std::vector<core::Event> events; // the hits the ticks start, which no picture shows
+    for (u64 tick = 1; tick <= view.ticks; ++tick) {
+        const auto walk = std::ranges::find(view.walks, tick, &Walk::tick);
+        const std::array<core::Action, 1> actions{ { { .kind = core::ActionKind::WalkTo,
+                                                       .point = walk == view.walks.end() ? core::Vec2{} : walk->to } } };
+        const core::TickInput input =
+            walk != view.walks.end() ? core::TickInput{ .actions = actions, .held = {} } : core::TickInput{};
+        host.Tick({ .wall = tick, .simulation = tick, .state = tick }, input, events);
+        if (view.fogEased && tick < view.ticks) {
+            fog.Update(Published(host, jobs, tick, sent), *world, TICK_SECONDS, fadeSeconds);
+        }
+    }
+}
+
 void CheckAgainstReference(const View& view) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
@@ -246,15 +288,17 @@ void CheckAgainstReference(const View& view) {
         data.fox.orbitWobble = CROWD_WOBBLE;
     }
     game::Host host(test::TestManifest(), view.scene, data);
-    std::vector<core::Event> events; // the hits the ticks start, which no picture shows
-    for (u64 tick = 1; tick <= view.ticks; ++tick) {
-        const std::array<core::Action, 1> walk{ { { .kind = core::ActionKind::WalkTo,
-                                                    .point = view.walkTo.value_or(core::Vec2{}) } } };
-        const core::TickInput input =
-            tick == 1 && view.walkTo ? core::TickInput{ .actions = walk, .held = {} } : core::TickInput{};
-        host.Tick({ .wall = tick, .simulation = tick, .state = tick }, input, events);
-    }
-    if (view.walkTo) {
+    std::vector<core::Event> events; // the hits the select tick below starts, which no picture shows
+    // The view sent is the camera's, and only a fixed centre is known before publishing (outlines and crowd follow).
+    REQUIRE((!view.asInGame || view.centre.has_value()));
+    const gfx::Camera centred{ .centre = view.centre.value_or(gfx::REFERENCE_CENTRE), .zoom = view.zoom };
+    const core::Rect area = app::CullArea(centred, static_cast<i32>(view.width), static_cast<i32>(view.height));
+    const std::optional<core::Rect> sent = view.asInGame ? std::optional{ area } : std::nullopt;
+    const std::shared_ptr<const core::WorldMap> world = test::ShippedWorld();
+    app::FogFade fog;
+    const f32 fadeSeconds = test::ShippedWorldLook(*test::TestManifest(), *world).fog.fadeSeconds;
+    TickToPicture(view, host, jobs, sent, fog);
+    if (!view.walks.empty() && !view.walkEnded) {
         REQUIRE(host.PlayerRoute().has_value());
     }
     if (view.outlines) {
@@ -274,20 +318,18 @@ void CheckAgainstReference(const View& view) {
         );
         REQUIRE(host.Selected() == fox);
     }
-    // The view sent is the camera's, and only a fixed centre is known before publishing (outlines and crowd follow).
-    REQUIRE((!view.asInGame || view.centre.has_value()));
-    const gfx::Camera centred{ .centre = view.centre.value_or(gfx::REFERENCE_CENTRE), .zoom = view.zoom };
-    const core::Rect area = app::CullArea(centred, static_cast<i32>(view.width), static_cast<i32>(view.height));
     if (view.exploreAll) {
         host.Explore(area);
     }
     host.SetDebugSight(view.debugSight);
-    const std::optional<core::Rect> sent = view.asInGame ? std::optional{ area } : std::nullopt;
     const core::Snapshot snapshot = Published(host, jobs, view.asInGame ? view.ticks : 0, sent);
+    if (snapshot.worldMap) {
+        fog.Update(snapshot, *world, view.fogEased ? TICK_SECONDS : 0.0F, fadeSeconds);
+    }
 
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
-    gfx::View shown{ .alpha = view.alpha, .camera = { .zoom = view.zoom }, .showcase = false };
+    gfx::View shown{ .alpha = view.alpha, .camera = { .zoom = view.zoom }, .showcase = false, .fog = fog.Frame() };
     if (view.outlines) {
         const auto player = std::ranges::find(snapshot.ids, host.Player());
         REQUIRE(player != snapshot.ids.end());
@@ -299,6 +341,9 @@ void CheckAgainstReference(const View& view) {
     }
     if (view.centre) {
         shown.camera.centre = *view.centre;
+    }
+    if (view.cursorOnTarget) {
+        renderer.SetTargetTile(world->TileCentre(world->TileAt(view.walks.back().to)));
     }
     if (view.refit) {
         static_cast<void>(Captured(renderer, snapshot, shown, jobs, WIDTH / 2, HEIGHT / 3));
@@ -452,9 +497,89 @@ TEST_CASE("the world at a middle zoom with the cultivator mid-route: the route l
           .zoom = LABELS_ZOOM,
           .centre = map->StartCentre() + ((target - map->StartCentre()) * static_cast<f32>(HALFWAY)),
           .asInGame = true,
-          .walkTo = target,
+          .walks = std::array{ Walk{ .tick = 1, .to = target } },
           .exploreAll = true,
           .debugSight = true,
+          .width = FULL_HD_WIDTH,
+          .height = FULL_HD_HEIGHT }
+    );
+}
+
+constexpr u64 FOG_PATH_BACK_TICK = 600;
+constexpr u64 FOG_PATH_TICKS = 1200;
+constexpr f32 FOG_PATH_TILES = 4.0F;
+// The cultivator's third step, which explores a new row of tiles at tick 176, drawn after 15 eased ticks: a quarter second.
+constexpr u64 FOG_UNCOVER_TICKS = 190;
+constexpr f32 FOG_UNCOVER_TILES = 8.0F;
+
+// A new game's start: the cultivator's diamond of sight over the land it has explored, the clouds past it. Drawn as the game
+// draws it, with the fog but no debug sight and nothing explored by the view; the zooms are the clouds' levels: 1 and 0.4 and
+// 0.25 show one level alone, 0.71 two at once.
+void CheckFogStart(std::string_view name, f32 zoom) {
+    CheckAgainstReference(
+        { .name = name,
+          .scene = game::WORLD_SCENE,
+          .ticks = TWO_SECONDS,
+          .zoom = zoom,
+          .centre = test::ShippedWorld()->StartCentre(),
+          .asInGame = true,
+          .width = FULL_HD_WIDTH,
+          .height = FULL_HD_HEIGHT }
+    );
+}
+
+TEST_CASE("a new game's fog at zoom 1: the sight's diamond, the shaded edge and the clouds beyond") {
+    CheckFogStart("fog_start_close", 1.0F);
+}
+
+TEST_CASE("a new game's fog at zoom 0.71: two levels of cloud cross-fading") {
+    CheckFogStart("fog_start_step", 0.71F);
+}
+
+TEST_CASE("a new game's fog at zoom 0.4: the clouds' first level") {
+    CheckFogStart("fog_start_middle", 0.4F);
+}
+
+TEST_CASE("a new game's fog at the smallest zoom: the clouds' second level") {
+    CheckFogStart("fog_start_widest", gfx::MIN_ZOOM);
+}
+
+// East 4 tiles and back to the capital: the land the cultivator passed stays explored, so it shows drained where it is out of
+// sight and misted at sight's far edge, with the clouds beyond.
+TEST_CASE("the fog after a route east and back: land explored but out of sight is drained, then misted") {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const core::Vec2 start = map->StartCentre();
+    CheckAgainstReference(
+        { .name = "fog_explored_path",
+          .scene = game::WORLD_SCENE,
+          .ticks = FOG_PATH_TICKS,
+          .zoom = LABELS_ZOOM,
+          .centre = start,
+          .asInGame = true,
+          .walks = std::array{ Walk{ .tick = 1, .to = start + core::Vec2{ .x = FOG_PATH_TILES * map->TileSize(), .y = 0.0F } },
+                               Walk{ .tick = FOG_PATH_BACK_TICK, .to = start } },
+          .walkEnded = true,
+          .width = FULL_HD_WIDTH,
+          .height = FULL_HD_HEIGHT }
+    );
+}
+
+// A route into land never seen, its target the far end: the picture is a quarter second into the first step's uncover, the
+// route's dots under the clouds and the target cursor over them.
+TEST_CASE("the fog uncovering a new tile: a quarter second into its fade, the route under the clouds, the cursor over them") {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const core::Vec2 start = map->StartCentre();
+    const core::Vec2 target = start + core::Vec2{ .x = FOG_UNCOVER_TILES * map->TileSize(), .y = 0.0F };
+    CheckAgainstReference(
+        { .name = "fog_uncovering",
+          .scene = game::WORLD_SCENE,
+          .ticks = FOG_UNCOVER_TICKS,
+          .zoom = LABELS_ZOOM,
+          .centre = start + ((target - start) * static_cast<f32>(HALFWAY)),
+          .asInGame = true,
+          .walks = std::array{ Walk{ .tick = 1, .to = target } },
+          .cursorOnTarget = true,
+          .fogEased = true,
           .width = FULL_HD_WIDTH,
           .height = FULL_HD_HEIGHT }
     );
@@ -1513,13 +1638,14 @@ std::vector<f64> TileInks(std::span<const f64> ink, f64 shift) {
 }
 
 // The tiles' inks (TileInks()) that `with` adds over `without` seen through `camera`, then through it moved a quarter
-// pixel right and down.
+// pixel right and down; `fog` shades and clouds only the picture of `with`.
 std::array<std::vector<f64>, 2> QuarterPixelApart(
     gfx::Renderer& renderer,
     const core::Snapshot& with,
     const core::Snapshot& without,
     const gfx::Camera& camera,
-    core::Jobs& jobs
+    core::Jobs& jobs,
+    const gfx::FogFrame& fog = {}
 ) {
     constexpr f32 QUARTER_PIXEL = 0.25F;
     const f32 worldPerPixel = 1.0F / gfx::PixelsPerUnit(camera, WIDTH, HEIGHT);
@@ -1528,7 +1654,9 @@ std::array<std::vector<f64>, 2> QuarterPixelApart(
         const f32 offset = shot == 0 ? 0.0F : QUARTER_PIXEL;
         gfx::View view{ .camera = camera };
         view.camera.centre = view.camera.centre + (core::Vec2{ .x = offset, .y = offset } * worldPerPixel);
-        const gfx::Image drawn = Captured(renderer, with, view, jobs);
+        gfx::View fogged = view;
+        fogged.fog = fog;
+        const gfx::Image drawn = Captured(renderer, with, fogged, jobs);
         const gfx::Image bare = Captured(renderer, without, view, jobs);
         tiles.at(shot) = TileInks(InkPerPixel(drawn, bare), static_cast<f64>(offset));
     }
@@ -1628,6 +1756,30 @@ TEST_CASE("the world's tiles and travellers at the smallest zoom: shimmer held t
     const TileChange change = WorstTileChange(QuarterPixelApart(renderer, world, backdrop, far, jobs));
     // The line `project_n measure` reads from the reference run's output.
     MESSAGE("world shimmer: ", change.worst);
+    INFO("of ", change.measured, " tiles, the worst changed its ink by ", change.worst);
+    CHECK(change.worst < MOST_CHANGE);
+}
+
+// What the fog's clouds and shade add over a fogless picture of the same unexplored land, at the smallest zoom, where the
+// clouds' fine detail sits near a pixel.
+TEST_CASE("the fog's clouds at the smallest zoom: shimmer held to its bound") {
+    // Measured 0.0205 (clouds at rest, the frame clock at 0); about 1.25 times that, as the world's bound is.
+    constexpr f64 MOST_CHANGE = 0.0256;
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs{ ReferenceWorkers() };
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    // Over the busiest region, far from the start's small explored diamond, so clouds cover the whole picture.
+    const gfx::Camera far{ .centre = game::WORLD_BUSIEST, .zoom = gfx::MIN_ZOOM };
+    const core::Rect area = app::CullArea(far, static_cast<i32>(WIDTH), static_cast<i32>(HEIGHT));
+    const core::Snapshot world = Published(host, jobs, 0, area);
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    app::FogFade fade;
+    fade.Update(world, *map, 0.0F, test::ShippedWorldLook(*test::TestManifest(), *map).fog.fadeSeconds);
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, world.scene, jobs);
+    const TileChange change = WorstTileChange(QuarterPixelApart(renderer, world, world, far, jobs, fade.Frame()));
+    // The line `project_n measure` reads from the reference run's output.
+    MESSAGE("cloud shimmer: ", change.worst);
     INFO("of ", change.measured, " tiles, the worst changed its ink by ", change.worst);
     CHECK(change.worst < MOST_CHANGE);
 }
