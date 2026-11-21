@@ -6,27 +6,12 @@
 [[vk::combinedImageSampler]] [[vk::binding(0, 2)]] SamplerState atlasSampler : register(s0, space2);
 [[vk::combinedImageSampler]] [[vk::binding(1, 2)]] Texture2DArray<float> field : register(t1, space2);
 [[vk::combinedImageSampler]] [[vk::binding(1, 2)]] SamplerState fieldSampler : register(s1, space2);
-// The fog over the world map, a texel per tile: explored in red, in sight in green (gfx::FogFrame), filtered linearly and
-// clamped at the edge, as gfx::FogSample() samples it.
-[[vk::combinedImageSampler]] [[vk::binding(2, 2)]] Texture2D<float2> fogField : register(t2, space2);
-[[vk::combinedImageSampler]] [[vk::binding(2, 2)]] SamplerState fogSampler : register(s2, space2);
-
-/// gfx::FogUniforms in src/gfx/fog.hpp, 64 bytes.
-struct Fog {
-    float2 mapSize; // the field's tiles across and down
-    float tileSize; // a tile's side in world units
-    uint on;        // 1 while the view has fog; 0 leaves every sprite as it is
-    float4 sepia;   // rgb: the sepia colour over its own luminance, linear; a: how far the colour drains
-    float4 mist;    // rgb: the mist's linear colour; a: how much of it shows
-    float4 shade;   // rgb: the linear colour under the clouds; a unused
-};
-ConstantBuffer<Fog> fog : register(b0, space3);
+#define FOG_TEXTURE_SLOT 2
+#include "fog.hlsli"
 
 /// core::INSTANCE_FOGGED_LAND and core::INSTANCE_SIGHT_FADE.
 static const uint INSTANCE_FOGGED_LAND = 1;
 static const uint INSTANCE_SIGHT_FADE = 2;
-/// Rec. 709's weights of linear red, green and blue in luminance: FOG_LUMINANCE in src/gfx/fog.cpp.
-static const float3 LUMINANCE = float3(0.2126, 0.7152, 0.0722);
 
 /// A dissolve's blocks are this many screen pixels square, so it stays crisp at every zoom.
 static const float DISSOLVE_BLOCK_PIXELS = 4.0;
@@ -83,12 +68,6 @@ float4 Glowing(VertexOut input, float2 uvPerPixel) {
     return sprite + input.glowColour * (coverage * (1.0 - sprite.a));
 }
 
-/// The fog's explored (x) and in-sight (y) values at `world`, each 0 to 1.
-float2 FogAt(float2 world) {
-    // The field has no mips, so the sample needs no derivatives, which a discarded neighbour would leave undefined.
-    return fogField.SampleLevel(fogSampler, world / (fog.mapSize * fog.tileSize), 0.0);
-}
-
 /// `colour` (premultiplied) as the fog leaves it: land drained, veiled and shaded by its tile's state, and a sprite fading
 /// with sight at its sight point.
 float4 Fogged(float4 colour, VertexOut input) {
@@ -96,16 +75,7 @@ float4 Fogged(float4 colour, VertexOut input) {
         return colour;
     }
     if ((input.fogFlags & INSTANCE_FOGGED_LAND) != 0) {
-        const float2 state = FogAt(input.world);
-        const float explored = state.x;
-        // Seen once but out of sight now.
-        const float remembered = explored * (1.0 - state.y);
-        const float3 drained = lerp(colour.rgb, dot(colour.rgb, LUMINANCE) * fog.sepia.rgb, fog.sepia.a);
-        float3 rgb = lerp(colour.rgb, drained, remembered);
-        rgb = lerp(rgb, fog.mist.rgb * colour.a, fog.mist.a * remembered);
-        // Gone by half explored, the value at an unexplored tile's edge, so the shade stays under its edge row of clouds.
-        rgb = lerp(rgb, fog.shade.rgb * colour.a, 1.0 - smoothstep(0.0, 0.5, explored));
-        colour.rgb = rgb;
+        colour = FoggedLand(colour.rgb, colour.a, input.world);
     }
     if ((input.fogFlags & INSTANCE_SIGHT_FADE) != 0) {
         colour *= smoothstep(0.5, 1.0, FogAt(input.sightPoint).y);

@@ -3,7 +3,7 @@
 /// @file
 /// @ingroup gfx
 /// The fog of war as the renderer sees it: a field of two values per world-map tile, and the sampling both the CPU and
-/// the GPU's linear filter do over it, and the uniforms the sprite shader shades by it. Pure maths, tested without a
+/// the GPU's linear filter do over it, and the uniforms the world map's shaders shade by it. Pure maths, tested without a
 /// device.
 
 #include "core/types.hpp"
@@ -46,7 +46,7 @@ inline constexpr u32 FOG_IN_SIGHT = 1;
 /// The explored value of the tile under `world` alone, 0 to 1, whatever its neighbours; 1 with no fog or off the map.
 [[nodiscard]] f32 TileExplored(const FogFrame& fog, core::Vec2 world);
 
-/// What the sprite fragment shader shades and fades by the fog with: `Fog` in shaders/sprite.frag.hlsl, rows of 16 bytes.
+/// What the fragment shaders shade and fade by the fog with: `Fog` in shaders/fog.hlsli, rows of 16 bytes.
 struct FogUniforms {
     /// The field's tiles across, then down.
     std::array<f32, 2> mapSize{};
@@ -71,6 +71,10 @@ static_assert(
         offsetof(FogUniforms, shade) == 3 * FOG_ROW_BYTES,
     "the shader's fog constant buffer starts each colour on its own 16-byte row"
 );
+
+/// The linear red, green and blue of the sRGB colour `srgb`, each as the 8-bit linear byte core::FromSrgb() gives over 255,
+/// as every world map colour reaches its shader.
+[[nodiscard]] std::array<f32, 3> LinearOf(const std::array<u8, 3>& srgb);
 
 /// The uniforms that shade by `fog` in `look`'s colours and strengths; off when `fog` has no tiles.
 [[nodiscard]] FogUniforms FogUniformsOf(const FogFrame& fog, const core::FogLook& look);

@@ -1,0 +1,590 @@
+#pragma clang diagnostic ignored "-Wmissing-prototypes"
+#pragma clang diagnostic ignored "-Wmissing-braces"
+
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+template<typename T, size_t Num>
+struct spvUnsafeArray
+{
+    T elements[Num ? Num : 1];
+    
+    thread T& operator [] (size_t pos) thread
+    {
+        return elements[pos];
+    }
+    constexpr const thread T& operator [] (size_t pos) const thread
+    {
+        return elements[pos];
+    }
+    
+    device T& operator [] (size_t pos) device
+    {
+        return elements[pos];
+    }
+    constexpr const device T& operator [] (size_t pos) const device
+    {
+        return elements[pos];
+    }
+    
+    constexpr const constant T& operator [] (size_t pos) const constant
+    {
+        return elements[pos];
+    }
+    
+    threadgroup T& operator [] (size_t pos) threadgroup
+    {
+        return elements[pos];
+    }
+    constexpr const threadgroup T& operator [] (size_t pos) const threadgroup
+    {
+        return elements[pos];
+    }
+};
+
+struct type_ConstantBuffer_Fog
+{
+    float2 mapSize;
+    float tileSize;
+    uint on;
+    float4 sepia;
+    float4 mist;
+    float4 shade;
+};
+
+struct type_ConstantBuffer_Ground
+{
+    float2 mapSize;
+    float tileSize;
+    uint mode;
+    packed_float3 paper;
+    float grain;
+    float edgeWarp;
+    float edgeSoft;
+    float blotch;
+    float depthTiles;
+    packed_float3 shore;
+    float shoreStrength;
+    packed_float3 grid;
+    float gridStrength;
+    packed_float3 veil;
+    float veilStrength;
+    uint shallowKind;
+    uint deepKind;
+    float shoreWidth;
+    float veilScale;
+    float2 gridFade;
+    float zoom;
+    float padding;
+    float4 washes[16];
+};
+
+constant spvUnsafeArray<float2, 4> _122 = spvUnsafeArray<float2, 4>({ float2(0.0), float2(1.0, 0.0), float2(0.0, 1.0), float2(1.0) });
+
+struct FragmentMain_out
+{
+    float4 out_var_SV_Target0 [[color(0)]];
+};
+
+struct FragmentMain_in
+{
+    float2 in_var_TEXCOORD0 [[user(locn0)]];
+};
+
+fragment FragmentMain_out FragmentMain(FragmentMain_in in [[stage_in]], constant type_ConstantBuffer_Fog& fog [[buffer(0)]], constant type_ConstantBuffer_Ground& ground [[buffer(1)]], texture2d<float> kindField [[texture(0)]], texture2d<float> shoreField [[texture(1)]], texture2d<float> fogField [[texture(2)]], sampler kindFieldSmplr [[sampler(0)]], sampler shoreFieldSmplr [[sampler(1)]], sampler fogFieldSmplr [[sampler(2)]])
+{
+    FragmentMain_out out = {};
+    float4 _1489;
+    do
+    {
+        float _141 = fwidth(in.in_var_TEXCOORD0.x);
+        float _144 = fwidth(in.in_var_TEXCOORD0.y);
+        float _146 = precise::max(precise::max(_141, _144), 9.9999999747524270787835121154785e-07);
+        if (ground.mode == 2u)
+        {
+            float4 _209;
+            do
+            {
+                if (fog.on == 0u)
+                {
+                    _209 = float4(ground.paper[0], ground.paper[1], ground.paper[2], 1.0);
+                    break;
+                }
+                float4 _172 = fogField.sample(fogFieldSmplr, (in.in_var_TEXCOORD0 / (fog.mapSize * fog.tileSize)), level(0.0));
+                float _173 = _172.x;
+                float _176 = _173 * (1.0 - _172.y);
+                _209 = float4(mix(mix(mix(float3(ground.paper), mix(float3(ground.paper), fog.sepia.xyz * dot(float3(ground.paper), float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875)), float3(fog.sepia.w)), float3(_176)), fog.mist.xyz * 1.0, float3(fog.mist.w * _176)), fog.shade.xyz * 1.0, float3(1.0 - smoothstep(0.0, 0.5, _173))), 1.0);
+                break;
+            } while(false);
+            _1489 = _209;
+            break;
+        }
+        if (ground.mode == 1u)
+        {
+            float _218 = precise::max(ground.veilScale, 0.001000000047497451305389404296875) * ground.tileSize;
+            float _219 = _218 / _146;
+            float2 _221 = in.in_var_TEXCOORD0 / float2(_218);
+            float _228;
+            float _230;
+            _228 = 0.0;
+            _230 = 0.0;
+            float _223 = 1.0;
+            float _226 = 1.0;
+            uint _232 = 0u;
+            for (; _232 < 4u; )
+            {
+                uint _233 = _232 + 1u;
+                float _236 = float(_233);
+                float _237 = 0.829999983310699462890625 * _236;
+                float _238 = cos(_237);
+                float _239 = sin(_237);
+                float2 _240 = _221 * _226;
+                float _241 = _240.x;
+                float _243 = _240.y;
+                float _250 = _219 / _226;
+                float _253 = fast::clamp((_250 - 2.0) * 0.5, 0.0, 1.0);
+                float _258 = _223 * ((_253 * _253) * (3.0 - (2.0 * _253)));
+                float2 _260 = float2((_241 * _238) - (_243 * _239), (_241 * _239) + (_243 * _238)) + (float2(17.3099994659423828125, 41.770000457763671875) * _236);
+                uint _261 = 71u + _232;
+                float2 _262 = floor(_260);
+                float2 _263 = _260 - _262;
+                float2 _270 = ((_263 * _263) * _263) * ((_263 * ((_263 * 6.0) - float2(15.0))) + float2(10.0));
+                int2 _271 = int2(_262);
+                uint2 _275 = uint2(_261 * 2654435769u, _261 * 2246822507u);
+                uint2 _278 = ((uint2(_271) + _275) * uint2(1664525u)) + uint2(1013904223u);
+                uint _279 = _278.y;
+                uint _282 = _278.x + (_279 * 1664525u);
+                uint2 _285 = uint2(_282, _279 + (_282 * 1664525u));
+                uint2 _287 = _285 ^ (_285 >> uint2(16u));
+                uint _288 = _287.y;
+                uint _291 = _287.x + (_288 * 1664525u);
+                uint2 _294 = uint2(_291, _288 + (_291 * 1664525u));
+                uint2 _305 = ((uint2(_271 + int2(1, 0)) + _275) * uint2(1664525u)) + uint2(1013904223u);
+                uint _306 = _305.y;
+                uint _309 = _305.x + (_306 * 1664525u);
+                uint2 _312 = uint2(_309, _306 + (_309 * 1664525u));
+                uint2 _314 = _312 ^ (_312 >> uint2(16u));
+                uint _315 = _314.y;
+                uint _318 = _314.x + (_315 * 1664525u);
+                uint2 _321 = uint2(_318, _315 + (_318 * 1664525u));
+                float _328 = _270.x;
+                uint2 _334 = ((uint2(_271 + int2(0, 1)) + _275) * uint2(1664525u)) + uint2(1013904223u);
+                uint _335 = _334.y;
+                uint _338 = _334.x + (_335 * 1664525u);
+                uint2 _341 = uint2(_338, _335 + (_338 * 1664525u));
+                uint2 _343 = _341 ^ (_341 >> uint2(16u));
+                uint _344 = _343.y;
+                uint _347 = _343.x + (_344 * 1664525u);
+                uint2 _350 = uint2(_347, _344 + (_347 * 1664525u));
+                uint2 _361 = ((uint2(_271 + int2(1)) + _275) * uint2(1664525u)) + uint2(1013904223u);
+                uint _362 = _361.y;
+                uint _365 = _361.x + (_362 * 1664525u);
+                uint2 _368 = uint2(_365, _362 + (_365 * 1664525u));
+                uint2 _370 = _368 ^ (_368 >> uint2(16u));
+                uint _371 = _370.y;
+                uint _374 = _370.x + (_371 * 1664525u);
+                uint2 _377 = uint2(_374, _371 + (_374 * 1664525u));
+                float _229 = _228 + _223;
+                _223 *= 0.5;
+                _226 *= 2.0;
+                _228 = _229;
+                _230 += (_258 * (mix(mix(float((_294 ^ (_294 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, float((_321 ^ (_321 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, _328), mix(float((_350 ^ (_350 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, float((_377 ^ (_377 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, _328), _270.y) - 0.5));
+                _232 = _233;
+                continue;
+            }
+            float _395 = fast::clamp(((_230 / _228) + 0.050000011920928955078125) * 3.0, 0.0, 1.0) * ground.veilStrength;
+            float4 _402 = float4(float3(ground.veil) * _395, _395);
+            float3 _403 = _402.xyz;
+            float4 _455;
+            do
+            {
+                if (fog.on == 0u)
+                {
+                    _455 = _402;
+                    break;
+                }
+                float4 _418 = fogField.sample(fogFieldSmplr, (in.in_var_TEXCOORD0 / (fog.mapSize * fog.tileSize)), level(0.0));
+                float _419 = _418.x;
+                float _422 = _419 * (1.0 - _418.y);
+                _455 = float4(mix(mix(mix(_403, mix(_403, fog.sepia.xyz * dot(_403, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875)), float3(fog.sepia.w)), float3(_422)), fog.mist.xyz * _395, float3(fog.mist.w * _422)), fog.shade.xyz * _395, float3(1.0 - smoothstep(0.0, 0.5, _419))), _395);
+                break;
+            } while(false);
+            _1489 = _455;
+            break;
+        }
+        float2 _459 = in.in_var_TEXCOORD0 / float2(ground.tileSize);
+        float _460 = ground.tileSize / _146;
+        float _467;
+        float _469;
+        _467 = 0.0;
+        _469 = 0.0;
+        float _462 = 1.0;
+        float _465 = 1.0;
+        uint _471 = 0u;
+        for (; _471 < 3u; )
+        {
+            uint _472 = _471 + 1u;
+            float _475 = float(_472);
+            float _476 = 0.829999983310699462890625 * _475;
+            float _477 = cos(_476);
+            float _478 = sin(_476);
+            float2 _479 = _459 * _465;
+            float _480 = _479.x;
+            float _482 = _479.y;
+            float _489 = _460 / _465;
+            float _492 = fast::clamp((_489 - 2.0) * 0.5, 0.0, 1.0);
+            float _497 = _462 * ((_492 * _492) * (3.0 - (2.0 * _492)));
+            float2 _499 = float2((_480 * _477) - (_482 * _478), (_480 * _478) + (_482 * _477)) + (float2(17.3099994659423828125, 41.770000457763671875) * _475);
+            uint _500 = 11u + _471;
+            float2 _501 = floor(_499);
+            float2 _502 = _499 - _501;
+            float2 _509 = ((_502 * _502) * _502) * ((_502 * ((_502 * 6.0) - float2(15.0))) + float2(10.0));
+            int2 _510 = int2(_501);
+            uint2 _514 = uint2(_500 * 2654435769u, _500 * 2246822507u);
+            uint2 _517 = ((uint2(_510) + _514) * uint2(1664525u)) + uint2(1013904223u);
+            uint _518 = _517.y;
+            uint _521 = _517.x + (_518 * 1664525u);
+            uint2 _524 = uint2(_521, _518 + (_521 * 1664525u));
+            uint2 _526 = _524 ^ (_524 >> uint2(16u));
+            uint _527 = _526.y;
+            uint _530 = _526.x + (_527 * 1664525u);
+            uint2 _533 = uint2(_530, _527 + (_530 * 1664525u));
+            uint2 _544 = ((uint2(_510 + int2(1, 0)) + _514) * uint2(1664525u)) + uint2(1013904223u);
+            uint _545 = _544.y;
+            uint _548 = _544.x + (_545 * 1664525u);
+            uint2 _551 = uint2(_548, _545 + (_548 * 1664525u));
+            uint2 _553 = _551 ^ (_551 >> uint2(16u));
+            uint _554 = _553.y;
+            uint _557 = _553.x + (_554 * 1664525u);
+            uint2 _560 = uint2(_557, _554 + (_557 * 1664525u));
+            float _567 = _509.x;
+            uint2 _573 = ((uint2(_510 + int2(0, 1)) + _514) * uint2(1664525u)) + uint2(1013904223u);
+            uint _574 = _573.y;
+            uint _577 = _573.x + (_574 * 1664525u);
+            uint2 _580 = uint2(_577, _574 + (_577 * 1664525u));
+            uint2 _582 = _580 ^ (_580 >> uint2(16u));
+            uint _583 = _582.y;
+            uint _586 = _582.x + (_583 * 1664525u);
+            uint2 _589 = uint2(_586, _583 + (_586 * 1664525u));
+            uint2 _600 = ((uint2(_510 + int2(1)) + _514) * uint2(1664525u)) + uint2(1013904223u);
+            uint _601 = _600.y;
+            uint _604 = _600.x + (_601 * 1664525u);
+            uint2 _607 = uint2(_604, _601 + (_604 * 1664525u));
+            uint2 _609 = _607 ^ (_607 >> uint2(16u));
+            uint _610 = _609.y;
+            uint _613 = _609.x + (_610 * 1664525u);
+            uint2 _616 = uint2(_613, _610 + (_613 * 1664525u));
+            float _468 = _467 + _462;
+            _462 *= 0.5;
+            _465 *= 2.0;
+            _467 = _468;
+            _469 += (_497 * (mix(mix(float((_533 ^ (_533 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, float((_560 ^ (_560 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, _567), mix(float((_589 ^ (_589 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, float((_616 ^ (_616 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, _567), _509.y) - 0.5));
+            _471 = _472;
+            continue;
+        }
+        float _636;
+        float _638;
+        _636 = 0.0;
+        _638 = 0.0;
+        float _631 = 1.0;
+        float _634 = 1.0;
+        uint _640 = 0u;
+        for (; _640 < 3u; )
+        {
+            uint _641 = _640 + 1u;
+            float _644 = float(_641);
+            float _645 = 0.829999983310699462890625 * _644;
+            float _646 = cos(_645);
+            float _647 = sin(_645);
+            float2 _648 = _459 * _634;
+            float _649 = _648.x;
+            float _651 = _648.y;
+            float _658 = _460 / _634;
+            float _661 = fast::clamp((_658 - 2.0) * 0.5, 0.0, 1.0);
+            float _666 = _631 * ((_661 * _661) * (3.0 - (2.0 * _661)));
+            float2 _668 = float2((_649 * _646) - (_651 * _647), (_649 * _647) + (_651 * _646)) + (float2(17.3099994659423828125, 41.770000457763671875) * _644);
+            uint _669 = 23u + _640;
+            float2 _670 = floor(_668);
+            float2 _671 = _668 - _670;
+            float2 _678 = ((_671 * _671) * _671) * ((_671 * ((_671 * 6.0) - float2(15.0))) + float2(10.0));
+            int2 _679 = int2(_670);
+            uint2 _683 = uint2(_669 * 2654435769u, _669 * 2246822507u);
+            uint2 _686 = ((uint2(_679) + _683) * uint2(1664525u)) + uint2(1013904223u);
+            uint _687 = _686.y;
+            uint _690 = _686.x + (_687 * 1664525u);
+            uint2 _693 = uint2(_690, _687 + (_690 * 1664525u));
+            uint2 _695 = _693 ^ (_693 >> uint2(16u));
+            uint _696 = _695.y;
+            uint _699 = _695.x + (_696 * 1664525u);
+            uint2 _702 = uint2(_699, _696 + (_699 * 1664525u));
+            uint2 _713 = ((uint2(_679 + int2(1, 0)) + _683) * uint2(1664525u)) + uint2(1013904223u);
+            uint _714 = _713.y;
+            uint _717 = _713.x + (_714 * 1664525u);
+            uint2 _720 = uint2(_717, _714 + (_717 * 1664525u));
+            uint2 _722 = _720 ^ (_720 >> uint2(16u));
+            uint _723 = _722.y;
+            uint _726 = _722.x + (_723 * 1664525u);
+            uint2 _729 = uint2(_726, _723 + (_726 * 1664525u));
+            float _736 = _678.x;
+            uint2 _742 = ((uint2(_679 + int2(0, 1)) + _683) * uint2(1664525u)) + uint2(1013904223u);
+            uint _743 = _742.y;
+            uint _746 = _742.x + (_743 * 1664525u);
+            uint2 _749 = uint2(_746, _743 + (_746 * 1664525u));
+            uint2 _751 = _749 ^ (_749 >> uint2(16u));
+            uint _752 = _751.y;
+            uint _755 = _751.x + (_752 * 1664525u);
+            uint2 _758 = uint2(_755, _752 + (_755 * 1664525u));
+            uint2 _769 = ((uint2(_679 + int2(1)) + _683) * uint2(1664525u)) + uint2(1013904223u);
+            uint _770 = _769.y;
+            uint _773 = _769.x + (_770 * 1664525u);
+            uint2 _776 = uint2(_773, _770 + (_773 * 1664525u));
+            uint2 _778 = _776 ^ (_776 >> uint2(16u));
+            uint _779 = _778.y;
+            uint _782 = _778.x + (_779 * 1664525u);
+            uint2 _785 = uint2(_782, _779 + (_782 * 1664525u));
+            float _637 = _636 + _631;
+            _631 *= 0.5;
+            _634 *= 2.0;
+            _636 = _637;
+            _638 += (_666 * (mix(mix(float((_702 ^ (_702 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, float((_729 ^ (_729 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, _736), mix(float((_758 ^ (_758 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, float((_785 ^ (_785 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, _736), _678.y) - 0.5));
+            _640 = _641;
+            continue;
+        }
+        float2 _805 = _459 + ((float2(0.5 + (_469 / _467), 0.5 + (_638 / _636)) - float2(0.5)) * (2.0 * ground.edgeWarp));
+        float _808 = fast::clamp(ground.edgeSoft, 0.0199999995529651641845703125, 1.0);
+        float2 _809 = _805 - float2(0.5);
+        float2 _810 = floor(_809);
+        float2 _811 = _809 - _810;
+        float2 _812 = float2(1.0) - _811;
+        float2 _815 = ((_812 * _812) * _812) * float2(0.16666667163372039794921875);
+        float2 _822 = ((_811 * (((_811 * 3.0) * _811) - (_811 * 6.0))) + float2(4.0)) * float2(0.16666667163372039794921875);
+        float2 _827 = (float2(1.0) - _815) - _822;
+        float2 _828 = _815 + _822;
+        float2 _831 = (_810 - float2(1.0)) + (_822 / _828);
+        float2 _834 = (_810 + float2(1.0)) + ((((_811 * _811) * _811) * float2(0.16666667163372039794921875)) / _827);
+        float _836 = _828.x;
+        float _845 = _827.x;
+        float _877 = (((_828.y * ((_836 * shoreField.sample(shoreFieldSmplr, ((_831 + float2(0.5)) / ground.mapSize), level(0.0)).y) + (_845 * shoreField.sample(shoreFieldSmplr, ((float2(_834.x, _831.y) + float2(0.5)) / ground.mapSize), level(0.0)).y))) + (_827.y * ((_836 * shoreField.sample(shoreFieldSmplr, ((float2(_831.x, _834.y) + float2(0.5)) / ground.mapSize), level(0.0)).y) + (_845 * shoreField.sample(shoreFieldSmplr, ((_834 + float2(0.5)) / ground.mapSize), level(0.0)).y)))) * 255.0) - 128.0;
+        float _878 = _877 * 0.03125;
+        float _879 = (-0.5) * _808;
+        float _880 = 0.5 * _808;
+        float _885 = fast::clamp((_878 - _879) / precise::max(_880 - _879, 9.9999999747524270787835121154785e-07), 0.0, 1.0);
+        float _890 = 1.0 - ((_885 * _885) * (3.0 - (2.0 * _885)));
+        float _891 = 0.5 - _880;
+        float _898 = precise::max(_880 + _880, 9.9999999747524270787835121154785e-07);
+        float _900 = fast::clamp((((_805.x - 0.5) - _810.x) - _891) / _898, 0.0, 1.0);
+        float _904 = (_900 * _900) * (3.0 - (2.0 * _900));
+        float _911 = fast::clamp((((_805.y - 0.5) - _810.y) - _891) / _898, 0.0, 1.0);
+        float _915 = (_911 * _911) * (3.0 - (2.0 * _911));
+        float _916 = 1.0 - _904;
+        float _917 = 1.0 - _915;
+        float4 _134 = float4(_916 * _917, _904 * _917, _916 * _915, _904 * _915);
+        float3 _924;
+        float _927;
+        _924 = float3(0.0);
+        _927 = 0.0;
+        float3 _925;
+        float _928;
+        for (uint _929 = 0u; _929 < 4u; _924 = _925, _927 = _928, _929++)
+        {
+            uint _945 = min(uint(rint(kindField.sample(kindFieldSmplr, (((_810 + _122[_929]) + float2(0.5)) / ground.mapSize), level(0.0)).x * 255.0)), 15u);
+            bool _954;
+            if (_945 != ground.shallowKind)
+            {
+                _954 = _945 == ground.deepKind;
+            }
+            else
+            {
+                _954 = true;
+            }
+            if (_954)
+            {
+                _925 = _924;
+                _928 = _927;
+                continue;
+            }
+            _925 = _924 + (mix(float3(ground.paper), ground.washes[_945].xyz, float3(ground.washes[_945].w)) * _134[_929]);
+            _928 = _927 + _134[_929];
+        }
+        float3 _979;
+        if (_927 > 0.0)
+        {
+            _979 = _924 / float3(_927);
+        }
+        else
+        {
+            _979 = float3(ground.paper);
+        }
+        float _987 = fast::clamp(((_877 * (-0.03125)) - 0.5) / precise::max(precise::max(ground.depthTiles, 0.001000000047497451305389404296875), 9.9999999747524270787835121154785e-07), 0.0, 1.0);
+        float4 _1001 = mix(ground.washes[ground.shallowKind], ground.washes[ground.deepKind], float4((_987 * _987) * (3.0 - (2.0 * _987))));
+        float2 _1010 = _459 * float2(0.5);
+        float _1011 = _460 * 2.0;
+        float _1018;
+        float _1020;
+        _1018 = 0.0;
+        _1020 = 0.0;
+        float _1013 = 1.0;
+        float _1016 = 1.0;
+        uint _1022 = 0u;
+        for (; _1022 < 4u; )
+        {
+            uint _1023 = _1022 + 1u;
+            float _1026 = float(_1023);
+            float _1027 = 0.829999983310699462890625 * _1026;
+            float _1028 = cos(_1027);
+            float _1029 = sin(_1027);
+            float2 _1030 = _1010 * _1016;
+            float _1031 = _1030.x;
+            float _1033 = _1030.y;
+            float _1040 = _1011 / _1016;
+            float _1043 = fast::clamp((_1040 - 2.0) * 0.5, 0.0, 1.0);
+            float _1048 = _1013 * ((_1043 * _1043) * (3.0 - (2.0 * _1043)));
+            float2 _1050 = float2((_1031 * _1028) - (_1033 * _1029), (_1031 * _1029) + (_1033 * _1028)) + (float2(17.3099994659423828125, 41.770000457763671875) * _1026);
+            uint _1051 = 37u + _1022;
+            float2 _1052 = floor(_1050);
+            float2 _1053 = _1050 - _1052;
+            float2 _1060 = ((_1053 * _1053) * _1053) * ((_1053 * ((_1053 * 6.0) - float2(15.0))) + float2(10.0));
+            int2 _1061 = int2(_1052);
+            uint2 _1065 = uint2(_1051 * 2654435769u, _1051 * 2246822507u);
+            uint2 _1068 = ((uint2(_1061) + _1065) * uint2(1664525u)) + uint2(1013904223u);
+            uint _1069 = _1068.y;
+            uint _1072 = _1068.x + (_1069 * 1664525u);
+            uint2 _1075 = uint2(_1072, _1069 + (_1072 * 1664525u));
+            uint2 _1077 = _1075 ^ (_1075 >> uint2(16u));
+            uint _1078 = _1077.y;
+            uint _1081 = _1077.x + (_1078 * 1664525u);
+            uint2 _1084 = uint2(_1081, _1078 + (_1081 * 1664525u));
+            uint2 _1095 = ((uint2(_1061 + int2(1, 0)) + _1065) * uint2(1664525u)) + uint2(1013904223u);
+            uint _1096 = _1095.y;
+            uint _1099 = _1095.x + (_1096 * 1664525u);
+            uint2 _1102 = uint2(_1099, _1096 + (_1099 * 1664525u));
+            uint2 _1104 = _1102 ^ (_1102 >> uint2(16u));
+            uint _1105 = _1104.y;
+            uint _1108 = _1104.x + (_1105 * 1664525u);
+            uint2 _1111 = uint2(_1108, _1105 + (_1108 * 1664525u));
+            float _1118 = _1060.x;
+            uint2 _1124 = ((uint2(_1061 + int2(0, 1)) + _1065) * uint2(1664525u)) + uint2(1013904223u);
+            uint _1125 = _1124.y;
+            uint _1128 = _1124.x + (_1125 * 1664525u);
+            uint2 _1131 = uint2(_1128, _1125 + (_1128 * 1664525u));
+            uint2 _1133 = _1131 ^ (_1131 >> uint2(16u));
+            uint _1134 = _1133.y;
+            uint _1137 = _1133.x + (_1134 * 1664525u);
+            uint2 _1140 = uint2(_1137, _1134 + (_1137 * 1664525u));
+            uint2 _1151 = ((uint2(_1061 + int2(1)) + _1065) * uint2(1664525u)) + uint2(1013904223u);
+            uint _1152 = _1151.y;
+            uint _1155 = _1151.x + (_1152 * 1664525u);
+            uint2 _1158 = uint2(_1155, _1152 + (_1155 * 1664525u));
+            uint2 _1160 = _1158 ^ (_1158 >> uint2(16u));
+            uint _1161 = _1160.y;
+            uint _1164 = _1160.x + (_1161 * 1664525u);
+            uint2 _1167 = uint2(_1164, _1161 + (_1164 * 1664525u));
+            float _1019 = _1018 + _1013;
+            _1013 *= 0.5;
+            _1016 *= 2.0;
+            _1018 = _1019;
+            _1020 += (_1048 * (mix(mix(float((_1084 ^ (_1084 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, float((_1111 ^ (_1111 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, _1118), mix(float((_1140 ^ (_1140 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, float((_1167 ^ (_1167 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, _1118), _1060.y) - 0.5));
+            _1022 = _1023;
+            continue;
+        }
+        float _1191 = 0.5 * ground.shoreWidth;
+        float _1193 = precise::max(_1191, _146 / ground.tileSize);
+        float _1195 = abs(_878) / _1193;
+        float2 _1208 = _459 * float2(6.666666507720947265625);
+        float _1209 = _460 * 0.1500000059604644775390625;
+        float _1216;
+        float _1218;
+        _1216 = 0.0;
+        _1218 = 0.0;
+        float _1211 = 1.0;
+        float _1214 = 1.0;
+        uint _1220 = 0u;
+        for (; _1220 < 2u; )
+        {
+            uint _1221 = _1220 + 1u;
+            float _1224 = float(_1221);
+            float _1225 = 0.829999983310699462890625 * _1224;
+            float _1226 = cos(_1225);
+            float _1227 = sin(_1225);
+            float2 _1228 = _1208 * _1214;
+            float _1229 = _1228.x;
+            float _1231 = _1228.y;
+            float _1238 = _1209 / _1214;
+            float _1241 = fast::clamp((_1238 - 2.0) * 0.5, 0.0, 1.0);
+            float _1246 = _1211 * ((_1241 * _1241) * (3.0 - (2.0 * _1241)));
+            float2 _1248 = float2((_1229 * _1226) - (_1231 * _1227), (_1229 * _1227) + (_1231 * _1226)) + (float2(17.3099994659423828125, 41.770000457763671875) * _1224);
+            uint _1249 = 53u + _1220;
+            float2 _1250 = floor(_1248);
+            float2 _1251 = _1248 - _1250;
+            float2 _1258 = ((_1251 * _1251) * _1251) * ((_1251 * ((_1251 * 6.0) - float2(15.0))) + float2(10.0));
+            int2 _1259 = int2(_1250);
+            uint2 _1263 = uint2(_1249 * 2654435769u, _1249 * 2246822507u);
+            uint2 _1266 = ((uint2(_1259) + _1263) * uint2(1664525u)) + uint2(1013904223u);
+            uint _1267 = _1266.y;
+            uint _1270 = _1266.x + (_1267 * 1664525u);
+            uint2 _1273 = uint2(_1270, _1267 + (_1270 * 1664525u));
+            uint2 _1275 = _1273 ^ (_1273 >> uint2(16u));
+            uint _1276 = _1275.y;
+            uint _1279 = _1275.x + (_1276 * 1664525u);
+            uint2 _1282 = uint2(_1279, _1276 + (_1279 * 1664525u));
+            uint2 _1293 = ((uint2(_1259 + int2(1, 0)) + _1263) * uint2(1664525u)) + uint2(1013904223u);
+            uint _1294 = _1293.y;
+            uint _1297 = _1293.x + (_1294 * 1664525u);
+            uint2 _1300 = uint2(_1297, _1294 + (_1297 * 1664525u));
+            uint2 _1302 = _1300 ^ (_1300 >> uint2(16u));
+            uint _1303 = _1302.y;
+            uint _1306 = _1302.x + (_1303 * 1664525u);
+            uint2 _1309 = uint2(_1306, _1303 + (_1306 * 1664525u));
+            float _1316 = _1258.x;
+            uint2 _1322 = ((uint2(_1259 + int2(0, 1)) + _1263) * uint2(1664525u)) + uint2(1013904223u);
+            uint _1323 = _1322.y;
+            uint _1326 = _1322.x + (_1323 * 1664525u);
+            uint2 _1329 = uint2(_1326, _1323 + (_1326 * 1664525u));
+            uint2 _1331 = _1329 ^ (_1329 >> uint2(16u));
+            uint _1332 = _1331.y;
+            uint _1335 = _1331.x + (_1332 * 1664525u);
+            uint2 _1338 = uint2(_1335, _1332 + (_1335 * 1664525u));
+            uint2 _1349 = ((uint2(_1259 + int2(1)) + _1263) * uint2(1664525u)) + uint2(1013904223u);
+            uint _1350 = _1349.y;
+            uint _1353 = _1349.x + (_1350 * 1664525u);
+            uint2 _1356 = uint2(_1353, _1350 + (_1353 * 1664525u));
+            uint2 _1358 = _1356 ^ (_1356 >> uint2(16u));
+            uint _1359 = _1358.y;
+            uint _1362 = _1358.x + (_1359 * 1664525u);
+            uint2 _1365 = uint2(_1362, _1359 + (_1362 * 1664525u));
+            float _1217 = _1216 + _1211;
+            _1211 *= 0.5;
+            _1214 *= 2.0;
+            _1216 = _1217;
+            _1218 += (_1246 * (mix(mix(float((_1282 ^ (_1282 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, float((_1309 ^ (_1309 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, _1316), mix(float((_1338 ^ (_1338 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, float((_1365 ^ (_1365 >> uint2(16u))).x >> 8u) * 5.9604644775390625e-08, _1316), _1258.y) - 0.5));
+            _1220 = _1221;
+            continue;
+        }
+        float _1389 = precise::max(2.0, _146);
+        float2 _1396 = fast::clamp(((float2(0.5 * _1389) - (abs(fract(_459 + float2(0.5)) - float2(0.5)) * ground.tileSize)) / float2(_146)) + float2(0.5), float2(0.0), float2(1.0));
+        float _1407 = fast::clamp((ground.zoom - ground.gridFade.y) / precise::max(ground.gridFade.x - ground.gridFade.y, 9.9999999747524270787835121154785e-07), 0.0, 1.0);
+        float _1414 = fast::clamp((_460 - 12.0) * 0.083333335816860198974609375, 0.0, 1.0);
+        float3 _1432 = mix(mix(float3(ground.paper) + ((mix(_979, mix(float3(ground.paper), _1001.xyz, float3(_1001.w)), float3(_890)) - float3(ground.paper)) * (1.0 + ((ground.blotch * (_1020 / _1018)) * mix(1.0, 0.2800000011920928955078125, _890)))), float3(ground.shore), float3((ground.shoreStrength * (_1191 / _1193)) * exp((-_1195) * _1195))) * (1.0 + ((2.0 * ground.grain) * (_1218 / _1216))), float3(ground.grid), float3(ground.gridStrength * ((precise::max(_1396.x, _1396.y) * (2.0 / _1389)) * (((_1407 * _1407) * (3.0 - (2.0 * _1407))) * ((_1414 * _1414) * (3.0 - (2.0 * _1414)))))));
+        float4 _1488;
+        do
+        {
+            if (fog.on == 0u)
+            {
+                _1488 = float4(_1432, 1.0);
+                break;
+            }
+            float4 _1451 = fogField.sample(fogFieldSmplr, (in.in_var_TEXCOORD0 / (fog.mapSize * fog.tileSize)), level(0.0));
+            float _1452 = _1451.x;
+            float _1455 = _1452 * (1.0 - _1451.y);
+            _1488 = float4(mix(mix(mix(_1432, mix(_1432, fog.sepia.xyz * dot(_1432, float3(0.2125999927520751953125, 0.715200006961822509765625, 0.072200000286102294921875)), float3(fog.sepia.w)), float3(_1455)), fog.mist.xyz * 1.0, float3(fog.mist.w * _1455)), fog.shade.xyz * 1.0, float3(1.0 - smoothstep(0.0, 0.5, _1452))), 1.0);
+            break;
+        } while(false);
+        _1489 = _1488;
+        break;
+    } while(false);
+    out.out_var_SV_Target0 = _1489;
+    return out;
+}
+

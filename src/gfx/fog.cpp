@@ -12,13 +12,19 @@ constexpr f32 SIGHT_EDGE = 0.5F;
 constexpr f32 CENTRE = 0.5F;
 constexpr f32 SMOOTH_A = 3.0F; // smoothstep: t * t * (3 - 2t)
 constexpr f32 SMOOTH_B = 2.0F;
-/// sprite.frag.hlsl's LUMINANCE: Rec. 709's weights of linear red, green and blue.
+/// fog.hlsli's LUMINANCE: Rec. 709's weights of linear red, green and blue.
 constexpr std::array<f32, 3> FOG_LUMINANCE{ { 0.2126F, 0.7152F, 0.0722F } };
 constexpr u8 FOG_FULL = 255;
 constexpr u32 CHANNEL_BITS = 8;
 constexpr u32 CHANNEL_MASK = 0xFFU;
 
-/// The linear red, green and blue of the sRGB colour `srgb`.
+f32 Texel(const FogFrame& fog, u32 column, u32 row, u32 channel) {
+    const std::size_t index = (((std::size_t{ row } * fog.columns) + column) * 2) + channel;
+    return index < fog.values.size() ? static_cast<f32>(fog.values[index]) / BYTE_RANGE : 1.0F;
+}
+
+} // namespace
+
 std::array<f32, 3> LinearOf(const std::array<u8, 3>& srgb) {
     const u32 packed = core::FromSrgb(srgb[0], srgb[1], srgb[2], FOG_FULL);
     std::array<f32, 3> linear{};
@@ -27,13 +33,6 @@ std::array<f32, 3> LinearOf(const std::array<u8, 3>& srgb) {
     }
     return linear;
 }
-
-f32 Texel(const FogFrame& fog, u32 column, u32 row, u32 channel) {
-    const std::size_t index = (((std::size_t{ row } * fog.columns) + column) * 2) + channel;
-    return index < fog.values.size() ? static_cast<f32>(fog.values[index]) / BYTE_RANGE : 1.0F;
-}
-
-} // namespace
 
 f32 FogSample(const FogFrame& fog, core::Vec2 world, u32 channel) {
     if (fog.columns == 0 || fog.rows == 0 || fog.tileSize <= 0.0F) {
