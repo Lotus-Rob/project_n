@@ -11,7 +11,7 @@
 [[vk::combinedImageSampler]] [[vk::binding(2, 2)]] Texture2D<float2> fogField : register(t2, space2);
 [[vk::combinedImageSampler]] [[vk::binding(2, 2)]] SamplerState fogSampler : register(s2, space2);
 
-/// FogUniforms in src/gfx/internal/features/sprites.hpp, 64 bytes.
+/// gfx::FogUniforms in src/gfx/fog.hpp, 64 bytes.
 struct Fog {
     float2 mapSize; // the field's tiles across and down
     float tileSize; // a tile's side in world units
@@ -25,7 +25,7 @@ ConstantBuffer<Fog> fog : register(b0, space3);
 /// core::INSTANCE_FOGGED_LAND and core::INSTANCE_SIGHT_FADE.
 static const uint INSTANCE_FOGGED_LAND = 1;
 static const uint INSTANCE_SIGHT_FADE = 2;
-/// Rec. 709's weights of linear red, green and blue in luminance: FOG_LUMINANCE in src/gfx/internal/features/sprites.cpp.
+/// Rec. 709's weights of linear red, green and blue in luminance: FOG_LUMINANCE in src/gfx/fog.cpp.
 static const float3 LUMINANCE = float3(0.2126, 0.7152, 0.0722);
 
 /// A dissolve's blocks are this many screen pixels square, so it stays crisp at every zoom.

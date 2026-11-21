@@ -1,6 +1,7 @@
 #include "gfx/fog.hpp"
 
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/ui_colours.hpp"
 
 namespace gfx {
 
@@ -11,6 +12,21 @@ constexpr f32 SIGHT_EDGE = 0.5F;
 constexpr f32 CENTRE = 0.5F;
 constexpr f32 SMOOTH_A = 3.0F; // smoothstep: t * t * (3 - 2t)
 constexpr f32 SMOOTH_B = 2.0F;
+/// sprite.frag.hlsl's LUMINANCE: Rec. 709's weights of linear red, green and blue.
+constexpr std::array<f32, 3> FOG_LUMINANCE{ 0.2126F, 0.7152F, 0.0722F };
+constexpr u8 FOG_FULL = 255;
+constexpr u32 CHANNEL_BITS = 8;
+constexpr u32 CHANNEL_MASK = 0xFFU;
+
+/// The linear red, green and blue of the sRGB colour `srgb`.
+std::array<f32, 3> LinearOf(const std::array<u8, 3>& srgb) {
+    const u32 packed = core::FromSrgb(srgb[0], srgb[1], srgb[2], FOG_FULL);
+    std::array<f32, 3> linear{};
+    for (u32 channel = 0; channel < linear.size(); ++channel) {
+        linear.at(channel) = static_cast<f32>((packed >> (channel * CHANNEL_BITS)) & CHANNEL_MASK) / BYTE_RANGE;
+    }
+    return linear;
+}
 
 f32 Texel(const FogFrame& fog, u32 column, u32 row, u32 channel) {
     const std::size_t index = (((std::size_t{ row } * fog.columns) + column) * 2) + channel;
@@ -55,6 +71,24 @@ f32 TileExplored(const FogFrame& fog, core::Vec2 world) {
         return 1.0F;
     }
     return Texel(fog, static_cast<u32>(across), static_cast<u32>(down), FOG_EXPLORED);
+}
+
+FogUniforms FogUniformsOf(const FogFrame& fog, const core::FogLook& look) {
+    if (fog.columns == 0 || fog.rows == 0 || fog.tileSize <= 0.0F) {
+        return {};
+    }
+    const std::array<f32, 3> sepia = LinearOf(look.sepia);
+    const f32 luminance = (sepia[0] * FOG_LUMINANCE[0]) + (sepia[1] * FOG_LUMINANCE[1]) + (sepia[2] * FOG_LUMINANCE[2]);
+    // Over its own luminance, a colour's luminance times the tint keeps that luminance in the sepia's hue.
+    const f32 over = luminance > 0.0F ? 1.0F / luminance : 0.0F;
+    const std::array<f32, 3> mist = LinearOf(look.mist);
+    const std::array<f32, 3> shade = LinearOf(look.shade);
+    return { .mapSize = { static_cast<f32>(fog.columns), static_cast<f32>(fog.rows) },
+             .tileSize = fog.tileSize,
+             .on = 1,
+             .sepia = { sepia[0] * over, sepia[1] * over, sepia[2] * over, look.drain },
+             .mist = { mist[0], mist[1], mist[2], look.mistStrength },
+             .shade = { shade[0], shade[1], shade[2], 0.0F } };
 }
 
 } // namespace gfx
