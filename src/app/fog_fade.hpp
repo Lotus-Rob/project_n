@@ -41,12 +41,13 @@ private:
     };
 
     void SetTargets(const core::Snapshot& snapshot, const core::WorldMap& map);
+    /// Lists the values not yet at their target, so Ease() visits only those.
+    void FindMovers();
     void Snap();
     void Ease(f32 step);
 
     bool m_on = false;
     bool m_seeded = false;
-    bool m_moving = false;
     u64 m_epoch = 0;
     u64 m_change = 0;
     Source m_source{};
@@ -57,6 +58,8 @@ private:
     std::vector<f32> m_current;
     std::vector<f32> m_target;
     std::vector<u8> m_bytes;
+    /// Indices into the values of those still easing towards their target.
+    std::vector<u32> m_movers;
 };
 
 } // namespace app
