@@ -1485,6 +1485,16 @@ class MeasureTest(unittest.TestCase):
         self.assertEqual(project_n.world_shimmer(output), 0.0308694)
         self.assertIsNone(project_n.world_shimmer("no such case\n"))
 
+    def test_cloud_shimmer_read_from_reference_output(self):
+        output = ("tests/reference/reference_tests.cpp:212: MESSAGE: world shimmer: 0.0308694\n"
+                  "tests/reference/reference_tests.cpp:300: MESSAGE: cloud shimmer: 0.0204705\n")
+        self.assertEqual(project_n.cloud_shimmer(output), 0.0204705)
+        self.assertEqual(project_n.world_shimmer(output), 0.0308694)
+        self.assertIsNone(project_n.cloud_shimmer("world shimmer: 0.03\n"))
+
+    def test_the_world_run_turns_the_debug_sight_on(self):
+        self.assertIn("--debug-sight", project_n.MEASURE_RUNS["world"][0])
+
     def test_measure_refuses_unknown_runs(self):
         def build(*args):
             raise AssertionError("built before refusing the runs")
@@ -1537,7 +1547,7 @@ class MeasureTest(unittest.TestCase):
 
         def run_references(preset, quiet=False):
             asked.append(quiet)
-            return "[INFO] a case's game log\nMESSAGE: world shimmer: 0.031\n"
+            return "[INFO] a case's game log\nMESSAGE: world shimmer: 0.031\nMESSAGE: cloud shimmer: 0.021\n"
         status, out, err, left = self.measure(measured, run_references)
         self.assertEqual(asked, [True])  # the cases' output stays out of the table's way
         self.assertNotIn("a case's game log", out)
@@ -1546,6 +1556,7 @@ class MeasureTest(unittest.TestCase):
         self.assertIn("untrusted: paused: the window is unfocused or minimised", world_row)
         self.assertNotIn("untrusted", next(line for line in out.splitlines() if line.startswith("burst ")))
         self.assertIn("world shimmer: 0.031", out)
+        self.assertIn("cloud shimmer: 0.021", out)
         self.assertIn("1 of 2 runs untrusted: world", err)
         self.assertEqual(len(left), 1)  # kept even without --keep: the game log says why it is untrusted
         self.assertIn(f"game logs are kept in {left[0]}", out)
@@ -1570,7 +1581,7 @@ class MeasureTest(unittest.TestCase):
         status, out, err, left = self.measure({"world": project_n.MeasuredRun("world", "unknown", [], [], [steady])}, fail)
         self.assertEqual(left, [])  # a trusted run without --keep leaves nothing
         self.assertIsNone(status)
-        self.assertIn("world shimmer: not measured (reference failed)", out)
+        self.assertIn("world shimmer: not measured (reference failed); cloud shimmer: not measured (reference failed)", out)
         self.assertIn("world  whole run", out)
         self.assertIn("1 of 44 case(s) failed", err)
 
