@@ -28,8 +28,9 @@ constexpr f32 HALF = 0.5F;
 constexpr f32 MIRROR_CHANCE = 0.5F;
 /// How far down its tile a stamp stands before its jitter: three quarters.
 constexpr f32 FOOT_DOWN = 0.75F;
-/// The share of the ranks one stamp's fade spans, so the fades overlap and the density falls evenly.
-constexpr f32 FADE_SHARE = 0.125F;
+/// The share of `shown` one stamp's fade spans, the ranks spreading over the rest: a wide fade keeps a 1% zoom step under 0.1
+/// of opacity, as smoothstep's steepest slope is 1.5 over the width and `shown` moves by up to 0.02 per 1% of zoom.
+constexpr f32 FADE_SHARE = 0.3F;
 /// The smoothstep polynomial 3t^2 - 2t^3.
 constexpr f32 SMOOTH_CUBIC = 3.0F;
 constexpr f32 SMOOTH_LINEAR = 2.0F;
