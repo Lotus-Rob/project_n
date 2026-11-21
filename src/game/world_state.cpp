@@ -102,6 +102,10 @@ void WorldContext::Damage(core::StableId target, i64 amount, u64 tick) {
     Combat::Damage(m_world->state, target, amount, tick);
 }
 
+bool WorldContext::Explored(u32 tile) const {
+    return m_world->explored.empty() || core::IsExplored(m_world->explored, tile);
+}
+
 void BuildScratch(WorldState& world, const Scene& scene, SceneContext& context) {
     PN_ASSERT(scene.Traits().devScene, "a game scene built as a dev scene's scratch world");
     PN_ASSERT(&context.State() == &world.state, "a dev scene built into another world than its context's");

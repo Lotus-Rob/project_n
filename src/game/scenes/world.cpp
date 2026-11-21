@@ -59,8 +59,9 @@ void WorldScene::Publish(const SceneContext& context, core::Rect view, core::Sna
     const f32 markerBelow = static_cast<f32>(marker.height - marker.footY);
     for (std::size_t index = 0; index < map.Places().size(); ++index) {
         const core::Place& place = map.Places()[index];
-        const core::Vec2 centre = map.TileCentre(map.TileIndex(place.tile));
-        if (!core::Contains(view, centre)) {
+        const u32 tile = map.TileIndex(place.tile);
+        const core::Vec2 centre = map.TileCentre(tile);
+        if (!core::Contains(view, centre) || !context.Explored(tile)) {
             continue;
         }
         // The name hangs under the marker drawn round the tile's centre, like a map label under its town: the cultivator
@@ -75,6 +76,7 @@ void WorldScene::Publish(const SceneContext& context, core::Rect view, core::Sna
                 .entity = static_cast<core::StableId>(PLACE_ENTITY_BASE + index),
                 .nameKey = std::to_underlying(place.name),
                 .priority = core::LabelPriority::Place,
+                .fog = core::TextFog::Explored,
                 .align = core::TextAlign::TopCentre,
             }
         );

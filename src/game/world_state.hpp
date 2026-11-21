@@ -130,6 +130,9 @@ public:
     [[nodiscard]] std::optional<core::Vec2> MapPlace() const override {
         return m_world->mapPlace;
     }
+    /// Whether the world's explored tiles (WorldState::explored) hold `tile`: true for a world that keeps none, a scratch
+    /// world's.
+    [[nodiscard]] bool Explored(u32 tile) const override;
 
 private:
     WorldState* m_world;

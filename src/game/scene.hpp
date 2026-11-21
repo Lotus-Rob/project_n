@@ -140,6 +140,10 @@ public:
     /// portal, the point it stood on just before it stepped onto the portal), kept until it is back; none when it hasn't
     /// left it since the game began.
     [[nodiscard]] virtual std::optional<core::Vec2> MapPlace() const = 0;
+
+    /// Whether the player has explored tile `tile` of the world map: true unless the world keeps explored tiles and that one
+    /// isn't among them.
+    [[nodiscard]] virtual bool Explored(u32 tile) const;
 };
 
 /// One scene: its traits, how it builds, and its own behaviour through hooks the host calls. It holds no state, so its

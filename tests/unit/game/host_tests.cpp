@@ -1504,6 +1504,7 @@ struct Road {
     u16 from = core::NO_PLACE;
     u16 to = core::NO_PLACE;
     std::vector<u32> tiles;
+    std::vector<u32> arrive; // the ticks from setting out to reach each tile's centre on the way out
     i64 outTicks = 0;
     i64 visitTicks = 0;
 };
@@ -1525,6 +1526,7 @@ Road FirstRoad(const core::WorldMap& map) {
     REQUIRE(road.tiles.size() >= 3);
     const core::Journey probe =
         core::Visit(map, road.tiles, core::StableId{ 1 }, road.from, road.to, 0, TRAVEL_STAY_DAYS, TRAVEL_STAY_SEED);
+    road.arrive = probe.parts.front().leg.arrive;
     road.outTicks = core::EndTick(probe.parts.front().leg);
     road.visitTicks = core::EndTick(probe);
     return road;
@@ -1559,7 +1561,7 @@ core::StableId CultivatorAt(core::State& state, const core::GameData& data, core
 
 /// A host that has loaded and entered a world save at `clock` holding one visit along FirstRoad() per departure, its
 /// members world NPCs at home in the road's first city, and, with `player`, the player's cultivator on that city's tile
-/// centre: nothing else lives there.
+/// centre: nothing else lives there. Without a player the debug sight is on, as no one else sees the travellers.
 TravelWorld TravelWorldOf(std::span<const Departure> departures, bool player = false, u64 clock = TRAVEL_CLOCK) {
     TravelWorld world;
     // The shipped names, so a party's two members are named apart.
@@ -1606,6 +1608,7 @@ TravelWorld TravelWorldOf(std::span<const Departure> departures, bool player = f
     core::Reader reader{ bytes };
     REQUIRE(world.host->Load(reader, 0));
     world.host->EnterScene();
+    world.host->SetDebugSight(!player);
     return world;
 }
 
@@ -1659,11 +1662,13 @@ TEST_CASE("travellers in view are drawn and labelled with their names") {
         CAPTURE(member);
         const core::StableId traveller = journey.members[member];
         const core::Vec2 foot = core::Where(*world.map, journey, static_cast<i64>(TRAVEL_CLOCK), member);
-        const core::Instance expected =
-            core::MakeInstance(*manifest, { .sprite = SpriteId::Villager, .previous = foot, .current = foot });
+        const core::Instance expected = core::MakeInstance(
+            *manifest, { .sprite = SpriteId::Villager, .previous = foot, .current = foot, .flags = core::INSTANCE_SIGHT_FADE }
+        );
         CHECK(SameInstance(InstanceOf(snapshot, traveller), expected));
-        const core::Instance shadow =
-            core::MakeInstance(*manifest, { .sprite = SpriteId::Shadow, .previous = foot, .current = foot });
+        const core::Instance shadow = core::MakeInstance(
+            *manifest, { .sprite = SpriteId::Shadow, .previous = foot, .current = foot, .flags = core::INSTANCE_SIGHT_FADE }
+        );
         CHECK(std::ranges::any_of(snapshot.instances, [&](const core::Instance& drawn) {
             return SameInstance(drawn, shadow);
         }));
@@ -1724,6 +1729,7 @@ TEST_CASE("a selected traveller's label outranks a place's") {
     std::vector<core::Event> events;
     world.host->Tick(At(1), { .actions = select, .held = {} }, events);
     REQUIRE(world.host->Selected() == chosen);
+    world.host->Explore(NearHome(*world.map)); // a place is named only once explored
     const core::Snapshot snapshot = Published(*world.host, NearHome(*world.map));
     const auto place = std::ranges::find(snapshot.texts, core::TextKind::Place, &core::TextItem::kind);
     REQUIRE(place != snapshot.texts.end());
@@ -1766,7 +1772,9 @@ TEST_CASE("travellers stand still while the world is paused") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     CHECK(SameInstance(
         InstanceOf(running, traveller),
-        core::MakeInstance(*manifest, { .sprite = SpriteId::Villager, .previous = from, .current = onward })
+        core::MakeInstance(
+            *manifest, { .sprite = SpriteId::Villager, .previous = from, .current = onward, .flags = core::INSTANCE_SIGHT_FADE }
+        )
     ));
 
     // Paused, on the pausing tick and after it.
@@ -1775,7 +1783,10 @@ TEST_CASE("travellers stand still while the world is paused") {
     const core::Snapshot paused = Published(*world.host, view);
     CHECK(SameInstance(
         InstanceOf(paused, traveller),
-        core::MakeInstance(*manifest, { .sprite = SpriteId::Villager, .previous = onward, .current = onward })
+        core::MakeInstance(
+            *manifest,
+            { .sprite = SpriteId::Villager, .previous = onward, .current = onward, .flags = core::INSTANCE_SIGHT_FADE }
+        )
     ));
     const core::TextItem label = LabelOf(paused, traveller);
     CHECK(SamePoint(label.previous, label.current));
@@ -1790,8 +1801,10 @@ TEST_CASE("a month step asked for early stands travellers where the new clock pu
     StepMonth(*world.host, 2);
     REQUIRE(world.host->WorldTicks() == game::TICKS_PER_MONTH);
     const core::Vec2 foot = core::Where(*world.map, world.journeys.front(), nextMonth);
-    const core::Instance expected =
-        core::MakeInstance(*test::TestManifest(), { .sprite = SpriteId::Villager, .previous = foot, .current = foot });
+    const core::Instance expected = core::MakeInstance(
+        *test::TestManifest(),
+        { .sprite = SpriteId::Villager, .previous = foot, .current = foot, .flags = core::INSTANCE_SIGHT_FADE }
+    );
     CHECK(SameInstance(InstanceOf(Published(*world.host, NearHome(*world.map)), traveller), expected));
 }
 
@@ -2443,6 +2456,151 @@ TEST_CASE("exploring an area explores every tile it covers, edges included, and 
     constexpr f32 NOT_A_NUMBER = std::numeric_limits<f32>::quiet_NaN();
     host.Explore({ .min = { .x = NOT_A_NUMBER, .y = 0.0F }, .max = { .x = NOT_A_NUMBER, .y = 0.0F } });
     CHECK(ExploredCount(host.ExploredTiles()) == 3);
+}
+
+TEST_CASE("walkers beyond sight's ring aren't published, those in sight and on the ring are") {
+    const Road road = FirstRoad(*test::SmallWorld());
+    const auto clock = static_cast<i64>(TRAVEL_CLOCK);
+    // Each stands on the top row's tile 3, 4 or 5 columns from the cultivator's, the first: in sight, on the ring just
+    // beyond it, and past that.
+    constexpr std::array<u32, 3> COLUMNS{ 3, 4, 5 };
+    const std::array<Departure, 3> departures{ {
+        { .tick = clock - i64{ road.arrive.at(COLUMNS[0]) } },
+        { .tick = clock - i64{ road.arrive.at(COLUMNS[1]) } },
+        { .tick = clock - i64{ road.arrive.at(COLUMNS[2]) } },
+    } };
+    const TravelWorld world = TravelWorldOf(departures, true);
+    const core::WorldMap& map = *world.map;
+    REQUIRE(world.host->SightRadius() == 3);
+    REQUIRE(map.TileAt(FootOf(*world.host, world.player)) == map.TileIndex({ .column = 0, .row = 0 }));
+    for (std::size_t index = 0; index < COLUMNS.size(); ++index) {
+        const core::Vec2 foot = core::Where(map, world.journeys[index], clock);
+        REQUIRE(map.TileAt(foot) == map.TileIndex({ .column = COLUMNS[index], .row = 0 }));
+    }
+    const core::Snapshot snapshot = Published(*world.host, world.host->View());
+    CHECK(Shows(snapshot, world.journeys[0].members.front()));
+    CHECK(Shows(snapshot, world.journeys[1].members.front()));
+    CHECK_FALSE(Shows(snapshot, world.journeys[2].members.front()));
+}
+
+TEST_CASE("with the debug sight every walker in view is published") {
+    const Road road = FirstRoad(*test::SmallWorld());
+    const auto clock = static_cast<i64>(TRAVEL_CLOCK);
+    // One just setting out beside the cultivator, one 5 tiles off, past sight's ring.
+    const std::array<Departure, 2> departures{ { { .tick = clock - JUST_LEFT },
+                                                 { .tick = clock - i64{ road.arrive.at(5) } } } };
+    const TravelWorld world = TravelWorldOf(departures, true);
+    const core::StableId near = world.journeys[0].members.front();
+    const core::StableId far = world.journeys[1].members.front();
+    REQUIRE_FALSE(Shows(Published(*world.host, world.host->View()), far));
+
+    world.host->SetDebugSight(true);
+    const core::Snapshot whole = Published(*world.host, world.host->View());
+    CHECK(Shows(whole, near));
+    CHECK(Shows(whole, far));
+    CHECK(whole.fog.debugSight);
+    // The view still culls.
+    const core::Snapshot home = Published(*world.host, NearHome(*world.map));
+    CHECK(Shows(home, near));
+    CHECK_FALSE(Shows(home, far));
+
+    // With no cultivator to see them, only the debug sight shows them.
+    const TravelWorld alone = TravelWorldOf(departures);
+    CHECK(Shows(Published(*alone.host, alone.host->View()), alone.journeys[1].members.front()));
+    alone.host->SetDebugSight(false);
+    const core::Snapshot unseen = Published(*alone.host, alone.host->View());
+    CHECK_FALSE(Shows(unseen, alone.journeys[0].members.front()));
+    CHECK_FALSE(Shows(unseen, alone.journeys[1].members.front()));
+}
+
+TEST_CASE("walkers and their shadows and labels are flagged to fade with sight") {
+    const std::array<Departure, 1> departures{ { { .tick = static_cast<i64>(TRAVEL_CLOCK) - JUST_LEFT } } };
+    const TravelWorld world = TravelWorldOf(departures, true);
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    const core::StableId traveller = world.journeys.front().members.front();
+    const core::Vec2 foot = core::Where(*world.map, world.journeys.front(), static_cast<i64>(TRAVEL_CLOCK));
+    const core::Snapshot snapshot = Published(*world.host, NearHome(*world.map));
+
+    CHECK(InstanceOf(snapshot, traveller).flags == core::INSTANCE_SIGHT_FADE);
+    const core::Instance shadow = core::MakeInstance(
+        *manifest, { .sprite = SpriteId::Shadow, .previous = foot, .current = foot, .flags = core::INSTANCE_SIGHT_FADE }
+    );
+    CHECK(std::ranges::any_of(snapshot.instances, [&](const core::Instance& drawn) { return SameInstance(drawn, shadow); }));
+    const core::TextItem label = LabelOf(snapshot, traveller);
+    CHECK(label.fog == core::TextFog::Sight);
+    CHECK(label.current.y + label.height == doctest::Approx(foot.y)); // anchor and height reach its foot
+
+    // The cultivator, whose sight it is, never fades.
+    CHECK(InstanceOf(snapshot, world.player).flags == 0);
+    CHECK(LabelOf(snapshot, world.player).fog == core::TextFog::None);
+}
+
+TEST_CASE("the fog in the snapshot follows exploring") {
+    constexpr u64 MOST_TICKS = 1'000; // far more than a tile's walk
+    const core::GameData data = SmallDataSeeing(1);
+    const core::WorldMap& map = *data.world;
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, data);
+    const u32 start = map.TileIndex({ .column = 0, .row = 0 });
+    const u32 next = map.TileIndex({ .column = 1, .row = 0 });
+    const core::Snapshot first = Published(host);
+    CHECK(first.fog.on);
+    CHECK(first.fog.version == host.FogVersion());
+    CHECK(std::ranges::equal(first.fog.explored, host.ExploredTiles()));
+    CHECK(first.fog.playerTile == std::optional{ start });
+    CHECK(first.fog.sightRadius == 1);
+    CHECK_FALSE(first.fog.debugSight);
+
+    // A step onto the next tile uncovers the one beyond it.
+    u64 tick = 1;
+    for (; tick <= MOST_TICKS && map.TileAt(FootOf(host, host.Player())) != next; ++tick) {
+        TickRange(host, tick, tick, HELD_RIGHT);
+    }
+    REQUIRE(map.TileAt(FootOf(host, host.Player())) == next);
+    const core::Snapshot onward = Published(host);
+    CHECK(onward.fog.version > first.fog.version);
+    CHECK(std::ranges::equal(onward.fog.explored, host.ExploredTiles()));
+    CHECK(onward.fog.explored != first.fog.explored);
+    CHECK(onward.fog.playerTile == std::optional{ next });
+
+    // A step back within explored land uncovers nothing.
+    const u64 back = tick + MOST_TICKS;
+    for (; tick <= back && map.TileAt(FootOf(host, host.Player())) != start; ++tick) {
+        TickRange(host, tick, tick, HELD_LEFT);
+    }
+    REQUIRE(map.TileAt(FootOf(host, host.Player())) == start);
+    const core::Snapshot home = Published(host);
+    CHECK(home.fog.version == onward.fog.version);
+    CHECK(home.fog.explored == onward.fog.explored);
+    CHECK(home.fog.playerTile == std::optional{ start });
+}
+
+TEST_CASE("debug sight changes no state: the same ticks hash alike with it on and off") {
+    constexpr u64 TICKS = 300;
+    const std::array<Departure, 1> departures{ { { .tick = static_cast<i64>(TRAVEL_CLOCK) - JUST_LEFT } } };
+    const TravelWorld seen = TravelWorldOf(departures, true);
+    const TravelWorld shown = TravelWorldOf(departures, true);
+    shown.host->SetDebugSight(true);
+    const core::WorldMap& map = *seen.map;
+    const core::StableId chosen = seen.journeys.front().members.front();
+    // The cultivator walks down to the bottom row while the walker it selects heads east along the top: out of sight.
+    const core::Vec2 target = map.TileCentre(map.TileIndex({ .column = 0, .row = test::small::ROWS - 1 }));
+    const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = chosen } } };
+    for (game::Host* const host : { seen.host.get(), shown.host.get() }) {
+        host->SetSightRadius(1);
+        WalkTo(*host, 1, target);
+        std::vector<core::Event> events;
+        host->Tick(At(2), { .actions = select, .held = {} }, events);
+        for (u64 tick = 3; tick <= TICKS; ++tick) {
+            TickRange(*host, tick, tick);
+            static_cast<void>(Published(*host, host->View()));
+        }
+    }
+    CHECK(seen.host->StateHash() == shown.host->StateHash());
+    CHECK(seen.host->Selected() == chosen);
+    CHECK(shown.host->Selected() == chosen);
+    // Out of sight, the walker is kept selected though it isn't drawn.
+    CHECK_FALSE(Shows(Published(*seen.host, seen.host->View()), chosen));
+    CHECK(Shows(Published(*shown.host, shown.host->View()), chosen));
 }
 
 } // namespace

@@ -286,6 +286,12 @@ public:
         return m_fogVersion;
     }
 
+    /// Sets whether the debug sight is on: every traveller in view is published as if in sight, and the fog's snapshot says
+    /// so. It changes what is published only, never exploring or the state, so it is never recorded, saved or hashed.
+    void SetDebugSight(bool enabled) override {
+        m_debugSight = enabled;
+    }
+
     /// The route the player's cultivator walks on the world map (core::ActionKind::WalkTo): a journey of the cultivator alone
     /// with one tile route leg by core::WALKING, from the foot it set out from to the tile walked to; none while it walks
     /// freely.
@@ -304,21 +310,26 @@ public:
     /// hooks get the same area. The snapshot names the scene's camera (SceneTraits::camera) and, in a scene showing the
     /// world map, the calendar (core::CalendarView: the months and the day of the month the world clock has reached, and
     /// the world pause) and, while the player's cultivator walks a route, the route (core::Snapshot::route: its foot, then
-    /// the centres of the route's tiles it hasn't reached by the world clock). A scene with a player adds the
-    /// player's and each living fox's name label over its head; a combat scene adds each living fox's health bar at its
-    /// head and the player's casting state (core::Snapshot::caster). In a scene showing the world map each member of each
-    /// journey under way at the world clock (core::Underway()) whose foot lies in the area is drawn as a villager with
-    /// its shadow, its instance carrying its ID (so it can be picked and selected), placed by core::Where() at the clock
-    /// when the last tick began and at the clock now (the same point while the clock stood still), packed in further
-    /// chunks of the same size after the entities', and the player's cultivator draws over them and everything else in
-    /// the world layer, so a crowd never hides it; with the game data's names (GameData::names) it carries a name label
-    /// over its head (core::NameOf() of the state's seed and its ID, stacked by core::NameKey(): LabelPriority::Selected
-    /// when selected, LabelPriority::Named otherwise), the labels following the player's in chunk order. Then the scene
-    /// adds its own (Scene::Publish(): the tablet's caption, the arena's showcase seals, the world's place names), then
-    /// a scene with a portal adds its seal (PORTAL_SEAL at SceneTraits::portal, twice PORTAL_RADIUS in size, from tick 0
-    /// and never ending, no showcase seal, so F8 never hides it) and its "Portal" caption over it, both whatever the view,
-    /// as the seals are: one record each, whose look reaches past its point. After them come the volleys in flight with
-    /// their targets and the seals raised in play (Combat::Publish()).
+    /// the centres of the route's tiles it hasn't reached by the world clock) and the fog (core::FogView: the explored
+    /// tiles with FogVersion(), the tile under the player's foot when there is a player, the sight radius and the debug
+    /// sight; off elsewhere). A scene with a player adds the player's and each living fox's name label over its head; a
+    /// combat scene adds each living fox's health bar at its head and the player's casting state (core::Snapshot::caster).
+    /// In a scene showing the world map each member of each journey under way at the world clock (core::Underway()) whose
+    /// foot lies in the area and on a tile within one more than the sight radius of the player's (any tile with the debug
+    /// sight on; none without either) is drawn as a villager with its shadow, both flagged to fade with sight
+    /// (core::INSTANCE_SIGHT_FADE), its instance carrying its ID (so it can be picked and selected), placed by
+    /// core::Where() at the clock when the last tick began and at the clock now (the same point while the clock stood
+    /// still), packed in further chunks of the same size after the entities', and the player's cultivator draws over them
+    /// and everything else in the world layer, so a crowd never hides it; with the game data's names (GameData::names) it
+    /// carries a name label over its head (core::NameOf() of the state's seed and its ID, stacked by core::NameKey():
+    /// LabelPriority::Selected when selected, LabelPriority::Named otherwise; hidden with sight, core::TextFog::Sight, its
+    /// height the villager's foot height, so its anchor and height reach its foot), the labels following the player's in
+    /// chunk order. A selected traveller out of sight stays selected, undrawn. Then the scene adds its own
+    /// (Scene::Publish(): the tablet's caption, the arena's showcase seals, the world's place names), then a scene with a
+    /// portal adds its seal (PORTAL_SEAL at SceneTraits::portal, twice PORTAL_RADIUS in size, from tick 0 and never ending,
+    /// no showcase seal, so F8 never hides it) and its "Portal" caption over it, both whatever the view, as the seals are:
+    /// one record each, whose look reaches past its point. After them come the volleys in flight with their targets and the
+    /// seals raised in play (Combat::Publish()).
     void Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::optional<core::Rect>& view) override;
 
 private:
@@ -364,6 +375,9 @@ private:
     void ExploreRound(u32 tile);
     // ExploreRound() of the tile under the player's foot, in a scene showing the world map with a player; nothing else.
     void ExploreRoundFoot();
+    // The tile under the player's foot, the centre of its sight, in a scene showing the world map; none elsewhere or
+    // without a player.
+    [[nodiscard]] std::optional<u32> PlayerTile() const;
     // ExploreRound() of each tile `route`'s legs reach after world tick `fromTick` and by `toTick`.
     void ExploreRoute(const core::Journey& route, i64 fromTick, i64 toTick);
     [[nodiscard]] Body& PlayerBody();
@@ -378,9 +392,12 @@ private:
     void PublishOverhead(core::Snapshot& snapshot) const;
     void PublishCaster(core::Snapshot& snapshot) const;
     void PublishRoute(core::Snapshot& snapshot) const;
-    // One job chunk of a publish: PUBLISH_CHUNK journeys' travellers into draw-list part `part` and their labels into
-    // m_travellerLabels[chunk], sharing nothing else with the other chunks, so they run at once.
-    void PublishJourneys(u32 chunk, u32 part, const core::Rect& area);
+    // The fog of a scene showing the world map, its sight centred on `playerTile`.
+    void PublishFog(core::Snapshot& snapshot, std::optional<u32> playerTile) const;
+    // One job chunk of a publish: PUBLISH_CHUNK journeys' travellers in `area` and in sight of `playerTile` into draw-list
+    // part `part` and their labels into m_travellerLabels[chunk], sharing nothing else with the other chunks, so they run
+    // at once.
+    void PublishJourneys(u32 chunk, u32 part, const core::Rect& area, std::optional<u32> playerTile);
     // How many PUBLISH_CHUNK chunks of journeys a publish draws: none off the world map.
     [[nodiscard]] u32 JourneyChunks() const;
     void ApplyData();
@@ -412,6 +429,8 @@ private:
     // Counts the changes of the game's world's explored tiles and the scenes entered, for the publish to tell when to hand
     // the fog on. Presentation only, so never saved or hashed.
     u64 m_fogVersion = 0;
+    // Whether every traveller in view is published as if in sight. Presentation only, so never saved, hashed or recorded.
+    bool m_debugSight = false;
     std::optional<core::Journey> m_route = std::nullopt; // the player's route; none while it walks freely
     core::StableId m_player{};                           // the cultivator the player walks; zero for none
     core::StableId m_selected{};                         // zero for none

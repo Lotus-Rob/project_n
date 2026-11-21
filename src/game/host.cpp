@@ -1083,8 +1083,13 @@ u32 Host::JourneyChunks() const {
     return core::ChunkCount(Live().travel.Journeys().size(), PUBLISH_CHUNK);
 }
 
-void Host::PublishJourneys(u32 chunk, u32 part, const core::Rect& area) {
+void Host::PublishJourneys(u32 chunk, u32 part, const core::Rect& area, std::optional<u32> playerTile) {
+    if (!m_debugSight && !playerTile) {
+        return; // no one to see them
+    }
     const core::WorldMap& map = *m_data.world;
+    // One tile past sight too, so a walker on a tile that has just left sight fades out with it rather than vanishing.
+    const u32 shown = m_world.sightRadius + 1;
     const WorldState& world = Live();
     const std::span<const core::Journey> journeys = world.travel.Journeys();
     const auto now = static_cast<i64>(world.worldTicks);
@@ -1103,7 +1108,8 @@ void Host::PublishJourneys(u32 chunk, u32 part, const core::Rect& area) {
         }
         for (std::size_t member = 0; member < journey.members.size(); ++member) {
             const core::Vec2 current = core::Where(map, journey, now, member);
-            if (!core::Contains(area, current)) {
+            if (!core::Contains(area, current) ||
+                (!m_debugSight && !core::InSight(map, playerTile.value_or(0), map.TileAt(current), shown))) {
                 continue;
             }
             const core::Vec2 previous = core::Where(map, journey, before, member);
@@ -1112,14 +1118,22 @@ void Host::PublishJourneys(u32 chunk, u32 part, const core::Rect& area) {
                 part,
                 core::Layer::Decals,
                 core::Pipeline::Normal,
-                core::MakeInstance(*m_manifest, { .sprite = SpriteId::Shadow, .previous = previous, .current = current })
+                core::MakeInstance(
+                    *m_manifest,
+                    { .sprite = SpriteId::Shadow, .previous = previous, .current = current, .flags = core::INSTANCE_SIGHT_FADE }
+                )
             );
             m_drawList.Add(
                 part,
                 look.layer,
                 look.pipeline,
                 core::MakeInstance(
-                    *m_manifest, { .sprite = look.sprite, .previous = previous, .current = current, .scale = look.scale }
+                    *m_manifest,
+                    { .sprite = look.sprite,
+                      .previous = previous,
+                      .current = current,
+                      .scale = look.scale,
+                      .flags = core::INSTANCE_SIGHT_FADE }
                 ),
                 current.y,
                 traveller
@@ -1139,6 +1153,7 @@ void Host::PublishJourneys(u32 chunk, u32 part, const core::Rect& area) {
                     .height = height,
                     .nameKey = core::NameKey(name),
                     .priority = traveller == m_selected ? core::LabelPriority::Selected : core::LabelPriority::Named,
+                    .fog = core::TextFog::Sight,
                 }
             );
         }
@@ -1184,6 +1199,15 @@ void Host::PublishRoute(core::Snapshot& snapshot) const {
     if (snapshot.route.size() == 1) {
         snapshot.route.clear(); // nothing left to walk, so no line and no end to mark
     }
+}
+
+void Host::PublishFog(core::Snapshot& snapshot, std::optional<u32> playerTile) const {
+    snapshot.fog.on = true;
+    snapshot.fog.version = m_fogVersion;
+    snapshot.fog.explored.assign(m_world.explored.begin(), m_world.explored.end());
+    snapshot.fog.playerTile = playerTile;
+    snapshot.fog.sightRadius = m_world.sightRadius;
+    snapshot.fog.debugSight = m_debugSight;
 }
 
 void Host::DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const {
@@ -1277,10 +1301,16 @@ void Host::ExploreRound(u32 tile) {
 }
 
 void Host::ExploreRoundFoot() {
-    if (!Running().Traits().worldMap || m_player == core::StableId{}) {
-        return;
+    if (const std::optional<u32> tile = PlayerTile()) {
+        ExploreRound(*tile);
     }
-    ExploreRound(m_data.world->TileAt(PlayerBody().current));
+}
+
+std::optional<u32> Host::PlayerTile() const {
+    if (!Running().Traits().worldMap || m_player == core::StableId{}) {
+        return std::nullopt;
+    }
+    return m_data.world->TileAt(PlayerBody().current);
 }
 
 void Host::ExploreRoute(const core::Journey& route, i64 fromTick, i64 toTick) {
@@ -1536,6 +1566,7 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
     snapshot.combat = traits.combat;
     snapshot.camera = traits.camera;
     snapshot.worldMap = traits.worldMap;
+    const std::optional<u32> playerTile = PlayerTile();
     if (traits.worldMap) {
         snapshot.calendar = core::CalendarView{
             .month = world.worldTicks / TICKS_PER_MONTH,
@@ -1543,6 +1574,7 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
             .paused = world.paused,
         };
         PublishRoute(snapshot);
+        PublishFog(snapshot, playerTile);
     }
     const u32 chunks = core::ChunkCount(looks.size(), PUBLISH_CHUNK);
     const WorldContext context = LiveContext();
@@ -1567,7 +1599,7 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
     Running().PublishGround(context, area, m_drawList, 0);
     jobs.ParallelFor(chunks + journeyChunks, [&](u32 chunk) {
         if (chunk >= chunks) {
-            PublishJourneys(chunk - chunks, entityParts + (chunk - chunks), area);
+            PublishJourneys(chunk - chunks, entityParts + (chunk - chunks), area, playerTile);
             return;
         }
         const std::size_t begin = std::size_t{ chunk } * PUBLISH_CHUNK;
