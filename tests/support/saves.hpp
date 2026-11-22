@@ -46,8 +46,8 @@ namespace test {
 inline constexpr u32 HOST_FORMAT = 10;
 /// The active domain's version in a host save (5: the NPCs' homes).
 inline constexpr u32 ACTIVE_VERSION = 5;
-/// The world domain's version in a host save (7: the explored tiles and the sight radius).
-inline constexpr u32 WORLD_VERSION = 7;
+/// The world domain's version in a host save (8: each journey's plan names the profile it moves by).
+inline constexpr u32 WORLD_VERSION = 8;
 /// The active domain's saved components, in the host's order.
 using ActiveComponents = core::ComponentList<
     game::Body,

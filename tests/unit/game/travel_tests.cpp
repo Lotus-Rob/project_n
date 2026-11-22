@@ -52,7 +52,7 @@ constexpr std::array<u32, 7> ROAD_ROUTE{ { 0, 1, 2, 3, 4, 5, 6 } };
 core::Journey VisitOf(const core::WorldMap& map, core::StableId member, i64 departTick, u32 stayDays = STAY_DAYS) {
     const auto seed =
         static_cast<u32>(core::Random(GAME_SEED, static_cast<u64>(departTick), std::to_underlying(member), STAY_PURPOSE, 0));
-    return core::Visit(map, ROAD_ROUTE, member, HOME, DESTINATION, departTick, stayDays, seed);
+    return core::Visit(map, ROAD_ROUTE, core::WALKING, member, HOME, DESTINATION, departTick, stayDays, seed);
 }
 
 /// A world NPC homed in the home city, on its tile, travelling.
@@ -309,6 +309,37 @@ TEST_CASE("travel and the journal are saved, loaded and hashed") {
     CHECK_FALSE(Loads(bytes, state, nullptr));
     const core::State resting{ game::DOMAINS, STATE_SEED };
     CHECK(Loads(Bytes(game::Travel{}), resting, nullptr));
+}
+
+TEST_CASE("a plan naming a profile the map lacks is refused on load") {
+    const auto map = std::make_shared<const core::WorldMap>(TestMap());
+    REQUIRE(map->Profiles().size() == 1);
+    core::Paths paths{ map };
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::StableId npc = Traveller(state);
+    // A table without a base holding only the visit made by `profile`, and no journals.
+    const auto loads = [&](core::ProfileIndex profile) {
+        const core::VisitPlan plan{ .members = { npc },
+                                    .home = HOME,
+                                    .destination = DESTINATION,
+                                    .from = 0,
+                                    .departTick = 0,
+                                    .stayDays = STAY_DAYS,
+                                    .seed = 1,
+                                    .profile = profile };
+        std::vector<std::byte> bytes;
+        core::Writer writer{ bytes };
+        writer(std::vector<u64>{}, std::vector<core::VisitPlan>{ plan }, std::vector<core::Journey>{}, u64{ 0 });
+        game::Travel travel;
+        core::Reader reader{ bytes };
+        const bool loaded = travel.LoadDelta(reader, game::Travel{}, state, map.get(), &paths);
+        CHECK(loaded != reader.Failed());
+        return loaded;
+    };
+    CHECK(loads(core::WALKING));
+    CHECK_FALSE(loads(1)); // the first past the map's one profile
+    CHECK_FALSE(loads(static_cast<core::ProfileIndex>(core::MOST_PROFILES)));
+    CHECK_FALSE(loads(std::numeric_limits<core::ProfileIndex>::max()));
 }
 
 TEST_CASE("a save naming a traveller who isn't there is refused") {
@@ -814,6 +845,205 @@ TEST_CASE("a visit to the next tile over goes there and comes back") {
     CHECK(SamePoint(core::Where(*map, journey, core::EndTick(journey)), map->TileCentre(0)));
 }
 
+TEST_CASE("a traveller's power picks the last band it reaches") {
+    constexpr core::ProfileIndex BAND_ZERO = 1;
+    core::TravelRules rules;
+    rules.bands = { { .fromPower = 0.0F, .profile = BAND_ZERO }, { .fromPower = 5.0F, .profile = core::WALKING } };
+    CHECK(game::ProfileFor(rules, 0.0F) == BAND_ZERO);
+    CHECK(game::ProfileFor(rules, 4.99F) == BAND_ZERO); // just short of the second band
+    CHECK(game::ProfileFor(rules, 5.0F) == core::WALKING);
+    CHECK(game::ProfileFor(rules, 1e30F) == core::WALKING);
+    CHECK(game::ProfileFor(rules, std::numeric_limits<f32>::infinity()) == core::WALKING);
+    // What no band reaches takes the first, and never reads past the list.
+    CHECK(game::ProfileFor(rules, std::numeric_limits<f32>::quiet_NaN()) == BAND_ZERO);
+    CHECK(game::ProfileFor(rules, -3.0F) == BAND_ZERO);
+    CHECK(game::ProfileFor(rules, -0.0F) == BAND_ZERO);
+    CHECK(game::ProfileFor(rules, -std::numeric_limits<f32>::infinity()) == BAND_ZERO);
+
+    // A middle band holds from its own start up to the next one's.
+    constexpr core::ProfileIndex MIDDLE = 2;
+    rules.bands.insert(rules.bands.begin() + 1, { .fromPower = 1.0F, .profile = MIDDLE });
+    CHECK(game::ProfileFor(rules, 0.99F) == BAND_ZERO);
+    CHECK(game::ProfileFor(rules, 1.0F) == MIDDLE);
+    CHECK(game::ProfileFor(rules, 4.99F) == MIDDLE);
+    CHECK(game::ProfileFor(rules, 5.0F) == core::WALKING);
+
+    rules.bands.clear();
+    for (const f32 power : { 0.0F, 5.0F, 1e30F, std::numeric_limits<f32>::quiet_NaN(), -3.0F }) {
+        CAPTURE(power);
+        CHECK(game::ProfileFor(rules, power) == core::WALKING);
+    }
+}
+
+// The danger map, 9 by 3 tiles of meadow without roads but for a bog in the bottom left corner: the home city at the
+// middle row's left end, the destination at its right end, and a danger in the top row's middle, whose reach of 1 flags
+// its own tile, the two beside it and the middle row's middle tile. Walking the middle row is the shortest way (8 steps,
+// cost 80) but crosses that tile; stepping round it, three steps along the middle row, a diagonal down into the bottom row
+// below it and one back up, then three more along the middle row, costs 88. Wary walkers pay 50 more on a flagged tile
+// and can't enter the bog, which walkers cross at a price.
+constexpr u32 DANGER_COLUMNS = 9;
+constexpr u32 DANGER_ROWS = 3;
+constexpr u32 DANGER_HOME_TILE = DANGER_COLUMNS;
+constexpr u32 BOG_TILE = 2 * DANGER_COLUMNS;
+constexpr u8 BOG = 1;
+constexpr u16 BOG_COST = 20;
+constexpr core::ProfileIndex WARY = 1;
+constexpr u16 WARY_DANGER_COST = 50;
+constexpr u32 STRAIGHT_COST = 80;
+constexpr u32 ROUND_COST = 88;
+constexpr f32 WEAK = 1.0F;  // in the wary band
+constexpr f32 BOLD = 10.0F; // in the band from 5, which walks
+constexpr u32 DANGER_VISITORS = 10;
+
+/// Everyone sets out, reaching `reachBase`; power 0 up to 5 moves WARY, from 5 WALKING.
+core::TravelRules DangerRules(u32 reachBase = 1'000) {
+    core::TravelRules rules = ALL_GO;
+    rules.reachBase = reachBase;
+    rules.bands = { { .fromPower = 0.0F, .profile = WARY }, { .fromPower = 5.0F, .profile = core::WALKING } };
+    return rules;
+}
+
+/// The danger map under `rules`.
+std::shared_ptr<const core::WorldMap> DangerMap(const core::TravelRules& rules = DangerRules()) {
+    core::WorldMapSource source;
+    source.columns = DANGER_COLUMNS;
+    source.rows = DANGER_ROWS;
+    source.tileSize = TILE;
+    source.kinds = { { .name = "meadow", .symbol = '.', .cost = MEADOW_COST },
+                     { .name = "bog", .symbol = '~', .cost = BOG_COST } };
+    source.grid.assign(static_cast<std::size_t>(DANGER_COLUMNS) * DANGER_ROWS, MEADOW);
+    source.grid[BOG_TILE] = BOG;
+    source.dangerReach = 1;
+    const core::MovementProfile walking{
+        .key = "on_foot", .ticksPerCost = core::DEFAULT_TICKS_PER_COST, .kindCosts = { MEADOW_COST, BOG_COST }, .features = {}
+    };
+    core::MovementProfile wary = walking;
+    wary.key = "wary";
+    wary.kindCosts[BOG] = core::IMPASSABLE_COST;
+    wary.features.danger = WARY_DANGER_COST;
+    source.profiles = { walking, wary };
+    source.places = {
+        City("home", { .column = 0, .row = 1 }, PEOPLE, EVERYONE),
+        City("there", { .column = DANGER_COLUMNS - 1, .row = 1 }, PEOPLE, EVERYONE),
+        { .key = "cave",
+          .kind = core::PlaceKind::Danger,
+          .sort = "cave",
+          .tile = { .column = DANGER_COLUMNS / 2, .row = 0 },
+          .nameKey = "cave",
+          .name = {},
+          .people = 0,
+          .start = false },
+    };
+    source.travel = rules;
+    auto built = core::WorldMap::Build(std::move(source));
+    INFO((built ? std::string{} : built.error().message));
+    REQUIRE(built.has_value());
+    return std::make_shared<const core::WorldMap>(*std::move(built));
+}
+
+/// Whether `leg` steps on a tile flagged core::TileFlag::Danger.
+bool CrossesDanger(const core::WorldMap& map, const core::Leg& leg) {
+    return std::ranges::any_of(leg.tiles, [&map](u32 tile) {
+        return (map.FlagsAt(tile) & std::to_underlying(core::TileFlag::Danger)) != 0;
+    });
+}
+
+/// A month of visits on the danger map from DANGER_VISITORS weak NPCs, then as many bold ones, all on the home's tile;
+/// gives the weak, in order.
+std::vector<core::StableId> DangerMonth(
+    core::State& state,
+    game::Travel& travel,
+    const core::WorldMap& map,
+    core::Paths& paths
+) {
+    std::vector<core::StableId> weak = Residents(state, DANGER_VISITORS, DANGER_HOME_TILE, HOME, WEAK);
+    static_cast<void>(Residents(state, DANGER_VISITORS, DANGER_HOME_TILE, HOME, BOLD));
+    VisitMonth(travel, state, map, paths, 0);
+    return weak;
+}
+
+TEST_CASE("a wary traveller goes round a danger a strong one goes through") {
+    const std::shared_ptr<const core::WorldMap> map = DangerMap();
+    core::Paths paths{ map };
+    REQUIRE(paths.To(DESTINATION, core::WALKING).CostFrom(DANGER_HOME_TILE) == STRAIGHT_COST);
+    REQUIRE(paths.To(DESTINATION, WARY).CostFrom(DANGER_HOME_TILE) == ROUND_COST);
+    core::State state{ game::DOMAINS, STATE_SEED };
+    game::Travel travel;
+    const std::vector<core::StableId> weak = DangerMonth(state, travel, *map, paths);
+    REQUIRE(travel.Journeys().size() == 2 * DANGER_VISITORS);
+    std::size_t round = 0;
+    std::size_t through = 0;
+    bool carried = true;
+    for (const core::Journey& journey : travel.Journeys()) {
+        REQUIRE(journey.parts.size() == 3);
+        const bool wary = std::ranges::binary_search(weak, journey.members.front());
+        const core::ProfileIndex profile = wary ? WARY : core::WALKING;
+        carried = carried && journey.parts[0].leg.profile == profile && journey.parts[2].leg.profile == profile;
+        const bool crosses = CrossesDanger(*map, journey.parts[0].leg);
+        round += wary && !crosses ? 1 : 0;
+        through += !wary && crosses ? 1 : 0;
+    }
+    CHECK(carried);
+    CHECK(round == DANGER_VISITORS);
+    CHECK(through == DANGER_VISITORS);
+}
+
+TEST_CASE("a wary traveller's reach counts its own way's cost") {
+    // Reach 85: past the straight way's 80, short of the way round's 88.
+    const std::shared_ptr<const core::WorldMap> map = DangerMap(DangerRules(85));
+    core::Paths paths{ map };
+    paths.Warm(WARY);
+    const game::Npc weak{ .cell = DANGER_HOME_TILE, .home = HOME, .action = game::Action::Rest, .power = WEAK };
+    const game::Npc bold{ .cell = DANGER_HOME_TILE, .home = HOME, .action = game::Action::Rest, .power = BOLD };
+    CHECK_FALSE(game::ChooseDestination(*map, map->Travel(), paths, weak, 0).has_value());
+    CHECK(game::ChooseDestination(*map, map->Travel(), paths, bold, 0) == DESTINATION);
+}
+
+TEST_CASE("a traveller standing where its own profile can't step stays home, though walkers could") {
+    const std::shared_ptr<const core::WorldMap> map = DangerMap();
+    REQUIRE(map->CostAt(BOG_TILE, core::WALKING) == BOG_COST);
+    REQUIRE(map->CostAt(BOG_TILE, WARY) == core::IMPASSABLE_COST);
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const std::vector<core::StableId> weak = Residents(state, DANGER_VISITORS, BOG_TILE, HOME, WEAK);
+    const std::vector<core::StableId> bold = Residents(state, DANGER_VISITORS, BOG_TILE, HOME, BOLD);
+    core::Paths paths{ map };
+    game::Travel travel;
+    VisitMonth(travel, state, *map, paths, 0);
+    CHECK(travel.Journeys().size() == DANGER_VISITORS);
+    const bool weakStay = std::ranges::none_of(weak, [&](core::StableId npc) { return travel.Travelling(npc); });
+    const bool boldGo = std::ranges::all_of(bold, [&](core::StableId npc) { return travel.Travelling(npc); });
+    CHECK(weakStay);
+    CHECK(boldGo);
+}
+
+TEST_CASE("the month's visits by several profiles are the same on 1 and 4 workers") {
+    constexpr u32 MANY_WORKERS = 4;
+    // Over two chunks of NPCs, wary and bold in turn, so every chunk routes by both profiles at once.
+    constexpr u32 CROWD = (2 * game::MonthStep::CHUNK) + 100;
+    const std::shared_ptr<const core::WorldMap> map = DangerMap();
+    const auto month = [&map](u32 workers) {
+        core::State state{ game::DOMAINS, STATE_SEED };
+        for (u32 npc = 0; npc < CROWD; ++npc) {
+            static_cast<void>(game::SpawnNpc(state, DANGER_HOME_TILE, HOME, npc % 2 == 0 ? WEAK : BOLD));
+        }
+        // Fresh paths, so the month itself must build every band's maps before it forks.
+        core::Paths paths{ map };
+        core::Jobs jobs{ workers };
+        game::Travel travel;
+        travel.Month(state, *map, paths, jobs, GAME_SEED, VISIT_COUNTER, 0);
+        return travel;
+    };
+    const game::Travel one = month(1);
+    const game::Travel many = month(MANY_WORKERS);
+    REQUIRE(one.Journeys().size() == CROWD);
+    const auto wary = std::ranges::count_if(one.Journeys(), [](const core::Journey& journey) {
+        return journey.parts.front().leg.profile == WARY;
+    });
+    CHECK(wary == CROWD / 2);
+    const bool same = Bytes(one) == Bytes(many);
+    CHECK(same);
+}
+
 TEST_CASE("a raised travel share replaces the map's and the data's hash; data without a map is refused") {
     constexpr u16 RAISED_SHARE = 200;
     core::GameData data{};
@@ -857,7 +1087,7 @@ core::Journey RoutedVisit(
     i64 departTick
 ) {
     const std::vector<u32> route = core::RouteDown(map, paths.To(destination, core::WALKING), from);
-    return core::Visit(map, route, member, HOME, destination, departTick, STAY_DAYS, 99);
+    return core::Visit(map, route, core::WALKING, member, HOME, destination, departTick, STAY_DAYS, 99);
 }
 
 TEST_CASE("travel round-trips as its difference from a base, a journey its plan doesn't rebuild written whole") {
@@ -996,6 +1226,35 @@ TEST_CASE("a plan to an unreachable city is refused") {
     core::VisitPlan farFuture = reachable;
     farFuture.departTick = std::numeric_limits<i64>::max() - 1;
     CHECK_FALSE(loads(farFuture, &paths));
+}
+
+TEST_CASE("a wary traveller's journey saves as its plan and loads by the same profile") {
+    const std::shared_ptr<const core::WorldMap> map = DangerMap();
+    core::Paths paths{ map };
+    core::State state{ game::DOMAINS, STATE_SEED };
+    game::Travel travel;
+    static_cast<void>(DangerMonth(state, travel, *map, paths));
+    const std::vector<std::byte> bytes = DeltaBytes(travel, game::Travel{}, *map, paths);
+
+    std::vector<u64> gone;
+    std::vector<core::VisitPlan> plans;
+    std::vector<core::Journey> whole;
+    core::Reader parts{ bytes };
+    parts(gone, plans, whole);
+    REQUIRE_FALSE(parts.Failed());
+    CHECK(plans.size() == 2 * DANGER_VISITORS);
+    CHECK(whole.empty());
+    const auto wary = std::ranges::count(plans, WARY, &core::VisitPlan::profile);
+    CHECK(wary == DANGER_VISITORS);
+
+    // Loaded with fresh paths, as a new session's are.
+    core::Paths fresh{ map };
+    game::Travel loaded;
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.LoadDelta(reader, game::Travel{}, state, map.get(), &fresh));
+    CHECK(reader.Remaining() == 0);
+    const bool sameBytes = Bytes(loaded) == Bytes(travel);
+    CHECK(sameBytes);
 }
 
 } // namespace

@@ -37,9 +37,9 @@ constexpr u32 ROAD_END = 5;
 // A departure before tick 0.
 constexpr i64 BEFORE_ZERO = -200;
 
-// The test map, 7 by 3 tiles of meadow: city 0 (the home, on sand) at tile 0, a road over tiles 1 to 5 of the top row,
-// and city 1 (the destination, on meadow) at tile 6, its right end. Its profile is the default on_foot at pace 16.
-core::WorldMap TestMap() {
+// The test map's source, 7 by 3 tiles of meadow: city 0 (the home, on sand) at tile 0, a road over tiles 1 to 5 of the top
+// row, and city 1 (the destination, on meadow) at tile 6, its right end. Its profile is the default on_foot at pace 16.
+core::WorldMapSource TestSource() {
     core::WorldMapSource source;
     source.columns = COLUMNS;
     source.rows = ROWS;
@@ -63,9 +63,39 @@ core::WorldMap TestMap() {
               .start = city == HOME }
         );
     }
+    return source;
+}
+
+core::WorldMap Built(core::WorldMapSource source) {
     auto built = core::WorldMap::Build(std::move(source));
+    INFO((built ? std::string{} : built.error().message));
     REQUIRE(built.has_value());
     return *std::move(built);
+}
+
+// The test map (TestSource()).
+core::WorldMap TestMap() {
+    return Built(TestSource());
+}
+
+// A laden walker's profile on the test map: slower, dearer on every kind and helped by no road, so its routes and ticks
+// differ from walking's.
+constexpr core::ProfileIndex LADEN = 1;
+constexpr u16 LADEN_TICKS_PER_COST = 24;
+constexpr u16 LADEN_MEADOW_COST = 12;
+constexpr u16 LADEN_SAND_COST = 40;
+
+// The test map with LADEN after the default on_foot.
+core::WorldMap TwoProfileMap() {
+    core::WorldMapSource source = TestSource();
+    const core::MovementProfile walking = TestMap().Profiles()[core::WALKING];
+    core::MovementProfile laden = walking;
+    laden.key = "laden";
+    laden.ticksPerCost = LADEN_TICKS_PER_COST;
+    laden.kindCosts = { LADEN_MEADOW_COST, LADEN_SAND_COST };
+    laden.features.road = LADEN_MEADOW_COST;
+    source.profiles = { walking, laden };
+    return Built(std::move(source));
 }
 
 // The top row from the home's tile to the destination's: sand, five road tiles, then the destination's meadow.
@@ -184,7 +214,7 @@ TEST_CASE("a walker is at its origin before the leg and its last tile after") {
 TEST_CASE("a walker moves without a jump") {
     const core::WorldMap map = TestMap();
     constexpr i64 DEPART = 0;
-    const core::Journey visit = core::Visit(map, ROAD_ROUTE, WALKER, HOME, DESTINATION, DEPART, TWO_DAYS, SEED);
+    const core::Journey visit = core::Visit(map, ROAD_ROUTE, core::WALKING, WALKER, HOME, DESTINATION, DEPART, TWO_DAYS, SEED);
     REQUIRE(visit.parts.size() == 3);
     const core::Leg& out = visit.parts[0].leg;
     const core::Stay& stay = visit.parts[1].rest;
@@ -209,7 +239,7 @@ TEST_CASE("a walker moves without a jump") {
 TEST_CASE("a visit comes home by its own road reversed") {
     const core::WorldMap map = TestMap();
     constexpr i64 DEPART = 500;
-    const core::Journey visit = core::Visit(map, ROAD_ROUTE, WALKER, HOME, DESTINATION, DEPART, TWO_DAYS, SEED);
+    const core::Journey visit = core::Visit(map, ROAD_ROUTE, core::WALKING, WALKER, HOME, DESTINATION, DEPART, TWO_DAYS, SEED);
     CHECK(visit.members == std::vector<core::StableId>{ WALKER });
     CHECK(visit.home == HOME);
     CHECK(visit.destination == DESTINATION);
@@ -240,7 +270,7 @@ TEST_CASE("a visit comes home by its own road reversed") {
 
 TEST_CASE("a stay keeps its walker near the city's tile") {
     const core::WorldMap map = TestMap();
-    const core::Journey visit = core::Visit(map, ROAD_ROUTE, WALKER, HOME, DESTINATION, 0, FIVE_DAYS, SEED);
+    const core::Journey visit = core::Visit(map, ROAD_ROUTE, core::WALKING, WALKER, HOME, DESTINATION, 0, FIVE_DAYS, SEED);
     const core::Stay& stay = visit.parts[1].rest;
     const core::Vec2 centre = map.TileCentre(ROAD_ROUTE.back());
     // The stay's ends, each day point and the ticks either side of it, and the middles of a few days.
@@ -274,7 +304,7 @@ TEST_CASE("a stay keeps its walker near the city's tile") {
 
 TEST_CASE("two members of one journey stand apart") {
     const core::WorldMap map = TestMap();
-    core::Journey convoy = core::Visit(map, ROAD_ROUTE, WALKER, HOME, DESTINATION, 0, TWO_DAYS, SEED);
+    core::Journey convoy = core::Visit(map, ROAD_ROUTE, core::WALKING, WALKER, HOME, DESTINATION, 0, TWO_DAYS, SEED);
     convoy.members = { WALKER, SECOND, THIRD };
     constexpr i64 ON_THE_ROAD = 100;
     const i64 inTheCity = convoy.parts[1].rest.startTick + DAY + 30;
@@ -323,7 +353,7 @@ TEST_CASE("a journey places its legs exactly as Where of the leg does") {
 TEST_CASE("signed ticks place a journey that left before tick 0") {
     const core::WorldMap map = TestMap();
     constexpr i64 DEPART = BEFORE_ZERO;
-    const core::Journey visit = core::Visit(map, ROAD_ROUTE, WALKER, HOME, DESTINATION, DEPART, TWO_DAYS, SEED);
+    const core::Journey visit = core::Visit(map, ROAD_ROUTE, core::WALKING, WALKER, HOME, DESTINATION, DEPART, TWO_DAYS, SEED);
     CHECK(core::StartTick(visit) == DEPART);
     CHECK(core::EndTick(visit) == DEPART + 480 + (TWO_DAYS * DAY) + 544);
     CHECK_FALSE(core::Underway(visit, DEPART - 1));
@@ -338,7 +368,7 @@ TEST_CASE("signed ticks place a journey that left before tick 0") {
 
 TEST_CASE("a journey is written and read back whole") {
     const core::WorldMap map = TestMap();
-    core::Journey visit = core::Visit(map, ROAD_ROUTE, WALKER, HOME, DESTINATION, BEFORE_ZERO, TWO_DAYS, SEED);
+    core::Journey visit = core::Visit(map, ROAD_ROUTE, core::WALKING, WALKER, HOME, DESTINATION, BEFORE_ZERO, TWO_DAYS, SEED);
     visit.members.push_back(SECOND);
     std::vector<std::byte> bytes;
     core::Writer writer{ bytes };
@@ -379,8 +409,8 @@ struct Sample {
     i64 departTick;
 };
 
-TEST_CASE("a visit rebuilt from its plan equals the visit") {
-    const auto map = std::make_shared<const core::WorldMap>(TestMap());
+TEST_CASE("a visit by any profile rebuilt from its plan equals the visit") {
+    const auto map = std::make_shared<const core::WorldMap>(TwoProfileMap());
     core::Paths paths{ map };
     constexpr u32 LONG_STAY_DAYS = 40; // longer than a month
     constexpr u32 THREE_DAYS = 3;
@@ -451,40 +481,65 @@ TEST_CASE("a visit rebuilt from its plan equals the visit") {
           .departTick = 99 },
     } };
     const std::array<core::StableId, 3> everyone{ WALKER, SECOND, THIRD };
-    for (const Sample& sample : samples) {
-        CAPTURE(sample.why);
-        CAPTURE(sample.from);
-        CAPTURE(sample.members);
-        CAPTURE(sample.departTick);
-        CAPTURE(sample.stayDays);
-        const std::vector<u32> route = core::RouteDown(*map, paths.To(DESTINATION, core::WALKING), sample.from);
-        REQUIRE_FALSE(route.empty());
-        core::Journey visit = core::Visit(*map, route, WALKER, HOME, DESTINATION, sample.departTick, sample.stayDays, SEED);
-        visit.members.assign(everyone.begin(), std::next(everyone.begin(), static_cast<std::ptrdiff_t>(sample.members)));
+    for (const core::ProfileIndex profile : { core::WALKING, LADEN }) {
+        for (const Sample& sample : samples) {
+            CAPTURE(profile);
+            CAPTURE(sample.why);
+            CAPTURE(sample.from);
+            CAPTURE(sample.members);
+            CAPTURE(sample.departTick);
+            CAPTURE(sample.stayDays);
+            const std::vector<u32> route = core::RouteDown(*map, paths.To(DESTINATION, profile), sample.from);
+            REQUIRE_FALSE(route.empty());
+            core::Journey visit =
+                core::Visit(*map, route, profile, WALKER, HOME, DESTINATION, sample.departTick, sample.stayDays, SEED);
+            visit.members.assign(everyone.begin(), std::next(everyone.begin(), static_cast<std::ptrdiff_t>(sample.members)));
+            CHECK(visit.parts[0].leg.profile == profile);
+            CHECK(visit.parts[2].leg.profile == profile);
 
-        REQUIRE(core::PlanOf(visit).has_value());
-        const core::VisitPlan plan = core::PlanOf(visit).value_or(core::VisitPlan{});
-        CHECK(plan.members == visit.members);
-        CHECK(plan.home == HOME);
-        CHECK(plan.destination == DESTINATION);
-        CHECK(plan.from == sample.from);
-        CHECK(plan.departTick == sample.departTick);
-        CHECK(plan.stayDays == sample.stayDays);
-        CHECK(plan.seed == SEED);
-        const core::Journey rebuilt = core::Rebuild(*map, paths, plan);
-        REQUIRE(rebuilt.parts.size() == 3);
-        CHECK(rebuilt.parts[0].leg.origin.x == visit.parts[0].leg.origin.x);
-        CHECK(rebuilt.parts[0].leg.origin.y == visit.parts[0].leg.origin.y);
-        CHECK(rebuilt.parts[2].leg.origin.x == visit.parts[2].leg.origin.x);
-        CHECK(rebuilt.parts[2].leg.origin.y == visit.parts[2].leg.origin.y);
-        const bool same = BytesOf(rebuilt) == BytesOf(visit);
-        CHECK(same);
+            REQUIRE(core::PlanOf(visit).has_value());
+            const core::VisitPlan plan = core::PlanOf(visit).value_or(core::VisitPlan{});
+            CHECK(plan.profile == profile);
+            CHECK(plan.members == visit.members);
+            CHECK(plan.home == HOME);
+            CHECK(plan.destination == DESTINATION);
+            CHECK(plan.from == sample.from);
+            CHECK(plan.departTick == sample.departTick);
+            CHECK(plan.stayDays == sample.stayDays);
+            CHECK(plan.seed == SEED);
+            const core::Journey rebuilt = core::Rebuild(*map, paths, plan);
+            REQUIRE(rebuilt.parts.size() == 3);
+            CHECK(rebuilt.parts[0].leg.origin.x == visit.parts[0].leg.origin.x);
+            CHECK(rebuilt.parts[0].leg.origin.y == visit.parts[0].leg.origin.y);
+            CHECK(rebuilt.parts[2].leg.origin.x == visit.parts[2].leg.origin.x);
+            CHECK(rebuilt.parts[2].leg.origin.y == visit.parts[2].leg.origin.y);
+            const bool same = BytesOf(rebuilt) == BytesOf(visit);
+            CHECK(same);
+        }
     }
+}
+
+TEST_CASE("a journey whose legs differ in profile has no plan") {
+    const core::WorldMap map = TwoProfileMap();
+    // The road row is as walkable laden, so one route serves both profiles.
+    const core::Journey laden = core::Visit(map, ROAD_ROUTE, LADEN, WALKER, HOME, DESTINATION, 0, TWO_DAYS, SEED);
+    REQUIRE(core::PlanOf(laden).has_value());
+    CHECK(core::PlanOf(laden).value_or(core::VisitPlan{}).profile == LADEN);
+
+    core::Journey walkedHome = laden;
+    walkedHome.parts[2].leg = core::MakeTileLeg(
+        map, core::WALKING, laden.parts[2].leg.startTick, laden.parts[2].leg.origin, laden.parts[2].leg.tiles
+    );
+    CHECK_FALSE(core::PlanOf(walkedHome).has_value());
+
+    core::Journey walkedOut = laden;
+    walkedOut.parts[0].leg.profile = core::WALKING;
+    CHECK_FALSE(core::PlanOf(walkedOut).has_value());
 }
 
 TEST_CASE("a journey a visit didn't make has no plan") {
     const auto map = std::make_shared<const core::WorldMap>(TestMap());
-    const core::Journey visit = core::Visit(*map, ROAD_ROUTE, WALKER, HOME, DESTINATION, 0, TWO_DAYS, SEED);
+    const core::Journey visit = core::Visit(*map, ROAD_ROUTE, core::WALKING, WALKER, HOME, DESTINATION, 0, TWO_DAYS, SEED);
     REQUIRE(core::PlanOf(visit).has_value());
 
     core::Journey withoutParts = visit;
@@ -513,7 +568,7 @@ TEST_CASE("a journey a visit didn't make has no plan") {
     CHECK_FALSE(core::PlanOf(memberless).has_value());
 }
 
-TEST_CASE("a plan from where walkers can't step rebuilds to nothing") {
+TEST_CASE("a plan from where its profile can't step rebuilds to nothing") {
     constexpr u8 SHALLOWS = 1;
     constexpr u32 SHALLOWS_TILE = COLUMNS + 3;
     core::WorldMapSource source;
@@ -526,9 +581,15 @@ TEST_CASE("a plan from where walkers can't step rebuilds to nothing") {
                      { .name = "shallows", .symbol = '-', .cost = FORD_COST } };
     source.grid.assign(static_cast<std::size_t>(COLUMNS) * ROWS, MEADOW);
     source.grid[SHALLOWS_TILE] = SHALLOWS;
+    // A wader crosses the shallows walkers can't.
+    constexpr core::ProfileIndex WADING = 1;
     source.profiles = { { .key = "on_foot",
                           .ticksPerCost = core::DEFAULT_TICKS_PER_COST,
                           .kindCosts = { MEADOW_COST, core::IMPASSABLE_COST },
+                          .features = {} },
+                        { .key = "wading",
+                          .ticksPerCost = core::DEFAULT_TICKS_PER_COST,
+                          .kindCosts = { MEADOW_COST, FORD_COST },
                           .features = {} } };
     for (const u16 city : { HOME, DESTINATION }) {
         source.places.push_back(
@@ -554,10 +615,17 @@ TEST_CASE("a plan from where walkers can't step rebuilds to nothing") {
                           .from = 0,
                           .departTick = 0,
                           .stayDays = TWO_DAYS,
-                          .seed = SEED };
+                          .seed = SEED,
+                          .profile = core::WALKING };
     CHECK_FALSE(core::Rebuild(*map, paths, plan).parts.empty());
     plan.from = SHALLOWS_TILE;
     CHECK(core::Rebuild(*map, paths, plan).parts.empty());
+    // A wader may set out from the shallows: the tile is judged by the profile the journey moves by.
+    plan.profile = WADING;
+    const core::Journey waded = core::Rebuild(*map, paths, plan);
+    REQUIRE_FALSE(waded.parts.empty());
+    CHECK(waded.parts[0].leg.profile == WADING);
+    CHECK(waded.parts[0].leg.tiles.front() == SHALLOWS_TILE);
 }
 
 } // namespace
