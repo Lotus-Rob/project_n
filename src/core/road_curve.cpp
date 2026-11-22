@@ -110,7 +110,7 @@ std::vector<Vec2> Midline(std::span<const Vec2> waypoints, f32 tileSize, u32 ste
 std::optional<Vec2> JoinedEnd(
     std::span<const Vec2> waypoints,
     std::size_t own,
-    std::span<const std::vector<Vec2>> others,
+    std::span<const std::vector<Vec2>> midlines,
     f32 tileSize
 ) {
     PN_ASSERT(waypoints.size() >= 2, "an end needs a stretch before it");
@@ -119,11 +119,11 @@ std::optional<Vec2> JoinedEnd(
     const f32 reach = JOIN_TILES * tileSize;
     std::optional<Vec2> nearest;
     f32 nearestApart = reach;
-    for (std::size_t other = 0; other < others.size(); ++other) {
+    for (std::size_t other = 0; other < midlines.size(); ++other) {
         if (other == own) {
             continue;
         }
-        const std::vector<Vec2>& line = others[other];
+        const std::vector<Vec2>& line = midlines[other];
         for (std::size_t point = 1; point < line.size(); ++point) {
             const std::optional<f32> share = Meeting(from, last, line[point - 1], line[point]);
             if (!share || *share <= 0.0F) {
