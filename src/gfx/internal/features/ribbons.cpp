@@ -3,6 +3,8 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/profile.hpp"
 #include "gfx/internal/features/meshes.hpp"
+#include "gfx/internal/resources/shaders.hpp"
+#include "gfx/volley_draw.hpp"
 
 namespace gfx::internal {
 

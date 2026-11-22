@@ -10,9 +10,9 @@
 #include "core/error.hpp"
 #include "core/types.hpp"
 #include "gfx/camera.hpp"
+#include "gfx/generated/shaders.hpp" // by `project_n shaders`
 #include "gfx/internal/gpu.hpp"
-#include "gfx/internal/resources/shaders.hpp"
-#include "gfx/volley_draw.hpp"
+#include "gfx/ribbon.hpp"
 
 #include <SDL3/SDL.h>
 
