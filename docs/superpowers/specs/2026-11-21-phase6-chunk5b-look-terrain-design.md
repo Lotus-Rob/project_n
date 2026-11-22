@@ -66,8 +66,8 @@ paintings only (a cave or shrine is a few pixels at zoom 0.25, against accessibi
   kind, `world_look.yaml`'s `kinds:`), river and road overlays by neighbour mask, bridges, fords and place markers, all
   flagged `core::INSTANCE_FOGGED_LAND`, as one sprite buffer (at most `MAX_TERRAIN_INSTANCES`, 8,192) re-laid when the
   view reaches other tiles. `shaders/sprite.frag.hlsl`'s `Fogged()` samples the fog texture (`fogField`, one texel per
-  tile, linear, explored in R, in sight in G) for drain, mist and shade. A ribbon pipeline (additive, sword trails) and a
-  mesh pipeline (premultiplied over, screen space) exist. The map is static data (`core::WorldMap`: 150 × 85 tiles of
+  tile, linear, explored in R, in sight in G) for drain, mist and shade. A ribbon pipeline (additive, sword trails) and
+  a mesh pipeline (premultiplied over, screen space) exist. The map is static data (`core::WorldMap`: 150 × 85 tiles of
   256 world units, 11 kinds, `Roads()`, `Rivers()` polylines of tile points, 6 cities and 20 danger sites, each one
   tile). Zoom 0.25 to 2. The shimmer guards (`tests/reference/reference_tests.cpp`): world 0.048 measured against a 0.06
   bound at zoom 0.25 (tiles and travellers), clouds 0.0205 against 0.0256.
@@ -77,10 +77,10 @@ paintings only (a cave or shrine is a few pixels at zoom 0.25, against accessibi
 
 ## Goals
 
-1. **The kind texture.** When the world scene loads its map, the renderer builds a texture of one texel per tile
-   holding the tile's kind index and its signed distance to the nearest shore (water against land, in tiles, negative
-   in water, clamped to a few tiles), and binds it to the ground pass. The map doesn't change at run time; the texture
-   is rebuilt only with the map.
+1. **The kind texture.** When the world scene loads its map, the renderer builds a texture of one texel per tile holding
+   the tile's kind index and its signed distance to the nearest shore (water against land, in tiles, negative in water,
+   clamped to a few tiles), and binds it to the ground pass. The map doesn't change at run time; the texture is rebuilt
+   only with the map.
 2. **The ground pass** draws the whole view once, before anything else on the world map, in world space:
    - **Paper:** a warm paper colour with a faint fibre grain (procedural noise in world units).
    - **Washes:** each kind's wash colour laid over the paper at that kind's strength (both in `world_look.yaml`; the
@@ -95,8 +95,8 @@ paintings only (a cave or shrine is a few pixels at zoom 0.25, against accessibi
      zoom, so camera moves of a fraction of a pixel don't make the ground crawl.
    - **The fog:** the ground applies the same drain, mist and shade as `Fogged()` does for land today (shared shader
      code, not a copy).
-3. **Rivers as painted bands.** Each river polyline is smoothed (a centripetal Catmull-Rom spline or similar through
-   its tile centres) and drawn as a ribbon about 0.4 tile wide with a darker soft edge, ending inside the sea or lake it
+3. **Rivers as painted bands.** Each river polyline is smoothed (a centripetal Catmull-Rom spline or similar through its
+   tile centres) and drawn as a ribbon about 0.4 tile wide with a darker soft edge, ending inside the sea or lake it
    runs into; a new premultiplied-over ribbon variant in world space with anti-aliased edges and the fog's land
    treatment. Joins where rivers meet are smooth. Bridges and fords stay sprites, sized to span the wider band.
 4. **Stamps.** Each tile may carry painted stamps for its kind, laid out like today's terrain (pure, on the main thread,
@@ -118,8 +118,8 @@ paintings only (a cave or shrine is a few pixels at zoom 0.25, against accessibi
      reeds) fade out, ranked by their hash so the same ones go first; forests and mountain ranges stay. Fading is
      continuous with the zoom, never a pop.
 5. **Places painted.** Each city draws a painting centred on its tile; each danger site a painted stamp. The painting's
-   own size decides how far it spreads (placeholders: 2×2 tiles for cities, 1 tile for danger sites), so the capital
-   can be larger than the oasis by art alone. `world_look.yaml` names a painting per place kind (`city`, and each danger
+   own size decides how far it spreads (placeholders: 2×2 tiles for cities, 1 tile for danger sites), so the capital can
+   be larger than the oasis by art alone. `world_look.yaml` names a painting per place kind (`city`, and each danger
    sort) and lets any place name its own by key. Terrain stamps whose foot falls inside a painting's footprint are
    skipped, so stamps make way. Paintings sort with the stamps by foot. Gameplay is unchanged: a place is one tile for
    walking, picking and travel.
@@ -131,21 +131,21 @@ paintings only (a cave or shrine is a few pixels at zoom 0.25, against accessibi
    unexplored land is hidden by the clouds and the shade. The cloud placeholders are repainted to sit on paper (softer
    ink, paper-toned fill), keeping their count, sizes and layout.
 8. **Every look value live.** Wash colours and strengths, edge warp and softness, water depth colours, the shore line,
-   the grid, stamp lists and densities, mist and paintings are in `world_look.yaml` (presentation: not hashed, not saved,
-   reloaded live by debug builds as today). A broken edit keeps the old look.
+   the grid, stamp lists and densities, mist and paintings are in `world_look.yaml` (presentation: not hashed, not
+   saved, reloaded live by debug builds as today). A broken edit keeps the old look.
 9. **The art pipeline.** Every new sprite (stamps per kind, mountain ranges, mist puffs, place paintings, wider bridges
    and fords, repainted clouds) is a generated placeholder from `art/placeholders.py`, listed in `art/sprites.toml` and
    the world scene's list in `art/scenes.toml`, so an artist replaces a PNG and reruns `atlas`, never code.
-10. **Shimmer to 0.02.** The terrain holds a shimmer of 0.02 or under at zoom 1, 0.5 and 0.25, each a guard case of
-    its own with its bound set from its first measurement plus the guards' usual margin (about 1.25 times), and never
-    above 0.02. **In the frame:** the ground, the veil, rivers, stamps, mist puffs, place paintings, bridges, fords and
+10. **Shimmer to 0.02.** The terrain holds a shimmer of 0.02 or under at zoom 1, 0.5 and 0.25, each a guard case of its
+    own with its bound set from its first measurement plus the guards' usual margin (about 1.25 times), and never above
+    0.02. **In the frame:** the ground, the veil, rivers, stamps, mist puffs, place paintings, bridges, fords and
     markers, over the busiest region explored and in sight (the debug sight, as the world case); **hidden:** travellers
     and labels (part 2's and 3's) and the road overlays (redrawn in part 2). **Measured against flat paper** (the same
     frame drawn as plain paper colour), not the dark backdrop, so the paper's large even ink doesn't dilute the crawl of
-    the grid, shore, river and stamp edges. The existing world guard (tiles and travellers at zoom 0.25) is tightened
-    to its new measurement plus margin. The cloud guard's bound is re-set from its new measurement plus the same margin
-    but never above today's 0.0256; if the repainted clouds would need more, the placeholder art is fixed instead.
-    `measure` reports the new cases beside the old.
+    the grid, shore, river and stamp edges. The existing world guard (tiles and travellers at zoom 0.25) is tightened to
+    its new measurement plus margin. The cloud guard's bound is re-set from its new measurement plus the same margin but
+    never above today's 0.0256; if the repainted clouds would need more, the placeholder art is fixed instead. `measure`
+    reports the new cases beside the old.
 11. **No cost.** `measure`'s world run (with `--debug-sight`) shows no frame-time change beyond noise against main's
     numbers, and the terrain's main-thread layout at the widest view stays under 0.2 ms median.
 
@@ -153,9 +153,8 @@ paintings only (a cave or shrine is a few pixels at zoom 0.25, against accessibi
 
 **Ground pass** (paper, washes, water, grid; fog) → **rivers** (ribbons) → road overlays, bridges, fords (as today) →
 **stamps, mountain ranges and place paintings** (one sorted batch) → **mist puffs** → **veil pass** → **markers** →
-route → the
-snapshot's ground, decals and entities (and their glows) → **cloud shade** → clouds → target cursor → overlay, text,
-HUD.
+route → the snapshot's ground, decals and entities (and their glows) → **cloud shade** → clouds → target cursor →
+overlay, text, HUD.
 
 ## Non-goals
 
@@ -339,21 +338,21 @@ refresh (6.01 to 6.07 ms on both sides), the month step's hitch is 56.20 / 55.11
 (12.1 to 24.0) / 12.2 ms (10.0 to 17.9).
 
 **Layout time** (Goal 11: under 0.2 ms median at the widest view; measured over the zoom segment, which covers it).
-`DrawTerrain` relays the terrain buffer on every zoom
-change, so every frame of a smooth zoom, and holds it while the view and zoom stay put. A 30 s `profile` run at the fixed
-`--world --debug-sight --zoom 0.25` therefore holds one call each (`DrawTerrain` 0.035 ms, `DrawStamps` 0.029 ms): no
-median to take. `profile` takes no zoom-changing game args, so the per-call times come from `measure`'s capture (one
-Tracy trace with the camera path's zoom in and out, then the widest view), read with `tracy-csvexport -u` (each zone's
-calls): in its 4 s zoom segment `DrawTerrain` is called 659 times, at a median of 0.026 ms (p99 0.060, worst 0.101) and
-`DrawStamps`, which it contains, 0.022 ms (p99 0.050, worst 0.091); the whole capture's 693 calls give the same (median
-0.026, p99 0.063, worst 0.101 ms). The median is a seventh of the target and the worst frame half of it. The same
-capture's `UploadTerrain` is 0.002 ms at the median (p99 0.062, worst 0.19).
+`DrawTerrain` relays the terrain buffer on every zoom change, so every frame of a smooth zoom, and holds it while the
+view and zoom stay put. A 30 s `profile` run at the fixed `--world --debug-sight --zoom 0.25` therefore holds one call
+each (`DrawTerrain` 0.035 ms, `DrawStamps` 0.029 ms): no median to take. `profile` takes no zoom-changing game args, so
+the per-call times come from `measure`'s capture (one Tracy trace with the camera path's zoom in and out, then the
+widest view), read with `tracy-csvexport -u` (each zone's calls): in its 4 s zoom segment `DrawTerrain` is called 659
+times, at a median of 0.026 ms (p99 0.060, worst 0.101) and `DrawStamps`, which it contains, 0.022 ms (p99 0.050, worst
+0.091); the whole capture's 693 calls give the same (median 0.026, p99 0.063, worst 0.101 ms). The median is a seventh
+of the target and the worst frame half of it. The same capture's `UploadTerrain` is 0.002 ms at the median (p99 0.062,
+worst 0.19).
 
-**The ground field's rebuild** has no zone of its own; it runs inside `UploadGround` (the field with the rivers' ribbons)
-once per map or look change. That call's worst in both captures is 1.34 to 1.35 ms, the first frame of the world scene;
-afterwards `UploadGround` is 0.004 ms at the median at a fixed zoom (0.020 ms across the camera path, where it also sets
-the zoom uniform). The ground pass `DrawGround` takes 0.002 ms and `GroundUniformsOf` 0.002 ms a frame at a fixed zoom
-(since made once per map or look: above), and the rivers' draw 0.001 ms.
+**The ground field's rebuild** has no zone of its own; it runs inside `UploadGround` (the field with the rivers'
+ribbons) once per map or look change. That call's worst in both captures is 1.34 to 1.35 ms, the first frame of the
+world scene; afterwards `UploadGround` is 0.004 ms at the median at a fixed zoom (0.020 ms across the camera path, where
+it also sets the zoom uniform). The ground pass `DrawGround` takes 0.002 ms and `GroundUniformsOf` 0.002 ms a frame at a
+fixed zoom (since made once per map or look: above), and the rivers' draw 0.001 ms.
 
 **Shimmer (Goal 10)** (`reference`, run first by `measure`; each bound is the first measurement plus the guards' usual
 margin, about 1.25 times, never above 0.02 for the three ground cases):
@@ -371,10 +370,10 @@ tile edges.
 
 **Markers on drained land** (the by-eye check: no reference picture shows one, because travellers cover every marker): a
 temporary reference case (explored everywhere, the debug sight off, zoom 0.5 over the capital; not committed) shows the
-drained land as sepia paper with each danger site's marker, a red or amber pin, in its own colour over it, and the portal
-in colour, while the ground, river and stamps around them are drained. Markers take the fog's shade only, never the drain
-(Calls made here: "Markers stay undrained"). The markers are tiny at that size, so the verdict rests on the picture and
-three crops of it judged by eye.
+drained land as sepia paper with each danger site's marker, a red or amber pin, in its own colour over it, and the
+portal in colour, while the ground, river and stamps around them are drained. Markers take the fog's shade only, never
+the drain, as Calls made here has it ("Markers stay undrained"). The markers are tiny at that size, so the verdict rests
+on the picture and three crops of it judged by eye.
 
 **The cloud shade** (Decision 10; commit `fix(gfx): hide walkers and their names under the clouds`). The ground
 pipeline gains a fourth mode, `GROUND_MODE_CLOUD_SHADE`, drawn once more over the map's part of the view after the
@@ -420,44 +419,53 @@ Rivers and the ground:
   8,192`. The plan's per-segment reading left quads up to 1.7 tiles long, which kink at bends at zoom 1, and per tile at
   8 steps overflowed the cap. 4 per tile gives 64 px quads and 3,448 quads for the shipped map (42% of the cap); a
   constant change and a 0.8 MB buffer if wrong. (The user accepted this, 2026-11-21.)
-- "Tile centres" in the river spec means the polyline's stored waypoints' tiles, not every tile the river crosses: rivers
-  are stored as sparse waypoints.
-- The reader's limits narrow to what the shader can show: `edge_soft` (0, 1], `depth_tiles` (0, 3.5] (the field clamps at
-  4 tiles and the shore at -0.5); `edge_warp` [0, 2], shore width and river width and edge (0, 2]; a stamp's size at most
-  4 tiles and a mist width at most 2 (shipped maxima 1.7 and 1.4) so stamp layout can rely on a bounded footprint;
+- "Tile centres" in the river spec means the polyline's stored waypoints' tiles, not every tile the river crosses:
+  rivers are stored as sparse waypoints.
+- The reader's limits narrow to what the shader can show: `edge_soft` (0, 1], `depth_tiles` (0, 3.5] (the field clamps
+  at 4 tiles and the shore at -0.5); `edge_warp` [0, 2], shore width and river width and edge (0, 2]; a stamp's size at
+  most 4 tiles and a mist width at most 2 (shipped maxima 1.7 and 1.4) so stamp layout can rely on a bounded footprint;
   `water`'s shallow and deep kinds must differ. (The user accepted the limits.)
 - A river's edge band fades softly outward (its alpha falls across the ribbon from the core to the outer side, still
   anti-aliased): the spec asks for a darker soft edge, and a flat rim read as a hard grey stripe.
 - River ends are fixed in presentation (`river_draw`), `world.yaml` untouched: an end on a joined river's middle, and a
   run that stops at most 3 tiles short of water carried a tile in and faded. A tributary meeting the main river within a
-  tile of the main river's own end keeps its waypoint end, without a join: rivers carry no flow direction, so that meeting
-  can't be told from the main river joining the tributary; it costs at most a tile's gap or overshoot at a confluence
-  right at a mouth, and no shipped river has one (if wrong, rivers need a flow order, a data change). The shipped-rivers
-  test allows one tile per river and still fails on a band cut short by more.
+  tile of the main river's own end keeps its waypoint end, without a join: rivers carry no flow direction, so that
+  meeting can't be told from the main river joining the tributary; it costs at most a tile's gap or overshoot at a
+  confluence right at a mouth, and no shipped river has one (if wrong, rivers need a flow order, a data change). The
+  shipped-rivers test allows one tile per river and still fails on a band cut short by more.
 - Rims darkening where two rivers' edge bands overlap was not visible in the pictures once the tiles went.
 
 Reader and refusals:
-- A danger sort the map uses with no painting is refused, as markers are: a place with no painting would draw nothing once
-  the tiles go; the two readers stay alike.
-- A kind with `variants:` is no longer refused but warned as an unknown key while the look still reads: every look section
-  notes unknown keys and reads on, and the plan assumed a refusal the reader never makes.
+- A danger sort the map uses with no painting is refused, as markers are: a place with no painting would draw nothing
+  once the tiles go; the two readers stay alike.
+- A kind with `variants:` is no longer refused but warned as an unknown key while the look still reads: every look
+  section notes unknown keys and reads on, and the plan assumed a refusal the reader never makes.
 - `world_look.cpp`'s growth (about 450 lines) is noted, not split.
+- The look's water kinds (shallow and deep) must be kinds of the map and differ from each other, and a look holds at
+  most 16 kinds; the other mismatches (an extra kind, a marker the map doesn't use) only warn. The ground and the
+  rivers read the water kinds' indices, so a look naming one the map lacks would draw wrong water. That is why the
+  small test map now refuses the shipped look (the test "...is refused by a map lacking its water kinds"). A `by_key`
+  painting naming a place the map lacks is refused too.
 
 Stamps:
+- Rock stamps are 0.8 to 1.1 tiles wide, under Goal 4's "about 1.2 to 1.7 tiles" for peaks, snow and rock: the plan's
+  value stands. The user approved the plan with it, rocks read as scattered stones rather than ranges, and it is a live
+  look value in `world_look.yaml` (listed for the user below).
 - A stamp's thinning fade spans 0.3 of `shown` and ranks spread over the rest (`rank = TileUnit(c, r, 9) * 0.7`, opacity
-  `smoothstep(rank, rank + 0.3, shown)`); the test stays at zooms 1% apart and at most 0.1 of opacity. `shown` moves by up
-  to 0.02 per 1% of zoom and smoothstep's steepest slope is 1.5 / width, so 0.1 needs a width of 0.3; the test is not
+  `smoothstep(rank, rank + 0.3, shown)`); the test stays at zooms 1% apart and at most 0.1 of opacity. `shown` moves by
+  up to 0.02 per 1% of zoom and smoothstep's steepest slope is 1.5 / width, so 0.1 needs a width of 0.3; the test is not
   loosened.
-- `DrawStamps` lays stamps and puffs out over the span widened by a reach computed from the look and manifest (the tallest
-  stamp's height and half-width at its largest size, plus jitter, plus the widest puff's half-size), clamped to the map,
-  and the paintings' cull widens by the same reach: the plan's one tile of span popped tall stamps in at every view edge.
+- `DrawStamps` lays stamps and puffs out over the span widened by a reach computed from the look and manifest (the
+  tallest stamp's height and half-width at its largest size, plus jitter, plus the widest puff's half-size), clamped to
+  the map, and the paintings' cull widens by the same reach: the plan's one tile of span popped tall stamps in at every
+  view edge.
 - The terrain buffer is relaid on each zoom change (the layout key gains the zoom), the cost measured above.
 
 Shimmer and art:
-- The cloud case overran its cap (0.0291 against 0.0256) after the switch-over; the cause was forest and peak stamps' art
-  cut by the sides of their quads, crawling at zoom 0.25. The placeholder art (`art/placeholders.py`) now keeps 16
-  texels clear of the sides for stamps, 2 for mist and 9 for paintings (the paintings' bottom row and the stamps' foot row
-  too); no shader or look change. The cloud case fell to 0.0165 and was re-set to 0.0206.
+- The cloud case overran its cap (0.0291 against 0.0256) after the switch-over; the cause was forest and peak stamps'
+  art cut by the sides of their quads, crawling at zoom 0.25. The placeholder art (`art/placeholders.py`) now keeps 16
+  texels clear of the sides for stamps, 2 for mist and 9 for paintings (the paintings' bottom row and the stamps' foot
+  row too); no shader or look change. The cloud case fell to 0.0165 and was re-set to 0.0206.
 - `test_terrain_tiles_are_seamless` (tools self-test) is replaced by a guard on the margins above (every stamp, mist and
   painting keeps its art clear of its sprite's left and right sides, and the painted marks their bottom edge as well),
   not just deleted: its subject, the tile sprites, is gone. Removing a test for removed art is not loosening one.
@@ -474,12 +482,12 @@ Build and checks:
   live game, because the display was not freed for this work until the measurements; if wrong, one more look.
 
 Stood as built (noted, not fixed):
-- The capital's stacked roofs show a double outline near the spire, and the shrine's torii posts overlap the hut
-  (placeholder cosmetics).
-- The tributary test's x bounds are loose: it proves "not a waypoint", not "near x = 4".
-- `renderer.cpp`'s world-map upload block (terrain, ground, route, clouds) could move to its own file; `ribbons.hpp` in
-  the features includes two headers clangd reports unused.
-- Gotcha for AGENTS.md: GCC and Clang accept single-braced `std::array` and `std::array`-like initialisers (a
-  `StampLook::size{ 1.0F, 1.0F }`) that MSVC's C5246 rejects; run the windows-msvc release build before reporting.
-- The `fog_explored_path` picture's drained paper reads strongly sepia: a look value (`drain.strength`) for the user.
+- `renderer.cpp`'s world-map upload block (terrain, ground, route, clouds) could move to its own file; the sweep-up
+  backlog has it.
+- The MSVC braces gotcha (single-braced `std::array` initialisers that GCC and Clang accept and C5246 rejects) lives in
+  src/AGENTS.md's MSVC bullet; run the windows-msvc release build before reporting.
 - Not visible in stills: that nothing pops while panning or zooming; the unit tests hold it.
+
+Look values for the user:
+- The `fog_explored_path` picture's drained paper reads strongly sepia: a look value (`drain.strength`).
+- Rocks are `size: [0.8, 1.1]` tiles wide, not Goal 4's 1.2 to 1.7 (see Rulings): a look value to judge on screen.
