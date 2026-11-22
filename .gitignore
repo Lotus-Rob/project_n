@@ -12,6 +12,16 @@
 .DS_Store
 # Per-developer spell-checker dictionary (typos-lsp)
 typos.toml
+# Claude Code's per-developer settings
+.claude/settings.local.json
+
+# Secrets: environment files and keys never belong in the repo
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
 
 # Build outputs
 build/
