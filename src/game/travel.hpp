@@ -61,6 +61,10 @@ struct JournalEntry {
 /// The kind of visitor an NPC of `power` is: a cultivator from `rules.cultivatorPower` up, a trader below.
 [[nodiscard]] core::VisitorKind VisitorOf(const core::TravelRules& rules, f32 power);
 
+/// The profile a traveller of `power` moves by: that of the last of `rules.bands` whose `fromPower` it reaches, the first
+/// band's for a power no band reaches (NaN, or below 0), and core::WALKING when there are no bands.
+[[nodiscard]] core::ProfileIndex ProfileFor(const core::TravelRules& rules, f32 power);
+
 /// How strongly city `destination` of `map` draws a visitor of `power` (finite) whose walk there costs `cost` (in the
 /// profile's cost units, core::UNREACHABLE when it can't get there), in whole numbers so every machine draws alike: the
 /// pull (the city's people × 1,000,000 ÷ cost², a cost counted as at least 1), times the reach (max(0, R − cost) × 1,000 ÷
@@ -76,10 +80,10 @@ struct JournalEntry {
 );
 
 /// Where `npc`, a world NPC homed in a city of `map` and standing on one of its tiles, goes on a visit, drawn by `random`:
-/// the cities but its home, in place order, each weighed by DestinationWeight() with what walking there from its tile costs
-/// (`paths`, by core::WALKING), and the city picked whose cumulative weight first passes `random` scaled to the total. None
-/// when every weight is 0. Reads `paths` only once its walking maps are built (Paths::Warm()), so chunks may call it at
-/// once after that.
+/// the cities but its home, in place order, each weighed by DestinationWeight() with what the way there from its tile costs
+/// by its profile (`paths`, by ProfileFor() of its power), and the city picked whose cumulative weight first passes
+/// `random` scaled to the total. None when every weight is 0. Reads `paths` only once that profile's maps are built
+/// (Paths::Warm()), so chunks may call it at once after that.
 [[nodiscard]] std::optional<u16> ChooseDestination(
     const core::WorldMap& map,
     const core::TravelRules& rules,
@@ -120,9 +124,10 @@ public:
     void Forget(core::StableId npc);
 
     /// Sends world NPCs of `state` on visits in the month from world tick `monthStart`, by `map`'s travel rules: first it
-    /// builds `paths`' walking maps of every city, then, in MonthStep::CHUNK-sized chunks of the world NPCs forked over
-    /// `jobs`, each one homed in a city and not travelling sets out with a chance of `sharePerMille` in a thousand, to a
-    /// city ChooseDestination() picks (none, and it stays, when it reaches none), along the walking route from its tile
+    /// builds `paths`' maps of every city by core::WALKING and by each band's profile, then, in MonthStep::CHUNK-sized
+    /// chunks of the world NPCs forked over `jobs`, each one homed in a city, not travelling and standing on a tile its
+    /// profile (ProfileFor() of its power) can enter sets out with a chance of `sharePerMille` in a thousand, to a city
+    /// ChooseDestination() picks (none, and it stays, when it reaches none), along its profile's route from its tile
     /// (core::RouteDown()), leaving on a tick drawn uniformly over the month's and staying a number of days drawn uniformly
     /// from the rules' fewest to their most (core::Visit()), so it comes back to its own tile. Every draw is keyed on
     /// `seed`, `stateCounter`, `monthStart` and the NPC (core/random.hpp), so the journeys are the same on any worker
@@ -159,17 +164,18 @@ public:
     /// Replaces the journeys and journals with those SaveDelta() wrote against `base`, its plans rebuilt over `map` and
     /// `paths` (core::Rebuild()), checked against `state` and `map` (none in a scene without the world map, where the
     /// table must be empty). False, failing `archive` and changing nothing, on a malformed table: base places out of
-    /// order, repeated or past `base`'s journeys; a plan with no `map` and `paths` to rebuild it, with no member, a city
-    /// that isn't one of `map`, a tile off it, a route that is empty (the tile impassable or the destination unreachable),
-    /// a departure too near an i64's most for its journey's ticks to fit, or a rebuild that doesn't start at its
-    /// departure; then, of the table made, journeys out of their first members' order, a journey without members or
-    /// parts, a member that isn't a world NPC of `state`, is in two journeys or is listed twice in one, a city or stay that
-    /// isn't a city of `map`, parts that don't follow on from each other, a leg of an unknown shape or profile, with a tile
-    /// off the map, a non-finite origin, arrive ticks not one per tile, from 0 and rising, or an end tick past an i64's
-    /// range, a stay ending before it starts, lasting more ticks than a u32 holds or ending within a day of an i64's most;
-    /// journals out of their NPCs' order, empty, for an NPC not in `state`, longer than its NPC keeps, or naming a city or
-    /// profile `map` lacks; or months that don't match the journeys: a member whose month isn't Action::Travel, or an NPC
-    /// whose month is Action::Travel on no journey (with or without the map).
+    /// order, repeated or past `base`'s journeys; a plan with no `map` and `paths` to rebuild it, with no member, a
+    /// city that isn't one of `map`, a tile off it, a profile it lacks, a route that is empty (the tile impassable to
+    /// the profile or the destination out of its reach), a departure too near an i64's most for its journey's ticks to
+    /// fit, or a rebuild that doesn't start at its departure; then, of the table made, journeys out of their first
+    /// members' order, a journey without members or parts, a member that isn't a world NPC of `state`, is in two
+    /// journeys or is listed twice in one, a city or stay that isn't a city of `map`, parts that don't follow on from
+    /// each other, a leg of an unknown shape or profile, with a tile off the map, a non-finite origin, arrive ticks not
+    /// one per tile, from 0 and rising, or an end tick past an i64's range, a stay ending before it starts, lasting
+    /// more ticks than a u32 holds or ending within a day of an i64's most; journals out of their NPCs' order, empty,
+    /// for an NPC not in `state`, longer than its NPC keeps, or naming a city or profile `map` lacks; or months that
+    /// don't match the journeys: a member whose month isn't Action::Travel, or an NPC whose month is Action::Travel on
+    /// no journey (with or without the map).
     [[nodiscard]] bool LoadDelta(
         core::Reader& archive,
         const Travel& base,

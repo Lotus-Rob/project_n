@@ -58,10 +58,10 @@ struct Traveller {
         REQUIRE(tiles.size() >= 3);
         npc = game::SpawnNpc(state, tiles.front(), cities[0]);
         group = game::SpawnGroup(state, tiles.front(), 0);
-        const core::Journey done = core::Visit(*map, tiles, npc, cities[0], cities[1], 0, STAY_DAYS, STAY_SEED);
+        const core::Journey done = core::Visit(*map, tiles, core::WALKING, npc, cities[0], cities[1], 0, STAY_DAYS, STAY_SEED);
         travel.Start(done);
         travel.Finish(core::EndTick(done), state);
-        travel.Start(core::Visit(*map, tiles, npc, cities[0], cities[1], LATER, STAY_DAYS, STAY_SEED));
+        travel.Start(core::Visit(*map, tiles, core::WALKING, npc, cities[0], cities[1], LATER, STAY_DAYS, STAY_SEED));
         state[game::WORLD].Entities().get<game::Npc>(state[game::WORLD].Find(npc)).action = game::Action::Travel;
     }
 };

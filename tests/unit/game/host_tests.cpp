@@ -1525,8 +1525,9 @@ Road FirstRoad(const core::WorldMap& map) {
         map, core::WALKING, map.TileIndex(map.Places()[road.from].tile), map.TileIndex(map.Places()[road.to].tile)
     );
     REQUIRE(road.tiles.size() >= 3);
-    const core::Journey probe =
-        core::Visit(map, road.tiles, core::StableId{ 1 }, road.from, road.to, 0, TRAVEL_STAY_DAYS, TRAVEL_STAY_SEED);
+    const core::Journey probe = core::Visit(
+        map, road.tiles, core::WALKING, core::StableId{ 1 }, road.from, road.to, 0, TRAVEL_STAY_DAYS, TRAVEL_STAY_SEED
+    );
     road.arrive = probe.parts.front().leg.arrive;
     road.outTicks = core::EndTick(probe.parts.front().leg);
     road.visitTicks = core::EndTick(probe);
@@ -1592,7 +1593,15 @@ TravelWorld TravelWorldOf(
             members.push_back(npc);
         }
         core::Journey journey = core::Visit(
-            *world.map, road.tiles, members.front(), road.from, road.to, departure.tick, TRAVEL_STAY_DAYS, TRAVEL_STAY_SEED
+            *world.map,
+            road.tiles,
+            core::WALKING,
+            members.front(),
+            road.from,
+            road.to,
+            departure.tick,
+            TRAVEL_STAY_DAYS,
+            TRAVEL_STAY_SEED
         );
         journey.members = members;
         travel.Start(journey);

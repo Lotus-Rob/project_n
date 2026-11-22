@@ -158,13 +158,14 @@ struct Journey {
 /// Whether `journey` is underway at `tick`: from its start to the tick before its end.
 [[nodiscard]] bool Underway(const Journey& journey, i64 tick);
 
-/// A visit by `member` from city `home` to city `destination` along `out` (from the home's tile to the destination's, by
-/// WALKING), leaving on `departTick`: the out leg from the first tile's centre, a stay of `stayDays` days in the
-/// destination drawn from `seed`, and the leg home along `out` reversed, its ticks its own entering costs; each part
-/// starts where and when the one before ends.
+/// A visit by `member` from city `home` to city `destination` along `out` (from the home's tile to the destination's, each
+/// step one `profile`, a profile of `map`, can walk), leaving on `departTick`: the out leg by `profile` from the first
+/// tile's centre, a stay of `stayDays` days in the destination drawn from `seed`, and the leg home by `profile` along `out`
+/// reversed, its ticks its own entering costs; each part starts where and when the one before ends.
 [[nodiscard]] Journey Visit(
     const WorldMap& map,
     std::span<const u32> out,
+    ProfileIndex profile,
     StableId member,
     u16 home,
     u16 destination,
@@ -190,23 +191,27 @@ struct VisitPlan {
     u32 stayDays = 0;
     /// The seed its stay's day points are drawn from.
     u32 seed = 0;
+    /// The profile both its legs move by.
+    ProfileIndex profile = WALKING;
 
     /// Lists its fields for an archive (core/archive.hpp).
     template<typename Self, typename Archive>
     void Fields(this Self& self, Archive& archive) {
-        archive(self.members, self.home, self.destination, self.from, self.departTick, self.stayDays, self.seed);
+        archive(self.members, self.home, self.destination, self.from, self.departTick, self.stayDays, self.seed, self.profile);
     }
 };
 
-/// The VisitPlan `journey` was made from, or none for a journey Visit() didn't make: members, then a walking leg, a stay in the
-/// destination of whole days and the leg home along the first one reversed, each starting on the tick the one before ends.
+/// The VisitPlan `journey` was made from, or none for a journey Visit() didn't make: members, then a leg, a stay in the
+/// destination of whole days and the leg home along the first one reversed by the same profile, each starting on the tick
+/// the one before ends.
 /// What it can't see without a map (the legs' origins and arrive ticks) Rebuild() restores, so a caller that must be sure
 /// compares the rebuild with the journey.
 [[nodiscard]] std::optional<VisitPlan> PlanOf(const Journey& journey);
 
-/// The journey `plan` describes: the route down `paths`' walking map to its destination from its tile (RouteDown()), Visit()
-/// of the first member over it, then the other members appended. A journey without parts when the way is empty: the
-/// tile is impassable to walkers, or the destination out of reach. `plan` has a member, cities of `map` and a tile on it.
+/// The journey `plan` describes: the route down `paths`' map by its profile to its destination from its tile (RouteDown()),
+/// Visit() of the first member over it by that profile, then the other members appended. A journey without parts when the
+/// way is empty: the tile is impassable to the profile, or the destination out of its reach. `plan` has a member, cities
+/// of `map`, a tile on it and a profile of it.
 [[nodiscard]] Journey Rebuild(const WorldMap& map, Paths& paths, const VisitPlan& plan);
 
 } // namespace core

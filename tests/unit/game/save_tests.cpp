@@ -1160,7 +1160,7 @@ Trip FirstTrip(const core::WorldMap& map) {
 core::Journey VisitOf(const core::WorldMap& map, const Trip& trip, core::StableId member, i64 departTick, u32 stayDays) {
     const auto seed =
         static_cast<u32>(core::Random(STATE_SEED, static_cast<u64>(departTick), std::to_underlying(member), STAY_PURPOSE, 0));
-    return core::Visit(map, trip.route, member, trip.home, trip.destination, departTick, stayDays, seed);
+    return core::Visit(map, trip.route, core::WALKING, member, trip.home, trip.destination, departTick, stayDays, seed);
 }
 
 /// A world NPC of `state` at home on `trip`'s first city, travelling.

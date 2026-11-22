@@ -77,8 +77,8 @@ constexpr u32 ACTIVE_VERSION =
 // 2: the NPCs' homes; 3: the travelling action, the journeys and the journals; 4: the game's world as its difference from
 // its base, a dev scene's journeys as their difference from none; 5: the world domain's order beside its difference, and a
 // dev scene's world as its difference from its entry build; 6: each relationship's last-met month; 7: the explored tiles and
-// the sight radius
-constexpr u32 WORLD_VERSION = 7;
+// the sight radius; 8: each journey's plan names the profile it moves by
+constexpr u32 WORLD_VERSION = 8;
 using ActiveComponents = core::ComponentList<
     Body,
     Look,

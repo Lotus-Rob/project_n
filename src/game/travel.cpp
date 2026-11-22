@@ -134,8 +134,9 @@ void SetOut(const VisitMonth& month, auto& npcs, const auto& ids, u32 chunk, std
         if (!IsCity(map, person.home) || month.travel->Travelling(npc)) {
             continue;
         }
-        // The way back would end by stepping onto this tile, which walkers can't enter: such an NPC has no way home.
-        if (map.CostAt(person.cell, core::WALKING) == core::IMPASSABLE_COST) {
+        const core::ProfileIndex profile = ProfileFor(rules, person.power);
+        // The way back would end by stepping onto this tile, which its profile can't enter: such an NPC has no way home.
+        if (map.CostAt(person.cell, profile) == core::IMPASSABLE_COST) {
             continue;
         }
         const u64 key = std::to_underlying(npc);
@@ -148,7 +149,7 @@ void SetOut(const VisitMonth& month, auto& npcs, const auto& ids, u32 chunk, std
         if (!destination) {
             continue;
         }
-        const std::vector<u32> route = core::RouteDown(map, month.paths->To(*destination, core::WALKING), person.cell);
+        const std::vector<u32> route = core::RouteDown(map, month.paths->To(*destination, profile), person.cell);
         PN_ASSERT(!route.empty(), "a city with a weight has a route to it");
         if (route.empty()) {
             continue;
@@ -157,7 +158,7 @@ void SetOut(const VisitMonth& month, auto& npcs, const auto& ids, u32 chunk, std
             month.monthStart + i64{ core::ToBelow(draw(VISIT_DRAW_DEPARTURE), static_cast<u32>(core::TICKS_PER_MONTH)) };
         const u32 stayDays = u32{ rules.stayMinDays } + core::ToBelow(draw(VISIT_DRAW_STAY), stayChoices);
         const auto seed = static_cast<u32>(core::Random(month.key, 0, key, PURPOSE_JOURNEY_SEED, 0));
-        out.push_back(core::Visit(map, route, npc, person.home, *destination, departure, stayDays, seed));
+        out.push_back(core::Visit(map, route, profile, npc, person.home, *destination, departure, stayDays, seed));
         person.action = Action::Travel;
     }
 }
@@ -193,6 +194,16 @@ core::VisitorKind VisitorOf(const core::TravelRules& rules, f32 power) {
     return power >= rules.cultivatorPower ? core::VisitorKind::Cultivator : core::VisitorKind::Trader;
 }
 
+core::ProfileIndex ProfileFor(const core::TravelRules& rules, f32 power) {
+    if (rules.bands.empty()) {
+        return core::WALKING;
+    }
+    // Asked as "not reached" so a NaN, which reaches nothing, stops at the first band like a negative power.
+    const auto unreached =
+        std::ranges::find_if(rules.bands, [power](const core::PowerBand& band) { return !(power >= band.fromPower); });
+    return unreached == rules.bands.begin() ? rules.bands.front().profile : std::prev(unreached)->profile;
+}
+
 u64 DestinationWeight(const core::WorldMap& map, const core::TravelRules& rules, f32 power, u32 cost, u16 destination) {
     if (cost == core::UNREACHABLE) {
         return 0;
@@ -220,12 +231,13 @@ std::optional<u16> ChooseDestination(
     const Npc& npc,
     u64 random
 ) {
+    const core::ProfileIndex profile = ProfileFor(rules, npc.power);
     const auto weightOf = [&](std::size_t place) -> u64 {
         if (place == npc.home || !IsCity(map, static_cast<u16>(place))) {
             return 0;
         }
         const auto city = static_cast<u16>(place);
-        return DestinationWeight(map, rules, npc.power, paths.To(city, core::WALKING).CostFrom(npc.cell), city);
+        return DestinationWeight(map, rules, npc.power, paths.To(city, profile).CostFrom(npc.cell), city);
     };
     const std::size_t places = map.Places().size();
     u64 total = 0;
@@ -348,6 +360,9 @@ void Travel::SendOut(
 ) {
     // Built here, before the chunks read them at once.
     paths.Warm(core::WALKING);
+    for (const core::PowerBand& band : map.Travel().bands) {
+        paths.Warm(band.profile);
+    }
     // Fetched once, before the fork: the chunks then only read and write within them.
     core::Registry& world = state[WORLD].Entities();
     auto& npcs = world.storage<Npc>();
@@ -509,7 +524,8 @@ bool Travel::LoadDelta(
                                      ((i64{ std::numeric_limits<u32>::max() } + 1) * DAY_TICKS);
     const auto plannable = [map](const core::VisitPlan& plan) {
         return !plan.members.empty() && IsCity(*map, plan.home) && IsCity(*map, plan.destination) &&
-               plan.from < map->Columns() * map->Rows() && plan.departTick <= LATEST_DEPARTURE;
+               plan.from < map->Columns() * map->Rows() && plan.profile < map->Profiles().size() &&
+               plan.departTick <= LATEST_DEPARTURE;
     };
     bool sound = !archive.Failed() && std::ranges::adjacent_find(gone, std::greater_equal{}) == gone.end() &&
                  (gone.empty() || gone.back() < base.m_journeys.size()) &&

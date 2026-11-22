@@ -209,6 +209,7 @@ bool Underway(const Journey& journey, i64 tick) {
 Journey Visit(
     const WorldMap& map,
     std::span<const u32> out,
+    ProfileIndex profile,
     StableId member,
     u16 home,
     u16 destination,
@@ -222,13 +223,13 @@ Journey Visit(
         "a visit's route ends on its destination's tile, where its stay starts"
     );
     Journey journey{ .members = { member }, .home = home, .destination = destination, .parts = {} };
-    Leg outward = MakeTileLeg(map, WALKING, departTick, map.TileCentre(out.front()), out);
+    Leg outward = MakeTileLeg(map, profile, departTick, map.TileCentre(out.front()), out);
     const Stay stay{ .city = destination,
                      .startTick = EndTick(outward),
                      .endTick = EndTick(outward) + (i64{ stayDays } * DAY_TICKS),
                      .seed = seed };
     const std::vector<u32> back{ out.rbegin(), out.rend() };
-    Leg homeward = MakeTileLeg(map, WALKING, stay.endTick, map.TileCentre(out.back()), back);
+    Leg homeward = MakeTileLeg(map, profile, stay.endTick, map.TileCentre(out.back()), back);
     journey.parts.reserve(3);
     journey.parts.push_back({ .stay = false, .leg = std::move(outward), .rest = {} });
     journey.parts.push_back({ .stay = true, .leg = {}, .rest = stay });
@@ -247,8 +248,7 @@ std::optional<VisitPlan> PlanOf(const Journey& journey) {
     const Leg& back = last.leg;
     const Stay& stay = middle.rest;
     const bool shaped = !first.stay && middle.stay && !last.stay && out.shape == LegShape::TileRoute &&
-                        back.shape == LegShape::TileRoute && out.profile == WALKING && back.profile == WALKING &&
-                        !out.tiles.empty() &&
+                        back.shape == LegShape::TileRoute && out.profile == back.profile && !out.tiles.empty() &&
                         std::ranges::equal(back.tiles.begin(), back.tiles.end(), out.tiles.rbegin(), out.tiles.rend());
     if (!shaped || stay.city != journey.destination || stay.startTick != EndTick(out) || back.startTick != stay.endTick ||
         stay.endTick < stay.startTick) {
@@ -266,23 +266,27 @@ std::optional<VisitPlan> PlanOf(const Journey& journey) {
                       .from = out.tiles.front(),
                       .departTick = out.startTick,
                       .stayDays = static_cast<u32>(days),
-                      .seed = stay.seed };
+                      .seed = stay.seed,
+                      .profile = out.profile };
 }
 
 Journey Rebuild(const WorldMap& map, Paths& paths, const VisitPlan& plan) {
     PN_ASSERT(!plan.members.empty(), "a plan has a member");
     PN_ASSERT(plan.from < map.Columns() * map.Rows(), "a plan starts on a tile of the map");
+    PN_ASSERT(plan.profile < map.Profiles().size(), "a plan's profile is one of the map's");
     Journey journey{ .members = plan.members, .home = plan.home, .destination = plan.destination, .parts = {} };
-    // Visit's way home ends by stepping onto this tile, which walkers can't enter.
-    if (map.CostAt(plan.from, WALKING) == IMPASSABLE_COST) {
+    // Visit's way home ends by stepping onto this tile, which the profile can't enter.
+    if (map.CostAt(plan.from, plan.profile) == IMPASSABLE_COST) {
         return journey;
     }
-    const std::vector<u32> route = RouteDown(map, paths.To(plan.destination, WALKING), plan.from);
+    const std::vector<u32> route = RouteDown(map, paths.To(plan.destination, plan.profile), plan.from);
     if (route.empty()) {
         return journey;
     }
-    journey.parts =
-        Visit(map, route, plan.members.front(), plan.home, plan.destination, plan.departTick, plan.stayDays, plan.seed).parts;
+    Journey visit = Visit(
+        map, route, plan.profile, plan.members.front(), plan.home, plan.destination, plan.departTick, plan.stayDays, plan.seed
+    );
+    journey.parts = std::move(visit.parts);
     return journey;
 }
 
