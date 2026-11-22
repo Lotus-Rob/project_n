@@ -1259,8 +1259,10 @@ def forest(width, height, variant, seed):
         return trial, columns[0] - pad, pad + width - 1 - columns[-1], top - pad
 
     tallest = next((scale for scale in FOREST_SCALES if drawn(1.0, scale)[3] >= STAMP_MARGIN), None)
+    if tallest is None:
+        raise ValueError(f"no scale keeps forest variant {variant} clear of its top margin")
     fits = [(spread, tallest) for spread in FOREST_SPREADS] + \
-           [(FOREST_SPREADS[-1], scale) for scale in FOREST_SCALES if tallest is not None and scale < tallest]
+           [(FOREST_SPREADS[-1], scale) for scale in FOREST_SCALES if scale < tallest]
     for spread, scale in fits:
         trial, left, right, _ = drawn(spread, scale)
         if min(left, right) >= STAMP_MARGIN:
