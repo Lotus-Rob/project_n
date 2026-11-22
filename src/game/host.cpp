@@ -61,6 +61,11 @@ f32 SortingFootY(core::StableId entity, core::StableId onTop, f32 footY) {
     return entity == onTop ? ABOVE_THE_WORLD : footY;
 }
 
+/// Where `entity`, whose body is `body`, is drawn: `drawnPlayer` (Host::DrawnPlayer()) for `player`, its body for the rest.
+Body DrawnBodyOf(core::StableId entity, const Body& body, core::StableId player, const Body& drawnPlayer) {
+    return entity == player ? drawnPlayer : body;
+}
+
 // Halfway across a scene's view, where a still camera starts: what a publish culls round before the window's view arrives.
 constexpr f32 MIDDLE = 0.5F;
 
@@ -705,6 +710,7 @@ Host::Host(std::shared_ptr<const core::Manifest> manifest, core::SceneKey scene,
   , m_sceneId{ SceneIdOf(*m_manifest, m_scene) } {
     if (m_data.world != nullptr) {
         m_paths.emplace(m_data.world);
+        m_roadCurves.emplace(*m_data.world);
     }
     GenerateWorld(m_base, m_data, m_paths ? &*m_paths : nullptr);
     m_world = CopyOf(m_base);
@@ -969,6 +975,18 @@ const Body& Host::PlayerBody() const {
     return active.Entities().get<Body>(active.Find(m_player));
 }
 
+Body Host::DrawnPlayer(const Body& body) const {
+    if (!m_route || !m_roadCurves) {
+        return body;
+    }
+    const core::WorldMap& map = *m_data.world;
+    const auto shift = [&](u64 clock) {
+        const auto tick = static_cast<i64>(clock);
+        return core::DrawnWhere(map, *m_roadCurves, *m_route, tick) - core::Where(map, *m_route, tick);
+    };
+    return { .previous = body.previous + shift(m_worldTicksBefore), .current = body.current + shift(Live().worldTicks) };
+}
+
 void Host::Leave(core::SceneKey next, bool throughPortal, std::vector<core::Event>& events) {
     m_combat.EndUses(Live().state, events); // nothing of this scene's goes on to hit
     if (Running().Traits().worldMap && m_player != core::StableId{}) {
@@ -1058,6 +1076,7 @@ void Host::PublishOverhead(core::Snapshot& snapshot) const {
         const core::StringId name = player ? core::StringId::CultivatorName : core::StringId::FoxName;
         const f32 height = static_cast<f32>(m_manifest->Sprite(look.sprite).footY) * look.scale;
         const core::Vec2 head{ .x = 0.0F, .y = -height };
+        const Body drawn = player ? DrawnPlayer(body) : body;
         if (combat && !player) {
             snapshot.healthBars.push_back(
                 {
@@ -1072,8 +1091,8 @@ void Host::PublishOverhead(core::Snapshot& snapshot) const {
             {
                 .kind = core::TextKind::Label,
                 .string = name,
-                .previous = body.previous + head,
-                .current = body.current + head,
+                .previous = drawn.previous + head,
+                .current = drawn.current + head,
                 .offset = LABEL_OFFSET,
                 .entity = stableId,
                 .height = height,
@@ -1096,7 +1115,11 @@ void Host::PublishJourneys(u32 chunk, u32 part, const core::Rect& area, std::opt
     if (!m_debugSight && !playerTile) {
         return; // no one to see them
     }
+    if (!m_roadCurves) {
+        return; // no map, so no journeys under way on it
+    }
     const core::WorldMap& map = *m_data.world;
+    const core::RoadCurveIndex& roads = *m_roadCurves;
     // One tile past sight too, so a walker on a tile that has just left sight fades out with it rather than vanishing.
     const u32 shown = m_world.sightRadius + 1;
     const WorldState& world = Live();
@@ -1116,12 +1139,13 @@ void Host::PublishJourneys(u32 chunk, u32 part, const core::Rect& area, std::opt
             continue;
         }
         for (std::size_t member = 0; member < journey.members.size(); ++member) {
-            const core::Vec2 current = core::Where(map, journey, now, member);
-            if (!core::Contains(area, current) ||
-                (!m_debugSight && !core::InSight(map, playerTile.value_or(0), map.TileAt(current), shown))) {
+            const core::Vec2 foot = core::Where(map, journey, now, member);
+            if (!core::Contains(area, foot) ||
+                (!m_debugSight && !core::InSight(map, playerTile.value_or(0), map.TileAt(foot), shown))) {
                 continue;
             }
-            const core::Vec2 previous = core::Where(map, journey, before, member);
+            const core::Vec2 current = core::DrawnWhere(map, roads, journey, now, member);
+            const core::Vec2 previous = core::DrawnWhere(map, roads, journey, before, member);
             const core::StableId traveller = journey.members[member];
             m_drawList.Add(
                 part,
@@ -1197,7 +1221,7 @@ void Host::PublishRoute(core::Snapshot& snapshot) const {
         return;
     }
     const auto now = static_cast<i64>(Live().worldTicks);
-    snapshot.route.push_back(PlayerBody().current);
+    snapshot.route.push_back(DrawnPlayer(PlayerBody()).current);
     for (const core::JourneyPart& part : m_route->parts) {
         for (std::size_t tile = 0; !part.stay && tile < part.leg.tiles.size(); ++tile) {
             if (part.leg.startTick + i64{ part.leg.arrive[tile] } > now) {
@@ -1501,8 +1525,10 @@ bool Host::Load(core::Reader& archive, u64 simulationTick) {
 void Host::SetData(const core::GameData& data) {
     if (data.world != m_data.world) {
         m_paths.reset();
+        m_roadCurves.reset();
         if (data.world != nullptr) {
             m_paths.emplace(data.world);
+            m_roadCurves.emplace(*data.world);
         }
     }
     m_data = data;
@@ -1589,10 +1615,12 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
     const WorldContext context = LiveContext();
     const core::Rect sceneView = Running().View(context);
     core::Vec2 start = (sceneView.min + sceneView.max) * MIDDLE;
+    Body drawnPlayer;
     if (m_player != core::StableId{}) {
         const Body& body = bodies.get(active.Find(m_player));
         snapshot.follow = core::Follow{ .previous = body.previous, .current = body.current };
         start = body.current;
+        drawnPlayer = DrawnPlayer(body);
     }
     // Before the main thread's view arrives the camera's zoom and window are unknown, so cull as widely as any shows.
     const core::Rect area =
@@ -1615,9 +1643,9 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
         const std::size_t end = std::min(looks.size(), begin + PUBLISH_CHUNK);
         for (std::size_t i = begin; i < end; ++i) {
             const core::Entity entity = looks[i];
-            const Body& body = bodies.get(entity);
             const Look& look = looks.get(entity);
             const core::StableId stableId = ids.get(entity);
+            const Body body = DrawnBodyOf(stableId, bodies.get(entity), m_player, drawnPlayer);
             const Spin spin = spins.contains(entity) ? spins.get(entity) : Spin{};
             // A dying entity can't be picked, hovered or outlined: its instance names none.
             const bool dying = dyings.contains(entity);

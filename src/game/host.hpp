@@ -20,6 +20,7 @@
 #include "core/logic.hpp"
 #include "core/manifest.hpp"
 #include "core/rect.hpp"
+#include "core/road_curve.hpp"
 #include "core/state.hpp"
 #include "core/tick_clock.hpp"
 #include "core/types.hpp"
@@ -309,24 +310,26 @@ public:
     /// the centre of the scene's view (SceneTraits::view); the painted ground is drawn whole either way, and the scene's
     /// hooks get the same area. The snapshot names the scene's camera (SceneTraits::camera) and, in a scene showing the
     /// world map, the calendar (core::CalendarView: the months and the day of the month the world clock has reached, and
-    /// the world pause) and, while the player's cultivator walks a route, the route (core::Snapshot::route: its foot, then
-    /// the centres of the route's tiles it hasn't reached by the world clock) and the fog (core::FogView: the explored
-    /// tiles with FogVersion(), the tile under the player's foot when there is a player, the sight radius and the debug
-    /// sight; off elsewhere). A scene with a player adds the player's and each living fox's name label over its head; a
-    /// combat scene adds each living fox's health bar at its head and the player's casting state (core::Snapshot::caster).
+    /// the world pause) and, while the player's cultivator walks a route, the route (core::Snapshot::route: its foot as
+    /// drawn, then the centres of the route's tiles it hasn't reached by the world clock) and the fog (core::FogView: the
+    /// explored tiles with FogVersion(), the tile under the player's foot when there is a player, the sight radius and the
+    /// debug sight; off elsewhere). A scene with a player adds the player's and each living fox's name label over its head
+    /// (while the player's cultivator walks a route on the world map, it and its label are drawn moved onto the road as a
+    /// traveller is, below); a combat scene adds each living fox's health bar at its head and the player's casting state
+    /// (core::Snapshot::caster).
     /// In a scene showing the world map each member of each journey under way at the world clock (core::Underway()) whose
     /// foot lies in the area and on a tile within one more than the sight radius of the player's (any tile with the debug
     /// sight on; none without either) is drawn as a villager with its shadow, both flagged to fade with sight
-    /// (core::INSTANCE_SIGHT_FADE), its instance carrying its ID (so it can be picked and selected), placed by
-    /// core::Where() at the clock when the last tick began and at the clock now (the same point while the clock stood
-    /// still), packed in further chunks of the same size after the entities', and the player's cultivator draws over them
-    /// and everything else in the world layer, so a crowd never hides it; with the game data's names (GameData::names) it
-    /// carries a name label over its head (core::NameOf() of the state's seed and its ID, stacked by core::NameKey():
-    /// LabelPriority::Selected when selected, LabelPriority::Named otherwise; hidden with sight, core::TextFog::Sight, its
-    /// height the villager's foot height, so its anchor and height reach its foot), the labels following the player's in
-    /// chunk order. A selected traveller out of sight stays selected, undrawn. Then the scene adds its own
-    /// (Scene::Publish(): the tablet's caption, the arena's showcase seals, the world's place names), then a scene with a
-    /// portal adds its seal (PORTAL_SEAL at SceneTraits::portal, twice PORTAL_RADIUS in size, from tick 0 and never ending,
+    /// (core::INSTANCE_SIGHT_FADE), its instance carrying its ID (so it can be picked and selected), drawn on the road
+    /// it walks by core::DrawnWhere() at the clock when the last tick began and at the clock now (the same point while
+    /// the clock stood still), packed in further chunks of the same size after the entities', and the player's
+    /// cultivator draws over them and everything else in the world layer, so a crowd never hides it; with the game data's names
+    /// (GameData::names) it carries a name label over its head (core::NameOf() of the state's seed and its ID, stacked by
+    /// core::NameKey(): LabelPriority::Selected when selected, LabelPriority::Named otherwise; hidden with sight,
+    /// core::TextFog::Sight, its height the villager's foot height, so its anchor and height reach its foot), the labels
+    /// following the player's in chunk order. A selected traveller out of sight stays selected, undrawn. Then the scene adds
+    /// its own (Scene::Publish(): the tablet's caption, the arena's showcase seals, the world's place names), then a scene with
+    /// a portal adds its seal (PORTAL_SEAL at SceneTraits::portal, twice PORTAL_RADIUS in size, from tick 0 and never ending,
     /// no showcase seal, so F8 never hides it) and its "Portal" caption over it, both whatever the view, as the seals are:
     /// one record each, whose look reaches past its point. After them come the volleys in flight with their targets and the
     /// seals raised in play (Combat::Publish()).
@@ -382,6 +385,10 @@ private:
     void ExploreRoute(const core::Journey& route, i64 fromTick, i64 toTick);
     [[nodiscard]] Body& PlayerBody();
     [[nodiscard]] const Body& PlayerBody() const;
+    // Where the player's cultivator is drawn when the last tick began and now, from its `body`: moved onto the road its
+    // route walks while one is set, as core::DrawnWhere() moves a traveller from core::Where(), else where `body` stands.
+    // Presentation only: the body itself never moves for it.
+    [[nodiscard]] Body DrawnPlayer(const Body& body) const;
     void CastAction(const core::Action& action, const core::TickCounters& counters, std::vector<core::Event>& events);
     void DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const;
     void Leave(core::SceneKey next, bool throughPortal, std::vector<core::Event>& events);
@@ -410,6 +417,8 @@ private:
     Combat m_combat;
     std::vector<std::vector<core::TextItem>> m_travellerLabels; // per publish chunk, kept for their capacity
     std::optional<core::Paths> m_paths = std::nullopt; // the world map's distance maps, kept for the run; none without one
+    // Where walkers on the world map's road tiles are drawn, kept for the run; none without a map.
+    std::optional<core::RoadCurveIndex> m_roadCurves = std::nullopt;
     std::shared_ptr<const core::Manifest> m_manifest;
     WorldState m_world; // the game's world
     WorldState m_base;  // the game's world as it was made, never ticked: what a save of it is written against

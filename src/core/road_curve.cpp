@@ -14,6 +14,10 @@ constexpr f32 JOIN_TILES = 1.0F;
 /// The shortest run or crossing that still has a direction, in world units or as a share of the lengths compared; a move
 /// of an end shorter than this isn't one.
 constexpr f32 SHORTEST_RUN = 1.0e-4F;
+/// How far, in tiles, a road tile's centre may lie from a road's curve and still have its walkers drawn on it: well past
+/// the half tile a staircase's corner centres stand off their curve, and past the tile a joined end moves the curve's end
+/// away from the last tile laid.
+constexpr f32 DRAWN_REACH_TILES = 1.5F;
 
 f32 Length(Vec2 vec) {
     return std::sqrt((vec.x * vec.x) + (vec.y * vec.y));
@@ -296,6 +300,112 @@ std::vector<std::vector<Vec2>> RoadCurves(const WorldMap& map) {
         curves[index] = Midline(points, tileSize, ROAD_STEPS);
     }
     return curves;
+}
+
+namespace {
+
+/// The point of the segment from `start` to `end` closest to `point`.
+Vec2 ClosestOnSegment(Vec2 point, Vec2 start, Vec2 end) {
+    const Vec2 along = end - start;
+    const f32 lengthSquared = (along.x * along.x) + (along.y * along.y);
+    if (lengthSquared <= 0.0F) {
+        return start;
+    }
+    const Vec2 apart = point - start;
+    const f32 share = std::clamp(((apart.x * along.x) + (apart.y * along.y)) / lengthSquared, 0.0F, 1.0F);
+    return start + (along * share);
+}
+
+/// How far a walker standing at `point` on `tile` is moved: onto RoadCurveIndex::OnRoad() of the tile when it has a point
+/// there, unless the walker is drawn where it stands (`staysPut`).
+Vec2 ShiftAt(const RoadCurveIndex& roads, u32 tile, Vec2 point, bool staysPut) {
+    if (staysPut) {
+        return {};
+    }
+    const std::optional<Vec2> onRoad = roads.OnRoad(tile);
+    return onRoad ? *onRoad - point : Vec2{};
+}
+
+/// How `journey`'s walkers are moved onto the road at `tick`, from where Where() puts them.
+Vec2 JourneyShift(const WorldMap& map, const RoadCurveIndex& roads, const Journey& journey, i64 tick) {
+    // The part holding `tick` as Where() picks it, so the two agree at every boundary.
+    const auto holding = std::ranges::find_if(journey.parts, [tick](const JourneyPart& part) { return EndTick(part) > tick; });
+    const std::size_t index =
+        holding == journey.parts.end() ? journey.parts.size() - 1 : static_cast<std::size_t>(holding - journey.parts.begin());
+    const JourneyPart& part = journey.parts[index];
+    const bool opens = index == 0;
+    const bool closes = index + 1 == journey.parts.size();
+    if (part.stay) {
+        // The drift round a city is no walk along a road: the whole stay keeps the shift of the centre it starts and ends
+        // on, which the legs arriving and leaving share.
+        const u32 city = map.TileIndex(map.Places()[part.rest.city].tile);
+        return ShiftAt(roads, city, map.TileCentre(city), opens || closes);
+    }
+    const Leg& leg = part.leg;
+    const std::size_t last = leg.tiles.size() - 1;
+    const auto shiftOf = [&](std::size_t point) {
+        const Vec2 standing = point == 0 ? leg.origin : map.TileCentre(leg.tiles[point]);
+        return ShiftAt(roads, leg.tiles[point], standing, (opens && point == 0) || (closes && point == last));
+    };
+    if (tick <= leg.startTick) {
+        return shiftOf(0);
+    }
+    if (tick >= EndTick(leg)) {
+        return shiftOf(last);
+    }
+    // As Where() finds the step: before the end, the elapsed ticks fit a u32 and some tile comes after them.
+    const auto elapsed = static_cast<u32>(tick - leg.startTick);
+    const auto next = static_cast<std::size_t>(std::ranges::upper_bound(leg.arrive, elapsed) - leg.arrive.begin());
+    const std::size_t from = next - 1;
+    const f64 fraction = static_cast<f64>(elapsed - leg.arrive[from]) / static_cast<f64>(leg.arrive[next] - leg.arrive[from]);
+    const Vec2 start = shiftOf(from);
+    return start + ((shiftOf(next) - start) * static_cast<f32>(fraction));
+}
+
+} // namespace
+
+RoadCurveIndex::RoadCurveIndex(const WorldMap& map)
+  : m_onRoad(static_cast<std::size_t>(map.Columns()) * map.Rows()) {
+    const f32 tileSize = map.TileSize();
+    const f32 reach = DRAWN_REACH_TILES * tileSize;
+    std::vector<f32> nearest(m_onRoad.size());
+    const u8 road = std::to_underlying(TileFlag::Road);
+    // Each segment measured against the road tiles round it, in the curves' order: a later segment takes a tile only when
+    // strictly closer, so a tie goes to the first road.
+    for (const std::vector<Vec2>& curve : RoadCurves(map)) {
+        for (std::size_t point = 1; point < curve.size(); ++point) {
+            const Vec2 start = curve[point - 1];
+            const Vec2 end = curve[point];
+            const Vec2 low{ .x = std::min(start.x, end.x), .y = std::min(start.y, end.y) };
+            const Vec2 high{ .x = std::max(start.x, end.x), .y = std::max(start.y, end.y) };
+            const TileSpan around =
+                map.TilesIn({ .min = low - Vec2{ .x = reach, .y = reach }, .max = high + Vec2{ .x = reach, .y = reach } });
+            for (u32 row = around.firstRow; row <= around.lastRow; ++row) {
+                for (u32 column = around.firstColumn; column <= around.lastColumn; ++column) {
+                    const u32 tile = map.TileIndex({ .column = column, .row = row });
+                    if ((map.FlagsAt(tile) & road) == 0) {
+                        continue;
+                    }
+                    const Vec2 centre = map.TileCentre(tile);
+                    const Vec2 closest = ClosestOnSegment(centre, start, end);
+                    const f32 apart = Length(closest - centre);
+                    if (apart <= reach && (!m_onRoad[tile] || apart < nearest[tile])) {
+                        nearest[tile] = apart;
+                        m_onRoad[tile] = closest;
+                    }
+                }
+            }
+        }
+    }
+}
+
+std::optional<Vec2> RoadCurveIndex::OnRoad(u32 tile) const {
+    return tile < m_onRoad.size() ? m_onRoad[tile] : std::nullopt;
+}
+
+Vec2 DrawnWhere(const WorldMap& map, const RoadCurveIndex& roads, const Journey& journey, i64 tick, std::size_t member) {
+    const Vec2 shift = journey.parts.empty() ? Vec2{} : JourneyShift(map, roads, journey, tick);
+    return Where(map, journey, tick, member) + shift;
 }
 
 } // namespace core

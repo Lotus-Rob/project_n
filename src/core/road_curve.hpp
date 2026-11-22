@@ -3,8 +3,9 @@
 /// @file
 /// @ingroup core
 /// The centre lines of the world map's roads and rivers: a smooth curve through each polyline's tile centres. Pure, so the
-/// drawing and whatever walks a road read one curve.
+/// drawing and whatever walks a road read one curve: travellers walk tile centre to tile centre and are drawn on it.
 
+#include "core/journey.hpp"
 #include "core/types.hpp"
 #include "core/vec2.hpp"
 #include "core/world_map.hpp"
@@ -56,5 +57,36 @@ inline constexpr u32 ROAD_STEPS = 4;
 /// laid, crossing there. Each end is judged against the others' joins found with
 /// nothing skipped, so the result never depends on the order roads are worked through.
 [[nodiscard]] std::vector<std::vector<Vec2>> RoadCurves(const WorldMap& map);
+
+/// Where a walker standing on each road tile's centre of a map is drawn: the closest point on any of its RoadCurves() within
+/// 1.5 tiles of the centre, the first road's in the map's order on a tie. Found once from the curves' segments near each
+/// road tile, so placing a walker reads one point per tile.
+class RoadCurveIndex {
+public:
+    /// Indexes the road tiles of `map`.
+    explicit RoadCurveIndex(const WorldMap& map);
+
+    /// Where a walker on `tile`'s centre is drawn on a road: none for a tile no road crosses (TileFlag::Road), or one no
+    /// road's curve passes within 1.5 tiles of, or a tile off the map.
+    [[nodiscard]] std::optional<Vec2> OnRoad(u32 tile) const;
+
+private:
+    std::vector<std::optional<Vec2>> m_onRoad; // one per tile, row by row
+};
+
+/// Where `member` (an index into its members, below their count) of `journey` is drawn at `tick`: Where() moved onto the
+/// road it walks, for presentation alone. A leg's walker is drawn at RoadCurveIndex::OnRoad() of each tile centre it
+/// reaches that has one, else at the centre, and between two points of its leg moves straight from where it is drawn at
+/// the one to where at the next, so it eases on and off a road over the step that joins or leaves it and never jumps. A
+/// stay is moved as its city's tile centre is. The journey's own first and last points are drawn where they are, so a
+/// walker drawn where it stands before or after the journey (the player's cultivator) meets it there. The other members
+/// keep their places round member 0, moved with it. Where() for a journey without parts.
+[[nodiscard]] Vec2 DrawnWhere(
+    const WorldMap& map,
+    const RoadCurveIndex& roads,
+    const Journey& journey,
+    i64 tick,
+    std::size_t member = 0
+);
 
 } // namespace core
