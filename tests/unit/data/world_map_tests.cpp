@@ -198,7 +198,7 @@ TEST_CASE("the reader refuses, naming the line") {
 }
 
 TEST_CASE("the reader refuses bad profiles, draws and travel, naming the line") {
-    constexpr std::array<Broken, 15> CASES{ {
+    constexpr std::array<Broken, 18> CASES{ {
         Broken{ .from = "profiles:\n  - { key: on_foot, ticks_per_cost: 16 }\n",
                 .replacement = "",
                 .onLineOf = "road_cost",
@@ -211,6 +211,18 @@ TEST_CASE("the reader refuses bad profiles, draws and travel, naming the line") 
                 .replacement = "ticks_per_cost: 16, kinds: { lava: 3 }",
                 .onLineOf = "ticks_per_cost",
                 .says = "lava" },
+        Broken{ .from = "ford_cost: 30",
+                .replacement = "ford_cost: 30\ndanger_reach: 17",
+                .onLineOf = "danger_reach",
+                .says = "danger_reach" },
+        Broken{ .from = "ticks_per_cost: 16",
+                .replacement = "ticks_per_cost: 16, features: { danger: -1 }",
+                .onLineOf = "ticks_per_cost",
+                .says = "danger cost" },
+        Broken{ .from = "ticks_per_cost: 16",
+                .replacement = "ticks_per_cost: 16, features: { danger: impassable }",
+                .onLineOf = "ticks_per_cost",
+                .says = "danger cost" },
         Broken{ .from = "ticks_per_cost: 16",
                 .replacement = "ticks_per_cost: 16, features: { moat: 3 }",
                 .onLineOf = "ticks_per_cost",
@@ -289,6 +301,24 @@ TEST_CASE("profiles read with their overrides resolved") {
     CHECK(boat.kindCosts == std::vector<u16>{ 5, MEADOW_COST });
     CHECK(boat.features.river == 6);
     CHECK(boat.features.ford == core::IMPASSABLE_COST);
+}
+
+TEST_CASE("danger reach and a profile's danger cost read") {
+    const std::string text = With("ford_cost: 30", "ford_cost: 30\ndanger_reach: 3");
+    const std::string priced =
+        std::string{ text }.replace(text.find("ticks_per_cost: 16 }"), 20, "ticks_per_cost: 16, features: { danger: 25 } }");
+    const std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(priced, Names());
+    REQUIRE(map.has_value());
+    CHECK(map->Profiles()[core::WALKING].features.danger == 25);
+    // The danger at [4, 1] reaches [2, 2] (distance squared 5) and not the capital's [0, 2] (17).
+    constexpr u32 NEAR_TILE = 12;
+    constexpr u32 FAR_TILE = 10;
+    CHECK((map->FlagsAt(NEAR_TILE) & std::to_underlying(core::TileFlag::Danger)) != 0);
+    CHECK((map->FlagsAt(FAR_TILE) & std::to_underlying(core::TileFlag::Danger)) == 0);
+    const std::expected<core::WorldMap, core::Error> plain = data::ParseWorldMap(std::string{ SMALL }, Names());
+    REQUIRE(plain.has_value());
+    CHECK(plain->Profiles()[core::WALKING].features.danger == 0);
+    CHECK((plain->FlagsAt(NEAR_TILE) & std::to_underlying(core::TileFlag::Danger)) == 0);
 }
 
 TEST_CASE("draws and travel rules read") {

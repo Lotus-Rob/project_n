@@ -104,7 +104,8 @@ grid: |
   TTTTTTTTTTTTT###AAAAAAAA#nnTTTTTTnnnTTTTTTTTTTTTTTTTTTTTTTTT--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~--%%%%%%%%%--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # How people move: pace in ticks per unit of cost (a road tile, cost 4, takes 64 ticks on foot). Profile 0, on_foot, is the
 # one every traveller walks by; a profile may add all_kinds: <cost|impassable>, kinds: { <name>: <cost|impassable> } and
-# features: { road, river, bridge, ford }, laid over the kinds' costs above.
+# features: { road, river, bridge, ford, danger }, laid over the kinds' costs above (a danger cost, 0 to 1000, is added on
+# top for a tile near a danger site, within the top-level danger_reach tiles, 0 to 16).
 profiles:
   - { key: on_foot, ticks_per_cost: 16 }
 # The travellers between cities: the share of a city's people setting out each month (per thousand), the days they stay,

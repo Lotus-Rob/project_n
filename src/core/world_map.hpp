@@ -30,6 +30,8 @@ inline constexpr u16 NO_PLACE = 0xFFFF;
 /// The most any terrain kind, road or ford may cost to walk (a kind that no one can walk on is IMPASSABLE_COST instead):
 /// it keeps a path's cost, even a diagonal's seven fifths, far below that sentinel.
 inline constexpr u16 MAX_WALK_COST = 1'000;
+/// The most tiles a danger's reach may span from its own tile.
+inline constexpr u8 MAX_DANGER_REACH = 16;
 
 /// A diagonal step costs this fraction of the cost of the tile it enters, rounded down (about the square root of two):
 /// StepCost's rule, which the route search's estimate is built on.
@@ -152,6 +154,9 @@ struct FeatureCosts {
     u16 bridge = DEFAULT_ROAD_COST;
     /// A ford tile's cost, whatever the terrain.
     u16 ford = DEFAULT_FORD_COST;
+    /// What a tile near a danger adds to its cost, from 0 (nothing) to MAX_WALK_COST; the sum stays within MAX_WALK_COST,
+    /// and an impassable tile stays impassable.
+    u16 danger = 0;
 };
 
 /// A way of moving: how long a unit of cost takes and what each terrain kind and feature costs.
@@ -168,10 +173,11 @@ struct MovementProfile {
 
 /// What a tile carries besides its terrain, as bits of FlagsAt().
 enum class TileFlag : u8 {
-    Road = 1,   ///< A road crosses it.
-    River = 2,  ///< A river crosses it.
-    Bridge = 4, ///< Road and river cross: the road bridges the river.
-    Ford = 8,   ///< A named crossing of a river, walkable at a price.
+    Road = 1,    ///< A road crosses it.
+    River = 2,   ///< A river crosses it.
+    Bridge = 4,  ///< Road and river cross: the road bridges the river.
+    Ford = 8,    ///< A named crossing of a river, walkable at a price.
+    Danger = 16, ///< Its centre lies within the danger reach of a danger place.
 };
 
 /// The line of the data file each entry of a WorldMapSource was written on, for refusals to name; each vector is
@@ -202,6 +208,8 @@ struct WorldMapSource {
     u16 roadCost = DEFAULT_ROAD_COST;
     /// What a ford costs, whatever the terrain.
     u16 fordCost = DEFAULT_FORD_COST;
+    /// How far a danger place's reach flags tiles, in tiles from its own, from 0 (none) to MAX_DANGER_REACH.
+    u8 dangerReach = 0;
     /// The terrain kinds.
     std::vector<TerrainKind> kinds;
     /// One kind index per tile, row by row.
