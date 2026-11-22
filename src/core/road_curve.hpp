@@ -23,10 +23,11 @@ inline constexpr u32 ROAD_STEPS = 4;
 /// `tiles`' waypoints as world points (tile centres of `tileSize`), each repeat of the one before dropped.
 [[nodiscard]] std::vector<Vec2> Waypoints(std::span<const TilePoint> tiles, f32 tileSize);
 
-/// The centripetal Catmull-Rom spline through `waypoints` (two or more, none repeating its neighbour), as the points a
-/// ribbon's quads stand at, beginning at the first waypoint and ending on the last, passing through every one. Phantom end
-/// points mirror the first and last neighbours, so the curve arrives along the end segments. Each segment takes
-/// `stepsPerTile` times its length in tiles (at least one tile) of steps.
+/// The centripetal Catmull-Rom spline through `waypoints` (two or more), as the points a ribbon's quads stand at, beginning
+/// at the first waypoint and ending on the last, passing through every one. A waypoint that repeats the one before it is
+/// skipped, so when every waypoint is one point the curve is that single point. Phantom end points mirror the first and last
+/// neighbours, so the curve arrives along the end segments. Each segment takes `stepsPerTile` times its length in tiles (at
+/// least one tile) of steps.
 [[nodiscard]] std::vector<Vec2> Midline(std::span<const Vec2> waypoints, f32 tileSize, u32 stepsPerTile);
 
 /// The Midline() of each of `lines` (lists of waypoints), an empty one for a list of fewer than two.
@@ -51,7 +52,8 @@ inline constexpr u32 ROAD_STEPS = 4;
 /// there, at either end of the road, except an end on a city's tile, which stays at the city's centre. As in JoinedEnd(),
 /// but a meeting within a tile of another road's end is skipped only when that end flows into this road: it would join this
 /// road itself, or it lies on this end's line, where the two already meet. Of two ends that would each join the other's
-/// road there, the later road's joins and the earlier's stays. Each end is judged against the others' joins found with
+/// road there, the later road's joins and the earlier's stays. A road whose two ends would join at one point keeps both as
+/// laid, crossing there. Each end is judged against the others' joins found with
 /// nothing skipped, so the result never depends on the order roads are worked through.
 [[nodiscard]] std::vector<std::vector<Vec2>> RoadCurves(const WorldMap& map);
 

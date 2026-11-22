@@ -131,14 +131,25 @@ std::vector<Vec2> Waypoints(std::span<const TilePoint> tiles, f32 tileSize) {
 
 std::vector<Vec2> Midline(std::span<const Vec2> waypoints, f32 tileSize, u32 stepsPerTile) {
     PN_ASSERT(waypoints.size() >= 2, "a curve needs two waypoints");
+    // The spline's knots are spaced by the distance between waypoints, so a stretch of no length would divide by zero.
+    std::vector<Vec2> distinct;
+    distinct.reserve(waypoints.size());
+    for (const Vec2 point : waypoints) {
+        if (distinct.empty() || Length(point - distinct.back()) > SHORTEST_RUN) {
+            distinct.push_back(point);
+        }
+    }
+    const std::size_t count = distinct.size();
+    if (count < 2) {
+        return { distinct.front() };
+    }
     std::vector<Vec2> padded;
-    padded.reserve(waypoints.size() + 2);
-    padded.push_back(waypoints[0] + (waypoints[0] - waypoints[1]));
-    padded.insert(padded.end(), waypoints.begin(), waypoints.end());
-    const std::size_t count = waypoints.size();
-    padded.push_back(waypoints[count - 1] + (waypoints[count - 1] - waypoints[count - 2]));
+    padded.reserve(count + 2);
+    padded.push_back(distinct[0] + (distinct[0] - distinct[1]));
+    padded.insert(padded.end(), distinct.begin(), distinct.end());
+    padded.push_back(distinct[count - 1] + (distinct[count - 1] - distinct[count - 2]));
 
-    std::vector<Vec2> line{ waypoints[0] };
+    std::vector<Vec2> line{ distinct[0] };
     for (std::size_t segment = 0; segment + 1 < count; ++segment) {
         const std::array<Vec2, 4> points{ padded[segment], padded[segment + 1], padded[segment + 2], padded[segment + 3] };
         std::array<f32, 4> knots{};
@@ -270,6 +281,11 @@ std::vector<std::vector<Vec2>> RoadCurves(const WorldMap& map) {
         }
         if (!atCity(roads[index].front())) {
             first = ResolvedJoin(Reversed(points), index, false, stored, tileSize, free);
+        }
+        if (last && first && Length(last->point - first->point) <= SHORTEST_RUN * tileSize) {
+            // Both ends drawn at one crossing would leave the road no length, so it crosses there as laid instead.
+            last.reset();
+            first.reset();
         }
         if (last) {
             points.back() = last->point;
