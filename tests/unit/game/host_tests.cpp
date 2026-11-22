@@ -15,6 +15,7 @@
 #include "data/game_data.hpp"
 #include "game/host.hpp"
 #include "game/npcs.hpp"
+#include "game/travel.hpp"
 #include "platform/paths.hpp"
 #include "support/fog.hpp"
 #include "support/host.hpp"
@@ -1823,12 +1824,12 @@ void WalkTo(game::Host& host, u64 tick, core::Vec2 point, core::HeldInput held =
     host.Tick(At(tick), { .actions = walk, .held = held }, events);
 }
 
-/// The leg a walk-to from `foot` towards `point` on `map` takes, set out on world tick `clock`: the cheapest way on foot
-/// from the foot's tile, starting from the foot itself. REQUIREs a step at least.
+/// The leg a walk-to from `foot` towards `point` on `map` takes, set out on world tick `clock`: the shortest way on foot
+/// from the foot's tile, starting from the foot itself, at the cultivator's walk speed. REQUIREs a step at least.
 core::Leg LegTo(const core::WorldMap& map, core::Vec2 foot, core::Vec2 point, u64 clock) {
-    const std::vector<u32> tiles = core::FindRoute(map, core::WALKING, map.TileAt(foot), map.TileAt(point));
+    const std::vector<u32> tiles = core::FindShortestRoute(map, map.TileAt(foot), map.TileAt(point));
     REQUIRE(tiles.size() >= 2);
-    return core::MakeTileLeg(map, core::WALKING, static_cast<i64>(clock), foot, tiles);
+    return core::MakePacedLeg(map, static_cast<i64>(clock), foot, tiles, test::SmallData().cultivator.walkSpeed);
 }
 
 /// Whether `route`, as a snapshot publishes one, is `foot` and then the centres of `leg`'s tiles from its `next`th on.
@@ -1910,6 +1911,51 @@ TEST_CASE("a walk-to sends the cultivator along the route") {
     TickRange(*world.host, end - TRAVEL_CLOCK + 1, end - TRAVEL_CLOCK + 1, HELD_RIGHT);
     const core::Vec2 walked = map.TileCentre(leg.tiles.back()) + core::Vec2{ .x = test::SmallData().cultivator.walkSpeed };
     CHECK(SamePoint(FootOf(*world.host, world.player), walked));
+}
+
+TEST_CASE("a walk-to crosses meadow at the held walk's pace") {
+    const TravelWorld world = TravelWorldOf({}, true);
+    const core::WorldMap& map = *world.map;
+    const core::Vec2 start = FootOf(*world.host, world.player);
+    constexpr u32 TILES_EAST = 5;
+    const core::Vec2 target = start + core::Vec2{ .x = static_cast<f32>(TILES_EAST) * test::small::TILE, .y = 0.0F };
+    const f32 walkSpeed = test::SmallData().cultivator.walkSpeed;
+    WalkTo(*world.host, 1, target);
+    const auto ticks = static_cast<i64>(std::ceil((target.x - start.x) / walkSpeed));
+    CHECK(core::EndTick(RouteOf(*world.host)) == static_cast<i64>(TRAVEL_CLOCK) + ticks);
+    CHECK(RouteLegOf(*world.host).tiles.size() == TILES_EAST + 1);
+    CHECK(SamePoint(core::Where(map, RouteLegOf(*world.host), static_cast<i64>(TRAVEL_CLOCK) + ticks), target));
+}
+
+TEST_CASE("a walk-to goes the shortest way whatever the ground") {
+    const TravelWorld world = TravelWorldOf({}, true);
+    const core::WorldMap& map = *world.map;
+    // The bottom row's column 5 is two diagonals and three straight steps from the start city: no longer for the road
+    // along the top row, which the cheapest way would hug.
+    const u32 target = map.TileIndex({ .column = test::small::ROAD_END, .row = 2 });
+    WalkTo(*world.host, 1, map.TileCentre(target));
+    const core::Leg leg = RouteLegOf(*world.host);
+    CHECK(leg.tiles == core::FindShortestRoute(map, 0, target));
+    CHECK(leg.tiles.size() == 6);
+    constexpr f32 DIAGONAL_TICKS = 91.0F; // a diagonal tile at 4 units a tick
+    const f32 straight = (3.0F * test::small::TILE / test::SmallData().cultivator.walkSpeed) + (2.0F * DIAGONAL_TICKS);
+    CHECK(static_cast<f32>(leg.arrive.back()) == doctest::Approx(straight).epsilon(0.01));
+    CHECK(game::LegSound(leg, map));
+}
+
+TEST_CASE("a walk-to from a foot beside the next centre still takes a tick for its first step") {
+    const TravelWorld world = TravelWorldOf({}, true);
+    const core::WorldMap& map = *world.map;
+    constexpr f32 NEAR = 1.0F;
+    const core::Leg leg = core::MakePacedLeg(
+        map,
+        static_cast<i64>(TRAVEL_CLOCK),
+        map.TileCentre(1) - core::Vec2{ .x = NEAR, .y = 0.0F },
+        std::array<u32, 2>{ { 0, 1 } },
+        test::SmallData().cultivator.walkSpeed
+    );
+    CHECK(leg.arrive[1] == 1);
+    CHECK(game::LegSound(leg, map));
 }
 
 TEST_CASE("held movement cancels a route") {

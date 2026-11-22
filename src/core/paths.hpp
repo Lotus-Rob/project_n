@@ -62,6 +62,12 @@ private:
 /// steps cost what the distance map to `target` says. Empty when `target` is impassable or unreachable.
 [[nodiscard]] std::vector<u32> FindRoute(const WorldMap& map, ProfileIndex profile, u32 from, u32 target);
 
+/// The shortest route from `from` to `target` over the tiles `WALKING` can step onto: every step costs its length (a
+/// diagonal DIAGONAL_NUMERATOR / DIAGONAL_DENOMINATOR of a straight one) whatever the ground, so roads and terrain
+/// don't bend it. A* with FindRoute's neighbour and corner rules and tie rule (lower tile index); `{from}` when `from`
+/// is `target`, empty when `target` is impassable or unreachable.
+[[nodiscard]] std::vector<u32> FindShortestRoute(const WorldMap& map, u32 from, u32 target);
+
 /// The distance maps to the map's cities, each built on first use and kept. Not thread-safe: Warm before any parallel
 /// reads.
 class Paths {

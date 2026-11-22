@@ -884,6 +884,10 @@ void Host::WalkTo(core::Vec2 point, u64 tick) {
         PN_LOG_DEBUG("tick {}: a walk-to is ignored: the world clock is past where journeys can be timed", tick);
         return;
     }
+    if (m_data.cultivator.walkSpeed <= 0.0F) {
+        PN_LOG_DEBUG("tick {}: a walk-to is ignored: the cultivator has no walk speed", tick);
+        return;
+    }
     const core::WorldMap& map = *m_data.world;
     if (!core::Contains(MapArea(map), point)) {
         PN_LOG_DEBUG("tick {}: a walk-to ({}, {}) off the map is ignored", tick, point.x, point.y);
@@ -891,7 +895,7 @@ void Host::WalkTo(core::Vec2 point, u64 tick) {
     }
     const core::Vec2 foot = PlayerBody().current;
     const u32 target = map.TileAt(point);
-    const std::vector<u32> tiles = core::FindRoute(map, core::WALKING, map.TileAt(foot), target);
+    const std::vector<u32> tiles = core::FindShortestRoute(map, map.TileAt(foot), target);
     if (tiles.empty()) {
         PN_LOG_DEBUG("tick {}: a walk-to tile {} is ignored: no way there on foot", tick, target);
         return;
@@ -905,7 +909,8 @@ void Host::WalkTo(core::Vec2 point, u64 tick) {
     core::Journey route;
     route.members = { m_player };
     route.parts.push_back(
-        { .stay = false, .leg = core::MakeTileLeg(map, core::WALKING, static_cast<i64>(Live().worldTicks), foot, tiles) }
+        { .stay = false,
+          .leg = core::MakePacedLeg(map, static_cast<i64>(Live().worldTicks), foot, tiles, m_data.cultivator.walkSpeed) }
     );
     PN_LOG_INFO(
         "tick {}: the cultivator sets out for tile {}, {} tiles on, arriving at world tick {}",

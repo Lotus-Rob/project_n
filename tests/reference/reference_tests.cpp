@@ -614,8 +614,8 @@ TEST_CASE("the world's mountains by the sect at zoom 1: overlapping ranges, the 
 constexpr u64 FOG_PATH_BACK_TICK = 900;
 constexpr u64 FOG_PATH_TICKS = 1800;
 constexpr f32 FOG_PATH_TILES = 4.0F;
-// The cultivator's third step explores a new row of tiles at tick 176; TickToPicture checks this is a quarter second before.
-constexpr u64 FOG_UNCOVER_TICKS = 190;
+// The cultivator's third step explores a new row of tiles at tick 187; TickToPicture checks this is a quarter second before.
+constexpr u64 FOG_UNCOVER_TICKS = 201;
 constexpr f32 FOG_UNCOVER_TILES = 8.0F;
 
 /// A new game's start: the cultivator's diamond of sight over the land it has explored, the clouds past it. Drawn as the

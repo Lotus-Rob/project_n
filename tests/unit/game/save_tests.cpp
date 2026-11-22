@@ -1479,6 +1479,54 @@ TEST_CASE("a save made mid-route loads to the same position on the next tick") {
     CHECK(loaded.StateHash() == saved.StateHash());
 }
 
+TEST_CASE("a paced route saved mid-walk loads and arrives on the same tick") {
+    constexpr u64 WALKED = 100;
+    constexpr u64 MOST_TICKS = 400;
+    const std::shared_ptr<const core::WorldMap> map = test::SmallWorld();
+    const Trip trip = FirstTrip(*map);
+    REQUIRE(trip.route.size() >= ROUTE_TILES);
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::Vec2 home = map->TileCentre(trip.route.front());
+    const auto [player, entity] = state.Create(game::ACTIVE, core::IdRange::Scene);
+    state[game::ACTIVE].Entities().emplace<game::Body>(entity, home, home);
+    const std::vector<std::byte> start =
+        ArenaSave(state, player, std::nullopt, std::nullopt, std::nullopt, game::WORLD_SCENE, WORLD_VERSION, ACTIVE_VERSION);
+    game::Host saved(test::TestManifest(), game::ARENA_SCENE, test::SmallData());
+    core::Reader startReader{ start };
+    REQUIRE(saved.Load(startReader, SAVED_TICK));
+    saved.EnterScene();
+    const core::Vec2 target = map->TileCentre(trip.route[ROUTE_TILES - 1]);
+    const std::array<core::Action, 1> walk{ { { .kind = core::ActionKind::WalkTo, .point = target } } };
+    Tick(saved, At(1), { .actions = walk, .held = {} });
+    for (u64 tick = 2; tick <= WALKED; ++tick) {
+        Tick(saved, At(tick), {});
+    }
+    REQUIRE(saved.PlayerRoute().has_value());
+
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, test::SmallData());
+    const std::vector<std::byte> bytes = Saved(saved);
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader, SAVED_TICK));
+    loaded.EnterScene();
+
+    u64 savedEnds = 0;
+    u64 loadedEnds = 0;
+    for (u64 tick = WALKED + 1; tick <= MOST_TICKS; ++tick) {
+        Tick(saved, At(tick), {});
+        Tick(loaded, At(tick), {});
+        if (savedEnds == 0 && !saved.PlayerRoute().has_value()) {
+            savedEnds = tick;
+        }
+        if (loadedEnds == 0 && !loaded.PlayerRoute().has_value()) {
+            loadedEnds = tick;
+        }
+    }
+    CHECK(savedEnds != 0);
+    CHECK(loadedEnds == savedEnds);
+    CHECK(SamePoint(test::BodyOf(loaded, player).current, target));
+    CHECK(loaded.StateHash() == saved.StateHash());
+}
+
 TEST_CASE("a new game's world delta changes no NPC") {
     const core::GameData data = test::ShippedData();
     const game::Host host(test::TestManifest(), game::WORLD_SCENE, data);
