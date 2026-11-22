@@ -2090,8 +2090,9 @@ TileChange TerrainShimmer(f32 zoom, gfx::TerrainParts shown, gfx::TerrainParts u
 // The road ribbons' own ink over the rest of the terrain, at the smallest zoom, where their soft edges are narrowest in
 // pixels and a band that hits or misses pixels as the view pans would crawl most.
 TEST_CASE("the world's road ribbons at the smallest zoom: shimmer held to its bound") {
-    // Measured 0.00500 (0.00431 at zoom 0.5, 0.00128 at 1, 0.00337 at 2); about 1.25 times that, as the world's bound is,
-    // and well inside the 0.02 a label's or a seal's line may crawl.
+    // About 1.25 times the 0.00500 first measured, as the world's bound is, and well inside the 0.02 a label's or a seal's
+    // line may crawl (the smallest zoom crawled most: 0.00431 at zoom 0.5, 0.00128 at 1, 0.00337 at 2). Measured 0.00608
+    // with the paler ink since: the crawl is taken as a share of the ink, so a paler road measures higher.
     constexpr f64 MOST_CHANGE = 0.0062;
     const TileChange change = TerrainShimmer(gfx::MIN_ZOOM, gfx::TerrainParts::All, gfx::TerrainParts::AllButRoads);
     MESSAGE("road shimmer: ", change.worst);

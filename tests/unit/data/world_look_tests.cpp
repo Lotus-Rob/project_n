@@ -506,8 +506,8 @@ TEST_CASE("road reads as written") {
     const core::RoadLook& road = shipped.look.road;
     CHECK(road.width == doctest::Approx(0.26F));
     CHECK(road.edge == doctest::Approx(0.4F));
-    CHECK(road.colour == std::array<u8, 3>{ { 132, 112, 88 } });
-    CHECK(road.edgeColour == std::array<u8, 3>{ { 104, 90, 72 } });
+    CHECK(road.colour == std::array<u8, 3>{ { 149, 132, 109 } });
+    CHECK(road.edgeColour == std::array<u8, 3>{ { 126, 113, 96 } });
     CHECK(road.edgeStrength == doctest::Approx(0.4F));
     // A road is a narrower line than a river.
     CHECK(road.width < shipped.look.river.width);
