@@ -5,6 +5,7 @@
 #include "core/profile.hpp"
 #include "core/rect.hpp"
 #include "core/vec2.hpp"
+#include "gfx/colour.hpp"
 #include "gfx/tile_hash.hpp"
 
 namespace gfx {
@@ -58,6 +59,8 @@ struct Pass {
     const core::Manifest* manifest = nullptr;
     core::TileSpan span{};
     f32 zoom = 1.0F;
+    /// The mist's colour, linear: the look holds sRGB, converted once per drawing.
+    std::array<f32, 3> mistColour{};
 };
 
 /// A sprite's width and height in world units at its own size.
@@ -71,9 +74,9 @@ f32 SmoothStep(f32 low, f32 high, f32 value) {
     return along * along * (SMOOTH_CUBIC - (SMOOTH_LINEAR * along));
 }
 
-/// The premultiplied colour of `rgb` (sRGB bytes) at `alpha` from 0 to 1, red in the low byte.
-u32 Premultiplied(const std::array<u8, 3>& rgb, f32 alpha) {
-    const auto byte = [alpha](u8 channel) { return static_cast<u32>(std::lround(static_cast<f32>(channel) * alpha)); };
+/// The premultiplied colour of `rgb` (linear, 0 to 1 a channel) at `alpha` from 0 to 1, red in the low byte.
+u32 Premultiplied(const std::array<f32, 3>& rgb, f32 alpha) {
+    const auto byte = [alpha](f32 channel) { return static_cast<u32>(std::lround(channel * BYTE_RANGE * alpha)); };
     const auto opacity = static_cast<u32>(std::lround(alpha * BYTE_RANGE));
     return byte(rgb[0]) | (byte(rgb[1]) << BYTE_BITS) | (byte(rgb[2]) << (2 * BYTE_BITS)) | (opacity << ALPHA_SHIFT);
 }
@@ -248,7 +251,7 @@ void LayStamp(
         return;
     }
     const f32 opacity = Opacity(pass, stamps, column, row);
-    const u32 colour = opacity >= 1.0F ? core::OPAQUE_WHITE : Premultiplied({ { 255, 255, 255 } }, opacity);
+    const u32 colour = opacity >= 1.0F ? core::OPAQUE_WHITE : Premultiplied({ { 1.0F, 1.0F, 1.0F } }, opacity);
     if ((colour >> ALPHA_SHIFT) == 0) {
         return;
     }
@@ -281,7 +284,7 @@ void LayStamp(
                   .previous = foot,
                   .current = foot,
                   .scale = puffWidth / SizeOf(manifest, puff).x,
-                  .colour = Premultiplied(mist.colour, mist.strength * opacity),
+                  .colour = Premultiplied(pass.mistColour, mist.strength * opacity),
                   .flags = core::INSTANCE_FOGGED_LAND }
             )
         );
@@ -304,7 +307,9 @@ void DrawStamps(
     }
     const Pass reached{ .map = &map, .look = &look, .manifest = &manifest, .span = span, .zoom = zoom };
     span = Widened(map, span, StampReach(reached));
-    const Pass pass{ .map = &map, .look = &look, .manifest = &manifest, .span = span, .zoom = zoom };
+    const Pass pass{
+        .map = &map, .look = &look, .manifest = &manifest, .span = span, .zoom = zoom, .mistColour = LinearOf(look.mist.colour)
+    };
     const std::vector<Painting> paintings = Paintings(pass);
     std::vector<Laid> things;
     std::vector<core::Instance> puffs;
