@@ -1,6 +1,7 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/instances.hpp"
 #include "core/manifest.hpp"
+#include "core/ui_colours.hpp"
 #include "core/view_limits.hpp"
 #include "core/world_look.hpp"
 #include "core/world_map.hpp"
@@ -365,9 +366,10 @@ TEST_CASE("a stamp's width and mirroring and its puff's centre, width and colour
         wrong += std::abs(UnpackedWidth(*stamp) - stampWidth) > 0.01F * stampWidth ? 1 : 0;
         wrong += (core::UnpackHalf(static_cast<u16>(stamp->size & 0xFFFFU)) < 0.0F) != mirrored ? 1 : 0;
         wrong += std::abs(UnpackedWidth(*puff) - puffWidth) > 0.01F * puffWidth ? 1 : 0;
-        // 0.9 strength at full opacity over 246 red.
+        // 0.9 strength at full opacity over the linear red of the sRGB 246: the colour is a look's sRGB, drawn linear.
+        const f32 linearRed = static_cast<f32>(core::FromSrgb(246, 244, 238, 255) & 0xFFU);
         wrong += std::abs(static_cast<f32>(AlphaOf(*puff)) - (0.9F * BYTE_RANGE)) > 1.0F ? 1 : 0;
-        wrong += std::abs(static_cast<f32>(puff->colour & 0xFFU) - (246.0F * 0.9F)) > 1.0F ? 1 : 0;
+        wrong += std::abs(static_cast<f32>(puff->colour & 0xFFU) - (linearRed * 0.9F)) > 1.0F ? 1 : 0;
     }
     // Both a stamp and a puff of each of the six tiles were found and held to their draws.
     CHECK(checked == 12);
