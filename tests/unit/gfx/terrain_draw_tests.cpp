@@ -81,6 +81,7 @@ ground:
 veil: { colour: [246, 244, 238], scale: 3.0, strength: 0.55 }
 mist: { sprites: [mist_0], colour: [246, 244, 238], strength: 0.9, chance: 0.7, width: [1.0, 1.4] }
 river: { width: 0.38, edge: 0.5, colour: [128, 172, 176], edge_colour: [70, 104, 112], edge_strength: 0.67 }
+road: { width: 0.26, edge: 0.4, colour: [132, 112, 88], edge_colour: [104, 90, 72], edge_strength: 0.4 }
 places:
   city: painting_city
   dangers: { mountain_pass: painting_mountain_pass }

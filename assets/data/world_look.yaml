@@ -19,6 +19,8 @@
 #          greatest as a share of the stamp's width
 # river:   the ribbon: `width` of the water and `edge` of the whole edge band under it, both in tiles, `colour`,
 #          `edge_colour`, `edge_strength` (0 to 1)
+# road:    the ribbon roads are drawn as, the same keys as `river:`, narrower and quieter; `edge` may not be narrower
+#          than `width`
 # places:  paintings for places: `city`, `dangers` one per danger sort the map uses (a sort it doesn't use is ignored),
 #          `by_key` for the places with a key of their own (a key no place has is refused)
 # route:   the player's route and the target cursor: `dot` every `spacing` world units along the line, `marker` on its
@@ -174,6 +176,7 @@ ground:
 veil: { colour: [246, 244, 238], scale: 3.0, strength: 0.55 }
 mist: { sprites: [mist_0, mist_1, mist_2, mist_3], colour: [246, 244, 238], strength: 0.9, chance: 1.0, width: [1.0, 1.4] }
 river: { width: 0.38, edge: 0.5, colour: [128, 172, 176], edge_colour: [70, 104, 112], edge_strength: 0.67 }
+road: { width: 0.26, edge: 0.4, colour: [132, 112, 88], edge_colour: [104, 90, 72], edge_strength: 0.4 }
 places:
   city: painting_city
   dangers:

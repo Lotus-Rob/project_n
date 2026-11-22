@@ -70,6 +70,7 @@ ground:
 veil: { colour: [246, 244, 238], scale: 3.0, strength: 0.55 }
 mist: { sprites: [mist_0, mist_1], colour: [246, 244, 238], strength: 0.9, chance: 0.7, width: [1.0, 1.4] }
 river: { width: 0.38, edge: 0.5, colour: [128, 172, 176], edge_colour: [70, 104, 112], edge_strength: 0.67 }
+road: { width: 0.26, edge: 0.4, colour: [132, 112, 88], edge_colour: [104, 90, 72], edge_strength: 0.4 }
 places:
   city: painting_city
   dangers: { mountain_pass: painting_mountain_pass }
@@ -511,6 +512,21 @@ TEST_CASE("an unknown key in the fog's sections warns") {
     CHECK(tints[0].contains("drain has no key tone"));
 }
 
+TEST_CASE("road reads as written") {
+    const Shipped shipped = ShippedLook();
+    const core::RoadLook& road = shipped.look.road;
+    CHECK(road.width == doctest::Approx(0.26F));
+    CHECK(road.edge == doctest::Approx(0.4F));
+    CHECK(road.colour == std::array<u8, 3>{ { 132, 112, 88 } });
+    CHECK(road.edgeColour == std::array<u8, 3>{ { 104, 90, 72 } });
+    CHECK(road.edgeStrength == doctest::Approx(0.4F));
+    // A road is a narrower line than a river.
+    CHECK(road.width < shipped.look.river.width);
+    const std::expected<core::WorldLook, core::Error> small = Parse(SMALL_LOOK);
+    REQUIRE(small.has_value());
+    CHECK(small->road.width == doctest::Approx(0.26F));
+}
+
 TEST_CASE("the shipped look's ground, veil, mist, river and places read as written") {
     const Shipped shipped = ShippedLook();
     const core::WorldLook& look = shipped.look;
@@ -645,6 +661,15 @@ TEST_CASE("ground values out of range are refused, each naming its key") {
               ""
           ),
           .key = "the look has no river" },
+        { .why = "a road edge narrower than its width",
+          .text = With("edge: 0.4", "edge: 0.2"),
+          .key = "road's edge is narrower than its width" },
+        { .why = "a road width of zero", .text = With("width: 0.26", "width: 0"), .key = "road's width" },
+        { .why = "no road",
+          .text = With(
+              "road: { width: 0.26, edge: 0.4, colour: [132, 112, 88], edge_colour: [104, 90, 72], edge_strength: 0.4 }\n", ""
+          ),
+          .key = "the look has no road" },
         { .why = "no ground", .text = With("ground:\n", "grounds:\n"), .key = "the look has no ground" },
     };
     for (const Broken& broken : cases) {
