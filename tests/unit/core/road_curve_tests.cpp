@@ -158,6 +158,33 @@ TEST_CASE("of two ends crossing a short road near both its ends, exactly one joi
     CHECK(Distance(swapped[1].back(), Middle(4, 3)) < CLOSE);
 }
 
+TEST_CASE("a road whose both ends would join one crossing keeps both ends") {
+    // The short road's ends both lie a tile from the first road's line and each would be cut back to the same crossing.
+    const auto curves = Curves(
+        { { { .column = 3, .row = 3 }, { .column = 5, .row = 3 } }, { { .column = 4, .row = 2 }, { .column = 4, .row = 4 } } }
+    );
+    const bool finite =
+        std::ranges::all_of(curves[1], [](core::Vec2 point) { return std::isfinite(point.x) && std::isfinite(point.y); });
+    CHECK(finite);
+    CHECK(Distance(curves[1].front(), Middle(4, 2)) < CLOSE);
+    CHECK(Distance(curves[1].back(), Middle(4, 4)) < CLOSE);
+}
+
+TEST_CASE("a curve skips a waypoint repeating the one before it") {
+    const std::vector<core::Vec2> repeated{ Middle(1, 1), Middle(1, 1), Middle(3, 1), Middle(3, 1) };
+    const std::vector<core::Vec2> curve = core::Midline(repeated, TILE_SIZE, core::ROAD_STEPS);
+    REQUIRE(curve.size() == 1 + (std::size_t{ 2 } * core::ROAD_STEPS));
+    const bool finite =
+        std::ranges::all_of(curve, [](core::Vec2 point) { return std::isfinite(point.x) && std::isfinite(point.y); });
+    CHECK(finite);
+    CHECK(Distance(curve.front(), Middle(1, 1)) < CLOSE);
+    CHECK(Distance(curve.back(), Middle(3, 1)) < CLOSE);
+    const std::vector<core::Vec2> single{ Middle(2, 2), Middle(2, 2) };
+    const std::vector<core::Vec2> point = core::Midline(single, TILE_SIZE, core::ROAD_STEPS);
+    REQUIRE(point.size() == 1);
+    CHECK(Distance(point[0], Middle(2, 2)) < CLOSE);
+}
+
 TEST_CASE("a road ending at a city keeps its end on the city's centre") {
     // The city stands on (0, 0). The other road starts on the first road's line a tile from that end, so without the city
     // the end would be drawn there instead.
