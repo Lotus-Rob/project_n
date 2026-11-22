@@ -22,7 +22,8 @@ How the land forms, in order:
 - biomes from a Whittaker-style table onto the eleven kinds, then a smoothing pass: no kind in a patch under 3 tiles;
 - cities at the hand sites below, roads as least-cost paths between them by the game's step rule (the entered tile's
   cost, 7/5 of it diagonally, past two passable neighbours) over a gently noisy cost so they wander like real roads,
-  simplified (Ramer-Douglas-Peucker, one-tile tolerance) and checked tile by tile as the game rasterises them;
+  simplified (Ramer-Douglas-Peucker, one-tile tolerance; rock, snow and the tiles beside peaks cost extra, so they
+  keep to valleys and cross a range only by its pass) and checked tile by tile as the game rasterises them;
 - fords where a stretch of land would otherwise be cut off by rivers, and danger sites by sort on fitting ground,
   off the roads and more of them at the wild edges.
 
@@ -915,6 +916,8 @@ def derive(kinds, roads, rivers, fords, danger=None, danger_cost=0):
 def danger_tiles(places, reach):
     """Per tile: whether its centre lies within `reach` tiles of a danger site's tile, as WorldMap::Build flags it."""
     flags = [False] * (COLUMNS * ROWS)
+    if reach <= 0:
+        return flags
     for tile in places:
         for y in range(max(0, tile[1] - reach), min(ROWS, tile[1] + reach + 1)):
             for x in range(max(0, tile[0] - reach), min(COLUMNS, tile[0] + reach + 1)):
@@ -1105,17 +1108,31 @@ def forks(detour, path):
     return found
 
 
-def meet_road(stretch, road):
-    """`stretch` with each end that isn't on a built road's tile moved to the nearest one, so a fork meets the road as
-    written, which straightening can leave a tile off the path it followed."""
-    def nearest(tile):
-        if road[tile]:
-            return tile
-        x, y = tile % COLUMNS, tile // COLUMNS
-        found = [(dx * dx + dy * dy, index(x + dx, y + dy)) for dx in range(-3, 4) for dy in range(-3, 4)
-                 if on_map(x + dx, y + dy) and road[index(x + dx, y + dy)]]
-        return min(found)[1] if found else tile
-    first, last = nearest(stretch[0]), nearest(stretch[-1])
+def meet_road(stretch, road_tiles, river):
+    """`stretch` with each end that isn't on one of `road_tiles` (the tiles of the road it leaves, as rasterised) moved to
+    the one of them within 3 tiles nearest the stretch's next tile, so a fork meets the road as written, which
+    straightening can leave a tile off the path it followed. The step to the next tile never crosses a river the
+    stretch doesn't."""
+    own = set(stretch)
+
+    def nearest(end, neighbour):
+        if end in road_tiles:
+            return end
+        ex, ey = end % COLUMNS, end // COLUMNS
+        nx, ny = neighbour % COLUMNS, neighbour // COLUMNS
+        found = []
+        for dx in range(-3, 4):
+            for dy in range(-3, 4):
+                x, y = ex + dx, ey + dy
+                if not on_map(x, y) or index(x, y) not in road_tiles:
+                    continue
+                if any(river[index(*t)] and index(*t) not in own for t in rasterise((x, y), (nx, ny))):
+                    continue
+                found.append(((x - nx) ** 2 + (y - ny) ** 2, index(x, y)))
+        if not found:
+            raise SystemExit(f"world_map: a fork ends at ({ex}, {ey}), where no road of its link is within 3 tiles")
+        return min(found)[1]
+    first, last = nearest(stretch[0], stretch[1]), nearest(stretch[-1], stretch[-2])
     return [first, *stretch[1:-1], last]
 
 
@@ -1133,13 +1150,15 @@ def build_roads(kinds, river, places, danger=None, danger_cost=0):
             weak = plan_costs(kinds, river, road, danger, danger_cost)
             wary_path = route(weak, river, start, goal)
         built = new_roads(path, road, kinds, river, costs)
+        link_tiles = {t for t in path if road[t]}
         for line in built:
             for x, y in line_tiles(line):
                 road[index(x, y)] = True
+                link_tiles.add(index(x, y))
         lines.extend(built)
         if weak is not None:
             for stretch in forks(wary_path, path):
-                built = new_roads(meet_road(stretch, road), road, kinds, river, weak)
+                built = new_roads(meet_road(stretch, link_tiles, river), road, kinds, river, weak)
                 for line in built:
                     for x, y in line_tiles(line):
                         road[index(x, y)] = True
@@ -1453,22 +1472,33 @@ def parse_flow(text, pos=0):
     end = pos
     while end < len(text) and text[end] not in ",}]":
         end += 1
-    word = text[pos:end].strip()
-    return (int(word) if word.lstrip("-").isdigit() else word), end
+    word = text[pos:end].split(" #")[0].strip()
+    if word in ("true", "false"):
+        return word == "true", end
+    for number in (int, float):
+        try:
+            return number(word), end
+        except ValueError:
+            pass
+    return word, end
 
 
 def block_lines(lines, key):
-    """The first and one past the last index of the lines under the top-level `key:`, and none of them a comment."""
+    """The first and one past the last index of the items under the top-level `key:`; a comment or blank line between
+    them is refused, one after the last item belongs to what follows."""
     try:
         first = lines.index(f"{key}:") + 1
     except ValueError:
         raise SystemExit(f"world_map: no `{key}:` block in the file") from None
-    end = first
-    while end < len(lines) and lines[end].startswith("  "):
-        end += 1
+    end, stop = first, first
+    while stop < len(lines) and (not lines[stop].strip() or lines[stop].startswith(("#", " "))):
+        if lines[stop].startswith("  "):
+            end = stop + 1
+        stop += 1
     for number in range(first, end):
-        if lines[number].lstrip().startswith("#"):
-            raise SystemExit(f"world_map: line {number + 1} is a comment inside the `{key}:` block, which is rewritten")
+        if not lines[number].strip() or lines[number].lstrip().startswith("#"):
+            what = "a blank line" if not lines[number].strip() else "a comment"
+            raise SystemExit(f"world_map: line {number + 1} is {what} inside the `{key}:` block, which is rewritten")
     return first, end
 
 
@@ -1488,6 +1518,8 @@ def read_world(text):
             raw[key].append(line[2:])
         elif line.startswith("  - "):
             raw[key].append(line[4:].strip())
+        elif isinstance(raw[key], str):
+            raw[key] += " " + line.strip()  # a long flow mapping wraps onto indented lines
         elif raw[key]:
             raw[key][-1] += " " + line.strip()  # a long list wraps onto indented lines
         else:
@@ -1520,12 +1552,12 @@ def kinds_of(world):
 
 
 def wary_danger_cost(world):
-    """What a danger tile adds for those who walk warily: the danger feature of the profile of the band that starts at
-    power 0, and 0 where the file has no such band or the profile no such feature."""
+    """What a danger tile adds for those who walk warily: the danger feature of the profile of the first band (it starts at
+    power 0), and 0 where the file has no such band or the profile no such feature."""
     bands = world["travel"].get("bands", [])
-    weakest = next((band["profile"] for band in bands if band["from_power"] == 0), None)
-    if weakest is None:
+    if not bands:
         return 0
+    weakest = bands[0]["profile"]
     profile = next((p for p in world["profiles"] if p["key"] == weakest), None)
     if profile is None:
         raise SystemExit(f"world_map: the band for power 0 names profile {weakest}, which the file lacks")
@@ -1557,14 +1589,15 @@ def rewrite_roads(text, roads, fords):
 def road_report(world, roads):
     """Per danger site, the roads (and the tiles of them) that pass within the file's danger reach of it."""
     reach = world.get("danger_reach", 0)
+    limit = reach * reach if reach > 0 else -1  # a reach of 0 marks no tile
     tiles = [{(x, y) for x, y in line_tiles(line)} for line in roads]
     for place in world["places"]:
         if place["kind"] != "danger":
             continue
-        near = [{t for t in line if (t[0] - place["tile"][0]) ** 2 + (t[1] - place["tile"][1]) ** 2 <= reach * reach}
+        near = [{t for t in line if (t[0] - place["tile"][0]) ** 2 + (t[1] - place["tile"][1]) ** 2 <= limit}
                 for line in tiles]
         through = [len(t) for t in near if t]
-        print(f"world_map: {place['sort']} {place['key']} at {place['tile']}: {len(through)} roads within {reach} tiles, "
+        print(f"world_map: {place['sort']} {place['key']} at {place['tile']}: {len(through)} roads within {max(reach, 0)} tiles, "
               f"{sum(through)} tiles")
 
 
