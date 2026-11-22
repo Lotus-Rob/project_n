@@ -2,6 +2,7 @@
 #include "core/journey.hpp"
 #include "core/road_curve.hpp"
 #include "support/meadow.hpp"
+#include "support/road_curves.hpp"
 
 #include <doctest/doctest.h>
 
@@ -241,19 +242,6 @@ core::Journey Walk(
     return journey;
 }
 
-/// How far `point` lies from the polyline `curve`.
-f32 OffCurve(core::Vec2 point, std::span<const core::Vec2> curve) {
-    f32 nearest = std::numeric_limits<f32>::max();
-    for (std::size_t index = 1; index < curve.size(); ++index) {
-        const core::Vec2 along = curve[index] - curve[index - 1];
-        const core::Vec2 apart = point - curve[index - 1];
-        const f32 lengthSquared = (along.x * along.x) + (along.y * along.y);
-        const f32 share = std::clamp(((apart.x * along.x) + (apart.y * along.y)) / lengthSquared, 0.0F, 1.0F);
-        nearest = std::min(nearest, Distance(point, curve[index - 1] + (along * share)));
-    }
-    return nearest;
-}
-
 /// How far along the polyline `curve` the point of it closest to `point` lies.
 f32 AlongCurve(core::Vec2 point, std::span<const core::Vec2> curve) {
     f32 nearest = std::numeric_limits<f32>::max();
@@ -318,8 +306,8 @@ TEST_CASE("a walker at a road tile's centre mid-road is drawn on the curve") {
     f32 worstWalked = 0.0F;
     for (std::size_t index = 1; index + 1 < tiles.size(); ++index) {
         const i64 tick = ArriveTick(journey, index);
-        worstDrawn = std::max(worstDrawn, OffCurve(core::DrawnWhere(map, roads, journey, tick), curve));
-        worstWalked = std::max(worstWalked, OffCurve(core::Where(map, journey, tick), curve));
+        worstDrawn = std::max(worstDrawn, test::OffCurve(core::DrawnWhere(map, roads, journey, tick), curve));
+        worstWalked = std::max(worstWalked, test::OffCurve(core::Where(map, journey, tick), curve));
     }
     CHECK(worstDrawn < ON_CURVE);
     CHECK(worstWalked > 0.4F * TILE_SIZE);
@@ -372,7 +360,7 @@ TEST_CASE("a walker stepping onto a road is drawn easing on") {
         const i64 last = ArriveTick(journey, onto);
         CHECK(SamePoint(core::DrawnWhere(map, roads, journey, first), core::Where(map, journey, first)));
         CHECK(WorstExtraMove(map, roads, journey, first, last) <= EASE_SLACK);
-        CHECK(OffCurve(core::DrawnWhere(map, roads, journey, last), curve) < ON_CURVE);
+        CHECK(test::OffCurve(core::DrawnWhere(map, roads, journey, last), curve) < ON_CURVE);
     }
 }
 
@@ -389,8 +377,8 @@ TEST_CASE("a walker crossing a staircase corner diagonally is drawn keeping to t
     f32 worstDrawn = 0.0F;
     f32 worstWalked = 0.0F;
     for (i64 tick = 0; tick <= end; tick += end / 20) {
-        worstDrawn = std::max(worstDrawn, OffCurve(core::DrawnWhere(map, roads, journey, tick), curve));
-        worstWalked = std::max(worstWalked, OffCurve(core::Where(map, journey, tick), curve));
+        worstDrawn = std::max(worstDrawn, test::OffCurve(core::DrawnWhere(map, roads, journey, tick), curve));
+        worstWalked = std::max(worstWalked, test::OffCurve(core::Where(map, journey, tick), curve));
     }
     CHECK(worstDrawn < ON_CURVE);
     CHECK(worstWalked > 0.4F * TILE_SIZE);
@@ -429,21 +417,63 @@ TEST_CASE("a walker turning at a fork, or off the road there, is drawn without a
     // the corner's centre, so near the corner the two curves are equally near.
     const core::WorldMap map = RoadMap({ Staircase(), { { .column = 6, .row = 4 }, { .column = 6, .row = 7 } } });
     const core::RoadCurveIndex roads{ map };
-    const std::vector<TilePoint> turning{ { .column = 4, .row = 3 },
-                                          { .column = 5, .row = 3 },
-                                          { .column = 6, .row = 4 },
-                                          { .column = 6, .row = 5 },
-                                          { .column = 6, .row = 6 } };
-    const std::vector<TilePoint> leaving{ { .column = 4, .row = 3 },
-                                          { .column = 5, .row = 3 },
-                                          { .column = 6, .row = 4 },
-                                          { .column = 7, .row = 5 },
-                                          { .column = 8, .row = 6 } };
+    const std::vector<std::vector<core::Vec2>> curves = core::RoadCurves(map);
+    // Each passes the corner tile (4, 3), whose centre stands off both curves, on its way to the fork.
+    const std::vector<TilePoint> turning{ { .column = 3, .row = 2 }, { .column = 4, .row = 3 }, { .column = 5, .row = 3 },
+                                          { .column = 6, .row = 4 }, { .column = 6, .row = 5 }, { .column = 6, .row = 6 } };
+    const std::vector<TilePoint> leaving{ { .column = 3, .row = 2 }, { .column = 4, .row = 3 }, { .column = 5, .row = 3 },
+                                          { .column = 6, .row = 4 }, { .column = 7, .row = 5 }, { .column = 8, .row = 6 } };
     for (const std::vector<TilePoint>* tiles : { &turning, &leaving }) {
         const core::Journey journey = Walk(map, *tiles);
+        const core::Vec2 corner = core::DrawnWhere(map, roads, journey, ArriveTick(journey, 1));
+        CHECK(std::min(test::OffCurve(corner, curves[0]), test::OffCurve(corner, curves[1])) < ON_CURVE);
         // The steps onto the fork's tile and away from it.
-        CHECK(WorstExtraMove(map, roads, journey, ArriveTick(journey, 1), ArriveTick(journey, 3)) <= EASE_SLACK);
+        CHECK(WorstExtraMove(map, roads, journey, ArriveTick(journey, 2), ArriveTick(journey, 4)) <= EASE_SLACK);
     }
+}
+
+TEST_CASE("a walker staying in a city on a road is drawn moved as the city's centre is, arriving and leaving smoothly") {
+    // A city on the staircase's corner tile (6, 4), whose centre stands off the road's curve; a walker comes along the
+    // road, stays two days and walks on.
+    const TilePoint city{ .column = 6, .row = 4 };
+    const std::array<TilePoint, 1> cities{ city };
+    const core::WorldMap map = test::MeadowMap(12, 8, {}, { Staircase() }, cities);
+    const core::RoadCurveIndex roads{ map };
+    const std::vector<TilePoint> arriving{
+        { .column = 3, .row = 2 }, { .column = 4, .row = 3 }, { .column = 5, .row = 3 }, city
+    };
+    const std::vector<TilePoint> leaving{
+        city, { .column = 7, .row = 4 }, { .column = 8, .row = 4 }, { .column = 9, .row = 5 }
+    };
+    core::Journey journey = Walk(map, arriving);
+    const i64 arrives = core::EndTick(journey);
+    const i64 leaves = arrives + (2 * static_cast<i64>(core::TICKS_PER_DAY));
+    journey.parts.push_back(
+        { .stay = true, .leg = {}, .rest = { .city = 1, .startTick = arrives, .endTick = leaves, .seed = 7 } }
+    );
+    std::vector<u32> onward;
+    onward.reserve(leaving.size());
+    for (const TilePoint tile : leaving) {
+        onward.push_back(map.TileIndex(tile));
+    }
+    journey.parts.push_back(
+        { .stay = false,
+          .leg = core::MakePacedLeg(map, leaves, map.TileCentre(onward[0]), onward, PACE).value_or(core::Leg{}),
+          .rest = {} }
+    );
+    REQUIRE(journey.parts.back().leg.tiles.size() == leaving.size());
+    // Mid-stay, drifting round the city, it is moved as the city's centre is.
+    const i64 midStay = arrives + static_cast<i64>(core::TICKS_PER_DAY) + 50;
+    const core::Vec2 shift = core::DrawnWhere(map, roads, journey, midStay) - core::Where(map, journey, midStay);
+    const core::Vec2 centre = map.TileCentre(map.TileIndex(city));
+    const std::optional<core::Vec2> onRoad = roads.OnRoad(map.TileIndex(city));
+    REQUIRE(onRoad);
+    CHECK(Distance(shift, onRoad.value_or(centre) - centre) < CLOSE);
+    CHECK(Distance(shift, {}) > 0.25F * TILE_SIZE);
+    // Over the steps into the city and out of it, and the stay's ends between.
+    constexpr i64 STEP = 16;
+    CHECK(WorstExtraMove(map, roads, journey, arrives - STEP, arrives + STEP) <= EASE_SLACK);
+    CHECK(WorstExtraMove(map, roads, journey, leaves - STEP, leaves + STEP) <= EASE_SLACK);
 }
 
 TEST_CASE("a walker is drawn where it stands at its journey's ends, its party moved together") {
