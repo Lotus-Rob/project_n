@@ -2748,7 +2748,8 @@ class WorldMapRoadsTest(unittest.TestCase):
         cls.module = world_map()
         cls.text = (Path(__file__).resolve().parent.parent / "assets" / "data" / "world.yaml").read_text(encoding="utf-8")
         cls.world = cls.module.read_world(cls.text)
-        cls.roads, cls.fords = cls.module.route_roads(cls.world)
+        cls.links, cls.fords = cls.module.world_links(cls.world)
+        cls.roads = cls.module.all_roads(cls.links)
         cls.out = cls.module.rewrite_roads(cls.text, cls.roads, cls.fords)
         wary = copy.deepcopy(cls.world)
         wary["danger_reach"] = 6
@@ -2870,7 +2871,7 @@ class WorldMapRoadsTest(unittest.TestCase):
             small = [module.link_roads(kinds, river, places, module.danger_tiles([tiles[at]], 4), 300)
                      for at in range(len(tiles) // 5, len(tiles), len(tiles) // 5)]
         unjoined = []
-        for name, links in [*((f"small {n}", links) for n, links in enumerate(small)), ("shipped", module.world_links(self.world))]:
+        for name, links in [*((f"small {n}", links) for n, links in enumerate(small)), ("shipped", self.links)]:
             before = []
             for strong, forked in links:
                 before.extend(strong)
@@ -2916,14 +2917,16 @@ class WorldMapRoadsTest(unittest.TestCase):
         self.assertFalse(any(self.module.danger_tiles([(40, 40)], 0)))
         self.assertTrue(self.module.danger_tiles([(40, 40)], 1)[self.module.index(40, 41)])
 
-    def test_a_fork_joins_the_road_nearest_its_next_tile_and_never_goes_unjoined(self):
+    def test_a_fork_ending_off_its_links_roads_is_refused_by_its_tile(self):
         module = self.module
-        river = [False] * (module.COLUMNS * module.ROWS)
-        a, b, far, c = (module.index(*t) for t in ((30, 30), (30, 32), (33, 30), (35, 41)))
-        stretch = [module.index(31, 31), module.index(32, 35), module.index(40, 40), module.index(35, 40)]
-        self.assertEqual(module.meet_road(stretch, {a, b, far, c}, river)[0], b)
-        with self.assertRaisesRegex(SystemExit, "fork"):
-            module.meet_road(stretch, set(), river)
+        kinds = [module.KIND["meadow"]] * (module.COLUMNS * module.ROWS)
+        river = [False] * len(kinds)
+        places = {"capital": (10, 40), "port": (60, 40)}
+        loose = module.index(31, 46)
+        with mock.patch.object(module, "ROADS", [("capital", "port")]), \
+                mock.patch.object(module, "forks", lambda detour, on_road: [[detour[0], module.index(30, 45), loose]]), \
+                self.assertRaisesRegex(SystemExit, r"fork ends at \(31, 46\), off its link's roads"):
+            module.link_roads(kinds, river, places, [False] * len(kinds), 300)
 
 
 class GitLfsTest(unittest.TestCase):
