@@ -35,6 +35,7 @@ import functools
 import heapq
 import itertools
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -1475,11 +1476,8 @@ def parse_flow(text, pos=0):
     word = text[pos:end].split(" #")[0].strip()
     if word in ("true", "false"):
         return word == "true", end
-    for number in (int, float):
-        try:
-            return number(word), end
-        except ValueError:
-            pass
+    if re.fullmatch(r"-?\d+(\.\d+)?", word):
+        return (float(word) if "." in word else int(word)), end
     return word, end
 
 
