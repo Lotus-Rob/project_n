@@ -513,6 +513,36 @@ TEST_CASE("the shipped world.yaml has on_foot as profile 0 at pace 16") {
     }
 }
 
+// Mortals walk warily, round the danger sites where a way round exists; from the cultivators' power on, they walk past.
+TEST_CASE("the shipped world.yaml walks mortals by on_foot_wary and cultivators by on_foot") {
+    constexpr core::ProfileIndex WARY = 1;
+    const std::shared_ptr<const core::WorldMap> map = Shipped();
+    REQUIRE(map->Profiles().size() == 2);
+    const core::MovementProfile& walking = map->Profiles()[core::WALKING];
+    const core::MovementProfile& wary = map->Profiles()[WARY];
+    CHECK(wary.key == "on_foot_wary");
+    CHECK(wary.features.danger > 0);
+    // Danger is all that sets the two apart.
+    CHECK(wary.ticksPerCost == walking.ticksPerCost);
+    CHECK(wary.kindCosts == walking.kindCosts);
+    CHECK(wary.features.road == walking.features.road);
+    CHECK(wary.features.river == walking.features.river);
+    CHECK(wary.features.bridge == walking.features.bridge);
+    CHECK(wary.features.ford == walking.features.ford);
+    const std::vector<core::PowerBand>& bands = map->Travel().bands;
+    REQUIRE(bands.size() == 2);
+    CHECK(bands[0].fromPower == 0.0F);
+    CHECK(bands[0].profile == WARY);
+    CHECK(bands[1].fromPower == map->Travel().cultivatorPower);
+    CHECK(bands[1].profile == core::WALKING);
+    const u32 tiles = map->Columns() * map->Rows();
+    u32 near = 0;
+    for (u32 tile = 0; tile < tiles; ++tile) {
+        near += (map->FlagsAt(tile) & std::to_underlying(core::TileFlag::Danger)) != 0 ? 1U : 0U;
+    }
+    CHECK(near > 0);
+}
+
 // Build refuses a city it can't reach, so this pins the rule on the shipped file; the danger sites, which Build leaves
 // unchecked (the player will enter them), are reachable too.
 TEST_CASE("every city on the shipped map is reachable from the capital, and every danger site too") {
