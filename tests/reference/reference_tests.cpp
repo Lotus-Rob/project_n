@@ -802,15 +802,15 @@ std::size_t DifferingPixelsIn(const gfx::Image& first, const gfx::Image& second,
     return differing;
 }
 
-/// `snapshot` with `walker` taken out: its villager and shadow drawn clear and its label gone.
-core::Snapshot Without(const core::Snapshot& snapshot, const Walker& walker) {
+/// `snapshot` with `walker` taken out: its villager and shadow drawn clear and its label gone. `wallTick` is one no other
+/// snapshot the renderer drew carried, so it uploads the changed instances rather than keep the last ones.
+core::Snapshot Without(const core::Snapshot& snapshot, const Walker& walker, u64 wallTick) {
     core::Snapshot without = snapshot;
     // Premultiplied, a clear colour adds nothing, and the batches stay as they were.
     without.instances.at(walker.body).colour = 0;
     without.instances.at(walker.shadow).colour = 0;
     without.texts.erase(without.texts.begin() + static_cast<std::ptrdiff_t>(walker.label));
-    // Another snapshot to the renderer, so it uploads the changed instances.
-    ++without.wallTick;
+    without.wallTick = wallTick;
     return without;
 }
 
@@ -847,9 +847,10 @@ TEST_CASE("the debug sight past the explored land: walkers there and their names
             REQUIRE_MESSAGE(hidden != walkers.end(), "no walker in the picture stands wholly on land never explored");
             REQUIRE_MESSAGE(seen != walkers.end(), "no walker in the picture stands wholly on explored land");
             const gfx::Image withoutHidden =
-                Captured(renderer, Without(snapshot, *hidden), shown, jobs, drawn.width, drawn.height);
+                Captured(renderer, Without(snapshot, *hidden, snapshot.wallTick + 1), shown, jobs, drawn.width, drawn.height);
             CHECK(gfx::DifferingPixels(drawn, withoutHidden, 0) == 0);
-            const gfx::Image withoutSeen = Captured(renderer, Without(snapshot, *seen), shown, jobs, drawn.width, drawn.height);
+            const gfx::Image withoutSeen =
+                Captured(renderer, Without(snapshot, *seen, snapshot.wallTick + 2), shown, jobs, drawn.width, drawn.height);
             const std::optional<core::Rect> seenBox = PixelsOf(seen->area, shown.camera, drawn.width, drawn.height);
             CHECK(DifferingPixelsIn(drawn, withoutSeen, seenBox.value_or(core::Rect{})) > 0);
         }
