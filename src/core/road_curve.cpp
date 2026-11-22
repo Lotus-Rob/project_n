@@ -187,7 +187,19 @@ std::vector<Vec2> Reversed(std::span<const Vec2> points) {
     return { points.rbegin(), points.rend() };
 }
 
-/// The join of road `index`'s last point (`points` as authored) or first (`points` reversed), given `free`.
+/// Whether `point` lies on the line from `from` through `toward`, beyond `from`.
+bool AheadOnLine(Vec2 from, Vec2 toward, Vec2 point) {
+    const Vec2 runs = toward - from;
+    const Vec2 apart = point - from;
+    const f32 cross = (runs.x * apart.y) - (runs.y * apart.x);
+    const f32 along = (runs.x * apart.x) + (runs.y * apart.y);
+    return along > 0.0F && std::abs(cross) <= SHORTEST_RUN * Length(runs) * Length(apart);
+}
+
+/// The join of road `index`'s last point (`points` as authored) or first (`points` reversed), given every end's join with
+/// nothing yielding, `free`. A meeting near another road's end is skipped only when that end flows into this road: its own
+/// join is on this road, or it lies on this end's line (the two already meet there). When this end's join is on that road
+/// too, only the lower-indexed road's end skips it.
 std::optional<Join> ResolvedJoin(
     std::span<const Vec2> points,
     std::size_t index,
@@ -197,13 +209,17 @@ std::optional<Join> ResolvedJoin(
     const EndJoins& free
 ) {
     const std::optional<Join>& own = atLast ? free.lasts[index] : free.firsts[index];
-    if (!own) {
-        return std::nullopt;
-    }
+    const Vec2 from = points[points.size() - 2];
+    const Vec2 last = points.back();
     const auto yields = [&](std::size_t line, bool atFront) {
+        const Vec2 end = atFront ? midlines[line].front() : midlines[line].back();
+        if (AheadOnLine(from, last, end)) {
+            return true;
+        }
         const std::optional<Join>& theirs = atFront ? free.firsts[line] : free.lasts[line];
-        const bool mutual = theirs && theirs->line == index && own->line == line;
-        return !mutual || index < line;
+        const bool joinsThis = theirs && theirs->line == index;
+        const bool joinsThat = own && own->line == line;
+        return joinsThis && (!joinsThat || index < line);
     };
     return FindJoin(points, index, midlines, tileSize, yields);
 }
@@ -224,18 +240,16 @@ std::vector<std::vector<Vec2>> RoadCurves(const WorldMap& map) {
         waypoints.push_back(Waypoints(road, tileSize));
     }
     const std::vector<std::vector<Vec2>> stored = Midlines(waypoints, tileSize, ROAD_STEPS);
-    // Each end's join with nothing yielding to anything, then the real one: an end yields to a meeting near another road's
-    // end (there the other flows into this one) unless the two ends would join each other, and then only the lower-indexed
-    // road's yields, so exactly one of them joins. The second pass reads only the first's results, never its own, so the
+    // Every end's join with nothing yielding comes first, and the real joins read only those, never each other, so the
     // answer never depends on the order of the work.
     EndJoins free;
     free.lasts.resize(roads.size());
     free.firsts.resize(roads.size());
+    const auto never = [](std::size_t /*line*/, bool /*atFront*/) { return false; };
     for (std::size_t index = 0; index < roads.size(); ++index) {
         if (waypoints[index].size() < 2) {
             continue;
         }
-        const auto never = [](std::size_t /*line*/, bool /*atFront*/) { return false; };
         if (!atCity(roads[index].back())) {
             free.lasts[index] = FindJoin(waypoints[index], index, stored, tileSize, never);
         }
@@ -249,8 +263,14 @@ std::vector<std::vector<Vec2>> RoadCurves(const WorldMap& map) {
         if (points.size() < 2) {
             continue;
         }
-        const std::optional<Join> last = ResolvedJoin(points, index, true, stored, tileSize, free);
-        const std::optional<Join> first = ResolvedJoin(Reversed(points), index, false, stored, tileSize, free);
+        std::optional<Join> last;
+        std::optional<Join> first;
+        if (!atCity(roads[index].back())) {
+            last = ResolvedJoin(points, index, true, stored, tileSize, free);
+        }
+        if (!atCity(roads[index].front())) {
+            first = ResolvedJoin(Reversed(points), index, false, stored, tileSize, free);
+        }
         if (last) {
             points.back() = last->point;
         }

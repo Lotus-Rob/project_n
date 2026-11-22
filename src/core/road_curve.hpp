@@ -36,7 +36,8 @@ inline constexpr u32 ROAD_STEPS = 4;
 /// to meet the middle of one of `midlines` (the line at index `own` skipped, `midlines.size()` or more to skip none): the
 /// nearest such meeting within a tile of its end and not within a tile of the other line's own last point (there the other
 /// flows into this one), nor, with `startsFlowIn`, of its first (for lines that may be read either way, as roads are; a
-/// river's first point is its source, which nothing flows into), and not at the end already. None when it meets none there.
+/// river's first point is its source, which nothing flows into), and not where the last stretch would be left no length.
+/// None when it meets none there.
 [[nodiscard]] std::optional<Vec2> JoinedEnd(
     std::span<const Vec2> waypoints,
     std::size_t own,
@@ -46,9 +47,12 @@ inline constexpr u32 ROAD_STEPS = 4;
 );
 
 /// Every road's curve of `map`, in the map's order, at ROAD_STEPS; a road of fewer than two distinct points gets an empty
-/// one, so the indices still match `map.Roads()`. A road's end that meets another road's middle (as JoinedEnd() says) is
-/// drawn there, at either end of the road, except an end on a city's tile, which stays at the city's centre.
-/// Two ends that would each join the other's road near the other's end don't both: the later road's joins, the earlier's stays.
+/// one, so the indices still match `map.Roads()`. A road's end that meets another road's middle within a tile is drawn
+/// there, at either end of the road, except an end on a city's tile, which stays at the city's centre. As in JoinedEnd(),
+/// but a meeting within a tile of another road's end is skipped only when that end flows into this road: it would join this
+/// road itself, or it lies on this end's line, where the two already meet. Of two ends that would each join the other's
+/// road there, the later road's joins and the earlier's stays. Each end is judged against the others' joins found with
+/// nothing skipped, so the result never depends on the order roads are worked through.
 [[nodiscard]] std::vector<std::vector<Vec2>> RoadCurves(const WorldMap& map);
 
 } // namespace core

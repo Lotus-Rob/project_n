@@ -143,6 +143,21 @@ TEST_CASE("a meeting within a tile of the other road's start doesn't join") {
     CHECK(Distance(curves[1].front(), Middle(4, 3)) < CLOSE);
 }
 
+TEST_CASE("of two ends crossing a short road near both its ends, exactly one joins") {
+    // The short road (3, 3) to (5, 3) is crossed at its middle by the long road's end. Its start lies on a third road, so
+    // only its end and the long road's end would join each other, and the lower-indexed road's end stays.
+    const std::vector<TilePoint> shortRoad{ { .column = 3, .row = 3 }, { .column = 5, .row = 3 } };
+    const std::vector<TilePoint> longRoad{ { .column = 4, .row = 0 }, { .column = 4, .row = 4 } };
+    const std::vector<TilePoint> third{ { .column = 3, .row = 1 }, { .column = 3, .row = 6 } };
+    const auto curves = Curves({ shortRoad, longRoad, third });
+    CHECK(Distance(curves[0].front(), Middle(3, 3)) < CLOSE);
+    CHECK(Distance(curves[0].back(), Middle(5, 3)) < CLOSE);
+    CHECK(Distance(curves[1].back(), Middle(4, 3)) < CLOSE);
+    const auto swapped = Curves({ longRoad, shortRoad, third });
+    CHECK(Distance(swapped[0].back(), Middle(4, 4)) < CLOSE);
+    CHECK(Distance(swapped[1].back(), Middle(4, 3)) < CLOSE);
+}
+
 TEST_CASE("a road ending at a city keeps its end on the city's centre") {
     // The city stands on (0, 0). The other road starts on the first road's line a tile from that end, so without the city
     // the end would be drawn there instead.
