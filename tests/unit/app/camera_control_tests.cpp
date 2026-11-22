@@ -41,9 +41,13 @@ f32 PanStep(f32 zoom) {
 // The edge band's width in the test window's pixels.
 constexpr f32 BAND = app::EDGE_BAND * static_cast<f32>(HEIGHT);
 
+void CheckPoint(core::Vec2 centre, core::Vec2 expected) {
+    CHECK(centre.x == doctest::Approx(expected.x));
+    CHECK(centre.y == doctest::Approx(expected.y));
+}
+
 void CheckAt(const app::CameraControl& control, core::Vec2 expected) {
-    CHECK(control.Camera().centre.x == doctest::Approx(expected.x));
-    CHECK(control.Camera().centre.y == doctest::Approx(expected.y));
+    CheckPoint(control.Camera().centre, expected);
 }
 
 TEST_CASE("a scene that follows nothing starts its camera where its publishes cull before a view arrives") {
@@ -341,11 +345,6 @@ TEST_CASE("in a roaming scene, panning frees the camera and snap back follows ag
     }
 }
 
-void CheckPoint(core::Vec2 centre, core::Vec2 expected) {
-    CHECK(centre.x == doctest::Approx(expected.x));
-    CHECK(centre.y == doctest::Approx(expected.y));
-}
-
 TEST_CASE("FollowedWithin moves the centre only by the foot's overshoot") {
     constexpr core::Vec2 BOX{ .x = 100.0F, .y = 50.0F };
     CheckPoint(app::FollowedWithin({}, { .x = 60.0F, .y = 20.0F }, BOX), { .x = 0.0F, .y = 0.0F });
@@ -355,18 +354,29 @@ TEST_CASE("FollowedWithin moves the centre only by the foot's overshoot") {
     CheckPoint(app::FollowedWithin({}, { .x = 7.0F, .y = -9.0F }, {}), { .x = 7.0F, .y = -9.0F });
 }
 
-// How far the roaming camera lets the foot stray from the centre, per axis, at zoom 1 in the test window.
-constexpr f32 BOX_HALF_X = static_cast<f32>(WIDTH) * app::FOLLOW_BOX_SHARE / 2.0F;
-constexpr f32 BOX_HALF_Y = static_cast<f32>(HEIGHT) * app::FOLLOW_BOX_SHARE / 2.0F;
+/// A window the reference size doesn't fit: 1.2 world units to a pixel at zoom 1, so a box in pixels differs from one in units.
+constexpr i32 SMALL_WIDTH = 1'600;
+constexpr i32 SMALL_HEIGHT = 900;
+constexpr f32 UNITS_PER_PIXEL = 1.2F;
 
-// Where a roaming camera that started on PLAYER centres after the foot walks to `foot`.
+/// How far the roaming camera lets the foot stray from the centre, per axis, at zoom 1 in SMALL_WIDTH by SMALL_HEIGHT.
+constexpr f32 BOX_HALF_X = static_cast<f32>(SMALL_WIDTH) * app::FOLLOW_BOX_SHARE / 2.0F * UNITS_PER_PIXEL;
+constexpr f32 BOX_HALF_Y = static_cast<f32>(SMALL_HEIGHT) * app::FOLLOW_BOX_SHARE / 2.0F * UNITS_PER_PIXEL;
+
+/// A frame of the roaming scene in a window `width` by `height`, the foot at `foot`.
+app::CameraInput RoamFrame(i32 width, i32 height, core::Vec2 foot) {
+    app::CameraInput frame = Frame(CameraKind::Roam);
+    frame.width = width;
+    frame.height = height;
+    frame.followed = foot;
+    return frame;
+}
+
+/// Where a roaming camera that started on PLAYER centres after the foot walks to `foot`.
 core::Vec2 RoamedTo(core::Vec2 foot) {
     app::CameraControl control{ 1.0F };
-    app::CameraInput frame = Frame(CameraKind::Roam);
-    frame.followed = PLAYER;
-    control.Update(frame);
-    frame.followed = foot;
-    control.Update(frame);
+    control.Update(RoamFrame(SMALL_WIDTH, SMALL_HEIGHT, PLAYER));
+    control.Update(RoamFrame(SMALL_WIDTH, SMALL_HEIGHT, foot));
     return control.Camera().centre;
 }
 
@@ -383,25 +393,24 @@ TEST_CASE("a roaming camera moves by the overshoot when the cultivator leaves th
     CheckPoint(RoamedTo(PLAYER - core::Vec2{ .x = 0.0F, .y = BOX_HALF_Y + OVER }), PLAYER - core::Vec2{ .x = 0.0F, .y = OVER });
 }
 
-TEST_CASE("zooming out keeps the foot inside the smaller box without jumping past it") {
+TEST_CASE("zooming in pulls the camera only by the foot's overshoot of the smaller box") {
     app::CameraControl control{ 1.0F };
-    app::CameraInput frame = Frame(CameraKind::Roam);
-    frame.followed = PLAYER;
-    control.Update(frame);
+    control.Update(RoamFrame(SMALL_WIDTH, SMALL_HEIGHT, PLAYER));
     const core::Vec2 foot = PLAYER + core::Vec2{ .x = BOX_HALF_X, .y = 0.0F }; // at the box's edge
-    frame.followed = foot;
+    const app::CameraInput frame = RoamFrame(SMALL_WIDTH, SMALL_HEIGHT, foot);
     control.Update(frame);
     REQUIRE(control.Camera().centre.x == doctest::Approx(PLAYER.x));
     f32 before = control.Camera().centre.x;
     for (i32 notch = 0; notch < 4; ++notch) {
-        control.Zoom(-1.0F);
+        control.Zoom(1.0F);
         control.Update(frame);
         const f32 centre = control.Camera().centre.x;
-        CHECK(foot.x - centre <= doctest::Approx(BOX_HALF_X / control.Camera().zoom));
+        CHECK(foot.x - centre == doctest::Approx(BOX_HALF_X / control.Camera().zoom));
         CHECK(centre <= foot.x);
         CHECK(centre >= before);
         before = centre;
     }
+    CHECK(control.Camera().zoom > 1.0F);
 }
 
 TEST_CASE("a snap back and a scene change put the cultivator at the centre") {

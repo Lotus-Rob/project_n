@@ -2,6 +2,7 @@
 
 #include "app/camera_path.hpp"
 #include "app/view.hpp"
+#include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/profile.hpp"
 
@@ -86,6 +87,7 @@ core::Vec2 Followed(const gfx::Camera& camera, const CameraInput& input, core::V
 } // namespace
 
 core::Vec2 FollowedWithin(core::Vec2 centre, core::Vec2 followed, core::Vec2 halfBox) {
+    PN_ASSERT(halfBox.x >= 0.0F && halfBox.y >= 0.0F, "a follow box has no negative size");
     return { .x = WithinOnAxis(centre.x, followed.x, halfBox.x), .y = WithinOnAxis(centre.y, followed.y, halfBox.y) };
 }
 

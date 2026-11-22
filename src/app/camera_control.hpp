@@ -32,7 +32,7 @@ inline constexpr f32 EDGE_BAND = 0.02F;
 inline constexpr f32 FOLLOW_BOX_SHARE = 0.5F;
 
 /// The centre `centre` moved by the least amount that puts `followed` within `halfBox` of it on each axis (a `halfBox`
-/// of 0 on an axis gives `followed`'s coordinate there).
+/// of 0 on an axis gives `followed`'s coordinate there). `halfBox` is non-negative on each axis.
 [[nodiscard]] core::Vec2 FollowedWithin(core::Vec2 centre, core::Vec2 followed, core::Vec2 halfBox);
 
 /// What the camera is told each drawn frame.
