@@ -18,12 +18,14 @@ constexpr u32 QUAD_CORNERS = 4;
 constexpr u32 FOG_UNIFORM_SLOT = 0;
 constexpr u32 GROUND_UNIFORM_SLOT = 1;
 /// The constants the ground shaders copy, as they hold them: each must equal what it copies.
-constexpr u32 SHADER_GROUND_KINDS = 16; // ground.hlsli's washes[] length and ground.frag.hlsl's LAST_KIND + 1
-constexpr u32 SHADER_MODE_VEIL = 1;     // ground.hlsli's GROUND_MODE_VEIL
-constexpr u32 SHADER_MODE_PAPER = 2;    // ground.hlsli's GROUND_MODE_PAPER
+constexpr u32 SHADER_GROUND_KINDS = 16;    // ground.hlsli's washes[] length and ground.frag.hlsl's LAST_KIND + 1
+constexpr u32 SHADER_MODE_VEIL = 1;        // ground.hlsli's GROUND_MODE_VEIL
+constexpr u32 SHADER_MODE_PAPER = 2;       // ground.hlsli's GROUND_MODE_PAPER
+constexpr u32 SHADER_MODE_CLOUD_SHADE = 3; // ground.hlsli's GROUND_MODE_CLOUD_SHADE
 static_assert(core::MAX_GROUND_KINDS == SHADER_GROUND_KINDS, "the ground shaders' wash table holds MAX_GROUND_KINDS");
 static_assert(
-    GROUND_MODE_GROUND == 0 && GROUND_MODE_VEIL == SHADER_MODE_VEIL && GROUND_MODE_PAPER == SHADER_MODE_PAPER,
+    GROUND_MODE_GROUND == 0 && GROUND_MODE_VEIL == SHADER_MODE_VEIL && GROUND_MODE_PAPER == SHADER_MODE_PAPER &&
+        GROUND_MODE_CLOUD_SHADE == SHADER_MODE_CLOUD_SHADE,
     "ground.hlsli's GROUND_MODE_ constants are gfx's"
 );
 
