@@ -2751,6 +2751,7 @@ class WorldMapRoadsTest(unittest.TestCase):
         cls.out = cls.module.rewrite_roads(cls.text, cls.roads, cls.fords)
         wary = copy.deepcopy(cls.world)
         wary["danger_reach"] = 6
+        wary["profiles"] = [p for p in wary["profiles"] if p["key"] != "on_foot_wary"]
         wary["profiles"].append({"key": "on_foot_wary", "ticks_per_cost": 16, "features": {"danger": 300}})
         wary["travel"]["bands"] = [{"from_power": 0, "profile": "on_foot_wary"}, {"from_power": 5, "profile": "on_foot"}]
         cls.wary = wary
@@ -2843,9 +2844,10 @@ class WorldMapRoadsTest(unittest.TestCase):
         self.assertIn("# about the rivers\nrivers:", out)
 
     def test_a_wrapped_travel_line_with_bands_gives_the_wary_cost(self):
-        text = self.text.replace(
-            "cultivator_power: 5 }",
-            "cultivator_power: 5,\n    bands: [{ from_power: 0.0, profile: wary }, { from_power: 5, profile: on_foot }] }")
+        text = re.sub(
+            r"(?m)^travel: .*\n(?:  .*\n)*",
+            "travel: { share_per_mille: 60, stay_days: [2, 5], reach_base: 300, reach_per_power: 20, cultivator_power: 5,\n"
+            "    bands: [{ from_power: 0.0, profile: wary }, { from_power: 5, profile: on_foot }] }\n", self.text)
         text = text.replace("profiles:\n", "profiles:\n  - { key: wary, ticks_per_cost: 16, features: { danger: 300 } }\n")
         self.assertNotEqual(text, self.text)
         self.assertEqual(self.module.wary_danger_cost(self.module.read_world(text)), 300)

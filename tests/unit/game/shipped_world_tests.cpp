@@ -121,6 +121,164 @@ TEST_CASE("the search costs the same as the distance map on the shipped map") {
     }
 }
 
+/// The index of the place keyed `key` on `map`, which has one.
+u16 PlaceIndex(const core::WorldMap& map, std::string_view key) {
+    const auto place = std::ranges::find(map.Places(), key, &core::Place::key);
+    REQUIRE(place != map.Places().end());
+    return static_cast<u16>(place - map.Places().begin());
+}
+
+/// What walking from city `from` to city `target` of `map` costs by `profile`, or core::UNREACHABLE.
+u32 CityCost(const core::WorldMap& map, u16 from, u16 target, core::ProfileIndex profile) {
+    const core::DistanceMap distances = core::DistanceMap::Build(map, map.TileIndex(map.Places()[target].tile), profile);
+    return distances.CostFrom(map.TileIndex(map.Places()[from].tile));
+}
+
+// The anti-goal "a cut-off city": whatever its power, a traveller can get from any city to any other.
+TEST_CASE("every band's profile reaches every city from every city") {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    REQUIRE_FALSE(map->Travel().bands.empty());
+    for (const core::PowerBand& band : map->Travel().bands) {
+        CAPTURE(band.profile);
+        for (u16 target = 0; target < map->Places().size(); ++target) {
+            if (map->Places()[target].kind != core::PlaceKind::City) {
+                continue;
+            }
+            const core::DistanceMap distances =
+                core::DistanceMap::Build(*map, map->TileIndex(map->Places()[target].tile), band.profile);
+            const auto cut = std::ranges::find_if(map->Places(), [&](const core::Place& place) {
+                return place.kind == core::PlaceKind::City &&
+                       distances.CostFrom(map->TileIndex(place.tile)) == core::UNREACHABLE;
+            });
+            CAPTURE(map->Places()[target].key);
+            CHECK_MESSAGE(cut == map->Places().end(), "a city this band can't walk from");
+        }
+    }
+}
+
+/// Fewest steps along road tiles, edge to edge as roads are rasterised, from `from` to `target` of `map` without entering
+/// a tile `banned` marks; core::UNREACHABLE when no such way exists.
+u32 RoadSteps(const core::WorldMap& map, u32 from, u32 target, const std::vector<bool>& banned) {
+    constexpr u8 ROAD = std::to_underlying(core::TileFlag::Road);
+    std::vector<u32> steps(banned.size(), core::UNREACHABLE);
+    std::vector<u32> frontier{ from }; // breadth first: tiles in the order they were reached
+    steps.at(from) = 0;
+    for (std::size_t next = 0; next < frontier.size(); ++next) {
+        const u32 tile = frontier[next];
+        const core::TilePoint point = map.PointOf(tile);
+        const std::array<core::TilePoint, 4> sides{ { { .column = point.column + 1, .row = point.row },
+                                                      { .column = point.column - 1, .row = point.row },
+                                                      { .column = point.column, .row = point.row + 1 },
+                                                      { .column = point.column, .row = point.row - 1 } } };
+        for (const core::TilePoint side : sides) {
+            // A step off the map's first column or row wraps to a huge value, which this bound also refuses.
+            if (side.column >= map.Columns() || side.row >= map.Rows()) {
+                continue;
+            }
+            const u32 sideTile = map.TileIndex(side);
+            if (steps.at(sideTile) == core::UNREACHABLE && !banned.at(sideTile) && (map.FlagsAt(sideTile) & ROAD) != 0) {
+                steps.at(sideTile) = steps.at(tile) + 1;
+                frontier.push_back(sideTile);
+            }
+        }
+    }
+    return steps.at(target);
+}
+
+/// Per tile of `map`: whether it lies in the reach of danger place `site`, the danger tiles nearest to it (danger places
+/// stand further apart than twice the reach, so no tile lies in two reaches).
+std::vector<bool> ReachOf(const core::WorldMap& map, u16 site) {
+    constexpr u8 DANGER = std::to_underlying(core::TileFlag::Danger);
+    const auto distanceSquared = [&](u32 tile, const core::Place& place) {
+        const core::TilePoint point = map.PointOf(tile);
+        const i64 columns = static_cast<i64>(point.column) - place.tile.column;
+        const i64 rows = static_cast<i64>(point.row) - place.tile.row;
+        return (columns * columns) + (rows * rows);
+    };
+    std::vector<bool> reach(static_cast<std::size_t>(map.Columns()) * map.Rows(), false);
+    for (u32 tile = 0; tile < reach.size(); ++tile) {
+        if ((map.FlagsAt(tile) & DANGER) == 0) {
+            continue;
+        }
+        const auto nearest = std::ranges::min_element(map.Places(), {}, [&](const core::Place& place) {
+            return place.kind == core::PlaceKind::Danger ? distanceSquared(tile, place) : std::numeric_limits<i64>::max();
+        });
+        reach.at(tile) = nearest - map.Places().begin() == site;
+    }
+    return reach;
+}
+
+// Three danger sites stand on the roads' shortcuts: on each of their links the short road runs through the danger and a
+// longer one goes round it, so the strong and the weak each have their way; every other site lies off the roads.
+TEST_CASE("three links fork around a danger") {
+    constexpr u8 ROAD = std::to_underlying(core::TileFlag::Road);
+    struct Fork {
+        std::string_view site;
+        std::string_view from;
+        std::string_view target;
+    };
+    constexpr std::array<Fork, 3> FORKS{ {
+        { .site = "jade_cave", .from = "capital", .target = "oasis" },
+        { .site = "bone_forest", .from = "capital", .target = "port" },
+        { .site = "ghostlight_woods", .from = "port", .target = "isle" },
+    } };
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const std::vector<bool> nothing(static_cast<std::size_t>(map->Columns()) * map->Rows(), false);
+    for (const Fork& fork : FORKS) {
+        CAPTURE(fork.site);
+        const std::vector<bool> reach = ReachOf(*map, PlaceIndex(*map, fork.site));
+        const u32 from = map->TileIndex(map->Places()[PlaceIndex(*map, fork.from)].tile);
+        const u32 target = map->TileIndex(map->Places()[PlaceIndex(*map, fork.target)].tile);
+        const u32 shortest = RoadSteps(*map, from, target, nothing);
+        const u32 around = RoadSteps(*map, from, target, reach);
+        CAPTURE(shortest);
+        CAPTURE(around);
+        REQUIRE(shortest != core::UNREACHABLE);
+        CHECK(around != core::UNREACHABLE);
+        CHECK(around > shortest); // the short way is the one through the danger
+    }
+    std::vector<std::string_view> onRoads;
+    for (u16 site = 0; site < map->Places().size(); ++site) {
+        if (map->Places()[site].kind != core::PlaceKind::Danger) {
+            continue;
+        }
+        const std::vector<bool> reach = ReachOf(*map, site);
+        bool touched = false;
+        for (u32 tile = 0; tile < reach.size(); ++tile) {
+            touched = touched || (reach.at(tile) && (map->FlagsAt(tile) & ROAD) != 0);
+        }
+        if (touched) {
+            onRoads.push_back(map->Places()[site].key);
+        }
+    }
+    CHECK(onRoads == std::vector<std::string_view>{ "ghostlight_woods", "jade_cave", "bone_forest" });
+}
+
+// The travel rules' stated targets: a mortal, who walks warily, reaches the next town, and a strong cultivator crosses the
+// map, from the sect in the west to the isle in the east.
+TEST_CASE("a mortal reaches the next town, a strong cultivator the far side") {
+    constexpr f32 MORTAL = 0.0F;
+    constexpr f32 STRONG = 50.0F;
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const core::TravelRules& rules = map->Travel();
+    const core::ProfileIndex wary = game::ProfileFor(rules, MORTAL);
+    const core::ProfileIndex strong = game::ProfileFor(rules, STRONG);
+    REQUIRE(map->Profiles()[wary].features.danger > 0);
+    REQUIRE(map->Profiles()[strong].features.danger == 0);
+    const u16 capital = PlaceIndex(*map, "capital");
+    u32 nearest = core::UNREACHABLE;
+    for (u16 city = 0; city < map->Places().size(); ++city) {
+        if (city != capital && map->Places()[city].kind == core::PlaceKind::City) {
+            nearest = std::min(nearest, CityCost(*map, capital, city, wary));
+        }
+    }
+    const u32 farSide = CityCost(*map, PlaceIndex(*map, "sect"), PlaceIndex(*map, "isle"), strong);
+    CAPTURE(nearest);
+    CAPTURE(farSide);
+    CHECK(nearest < rules.reachBase);
+    CHECK(farSide < rules.reachBase + (static_cast<u32>(STRONG) * rules.reachPerPower));
+}
+
 /// How many of `host`'s journeys are under way at world tick `tick`.
 std::size_t UnderwayAt(const game::Host& host, i64 tick) {
     return static_cast<std::size_t>(std::ranges::count_if(host.NpcTravel().Journeys(), [tick](const core::Journey& journey) {
@@ -128,10 +286,11 @@ std::size_t UnderwayAt(const game::Host& host, i64 tick) {
     }));
 }
 
-// A few thousand of the 50,000 on the roads, enough to make them busy without crowding every tile.
-TEST_CASE("the shipped roads carry a few thousand at once") {
-    constexpr std::size_t FEWEST = 2'000;
-    constexpr std::size_t MOST = 6'000;
+// A few thousand of the 50,000 on the roads, enough to make them busy without crowding every tile: the travel rules' stated
+// target, which their share is tuned to.
+TEST_CASE("the shipped roads carry 2,500 to 3,300 at once") {
+    constexpr std::size_t FEWEST = 2'500;
+    constexpr std::size_t MOST = 3'300;
     constexpr auto MONTH = static_cast<i64>(game::TICKS_PER_MONTH);
     game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
     // The new world's first tick and the middle of its first month, then the next month's first tick, middle and last.
@@ -170,9 +329,9 @@ std::size_t TravellersIn(const game::Host& host, const core::WorldMap& map, cons
 }
 
 // `measure`'s world run looks over WORLD_BUSIEST at the widest view: the travellers there are its load, kept at 2,000 or
-// more so its runs stay comparable over time. The shipped share, 60 per thousand, puts 650 to 884 there over the first half
-// month, so the run raises it with `--travel-share`, through what main applies it with: at 200 the fewest is 2,304, at its
-// second tick, rising to 2,813.
+// more so its runs stay comparable over time. The shipped share, 58 per thousand, puts 576 to 804 there over the first half
+// month, so the run raises it with `--travel-share`, through what main applies it with: at 200 the fewest is 2,083, at its
+// first tick, rising to 2,648.
 TEST_CASE("the busiest view holds at least 2,000 travellers") {
     constexpr std::size_t FEWEST = 2'000;
     constexpr u16 MEASURED_SHARE = 200; // `--travel-share` in measure's world run (MEASURE_RUNS in tools/project_n.py)

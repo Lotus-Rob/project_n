@@ -93,8 +93,8 @@ inline constexpr u16 DANGER = 2;
 inline constexpr u32 ROAD_END = 5;
 /// The ticks per cost of the second profile SmallWorld(true) adds.
 inline constexpr u16 RIDDEN_TICKS_PER_COST = 8;
-/// The shipped map's travel rules, which TravellingSmallData() gives the small map: its two cities in each other's
-/// reach, so a month step sends visitors between them.
+/// Travel rules near the shipped map's, without its bands (the small map has one profile), which TravellingSmallData()
+/// gives the small map: its two cities in each other's reach, so a month step sends visitors between them.
 inline constexpr core::TravelRules TRAVEL{ .sharePerMille = 60,
                                            .stayMinDays = 2,
                                            .stayMaxDays = 5,
