@@ -692,6 +692,7 @@ void Host::EnterScene() {
         m_worldTicksBefore = Live().worldTicks;
         m_requested.reset(); // the load replaces the scene a CycleScene asked for
         ApplyData();
+        RestartDrawnShift();
         return;
     }
     PN_ASSERT(m_requested.has_value(), "a scene entered that nothing asked for");
@@ -737,6 +738,7 @@ void Host::Build(core::SceneKey scene) {
     m_player = {};
     m_selected = {};
     m_route.reset();
+    m_drawnShift = {};
     const SceneTraits& traits = Running().Traits();
     if (traits.devScene) {
         m_scratch.emplace(core::State{ DOMAINS, SEED });
@@ -938,15 +940,18 @@ void Host::Move(core::Vec2 move, u64 worldTick, u64 tick) {
         m_route.reset();
         PN_LOG_DEBUG("tick {}: held movement ends the cultivator's route", tick);
     }
+    const u64 fromTick = Live().worldTicks;
     if (Live().paused) {
         Walk({}); // the cultivator stands, any route held
+        ShiftDrawnPlayer(fromTick, worldTick);
         return;
     }
     if (m_route) {
-        FollowRoute(Live().worldTicks, worldTick, tick);
+        FollowRoute(fromTick, worldTick, tick);
         return;
     }
     Walk(move);
+    ShiftDrawnPlayer(fromTick, worldTick);
 }
 
 void Host::FollowRoute(u64 fromTick, u64 worldTick, u64 tick) {
@@ -959,6 +964,7 @@ void Host::FollowRoute(u64 fromTick, u64 worldTick, u64 tick) {
     body.previous = body.current;
     body.current = core::Where(*m_data.world, route, clock);
     ExploreRoute(route, static_cast<i64>(fromTick), clock);
+    ShiftDrawnPlayer(fromTick, worldTick); // by the route it walked, which may end here
     if (clock >= core::EndTick(route)) {
         PN_LOG_DEBUG("tick {}: the cultivator reaches the end of its route", tick);
         m_route.reset();
@@ -976,15 +982,49 @@ const Body& Host::PlayerBody() const {
 }
 
 Body Host::DrawnPlayer(const Body& body) const {
+    return { .previous = body.previous + m_drawnShift.previous, .current = body.current + m_drawnShift.current };
+}
+
+core::Vec2 Host::RouteShift(u64 clock) const {
     if (!m_route || !m_roadCurves) {
-        return body;
+        return {};
     }
-    const core::WorldMap& map = *m_data.world;
-    const auto shift = [&](u64 clock) {
-        const auto tick = static_cast<i64>(clock);
-        return core::DrawnWhere(map, *m_roadCurves, *m_route, tick) - core::Where(map, *m_route, tick);
-    };
-    return { .previous = body.previous + shift(m_worldTicksBefore), .current = body.current + shift(Live().worldTicks) };
+    const auto tick = static_cast<i64>(clock);
+    return core::DrawnWhere(*m_data.world, *m_roadCurves, *m_route, tick) - core::Where(*m_data.world, *m_route, tick);
+}
+
+void Host::ShiftDrawnPlayer(u64 fromTick, u64 toTick) {
+    if (m_player == core::StableId{}) {
+        return;
+    }
+    const core::Vec2 before = RouteShift(fromTick);
+    // What the route gives no longer meets what was drawn when it isn't the route the last tick drew by: the difference
+    // is left over, and fades from here.
+    core::Vec2 leftover = m_drawnShift.current - before;
+    if (std::bit_cast<u64>(before) != std::bit_cast<u64>(m_drawnShift.fromRoute) && m_data.world != nullptr) {
+        m_drawnShift.fadeLeft = m_data.world->TileSize();
+    }
+    // By distance walked, never by time, so a cultivator standing still never slides.
+    const Body& body = PlayerBody();
+    const core::Vec2 step = body.current - body.previous;
+    const f32 moved = std::sqrt((step.x * step.x) + (step.y * step.y));
+    if (moved >= m_drawnShift.fadeLeft) {
+        leftover = {};
+        m_drawnShift.fadeLeft = 0.0F;
+    }
+    else {
+        leftover = leftover * ((m_drawnShift.fadeLeft - moved) / m_drawnShift.fadeLeft);
+        m_drawnShift.fadeLeft -= moved;
+    }
+    const core::Vec2 after = RouteShift(toTick);
+    m_drawnShift.previous = m_drawnShift.current;
+    m_drawnShift.current = after + leftover;
+    m_drawnShift.fromRoute = after;
+}
+
+void Host::RestartDrawnShift() {
+    const core::Vec2 shift = RouteShift(Live().worldTicks);
+    m_drawnShift = { .previous = shift, .current = shift, .fromRoute = shift, .fadeLeft = 0.0F };
 }
 
 void Host::Leave(core::SceneKey next, bool throughPortal, std::vector<core::Event>& events) {
@@ -1387,6 +1427,7 @@ void Host::AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs,
             if (m_route) {
                 FollowRoute(jumpedFrom, world.worldTicks, counters.simulation);
                 PlayerBody().previous = PlayerBody().current; // it stands there a frame, as the travellers do
+                RestartDrawnShift();
                 ExploreRoundFoot();
             }
         }

@@ -385,10 +385,18 @@ private:
     void ExploreRoute(const core::Journey& route, i64 fromTick, i64 toTick);
     [[nodiscard]] Body& PlayerBody();
     [[nodiscard]] const Body& PlayerBody() const;
-    // Where the player's cultivator is drawn when the last tick began and now, from its `body`: moved onto the road its
-    // route walks while one is set, as core::DrawnWhere() moves a traveller from core::Where(), else where `body` stands.
+    // Where the player's cultivator is drawn when the last tick began and now, from its `body`: moved by m_drawnShift.
     // Presentation only: the body itself never moves for it.
     [[nodiscard]] Body DrawnPlayer(const Body& body) const;
+    // How far the player's route draws its cultivator from its body at world tick `clock`: core::DrawnWhere() less
+    // core::Where(); nothing without a route.
+    [[nodiscard]] core::Vec2 RouteShift(u64 clock) const;
+    // Moves m_drawnShift on by this tick's move of the player's cultivator from world tick `fromTick` to `toTick`, by the
+    // route it walked: what was drawn stays where it was, so the cultivator never jumps when its route is replaced,
+    // dropped or ends, and what the route no longer gives fades out over the body's next tile of movement.
+    void ShiftDrawnPlayer(u64 fromTick, u64 toTick);
+    // Starts m_drawnShift afresh at the clock, with nothing left over: drawn where the route puts it, standing still.
+    void RestartDrawnShift();
     void CastAction(const core::Action& action, const core::TickCounters& counters, std::vector<core::Event>& events);
     void DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const;
     void Leave(core::SceneKey next, bool throughPortal, std::vector<core::Event>& events);
@@ -440,6 +448,17 @@ private:
     u64 m_fogVersion = 0;
     // Whether every traveller in view is published as if in sight. Presentation only, so never saved, hashed or recorded.
     bool m_debugSight = false;
+    // How far the player's cultivator is drawn from its body (onto the road it walks) when the last tick began and now,
+    // the part of that its route gives now (the rest is left over from a route replaced, dropped or taken over by held
+    // movement), and how far its body has still to move before that leftover is gone. Presentation only, so never saved,
+    // hashed or read by the simulation: a scene entry, a load or the clock's jump starts it afresh.
+    struct DrawnShift {
+        core::Vec2 previous{};
+        core::Vec2 current{};
+        core::Vec2 fromRoute{};
+        f32 fadeLeft = 0.0F;
+    };
+    DrawnShift m_drawnShift;
     std::optional<core::Journey> m_route = std::nullopt; // the player's route; none while it walks freely
     core::StableId m_player{};                           // the cultivator the player walks; zero for none
     core::StableId m_selected{};                         // zero for none
