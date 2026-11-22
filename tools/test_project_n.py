@@ -2763,6 +2763,10 @@ class WorldMapRoadsTest(unittest.TestCase):
         self.assertEqual(without_blocks(self.out), without_blocks(self.text))
         self.assertIn("# Each a polyline of [column, row] tile points; a road over a river is a bridge.\nroads:\n", self.out)
 
+    def test_the_shipped_roads_are_the_ones_the_file_routes(self):
+        self.assertEqual(self.out, self.text,
+                         "world.yaml's roads or fords are stale: run `pixi run python art/world_map.py --roads`")
+
     def test_a_second_pass_changes_nothing(self):
         again = self.module.rewrite_roads(self.out, *self.module.route_roads(self.module.read_world(self.out)))
         self.assertEqual(again, self.out)
