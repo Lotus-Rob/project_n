@@ -542,12 +542,60 @@ std::expected<void, core::Error> ReadTravelWhole(const YAML::Node& node, const c
     return {};
 }
 
-/// Reads the optional `travel:` rules over the defaults of core::TravelRules.
+/// Reads the optional `bands:` of `node`, the travel rules, into `source.travel`: each `{ from_power, profile }` with the
+/// profile named by its key among `source.profiles`, the first from power 0 and the rest rising.
+std::expected<void, core::Error> ReadBands(const YAML::Node& node, core::WorldMapSource& source) {
+    const YAML::Node list = node["bands"];
+    if (!list) {
+        return {};
+    }
+    if (!list.IsSequence()) {
+        return RefuseMap(list, "travel's bands isn't a list");
+    }
+    std::vector<core::PowerBand> bands;
+    for (const YAML::Node& entry : list) {
+        if (!entry.IsMap()) {
+            return RefuseMap(entry, "a band isn't a map");
+        }
+        if (bands.size() >= core::MOST_PROFILES) {
+            return RefuseMap(entry, std::format("too many bands: at most {}", core::MOST_PROFILES));
+        }
+        const std::expected<f64, core::Error> power = internal::RequiredNumber(
+            WORLD_READER,
+            entry,
+            "a band",
+            "from_power",
+            { .low = 0.0, .lowOpen = false, .high = static_cast<f64>(MOST_TRAVEL_REACH) }
+        );
+        const std::expected<std::string, core::Error> key = Text(entry, "profile", "a band");
+        if (!power || !key) {
+            return std::unexpected{ power ? key.error() : power.error() };
+        }
+        const auto profile = std::ranges::find(source.profiles, *key, &core::MovementProfile::key);
+        if (profile == source.profiles.end()) {
+            return RefuseMap(entry, std::format("a band names no profile {}", *key));
+        }
+        const f32 from = static_cast<f32>(*power);
+        if (bands.empty() && from != 0.0F) {
+            return RefuseMap(entry, "the first band must start at from_power 0");
+        }
+        if (!bands.empty() && from <= bands.back().fromPower) {
+            return RefuseMap(entry, std::format("band from_power {} doesn't rise past the band before it", from));
+        }
+        bands.push_back({ .fromPower = from, .profile = static_cast<core::ProfileIndex>(profile - source.profiles.begin()) });
+    }
+    source.travel.bands = std::move(bands);
+    return {};
+}
+
+/// Reads the optional `travel:` rules over the defaults of core::TravelRules, into `source.travel`, after the profiles its
+/// bands name.
 std::expected<void, core::Error> ReadTravel(
     const YAML::Node& root,
-    core::TravelRules& travel,
+    core::WorldMapSource& source,
     std::vector<std::string>* warnings
 ) {
+    core::TravelRules& travel = source.travel;
     const YAML::Node node = root["travel"];
     if (!node) {
         return {};
@@ -560,7 +608,7 @@ std::expected<void, core::Error> ReadTravel(
         node,
         "travel",
         "key",
-        { "share_per_mille", "stay_days", "reach_base", "reach_per_power", "cultivator_power" },
+        { "share_per_mille", "stay_days", "reach_base", "reach_per_power", "cultivator_power", "bands" },
         warnings
     );
     const std::expected<f64, core::Error> power = internal::TunedNumber(
@@ -578,7 +626,8 @@ std::expected<void, core::Error> ReadTravel(
     return ReadTravelWhole(node, "share_per_mille", MOST_PER_MILLE, travel.sharePerMille)
         .and_then([&] { return ReadTravelWhole(node, "reach_base", MOST_TRAVEL_REACH, travel.reachBase); })
         .and_then([&] { return ReadTravelWhole(node, "reach_per_power", MOST_TRAVEL_REACH, travel.reachPerPower); })
-        .and_then([&] { return ReadStayDays(node, travel); });
+        .and_then([&] { return ReadStayDays(node, travel); })
+        .and_then([&] { return ReadBands(node, source); });
 }
 
 /// Reads the optional `draws:` of `entry`, a place called `owner`, into `place`: a city's draw for each kind of visitor.
@@ -740,7 +789,7 @@ std::expected<core::WorldMap, core::Error> ParseWorldMap(
         if (auto read = ReadProfiles(root, source, warnings); !read) {
             return std::unexpected{ std::move(read.error()) };
         }
-        if (auto read = ReadTravel(root, source.travel, warnings); !read) {
+        if (auto read = ReadTravel(root, source, warnings); !read) {
             return std::unexpected{ std::move(read.error()) };
         }
         if (auto read = ReadPolylines(root, "roads", source.roads, source.lines.roads); !read) {

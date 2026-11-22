@@ -826,6 +826,43 @@ TEST_CASE("Build refuses travel rules out of order or past a thousand") {
     CHECK(zeroRefusal.contains("in order"));
 }
 
+TEST_CASE("Build refuses bands that don't start at 0, rise strictly, name a profile or are too many") {
+    const auto refusalOf = [](const std::vector<core::PowerBand>& bands) {
+        core::WorldMapSource source = Source({ "0.1" });
+        source.profiles = { Profile("walk", MEADOW_COST), Profile("wary", MEADOW_COST) };
+        source.travel.bands = bands;
+        return Refusal(std::move(source));
+    };
+    CHECK(refusalOf({ { .fromPower = 1.0F, .profile = 0 } }).contains("start at 0"));
+    CHECK(refusalOf({ { .fromPower = 0.0F, .profile = 0 }, { .fromPower = 0.0F, .profile = 1 } }).contains("rise"));
+    CHECK(refusalOf({ { .fromPower = 0.0F, .profile = 0 }, { .fromPower = 5.0F, .profile = 2 } }).contains("no profile 2"));
+    CHECK(refusalOf({ { .fromPower = std::numeric_limits<f32>::quiet_NaN(), .profile = 0 } }).contains("start at 0"));
+    CHECK(refusalOf({ { .fromPower = -1.0F, .profile = 0 } }).contains("start at 0"));
+    std::vector<core::PowerBand> many;
+    for (std::size_t band = 0; band <= core::MOST_PROFILES; ++band) {
+        many.push_back({ .fromPower = static_cast<f32>(band), .profile = 0 });
+    }
+    CHECK(refusalOf(many).contains("too many bands"));
+}
+
+TEST_CASE("the hash changes with the bands") {
+    const auto hashOf = [](const std::vector<core::PowerBand>& bands) {
+        core::WorldMapSource source = Source({ "0.1" });
+        source.profiles = { Profile("walk", MEADOW_COST), Profile("wary", MEADOW_COST) };
+        source.travel.bands = bands;
+        return MustBuild(std::move(source)).Hash();
+    };
+    const u64 reference = hashOf({});
+    const u64 single = hashOf({ { .fromPower = 0.0F, .profile = 0 } });
+    CHECK(single != reference);
+    CHECK(hashOf({ { .fromPower = 0.0F, .profile = 1 } }) != single);
+    CHECK(hashOf({ { .fromPower = 0.0F, .profile = 0 }, { .fromPower = 5.0F, .profile = 1 } }) != single);
+    CHECK(
+        hashOf({ { .fromPower = 0.0F, .profile = 0 }, { .fromPower = 6.0F, .profile = 1 } }) !=
+        hashOf({ { .fromPower = 0.0F, .profile = 0 }, { .fromPower = 5.0F, .profile = 1 } })
+    );
+}
+
 TEST_CASE("a map with other travel rules keeps all else and hashes apart; past a thousand it is refused") {
     constexpr u16 RAISED_SHARE = 200;
     const core::WorldMap map = MustBuild(Source({ "0.1" }));

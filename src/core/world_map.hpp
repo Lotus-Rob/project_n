@@ -128,6 +128,14 @@ inline constexpr u8 DEFAULT_STAY_MAX_DAYS = 5;
 /// The shipped power from which a traveller is a cultivator.
 inline constexpr f32 DEFAULT_CULTIVATOR_POWER = 5.0F;
 
+/// From which power a traveller moves by a profile.
+struct PowerBand {
+    /// The least power of a traveller in this band.
+    f32 fromPower = 0.0F;
+    /// The movement profile such a traveller walks by.
+    ProfileIndex profile = WALKING;
+};
+
 /// The rules the travellers between cities follow.
 struct TravelRules {
     /// The share of a city's people on the road at once, in parts per thousand; at most 1,000.
@@ -142,6 +150,10 @@ struct TravelRules {
     u32 reachPerPower = 0;
     /// The power from which a traveller is a cultivator rather than a trader.
     f32 cultivatorPower = DEFAULT_CULTIVATOR_POWER;
+    /// Which profile a traveller moves by, from its power: at most MOST_PROFILES bands, the first from power 0, rising
+    /// strictly, each naming a profile of the map. A traveller takes the last band its power reaches; empty means everyone
+    /// moves by WALKING.
+    std::vector<PowerBand> bands;
 };
 
 /// What a profile's steps cost on each feature, each from 1 to MAX_WALK_COST, or IMPASSABLE_COST.

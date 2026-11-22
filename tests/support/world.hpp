@@ -100,7 +100,8 @@ inline constexpr core::TravelRules TRAVEL{ .sharePerMille = 60,
                                            .stayMaxDays = 5,
                                            .reachBase = 300,
                                            .reachPerPower = 20,
-                                           .cultivatorPower = 5.0F };
+                                           .cultivatorPower = 5.0F,
+                                           .bands = {} };
 } // namespace small
 
 /// The small test map: 7 by 3 tiles of meadow but for impassable peaks on the last tile (the bottom row's right end),
