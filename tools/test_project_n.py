@@ -2721,6 +2721,13 @@ class PlaceholderTest(unittest.TestCase):
                if min(left, right) < needed[name][0] or top < needed[name][1] or bottom < needed[name][2]]
         self.assertEqual(cut, [])
 
+    def test_a_forest_that_cannot_clear_its_top_margin_is_refused_by_name(self):
+        module = placeholders()
+        width, height = module.STAMPS["forest"]
+        with mock.patch.object(module, "STAMP_MARGIN", width + height), \
+                self.assertRaisesRegex(ValueError, "forest variant 0"):
+            module.forest(width, height, 0, 1)
+
 
 class GitLfsTest(unittest.TestCase):
     def test_a_clone_is_set_up_only_with_every_value(self):
