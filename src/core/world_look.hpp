@@ -2,8 +2,8 @@
 
 /// @file
 /// @ingroup core
-/// The world map's look: each terrain kind's wash and stamps, the paper, water, rivers, mist and veil, the road overlays,
-/// the crossings, the place paintings and markers, the route and the fog, read from `assets/data/world_look.yaml`.
+/// The world map's look: each terrain kind's wash and stamps, the paper, water, rivers, mist and veil, the road overlays and
+/// ribbon, the crossings, the place paintings and markers, the route and the fog, read from `assets/data/world_look.yaml`.
 /// Presentation, not game data: it is never hashed into the game data or saved, `game` never sees it, and the main thread
 /// reloads it as the file is edited.
 
@@ -179,6 +179,20 @@ struct RiverLook {
     f32 edgeStrength = 0.0F;
 };
 
+/// The painted road ribbon. Lengths in tiles, colours sRGB.
+struct RoadLook {
+    /// The ribbon's width.
+    f32 width = 0.0F;
+    /// The whole width of the edge band, drawn under the core, so the verge shows at each side past it.
+    f32 edge = 0.0F;
+    /// The road's colour.
+    std::array<u8, 3> colour{};
+    /// The verge's colour.
+    std::array<u8, 3> edgeColour{};
+    /// How strongly the verge shows, from 0 to 1.
+    f32 edgeStrength = 0.0F;
+};
+
 /// The paintings that stand for places.
 struct PlaceLook {
     /// A city's painting.
@@ -217,6 +231,8 @@ struct WorldLook {
     MistLook mist{};
     /// The river ribbon.
     RiverLook river{};
+    /// The road ribbon.
+    RoadLook road{};
     /// The paintings of the places.
     PlaceLook places{};
 
@@ -293,6 +309,9 @@ struct WorldLook {
         hasher(river.width, river.edge, river.edgeStrength);
         colour(river.colour);
         colour(river.edgeColour);
+        hasher(road.width, road.edge, road.edgeStrength);
+        colour(road.colour);
+        colour(road.edgeColour);
         hasher(places.city);
         named(places.dangers);
         named(places.byKey);

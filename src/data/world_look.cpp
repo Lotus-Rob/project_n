@@ -759,35 +759,45 @@ std::expected<void, core::Error> ReadMist(
     return {};
 }
 
-std::expected<void, core::Error> ReadRiver(const YAML::Node& root, std::vector<std::string>* warnings, core::RiverLook& river) {
-    const std::expected<YAML::Node, core::Error> node = MapAt(root, "river");
+/// Reads the ribbon section `key` of `root` (a river's or a road's: the same keys) into `ribbon`.
+template<typename Look>
+std::expected<void, core::Error> ReadRibbon(
+    const YAML::Node& root,
+    const char* key,
+    std::vector<std::string>* warnings,
+    Look& ribbon
+) {
+    const std::expected<YAML::Node, core::Error> node = MapAt(root, key);
     if (!node) {
         return std::unexpected{ node.error() };
     }
     internal::NoteUnknownKeys(
-        LOOK_READER, *node, "river", "key", { "width", "edge", "colour", "edge_colour", "edge_strength" }, warnings
+        LOOK_READER, *node, key, "key", { "width", "edge", "colour", "edge_colour", "edge_strength" }, warnings
     );
-    const std::expected<f32, core::Error> width = NumberIn(*node, "river", "width", ABOVE_ZERO_TO_TWO);
+    const std::expected<f32, core::Error> width = NumberIn(*node, key, "width", ABOVE_ZERO_TO_TWO);
     if (!width) {
         return std::unexpected{ width.error() };
     }
-    const std::expected<f32, core::Error> edge = NumberIn(*node, "river", "edge", ABOVE_ZERO_TO_TWO);
+    const std::expected<f32, core::Error> edge = NumberIn(*node, key, "edge", ABOVE_ZERO_TO_TWO);
     if (!edge) {
         return std::unexpected{ edge.error() };
     }
-    const std::expected<std::array<u8, 3>, core::Error> colour = ColourIn(*node, "colour", "river");
+    if (*edge < *width) {
+        return RefuseLook((*node)["edge"], std::format("{}'s edge is narrower than its width", key));
+    }
+    const std::expected<std::array<u8, 3>, core::Error> colour = ColourIn(*node, "colour", key);
     if (!colour) {
         return std::unexpected{ colour.error() };
     }
-    const std::expected<std::array<u8, 3>, core::Error> edgeColour = ColourIn(*node, "edge_colour", "river");
+    const std::expected<std::array<u8, 3>, core::Error> edgeColour = ColourIn(*node, "edge_colour", key);
     if (!edgeColour) {
         return std::unexpected{ edgeColour.error() };
     }
-    const std::expected<f32, core::Error> edgeStrength = NumberIn(*node, "river", "edge_strength", internal::FRACTION);
+    const std::expected<f32, core::Error> edgeStrength = NumberIn(*node, key, "edge_strength", internal::FRACTION);
     if (!edgeStrength) {
         return std::unexpected{ edgeStrength.error() };
     }
-    river = { .width = *width, .edge = *edge, .colour = *colour, .edgeColour = *edgeColour, .edgeStrength = *edgeStrength };
+    ribbon = { .width = *width, .edge = *edge, .colour = *colour, .edgeColour = *edgeColour, .edgeStrength = *edgeStrength };
     return {};
 }
 
@@ -889,7 +899,19 @@ std::expected<core::WorldLook, core::Error> ParseWorldLook(
             root,
             "",
             "key",
-            { "kinds", "roads", "bridge", "ford", "markers", "route", "fog", "ground", "veil", "mist", "river", "places" },
+            { "kinds",
+              "roads",
+              "bridge",
+              "ford",
+              "markers",
+              "route",
+              "fog",
+              "ground",
+              "veil",
+              "mist",
+              "river",
+              "road",
+              "places" },
             warnings
         );
         core::WorldLook look;
@@ -941,7 +963,10 @@ std::expected<core::WorldLook, core::Error> ParseWorldLook(
         if (auto read = ReadMist(root, atlas, warnings, look.mist); !read) {
             return std::unexpected{ std::move(read.error()) };
         }
-        if (auto read = ReadRiver(root, warnings, look.river); !read) {
+        if (auto read = ReadRibbon(root, "river", warnings, look.river); !read) {
+            return std::unexpected{ std::move(read.error()) };
+        }
+        if (auto read = ReadRibbon(root, "road", warnings, look.road); !read) {
             return std::unexpected{ std::move(read.error()) };
         }
         if (auto read = ReadPlaces(root, atlas, map, warnings, look.places); !read) {
