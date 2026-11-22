@@ -9,6 +9,7 @@ import functools
 import importlib.util
 import io
 import json
+import math
 import os
 import re
 import subprocess
@@ -2810,6 +2811,31 @@ class WorldMapRoadsTest(unittest.TestCase):
         for end in (forked[1][0], forked[1][-1]):
             self.assertIn(end, first)
         self.assertFalse(any(danger[module.index(*t)] for t in second - first))
+
+    def test_a_fork_keeps_to_its_road_until_the_danger_makes_it_leave(self):
+        """A way round planned without seeing its own link's road can part from it at the city and run beside it; seen,
+        the road is cheap, so the wary keep to it until near the danger. A fork's first tile off the road lies within
+        the danger's reach and three tiles (a slanting road is left a little before the reach), and hugging the reach it
+        never cuts into it, not even at a diagonal step's corner, which the road laid tile by tile would cross."""
+        module = self.module
+        kinds = [module.KIND["meadow"]] * (module.COLUMNS * module.ROWS)
+        river = [False] * len(kinds)
+        reach = 5
+        for port in ((60, 40), (70, 52), (60, 58)):
+            places = {"capital": (10, 40), "port": port}
+            with mock.patch.object(module, "ROADS", [("capital", "port")]):
+                tiles = [t for line in module.build_roads(kinds, river, places) for t in module.line_tiles(line)]
+                centre = tiles[len(tiles) // 2]
+                danger = module.danger_tiles([centre], reach)
+                roads = module.build_roads(kinds, river, places, danger, 300)
+            main = set(module.line_tiles(roads[0]))
+            with self.subTest(port=port):
+                self.assertGreater(len(roads), 1)
+                for line in roads[1:]:
+                    off = [t for t in module.line_tiles(line) if t not in main]
+                    first = min(off, key=lambda t: math.dist(t, line[0]))
+                    self.assertLessEqual(math.dist(first, centre), reach + 3)
+                    self.assertEqual([t for t in off if danger[module.index(*t)]], [])
 
     def test_every_fork_ends_on_tiles_of_the_road_it_leaves(self):
         """The strong road is straightened after routing, so the tile where the wary way left its path may lie a tile off
