@@ -1357,11 +1357,11 @@ def ground_wash(canvas, cx, cy, rx, ry):
     blob(canvas, cx, min(cy, canvas.height - WASH_ROOM - ry), rx, ry, (196, 184, 150), 0.45, rim=None)
 
 
-def roof(canvas, x, y, w, h, colour=(70, 68, 78), lw=2.5):
+def roof(canvas, x, y, w, h, colour=(70, 68, 78), lw=2.5, opacity=0.97):
     """An upturned eave roof over the span x - w/2 .. x + w/2, its ridge h above y."""
     poly(canvas, [(x - w * 0.62, y + h * 0.15), (x - w * 0.5, y), (x - w * 0.12, y - h * 0.8), (x, y - h),
                   (x + w * 0.12, y - h * 0.8), (x + w * 0.5, y), (x + w * 0.62, y + h * 0.15), (x, y + h * 0.05)],
-         colour, 0.97, rim_alpha=0.85, width=lw)
+         colour, opacity, rim_alpha=0.85, width=lw)
 
 
 def house(canvas, x, y, w, h, k, colour=(214, 204, 182), roof_colour=(70, 68, 78), opacity=0.97):
@@ -1393,11 +1393,12 @@ def painting_city(size, tiers):
         x = cx + (i + 0.5) * 22 * k
         poly(canvas, [(x - 9 * k, top), (x - 9 * k, top - 14 * k), (x + 9 * k, top - 14 * k), (x + 9 * k, top)],
              (200, 190, 170), 0.98, width=2 * k)
+    # The corner towers stand in front of the rooftops and battlements: opaque, so those don't show through them.
     for dx in (-190, 190):
         tx = cx + dx * k
         poly(canvas, [(tx - 40 * k, base), (tx - 40 * k, top - 70 * k), (tx + 40 * k, top - 70 * k),
-                      (tx + 40 * k, base)], (190, 180, 160), 0.98, width=3 * k)
-        roof(canvas, tx, top - 70 * k, 90 * k, 70 * k, (70, 68, 78), 3 * k)
+                      (tx + 40 * k, base)], (190, 180, 160), 1.0, width=3 * k)
+        roof(canvas, tx, top - 70 * k, 90 * k, 70 * k, (70, 68, 78), 3 * k, 1.0)
     for x in range(-200, 201, 40):
         ink(canvas, [(cx + x * k, top + 12 * k), (cx + x * k, base - 6 * k)], 1.5 * k, WASH_INK, 0.2)
     gate = [(cx - 30 * k, base), (cx - 30 * k, top + 70 * k), (cx - 18 * k, top + 42 * k), (cx, top + 30 * k),
