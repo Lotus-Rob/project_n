@@ -87,7 +87,7 @@ inline constexpr u32 MAX_GROUND_KINDS = 16;
 struct StampLook {
     /// The stamp sprites of the kind's family; a stamp picks one by its place.
     std::vector<atlas::SpriteId> sprites;
-    /// How many stamps a tile gets on average.
+    /// The chance a tile gets a stamp, from 0 to 1 (a tile gets at most one).
     f32 density = 0.0F;
     /// The least and greatest width of a stamp, in tiles.
     std::array<f32, 2> size{ { 1.0F, 1.0F } };
@@ -169,7 +169,7 @@ struct MistLook {
 struct RiverLook {
     /// The ribbon's width.
     f32 width = 0.0F;
-    /// The width of its bank.
+    /// The whole width of the edge band, drawn under the core, so the bank shows at each side past it.
     f32 edge = 0.0F;
     /// The water's colour.
     std::array<u8, 3> colour{};
