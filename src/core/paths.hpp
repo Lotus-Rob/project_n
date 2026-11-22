@@ -60,7 +60,9 @@ private:
 [[nodiscard]] std::vector<u32> RouteDown(const WorldMap& map, const DistanceMap& distances, u32 from);
 
 /// The cheapest route from `from` to `target` by `profile` (A*, ties by lower tile index), with RouteDown's contract: its
-/// steps cost what the distance map to `target` says. Empty when `target` is impassable or unreachable.
+/// steps cost what the distance map to `target` says. Empty when `target` is impassable or unreachable. The game's
+/// travellers route through Paths (distance maps and RouteDown) and the player's click through FindShortestRoute; this
+/// gives the same cheapest routes for one pair of tiles without building a map, for tests and tools.
 [[nodiscard]] std::vector<u32> FindRoute(const WorldMap& map, ProfileIndex profile, u32 from, u32 target);
 
 /// The shortest route from `from` to `target` over the tiles `WALKING` can step onto: every step costs its length (a
