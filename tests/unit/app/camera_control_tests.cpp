@@ -610,6 +610,10 @@ TEST_CASE("zoom takes one wheel notch a frame, and drops notches past its limit"
     CHECK(control.Camera().zoom == doctest::Approx(gfx::ZoomedBy(gfx::MAX_ZOOM, -1.0F)));
 }
 
+/// How far the roaming camera lets the foot stray from the centre across, at zoom 1 in Frame()'s WIDTH by HEIGHT window,
+/// where a pixel is a world unit.
+constexpr f32 FRAME_BOX_HALF_X = static_cast<f32>(WIDTH) * app::FOLLOW_BOX_SHARE / 2.0F;
+
 TEST_CASE("the camera holds still while a calendar step's transition shows, and still follows") {
     app::CameraControl control{ 1.0F };
     app::CameraInput frame = Frame(CameraKind::Roam);
@@ -619,7 +623,7 @@ TEST_CASE("the camera holds still while a calendar step's transition shows, and 
     frame.pan = RIGHT;
     frame.cursor = LEFT_EDGE;
     frame.dragFrom = WINDOW_CENTRE;
-    frame.followed = PLAYER + core::Vec2{ .x = BOX_HALF_X + 100.0F, .y = 0.0F }; // past the box
+    frame.followed = PLAYER + core::Vec2{ .x = FRAME_BOX_HALF_X + 100.0F, .y = 0.0F }; // past the box
     control.Zoom(1.0F);
     control.Update(frame);
     CHECK_FALSE(control.Free());
