@@ -448,9 +448,9 @@ Reader and refusals:
   painting naming a place the map lacks is refused too.
 
 Stamps:
-- Rock stamps are 0.8 to 1.1 tiles wide, under Goal 4's "about 1.2 to 1.7 tiles" for peaks, snow and rock: the plan's
-  value stands. The user approved the plan with it, rocks read as scattered stones rather than ranges, and it is a live
-  look value in `world_look.yaml` (listed for the user below).
+- Rock stamps were built 0.8 to 1.1 tiles wide, under Goal 4's "about 1.2 to 1.7 tiles" for peaks, snow and rock, as
+  the plan had them; at the user's word after the final review they take Goal 4's size and the mountains' jitter
+  (`size: [1.2, 1.7]`, `jitter: 0.3`), so rocks join the ranges (see the look values below).
 - A stamp's thinning fade spans 0.3 of `shown` and ranks spread over the rest (`rank = TileUnit(c, r, 9) * 0.7`, opacity
   `smoothstep(rank, rank + 0.3, shown)`); the test stays at zooms 1% apart and at most 0.1 of opacity. `shown` moves by
   up to 0.02 per 1% of zoom and smoothstep's steepest slope is 1.5 / width, so 0.1 needs a width of 0.3; the test is not
@@ -498,7 +498,12 @@ Final review (the whole branch, a second model's review beside it):
 - A tributary's end is held to where it meets the main river, the ground shader's cloud-shade mode is checked against
   gfx's, and a forest no scale can fit is refused by name.
 
-Look values for the user:
-- The `fog_explored_path` picture's drained paper reads strongly sepia: a look value (`drain.strength`).
-- Snow stamps west of the sect read sparse: a look value (`density` of the snow kind's stamps).
-- Rocks are `size: [0.8, 1.1]` tiles wide, not Goal 4's 1.2 to 1.7 (see Rulings): a look value to judge on screen.
+Look values, settled by the user after the final review (`world_look.yaml`; no code changed, the seven moved
+reference pictures judged by eye):
+- The drained paper read strongly sepia (`fog_explored_path`): the drain keeps its strength (0.85) and drains toward a
+  paler sepia, `[160, 148, 124]` (was `[160, 138, 106]`), so seen-but-distant paper sits near the paper's own tone
+  (one sample went from (255, 233, 198) to (249, 236, 207) against the lit paper's (238, 234, 220)) while coloured land
+  still loses its colour.
+- Snow stamps west of the sect read sparse: snow's `density` rises from 0.35 to 0.6, as peaks and rock have.
+- Rocks take Goal 4's 1.2 to 1.7 tiles with 0.3 jitter (see Rulings). The ground, world and cloud shimmer guards
+  stayed within their bounds (world 0.0020, clouds 0.0165, ground 0.0117 / 0.0061 / 0.0036).
