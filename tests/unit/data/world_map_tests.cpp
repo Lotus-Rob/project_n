@@ -324,6 +324,54 @@ TEST_CASE("danger reach and a profile's danger cost read") {
     CHECK((plain->FlagsAt(NEAR_TILE) & std::to_underlying(core::TileFlag::Danger)) == 0);
 }
 
+// SMALL with a second profile, `wary`, and `bands` as the travel rules' bands.
+std::string WithBands(std::string_view bands) {
+    const std::string text = With("ticks_per_cost: 16 }\n", "ticks_per_cost: 16 }\n  - { key: wary, ticks_per_cost: 20 }\n");
+    return std::string{ text }.replace(text.find("places:"), 7, std::format("travel: {{ bands: {} }}\nplaces:", bands));
+}
+
+TEST_CASE("bands read with their profiles resolved") {
+    const std::expected<core::WorldMap, core::Error> map =
+        data::ParseWorldMap(WithBands("[{ from_power: 0, profile: on_foot }, { from_power: 5.5, profile: wary }]"), Names());
+    REQUIRE(map.has_value());
+    REQUIRE(map->Travel().bands.size() == 2);
+    CHECK(map->Travel().bands[0].fromPower == doctest::Approx(0.0F));
+    CHECK(map->Travel().bands[0].profile == 0);
+    CHECK(map->Travel().bands[1].fromPower == doctest::Approx(5.5F));
+    CHECK(map->Travel().bands[1].profile == 1);
+    const std::expected<core::WorldMap, core::Error> none = data::ParseWorldMap(WithBands("[]"), Names());
+    REQUIRE(none.has_value());
+    CHECK(none->Travel().bands.empty());
+    const std::expected<core::WorldMap, core::Error> plain = data::ParseWorldMap(SMALL, Names());
+    REQUIRE(plain.has_value());
+    CHECK(plain->Travel().bands.empty());
+}
+
+TEST_CASE("the reader refuses bad bands, naming the line") {
+    const core::Strings strings = Names();
+    const auto refused = [&](std::string_view bands, std::string_view says) {
+        CAPTURE(bands);
+        const std::string text = WithBands(bands);
+        const std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(text, strings);
+        REQUIRE_FALSE(map.has_value());
+        CHECK(map.error().message.contains(says));
+        CHECK(map.error().message.contains(std::format("line {}:", LineOf(text, "bands"))));
+    };
+    refused("[{ from_power: 1, profile: on_foot }]", "first band");
+    refused(
+        "[{ from_power: 0, profile: on_foot }, { from_power: 5, profile: wary }, { from_power: 5, profile: on_foot }]", "rise"
+    );
+    refused("[{ from_power: 0, profile: on_foot }, { from_power: 5, profile: skiff }]", "skiff");
+    refused("[{ from_power: -1, profile: on_foot }]", "from_power");
+    refused("{ from_power: 0, profile: on_foot }", "bands");
+    refused("[{ from_power: 0 }]", "profile");
+    std::string many = "[{ from_power: 0, profile: on_foot }";
+    for (std::size_t band = 1; band <= core::MOST_PROFILES; ++band) {
+        many += std::format(", {{ from_power: {}, profile: wary }}", band);
+    }
+    refused(many + "]", "too many bands");
+}
+
 TEST_CASE("draws and travel rules read") {
     const std::string text = With("people: 100, ", "people: 100, draws: { cultivators: 3, traders: 7 }, ");
     const std::string travelled = std::string{ text }.replace(

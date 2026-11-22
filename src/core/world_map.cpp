@@ -363,8 +363,35 @@ std::expected<void, Error> CheckProfiles(const WorldMapSource& source) {
     return {};
 }
 
-/// Whether the travel rules can be used: a share of at most a thousand, a stay of at least a day, in order.
-std::expected<void, Error> CheckTravel(const TravelRules& travel) {
+/// Whether the bands can be used: at most MOST_PROFILES, the first from power 0, rising strictly, each over a profile that
+/// exists among `profileCount`.
+std::expected<void, Error> CheckBands(const std::vector<PowerBand>& bands, std::size_t profileCount) {
+    if (bands.size() > MOST_PROFILES) {
+        return std::unexpected{
+            Refuse(std::format("the travel has {} bands, too many bands: at most {}", bands.size(), MOST_PROFILES))
+        };
+    }
+    for (std::size_t index = 0; index < bands.size(); ++index) {
+        const PowerBand& band = bands[index];
+        // Written so that a NaN fails the first test.
+        if (index == 0 && !(band.fromPower == 0.0F)) {
+            return std::unexpected{ Refuse(std::format("the first band must start at 0, not {}", band.fromPower)) };
+        }
+        if (index > 0 && !(band.fromPower > bands[index - 1].fromPower)) {
+            return std::unexpected{
+                Refuse(std::format("band {} (from {}) doesn't rise past the band before it", index, band.fromPower))
+            };
+        }
+        if (band.profile >= profileCount) {
+            return std::unexpected{ Refuse(std::format("band {} names no profile {}", index, band.profile)) };
+        }
+    }
+    return {};
+}
+
+/// Whether the travel rules can be used: a share of at most a thousand, a stay of at least a day, in order, bands over the
+/// `profileCount` profiles.
+std::expected<void, Error> CheckTravel(const TravelRules& travel, std::size_t profileCount) {
     if (travel.sharePerMille > MOST_SHARE_PER_MILLE) {
         return std::unexpected{
             Refuse(std::format("the travel share, {} per thousand, is over a thousand", travel.sharePerMille))
@@ -375,7 +402,7 @@ std::expected<void, Error> CheckTravel(const TravelRules& travel) {
             std::format("the stay of {} to {} days isn't 1 day or more, in order", travel.stayMinDays, travel.stayMaxDays)
         ) };
     }
-    return {};
+    return CheckBands(travel.bands, profileCount);
 }
 
 /// The profile a map without any gets: on foot by the base costs.
@@ -551,7 +578,7 @@ std::expected<PlaceLayer, Error> PlaceTiles(const WorldMapSource& source, const 
 } // namespace
 
 std::expected<WorldMap, Error> WorldMap::WithTravel(const TravelRules& travel) const {
-    if (auto checked = CheckTravel(travel); !checked) {
+    if (auto checked = CheckTravel(travel, m_source.profiles.size()); !checked) {
         return std::unexpected{ checked.error() };
     }
     WorldMap map = *this;
@@ -566,11 +593,11 @@ std::expected<WorldMap, Error> WorldMap::Build(WorldMapSource source) {
     if (auto profiles = CheckProfiles(source); !profiles) {
         return std::unexpected{ profiles.error() };
     }
-    if (auto travel = CheckTravel(source.travel); !travel) {
-        return std::unexpected{ travel.error() };
-    }
     if (source.profiles.empty()) {
         source.profiles.push_back(OnFoot(source));
+    }
+    if (auto travel = CheckTravel(source.travel, source.profiles.size()); !travel) {
+        return std::unexpected{ travel.error() };
     }
     const std::size_t tiles = source.grid.size();
     WorldMap map;
@@ -753,6 +780,10 @@ u64 WorldMap::Hash() const {
         travel.reachPerPower,
         travel.cultivatorPower
     );
+    hasher(static_cast<u64>(travel.bands.size()));
+    for (const PowerBand& band : travel.bands) {
+        hasher(band.fromPower, band.profile);
+    }
     return hasher.Value();
 }
 

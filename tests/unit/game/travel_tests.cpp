@@ -480,14 +480,16 @@ constexpr core::TravelRules ALL_GO{ .sharePerMille = 1'000,
                                     .stayMaxDays = STAY_MAX,
                                     .reachBase = 1'000,
                                     .reachPerPower = 0,
-                                    .cultivatorPower = 5.0F };
+                                    .cultivatorPower = 5.0F,
+                                    .bands = {} };
 // A mortal's reach ends between the near city and the far one; each whole point of power adds 10.
 constexpr core::TravelRules SHORT_REACH{ .sharePerMille = 1'000,
                                          .stayMinDays = STAY_MIN,
                                          .stayMaxDays = STAY_MAX,
                                          .reachBase = 50,
                                          .reachPerPower = 10,
-                                         .cultivatorPower = 5.0F };
+                                         .cultivatorPower = 5.0F,
+                                         .bands = {} };
 constexpr f32 MORTAL = 0.0F;
 // Either side of the reach's next whole point, and of the cultivator's threshold.
 constexpr f32 JUST_BELOW_FOUR = 3.9F;

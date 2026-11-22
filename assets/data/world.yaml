@@ -113,6 +113,8 @@ profiles:
 # which one is a cultivator rather than a trader. Tuned so about 2,500 to 3,300 of the 50,000 are on the roads at once
 # from the first tick, mortals reaching the next town (the capital's nearest cost about 130, the sect's 225) and the
 # strong the far side of the map (the sect to the isle costs 562).
+# An optional bands: [{ from_power: 0, profile: <key> }, ...] would map a traveller's power to the profile it moves by (the
+# first from 0, rising strictly); none is shipped, so everyone walks on_foot.
 travel: { share_per_mille: 60, stay_days: [2, 5], reach_base: 300, reach_per_power: 20, cultivator_power: 5 }
 # Each a polyline of [column, row] tile points; a road over a river is a bridge.
 roads:
