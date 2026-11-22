@@ -287,17 +287,53 @@ and back, with main's own `measure`. Every figure is this branch / main, in ms.
 | labels: first 0.5 s | 6.05 / 6.08 | - | 9.44 / 8.83 | 4.25 / 3.34 | - | 7.30 / 7.78 | 25% / 38% |
 | labels: rest | 5.98 / 6.08 | 9.57 / 9.31 | 10.31 / 10.08 | 4.19 / 3.19 | 7.65 / 5.70 | 8.66 / 6.03 | 30% / 52% |
 
-**Frame time (Goal 11): unchanged on screen, the main thread's work is not.** Every median sits at the display's 6.06 ms
-refresh (both runs are paced), the p99 differs by under 0.8 ms either way (lower on this branch in four segments:
-follow, zoom in and out, widest view and month step; higher in pan by 0.13 ms and labels by 0.26), and the only hitch
-is the month step's one, which both runs show alike (55.23 / 56.54 ms, carried by the logic and worker threads; the
-main thread's worst there is 7.38 / 6.28). The main thread's work is higher in all 12 segments, by 0.4 to 1.0 ms at the
-median (widest view, rest: 4.02 / 3.37; labels, rest: 4.19 / 3.19) and by up to 2 ms at the p99 (labels, rest: 7.65 /
-5.70). That rise is real and consistent, not noise. The layout accounts for about 0.03 ms of it (below); the rest is not
-attributed, as no profile of the rest was taken. The paced frame time shows no effect (the GPU's wait share is lower in
-every segment, by 6 to 22 points), but the rise would cut the main thread's headroom if the frame budget tightened.
-Input latency was 12.6 ms median (11.9 to 17.8 over 8 presses) against main's 14.2 ms (11.3 to 20.7); the display delay
-the same (3.7 ms, 3.0 to 10.0 / 3.1 to 10.0).
+**Frame time (Goal 11): unchanged on screen; the main thread's rise is the GPU's time, not its own work.** Every median
+sits at the display's 6.06 ms refresh (both runs are paced), the p99 differs by under 0.8 ms either way (lower on this
+branch in four segments: follow, zoom in and out, widest view and month step; higher in pan by 0.13 ms and labels by
+0.26), and the only hitch is the month step's one, which both runs show alike (55.23 / 56.54 ms, carried by the logic
+and worker threads; the main thread's worst there is 7.38 / 6.28). The main thread's work in the table is higher in all
+12 segments, by 0.4 to 1.0 ms at the median (widest view, rest: 4.02 / 3.37; labels, rest: 4.19 / 3.19) and by up to
+2 ms at the p99 (labels, rest: 7.65 / 5.70). Input latency was 12.6 ms median (11.9 to 17.8 over 8 presses) against
+main's 14.2 ms (11.3 to 20.7); the display delay the same (3.7 ms, 3.0 to 10.0 / 3.1 to 10.0).
+
+Where the rise goes (profiled afterwards: `profile --seconds 30 -- --world --debug-sight --fullscreen` on each side, the
+main checkout switched to main and back, both at 2560x1440 at 165.1 Hz, the frames after the first 5 s, 3,936 each;
+`tracy-csvexport -u -e`, each zone's self time summed per frame): it is all in one zone, `SubmitFrame`
+(`SDL_SubmitGPUCommandBuffer`), 1.60 ms at the median against main's 0.79, while the wait for the next swapchain image
+(`WaitForGpu`) falls by as much (2.90 / 3.71); the two together are the same (4.59 / 4.60). The main thread's work
+median is 3.13 / 2.32 ms, and every other zone on it together is 1.415 / 1.401 ms a frame (mean): the branch's own
+per-frame work (the ground's three draws 0.017 ms, its uniforms 0.011, `UploadGround` 0.010, the rivers' draw 0.007)
+is about 0.05 ms, offset by fewer labels to gather near the start (`GatherLabels` 0.34 / 0.39), and 1.401 after the fix
+below. On this driver (NVIDIA 620.70 on niri) the submit waits on the GPU's work for the frame, as the switches below
+show, so it carries the GPU's time; `measure` counts it as work, as it counts only `WaitForGpu` as waiting. Switching
+off the four new GPU draws in a local build (not committed; the uploads and layout stay) takes `SubmitFrame` from 1.61
+to 0.80 ms and the main thread's work to 2.30 ms, main's 2.32. Each draw off on its own gives its GPU cost: the painted ground 0.59 ms, the veil 0.20, the cloud shade 0.07 and
+the rivers 0.02; the same holds under `measure`'s flags (2 workers, unpaced: 1.61 against 0.82 ms with all four off).
+The ground's cost is its noise: 12 octaves of hashed value noise and 8 field samples a pixel over the whole view,
+every frame, which the paper look needs and which moves with the camera, so it can't wait for a change; it costs no
+frame (the GPU's wait share is still 30 to 53% of each frame). It stands, recorded at that size. The one cost that
+could wait for a change was `GroundUniformsOf`, which turned every colour of the look linear each frame (0.011 ms paced,
+0.002 unthrottled): commit `perf(gfx): make the ground's uniforms once per map and look` makes it once per map or look.
+
+After it, `measure --runs world` on both sides again (2 workers, unpaced, both at 165.1 Hz; the branch's run has the
+cloud shade, which the table above predates), the main thread's work median and the part of it in `SubmitFrame`, this
+branch before the fix (the table above) / after it / main, in ms:
+
+| segment (rest) | work median | of it `SubmitFrame` | the rest |
+|---|---|---|---|
+| follow | 4.28 / 4.18 / 3.57 | 1.56 / 1.66 / 0.91 | 2.74 / 2.52 / 2.63 |
+| pan | 3.40 / 2.93 / 2.61 | 1.51 / 1.63 / 0.80 | 1.80 / 1.24 / 1.73 |
+| zoom in and out | 3.11 / 2.65 / 1.96 | 1.57 / 1.64 / 0.84 | 1.04 / 0.92 / 0.95 |
+| widest view | 4.02 / 3.04 / 3.30 | 1.57 / 1.66 / 0.86 | 2.41 / 1.36 / 2.40 |
+| month step | 4.26 / 3.10 / 3.29 | 1.54 / 1.69 / 0.88 | 2.60 / 1.38 / 2.32 |
+| labels | 4.19 / 2.67 / 3.38 | 1.58 / 1.65 / 0.86 | 2.55 / 0.98 / 2.46 |
+
+`SubmitFrame` is 0.65 to 0.83 ms above main's in every segment of both branch runs, as the GPU passes give. The rest
+falls by up to 1.6 ms from pan on since the cloud shade, which is not a saving: a walker's name on unexplored land now
+fades out under the shade even with the debug sight, so the world run no longer draws most names
+(`GatherLabels` in labels, rest: 1.01 ms before the cloud shade, 0.11 after it, main 0.99). Frame medians stay at the
+refresh (6.01 to 6.07 ms on both sides), the month step's hitch is 56.20 / 55.11 ms, and input latency 12.9 ms median
+(12.1 to 24.0) / 12.2 ms (10.0 to 17.9).
 
 **Layout time** (Goal 11: under 0.2 ms median at the widest view; measured over the zoom segment, which covers it).
 `DrawTerrain` relays the terrain buffer on every zoom
@@ -313,8 +349,8 @@ capture's `UploadTerrain` is 0.002 ms at the median (p99 0.062, worst 0.19).
 **The ground field's rebuild** has no zone of its own; it runs inside `UploadGround` (the field with the rivers' ribbons)
 once per map or look change. That call's worst in both captures is 1.34 to 1.35 ms, the first frame of the world scene;
 afterwards `UploadGround` is 0.004 ms at the median at a fixed zoom (0.020 ms across the camera path, where it also sets
-the zoom uniform). The ground pass `DrawGround` takes 0.002 ms and `GroundUniformsOf` 0.002 ms a frame at a fixed zoom,
-and the rivers' draw 0.001 ms.
+the zoom uniform). The ground pass `DrawGround` takes 0.002 ms and `GroundUniformsOf` 0.002 ms a frame at a fixed zoom
+(since made once per map or look: above), and the rivers' draw 0.001 ms.
 
 **Shimmer (Goal 10)** (`reference`, run first by `measure`; each bound is the first measurement plus the guards' usual
 margin, about 1.25 times, never above 0.02 for the three ground cases):
@@ -356,8 +392,9 @@ differed in 2,318 pixels.
   crops and difference images: no tile edge, no label or walker in play moved. In `fog_uncovering` the route's dots on
   unexplored land are under the shade as well as the clouds. The shimmer guards are unchanged to the digit (world
   0.00204363, clouds 0.016509, ground 0.01167 / 0.00606704 / 0.00396805).
-- Cost: one more full-view pass with a single fog sample per pixel, lighter than the veil pass beside it (no noise).
-  Not measured: `measure` takes the display, and the branch's main-thread question is profiled separately.
+- Cost: one more full-view pass with a single fog sample per pixel, lighter than the veil pass beside it (no noise):
+  0.07 ms of GPU time a frame (the submit's median with the pass off, 1.54 against 1.61 ms; above) and 0.006 ms of the
+  main thread's (one of the ground's three draws).
 
 ### Rulings made while building
 
