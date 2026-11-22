@@ -21,6 +21,11 @@ namespace core {
 /// tile). An engine limit, so in code.
 inline constexpr u32 ROAD_STEPS = 4;
 
+/// How far, in tiles, a road tile's centre may lie from a road's curve and still have its walkers drawn on it
+/// (RoadCurveIndex): well past the half tile a staircase's corner centres stand off their curve, and past the tile a joined
+/// end moves the curve's end away from the last tile laid. An engine limit, so in code.
+inline constexpr f32 ROAD_DRAWN_REACH = 1.5F;
+
 /// `tiles`' waypoints as world points (tile centres of `tileSize`), each repeat of the one before dropped.
 [[nodiscard]] std::vector<Vec2> Waypoints(std::span<const TilePoint> tiles, f32 tileSize);
 
@@ -59,15 +64,15 @@ inline constexpr u32 ROAD_STEPS = 4;
 [[nodiscard]] std::vector<std::vector<Vec2>> RoadCurves(const WorldMap& map);
 
 /// Where a walker standing on each road tile's centre of a map is drawn: the closest point on any of its RoadCurves() within
-/// 1.5 tiles of the centre, the first road's in the map's order on a tie. Found once from the curves' segments near each
-/// road tile, so placing a walker reads one point per tile.
+/// ROAD_DRAWN_REACH tiles of the centre, the first road's in the map's order on a tie. Found once from the curves' segments
+/// near each road tile, so placing a walker reads one point per tile.
 class RoadCurveIndex {
 public:
     /// Indexes the road tiles of `map`.
     explicit RoadCurveIndex(const WorldMap& map);
 
     /// Where a walker on `tile`'s centre is drawn on a road: none for a tile no road crosses (TileFlag::Road), or one no
-    /// road's curve passes within 1.5 tiles of, or a tile off the map.
+    /// road's curve passes within ROAD_DRAWN_REACH tiles of, or a tile off the map.
     [[nodiscard]] std::optional<Vec2> OnRoad(u32 tile) const;
 
 private:
