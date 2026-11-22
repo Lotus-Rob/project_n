@@ -4,6 +4,7 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/profile.hpp"
 #include "gfx/fog.hpp"
+#include "gfx/generated/shaders.hpp" // by `project_n shaders`
 #include "gfx/ground.hpp"
 #include "gfx/internal/features/meshes.hpp"
 #include "gfx/river_draw.hpp"
