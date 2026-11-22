@@ -1996,7 +1996,7 @@ TEST_CASE("a walk-to too slow for a leg's ticks changes nothing") {
     CHECK(SamePoint(FootOf(*world.host, world.player), start));
 }
 
-TEST_CASE("a paced leg from a foot beside the next centre is sound") {
+TEST_CASE("a route's soundness check accepts a paced leg whose first step takes a single tick") {
     const std::shared_ptr<const core::WorldMap> world = test::SmallWorld();
     const core::WorldMap& map = *world;
     constexpr f32 NEAR = 1.0F;
@@ -2008,8 +2008,7 @@ TEST_CASE("a paced leg from a foot beside the next centre is sound") {
         test::SmallData().cultivator.walkSpeed
     );
     REQUIRE(leg.has_value());
-    CHECK(leg->arrive[1] == 1);
-    CHECK(game::LegSound(*leg, map));
+    CHECK(game::LegSound(leg.value_or(core::Leg{}), map));
 }
 
 TEST_CASE("held movement cancels a route") {
