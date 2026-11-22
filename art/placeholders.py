@@ -1364,8 +1364,8 @@ def roof(canvas, x, y, w, h, colour=(70, 68, 78), lw=2.5):
          colour, 0.97, rim_alpha=0.85, width=lw)
 
 
-def house(canvas, x, y, w, h, k, colour=(214, 204, 182), roof_colour=(70, 68, 78)):
-    poly(canvas, [(x - w / 2, y), (x - w / 2, y - h), (x + w / 2, y - h), (x + w / 2, y)], colour, 0.97, width=2.5 * k)
+def house(canvas, x, y, w, h, k, colour=(214, 204, 182), roof_colour=(70, 68, 78), opacity=0.97):
+    poly(canvas, [(x - w / 2, y), (x - w / 2, y - h), (x + w / 2, y - h), (x + w / 2, y)], colour, opacity, width=2.5 * k)
     roof(canvas, x, y - h, w * 1.05, h * 0.8, roof_colour, 2.5 * k)
 
 
@@ -1380,8 +1380,9 @@ def painting_city(size, tiers):
     if tiers:
         for i in range(tiers):
             house(canvas, cx + (i - (tiers - 1) / 2.0) * 84 * k, top - 8 * k - i % 2 * 30 * k, 70 * k, 80 * k, k)
-        house(canvas, cx, top - 8 * k, 140 * k, 150 * k, k, (206, 192, 168), VERMILION)
-        roof(canvas, cx, top - 208 * k, 100 * k, 60 * k, VERMILION, 2.5 * k)
+        # Opaque, so the rooftops behind the keep don't show through it.
+        house(canvas, cx, top - 8 * k, 140 * k, 150 * k, k, (206, 192, 168), VERMILION, 1.0)
+        roof(canvas, cx, top - 208 * k, 100 * k, 70 * k, VERMILION, 2.5 * k)
     else:
         for dx, w, h in ((-150, 110, 100), (150, 110, 90)):
             house(canvas, cx + dx * k, top - 8 * k, w * k, h * k, k)
@@ -1437,12 +1438,12 @@ def painting_mountain_pass():
 def painting_shrine():
     canvas = Canvas(256, 256)
     ground_wash(canvas, 128, 246, 100, 12)
-    house(canvas, 128, 236, 150, 110, 1.0, (206, 192, 168), VERMILION)
-    for x in (62, 194):
+    house(canvas, 128, 236, 100, 64, 1.0, (206, 192, 168), VERMILION)
+    for x in (48, 208):
         ink(canvas, [(x, 244), (x, 60)], 14, VERMILION, 0.95)
-    ink(canvas, [(44, 66), (212, 66)], 15, VERMILION, 0.95)
-    ink(canvas, [(32, 42), (224, 42)], 14, WASH_INK, 0.9)
-    ink(canvas, [(62, 110), (194, 110)], 8, WASH_INK, 0.85)
+    ink(canvas, [(30, 66), (226, 66)], 15, VERMILION, 0.95)
+    ink(canvas, [(18, 42), (238, 42)], 14, WASH_INK, 0.9)
+    ink(canvas, [(48, 110), (208, 110)], 8, WASH_INK, 0.85)
     return canvas
 
 
