@@ -305,11 +305,14 @@ TEST_CASE("profiles read with their overrides resolved") {
 
 TEST_CASE("danger reach and a profile's danger cost read") {
     const std::string text = With("ford_cost: 30", "ford_cost: 30\ndanger_reach: 3");
-    const std::string priced =
-        std::string{ text }.replace(text.find("ticks_per_cost: 16 }"), 20, "ticks_per_cost: 16, features: { danger: 25 } }");
+    const std::string priced = std::string{ text }.replace(
+        text.find("ticks_per_cost: 16 }") + 20, 0, "\n  - { key: fearful, ticks_per_cost: 16, features: { danger: 25 } }"
+    );
     const std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(priced, Names());
     REQUIRE(map.has_value());
-    CHECK(map->Profiles()[core::WALKING].features.danger == 25);
+    REQUIRE(map->Profiles().size() == 2);
+    CHECK(map->Profiles()[1].features.danger == 25);
+    CHECK(map->Profiles()[core::WALKING].features.danger == 0);
     // The danger at [4, 1] reaches [2, 2] (distance squared 5) and not the capital's [0, 2] (17).
     constexpr u32 NEAR_TILE = 12;
     constexpr u32 FAR_TILE = 10;

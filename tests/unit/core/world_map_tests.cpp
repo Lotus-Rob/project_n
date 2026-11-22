@@ -652,6 +652,11 @@ TEST_CASE("Build refuses a profile it can't use") {
     CHECK(refusal([](auto& profiles) { profiles[0].features.road = 0; }).contains("a feature 0"));
     CHECK(refusal([](auto& profiles) { profiles.push_back(Profile("walk", 1)); }).contains("shares its key"));
     CHECK(refusal([](auto& profiles) { profiles[0].key = ""; }).contains("has no key"));
+    CHECK(refusal([](auto& profiles) { profiles[0].features.danger = 1; }).contains("everyone's walk"));
+    CHECK(refusal([](auto& profiles) {
+              profiles.push_back(Profile("fear", MEADOW_COST));
+              profiles[1].features.danger = core::MAX_WALK_COST + 1;
+          }).contains("danger cost over"));
     CHECK(refusal([](auto& profiles) {
               profiles.assign(core::MOST_PROFILES + 1, Profile("walk", 1));
               for (std::size_t index = 0; index < profiles.size(); ++index) {
@@ -661,7 +666,9 @@ TEST_CASE("Build refuses a profile it can't use") {
 }
 
 constexpr u32 DANGER_REACH = 2;
-constexpr u32 DANGER_COLUMNS = 9;
+constexpr u32 DANGER_MAP_SIDE = 9;
+// Wide enough to flag every tile of the cost test's map from its one danger.
+constexpr u8 WHOLE_MAP_REACH = 9;
 constexpr u16 DANGER_COST = 30;
 constexpr u16 DANGER_KIND_COST = 990;
 constexpr core::ProfileIndex FEAR = 1;
@@ -685,7 +692,8 @@ bool Flagged(const core::WorldMap& map, u32 column, u32 row) {
 }
 
 TEST_CASE("a danger's reach flags the tiles within it") {
-    const std::vector<std::string> rows(DANGER_COLUMNS, "0........");
+    std::vector<std::string> rows(DANGER_MAP_SIDE, ".........");
+    rows.front()[0] = '0';
     core::WorldMapSource source = Source(rows);
     AddDanger(source, { .column = 4, .row = 4 });
     source.dangerReach = DANGER_REACH;
@@ -699,18 +707,23 @@ TEST_CASE("a danger's reach flags the tiles within it") {
     CHECK_FALSE(Flagged(map, 0, 0));
     source.dangerReach = 0;
     const core::WorldMap none = MustBuild(source);
-    for (u32 tile = 0; tile < DANGER_COLUMNS * DANGER_COLUMNS; ++tile) {
+    for (u32 tile = 0; tile < DANGER_MAP_SIDE * DANGER_MAP_SIDE; ++tile) {
         CHECK((none.FlagsAt(tile) & std::to_underlying(core::TileFlag::Danger)) == 0);
     }
 }
 
+TEST_CASE("Build refuses a danger reach past the most") {
+    core::WorldMapSource source = Source({ "0.." });
+    source.dangerReach = core::MAX_DANGER_REACH + 1;
+    CHECK(Refusal(std::move(source)).contains("danger reach"));
+}
+
 TEST_CASE("a profile's danger cost adds after the road and caps") {
-    // Columns: 0 the city, 1 meadow, 2 road, 3 sand, 4 the danger, 5 deep water.
+    // Columns: 0 the city, 1 meadow, 2 road, 3 sand, 4 the danger, 6 deep water.
     core::WorldMapSource source = Source({ "0..,..~", "......." });
-    source.grid[4] = MEADOW;
     source.roads = { { { .column = 2, .row = 0 } } };
     AddDanger(source, { .column = 4, .row = 0 });
-    source.dangerReach = DANGER_COLUMNS;
+    source.dangerReach = WHOLE_MAP_REACH;
     core::MovementProfile walk = Profile("walk", MEADOW_COST);
     walk.kindCosts[DEEP] = core::IMPASSABLE_COST;
     core::MovementProfile fear = walk;
@@ -728,34 +741,35 @@ TEST_CASE("a profile's danger cost adds after the road and caps") {
 }
 
 TEST_CASE("the base costs ignore danger") {
-    // City 0 is the start; the danger's reach covers the way into city 1.
-    core::WorldMapSource source = Source({ "0.......1" });
-    AddDanger(source, { .column = 6, .row = 0 });
-    source.dangerReach = 3;
+    // City 0 starts on a flagged stretch (columns 0 to 4); a base layer that priced it would hand tile 4 to city 1.
+    core::WorldMapSource source = Source({ "0........1" });
+    AddDanger(source, { .column = 2, .row = 0 });
+    source.dangerReach = 2;
     const core::MovementProfile walk = Profile("walk", MEADOW_COST);
     core::MovementProfile fear = walk;
     fear.key = "fear";
     fear.features.danger = DANGER_KIND_COST;
     source.profiles = { walk, fear };
     const core::WorldMap map = MustBuild(std::move(source));
-    CHECK(Flagged(map, 7, 0));
-    CHECK(map.CostAt(7) == MEADOW_COST);
-    CHECK(map.RegionAt(7) == 1);
-    CHECK(map.RegionAt(0) == 0);
-    CHECK(map.CostAt(7, FEAR) == core::MAX_WALK_COST);
+    CHECK(Flagged(map, 4, 0));
+    CHECK_FALSE(Flagged(map, 5, 0));
+    CHECK(map.CostAt(4) == MEADOW_COST);
+    CHECK(map.RegionAt(4) == 0);
+    CHECK(map.RegionAt(5) == 1);
+    CHECK(map.CostAt(4, FEAR) == core::MAX_WALK_COST);
 }
 
 TEST_CASE("the hash changes with danger reach and danger costs") {
     const auto hashOf = [](const std::function<void(core::WorldMapSource&)>& change) {
         core::WorldMapSource source = ProfileSource();
-        source.profiles = { Profile("walk", MEADOW_COST) };
+        source.profiles = { Profile("walk", MEADOW_COST), Profile("fear", MEADOW_COST) };
         AddDanger(source, { .column = 5, .row = 1 });
         change(source);
         return MustBuild(std::move(source)).Hash();
     };
     const u64 reference = hashOf([](core::WorldMapSource&) {});
     CHECK(hashOf([](core::WorldMapSource& source) { source.dangerReach = 1; }) != reference);
-    CHECK(hashOf([](core::WorldMapSource& source) { source.profiles[0].features.danger = 1; }) != reference);
+    CHECK(hashOf([](core::WorldMapSource& source) { source.profiles[1].features.danger = 1; }) != reference);
 }
 
 TEST_CASE("the hash changes with a profile's pace or cost") {

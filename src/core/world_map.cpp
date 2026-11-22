@@ -245,6 +245,11 @@ std::expected<void, Error> CheckShape(const WorldMapSource& source) {
             )
         ) };
     }
+    if (source.dangerReach > MAX_DANGER_REACH) {
+        return std::unexpected{
+            Refuse(std::format("the danger reach {} is over the most, {}", source.dangerReach, MAX_DANGER_REACH))
+        };
+    }
     if (std::ranges::any_of(source.grid, [&](u8 kind) { return kind >= source.kinds.size(); })) {
         return std::unexpected{ Refuse("the grid names a terrain kind that doesn't exist") };
     }
@@ -338,6 +343,9 @@ std::expected<void, Error> CheckProfiles(const WorldMapSource& source) {
         }
         else if (std::ranges::contains(featureCosts, 0)) {
             problem = "costs a feature 0: a step takes time, so a cost is at least 1";
+        }
+        else if (index == WALKING && profile.features.danger != 0) {
+            problem = "is everyone's walk, so it adds no danger cost";
         }
         else if (profile.features.danger > MAX_WALK_COST) {
             problem = std::format("adds a danger cost over the most a step may cost, {}", MAX_WALK_COST);
