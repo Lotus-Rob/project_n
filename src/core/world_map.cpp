@@ -414,7 +414,8 @@ std::vector<u16> ProfileLayer(const WorldMapSource& source, const std::vector<u8
             cost[tile] = kindCost;
         }
         if ((tileFlags & FLAG_DANGER) != 0 && cost[tile] != IMPASSABLE_COST) {
-            cost[tile] = static_cast<u16>(std::min<u32>(cost[tile] + profile.features.danger, MAX_WALK_COST));
+            const u32 priced = u32{ cost[tile] } + u32{ profile.features.danger };
+            cost[tile] = static_cast<u16>(std::min<u32>(priced, MAX_WALK_COST));
         }
     }
     return cost;
