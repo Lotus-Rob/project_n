@@ -69,7 +69,7 @@ void DrawRivers(
         }
         // A river flows into the river its end lies on or by, else on into the water just ahead of it.
         f32 fade = 0.0F;
-        if (const std::optional<core::Vec2> joined = core::JoinedEnd(points, index, stored, map.TileSize())) {
+        if (const std::optional<core::Vec2> joined = core::JoinedEnd(points, index, stored, map.TileSize(), false)) {
             points.back() = *joined;
         }
         else if (const std::optional<core::Vec2> mouth = Mouth(map, water, points[points.size() - 2], points.back())) {

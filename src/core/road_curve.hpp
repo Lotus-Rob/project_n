@@ -34,13 +34,15 @@ inline constexpr u32 ROAD_STEPS = 4;
 
 /// Where the last stretch of `waypoints` (two or more) should end to flow into another line, when it runs on or is cut short
 /// to meet the middle of one of `midlines` (the line at index `own` skipped, `midlines.size()` or more to skip none): the
-/// nearest such meeting within a tile of its end and not within a tile of the other line's own end (there the other flows
-/// into this one), and not at the end already. None when it meets none there.
+/// nearest such meeting within a tile of its end and not within a tile of the other line's own last point (there the other
+/// flows into this one), nor, with `startsFlowIn`, of its first (for lines that may be read either way, as roads are; a
+/// river's first point is its source, which nothing flows into), and not at the end already. None when it meets none there.
 [[nodiscard]] std::optional<Vec2> JoinedEnd(
     std::span<const Vec2> waypoints,
     std::size_t own,
     std::span<const std::vector<Vec2>> midlines,
-    f32 tileSize
+    f32 tileSize,
+    bool startsFlowIn
 );
 
 /// Every road's curve of `map`, in the map's order, at ROAD_STEPS; a road of fewer than two distinct points gets an empty
