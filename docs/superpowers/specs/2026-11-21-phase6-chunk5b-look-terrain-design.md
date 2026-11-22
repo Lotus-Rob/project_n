@@ -302,18 +302,21 @@ main checkout switched to main and back, both at 2560x1440 at 165.1 Hz, the fram
 (`SDL_SubmitGPUCommandBuffer`), 1.60 ms at the median against main's 0.79, while the wait for the next swapchain image
 (`WaitForGpu`) falls by as much (2.90 / 3.71); the two together are the same (4.59 / 4.60). The main thread's work
 median is 3.13 / 2.32 ms, and every other zone on it together is 1.415 / 1.401 ms a frame (mean): the branch's own
-per-frame work (the ground's three draws 0.017 ms, its uniforms 0.011, `UploadGround` 0.010, the rivers' draw 0.007)
-is about 0.05 ms, offset by fewer labels to gather near the start (`GatherLabels` 0.34 / 0.39), and 1.401 after the fix
-below. On this driver (NVIDIA 620.70 on niri) the submit waits on the GPU's work for the frame, as the switches below
-show, so it carries the GPU's time; `measure` counts it as work, as it counts only `WaitForGpu` as waiting. Switching
-off the four new GPU draws in a local build (not committed; the uploads and layout stay) takes `SubmitFrame` from 1.61
-to 0.80 ms and the main thread's work to 2.30 ms, main's 2.32. Each draw off on its own gives its GPU cost: the painted ground 0.59 ms, the veil 0.20, the cloud shade 0.07 and
-the rivers 0.02; the same holds under `measure`'s flags (2 workers, unpaced: 1.61 against 0.82 ms with all four off).
-The ground's cost is its noise: 12 octaves of hashed value noise and 8 field samples a pixel over the whole view,
-every frame, which the paper look needs and which moves with the camera, so it can't wait for a change; it costs no
-frame (the GPU's wait share is still 30 to 53% of each frame). It stands, recorded at that size. The one cost that
-could wait for a change was `GroundUniformsOf`, which turned every colour of the look linear each frame (0.011 ms paced,
-0.002 unthrottled): commit `perf(gfx): make the ground's uniforms once per map and look` makes it once per map or look.
+per-frame work (the ground's three draws 0.017 ms, its uniforms 0.011, `UploadGround` 0.010, the rivers' draw 0.007) is
+about 0.05 ms, offset by fewer labels to gather (`GatherLabels` 0.34 / 0.39): walkers' names on unexplored land fade out
+under the cloud shade even with the debug sight, as the paragraph after the table below explains. It is 1.401 after the
+fix below. On this driver (NVIDIA 620.70 on niri) the submit waits on the GPU's work for the frame, as the switches
+below show, so it carries the GPU's time; `measure` counts it as work, as it counts only `WaitForGpu` as waiting.
+Switching off the four new GPU draws in a local build (not committed; the uploads and layout stay) takes `SubmitFrame`
+from 1.61 to 0.80 ms and the main thread's work to 2.30 ms, main's 2.32. Each draw off on its own gives its GPU cost:
+the painted ground 0.59 ms, the veil 0.20, the cloud shade 0.07 and the rivers 0.02; the same holds under `measure`'s
+flags (2 workers, unpaced: 1.61 against 0.82 ms with all four off). The ground's cost is its noise: 12 octaves of hashed
+value noise and 8 field samples a pixel over the whole view, every frame, which the paper look needs and which moves
+with the camera, so it can't wait for a change; it costs no frame (in the after-fix `measure` run below the GPU's wait
+share is 30 to 53% of the frame in the segments' rest, 28 to 53% counting their first 0.5 s). It stands, recorded at
+that size. The one cost that could wait for a change was `GroundUniformsOf`, which turned every colour of the look
+linear each frame (0.011 ms paced, 0.002 unthrottled): commit
+`perf(gfx): make the ground's uniforms once per map and look` makes it once per map or look.
 
 After it, `measure --runs world` on both sides again (2 workers, unpaced, both at 165.1 Hz; the branch's run has the
 cloud shade, which the table above predates), the main thread's work median and the part of it in `SubmitFrame`, this
