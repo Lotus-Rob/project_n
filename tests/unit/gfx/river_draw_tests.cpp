@@ -112,9 +112,7 @@ TEST_CASE("a tributary's end lies inside the main river's core") {
     );
     const std::vector<gfx::RibbonVertex> vertices = Draw(map);
     const core::Vec2 end = Midline(vertices, (vertices.size() / gfx::QUAD_VERTICES) - 1, true);
-    CHECK(std::abs(end.y - Middle(0, 4).y) < CORE / 2.0F);
-    CHECK(end.x > Middle(0, 4).x);
-    CHECK(end.x < Middle(7, 4).x);
+    CHECK(Distance(end, Middle(4, 4)) < CORE / 2.0F);
 }
 
 TEST_CASE("a tributary ending past the main river ends on the main river's middle") {
