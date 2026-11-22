@@ -214,11 +214,11 @@ bool Covered(const std::vector<Painting>& paintings, core::Vec2 point) {
 
 /// Whether `lhs` stands behind `rhs`: farther up, then farther left, then on an earlier tile.
 bool Behind(const Laid& lhs, const Laid& rhs) {
-    if (const auto down = lhs.foot.y <=> rhs.foot.y; down != 0) {
-        return down < 0;
+    if (const auto down = lhs.foot.y <=> rhs.foot.y; std::is_neq(down)) {
+        return std::is_lt(down);
     }
-    if (const auto across = lhs.foot.x <=> rhs.foot.x; across != 0) {
-        return across < 0;
+    if (const auto across = lhs.foot.x <=> rhs.foot.x; std::is_neq(across)) {
+        return std::is_lt(across);
     }
     return lhs.tile < rhs.tile;
 }
