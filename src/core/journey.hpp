@@ -112,6 +112,13 @@ struct Journey {
     std::span<const u32> tiles
 );
 
+/// A tile route leg along `tiles` (at least one, each step between adjacent tiles that WALKING can walk) paced by
+/// distance: `unitsPerTick` (above 0) world units a tick over the walked length, the origin to the second tile's centre
+/// and then centre to centre, a diagonal at its true length. Each arrive tick is the ceiling of the length so far over
+/// `unitsPerTick`, summed in floating point from the start so no rounding builds up, and at least a tick after the
+/// one before, so a walker's ticks always rise.
+[[nodiscard]] Leg MakePacedLeg(const WorldMap& map, i64 startTick, Vec2 origin, std::span<const u32> tiles, f32 unitsPerTick);
+
 /// The tick `leg` ends on: its walker has reached its last tile.
 [[nodiscard]] i64 EndTick(const Leg& leg);
 

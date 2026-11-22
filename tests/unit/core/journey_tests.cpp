@@ -103,6 +103,35 @@ TEST_CASE("a tile leg takes its cost in ticks") {
     CHECK(diagonal.arrive == std::vector<u32>{ 0, 14 * 16 });
 }
 
+TEST_CASE("a paced leg takes the same ticks a tile on every kind") {
+    const core::WorldMap map = TestMap();
+    constexpr f32 WALK_SPEED = 4.0F;
+    constexpr std::array<u32, 4> MEADOW_RUN{ { COLUMNS + 1, COLUMNS + 2, COLUMNS + 3, COLUMNS + 4 } };
+    constexpr std::array<u32, 4> ROAD_RUN{ { 1, 2, 3, 4 } };
+    constexpr std::array<u32, 4> SAND_THEN_ROAD{ { 0, 1, 2, 3 } };
+    for (const std::span<const u32> tiles :
+         { std::span<const u32>{ MEADOW_RUN }, std::span<const u32>{ ROAD_RUN }, std::span<const u32>{ SAND_THEN_ROAD } }) {
+        const core::Leg leg = core::MakePacedLeg(map, 0, map.TileCentre(tiles.front()), tiles, WALK_SPEED);
+        CHECK(leg.profile == core::WALKING);
+        CHECK(leg.arrive == std::vector<u32>{ 0, 64, 128, 192 });
+    }
+}
+
+TEST_CASE("a paced leg's diagonal steps take their length's time") {
+    const core::WorldMap map = TestMap();
+    constexpr std::array<u32, 3> DIAGONALS{ { 0, COLUMNS + 1, (2 * COLUMNS) + 2 } };
+    const core::Leg leg = core::MakePacedLeg(map, 0, map.TileCentre(0), DIAGONALS, 4.0F);
+    CHECK(leg.arrive == std::vector<u32>{ 0, 91, 182 });
+}
+
+TEST_CASE("a paced leg's first step from a foot near the next centre takes at least a tick") {
+    const core::WorldMap map = TestMap();
+    constexpr std::array<u32, 3> NEXT{ { 0, 1, 2 } };
+    const core::Vec2 foot = map.TileCentre(1) - core::Vec2{ .x = 1.0F, .y = 0.0F };
+    const core::Leg leg = core::MakePacedLeg(map, 5, foot, NEXT, 4.0F);
+    CHECK(leg.arrive == std::vector<u32>{ 0, 1, 65 });
+}
+
 TEST_CASE("a walker is at its origin before the leg and its last tile after") {
     const core::WorldMap map = TestMap();
     constexpr i64 START = 100;

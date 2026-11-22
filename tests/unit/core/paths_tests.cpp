@@ -113,6 +113,29 @@ TEST_CASE("a route never cuts a corner past impassable ground") {
     CHECK(distances.CostFrom(1) == 4 * MEADOW_COST);
 }
 
+TEST_CASE("the shortest route goes straight across open ground past a road") {
+    core::WorldMapSource source = Source({ "0........", ".........", "........1" });
+    source.roads = { { { .column = 0, .row = 1 }, { .column = WIDE_LAST_COLUMN, .row = 1 } } };
+    const core::WorldMap map = MustBuild(std::move(source));
+    const std::vector<u32> straight = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+    CHECK(core::FindShortestRoute(map, 0, 8) == straight);
+    CHECK(core::FindRoute(map, core::WALKING, 0, 8) != straight);
+    CHECK(core::FindShortestRoute(map, 5, 5) == std::vector<u32>{ 5 });
+}
+
+TEST_CASE("the shortest route never cuts a corner past impassable ground") {
+    const core::WorldMap map = MustBuild(Source({ "0.~.", "...." }));
+    const std::vector<u32> round = { 1, 5, 6, 7, 3 };
+    CHECK(core::FindShortestRoute(map, 1, 3) == round);
+    CHECK(core::FindShortestRoute(map, 1, 3) == core::FindRoute(map, core::WALKING, 1, 3));
+}
+
+TEST_CASE("the shortest route to an impassable or unreachable tile is empty") {
+    const core::WorldMap map = MustBuild(Source({ "0..~.", "...~.", "...~." }));
+    CHECK(core::FindShortestRoute(map, 0, 3).empty()); // deep water
+    CHECK(core::FindShortestRoute(map, 0, 4).empty()); // an island past the water
+}
+
 TEST_CASE("a distance map's cost is what walking its route costs") {
     const core::WorldMap map = RiverMap();
     const u32 goal = map.TileIndex({ .column = 7, .row = 4 });

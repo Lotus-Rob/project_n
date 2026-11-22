@@ -95,12 +95,17 @@ std::vector<u32> RouteDown(const WorldMap& map, const DistanceMap& distances, u3
     return route;
 }
 
-std::vector<u32> FindRoute(const WorldMap& map, ProfileIndex profile, u32 from, u32 target) {
+namespace {
+
+/// A* from `from` to `target` over the tiles `profile` can step onto, each step priced by `price(from, next)` (never
+/// IMPASSABLE_COST for a step `profile` can take), `cheapest` the least any step costs, which keeps the estimate from
+/// overshooting. Ties go to the lower tile index.
+template<typename Price>
+std::vector<u32> Search(const WorldMap& map, ProfileIndex profile, u32 from, u32 target, u32 cheapest, const Price& price) {
     if (map.CostAt(target, profile) == IMPASSABLE_COST) {
         return {};
     }
     const std::size_t tiles = static_cast<std::size_t>(map.Columns()) * map.Rows();
-    const u32 cheapest = CheapestEntry(map.Profiles()[profile]);
     const TilePoint targetPoint = map.PointOf(target);
     const auto estimate = [&](u32 tile) {
         const TilePoint point = map.PointOf(tile);
@@ -130,7 +135,7 @@ std::vector<u32> FindRoute(const WorldMap& map, ProfileIndex profile, u32 from, 
             return route;
         }
         map.ForEachNeighbour(tile, [&](u32 next) {
-            const u32 step = map.StepCost(tile, next, profile);
+            const u32 step = price(tile, next);
             if (step == IMPASSABLE_COST) {
                 return;
             }
@@ -143,6 +148,29 @@ std::vector<u32> FindRoute(const WorldMap& map, ProfileIndex profile, u32 from, 
         });
     }
     return {};
+}
+
+/// The price of a straight step in FindShortestRoute: any whole number, as only the diagonal's ratio to it matters.
+constexpr u32 SHORTEST_STEP = 5;
+
+} // namespace
+
+std::vector<u32> FindRoute(const WorldMap& map, ProfileIndex profile, u32 from, u32 target) {
+    return Search(map, profile, from, target, CheapestEntry(map.Profiles()[profile]), [&](u32 tile, u32 next) {
+        return map.StepCost(tile, next, profile);
+    });
+}
+
+std::vector<u32> FindShortestRoute(const WorldMap& map, u32 from, u32 target) {
+    return Search(map, WALKING, from, target, SHORTEST_STEP, [&](u32 tile, u32 next) -> u32 {
+        if (map.StepCost(tile, next, WALKING) == IMPASSABLE_COST) {
+            return IMPASSABLE_COST;
+        }
+        const TilePoint start = map.PointOf(tile);
+        const TilePoint end = map.PointOf(next);
+        return start.column != end.column && start.row != end.row ? SHORTEST_STEP * DIAGONAL_NUMERATOR / DIAGONAL_DENOMINATOR
+                                                                  : SHORTEST_STEP;
+    });
 }
 
 Paths::Paths(std::shared_ptr<const WorldMap> map)
