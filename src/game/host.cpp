@@ -906,12 +906,17 @@ void Host::WalkTo(core::Vec2 point, u64 tick) {
         PN_LOG_DEBUG("tick {}: the cultivator already stands on tile {} and stops there", tick, target);
         return;
     }
+    std::optional<core::Leg> leg =
+        core::MakePacedLeg(map, static_cast<i64>(Live().worldTicks), foot, tiles, m_data.cultivator.walkSpeed);
+    if (!leg || core::EndTick(*leg) > static_cast<i64>(TRAVEL_END)) {
+        PN_LOG_DEBUG(
+            "tick {}: a walk-to tile {} is ignored: the walk there takes longer than a route can be timed", tick, target
+        );
+        return;
+    }
     core::Journey route;
     route.members = { m_player };
-    route.parts.push_back(
-        { .stay = false,
-          .leg = core::MakePacedLeg(map, static_cast<i64>(Live().worldTicks), foot, tiles, m_data.cultivator.walkSpeed) }
-    );
+    route.parts.push_back({ .stay = false, .leg = std::move(*leg) });
     PN_LOG_INFO(
         "tick {}: the cultivator sets out for tile {}, {} tiles on, arriving at world tick {}",
         tick,

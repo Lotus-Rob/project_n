@@ -6,7 +6,7 @@
 cultivator:
   sprite: cultivator
   health: 1000
-  walk_speed: 4.0 # at full stick
+  walk_speed: 4.0 # at full stick; 0 (it doesn't walk) or at least 0.01
   sight: 3 # tiles it sees on the world map, 0 to 64 (0 when absent)
 fox:
   sprite: fox

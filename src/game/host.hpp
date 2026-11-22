@@ -84,25 +84,25 @@ public:
     /// cultivator on a route for a WalkTo there (ignored elsewhere): the shortest way on foot (core::FindShortestRoute())
     /// from the tile under its foot to the tile under the action's point, as a journey of its own (PlayerRoute()) whose
     /// leg sets out from the foot itself on the world clock's tick, timed by distance at the cultivator's walk speed
-    /// (core::MakePacedLeg()). A WalkTo off the map, to a tile it can't reach, or from a cultivator whose walk speed is not
-    /// above 0 changes nothing; one to the tile it stands on ends its route, leaving it where it stands. Then held movement
-    /// ends its route and, unless the world is paused (when the cultivator stands, any route held), walks it where it points,
-    /// and a route places it where core::Where() puts it at the tick the world clock reaches this tick, ending once the clock
-    /// reaches the route's end, on its last tile's centre. When the player's foot, on its way this tick, crosses the step area
-    /// of the scene's portal (Scene::Portal(): an ellipse PORTAL_RADIUS across and PORTAL_DEPTH_RATIO as deep, as its seal is
-    /// drawn), it asks for the scene the portal leads to (NextWalkableScene(); Requested()), ending every use still open and,
-    /// on the world map, keeping the point its foot stood on before this tick as the place it comes back to, off the portal
-    /// (none, so the start city, when a month step's jump had left it standing in the step area), and does nothing more.
-    /// Before that check, on the world map, the player's cultivator explores every tile within the sight radius
-    /// (SightRadius()) of each tile its route reached this tick and of the tile under its foot (ExploredTiles()).
-    /// Otherwise the world clock moves a tick in a scene showing the world map, unless the world is paused, a month is due
-    /// (MonthDue()) or the calendar has ended (LAST_MONTH); it moves every entity on an Orbit to where it is at
-    /// `counters.simulation`, advances combat (Combat::Tick(): arrivals, removing the dead, which clears their selection, and
-    /// the foxes due back, which the scene respawns: Scene::Respawn()), and walks the active NPCs, whose decisions draw random
-    /// numbers keyed on `counters.state`. Then the scene takes its own part of the tick (Scene::Tick(): in the arena, the
-    /// crystal's aura); a DebugBurst action appends 4,000 hits round the foxes, which change nothing. Last, the volleys and
-    /// afflictions strike (Combat::Strike()), appending their hits. Each use ends with a UseEnded event. The events themselves
-    /// change nothing in the state.
+    /// (core::MakePacedLeg()). A WalkTo off the map, to a tile it can't reach, from a cultivator whose walk speed is not
+    /// above 0, or whose walk would end past the ticks a route can be timed in changes nothing; one to the tile it stands on
+    /// ends its route, leaving it where it stands. Then held movement ends its route and, unless the world is paused (when the
+    /// cultivator stands, any route held), walks it where it points, and a route places it where core::Where() puts it at the
+    /// tick the world clock reaches this tick, ending once the clock reaches the route's end, on its last tile's centre. When
+    /// the player's foot, on its way this tick, crosses the step area of the scene's portal (Scene::Portal(): an ellipse
+    /// PORTAL_RADIUS across and PORTAL_DEPTH_RATIO as deep, as its seal is drawn), it asks for the scene the portal leads to
+    /// (NextWalkableScene(); Requested()), ending every use still open and, on the world map, keeping the point its foot stood
+    /// on before this tick as the place it comes back to, off the portal (none, so the start city, when a month step's jump had
+    /// left it standing in the step area), and does nothing more. Before that check, on the world map, the player's cultivator
+    /// explores every tile within the sight radius (SightRadius()) of each tile its route reached this tick and of the tile
+    /// under its foot (ExploredTiles()). Otherwise the world clock moves a tick in a scene showing the world map, unless the
+    /// world is paused, a month is due (MonthDue()) or the calendar has ended (LAST_MONTH); it moves every entity on an Orbit
+    /// to where it is at `counters.simulation`, advances combat (Combat::Tick(): arrivals, removing the dead, which clears
+    /// their selection, and the foxes due back, which the scene respawns: Scene::Respawn()), and walks the active NPCs, whose
+    /// decisions draw random numbers keyed on `counters.state`. Then the scene takes its own part of the tick (Scene::Tick():
+    /// in the arena, the crystal's aura); a DebugBurst action appends 4,000 hits round the foxes, which change nothing. Last,
+    /// the volleys and afflictions strike (Combat::Strike()), appending their hits. Each use ends with a UseEnded event. The
+    /// events themselves change nothing in the state.
     void Tick(const core::TickCounters& counters, const core::TickInput& input, std::vector<core::Event>& events) override;
 
     /// Lets a month pass for the running world's NPCs and counts it (Months()): a dev scene's scratch world while one

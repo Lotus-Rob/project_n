@@ -1834,11 +1834,15 @@ void WalkTo(game::Host& host, u64 tick, core::Vec2 point, core::HeldInput held =
 }
 
 /// The leg a walk-to from `foot` towards `point` on `map` takes, set out on world tick `clock`: the shortest way on foot
-/// from the foot's tile, starting from the foot itself, at the cultivator's walk speed. REQUIREs a step at least.
+/// from the foot's tile, starting from the foot itself, at the cultivator's walk speed. REQUIREs a step at least, and a
+/// leg that can be timed.
 core::Leg LegTo(const core::WorldMap& map, core::Vec2 foot, core::Vec2 point, u64 clock) {
     const std::vector<u32> tiles = core::FindShortestRoute(map, map.TileAt(foot), map.TileAt(point));
     REQUIRE(tiles.size() >= 2);
-    return core::MakePacedLeg(map, static_cast<i64>(clock), foot, tiles, test::SmallData().cultivator.walkSpeed);
+    const std::optional<core::Leg> leg =
+        core::MakePacedLeg(map, static_cast<i64>(clock), foot, tiles, test::SmallData().cultivator.walkSpeed);
+    REQUIRE(leg.has_value());
+    return leg.value_or(core::Leg{});
 }
 
 /// Whether `route`, as a snapshot publishes one, is `foot` and then the centres of `leg`'s tiles from its `next`th on.
@@ -1981,19 +1985,31 @@ TEST_CASE("a walk-to from a cultivator with no walk speed changes nothing") {
     CHECK(SamePoint(FootOf(*world.host, world.player), start));
 }
 
+TEST_CASE("a walk-to too slow for a leg's ticks changes nothing") {
+    // A tile of 256 units at a billionth of a unit a tick is 2.56e11 ticks, past a leg's 32-bit arrive ticks.
+    constexpr f32 CRAWL = 1e-9F;
+    const TravelWorld world = TravelWorldOf({}, true, TRAVEL_CLOCK, CRAWL);
+    const core::WorldMap& map = *world.map;
+    const core::Vec2 start = FootOf(*world.host, world.player);
+    WalkTo(*world.host, 1, map.TileCentre(RouteRoad(map)[ROUTE_TILES]));
+    CHECK_FALSE(world.host->PlayerRoute().has_value());
+    CHECK(SamePoint(FootOf(*world.host, world.player), start));
+}
+
 TEST_CASE("a paced leg from a foot beside the next centre is sound") {
     const std::shared_ptr<const core::WorldMap> world = test::SmallWorld();
     const core::WorldMap& map = *world;
     constexpr f32 NEAR = 1.0F;
-    const core::Leg leg = core::MakePacedLeg(
+    const std::optional<core::Leg> leg = core::MakePacedLeg(
         map,
         static_cast<i64>(TRAVEL_CLOCK),
         map.TileCentre(1) - core::Vec2{ .x = NEAR, .y = 0.0F },
         std::array<u32, 2>{ { 0, 1 } },
         test::SmallData().cultivator.walkSpeed
     );
-    CHECK(leg.arrive[1] == 1);
-    CHECK(game::LegSound(leg, map));
+    REQUIRE(leg.has_value());
+    CHECK(leg->arrive[1] == 1);
+    CHECK(game::LegSound(*leg, map));
 }
 
 TEST_CASE("held movement cancels a route") {

@@ -164,6 +164,22 @@ TEST_CASE("a creature's sight is read, absent is 0, and a negative one refused")
     CHECK(ErrorFor(With("walk_speed: 4.0", "walk_speed: 4.0\n  sight: 2.5")).message.contains("cultivator's sight"));
 }
 
+TEST_CASE("a creature's walk speed is 0 or at least the slowest walk") {
+    const std::expected<core::GameData, core::Error> standing =
+        data::ParseGameData(With("walk_speed: 4.0", "walk_speed: 0.0"), ABILITIES);
+    REQUIRE(standing.has_value());
+    CHECK(standing->cultivator.walkSpeed == 0.0F);
+    const std::expected<core::GameData, core::Error> slowest =
+        data::ParseGameData(With("walk_speed: 4.0", "walk_speed: 0.01"), ABILITIES);
+    REQUIRE(slowest.has_value());
+    CHECK(slowest->cultivator.walkSpeed == 0.01F);
+    CHECK(
+        ErrorFor(With("walk_speed: 4.0", "walk_speed: 0.0099")).message ==
+        "creatures line 4: cultivator's walk_speed is neither 0 nor at least 0.01"
+    );
+    CHECK(ErrorFor(With("walk_speed: 0.5", "walk_speed: -0.5")).message.contains("line 8: fox's walk_speed is neither 0"));
+}
+
 TEST_CASE("a missing data folder is an error") {
     const std::expected<core::GameData, core::Error> data =
         data::LoadGameData(std::filesystem::temp_directory_path() / "project_n_no_such_data_folder");
