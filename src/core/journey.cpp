@@ -114,9 +114,11 @@ Leg MakeTileLeg(const WorldMap& map, ProfileIndex profile, i64 startTick, Vec2 o
     return leg;
 }
 
-Leg MakePacedLeg(const WorldMap& map, i64 startTick, Vec2 origin, std::span<const u32> tiles, f32 unitsPerTick) {
+std::optional<Leg> MakePacedLeg(const WorldMap& map, i64 startTick, Vec2 origin, std::span<const u32> tiles, f32 unitsPerTick) {
     PN_ASSERT(!tiles.empty(), "a leg has a tile to start on");
-    PN_ASSERT(unitsPerTick > 0.0F, "a paced leg moves some distance a tick");
+    if (!(unitsPerTick > 0.0F)) {
+        return std::nullopt;
+    }
     Leg leg{ .shape = LegShape::TileRoute,
              .profile = WALKING,
              .startTick = startTick,
@@ -135,9 +137,17 @@ Leg MakePacedLeg(const WorldMap& map, i64 startTick, Vec2 origin, std::span<cons
         const Vec2 apart = centre - from;
         walked += std::sqrt(static_cast<f64>((apart.x * apart.x) + (apart.y * apart.y)));
         from = centre;
+        constexpr u64 MOST_TICKS = std::numeric_limits<u32>::max();
+        // Checked in floating point, before any conversion: a float out of an integer's range converts to anything.
         const f64 ticks = std::ceil(walked / static_cast<f64>(unitsPerTick));
-        PN_ASSERT(ticks < static_cast<f64>(std::numeric_limits<u32>::max()), "a leg's ticks fit its arrive ticks");
-        leg.arrive.push_back(std::max(static_cast<u32>(ticks), leg.arrive.back() + 1));
+        if (!(ticks <= static_cast<f64>(MOST_TICKS))) {
+            return std::nullopt;
+        }
+        const u64 arrive = std::max(static_cast<u64>(ticks), u64{ leg.arrive.back() } + 1);
+        if (arrive > MOST_TICKS) {
+            return std::nullopt;
+        }
+        leg.arrive.push_back(static_cast<u32>(arrive));
     }
     return leg;
 }

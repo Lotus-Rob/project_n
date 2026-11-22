@@ -18,6 +18,11 @@
 
 namespace core {
 
+/// The slowest walk speed a creature that walks may have, in world units per tick. A tile of 256 units then takes over
+/// seven hours of play to cross, slower than anything is meant to walk, and a walk of 160,000 such tiles still fits a
+/// leg's 32-bit arrive ticks.
+inline constexpr f32 MIN_WALK_SPEED = 0.01F;
+
 /// One kind of creature: how it looks and moves. A kind that doesn't walk has a walk speed of zero;
 /// one that circles nothing, an orbit radius, wobble and speed of zero.
 struct CreatureData {
@@ -25,7 +30,7 @@ struct CreatureData {
     atlas::SpriteId sprite = atlas::SpriteId{};
     /// Its health at full.
     i64 health = 0;
-    /// World units per tick at full movement.
+    /// World units per tick at full movement: 0, or at least MIN_WALK_SPEED.
     f32 walkSpeed = 0.0F;
     /// The mean distance of its orbit from the point circled, in world units.
     f32 orbitRadius = 0.0F;

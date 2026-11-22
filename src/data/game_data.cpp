@@ -57,6 +57,11 @@ std::expected<core::CreatureData, core::Error> Creature(
     if (!walkSpeed) {
         return std::unexpected{ walkSpeed.error() };
     }
+    if (*walkSpeed != 0.0F && !(*walkSpeed >= core::MIN_WALK_SPEED)) {
+        return Fail(
+            node["walk_speed"], std::format("{}'s walk_speed is neither 0 nor at least {}", name, core::MIN_WALK_SPEED)
+        );
+    }
     creature.walkSpeed = *walkSpeed;
     const std::expected<i64, core::Error> health = internal::WholeNumber("creatures", node, name, "health", true, MAX_HEALTH);
     if (!health) {
