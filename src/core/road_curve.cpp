@@ -1,20 +1,18 @@
 #include "core/road_curve.hpp"
 
+#include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
-#include "core/math.hpp"
 
 namespace core {
 
 namespace {
 
-/// The spline's knot spacing grows as distance to this power: a half is the centripetal parametrisation, which never
-/// loops or cusps within a segment.
-constexpr f32 KNOT_POWER = 0.5F;
 /// Where in a tile its centre lies, as a fraction of its size.
 constexpr f32 TILE_CENTRE = 0.5F;
 /// How far, in tiles, a line's last stretch may run on or stop short and still be taken to flow into another line.
 constexpr f32 JOIN_TILES = 1.0F;
-/// The shortest run or crossing that still has a direction, in world units or as a share of the lengths compared.
+/// The shortest run or crossing that still has a direction, in world units or as a share of the lengths compared; a move
+/// of an end shorter than this isn't one.
 constexpr f32 SHORTEST_RUN = 1.0e-4F;
 
 f32 Length(Vec2 vec) {
@@ -26,8 +24,9 @@ Vec2 Lerp(Vec2 from, Vec2 target, f32 amount) {
 }
 
 /// The point at parameter `param` in [knots[1], knots[2]] of the centripetal Catmull-Rom spline through `points[1]` and
-/// `points[2]`, with `points[0]` and `points[3]` shaping its ends (Barry and Goldman's pyramid). Every neighbouring pair
-/// must differ.
+/// `points[2]`, with `points[0]` and `points[3]` shaping its ends (Barry and Goldman's pyramid); knot spacing grows as the
+/// square root of distance, the centripetal parametrisation, which never loops or cusps within a segment. Every neighbouring
+/// pair must differ.
 Vec2 SplineAt(const std::array<Vec2, 4>& points, const std::array<f32, 4>& knots, f32 param) {
     const auto blend = [&](Vec2 from, Vec2 target, std::size_t first, std::size_t last) {
         const f32 span = knots.at(last) - knots.at(first);
@@ -84,6 +83,7 @@ std::vector<Vec2> Waypoints(std::span<const TilePoint> tiles, f32 tileSize) {
 }
 
 std::vector<Vec2> Midline(std::span<const Vec2> waypoints, f32 tileSize, u32 stepsPerTile) {
+    PN_ASSERT(waypoints.size() >= 2, "a curve needs two waypoints");
     std::vector<Vec2> padded;
     padded.reserve(waypoints.size() + 2);
     padded.push_back(waypoints[0] + (waypoints[0] - waypoints[1]));
@@ -96,7 +96,7 @@ std::vector<Vec2> Midline(std::span<const Vec2> waypoints, f32 tileSize, u32 ste
         const std::array<Vec2, 4> points{ padded[segment], padded[segment + 1], padded[segment + 2], padded[segment + 3] };
         std::array<f32, 4> knots{};
         for (std::size_t knot = 1; knot < 4; ++knot) {
-            knots.at(knot) = knots.at(knot - 1) + math::Pow(Length(points.at(knot) - points.at(knot - 1)), KNOT_POWER);
+            knots.at(knot) = knots.at(knot - 1) + std::sqrt(Length(points.at(knot) - points.at(knot - 1)));
         }
         const std::size_t steps = SegmentSteps(Length(points[2] - points[1]), tileSize, stepsPerTile);
         for (std::size_t step = 1; step <= steps; ++step) {
@@ -107,12 +107,13 @@ std::vector<Vec2> Midline(std::span<const Vec2> waypoints, f32 tileSize, u32 ste
     return line;
 }
 
-std::optional<Vec2> Join(
+std::optional<Vec2> JoinedEnd(
     std::span<const Vec2> waypoints,
     std::size_t own,
     std::span<const std::vector<Vec2>> others,
     f32 tileSize
 ) {
+    PN_ASSERT(waypoints.size() >= 2, "an end needs a stretch before it");
     const Vec2 from = waypoints[waypoints.size() - 2];
     const Vec2 last = waypoints.back();
     const f32 reach = JOIN_TILES * tileSize;
@@ -139,52 +140,49 @@ std::optional<Vec2> Join(
             }
         }
     }
-    return nearest;
+    return nearest && Length(*nearest - from) > SHORTEST_RUN ? nearest : std::nullopt;
 }
 
-std::vector<Vec2> CurveThrough(
-    std::span<const TilePoint> line,
-    std::span<const std::vector<TilePoint>> others,
-    f32 tileSize,
-    u32 stepsPerTile
-) {
-    std::vector<Vec2> points = Waypoints(line, tileSize);
-    if (points.size() < 2) {
-        return {};
+std::vector<std::vector<Vec2>> Midlines(std::span<const std::vector<Vec2>> lines, f32 tileSize, u32 stepsPerTile) {
+    std::vector<std::vector<Vec2>> midlines;
+    midlines.reserve(lines.size());
+    for (const std::vector<Vec2>& line : lines) {
+        midlines.push_back(line.size() < 2 ? std::vector<Vec2>{} : Midline(line, tileSize, stepsPerTile));
     }
-    std::vector<std::vector<Vec2>> stored;
-    stored.reserve(others.size());
-    for (const std::vector<TilePoint>& other : others) {
-        const std::vector<Vec2> otherPoints = Waypoints(other, tileSize);
-        stored.push_back(otherPoints.size() < 2 ? std::vector<Vec2>{} : Midline(otherPoints, tileSize, stepsPerTile));
-    }
-    if (const std::optional<Vec2> joined = Join(points, stored.size(), stored, tileSize);
-        joined && Length(*joined - points[points.size() - 2]) > SHORTEST_RUN) {
-        points.back() = *joined;
-    }
-    return Midline(points, tileSize, stepsPerTile);
+    return midlines;
 }
 
 std::vector<std::vector<Vec2>> RoadCurves(const WorldMap& map) {
     const std::span<const std::vector<TilePoint>> roads = map.Roads();
     const f32 tileSize = map.TileSize();
+    const auto atCity = [&](TilePoint tile) {
+        return std::ranges::any_of(map.Places(), [&](const Place& place) {
+            return place.kind == PlaceKind::City && place.tile == tile;
+        });
+    };
     std::vector<std::vector<Vec2>> waypoints;
-    std::vector<std::vector<Vec2>> stored;
     waypoints.reserve(roads.size());
-    stored.reserve(roads.size());
     for (const std::vector<TilePoint>& road : roads) {
         waypoints.push_back(Waypoints(road, tileSize));
-        stored.push_back(waypoints.back().size() < 2 ? std::vector<Vec2>{} : Midline(waypoints.back(), tileSize, ROAD_STEPS));
     }
+    const std::vector<std::vector<Vec2>> stored = Midlines(waypoints, tileSize, ROAD_STEPS);
     std::vector<std::vector<Vec2>> curves(roads.size());
     for (std::size_t index = 0; index < roads.size(); ++index) {
         std::vector<Vec2>& points = waypoints[index];
         if (points.size() < 2) {
             continue;
         }
-        if (const std::optional<Vec2> joined = Join(points, index, stored, tileSize);
-            joined && Length(*joined - points[points.size() - 2]) > SHORTEST_RUN) {
-            points.back() = *joined;
+        // Both ends are found on the road as authored, so moving one never changes where the other looks.
+        const std::vector<Vec2> backwards(points.rbegin(), points.rend());
+        const std::optional<Vec2> last =
+            atCity(roads[index].back()) ? std::nullopt : JoinedEnd(points, index, stored, tileSize);
+        const std::optional<Vec2> first =
+            atCity(roads[index].front()) ? std::nullopt : JoinedEnd(backwards, index, stored, tileSize);
+        if (last) {
+            points.back() = *last;
+        }
+        if (first) {
+            points.front() = *first;
         }
         curves[index] = Midline(points, tileSize, ROAD_STEPS);
     }
