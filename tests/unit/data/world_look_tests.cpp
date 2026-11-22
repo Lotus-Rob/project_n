@@ -426,7 +426,7 @@ TEST_CASE("the shipped look's fog has 16 clouds and the written values") {
     CHECK(fog.drift == doctest::Approx(0.3F));
     CHECK(fog.fadeSeconds == doctest::Approx(0.5F));
     CHECK(fog.drain == doctest::Approx(0.85F));
-    CHECK(fog.sepia == std::array<u8, 3>{ 160, 138, 106 });
+    CHECK(fog.sepia == std::array<u8, 3>{ 160, 148, 124 });
     CHECK(fog.mist == std::array<u8, 3>{ 239, 233, 220 });
     CHECK(fog.mistStrength == doctest::Approx(0.25F));
     CHECK(fog.shade == std::array<u8, 3>{ 214, 206, 192 });
