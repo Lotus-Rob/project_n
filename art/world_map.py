@@ -1137,22 +1137,50 @@ def meet_road(stretch, road_tiles, river):
     return [first, *stretch[1:-1], last]
 
 
-def build_roads(kinds, river, places, danger=None, danger_cost=0):
-    """The roads between the cities. With a `danger` flag per tile and a `danger_cost`, each link is routed twice, once
-    as the strong walk it and once as the wary do, and where the two part a second road is built along the wary way."""
+def join_forks(forked, roads, kinds, river):
+    """Makes each end of the `forked` lines a waypoint of the road it lies on, in place: the first of `roads`, then of the
+    forks before it, whose rasterised tiles hold it. The game draws a road on a curve through its waypoints, which
+    between far-apart ones bulges off the tiles laid, so only a waypoint keeps the fork's end on the road as drawn.
+    Every end is found on the roads as they were laid, then all are added at once."""
+    found = {}  # (id of the road, index of its segment) -> [(how far along the segment, end)]
+    for at, line in enumerate(forked):
+        for end in (line[0], line[-1]):
+            candidates = roads + forked[:at]
+            if any(end in other for other in candidates):
+                continue
+            hit = next(((other, i) for other in candidates for i in range(len(other) - 1)
+                        if end in rasterise(other[i], other[i + 1])), None)
+            if hit is None:
+                raise SystemExit(f"world_map: a fork ends at {end}, on no road laid before it")
+            other, i = hit
+            along = abs(end[0] - other[i][0]) + abs(end[1] - other[i][1])
+            found.setdefault((id(other), i), (other, []))[1].append((along, end))
+    for (_, i), (other, ends) in sorted(found.items(), key=lambda item: -item[0][1]):
+        before = set(line_tiles(other))
+        other[i + 1:i + 1] = [end for _, end in sorted(set(ends))]
+        for x, y in set(line_tiles(other)) - before:
+            t = index(x, y)
+            if kind_cost(kinds[t]) is None or river[t]:
+                raise SystemExit(f"world_map: a road bent to meet a fork would cross ({x}, {y}), which it didn't")
+
+
+def link_roads(kinds, river, places, danger=None, danger_cost=0):
+    """Per link of ROADS, in order, the roads built for it: those the strong walk, and the forks along the wary way.
+    With a `danger` flag per tile and a `danger_cost`, each link is routed twice, once as the strong walk it and once as
+    the wary do, and where the two part a second road is built along the wary way."""
     road = [False] * len(kinds)
-    lines = []
+    links = []
     for first, second in ROADS:
         costs = plan_costs(kinds, river, road)
         start, goal = index(*places[first]), index(*places[second])
         path = route(costs, river, start, goal)
-        built = new_roads(path, road, kinds, river, costs)
+        strong = new_roads(path, road, kinds, river, costs)
         link_tiles = {t for t in path if road[t]}
-        for line in built:
+        for line in strong:
             for x, y in line_tiles(line):
                 road[index(x, y)] = True
                 link_tiles.add(index(x, y))
-        lines.extend(built)
+        forked = []
         if danger_cost and danger is not None:
             # Planned over the link's own road, which is cheap, so the wary keep to it until the danger turns them off.
             weak = plan_costs(kinds, river, road, danger, danger_cost)
@@ -1161,8 +1189,20 @@ def build_roads(kinds, river, places, danger=None, danger_cost=0):
                 for line in built:
                     for x, y in line_tiles(line):
                         road[index(x, y)] = True
-                lines.extend(built)
-    return lines
+                forked.extend(built)
+        earlier = [line for done in links for line in done[0] + done[1]]
+        join_forks(forked, strong + earlier, kinds, river)
+        links.append((strong, forked))
+        road = [False] * len(kinds)
+        for line in earlier + strong + forked:
+            for x, y in line_tiles(line):
+                road[index(x, y)] = True
+    return links
+
+
+def build_roads(kinds, river, places, danger=None, danger_cost=0):
+    """The roads between the cities, link by link (link_roads), each link's strong roads before its forks."""
+    return [line for strong, forked in link_roads(kinds, river, places, danger, danger_cost) for line in strong + forked]
 
 
 # Fords and danger sites.
@@ -1561,15 +1601,21 @@ def wary_danger_cost(world):
     return profile.get("features", {}).get("danger", 0)
 
 
-def route_roads(world):
-    """The roads and fords for the file's land, rivers and places, from the same routing a plain run uses."""
+def world_links(world):
+    """link_roads() for the file's land, rivers, places and wary danger cost."""
     kinds = kinds_of(world)
     cities = {p["key"]: p["tile"] for p in world["places"] if p["kind"] == "city"}
     river = derive(kinds, [], world["rivers"], [])[2]
     sites = [p["tile"] for p in world["places"] if p["kind"] == "danger"]
     danger = danger_tiles(sites, world.get("danger_reach", 0))
-    roads = build_roads(kinds, river, cities, danger, wary_danger_cost(world))
-    return roads, add_fords(kinds, roads, world["rivers"], cities["capital"])
+    return link_roads(kinds, river, cities, danger, wary_danger_cost(world))
+
+
+def route_roads(world):
+    """The roads and fords for the file's land, rivers and places, from the same routing a plain run uses."""
+    roads = [line for strong, forked in world_links(world) for line in strong + forked]
+    capital = next(p["tile"] for p in world["places"] if p["kind"] == "city" and p["key"] == "capital")
+    return roads, add_fords(kinds_of(world), roads, world["rivers"], capital)
 
 
 def rewrite_roads(text, roads, fords):

@@ -1,7 +1,9 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/road_curve.hpp"
 #include "data/strings.hpp"
 #include "data/world_map.hpp"
 #include "platform/paths.hpp"
+#include "support/road_curves.hpp"
 
 #include <doctest/doctest.h>
 
@@ -606,6 +608,45 @@ TEST_CASE("the shipped roads join every city to the capital") {
         return place.kind == core::PlaceKind::City && !reached.at(map->TileIndex(place.tile));
     });
     CHECK_MESSAGE(cut == map->Places().end(), "a city no road from the capital reaches");
+}
+
+// A road that ends on another's middle is drawn ending on that road's ribbon, never as a stub beside or across it: the
+// drawn end lies on another road's curve, whether the end was laid on a waypoint of it or RoadCurves() joined it there.
+TEST_CASE("every shipped road's end off a city is drawn on another road's curve") {
+    const std::shared_ptr<const core::WorldMap> map = Shipped();
+    const std::vector<std::vector<core::Vec2>> curves = core::RoadCurves(*map);
+    const auto atCity = [&](core::TilePoint tile) {
+        return std::ranges::any_of(map->Places(), [&](const core::Place& place) {
+            return place.kind == core::PlaceKind::City && place.tile == tile;
+        });
+    };
+    f32 worst = 0.0F;
+    std::size_t worstRoad = 0;
+    std::size_t ends = 0;
+    for (std::size_t road = 0; road < curves.size(); ++road) {
+        REQUIRE_FALSE(curves[road].empty());
+        const std::vector<core::TilePoint>& laid = map->Roads()[road];
+        for (const auto& [tile, drawn] :
+             { std::pair{ laid.front(), curves[road].front() }, std::pair{ laid.back(), curves[road].back() } }) {
+            if (atCity(tile)) {
+                continue;
+            }
+            ++ends;
+            f32 nearest = std::numeric_limits<f32>::max();
+            for (std::size_t other = 0; other < curves.size(); ++other) {
+                if (other != road) {
+                    nearest = std::min(nearest, test::OffCurve(drawn, curves[other]));
+                }
+            }
+            if (nearest > worst) {
+                worst = nearest;
+                worstRoad = road;
+            }
+        }
+    }
+    CAPTURE(worstRoad);
+    CHECK(ends > 0);
+    CHECK(worst / map->TileSize() < 0.01F);
 }
 
 TEST_CASE("the shipped map has about six cities and twenty danger sites") {

@@ -2858,6 +2858,29 @@ class WorldMapRoadsTest(unittest.TestCase):
                     self.assertIn(line[-1], parent)
         self.assertGreaterEqual(forks, 3)
 
+    def test_every_fork_ends_on_waypoints_of_the_roads_before_it(self):
+        """The game draws a road on a curve through its waypoints, which bulges off the tiles between far-apart ones; a
+        fork's end on such a tile would miss the road as drawn, so each end is a waypoint of a road laid before it."""
+        module = self.module
+        kinds = [module.KIND["meadow"]] * (module.COLUMNS * module.ROWS)
+        river = [False] * len(kinds)
+        places = {"capital": (10, 40), "port": (70, 52)}
+        with mock.patch.object(module, "ROADS", [("capital", "port")]):
+            tiles = [t for line in module.build_roads(kinds, river, places) for t in module.line_tiles(line)]
+            small = [module.link_roads(kinds, river, places, module.danger_tiles([tiles[at]], 4), 300)
+                     for at in range(len(tiles) // 5, len(tiles), len(tiles) // 5)]
+        unjoined = []
+        for name, links in [*((f"small {n}", links) for n, links in enumerate(small)), ("shipped", module.world_links(self.world))]:
+            before = []
+            for strong, forked in links:
+                before.extend(strong)
+                for line in forked:
+                    unjoined.extend(f"{name}: {line} at {end}" for end in (line[0], line[-1])
+                                    if not any(end in other for other in before))
+                    before.append(line)
+        self.assertGreaterEqual(sum(len(forked) for links in small for _, forked in links), 3)
+        self.assertEqual(unjoined, [])
+
     def test_a_comment_or_blank_line_at_column_zero_inside_a_block_is_refused(self):
         for key in ("roads", "fords"):
             for note in ("# a hand note", ""):
