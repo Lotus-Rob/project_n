@@ -2827,7 +2827,6 @@ class WorldMapRoadsTest(unittest.TestCase):
                     self.assertIn(line[-1], parent)
         self.assertGreaterEqual(forks, 3)
 
-
     def test_a_comment_or_blank_line_at_column_zero_inside_a_block_is_refused(self):
         for key in ("roads", "fords"):
             for note in ("# a hand note", ""):
@@ -2855,6 +2854,7 @@ class WorldMapRoadsTest(unittest.TestCase):
         parse = self.module.parse_flow
         self.assertEqual(parse("6  # tiles")[0], 6)
         self.assertEqual(parse("0.5")[0], 0.5)
+        self.assertEqual([parse(word)[0] for word in ("nan", "inf", "infinity", "1_0")], ["nan", "inf", "infinity", "1_0"])
         self.assertEqual(parse("{ a: false, b: true }")[0], {"a": False, "b": True})
 
     def test_a_reach_of_zero_flags_no_tile(self):
