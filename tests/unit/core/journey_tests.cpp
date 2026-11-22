@@ -132,6 +132,13 @@ TEST_CASE("a paced leg's first step from a foot near the next centre takes at le
     CHECK(leg.arrive == std::vector<u32>{ 0, 1, 65 });
 }
 
+TEST_CASE("a paced leg's first step from a foot already on the next centre takes a tick") {
+    const core::WorldMap map = TestMap();
+    constexpr std::array<u32, 2> NEXT{ { 0, 1 } };
+    const core::Leg leg = core::MakePacedLeg(map, 5, map.TileCentre(1), NEXT, 4.0F);
+    CHECK(leg.arrive == std::vector<u32>{ 0, 1 });
+}
+
 TEST_CASE("a walker is at its origin before the leg and its last tile after") {
     const core::WorldMap map = TestMap();
     constexpr i64 START = 100;

@@ -150,8 +150,10 @@ std::vector<u32> Search(const WorldMap& map, ProfileIndex profile, u32 from, u32
     return {};
 }
 
-/// The price of a straight step in FindShortestRoute: any whole number, as only the diagonal's ratio to it matters.
+/// The price of a straight step in FindShortestRoute: a multiple of DIAGONAL_DENOMINATOR, so the diagonal's price
+/// (this times the numerator over the denominator) is exact and the two stay in the diagonal's ratio.
 constexpr u32 SHORTEST_STEP = 5;
+static_assert(SHORTEST_STEP % DIAGONAL_DENOMINATOR == 0, "a diagonal's price is a whole number of a straight one's");
 
 } // namespace
 

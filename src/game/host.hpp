@@ -84,8 +84,8 @@ public:
     /// cultivator on a route for a WalkTo there (ignored elsewhere): the shortest way on foot (core::FindShortestRoute())
     /// from the tile under its foot to the tile under the action's point, as a journey of its own (PlayerRoute()) whose
     /// leg sets out from the foot itself on the world clock's tick, timed by distance at the cultivator's walk speed
-    /// (core::MakePacedLeg()). A WalkTo off the map or to a tile it
-    /// can't reach changes nothing; one to the tile it stands on ends its route, leaving it where it stands. Then held movement
+    /// (core::MakePacedLeg()). A WalkTo off the map, to a tile it can't reach, or from a cultivator whose walk speed is not
+    /// above 0 changes nothing; one to the tile it stands on ends its route, leaving it where it stands. Then held movement
     /// ends its route and, unless the world is paused (when the cultivator stands, any route held), walks it where it points,
     /// and a route places it where core::Where() puts it at the tick the world clock reaches this tick, ending once the clock
     /// reaches the route's end, on its last tile's centre. When the player's foot, on its way this tick, crosses the step area

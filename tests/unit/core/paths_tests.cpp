@@ -130,6 +130,12 @@ TEST_CASE("the shortest route never cuts a corner past impassable ground") {
     CHECK(core::FindShortestRoute(map, 1, 3) == core::FindRoute(map, core::WALKING, 1, 3));
 }
 
+TEST_CASE("the shortest route never squeezes a diagonal between two impassable tiles") {
+    const core::WorldMap map = MustBuild(Source({ "0~", "~." }));
+    CHECK(core::FindShortestRoute(map, 0, 3).empty());
+    CHECK(core::FindShortestRoute(map, 0, 3) == core::FindRoute(map, core::WALKING, 0, 3));
+}
+
 TEST_CASE("the shortest route to an impassable or unreachable tile is empty") {
     const core::WorldMap map = MustBuild(Source({ "0..~.", "...~.", "...~." }));
     CHECK(core::FindShortestRoute(map, 0, 3).empty()); // deep water
