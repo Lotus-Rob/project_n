@@ -21,6 +21,7 @@
 #include "support/fog.hpp"
 #include "support/host.hpp"
 #include "support/manifest.hpp"
+#include "support/road_curves.hpp"
 #include "support/saves.hpp"
 #include "support/seals.hpp"
 #include "support/world.hpp"
@@ -1863,20 +1864,6 @@ std::shared_ptr<const core::WorldMap> StaircaseWorld() {
     return std::make_shared<const core::WorldMap>(*std::move(built));
 }
 
-/// How far `point` lies from the polyline `curve`.
-f32 OffCurve(core::Vec2 point, std::span<const core::Vec2> curve) {
-    f32 nearest = std::numeric_limits<f32>::max();
-    for (std::size_t index = 1; index < curve.size(); ++index) {
-        const core::Vec2 along = curve[index] - curve[index - 1];
-        const core::Vec2 apart = point - curve[index - 1];
-        const f32 share =
-            std::clamp(((apart.x * along.x) + (apart.y * along.y)) / ((along.x * along.x) + (along.y * along.y)), 0.0F, 1.0F);
-        const core::Vec2 off = point - (curve[index - 1] + (along * share));
-        nearest = std::min(nearest, std::hypot(off.x, off.y));
-    }
-    return nearest;
-}
-
 TEST_CASE("a traveller on a road is published on its curve, and its label moves with it") {
     const std::shared_ptr<const core::WorldMap> map = StaircaseWorld();
     const std::vector<core::Vec2> curve = core::RoadCurves(*map)[0];
@@ -1885,7 +1872,8 @@ TEST_CASE("a traveller on a road is published on its curve, and its label moves 
     // of it, so the tick below takes it there.
     std::size_t corner = 1;
     for (std::size_t index = 1; index + 1 < road.tiles.size(); ++index) {
-        if (OffCurve(map->TileCentre(road.tiles[index]), curve) > OffCurve(map->TileCentre(road.tiles[corner]), curve)) {
+        if (test::OffCurve(map->TileCentre(road.tiles[index]), curve) >
+            test::OffCurve(map->TileCentre(road.tiles[corner]), curve)) {
             corner = index;
         }
     }
@@ -1894,7 +1882,7 @@ TEST_CASE("a traveller on a road is published on its curve, and its label moves 
     const TravelWorld world = TravelWorldOf(departures, false, TRAVEL_CLOCK, std::nullopt, map);
     const core::Journey& journey = world.journeys.front();
     const core::StableId traveller = journey.members.front();
-    REQUIRE(OffCurve(core::Where(*map, journey, clock + 1), curve) > 0.25F * test::small::TILE);
+    REQUIRE(test::OffCurve(core::Where(*map, journey, clock + 1), curve) > 0.25F * test::small::TILE);
 
     TickRange(*world.host, 1, 1);
     const core::Rect whole{ .min = {}, .max = { .x = 10.0F * test::small::TILE, .y = 4.0F * test::small::TILE } };
@@ -1902,7 +1890,7 @@ TEST_CASE("a traveller on a road is published on its curve, and its label moves 
     const core::RoadCurveIndex roads{ *map };
     const core::Vec2 from = core::DrawnWhere(*map, roads, journey, clock);
     const core::Vec2 onward = core::DrawnWhere(*map, roads, journey, clock + 1);
-    CHECK(OffCurve(onward, curve) < 0.02F * test::small::TILE);
+    CHECK(test::OffCurve(onward, curve) < 0.02F * test::small::TILE);
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     CHECK(SameInstance(
         InstanceOf(snapshot, traveller),
@@ -2024,49 +2012,147 @@ TEST_CASE("a walk-to sends the cultivator along the route") {
     CHECK(SamePoint(FootOf(*world.host, world.player), walked));
 }
 
-TEST_CASE("the cultivator walking a road is drawn on its curve, with its label and its route line") {
+/// A cultivator walking a route along StaircaseWorld()'s road towards its far city, stopped on the route's road tile
+/// whose centre stands farthest off the road's curve.
+struct CornerWalk {
+    TravelWorld world;
+    std::vector<core::Vec2> curve; // the road's
+    core::Journey route;
+    std::size_t corner = 0;  // the tile of the route it stands on
+    u64 tick = 0;            // the last simulation tick run
+    core::Snapshot snapshot; // published there, over the whole map
+};
+
+/// The whole of StaircaseWorld(), as a view.
+constexpr core::Rect STAIRCASE_VIEW{ .min = {}, .max = { .x = 10.0F * test::small::TILE, .y = 4.0F * test::small::TILE } };
+
+CornerWalk WalkedToCorner() {
+    CornerWalk walk;
     const std::shared_ptr<const core::WorldMap> map = StaircaseWorld();
-    const TravelWorld world = TravelWorldOf({}, true, TRAVEL_CLOCK, std::nullopt, map);
-    const std::vector<core::Vec2> curve = core::RoadCurves(*map)[0];
-    WalkTo(*world.host, 1, map->TileCentre(map->TileIndex({ .column = 9, .row = 3 })));
-    const core::Journey route = RouteOf(*world.host);
-    const core::Leg leg = RouteLegOf(*world.host);
-    // The road tile of the route, short of its end, whose centre stands farthest off the curve.
-    std::size_t corner = 0;
+    walk.world = TravelWorldOf({}, true, TRAVEL_CLOCK, std::nullopt, map);
+    walk.curve = core::RoadCurves(*map)[0];
+    WalkTo(*walk.world.host, 1, map->TileCentre(map->TileIndex({ .column = 9, .row = 3 })));
+    walk.route = RouteOf(*walk.world.host);
+    const core::Leg leg = RouteLegOf(*walk.world.host);
     f32 off = 0.0F;
     for (std::size_t index = 1; index + 1 < leg.tiles.size(); ++index) {
         const bool road = (map->FlagsAt(leg.tiles[index]) & std::to_underlying(core::TileFlag::Road)) != 0;
-        const f32 apart = OffCurve(map->TileCentre(leg.tiles[index]), curve);
+        const f32 apart = test::OffCurve(map->TileCentre(leg.tiles[index]), walk.curve);
         if (road && apart > off) {
-            corner = index;
+            walk.corner = index;
             off = apart;
         }
     }
     REQUIRE(off > 0.25F * test::small::TILE);
     // A walk-to's tick takes the clock a tick on, as each tick after it does.
-    const u64 reached = TRAVEL_CLOCK + leg.arrive[corner];
-    TickRange(*world.host, 2, leg.arrive[corner]);
-    REQUIRE(world.host->WorldTicks() == reached);
+    walk.tick = leg.arrive[walk.corner];
+    TickRange(*walk.world.host, 2, walk.tick);
+    REQUIRE(walk.world.host->WorldTicks() == TRAVEL_CLOCK + walk.tick);
+    walk.snapshot = Published(*walk.world.host, STAIRCASE_VIEW);
+    return walk;
+}
 
-    const core::Rect whole{ .min = {}, .max = { .x = 10.0F * test::small::TILE, .y = 4.0F * test::small::TILE } };
-    const core::Snapshot snapshot = Published(*world.host, whole);
-    const core::RoadCurveIndex roads{ *map };
-    const core::Vec2 from = core::DrawnWhere(*map, roads, route, static_cast<i64>(reached) - 1);
-    const core::Vec2 onward = core::DrawnWhere(*map, roads, route, static_cast<i64>(reached));
-    CHECK(OffCurve(onward, curve) < 0.02F * test::small::TILE);
-    const auto near = [](core::Vec2 lhs, core::Vec2 rhs) { return std::hypot(lhs.x - rhs.x, lhs.y - rhs.y) < 0.01F; };
+/// The distance between two points.
+f32 Apart(core::Vec2 lhs, core::Vec2 rhs) {
+    return std::hypot(lhs.x - rhs.x, lhs.y - rhs.y);
+}
+
+TEST_CASE("the cultivator walking a road is drawn on its curve, with its label and its route line") {
+    const CornerWalk walk = WalkedToCorner();
+    const core::WorldMap& map = *walk.world.map;
+    const core::Snapshot& snapshot = walk.snapshot;
+    const auto reached = static_cast<i64>(TRAVEL_CLOCK + walk.tick);
+    const core::RoadCurveIndex roads{ map };
+    const core::Vec2 from = core::DrawnWhere(map, roads, walk.route, reached - 1);
+    const core::Vec2 onward = core::DrawnWhere(map, roads, walk.route, reached);
+    CHECK(test::OffCurve(onward, walk.curve) < 0.02F * test::small::TILE);
+    const auto near = [](core::Vec2 lhs, core::Vec2 rhs) { return Apart(lhs, rhs) < 0.01F; };
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const SpriteId sprite = test::SmallData().cultivator.sprite;
     const core::Instance expected = core::MakeInstance(*manifest, { .sprite = sprite, .previous = from, .current = onward });
-    const core::Instance drawn = InstanceOf(snapshot, world.player);
+    const core::Instance drawn = InstanceOf(snapshot, walk.world.player);
     CHECK(near(drawn.previous, expected.previous));
     CHECK(near(drawn.current, expected.current));
     const core::Vec2 head{ .x = 0.0F, .y = -static_cast<f32>(manifest->Sprite(sprite).footY) };
-    const core::TextItem label = LabelOf(snapshot, world.player);
+    const core::TextItem label = LabelOf(snapshot, walk.world.player);
     CHECK(near(label.previous, from + head));
     CHECK(near(label.current, onward + head));
     REQUIRE_FALSE(snapshot.route.empty());
     CHECK(near(snapshot.route.front(), onward));
+}
+
+TEST_CASE("a walk-to changing course mid-road draws the cultivator on from where it was drawn") {
+    const CornerWalk walk = WalkedToCorner();
+    const core::WorldMap& map = *walk.world.map;
+    game::Host& host = *walk.world.host;
+    const core::TextItem before = LabelOf(walk.snapshot, walk.world.player);
+    const core::Instance drawnBefore = InstanceOf(walk.snapshot, walk.world.player);
+    // Back west to a tile off the road: a new route, setting out from the foot.
+    WalkTo(host, walk.tick + 1, map.TileCentre(map.TileIndex({ .column = 0, .row = 3 })));
+    REQUIRE(RouteLegOf(host).startTick == static_cast<i64>(TRAVEL_CLOCK + walk.tick));
+    const core::Snapshot after = Published(host, STAIRCASE_VIEW);
+    const core::TextItem label = LabelOf(after, walk.world.player);
+    CHECK(SamePoint(label.previous, before.current));
+    CHECK(SamePoint(InstanceOf(after, walk.world.player).previous, drawnBefore.current));
+    const game::Body body = BodyOf(host, walk.world.player);
+    CHECK(Apart(label.current, label.previous) <= Apart(body.current, body.previous) + (0.05F * test::small::TILE));
+    // The route line starts at the drawn foot, under the label.
+    const core::Vec2 head = before.current - walk.snapshot.route.front();
+    REQUIRE_FALSE(after.route.empty());
+    CHECK(Apart(after.route.front() + head, label.current) < 0.01F);
+}
+
+TEST_CASE("a walk-to onto the tile the cultivator stands on keeps it where it was drawn") {
+    const CornerWalk walk = WalkedToCorner();
+    const core::WorldMap& map = *walk.world.map;
+    game::Host& host = *walk.world.host;
+    const core::TextItem before = LabelOf(walk.snapshot, walk.world.player);
+    WalkTo(host, walk.tick + 1, map.TileCentre(walk.route.parts.front().leg.tiles[walk.corner]));
+    REQUIRE_FALSE(host.PlayerRoute().has_value());
+    const core::TextItem label = LabelOf(Published(host, STAIRCASE_VIEW), walk.world.player);
+    CHECK(SamePoint(label.previous, before.current));
+    CHECK(SamePoint(label.current, label.previous)); // it stands, so it never slides back to its body
+}
+
+TEST_CASE("held movement taking over mid-road fades the cultivator's shift over its next tile of walking") {
+    const CornerWalk walk = WalkedToCorner();
+    game::Host& host = *walk.world.host;
+    const core::StableId player = walk.world.player;
+    const core::TextItem before = LabelOf(walk.snapshot, player);
+    const core::Vec2 head = before.current - walk.snapshot.route.front(); // the label over the drawn foot
+
+    // A tick held south ends the route; it walks on from where it was drawn.
+    TickRange(host, walk.tick + 1, walk.tick + 1, { .move = { .x = 0.0F, .y = 1.0F } });
+    REQUIRE_FALSE(host.PlayerRoute().has_value());
+    const core::TextItem took = LabelOf(Published(host, STAIRCASE_VIEW), player);
+    CHECK(SamePoint(took.previous, before.current));
+    const game::Body body = BodyOf(host, player);
+    CHECK(Apart(took.current, took.previous) <= Apart(body.current, body.previous) + (0.05F * test::small::TILE));
+
+    // Standing, it stays where it is drawn: no slide while nothing is held.
+    TickRange(host, walk.tick + 2, walk.tick + 3);
+    const core::TextItem standing = LabelOf(Published(host, STAIRCASE_VIEW), player);
+    CHECK(SamePoint(standing.current, took.current));
+
+    // After a tile of held walking east it is drawn on its body again.
+    const auto walkTicks = static_cast<u64>(std::ceil(test::small::TILE / test::SmallData().cultivator.walkSpeed));
+    TickRange(host, walk.tick + 4, walk.tick + 4 + walkTicks, { .move = { .x = 1.0F, .y = 0.0F } });
+    const core::TextItem walked = LabelOf(Published(host, STAIRCASE_VIEW), player);
+    CHECK(Apart(walked.current, BodyOf(host, player).current + head) < 0.01F);
+}
+
+TEST_CASE("the cultivator reaching its route's end is drawn without a jump") {
+    const std::shared_ptr<const core::WorldMap> map = StaircaseWorld();
+    const TravelWorld world = TravelWorldOf({}, true, TRAVEL_CLOCK, std::nullopt, map);
+    // Two road tiles on, the step before the end starting from (1, 0), whose centre stands off the curve.
+    WalkTo(*world.host, 1, map->TileCentre(map->TileIndex({ .column = 2, .row = 0 })));
+    const u64 end = RouteLegOf(*world.host).arrive.back();
+    TickRange(*world.host, 2, end - 1);
+    const core::TextItem before = LabelOf(Published(*world.host, STAIRCASE_VIEW), world.player);
+    TickRange(*world.host, end, end);
+    REQUIRE_FALSE(world.host->PlayerRoute().has_value());
+    const core::TextItem after = LabelOf(Published(*world.host, STAIRCASE_VIEW), world.player);
+    CHECK(SamePoint(after.previous, before.current));
 }
 
 TEST_CASE("a walk-to crosses meadow at the held walk's pace") {
