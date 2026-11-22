@@ -48,6 +48,7 @@ inline constexpr u32 ROAD_STEPS = 4;
 /// Every road's curve of `map`, in the map's order, at ROAD_STEPS; a road of fewer than two distinct points gets an empty
 /// one, so the indices still match `map.Roads()`. A road's end that meets another road's middle (as JoinedEnd() says) is
 /// drawn there, at either end of the road, except an end on a city's tile, which stays at the city's centre.
+/// Two ends that would each join the other's road near the other's end don't both: the later road's joins, the earlier's stays.
 [[nodiscard]] std::vector<std::vector<Vec2>> RoadCurves(const WorldMap& map);
 
 } // namespace core
