@@ -4,7 +4,8 @@
 // camera offsets, nor step while its creature moves. So are the glows' drives: a demo glow's drawn amount follows
 // core::GlowStrength() from tick to tick, and reduce flashing holds and dims it. So are the seals: a screen-wide seal's ink,
 // tile by tile, must not shimmer at sub-pixel camera offsets. So is the world map: its terrain and travellers at the
-// smallest zoom, the fog's clouds over it, and its painted ground alone at three zooms, the same way.
+// smallest zoom, its road ribbons there, the fog's clouds over it, and its painted ground alone at three zooms, the same
+// way.
 #include "app/app.hpp"
 #include "app/damage_numbers.hpp"
 #include "app/hud.hpp"
@@ -605,6 +606,26 @@ TEST_CASE("the world's mountains by the sect at zoom 1: overlapping ranges, the 
           .ticks = TWO_SECONDS,
           .zoom = 1.0F,
           .centre = PlaceCentre(*map, "sect") + (MOUNTAINS_FROM_SECT * map->TileSize()),
+          .asInGame = true,
+          .exploreAll = true,
+          .debugSight = true }
+    );
+}
+
+// The zoom the fork's picture is drawn at: the whole fork round Ghostlight Woods, both its ends and the danger between,
+// fits in the view.
+constexpr f32 FORK_ZOOM = 0.3F;
+
+// A road forking past a danger, as the world's pictures are drawn: centred on Ghostlight Woods, the short road through
+// its reach and the longer one round it, parting and joining again, the travellers on both.
+TEST_CASE("the world's road forking at Ghostlight Woods: the short road past the danger and the long way round") {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    CheckAgainstReference(
+        { .name = "world_fork",
+          .scene = game::WORLD_SCENE,
+          .ticks = TWO_SECONDS,
+          .zoom = FORK_ZOOM,
+          .centre = PlaceCentre(*map, "ghostlight_woods"),
           .asInGame = true,
           .exploreAll = true,
           .debugSight = true }
@@ -2037,6 +2058,47 @@ TEST_CASE("the world's painted ground and travellers at the smallest zoom: shimm
     CHECK(change.worst < MOST_CHANGE);
 }
 
+/// The worst tile's change (WorstTileChange()) in what the world map's terrain drawn as `shown` adds over it drawn as
+/// `under`, a quarter pixel apart, at `zoom` over the busiest region, explored and seen whole (the debug sight, as the
+/// world's case). The snapshot's instances, batches and texts are cleared, so no traveller, cultivator or label is drawn.
+TileChange TerrainShimmer(f32 zoom, gfx::TerrainParts shown, gfx::TerrainParts under) {
+    core::math::SetFloatingPointEnvironment();
+    core::Jobs jobs{ ReferenceWorkers() };
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    const gfx::Camera camera{ .centre = game::WORLD_BUSIEST, .zoom = zoom };
+    const core::Rect area = app::CullArea(camera, static_cast<i32>(WIDTH), static_cast<i32>(HEIGHT));
+    host.Explore(area);
+    host.SetDebugSight(true);
+    core::Snapshot ground = Published(host, jobs, 0, area);
+    ground.instances.clear();
+    ground.batches.clear();
+    ground.ids.clear();
+    ground.texts.clear();
+    ground.groundBatches = 0;
+    const WorldFog look;
+    app::FogFade fade;
+    fade.Update(ground, *look.map, 0.0F, look.fadeSeconds);
+    platform::Window window = OpenWindow();
+    gfx::Renderer renderer = RendererFor(window, ground.scene, jobs);
+    gfx::View drawn{ .camera = camera, .fog = fade.Frame() };
+    drawn.terrainParts = shown;
+    gfx::View bare = drawn;
+    bare.terrainParts = under;
+    return WorstTileChange(QuarterPixelApart(renderer, ground, ground, drawn, bare, jobs));
+}
+
+// The road ribbons' own ink over the rest of the terrain, at the smallest zoom, where their soft edges are narrowest in
+// pixels and a band that hits or misses pixels as the view pans would crawl most.
+TEST_CASE("the world's road ribbons at the smallest zoom: shimmer held to its bound") {
+    // Measured 0.00500 (0.00431 at zoom 0.5, 0.00128 at 1, 0.00337 at 2); about 1.25 times that, as the world's bound is,
+    // and well inside the 0.02 a label's or a seal's line may crawl.
+    constexpr f64 MOST_CHANGE = 0.0062;
+    const TileChange change = TerrainShimmer(gfx::MIN_ZOOM, gfx::TerrainParts::All, gfx::TerrainParts::AllButRoads);
+    MESSAGE("road shimmer: ", change.worst);
+    INFO("of ", change.measured, " tiles, the worst changed its ink by ", change.worst);
+    CHECK(change.worst < MOST_CHANGE);
+}
+
 // What the fog's clouds and shade add over a fogless picture of the same unexplored land, at the smallest zoom, where the
 // clouds' fine detail sits near a pixel.
 TEST_CASE("the fog's clouds at the smallest zoom: shimmer held to its bound") {
@@ -2065,37 +2127,13 @@ TEST_CASE("the fog's clouds at the smallest zoom: shimmer held to its bound") {
     CHECK(change.worst < MOST_CHANGE);
 }
 
-/// The painted ground's shimmer at `zoom` over the busiest region, explored and seen whole (the debug sight, as the world's
-/// case): what the ground, the veil, rivers, stamps, mist, paintings, crossings and markers add over the same frame painted
-/// as flat paper, a quarter pixel apart. The snapshot's instances, batches and texts are cleared, so no traveller, cultivator
-/// or label is drawn, and the road ribbons are left out (gfx::TerrainParts::AllButRoads): their shimmer is their own. Over
-/// paper rather than the dark backdrop, so the paper's large even ink doesn't dilute the crawl of the grid's, shores',
-/// rivers' and stamps' edges. Prints `ground shimmer <zoom>: <value>` and checks the worst tile changed less than
-/// `mostChange`.
+/// The painted ground's shimmer at `zoom` (TerrainShimmer()): what the ground, the veil, rivers, stamps, mist, paintings,
+/// crossings and markers add over the same frame painted as flat paper. The road ribbons are left out
+/// (gfx::TerrainParts::AllButRoads): their own case guards them. Over paper rather than the dark backdrop, so the paper's
+/// large even ink doesn't dilute the crawl of the grid's, shores', rivers' and stamps' edges. Prints
+/// `ground shimmer <zoom>: <value>` and checks the worst tile changed less than `mostChange`.
 void CheckGroundShimmer(f32 zoom, f64 mostChange) {
-    core::math::SetFloatingPointEnvironment();
-    core::Jobs jobs{ ReferenceWorkers() };
-    game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
-    const gfx::Camera camera{ .centre = game::WORLD_BUSIEST, .zoom = zoom };
-    const core::Rect area = app::CullArea(camera, static_cast<i32>(WIDTH), static_cast<i32>(HEIGHT));
-    host.Explore(area);
-    host.SetDebugSight(true);
-    core::Snapshot ground = Published(host, jobs, 0, area);
-    ground.instances.clear();
-    ground.batches.clear();
-    ground.ids.clear();
-    ground.texts.clear();
-    ground.groundBatches = 0;
-    const WorldFog look;
-    app::FogFade fade;
-    fade.Update(ground, *look.map, 0.0F, look.fadeSeconds);
-    platform::Window window = OpenWindow();
-    gfx::Renderer renderer = RendererFor(window, ground.scene, jobs);
-    gfx::View painted{ .camera = camera, .fog = fade.Frame() };
-    painted.terrainParts = gfx::TerrainParts::AllButRoads;
-    gfx::View paper = painted;
-    paper.terrainParts = gfx::TerrainParts::PaperOnly;
-    const TileChange change = WorstTileChange(QuarterPixelApart(renderer, ground, ground, painted, paper, jobs));
+    const TileChange change = TerrainShimmer(zoom, gfx::TerrainParts::AllButRoads, gfx::TerrainParts::PaperOnly);
     // The line `project_n measure` reads from the reference run's output.
     MESSAGE("ground shimmer ", zoom, ": ", change.worst);
     INFO("of ", change.measured, " tiles, the worst changed its ink by ", change.worst);
