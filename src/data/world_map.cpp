@@ -379,19 +379,28 @@ std::expected<void, core::Error> ReadEntries(const YAML::Node& entry, const char
     return {};
 }
 
-/// Sets the cost of the feature `name`, one of road, river, bridge and ford, to what `node` holds.
+/// Sets the cost of the feature `name`, one of road, river, bridge, ford and danger, to what `node` holds. A danger's is
+/// added to a tile's cost, so it may be 0 and never impassable.
 std::expected<void, core::Error> ReadFeature(
     core::FeatureCosts& features,
     const std::string& name,
     const YAML::Node& node,
     const std::string& owner
 ) {
+    if (name == "danger") {
+        const std::expected<i64, core::Error> added = Whole(node, std::format("{}'s danger cost", owner), core::MAX_WALK_COST);
+        if (!added) {
+            return std::unexpected{ added.error() };
+        }
+        features.danger = static_cast<u16>(*added);
+        return {};
+    }
     constexpr auto NAMES = std::to_array<std::string_view>({ "road", "river", "bridge", "ford" });
     const std::array<u16*, NAMES.size()> costs{ { &features.road, &features.river, &features.bridge, &features.ford } };
     // An index rather than an iterator: std::array's iterator is a pointer in libstdc++ and a class in MSVC's library.
     const auto index = static_cast<std::size_t>(std::ranges::distance(NAMES.begin(), std::ranges::find(NAMES, name)));
     if (index == NAMES.size()) {
-        return RefuseMap(node, std::format("{} has no feature \"{}\": road, river, bridge or ford", owner, name));
+        return RefuseMap(node, std::format("{} has no feature \"{}\": road, river, bridge, ford or danger", owner, name));
     }
     const std::expected<u16, core::Error> cost = Cost(node, std::format("{}'s {} cost", owner, name));
     if (!cost) {
@@ -663,6 +672,11 @@ std::expected<void, core::Error> ReadSizes(const YAML::Node& root, core::WorldMa
     if (!ford) {
         return std::unexpected{ ford.error() };
     }
+    const std::expected<i64, core::Error> reach =
+        internal::WholeNumber(WORLD_READER, root, "the map", "danger_reach", false, core::MAX_DANGER_REACH);
+    if (!reach) {
+        return std::unexpected{ reach.error() };
+    }
     const std::expected<f64, core::Error> tile = internal::RequiredNumber(
         WORLD_READER, root, "the map", "tile_size", { .low = LEAST_TILE_SIZE, .lowOpen = false, .high = MOST_TILE_SIZE }
     );
@@ -676,6 +690,7 @@ std::expected<void, core::Error> ReadSizes(const YAML::Node& root, core::WorldMa
     }
     source.roadCost = static_cast<u16>(*road);
     source.fordCost = static_cast<u16>(*ford);
+    source.dangerReach = static_cast<u8>(*reach);
     source.tileSize = static_cast<f32>(*tile);
     return {};
 }
@@ -699,6 +714,7 @@ std::expected<core::WorldMap, core::Error> ParseWorldMap(
             "key",
             { "road_cost",
               "ford_cost",
+              "danger_reach",
               "tile_size",
               "kinds",
               "grid",

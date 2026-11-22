@@ -11,6 +11,7 @@ constexpr u8 FLAG_ROAD = std::to_underlying(TileFlag::Road);
 constexpr u8 FLAG_RIVER = std::to_underlying(TileFlag::River);
 constexpr u8 FLAG_BRIDGE = std::to_underlying(TileFlag::Bridge);
 constexpr u8 FLAG_FORD = std::to_underlying(TileFlag::Ford);
+constexpr u8 FLAG_DANGER = std::to_underlying(TileFlag::Danger);
 constexpr f32 TILE_MIDDLE = 0.5F; // the middle of a tile
 constexpr u32 MAX_TILES = 1U << 24;
 
@@ -338,6 +339,9 @@ std::expected<void, Error> CheckProfiles(const WorldMapSource& source) {
         else if (std::ranges::contains(featureCosts, 0)) {
             problem = "costs a feature 0: a step takes time, so a cost is at least 1";
         }
+        else if (profile.features.danger > MAX_WALK_COST) {
+            problem = std::format("adds a danger cost over the most a step may cost, {}", MAX_WALK_COST);
+        }
         else if (!std::ranges::all_of(profile.kindCosts, walkable)) {
             problem = std::format("costs a terrain kind over the most a step may cost, {}", MAX_WALK_COST);
         }
@@ -401,8 +405,34 @@ std::vector<u16> ProfileLayer(const WorldMapSource& source, const std::vector<u8
         else {
             cost[tile] = kindCost;
         }
+        if ((tileFlags & FLAG_DANGER) != 0 && cost[tile] != IMPASSABLE_COST) {
+            cost[tile] = static_cast<u16>(std::min<u32>(cost[tile] + profile.features.danger, MAX_WALK_COST));
+        }
     }
     return cost;
+}
+
+/// Flags every tile whose centre lies within the danger reach of a danger place's tile. Places must already be on the map.
+void MarkDanger(const WorldMapSource& source, std::vector<u8>& flags) {
+    const i64 reach = source.dangerReach;
+    for (const Place& place : source.places) {
+        if (place.kind != PlaceKind::Danger || reach == 0) {
+            continue;
+        }
+        const i64 firstRow = std::max<i64>(0, i64{ place.tile.row } - reach);
+        const i64 lastRow = std::min<i64>(source.rows - 1, i64{ place.tile.row } + reach);
+        const i64 firstColumn = std::max<i64>(0, i64{ place.tile.column } - reach);
+        const i64 lastColumn = std::min<i64>(source.columns - 1, i64{ place.tile.column } + reach);
+        for (i64 row = firstRow; row <= lastRow; ++row) {
+            for (i64 column = firstColumn; column <= lastColumn; ++column) {
+                const i64 across = column - i64{ place.tile.column };
+                const i64 down = row - i64{ place.tile.row };
+                if (((across * across) + (down * down)) <= (reach * reach)) {
+                    flags[(static_cast<std::size_t>(row) * source.columns) + static_cast<std::size_t>(column)] |= FLAG_DANGER;
+                }
+            }
+        }
+    }
 }
 
 struct PlaceLayer {
@@ -540,12 +570,14 @@ std::expected<WorldMap, Error> WorldMap::Build(WorldMapSource source) {
         return std::unexpected{ derived.error() };
     }
     map.m_cost = ProfileLayer(source, map.m_flags, OnFoot(source));
-    for (const MovementProfile& profile : source.profiles) {
-        map.m_profileCost.push_back(ProfileLayer(source, map.m_flags, profile));
-    }
     auto placed = PlaceTiles(source, map.m_cost);
     if (!placed) {
         return std::unexpected{ placed.error() };
+    }
+    // Danger flags need the places checked and on the map, and only the profile layers (never the base layer) price them.
+    MarkDanger(source, map.m_flags);
+    for (const MovementProfile& profile : source.profiles) {
+        map.m_profileCost.push_back(ProfileLayer(source, map.m_flags, profile));
     }
     // A danger draws no one, whatever a source built in code left in it.
     for (Place& place : source.places) {
@@ -659,7 +691,7 @@ TileSpan WorldMap::TilesIn(Rect view) const {
 
 u64 WorldMap::Hash() const {
     Hasher hasher;
-    hasher(m_source.columns, m_source.rows, m_source.tileSize, m_source.roadCost, m_source.fordCost);
+    hasher(m_source.columns, m_source.rows, m_source.tileSize, m_source.roadCost, m_source.fordCost, m_source.dangerReach);
     hasher(static_cast<u64>(m_source.kinds.size()));
     for (const TerrainKind& kind : m_source.kinds) {
         HashText(hasher, kind.name);
@@ -672,7 +704,12 @@ u64 WorldMap::Hash() const {
     for (const MovementProfile& profile : m_source.profiles) {
         HashText(hasher, profile.key);
         hasher(
-            profile.ticksPerCost, profile.features.road, profile.features.river, profile.features.bridge, profile.features.ford
+            profile.ticksPerCost,
+            profile.features.road,
+            profile.features.river,
+            profile.features.bridge,
+            profile.features.ford,
+            profile.features.danger
         );
         hasher(static_cast<u64>(profile.kindCosts.size()));
         for (const u16 cost : profile.kindCosts) {

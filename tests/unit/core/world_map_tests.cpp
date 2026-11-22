@@ -660,6 +660,104 @@ TEST_CASE("Build refuses a profile it can't use") {
           }).contains("17 profiles"));
 }
 
+constexpr u32 DANGER_REACH = 2;
+constexpr u32 DANGER_COLUMNS = 9;
+constexpr u16 DANGER_COST = 30;
+constexpr u16 DANGER_KIND_COST = 990;
+constexpr core::ProfileIndex FEAR = 1;
+
+// `source` with a danger place on `tile`.
+void AddDanger(core::WorldMapSource& source, core::TilePoint tile) {
+    source.places.push_back(
+        { .key = "danger",
+          .kind = core::PlaceKind::Danger,
+          .sort = "cave",
+          .tile = tile,
+          .nameKey = "place_danger",
+          .name = {},
+          .people = 0,
+          .start = false }
+    );
+}
+
+bool Flagged(const core::WorldMap& map, u32 column, u32 row) {
+    return (map.FlagsAt(map.TileIndex({ .column = column, .row = row })) & std::to_underlying(core::TileFlag::Danger)) != 0;
+}
+
+TEST_CASE("a danger's reach flags the tiles within it") {
+    const std::vector<std::string> rows(DANGER_COLUMNS, "0........");
+    core::WorldMapSource source = Source(rows);
+    AddDanger(source, { .column = 4, .row = 4 });
+    source.dangerReach = DANGER_REACH;
+    const core::WorldMap map = MustBuild(source);
+    CHECK(Flagged(map, 4, 4));
+    CHECK(Flagged(map, 4, 2));
+    CHECK(Flagged(map, 6, 4));
+    CHECK(Flagged(map, 5, 5));
+    CHECK_FALSE(Flagged(map, 6, 6));
+    CHECK_FALSE(Flagged(map, 4, 1));
+    CHECK_FALSE(Flagged(map, 0, 0));
+    source.dangerReach = 0;
+    const core::WorldMap none = MustBuild(source);
+    for (u32 tile = 0; tile < DANGER_COLUMNS * DANGER_COLUMNS; ++tile) {
+        CHECK((none.FlagsAt(tile) & std::to_underlying(core::TileFlag::Danger)) == 0);
+    }
+}
+
+TEST_CASE("a profile's danger cost adds after the road and caps") {
+    // Columns: 0 the city, 1 meadow, 2 road, 3 sand, 4 the danger, 5 deep water.
+    core::WorldMapSource source = Source({ "0..,..~", "......." });
+    source.grid[4] = MEADOW;
+    source.roads = { { { .column = 2, .row = 0 } } };
+    AddDanger(source, { .column = 4, .row = 0 });
+    source.dangerReach = DANGER_COLUMNS;
+    core::MovementProfile walk = Profile("walk", MEADOW_COST);
+    walk.kindCosts[DEEP] = core::IMPASSABLE_COST;
+    core::MovementProfile fear = walk;
+    fear.key = "fear";
+    fear.features.danger = DANGER_COST;
+    fear.kindCosts[SAND] = DANGER_KIND_COST;
+    source.profiles = { walk, fear };
+    const core::WorldMap map = MustBuild(std::move(source));
+    CHECK(map.CostAt(1, FEAR) == MEADOW_COST + DANGER_COST);
+    CHECK(map.CostAt(2, FEAR) == ROAD_COST + DANGER_COST);
+    CHECK(map.CostAt(6, FEAR) == core::IMPASSABLE_COST);
+    CHECK(map.CostAt(3, FEAR) == core::MAX_WALK_COST);
+    CHECK(map.CostAt(1, core::WALKING) == MEADOW_COST);
+    CHECK(map.CostAt(2, core::WALKING) == ROAD_COST);
+}
+
+TEST_CASE("the base costs ignore danger") {
+    // City 0 is the start; the danger's reach covers the way into city 1.
+    core::WorldMapSource source = Source({ "0.......1" });
+    AddDanger(source, { .column = 6, .row = 0 });
+    source.dangerReach = 3;
+    const core::MovementProfile walk = Profile("walk", MEADOW_COST);
+    core::MovementProfile fear = walk;
+    fear.key = "fear";
+    fear.features.danger = DANGER_KIND_COST;
+    source.profiles = { walk, fear };
+    const core::WorldMap map = MustBuild(std::move(source));
+    CHECK(Flagged(map, 7, 0));
+    CHECK(map.CostAt(7) == MEADOW_COST);
+    CHECK(map.RegionAt(7) == 1);
+    CHECK(map.RegionAt(0) == 0);
+    CHECK(map.CostAt(7, FEAR) == core::MAX_WALK_COST);
+}
+
+TEST_CASE("the hash changes with danger reach and danger costs") {
+    const auto hashOf = [](const std::function<void(core::WorldMapSource&)>& change) {
+        core::WorldMapSource source = ProfileSource();
+        source.profiles = { Profile("walk", MEADOW_COST) };
+        AddDanger(source, { .column = 5, .row = 1 });
+        change(source);
+        return MustBuild(std::move(source)).Hash();
+    };
+    const u64 reference = hashOf([](core::WorldMapSource&) {});
+    CHECK(hashOf([](core::WorldMapSource& source) { source.dangerReach = 1; }) != reference);
+    CHECK(hashOf([](core::WorldMapSource& source) { source.profiles[0].features.danger = 1; }) != reference);
+}
+
 TEST_CASE("the hash changes with a profile's pace or cost") {
     const auto hashOf = [](const std::function<void(core::MovementProfile&)>& change) {
         core::WorldMapSource source = ProfileSource();
