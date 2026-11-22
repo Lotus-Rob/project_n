@@ -8,6 +8,7 @@
 #include "core/names.hpp"
 #include "core/paths.hpp"
 #include "core/rect.hpp"
+#include "core/road_curve.hpp"
 #include "core/seal.hpp"
 #include "core/state.hpp"
 #include "core/view_limits.hpp"
@@ -1564,18 +1565,22 @@ core::StableId CultivatorAt(core::State& state, const core::GameData& data, core
 /// A host that has loaded and entered a world save at `clock`, with the months it has passed, holding one visit along
 /// FirstRoad() per departure, its members world NPCs at home in the road's first city, and, with `player`, the player's
 /// cultivator on that city's tile centre: nothing else lives there. Without a player the debug sight is on, as no one
-/// else sees the travellers. A `walkSpeed` replaces the cultivator's in the game data.
+/// else sees the travellers. A `walkSpeed` replaces the cultivator's in the game data, and a `map` the small map.
 TravelWorld TravelWorldOf(
     std::span<const Departure> departures,
     bool player = false,
     u64 clock = TRAVEL_CLOCK,
-    std::optional<f32> walkSpeed = std::nullopt
+    std::optional<f32> walkSpeed = std::nullopt,
+    std::shared_ptr<const core::WorldMap> map = nullptr
 ) {
     TravelWorld world;
     // The shipped names, so a party's two members are named apart.
     core::GameData data = test::SmallData();
     if (walkSpeed) {
         data.cultivator.walkSpeed = *walkSpeed;
+    }
+    if (map) {
+        data.world = std::move(map);
     }
     data.names = test::ShippedNames();
     world.map = data.world;
@@ -1827,6 +1832,90 @@ TEST_CASE("a month step asked for early stands travellers where the new clock pu
     CHECK(SameInstance(InstanceOf(Published(*world.host, NearHome(*world.map)), traveller), expected));
 }
 
+/// A 10 by 4 meadow map with the small map's costs, a city on (0, 0) (the start) and one on (9, 3), joined by a road laid
+/// straight between them: its tiles step as a staircase, whose corner tiles' centres stand off the road's curve.
+std::shared_ptr<const core::WorldMap> StaircaseWorld() {
+    constexpr u32 COLUMNS = 10;
+    constexpr u32 ROWS = 4;
+    core::WorldMapSource source;
+    source.columns = COLUMNS;
+    source.rows = ROWS;
+    source.tileSize = test::small::TILE;
+    source.roadCost = test::small::ROAD_COST;
+    source.fordCost = test::small::FORD_COST;
+    source.kinds = { { .name = "meadow", .symbol = '.', .cost = test::small::MEADOW_COST } };
+    source.grid.assign(std::size_t{ COLUMNS } * ROWS, test::small::MEADOW);
+    source.roads = { { { .column = 0, .row = 0 }, { .column = COLUMNS - 1, .row = ROWS - 1 } } };
+    for (const u32 city : { 0U, 1U }) {
+        source.places.push_back(
+            { .key = std::format("city{}", city),
+              .kind = core::PlaceKind::City,
+              .sort = "",
+              .tile = { .column = city * (COLUMNS - 1), .row = city * (ROWS - 1) },
+              .nameKey = std::format("city_{}", city),
+              .name = {},
+              .people = test::small::PEOPLE,
+              .start = city == 0 }
+        );
+    }
+    std::expected<core::WorldMap, core::Error> built = core::WorldMap::Build(std::move(source));
+    REQUIRE(built);
+    return std::make_shared<const core::WorldMap>(*std::move(built));
+}
+
+/// How far `point` lies from the polyline `curve`.
+f32 OffCurve(core::Vec2 point, std::span<const core::Vec2> curve) {
+    f32 nearest = std::numeric_limits<f32>::max();
+    for (std::size_t index = 1; index < curve.size(); ++index) {
+        const core::Vec2 along = curve[index] - curve[index - 1];
+        const core::Vec2 apart = point - curve[index - 1];
+        const f32 share =
+            std::clamp(((apart.x * along.x) + (apart.y * along.y)) / ((along.x * along.x) + (along.y * along.y)), 0.0F, 1.0F);
+        const core::Vec2 off = point - (curve[index - 1] + (along * share));
+        nearest = std::min(nearest, std::hypot(off.x, off.y));
+    }
+    return nearest;
+}
+
+TEST_CASE("a traveller on a road is published on its curve, and its label moves with it") {
+    const std::shared_ptr<const core::WorldMap> map = StaircaseWorld();
+    const std::vector<core::Vec2> curve = core::RoadCurves(*map)[0];
+    const Road road = FirstRoad(*map);
+    // The tile of the way out, short of its end, whose centre stands farthest off the curve; the traveller is a tick short
+    // of it, so the tick below takes it there.
+    std::size_t corner = 1;
+    for (std::size_t index = 1; index + 1 < road.tiles.size(); ++index) {
+        if (OffCurve(map->TileCentre(road.tiles[index]), curve) > OffCurve(map->TileCentre(road.tiles[corner]), curve)) {
+            corner = index;
+        }
+    }
+    const auto clock = static_cast<i64>(TRAVEL_CLOCK);
+    const std::array<Departure, 1> departures{ { { .tick = clock + 1 - i64{ road.arrive.at(corner) }, .members = 1 } } };
+    const TravelWorld world = TravelWorldOf(departures, false, TRAVEL_CLOCK, std::nullopt, map);
+    const core::Journey& journey = world.journeys.front();
+    const core::StableId traveller = journey.members.front();
+    REQUIRE(OffCurve(core::Where(*map, journey, clock + 1), curve) > 0.25F * test::small::TILE);
+
+    TickRange(*world.host, 1, 1);
+    const core::Rect whole{ .min = {}, .max = { .x = 10.0F * test::small::TILE, .y = 4.0F * test::small::TILE } };
+    const core::Snapshot snapshot = Published(*world.host, whole);
+    const core::RoadCurveIndex roads{ *map };
+    const core::Vec2 from = core::DrawnWhere(*map, roads, journey, clock);
+    const core::Vec2 onward = core::DrawnWhere(*map, roads, journey, clock + 1);
+    CHECK(OffCurve(onward, curve) < 0.02F * test::small::TILE);
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    CHECK(SameInstance(
+        InstanceOf(snapshot, traveller),
+        core::MakeInstance(
+            *manifest, { .sprite = SpriteId::Villager, .previous = from, .current = onward, .flags = core::INSTANCE_SIGHT_FADE }
+        )
+    ));
+    const core::Vec2 head{ .x = 0.0F, .y = -static_cast<f32>(manifest->Sprite(SpriteId::Villager).footY) };
+    const core::TextItem label = LabelOf(snapshot, traveller);
+    CHECK(SamePoint(label.previous, from + head));
+    CHECK(SamePoint(label.current, onward + head));
+}
+
 // How many tiles along the first road a walk-to below goes, and a tile farther on.
 constexpr std::size_t ROUTE_TILES = 4;
 constexpr std::size_t FARTHER = ROUTE_TILES + 2;
@@ -1933,6 +2022,51 @@ TEST_CASE("a walk-to sends the cultivator along the route") {
     TickRange(*world.host, end - TRAVEL_CLOCK + 1, end - TRAVEL_CLOCK + 1, HELD_RIGHT);
     const core::Vec2 walked = map.TileCentre(leg.tiles.back()) + core::Vec2{ .x = test::SmallData().cultivator.walkSpeed };
     CHECK(SamePoint(FootOf(*world.host, world.player), walked));
+}
+
+TEST_CASE("the cultivator walking a road is drawn on its curve, with its label and its route line") {
+    const std::shared_ptr<const core::WorldMap> map = StaircaseWorld();
+    const TravelWorld world = TravelWorldOf({}, true, TRAVEL_CLOCK, std::nullopt, map);
+    const std::vector<core::Vec2> curve = core::RoadCurves(*map)[0];
+    WalkTo(*world.host, 1, map->TileCentre(map->TileIndex({ .column = 9, .row = 3 })));
+    const core::Journey route = RouteOf(*world.host);
+    const core::Leg leg = RouteLegOf(*world.host);
+    // The road tile of the route, short of its end, whose centre stands farthest off the curve.
+    std::size_t corner = 0;
+    f32 off = 0.0F;
+    for (std::size_t index = 1; index + 1 < leg.tiles.size(); ++index) {
+        const bool road = (map->FlagsAt(leg.tiles[index]) & std::to_underlying(core::TileFlag::Road)) != 0;
+        const f32 apart = OffCurve(map->TileCentre(leg.tiles[index]), curve);
+        if (road && apart > off) {
+            corner = index;
+            off = apart;
+        }
+    }
+    REQUIRE(off > 0.25F * test::small::TILE);
+    // A walk-to's tick takes the clock a tick on, as each tick after it does.
+    const u64 reached = TRAVEL_CLOCK + leg.arrive[corner];
+    TickRange(*world.host, 2, leg.arrive[corner]);
+    REQUIRE(world.host->WorldTicks() == reached);
+
+    const core::Rect whole{ .min = {}, .max = { .x = 10.0F * test::small::TILE, .y = 4.0F * test::small::TILE } };
+    const core::Snapshot snapshot = Published(*world.host, whole);
+    const core::RoadCurveIndex roads{ *map };
+    const core::Vec2 from = core::DrawnWhere(*map, roads, route, static_cast<i64>(reached) - 1);
+    const core::Vec2 onward = core::DrawnWhere(*map, roads, route, static_cast<i64>(reached));
+    CHECK(OffCurve(onward, curve) < 0.02F * test::small::TILE);
+    const auto near = [](core::Vec2 lhs, core::Vec2 rhs) { return std::hypot(lhs.x - rhs.x, lhs.y - rhs.y) < 0.01F; };
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    const SpriteId sprite = test::SmallData().cultivator.sprite;
+    const core::Instance expected = core::MakeInstance(*manifest, { .sprite = sprite, .previous = from, .current = onward });
+    const core::Instance drawn = InstanceOf(snapshot, world.player);
+    CHECK(near(drawn.previous, expected.previous));
+    CHECK(near(drawn.current, expected.current));
+    const core::Vec2 head{ .x = 0.0F, .y = -static_cast<f32>(manifest->Sprite(sprite).footY) };
+    const core::TextItem label = LabelOf(snapshot, world.player);
+    CHECK(near(label.previous, from + head));
+    CHECK(near(label.current, onward + head));
+    REQUIRE_FALSE(snapshot.route.empty());
+    CHECK(near(snapshot.route.front(), onward));
 }
 
 TEST_CASE("a walk-to crosses meadow at the held walk's pace") {
