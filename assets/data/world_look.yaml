@@ -116,8 +116,8 @@ kinds:
     stamps:
       sprites: [stamp_rock_0, stamp_rock_1, stamp_rock_2, stamp_rock_3]
       density: 0.6
-      size: [0.8, 1.1]
-      jitter: 0.2
+      size: [1.2, 1.7]
+      jitter: 0.3
       thin_below: 0
       mist: true
   snow:
@@ -125,7 +125,7 @@ kinds:
     strength: 0.2
     stamps:
       sprites: [stamp_snow_0, stamp_snow_1, stamp_snow_2, stamp_snow_3]
-      density: 0.35
+      density: 0.6
       size: [1.2, 1.7]
       jitter: 0.3
       thin_below: 0
@@ -159,7 +159,7 @@ fog:
   bob: { amplitude: 0.03, period: 4.0 }
   drift: 0.3
   fade_seconds: 0.5
-  drain: { strength: 0.85, sepia: [160, 138, 106] }
+  drain: { strength: 0.85, sepia: [160, 148, 124] }
   mist: { colour: [239, 233, 220], strength: 0.25 }
   shade: [214, 206, 192]
 ground:

@@ -454,7 +454,7 @@ TEST_CASE("the widest 32:9 view of the shipped map fits the terrain buffer") {
     constexpr std::array<core::TilePoint, 4> CENTRES{ {
         // The densest window by expected stamps (about 430, forest-heavy), the south-west corner.
         { .column = 30, .row = 76 },
-        // The densest of peaks, rock and snow (0.6 and 0.35 a tile), the stamps that stand tallest.
+        // The densest of peaks, rock and snow (0.6 a tile each), the stamps that stand tallest.
         { .column = 33, .row = 54 },
         // The most places in one window (six), so the most paintings over the stamps.
         { .column = 57, .row = 21 },
