@@ -1959,13 +1959,13 @@ TEST_CASE("a walk-to crosses meadow at the held walk's pace") {
 TEST_CASE("a walk-to goes the shortest way whatever the ground") {
     const TravelWorld world = TravelWorldOf({}, true);
     const core::WorldMap& map = *world.map;
-    // The bottom row's column 5 is two diagonals and three straight steps from the start city. The cheapest way takes the
-    // same line here, so only the tick count below tells the two timings apart; the routes part ways in paths_tests.
+    // The bottom row's column 5 is two diagonals and three straight steps from the start city. The cheapest way runs along
+    // the road first; the shortest keeps near the straight line.
     const u32 target = map.TileIndex({ .column = test::small::ROAD_END, .row = 2 });
     WalkTo(*world.host, 1, map.TileCentre(target));
     const core::Leg leg = RouteLegOf(*world.host);
-    CHECK(leg.tiles == core::FindShortestRoute(map, 0, target));
-    CHECK(leg.tiles.size() == 6);
+    CHECK(leg.tiles == std::vector<u32>{ 0, 1, 9, 10, 18, 19 });
+    CHECK(core::FindRoute(map, core::WALKING, 0, target) == std::vector<u32>{ 0, 1, 2, 3, 11, 19 });
     // Three straight steps of 64 ticks and two diagonals: ceil((3 * 256 + 2 * 256 * sqrt 2) / 4).
     CHECK(leg.arrive.back() == 374);
     CHECK(game::LegSound(leg, map));
