@@ -164,9 +164,9 @@ places:
   - { key: rotting_reed_village, kind: danger, sort: corrupt_village, tile: [134, 78], name: place_rotting_reed_village }
   - { key: frost_throat_pass, kind: danger, sort: mountain_pass, tile: [12, 55], name: place_frost_throat_pass }
   - { key: bat_cave, kind: danger, sort: cave, tile: [42, 59], name: place_bat_cave }
-  - { key: ghostlight_woods, kind: danger, sort: haunted_forest, tile: [123, 13], name: place_ghostlight_woods }
+  - { key: ghostlight_woods, kind: danger, sort: haunted_forest, tile: [126, 56], name: place_ghostlight_woods }
   - { key: tide_shrine, kind: danger, sort: shrine, tile: [147, 44], name: place_tide_shrine }
   - { key: eagle_cliff, kind: danger, sort: cliff, tile: [14, 2], name: place_eagle_cliff }
-  - { key: jade_cave, kind: danger, sort: cave, tile: [71, 19], name: place_jade_cave }
-  - { key: bone_forest, kind: danger, sort: haunted_forest, tile: [79, 61], name: place_bone_forest }
+  - { key: jade_cave, kind: danger, sort: cave, tile: [73, 24], name: place_jade_cave }
+  - { key: bone_forest, kind: danger, sort: haunted_forest, tile: [86, 42], name: place_bone_forest }
   - { key: white_crane_cliff, kind: danger, sort: cliff, tile: [100, 21], name: place_white_crane_cliff }
