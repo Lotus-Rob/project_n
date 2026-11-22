@@ -6,6 +6,8 @@ rivers, roads, fords, cities and danger sites drawn over it) and build/world_map
 world.yaml is hand-tuned after generation and is the source from then on: running this again starts over from these
 inputs and loses every edit made to world.yaml by hand since. Run with `pixi run python art/world_map.py`.
 
+`--roads` instead reroutes only the roads and fords over the file as it stands, keeping every other line.
+
 How the land forms, in order:
 - a hand-shaped continent: the sea as overlapping ellipses (the eastern sea, the south-east, a southern gulf) and the
   islands, their coasts made ragged by domain-warped fbm and frayed wherever they still run straight; the port's tile,
@@ -28,9 +30,11 @@ Standard library only, like placeholders.py, whose noise it reuses: arithmetic a
 function, so a run gives the same map on every machine.
 """
 
+import functools
 import heapq
 import itertools
 import math
+import sys
 from pathlib import Path
 
 from placeholders import Canvas, fbm, hash01, noise, smoothstep
@@ -48,6 +52,7 @@ COLUMNS, ROWS, TILE_SIZE = 150, 85, 256  # written into world.yaml, from which t
 BUSIEST = (33_000, 10_800)  # game::WORLD_BUSIEST, the measurement path's anchor: the port's tile holds it
 PORT = (BUSIEST[0] // TILE_SIZE, BUSIEST[1] // TILE_SIZE)
 ROAD_COST, FORD_COST = 4, 30
+MAX_WALK_COST = 1000  # game::MAX_WALK_COST: no tile costs more, however many rules add to it
 IMPASSABLE = None
 
 # The eleven kinds: name, symbol, walk cost (None: impassable), preview colour.
@@ -175,6 +180,9 @@ SHORE_WANDER = 14.0  # how far the coastline wanders in and out: up to half of i
 MOST_STRAIGHT_SHORE = 5  # tiles: a straighter run of shore is frayed by inlets and spits
 DANGER_SPACING = 11  # tiles between a danger site and any other place
 DANGER_ROAD_CLEARANCE = 3  # tiles between a danger site and the nearest road
+MOUNTAIN_PLAN_COST = 80  # added to rock and snow: about what a bridge costs, so a road crosses a range only by its pass
+PEAK_NEAR_PLAN_COST = 60  # added to a tile beside the peaks, which keeps roads a tile or more off them where a way exists
+FORK_LEAST = 6  # tiles: the weak walkers' way must part from the strong one this long to be a second road
 
 NEIGHBOURS = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
 ORTHOGONAL = [(0, -1), (1, 0), (0, 1), (-1, 0)]
@@ -871,8 +879,10 @@ def kind_cost(kind):
     return KINDS[kind][2]
 
 
-def derive(kinds, roads, rivers, fords):
-    """Per tile: the walk cost (None: impassable) and the road, river, bridge and ford flags, as WorldMap::Build."""
+def derive(kinds, roads, rivers, fords, danger=None, danger_cost=0):
+    """Per tile: the walk cost (None: impassable) and the road, river, bridge and ford flags, as WorldMap::Build. A
+    flagged `danger` tile costs `danger_cost` more as the last rule (the sum capped at MAX_WALK_COST, impassable
+    staying so), as a profile with a danger feature walks it."""
     river = [False] * len(kinds)
     road = [False] * len(kinds)
     for line in rivers:
@@ -896,8 +906,21 @@ def derive(kinds, roads, rivers, fords):
             c = ROAD_COST if c is None else min(c, ROAD_COST)
         elif river[t]:
             c = FORD_COST if ford[t] else None
+        if c is not None and danger is not None and danger[t]:
+            c = min(c + danger_cost, MAX_WALK_COST)
         cost.append(c)
     return cost, road, river, ford
+
+
+def danger_tiles(places, reach):
+    """Per tile: whether its centre lies within `reach` tiles of a danger site's tile, as WorldMap::Build flags it."""
+    flags = [False] * (COLUMNS * ROWS)
+    for tile in places:
+        for y in range(max(0, tile[1] - reach), min(ROWS, tile[1] + reach + 1)):
+            for x in range(max(0, tile[0] - reach), min(COLUMNS, tile[0] + reach + 1)):
+                if (x - tile[0]) ** 2 + (y - tile[1]) ** 2 <= reach * reach:
+                    flags[index(x, y)] = True
+    return flags
 
 
 def step_cost(cost, tile, other):
@@ -930,23 +953,40 @@ def reachable(cost, start):
 
 # Roads.
 
-def plan_costs(kinds, river, road):
+@functools.cache
+def wander_factor(t):
+    """The gentle variation of a tile's plan cost, which makes roads wander as real ones do."""
+    return 0.5 + 1.3 * fbm(t % COLUMNS / 8, t // COLUMNS / 8, SEED + 71, 3)
+
+
+def plan_costs(kinds, river, road, danger=None, danger_cost=0):
     """What entering each tile costs a planned road: the ground's cost, gently varied so roads wander as real ones do,
-    an existing road's cost, a bridge's high cost, or None."""
+    more on rock and snow and beside the peaks, an existing road's cost, a bridge's high cost, or None. A flagged
+    `danger` tile costs `danger_cost` more, for the roads of those who walk warily."""
+    peaks = {t for t, kind in enumerate(kinds) if kind == KIND["peaks"]}
     costs = []
     for t, kind in enumerate(kinds):
         c = kind_cost(kind)
+        x, y = t % COLUMNS, t // COLUMNS
         if c is None:
             costs.append(None)
-        elif road[t]:
-            costs.append(ROAD_PLAN_COST)
-        elif river[t]:
-            costs.append(float(BRIDGE_PLAN_COST))
-        elif kind == KIND["shallows"]:
-            costs.append(float(CAUSEWAY_PLAN_COST))
+            continue
+        if road[t]:
+            c = ROAD_PLAN_COST
         else:
-            x, y = t % COLUMNS, t // COLUMNS
-            costs.append(c * (0.5 + 1.3 * fbm(x / 8, y / 8, SEED + 71, 3)))
+            if river[t]:
+                c = float(BRIDGE_PLAN_COST)
+            elif kind == KIND["shallows"]:
+                c = float(CAUSEWAY_PLAN_COST)
+            else:
+                c *= wander_factor(t)
+            if kind in (KIND["rock"], KIND["snow"]):
+                c += MOUNTAIN_PLAN_COST
+            if any(index(x + dx, y + dy) in peaks for dx, dy in NEIGHBOURS if on_map(x + dx, y + dy)):
+                c += PEAK_NEAR_PLAN_COST
+        if danger is not None and danger[t]:
+            c += danger_cost
+        costs.append(c)
     return costs
 
 
@@ -1033,29 +1073,77 @@ def fit_line(path, kinds, river, costs):
     return line
 
 
-def build_roads(kinds, river, places):
+def new_roads(path, road, kinds, river, costs):
+    """Only the stretches of `path` off the roads already built become new roads, each joined to the road it leaves."""
+    lines, run = [], []
+    for step, tile in enumerate(path):
+        if not road[tile]:
+            if not run and step > 0:
+                run.append(path[step - 1])
+            run.append(tile)
+        elif run:
+            run.append(tile)
+            lines.append(fit_line(run, kinds, river, costs))
+            run = []
+    if run:
+        lines.append(fit_line(run, kinds, river, costs))
+    return lines
+
+
+def forks(detour, path):
+    """The stretches of `detour` that leave `path` for at least FORK_LEAST tiles, each with the tile it leaves from and
+    the one it rejoins at."""
+    on_path = set(path)
+    found, first = [], None
+    for step, tile in enumerate(detour + [path[-1]]):
+        if tile in on_path:
+            if first is not None and step - first >= FORK_LEAST:
+                found.append(detour[first - 1:step + 1])
+            first = None
+        elif first is None:
+            first = step
+    return found
+
+
+def meet_road(stretch, road):
+    """`stretch` with each end that isn't on a built road's tile moved to the nearest one, so a fork meets the road as
+    written, which straightening can leave a tile off the path it followed."""
+    def nearest(tile):
+        if road[tile]:
+            return tile
+        x, y = tile % COLUMNS, tile // COLUMNS
+        found = [(dx * dx + dy * dy, index(x + dx, y + dy)) for dx in range(-3, 4) for dy in range(-3, 4)
+                 if on_map(x + dx, y + dy) and road[index(x + dx, y + dy)]]
+        return min(found)[1] if found else tile
+    first, last = nearest(stretch[0]), nearest(stretch[-1])
+    return [first, *stretch[1:-1], last]
+
+
+def build_roads(kinds, river, places, danger=None, danger_cost=0):
+    """The roads between the cities. With a `danger` flag per tile and a `danger_cost`, each link is routed twice, once
+    as the strong walk it and once as the wary do, and where the two part a second road is built along the wary way."""
     road = [False] * len(kinds)
     lines = []
     for first, second in ROADS:
         costs = plan_costs(kinds, river, road)
-        a, b = places[first], places[second]
-        path = route(costs, river, index(*a), index(*b))
-        # Only the stretches off the roads already built become new roads, each joined to the road it leaves.
-        run = []
-        for step, tile in enumerate(path):
-            if not road[tile]:
-                if not run and step > 0:
-                    run.append(path[step - 1])
-                run.append(tile)
-            elif run:
-                run.append(tile)
-                lines.append(fit_line(run, kinds, river, costs))
-                run = []
-        if run:
-            lines.append(fit_line(run, kinds, river, costs))
-        for line in lines:
+        start, goal = index(*places[first]), index(*places[second])
+        path = route(costs, river, start, goal)
+        weak = None
+        if danger_cost and danger is not None:
+            weak = plan_costs(kinds, river, road, danger, danger_cost)
+            wary_path = route(weak, river, start, goal)
+        built = new_roads(path, road, kinds, river, costs)
+        for line in built:
             for x, y in line_tiles(line):
                 road[index(x, y)] = True
+        lines.extend(built)
+        if weak is not None:
+            for stretch in forks(wary_path, path):
+                built = new_roads(meet_road(stretch, road), road, kinds, river, weak)
+                for line in built:
+                    for x, y in line_tiles(line):
+                        road[index(x, y)] = True
+                lines.extend(built)
     return lines
 
 
@@ -1335,7 +1423,178 @@ def settle(key, tile, kinds, river_tiles):
     return (found[2], found[1])
 
 
+# Reading and rewriting the file as it stands, for the roads-only mode: the YAML is hand-tuned and its own source, so
+# the roads are replaced in it and nothing else.
+
+def parse_flow(text, pos=0):
+    """One YAML flow value (mapping, list, quoted or bare scalar) at `pos`, and the position after it."""
+    while text[pos] == " ":
+        pos += 1
+    if text[pos] in "{[":
+        close = "}" if text[pos] == "{" else "]"
+        pos += 1
+        items = {} if close == "}" else []
+        while True:
+            while text[pos] in " ,":
+                pos += 1
+            if text[pos] == close:
+                return items, pos + 1
+            if close == "}":
+                colon = text.index(":", pos)
+                key = text[pos:colon].strip()
+                value, pos = parse_flow(text, colon + 1)
+                items[key] = value
+            else:
+                value, pos = parse_flow(text, pos)
+                items.append(value)
+    if text[pos] == '"':
+        end = text.index('"', pos + 1)
+        return text[pos + 1:end], end + 1
+    end = pos
+    while end < len(text) and text[end] not in ",}]":
+        end += 1
+    word = text[pos:end].strip()
+    return (int(word) if word.lstrip("-").isdigit() else word), end
+
+
+def block_lines(lines, key):
+    """The first and one past the last index of the lines under the top-level `key:`, and none of them a comment."""
+    try:
+        first = lines.index(f"{key}:") + 1
+    except ValueError:
+        raise SystemExit(f"world_map: no `{key}:` block in the file") from None
+    end = first
+    while end < len(lines) and lines[end].startswith("  "):
+        end += 1
+    for number in range(first, end):
+        if lines[number].lstrip().startswith("#"):
+            raise SystemExit(f"world_map: line {number + 1} is a comment inside the `{key}:` block, which is rewritten")
+    return first, end
+
+
+def read_world(text):
+    """world.yaml as the generator writes it (a hand edit may add keys, comments and profiles), without PyYAML: the
+    top-level scalars and flow mappings by key, the list blocks as lists of parsed items, the grid as its rows, and every
+    point as a tuple."""
+    world, key, raw = {}, None, {}
+    for line in text.split("\n"):
+        if line.startswith("#") or not line.strip():
+            continue
+        if not line.startswith(" "):
+            key, _, rest = line.partition(":")
+            rest = rest.strip()
+            raw[key] = [] if not rest or rest == "|" else rest
+        elif key == "grid":
+            raw[key].append(line[2:])
+        elif line.startswith("  - "):
+            raw[key].append(line[4:].strip())
+        elif raw[key]:
+            raw[key][-1] += " " + line.strip()  # a long list wraps onto indented lines
+        else:
+            raise SystemExit(f"world_map: can't read the line `{line.strip()[:40]}` under `{key}:`")
+    for key, value in raw.items():
+        if key == "grid":
+            world[key] = value
+        elif isinstance(value, str):
+            world[key] = parse_flow(value)[0]
+        else:
+            world[key] = [parse_flow(item)[0] for item in value]
+
+    def points(value):
+        return tuple(map(tuple, value)) if value and isinstance(value[0], list) else value
+    for name in ("roads", "rivers"):
+        world[name] = [points(line) for line in world[name]]
+    world["fords"] = [tuple(tile) for tile in world["fords"]]
+    for place in world["places"]:
+        place["tile"] = tuple(place["tile"])
+    return world
+
+
+def kinds_of(world):
+    """The grid's kind per tile, once the file's kinds are the ones this script knows by name, symbol and cost."""
+    known = {symbol: (name, "impassable" if cost is None else cost) for name, symbol, cost, _ in KINDS}
+    if {item["symbol"]: (item["name"], item["cost"]) for item in world["kinds"]} != known:
+        raise SystemExit("world_map: the file's kinds aren't the ones this script knows (KINDS)")
+    symbol_kind = {symbol: KIND[name] for symbol, (name, _) in known.items()}
+    return [symbol_kind[symbol] for row in world["grid"] for symbol in row]
+
+
+def wary_danger_cost(world):
+    """What a danger tile adds for those who walk warily: the danger feature of the profile of the band that starts at
+    power 0, and 0 where the file has no such band or the profile no such feature."""
+    bands = world["travel"].get("bands", [])
+    weakest = next((band["profile"] for band in bands if band["from_power"] == 0), None)
+    if weakest is None:
+        return 0
+    profile = next((p for p in world["profiles"] if p["key"] == weakest), None)
+    if profile is None:
+        raise SystemExit(f"world_map: the band for power 0 names profile {weakest}, which the file lacks")
+    return profile.get("features", {}).get("danger", 0)
+
+
+def route_roads(world):
+    """The roads and fords for the file's land, rivers and places, from the same routing a plain run uses."""
+    kinds = kinds_of(world)
+    cities = {p["key"]: p["tile"] for p in world["places"] if p["kind"] == "city"}
+    river = derive(kinds, [], world["rivers"], [])[2]
+    sites = [p["tile"] for p in world["places"] if p["kind"] == "danger"]
+    danger = danger_tiles(sites, world.get("danger_reach", 0))
+    roads = build_roads(kinds, river, cities, danger, wary_danger_cost(world))
+    return roads, add_fords(kinds, roads, world["rivers"], cities["capital"])
+
+
+def rewrite_roads(text, roads, fords):
+    """`text` with its `roads:` and `fords:` blocks replaced by these, in the flow style of a plain run, and every other
+    line as it was."""
+    lines = text.split("\n")
+    for key, body in (("fords", [f"  - [{x}, {y}]" for x, y in fords]),
+                      ("roads", ["  - " + flow_list(line, 4) for line in roads])):
+        first, end = block_lines(lines, key)
+        lines[first:end] = body
+    return "\n".join(lines)
+
+
+def road_report(world, roads):
+    """Per danger site, the roads (and the tiles of them) that pass within the file's danger reach of it."""
+    reach = world.get("danger_reach", 0)
+    tiles = [{(x, y) for x, y in line_tiles(line)} for line in roads]
+    for place in world["places"]:
+        if place["kind"] != "danger":
+            continue
+        near = [{t for t in line if (t[0] - place["tile"][0]) ** 2 + (t[1] - place["tile"][1]) ** 2 <= reach * reach}
+                for line in tiles]
+        through = [len(t) for t in near if t]
+        print(f"world_map: {place['sort']} {place['key']} at {place['tile']}: {len(through)} roads within {reach} tiles, "
+              f"{sum(through)} tiles")
+
+
+def reroute(path):
+    """The roads-only mode: replaces the roads and fords of the file at `path` and writes the previews."""
+    print(f"world_map: rerouting the roads and fords of {path}; every other line stays")
+    text = path.read_text(encoding="utf-8")
+    world = read_world(text)
+    roads, fords = route_roads(world)
+    path.write_text(rewrite_roads(text, roads, fords), encoding="utf-8")
+    kinds = kinds_of(world)
+    cost, road, river, ford = derive(kinds, roads, world["rivers"], fords)
+    cities = [(p["key"], p["tile"], p["people"], p.get("start", False)) for p in world["places"] if p["kind"] == "city"]
+    dangers = [(p["key"], p["sort"], p["tile"]) for p in world["places"] if p["kind"] == "danger"]
+    reach = reachable(cost, index(*next(tile for key, tile, _, _ in cities if key == "capital")))
+    for key, tile, _, _ in cities:
+        if not reach[index(*tile)]:
+            print(f"world_map: city {key} can't be reached from the capital")
+    write_previews(kinds, road, river, ford, cities, dangers)
+    road_report(world, roads)
+    print(f"world_map: {len(roads)} roads, {len(fords)} fords; wrote {PREVIEW.relative_to(ROOT)}, "
+          f"{TERRAIN_PREVIEW.relative_to(ROOT)}")
+
+
 def main():
+    if sys.argv[1:] == ["--roads"]:
+        reroute(YAML_OUT)
+        return
+    if sys.argv[1:]:
+        raise SystemExit("usage: world_map.py [--roads]")
     print("world_map: generating; this starts over and overwrites assets/data/world.yaml and its hand edits")
     coast = coast_field()
     land = drop_specks([c > 0.0 for c in coast], 6)

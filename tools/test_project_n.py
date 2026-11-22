@@ -3,6 +3,7 @@
 import argparse
 import concurrent.futures
 import contextlib
+import copy
 import fnmatch
 import functools
 import importlib.util
@@ -2727,6 +2728,104 @@ class PlaceholderTest(unittest.TestCase):
         with mock.patch.object(module, "STAMP_MARGIN", width + height), \
                 self.assertRaisesRegex(ValueError, "forest variant 0"):
             module.forest(width, height, 0, 1)
+
+
+@functools.cache
+def world_map():
+    """art/world_map.py, loaded from its path after placeholders.py, whose noise it imports."""
+    placeholders()
+    spec = importlib.util.spec_from_file_location("world_map", Path(__file__).resolve().parent.parent / "art" / "world_map.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class WorldMapRoadsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.module = world_map()
+        cls.text = (Path(__file__).resolve().parent.parent / "assets" / "data" / "world.yaml").read_text(encoding="utf-8")
+        cls.world = cls.module.read_world(cls.text)
+        cls.roads, cls.fords = cls.module.route_roads(cls.world)
+        cls.out = cls.module.rewrite_roads(cls.text, cls.roads, cls.fords)
+        wary = copy.deepcopy(cls.world)
+        wary["danger_reach"] = 6
+        wary["profiles"].append({"key": "on_foot_wary", "ticks_per_cost": 16, "features": {"danger": 300}})
+        wary["travel"]["bands"] = [{"from_power": 0, "profile": "on_foot_wary"}, {"from_power": 5, "profile": "on_foot"}]
+        cls.wary = wary
+        cls.wary_roads, cls.wary_fords = cls.module.route_roads(wary)
+
+    def test_only_the_roads_and_fords_blocks_change(self):
+        def without_blocks(text):
+            return re.sub(r"(?m)^(roads|fords):\n(?:  .*\n)*", r"\1:\n", text)
+        self.assertEqual(without_blocks(self.out), without_blocks(self.text))
+        self.assertIn("# Each a polyline of [column, row] tile points; a road over a river is a bridge.\nroads:\n", self.out)
+
+    def test_a_second_pass_changes_nothing(self):
+        again = self.module.rewrite_roads(self.out, *self.module.route_roads(self.module.read_world(self.out)))
+        self.assertEqual(again, self.out)
+
+    def test_a_comment_inside_the_roads_block_is_refused_with_its_line(self):
+        lines = self.text.split("\n")
+        at = lines.index("roads:") + 2
+        lines.insert(at, "  # a hand note")
+        with self.assertRaisesRegex(SystemExit, f"line {at + 1} "):
+            self.module.rewrite_roads("\n".join(lines), self.roads, self.fords)
+
+    def test_every_city_is_reachable_with_and_without_the_wary_cost(self):
+        module = self.module
+        for world, roads, fords in ((self.world, self.roads, self.fords), (self.wary, self.wary_roads, self.wary_fords)):
+            kinds = module.kinds_of(world)
+            sites = [p["tile"] for p in world["places"] if p["kind"] == "danger"]
+            flags = module.danger_tiles(sites, world.get("danger_reach", 0))
+            cities = {p["key"]: p["tile"] for p in world["places"] if p["kind"] == "city"}
+            for danger_cost in (0, 300):
+                cost = module.derive(kinds, roads, world["rivers"], fords, flags, danger_cost)[0]
+                reach = module.reachable(cost, module.index(*cities["capital"]))
+                self.assertEqual([k for k, tile in cities.items() if not reach[module.index(*tile)]], [])
+
+    def test_the_wary_roads_fork_round_a_danger_on_a_link_and_only_then(self):
+        module = self.module
+        kinds = [module.KIND["meadow"]] * (module.COLUMNS * module.ROWS)
+        river = [False] * len(kinds)
+        places = {"capital": (10, 40), "port": (60, 40)}
+        with mock.patch.object(module, "ROADS", [("capital", "port")]):
+            plain = module.build_roads(kinds, river, places)
+            tiles = [t for line in plain for t in module.line_tiles(line)]
+            centre = tiles[len(tiles) // 2]
+            danger = module.danger_tiles([centre], 5)
+            self.assertEqual(len(module.build_roads(kinds, river, places, [False] * len(kinds), 300)), 1)
+            forked = module.build_roads(kinds, river, places, danger, 300)
+        self.assertEqual(len(plain), 1)
+        self.assertEqual(len(forked), 2)
+        first, second = ({t for t in module.line_tiles(line)} for line in forked)
+        self.assertTrue({(10, 40), (60, 40)} <= first)
+        for end in (forked[1][0], forked[1][-1]):
+            self.assertIn(end, first)
+        self.assertFalse(any(danger[module.index(*t)] for t in second - first))
+
+
+    def test_every_fork_ends_on_tiles_of_the_road_it_leaves(self):
+        """The strong road is straightened after routing, so the tile where the wary way left its path may lie a tile off
+        the written road; a fork has to meet the road as the game rasterises it."""
+        module = self.module
+        kinds = [module.KIND["meadow"]] * (module.COLUMNS * module.ROWS)
+        river = [False] * len(kinds)
+        places = {"capital": (10, 40), "port": (70, 52)}
+        with mock.patch.object(module, "ROADS", [("capital", "port")]):
+            plain = module.build_roads(kinds, river, places)
+            tiles = [t for line in plain for t in module.line_tiles(line)]
+            forks = 0
+            for at in range(len(tiles) // 5, len(tiles), len(tiles) // 5):
+                danger = module.danger_tiles([tiles[at]], 4)
+                roads = module.build_roads(kinds, river, places, danger, 300)
+                parent = set(module.line_tiles(roads[0]))
+                for line in roads[1:]:
+                    forks += 1
+                    self.assertIn(line[0], parent)
+                    self.assertIn(line[-1], parent)
+        self.assertGreaterEqual(forks, 3)
 
 
 class GitLfsTest(unittest.TestCase):
