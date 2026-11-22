@@ -544,7 +544,11 @@ std::expected<void, core::Error> ReadTravelWhole(const YAML::Node& node, const c
 
 /// Reads the optional `bands:` of `node`, the travel rules, into `source.travel`: each `{ from_power, profile }` with the
 /// profile named by its key among `source.profiles`, the first from power 0 and the rest rising.
-std::expected<void, core::Error> ReadBands(const YAML::Node& node, core::WorldMapSource& source) {
+std::expected<void, core::Error> ReadBands(
+    const YAML::Node& node,
+    core::WorldMapSource& source,
+    std::vector<std::string>* warnings
+) {
     const YAML::Node list = node["bands"];
     if (!list) {
         return {};
@@ -560,6 +564,7 @@ std::expected<void, core::Error> ReadBands(const YAML::Node& node, core::WorldMa
         if (bands.size() >= core::MOST_PROFILES) {
             return RefuseMap(entry, std::format("too many bands: at most {}", core::MOST_PROFILES));
         }
+        internal::NoteUnknownKeys(WORLD_READER, entry, "a band", "key", { "from_power", "profile" }, warnings);
         const std::expected<f64, core::Error> power = internal::RequiredNumber(
             WORLD_READER,
             entry,
@@ -627,7 +632,7 @@ std::expected<void, core::Error> ReadTravel(
         .and_then([&] { return ReadTravelWhole(node, "reach_base", MOST_TRAVEL_REACH, travel.reachBase); })
         .and_then([&] { return ReadTravelWhole(node, "reach_per_power", MOST_TRAVEL_REACH, travel.reachPerPower); })
         .and_then([&] { return ReadStayDays(node, travel); })
-        .and_then([&] { return ReadBands(node, source); });
+        .and_then([&] { return ReadBands(node, source, warnings); });
 }
 
 /// Reads the optional `draws:` of `entry`, a place called `owner`, into `place`: a city's draw for each kind of visitor.

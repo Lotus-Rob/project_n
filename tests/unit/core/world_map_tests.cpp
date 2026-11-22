@@ -845,6 +845,19 @@ TEST_CASE("Build refuses bands that don't start at 0, rise strictly, name a prof
     CHECK(refusalOf(many).contains("too many bands"));
 }
 
+TEST_CASE("WithTravel refuses a band over a profile the map lacks") {
+    core::WorldMapSource source = Source({ "0.1" });
+    source.profiles = { Profile("walk", MEADOW_COST), Profile("wary", MEADOW_COST) };
+    const core::WorldMap map = MustBuild(std::move(source));
+    core::TravelRules travel = map.Travel();
+    travel.bands = { { .fromPower = 0.0F, .profile = 1 } };
+    CHECK(map.WithTravel(travel).has_value());
+    travel.bands = { { .fromPower = 0.0F, .profile = 0 }, { .fromPower = 5.0F, .profile = 2 } };
+    const std::expected<core::WorldMap, core::Error> refused = map.WithTravel(travel);
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error().message.contains("no profile 2"));
+}
+
 TEST_CASE("the hash changes with the bands") {
     const auto hashOf = [](const std::vector<core::PowerBand>& bands) {
         core::WorldMapSource source = Source({ "0.1" });
