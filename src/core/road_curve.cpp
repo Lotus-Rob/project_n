@@ -63,6 +63,53 @@ std::optional<f32> Meeting(Vec2 from, Vec2 toward, Vec2 start, Vec2 end) {
     return ((apart.x * along.y) - (apart.y * along.x)) / cross;
 }
 
+/// Where an end of a line joins, and the line it joins.
+struct Join {
+    Vec2 point;
+    std::size_t line;
+};
+
+/// The search behind JoinedEnd(): the nearest meeting of the last stretch of `waypoints` with a line of `midlines` other than
+/// `own`, skipping those within a tile of an end of that line for which `yields(line, atFront)` says the other flows in.
+template<typename Yields>
+std::optional<Join> FindJoin(
+    std::span<const Vec2> waypoints,
+    std::size_t own,
+    std::span<const std::vector<Vec2>> midlines,
+    f32 tileSize,
+    const Yields& yields
+) {
+    PN_ASSERT(waypoints.size() >= 2, "an end needs a stretch before it");
+    const Vec2 from = waypoints[waypoints.size() - 2];
+    const Vec2 last = waypoints.back();
+    const f32 reach = JOIN_TILES * tileSize;
+    std::optional<Join> nearest;
+    f32 nearestApart = reach;
+    for (std::size_t other = 0; other < midlines.size(); ++other) {
+        if (other == own) {
+            continue;
+        }
+        const std::vector<Vec2>& line = midlines[other];
+        for (std::size_t point = 1; point < line.size(); ++point) {
+            const std::optional<f32> share = Meeting(from, last, line[point - 1], line[point]);
+            if (!share || *share <= 0.0F) {
+                continue;
+            }
+            const Vec2 meets = Lerp(from, last, *share);
+            const f32 apart = Length(meets - last);
+            if ((Length(meets - line.back()) <= reach && yields(other, false)) ||
+                (Length(meets - line.front()) <= reach && yields(other, true))) {
+                continue;
+            }
+            if (apart <= nearestApart) {
+                nearest = Join{ .point = meets, .line = other };
+                nearestApart = apart;
+            }
+        }
+    }
+    return nearest && Length(nearest->point - from) > SHORTEST_RUN ? nearest : std::nullopt;
+}
+
 } // namespace
 
 std::vector<Vec2> Waypoints(std::span<const TilePoint> tiles, f32 tileSize) {
@@ -114,34 +161,9 @@ std::optional<Vec2> JoinedEnd(
     f32 tileSize,
     bool startsFlowIn
 ) {
-    PN_ASSERT(waypoints.size() >= 2, "an end needs a stretch before it");
-    const Vec2 from = waypoints[waypoints.size() - 2];
-    const Vec2 last = waypoints.back();
-    const f32 reach = JOIN_TILES * tileSize;
-    std::optional<Vec2> nearest;
-    f32 nearestApart = reach;
-    for (std::size_t other = 0; other < midlines.size(); ++other) {
-        if (other == own) {
-            continue;
-        }
-        const std::vector<Vec2>& line = midlines[other];
-        for (std::size_t point = 1; point < line.size(); ++point) {
-            const std::optional<f32> share = Meeting(from, last, line[point - 1], line[point]);
-            if (!share || *share <= 0.0F) {
-                continue;
-            }
-            const Vec2 meets = Lerp(from, last, *share);
-            const f32 apart = Length(meets - last);
-            if (Length(meets - line.back()) <= reach || (startsFlowIn && Length(meets - line.front()) <= reach)) {
-                continue;
-            }
-            if (apart <= nearestApart) {
-                nearest = meets;
-                nearestApart = apart;
-            }
-        }
-    }
-    return nearest && Length(*nearest - from) > SHORTEST_RUN ? nearest : std::nullopt;
+    const auto yields = [&](std::size_t /*line*/, bool atFront) { return startsFlowIn || !atFront; };
+    const std::optional<Join> join = FindJoin(waypoints, own, midlines, tileSize, yields);
+    return join ? std::optional<Vec2>{ join->point } : std::nullopt;
 }
 
 std::vector<std::vector<Vec2>> Midlines(std::span<const std::vector<Vec2>> lines, f32 tileSize, u32 stepsPerTile) {
@@ -152,6 +174,41 @@ std::vector<std::vector<Vec2>> Midlines(std::span<const std::vector<Vec2>> lines
     }
     return midlines;
 }
+
+namespace {
+
+/// Where each road's last and first points join another road with nothing yielding, a road at a time.
+struct EndJoins {
+    std::vector<std::optional<Join>> lasts;
+    std::vector<std::optional<Join>> firsts;
+};
+
+std::vector<Vec2> Reversed(std::span<const Vec2> points) {
+    return { points.rbegin(), points.rend() };
+}
+
+/// The join of road `index`'s last point (`points` as authored) or first (`points` reversed), given `free`.
+std::optional<Join> ResolvedJoin(
+    std::span<const Vec2> points,
+    std::size_t index,
+    bool atLast,
+    std::span<const std::vector<Vec2>> midlines,
+    f32 tileSize,
+    const EndJoins& free
+) {
+    const std::optional<Join>& own = atLast ? free.lasts[index] : free.firsts[index];
+    if (!own) {
+        return std::nullopt;
+    }
+    const auto yields = [&](std::size_t line, bool atFront) {
+        const std::optional<Join>& theirs = atFront ? free.firsts[line] : free.lasts[line];
+        const bool mutual = theirs && theirs->line == index && own->line == line;
+        return !mutual || index < line;
+    };
+    return FindJoin(points, index, midlines, tileSize, yields);
+}
+
+} // namespace
 
 std::vector<std::vector<Vec2>> RoadCurves(const WorldMap& map) {
     const std::span<const std::vector<TilePoint>> roads = map.Roads();
@@ -167,23 +224,38 @@ std::vector<std::vector<Vec2>> RoadCurves(const WorldMap& map) {
         waypoints.push_back(Waypoints(road, tileSize));
     }
     const std::vector<std::vector<Vec2>> stored = Midlines(waypoints, tileSize, ROAD_STEPS);
+    // Each end's join with nothing yielding to anything, then the real one: an end yields to a meeting near another road's
+    // end (there the other flows into this one) unless the two ends would join each other, and then only the lower-indexed
+    // road's yields, so exactly one of them joins. The second pass reads only the first's results, never its own, so the
+    // answer never depends on the order of the work.
+    EndJoins free;
+    free.lasts.resize(roads.size());
+    free.firsts.resize(roads.size());
+    for (std::size_t index = 0; index < roads.size(); ++index) {
+        if (waypoints[index].size() < 2) {
+            continue;
+        }
+        const auto never = [](std::size_t /*line*/, bool /*atFront*/) { return false; };
+        if (!atCity(roads[index].back())) {
+            free.lasts[index] = FindJoin(waypoints[index], index, stored, tileSize, never);
+        }
+        if (!atCity(roads[index].front())) {
+            free.firsts[index] = FindJoin(Reversed(waypoints[index]), index, stored, tileSize, never);
+        }
+    }
     std::vector<std::vector<Vec2>> curves(roads.size());
     for (std::size_t index = 0; index < roads.size(); ++index) {
         std::vector<Vec2>& points = waypoints[index];
         if (points.size() < 2) {
             continue;
         }
-        // Both ends are found on the road as authored, so moving one never changes where the other looks.
-        const std::vector<Vec2> backwards(points.rbegin(), points.rend());
-        const std::optional<Vec2> last =
-            atCity(roads[index].back()) ? std::nullopt : JoinedEnd(points, index, stored, tileSize, true);
-        const std::optional<Vec2> first =
-            atCity(roads[index].front()) ? std::nullopt : JoinedEnd(backwards, index, stored, tileSize, true);
+        const std::optional<Join> last = ResolvedJoin(points, index, true, stored, tileSize, free);
+        const std::optional<Join> first = ResolvedJoin(Reversed(points), index, false, stored, tileSize, free);
         if (last) {
-            points.back() = *last;
+            points.back() = last->point;
         }
         if (first) {
-            points.front() = *first;
+            points.front() = first->point;
         }
         curves[index] = Midline(points, tileSize, ROAD_STEPS);
     }

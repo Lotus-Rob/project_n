@@ -140,6 +140,7 @@ TEST_CASE("a meeting within a tile of the other road's start doesn't join") {
         { { { .column = 1, .row = 3 }, { .column = 5, .row = 3 } }, { { .column = 4, .row = 2 }, { .column = 4, .row = 6 } } }
     );
     CHECK(Distance(curves[0].back(), Middle(5, 3)) < CLOSE);
+    CHECK(Distance(curves[1].front(), Middle(4, 3)) < CLOSE);
 }
 
 TEST_CASE("a road ending at a city keeps its end on the city's centre") {
