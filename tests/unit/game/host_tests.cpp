@@ -1562,11 +1562,20 @@ core::StableId CultivatorAt(core::State& state, const core::GameData& data, core
 
 /// A host that has loaded and entered a world save at `clock` holding one visit along FirstRoad() per departure, its
 /// members world NPCs at home in the road's first city, and, with `player`, the player's cultivator on that city's tile
-/// centre: nothing else lives there. Without a player the debug sight is on, as no one else sees the travellers.
-TravelWorld TravelWorldOf(std::span<const Departure> departures, bool player = false, u64 clock = TRAVEL_CLOCK) {
+/// centre: nothing else lives there. Without a player the debug sight is on, as no one else sees the travellers. A
+/// `walkSpeed` replaces the cultivator's in the game data.
+TravelWorld TravelWorldOf(
+    std::span<const Departure> departures,
+    bool player = false,
+    u64 clock = TRAVEL_CLOCK,
+    std::optional<f32> walkSpeed = std::nullopt
+) {
     TravelWorld world;
     // The shipped names, so a party's two members are named apart.
     core::GameData data = test::SmallData();
+    if (walkSpeed) {
+        data.cultivator.walkSpeed = *walkSpeed;
+    }
     data.names = test::ShippedNames();
     world.map = data.world;
     const Road road = FirstRoad(*world.map);
@@ -1914,38 +1923,67 @@ TEST_CASE("a walk-to sends the cultivator along the route") {
 }
 
 TEST_CASE("a walk-to crosses meadow at the held walk's pace") {
+    constexpr u64 SOUTH_TICKS = 70; // a step south takes 64
+    constexpr u64 TILES_EAST = 5;
+    constexpr u64 COMPARED_TICKS = 100;
     const TravelWorld world = TravelWorldOf({}, true);
     const core::WorldMap& map = *world.map;
-    const core::Vec2 start = FootOf(*world.host, world.player);
-    constexpr u32 TILES_EAST = 5;
-    const core::Vec2 target = start + core::Vec2{ .x = static_cast<f32>(TILES_EAST) * test::small::TILE, .y = 0.0F };
     const f32 walkSpeed = test::SmallData().cultivator.walkSpeed;
-    WalkTo(*world.host, 1, target);
+    const core::Vec2 row = map.TileCentre(map.TileIndex({ .column = 0, .row = 1 }));
+    // One step south, off the road's row, so the five tiles east are all meadow, which the old cost timing took 800 ticks
+    // over.
+    WalkTo(*world.host, 1, row);
+    TickRange(*world.host, 2, SOUTH_TICKS);
+    REQUIRE_FALSE(world.host->PlayerRoute().has_value());
+    const core::Vec2 start = FootOf(*world.host, world.player);
+    const u64 clock = world.host->WorldTicks();
+    const core::Vec2 target = start + core::Vec2{ .x = static_cast<f32>(TILES_EAST) * test::small::TILE, .y = 0.0F };
+    WalkTo(*world.host, SOUTH_TICKS + 1, target);
     const auto ticks = static_cast<i64>(std::ceil((target.x - start.x) / walkSpeed));
-    CHECK(core::EndTick(RouteOf(*world.host)) == static_cast<i64>(TRAVEL_CLOCK) + ticks);
+    REQUIRE(ticks == 320);
+    CHECK(core::EndTick(RouteOf(*world.host)) == static_cast<i64>(clock) + ticks);
     CHECK(RouteLegOf(*world.host).tiles.size() == TILES_EAST + 1);
-    CHECK(SamePoint(core::Where(map, RouteLegOf(*world.host), static_cast<i64>(TRAVEL_CLOCK) + ticks), target));
+    CHECK(SamePoint(core::Where(map, RouteLegOf(*world.host), static_cast<i64>(clock) + ticks), target));
+
+    // After the same number of ticks the route's foot is where held movement walking east would be.
+    TickRange(*world.host, SOUTH_TICKS + 2, SOUTH_TICKS + COMPARED_TICKS);
+    const TravelWorld held = TravelWorldOf({}, true);
+    WalkTo(*held.host, 1, row);
+    TickRange(*held.host, 2, SOUTH_TICKS);
+    TickRange(*held.host, SOUTH_TICKS + 1, SOUTH_TICKS + COMPARED_TICKS, HELD_RIGHT);
+    const core::Vec2 walked = FootOf(*held.host, held.player);
+    CHECK(FootOf(*world.host, world.player).x == doctest::Approx(walked.x).epsilon(0.0001));
+    CHECK(FootOf(*world.host, world.player).y == doctest::Approx(walked.y).epsilon(0.0001));
 }
 
 TEST_CASE("a walk-to goes the shortest way whatever the ground") {
     const TravelWorld world = TravelWorldOf({}, true);
     const core::WorldMap& map = *world.map;
-    // The bottom row's column 5 is two diagonals and three straight steps from the start city: no longer for the road
-    // along the top row, which the cheapest way would hug.
+    // The bottom row's column 5 is two diagonals and three straight steps from the start city. The cheapest way takes the
+    // same line here, so only the tick count below tells the two timings apart; the routes part ways in paths_tests.
     const u32 target = map.TileIndex({ .column = test::small::ROAD_END, .row = 2 });
     WalkTo(*world.host, 1, map.TileCentre(target));
     const core::Leg leg = RouteLegOf(*world.host);
     CHECK(leg.tiles == core::FindShortestRoute(map, 0, target));
     CHECK(leg.tiles.size() == 6);
-    constexpr f32 DIAGONAL_TICKS = 91.0F; // a diagonal tile at 4 units a tick
-    const f32 straight = (3.0F * test::small::TILE / test::SmallData().cultivator.walkSpeed) + (2.0F * DIAGONAL_TICKS);
-    CHECK(static_cast<f32>(leg.arrive.back()) == doctest::Approx(straight).epsilon(0.01));
+    // Three straight steps of 64 ticks and two diagonals: ceil((3 * 256 + 2 * 256 * sqrt 2) / 4).
+    CHECK(leg.arrive.back() == 374);
     CHECK(game::LegSound(leg, map));
 }
 
-TEST_CASE("a walk-to from a foot beside the next centre still takes a tick for its first step") {
-    const TravelWorld world = TravelWorldOf({}, true);
+TEST_CASE("a walk-to from a cultivator with no walk speed changes nothing") {
+    constexpr f32 NO_SPEED = 0.0F;
+    const TravelWorld world = TravelWorldOf({}, true, TRAVEL_CLOCK, NO_SPEED);
     const core::WorldMap& map = *world.map;
+    const core::Vec2 start = FootOf(*world.host, world.player);
+    WalkTo(*world.host, 1, map.TileCentre(RouteRoad(map)[ROUTE_TILES]));
+    CHECK_FALSE(world.host->PlayerRoute().has_value());
+    CHECK(SamePoint(FootOf(*world.host, world.player), start));
+}
+
+TEST_CASE("a paced leg from a foot beside the next centre is sound") {
+    const std::shared_ptr<const core::WorldMap> world = test::SmallWorld();
+    const core::WorldMap& map = *world;
     constexpr f32 NEAR = 1.0F;
     const core::Leg leg = core::MakePacedLeg(
         map,
