@@ -2774,6 +2774,7 @@ class WorldMapRoadsTest(unittest.TestCase):
             self.module.rewrite_roads("\n".join(lines), self.roads, self.fords)
 
     def test_every_city_is_reachable_with_and_without_the_wary_cost(self):
+        # The danger half guards the rule that a danger cost never turns ground impassable.
         module = self.module
         for world, roads, fords in ((self.world, self.roads, self.fords), (self.wary, self.wary_roads, self.wary_fords)):
             kinds = module.kinds_of(world)
@@ -2805,7 +2806,6 @@ class WorldMapRoadsTest(unittest.TestCase):
             self.assertIn(end, first)
         self.assertFalse(any(danger[module.index(*t)] for t in second - first))
 
-
     def test_every_fork_ends_on_tiles_of_the_road_it_leaves(self):
         """The strong road is straightened after routing, so the tile where the wary way left its path may lie a tile off
         the written road; a fork has to meet the road as the game rasterises it."""
@@ -2826,6 +2826,49 @@ class WorldMapRoadsTest(unittest.TestCase):
                     self.assertIn(line[0], parent)
                     self.assertIn(line[-1], parent)
         self.assertGreaterEqual(forks, 3)
+
+
+    def test_a_comment_or_blank_line_at_column_zero_inside_a_block_is_refused(self):
+        for key in ("roads", "fords"):
+            for note in ("# a hand note", ""):
+                lines = self.text.split("\n")
+                at = lines.index(f"{key}:") + 2
+                lines.insert(at, note)
+                with self.subTest(key=key, note=note), self.assertRaisesRegex(SystemExit, f"line {at + 1} "):
+                    self.module.rewrite_roads("\n".join(lines), self.roads, self.fords)
+
+    def test_a_comment_after_the_last_road_stays(self):
+        lines = self.text.split("\n")
+        lines.insert(lines.index("rivers:"), "# about the rivers")
+        out = self.module.rewrite_roads("\n".join(lines), self.roads, self.fords)
+        self.assertIn("# about the rivers\nrivers:", out)
+
+    def test_a_wrapped_travel_line_with_bands_gives_the_wary_cost(self):
+        text = self.text.replace(
+            "cultivator_power: 5 }",
+            "cultivator_power: 5,\n    bands: [{ from_power: 0.0, profile: wary }, { from_power: 5, profile: on_foot }] }")
+        text = text.replace("profiles:\n", "profiles:\n  - { key: wary, ticks_per_cost: 16, features: { danger: 300 } }\n")
+        self.assertNotEqual(text, self.text)
+        self.assertEqual(self.module.wary_danger_cost(self.module.read_world(text)), 300)
+
+    def test_scalars_read_as_numbers_and_booleans_without_their_comments(self):
+        parse = self.module.parse_flow
+        self.assertEqual(parse("6  # tiles")[0], 6)
+        self.assertEqual(parse("0.5")[0], 0.5)
+        self.assertEqual(parse("{ a: false, b: true }")[0], {"a": False, "b": True})
+
+    def test_a_reach_of_zero_flags_no_tile(self):
+        self.assertFalse(any(self.module.danger_tiles([(40, 40)], 0)))
+        self.assertTrue(self.module.danger_tiles([(40, 40)], 1)[self.module.index(40, 41)])
+
+    def test_a_fork_joins_the_road_nearest_its_next_tile_and_never_goes_unjoined(self):
+        module = self.module
+        river = [False] * (module.COLUMNS * module.ROWS)
+        a, b, far, c = (module.index(*t) for t in ((30, 30), (30, 32), (33, 30), (35, 41)))
+        stretch = [module.index(31, 31), module.index(32, 35), module.index(40, 40), module.index(35, 40)]
+        self.assertEqual(module.meet_road(stretch, {a, b, far, c}, river)[0], b)
+        with self.assertRaisesRegex(SystemExit, "fork"):
+            module.meet_road(stretch, set(), river)
 
 
 class GitLfsTest(unittest.TestCase):
