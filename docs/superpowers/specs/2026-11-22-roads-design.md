@@ -1,6 +1,6 @@
 # Roads: rerouted along the land, drawn as ribbons, chosen by power
 
-Status: draft, awaiting the user's approval (builder check done 2026-11-22; its questions answered by the user).
+Status: approved by the user 2026-11-22 (builder check done; its questions answered by the user). Plan to come.
 
 ## Intent
 
