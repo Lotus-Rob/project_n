@@ -14,10 +14,6 @@ constexpr f32 JOIN_TILES = 1.0F;
 /// The shortest run or crossing that still has a direction, in world units or as a share of the lengths compared; a move
 /// of an end shorter than this isn't one.
 constexpr f32 SHORTEST_RUN = 1.0e-4F;
-/// How far, in tiles, a road tile's centre may lie from a road's curve and still have its walkers drawn on it: well past
-/// the half tile a staircase's corner centres stand off their curve, and past the tile a joined end moves the curve's end
-/// away from the last tile laid.
-constexpr f32 DRAWN_REACH_TILES = 1.5F;
 
 f32 Length(Vec2 vec) {
     return std::sqrt((vec.x * vec.x) + (vec.y * vec.y));
@@ -367,7 +363,7 @@ Vec2 JourneyShift(const WorldMap& map, const RoadCurveIndex& roads, const Journe
 RoadCurveIndex::RoadCurveIndex(const WorldMap& map)
   : m_onRoad(static_cast<std::size_t>(map.Columns()) * map.Rows()) {
     const f32 tileSize = map.TileSize();
-    const f32 reach = DRAWN_REACH_TILES * tileSize;
+    const f32 reach = ROAD_DRAWN_REACH * tileSize;
     std::vector<f32> nearest(m_onRoad.size());
     const u8 road = std::to_underlying(TileFlag::Road);
     // Each segment measured against the road tiles round it, in the curves' order: a later segment takes a tile only when
