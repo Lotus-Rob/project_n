@@ -994,9 +994,9 @@ def plan_costs(kinds, river, road, danger=None, danger_cost=0):
     return costs
 
 
-def route(costs, river, start, goal):
+def route(costs, river, start, goal, avoid=None):
     """The cheapest path from start to goal by the game's step rule over `costs`; a diagonal step never cuts past a
-    river's corner (the rasterised road would bridge it)."""
+    river's corner (the rasterised road would bridge it), nor an `avoid`-flagged one (the road would enter it)."""
     best = {start: 0.0}
     came = {}
     queue = [(0.0, start)]
@@ -1016,7 +1016,7 @@ def route(costs, river, start, goal):
                 continue
             if dx and dy:
                 corners = (index(x + dx, y), index(x, y + dy))
-                if any(costs[k] is None or river[k] for k in corners):
+                if any(costs[k] is None or river[k] or (avoid is not None and avoid[k]) for k in corners):
                     continue
                 c *= 1.4
             if spent + c < best.get(other, float("inf")):
@@ -1032,11 +1032,11 @@ def route(costs, river, start, goal):
     return path
 
 
-def fit_line(path, kinds, river, costs):
+def fit_line(path, kinds, river, costs, avoid=None):
     """A polyline over `path` (tile indices) as a road would be built: pulled straight wherever a straight stretch costs
     about what the path's winding one does (so it bends only round what is worth avoiding), then simplified
-    (Ramer-Douglas-Peucker at ROAD_TOLERANCE). Every rasterised tile stays passable, and it bridges no river the
-    path didn't."""
+    (Ramer-Douglas-Peucker at ROAD_TOLERANCE). Every rasterised tile stays passable, and it bridges no river, nor
+    enters an `avoid`-flagged tile, the path didn't."""
     points = [(t % COLUMNS, t // COLUMNS) for t in path]
     allowed = set(points)
     spent = [0.0]
@@ -1047,7 +1047,7 @@ def fit_line(path, kinds, river, costs):
     def fits(a, b):
         for x, y in rasterise(a, b):
             t = index(x, y)
-            if kind_cost(kinds[t]) is None or (river[t] and (x, y) not in allowed):
+            if kind_cost(kinds[t]) is None or ((river[t] or (avoid is not None and avoid[t])) and (x, y) not in allowed):
                 return False
         return True
 
@@ -1077,8 +1077,9 @@ def fit_line(path, kinds, river, costs):
     return line
 
 
-def new_roads(path, road, kinds, river, costs):
-    """Only the stretches of `path` off the roads already built become new roads, each joined to the road it leaves."""
+def new_roads(path, road, kinds, river, costs, avoid=None):
+    """Only the stretches of `path` off the roads already built become new roads, each joined to the road it leaves,
+    each fitted (fit_line) clear of the `avoid`-flagged tiles the stretch keeps off."""
     lines, run = [], []
     for step, tile in enumerate(path):
         if not road[tile]:
@@ -1087,20 +1088,19 @@ def new_roads(path, road, kinds, river, costs):
             run.append(tile)
         elif run:
             run.append(tile)
-            lines.append(fit_line(run, kinds, river, costs))
+            lines.append(fit_line(run, kinds, river, costs, avoid))
             run = []
     if run:
-        lines.append(fit_line(run, kinds, river, costs))
+        lines.append(fit_line(run, kinds, river, costs, avoid))
     return lines
 
 
-def forks(detour, path):
-    """The stretches of `detour` that leave `path` for at least FORK_LEAST tiles, each with the tile it leaves from and
-    the one it rejoins at."""
-    on_path = set(path)
+def forks(detour, on_road):
+    """The stretches of `detour` (which ends on one of `on_road`'s tiles) that leave `on_road` for at least FORK_LEAST
+    tiles, each with the tile it leaves from and the one it rejoins at."""
     found, first = [], None
-    for step, tile in enumerate(detour + [path[-1]]):
-        if tile in on_path:
+    for step, tile in enumerate(detour):
+        if tile in on_road:
             if first is not None and step - first >= FORK_LEAST:
                 found.append(detour[first - 1:step + 1])
             first = None
@@ -1111,9 +1111,9 @@ def forks(detour, path):
 
 def meet_road(stretch, road_tiles, river):
     """`stretch` with each end that isn't on one of `road_tiles` (the tiles of the road it leaves, as rasterised) moved to
-    the one of them within 3 tiles nearest the stretch's next tile, so a fork meets the road as written, which
-    straightening can leave a tile off the path it followed. The step to the next tile never crosses a river the
-    stretch doesn't."""
+    the one of them within 3 tiles nearest the stretch's next tile, so a fork always meets the road as written (forks()
+    finds stretches against those tiles, whose ends this leaves as they are). The step to the next tile never crosses a
+    river the stretch doesn't."""
     own = set(stretch)
 
     def nearest(end, neighbour):
@@ -1146,10 +1146,6 @@ def build_roads(kinds, river, places, danger=None, danger_cost=0):
         costs = plan_costs(kinds, river, road)
         start, goal = index(*places[first]), index(*places[second])
         path = route(costs, river, start, goal)
-        weak = None
-        if danger_cost and danger is not None:
-            weak = plan_costs(kinds, river, road, danger, danger_cost)
-            wary_path = route(weak, river, start, goal)
         built = new_roads(path, road, kinds, river, costs)
         link_tiles = {t for t in path if road[t]}
         for line in built:
@@ -1157,9 +1153,11 @@ def build_roads(kinds, river, places, danger=None, danger_cost=0):
                 road[index(x, y)] = True
                 link_tiles.add(index(x, y))
         lines.extend(built)
-        if weak is not None:
-            for stretch in forks(wary_path, path):
-                built = new_roads(meet_road(stretch, link_tiles, river), road, kinds, river, weak)
+        if danger_cost and danger is not None:
+            # Planned over the link's own road, which is cheap, so the wary keep to it until the danger turns them off.
+            weak = plan_costs(kinds, river, road, danger, danger_cost)
+            for stretch in forks(route(weak, river, start, goal, danger), link_tiles):
+                built = new_roads(meet_road(stretch, link_tiles, river), road, kinds, river, weak, danger)
                 for line in built:
                     for x, y in line_tiles(line):
                         road[index(x, y)] = True
