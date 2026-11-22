@@ -73,22 +73,6 @@ enum class SpriteId : u16 { // NOLINT(performance-enum-size): stable IDs outgrow
     EmblemSwords, ///< assets/sprites/emblem_swords.png
     EmblemEye, ///< assets/sprites/emblem_eye.png
     EmblemSpiral, ///< assets/sprites/emblem_spiral.png
-    Road0, ///< assets/sprites/road_0.png
-    Road1, ///< assets/sprites/road_1.png
-    Road2, ///< assets/sprites/road_2.png
-    Road3, ///< assets/sprites/road_3.png
-    Road4, ///< assets/sprites/road_4.png
-    Road5, ///< assets/sprites/road_5.png
-    Road6, ///< assets/sprites/road_6.png
-    Road7, ///< assets/sprites/road_7.png
-    Road8, ///< assets/sprites/road_8.png
-    Road9, ///< assets/sprites/road_9.png
-    Road10, ///< assets/sprites/road_10.png
-    Road11, ///< assets/sprites/road_11.png
-    Road12, ///< assets/sprites/road_12.png
-    Road13, ///< assets/sprites/road_13.png
-    Road14, ///< assets/sprites/road_14.png
-    Road15, ///< assets/sprites/road_15.png
     BridgeH, ///< assets/sprites/bridge_h.png
     BridgeV, ///< assets/sprites/bridge_v.png
     Ford, ///< assets/sprites/ford.png
@@ -173,7 +157,7 @@ enum class SpriteId : u16 { // NOLINT(performance-enum-size): stable IDs outgrow
 };
 
 /// Every sprite's name, indexed by SpriteId: the manifest must list the same, in this order.
-inline constexpr std::array<std::string_view, 160> SPRITE_NAMES{ {
+inline constexpr std::array<std::string_view, 144> SPRITE_NAMES{ {
     "ground",
     "rock_large",
     "rock_small",
@@ -237,22 +221,6 @@ inline constexpr std::array<std::string_view, 160> SPRITE_NAMES{ {
     "emblem_swords",
     "emblem_eye",
     "emblem_spiral",
-    "road_0",
-    "road_1",
-    "road_2",
-    "road_3",
-    "road_4",
-    "road_5",
-    "road_6",
-    "road_7",
-    "road_8",
-    "road_9",
-    "road_10",
-    "road_11",
-    "road_12",
-    "road_13",
-    "road_14",
-    "road_15",
     "bridge_h",
     "bridge_v",
     "ford",

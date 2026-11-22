@@ -1,6 +1,7 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/instances.hpp"
 #include "core/manifest.hpp"
+#include "core/road_curve.hpp"
 #include "core/ui_colours.hpp"
 #include "core/view_limits.hpp"
 #include "core/world_look.hpp"
@@ -469,7 +470,7 @@ TEST_CASE("the widest 32:9 view of the shipped map fits the terrain buffer") {
                                .max = { .x = centre.x + half.x, .y = centre.y + half.y } };
         for (const f32 zoom : { 0.25F, 1.0F }) {
             gfx::TerrainDrawing drawing;
-            gfx::DrawTerrain(*map, *look, *manifest, view, zoom, drawing);
+            gfx::DrawTerrain(*map, *look, core::RoadCurves(*map), *manifest, view, zoom, drawing);
             most = std::max(most, drawing.instances.size());
         }
     }

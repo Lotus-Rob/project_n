@@ -41,8 +41,6 @@ constexpr std::string_view SMALL_LOOK = R"yaml(kinds:
     wash: [196, 204, 146]
     strength: 0.1
     stamps: { sprites: [stamp_meadow_0], density: 0.03, size: [0.6, 0.9], jitter: 0.2, thin_below: 0, mist: true }
-roads:
-  [road_0, road_1, road_2, road_3, road_4, road_5, road_6, road_7, road_8, road_9, road_10, road_11, road_12, road_13, road_14, road_15]
 bridge: { across: bridge_h, down: bridge_v }
 ford: ford
 markers:
@@ -77,7 +75,6 @@ places:
   by_key: { capital: painting_capital }
 )yaml";
 
-constexpr std::size_t MASKS = 16;
 constexpr f32 SMALL_SPACING = 40.0F; // the small look's route spacing, not the default
 
 core::WorldMap SmallMap() {
@@ -116,7 +113,7 @@ std::string WithSnow(std::string_view sprites) {
 std::string WithoutMeadow() {
     std::string text{ SMALL_LOOK };
     const std::size_t first = text.find("  meadow:\n");
-    const std::size_t last = text.find("roads:");
+    const std::size_t last = text.find("bridge:");
     REQUIRE(first != std::string::npos);
     REQUIRE(last != std::string::npos);
     return text.erase(first, last - first);
@@ -142,8 +139,6 @@ TEST_CASE("a small look parses against a small map") {
         look->kinds[0].stamps.sprites == std::vector{ core::atlas::SpriteId::StampWater0, core::atlas::SpriteId::StampWater1 }
     );
     CHECK(look->kinds[1].stamps.sprites == std::vector{ core::atlas::SpriteId::StampMeadow0 });
-    CHECK(look->roads.front() == core::atlas::SpriteId::Road0);
-    CHECK(look->roads.size() == MASKS);
     CHECK(look->bridgeAcross == core::atlas::SpriteId::BridgeH);
     CHECK(look->bridgeDown == core::atlas::SpriteId::BridgeV);
     CHECK(look->ford == core::atlas::SpriteId::Ford);
@@ -166,8 +161,6 @@ TEST_CASE("the look reader refuses what the map can't be drawn by, naming the li
     const std::string noMeadow = WithoutMeadow();
     const std::string noPass = With("  mountain_pass: marker_mountain_pass\n", "");
     const std::string badSprite = With("[stamp_water_0,", "[stamp_lava_0,");
-    std::string fifteenRoads{ SMALL_LOOK };
-    fifteenRoads.replace(fifteenRoads.find(", road_15"), std::string_view{ ", road_15" }.size(), "");
     const std::vector<Broken> cases{
         { .why = "a kind of the map with no look",
           .text = noMeadow,
@@ -197,9 +190,6 @@ TEST_CASE("the look reader refuses what the map can't be drawn by, naming the li
               "world_look line {}: marker cave names the sprite \"marker_nowhere\", which isn't in the atlas",
               LineOf(With("  mountain_pass:", "  cave: marker_nowhere\n  mountain_pass:"), "cave:")
           ) },
-        { .why = "a road list not 16 long",
-          .text = fifteenRoads,
-          .says = std::format("world_look line {}: roads has 15 sprites, not 16", LineOf(SMALL_LOOK, "[road_0")) },
         { .why = "a missing bridge",
           .text = With("bridge: { across: bridge_h, down: bridge_v }\n", ""),
           .says = "world_look line 1: the look has no bridge" },
@@ -372,7 +362,6 @@ TEST_CASE("the shipped look covers the shipped map") {
     const core::SceneId worldId = worldScene.value_or(core::SceneId{});
     const std::vector<core::atlas::SpriteId>& resident = manifest->Scene(worldId).sprites;
     std::vector<core::atlas::SpriteId> named = { look.bridgeAcross, look.bridgeDown, look.ford, look.cityMarker };
-    named.insert(named.end(), look.roads.begin(), look.roads.end());
     for (const core::KindLook& kind : look.kinds) {
         named.insert(named.end(), kind.stamps.sprites.begin(), kind.stamps.sprites.end());
     }

@@ -2,14 +2,15 @@
 
 /// @file
 /// @ingroup gfx
-/// What the world map's ground and river pipelines draw by: the ground shader's uniforms from the map and the look, the
-/// part of the view the ground covers, and the rivers' painted shape. Pure, tested without a device.
+/// What the world map's ground and ribbon pipelines draw by: the ground shader's uniforms from the map and the look, the
+/// part of the view the ground covers, and the rivers' and roads' painted shapes. Pure, tested without a device.
 
 #include "core/rect.hpp"
 #include "core/types.hpp"
 #include "core/world_look.hpp"
 #include "core/world_map.hpp"
 #include "gfx/river_draw.hpp"
+#include "gfx/road_draw.hpp"
 
 #include <array>
 #include <cstddef>
@@ -107,9 +108,13 @@ static_assert(
 /// in its colour at its strength, premultiplied.
 [[nodiscard]] RiverShape RiverShapeOf(const core::WorldMap& map, const core::RiverLook& look);
 
-/// Where `shape`'s edge band starts fading out toward its sides, as a share of its half width from its middle: where the
-/// core ends (the core's width over the edge's), so the rim shows whole beside the core and fades to nothing at the band's
-/// side; 1, no fade, when the core is as wide as the edge or the edge has no width.
-[[nodiscard]] f32 RimStart(const RiverShape& shape);
+/// The roads' painted shape for `look` on `map`, as RiverShapeOf() makes the rivers': its widths in world units, the core
+/// opaque in its colour and the edge in its colour at its strength, premultiplied.
+[[nodiscard]] RoadShape RoadShapeOf(const core::WorldMap& map, const core::RoadLook& look);
+
+/// Where a ribbon's edge band, `edgeWidth` wide, starts fading out toward its sides, as a share of its half width from its
+/// middle: where its core, `coreWidth` wide, ends (the core's width over the edge's), so the rim shows whole beside the
+/// core and fades to nothing at the band's side; 1, no fade, when the core is as wide as the edge or the edge has no width.
+[[nodiscard]] f32 RimStart(f32 coreWidth, f32 edgeWidth);
 
 } // namespace gfx

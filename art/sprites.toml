@@ -203,55 +203,7 @@ foot = [128, 128]
 [emblem_spiral]
 foot = [128, 128]
 
-# The world map's road overlays: 256-pixel tiles by neighbour mask, laid from their top-left corners.
-[road_0]
-foot = [0, 0]
-
-[road_1]
-foot = [0, 0]
-
-[road_2]
-foot = [0, 0]
-
-[road_3]
-foot = [0, 0]
-
-[road_4]
-foot = [0, 0]
-
-[road_5]
-foot = [0, 0]
-
-[road_6]
-foot = [0, 0]
-
-[road_7]
-foot = [0, 0]
-
-[road_8]
-foot = [0, 0]
-
-[road_9]
-foot = [0, 0]
-
-[road_10]
-foot = [0, 0]
-
-[road_11]
-foot = [0, 0]
-
-[road_12]
-foot = [0, 0]
-
-[road_13]
-foot = [0, 0]
-
-[road_14]
-foot = [0, 0]
-
-[road_15]
-foot = [0, 0]
-
+# The world map's crossings: 256-pixel tiles, laid from their top-left corners.
 [bridge_h]
 foot = [0, 0]
 

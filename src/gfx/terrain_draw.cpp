@@ -12,12 +12,6 @@ namespace {
 
 using core::atlas::SpriteId;
 
-constexpr u32 NORTH = 1;
-constexpr u32 EAST = 2;
-constexpr u32 SOUTH = 4;
-constexpr u32 WEST = 8;
-
-constexpr u8 ROAD = std::to_underlying(core::TileFlag::Road);
 constexpr u8 BRIDGE = std::to_underlying(core::TileFlag::Bridge);
 constexpr u8 FORD = std::to_underlying(core::TileFlag::Ford);
 
@@ -26,6 +20,7 @@ struct Pass {
     const core::WorldMap* map = nullptr;
     const core::WorldLook* look = nullptr;
     const core::Manifest* manifest = nullptr;
+    std::span<const std::vector<core::Vec2>> roadCurves;
     core::TileSpan span{};
     TerrainDrawing* into = nullptr;
 
@@ -38,25 +33,6 @@ struct Pass {
     [[nodiscard]] core::Vec2 Corner(u32 column, u32 row) const {
         const f32 side = map->TileSize();
         return { .x = static_cast<f32>(column) * side, .y = static_cast<f32>(row) * side };
-    }
-    /// The flags of the tile at `column` and `row`, or 0 past the map: `column` and `row` may lie one outside it.
-    [[nodiscard]] u8 FlagsAt(i64 column, i64 row) const {
-        if (column < 0 || row < 0 || std::cmp_greater_equal(column, map->Columns()) ||
-            std::cmp_greater_equal(row, map->Rows())) {
-            return 0;
-        }
-        return map->FlagsAt(map->TileIndex({ .column = static_cast<u32>(column), .row = static_cast<u32>(row) }));
-    }
-    /// Which neighbours of the tile at `column` and `row` carry any of `flag`'s bits, as bits 1, 2, 4 and 8.
-    [[nodiscard]] u32 Neighbours(u32 column, u32 row, u8 flag) const {
-        const auto across = static_cast<i64>(column);
-        const auto down = static_cast<i64>(row);
-        u32 mask = 0;
-        mask |= (FlagsAt(across, down - 1) & flag) != 0 ? NORTH : 0;
-        mask |= (FlagsAt(across + 1, down) & flag) != 0 ? EAST : 0;
-        mask |= (FlagsAt(across, down + 1) & flag) != 0 ? SOUTH : 0;
-        mask |= (FlagsAt(across - 1, down) & flag) != 0 ? WEST : 0;
-        return mask;
     }
     /// Calls `visit(column, row, flags)` for each tile of the span, row by row.
     template<typename Visit>
@@ -78,20 +54,32 @@ void CloseBatch(TerrainDrawing& into) {
     }
 }
 
-void AddLines(const Pass& pass, u8 flag, const std::array<SpriteId, core::LINE_MASKS>& sprites) {
-    pass.ForTiles([&](u32 column, u32 row, u8 flags) {
-        if ((flags & flag) != 0) {
-            pass.Add(sprites.at(pass.Neighbours(column, row, flag)), pass.Corner(column, row));
+/// Which way the road curve nearest `point` runs there: from the curve point before the nearest to the one after it. Zero
+/// when no curve has a point.
+core::Vec2 HeadingNear(std::span<const std::vector<core::Vec2>> curves, core::Vec2 point) {
+    core::Vec2 heading{};
+    f32 nearest = std::numeric_limits<f32>::infinity();
+    for (const std::vector<core::Vec2>& curve : curves) {
+        for (std::size_t index = 0; index < curve.size(); ++index) {
+            const core::Vec2 offset = curve[index] - point;
+            const f32 distance = (offset.x * offset.x) + (offset.y * offset.y);
+            if (distance < nearest) {
+                nearest = distance;
+                heading = curve[std::min(index + 1, curve.size() - 1)] - curve[index > 0 ? index - 1 : 0];
+            }
         }
-    });
+    }
+    return heading;
 }
 
 void AddCrossings(const Pass& pass) {
     pass.ForTiles([&](u32 column, u32 row, u8 flags) {
         if ((flags & BRIDGE) != 0) {
-            // Down only where the road runs north to south alone; across wherever it runs east to west, or both or neither.
-            const u32 road = pass.Neighbours(column, row, ROAD);
-            const bool down = (road & (NORTH | SOUTH)) != 0 && (road & (EAST | WEST)) == 0;
+            // The ribbon decides, not the tiles: a road rasterised on a slant steps sideways onto a bridge it crosses
+            // nearly straight on, and the deck must lie the way the drawn road does.
+            const core::Vec2 heading =
+                HeadingNear(pass.roadCurves, pass.map->TileCentre(pass.map->TileIndex({ .column = column, .row = row })));
+            const bool down = std::abs(heading.x) < std::abs(heading.y);
             pass.Add(down ? pass.look->bridgeDown : pass.look->bridgeAcross, pass.Corner(column, row));
         }
         else if ((flags & FORD) != 0) {
@@ -125,6 +113,7 @@ void AddMarkers(const Pass& pass) {
 void DrawTerrain(
     const core::WorldMap& map,
     const core::WorldLook& look,
+    std::span<const std::vector<core::Vec2>> roadCurves,
     const core::Manifest& manifest,
     core::Rect view,
     f32 zoom,
@@ -133,16 +122,12 @@ void DrawTerrain(
     PN_PROFILE_ZONE();
     into.instances.clear();
     into.batches.clear();
-    into.roadBatches = 0;
     into.markersFrom = 0;
     const core::TileSpan span = map.TilesIn(view);
     if (span.firstColumn > span.lastColumn || span.firstRow > span.lastRow) {
         return;
     }
-    const Pass pass{ .map = &map, .look = &look, .manifest = &manifest, .span = span, .into = &into };
-    AddLines(pass, ROAD, look.roads);
-    CloseBatch(into);
-    into.roadBatches = static_cast<u32>(into.batches.size());
+    const Pass pass{ .map = &map, .look = &look, .manifest = &manifest, .roadCurves = roadCurves, .span = span, .into = &into };
     AddCrossings(pass);
     CloseBatch(into);
     DrawStamps(map, look, manifest, span, zoom, into);

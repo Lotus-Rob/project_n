@@ -2067,7 +2067,7 @@ TEST_CASE("the fog's clouds at the smallest zoom: shimmer held to its bound") {
 /// The painted ground's shimmer at `zoom` over the busiest region, explored and seen whole (the debug sight, as the world's
 /// case): what the ground, the veil, rivers, stamps, mist, paintings, crossings and markers add over the same frame painted
 /// as flat paper, a quarter pixel apart. The snapshot's instances, batches and texts are cleared, so no traveller, cultivator
-/// or label is drawn, and the road overlays are left out (gfx::TerrainParts::AllButRoads): their shimmer is their own. Over
+/// or label is drawn, and the road ribbons are left out (gfx::TerrainParts::AllButRoads): their shimmer is their own. Over
 /// paper rather than the dark backdrop, so the paper's large even ink doesn't dilute the crawl of the grid's, shores',
 /// rivers' and stamps' edges. Prints `ground shimmer <zoom>: <value>` and checks the worst tile changed less than
 /// `mostChange`.

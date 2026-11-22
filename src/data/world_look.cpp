@@ -43,19 +43,14 @@ std::expected<core::atlas::SpriteId, core::Error> LookSpriteAt(
     return *sprite;
 }
 
-/// The sprites of the list `node` holds, which `owner` names in refusals: `count` of them, or any number from 1 when
-/// `count` is 0.
+/// The sprites of the list `node` holds, one or more, which `owner` names in refusals.
 std::expected<std::vector<core::atlas::SpriteId>, core::Error> SpriteList(
     const YAML::Node& node,
     std::string_view owner,
-    const Atlas& atlas,
-    std::size_t count
+    const Atlas& atlas
 ) {
     if (!node || !node.IsSequence()) {
         return RefuseLook(node, std::format("{} isn't a list of sprites", owner));
-    }
-    if (count != 0 && node.size() != count) {
-        return RefuseLook(node, std::format("{} has {} sprites, not {}", owner, node.size(), count));
     }
     if (node.size() == 0) {
         return RefuseLook(node, std::format("{} has no sprite", owner));
@@ -230,7 +225,7 @@ std::expected<core::StampLook, core::Error> ReadStamps(
         return RefuseLook(node, std::format("{} has no sprites", owner));
     }
     std::expected<std::vector<core::atlas::SpriteId>, core::Error> sprites =
-        SpriteList(node["sprites"], std::format("{} sprites", owner), atlas, 0);
+        SpriteList(node["sprites"], std::format("{} sprites", owner), atlas);
     if (!sprites) {
         return std::unexpected{ sprites.error() };
     }
@@ -330,25 +325,6 @@ std::expected<void, core::Error> ReadLookKinds(
             return std::unexpected{ read.error() };
         }
     }
-    return {};
-}
-
-std::expected<void, core::Error> ReadMasks(
-    const YAML::Node& root,
-    const char* key,
-    const Atlas& atlas,
-    std::array<core::atlas::SpriteId, core::LINE_MASKS>& masks
-) {
-    const YAML::Node node = root[key];
-    if (!node) {
-        return RefuseLook(root, std::format("the look has no {}", key));
-    }
-    const std::expected<std::vector<core::atlas::SpriteId>, core::Error> sprites =
-        SpriteList(node, key, atlas, core::LINE_MASKS);
-    if (!sprites) {
-        return std::unexpected{ sprites.error() };
-    }
-    std::ranges::copy(*sprites, masks.begin());
     return {};
 }
 
@@ -535,8 +511,7 @@ std::expected<void, core::Error> ReadFog(
     if (!(*node)["clouds"]) {
         return RefuseLook(*node, "fog has no clouds");
     }
-    std::expected<std::vector<core::atlas::SpriteId>, core::Error> sprites =
-        SpriteList((*node)["clouds"], "fog clouds", atlas, 0);
+    std::expected<std::vector<core::atlas::SpriteId>, core::Error> sprites = SpriteList((*node)["clouds"], "fog clouds", atlas);
     if (!sprites) {
         return std::unexpected{ sprites.error() };
     }
@@ -735,7 +710,7 @@ std::expected<void, core::Error> ReadMist(
         return RefuseLook(*node, "mist has no sprites");
     }
     std::expected<std::vector<core::atlas::SpriteId>, core::Error> sprites =
-        SpriteList((*node)["sprites"], "mist sprites", atlas, 0);
+        SpriteList((*node)["sprites"], "mist sprites", atlas);
     if (!sprites) {
         return std::unexpected{ sprites.error() };
     }
@@ -899,26 +874,11 @@ std::expected<core::WorldLook, core::Error> ParseWorldLook(
             root,
             "",
             "key",
-            { "kinds",
-              "roads",
-              "bridge",
-              "ford",
-              "markers",
-              "route",
-              "fog",
-              "ground",
-              "veil",
-              "mist",
-              "river",
-              "road",
-              "places" },
+            { "kinds", "bridge", "ford", "markers", "route", "fog", "ground", "veil", "mist", "river", "road", "places" },
             warnings
         );
         core::WorldLook look;
         if (auto read = ReadLookKinds(root, atlas, map, warnings, look); !read) {
-            return std::unexpected{ std::move(read.error()) };
-        }
-        if (auto read = ReadMasks(root, "roads", atlas, look.roads); !read) {
             return std::unexpected{ std::move(read.error()) };
         }
         const std::expected<YAML::Node, core::Error> bridge = MapAt(root, "bridge");
