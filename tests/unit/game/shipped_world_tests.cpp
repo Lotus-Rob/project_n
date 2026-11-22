@@ -134,7 +134,7 @@ u32 CityCost(const core::WorldMap& map, u16 from, u16 target, core::ProfileIndex
     return distances.CostFrom(map.TileIndex(map.Places()[from].tile));
 }
 
-// The anti-goal "a cut-off city": whatever its power, a traveller can get from any city to any other.
+// No city is cut off: whatever their power, travellers get from any city to any other.
 TEST_CASE("every band's profile reaches every city from every city") {
     const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
     REQUIRE_FALSE(map->Travel().bands.empty());
@@ -222,8 +222,16 @@ TEST_CASE("three links fork around a danger") {
         { .site = "bone_forest", .from = "capital", .target = "port" },
         { .site = "ghostlight_woods", .from = "port", .target = "isle" },
     } };
+    constexpr u32 MORTAL_TO_OASIS = 173; // round Jade Cave
+    constexpr u32 STRONG_TO_OASIS = 152; // through it
     const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const core::ProfileIndex wary = game::ProfileFor(map->Travel(), 0.0F);
+    const core::ProfileIndex strong = game::ProfileFor(map->Travel(), map->Travel().cultivatorPower);
+    REQUIRE(wary != strong);
     const std::vector<bool> nothing(static_cast<std::size_t>(map->Columns()) * map->Rows(), false);
+    const auto entered = [&](const std::vector<u32>& route, const std::vector<bool>& reach) {
+        return std::ranges::count_if(route, [&](u32 tile) { return reach.at(tile); });
+    };
     for (const Fork& fork : FORKS) {
         CAPTURE(fork.site);
         const std::vector<bool> reach = ReachOf(*map, PlaceIndex(*map, fork.site));
@@ -236,7 +244,18 @@ TEST_CASE("three links fork around a danger") {
         REQUIRE(shortest != core::UNREACHABLE);
         CHECK(around != core::UNREACHABLE);
         CHECK(around > shortest); // the short way is the one through the danger
+        // The game's own search: a mortal takes the way round, a cultivator the way through.
+        const std::vector<u32> mortalRoute = core::FindRoute(*map, wary, from, target);
+        const std::vector<u32> strongRoute = core::FindRoute(*map, strong, from, target);
+        REQUIRE_FALSE(mortalRoute.empty());
+        REQUIRE_FALSE(strongRoute.empty());
+        CHECK(entered(mortalRoute, reach) == 0);
+        CHECK(entered(strongRoute, reach) > 0);
     }
+    const u16 capital = PlaceIndex(*map, "capital");
+    const u16 oasis = PlaceIndex(*map, "oasis");
+    CHECK(CityCost(*map, capital, oasis, wary) == MORTAL_TO_OASIS);
+    CHECK(CityCost(*map, capital, oasis, strong) == STRONG_TO_OASIS);
     std::vector<std::string_view> onRoads;
     for (u16 site = 0; site < map->Places().size(); ++site) {
         if (map->Places()[site].kind != core::PlaceKind::Danger) {
