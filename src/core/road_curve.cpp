@@ -111,7 +111,8 @@ std::optional<Vec2> JoinedEnd(
     std::span<const Vec2> waypoints,
     std::size_t own,
     std::span<const std::vector<Vec2>> midlines,
-    f32 tileSize
+    f32 tileSize,
+    bool startsFlowIn
 ) {
     PN_ASSERT(waypoints.size() >= 2, "an end needs a stretch before it");
     const Vec2 from = waypoints[waypoints.size() - 2];
@@ -131,7 +132,7 @@ std::optional<Vec2> JoinedEnd(
             }
             const Vec2 meets = Lerp(from, last, *share);
             const f32 apart = Length(meets - last);
-            if (Length(meets - line.back()) <= reach) {
+            if (Length(meets - line.back()) <= reach || (startsFlowIn && Length(meets - line.front()) <= reach)) {
                 continue;
             }
             if (apart <= nearestApart) {
@@ -175,9 +176,9 @@ std::vector<std::vector<Vec2>> RoadCurves(const WorldMap& map) {
         // Both ends are found on the road as authored, so moving one never changes where the other looks.
         const std::vector<Vec2> backwards(points.rbegin(), points.rend());
         const std::optional<Vec2> last =
-            atCity(roads[index].back()) ? std::nullopt : JoinedEnd(points, index, stored, tileSize);
+            atCity(roads[index].back()) ? std::nullopt : JoinedEnd(points, index, stored, tileSize, true);
         const std::optional<Vec2> first =
-            atCity(roads[index].front()) ? std::nullopt : JoinedEnd(backwards, index, stored, tileSize);
+            atCity(roads[index].front()) ? std::nullopt : JoinedEnd(backwards, index, stored, tileSize, true);
         if (last) {
             points.back() = *last;
         }

@@ -114,6 +114,34 @@ TEST_CASE("a meeting within a tile of the other road's own end doesn't join") {
     CHECK(Distance(curves[0].back(), Middle(1, 3)) < CLOSE);
 }
 
+TEST_CASE("two roads starting on one tile both start at its centre") {
+    const auto curves = Curves(
+        { { { .column = 3, .row = 3 }, { .column = 7, .row = 3 }, { .column = 7, .row = 6 } },
+          { { .column = 3, .row = 3 }, { .column = 3, .row = 7 } },
+          { { .column = 3, .row = 3 }, { .column = 6, .row = 6 } } }
+    );
+    for (const auto& curve : curves) {
+        CHECK(Distance(curve.front(), Middle(3, 3)) < CLOSE);
+    }
+}
+
+TEST_CASE("a road starting where another ends keeps both ends there") {
+    const auto curves = Curves(
+        { { { .column = 1, .row = 6 }, { .column = 3, .row = 3 } }, { { .column = 3, .row = 3 }, { .column = 7, .row = 3 } } }
+    );
+    CHECK(Distance(curves[0].back(), Middle(3, 3)) < CLOSE);
+    CHECK(Distance(curves[1].front(), Middle(3, 3)) < CLOSE);
+}
+
+TEST_CASE("a meeting within a tile of the other road's start doesn't join") {
+    // The second road starts a tile above the first's line and runs down across it, so the first road's end would be cut back
+    // to that crossing if it didn't see the second as flowing out of the tile beside it.
+    const auto curves = Curves(
+        { { { .column = 1, .row = 3 }, { .column = 5, .row = 3 } }, { { .column = 4, .row = 2 }, { .column = 4, .row = 6 } } }
+    );
+    CHECK(Distance(curves[0].back(), Middle(5, 3)) < CLOSE);
+}
+
 TEST_CASE("a road ending at a city keeps its end on the city's centre") {
     // The city stands on (0, 0). The other road starts on the first road's line a tile from that end, so without the city
     // the end would be drawn there instead.
