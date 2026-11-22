@@ -27,6 +27,14 @@ inline constexpr f32 PAN_SCREENS_PER_SECOND = 1.0F;
 /// nothing until it has been seen inside clear of the band, so crossing the edge on the way in never pans.
 inline constexpr f32 EDGE_BAND = 0.02F;
 
+/// The share of the view's width and height the followed foot walks in, centred, before a Roam camera moves: a step
+/// inside the box scrolls nothing.
+inline constexpr f32 FOLLOW_BOX_SHARE = 0.5F;
+
+/// The centre `centre` moved by the least amount that puts `followed` within `halfBox` of it on each axis (a `halfBox`
+/// of 0 on an axis gives `followed`'s coordinate there).
+[[nodiscard]] core::Vec2 FollowedWithin(core::Vec2 centre, core::Vec2 followed, core::Vec2 halfBox);
+
 /// What the camera is told each drawn frame.
 struct CameraInput {
     /// How the camera moves over the scene drawn (core::Snapshot::camera).
@@ -100,7 +108,8 @@ private:
 
 /// The camera over each kind of scene: a Follow scene centres on what it follows and nothing else moves it; a Pan
 /// scene pans by Move, the pan controls, the screen's edge and a drag, and snap back returns it to the scene's start;
-/// a Roam scene follows until any of those but Move pans it, then stays where the player leaves it until snap back
+/// a Roam scene follows loosely (the camera moves only by the foot's overshoot of a box FOLLOW_BOX_SHARE of the view)
+/// until any of those but Move pans it, then stays where the player leaves it until snap back
 /// follows again. The wheel zooms every kind, at most ZOOM_NOTCHES_PER_SECOND and one notch a frame, within
 /// gfx::MIN_ZOOM and gfx::MAX_ZOOM. While CameraInput::path is set, the scripted path (CameraPath()) moves it instead.
 class CameraControl {

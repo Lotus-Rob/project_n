@@ -341,6 +341,110 @@ TEST_CASE("in a roaming scene, panning frees the camera and snap back follows ag
     }
 }
 
+void CheckPoint(core::Vec2 centre, core::Vec2 expected) {
+    CHECK(centre.x == doctest::Approx(expected.x));
+    CHECK(centre.y == doctest::Approx(expected.y));
+}
+
+TEST_CASE("FollowedWithin moves the centre only by the foot's overshoot") {
+    constexpr core::Vec2 BOX{ .x = 100.0F, .y = 50.0F };
+    CheckPoint(app::FollowedWithin({}, { .x = 60.0F, .y = 20.0F }, BOX), { .x = 0.0F, .y = 0.0F });
+    CheckPoint(app::FollowedWithin({}, { .x = 130.0F, .y = 0.0F }, BOX), { .x = 30.0F, .y = 0.0F });
+    CheckPoint(app::FollowedWithin({}, { .x = 0.0F, .y = -80.0F }, BOX), { .x = 0.0F, .y = -30.0F });
+    CheckPoint(app::FollowedWithin({}, { .x = -150.0F, .y = 70.0F }, BOX), { .x = -50.0F, .y = 20.0F });
+    CheckPoint(app::FollowedWithin({}, { .x = 7.0F, .y = -9.0F }, {}), { .x = 7.0F, .y = -9.0F });
+}
+
+// How far the roaming camera lets the foot stray from the centre, per axis, at zoom 1 in the test window.
+constexpr f32 BOX_HALF_X = static_cast<f32>(WIDTH) * app::FOLLOW_BOX_SHARE / 2.0F;
+constexpr f32 BOX_HALF_Y = static_cast<f32>(HEIGHT) * app::FOLLOW_BOX_SHARE / 2.0F;
+
+// Where a roaming camera that started on PLAYER centres after the foot walks to `foot`.
+core::Vec2 RoamedTo(core::Vec2 foot) {
+    app::CameraControl control{ 1.0F };
+    app::CameraInput frame = Frame(CameraKind::Roam);
+    frame.followed = PLAYER;
+    control.Update(frame);
+    frame.followed = foot;
+    control.Update(frame);
+    return control.Camera().centre;
+}
+
+TEST_CASE("a roaming camera holds still while the cultivator walks inside the box") {
+    CheckPoint(RoamedTo(PLAYER + core::Vec2{ .x = BOX_HALF_X - 20.0F, .y = 0.0F }), PLAYER);
+    CheckPoint(RoamedTo(PLAYER + core::Vec2{ .x = 0.0F, .y = BOX_HALF_Y }), PLAYER);
+}
+
+TEST_CASE("a roaming camera moves by the overshoot when the cultivator leaves the box") {
+    constexpr f32 OVER = 100.0F;
+    CheckPoint(RoamedTo(PLAYER + core::Vec2{ .x = BOX_HALF_X + OVER, .y = 0.0F }), PLAYER + core::Vec2{ .x = OVER, .y = 0.0F });
+    CheckPoint(RoamedTo(PLAYER - core::Vec2{ .x = BOX_HALF_X + OVER, .y = 0.0F }), PLAYER - core::Vec2{ .x = OVER, .y = 0.0F });
+    CheckPoint(RoamedTo(PLAYER + core::Vec2{ .x = 0.0F, .y = BOX_HALF_Y + OVER }), PLAYER + core::Vec2{ .x = 0.0F, .y = OVER });
+    CheckPoint(RoamedTo(PLAYER - core::Vec2{ .x = 0.0F, .y = BOX_HALF_Y + OVER }), PLAYER - core::Vec2{ .x = 0.0F, .y = OVER });
+}
+
+TEST_CASE("zooming out keeps the foot inside the smaller box without jumping past it") {
+    app::CameraControl control{ 1.0F };
+    app::CameraInput frame = Frame(CameraKind::Roam);
+    frame.followed = PLAYER;
+    control.Update(frame);
+    const core::Vec2 foot = PLAYER + core::Vec2{ .x = BOX_HALF_X, .y = 0.0F }; // at the box's edge
+    frame.followed = foot;
+    control.Update(frame);
+    REQUIRE(control.Camera().centre.x == doctest::Approx(PLAYER.x));
+    f32 before = control.Camera().centre.x;
+    for (i32 notch = 0; notch < 4; ++notch) {
+        control.Zoom(-1.0F);
+        control.Update(frame);
+        const f32 centre = control.Camera().centre.x;
+        CHECK(foot.x - centre <= doctest::Approx(BOX_HALF_X / control.Camera().zoom));
+        CHECK(centre <= foot.x);
+        CHECK(centre >= before);
+        before = centre;
+    }
+}
+
+TEST_CASE("a snap back and a scene change put the cultivator at the centre") {
+    app::CameraControl control{ 1.0F };
+    app::CameraInput frame = Frame(CameraKind::Roam);
+    frame.followed = PLAYER;
+    control.Update(frame);
+    frame.followed = PLAYER + core::Vec2{ .x = 100.0F, .y = 0.0F };
+    control.Update(frame);
+    REQUIRE(control.Camera().centre.x == doctest::Approx(PLAYER.x));
+    control.SnapBack();
+    control.Update(frame);
+    CheckAt(control, *frame.followed);
+    frame.followed = WALKED;
+    frame.change = 2;
+    control.Update(frame);
+    CheckAt(control, WALKED);
+}
+
+TEST_CASE("a minimised window centres the camera on the cultivator") {
+    app::CameraControl control{ 1.0F };
+    app::CameraInput frame = Frame(CameraKind::Roam);
+    frame.width = 0;
+    frame.height = 0;
+    frame.followed = PLAYER;
+    control.Update(frame);
+    frame.followed = WALKED;
+    control.Update(frame);
+    CheckAt(control, WALKED);
+    CHECK_FALSE(std::isnan(control.Camera().centre.x));
+    CHECK_FALSE(std::isnan(control.Camera().centre.y));
+}
+
+TEST_CASE("a combat scene's camera still centres on the cultivator every frame") {
+    app::CameraControl control{ 1.0F };
+    app::CameraInput frame = Frame(CameraKind::Follow);
+    frame.followed = PLAYER;
+    control.Update(frame);
+    frame.followed = PLAYER + core::Vec2{ .x = 300.0F, .y = 0.0F };
+    control.Update(frame);
+    CheckAt(control, *frame.followed);
+}
+
 TEST_CASE("walking doesn't re-attach a free camera") {
     app::CameraControl control{ 1.0F };
     app::CameraInput frame = Frame(CameraKind::Roam);
@@ -506,11 +610,11 @@ TEST_CASE("the camera holds still while a calendar step's transition shows, and 
     frame.pan = RIGHT;
     frame.cursor = LEFT_EDGE;
     frame.dragFrom = WINDOW_CENTRE;
-    frame.followed = WALKED;
+    frame.followed = PLAYER + core::Vec2{ .x = BOX_HALF_X + 100.0F, .y = 0.0F }; // past the box
     control.Zoom(1.0F);
     control.Update(frame);
     CHECK_FALSE(control.Free());
-    CheckAt(control, WALKED);
+    CheckAt(control, PLAYER + core::Vec2{ .x = 100.0F, .y = 0.0F });
     CHECK(control.Camera().zoom == 1.0F); // the notch waits for the transition's end
     frame.still = false;
     frame.pan = {};

@@ -60,7 +60,34 @@ f32 ScreenOf(const gfx::Camera& camera, const CameraInput& input) {
            gfx::PixelsPerUnit(camera, static_cast<u32>(std::max(input.width, 1)), static_cast<u32>(std::max(input.height, 1)));
 }
 
+/// `centre` moved along one axis by the least amount that puts `followed` within `half` of it.
+f32 WithinOnAxis(f32 centre, f32 followed, f32 half) {
+    return std::clamp(centre, followed - half, followed + half);
+}
+
+/// How far from the centre the followed foot may walk, in world units, in the input's window.
+core::Vec2 FollowBoxHalf(const gfx::Camera& camera, const CameraInput& input) {
+    const auto width = static_cast<u32>(std::max(input.width, 0));
+    const auto height = static_cast<u32>(std::max(input.height, 0));
+    // PixelsPerUnit counts a side below 1 pixel as 1, so it stays finite and a side of 0 gives a box of 0.
+    const f32 perPixel = FOLLOW_BOX_SHARE / 2.0F / gfx::PixelsPerUnit(camera, width, height);
+    return { .x = static_cast<f32>(width) * perPixel, .y = static_cast<f32>(height) * perPixel };
+}
+
+/// The centre a following camera takes this frame: a roaming one lets the foot walk in a box first, a combat scene's keeps
+/// it exactly at the centre.
+core::Vec2 Followed(const gfx::Camera& camera, const CameraInput& input, core::Vec2 foot) {
+    if (input.kind != core::CameraKind::Roam) {
+        return foot;
+    }
+    return FollowedWithin(camera.centre, foot, FollowBoxHalf(camera, input));
+}
+
 } // namespace
+
+core::Vec2 FollowedWithin(core::Vec2 centre, core::Vec2 followed, core::Vec2 halfBox) {
+    return { .x = WithinOnAxis(centre.x, followed.x, halfBox.x), .y = WithinOnAxis(centre.y, followed.y, halfBox.y) };
+}
 
 bool DragsCamera(Control control, bool combat) {
     return control == Control::DragCamera || (control == Control::Secondary && !combat);
@@ -150,7 +177,7 @@ void CameraControl::Update(const CameraInput& input) {
     }
     const bool follows = input.kind == core::CameraKind::Follow || (input.kind == core::CameraKind::Roam && !m_free);
     if (follows && input.followed) {
-        m_camera.centre = *input.followed;
+        m_camera.centre = Followed(m_camera, input, *input.followed);
     }
     if (input.kind == core::CameraKind::Follow) {
         m_snapBack = false; // it never left
