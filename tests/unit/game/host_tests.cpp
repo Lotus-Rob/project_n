@@ -2141,6 +2141,23 @@ TEST_CASE("held movement taking over mid-road fades the cultivator's shift over 
     CHECK(Apart(walked.current, BodyOf(host, player).current + head) < 0.01F);
 }
 
+TEST_CASE("a cultivator that stops walking mid-fade keeps what is left of its shift, standing") {
+    const CornerWalk walk = WalkedToCorner();
+    game::Host& host = *walk.world.host;
+    const core::StableId player = walk.world.player;
+    const core::Vec2 head = LabelOf(walk.snapshot, player).current - walk.snapshot.route.front();
+    // Eight ticks held south take over the route and fade part of its shift, far short of a tile.
+    TickRange(host, walk.tick + 1, walk.tick + 8, { .move = { .x = 0.0F, .y = 1.0F } });
+    REQUIRE_FALSE(host.PlayerRoute().has_value());
+    const core::TextItem walking = LabelOf(Published(host, STAIRCASE_VIEW), player);
+    REQUIRE(Apart(walking.current, BodyOf(host, player).current + head) > 0.1F * test::small::TILE);
+    // The first tick standing: none of the leftover goes, as the body moved none of the way.
+    TickRange(host, walk.tick + 9, walk.tick + 9);
+    const core::TextItem stood = LabelOf(Published(host, STAIRCASE_VIEW), player);
+    CHECK(SamePoint(stood.previous, walking.current));
+    CHECK(SamePoint(stood.current, walking.current));
+}
+
 TEST_CASE("the cultivator reaching its route's end is drawn without a jump") {
     const std::shared_ptr<const core::WorldMap> map = StaircaseWorld();
     const TravelWorld world = TravelWorldOf({}, true, TRAVEL_CLOCK, std::nullopt, map);
