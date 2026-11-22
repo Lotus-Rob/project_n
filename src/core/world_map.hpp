@@ -370,7 +370,8 @@ public:
         return m_source.travel;
     }
     /// This map with `travel` for its travellers' rules, everything else alike; refused as Build refuses rules (a share
-    /// past MOST_SHARE_PER_MILLE, a stay out of order or of no days).
+    /// past MOST_SHARE_PER_MILLE, a stay out of order or of no days, bands that don't start at 0, rise strictly, number at
+    /// most MOST_PROFILES or name a profile this map lacks).
     [[nodiscard]] std::expected<WorldMap, Error> WithTravel(const TravelRules& travel) const;
     /// The index of the start city.
     [[nodiscard]] u16 Start() const {

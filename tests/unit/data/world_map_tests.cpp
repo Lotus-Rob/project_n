@@ -335,9 +335,9 @@ TEST_CASE("bands read with their profiles resolved") {
         data::ParseWorldMap(WithBands("[{ from_power: 0, profile: on_foot }, { from_power: 5.5, profile: wary }]"), Names());
     REQUIRE(map.has_value());
     REQUIRE(map->Travel().bands.size() == 2);
-    CHECK(map->Travel().bands[0].fromPower == doctest::Approx(0.0F));
+    CHECK(map->Travel().bands[0].fromPower == 0.0F);
     CHECK(map->Travel().bands[0].profile == 0);
-    CHECK(map->Travel().bands[1].fromPower == doctest::Approx(5.5F));
+    CHECK(map->Travel().bands[1].fromPower == 5.5F);
     CHECK(map->Travel().bands[1].profile == 1);
     const std::expected<core::WorldMap, core::Error> none = data::ParseWorldMap(WithBands("[]"), Names());
     REQUIRE(none.has_value());
@@ -345,6 +345,16 @@ TEST_CASE("bands read with their profiles resolved") {
     const std::expected<core::WorldMap, core::Error> plain = data::ParseWorldMap(SMALL, Names());
     REQUIRE(plain.has_value());
     CHECK(plain->Travel().bands.empty());
+}
+
+TEST_CASE("an unknown key inside a band warns, with its line") {
+    std::vector<std::string> warnings;
+    const std::string text = WithBands("[{ from_power: 0, profile: on_foot, speed: 2 }]");
+    const std::expected<core::WorldMap, core::Error> map = data::ParseWorldMap(text, Names(), &warnings);
+    REQUIRE(map.has_value());
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0].contains("speed"));
+    CHECK(warnings[0].contains(std::format("line {}:", LineOf(text, "speed"))));
 }
 
 TEST_CASE("the reader refuses bad bands, naming the line") {
