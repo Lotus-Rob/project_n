@@ -488,6 +488,17 @@ Stood as built (noted, not fixed):
   src/AGENTS.md's MSVC bullet; run the windows-msvc release build before reporting.
 - Not visible in stills: that nothing pops while panning or zooming; the unit tests hold it.
 
+Final review (the whole branch, a second model's review beside it):
+- The mist puffs drew the look's sRGB colour as if it were linear light, lighter and cooler than the veil of the same
+  colour; they now take it as linear, like every other look colour, and the test that had pinned the old value expects
+  the linear one (`fix(gfx): draw the mist puffs in the look's colour as linear light`).
+- The placeholder paintings lost their double outlines: the capital's upper roof shares the keep roof's apex, the keep
+  and the cities' corner towers are opaque so nothing behind them shows through, and the shrine's torii stands clear of
+  its hut.
+- A tributary's end is held to where it meets the main river, the ground shader's cloud-shade mode is checked against
+  gfx's, and a forest no scale can fit is refused by name.
+
 Look values for the user:
 - The `fog_explored_path` picture's drained paper reads strongly sepia: a look value (`drain.strength`).
+- Snow stamps west of the sect read sparse: a look value (`density` of the snow kind's stamps).
 - Rocks are `size: [0.8, 1.1]` tiles wide, not Goal 4's 1.2 to 1.7 (see Rulings): a look value to judge on screen.
