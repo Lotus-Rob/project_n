@@ -27,8 +27,10 @@ inline constexpr std::string_view WORLD_LOOK_SCENE = "world";
 /// the sprites of its WORLD_LOOK_SCENE, which the renderer has resident when the map draws. Fails, naming the line, on YAML
 /// that doesn't parse, a field missing, of the wrong type or out of its range, a sprite the manifest lacks or the world
 /// scene doesn't load (a manifest without that scene fails too), a road list that isn't 16 long, a kind of `map` without a
-/// look or with no stamp sprite, and a danger sort the map uses without a marker or a painting. A kind or marker the map
-/// doesn't use is accepted; a key it doesn't know is ignored, with a line naming it added to `warnings` when given.
+/// look or with no stamp sprite, more kinds than the ground holds (core::MAX_GROUND_KINDS), a water kind (`ground.water`'s
+/// shallow or deep) the map lacks or the same kind for both, a `places.by_key` painting for a place no place of the map has,
+/// and a danger sort the map uses without a marker or a painting. A kind or marker the map doesn't use is accepted; a key it
+/// doesn't know is ignored, with a line naming it added to `warnings` when given.
 [[nodiscard]] std::expected<core::WorldLook, core::Error> ParseWorldLook(
     std::string_view yaml,
     const core::Manifest& manifest,

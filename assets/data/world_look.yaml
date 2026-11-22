@@ -2,9 +2,9 @@
 # edit keeps the old look). It says which sprites draw the map; world.yaml says what the map is.
 #
 # kinds:   each terrain kind of world.yaml by name (at most 16): `wash` its colour and `strength` (0 to 1), `stamps`
-#          the painted stamps over it: `sprites`, `density` (0 to 1), `size` the least and greatest width in tiles,
-#          `jitter` (0 to 1) how far one strays from its cell, `thin_below` the zoom (0 to 2) under which they thin out
-#          (0 never), `mist` whether mist gathers among them
+#          the painted stamps over it: `sprites`, `density` (0 to 1, the chance a tile gets one), `size` the least and
+#          greatest width in tiles, `jitter` (0 to 1) how far one strays from its cell, `thin_below` the zoom (0 to 2)
+#          under which they thin out (0 never), `mist` whether mist gathers among them
 # roads:   16 sprites, by which of a tile's north, east, south and west neighbours carry a road (bits 1, 2, 4, 8)
 # bridge:  a road over a river: `across` where the road runs east to west, `down` where it runs north to south
 # ford:    drawn over the river at a ford
@@ -17,7 +17,8 @@
 # veil:    the haze over the ground: `colour`, patch `scale` in tiles, `strength` (0 to 1)
 # mist:    the puffs among stamps: `sprites`, `colour`, `strength`, `chance` of one beside a stamp, `width` the least and
 #          greatest as a share of the stamp's width
-# river:   the ribbon: `width` and `edge` in tiles, `colour`, `edge_colour`, `edge_strength` (0 to 1)
+# river:   the ribbon: `width` of the water and `edge` of the whole edge band under it, both in tiles, `colour`,
+#          `edge_colour`, `edge_strength` (0 to 1)
 # places:  paintings for places: `city`, `dangers` one per danger sort the map uses (a sort it doesn't use is ignored),
 #          `by_key` for the places with a key of their own (a key no place has is refused)
 # route:   the player's route and the target cursor: `dot` every `spacing` world units along the line, `marker` on its
