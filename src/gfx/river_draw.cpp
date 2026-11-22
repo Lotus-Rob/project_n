@@ -55,16 +55,11 @@ void DrawRivers(
     into.clear();
     const std::span<const std::vector<core::TilePoint>> rivers = map.Rivers();
     std::vector<std::vector<core::Vec2>> waypoints;
-    std::vector<std::vector<core::Vec2>> stored;
     waypoints.reserve(rivers.size());
-    stored.reserve(rivers.size());
     for (const std::vector<core::TilePoint>& river : rivers) {
         waypoints.push_back(core::Waypoints(river, map.TileSize()));
-        stored.push_back(
-            waypoints.back().size() < 2 ? std::vector<core::Vec2>{}
-                                        : core::Midline(waypoints.back(), map.TileSize(), RIVER_STEPS)
-        );
     }
+    const std::vector<std::vector<core::Vec2>> stored = core::Midlines(waypoints, map.TileSize(), RIVER_STEPS);
     std::vector<Laid> lines;
     std::size_t quads = 0;
     for (std::size_t index = 0; index < rivers.size(); ++index) {
@@ -74,8 +69,7 @@ void DrawRivers(
         }
         // A river flows into the river its end lies on or by, else on into the water just ahead of it.
         f32 fade = 0.0F;
-        if (const std::optional<core::Vec2> joined = core::Join(points, index, stored, map.TileSize());
-            joined && Length(*joined - points[points.size() - 2]) > SHORTEST_TANGENT) {
+        if (const std::optional<core::Vec2> joined = core::JoinedEnd(points, index, stored, map.TileSize())) {
             points.back() = *joined;
         }
         else if (const std::optional<core::Vec2> mouth = Mouth(map, water, points[points.size() - 2], points.back())) {

@@ -17,10 +17,9 @@
 # veil:    the haze over the ground: `colour`, patch `scale` in tiles, `strength` (0 to 1)
 # mist:    the puffs among stamps: `sprites`, `colour`, `strength`, `chance` of one beside a stamp, `width` the least and
 #          greatest as a share of the stamp's width
-# river:   the ribbon: `width` of the water and `edge` of the whole edge band under it, both in tiles, `colour`,
-#          `edge_colour`, `edge_strength` (0 to 1)
-# road:    the ribbon roads are drawn as, the same keys as `river:`, narrower and quieter; `edge` may not be narrower
-#          than `width`
+# river:   the ribbon: `width` of the water and `edge` of the whole edge band under it, both in tiles (`edge` not narrower
+#          than `width`), `colour`, `edge_colour`, `edge_strength` (0 to 1)
+# road:    the ribbon roads are drawn as, the same keys and rules as `river:`, narrower and quieter
 # places:  paintings for places: `city`, `dangers` one per danger sort the map uses (a sort it doesn't use is ignored),
 #          `by_key` for the places with a key of their own (a key no place has is refused)
 # route:   the player's route and the target cursor: `dot` every `spacing` world units along the line, `marker` on its
