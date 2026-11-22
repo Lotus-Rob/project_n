@@ -2,11 +2,13 @@
 
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
+#include "core/profile.hpp"
 #include "gfx/ribbon_band.hpp"
 
 namespace gfx {
 
 void DrawRoads(std::span<const std::vector<core::Vec2>> curves, const RoadShape& shape, std::vector<RibbonVertex>& into) {
+    PN_PROFILE_ZONE();
     into.clear();
     std::vector<Laid> lines;
     std::size_t quads = 0;

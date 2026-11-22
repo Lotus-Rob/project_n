@@ -7,6 +7,7 @@
 /// rim fading out softly and every side anti-aliased, and shaded by the fog as land is.
 
 #include "core/error.hpp"
+#include "core/profile.hpp"
 #include "core/types.hpp"
 #include "gfx/camera.hpp"
 #include "gfx/internal/features/ribbons.hpp"
@@ -43,6 +44,7 @@ public:
     /// then nothing draws until a later Update() succeeds.
     template<typename Lay>
     [[nodiscard]] std::expected<void, core::Error> Update(SDL_GPUCopyPass* copy, u64 version, const Lay& lay) {
+        PN_PROFILE_ZONE();
         m_ready = m_held == version;
         if (m_ready) {
             return {};

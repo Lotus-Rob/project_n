@@ -206,17 +206,49 @@ core::WorldMap MapOf(std::string_view yaml) {
     return std::move(*map);
 }
 
-/// The bridges `map` draws over all its tiles with the small look, cut to its one kind, in drawing order.
-std::vector<core::Instance> BridgesOf(const core::Manifest& manifest, const core::WorldMap& map) {
+/// The bridges `map` draws over all its tiles with the small look, cut to its one kind, laid by `roadCurves`, in drawing
+/// order.
+std::vector<core::Instance> BridgesAlong(
+    const core::Manifest& manifest,
+    const core::WorldMap& map,
+    std::span<const std::vector<core::Vec2>> roadCurves
+) {
     core::WorldLook look = SmallLook(manifest, SmallMap());
     look.kinds.resize(1);
-    const gfx::TerrainDrawing drawing = Drawn(map, look, manifest, TilesRect(0, map.Columns() - 1, 0, map.Rows() - 1));
+    gfx::TerrainDrawing drawing;
+    gfx::DrawTerrain(map, look, roadCurves, manifest, TilesRect(0, map.Columns() - 1, 0, map.Rows() - 1), 1.0F, drawing);
     std::vector<core::Instance> bridges;
     std::ranges::copy_if(drawing.instances, std::back_inserter(bridges), [&](const core::Instance& instance) {
         return Shows(manifest, instance, SpriteId::BridgeH) || Shows(manifest, instance, SpriteId::BridgeV);
     });
     return bridges;
 }
+
+/// BridgesAlong() `map`'s own road curves.
+std::vector<core::Instance> BridgesOf(const core::Manifest& manifest, const core::WorldMap& map) {
+    return BridgesAlong(manifest, map, core::RoadCurves(map));
+}
+
+// A river along row 2 and a road climbing a column east over four rows: its tiles step east on the river, so the bridges
+// at (2, 2) and (1, 2) each have a road neighbour to the side, yet the road runs mostly north to south.
+constexpr std::string_view NORTH_NORTH_EAST = R"yaml(road_cost: 4
+ford_cost: 30
+tile_size: 256
+kinds:
+  - { symbol: ".", name: meadow, cost: 10 }
+grid: |
+  .....
+  .....
+  .....
+  .....
+  .....
+roads: [ [[1, 4], [2, 0]] ]
+rivers: [ [[0, 2], [4, 2]] ]
+profiles:
+  - { key: on_foot, ticks_per_cost: 16 }
+places:
+  - { key: capital, kind: city, tile: [2, 0], name: place_capital, people: 100, start: true }
+)yaml";
 
 TEST_CASE("the terrain draws no tiles and no river overlays") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
@@ -301,8 +333,27 @@ TEST_CASE("terrain draws no road overlays") {
 
 TEST_CASE("a bridge on a road running north-north-east draws the downward bridge") {
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
-    // A river along row 2 and a road climbing a column east over four rows: its tiles step east on the river, so the
-    // bridges at (2, 2) and (1, 2) each have a road neighbour to the side, yet the road runs mostly north to south.
+    const core::WorldMap map = MapOf(NORTH_NORTH_EAST);
+    const std::vector<core::Instance> bridges = BridgesOf(*manifest, map);
+    REQUIRE(bridges.size() == 2);
+    CHECK(Is(*manifest, bridges[0], SpriteId::BridgeV, Corner(1, 2)));
+    CHECK(Is(*manifest, bridges[1], SpriteId::BridgeV, Corner(2, 2)));
+}
+
+TEST_CASE("a bridge with no road curve to follow draws the bridge across") {
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    // The north-north-east road's own curves lay both bridges down; with none given there is no heading to follow.
+    const core::WorldMap map = MapOf(NORTH_NORTH_EAST);
+    const std::vector<core::Instance> bridges = BridgesAlong(*manifest, map, {});
+    REQUIRE(bridges.size() == 2);
+    CHECK(Is(*manifest, bridges[0], SpriteId::BridgeH, Corner(1, 2)));
+    CHECK(Is(*manifest, bridges[1], SpriteId::BridgeH, Corner(2, 2)));
+}
+
+TEST_CASE("a bridge on a road running as much east as north draws the bridge across") {
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    // A road on the diagonal from (0, 4) to (4, 0) over a river along row 2, bridged at (1, 2) and (2, 2). Its curve is
+    // given through the tile centres it crosses, a tile across for each tile up, so every heading is an exact tie.
     const core::WorldMap map = MapOf(R"yaml(road_cost: 4
 ford_cost: 30
 tile_size: 256
@@ -314,17 +365,20 @@ grid: |
   .....
   .....
   .....
-roads: [ [[1, 4], [2, 0]] ]
+roads: [ [[0, 4], [4, 0]] ]
 rivers: [ [[0, 2], [4, 2]] ]
 profiles:
   - { key: on_foot, ticks_per_cost: 16 }
 places:
-  - { key: capital, kind: city, tile: [2, 0], name: place_capital, people: 100, start: true }
+  - { key: capital, kind: city, tile: [0, 4], name: place_capital, people: 100, start: true }
 )yaml");
-    const std::vector<core::Instance> bridges = BridgesOf(*manifest, map);
+    const std::vector<std::vector<core::Vec2>> diagonal{
+        { Middle(0, 4), Middle(1, 3), Middle(2, 2), Middle(3, 1), Middle(4, 0) }
+    };
+    const std::vector<core::Instance> bridges = BridgesAlong(*manifest, map, diagonal);
     REQUIRE(bridges.size() == 2);
-    CHECK(Is(*manifest, bridges[0], SpriteId::BridgeV, Corner(1, 2)));
-    CHECK(Is(*manifest, bridges[1], SpriteId::BridgeV, Corner(2, 2)));
+    CHECK(Is(*manifest, bridges[0], SpriteId::BridgeH, Corner(1, 2)));
+    CHECK(Is(*manifest, bridges[1], SpriteId::BridgeH, Corner(2, 2)));
 }
 
 TEST_CASE("a bridge on a road running east-north-east draws the bridge across") {

@@ -424,10 +424,11 @@ struct Renderer::Impl {
     std::optional<core::Vec2> targetTile = std::nullopt; // SetTargetTile(): the cursor tile's centre, if it shows
     bool routeShown = false;                             // whether this frame draws the route buffer: it holds something
     bool terrainShown = false; // whether this frame draws the terrain: the snapshot shows the map and its buffer is current
-    std::optional<core::Rect> groundQuad = std::nullopt; // the part of this frame's view the ground and rivers cover, if any
-    GroundUniforms groundUniforms{};                     // what this frame's ground is painted by
-    GroundUniforms veilUniforms{};                       // what this frame's veil is painted by
-    GroundUniforms cloudShadeUniforms{};                 // what this frame's shade under the clouds is painted by
+    std::optional<core::Rect> groundQuad =
+        std::nullopt;                    // the part of this frame's view the ground, rivers and roads cover, if any
+    GroundUniforms groundUniforms{};     // what this frame's ground is painted by
+    GroundUniforms veilUniforms{};       // what this frame's veil is painted by
+    GroundUniforms cloudShadeUniforms{}; // what this frame's shade under the clouds is painted by
     // The map and look version and whether paper alone was asked for when the three uniforms were last made.
     std::optional<std::pair<u64, bool>> groundUniformsFor = std::nullopt;
     VolleyDrawing volleyDrawing; // this frame's health bars and swords, placed at the render time, and the HUD's bars

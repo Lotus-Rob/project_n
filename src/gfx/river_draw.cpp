@@ -2,6 +2,7 @@
 
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
+#include "core/profile.hpp"
 #include "core/road_curve.hpp"
 #include "core/vec2.hpp"
 #include "gfx/ribbon.hpp"
@@ -52,6 +53,7 @@ void DrawRivers(
     std::span<const u8> water,
     std::vector<RibbonVertex>& into
 ) {
+    PN_PROFILE_ZONE();
     into.clear();
     const std::span<const std::vector<core::TilePoint>> rivers = map.Rivers();
     std::vector<std::vector<core::Vec2>> waypoints;
