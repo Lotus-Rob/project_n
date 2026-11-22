@@ -5,7 +5,7 @@
 #          the painted stamps over it: `sprites`, `density` (0 to 1, the chance a tile gets one), `size` the least and
 #          greatest width in tiles, `jitter` (0 to 1) how far one strays from its cell, `thin_below` the zoom (0 to 2)
 #          under which they thin out (0 never), `mist` whether mist gathers among them
-# bridge:  a road over a river: `across` where the road's ribbon runs more east to west than north to south, else `down`
+# bridge:  a road over a river: `across` where the road's ribbon runs at least as much east to west as north to south, else `down`
 # ford:    drawn over the river at a ford
 # markers: `city` and one sprite per danger sort the map uses (a sort the map doesn't use is ignored)
 # ground:  the paper under the map: `paper` colour, `grain` its fibre's strength, `edge_warp` and `edge_soft` how far
