@@ -4,7 +4,8 @@
 /// @ingroup core
 /// Routes over the world map: a distance map gives, from every tile, what walking to one goal costs
 /// by a movement profile; a route follows it down, or A* finds one tile to tile. Cost is whole numbers with fixed
-/// tie-breaks (lower tile index), so every route is the same on every machine.
+/// tie-breaks (the lower tile index, after the shortest route's nearness to its straight line), so every route is the
+/// same on every machine.
 
 #include "core/types.hpp"
 #include "core/world_map.hpp"
@@ -64,8 +65,11 @@ private:
 
 /// The shortest route from `from` to `target` over the tiles `WALKING` can step onto: every step costs its length (a
 /// diagonal DIAGONAL_NUMERATOR / DIAGONAL_DENOMINATOR of a straight one) whatever the ground, so roads and terrain
-/// don't bend it. A* with FindRoute's neighbour and corner rules and tie rule (lower tile index); `{from}` when `from`
-/// is `target`, empty when `target` is impassable or unreachable.
+/// don't bend it. A* with FindRoute's neighbour and corner rules. Of the many routes equally short on an eight-way grid it
+/// takes the one keeping closest to the straight line from `from`'s tile to `target`'s: the least sum, over the tiles it
+/// enters, of each one's distance off that line (in whole numbers), then the lower tile index; so it walks a staircase
+/// along the line rather than all its straight steps and then all its diagonals. `{from}` when `from` is `target`, empty
+/// when `target` is impassable or unreachable.
 [[nodiscard]] std::vector<u32> FindShortestRoute(const WorldMap& map, u32 from, u32 target);
 
 /// The distance maps to the map's cities, each built on first use and kept. Not thread-safe: Warm before any parallel

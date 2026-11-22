@@ -6,7 +6,7 @@ namespace core {
 
 namespace {
 
-using RouteEntry = std::pair<u64, u32>; // (cost or f, tile)
+using RouteEntry = std::pair<u64, u32>; // (cost, tile)
 using RouteQueue = std::priority_queue<RouteEntry, std::vector<RouteEntry>, std::greater<>>;
 
 /// The cheapest cost of entering any tile by `profile`: every tile's cost is one of its kinds' or features' costs, or a
@@ -97,11 +97,24 @@ std::vector<u32> RouteDown(const WorldMap& map, const DistanceMap& distances, u3
 
 namespace {
 
+/// A search entry: (estimated length, aside so far, tile), so the queue pops by length, then aside, then tile index.
+using SearchEntry = std::tuple<u64, u64, u32>;
+using SearchQueue = std::priority_queue<SearchEntry, std::vector<SearchEntry>, std::greater<>>;
+
 /// A* from `from` to `target` over the tiles `profile` can step onto, each step priced by `price(from, next)` (never
 /// IMPASSABLE_COST for a step `profile` can take), `cheapest` the least any step costs, which keeps the estimate from
-/// overshooting. Ties go to the lower tile index.
-template<typename Price>
-std::vector<u32> Search(const WorldMap& map, ProfileIndex profile, u32 from, u32 target, u32 cheapest, const Price& price) {
+/// overshooting. Among routes of the least price it takes the one whose entered tiles' `aside(tile)` sum least, compared
+/// only on equal price; ties beyond that go to the lower tile index.
+template<typename Price, typename Aside>
+std::vector<u32> Search(
+    const WorldMap& map,
+    ProfileIndex profile,
+    u32 from,
+    u32 target,
+    u32 cheapest,
+    const Price& price,
+    const Aside& aside
+) {
     if (map.CostAt(target, profile) == IMPASSABLE_COST) {
         return {};
     }
@@ -116,15 +129,17 @@ std::vector<u32> Search(const WorldMap& map, ProfileIndex profile, u32 from, u32
         );
     };
     std::vector<u32> cost(tiles, UNREACHABLE);
+    std::vector<u64> astray(tiles, std::numeric_limits<u64>::max());
     std::vector<u32> parent(tiles, UNREACHABLE);
     cost.at(from) = 0;
-    RouteQueue queue; // (f, tile)
-    queue.emplace(estimate(from), from);
+    astray.at(from) = 0;
+    SearchQueue queue;
+    queue.emplace(estimate(from), 0, from);
     while (!queue.empty()) {
-        const auto [estimated, tile] = queue.top();
+        const auto [estimated, strayed, tile] = queue.top();
         queue.pop();
-        if (estimated > u64{ cost[tile] } + estimate(tile)) {
-            continue; // a cheaper way to this tile was found after this entry
+        if (std::pair{ estimated, strayed } > std::pair{ u64{ cost[tile] } + estimate(tile), astray[tile] }) {
+            continue; // a better way to this tile was found after this entry
         }
         if (tile == target) {
             std::vector<u32> route{ target };
@@ -140,10 +155,14 @@ std::vector<u32> Search(const WorldMap& map, ProfileIndex profile, u32 from, u32
                 return;
             }
             const u64 total = u64{ cost[tile] } + step;
-            if (total < cost[next]) {
+            const u64 off = astray[tile] + aside(next);
+            // The aside takes part in the relaxation, not only in the queue's order, so a later way of the same price
+            // that strays less replaces the parent the first one set.
+            if (std::pair{ total, off } < std::pair{ u64{ cost[next] }, astray[next] }) {
                 cost[next] = static_cast<u32>(total);
+                astray[next] = off;
                 parent[next] = tile;
-                queue.emplace(total + estimate(next), next);
+                queue.emplace(total + estimate(next), off, next);
             }
         });
     }
@@ -158,21 +177,41 @@ static_assert(SHORTEST_STEP % DIAGONAL_DENOMINATOR == 0, "a diagonal's price is 
 } // namespace
 
 std::vector<u32> FindRoute(const WorldMap& map, ProfileIndex profile, u32 from, u32 target) {
-    return Search(map, profile, from, target, CheapestEntry(map.Profiles()[profile]), [&](u32 tile, u32 next) {
-        return map.StepCost(tile, next, profile);
-    });
+    return Search(
+        map,
+        profile,
+        from,
+        target,
+        CheapestEntry(map.Profiles()[profile]),
+        [&](u32 tile, u32 next) { return map.StepCost(tile, next, profile); },
+        [](u32 /*tile*/) { return u64{ 0 }; }
+    );
 }
 
 std::vector<u32> FindShortestRoute(const WorldMap& map, u32 from, u32 target) {
-    return Search(map, WALKING, from, target, SHORTEST_STEP, [&](u32 tile, u32 next) -> u32 {
+    const TilePoint start = map.PointOf(from);
+    const TilePoint end = map.PointOf(target);
+    const i64 alongColumns = static_cast<i64>(end.column) - static_cast<i64>(start.column);
+    const i64 alongRows = static_cast<i64>(end.row) - static_cast<i64>(start.row);
+    const auto price = [&](u32 tile, u32 next) -> u32 {
         if (map.StepCost(tile, next, WALKING) == IMPASSABLE_COST) {
             return IMPASSABLE_COST;
         }
-        const TilePoint start = map.PointOf(tile);
-        const TilePoint end = map.PointOf(next);
-        return start.column != end.column && start.row != end.row ? SHORTEST_STEP * DIAGONAL_NUMERATOR / DIAGONAL_DENOMINATOR
-                                                                  : SHORTEST_STEP;
-    });
+        const TilePoint stepFrom = map.PointOf(tile);
+        const TilePoint stepTo = map.PointOf(next);
+        return stepFrom.column != stepTo.column && stepFrom.row != stepTo.row
+                   ? SHORTEST_STEP * DIAGONAL_NUMERATOR / DIAGONAL_DENOMINATOR
+                   : SHORTEST_STEP;
+    };
+    // The cross product with the line from `from` to `target`: the tile's distance off the line times the line's length,
+    // the same factor for every tile, so whole numbers order the tiles as their distances do.
+    const auto aside = [&](u32 tile) -> u64 {
+        const TilePoint point = map.PointOf(tile);
+        const i64 column = static_cast<i64>(point.column) - static_cast<i64>(start.column);
+        const i64 row = static_cast<i64>(point.row) - static_cast<i64>(start.row);
+        return static_cast<u64>(std::abs((alongColumns * row) - (alongRows * column)));
+    };
+    return Search(map, WALKING, from, target, SHORTEST_STEP, price, aside);
 }
 
 Paths::Paths(std::shared_ptr<const WorldMap> map)

@@ -123,6 +123,25 @@ TEST_CASE("the shortest route goes straight across open ground past a road") {
     CHECK(core::FindShortestRoute(map, 5, 5) == std::vector<u32>{ 5 });
 }
 
+TEST_CASE("the shortest route over open ground keeps close to the straight line") {
+    // Six columns by seven rows of meadow: tile = row * 6 + column.
+    const core::WorldMap map = MustBuild(Source({ "0.....", "......", "......", "......", "......", "......", "......" }));
+    // Two across and six down: two diagonals among four straight steps, spread out rather than all straight steps first.
+    CHECK(core::FindShortestRoute(map, 0, 38) == std::vector<u32>{ 0, 6, 13, 19, 25, 32, 38 });
+    // Five across and four down: the one straight step in the middle of the diagonals, there and back.
+    CHECK(core::FindShortestRoute(map, 0, 29) == std::vector<u32>{ 0, 7, 14, 15, 22, 29 });
+    CHECK(core::FindShortestRoute(map, 29, 0) == std::vector<u32>{ 29, 22, 15, 14, 7, 0 });
+}
+
+TEST_CASE("the shortest route round an obstacle keeps close to the line and stays shortest") {
+    const core::WorldMap map = MustBuild(Source({ "0..~...", "......." }));
+    const std::vector<u32> round = core::FindShortestRoute(map, 0, 6);
+    // Down to the second row only for the three tiles beside the water; on meadow alone each step costs its length, so the
+    // cheapest route's cost is the shortest one's.
+    CHECK(round == std::vector<u32>{ 0, 1, 9, 10, 11, 5, 6 });
+    CHECK(Walked(map, round) == Walked(map, core::FindRoute(map, core::WALKING, 0, 6)));
+}
+
 TEST_CASE("the shortest route never cuts a corner past impassable ground") {
     const core::WorldMap map = MustBuild(Source({ "0.~.", "...." }));
     const std::vector<u32> round = { 1, 5, 6, 7, 3 };
