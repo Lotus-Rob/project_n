@@ -423,6 +423,8 @@ struct Renderer::Impl {
     GroundUniforms groundUniforms{};                     // what this frame's ground is painted by
     GroundUniforms veilUniforms{};                       // what this frame's veil is painted by
     GroundUniforms cloudShadeUniforms{};                 // what this frame's shade under the clouds is painted by
+    // The map and look version and whether paper alone was asked for when the three uniforms were last made.
+    std::optional<std::pair<u64, bool>> groundUniformsFor = std::nullopt;
     VolleyDrawing volleyDrawing; // this frame's health bars and swords, placed at the render time, and the HUD's bars
     SealDrawing sealDrawing;     // this frame's seals, laid out at the render time
     std::vector<core::SealKey> sealsMissing; // the seal keys the table lacked, each logged once
@@ -608,12 +610,20 @@ std::expected<void, core::Error> Renderer::Impl::UploadGround(SDL_GPUCopyPass* c
     const std::expected<void, core::Error> laid = rivers.Update(copy, *worldMap, worldLook, worldVersion);
     groundQuad = GroundQuad(ViewRect(shown), *worldMap);
     const bool paperOnly = shown.view->terrainParts == TerrainParts::PaperOnly;
-    groundUniforms = GroundUniformsOf(*worldMap, worldLook, paperOnly ? GROUND_MODE_PAPER : GROUND_MODE_GROUND);
+    // Turning the look's colours linear takes some sixty of core's deterministic powers, so it waits for a new map or look;
+    // only the zoom follows the camera.
+    const std::pair<u64, bool> uniformsFor{ worldVersion, paperOnly };
+    if (groundUniformsFor != uniformsFor) {
+        groundUniforms = GroundUniformsOf(*worldMap, worldLook, paperOnly ? GROUND_MODE_PAPER : GROUND_MODE_GROUND);
+        veilUniforms = groundUniforms;
+        veilUniforms.mode = GROUND_MODE_VEIL;
+        cloudShadeUniforms = groundUniforms;
+        cloudShadeUniforms.mode = GROUND_MODE_CLOUD_SHADE;
+        groundUniformsFor = uniformsFor;
+    }
     groundUniforms.zoom = shown.view->camera.zoom;
-    veilUniforms = groundUniforms;
-    veilUniforms.mode = GROUND_MODE_VEIL;
-    cloudShadeUniforms = groundUniforms;
-    cloudShadeUniforms.mode = GROUND_MODE_CLOUD_SHADE;
+    veilUniforms.zoom = groundUniforms.zoom;
+    cloudShadeUniforms.zoom = groundUniforms.zoom;
     return core::Combine(field, laid);
 }
 
