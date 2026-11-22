@@ -5,9 +5,7 @@
 #include "core/profile.hpp"
 #include "gfx/fog.hpp"
 #include "gfx/generated/shaders.hpp" // by `project_n shaders`
-#include "gfx/ground.hpp"
 #include "gfx/internal/features/meshes.hpp"
-#include "gfx/river_draw.hpp"
 
 namespace gfx::internal {
 
@@ -39,14 +37,22 @@ struct BandUniforms {
 
 } // namespace
 
-std::expected<RiverRenderer, core::Error> RiverRenderer::Create(SDL_GPUDevice* device, SDL_GPUTextureFormat format) {
-    RiverRenderer renderer;
+std::expected<LineRibbonRenderer, core::Error> LineRibbonRenderer::Create(
+    SDL_GPUDevice* device,
+    SDL_GPUTextureFormat format,
+    u32 maxQuads,
+    std::string_view name
+) {
+    LineRibbonRenderer renderer;
     renderer.m_device = device;
-    renderer.m_pipeline = CreateRibbonPipeline(device, format, shaders::RIVER_VERT, shaders::RIVER_FRAG, OVER, "rivers");
+    renderer.m_name = name;
+    renderer.m_maxQuads = maxQuads;
+    renderer.m_pipeline =
+        CreateRibbonPipeline(device, format, shaders::RIVER_VERT, shaders::RIVER_FRAG, OVER, renderer.m_name.c_str());
     if (renderer.m_pipeline == nullptr) {
-        return std::unexpected{ core::Error{ std::format("the river pipeline was rejected: {}", SDL_GetError()) } };
+        return std::unexpected{ core::Error{ std::format("the {} pipeline was rejected: {}", name, SDL_GetError()) } };
     }
-    std::expected<RibbonBuffers, core::Error> buffers = CreateRibbonBuffers(device, MAX_RIVER_QUADS, "river");
+    std::expected<RibbonBuffers, core::Error> buffers = CreateRibbonBuffers(device, maxQuads, name);
     if (!buffers) {
         return std::unexpected{ std::move(buffers.error()) };
     }
@@ -54,42 +60,31 @@ std::expected<RiverRenderer, core::Error> RiverRenderer::Create(SDL_GPUDevice* d
     return renderer;
 }
 
-std::expected<void, core::Error> RiverRenderer::Update(
-    SDL_GPUCopyPass* copy,
-    const core::WorldMap& map,
-    const core::WorldLook& look,
-    u64 version
-) {
+std::expected<void, core::Error> LineRibbonRenderer::Upload(SDL_GPUCopyPass* copy, u64 version, f32 rimStart) {
     PN_PROFILE_ZONE();
-    m_ready = m_held == version;
-    if (m_ready) {
-        return {};
-    }
     if (!m_indicesHeld) {
-        if (!UploadQuadIndices(m_device, copy, m_buffers.indices.get(), MAX_RIVER_QUADS)) {
-            return std::unexpected{ core::Error{ std::format("the river quad indices weren't uploaded: {}", SDL_GetError()) } };
+        if (!UploadQuadIndices(m_device, copy, m_buffers.indices.get(), m_maxQuads)) {
+            return std::unexpected{ core::Error{
+                std::format("the {} quad indices weren't uploaded: {}", m_name, SDL_GetError()) } };
         }
         m_indicesRecorded = true;
     }
-    const RiverShape shape = RiverShapeOf(map, look.river);
-    // DrawRivers() leaves out whole the rivers past MAX_RIVER_QUADS, and logs it.
-    const std::array<u8, 2> water{ { look.ground.shallowKind, look.ground.deepKind } };
-    DrawRivers(map, shape, water, m_laid);
     m_quads = static_cast<u32>(m_laid.size() / QUAD_VERTICES);
-    m_rimStart = RimStart(shape);
+    PN_ASSERT(m_quads <= m_maxQuads, "the layout keeps within the buffer it was made for");
+    m_rimStart = rimStart;
     // Cycled: a frame in flight may still read what the transfer buffer and the vertex buffer held.
     if (m_quads > 0 &&
         !CopyToBuffer(
             m_device, copy, m_buffers.transfer.get(), m_buffers.vertices.get(), std::as_bytes(std::span{ m_laid }), true
         )) {
-        return std::unexpected{ core::Error{ std::format("the river vertices weren't uploaded: {}", SDL_GetError()) } };
+        return std::unexpected{ core::Error{ std::format("the {} vertices weren't uploaded: {}", m_name, SDL_GetError()) } };
     }
     m_recorded = version;
     m_ready = true;
     return {};
 }
 
-void RiverRenderer::Submitted(bool submitted) {
+void LineRibbonRenderer::Submitted(bool submitted) {
     if (submitted && m_recorded) {
         m_held = m_recorded;
     }
@@ -100,7 +95,7 @@ void RiverRenderer::Submitted(bool submitted) {
     m_indicesRecorded = false;
 }
 
-void RiverRenderer::Draw(
+void LineRibbonRenderer::Draw(
     SDL_GPUCommandBuffer* commands,
     SDL_GPURenderPass* pass,
     const ClipTransform& worldToClip,
@@ -110,8 +105,8 @@ void RiverRenderer::Draw(
     if (!m_ready || m_quads == 0) {
         return;
     }
-    // DrawRivers() gives each river's two bands the same quads, every edge band's before every core's.
-    PN_ASSERT(m_quads % 2 == 0, "the rivers' edge and core bands take as many quads each");
+    // The layout gives each line's two bands the same quads, every edge band's before every core's.
+    PN_ASSERT(m_quads % 2 == 0, "the lines' edge and core bands take as many quads each");
     const u32 edgeQuads = m_quads / 2;
     SDL_BindGPUGraphicsPipeline(pass, m_pipeline.get());
     const SDL_GPUBufferBinding vertices{ .buffer = m_buffers.vertices.get(), .offset = 0 };

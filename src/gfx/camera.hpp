@@ -34,10 +34,10 @@ struct Camera {
 };
 
 /// Which parts of the world map's terrain a frame draws. Only the shimmer measure sets anything but All: it holds the
-/// painted ground's crawl against the same frame as flat paper, without the road overlays, whose shimmer is their own.
+/// painted ground's crawl against the same frame as flat paper, without the road ribbons, whose shimmer is their own.
 enum class TerrainParts : u8 {
-    All,         ///< The ground, rivers, every terrain sprite and the veil.
-    AllButRoads, ///< All but the road overlays.
+    All,         ///< The ground, rivers, roads, every terrain sprite and the veil.
+    AllButRoads, ///< All but the road ribbons.
     PaperOnly,   ///< The ground as flat paper (GROUND_MODE_PAPER), and nothing else of the terrain.
 };
 

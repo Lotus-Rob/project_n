@@ -31,24 +31,22 @@ sprites = [
 [cells]
 sprites = ["ground", "cell_plain", "cell_forest", "cell_mountain", "cell_snow", "cell_city"]
 
-# The world map: its road overlays, crossings, markers, route and cursor, the fog's clouds, the painted stamps, mist
+# The world map: its crossings, markers, route and cursor, the fog's clouds, the painted stamps, mist
 # and place paintings, the cultivator (the fox too, as the creatures data draws both) and the travellers with their
 # shadows.
 [world]
 sprites = [
-    "shadow", "cultivator", "fox", "villager", "road_0", "road_1", "road_2", "road_3", "road_4", "road_5", "road_6",
-    "road_7", "road_8", "road_9", "road_10", "road_11", "road_12", "road_13", "road_14", "road_15", "bridge_h",
-    "bridge_v", "ford", "marker_city", "marker_haunted_forest", "marker_mountain_pass", "marker_shrine",
-    "marker_cave", "marker_cliff", "marker_corrupt_village", "route_dot", "route_marker", "target_tile", "cloud_0",
-    "cloud_1", "cloud_2", "cloud_3", "cloud_4", "cloud_5", "cloud_6", "cloud_7", "cloud_8", "cloud_9", "cloud_10",
-    "cloud_11", "cloud_12", "cloud_13", "cloud_14", "cloud_15", "stamp_forest_0", "stamp_forest_1",
-    "stamp_forest_2", "stamp_forest_3", "stamp_hills_0", "stamp_hills_1", "stamp_hills_2", "stamp_hills_3",
-    "stamp_peaks_0", "stamp_peaks_1", "stamp_peaks_2", "stamp_peaks_3", "stamp_snow_0", "stamp_snow_1",
-    "stamp_snow_2", "stamp_snow_3", "stamp_rock_0", "stamp_rock_1", "stamp_rock_2", "stamp_rock_3", "stamp_marsh_0",
-    "stamp_marsh_1", "stamp_marsh_2", "stamp_marsh_3", "stamp_sand_0", "stamp_sand_1", "stamp_sand_2",
-    "stamp_sand_3", "stamp_grass_0", "stamp_grass_1", "stamp_grass_2", "stamp_grass_3", "stamp_meadow_0",
-    "stamp_meadow_1", "stamp_meadow_2", "stamp_meadow_3", "stamp_water_0", "stamp_water_1", "stamp_water_2",
-    "stamp_water_3", "mist_0", "mist_1", "mist_2", "mist_3", "painting_city", "painting_capital",
+    "shadow", "cultivator", "fox", "villager", "bridge_h", "bridge_v", "ford", "marker_city", "marker_haunted_forest",
+    "marker_mountain_pass", "marker_shrine", "marker_cave", "marker_cliff", "marker_corrupt_village", "route_dot",
+    "route_marker", "target_tile", "cloud_0", "cloud_1", "cloud_2", "cloud_3", "cloud_4", "cloud_5", "cloud_6",
+    "cloud_7", "cloud_8", "cloud_9", "cloud_10", "cloud_11", "cloud_12", "cloud_13", "cloud_14", "cloud_15",
+    "stamp_forest_0", "stamp_forest_1", "stamp_forest_2", "stamp_forest_3", "stamp_hills_0", "stamp_hills_1",
+    "stamp_hills_2", "stamp_hills_3", "stamp_peaks_0", "stamp_peaks_1", "stamp_peaks_2", "stamp_peaks_3",
+    "stamp_snow_0", "stamp_snow_1", "stamp_snow_2", "stamp_snow_3", "stamp_rock_0", "stamp_rock_1", "stamp_rock_2",
+    "stamp_rock_3", "stamp_marsh_0", "stamp_marsh_1", "stamp_marsh_2", "stamp_marsh_3", "stamp_sand_0", "stamp_sand_1",
+    "stamp_sand_2", "stamp_sand_3", "stamp_grass_0", "stamp_grass_1", "stamp_grass_2", "stamp_grass_3",
+    "stamp_meadow_0", "stamp_meadow_1", "stamp_meadow_2", "stamp_meadow_3", "stamp_water_0", "stamp_water_1",
+    "stamp_water_2", "stamp_water_3", "mist_0", "mist_1", "mist_2", "mist_3", "painting_city", "painting_capital",
     "painting_haunted_forest", "painting_mountain_pass", "painting_shrine", "painting_cave", "painting_cliff",
     "painting_corrupt_village",
 ]

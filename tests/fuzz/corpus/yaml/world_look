@@ -7,8 +7,6 @@ kinds:
     wash: [196, 204, 146]
     strength: 0.1
     stamps: { sprites: [stamp_meadow_0], density: 0.03, size: [0.6, 0.9], jitter: 0.2, thin_below: 0, mist: true }
-roads:
-  [road_0, road_1, road_2, road_3, road_4, road_5, road_6, road_7, road_8, road_9, road_10, road_11, road_12, road_13, road_14, road_15]
 bridge: { across: bridge_h, down: bridge_v }
 ford: ford
 markers:

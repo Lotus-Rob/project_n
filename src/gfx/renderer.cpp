@@ -5,6 +5,7 @@
 #include "core/log.hpp"
 #include "core/profile.hpp"
 #include "core/repeated_failure.hpp"
+#include "core/road_curve.hpp"
 #include "core/tick_clock.hpp"
 #include "gfx/cloud_draw.hpp"
 #include "gfx/glow_table.hpp"
@@ -21,6 +22,8 @@
 #include "gfx/internal/resources/scene_target.hpp"
 #include "gfx/internal/resources/sprite_array.hpp"
 #include "gfx/labels.hpp"
+#include "gfx/river_draw.hpp"
+#include "gfx/road_draw.hpp"
 #include "gfx/route_draw.hpp"
 #include "gfx/seal_draw.hpp"
 #include "gfx/sprite_block.hpp"
@@ -221,10 +224,10 @@ struct Renderer::Impl {
     /// Lays out and copies the world map's sprites (DrawTerrain()) for the world `shown` shows at its zoom, when it shows the
     /// map and they differ from what the buffer holds; returns how many instances didn't fit.
     std::expected<std::size_t, core::Error> UploadTerrain(SDL_GPUCopyPass* copy, const Shown& shown);
-    /// Builds and copies the world map's ground field and rivers when the map or the look changed, and works out the part
-    /// of the view the ground covers and its uniforms, when `shown` shows the map; nothing of either draws otherwise.
+    /// Builds and copies the world map's ground field, rivers and roads when the map or the look changed, and works out the
+    /// part of the view the ground covers and its uniforms, when `shown` shows the map; nothing of either draws otherwise.
     std::expected<void, core::Error> UploadGround(SDL_GPUCopyPass* copy, const Shown& shown);
-    /// Creates the world map's ground and river pipelines on `gpu`, or says why it couldn't.
+    /// Creates the world map's ground, river and road pipelines on `gpu`, or says why it couldn't.
     std::expected<void, core::Error> CreateGround(SDL_GPUDevice* gpu);
     /// The world the camera shows, as a rectangle, for the window's size.
     static core::Rect ViewRect(const Shown& shown);
@@ -331,19 +334,21 @@ struct Renderer::Impl {
     core::Seals sealLooks{};                                  // empty until SetSeals(): no seal is drawn
     std::shared_ptr<const core::WorldMap> worldMap = nullptr; // null until SetWorld(): no map is drawn
     core::WorldLook worldLook{};
+    std::vector<std::vector<core::Vec2>> roadCurves; // worldMap's, made by SetWorld(): the ribbons and bridges follow them
     std::filesystem::path assets;
     std::vector<bool> resident;
     std::optional<SceneLoad> load = std::nullopt;
     /// Features: what draws, each with its pipelines and buffers.
     internal::SpriteRenderer instances{};
     internal::MeshRenderer meshes{};
-    internal::GroundRenderer ground{};  // the world map's painted ground, under everything on it
-    internal::RiverRenderer rivers{};   // the world map's rivers, over the ground
-    internal::SpriteRenderer terrain{}; // the world map's roads, crossings, stamps and markers (TerrainDrawing)
-    internal::SpriteRenderer route{};   // the player's route (TerrainDrawing), over the map
-    internal::SpriteRenderer clouds{};  // the fog's clouds (CloudDrawing), over the world's sprites
-    internal::SpriteRenderer cursor{};  // the cursor's tile (TerrainDrawing), over the clouds
-    internal::SpriteRenderer overlay{}; // the per-frame sprites: swords, bursts and health bars (VolleyDrawing)
+    internal::GroundRenderer ground{};     // the world map's painted ground, under everything on it
+    internal::LineRibbonRenderer rivers{}; // the world map's rivers, over the ground
+    internal::LineRibbonRenderer roads{};  // the world map's roads, over the rivers
+    internal::SpriteRenderer terrain{};    // the world map's crossings, stamps and markers (TerrainDrawing)
+    internal::SpriteRenderer route{};      // the player's route (TerrainDrawing), over the map
+    internal::SpriteRenderer clouds{};     // the fog's clouds (CloudDrawing), over the world's sprites
+    internal::SpriteRenderer cursor{};     // the cursor's tile (TerrainDrawing), over the clouds
+    internal::SpriteRenderer overlay{};    // the per-frame sprites: swords, bursts and health bars (VolleyDrawing)
     internal::GlowTableBuffer glowTable{};
     internal::FogTexture fog{}; // the world map's fog, which every sprite draw is shaded by
     internal::RibbonRenderer ribbons{};
@@ -589,7 +594,7 @@ std::expected<std::size_t, core::Error> Renderer::Impl::UploadTerrain(SDL_GPUCop
         terrainShown = true;
         return std::size_t{ 0 };
     }
-    DrawTerrain(*worldMap, worldLook, *manifest, view, zoom, terrainDrawing);
+    DrawTerrain(*worldMap, worldLook, roadCurves, *manifest, view, zoom, terrainDrawing);
     terrainLaid = key;
     const std::expected<std::size_t, core::Error> dropped = terrain.Upload(copy, terrainDrawing.instances);
     if (dropped) {
@@ -605,9 +610,21 @@ std::expected<void, core::Error> Renderer::Impl::UploadGround(SDL_GPUCopyPass* c
     if (!shown.snapshot->worldMap || worldMap == nullptr || !Holds(shown.snapshot->scene)) {
         return {};
     }
-    // SetWorld() counts each new map or look, which is all the field and the rivers are built from.
+    // SetWorld() counts each new map or look, which is all the field and the ribbons are built from.
     const std::expected<void, core::Error> field = ground.Update(copy, *worldMap, worldLook, worldVersion);
-    const std::expected<void, core::Error> laid = rivers.Update(copy, *worldMap, worldLook, worldVersion);
+    const std::expected<void, core::Error> riversLaid = rivers.Update(copy, worldVersion, [&](std::vector<RibbonVertex>& into) {
+        const RiverShape shape = RiverShapeOf(*worldMap, worldLook.river);
+        // DrawRivers() leaves out whole the rivers past MAX_RIVER_QUADS, and logs it.
+        const std::array<u8, 2> water{ { worldLook.ground.shallowKind, worldLook.ground.deepKind } };
+        DrawRivers(*worldMap, shape, water, into);
+        return RimStart(shape.coreWidth, shape.edgeWidth);
+    });
+    const std::expected<void, core::Error> roadsLaid = roads.Update(copy, worldVersion, [&](std::vector<RibbonVertex>& into) {
+        const RoadShape shape = RoadShapeOf(*worldMap, worldLook.road);
+        // DrawRoads() leaves out whole the roads past MAX_ROAD_QUADS, and logs it.
+        DrawRoads(roadCurves, shape, into);
+        return RimStart(shape.coreWidth, shape.edgeWidth);
+    });
     groundQuad = GroundQuad(ViewRect(shown), *worldMap);
     const bool paperOnly = shown.view->terrainParts == TerrainParts::PaperOnly;
     // Turning the look's colours linear takes some sixty of core's deterministic powers, so it waits for a new map or look;
@@ -624,7 +641,7 @@ std::expected<void, core::Error> Renderer::Impl::UploadGround(SDL_GPUCopyPass* c
     groundUniforms.zoom = shown.view->camera.zoom;
     veilUniforms.zoom = groundUniforms.zoom;
     cloudShadeUniforms.zoom = groundUniforms.zoom;
-    return core::Combine(field, laid);
+    return core::Combine(field, core::Combine(riversLaid, roadsLaid));
 }
 
 std::expected<void, core::Error> Renderer::Impl::CreateGround(SDL_GPUDevice* gpu) {
@@ -634,12 +651,18 @@ std::expected<void, core::Error> Renderer::Impl::CreateGround(SDL_GPUDevice* gpu
         return std::unexpected{ std::move(madeGround.error()) };
     }
     ground = std::move(*madeGround);
-    std::expected<internal::RiverRenderer, core::Error> madeRivers =
-        internal::RiverRenderer::Create(gpu, internal::SCENE_FORMAT);
+    std::expected<internal::LineRibbonRenderer, core::Error> madeRivers =
+        internal::LineRibbonRenderer::Create(gpu, internal::SCENE_FORMAT, MAX_RIVER_QUADS, "river");
     if (!madeRivers) {
         return std::unexpected{ std::move(madeRivers.error()) };
     }
     rivers = std::move(*madeRivers);
+    std::expected<internal::LineRibbonRenderer, core::Error> madeRoads =
+        internal::LineRibbonRenderer::Create(gpu, internal::SCENE_FORMAT, MAX_ROAD_QUADS, "road");
+    if (!madeRoads) {
+        return std::unexpected{ std::move(madeRoads.error()) };
+    }
+    roads = std::move(*madeRoads);
     return {};
 }
 
@@ -1100,6 +1123,7 @@ void Renderer::Impl::Submitted(bool submitted) {
     fog.Submitted(submitted);
     ground.Submitted(submitted);
     rivers.Submitted(submitted);
+    roads.Submitted(submitted);
     if (submitted && terrainRecorded) {
         terrainHeld = terrainRecorded;
     }
@@ -1165,8 +1189,8 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
     const std::span<const core::Batch> batches{ snapshot.batches };
     const std::size_t groundBatches = std::min<std::size_t>(snapshot.groundBatches, batches.size());
     // The map under all of it: it is the ground of a scene that shows it, which publishes none. Its painted ground first,
-    // then the rivers on it, then the roads, crossings, stamps and paintings, the veil's haze over them all, and the places'
-    // markers above the haze so every place reads; none of it where the view misses the map. Plain paper alone, its
+    // then the rivers on it, the roads over them, then the crossings, stamps and paintings, the veil's haze over them all, and
+    // the places' markers above the haze so every place reads; none of it where the view misses the map. Plain paper alone, its
     // groundUniforms in the paper mode, when the view asks for nothing else.
     const bool paperOnly = view.terrainParts == TerrainParts::PaperOnly;
     if (groundQuad) {
@@ -1175,12 +1199,13 @@ void Renderer::Impl::DrawWorld(SDL_GPUCommandBuffer* commands, const core::Snaps
     if (groundQuad && !paperOnly) {
         rivers.Draw(commands, pass, transform, fog);
     }
+    if (groundQuad && !paperOnly && view.terrainParts != TerrainParts::AllButRoads) {
+        roads.Draw(commands, pass, transform, fog);
+    }
     const std::span<const core::Batch> terrainBatches{ terrainDrawing.batches };
     const std::size_t underVeil = std::min<std::size_t>(terrainDrawing.markersFrom, terrainBatches.size());
-    const std::size_t roads =
-        view.terrainParts == TerrainParts::AllButRoads ? std::min<std::size_t>(terrainDrawing.roadBatches, underVeil) : 0;
     if (terrainShown && !paperOnly) {
-        terrain.Draw(commands, pass, terrainBatches.first(underVeil).subspan(roads), sprites, transform, alpha, glows, fog);
+        terrain.Draw(commands, pass, terrainBatches.first(underVeil), sprites, transform, alpha, glows, fog);
     }
     if (groundQuad && !paperOnly) {
         ground.Draw(commands, pass, transform, *groundQuad, veilUniforms, fog);
@@ -1596,6 +1621,7 @@ void Renderer::SetNames(std::shared_ptr<const core::Names> names) {
 }
 
 void Renderer::SetWorld(std::shared_ptr<const core::WorldMap> map, const core::WorldLook& look) {
+    m_impl->roadCurves = map != nullptr ? core::RoadCurves(*map) : std::vector<std::vector<core::Vec2>>{};
     m_impl->worldMap = std::move(map);
     m_impl->worldLook = look;
     ++m_impl->worldVersion;

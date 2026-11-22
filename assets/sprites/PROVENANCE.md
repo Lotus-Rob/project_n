@@ -42,23 +42,7 @@ updates its row in the same commit (what made it, when, and who) and takes it ou
 | rune_00.png to rune_23.png | `art/placeholders.py` (procedural placeholder) | 2026-11-13 | the seals' invented runes, 2 to 5 strokes on a 3 x 4 grid; white, tinted by the seal; `./dev atlas --placeholders` redraws them byte for byte |
 | flourish_flame_0.png to flourish_flame_2.png | `art/placeholders.py` (procedural placeholder) | 2026-11-13 | the seals' flame flourishes, 256 x 128; white; as above |
 | emblem_lotus.png, emblem_swords.png, emblem_eye.png, emblem_spiral.png | `art/placeholders.py` (procedural placeholder) | 2026-11-13 | the seals' emblems, 256 x 256, abstract and original; white; as above |
-| road_0.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | the world map's road overlays, one per neighbour mask; 256 x 256, laid from their top-left corners; `./dev atlas --placeholders` redraws it byte for byte |
-| road_1.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| road_2.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| road_3.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| road_4.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| road_5.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| road_6.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| road_7.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| road_8.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| road_9.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| road_10.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| road_11.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| road_12.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| road_13.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| road_14.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| road_15.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
-| bridge_h.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
+| bridge_h.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | the world map's crossings, a bridge each way and a ford; 256 x 256, laid from their top-left corners; `./dev atlas --placeholders` redraws it byte for byte |
 | bridge_v.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
 | ford.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |
 | marker_city.png | `art/placeholders.py` (procedural placeholder) | 2026-11-15 | as above |

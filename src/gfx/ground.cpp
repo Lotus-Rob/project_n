@@ -11,6 +11,12 @@ namespace {
 
 constexpr f32 ALPHA_RANGE = 255.0F;
 
+/// `colour` premultiplied by `strength`, held between 0 and 1.
+u32 StrengthColour(const std::array<u8, 3>& colour, f32 strength) {
+    const auto alpha = static_cast<u8>(std::lround(std::clamp(strength, 0.0F, 1.0F) * ALPHA_RANGE));
+    return core::FromSrgb(colour[0], colour[1], colour[2], alpha);
+}
+
 /// `linear` and `strength` as one row of four.
 std::array<f32, 4> RowOf(const std::array<f32, 3>& linear, f32 strength) {
     return { { linear[0], linear[1], linear[2], strength } };
@@ -61,18 +67,24 @@ std::optional<core::Rect> GroundQuad(core::Rect view, const core::WorldMap& map)
 }
 
 RiverShape RiverShapeOf(const core::WorldMap& map, const core::RiverLook& look) {
-    const auto edgeAlpha = static_cast<u8>(std::lround(std::clamp(look.edgeStrength, 0.0F, 1.0F) * ALPHA_RANGE));
     return { .coreWidth = look.width * map.TileSize(),
              .edgeWidth = look.edge * map.TileSize(),
              .coreColour = core::FromSrgb(look.colour[0], look.colour[1], look.colour[2], core::OPAQUE_ALPHA),
-             .edgeColour = core::FromSrgb(look.edgeColour[0], look.edgeColour[1], look.edgeColour[2], edgeAlpha) };
+             .edgeColour = StrengthColour(look.edgeColour, look.edgeStrength) };
 }
 
-f32 RimStart(const RiverShape& shape) {
-    if (shape.edgeWidth <= 0.0F) {
+RoadShape RoadShapeOf(const core::WorldMap& map, const core::RoadLook& look) {
+    return { .coreWidth = look.width * map.TileSize(),
+             .edgeWidth = look.edge * map.TileSize(),
+             .coreColour = core::FromSrgb(look.colour[0], look.colour[1], look.colour[2], core::OPAQUE_ALPHA),
+             .edgeColour = StrengthColour(look.edgeColour, look.edgeStrength) };
+}
+
+f32 RimStart(f32 coreWidth, f32 edgeWidth) {
+    if (edgeWidth <= 0.0F) {
         return 1.0F;
     }
-    return std::clamp(shape.coreWidth / shape.edgeWidth, 0.0F, 1.0F);
+    return std::clamp(coreWidth / edgeWidth, 0.0F, 1.0F);
 }
 
 } // namespace gfx

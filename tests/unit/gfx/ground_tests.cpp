@@ -104,17 +104,33 @@ TEST_CASE("a river's shape is its look in world units") {
     CHECK((shape.edgeColour >> 24U) == 171);
 }
 
-TEST_CASE("a river's rim fades from where its core ends") {
-    // The shipped shape: a core 0.38 tile wide in an edge 0.5 wide.
-    CHECK(
-        gfx::RimStart({ .coreWidth = 97.28F, .edgeWidth = 128.0F, .coreColour = 0, .edgeColour = 0 }) == doctest::Approx(0.76F)
-    );
+TEST_CASE("a road's shape is its look in world units") {
+    const core::WorldMap map = test::MeadowMap(2, 2);
+    const core::RoadLook look{
+        .width = 0.26F, .edge = 0.4F, .colour = { { 132, 112, 88 } }, .edgeColour = { { 104, 90, 72 } }, .edgeStrength = 0.4F
+    };
+    const gfx::RoadShape shape = gfx::RoadShapeOf(map, look);
+    CHECK(shape.coreWidth == doctest::Approx(0.26F * TILE));
+    CHECK(shape.edgeWidth == doctest::Approx(0.4F * TILE));
+    CHECK(shape.coreColour == core::FromSrgb(132, 112, 88, 255));
+    // 0.4 of 255 is 102, and the colour is premultiplied by it.
+    CHECK(shape.edgeColour == core::FromSrgb(104, 90, 72, 102));
+    CHECK((shape.edgeColour >> 24U) == 102);
+    // A strength past 1 is held to opaque.
+    core::RoadLook strong = look;
+    strong.edgeStrength = 1.5F;
+    CHECK((gfx::RoadShapeOf(map, strong).edgeColour >> 24U) == 255);
+}
+
+TEST_CASE("a ribbon's rim fades from where its core ends") {
+    // The shipped river: a core 0.38 tile wide in an edge 0.5 wide.
+    CHECK(gfx::RimStart(97.28F, 128.0F) == doctest::Approx(0.76F));
     // A core as wide as the edge, or wider, leaves no rim to fade.
-    CHECK(gfx::RimStart({ .coreWidth = 128.0F, .edgeWidth = 128.0F, .coreColour = 0, .edgeColour = 0 }) == 1.0F);
-    CHECK(gfx::RimStart({ .coreWidth = 200.0F, .edgeWidth = 128.0F, .coreColour = 0, .edgeColour = 0 }) == 1.0F);
+    CHECK(gfx::RimStart(128.0F, 128.0F) == 1.0F);
+    CHECK(gfx::RimStart(200.0F, 128.0F) == 1.0F);
     // An edge of no width has nothing to fade, and no core fades from the middle.
-    CHECK(gfx::RimStart({ .coreWidth = 50.0F, .edgeWidth = 0.0F, .coreColour = 0, .edgeColour = 0 }) == 1.0F);
-    CHECK(gfx::RimStart({ .coreWidth = 0.0F, .edgeWidth = 128.0F, .coreColour = 0, .edgeColour = 0 }) == 0.0F);
+    CHECK(gfx::RimStart(50.0F, 0.0F) == 1.0F);
+    CHECK(gfx::RimStart(0.0F, 128.0F) == 0.0F);
 }
 
 } // namespace

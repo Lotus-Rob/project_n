@@ -1,7 +1,7 @@
 """Procedural placeholder art for the sprite pipeline: ink wash on paper.
 
 Writes assets/sprites/<name>.png for every placeholder sprite in art/sprites.toml: a painted ground, rocks, a pine,
-a shrine, a fox, a cultivator, a villager, glowing orbs, a blob shadow, four world-map cells, the world map's road,
+a shrine, a fox, a cultivator, a villager, glowing orbs, a blob shadow, four world-map cells, the world map's
 bridge, ford and marker overlays, its painted stamps, mist, places and clouds, and the abilities' effects: a sword, a
 halo and a soft dot (both unused now), a fire bolt, the lance's burst and the bars' solid square. Each is original and
 drawn from code. Reproducible byte for byte: the drawing uses only arithmetic and square roots (correctly rounded
@@ -793,83 +793,11 @@ def emblem_spiral():
     return mask.canvas()
 
 
-# The map's overlays: transparent but for the drawing, a tile's 256 px square. A road tile has one of 16 masks, the bits
-# of the neighbours carrying a road (N 1, E 2, S 4, W 8); each arm runs from the tile's centre to the middle of its edge,
-# straight over the last stretch and painted by the same solid strokes at every tile, so neighbours join. Mask 0 is an
-# isolated dot.
+# The map's crossings: transparent but for the drawing, a tile's 256 px square.
 
 TILE = 256
 MID = TILE / 2.0
-OCHRE = (150, 110, 64)
 PLANK = (150, 112, 70)
-
-
-def curve(points, steps=12):
-    """A Catmull-Rom curve through the points, ends included, arriving along its first and last segments."""
-    padded = [points[0], *points, points[-1]]
-    out = [points[0]]
-    for p0, p1, p2, p3 in zip(padded, padded[1:], padded[2:], padded[3:]):
-        for k in range(1, steps + 1):
-            t = k / steps
-            t2, t3 = t * t, t * t * t
-            out.append(tuple(
-                0.5 * (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (3 * b - a - 3 * c + d) * t3)
-                for a, b, c, d in zip(p0, p1, p2, p3)))
-    return out
-
-
-def arm(seed, layers):
-    """The east arm: from just outside the east edge's middle to the centre, straight over its last stretch."""
-    rng = random.Random(seed)
-    off = rng.uniform(-6.0, 6.0)
-    points = curve([(TILE + 8.0, MID), (MID + 88, MID), (MID + 48, MID + off), (MID + 16, MID), (MID, MID)])
-    canvas = Canvas(TILE, TILE)
-    for width, colour, alpha, dry, sd in layers:
-        canvas.stroke(points, width, width, colour, alpha, dry, sd)
-    return canvas
-
-
-def remap(canvas, source):
-    """A canvas whose pixel (x, y) is the original's pixel source(x, y); the maps used here are exact."""
-    out = Canvas(TILE, TILE)
-    for y in range(TILE):
-        for x in range(TILE):
-            sx, sy = source(x, y)
-            i, j = y * TILE + x, sy * TILE + sx
-            out.r[i], out.g[i], out.b[i], out.a[i] = canvas.r[j], canvas.g[j], canvas.b[j], canvas.a[j]
-    return out
-
-
-def lay(canvas, top):
-    for i in range(TILE * TILE):
-        keep = 1.0 - top.a[i]
-        canvas.r[i] = top.r[i] + canvas.r[i] * keep
-        canvas.g[i] = top.g[i] + canvas.g[i] * keep
-        canvas.b[i] = top.b[i] + canvas.b[i] * keep
-        canvas.a[i] = top.a[i] + canvas.a[i] * keep
-
-
-def line_tile(mask, seed, layers, dot):
-    """The mask's arms laid over one another. The west arm mirrors the east one and the north the south, which is
-    the east arm turned about the diagonal, so the two tiles meeting at an edge paint the same pixels along it."""
-    canvas = Canvas(TILE, TILE)
-    if not mask:
-        for width, colour, alpha, dry, sd in layers:
-            canvas.dab(MID, MID, width * dot, colour, alpha, dry=dry, seed=sd)
-        return canvas
-    east, south = arm(seed, layers), remap(arm(seed + 1, layers), lambda x, y: (y, x))
-    drawn = {1: remap(south, lambda x, y: (x, TILE - 1 - y)), 2: east, 4: south,
-             8: remap(east, lambda x, y: (TILE - 1 - x, y))}
-    for bit, picture in drawn.items():
-        if mask & bit:
-            lay(canvas, picture)
-    return canvas
-
-
-def road(mask):
-    """A worn track: a dark soft verge, an ochre bed and dry light wheel marks."""
-    return line_tile(mask, 60, [(19, INK, 0.28, 0.35, 1), (14, OCHRE, 1.0, 0.0, 2), (8, (190, 152, 98), 0.55, 0.5, 3),
-                                (3, (104, 74, 44), 0.45, 0.6, 4)], 0.5)
 
 
 def plank_bridge(across):
@@ -1513,7 +1441,6 @@ PLACEHOLDERS = {
     "emblem_swords": (emblem_swords, False),
     "emblem_eye": (emblem_eye, False),
     "emblem_spiral": (emblem_spiral, False),
-    **{f"road_{m}": ((lambda m=m: road(m)), False) for m in range(16)},
     "bridge_h": (lambda: plank_bridge("h"), False),
     "bridge_v": (lambda: plank_bridge("v"), False),
     "ford": (ford, False),
