@@ -153,6 +153,7 @@ TEST_CASE("a paced leg whose ticks would not fit, or that never moves, is refuse
     CHECK_FALSE(core::MakePacedLeg(map, 0, map.TileCentre(0), NEXT, 1e-9F).has_value());
     CHECK_FALSE(core::MakePacedLeg(map, 0, map.TileCentre(0), NEXT, 0.0F).has_value());
     CHECK_FALSE(core::MakePacedLeg(map, 0, map.TileCentre(0), NEXT, -4.0F).has_value());
+    CHECK_FALSE(core::MakePacedLeg(map, 0, map.TileCentre(0), NEXT, std::numeric_limits<f32>::quiet_NaN()).has_value());
 }
 
 TEST_CASE("a walker is at its origin before the leg and its last tile after") {

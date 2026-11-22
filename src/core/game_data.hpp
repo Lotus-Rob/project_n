@@ -18,9 +18,9 @@
 
 namespace core {
 
-/// The slowest walk speed a creature that walks may have, in world units per tick. A tile of 256 units then takes over
-/// seven hours of play to cross, slower than anything is meant to walk, and a walk of 160,000 such tiles still fits a
-/// leg's 32-bit arrive ticks.
+/// The slowest walk speed a creature that walks may have, in world units per tick. A tile of 256 units then takes about
+/// seven minutes of play to cross, slower than anything is meant to walk, and a walk of over 100,000 tiles, diagonal or
+/// straight, still fits a leg's 32-bit arrive ticks.
 inline constexpr f32 MIN_WALK_SPEED = 0.01F;
 
 /// One kind of creature: how it looks and moves. A kind that doesn't walk has a walk speed of zero;

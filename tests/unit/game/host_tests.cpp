@@ -1560,10 +1560,10 @@ core::StableId CultivatorAt(core::State& state, const core::GameData& data, core
     return stableId;
 }
 
-/// A host that has loaded and entered a world save at `clock` holding one visit along FirstRoad() per departure, its
-/// members world NPCs at home in the road's first city, and, with `player`, the player's cultivator on that city's tile
-/// centre: nothing else lives there. Without a player the debug sight is on, as no one else sees the travellers. A
-/// `walkSpeed` replaces the cultivator's in the game data.
+/// A host that has loaded and entered a world save at `clock`, with the months it has passed, holding one visit along
+/// FirstRoad() per departure, its members world NPCs at home in the road's first city, and, with `player`, the player's
+/// cultivator on that city's tile centre: nothing else lives there. Without a player the debug sight is on, as no one
+/// else sees the travellers. A `walkSpeed` replaces the cultivator's in the game data.
 TravelWorld TravelWorldOf(
     std::span<const Departure> departures,
     bool player = false,
@@ -1607,7 +1607,7 @@ TravelWorld TravelWorldOf(
         game::WORLD_SCENE,
         test::WORLD_VERSION,
         test::ACTIVE_VERSION,
-        { .ticks = clock },
+        { .ticks = clock, .months = clock / game::TICKS_PER_MONTH },
         travel,
         std::nullopt,
         game::Relationships{},
@@ -1989,6 +1989,17 @@ TEST_CASE("a walk-to too slow for a leg's ticks changes nothing") {
     // A tile of 256 units at a billionth of a unit a tick is 2.56e11 ticks, past a leg's 32-bit arrive ticks.
     constexpr f32 CRAWL = 1e-9F;
     const TravelWorld world = TravelWorldOf({}, true, TRAVEL_CLOCK, CRAWL);
+    const core::WorldMap& map = *world.map;
+    const core::Vec2 start = FootOf(*world.host, world.player);
+    WalkTo(*world.host, 1, map.TileCentre(RouteRoad(map)[ROUTE_TILES]));
+    CHECK_FALSE(world.host->PlayerRoute().has_value());
+    CHECK(SamePoint(FootOf(*world.host, world.player), start));
+}
+
+TEST_CASE("a walk-to that would end past the last tick a journey can be timed to changes nothing") {
+    // The host's own limit, half of i64's range; the clock stands just inside it, so only the walk's end passes it.
+    constexpr u64 LAST_TIMED = static_cast<u64>(std::numeric_limits<i64>::max() / 2);
+    const TravelWorld world = TravelWorldOf({}, true, LAST_TIMED - 1);
     const core::WorldMap& map = *world.map;
     const core::Vec2 start = FootOf(*world.host, world.player);
     WalkTo(*world.host, 1, map.TileCentre(RouteRoad(map)[ROUTE_TILES]));
