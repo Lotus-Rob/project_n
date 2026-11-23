@@ -61,6 +61,12 @@ f32 SortingFootY(core::StableId entity, core::StableId onTop, f32 footY) {
     return entity == onTop ? ABOVE_THE_WORLD : footY;
 }
 
+/// How far `body` moved this tick: its step's length.
+f32 StepLength(const Body& body) {
+    const core::Vec2 step = body.current - body.previous;
+    return std::sqrt((step.x * step.x) + (step.y * step.y));
+}
+
 /// Where `entity`, whose body is `body`, is drawn: `drawnPlayer` (Host::DrawnPlayer()) for `player`, its body for the rest.
 Body DrawnBodyOf(core::StableId entity, const Body& body, core::StableId player, const Body& drawnPlayer) {
     return entity == player ? drawnPlayer : body;
@@ -631,9 +637,33 @@ struct Pose {
     f32 widthScale = 1.0F;
 };
 
+/// How a figure standing in `standing` is drawn by its walk clip `clip` having walked as `walked` says: the frame
+/// core::PoseSprite() picks, mirrored while it faces left.
+Pose PoseOf(const core::WalkClip& clip, SpriteId standing, const core::Walked& walked) {
+    return { .sprite = core::PoseSprite(&clip, standing, walked.distance, walked.moving),
+             .widthScale = walked.facesLeft ? -1.0F : 1.0F };
+}
+
+/// How `entity`, which looks as `look` says, is drawn: `player`, whose walk is `walked`, by PoseOf() with its sprite's walk
+/// clip in `animations`; every other entity, and the player without a clip, in its own sprite, unmirrored (only the
+/// cultivator's walk is kept, so the crowds stand in their sprite whatever clip it has).
+Pose DrawnPoseOf(
+    core::StableId entity,
+    const Look& look,
+    core::StableId player,
+    const core::Animations* animations,
+    const core::Walked& walked
+) {
+    if (entity != player || animations == nullptr) {
+        return { .sprite = look.sprite };
+    }
+    const core::WalkClip* const clip = animations->WalkOf(look.sprite);
+    return clip != nullptr ? PoseOf(*clip, look.sprite, walked) : Pose{ .sprite = look.sprite };
+}
+
 /// How member 0 of `journey` on `map` is drawn at `tick` by `clip`, the walk clip of the figure standing in `standing`:
-/// the frame core::PoseSprite() picks for how far it has walked (its legs' walk tables taken from `walks`), mirrored while
-/// it faces left; with no clip, standing unmirrored, as a figure without one has no side-on frames to step through or turn.
+/// PoseOf() how far it has walked (its legs' walk tables taken from `walks`); with no clip, standing unmirrored, as a
+/// figure without one has no side-on frames to step through or turn.
 Pose PoseOn(
     const core::WorldMap& map,
     const core::Journey& journey,
@@ -645,9 +675,7 @@ Pose PoseOn(
     if (clip == nullptr) {
         return { .sprite = standing, .widthScale = 1.0F };
     }
-    const core::Walked walked = core::WalkedAt(map, journey, tick, walks);
-    return { .sprite = core::PoseSprite(clip, standing, walked.distance, walked.moving),
-             .widthScale = walked.facesLeft ? -1.0F : 1.0F };
+    return PoseOf(*clip, standing, core::WalkedAt(map, journey, tick, walks));
 }
 
 } // namespace
@@ -721,6 +749,7 @@ void Host::EnterScene() {
         m_requested.reset(); // the load replaces the scene a CycleScene asked for
         ApplyData();
         RestartDrawnShift();
+        m_playerWalk = {};
         return;
     }
     PN_ASSERT(m_requested.has_value(), "a scene entered that nothing asked for");
@@ -768,6 +797,7 @@ void Host::Build(core::SceneKey scene) {
     m_selected = {};
     m_route.reset();
     m_drawnShift = {};
+    m_playerWalk = {};
     const SceneTraits& traits = Running().Traits();
     if (traits.devScene) {
         m_scratch.emplace(core::State{ DOMAINS, SEED });
@@ -817,10 +847,12 @@ void Host::Tick(const core::TickCounters& counters, const core::TickInput& input
     }
     TakeActions(input.actions, counters, events);
     const bool clockRuns = Running().Traits().worldMap && !world.paused && !MonthDue() && world.worldTicks < CALENDAR_END;
-    if (!Combat::Dash(world.state, m_player, counters.simulation)) {
+    const bool dashing = Combat::Dash(world.state, m_player, counters.simulation);
+    if (!dashing) {
         // A route walks to where the clock is by the end of the tick, so the portal sees the step it takes.
         Move(input.held.move, clockRuns ? world.worldTicks + 1 : world.worldTicks, counters.simulation);
     }
+    StepPlayerWalk(dashing);
     ExploreRoundFoot();
     if (OnPortal()) {
         const core::SceneKey next = NextWalkableScene(m_scene);
@@ -1034,9 +1066,7 @@ void Host::ShiftDrawnPlayer(u64 fromTick, u64 toTick) {
         m_drawnShift.fadeLeft = m_data.world->TileSize();
     }
     // By distance walked, never by time, so a cultivator standing still never slides.
-    const Body& body = PlayerBody();
-    const core::Vec2 step = body.current - body.previous;
-    const f32 moved = std::sqrt((step.x * step.x) + (step.y * step.y));
+    const f32 moved = StepLength(PlayerBody());
     if (moved >= m_drawnShift.fadeLeft) {
         leftover = {};
         m_drawnShift.fadeLeft = 0.0F;
@@ -1054,6 +1084,22 @@ void Host::ShiftDrawnPlayer(u64 fromTick, u64 toTick) {
 void Host::RestartDrawnShift() {
     const core::Vec2 shift = RouteShift(Live().worldTicks);
     m_drawnShift = { .previous = shift, .current = shift, .fromRoute = shift, .fadeLeft = 0.0F };
+}
+
+void Host::StepPlayerWalk(bool dashing) {
+    if (m_player == core::StableId{}) {
+        return;
+    }
+    const Body& body = PlayerBody();
+    const f32 length = StepLength(body);
+    m_playerWalk.moving = length > 0.0F;
+    if (!dashing) {
+        m_playerWalk.distance += static_cast<f64>(length);
+    }
+    const f32 across = body.current.x - body.previous.x;
+    if (across != 0.0F) {
+        m_playerWalk.facesLeft = across < 0.0F;
+    }
 }
 
 void Host::Leave(core::SceneKey next, bool throughPortal, std::vector<core::Event>& events) {
@@ -1477,6 +1523,7 @@ void Host::AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs,
                 FollowRoute(jumpedFrom, world.worldTicks, counters.simulation);
                 PlayerBody().previous = PlayerBody().current; // it stands there a frame, as the travellers do
                 RestartDrawnShift();
+                m_playerWalk.moving = false; // it keeps its walk and facing, as the travellers do
                 ExploreRoundFoot();
             }
         }
@@ -1744,6 +1791,7 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
             const Look& look = looks.get(entity);
             const core::StableId stableId = ids.get(entity);
             const Body body = DrawnBodyOf(stableId, bodies.get(entity), m_player, drawnPlayer);
+            const Pose pose = DrawnPoseOf(stableId, look, m_player, m_animations.get(), m_playerWalk);
             const Spin spin = spins.contains(entity) ? spins.get(entity) : Spin{};
             // A dying entity can't be picked, hovered or outlined: its instance names none.
             const bool dying = dyings.contains(entity);
@@ -1765,13 +1813,14 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
                 look.pipeline,
                 core::MakeInstance(
                     *m_manifest,
-                    { .sprite = look.sprite,
+                    { .sprite = pose.sprite,
                       .previous = body.previous,
                       .current = body.current,
                       .scale = look.scale,
                       .previousRotation = spin.previous,
                       .currentRotation = spin.current,
                       .dissolve = dissolve,
+                      .widthScale = pose.widthScale,
                       .glow = DemoGlow(DemoRoleOf(demoGlows, look.sprite), tick) }
                 ),
                 SortingFootY(stableId, onTop, body.current.y),

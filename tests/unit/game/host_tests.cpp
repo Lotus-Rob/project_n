@@ -3355,4 +3355,262 @@ TEST_CASE("debug sight changes no state: the same ticks hash alike with it on an
     CHECK(Shows(Published(*shown.host, shown.host->View()), chosen));
 }
 
+// How far the cultivator walks a tick in the tests of its walk.
+constexpr f32 CULTIVATOR_SPEED = 4.0F;
+
+/// The cultivator's walk, its 8 frames each shown for 14 world units walked, beside the villager's (VillagerWalks()).
+std::shared_ptr<const core::Animations> CultivatorWalks() {
+    constexpr f32 STRIDE = 14.0F;
+    core::Animations animations = *VillagerWalks();
+    animations.walks.push_back(
+        { .standing = SpriteId::Cultivator,
+          .frames = { SpriteId::CultivatorWalk0,
+                      SpriteId::CultivatorWalk1,
+                      SpriteId::CultivatorWalk2,
+                      SpriteId::CultivatorWalk3,
+                      SpriteId::CultivatorWalk4,
+                      SpriteId::CultivatorWalk5,
+                      SpriteId::CultivatorWalk6,
+                      SpriteId::CultivatorWalk7 },
+          .stride = STRIDE }
+    );
+    return std::make_shared<const core::Animations>(std::move(animations));
+}
+
+/// An arena whose cultivator walks CULTIVATOR_SPEED a tick, drawn by `animations`.
+std::unique_ptr<game::Host> WalkingArena(const std::shared_ptr<const core::Animations>& animations = CultivatorWalks()) {
+    core::GameData data = game::BuiltInData();
+    data.cultivator.walkSpeed = CULTIVATOR_SPEED;
+    auto host = std::make_unique<game::Host>(test::TestManifest(), game::ARENA_SCENE, data);
+    host->SetAnimations(animations);
+    return host;
+}
+
+/// The player's cultivator as `host` draws it now.
+core::Instance PlayerDrawn(game::Host& host) {
+    return InstanceOf(Published(host), host.Player());
+}
+
+/// Whether `host`'s cultivator is dashing.
+bool Dashes(const game::Host& host) {
+    const core::Domain& active = host.State()[game::ACTIVE];
+    return active.Entities().all_of<game::Dashing>(active.Find(host.Player()));
+}
+
+constexpr core::HeldInput HELD_UP{ .move = { .x = 0.0F, .y = -1.0F } };
+
+TEST_CASE("the cultivator's held walk picks frames by distance") {
+    // Its first frame shows for the first 14 units, its second for the next 14.
+    constexpr f64 THREE_TICKS = 12.0;
+    constexpr f64 FOUR_TICKS = 16.0;
+    const std::unique_ptr<game::Host> host = WalkingArena();
+    TickRange(*host, 1, 3, HELD_RIGHT);
+    CHECK(host->PlayerWalk().distance == THREE_TICKS);
+    CHECK(host->PlayerWalk().moving);
+    const core::Snapshot three = Published(*host);
+    CHECK(Draws(InstanceOf(three, host->Player()), SpriteId::CultivatorWalk0));
+    CHECK_FALSE(Mirrored(InstanceOf(three, host->Player())));
+    // The crowd wandering round it has a clip in the table too, but only the cultivator walks by one.
+    REQUIRE(std::ranges::any_of(three.instances, [](const core::Instance& instance) {
+        return Draws(instance, SpriteId::Villager);
+    }));
+    CHECK(WalkFrames(three).first == 0);
+
+    TickRange(*host, 4, 4, HELD_RIGHT);
+    CHECK(host->PlayerWalk().distance == FOUR_TICKS);
+    const core::Instance four = PlayerDrawn(*host);
+    CHECK(Draws(four, SpriteId::CultivatorWalk1));
+    CHECK_FALSE(Mirrored(four));
+}
+
+TEST_CASE("it turns with held movement and keeps its facing") {
+    const std::unique_ptr<game::Host> host = WalkingArena();
+    TickRange(*host, 1, 1, HELD_LEFT);
+    CHECK(Mirrored(PlayerDrawn(*host)));
+
+    // Straight up: no step left or right to turn it by.
+    TickRange(*host, 2, 2, HELD_UP);
+    const core::Instance upward = PlayerDrawn(*host);
+    CHECK(Draws(upward, SpriteId::CultivatorWalk0));
+    CHECK(Mirrored(upward));
+
+    TickRange(*host, 3, 3);
+    const core::Instance released = PlayerDrawn(*host);
+    CHECK(Draws(released, SpriteId::Cultivator));
+    CHECK(Mirrored(released));
+
+    // Down and to the right: turned by its step's x, and walked by its whole length, not its x alone.
+    constexpr core::HeldInput HELD_DOWN_RIGHT{ .move = { .x = 0.6F, .y = 0.8F } };
+    const f64 before = host->PlayerWalk().distance;
+    TickRange(*host, 4, 4, HELD_DOWN_RIGHT);
+    CHECK(host->PlayerWalk().distance - before == doctest::Approx(CULTIVATOR_SPEED));
+    CHECK_FALSE(Mirrored(PlayerDrawn(*host)));
+}
+
+TEST_CASE("a cast doesn't turn it") {
+    constexpr core::Vec2 RIGHT{ .x = 300.0F };
+    const std::unique_ptr<game::Host> host = WalkingArena();
+    TickRange(*host, 1, 1, HELD_LEFT);
+    REQUIRE(Mirrored(PlayerDrawn(*host)));
+    const std::array<core::Action, 1> cast{
+        { { .kind = core::ActionKind::Cast, .slot = core::Slot::Generator, .point = FootOf(*host, host->Player()) + RIGHT } }
+    };
+    std::vector<core::Event> events;
+    host->Tick(At(2), { .actions = cast, .held = {} }, events);
+    const core::Snapshot snapshot = Published(*host);
+    REQUIRE(snapshot.volleys.size() == 1); // the bolt is on its way
+    CHECK(Mirrored(InstanceOf(snapshot, host->Player())));
+}
+
+TEST_CASE("a dash turns it and holds its frame") {
+    constexpr u64 WALKED_LEFT = 5; // 20 units: its second frame
+    constexpr u64 MOST_TICKS = 30; // longer than the dash lasts
+    constexpr core::Vec2 RIGHT{ .x = 200.0F };
+    const std::unique_ptr<game::Host> host = WalkingArena();
+    TickRange(*host, 1, WALKED_LEFT, HELD_LEFT);
+    const core::Instance before = PlayerDrawn(*host);
+    REQUIRE(Mirrored(before));
+    REQUIRE(Draws(before, SpriteId::CultivatorWalk1));
+    const f64 walked = host->PlayerWalk().distance;
+    const core::Vec2 from = FootOf(*host, host->Player());
+    const std::array<core::Action, 1> dash{
+        { { .kind = core::ActionKind::Cast, .slot = core::Slot::Movement, .point = from + RIGHT } }
+    };
+    std::vector<core::Event> events;
+    // Held left all through: the dash, not the stick, says which way it goes.
+    u64 tick = WALKED_LEFT + 1;
+    host->Tick(At(tick), { .actions = dash, .held = HELD_LEFT }, events);
+    REQUIRE(Dashes(*host));
+    for (;;) {
+        CAPTURE(tick);
+        const core::Instance drawn = PlayerDrawn(*host);
+        CHECK_FALSE(Mirrored(drawn));
+        CHECK(Draws(drawn, SpriteId::CultivatorWalk1));
+        CHECK(host->PlayerWalk().distance == walked);
+        if (!Dashes(*host) || tick == MOST_TICKS) {
+            break;
+        }
+        ++tick;
+        host->Tick(At(tick), { .actions = {}, .held = HELD_LEFT }, events);
+    }
+    REQUIRE_FALSE(Dashes(*host));
+    CHECK(FootOf(*host, host->Player()).x == doctest::Approx(from.x + RIGHT.x));
+    CHECK_FALSE(host->Requested().has_value());
+}
+
+// The ticks the cultivator walks east onto the small map's second tile's centre at CULTIVATOR_SPEED.
+constexpr u64 EAST_TICKS = static_cast<u64>(test::small::TILE / CULTIVATOR_SPEED);
+
+/// A world whose cultivator, drawn by CultivatorWalks(), has walked east from the home city's tile onto the next tile's
+/// centre, held, then set out back west on a walk-to at tick EAST_TICKS + 1.
+TravelWorld WalkingWest() {
+    TravelWorld world = TravelWorldOf({}, true, TRAVEL_CLOCK, CULTIVATOR_SPEED);
+    world.host->SetAnimations(CultivatorWalks());
+    TickRange(*world.host, 1, EAST_TICKS, HELD_RIGHT);
+    REQUIRE(SamePoint(FootOf(*world.host, world.player), world.map->TileCentre(1)));
+    REQUIRE_FALSE(Mirrored(PlayerDrawn(*world.host)));
+    WalkTo(*world.host, EAST_TICKS + 1, world.map->TileCentre(0));
+    REQUIRE(world.host->PlayerRoute().has_value());
+    return world;
+}
+
+TEST_CASE("on the world map it walks a route and stands while paused") {
+    constexpr u64 ROUTE_WALK = 10; // ticks: 40 units, about three frames on
+    const TravelWorld world = WalkingWest();
+    game::Host& host = *world.host;
+    const std::shared_ptr<const core::Animations> walks = CultivatorWalks();
+    const core::WalkClip* const clip = walks->WalkOf(SpriteId::Cultivator);
+    REQUIRE(clip != nullptr);
+    u64 tick = EAST_TICKS + 1;
+    CHECK(Mirrored(PlayerDrawn(host)));
+    const core::Walked setOut = host.PlayerWalk();
+    const core::Vec2 from = FootOf(host, world.player);
+    TickRange(host, tick + 1, tick + ROUTE_WALK);
+    tick += ROUTE_WALK;
+    REQUIRE(host.PlayerRoute().has_value());
+    const core::Walked walked = host.PlayerWalk();
+    CHECK(walked.moving);
+    // Straight along the row, so the way its foot went is how far it walked.
+    CHECK(walked.distance - setOut.distance == doctest::Approx(from.x - FootOf(host, world.player).x));
+    const SpriteId frame = core::PoseSprite(clip, SpriteId::Cultivator, walked.distance, true);
+    CHECK(frame != core::PoseSprite(clip, SpriteId::Cultivator, setOut.distance, true));
+    const core::Instance drawn = PlayerDrawn(host);
+    CHECK(Draws(drawn, frame));
+    CHECK(Mirrored(drawn));
+
+    TickWith(host, tick + 1, core::ActionKind::ToggleWorldPause);
+    REQUIRE(host.WorldPaused());
+    const core::Instance paused = PlayerDrawn(host);
+    CHECK(Draws(paused, SpriteId::Cultivator));
+    CHECK(Mirrored(paused));
+    TickRange(host, tick + 2, tick + 2);
+    CHECK(SameInstance(PlayerDrawn(host), paused));
+}
+
+TEST_CASE("M's jump stands the cultivator, keeping its walk and facing") {
+    const TravelWorld world = WalkingWest();
+    game::Host& host = *world.host;
+    TickRange(host, EAST_TICKS + 2, EAST_TICKS + 3);
+    const core::Walked before = host.PlayerWalk();
+    REQUIRE(before.moving);
+    REQUIRE(before.facesLeft);
+    StepMonth(host, EAST_TICKS + 4);
+    const core::Instance jumped = PlayerDrawn(host);
+    CHECK(Draws(jumped, SpriteId::Cultivator));
+    CHECK(Mirrored(jumped));
+    CHECK_FALSE(host.PlayerWalk().moving);
+    CHECK(host.PlayerWalk().distance == before.distance);
+}
+
+TEST_CASE("held movement taking over a route walks on from the route's walk") {
+    const TravelWorld world = WalkingWest();
+    game::Host& host = *world.host;
+    TickRange(host, EAST_TICKS + 2, EAST_TICKS + 3);
+    const core::Walked onRoute = host.PlayerWalk();
+    REQUIRE(onRoute.facesLeft);
+    // Straight up, which ends the route and gives no step left or right to turn it by.
+    TickRange(host, EAST_TICKS + 4, EAST_TICKS + 4, HELD_UP);
+    REQUIRE_FALSE(host.PlayerRoute().has_value());
+    const core::Walked held = host.PlayerWalk();
+    CHECK(held.distance - onRoute.distance == doctest::Approx(CULTIVATOR_SPEED));
+    CHECK(held.facesLeft);
+    const std::shared_ptr<const core::Animations> walks = CultivatorWalks();
+    const core::Instance drawn = PlayerDrawn(host);
+    CHECK(Draws(drawn, core::PoseSprite(walks->WalkOf(SpriteId::Cultivator), SpriteId::Cultivator, held.distance, true)));
+    CHECK(Mirrored(drawn));
+}
+
+TEST_CASE("a load starts the walk afresh") {
+    constexpr u64 WALKED_LEFT = 5;
+    const std::unique_ptr<game::Host> host = WalkingArena();
+    TickRange(*host, 1, WALKED_LEFT, HELD_LEFT);
+    REQUIRE(Mirrored(PlayerDrawn(*host)));
+    const std::vector<std::byte> bytes = test::Saved(*host);
+    core::Reader reader{ bytes };
+    REQUIRE(host->Load(reader, WALKED_LEFT));
+    host->EnterScene();
+    const core::Instance loaded = PlayerDrawn(*host);
+    CHECK(Draws(loaded, SpriteId::Cultivator));
+    CHECK_FALSE(Mirrored(loaded));
+    CHECK(host->PlayerWalk().distance == 0.0);
+
+    TickRange(*host, WALKED_LEFT + 1, WALKED_LEFT + 1);
+    const core::Instance still = PlayerDrawn(*host);
+    CHECK(Draws(still, SpriteId::Cultivator));
+    CHECK_FALSE(Mirrored(still));
+}
+
+TEST_CASE("the cultivator's walk changes no hash") {
+    constexpr u64 TICKS = 20;
+    const std::unique_ptr<game::Host> drawn = WalkingArena();
+    const std::unique_ptr<game::Host> plain = WalkingArena(nullptr);
+    for (u64 tick = 1; tick <= TICKS; ++tick) {
+        TickRange(*drawn, tick, tick, HELD_RIGHT);
+        TickRange(*plain, tick, tick, HELD_RIGHT);
+        REQUIRE_FALSE(Draws(PlayerDrawn(*drawn), SpriteId::Cultivator));
+        REQUIRE(Draws(PlayerDrawn(*plain), SpriteId::Cultivator));
+    }
+    CHECK(drawn->StateHash() == plain->StateHash());
+}
+
 } // namespace

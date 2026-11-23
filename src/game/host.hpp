@@ -295,9 +295,9 @@ public:
         m_debugSight = enabled;
     }
 
-    /// Keeps the figures' animations, whose villager walk clip steps each traveller through its frames: null, or a table
-    /// without that clip, draws them standing. It changes what is published only, so it is never recorded, saved or
-    /// hashed.
+    /// Keeps the figures' animations, whose villager walk clip steps each traveller through its frames and whose clip for
+    /// the player's sprite steps its cultivator: null, or a table without a figure's clip, draws that figure standing. It
+    /// changes what is published only, so it is never recorded, saved or hashed.
     void SetAnimations(const std::shared_ptr<const core::Animations>& animations) override {
         m_animations = animations;
     }
@@ -307,6 +307,15 @@ public:
     /// it. None without a map.
     [[nodiscard]] std::size_t LegWalkTables() const {
         return m_legWalks ? m_legWalks->Size() : 0;
+    }
+
+    /// How far the player's cultivator has walked, whether it moved this tick and which way it faces, as its walk clip
+    /// draws it: its body's step each tick, a dash turning it but taking no step; a month step's jump stands a cultivator
+    /// on a route, keeping the rest, and a scene's build or a load starts it afresh, standing and facing right. Kept with
+    /// or without a walk clip, so one that arrives later steps on from it. Presentation only: never saved, hashed or read
+    /// by the simulation.
+    [[nodiscard]] const core::Walked& PlayerWalk() const {
+        return m_playerWalk;
     }
 
     /// The route the player's cultivator walks on the world map (core::ActionKind::WalkTo): a journey of the cultivator alone
@@ -329,7 +338,9 @@ public:
     /// the world pause) and, while the player's cultivator walks a route, the route (core::Snapshot::route: its foot as
     /// drawn, then the centres of the route's tiles it hasn't reached by the world clock) and the fog (core::FogView: the
     /// explored tiles with FogVersion(), the tile under the player's foot when there is a player, the sight radius and the
-    /// debug sight; off elsewhere). A scene with a player adds the player's and each living fox's name label over its head
+    /// debug sight; off elsewhere). With a walk clip for its sprite (SetAnimations()) the player's cultivator shows the frame
+    /// core::PoseSprite() picks for PlayerWalk(), mirrored while it faces left, its shadow never; every other entity draws
+    /// its own sprite. A scene with a player adds the player's and each living fox's name label over its head
     /// (while the player's cultivator walks a route on the world map, it and its label are drawn moved onto the road as a
     /// traveller is, below); a combat scene adds each living fox's health bar at its head and the player's casting state
     /// (core::Snapshot::caster).
@@ -416,6 +427,9 @@ private:
     void ShiftDrawnPlayer(u64 fromTick, u64 toTick);
     // Starts m_drawnShift afresh at the clock, with nothing left over: drawn where the route puts it, standing still.
     void RestartDrawnShift();
+    // Moves m_playerWalk on by this tick's step of the player's body, which the dash, when `dashing`, turns but doesn't
+    // walk: so its frame holds rather than racing through the dash.
+    void StepPlayerWalk(bool dashing);
     void CastAction(const core::Action& action, const core::TickCounters& counters, std::vector<core::Event>& events);
     void DebugBurst(const core::TickCounters& counters, std::vector<core::Event>& events) const;
     void Leave(core::SceneKey next, bool throughPortal, std::vector<core::Event>& events);
@@ -484,6 +498,10 @@ private:
         f32 fadeLeft = 0.0F;
     };
     DrawnShift m_drawnShift;
+    // How far the player's cultivator has walked and which way it faces, which pick its frame. Presentation only, so never
+    // saved, hashed or read by the simulation: a scene build or a load starts it afresh, and the clock's jump stands it
+    // when it walks a route.
+    core::Walked m_playerWalk;
     std::optional<core::Journey> m_route = std::nullopt; // the player's route; none while it walks freely
     core::StableId m_player{};                           // the cultivator the player walks; zero for none
     core::StableId m_selected{};                         // zero for none
