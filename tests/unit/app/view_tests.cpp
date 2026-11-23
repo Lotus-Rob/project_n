@@ -88,6 +88,23 @@ TEST_CASE("picking turns with a rotated instance, as alpha draws it") {
     CHECK(app::Pick(snapshot, 1.0, ALONG_X, NO_FOG) == core::StableId{});
 }
 
+TEST_CASE("picking hits a mirrored instance where it is drawn") {
+    constexpr core::StableId FIGURE{ 1 };
+    constexpr f32 NARROW = 40.0F;
+    // Mirrored about a foot at the origin, the quad's centre sits left of it and its packed width is negative; the
+    // unmirrored quad would have stood at the same distance to the right.
+    constexpr core::Vec2 CENTRE{ .x = -30.0F, .y = 0.0F };
+    constexpr core::Vec2 DRAWN{ .x = -40.0F, .y = 0.0F };
+    constexpr core::Vec2 UNMIRRORED{ .x = 30.0F, .y = 0.0F };
+    core::Snapshot snapshot;
+    snapshot.instances = {
+        { .previous = CENTRE, .current = CENTRE, .size = core::PackPair(core::PackHalf(-NARROW), core::PackHalf(QUAD)) }
+    };
+    snapshot.ids = { FIGURE };
+    CHECK(app::Pick(snapshot, 1.0, DRAWN, NO_FOG) == FIGURE);
+    CHECK(app::Pick(snapshot, 1.0, UNMIRRORED, NO_FOG) == core::StableId{});
+}
+
 /// A one-tile fog over `values` (explored, then in sight, each 0 to 255), which every point of the map then samples.
 gfx::FogFrame OneTile(const std::array<u8, 2>& values) {
     return { .columns = 1, .rows = 1, .tileSize = 256.0F, .values = values, .revision = 1 };

@@ -83,7 +83,8 @@ std::optional<std::size_t> PickInstance(const core::Snapshot& snapshot, f64 alph
         const f32 cosine = instance.rotation == 0 ? 1.0F : std::cos(angle);
         const f32 alongWidth = (offset.x * cosine) + (offset.y * sine);
         const f32 alongHeight = (offset.y * cosine) - (offset.x * sine);
-        const f32 halfWidth = core::UnpackHalf(static_cast<u16>(instance.size & LOW_HALF)) / 2.0F;
+        // A mirrored sprite packs a negative width: the quad spans the same distance either way.
+        const f32 halfWidth = std::abs(core::UnpackHalf(static_cast<u16>(instance.size & LOW_HALF))) / 2.0F;
         const f32 halfHeight = core::UnpackHalf(static_cast<u16>(instance.size >> HIGH_SHIFT)) / 2.0F;
         if (std::abs(alongWidth) > halfWidth || std::abs(alongHeight) > halfHeight) {
             continue;
