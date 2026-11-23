@@ -2769,6 +2769,29 @@ class WorldMapRoadsTest(unittest.TestCase):
         self.assertEqual(self.out, self.text,
                          "world.yaml's roads or fords are stale: run `pixi run python art/world_map.py --roads`")
 
+    def test_a_generated_world_holds_the_danger_travel_and_its_roads_are_a_roads_pass_over_it(self):
+        module = self.module
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder)
+            saved = (module.YAML_OUT, module.PREVIEW, module.TERRAIN_PREVIEW, module.ROOT, sys.argv)
+            module.ROOT = target
+            module.YAML_OUT, module.PREVIEW, module.TERRAIN_PREVIEW = (
+                target / "world.yaml", target / "preview.png", target / "terrain.png")
+            sys.argv = ["world_map.py"]
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    module.main()
+                text = module.YAML_OUT.read_text(encoding="utf-8")
+            finally:
+                module.YAML_OUT, module.PREVIEW, module.TERRAIN_PREVIEW, module.ROOT, sys.argv = saved
+        world = module.read_world(text)
+        self.assertEqual(world["danger_reach"], self.world["danger_reach"])
+        self.assertEqual(world["profiles"], self.world["profiles"])
+        self.assertEqual(world["travel"]["bands"], self.world["travel"]["bands"])
+        self.assertGreater(module.wary_danger_cost(world), 0)
+        self.assertIn("`art/world_map.py --roads` writes", text)
+        self.assertEqual(module.rewrite_roads(text, *module.route_roads(world)), text)
+
     def test_a_second_pass_changes_nothing(self):
         again = self.module.rewrite_roads(self.out, *self.module.route_roads(self.module.read_world(self.out)))
         self.assertEqual(again, self.out)
