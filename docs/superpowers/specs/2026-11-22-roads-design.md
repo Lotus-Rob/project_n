@@ -1,6 +1,6 @@
 # Roads: rerouted along the land, drawn as ribbons, chosen by power
 
-Status: approved by the user 2026-11-22 (builder check done; its questions answered by the user). Plan to come.
+Status: **implemented 2026-11-22** (see Outcome; approved by the user 2026-11-22, builder check done; its questions answered by the user). Plan: `2026-11-22-roads.md`.
 
 ## Intent
 
@@ -188,3 +188,104 @@ separately confirmed; listed for the user.
   so more bands are a values change.
 - **Travel retuned to its comment's targets** (Goal 8).
 - **The player is drawn on the curve too** (Goal 7). The danger cost never applies to the player.
+
+## Outcome
+
+**Measurements** (`measure --runs world`, 2 workers, unpaced, fullscreen at 2560×1440 on the 165 Hz display, travel
+share 200, every run trusted). Run back to back, this branch then main: frame medians 6.0 ms on both; the month step's
+hitch, on the main thread, 53.0 against 53.4 ms (main has it too); the month step's logic worst 27.4 against 25.0 ms and
+its logged stall 25 against 22 ms, about 10%, within run-to-run noise. An earlier pair, not back to back, read 29.2
+against 11.7 ms; the investigation that followed found the branch's month step costs the same as main's without a
+window (8.5 ms for both at share 200; 6,891 departures against 6,929, 5,474 of them by the wary profile; 42.8 route
+tiles a departure against 41.0), the extra profile's distance maps being built once at start (Seed 37 → 46 ms), and the
+captures showing code this branch doesn't touch slowed by the same factor near that step: the 11.7 was a quiet run. The
+cost anti-goal holds. The investigation kept profiling zones for the month step's parts and one cut that keeps every
+route: `RouteDown` asks a step's cost only of neighbours nearer the goal (`perf(core): step down a distance map only
+through cheaper tiles`: route finding 6.5 → 4.3 ms of CPU a month, main's logic gaining alike). The busiest-view load
+changed with the bands (the fewest travellers there 2,304 → 2,083 at share 200), so frame costs compare like for like
+only roughly. Task 9's earlier runs were untrusted (the user's game held focus).
+
+**Shimmer** (`reference`): the rerouted roads' shimmer measured 0.00500 with the first road look (a 1.3 px road, the
+guard's own failing case, measured 0.0366). The paler road measures 0.00608, because the metric is crawl as a share of
+the road's ink, so a quieter road scores higher for the same crawl; the bound was re-set from the shipped look by the
+house rule (about 1.25 times: 0.0076, far inside this spec's 0.02), and a deliberately hard road fails it at 0.0623.
+
+**Crowd** (Goal 8): with `danger_reach` 4, the wary profile's `danger` cost 40 and the share at 58, the crowd runs
+2,517 to 3,235 against the bounds 2,500 to 3,300 (were 2,000 to 6,000). Share 59 gives 2,549 to 3,281; a whole-number
+share can't centre the range, and a later retune that trips the floor is a fair signal. Game routes agree with the
+generator: capital to oasis is 173 for the wary profile and 152 for the strong one (pinned).
+
+### Rulings made while building
+
+Routing and data:
+- The generator reads the weak pass's danger cost from the profile the band at `from_power` 0 names; with no profile
+  carrying a danger cost the weak pass equals the strong one, and no forks are made.
+- A fork's joins come from the built road's rasterised tiles, not the strong path's raw tiles; then each fork's meeting
+  tile becomes a waypoint of the road it leaves, so the curve passes through it (`build(tools): lay each fork's ends on
+  waypoints of the road it leaves`). Before that, the Bone Forest fork joined at neither end: the trunk's curve bulged
+  about 0.8 tile, past the join's reach. A shipped-world test now checks every non-city end lies on another curve
+  (within the reach plus 3: fixed ends measure up to 8, broken ones 16 to 22).
+- The wary route is planned after its link's own strong road is built, so it sees that road as cheap; planned first, Jade
+  Cave's way round ran as a second road two tiles beside the main one for about ten rows (`build(tools): plan the wary
+  way over its link's own road`).
+- The rewrite of `world.yaml` refuses stray lines (comments or blanks at column 0) inside a block it rewrites, and reads
+  only plain decimals as numbers (`inf`, `nan` and `1_0` stay text).
+- Sites moved: Jade Cave to (73, 24), Bone Forest to (86, 42), Ghostlight Woods to (126, 56). None is a cliff: the
+  spec's "a cave, a haunted forest and a cliff" was an example.
+- `world.yaml`'s roads are checked against a `world_map.py --roads` pass (`test(tools): fail when world.yaml's roads are
+  stale`), and its header says where they come from.
+- Data commits are `chore(data)`, not the plan's `feat(data)`: feat and fix are kept for game code.
+
+Rules and saves:
+- Profile 0 (walking) never carries a danger cost, and a `danger_reach` too large for the mark's range is refused.
+- The band table reports unknown keys. Danger stays passable for every profile: every band reaches every city (a test
+  guards it).
+- Sending travellers by their band's profile changes the world's version, so saves break: the commit is marked breaking
+  (`feat(game)!:`), following the git-commit skill's rule over the plan's subject. Four save seeds were regenerated; no
+  expected value changed. A many-chunk test with 2,148 travellers checks 1 and 4 workers agree across bands.
+
+Drawing:
+- Roads join at both ends, and an end on a city's tile is never moved: the spec says a road's end joins, and that a road
+  ends at its city's tile centre.
+- Joining both ends needed three more rules, each found by a failing case: a meeting near another road's start is
+  skipped only where that end itself flows in; of two roads whose ends would each join the other, the lower index yields,
+  so one of them joins; and when both of a road's joins would leave its ends closer than a short run, neither moves (the
+  road is drawn crossing, as authored). `Midline` skips repeated waypoints, so it never returns a NaN curve.
+- The road sprites, `LINE_MASKS` and the YAML `roads:` sprite list stayed until the ribbons drew roads, so every commit
+  built.
+- "Passes through every waypoint" means every distinct point of the road's polyline, within 0.001 units: those are the
+  spline's knots.
+- In-sight roads read quieter than rivers: the road colours moved towards the paper (zoom 0.6 road at (149, 132, 109)),
+  judged by eye against the river. The junction by the bridge at (40, 26) was looked at in three zooms: smooth, and the
+  bridge square across it.
+
+Travellers on the road:
+- The drawn shift is the nearest-point rule taken at each leg point (the origin and each tile centre) and blended
+  linearly between them: taken at every position it jumped 0.31 tile in a tick at a staircase fork, which breaks "never
+  jumps". A journey's own first and last points get no shift.
+- Held walking isn't snapped onto the road (only routes are). When held input or a new walk-to takes over a route
+  mid-road, the shift left over fades to zero across the body's next tile of movement, so a cultivator standing still
+  never slides. It resets on load, on entering a scene, and on a clock jump that carries the cultivator along its route.
+  With no route, a jump leaves the leftover alone: the body doesn't move, so resetting it would itself jump the drawn
+  cultivator (a cross-model review asked for the reset; rejected for that reason).
+- The route line ahead follows the road too: each remaining road tile at its point on the curve, the clicked end at its
+  tile's centre, as the drawn walker will pass them (`fix(game): draw the route line along the road's curve`).
+- The camera follows the cultivator's actual body, not its drawn position (the user, 2026-11-22); the label, selection
+  and pick box move with the drawn body.
+- The drawn-traveller tests build their own small road maps, never the shipped one, so rerouting the shipped roads moves no
+  pinned curve.
+
+From the final review (Opus, plus GLM-5.3-Flash and DeepSeek V4.1 Flash):
+- Rivers and roads share one look and shape type (`RibbonLook`, `RibbonShape`) and the renderer's header is named for
+  what it draws (`line_ribbons`); the road ribbon keeps the river's shader pair.
+- The full generator writes the danger reach, the wary profile and the bands as the shipped file has them and routes its
+  roads through `--roads`' code, so a regenerated world still forks round danger; art/AGENTS.md and the root AGENTS.md
+  say that a land edit to world.yaml means running `--roads`, which a self-test enforces.
+- The travel comment's example costs are all pinned (126, 162, 173/152, 562).
+- `StepCost` promises an allowed step costs at least 1, which `RouteDown`'s cut relies on.
+
+Process:
+- A test that pins a hash, a shipped value or a save seed that a change legitimately moves is updated to the new value
+  and named, never loosened.
+- The power bands' tests were written after the code (their failing run was a compile error); the reviewer checked them
+  as sound.
