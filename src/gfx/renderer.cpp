@@ -794,9 +794,16 @@ void Renderer::Impl::PlaceTexts(const Shown& shown, core::Jobs& jobs) {
         }
     }
     GatherLabels(hovered, selected);
+    // The travellers' names keep off the player's cultivator's body, which the first Player label names.
+    std::optional<core::Rect> body = std::nullopt;
+    const auto player =
+        std::ranges::find(labelItems, core::LabelPriority::Player, [](const core::TextItem* item) { return item->priority; });
+    if (player != labelItems.end()) {
+        body = ScreenBoxOf(snapshot, (*player)->entity, textFrame.clip, textFrame.alpha, shown.width, shown.height);
+    }
     // A label whose item has gone draws as the pass kept it, fading out.
     for (const PlacedLabel& placed :
-         labels.Place(labelInputs, shown.width, shown.height, shown.view->frameClock, textOptions.scale)) {
+         labels.Place(labelInputs, shown.width, shown.height, shown.view->frameClock, textOptions.scale, body)) {
         const core::TextItem& item = placed.label->item;
         const f32 pixels = placed.label->pixels;
         const f32 opacity = placed.opacity * FogOpacity(item, textFrame.fog, textFrame.alpha);

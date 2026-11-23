@@ -38,12 +38,15 @@ u32 ColourOfText(const core::TextItem& item, const core::UiColours& colours, boo
     return item.opacity >= 1.0F ? colour : core::ScaledColour(colour, item.opacity);
 }
 
-core::Vec2 AnchorOfText(const core::TextItem& item, const ClipTransform& clip, f32 alpha, u32 width, u32 height) {
-    const core::Vec2 world = item.previous + ((item.current - item.previous) * alpha) + item.offset;
+core::Vec2 PixelOf(core::Vec2 world, const ClipTransform& clip, u32 width, u32 height) {
     return {
         .x = ((world.x * clip.scaleX) + clip.offsetX + 1.0F) * HALF * static_cast<f32>(width),
         .y = (1.0F - ((world.y * clip.scaleY) + clip.offsetY)) * HALF * static_cast<f32>(height),
     };
+}
+
+core::Vec2 AnchorOfText(const core::TextItem& item, const ClipTransform& clip, f32 alpha, u32 width, u32 height) {
+    return PixelOf(item.previous + ((item.current - item.previous) * alpha) + item.offset, clip, width, height);
 }
 
 core::Vec2 TopLeftOfText(core::Vec2 anchor, core::Vec2 size, core::TextAlign align) {
@@ -209,6 +212,33 @@ core::Vec2 TextAnchor(const core::TextItem& item, const View& view, u32 width, u
 
 core::Vec2 TextAnchor(const core::TextItem& item, const ClipTransform& clip, f32 alpha, u32 width, u32 height) {
     return AnchorOfText(item, clip, alpha, width, height);
+}
+
+std::optional<core::Rect> ScreenBoxOf(
+    const core::Snapshot& snapshot,
+    core::StableId entity,
+    const ClipTransform& clip,
+    f32 alpha,
+    u32 width,
+    u32 height
+) {
+    PN_PROFILE_ZONE();
+    const std::size_t count = std::min(snapshot.instances.size(), snapshot.ids.size());
+    const std::span ids = std::span{ snapshot.ids }.first(count);
+    const auto found = std::ranges::find(ids, entity);
+    if (found == ids.end()) {
+        return std::nullopt;
+    }
+    const core::Instance& instance = snapshot.instances[static_cast<std::size_t>(found - ids.begin())];
+    constexpr u32 HIGH_HALF = 16;
+    const f32 across = std::abs(core::UnpackHalf(static_cast<u16>(instance.size & 0xFFFFU)));
+    const f32 down = std::abs(core::UnpackHalf(static_cast<u16>(instance.size >> HIGH_HALF)));
+    const core::Vec2 centre =
+        PixelOf(instance.previous + ((instance.current - instance.previous) * alpha), clip, width, height);
+    const f32 pixelsX = HALF * static_cast<f32>(width) * clip.scaleX;
+    const f32 pixelsY = HALF * static_cast<f32>(height) * clip.scaleY;
+    const core::Vec2 half{ .x = std::abs(pixelsX) * across * HALF, .y = std::abs(pixelsY) * down * HALF };
+    return core::Rect{ .min = centre - half, .max = centre + half };
 }
 
 core::Vec2 TextTopLeft(core::Vec2 anchor, core::Vec2 size, core::TextAlign align) {
