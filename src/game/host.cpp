@@ -625,6 +625,24 @@ constexpr core::Abilities BUILT_IN_ABILITIES{
     } },
 };
 
+/// How a walker is drawn: its sprite, and the width scale that turns it the way it faces.
+struct Pose {
+    SpriteId sprite = SpriteId{};
+    f32 widthScale = 1.0F;
+};
+
+/// How member 0 of `journey` on `map` is drawn at `tick` by `clip`, the walk clip of the figure standing in `standing`:
+/// the frame core::PoseSprite() picks for how far it has walked, mirrored while it faces left; with no clip, standing
+/// unmirrored, as a figure without one has no side-on frames to step through or turn.
+Pose PoseOn(const core::WorldMap& map, const core::Journey& journey, i64 tick, const core::WalkClip* clip, SpriteId standing) {
+    if (clip == nullptr) {
+        return { .sprite = standing, .widthScale = 1.0F };
+    }
+    const core::Walked walked = core::WalkedAt(map, journey, tick);
+    return { .sprite = core::PoseSprite(clip, standing, walked.distance, walked.moving),
+             .widthScale = walked.facesLeft ? -1.0F : 1.0F };
+}
+
 } // namespace
 
 core::GameData BuiltInData() {
@@ -1167,6 +1185,7 @@ void Host::PublishJourneys(u32 chunk, u32 part, const core::Rect& area, std::opt
     const auto now = static_cast<i64>(world.worldTicks);
     const auto before = static_cast<i64>(m_worldTicksBefore);
     const Look look{ .sprite = SpriteId::Villager, .shadow = true };
+    const core::WalkClip* const clip = m_animations ? m_animations->WalkOf(look.sprite) : nullptr;
     const f32 height = static_cast<f32>(m_manifest->Sprite(look.sprite).footY) * look.scale;
     const core::Vec2 head{ .x = 0.0F, .y = -height };
     const core::Names* const names = m_data.names.get();
@@ -1178,11 +1197,17 @@ void Host::PublishJourneys(u32 chunk, u32 part, const core::Rect& area, std::opt
         if (!core::Underway(journey, now)) {
             continue;
         }
+        // The members keep fixed places round the first, so they all step and face as it does: worked out once, at the
+        // first member drawn, as most journeys draw none.
+        std::optional<Pose> pose;
         for (std::size_t member = 0; member < journey.members.size(); ++member) {
             const core::Vec2 foot = core::Where(map, journey, now, member);
             if (!core::Contains(area, foot) ||
                 (!m_debugSight && !core::InSight(map, playerTile.value_or(0), map.TileAt(foot), shown))) {
                 continue;
+            }
+            if (!pose) {
+                pose = PoseOn(map, journey, now, clip, look.sprite);
             }
             const core::Vec2 current = core::DrawnWhere(map, roads, journey, now, member);
             const core::Vec2 previous = core::DrawnWhere(map, roads, journey, before, member);
@@ -1202,10 +1227,11 @@ void Host::PublishJourneys(u32 chunk, u32 part, const core::Rect& area, std::opt
                 look.pipeline,
                 core::MakeInstance(
                     *m_manifest,
-                    { .sprite = look.sprite,
+                    { .sprite = pose->sprite,
                       .previous = previous,
                       .current = current,
                       .scale = look.scale,
+                      .widthScale = pose->widthScale,
                       .flags = core::INSTANCE_SIGHT_FADE }
                 ),
                 current.y,

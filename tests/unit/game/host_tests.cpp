@@ -1,3 +1,4 @@
+#include "core/animations.hpp"
 #include "core/archive.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/draw_list.hpp"
@@ -1831,6 +1832,266 @@ TEST_CASE("a month step asked for early stands travellers where the new clock pu
         { .sprite = SpriteId::Villager, .previous = foot, .current = foot, .flags = core::INSTANCE_SIGHT_FADE }
     );
     CHECK(SameInstance(InstanceOf(Published(*world.host, NearHome(*world.map)), traveller), expected));
+}
+
+/// The villager's walk: its 8 frames, each shown for 12 world units walked; `reversed` steps through them backwards, so the
+/// frame any distance picks differs from the forward order's.
+std::shared_ptr<const core::Animations> VillagerWalks(bool reversed = false) {
+    constexpr f32 STRIDE = 12.0F;
+    std::vector<SpriteId> frames{ SpriteId::VillagerWalk0, SpriteId::VillagerWalk1, SpriteId::VillagerWalk2,
+                                  SpriteId::VillagerWalk3, SpriteId::VillagerWalk4, SpriteId::VillagerWalk5,
+                                  SpriteId::VillagerWalk6, SpriteId::VillagerWalk7 };
+    if (reversed) {
+        std::ranges::reverse(frames);
+    }
+    core::Animations animations;
+    animations.walks.push_back({ .standing = SpriteId::Villager, .frames = std::move(frames), .stride = STRIDE });
+    return std::make_shared<const core::Animations>(std::move(animations));
+}
+
+/// Whether `instance` is drawn mirrored: its width is negative.
+bool Mirrored(const core::Instance& instance) {
+    constexpr u32 WIDTH_MASK = 0xFFFFU;
+    return core::UnpackHalf(static_cast<u16>(instance.size & WIDTH_MASK)) < 0.0F;
+}
+
+/// How many of `snapshot`'s instances draw a villager's walk frame, and how many of those are mirrored.
+std::pair<u32, u32> WalkFrames(const core::Snapshot& snapshot) {
+    constexpr u32 PAGE_MASK = 0xFFFFU;
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    const std::shared_ptr<const core::Animations> walks = VillagerWalks();
+    const core::WalkClip* const clip = walks->WalkOf(SpriteId::Villager);
+    REQUIRE(clip != nullptr);
+    // Each frame's region and page, as Draws() tells a sprite.
+    std::vector<std::pair<u32, u32>> frames;
+    for (const SpriteId frame : clip->frames) {
+        const core::Instance drawn = core::MakeInstance(*manifest, { .sprite = frame });
+        frames.emplace_back(drawn.regionMin, drawn.layerFlags & PAGE_MASK);
+    }
+    u32 walking = 0;
+    u32 mirrored = 0;
+    for (const core::Instance& instance : snapshot.instances) {
+        if (std::ranges::contains(frames, std::pair{ instance.regionMin, instance.layerFlags & PAGE_MASK })) {
+            ++walking;
+            mirrored += Mirrored(instance) ? 1U : 0U;
+        }
+    }
+    return { walking, mirrored };
+}
+
+/// A visit along the first road whose clock, TRAVEL_CLOCK, finds its traveller a little way into its way home: walking
+/// west, near its home city.
+i64 HomewardDeparture() {
+    const Road road = FirstRoad(*test::SmallWorld());
+    return static_cast<i64>(TRAVEL_CLOCK) - (road.visitTicks - JUST_LEFT);
+}
+
+/// What `world`'s one journey's member `member` is drawn as, ticked from TRAVEL_CLOCK to the tick after it: `sprite`,
+/// `widthScale` wide, on the road it walks by `roads`, the world's map's road curves.
+core::Instance TravellerDrawn(
+    const TravelWorld& world,
+    const core::RoadCurveIndex& roads,
+    std::size_t member,
+    SpriteId sprite,
+    f32 widthScale
+) {
+    const auto clock = static_cast<i64>(TRAVEL_CLOCK);
+    const core::Journey& journey = world.journeys.front();
+    return core::MakeInstance(
+        *test::TestManifest(),
+        { .sprite = sprite,
+          .previous = core::DrawnWhere(*world.map, roads, journey, clock, member),
+          .current = core::DrawnWhere(*world.map, roads, journey, clock + 1, member),
+          .widthScale = widthScale,
+          .flags = core::INSTANCE_SIGHT_FADE }
+    );
+}
+
+TEST_CASE("a traveller draws the walk frame its distance picks, facing its way") {
+    const auto clock = static_cast<i64>(TRAVEL_CLOCK);
+    const std::shared_ptr<const core::Animations> walks = VillagerWalks();
+    const core::WalkClip* const clip = walks->WalkOf(SpriteId::Villager);
+    REQUIRE(clip != nullptr);
+
+    // Eastward, setting out: a party of two, both members stepping alike.
+    const std::array<Departure, 1> out{ { { .tick = clock - JUST_LEFT, .members = 2 } } };
+    const TravelWorld east = TravelWorldOf(out);
+    east.host->SetAnimations(walks);
+    TickRange(*east.host, 1, 1);
+    const core::Walked eastward = core::WalkedAt(*east.map, east.journeys.front(), clock + 1);
+    REQUIRE(eastward.moving);
+    REQUIRE_FALSE(eastward.facesLeft);
+    const SpriteId eastFrame = core::PoseSprite(clip, SpriteId::Villager, eastward.distance, eastward.moving);
+    CHECK(eastFrame != SpriteId::Villager);
+    const core::Snapshot eastSnapshot = Published(*east.host, NearHome(*east.map));
+    const core::RoadCurveIndex eastRoads{ *east.map };
+    for (std::size_t member = 0; member < east.journeys.front().members.size(); ++member) {
+        CAPTURE(member);
+        const core::Instance drawn = InstanceOf(eastSnapshot, east.journeys.front().members[member]);
+        CHECK(SameInstance(drawn, TravellerDrawn(east, eastRoads, member, eastFrame, 1.0F)));
+        CHECK_FALSE(Mirrored(drawn));
+    }
+
+    // Westward, nearly home: mirrored, its shadow not.
+    const std::array<Departure, 1> home{ { { .tick = HomewardDeparture() } } };
+    const TravelWorld west = TravelWorldOf(home);
+    west.host->SetAnimations(walks);
+    TickRange(*west.host, 1, 1);
+    const core::Walked westward = core::WalkedAt(*west.map, west.journeys.front(), clock + 1);
+    REQUIRE(westward.moving);
+    REQUIRE(westward.facesLeft);
+    const SpriteId westFrame = core::PoseSprite(clip, SpriteId::Villager, westward.distance, westward.moving);
+    CHECK(westFrame != SpriteId::Villager);
+    const core::Snapshot westSnapshot = Published(*west.host, NearHome(*west.map));
+    const core::RoadCurveIndex westRoads{ *west.map };
+    const core::Instance drawn = InstanceOf(westSnapshot, west.journeys.front().members.front());
+    CHECK(SameInstance(drawn, TravellerDrawn(west, westRoads, 0, westFrame, -1.0F)));
+    CHECK(Mirrored(drawn));
+    const core::Instance shadow = TravellerDrawn(west, westRoads, 0, SpriteId::Shadow, 1.0F);
+    CHECK(std::ranges::any_of(westSnapshot.instances, [&](const core::Instance& instance) {
+        return SameInstance(instance, shadow);
+    }));
+}
+
+TEST_CASE("a traveller with no clip draws as before") {
+    // Walking west, which would mirror it if it had a clip.
+    const std::array<Departure, 1> home{ { { .tick = HomewardDeparture() } } };
+    const TravelWorld world = TravelWorldOf(home);
+    const core::StableId traveller = world.journeys.front().members.front();
+    TickRange(*world.host, 1, 1);
+    REQUIRE(core::WalkedAt(*world.map, world.journeys.front(), static_cast<i64>(TRAVEL_CLOCK) + 1).facesLeft);
+    const core::RoadCurveIndex roads{ *world.map };
+    const core::Instance standing = TravellerDrawn(world, roads, 0, SpriteId::Villager, 1.0F);
+
+    // No table set.
+    CHECK(SameInstance(InstanceOf(Published(*world.host, NearHome(*world.map)), traveller), standing));
+    // An empty table.
+    world.host->SetAnimations(std::make_shared<const core::Animations>());
+    CHECK(SameInstance(InstanceOf(Published(*world.host, NearHome(*world.map)), traveller), standing));
+    // No table again.
+    world.host->SetAnimations(nullptr);
+    CHECK(SameInstance(InstanceOf(Published(*world.host, NearHome(*world.map)), traveller), standing));
+}
+
+TEST_CASE("a swapped table changes the next publish") {
+    const auto clock = static_cast<i64>(TRAVEL_CLOCK);
+    const std::array<Departure, 1> out{ { { .tick = clock - JUST_LEFT } } };
+    const TravelWorld world = TravelWorldOf(out);
+    const core::StableId traveller = world.journeys.front().members.front();
+    TickRange(*world.host, 1, 1);
+    const core::Walked walked = core::WalkedAt(*world.map, world.journeys.front(), clock + 1);
+    REQUIRE(walked.moving);
+    const core::RoadCurveIndex roads{ *world.map };
+    const auto drawnWith = [&](const std::shared_ptr<const core::Animations>& animations) {
+        world.host->SetAnimations(animations);
+        return InstanceOf(Published(*world.host, NearHome(*world.map)), traveller);
+    };
+
+    const std::shared_ptr<const core::Animations> forward = VillagerWalks();
+    const SpriteId forwardFrame =
+        core::PoseSprite(forward->WalkOf(SpriteId::Villager), SpriteId::Villager, walked.distance, walked.moving);
+    CHECK(SameInstance(drawnWith(forward), TravellerDrawn(world, roads, 0, forwardFrame, 1.0F)));
+
+    const std::shared_ptr<const core::Animations> backward = VillagerWalks(true);
+    const SpriteId backwardFrame =
+        core::PoseSprite(backward->WalkOf(SpriteId::Villager), SpriteId::Villager, walked.distance, walked.moving);
+    REQUIRE(backwardFrame != forwardFrame);
+    CHECK(SameInstance(drawnWith(backward), TravellerDrawn(world, roads, 0, backwardFrame, 1.0F)));
+
+    // An entry removed: the villager stands.
+    CHECK(SameInstance(
+        drawnWith(std::make_shared<const core::Animations>()), TravellerDrawn(world, roads, 0, SpriteId::Villager, 1.0F)
+    ));
+}
+
+TEST_CASE("travellers' frames are alike on 1 and 4 workers and after a load") {
+    constexpr u32 MANY_WORKERS = 4;
+    // Two days into the first month, when that month's first visits are under way.
+    constexpr u64 SAVED_AT = 2 * game::TICKS_PER_DAY;
+    const core::GameData data = test::ShippedData();
+    const std::shared_ptr<const core::Animations> walks = VillagerWalks();
+    const core::Rect whole{ .min = {},
+                            .max = { .x = static_cast<f32>(data.world->Columns()) * data.world->TileSize(),
+                                     .y = static_cast<f32>(data.world->Rows()) * data.world->TileSize() } };
+    const auto published = [&](game::Host& host, u32 workers) {
+        host.SetDebugSight(true);
+        host.SetAnimations(walks);
+        core::Jobs jobs{ workers };
+        core::Snapshot snapshot;
+        host.Publish(snapshot, jobs, whole);
+        return snapshot;
+    };
+    const auto same = [](const core::Snapshot& lhs, const core::Snapshot& rhs) {
+        return std::ranges::equal(std::as_bytes(std::span{ lhs.instances }), std::as_bytes(std::span{ rhs.instances })) &&
+               lhs.ids == rhs.ids;
+    };
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, data);
+    StepMonth(host, 1);
+    TickRange(host, 2, SAVED_AT);
+
+    const core::Snapshot one = published(host, 1);
+    const auto [walking, mirrored] = WalkFrames(one);
+    REQUIRE(mirrored > 0);           // some walk west
+    REQUIRE(walking - mirrored > 0); // and some east
+    CHECK(same(one, published(host, MANY_WORKERS)));
+
+    std::vector<std::byte> bytes;
+    core::Writer writer{ bytes };
+    host.Save(writer);
+    game::Host loaded(test::TestManifest(), game::ARENA_SCENE, data);
+    core::Reader reader{ bytes };
+    REQUIRE(loaded.Load(reader, SAVED_AT));
+    loaded.EnterScene();
+    TickRange(host, SAVED_AT + 1, SAVED_AT + 1);
+    TickRange(loaded, SAVED_AT + 1, SAVED_AT + 1);
+    const core::Snapshot carried = published(host, 1);
+    REQUIRE(WalkFrames(carried).first > 0);
+    CHECK(same(carried, published(loaded, 1)));
+}
+
+TEST_CASE("walking changes no hash") {
+    constexpr u64 TICKS = 30;
+    const std::array<Departure, 1> out{ { { .tick = static_cast<i64>(TRAVEL_CLOCK) - JUST_LEFT, .members = 2 } } };
+    const TravelWorld standing = TravelWorldOf(out);
+    const TravelWorld walking = TravelWorldOf(out);
+    const core::StableId traveller = walking.journeys.front().members.front();
+    walking.host->SetAnimations(VillagerWalks());
+    CHECK(walking.host->StateHash() == standing.host->StateHash());
+    CHECK(walking.host->WorldHash() == standing.host->WorldHash());
+
+    for (u64 tick = 1; tick <= TICKS; ++tick) {
+        TickRange(*standing.host, tick, tick);
+        TickRange(*walking.host, tick, tick);
+        const core::Snapshot stood = Published(*standing.host, NearHome(*standing.map));
+        const core::Snapshot walked = Published(*walking.host, NearHome(*walking.map));
+        REQUIRE_FALSE(SameInstance(InstanceOf(stood, traveller), InstanceOf(walked, traveller)));
+    }
+    CHECK(walking.host->StateHash() == standing.host->StateHash());
+    CHECK(walking.host->WorldHash() == standing.host->WorldHash());
+}
+
+TEST_CASE("a paused world draws the same frames") {
+    constexpr u64 PAUSED_TICKS = 10;
+    const std::array<Departure, 1> out{ { { .tick = static_cast<i64>(TRAVEL_CLOCK) - JUST_LEFT, .members = 2 } } };
+    const TravelWorld world = TravelWorldOf(out);
+    world.host->SetAnimations(VillagerWalks());
+    const core::Rect view = NearHome(*world.map);
+    TickRange(*world.host, 1, 1);
+    const core::Snapshot running = Published(*world.host, view);
+    TickWith(*world.host, 2, core::ActionKind::ToggleWorldPause);
+    REQUIRE(world.host->WorldPaused());
+    const core::Snapshot paused = Published(*world.host, view);
+    REQUIRE(WalkFrames(paused).first == 2);
+    // The pausing tick stops the clock where the last running tick left it, so the frames are the same. Compared by frame
+    // and facing only: once the clock stops, each instance's previous point collapses onto its current one.
+    for (const core::StableId traveller : world.journeys.front().members) {
+        CHECK(InstanceOf(paused, traveller).regionMin == InstanceOf(running, traveller).regionMin);
+        CHECK(InstanceOf(paused, traveller).size == InstanceOf(running, traveller).size);
+    }
+
+    TickRange(*world.host, 3, 2 + PAUSED_TICKS);
+    const core::Snapshot later = Published(*world.host, view);
+    CHECK(std::ranges::equal(std::as_bytes(std::span{ paused.instances }), std::as_bytes(std::span{ later.instances })));
 }
 
 /// A 10 by 4 meadow map with the small map's costs, a city on (0, 0) (the start) and one on (9, 3), joined by a road laid

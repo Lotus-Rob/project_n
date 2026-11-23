@@ -10,6 +10,7 @@
 /// cultivator, the selection, combat, the game data, saving, loading and hashing, and the publishing every scene shares, and it
 /// knows no scene by name.
 
+#include "core/animations.hpp"
 #include "core/calendar.hpp"
 #include "core/draw_list.hpp"
 #include "core/ecs.hpp"
@@ -293,6 +294,13 @@ public:
         m_debugSight = enabled;
     }
 
+    /// Keeps the figures' animations, whose villager walk clip steps each traveller through its frames: null, or a table
+    /// without that clip, draws them standing. It changes what is published only, so it is never recorded, saved or
+    /// hashed.
+    void SetAnimations(const std::shared_ptr<const core::Animations>& animations) override {
+        m_animations = animations;
+    }
+
     /// The route the player's cultivator walks on the world map (core::ActionKind::WalkTo): a journey of the cultivator alone
     /// with one tile route leg by core::WALKING, from the foot it set out from to the tile walked to; none while it walks
     /// freely.
@@ -320,7 +328,9 @@ public:
     /// In a scene showing the world map each member of each journey under way at the world clock (core::Underway()) whose
     /// foot lies in the area and on a tile within one more than the sight radius of the player's (any tile with the debug
     /// sight on; none without either) is drawn as a villager with its shadow, both flagged to fade with sight
-    /// (core::INSTANCE_SIGHT_FADE), its instance carrying its ID (so it can be picked and selected), drawn on the road
+    /// (core::INSTANCE_SIGHT_FADE), its instance carrying its ID (so it can be picked and selected); with a villager walk
+    /// clip (SetAnimations()) it shows the frame core::PoseSprite() picks for how far its journey has walked by the clock
+    /// (core::WalkedAt()), mirrored while it faces left, its shadow never; it is drawn on the road
     /// it walks by core::DrawnWhere() at the clock when the last tick began and at the clock now (the same point while
     /// the clock stood still), packed in further chunks of the same size after the entities', and the player's
     /// cultivator draws over them and everything else in the world layer, so a crowd never hides it; with the game data's names
@@ -448,6 +458,8 @@ private:
     u64 m_fogVersion = 0;
     // Whether every traveller in view is published as if in sight. Presentation only, so never saved, hashed or recorded.
     bool m_debugSight = false;
+    // The figures' animations, which pick a traveller's frame. Presentation only, so never saved, hashed or recorded.
+    std::shared_ptr<const core::Animations> m_animations;
     // How far the player's cultivator is drawn from its body (onto the road it walks) when the last tick began and now,
     // the part of that its route gives now (the rest is left over from a route replaced, dropped or taken over by held
     // movement), and how far its body has still to move before that leftover is gone. Presentation only, so never saved,
