@@ -71,12 +71,16 @@ std::vector<u32> RouteDown(const WorldMap& map, const DistanceMap& distances, u3
     u32 tile = from;
     while (tile != distances.Goal() && route.size() <= most) {
         u32 best = UNREACHABLE;
+        const u32 here = distances.CostFrom(tile);
         map.ForEachNeighbour(tile, [&](u32 next) {
-            if (best != UNREACHABLE || distances.CostFrom(next) == UNREACHABLE) {
-                return; // neighbours come in tile order: the first that fits is the lowest
+            // Neighbours come in tile order, so the first that fits is the lowest. Only one cheaper than here can be a step
+            // down (a step costs at least 1), so the step's cost, the dear part, is asked only of those.
+            const u32 there = distances.CostFrom(next);
+            if (best != UNREACHABLE || there >= here) {
+                return;
             }
             const u32 step = map.StepCost(tile, next, distances.Profile());
-            if (step != IMPASSABLE_COST && step + distances.CostFrom(next) == distances.CostFrom(tile)) {
+            if (step != IMPASSABLE_COST && step + there == here) {
                 best = next;
             }
         });
