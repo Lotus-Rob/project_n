@@ -327,8 +327,9 @@ public:
     }
     /// What a step from `from` onto the adjacent `target` costs: the entered tile's cost; a diagonal costs seven fifths
     /// of it and is allowed only when both orthogonal neighbours are passable. IMPASSABLE_COST when the step isn't
-    /// allowed (not adjacent, off the map, or onto an impassable tile); with costs bounded by MAX_WALK_COST, an
-    /// allowed step never reaches that value.
+    /// allowed (not adjacent, off the map, or onto an impassable tile). An allowed step costs at least 1 and at most
+    /// seven fifths of MAX_WALK_COST, so it never reaches IMPASSABLE_COST; RouteDown() relies on that floor, stepping
+    /// only onto tiles nearer the goal.
     [[nodiscard]] u32 StepCost(u32 from, u32 target) const;
     /// What a step from `from` onto the adjacent `target` costs by `profile`: StepCost's rule over that profile's costs.
     [[nodiscard]] u32 StepCost(u32 from, u32 target, ProfileIndex profile) const;
