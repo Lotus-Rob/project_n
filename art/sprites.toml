@@ -29,6 +29,30 @@ foot = [54, 68]
 [cultivator]
 foot = [36, 122]
 
+[cultivator_walk_0]
+foot = [36, 122]
+
+[cultivator_walk_1]
+foot = [36, 122]
+
+[cultivator_walk_2]
+foot = [36, 122]
+
+[cultivator_walk_3]
+foot = [36, 122]
+
+[cultivator_walk_4]
+foot = [36, 122]
+
+[cultivator_walk_5]
+foot = [36, 122]
+
+[cultivator_walk_6]
+foot = [36, 122]
+
+[cultivator_walk_7]
+foot = [36, 122]
+
 [orb_blue]
 foot = [16, 16]
 
@@ -84,6 +108,30 @@ foot = [0, 0]
 foot = [16, 16]
 
 [villager]
+foot = [32, 112]
+
+[villager_walk_0]
+foot = [32, 112]
+
+[villager_walk_1]
+foot = [32, 112]
+
+[villager_walk_2]
+foot = [32, 112]
+
+[villager_walk_3]
+foot = [32, 112]
+
+[villager_walk_4]
+foot = [32, 112]
+
+[villager_walk_5]
+foot = [32, 112]
+
+[villager_walk_6]
+foot = [32, 112]
+
+[villager_walk_7]
 foot = [32, 112]
 
 # The abilities' effects. All but the sword are white, tinted by their element's colour. Each one's

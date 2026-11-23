@@ -26,6 +26,7 @@ INK = (38, 42, 50)
 MOSS = (88, 108, 88)
 PINE = (44, 62, 56)
 VERMILION = (164, 56, 42)
+WALK_FRAMES = 8
 
 
 # Noise and shaping: integer hashing and polynomials only.
@@ -362,33 +363,79 @@ def trapezoid(canvas, y0, y1, half0, half1, colour, shade, cx):
     canvas.shape((cx - max(half0, half1), y0, cx + max(half0, half1), y1), inside)
 
 
-def cultivator():
+def gait(frame, stride, lift):
+    """The legs and arms of walk frame `frame` (None: standing): the near leg's foot x and lift, the far leg's, the
+    arms' swing in texels, and the body's bob. The planted foot moves back one stride per frame, so the figure
+    advancing by its stride keeps that foot still on the ground; the near leg plants in frames 0 to 3, the far leg
+    in 4 to 7."""
+    if frame is None:
+        return (3.0, 0.0), (-5.0, 0.0), (0.0, 0.0), 0
+    step, k = divmod(frame, 4)
+    planted, swing = 2.0 * stride - stride * k, -2.0 * stride + stride * k
+    raised = lift * math.sin(math.pi * k / 4.0)
+    near, far = ((planted, 0.0), (swing, raised)) if step == 0 else ((swing, raised), (planted, 0.0))
+    sway = 10.0 * (swing - planted) / (4.0 * stride) * (1 if step == 0 else -1)
+    return near, far, (sway, -sway), (0, 1, 2, 1)[k]
+
+
+def leg(canvas, hip, foot, lift, colour, width, shoe):
+    """A leg from `hip` to a foot raised by `lift`, bent forward at the knee while it swings, ending in a
+    toe-forward shoe."""
+    foot = (foot[0], foot[1] - lift)
+    knee = ((hip[0] + foot[0]) / 2.0 + lift * 0.6, (hip[1] + foot[1]) / 2.0)
+    canvas.stroke([hip, knee, foot], width, width - 1, colour, 1.0)
+    canvas.stroke([(foot[0] - 2, foot[1] + 1), (foot[0] + 4, foot[1] + 1)], 4, 3.5, shoe, 1.0)
+
+
+def arm(canvas, shoulder, swing, length, width, colour, hand):
+    """An arm hanging from `shoulder`, swung forward by `swing` texels, ending in a hand."""
+    end = (shoulder[0] + swing, shoulder[1] + math.sqrt(length * length - swing * swing))
+    canvas.stroke([shoulder, end], width, width - 1, colour, 1.0)
+    canvas.dab(end[0], end[1] + 1, 3.2, hand, 1.0, soft=0.2)
+
+
+def cultivator(frame=None):
+    """The player, side-on and facing right: a white robe with a vermilion sash and a hair bun. A walk frame
+    (0 to 7) plants a foot one stride (14 texels) back from the last."""
     canvas = Canvas(72, 128)
-    robe, shade = (222, 228, 232), (150, 166, 186)
-    trapezoid(canvas, 44, 122, 13, 26, robe, shade, 36.0)  # robe
-    trapezoid(canvas, 46, 84, 8, 20, robe, shade, 18)      # sleeves
-    trapezoid(canvas, 46, 84, 8, 20, robe, shade, 54)
-    canvas.shape((22, 70, 50, 77), lambda x, y: (VERMILION, 1.0))  # sash
-    canvas.stroke([(36, 46), (36, 120)], 1.5, 1.5, shade, 0.8)     # the robe's fold
-    canvas.dab(36, 30, 11, (228, 202, 172), 1.0, soft=0.15)        # head
-    canvas.dab(36, 22, 10, (34, 34, 40), 1.0, soft=0.15)           # hair
-    canvas.dab(36, 11, 6, (34, 34, 40), 1.0, soft=0.2)             # bun
+    cx, ground, hip = 36.0, 119.0, 84.0
+    robe, shade, skin, hair, shoe = (222, 228, 232), (150, 166, 186), (228, 202, 172), (34, 34, 40), (40, 40, 48)
+    (nx, nl), (fx, fl), (na, fa), bob = gait(frame, 14.0, 12.0)
+    up = -bob
+    leg(canvas, (cx, hip + up), (cx + fx, ground), fl, (150, 158, 172), 8, shoe)
+    leg(canvas, (cx, hip + up), (cx + nx, ground), nl, (190, 198, 210), 8, shoe)
+    arm(canvas, (cx - 1, 50 + up), fa, 30, 10, shade, skin)
+    spread = abs(nx - fx) * 0.25
+    trapezoid(canvas, 44 + up, 114 + up * 0.5, 11, 15 + spread, robe, shade, cx)             # robe
+    half = 11 + (4 + spread) * (70 - 44) / 70
+    trapezoid(canvas, 70 + up, 77 + up, half, half, VERMILION, VERMILION, cx)               # sash
+    canvas.stroke([(cx + 3, 50 + up), (cx + 3, 112 + up * 0.5)], 1.5, 1.5, shade, 0.8)      # the robe's fold
+    arm(canvas, (cx + 1, 50 + up), na, 30, 11, robe, skin)
+    canvas.dab(cx + 1, 30 + up, 10, skin, 1.0, soft=0.15)                                    # head
+    canvas.dab(cx + 11, 31 + up, 2.6, skin, 1.0, soft=0.2)                                   # nose
+    canvas.dab(cx - 2, 22 + up, 10, hair, 1.0, soft=0.15)                                    # hair
+    canvas.dab(cx - 8, 13 + up, 6, hair, 1.0, soft=0.2)                                      # bun
     canvas.outline(INK)
     return canvas
 
 
-def villager():
-    """An NPC: a short indigo tunic over dark trousers and a wide straw hat, unlike the player's white robe."""
+def villager(frame=None):
+    """An NPC, side-on and facing right: a short indigo tunic over dark trousers and a wide straw hat, unlike the
+    player's white robe. A walk frame (0 to 7) plants a foot one stride (12 texels) back from the last."""
     canvas = Canvas(64, 116)
-    tunic, shade = (70, 92, 128), (36, 46, 70)
-    for x in (25, 39):                                                             # trousers
-        canvas.stroke([(x, 80), (x, 110)], 6, 5, (52, 48, 52), 1.0)
-    trapezoid(canvas, 42, 86, 10, 18, tunic, shade, 32.0)                          # tunic
-    trapezoid(canvas, 44, 74, 6, 11, tunic, shade, 16)                             # sleeves
-    trapezoid(canvas, 44, 74, 6, 11, tunic, shade, 48)
-    canvas.shape((19, 62, 45, 67), lambda x, y: ((120, 86, 52), 1.0))             # belt
-    canvas.dab(32, 34, 9, (214, 184, 150), 1.0, soft=0.15)                         # head
-    trapezoid(canvas, 10, 28, 2, 28, (200, 172, 108), (150, 120, 70), 32.0)        # straw hat
+    cx, ground, hip = 32.0, 109.0, 80.0
+    tunic, shade, skin, shoe = (70, 92, 128), (36, 46, 70), (214, 184, 150), (40, 36, 40)
+    (nx, nl), (fx, fl), (na, fa), bob = gait(frame, 12.0, 10.0)
+    up = -bob
+    arm(canvas, (cx - 1, 48 + up), fa, 27, 8, shade, skin)
+    leg(canvas, (cx, hip + up), (cx + fx, ground), fl, (36, 34, 40), 6, shoe)
+    leg(canvas, (cx, hip + up), (cx + nx, ground), nl, (52, 48, 52), 6, shoe)
+    trapezoid(canvas, 42 + up, 86 + up, 9, 12, tunic, shade, cx)                             # tunic
+    canvas.shape((cx - 11, 62 + up, cx + 11, 67 + up), lambda x, y: ((120, 86, 52), 1.0))   # belt
+    arm(canvas, (cx + 1, 48 + up), na, 27, 9, tunic, skin)
+    canvas.dab(cx + 1, 34 + up, 9, skin, 1.0, soft=0.15)                                     # head
+    canvas.dab(cx + 9, 35 + up, 2.4, skin, 1.0, soft=0.2)                                    # nose
+    trapezoid(canvas, 10 + up, 28 + up, 2, 28, (200, 172, 108), (150, 120, 70), cx)          # straw hat
     canvas.outline(INK)
     return canvas
 
@@ -1422,6 +1469,8 @@ PLACEHOLDERS = {
     "fox": (fox, False),
     "cultivator": (cultivator, False),
     "villager": (villager, False),
+    **{f"villager_walk_{i}": ((lambda i=i: villager(i)), False) for i in range(WALK_FRAMES)},
+    **{f"cultivator_walk_{i}": ((lambda i=i: cultivator(i)), False) for i in range(WALK_FRAMES)},
     "orb_blue": (lambda: orb(32, (80, 196, 255)), False),
     "orb_red": (lambda: orb(16, (255, 96, 64)), False),
     "shadow": (shadow, False),
