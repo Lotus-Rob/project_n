@@ -632,13 +632,20 @@ struct Pose {
 };
 
 /// How member 0 of `journey` on `map` is drawn at `tick` by `clip`, the walk clip of the figure standing in `standing`:
-/// the frame core::PoseSprite() picks for how far it has walked, mirrored while it faces left; with no clip, standing
-/// unmirrored, as a figure without one has no side-on frames to step through or turn.
-Pose PoseOn(const core::WorldMap& map, const core::Journey& journey, i64 tick, const core::WalkClip* clip, SpriteId standing) {
+/// the frame core::PoseSprite() picks for how far it has walked (its legs' walk tables taken from `walks`), mirrored while
+/// it faces left; with no clip, standing unmirrored, as a figure without one has no side-on frames to step through or turn.
+Pose PoseOn(
+    const core::WorldMap& map,
+    const core::Journey& journey,
+    i64 tick,
+    const core::WalkClip* clip,
+    SpriteId standing,
+    core::LegWalks& walks
+) {
     if (clip == nullptr) {
         return { .sprite = standing, .widthScale = 1.0F };
     }
-    const core::Walked walked = core::WalkedAt(map, journey, tick);
+    const core::Walked walked = core::WalkedAt(map, journey, tick, walks);
     return { .sprite = core::PoseSprite(clip, standing, walked.distance, walked.moving),
              .widthScale = walked.facesLeft ? -1.0F : 1.0F };
 }
@@ -693,6 +700,9 @@ void Host::EnterScene() {
     ++m_fogVersion; // a scene entered, or a load, hands the fog on afresh
     if (m_loaded) {
         m_world = std::move(m_loaded->world);
+        if (m_legWalks) {
+            m_legWalks->Clear(); // the journeys loaded replace those its tables were made for
+        }
         m_base = std::move(m_loaded->base);
         m_baseHash = m_loaded->baseHash;
         m_scratch = std::move(m_loaded->scratch);
@@ -730,6 +740,7 @@ Host::Host(std::shared_ptr<const core::Manifest> manifest, core::SceneKey scene,
     if (m_data.world != nullptr) {
         m_paths.emplace(m_data.world);
         m_roadCurves.emplace(*m_data.world);
+        m_legWalks.emplace(*m_data.world);
     }
     GenerateWorld(m_base, m_data, m_paths ? &*m_paths : nullptr);
     m_world = CopyOf(m_base);
@@ -1173,11 +1184,12 @@ void Host::PublishJourneys(u32 chunk, u32 part, const core::Rect& area, std::opt
     if (!m_debugSight && !playerTile) {
         return; // no one to see them
     }
-    if (!m_roadCurves) {
+    if (!m_roadCurves || !m_legWalks) {
         return; // no map, so no journeys under way on it
     }
     const core::WorldMap& map = *m_data.world;
     const core::RoadCurveIndex& roads = *m_roadCurves;
+    core::LegWalkCache& walks = *m_legWalks;
     // One tile past sight too, so a walker on a tile that has just left sight fades out with it rather than vanishing.
     const u32 shown = m_world.sightRadius + 1;
     const WorldState& world = Live();
@@ -1207,7 +1219,7 @@ void Host::PublishJourneys(u32 chunk, u32 part, const core::Rect& area, std::opt
                 continue;
             }
             if (!pose) {
-                pose = PoseOn(map, journey, now, clip, look.sprite);
+                pose = PoseOn(map, journey, now, clip, look.sprite, walks);
             }
             const core::Vec2 current = core::DrawnWhere(map, roads, journey, now, member);
             const core::Vec2 previous = core::DrawnWhere(map, roads, journey, before, member);
@@ -1484,6 +1496,11 @@ void Host::AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs,
             static_cast<i64>(world.months * TICKS_PER_MONTH)
         );
     }
+    // The month's journeys replace the last's, so the tables of legs no one walks any more go, rather than piling up
+    // month after month: the routes start on each traveller's own tile, so there are ever more of them.
+    if (m_legWalks) {
+        m_legWalks->Clear();
+    }
     m_monthStep.Run(world.state, world.relationships, jobs, counters.state, world.months, stop);
 }
 
@@ -1604,9 +1621,12 @@ void Host::SetData(const core::GameData& data) {
     if (data.world != m_data.world) {
         m_paths.reset();
         m_roadCurves.reset();
+        // Its tables hold the old map's tile centres.
+        m_legWalks.reset();
         if (data.world != nullptr) {
             m_paths.emplace(data.world);
             m_roadCurves.emplace(*data.world);
+            m_legWalks.emplace(*data.world);
         }
     }
     m_data = data;

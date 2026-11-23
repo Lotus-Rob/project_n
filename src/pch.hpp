@@ -34,6 +34,8 @@
 #include <numeric>
 #include <optional>
 #include <queue>
+#include <ranges>
+#include <shared_mutex>
 #include <source_location>
 #include <span>
 #include <stop_token>

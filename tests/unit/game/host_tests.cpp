@@ -1541,6 +1541,8 @@ Road FirstRoad(const core::WorldMap& map) {
 struct Departure {
     i64 tick = 0;
     u32 members = 1;
+    /// The tiles it walks out by, from the road's first city's tile to its second's; the road's when none.
+    std::optional<std::vector<u32>> route = std::nullopt;
 };
 
 /// A world on the small test map and the shipped names, loaded from a save at TRAVEL_CLOCK, the journeys it holds and its
@@ -1601,7 +1603,7 @@ TravelWorld TravelWorldOf(
         }
         core::Journey journey = core::Visit(
             *world.map,
-            road.tiles,
+            departure.route.value_or(road.tiles),
             core::WALKING,
             members.front(),
             road.from,
@@ -2092,6 +2094,107 @@ TEST_CASE("a paused world draws the same frames") {
     TickRange(*world.host, 3, 2 + PAUSED_TICKS);
     const core::Snapshot later = Published(*world.host, view);
     CHECK(std::ranges::equal(std::as_bytes(std::span{ paused.instances }), std::as_bytes(std::span{ later.instances })));
+}
+
+/// FirstRoad()'s tiles with one between its ends swapped for another tile next to both its neighbours that walking can enter:
+/// a route between the same cities by as many tiles, but another way.
+std::vector<u32> Detour(const core::WorldMap& map) {
+    std::vector<u32> tiles = FirstRoad(map).tiles;
+    for (std::size_t index = 1; index + 1 < tiles.size(); ++index) {
+        std::optional<u32> other;
+        map.ForEachNeighbour(tiles[index - 1], [&](u32 tile) {
+            if (!other && !std::ranges::contains(tiles, tile) &&
+                map.StepCost(tiles[index - 1], tile, core::WALKING) != core::IMPASSABLE_COST &&
+                map.StepCost(tile, tiles[index + 1], core::WALKING) != core::IMPASSABLE_COST) {
+                other = tile;
+            }
+        });
+        if (other) {
+            tiles[index] = *other;
+            return tiles;
+        }
+    }
+    FAIL("the first road has no detour");
+    return tiles;
+}
+
+TEST_CASE("travellers on one route share its walk table, made once one is drawn walking, until the journeys or map change") {
+    const auto clock = static_cast<i64>(TRAVEL_CLOCK);
+    const std::vector<u32> detour = Detour(*test::SmallWorld());
+    // Two setting out along the road at different ticks, and one by the detour between the same cities.
+    const std::array<Departure, 3> departures{
+        { { .tick = clock - JUST_LEFT }, { .tick = clock - (2 * JUST_LEFT) }, { .tick = clock - JUST_LEFT, .route = detour } }
+    };
+    const TravelWorld world = TravelWorldOf(departures);
+    TickRange(*world.host, 1, 1);
+    const core::Rect whole{ .min = {},
+                            .max = { .x = static_cast<f32>(world.map->Columns()) * world.map->TileSize(),
+                                     .y = static_cast<f32>(world.map->Rows()) * world.map->TileSize() } };
+
+    // Standing, with no walk clip: no walk is worked out.
+    REQUIRE(WalkFrames(Published(*world.host, whole)).first == 0);
+    CHECK(world.host->LegWalkTables() == 0);
+    // Walking but all out of view.
+    const std::shared_ptr<const core::Animations> walks = VillagerWalks();
+    world.host->SetAnimations(walks);
+    const core::Vec2 far{ .x = -10'000.0F, .y = -10'000.0F };
+    REQUIRE(Published(*world.host, core::Rect{ .min = far, .max = far + core::Vec2{ .x = 1.0F, .y = 1.0F } }).ids.empty());
+    CHECK(world.host->LegWalkTables() == 0);
+
+    // All drawn, each on its way out: the road's way out once, the detour's once.
+    const core::Snapshot drawn = Published(*world.host, whole);
+    REQUIRE(WalkFrames(drawn).first == 3);
+    CHECK(world.host->LegWalkTables() == 2);
+    // Each traveller steps by its own route's table.
+    const core::WalkClip* const clip = walks->WalkOf(SpriteId::Villager);
+    REQUIRE(clip != nullptr);
+    std::size_t wrong = 0;
+    for (const core::Journey& journey : world.journeys) {
+        const core::Walked walked = core::WalkedAt(*world.map, journey, clock + 1);
+        const SpriteId frame = core::PoseSprite(clip, SpriteId::Villager, walked.distance, walked.moving);
+        wrong += Draws(InstanceOf(drawn, journey.members.front()), frame) ? 0 : 1;
+    }
+    CHECK(wrong == 0);
+    // Drawn again, nothing new is made.
+    std::ignore = Published(*world.host, whole);
+    CHECK(world.host->LegWalkTables() == 2);
+
+    // A load brings its own journeys, and the tables go with the old.
+    std::vector<std::byte> bytes;
+    core::Writer writer{ bytes };
+    world.host->Save(writer);
+    core::Reader reader{ bytes };
+    REQUIRE(world.host->Load(reader, 1));
+    world.host->EnterScene();
+    CHECK(world.host->LegWalkTables() == 0);
+    REQUIRE(WalkFrames(Published(*world.host, whole)).first == 3);
+    CHECK(world.host->LegWalkTables() == 2);
+
+    // Another map, its tiles twice as large: the old map's tables go, and the walks are the new map's.
+    core::GameData larger = test::SmallData();
+    larger.names = test::ShippedNames();
+    larger.world = test::SmallWorld(false, {}, 2.0F * test::small::TILE);
+    world.host->SetData(larger);
+    CHECK(world.host->LegWalkTables() == 0);
+    const core::Rect largerWhole{ .min = {}, .max = whole.max * 2.0F };
+    const core::Snapshot onLarger = Published(*world.host, largerWhole);
+    CHECK(world.host->LegWalkTables() == 2);
+    std::size_t stale = 0;
+    std::size_t moved = 0;
+    for (const core::Journey& journey : world.journeys) {
+        const core::Walked walked = core::WalkedAt(*larger.world, journey, clock + 1);
+        const core::Walked before = core::WalkedAt(*world.map, journey, clock + 1);
+        const SpriteId frame = core::PoseSprite(clip, SpriteId::Villager, walked.distance, walked.moving);
+        stale += Draws(InstanceOf(onLarger, journey.members.front()), frame) ? 0 : 1;
+        moved += frame != core::PoseSprite(clip, SpriteId::Villager, before.distance, before.moving) ? 1 : 0;
+    }
+    CHECK(stale == 0);
+    // The larger tiles step some traveller on to another frame, so an old table read would show.
+    REQUIRE(moved > 0);
+
+    // A month step brings the month's journeys in place of the last's, and the tables go with the old.
+    StepMonth(*world.host, 2);
+    CHECK(world.host->LegWalkTables() == 0);
 }
 
 /// A 10 by 4 meadow map with the small map's costs, a city on (0, 0) (the start) and one on (9, 3), joined by a road laid

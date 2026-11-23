@@ -33,6 +33,7 @@
 #include <numbers>
 #include <numeric>
 #include <optional>
+#include <shared_mutex>
 #include <source_location>
 #include <span>
 #include <sstream>

@@ -18,6 +18,7 @@
 #include "core/game_data.hpp"
 #include "core/glow.hpp"
 #include "core/journey.hpp"
+#include "core/leg_walk_cache.hpp"
 #include "core/logic.hpp"
 #include "core/manifest.hpp"
 #include "core/rect.hpp"
@@ -301,6 +302,13 @@ public:
         m_animations = animations;
     }
 
+    /// How many leg walk tables (core::LegWalkCache) the travellers drawn walking have needed since the journeys last
+    /// changed (a month step or a load) or the world map did: one per distinct leg drawn, however many travellers walk
+    /// it. None without a map.
+    [[nodiscard]] std::size_t LegWalkTables() const {
+        return m_legWalks ? m_legWalks->Size() : 0;
+    }
+
     /// The route the player's cultivator walks on the world map (core::ActionKind::WalkTo): a journey of the cultivator alone
     /// with one tile route leg by core::WALKING, from the foot it set out from to the tile walked to; none while it walks
     /// freely.
@@ -330,7 +338,8 @@ public:
     /// sight on; none without either) is drawn as a villager with its shadow, both flagged to fade with sight
     /// (core::INSTANCE_SIGHT_FADE), its instance carrying its ID (so it can be picked and selected); with a villager walk
     /// clip (SetAnimations()) it shows the frame core::PoseSprite() picks for how far its journey has walked by the clock
-    /// (core::WalkedAt()), mirrored while it faces left, its shadow never; it is drawn on the road
+    /// (core::WalkedAt(), from walk tables made the first time a traveller on each leg is drawn walking, then shared:
+    /// LegWalkTables()), mirrored while it faces left, its shadow never; it is drawn on the road
     /// it walks by core::DrawnWhere() at the clock when the last tick began and at the clock now (the same point while
     /// the clock stood still), packed in further chunks of the same size after the entities', and the player's
     /// cultivator draws over them and everything else in the world layer, so a crowd never hides it; with the game data's names
@@ -437,6 +446,10 @@ private:
     std::optional<core::Paths> m_paths = std::nullopt; // the world map's distance maps, kept for the run; none without one
     // Where walkers on the world map's road tiles are drawn, kept for the run; none without a map.
     std::optional<core::RoadCurveIndex> m_roadCurves = std::nullopt;
+    // The walk tables of the legs travellers are drawn walking on the world map, shared by every journey over the same
+    // leg and kept until the journeys change (a month step, a load) or the map does; none without a map. Presentation
+    // only, so never saved, hashed or read by the simulation.
+    std::optional<core::LegWalkCache> m_legWalks = std::nullopt;
     std::shared_ptr<const core::Manifest> m_manifest;
     WorldState m_world; // the game's world
     WorldState m_base;  // the game's world as it was made, never ticked: what a save of it is written against
