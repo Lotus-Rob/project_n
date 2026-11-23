@@ -314,12 +314,31 @@ void TickToPicture(
     }
 }
 
+/// Has `host` select the fox that spawned first (the lowest ID among them) on simulation tick `tick`.
+void SelectFirstFox(game::Host& host, u64 tick) {
+    std::vector<core::Event> events; // the hits the select tick starts, which no picture shows
+    core::StableId fox{ std::numeric_limits<u64>::max() };
+    const core::Registry& entities = host.State()[game::ACTIVE].Entities();
+    for (auto [entity, creature, stableId] : entities.view<const game::Creature, const core::StableId>().each()) {
+        if (creature.kind == game::CreatureKind::Fox && std::to_underlying(stableId) < std::to_underlying(fox)) {
+            fox = stableId;
+        }
+    }
+    const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = fox } } };
+    host.Tick({ .wall = tick, .simulation = tick, .state = tick }, { .actions = select, .held = {} }, events);
+    REQUIRE(host.Selected() == fox);
+}
+
 /// What a case checks on its picture once it matches the reference: with the renderer, snapshot, view and jobs it was
 /// drawn with, so it can draw the same frame changed.
 using AfterPicture =
     std::function<void(gfx::Renderer&, const core::Snapshot&, const gfx::View&, core::Jobs&, const gfx::Image&)>;
 
-void CheckAgainstReference(const View& view, const AfterPicture& after = {}) {
+/// What a case checks on the published snapshot before drawing it, with the host that published it and the manifest it
+/// draws by.
+using BeforePicture = std::function<void(const game::Host&, const core::Snapshot&, const core::Manifest&)>;
+
+void CheckAgainstReference(const View& view, const AfterPicture& after = {}, const BeforePicture& before = {}) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
     core::GameData data = test::ShippedData();
@@ -327,8 +346,9 @@ void CheckAgainstReference(const View& view, const AfterPicture& after = {}) {
         data.fox.orbitRadius = CROWD_ORBIT;
         data.fox.orbitWobble = CROWD_WOBBLE;
     }
-    game::Host host(test::TestManifest(), view.scene, data);
-    std::vector<core::Event> events; // the hits the select tick below starts, which no picture shows
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest(); // held: the host and the checks share it
+    game::Host host(manifest, view.scene, data);
+    host.SetAnimations(test::ShippedAnimations(*manifest));
     // The view sent is the camera's, and only a fixed centre is known before publishing (outlines and crowd follow).
     REQUIRE((!view.asInGame || view.centre.has_value()));
     const gfx::Camera centred{ .centre = view.centre.value_or(gfx::REFERENCE_CENTRE), .zoom = view.zoom };
@@ -344,21 +364,7 @@ void CheckAgainstReference(const View& view, const AfterPicture& after = {}) {
         REQUIRE(host.PlayerRoute().has_value() != view.walkEnded);
     }
     if (view.outlines) {
-        // The fox spawned first: the lowest ID among them.
-        core::StableId fox{ std::numeric_limits<u64>::max() };
-        const core::Registry& entities = host.State()[game::ACTIVE].Entities();
-        for (auto [entity, creature, stableId] : entities.view<const game::Creature, const core::StableId>().each()) {
-            if (creature.kind == game::CreatureKind::Fox && std::to_underlying(stableId) < std::to_underlying(fox)) {
-                fox = stableId;
-            }
-        }
-        const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = fox } } };
-        host.Tick(
-            { .wall = view.ticks + 1, .simulation = view.ticks + 1, .state = view.ticks + 1 },
-            { .actions = select, .held = {} },
-            events
-        );
-        REQUIRE(host.Selected() == fox);
+        SelectFirstFox(host, view.ticks + 1);
     }
     if (view.exploreAll) {
         host.Explore(area);
@@ -366,6 +372,9 @@ void CheckAgainstReference(const View& view, const AfterPicture& after = {}) {
     host.SetDebugSight(view.debugSight);
     const core::Snapshot snapshot = Published(host, jobs, view.asInGame ? view.ticks : 0, sent);
     REQUIRE((world.has_value() || !snapshot.worldMap));
+    if (before) {
+        before(host, snapshot, *manifest);
+    }
     if (world && snapshot.worldMap) {
         fog.Update(snapshot, *world->map, view.fogEased ? TICK_SECONDS : 0.0F, world->fadeSeconds);
     }
@@ -549,6 +558,55 @@ TEST_CASE("the world at a middle zoom with the cultivator mid-route: the route l
           .debugSight = true,
           .width = FULL_HD_WIDTH,
           .height = FULL_HD_HEIGHT }
+    );
+}
+
+// How far the cultivator is along its way west in the walk's picture: far enough to be mid-stride on a contact frame,
+// still among the crowd the travellers make by the capital.
+constexpr u64 WALK_TICKS = 44;
+
+/// Which of the cultivator's eight walk frames (0 to 7) `instance` draws, by its place on its atlas page, or none.
+std::optional<u32> CultivatorWalkFrame(const core::Manifest& manifest, const core::Instance& instance) {
+    constexpr u32 FRAMES = 8;
+    for (u32 frame = 0; frame < FRAMES; ++frame) {
+        const auto sprite =
+            static_cast<core::atlas::SpriteId>(std::to_underlying(core::atlas::SpriteId::CultivatorWalk0) + frame);
+        const core::Instance walking = core::MakeInstance(manifest, { .sprite = sprite });
+        if (walking.regionMin == instance.regionMin && walking.regionMax == instance.regionMax) {
+            return frame;
+        }
+    }
+    return std::nullopt;
+}
+
+// The cultivator setting out 4 tiles west from the capital, mirrored, at zoom 1, on a contact frame where its feet are
+// furthest apart, with the travellers crowding past it: the names of those over its body are faded off it, and they walk
+// both ways on the roads leaving the capital. The case checks the cultivator's mirrored contact frame on the snapshot.
+TEST_CASE("the world at zoom 1 with the cultivator walking west: a mirrored contact step among the travellers") {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const core::Vec2 target = map->StartCentre() - core::Vec2{ .x = 4.0F * map->TileSize(), .y = 0.0F };
+    CheckAgainstReference(
+        { .name = "world_walk",
+          .scene = game::WORLD_SCENE,
+          .ticks = WALK_TICKS,
+          .zoom = 1.0F,
+          .centre = map->StartCentre(),
+          .asInGame = true,
+          .walks = std::array{ Walk{ .tick = 1, .to = target } },
+          .exploreAll = true,
+          .debugSight = true,
+          .width = FULL_HD_WIDTH,
+          .height = FULL_HD_HEIGHT },
+        {},
+        [](const game::Host& host, const core::Snapshot& snapshot, const core::Manifest& manifest) {
+            const auto player = std::ranges::find(snapshot.ids, host.Player());
+            REQUIRE(player != snapshot.ids.end());
+            const core::Instance& body = snapshot.instances[static_cast<std::size_t>(player - snapshot.ids.begin())];
+            CHECK(core::UnpackHalf(static_cast<u16>(body.size & 0xFFFFU)) < 0.0F);
+            const std::optional<u32> frame = CultivatorWalkFrame(manifest, body);
+            REQUIRE(frame.has_value());
+            CHECK_MESSAGE((*frame == 0 || *frame == 4), "the cultivator shows walk frame ", *frame, ", not a contact one");
+        }
     );
 }
 
@@ -891,6 +949,7 @@ TEST_CASE("a fox dissolving, at half its progress") {
     core::GameData data = game::BuiltInData();
     data.fox.health = 1;
     game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
+    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
     std::vector<core::Event> events;
     for (u64 tick = 1; tick <= SHOWN_AT; ++tick) {
         host.Tick({ .wall = tick, .simulation = tick, .state = tick }, {}, events);
@@ -927,6 +986,7 @@ core::Snapshot CastThenPublish(core::Slot slot, u64 after, core::Jobs& jobs) {
     core::GameData data = game::BuiltInData();
     data.abilities.qiStart = data.abilities.qiMax;
     game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
+    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
     std::vector<core::Event> events;
     const std::array<core::Action, 1> cast{ { { .kind = core::ActionKind::Cast, .slot = slot, .point = AMONG_THE_FOXES } } };
     const u64 shownAt = CAST_TICK + after;
@@ -1073,6 +1133,7 @@ constexpr u64 SINCE_RAISED = 90;
 // The arena at rest at SEAL_TICK with the swords' seal at its shipped size among the foxes, which stand on it.
 core::Snapshot ArenaWithSwordSeal(core::Jobs& jobs) {
     game::Host host(test::TestManifest());
+    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
     core::Snapshot snapshot = Published(host, jobs, SEAL_TICK);
     // A copy: the game data BuiltInData() returns is a temporary, gone at the end of this line.
     const std::optional<core::SealCast> cast = game::BuiltInData().abilities.Of(core::AbilityKind::FlyingSwords).seal;
@@ -1136,6 +1197,7 @@ TEST_CASE("an overhead seal's light on the pale ground: pillars falling from it,
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest());
+    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
     core::Snapshot snapshot = Published(host, jobs, SEAL_TICK);
     core::Seal seal = SwordSeal(AMONG_THE_FOXES + BELOW, SIZE, SEAL_TICK - SINCE_RAISED);
     seal.key = core::SealKeyOf(LIT);
@@ -1161,6 +1223,7 @@ void CheckShowcase(std::string_view name, const gfx::View& view) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest());
+    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
     const core::Snapshot snapshot = Published(host, jobs, SEAL_TICK);
     const bool shown = std::ranges::any_of(snapshot.seals, &core::Seal::showcase);
     REQUIRE(shown);
@@ -1257,6 +1320,7 @@ void CheckGlows(std::string_view name, f32 zoom, core::Vec2 centre) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest(), game::ARENA_SCENE, game::BuiltInData());
+    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
     std::vector<core::Event> events;
     for (u64 tick = 1; tick <= GLOW_TICK; ++tick) {
         host.Tick({ .wall = tick, .simulation = tick, .state = tick }, {}, events);
@@ -1348,6 +1412,7 @@ void CheckNumbers(std::string_view name, f32 zoom, bool bare = false) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest());
+    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
     const core::Snapshot snapshot = Published(host, jobs);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
@@ -1395,6 +1460,7 @@ void CheckRecoloured(std::string_view name, bool bare) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest());
+    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
     std::vector<core::Event> events;
     // The fox spawned first: the lowest ID among them, as the outlines picture selects.
     core::StableId fox{ std::numeric_limits<u64>::max() };
@@ -1441,6 +1507,7 @@ TEST_CASE("a number on a creature too small to see starts from its label") {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest());
+    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
     core::Snapshot snapshot = Published(host, jobs);
     std::vector<core::TextItem*> foxes;
     for (core::TextItem& text : snapshot.texts) {
@@ -1512,6 +1579,7 @@ core::Instance FlatPaleGround() {
 
 LabelScene PlayerLabel(core::Jobs& jobs, Ground ground) {
     game::Host host(test::TestManifest());
+    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
     LabelScene scene{ .with = Published(host, jobs) };
     const auto label = std::ranges::find(scene.with.texts, core::LabelPriority::Player, &core::TextItem::priority);
     REQUIRE(label != scene.with.texts.end());
@@ -1821,6 +1889,7 @@ TEST_CASE("each drive's drawn glow follows GlowStrength, also with start ticks a
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest(), game::ARENA_SCENE, game::BuiltInData());
+    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, ArenaScene(), jobs);
     GlowRig rig{ .renderer = &renderer, .host = &host, .jobs = &jobs };
@@ -1841,6 +1910,7 @@ TEST_CASE("reduce flashing holds a pulse at its average and dims light glows, an
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest(), game::ARENA_SCENE, game::BuiltInData());
+    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, ArenaScene(), jobs);
     GlowRig rig{ .renderer = &renderer, .host = &host, .jobs = &jobs };
@@ -2031,6 +2101,7 @@ TEST_CASE("the world's painted ground and travellers at the smallest zoom: shimm
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
     // Over the busiest region, published culled to the unshifted picture's view, as the game sends it (its margin holds
     // the shifted one); the travellers' labels are hidden at this zoom.
     const gfx::Camera far{ .centre = game::WORLD_BUSIEST, .zoom = gfx::MIN_ZOOM };
@@ -2065,6 +2136,7 @@ TileChange TerrainShimmer(f32 zoom, gfx::TerrainParts shown, gfx::TerrainParts u
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
     const gfx::Camera camera{ .centre = game::WORLD_BUSIEST, .zoom = zoom };
     const core::Rect area = app::CullArea(camera, static_cast<i32>(WIDTH), static_cast<i32>(HEIGHT));
     host.Explore(area);
@@ -2109,6 +2181,7 @@ TEST_CASE("the fog's clouds at the smallest zoom: shimmer held to its bound") {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
     game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
+    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
     // Over the busiest region, far from the start's small explored diamond, so clouds cover the whole picture.
     const gfx::Camera far{ .centre = game::WORLD_BUSIEST, .zoom = gfx::MIN_ZOOM };
     const core::Rect area = app::CullArea(far, static_cast<i32>(WIDTH), static_cast<i32>(HEIGHT));
