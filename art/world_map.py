@@ -1714,10 +1714,6 @@ def main():
     capital = places["capital"]
     fords = add_fords(kinds, roads, rivers, capital)
     cost, road, river, ford = derive(kinds, roads, rivers, fords)
-    reach = reachable(cost, index(*capital))
-    for key, tile in places.items():
-        if not reach[index(*tile)]:
-            print(f"world_map: city {key} can't be reached from the capital")
     dangers = place_dangers(kinds, heights, cost, roads, places, capital)
     write_yaml(kinds, rivers, roads, fords, cities, dangers)
     # The danger sites stand where the first roads left room for them; the roads the file keeps are then the ones the
@@ -1727,6 +1723,10 @@ def main():
     roads, fords = route_roads(read_world(text))
     YAML_OUT.write_text(rewrite_roads(text, roads, fords), encoding="utf-8")
     cost, road, river, ford = derive(kinds, roads, rivers, fords)
+    reach = reachable(cost, index(*capital))
+    for key, tile in places.items():
+        if not reach[index(*tile)]:
+            print(f"world_map: city {key} can't be reached from the capital")
     write_previews(kinds, road, river, ford, cities, dangers)
     check_strings(cities, dangers)
     stranded = sum(1 for t in range(len(cost)) if cost[t] is not None and not reach[t])
