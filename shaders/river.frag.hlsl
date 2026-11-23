@@ -5,7 +5,7 @@
 
 /// The band being drawn: where it starts fading toward its sides, as a share of its half width from its middle (gfx's
 /// RimStart() for an edge band, where the core ends; 1 for a core, solid to its sides). RiverBand in
-/// src/gfx/internal/features/rivers.cpp.
+/// src/gfx/internal/features/line_ribbons.cpp.
 struct RiverBand {
     float rimStart;
     float3 padding;
