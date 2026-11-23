@@ -17,6 +17,14 @@ enum class SpriteId : u16 { // NOLINT(performance-enum-size): stable IDs outgrow
     Shrine, ///< assets/sprites/shrine.png
     Fox, ///< assets/sprites/fox.png
     Cultivator, ///< assets/sprites/cultivator.png
+    CultivatorWalk0, ///< assets/sprites/cultivator_walk_0.png
+    CultivatorWalk1, ///< assets/sprites/cultivator_walk_1.png
+    CultivatorWalk2, ///< assets/sprites/cultivator_walk_2.png
+    CultivatorWalk3, ///< assets/sprites/cultivator_walk_3.png
+    CultivatorWalk4, ///< assets/sprites/cultivator_walk_4.png
+    CultivatorWalk5, ///< assets/sprites/cultivator_walk_5.png
+    CultivatorWalk6, ///< assets/sprites/cultivator_walk_6.png
+    CultivatorWalk7, ///< assets/sprites/cultivator_walk_7.png
     OrbBlue, ///< assets/sprites/orb_blue.png
     OrbRed, ///< assets/sprites/orb_red.png
     Shadow, ///< assets/sprites/shadow.png
@@ -36,6 +44,14 @@ enum class SpriteId : u16 { // NOLINT(performance-enum-size): stable IDs outgrow
     CellSnow, ///< assets/sprites/cell_snow.png
     OrbGold, ///< assets/sprites/orb_gold.png
     Villager, ///< assets/sprites/villager.png
+    VillagerWalk0, ///< assets/sprites/villager_walk_0.png
+    VillagerWalk1, ///< assets/sprites/villager_walk_1.png
+    VillagerWalk2, ///< assets/sprites/villager_walk_2.png
+    VillagerWalk3, ///< assets/sprites/villager_walk_3.png
+    VillagerWalk4, ///< assets/sprites/villager_walk_4.png
+    VillagerWalk5, ///< assets/sprites/villager_walk_5.png
+    VillagerWalk6, ///< assets/sprites/villager_walk_6.png
+    VillagerWalk7, ///< assets/sprites/villager_walk_7.png
     Sword, ///< assets/sprites/sword.png
     Halo, ///< assets/sprites/halo.png
     FireBolt, ///< assets/sprites/fire_bolt.png
@@ -157,7 +173,7 @@ enum class SpriteId : u16 { // NOLINT(performance-enum-size): stable IDs outgrow
 };
 
 /// Every sprite's name, indexed by SpriteId: the manifest must list the same, in this order.
-inline constexpr std::array<std::string_view, 144> SPRITE_NAMES{ {
+inline constexpr std::array<std::string_view, 160> SPRITE_NAMES{ {
     "ground",
     "rock_large",
     "rock_small",
@@ -165,6 +181,14 @@ inline constexpr std::array<std::string_view, 144> SPRITE_NAMES{ {
     "shrine",
     "fox",
     "cultivator",
+    "cultivator_walk_0",
+    "cultivator_walk_1",
+    "cultivator_walk_2",
+    "cultivator_walk_3",
+    "cultivator_walk_4",
+    "cultivator_walk_5",
+    "cultivator_walk_6",
+    "cultivator_walk_7",
     "orb_blue",
     "orb_red",
     "shadow",
@@ -184,6 +208,14 @@ inline constexpr std::array<std::string_view, 144> SPRITE_NAMES{ {
     "cell_snow",
     "orb_gold",
     "villager",
+    "villager_walk_0",
+    "villager_walk_1",
+    "villager_walk_2",
+    "villager_walk_3",
+    "villager_walk_4",
+    "villager_walk_5",
+    "villager_walk_6",
+    "villager_walk_7",
     "sword",
     "halo",
     "fire_bolt",
