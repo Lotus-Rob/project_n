@@ -4,6 +4,8 @@
 #include "core/paths.hpp"
 #include "core/world_map.hpp"
 
+#include "support/meadow.hpp"
+
 #include <doctest/doctest.h>
 
 namespace {
@@ -626,6 +628,192 @@ TEST_CASE("a plan from where its profile can't step rebuilds to nothing") {
     REQUIRE_FALSE(waded.parts.empty());
     CHECK(waded.parts[0].leg.profile == WADING);
     CHECK(waded.parts[0].leg.tiles.front() == SHALLOWS_TILE);
+}
+
+// The walk tests' map: 3 by 3 tiles of meadow, the home city at tile 0 and the destination on tile 2, the top row's end.
+constexpr u32 WALK_COLUMNS = 3;
+// The walk map's tile side, as the distances walked are measured.
+constexpr f64 WALK_TILE = 256.0;
+constexpr std::array<core::TilePoint, 1> WALK_CITIES{ { { .column = 2, .row = 0 } } };
+// The tiles of the walk map by column and row.
+constexpr u32 TOP_LEFT = 0;
+constexpr u32 TOP_MIDDLE = 1;
+constexpr u32 MIDDLE_LEFT = WALK_COLUMNS;
+constexpr u32 CENTRE = WALK_COLUMNS + 1;
+// A departure tick far from 0, so a tick taken for a duration would show.
+constexpr i64 WALK_START = 1'000;
+
+core::WorldMap WalkMap() {
+    return test::MeadowMap(WALK_COLUMNS, WALK_COLUMNS, {}, {}, WALK_CITIES);
+}
+
+/// A journey of WALKER alone along one tile leg over `tiles` from the first one's centre, setting out on WALK_START.
+core::Journey OneLeg(const core::WorldMap& map, std::span<const u32> tiles) {
+    core::Leg leg = core::MakeTileLeg(map, core::WALKING, WALK_START, map.TileCentre(tiles.front()), tiles);
+    core::Journey journey{ .members = { WALKER }, .home = HOME, .destination = HOME, .parts = {} };
+    journey.parts.push_back({ .stay = false, .leg = std::move(leg), .rest = {} });
+    return journey;
+}
+
+/// The tick halfway through step `step` (from tile `step` to the next) of `journey`'s first part, a leg.
+i64 HalfwayThrough(const core::Journey& journey, std::size_t step) {
+    const core::Leg& leg = journey.parts.front().leg;
+    return leg.startTick + ((i64{ leg.arrive[step] } + i64{ leg.arrive[step + 1] }) / 2);
+}
+
+TEST_CASE("a walk east then south counts its length and keeps facing right") {
+    const core::WorldMap map = WalkMap();
+    constexpr std::array<u32, 3> EAST_THEN_SOUTH{ { TOP_LEFT, TOP_MIDDLE, CENTRE } };
+    const core::Journey journey = OneLeg(map, EAST_THEN_SOUTH);
+    // Meadow steps of the same cost, so halfway in ticks is halfway along.
+    REQUIRE(journey.parts.front().leg.arrive[2] == 2 * journey.parts.front().leg.arrive[1]);
+
+    const core::Walked east = core::WalkedAt(map, journey, HalfwayThrough(journey, 0));
+    CHECK(east.distance == 0.5 * WALK_TILE);
+    CHECK(east.moving);
+    CHECK_FALSE(east.facesLeft);
+
+    // A step north or south keeps the facing the last step across left.
+    const core::Walked south = core::WalkedAt(map, journey, HalfwayThrough(journey, 1));
+    CHECK(south.distance == 1.5 * WALK_TILE);
+    CHECK(south.moving);
+    CHECK_FALSE(south.facesLeft);
+}
+
+TEST_CASE("a walk west faces left") {
+    const core::WorldMap map = WalkMap();
+    constexpr std::array<u32, 2> WEST{ { TOP_MIDDLE, TOP_LEFT } };
+    const core::Journey journey = OneLeg(map, WEST);
+    const core::Walked walked = core::WalkedAt(map, journey, HalfwayThrough(journey, 0));
+    CHECK(walked.moving);
+    CHECK(walked.facesLeft);
+}
+
+TEST_CASE("a walk stands before its journey and after its end") {
+    const core::WorldMap map = WalkMap();
+    constexpr std::array<u32, 3> EAST_THEN_SOUTH{ { TOP_LEFT, TOP_MIDDLE, CENTRE } };
+    const core::Journey journey = OneLeg(map, EAST_THEN_SOUTH);
+
+    const core::Walked first = core::WalkedAt(map, journey, core::StartTick(journey));
+    CHECK(first.distance == 0.0);
+    CHECK_FALSE(first.moving);
+
+    // The end tick still finishes the last step.
+    const core::Walked last = core::WalkedAt(map, journey, core::EndTick(journey));
+    CHECK(last.distance == 2.0 * WALK_TILE);
+    CHECK(last.moving);
+
+    const core::Walked after = core::WalkedAt(map, journey, core::EndTick(journey) + 1);
+    CHECK(after.distance == 2.0 * WALK_TILE);
+    CHECK_FALSE(after.moving);
+}
+
+TEST_CASE("a walk whose first step is vertical faces its first step across") {
+    const core::WorldMap map = WalkMap();
+    constexpr std::array<u32, 3> SOUTH_THEN_WEST{ { TOP_MIDDLE, CENTRE, MIDDLE_LEFT } };
+    const core::Journey journey = OneLeg(map, SOUTH_THEN_WEST);
+    const core::Walked walked = core::WalkedAt(map, journey, HalfwayThrough(journey, 0));
+    CHECK(walked.moving);
+    CHECK(walked.facesLeft);
+}
+
+TEST_CASE("a walk that never steps across faces right") {
+    const core::WorldMap map = WalkMap();
+    constexpr std::array<u32, 2> SOUTH{ { TOP_LEFT, MIDDLE_LEFT } };
+    const core::Journey journey = OneLeg(map, SOUTH);
+    const core::Walked walked = core::WalkedAt(map, journey, HalfwayThrough(journey, 0));
+    CHECK(walked.moving);
+    CHECK_FALSE(walked.facesLeft);
+}
+
+TEST_CASE("a walk runs on from its leg into its stay without a jump") {
+    const core::WorldMap map = WalkMap();
+    constexpr std::array<u32, 3> OUT{ { TOP_LEFT, TOP_MIDDLE, 2 } };
+    const core::Journey visit = core::Visit(map, OUT, core::WALKING, WALKER, HOME, DESTINATION, WALK_START, TWO_DAYS, SEED);
+    const i64 arrival = core::EndTick(visit.parts[0]);
+    const core::Walked arrived = core::WalkedAt(map, visit, arrival);
+    CHECK(arrived.distance == 2.0 * WALK_TILE);
+
+    // The stay's first day drifts from the tile centre to its first day point evenly over the day.
+    const auto firstDrift = static_cast<f64>(Distance(map.TileCentre(OUT.back()), core::Where(map, visit, arrival + DAY)));
+    REQUIRE(firstDrift > 0.0);
+    const core::Walked staying = core::WalkedAt(map, visit, arrival + 1);
+    CHECK(staying.distance - arrived.distance == doctest::Approx(firstDrift / static_cast<f64>(DAY)));
+    CHECK(staying.moving);
+}
+
+TEST_CASE("a walk stays still through a stay standing on its tile centre") {
+    const core::WorldMap map = WalkMap();
+    constexpr std::array<u32, 3> OUT{ { TOP_LEFT, TOP_MIDDLE, 2 } };
+    // A one-day stay runs from the tile centre to the tile centre.
+    const core::Journey visit = core::Visit(map, OUT, core::WALKING, WALKER, HOME, DESTINATION, WALK_START, 1, SEED);
+    const core::Stay& stay = visit.parts[1].rest;
+    bool anyMoving = false;
+    f64 farthest = 0.0;
+    // Its first tick after arriving, its middle, its last and its end, where the leg home has yet to move.
+    for (const i64 tick : { stay.startTick + 1, stay.startTick + (DAY / 2), stay.endTick - 1, stay.endTick }) {
+        const core::Walked walked = core::WalkedAt(map, visit, tick);
+        anyMoving = anyMoving || walked.moving;
+        farthest = std::max(farthest, walked.distance);
+    }
+    CHECK_FALSE(anyMoving);
+    CHECK(farthest == 2.0 * WALK_TILE);
+}
+
+TEST_CASE("a walk in a stay faces the way each day drifts across") {
+    const core::WorldMap map = WalkMap();
+    constexpr std::array<u32, 3> OUT{ { TOP_LEFT, TOP_MIDDLE, 2 } };
+    const core::Journey visit = core::Visit(map, OUT, core::WALKING, WALKER, HOME, DESTINATION, WALK_START, FIVE_DAYS, SEED);
+    const core::Stay& stay = visit.parts[1].rest;
+    std::size_t leftward = 0;
+    std::size_t rightward = 0;
+    std::size_t wrong = 0;
+    for (i64 dayStart = stay.startTick; dayStart < stay.endTick; dayStart += DAY) {
+        // Where() stands exactly on each day's point at the day's ends, so its drift across is the day's own.
+        const f32 across = core::Where(map, visit, dayStart + DAY).x - core::Where(map, visit, dayStart).x;
+        if (across == 0.0F) {
+            continue;
+        }
+        (across < 0.0F ? leftward : rightward) += 1;
+        wrong += core::WalkedAt(map, visit, dayStart + (DAY / 2)).facesLeft == (across < 0.0F) ? 0 : 1;
+    }
+    // The seed's drifts go both ways, so a walk facing either way throughout would fail.
+    REQUIRE(leftward > 0);
+    REQUIRE(rightward > 0);
+    CHECK(wrong == 0);
+}
+
+TEST_CASE("a walk keeps its leg's facing through a stay standing on its tile centre") {
+    const core::WorldMap map = WalkMap();
+    // West from the city on tile 2 (place 1) to the one on tile 0 (place 0), so the facing kept is left, never the default
+    // right.
+    constexpr std::array<u32, 3> WESTWARD{ { 2, TOP_MIDDLE, TOP_LEFT } };
+    constexpr u16 EAST_CITY = 1;
+    constexpr u16 WEST_CITY = 0;
+    const core::Journey visit = core::Visit(map, WESTWARD, core::WALKING, WALKER, EAST_CITY, WEST_CITY, WALK_START, 1, SEED);
+    const core::Stay& stay = visit.parts[1].rest;
+    CHECK(core::WalkedAt(map, visit, stay.startTick + (DAY / 2)).facesLeft);
+    // Its end, where the walk home east has yet to begin.
+    CHECK(core::WalkedAt(map, visit, stay.endTick).facesLeft);
+}
+
+TEST_CASE("a walk is the same for the same journey rebuilt") {
+    constexpr std::array<u32, 3> OUT{ { TOP_LEFT, TOP_MIDDLE, 2 } };
+    const core::WorldMap map = WalkMap();
+    const core::Journey visit = core::Visit(map, OUT, core::WALKING, WALKER, HOME, DESTINATION, WALK_START, TWO_DAYS, SEED);
+    // A map and journey made again from the same inputs, as a load makes them.
+    const core::WorldMap loadedMap = WalkMap();
+    const core::Journey loaded =
+        core::Visit(loadedMap, OUT, core::WALKING, WALKER, HOME, DESTINATION, WALK_START, TWO_DAYS, SEED);
+    // Mid-leg, and mid-stay, where the distance sums drifts of uneven lengths; a paused world asks for one tick again and
+    // again.
+    for (const i64 tick : { WALK_START + 100, visit.parts[1].rest.startTick + DAY + (DAY / 3) }) {
+        const core::Walked first = core::WalkedAt(map, visit, tick);
+        const core::Walked again = core::WalkedAt(loadedMap, loaded, tick);
+        CHECK(std::bit_cast<u64>(first.distance) == std::bit_cast<u64>(again.distance));
+        CHECK(first.moving == again.moving);
+        CHECK(first.facesLeft == again.facesLeft);
+    }
 }
 
 } // namespace

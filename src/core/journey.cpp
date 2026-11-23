@@ -89,6 +89,84 @@ Vec2 MemberOffset(std::size_t member) {
     return (corner + step) * MEMBER_SPACING;
 }
 
+/// A journey walker's walk at one tick, gathered from the straight stretches it walks, given in time order.
+class WalkTally {
+public:
+    /// Gathers the walk at `tick`.
+    explicit WalkTally(i64 tick)
+      : m_tick{ tick } {
+    }
+
+    /// Adds the stretch from `from` to `target`, walked evenly over the ticks `start` to `end`. True once no later stretch
+    /// can change the walk: after a stretch not yet begun none is, so only the facing may still be unknown.
+    bool Add(Vec2 from, Vec2 target, i64 start, i64 end) {
+        const f64 across = static_cast<f64>(target.x) - static_cast<f64>(from.x);
+        if (start >= m_tick) {
+            if (!m_faced && across != 0.0) {
+                Face(across);
+            }
+            return m_faced;
+        }
+        const f64 down = static_cast<f64>(target.y) - static_cast<f64>(from.y);
+        const f64 length = std::sqrt((across * across) + (down * down));
+        // Begun, so `end` is past `start` whenever the tick lies before it.
+        const f64 share = m_tick >= end ? 1.0 : static_cast<f64>(m_tick - start) / static_cast<f64>(end - start);
+        m_walked.distance += length * share;
+        m_walked.moving = m_walked.moving || (length > 0.0 && m_tick <= end);
+        if (across != 0.0) {
+            Face(across);
+        }
+        return false;
+    }
+
+    /// The walk from the stretches added so far.
+    [[nodiscard]] Walked Result() const {
+        return m_walked;
+    }
+
+private:
+    /// Faces the way a stretch `across` units to the right (left when negative) goes.
+    void Face(f64 across) {
+        m_walked.facesLeft = across < 0.0;
+        m_faced = true;
+    }
+
+    i64 m_tick;
+    Walked m_walked{};
+    /// Whether a stretch across has set the facing.
+    bool m_faced = false;
+};
+
+/// Adds `leg`'s steps, from tile to tile, to `tally`; true once it needs no more.
+bool AddLeg(const WorldMap& map, const Leg& leg, WalkTally& tally) {
+    PN_ASSERT(leg.arrive.size() == leg.tiles.size(), "a leg has an arrive tick per tile");
+    for (std::size_t index = 0; index + 1 < leg.tiles.size(); ++index) {
+        const i64 start = leg.startTick + i64{ leg.arrive[index] };
+        const i64 end = leg.startTick + i64{ leg.arrive[index + 1] };
+        if (tally.Add(LegPoint(map, leg, index), LegPoint(map, leg, index + 1), start, end)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Adds `stay`'s days, from day point to day point as StayWhere() moves its walker, to `tally`; true once it needs no
+/// more.
+bool AddStay(const WorldMap& map, const Stay& stay, WalkTally& tally) {
+    PN_ASSERT(stay.city < map.Places().size(), "a stay is in a place of the map");
+    const Vec2 centre = map.TileCentre(map.TileIndex(map.Places()[stay.city].tile));
+    Vec2 from = centre;
+    for (i64 day = 0; stay.startTick + (day * DAY_TICKS) < stay.endTick; ++day) {
+        const i64 dayStart = stay.startTick + (day * DAY_TICKS);
+        const Vec2 target = StayPoint(map, stay, centre, day + 1);
+        if (tally.Add(from, target, dayStart, std::min(dayStart + DAY_TICKS, stay.endTick))) {
+            return true;
+        }
+        from = target;
+    }
+    return false;
+}
+
 } // namespace
 
 Leg MakeTileLeg(const WorldMap& map, ProfileIndex profile, i64 startTick, Vec2 origin, std::span<const u32> tiles) {
@@ -200,6 +278,16 @@ Vec2 Where(const WorldMap& map, const Journey& journey, i64 tick, std::size_t me
     const JourneyPart& part = holding == journey.parts.end() ? journey.parts.back() : *holding;
     const Vec2 position = part.stay ? StayWhere(map, part.rest, tick) : Where(map, part.leg, tick);
     return position + MemberOffset(member);
+}
+
+Walked WalkedAt(const WorldMap& map, const Journey& journey, i64 tick) {
+    WalkTally tally{ tick };
+    for (const JourneyPart& part : journey.parts) {
+        if (part.stay ? AddStay(map, part.rest, tally) : AddLeg(map, part.leg, tally)) {
+            break;
+        }
+    }
+    return tally.Result();
 }
 
 bool Underway(const Journey& journey, i64 tick) {
