@@ -155,6 +155,24 @@ struct Journey {
 /// the members' count.
 [[nodiscard]] Vec2 Where(const WorldMap& map, const Journey& journey, i64 tick, std::size_t member = 0);
 
+/// How far a journey's walker has walked by a tick, and how it is drawn there.
+struct Walked {
+    /// The world units walked from the journey's start: each straight stretch's length times the share of its ticks gone.
+    f64 distance = 0.0;
+    /// Whether it is moving: some stretch of nonzero length holds the tick, after its start and up to its end.
+    bool moving = false;
+    /// Whether it faces left: it last stepped left (a step straight up or down keeps the facing), or, having not yet
+    /// stepped left or right, will first step left.
+    bool facesLeft = false;
+};
+
+/// How far member 0 of `journey` has walked at `tick`, whether it moves and which way it faces, over the straight
+/// stretches Where() moves it along in order: each leg's steps from tile to tile and each stay's days from day point to
+/// day point. The other members keep fixed offsets from it, so they walk alike. A pure function of the journey, the map
+/// and the tick, so a paused clock gives the same walk; it allocates nothing and reads no stretch after `tick` once the
+/// facing is known.
+[[nodiscard]] Walked WalkedAt(const WorldMap& map, const Journey& journey, i64 tick);
+
 /// Whether `journey` is underway at `tick`: from its start to the tick before its end.
 [[nodiscard]] bool Underway(const Journey& journey, i64 tick);
 

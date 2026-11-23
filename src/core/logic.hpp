@@ -6,6 +6,7 @@
 /// ticks, frozen while paused, and publishing the last one's snapshot. The thread around it only
 /// waits for the clock and logs. The game module's simulation runs here through core::Simulation.
 
+#include "core/animations.hpp"
 #include "core/archive.hpp"
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
@@ -17,6 +18,7 @@
 
 #include <cstddef>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <span>
 #include <stop_token>
@@ -89,6 +91,11 @@ public:
     /// Tells it whether the player has turned on seeing the whole map through the fog, before each Publish(); it changes
     /// only what is published. Does nothing by default.
     virtual void SetDebugSight(bool /*on*/) {
+    }
+
+    /// Gives it the figures' animations, before each Publish(); they change only what is published (which frame a walking
+    /// figure draws), never the state. Does nothing by default.
+    virtual void SetAnimations(const std::shared_ptr<const Animations>& /*animations*/) {
     }
 
     /// Writes what the state looks like now into `snapshot`'s drawing data: its instances, batches
