@@ -96,9 +96,13 @@ public:
     void SetDebugSight(bool enabled) override {
         debugSight = enabled;
     }
+    void SetAnimations(const std::shared_ptr<const core::Animations>& table) override {
+        animations = table;
+    }
     void Publish(core::Snapshot& snapshot, core::Jobs& /*jobs*/, const std::optional<core::Rect>& view) override {
         calls.push_back(Call::Publish);
         debugSightAtPublish = debugSight;
+        animationsAtPublish = animations;
         fogOnAtPublish = snapshot.fog.on;
         fogCapacityAtPublish = snapshot.fog.explored.capacity();
         if (fillFog) {
@@ -149,9 +153,11 @@ public:
     std::optional<Loaded> loaded = std::nullopt;
     core::SceneFacts asks{ .key = OTHER_KEY, .sprites = OTHER_SCENE }; // the scene a CycleScene asks for
     bool followCamera = false;
-    bool debugSight = false;          // what SetDebugSight last heard
-    bool debugSightAtPublish = false; // what it had heard when the last publish ran
-    bool fogOnAtPublish = false;      // the snapshot's fog as the last publish was handed it
+    bool debugSight = false;                                               // what SetDebugSight last heard
+    bool debugSightAtPublish = false;                                      // what it had heard when the last publish ran
+    std::shared_ptr<const core::Animations> animations = nullptr;          // what SetAnimations last heard
+    std::shared_ptr<const core::Animations> animationsAtPublish = nullptr; // what it had heard when the last publish ran
+    bool fogOnAtPublish = false; // the snapshot's fog as the last publish was handed it
     std::size_t fogCapacityAtPublish = 0;
     bool fillFog = false; // whether a publish turns the fog on with a bitset
     core::CameraKind cameraAtPublish = core::CameraKind::Pan;
@@ -385,6 +391,22 @@ TEST_CASE("the publish hears the latest view's debug sight, and none before a vi
     rig.handover.SendView({ .area = AREA, .change = 1, .debugSight = false });
     static_cast<void>(rig.Burst(1));
     CHECK_FALSE(rig.simulation.debugSightAtPublish);
+}
+
+TEST_CASE("the view's animations reach the simulation before it publishes") {
+    constexpr core::Rect AREA{ .min = { .x = 0.0F, .y = 0.0F }, .max = { .x = 100.0F, .y = 100.0F } };
+    const auto first = std::make_shared<const core::Animations>();
+    const auto second = std::make_shared<const core::Animations>();
+    Rig rig;
+    rig.simulation.animations = first; // so a null below proves the logic sent one
+    static_cast<void>(rig.Burst(1));
+    CHECK(rig.simulation.animationsAtPublish == nullptr);
+    rig.handover.SendView({ .area = AREA, .change = 1, .animations = first });
+    static_cast<void>(rig.Burst(1));
+    CHECK(rig.simulation.animationsAtPublish == first);
+    rig.handover.SendView({ .area = AREA, .change = 1, .animations = second }); // the hot-reload swap
+    static_cast<void>(rig.Burst(1));
+    CHECK(rig.simulation.animationsAtPublish == second);
 }
 
 TEST_CASE("a calendar step asked for ends the burst at once and publishes the transition first") {

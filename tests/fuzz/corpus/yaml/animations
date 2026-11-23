@@ -1,0 +1,18 @@
+# How the figures animate. Presentation only: nothing here changes what happens, and it is not saved or hashed. Debug builds
+# reload it within half a second of an edit; a value out of range is refused with its line (the old animations stay), and
+# an unknown key is refused too. A figure with no entry here draws its one sprite, as it stands.
+#
+# Each entry is named by the sprite its figure stands in, and holds:
+#   walk: the clip it steps through while it moves, with
+#     frames: 1 to 32 sprites in order, side-on and facing right, on the standing sprite's canvas and foot point. Every
+#       scene that draws the standing sprite must draw each of them.
+#     stride: the world units walked while one frame shows (a number above 0 and at most 1,000,000): the clip's length
+#       is its frames times it, and then it repeats.
+villager:
+  walk:
+    frames: [villager_walk_0, villager_walk_1, villager_walk_2, villager_walk_3, villager_walk_4, villager_walk_5, villager_walk_6, villager_walk_7]
+    stride: 12
+cultivator:
+  walk:
+    frames: [cultivator_walk_0, cultivator_walk_1, cultivator_walk_2, cultivator_walk_3, cultivator_walk_4, cultivator_walk_5, cultivator_walk_6, cultivator_walk_7]
+    stride: 14

@@ -15,6 +15,7 @@
 #include "app/hud.hpp"
 #include "app/target_cursor.hpp"
 #include "app/view.hpp"
+#include "core/animations.hpp"
 #include "core/display_delay.hpp"
 #include "core/effects.hpp"
 #include "core/error.hpp"
@@ -71,6 +72,9 @@ struct Options {
     core::Effects effects{};
     /// The seals' looks, read from `assets/data/seals.yaml` against `manifest`; debug builds reload them with the data.
     core::Seals seals{};
+    /// The figures' walk clips, read from `assets/data/animations.yaml` against `manifest`; debug builds reload them with the
+    /// data. Sent to the logic thread with every view; null when none were read, which no figure then walks by.
+    std::shared_ptr<const core::Animations> animations = nullptr;
     /// The world map's look, read from `assets/data/world_look.yaml` against `manifest` and the map; debug builds reload it
     /// with the data.
     core::WorldLook worldLook{};
@@ -180,6 +184,13 @@ void KeepWorld(const core::GameData& running, std::expected<core::GameData, core
 /// Makes `current` the seals table `read` after an edit, and says whether it did: a table that couldn't be read leaves
 /// `current` as it is, as the reader hands back no part of a broken one.
 [[nodiscard]] bool KeepSeals(core::Seals& current, std::expected<core::Seals, core::Error> read);
+
+/// Makes `current` the animations table `read` after an edit, and says whether it did: a table that couldn't be read leaves
+/// `current` as it is. A new table is a new pointer, so what holds the old one keeps it unchanged.
+[[nodiscard]] bool KeepAnimations(
+    std::shared_ptr<const core::Animations>& current,
+    std::expected<core::Animations, core::Error> read
+);
 
 /// Makes `current` the world look `read` after an edit when it differs (by Hash()), and says whether it did: a look that
 /// couldn't be read, or reads as it was, leaves `current` as it is.

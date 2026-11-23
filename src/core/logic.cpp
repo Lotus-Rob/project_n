@@ -76,6 +76,7 @@ bool Logic::RunBurst(const TickBurst& burst, const std::stop_token& stop) {
         culled = view->area;
     }
     m_simulation->SetDebugSight(view && view->debugSight);
+    m_simulation->SetAnimations(view ? view->animations : nullptr);
     m_simulation->Publish(snapshot, *m_jobs, culled);
     snapshot.publishedNs = m_now();
     m_handover->Publish(m_events);

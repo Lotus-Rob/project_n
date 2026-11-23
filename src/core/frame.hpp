@@ -6,6 +6,7 @@
 /// thread through core::Handover, and the input it gets back: timing and pausing, instances, view models and events.
 
 #include "core/abilities.hpp"
+#include "core/animations.hpp"
 #include "core/display_delay.hpp"
 #include "core/game_data.hpp"
 #include "core/handover.hpp"
@@ -152,6 +153,9 @@ struct ViewReport {
     /// Whether the player has turned on seeing the whole map through the fog: a debugging aid, heard whatever scene the
     /// view is of.
     bool debugSight = false;
+    /// The figures' walk clips the window draws with, which publishing needs to pick each traveller's frame; null until a
+    /// table is read, when no figure has a walk.
+    std::shared_ptr<const Animations> animations = nullptr;
 };
 
 /// How the camera moves over a scene.
