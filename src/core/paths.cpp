@@ -1,6 +1,7 @@
 #include "core/paths.hpp"
 
 #include "core/assert.hpp"
+#include "core/profile.hpp"
 
 namespace core {
 
@@ -237,6 +238,7 @@ const DistanceMap& Paths::To(u16 city, ProfileIndex profile) {
 }
 
 void Paths::Warm(ProfileIndex profile) {
+    PN_PROFILE_ZONE();
     for (std::size_t place = 0; place < m_map->Places().size(); ++place) {
         if (m_map->Places()[place].kind == PlaceKind::City) {
             static_cast<void>(To(static_cast<u16>(place), profile));

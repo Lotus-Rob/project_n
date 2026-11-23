@@ -122,6 +122,7 @@ struct VisitMonth {
 /// The visits the world NPCs of chunk `chunk` (MonthStep::CHUNK of them, in the order of `npcs`, the world's Npc storage,
 /// whose stable IDs `ids` holds) set out on in `month`, each appended to `out`, its member's month made Action::Travel.
 void SetOut(const VisitMonth& month, auto& npcs, const auto& ids, u32 chunk, std::vector<core::Journey>& out) {
+    PN_PROFILE_ZONE();
     const core::WorldMap& map = *month.map;
     const core::TravelRules& rules = map.Travel();
     const u32 stayChoices = u32{ rules.stayMaxDays } - u32{ rules.stayMinDays } + 1;
@@ -278,6 +279,7 @@ bool Travel::Travelling(core::StableId npc) const {
 }
 
 void Travel::Finish(i64 tick, core::State& state) {
+    PN_PROFILE_ZONE();
     m_written.clear();
     for (const core::Journey& journey : m_journeys) {
         if (core::EndTick(journey) > tick) {
@@ -330,6 +332,7 @@ void Travel::Finish(i64 tick, core::State& state) {
 }
 
 void Travel::StartAll(std::vector<core::Journey>& journeys) {
+    PN_PROFILE_ZONE();
     PN_ASSERT(
         std::ranges::all_of(journeys, [](const core::Journey& journey) { return !journey.members.empty(); }),
         "a journey has a member"
