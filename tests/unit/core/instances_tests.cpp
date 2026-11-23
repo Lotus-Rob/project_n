@@ -184,6 +184,22 @@ TEST_CASE("a width scale stretches an instance across about its foot point, not 
     CHECK(instance.size == core::PackPair(core::PackHalf(width), core::PackHalf(DOUBLE * sprite.height)));
 }
 
+TEST_CASE("a mirrored sprite stands on its mirrored foot") {
+    using core::atlas::SpriteId;
+    constexpr core::Vec2 FOOT{ .x = 500.0F, .y = 300.0F };
+    const core::Manifest manifest = TestManifest();
+    const core::SpriteInfo& sprite = manifest.Sprite(SpriteId::Fox);
+    const core::Instance instance =
+        core::MakeInstance(manifest, { .sprite = SpriteId::Fox, .previous = FOOT, .current = FOOT, .widthScale = -1.0F });
+    // Mirrored about the foot: the unmirrored centre's x offset negated, its y offset unchanged.
+    const f32 offsetX = (static_cast<f32>(sprite.width) * HALF) - static_cast<f32>(sprite.footX);
+    const f32 offsetY = (static_cast<f32>(sprite.height) * HALF) - static_cast<f32>(sprite.footY);
+    REQUIRE(offsetX != 0.0F); // the foot is off-centre, or the test proves nothing
+    CHECK(instance.current.x == doctest::Approx(FOOT.x - offsetX));
+    CHECK(instance.current.y == doctest::Approx(FOOT.y + offsetY));
+    CHECK(instance.size == core::PackPair(core::PackHalf(-static_cast<f32>(sprite.width)), core::PackHalf(sprite.height)));
+}
+
 TEST_CASE("a rotation across the full turn interpolates along the shorter arc") {
     constexpr f32 DEGREE = std::numbers::pi_v<f32> / 180.0F;
     constexpr f32 PREVIOUS = 350.0F * DEGREE;
