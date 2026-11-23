@@ -7,7 +7,7 @@
 
 namespace gfx {
 
-void DrawRoads(std::span<const std::vector<core::Vec2>> curves, const RoadShape& shape, std::vector<RibbonVertex>& into) {
+void DrawRoads(std::span<const std::vector<core::Vec2>> curves, const RibbonShape& shape, std::vector<RibbonVertex>& into) {
     PN_PROFILE_ZONE();
     into.clear();
     std::vector<Laid> lines;

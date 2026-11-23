@@ -49,7 +49,7 @@ std::optional<core::Vec2> Mouth(const core::WorldMap& map, std::span<const u8> w
 
 void DrawRivers(
     const core::WorldMap& map,
-    const RiverShape& shape,
+    const RibbonShape& shape,
     std::span<const u8> water,
     std::vector<RibbonVertex>& into
 ) {

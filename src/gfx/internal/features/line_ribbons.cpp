@@ -1,4 +1,4 @@
-#include "gfx/internal/features/rivers.hpp"
+#include "gfx/internal/features/line_ribbons.hpp"
 
 #include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
@@ -47,6 +47,7 @@ std::expected<LineRibbonRenderer, core::Error> LineRibbonRenderer::Create(
     renderer.m_device = device;
     renderer.m_name = name;
     renderer.m_maxQuads = maxQuads;
+    // The roads share the river shader pair: the two bands are drawn alike, and only the look differs.
     renderer.m_pipeline =
         CreateRibbonPipeline(device, format, shaders::RIVER_VERT, shaders::RIVER_FRAG, OVER, renderer.m_name.c_str());
     if (renderer.m_pipeline == nullptr) {

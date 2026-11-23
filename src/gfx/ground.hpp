@@ -3,7 +3,7 @@
 /// @file
 /// @ingroup gfx
 /// What the world map's ground and ribbon pipelines draw by: the ground shader's uniforms from the map and the look, the
-/// part of the view the ground covers, and the rivers' and roads' painted shapes. Pure, tested without a device.
+/// part of the view the ground covers, and the ribbons' painted shape. Pure, tested without a device.
 
 #include "core/rect.hpp"
 #include "core/types.hpp"
@@ -104,13 +104,9 @@ static_assert(
 /// none when they share no area, so nothing is drawn past the map or when the view misses it.
 [[nodiscard]] std::optional<core::Rect> GroundQuad(core::Rect view, const core::WorldMap& map);
 
-/// The rivers' painted shape for `look` on `map`: its widths in world units, the core opaque in its colour and the edge
-/// in its colour at its strength, premultiplied.
-[[nodiscard]] RiverShape RiverShapeOf(const core::WorldMap& map, const core::RiverLook& look);
-
-/// The roads' painted shape for `look` on `map`, as RiverShapeOf() makes the rivers': its widths in world units, the core
-/// opaque in its colour and the edge in its colour at its strength, premultiplied.
-[[nodiscard]] RoadShape RoadShapeOf(const core::WorldMap& map, const core::RoadLook& look);
+/// A river's or a road's painted shape for `look` on `map`: its widths in world units, the core opaque in its colour and
+/// the edge in its colour at its strength, premultiplied.
+[[nodiscard]] RibbonShape RibbonShapeOf(const core::WorldMap& map, const core::RibbonLook& look);
 
 /// Where a ribbon's edge band, `edgeWidth` wide, starts fading out toward its sides, as a share of its half width from its
 /// middle: where its core, `coreWidth` wide, ends (the core's width over the edge's), so the rim shows whole beside the

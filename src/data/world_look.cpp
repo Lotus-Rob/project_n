@@ -735,12 +735,11 @@ std::expected<void, core::Error> ReadMist(
 }
 
 /// Reads the ribbon section `key` of `root` (a river's or a road's: the same keys) into `ribbon`.
-template<typename Look>
 std::expected<void, core::Error> ReadRibbon(
     const YAML::Node& root,
     const char* key,
     std::vector<std::string>* warnings,
-    Look& ribbon
+    core::RibbonLook& ribbon
 ) {
     const std::expected<YAML::Node, core::Error> node = MapAt(root, key);
     if (!node) {

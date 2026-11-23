@@ -21,18 +21,6 @@ inline constexpr u32 RIVER_STEPS = 4;
 /// the rivers that don't fit.
 inline constexpr u32 MAX_RIVER_QUADS = 8'192;
 
-/// How a river is painted: a wide edge band under a narrower core band.
-struct RiverShape {
-    /// The core band's width in world units.
-    f32 coreWidth = 0.0F;
-    /// The edge band's width in world units, wider than the core's.
-    f32 edgeWidth = 0.0F;
-    /// The core's premultiplied colour, red in the low byte, as RibbonVertex::colour.
-    u32 coreColour = 0;
-    /// The edge's premultiplied colour, in the same layout.
-    u32 edgeColour = 0;
-};
-
 /// Replaces `into` with the quads of every river's edge band, then of every river's core band, each river a centripetal
 /// Catmull-Rom spline through its polyline's tile centres, ends included, arriving along the end segments. Each segment
 /// takes RIVER_STEPS times its length in tiles (at least one tile) of quads per band, as whole quads in MeshVertex's corner
@@ -43,6 +31,11 @@ struct RiverShape {
 /// `water`), both bands fading out over that last tile. Only the drawing changes: the map is as it was. A river of fewer than
 /// two distinct points draws nothing; rivers that would take the quads past MAX_RIVER_QUADS are left out whole, the later ones
 /// first.
-void DrawRivers(const core::WorldMap& map, const RiverShape& shape, std::span<const u8> water, std::vector<RibbonVertex>& into);
+void DrawRivers(
+    const core::WorldMap& map,
+    const RibbonShape& shape,
+    std::span<const u8> water,
+    std::vector<RibbonVertex>& into
+);
 
 } // namespace gfx

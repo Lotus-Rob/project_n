@@ -92,10 +92,10 @@ TEST_CASE("the ground quad is the view's overlap with the map") {
 
 TEST_CASE("a river's shape is its look in world units") {
     const core::WorldMap map = test::MeadowMap(2, 2);
-    const core::RiverLook look{
+    const core::RibbonLook look{
         .width = 0.38F, .edge = 0.5F, .colour = { { 128, 172, 176 } }, .edgeColour = { { 70, 104, 112 } }, .edgeStrength = 0.67F
     };
-    const gfx::RiverShape shape = gfx::RiverShapeOf(map, look);
+    const gfx::RibbonShape shape = gfx::RibbonShapeOf(map, look);
     CHECK(shape.coreWidth == doctest::Approx(0.38F * TILE));
     CHECK(shape.edgeWidth == doctest::Approx(0.5F * TILE));
     CHECK(shape.coreColour == core::FromSrgb(128, 172, 176, 255));
@@ -106,10 +106,10 @@ TEST_CASE("a river's shape is its look in world units") {
 
 TEST_CASE("a road's shape is its look in world units") {
     const core::WorldMap map = test::MeadowMap(2, 2);
-    const core::RoadLook look{
+    const core::RibbonLook look{
         .width = 0.26F, .edge = 0.4F, .colour = { { 132, 112, 88 } }, .edgeColour = { { 104, 90, 72 } }, .edgeStrength = 0.4F
     };
-    const gfx::RoadShape shape = gfx::RoadShapeOf(map, look);
+    const gfx::RibbonShape shape = gfx::RibbonShapeOf(map, look);
     CHECK(shape.coreWidth == doctest::Approx(0.26F * TILE));
     CHECK(shape.edgeWidth == doctest::Approx(0.4F * TILE));
     CHECK(shape.coreColour == core::FromSrgb(132, 112, 88, 255));
@@ -117,9 +117,9 @@ TEST_CASE("a road's shape is its look in world units") {
     CHECK(shape.edgeColour == core::FromSrgb(104, 90, 72, 102));
     CHECK((shape.edgeColour >> 24U) == 102);
     // A strength past 1 is held to opaque.
-    core::RoadLook strong = look;
+    core::RibbonLook strong = look;
     strong.edgeStrength = 1.5F;
-    CHECK((gfx::RoadShapeOf(map, strong).edgeColour >> 24U) == 255);
+    CHECK((gfx::RibbonShapeOf(map, strong).edgeColour >> 24U) == 255);
 }
 
 TEST_CASE("a ribbon's rim fades from where its core ends") {
