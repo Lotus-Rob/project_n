@@ -1,4 +1,5 @@
 #include "app/app.hpp"
+#include "core/animations.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/seals.hpp"
 #include "core/world_look.hpp"
@@ -222,6 +223,34 @@ TEST_CASE("a seals table that reads replaces the running one, and reports the ch
     const core::SealLook* read = current.Find(core::SealKeyOf("b"));
     CHECK(gone == nullptr);
     CHECK(read != nullptr);
+}
+
+// An animations table holding one walk, of one frame and the stride `stride`.
+core::Animations AnimationsOf(f32 stride) {
+    core::Animations table;
+    table.walks = {
+        { .standing = core::atlas::SpriteId::Villager, .frames = { core::atlas::SpriteId::VillagerWalk0 }, .stride = stride }
+    };
+    return table;
+}
+
+TEST_CASE("an animations table that couldn't be read leaves the running one, and reports no change") {
+    std::shared_ptr<const core::Animations> current = std::make_shared<const core::Animations>(AnimationsOf(12.0F));
+    const core::Animations* const before = current.get();
+    const bool replaced = app::KeepAnimations(current, std::unexpected{ core::Error{ "broken" } });
+    CHECK_FALSE(replaced);
+    CHECK(current.get() == before);
+}
+
+TEST_CASE("an animations table that reads replaces the running one with a new pointer, and reports the change") {
+    std::shared_ptr<const core::Animations> current = std::make_shared<const core::Animations>(AnimationsOf(12.0F));
+    const std::shared_ptr<const core::Animations> before = current;
+    const bool replaced = app::KeepAnimations(current, AnimationsOf(20.0F));
+    CHECK(replaced);
+    CHECK(current != before);
+    REQUIRE(current->walks.size() == 1);
+    CHECK(current->walks.front().stride == 20.0F);
+    CHECK(before->walks.front().stride == 12.0F); // what held the old one still sees it
 }
 
 // The look reader checks sprites against the manifest scene it names, which must be the one game shows the map in.

@@ -2,16 +2,18 @@
 
 /// @file
 /// The shipped world map for tests: assets/data/world.yaml read against the shipped strings, as main reads it, the shipped
-/// names, and the game data a world scene runs on in the game (game::BuiltInData() with that map and those names), since
-/// game::BuiltInData() carries neither; and a small map, names and data for tests that need a world map but not the
-/// shipped one, whose world is made in a moment where the shipped one takes a large part of a second. Their
-/// target copies assets/ next to it (the `assets` rule) and links data and platform, and game for ShippedData().
+/// names, the shipped animations, and the game data a world scene runs on in the game (game::BuiltInData() with that map and
+/// those names), since game::BuiltInData() carries neither; and a small map, names and data for tests that need a world map but
+/// not the shipped one, whose world is made in a moment where the shipped one takes a large part of a second. Their target
+/// copies assets/ next to it (the `assets` rule) and links data and platform, and game for ShippedData().
 
+#include "core/animations.hpp"
 #include "core/game_data.hpp"
 #include "core/manifest.hpp"
 #include "core/names.hpp"
 #include "core/world_look.hpp"
 #include "core/world_map.hpp"
+#include "data/animations.hpp"
 #include "data/names.hpp"
 #include "data/world_look.hpp"
 #include "game/host.hpp"
@@ -50,6 +52,19 @@ namespace test {
         std::abort(); // every test after would fail for the same reason
     }
     return std::make_shared<const core::Names>(std::move(*names));
+}
+
+/// assets/data/animations.yaml, read against `manifest`; a test binary that can't read it stops at once, as ShippedWorld()
+/// does.
+[[nodiscard]] inline std::shared_ptr<const core::Animations> ShippedAnimations(const core::Manifest& manifest) {
+    std::expected<core::Animations, core::Error> animations =
+        platform::AssetsDirectory().and_then([&](const std::filesystem::path& assets) {
+            return data::LoadAnimations(assets / "data", manifest);
+        });
+    if (!animations) {
+        std::abort(); // every test after would fail for the same reason
+    }
+    return std::make_shared<const core::Animations>(std::move(*animations));
 }
 
 /// game::BuiltInData() with the shipped world map and names: the data every host that builds or cycles into the world

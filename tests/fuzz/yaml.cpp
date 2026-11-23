@@ -1,12 +1,13 @@
 // The data module's YAML readers (data::ParseGameData, data::ParseAbilities, data::ParseSettings, data::ParseManifest,
-// data::ParseStrings, data::ParseEffects, data::ParseSeals, data::ParseWorldMap, data::ParseWorldLook, data::ParseNames): a
-// data or settings file is edited by hand and the manifest may be damaged, so any text is refused with an error or read, never
-// a crash or an exception escaping. Seeded with the shipped creatures, abilities, effects, seals, strings and names tables, a
-// settings file, the manifest, a seals table past a cap, a small world map, a small look for it and a directive with many
-// parameters (its tokens' vectors grow past their first capacities).
+// data::ParseStrings, data::ParseEffects, data::ParseSeals, data::ParseAnimations, data::ParseWorldMap, data::ParseWorldLook,
+// data::ParseNames): a data or settings file is edited by hand and the manifest may be damaged, so any text is refused with an
+// error or read, never a crash or an exception escaping. Seeded with the shipped creatures, abilities, effects, seals,
+// animations, strings and names tables, a settings file, the manifest, a seals table past a cap, a small world map, a small
+// look for it and a directive with many parameters (its tokens' vectors grow past their first capacities).
 #include "../support/manifest.hpp" // relative: lint has no compile flags for the fuzz targets, which only build with ASan
 #include "core/cxx23.hpp"          // IWYU pragma: keep
 #include "data/abilities.hpp"
+#include "data/animations.hpp"
 #include "data/effects.hpp"
 #include "data/game_data.hpp"
 #include "data/manifest.hpp"
@@ -64,6 +65,7 @@ extern "C" i32 LLVMFuzzerTestOneInput(const u8* bytes, std::size_t size) {
     // The seals name sprites, so they are read against the shipped manifest, loaded once and kept to the process's end.
     [[clang::no_destroy]] static const std::shared_ptr<const core::Manifest> shipped = test::TestManifest();
     const std::expected<core::Seals, core::Error> seals = data::ParseSeals(text, *shipped, &warnings);
+    const std::expected<core::Animations, core::Error> animations = data::ParseAnimations(text, *shipped);
     // The world map names its places by strings, so it is read against a table holding the seed's names.
     [[clang::no_destroy]] static const core::Strings placeNames = [] {
         core::Strings table;
@@ -85,7 +87,8 @@ extern "C" i32 LLVMFuzzerTestOneInput(const u8* bytes, std::size_t size) {
         (!effects && effects.error().message.empty()) || (!settings && settings.error().message.empty()) ||
         (!manifest && manifest.error().message.empty()) || (!strings && strings.error().message.empty()) ||
         (!names && names.error().message.empty()) || (!seals && seals.error().message.empty()) ||
-        (!world && world.error().message.empty()) || (!look && look.error().message.empty())) {
+        (!animations && animations.error().message.empty()) || (!world && world.error().message.empty()) ||
+        (!look && look.error().message.empty())) {
         std::abort(); // a refusal always says why
     }
     return 0;

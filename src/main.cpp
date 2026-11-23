@@ -3,6 +3,7 @@
 #include "core/command_line.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
+#include "data/animations.hpp"
 #include "data/effects.hpp"
 #include "data/game_data.hpp"
 #include "data/manifest.hpp"
@@ -98,6 +99,11 @@ i32 Run(const core::Settings& settings, app::Options options, bool fullscreen, s
         return FailToStart("the game's data couldn't be read", seals.error());
     }
     options.seals = std::move(*seals);
+    std::expected<core::Animations, core::Error> animations = data::LoadAnimations(dataFolder, *options.manifest);
+    if (!animations) {
+        return FailToStart("the game's data couldn't be read", animations.error());
+    }
+    options.animations = std::make_shared<const core::Animations>(std::move(*animations));
     std::expected<core::Strings, core::Error> strings = data::LoadStrings(dataFolder);
     if (!strings) {
         return FailToStart("the game's data couldn't be read", strings.error());

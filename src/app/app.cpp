@@ -11,6 +11,7 @@
 #include "core/math.hpp"
 #include "core/profile.hpp"
 #include "core/tick_clock.hpp"
+#include "data/animations.hpp"
 #include "data/effects.hpp"
 #include "data/game_data.hpp"
 #include "data/seals.hpp"
@@ -211,6 +212,14 @@ bool KeepSeals(core::Seals& current, std::expected<core::Seals, core::Error> rea
         return false;
     }
     current = std::move(*read);
+    return true;
+}
+
+bool KeepAnimations(std::shared_ptr<const core::Animations>& current, std::expected<core::Animations, core::Error> read) {
+    if (!read) {
+        return false;
+    }
+    current = std::make_shared<const core::Animations>(std::move(*read));
     return true;
 }
 
@@ -443,6 +452,14 @@ void App::WatchData(u64 nowNs) {
     else if (KeepSeals(m_options.seals, std::move(seals))) {
         m_renderer.SetSeals(m_options.seals);
         PN_LOG_INFO("the seals were read again: {} looks", m_options.seals.looks.size());
+    }
+    // The animations reach the logic thread with the next view, which picks the frames; they are never part of its state.
+    std::expected<core::Animations, core::Error> animations = data::LoadAnimations(m_options.dataFolder, *m_options.manifest);
+    if (!animations) {
+        PN_LOG_ERROR("the animations changed but weren't reloaded; the old animations stay: {}", animations.error().message);
+    }
+    else if (KeepAnimations(m_options.animations, std::move(animations))) {
+        PN_LOG_INFO("the animations were read again: {} walks", m_options.animations->walks.size());
     }
     // The world's look is drawn only too, and checked against the map the game runs: a look the map can't use keeps the old.
     if (m_options.data.world) {
@@ -838,7 +855,8 @@ bool App::Present(const platform::WindowState& state) {
             m_handover.SendView(
                 { .area = CullArea(m_camera.Camera(), state.width, state.height),
                   .change = core::ShownChange(drawn.sceneChange),
-                  .debugSight = m_debugSight }
+                  .debugSight = m_debugSight,
+                  .animations = m_options.animations }
             );
             const f64 renderTick = core::RenderTick(drawn.simulationTick, alpha);
             m_numberTexts.clear();
