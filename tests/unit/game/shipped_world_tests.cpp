@@ -284,16 +284,24 @@ TEST_CASE("a mortal reaches the next town, a strong cultivator the far side") {
     const core::ProfileIndex strong = game::ProfileFor(rules, STRONG);
     REQUIRE(map->Profiles()[wary].features.danger > 0);
     REQUIRE(map->Profiles()[strong].features.danger == 0);
-    const u16 capital = PlaceIndex(*map, "capital");
-    u32 nearest = core::UNREACHABLE;
-    for (u16 city = 0; city < map->Places().size(); ++city) {
-        if (city != capital && map->Places()[city].kind == core::PlaceKind::City) {
-            nearest = std::min(nearest, CityCost(*map, capital, city, wary));
+    const auto nearestTown = [&](u16 from) {
+        u32 nearest = core::UNREACHABLE;
+        for (u16 city = 0; city < map->Places().size(); ++city) {
+            if (city != from && map->Places()[city].kind == core::PlaceKind::City) {
+                nearest = std::min(nearest, CityCost(*map, from, city, wary));
+            }
         }
-    }
+        return nearest;
+    };
+    const u32 nearest = nearestTown(PlaceIndex(*map, "capital"));
+    const u32 sectNearest = nearestTown(PlaceIndex(*map, "sect"));
     const u32 farSide = CityCost(*map, PlaceIndex(*map, "sect"), PlaceIndex(*map, "isle"), strong);
     CAPTURE(nearest);
     CAPTURE(farSide);
+    CAPTURE(sectNearest);
+    CHECK(nearest == 126);
+    CHECK(sectNearest == 162);
+    CHECK(farSide == 562);
     CHECK(nearest < rules.reachBase);
     CHECK(farSide < rules.reachBase + (static_cast<u32>(STRONG) * rules.reachPerPower));
 }
