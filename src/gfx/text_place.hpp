@@ -11,6 +11,7 @@
 #include "core/frame.hpp"
 #include "core/jobs.hpp"
 #include "core/names.hpp"
+#include "core/rect.hpp"
 #include "core/stable_id.hpp"
 #include "core/strings.hpp"
 #include "core/types.hpp"
@@ -22,6 +23,7 @@
 
 #include <array>
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -91,6 +93,19 @@ private:
 /// TextAnchor() with the view's world to clip transform `clip` (WorldToClip()) and alpha `alpha` already worked out: for
 /// a frame's texts, which share them.
 [[nodiscard]] core::Vec2 TextAnchor(const core::TextItem& item, const ClipTransform& clip, f32 alpha, u32 width, u32 height);
+
+/// The box on a target `width` by `height` pixels of the first instance `snapshot.ids` gives `entity`, in target pixels
+/// from the top left, unrotated: centred where the instance is `alpha` of the way from its previous centre to its
+/// current one (the clip transform `clip`, WorldToClip()), as wide as its width without the sign a mirrored instance's
+/// carries, and as tall as it is. None when `entity` has no instance.
+[[nodiscard]] std::optional<core::Rect> ScreenBoxOf(
+    const core::Snapshot& snapshot,
+    core::StableId entity,
+    const ClipTransform& clip,
+    f32 alpha,
+    u32 width,
+    u32 height
+);
 
 /// The top-left corner, in target pixels, of a text box `size` pixels large whose `align` point is at `anchor`.
 [[nodiscard]] core::Vec2 TextTopLeft(core::Vec2 anchor, core::Vec2 size, core::TextAlign align);

@@ -1,5 +1,6 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
+#include "core/rect.hpp"
 #include "core/stable_id.hpp"
 #include "gfx/fog.hpp"
 #include "gfx/labels.hpp"
@@ -72,6 +73,28 @@ gfx::PlacedLabel Of(std::span<const gfx::PlacedLabel> placed, std::size_t input)
     const auto found = std::ranges::find(placed, input, &gfx::PlacedLabel::input);
     REQUIRE(found != placed.end());
     return *found;
+}
+
+// A box over the row where a label at AT_100 hangs (its box spans x 80 to 120, y 280 to 300).
+constexpr core::Rect BODY{ .min = { .x = 90.0F, .y = 250.0F }, .max = { .x = 110.0F, .y = 310.0F } };
+// BODY moved right to clear the label by more than the hysteresis (BODY_CLEAR); and a wider box reaching in from
+// the right, overlapping it by less than the hysteresis (BODY_EDGE).
+constexpr core::Rect BODY_CLEAR{ .min = { .x = 130.0F, .y = 250.0F }, .max = { .x = 150.0F, .y = 310.0F } };
+constexpr core::Rect BODY_EDGE{ .min = { .x = 117.0F, .y = 250.0F }, .max = { .x = 150.0F, .y = 310.0F } };
+
+/// The opacity of the label at `input`: 0 once it has faded out, as the pass stops giving it then.
+f32 OpacityOf(std::span<const gfx::PlacedLabel> placed, std::size_t input) {
+    const auto found = std::ranges::find(placed, input, &gfx::PlacedLabel::input);
+    return found == placed.end() ? 0.0F : found->opacity;
+}
+
+std::span<const gfx::PlacedLabel> PlaceKeeping(
+    gfx::LabelPass& pass,
+    std::span<const gfx::LabelInput> labels,
+    f64 clock,
+    std::optional<core::Rect> keepClear
+) {
+    return pass.Place(labels, SCREEN_WIDTH, SCREEN_HEIGHT, clock, SCALE, keepClear);
 }
 
 TEST_CASE("labels apart are each shown") {
@@ -1066,6 +1089,52 @@ TEST_CASE("equal turns fall back to the entity") {
     std::array waiting{ WaitingAt(0, 9, core::LabelPriority::Rest, 10.0F), WaitingAt(1, 4, core::LabelPriority::Rest, -10.0F) };
     gfx::OrderWaiting(waiting, { .x = 640.0F, .y = 360.0F });
     CHECK(Items(waiting) == std::vector<std::size_t>{ 1, 0 });
+}
+
+TEST_CASE("a named label over the kept-clear box fades out, and back once clear") {
+    const std::array<gfx::LabelInput, 1> labels{ { Label(1, FOX_KEY, core::LabelPriority::Named, AT_100) } };
+    gfx::LabelPass pass;
+    CHECK(OpacityOf(PlaceKeeping(pass, labels, 0.0, std::nullopt), 0) == 1.0F);
+    CHECK(OpacityOf(PlaceKeeping(pass, labels, HALF_FADE, BODY), 0) == doctest::Approx(HALF));
+    CHECK(OpacityOf(PlaceKeeping(pass, labels, WHOLE_FADE, BODY), 0) == 0.0F);
+    CHECK(OpacityOf(PlaceKeeping(pass, labels, WHOLE_FADE + HALF_FADE, BODY_CLEAR), 0) == doctest::Approx(HALF));
+    CHECK(OpacityOf(PlaceKeeping(pass, labels, WHOLE_FADE + WHOLE_FADE, BODY_CLEAR), 0) == 1.0F);
+}
+
+TEST_CASE("a named label at the kept-clear box's edge holds its state") {
+    const std::array<gfx::LabelInput, 1> labels{ { Label(1, FOX_KEY, core::LabelPriority::Named, AT_100) } };
+    {
+        gfx::LabelPass pass; // shown last frame: it overlaps by less than the hysteresis and stays
+        CHECK(OpacityOf(PlaceKeeping(pass, labels, 0.0, std::nullopt), 0) == 1.0F);
+        CHECK(OpacityOf(PlaceKeeping(pass, labels, WHOLE_FADE, BODY_EDGE), 0) == 1.0F);
+    }
+    {
+        gfx::LabelPass pass; // hidden last frame: it stays hidden
+        CHECK(OpacityOf(PlaceKeeping(pass, labels, 0.0, BODY), 0) == 0.0F);
+        CHECK(OpacityOf(PlaceKeeping(pass, labels, WHOLE_FADE, BODY_EDGE), 0) == 0.0F);
+    }
+}
+
+TEST_CASE("only named labels give way to the kept-clear box") {
+    for (const core::LabelPriority priority : { core::LabelPriority::Selected,
+                                                core::LabelPriority::Hovered,
+                                                core::LabelPriority::Player,
+                                                core::LabelPriority::Place,
+                                                core::LabelPriority::Rest }) {
+        const std::array<gfx::LabelInput, 1> labels{ { Label(1, FOX_KEY, priority, AT_100) } };
+        gfx::LabelPass pass;
+        CHECK(OpacityOf(PlaceKeeping(pass, labels, 0.0, BODY), 0) == 1.0F);
+    }
+}
+
+TEST_CASE("a label hidden by the kept-clear box takes no room") {
+    // The named label at 100 is hidden; the other name's at 130 overlaps only it, and clears the box.
+    const std::array<gfx::LabelInput, 2> labels{ { Label(1, FOX_KEY, core::LabelPriority::Named, AT_100),
+                                                   Label(2, PLACE_KEY, core::LabelPriority::Rest, AT_130) } };
+    gfx::LabelPass pass;
+    const std::span<const gfx::PlacedLabel> placed = PlaceKeeping(pass, labels, 0.0, BODY);
+    CHECK(OpacityOf(placed, 0) == 0.0F);
+    CHECK(OpacityOf(placed, 1) == 1.0F);
 }
 
 } // namespace

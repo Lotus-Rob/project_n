@@ -10,10 +10,12 @@
 /// room from the rest and joins no stack (a player's label at the widest zoom never hides a place's name; a stack whose
 /// members all grow too small splits, each fading out alone, its "(+N)" count fading with it). Every change fades over
 /// LABEL_FADE_SECONDS, never pops: a label coming or going fades in or out, a stack's count cross-fades and its place glides;
-/// and a label on the edge of overlapping keeps its state (LABEL_HYSTERESIS_PIXELS), so it doesn't flicker. Pure, tested
-/// without a device.
+/// and a label on the edge of overlapping keeps its state (LABEL_HYSTERESIS_PIXELS), so it doesn't flicker. A box kept
+/// clear (the player's cultivator's body) hides the named creatures' labels over it, which take no room while hidden;
+/// every other priority draws over it. Pure, tested without a device.
 
 #include "core/frame.hpp"
+#include "core/rect.hpp"
 #include "core/stable_id.hpp"
 #include "core/strings.hpp"
 #include "core/types.hpp"
@@ -107,6 +109,9 @@ public:
     /// any others it bridges into it, unless the room the stack would need over it (or over a lone head it joins)
     /// overlaps anything else. Any other is hidden. A label wholly off the screen is left out of all this.
     ///
+    /// A Named label whose box overlaps `keepClear` (in screen pixels, like the labels') is hidden and covers no room,
+    /// with the same hysteresis as any overlap: the label on the box's edge keeps its state.
+    ///
     /// A stack is drawn over its member nearest the mean of its members' anchors, or over the one it was drawn over
     /// last frame while that is within LABEL_HYSTERESIS_PIXELS as near. A placed label large enough to read whose text is
     /// complete shows; every other fades out. Each label's opacity moves toward its target by the clock's step over
@@ -119,7 +124,14 @@ public:
     /// Gives every placed label on the screen, faded out or not, and every other still fading out, in drawing order:
     /// those whose items have gone first, then the lowest priority, so the highest draws on top. The span holds until the
     /// next Place().
-    std::span<const PlacedLabel> Place(std::span<const LabelInput> labels, u32 width, u32 height, f64 clock, f32 scale);
+    std::span<const PlacedLabel> Place(
+        std::span<const LabelInput> labels,
+        u32 width,
+        u32 height,
+        f64 clock,
+        f32 scale,
+        std::optional<core::Rect> keepClear = std::nullopt
+    );
 
     /// Where `entity`'s label was put by the last Place(), as the middle of its box's bottom edge: where it or the
     /// stack it joined is drawn, even when faded out, or its own anchor when it was hidden or off the screen; none when
@@ -205,8 +217,15 @@ private:
     void Cover(const Box& box, std::size_t stack, std::size_t member);
     // Gives each label its state's entry (m_seenOf) and the grid its size for a screen `width` by `height`.
     void Begin(std::span<const LabelInput> labels, u32 width, u32 height);
-    // Steps 1 to 3: m_order, then each label's stack in m_role, merged where a label bridges two.
-    void Resolve(std::span<const LabelInput> labels, u32 width, u32 height, f32 scale);
+    // Steps 1 to 3: m_order, then each label's stack in m_role, merged where a label bridges two; Named labels over
+    // `keepClear` are hidden.
+    void Resolve(
+        std::span<const LabelInput> labels,
+        u32 width,
+        u32 height,
+        f32 scale,
+        const std::optional<core::Rect>& keepClear
+    );
     // Joins the label at `index` to the stacks in m_joined, and any of its name their text's room reaches, if that room
     // reaches no other; else it is hidden.
     void Join(std::size_t index, std::span<const LabelInput> labels);

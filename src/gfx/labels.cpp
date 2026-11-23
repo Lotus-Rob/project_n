@@ -37,7 +37,14 @@ std::size_t CellOf(f32 pixels, std::size_t cells) {
 
 } // namespace
 
-std::span<const PlacedLabel> LabelPass::Place(std::span<const LabelInput> labels, u32 width, u32 height, f64 clock, f32 scale) {
+std::span<const PlacedLabel> LabelPass::Place(
+    std::span<const LabelInput> labels,
+    u32 width,
+    u32 height,
+    f64 clock,
+    f32 scale,
+    std::optional<core::Rect> keepClear
+) {
     PN_PROFILE_ZONE();
     ++m_frame;
     const bool first = !m_clock;
@@ -46,7 +53,7 @@ std::span<const PlacedLabel> LabelPass::Place(std::span<const LabelInput> labels
     m_clock = clock;
     const f32 step = elapsed / LABEL_FADE_SECONDS;
     Begin(labels, width, height);
-    Resolve(labels, width, height, scale);
+    Resolve(labels, width, height, scale, keepClear);
     Centre(labels);
     m_placed.clear();
     FadeGone(step);
@@ -86,7 +93,13 @@ void LabelPass::Begin(std::span<const LabelInput> labels, u32 width, u32 height)
     }
 }
 
-void LabelPass::Resolve(std::span<const LabelInput> labels, u32 width, u32 height, f32 scale) {
+void LabelPass::Resolve(
+    std::span<const LabelInput> labels,
+    u32 width,
+    u32 height,
+    f32 scale,
+    const std::optional<core::Rect>& keepClear
+) {
     PN_PROFILE_ZONE();
     m_order.resize(labels.size());
     std::ranges::iota(m_order, std::size_t{ 0 });
@@ -116,6 +129,16 @@ void LabelPass::Resolve(std::span<const LabelInput> labels, u32 width, u32 heigh
             m_role[index] = m_stacks.size();
             m_stacks.push_back({ .head = index, .into = m_role[index], .members = 1, .sum = label.anchor });
             continue;
+        }
+        // A named creature's label gives way to the kept-clear box, and then takes no room from the labels beside it.
+        if (keepClear && label.priority == core::LabelPriority::Named) {
+            const Box grown = BoxAt(label.anchor, label.width, label.height, Grow(*m_seenOf[index], label.width, label.height));
+            if (Overlap(
+                    grown,
+                    { .left = keepClear->min.x, .top = keepClear->min.y, .right = keepClear->max.x, .bottom = keepClear->max.y }
+                )) {
+                continue;
+            }
         }
         if (Collect(index, labels)) {
             continue;

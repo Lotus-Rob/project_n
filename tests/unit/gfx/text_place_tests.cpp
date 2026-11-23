@@ -3,6 +3,7 @@
 #include "core/instances.hpp"
 #include "core/names.hpp"
 #include "core/ui_colours.hpp"
+#include "gfx/camera.hpp"
 #include "gfx/text_layout.hpp"
 #include "gfx/text_place.hpp"
 
@@ -229,6 +230,37 @@ TEST_CASE("two labels of different names never stack") {
     core::TextItem lowest; // surname 5, the first given character, no second: NameKey() alone is 5
     lowest.npcName = core::NpcName{ .surname = PLAIN_KEY, .first = 0, .second = core::NO_GIVEN };
     CHECK(gfx::LabelKey(lowest) != gfx::LabelKey(plain));
+}
+
+TEST_CASE("an entity's screen box is its first instance's, unrotated, centred between its ticks at the alpha") {
+    constexpr core::StableId PLAIN{ 5 };
+    constexpr core::StableId MIRRORED{ 6 };
+    constexpr core::StableId MISSING{ 7 };
+    const auto sized = [](f32 width, f32 height) { return core::PackPair(core::PackHalf(width), core::PackHalf(height)); };
+    core::Snapshot snapshot;
+    snapshot.instances = {
+        { .previous = { .x = 100.0F, .y = 200.0F }, .current = { .x = 108.0F, .y = 200.0F }, .size = sized(30.0F, 50.0F) },
+        { .previous = { .x = 300.0F, .y = 400.0F }, .current = { .x = 310.0F, .y = 400.0F }, .size = sized(-20.0F, 40.0F) },
+        { .previous = { .x = 700.0F, .y = 800.0F }, .current = { .x = 700.0F, .y = 800.0F }, .size = sized(10.0F, 10.0F) },
+    };
+    snapshot.ids = { PLAIN, MIRRORED, PLAIN }; // the later instance of PLAIN doesn't count
+    const gfx::ClipTransform clip = gfx::WorldToClip({}, REFERENCE_WIDTH, REFERENCE_HEIGHT);
+    const std::optional<core::Rect> plain = gfx::ScreenBoxOf(snapshot, PLAIN, clip, HALF, REFERENCE_WIDTH, REFERENCE_HEIGHT);
+    REQUIRE(plain.has_value());
+    const core::Rect plainBox = plain.value_or(core::Rect{});
+    CHECK(plainBox.min.x == doctest::Approx(89.0F));
+    CHECK(plainBox.min.y == doctest::Approx(175.0F));
+    CHECK(plainBox.max.x == doctest::Approx(119.0F));
+    CHECK(plainBox.max.y == doctest::Approx(225.0F));
+    const std::optional<core::Rect> mirrored =
+        gfx::ScreenBoxOf(snapshot, MIRRORED, clip, HALF, REFERENCE_WIDTH, REFERENCE_HEIGHT);
+    REQUIRE(mirrored.has_value());
+    const core::Rect mirroredBox = mirrored.value_or(core::Rect{});
+    CHECK(mirroredBox.min.x == doctest::Approx(295.0F));
+    CHECK(mirroredBox.min.y == doctest::Approx(380.0F));
+    CHECK(mirroredBox.max.x == doctest::Approx(315.0F));
+    CHECK(mirroredBox.max.y == doctest::Approx(420.0F));
+    CHECK_FALSE(gfx::ScreenBoxOf(snapshot, MISSING, clip, HALF, REFERENCE_WIDTH, REFERENCE_HEIGHT));
 }
 
 } // namespace
