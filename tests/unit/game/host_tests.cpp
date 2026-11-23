@@ -2081,6 +2081,29 @@ TEST_CASE("the cultivator walking a road is drawn on its curve, with its label a
     CHECK(near(snapshot.route.front(), onward));
 }
 
+TEST_CASE("the route line ahead follows the road's curve and ends on the clicked tile's centre") {
+    const CornerWalk walk = WalkedToCorner();
+    const core::WorldMap& map = *walk.world.map;
+    const core::Leg leg = RouteLegOf(*walk.world.host);
+    const std::vector<core::Vec2>& line = walk.snapshot.route;
+    // The foot, then the tiles after the corner it stands on.
+    REQUIRE(line.size() == leg.tiles.size() - walk.corner);
+    const u8 roadFlag = std::to_underlying(core::TileFlag::Road);
+    bool shifted = false;
+    for (std::size_t point = 1; point + 1 < line.size(); ++point) {
+        const u32 tile = leg.tiles[walk.corner + point];
+        if ((map.FlagsAt(tile) & roadFlag) != 0) {
+            CHECK(test::OffCurve(line[point], walk.curve) < 0.02F * test::small::TILE);
+            shifted = shifted || Apart(line[point], map.TileCentre(tile)) > 0.25F * test::small::TILE;
+        }
+        else {
+            CHECK(Apart(line[point], map.TileCentre(tile)) < 0.01F);
+        }
+    }
+    CHECK(shifted);
+    CHECK(Apart(line.back(), map.TileCentre(leg.tiles.back())) < 0.01F);
+}
+
 TEST_CASE("a walk-to changing course mid-road draws the cultivator on from where it was drawn") {
     const CornerWalk walk = WalkedToCorner();
     const core::WorldMap& map = *walk.world.map;
