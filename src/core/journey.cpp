@@ -89,83 +89,131 @@ Vec2 MemberOffset(std::size_t member) {
     return (corner + step) * MEMBER_SPACING;
 }
 
-/// A journey walker's walk at one tick, gathered from the straight stretches it walks, given in time order.
-class WalkTally {
-public:
-    /// Gathers the walk at `tick`.
-    explicit WalkTally(i64 tick)
-      : m_tick{ tick } {
-    }
-
-    /// Adds the stretch from `from` to `target`, walked evenly over the ticks `start` to `end`. True once no later stretch
-    /// can change the walk: after a stretch not yet begun none is, so only the facing may still be unknown.
-    bool Add(Vec2 from, Vec2 target, i64 start, i64 end) {
-        const f64 across = static_cast<f64>(target.x) - static_cast<f64>(from.x);
-        if (start >= m_tick) {
-            if (!m_faced && across != 0.0) {
-                Face(across);
-            }
-            return m_faced;
-        }
-        const f64 down = static_cast<f64>(target.y) - static_cast<f64>(from.y);
-        const f64 length = std::sqrt((across * across) + (down * down));
-        // Begun, so `end` is past `start` whenever the tick lies before it.
-        const f64 share = m_tick >= end ? 1.0 : static_cast<f64>(m_tick - start) / static_cast<f64>(end - start);
-        m_walked.distance += length * share;
-        m_walked.moving = m_walked.moving || (length > 0.0 && m_tick <= end);
-        if (across != 0.0) {
-            Face(across);
-        }
-        return false;
-    }
-
-    /// The walk from the stretches added so far.
-    [[nodiscard]] Walked Result() const {
-        return m_walked;
-    }
-
-private:
-    /// Faces the way a stretch `across` units to the right (left when negative) goes.
-    void Face(f64 across) {
-        m_walked.facesLeft = across < 0.0;
-        m_faced = true;
-    }
-
-    i64 m_tick;
-    Walked m_walked{};
-    /// Whether a stretch across has set the facing.
-    bool m_faced = false;
+/// A straight stretch's length and the way it goes across.
+struct Stretch {
+    f64 length = 0.0;
+    Across across = Across::None;
 };
 
-/// Adds `leg`'s steps, from tile to tile, to `tally`; true once it needs no more.
-bool AddLeg(const WorldMap& map, const Leg& leg, WalkTally& tally) {
-    PN_ASSERT(leg.arrive.size() == leg.tiles.size(), "a leg has an arrive tick per tile");
-    for (std::size_t index = 0; index + 1 < leg.tiles.size(); ++index) {
-        const i64 start = leg.startTick + i64{ leg.arrive[index] };
-        const i64 end = leg.startTick + i64{ leg.arrive[index + 1] };
-        if (tally.Add(LegPoint(map, leg, index), LegPoint(map, leg, index + 1), start, end)) {
-            return true;
-        }
+/// The stretch from `from` to `target`.
+Stretch StretchOf(Vec2 from, Vec2 target) {
+    const f64 across = static_cast<f64>(target.x) - static_cast<f64>(from.x);
+    const f64 down = static_cast<f64>(target.y) - static_cast<f64>(from.y);
+    Stretch stretch{ .length = std::sqrt((across * across) + (down * down)), .across = Across::None };
+    if (across < 0.0) {
+        stretch.across = Across::Left;
     }
-    return false;
+    else if (across > 0.0) {
+        stretch.across = Across::Right;
+    }
+    return stretch;
 }
 
-/// Adds `stay`'s days, from day point to day point as StayWhere() moves its walker, to `tally`; true once it needs no
-/// more.
-bool AddStay(const WorldMap& map, const Stay& stay, WalkTally& tally) {
+/// The share of a stretch walked evenly over the ticks `start` to `end` that is gone at `tick`, a tick after `start`.
+f64 ShareGone(i64 start, i64 end, i64 tick) {
+    // Begun, so `end` is past `start` whenever the tick lies before it.
+    return tick >= end ? 1.0 : static_cast<f64>(tick - start) / static_cast<f64>(end - start);
+}
+
+/// One part's walk at a tick, over its own stretches begun by then.
+struct PartWalked {
+    /// The world units walked from the part's start.
+    f64 distance = 0.0;
+    /// Whether a stretch of nonzero length holds the tick.
+    bool moving = false;
+    /// The way its last stretch across begun by the tick goes.
+    Across faced = Across::None;
+    /// Its first stretch not yet begun by the tick, if any: a tile index of a leg, a day of a stay.
+    std::optional<std::size_t> ahead = std::nullopt;
+};
+
+/// How many of `leg`'s stretches have begun by `tick`: those from the tiles it reaches before the tick.
+std::size_t BegunStretches(const Leg& leg, i64 tick) {
+    PN_ASSERT(!leg.tiles.empty() && leg.arrive.size() == leg.tiles.size(), "a leg has an arrive tick per tile");
+    const i64 elapsed = tick - leg.startTick;
+    // The last tile starts no stretch.
+    const std::span<const u32> starts = std::span{ leg.arrive }.first(leg.arrive.size() - 1);
+    const auto first = std::ranges::lower_bound(starts, elapsed, std::ranges::less{}, [](u32 arrive) { return i64{ arrive }; });
+    return static_cast<std::size_t>(first - starts.begin());
+}
+
+/// `leg`'s walk at `tick`, `begun` of its stretches begun (BegunStretches()), read from its walk table `walk` (null only
+/// when none has begun).
+PartWalked LegWalked(const Leg& leg, i64 tick, std::size_t begun, const LegWalk* walk) {
+    PartWalked walked;
+    if (begun + 1 < leg.tiles.size()) {
+        walked.ahead = begun;
+    }
+    if (begun == 0) {
+        return walked;
+    }
+    PN_ASSERT(walk != nullptr && walk->marks.size() == leg.tiles.size(), "a begun leg's walk table has a mark per tile");
+    const std::size_t last = begun - 1;
+    const LegWalkMark& mark = walk->marks[last];
+    const i64 end = leg.startTick + i64{ leg.arrive[begun] };
+    walked.distance = mark.walked + (mark.length * ShareGone(leg.startTick + i64{ leg.arrive[last] }, end, tick));
+    walked.moving = mark.length > 0.0 && tick <= end;
+    walked.faced = walk->marks[begun].before;
+    return walked;
+}
+
+/// `stay`'s walk at `tick`, over its days from day point to day point as StayWhere() moves its walker.
+PartWalked StayWalked(const WorldMap& map, const Stay& stay, i64 tick) {
     PN_ASSERT(stay.city < map.Places().size(), "a stay is in a place of the map");
     const Vec2 centre = map.TileCentre(map.TileIndex(map.Places()[stay.city].tile));
+    PartWalked walked;
     Vec2 from = centre;
     for (i64 day = 0; stay.startTick + (day * DAY_TICKS) < stay.endTick; ++day) {
         const i64 dayStart = stay.startTick + (day * DAY_TICKS);
+        if (dayStart >= tick) {
+            walked.ahead = static_cast<std::size_t>(day);
+            break;
+        }
+        const i64 dayEnd = std::min(dayStart + DAY_TICKS, stay.endTick);
         const Vec2 target = StayPoint(map, stay, centre, day + 1);
-        if (tally.Add(from, target, dayStart, std::min(dayStart + DAY_TICKS, stay.endTick))) {
-            return true;
+        const Stretch stretch = StretchOf(from, target);
+        walked.distance += stretch.length * ShareGone(dayStart, dayEnd, tick);
+        walked.moving = walked.moving || (stretch.length > 0.0 && tick <= dayEnd);
+        if (stretch.across != Across::None) {
+            walked.faced = stretch.across;
         }
         from = target;
     }
-    return false;
+    return walked;
 }
+
+/// The way the first of `stay`'s days from `firstDay` on that drifts across goes.
+Across StayAhead(const WorldMap& map, const Stay& stay, std::size_t firstDay) {
+    const Vec2 centre = map.TileCentre(map.TileIndex(map.Places()[stay.city].tile));
+    auto day = static_cast<i64>(firstDay);
+    Vec2 from = StayPoint(map, stay, centre, day);
+    for (; stay.startTick + (day * DAY_TICKS) < stay.endTick; ++day) {
+        const Vec2 target = StayPoint(map, stay, centre, day + 1);
+        const Across across = StretchOf(from, target).across;
+        if (across != Across::None) {
+            return across;
+        }
+        from = target;
+    }
+    return Across::None;
+}
+
+/// Makes each walk table afresh when asked, keeping only the last.
+class FreshLegWalks final : public LegWalks {
+public:
+    explicit FreshLegWalks(const WorldMap& map)
+      : m_map{ &map } {
+    }
+
+    const LegWalk& Of(const Leg& leg) override {
+        m_made = MakeLegWalk(*m_map, leg);
+        return m_made;
+    }
+
+private:
+    const WorldMap* m_map;
+    LegWalk m_made;
+};
 
 } // namespace
 
@@ -280,14 +328,88 @@ Vec2 Where(const WorldMap& map, const Journey& journey, i64 tick, std::size_t me
     return position + MemberOffset(member);
 }
 
+bool LegWalk::Fits(const Leg& leg) const {
+    return std::bit_cast<u32>(origin.x) == std::bit_cast<u32>(leg.origin.x) &&
+           std::bit_cast<u32>(origin.y) == std::bit_cast<u32>(leg.origin.y) && std::ranges::equal(tiles, leg.tiles);
+}
+
+LegWalk MakeLegWalk(const WorldMap& map, const Leg& leg) {
+    PN_ASSERT(!leg.tiles.empty(), "a leg has a tile to start on");
+    LegWalk walk{ .origin = leg.origin, .tiles = leg.tiles, .marks = std::vector<LegWalkMark>(leg.tiles.size()) };
+    f64 walked = 0.0;
+    Across before = Across::None;
+    for (std::size_t index = 0; index < walk.marks.size(); ++index) {
+        LegWalkMark& mark = walk.marks[index];
+        mark.walked = walked;
+        mark.before = before;
+        if (index + 1 < walk.marks.size()) {
+            const Stretch stretch = StretchOf(LegPoint(map, leg, index), LegPoint(map, leg, index + 1));
+            mark.length = stretch.length;
+            // The stretch's own way until the pass back below.
+            mark.after = stretch.across;
+            walked += stretch.length;
+            if (stretch.across != Across::None) {
+                before = stretch.across;
+            }
+        }
+    }
+    Across after = Across::None;
+    for (LegWalkMark& mark : std::views::reverse(walk.marks)) {
+        if (mark.after != Across::None) {
+            after = mark.after;
+        }
+        mark.after = after;
+    }
+    return walk;
+}
+
+LegWalks::~LegWalks() = default;
+
 Walked WalkedAt(const WorldMap& map, const Journey& journey, i64 tick) {
-    WalkTally tally{ tick };
+    FreshLegWalks walks{ map };
+    return WalkedAt(map, journey, tick, walks);
+}
+
+Walked WalkedAt(const WorldMap& map, const Journey& journey, i64 tick, LegWalks& walks) {
+    Walked walked;
+    Across faced = Across::None;
     for (const JourneyPart& part : journey.parts) {
-        if (part.stay ? AddStay(map, part.rest, tally) : AddLeg(map, part.leg, tally)) {
+        const LegWalk* walk = nullptr;
+        PartWalked partWalked;
+        if (part.stay) {
+            partWalked = StayWalked(map, part.rest, tick);
+        }
+        else {
+            const std::size_t begun = BegunStretches(part.leg, tick);
+            if (begun > 0) {
+                walk = &walks.Of(part.leg);
+            }
+            partWalked = LegWalked(part.leg, tick, begun, walk);
+        }
+        walked.distance += partWalked.distance;
+        walked.moving = walked.moving || partWalked.moving;
+        if (partWalked.faced != Across::None) {
+            faced = partWalked.faced;
+        }
+        if (!partWalked.ahead) {
+            continue;
+        }
+        // Stretches after one not yet begun are not begun either, so only the facing may still be unknown: a walker that
+        // has not yet stepped across faces the way it first will.
+        if (faced == Across::None) {
+            if (part.stay) {
+                faced = StayAhead(map, part.rest, *partWalked.ahead);
+            }
+            else {
+                faced = (walk != nullptr ? *walk : walks.Of(part.leg)).marks[*partWalked.ahead].after;
+            }
+        }
+        if (faced != Across::None) {
             break;
         }
     }
-    return tally.Result();
+    walked.facesLeft = faced == Across::Left;
+    return walked;
 }
 
 bool Underway(const Journey& journey, i64 tick) {

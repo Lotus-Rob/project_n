@@ -1,6 +1,7 @@
 #include "core/archive.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/journey.hpp"
+#include "core/leg_walk_cache.hpp"
 #include "core/paths.hpp"
 #include "core/world_map.hpp"
 
@@ -814,6 +815,79 @@ TEST_CASE("a walk is the same for the same journey rebuilt") {
         CHECK(first.moving == again.moving);
         CHECK(first.facesLeft == again.facesLeft);
     }
+}
+
+/// Whether two walks are the same to the bit.
+bool SameWalk(const core::Walked& lhs, const core::Walked& rhs) {
+    return std::bit_cast<u64>(lhs.distance) == std::bit_cast<u64>(rhs.distance) && lhs.moving == rhs.moving &&
+           lhs.facesLeft == rhs.facesLeft;
+}
+
+TEST_CASE("a walk from kept tables is the walk worked out afresh, to the bit") {
+    const core::WorldMap map = WalkMap();
+    // From the home city's tile to the destination's: south first, so it sets out looking ahead, then a diagonal, a step
+    // west and back east; the way home walks it reversed.
+    constexpr std::array<u32, 6> WINDING{ { TOP_LEFT, MIDDLE_LEFT, 7, 5, CENTRE, 2 } };
+    const core::Journey visit =
+        core::Visit(map, WINDING, core::WALKING, WALKER, HOME, DESTINATION, WALK_START, FIVE_DAYS, SEED);
+    const core::Leg& out = visit.parts[0].leg;
+    const core::Stay& stay = visit.parts[1].rest;
+    const core::Leg& back = visit.parts[2].leg;
+    const i64 homeEnd = core::EndTick(back);
+    const std::array<i64, 20> samples{ {
+        WALK_START - 1,                                                         // before it sets out
+        WALK_START,                                                             // setting out
+        WALK_START + 1,                                                         // its first tick under way
+        HalfwayThrough(visit, 0),                                               // down its first step, not yet across
+        out.startTick + i64{ out.arrive[1] },                                   // a step's end
+        out.startTick + i64{ out.arrive[1] } + 1,                               // the next step's first tick
+        out.startTick + ((i64{ out.arrive[3] } + i64{ out.arrive[4] }) / 2),    // halfway west
+        stay.startTick,                                                         // arriving
+        stay.startTick + 1,                                                     // the stay's first tick
+        stay.startTick + (DAY / 2),                                             // mid-day
+        stay.startTick + DAY,                                                   // a day's end
+        stay.startTick + (2 * DAY) + (DAY / 3),                                 // into a later day
+        stay.endTick - 1,                                                       // the stay's last tick
+        stay.endTick,                                                           // setting out home
+        back.startTick + 1,                                                     // the way home's first tick
+        back.startTick + ((i64{ back.arrive[1] } + i64{ back.arrive[2] }) / 2), // halfway home's second step
+        back.startTick + i64{ back.arrive[2] },                                 // a step's end on the way home
+        homeEnd - 1,                                                            // its last tick
+        homeEnd,                                                                // home
+        homeEnd + 1,                                                            // after it
+    } };
+    core::LegWalkCache walks{ map };
+    std::size_t differ = 0;
+    for (const i64 tick : samples) {
+        differ += SameWalk(core::WalkedAt(map, visit, tick, walks), core::WalkedAt(map, visit, tick)) ? 0 : 1;
+    }
+    CHECK(differ == 0);
+    // The samples reach both ways of facing and both standing and walking, so a table read wrongly would show.
+    CHECK_FALSE(core::WalkedAt(map, visit, HalfwayThrough(visit, 0), walks).facesLeft);
+    CHECK(core::WalkedAt(map, visit, samples[6], walks).facesLeft);
+    CHECK(core::WalkedAt(map, visit, stay.startTick + 1, walks).moving);
+    CHECK_FALSE(core::WalkedAt(map, visit, homeEnd + 1, walks).moving);
+}
+
+TEST_CASE("a walk from kept tables looks ahead for its facing, into its next leg too") {
+    const core::WorldMap map = WalkMap();
+    constexpr std::array<u32, 3> SOUTH_THEN_WEST{ { TOP_MIDDLE, CENTRE, MIDDLE_LEFT } };
+    const core::Journey journey = OneLeg(map, SOUTH_THEN_WEST);
+    core::LegWalkCache walks{ map };
+    CHECK(core::WalkedAt(map, journey, core::StartTick(journey), walks).facesLeft);
+    CHECK(core::WalkedAt(map, journey, HalfwayThrough(journey, 0), walks).facesLeft);
+
+    // A leg straight down, then one west: down the first, it faces the second's way.
+    constexpr std::array<u32, 2> SOUTH{ { TOP_MIDDLE, CENTRE } };
+    constexpr std::array<u32, 2> WEST{ { CENTRE, MIDDLE_LEFT } };
+    core::Journey twoLegs = OneLeg(map, SOUTH);
+    const i64 turn = core::EndTick(twoLegs);
+    twoLegs.parts.push_back(
+        { .stay = false, .leg = core::MakeTileLeg(map, core::WALKING, turn, map.TileCentre(CENTRE), WEST), .rest = {} }
+    );
+    const i64 down = HalfwayThrough(twoLegs, 0);
+    CHECK(core::WalkedAt(map, twoLegs, down, walks).facesLeft);
+    CHECK(SameWalk(core::WalkedAt(map, twoLegs, down, walks), core::WalkedAt(map, twoLegs, down)));
 }
 
 } // namespace

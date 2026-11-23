@@ -123,13 +123,18 @@ inline constexpr core::TravelRules TRAVEL{ .sharePerMille = 60,
 /// city small::HOME (the start) at tile 0, a road over tiles 1 to 5 of the top row and city small::DESTINATION at tile 6,
 /// its right end, each of small::PEOPLE, and a danger, small::DANGER, in the bottom row's middle. Its one profile is the
 /// default on_foot; with `secondProfile` a `ridden` one twice as fast follows it. Its travellers follow `travel`: by
-/// default they reach nowhere, so nobody travels. A test binary that can't build it stops at once, as ShippedWorld() does.
-[[nodiscard]] inline core::WorldMap SmallWorldMap(bool secondProfile = false, const core::TravelRules& travel = {}) {
+/// default they reach nowhere, so nobody travels. A `tileSize` other than small::TILE lays the same tiles out larger or
+/// smaller. A test binary that can't build it stops at once, as ShippedWorld() does.
+[[nodiscard]] inline core::WorldMap SmallWorldMap(
+    bool secondProfile = false,
+    const core::TravelRules& travel = {},
+    f32 tileSize = small::TILE
+) {
     core::WorldMapSource source;
     source.travel = travel;
     source.columns = small::COLUMNS;
     source.rows = small::ROWS;
-    source.tileSize = small::TILE;
+    source.tileSize = tileSize;
     source.roadCost = small::ROAD_COST;
     source.fordCost = small::FORD_COST;
     source.kinds = { { .name = "meadow", .symbol = '.', .cost = small::MEADOW_COST },
@@ -182,12 +187,13 @@ inline constexpr core::TravelRules TRAVEL{ .sharePerMille = 60,
     return *std::move(built);
 }
 
-/// SmallWorldMap(`secondProfile`, `travel`), shared as game data holds a map.
+/// SmallWorldMap(`secondProfile`, `travel`, `tileSize`), shared as game data holds a map.
 [[nodiscard]] inline std::shared_ptr<const core::WorldMap> SmallWorld(
     bool secondProfile = false,
-    const core::TravelRules& travel = {}
+    const core::TravelRules& travel = {},
+    f32 tileSize = small::TILE
 ) {
-    return std::make_shared<const core::WorldMap>(SmallWorldMap(secondProfile, travel));
+    return std::make_shared<const core::WorldMap>(SmallWorldMap(secondProfile, travel, tileSize));
 }
 
 /// A names table of one surname and one given character.

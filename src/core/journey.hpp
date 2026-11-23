@@ -157,7 +157,9 @@ struct Journey {
 
 /// How far a journey's walker has walked by a tick, and how it is drawn there.
 struct Walked {
-    /// The world units walked from the journey's start: each straight stretch's length times the share of its ticks gone.
+    /// The world units walked from the journey's start: each straight stretch's length times the share of its ticks gone,
+    /// summed part by part from each part's start and the parts' sums added in order, so a leg's share of it is the same
+    /// in every journey that walks that leg.
     f64 distance = 0.0;
     /// Whether it is moving: some stretch of nonzero length holds the tick, after its start and up to its end.
     bool moving = false;
@@ -166,12 +168,68 @@ struct Walked {
     bool facesLeft = false;
 };
 
+/// Which way a straight stretch goes across the map: left, right, or neither (straight up or down, or nowhere).
+enum class Across : u8 {
+    None,  ///< Neither way.
+    Left,  ///< Towards smaller x.
+    Right, ///< Towards larger x.
+};
+
+/// What a leg's walk table holds for one of its tiles.
+struct LegWalkMark {
+    /// The world units of the stretches before the tile, summed in order from the leg's first.
+    f64 walked = 0.0;
+    /// The length of the stretch from the tile to the next; 0 for the last tile.
+    f64 length = 0.0;
+    /// The way the last stretch across before the tile goes.
+    Across before = Across::None;
+    /// The way the first stretch across from the tile on goes.
+    Across after = Across::None;
+};
+
+/// A leg's walk table: what WalkedAt() needs of a leg's stretches, worked out once from its points (its origin, then its
+/// tiles' centres), so how far its walker has gone takes a search of its arrive ticks and one stretch. It depends on the
+/// points alone, not on the ticks, so every leg over the same points may share one, whatever its start or profile.
+struct LegWalk {
+    /// The origin of the leg it was made for.
+    Vec2 origin{};
+    /// The tiles of the leg it was made for.
+    std::vector<u32> tiles;
+    /// One per tile, in order.
+    std::vector<LegWalkMark> marks;
+
+    /// Whether it is the table of `leg`'s points: the same origin, to the bit, and the same tiles.
+    [[nodiscard]] bool Fits(const Leg& leg) const;
+};
+
+/// The walk table of `leg`'s points on `map`.
+[[nodiscard]] LegWalk MakeLegWalk(const WorldMap& map, const Leg& leg);
+
+/// Where WalkedAt() finds the walk tables of a journey's legs: made afresh, or kept and shared (core::LegWalkCache).
+class LegWalks {
+public:
+    LegWalks() = default;
+    LegWalks(const LegWalks&) = delete;
+    LegWalks& operator=(const LegWalks&) = delete;
+    LegWalks(LegWalks&&) = delete;
+    LegWalks& operator=(LegWalks&&) = delete;
+    virtual ~LegWalks();
+
+    /// The walk table of `leg`'s points on the map its journey walks (MakeLegWalk()), valid at least until the next call.
+    [[nodiscard]] virtual const LegWalk& Of(const Leg& leg) = 0;
+};
+
 /// How far member 0 of `journey` has walked at `tick`, whether it moves and which way it faces, over the straight
 /// stretches Where() moves it along in order: each leg's steps from tile to tile and each stay's days from day point to
 /// day point. The other members keep fixed offsets from it, so they walk alike. A pure function of the journey, the map
-/// and the tick, so a paused clock gives the same walk; it allocates nothing and reads no stretch after `tick` once the
-/// facing is known.
+/// and the tick, so a paused clock gives the same walk. It makes each leg's walk table it reads afresh, at the cost of
+/// walking the leg; a caller asking for many walks keeps the tables and passes them (the overload below).
 [[nodiscard]] Walked WalkedAt(const WorldMap& map, const Journey& journey, i64 tick);
+
+/// WalkedAt() above, to the bit, each leg's walk table taken from `walks`: it costs a search of the arrive ticks of each
+/// leg begun by `tick`, one stretch of each, and the days of a stay up to `tick`, and asks for no table of a leg not yet
+/// begun unless it must look ahead for the facing. It reads no part after the one that settles the facing.
+[[nodiscard]] Walked WalkedAt(const WorldMap& map, const Journey& journey, i64 tick, LegWalks& walks);
 
 /// Whether `journey` is underway at `tick`: from its start to the tick before its end.
 [[nodiscard]] bool Underway(const Journey& journey, i64 tick);
