@@ -66,14 +66,7 @@ std::optional<core::Rect> GroundQuad(core::Rect view, const core::WorldMap& map)
     return overlap;
 }
 
-RiverShape RiverShapeOf(const core::WorldMap& map, const core::RiverLook& look) {
-    return { .coreWidth = look.width * map.TileSize(),
-             .edgeWidth = look.edge * map.TileSize(),
-             .coreColour = core::FromSrgb(look.colour[0], look.colour[1], look.colour[2], core::OPAQUE_ALPHA),
-             .edgeColour = StrengthColour(look.edgeColour, look.edgeStrength) };
-}
-
-RoadShape RoadShapeOf(const core::WorldMap& map, const core::RoadLook& look) {
+RibbonShape RibbonShapeOf(const core::WorldMap& map, const core::RibbonLook& look) {
     return { .coreWidth = look.width * map.TileSize(),
              .edgeWidth = look.edge * map.TileSize(),
              .coreColour = core::FromSrgb(look.colour[0], look.colour[1], look.colour[2], core::OPAQUE_ALPHA),

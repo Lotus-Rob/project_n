@@ -12,9 +12,9 @@
 #include "gfx/ground.hpp"
 #include "gfx/internal/features/composite.hpp"
 #include "gfx/internal/features/ground.hpp"
+#include "gfx/internal/features/line_ribbons.hpp"
 #include "gfx/internal/features/meshes.hpp"
 #include "gfx/internal/features/ribbons.hpp"
-#include "gfx/internal/features/rivers.hpp"
 #include "gfx/internal/features/seals.hpp"
 #include "gfx/internal/features/sprites.hpp"
 #include "gfx/internal/frame/frame.hpp"
@@ -614,14 +614,14 @@ std::expected<void, core::Error> Renderer::Impl::UploadGround(SDL_GPUCopyPass* c
     // SetWorld() counts each new map or look, which is all the field and the ribbons are built from.
     const std::expected<void, core::Error> field = ground.Update(copy, *worldMap, worldLook, worldVersion);
     const std::expected<void, core::Error> riversLaid = rivers.Update(copy, worldVersion, [&](std::vector<RibbonVertex>& into) {
-        const RiverShape shape = RiverShapeOf(*worldMap, worldLook.river);
+        const RibbonShape shape = RibbonShapeOf(*worldMap, worldLook.river);
         // DrawRivers() leaves out whole the rivers past MAX_RIVER_QUADS, and logs it.
         const std::array<u8, 2> water{ { worldLook.ground.shallowKind, worldLook.ground.deepKind } };
         DrawRivers(*worldMap, shape, water, into);
         return RimStart(shape.coreWidth, shape.edgeWidth);
     });
     const std::expected<void, core::Error> roadsLaid = roads.Update(copy, worldVersion, [&](std::vector<RibbonVertex>& into) {
-        const RoadShape shape = RoadShapeOf(*worldMap, worldLook.road);
+        const RibbonShape shape = RibbonShapeOf(*worldMap, worldLook.road);
         // DrawRoads() leaves out whole the roads past MAX_ROAD_QUADS, and logs it.
         DrawRoads(roadCurves, shape, into);
         return RimStart(shape.coreWidth, shape.edgeWidth);

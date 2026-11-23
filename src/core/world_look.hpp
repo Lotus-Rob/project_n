@@ -161,31 +161,17 @@ struct MistLook {
     std::array<f32, 2> width{};
 };
 
-/// The painted river ribbon. Lengths in tiles, colours sRGB.
-struct RiverLook {
+/// A painted ribbon, a river's or a road's: the same keys. Lengths in tiles, colours sRGB.
+struct RibbonLook {
     /// The ribbon's width.
     f32 width = 0.0F;
-    /// The whole width of the edge band, drawn under the core, so the bank shows at each side past it.
+    /// The whole width of the edge band, drawn under the core, so the bank or verge shows at each side past it.
     f32 edge = 0.0F;
-    /// The water's colour.
+    /// The core's colour.
     std::array<u8, 3> colour{};
-    /// The bank's colour.
+    /// The edge's colour.
     std::array<u8, 3> edgeColour{};
-    /// How strongly the bank shows, from 0 to 1.
-    f32 edgeStrength = 0.0F;
-};
-
-/// The painted road ribbon. Lengths in tiles, colours sRGB.
-struct RoadLook {
-    /// The ribbon's width.
-    f32 width = 0.0F;
-    /// The whole width of the edge band, drawn under the core, so the verge shows at each side past it.
-    f32 edge = 0.0F;
-    /// The road's colour.
-    std::array<u8, 3> colour{};
-    /// The verge's colour.
-    std::array<u8, 3> edgeColour{};
-    /// How strongly the verge shows, from 0 to 1.
+    /// How strongly the edge shows, from 0 to 1.
     f32 edgeStrength = 0.0F;
 };
 
@@ -224,9 +210,9 @@ struct WorldLook {
     /// The mist puffs among the stamps.
     MistLook mist{};
     /// The river ribbon.
-    RiverLook river{};
+    RibbonLook river{};
     /// The road ribbon.
-    RoadLook road{};
+    RibbonLook road{};
     /// The paintings of the places.
     PlaceLook places{};
 

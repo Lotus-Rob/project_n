@@ -15,7 +15,7 @@ constexpr f32 CORE = 12.0F;
 constexpr f32 EDGE = 20.0F;
 constexpr u32 CORE_COLOUR = 0xFF'11'22'33;
 constexpr u32 EDGE_COLOUR = 0xFF'44'55'66;
-constexpr gfx::RiverShape SHAPE{ .coreWidth = CORE, .edgeWidth = EDGE, .coreColour = CORE_COLOUR, .edgeColour = EDGE_COLOUR };
+constexpr gfx::RibbonShape SHAPE{ .coreWidth = CORE, .edgeWidth = EDGE, .coreColour = CORE_COLOUR, .edgeColour = EDGE_COLOUR };
 
 /// The kind index MapOfTiles() gives its lake tiles: water.
 constexpr u8 LAKE = 1;

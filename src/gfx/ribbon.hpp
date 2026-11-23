@@ -30,6 +30,18 @@ struct RibbonVertex {
 };
 static_assert(sizeof(RibbonVertex) == MESH_VERTEX_BYTES, "the ribbon pipeline reads vertices as the mesh path's");
 
+/// How a ribbon of lines on the world map, a river or a road, is painted: a wide edge band under a narrower core band.
+struct RibbonShape {
+    /// The core band's width in world units.
+    f32 coreWidth = 0.0F;
+    /// The edge band's width in world units, wider than the core's.
+    f32 edgeWidth = 0.0F;
+    /// The core's premultiplied colour, red in the low byte, as RibbonVertex::colour.
+    u32 coreColour = 0;
+    /// The edge's premultiplied colour, in the same layout.
+    u32 edgeColour = 0;
+};
+
 /// A tangent shorter than this, in world units, is too short to say which way a ribbon runs there.
 inline constexpr f32 SHORTEST_TANGENT = 1.0e-4F;
 

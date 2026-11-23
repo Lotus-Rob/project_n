@@ -9,7 +9,7 @@ constexpr f32 CORE = 6.0F;
 constexpr f32 EDGE = 10.0F;
 constexpr u32 CORE_COLOUR = 0xFF'11'22'33;
 constexpr u32 EDGE_COLOUR = 0xFF'44'55'66;
-constexpr gfx::RoadShape SHAPE{ .coreWidth = CORE, .edgeWidth = EDGE, .coreColour = CORE_COLOUR, .edgeColour = EDGE_COLOUR };
+constexpr gfx::RibbonShape SHAPE{ .coreWidth = CORE, .edgeWidth = EDGE, .coreColour = CORE_COLOUR, .edgeColour = EDGE_COLOUR };
 
 /// A straight curve of `steps` steps along y = `row`, 10 units each.
 std::vector<core::Vec2> Straight(std::size_t steps, f32 row) {

@@ -503,7 +503,7 @@ TEST_CASE("an unknown key in the fog's sections warns") {
 
 TEST_CASE("road reads as written") {
     const Shipped shipped = ShippedLook();
-    const core::RoadLook& road = shipped.look.road;
+    const core::RibbonLook& road = shipped.look.road;
     CHECK(road.width == doctest::Approx(0.26F));
     CHECK(road.edge == doctest::Approx(0.4F));
     CHECK(road.colour == std::array<u8, 3>{ { 149, 132, 109 } });
