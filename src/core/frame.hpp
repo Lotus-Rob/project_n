@@ -428,8 +428,9 @@ struct Snapshot {
     std::optional<CalendarView> calendar = std::nullopt;
     /// The fog of war on the world map; `on` is false until the simulation turns it on, each publish.
     FogView fog{};
-    /// The player's remaining route on the world map: its foot where it is drawn (on the road it walks), then the centres
-    /// of the tiles still to walk; refilled in place each publish and empty for none.
+    /// The player's remaining route on the world map: its foot where it is drawn (on the road it walks), then the tiles
+    /// still to walk as they will be drawn (on a road its curve, else the centre; the clicked end its centre); refilled in
+    /// place each publish and empty for none.
     // NOLINTNEXTLINE(readability-redundant-member-init): designated initializers omit it; Clang warns without one
     std::vector<Vec2> route{};
     /// What the camera follows, if anything.

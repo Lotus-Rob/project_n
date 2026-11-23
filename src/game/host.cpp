@@ -1262,10 +1262,21 @@ void Host::PublishRoute(core::Snapshot& snapshot) const {
     }
     const auto now = static_cast<i64>(Live().worldTicks);
     snapshot.route.push_back(DrawnPlayer(PlayerBody()).current);
-    for (const core::JourneyPart& part : m_route->parts) {
+    for (std::size_t index = 0; index < m_route->parts.size(); ++index) {
+        const core::JourneyPart& part = m_route->parts[index];
+        const bool lastPart = index + 1 == m_route->parts.size();
         for (std::size_t tile = 0; !part.stay && tile < part.leg.tiles.size(); ++tile) {
             if (part.leg.startTick + i64{ part.leg.arrive[tile] } > now) {
-                snapshot.route.push_back(m_data.world->TileCentre(part.leg.tiles[tile]));
+                const u32 where = part.leg.tiles[tile];
+                // The line runs where the cultivator will be drawn, so on a road it follows the curve; the clicked end is
+                // drawn where it stands, as DrawnWhere leaves a journey's last point.
+                const bool end = lastPart && tile + 1 == part.leg.tiles.size();
+                core::Vec2 point = m_data.world->TileCentre(where);
+                if (const std::optional<core::Vec2> onRoad =
+                        end || !m_roadCurves ? std::nullopt : m_roadCurves->OnRoad(where)) {
+                    point = *onRoad;
+                }
+                snapshot.route.push_back(point);
             }
         }
     }
