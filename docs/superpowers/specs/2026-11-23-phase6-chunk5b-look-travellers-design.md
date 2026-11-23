@@ -1,6 +1,6 @@
 # Phase 6, chunk 5b-look, part 2: the travellers walk
 
-Date: 2026-11-23 · Status: **draft** · Chunk spec: `2026-11-10-phase6-chunk5-world-map-design.md` · Builds on:
+Date: 2026-11-23 · Status: **approved 2026-11-23** (builder check done; its four questions settled as Decisions 5-7 and Goal 8) · Chunk spec: `2026-11-10-phase6-chunk5-world-map-design.md` · Builds on:
 `2026-11-21-phase6-chunk5b-look-terrain-design.md` (part 1), `2026-11-22-roads-design.md` and
 `2026-11-22-player-walk-and-camera-design.md` (their Outcomes) · Followed by: 5b-look part 3 (sharpness)
 
