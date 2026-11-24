@@ -516,6 +516,16 @@ TEST_CASE("road reads as written") {
     CHECK(small->road.width == doctest::Approx(0.26F));
 }
 
+TEST_CASE("a road's taper is an unknown key: it warns and the road stays untapered") {
+    std::vector<std::string> warnings;
+    const std::string text = With("edge_strength: 0.4 }", "edge_strength: 0.4, taper: 2 }");
+    const std::expected<core::WorldLook, core::Error> look = Parse(text, &warnings);
+    REQUIRE(look.has_value());
+    CHECK(look->road.taper == 0.0F);
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0] == std::format("world_look line {}: road has no key taper; it is ignored", LineOf(text, "road:")));
+}
+
 TEST_CASE("a ribbon's taper is read in tiles, 0 when absent") {
     const std::expected<core::WorldLook, core::Error> tapered =
         Parse(With("edge_strength: 0.67 }", "edge_strength: 0.67, taper: 1.5 }"));
@@ -567,6 +577,8 @@ TEST_CASE("the shipped look's ground, veil, mist, river and places read as writt
     CHECK(look.river.colour == std::array<u8, 3>{ { 128, 172, 176 } });
     CHECK(look.river.edgeColour == std::array<u8, 3>{ { 70, 104, 112 } });
     CHECK(look.river.edgeStrength == doctest::Approx(0.67F));
+    CHECK(look.river.taper == doctest::Approx(1.5F));
+    CHECK(look.road.taper == 0.0F);
     CHECK(look.places.city == core::atlas::SpriteId::PaintingCity);
     CHECK(look.places.dangers.size() == 6);
     REQUIRE(look.places.byKey.size() == 1);

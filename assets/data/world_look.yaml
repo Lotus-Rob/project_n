@@ -19,7 +19,7 @@
 # river:   the ribbon: `width` of the water and `edge` of the whole edge band under it, both in tiles (`edge` not narrower
 #          than `width`), `colour`, `edge_colour`, `edge_strength` (0 to 1), and optionally `taper`, the tiles from its start
 #          over which it widens from nothing to full width (0 to 4, default 0)
-# road:    the ribbon roads are drawn as, the same keys and rules as `river:`, narrower and quieter
+# road:    the ribbon roads are drawn as, the same keys and rules as `river:` but `taper`, which only rivers take, narrower and quieter
 # places:  paintings for places: `city`, `dangers` one per danger sort the map uses (a sort it doesn't use is ignored),
 #          `by_key` for the places with a key of their own (a key no place has is refused)
 # route:   the player's route and the target cursor: `dot` every `spacing` world units along the line, `marker` on its
