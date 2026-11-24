@@ -184,7 +184,8 @@ pass.
 Rulings, with the measurements behind them:
 - **River 5 is fed by a pond, not hills.** Its only hills lie across the row-32 road: an extension would bridge the road
   and hook back on itself. The pond sits below the road, where the old head already sat; travel is unchanged. The
-  third task's review raised the pond beside the road as a Minor; it was kept for that reason (moving it would re-roll 17 pictures).
+  third task's review raised the pond beside the road as a Minor; it was kept for that reason (moving it would re-roll
+  17 pictures).
 - **Rivers 6 and 7 are fed by ponds.** River 6's hills lie beyond the capital-north road; river 7's are six rows north,
   so an extension would turn about 110 degrees at the old head.
 - **The shipped-roads traffic floor dropped from 2,500 to 2,400** (the user: the count is a demo stress load, not a
@@ -197,3 +198,22 @@ Rulings, with the measurements behind them:
   nearest 126, sect nearest 162, far side 562.
 - **No RED run was recorded where a new test called a symbol that did not exist yet** (`RiverStarts`, the taper
   fields). Those tests failed to compile until the code existed. Each review fix did run RED first.
+
+The final whole-branch review (Opus, with GLM-5.3-Flash, DeepSeek V4.1 Flash, GPT-6 Luna and Qwen3.8 Flash in
+parallel) found no Critical or Important defect in the code; every finding was fixed in two passes, none changing a
+reference picture:
+- **A head where another river ends is a branch** ("fix(gfx): make a head at another river's end a branch, not a
+  spring"): the start classifier reused `core::JoinedEnd`, whose rule skips meetings near the other river's end, so a
+  river fed at its head by another's mouth was a spring tapering to a point where the other arrives at full width. A
+  new `core::JoinedHead` skips only meetings near the other river's start, so two sources side by side stay springs.
+  Like `JoinedEnd` it returns the meeting point, though the classifier only asks whether there is one: kept so the two
+  read alike.
+- **`taper` is a river-only key** ("fix(data): read taper under river only, as roads never use it"): roads never used it,
+  so under `road:` it now warns as an unknown key instead of being read and ignored.
+- **Ends and starts stay on the map** ("fix(gfx): keep river ends on the map beside edge water"): the point a band runs
+  on to inside water was never checked against the map's extent; it is now clamped to it.
+- The rest were tests and words: the edge-spring and pond-start tests now fail on the bugs they guard, the shipped look
+  test checks both tapers, the shipped kind lookup fails on a missing name, a named constant replaced a reused one, and
+  `src/AGENTS.md` and the `RiverStart` docs describe the start as drawn.
+- Rejected (Qwen3.8 Flash): the delta's head (river 10) ends about 0.2 tile outside river 0's band. That drawing predates
+  this work, which leaves river 10 as it is; it went to the backlog.
