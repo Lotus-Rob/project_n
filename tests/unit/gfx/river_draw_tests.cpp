@@ -234,6 +234,7 @@ TEST_CASE("a river starting on open ground tapers in") {
     const std::vector<gfx::RibbonVertex> vertices = Draw(map, {}, TAPERED);
     const std::size_t core = (vertices.size() / gfx::QUAD_VERTICES / 2) * gfx::QUAD_VERTICES;
     CHECK(Distance(Corner(vertices[core]), Corner(vertices[core + 1])) < 0.01F);
+    CHECK(Distance(Corner(vertices[0]), Corner(vertices[1])) < 0.01F);
 }
 
 TEST_CASE("a river starting by a lake starts inside it, fading in") {
@@ -266,6 +267,7 @@ TEST_CASE("a river starting in a lake keeps its start") {
     CHECK(gfx::RiverStarts(map, LAKE_WATER) == std::vector{ gfx::RiverStart::Pond });
     const std::vector<gfx::RibbonVertex> vertices = Draw(map, LAKE_WATER, TAPERED);
     CHECK(Distance(Midline(vertices, vertices.size() / gfx::QUAD_VERTICES / 2, false), Middle(1, 1)) < 1.0F);
+    CHECK(vertices[vertices.size() / 2].colour == 0);
 }
 
 TEST_CASE("a branch's start is drawn as it was") {
@@ -281,6 +283,20 @@ TEST_CASE("a branch's start is drawn as it was") {
     const std::size_t mainQuads = std::size_t{ 8 } * gfx::RIVER_STEPS;
     const std::size_t first = ((quads / 2) + mainQuads) * gfx::QUAD_VERTICES;
     CHECK(std::abs(Distance(Corner(vertices[first]), Corner(vertices[first + 1])) - CORE) < 0.01F);
+}
+
+TEST_CASE("a branch's head keeps its own first point") {
+    // The main river slopes, so its middle at the branch's column lies half a tile below the branch's first waypoint.
+    const core::WorldMap map = test::MeadowMap(
+        10,
+        6,
+        { { { .column = 1, .row = 4 }, { .column = 9, .row = 5 } }, { { .column = 5, .row = 4 }, { .column = 5, .row = 1 } } }
+    );
+    CHECK(gfx::RiverStarts(map, {}) == std::vector{ gfx::RiverStart::Spring, gfx::RiverStart::Branch });
+    const std::vector<gfx::RibbonVertex> vertices = Draw(map, {}, TAPERED);
+    const std::size_t mainQuads = std::size_t{ 9 } * gfx::RIVER_STEPS;
+    const std::size_t branch = (vertices.size() / gfx::QUAD_VERTICES / 2) + mainQuads;
+    CHECK(Distance(Midline(vertices, branch, false), Middle(5, 4)) < 1.0F);
 }
 
 TEST_CASE("a river at the map's west edge is a spring") {

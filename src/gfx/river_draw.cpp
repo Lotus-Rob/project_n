@@ -49,11 +49,11 @@ std::optional<core::Vec2> Mouth(const core::WorldMap& map, std::span<const u8> w
     return std::nullopt;
 }
 
-/// How one river begins and, when that changes its first point, the point it begins at.
+/// How one river begins and, for a pond with water behind it, the point it begins at.
 struct Start {
     /// The kind of start.
     RiverStart kind;
-    /// The first point a branch begins at, or the point a pond's river begins at before its own first point.
+    /// The point a pond's river begins at before its own first point; none when it already starts in water or isn't a pond.
     std::optional<core::Vec2> point;
 };
 
@@ -73,7 +73,7 @@ Start StartOf(
     if (const std::optional<core::Vec2> joined = core::JoinedEnd(reversed, index, stored, map.TileSize(), false)) {
         return { .kind = RiverStart::Branch, .point = joined };
     }
-    if (IsWet(map, water, points[0]) && !water.empty()) {
+    if (IsWet(map, water, points[0])) {
         return { .kind = RiverStart::Pond, .point = std::nullopt };
     }
     if (const std::optional<core::Vec2> mouth = Mouth(map, water, points[1], points[0])) {
@@ -82,6 +82,7 @@ Start StartOf(
     return { .kind = RiverStart::Spring, .point = std::nullopt };
 }
 
+/// Every river's waypoints of `map`, in the map's order.
 std::vector<std::vector<core::Vec2>> WaypointsOf(const core::WorldMap& map) {
     std::vector<std::vector<core::Vec2>> waypoints;
     waypoints.reserve(map.Rivers().size());
@@ -125,12 +126,11 @@ void DrawRivers(
         f32 fadeIn = 0.0F;
         f32 taper = 0.0F;
         const Start start = StartOf(map, water, points, index, stored);
-        if (start.kind == RiverStart::Branch && start.point) {
-            points.front() = *start.point;
-        }
-        else if (start.kind == RiverStart::Pond && start.point) {
-            points.insert(points.begin(), *start.point);
+        if (start.kind == RiverStart::Pond) {
             fadeIn = MOUTH_INTO_TILES * map.TileSize();
+            if (start.point) {
+                points.insert(points.begin(), *start.point);
+            }
         }
         else if (start.kind == RiverStart::Spring) {
             taper = shape.taper;
