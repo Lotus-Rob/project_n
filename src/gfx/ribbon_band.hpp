@@ -17,7 +17,8 @@ struct Laid {
     std::vector<core::Vec2> line;
     /// How far back from the end the band fades to nothing, in world units.
     f32 fade = 0.0F;
-    /// How far from the start the band rises from nothing to its colour, in world units.
+    /// How far from the start the band rises from nothing to its colour, in world units; a line shorter than twice this
+    /// rises over half its length.
     f32 fadeIn = 0.0F;
     /// How far from the start both sides widen from nothing to the full width, in world units; a line shorter than twice
     /// this tapers over half its length.

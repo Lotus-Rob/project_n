@@ -37,10 +37,10 @@ f32 FarWidth(const std::vector<gfx::RibbonVertex>& vertices, std::size_t quad) {
 
 TEST_CASE("a band tapers from nothing at its start") {
     const std::vector<gfx::RibbonVertex> vertices = Band({ .line = Straight(9), .taper = 128.0F });
-    CHECK(NearWidth(vertices, 0) == doctest::Approx(0.0F).epsilon(TOLERANCE));
-    CHECK(FarWidth(vertices, 0) == doctest::Approx(10.0F).epsilon(TOLERANCE));
-    CHECK(FarWidth(vertices, 1) == doctest::Approx(WIDTH).epsilon(TOLERANCE));
-    CHECK(FarWidth(vertices, 7) == doctest::Approx(WIDTH).epsilon(TOLERANCE));
+    CHECK(NearWidth(vertices, 0) < TOLERANCE);
+    CHECK(std::abs(FarWidth(vertices, 0) - 10.0F) < TOLERANCE);
+    CHECK(std::abs(FarWidth(vertices, 1) - WIDTH) < TOLERANCE);
+    CHECK(std::abs(FarWidth(vertices, 7) - WIDTH) < TOLERANCE);
 }
 
 TEST_CASE("a band fades in from nothing at its start") {
@@ -53,7 +53,12 @@ TEST_CASE("a band fades in from nothing at its start") {
 
 TEST_CASE("a short band tapers over at most half its length") {
     const std::vector<gfx::RibbonVertex> vertices = Band({ .line = Straight(2), .taper = 256.0F });
-    CHECK(FarWidth(vertices, 0) == doctest::Approx(WIDTH).epsilon(TOLERANCE));
+    CHECK(std::abs(FarWidth(vertices, 0) - WIDTH) < TOLERANCE);
+}
+
+TEST_CASE("a short band fades in over at most half its length") {
+    const std::vector<gfx::RibbonVertex> vertices = Band({ .line = Straight(2), .fadeIn = 256.0F });
+    CHECK(vertices[2].colour == COLOUR);
 }
 
 TEST_CASE("start and end shaping multiply") {
@@ -61,9 +66,16 @@ TEST_CASE("start and end shaping multiply") {
         Band({ .line = Straight(9), .fade = 128.0F, .fadeIn = 128.0F, .taper = 128.0F });
     // Point 4 is the middle: the far end of quad 3.
     CHECK(vertices[(3 * gfx::QUAD_VERTICES) + 2].colour == COLOUR);
-    CHECK(FarWidth(vertices, 3) == doctest::Approx(WIDTH).epsilon(TOLERANCE));
+    CHECK(std::abs(FarWidth(vertices, 3) - WIDTH) < TOLERANCE);
     CHECK(vertices[0].colour == 0);
     CHECK(vertices[(7 * gfx::QUAD_VERTICES) + 2].colour == 0);
+}
+
+TEST_CASE("overlapping fade in and fade multiply their shares") {
+    // On a line 256 long the fade-in of 256 is capped to 128: at 64 it is 0.5 and the fade's 192 of 256 left is 0.75, so
+    // 0.375 (a minimum would give 0.5). Each channel of the colour is scaled and rounded: 255, 51, 34, 17 to 96, 19, 13, 6.
+    const std::vector<gfx::RibbonVertex> vertices = Band({ .line = Straight(5), .fade = 256.0F, .fadeIn = 256.0F });
+    CHECK(vertices[2].colour == 0x60'06'0D'13U);
 }
 
 TEST_CASE("an unshaped band is as before") {
