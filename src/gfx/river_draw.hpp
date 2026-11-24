@@ -23,8 +23,8 @@ inline constexpr u32 MAX_RIVER_QUADS = 8'192;
 
 /// How a river begins: on another river, out of water, or at a spring.
 enum class RiverStart : u8 {
-    /// Its head lies on or within a tile of another river's line (its end included): it flows out of that river. Two sources
-    /// side by side don't count.
+    /// Its first stretch, run on a tile past its head, meets another river's line (that river's end included, not within a
+    /// tile of its start, where two sources lie side by side): it flows out of that river.
     Branch,
     /// It begins in water, or water lies behind its first point: it rises out of it.
     Pond,
@@ -43,13 +43,13 @@ enum class RiverStart : u8 {
 /// flows on, though its waypoints stop short or overshoot: where its last stretch meets another river's middle, when that
 /// lies within a tile of the end and not within a tile of the other river's own end (there the other flows into it); else, when
 /// the end isn't on water, a tile into the first tile of a kind in `water` within three tiles straight ahead (none for an empty
-/// `water`), both bands fading out over that last tile. Its start is drawn the same way mirrored: a river whose head lies
-/// within a tile of another river's line, its end included but not its start (two sources side by side), is left as it is (a
-/// branch); one that begins on water keeps its first point, and one with water within three tiles straight behind it begins
-/// a tile into that water, each fading in over a tile (a pond); any other
-/// starts as a spring, both sides widening from a point
-/// over `shape.taper`. Only the drawing changes: the map is as it was. A river of fewer than two distinct points draws nothing;
-/// rivers that would take the quads past MAX_RIVER_QUADS are left out whole, the later ones first.
+/// `water`), both bands fading out over that last tile; a point drawn past the map's edge is kept on it. Its start is drawn
+/// the same way mirrored: a river whose first stretch, run on a tile past its head, meets another river's line (that
+/// river's end included, not within a tile of its start) is left as it is (a branch); one that begins on water keeps its
+/// first point, and one with water within three tiles straight behind it begins a tile into that water, each fading in
+/// over a tile (a pond); any other starts as a spring, both sides widening from a point over `shape.taper`. Only the
+/// drawing changes: the map is as it was. A river of fewer than two distinct points draws nothing; rivers that would take
+/// the quads past MAX_RIVER_QUADS are left out whole, the later ones first.
 void DrawRivers(
     const core::WorldMap& map,
     const RibbonShape& shape,
