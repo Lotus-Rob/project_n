@@ -20,6 +20,11 @@ constexpr u32 MOUTH_STEPS = 12;
 /// water's wash rather than stopping at a square end or on the shore line.
 constexpr f32 MOUTH_INTO_TILES = 1.0F;
 
+/// Whether `point`'s tile is of a kind in `water`.
+bool IsWet(const core::WorldMap& map, std::span<const u8> water, core::Vec2 point) {
+    return std::ranges::contains(water, map.KindAt(map.TileAt(point)));
+}
+
 /// Where a river ending at `last` after `from` runs into water ahead of it: MOUTH_INTO_TILES past the first point on its
 /// heading, within MOUTH_STEPS steps and on the map, whose tile is of a kind in `water`; none when it already ends in water
 /// or finds none.
@@ -27,8 +32,7 @@ std::optional<core::Vec2> Mouth(const core::WorldMap& map, std::span<const u8> w
     const f32 tileSize = map.TileSize();
     const f32 width = static_cast<f32>(map.Columns()) * tileSize;
     const f32 height = static_cast<f32>(map.Rows()) * tileSize;
-    const auto wet = [&](core::Vec2 point) { return std::ranges::contains(water, map.KindAt(map.TileAt(point))); };
-    if (water.empty() || wet(last)) {
+    if (water.empty() || IsWet(map, water, last)) {
         return std::nullopt;
     }
     const core::Vec2 heading = HeadingOf(last - from, core::Vec2{ .x = 1.0F, .y = 0.0F });
@@ -38,14 +42,67 @@ std::optional<core::Vec2> Mouth(const core::WorldMap& map, std::span<const u8> w
         if (point.x < 0.0F || point.y < 0.0F || point.x >= width || point.y >= height) {
             return std::nullopt;
         }
-        if (wet(point)) {
+        if (IsWet(map, water, point)) {
             return last + (heading * ((ahead + MOUTH_INTO_TILES) * tileSize));
         }
     }
     return std::nullopt;
 }
 
+/// How one river begins and, when that changes its first point, the point it begins at.
+struct Start {
+    /// The kind of start.
+    RiverStart kind;
+    /// The first point a branch begins at, or the point a pond's river begins at before its own first point.
+    std::optional<core::Vec2> point;
+};
+
+/// How the river of `points` (its waypoints; the river at `index` among those whose midlines are `stored`) begins. Shared
+/// by RiverStarts() and DrawRivers() so they never disagree.
+Start StartOf(
+    const core::WorldMap& map,
+    std::span<const u8> water,
+    std::span<const core::Vec2> points,
+    std::size_t index,
+    std::span<const std::vector<core::Vec2>> stored
+) {
+    if (points.size() < 2) {
+        return { .kind = RiverStart::Spring, .point = std::nullopt };
+    }
+    const std::vector<core::Vec2> reversed(points.rbegin(), points.rend());
+    if (const std::optional<core::Vec2> joined = core::JoinedEnd(reversed, index, stored, map.TileSize(), false)) {
+        return { .kind = RiverStart::Branch, .point = joined };
+    }
+    if (IsWet(map, water, points[0]) && !water.empty()) {
+        return { .kind = RiverStart::Pond, .point = std::nullopt };
+    }
+    if (const std::optional<core::Vec2> mouth = Mouth(map, water, points[1], points[0])) {
+        return { .kind = RiverStart::Pond, .point = mouth };
+    }
+    return { .kind = RiverStart::Spring, .point = std::nullopt };
+}
+
+std::vector<std::vector<core::Vec2>> WaypointsOf(const core::WorldMap& map) {
+    std::vector<std::vector<core::Vec2>> waypoints;
+    waypoints.reserve(map.Rivers().size());
+    for (const std::vector<core::TilePoint>& river : map.Rivers()) {
+        waypoints.push_back(core::Waypoints(river, map.TileSize()));
+    }
+    return waypoints;
+}
+
 } // namespace
+
+std::vector<RiverStart> RiverStarts(const core::WorldMap& map, std::span<const u8> water) {
+    const std::vector<std::vector<core::Vec2>> waypoints = WaypointsOf(map);
+    const std::vector<std::vector<core::Vec2>> stored = core::Midlines(waypoints, map.TileSize(), RIVER_STEPS);
+    std::vector<RiverStart> starts;
+    starts.reserve(waypoints.size());
+    for (std::size_t index = 0; index < waypoints.size(); ++index) {
+        starts.push_back(StartOf(map, water, waypoints[index], index, stored).kind);
+    }
+    return starts;
+}
 
 void DrawRivers(
     const core::WorldMap& map,
@@ -56,11 +113,7 @@ void DrawRivers(
     PN_PROFILE_ZONE();
     into.clear();
     const std::span<const std::vector<core::TilePoint>> rivers = map.Rivers();
-    std::vector<std::vector<core::Vec2>> waypoints;
-    waypoints.reserve(rivers.size());
-    for (const std::vector<core::TilePoint>& river : rivers) {
-        waypoints.push_back(core::Waypoints(river, map.TileSize()));
-    }
+    std::vector<std::vector<core::Vec2>> waypoints = WaypointsOf(map);
     const std::vector<std::vector<core::Vec2>> stored = core::Midlines(waypoints, map.TileSize(), RIVER_STEPS);
     std::vector<Laid> lines;
     std::size_t quads = 0;
@@ -68,6 +121,19 @@ void DrawRivers(
         std::vector<core::Vec2>& points = waypoints[index];
         if (points.size() < 2) {
             continue;
+        }
+        f32 fadeIn = 0.0F;
+        f32 taper = 0.0F;
+        const Start start = StartOf(map, water, points, index, stored);
+        if (start.kind == RiverStart::Branch && start.point) {
+            points.front() = *start.point;
+        }
+        else if (start.kind == RiverStart::Pond && start.point) {
+            points.insert(points.begin(), *start.point);
+            fadeIn = MOUTH_INTO_TILES * map.TileSize();
+        }
+        else if (start.kind == RiverStart::Spring) {
+            taper = shape.taper;
         }
         // A river flows into the river its end lies on or by, else on into the water just ahead of it.
         f32 fade = 0.0F;
@@ -90,7 +156,7 @@ void DrawRivers(
             break;
         }
         quads += taken;
-        lines.push_back({ .line = std::move(line), .fade = fade });
+        lines.push_back({ .line = std::move(line), .fade = fade, .fadeIn = fadeIn, .taper = taper });
     }
     into.reserve(quads * QUAD_VERTICES);
     for (const Laid& laid : lines) {

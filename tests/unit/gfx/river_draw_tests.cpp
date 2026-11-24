@@ -21,9 +21,20 @@ constexpr gfx::RibbonShape SHAPE{ .coreWidth = CORE, .edgeWidth = EDGE, .coreCol
 constexpr u8 LAKE = 1;
 constexpr std::array<u8, 1> LAKE_WATER{ { LAKE } };
 
-std::vector<gfx::RibbonVertex> Draw(const core::WorldMap& map, std::span<const u8> water = {}) {
+/// SHAPE with springs that widen over a tile.
+constexpr gfx::RibbonShape TAPERED{ .coreWidth = CORE,
+                                    .edgeWidth = EDGE,
+                                    .coreColour = CORE_COLOUR,
+                                    .edgeColour = EDGE_COLOUR,
+                                    .taper = TILE };
+
+std::vector<gfx::RibbonVertex> Draw(
+    const core::WorldMap& map,
+    std::span<const u8> water = {},
+    const gfx::RibbonShape& shape = SHAPE
+) {
     std::vector<gfx::RibbonVertex> vertices;
-    gfx::DrawRivers(map, SHAPE, water, vertices);
+    gfx::DrawRivers(map, shape, water, vertices);
     return vertices;
 }
 
@@ -215,6 +226,66 @@ TEST_CASE("a river ending more than three tiles short of water keeps its end") {
         test::MapOfTiles(COLUMNS, ROWS, grid, { { { .column = 1, .row = 1 }, { .column = 3, .row = 1 } } });
     const std::vector<gfx::RibbonVertex> vertices = Draw(map, LAKE_WATER);
     CHECK(Distance(Midline(vertices, (vertices.size() / gfx::QUAD_VERTICES) - 1, true), Middle(3, 1)) < 1.0F);
+}
+
+TEST_CASE("a river starting on open ground tapers in") {
+    const core::WorldMap map = test::MeadowMap(8, 4, { { { .column = 1, .row = 2 }, { .column = 6, .row = 2 } } });
+    CHECK(gfx::RiverStarts(map, {}) == std::vector{ gfx::RiverStart::Spring });
+    const std::vector<gfx::RibbonVertex> vertices = Draw(map, {}, TAPERED);
+    const std::size_t core = (vertices.size() / gfx::QUAD_VERTICES / 2) * gfx::QUAD_VERTICES;
+    CHECK(Distance(Corner(vertices[core]), Corner(vertices[core + 1])) < 0.01F);
+}
+
+TEST_CASE("a river starting by a lake starts inside it, fading in") {
+    constexpr u32 COLUMNS = 8;
+    constexpr u32 ROWS = 3;
+    std::array<u8, std::size_t{ COLUMNS } * ROWS> grid{};
+    for (u32 row = 0; row < ROWS; ++row) {
+        grid.at(std::size_t{ row } * COLUMNS) = LAKE;
+        grid.at((row * COLUMNS) + 1) = LAKE;
+    }
+    const core::WorldMap map =
+        test::MapOfTiles(COLUMNS, ROWS, grid, { { { .column = 3, .row = 1 }, { .column = 6, .row = 1 } } });
+    CHECK(gfx::RiverStarts(map, LAKE_WATER) == std::vector{ gfx::RiverStart::Pond });
+    const std::vector<gfx::RibbonVertex> vertices = Draw(map, LAKE_WATER, TAPERED);
+    const std::size_t cores = vertices.size() / 2;
+    CHECK(Midline(vertices, cores / gfx::QUAD_VERTICES, false).x == doctest::Approx(0.75F * TILE));
+    CHECK(vertices[cores].colour == 0);
+}
+
+TEST_CASE("a river starting in a lake keeps its start") {
+    constexpr u32 COLUMNS = 8;
+    constexpr u32 ROWS = 3;
+    std::array<u8, std::size_t{ COLUMNS } * ROWS> grid{};
+    for (u32 row = 0; row < ROWS; ++row) {
+        grid.at(std::size_t{ row } * COLUMNS) = LAKE;
+        grid.at((row * COLUMNS) + 1) = LAKE;
+    }
+    const core::WorldMap map =
+        test::MapOfTiles(COLUMNS, ROWS, grid, { { { .column = 1, .row = 1 }, { .column = 6, .row = 1 } } });
+    CHECK(gfx::RiverStarts(map, LAKE_WATER) == std::vector{ gfx::RiverStart::Pond });
+    const std::vector<gfx::RibbonVertex> vertices = Draw(map, LAKE_WATER, TAPERED);
+    CHECK(Distance(Midline(vertices, vertices.size() / gfx::QUAD_VERTICES / 2, false), Middle(1, 1)) < 1.0F);
+}
+
+TEST_CASE("a branch's start is drawn as it was") {
+    const core::WorldMap map = test::MeadowMap(
+        10,
+        6,
+        { { { .column = 1, .row = 4 }, { .column = 9, .row = 4 } }, { { .column = 5, .row = 4 }, { .column = 5, .row = 1 } } }
+    );
+    CHECK(gfx::RiverStarts(map, {}) == std::vector{ gfx::RiverStart::Spring, gfx::RiverStart::Branch });
+    const std::vector<gfx::RibbonVertex> vertices = Draw(map, {}, TAPERED);
+    // The branch is listed last, so its core's first quad is the first after the main river's.
+    const std::size_t quads = vertices.size() / gfx::QUAD_VERTICES;
+    const std::size_t mainQuads = std::size_t{ 8 } * gfx::RIVER_STEPS;
+    const std::size_t first = ((quads / 2) + mainQuads) * gfx::QUAD_VERTICES;
+    CHECK(std::abs(Distance(Corner(vertices[first]), Corner(vertices[first + 1])) - CORE) < 0.01F);
+}
+
+TEST_CASE("a river at the map's west edge is a spring") {
+    const core::WorldMap map = test::MeadowMap(8, 3, { { { .column = 0, .row = 1 }, { .column = 4, .row = 1 } } });
+    CHECK(gfx::RiverStarts(map, LAKE_WATER) == std::vector{ gfx::RiverStart::Spring });
 }
 
 TEST_CASE("the shipped rivers fit the river buffer") {
