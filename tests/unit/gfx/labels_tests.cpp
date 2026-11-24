@@ -1137,4 +1137,21 @@ TEST_CASE("a label hidden by the kept-clear box takes no room") {
     CHECK(OpacityOf(placed, 1) == 1.0F);
 }
 
+TEST_CASE("the body is sought only when a named label can give way to it") {
+    constexpr core::StableId PLAYER{ 1 };
+    i32 sought = 0;
+    const auto seek = [&sought](core::StableId) {
+        ++sought;
+        return std::optional<core::Rect>{ BODY };
+    };
+    const std::array<gfx::LabelInput, 2> foxes{ { Label(1, FOX_KEY, core::LabelPriority::Rest, AT_100),
+                                                  Label(2, PLAYER_KEY, core::LabelPriority::Player, AT_130) } };
+    CHECK_FALSE(gfx::KeptClearBox(foxes, PLAYER, seek).has_value());
+    CHECK(sought == 0);
+    const std::array<gfx::LabelInput, 2> named{ { Label(1, FOX_KEY, core::LabelPriority::Named, AT_100),
+                                                  Label(2, PLAYER_KEY, core::LabelPriority::Player, AT_130) } };
+    CHECK(gfx::KeptClearBox(named, PLAYER, seek).has_value());
+    CHECK(sought == 1);
+}
+
 } // namespace
