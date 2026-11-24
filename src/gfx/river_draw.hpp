@@ -21,6 +21,20 @@ inline constexpr u32 RIVER_STEPS = 4;
 /// the rivers that don't fit.
 inline constexpr u32 MAX_RIVER_QUADS = 8'192;
 
+/// How a river begins: on another river, out of water, or at a spring.
+enum class RiverStart : u8 {
+    /// Its first stretch meets another river's middle: it flows out of that river.
+    Branch,
+    /// It begins in water, or water lies behind its first point: it rises out of it.
+    Pond,
+    /// It begins on open ground and widens from a point.
+    Spring
+};
+
+/// How each of `map`'s rivers begins, in the map's order, with `water` the kinds that count as water. A river of fewer than
+/// two distinct points is a Spring.
+[[nodiscard]] std::vector<RiverStart> RiverStarts(const core::WorldMap& map, std::span<const u8> water);
+
 /// Replaces `into` with the quads of every river's edge band, then of every river's core band, each river a centripetal
 /// Catmull-Rom spline through its polyline's tile centres, ends included, arriving along the end segments. Each segment
 /// takes RIVER_STEPS times its length in tiles (at least one tile) of quads per band, as whole quads in MeshVertex's corner
@@ -28,7 +42,10 @@ inline constexpr u32 MAX_RIVER_QUADS = 8'192;
 /// flows on, though its waypoints stop short or overshoot: where its last stretch meets another river's middle, when that
 /// lies within a tile of the end and not within a tile of the other river's own end (there the other flows into it); else, when
 /// the end isn't on water, a tile into the first tile of a kind in `water` within three tiles straight ahead (none for an empty
-/// `water`), both bands fading out over that last tile. Only the drawing changes: the map is as it was. A river of fewer than
+/// `water`), both bands fading out over that last tile. Its start is drawn the same way mirrored: a river whose first stretch
+/// meets another river's middle begins there (a branch); one that begins on water, or has water within three tiles straight
+/// behind its first point, begins a tile into it, fading in over that tile (a pond); any other starts as a spring, both
+/// sides widening from a point over `shape.taper`. Only the drawing changes: the map is as it was. A river of fewer than
 /// two distinct points draws nothing; rivers that would take the quads past MAX_RIVER_QUADS are left out whole, the later ones
 /// first.
 void DrawRivers(
