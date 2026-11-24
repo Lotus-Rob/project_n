@@ -1,7 +1,6 @@
 # River heads: sources on high ground or in a pond, a band that narrows at its source
 
-Status: **draft** (approach chosen by the user 2026-11-24; builder check done, its question answered by the user;
-awaiting approval of this document).
+Status: **approved by the user 2026-11-24** (builder check done, its question answered by the user). Plan: to come.
 
 ## Intent
 
