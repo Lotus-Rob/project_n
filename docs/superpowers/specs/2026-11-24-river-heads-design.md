@@ -1,6 +1,6 @@
 # River heads: sources on high ground or in a pond, a band that narrows at its source
 
-Status: **approved by the user 2026-11-24** (builder check done, its question answered by the user). Plan: to come.
+Status: **approved by the user 2026-11-24** (builder check done, its question answered by the user). Plan: `2026-11-24-river-heads.md`.
 
 ## Intent
 
