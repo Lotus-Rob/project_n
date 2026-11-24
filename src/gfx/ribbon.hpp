@@ -40,6 +40,8 @@ struct RibbonShape {
     u32 coreColour = 0;
     /// The edge's premultiplied colour, in the same layout.
     u32 edgeColour = 0;
+    /// How far from a ribbon's start it widens from nothing to full width, in world units; 0: it starts full width.
+    f32 taper = 0.0F;
 };
 
 /// A tangent shorter than this, in world units, is too short to say which way a ribbon runs there.

@@ -70,7 +70,8 @@ RibbonShape RibbonShapeOf(const core::WorldMap& map, const core::RibbonLook& loo
     return { .coreWidth = look.width * map.TileSize(),
              .edgeWidth = look.edge * map.TileSize(),
              .coreColour = core::FromSrgb(look.colour[0], look.colour[1], look.colour[2], core::OPAQUE_ALPHA),
-             .edgeColour = StrengthColour(look.edgeColour, look.edgeStrength) };
+             .edgeColour = StrengthColour(look.edgeColour, look.edgeStrength),
+             .taper = look.taper * map.TileSize() };
 }
 
 f32 RimStart(f32 coreWidth, f32 edgeWidth) {
