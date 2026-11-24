@@ -1,6 +1,6 @@
 # Phase 6, chunk 5b-look, part 2: the travellers walk
 
-Date: 2026-11-23 · Status: **approved 2026-11-23** (builder check done; its four questions settled as Decisions 5-7 and Goal 8) · Chunk spec: `2026-11-10-phase6-chunk5-world-map-design.md` · Builds on:
+Date: 2026-11-23 · Status: **implemented 2026-11-24** (see Outcome; approved 2026-11-23, builder check done; its four questions settled as Decisions 5-7 and Goal 8) · Chunk spec: `2026-11-10-phase6-chunk5-world-map-design.md` · Builds on:
 `2026-11-21-phase6-chunk5b-look-terrain-design.md` (part 1), `2026-11-22-roads-design.md` and
 `2026-11-22-player-walk-and-camera-design.md` (their Outcomes) · Followed by: 5b-look part 3 (sharpness)
 
@@ -199,3 +199,60 @@ who walk read as people going somewhere.
 - Labels: a `Named` label over the cultivator's body fades out, comes back once clear, holds at the hysteresis edge; a
   `Selected` one, the player's own and a `Rest` one (with its health bar) stay.
 - Reference pictures of a walking crowd and the cultivator at the capital.
+
+## Outcome
+
+**Measurements** (`measure --runs world`, 2 workers, unpaced, fullscreen at 2560×1440 on the 165 Hz display, travel
+share 200; the baseline is main at the branch's base, in a separate worktree). Frame and main-thread work percentiles
+match main's in every segment, and the one hitch (the month step at 17.3 s, about 53 ms of main-thread work) is main's
+too. The cost sat on the logic thread's publish: with the first shared walk tables it rose 30 to 90% at p99 (zoom
+2.72 → 5.0 ms, widest view 2.24 → 3.8, month step 2.64 → 4.5). Attributed by profiling: about 82% was contention on the
+shared table cache's reader lock (libc++'s `shared_mutex` serialises the three publishing threads), building tables
+at most 0.05 ms a publish, hashing and fitting about 6%, the pose maths about 0.2 µs a figure. After each journey kept
+its own tables and its finished parts' sum (`perf(core): keep a journey's walk tables and its finished parts' sum`,
+`perf(game): find a drawn traveller's walk tables without a lock`), the publish p99 against main: follow 2.06 → 2.08,
+pan 1.78 → 1.88, zoom 2.72 → 3.00, widest 2.24 → 2.24, month step 2.64 → 2.82, labels 2.22 → 2.19 ms: within the
+plan's ~10% bar, zoom on its line. The month step's first half second still shows a logic-thread worst of about 31 ms
+(main's runs read 10.5 and 26.7: noisy, and off the frame's critical path); the first publish after the month's clear
+refills each journey's tables under the lock by design.
+
+**By eye:** the reference pictures show both facings, the step frames and names faded off the cultivator's body
+(`world_walk`, among the crowd at the capital); every changed picture was viewed. Feet sliding and steps flickering at
+zoom 0.25 are left to the user's eye in motion: the tests can't walk the cultivator live.
+
+### Rulings made while building
+
+Settled by the plan: mirroring uses the sprite draw's existing negative width (`widthScale = -1`), which already places
+the quad about the mirrored foot, so Decision 2's `core::INSTANCE_MIRROR` flag and shader change were never made and the
+snapshot gained nothing.
+
+Data and art:
+- The placeholder walks stretch the legs at contact (a 48/56 texel spread): the plan's strides and the planted-foot
+  rule dictate it, and an artist replaces the placeholders later.
+- A clip's stride is capped at 1,000,000, documented in the reader and the YAML header, so a typo can't pass.
+
+Walk maths and cost:
+- Summing a traveller's walk from its journey's start on every publish was wasted work (it grew with progress and drew
+  two random numbers a stay day). It became one walk table per leg's route (keyed by the leg's whole path, origin and
+  tiles, so it doesn't depend on the profile that chose it), built once and shared by every journey walking it, a pose being a binary search on the leg's arrival ticks plus one segment; then,
+  after the measure above, a slot per journey over those tables (lock-free after its first fill, renewed by a stamp
+  every journey change bumps) and a memo of its finished parts. All of it is presentation only: never saved or hashed.
+- The shared tables are cleared at each month step and when a load takes effect: NPC legs start on each NPC's own tile,
+  so tables kept for the run grew without bound (10,430 after 12 months on the whole map); with the clear they level at
+  about 2,300 to 2,700 (about 5 MB at worst). A two-generation cache and building off the publishing path were measured
+  negligible and skipped.
+- The cultivator's walk is the host's own state, its body's step lengths added up each tick, never the shared cache:
+  every click is a new origin and would add a table per click until the month step.
+- On the month jump only the cultivator's `moving` clears, keeping its distance and facing as travellers do; a load and a
+  scene build start it afresh. Resetting facing on M turned the figure for one frame.
+- `Simulation::SetAnimations` takes `const std::shared_ptr<const Animations>&`: lint rejects a by-value parameter on the
+  do-nothing default.
+- The labels look for the cultivator's body on the screen only when a Named label shows: the search scans every drawn
+  instance, about 100,000 in the stress scene, where no label could use it (`perf(gfx): seek the player's body only
+  when a named label can use it`).
+- `Host::PlayerWalk()` is a public, read-only, presentation-only accessor (like `DrawnPlayer`) so tests can read the
+  cultivator's distance walked.
+
+Left for later (sweep-up backlog): per-destination walk tables (remaining distance per tile over the paths' distance
+maps, from any start tile, immutable while publishing), journeys storing only their plan, and whether NPCs set out from
+their city; they replace the per-route cache when they land.
