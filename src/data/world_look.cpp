@@ -736,10 +736,11 @@ std::expected<void, core::Error> ReadMist(
     return {};
 }
 
-/// Reads the ribbon section `key` of `root` (a river's or a road's: the same keys) into `ribbon`.
+/// Reads the ribbon section `key` of `root` (a river's or a road's) into `ribbon`; only a river takes `taper`, a road's is 0.
 std::expected<void, core::Error> ReadRibbon(
     const YAML::Node& root,
     const char* key,
+    bool tapers,
     std::vector<std::string>* warnings,
     core::RibbonLook& ribbon
 ) {
@@ -747,9 +748,16 @@ std::expected<void, core::Error> ReadRibbon(
     if (!node) {
         return std::unexpected{ node.error() };
     }
-    internal::NoteUnknownKeys(
-        LOOK_READER, *node, key, "key", { "width", "edge", "colour", "edge_colour", "edge_strength", "taper" }, warnings
-    );
+    if (tapers) {
+        internal::NoteUnknownKeys(
+            LOOK_READER, *node, key, "key", { "width", "edge", "colour", "edge_colour", "edge_strength", "taper" }, warnings
+        );
+    }
+    else {
+        internal::NoteUnknownKeys(
+            LOOK_READER, *node, key, "key", { "width", "edge", "colour", "edge_colour", "edge_strength" }, warnings
+        );
+    }
     const std::expected<f32, core::Error> width = NumberIn(*node, key, "width", ABOVE_ZERO_TO_TWO);
     if (!width) {
         return std::unexpected{ width.error() };
@@ -773,7 +781,9 @@ std::expected<void, core::Error> ReadRibbon(
     if (!edgeStrength) {
         return std::unexpected{ edgeStrength.error() };
     }
-    const std::expected<f64, core::Error> taper = internal::TunedNumber(LOOK_READER, *node, key, "taper", 0.0, UP_TO_FOUR);
+    const std::expected<f64, core::Error> taper = tapers
+                                                      ? internal::TunedNumber(LOOK_READER, *node, key, "taper", 0.0, UP_TO_FOUR)
+                                                      : std::expected<f64, core::Error>{ 0.0 };
     if (!taper) {
         return std::unexpected{ taper.error() };
     }
@@ -933,10 +943,10 @@ std::expected<core::WorldLook, core::Error> ParseWorldLook(
         if (auto read = ReadMist(root, atlas, warnings, look.mist); !read) {
             return std::unexpected{ std::move(read.error()) };
         }
-        if (auto read = ReadRibbon(root, "river", warnings, look.river); !read) {
+        if (auto read = ReadRibbon(root, "river", true, warnings, look.river); !read) {
             return std::unexpected{ std::move(read.error()) };
         }
-        if (auto read = ReadRibbon(root, "road", warnings, look.road); !read) {
+        if (auto read = ReadRibbon(root, "road", false, warnings, look.road); !read) {
             return std::unexpected{ std::move(read.error()) };
         }
         if (auto read = ReadPlaces(root, atlas, map, warnings, look.places); !read) {
