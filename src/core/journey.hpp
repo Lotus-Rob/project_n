@@ -14,6 +14,7 @@
 #include "core/vec2.hpp"
 #include "core/world_map.hpp"
 
+#include <array>
 #include <cstddef>
 #include <optional>
 #include <span>
@@ -230,6 +231,31 @@ public:
 /// leg begun by `tick`, one stretch of each, and the days of a stay up to `tick`, and asks for no table of a leg not yet
 /// begun unless it must look ahead for the facing. It reads no part after the one that settles the facing.
 [[nodiscard]] Walked WalkedAt(const WorldMap& map, const Journey& journey, i64 tick, LegWalks& walks);
+
+/// What one journey keeps between the walks WalkedAt() below works out for it, so a journey drawn again and again asks
+/// for no table it has had and sums no part already behind it: its first parts' leg tables, each taken once, and how far
+/// its finished parts walked and the way they last faced. It holds for one journey on one map and the tables it was given:
+/// start it afresh (`{}`) when any of them changes.
+struct KeptWalk {
+    /// How many of a journey's first parts keep their leg's table: a visit's way out, stay and way home.
+    static constexpr std::size_t KEPT_PARTS = 3;
+
+    /// The walk table of each of the first KEPT_PARTS parts' legs, by part: null until asked for, and for a stay.
+    std::array<const LegWalk*, KEPT_PARTS> tables{};
+    /// The world units walked over the first `finished` parts.
+    f64 walked = 0.0;
+    /// How many of the parts, from the first, ended before the tick of the last walk.
+    u32 finished = 0;
+    /// The way the last stretch across in those parts goes.
+    Across faced = Across::None;
+};
+
+/// WalkedAt() above, to the bit, for the journey `kept` belongs to: a table of one of its first KeptWalk::KEPT_PARTS
+/// parts is taken from `walks` only the first time a walk needs it and read from `kept` after, and the parts ended before
+/// `tick` are summed into `kept` once (again from the first, should `tick` come before the end of one counted), so a walk
+/// costs only the part holding `tick` and any it looks ahead into for the facing. `walks` keeps each table it gives as long
+/// as `kept` does (core::LegWalkCache). One thread at a time per `kept`.
+[[nodiscard]] Walked WalkedAt(const WorldMap& map, const Journey& journey, i64 tick, KeptWalk& kept, LegWalks& walks);
 
 /// Whether `journey` is underway at `tick`: from its start to the tick before its end.
 [[nodiscard]] bool Underway(const Journey& journey, i64 tick);

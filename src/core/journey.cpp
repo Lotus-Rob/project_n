@@ -198,6 +198,71 @@ Across StayAhead(const WorldMap& map, const Stay& stay, std::size_t firstDay) {
     return Across::None;
 }
 
+/// What the parts of a journey before some part of it walked by a tick, all of them over by then.
+struct WalkedBefore {
+    /// How many parts, from the first.
+    std::size_t parts = 0;
+    /// The world units they walked, summed in order.
+    f64 distance = 0.0;
+    /// The way their last stretch across goes.
+    Across faced = Across::None;
+};
+
+/// A part's walk at a tick, and its leg's walk table if it read one.
+struct PartWalkRead {
+    /// The part's walk.
+    PartWalked walked;
+    /// The table read: null for a stay, or a leg not yet begun.
+    const LegWalk* walk = nullptr;
+};
+
+/// `part`, part `index` of its journey, walked at `tick`, its leg's table, when one is needed, from `tableOf(index)`.
+template<typename TableOf>
+PartWalkRead PartWalkedAt(const WorldMap& map, const JourneyPart& part, std::size_t index, i64 tick, const TableOf& tableOf) {
+    if (part.stay) {
+        return { .walked = StayWalked(map, part.rest, tick), .walk = nullptr };
+    }
+    const std::size_t begun = BegunStretches(part.leg, tick);
+    const LegWalk* const walk = begun > 0 ? &tableOf(index) : nullptr;
+    return { .walked = LegWalked(part.leg, tick, begun, walk), .walk = walk };
+}
+
+/// How far member 0 of `journey` has walked at `tick` and how it is drawn, its parts from `before.parts` on walked here
+/// and those before them, all over by `tick`, having walked as `before` says; part `index`'s leg table, when one is
+/// needed, from `tableOf(index)`.
+template<typename TableOf>
+Walked WalkFrom(const WorldMap& map, const Journey& journey, i64 tick, const WalkedBefore& before, const TableOf& tableOf) {
+    Walked walked{ .distance = before.distance };
+    Across faced = before.faced;
+    for (std::size_t index = before.parts; index < journey.parts.size(); ++index) {
+        const JourneyPart& part = journey.parts[index];
+        const auto [partWalked, walk] = PartWalkedAt(map, part, index, tick, tableOf);
+        walked.distance += partWalked.distance;
+        walked.moving = walked.moving || partWalked.moving;
+        if (partWalked.faced != Across::None) {
+            faced = partWalked.faced;
+        }
+        if (!partWalked.ahead) {
+            continue;
+        }
+        // Stretches after one not yet begun are not begun either, so only the facing may still be unknown: a walker that
+        // has not yet stepped across faces the way it first will.
+        if (faced == Across::None) {
+            if (part.stay) {
+                faced = StayAhead(map, part.rest, *partWalked.ahead);
+            }
+            else {
+                faced = (walk != nullptr ? *walk : tableOf(index)).marks[*partWalked.ahead].after;
+            }
+        }
+        if (faced != Across::None) {
+            break;
+        }
+    }
+    walked.facesLeft = faced == Across::Left;
+    return walked;
+}
+
 /// Makes each walk table afresh when asked, keeping only the last.
 class FreshLegWalks final : public LegWalks {
 public:
@@ -371,45 +436,40 @@ Walked WalkedAt(const WorldMap& map, const Journey& journey, i64 tick) {
 }
 
 Walked WalkedAt(const WorldMap& map, const Journey& journey, i64 tick, LegWalks& walks) {
-    Walked walked;
-    Across faced = Across::None;
-    for (const JourneyPart& part : journey.parts) {
-        const LegWalk* walk = nullptr;
-        PartWalked partWalked;
-        if (part.stay) {
-            partWalked = StayWalked(map, part.rest, tick);
+    return WalkFrom(map, journey, tick, {}, [&](std::size_t index) -> const LegWalk& {
+        return walks.Of(journey.parts[index].leg);
+    });
+}
+
+Walked WalkedAt(const WorldMap& map, const Journey& journey, i64 tick, KeptWalk& kept, LegWalks& walks) {
+    const auto tableOf = [&](std::size_t index) -> const LegWalk& {
+        const Leg& leg = journey.parts[index].leg;
+        if (index >= kept.tables.size()) {
+            return walks.Of(leg);
         }
-        else {
-            const std::size_t begun = BegunStretches(part.leg, tick);
-            if (begun > 0) {
-                walk = &walks.Of(part.leg);
-            }
-            partWalked = LegWalked(part.leg, tick, begun, walk);
+        const LegWalk*& table = kept.tables[index];
+        if (table == nullptr) {
+            table = &walks.Of(leg);
         }
-        walked.distance += partWalked.distance;
-        walked.moving = walked.moving || partWalked.moving;
-        if (partWalked.faced != Across::None) {
-            faced = partWalked.faced;
-        }
-        if (!partWalked.ahead) {
-            continue;
-        }
-        // Stretches after one not yet begun are not begun either, so only the facing may still be unknown: a walker that
-        // has not yet stepped across faces the way it first will.
-        if (faced == Across::None) {
-            if (part.stay) {
-                faced = StayAhead(map, part.rest, *partWalked.ahead);
-            }
-            else {
-                faced = (walk != nullptr ? *walk : walks.Of(part.leg)).marks[*partWalked.ahead].after;
-            }
-        }
-        if (faced != Across::None) {
-            break;
-        }
+        return *table;
+    };
+    const std::span<const JourneyPart> parts = journey.parts;
+    if (kept.finished > parts.size() || (kept.finished > 0 && EndTick(parts[kept.finished - 1]) >= tick)) {
+        kept.walked = 0.0;
+        kept.finished = 0;
+        kept.faced = Across::None;
     }
-    walked.facesLeft = faced == Across::Left;
-    return walked;
+    // A part ended before the tick has walked all it ever will, whatever the tick: every stretch of it done and none
+    // holding the tick. One ending on the tick may still hold it, so it is walked afresh.
+    while (kept.finished < parts.size() && EndTick(parts[kept.finished]) < tick) {
+        const PartWalked done = PartWalkedAt(map, parts[kept.finished], kept.finished, tick, tableOf).walked;
+        kept.walked += done.distance;
+        if (done.faced != Across::None) {
+            kept.faced = done.faced;
+        }
+        ++kept.finished;
+    }
+    return WalkFrom(map, journey, tick, { .parts = kept.finished, .distance = kept.walked, .faced = kept.faced }, tableOf);
 }
 
 bool Underway(const Journey& journey, i64 tick) {

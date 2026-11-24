@@ -823,18 +823,25 @@ bool SameWalk(const core::Walked& lhs, const core::Walked& rhs) {
            lhs.facesLeft == rhs.facesLeft;
 }
 
-TEST_CASE("a walk from kept tables is the walk worked out afresh, to the bit") {
-    const core::WorldMap map = WalkMap();
-    // From the home city's tile to the destination's: south first, so it sets out looking ahead, then a diagonal, a step
-    // west and back east; the way home walks it reversed.
+/// A visit on WalkMap() from the home city's tile to the destination's: south first, so it sets out looking ahead, then a
+/// diagonal, a step west and back east; the way home walks it reversed.
+core::Journey WindingVisit(const core::WorldMap& map) {
     constexpr std::array<u32, 6> WINDING{ { TOP_LEFT, MIDDLE_LEFT, 7, 5, CENTRE, 2 } };
-    const core::Journey visit =
-        core::Visit(map, WINDING, core::WALKING, WALKER, HOME, DESTINATION, WALK_START, FIVE_DAYS, SEED);
+    return core::Visit(map, WINDING, core::WALKING, WALKER, HOME, DESTINATION, WALK_START, FIVE_DAYS, SEED);
+}
+
+// Named, and its size checked, before a function returns it: MSVC warns at the first call of a function returning a
+// std::array that nothing has instantiated yet.
+using Samples = std::array<i64, 20>;
+static_assert(sizeof(Samples) == 20 * sizeof(i64));
+
+/// Ticks of WindingVisit() in order: before it, each part's ends and the ticks either side, and points within each part.
+Samples WindingSamples(const core::Journey& visit) {
     const core::Leg& out = visit.parts[0].leg;
     const core::Stay& stay = visit.parts[1].rest;
     const core::Leg& back = visit.parts[2].leg;
     const i64 homeEnd = core::EndTick(back);
-    const std::array<i64, 20> samples{ {
+    return { {
         WALK_START - 1,                                                         // before it sets out
         WALK_START,                                                             // setting out
         WALK_START + 1,                                                         // its first tick under way
@@ -856,6 +863,14 @@ TEST_CASE("a walk from kept tables is the walk worked out afresh, to the bit") {
         homeEnd,                                                                // home
         homeEnd + 1,                                                            // after it
     } };
+}
+
+TEST_CASE("a walk from kept tables is the walk worked out afresh, to the bit") {
+    const core::WorldMap map = WalkMap();
+    const core::Journey visit = WindingVisit(map);
+    const core::Stay& stay = visit.parts[1].rest;
+    const i64 homeEnd = core::EndTick(visit.parts[2].leg);
+    const Samples samples = WindingSamples(visit);
     core::LegWalkCache walks{ map };
     std::size_t differ = 0;
     for (const i64 tick : samples) {
@@ -888,6 +903,96 @@ TEST_CASE("a walk from kept tables looks ahead for its facing, into its next leg
     const i64 down = HalfwayThrough(twoLegs, 0);
     CHECK(core::WalkedAt(map, twoLegs, down, walks).facesLeft);
     CHECK(SameWalk(core::WalkedAt(map, twoLegs, down, walks), core::WalkedAt(map, twoLegs, down)));
+}
+
+TEST_CASE("a kept walk is the walk worked out afresh, to the bit, whatever order its ticks come in") {
+    const core::WorldMap map = WalkMap();
+    const core::Journey visit = WindingVisit(map);
+    const Samples samples = WindingSamples(visit);
+    core::LegWalkCache walks{ map };
+    std::size_t differ = 0;
+    // As a clock runs, each part summed once it is behind the tick.
+    core::KeptWalk kept;
+    for (const i64 tick : samples) {
+        differ += SameWalk(core::WalkedAt(map, visit, tick, kept, walks), core::WalkedAt(map, visit, tick)) ? 0 : 1;
+    }
+    // Then back to the start, each tick before parts it had counted behind it.
+    Samples backwards = samples;
+    std::ranges::reverse(backwards);
+    for (const i64 tick : backwards) {
+        differ += SameWalk(core::WalkedAt(map, visit, tick, kept, walks), core::WalkedAt(map, visit, tick)) ? 0 : 1;
+    }
+    // And each one first, as for a journey first drawn there.
+    for (const i64 tick : samples) {
+        core::KeptWalk fresh;
+        differ += SameWalk(core::WalkedAt(map, visit, tick, fresh, walks), core::WalkedAt(map, visit, tick)) ? 0 : 1;
+    }
+    CHECK(differ == 0);
+}
+
+TEST_CASE("a kept walk looks ahead for its facing, into its next leg too") {
+    const core::WorldMap map = WalkMap();
+    // A leg straight down, then one west: down the first, it faces the second's way.
+    constexpr std::array<u32, 2> SOUTH{ { TOP_MIDDLE, CENTRE } };
+    constexpr std::array<u32, 2> WEST{ { CENTRE, MIDDLE_LEFT } };
+    core::Journey twoLegs = OneLeg(map, SOUTH);
+    const i64 turn = core::EndTick(twoLegs);
+    twoLegs.parts.push_back(
+        { .stay = false, .leg = core::MakeTileLeg(map, core::WALKING, turn, map.TileCentre(CENTRE), WEST), .rest = {} }
+    );
+    core::LegWalkCache walks{ map };
+    core::KeptWalk kept;
+    std::size_t differ = 0;
+    for (const i64 tick : { HalfwayThrough(twoLegs, 0), turn, turn + 1, core::EndTick(twoLegs) + 1 }) {
+        differ += SameWalk(core::WalkedAt(map, twoLegs, tick, kept, walks), core::WalkedAt(map, twoLegs, tick)) ? 0 : 1;
+    }
+    CHECK(differ == 0);
+    CHECK(core::WalkedAt(map, twoLegs, HalfwayThrough(twoLegs, 0), kept, walks).facesLeft);
+}
+
+/// Walk tables made afresh, counting how many are asked for.
+class CountedWalks final : public core::LegWalks {
+public:
+    /// Tables of legs on `map`, which outlives it.
+    explicit CountedWalks(const core::WorldMap& map)
+      : m_map{ &map } {
+    }
+
+    const core::LegWalk& Of(const core::Leg& leg) override {
+        ++m_asked;
+        m_made.push_back(std::make_unique<const core::LegWalk>(core::MakeLegWalk(*m_map, leg)));
+        return *m_made.back();
+    }
+
+    /// How many tables it was asked for.
+    [[nodiscard]] std::size_t Asked() const {
+        return m_asked;
+    }
+
+private:
+    const core::WorldMap* m_map;
+    std::vector<std::unique_ptr<const core::LegWalk>> m_made;
+    std::size_t m_asked = 0;
+};
+
+TEST_CASE("a kept walk asks for each leg's table once, whatever order its ticks come in") {
+    const core::WorldMap map = WalkMap();
+    const core::Journey visit = WindingVisit(map);
+    const Samples samples = WindingSamples(visit);
+    CountedWalks walks{ map };
+    core::KeptWalk kept;
+    // First walked on its way home: the way out's table once, for how far it went, and the way home's.
+    std::ignore = core::WalkedAt(map, visit, samples[15], kept, walks);
+    CHECK(walks.Asked() == 2);
+    for (const i64 tick : samples) {
+        std::ignore = core::WalkedAt(map, visit, tick, kept, walks);
+    }
+    Samples backwards = samples;
+    std::ranges::reverse(backwards);
+    for (const i64 tick : backwards) {
+        std::ignore = core::WalkedAt(map, visit, tick, kept, walks);
+    }
+    CHECK(walks.Asked() == 2);
 }
 
 } // namespace
