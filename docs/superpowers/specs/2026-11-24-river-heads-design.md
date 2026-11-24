@@ -104,7 +104,7 @@ distance), "water" the nearest shallows, deep water or marsh.
   guards exactly what is drawn. It is pure and needs no device (core, beside `core::JoinedEnd`, or gfx; the builder's
   call). In order:
   - **branch**: the first point lies on or within a tile of another river's line (as `core::JoinedEnd` judges an end);
-    drawn as today;
+    drawn as today (as built, `core::JoinedHead` decides it: the Outcome's "a head where another river ends");
   - **pond**: the mirror of `Mouth`: water lies within three tiles straight behind the first point, looking back along
     the first segment; the line starts `MOUTH_INTO_TILES` inside the water and fades in over that stretch;
   - **spring**: anything else; the line keeps its first point and tapers in.
