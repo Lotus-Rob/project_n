@@ -53,6 +53,16 @@ inline constexpr f32 ROAD_DRAWN_REACH = 1.5F;
     bool startsFlowIn
 );
 
+/// Where the first stretch of `waypoints` (two or more, read backwards: the river's head is the last of `waypoints`) should
+/// end to start on another line, as JoinedEnd() finds a join but skipping, within a tile of another line's end, only a
+/// meeting at its first point (two sources side by side), never its last: a river that ends there flows into this one's head.
+[[nodiscard]] std::optional<Vec2> JoinedHead(
+    std::span<const Vec2> waypoints,
+    std::size_t own,
+    std::span<const std::vector<Vec2>> midlines,
+    f32 tileSize
+);
+
 /// Every road's curve of `map`, in the map's order, at ROAD_STEPS; a road of fewer than two distinct points gets an empty
 /// one, so the indices still match `map.Roads()`. A road's end that meets another road's middle within a tile is drawn
 /// there, at either end of the road, except an end on a city's tile, which stays at the city's centre. As in JoinedEnd(),

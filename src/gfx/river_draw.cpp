@@ -70,8 +70,8 @@ Start StartOf(
         return { .kind = RiverStart::Spring, .point = std::nullopt };
     }
     const std::vector<core::Vec2> reversed(points.rbegin(), points.rend());
-    if (const std::optional<core::Vec2> joined = core::JoinedEnd(reversed, index, stored, map.TileSize(), false)) {
-        return { .kind = RiverStart::Branch, .point = joined };
+    if (core::JoinedHead(reversed, index, stored, map.TileSize())) {
+        return { .kind = RiverStart::Branch, .point = std::nullopt };
     }
     if (IsWet(map, water, points[0])) {
         return { .kind = RiverStart::Pond, .point = std::nullopt };

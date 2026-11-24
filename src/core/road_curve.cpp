@@ -177,6 +177,17 @@ std::optional<Vec2> JoinedEnd(
     return join ? std::optional<Vec2>{ join->point } : std::nullopt;
 }
 
+std::optional<Vec2> JoinedHead(
+    std::span<const Vec2> waypoints,
+    std::size_t own,
+    std::span<const std::vector<Vec2>> midlines,
+    f32 tileSize
+) {
+    const auto yields = [](std::size_t /*line*/, bool atFront) { return atFront; };
+    const std::optional<Join> join = FindJoin(waypoints, own, midlines, tileSize, yields);
+    return join ? std::optional<Vec2>{ join->point } : std::nullopt;
+}
+
 std::vector<std::vector<Vec2>> Midlines(std::span<const std::vector<Vec2>> lines, f32 tileSize, u32 stepsPerTile) {
     std::vector<std::vector<Vec2>> midlines;
     midlines.reserve(lines.size());
