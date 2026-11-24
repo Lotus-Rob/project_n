@@ -322,6 +322,24 @@ TEST_CASE("a river looking back off the map's edge at a lake corner is a spring"
     CHECK(gfx::RiverStarts(map, LAKE_WATER) == std::vector{ gfx::RiverStart::Spring });
 }
 
+TEST_CASE("a river's start at the map's edge water stays on the map") {
+    constexpr u32 COLUMNS = 4;
+    constexpr u32 ROWS = 4;
+    std::array<u8, std::size_t{ COLUMNS } * ROWS> grid{};
+    grid.at(0) = LAKE;
+    grid.at(COLUMNS) = LAKE;
+    // The water lies behind the head, against the edge: a tile past it would be off the map.
+    const core::WorldMap map =
+        test::MapOfTiles(COLUMNS, ROWS, grid, { { { .column = 1, .row = 1 }, { .column = 2, .row = 1 } } });
+    const std::vector<gfx::RibbonVertex> vertices = Draw(map, LAKE_WATER);
+    REQUIRE(!vertices.empty());
+    f32 lowest = vertices.front().x;
+    for (const gfx::RibbonVertex& vertex : vertices) {
+        lowest = std::min(lowest, vertex.x);
+    }
+    CHECK(lowest >= 0.0F);
+}
+
 /// The index of `map`'s kind named `name`.
 u8 ShippedKind(const core::WorldMap& map, std::string_view name) {
     const std::span<const core::TerrainKind> kinds = map.Kinds();
