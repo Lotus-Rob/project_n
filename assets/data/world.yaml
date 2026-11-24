@@ -49,11 +49,11 @@ grid: |
   nnnnnnn##*****AAAAA***##nnnnnn:::::nnn:,,,,,,::nnnnnnn:::nn::::nnnnnnn,,,,,,nn,,,,,,,,,,,,,,,,,,,,,,,,,,..,,,,,...............TTTT-----T----------~~~~
   nnnnnnnn##***AAAAAAA***#nnnnnn::::nnnn::,,,,,:::::::::::::::::::nnnnn,,,,,,,,,,,,,,,,,,,,,,,,,,,,TT,,,,T..,,,,,,,,.....TTT.....TTT----TT.------:--~~~~
   nnnTTnnnn##**AAAAAA*******n***::nnnnnn:::::,,:::::::::::::::::::nnnn,,,,,,,...,,,,,,,,,,,,,,,,,,TTTTTTTT..,,TTTTT,,...TTTTT.....TTT---....---:::--~~~~
-  nnTTTTnnnn#**AAAAAA*****AAAAAAAnnn*nn::::::::::::::::,,:::::,,,,,n,,,,,,,,......,,,,,,,,,,,,,,,,TTTTTTT....TTTTTTT,,..TTTTT...,,TT----...:--::::--~~~~
-  nTTTTTnnnn##*AAAAA******AAAAAAAA***nn::::::::,,:::,,,,,,:::,,,,,..,,,,,,,........,,,,,,,,,,,,,,,TTTTTTT...TTTTTTTT,,..TTTTTT..,,TT-----::::--::::-~~~~
-  TTTTT,nnnnn#*AAAAAA*******###******nn:::::,,,,,,,,,,,,,,,,,,,.....,,,............,,,,,,,,,,,,,,TTTTTTT...,,,TTTTTTT,...TTTTTTTTTTT-----::::-------~~~~
-  TTT,,,,nnnn**AAAAAAA*****##nn###nnn,,,,,,,,..,,,,,,,,,,,,,,,.......,............,,,,,,,,,,,,,,,....T,....,,,,,,TTTT,...TTTTTTTTTTT--------::------~~~~
-  ,,,,,,,nnnn#**AAAAAAAAA**#nnnnnnnnn,,,,,,,...T,,,,,,,,,,,,,............TT......,,,..,,,,,,,,,,,....,,.....,,,...TTTT....TTTTTTTTT--------------~~~~~~~
+  nnTTTTnnnn#**AAAAAA*****AAAAAAAnnn*nn::::::::::::::::,,:::::,,,,,n,,,,,,,,......,,,,,,,,,,,,,,,,TT--TTT....TTTTTTT,,..TTTTT...,,TT----...:--::::--~~~~
+  nTTTTTnnnn##*AAAAA******AAAAAAAA***nn::::::::,,:::,,,,,,:::,,,,,..,,,,,,,....--..,,,,,,,,,,,,,,,TT--TTT...TTTTTTTT,,..TTTTTT..,,TT-----::::--::::-~~~~
+  TTTTT,nnnnn#*AAAAAA*******###******nn:::::,,,,,,,,,,,,,,,,,,,.....,,,........--..,,,,,,,,,,,,,,TTTTTTT...,,,TTTTTTT,...TTTTTTTTTTT-----::::-------~~~~
+  TTT,,,,nnnn**AAAAAAA*****##nn###nnn,,,,,,,,..,,,,,,,,,,,,,,,--.....,............,,,,,,,,,,,,,,,....T,....,,,,,,TTTT,...TTTTTTTTTTT--------::------~~~~
+  ,,,,,,,nnnn#**AAAAAAAAA**#nnnnnnnnn,,,,,,,...T,,,,,,,,,,,,,.--.........TT......,,,..,,,,,,,,,,,....,,.....,,,...TTTT....TTTTTTTTT--------------~~~~~~~
   ,,,,,,,nnnn#****AAAAAAAA*#nnn,,nnn,,,,,,,,..TTTTTTT,,,,,,,,...........TTTT....,,,....,,,,,,,,..,,,,,,,..........TTTTT.....TTTTTT----~~~~-------~~~~~~~
   ,,,,,,nnnnn#*****AAAAAAA#nnn,,,,,,,,,,,,,,.TTTTTTT..,,,,,,,..........TTT,,.....,......,,,,,TT..,,,,,,,,,.........TTT.......TTT-----~~~~~~~~~~~------~~
   ,,,,,nnnnnn#******AAAAA##nnn,,,,,,,,,,,,,,,,,,TTTT..,,,,,,,...........T,,,.............TTTTT...,,,,,,,,,,.........TT........TT-----~~~~~~~~~~~-------~
@@ -78,8 +78,8 @@ grid: |
   ..nnnn##AAAAAAAAA*#####****nnnnnnnAAAAAAAAAAn,,::::,,,,................................TTT------%%TTTTTT###TTT................TTT%%%-----:::......:---
   ...nnn##AAAAAAAA**#######nnnnnTTTTTAAAAAAAAA*nn::::,,,,,..........,,,,................TTTT-----%%TTTTTT######............TT......TTTT----:::......::--
   ...nnnnn*AAAAAA*****#####nnnnTTTTTT.###AAAAA*nn,,:,,,,,T.........,,,,,,.......TTT..TTTTTTTT--%%%TTTTTTT#######n........nTTT,,,,,,TTTTT---:::,,,,,,:---
-  ...nnnnn**AA*************nnnnTTTTT..nnnnnnn**nn,,,...TTT..........,,,,,,.TTTTTTTTTTTTTTTTTT--%%TTTTTTTTTT.nnnnnn.....nnnTT.,,,,,,,TTT%----:TTT,,,,,,,,
-  ....nnnn#*****************nnnnTTT......nnnn##nn,,,...TTT.............,,.TTTTTTTTTTTTTTTTTTTT%%TTTTTTTTTTT.....nnn..nnnn.....,,,,,,TT%%--%%%%%T,,,,,,,,
+  ...nnnnn**AA*************nnnnTTTTT..nnnnnnn**nn,,,...TTT..........--,,,,.TTTTTTTTTTTTTTTTTT--%%TTTTTTTTTT.nnnnnn.....nnnTT.,,,,,,,TTT%----:TTT,,,,,,,,
+  ....nnnn#*****************nnnnTTT......nnnn##nn,,,...TTT..........--.,,.TTTTTTTTTTTTTTTTTTTT%%TTTTTTTTTTT.....nnn..nnnn.....,,,,,,TT%%--%%%%%T,,,,,,,,
   .T...nnn##******************nnTTT.....TTTnnn#nn,,,...TTTT................TTTTTTTTTTTTT...TTTTTTTTTTTTTTTT.........nnnn.......,,,,TTT%%---%---,,,,,,,,,
   TT...,,n##*****###*********nnnTT......TTTT...nn,,,...TTTT...................TTTTTTTTT...,,,,..TTTTTTTTTTTT..TTT...nn..........,TTTTT%%--------,,,.....
   TT...,,,nn##**TTTTT*******#nnnTT.....TTTT.....,,,,...TTT...TTTTT........,,...TTTTTTT,,,,,,,,...TTTTTTTTTTTTTTTTT.............TTTTTTT%%%--------%TT....
@@ -117,7 +117,7 @@ profiles:
 # how far they will go (reach_base plus reach_per_power for each whole point of power, in cost units) and the power from
 # which one is a cultivator rather than a trader. bands: [{ from_power: 0, profile: <key> }, ...] maps a traveller's power
 # to the profile it moves by (the first from 0, rising strictly; without bands everyone walks on_foot): mortals walk
-# on_foot_wary, cultivators on_foot. Tuned so about 2,500 to 3,300 of the 50,000 are on the roads at once from the first
+# on_foot_wary, cultivators on_foot. Set so about 2,400 to 3,300 of the 50,000 are on the roads at once from the first
 # tick, mortals reaching the next town (the capital's nearest costs 126, the sect's 162; the capital to the oasis costs a
 # mortal 173, round Jade Cave, and the strong 152) and the strong the far side of the map (the sect to the isle costs 562).
 travel: { share_per_mille: 58, stay_days: [2, 5], reach_base: 300, reach_per_power: 20, cultivator_power: 5,
@@ -135,19 +135,19 @@ roads:
   - [[74, 27], [65, 32]]
   - [[60, 13], [50, 22], [41, 26]]
 rivers:
-  - [[27, 19], [31, 18], [36, 22], [39, 22], [40, 27], [43, 31], [43, 33], [39, 37], [42, 43], [45, 43], [51, 46],
+  - [[23, 21], [27, 19], [31, 18], [36, 22], [39, 22], [40, 27], [43, 31], [43, 33], [39, 37], [42, 43], [45, 43], [51, 46],
          [55, 46], [58, 44], [63, 44], [64, 45], [75, 43], [79, 44], [83, 45], [89, 42], [93, 42], [96, 44],
          [109, 43], [112, 45], [126, 44]]
-  - [[29, 80], [31, 75], [36, 75], [37, 74], [42, 74], [45, 77], [56, 76], [60, 80]]
+  - [[26, 81], [29, 80], [31, 75], [36, 75], [37, 74], [42, 74], [45, 77], [56, 76], [60, 80]]
   - [[67, 12], [69, 14], [75, 14], [77, 14], [88, 14], [92, 10], [94, 10], [99, 15], [105, 17], [107, 15], [111, 15],
          [117, 9], [121, 13], [121, 15], [127, 21]]
-  - [[34, 4], [39, 4], [41, 6], [47, 8], [49, 7], [53, 11], [58, 8], [60, 8]]
+  - [[32, 6], [34, 4], [39, 4], [41, 6], [47, 8], [49, 7], [53, 11], [58, 8], [60, 8]]
   - [[19, 49], [24, 49], [26, 46], [28, 46], [30, 44], [37, 45], [42, 43]]
   - [[62, 33], [64, 33], [67, 38], [65, 42], [65, 45]]
   - [[78, 33], [79, 36], [77, 39], [77, 44]]
   - [[100, 31], [103, 32], [104, 31], [110, 31], [111, 32], [113, 38], [109, 43]]
-  - [[31, 58], [33, 58], [41, 64], [42, 67], [45, 67], [56, 76]]
-  - [[67, 63], [65, 63], [58, 70], [58, 78]]
+  - [[28, 58], [31, 58], [33, 58], [41, 64], [42, 67], [45, 67], [56, 76]]
+  - [[67, 61], [67, 63], [65, 63], [58, 70], [58, 78]]
   - [[120, 44], [123, 47]]
 # River tiles walked across without a bridge.
 fords:
