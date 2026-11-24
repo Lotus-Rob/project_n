@@ -285,6 +285,15 @@ TEST_CASE("a branch's start is drawn as it was") {
     CHECK(std::abs(Distance(Corner(vertices[first]), Corner(vertices[first + 1])) - CORE) < 0.01F);
 }
 
+TEST_CASE("a river starting where another river ends is a branch") {
+    const core::WorldMap map = test::MeadowMap(
+        10,
+        6,
+        { { { .column = 1, .row = 4 }, { .column = 5, .row = 4 } }, { { .column = 5, .row = 4 }, { .column = 5, .row = 1 } } }
+    );
+    CHECK(gfx::RiverStarts(map, {}) == std::vector{ gfx::RiverStart::Spring, gfx::RiverStart::Branch });
+}
+
 TEST_CASE("a branch's head keeps its own first point") {
     // The main river slopes, so its middle at the branch's column lies half a tile below the branch's first waypoint.
     const core::WorldMap map = test::MeadowMap(
