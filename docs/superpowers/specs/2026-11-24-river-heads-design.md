@@ -1,6 +1,6 @@
 # River heads: sources on high ground or in a pond, a band that narrows at its source
 
-Status: **approved by the user 2026-11-24** (builder check done, its question answered by the user). Plan: `2026-11-24-river-heads.md`.
+Status: **implemented 2026-11-24** (approved by the user 2026-11-24; builder check done, its question answered by the user). Plan: `2026-11-24-river-heads.md`. Outcome below.
 
 ## Intent
 
@@ -156,3 +156,44 @@ distance), "water" the nearest shallows, deep water or marsh.
 - The source rule is a shipped-data test, not a load-time rejection: it is a content rule for this map, not a format
   rule.
 - The generator (`art/world_map.py`) is not taught the rule.
+
+## Outcome
+
+Implemented on the `river-heads` branch (2026-11-24), three tasks run subagent-driven, each review clean after one fix
+pass.
+
+- **Ribbon start** ("feat(gfx): taper and fade in a ribbon's start"): a band can taper (`Laid::taper`, `RibbonShape::taper`,
+  `world_look.yaml` `river: taper` 1.5 tiles) and fade in (`Laid::fadeIn`). The taper narrows linearly. Both are capped
+  at half the line's length, so a short river never vanishes; the fade-in cap came from the task's review, because a
+  river starting inside a pond can be shorter than its one-tile fade-in.
+- **Start classes** ("feat(gfx): draw a river's start as a spring, a pond or a branch"): `gfx::RiverStarts` is the one
+  classifier the renderer and the shipped-data test share. The review found two bugs, both fixed test-first ("fix(gfx):
+  fade in a river that starts in water, keep a branch head"): a river starting in water had no fade-in, and branch heads
+  were moved onto their parent instead of being drawn as before.
+- **Sources** ("feat(game): give every river a source on high ground or in a pond"):
+
+  | River | Source | Kind |
+  |---|---|---|
+  | 0, 1, 3, 8 | extended 2 to 4.5 tiles upstream onto hills | Spring |
+  | 5, 6, 7 | a 2x2 pond 4 tiles behind its old head | Pond |
+  | 9 | extended 2 tiles north, a 2x2 pond behind | Pond |
+  | 2, 4, 10 | unchanged (oasis lake, hills, delta branch) | Pond / Spring / Branch |
+
+  Roads and fords did not move (`art/world_map.py --roads` rewrote them unchanged). Reference pictures: 17 updated.
+
+Rulings, with the measurements behind them:
+- **River 5 is fed by a pond, not hills.** Its only hills lie across the row-32 road: an extension would bridge the road
+  and hook back on itself. The pond sits below the road, where the old head already sat; travel is unchanged. The
+  third task's review raised the pond beside the road as a Minor; it was kept for that reason (moving it would re-roll 17 pictures).
+- **Rivers 6 and 7 are fed by ponds.** River 6's hills lie beyond the capital-north road; river 7's are six rows north,
+  so an extension would turn about 110 degrees at the old head.
+- **The shipped-roads traffic floor dropped from 2,500 to 2,400** (the user: the count is a demo stress load, not a
+  balance target). River 9's source lies in marsh town's region and moves where its people live. The start count fell
+  from 2,519 to 2,495; the only placement that kept it above 2,500 (2,504) put the pond against the marsh-town road.
+  Single-river edits on the old map: river 9 alone gave 2,485, the others 2,511 to 2,521. Final counts, old → new:
+  start 2,519 → 2,495, first middle 3,123 → 3,102, after a step 3,261 → 3,228, second middle 3,158 → 3,151, second
+  last 3,122 → 3,143. `share_per_mille` was not retuned.
+- **Pinned travel costs did not change** (option A had nothing to update): mortal to oasis 173, strong to oasis 152,
+  nearest 126, sect nearest 162, far side 562.
+- **No RED run was recorded where a new test called a symbol that did not exist yet** (`RiverStarts`, the taper
+  fields). Those tests failed to compile until the code existed. Each review fix did run RED first.
