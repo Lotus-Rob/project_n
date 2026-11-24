@@ -8,6 +8,9 @@ namespace {
 
 constexpr u32 BYTE_BITS = 8;
 constexpr u32 BYTE_MASK = 0xFFU;
+/// The most of a line's length its start's fade-in or taper may take, so a line shorter than the one asked for still shows
+/// its full width and strength somewhere rather than vanishing.
+constexpr f32 MOST_SHAPED_SHARE = 0.5F;
 
 /// The premultiplied colour `colour` (RibbonVertex::colour's layout) at `share` of its strength, from 0 to 1.
 u32 Faded(u32 colour, f32 share) {
@@ -37,7 +40,7 @@ f32 RiseShare(f32 along, f32 length) {
 /// `fadeIn` world units (at most half the line) and falling to nothing over the last `fade` before its end.
 std::vector<f32> Shares(const Laid& laid, const std::vector<f32>& along) {
     std::vector<f32> shares(laid.line.size(), 1.0F);
-    const f32 fadeInLength = std::min(laid.fadeIn, along.back() * RIBBON_HALF);
+    const f32 fadeInLength = std::min(laid.fadeIn, along.back() * MOST_SHAPED_SHARE);
     for (std::size_t point = 0; point < shares.size(); ++point) {
         shares[point] = RiseShare(along[point], fadeInLength);
     }
@@ -59,7 +62,7 @@ void AddBand(const Laid& laid, f32 width, u32 colour, std::vector<RibbonVertex>&
     lefts.reserve(line.size());
     rights.reserve(line.size());
     const std::vector<f32> along = DistancesAlong(line);
-    const f32 taperLength = std::min(laid.taper, along[last] * RIBBON_HALF);
+    const f32 taperLength = std::min(laid.taper, along[last] * MOST_SHAPED_SHARE);
     core::Vec2 heading{ .x = 1.0F, .y = 0.0F };
     for (std::size_t point = 0; point <= last; ++point) {
         // From the neighbours, so the band bends with the line without twisting; a stall keeps the last direction.
