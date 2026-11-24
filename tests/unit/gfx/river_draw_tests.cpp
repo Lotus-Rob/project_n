@@ -340,6 +340,23 @@ TEST_CASE("a river's start at the map's edge water stays on the map") {
     CHECK(lowest >= 0.0F);
 }
 
+TEST_CASE("a river's end at the map's edge water stays on the map") {
+    constexpr u32 COLUMNS = 4;
+    constexpr u32 ROWS = 4;
+    std::array<u8, std::size_t{ COLUMNS } * ROWS> grid{};
+    grid.at(COLUMNS) = LAKE;
+    // The water lies ahead of the end, against the west edge: a tile past it would be off the map.
+    const core::WorldMap map =
+        test::MapOfTiles(COLUMNS, ROWS, grid, { { { .column = 2, .row = 1 }, { .column = 1, .row = 1 } } });
+    const std::vector<gfx::RibbonVertex> vertices = Draw(map, LAKE_WATER);
+    REQUIRE(!vertices.empty());
+    f32 lowest = vertices.front().x;
+    for (const gfx::RibbonVertex& vertex : vertices) {
+        lowest = std::min(lowest, vertex.x);
+    }
+    CHECK(lowest >= 0.0F);
+}
+
 TEST_CASE("two sources side by side on dry ground stay springs") {
     // The second one's head looks back along its line at the first one's start, a tile away.
     const core::WorldMap map = test::MeadowMap(
