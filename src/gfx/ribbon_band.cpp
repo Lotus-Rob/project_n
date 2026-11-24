@@ -19,13 +19,30 @@ u32 Faded(u32 colour, f32 share) {
     return faded;
 }
 
-/// How much of the band shows at each point of `laid`'s line: all of it, but over the last `fade` world units before its
-/// end, where it falls to nothing at the end.
-std::vector<f32> Shares(const Laid& laid) {
+/// How far along `line` each point stands, in world units.
+std::vector<f32> DistancesAlong(const std::vector<core::Vec2>& line) {
+    std::vector<f32> distances(line.size(), 0.0F);
+    for (std::size_t point = 1; point < line.size(); ++point) {
+        distances[point] = distances[point - 1] + Length(line[point] - line[point - 1]);
+    }
+    return distances;
+}
+
+/// How far into a stretch of `length` world units a point `along` the line stands, from 0 to 1 (1 where there is no stretch).
+f32 RiseShare(f32 along, f32 length) {
+    return length > 0.0F ? std::min(1.0F, along / length) : 1.0F;
+}
+
+/// How much of the band shows at each point of `laid`'s line, `along` it: all of it, but rising from nothing over the first
+/// `fadeIn` world units and falling to nothing over the last `fade` before its end.
+std::vector<f32> Shares(const Laid& laid, const std::vector<f32>& along) {
     std::vector<f32> shares(laid.line.size(), 1.0F);
+    for (std::size_t point = 0; point < shares.size(); ++point) {
+        shares[point] = RiseShare(along[point], laid.fadeIn);
+    }
     f32 fromEnd = 0.0F;
     for (std::size_t point = laid.line.size() - 1; laid.fade > 0.0F && point > 0; --point) {
-        shares[point] = std::min(1.0F, fromEnd / laid.fade);
+        shares[point] *= std::min(1.0F, fromEnd / laid.fade);
         fromEnd += Length(laid.line[point] - laid.line[point - 1]);
     }
     return shares;
@@ -40,12 +57,14 @@ void AddBand(const Laid& laid, f32 width, u32 colour, std::vector<RibbonVertex>&
     std::vector<core::Vec2> rights;
     lefts.reserve(line.size());
     rights.reserve(line.size());
+    const std::vector<f32> along = DistancesAlong(line);
+    const f32 taperLength = std::min(laid.taper, along[last] * RIBBON_HALF);
     core::Vec2 heading{ .x = 1.0F, .y = 0.0F };
     for (std::size_t point = 0; point <= last; ++point) {
         // From the neighbours, so the band bends with the line without twisting; a stall keeps the last direction.
         const core::Vec2 runs = line[std::min(point + 1, last)] - line[point == 0 ? 0 : point - 1];
         heading = HeadingOf(runs, heading);
-        const core::Vec2 side = SideOf(heading, width);
+        const core::Vec2 side = SideOf(heading, width) * (laid.taper > 0.0F ? RiseShare(along[point], taperLength) : 1.0F);
         lefts.push_back(line[point] + side);
         rights.push_back(line[point] - side);
     }
@@ -61,10 +80,10 @@ void AddBand(const Laid& laid, f32 width, u32 colour, std::vector<RibbonVertex>&
             colour
         );
     }
-    if (laid.fade <= 0.0F) {
+    if (laid.fade <= 0.0F && laid.fadeIn <= 0.0F) {
         return;
     }
-    const std::vector<f32> shares = Shares(laid);
+    const std::vector<f32> shares = Shares(laid, along);
     for (std::size_t quad = 0; quad < last; ++quad) {
         const std::span<RibbonVertex> corners = std::span{ into }.subspan(first + (quad * QUAD_VERTICES), QUAD_VERTICES);
         // Corners 0 and 1 stand at the quad's near end, 2 and 3 at its far end (WriteRibbonQuad()).

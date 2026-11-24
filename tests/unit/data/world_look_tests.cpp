@@ -516,6 +516,21 @@ TEST_CASE("road reads as written") {
     CHECK(small->road.width == doctest::Approx(0.26F));
 }
 
+TEST_CASE("a ribbon's taper is read in tiles, 0 when absent") {
+    const std::expected<core::WorldLook, core::Error> tapered =
+        Parse(With("edge_strength: 0.67 }", "edge_strength: 0.67, taper: 1.5 }"));
+    REQUIRE(tapered.has_value());
+    CHECK(tapered->river.taper == 1.5F);
+    CHECK(tapered->road.taper == 0.0F);
+    for (const std::string_view bad : { "taper: 5", "taper: -1" }) {
+        CAPTURE(bad);
+        const std::expected<core::WorldLook, core::Error> look =
+            Parse(With("edge_strength: 0.67 }", std::format("edge_strength: 0.67, {} }}", bad)));
+        REQUIRE_FALSE(look.has_value());
+        CHECK(look.error().message.contains("taper"));
+    }
+}
+
 TEST_CASE("the shipped look's ground, veil, mist, river and places read as written") {
     const Shipped shipped = ShippedLook();
     const core::WorldLook& look = shipped.look;

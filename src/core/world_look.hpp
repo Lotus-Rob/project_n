@@ -173,6 +173,8 @@ struct RibbonLook {
     std::array<u8, 3> edgeColour{};
     /// How strongly the edge shows, from 0 to 1.
     f32 edgeStrength = 0.0F;
+    /// How far from its start the ribbon widens from nothing to its full width, in tiles; 0: it starts full width.
+    f32 taper = 0.0F;
 };
 
 /// The paintings that stand for places.
@@ -283,10 +285,10 @@ struct WorldLook {
         sprites(mist.sprites);
         colour(mist.colour);
         hasher(mist.strength, mist.chance, mist.width[0], mist.width[1]);
-        hasher(river.width, river.edge, river.edgeStrength);
+        hasher(river.width, river.edge, river.edgeStrength, river.taper);
         colour(river.colour);
         colour(river.edgeColour);
-        hasher(road.width, road.edge, road.edgeStrength);
+        hasher(road.width, road.edge, road.edgeStrength, road.taper);
         colour(road.colour);
         colour(road.edgeColour);
         hasher(places.city);

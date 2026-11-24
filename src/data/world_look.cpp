@@ -123,6 +123,8 @@ constexpr internal::Range BOB_AMPLITUDE{ .low = 0.0, .lowOpen = false, .high = 0
 constexpr internal::Range POSITIVE{ .low = 0.0, .lowOpen = true };
 constexpr internal::Range DRIFT{ .low = 0.0, .lowOpen = false, .high = 2.0 };
 constexpr internal::Range UP_TO_TWO{ .low = 0.0, .lowOpen = false, .high = 2.0 };
+/// A ribbon's taper, in tiles: from none to four, both included.
+constexpr internal::Range UP_TO_FOUR{ .low = 0.0, .lowOpen = false, .high = 4.0 };
 constexpr internal::Range ABOVE_ZERO_TO_TWO{ .low = 0.0, .lowOpen = true, .high = 2.0 };
 /// How wide the edge between two kinds may blend, in tiles: the ground shader blends an edge only with the tiles on
 /// either side of it, so anything wider would look the same as one tile.
@@ -746,7 +748,7 @@ std::expected<void, core::Error> ReadRibbon(
         return std::unexpected{ node.error() };
     }
     internal::NoteUnknownKeys(
-        LOOK_READER, *node, key, "key", { "width", "edge", "colour", "edge_colour", "edge_strength" }, warnings
+        LOOK_READER, *node, key, "key", { "width", "edge", "colour", "edge_colour", "edge_strength", "taper" }, warnings
     );
     const std::expected<f32, core::Error> width = NumberIn(*node, key, "width", ABOVE_ZERO_TO_TWO);
     if (!width) {
@@ -771,7 +773,16 @@ std::expected<void, core::Error> ReadRibbon(
     if (!edgeStrength) {
         return std::unexpected{ edgeStrength.error() };
     }
-    ribbon = { .width = *width, .edge = *edge, .colour = *colour, .edgeColour = *edgeColour, .edgeStrength = *edgeStrength };
+    const std::expected<f64, core::Error> taper = internal::TunedNumber(LOOK_READER, *node, key, "taper", 0.0, UP_TO_FOUR);
+    if (!taper) {
+        return std::unexpected{ taper.error() };
+    }
+    ribbon = { .width = *width,
+               .edge = *edge,
+               .colour = *colour,
+               .edgeColour = *edgeColour,
+               .edgeStrength = *edgeStrength,
+               .taper = static_cast<f32>(*taper) };
     return {};
 }
 
