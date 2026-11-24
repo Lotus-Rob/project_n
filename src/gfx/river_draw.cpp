@@ -26,8 +26,8 @@ bool IsWet(const core::WorldMap& map, std::span<const u8> water, core::Vec2 poin
 }
 
 /// Where a river ending at `last` after `from` runs into water ahead of it: MOUTH_INTO_TILES past the first point on its
-/// heading, within MOUTH_STEPS steps and on the map, whose tile is of a kind in `water`; none when it already ends in water
-/// or finds none.
+/// heading, within MOUTH_STEPS steps and on the map, whose tile is of a kind in `water`, kept within the map; none when it
+/// already ends in water or finds none.
 std::optional<core::Vec2> Mouth(const core::WorldMap& map, std::span<const u8> water, core::Vec2 from, core::Vec2 last) {
     const f32 tileSize = map.TileSize();
     const f32 width = static_cast<f32>(map.Columns()) * tileSize;
@@ -43,7 +43,8 @@ std::optional<core::Vec2> Mouth(const core::WorldMap& map, std::span<const u8> w
             return std::nullopt;
         }
         if (IsWet(map, water, point)) {
-            return last + (heading * ((ahead + MOUTH_INTO_TILES) * tileSize));
+            const core::Vec2 into = last + (heading * ((ahead + MOUTH_INTO_TILES) * tileSize));
+            return core::Vec2{ .x = std::clamp(into.x, 0.0F, width), .y = std::clamp(into.y, 0.0F, height) };
         }
     }
     return std::nullopt;
