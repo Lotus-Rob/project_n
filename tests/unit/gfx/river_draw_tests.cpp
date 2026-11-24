@@ -304,14 +304,21 @@ TEST_CASE("a river at the map's west edge is a spring") {
     CHECK(gfx::RiverStarts(map, LAKE_WATER) == std::vector{ gfx::RiverStart::Spring });
 }
 
+/// The index of `map`'s kind named `name`.
+u8 ShippedKind(const core::WorldMap& map, std::string_view name) {
+    const std::span<const core::TerrainKind> kinds = map.Kinds();
+    return static_cast<u8>(std::ranges::find(kinds, name, &core::TerrainKind::name) - kinds.begin());
+}
+
+/// `map`'s water kinds, as the shipped look names them.
+std::array<u8, 2> ShippedWater(const core::WorldMap& map) {
+    return { { ShippedKind(map, "shallows"), ShippedKind(map, "deep_water") } };
+}
+
 TEST_CASE("the shipped rivers fit the river buffer") {
     const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
     // With the shipped look's water kinds, so the rivers run on into the sea as they are drawn.
-    const std::span<const core::TerrainKind> kinds = map->Kinds();
-    const auto indexOf = [&](std::string_view name) {
-        return static_cast<u8>(std::ranges::find(kinds, name, &core::TerrainKind::name) - kinds.begin());
-    };
-    const std::array<u8, 2> water{ { indexOf("shallows"), indexOf("deep_water") } };
+    const std::array<u8, 2> water = ShippedWater(*map);
     const std::vector<gfx::RibbonVertex> vertices = Draw(*map, water);
     bool finite = true;
     for (const gfx::RibbonVertex& vertex : vertices) {
@@ -343,13 +350,8 @@ TEST_CASE("the shipped rivers fit the river buffer") {
 
 TEST_CASE("every shipped river rises on high ground, out of water or from another river") {
     const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
-    const std::span<const core::TerrainKind> kinds = map->Kinds();
-    const auto indexOf = [&](std::string_view name) {
-        return static_cast<u8>(std::ranges::find(kinds, name, &core::TerrainKind::name) - kinds.begin());
-    };
-    const std::array<u8, 2> water{ { indexOf("shallows"), indexOf("deep_water") } };
-    const std::array<u8, 3> high{ { indexOf("hills"), indexOf("rock"), indexOf("snow") } };
-    const std::vector<gfx::RiverStart> starts = gfx::RiverStarts(*map, water);
+    const std::array<u8, 3> high{ { ShippedKind(*map, "hills"), ShippedKind(*map, "rock"), ShippedKind(*map, "snow") } };
+    const std::vector<gfx::RiverStart> starts = gfx::RiverStarts(*map, ShippedWater(*map));
     REQUIRE(starts.size() == map->Rivers().size());
     std::string broken;
     for (std::size_t index = 0; index < starts.size(); ++index) {
