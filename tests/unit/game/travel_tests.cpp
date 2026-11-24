@@ -721,6 +721,67 @@ TEST_CASE("every visitor comes home") {
     CHECK(home);
 }
 
+TEST_CASE("the journeys' stamp changes with them, and a copy keeps it") {
+    const core::WorldMap map = TestMap();
+    core::State state{ game::DOMAINS, STATE_SEED };
+    const core::StableId first = Traveller(state);
+    const core::StableId second = Traveller(state);
+    const core::StableId atHome = game::SpawnNpc(state, 0, HOME);
+    game::Travel travel;
+    // Two tables made apart are stamped apart, empty and alike as they are.
+    CHECK(travel.JourneysStamp() != game::Travel{}.JourneysStamp());
+
+    u64 stamp = travel.JourneysStamp();
+    const auto changed = [&] {
+        const bool fresh = travel.JourneysStamp() != stamp;
+        stamp = travel.JourneysStamp();
+        return fresh;
+    };
+    const core::Journey ending = VisitOf(map, first, THIRD_DAY);
+    travel.Start(ending);
+    CHECK(changed());
+    travel.Start(VisitOf(map, second, THIRD_DAY + DAY));
+    CHECK(changed());
+    // A copy holds the same journeys.
+    game::Travel copy = travel;
+    CHECK(copy.JourneysStamp() == travel.JourneysStamp());
+
+    // A load replaces the journeys, even with the same ones.
+    const u64 copied = copy.JourneysStamp();
+    REQUIRE(LoadInto(copy, Bytes(copy), state, &map));
+    CHECK(copy.JourneysStamp() != copied);
+    // A table moved into takes the stamp; the one moved from, its journeys unknown, takes a fresh one.
+    const u64 loaded = copy.JourneysStamp();
+    const game::Travel moved = std::move(copy);
+    CHECK(moved.JourneysStamp() == loaded);
+    // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move): a table moved from is valid; its stamp is checked
+    CHECK(copy.JourneysStamp() != loaded);
+
+    // Nothing ended, nobody travelling forgotten: the journeys are as they were.
+    travel.Finish(THIRD_DAY, state);
+    CHECK_FALSE(changed());
+    travel.Forget(atHome);
+    CHECK_FALSE(changed());
+    // One ended, then a member forgotten.
+    travel.Finish(core::EndTick(ending), state);
+    REQUIRE(travel.Journeys().size() == 1);
+    CHECK(changed());
+    travel.Forget(second);
+    REQUIRE(travel.Journeys().empty());
+    CHECK(changed());
+
+    // A month's departures.
+    const std::shared_ptr<const core::WorldMap> visitMap = VisitMap();
+    core::State visitState{ game::DOMAINS, STATE_SEED };
+    static_cast<void>(Residents(visitState, VISITORS, 0, HOME, MORTAL));
+    core::Paths paths{ visitMap };
+    game::Travel visits;
+    const u64 before = visits.JourneysStamp();
+    VisitMonth(visits, visitState, *visitMap, paths, 0);
+    REQUIRE_FALSE(visits.Journeys().empty());
+    CHECK(visits.JourneysStamp() != before);
+}
+
 TEST_CASE("a visit across a month step continues") {
     const std::shared_ptr<const core::WorldMap> map = VisitMap();
     core::State state{ game::DOMAINS, STATE_SEED };

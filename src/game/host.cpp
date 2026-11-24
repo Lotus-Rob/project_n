@@ -662,20 +662,31 @@ Pose DrawnPoseOf(
 }
 
 /// How member 0 of `journey` on `map` is drawn at `tick` by `clip`, the walk clip of the figure standing in `standing`:
-/// PoseOf() how far it has walked (its legs' walk tables taken from `walks`); with no clip, standing unmirrored, as a
-/// figure without one has no side-on frames to step through or turn.
+/// PoseOf() how far it has walked, from what the journey keeps of its walk, `kept[index]`, and the walk tables in `walks`;
+/// with no clip, standing unmirrored, as a figure without one has no side-on frames to step through or turn (`kept` may
+/// then be empty).
 Pose PoseOn(
     const core::WorldMap& map,
     const core::Journey& journey,
     i64 tick,
     const core::WalkClip* clip,
     SpriteId standing,
+    std::span<core::KeptWalk> kept,
+    std::size_t index,
     core::LegWalks& walks
 ) {
     if (clip == nullptr) {
         return { .sprite = standing, .widthScale = 1.0F };
     }
-    return PoseOf(*clip, standing, core::WalkedAt(map, journey, tick, walks));
+    return PoseOf(*clip, standing, core::WalkedAt(map, journey, tick, kept[index], walks));
+}
+
+/// The sprite a traveller on the world map stands in.
+constexpr SpriteId TRAVELLER_SPRITE = SpriteId::Villager;
+
+/// The walk clip of TRAVELLER_SPRITE in `animations`, if any.
+const core::WalkClip* TravellerClip(const core::Animations* animations) {
+    return animations != nullptr ? animations->WalkOf(TRAVELLER_SPRITE) : nullptr;
 }
 
 } // namespace
@@ -745,6 +756,7 @@ void Host::EnterScene() {
         m_selected = m_loaded->selected;
         m_route = std::move(m_loaded->route);
         m_loaded.reset();
+        DropKeptWalks(); // kept for the journeys the load replaced, in the tables cleared above
         m_worldTicksBefore = Live().worldTicks;
         m_requested.reset(); // the load replaces the scene a CycleScene asked for
         ApplyData();
@@ -1226,6 +1238,30 @@ u32 Host::JourneyChunks() const {
     return core::ChunkCount(Live().travel.Journeys().size(), PUBLISH_CHUNK);
 }
 
+void Host::DropKeptWalks() {
+    m_keptWalks.clear();
+    m_keptWalksStamp.reset();
+}
+
+void Host::SizeKeptWalks(u32 journeyChunks) {
+    if (journeyChunks == 0 || TravellerClip(m_animations.get()) == nullptr) {
+        return; // no traveller walks
+    }
+    const Travel& travel = Live().travel;
+    // Kept by journey index, so they hold only for the journeys they were kept for.
+    if (m_keptWalksStamp != travel.JourneysStamp()) {
+        m_keptWalks.assign(travel.Journeys().size(), core::KeptWalk{});
+        m_keptWalksStamp = travel.JourneysStamp();
+    }
+}
+
+std::size_t Host::KeptWalks() const {
+    return static_cast<std::size_t>(std::ranges::count_if(m_keptWalks, [](const core::KeptWalk& kept) {
+        return kept.finished > 0 ||
+               std::ranges::any_of(kept.tables, [](const core::LegWalk* table) { return table != nullptr; });
+    }));
+}
+
 void Host::PublishJourneys(u32 chunk, u32 part, const core::Rect& area, std::optional<u32> playerTile) {
     if (!m_debugSight && !playerTile) {
         return; // no one to see them
@@ -1242,8 +1278,9 @@ void Host::PublishJourneys(u32 chunk, u32 part, const core::Rect& area, std::opt
     const std::span<const core::Journey> journeys = world.travel.Journeys();
     const auto now = static_cast<i64>(world.worldTicks);
     const auto before = static_cast<i64>(m_worldTicksBefore);
-    const Look look{ .sprite = SpriteId::Villager, .shadow = true };
-    const core::WalkClip* const clip = m_animations ? m_animations->WalkOf(look.sprite) : nullptr;
+    const Look look{ .sprite = TRAVELLER_SPRITE, .shadow = true };
+    const core::WalkClip* const clip = TravellerClip(m_animations.get());
+    PN_ASSERT(clip == nullptr || m_keptWalks.size() == journeys.size(), "each journey drawn walking keeps its walk");
     const f32 height = static_cast<f32>(m_manifest->Sprite(look.sprite).footY) * look.scale;
     const core::Vec2 head{ .x = 0.0F, .y = -height };
     const core::Names* const names = m_data.names.get();
@@ -1265,7 +1302,7 @@ void Host::PublishJourneys(u32 chunk, u32 part, const core::Rect& area, std::opt
                 continue;
             }
             if (!pose) {
-                pose = PoseOn(map, journey, now, clip, look.sprite, walks);
+                pose = PoseOn(map, journey, now, clip, look.sprite, m_keptWalks, index, walks);
             }
             const core::Vec2 current = core::DrawnWhere(map, roads, journey, now, member);
             const core::Vec2 previous = core::DrawnWhere(map, roads, journey, before, member);
@@ -1545,6 +1582,7 @@ void Host::AdvanceCalendar(const core::TickCounters& counters, core::Jobs& jobs,
     }
     // The month's journeys replace the last's, so the tables of legs no one walks any more go, rather than piling up
     // month after month: the routes start on each traveller's own tile, so there are ever more of them.
+    DropKeptWalks();
     if (m_legWalks) {
         m_legWalks->Clear();
     }
@@ -1669,6 +1707,7 @@ void Host::SetData(const core::GameData& data) {
         m_paths.reset();
         m_roadCurves.reset();
         // Its tables hold the old map's tile centres.
+        DropKeptWalks();
         m_legWalks.reset();
         if (data.world != nullptr) {
             m_paths.emplace(data.world);
@@ -1773,6 +1812,7 @@ void Host::Publish(core::Snapshot& snapshot, core::Jobs& jobs, const std::option
     // The ground takes the first part whether or not there are entities; the journeys' parts follow the entities'.
     const u32 entityParts = std::max(chunks, 1U);
     const u32 journeyChunks = JourneyChunks();
+    SizeKeptWalks(journeyChunks);
     m_travellerLabels.resize(journeyChunks);
     for (std::vector<core::TextItem>& labels : m_travellerLabels) {
         labels.clear();

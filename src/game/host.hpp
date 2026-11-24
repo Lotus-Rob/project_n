@@ -309,6 +309,11 @@ public:
         return m_legWalks ? m_legWalks->Size() : 0;
     }
 
+    /// How many journeys keep their walk between publishes (core::KeptWalk: their own legs' walk tables, each asked of the
+    /// walk-table cache (core::LegWalkCache) once, and how far their finished parts walked): those drawn walking since the
+    /// journeys last changed (a month step, a load) or the world map did.
+    [[nodiscard]] std::size_t KeptWalks() const;
+
     /// How far the player's cultivator has walked, whether it moved this tick and which way it faces, as its walk clip
     /// draws it: its body's step each tick, a dash turning it but taking no step; a month step's jump stands a cultivator
     /// on a route, keeping the rest, and a scene's build or a load starts it afresh, standing and facing right. Kept with
@@ -350,7 +355,9 @@ public:
     /// (core::INSTANCE_SIGHT_FADE), its instance carrying its ID (so it can be picked and selected); with a villager walk
     /// clip (SetAnimations()) it shows the frame core::PoseSprite() picks for how far its journey has walked by the clock
     /// (core::WalkedAt(), from walk tables made the first time a traveller on each leg is drawn walking, then shared:
-    /// LegWalkTables()), mirrored while it faces left, its shadow never; it is drawn on the road
+    /// LegWalkTables(); each journey drawn keeps its own legs' tables and its finished parts' walk, KeptWalks(), so its
+    /// next walk finds them without a lock and works out only the part under way), mirrored while it faces left, its
+    /// shadow never; it is drawn on the road
     /// it walks by core::DrawnWhere() at the clock when the last tick began and at the clock now (the same point while
     /// the clock stood still), packed in further chunks of the same size after the entities', and the player's
     /// cultivator draws over them and everything else in the world layer, so a crowd never hides it; with the game data's names
@@ -448,6 +455,12 @@ private:
     void PublishJourneys(u32 chunk, u32 part, const core::Rect& area, std::optional<u32> playerTile);
     // How many PUBLISH_CHUNK chunks of journeys a publish draws: none off the world map.
     [[nodiscard]] u32 JourneyChunks() const;
+    // Drops what each journey kept of its walk, for the journeys or the map it was kept for have gone, or the walk tables
+    // it points into are going.
+    void DropKeptWalks();
+    // Sizes m_keptWalks to the running world's journeys, afresh when they have changed since, before a publish forks its
+    // `journeyChunks` chunks of journeys (each fills only its own journeys'): only when travellers walk.
+    void SizeKeptWalks(u32 journeyChunks);
     void ApplyData();
     [[nodiscard]] const core::CreatureData& DataOf(CreatureKind kind) const {
         return kind == CreatureKind::Fox ? m_data.fox : m_data.cultivator;
@@ -464,6 +477,11 @@ private:
     // leg and kept until the journeys change (a month step, a load) or the map does; none without a map. Presentation
     // only, so never saved, hashed or read by the simulation.
     std::optional<core::LegWalkCache> m_legWalks = std::nullopt;
+    // What each journey of the running world drawn walking keeps of its walk, by its index, and the journeys' stamp
+    // (Travel::JourneysStamp()) they are kept for: sized before a publish forks its chunks, each chunk filling only its
+    // own journeys', so no two threads touch one. Presentation only, so never saved, hashed or read by the simulation.
+    std::vector<core::KeptWalk> m_keptWalks;
+    std::optional<u64> m_keptWalksStamp = std::nullopt;
     std::shared_ptr<const core::Manifest> m_manifest;
     WorldState m_world; // the game's world
     WorldState m_base;  // the game's world as it was made, never ticked: what a save of it is written against
