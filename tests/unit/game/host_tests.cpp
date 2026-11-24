@@ -2197,6 +2197,99 @@ TEST_CASE("travellers on one route share its walk table, made once one is drawn 
     CHECK(world.host->LegWalkTables() == 0);
 }
 
+/// Of the journeys under way at `host`'s world clock: how many `snapshot` draws some member of, and how many of their
+/// members drawn show another frame or facing than `clip` gives for the journey's walk on `map` worked out afresh
+/// (core::WalkedAt() without tables).
+struct WalksDrawn {
+    std::size_t journeys = 0;
+    std::size_t wrong = 0;
+};
+
+WalksDrawn WalksDrawnIn(
+    const game::Host& host,
+    const core::Snapshot& snapshot,
+    const core::WorldMap& map,
+    const core::WalkClip& clip
+) {
+    std::unordered_map<core::StableId, std::size_t> drawn;
+    for (std::size_t index = 0; index < snapshot.ids.size(); ++index) {
+        drawn.emplace(snapshot.ids[index], index);
+    }
+    const auto now = static_cast<i64>(host.WorldTicks());
+    WalksDrawn walks;
+    for (const core::Journey& journey : host.NpcTravel().Journeys()) {
+        if (!core::Underway(journey, now) ||
+            std::ranges::none_of(journey.members, [&](core::StableId member) { return drawn.contains(member); })) {
+            continue;
+        }
+        ++walks.journeys;
+        const core::Walked walked = core::WalkedAt(map, journey, now);
+        const SpriteId frame = core::PoseSprite(&clip, SpriteId::Villager, walked.distance, walked.moving);
+        for (const core::StableId member : journey.members) {
+            if (const auto found = drawn.find(member); found != drawn.end()) {
+                const core::Instance& instance = snapshot.instances.at(found->second);
+                walks.wrong += Draws(instance, frame) && Mirrored(instance) == walked.facesLeft ? 0 : 1;
+            }
+        }
+    }
+    return walks;
+}
+
+TEST_CASE("a drawn traveller keeps its walk until the journeys or the map change") {
+    // Two days into a month, when its first visits are under way.
+    constexpr u64 TICKS_IN = 2 * game::TICKS_PER_DAY;
+    constexpr u16 RAISED_SHARE = 300;
+    core::GameData data = test::ShippedData();
+    const std::shared_ptr<const core::Animations> walks = VillagerWalks();
+    const core::WalkClip* const clip = walks->WalkOf(SpriteId::Villager);
+    REQUIRE(clip != nullptr);
+    const core::Rect whole{ .min = {},
+                            .max = { .x = static_cast<f32>(data.world->Columns()) * data.world->TileSize(),
+                                     .y = static_cast<f32>(data.world->Rows()) * data.world->TileSize() } };
+    game::Host host(test::TestManifest(), game::WORLD_SCENE, data);
+    host.SetDebugSight(true);
+    host.SetAnimations(walks);
+    const auto drawn = [&] { return WalksDrawnIn(host, Published(host, whole), *data.world, *clip); };
+    StepMonth(host, 1);
+    TickRange(host, 2, TICKS_IN);
+    CHECK(host.KeptWalks() == 0);
+
+    const WalksDrawn first = drawn();
+    REQUIRE(first.journeys > 0);
+    CHECK(first.wrong == 0);
+    CHECK(host.KeptWalks() == first.journeys);
+    // A tick on, each walks on from what it kept.
+    TickRange(host, TICKS_IN + 1, TICKS_IN + 1);
+    CHECK(drawn().wrong == 0);
+
+    // A month step brings the month's journeys in place of the last's, and what each kept goes with the old.
+    StepMonth(host, 2);
+    CHECK(host.KeptWalks() == 0);
+    const WalksDrawn stepped = drawn();
+    REQUIRE(stepped.journeys > 0);
+    CHECK(stepped.wrong == 0);
+    CHECK(host.KeptWalks() == stepped.journeys);
+
+    // So does a load, though it brings the same journeys back.
+    std::vector<std::byte> bytes;
+    core::Writer writer{ bytes };
+    host.Save(writer);
+    core::Reader reader{ bytes };
+    REQUIRE(host.Load(reader, TICKS_IN + 1));
+    host.EnterScene();
+    CHECK(host.KeptWalks() == 0);
+    const WalksDrawn loaded = drawn();
+    REQUIRE(loaded.journeys > 0);
+    CHECK(loaded.wrong == 0);
+    CHECK(host.KeptWalks() == loaded.journeys);
+
+    // And another map.
+    REQUIRE(game::SetTravelShare(data, RAISED_SHARE).has_value());
+    host.SetData(data);
+    CHECK(host.KeptWalks() == 0);
+    CHECK(drawn().wrong == 0);
+}
+
 /// A 10 by 4 meadow map with the small map's costs, a city on (0, 0) (the start) and one on (9, 3), joined by a road laid
 /// straight between them: its tiles step as a staircase, whose corner tiles' centres stand off the road's curve.
 std::shared_ptr<const core::WorldMap> StaircaseWorld() {

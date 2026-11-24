@@ -164,6 +164,13 @@ void SetOut(const VisitMonth& month, auto& npcs, const auto& ids, u32 chunk, std
     }
 }
 
+/// A JourneysStamp() value no table has had yet.
+u64 NextStamp() {
+    // Shared by every table, so two tables never draw one; atomic, so neither do tables made on two threads at once.
+    static std::atomic<u64> next{ 1 };
+    return next.fetch_add(1, std::memory_order_relaxed);
+}
+
 } // namespace
 
 bool LegSound(const core::Leg& leg, const core::WorldMap& map) {
@@ -260,6 +267,25 @@ std::optional<u16> ChooseDestination(
     return std::nullopt; // not reached: the pick lies below the total, which the last city's sum reaches
 }
 
+Travel::Stamp::Stamp()
+  : m_value{ NextStamp() } {
+}
+
+Travel::Stamp::Stamp(Stamp&& other) noexcept
+  : m_value{ other.m_value } {
+    other.Renew();
+}
+
+Travel::Stamp& Travel::Stamp::operator=(Stamp&& other) noexcept {
+    m_value = other.m_value;
+    other.Renew();
+    return *this;
+}
+
+void Travel::Stamp::Renew() {
+    m_value = NextStamp();
+}
+
 void Travel::Start(core::Journey journey) {
     PN_ASSERT(!journey.members.empty() && !journey.parts.empty(), "a journey has a member and a part");
     PN_ASSERT(
@@ -272,6 +298,7 @@ void Travel::Start(core::Journey journey) {
     // One without parts is kept: it ends at tick 0 (core::EndTick()), so the next Finish() writes it and drops it.
     m_travellers.insert(journey.members.begin(), journey.members.end());
     m_journeys.insert(std::ranges::upper_bound(m_journeys, Leader(journey), {}, Leader), std::move(journey));
+    m_stamp.Renew();
 }
 
 bool Travel::Travelling(core::StableId npc) const {
@@ -300,6 +327,7 @@ void Travel::Finish(i64 tick, core::State& state) {
     }
     const std::size_t ended =
         std::erase_if(m_journeys, [tick](const core::Journey& journey) { return core::EndTick(journey) <= tick; });
+    m_stamp.Renew();
     PN_LOG_DEBUG("{} journeys ended by world tick {}", ended, tick);
 
     // Merged in one pass rather than inserted one by one: tens of thousands of journals, thousands of entries a month.
@@ -349,6 +377,9 @@ void Travel::StartAll(std::vector<core::Journey>& journeys) {
     const auto before = static_cast<std::ptrdiff_t>(m_journeys.size());
     m_journeys.insert(m_journeys.end(), std::make_move_iterator(journeys.begin()), std::make_move_iterator(journeys.end()));
     std::ranges::inplace_merge(m_journeys, m_journeys.begin() + before, {}, Leader);
+    if (!journeys.empty()) {
+        m_stamp.Renew();
+    }
     journeys.clear();
 }
 
@@ -456,6 +487,7 @@ void Travel::Forget(core::StableId npc) {
     }
     const bool led = Leader(*found) == npc;
     std::erase(found->members, npc);
+    m_stamp.Renew();
     if (found->members.empty()) {
         m_journeys.erase(found);
     }
@@ -615,6 +647,7 @@ bool Travel::Adopt(
         return false;
     }
     m_journeys = std::move(journeys);
+    m_stamp.Renew();
     m_journals = std::move(journals);
     m_travellers = std::unordered_set<core::StableId>(members.begin(), members.end());
     m_written.clear();

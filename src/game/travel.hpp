@@ -105,6 +105,14 @@ public:
         return m_journeys;
     }
 
+    /// A number standing for the journeys as they are: drawn afresh, from a count the whole program shares, whenever they
+    /// change (one starts, ends, loses a member or is loaded) and kept by a copy, so two tables with one stamp hold the
+    /// same journeys, while a table moved from takes a fresh one. Bookkeeping for what presentation keeps per journey:
+    /// never saved, hashed or read by the simulation.
+    [[nodiscard]] u64 JourneysStamp() const {
+        return m_stamp.Value();
+    }
+
     /// Adds `journey`, which has at least one member and one part, and none of whose members is travelling already.
     void Start(core::Journey journey);
 
@@ -219,6 +227,29 @@ private:
         std::vector<Journal> journals
     );
 
+    /// A JourneysStamp() value: drawn afresh when made and by Renew(), copied with its table, and renewed in a table moved
+    /// from, whose journeys are left unknown.
+    class Stamp {
+    public:
+        Stamp();
+        Stamp(const Stamp&) = default;
+        Stamp& operator=(const Stamp&) = default;
+        Stamp(Stamp&& other) noexcept;
+        Stamp& operator=(Stamp&& other) noexcept;
+        ~Stamp() = default;
+
+        /// Draws a fresh value.
+        void Renew();
+
+        /// The value.
+        [[nodiscard]] u64 Value() const {
+            return m_value;
+        }
+
+    private:
+        u64 m_value;
+    };
+
     std::vector<core::Journey> m_journeys;                          // by first member
     std::vector<Journal> m_journals;                                // by NPC
     std::unordered_set<core::StableId> m_travellers;                // every journey's members; looked up only, never
@@ -227,6 +258,7 @@ private:
     std::vector<Journal> m_merged;                                  // Finish()'s output, swapped in, as m_written
     std::vector<std::vector<core::Journey>> m_setOut;               // per chunk of a month: the visits its NPCs make
     std::vector<core::Journey> m_departing;                         // a month's visits, gathered in chunk order
+    Stamp m_stamp;                                                  // renewed with every change to m_journeys
 };
 
 } // namespace game
