@@ -948,8 +948,9 @@ TEST_CASE("a fox dissolving, at half its progress") {
     core::Jobs jobs{ ReferenceWorkers() };
     core::GameData data = game::BuiltInData();
     data.fox.health = 1;
-    game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
-    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    game::Host host(manifest, game::ARENA_SCENE, data);
+    host.SetAnimations(test::ShippedAnimations(*manifest));
     std::vector<core::Event> events;
     for (u64 tick = 1; tick <= SHOWN_AT; ++tick) {
         host.Tick({ .wall = tick, .simulation = tick, .state = tick }, {}, events);
@@ -985,8 +986,9 @@ core::Snapshot CastThenPublish(core::Slot slot, u64 after, core::Jobs& jobs) {
     REQUIRE(after <= MOST_TICKS_AFTER_CAST);
     core::GameData data = game::BuiltInData();
     data.abilities.qiStart = data.abilities.qiMax;
-    game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
-    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    game::Host host(manifest, game::ARENA_SCENE, data);
+    host.SetAnimations(test::ShippedAnimations(*manifest));
     std::vector<core::Event> events;
     const std::array<core::Action, 1> cast{ { { .kind = core::ActionKind::Cast, .slot = slot, .point = AMONG_THE_FOXES } } };
     const u64 shownAt = CAST_TICK + after;
@@ -1132,8 +1134,9 @@ constexpr u64 SINCE_RAISED = 90;
 
 // The arena at rest at SEAL_TICK with the swords' seal at its shipped size among the foxes, which stand on it.
 core::Snapshot ArenaWithSwordSeal(core::Jobs& jobs) {
-    game::Host host(test::TestManifest());
-    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    game::Host host(manifest);
+    host.SetAnimations(test::ShippedAnimations(*manifest));
     core::Snapshot snapshot = Published(host, jobs, SEAL_TICK);
     // A copy: the game data BuiltInData() returns is a temporary, gone at the end of this line.
     const std::optional<core::SealCast> cast = game::BuiltInData().abilities.Of(core::AbilityKind::FlyingSwords).seal;
@@ -1196,8 +1199,9 @@ TEST_CASE("an overhead seal's light on the pale ground: pillars falling from it,
                                      .sparkSize = 0.035F };
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
-    game::Host host(test::TestManifest());
-    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    game::Host host(manifest);
+    host.SetAnimations(test::ShippedAnimations(*manifest));
     core::Snapshot snapshot = Published(host, jobs, SEAL_TICK);
     core::Seal seal = SwordSeal(AMONG_THE_FOXES + BELOW, SIZE, SEAL_TICK - SINCE_RAISED);
     seal.key = core::SealKeyOf(LIT);
@@ -1222,8 +1226,9 @@ TEST_CASE("an overhead seal's light on the pale ground: pillars falling from it,
 void CheckShowcase(std::string_view name, const gfx::View& view) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
-    game::Host host(test::TestManifest());
-    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    game::Host host(manifest);
+    host.SetAnimations(test::ShippedAnimations(*manifest));
     const core::Snapshot snapshot = Published(host, jobs, SEAL_TICK);
     const bool shown = std::ranges::any_of(snapshot.seals, &core::Seal::showcase);
     REQUIRE(shown);
@@ -1319,8 +1324,9 @@ void CheckGlows(std::string_view name, f32 zoom, core::Vec2 centre) {
     constexpr u64 GLOW_TICK = 492;
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
-    game::Host host(test::TestManifest(), game::ARENA_SCENE, game::BuiltInData());
-    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    game::Host host(manifest, game::ARENA_SCENE, game::BuiltInData());
+    host.SetAnimations(test::ShippedAnimations(*manifest));
     std::vector<core::Event> events;
     for (u64 tick = 1; tick <= GLOW_TICK; ++tick) {
         host.Tick({ .wall = tick, .simulation = tick, .state = tick }, {}, events);
@@ -1411,8 +1417,9 @@ std::vector<core::TextItem> NumberGrid(bool bare, const core::UiColours& colours
 void CheckNumbers(std::string_view name, f32 zoom, bool bare = false) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
-    game::Host host(test::TestManifest());
-    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    game::Host host(manifest);
+    host.SetAnimations(test::ShippedAnimations(*manifest));
     const core::Snapshot snapshot = Published(host, jobs);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
@@ -1459,20 +1466,10 @@ core::UiColours GarishColours() {
 void CheckRecoloured(std::string_view name, bool bare) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
-    game::Host host(test::TestManifest());
-    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
-    std::vector<core::Event> events;
-    // The fox spawned first: the lowest ID among them, as the outlines picture selects.
-    core::StableId fox{ std::numeric_limits<u64>::max() };
-    const core::Registry& entities = host.State()[game::ACTIVE].Entities();
-    for (auto [entity, creature, stableId] : entities.view<const game::Creature, const core::StableId>().each()) {
-        if (creature.kind == game::CreatureKind::Fox && std::to_underlying(stableId) < std::to_underlying(fox)) {
-            fox = stableId;
-        }
-    }
-    const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = fox } } };
-    host.Tick({ .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} }, events);
-    REQUIRE(host.Selected() == fox);
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    game::Host host(manifest);
+    host.SetAnimations(test::ShippedAnimations(*manifest));
+    SelectFirstFox(host, 1);
     const core::Snapshot snapshot = Published(host, jobs);
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, snapshot.scene, jobs);
@@ -1506,8 +1503,9 @@ TEST_CASE("a number on a creature too small to see starts from its label") {
     constexpr i32 ON_SEEN = 33;
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
-    game::Host host(test::TestManifest());
-    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    game::Host host(manifest);
+    host.SetAnimations(test::ShippedAnimations(*manifest));
     core::Snapshot snapshot = Published(host, jobs);
     std::vector<core::TextItem*> foxes;
     for (core::TextItem& text : snapshot.texts) {
@@ -1578,8 +1576,9 @@ core::Instance FlatPaleGround() {
 }
 
 LabelScene PlayerLabel(core::Jobs& jobs, Ground ground) {
-    game::Host host(test::TestManifest());
-    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    game::Host host(manifest);
+    host.SetAnimations(test::ShippedAnimations(*manifest));
     LabelScene scene{ .with = Published(host, jobs) };
     const auto label = std::ranges::find(scene.with.texts, core::LabelPriority::Player, &core::TextItem::priority);
     REQUIRE(label != scene.with.texts.end());
@@ -1888,8 +1887,9 @@ TEST_CASE("each drive's drawn glow follows GlowStrength, also with start ticks a
     } };
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
-    game::Host host(test::TestManifest(), game::ARENA_SCENE, game::BuiltInData());
-    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    game::Host host(manifest, game::ARENA_SCENE, game::BuiltInData());
+    host.SetAnimations(test::ShippedAnimations(*manifest));
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, ArenaScene(), jobs);
     GlowRig rig{ .renderer = &renderer, .host = &host, .jobs = &jobs };
@@ -1909,8 +1909,9 @@ TEST_CASE("reduce flashing holds a pulse at its average and dims light glows, an
     using enum core::GlowRole;
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
-    game::Host host(test::TestManifest(), game::ARENA_SCENE, game::BuiltInData());
-    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    game::Host host(manifest, game::ARENA_SCENE, game::BuiltInData());
+    host.SetAnimations(test::ShippedAnimations(*manifest));
     platform::Window window = OpenWindow();
     gfx::Renderer renderer = RendererFor(window, ArenaScene(), jobs);
     GlowRig rig{ .renderer = &renderer, .host = &host, .jobs = &jobs };
@@ -2100,8 +2101,9 @@ TEST_CASE("the world's painted ground and travellers at the smallest zoom: shimm
     constexpr f64 MOST_CHANGE = 0.0026;
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
-    game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
-    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    game::Host host(manifest, game::WORLD_SCENE, test::ShippedData());
+    host.SetAnimations(test::ShippedAnimations(*manifest));
     // Over the busiest region, published culled to the unshifted picture's view, as the game sends it (its margin holds
     // the shifted one); the travellers' labels are hidden at this zoom.
     const gfx::Camera far{ .centre = game::WORLD_BUSIEST, .zoom = gfx::MIN_ZOOM };
@@ -2135,8 +2137,9 @@ TEST_CASE("the world's painted ground and travellers at the smallest zoom: shimm
 TileChange TerrainShimmer(f32 zoom, gfx::TerrainParts shown, gfx::TerrainParts under) {
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
-    game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
-    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    game::Host host(manifest, game::WORLD_SCENE, test::ShippedData());
+    host.SetAnimations(test::ShippedAnimations(*manifest));
     const gfx::Camera camera{ .centre = game::WORLD_BUSIEST, .zoom = zoom };
     const core::Rect area = app::CullArea(camera, static_cast<i32>(WIDTH), static_cast<i32>(HEIGHT));
     host.Explore(area);
@@ -2180,8 +2183,9 @@ TEST_CASE("the fog's clouds at the smallest zoom: shimmer held to its bound") {
     constexpr f64 MOST_CHANGE = 0.0206;
     core::math::SetFloatingPointEnvironment();
     core::Jobs jobs{ ReferenceWorkers() };
-    game::Host host(test::TestManifest(), game::WORLD_SCENE, test::ShippedData());
-    host.SetAnimations(test::ShippedAnimations(*test::TestManifest()));
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    game::Host host(manifest, game::WORLD_SCENE, test::ShippedData());
+    host.SetAnimations(test::ShippedAnimations(*manifest));
     // Over the busiest region, far from the start's small explored diamond, so clouds cover the whole picture.
     const gfx::Camera far{ .centre = game::WORLD_BUSIEST, .zoom = gfx::MIN_ZOOM };
     const core::Rect area = app::CullArea(far, static_cast<i32>(WIDTH), static_cast<i32>(HEIGHT));
