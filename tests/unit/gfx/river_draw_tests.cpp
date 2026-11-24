@@ -340,10 +340,22 @@ TEST_CASE("a river's start at the map's edge water stays on the map") {
     CHECK(lowest >= 0.0F);
 }
 
+TEST_CASE("two sources side by side on dry ground stay springs") {
+    // The second one's head looks back along its line at the first one's start, a tile away.
+    const core::WorldMap map = test::MeadowMap(
+        7,
+        7,
+        { { { .column = 1, .row = 1 }, { .column = 1, .row = 5 } }, { { .column = 2, .row = 1 }, { .column = 5, .row = 1 } } }
+    );
+    CHECK(gfx::RiverStarts(map, {}) == std::vector{ gfx::RiverStart::Spring, gfx::RiverStart::Spring });
+}
+
 /// The index of `map`'s kind named `name`.
 u8 ShippedKind(const core::WorldMap& map, std::string_view name) {
     const std::span<const core::TerrainKind> kinds = map.Kinds();
-    return static_cast<u8>(std::ranges::find(kinds, name, &core::TerrainKind::name) - kinds.begin());
+    const auto found = std::ranges::find(kinds, name, &core::TerrainKind::name);
+    REQUIRE_MESSAGE(found != kinds.end(), "the shipped world has no terrain kind named ", name);
+    return static_cast<u8>(found - kinds.begin());
 }
 
 /// `map`'s water kinds, as the shipped look names them.
