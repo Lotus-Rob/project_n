@@ -341,6 +341,27 @@ TEST_CASE("the shipped rivers fit the river buffer") {
     CHECK((vertices.size() / gfx::QUAD_VERTICES) + joinLoss >= expected);
 }
 
+TEST_CASE("every shipped river rises on high ground, out of water or from another river") {
+    const std::shared_ptr<const core::WorldMap> map = test::ShippedWorld();
+    const std::span<const core::TerrainKind> kinds = map->Kinds();
+    const auto indexOf = [&](std::string_view name) {
+        return static_cast<u8>(std::ranges::find(kinds, name, &core::TerrainKind::name) - kinds.begin());
+    };
+    const std::array<u8, 2> water{ { indexOf("shallows"), indexOf("deep_water") } };
+    const std::array<u8, 3> high{ { indexOf("hills"), indexOf("rock"), indexOf("snow") } };
+    const std::vector<gfx::RiverStart> starts = gfx::RiverStarts(*map, water);
+    REQUIRE(starts.size() == map->Rivers().size());
+    std::string broken;
+    for (std::size_t index = 0; index < starts.size(); ++index) {
+        const TilePoint head = map->Rivers()[index].front();
+        const bool onHigh = std::ranges::contains(high, map->KindAt(map->TileIndex(head)));
+        if (starts[index] == gfx::RiverStart::Spring && !onHigh) {
+            broken += std::format("river {} at [{}, {}]; ", index, head.column, head.row);
+        }
+    }
+    CHECK_MESSAGE(broken.empty(), "springs on low ground: ", broken);
+}
+
 TEST_CASE("rivers past the buffer are left out whole, the later ones first") {
     constexpr u32 LENGTH = 255;
     constexpr u32 QUADS_PER_RIVER = 2 * LENGTH * gfx::RIVER_STEPS;
