@@ -799,7 +799,9 @@ void Renderer::Impl::PlaceTexts(const Shown& shown, core::Jobs& jobs) {
     const auto player =
         std::ranges::find(labelItems, core::LabelPriority::Player, [](const core::TextItem* item) { return item->priority; });
     if (player != labelItems.end()) {
-        body = ScreenBoxOf(snapshot, (*player)->entity, textFrame.clip, textFrame.alpha, shown.width, shown.height);
+        body = KeptClearBox(labelInputs, (*player)->entity, [&](core::StableId entity) {
+            return ScreenBoxOf(snapshot, entity, textFrame.clip, textFrame.alpha, shown.width, shown.height);
+        });
     }
     // A label whose item has gone draws as the pass kept it, fading out.
     for (const PlacedLabel& placed :

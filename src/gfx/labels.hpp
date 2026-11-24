@@ -22,6 +22,7 @@
 #include "core/vec2.hpp"
 #include "gfx/fog.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <optional>
 #include <span>
@@ -85,6 +86,20 @@ struct PlacedLabel {
     /// How much of it shows, from 0 (none) to 1 (all): it multiplies the label's premultiplied colour.
     f32 opacity = 0.0F;
 };
+
+/// The box LabelPass::Place() keeps clear for `labels`: the player's body on the screen as `seek(player)` finds it,
+/// when any of them is Named (only Named labels give way to it); none, without calling `seek`, when none is, as finding
+/// the body is not free and nothing would use it.
+template<typename Seek>
+[[nodiscard]] std::optional<core::Rect> KeptClearBox(
+    std::span<const LabelInput> labels,
+    core::StableId player,
+    const Seek& seek
+) {
+    const bool named =
+        std::ranges::any_of(labels, [](const LabelInput& label) { return label.priority == core::LabelPriority::Named; });
+    return named ? seek(player) : std::nullopt;
+}
 
 /// How long a label takes to fade fully in or out, a stack's count to cross-fade and its place to glide, in seconds of
 /// the frame clock (View::frameClock).
