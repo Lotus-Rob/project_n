@@ -252,6 +252,8 @@ TEST_CASE("a river starting by a lake starts inside it, fading in") {
     const std::size_t cores = vertices.size() / 2;
     CHECK(Midline(vertices, cores / gfx::QUAD_VERTICES, false).x == doctest::Approx(0.75F * TILE));
     CHECK(vertices[cores].colour == 0);
+    // A pond's river isn't tapered: its core is as wide as the look's.
+    CHECK(std::abs(Distance(Corner(vertices[cores]), Corner(vertices[cores + 1])) - CORE) < 0.01F);
 }
 
 TEST_CASE("a river starting in a lake keeps its start") {
@@ -308,8 +310,15 @@ TEST_CASE("a branch's head keeps its own first point") {
     CHECK(Distance(Midline(vertices, branch, false), Middle(5, 4)) < 1.0F);
 }
 
-TEST_CASE("a river at the map's west edge is a spring") {
-    const core::WorldMap map = test::MeadowMap(8, 3, { { { .column = 0, .row = 1 }, { .column = 4, .row = 1 } } });
+TEST_CASE("a river looking back off the map's edge at a lake corner is a spring") {
+    constexpr u32 COLUMNS = 4;
+    constexpr u32 ROWS = 4;
+    std::array<u8, std::size_t{ COLUMNS } * ROWS> grid{};
+    grid.at(0) = LAKE;
+    // Looking back from tile (0, 1) towards (1, 2) leaves the map within a tile, where the tile lookup would clamp onto the
+    // lake at (0, 0).
+    const core::WorldMap map =
+        test::MapOfTiles(COLUMNS, ROWS, grid, { { { .column = 0, .row = 1 }, { .column = 1, .row = 2 } } });
     CHECK(gfx::RiverStarts(map, LAKE_WATER) == std::vector{ gfx::RiverStart::Spring });
 }
 
