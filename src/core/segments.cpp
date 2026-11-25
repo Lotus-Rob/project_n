@@ -33,6 +33,18 @@ Segment Fill(const WorldMap& map, const RouteGraph& graph, const std::vector<u32
     return segment;
 }
 
+/// Whether edge `next`'s way comes from the same walk as edge `walked`'s (NO_NODE for none yet): from the same node over
+/// the same tiles.
+bool SameWalk(const RouteGraph& graph, const WorldMap& map, u32 walked, u32 next) {
+    if (walked == NO_NODE) {
+        return false;
+    }
+    const TileSpan first = graph.WalkSpan(map, walked);
+    const TileSpan second = graph.WalkSpan(map, next);
+    return graph.Edges()[walked].from == graph.Edges()[next].from && first.firstColumn == second.firstColumn &&
+           first.lastColumn == second.lastColumn && first.firstRow == second.firstRow && first.lastRow == second.lastRow;
+}
+
 } // namespace
 
 std::size_t Segment::Bytes() const {
@@ -65,23 +77,20 @@ void SegmentStore::Add(std::span<const u32> edges) {
             todo.push_back(edge);
         }
     }
-    // Edge IDs run by sector and then lower node, so sorted they gather the edges that share one walk.
+    // Edge IDs run by sector, then kind, then the node walked from, so sorted they gather the edges that share one walk.
     std::ranges::sort(todo);
     todo.erase(std::ranges::unique(todo).begin(), todo.end());
-    u32 walkedSector = 0;
-    u32 walkedFrom = NO_NODE;
+    u32 walkedEdge = NO_NODE;
     for (const u32 edge : todo) {
         const GraphEdge& way = m_graph->Edges()[edge];
         if (m_graph->IsCrossing(edge)) {
             m_tiles.assign({ m_graph->NodeTile(way.from), m_graph->NodeTile(way.to) });
         }
         else {
-            if (walkedFrom != way.from || walkedSector != way.sector) {
-                m_walk.WalkFrom(
-                    *m_map, m_graph->Profile(), SectorSpan(*m_map, m_graph->Rules(), way.sector), m_graph->NodeTile(way.from)
-                );
-                walkedSector = way.sector;
-                walkedFrom = way.from;
+            const TileSpan span = m_graph->WalkSpan(*m_map, edge);
+            if (!SameWalk(*m_graph, *m_map, walkedEdge, edge)) {
+                m_walk.WalkFrom(*m_map, m_graph->Profile(), span, m_graph->NodeTile(way.from));
+                walkedEdge = edge;
             }
             m_walk.Way(m_graph->NodeTile(way.to), m_tiles);
         }

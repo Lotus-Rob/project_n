@@ -49,6 +49,8 @@ struct RoutingRules {
 [[nodiscard]] u32 SectorRows(const WorldMap& map, RoutingRules rules);
 /// Sector `sector`'s tiles (sectors numbered row by row).
 [[nodiscard]] TileSpan SectorSpan(const WorldMap& map, RoutingRules rules, u32 sector);
+/// The tiles of sector `sector` and of the up to eight sectors round it, the map's edges clipping the block.
+[[nodiscard]] TileSpan BlockSpan(const WorldMap& map, RoutingRules rules, u32 sector);
 /// The sector holding `tile`.
 [[nodiscard]] u32 SectorOf(const WorldMap& map, RoutingRules rules, u32 tile);
 
@@ -127,6 +129,21 @@ struct SectorCrossing {
     [[nodiscard]] friend constexpr bool operator==(const SectorCrossing&, const SectorCrossing&) = default;
 };
 
+/// A way from one of a sector's places to a node of a sector round it: the cheapest inside the place's block.
+struct SectorPlaceEdge {
+    /// The place's index in SectorGraph::nodes, where the way starts.
+    u16 place = 0;
+    /// The other node's tile, in one of the sectors round the place's.
+    u32 tile = 0;
+    /// What walking the way from the place costs: the cheapest inside the block.
+    u32 cost = 0;
+    /// What walking the same tiles back to the place costs, which may exceed the cheapest way back.
+    u32 costBack = 0;
+
+    /// Whether all are equal.
+    [[nodiscard]] friend constexpr bool operator==(const SectorPlaceEdge&, const SectorPlaceEdge&) = default;
+};
+
 /// One sector's graph by one profile.
 struct SectorGraph {
     /// The node tiles, ascending: each side of a gate on any of the sector's borders and each place the profile can
@@ -136,12 +153,16 @@ struct SectorGraph {
     std::vector<SectorEdge> edges;
     /// The steps over the east and south borders, by (node, east before south).
     std::vector<SectorCrossing> crossings;
+    /// The ways from each place to every node of the sectors round its own, by (place, tile); none to a place of a lower
+    /// sector, whose own ways reach this one.
+    std::vector<SectorPlaceEdge> placeEdges;
 
     /// Whether all are equal.
     [[nodiscard]] friend bool operator==(const SectorGraph&, const SectorGraph&) = default;
 };
 
-/// Sector `sector`'s graph by `profile`, from its own tiles and the ring of tiles round it. `walk` is the caller's
+/// Sector `sector`'s graph by `profile`, from its own tiles and the ring of tiles round it, and for a sector holding a
+/// place, from its block and the ring round that. `walk` is the caller's
 /// workspace: what it held before changes nothing.
 [[nodiscard]] SectorGraph BuildSector(
     const WorldMap& map,
@@ -151,17 +172,19 @@ struct SectorGraph {
     SectorWalk& walk
 );
 
-/// A way between two nodes of a route graph: inside one sector, or a step over a border onto the node beside it.
+/// A way between two nodes of a route graph: inside one sector, a step over a border onto the node beside it, or a
+/// place's way to a node of a sector round its own (a block edge).
 struct GraphEdge {
-    /// The lower node, where the way starts.
+    /// The node where the way starts: the lower one, but a block edge's place.
     u32 from = 0;
-    /// The higher node.
+    /// The node where it ends.
     u32 to = 0;
     /// What walking it from `from` to `to` costs.
     u32 cost = 0;
     /// What walking the same tiles back from `to` to `from` costs.
     u32 costBack = 0;
-    /// The sector that lists it: the one holding its tiles, or for a step over a border, the one it leaves.
+    /// The sector that lists it: the one holding its tiles, for a step over a border the one it leaves, and for a block
+    /// edge its place's.
     u32 sector = 0;
 
     /// Whether all are equal.
@@ -185,7 +208,8 @@ struct GraphLink {
 
 /// One profile's graph over the whole map: every sector's nodes and edges joined by the steps over their borders.
 /// Numbers are positions: sectors row by row, a sector's nodes in tile order, so its nodes are FirstNode(sector) plus
-/// their index in the sector; edge IDs run sector by sector, a sector's edges then its crossings.
+/// their index in the sector; edge IDs run sector by sector, a sector's edges, then its crossings, then its places' block
+/// edges.
 class RouteGraph {
 public:
     /// The graph of sectors built one by one; `sectors[i]` is BuildSector(..., i, ...).
@@ -214,8 +238,13 @@ public:
     [[nodiscard]] u32 FirstNode(u32 sector) const;
     /// Every edge, by ID.
     [[nodiscard]] std::span<const GraphEdge> Edges() const;
-    /// Whether edge `edge` is a step over a border onto the node beside it, rather than a way inside one sector.
+    /// Whether edge `edge` is a step over a border onto the node beside it, rather than a walked way.
     [[nodiscard]] bool IsCrossing(u32 edge) const;
+    /// Whether edge `edge` is a place's way to a node of a sector round its own.
+    [[nodiscard]] bool IsBlockEdge(u32 edge) const;
+    /// The tiles of `map`, the graph's map, that edge `edge`'s way was found in: its place's block for a block edge,
+    /// else its sector.
+    [[nodiscard]] TileSpan WalkSpan(const WorldMap& map, u32 edge) const;
     /// The ways out of `node`, one for each of its edges, by edge ID.
     [[nodiscard]] std::span<const GraphLink> LinksOf(u32 node) const;
     /// The bytes its arrays hold, by their capacity.
@@ -226,6 +255,9 @@ public:
 private:
     /// An empty graph, for Assemble to fill.
     RouteGraph() = default;
+    /// Appends sector `sector`'s edges, crossings and block edges, built as `built`, in that order; its nodes and every
+    /// sector's first node are already in place.
+    void AppendSector(u32 sector, const SectorGraph& built);
 
     /// The profile it was built for.
     ProfileIndex m_profile = WALKING;
@@ -245,6 +277,10 @@ private:
     std::vector<u32> m_placeNode;
     /// Every edge, by ID.
     std::vector<GraphEdge> m_edges;
+    /// Each sector's first crossing's edge ID.
+    std::vector<u32> m_firstCrossing;
+    /// Each sector's first block edge's ID.
+    std::vector<u32> m_firstBlockEdge;
     /// Each node's first link, and after the last node's, the number of links.
     std::vector<u32> m_firstLink;
     /// Every node's links, a node's together.
@@ -284,8 +320,9 @@ private:
     u32 m_sectorsBuilt = 0;
 };
 
-/// Whether `first` and `second` cost the same to enter on every tile of `sector` and of the ring one tile round it: all a
-/// sector's graph reads of its profile, so where they agree the two build the same sector.
+/// Whether `first` and `second` cost the same to enter on every tile a sector's graph reads of its profile: the sector and
+/// the ring one tile round it, or for a sector holding a place, its block and the ring round that; so where they agree
+/// the two build the same sector.
 [[nodiscard]] bool SectorCostsAgree(
     const WorldMap& map,
     RoutingRules rules,

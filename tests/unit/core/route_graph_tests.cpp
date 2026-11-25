@@ -195,6 +195,33 @@ u32 WalkedBy(const core::WorldMap& map, core::ProfileIndex profile, const std::v
     return total;
 }
 
+/// What an edge of a route graph is.
+enum class EdgeKind : u8 {
+    Inside,   ///< A way inside one sector.
+    Crossing, ///< A step over a border.
+    Block,    ///< A place's way to a node of a sector round its own.
+};
+
+/// What `graph` names its edge `edge`.
+EdgeKind NamedKind(const core::RouteGraph& graph, u32 edge) {
+    if (graph.IsCrossing(edge)) {
+        return EdgeKind::Crossing;
+    }
+    if (graph.IsBlockEdge(edge)) {
+        return EdgeKind::Block;
+    }
+    return EdgeKind::Inside;
+}
+
+/// How many of `graph`'s `count` edges from ID `first` the graph doesn't name as `kind`.
+std::size_t Misnamed(const core::RouteGraph& graph, std::size_t first, std::size_t count, EdgeKind kind) {
+    std::size_t misnamed = 0;
+    for (std::size_t index = first; index < first + count && index < graph.Edges().size(); ++index) {
+        misnamed += NamedKind(graph, static_cast<u32>(index)) == kind ? 0 : 1;
+    }
+    return misnamed;
+}
+
 TEST_CASE("a map smaller than a sector is one sector with only its places") {
     const core::WorldMap map = MustBuild(Source({ "0......", ".....1.", "......." }));
     const core::RoutingRules rules{};
@@ -435,8 +462,9 @@ TEST_CASE("profiles that cost the same on a sector share its build") {
     const core::WorldMap map = HandMap();
     const u32 sectors = HandSectors(map);
     REQUIRE(map.Profiles().size() == 2);
-    // Only the danger's sector and the one whose ring its reach touches cost differently for the wary.
-    CHECK(HandGraphs(map).SectorsBuilt() == sectors + 2);
+    // Only the danger's sector, the one whose ring its reach touches and city 2's, whose block's ring it touches, cost
+    // differently for the wary.
+    CHECK(HandGraphs(map).SectorsBuilt() == sectors + 3);
     CHECK(HandGraphs(map, { .jobs = nullptr, .sectorsPerChunk = 2, .share = false }).SectorsBuilt() == sectors * 2);
 }
 
@@ -466,7 +494,7 @@ TEST_CASE("a sector whose ring costs differently is not shared") {
     CHECK(shared.Of(WARY).SameAs(unshared.Of(WARY)));
 }
 
-TEST_CASE("each crossing joins the nodes either side of its border") {
+TEST_CASE("each crossing joins the nodes either side of its border, and each kind of edge is named as such") {
     const core::WorldMap map = HandMap();
     const core::RouteGraphs graphs = HandGraphs(map);
     core::SectorWalk walk;
@@ -477,8 +505,10 @@ TEST_CASE("each crossing joins the nodes either side of its border") {
         std::size_t crossings = 0;
         std::size_t listed = 0;
         std::size_t apart = 0;
+        std::size_t misnamed = 0;
         for (u32 sector = 0; sector < HandSectors(map); ++sector) {
             const core::SectorGraph built = core::BuildSector(map, profile, HAND_RULES, sector, walk);
+            misnamed += Misnamed(graph, next, built.edges.size(), EdgeKind::Inside);
             next += built.edges.size();
             listed += built.crossings.size();
             for (std::size_t crossing = 0; crossing < built.crossings.size() && next < graph.Edges().size(); ++crossing) {
@@ -493,10 +523,14 @@ TEST_CASE("each crossing joins the nodes either side of its border") {
                 apart += (east || south) && leaves ? 0 : 1;
                 ++crossings;
             }
+            misnamed += Misnamed(graph, next - built.crossings.size(), built.crossings.size(), EdgeKind::Crossing);
+            misnamed += Misnamed(graph, next, built.placeEdges.size(), EdgeKind::Block);
+            next += built.placeEdges.size();
         }
         CHECK(crossings > 0);
         CHECK(crossings == listed);
         CHECK(apart == 0);
+        CHECK(misnamed == 0);
         CHECK(next == graph.Edges().size());
     }
 }
@@ -611,6 +645,52 @@ TEST_CASE("a profile that can enter nothing has an empty graph") {
     CHECK(stone.SectorNodes(0).empty());
     CHECK(stone.NodeAt(At(map, 2, 2)) == core::NO_NODE);
     CHECK(stone.PlaceNode(0) == core::NO_NODE);
+}
+
+TEST_CASE("a place's block edges join it to every node of the sectors round its own") {
+    const core::WorldMap map = HandMap();
+    const core::RouteGraphs graphs = HandGraphs(map);
+    const core::RouteGraph& graph = graphs.Of(core::WALKING);
+    // City 1 stands in sector 7, the middle of the map's second row of sectors, so its block is whole: sectors 1 to 3,
+    // 6, 8 and 11 to 13.
+    const u32 city = graph.PlaceNode(1);
+    const u32 sector = core::SectorOf(map, HAND_RULES, graph.NodeTile(city));
+    REQUIRE(sector == 7);
+    std::vector<u32> round;
+    for (const u32 other : { 1U, 2U, 3U, 6U, 8U, 11U, 12U, 13U }) {
+        for (u32 index = 0; index < graph.SectorNodes(other).size(); ++index) {
+            round.push_back(graph.FirstNode(other) + index);
+        }
+    }
+    std::vector<u32> joined;
+    std::size_t strays = 0;
+    for (u32 edge = 0; edge < graph.Edges().size(); ++edge) {
+        const core::GraphEdge& way = graph.Edges()[edge];
+        if (graph.IsBlockEdge(edge) && way.from == city) {
+            joined.push_back(way.to);
+            strays += way.sector == sector ? 0 : 1;
+        }
+    }
+    std::ranges::sort(joined);
+    CHECK(strays == 0);
+    CHECK(joined == round);
+}
+
+TEST_CASE("two places in each other's blocks share one edge, the lower sector's") {
+    // City 0 in sector 0 and city 1 in sector 1, each in the other's block.
+    const core::WorldMap map = MustBuild(Source({ "........", ".0...1..", "........", "........" }));
+    const core::RouteGraphs graphs = core::RouteGraphs::Build(map, RULES);
+    const core::RouteGraph& graph = graphs.Of(core::WALKING);
+    const u32 first = graph.PlaceNode(0);
+    const u32 second = graph.PlaceNode(1);
+    std::vector<core::GraphEdge> joining;
+    for (const core::GraphEdge& way : graph.Edges()) {
+        if ((way.from == first && way.to == second) || (way.from == second && way.to == first)) {
+            joining.push_back(way);
+        }
+    }
+    // Four meadow steps east each way.
+    CHECK(joining == std::vector<core::GraphEdge>{ { .from = first, .to = second, .cost = 40, .costBack = 40, .sector = 0 } });
 }
 
 } // namespace

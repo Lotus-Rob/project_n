@@ -30,13 +30,13 @@ struct RouteStep {
 
 /// A route over a graph: a stretch of its own from the start onto the graph, the graph's edges, and a stretch of its own
 /// from the graph to the end. A route the graph can't beat between ends one block apart at most, and a route that goes
-/// nowhere, are its head alone.
+/// nowhere, are its head alone. Between two places it is the graph's edges alone.
 struct GraphRoute {
-    /// The tiles from the start to its first node, both included; empty from a node.
+    /// The tiles from the start to its first node, both included; empty when the start is its first node.
     std::vector<u32> head;
     /// The graph's edges in walking order.
     std::vector<RouteStep> steps;
-    /// The tiles from the last node to the end, both included; empty onto a node.
+    /// The tiles from the last node to the end, both included; empty when the end is its last node.
     std::vector<u32> tail;
     /// What walking it costs: its head, its steps (each the cost of its own direction) and its tail.
     u32 cost = 0;
@@ -59,12 +59,13 @@ struct SearchCounts {
 class RouteScratch;
 
 /// The route from `from` to `target` over `graph`, the graph of its profile over `map`; none when `target` can't be
-/// entered or reached. An end that is a node starts or ends there alone. A start that is no node reaches every node of its
-/// block (its sector and the up to eight round it) by the cheapest way kept inside the block, and every node of the
-/// end's block may end by the cheapest way inside that block to an end that is no node, each priced in the direction
-/// walked. A route between two nodes uses the graph alone; when either end is no node and the end lies in the start's
-/// block, the cheapest way inside that block is the route unless the graph's is strictly cheaper. It reads the map and
-/// the graph only, so threads may search at once, each with its own `scratch`.
+/// entered or reached. An end on a place that is a node starts or ends there alone: the graph's ways from a place already
+/// reach every node of its block. Any other start, a gate's tile included, reaches every node of its block (its sector
+/// and the up to eight round it) by the cheapest way kept inside the block, and any other end is reached from every node
+/// of its block by the cheapest way inside that block, each priced in the direction walked. A route between two places
+/// uses the graph alone; otherwise, when the end lies in the start's block, the cheapest way inside that block is the
+/// route unless the graph's is strictly cheaper. It reads the map and the graph only, so threads may search at once,
+/// each with its own `scratch`.
 [[nodiscard]] std::optional<GraphRoute> FindGraphRoute(
     const WorldMap& map,
     const RouteGraph& graph,
@@ -95,14 +96,14 @@ private:
     struct Ends {
         /// The start's sector, the middle of the block its leg reaches over.
         u32 fromSector = 0;
-        /// The start's node, or NO_NODE.
+        /// The start's node when it is a place's, else NO_NODE.
         u32 fromNode = NO_NODE;
-        /// The end's node, or NO_NODE.
+        /// The end's node when it is a place's, else NO_NODE.
         u32 targetNode = NO_NODE;
         /// The slot the search ends on: the end's node, or past the nodes for an end that is none.
         u32 goal = 0;
-        /// What the way from the start to the end within the start's block costs, when either end is no node; else
-        /// UNREACHABLE.
+        /// What the way from the start to the end within the start's block costs, unless both ends are places' nodes;
+        /// else UNREACHABLE.
         u32 direct = UNREACHABLE;
         /// The least any step costs by the graph's profile.
         u32 cheapest = 0;

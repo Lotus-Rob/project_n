@@ -277,6 +277,35 @@ TEST_CASE("the store makes a segment once and never moves it") {
     CHECK(store.Made() == 8);
 }
 
+TEST_CASE("a place's ways inside its sector and over its block make the segments their own walks give") {
+    const Fixture fixture;
+    const core::RouteGraph& graph = fixture.Graph();
+    const u32 city = graph.PlaceNode(0);
+    // City 0's way inside its sector and two of its ways to the sectors round it: one node, two walks over other tiles.
+    std::vector<u32> inside;
+    std::vector<u32> block;
+    for (u32 edge = 0; edge < graph.Edges().size(); ++edge) {
+        if (graph.Edges()[edge].from != city || graph.IsCrossing(edge)) {
+            continue;
+        }
+        (graph.IsBlockEdge(edge) ? block : inside).push_back(edge);
+    }
+    REQUIRE(!inside.empty());
+    REQUIRE(block.size() >= 2);
+    const std::vector<u32> edges{ inside.front(), block.front(), block.back() };
+    core::SegmentStore store(fixture.map, graph);
+    store.Add(edges);
+    core::SectorWalk walk;
+    std::size_t different = 0;
+    for (const u32 edge : edges) {
+        const core::Segment* found = store.Find(edge);
+        REQUIRE(found != nullptr);
+        different += SameSegment(*found, core::MakeSegment(fixture.map, graph, edge, walk)) ? 0 : 1;
+    }
+    CHECK(different == 0);
+    CHECK(store.Made() == 3);
+}
+
 TEST_CASE("the store's bytes grow only with the segments made") {
     const Fixture fixture;
     const std::vector<u32> edges = NamedEdges(fixture.Graph());
