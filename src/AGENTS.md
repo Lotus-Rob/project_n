@@ -8,8 +8,9 @@ The YAML tables, hashed or presentation, and what reads each → `assets/AGENTS.
 ## Rules
 - C++23 with conventional headers (no modules). Every translation unit's includes lead to `core/cxx23.hpp`, which fails the build below C++23; include it with `// IWYU pragma: keep`.
 - Include order: project headers, then library headers (`<SDL3/...>`), then (headers only) the standard library, as blank-line-separated blocks. clang-format sorts within a block but doesn't regroup.
-- Formatting and lint: `project_n fmt` and `lint` (warnings are errors).
-- Headers include only the standard library and our own headers, and forward-declare none of their types. Third-party and platform code (SDL, Tracy, `<windows.h>`) stays in `.cpp` files behind our own types (a pimpl or opaque handle); `lint` fails on a third-party include in a header. Only `gfx` calls SDL_GPU.
+- Format and lint: `project_n fmt` and `lint` (warnings are errors).
+- Headers include only the standard library and our own headers, and forward-declare none of their types. Third-party and platform code (SDL, Tracy, `<windows.h>`) stays in `.cpp` files behind our own types (pimpl or opaque handle); `lint` fails on a third-party include in a header.
+- Only `gfx` calls SDL_GPU.
 - Only a facade (`FACADES` in tools/project_n.py) includes its own library in a header, and a module's private `src/<module>/internal/` headers its libraries (nothing outside the module includes them).
 - Numbers use the sized types from `core/types.hpp` (`i8`–`i64`, `u8`–`u64`, `f32`, `f64`), never `int`, `unsigned`, `long`, `float`, `double` or `std::uint32_t` names (`int main(int, char**)` excepted; `std::size_t` stays for sizes and indices); `lint` fails on them. Headers include it themselves.
 - `pch.hpp` is the game's precompiled header and holds every standard header the sources use (it includes `core/types.hpp`): a `.cpp` never includes a standard header itself (`lint` fails on one), so add it there. Headers still include what they use; no third-party ones in it.
@@ -36,7 +37,7 @@ The YAML tables, hashed or presentation, and what reads each → `assets/AGENTS.
 ## Gotchas
 - A `///` comment right after the `/// @file` block joins it, leaving the next declaration undocumented: put a blank line after the file comment.
 - A `switch` over every value of an enum fails either way under Clang's `-Weverything`: `-Wswitch-default` wants a `default`, `-Wcovered-switch-default` rejects one. Use `if`s.
-- A member a designated initialiser can omit needs an initializer under Clang (`-Wmissing-designated-field-initializers`; it names one member per site): `{}` with `core/frame.hpp`'s `NOLINTNEXTLINE(readability-redundant-member-init)`, or a value tidy accepts (`= nullptr`, `= std::nullopt`). Others stay bare.
+- A member a designated initialiser omits needs an initializer under Clang (`-Wmissing-designated-field-initializers`; it names one member per site): `{}` with `core/frame.hpp`'s `NOLINTNEXTLINE(readability-redundant-member-init)`, or a value tidy accepts (`= nullptr`). Others stay bare.
 - MSVC's warnings show only in the windows-msvc builds, never natively.
 - MSVC C5246: `std::array` needs double braces, also for a member default, constant or argument (`size{ 1.0F, 1.0F }`, `f({ 255, 255, 255 })`). Arrays of aggregates (`std::array CASES{ Case{ ... }, ... }`) pass.
 - MSVC C2641: a `std::array` deduced from scalars (`std::array KEYS{ InputCode::KeyW, ... }`) warns as C5246 does, and double braces stop the deduction: write `std::to_array({ ... })`.
