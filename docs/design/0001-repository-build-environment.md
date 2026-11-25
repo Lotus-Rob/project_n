@@ -464,7 +464,7 @@ Rejected alternatives:
 
 | Tier | Holds | Loaded | Size rule |
 |---|---|---|---|
-| **AGENTS.md** | Facts an agent needs for *any* task in the area: map, commands, one-line rules, pointers to skills | Always, when working in that directory | Below the root: ≤ 8 KB (8,192 bytes), one line per rule of ≤ 300 characters; the root's process rules are the user's (exempt); `doctor --docs` checks |
+| **AGENTS.md** | Facts an agent needs for *any* task in the area: map, commands, one-line rules, pointers to skills | Always, when working in that directory | Below the root: ≤ 8 KB (8,192 bytes), one line per rule, every line ≤ 300 characters; the root's process rules are the user's (exempt); `doctor --docs` checks |
 | **Skills** (`.claude/skills/<name>/SKILL.md`) | *How* to do a specific job: steps, checklists, examples, detailed rules, gotchas for that job | On demand, when the task matches the skill's `description` | SKILL.md ≤ 200 lines (`doctor --docs` checks); longer reference material goes in a `references/` file inside the skill |
 | **Design docs** (`docs/design/`) | *Why* something is the way it is; alternatives rejected | When changing the design | No limit; superseded rather than edited once accepted |
 | **Agent briefs** (`.claude/agents/<name>.md`) | A subagent's role, what it may touch, and what it reports. Procedures and definitions stay in the skill it points to | When spawned, in a fresh context | ≤ 60 lines (`doctor --docs` checks); listed in root AGENTS.md under Agents |
