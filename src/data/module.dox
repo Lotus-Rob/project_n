@@ -1,4 +1,5 @@
 /// @defgroup data data
-/// The game's data files: the player's settings and the data tables (game data, the effects' looks and the HUD's layout, and the seals' looks), read
-/// from YAML into core's types. yaml-cpp stays inside this module; its readers return errors with
-/// the line they were found on and never throw.
+/// The game's data files: the player's settings and the data tables, read from YAML into core's types. Game data
+/// (creatures, abilities, the world map, the names) is hashed and saved against; presentation (the effects' looks and the
+/// HUD's layout, the seals' looks, the figures' walk clips, the world map's look) is neither hashed nor ticked on. yaml-cpp
+/// stays inside this module; its readers return errors with the line they were found on and never throw.
