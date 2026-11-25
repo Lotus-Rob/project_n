@@ -1,3 +1,4 @@
+#include "core/calendar.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/journey.hpp"
 #include "core/road_curve.hpp"

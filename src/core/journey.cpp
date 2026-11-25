@@ -1,6 +1,7 @@
 #include "core/journey.hpp"
 
 #include "core/assert.hpp"
+#include "core/calendar.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/random.hpp"
 
@@ -398,17 +399,18 @@ bool LegWalk::Fits(const Leg& leg) const {
            std::bit_cast<u32>(origin.y) == std::bit_cast<u32>(leg.origin.y) && std::ranges::equal(tiles, leg.tiles);
 }
 
-LegWalk MakeLegWalk(const WorldMap& map, const Leg& leg) {
-    PN_ASSERT(!leg.tiles.empty(), "a leg has a tile to start on");
-    LegWalk walk{ .origin = leg.origin, .tiles = leg.tiles, .marks = std::vector<LegWalkMark>(leg.tiles.size()) };
+std::vector<LegWalkMark> MakeWalkMarks(const WorldMap& map, Vec2 origin, std::span<const u32> tiles) {
+    PN_ASSERT(!tiles.empty(), "a leg has a tile to start on");
+    const auto point = [&](std::size_t index) { return index == 0 ? origin : map.TileCentre(tiles[index]); };
+    std::vector<LegWalkMark> marks(tiles.size());
     f64 walked = 0.0;
     Across before = Across::None;
-    for (std::size_t index = 0; index < walk.marks.size(); ++index) {
-        LegWalkMark& mark = walk.marks[index];
+    for (std::size_t index = 0; index < marks.size(); ++index) {
+        LegWalkMark& mark = marks[index];
         mark.walked = walked;
         mark.before = before;
-        if (index + 1 < walk.marks.size()) {
-            const Stretch stretch = StretchOf(LegPoint(map, leg, index), LegPoint(map, leg, index + 1));
+        if (index + 1 < marks.size()) {
+            const Stretch stretch = StretchOf(point(index), point(index + 1));
             mark.length = stretch.length;
             // The stretch's own way until the pass back below.
             mark.after = stretch.across;
@@ -419,13 +421,17 @@ LegWalk MakeLegWalk(const WorldMap& map, const Leg& leg) {
         }
     }
     Across after = Across::None;
-    for (LegWalkMark& mark : std::views::reverse(walk.marks)) {
+    for (LegWalkMark& mark : std::views::reverse(marks)) {
         if (mark.after != Across::None) {
             after = mark.after;
         }
         mark.after = after;
     }
-    return walk;
+    return marks;
+}
+
+LegWalk MakeLegWalk(const WorldMap& map, const Leg& leg) {
+    return { .origin = leg.origin, .tiles = leg.tiles, .marks = MakeWalkMarks(map, leg.origin, leg.tiles) };
 }
 
 LegWalks::~LegWalks() = default;

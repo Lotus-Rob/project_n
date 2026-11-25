@@ -7,7 +7,6 @@
 /// place is of its volley. A leg is reached only through Where() and EndTick(), so a new leg shape is one more case
 /// there and nothing that uses legs changes. Ticks are signed, so a journey may have left before the clock's tick 0.
 
-#include "core/calendar.hpp"
 #include "core/paths.hpp"
 #include "core/stable_id.hpp"
 #include "core/types.hpp"
@@ -205,6 +204,9 @@ struct LegWalk {
 
 /// The walk table of `leg`'s points on `map`.
 [[nodiscard]] LegWalk MakeLegWalk(const WorldMap& map, const Leg& leg);
+
+/// The marks of a leg that starts at `origin` and walks `tiles` (at least one) on `map`: those MakeLegWalk() makes for it.
+[[nodiscard]] std::vector<LegWalkMark> MakeWalkMarks(const WorldMap& map, Vec2 origin, std::span<const u32> tiles);
 
 /// Where WalkedAt() finds the walk tables of a journey's legs: made afresh, or kept and shared (core::LegWalkCache).
 class LegWalks {

@@ -10,6 +10,8 @@ namespace {
 using RouteEntry = std::pair<u64, u32>; // (cost, tile)
 using RouteQueue = std::priority_queue<RouteEntry, std::vector<RouteEntry>, std::greater<>>;
 
+} // namespace
+
 /// The cheapest cost of entering any tile by `profile`: every tile's cost is one of its kinds' or features' costs, or a
 /// cap of the terrain's by one, so none is lower. 0 when nothing is passable.
 u32 CheapestEntry(const MovementProfile& profile) {
@@ -25,15 +27,13 @@ u32 CheapestEntry(const MovementProfile& profile) {
 
 /// The cost of crossing `dColumn` by `dRow` tiles at best, with `cheapest` the least a step may cost: straight steps for
 /// the difference, diagonals (seven fifths, rounded down as StepCost does) for the rest.
-u64 Estimate(u32 cheapest, i64 dColumn, i64 dRow) {
+u64 StepEstimate(u32 cheapest, i64 dColumn, i64 dRow) {
     const u64 along = static_cast<u64>(std::abs(dColumn));
     const u64 across = static_cast<u64>(std::abs(dRow));
     const u64 shorter = std::min(along, across);
     const u64 longer = std::max(along, across);
     return (u64{ cheapest } * (longer - shorter)) + (u64{ cheapest } * DIAGONAL_NUMERATOR / DIAGONAL_DENOMINATOR * shorter);
 }
-
-} // namespace
 
 DistanceMap DistanceMap::Build(const WorldMap& map, u32 goal, ProfileIndex profile) {
     std::vector<u32> cost(static_cast<std::size_t>(map.Columns()) * map.Rows(), UNREACHABLE);
@@ -127,7 +127,7 @@ std::vector<u32> Search(
     const TilePoint targetPoint = map.PointOf(target);
     const auto estimate = [&](u32 tile) {
         const TilePoint point = map.PointOf(tile);
-        return Estimate(
+        return StepEstimate(
             cheapest,
             static_cast<i64>(targetPoint.column) - static_cast<i64>(point.column),
             static_cast<i64>(targetPoint.row) - static_cast<i64>(point.row)

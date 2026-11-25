@@ -268,3 +268,44 @@ TEST_CASE("Paths builds a map once and keeps it") {
 }
 
 } // namespace
+
+namespace {
+
+struct EstimatePair {
+    u32 from;
+    u32 to;
+};
+
+} // namespace
+
+TEST_CASE("the step estimate never exceeds a route's cost") {
+    const core::WorldMap map = RiverMap();
+    const core::MovementProfile& profile = map.Profiles()[core::WALKING];
+    const u32 cheapest = core::CheapestEntry(profile);
+    // Corner to corner, along the top, across the river, up from the road's end, and along the ford's row.
+    constexpr std::array<EstimatePair, 5> PAIRS{ { { .from = 0, .to = 39 },
+                                                   { .from = 0, .to = 7 },
+                                                   { .from = 3, .to = 35 },
+                                                   { .from = 36, .to = 2 },
+                                                   { .from = 20, .to = 23 } } };
+    for (const EstimatePair& pair : PAIRS) {
+        const std::vector<u32> route = core::FindRoute(map, core::WALKING, pair.from, pair.to);
+        REQUIRE_FALSE(route.empty());
+        const core::TilePoint from = map.PointOf(pair.from);
+        const core::TilePoint goal = map.PointOf(pair.to);
+        const u64 estimate = core::StepEstimate(
+            cheapest,
+            static_cast<i64>(goal.column) - static_cast<i64>(from.column),
+            static_cast<i64>(goal.row) - static_cast<i64>(from.row)
+        );
+        CHECK(estimate <= Walked(map, route));
+    }
+
+    core::MovementProfile blocked = profile;
+    blocked.kindCosts.assign(blocked.kindCosts.size(), core::IMPASSABLE_COST);
+    blocked.features = { .road = core::IMPASSABLE_COST,
+                         .river = core::IMPASSABLE_COST,
+                         .bridge = core::IMPASSABLE_COST,
+                         .ford = core::IMPASSABLE_COST };
+    CHECK(core::CheapestEntry(blocked) == 0);
+}

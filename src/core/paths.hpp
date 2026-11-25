@@ -18,6 +18,14 @@
 
 namespace core {
 
+/// The cheapest cost of entering any tile by `profile`: every tile's cost is one of its kinds' or features' costs, or a
+/// cap of the terrain's by one, so none is lower. 0 when nothing is passable.
+[[nodiscard]] u32 CheapestEntry(const MovementProfile& profile);
+
+/// The cost of crossing `dColumn` by `dRow` tiles at best, with `cheapest` the least a step may cost: straight steps for
+/// the difference, diagonals (seven fifths, rounded down as StepCost does) for the rest. It never exceeds a route's cost.
+[[nodiscard]] u64 StepEstimate(u32 cheapest, i64 dColumn, i64 dRow);
+
 /// The cost of a tile that can't reach the goal.
 inline constexpr u32 UNREACHABLE = std::numeric_limits<u32>::max();
 
