@@ -69,6 +69,16 @@ void ForEachGate(const WorldMap& map, ProfileIndex profile, u32 gateSpacing, Bor
     }
 }
 
+/// A crossing found on a border before its sector's nodes are final.
+struct PendingCrossing {
+    /// Its node's tile.
+    u32 tile = 0;
+    /// Whether it crosses the south border rather than the east one.
+    bool south = false;
+    /// What stepping over costs.
+    u32 cost = 0;
+};
+
 /// The index of `tile` in `nodes`, which holds it.
 u16 NodeIndex(const std::vector<u32>& nodes, u32 tile) {
     const auto found = std::ranges::lower_bound(nodes, tile);
@@ -228,12 +238,13 @@ SectorGraph BuildSector(const WorldMap& map, ProfileIndex profile, RoutingRules 
     const u32 topLeft = map.TileIndex({ .column = span.firstColumn, .row = span.firstRow });
 
     SectorGraph graph;
+    // A crossing's node index is known only once every node is found, sorted and merged, so its tile waits here.
+    std::vector<PendingCrossing> pending;
     const auto addEastOrSouthTile = [&](u32 /*westOrNorth*/, u32 eastOrSouth) { graph.nodes.push_back(eastOrSouth); };
-    // A crossing keeps its node's tile in costBack until the nodes are final, so each border's gates are found once.
     const auto addCrossing = [&](bool south) {
-        return [&graph, &map, profile, south](u32 inner, u32 outer) {
+        return [&graph, &pending, &map, profile, south](u32 inner, u32 outer) {
             graph.nodes.push_back(inner);
-            graph.crossings.push_back({ .node = 0, .south = south, .cost = map.CostAt(outer, profile), .costBack = inner });
+            pending.push_back({ .tile = inner, .south = south, .cost = map.CostAt(outer, profile) });
         };
     };
     if (span.firstColumn > 0) {
@@ -269,10 +280,14 @@ SectorGraph BuildSector(const WorldMap& map, ProfileIndex profile, RoutingRules 
         graph.nodes.size() <= std::size_t{ std::numeric_limits<u16>::max() } + 1, "a sector's node indices fit in 16 bits"
     );
 
-    for (SectorCrossing& crossing : graph.crossings) {
-        const u32 inner = crossing.costBack;
-        crossing.node = NodeIndex(graph.nodes, inner);
-        crossing.costBack = map.CostAt(inner, profile);
+    graph.crossings.reserve(pending.size());
+    for (const PendingCrossing& crossing : pending) {
+        graph.crossings.push_back(
+            { .node = NodeIndex(graph.nodes, crossing.tile),
+              .south = crossing.south,
+              .cost = crossing.cost,
+              .costBack = map.CostAt(crossing.tile, profile) }
+        );
     }
     std::ranges::sort(graph.crossings, {}, [](const SectorCrossing& crossing) {
         return std::pair{ crossing.node, crossing.south };
