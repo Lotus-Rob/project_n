@@ -35,6 +35,21 @@ struct SyntheticSize {
     u32 dangers;
 };
 
+/// How a synthetic map's ground is made.
+enum class SyntheticTerrain : u8 {
+    Noise,  ///< Two octaves of value noise, with roads between the cities.
+    Meadow, ///< Meadow everywhere and no roads.
+    Coarse, ///< Only the coarse octave, so the biomes are wide, with roads, and every danger reaches 16 tiles.
+};
+
+/// What a synthetic map varies from its scale's default.
+struct SyntheticOptions {
+    /// How many places it holds, cities and dangers in the shares its scale has (at least 2 cities); 0 for the scale's.
+    u32 places = 0;
+    /// How its ground is made.
+    SyntheticTerrain terrain = SyntheticTerrain::Noise;
+};
+
 /// The scales a synthetic map exists at, in times the shipped test map's area.
 inline constexpr std::array<u32, 3> SYNTHETIC_SCALES{ { 1, 10, 50 } };
 
@@ -54,6 +69,15 @@ inline constexpr std::array<u32, 3> SYNTHETIC_SCALES{ { 1, 10, 50 } };
     // Not a constant expression, so a bad scale in one fails to compile.
     std::println(stderr, "no synthetic map of scale {}", scale);
     std::abort();
+}
+
+/// `size` with `places` places in its shares of cities and dangers, at least 2 of them cities; `size` itself for 0.
+[[nodiscard]] constexpr SyntheticSize WithPlaces(SyntheticSize size, u32 places) {
+    if (places == 0) {
+        return size;
+    }
+    const u32 cities = std::clamp(places * size.cities / (size.cities + size.dangers), 2U, std::max(places, 2U));
+    return { .columns = size.columns, .rows = size.rows, .cities = cities, .dangers = places > cities ? places - cities : 0 };
 }
 
 namespace synthetic {
@@ -112,6 +136,8 @@ constexpr std::array<u32, 8> KIND_BOUNDS{ { 335, 365, 405, 405, 555, 659, 720, 7
 
 /// How far, in tiles, a danger's reach flags tiles around it.
 constexpr u32 DANGER_REACH = 3;
+/// How far a danger reaches on a map of wide biomes.
+constexpr u32 WIDE_DANGER_REACH = 16;
 /// How many people a city homes.
 constexpr u32 PEOPLE = 100;
 /// What a tile near a danger adds to its cost for the wary profile.
@@ -216,21 +242,34 @@ struct Draft {
              .features = { .danger = danger } };
 }
 
-/// Fills `source`'s size, kinds and grid: each tile's kind is picked by the noise sum of its two octaves.
-inline void MakeTerrain(core::WorldMapSource& source, const SyntheticSize& size, u64 seed) {
+/// The kind index of the tile (`column`, `row`) of `terrain`.
+[[nodiscard]] inline u8 TileKind(SyntheticTerrain terrain, u64 seed, const SyntheticSize& size, u32 column, u32 row) {
+    if (terrain == SyntheticTerrain::Meadow) {
+        return MEADOW;
+    }
+    const u32 coarse = Octave(seed, PURPOSE_COARSE_NOISE, COARSE_CELL, size.columns, column, row);
+    if (terrain == SyntheticTerrain::Coarse) {
+        // The kind bounds are cut for a sum of weights COARSE_WEIGHT + FINE_WEIGHT over two octaves of the same range.
+        return KindOf((COARSE_WEIGHT + FINE_WEIGHT) * coarse);
+    }
+    return KindOf(
+        (COARSE_WEIGHT * coarse) + (FINE_WEIGHT * Octave(seed, PURPOSE_FINE_NOISE, FINE_CELL, size.columns, column, row))
+    );
+}
+
+/// Fills `source`'s size, kinds and grid: each tile's kind is picked as `terrain` says.
+inline void MakeTerrain(core::WorldMapSource& source, const SyntheticSize& size, u64 seed, SyntheticTerrain terrain) {
     source.columns = size.columns;
     source.rows = size.rows;
     source.tileSize = TILE_SIZE;
-    source.dangerReach = DANGER_REACH;
+    source.dangerReach = terrain == SyntheticTerrain::Coarse ? WIDE_DANGER_REACH : DANGER_REACH;
     for (const auto& kind : KINDS) {
         source.kinds.push_back({ .name = kind.name, .symbol = ' ', .cost = kind.cost });
     }
     source.grid.resize(static_cast<std::size_t>(size.columns) * size.rows);
     for (u32 row = 0; row < size.rows; ++row) {
         for (u32 column = 0; column < size.columns; ++column) {
-            const u32 sum = (COARSE_WEIGHT * Octave(seed, PURPOSE_COARSE_NOISE, COARSE_CELL, size.columns, column, row)) +
-                            (FINE_WEIGHT * Octave(seed, PURPOSE_FINE_NOISE, FINE_CELL, size.columns, column, row));
-            source.grid[GridIndex(source, { .column = column, .row = row })] = KindOf(sum);
+            source.grid[GridIndex(source, { .column = column, .row = row })] = TileKind(terrain, seed, size, column, row);
         }
     }
 }
@@ -363,13 +402,15 @@ inline u32 MakeRoads(core::WorldMapSource& source, u32 cities) {
 }
 
 /// The source of the synthetic map: terrain, places, roads with the carving under them, profiles and travel rules.
-[[nodiscard]] inline Draft Source(u32 scale, u64 seed) {
-    const SyntheticSize size = SyntheticSizeOf(scale);
+[[nodiscard]] inline Draft Source(u32 scale, u64 seed, const SyntheticOptions& options = {}) {
+    const SyntheticSize size = WithPlaces(SyntheticSizeOf(scale), options.places);
     Draft draft;
     core::WorldMapSource& source = draft.source;
-    MakeTerrain(source, size, seed);
+    MakeTerrain(source, size, seed, options.terrain);
     MakePlaces(source, size, seed);
-    draft.carved = MakeRoads(source, size.cities);
+    if (options.terrain != SyntheticTerrain::Meadow) {
+        draft.carved = MakeRoads(source, size.cities);
+    }
     source.profiles.push_back(Profile("on_foot", 0));
     source.profiles.push_back(Profile("on_foot_wary", DANGER_COST));
     source.travel.reachBase = 300;
@@ -386,10 +427,10 @@ inline u32 MakeRoads(core::WorldMapSource& source, u32 cities) {
     return synthetic::Source(scale, seed).carved;
 }
 
-/// The synthetic map of `scale` times the test map's area (1, 10 or 50) for `seed`: the same map for the same pair.
-/// Stops the program if it can't be built, a fault of this support code, as ShippedWorld() does.
-[[nodiscard]] inline core::WorldMap SyntheticMap(u32 scale, u64 seed) {
-    std::expected<core::WorldMap, core::Error> built = core::WorldMap::Build(synthetic::Source(scale, seed).source);
+/// The synthetic map of `scale` times the test map's area (1, 10 or 50) for `seed` and `options`: the same map for the
+/// same arguments. Stops the program if it can't be built, a fault of this support code, as ShippedWorld() does.
+[[nodiscard]] inline core::WorldMap SyntheticMap(u32 scale, u64 seed, const SyntheticOptions& options = {}) {
+    std::expected<core::WorldMap, core::Error> built = core::WorldMap::Build(synthetic::Source(scale, seed, options).source);
     if (!built) {
         std::println(stderr, "synthetic map refused: {}", built.error().message);
         std::abort();
