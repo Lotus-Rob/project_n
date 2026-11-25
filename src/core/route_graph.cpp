@@ -441,6 +441,13 @@ u32 RouteGraph::NodeAt(u32 tile) const {
     return m_firstNode[sector] + static_cast<u32>(found - tiles.begin());
 }
 
+bool RouteGraph::IsCrossing(u32 edge) const {
+    PN_ASSERT(edge < m_edges.size(), "an edge of the graph");
+    const GraphEdge& way = m_edges[edge];
+    // Only a crossing reaches past its sector's own nodes, onto the tile beside its first.
+    return way.to - FirstNode(way.sector) >= SectorNodes(way.sector).size();
+}
+
 u32 RouteGraph::PlaceNode(u16 place) const {
     PN_ASSERT(place < m_placeNode.size(), "a place of the map");
     return m_placeNode[place];
@@ -570,8 +577,7 @@ void EdgeTiles(const WorldMap& map, const RouteGraph& graph, u32 edge, SectorWal
     const GraphEdge& way = graph.Edges()[edge];
     const u32 start = graph.NodeTile(way.from);
     const u32 end = graph.NodeTile(way.to);
-    // Only a crossing reaches past its sector's own nodes, onto the tile beside its first.
-    if (way.to - graph.FirstNode(way.sector) >= graph.SectorNodes(way.sector).size()) {
+    if (graph.IsCrossing(edge)) {
         into.clear();
         into.push_back(start);
         into.push_back(end);
