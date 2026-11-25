@@ -77,7 +77,7 @@ user every outcome with its numbers before the next wave; outcomes go into the s
 | S5 | What does the kept workspace save? | Search mean and p99 with and without `--fresh-scratch` | Reported. The workspace stays either way (it costs nothing); a saving under 5% at 50× is reported as such | 2 |
 | S6 | Is the binary heap the search's cost? | Per search: nodes popped, links relaxed, nanoseconds a pop | If the 50× search p99 passes half its budget (1 ms): a bucket queue is written behind the same search, measured the same way, and kept if it is over 10% faster. Else the heap stays, with the numbers | 2 |
 | S7 | What do batched segments and their walk marks cost? | Time to make the trip model's segments batched and with `--single-segments`; bytes a segment tile, and the walk marks' share of the segments' bytes | Batching kept if faster. The marks' share is the input for stage 2's compact form: passed on, not acted on here | 2 |
-| S8 | Does the search need a coarser graph above the sectors? | The 50× search p99 after S6, and nodes popped a search | Inside 2 ms: no. Over: its design is brought to the user before stage 2 | 2 |
+| S8 | Does the search need a coarser graph above the sectors? | The 50× search p99 after S6, near and far pairs, and nodes popped a search | Inside 2 ms: no. Over: landmark bounds (a better estimate, about 2 MB a profile) are designed and brought to the user first; a coarser graph only if they fall short | 2 |
 
 Round 1 runs after wave C lands (Task 5's benchmark), round 2 after Task 9. Round 1's numbers reach the user while
 wave D runs; a round-1 outcome that changes Task 3's or 4's code is a fix task before wave E.
@@ -663,6 +663,10 @@ public:
 - The search is Dijkstra over `LinksOf` from `PlaceNode(city)` by each link's `cost`; a cost above `bound` is not kept.
   A chunk is `CITIES_PER_CHUNK` cities and keeps one workspace for them (costs and stamps per node, the queue's
   storage), stamped as `RouteScratch` is, so a city's search clears nothing.
+- The last band's profile has no bound, so its table is one full search a city, growing with the map's area squared;
+  Task 9 times it as its own part. The game has no highest power today: should one come, its reach becomes that
+  profile's bound in `ReachBound`, nothing else. `Cost()` stays the table's only accessor, so its storage can change
+  without touching a caller.
 
 - [ ] **Step 1: Write the failing tests.**
   - `"the place table's cost is the cost of the route found for the same pair"`: `SyntheticMap(1, 1)`, both profiles,
@@ -693,15 +697,22 @@ public:
 
 **What it adds, per scale:**
 1. Build and memory: `PlaceTable::Build` with `ReachBound` for every profile joins both rows (the best of 5; each part
-   printed, their sum against the budget).
+   printed, their sum against the budget); the unbounded last band's tables printed as their own part, per profile.
+   `--places N` sets the number of places on the synthetic map, for place edges' and the tables' growth with places.
+   The "gates a sector" count uses `IsCrossing`, so place and block edges aren't counted as gates.
 2. The trip model: every city's routes to its 20 nearest places by the table's cost, each profile, one `RouteScratch`
    for all (a new one per search under `--fresh-scratch`). Each search timed alone: p99 against the budget, mean
    printed; and from `Counts()` the mean and most nodes popped and links relaxed, and the nanoseconds a pop.
 3. The model's memory: a `SegmentStore` per profile given every route's edges in one `Add` (one `Add` an edge under
    `--single-segments`), the `Add`s timed; its `Bytes()` plus the routes' `Bytes()` against the budget; printed:
    segments made of the graph's edges, bytes a segment tile, `WalkBytes()` as a share.
-4. Quality: 20 pairs drawn by `core::Random` among places and passable tiles, each way, each profile:
-   `FindGraphRoute` against `FindRoute`: the worst and mean ratio and how many pass 2% printed, the worst held to 5%.
+4. Far pairs: random city pairs in each band of sector distance (1-2, 2-4, 4-8 and further), each search timed alone:
+   p99 and mean per band, and nodes popped as a share of the graph's nodes; the far band's p99 is held to the budget.
+   Searches with a tile end are their own row.
+5. Quality: about 20 seeds × 200 pairs among places and passable tiles, stratified by the same bands of sector
+   distance, each way, each profile, plus two hostile maps (all meadow with no roads; coarse biomes with a danger
+   reach of 16): `FindGraphRoute` against `FindRoute`, worst ratio and share over 2% per band printed, the worst held
+   to 5%. The unit test's 40 routes stay as they are.
 
 - [ ] **Step 1: Extend `routing.cpp`.**
 - [ ] **Step 2: Build and run it once.** `pixi run project_n test --mode release --target routing_bench`. Expected:
@@ -739,5 +750,9 @@ changes code, each test-first:
 - **S2, S3's storage or S8 goes to the user:** no code here; the user's answer becomes its own plan or task.
 - **Nothing changes code:** the task is the record alone.
 
-Then the controller writes stage 1's part of the spec's Outcome (each spike's question, numbers and ruling), and the
-branch goes to `check`, the final review and the pull request.
+Then the controller writes stage 1's part of the spec's Outcome (each spike's question, numbers and ruling), with the
+route graph's design review's items left to stage 2: place edges pruned where they pass through another node; segments
+kept once for twin profiles rather than per profile; `SegmentStore::Add` in parallel, or segments in a compact form, as
+S7's numbers say; a map change means the graphs are assembled again, and Goals 2 and 4 are reworded to say so; and a place's
+edge to a place sought only in the lower place's block. The branch then goes to `check`, the final review and the pull
+request.
