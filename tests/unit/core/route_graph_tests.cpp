@@ -18,9 +18,7 @@ constexpr core::RoutingRules RULES{ .sectorSize = 4, .gateSpacing = 2 };
 /// A map from rows of symbols: '.' meadow (10), '^' peaks (impassable), '=' a road on meadow (4), and a digit for a city
 /// on meadow whose place index is the digit, city 0 the start.
 core::WorldMapSource Source(const std::vector<std::string>& rows) {
-    for (const std::string& row : rows) {
-        REQUIRE(row.size() == rows.front().size());
-    }
+    REQUIRE(std::ranges::all_of(rows, [&](const std::string& row) { return row.size() == rows.front().size(); }));
     core::WorldMapSource source;
     source.columns = static_cast<u32>(rows.front().size());
     source.rows = static_cast<u32>(rows.size());
@@ -82,11 +80,13 @@ std::vector<u32> CrossingTiles(const core::SectorGraph& graph) {
 /// What walking `way` costs step by step.
 u32 Walked(const core::WorldMap& map, const std::vector<u32>& way) {
     u32 total = 0;
+    bool blocked = false;
     for (std::size_t step = 1; step < way.size(); ++step) {
         const u32 cost = map.StepCost(way[step - 1], way[step], core::WALKING);
-        REQUIRE(cost != core::IMPASSABLE_COST);
+        blocked = blocked || cost == core::IMPASSABLE_COST;
         total += cost;
     }
+    REQUIRE(!blocked);
     return total;
 }
 
@@ -132,6 +132,30 @@ TEST_CASE("a road crossing a border is a gate") {
 TEST_CASE("impassable ground splits a border into runs") {
     const core::WorldMap map = MustBuild(Source({ "........", "....^...", "........", ".......0" }));
     CHECK(CrossingTiles(Build(map, 0)) == std::vector<u32>{ At(map, 3, 0), At(map, 3, 2) });
+}
+
+TEST_CASE("each crossing's far tile is a node of the sector it enters, short sectors included") {
+    // 9 x 6 in sectors of 4 leaves a last column of sectors one tile wide and a last row two tiles high; the peaks split
+    // borders into runs on both sides of that column.
+    const core::WorldMap map =
+        MustBuild(Source({ "0........", "...^.....", "........^", "....^....", ".........", "...^....." }));
+    std::size_t crossings = 0;
+    std::size_t intoLastColumn = 0;
+    std::size_t missing = 0;
+    for (u32 sector = 0; sector < core::SectorColumns(map, RULES) * core::SectorRows(map, RULES); ++sector) {
+        const core::SectorGraph graph = Build(map, sector);
+        for (const core::SectorCrossing& crossing : graph.crossings) {
+            const u32 far = graph.nodes.at(crossing.node) + (crossing.south ? map.Columns() : 1);
+            const core::SectorGraph entered = Build(map, core::SectorOf(map, RULES, far));
+            missing += std::ranges::binary_search(entered.nodes, far) ? 0 : 1;
+            intoLastColumn += map.PointOf(far).column == 8 ? 1 : 0;
+            ++crossings;
+        }
+    }
+    CHECK(missing == 0);
+    // Rows 0 and 3 across into sector 2 (row 2 is peaks there), row 4 into sector 5, and sector 2's south gate.
+    CHECK(intoLastColumn == 4);
+    CHECK(crossings > intoLastColumn);
 }
 
 TEST_CASE("a place on a gate's tile and a corner tile serving two borders are one node each") {
