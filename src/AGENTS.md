@@ -36,7 +36,7 @@ The YAML tables, hashed or presentation, and what reads each → `assets/AGENTS.
 ## Gotchas
 - A `///` comment right after the `/// @file` block joins it, leaving the next declaration undocumented: put a blank line after the file comment.
 - A `switch` over every value of an enum fails either way under Clang's `-Weverything`: `-Wswitch-default` wants a `default`, `-Wcovered-switch-default` rejects one. Use `if`s.
-- A member a designated initialiser can omit needs an initializer under Clang (`-Wmissing-designated-field-initializers`): `{}` with `core/frame.hpp`'s `NOLINTNEXTLINE(readability-redundant-member-init)`, or a value tidy accepts (`= nullptr`, `= std::nullopt`). Others stay bare.
+- A member a designated initialiser can omit needs an initializer under Clang (`-Wmissing-designated-field-initializers`; it names one member per site): `{}` with `core/frame.hpp`'s `NOLINTNEXTLINE(readability-redundant-member-init)`, or a value tidy accepts (`= nullptr`, `= std::nullopt`). Others stay bare.
 - MSVC's warnings show only in the windows-msvc builds, never natively.
 - MSVC C5246: `std::array` needs double braces, also for a member default, constant or argument (`size{ 1.0F, 1.0F }`, `f({ 255, 255, 255 })`). Arrays of aggregates (`std::array CASES{ Case{ ... }, ... }`) pass.
 - MSVC C2641: a `std::array` deduced from scalars (`std::array KEYS{ InputCode::KeyW, ... }`) warns as C5246 does, and double braces stop the deduction: write `std::to_array({ ... })`.

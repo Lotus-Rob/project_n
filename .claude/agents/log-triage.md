@@ -9,7 +9,7 @@ You get a log file (or several) and what was being attempted. Find why it failed
 1. Strip colour codes before searching: `sed 's/\x1b\[[0-9;]*m//g' <log>`.
 2. Find the first real error, not the last line. XMake ends with a summary (`error: ...`, `install failed!`); the cause is earlier: the first `error:`, `fatal error`, `undefined reference`, `LNK`, MSVC `C<number>`, failed CMake or configure check, failed test, or sanitizer `ERROR:` block. Later errors are usually consequences of the first.
 3. A failed package install saves its error in `.../installdir.failed/logs/install.txt`, whose path the log prints: read that file too.
-4. Compare the symptom with the Gotchas in the AGENTS.md files and skills (`grep -rn Gotchas -A20 AGENTS.md */AGENTS.md .claude/skills`): many failures here are known.
+4. Compare the symptom with the known failures: the Gotchas in the AGENTS.md files and skills (`grep -rn Gotchas -A20 AGENTS.md */AGENTS.md .claude/skills`), and the error text quoted in comments (`grep -n '<symptom text>' tools/project_n.py xmake.lua tests/xmake.lua .github/workflows/ci.yml`).
 
 Report in at most 40 lines:
 - **What failed:** the target, package or step.

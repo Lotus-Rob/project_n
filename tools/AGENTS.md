@@ -8,11 +8,11 @@
 - `dev` and `dev.cmd` only forward to `pixi run project_n`; behaviour belongs in project_n.py.
 - `PRESETS`, `IMAGES` and `SCOPES` at the top of the file are the single source of truth. Changing a preset or scope updates design doc 0001 §3/§11 and any AGENTS.md that names it.
 - Containers re-enter the same script (`reenter`): add behaviour once, not per environment.
-- Never pipe XMake's output through filters; it stalled twice that way (spike S4). Call XMake only through `run()`/`capture()`, never bare: they pass `-P <ROOT>` and restore `xmake-requires.lock`.
+- Never pipe XMake's output through filters; it stalled twice that way (spike S4). Call XMake only through `run()` (passes `-P <ROOT>`, restores `xmake-requires.lock`) or, for read-only output, `capture()` (passes `-P <ROOT>`, never restores the lock), never bare.
 - `doctor --docs` checks the agent docs: every quoted command exists, every AGENTS.md below the root is ≤ 8,192 bytes with no line over 300 characters, a SKILL.md ≤ 200 lines, an agent brief ≤ 60 (`doc_budget_problems`); `selftest` runs it on the real tree.
 - `env/activate.sh` runs on every `pixi run`: keep it fast and idempotent.
 - `lint` refuses design references in code comments (`design_references`), in every comment kind except `*.md`, `docs/`, generated files, the manifest and fuzz corpora. A comment it flags wrongly narrows the pattern, never rewords the comment → the comment above `DESIGN_REFERENCE_PATTERNS`.
-- `--help` is read by shell completers (lig): an option with choices opens its help with `[possible values: a, b]`, on one line; `test --list-tests [--suite S]` prints what `--test` takes.
+- `--help` is read by shell completers (lig): an option with choices opens its help with `[possible values: a, b]`, on one line (`help_format` doesn't wrap piped output); `test --list-tests [--suite S]` prints what `--test` takes.
 - The cold rule: CI builds on main and tags compile from source (`cold_ref`); a build writes only into an empty object-cache folder → `configure`'s docstring.
 - XMake rewrites `xmake-requires.lock` on every call (order, and only the entries the configuration uses); `run` writes the old bytes back unless an entry was added or changed, then it prints the diff: commit it → `restore_lock_unless_added`.
 - No compile cache is shared between checkouts, on purpose; the record is in `docs/superpowers/specs/2026-11-13-ci-and-local-speed-design.md` (Outcome, spikes), the why at `BUILD_CACHE_ENV`.
@@ -38,4 +38,4 @@
 - `reference` runs each case in its own process with its share of the cores and a timeout (`run_references`, `reference_share`, `REFERENCE_CASE_TIMEOUT`).
 - XMake takes an ancestor project over the current directory, and `utils.bin2c` still warns in a worktree's shader step ("we are building the project(<main checkout>)…"): benign → `resolve`.
 - `xmake f -v` is on purpose (it serialises package installs) → `configure`. `doctor` exits 3 for "problems found" → `DOCTOR_PROBLEMS`.
-- A worktree outside the repo fails to check out (Git LFS's filter needs Pixi to find `pixi.toml` further up) → the root AGENTS.md.
+- A worktree outside the repo fails to check out ("smudge filter lfs failed": Git LFS's filter needs Pixi to find `pixi.toml` further up) → `CLONE_CONFIG`.
