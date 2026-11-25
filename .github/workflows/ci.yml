@@ -19,18 +19,24 @@ permissions:
 env:
   PIXI_VERSION: v0.83.0
   PROJECT_N_REGISTRY: ghcr.io/lotus-rob
-  # Dependabot's runs get a read-only token, so they use the cache without pushing to it.
+  # Dependabot's runs get a read-only token, so they use the cache without pushing to it: a failed image push there
+  # would fail them, and with every check required their pull requests could never merge. Keep this condition.
   PROJECT_N_PUSH_IMAGES: ${{ github.event_name == 'push' && github.actor != 'dependabot[bot]' && '1' || '0' }}
   PROJECT_N_XMAKE_CACHE: /home/runner/xmake-cache
 
-# XMake package caches are keyed on the toolchain, the dependencies and the package overrides.
+# Three cache layers. Setup caches (Pixi envs, the linux and msvc images in GHCR by content tag, the MSVC install and
+# toolset, the macOS XMake bundle) are keyed on what they install and saved as soon as their step finishes. Packages
+# (XMake's) and objects (compiled Clang code, PROJECT_N_BUILD_CACHE, per job) are saved at job end even after a failure,
+# never on tags, which write no cache. Git LFS objects come through the actions/lfs composite action.
 jobs:
   lint:
-    # The non-build half of `check`: commit messages, quoted commands, formatting, clang-tidy.
+    # The non-build half of `check`: `selftest` (with the `doctor --docs` check), commit-check, `fmt --check` (which
+    # also catches commits made without the pre-commit hook) and `lint --container`, over a branch's commits since
+    # main, or main's pushed ones.
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     env:
-      PROJECT_N_BUILD_CACHE: /home/runner/build-cache # object caches (.github/AGENTS.md)
+      PROJECT_N_BUILD_CACHE: /home/runner/build-cache # the object caches' root: see the cache steps below
     permissions:
       contents: read
       packages: write # the linux image cache in GHCR
@@ -59,13 +65,20 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /home/runner/xmake-cache
-          # container (linux-clang)'s, which saves them: the same image, toolchain and packages (.github/AGENTS.md).
+          # container (linux-clang)'s, which saves them: the same image, toolchain and packages. `releasedbg` restores
+          # it too, and `windows` and `macos (address)` their release entry's.
+          # One entry per image or host and toolchain, saved only by its owner: `set_runtimes("MT")` is project-wide,
+          # sanitizers and LTO are per target and nearly every `add_requires` is unconditional, so a mode or sanitizer
+          # picks no other package variant (a split had saved duplicates of ~190, 42 and 25 MB).
           key: xmake-linux-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
           restore-keys: xmake-linux-clang-
       - name: Restore objects
         id: objects
-        # Warm on branch pushes only: main and tags compile cold (project_n enforces it too). Main only looks
-        # its key up for Save objects; tags skip both.
+        # Warm on branch pushes only: main and tags compile cold (project_n enforces it too: `cold_ref()`). Main only
+        # looks its key up for Save objects, which saves its cold build and seeds a new branch's first run (branches
+        # fall back to the default branch's caches); tags skip both. The newest earlier branch run seeds the next:
+        # unlike the packages, restore-keys keep the hash, since XMake's object key holds the compiler's path, not
+        # its version, so a toolchain bump must start cold.
         if: github.ref_type == 'branch'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -85,7 +98,8 @@ jobs:
       - run: pixi run project_n lint --container
       - name: Prune objects
         id: prune
-        # Only what this run's builds used stays (XMake's cache never evicts); says whether anything is left to save.
+        # Only what this run's builds used stays (XMake's build cache never evicts, so each save grew); says whether
+        # anything is left to save, so an empty folder never becomes the newest entry.
         if: always() && github.ref_type != 'tag' && steps.objects.outputs.cache-hit != 'true'
         run: pixi run project_n prune-build-cache
       - name: Save objects
@@ -95,10 +109,16 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /home/runner/build-cache
-          key: ${{ steps.objects.outputs.cache-primary-key }} # the restore's: builds may change the lock
+          # The restore step's key, never a fresh hashFiles: a build can change a hashed file (XMake adds a platform's
+          # missing entries to xmake-requires.lock), and the save would then name another key than the restore did.
+          key: ${{ steps.objects.outputs.cache-primary-key }}
 
   container:
-    # One clean-container build per preset (`project_n artifact`): build, tests, runtime-dependency check, dist/.
+    # One clean-container build per preset (`project_n artifact`): build, tests, on Linux the reference pictures,
+    # runtime-dependency check, upload. No disk cleanup step: the runner has room for the images plus packages.
+    # Objects are cached for linux-clang only: GCC's precompiled header made stale objects, and MSVC's `cl` cache
+    # drops the debug types /Zi keeps beside the objects. The windows-msvc packages entry is `xmake-windows-msvc-`,
+    # which no restore prefix of native Windows' `xmake-windows-native-` shares.
     strategy:
       fail-fast: false
       matrix:
@@ -109,7 +129,7 @@ jobs:
       contents: read
       packages: write # the linux image cache in GHCR
     env:
-      PROJECT_N_BUILD_CACHE: /home/runner/build-cache # object caches (.github/AGENTS.md)
+      PROJECT_N_BUILD_CACHE: /home/runner/build-cache # the object caches' root: see the cache steps below
       PROJECT_N_ACCEPT_MSVC_LICENSE: "1" # the licence is accepted on purpose; the image stays on the runner
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -184,14 +204,15 @@ jobs:
           key: ${{ steps.objects.outputs.cache-primary-key }} # the restore's: builds may change the lock
 
   releasedbg:
-    # linux-clang's releasedbg build in its container: the only mode that compiles Tracy's zones.
+    # linux-clang's releasedbg build in its container: the only mode that compiles Tracy's zones. Restores
+    # container (linux-clang)'s packages entry and never saves it.
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
       contents: read
       packages: write # the linux image cache in GHCR
     env:
-      PROJECT_N_BUILD_CACHE: /home/runner/build-cache # object caches (.github/AGENTS.md)
+      PROJECT_N_BUILD_CACHE: /home/runner/build-cache # the object caches' root: see the cache steps below
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         env:
@@ -203,7 +224,8 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /home/runner/xmake-cache
-          # container (linux-clang)'s, which saves them: the same image, toolchain and packages (.github/AGENTS.md).
+          # container (linux-clang)'s, which saves them: the same image, toolchain and packages. `releasedbg` restores
+          # it too, and `windows` and `macos (address)` their release entry's.
           key: xmake-linux-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
           restore-keys: xmake-linux-clang-
       - name: Restore objects
@@ -241,6 +263,9 @@ jobs:
 
   windows:
     # Native MSVC: the authoritative Windows build, and the only place MSVC's ASan can run. One build per entry.
+    # `release` tests; `address` runs the ASan tests plus `selftest`. No object cache: XMake's `cl` cache compiles
+    # each file's preprocessed text without the precompiled header and keeps only the `.obj`, so a warm build's
+    # debug info and binary differ from an uncached one's, and it only slowed cold runs (every main run).
     name: windows (${{ matrix.build }})
     strategy:
       fail-fast: false
@@ -328,7 +353,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 180
     env:
-      PROJECT_N_BUILD_CACHE: /Users/runner/build-cache # object caches (.github/AGENTS.md)
+      PROJECT_N_BUILD_CACHE: /Users/runner/build-cache # the object caches' root: see the cache steps below
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         env:
@@ -408,8 +433,10 @@ jobs:
           key: ${{ steps.objects.outputs.cache-primary-key }} # the restore's: builds may change the lock
 
   caches:
-    # Deletes this ref's superseded cache entries once every job has saved its own (.github/AGENTS.md). Not a required
-    # check, so it may skip (tags save nothing); the only job that may delete caches.
+    # Deletes this ref's superseded cache entries once every job has saved its own, so the repository stays within
+    # its 10 GB cache budget (`prune-ci-caches` keeps the newest entry per family and version). Runs after every job
+    # that saves a cache, even failed ones. Not a required check, so it may skip (tags save nothing); the only job
+    # with `actions: write`.
     needs: [lint, container, releasedbg, windows, macos]
     if: always() && github.ref_type != 'tag'
     runs-on: ubuntu-26.04
