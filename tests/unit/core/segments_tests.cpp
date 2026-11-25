@@ -123,17 +123,11 @@ struct Fixture {
     }
 };
 
-/// Whether edge `edge` of `graph` is a step over a border rather than a way inside a sector.
-bool IsCrossing(const core::RouteGraph& graph, u32 edge) {
-    const core::GraphEdge& way = graph.Edges()[edge];
-    return way.to - graph.FirstNode(way.sector) >= graph.SectorNodes(way.sector).size();
-}
-
 /// The first edge inside a sector whose cost differs by direction.
 u32 AsymmetricEdge(const core::RouteGraph& graph) {
     for (u32 edge = 0; edge < graph.Edges().size(); ++edge) {
         const core::GraphEdge& way = graph.Edges()[edge];
-        if (!IsCrossing(graph, edge) && way.cost != way.costBack) {
+        if (!graph.IsCrossing(edge) && way.cost != way.costBack) {
             return edge;
         }
     }
@@ -142,14 +136,14 @@ u32 AsymmetricEdge(const core::RouteGraph& graph) {
 }
 
 /// Eight edges to make together, unsorted with one repeated: three inside one sector sharing a `from` node, two
-/// crossings and three more inside sectors.
+/// crossings and three more inside other sectors, each in a sector the one before isn't in.
 std::vector<u32> NamedEdges(const core::RouteGraph& graph) {
     std::vector<u32> sharing;
     std::vector<u32> crossings;
     std::vector<u32> others;
     for (u32 edge = 0; edge < graph.Edges().size(); ++edge) {
         const core::GraphEdge& way = graph.Edges()[edge];
-        if (IsCrossing(graph, edge)) {
+        if (graph.IsCrossing(edge)) {
             crossings.push_back(edge);
             continue;
         }
@@ -158,7 +152,10 @@ std::vector<u32> NamedEdges(const core::RouteGraph& graph) {
         if (sharing.size() < 3 && (sharing.empty() || sameNode)) {
             sharing.push_back(edge);
         }
-        else if (sharing.size() == 3 && edge % 29 == 0) {
+        else if (
+            sharing.size() == 3 && others.size() < 3 && way.sector != graph.Edges()[sharing.front()].sector &&
+            (others.empty() || way.sector != graph.Edges()[others.back()].sector)
+        ) {
             others.push_back(edge);
         }
     }
@@ -231,9 +228,10 @@ TEST_CASE("a segment's walk marks are a leg's over its tiles, each way") {
 TEST_CASE("a crossing's segment is its two tiles") {
     const Fixture fixture;
     u32 edge = 0;
-    while (!IsCrossing(fixture.Graph(), edge)) {
+    while (edge < fixture.Graph().Edges().size() && !fixture.Graph().IsCrossing(edge)) {
         ++edge;
     }
+    REQUIRE(edge < fixture.Graph().Edges().size());
     core::SectorWalk walk;
     const core::Segment segment = core::MakeSegment(fixture.map, fixture.Graph(), edge, walk);
     const core::GraphEdge& way = fixture.Graph().Edges()[edge];
@@ -265,10 +263,17 @@ TEST_CASE("the store makes a segment once and never moves it") {
     CHECK(store.Find(edges.front()) == nullptr);
     CHECK(store.Made() == 0);
     store.Add(std::span<const u32>(edges).first(3));
-    const core::Segment* first = store.Find(edges.front());
-    REQUIRE(first != nullptr);
-    store.Add(std::span<const u32>(edges).subspan(1));
-    CHECK(store.Find(edges.front()) == first);
+    std::vector<const core::Segment*> before;
+    for (const u32 edge : std::span<const u32>(edges).first(3)) {
+        before.push_back(store.Find(edge));
+        REQUIRE(before.back() != nullptr);
+    }
+    store.Add(edges);
+    std::size_t moved = 0;
+    for (std::size_t index = 0; index < before.size(); ++index) {
+        moved += store.Find(edges[index]) == before[index] ? 0 : 1;
+    }
+    CHECK(moved == 0);
     CHECK(store.Made() == 8);
 }
 
