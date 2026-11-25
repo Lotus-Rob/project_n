@@ -35,21 +35,25 @@ struct SyntheticSize {
     u32 dangers;
 };
 
-/// The size of the synthetic map `scale` times the shipped test map's area: only 1, 10 and 50 exist. Any other scale is
-/// an error in a constant expression and stops the program otherwise.
+/// The scales a synthetic map exists at, in times the shipped test map's area.
+inline constexpr std::array<u32, 3> SYNTHETIC_SCALES{ 1, 10, 50 };
+
+/// The size of the synthetic map `scale` times the shipped test map's area: only SYNTHETIC_SCALES exist. Any other scale
+/// is an error in a constant expression and stops the program otherwise.
 [[nodiscard]] constexpr SyntheticSize SyntheticSizeOf(u32 scale) {
-    switch (scale) {
-        case 1:
-            return { .columns = 150, .rows = 85, .cities = 6, .dangers = 10 };
-        case 10:
-            return { .columns = 474, .rows = 269, .cities = 60, .dangers = 100 };
-        case 50:
-            return { .columns = 1061, .rows = 601, .cities = 300, .dangers = 500 };
-        default:
-            // Not a constant expression, so a bad scale in one fails to compile.
-            std::println(stderr, "no synthetic map of scale {}", scale);
-            std::abort();
+    constexpr std::array<SyntheticSize, SYNTHETIC_SCALES.size()> SIZES{ {
+        { .columns = 150, .rows = 85, .cities = 6, .dangers = 10 },
+        { .columns = 474, .rows = 269, .cities = 60, .dangers = 100 },
+        { .columns = 1061, .rows = 601, .cities = 300, .dangers = 500 },
+    } };
+    for (std::size_t i = 0; i < SYNTHETIC_SCALES.size(); ++i) {
+        if (SYNTHETIC_SCALES.at(i) == scale) {
+            return SIZES.at(i);
+        }
     }
+    // Not a constant expression, so a bad scale in one fails to compile.
+    std::println(stderr, "no synthetic map of scale {}", scale);
+    std::abort();
 }
 
 namespace synthetic {
