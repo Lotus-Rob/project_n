@@ -1,6 +1,7 @@
 #include "core/route_graph.hpp"
 
 #include "core/assert.hpp"
+#include "core/jobs.hpp"
 #include "core/profile.hpp"
 
 namespace core {
@@ -78,6 +79,12 @@ struct PendingCrossing {
     /// What stepping over costs.
     u32 cost = 0;
 };
+
+/// The bytes `vector` holds, by its capacity.
+template<typename T>
+std::size_t CapacityBytes(const std::vector<T>& vector) {
+    return vector.capacity() * sizeof(T);
+}
 
 /// The index of `tile` in `nodes`, which holds it.
 u16 NodeIndex(const std::vector<u32>& nodes, u32 tile) {
@@ -315,6 +322,263 @@ SectorGraph BuildSector(const WorldMap& map, ProfileIndex profile, RoutingRules 
         }
     }
     return graph;
+}
+
+RouteGraph RouteGraph::Assemble(
+    const WorldMap& map,
+    ProfileIndex profile,
+    RoutingRules rules,
+    std::span<const SectorGraph> sectors
+) {
+    const u32 sectorColumns = SectorColumns(map, rules);
+    PN_ASSERT(sectors.size() == std::size_t{ sectorColumns } * SectorRows(map, rules), "one graph for each sector of the map");
+    RouteGraph graph;
+    graph.m_profile = profile;
+    graph.m_rules = rules;
+    graph.m_columns = map.Columns();
+    graph.m_rows = map.Rows();
+    graph.m_sectorColumns = sectorColumns;
+
+    std::size_t nodes = 0;
+    std::size_t edges = 0;
+    for (const SectorGraph& sector : sectors) {
+        nodes += sector.nodes.size();
+        edges += sector.edges.size() + sector.crossings.size();
+    }
+    PN_ASSERT(nodes < NO_NODE && edges < NO_NODE / 2, "node, edge and link numbers fit in 32 bits");
+    graph.m_nodeTiles.reserve(nodes);
+    graph.m_firstNode.reserve(sectors.size() + 1);
+    for (const SectorGraph& sector : sectors) {
+        graph.m_firstNode.push_back(static_cast<u32>(graph.m_nodeTiles.size()));
+        graph.m_nodeTiles.insert(graph.m_nodeTiles.end(), sector.nodes.begin(), sector.nodes.end());
+    }
+    graph.m_firstNode.push_back(static_cast<u32>(graph.m_nodeTiles.size()));
+
+    graph.m_edges.reserve(edges);
+    for (std::size_t index = 0; index < sectors.size(); ++index) {
+        const SectorGraph& built = sectors[index];
+        const auto sector = static_cast<u32>(index);
+        const u32 first = graph.m_firstNode[index];
+        for (const SectorEdge& edge : built.edges) {
+            graph.m_edges.push_back(
+                { .from = first + edge.from,
+                  .to = first + edge.to,
+                  .cost = edge.cost,
+                  .costBack = edge.costBack,
+                  .sector = sector }
+            );
+        }
+        for (const SectorCrossing& crossing : built.crossings) {
+            const u32 tile = built.nodes[crossing.node];
+            const u32 beside = graph.NodeAt(tile + (crossing.south ? graph.m_columns : 1));
+            PN_ASSERT(beside != NO_NODE, "a crossing lands on a node of the sector it enters");
+            if (beside == NO_NODE) {
+                continue;
+            }
+            graph.m_edges.push_back(
+                { .from = first + crossing.node,
+                  .to = beside,
+                  .cost = crossing.cost,
+                  .costBack = crossing.costBack,
+                  .sector = sector }
+            );
+        }
+    }
+
+    graph.m_firstLink.assign(nodes + 1, 0);
+    for (const GraphEdge& edge : graph.m_edges) {
+        ++graph.m_firstLink[edge.from + 1];
+        ++graph.m_firstLink[edge.to + 1];
+    }
+    std::partial_sum(graph.m_firstLink.begin(), graph.m_firstLink.end(), graph.m_firstLink.begin());
+    graph.m_links.resize(graph.m_firstLink.back());
+    std::vector<u32> next(graph.m_firstLink.begin(), graph.m_firstLink.end() - 1);
+    // Edges are laid out in ID order, so each node's links come out by edge ID.
+    for (std::size_t index = 0; index < graph.m_edges.size(); ++index) {
+        const GraphEdge& edge = graph.m_edges[index];
+        const auto edgeId = static_cast<u32>(index);
+        graph.m_links[next[edge.from]++] = { .node = edge.to, .edge = edgeId, .cost = edge.cost, .reversed = false };
+        graph.m_links[next[edge.to]++] = { .node = edge.from, .edge = edgeId, .cost = edge.costBack, .reversed = true };
+    }
+
+    graph.m_placeNode.reserve(map.Places().size());
+    for (const Place& place : map.Places()) {
+        graph.m_placeNode.push_back(graph.NodeAt(map.TileIndex(place.tile)));
+    }
+    return graph;
+}
+
+ProfileIndex RouteGraph::Profile() const {
+    return m_profile;
+}
+
+RoutingRules RouteGraph::Rules() const {
+    return m_rules;
+}
+
+u32 RouteGraph::Nodes() const {
+    return static_cast<u32>(m_nodeTiles.size());
+}
+
+u32 RouteGraph::NodeTile(u32 node) const {
+    PN_ASSERT(node < m_nodeTiles.size(), "a node of the graph");
+    return m_nodeTiles[node];
+}
+
+u32 RouteGraph::NodeAt(u32 tile) const {
+    PN_ASSERT(u64{ tile } < u64{ m_columns } * m_rows, "a tile of the map");
+    if (u64{ tile } >= u64{ m_columns } * m_rows) {
+        return NO_NODE;
+    }
+    const u32 column = tile % m_columns;
+    const u32 row = tile / m_columns;
+    const u32 sector = ((row / m_rules.sectorSize) * m_sectorColumns) + (column / m_rules.sectorSize);
+    const std::span<const u32> tiles = SectorNodes(sector);
+    const auto found = std::ranges::lower_bound(tiles, tile);
+    if (found == tiles.end() || *found != tile) {
+        return NO_NODE;
+    }
+    return m_firstNode[sector] + static_cast<u32>(found - tiles.begin());
+}
+
+u32 RouteGraph::PlaceNode(u16 place) const {
+    PN_ASSERT(place < m_placeNode.size(), "a place of the map");
+    return m_placeNode[place];
+}
+
+std::span<const u32> RouteGraph::SectorNodes(u32 sector) const {
+    PN_ASSERT(std::size_t{ sector } + 1 < m_firstNode.size(), "a sector of the map");
+    return std::span{ m_nodeTiles }.subspan(m_firstNode[sector], m_firstNode[sector + 1] - m_firstNode[sector]);
+}
+
+u32 RouteGraph::FirstNode(u32 sector) const {
+    PN_ASSERT(std::size_t{ sector } + 1 < m_firstNode.size(), "a sector of the map");
+    return m_firstNode[sector];
+}
+
+std::span<const GraphEdge> RouteGraph::Edges() const {
+    return m_edges;
+}
+
+std::span<const GraphLink> RouteGraph::LinksOf(u32 node) const {
+    PN_ASSERT(node < m_nodeTiles.size(), "a node of the graph");
+    return std::span{ m_links }.subspan(m_firstLink[node], m_firstLink[node + 1] - m_firstLink[node]);
+}
+
+std::size_t RouteGraph::Bytes() const {
+    return CapacityBytes(m_nodeTiles) + CapacityBytes(m_firstNode) + CapacityBytes(m_placeNode) + CapacityBytes(m_edges) +
+           CapacityBytes(m_firstLink) + CapacityBytes(m_links);
+}
+
+bool RouteGraph::SameAs(const RouteGraph& other) const {
+    return m_rules == other.m_rules && m_columns == other.m_columns && m_rows == other.m_rows &&
+           m_nodeTiles == other.m_nodeTiles && m_firstNode == other.m_firstNode && m_placeNode == other.m_placeNode &&
+           m_edges == other.m_edges && m_firstLink == other.m_firstLink && m_links == other.m_links;
+}
+
+RouteGraphs RouteGraphs::Build(const WorldMap& map, RoutingRules rules, BuildOptions options) {
+    PN_PROFILE_ZONE();
+    PN_ASSERT(options.sectorsPerChunk > 0, "a chunk builds some sectors");
+    const std::size_t profiles = map.Profiles().size();
+    const u32 sectors = SectorColumns(map, rules) * SectorRows(map, rules);
+    // Each profile's sectors lie together, so each profile's are one span to assemble.
+    std::vector<SectorGraph> built(profiles * sectors);
+    const u32 perChunk = std::max(options.sectorsPerChunk, 1U);
+    const u32 chunks = ChunkCount(sectors, perChunk);
+    std::vector<u32> builtPerChunk(chunks, 0);
+    const auto buildChunk = [&](u32 chunk) {
+        SectorWalk walk;
+        const u64 first = u64{ chunk } * perChunk;
+        const u64 last = std::min(first + perChunk, u64{ sectors });
+        for (auto sector = static_cast<u32>(first); sector < last; ++sector) {
+            for (std::size_t profile = 0; profile < profiles; ++profile) {
+                const auto index = static_cast<ProfileIndex>(profile);
+                SectorGraph& slot = built[(profile * sectors) + sector];
+                std::size_t twin = 0;
+                while (options.share && twin < profile &&
+                       !SectorCostsAgree(map, rules, sector, static_cast<ProfileIndex>(twin), index)) {
+                    ++twin;
+                }
+                if (options.share && twin < profile) {
+                    slot = built[(twin * sectors) + sector];
+                }
+                else {
+                    slot = BuildSector(map, index, rules, sector, walk);
+                    ++builtPerChunk[chunk];
+                }
+            }
+        }
+    };
+    if (options.jobs != nullptr) {
+        options.jobs->ParallelFor(chunks, buildChunk);
+    }
+    else {
+        for (u32 chunk = 0; chunk < chunks; ++chunk) {
+            buildChunk(chunk);
+        }
+    }
+
+    RouteGraphs graphs;
+    graphs.m_graphs.reserve(profiles);
+    for (std::size_t profile = 0; profile < profiles; ++profile) {
+        graphs.m_graphs.push_back(
+            RouteGraph::Assemble(
+                map, static_cast<ProfileIndex>(profile), rules, std::span{ built }.subspan(profile * sectors, sectors)
+            )
+        );
+    }
+    graphs.m_sectorsBuilt = std::accumulate(builtPerChunk.begin(), builtPerChunk.end(), u32{ 0 });
+    return graphs;
+}
+
+const RouteGraph& RouteGraphs::Of(ProfileIndex profile) const {
+    PN_ASSERT(profile < m_graphs.size(), "a profile of the map");
+    return m_graphs[profile];
+}
+
+u32 RouteGraphs::SectorsBuilt() const {
+    return m_sectorsBuilt;
+}
+
+std::size_t RouteGraphs::Bytes() const {
+    std::size_t bytes = CapacityBytes(m_graphs);
+    for (const RouteGraph& graph : m_graphs) {
+        bytes += graph.Bytes();
+    }
+    return bytes;
+}
+
+bool SectorCostsAgree(const WorldMap& map, RoutingRules rules, u32 sector, ProfileIndex first, ProfileIndex second) {
+    const TileSpan span = SectorSpan(map, rules, sector);
+    const u32 firstColumn = span.firstColumn == 0 ? 0 : span.firstColumn - 1;
+    const u32 lastColumn = std::min(span.lastColumn + 1, map.Columns() - 1);
+    const u32 firstRow = span.firstRow == 0 ? 0 : span.firstRow - 1;
+    const u32 lastRow = std::min(span.lastRow + 1, map.Rows() - 1);
+    for (u32 row = firstRow; row <= lastRow; ++row) {
+        for (u32 column = firstColumn; column <= lastColumn; ++column) {
+            const u32 tile = map.TileIndex({ .column = column, .row = row });
+            if (map.CostAt(tile, first) != map.CostAt(tile, second)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+void EdgeTiles(const WorldMap& map, const RouteGraph& graph, u32 edge, SectorWalk& walk, std::vector<u32>& into) {
+    PN_ASSERT(edge < graph.Edges().size(), "an edge of the graph");
+    const GraphEdge& way = graph.Edges()[edge];
+    const u32 start = graph.NodeTile(way.from);
+    const u32 end = graph.NodeTile(way.to);
+    // Only a crossing reaches past its sector's own nodes, onto the tile beside its first.
+    if (way.to - graph.FirstNode(way.sector) >= graph.SectorNodes(way.sector).size()) {
+        into.clear();
+        into.push_back(start);
+        into.push_back(end);
+        return;
+    }
+    walk.WalkFrom(map, graph.Profile(), SectorSpan(map, graph.Rules(), way.sector), start);
+    walk.Way(end, into);
 }
 
 } // namespace core

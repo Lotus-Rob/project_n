@@ -4,18 +4,22 @@
 /// @ingroup core
 /// Routing over sectors: the world map cut into square sectors, the gates where two sectors touch and a profile can cross
 /// from one to the other, and each sector's graph, whose nodes are its gates' and places' tiles and whose edges are the
-/// cheapest ways between them inside the sector. Whole numbers with fixed tie-breaks, so every graph is the same on
-/// every machine, whatever was built before it.
+/// cheapest ways between them inside the sector; the sectors joined into each profile's graph of the whole map. Whole numbers
+/// with fixed tie-breaks, so every graph is the same on every machine, whatever was built before it.
 
 #include "core/paths.hpp"
 #include "core/types.hpp"
 #include "core/world_map.hpp"
 
 #include <cstddef>
+#include <limits>
+#include <span>
 #include <utility>
 #include <vector>
 
 namespace core {
+
+class Jobs;
 
 /// The version of the routing rules: changes whenever a graph built from the same map would differ.
 inline constexpr u32 ROUTING_VERSION = 1;
@@ -23,6 +27,10 @@ inline constexpr u32 ROUTING_VERSION = 1;
 inline constexpr u32 SECTOR_SIZE = 16;
 /// The longest stretch of a border one gate serves, in tiles.
 inline constexpr u32 GATE_SPACING = 8;
+/// The node of a tile that is none.
+inline constexpr u32 NO_NODE = std::numeric_limits<u32>::max();
+/// How many sectors one chunk of a parallel build builds, every profile's.
+inline constexpr u32 SECTORS_PER_CHUNK = 32;
 
 /// How the map is cut into sectors and their borders into gates.
 struct RoutingRules {
@@ -141,5 +149,150 @@ struct SectorGraph {
     u32 sector,
     SectorWalk& walk
 );
+
+/// A way between two nodes of a route graph: inside one sector, or a step over a border onto the node beside it.
+struct GraphEdge {
+    /// The lower node, where the way starts.
+    u32 from = 0;
+    /// The higher node.
+    u32 to = 0;
+    /// What walking it from `from` to `to` costs.
+    u32 cost = 0;
+    /// What walking the same tiles back from `to` to `from` costs.
+    u32 costBack = 0;
+    /// The sector that lists it: the one holding its tiles, or for a step over a border, the one it leaves.
+    u32 sector = 0;
+
+    /// Whether all are equal.
+    [[nodiscard]] friend constexpr bool operator==(const GraphEdge&, const GraphEdge&) = default;
+};
+
+/// One way out of a node: an edge and the node at its other end.
+struct GraphLink {
+    /// The node at the edge's other end.
+    u32 node = 0;
+    /// The edge's ID.
+    u32 edge = 0;
+    /// What walking the edge this way costs.
+    u32 cost = 0;
+    /// Whether this way runs from the edge's `to` back to its `from`.
+    bool reversed = false;
+
+    /// Whether all are equal.
+    [[nodiscard]] friend constexpr bool operator==(const GraphLink&, const GraphLink&) = default;
+};
+
+/// One profile's graph over the whole map: every sector's nodes and edges joined by the steps over their borders.
+/// Numbers are positions: sectors row by row, a sector's nodes in tile order, so its nodes are FirstNode(sector) plus
+/// their index in the sector; edge IDs run sector by sector, a sector's edges then its crossings.
+class RouteGraph {
+public:
+    /// The graph of sectors built one by one; `sectors[i]` is BuildSector(..., i, ...).
+    [[nodiscard]] static RouteGraph Assemble(
+        const WorldMap& map,
+        ProfileIndex profile,
+        RoutingRules rules,
+        std::span<const SectorGraph> sectors
+    );
+
+    /// The profile it was built for.
+    [[nodiscard]] ProfileIndex Profile() const;
+    /// The rules its sectors and gates follow.
+    [[nodiscard]] RoutingRules Rules() const;
+    /// How many nodes it has.
+    [[nodiscard]] u32 Nodes() const;
+    /// The tile of `node`.
+    [[nodiscard]] u32 NodeTile(u32 node) const;
+    /// The node on `tile`, or NO_NODE for a tile that is none.
+    [[nodiscard]] u32 NodeAt(u32 tile) const;
+    /// The node on place `place`'s tile, or NO_NODE when its profile can't enter that tile.
+    [[nodiscard]] u32 PlaceNode(u16 place) const;
+    /// The tiles of sector `sector`'s nodes, ascending; the first is node FirstNode(sector).
+    [[nodiscard]] std::span<const u32> SectorNodes(u32 sector) const;
+    /// The node of sector `sector`'s first node tile.
+    [[nodiscard]] u32 FirstNode(u32 sector) const;
+    /// Every edge, by ID.
+    [[nodiscard]] std::span<const GraphEdge> Edges() const;
+    /// The ways out of `node`, one for each of its edges, by edge ID.
+    [[nodiscard]] std::span<const GraphLink> LinksOf(u32 node) const;
+    /// The bytes its arrays hold, by their capacity.
+    [[nodiscard]] std::size_t Bytes() const;
+    /// Whether the two hold the same nodes, edges and links under the same rules; the profile isn't compared.
+    [[nodiscard]] bool SameAs(const RouteGraph& other) const;
+
+private:
+    /// An empty graph, for Assemble to fill.
+    RouteGraph() = default;
+
+    /// The profile it was built for.
+    ProfileIndex m_profile = WALKING;
+    /// The rules its sectors and gates follow.
+    RoutingRules m_rules{};
+    /// The map's width in tiles.
+    u32 m_columns = 0;
+    /// The map's height in tiles.
+    u32 m_rows = 0;
+    /// Sectors across.
+    u32 m_sectorColumns = 0;
+    /// Each node's tile.
+    std::vector<u32> m_nodeTiles;
+    /// Each sector's first node, and after the last sector's, the number of nodes.
+    std::vector<u32> m_firstNode;
+    /// Each place's node, or NO_NODE.
+    std::vector<u32> m_placeNode;
+    /// Every edge, by ID.
+    std::vector<GraphEdge> m_edges;
+    /// Each node's first link, and after the last node's, the number of links.
+    std::vector<u32> m_firstLink;
+    /// Every node's links, a node's together.
+    std::vector<GraphLink> m_links;
+};
+
+/// How a build is carried out; none of it changes what is built.
+struct BuildOptions {
+    /// The job system the chunks run on; in turn on the calling thread when null.
+    Jobs* jobs = nullptr;
+    /// How many sectors a chunk builds, every profile's; at least 1.
+    u32 sectorsPerChunk = SECTORS_PER_CHUNK;
+    /// Whether a sector is built once for the profiles whose costs agree on it, and copied for the later ones.
+    bool share = true;
+};
+
+/// Every profile's route graph over one map.
+class RouteGraphs {
+public:
+    /// Every profile's graph over `map` by `rules`.
+    [[nodiscard]] static RouteGraphs Build(const WorldMap& map, RoutingRules rules = {}, BuildOptions options = {});
+
+    /// Profile `profile`'s graph.
+    [[nodiscard]] const RouteGraph& Of(ProfileIndex profile) const;
+    /// How many sectors were built rather than copied: sectors × profiles, less those shared.
+    [[nodiscard]] u32 SectorsBuilt() const;
+    /// The bytes every graph holds, by capacity.
+    [[nodiscard]] std::size_t Bytes() const;
+
+private:
+    /// No graphs, for Build to fill.
+    RouteGraphs() = default;
+
+    /// Each profile's graph, by profile.
+    std::vector<RouteGraph> m_graphs;
+    /// How many sectors were built rather than copied.
+    u32 m_sectorsBuilt = 0;
+};
+
+/// Whether `first` and `second` cost the same to enter on every tile of `sector` and of the ring one tile round it: all a
+/// sector's graph reads of its profile, so where they agree the two build the same sector.
+[[nodiscard]] bool SectorCostsAgree(
+    const WorldMap& map,
+    RoutingRules rules,
+    u32 sector,
+    ProfileIndex first,
+    ProfileIndex second
+);
+
+/// An edge's tiles from its `from` node to its `to` node, both included, into `into` (cleared first); `walk` is the
+/// caller's workspace.
+void EdgeTiles(const WorldMap& map, const RouteGraph& graph, u32 edge, SectorWalk& walk, std::vector<u32>& into);
 
 } // namespace core
