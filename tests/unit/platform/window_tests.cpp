@@ -17,7 +17,7 @@ void Push(SDL_EventType type) {
 // A window the tests push their own events to: it draws nothing and reads no device.
 std::expected<platform::Window, core::Error> OpenWindow() {
     // The dummy driver, not offscreen: on macOS SDL gives a window OpenGL by default when its driver has it, and
-    // offscreen's comes through EGL, which macOS lacks.
+    // offscreen's comes through EGL, which macOS lacks ("Could not initialize OpenGL / GLES library").
     REQUIRE(SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, "dummy", SDL_HINT_OVERRIDE));
     // No gamepad backends: macOS's GameController and IOKit leak under LeakSanitizer when SDL starts and stops them.
     for (const char* backend : { SDL_HINT_JOYSTICK_MFI, SDL_HINT_JOYSTICK_IOKIT, SDL_HINT_JOYSTICK_HIDAPI }) {
