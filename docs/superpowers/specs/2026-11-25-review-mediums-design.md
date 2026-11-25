@@ -288,7 +288,7 @@ Every medium finding, with the area that closes it. Each area's pull request upd
 | DATA-COMBAT-01 | R5 | |
 | DATA-YAML-CORE-01 | R8 | |
 | DESIGN-DOCS-01 | R12 | |
-| DESIGN-DOCS-02 | R1 | |
+| DESIGN-DOCS-02 | R1 | amended |
 | DESIGN-DOCS-03 | R12 | |
 | DESIGN-DOCS-04 | R4 | |
 | DESIGN-DOCS-05 | R4 | |
@@ -323,7 +323,7 @@ Every medium finding, with the area that closes it. Each area's pull request upd
 | GD-ROADMAP-SCOPE-04 | D2 | |
 | GD-ROADMAP-SCOPE-05 | D5 | |
 | GD-ROADMAP-SCOPE-06 | D4 | |
-| GD-ROADMAP-SCOPE-07 | R1 | |
+| GD-ROADMAP-SCOPE-07 | R1 | amended |
 | GD-ROADMAP-SCOPE-08 | R3 | |
 | GD-ROADMAP-SCOPE-09 | D1 | |
 | GD-TOI-COVERAGE-01 | D1 | |
@@ -367,7 +367,7 @@ Every medium finding, with the area that closes it. Each area's pull request upd
 | X-ARCHITECTURE-05 | D3 | |
 | X-ARCHITECTURE-06 | D3 | |
 | X-ARCHITECTURE-07 | D3 | |
-| X-ARCHITECTURE-08 | R1 | |
+| X-ARCHITECTURE-08 | R1 | amended |
 | X-CPP-SAFETY-01 | R2 | |
 | X-CPP-SAFETY-02 | R2 | |
 | X-DETERMINISM-01 | R4 | |
