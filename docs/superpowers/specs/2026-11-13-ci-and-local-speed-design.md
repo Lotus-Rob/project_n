@@ -348,7 +348,7 @@ only a cache shared between folders could shorten (the spike below). A warm `che
 
 **The spikes:**
 
-- **No compile cache shared between local worktrees** (record, don't adopt; tools/AGENTS.md). A shared `--ccachedir`
+- **No compile cache shared between local worktrees** (record, don't adopt; tools/AGENTS.md points here). A shared `--ccachedir`
   hit 0 of 140 compiles from another worktree: XMake's key holds the compiler's path, which is each worktree's own
   `.pixi`, and the preprocessed text, whose line markers name that env's headers and, through `-include-pch`, every
   precompiled header's headers by absolute path; no flag mapped those, and `-ffile-prefix-map=<ROOT>=.` guarantees a
@@ -357,6 +357,14 @@ only a cache shared between folders could shorten (the spike below). A warm `che
   build in 9 s instead of 20 s (XMake's time), but every cold build 20 → 28 s, and gdb started from the binary's folder
   loses the sources. Not adopted: a shared env is an architecture change this spec didn't approve, and dropping the PCH
   changes shipped builds' compile flags.
+  Cold builds measured the same day (XMake's time, 2026-11-14, 32 shared cores): linux-clang debug 20 s, release 35 s,
+  releasedbg 43 s, linux-gcc release 64 s, windows-msvc release 53 s; the packages are shared through `packages_dir()`.
+- **A worktree's shader step warns about the main checkout** (2026-11-14, a worktree nested in a worktree): XMake's
+  `utils.bin2c` runs as a script in a thread whose start resolves the project again without `-P` (`main._find_root`
+  takes the outermost `xmake.lua` above it) and only warns "we are building the project(<main checkout>) which has
+  been configured in this directory"; the `-P <ROOT>` build is untouched: the compile database names only the
+  worktree's sources and build folder, every `*.spv.h` landed in its own `.gens/`, and nothing in another
+  checkout's `build/` changed.
 - **No MSVC objects in CI** (.github/AGENTS.md, Gotchas). XMake's `cl` cache compiles each file's preprocessed text
   without the PCH, so even a cold-cached `.exe` differs in code from an uncached one (418,566 bytes; anonymous
   namespaces take the `__cpp_*` file's name), and it keeps only the `.obj`, so on a hit the debug types `/Zi` left in
@@ -381,7 +389,7 @@ so two container jobs each link about half of the twelve executables (/LTCG unde
    the split, and 11m09 on the run that filled an empty clang-tidy cache (43529001973). The user accepted lint's
    cold time as recorded (2026-11-14); sharding it is an idea on the sweep-up backlog.
 2. Test rounds: `game_tests` no longer runs in one process; `test` takes 8.4 s instead of 37 s.
-3. Fresh worktrees: no correct shared cache (the spike above); tools/AGENTS.md has today's cold build times instead of
+3. Fresh worktrees: no correct shared cache (the spike above); this Outcome has today's cold build times instead of
    "~10 s".
 4. The sweep-up items are fixed and the backlog pruned (the lock reorder, the reference pictures, the Quill print, the
    finished entries); "CI speed, another pass" is marked done there.
