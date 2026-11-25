@@ -504,7 +504,8 @@ enum class ActionKind : u8 {
     /// Pause the world's clock, or resume it, in a scene that shows the world map: the simulation ignores it elsewhere.
     ToggleWorldPause,
     /// Walk the player's cultivator to the tile under the world point `point` by the cheapest way on foot, in a scene that
-    /// shows the world map: the simulation ignores it elsewhere.
+    /// shows the world map: the simulation ignores it elsewhere. Recorded in replays like any press (its `point` is part of
+    /// the input); it also lets go of the selection.
     WalkTo,
 };
 /// How many kinds ActionKind names (WalkTo is the last): a replay read from disk holds only kinds below this.
