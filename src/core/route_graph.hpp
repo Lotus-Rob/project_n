@@ -30,7 +30,7 @@ inline constexpr u32 GATE_SPACING = 8;
 /// The node of a tile that is none.
 inline constexpr u32 NO_NODE = std::numeric_limits<u32>::max();
 /// How many sectors one chunk of a parallel build builds, every profile's.
-inline constexpr u32 SECTORS_PER_CHUNK = 32;
+inline constexpr u32 SECTORS_PER_CHUNK = 1;
 
 /// The bytes `vector` holds, by its capacity: what the routing structures count as their size.
 template<typename T>
