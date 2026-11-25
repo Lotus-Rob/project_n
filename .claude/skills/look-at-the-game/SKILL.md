@@ -8,11 +8,11 @@ description: See what project_n actually draws, to check a rendering change by e
 Owned by: src/AGENTS.md. Reference pictures: also tests/AGENTS.md.
 
 ## Pick the way to look
-- **A fixed scene, no display needed (preferred):** `pixi run project_n reference`. Each run writes its pictures to `build/reference/<view>.png`, named by the view each call in tests/reference/reference_tests.cpp gives (to `CheckAgainstReference`, to a direct `CompareWithReference(...)`, or through a helper such as `CheckFogStart`, `CheckVolley`, `CheckShowcase`); the case's title and comment say what it shows. `ls tests/reference/` lists them; the calls: `grep -nE 'CompareWithReference\(|CheckAgainstReference\(|Check[A-Z][A-Za-z]*\("' tests/reference/reference_tests.cpp`. Open them with the Read tool. They come from software Vulkan, so they match CI, not necessarily the user's GPU. Judging drift and `--update`: references/reference-pictures.md.
+- **A fixed scene, no display needed (preferred):** `pixi run project_n reference`. Each run writes its pictures to `build/reference/<view>.png`; how the views are named and found, judging drift and `--update`: references/reference-pictures.md. They come from software Vulkan, so they match CI, not necessarily the user's GPU. Open them with the Read tool.
 - **The real window, on the user's GPU:** when the change concerns presentation, input, zoom or the live loop, or the user asks to see it running.
 
 ## The real window
-1. Start the scene in the background: `pixi run project_n run -- --painted` (or `--cells`, `--stress`, nothing for the arena; src/AGENTS.md Commands).
+1. Start the scene in the background: `pixi run project_n run -- --painted` (or `--cells`, `--stress`, nothing for the arena; `src/app/module.dox`).
 2. Find the window and capture it. On niri: `niri msg -j windows` gives each window's `id` and `title` (`project_n`), then `niri msg action screenshot-window --id <id> --path <scratchpad>/<name>.png`. Elsewhere, ask the user for a screenshot.
 3. Read the PNG; then stop the game (the background task, or close the window). Never kill processes this session didn't start.
 4. The log: `project_n.log` under `logs/` in SDL's per-user folder for `project_n` (on Linux `~/.local/share/project_n/logs/`): what was chosen (driver, scene, workers) and any failure.
