@@ -2,6 +2,7 @@
 
 #include "core/assert.hpp"
 #include "core/jobs.hpp"
+#include "core/paths.hpp"
 #include "core/profile.hpp"
 
 namespace core {
@@ -80,12 +81,6 @@ struct PendingCrossing {
     u32 cost = 0;
 };
 
-/// The bytes `vector` holds, by its capacity.
-template<typename T>
-std::size_t CapacityBytes(const std::vector<T>& vector) {
-    return vector.capacity() * sizeof(T);
-}
-
 /// What walking `way` back from its last tile to its first costs by `profile`.
 u32 WalkedBack(const WorldMap& map, ProfileIndex profile, const std::vector<u32>& way) {
     u32 costBack = 0;
@@ -149,20 +144,6 @@ void CollectNodes(
     std::ranges::sort(nodes);
     const auto repeats = std::ranges::unique(nodes);
     nodes.erase(repeats.begin(), repeats.end());
-}
-
-/// Calls `visit(sector)` for `sector` and each sector round it, row by row.
-template<typename Visit>
-void ForEachBlockSector(const WorldMap& map, RoutingRules rules, u32 sector, const Visit& visit) {
-    const u32 columns = SectorColumns(map, rules);
-    const u32 rows = SectorRows(map, rules);
-    const u32 column = sector % columns;
-    const u32 row = sector / columns;
-    for (u32 blockRow = std::max(row, 1U) - 1; blockRow <= std::min(row + 1, rows - 1); ++blockRow) {
-        for (u32 blockColumn = std::max(column, 1U) - 1; blockColumn <= std::min(column + 1, columns - 1); ++blockColumn) {
-            visit((blockRow * columns) + blockColumn);
-        }
-    }
 }
 
 /// Adds to `graph`, sector `sector`'s, the ways from each of its places to every node of the sectors round it, found
@@ -249,13 +230,23 @@ TileSpan SectorSpan(const WorldMap& map, RoutingRules rules, u32 sector) {
              .lastRow = std::min(firstRow + rules.sectorSize, map.Rows()) - 1 };
 }
 
-TileSpan BlockSpan(const WorldMap& map, RoutingRules rules, u32 sector) {
+BlockSectors BlockSectorsOf(const WorldMap& map, RoutingRules rules, u32 sector) {
     const u32 columns = SectorColumns(map, rules);
     const u32 rows = SectorRows(map, rules);
+    PN_ASSERT(sector < columns * rows, "a sector of the map");
     const u32 column = sector % columns;
     const u32 row = sector / columns;
-    const TileSpan first = SectorSpan(map, rules, ((std::max(row, 1U) - 1) * columns) + std::max(column, 1U) - 1);
-    const TileSpan last = SectorSpan(map, rules, (std::min(row + 1, rows - 1) * columns) + std::min(column + 1, columns - 1));
+    return { .firstColumn = std::max(column, 1U) - 1,
+             .lastColumn = std::min(column + 1, columns - 1),
+             .firstRow = std::max(row, 1U) - 1,
+             .lastRow = std::min(row + 1, rows - 1),
+             .columns = columns };
+}
+
+TileSpan BlockSpan(const WorldMap& map, RoutingRules rules, u32 sector) {
+    const BlockSectors block = BlockSectorsOf(map, rules, sector);
+    const TileSpan first = SectorSpan(map, rules, (block.firstRow * block.columns) + block.firstColumn);
+    const TileSpan last = SectorSpan(map, rules, (block.lastRow * block.columns) + block.lastColumn);
     return {
         .firstColumn = first.firstColumn, .lastColumn = last.lastColumn, .firstRow = first.firstRow, .lastRow = last.lastRow
     };
