@@ -1,6 +1,6 @@
 # Layered routing: journeys as plans over a route graph built once per world
 
-Date: 2026-11-24, reworked 2026-11-25 · Status: **draft** · Builds on:
+Date: 2026-11-24, reworked 2026-11-25 · Status: **draft** (builder check done on the rework; its five questions settled as Decisions 10-13, Goal 14's note and the place table's exception) · Builds on:
 `2026-11-23-phase6-chunk5b-look-travellers-design.md` (its Outcome), `2026-11-22-roads-design.md` · Replaces two sweep-up
 backlog items: "NEXT DESIGN after the travellers branch: per-destination walk tables + journeys keep only their plan +
 NPCs set out from their city?" and "Journeys share their routes in the simulation"
@@ -83,7 +83,8 @@ A reader of any layer during the publish takes no lock and finds everything alre
    sectors, each unbroken run of tile pairs a profile can step across gives gates: one at the run's cheapest crossing
    (so a road crossing a border is a gate), more along a long run (Decision 2). Each place (city, danger, any later
    kind) is a node in its sector. Within a sector an edge joins each pair of nodes that the profile can walk between
-   without leaving it, with the cheapest cost each way; an edge joins the two sides of each gate.
+   without leaving it; an edge joins the two sides of each gate. An edge is one tile path walked both ways (Decision 10):
+   it carries that path's cost in each direction, which is what the search and the place table count.
 2. **A pure function of the map.** The graph depends only on the map, the profile and `ROUTING_VERSION` (Goal 12): the
    same on every machine and worker count, with `core/paths.hpp`'s fixed tie-breaks. Each sector is built from its own
    tiles alone, so sectors build in parallel and one sector can be rebuilt alone.
@@ -149,7 +150,10 @@ A reader of any layer during the publish takes no lock and finds everything alre
     | One place-to-place route search (p99) | 0.1 ms | 0.5 ms | 2 ms |
     | Segments and routes after a year of the shipped travel rules | 2 MB | 20 MB | 100 MB |
 
-    A budget missed by measurement is brought to the user with the numbers, not silently relaxed.
+    The build row is the parallel build, measured by the benchmark (Decision 11). The last row is measured as written
+   only at 1×, in stage 2, on the test map; at 10× and 50× stage 1's benchmark stands in a trip model for it (every
+   city's routes to its 20 nearest places by cost), since nothing simulates those maps' people. A budget missed by
+   measurement is brought to the user with the numbers, not silently relaxed.
 15. **Measured against main on the test map:** travel's memory (journeys, routes, segments, graph against main's
     journeys, distance maps and walk cache), the month step's time, the travellers under way, and `measure --runs
     world` publish p99 per segment: no worse than main's by more than about 10%, with the month step and travel's
@@ -176,7 +180,8 @@ A reader of any layer during the publish takes no lock and finds everything alre
 ## Anti-goals
 
 - Any lock, search, lazy build or allocation on the publish's read path.
-- Any table that grows with places × tiles or places × places, built up front.
+- Any table that grows with places × tiles, or any routes stored per pair of places, built up front. The place table
+  is the one accepted table over pairs: 4 bytes of cost a pair (about 2 MB at 50×), one graph search per city.
 - Simulation state that depends on handles, on the order routes were made, on thread timing or on the worker count.
 - A route that changes for the same map, ends, profile and `ROUTING_VERSION`.
 - Travellers funnelled along sector borders or through gate-to-gate zigzags a player can see in open country (Goal 5's
@@ -224,6 +229,22 @@ A reader of any layer during the publish takes no lock and finds everything alre
    `core`, with tests and benchmarks; nothing in the game uses them yet. Stage 2: the route store, plan-only journeys,
    the month step, saves and hash on top, and the removals of Goal 13. Each gets its own plan; stage 2's is written
    after stage 1's measurements.
+
+10. **An edge is one path, defined one way.** Entering costs differ by direction (`WorldMap::StepOver` prices the
+    entered tile), so the cheapest path back is not the path out reversed. An edge's tiles are the cheapest path from
+    its lower-numbered node to its higher one; its cost the other way is that same path walked back, which may be a
+    little more than the cheapest. The graph, the search, the place table and a route all count those same costs, so
+    they agree exactly, and Goal 5's 5% is measured in each direction against `core::FindRoute`.
+11. **Built with the map, in turn where there are no workers.** The graph's build takes an optional job system. World
+    creation, `Host::Load` and `Host::SetData` have none today, so the game builds it in turn there, owned beside where
+    `core::Paths` is now and made again when the map is (milliseconds on the test map); tests and benchmarks prove the
+    parallel build gives the same graph and meets Goal 14. Workers reach world creation with the "creating world"
+    screen.
+12. **A walk's distance is summed per segment**: each segment's stretches from its own start, the segments' sums added
+    in route order, the parts' in journey order (as parts are added today). That is the from-scratch definition the fast
+    paths must match to the bit; it differs from today's leg-wide sum only in last bits (presentation only).
+13. **A record may hold derived values beside its plan** (route handles, a stay's whole drift distance), worked out when
+    the journey starts or loads, never saved or hashed.
 
 ## Left to the builder
 
