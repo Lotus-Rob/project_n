@@ -7,10 +7,10 @@
 /// cheapest ways between them inside the sector; the sectors joined into each profile's graph of the whole map. Whole numbers
 /// with fixed tie-breaks, so every graph is the same on every machine, whatever was built before it.
 
-#include "core/paths.hpp"
 #include "core/types.hpp"
 #include "core/world_map.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <limits>
 #include <span>
@@ -32,6 +32,12 @@ inline constexpr u32 NO_NODE = std::numeric_limits<u32>::max();
 /// How many sectors one chunk of a parallel build builds, every profile's.
 inline constexpr u32 SECTORS_PER_CHUNK = 32;
 
+/// The bytes `vector` holds, by its capacity: what the routing structures count as their size.
+template<typename T>
+[[nodiscard]] std::size_t CapacityBytes(const std::vector<T>& vector) {
+    return vector.capacity() * sizeof(T);
+}
+
 /// How the map is cut into sectors and their borders into gates.
 struct RoutingRules {
     /// A sector's side in tiles; at least 1.
@@ -49,8 +55,34 @@ struct RoutingRules {
 [[nodiscard]] u32 SectorRows(const WorldMap& map, RoutingRules rules);
 /// Sector `sector`'s tiles (sectors numbered row by row).
 [[nodiscard]] TileSpan SectorSpan(const WorldMap& map, RoutingRules rules, u32 sector);
-/// The tiles of sector `sector` and of the up to eight sectors round it, the map's edges clipping the block.
+/// The sectors of a block: a sector and the up to eight round it, by their sector columns and rows, both included, the
+/// map's edges clipping them.
+struct BlockSectors {
+    /// Its first sector column.
+    u32 firstColumn = 0;
+    /// Its last sector column.
+    u32 lastColumn = 0;
+    /// Its first sector row.
+    u32 firstRow = 0;
+    /// Its last sector row.
+    u32 lastRow = 0;
+    /// Sectors across the whole map, which numbers them row by row.
+    u32 columns = 0;
+};
+/// The sectors of sector `sector`'s block.
+[[nodiscard]] BlockSectors BlockSectorsOf(const WorldMap& map, RoutingRules rules, u32 sector);
+/// The tiles of sector `sector`'s block: the tiles of the sectors BlockSectorsOf gives.
 [[nodiscard]] TileSpan BlockSpan(const WorldMap& map, RoutingRules rules, u32 sector);
+/// Calls `visit(block)` for each sector of sector `sector`'s block, row by row: the sectors BlockSpan covers.
+template<typename Visit>
+void ForEachBlockSector(const WorldMap& map, RoutingRules rules, u32 sector, const Visit& visit) {
+    const BlockSectors block = BlockSectorsOf(map, rules, sector);
+    for (u32 row = block.firstRow; row <= block.lastRow; ++row) {
+        for (u32 column = block.firstColumn; column <= block.lastColumn; ++column) {
+            visit((row * block.columns) + column);
+        }
+    }
+}
 /// The sector holding `tile`.
 [[nodiscard]] u32 SectorOf(const WorldMap& map, RoutingRules rules, u32 tile);
 

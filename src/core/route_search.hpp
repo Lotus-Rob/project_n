@@ -102,8 +102,8 @@ private:
         u32 targetNode = NO_NODE;
         /// The slot the search ends on: the end's node, or past the nodes for an end that is none.
         u32 goal = 0;
-        /// What the way from the start to the end within the start's block costs, unless both ends are places' nodes;
-        /// else UNREACHABLE.
+        /// What the way from the start to the end within the start's block costs; UNREACHABLE when both ends are places'
+        /// nodes, when the end lies outside the start's block, or when no way inside the block reaches it.
         u32 direct = UNREACHABLE;
         /// The least any step costs by the graph's profile.
         u32 cheapest = 0;

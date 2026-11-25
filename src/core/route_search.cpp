@@ -19,12 +19,6 @@ u32 ViaLink(const GraphLink& link) {
     return (link.edge << 1U) | (link.reversed ? 1U : 0U);
 }
 
-/// The bytes `vector` holds, by its capacity.
-template<typename T>
-std::size_t CapacityBytes(const std::vector<T>& vector) {
-    return vector.capacity() * sizeof(T);
-}
-
 /// The node of the place on `tile`, or NO_NODE for a tile that is no place or whose place is no node.
 u32 PlaceNodeAt(const WorldMap& map, const RouteGraph& graph, u32 tile) {
     // Only a place has ways of its own to the sectors round it; any other end, a gate's tile included, reaches them by
@@ -160,24 +154,17 @@ void RouteScratch::Seed(const WorldMap& map, const RouteGraph& graph, const Ends
         OfferNode(map, graph, ends, ends.fromNode, 0, FROM_START);
         return;
     }
-    const RoutingRules rules = graph.Rules();
-    const u32 columns = SectorColumns(map, rules);
-    const u32 rows = SectorRows(map, rules);
-    const u32 column = ends.fromSector % columns;
-    const u32 row = ends.fromSector / columns;
-    for (u32 sectorRow = std::max(row, 1U) - 1; sectorRow <= std::min(row + 1, rows - 1); ++sectorRow) {
-        for (u32 sectorColumn = std::max(column, 1U) - 1; sectorColumn <= std::min(column + 1, columns - 1); ++sectorColumn) {
-            const u32 sector = (sectorRow * columns) + sectorColumn;
-            const u32 first = graph.FirstNode(sector);
-            const std::span<const u32> starts = graph.SectorNodes(sector);
-            for (std::size_t index = 0; index < starts.size(); ++index) {
-                const u32 cost = m_fromWalk.Cost(starts[index]);
-                if (cost != UNREACHABLE) {
-                    OfferNode(map, graph, ends, first + static_cast<u32>(index), cost, FROM_START);
-                }
+    // The walk from the start covers BlockSpan, so these are exactly the sectors whose nodes it may reach.
+    ForEachBlockSector(map, graph.Rules(), ends.fromSector, [&](u32 sector) {
+        const u32 first = graph.FirstNode(sector);
+        const std::span<const u32> starts = graph.SectorNodes(sector);
+        for (std::size_t index = 0; index < starts.size(); ++index) {
+            const u32 cost = m_fromWalk.Cost(starts[index]);
+            if (cost != UNREACHABLE) {
+                OfferNode(map, graph, ends, first + static_cast<u32>(index), cost, FROM_START);
             }
         }
-    }
+    });
 }
 
 bool RouteScratch::Search(const WorldMap& map, const RouteGraph& graph, const Ends& ends) {
@@ -198,7 +185,7 @@ bool RouteScratch::Search(const WorldMap& map, const RouteGraph& graph, const En
         for (const GraphLink& link : graph.LinksOf(node)) {
             OfferNode(map, graph, ends, link.node, u64{ reached } + link.cost, ViaLink(link));
         }
-        // The walk to an end that is no node reaches exactly the nodes of the block round it.
+        // The walk to an end that is no place's node reaches at most the nodes of the block round it.
         const u32 last = ends.targetNode == NO_NODE ? m_toWalk.Cost(graph.NodeTile(node)) : UNREACHABLE;
         const u64 total = u64{ reached } + last;
         if (last != UNREACHABLE && total < CostOf(ends.goal)) {

@@ -254,6 +254,9 @@ struct TileSpan {
     u32 firstRow = 0;
     /// Its last row.
     u32 lastRow = 0;
+
+    /// Whether all are equal.
+    [[nodiscard]] friend constexpr bool operator==(const TileSpan&, const TileSpan&) = default;
 };
 
 /// The world map: the authored source and the per-tile layers derived from it.

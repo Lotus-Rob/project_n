@@ -7,12 +7,6 @@ namespace core {
 
 namespace {
 
-/// The bytes `vector` holds, by its capacity.
-template<typename T>
-std::size_t CapacityBytes(const std::vector<T>& vector) {
-    return vector.capacity() * sizeof(T);
-}
-
 /// The segment over `tiles`, walked forward from the first; `reversed` is the caller's buffer for the tiles back to front.
 Segment Fill(const WorldMap& map, const RouteGraph& graph, const std::vector<u32>& tiles, std::vector<u32>& reversed) {
     PN_ASSERT(!tiles.empty(), "an edge has tiles");
@@ -33,17 +27,16 @@ Segment Fill(const WorldMap& map, const RouteGraph& graph, const std::vector<u32
     return segment;
 }
 
-/// Whether edge `next`'s way comes from the same walk as edge `walked`'s (NO_NODE for none yet): from the same node over
-/// the same tiles.
-bool SameWalk(const RouteGraph& graph, const WorldMap& map, u32 walked, u32 next) {
-    if (walked == NO_NODE) {
-        return false;
-    }
-    const TileSpan first = graph.WalkSpan(map, walked);
-    const TileSpan second = graph.WalkSpan(map, next);
-    return graph.Edges()[walked].from == graph.Edges()[next].from && first.firstColumn == second.firstColumn &&
-           first.lastColumn == second.lastColumn && first.firstRow == second.firstRow && first.lastRow == second.lastRow;
-}
+/// Where a walk started and the tiles it covered: two edges with the same come from one walk.
+struct WalkKey {
+    /// The node walked from.
+    u32 from = 0;
+    /// The tiles walked over.
+    TileSpan span{};
+
+    /// Whether all are equal.
+    [[nodiscard]] friend constexpr bool operator==(const WalkKey&, const WalkKey&) = default;
+};
 
 } // namespace
 
@@ -80,17 +73,17 @@ void SegmentStore::Add(std::span<const u32> edges) {
     // Edge IDs run by sector, then kind, then the node walked from, so sorted they gather the edges that share one walk.
     std::ranges::sort(todo);
     todo.erase(std::ranges::unique(todo).begin(), todo.end());
-    u32 walkedEdge = NO_NODE;
+    std::optional<WalkKey> walked;
     for (const u32 edge : todo) {
         const GraphEdge& way = m_graph->Edges()[edge];
         if (m_graph->IsCrossing(edge)) {
             m_tiles.assign({ m_graph->NodeTile(way.from), m_graph->NodeTile(way.to) });
         }
         else {
-            const TileSpan span = m_graph->WalkSpan(*m_map, edge);
-            if (!SameWalk(*m_graph, *m_map, walkedEdge, edge)) {
-                m_walk.WalkFrom(*m_map, m_graph->Profile(), span, m_graph->NodeTile(way.from));
-                walkedEdge = edge;
+            const WalkKey key{ .from = way.from, .span = m_graph->WalkSpan(*m_map, edge) };
+            if (walked != key) {
+                m_walk.WalkFrom(*m_map, m_graph->Profile(), key.span, m_graph->NodeTile(way.from));
+                walked = key;
             }
             m_walk.Way(m_graph->NodeTile(way.to), m_tiles);
         }
