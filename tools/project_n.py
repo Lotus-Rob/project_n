@@ -156,7 +156,7 @@ def resolve(cmd):
     args = list(cmd[1:])
     if cmd[0] == "xmake" and args and not str(args[0]).startswith("-"):
         # XMake takes an ancestor folder holding a project (one with `.xmake/`) over the current one: a worktree
-        # inside the main checkout would build the main checkout's sources. `-P` works; XMAKE_PROJECT_DIR doesn't.
+        # inside the main checkout built the main checkout's sources ("You are working in the project directory(...)"). `-P` works; XMAKE_PROJECT_DIR doesn't.
         # XMake's `utils.bin2c` still resolves the project again without -P in a thread, so a worktree's shader step
         # warns once per binary that it is building the main checkout's project: benign, it only converts the
         # build's own files.
@@ -711,7 +711,8 @@ def configure(preset, mode, sanitizer="none"):
     mark_used(ROOT / bdir, time.time())
     # -v makes XMake install packages one at a time (else 4 in parallel). XMake installs
     # duplicate variants with the same build hash (libxcb, libx11 for SDL3) concurrently into one
-    # directory and they corrupt each other; drop -v once that's fixed upstream.
+    # directory and they corrupt each other ("install: ... No such file or directory"); drop -v once that's
+    # fixed upstream.
     cmd = ["xmake", "f", "-y", "-v", "-p", p["plat"], "-a", p["arch"], f"--toolchain={p['toolchain']}", "-m", mode,
            "-o", bdir, f"--sanitizer={sanitizer}"]
     if p["toolchain"] == "msvc":
@@ -1993,7 +1994,9 @@ def unreached_headers(sources, dependencies):
 
 # The clone's own git config: the commit hooks, and Git LFS's filters run through Pixi, as any git
 # (an editor's, a container's) runs them on large binary assets, not only ours. They name `pixi run git-lfs`, never a
-# bare `git-lfs` the host may lack or have at another version.
+# bare `git-lfs` the host may lack or have at another version. A worktree outside the repo fails to check out
+# ("smudge filter lfs failed"): the filter runs `pixi run git-lfs` in the new folder before its `pixi.toml` exists,
+# `GIT_LFS_SKIP_SMUDGE` doesn't help (the filter process can't start); inside the repo Pixi finds the main checkout's.
 CLONE_CONFIG = {
     "core.hooksPath": ".githooks",
     "filter.lfs.process": "pixi run --quiet git-lfs filter-process",
@@ -3346,7 +3349,8 @@ def ensure_macos_xmake():
 
 
 def help_format(prog):
-    """Piped help isn't wrapped: shell completers (lig) read an option's values from the first line of its help."""
+    """Piped help isn't wrapped: shell completers (lig) read an option's values from the first line of its help,
+    so a `[possible values: ...]` list stays on one line."""
     return argparse.HelpFormatter(prog, width=None if sys.stdout.isatty() else 10_000)
 
 
