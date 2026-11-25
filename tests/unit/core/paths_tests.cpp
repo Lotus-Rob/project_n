@@ -267,16 +267,10 @@ TEST_CASE("Paths builds a map once and keeps it") {
     CHECK(paths.To(0, core::WALKING).Goal() == 0);
 }
 
-} // namespace
-
-namespace {
-
 struct EstimatePair {
     u32 from;
     u32 to;
 };
-
-} // namespace
 
 TEST_CASE("the step estimate never exceeds a route's cost") {
     const core::WorldMap map = RiverMap();
@@ -309,3 +303,5 @@ TEST_CASE("the step estimate never exceeds a route's cost") {
                          .ford = core::IMPASSABLE_COST };
     CHECK(core::CheapestEntry(blocked) == 0);
 }
+
+} // namespace
