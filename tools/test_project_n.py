@@ -2022,6 +2022,42 @@ class DocsTest(unittest.TestCase):
         self.assertEqual(project_n.stale_doc_commands(), [])
 
 
+class TestDocBudgets(unittest.TestCase):
+    def test_an_agents_md_at_the_byte_budget_passes(self):
+        self.assertEqual(project_n.doc_budget_problems("src/AGENTS.md", ("a" * 99 + "\n") * 81 + "a" * 90 + "\n"), [])
+
+    def test_an_agents_md_over_the_byte_budget_fails(self):
+        self.assertEqual(project_n.doc_budget_problems("src/AGENTS.md", ("a" * 99 + "\n") * 82),
+                         ["src/AGENTS.md: 8200 bytes, over the 8192-byte budget"])
+
+    def test_a_line_over_300_characters_fails(self):
+        self.assertEqual(project_n.doc_budget_problems("tests/AGENTS.md", "x\n" + "b" * 301 + "\n"),
+                         ["tests/AGENTS.md:2: 301 characters, over the 300-character line budget"])
+
+    def test_a_line_is_measured_in_characters(self):
+        self.assertEqual(project_n.doc_budget_problems("tools/AGENTS.md", "\u2192" * 300 + "\n"), [])  # 900 bytes
+
+    def test_the_root_agents_md_is_exempt(self):
+        self.assertEqual(project_n.doc_budget_problems("AGENTS.md", "c" * 20000 + "\n"), [])
+
+    def test_a_skill_over_200_lines_fails(self):
+        self.assertEqual(project_n.doc_budget_problems(".claude/skills/x/SKILL.md", "l\n" * 201),
+                         [".claude/skills/x/SKILL.md: 201 lines, over the 200-line budget"])
+
+    def test_a_skill_at_200_lines_passes_with_long_lines(self):
+        self.assertEqual(project_n.doc_budget_problems(".claude/skills/x/SKILL.md", ("d" * 400 + "\n") * 200), [])
+
+    def test_an_agent_brief_over_60_lines_fails(self):
+        self.assertEqual(project_n.doc_budget_problems(".claude/agents/x.md", "l\n" * 61),
+                         [".claude/agents/x.md: 61 lines, over the 60-line budget"])
+
+    def test_a_nested_agents_md_is_held_to_the_budget(self):
+        self.assertEqual(len(project_n.doc_budget_problems("src/game/AGENTS.md", "e" * 301 + "\n")), 1)
+
+    def test_agent_docs_fit_their_budgets(self):
+        self.assertEqual(project_n.oversized_agent_docs(), [])
+
+
 class SuppressionTest(unittest.TestCase):
     def test_sources_have_no_unexplained_suppressions(self):
         self.assertEqual(project_n.unexplained_suppressions(project_n.source_files()), [])

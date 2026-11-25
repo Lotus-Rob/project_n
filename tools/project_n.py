@@ -3113,14 +3113,19 @@ def check_message(message, allow_fixup=True):
 DOC_COMMAND_RE = re.compile(r"(?:pixi run project_n|`project_n|\./dev) +([a-z][a-z-]*)")
 
 
-def stale_doc_commands():
-    """`project_n <cmd>` and `./dev <cmd>` quoted in AGENTS.md, CLAUDE.md, skills, agents and README that don't exist."""
-    commands = set(make_parser()._subparsers._group_actions[0].choices)
+def agent_doc_files():
+    """Our agent docs, tracked or new, as repo-relative paths."""
     # Ours only (tracked or new): build/ holds xmake-repo's own AGENTS.md.
     docs = capture(["git", "ls-files", "--cached", "--others", "--exclude-standard", "--",
                     "*AGENTS.md", "*CLAUDE.md", ".claude/skills/*.md", ".claude/agents/*.md", "README.md"]).splitlines()
+    return [d for d in docs if (ROOT / d).is_file()]  # is_file: deleted but not yet committed
+
+
+def stale_doc_commands():
+    """`project_n <cmd>` and `./dev <cmd>` quoted in AGENTS.md, CLAUDE.md, skills, agents and README that don't exist."""
+    commands = set(make_parser()._subparsers._group_actions[0].choices)
     stale = []
-    for doc in [d for d in docs if (ROOT / d).is_file()]:  # is_file: deleted but not yet committed
+    for doc in agent_doc_files():
         for n, line in enumerate((ROOT / doc).read_text(encoding="utf-8").splitlines(), 1):
             for cmd in DOC_COMMAND_RE.findall(line):
                 if cmd not in commands:
@@ -3128,11 +3133,44 @@ def stale_doc_commands():
     return stale
 
 
+AGENTS_MD_BYTES = 8192      # below the root
+DOC_LINE_CHARS = 300        # AGENTS.md lines, below the root
+SKILL_LINES = 200           # .claude/skills/*/SKILL.md
+AGENT_BRIEF_LINES = 60      # .claude/agents/*.md
+
+
+def doc_budget_problems(path, text):
+    """Budget findings for one agent doc; `path` is repo-relative and '/'-separated."""
+    if path.startswith(".claude/skills/") and path.endswith(".md"):
+        n = len(text.splitlines())
+        return [f"{path}: {n} lines, over the {SKILL_LINES}-line budget"] if n > SKILL_LINES else []
+    if path.startswith(".claude/agents/") and path.endswith(".md"):
+        n = len(text.splitlines())
+        return [f"{path}: {n} lines, over the {AGENT_BRIEF_LINES}-line budget"] if n > AGENT_BRIEF_LINES else []
+    # The root's process rules are the user's and stay as written.
+    if not path.endswith("AGENTS.md") or path == "AGENTS.md":
+        return []
+    problems = []
+    size = len(text.encode("utf-8"))
+    if size > AGENTS_MD_BYTES:
+        problems.append(f"{path}: {size} bytes, over the {AGENTS_MD_BYTES}-byte budget")
+    for n, line in enumerate(text.splitlines(), 1):
+        if len(line) > DOC_LINE_CHARS:
+            problems.append(f"{path}:{n}: {len(line)} characters, over the {DOC_LINE_CHARS}-character line budget")
+    return problems
+
+
+def oversized_agent_docs():
+    """Budget findings across every agent doc of ours."""
+    return [p for doc in agent_doc_files()
+            for p in doc_budget_problems(doc, (ROOT / doc).read_text(encoding="utf-8"))]
+
+
 def cmd_doctor(args):
     if args.docs:
-        stale = stale_doc_commands()
-        print("\n".join(stale) or "doctor --docs: every quoted command exists")
-        return 1 if stale else 0
+        found = stale_doc_commands() + oversized_agent_docs()
+        print("\n".join(found) or "doctor --docs: every quoted command exists and every agent doc fits its budget")
+        return 1 if found else 0
     problems = 0
 
     def report(ok, what, fix=None):
@@ -3346,7 +3384,7 @@ def make_parser():
     add("prune-ci-caches", cmd_prune_ci_caches,
         "delete this ref's superseded Actions cache entries, keeping each family's newest (CI's cleanup job)")
     p = add("doctor", cmd_doctor, "check the environment; prints how to fix problems, installs nothing")
-    p.add_argument("--docs", action="store_true", help="only check that commands quoted in agent docs and README exist")
+    p.add_argument("--docs", action="store_true", help="only check that commands quoted in agent docs and README exist and that every agent doc fits its size budget")
     add_sanitizer(add("build", cmd_build, "build a preset, or all of them", preset="native", mode=True, container=True,
                       choices=(*PRESETS, "all")))
     p = add("test", cmd_test, "build and run the tests of a preset", preset="native", mode=True, container=True)
