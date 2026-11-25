@@ -83,8 +83,9 @@ public:
     /// lies in the portal's step area), and does nothing else. Otherwise
     /// selects what its Select actions name (nothing for a dying one), ignores Cast actions outside a combat scene (in one a
     /// Cast is Combat::Cast(): Qi, cooldown, the ability's effect; a dash moves the player in place of held movement), pauses
-    /// or resumes the world for a ToggleWorldPause in a scene showing the world map (ignored elsewhere), and sets the player's
-    /// cultivator on a route for a WalkTo there (ignored elsewhere): the shortest way on foot (core::FindShortestRoute())
+    /// or resumes the world for a ToggleWorldPause in a scene showing the world map (ignored elsewhere), and for a WalkTo there
+    /// (ignored elsewhere) lets go of the selection, wherever the point lies, and sets the player's cultivator on a route:
+    /// the shortest way on foot (core::FindShortestRoute())
     /// from the tile under its foot to the tile under the action's point, as a journey of its own (PlayerRoute()) whose
     /// leg sets out from the foot itself on the world clock's tick, timed by distance at the cultivator's walk speed
     /// (core::MakePacedLeg()). A WalkTo off the map, to a tile it can't reach, from a cultivator whose walk speed is not
@@ -148,7 +149,8 @@ public:
     /// refusing it, or a world-ID counter behind the base's, each logged), don't end where the state does, hold a
     /// flash or a seal that starts after `simulationTick`, a world clock outside the month after the month steps run (its
     /// end included) or past the calendar's end (LAST_MONTH's first tick), relationships naming an NPC in neither domain or
-    /// last met after their world's calendar, a place kept on the map that isn't a finite point or lies in its portal's step
+    /// last met after their world's calendar, an NPC whose home or tile doesn't suit its world (a scratch world's are
+    /// homeless), a place kept on the map that isn't a finite point or lies in its portal's step
     /// area, explored tiles that don't fit the map (core::FogBitsFit(): the wrong number of words, or a bit past its last
     /// tile), a sight radius past core::MAX_SIGHT, a world paused, keeping a place on the map, exploring or seeing any
     /// distance where it can't have shown the map (a dev scene's scratch world, or any in a game without the map), travel
