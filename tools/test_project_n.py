@@ -2071,6 +2071,7 @@ class DocBudgetsTest(unittest.TestCase):
 
     def test_only_claude_md_files_are_checked_for_the_pointer(self):
         self.assertEqual(project_n.claude_md_problems("README.md", "anything"), [])
+        self.assertEqual(project_n.claude_md_problems("docs/NOTCLAUDE.md", "anything"), [])
 
     def test_every_claude_md_is_a_pointer(self):
         self.assertEqual(project_n.misshaped_claude_docs(), [])

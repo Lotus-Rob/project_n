@@ -156,7 +156,8 @@ def resolve(cmd):
     args = list(cmd[1:])
     if cmd[0] == "xmake" and args and not str(args[0]).startswith("-"):
         # XMake takes an ancestor folder holding a project (one with `.xmake/`) over the current one: a worktree
-        # inside the main checkout built the main checkout's sources ("You are working in the project directory(...)"). `-P` works; XMAKE_PROJECT_DIR doesn't.
+        # inside the main checkout built the main checkout's sources ("You are working in the project
+        # directory(...)"). `-P` works; XMAKE_PROJECT_DIR doesn't.
         # XMake's `utils.bin2c` still resolves the project again without -P in a thread, so a worktree's shader step
         # warns once per binary that it is building the main checkout's project: benign, it only converts the
         # build's own files.
@@ -862,9 +863,10 @@ def cmd_test(args):
     """Build and run the tests. `--suite` (`--target`) names one test target: a suite or fuzz suite runs its files in
     parallel, one process per test file; with `--test` or doctest arguments the binary runs once instead, keeping the
     cases of the test file `--test` names, else the cases with it in their name. A name that is no suite, fuzz suite or
-    test program (`headless_bench`, `reference_tests`) is refused. A `--test` that matches no test file and no case name still runs nothing and passes. A fuzz
-    suite replays its seeds once (`-runs=0`) and only under linux-clang with AddressSanitizer. A skipped long run or
-    measurement is run by name with `--no-skip`, in double quotes as names hold apostrophes."""
+    test program (`headless_bench`, `reference_tests`) is refused. A `--test` that matches no test file and no case
+    name still runs nothing and passes. A fuzz suite replays its seeds once (`-runs=0`) and only under linux-clang with
+    AddressSanitizer. A skipped long run or measurement is run by name with `--no-skip`, in double quotes as names
+    hold apostrophes."""
     if getattr(args, "list_tests", False):  # internal callers build their own Namespace
         suites = test_names()
         print("\n".join(suites.get(args.target, ()) if args.target else all_test_files(suites)))
@@ -2548,9 +2550,9 @@ MEASURE_MONTH_STEP_AT = 15
 # the debug sight on (`--debug-sight`): every tile is in sight, but walkers and their names on unexplored land stay
 # hidden under the clouds' shade, so it carries the label load of explored land only and its labels segments aren't
 # comparable with runs from before the cloud shade. It also raises the travel share and lets one month pass
-# (MEASURE_TRAVEL_SHARE, MEASURE_MONTH_STEP_AT); the camera path test's `MEASURED` is the same month step and its `MEASURED_SHARE` the same travel share, and the
-# self-tests check both. The step's message starts a segment of its own, so `widest view` runs 12 to 15 s and
-# `month step` 15 to 18 s: its first 0.5 s row is the step's timing.
+# (MEASURE_TRAVEL_SHARE, MEASURE_MONTH_STEP_AT); the camera path test's `MEASURED` is the same month step and its
+# `MEASURED_SHARE` the same travel share, and the self-tests check both. The step's message starts a segment of its
+# own, so `widest view` runs 12 to 15 s and `month step` 15 to 18 s: its first 0.5 s row is the step's timing.
 MEASURE_RUNS = {"world": (["--world", "--camera-path", "--travel-share", str(MEASURE_TRAVEL_SHARE),
                        "--month-step-at", str(MEASURE_MONTH_STEP_AT), "--debug-sight"], 60),
                 "burst": (["--burst"], 20), "swords": (["--cast-swords"], 70), "seals": (["--cast-swords", "--zoom", "2"], 30)}
@@ -3152,7 +3154,9 @@ AGENT_BRIEF_LINES = 60      # .claude/agents/*.md
 
 
 def doc_budget_problems(path, text):
-    """Budget findings for one agent doc; `path` is repo-relative and '/'-separated."""
+    """Budget findings for one agent doc; `path` is repo-relative and '/'-separated.
+
+    `selftest` runs it on the real tree (`oversized_agent_docs`)."""
     if path.startswith(".claude/skills/") and path.endswith("/SKILL.md"):
         n = len(text.splitlines())
         return [f"{path}: {n} lines, over the {SKILL_LINES}-line budget"] if n > SKILL_LINES else []
@@ -3195,7 +3199,8 @@ def oversized_agent_docs():
 def cmd_doctor(args):
     if args.docs:
         found = stale_doc_commands() + oversized_agent_docs() + misshaped_claude_docs()
-        print("\n".join(found) or "doctor --docs: every quoted command exists, every agent doc fits its budget and every CLAUDE.md is a pointer")
+        print("\n".join(found) or "doctor --docs: every quoted command exists, every agent doc fits its budget"
+                                   " and every CLAUDE.md is a pointer")
         return 1 if found else 0
     problems = 0
 
@@ -3411,7 +3416,8 @@ def make_parser():
     add("prune-ci-caches", cmd_prune_ci_caches,
         "delete this ref's superseded Actions cache entries, keeping each family's newest (CI's cleanup job)")
     p = add("doctor", cmd_doctor, "check the environment; prints how to fix problems, installs nothing")
-    p.add_argument("--docs", action="store_true", help="only check that commands quoted in agent docs and README exist and that every agent doc fits its size budget")
+    p.add_argument("--docs", action="store_true", help="only check the agent docs: quoted commands exist, sizes fit"
+                   " their budgets, every CLAUDE.md is a pointer")
     add_sanitizer(add("build", cmd_build, "build a preset, or all of them", preset="native", mode=True, container=True,
                       choices=(*PRESETS, "all")))
     p = add("test", cmd_test, "build and run the tests of a preset", preset="native", mode=True, container=True)
