@@ -14,7 +14,7 @@
 /// four to eight times slower): close animated pages, leave the game's window focused, and compare a build only with a
 /// baseline taken the same way. A tiling compositor changes the window's size from `settings.yaml`'s, and a fullscreen
 /// window may be paced at the monitor's rate despite mailbox (every zone ran three to five times slower than unthrottled):
-/// record the size the window really has and compare zones only between runs paced alike.
+/// record the size `niri msg windows` shows and compare zones only between runs paced alike.
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage): Tracy records each zone's source location in a
 // static at the call site, which only a macro can place there.
