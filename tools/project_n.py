@@ -858,6 +858,12 @@ def test_filter(name, suite):
 
 
 def cmd_test(args):
+    """Build and run the tests. `--suite` (`--target`) names one test target: a suite or fuzz suite runs its files in
+    parallel, one process per test file; with `--test` or doctest arguments the binary runs once instead, keeping the
+    cases of the test file `--test` names, else the cases with it in their name. A name that is no suite, fuzz suite or
+    test program (`headless_bench`, `reference_tests`) is refused, so a run never passes having tested nothing. A fuzz
+    suite replays its seeds once (`-runs=0`) and only under linux-clang with AddressSanitizer. A skipped long run or
+    measurement is run by name with `--no-skip`, in double quotes as names hold apostrophes."""
     if getattr(args, "list_tests", False):  # internal callers build their own Namespace
         suites = test_names()
         print("\n".join(suites.get(args.target, ()) if args.target else all_test_files(suites)))
@@ -963,7 +969,9 @@ def run_references(preset, update=False, quiet=False):
     """Compare a built release's pictures of fixed scenes with tests/reference/, on Mesa's software
     Vulkan (Pixi's lavapipe environment) and without a display: every machine draws the same. Returns every case's
     output (nothing with `update`), which `measure` reads the world's shimmer from; `quiet` prints it only when a case
-    fails."""
+    fails. Never run under a sanitizer: ThreadSanitizer reports races inside lavapipe and LLVM that no gate could
+    suppress without hiding one of ours. Our own threading runs under it in the unit tests; a by-hand run of these cases
+    is worth repeating once the renderer shares memory between threads on the CPU side."""
     lavapipe = pixi_prefix("lavapipe")
     env = {**os.environ, "SDL_VIDEO_DRIVER": "offscreen", "SDL_VULKAN_LIBRARY": str(lavapipe / "lib" / "libvulkan.so.1"),
            "VK_DRIVER_FILES": str(lavapipe / "share" / "vulkan" / "icd.d" / "lvp_icd.x86_64.json")}
@@ -1006,6 +1014,8 @@ def run_references(preset, update=False, quiet=False):
 
 
 def cmd_reference(args):
+    """Build the release and compare the reference pictures (tests/reference/reference_tests.cpp) on software Vulkan;
+    `--update` takes this run's pictures from build/reference/ as the references, which needs a look at them first."""
     if PRESETS[args.preset]["plat"] != "linux":
         raise Fail("`reference` runs on Linux only (lavapipe here is linux-64's): pass --preset linux-gcc or linux-clang")
     if needs_container(args.preset, args.container):
@@ -2454,7 +2464,9 @@ def cmd_coverage(args):
 
 
 def cmd_fuzz(args):
-    """Fuzz one libFuzzer target (tests/fuzz/<name>.cpp): linux-clang with AddressSanitizer."""
+    """Fuzz one libFuzzer target (tests/fuzz/<name>.cpp): linux-clang with AddressSanitizer. Every target needs a seed
+    in tests/fuzz/corpus/<name>/, and an input that found a bug is committed there as one; a seed in an old format only
+    exercises the refusal, so regenerate it when the format changes."""
     preset = "linux-clang"
     if needs_container(preset, args.container):
         return reenter(preset, ["fuzz", args.target, "--time", str(args.time)])
