@@ -327,7 +327,9 @@ public:
 
     /// The route the player's cultivator walks on the world map (core::ActionKind::WalkTo): a journey of the cultivator alone
     /// with one tile route leg by core::WALKING, from the foot it set out from to the tile walked to; none while it walks
-    /// freely.
+    /// freely. Drawn moved onto the road like a traveller (core::DrawnWhere()), and what was drawn never jumps: when the route
+    /// is replaced, dropped, taken over by held movement or ends, the shift it no longer gives fades out over the body's next
+    /// tile of movement, never while it stands.
     [[nodiscard]] const std::optional<core::Journey>& PlayerRoute() const {
         return m_route;
     }
