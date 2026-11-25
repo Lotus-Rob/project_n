@@ -31,6 +31,7 @@
 /// -# Text, then the HUD in target pixels, its bars through the overlay's sprites and then its lines; on the world map
 ///    the date line, the HUD's one clickable area (`app/hud.hpp`).
 ///
-/// The fog is no step of its own: its texture (`View::fog` through `internal::FogTexture`) is bound to the ground,
-/// river, road, terrain, route and sprite draws of the first six steps, which shade each world-map sprite and label by
-/// it as the instance flags in `core/frame.hpp` say (`gfx/fog.hpp`, `gfx/internal/features/sprites.hpp`).
+/// The fog is no step of its own: its texture (`View::fog` through `internal::FogTexture`) is bound to every draw of
+/// the world pass, up to the overlay and the HUD, which shade by it as the instance flags in `core/frame.hpp` say
+/// (`gfx/fog.hpp`, `gfx/internal/features/sprites.hpp`); labels fade by `FogOpacity` (`gfx/labels.hpp`) as they are
+/// placed.
