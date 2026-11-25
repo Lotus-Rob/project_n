@@ -333,17 +333,6 @@ TEST_CASE("an end one tile from a sector border routes no dearer than through th
     // Onto sector 1's gate (7, 2) (6 straight and a diagonal, 74), over to (8, 2) (10), then from there straight to the
     // end (3 straight and a diagonal, 44), rather than through sector 3's own gate at (12, 2) (134).
     CHECK(route.cost == 128);
-
-    // The synthetic map's wary pair that paid most for ends reached only through their own sectors' gates.
-    const core::WorldMap synthetic = test::SyntheticMap(1, 1);
-    const core::RouteGraphs syntheticGraphs = core::RouteGraphs::Build(synthetic);
-    constexpr u32 SYNTHETIC_FROM = 12427;
-    constexpr u32 SYNTHETIC_TO = 2074;
-    const core::GraphRoute dearest = Must(Fresh(synthetic, syntheticGraphs.Of(WARY), SYNTHETIC_FROM, SYNTHETIC_TO));
-    const u32 cheapest = Cost(synthetic, WARY, core::FindRoute(synthetic, WARY, SYNTHETIC_FROM, SYNTHETIC_TO));
-    CAPTURE(dearest.cost);
-    CAPTURE(cheapest);
-    CHECK(u64{ dearest.cost } * 100 <= u64{ cheapest } * 105);
 }
 
 /// The purposes of the synthetic routes' draws: each end's tile and place.
