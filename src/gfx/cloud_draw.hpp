@@ -67,6 +67,7 @@ struct CloudDrawing {
 ///
 /// Instances run back to front by the foot each cloud rests at (before its bob and drift, so neither swaps two), all in
 /// one normal-blend batch. Past MAX_CLOUD_INSTANCES the farthest back are dropped.
+/// `seconds` is the frame clock (View::frameClock), which drives each cloud's bob and drift.
 void DrawClouds(
     const FogFrame& fog,
     const core::FogLook& look,
