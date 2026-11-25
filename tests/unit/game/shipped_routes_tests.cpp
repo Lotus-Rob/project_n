@@ -25,6 +25,19 @@ u32 Walked(const core::WorldMap& map, const std::vector<u32>& tiles) {
     return total;
 }
 
+/// The pair that came off worst on one bound: its tiles, and the measure it was judged by for the graph's route and for
+/// the cheapest.
+struct WorstPair {
+    /// The start's tile.
+    u32 from = 0;
+    /// The end's tile.
+    u32 target = 0;
+    /// The graph's route's measure.
+    u32 route = 0;
+    /// The cheapest route's measure.
+    u32 cheapest = 0;
+};
+
 TEST_CASE("routes between the shipped map's cities keep to its roads") {
     const std::shared_ptr<const core::WorldMap> shipped = test::ShippedWorld();
     const core::WorldMap& map = *shipped;
@@ -39,11 +52,12 @@ TEST_CASE("routes between the shipped map's cities keep to its roads") {
     REQUIRE(cities.size() == 6);
 
     core::RouteScratch scratch;
+    core::SectorWalk walk;
     std::size_t missing = 0;
     i64 worstCost = std::numeric_limits<i64>::min();
     i64 worstOffRoad = std::numeric_limits<i64>::min();
-    std::pair<u32, u32> costliest{};
-    std::pair<u32, u32> furthestOffRoad{};
+    WorstPair costliest{};
+    WorstPair furthestOffRoad{};
     for (const u32 from : cities) {
         for (const u32 target : cities) {
             if (from == target) {
@@ -58,21 +72,25 @@ TEST_CASE("routes between the shipped map's cities keep to its roads") {
             const i64 over = (i64{ route->cost } * 100) - (i64{ Walked(map, cheapest) } * 105);
             if (over > worstCost) {
                 worstCost = over;
-                costliest = { route->cost, Walked(map, cheapest) };
+                costliest = { .from = from, .target = target, .route = route->cost, .cheapest = Walked(map, cheapest) };
             }
             // The cheapest route's off-road tiles plus 5% of its length, rounded up.
             const i64 allowed = i64{ OffRoad(map, cheapest) } + static_cast<i64>(((cheapest.size() * 5) + 99) / 100);
-            const u32 offRoad = OffRoad(map, core::RouteTiles(map, graph, *route));
+            const u32 offRoad = OffRoad(map, core::RouteTiles(map, graph, *route, walk));
             if (i64{ offRoad } - allowed > worstOffRoad) {
                 worstOffRoad = i64{ offRoad } - allowed;
-                furthestOffRoad = { offRoad, OffRoad(map, cheapest) };
+                furthestOffRoad = { .from = from, .target = target, .route = offRoad, .cheapest = OffRoad(map, cheapest) };
             }
         }
     }
-    CAPTURE(costliest.first);
-    CAPTURE(costliest.second);
-    CAPTURE(furthestOffRoad.first);
-    CAPTURE(furthestOffRoad.second);
+    CAPTURE(costliest.from);
+    CAPTURE(costliest.target);
+    CAPTURE(costliest.route);
+    CAPTURE(costliest.cheapest);
+    CAPTURE(furthestOffRoad.from);
+    CAPTURE(furthestOffRoad.target);
+    CAPTURE(furthestOffRoad.route);
+    CAPTURE(furthestOffRoad.cheapest);
     CHECK(missing == 0);
     CHECK(worstCost <= 0);
     CHECK(worstOffRoad <= 0);
