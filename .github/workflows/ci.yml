@@ -205,7 +205,7 @@ jobs:
           key: ${{ steps.objects.outputs.cache-primary-key }} # the restore's: builds may change the lock
 
   releasedbg:
-    # linux-clang's releasedbg build in its container: the only mode that compiles Tracy's zones. Restores
+    # A required check. linux-clang's releasedbg build in its container: the only mode that compiles Tracy's zones. Restores
     # container (linux-clang)'s packages entry and never saves it.
     runs-on: ubuntu-26.04
     timeout-minutes: 60
@@ -225,7 +225,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /home/runner/xmake-cache
-          # container (linux-clang)'s, which saves them: the same image, toolchain and packages. `releasedbg` restores
+          # container (linux-clang)'s, which saves them: the same image, toolchain and packages. `lint` restores
           # it too, and `windows` and `macos (address)` their release entry's.
           key: xmake-linux-clang-${{ hashFiles('pixi.toml', 'pixi.lock', 'xmake-requires.lock', 'xmake/repo/**') }}
           restore-keys: xmake-linux-clang-
@@ -263,7 +263,7 @@ jobs:
           key: ${{ steps.objects.outputs.cache-primary-key }} # the restore's: builds may change the lock
 
   windows:
-    # Native MSVC: the authoritative Windows build, and the only place MSVC's ASan can run. One build per entry.
+    # A required check. Native MSVC: the authoritative Windows build, and the only place MSVC's ASan can run. One build per entry.
     # `release` tests; `address` runs the ASan tests plus `selftest`. No object cache: XMake's `cl` cache compiles
     # each file's preprocessed text without the precompiled header and keeps only the `.obj`, so a warm build's
     # debug info and binary differ from an uncached one's, and it only slowed cold runs (every main run).
@@ -339,7 +339,7 @@ jobs:
           key: ${{ steps.xmake-cache.outputs.cache-primary-key }} # the restore's: builds may change the lock
 
   macos:
-    # Native macos-clang on Apple Silicon: the only place it can build. One build per
+    # A required check. Native macos-clang on Apple Silicon: the only place it can build. One build per
     # entry on branch pushes: release (tests, then the artefact from that build) and ASan; on main and tags the
     # artefact rebuilds in a clean room.
     name: macos (${{ matrix.build }})
