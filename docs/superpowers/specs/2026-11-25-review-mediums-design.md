@@ -87,6 +87,7 @@ to one short line per rule with pointers; move the narrative into Doxygen on the
 Outcomes (nothing is deleted without a home). Make the size rule checkable: `doctor --docs` fails an AGENTS.md over a byte
 budget or with a line over a length budget (budgets set by the plan from what the cut files need; the root rule "about 100
 lines" becomes a byte budget in 0001 §10.1). First, because every later session pays for the current size.
+**Implemented** (Outcome: R1, below).
 
 **R2. Windows paths** (full; plan only). X-UNTRUSTED-INPUT-01, X-CPP-SAFETY-02, X-TEXT-L10N-02, X-UNTRUSTED-INPUT-02,
 X-CPP-SAFETY-01. One helper returning a path's UTF-8 bytes (from `u8string()`), used for every log or error argument and
@@ -272,6 +273,37 @@ sit idle while CI runs").
 
 Task split and waves inside the area, exact thresholds (failed-frame count, size budgets, buffer ticks), test names,
 which low findings in the area's clusters each task closes.
+
+## Outcome: R1 (implemented)
+
+R1's plan (`docs/superpowers/plans/2026-11-25-review-r1-agent-docs.md`, six tasks in three waves) is built.
+
+- **Budgets** (set by the plan from what the cut files needed): every tracked `AGENTS.md` below the root ≤ 8,192 bytes
+  and every line ≤ 300 characters; `.claude/skills/*/SKILL.md` ≤ 200 lines (a skill's `references/` files are not held
+  to it); `.claude/agents/*.md` ≤ 60 lines. The root `AGENTS.md` is exempt. `doctor --docs` fails any file over its
+  budget; its selftests pin each boundary (8,192 passes, 8,193 fails; 300 characters pass, 301 fail).
+- **Sizes**, before → after: `src/AGENTS.md` 45,264 → 8,110 B (plus new `src/gfx/AGENTS.md` 480 B and
+  `src/game/AGENTS.md` 865 B for rules true in one module), `tools/` 21,137 → 5,498, `tests/` 19,275 → 7,364,
+  `.github/` 8,504 → 3,646, `assets/` 2,807 → 2,059, `art/` 2,533 → 1,395. Every task under `src/` now loads about a
+  fifth of what it did.
+- **Nothing lost:** each cut fact went to its home (Doxygen on its class or `module.dox`, the skill that owns the job, a
+  comment at the CI step, or the Outcome it came from), was found already there, or was dropped only as stale history
+  (incident anecdotes and dates). Each task's reviewer checked its fact map; facts a review found homeless were carried
+  into a later task (below) rather than a second fix round.
+
+Rulings made while building it:
+
+- Tasks 3 and 4 ran in parallel though both edit `tools/project_n.py` docstrings: they own disjoint functions, so a
+  rebase clash is a trivial hunk fix (none happened).
+- Tasks that changed no compiled file skipped the full `test` (`selftest`, `lint --range` and `doctor --docs` were
+  their gates): four cold worktree builds at once beside shared-routes would double the wait for nothing a doc can
+  break. The controller's test and release builds after each wave covered the one C++ comment such a task touched.
+- One fix pass per review: three findings that a re-review raised after the fix pass were carried into the next task
+  that edited the same files (the look-at-the-game skill's view names, which also come from `CompareWithReference`
+  and six helpers; the scene-ID counter in the saves line; a label wholly hidden by fog taking no room and the
+  clouds' clock, as Doxygen), and one into the final review's fixes (the `Renderer::Impl::GatherLabels` name).
+- The plan's at-budget selftest input was one 8,191-character line, which breaks its own line budget; the check's
+  tests use 81 lines of 99 characters plus one of 91 (8,192 bytes, the budget exactly) to test the same byte boundary.
 
 ## The findings and their areas
 
