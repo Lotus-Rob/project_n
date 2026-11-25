@@ -33,7 +33,10 @@ enum class RiverStart : u8 {
 };
 
 /// How each of `map`'s rivers begins, in the map's order, with `water` the kinds that count as water. A river of fewer than
-/// two distinct points is a Spring.
+/// two distinct points is a Spring. A shipped river must rise somewhere: on high ground (`hills`, `rock` or `snow`), out of
+/// water (`shallows` or deep water on its first tile or within three tiles straight behind it along its first segment; a
+/// pond is 2 to 4 `shallows` tiles, inland), or within a tile of another river's line (a branch); a test fails on a river
+/// that starts as a Spring on low ground.
 [[nodiscard]] std::vector<RiverStart> RiverStarts(const core::WorldMap& map, std::span<const u8> water);
 
 /// Replaces `into` with the quads of every river's edge band, then of every river's core band, each river a centripetal
