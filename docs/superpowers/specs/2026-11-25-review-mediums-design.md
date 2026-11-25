@@ -1,6 +1,6 @@
 # Acting on the full codebase review: every medium finding, area by area
 
-Status: **draft, awaiting the user's approval** (approach 1 picked by the user 2026-11-25, with shared-routes going on beside it; builder check done, its question answered by the user). Each area below
+Status: **approved by the user 2026-11-25** (approach 1, with shared-routes going on beside it; the calls below approved as written; this spec reaches main with R1's pull request). Each area below
 gets its own plan (and, where marked, its own short spec) and its own pull request.
 
 ## Intent
