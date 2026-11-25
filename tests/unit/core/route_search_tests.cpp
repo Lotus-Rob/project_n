@@ -348,9 +348,22 @@ TEST_CASE("a start and an end on one tile, in one sector and on a gate work") {
 }
 
 TEST_CASE("a route between the halves of a split sector leaves it and comes back") {
-    // Peaks down column 2 of sector 0 part its west from its east; the gap is in sector 2, below it.
-    const core::WorldMap map =
-        MustBuild(Source({ "0.^.....", "..^.....", "..^.....", "..^.....", "........", "........", "........", "........" }));
+    // Peaks down column 2 of sectors 0 and 2 part sector 0's west from its east; the gap is in sector 4, beyond the block
+    // of sectors round sector 0, so only the graph's edges reach round.
+    const core::WorldMap map = MustBuild(Source(
+        { "0.^.....",
+          "..^.....",
+          "..^.....",
+          "..^.....",
+          "..^.....",
+          "..^.....",
+          "..^.....",
+          "..^.....",
+          "........",
+          "........",
+          "........",
+          "........" }
+    ));
     const core::RouteGraphs graphs = core::RouteGraphs::Build(map, SMALL_RULES);
     const core::RouteGraph& graph = graphs.Of(core::WALKING);
     const u32 from = At(map, 1, 1);
@@ -404,6 +417,34 @@ TEST_CASE("the way there and the way back each cost their own steps") {
     CHECK(Walkable(map, graph, there, city, open));
     CHECK(Walkable(map, graph, back, open, city));
     CHECK(there.cost != back.cost);
+}
+
+TEST_CASE("an end one tile from a sector border routes no dearer than through the neighbouring sector's gate") {
+    // Sectors of 4 in one row; every border's gates are on rows 0 and 2, and the end on row 3 stands on sector 3's west
+    // edge.
+    const core::WorldMap map =
+        MustBuild(Source({ "...................0", "....................", "....................", "...................." }));
+    const core::RouteGraphs graphs = core::RouteGraphs::Build(map, SMALL_RULES);
+    const core::RouteGraph& graph = graphs.Of(core::WALKING);
+    const u32 from = At(map, 0, 3);
+    const u32 target = At(map, 12, 3);
+    REQUIRE(graph.NodeAt(target) == core::NO_NODE);
+    const core::GraphRoute route = Must(Fresh(map, graph, from, target));
+    CHECK(Walkable(map, graph, route, from, target));
+    // Onto sector 1's gate (7, 2) (6 straight and a diagonal, 74), over to (8, 2) (10), then from there straight to the
+    // end (3 straight and a diagonal, 44), rather than through sector 3's own gate at (12, 2) (134).
+    CHECK(route.cost == 128);
+
+    // The synthetic map's wary pair that paid most for ends reached only through their own sectors' gates.
+    const core::WorldMap synthetic = test::SyntheticMap(1, 1);
+    const core::RouteGraphs syntheticGraphs = core::RouteGraphs::Build(synthetic);
+    constexpr u32 SYNTHETIC_FROM = 12427;
+    constexpr u32 SYNTHETIC_TO = 2074;
+    const core::GraphRoute dearest = Must(Fresh(synthetic, syntheticGraphs.Of(WARY), SYNTHETIC_FROM, SYNTHETIC_TO));
+    const u32 cheapest = Cost(synthetic, WARY, core::FindRoute(synthetic, WARY, SYNTHETIC_FROM, SYNTHETIC_TO));
+    CAPTURE(dearest.cost);
+    CAPTURE(cheapest);
+    CHECK(u64{ dearest.cost } * 100 <= u64{ cheapest } * 105);
 }
 
 /// The purposes of the synthetic routes' draws: each end's tile and place.
