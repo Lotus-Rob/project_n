@@ -478,10 +478,10 @@ Rejected alternatives:
 | `/AGENTS.md` | Project map, canonical commands, global one-line rules, skill index, contract summary |
 | `/containers/AGENTS.md` | Images and their roles, licence constraint, Linux linking rules, Podman/WSL gotchas |
 | `/tools/AGENTS.md` | `project_n.py` rules (stdlib only, thin, presets and scopes as single source of truth), running its tests |
-| `/src/AGENTS.md` | C++ conventions |
+| `/src/AGENTS.md` | C++ conventions, and the rules across modules: SDL_GPU confined to `gfx`, the arena |
 | `/tests/AGENTS.md` | doctest conventions, layout, running and filtering tests |
-| `/src/gfx/AGENTS.md` | Rules true only in `gfx`: draw-order pointer, SDL_GPU confined to the module, shaders and their generated header |
-| `/src/game/AGENTS.md` | Rules true only in `game`: the arena, world generation, host state, travel determinism, the world map's helpers |
+| `/src/gfx/AGENTS.md` | Rules true only in `gfx`: draw-order pointer, shaders and their generated header |
+| `/src/game/AGENTS.md` | Rules true only in `game`: scenes, host state and the save layout, world generation, travel determinism, the world map's helpers |
 
 Every directory with an AGENTS.md also has a `CLAUDE.md` containing only `@AGENTS.md`, except the root, whose `CLAUDE.md` lives in `.claude/` (`@../AGENTS.md`), which Claude Code also reads.
 
