@@ -8,7 +8,7 @@ description: See what project_n actually draws, to check a rendering change by e
 Owned by: src/AGENTS.md. Reference pictures: also tests/AGENTS.md.
 
 ## Pick the way to look
-- **A fixed scene, no display needed (preferred):** `pixi run project_n reference`. Each run writes its pictures to `build/reference/<view>.png`, named by the `.name =` of each `CheckAgainstReference` call in tests/reference/reference_tests.cpp (the case's title and comment say what it shows; `ls tests/reference/` or `grep '\.name =' tests/reference/reference_tests.cpp`). Open them with the Read tool. They come from software Vulkan, so they match CI, not necessarily the user's GPU. Judging drift and `--update`: references/reference-pictures.md.
+- **A fixed scene, no display needed (preferred):** `pixi run project_n reference`. Each run writes its pictures to `build/reference/<view>.png`, named by the view each call in tests/reference/reference_tests.cpp gives (to `CheckAgainstReference`, to a direct `CompareWithReference(...)`, or through a helper such as `CheckFogStart`, `CheckVolley`, `CheckShowcase`); the case's title and comment say what it shows. `ls tests/reference/` lists them; the calls: `grep -nE 'CompareWithReference\(|CheckAgainstReference\(|Check[A-Z][A-Za-z]*\("' tests/reference/reference_tests.cpp`. Open them with the Read tool. They come from software Vulkan, so they match CI, not necessarily the user's GPU. Judging drift and `--update`: references/reference-pictures.md.
 - **The real window, on the user's GPU:** when the change concerns presentation, input, zoom or the live loop, or the user asks to see it running.
 
 ## The real window
