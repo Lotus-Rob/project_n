@@ -26,7 +26,9 @@ local function test_under_wine(target, opt)
     return code == 0
 end
 
--- What a target that builds a host needs: the shipped manifest (support/manifest.hpp) and its reader.
+-- What a target that builds a host needs: the shipped manifest (support/manifest.hpp) and its reader. The include directory
+-- makes `support/<name>.hpp` reachable without `..` in the path, which MSVC warns about (C4464); only the fuzz targets, which
+-- never build with MSVC and are missing from the compile database lint reads, include them relatively.
 local function with_manifest()
     add_deps("data", "platform")
     add_includedirs(os.scriptdir())

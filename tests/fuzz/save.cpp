@@ -5,7 +5,10 @@
 // again.
 // Seeded with the arena in the middle of a fight (a volley in flight, a lance's flash, burn and poison, a fox dying, one
 // easing in, a respawn waiting, the player dashing), the empty world scene, the world scene a month on (journeys of the
-// base ended, new ones by their plans) and the arena entered from that world mid-volley (both worlds' sections).
+// base ended, new ones by their plans) and the arena entered from that world mid-volley (both worlds' sections). Each seed
+// comes from a skipped-by-default case in unit/game/save_exactness_tests.cpp, written by
+// `pixi run project_n test --target game_tests -- --test-case='write the <name> save seed' --no-skip` (`fight`, `world`,
+// `delta`, `scratch`); regenerate all four whenever the save layout changes.
 #include "../support/manifest.hpp" // relative: lint has no compile flags for the fuzz targets, which only build with ASan
 #include "../support/world.hpp"
 #include "core/archive.hpp"

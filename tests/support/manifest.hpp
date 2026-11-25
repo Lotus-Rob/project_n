@@ -15,7 +15,9 @@
 
 namespace test {
 
-/// assets/manifest.yaml; a test binary that can't read it stops at once.
+/// assets/manifest.yaml; a test binary that can't read it stops at once. Hold the result in a named `shared_ptr` before
+/// binding a reference into it: the temporary `shared_ptr` holds the manifest's last reference, so a `const&` into it dangles,
+/// which only AddressSanitizer reports.
 [[nodiscard]] inline std::shared_ptr<const core::Manifest> TestManifest() {
     std::expected<core::Manifest, core::Error> loaded =
         platform::AssetsDirectory().and_then([](const std::filesystem::path& assets) {
