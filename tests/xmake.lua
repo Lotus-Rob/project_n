@@ -118,6 +118,16 @@ target("headless_bench")
     set_pcxxheader("$(projectdir)/src/pch.hpp") -- not a doctest suite: the game's, without doctest
     add_rules("shared_pch", {owner = "game_pch"})
 
+-- The routing benchmark: builds the route graphs over large synthetic maps, reports time and memory and fails over
+-- their budgets. Run it on request: `project_n test --mode release --target routing_bench [-- --scales 1,10,50]`.
+target("routing_bench")
+    set_kind("binary")
+    add_deps("core")
+    add_includedirs(os.scriptdir()) -- support/synthetic_map.hpp
+    add_files("bench/routing.cpp")
+    set_pcxxheader("$(projectdir)/src/pch.hpp") -- not a doctest suite: the game's, without doctest
+    add_rules("shared_pch", {owner = "game_pch"})
+
 -- Pictures of fixed scenes compared with tests/reference/. Built with the tests
 -- but not registered as one, as it needs a GPU: `project_n reference` runs it on Mesa's software Vulkan.
 target("reference_tests")
