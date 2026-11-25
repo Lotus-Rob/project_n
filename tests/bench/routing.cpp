@@ -953,8 +953,9 @@ void CompareProfile(
             const auto ends = drawer.Draw(
                 band, pair, { .firstPlace = (pair % 2) == 0, .secondPlace = ((pair / 2) % 2) == 0, .citiesOnly = false }, drawn
             );
+            // One mix running out of pairs in a band leaves the other mixes still to draw from.
             if (!ends) {
-                break;
+                continue;
             }
             comparisons.push_back({ .from = ends->first, .target = ends->second, .band = band });
             comparisons.push_back({ .from = ends->second, .target = ends->first, .band = band });
