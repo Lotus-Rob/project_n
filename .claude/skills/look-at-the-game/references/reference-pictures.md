@@ -2,8 +2,9 @@
 
 `pixi run project_n reference` (Linux; part of `check` and `artifact`) draws fixed scenes on Mesa's software Vulkan and
 compares each with the committed PNG in `tests/reference/`. A run writes its pictures to `build/reference/<view>.png`; the
-views are the `.name` of each `TEST_CASE` in `tests/reference/reference_tests.cpp`, whose name and comment say what the
-picture shows (`ls tests/reference/` lists them). Open them with the Read tool. They match CI, not necessarily the user's GPU.
+views are the `.name =` given to `CheckAgainstReference` in `tests/reference/reference_tests.cpp` (not the `TEST_CASE`
+title); the case's title and comment say what the picture shows. `ls tests/reference/` or
+`grep '\.name =' tests/reference/reference_tests.cpp` lists them. Open them with the Read tool. They match CI, not necessarily the user's GPU.
 
 ## When a change needs `reference --update`
 A change to shaders, sprites or a scene's layout that moves pixels. Run `pixi run project_n reference --update`, look at
