@@ -25,17 +25,11 @@ std::size_t CapacityBytes(const std::vector<T>& vector) {
     return vector.capacity() * sizeof(T);
 }
 
-/// The tiles of `sector` and the sectors round it, the map's edges clipping the block.
-TileSpan BlockSpan(const WorldMap& map, RoutingRules rules, u32 sector) {
-    const u32 columns = SectorColumns(map, rules);
-    const u32 rows = SectorRows(map, rules);
-    const u32 column = sector % columns;
-    const u32 row = sector / columns;
-    const TileSpan first = SectorSpan(map, rules, ((std::max(row, 1U) - 1) * columns) + std::max(column, 1U) - 1);
-    const TileSpan last = SectorSpan(map, rules, (std::min(row + 1, rows - 1) * columns) + std::min(column + 1, columns - 1));
-    return {
-        .firstColumn = first.firstColumn, .lastColumn = last.lastColumn, .firstRow = first.firstRow, .lastRow = last.lastRow
-    };
+/// The node of the place on `tile`, or NO_NODE for a tile that is no place or whose place is no node.
+u32 PlaceNodeAt(const WorldMap& map, const RouteGraph& graph, u32 tile) {
+    // Only a place has ways of its own to the sectors round it; any other end, a gate's tile included, reaches them by
+    // its legs.
+    return map.PlaceAt(tile) != NO_PLACE ? graph.NodeAt(tile) : NO_NODE;
 }
 
 /// Whether `point` lies in `span`.
@@ -220,6 +214,9 @@ GraphRoute RouteScratch::Trace(const RouteGraph& graph, const Ends& ends) const 
     if (ends.targetNode == NO_NODE) {
         node = m_via[ends.goal];
         m_toWalk.Way(graph.NodeTile(node), route.tail);
+        if (route.tail.size() == 1) {
+            route.tail.clear(); // the end is that node
+        }
     }
     while (m_via[node] != FROM_START && route.steps.size() <= graph.Nodes()) {
         const u32 via = m_via[node];
@@ -232,6 +229,9 @@ GraphRoute RouteScratch::Trace(const RouteGraph& graph, const Ends& ends) const 
     std::ranges::reverse(route.steps);
     if (ends.fromNode == NO_NODE) {
         m_fromWalk.Way(graph.NodeTile(node), route.head);
+        if (route.head.size() == 1) {
+            route.head.clear(); // the start is that node
+        }
     }
     route.cost = m_cost[ends.goal];
     return route;
@@ -260,20 +260,20 @@ std::optional<GraphRoute> FindGraphRoute(
 
     const RoutingRules rules = graph.Rules();
     RouteScratch::Ends ends{ .fromSector = SectorOf(map, rules, from),
-                             .fromNode = graph.NodeAt(from),
-                             .targetNode = graph.NodeAt(target),
+                             .fromNode = PlaceNodeAt(map, graph, from),
+                             .targetNode = PlaceNodeAt(map, graph, target),
                              .goal = 0,
                              .direct = UNREACHABLE,
                              .cheapest = CheapestEntry(map.Profiles()[profile]),
                              .end = map.PointOf(target) };
-    // Onto a tile that is no node the search ends on a slot of its own past the nodes, reached from the block round it.
+    // Onto any end but a place's node the search ends on a slot of its own past the nodes, reached from the block round it.
     ends.goal = ends.targetNode != NO_NODE ? ends.targetNode : graph.Nodes();
     scratch.Begin(std::size_t{ graph.Nodes() } + 1);
 
     // An end near a sector border would otherwise have to go round through a gate of its own sector, however near the
     // crossing it faces; the legs reach over the sectors round each end so that crossing is among the ways out.
-    // Between two nodes the graph alone routes, so a route and the graph's costs agree; with either end on open ground
-    // and the other within its block, the way within the block may be cheaper than any through the graph's nodes.
+    // Between two places the graph alone routes, so a route and the graph's costs agree; with either end elsewhere and the
+    // other within its block, the way within the block may be cheaper than any through the graph's nodes.
     const TileSpan fromBlock = BlockSpan(map, rules, ends.fromSector);
     const bool direct = (ends.fromNode == NO_NODE || ends.targetNode == NO_NODE) && Contains(fromBlock, ends.end);
     if (ends.fromNode == NO_NODE || direct) {

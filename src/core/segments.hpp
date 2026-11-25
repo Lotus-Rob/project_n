@@ -66,7 +66,7 @@ private:
     std::vector<std::unique_ptr<const Segment>> m_slots;
     /// How many slots are filled.
     u32 m_made = 0;
-    /// The workspace Add() walks sectors in.
+    /// The workspace Add() walks sectors and places' blocks in.
     SectorWalk m_walk;
     /// The tiles of the edge Add() is making, its buffer kept from call to call.
     std::vector<u32> m_tiles;

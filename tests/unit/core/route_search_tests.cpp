@@ -337,14 +337,14 @@ TEST_CASE("a start and an end on one tile, in one sector and on a gate work") {
     CHECK(inside.tail.empty());
     CHECK(inside.cost == 4 * MEADOW_COST);
 
-    // The road's gate onto sector 1 at (8, 2): five road steps to the border and one over it.
-    const u32 gate = At(map, 8, 2);
+    // The road's gate onto sector 3 at (24, 2), beyond city 0's block: 22 road steps.
+    const u32 gate = At(map, 24, 2);
     REQUIRE(graph.NodeAt(gate) != core::NO_NODE);
     const core::GraphRoute onGate = Must(Fresh(map, graph, At(map, CITY_0), gate));
     CHECK(onGate.head.empty());
-    CHECK(onGate.steps.size() == 2);
-    CHECK(onGate.tail.empty());
-    CHECK(onGate.cost == 6 * ROAD_COST);
+    CHECK(!onGate.steps.empty());
+    CHECK(onGate.cost == 22 * ROAD_COST);
+    CHECK(Walkable(map, graph, onGate, At(map, CITY_0), gate));
 }
 
 TEST_CASE("a route between the halves of a split sector leaves it and comes back") {
