@@ -286,7 +286,7 @@ std::optional<GraphRoute> FindGraphRoute(
     return route;
 }
 
-std::vector<u32> RouteTiles(const WorldMap& map, const RouteGraph& graph, const GraphRoute& route) {
+std::vector<u32> RouteTiles(const WorldMap& map, const RouteGraph& graph, const GraphRoute& route, SectorWalk& walk) {
     std::vector<u32> tiles = route.head;
     const auto append = [&](const std::vector<u32>& part) {
         if (part.empty()) {
@@ -296,7 +296,6 @@ std::vector<u32> RouteTiles(const WorldMap& map, const RouteGraph& graph, const 
         const auto start = !tiles.empty() && tiles.back() == part.front() ? part.begin() + 1 : part.begin();
         tiles.insert(tiles.end(), start, part.end());
     };
-    SectorWalk walk;
     std::vector<u32> part;
     for (const RouteStep& step : route.steps) {
         EdgeTiles(map, graph, step.edge, walk, part);
@@ -307,6 +306,11 @@ std::vector<u32> RouteTiles(const WorldMap& map, const RouteGraph& graph, const 
     }
     append(route.tail);
     return tiles;
+}
+
+std::vector<u32> RouteTiles(const WorldMap& map, const RouteGraph& graph, const GraphRoute& route) {
+    SectorWalk walk;
+    return RouteTiles(map, graph, route, walk);
 }
 
 } // namespace core

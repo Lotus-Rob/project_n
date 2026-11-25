@@ -175,6 +175,7 @@ void AddPlaceEdges(
             return;
         }
         nodes.clear();
+        unused.clear();
         CollectNodes(map, profile, rules, round, nodes, unused);
         for (const u32 tile : nodes) {
             if (round > sector || map.PlaceAt(tile) == NO_PLACE) {
