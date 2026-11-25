@@ -43,8 +43,10 @@ public:
     /// spawned here.
     void Build(SceneContext& context) const override;
 
-    /// The name of every place of the map whose tile centre lies within `view` (core::TextKind::Place), hung under the
-    /// tile's marker so a cultivator standing on a city never has its own label over the name.
+    /// The name of every place of the map whose tile centre lies within `view` and whose tile the player has explored
+    /// (SceneContext::Explored(); core::TextKind::Place, shown only where explored: core::TextFog::Explored), one entity and
+    /// name key a place, hung under the tile's marker so a cultivator standing on a city never has its own label over the
+    /// name.
     void Publish(const SceneContext& context, core::Rect view, core::Snapshot& snapshot) const override;
 };
 
