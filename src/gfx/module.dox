@@ -6,3 +6,79 @@
 /// their light (pillars, sparks and shards) placed in the light's vertex shader from one record a seal (SealParticleAt(),
 /// mirrored in C++ for the tests), with no particle state: the ground ones over the ground and decals, the upright and
 /// overhead ones over the creatures but under the swords' trails, the overlay, text and the HUD.
+///
+/// @par Draw order
+/// The world pass draws, in this order (a new layer goes in this list):
+/// -# When the snapshot shows the world map (`Snapshot::worldMap`, from `SceneTraits::worldMap`: only the world scene,
+///    which publishes no tiles and no painted ground), first its painted ground: one quad over the map's part of the view
+///    (`gfx::GroundQuad`; nothing past the map, none when the view misses it) by `internal::GroundRenderer`
+///    (`gfx/internal/features/ground.hpp`). It holds the ground field of `gfx/ground_field.hpp` as a two-byte texel per
+///    tile, point-sampled for the kind and linearly for the shore, rebuilt only when `SetWorld` is called, and
+///    `gfx::GroundUniformsOf`'s uniforms from `gfx/ground.hpp` (made again only then too, the zoom set each frame): paper,
+///    washes bled across noisy edges, water deepening from an inked shore, the faint grid faded by zoom, every noise octave
+///    and line faded before it gets finer than a couple of pixels. The pipeline has a veil mode, a cloud-shade mode and a
+///    paper-only mode too: the paper drawn alone, without the rivers, roads, terrain sprites or veil, when
+///    `View::terrainParts` asks (`gfx::TerrainParts`, which only the shimmer measure sets; `AllButRoads` leaves out the
+///    road ribbons).
+/// -# The rivers on it (an `internal::LineRibbonRenderer`, `gfx/internal/features/line_ribbons.hpp`: `gfx::DrawRivers`'
+///    bands built once per map and look, premultiplied over). A river's end is drawn on to where its last stretch meets
+///    another river's middle (not within a tile of that river's own end, where the other flows into it), or a tile on into
+///    the water ahead of it, fading out, the map's waypoints untouched. Its start narrows from a point at a spring (the
+///    look's `taper`), fades in a tile out of a pond's water and is left as laid at a branch.
+/// -# The roads over them (a second `LineRibbonRenderer`: `gfx::DrawRoads`' bands along `core::RoadCurves`, which
+///    `SetWorld` works out once, in `gfx::RibbonShapeOf`'s shape from `world_look.yaml`'s `road:`), all shaded by the fog
+///    as land is through `shaders/fog.hlsli` (`FoggedLand`, shared with the sprite shader).
+/// -# Over them the terrain's sprites: `gfx/terrain_draw.hpp` (`DrawTerrain`) lays out, for the tiles in view at the
+///    camera's zoom, the bridges (across or down by the road curve's heading nearest the tile: across when it runs at
+///    least as much east to west) and fords (the leading batch), the stamps and place paintings sorted by foot and the mist
+///    puffs (`gfx/stamp_draw.hpp`, `DrawStamps`: fixed by a hash of each tile, `gfx/tile_hash.hpp`, laid out past the view
+///    by their reach, small ones fading by rank below their kind's zoom), and last the place markers
+///    (`TerrainDrawing::markersFrom`). There are no tiles and no river or road overlays in the snapshot: all of it comes
+///    from the `core::WorldMap` and `core::WorldLook` given to `Renderer::SetWorld`, which App calls at start and whenever
+///    a look reload replaces the look. It is one more sprite buffer, laid out and copied again only when the view reaches
+///    other tiles, the zoom changes or SetWorld is called. The renderer draws its batches before `markersFrom`, then the
+///    ground pipeline again in its veil mode (pale patches over everything so far), then the markers.
+/// -# The fog's flags: every instance but the markers is flagged `core::INSTANCE_FOGGED_LAND`, which the sprite shader
+///    drains to sepia and veils in mist where its pixel's tile is explored but out of sight and shades in the look's shade
+///    colour where it is unexplored; the markers are `core::INSTANCE_FOG_SHADE` (`FogShaded`: only the shade, so a place
+///    found once stays in colour but hides under the clouds). The fog comes from `View::fog` (`gfx::FogFrame`,
+///    `gfx/fog.hpp`) through `internal::FogTexture` (`gfx/internal/features/sprites.hpp`: a two-channel UNORM texture, a
+///    texel per tile, explored and in sight, filtered linearly and clamped, uploaded only when its revision changes, bound
+///    to every sprite draw; with no fog a 1 x 1 one and nothing shaded). An instance flagged `core::INSTANCE_SIGHT_FADE`
+///    fades with sight at its `core::SightPoint` and a label by `gfx::FogOpacity` (a walker's name also by
+///    `gfx::ExploredFade` at its foot, as far as the shade under the clouds leaves it uncovered), one wholly hidden taking
+///    no label room.
+/// -# The player's route (`gfx/route_draw.hpp`, another sprite buffer laid out each frame from `Snapshot::route`: a
+///    `route_dot` every `route.spacing` units of `world_look.yaml`, `route_marker` on the end).
+/// -# The snapshot's ground and decals (its first `Snapshot::groundBatches`, which the draw list cuts there).
+/// -# The ground seals: each its ink wash and its particles' ink, with the light shadows overhead seals cast on the
+///    ground, normal blend, then its lines and its light's pillars, sparks and shards, additive.
+/// -# The rest of the snapshot's sprites, then the selection and hover outlines (the glows `selected` and `hover`, drawn
+///    alone round those sprites).
+/// -# The ground pipeline once more in its cloud-shade mode while the view has fog (the look's shade colour, opaque where
+///    land is unexplored and gone from half explored on, the land's own shade edge, so nothing standing on unexplored land
+///    shows through the clouds' gaps: only the debug sight draws walkers there).
+/// -# The fog's clouds (`gfx/cloud_draw.hpp`: `DrawClouds` lays them out each frame for the view, zoom and
+///    `View::frameClock` into one sprite buffer of `MAX_CLOUD_INSTANCES`, one normal batch, only when `View::fog` has
+///    columns) and over them the target cursor's tile (`gfx::DrawTargetTile`, its own one-instance buffer from
+///    `Renderer::SetTargetTile`: `target_tile`).
+/// -# The upright and overhead seals (drawn alike, their light with them, capped in opacity, under all that follows, so
+///    the swords fly out over them and health bars, numbers and the HUD stay readable; `gfx/seal_draw.hpp` lays every seal
+///    out at the render time from `Snapshot::seals`, `gfx/internal/features/seals.hpp` draws them).
+/// -# The swords' trails (additive ribbons).
+/// -# The overlay: sprites the main thread places each frame at the render time. The swords, each one instance wearing
+///    its glow, then the poison lance's additive bursts, then the health bars, which follow their creature's label and
+///    stay readable over the swords (`gfx/volley_draw.hpp`: the snapshot carries each volley as one record,
+///    `Snapshot::volleys` with their targets in `volleyTargets`, never a sword each, and every sword is placed by
+///    `core::SwordAt` at the exact render time).
+/// -# Text, then the HUD in target pixels (`app/hud.hpp` lays it out: its bars through the overlay's sprites, then its
+///    lines). On the world map the HUD also lays out the date line (`Hud::BuildDate` from `Snapshot::calendar`: month and
+///    day counted from 1, "Paused" after it while the world is paused, right-aligned top right through
+///    `HudLine::alignRight`), whose box (`Hud::DateLineArea`, laid out by `hud.date_inset` in `effects.yaml`, as wide as
+///    the text draws, `gfx::Renderer::HudLineWidth`, and never narrower than `hud.date_width`) is the HUD's one clickable
+///    area: a primary mouse press in it sends `ToggleWorldPause` through `app::DateLineClick` and nothing else, ahead of
+///    the world's click.
+///
+/// @par Shaders
+/// Shaders are HLSL in `shaders/<name>.<stage>.hlsl`; `gfx` reaches the compiled ones through the generated
+/// `gfx/generated/shaders.hpp`. Nothing outside `gfx` calls SDL_GPU.
