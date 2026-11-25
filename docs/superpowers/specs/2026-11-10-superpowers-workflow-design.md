@@ -163,7 +163,7 @@ What was built differs from the design where measurement or review showed it sho
   nothing. Pointing the built-in cache at one shared folder (`--ccachedir`) missed from a second checkout: 10.7 s, then
   11.7 s, the cache growing 139 MB → 277 MB; the same path rebuilt in 2.7 s. The premise was wrong too: a cold build of
   our sources is ~10 s per preset and mode (109 files, linux-clang debug), and the slow part, the packages, is already
-  shared through `packages_dir()`. Recorded in tools/AGENTS.md Gotchas.
+  shared through `packages_dir()`. Recorded in tools/AGENTS.md and, with numbers, in the Outcome of the 2026-11-13 CI and local speed spec.
 - **No copy-on-write `build/` snapshot (decision 6, item 2, dropped).** A reflinked copy of the main checkout's `build/`
   (38 GB in 2.2 s) is safe but useless: XMake recompiled all 109 files (10.8 s, the same as cold), since its cache and
   dependency records key on the other checkout's paths; nothing stale was linked.
