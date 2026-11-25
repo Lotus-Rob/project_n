@@ -9,6 +9,6 @@
   - `animations.yaml`: presentation, not hashed, hot-reloaded: each figure's walk clip (its frames and stride, keyed by its standing sprite), read into `core::Animations` and sent to the logic thread in `ViewReport::animations`
   - `world_look.yaml`: presentation, not hashed, hot-reloaded: the world map's look, every section required; `data::LoadWorldLook` into `core::WorldLook`, checked against the map → `src/data/world_look.hpp`
   - `world.yaml`: game data, hashed, read at start after the strings, not reloaded: the world map, `data::LoadWorldMap` into `core::GameData::world`; hand-tuned after `art/world_map.py` generated it, but for its `roads:` and `fords:` (art/AGENTS.md)
-    - A river in `world.yaml` must rise somewhere: on high ground, out of water or from another river; the gfx test fails on one that doesn't → `gfx::RiverStarts` (`src/gfx/river_draw.hpp`)
+    - A river in `world.yaml` must rise somewhere: on high ground, out of water or from another river; `gfx::RiverStarts` judges it as the renderer draws it, and the gfx test fails on one that doesn't → `src/gfx/river_draw.hpp`
   - `names.yaml`: game data, hashed, read at start after the map, not reloaded: the surnames and given characters NPC names are drawn from, `data::LoadNames` into `core::GameData::names`
   - `strings.yaml`: the text in each language; not game data, so not hashed, and read once at start
