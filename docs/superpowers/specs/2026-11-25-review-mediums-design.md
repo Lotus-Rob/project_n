@@ -282,10 +282,13 @@ R1's plan (`docs/superpowers/plans/2026-11-25-review-r1-agent-docs.md`, six task
   and every line ≤ 300 characters; `.claude/skills/*/SKILL.md` ≤ 200 lines (a skill's `references/` files are not held
   to it); `.claude/agents/*.md` ≤ 60 lines. The root `AGENTS.md` is exempt. `doctor --docs` fails any file over its
   budget; its selftests pin each boundary (8,192 passes, 8,193 fails; 300 characters pass, 301 fail).
-- **Sizes**, before → after: `src/AGENTS.md` 45,264 → 8,110 B (plus new `src/gfx/AGENTS.md` 480 B and
-  `src/game/AGENTS.md` 865 B for rules true in one module), `tools/` 21,137 → 5,498, `tests/` 19,275 → 7,364,
-  `.github/` 8,504 → 3,646, `assets/` 2,807 → 2,059, `art/` 2,533 → 1,395. Every task under `src/` now loads about a
-  fifth of what it did.
+- **Sizes**, before → after: `src/AGENTS.md` 45,264 → 7,190 B (plus new `src/gfx/AGENTS.md` 441 B and
+  `src/game/AGENTS.md` 1,379 B for rules true in one module), `tools/` 21,137 → 5,644, `tests/` 19,275 → 7,515,
+  `.github/` 8,504 → 3,646, `assets/` 2,807 → 2,059, `art/` 2,533 → 1,395. A task under `src/` now loads about a
+  sixth of what it did, and `src/AGENTS.md` keeps 1 KB of room for new rules (a rule binding more than one module
+  stays there: a nested file loads only for its own module).
+- **`doctor --docs`** also fails a `CLAUDE.md` that is not exactly the pointer to its `AGENTS.md`, and checks the
+  commands quoted in `src/` headers and `.dox` files, where much of the cut text now lives.
 - **Nothing lost:** each cut fact went to its home (Doxygen on its class or `module.dox`, the skill that owns the job, a
   comment at the CI step, or the Outcome it came from), was found already there, or was dropped only as stale history
   (incident anecdotes and dates). Each task's reviewer checked its fact map; facts a review found homeless were carried
@@ -302,6 +305,8 @@ Rulings made while building it:
   that edited the same files (the look-at-the-game skill's view names, which also come from `CompareWithReference`
   and six helpers; the scene-ID counter in the saves line; a label wholly hidden by fog taking no room and the
   clouds' clock, as Doxygen), and one into the final review's fixes (the `Renderer::Impl::GatherLabels` name).
+- The final review's commit-scope notes (three landed subjects that also touch other files) changed nothing:
+  `commit-check` passes and each subject names its main change.
 - The plan's at-budget selftest input was one 8,191-character line, which breaks its own line budget; the check's
   tests use 81 lines of 99 characters plus one of 91 (8,192 bytes, the budget exactly) to test the same byte boundary.
 
