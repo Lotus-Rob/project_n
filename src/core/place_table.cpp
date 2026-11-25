@@ -42,9 +42,9 @@ public:
                 continue;
             }
             for (const GraphLink& link : graph.LinksOf(node)) {
-                const u64 through = cost + link.cost;
+                const u64 through = u64{ cost } + link.cost;
                 if (through <= bound) {
-                    Offer(link.node, through);
+                    Offer(link.node, static_cast<u32>(through));
                 }
             }
         }
@@ -57,12 +57,12 @@ public:
 
 private:
     /// Queues `node` at `cost` when that betters what this search had for it.
-    void Offer(u32 node, u64 cost) {
+    void Offer(u32 node, u32 cost) {
         if (m_stamp[node] == m_search && m_cost[node] <= cost) {
             return;
         }
         m_stamp[node] = m_search;
-        m_cost[node] = static_cast<u32>(cost);
+        m_cost[node] = cost;
         m_queue.emplace_back(cost, node);
         std::ranges::push_heap(m_queue, std::greater<>{});
     }
@@ -72,7 +72,7 @@ private:
     /// The search that last reached each node.
     std::vector<u32> m_stamp;
     /// The queue: a binary heap of (cost, node), the least first, so equal costs pop by node; stale entries are skipped.
-    std::vector<std::pair<u64, u32>> m_queue;
+    std::vector<std::pair<u32, u32>> m_queue;
     /// The last search's stamp; 0 marks none.
     u32 m_search = 0;
 };
