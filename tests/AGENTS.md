@@ -12,7 +12,7 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
 - Hand-built host saves (`tests/support/saves.hpp`) write the world as its difference from the one the loading game makes: small test data by default, `test::ShippedData()` (slow to make) only for cases that need its geometry or size.
 - Comments in tests follow src/AGENTS.md: `///` on a helper or fixture that states a contract, a comment inside a body only for a why, none citing a spec, plan, ruling or task (`lint` fails on one; a `TEST_CASE` name or `CAPTURE` string is code too).
 - Layout mirrors `src/`: `tests/unit/<area>/`, one executable per area (`<area>_tests`). A test of process-wide state that can be set once (logging start-up) gets its own, as in `tests/unit/log_startup/`.
-- Test code passes the same lint and warnings as `src/` except MSVC C4866, C4868, C5246 and the magic-number checks (`tests/.clang-tidy`): `TEST_CASE`s go in an anonymous namespace; literals may stand in a `CHECK`.
+- Test code passes the same lint and warnings as `src/` except the magic-number checks (`tests/.clang-tidy`) and MSVC C4866, C4868, C5246 (`/wd` flags in `tests/xmake.lua`): `TEST_CASE`s go in an anonymous namespace; literals may stand in a `CHECK`.
 - Each executable has exactly one `main.cpp` defining `DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN` and `DOCTEST_CONFIG_IMPLEMENT`; test files include `<doctest/doctest.h>` only.
 - `unit_tests()` registers one XMake test per `*_tests.cpp` file (`game_tests/combat`, doctest's `--source-file`) plus `rest` for the other cases: no file named `rest_tests.cpp`, no two of one suite share a name (the selftest checks) → `tests/xmake.lua`.
 - `unit/pch.hpp` holds every standard header the tests use: test `.cpp` files never include standard headers (`lint` fails on one). Fuzz targets and the benchmark take the game's `src/pch.hpp` instead.
@@ -37,6 +37,9 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
 - `pixi run project_n test --mode release --target game_tests -- --test-case="<skipped case name>" --no-skip`: a skipped long run or measurement by name; double quotes, as names hold apostrophes
 - `pixi run project_n test --preset linux-clang --target core_tests -- --test-case='*expected*'`: one target with doctest arguments
 - `pixi run project_n test --target game_tests -- --test-case='write the <name> save seed' --no-skip`: regenerate a save fuzz seed (`fight`, `world`, `delta`, `scratch`) when the save layout changes
+
+## Skills
+- look-at-the-game (reference pictures: `references/reference-pictures.md`; src/AGENTS.md owns the rest)
 
 ## Gotchas
 - `xmake test` runs a Windows `.exe` directly on Linux; the test targets call Wine themselves (`test_under_wine` in `tests/xmake.lua`), so no host binfmt is needed.
