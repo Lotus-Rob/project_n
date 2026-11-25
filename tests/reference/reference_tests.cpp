@@ -6,6 +6,17 @@
 // tile by tile, must not shimmer at sub-pixel camera offsets. So is the world map: its terrain and travellers at the
 // smallest zoom, its road ribbons there, the fog's clouds over it, and its painted ground alone at three zooms, the same
 // way.
+//
+// `project_n reference` runs the binary on Mesa's software Vulkan (Pixi's `lavapipe` environment) with SDL's offscreen
+// video driver, so it needs no display and draws the same on every machine. It starts one process per case, all at once, so
+// a case never relies on another having run before it; every wait or search loop here has a bound that fails loudly, naming
+// what never happened (SCENE_LOAD_LIMIT_NS, MOST_TICKS_AFTER_CAST), and the harness bounds whole cases too. The cases are
+// release builds only: under ThreadSanitizer every drawing case reports races inside lavapipe and LLVM, between threads
+// lavapipe starts, and the library-wide suppressions that would silence them hide a race of ours inside Mesa as well.
+// Every case's renderer draws seals in `seals.yaml`'s looks; only the world's cases also name NPCs from `names.yaml`
+// (test::ShippedNames), as composing every name's glyphs ahead takes a second or two. The shimmer measurements print
+// `world shimmer: <value>`, `cloud shimmer: <value>`, `ground shimmer <zoom>: <value>` and `road shimmer: <value>` as doctest
+// messages in every run's output, which `measure` reads: each is a regression guard only.
 #include "app/app.hpp"
 #include "app/damage_numbers.hpp"
 #include "app/hud.hpp"

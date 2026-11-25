@@ -3,7 +3,9 @@
 // data::ParseNames): a data or settings file is edited by hand and the manifest may be damaged, so any text is refused with an
 // error or read, never a crash or an exception escaping. Seeded with the shipped creatures, abilities, effects, seals,
 // animations, strings and names tables, a settings file, the manifest, a seals table past a cap, a small world map, a small
-// look for it and a directive with many parameters (its tokens' vectors grow past their first capacities).
+// look for it and a directive with many parameters (its tokens' vectors grow past their first capacities). The seals, the
+// animations and the look are read against the shipped manifest, the map against a table of its seed's place names, the look
+// against the `world` seed's map, built once.
 #include "../support/manifest.hpp" // relative: lint has no compile flags for the fuzz targets, which only build with ASan
 #include "core/cxx23.hpp"          // IWYU pragma: keep
 #include "data/abilities.hpp"
