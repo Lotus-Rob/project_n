@@ -996,21 +996,32 @@ TEST_CASE("a kept walk asks for each leg's table once, whatever order its ticks 
     CHECK(walks.Asked() == 2);
 }
 
-} // namespace
-
 TEST_CASE("walk marks made from tiles are a leg's walk table") {
     const core::WorldMap map = WalkMap();
+    // East then south, and a loop whose straight-down and straight-up stretches sit between stretches across, so the
+    // marks' before and after come from the backward pass.
     constexpr std::array<u32, 3> EAST_THEN_SOUTH{ { TOP_LEFT, TOP_MIDDLE, CENTRE } };
-    const core::Journey journey = OneLeg(map, EAST_THEN_SOUTH);
-    const core::Leg& leg = journey.parts.front().leg;
+    constexpr std::array<u32, 5> LOOP{ { TOP_LEFT, MIDDLE_LEFT, CENTRE, TOP_MIDDLE, TOP_LEFT } };
+    for (const std::span<const u32> tiles : { std::span<const u32>{ EAST_THEN_SOUTH }, std::span<const u32>{ LOOP } }) {
+        const core::Journey journey = OneLeg(map, tiles);
+        const core::Leg& leg = journey.parts.front().leg;
 
-    const std::vector<core::LegWalkMark> marks = core::MakeWalkMarks(map, leg.origin, leg.tiles);
-    const core::LegWalk walk = core::MakeLegWalk(map, leg);
-    REQUIRE(marks.size() == walk.marks.size());
-    for (std::size_t index = 0; index < marks.size(); ++index) {
-        CHECK(marks[index].walked == walk.marks[index].walked);
-        CHECK(marks[index].length == walk.marks[index].length);
-        CHECK(marks[index].before == walk.marks[index].before);
-        CHECK(marks[index].after == walk.marks[index].after);
+        const std::vector<core::LegWalkMark> marks = core::MakeWalkMarks(map, leg.origin, leg.tiles);
+        const core::LegWalk walk = core::MakeLegWalk(map, leg);
+        REQUIRE(marks.size() == walk.marks.size());
+        for (std::size_t index = 0; index < marks.size(); ++index) {
+            CHECK(marks[index].walked == walk.marks[index].walked);
+            CHECK(marks[index].length == walk.marks[index].length);
+            CHECK(marks[index].before == walk.marks[index].before);
+            CHECK(marks[index].after == walk.marks[index].after);
+        }
     }
+    // The loop's first stretch goes straight down, yet the way across to come is right.
+    const core::Journey loop = OneLeg(map, LOOP);
+    const std::vector<core::LegWalkMark> loopMarks =
+        core::MakeWalkMarks(map, loop.parts.front().leg.origin, loop.parts.front().leg.tiles);
+    CHECK(loopMarks.front().after == core::Across::Right);
+    CHECK(loopMarks.back().before == core::Across::Left);
 }
+
+} // namespace
