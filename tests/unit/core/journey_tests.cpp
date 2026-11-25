@@ -1,4 +1,5 @@
 #include "core/archive.hpp"
+#include "core/calendar.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/journey.hpp"
 #include "core/leg_walk_cache.hpp"
@@ -996,3 +997,20 @@ TEST_CASE("a kept walk asks for each leg's table once, whatever order its ticks 
 }
 
 } // namespace
+
+TEST_CASE("walk marks made from tiles are a leg's walk table") {
+    const core::WorldMap map = WalkMap();
+    constexpr std::array<u32, 3> EAST_THEN_SOUTH{ { TOP_LEFT, TOP_MIDDLE, CENTRE } };
+    const core::Journey journey = OneLeg(map, EAST_THEN_SOUTH);
+    const core::Leg& leg = journey.parts.front().leg;
+
+    const std::vector<core::LegWalkMark> marks = core::MakeWalkMarks(map, leg.origin, leg.tiles);
+    const core::LegWalk walk = core::MakeLegWalk(map, leg);
+    REQUIRE(marks.size() == walk.marks.size());
+    for (std::size_t index = 0; index < marks.size(); ++index) {
+        CHECK(marks[index].walked == walk.marks[index].walked);
+        CHECK(marks[index].length == walk.marks[index].length);
+        CHECK(marks[index].before == walk.marks[index].before);
+        CHECK(marks[index].after == walk.marks[index].after);
+    }
+}
