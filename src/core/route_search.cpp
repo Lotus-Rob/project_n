@@ -25,6 +25,25 @@ std::size_t CapacityBytes(const std::vector<T>& vector) {
     return vector.capacity() * sizeof(T);
 }
 
+/// The tiles of `sector` and the sectors round it, the map's edges clipping the block.
+TileSpan BlockSpan(const WorldMap& map, RoutingRules rules, u32 sector) {
+    const u32 columns = SectorColumns(map, rules);
+    const u32 rows = SectorRows(map, rules);
+    const u32 column = sector % columns;
+    const u32 row = sector / columns;
+    const TileSpan first = SectorSpan(map, rules, ((std::max(row, 1U) - 1) * columns) + std::max(column, 1U) - 1);
+    const TileSpan last = SectorSpan(map, rules, (std::min(row + 1, rows - 1) * columns) + std::min(column + 1, columns - 1));
+    return {
+        .firstColumn = first.firstColumn, .lastColumn = last.lastColumn, .firstRow = first.firstRow, .lastRow = last.lastRow
+    };
+}
+
+/// Whether `point` lies in `span`.
+bool Contains(TileSpan span, TilePoint point) {
+    return point.column >= span.firstColumn && point.column <= span.lastColumn && point.row >= span.firstRow &&
+           point.row <= span.lastRow;
+}
+
 } // namespace
 
 std::size_t GraphRoute::Bytes() const {
@@ -147,23 +166,31 @@ void RouteScratch::Seed(const WorldMap& map, const RouteGraph& graph, const Ends
         OfferNode(map, graph, ends, ends.fromNode, 0, FROM_START);
         return;
     }
-    const u32 first = graph.FirstNode(ends.fromSector);
-    const std::span<const u32> starts = graph.SectorNodes(ends.fromSector);
-    for (std::size_t index = 0; index < starts.size(); ++index) {
-        const u32 cost = m_fromWalk.Cost(starts[index]);
-        if (cost != UNREACHABLE) {
-            OfferNode(map, graph, ends, first + static_cast<u32>(index), cost, FROM_START);
+    const RoutingRules rules = graph.Rules();
+    const u32 columns = SectorColumns(map, rules);
+    const u32 rows = SectorRows(map, rules);
+    const u32 column = ends.fromSector % columns;
+    const u32 row = ends.fromSector / columns;
+    for (u32 sectorRow = std::max(row, 1U) - 1; sectorRow <= std::min(row + 1, rows - 1); ++sectorRow) {
+        for (u32 sectorColumn = std::max(column, 1U) - 1; sectorColumn <= std::min(column + 1, columns - 1); ++sectorColumn) {
+            const u32 sector = (sectorRow * columns) + sectorColumn;
+            const u32 first = graph.FirstNode(sector);
+            const std::span<const u32> starts = graph.SectorNodes(sector);
+            for (std::size_t index = 0; index < starts.size(); ++index) {
+                const u32 cost = m_fromWalk.Cost(starts[index]);
+                if (cost != UNREACHABLE) {
+                    OfferNode(map, graph, ends, first + static_cast<u32>(index), cost, FROM_START);
+                }
+            }
         }
     }
 }
 
 bool RouteScratch::Search(const WorldMap& map, const RouteGraph& graph, const Ends& ends) {
     const u32 nodes = graph.Nodes();
-    const u32 endFirst = graph.FirstNode(ends.toSector);
-    const auto endCount = static_cast<u32>(graph.SectorNodes(ends.toSector).size());
     while (!m_queue.empty()) {
-        // Every way left costs at least the queue's least key, so once that reaches the way inside the sector, it wins.
-        if (ends.inside != UNREACHABLE && m_key[m_queue.front()] >= ends.inside) {
+        // Every way left costs at least the queue's least key, so once that reaches the direct way, it wins.
+        if (ends.direct != UNREACHABLE && m_key[m_queue.front()] >= ends.direct) {
             return false;
         }
         const u32 node = Pop();
@@ -177,9 +204,8 @@ bool RouteScratch::Search(const WorldMap& map, const RouteGraph& graph, const En
         for (const GraphLink& link : graph.LinksOf(node)) {
             OfferNode(map, graph, ends, link.node, u64{ reached } + link.cost, ViaLink(link));
         }
-        // The end's sector's nodes, by their place among the graph's, step off the graph onto an end that is no node.
-        const u32 last =
-            ends.targetNode == NO_NODE && node - endFirst < endCount ? m_toWalk.Cost(graph.NodeTile(node)) : UNREACHABLE;
+        // The walk to an end that is no node reaches exactly the nodes of the block round it.
+        const u32 last = ends.targetNode == NO_NODE ? m_toWalk.Cost(graph.NodeTile(node)) : UNREACHABLE;
         const u64 total = u64{ reached } + last;
         if (last != UNREACHABLE && total < CostOf(ends.goal)) {
             Offer(ends.goal, static_cast<u32>(total), total, node);
@@ -234,41 +260,43 @@ std::optional<GraphRoute> FindGraphRoute(
 
     const RoutingRules rules = graph.Rules();
     RouteScratch::Ends ends{ .fromSector = SectorOf(map, rules, from),
-                             .toSector = SectorOf(map, rules, target),
                              .fromNode = graph.NodeAt(from),
                              .targetNode = graph.NodeAt(target),
                              .goal = 0,
-                             .inside = UNREACHABLE,
+                             .direct = UNREACHABLE,
                              .cheapest = CheapestEntry(map.Profiles()[profile]),
                              .end = map.PointOf(target) };
-    // Onto a tile that is no node the search ends on a slot of its own past the nodes, reached from the end's sector.
+    // Onto a tile that is no node the search ends on a slot of its own past the nodes, reached from the block round it.
     ends.goal = ends.targetNode != NO_NODE ? ends.targetNode : graph.Nodes();
     scratch.Begin(std::size_t{ graph.Nodes() } + 1);
 
-    // Between two nodes the graph alone routes, so a route and the graph's costs agree; with an end on open ground in the
-    // same sector, the way inside it may be cheaper than any through the graph's nodes.
-    const bool oneSector = ends.fromSector == ends.toSector && (ends.fromNode == NO_NODE || ends.targetNode == NO_NODE);
-    if (ends.fromNode == NO_NODE || oneSector) {
-        scratch.m_fromWalk.WalkFrom(map, profile, SectorSpan(map, rules, ends.fromSector), from);
+    // An end near a sector border would otherwise have to go round through a gate of its own sector, however near the
+    // crossing it faces; the legs reach over the sectors round each end so that crossing is among the ways out.
+    // Between two nodes the graph alone routes, so a route and the graph's costs agree; with either end on open ground
+    // and the other within its block, the way within the block may be cheaper than any through the graph's nodes.
+    const TileSpan fromBlock = BlockSpan(map, rules, ends.fromSector);
+    const bool direct = (ends.fromNode == NO_NODE || ends.targetNode == NO_NODE) && Contains(fromBlock, ends.end);
+    if (ends.fromNode == NO_NODE || direct) {
+        scratch.m_fromWalk.WalkFrom(map, profile, fromBlock, from);
     }
-    if (oneSector) {
-        ends.inside = scratch.m_fromWalk.Cost(target);
+    if (direct) {
+        ends.direct = scratch.m_fromWalk.Cost(target);
     }
     if (ends.targetNode == NO_NODE) {
-        scratch.m_toWalk.WalkTo(map, profile, SectorSpan(map, rules, ends.toSector), target);
+        scratch.m_toWalk.WalkTo(map, profile, BlockSpan(map, rules, SectorOf(map, rules, target)), target);
     }
 
     scratch.Seed(map, graph, ends);
     if (scratch.Search(map, graph, ends)) {
         return scratch.Trace(graph, ends);
     }
-    if (ends.inside == UNREACHABLE) {
+    if (ends.direct == UNREACHABLE) {
         return std::nullopt;
     }
-    GraphRoute inside;
-    scratch.m_fromWalk.Way(target, inside.head);
-    inside.cost = ends.inside;
-    return inside;
+    GraphRoute route;
+    scratch.m_fromWalk.Way(target, route.head);
+    route.cost = ends.direct;
+    return route;
 }
 
 std::vector<u32> RouteTiles(const WorldMap& map, const RouteGraph& graph, const GraphRoute& route) {

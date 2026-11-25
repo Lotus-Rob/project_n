@@ -52,8 +52,9 @@ struct RoutingRules {
 /// The sector holding `tile`.
 [[nodiscard]] u32 SectorOf(const WorldMap& map, RoutingRules rules, u32 tile);
 
-/// A search inside one sector from or to one of its tiles, and the workspace it runs in: kept by its caller and
-/// walked again and again, it allocates nothing once it has held a sector of the largest size. One thread at a time.
+/// A search inside a block of tiles (a sector, or the sectors round one) from or to one of its tiles, and the workspace
+/// it runs in: kept by its caller and walked again and again, it allocates nothing once it has held a block of the
+/// largest size. One thread at a time.
 /// Steps are priced by WorldMap::StepCost; the search settles tiles by (cost, tile index), and a tile's step is set only
 /// by a strictly cheaper way, so its ways are the same whatever the workspace held before.
 class SectorWalk {
