@@ -29,7 +29,7 @@ The YAML files, which are hashed game data, which presentation, and the C++ each
 - The arena (`game/scenes/arena.hpp`) is the growing demo scene: a new game or engine feature shows up in it, in the same branch, and joins the header's list.
 - Scenes are stateless classes in `game/scenes/` behind `game/scene.hpp`, listed in `game/scenes.cpp` in F2's order (a scene's key is its place there) → `game/scenes.hpp`.
 - The host owns all state and never checks which scene it runs: the game's world outlives scene changes, a dev scene runs on a scratch world made afresh → `game/host.hpp`, `game/world_state.hpp`.
-- Saves hold the game's world as its difference from its base, then a scratch world, then the scene; a save never sorts and a load restores every storage's order → `Host::Save` in `game/host.hpp`.
+- Saves hold the game's world as its difference from its base (identity: seed, `GENERATOR_VERSION`, `BaseHash`), then a scratch world, then the scene; a save never sorts, a load restores each storage's order → `Host::Save` in `game/host.hpp`.
 - A change to what `GenerateWorld` makes raises `GENERATOR_VERSION` → `game/world_state.hpp`.
 - Presentation-only host state (walk tables, kept walks, the player's walk, the drawn shift, `FogVersion`, the debug sight) is never saved, hashed or read by the simulation → `game/host.hpp`.
 - Travel, journeys and month steps: every random draw is keyed on the seed, state counter, month and NPC, so a run is the same on any worker count → `game/travel.hpp`.
