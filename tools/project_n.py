@@ -561,7 +561,8 @@ def cmd_prune_build_cache(args):
 def packages_dir():
     """XMake keys its package cache on the toolchain name, not the compiler version, so each
     environment gets its own: a toolchain bump never reuses stale builds. pixi.toml counts too,
-    because activation variables (build flags, pkg-config paths) aren't in the lock."""
+    because activation variables (build flags, pkg-config paths) aren't in the lock. It lives here, not in the
+    Linux-only activation script, so every host gets it (`clean --packages` removes old ones)."""
     return Path.home() / ".xmake" / "project_n" / sha256("pixi.toml", "pixi.lock")[:12] / "packages"
 
 
