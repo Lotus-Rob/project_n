@@ -43,7 +43,8 @@ struct GameSetup {
 
 /// The logic thread's systems: the save slot, the replay file's slot, the replay, the simulation
 /// (the host), the logic that drives them and the tick clock, built in that order and destroyed in
-/// reverse, working on a job system it is handed.
+/// reverse, working on a job system it is handed. A new logic-side system is a member of Game, not an argument passed
+/// around.
 class Game {
 public:
     /// Builds the systems for `setup`, publishing through `handover` and working on `jobs`, which must

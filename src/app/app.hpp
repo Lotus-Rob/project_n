@@ -198,6 +198,7 @@ void KeepWorld(const core::GameData& running, std::expected<core::GameData, core
 
 /// The main thread's systems (the job system, the window, the renderer, the handover and its display
 /// side, the camera, the damage numbers, the HUD) and the logic thread, which builds and runs a Game on the job system.
+/// A new system is a member of App (main thread) or of Game (logic thread), never passed in as loose arguments.
 class App {
 public:
     /// Takes over `window` and `renderer` (made for that window) and starts the logic thread for
