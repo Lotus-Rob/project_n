@@ -16,8 +16,6 @@
 /// -# The terrain's sprites (bridges, fords, stamps, place paintings, mist puffs), then the ground pipeline again in its
 ///    veil mode, then the place markers: `gfx/terrain_draw.hpp`, `gfx/stamp_draw.hpp`, `gfx/tile_hash.hpp`,
 ///    `Renderer::SetWorld`.
-/// -# The fog on every world-map sprite and label, from `View::fog` through `internal::FogTexture`: the instance flags
-///    in `core/frame.hpp`, `gfx/fog.hpp`, `gfx/internal/features/sprites.hpp`.
 /// -# The player's route: `gfx/route_draw.hpp`.
 /// -# The snapshot's ground and decals (its first `Snapshot::groundBatches`), then the ground seals (washes and ink with
 ///    normal blend, then lines and light additive): `gfx/seal_draw.hpp`, `gfx/internal/features/seals.hpp`.
@@ -33,6 +31,6 @@
 /// -# Text, then the HUD in target pixels, its bars through the overlay's sprites and then its lines; on the world map
 ///    the date line, the HUD's one clickable area (`app/hud.hpp`).
 ///
-/// @par Shaders
-/// Shaders are HLSL in `shaders/<name>.<stage>.hlsl`; `gfx` reaches the compiled ones through the generated
-/// `gfx/generated/shaders.hpp`. Nothing outside `gfx` calls SDL_GPU.
+/// The fog is no step of its own: its texture (`View::fog` through `internal::FogTexture`) is bound to the ground,
+/// river, road, terrain, route and sprite draws of the first six steps, which shade each world-map sprite and label by
+/// it as the instance flags in `core/frame.hpp` say (`gfx/fog.hpp`, `gfx/internal/features/sprites.hpp`).

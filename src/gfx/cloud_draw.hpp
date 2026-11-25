@@ -49,7 +49,7 @@ struct CloudDrawing {
 /// the zoom one level up.
 [[nodiscard]] f32 CloudLevel(f32 zoom);
 
-/// Replaces `into` with the clouds over the unexplored land `view` shows at `zoom`, at `seconds` of render time; nothing
+/// Replaces `into` with the clouds over the unexplored land `view` shows at `zoom`, at `seconds` of frame time; nothing
 /// with no fog (FogFrame::columns 0) or no cloud sprites in `look`.
 ///
 /// A cell at level `l` is 0.5 × 2^l tiles across, counted from the map's origin, and covers its tiles' cloud as a whole

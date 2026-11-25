@@ -358,7 +358,7 @@ struct Renderer::Impl {
     internal::SceneTarget sceneTarget{};
     /// What every text of a frame shares, worked out once a frame by PlaceTexts(): the functions it calls for each text
     /// (TextOf(), LabelOf(), LabelPixels(), StackOf(), PlaceText(), PlaceNumber(), PlaceLabel(), PlaceLayout()) read it
-    /// and have no zones, as a zone costs more than one text's work (src/AGENTS.md); PlaceTexts()' zone measures them.
+    /// and have no zones, as a zone costs more than one text's work (core/profile.hpp); PlaceTexts()' zone measures them.
     struct TextFrame {
         ClipTransform clip{};
         f32 alpha = 1.0F;
