@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <cstdlib>
 #include <expected>
 #include <format>
@@ -45,14 +46,17 @@ struct SyntheticSize {
         case 50:
             return { .columns = 1061, .rows = 601, .cities = 300, .dangers = 500 };
         default:
-            std::abort(); // not a constant expression, so a bad scale in one fails to compile
+            // Not a constant expression, so a bad scale in one fails to compile.
+            std::println(stderr, "no synthetic map of scale {}", scale);
+            std::abort();
     }
 }
 
 namespace synthetic {
 
-// Terrain kinds, by index: the shipped map's names and costs.
+/// The kind index of meadow, which closed ground under a road becomes.
 constexpr u8 MEADOW = 4;
+/// The terrain kinds, by index: the shipped map's names and costs.
 constexpr std::array<std::pair<const char*, u16>, 9> KINDS{ {
     { "deep_water", core::IMPASSABLE_COST },
     { "shallows", 30 },
@@ -65,54 +69,70 @@ constexpr std::array<std::pair<const char*, u16>, 9> KINDS{ {
     { "peaks", core::IMPASSABLE_COST },
 } };
 
-// One purpose per use of core::Random, so no two uses share numbers.
+/// The purpose of the draws of the coarse noise octave's lattice; each use of core::Random has a purpose of its own, so no
+/// two uses share numbers.
 constexpr u32 PURPOSE_COARSE_NOISE = 1;
+/// The purpose of the draws of the fine noise octave's lattice.
 constexpr u32 PURPOSE_FINE_NOISE = 2;
+/// The purpose of the draws of a city's column.
 constexpr u32 PURPOSE_CITY_COLUMN = 3;
+/// The purpose of the draws of a city's row.
 constexpr u32 PURPOSE_CITY_ROW = 4;
+/// The purpose of the draws of a danger's column.
 constexpr u32 PURPOSE_DANGER_COLUMN = 5;
+/// The purpose of the draws of a danger's row.
 constexpr u32 PURPOSE_DANGER_ROW = 6;
 
-constexpr u32 COARSE_CELL = 24; // lattice cell side, in tiles
+/// The side, in tiles, of the coarse octave's lattice cell.
+constexpr u32 COARSE_CELL = 24;
+/// The side, in tiles, of the fine octave's lattice cell.
 constexpr u32 FINE_CELL = 6;
+/// What the coarse octave adds to a tile's noise sum, per lattice level.
 constexpr u32 COARSE_WEIGHT = 3;
+/// What the fine octave adds to a tile's noise sum, per lattice level.
 constexpr u32 FINE_WEIGHT = 1;
-constexpr u32 LATTICE_LEVELS = 256; // a lattice value is below this
+/// The number of values a lattice corner may take: each is below this.
+constexpr u32 LATTICE_LEVELS = 256;
 
-// Each kind's noise sum is below its bound (the last kind takes the rest), cut from the sums' measured spread so the
-// kinds come in about these shares: 12% deep water, 5% shallows, 8% sand, 35% meadow, 20% forest, 10% hills, 5% rock,
-// 5% peaks. Marsh has none.
+/// Each kind's noise sum is below its bound (the last kind takes the rest), cut from the sums' measured spread so the
+/// kinds come in about these shares: 12% deep water, 5% shallows, 8% sand, 35% meadow, 20% forest, 10% hills, 5% rock,
+/// 5% peaks. Marsh has none.
 constexpr std::array<u32, 8> KIND_BOUNDS{ 335, 365, 405, 405, 555, 659, 720, 760 };
 
+/// How far, in tiles, a danger's reach flags tiles around it.
 constexpr u32 DANGER_REACH = 3;
+/// How many people a city homes.
 constexpr u32 PEOPLE = 100;
+/// What a tile near a danger adds to its cost for the wary profile.
 constexpr u16 DANGER_COST = 40;
+/// A tile's side in world units.
 constexpr f32 TILE_SIZE = 256.0F;
 
 /// Value noise of one octave at tile (`column`, `row`): whole-number lattice values drawn per corner, blended bilinearly
 /// in fixed point. The result is below LATTICE_LEVELS.
 [[nodiscard]] inline u32 Octave(u64 seed, u32 purpose, u32 cell, u32 columns, u32 column, u32 row) {
     const u32 latticeColumns = (columns / cell) + 2;
-    const auto corner = [&](u32 x, u32 y) {
-        return core::ToBelow(core::Random(seed, 0, (u64{ y } * latticeColumns) + x, purpose, 0), LATTICE_LEVELS);
+    const auto corner = [&](u32 latticeColumn, u32 latticeRow) {
+        return core::ToBelow(
+            core::Random(seed, 0, (u64{ latticeRow } * latticeColumns) + latticeColumn, purpose, 0), LATTICE_LEVELS
+        );
     };
-    const u32 x = column / cell;
-    const u32 y = row / cell;
+    const u32 cellColumn = column / cell;
+    const u32 cellRow = row / cell;
     const u32 across = column % cell;
     const u32 down = row % cell;
-    const u32 top = (corner(x, y) * (cell - across)) + (corner(x + 1, y) * across);
-    const u32 bottom = (corner(x, y + 1) * (cell - across)) + (corner(x + 1, y + 1) * across);
+    const u32 top = (corner(cellColumn, cellRow) * (cell - across)) + (corner(cellColumn + 1, cellRow) * across);
+    const u32 bottom = (corner(cellColumn, cellRow + 1) * (cell - across)) + (corner(cellColumn + 1, cellRow + 1) * across);
     return ((top * (cell - down)) + (bottom * down)) / (cell * cell);
 }
 
 /// The kind index a tile's noise sum picks.
 [[nodiscard]] inline u8 KindOf(u32 sum) {
-    for (u8 kind = 0; kind < KIND_BOUNDS.size(); ++kind) {
-        if (sum < KIND_BOUNDS[kind]) {
-            return kind;
-        }
+    std::size_t kind = 0;
+    while (kind < KIND_BOUNDS.size() && sum >= KIND_BOUNDS[kind]) {
+        ++kind;
     }
-    return static_cast<u8>(KIND_BOUNDS.size());
+    return static_cast<u8>(kind);
 }
 
 /// Whether `kind` can be walked.
@@ -170,23 +190,23 @@ struct Draft {
     u32 carved = 0;
 };
 
+/// The index in the source's grid of `tile`.
+[[nodiscard]] inline std::size_t GridIndex(const core::WorldMapSource& source, core::TilePoint tile) {
+    return (static_cast<std::size_t>(tile.row) * source.columns) + tile.column;
+}
+
 /// The movement profile `key`, walking every kind at its cost and adding `danger` near a danger.
 [[nodiscard]] inline core::MovementProfile Profile(std::string key, u16 danger) {
-    std::vector<u16> costs;
-    for (const auto& kind : KINDS) {
-        costs.push_back(kind.second);
-    }
+    std::vector<u16> costs(KINDS.size());
+    std::ranges::transform(KINDS, costs.begin(), &std::pair<const char*, u16>::second);
     return { .key = std::move(key),
              .ticksPerCost = core::DEFAULT_TICKS_PER_COST,
              .kindCosts = std::move(costs),
              .features = { .danger = danger } };
 }
 
-/// The source of the synthetic map: terrain, places, roads, then the carving of closed tiles under the roads.
-[[nodiscard]] inline Draft Source(u32 scale, u64 seed) {
-    const SyntheticSize size = SyntheticSizeOf(scale);
-    Draft draft;
-    core::WorldMapSource& source = draft.source;
+/// Fills `source`'s size, kinds and grid: each tile's kind is picked by the noise sum of its two octaves.
+inline void MakeTerrain(core::WorldMapSource& source, const SyntheticSize& size, u64 seed) {
     source.columns = size.columns;
     source.rows = size.rows;
     source.tileSize = TILE_SIZE;
@@ -199,81 +219,146 @@ struct Draft {
         for (u32 column = 0; column < size.columns; ++column) {
             const u32 sum = (COARSE_WEIGHT * Octave(seed, PURPOSE_COARSE_NOISE, COARSE_CELL, size.columns, column, row)) +
                             (FINE_WEIGHT * Octave(seed, PURPOSE_FINE_NOISE, FINE_CELL, size.columns, column, row));
-            source.grid[(static_cast<std::size_t>(row) * size.columns) + column] = KindOf(sum);
+            source.grid[GridIndex(source, { .column = column, .row = row })] = KindOf(sum);
         }
     }
+}
 
-    // A place redraws with the next draw index until its tile is open and free.
+/// What differs between a city and a danger when one is placed.
+struct PlaceSpec {
+    /// The place's kind.
+    core::PlaceKind kind;
+    /// The start of its key, before its number.
+    const char* keyPrefix;
+    /// A danger's sort; empty for a city.
+    const char* sort;
+    /// How many people it homes.
+    u32 people;
+    /// The purpose of the draws of its column.
+    u32 columnPurpose;
+    /// The purpose of the draws of its row.
+    u32 rowPurpose;
+};
+
+/// A city.
+constexpr PlaceSpec CITY{ .kind = core::PlaceKind::City,
+                          .keyPrefix = "city",
+                          .sort = "",
+                          .people = PEOPLE,
+                          .columnPurpose = PURPOSE_CITY_COLUMN,
+                          .rowPurpose = PURPOSE_CITY_ROW };
+/// A danger.
+constexpr PlaceSpec DANGER{ .kind = core::PlaceKind::Danger,
+                            .keyPrefix = "danger",
+                            .sort = "beast",
+                            .people = 0,
+                            .columnPurpose = PURPOSE_DANGER_COLUMN,
+                            .rowPurpose = PURPOSE_DANGER_ROW };
+
+/// Adds place number `number` of its kind, drawn by `index` among all the places, to `source`: it redraws with the next
+/// draw index until its tile is open and no other place holds it (`taken`).
+inline void PlaceOne(
+    core::WorldMapSource& source,
+    std::vector<bool>& taken,
+    const PlaceSpec& spec,
+    u64 seed,
+    u32 index,
+    u32 number
+) {
+    for (u32 draw = 0;; ++draw) {
+        const core::TilePoint tile{
+            .column = core::ToBelow(core::Random(seed, 0, index, spec.columnPurpose, draw), source.columns),
+            .row = core::ToBelow(core::Random(seed, 0, index, spec.rowPurpose, draw), source.rows),
+        };
+        const std::size_t tileIndex = GridIndex(source, tile);
+        if (taken[tileIndex] || !Open(source.grid[tileIndex])) {
+            continue;
+        }
+        taken[tileIndex] = true;
+        const std::string key = std::format("{}_{}", spec.keyPrefix, number);
+        source.places.push_back(
+            { .key = key,
+              .kind = spec.kind,
+              .sort = spec.sort,
+              .tile = tile,
+              .nameKey = key,
+              .name = {},
+              .people = spec.people,
+              .start = index == 0 }
+        );
+        return;
+    }
+}
+
+/// Adds the cities, then the dangers, to `source`.
+inline void MakePlaces(core::WorldMapSource& source, const SyntheticSize& size, u64 seed) {
     std::vector<bool> taken(source.grid.size(), false);
-    const u32 places = size.cities + size.dangers;
-    for (u32 index = 0; index < places; ++index) {
-        const bool city = index < size.cities;
-        for (u32 draw = 0;; ++draw) {
-            const core::TilePoint tile{
-                .column = core::ToBelow(
-                    core::Random(seed, 0, index, city ? PURPOSE_CITY_COLUMN : PURPOSE_DANGER_COLUMN, draw), size.columns
-                ),
-                .row =
-                    core::ToBelow(core::Random(seed, 0, index, city ? PURPOSE_CITY_ROW : PURPOSE_DANGER_ROW, draw), size.rows),
-            };
-            const std::size_t at = (static_cast<std::size_t>(tile.row) * size.columns) + tile.column;
-            if (taken[at] || !Open(source.grid[at])) {
-                continue;
-            }
-            taken[at] = true;
-            const std::string key = std::format("{}_{}", city ? "city" : "danger", city ? index : index - size.cities);
-            source.places.push_back(
-                { .key = key,
-                  .kind = city ? core::PlaceKind::City : core::PlaceKind::Danger,
-                  .sort = city ? "" : "beast",
-                  .tile = tile,
-                  .nameKey = key,
-                  .name = {},
-                  .people = city ? PEOPLE : 0,
-                  .start = index == 0 }
-            );
-            break;
-        }
-    }
-
-    // Each city to its nearest lower-indexed city and to its nearest city, a road once however many ask for it; the lower
-    // index wins a tie, so the first city is joined to all.
-    const auto nearest = [&](u32 city, u32 last) {
-        u32 best = city == 0 ? 1 : 0;
-        for (u32 other = 0; other < last; ++other) {
-            if (other != city && Distance(source.places[city].tile, source.places[other].tile) <
-                                     Distance(source.places[city].tile, source.places[best].tile)) {
-                best = other;
-            }
-        }
-        return best;
-    };
-    std::vector<std::pair<u32, u32>> joins;
-    const auto join = [&](u32 first, u32 second) {
-        const std::pair<u32, u32> pair = std::minmax(first, second);
-        if (std::ranges::find(joins, pair) == joins.end()) {
-            joins.push_back(pair);
-        }
-    };
     for (u32 city = 0; city < size.cities; ++city) {
-        if (city > 0) {
-            join(city, nearest(city, city));
-        }
-        join(city, nearest(city, size.cities));
+        PlaceOne(source, taken, CITY, seed, city, city);
     }
-    for (const auto& [first, second] : joins) {
-        const core::TilePoint from = source.places[first].tile;
-        const core::TilePoint to = source.places[second].tile;
-        source.roads.push_back({ from, to });
-        WalkRoad(from, to, [&](core::TilePoint tile) {
-            u8& kind = source.grid[(static_cast<std::size_t>(tile.row) * size.columns) + tile.column];
+    for (u32 danger = 0; danger < size.dangers; ++danger) {
+        PlaceOne(source, taken, DANGER, seed, size.cities + danger, danger);
+    }
+}
+
+/// The city among the first `last` cities nearest to `city` (other than itself), the lower index on a tie.
+[[nodiscard]] inline u32 NearestCity(const core::WorldMapSource& source, u32 city, u32 last) {
+    u32 best = city == 0 ? 1 : 0;
+    for (u32 other = 0; other < last; ++other) {
+        if (other != city && Distance(source.places[city].tile, source.places[other].tile) <
+                                 Distance(source.places[city].tile, source.places[best].tile)) {
+            best = other;
+        }
+    }
+    return best;
+}
+
+/// The pairs of cities a road joins: each city to its nearest lower-indexed city and to its nearest city, each pair once
+/// however many ask for it, so the first city is joined to all.
+[[nodiscard]] inline std::vector<std::pair<u32, u32>> RoadPairs(const core::WorldMapSource& source, u32 cities) {
+    std::vector<std::pair<u32, u32>> pairs;
+    const auto add = [&](u32 first, u32 second) {
+        const std::pair<u32, u32> pair = std::minmax(first, second);
+        if (std::ranges::find(pairs, pair) == pairs.end()) {
+            pairs.push_back(pair);
+        }
+    };
+    for (u32 city = 0; city < cities; ++city) {
+        if (city > 0) {
+            add(city, NearestCity(source, city, city));
+        }
+        add(city, NearestCity(source, city, cities));
+    }
+    return pairs;
+}
+
+/// Adds the roads, one straight line of two points each, and turns the closed tiles under them to meadow; returns how
+/// many it turned.
+inline u32 MakeRoads(core::WorldMapSource& source, u32 cities) {
+    u32 carved = 0;
+    for (const auto& [first, second] : RoadPairs(source, cities)) {
+        const core::TilePoint start = source.places[first].tile;
+        const core::TilePoint end = source.places[second].tile;
+        source.roads.push_back({ start, end });
+        WalkRoad(start, end, [&](core::TilePoint tile) {
+            u8& kind = source.grid[GridIndex(source, tile)];
             if (!Open(kind)) {
                 kind = MEADOW;
-                ++draft.carved;
+                ++carved;
             }
         });
     }
+    return carved;
+}
 
+/// The source of the synthetic map: terrain, places, roads with the carving under them, profiles and travel rules.
+[[nodiscard]] inline Draft Source(u32 scale, u64 seed) {
+    const SyntheticSize size = SyntheticSizeOf(scale);
+    Draft draft;
+    core::WorldMapSource& source = draft.source;
+    MakeTerrain(source, size, seed);
+    MakePlaces(source, size, seed);
+    draft.carved = MakeRoads(source, size.cities);
     source.profiles.push_back(Profile("on_foot", 0));
     source.profiles.push_back(Profile("on_foot_wary", DANGER_COST));
     source.travel.reachBase = 300;
@@ -283,6 +368,12 @@ struct Draft {
 }
 
 } // namespace synthetic
+
+/// How many closed tiles under the roads of the synthetic map of `scale` and `seed` were turned to meadow so the roads can
+/// cross them.
+[[nodiscard]] inline u32 SyntheticCarvedTiles(u32 scale, u64 seed) {
+    return synthetic::Source(scale, seed).carved;
+}
 
 /// The synthetic map of `scale` times the test map's area (1, 10 or 50) for `seed`: the same map for the same pair.
 /// Stops the program if it can't be built, a fault of this support code, as ShippedWorld() does.
