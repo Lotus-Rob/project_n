@@ -47,18 +47,19 @@ constexpr std::size_t TRIPS_PER_CITY = 20;
 constexpr u32 PAIRS_PER_BAND = 200;
 /// How many maps the quality check compares routes on, each its own seed.
 constexpr u32 QUALITY_MAPS = 20;
-/// How many pairs it draws on each, over all bands.
-constexpr u32 QUALITY_PAIRS = 200;
+/// How many pairs it draws on each map in each band.
+constexpr u32 QUALITY_PAIRS_PER_BAND = 50;
 /// How much worse than the cheapest route a route may cost, in percent.
 constexpr f64 QUALITY_LIMIT_PERCENT = 5.0;
 /// The share of routes it counts as noticeably worse, in percent over the cheapest.
 constexpr f64 QUALITY_NOTICE_PERCENT = 2.0;
 /// How many ends a pair is redrawn for before its band is given up as empty.
 constexpr u32 PAIR_ATTEMPTS = 20'000;
-/// The furthest sector distance each band holds: 1-2, 3-4, 5-8 and further.
-constexpr std::array<u32, 4> BAND_LAST{ { 2, 4, 8, std::numeric_limits<u32>::max() } };
+/// The furthest sector distance each band holds: the same sector, 1-2, 3-4, 5-8 and further. Distances are counted in
+/// core::SECTOR_SIZE tiles whatever sector size a run builds with, so every run draws the same pairs.
+constexpr std::array<u32, 5> BAND_LAST{ { 0, 2, 4, 8, std::numeric_limits<u32>::max() } };
 /// The names of the bands.
-constexpr std::array<std::string_view, BAND_LAST.size()> BAND_NAMES{ { "1-2", "3-4", "5-8", "9+" } };
+constexpr std::array<std::string_view, BAND_LAST.size()> BAND_NAMES{ { "0", "1-2", "3-4", "5-8", "9+" } };
 /// The purposes of the pairs' draws: each end's pick of place or tile.
 constexpr u32 PURPOSE_FIRST = 1;
 constexpr u32 PURPOSE_SECOND = 2;
@@ -253,12 +254,24 @@ public:
         m_names.push_back(std::move(name));
         m_rows.push_back({ .name = {}, .measured = measured, .budget = budget, .unit = unit, .decimals = decimals });
     }
-    /// Logs the rows; whether any is over its budget.
+    /// Adds a line of text in the rows' place.
+    void AddNote(std::string text) {
+        Add(std::move(text), 0.0, 0.0, "");
+        m_notes.push_back(m_rows.size() - 1);
+    }
+    /// Logs the rows and notes in the order added; whether any row is over its budget.
     [[nodiscard]] bool Print() {
+        bool over = false;
         for (std::size_t i = 0; i < m_rows.size(); ++i) {
             m_rows[i].name = m_names[i]; // views taken once the names no longer move
+            if (std::ranges::contains(m_notes, i)) {
+                PN_LOG_INFO("{}", m_names[i]);
+            }
+            else {
+                over = ::Print(std::span<const Row>{ &m_rows[i], 1 }) || over;
+            }
         }
-        return ::Print(m_rows);
+        return over;
     }
 
 private:
@@ -266,6 +279,8 @@ private:
     std::vector<std::string> m_names;
     /// The rows, their names set when printed.
     std::vector<Row> m_rows;
+    /// The positions of the entries that are notes, not rows.
+    std::vector<std::size_t> m_notes;
 };
 
 /// The budgets of `scale`, one of test::SYNTHETIC_SCALES.
@@ -365,6 +380,7 @@ struct SearchStats {
     /// above 0. `nodes` is the graph's node count, to give the settled nodes as a share of it; `full` adds the counts too.
     void AddRows(Table& table, std::string_view prefix, f64 budgetMs, u32 nodes, bool full) {
         if (times.Size() == 0) {
+            table.AddNote(std::format("{}: no pairs, budget not checked", prefix));
             return;
         }
         const f64 searches = static_cast<f64>(times.Size());
@@ -409,8 +425,11 @@ std::optional<core::GraphRoute> Timed(
     std::optional<core::GraphRoute> route;
     core::SearchCounts counts;
     const u64 nanoseconds = TimeNs([&] {
-        core::RouteScratch fresh;
-        core::RouteScratch& used = shared == nullptr ? fresh : *shared;
+        std::optional<core::RouteScratch> fresh;
+        if (shared == nullptr) {
+            fresh.emplace();
+        }
+        core::RouteScratch& used = shared == nullptr ? *fresh : *shared;
         route = core::FindGraphRoute(world.Map(), world.Graphs().Of(profile), from, target, used);
         counts = used.Counts();
     });
@@ -428,8 +447,8 @@ struct Tables {
     std::vector<f64> buildMs;
 };
 
-/// Builds each profile's place table within the reach bound of the map's travel rules, timed on `jobs`; the table is
-/// built once more to keep, outside the clock.
+/// Builds each profile's place table within the reach bound of the map's travel rules, timed on `jobs`; the last timed
+/// build is the one kept.
 Tables BuildTables(const core::WorldMap& map, const core::RouteGraphs& graphs, core::Jobs& jobs) {
     Tables built;
     for (std::size_t index = 0; index < map.Profiles().size(); ++index) {
@@ -437,8 +456,17 @@ Tables BuildTables(const core::WorldMap& map, const core::RouteGraphs& graphs, c
         const u32 bound = core::ReachBound(map.Travel(), profile);
         const core::RouteGraph& graph = graphs.Of(profile);
         built.bounds.push_back(bound);
-        built.buildMs.push_back(BestOf(BUILD_RUNS, [&] { return core::PlaceTable::Build(map, graph, bound, &jobs); }));
-        built.tables.push_back(core::PlaceTable::Build(map, graph, bound, &jobs));
+        std::optional<core::PlaceTable> made;
+        f64 best = std::numeric_limits<f64>::max();
+        for (u32 run = 0; run < BUILD_RUNS; ++run) {
+            made.reset(); // the last run's table stays, freed outside the clock
+            best = std::min(best, BestOf(1, [&] {
+                                made.emplace(core::PlaceTable::Build(map, graph, bound, &jobs));
+                                return true;
+                            }));
+        }
+        built.buildMs.push_back(best);
+        built.tables.push_back(std::move(made).value());
     }
     return built;
 }
@@ -580,13 +608,18 @@ std::vector<std::pair<u32, u32>> TripsOf(
     return trips;
 }
 
-/// Makes the segments of `routes`' edges in `store`, all in one `Add` or one `Add` an edge, and returns the time it took in
-/// milliseconds.
-f64 AddSegments(core::SegmentStore& store, const std::vector<core::GraphRoute>& routes, bool singly) {
+/// The edges of `routes`' steps, in order.
+std::vector<u32> EdgesOf(const std::vector<core::GraphRoute>& routes) {
     std::vector<u32> edges;
     for (const core::GraphRoute& route : routes) {
         std::ranges::transform(route.steps, std::back_inserter(edges), &core::RouteStep::edge);
     }
+    return edges;
+}
+
+/// Makes the segments of `edges` in `store`, all in one `Add` or one `Add` an edge, and returns the time it took in
+/// milliseconds.
+f64 AddSegments(core::SegmentStore& store, const std::vector<u32>& edges, bool singly) {
     const u64 nanoseconds = TimeNs([&] {
         if (!singly) {
             store.Add(edges);
@@ -599,12 +632,8 @@ f64 AddSegments(core::SegmentStore& store, const std::vector<core::GraphRoute>& 
     return static_cast<f64>(nanoseconds) / NANOSECONDS_PER_MILLISECOND;
 }
 
-/// The tiles of the segments `store` made for `routes`' edges, each edge once.
-u64 SegmentTiles(const core::SegmentStore& store, const std::vector<core::GraphRoute>& routes) {
-    std::vector<u32> edges;
-    for (const core::GraphRoute& route : routes) {
-        std::ranges::transform(route.steps, std::back_inserter(edges), &core::RouteStep::edge);
-    }
+/// The tiles of the segments `store` made for `edges`, each edge once.
+u64 SegmentTiles(const core::SegmentStore& store, std::vector<u32> edges) {
     std::ranges::sort(edges);
     const auto unique = std::ranges::unique(edges);
     u64 tiles = 0;
@@ -616,12 +645,17 @@ u64 SegmentTiles(const core::SegmentStore& store, const std::vector<core::GraphR
 
 /// Runs the trip model on every profile, logging the searches and then the segments they need; returns whether a search
 /// or the model's memory is over its budget.
-bool MeasureTrips(const Options& options, const Budgets& budgets, const World& world, const Tables& tables) {
+bool MeasureTrips(
+    const Options& options,
+    const Budgets& budgets,
+    const World& world,
+    const Tables& tables,
+    core::RouteScratch* shared
+) {
     const std::span<const core::MovementProfile> profiles = world.Map().Profiles();
     Table searches;
     Table segments;
     f64 modelBytes = 0.0;
-    core::RouteScratch shared;
     for (std::size_t index = 0; index < profiles.size(); ++index) {
         const auto profile = static_cast<core::ProfileIndex>(index);
         const core::RouteGraph& graph = world.Graphs().Of(profile);
@@ -629,8 +663,7 @@ bool MeasureTrips(const Options& options, const Budgets& budgets, const World& w
         SearchStats stats;
         std::vector<core::GraphRoute> routes;
         for (const auto& [from, target] : TripsOf(world.Map(), graph, tables.tables[index])) {
-            std::optional<core::GraphRoute> route =
-                Timed(world, profile, from, target, options.freshScratch ? nullptr : &shared, stats);
+            std::optional<core::GraphRoute> route = Timed(world, profile, from, target, shared, stats);
             if (route) {
                 routes.push_back(std::move(*route));
             }
@@ -638,12 +671,13 @@ bool MeasureTrips(const Options& options, const Budgets& budgets, const World& w
         stats.AddRows(searches, std::format("trips, {}", key), budgets.searchMs, graph.Nodes(), true);
 
         core::SegmentStore store{ world.Map(), graph };
-        const f64 addMs = AddSegments(store, routes, options.singleSegments);
+        const std::vector<u32> edges = EdgesOf(routes);
+        const f64 addMs = AddSegments(store, edges, options.singleSegments);
         const std::size_t routeBytes =
             std::accumulate(routes.begin(), routes.end(), std::size_t{ 0 }, [](std::size_t sum, const core::GraphRoute& route) {
                 return sum + route.Bytes();
             });
-        const f64 tiles = static_cast<f64>(std::max<u64>(SegmentTiles(store, routes), 1));
+        const f64 tiles = static_cast<f64>(std::max<u64>(SegmentTiles(store, edges), 1));
         modelBytes += static_cast<f64>(store.Bytes() + routeBytes);
         segments.Add(std::format("segments, {}, adds", key), addMs, 0.0, "ms");
         segments.Add(std::format("segments, {}, made", key), static_cast<f64>(store.Made()), 0.0, "", 0);
@@ -669,15 +703,15 @@ bool MeasureTrips(const Options& options, const Budgets& budgets, const World& w
     return segments.Print() || over;
 }
 
-/// The sector distance between two tiles: the larger of the distances in sector columns and rows.
-u32 SectorDistance(const World& world, u32 first, u32 second) {
-    const u32 columns = core::SectorColumns(world.Map(), world.rules);
-    const u32 firstSector = core::SectorOf(world.Map(), world.rules, first);
-    const u32 secondSector = core::SectorOf(world.Map(), world.rules, second);
-    const u32 across =
-        std::max(firstSector % columns, secondSector % columns) - std::min(firstSector % columns, secondSector % columns);
-    const u32 down =
-        std::max(firstSector / columns, secondSector / columns) - std::min(firstSector / columns, secondSector / columns);
+/// The distance between two tiles in sectors of core::SECTOR_SIZE tiles: the larger of the distances in columns and rows.
+u32 SectorDistance(const core::WorldMap& map, u32 first, u32 second) {
+    const auto sectorOf = [&](u32 tile) {
+        return std::pair{ (tile % map.Columns()) / core::SECTOR_SIZE, (tile / map.Columns()) / core::SECTOR_SIZE };
+    };
+    const auto [firstColumn, firstRow] = sectorOf(first);
+    const auto [secondColumn, secondRow] = sectorOf(second);
+    const u32 across = std::max(firstColumn, secondColumn) - std::min(firstColumn, secondColumn);
+    const u32 down = std::max(firstRow, secondRow) - std::min(firstRow, secondRow);
     return std::max(across, down);
 }
 
@@ -722,8 +756,14 @@ public:
       , m_placeTiles(PlaceTiles(world.Map(), profile, false)) {
     }
 
-    /// Pair number `index` of `band` with ends of `kinds`; none when no pair in the band turns up in PAIR_ATTEMPTS draws.
-    [[nodiscard]] std::optional<std::pair<u32, u32>> Draw(std::size_t band, u32 index, EndKinds kinds) const {
+    /// Pair number `index` of `band` with ends of `kinds`, one not yet in `drawn` (the pair either way round), which it
+    /// joins; none when no new pair in the band turns up in PAIR_ATTEMPTS draws.
+    [[nodiscard]] std::optional<std::pair<u32, u32>> Draw(
+        std::size_t band,
+        u32 index,
+        EndKinds kinds,
+        std::unordered_set<u64>& drawn
+    ) const {
         const std::vector<u32>& places = kinds.citiesOnly ? m_cityTiles : m_placeTiles;
         if (places.empty()) {
             return std::nullopt;
@@ -731,7 +771,8 @@ public:
         for (u32 attempt = 0; attempt < PAIR_ATTEMPTS; ++attempt) {
             const u32 first = End(places, kinds.firstPlace, band, index, PURPOSE_FIRST, attempt);
             const u32 second = End(places, kinds.secondPlace, band, index, PURPOSE_SECOND, attempt);
-            if (first != second && BandOf(SectorDistance(*m_world, first, second)) == band) {
+            const u64 key = (u64{ std::min(first, second) } << 32U) | std::max(first, second);
+            if (first != second && BandOf(SectorDistance(m_world->Map(), first, second)) == band && drawn.insert(key).second) {
                 return std::pair{ first, second };
             }
         }
@@ -776,28 +817,28 @@ private:
 
 /// Searches up to PAIRS_PER_BAND pairs of `band` drawn by `drawer`, each alone, from a city to a city or to a tile.
 SearchStats SearchBand(
-    const Options& options,
     const World& world,
     core::ProfileIndex profile,
     const PairDrawer& drawer,
     std::size_t band,
-    bool tileEnd
+    bool tileEnd,
+    core::RouteScratch* shared
 ) {
     SearchStats stats;
-    core::RouteScratch shared;
+    std::unordered_set<u64> drawn;
     for (u32 pair = 0; pair < PAIRS_PER_BAND; ++pair) {
-        const auto ends = drawer.Draw(band, pair, { .firstPlace = true, .secondPlace = !tileEnd, .citiesOnly = true });
+        const auto ends = drawer.Draw(band, pair, { .firstPlace = true, .secondPlace = !tileEnd, .citiesOnly = true }, drawn);
         if (!ends) {
             break;
         }
-        static_cast<void>(Timed(world, profile, ends->first, ends->second, options.freshScratch ? nullptr : &shared, stats));
+        static_cast<void>(Timed(world, profile, ends->first, ends->second, shared, stats));
     }
     return stats;
 }
 
 /// Searches random pairs in each band of sector distance, each alone, for every profile: city to city, then city to a
 /// tile; returns whether the far band's place-to-place p99 is over its budget.
-bool MeasureFarPairs(const Options& options, const Budgets& budgets, const World& world) {
+bool MeasureFarPairs(const Options& options, const Budgets& budgets, const World& world, core::RouteScratch* shared) {
     const std::span<const core::MovementProfile> profiles = world.Map().Profiles();
     Table table;
     for (std::size_t index = 0; index < profiles.size(); ++index) {
@@ -807,7 +848,7 @@ bool MeasureFarPairs(const Options& options, const Budgets& budgets, const World
             for (std::size_t band = 0; band < BAND_LAST.size(); ++band) {
                 const bool far = band + 1 == BAND_LAST.size();
                 const f64 budget = far && !tileEnd ? budgets.searchMs : 0.0;
-                SearchBand(options, world, profile, drawer, band, tileEnd)
+                SearchBand(world, profile, drawer, band, tileEnd, shared)
                     .AddRows(
                         table,
                         std::format(
@@ -843,6 +884,8 @@ struct QualityBand {
     u64 noticed = 0;
     /// The worst route's cost over the cheapest, in percent.
     f64 worstPercent = 0.0;
+    /// The worst route's pair, its costs and the map's seed, written out.
+    std::string worst;
     /// How many pairs the cheapest search and the graph's disagreed on whether a route exists.
     u64 unmatched = 0;
 };
@@ -861,8 +904,40 @@ struct Comparison {
     u32 cheapestCost = core::UNREACHABLE;
 };
 
-/// Compares the graph's routes with the cheapest on `world` for `profile`, QUALITY_PAIRS pairs drawn over the bands from
-/// `seed`, each routed both ways, adding what it finds to `into`.
+/// `tile` as a place's key and its column and row, or just its column and row.
+std::string Describe(const core::WorldMap& map, u32 tile) {
+    const u16 place = map.PlaceAt(tile);
+    const std::string where = std::format("({}, {})", tile % map.Columns(), tile / map.Columns());
+    return place == core::NO_PLACE ? std::format("tile {}", where) : std::format("place {} {}", map.Places()[place].key, where);
+}
+
+/// Adds the comparisons `one` of the map of `seed` to `into`.
+void Tally(const core::WorldMap& map, u64 seed, const Comparison& one, QualityBand& into) {
+    const bool found = one.graphCost != core::UNREACHABLE;
+    if (found != (one.cheapestCost != core::UNREACHABLE)) {
+        ++into.unmatched;
+    }
+    if (!found || one.cheapestCost == core::UNREACHABLE || one.cheapestCost == 0) {
+        return;
+    }
+    const f64 percent = ((static_cast<f64>(one.graphCost) / static_cast<f64>(one.cheapestCost)) - 1.0) * 100.0;
+    ++into.compared;
+    into.noticed += percent > QUALITY_NOTICE_PERCENT ? 1 : 0;
+    if (percent > into.worstPercent) {
+        into.worstPercent = percent;
+        into.worst = std::format(
+            "seed {}, {} to {}, cheapest {}, {} more",
+            seed,
+            Describe(map, one.from),
+            Describe(map, one.target),
+            one.cheapestCost,
+            i64{ one.graphCost } - i64{ one.cheapestCost }
+        );
+    }
+}
+
+/// Compares the graph's routes with the cheapest on `world` for `profile`, QUALITY_PAIRS_PER_BAND pairs drawn in each band
+/// from `seed`, each routed both ways, adding what it finds to `into`.
 void CompareProfile(
     const World& world,
     core::ProfileIndex profile,
@@ -871,12 +946,13 @@ void CompareProfile(
     std::array<QualityBand, BAND_LAST.size()>& into
 ) {
     const PairDrawer drawer{ world, profile, seed };
+    std::unordered_set<u64> drawn;
     std::vector<Comparison> comparisons;
     for (std::size_t band = 0; band < BAND_LAST.size(); ++band) {
-        for (u32 pair = 0; pair < QUALITY_PAIRS / BAND_LAST.size(); ++pair) {
-            // Ends alternate between places and tiles: both places, a place and a tile, a tile and a place, both tiles.
+        for (u32 pair = 0; pair < QUALITY_PAIRS_PER_BAND; ++pair) {
+            // Every band gets all four mixes of ends: two places, a place and a tile, a tile and a place, two tiles.
             const auto ends = drawer.Draw(
-                band, pair, { .firstPlace = (pair % 2) == 0, .secondPlace = ((pair / 2) % 2) == 0, .citiesOnly = false }
+                band, pair, { .firstPlace = (pair % 2) == 0, .secondPlace = ((pair / 2) % 2) == 0, .citiesOnly = false }, drawn
             );
             if (!ends) {
                 break;
@@ -902,26 +978,15 @@ void CompareProfile(
         }
     });
     for (const Comparison& one : comparisons) {
-        QualityBand& band = into.at(one.band);
-        const bool found = one.graphCost != core::UNREACHABLE;
-        if (found != (one.cheapestCost != core::UNREACHABLE)) {
-            ++band.unmatched;
-        }
-        if (!found || one.cheapestCost == core::UNREACHABLE || one.cheapestCost == 0) {
-            continue;
-        }
-        const f64 percent = ((static_cast<f64>(one.graphCost) / static_cast<f64>(one.cheapestCost)) - 1.0) * 100.0;
-        ++band.compared;
-        band.noticed += percent > QUALITY_NOTICE_PERCENT ? 1 : 0;
-        band.worstPercent = std::max(band.worstPercent, percent);
+        Tally(world.Map(), seed, one, into.at(one.band));
     }
 }
 
 /// The bands of every profile of one group of maps.
 using Quality = std::vector<std::array<QualityBand, BAND_LAST.size()>>;
 
-/// Logs `quality`, the comparisons made on the maps called `group`, one row a profile and band; returns whether any
-/// route is over QUALITY_LIMIT_PERCENT or any pair disagrees on having a route.
+/// Logs `quality`, the comparisons made on the maps called `group`, one row a profile and band with its worst pair;
+/// returns whether any route is over QUALITY_LIMIT_PERCENT or any pair disagrees on having a route.
 bool ReportQuality(std::string_view group, std::span<const core::MovementProfile> profiles, const Quality& quality) {
     Table table;
     bool unmatched = false;
@@ -930,18 +995,28 @@ bool ReportQuality(std::string_view group, std::span<const core::MovementProfile
             const QualityBand& result = quality.at(profile).at(band);
             unmatched = unmatched || result.unmatched > 0;
             if (result.compared + result.unmatched == 0) {
+                table.AddNote(
+                    std::format(
+                        "quality, {}, {}, {} sectors: no pairs, budget not checked",
+                        group,
+                        profiles[profile].key,
+                        BAND_NAMES.at(band)
+                    )
+                );
                 continue;
             }
             table.Add(
                 std::format(
-                    "quality, {}, {}, {} sectors ({} pairs, {:.2f}% over {:.0f}%, {} unmatched), worst over the cheapest",
+                    "quality, {}, {}, {} sectors ({} pairs, {:.2f}% over {:.0f}%, {} unmatched; worst: {}), worst over the "
+                    "cheapest",
                     group,
                     profiles[profile].key,
                     BAND_NAMES.at(band),
                     result.compared,
                     static_cast<f64>(result.noticed) * 100.0 / static_cast<f64>(std::max<u64>(result.compared, 1)),
                     QUALITY_NOTICE_PERCENT,
-                    result.unmatched
+                    result.unmatched,
+                    result.worst.empty() ? std::string{ "none over" } : result.worst
                 ),
                 result.worstPercent,
                 QUALITY_LIMIT_PERCENT,
@@ -953,27 +1028,31 @@ bool ReportQuality(std::string_view group, std::span<const core::MovementProfile
     return table.Print() || unmatched;
 }
 
-/// Compares the routes on `map`, built from `seed`, adding to `quality`.
-void CompareMap(const core::WorldMap& map, const Options& options, u64 seed, core::Jobs& jobs, Quality& quality) {
-    const core::RoutingRules rules{ .sectorSize = options.sector, .gateSpacing = options.gateSpacing };
-    const core::RouteGraphs graphs =
-        core::RouteGraphs::Build(map, rules, { .jobs = &jobs, .sectorsPerChunk = options.chunk, .share = options.share });
-    const World world{ .mapPointer = &map, .rules = rules, .graphsPointer = &graphs };
-    for (std::size_t profile = 0; profile < map.Profiles().size(); ++profile) {
+/// Compares the routes on `world`, a map built from `seed`, adding to `quality`.
+void CompareMap(const World& world, u64 seed, core::Jobs& jobs, Quality& quality) {
+    for (std::size_t profile = 0; profile < world.Map().Profiles().size(); ++profile) {
         CompareProfile(world, static_cast<core::ProfileIndex>(profile), seed, jobs, quality.at(profile));
     }
 }
 
-/// Compares the graph's routes with the cheapest on QUALITY_MAPS maps of `scale` and on the two hostile ones; returns
-/// whether any is over.
-bool MeasureQuality(const Options& options, u32 scale, core::Jobs& jobs, const core::WorldMap& first) {
-    const std::span<const core::MovementProfile> profiles = first.Profiles();
+/// Builds the graphs of `map`, built from `seed`, as `options` say, and compares its routes, adding to `quality`.
+void CompareNewMap(const core::WorldMap& map, const Options& options, u64 seed, core::Jobs& jobs, Quality& quality) {
+    const core::RoutingRules rules{ .sectorSize = options.sector, .gateSpacing = options.gateSpacing };
+    const core::RouteGraphs graphs =
+        core::RouteGraphs::Build(map, rules, { .jobs = &jobs, .sectorsPerChunk = options.chunk, .share = options.share });
+    CompareMap({ .mapPointer = &map, .rules = rules, .graphsPointer = &graphs }, seed, jobs, quality);
+}
+
+/// Compares the graph's routes with the cheapest on QUALITY_MAPS maps of `scale`, the first being `first`, and on the two
+/// hostile ones; returns whether any is over.
+bool MeasureQuality(const Options& options, u32 scale, core::Jobs& jobs, const World& first) {
+    const std::span<const core::MovementProfile> profiles = first.Map().Profiles();
     bool over = false;
     Quality seeded(profiles.size());
-    CompareMap(first, options, options.seed, jobs, seeded);
+    CompareMap(first, options.seed, jobs, seeded);
     for (u32 offset = 1; offset < QUALITY_MAPS; ++offset) {
         const u64 seed = options.seed + offset;
-        CompareMap(test::SyntheticMap(scale, seed, { .places = options.places }), options, seed, jobs, seeded);
+        CompareNewMap(test::SyntheticMap(scale, seed, { .places = options.places }), options, seed, jobs, seeded);
     }
     over = ReportQuality(std::format("{} maps", QUALITY_MAPS), profiles, seeded) || over;
     const std::array<std::pair<std::string_view, test::SyntheticTerrain>, 2> hostile{ {
@@ -982,7 +1061,7 @@ bool MeasureQuality(const Options& options, u32 scale, core::Jobs& jobs, const c
     } };
     for (const auto& [name, terrain] : hostile) {
         Quality one(profiles.size());
-        CompareMap(
+        CompareNewMap(
             test::SyntheticMap(scale, options.seed, { .places = options.places, .terrain = terrain }),
             options,
             options.seed,
@@ -992,6 +1071,27 @@ bool MeasureQuality(const Options& options, u32 scale, core::Jobs& jobs, const c
         over = ReportQuality(name, profiles, one) || over;
     }
     return over;
+}
+
+/// Runs one search per graph, between the first and last city and from the first city to the last tile, that is not
+/// timed, so `scratch` is sized to the graphs before any timed search uses it.
+void Warm(const World& world, core::RouteScratch& scratch) {
+    SearchStats unused;
+    const core::WorldMap& map = world.Map();
+    for (std::size_t index = 0; index < map.Profiles().size(); ++index) {
+        const auto profile = static_cast<core::ProfileIndex>(index);
+        const std::vector<u32> cities = PlaceTiles(map, profile, true);
+        u32 last = static_cast<u32>(u64{ map.Columns() } * map.Rows()) - 1;
+        while (last > 0 && map.CostAt(last, profile) == core::IMPASSABLE_COST) {
+            --last;
+        }
+        if (cities.size() >= 2) {
+            static_cast<void>(Timed(world, profile, cities.front(), cities.back(), &scratch, unused));
+        }
+        if (!cities.empty()) {
+            static_cast<void>(Timed(world, profile, cities.front(), last, &scratch, unused));
+        }
+    }
 }
 
 /// Builds the graphs and place tables of one scale, logs every table; returns whether any row is over its budget.
@@ -1025,10 +1125,13 @@ bool Measure(const Options& options, u32 scale) {
     );
 
     const Tables tables = BuildTables(map, graphs.front(), jobs);
+    core::RouteScratch scratch;
+    Warm(world, scratch);
+    core::RouteScratch* shared = options.freshScratch ? nullptr : &scratch;
     bool over = ReportBuild(options, budgets, world, tables, parallelMs, serialMs);
-    over = MeasureTrips(options, budgets, world, tables) || over;
-    over = MeasureFarPairs(options, budgets, world) || over;
-    return MeasureQuality(options, scale, jobs, map) || over;
+    over = MeasureTrips(options, budgets, world, tables, shared) || over;
+    over = MeasureFarPairs(options, budgets, world, shared) || over;
+    return MeasureQuality(options, scale, jobs, world) || over;
 }
 
 } // namespace
