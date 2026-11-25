@@ -60,7 +60,7 @@ Work happens on a branch; it merges into main only through a pull request, which
 - Don't call podman, xmake or git-cliff directly in docs or scripts; go through project_n.py.
 - Only ever stop or remove containers this project started (`project_n-*` images), never all containers.
 - Missing host tool: run `doctor` and give the user its install instructions. Never install system packages yourself.
-- Agent docs: an AGENTS.md holds what any task in its directory needs (below the root ≤ 8 KB, one line of ≤ 300 characters per rule; `doctor --docs` checks) and has a sibling `CLAUDE.md` holding only `@AGENTS.md` (the root's is `.claude/CLAUDE.md` with `@../AGENTS.md`); a skill holds how to do one job (≤ 200 lines) and names the AGENTS.md that owns it, which lists it under Skills. Commands quoted in them must exist (`doctor --docs`). Write and change skills with superpowers writing-skills.
+- Agent docs: an AGENTS.md holds what any task in its directory needs (below the root ≤ 8 KB, one line per rule, every line ≤ 300 characters; `doctor --docs` checks) and has a sibling `CLAUDE.md` holding only `@AGENTS.md` (the root's is `.claude/CLAUDE.md` with `@../AGENTS.md`); a skill holds how to do one job (≤ 200 lines) and names the AGENTS.md that owns it, which lists it under Skills. Commands quoted in them must exist (`doctor --docs`). Write and change skills with superpowers writing-skills.
 
 ## Skills (.claude/skills)
 - git-commit: writing commit messages, splitting changes, breaking changes
