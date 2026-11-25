@@ -4,6 +4,12 @@
 /// @ingroup gfx
 /// What the world map's ground and ribbon pipelines draw by: the ground shader's uniforms from the map and the look, the
 /// part of the view the ground covers, and the ribbons' painted shape. Pure, tested without a device.
+///
+/// The painted ground is paper, washes bled across noisy edges, water deepening from an inked shore and the faint grid
+/// faded by zoom, every noise octave and line faded before it gets finer than a couple of pixels. It reads the ground
+/// field (ground_field.hpp) as a two-byte texel per tile, point-sampled for the kind and linearly for the shore, rebuilt
+/// only when Renderer::SetWorld() is called, as are the uniforms (the zoom is set each frame). The same pipeline draws
+/// the veil and the cloud shade over what is drawn, and the paper alone when View::terrainParts asks.
 
 #include "core/rect.hpp"
 #include "core/types.hpp"
