@@ -261,7 +261,8 @@ struct Renderer::Impl {
     /// so does one whose stack text at the widest count isn't but at the earlier count is, which then waits its turn to
     /// lay out the new text. The others wait and take their turns (OrderWaiting()) laying out their name, then their
     /// stack text, within the frame's layout budget, until it is spent: that label and every later one stay out this
-    /// frame (or keep the earlier stack width).
+    /// frame (or keep the earlier stack width). One the fog hides wholly (FogOpacity() 0) stays out: it would take room
+    /// and win overlaps against labels that show.
     void GatherLabels(core::StableId hovered, core::StableId selected);
     /// GatherLabels()' turns: the waiting labels in OrderWaiting()'s order, each laying out what it lacks within the
     /// frame's layout budget, until it is spent.

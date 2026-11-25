@@ -343,7 +343,7 @@ private:
 /// one: a core::TextFog::Sight label by SightFade() times ExploredFade() at its entity's foot (the anchor `height` lower),
 /// so it shows only as far as the shade under the clouds leaves its entity uncovered, a core::TextFog::Explored one by
 /// TileExplored() at its anchor, and any other wholly.
-/// A label this makes 0 is wholly hidden: the renderer gives it no LabelInput, so it takes no room from the labels that show.
+/// A label this makes 0 is wholly hidden and takes no room (Renderer::GatherLabels).
 [[nodiscard]] f32 FogOpacity(const core::TextItem& item, const FogFrame& fog, f32 alpha);
 
 } // namespace gfx
