@@ -5,6 +5,10 @@
 /// Logging for game and engine code: the `PN_LOG_*` macros, which take a format string and its
 /// arguments like `std::format`. Formatting and writing happen on a background thread, so a call
 /// costs little more than copying its arguments. The only header that includes Quill.
+///
+/// Log outcomes (what was chosen, what happened, what failed and why), never code steps or internals, and never every
+/// frame (profile instead). Nothing else writes output (`std::print`, iostreams, `printf`, `SDL_Log`) and nothing else
+/// includes Quill or Tracy: `lint` fails on them.
 
 #include <quill/LogMacros.h> // IWYU pragma: export
 #include <quill/Logger.h>    // IWYU pragma: export
