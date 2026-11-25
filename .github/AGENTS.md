@@ -15,7 +15,7 @@
 - Caching Microsoft's files in the Actions cache is accepted only because no workflow runs on `pull_request` (the repository is public): never add that trigger without keeping the MSVC caches out of it.
 - Three cache layers (setup, packages, objects): see the comments at their steps in `ci.yml`. A save uses the key its restore step computed, never a fresh `hashFiles`; restore and save are separate steps, since `actions/cache` saves only after success.
 - Main and tags compile cold (the cold rule: `cold_ref()`, tools/AGENTS.md). Git LFS comes through `actions/lfs` and Pixi's git-lfs, never `actions/checkout`'s `lfs`.
-- The 10 GB budget: over it GitHub evicts the least recently used entries, main's first, and every first push goes cold. `caches` keeps one entry per family and version on each ref (`cache_family`): ~1.5 GB per ref plus ~3 GB of setup caches.
+- The 10 GB budget: over it GitHub evicts the least recently used entries, main's first (only a new branch's first push reads them), and every first push goes cold. `caches` keeps one entry per family and version on each ref (`cache_family`): ~1.5 GB per ref plus ~3 GB of setup caches.
 - A new cache needs a key `cache_family` parses, or it is never pruned.
 
 ## Commands

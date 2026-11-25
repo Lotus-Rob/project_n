@@ -27,10 +27,11 @@ env:
 # Three cache layers. Setup caches (Pixi envs, the linux and msvc images in GHCR by content tag, the MSVC install and
 # toolset, the macOS XMake bundle) are keyed on what they install and saved as soon as their step finishes. Packages
 # (XMake's) and objects (compiled Clang code, PROJECT_N_BUILD_CACHE, per job) are saved at job end even after a failure,
-# never on tags, which write no cache. Git LFS objects come through the actions/lfs composite action.
+# never on tags, which write no cache. Git LFS objects come through the actions/lfs composite action. A read-only
+# Dependabot token only makes a save warn, packages and objects alike.
 jobs:
   lint:
-    # The non-build half of `check`: `selftest` (with the `doctor --docs` check), commit-check, `fmt --check` (which
+    # A required check. The non-build half of `check`: `selftest` (with the `doctor --docs` check), commit-check, `fmt --check` (which
     # also catches commits made without the pre-commit hook) and `lint --container`, over a branch's commits since
     # main, or main's pushed ones.
     runs-on: ubuntu-26.04
@@ -114,7 +115,7 @@ jobs:
           key: ${{ steps.objects.outputs.cache-primary-key }}
 
   container:
-    # One clean-container build per preset (`project_n artifact`): build, tests, on Linux the reference pictures,
+    # A required check. One clean-container build per preset (`project_n artifact`): build, tests, on Linux the reference pictures,
     # runtime-dependency check, upload. No disk cleanup step: the runner has room for the images plus packages.
     # Objects are cached for linux-clang only: GCC's precompiled header made stale objects, and MSVC's `cl` cache
     # drops the debug types /Zi keeps beside the objects. The windows-msvc packages entry is `xmake-windows-msvc-`,
