@@ -2018,11 +2018,16 @@ class DocsTest(unittest.TestCase):
         line = "Reviews a project_n branch: run `pixi run project_n test`, `project_n release` or ./dev fmt."
         self.assertEqual(project_n.DOC_COMMAND_RE.findall(line), ["test", "release", "fmt"])
 
+    def test_quoted_commands_are_also_checked_in_src_docs(self):
+        files = project_n.command_quote_files()
+        self.assertIn("src/core/profile.hpp", files)
+        self.assertIn("src/app/module.dox", files)
+
     def test_agent_docs_quote_only_real_commands(self):
         self.assertEqual(project_n.stale_doc_commands(), [])
 
 
-class TestDocBudgets(unittest.TestCase):
+class DocBudgetsTest(unittest.TestCase):
     def test_an_agents_md_at_the_byte_budget_passes(self):
         self.assertEqual(project_n.doc_budget_problems("src/AGENTS.md", ("a" * 99 + "\n") * 81 + "a" * 91 + "\n"), [])
 
@@ -2042,6 +2047,33 @@ class TestDocBudgets(unittest.TestCase):
 
     def test_a_line_is_measured_in_characters(self):
         self.assertEqual(project_n.doc_budget_problems("tools/AGENTS.md", "\u2192" * 300 + "\n"), [])  # 900 bytes
+
+    def test_the_byte_budget_counts_bytes_not_characters(self):
+        text = ("\u2192" * 100 + "\n") * 28  # 2,828 characters, 8,428 bytes
+        self.assertEqual(project_n.doc_budget_problems("src/AGENTS.md", text),
+                         ["src/AGENTS.md: 8428 bytes, over the 8192-byte budget"])
+
+    def test_an_agent_brief_at_60_lines_passes(self):
+        self.assertEqual(project_n.doc_budget_problems(".claude/agents/x.md", "l\n" * 60), [])
+
+    def test_other_docs_have_no_budget(self):
+        for path in ("README.md", "src/CLAUDE.md", "docs/NOTAGENTS.md"):
+            self.assertEqual(project_n.doc_budget_problems(path, "f" * 20000 + "\n"), [], path)
+
+    def test_a_claude_md_pointing_at_its_agents_md_passes(self):
+        self.assertEqual(project_n.claude_md_problems("src/CLAUDE.md", "@AGENTS.md\n"), [])
+        self.assertEqual(project_n.claude_md_problems(".claude/CLAUDE.md", "@../AGENTS.md\n"), [])
+
+    def test_a_claude_md_holding_more_fails(self):
+        self.assertEqual(project_n.claude_md_problems("src/CLAUDE.md", "@AGENTS.md\nmore\n"),
+                         ["src/CLAUDE.md: must hold only '@AGENTS.md'"])
+        self.assertEqual(len(project_n.claude_md_problems(".claude/CLAUDE.md", "@AGENTS.md\n")), 1)
+
+    def test_only_claude_md_files_are_checked_for_the_pointer(self):
+        self.assertEqual(project_n.claude_md_problems("README.md", "anything"), [])
+
+    def test_every_claude_md_is_a_pointer(self):
+        self.assertEqual(project_n.misshaped_claude_docs(), [])
 
     def test_the_root_agents_md_is_exempt(self):
         self.assertEqual(project_n.doc_budget_problems("AGENTS.md", "c" * 20000 + "\n"), [])

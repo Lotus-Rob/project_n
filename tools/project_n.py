@@ -3124,11 +3124,20 @@ def agent_doc_files():
     return [d for d in docs if (ROOT / d).is_file()]  # is_file: deleted but not yet committed
 
 
+def command_quote_files():
+    """Where a quoted command may stand: the agent docs, and the Doxygen in headers and `.dox` files, which hold
+    what moved out of the AGENTS.md files."""
+    code = capture(["git", "ls-files", "--cached", "--others", "--exclude-standard", "--",
+                    "src/*.hpp", "src/*.dox"]).splitlines()
+    return agent_doc_files() + [c for c in code if (ROOT / c).is_file()]
+
+
 def stale_doc_commands():
-    """`project_n <cmd>` and `./dev <cmd>` quoted in AGENTS.md, CLAUDE.md, skills, agents and README that don't exist."""
+    """`project_n <cmd>` and `./dev <cmd>` quoted in AGENTS.md, CLAUDE.md, skills, agents, README, and the headers
+    and `.dox` files under src/ that don't exist."""
     commands = set(make_parser()._subparsers._group_actions[0].choices)
     stale = []
-    for doc in agent_doc_files():
+    for doc in command_quote_files():
         for n, line in enumerate((ROOT / doc).read_text(encoding="utf-8").splitlines(), 1):
             for cmd in DOC_COMMAND_RE.findall(line):
                 if cmd not in commands:
@@ -3151,7 +3160,7 @@ def doc_budget_problems(path, text):
         n = len(text.splitlines())
         return [f"{path}: {n} lines, over the {AGENT_BRIEF_LINES}-line budget"] if n > AGENT_BRIEF_LINES else []
     # The root's process rules are the user's and stay as written.
-    if not path.endswith("AGENTS.md") or path == "AGENTS.md":
+    if not path.endswith("/AGENTS.md"):
         return []
     problems = []
     size = len(text.encode("utf-8"))
@@ -3163,6 +3172,20 @@ def doc_budget_problems(path, text):
     return problems
 
 
+def claude_md_problems(path, text):
+    """A CLAUDE.md holds only `@AGENTS.md` (the root's, in `.claude/`, `@../AGENTS.md`); `path` is repo-relative."""
+    if path != "CLAUDE.md" and not path.endswith("/CLAUDE.md"):
+        return []
+    want = "@../AGENTS.md\n" if path == ".claude/CLAUDE.md" else "@AGENTS.md\n"
+    return [] if text == want else [f"{path}: must hold only {want.strip()!r}"]
+
+
+def misshaped_claude_docs():
+    """Findings across every CLAUDE.md of ours."""
+    return [p for doc in agent_doc_files()
+            for p in claude_md_problems(doc, (ROOT / doc).read_text(encoding="utf-8"))]
+
+
 def oversized_agent_docs():
     """Budget findings across every agent doc of ours."""
     return [p for doc in agent_doc_files()
@@ -3171,8 +3194,8 @@ def oversized_agent_docs():
 
 def cmd_doctor(args):
     if args.docs:
-        found = stale_doc_commands() + oversized_agent_docs()
-        print("\n".join(found) or "doctor --docs: every quoted command exists and every agent doc fits its budget")
+        found = stale_doc_commands() + oversized_agent_docs() + misshaped_claude_docs()
+        print("\n".join(found) or "doctor --docs: every quoted command exists, every agent doc fits its budget and every CLAUDE.md is a pointer")
         return 1 if found else 0
     problems = 0
 
