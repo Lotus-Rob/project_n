@@ -6,6 +6,15 @@ rivers, roads, fords, cities and danger sites drawn over it) and build/world_map
 world.yaml is hand-tuned after generation and is the source from then on (but for its roads and fords): running this again
 starts over from these inputs and loses every edit made to world.yaml by hand since. Run with `pixi run python art/world_map.py`.
 
+The generator doesn't know where a river may rise (high ground, a pond or another river: see gfx::RiverStarts), so its rivers
+start wherever the gathered flow crosses RIVER_SHARE; each river's source was placed by hand in world.yaml after
+generation, and a rerun loses them with the other hand edits.
+
+After a hand edit to world.yaml's grid, rivers, places, `danger_reach` or the power-0 profile, run `--roads` and commit its
+`roads:` and `fords:` (with `reference --update` if pictures move): the selftest
+`test_the_shipped_roads_are_the_ones_the_file_routes` fails on stale roads. `--roads` refuses a comment or blank line inside
+those two blocks; a `danger_reach` and a power-0 band with a danger cost in the file make the roads fork round danger sites.
+
 A plain run ends by routing the roads and fords as `--roads` would over the file it wrote, forking round the danger sites.
 `--roads` instead reroutes only the roads and fords over the file as it stands, keeping every other line.
 

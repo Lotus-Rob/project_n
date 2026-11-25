@@ -8,6 +8,16 @@ drawn from code. Reproducible byte for byte: the drawing uses only arithmetic an
 everywhere), integer hashing, and seeded random.Random, never a transcendental function. Run through
 `./dev atlas --placeholders`.
 
+The world map's painted marks (`stamp_<kind>_0..3`, `mist_0..3`, `painting_*`) are each drawn on a transparent sheet with
+the foot at the bottom centre. A stamp's art keeps STAMP_MARGIN texels off its sides and top, a painting's ground wash
+WASH_ROOM above its bottom, and mist and paintings have margins of their own: the far zoom draws them from small mips, and
+the quad's edge cutting their blur would crawl. `PlaceholderTest` in tools/test_project_n.py holds every margin, on the
+placeholders only: an artist's PNG that replaces one needs its margins checked by hand. The world map's roads are ribbons
+the renderer paints, so they have no sprites here.
+
+The villager and the cultivator are drawn side-on, facing right, with 8-frame walk cycles (`<name>_walk_0..7`); each
+frame's planted foot moves back one stride (12 and 14 texels) so the figure, moved by its stride, keeps it still.
+
 Standard library only, like tools/project_n.py, so it runs in the Pixi environment as it is.
 """
 
