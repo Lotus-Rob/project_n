@@ -6,5 +6,5 @@
 - `atlas.sha256`: written by `atlas` with the atlas, so `lint` can tell a stale one
 - `world_map.py` (run it with `pixi run python`): generates `assets/data/world.yaml` and previews in `build/world_map_*.png`; the YAML is hand-tuned after and is the source from then on, so a rerun starts over → its docstring
 - `world_map.py --roads` reroutes only the `roads:` and `fords:` blocks, keeping every other line; it refuses a comment inside them → its docstring
-- After a hand edit to `world.yaml`'s grid, rivers, places, `danger_reach` or the power-0 profile, run `world_map.py --roads` (with `pixi run python`) and commit its `roads:`/`fords:`; `selftest` fails on stale roads
+- After a hand edit to `world.yaml`'s grid, rivers, places, `danger_reach` or the power-0 profile, run `world_map.py --roads` (with `pixi run python`) and commit its `roads:`/`fords:` (and `reference --update` if pictures move); `selftest` fails on stale roads
 - The generator doesn't know where a river may rise, so each river's source was placed by hand in `world.yaml`, and a rerun loses them → `art/world_map.py`'s docstring, assets/AGENTS.md
