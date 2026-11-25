@@ -37,9 +37,14 @@ Vec2 Between(Vec2 from, Vec2 target, f64 fraction) {
     return from + ((target - from) * static_cast<f32>(fraction));
 }
 
-/// The point `leg` holds at its tile `index`: its origin for the first, the tile's centre after.
+/// The point a leg from `origin` over `tiles` holds at its tile `index`: `origin` for the first, the tile's centre after.
+Vec2 TilesPoint(const WorldMap& map, Vec2 origin, std::span<const u32> tiles, std::size_t index) {
+    return index == 0 ? origin : map.TileCentre(tiles[index]);
+}
+
+/// The point `leg` holds at its tile `index`.
 Vec2 LegPoint(const WorldMap& map, const Leg& leg, std::size_t index) {
-    return index == 0 ? leg.origin : map.TileCentre(leg.tiles[index]);
+    return TilesPoint(map, leg.origin, leg.tiles, index);
 }
 
 /// Where the walker of `stay` aims at its day point `day`: on the city's tile centre at its first (its start) and at any
@@ -401,7 +406,6 @@ bool LegWalk::Fits(const Leg& leg) const {
 
 std::vector<LegWalkMark> MakeWalkMarks(const WorldMap& map, Vec2 origin, std::span<const u32> tiles) {
     PN_ASSERT(!tiles.empty(), "a leg has a tile to start on");
-    const auto point = [&](std::size_t index) { return index == 0 ? origin : map.TileCentre(tiles[index]); };
     std::vector<LegWalkMark> marks(tiles.size());
     f64 walked = 0.0;
     Across before = Across::None;
@@ -410,7 +414,7 @@ std::vector<LegWalkMark> MakeWalkMarks(const WorldMap& map, Vec2 origin, std::sp
         mark.walked = walked;
         mark.before = before;
         if (index + 1 < marks.size()) {
-            const Stretch stretch = StretchOf(point(index), point(index + 1));
+            const Stretch stretch = StretchOf(TilesPoint(map, origin, tiles, index), TilesPoint(map, origin, tiles, index + 1));
             mark.length = stretch.length;
             // The stretch's own way until the pass back below.
             mark.after = stretch.across;
