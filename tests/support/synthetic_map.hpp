@@ -36,7 +36,7 @@ struct SyntheticSize {
 };
 
 /// The scales a synthetic map exists at, in times the shipped test map's area.
-inline constexpr std::array<u32, 3> SYNTHETIC_SCALES{ 1, 10, 50 };
+inline constexpr std::array<u32, 3> SYNTHETIC_SCALES{ { 1, 10, 50 } };
 
 /// The size of the synthetic map `scale` times the shipped test map's area: only SYNTHETIC_SCALES exist. Any other scale
 /// is an error in a constant expression and stops the program otherwise.
@@ -108,7 +108,7 @@ constexpr u32 LATTICE_LEVELS = 256;
 /// Each kind's noise sum is below its bound (the last kind takes the rest), cut from the sums' measured spread so the
 /// kinds come in about these shares: 12% deep water, 5% shallows, 8% sand, 35% meadow, 20% forest, 10% hills, 5% rock,
 /// 5% peaks. Marsh has none.
-constexpr std::array<u32, 8> KIND_BOUNDS{ 335, 365, 405, 405, 555, 659, 720, 760 };
+constexpr std::array<u32, 8> KIND_BOUNDS{ { 335, 365, 405, 405, 555, 659, 720, 760 } };
 
 /// How far, in tiles, a danger's reach flags tiles around it.
 constexpr u32 DANGER_REACH = 3;
