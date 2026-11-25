@@ -173,7 +173,10 @@ patterns for `core::math`, about 20 inputs per function. TESTS-GAME-01: replay s
 TESTS-GAME-02: shared test helpers move into `tests/support/`, variants named. X-TEXT-L10N-01: every codepoint of
 `strings.yaml` and `names.yaml` is in the font. GAP2-REPO-CONFIG-FILES-01: `-fsanitize=float-cast-overflow` in the clang
 sanitizer builds (`.clang-tidy` untouched: it is the user's). GAP1-THIRD-PARTY-LIBRARY-USAGE-01: Tracy without forced
-callstacks or fibers, then a new `measure` baseline (run alone: it takes the display). Any time; touches no game code.
+callstacks or fibers, then a new `measure` baseline (run alone: it takes the display). Also, found during
+shared-routes and added by the user (2026-11-25): `project_n test --test <name>` whose name matches no doctest case
+runs nothing and reports success (seen with `--test route_graph_tests`); it fails instead, naming the cases it could
+have meant (test: `selftest`, beside `test_a_test_file_of_another_suite_is_refused`). Any time; touches no game code.
 
 **R12. Design and roadmap docs** (light; plan only). DESIGN-DOCS-01: 0001 sweep (removed agents and skills, the process
 now run by superpowers). DESIGN-DOCS-03: 0002's unbuilt rules marked as such (arenas, command merging). SPECS-ROADMAP-03:
