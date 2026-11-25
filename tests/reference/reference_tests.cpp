@@ -16,7 +16,8 @@
 // Every case's renderer draws seals in `seals.yaml`'s looks; only the world's cases also name NPCs from `names.yaml`
 // (test::ShippedNames), as composing every name's glyphs ahead takes a second or two. The shimmer measurements print
 // `world shimmer: <value>`, `cloud shimmer: <value>`, `ground shimmer <zoom>: <value>` and `road shimmer: <value>` as doctest
-// messages in every run's output, which `measure` reads: each is a regression guard only.
+// messages in every run's output; `measure` reads the first three (the road's is not in its table). Each is a regression
+// guard only.
 #include "app/app.hpp"
 #include "app/damage_numbers.hpp"
 #include "app/hud.hpp"
