@@ -102,7 +102,10 @@ IMAGE_INPUTS = ("pixi.toml", "pixi.lock", "tools/env/activate.sh")
 IMAGE_IGNORE = "containers/.containerignore"  # the build context is the repo root; this admits only IMAGE_INPUTS
 CACHE_VOLUME = "project_n-xmake-cache"  # PROJECT_N_XMAKE_CACHE=<dir> bind-mounts a directory instead (CI caches it)
 # CI's compiled objects of our code, one folder per build (object_cache_dir), kept between runs by actions/cache.
-# Unset locally, where each build folder keeps XMake's own cache, aged by sweep_build (CACHE_DAYS).
+# Unset locally, where each build folder keeps XMake's own cache, aged by sweep_build (CACHE_DAYS). No cache is
+# shared between checkouts: XMake's key holds the compiler's path and the preprocessed text, both naming the
+# checkout (its own `.pixi`, the precompiled headers' headers by absolute path), and `-ffile-prefix-map` can't help,
+# as XMake keys on the flag's text. Packages are shared through packages_dir().
 BUILD_CACHE_ENV = "PROJECT_N_BUILD_CACHE"
 CONTAINER_BUILD_CACHE = "/home/dev/build-cache"  # where container_cmd mounts it
 # Toolchains whose CI builds use the object cache. Not pixi-gcc: with a precompiled header, GCC's preprocessed text
@@ -152,8 +155,11 @@ def resolve(cmd):
         exe = str(Path(os.environ["CONDA_PREFIX"], "Library", "share", "xmake", "xmake.exe"))
     args = list(cmd[1:])
     if cmd[0] == "xmake" and args and not str(args[0]).startswith("-"):
-        # XMake takes an ancestor folder holding a project over the current one: a worktree inside the main
-        # checkout would build the main checkout's sources.
+        # XMake takes an ancestor folder holding a project (one with `.xmake/`) over the current one: a worktree
+        # inside the main checkout would build the main checkout's sources. `-P` works; XMAKE_PROJECT_DIR doesn't.
+        # XMake's `utils.bin2c` still resolves the project again without -P in a thread, so a worktree's shader step
+        # warns once per binary that it is building the main checkout's project: benign, it only converts the
+        # build's own files.
         args[1:1] = ["-P", ROOT]
     return [exe, *(str(c) for c in args)]
 
@@ -217,7 +223,10 @@ def restore_lock_unless_added(before):
     drops native Windows' build tools from `windows|x64`: its own host tools are Linux ones). When it only
     reordered or dropped entries, write the bytes from `before` back so `git status` stays clean. An added or
     changed entry stays and prints its diff, to commit: a platform's missing entries, added on hosts no one
-    commits from (CI's macos and windows jobs), would otherwise go unseen."""
+    commits from (CI's macos and windows jobs: the only `macosx|arm64` and native `windows|x64` hosts, so their
+    logs carry the diff), would otherwise go unseen; macOS jobs once added five requires' entries each run, so
+    their caches never hit. Removing a dependency leaves its entries until deleted by hand (add-dependency skill).
+    `artifact` and `release` still ignore the lock in their clean-tree check (tree_dirty)."""
     now = lock_bytes()
     if now == before:
         return
@@ -358,7 +367,9 @@ def age_build_cache(tree, now, days=CACHE_DAYS):
 
 
 def sweep_build(build, now, days=STALE_DAYS, keep=()):
-    """Remove the build trees unused for `days`, but the warm ones and `keep`; (tree, bytes) for each removed."""
+    """Remove the build trees unused for `days`, but the warm ones and `keep`; (tree, bytes) for each removed. A tree it
+    can't remove is left with one line. Everything else in build/ stays: `profiles/` and `measure/` hold captures the
+    user deletes, and `artifact/`, `reference/`, `fuzz/`, `coverage/` and `docs/` are rewritten by their commands."""
     spared = warm_trees(build) | {Path(k) for k in keep}
     removed, cached = [], []
     for tree in build_trees(build) if build.is_dir() else ():
@@ -637,7 +648,15 @@ def ensure_msvc(image):
 
 
 def install_cl_wrapper(dest):
-    """Put CL_WRAPPER at `dest`/bin/x64/cl.exe in place of msvc-wine's symlink; rewritten only when it differs."""
+    """Put CL_WRAPPER at `dest`/bin/x64/cl.exe in place of msvc-wine's symlink; rewritten only when it differs.
+
+    Under Wine the `/sourceDependencies` JSON XMake asks cl for names headers as lowercased `z:\\...` paths it
+    can't find, so every build recompiled every file. The wrapper drops that option only when
+    PROJECT_N_CL_DROP_SOURCE_DEPENDENCIES=1 (`xmake_env` sets it): the install is shared by every checkout, and one
+    whose xmake.lua keeps the build cache on needs the option. Dropped, XMake reads `/showIncludes`, which
+    msvc-wine's `cl` turns into Linux paths, so a header change rebuilds exactly its includers; xmake.lua keeps the
+    build cache off for MSVC off Windows, as it compiles the preprocessed file, whose `/showIncludes` lists no
+    headers."""
     wrapper = dest / "bin" / "x64" / "cl.exe"
     if wrapper.is_symlink() or not wrapper.exists() or wrapper.read_text(encoding="utf-8") != CL_WRAPPER:
         wrapper.unlink(missing_ok=True)
@@ -680,6 +699,12 @@ def reenter(preset, argv, interactive=False):
 
 
 def configure(preset, mode, sanitizer="none"):
+    """Configure one build tree. With BUILD_CACHE_ENV set (CI), XMake's build cache is turned back on through the
+    `build_cache` option (a project policy, which XMake reads before its CI switch) with `--ccachedir` at
+    object_cache_dir, outside the build folder so `artifact`'s clean room keeps it. The cold rule (cold_ref: main or
+    a tag): a build writes only into an empty cache folder, creating it when absent, and otherwise passes
+    `--ccache=n`; it refuses a build folder that already holds objects (holds_objects). Unset (locally), nothing
+    changes."""
     check_sanitizer(preset, sanitizer)
     p, bdir = PRESETS[preset], build_dir(preset, mode, sanitizer)
     mark_used(ROOT / bdir, time.time())
@@ -1039,6 +1064,8 @@ def unexplained_suppressions(files):
 # Code comments explain why in their own words; they never point into the design process. Documentation
 # (*.md, docs/) keeps its references. Each pattern needs a digit or a section mark, so ordinary prose
 # ("the third phase", "a chunk of the file") never matches; "P<digit>" is left out (display P3 is a real name).
+# Every pattern has a found and a not-found sample in DesignReferenceTest (test_project_n.py). A legitimate comment a
+# pattern flags narrows the pattern, never rewords the comment ("the user's own" and the role stay unflagged).
 DESIGN_REFERENCE_PATTERNS = (
     r"\b(?:phase|chunk)s?\s+\d",
     r"\bthe\s+spec\b|\bspec's\s+(?:outcome|history)\b|\b(?:chunk|phase|design)\s+(?:\d\w*\s+)?spec\b",
@@ -1549,7 +1576,10 @@ def tidy_units(bdir, units, fix, cache=None):
     """(failed, ignored findings) of clang-tidy over `units`, one process per unit across all cores, each judged by
     tidy_verdict: run together, one unit's ignored finding would hide another's error. A finding prints once however
     many units report it; a listed one (IGNORED_FINDINGS) never prints, and counts once. `cache` goes to tidy_one. With
-    `fix`, the units that failed get one serial clang-tidy --fix afterwards."""
+    `fix`, the units that failed get one serial clang-tidy --fix afterwards.
+
+    Not one process over every unit (serial, minutes) and not `run-clang-tidy`: its exit code is 1 if any file fails,
+    so a file erroring without a finding beside files with only ignored findings would pass."""
     if cache:
         mark_tidy_run(cache)
     with concurrent.futures.ThreadPoolExecutor(jobs()) as pool:
@@ -1951,7 +1981,8 @@ def unreached_headers(sources, dependencies):
 
 
 # The clone's own git config: the commit hooks, and Git LFS's filters run through Pixi, as any git
-# (an editor's, a container's) runs them on large binary assets, not only ours.
+# (an editor's, a container's) runs them on large binary assets, not only ours. They name `pixi run git-lfs`, never a
+# bare `git-lfs` the host may lack or have at another version.
 CLONE_CONFIG = {
     "core.hooksPath": ".githooks",
     "filter.lfs.process": "pixi run --quiet git-lfs filter-process",
@@ -2212,7 +2243,10 @@ def step_times_table(times):
 def cmd_check(args):
     """The merge gate: commit messages, formatting and lint of the diff, then build and test every
     preset. The pre-commit hook checks formatting at each commit, so the hooks must be on; this
-    format check covers what it misses (rebases and cherry-picks don't run it)."""
+    format check covers what it misses (rebases and cherry-picks don't run it). Leave the tree alone while it
+    runs: each step lints and builds what is on disk, so a file written meanwhile (or `shaders` rewriting
+    `src/gfx/generated/shaders.hpp` before a build has made its `*.spv.h`) fails clang-tidy falsely, and a failure in
+    one step hides the real ones after it."""
     if not clone_set_up():
         raise Fail("set the clone up first (the commit hooks, Git LFS's filters): pixi run project_n setup")
     sweep_here(check_trees(args))
@@ -2494,7 +2528,13 @@ MEASURE_TRAVEL_SHARE = 200
 # region (12 s to 18 s), where the most travellers are on the roads, so the step's cost at its heaviest shows in the frame times.
 MEASURE_MONTH_STEP_AT = 15
 # `measure`'s runs: name -> (game arguments, seconds before the game quits). The arena runs last as long as they did when first
-# profiled; the world path quits the game when it ends (about 26 s), its limit only a safety net.
+# profiled; the world path quits the game when it ends (about 26 s), its limit only a safety net. The world run turns
+# the debug sight on (`--debug-sight`): every tile is in sight, but walkers and their names on unexplored land stay
+# hidden under the clouds' shade, so it carries the label load of explored land only and its labels segments aren't
+# comparable with runs from before the cloud shade. It also raises the travel share and lets one month pass
+# (MEASURE_TRAVEL_SHARE, MEASURE_MONTH_STEP_AT); the camera path test's `MEASURED` names the same values, and the
+# self-tests check both. The step's message starts a segment of its own, so `widest view` runs 12 to 15 s and
+# `month step` 15 to 18 s: its first 0.5 s row is the step's timing.
 MEASURE_RUNS = {"world": (["--world", "--camera-path", "--travel-share", str(MEASURE_TRAVEL_SHARE),
                        "--month-step-at", str(MEASURE_MONTH_STEP_AT), "--debug-sight"], 60),
                 "burst": (["--burst"], 20), "swords": (["--cast-swords"], 70), "seals": (["--cast-swords", "--zoom", "2"], 30)}
@@ -2851,6 +2891,23 @@ def measure_table(results, shimmer, cloud, ground):
 
 
 def cmd_measure(args):
+    """The smoothness and cost numbers of releasedbg runs, as one table; never a gate (not in `check` or CI).
+
+    Builds releasedbg and runs each of MEASURE_RUNS (`--runs` picks) with MEASURE_FLAGS under tracy-capture (`record`,
+    shared with `profile`), the game's log in a file. The captures are exported with `tracy-csvexport -u -e` (each
+    zone's self time) and `-m` (the `camera path: <segment>` messages); both columns are Tracy's raw timeline, one
+    origin. Both use EXPORT_SEP, as the exports aren't quoted and names, zone texts and messages may hold commas.
+    Per run and segment (each camera segment's first NEW_GROUND_SECONDS apart; an arena run is one segment after
+    SETTLE_SECONDS) the table gives the frame time (FRAME_ZONE start to start), its work (less `WaitForGpu`) and each
+    thread's work (self time of its zones but IDLE_ZONES; threads named main, logic, worker or thread): median, p99
+    (`—` below P99_FRAMES) and worst; the GPU's share (see `paced`); hitches (work over HITCH_MS, each with its three
+    largest zones); and beside each run its display (the log's last display line: where the window ended), the input
+    latency (median and spread over the world run's presses), the display delay (the log's `display delay:` line),
+    MEASURE_EARLIER and trust. With `world`, `reference` runs first (Linux, quiet, its output printed only when a case
+    fails, which leaves the shimmer unmeasured and the runs go on) for the world's, the clouds' and the painted
+    ground's shimmer, in the table's first line. A run whose log shows a pause, a camera path warning or an unfinished
+    path is untrusted and `measure` exits 1. Captures, exports and logs go to `build/measure/<time>/`, removed unless
+    `--keep`, a run fails or a run is untrusted."""
     runs = measure_runs(args.runs)
     shimmer = "not measured (no world run)"
     cloud = ground = shimmer
@@ -3194,7 +3251,10 @@ def branch_unmerged(branch):
 
 
 def prune_worktrees(args):
-    """Remove this project's worktrees whose work is merged, with their branches; never forced."""
+    """Remove this project's worktrees whose work is merged, with their branches; never forced. Keeps (saying why)
+    locked, detached and dirty ones, ones without commits of their own yet, and the checkout it runs in. A folder
+    deleted by hand is reported and left to the closing `git worktree prune`, and its branch deleted after it if
+    merged."""
     main = main_checkout()
     run(["git", "fetch", "--quiet", "--prune", "origin"])
     merged_gone = []
