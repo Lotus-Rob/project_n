@@ -51,6 +51,7 @@ TEST_CASE("the place table's cost is the cost of the route found for the same pa
     for (std::size_t profile = 0; profile < map.Profiles().size(); ++profile) {
         const core::RouteGraph& graph = graphs.Of(static_cast<core::ProfileIndex>(profile));
         const core::PlaceTable table = TableOf(map, graph);
+        CHECK(table.Bytes() >= std::size_t{ FIRST_DANGER } * PLACES * sizeof(u32));
         core::RouteScratch scratch;
         for (u16 city = 0; city < FIRST_DANGER; ++city) {
             for (const u16 place : NamedPlaces(city)) {
