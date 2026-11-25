@@ -56,17 +56,24 @@ namespace synthetic {
 
 /// The kind index of meadow, which closed ground under a road becomes.
 constexpr u8 MEADOW = 4;
+/// A terrain kind's name and the cost of entering its tiles.
+struct KindSpec {
+    /// Its name.
+    const char* name;
+    /// Its cost, or core::IMPASSABLE_COST.
+    u16 cost;
+};
 /// The terrain kinds, by index: the shipped map's names and costs.
-constexpr std::array<std::pair<const char*, u16>, 9> KINDS{ {
-    { "deep_water", core::IMPASSABLE_COST },
-    { "shallows", 30 },
-    { "sand", 14 },
-    { "marsh", 25 },
-    { "meadow", 10 },
-    { "forest", 16 },
-    { "hills", 20 },
-    { "rock", 40 },
-    { "peaks", core::IMPASSABLE_COST },
+constexpr std::array<KindSpec, 9> KINDS{ {
+    { .name = "deep_water", .cost = core::IMPASSABLE_COST },
+    { .name = "shallows", .cost = 30 },
+    { .name = "sand", .cost = 14 },
+    { .name = "marsh", .cost = 25 },
+    { .name = "meadow", .cost = 10 },
+    { .name = "forest", .cost = 16 },
+    { .name = "hills", .cost = 20 },
+    { .name = "rock", .cost = 40 },
+    { .name = "peaks", .cost = core::IMPASSABLE_COST },
 } };
 
 /// The purpose of the draws of the coarse noise octave's lattice; each use of core::Random has a purpose of its own, so no
@@ -137,7 +144,7 @@ constexpr f32 TILE_SIZE = 256.0F;
 
 /// Whether `kind` can be walked.
 [[nodiscard]] inline bool Open(u8 kind) {
-    return KINDS[kind].second != core::IMPASSABLE_COST;
+    return KINDS[kind].cost != core::IMPASSABLE_COST;
 }
 
 /// The squared straight-line distance between two tiles.
@@ -198,7 +205,7 @@ struct Draft {
 /// The movement profile `key`, walking every kind at its cost and adding `danger` near a danger.
 [[nodiscard]] inline core::MovementProfile Profile(std::string key, u16 danger) {
     std::vector<u16> costs(KINDS.size());
-    std::ranges::transform(KINDS, costs.begin(), &std::pair<const char*, u16>::second);
+    std::ranges::transform(KINDS, costs.begin(), &KindSpec::cost);
     return { .key = std::move(key),
              .ticksPerCost = core::DEFAULT_TICKS_PER_COST,
              .kindCosts = std::move(costs),
@@ -212,7 +219,7 @@ inline void MakeTerrain(core::WorldMapSource& source, const SyntheticSize& size,
     source.tileSize = TILE_SIZE;
     source.dangerReach = DANGER_REACH;
     for (const auto& kind : KINDS) {
-        source.kinds.push_back({ .name = kind.first, .symbol = ' ', .cost = kind.second });
+        source.kinds.push_back({ .name = kind.name, .symbol = ' ', .cost = kind.cost });
     }
     source.grid.resize(static_cast<std::size_t>(size.columns) * size.rows);
     for (u32 row = 0; row < size.rows; ++row) {
