@@ -273,7 +273,8 @@ std::expected<Window, core::Error> Window::Open(std::string_view title, i32 widt
         SDL_GetPlatform()
     );
 #ifdef SDL_PLATFORM_LINUX
-    // SDL picks XWayland over Wayland when the compositor lacks fifo-v1 (niri, for one).
+    // SDL silently picks XWayland over Wayland when the compositor lacks fifo-v1 (niri, for one), even with the Wayland
+    // driver compiled in.
     // A normal-priority hint, so SDL_VIDEO_DRIVER in the environment still overrides it.
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "wayland,x11");
 #endif
