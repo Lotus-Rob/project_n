@@ -51,6 +51,7 @@ core::WorldMapSource Source(const std::vector<std::string>& rows) {
     return source;
 }
 
+/// The map `source` builds; the test fails if it is refused.
 core::WorldMap MustBuild(core::WorldMapSource source) {
     auto built = core::WorldMap::Build(std::move(source));
     REQUIRE(built.has_value());
@@ -148,6 +149,7 @@ core::WorldMapSource HandSource() {
     return source;
 }
 
+/// The hand-drawn map HandSource describes.
 core::WorldMap HandMap() {
     return MustBuild(HandSource());
 }
@@ -191,11 +193,6 @@ u32 WalkedBy(const core::WorldMap& map, core::ProfileIndex profile, const std::v
         total += cost;
     }
     return total;
-}
-
-/// Whether edge `edge` of `graph` steps over a border rather than staying in its sector.
-bool IsCrossing(const core::WorldMap& map, const core::RouteGraph& graph, const core::GraphEdge& edge) {
-    return core::SectorOf(map, graph.Rules(), graph.NodeTile(edge.to)) != edge.sector;
 }
 
 TEST_CASE("a map smaller than a sector is one sector with only its places") {
@@ -472,24 +469,35 @@ TEST_CASE("a sector whose ring costs differently is not shared") {
 TEST_CASE("each crossing joins the nodes either side of its border") {
     const core::WorldMap map = HandMap();
     const core::RouteGraphs graphs = HandGraphs(map);
+    core::SectorWalk walk;
     for (const core::ProfileIndex profile : { core::WALKING, WARY }) {
         const core::RouteGraph& graph = graphs.Of(profile);
+        // Edge IDs run sector by sector, its own edges first, so each sector's crossings are found by position alone.
+        std::size_t next = 0;
         std::size_t crossings = 0;
+        std::size_t listed = 0;
         std::size_t apart = 0;
-        for (const core::GraphEdge& edge : graph.Edges()) {
-            if (!IsCrossing(map, graph, edge)) {
-                continue;
+        for (u32 sector = 0; sector < HandSectors(map); ++sector) {
+            const core::SectorGraph built = core::BuildSector(map, profile, HAND_RULES, sector, walk);
+            next += built.edges.size();
+            listed += built.crossings.size();
+            for (std::size_t crossing = 0; crossing < built.crossings.size() && next < graph.Edges().size(); ++crossing) {
+                const core::GraphEdge& edge = graph.Edges()[next++];
+                const core::TilePoint near = map.PointOf(graph.NodeTile(edge.from));
+                const core::TilePoint far = map.PointOf(graph.NodeTile(edge.to));
+                const bool east = far.column == near.column + 1 && far.row == near.row;
+                const bool south = far.column == near.column && far.row == near.row + 1;
+                const bool leaves = edge.sector == sector &&
+                                    core::SectorOf(map, HAND_RULES, graph.NodeTile(edge.from)) == sector &&
+                                    core::SectorOf(map, HAND_RULES, graph.NodeTile(edge.to)) != sector;
+                apart += (east || south) && leaves ? 0 : 1;
+                ++crossings;
             }
-            const core::TilePoint near = map.PointOf(graph.NodeTile(edge.from));
-            const core::TilePoint far = map.PointOf(graph.NodeTile(edge.to));
-            const bool east = far.column == near.column + 1 && far.row == near.row;
-            const bool south = far.column == near.column && far.row == near.row + 1;
-            const bool leaves = core::SectorOf(map, HAND_RULES, graph.NodeTile(edge.from)) == edge.sector;
-            apart += (east || south) && leaves ? 0 : 1;
-            ++crossings;
         }
         CHECK(crossings > 0);
+        CHECK(crossings == listed);
         CHECK(apart == 0);
+        CHECK(next == graph.Edges().size());
     }
 }
 
@@ -501,8 +509,11 @@ TEST_CASE("a node's links name each of its edges once, each way's cost") {
     const std::vector<u32> named{
         graph.PlaceNode(0), graph.PlaceNode(1), graph.PlaceNode(3), graph.NodeAt(At(map, 36, 15)), graph.Nodes() - 1
     };
+    REQUIRE(std::ranges::all_of(named, [&](u32 node) { return node < graph.Nodes(); }));
+    std::size_t linkless = 0;
+    std::size_t wrong = 0;
+    std::size_t unlisted = 0;
     for (const u32 node : named) {
-        REQUIRE(node < graph.Nodes());
         const std::span<const core::GraphLink> links = graph.LinksOf(node);
         std::vector<u32> touching;
         for (u32 edge = 0; edge < graph.Edges().size(); ++edge) {
@@ -511,7 +522,6 @@ TEST_CASE("a node's links name each of its edges once, each way's cost") {
             }
         }
         std::vector<u32> listed;
-        std::size_t wrong = 0;
         for (const core::GraphLink& link : links) {
             const core::GraphEdge& edge = graph.Edges()[link.edge];
             const bool out = !link.reversed && edge.from == node && edge.to == link.node && link.cost == edge.cost;
@@ -519,10 +529,12 @@ TEST_CASE("a node's links name each of its edges once, each way's cost") {
             wrong += out || back ? 0 : 1;
             listed.push_back(link.edge);
         }
-        CHECK(!links.empty());
-        CHECK(wrong == 0);
-        CHECK(listed == touching);
+        linkless += links.empty() ? 1 : 0;
+        unlisted += listed == touching ? 0 : 1;
     }
+    CHECK(linkless == 0);
+    CHECK(wrong == 0);
+    CHECK(unlisted == 0);
 }
 
 TEST_CASE("an edge's tiles start and end on its nodes and cost what the edge says each way") {
@@ -562,12 +574,13 @@ TEST_CASE("a place's node is its tile's, and a place its profile can't enter has
     const core::WorldMap map = MustBuild(std::move(source));
     const core::RouteGraphs graphs = HandGraphs(map);
     const core::RouteGraph& walking = graphs.Of(core::WALKING);
+    std::size_t misplaced = 0;
     for (u16 place = 0; place < map.Places().size(); ++place) {
         const u32 tile = map.TileIndex(map.Places()[place].tile);
-        CHECK(walking.PlaceNode(place) == walking.NodeAt(tile));
-        CHECK(walking.PlaceNode(place) != core::NO_NODE);
-        CHECK(walking.NodeTile(walking.PlaceNode(place)) == tile);
+        const u32 node = walking.PlaceNode(place);
+        misplaced += node != core::NO_NODE && node == walking.NodeAt(tile) && walking.NodeTile(node) == tile ? 0 : 1;
     }
+    CHECK(misplaced == 0);
     CHECK(walking.NodeAt(At(map, 12, 5)) == core::NO_NODE); // a peak
     CHECK(walking.NodeAt(At(map, 1, 1)) == core::NO_NODE);  // open meadow inside a sector
 
