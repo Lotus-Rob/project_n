@@ -9,6 +9,7 @@
 - `PRESETS`, `IMAGES` and `SCOPES` at the top of the file are the single source of truth. Changing a preset or scope updates design doc 0001 §3/§11 and any AGENTS.md that names it.
 - Containers re-enter the same script (`reenter`): add behaviour once, not per environment.
 - Never pipe XMake's output through filters; it stalled twice that way (spike S4). Call XMake only through `run()`/`capture()`, never bare: they pass `-P <ROOT>` and restore `xmake-requires.lock`.
+- `doctor --docs` checks the agent docs: every quoted command exists, every AGENTS.md below the root is ≤ 8,192 bytes with no line over 300 characters, a SKILL.md ≤ 200 lines, an agent brief ≤ 60 (`doc_budget_problems`); `selftest` runs it on the real tree.
 - `env/activate.sh` runs on every `pixi run`: keep it fast and idempotent.
 - `lint` refuses design references in code comments (`design_references`), in every comment kind except `*.md`, `docs/`, generated files, the manifest and fuzz corpora. A comment it flags wrongly narrows the pattern, never rewords the comment → the comment above `DESIGN_REFERENCE_PATTERNS`.
 - `--help` is read by shell completers (lig): an option with choices opens its help with `[possible values: a, b]`, on one line; `test --list-tests [--suite S]` prints what `--test` takes.
