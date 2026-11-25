@@ -70,6 +70,8 @@ private:
     SectorWalk m_walk;
     /// The tiles of the edge Add() is making, its buffer kept from call to call.
     std::vector<u32> m_tiles;
+    /// The tiles reversed, the buffer Add() makes each walkBack table from.
+    std::vector<u32> m_reversed;
 };
 
 } // namespace core

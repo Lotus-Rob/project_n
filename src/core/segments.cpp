@@ -13,14 +13,8 @@ std::size_t CapacityBytes(const std::vector<T>& vector) {
     return vector.capacity() * sizeof(T);
 }
 
-/// Whether `edge` is a step over a border, which reaches past its sector's own nodes.
-bool IsCrossing(const RouteGraph& graph, u32 edge) {
-    const GraphEdge& way = graph.Edges()[edge];
-    return way.to - graph.FirstNode(way.sector) >= graph.SectorNodes(way.sector).size();
-}
-
-/// The segment of `edge` over `tiles`, its way from `from` to `to`.
-Segment Fill(const WorldMap& map, const RouteGraph& graph, const std::vector<u32>& tiles) {
+/// The segment over `tiles`, walked forward from the first; `reversed` is the caller's buffer for the tiles back to front.
+Segment Fill(const WorldMap& map, const RouteGraph& graph, const std::vector<u32>& tiles, std::vector<u32>& reversed) {
     PN_ASSERT(!tiles.empty(), "an edge has tiles");
     const ProfileIndex profile = graph.Profile();
     Segment segment;
@@ -34,7 +28,7 @@ Segment Fill(const WorldMap& map, const RouteGraph& graph, const std::vector<u32
         segment.costBack[index - 1] = segment.costBack[index] + map.StepCost(tiles[index], tiles[index - 1], profile);
     }
     segment.walk = MakeWalkMarks(map, map.TileCentre(tiles.front()), tiles);
-    const std::vector<u32> reversed(tiles.rbegin(), tiles.rend());
+    reversed.assign(tiles.rbegin(), tiles.rend());
     segment.walkBack = MakeWalkMarks(map, map.TileCentre(reversed.front()), reversed);
     return segment;
 }
@@ -52,7 +46,8 @@ std::size_t Segment::WalkBytes() const {
 Segment MakeSegment(const WorldMap& map, const RouteGraph& graph, u32 edge, SectorWalk& walk) {
     std::vector<u32> tiles;
     EdgeTiles(map, graph, edge, walk, tiles);
-    return Fill(map, graph, tiles);
+    std::vector<u32> reversed;
+    return Fill(map, graph, tiles, reversed);
 }
 
 SegmentStore::SegmentStore(const WorldMap& map, const RouteGraph& graph)
@@ -77,7 +72,7 @@ void SegmentStore::Add(std::span<const u32> edges) {
     u32 walkedFrom = NO_NODE;
     for (const u32 edge : todo) {
         const GraphEdge& way = m_graph->Edges()[edge];
-        if (IsCrossing(*m_graph, edge)) {
+        if (m_graph->IsCrossing(edge)) {
             m_tiles.assign({ m_graph->NodeTile(way.from), m_graph->NodeTile(way.to) });
         }
         else {
@@ -90,7 +85,7 @@ void SegmentStore::Add(std::span<const u32> edges) {
             }
             m_walk.Way(m_graph->NodeTile(way.to), m_tiles);
         }
-        m_slots[edge] = std::make_unique<const Segment>(Fill(*m_map, *m_graph, m_tiles));
+        m_slots[edge] = std::make_unique<const Segment>(Fill(*m_map, *m_graph, m_tiles, m_reversed));
         ++m_made;
     }
 }

@@ -213,6 +213,8 @@ public:
     [[nodiscard]] u32 FirstNode(u32 sector) const;
     /// Every edge, by ID.
     [[nodiscard]] std::span<const GraphEdge> Edges() const;
+    /// Whether edge `edge` is a step over a border onto the node beside it, rather than a way inside one sector.
+    [[nodiscard]] bool IsCrossing(u32 edge) const;
     /// The ways out of `node`, one for each of its edges, by edge ID.
     [[nodiscard]] std::span<const GraphLink> LinksOf(u32 node) const;
     /// The bytes its arrays hold, by their capacity.
