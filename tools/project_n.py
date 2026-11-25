@@ -234,7 +234,7 @@ def restore_lock_unless_added(before):
     if old is not None and new is not None and new.items() <= old.items():
         (ROOT / "xmake-requires.lock").write_bytes(before)
         return
-    print("xmake-requires.lock: XMake added or changed entries; commit them (tools/AGENTS.md):", flush=True)
+    print("xmake-requires.lock: XMake added or changed entries; commit them:", flush=True)
     old_lines, new_lines = (b.decode("utf-8", "replace").splitlines() for b in (before, now))
     diff = difflib.unified_diff(old_lines, new_lines, "a/xmake-requires.lock", "b/xmake-requires.lock", lineterm="")
     print("\n".join(diff), flush=True)
@@ -243,7 +243,7 @@ def restore_lock_unless_added(before):
 def run(cmd, env=None, **kwargs):
     """Run a command from the repo root, echoing it; raise on failure. Output is never piped.
     Any XMake call may reorder or prune xmake-requires.lock, so each one restores it afterwards, even when it
-    fails (tools/AGENTS.md)."""
+    fails (restore_lock_unless_added)."""
     print("+", " ".join(str(c) for c in cmd), flush=True)
     before = lock_bytes() if cmd[0] == "xmake" else None
     try:
@@ -719,7 +719,7 @@ def configure(preset, mode, sanitizer="none"):
         cmd.append("--sdk=/opt/msvc" if IN_CONTAINER else f"--vs_toolset={VS_TOOLSET}")
     if cold_ref() and holds_objects(bdir):
         raise Fail(f"{bdir} already holds compiled objects, and CI builds {os.environ['GITHUB_REF']} from source: "
-                   "delete the folder first (the cold rule, tools/AGENTS.md)")
+                   "delete the folder first (the cold rule, in `configure`'s docstring)")
     cache = object_cache_dir(preset, mode, sanitizer)
     # On main a build only writes, into an empty folder: it reads no object an earlier build of the run made.
     if cache and not (cold_ref() and cache.is_dir() and any(cache.iterdir())):
@@ -862,7 +862,7 @@ def cmd_test(args):
     """Build and run the tests. `--suite` (`--target`) names one test target: a suite or fuzz suite runs its files in
     parallel, one process per test file; with `--test` or doctest arguments the binary runs once instead, keeping the
     cases of the test file `--test` names, else the cases with it in their name. A name that is no suite, fuzz suite or
-    test program (`headless_bench`, `reference_tests`) is refused, so a run never passes having tested nothing. A fuzz
+    test program (`headless_bench`, `reference_tests`) is refused. A `--test` that matches no test file and no case name still runs nothing and passes. A fuzz
     suite replays its seeds once (`-runs=0`) and only under linux-clang with AddressSanitizer. A skipped long run or
     measurement is run by name with `--no-skip`, in double quotes as names hold apostrophes."""
     if getattr(args, "list_tests", False):  # internal callers build their own Namespace
@@ -2335,7 +2335,7 @@ def msvc_versions(env_sh):
 
 def tree_dirty():
     """Uncommitted changes, except xmake-requires.lock: builds rewrite its order without changing it
-    (tools/AGENTS.md). A real lock change comes with xmake.lua or xmake/repo changes, which count."""
+    (`restore_lock_unless_added`). A real lock change comes with xmake.lua or xmake/repo changes, which count."""
     return capture(["git", "status", "--porcelain", "--", ".", ":!xmake-requires.lock"]).strip()
 
 
@@ -2548,7 +2548,7 @@ MEASURE_MONTH_STEP_AT = 15
 # the debug sight on (`--debug-sight`): every tile is in sight, but walkers and their names on unexplored land stay
 # hidden under the clouds' shade, so it carries the label load of explored land only and its labels segments aren't
 # comparable with runs from before the cloud shade. It also raises the travel share and lets one month pass
-# (MEASURE_TRAVEL_SHARE, MEASURE_MONTH_STEP_AT); the camera path test's `MEASURED` names the same values, and the
+# (MEASURE_TRAVEL_SHARE, MEASURE_MONTH_STEP_AT); the camera path test's `MEASURED` is the same month step and its `MEASURED_SHARE` the same travel share, and the
 # self-tests check both. The step's message starts a segment of its own, so `widest view` runs 12 to 15 s and
 # `month step` 15 to 18 s: its first 0.5 s row is the step's timing.
 MEASURE_RUNS = {"world": (["--world", "--camera-path", "--travel-share", str(MEASURE_TRAVEL_SHARE),

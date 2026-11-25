@@ -81,7 +81,7 @@ set_warnings("everything", "pedantic", "error")
 
 local sanitized = get_config("sanitizer") and get_config("sanitizer") ~= "none"
 
--- CI's object cache (`project_n` sets it with --ccachedir on branch builds; tools/AGENTS.md). XMake turns its build
+-- CI's object cache (`project_n` sets it with --ccachedir on branch builds; `configure` in tools/project_n.py). XMake turns its build
 -- cache off on CI and for Windows' cl; a project policy comes before both, so this turns it back on.
 option("build_cache", {default = false, description = "Compile through XMake's build cache, even on CI"})
 if get_config("toolchain") == "pixi-gcc" then
