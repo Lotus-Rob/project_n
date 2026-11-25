@@ -14,13 +14,13 @@ namespace {
 constexpr u32 BUILD_RUNS = 5;
 constexpr f64 BUILD_BUDGET_MS_PER_SCALE = 20.0;
 constexpr f64 MEMORY_BUDGET_MB_PER_SCALE = 1.0;
-constexpr f64 MEGABYTE = 1024.0 * 1024.0;
+constexpr f64 MEGABYTE = 1'000'000.0;
 constexpr std::string_view FLAG_LIST = "--scales, --sector, --gate-spacing, --workers, --seed, --chunk, --no-share";
 
 /// The parsed flags.
 struct Options {
-    /// The maps' scales: 1, 10 or 50 times the test map's area.
-    std::vector<u32> scales{ 1, 10, 50 };
+    /// The maps' scales, in times the test map's area.
+    std::vector<u32> scales{ test::SYNTHETIC_SCALES.begin(), test::SYNTHETIC_SCALES.end() };
     /// The sector's side in tiles.
     u32 sector = core::SECTOR_SIZE;
     /// The longest stretch of a border one gate serves.
@@ -45,6 +45,8 @@ struct Row {
     f64 budget;
     /// What it is counted in.
     std::string_view unit;
+    /// How many decimals it prints.
+    u32 decimals = 3;
 };
 
 /// Logs each row as `<name>: <measured> <unit> (budget <budget>) [OVER]` and returns whether any is over its budget.
@@ -53,24 +55,32 @@ bool Print(std::span<const Row> rows) {
     for (const Row& row : rows) {
         const bool isOver = row.budget > 0.0 && row.measured > row.budget;
         over = over || isOver;
+        const std::string unit = row.unit.empty() ? std::string{} : std::format(" {}", row.unit);
         if (row.budget > 0.0) {
             PN_LOG_INFO(
-                "{}: {:.3f} {} (budget {:.3f}){}", row.name, row.measured, row.unit, row.budget, isOver ? " [OVER]" : ""
+                "{}: {:.{}f}{} (budget {:.{}f}){}",
+                row.name,
+                row.measured,
+                row.decimals,
+                unit,
+                row.budget,
+                row.decimals,
+                isOver ? " [OVER]" : ""
             );
         }
         else {
-            PN_LOG_INFO("{}: {:.3f} {}", row.name, row.measured, row.unit);
+            PN_LOG_INFO("{}: {:.{}f}{}", row.name, row.measured, row.decimals, unit);
         }
     }
     return over;
 }
 
-/// The fastest of `runs` runs of `work`, in milliseconds.
+/// The fastest of `runs` runs of `work`, in milliseconds; what `work` returns is kept until the clock has stopped.
 f64 BestOf(u32 runs, const auto& work) {
     f64 best = std::numeric_limits<f64>::max();
     for (u32 run = 0; run < runs; ++run) {
         const auto start = std::chrono::steady_clock::now();
-        work();
+        [[maybe_unused]] const auto kept = work();
         best = std::min(best, std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - start).count());
     }
     return best;
@@ -105,12 +115,12 @@ u32* NumberField(Options& options, std::string_view flag) {
     return nullptr;
 }
 
-/// Sets `options.scales` from a comma-separated list of 1, 10 and 50; false when the list holds anything else.
+/// Sets `options.scales` from a comma-separated list of test::SYNTHETIC_SCALES; false when the list holds anything else.
 bool SetScales(Options& options, std::string_view list) {
     std::vector<u32> scales;
     for (const auto part : std::views::split(list, ',')) {
         const auto scale = ParseNumber<u32>(std::string_view{ part.begin(), part.end() });
-        if (!scale || (*scale != 1 && *scale != 10 && *scale != 50)) {
+        if (!scale || !std::ranges::contains(test::SYNTHETIC_SCALES, *scale)) {
             return false;
         }
         scales.push_back(*scale);
@@ -151,7 +161,7 @@ std::optional<Options> Parse(std::span<const std::string_view> args) {
             return std::nullopt;
         }
         if (std::next(arg) == args.end()) {
-            PN_LOG_ERROR("{} needs a value", *arg);
+            PN_LOG_ERROR("{} needs a value; the flags are {}", *arg, FLAG_LIST);
             return std::nullopt;
         }
         const std::string_view flag = *arg;
@@ -168,9 +178,9 @@ std::optional<Options> Parse(std::span<const std::string_view> args) {
 class Table {
 public:
     /// Adds a row.
-    void Add(std::string name, f64 measured, f64 budget, std::string_view unit) {
+    void Add(std::string name, f64 measured, f64 budget, std::string_view unit, u32 decimals = 3) {
         m_names.push_back(std::move(name));
-        m_rows.push_back({ .name = {}, .measured = measured, .budget = budget, .unit = unit });
+        m_rows.push_back({ .name = {}, .measured = measured, .budget = budget, .unit = unit, .decimals = decimals });
     }
     /// Logs the rows; whether any is over its budget.
     [[nodiscard]] bool Print() {
@@ -202,19 +212,18 @@ bool Measure(const Options& options, u32 scale) {
     const core::WorldMap map = test::SyntheticMap(scale, options.seed);
     const core::RoutingRules rules{ .sectorSize = options.sector, .gateSpacing = options.gateSpacing };
     core::Jobs jobs{ options.workers };
-    std::optional<core::RouteGraphs> graphs;
+    std::vector<core::RouteGraphs> graphs; // the one serial build, kept for the tables
     const f64 parallelMs = BestOf(BUILD_RUNS, [&] {
-        graphs.emplace(
-            core::RouteGraphs::Build(map, rules, { .jobs = &jobs, .sectorsPerChunk = options.chunk, .share = options.share })
+        return core::RouteGraphs::Build(
+            map, rules, { .jobs = &jobs, .sectorsPerChunk = options.chunk, .share = options.share }
         );
     });
     const f64 serialMs = BestOf(1, [&] {
-        graphs.emplace(core::RouteGraphs::Build(map, rules, { .sectorsPerChunk = options.chunk, .share = options.share }));
-    });
-    if (!graphs) {
+        graphs.push_back(core::RouteGraphs::Build(map, rules, { .sectorsPerChunk = options.chunk, .share = options.share }));
         return true;
-    }
+    });
 
+    const core::RouteGraphs& built = graphs.front();
     const f64 sectors = static_cast<f64>(core::SectorColumns(map, rules)) * static_cast<f64>(core::SectorRows(map, rules));
     const f64 factor = static_cast<f64>(scale);
     const std::span<const core::MovementProfile> profiles = map.Profiles();
@@ -235,24 +244,24 @@ bool Measure(const Options& options, u32 scale) {
     bool over = build.Print();
 
     Table memory;
-    memory.Add("memory, all graphs", static_cast<f64>(graphs->Bytes()) / MEGABYTE, MEMORY_BUDGET_MB_PER_SCALE * factor, "MB");
+    memory.Add("memory, all graphs", static_cast<f64>(built.Bytes()) / MEGABYTE, MEMORY_BUDGET_MB_PER_SCALE * factor, "MB");
     for (std::size_t profile = 0; profile < profiles.size(); ++profile) {
-        const core::RouteGraph& graph = graphs->Of(static_cast<core::ProfileIndex>(profile));
+        const core::RouteGraph& graph = built.Of(static_cast<core::ProfileIndex>(profile));
         memory.Add(std::format("memory, {}", profiles[profile].key), static_cast<f64>(graph.Bytes()) / MEGABYTE, 0.0, "MB");
     }
     over = memory.Print() || over;
 
     Table counts;
-    counts.Add("sectors", sectors, 0.0, "");
-    counts.Add("sectors x profiles", sectors * static_cast<f64>(profiles.size()), 0.0, "");
-    counts.Add("sectors built, the rest copied", static_cast<f64>(graphs->SectorsBuilt()), 0.0, "");
+    counts.Add("sectors", sectors, 0.0, "", 0);
+    counts.Add("sectors x profiles", sectors * static_cast<f64>(profiles.size()), 0.0, "", 0);
+    counts.Add("sectors built, the rest copied", static_cast<f64>(built.SectorsBuilt()), 0.0, "", 0);
     for (std::size_t profile = 0; profile < profiles.size(); ++profile) {
-        const core::RouteGraph& graph = graphs->Of(static_cast<core::ProfileIndex>(profile));
+        const core::RouteGraph& graph = built.Of(static_cast<core::ProfileIndex>(profile));
         const std::string& key = profiles[profile].key;
-        counts.Add(std::format("{} nodes", key), static_cast<f64>(graph.Nodes()), 0.0, "");
-        counts.Add(std::format("{} edges", key), static_cast<f64>(graph.Edges().size()), 0.0, "");
+        counts.Add(std::format("{} nodes", key), static_cast<f64>(graph.Nodes()), 0.0, "", 0);
+        counts.Add(std::format("{} edges", key), static_cast<f64>(graph.Edges().size()), 0.0, "", 0);
         counts.Add(
-            std::format("{} gates a sector", key), static_cast<f64>(CrossingEdges(map, rules, graph)) / sectors, 0.0, ""
+            std::format("{} gates a sector", key), static_cast<f64>(CrossingEdges(map, rules, graph)) / sectors, 0.0, "", 2
         );
     }
     static_cast<void>(counts.Print());
