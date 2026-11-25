@@ -14,6 +14,8 @@ root rule state the budgets.
 **Tech Stack:** Markdown, Doxygen comments in C++ headers and `module.dox`, Python (stdlib) in `tools/project_n.py`
 with `unittest` in `tools/test_project_n.py`.
 
+**Status:** approved by the user 2026-11-25.
+
 **Spec:** `docs/superpowers/specs/2026-11-25-review-mediums-design.md`, area R1 (findings X-ARCHITECTURE-08,
 DESIGN-DOCS-02, GD-ROADMAP-SCOPE-07; their cluster AGENT-DOCS-02, CORE-INFRA-20, SPECS-BUILT-A-09, GAME-SCENES-13,
 TOOLS-A-20; review files under `docs/reviews/2026-11-25-full-codebase-review/`).
