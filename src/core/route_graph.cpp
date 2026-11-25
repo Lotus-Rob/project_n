@@ -55,9 +55,12 @@ void ForEachGate(const WorldMap& map, ProfileIndex profile, u32 gateSpacing, Bor
             const auto first = static_cast<u32>(offset + (piece * run / pieces));
             const auto last = static_cast<u32>(offset + ((piece + 1) * run / pieces));
             u32 best = first;
+            u32 bestCost = pairCost(first);
             for (u32 at = first + 1; at < last; ++at) {
-                if (pairCost(at) < pairCost(best)) {
+                const u32 cost = pairCost(at);
+                if (cost < bestCost) {
                     best = at;
+                    bestCost = cost;
                 }
             }
             visit(border.firstA + (best * border.stride), border.firstB + (best * border.stride));
@@ -223,31 +226,33 @@ SectorGraph BuildSector(const WorldMap& map, ProfileIndex profile, RoutingRules 
     const u32 width = span.lastColumn - span.firstColumn + 1;
     const u32 height = span.lastRow - span.firstRow + 1;
     const u32 topLeft = map.TileIndex({ .column = span.firstColumn, .row = span.firstRow });
-    const u32 bottomLeft = map.TileIndex({ .column = span.firstColumn, .row = span.lastRow });
-    const u32 topRight = map.TileIndex({ .column = span.lastColumn, .row = span.firstRow });
-    const bool west = span.firstColumn > 0;
-    const bool east = span.lastColumn + 1 < columns;
-    const bool north = span.firstRow > 0;
-    const bool south = span.lastRow + 1 < map.Rows();
-    const Border westBorder{ .firstA = topLeft - 1, .firstB = topLeft, .stride = columns, .length = height };
-    const Border eastBorder{ .firstA = topRight, .firstB = topRight + 1, .stride = columns, .length = height };
-    const Border northBorder{ .firstA = topLeft - columns, .firstB = topLeft, .stride = 1, .length = width };
-    const Border southBorder{ .firstA = bottomLeft, .firstB = bottomLeft + columns, .stride = 1, .length = width };
 
     SectorGraph graph;
     const auto addEastOrSouthTile = [&](u32 /*westOrNorth*/, u32 eastOrSouth) { graph.nodes.push_back(eastOrSouth); };
-    const auto addWestOrNorthTile = [&](u32 westOrNorth, u32 /*eastOrSouth*/) { graph.nodes.push_back(westOrNorth); };
-    if (west) {
-        ForEachGate(map, profile, rules.gateSpacing, westBorder, addEastOrSouthTile);
+    // A crossing keeps its node's tile in costBack until the nodes are final, so each border's gates are found once.
+    const auto addCrossing = [&](bool south) {
+        return [&graph, &map, profile, south](u32 inner, u32 outer) {
+            graph.nodes.push_back(inner);
+            graph.crossings.push_back({ .node = 0, .south = south, .cost = map.CostAt(outer, profile), .costBack = inner });
+        };
+    };
+    if (span.firstColumn > 0) {
+        const Border west{ .firstA = topLeft - 1, .firstB = topLeft, .stride = columns, .length = height };
+        ForEachGate(map, profile, rules.gateSpacing, west, addEastOrSouthTile);
     }
-    if (east) {
-        ForEachGate(map, profile, rules.gateSpacing, eastBorder, addWestOrNorthTile);
+    if (span.lastColumn + 1 < columns) {
+        const u32 topRight = map.TileIndex({ .column = span.lastColumn, .row = span.firstRow });
+        const Border east{ .firstA = topRight, .firstB = topRight + 1, .stride = columns, .length = height };
+        ForEachGate(map, profile, rules.gateSpacing, east, addCrossing(false));
     }
-    if (north) {
-        ForEachGate(map, profile, rules.gateSpacing, northBorder, addEastOrSouthTile);
+    if (span.firstRow > 0) {
+        const Border north{ .firstA = topLeft - columns, .firstB = topLeft, .stride = 1, .length = width };
+        ForEachGate(map, profile, rules.gateSpacing, north, addEastOrSouthTile);
     }
-    if (south) {
-        ForEachGate(map, profile, rules.gateSpacing, southBorder, addWestOrNorthTile);
+    if (span.lastRow + 1 < map.Rows()) {
+        const u32 bottomLeft = map.TileIndex({ .column = span.firstColumn, .row = span.lastRow });
+        const Border south{ .firstA = bottomLeft, .firstB = bottomLeft + columns, .stride = 1, .length = width };
+        ForEachGate(map, profile, rules.gateSpacing, south, addCrossing(true));
     }
     for (u32 row = span.firstRow; row <= span.lastRow; ++row) {
         for (u32 column = span.firstColumn; column <= span.lastColumn; ++column) {
@@ -264,25 +269,10 @@ SectorGraph BuildSector(const WorldMap& map, ProfileIndex profile, RoutingRules 
         graph.nodes.size() <= std::size_t{ std::numeric_limits<u16>::max() } + 1, "a sector's node indices fit in 16 bits"
     );
 
-    if (east) {
-        ForEachGate(map, profile, rules.gateSpacing, eastBorder, [&](u32 inner, u32 outer) {
-            graph.crossings.push_back(
-                { .node = NodeIndex(graph.nodes, inner),
-                  .south = false,
-                  .cost = map.CostAt(outer, profile),
-                  .costBack = map.CostAt(inner, profile) }
-            );
-        });
-    }
-    if (south) {
-        ForEachGate(map, profile, rules.gateSpacing, southBorder, [&](u32 inner, u32 outer) {
-            graph.crossings.push_back(
-                { .node = NodeIndex(graph.nodes, inner),
-                  .south = true,
-                  .cost = map.CostAt(outer, profile),
-                  .costBack = map.CostAt(inner, profile) }
-            );
-        });
+    for (SectorCrossing& crossing : graph.crossings) {
+        const u32 inner = crossing.costBack;
+        crossing.node = NodeIndex(graph.nodes, inner);
+        crossing.costBack = map.CostAt(inner, profile);
     }
     std::ranges::sort(graph.crossings, {}, [](const SectorCrossing& crossing) {
         return std::pair{ crossing.node, crossing.south };
