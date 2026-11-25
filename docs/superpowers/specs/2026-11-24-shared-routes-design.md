@@ -1,6 +1,6 @@
 # Layered routing: journeys as plans over a route graph built once per world
 
-Date: 2026-11-24, reworked 2026-11-25 · Status: **draft** (builder check done on the rework; its five questions settled as Decisions 10-13, Goal 14's note and the place table's exception) · Builds on:
+Date: 2026-11-24, reworked 2026-11-25 · Status: **approved 2026-11-25** (builder check done on the rework; its five questions settled as Decisions 10-13, Goal 14's note and the place table's exception) · Builds on:
 `2026-11-23-phase6-chunk5b-look-travellers-design.md` (its Outcome), `2026-11-22-roads-design.md` · Replaces two sweep-up
 backlog items: "NEXT DESIGN after the travellers branch: per-destination walk tables + journeys keep only their plan +
 NPCs set out from their city?" and "Journeys share their routes in the simulation"
