@@ -456,17 +456,16 @@ Tables BuildTables(const core::WorldMap& map, const core::RouteGraphs& graphs, c
         const u32 bound = core::ReachBound(map.Travel(), profile);
         const core::RouteGraph& graph = graphs.Of(profile);
         built.bounds.push_back(bound);
-        std::optional<core::PlaceTable> made;
         f64 best = std::numeric_limits<f64>::max();
         for (u32 run = 0; run < BUILD_RUNS; ++run) {
-            made.reset(); // the last run's table stays, freed outside the clock
-            best = std::min(best, BestOf(1, [&] {
-                                made.emplace(core::PlaceTable::Build(map, graph, bound, &jobs));
-                                return true;
-                            }));
+            const auto start = std::chrono::steady_clock::now();
+            core::PlaceTable table = core::PlaceTable::Build(map, graph, bound, &jobs);
+            best = std::min(best, std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - start).count());
+            if (run + 1 == BUILD_RUNS) {
+                built.tables.push_back(std::move(table));
+            }
         }
         built.buildMs.push_back(best);
-        built.tables.push_back(std::move(made).value());
     }
     return built;
 }
