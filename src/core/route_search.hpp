@@ -159,7 +159,15 @@ private:
     SearchCounts m_counts{};
 };
 
-/// The route's tiles from its start to its end, each joint between its parts once.
+/// The route's tiles from its start to its end, each joint between its parts once. `walk` is the caller's workspace for
+/// the edges' ways, kept across calls so that only a block larger than any it has walked allocates.
+[[nodiscard]] std::vector<u32> RouteTiles(
+    const WorldMap& map,
+    const RouteGraph& graph,
+    const GraphRoute& route,
+    SectorWalk& walk
+);
+/// The same with a workspace of its own, for a caller that asks once.
 [[nodiscard]] std::vector<u32> RouteTiles(const WorldMap& map, const RouteGraph& graph, const GraphRoute& route);
 
 } // namespace core
