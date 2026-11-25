@@ -3141,7 +3141,7 @@ AGENT_BRIEF_LINES = 60      # .claude/agents/*.md
 
 def doc_budget_problems(path, text):
     """Budget findings for one agent doc; `path` is repo-relative and '/'-separated."""
-    if path.startswith(".claude/skills/") and path.endswith(".md"):
+    if path.startswith(".claude/skills/") and path.endswith("/SKILL.md"):
         n = len(text.splitlines())
         return [f"{path}: {n} lines, over the {SKILL_LINES}-line budget"] if n > SKILL_LINES else []
     if path.startswith(".claude/agents/") and path.endswith(".md"):

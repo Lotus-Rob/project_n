@@ -2024,15 +2024,21 @@ class DocsTest(unittest.TestCase):
 
 class TestDocBudgets(unittest.TestCase):
     def test_an_agents_md_at_the_byte_budget_passes(self):
-        self.assertEqual(project_n.doc_budget_problems("src/AGENTS.md", ("a" * 99 + "\n") * 81 + "a" * 90 + "\n"), [])
+        self.assertEqual(project_n.doc_budget_problems("src/AGENTS.md", ("a" * 99 + "\n") * 81 + "a" * 91 + "\n"), [])
 
     def test_an_agents_md_over_the_byte_budget_fails(self):
-        self.assertEqual(project_n.doc_budget_problems("src/AGENTS.md", ("a" * 99 + "\n") * 82),
-                         ["src/AGENTS.md: 8200 bytes, over the 8192-byte budget"])
+        self.assertEqual(project_n.doc_budget_problems("src/AGENTS.md", ("a" * 99 + "\n") * 81 + "a" * 92 + "\n"),
+                         ["src/AGENTS.md: 8193 bytes, over the 8192-byte budget"])
 
     def test_a_line_over_300_characters_fails(self):
         self.assertEqual(project_n.doc_budget_problems("tests/AGENTS.md", "x\n" + "b" * 301 + "\n"),
                          ["tests/AGENTS.md:2: 301 characters, over the 300-character line budget"])
+
+    def test_a_line_of_300_characters_passes(self):
+        self.assertEqual(project_n.doc_budget_problems("tests/AGENTS.md", "b" * 300 + "\n"), [])
+
+    def test_a_skills_reference_file_has_no_line_budget(self):
+        self.assertEqual(project_n.doc_budget_problems(".claude/skills/x/references/r.md", "l\n" * 201), [])
 
     def test_a_line_is_measured_in_characters(self):
         self.assertEqual(project_n.doc_budget_problems("tools/AGENTS.md", "\u2192" * 300 + "\n"), [])  # 900 bytes
