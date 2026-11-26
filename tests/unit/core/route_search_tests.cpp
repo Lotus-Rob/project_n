@@ -415,7 +415,7 @@ struct NearCosts {
     u32 table = 0;
 };
 
-/// The costs from place `from` to place `target` of `map`, both cities, over `graph`.
+/// The costs from place `from` to place `target` of `map` over `graph`.
 NearCosts CostsBetween(const core::WorldMap& map, const core::RouteGraph& graph, u16 from, u16 target) {
     const u32 start = At(map, map.Places()[from].tile);
     const u32 end = At(map, map.Places()[target].tile);

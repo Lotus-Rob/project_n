@@ -192,7 +192,10 @@ void AddPlaceEdges(
         const u32 own = graph.nodes[place];
         walk.WalkFrom(map, profile, block, own);
         for (const u32 tile : others) {
-            const u32 cost = tile == own ? UNREACHABLE : walk.Cost(tile);
+            if (tile == own) {
+                continue;
+            }
+            const u32 cost = walk.Cost(tile);
             if (cost == UNREACHABLE) {
                 continue;
             }
@@ -400,10 +403,20 @@ SectorGraph BuildSector(const WorldMap& map, ProfileIndex profile, RoutingRules 
         return std::pair{ crossing.node, crossing.south };
     });
 
+    // Two places of one sector share its block, and each one's block edge to the other is the cheapest way inside the
+    // block, which holds the sector: a way kept inside the sector between them could at best tie.
+    const auto isPlace = [&](std::size_t node) { return map.PlaceAt(graph.nodes[node]) != NO_PLACE; };
     std::vector<u32> way;
     for (std::size_t from = 0; from + 1 < graph.nodes.size(); ++from) {
-        walk.WalkFrom(map, profile, span, graph.nodes[from]);
+        bool walked = false;
         for (std::size_t to = from + 1; to < graph.nodes.size(); ++to) {
+            if (isPlace(from) && isPlace(to)) {
+                continue;
+            }
+            if (!walked) {
+                walk.WalkFrom(map, profile, span, graph.nodes[from]);
+                walked = true;
+            }
             const u32 cost = walk.Cost(graph.nodes[to]);
             if (cost == UNREACHABLE) {
                 continue;
@@ -685,7 +698,8 @@ bool SectorCostsAgree(const WorldMap& map, RoutingRules rules, u32 sector, Profi
             holdsPlace = map.PlaceAt(map.TileIndex({ .column = column, .row = row })) != NO_PLACE;
         }
     }
-    // A place's block edges walk its block and end on the gates of the sectors round it, which read their own rings.
+    // A place's block edges walk its block and end on nodes of it (the gates of the sectors round it, which read their own
+    // rings, and the places near it).
     const TileSpan span = holdsPlace ? BlockSpan(map, rules, sector) : own;
     const u32 firstColumn = span.firstColumn == 0 ? 0 : span.firstColumn - 1;
     const u32 lastColumn = std::min(span.lastColumn + 1, map.Columns() - 1);

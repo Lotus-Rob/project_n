@@ -182,7 +182,8 @@ struct SectorGraph {
     /// The node tiles, ascending: each side of a gate on any of the sector's borders and each place the profile can
     /// enter, a tile that is several of these once.
     std::vector<u32> nodes;
-    /// The ways inside the sector between pairs of nodes, by (from, to); none for a pair no way inside joins.
+    /// The ways inside the sector between pairs of nodes, by (from, to); none for a pair no way inside joins, nor for two
+    /// places, which placeEdges joins each way.
     std::vector<SectorEdge> edges;
     /// The steps over the east and south borders, by (node, east before south).
     std::vector<SectorCrossing> crossings;
@@ -207,7 +208,9 @@ struct SectorGraph {
 );
 
 /// A way between two nodes of a route graph: inside one sector, a step over a border onto the node beside it, or a
-/// place's way to a node of a sector round its own or to another place of its own sector (a block edge).
+/// place's way to a node of a sector round its own or to another place of its own sector (a block edge). Its `cost` and
+/// `costBack` are each the sum of WorldMap::StepCost over real steps between its nodes, so neither is ever cheaper than
+/// the route search's estimate between them, which the search relies on.
 struct GraphEdge {
     /// The node where the way starts: the lower one, but a block edge's place.
     u32 from = 0;
