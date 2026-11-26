@@ -850,7 +850,8 @@ def test_file_pattern(stem):
 
 def test_filter(name, suite):
     """doctest's filter for `test --suite SUITE --test NAME`: the cases of the test file NAME names, else the cases with
-    NAME in their name. A file of another suite fails: doctest passes a run whose filter selects nothing."""
+    NAME in their name (`check_test_matches` fails a name that selects none). A file of another suite fails: doctest
+    passes a run whose filter selects nothing."""
     suites = test_names()
     if name not in all_test_files(suites):
         return f"--test-case=*{name}*"
@@ -860,12 +861,46 @@ def test_filter(name, suite):
     return f"--source-file={test_file_pattern(name)}"
 
 
+def doctest_case_count(listing):
+    """The case count at the end of doctest's `--list-test-cases` output ("[doctest] unskipped test cases passing the
+    current filters: N"); 0 when the line is missing, as a run that listed nothing selected nothing."""
+    found = re.search(r"test cases passing the current filters: (\d+)", listing)
+    return int(found.group(1)) if found else 0
+
+
+def doctest_case_names(listing):
+    """The case names `--list-test-cases` prints, one per line between the `[doctest]` and `====` lines."""
+    return [line.strip() for line in listing.splitlines() if line.strip() and not line.startswith(("[doctest]", "==="))]
+
+
+def test_candidates(name, stems, cases):
+    """The test files and case names closest to a `--test` name that matched nothing, for the error."""
+    return difflib.get_close_matches(name, [*stems, *cases], n=5, cutoff=0.6)
+
+
+def list_test_cases(target, bdir, filters=()):
+    """doctest's listing of the cases of `target` passing `filters`, through the runner a test run uses (Wine for
+    windows-msvc)."""
+    argv = ["xmake", "run", target, "--list-test-cases", *filters]
+    return run(argv, env=xmake_env(bdir), capture_output=True, encoding="utf-8", errors="replace").stdout
+
+
+def check_test_matches(name, target, bdir):
+    """Fail a `--test` name that is no test file and selects no case of `target`: doctest passes a run that selects
+    nothing, which hides a misspelt name."""
+    if doctest_case_count(list_test_cases(target, bdir, [f"--test-case=*{name}*"])):
+        return
+    cases = doctest_case_names(list_test_cases(target, bdir))
+    near = test_candidates(name, test_names().get(target, ()), cases)
+    raise Fail(f"--test {name} matches no test file and no test case" + (f"; did you mean: {', '.join(near)}" if near else ""))
+
+
 def cmd_test(args):
     """Build and run the tests. `--suite` (`--target`) names one test target: a suite or fuzz suite runs its files in
     parallel, one process per test file; with `--test` or doctest arguments the binary runs once instead, keeping the
     cases of the test file `--test` names, else the cases with it in their name. A name that is no suite, fuzz suite or
     test program (`headless_bench`, `reference_tests`) is refused. A `--test` that matches no test file and no case
-    name still runs nothing and passes. A fuzz suite replays its seeds once (`-runs=0`) and only under linux-clang with
+    name fails, naming the closest files and cases. A fuzz suite replays its seeds once (`-runs=0`) and only under linux-clang with
     AddressSanitizer. A skipped long run or measurement is run by name with `--no-skip`, in double quotes as names
     hold apostrophes."""
     if getattr(args, "list_tests", False):  # internal callers build their own Namespace
@@ -888,6 +923,8 @@ def cmd_test(args):
         # MSVC's ASan hot-patches system DLLs; Wine's (CET endbr64 prologues) can't be patched.
         print(f"test: built with {args.sanitizer} sanitizer; MSVC sanitizer runs need native Windows, not Wine")
         return
+    if args.test and extra[0].startswith("--test-case="):
+        check_test_matches(args.test, args.target, bdir)
     if args.target in (*test_names(), *fuzz_suites()) and not extra:
         # Each test file is a test of its own (tests/xmake.lua), so a suite's files run in parallel.
         run(["xmake", "test", "--output-on-failure", f"{args.target}/*"], env=xmake_env(bdir))
