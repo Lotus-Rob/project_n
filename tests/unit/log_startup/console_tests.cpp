@@ -17,13 +17,16 @@ namespace {
 
 #ifdef _WIN32
 // Its own executable: Quill's loggers live for the whole process, and this Start() must be the first.
-// The console starts in another code page, so only Start can have switched it to UTF-8.
+// A private console, so no other process shares the code page this changes: the one inherited is
+// the parent's, and `xmake test` runs other test executables on it at the same time. It starts in
+// another code page, so only Start can have switched it to UTF-8.
 TEST_CASE("Start sets the console's output code page to UTF-8") {
-    if (GetConsoleOutputCP() == 0 && !AllocConsole()) {
+    FreeConsole();
+    // Wine's console accepts AllocConsole but not a code page: the same "no console" here.
+    if (!AllocConsole() || !SetConsoleOutputCP(437)) {
         WARN_MESSAGE(false, "no console can be attached here");
         return;
     }
-    REQUIRE(SetConsoleOutputCP(437));
     REQUIRE(GetConsoleOutputCP() == 437);
     core::log::Start({});
 
