@@ -207,6 +207,11 @@ void AddPlaceEdges(
     }
 }
 
+/// How many parts of `part` it takes to cover `whole`, the last perhaps short; never wraps, whatever `part` is.
+u32 CeilingOf(u32 whole, u32 part) {
+    return (whole / part) + (whole % part != 0 ? 1U : 0U);
+}
+
 /// The index of `tile` in `nodes`, which holds it.
 u16 NodeIndex(const std::vector<u32>& nodes, u32 tile) {
     const auto found = std::ranges::lower_bound(nodes, tile);
@@ -218,12 +223,12 @@ u16 NodeIndex(const std::vector<u32>& nodes, u32 tile) {
 
 u32 SectorColumns(const WorldMap& map, RoutingRules rules) {
     PN_ASSERT(rules.sectorSize > 0, "a sector holds tiles");
-    return (map.Columns() + rules.sectorSize - 1) / rules.sectorSize;
+    return CeilingOf(map.Columns(), rules.sectorSize);
 }
 
 u32 SectorRows(const WorldMap& map, RoutingRules rules) {
     PN_ASSERT(rules.sectorSize > 0, "a sector holds tiles");
-    return (map.Rows() + rules.sectorSize - 1) / rules.sectorSize;
+    return CeilingOf(map.Rows(), rules.sectorSize);
 }
 
 TileSpan SectorSpan(const WorldMap& map, RoutingRules rules, u32 sector) {
@@ -231,10 +236,11 @@ TileSpan SectorSpan(const WorldMap& map, RoutingRules rules, u32 sector) {
     PN_ASSERT(sector < columns * SectorRows(map, rules), "a sector of the map");
     const u32 firstColumn = (sector % columns) * rules.sectorSize;
     const u32 firstRow = (sector / columns) * rules.sectorSize;
+    // Counted from the sector's first tile, as the first tile plus a sector's side may pass u32's range.
     return { .firstColumn = firstColumn,
-             .lastColumn = std::min(firstColumn + rules.sectorSize, map.Columns()) - 1,
+             .lastColumn = firstColumn + std::min(rules.sectorSize, map.Columns() - firstColumn) - 1,
              .firstRow = firstRow,
-             .lastRow = std::min(firstRow + rules.sectorSize, map.Rows()) - 1 };
+             .lastRow = firstRow + std::min(rules.sectorSize, map.Rows() - firstRow) - 1 };
 }
 
 BlockSectors BlockSectorsOf(const WorldMap& map, RoutingRules rules, u32 sector) {
