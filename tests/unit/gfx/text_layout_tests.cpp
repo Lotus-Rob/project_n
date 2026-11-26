@@ -105,15 +105,36 @@ f32 LineHeight() {
     return height;
 }
 
+// A folder of its own under the system's temporary folder, removed when it goes out of scope.
+class Folder {
+public:
+    explicit Folder(const std::filesystem::path& name)
+      : m_path{ std::filesystem::temp_directory_path() / name } {
+        std::filesystem::remove_all(m_path);
+        std::filesystem::create_directories(m_path);
+    }
+    Folder(const Folder&) = delete;
+    Folder& operator=(const Folder&) = delete;
+    Folder(Folder&&) = delete;
+    Folder& operator=(Folder&&) = delete;
+    ~Folder() {
+        std::error_code ignored;
+        std::filesystem::remove_all(m_path, ignored);
+    }
+
+    [[nodiscard]] const std::filesystem::path& Path() const {
+        return m_path;
+    }
+
+private:
+    std::filesystem::path m_path;
+};
+
 TEST_CASE("the font opens from a folder named outside the ANSI code page") {
-    const std::filesystem::path folder = std::filesystem::temp_directory_path() / u8"project_n_font_项目_é_🎮";
-    std::filesystem::remove_all(folder);
-    std::filesystem::create_directories(folder);
-    std::filesystem::copy_file(Assets() / "fonts" / FONT_FILE, folder / FONT_FILE);
-    const std::expected<gfx::TextLayout, core::Error> layout = gfx::TextLayout::Open(folder);
+    const Folder folder{ u8"project_n_font_项目_é_🎮" };
+    std::filesystem::copy_file(Assets() / "fonts" / FONT_FILE, folder.Path() / FONT_FILE);
+    const std::expected<gfx::TextLayout, core::Error> layout = gfx::TextLayout::Open(folder.Path());
     const std::string error = layout.error_or(core::Error{}).message;
-    std::error_code ignored;
-    std::filesystem::remove_all(folder, ignored);
     REQUIRE_MESSAGE(layout, error);
 }
 
