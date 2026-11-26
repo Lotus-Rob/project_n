@@ -3,6 +3,7 @@
 #include "core/command_line.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
+#include "core/path_text.hpp"
 #include "data/animations.hpp"
 #include "data/effects.hpp"
 #include "data/game_data.hpp"
@@ -86,7 +87,7 @@ i32 Run(const core::Settings& settings, app::Options options, bool fullscreen, s
     if (!gameData) {
         return FailToStart("the game's data couldn't be read", gameData.error());
     }
-    PN_LOG_INFO("game data read from {}", dataFolder.string());
+    PN_LOG_INFO("game data read from {}", core::PathText(dataFolder));
     options.data = *gameData;
     options.dataFolder = dataFolder;
     const std::expected<core::Effects, core::Error> effects = data::LoadEffects(dataFolder);
