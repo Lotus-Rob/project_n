@@ -747,7 +747,7 @@ def remove_empty_outputs(folder):
 
 def build(preset, mode, sanitizer="none"):
     bdir = configure(preset, mode, sanitizer)
-    removed = remove_empty_outputs(binary_path(preset, mode).parent)
+    removed = remove_empty_outputs(binary_path(preset, mode, sanitizer=sanitizer).parent)
     if removed:
         print(f"build: removed {len(removed)} empty outputs a stopped build left: {', '.join(removed)}")
     run(["xmake", "build"], env=xmake_env(bdir))
@@ -757,10 +757,10 @@ def build(preset, mode, sanitizer="none"):
     return bdir
 
 
-def binary_path(preset, mode, name=APP):
+def binary_path(preset, mode, name=APP, sanitizer="none"):
     p = PRESETS[preset]
     exe = name + (".exe" if p["plat"] == "windows" else "")
-    return build_dir(preset, mode) / p["plat"] / p["arch"] / mode / exe
+    return build_dir(preset, mode, sanitizer) / p["plat"] / p["arch"] / mode / exe
 
 
 def cmd_build(args):
@@ -942,7 +942,7 @@ def cmd_test(args):
         argv += ["--", *doctest_args] if doctest_args else []
         return reenter(args.preset, argv)
     bdir = build(args.preset, args.mode, args.sanitizer)
-    if PRESETS[args.preset]["plat"] == "windows" and args.sanitizer != "none" and HOST != "windows":
+    if sanitizer_only_builds(args.preset, args.sanitizer):
         # MSVC's ASan hot-patches system DLLs; Wine's (CET endbr64 prologues) can't be patched.
         print(f"test: built with {args.sanitizer} sanitizer; MSVC sanitizer runs need native Windows, not Wine")
         return
@@ -2419,18 +2419,24 @@ def cmd_check(args):
         print(step_times_table(times), flush=True)
 
 
+def sanitizer_only_builds(preset, sanitizer):
+    """Whether a sanitizer test run only builds: MSVC's sanitizer runs need native Windows, not Wine."""
+    return PRESETS[preset]["plat"] == "windows" and sanitizer != "none" and HOST != "windows"
+
+
 def sanitizer_builds_only(skipped):
-    """The sanitizer checks `cmd_test` only builds, as "<preset>'s <sanitizer>": MSVC's runs need native Windows."""
-    if HOST == "windows":
-        return []
-    return [f"{p}'s {s}" for p in PRESETS if PRESETS[p]["plat"] == "windows" and p not in skipped for s in SANITIZERS[p]]
+    """The sanitizer checks `cmd_test` only builds, as "<preset>'s <sanitizer>"."""
+    return [f"{p}'s {s}" for p in PRESETS if p not in skipped for s in SANITIZERS[p] if sanitizer_only_builds(p, s)]
 
 
 def check_summary(sanitizers, skipped, built_only):
     """The line `check` ends on: what passed, which sanitizer checks only built, which presets were skipped."""
-    return ("check: all presets passed" + (" with every supported sanitizer" if sanitizers else "")
-            + (f"; {', '.join(built_only)} built, not run (MSVC sanitizer runs need native Windows)" if built_only else "")
-            + (f" (skipped {', '.join(skipped)}: not buildable on this host)" if skipped else ""))
+    summary = "check: all presets passed" + (" with every supported sanitizer" if sanitizers else "")
+    skip = f"skipped {', '.join(skipped)}: not buildable on this host" if skipped else ""
+    if built_only:
+        summary += f"; {', '.join(built_only)} built, not run (MSVC sanitizer runs need native Windows)"
+        return summary + (f"; {skip}" if skip else "")
+    return summary + (f" ({skip})" if skip else "")
 
 
 def check_trees(args):
