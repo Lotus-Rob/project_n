@@ -1891,6 +1891,10 @@ class NonUtf8ListingTest(unittest.TestCase):
             found = project_n.non_utf8_files(project_n.git_names("ls-files"))
             self.assertEqual([f.split(":")[0] for f in found], [self.NAME])
 
+    def test_a_listing_with_pathspecs_gives_raw_names(self):
+        with temp_repo({"docs/café.md": "a", "src/a.cpp": "a"}):
+            self.assertEqual(project_n.git_names("ls-files", "--", "*.md"), ["docs/café.md"])
+
     def test_a_non_ascii_name_is_found_by_changed_files(self):
         with temp_repo({"src/a.cpp": "a"}) as root:
             (root / self.NAME).write_bytes(b"caf\xe9\n")
