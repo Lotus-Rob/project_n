@@ -10,6 +10,10 @@ namespace {
 /// The segment over `tiles`, walked forward from the first; `reversed` is the caller's buffer for the tiles back to front.
 Segment Fill(const WorldMap& map, const RouteGraph& graph, const std::vector<u32>& tiles, std::vector<u32>& reversed) {
     PN_ASSERT(!tiles.empty(), "an edge has tiles");
+    if (tiles.empty()) {
+        // Only a graph read with a map other than its own walks no way; the cost tables below need a first tile.
+        return {};
+    }
     const ProfileIndex profile = graph.Profile();
     Segment segment;
     segment.tiles = tiles;
