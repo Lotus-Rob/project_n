@@ -481,32 +481,137 @@ TEST_CASE("a node's links name each of its edges once, each way's cost") {
     CHECK(unlisted == 0);
 }
 
+/// An edge picked as a test's sample, named for why it is there.
+struct EdgeSample {
+    /// Why it is a sample.
+    std::string name;
+    /// Its ID, or NO_EDGE when the graph has no such edge.
+    u32 edge;
+};
+
+/// The ID of no edge.
+constexpr u32 NO_EDGE = std::numeric_limits<u32>::max();
+
+/// The first edge of `graph`, by ID, that `wanted(edgeId, edge)` picks, or NO_EDGE.
+template<typename Wanted>
+u32 FirstEdge(const core::RouteGraph& graph, const Wanted& wanted) {
+    for (u32 edgeId = 0; edgeId < graph.Edges().size(); ++edgeId) {
+        if (wanted(edgeId, graph.Edges()[edgeId])) {
+            return edgeId;
+        }
+    }
+    return NO_EDGE;
+}
+
+/// One edge of each kind and shape of `graph`, a graph of `map`, named after `label`: its first and last, ways inside a
+/// sector dearer, cheaper and alike walked back, steps east and south over a border, and a place's way to a gate.
+std::vector<EdgeSample> EdgeSamples(const core::WorldMap& map, const core::RouteGraph& graph, std::string_view label) {
+    const auto inside = [&](u32 edgeId) { return NamedKind(graph, edgeId) == EdgeKind::Inside; };
+    const auto step = [&](const core::GraphEdge& edge) { return graph.NodeTile(edge.to) - graph.NodeTile(edge.from); };
+    const auto toPlace = [&](const core::GraphEdge& edge) { return map.PlaceAt(graph.NodeTile(edge.to)) != core::NO_PLACE; };
+    const auto edges = static_cast<u32>(graph.Edges().size());
+    return {
+        { .name = std::format("{}: the first edge", label), .edge = edges == 0 ? NO_EDGE : 0 },
+        { .name = std::format("{}: the last edge", label), .edge = edges == 0 ? NO_EDGE : edges - 1 },
+        { .name = std::format("{}: a way inside a sector, dearer back", label),
+          .edge = FirstEdge(
+              graph, [&](u32 edgeId, const core::GraphEdge& edge) { return inside(edgeId) && edge.costBack > edge.cost; }
+          ) },
+        { .name = std::format("{}: a way inside a sector, cheaper back", label),
+          .edge = FirstEdge(
+              graph, [&](u32 edgeId, const core::GraphEdge& edge) { return inside(edgeId) && edge.costBack < edge.cost; }
+          ) },
+        { .name = std::format("{}: a way inside a sector, alike both ways", label),
+          .edge = FirstEdge(
+              graph, [&](u32 edgeId, const core::GraphEdge& edge) { return inside(edgeId) && edge.costBack == edge.cost; }
+          ) },
+        { .name = std::format("{}: a step east over a border", label),
+          .edge = FirstEdge(
+              graph, [&](u32 edgeId, const core::GraphEdge& edge) { return graph.IsCrossing(edgeId) && step(edge) == 1; }
+          ) },
+        { .name = std::format("{}: a step south over a border", label),
+          .edge = FirstEdge(
+              graph,
+              [&](u32 edgeId, const core::GraphEdge& edge) { return graph.IsCrossing(edgeId) && step(edge) == map.Columns(); }
+          ) },
+        { .name = std::format("{}: a place's way to a gate", label),
+          .edge = FirstEdge(
+              graph, [&](u32 edgeId, const core::GraphEdge& edge) { return graph.IsBlockEdge(edgeId) && !toPlace(edge); }
+          ) },
+    };
+}
+
 TEST_CASE("an edge's tiles start and end on its nodes and cost what the edge says each way") {
     const core::WorldMap map = HandMap();
     const core::RouteGraphs graphs = HandGraphs(map);
+    // Sectors of 12 leave the map's last column of sectors 4 tiles wide, the road and the danger in it, and make blocks
+    // wide enough to hold two places, which sectors of 8 never do.
+    constexpr core::RoutingRules SHORT_RULES{ .sectorSize = 12, .gateSpacing = 4 };
+    const core::RouteGraphs shortGraphs = core::RouteGraphs::Build(map, SHORT_RULES);
+    const core::RouteGraph& shortGraph = shortGraphs.Of(core::WALKING);
+    const auto inShort = [&](const core::GraphEdge& edge) {
+        const core::TileSpan span = core::SectorSpan(map, SHORT_RULES, edge.sector);
+        return span.lastColumn - span.firstColumn + 1 < SHORT_RULES.sectorSize;
+    };
+
+    std::vector<std::pair<const core::RouteGraph*, EdgeSample>> samples;
+    for (const auto& [profile, label] : { std::pair{ core::WALKING, "on foot" }, std::pair{ WARY, "wary" } }) {
+        for (EdgeSample& sample : EdgeSamples(map, graphs.Of(profile), label)) {
+            samples.emplace_back(&graphs.Of(profile), std::move(sample));
+        }
+    }
+    for (const auto& [profile, label] : { std::pair{ core::WALKING, "on foot" }, std::pair{ WARY, "wary" } }) {
+        const core::RouteGraph& graph = shortGraphs.Of(profile);
+        samples.emplace_back(
+            &graph,
+            EdgeSample{ .name = std::format("sectors of 12, {}: a place's way to another place", label),
+                        .edge = FirstEdge(graph, [&](u32 edgeId, const core::GraphEdge& edge) {
+                            return graph.IsBlockEdge(edgeId) && map.PlaceAt(graph.NodeTile(edge.to)) != core::NO_PLACE;
+                        }) }
+        );
+    }
+    samples.emplace_back(
+        &shortGraph,
+        EdgeSample{ .name = "sectors of 12, on foot: a way inside a short sector",
+                    .edge = FirstEdge(shortGraph, [&](u32 edgeId, const core::GraphEdge& edge) {
+                        return NamedKind(shortGraph, edgeId) == EdgeKind::Inside && inShort(edge);
+                    }) }
+    );
+    samples.emplace_back(
+        &shortGraph,
+        EdgeSample{ .name = "sectors of 12, on foot: a step south out of a short sector",
+                    .edge = FirstEdge(shortGraph, [&](u32 edgeId, const core::GraphEdge& edge) {
+                        return shortGraph.IsCrossing(edgeId) && inShort(edge);
+                    }) }
+    );
+    samples.emplace_back(
+        &shortGraph,
+        EdgeSample{ .name = "sectors of 12, on foot: a place's way from a short sector",
+                    .edge = FirstEdge(shortGraph, [&](u32 edgeId, const core::GraphEdge& edge) {
+                        return shortGraph.IsBlockEdge(edgeId) && inShort(edge);
+                    }) }
+    );
+
     core::SectorWalk walk;
     std::vector<u32> tiles{ 99 };
-    for (const core::ProfileIndex profile : { core::WALKING, WARY }) {
-        const core::RouteGraph& graph = graphs.Of(profile);
-        REQUIRE(!graph.Edges().empty());
-        std::size_t badEnds = 0;
-        u32 worstCost = 0;
-        u32 worstBack = 0;
-        for (u32 id = 0; id < graph.Edges().size(); ++id) {
-            const core::GraphEdge& edge = graph.Edges()[id];
-            core::EdgeTiles(map, graph, id, walk, tiles);
-            const bool ends =
-                tiles.size() >= 2 && tiles.front() == graph.NodeTile(edge.from) && tiles.back() == graph.NodeTile(edge.to);
-            badEnds += ends ? 0 : 1;
-            const u32 cost = WalkedBy(map, profile, tiles, false);
-            const u32 back = WalkedBy(map, profile, tiles, true);
-            worstCost = std::max(worstCost, cost > edge.cost ? cost - edge.cost : edge.cost - cost);
-            worstBack = std::max(worstBack, back > edge.costBack ? back - edge.costBack : edge.costBack - back);
+    std::string missing;
+    std::string wrong;
+    for (const auto& [graph, sample] : samples) {
+        if (sample.edge == NO_EDGE) {
+            missing += sample.name + "; ";
+            continue;
         }
-        CHECK(badEnds == 0);
-        CHECK(worstCost == 0);
-        CHECK(worstBack == 0);
+        const core::GraphEdge& edge = graph->Edges()[sample.edge];
+        core::EdgeTiles(map, *graph, sample.edge, walk, tiles);
+        const bool ends =
+            tiles.size() >= 2 && tiles.front() == graph->NodeTile(edge.from) && tiles.back() == graph->NodeTile(edge.to);
+        const bool costs = WalkedBy(map, graph->Profile(), tiles, false) == edge.cost &&
+                           WalkedBy(map, graph->Profile(), tiles, true) == edge.costBack;
+        wrong += ends && costs ? "" : sample.name + "; ";
     }
+    CHECK(samples.size() == 21);
+    CHECK(missing == std::string{});
+    CHECK(wrong == std::string{});
 }
 
 TEST_CASE("a place's node is its tile's, and a place its profile can't enter has none") {

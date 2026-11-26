@@ -1009,12 +1009,16 @@ TEST_CASE("walk marks made from tiles are a leg's walk table") {
         const std::vector<core::LegWalkMark> marks = core::MakeWalkMarks(map, leg.origin, leg.tiles);
         const core::LegWalk walk = core::MakeLegWalk(map, leg);
         REQUIRE(marks.size() == walk.marks.size());
+        std::size_t unlike = 0;
         for (std::size_t index = 0; index < marks.size(); ++index) {
-            CHECK(marks[index].walked == walk.marks[index].walked);
-            CHECK(marks[index].length == walk.marks[index].length);
-            CHECK(marks[index].before == walk.marks[index].before);
-            CHECK(marks[index].after == walk.marks[index].after);
+            const core::LegWalkMark& made = marks[index];
+            const core::LegWalkMark& kept = walk.marks[index];
+            const bool same = std::bit_cast<u64>(made.walked) == std::bit_cast<u64>(kept.walked) &&
+                              std::bit_cast<u64>(made.length) == std::bit_cast<u64>(kept.length) &&
+                              made.before == kept.before && made.after == kept.after;
+            unlike += same ? 0 : 1;
         }
+        CHECK(unlike == 0);
     }
     // The loop's first stretch goes straight down, yet the way across to come is right.
     const core::Journey loop = OneLeg(map, LOOP);
