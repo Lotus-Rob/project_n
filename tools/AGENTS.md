@@ -39,3 +39,4 @@
 - XMake takes an ancestor project over the current directory, and `utils.bin2c` still warns in a worktree's shader step ("we are building the project(<main checkout>)…"): benign → `resolve`.
 - `xmake f -v` is on purpose (it serialises package installs) → `configure`. `doctor` exits 3 for "problems found" → `DOCTOR_PROBLEMS`.
 - A worktree outside the repo fails to check out ("smudge filter lfs failed": Git LFS's filter needs Pixi to find `pixi.toml` further up) → `CLONE_CONFIG`.
+- A stopped build can leave a 0-byte binary: `build` deletes the empty regular files in the binary folder before `xmake build` and says so → `remove_empty_outputs`.

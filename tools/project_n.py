@@ -733,8 +733,23 @@ def configure(preset, mode, sanitizer="none"):
     return bdir
 
 
+def remove_empty_outputs(folder):
+    """Delete the empty regular files directly in `folder` and return their sorted names. A build stopped while it
+    wrote a binary leaves a 0-byte file that fails every later run; nothing else in the folder is touched (not a
+    subfolder's files, a symlink or a directory)."""
+    if not folder.is_dir():
+        return []
+    empty = sorted(p for p in folder.iterdir() if p.is_file() and not p.is_symlink() and p.stat().st_size == 0)
+    for p in empty:
+        p.unlink()
+    return [p.name for p in empty]
+
+
 def build(preset, mode, sanitizer="none"):
     bdir = configure(preset, mode, sanitizer)
+    removed = remove_empty_outputs(binary_path(preset, mode).parent)
+    if removed:
+        print(f"build: removed {len(removed)} empty outputs a stopped build left: {', '.join(removed)}")
     run(["xmake", "build"], env=xmake_env(bdir))
     if not IN_CONTAINER and sanitizer == "none":
         # Native builds keep clangd current (.clangd reads build/; container paths would be wrong).

@@ -2652,6 +2652,55 @@ class TestFilesTest(unittest.TestCase):
         self.assertTrue(set(project_n.test_programs()).isdisjoint(project_n.test_names()))
 
 
+class EmptyOutputsTest(unittest.TestCase):
+    def test_only_empty_regular_files_directly_in_the_folder_go(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "bin"
+            (folder / "sub").mkdir(parents=True)
+            (folder / "empty_dir").mkdir()
+            (folder / "b_tests").write_bytes(b"")
+            (folder / "a_tests").write_bytes(b"")
+            (folder / "full").write_bytes(b"x")
+            (folder / "sub" / "nested").write_bytes(b"")
+            (folder / "sub" / "kept").write_bytes(b"x")
+            (Path(tmp) / "outside").write_bytes(b"")
+            symlinks = True
+            try:
+                (folder / "link_to_empty").symlink_to(Path(tmp) / "outside")
+                (folder / "dangling").symlink_to(Path(tmp) / "missing")
+            except OSError:  # no symlink right on this host
+                symlinks = False
+            self.assertEqual(project_n.remove_empty_outputs(folder), ["a_tests", "b_tests"])
+            self.assertEqual(sorted(p.name for p in folder.iterdir()),
+                             sorted(["sub", "empty_dir", "full", *(["link_to_empty", "dangling"] if symlinks else [])]))
+            self.assertTrue((folder / "sub" / "nested").is_file())  # a subfolder's files stay
+            self.assertTrue((Path(tmp) / "outside").is_file())  # nothing a link points at
+
+    def test_a_missing_folder_or_a_clean_one_removes_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(project_n.remove_empty_outputs(Path(tmp) / "none"), [])
+            self.assertEqual(project_n.remove_empty_outputs(Path(tmp)), [])
+
+    def test_build_clears_the_binary_folder_before_xmake_and_says_so(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "app").write_bytes(b"")
+            out, order = io.StringIO(), []
+            with mock.patch.multiple(project_n, configure=lambda *a: Path("bdir"), xmake_env=lambda bdir: {},
+                                     binary_path=lambda *a: folder / "app", IN_CONTAINER=True,
+                                     run=lambda argv, env=None: order.append(((folder / "app").exists(), argv))), \
+                 contextlib.redirect_stdout(out):
+                project_n.build("linux-gcc", "release")
+            self.assertEqual(order, [(False, ["xmake", "build"])])
+            self.assertEqual(out.getvalue(), "build: removed 1 empty outputs a stopped build left: app\n")
+            out = io.StringIO()
+            with mock.patch.multiple(project_n, configure=lambda *a: Path("bdir"), xmake_env=lambda bdir: {},
+                                     binary_path=lambda *a: folder / "app", IN_CONTAINER=True, run=lambda argv, env=None: None), \
+                 contextlib.redirect_stdout(out):
+                project_n.build("linux-gcc", "release")
+            self.assertEqual(out.getvalue(), "")
+
+
 class HelpersTest(unittest.TestCase):
     def test_with_version_replaces_only_the_version(self):
         lua = 'set_project("project_n")\nset_version("0.1.0")\nset_xmakever("3.1.2")\n'
