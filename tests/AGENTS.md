@@ -8,6 +8,7 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
 - The one way a test writes a repo file is a generator case decorated `* doctest::skip()`, run by name with `--no-skip`, never in a plain run (`save_exactness_tests.cpp`'s seed writers).
 - Logic only reachable through `main.cpp` or SDL moves into a `src/` function first, without changing behaviour. A sanitizer finding's test fails under that sanitizer (`--sanitizer <name>`).
 - A unit test checks a behaviour on about 20 representative samples, each named for why it is there (first, last, a boundary, the edge case), never a sweep; assert a loop's worst value once. Timing is profiling's, breadth is fuzzing's.
+- `core::math`'s bit patterns are pinned per toolchain (a change detector); world and state hashes never are: determinism holds within one binary.
 - Skipped `measure ...` cases and long-run comparisons on 1 and 4 workers run by name with `--no-skip --mode release`, write only temp files and are never gates: no `check`, no CI.
 - Hand-built host saves (`tests/support/saves.hpp`) write the world as its difference from the one the loading game makes: small test data by default, `test::ShippedData()` (slow to make) only for cases that need its geometry or size.
 - Comments in tests follow src/AGENTS.md: `///` on a helper or fixture that states a contract, a comment inside a body only for a why, none citing a spec, plan, ruling or task (`lint` fails on one; a `TEST_CASE` name or `CAPTURE` string is code too).
