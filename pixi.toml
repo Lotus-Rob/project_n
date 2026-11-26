@@ -28,6 +28,11 @@ cmake = "==4.4.5"
 ninja = "==1.13.2"
 meson = "==1.12.1"
 
+[activation.env]
+# Python 3.14 still opens files in the locale's encoding (cp1252 on Windows); UTF-8 mode makes
+# every file the tools read or write UTF-8 on every host, as the sources and data are.
+PYTHONUTF8 = "1"
+
 # XMake per platform: conda-forge has no osx-arm64 build, so project_n.py downloads the
 # upstream bundle there (XMAKE_MACOS_SHA256). Keep the version equal to set_xmakever().
 [target.win-64.dependencies]
