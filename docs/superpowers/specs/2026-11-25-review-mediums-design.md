@@ -228,23 +228,25 @@ This is the project's what-next order (the user, 2026-11-26): every piece of wor
 this table, and the backlog's old priority list points here. Two tracks run side by side: shared-routes (its own plan;
 stage 1 is PR #57, stage 2's plan waits for D1 and D2 per decision 4) and this work. Within this work:
 
-| Step | Areas | Needs | Why here |
-|---|---|---|---|
-| 1 | R1 | none | every later session loads less; shared-routes' tasks then add one-line rules (tell its next dispatch) |
-| 2 | R2, R11 (parallel) | R1 | R2 is small and stops start-up and save failures; R11 shares no files |
-| 3 | R3 | R2 (`main.cpp`, `app.cpp`) | the silent-failure class |
-| 4 | R4 | R3 (the save job's error path) | before shared-routes stage 2 changes the save layout |
-| 5 | R5, R6 (parallel) | R4 for R5 (`host.cpp`) | concrete bugs |
-| 6 | R5b, R7 (spec first), R8 (parallel) | R5 for R5b; R6 for R7 (`core/logic.cpp`); R5b and R7 both touch the tick, so R7 rebases on R5b | R7's spec can be written during step 5 |
-| 7 | R9, R13 (parallel) | R8 for R9; R5 for R13 | |
-| 8 | R10 (spec first) | R8 | its spec can be written during step 7 |
-| 9 | Backlog sweep | R1-R11, R13 merged | walked with the user: each backlog item left after the fold-in below is fixed, parked with its trigger, or dropped; the fixes are grouped into branches by the files they share |
-| 10 | Low and info pass | step 9 | every review finding no area closes ends fixed or ruled, as Goal 1's closings; first a triage table by review file, where a finding in code D2 or D3 will replace is ruled "superseded by D2/D3" rather than patched, then fix branches by area |
-| 11 | R12 | steps 9 and 10 | the docs describe what was built; the backlog's status column (GAP1-SWEEP-UP-BACKLOG-VS-CODE-01, -02) records the sweep's results |
-| 12 | D1, then D2, then D4 and D3 | R1-R12 | the review's items 8-10; shared-routes stage 2 is planned after D1 and D2 |
-| 13 | D5 | the user's hardware | S9 and S10 on D3D12 and Metal |
+| Step | Areas | Needs | Why here | Status |
+|---|---|---|---|---|
+| 1 | R1 | none | every later session loads less; shared-routes' tasks then add one-line rules (tell its next dispatch) | done, PR #56 |
+| 2 | R2, R11 (parallel) | R1 | R2 is small and stops start-up and save failures; R11 shares no files | R2 in progress; R11 not started |
+| 3 | R3 | R2 (`main.cpp`, `app.cpp`) | the silent-failure class |  |
+| 4 | R4 | R3 (the save job's error path) | before shared-routes stage 2 changes the save layout |  |
+| 5 | R5, R6 (parallel) | R4 for R5 (`host.cpp`) | concrete bugs |  |
+| 6 | R5b, R7 (spec first), R8 (parallel) | R5 for R5b; R6 for R7 (`core/logic.cpp`); R5b and R7 both touch the tick, so R7 rebases on R5b | R7's spec can be written during step 5 |  |
+| 7 | R9, R13 (parallel) | R8 for R9; R5 for R13 | |  |
+| 8 | R10 (spec first) | R8 | its spec can be written during step 7 |  |
+| 9 | Backlog sweep | R1-R11, R13 merged | walked with the user: each backlog item left after the fold-in below is fixed, parked with its trigger, or dropped; the fixes are grouped into branches by the files they share |  |
+| 10 | Low and info pass | step 9 | every review finding no area closes ends fixed or ruled, as Goal 1's closings; first a triage table by review file, where a finding in code D2 or D3 will replace is ruled "superseded by D2/D3" rather than patched, then fix branches by area |  |
+| 11 | R12 | steps 9 and 10 | the docs describe what was built; the backlog's status column (GAP1-SWEEP-UP-BACKLOG-VS-CODE-01, -02) records the sweep's results |  |
+| 12 | D1, then D2, then D4 and D3 | R1-R12 | the review's items 8-10; shared-routes stage 2 is planned after D1 and D2 |  |
+| 13 | D5 | the user's hardware | S9 and S10 on D3D12 and Metal |  |
 
-Each area's plan also takes the backlog items assigned to it in "Backlog items folded into the areas" (below), test-first
+Status is ticked off as work merges: the branch that finishes an area or step writes `done, PR #N` in its own pull
+request (several areas in a step: each named, as step 2), and the backlog items it closed leave the backlog after the
+merge. Each area's plan also takes the backlog items assigned to it in "Backlog items folded into the areas" (below), test-first
 where they are bugs. A spec for the next area may be written while the current one's pull request waits on CI (the root
 AGENTS.md's "never sit idle while CI runs").
 
