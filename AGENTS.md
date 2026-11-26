@@ -56,6 +56,7 @@ Work happens on a branch; it merges into main only through a pull request, which
 - Docs written on a branch (specs, Outcomes, design docs, handovers) cite commits by subject, never by hash: the rebase merge rewrites every hash. A hash is stable only once it's on main.
 - Bugs in `src/` are fixed test-first: a test that fails because of the bug (what makes it good: tests/AGENTS.md), committed with the fix; a fuzzer crash also adds its input as a seed in `tests/fuzz/corpus/<target>/`.
 - Code comments never cite the design process (specs, chunks, phases, plans, rulings, tasks, design docs, dates): say why in your own words. A plain comment explains only why, on one specific part, never what the next lines do; Doxygen (`///`) documents the API and may say what. `lint` checks the first (`design_references` in tools/project_n.py).
+- UTF-8 is the one text encoding: compilers read sources as UTF-8 (`set_encodings`), Windows executables carry a UTF-8 manifest and the log sets the console's, Python runs with `PYTHONUTF8=1` (pixi.toml), paths become text through `core::PathText`; `lint` rejects other encodings and BOMs.
 - Never delete, skip or loosen a test case to make a run go green.
 - Pins are exact (`==` in pixi.toml, exact `add_requires` versions). Change one only on purpose, with its lock file in the same commit.
 - Don't call podman, xmake or git-cliff directly in docs or scripts; go through project_n.py.
