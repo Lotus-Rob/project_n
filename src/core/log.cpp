@@ -17,6 +17,16 @@
 #pragma warning(pop)
 #endif
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 namespace core::log {
 
 namespace {
@@ -37,6 +47,10 @@ void Start(const std::filesystem::path& directory) {
     if (Started().load(std::memory_order_acquire) != nullptr) {
         return;
     }
+#ifdef _WIN32
+    // Quill writes UTF-8; the console shows it as text only in its UTF-8 output code page.
+    SetConsoleOutputCP(CP_UTF8);
+#endif
     quill::Backend::start();
 
     auto console = quill::Frontend::create_or_get_sink<quill::ConsoleSink>("console");
