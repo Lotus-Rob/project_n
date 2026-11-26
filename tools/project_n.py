@@ -1375,6 +1375,21 @@ def code_of(line):
     return re.sub(r'"(?:\\.|[^"\\])*"', '""', line).split("//")[0]
 
 
+# A path turned into text by the platform's narrow encoding instead of core::PathText.
+PATH_STRING_RE = re.compile(r"\.(?:generic_)?string\(\)")
+
+
+def path_strings(sources):
+    """Lines in src/ that call path::string() or generic_string(): they use the Windows ANSI code
+    page and throw outside it, so paths become text through core::PathText."""
+    found = []
+    for f in [f for f in sources if f.startswith("src/") and f.endswith((".cpp", ".hpp"))]:
+        for n, line in enumerate((ROOT / f).read_text(encoding="utf-8").splitlines(), 1):
+            if PATH_STRING_RE.search(code_of(line)):
+                found.append(f"{f}:{n}: {line.strip()}")
+    return found
+
+
 def bypassed_facades(sources):
     """Lines in src/ that go around a facade: all output goes through PN_LOG_*, and Quill, Tracy,
     EnTT and enkiTS are included only by their facade (FACADES) and its .cpp, so each library is
@@ -2197,6 +2212,10 @@ def cmd_lint(args):
     if maths:
         raise Fail("the simulation uses core::math (core/math.hpp), not the platform's maths functions:\n"
                    + "\n".join(maths))
+    paths = path_strings(sources)
+    if paths:
+        raise Fail("paths become text through core::PathText (core/path_text.hpp): path::string() uses the Windows ANSI "
+                   "code page and throws outside it:\n" + "\n".join(paths))
     check_api_docs(sources)
     if unequal_shader_pins():
         raise Fail(f"pin {', '.join(unequal_shader_pins())} to one version for linux-64 and win-64 in pixi.toml: "
