@@ -562,6 +562,10 @@ TEST_CASE("a replay with walk-tos on the world map plays back with the same hash
     const f32 tile = data.world->TileSize();
     const core::Vec2 start = data.world->StartCentre();
     const std::vector<std::byte> begin = CultivatorOnTheMap(data);
+    // The destinations barely fit the small map: a smaller one fails here, not as a walk-to that sets no route.
+    const u32 startTile = data.world->TileAt(start);
+    REQUIRE((startTile % data.world->Columns()) + static_cast<u32>(EAST.x) < data.world->Columns());
+    REQUIRE((startTile / data.world->Columns()) + static_cast<u32>(SOUTH_EAST.y) < data.world->Rows());
     const Folder folder{ "walk_to" };
     {
         Session recording(folder.Path(), begin, data);
@@ -601,17 +605,31 @@ TEST_CASE("a replay with walk-tos on the world map plays back with the same hash
     CHECK(playing.replay.Matched() == playing.replay.HashCount());
 }
 
-TEST_CASE("a replay recorded while walking plays back exploring the same tiles") {
-    // The cultivator walks a route east, past the start city's sight, to its end and stands there: a fresh game plays it
-    // back with every hash matching, and has explored the same tiles.
-    constexpr u64 STEP = 60;
-    constexpr u32 MAX_STEPS = 100;
+TEST_CASE("a replay recorded across a month's jump on a route plays back exploring the same tiles") {
+    // A walk-to east to a tile past the start city's sight, then a month step (M while paused) that carries the cultivator
+    // to the route's end in one jump: only the route's own exploring uncovers the tiles it passed, so (2, 2), within
+    // sight of the route's tile in column 2 of the top row alone, is explored; a fresh game plays it back with every hash
+    // matching and the same tiles explored.
+    constexpr u64 BURST = 7;
     constexpr u32 MAX_BURSTS = 100;
     constexpr core::Vec2 EAST{ .x = 4.0F, .y = 0.0F }; // in tiles from the start city's
     const core::GameData data = test::SmallData();
-    const f32 tile = data.world->TileSize();
-    const core::Vec2 start = data.world->StartCentre();
+    const core::WorldMap& map = *data.world;
+    const f32 tile = map.TileSize();
+    const core::Vec2 start = map.StartCentre();
+    const core::Vec2 target = start + (EAST * tile);
     const std::vector<std::byte> begin = CultivatorOnTheMap(data);
+    const std::vector<u32> startTile{ map.TileAt(start) };
+    const u32 endTile = map.TileAt(target);
+    const u32 passed =
+        map.TileIndex({ .column = 2, .row = 2 }); // beside the route's column-2 tile, out of the start's and the end's sight
+    const std::vector<u32> endTiles{ endTile };
+    REQUIRE(map.TileAt(target) == map.TileIndex({ .column = 4, .row = 0 }));
+    const std::vector<u64> seenFromStart = test::Diamonds(map, startTile, data.cultivator.sight);
+    const std::vector<u64> seenFromEnd = test::Diamonds(map, endTiles, data.cultivator.sight);
+    REQUIRE_FALSE(core::IsExplored(seenFromStart, endTile));
+    REQUIRE_FALSE(core::IsExplored(seenFromStart, passed));
+    REQUIRE_FALSE(core::IsExplored(seenFromEnd, passed));
     const Folder folder{ "exploring" };
     std::vector<u64> explored;
     {
@@ -620,18 +638,22 @@ TEST_CASE("a replay recorded while walking plays back exploring the same tiles")
         recording.Send(core::ActionKind::ToggleRecording);
         recording.Burst(1);
         const std::vector<u64> before = ExploredOf(recording.host);
-        recording.WalkTo(start + (EAST * tile));
+        recording.WalkTo(target);
         recording.Burst(1);
         REQUIRE(recording.host.PlayerRoute().has_value());
-        for (u32 steps = 0; steps < MAX_STEPS && recording.host.PlayerRoute().has_value(); ++steps) {
-            recording.Burst(STEP);
-        }
+        recording.Send(core::ActionKind::ToggleWorldPause);
+        recording.Burst(1);
+        recording.Send(core::ActionKind::AdvanceCalendar);
+        recording.Burst(BURST); // ends at the request
+        recording.Burst(BURST); // the month step
         REQUIRE_FALSE(recording.host.PlayerRoute().has_value());
         // To a hash tick, so the recording's last state is checked.
         recording.Burst(core::REPLAY_HASH_TICKS - (recording.logic.Counters().wall % core::REPLAY_HASH_TICKS));
         REQUIRE(recording.logic.Counters().wall % core::REPLAY_HASH_TICKS == 0);
         explored = ExploredOf(recording.host);
         REQUIRE(explored != before); // the walk uncovered tiles
+        REQUIRE(core::IsExplored(explored, endTile));
+        REQUIRE(core::IsExplored(explored, passed));
         recording.Send(core::ActionKind::ToggleRecording);
         recording.Burst(1);
     } // its job system finishes writing the replay
