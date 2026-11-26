@@ -17,13 +17,16 @@ namespace {
 
 #ifdef _WIN32
 // First in the file, because the early logger is created only once: it writes to the same console
-// as Start's, so it sets the code page too.
+// as Start's, so it sets the code page too. A private console, so no other process shares the code
+// page this changes: the one inherited is the parent's, and `xmake test` runs other test
+// executables on it at the same time.
 TEST_CASE("the early logger sets the console's output code page to UTF-8") {
-    if (GetConsoleOutputCP() == 0 && !AllocConsole()) {
+    FreeConsole();
+    // Wine's console accepts AllocConsole but not a code page: the same "no console" here.
+    if (!AllocConsole() || !SetConsoleOutputCP(437)) {
         WARN_MESSAGE(false, "no console can be attached here");
         return;
     }
-    REQUIRE(SetConsoleOutputCP(437));
     REQUIRE(GetConsoleOutputCP() == 437);
     REQUIRE(core::log::Root() != nullptr);
 
