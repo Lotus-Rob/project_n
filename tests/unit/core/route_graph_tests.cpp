@@ -132,6 +132,14 @@ TEST_CASE("a map smaller than a sector is one sector with only its places") {
     const core::SectorGraph graph = Build(map, 0, rules);
     CHECK(graph.nodes == std::vector<u32>{ At(map, 0, 0), At(map, 5, 1) });
     CHECK(graph.crossings.empty());
+
+    // The largest side a sector may have, where the map's width plus the side passes u32's range.
+    const core::RoutingRules widest{ .sectorSize = std::numeric_limits<u32>::max(), .gateSpacing = 4 };
+    REQUIRE(core::SectorColumns(map, widest) == 1);
+    REQUIRE(core::SectorRows(map, widest) == 1);
+    const core::TileSpan span = core::SectorSpan(map, widest, 0);
+    CHECK(span.lastColumn == 6);
+    CHECK(span.lastRow == 2);
 }
 
 TEST_CASE("sectors at the map's edge are short") {
