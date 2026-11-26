@@ -15,8 +15,10 @@ std::string Read(const std::filesystem::path& file) {
 // Quill's loggers live for the whole process, so Start() runs once, here, for every test that
 // needs it: in a directory seeded with logs from EARLIER_RUNS runs, project_n.log the newest. It
 // sits in the working directory (the build's), not the shared temp folder another run could own.
+// Its name holds characters outside every ANSI code page, so each test here also runs the way a
+// player's folder does.
 std::filesystem::path StartedDirectory() {
-    const std::filesystem::path directory = std::filesystem::current_path() / "project_n_log_tests";
+    const std::filesystem::path directory = std::filesystem::current_path() / u8"项目_é_🎮";
     [[maybe_unused]] static const bool started = [&directory] {
         std::filesystem::remove_all(directory);
         std::filesystem::create_directories(directory);
@@ -28,6 +30,10 @@ std::filesystem::path StartedDirectory() {
         return true;
     }();
     return directory;
+}
+
+TEST_CASE("the log file is created in a folder named outside the ANSI code page") {
+    CHECK(std::filesystem::exists(StartedDirectory() / "project_n.log"));
 }
 
 TEST_CASE("Start keeps the previous run's log as project_n.1.log") {

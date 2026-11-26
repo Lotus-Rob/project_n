@@ -1,6 +1,7 @@
 #include "core/log.hpp"
 
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/path_text.hpp"
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -47,10 +48,10 @@ void Start(const std::filesystem::path& directory) {
     if (!directory.empty()) {
         try {
             std::filesystem::create_directories(directory);
-            // Quill takes the file name as a std::string, so on Windows a path outside the
-            // ANSI code page throws here and logging stays on the console; a UTF-8 code page
-            // manifest would lift it.
-            file = (directory / "project_n.log").string();
+            // Quill takes the file name as a std::string and reads it in the ANSI code page,
+            // which the executables' manifest makes UTF-8: the UTF-8 text opens the same file
+            // however the folder is named.
+            file = core::PathText(directory / "project_n.log");
             quill::RotatingFileSinkConfig config;
             // Append mode: only then do files rotated by earlier runs count towards the limit;
             // in write mode Quill deletes them at startup.
