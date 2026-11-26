@@ -17,6 +17,9 @@
 
 namespace {
 
+using test::StepMonth;
+using test::Tick;
+
 TEST_CASE("names round-trip") {
     for (const game::Scene* const scene : game::Scenes()) {
         const std::string_view name = scene->Traits().name;
@@ -309,16 +312,6 @@ TEST_CASE("a month passes on the world map, the same twice, over the world NPCs"
     CHECK(first.StateHash() == second.StateHash());
 }
 
-core::TickCounters At(u64 tick) {
-    return { .wall = tick, .simulation = tick, .state = tick };
-}
-
-/// Ticks `host` once at `tick` with `input`, ignoring its events.
-void Tick(game::Host& host, u64 tick, const core::TickInput& input = {}) {
-    std::vector<core::Event> events;
-    host.Tick(At(tick), input, events);
-}
-
 /// Presses F2 at `tick`, then enters the scene it asks for, as the logic does after the tick.
 void CycleScene(game::Host& host, u64 tick) {
     const std::array<core::Action, 1> cycle{ { { .kind = core::ActionKind::CycleScene } } };
@@ -333,12 +326,6 @@ u64 CycleTo(game::Host& host, u64 tick, core::SceneKey scene) {
         CycleScene(host, tick++);
     }
     return tick;
-}
-
-/// Lets a month pass for `host` at once, as M asks for it.
-void StepMonth(game::Host& host, u64 tick) {
-    core::Jobs jobs{ 1 };
-    host.AdvanceCalendar(At(tick), jobs, {});
 }
 
 /// Where the player's cultivator stands in `host`.

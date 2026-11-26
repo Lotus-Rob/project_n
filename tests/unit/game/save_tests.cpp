@@ -18,6 +18,7 @@
 #include "support/fog.hpp"
 #include "support/host.hpp"
 #include "support/manifest.hpp"
+#include "support/same.hpp"
 #include "support/saves.hpp"
 #include "support/world.hpp"
 
@@ -37,6 +38,8 @@ using test::FOX_HEALTH;
 using test::Foxes;
 using test::Published;
 using test::SameBytes;
+using test::SameEventsIgnoringTick;
+using test::SamePoint;
 using test::Saved;
 using test::Tick;
 
@@ -233,14 +236,6 @@ TEST_CASE("Qi, cooldowns and a dash under way survive a save") {
     CHECK(loaded.StateHash() == saved.StateHash());
 }
 
-// Whether two runs' events are the same, field by field.
-bool SameEvents(const std::vector<core::Event>& lhs, const std::vector<core::Event>& rhs) {
-    return std::ranges::equal(lhs, rhs, [](const core::Event& one, const core::Event& two) {
-        return one.kind == two.kind && one.hit == two.hit && one.use == two.use && one.target == two.target &&
-               one.value == two.value && std::bit_cast<u64>(one.position) == std::bit_cast<u64>(two.position);
-    });
-}
-
 TEST_CASE("a save mid-arrival goes on as the game that saved, with the same events") {
     constexpr u64 DEATH = 5;
     constexpr u64 SAVED_AT = 300;  // the fox that respawned at tick 215 is easing in until tick 395
@@ -267,7 +262,7 @@ TEST_CASE("a save mid-arrival goes on as the game that saved, with the same even
         loaded.Tick(At(tick), {}, loadedEvents);
     }
     CHECK_FALSE(savedEvents.empty());
-    const bool same = SameEvents(loadedEvents, savedEvents);
+    const bool same = SameEventsIgnoringTick(loadedEvents, savedEvents);
     CHECK(same);
     CHECK(loaded.StateHash() == saved.StateHash());
 }
@@ -309,7 +304,7 @@ TEST_CASE("the save round-trips mid-volley") {
         std::vector<core::Event> loadedEvents;
         saved.Tick(At(tick), {}, savedEvents);
         loaded.Tick(At(tick), {}, loadedEvents);
-        differentEvents += SameEvents(loadedEvents, savedEvents) ? 0U : 1U;
+        differentEvents += SameEventsIgnoringTick(loadedEvents, savedEvents) ? 0U : 1U;
         differentStates += loaded.StateHash() == saved.StateHash() ? 0U : 1U;
         hits += static_cast<std::size_t>(std::ranges::count(savedEvents, volley.use, &core::Event::use));
     }
@@ -363,7 +358,7 @@ TEST_CASE("the save round-trips mid-burn") {
         std::vector<core::Event> loadedEvents;
         saved.Tick(At(tick), {}, savedEvents);
         loaded.Tick(At(tick), {}, loadedEvents);
-        differentEvents += SameEvents(loadedEvents, savedEvents) ? 0U : 1U;
+        differentEvents += SameEventsIgnoringTick(loadedEvents, savedEvents) ? 0U : 1U;
         differentStates += loaded.StateHash() == saved.StateHash() ? 0U : 1U;
         std::ranges::copy_if(loadedEvents, std::back_inserter(used), [&bolt](const core::Event& event) {
             return event.use == bolt.use;
@@ -1184,11 +1179,6 @@ std::vector<std::byte> TravelSave(const core::State& state, const game::Travel& 
         { .ticks = ticks },
         travel
     );
-}
-
-/// Whether `lhs` and `rhs` have the same bits, as determinism means.
-bool SamePoint(core::Vec2 lhs, core::Vec2 rhs) {
-    return std::bit_cast<u32>(lhs.x) == std::bit_cast<u32>(rhs.x) && std::bit_cast<u32>(lhs.y) == std::bit_cast<u32>(rhs.y);
 }
 
 std::vector<std::byte> TravelBytes(const game::Travel& travel) {

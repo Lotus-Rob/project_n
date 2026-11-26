@@ -20,6 +20,7 @@
 #include "core/world_map.hpp"
 #include "game/host.hpp"
 #include "support/fog.hpp"
+#include "support/host.hpp"
 #include "support/manifest.hpp"
 #include "support/saves.hpp"
 #include "support/seals.hpp"
@@ -31,6 +32,8 @@ namespace {
 
 using test::ExploredCount;
 using test::ExploredOf;
+using test::FootOf;
+using test::LivingFoxes;
 
 constexpr u32 WORKERS = 2;
 
@@ -256,24 +259,6 @@ TEST_CASE("a replay starting in another scene plays back with the same hashes") 
     }
 }
 
-// The living foxes' IDs, in order: none dying.
-std::vector<core::StableId> Foxes(const game::Host& host) {
-    std::vector<core::StableId> foxes;
-    const core::Registry& entities = host.State()[game::ACTIVE].Entities();
-    for (auto [entity, creature, stable] : entities.view<const game::Creature, const core::StableId>().each()) {
-        if (creature.kind == game::CreatureKind::Fox && !entities.all_of<game::Dying>(entity)) {
-            foxes.push_back(stable);
-        }
-    }
-    std::ranges::sort(foxes);
-    return foxes;
-}
-
-// Where `entity`'s foot is now.
-core::Vec2 FootOf(const game::Host& host, core::StableId entity) {
-    return host.State()[game::ACTIVE].Entities().get<game::Body>(host.State()[game::ACTIVE].Find(entity)).current;
-}
-
 TEST_CASE("a recorded fight replays with every hash matching") {
     // Every ability cast at the foxes through the real logic, foxes weak enough to die and respawn, and a save while the
     // swords fly: the fight plays back in a fresh game with every hash matching, the last on the final tick.
@@ -293,17 +278,17 @@ TEST_CASE("a recorded fight replays with every hash matching") {
     const Folder folder{ "fight" };
     {
         Session recording(folder.Path(), game::ARENA_SCENE, data);
-        const std::vector<core::StableId> first = Foxes(recording.host);
+        const std::vector<core::StableId> first = LivingFoxes(recording.host);
         REQUIRE(first.size() >= 3);
         recording.Send(core::ActionKind::ToggleRecording);
         recording.Burst(1);
         // Each at a fox still living: the lances kill theirs at once.
         for (u32 lance = 0; lance < 2; ++lance) {
-            recording.Cast(core::Slot::Spender, FootOf(recording.host, Foxes(recording.host).front()));
+            recording.Cast(core::Slot::Spender, FootOf(recording.host, LivingFoxes(recording.host).front()));
             recording.Burst(LANCE_COOLING);
         }
         for (u32 bolt = 0; bolt < 3; ++bolt) {
-            recording.Cast(core::Slot::Generator, FootOf(recording.host, Foxes(recording.host).front()));
+            recording.Cast(core::Slot::Generator, FootOf(recording.host, LivingFoxes(recording.host).front()));
             recording.Burst(BOLT_COOLING);
         }
         const core::Vec2 dashedFrom = FootOf(recording.host, recording.host.Player());
@@ -311,7 +296,7 @@ TEST_CASE("a recorded fight replays with every hash matching") {
         recording.Burst(DASHING);
         const f32 dashed = FootOf(recording.host, recording.host.Player()).x - dashedFrom.x; // straight right
         CHECK(dashed == doctest::Approx(data.abilities.Of(core::AbilityKind::Dash).distance));
-        recording.Cast(core::Slot::Special1, FootOf(recording.host, Foxes(recording.host).back()));
+        recording.Cast(core::Slot::Special1, FootOf(recording.host, LivingFoxes(recording.host).back()));
         recording.Burst(TO_MID_VOLLEY);
         REQUIRE(recording.volleys > 0); // the swords fly
         REQUIRE(recording.seals > 0);   // over their seal, which the hashes then cover
@@ -321,7 +306,7 @@ TEST_CASE("a recorded fight replays with every hash matching") {
         REQUIRE(recording.logic.Counters().wall % core::REPLAY_HASH_TICKS == 0);
         const core::Registry& entities = recording.host.State()[game::ACTIVE].Entities();
         CHECK(entities.get<game::Caster>(recording.host.State()[game::ACTIVE].Find(recording.host.Player())).qi == QI_LEFT);
-        const std::vector<core::StableId> now = Foxes(recording.host);
+        const std::vector<core::StableId> now = LivingFoxes(recording.host);
         CHECK(std::ranges::any_of(now, [&first](core::StableId fox) { return !std::ranges::contains(first, fox); }));
         recording.Send(core::ActionKind::ToggleRecording);
         recording.Burst(1);

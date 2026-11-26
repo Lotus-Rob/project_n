@@ -23,6 +23,7 @@
 #include "support/host.hpp"
 #include "support/manifest.hpp"
 #include "support/road_curves.hpp"
+#include "support/same.hpp"
 #include "support/saves.hpp"
 #include "support/seals.hpp"
 #include "support/world.hpp"
@@ -32,20 +33,14 @@
 namespace {
 
 using core::atlas::SpriteId;
-
-// Ticks `host`, which the tests below that look at no events do.
-void Tick(game::Host& host, const core::TickCounters& counters, const core::TickInput& input) {
-    std::vector<core::Event> events;
-    host.Tick(counters, input, events);
-}
-
-// What `host` publishes culled to `view`, or with none sent yet.
-core::Snapshot Published(game::Host& host, const std::optional<core::Rect>& view = std::nullopt) {
-    core::Jobs jobs{ 1 };
-    core::Snapshot snapshot;
-    host.Publish(snapshot, jobs, view);
-    return snapshot;
-}
+using test::At;
+using test::FootOf;
+using test::Foxes;
+using test::NearTheCrystal;
+using test::PublishedSnapshot;
+using test::SamePoint;
+using test::StepMonthFrozen;
+using test::Tick;
 
 // Whether an instance draws `sprite`: its region starts where the sprite's does, on the same page (the low half of
 // layerFlags; sprites on different pages can start at the same point).
@@ -57,14 +52,14 @@ bool Draws(const core::Instance& instance, SpriteId sprite) {
 
 TEST_CASE("the ground is drawn first") {
     game::Host host(test::TestManifest());
-    const core::Snapshot snapshot = Published(host);
+    const core::Snapshot snapshot = PublishedSnapshot(host);
     REQUIRE_FALSE(snapshot.instances.empty());
     CHECK(Draws(snapshot.instances.front(), SpriteId::Ground));
 }
 
 TEST_CASE("shadows are drawn before what casts them") {
     game::Host host(test::TestManifest());
-    const core::Snapshot snapshot = Published(host);
+    const core::Snapshot snapshot = PublishedSnapshot(host);
     const auto firstShadow =
         std::ranges::find_if(snapshot.instances, [](const auto& instance) { return Draws(instance, SpriteId::Shadow); });
     const auto firstFox =
@@ -87,9 +82,9 @@ std::vector<std::pair<f32, f32>> Positions(const core::Snapshot& snapshot, core:
 
 TEST_CASE("a tick moves the foxes, and their previous position is where they were") {
     game::Host host(test::TestManifest());
-    const core::Snapshot before = Published(host);
+    const core::Snapshot before = PublishedSnapshot(host);
     Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, {});
-    const core::Snapshot after = Published(host);
+    const core::Snapshot after = PublishedSnapshot(host);
     // Copied, not recomputed: the previous positions are the same floats.
     CHECK(Positions(after, &core::Instance::previous) == Positions(before, &core::Instance::current));
     CHECK(Positions(after, &core::Instance::current) != Positions(before, &core::Instance::current));
@@ -107,9 +102,9 @@ TEST_CASE("the ice crystal turns each tick, from where it was") {
     constexpr u32 HALF_BITS = 16;
     game::Host host(test::TestManifest());
     Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, {});
-    const u32 before = RotationOf(Published(host), SpriteId::CrystalIce);
+    const u32 before = RotationOf(PublishedSnapshot(host), SpriteId::CrystalIce);
     Tick(host, { .wall = 2, .simulation = 2, .state = 2 }, {});
-    const u32 after = RotationOf(Published(host), SpriteId::CrystalIce);
+    const u32 after = RotationOf(PublishedSnapshot(host), SpriteId::CrystalIce);
     CHECK((after & 0xFFFFU) == (before >> HALF_BITS)); // its previous rotation is the last tick's current one
     CHECK((after >> HALF_BITS) != (after & 0xFFFFU));
 }
@@ -128,10 +123,10 @@ constexpr core::HeldInput HELD_RIGHT{ .move = { .x = 1.0F, .y = 0.0F } };
 TEST_CASE("the cultivator walks where the held input points, and the camera follows it") {
     game::Host host(test::TestManifest());
     REQUIRE(host.Player() != core::StableId{});
-    const core::Snapshot before = Published(host);
+    const core::Snapshot before = PublishedSnapshot(host);
     REQUIRE(before.follow.has_value());
     Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
-    const core::Snapshot after = Published(host);
+    const core::Snapshot after = PublishedSnapshot(host);
     REQUIRE(after.follow.has_value());
     const core::Follow from = before.follow.value_or(core::Follow{});
     const core::Follow onto = after.follow.value_or(core::Follow{});
@@ -146,9 +141,9 @@ TEST_CASE("the cultivator walks at the game data's speed") {
     core::GameData data = game::BuiltInData();
     data.cultivator.walkSpeed = SPEED;
     game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
-    const core::Vec2 before = PositionOf(Published(host), host.Player());
+    const core::Vec2 before = PositionOf(PublishedSnapshot(host), host.Player());
     Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
-    const core::Vec2 after = PositionOf(Published(host), host.Player());
+    const core::Vec2 after = PositionOf(PublishedSnapshot(host), host.Player());
     CHECK(after.x - before.x == doctest::Approx(SPEED));
 }
 
@@ -172,7 +167,7 @@ f32 LeftmostAfter(const core::GameData& data, u64 ticks, core::HeldInput held, S
         Tick(host, { .wall = tick, .simulation = tick, .state = tick }, { .actions = {}, .held = held });
     }
     f32 left = std::numeric_limits<f32>::max();
-    for (const core::Instance& instance : Published(host).instances) {
+    for (const core::Instance& instance : PublishedSnapshot(host).instances) {
         if (Draws(instance, sprite)) {
             left = std::min(left, instance.current.x);
         }
@@ -201,12 +196,12 @@ TEST_CASE("new game data changes the foxes' sprite and orbit at once") {
     data.fox.sprite = SpriteId::FoxYellow;
     data.fox.orbitRadius *= WIDER;
     const u64 before = host.DataHash();
-    const f32 builtInSpread = Spread(Published(host), SpriteId::Fox);
+    const f32 builtInSpread = Spread(PublishedSnapshot(host), SpriteId::Fox);
     host.SetData(data);
     CHECK(host.DataHash() == data.Hash());
     CHECK(host.DataHash() != before);
     Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, {});
-    const core::Snapshot snapshot = Published(host);
+    const core::Snapshot snapshot = PublishedSnapshot(host);
     CHECK(std::ranges::none_of(snapshot.instances, [](const auto& instance) { return Draws(instance, SpriteId::Fox); }));
     CHECK(Spread(snapshot, SpriteId::FoxYellow) > builtInSpread * CLEARLY_WIDER);
 }
@@ -215,7 +210,7 @@ TEST_CASE("standing still, the cultivator draws still") {
     game::Host host(test::TestManifest());
     Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
     Tick(host, { .wall = 2, .simulation = 2, .state = 2 }, {});
-    const core::Snapshot snapshot = Published(host);
+    const core::Snapshot snapshot = PublishedSnapshot(host);
     REQUIRE(snapshot.follow.has_value());
     const core::Follow follow = snapshot.follow.value_or(core::Follow{});
     CHECK(follow.previous.x == follow.current.x);
@@ -223,7 +218,7 @@ TEST_CASE("standing still, the cultivator draws still") {
 
 TEST_CASE("each entity's instance carries its ID; the ground and shadows carry none") {
     game::Host host(test::TestManifest());
-    const core::Snapshot snapshot = Published(host);
+    const core::Snapshot snapshot = PublishedSnapshot(host);
     REQUIRE(snapshot.ids.size() == snapshot.instances.size());
     CHECK(snapshot.ids.front() == core::StableId{});
     CHECK(std::ranges::contains(snapshot.ids, host.Player()));
@@ -234,7 +229,7 @@ TEST_CASE("the snapshot names the selected entity's instance; selecting nothing 
     const std::array<core::Action, 1> select{ { { .kind = core::ActionKind::Select, .target = host.Player() } } };
     Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = select, .held = {} });
     CHECK(host.Selected() == host.Player());
-    const core::Snapshot snapshot = Published(host);
+    const core::Snapshot snapshot = PublishedSnapshot(host);
     const auto drawn = std::ranges::find(snapshot.ids, host.Player());
     REQUIRE(drawn != snapshot.ids.end());
     CHECK(snapshot.selected == std::optional<u32>{ static_cast<u32>(drawn - snapshot.ids.begin()) });
@@ -242,7 +237,7 @@ TEST_CASE("the snapshot names the selected entity's instance; selecting nothing 
     const std::array<core::Action, 1> none{ { { .kind = core::ActionKind::Select } } };
     Tick(host, { .wall = 2, .simulation = 2, .state = 2 }, { .actions = none, .held = {} });
     CHECK(host.Selected() == core::StableId{});
-    CHECK_FALSE(Published(host).selected.has_value());
+    CHECK_FALSE(PublishedSnapshot(host).selected.has_value());
 }
 
 TEST_CASE("a cast outside a combat scene is ignored") {
@@ -267,7 +262,7 @@ TEST_CASE("the arena is a combat scene and the others aren't") {
         game::Host host(test::TestManifest(), scene, test::SmallData());
         const bool combat = scene == game::ARENA_SCENE;
         CHECK(host.IsCombatScene() == combat);
-        CHECK(Published(host).combat == combat);
+        CHECK(PublishedSnapshot(host).combat == combat);
     }
 }
 
@@ -282,14 +277,14 @@ TEST_CASE("a stale ID selects nothing") {
 TEST_CASE("the still scenes have no player and follow nothing") {
     game::Host host(test::TestManifest(), game::PAINTED_SCENE);
     CHECK(host.Player() == core::StableId{});
-    CHECK_FALSE(Published(host).follow.has_value());
+    CHECK_FALSE(PublishedSnapshot(host).follow.has_value());
 }
 
 TEST_CASE("the snapshot names the camera") {
     game::Host host(test::TestManifest());
     game::Host painted(test::TestManifest(), game::PAINTED_SCENE);
-    CHECK(Published(host).camera == core::CameraKind::Follow);
-    CHECK(Published(painted).camera == core::CameraKind::Pan);
+    CHECK(PublishedSnapshot(host).camera == core::CameraKind::Follow);
+    CHECK(PublishedSnapshot(painted).camera == core::CameraKind::Pan);
 }
 
 // `area` grown by `margin` on every side.
@@ -315,10 +310,10 @@ constexpr core::Vec2 DRAW_MARGIN{ .x = core::DrawList::CULL_MARGIN, .y = core::D
 TEST_CASE("a publish with a view holds only what lies within it") {
     constexpr core::Vec2 HALF_VIEW{ .x = 200.0F, .y = 150.0F }; // a 400 by 300 view round the cultivator
     game::Host host(test::TestManifest());
-    const core::Snapshot everything = Published(host);
+    const core::Snapshot everything = PublishedSnapshot(host);
     const core::Vec2 cultivator = PositionOf(everything, host.Player());
     const core::Rect view = Grown({ .min = cultivator, .max = cultivator }, HALF_VIEW);
-    const core::Snapshot culled = Published(host, view);
+    const core::Snapshot culled = PublishedSnapshot(host, view);
     REQUIRE(culled.instances.size() > 1);
     CHECK(Draws(culled.instances.front(), SpriteId::Ground)); // drawn whole: larger than the margin allows
     const bool allWithin = std::ranges::all_of(std::span{ culled.instances }.subspan(1), [&](const core::Instance& instance) {
@@ -352,15 +347,15 @@ TEST_CASE("with no view, a publish culls to the widest view round the followed c
     data.cultivator.walkSpeed = core::WIDEST_HALF_VIEW.x + core::DrawList::CULL_MARGIN;
     game::Host host(test::TestManifest(), game::ARENA_SCENE, data);
     Tick(host, { .wall = 1, .simulation = 1, .state = 1 }, { .actions = {}, .held = HELD_RIGHT });
-    const core::Snapshot fallback = Published(host);
+    const core::Snapshot fallback = PublishedSnapshot(host);
     REQUIRE(fallback.follow.has_value());
     const core::Rect widest = WidestRound(fallback.follow.value_or(core::Follow{}).current);
     // The same bytes as a publish sent that view: the same instances, the world's depth measured from the same top.
-    const core::Snapshot sent = Published(host, widest);
+    const core::Snapshot sent = PublishedSnapshot(host, widest);
     CHECK(std::ranges::equal(std::as_bytes(std::span{ fallback.instances }), std::as_bytes(std::span{ sent.instances })));
     // Some of the arena lies within it and some past it.
     constexpr core::Rect ALL{ .min = { .x = -1.0e6F, .y = -1.0e6F }, .max = { .x = 1.0e6F, .y = 1.0e6F } };
-    const core::Snapshot everything = Published(host, ALL);
+    const core::Snapshot everything = PublishedSnapshot(host, ALL);
     REQUIRE(Draws(everything.instances.front(), SpriteId::Ground)); // drawn whole either way, so left out of the count
     const auto kept = static_cast<std::size_t>(
         std::ranges::count_if(std::span{ everything.instances }.subspan(1), [&](const core::Instance& instance) {
@@ -375,13 +370,13 @@ TEST_CASE("with no view, a publish culls to the widest view round the followed c
 TEST_CASE("with no view and no player, a publish culls to the widest view round the scene's view centre") {
     constexpr core::Vec2 CENTRE{ .x = 960.0F, .y = 540.0F }; // the middle of the painted scene's view, the ground
     game::Host host(test::TestManifest(), game::PAINTED_SCENE);
-    const core::Snapshot fallback = Published(host);
-    const core::Snapshot sent = Published(host, WidestRound(CENTRE));
+    const core::Snapshot fallback = PublishedSnapshot(host);
+    const core::Snapshot sent = PublishedSnapshot(host, WidestRound(CENTRE));
     REQUIRE(fallback.instances.size() > 1);
     CHECK(std::ranges::equal(std::as_bytes(std::span{ fallback.instances }), std::as_bytes(std::span{ sent.instances })));
     // A view far from the scene's culls all but the ground: the fallback isn't simply "keep everything".
     constexpr core::Rect FAR_AWAY{ .min = { .x = 50'000.0F, .y = 50'000.0F }, .max = { .x = 51'000.0F, .y = 51'000.0F } };
-    CHECK(Published(host, FAR_AWAY).instances.size() == 1);
+    CHECK(PublishedSnapshot(host, FAR_AWAY).instances.size() == 1);
 }
 
 // The sprite an instance draws, and where its foot stands: MakeInstance offsets the quad's
@@ -407,7 +402,7 @@ core::Snapshot MovedHost() {
     for (u64 tick = 1; tick <= TICKS; ++tick) {
         Tick(host, { .wall = tick, .simulation = tick, .state = tick }, {});
     }
-    return Published(host);
+    return PublishedSnapshot(host);
 }
 
 TEST_CASE("the arena publishes the ground's normal batch, the world's, then an additive one that ends the snapshot") {
@@ -456,13 +451,13 @@ TEST_CASE("the additive batch holds only the orbs") {
 TEST_CASE("the stress arena publishes 100,000 instances") {
     constexpr std::size_t INSTANCES = 100'000;
     game::Host host(test::TestManifest(), game::STRESS_SCENE);
-    CHECK(Published(host).instances.size() >= INSTANCES);
+    CHECK(PublishedSnapshot(host).instances.size() >= INSTANCES);
 }
 
 TEST_CASE("the stress arena's 10,000 bullets draw last, in an additive batch") {
     constexpr u32 BULLETS = 10'000;
     game::Host host(test::TestManifest(), game::STRESS_SCENE);
-    const core::Snapshot snapshot = Published(host);
+    const core::Snapshot snapshot = PublishedSnapshot(host);
     REQUIRE_FALSE(snapshot.batches.empty());
     const core::Batch& effects = snapshot.batches.back();
     CHECK(effects.pipeline == core::Pipeline::Additive);
@@ -473,7 +468,7 @@ TEST_CASE("the stress arena's 10,000 bullets draw last, in an additive batch") {
 TEST_CASE("the painted scene's glows draw last, in an additive batch") {
     constexpr u32 GLOWS = 5;
     game::Host host(test::TestManifest(), game::PAINTED_SCENE);
-    const core::Snapshot snapshot = Published(host);
+    const core::Snapshot snapshot = PublishedSnapshot(host);
     REQUIRE_FALSE(snapshot.batches.empty());
     CHECK(snapshot.batches.back().pipeline == core::Pipeline::Additive);
     CHECK(snapshot.batches.back().count == GLOWS);
@@ -482,16 +477,16 @@ TEST_CASE("the painted scene's glows draw last, in an additive batch") {
 TEST_CASE("the painted scene holds still") {
     constexpr u64 TICK = 7;
     game::Host host(test::TestManifest(), game::PAINTED_SCENE);
-    const core::Snapshot before = Published(host);
+    const core::Snapshot before = PublishedSnapshot(host);
     Tick(host, { .wall = TICK, .simulation = TICK, .state = TICK }, {});
-    const core::Snapshot after = Published(host);
+    const core::Snapshot after = PublishedSnapshot(host);
     CHECK(std::ranges::equal(std::as_bytes(std::span{ before.instances }), std::as_bytes(std::span{ after.instances })));
 }
 
 TEST_CASE("the cell grid publishes every cell, with none culled at its far corners") {
     constexpr std::size_t CELLS = 640;
     game::Host host(test::TestManifest(), game::CELLS_SCENE);
-    const core::Snapshot snapshot = Published(host);
+    const core::Snapshot snapshot = PublishedSnapshot(host);
     CHECK(snapshot.instances.size() == CELLS + 1); // and the ground, hidden beneath them
 }
 
@@ -509,7 +504,7 @@ TEST_CASE("a world publish holds no tiles in view and no painted ground: the ren
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     // The shipped map, as VIEW lies far past the small test map's edge and a screen needs a map larger than one.
     game::Host host(manifest, game::WORLD_SCENE, test::ShippedData());
-    const core::Snapshot snapshot = Published(host, VIEW);
+    const core::Snapshot snapshot = PublishedSnapshot(host, VIEW);
     // The terrain's stamp sprites, which art/sprites.toml lists together.
     std::vector<core::Instance> terrain;
     for (auto id = std::to_underlying(SpriteId::StampForest0); id <= std::to_underlying(SpriteId::StampWater3); ++id) {
@@ -545,8 +540,8 @@ TEST_CASE("two hosts ticked alike publish the same bytes") {
         Tick(first, { .wall = tick, .simulation = tick, .state = tick }, {});
         Tick(second, { .wall = tick, .simulation = tick, .state = tick }, {});
     }
-    const std::vector<core::Instance> mine = Published(first).instances;
-    const std::vector<core::Instance> theirs = Published(second).instances;
+    const std::vector<core::Instance> mine = PublishedSnapshot(first).instances;
+    const std::vector<core::Instance> theirs = PublishedSnapshot(second).instances;
     CHECK(std::ranges::equal(std::as_bytes(std::span{ mine }), std::as_bytes(std::span{ theirs })));
 }
 
@@ -732,22 +727,6 @@ constexpr f32 AURA_REACH = 320.0F;
 constexpr core::Vec2 CRYSTAL_FOOT{ .x = 420.0F, .y = 620.0F };
 constexpr core::HeldInput HELD_LEFT{ .move = { .x = -1.0F, .y = 0.0F } };
 
-// Game data that walks the cultivator to 100 units from the crystal in one tick and circles the foxes 300 units round
-// it, which puts some of them in the aura's reach and some out.
-core::GameData NearCrystalData() {
-    constexpr f32 WALK_SPEED = 440.0F;
-    constexpr f32 FOX_ORBIT = 300.0F;
-    core::GameData data = game::BuiltInData();
-    data.cultivator.walkSpeed = WALK_SPEED;
-    data.fox.orbitRadius = FOX_ORBIT;
-    data.fox.orbitWobble = 0.0F;
-    return data;
-}
-
-core::TickCounters At(u64 tick) {
-    return { .wall = tick, .simulation = tick, .state = tick };
-}
-
 // Ticks `host` from tick 1 to `last`, the first tick walking left, and returns every event of them.
 std::vector<core::Event> TickAll(game::Host& host, u64 last) {
     std::vector<core::Event> events;
@@ -766,22 +745,6 @@ std::vector<core::Event> TickTo(game::Host& host, u64 last) {
     return events;
 }
 
-core::Vec2 FootOf(const game::Host& host, core::StableId entity) {
-    const core::Domain& active = host.State()[game::ACTIVE];
-    return active.Entities().get<game::Body>(active.Find(entity)).current;
-}
-
-std::vector<core::StableId> Foxes(const game::Host& host) {
-    std::vector<core::StableId> foxes;
-    const core::Registry& entities = host.State()[game::ACTIVE].Entities();
-    for (auto [entity, creature, stable] : entities.view<const game::Creature, const core::StableId>().each()) {
-        if (creature.kind == game::CreatureKind::Fox) {
-            foxes.push_back(stable);
-        }
-    }
-    return foxes;
-}
-
 bool InReach(core::Vec2 foot) {
     return std::hypot(foot.x - CRYSTAL_FOOT.x, foot.y - CRYSTAL_FOOT.y) <= AURA_REACH;
 }
@@ -795,7 +758,7 @@ std::vector<core::Event> HitsOf(const std::vector<core::Event>& events) {
 }
 
 TEST_CASE("the aura hits a fox in reach once a second and none between") {
-    game::Host host(test::TestManifest(), game::ARENA_SCENE, NearCrystalData());
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, NearTheCrystal());
     CHECK(TickAll(host, AURA_TICK - 1).empty());
     std::vector<core::Event> events;
     host.Tick(At(AURA_TICK), {}, events);
@@ -836,7 +799,7 @@ TEST_CASE("the aura misses a fox out of reach") {
 }
 
 TEST_CASE("the aura heals the player in reach") {
-    game::Host host(test::TestManifest(), game::ARENA_SCENE, NearCrystalData());
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, NearTheCrystal());
     const std::vector<core::Event> events = TickTo(host, AURA_TICK);
     const auto heal = std::ranges::find(events, host.Player(), &core::Event::target);
     REQUIRE(heal != events.end());
@@ -847,8 +810,8 @@ TEST_CASE("the aura heals the player in reach") {
 }
 
 TEST_CASE("the aura's hits are the same on a rerun") {
-    game::Host first(test::TestManifest(), game::ARENA_SCENE, NearCrystalData());
-    game::Host second(test::TestManifest(), game::ARENA_SCENE, NearCrystalData());
+    game::Host first(test::TestManifest(), game::ARENA_SCENE, NearTheCrystal());
+    game::Host second(test::TestManifest(), game::ARENA_SCENE, NearTheCrystal());
     const std::vector<core::Event> one = TickTo(first, AURA_TICK);
     const std::vector<core::Event> two = TickTo(second, AURA_TICK);
     REQUIRE(one.size() == two.size());
@@ -863,7 +826,7 @@ TEST_CASE("the aura's hits are the same on a rerun") {
 }
 
 TEST_CASE("the aura hits at a fox's head") {
-    game::Host host(test::TestManifest(), game::ARENA_SCENE, NearCrystalData());
+    game::Host host(test::TestManifest(), game::ARENA_SCENE, NearTheCrystal());
     const std::vector<core::Event> events = TickTo(host, AURA_TICK);
     const std::vector<core::Event> hits = HitsOf(events);
     REQUIRE_FALSE(hits.empty());
@@ -951,7 +914,7 @@ TEST_CASE("the debug burst hits nothing in a scene without foxes") {
 TEST_CASE("the arena labels the player and every fox, and captions the tablet") {
     constexpr std::size_t FOXES = 12;
     game::Host host(test::TestManifest());
-    const core::Snapshot snapshot = Published(host);
+    const core::Snapshot snapshot = PublishedSnapshot(host);
     const auto labels = [&](core::LabelPriority priority) {
         return std::ranges::count_if(snapshot.texts, [priority](const core::TextItem& text) {
             return text.kind == core::TextKind::Label && text.priority == priority;
@@ -982,7 +945,7 @@ TEST_CASE("the arena labels the player and every fox, and captions the tablet") 
 
 TEST_CASE("labels and the caption leave their colour to the table") {
     game::Host host(test::TestManifest());
-    const core::Snapshot snapshot = Published(host);
+    const core::Snapshot snapshot = PublishedSnapshot(host);
     REQUIRE_FALSE(snapshot.texts.empty());
     for (const core::TextItem& text : snapshot.texts) {
         CHECK(text.colour == core::TextItem{}.colour);
@@ -992,7 +955,7 @@ TEST_CASE("labels and the caption leave their colour to the table") {
 TEST_CASE("the player's label stands a little over its head") {
     constexpr f32 CULTIVATOR_FOOT_Y = 122.0F; // assets/manifest.yaml
     game::Host host(test::TestManifest());
-    const core::Snapshot snapshot = Published(host);
+    const core::Snapshot snapshot = PublishedSnapshot(host);
     const auto label = std::ranges::find(snapshot.texts, core::LabelPriority::Player, &core::TextItem::priority);
     REQUIRE(label != snapshot.texts.end());
     const core::Vec2 foot = FootOf(host, host.Player());
@@ -1007,7 +970,7 @@ TEST_CASE("the player's label stands a little over its head") {
 
 TEST_CASE("the still scenes publish no texts") {
     game::Host host(test::TestManifest(), game::PAINTED_SCENE);
-    CHECK(Published(host).texts.empty());
+    CHECK(PublishedSnapshot(host).texts.empty());
 }
 
 constexpr u32 GLOW_ROLE_MASK = 0xFFU; // the role fills the glow word's low byte
@@ -1026,7 +989,7 @@ core::GlowRole GlowRoleOf(const core::Snapshot& snapshot, SpriteId sprite) {
 
 TEST_CASE("the shrine, stele and crystal wear the demo glows") {
     game::Host host(test::TestManifest());
-    const core::Snapshot snapshot = Published(host);
+    const core::Snapshot snapshot = PublishedSnapshot(host);
     CHECK(GlowRoleOf(snapshot, SpriteId::Shrine) == core::GlowRole::DemoPulse);
     CHECK(GlowRoleOf(snapshot, SpriteId::Stele) == core::GlowRole::DemoCharge);
     CHECK(GlowRoleOf(snapshot, SpriteId::CrystalIce) == core::GlowRole::DemoProgress);
@@ -1104,7 +1067,7 @@ TEST_CASE("the arena publishes its showcase seals, unsaved") {
     for (u64 tick = 1; tick <= SAVED_AT; ++tick) {
         Tick(host, At(tick), {});
     }
-    const core::Snapshot published = Published(host);
+    const core::Snapshot published = PublishedSnapshot(host);
     const std::vector<core::SealKey> shown = ShowcaseKeys(published);
     CHECK(shown == expected);
     const std::vector<core::Seal> raised = test::RaisedSeals(published);
@@ -1128,12 +1091,12 @@ TEST_CASE("the arena publishes its showcase seals, unsaved") {
     host.Save(writer);
     CHECK(bytes == before);
     game::Host loaded(test::TestManifest(), game::CELLS_SCENE);
-    const std::vector<core::SealKey> shownElsewhere = ShowcaseKeys(Published(loaded));
+    const std::vector<core::SealKey> shownElsewhere = ShowcaseKeys(PublishedSnapshot(loaded));
     CHECK(shownElsewhere.empty()); // the other scenes show none
     core::Reader reader{ bytes };
     REQUIRE(loaded.Load(reader, SAVED_AT));
     loaded.EnterScene(); // as the logic does at the swap
-    const core::Snapshot reloaded = Published(loaded);
+    const core::Snapshot reloaded = PublishedSnapshot(loaded);
     const std::vector<core::SealKey> shownAgain = ShowcaseKeys(reloaded);
     CHECK(shownAgain == expected);
     const std::vector<core::Seal> raisedAgain = test::RaisedSeals(reloaded);
@@ -1148,7 +1111,7 @@ TEST_CASE("glows leave the state hash alone") {
         published.Tick(At(tick), {}, events);
         plain.Tick(At(tick), {}, events);
         if (tick == BURST_TICK) {
-            static_cast<void>(Published(published)); // between ticks, so a publish that changed state would show
+            static_cast<void>(PublishedSnapshot(published)); // between ticks, so a publish that changed state would show
         }
     }
     CHECK(published.StateHash() == plain.StateHash());
@@ -1389,12 +1352,6 @@ std::unique_ptr<game::Host> WorldAt(const test::SavedClock& clock) {
     return host;
 }
 
-// Lets a month pass for `host`, as the logic does on the frozen tick after the transition.
-void StepMonth(game::Host& host, u64 state) {
-    core::Jobs jobs{ 1 };
-    host.AdvanceCalendar({ .wall = state, .simulation = 0, .state = state }, jobs, {});
-}
-
 // What `host` publishes as its calendar.
 std::optional<core::CalendarView> CalendarOf(game::Host& host) {
     core::Jobs jobs{ 1 };
@@ -1412,7 +1369,7 @@ TEST_CASE("a month's last day ends in the month step") {
     TickRange(*world, 2, 2);
     CHECK(world->WorldTicks() == game::TICKS_PER_MONTH); // the clock waits for the step
 
-    StepMonth(*world, 3);
+    StepMonthFrozen(*world, 3);
     CHECK(world->Months() == 1);
     CHECK_FALSE(world->MonthDue());
     CHECK(world->WorldTicks() == game::TICKS_PER_MONTH);
@@ -1423,14 +1380,14 @@ TEST_CASE("a month's last day ends in the month step") {
 TEST_CASE("M moves the clock to the next month's first tick") {
     constexpr u64 CLOCK = 1'000;
     const std::unique_ptr<game::Host> world = WorldAt({ .ticks = CLOCK, .months = 0 });
-    StepMonth(*world, 1);
+    StepMonthFrozen(*world, 1);
     CHECK(world->WorldTicks() == game::TICKS_PER_MONTH);
     CHECK(world->Months() == 1);
     CHECK_FALSE(world->MonthDue());
 
     // Pressed while the world is paused: the clock jumps and the pause holds.
     TickWith(*world, 1, core::ActionKind::ToggleWorldPause);
-    StepMonth(*world, 2);
+    StepMonthFrozen(*world, 2);
     CHECK(world->WorldTicks() == 2 * game::TICKS_PER_MONTH);
     CHECK(world->Months() == 2);
     CHECK(world->WorldPaused());
@@ -1439,7 +1396,7 @@ TEST_CASE("M moves the clock to the next month's first tick") {
 
     // Off the map the clock still moves with the steps, so the calendar keeps up with them.
     game::Host arena(test::TestManifest());
-    StepMonth(arena, 1);
+    StepMonthFrozen(arena, 1);
     CHECK(arena.WorldTicks() == game::TICKS_PER_MONTH);
     CHECK(arena.Months() == 1);
 }
@@ -1472,12 +1429,12 @@ TEST_CASE("the calendar ends at its last month's first tick, and a save of it lo
     const std::unique_ptr<game::Host> world = WorldAt({ .ticks = CALENDAR_END - 1, .months = game::LAST_MONTH - 1 });
     TickRange(*world, 1, 1);
     CHECK(world->MonthDue());
-    StepMonth(*world, 2);
+    StepMonthFrozen(*world, 2);
     CHECK(world->Months() == game::LAST_MONTH);
     CHECK_FALSE(world->MonthDue());
     TickRange(*world, 2, 2);
     CHECK(world->WorldTicks() == CALENDAR_END); // the clock stands still rather than wrap
-    StepMonth(*world, 3);
+    StepMonthFrozen(*world, 3);
     CHECK(world->Months() == game::LAST_MONTH); // M no longer counts
     CHECK(world->WorldTicks() == CALENDAR_END);
 
@@ -1672,15 +1629,11 @@ bool SameInstance(const core::Instance& lhs, const core::Instance& rhs) {
 }
 
 /// Whether two points have the same bits.
-bool SamePoint(core::Vec2 lhs, core::Vec2 rhs) {
-    return std::bit_cast<u64>(lhs) == std::bit_cast<u64>(rhs);
-}
-
 TEST_CASE("travellers in view are drawn and labelled with their names") {
     const std::array<Departure, 1> departures{ { { .tick = static_cast<i64>(TRAVEL_CLOCK) - JUST_LEFT, .members = 2 } } };
     const TravelWorld world = TravelWorldOf(departures);
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
-    const core::Snapshot snapshot = Published(*world.host, NearHome(*world.map));
+    const core::Snapshot snapshot = PublishedSnapshot(*world.host, NearHome(*world.map));
     const std::shared_ptr<const core::Names> names = test::ShippedNames();
     const core::Journey& journey = world.journeys.front();
     const f32 height = static_cast<f32>(manifest->Sprite(SpriteId::Villager).footY);
@@ -1725,7 +1678,7 @@ TEST_CASE("travellers outside the view are not published") {
     const core::Rect view = NearHome(*world.map);
     const core::Vec2 away = core::Where(*world.map, world.journeys[1], clock);
     REQUIRE_FALSE(core::Contains(view, away));
-    const core::Snapshot snapshot = Published(*world.host, view);
+    const core::Snapshot snapshot = PublishedSnapshot(*world.host, view);
     CHECK(Shows(snapshot, world.journeys[0].members.front()));
     CHECK_FALSE(Shows(snapshot, world.journeys[1].members.front()));
 }
@@ -1741,7 +1694,7 @@ TEST_CASE("a traveller still at home or home again isn't drawn") {
         { .tick = clock - road.visitTicks }, // home on this very tick
     } };
     const TravelWorld world = TravelWorldOf(departures);
-    const core::Snapshot snapshot = Published(*world.host, NearHome(*world.map));
+    const core::Snapshot snapshot = PublishedSnapshot(*world.host, NearHome(*world.map));
     CHECK(Shows(snapshot, world.journeys[0].members.front()));
     CHECK_FALSE(Shows(snapshot, world.journeys[1].members.front()));
     CHECK(Shows(snapshot, world.journeys[2].members.front()));
@@ -1758,7 +1711,7 @@ TEST_CASE("a selected traveller's label outranks a place's") {
     world.host->Tick(At(1), { .actions = select, .held = {} }, events);
     REQUIRE(world.host->Selected() == chosen);
     world.host->Explore(NearHome(*world.map)); // a place is named only once explored
-    const core::Snapshot snapshot = Published(*world.host, NearHome(*world.map));
+    const core::Snapshot snapshot = PublishedSnapshot(*world.host, NearHome(*world.map));
     const auto place = std::ranges::find(snapshot.texts, core::TextKind::Place, &core::TextItem::kind);
     REQUIRE(place != snapshot.texts.end());
     CHECK(LabelOf(snapshot, chosen).priority == core::LabelPriority::Selected);
@@ -1773,7 +1726,7 @@ TEST_CASE("the cultivator draws over a traveller standing where it stands") {
     const auto clock = static_cast<i64>(TRAVEL_CLOCK);
     const std::array<Departure, 2> departures{ { { .tick = clock }, { .tick = clock - JUST_LEFT } } };
     const TravelWorld world = TravelWorldOf(departures, true);
-    const core::Snapshot snapshot = Published(*world.host, NearHome(*world.map));
+    const core::Snapshot snapshot = PublishedSnapshot(*world.host, NearHome(*world.map));
     const auto indexOf = [&snapshot](core::StableId entity) {
         const auto found = std::ranges::find(snapshot.ids, entity);
         REQUIRE(found != snapshot.ids.end());
@@ -1793,7 +1746,7 @@ TEST_CASE("travellers stand still while the world is paused") {
 
     // Running, a tick takes it from where the clock was to where it is.
     TickRange(*world.host, 1, 1);
-    const core::Snapshot running = Published(*world.host, view);
+    const core::Snapshot running = PublishedSnapshot(*world.host, view);
     const core::Vec2 from = core::Where(*world.map, world.journeys.front(), static_cast<i64>(TRAVEL_CLOCK));
     const core::Vec2 onward = core::Where(*world.map, world.journeys.front(), static_cast<i64>(TRAVEL_CLOCK) + 1);
     REQUIRE_FALSE(SamePoint(from, onward));
@@ -1808,7 +1761,7 @@ TEST_CASE("travellers stand still while the world is paused") {
     // Paused, on the pausing tick and after it.
     TickWith(*world.host, 2, core::ActionKind::ToggleWorldPause);
     TickRange(*world.host, 3, 3);
-    const core::Snapshot paused = Published(*world.host, view);
+    const core::Snapshot paused = PublishedSnapshot(*world.host, view);
     CHECK(SameInstance(
         InstanceOf(paused, traveller),
         core::MakeInstance(
@@ -1826,14 +1779,14 @@ TEST_CASE("a month step asked for early stands travellers where the new clock pu
     const TravelWorld world = TravelWorldOf(departures);
     const core::StableId traveller = world.journeys.front().members.front();
     TickRange(*world.host, 1, 1);
-    StepMonth(*world.host, 2);
+    StepMonthFrozen(*world.host, 2);
     REQUIRE(world.host->WorldTicks() == game::TICKS_PER_MONTH);
     const core::Vec2 foot = core::Where(*world.map, world.journeys.front(), nextMonth);
     const core::Instance expected = core::MakeInstance(
         *test::TestManifest(),
         { .sprite = SpriteId::Villager, .previous = foot, .current = foot, .flags = core::INSTANCE_SIGHT_FADE }
     );
-    CHECK(SameInstance(InstanceOf(Published(*world.host, NearHome(*world.map)), traveller), expected));
+    CHECK(SameInstance(InstanceOf(PublishedSnapshot(*world.host, NearHome(*world.map)), traveller), expected));
 }
 
 /// The villager's walk: its 8 frames, each shown for 12 world units walked; `reversed` steps through them backwards, so the
@@ -1925,7 +1878,7 @@ TEST_CASE("a traveller draws the walk frame its distance picks, facing its way")
     REQUIRE_FALSE(eastward.facesLeft);
     const SpriteId eastFrame = core::PoseSprite(clip, SpriteId::Villager, eastward.distance, eastward.moving);
     CHECK(eastFrame != SpriteId::Villager);
-    const core::Snapshot eastSnapshot = Published(*east.host, NearHome(*east.map));
+    const core::Snapshot eastSnapshot = PublishedSnapshot(*east.host, NearHome(*east.map));
     const core::RoadCurveIndex eastRoads{ *east.map };
     for (std::size_t member = 0; member < east.journeys.front().members.size(); ++member) {
         CAPTURE(member);
@@ -1944,7 +1897,7 @@ TEST_CASE("a traveller draws the walk frame its distance picks, facing its way")
     REQUIRE(westward.facesLeft);
     const SpriteId westFrame = core::PoseSprite(clip, SpriteId::Villager, westward.distance, westward.moving);
     CHECK(westFrame != SpriteId::Villager);
-    const core::Snapshot westSnapshot = Published(*west.host, NearHome(*west.map));
+    const core::Snapshot westSnapshot = PublishedSnapshot(*west.host, NearHome(*west.map));
     const core::RoadCurveIndex westRoads{ *west.map };
     const core::Instance drawn = InstanceOf(westSnapshot, west.journeys.front().members.front());
     CHECK(SameInstance(drawn, TravellerDrawn(west, westRoads, 0, westFrame, -1.0F)));
@@ -1966,13 +1919,13 @@ TEST_CASE("a traveller with no clip draws as before") {
     const core::Instance standing = TravellerDrawn(world, roads, 0, SpriteId::Villager, 1.0F);
 
     // No table set.
-    CHECK(SameInstance(InstanceOf(Published(*world.host, NearHome(*world.map)), traveller), standing));
+    CHECK(SameInstance(InstanceOf(PublishedSnapshot(*world.host, NearHome(*world.map)), traveller), standing));
     // An empty table.
     world.host->SetAnimations(std::make_shared<const core::Animations>());
-    CHECK(SameInstance(InstanceOf(Published(*world.host, NearHome(*world.map)), traveller), standing));
+    CHECK(SameInstance(InstanceOf(PublishedSnapshot(*world.host, NearHome(*world.map)), traveller), standing));
     // No table again.
     world.host->SetAnimations(nullptr);
-    CHECK(SameInstance(InstanceOf(Published(*world.host, NearHome(*world.map)), traveller), standing));
+    CHECK(SameInstance(InstanceOf(PublishedSnapshot(*world.host, NearHome(*world.map)), traveller), standing));
 }
 
 TEST_CASE("a swapped table changes the next publish") {
@@ -1986,7 +1939,7 @@ TEST_CASE("a swapped table changes the next publish") {
     const core::RoadCurveIndex roads{ *world.map };
     const auto drawnWith = [&](const std::shared_ptr<const core::Animations>& animations) {
         world.host->SetAnimations(animations);
-        return InstanceOf(Published(*world.host, NearHome(*world.map)), traveller);
+        return InstanceOf(PublishedSnapshot(*world.host, NearHome(*world.map)), traveller);
     };
 
     const std::shared_ptr<const core::Animations> forward = VillagerWalks();
@@ -2028,7 +1981,7 @@ TEST_CASE("travellers' frames are alike on 1 and 4 workers and after a load") {
                lhs.ids == rhs.ids;
     };
     game::Host host(test::TestManifest(), game::WORLD_SCENE, data);
-    StepMonth(host, 1);
+    StepMonthFrozen(host, 1);
     TickRange(host, 2, SAVED_AT);
 
     const core::Snapshot one = published(host, 1);
@@ -2064,8 +2017,8 @@ TEST_CASE("walking changes no hash") {
     for (u64 tick = 1; tick <= TICKS; ++tick) {
         TickRange(*standing.host, tick, tick);
         TickRange(*walking.host, tick, tick);
-        const core::Snapshot stood = Published(*standing.host, NearHome(*standing.map));
-        const core::Snapshot walked = Published(*walking.host, NearHome(*walking.map));
+        const core::Snapshot stood = PublishedSnapshot(*standing.host, NearHome(*standing.map));
+        const core::Snapshot walked = PublishedSnapshot(*walking.host, NearHome(*walking.map));
         REQUIRE_FALSE(SameInstance(InstanceOf(stood, traveller), InstanceOf(walked, traveller)));
     }
     CHECK(walking.host->StateHash() == standing.host->StateHash());
@@ -2079,10 +2032,10 @@ TEST_CASE("a paused world draws the same frames") {
     world.host->SetAnimations(VillagerWalks());
     const core::Rect view = NearHome(*world.map);
     TickRange(*world.host, 1, 1);
-    const core::Snapshot running = Published(*world.host, view);
+    const core::Snapshot running = PublishedSnapshot(*world.host, view);
     TickWith(*world.host, 2, core::ActionKind::ToggleWorldPause);
     REQUIRE(world.host->WorldPaused());
-    const core::Snapshot paused = Published(*world.host, view);
+    const core::Snapshot paused = PublishedSnapshot(*world.host, view);
     REQUIRE(WalkFrames(paused).first == 2);
     // The pausing tick stops the clock where the last running tick left it, so the frames are the same. Compared by frame
     // and facing only: once the clock stops, each instance's previous point collapses onto its current one.
@@ -2092,7 +2045,7 @@ TEST_CASE("a paused world draws the same frames") {
     }
 
     TickRange(*world.host, 3, 2 + PAUSED_TICKS);
-    const core::Snapshot later = Published(*world.host, view);
+    const core::Snapshot later = PublishedSnapshot(*world.host, view);
     CHECK(std::ranges::equal(std::as_bytes(std::span{ paused.instances }), std::as_bytes(std::span{ later.instances })));
 }
 
@@ -2132,17 +2085,19 @@ TEST_CASE("travellers on one route share its walk table, made once one is drawn 
                                      .y = static_cast<f32>(world.map->Rows()) * world.map->TileSize() } };
 
     // Standing, with no walk clip: no walk is worked out.
-    REQUIRE(WalkFrames(Published(*world.host, whole)).first == 0);
+    REQUIRE(WalkFrames(PublishedSnapshot(*world.host, whole)).first == 0);
     CHECK(world.host->LegWalkTables() == 0);
     // Walking but all out of view.
     const std::shared_ptr<const core::Animations> walks = VillagerWalks();
     world.host->SetAnimations(walks);
     const core::Vec2 far{ .x = -10'000.0F, .y = -10'000.0F };
-    REQUIRE(Published(*world.host, core::Rect{ .min = far, .max = far + core::Vec2{ .x = 1.0F, .y = 1.0F } }).ids.empty());
+    REQUIRE(
+        PublishedSnapshot(*world.host, core::Rect{ .min = far, .max = far + core::Vec2{ .x = 1.0F, .y = 1.0F } }).ids.empty()
+    );
     CHECK(world.host->LegWalkTables() == 0);
 
     // All drawn, each on its way out: the road's way out once, the detour's once.
-    const core::Snapshot drawn = Published(*world.host, whole);
+    const core::Snapshot drawn = PublishedSnapshot(*world.host, whole);
     REQUIRE(WalkFrames(drawn).first == 3);
     CHECK(world.host->LegWalkTables() == 2);
     // Each traveller steps by its own route's table.
@@ -2156,7 +2111,7 @@ TEST_CASE("travellers on one route share its walk table, made once one is drawn 
     }
     CHECK(wrong == 0);
     // Drawn again, nothing new is made.
-    std::ignore = Published(*world.host, whole);
+    std::ignore = PublishedSnapshot(*world.host, whole);
     CHECK(world.host->LegWalkTables() == 2);
 
     // A load brings its own journeys, and the tables go with the old.
@@ -2167,7 +2122,7 @@ TEST_CASE("travellers on one route share its walk table, made once one is drawn 
     REQUIRE(world.host->Load(reader, 1));
     world.host->EnterScene();
     CHECK(world.host->LegWalkTables() == 0);
-    REQUIRE(WalkFrames(Published(*world.host, whole)).first == 3);
+    REQUIRE(WalkFrames(PublishedSnapshot(*world.host, whole)).first == 3);
     CHECK(world.host->LegWalkTables() == 2);
 
     // Another map, its tiles twice as large: the old map's tables go, and the walks are the new map's.
@@ -2177,7 +2132,7 @@ TEST_CASE("travellers on one route share its walk table, made once one is drawn 
     world.host->SetData(larger);
     CHECK(world.host->LegWalkTables() == 0);
     const core::Rect largerWhole{ .min = {}, .max = whole.max * 2.0F };
-    const core::Snapshot onLarger = Published(*world.host, largerWhole);
+    const core::Snapshot onLarger = PublishedSnapshot(*world.host, largerWhole);
     CHECK(world.host->LegWalkTables() == 2);
     std::size_t stale = 0;
     std::size_t moved = 0;
@@ -2193,7 +2148,7 @@ TEST_CASE("travellers on one route share its walk table, made once one is drawn 
     REQUIRE(moved > 0);
 
     // A month step brings the month's journeys in place of the last's, and the tables go with the old.
-    StepMonth(*world.host, 2);
+    StepMonthFrozen(*world.host, 2);
     CHECK(world.host->LegWalkTables() == 0);
 }
 
@@ -2249,8 +2204,8 @@ TEST_CASE("a drawn traveller keeps its walk until the journeys or the map change
     game::Host host(test::TestManifest(), game::WORLD_SCENE, data);
     host.SetDebugSight(true);
     host.SetAnimations(walks);
-    const auto drawn = [&] { return WalksDrawnIn(host, Published(host, whole), *data.world, *clip); };
-    StepMonth(host, 1);
+    const auto drawn = [&] { return WalksDrawnIn(host, PublishedSnapshot(host, whole), *data.world, *clip); };
+    StepMonthFrozen(host, 1);
     TickRange(host, 2, TICKS_IN);
     CHECK(host.KeptWalks() == 0);
 
@@ -2263,7 +2218,7 @@ TEST_CASE("a drawn traveller keeps its walk until the journeys or the map change
     CHECK(drawn().wrong == 0);
 
     // A month step brings the month's journeys in place of the last's, and what each kept goes with the old.
-    StepMonth(host, 2);
+    StepMonthFrozen(host, 2);
     CHECK(host.KeptWalks() == 0);
     const WalksDrawn stepped = drawn();
     REQUIRE(stepped.journeys > 0);
@@ -2343,7 +2298,7 @@ TEST_CASE("a traveller on a road is published on its curve, and its label moves 
 
     TickRange(*world.host, 1, 1);
     const core::Rect whole{ .min = {}, .max = { .x = 10.0F * test::small::TILE, .y = 4.0F * test::small::TILE } };
-    const core::Snapshot snapshot = Published(*world.host, whole);
+    const core::Snapshot snapshot = PublishedSnapshot(*world.host, whole);
     const core::RoadCurveIndex roads{ *map };
     const core::Vec2 from = core::DrawnWhere(*map, roads, journey, clock);
     const core::Vec2 onward = core::DrawnWhere(*map, roads, journey, clock + 1);
@@ -2445,7 +2400,7 @@ TEST_CASE("a walk-to sends the cultivator along the route") {
     const std::vector<core::StableId> alone{ world.player };
     CHECK(RouteOf(*world.host).members == alone);
     CHECK(SameLeg(RouteLegOf(*world.host), leg));
-    const bool fromFirst = RouteIs(Published(*world.host).route, map, first, leg, 1);
+    const bool fromFirst = RouteIs(PublishedSnapshot(*world.host).route, map, first, leg, 1);
     CHECK(fromFirst);
 
     // Halfway between its second and third tiles, it has those two and the rest still to walk.
@@ -2453,7 +2408,7 @@ TEST_CASE("a walk-to sends the cultivator along the route") {
     TickRange(*world.host, 2, midway - TRAVEL_CLOCK);
     const core::Vec2 there = core::Where(map, leg, static_cast<i64>(midway));
     CHECK(SamePoint(FootOf(*world.host, world.player), there));
-    const bool fromThere = RouteIs(Published(*world.host).route, map, there, leg, 2);
+    const bool fromThere = RouteIs(PublishedSnapshot(*world.host).route, map, there, leg, 2);
     CHECK(fromThere);
 
     // On its end's tick it stands on the last tile's centre, the route done.
@@ -2461,7 +2416,7 @@ TEST_CASE("a walk-to sends the cultivator along the route") {
     TickRange(*world.host, midway - TRAVEL_CLOCK + 1, end - TRAVEL_CLOCK);
     CHECK(SamePoint(FootOf(*world.host, world.player), map.TileCentre(leg.tiles.back())));
     CHECK_FALSE(world.host->PlayerRoute().has_value());
-    CHECK(Published(*world.host).route.empty());
+    CHECK(PublishedSnapshot(*world.host).route.empty());
 
     // Then it walks freely again.
     TickRange(*world.host, end - TRAVEL_CLOCK + 1, end - TRAVEL_CLOCK + 1, HELD_RIGHT);
@@ -2505,7 +2460,7 @@ CornerWalk WalkedToCorner() {
     walk.tick = leg.arrive[walk.corner];
     TickRange(*walk.world.host, 2, walk.tick);
     REQUIRE(walk.world.host->WorldTicks() == TRAVEL_CLOCK + walk.tick);
-    walk.snapshot = Published(*walk.world.host, STAIRCASE_VIEW);
+    walk.snapshot = PublishedSnapshot(*walk.world.host, STAIRCASE_VIEW);
     return walk;
 }
 
@@ -2570,7 +2525,7 @@ TEST_CASE("a walk-to changing course mid-road draws the cultivator on from where
     // Back west to a tile off the road: a new route, setting out from the foot.
     WalkTo(host, walk.tick + 1, map.TileCentre(map.TileIndex({ .column = 0, .row = 3 })));
     REQUIRE(RouteLegOf(host).startTick == static_cast<i64>(TRAVEL_CLOCK + walk.tick));
-    const core::Snapshot after = Published(host, STAIRCASE_VIEW);
+    const core::Snapshot after = PublishedSnapshot(host, STAIRCASE_VIEW);
     const core::TextItem label = LabelOf(after, walk.world.player);
     CHECK(SamePoint(label.previous, before.current));
     CHECK(SamePoint(InstanceOf(after, walk.world.player).previous, drawnBefore.current));
@@ -2589,7 +2544,7 @@ TEST_CASE("a walk-to onto the tile the cultivator stands on keeps it where it wa
     const core::TextItem before = LabelOf(walk.snapshot, walk.world.player);
     WalkTo(host, walk.tick + 1, map.TileCentre(walk.route.parts.front().leg.tiles[walk.corner]));
     REQUIRE_FALSE(host.PlayerRoute().has_value());
-    const core::TextItem label = LabelOf(Published(host, STAIRCASE_VIEW), walk.world.player);
+    const core::TextItem label = LabelOf(PublishedSnapshot(host, STAIRCASE_VIEW), walk.world.player);
     CHECK(SamePoint(label.previous, before.current));
     CHECK(SamePoint(label.current, label.previous)); // it stands, so it never slides back to its body
 }
@@ -2604,20 +2559,20 @@ TEST_CASE("held movement taking over mid-road fades the cultivator's shift over 
     // A tick held south ends the route; it walks on from where it was drawn.
     TickRange(host, walk.tick + 1, walk.tick + 1, { .move = { .x = 0.0F, .y = 1.0F } });
     REQUIRE_FALSE(host.PlayerRoute().has_value());
-    const core::TextItem took = LabelOf(Published(host, STAIRCASE_VIEW), player);
+    const core::TextItem took = LabelOf(PublishedSnapshot(host, STAIRCASE_VIEW), player);
     CHECK(SamePoint(took.previous, before.current));
     const game::Body body = BodyOf(host, player);
     CHECK(Apart(took.current, took.previous) <= Apart(body.current, body.previous) + (0.05F * test::small::TILE));
 
     // Standing, it stays where it is drawn: no slide while nothing is held.
     TickRange(host, walk.tick + 2, walk.tick + 3);
-    const core::TextItem standing = LabelOf(Published(host, STAIRCASE_VIEW), player);
+    const core::TextItem standing = LabelOf(PublishedSnapshot(host, STAIRCASE_VIEW), player);
     CHECK(SamePoint(standing.current, took.current));
 
     // After a tile of held walking east it is drawn on its body again.
     const auto walkTicks = static_cast<u64>(std::ceil(test::small::TILE / test::SmallData().cultivator.walkSpeed));
     TickRange(host, walk.tick + 4, walk.tick + 4 + walkTicks, { .move = { .x = 1.0F, .y = 0.0F } });
-    const core::TextItem walked = LabelOf(Published(host, STAIRCASE_VIEW), player);
+    const core::TextItem walked = LabelOf(PublishedSnapshot(host, STAIRCASE_VIEW), player);
     CHECK(Apart(walked.current, BodyOf(host, player).current + head) < 0.01F);
 }
 
@@ -2629,11 +2584,11 @@ TEST_CASE("a cultivator that stops walking mid-fade keeps what is left of its sh
     // Eight ticks held south take over the route and fade part of its shift, far short of a tile.
     TickRange(host, walk.tick + 1, walk.tick + 8, { .move = { .x = 0.0F, .y = 1.0F } });
     REQUIRE_FALSE(host.PlayerRoute().has_value());
-    const core::TextItem walking = LabelOf(Published(host, STAIRCASE_VIEW), player);
+    const core::TextItem walking = LabelOf(PublishedSnapshot(host, STAIRCASE_VIEW), player);
     REQUIRE(Apart(walking.current, BodyOf(host, player).current + head) > 0.1F * test::small::TILE);
     // The first tick standing: none of the leftover goes, as the body moved none of the way.
     TickRange(host, walk.tick + 9, walk.tick + 9);
-    const core::TextItem stood = LabelOf(Published(host, STAIRCASE_VIEW), player);
+    const core::TextItem stood = LabelOf(PublishedSnapshot(host, STAIRCASE_VIEW), player);
     CHECK(SamePoint(stood.previous, walking.current));
     CHECK(SamePoint(stood.current, walking.current));
 }
@@ -2645,10 +2600,10 @@ TEST_CASE("the cultivator reaching its route's end is drawn without a jump") {
     WalkTo(*world.host, 1, map->TileCentre(map->TileIndex({ .column = 2, .row = 0 })));
     const u64 end = RouteLegOf(*world.host).arrive.back();
     TickRange(*world.host, 2, end - 1);
-    const core::TextItem before = LabelOf(Published(*world.host, STAIRCASE_VIEW), world.player);
+    const core::TextItem before = LabelOf(PublishedSnapshot(*world.host, STAIRCASE_VIEW), world.player);
     TickRange(*world.host, end, end);
     REQUIRE_FALSE(world.host->PlayerRoute().has_value());
-    const core::TextItem after = LabelOf(Published(*world.host, STAIRCASE_VIEW), world.player);
+    const core::TextItem after = LabelOf(PublishedSnapshot(*world.host, STAIRCASE_VIEW), world.player);
     CHECK(SamePoint(after.previous, before.current));
 }
 
@@ -2764,7 +2719,7 @@ TEST_CASE("held movement cancels a route") {
     CHECK_FALSE(world.host->PlayerRoute().has_value());
     CHECK(SamePoint(BodyOf(*world.host, world.player).previous, onRoute));
     CHECK(SamePoint(BodyOf(*world.host, world.player).current, walked));
-    CHECK(Published(*world.host).route.empty());
+    CHECK(PublishedSnapshot(*world.host).route.empty());
 
     // Let go, it stands where it walked to rather than taking the route up again.
     TickRange(*world.host, WALKED + 2, WALKED + 3);
@@ -2814,7 +2769,7 @@ TEST_CASE("a walk-to the cultivator's own tile stops it where it stands") {
     CHECK(SamePoint(BodyOf(*world.host, world.player).current, there));
     TickRange(*world.host, WALKED + 2, WALKED + 3);
     CHECK(SamePoint(FootOf(*world.host, world.player), there));
-    CHECK(Published(*world.host).route.empty());
+    CHECK(PublishedSnapshot(*world.host).route.empty());
 }
 
 /// The centre of the first tile of `map` that no one can walk onto.
@@ -2888,7 +2843,7 @@ TEST_CASE("the paused world holds the cultivator on its route") {
     CHECK(SamePoint(BodyOf(*world.host, world.player).previous, held));
     CHECK(SamePoint(BodyOf(*world.host, world.player).current, held));
     CHECK(world.host->PlayerRoute().has_value());
-    const bool fromHeld = RouteIs(Published(*world.host).route, map, held, leg, 1);
+    const bool fromHeld = RouteIs(PublishedSnapshot(*world.host).route, map, held, leg, 1);
     CHECK(fromHeld);
 
     // Resumed, it goes on from there.
@@ -2910,7 +2865,7 @@ TEST_CASE("held movement cancels a route while the world is paused too") {
     TickWith(*world.host, WALKED + 1, core::ActionKind::ToggleWorldPause, HELD_RIGHT);
     CHECK_FALSE(world.host->PlayerRoute().has_value());
     CHECK(SamePoint(BodyOf(*world.host, world.player).current, there));
-    CHECK(Published(*world.host).route.empty());
+    CHECK(PublishedSnapshot(*world.host).route.empty());
 
     // Resumed, it walks where the held input points, not along the old route.
     TickWith(*world.host, WALKED + 2, core::ActionKind::ToggleWorldPause, HELD_RIGHT);
@@ -2946,7 +2901,7 @@ TEST_CASE("the automatic month step and an early one carry the cultivator on alo
         CHECK(SamePoint(BodyOf(*world.host, world.player).previous, due)); // it stands while the step is due
         CHECK(SamePoint(BodyOf(*world.host, world.player).current, due));
         CHECK(world.host->PlayerRoute().has_value());
-        StepMonth(*world.host, BEFORE_MONTH + 3);
+        StepMonthFrozen(*world.host, BEFORE_MONTH + 3);
         CHECK(SamePoint(FootOf(*world.host, world.player), due));
         TickRange(*world.host, BEFORE_MONTH + 3, BEFORE_MONTH + 3);
         CHECK(SamePoint(BodyOf(*world.host, world.player).previous, due));
@@ -2957,7 +2912,7 @@ TEST_CASE("the automatic month step and an early one carry the cultivator on alo
         const auto [world, leg] = WalkingBeforeMonthEnd(BEFORE_MONTH);
         const core::WorldMap& map = *world.map;
         TickRange(*world.host, 2, WALKED);
-        StepMonth(*world.host, WALKED + 1);
+        StepMonthFrozen(*world.host, WALKED + 1);
         REQUIRE(world.host->WorldTicks() == MONTH);
         CHECK_FALSE(world.host->WorldPaused());
         const core::Vec2 stepped = core::Where(map, leg, static_cast<i64>(MONTH));
@@ -2984,7 +2939,7 @@ TEST_CASE("a month step carries the cultivator on along its route, and the pause
     // M while paused: the clock jumps, the pause holds, and the cultivator stands where the new tick puts it, not streaking
     // there.
     TickWith(*world.host, 2, core::ActionKind::ToggleWorldPause);
-    StepMonth(*world.host, 3);
+    StepMonthFrozen(*world.host, 3);
     REQUIRE(world.host->WorldTicks() == MONTH);
     CHECK(world.host->WorldPaused());
     const core::Vec2 stepped = core::Where(map, leg, static_cast<i64>(MONTH));
@@ -3000,7 +2955,7 @@ TEST_CASE("a month step carries the cultivator on along its route, and the pause
     CHECK(SamePoint(BodyOf(*world.host, world.player).current, core::Where(map, leg, static_cast<i64>(MONTH + 1))));
 
     // M past the route's end leaves it on the last tile, the route done.
-    StepMonth(*world.host, 4);
+    StepMonthFrozen(*world.host, 4);
     REQUIRE(world.host->WorldTicks() == 2 * MONTH);
     CHECK(SamePoint(BodyOf(*world.host, world.player).previous, map.TileCentre(leg.tiles.back())));
     CHECK(SamePoint(BodyOf(*world.host, world.player).current, map.TileCentre(leg.tiles.back())));
@@ -3029,7 +2984,7 @@ TEST_CASE("leaving the world map drops the route") {
     }
     CHECK_FALSE(world.host->PlayerRoute().has_value());
     CHECK(world.host->WorldTicks() == clock);
-    CHECK(Published(*world.host).route.empty());
+    CHECK(PublishedSnapshot(*world.host).route.empty());
 }
 
 /// The small test data with the cultivator's sight cut to `sight`, so a walk along its top row leaves tiles unexplored.
@@ -3113,13 +3068,13 @@ TEST_CASE("a month's jump along a route explores every tile it passes") {
     const std::vector<u32> first{ leg.tiles.front() };
     REQUIRE(ExploredOf(*world.host) == Diamonds(map, first, 1));
 
-    StepMonth(*world.host, 2);
+    StepMonthFrozen(*world.host, 2);
     REQUIRE(world.host->WorldTicks() == MONTH);
     REQUIRE(map.TileAt(FootOf(*world.host, world.player)) == leg.tiles[FOURTH]);
     CHECK(ExploredOf(*world.host) == Diamonds(map, std::span{ leg.tiles }.first(FOURTH + 1), 1));
 
     // The next jump carries it to the route's end, round every tile of it.
-    StepMonth(*world.host, 3);
+    StepMonthFrozen(*world.host, 3);
     REQUIRE_FALSE(world.host->PlayerRoute().has_value());
     CHECK(ExploredOf(*world.host) == Diamonds(map, leg.tiles, 1));
 }
@@ -3313,7 +3268,7 @@ TEST_CASE("walkers beyond sight's ring aren't published, those in sight and on t
         const core::Vec2 foot = core::Where(map, world.journeys[index], clock);
         REQUIRE(map.TileAt(foot) == map.TileIndex({ .column = COLUMNS[index], .row = 0 }));
     }
-    const core::Snapshot snapshot = Published(*world.host, world.host->View());
+    const core::Snapshot snapshot = PublishedSnapshot(*world.host, world.host->View());
     CHECK(Shows(snapshot, world.journeys[0].members.front()));
     CHECK(Shows(snapshot, world.journeys[1].members.front()));
     CHECK_FALSE(Shows(snapshot, world.journeys[2].members.front()));
@@ -3328,23 +3283,23 @@ TEST_CASE("with the debug sight every walker in view is published") {
     const TravelWorld world = TravelWorldOf(departures, true);
     const core::StableId near = world.journeys[0].members.front();
     const core::StableId far = world.journeys[1].members.front();
-    REQUIRE_FALSE(Shows(Published(*world.host, world.host->View()), far));
+    REQUIRE_FALSE(Shows(PublishedSnapshot(*world.host, world.host->View()), far));
 
     world.host->SetDebugSight(true);
-    const core::Snapshot whole = Published(*world.host, world.host->View());
+    const core::Snapshot whole = PublishedSnapshot(*world.host, world.host->View());
     CHECK(Shows(whole, near));
     CHECK(Shows(whole, far));
     CHECK(whole.fog.debugSight);
     // The view still culls.
-    const core::Snapshot home = Published(*world.host, NearHome(*world.map));
+    const core::Snapshot home = PublishedSnapshot(*world.host, NearHome(*world.map));
     CHECK(Shows(home, near));
     CHECK_FALSE(Shows(home, far));
 
     // With no cultivator to see them, only the debug sight shows them.
     const TravelWorld alone = TravelWorldOf(departures);
-    CHECK(Shows(Published(*alone.host, alone.host->View()), alone.journeys[1].members.front()));
+    CHECK(Shows(PublishedSnapshot(*alone.host, alone.host->View()), alone.journeys[1].members.front()));
     alone.host->SetDebugSight(false);
-    const core::Snapshot unseen = Published(*alone.host, alone.host->View());
+    const core::Snapshot unseen = PublishedSnapshot(*alone.host, alone.host->View());
     CHECK_FALSE(Shows(unseen, alone.journeys[0].members.front()));
     CHECK_FALSE(Shows(unseen, alone.journeys[1].members.front()));
     CHECK(unseen.fog.on);
@@ -3357,7 +3312,7 @@ TEST_CASE("walkers and their shadows and labels are flagged to fade with sight")
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     const core::StableId traveller = world.journeys.front().members.front();
     const core::Vec2 foot = core::Where(*world.map, world.journeys.front(), static_cast<i64>(TRAVEL_CLOCK));
-    const core::Snapshot snapshot = Published(*world.host, NearHome(*world.map));
+    const core::Snapshot snapshot = PublishedSnapshot(*world.host, NearHome(*world.map));
 
     CHECK(InstanceOf(snapshot, traveller).flags == core::INSTANCE_SIGHT_FADE);
     const core::Instance shadow = core::MakeInstance(
@@ -3380,7 +3335,7 @@ TEST_CASE("the fog in the snapshot follows exploring") {
     game::Host host(test::TestManifest(), game::WORLD_SCENE, data);
     const u32 start = map.TileIndex({ .column = 0, .row = 0 });
     const u32 next = map.TileIndex({ .column = 1, .row = 0 });
-    const core::Snapshot first = Published(host);
+    const core::Snapshot first = PublishedSnapshot(host);
     CHECK(first.fog.on);
     CHECK(first.fog.version == host.FogVersion());
     CHECK(std::ranges::equal(first.fog.explored, host.ExploredTiles()));
@@ -3394,7 +3349,7 @@ TEST_CASE("the fog in the snapshot follows exploring") {
         TickRange(host, tick, tick, HELD_RIGHT);
     }
     REQUIRE(map.TileAt(FootOf(host, host.Player())) == next);
-    const core::Snapshot onward = Published(host);
+    const core::Snapshot onward = PublishedSnapshot(host);
     CHECK(onward.fog.version > first.fog.version);
     CHECK(std::ranges::equal(onward.fog.explored, host.ExploredTiles()));
     CHECK(onward.fog.explored != first.fog.explored);
@@ -3406,7 +3361,7 @@ TEST_CASE("the fog in the snapshot follows exploring") {
         TickRange(host, tick, tick, HELD_LEFT);
     }
     REQUIRE(map.TileAt(FootOf(host, host.Player())) == start);
-    const core::Snapshot home = Published(host);
+    const core::Snapshot home = PublishedSnapshot(host);
     CHECK(home.fog.version == onward.fog.version);
     CHECK(home.fog.explored == onward.fog.explored);
     CHECK(home.fog.playerTile == std::optional{ start });
@@ -3435,17 +3390,17 @@ TEST_CASE("debug sight changes no state: the same ticks hash alike with it on an
                 host->SetDebugSight(tick == SIGHT_ON);
             }
             TickRange(*host, tick, tick);
-            static_cast<void>(Published(*host, host->View()));
+            static_cast<void>(PublishedSnapshot(*host, host->View()));
         }
     }
     CHECK(seen.host->StateHash() == shown.host->StateHash());
     CHECK(seen.host->Selected() == chosen);
     CHECK(shown.host->Selected() == chosen);
     // Out of sight, the walker is kept selected though it isn't drawn, and the debug sight draws it again.
-    CHECK_FALSE(Shows(Published(*seen.host, seen.host->View()), chosen));
-    CHECK_FALSE(Shows(Published(*shown.host, shown.host->View()), chosen));
+    CHECK_FALSE(Shows(PublishedSnapshot(*seen.host, seen.host->View()), chosen));
+    CHECK_FALSE(Shows(PublishedSnapshot(*shown.host, shown.host->View()), chosen));
     shown.host->SetDebugSight(true);
-    CHECK(Shows(Published(*shown.host, shown.host->View()), chosen));
+    CHECK(Shows(PublishedSnapshot(*shown.host, shown.host->View()), chosen));
 }
 
 // How far the cultivator walks a tick in the tests of its walk.
@@ -3481,7 +3436,7 @@ std::unique_ptr<game::Host> WalkingArena(const std::shared_ptr<const core::Anima
 
 /// The player's cultivator as `host` draws it now.
 core::Instance PlayerDrawn(game::Host& host) {
-    return InstanceOf(Published(host), host.Player());
+    return InstanceOf(PublishedSnapshot(host), host.Player());
 }
 
 /// Whether `host`'s cultivator is dashing.
@@ -3500,7 +3455,7 @@ TEST_CASE("the cultivator's held walk picks frames by distance") {
     TickRange(*host, 1, 3, HELD_RIGHT);
     CHECK(host->PlayerWalk().distance == THREE_TICKS);
     CHECK(host->PlayerWalk().moving);
-    const core::Snapshot three = Published(*host);
+    const core::Snapshot three = PublishedSnapshot(*host);
     CHECK(Draws(InstanceOf(three, host->Player()), SpriteId::CultivatorWalk0));
     CHECK_FALSE(Mirrored(InstanceOf(three, host->Player())));
     // The crowd wandering round it has a clip in the table too, but only the cultivator walks by one.
@@ -3550,7 +3505,7 @@ TEST_CASE("a cast doesn't turn it") {
     };
     std::vector<core::Event> events;
     host->Tick(At(2), { .actions = cast, .held = {} }, events);
-    const core::Snapshot snapshot = Published(*host);
+    const core::Snapshot snapshot = PublishedSnapshot(*host);
     REQUIRE(snapshot.volleys.size() == 1); // the bolt is on its way
     CHECK(Mirrored(InstanceOf(snapshot, host->Player())));
 }
@@ -3647,7 +3602,7 @@ TEST_CASE("M's jump stands the cultivator, keeping its walk and facing") {
     const core::Walked before = host.PlayerWalk();
     REQUIRE(before.moving);
     REQUIRE(before.facesLeft);
-    StepMonth(host, EAST_TICKS + 4);
+    StepMonthFrozen(host, EAST_TICKS + 4);
     const core::Instance jumped = PlayerDrawn(host);
     CHECK(Draws(jumped, SpriteId::Cultivator));
     CHECK(Mirrored(jumped));
