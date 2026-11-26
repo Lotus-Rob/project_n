@@ -3,6 +3,10 @@
 
 #include <doctest/doctest.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace {
 
 struct Sample {
@@ -57,5 +61,12 @@ TEST_CASE("a path read from its text is the same path") {
     }
     CHECK_MESSAGE(misses == 0, missed);
 }
+
+#ifdef _WIN32
+// The narrow Windows APIs (and Quill's file name) read text in this code page; the manifest makes it UTF-8.
+TEST_CASE("the process's ANSI code page is UTF-8") {
+    CHECK(GetACP() == CP_UTF8);
+}
+#endif
 
 } // namespace

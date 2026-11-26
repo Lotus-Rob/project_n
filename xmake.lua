@@ -64,6 +64,20 @@ rule("assets")
     end)
 rule_end()
 
+-- Windows executables run in the UTF-8 code page (the manifest's activeCodePage), so the narrow APIs
+-- and libraries that take a `std::string` file name (Quill) read UTF-8 and a folder outside the ANSI
+-- code page works. Added to every binary, the tests' too: they open the same paths. The manifest is
+-- named relative to the project, which is XMake's working directory: under msvc-wine, mt.exe runs in
+-- Wine and would not know the Linux path an absolute one turns into.
+rule("utf8_code_page")
+    on_load(function (target)
+        if target:is_plat("windows") then
+            target:add("ldflags", "/MANIFEST:EMBED", "/MANIFESTINPUT:windows/utf8.manifest",
+                       {force = true})
+        end
+    end)
+rule_end()
+
 -- Release builds keep debug info, split off by XMake into a .sym, .dSYM or .pdb next to the
 -- stripped binary, so player crash reports can be symbolised. Only the binary ships.
 if is_mode("release") then
@@ -391,6 +405,6 @@ target("project_n")
     add_files("src/main.cpp")
     set_pcxxheader("src/pch.hpp")
     add_rules("shared_pch", {owner = "game_pch"})
-    add_rules("assets")
+    add_rules("assets", "utf8_code_page")
 
 includes("tests")

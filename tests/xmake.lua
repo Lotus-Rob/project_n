@@ -89,6 +89,7 @@ local function unit_tests(name, files, module, arena)
         add_deps("test_pch")
         set_pcxxheader("unit/pch.hpp")
         add_rules("shared_pch", {owner = "test_pch"})
+        add_rules("utf8_code_page")
         add_packages("doctest")
         test_warnings()
         add_file_tests(files)
@@ -115,6 +116,7 @@ target("headless_bench")
     add_deps("game")
     with_manifest()
     add_files("bench/headless.cpp")
+    add_rules("utf8_code_page")
     set_pcxxheader("$(projectdir)/src/pch.hpp") -- not a doctest suite: the game's, without doctest
     add_rules("shared_pch", {owner = "game_pch"})
 
@@ -125,6 +127,7 @@ target("routing_bench")
     add_deps("core")
     add_includedirs(os.scriptdir()) -- support/synthetic_map.hpp
     add_files("bench/routing.cpp")
+    add_rules("utf8_code_page")
     set_pcxxheader("$(projectdir)/src/pch.hpp") -- not a doctest suite: the game's, without doctest
     add_rules("shared_pch", {owner = "game_pch"})
 
@@ -135,6 +138,7 @@ target("reference_tests")
     add_deps("app") -- the damage numbers it draws; it brings gfx and game
     with_manifest()
     add_files("unit/gfx/main.cpp", "reference/*.cpp")
+    add_rules("utf8_code_page")
     add_deps("test_pch")
     set_pcxxheader("unit/pch.hpp")
     add_rules("shared_pch", {owner = "test_pch"})
