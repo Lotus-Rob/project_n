@@ -2,6 +2,7 @@
 
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
+#include "core/path_text.hpp"
 #include "data/internal/yaml.hpp"
 
 namespace data {
@@ -193,7 +194,7 @@ core::Settings LoadSettings(const std::filesystem::path& path) {
         const core::Settings defaults;
         const std::expected<void, core::Error> saved = SaveSettings(path, defaults);
         if (saved) {
-            PN_LOG_INFO("no settings yet: wrote the defaults to {}", path.string());
+            PN_LOG_INFO("no settings yet: wrote the defaults to {}", core::PathText(path));
         }
         else {
             PN_LOG_WARNING("no settings yet, and the defaults weren't written: {}", saved.error().message);
@@ -207,12 +208,12 @@ core::Settings LoadSettings(const std::filesystem::path& path) {
         PN_LOG_WARNING("{}", warning);
     }
     if (!settings) {
-        PN_LOG_WARNING("using the default settings, {} left as it is: {}", path.string(), settings.error().message);
+        PN_LOG_WARNING("using the default settings, {} left as it is: {}", core::PathText(path), settings.error().message);
         return {};
     }
     PN_LOG_INFO(
         "settings from {}: window {}x{}{}, language {}",
-        path.string(),
+        core::PathText(path),
         settings->windowWidth,
         settings->windowHeight,
         settings->fullscreen ? ", fullscreen" : "",
