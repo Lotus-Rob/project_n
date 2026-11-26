@@ -2341,7 +2341,9 @@ class SanitizerTest(unittest.TestCase):
         listing = "[doctest] listing all test case names\n====\nparse\n====\n[doctest] unskipped test cases passing the current filters: 1\n"
         self.assertEqual(project_n.doctest_case_count(listing), 1)
         self.assertEqual(project_n.doctest_case_count(listing.replace(": 1", ": 0")), 0)
-        self.assertEqual(project_n.doctest_case_count(""), 0)
+        with self.assertRaises(project_n.Fail) as raised:  # a broken run, not an empty selection
+            project_n.doctest_case_count("odd output")
+        self.assertIn("odd output", str(raised.exception))
 
     def test_doctest_case_names_skip_the_listings_frame(self):
         listing = "[doctest] listing all test case names\n====\nparse a path\n  parse b\n====\n[doctest] unskipped: 2\n"
@@ -2354,22 +2356,44 @@ class SanitizerTest(unittest.TestCase):
         self.assertEqual(project_n.test_candidates("qqqq", ["log"], ["zzz"]), [])
 
     @staticmethod
-    def run_listing(counts, names="[doctest] x\n====\nparse path\n====\n"):
-        """cmd_test with --test and doctest's listing mocked: the filtered one prints `counts`, the full one `names`."""
+    def run_listing(counts, names="[doctest] x\n====\nparse path\n====\n", args=(), listed=None):
+        """cmd_test with --test and doctest's listing mocked: the one with the `--test-case` filter prints `counts`, the
+        other `names`; `listed` collects each listing's arguments."""
         def listing(target, bdir, filters=()):
-            return f"[doctest] unskipped test cases passing the current filters: {counts}\n" if filters else names
+            if listed is not None:
+                listed.append(list(filters))
+            filtered = any(f.startswith("--test-case=") for f in filters)
+            return (f"[doctest] unskipped test cases passing the current filters: {counts}\n" if filtered else names)
         ran = []
         with mock.patch.multiple(project_n, build=lambda *a: Path("build"), xmake_env=lambda bdir: {},
                                  needs_container=lambda *a: False, run=lambda argv, env: ran.append(argv),
                                  list_test_cases=listing):
             project_n.cmd_test(project_n.argparse.Namespace(preset=project_n.NATIVE_PRESET, mode="debug", sanitizer="none",
-                                                            container=False, target="core_tests", test="nothing_like_it", args=[]))
+                                                            container=False, target="core_tests", test="nothing_like_it", args=list(args)))
         return ran
 
     def test_a_test_matching_no_file_and_no_case_is_refused_naming_candidates(self):
         with self.assertRaises(project_n.Fail) as raised:
-            self.run_listing(0, "[doctest] x\n====\nnothing like that\n====\n")
+            self.run_listing(0, "[doctest] x\n====\nnothing like that\nzzz unrelated\n====\n")
         self.assertIn("did you mean: nothing like that", str(raised.exception))
+        self.assertNotIn("zzz unrelated", str(raised.exception))
+
+    def test_a_skipped_case_run_with_no_skip_is_listed_with_it_and_runs(self):
+        listed = []
+        ran = self.run_listing(1, args=["--", "--no-skip"], listed=listed)
+        self.assertEqual(listed, [["--test-case=*nothing_like_it*", "--no-skip"]])
+        self.assertEqual(ran, [["xmake", "run", "core_tests", "--test-case=*nothing_like_it*", "--no-skip"]])
+
+    def test_the_candidate_listing_keeps_no_skip_but_not_the_filter(self):
+        listed = []
+        with self.assertRaises(project_n.Fail):
+            self.run_listing(0, args=["--no-skip"], listed=listed)
+        self.assertEqual(listed[1], ["--no-skip"])
+
+    def test_a_listing_without_a_count_is_refused_as_broken(self):
+        with self.assertRaises(project_n.Fail) as raised:
+            self.run_listing("?", names="x")  # the mock's count line never matches
+        self.assertNotIn("matches no test file", str(raised.exception))
 
     def test_a_test_matching_no_file_and_no_case_with_no_candidates_is_refused(self):
         with self.assertRaises(project_n.Fail) as raised:
@@ -2551,6 +2575,14 @@ class TestFilesTest(unittest.TestCase):
                                                             container=True, target="fuzz_yaml", test=None, args=[]))
         patched["reenter"].assert_called_once_with("linux-clang", ["test", "--preset", "linux-clang", "--mode", "debug",
                                                                    "--sanitizer", "address", "--target", "fuzz_yaml"])
+
+    def test_a_test_reaches_its_container_as_a_name_so_the_container_checks_it(self):
+        with mock.patch.multiple(project_n, needs_container=lambda *a: True, reenter=mock.DEFAULT) as patched:
+            project_n.cmd_test(project_n.argparse.Namespace(preset="windows-msvc", mode="debug", sanitizer="none", container=False,
+                                                            target="core_tests", test="route", args=["--", "--no-skip"]))
+        patched["reenter"].assert_called_once_with("windows-msvc", ["test", "--preset", "windows-msvc", "--mode", "debug",
+                                                                    "--sanitizer", "none", "--target", "core_tests", "--test", "route",
+                                                                    "--", "--no-skip"])
 
     def test_a_fuzz_refusal_keeps_the_mode_and_container_asked_for(self):
         with mock.patch.multiple(project_n, needs_container=lambda *a: False, build=mock.DEFAULT), \

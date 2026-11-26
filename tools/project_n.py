@@ -243,7 +243,7 @@ def restore_lock_unless_added(before):
 
 
 def run(cmd, env=None, **kwargs):
-    """Run a command from the repo root, echoing it; raise on failure. Output is never piped.
+    """Run a command from the repo root, echoing it; raise on failure. Output is piped only when the caller asks (`capture_output`).
     Any XMake call may reorder or prune xmake-requires.lock, so each one restores it afterwards, even when it
     fails (restore_lock_unless_added)."""
     print("+", " ".join(str(c) for c in cmd), flush=True)
@@ -861,11 +861,16 @@ def test_filter(name, suite):
     return f"--source-file={test_file_pattern(name)}"
 
 
+DOCTEST_COUNT_RE = re.compile(r"unskipped test cases passing the current filters: (\d+)")
+
+
 def doctest_case_count(listing):
     """The case count at the end of doctest's `--list-test-cases` output ("[doctest] unskipped test cases passing the
-    current filters: N"); 0 when the line is missing, as a run that listed nothing selected nothing."""
-    found = re.search(r"test cases passing the current filters: (\d+)", listing)
-    return int(found.group(1)) if found else 0
+    current filters: N"). A listing without the line is a broken run, not an empty selection: it fails."""
+    found = DOCTEST_COUNT_RE.search(listing)
+    if not found:
+        raise Fail(f"doctest's --list-test-cases printed no case count:\n{listing}")
+    return int(found[1])
 
 
 def doctest_case_names(listing):
@@ -885,12 +890,13 @@ def list_test_cases(target, bdir, filters=()):
     return run(argv, env=xmake_env(bdir), capture_output=True, encoding="utf-8", errors="replace").stdout
 
 
-def check_test_matches(name, target, bdir):
+def check_test_matches(name, target, bdir, extra):
     """Fail a `--test` name that is no test file and selects no case of `target`: doctest passes a run that selects
-    nothing, which hides a misspelt name."""
-    if doctest_case_count(list_test_cases(target, bdir, [f"--test-case=*{name}*"])):
+    nothing, which hides a misspelt name. `extra` is the run's doctest arguments, the `--test-case` filter first: the
+    listing takes them all, as `--no-skip` and `-cs` change what a filter selects, and the candidates the rest."""
+    if doctest_case_count(list_test_cases(target, bdir, extra)):
         return
-    cases = doctest_case_names(list_test_cases(target, bdir))
+    cases = doctest_case_names(list_test_cases(target, bdir, extra[1:]))
     near = test_candidates(name, test_names().get(target, ()), cases)
     raise Fail(f"--test {name} matches no test file and no test case" + (f"; did you mean: {', '.join(near)}" if near else ""))
 
@@ -911,12 +917,14 @@ def cmd_test(args):
     if (extra or args.test) and not args.target:
         raise Fail("pass --suite <test target> with --test or doctest arguments")
     check_test_target(args.target, args.test, extra, args.preset, args.sanitizer, args.mode, args.container)
-    extra = ([test_filter(args.test, args.target)] if args.test else []) + extra
+    doctest_args, extra = extra, ([test_filter(args.test, args.target)] if args.test else []) + extra
     check_sanitizer(args.preset, args.sanitizer)
     sweep_here(own_trees([args.preset], args.mode, args.sanitizer, args.container))
     if needs_container(args.preset, args.container):
         argv = ["test", "--preset", args.preset, "--mode", args.mode, "--sanitizer", args.sanitizer]
-        argv += (["--target", args.target] if args.target else []) + (["--", *extra] if extra else [])
+        # --test goes in as given, not as its filter: the container's run lists the cases (check_test_matches).
+        argv += (["--target", args.target] if args.target else []) + (["--test", args.test] if args.test else [])
+        argv += ["--", *doctest_args] if doctest_args else []
         return reenter(args.preset, argv)
     bdir = build(args.preset, args.mode, args.sanitizer)
     if PRESETS[args.preset]["plat"] == "windows" and args.sanitizer != "none" and HOST != "windows":
@@ -924,7 +932,7 @@ def cmd_test(args):
         print(f"test: built with {args.sanitizer} sanitizer; MSVC sanitizer runs need native Windows, not Wine")
         return
     if args.test and extra[0].startswith("--test-case="):
-        check_test_matches(args.test, args.target, bdir)
+        check_test_matches(args.test, args.target, bdir, extra)
     if args.target in (*test_names(), *fuzz_suites()) and not extra:
         # Each test file is a test of its own (tests/xmake.lua), so a suite's files run in parallel.
         run(["xmake", "test", "--output-on-failure", f"{args.target}/*"], env=xmake_env(bdir))
@@ -941,9 +949,6 @@ def pixi_prefix(name):
     run([pixi, "install", "--locked", "-e", name])
     envs = json.loads(capture([pixi, "info", "--json"]))["environments_info"]
     return Path(next(e["prefix"] for e in envs if e["name"] == name))
-
-
-DOCTEST_COUNT_RE = re.compile(r"unskipped test cases passing the current filters: (\d+)")
 
 
 def reference_case_count(exe, env):
