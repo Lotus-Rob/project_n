@@ -10,7 +10,7 @@
 
 namespace core {
 
-/// The UTF-8 bytes of `path`, with its native separators. SDL and our logs speak UTF-8, while `path::string()` speaks
+/// The UTF-8 bytes of `path`, with the separators the path holds. SDL and our logs speak UTF-8, while `path::string()` speaks
 /// the ANSI code page on Windows and throws on a name outside it.
 [[nodiscard]] std::string PathText(const std::filesystem::path& path);
 

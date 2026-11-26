@@ -6,28 +6,38 @@
 namespace {
 
 struct Sample {
+    std::string_view why;
     std::u8string_view path;
     std::string_view text;
 };
-// Each text is spelled in byte escapes, so a wrong conversion can't agree with itself.
-// Each text is spelled in escapes so the expectation doesn't depend on the source file's encoding.
-constexpr std::array<Sample, 10> SAMPLES{ {
-    { .path = u8"", .text = "" },
-    { .path = u8"a", .text = "a" },
-    { .path = u8"saves/slot.pns", .text = "saves/slot.pns" },
-    { .path = u8"é", .text = "\xC3\xA9" },
-    { .path = u8"项目", .text = "\xE9\xA1\xB9\xE7\x9B\xAE" },
-    { .path = u8"\U0001F3AE", .text = "\xF0\x9F\x8E\xAE" },
-    { .path = u8"项目_é_\U0001F3AE/settings.yaml", .text = "\xE9\xA1\xB9\xE7\x9B\xAE_\xC3\xA9_\xF0\x9F\x8E\xAE/settings.yaml" },
-    { .path = u8"my saves/a b.pns", .text = "my saves/a b.pns" },
-    { .path = u8".hidden", .text = ".hidden" },
-    { .path = u8"saves/", .text = "saves/" },
+
+// The expected texts are byte escapes, so a wrong conversion can't agree with itself.
+constexpr std::array<Sample, 11> SAMPLES{ {
+    { .why = "empty", .path = u8"", .text = "" },
+    { .why = "plain ASCII", .path = u8"a", .text = "a" },
+    { .why = "a folder and a file", .path = u8"saves/slot.pns", .text = "saves/slot.pns" },
+    { .why = "backslash kept as the path holds it", .path = u8"saves\\slot.pns", .text = "saves\\slot.pns" },
+    { .why = "é: inside the Western code page", .path = u8"é", .text = "\xC3\xA9" },
+    { .why = "项目: outside every Western code page", .path = u8"项目", .text = "\xE9\xA1\xB9\xE7\x9B\xAE" },
+    { .why = "🎮: outside the BMP", .path = u8"🎮", .text = "\xF0\x9F\x8E\xAE" },
+    { .why = "all three inside a folder",
+      .path = u8"项目_é_🎮/settings.yaml",
+      .text = "\xE9\xA1\xB9\xE7\x9B\xAE_\xC3\xA9_\xF0\x9F\x8E\xAE/settings.yaml" },
+    { .why = "a space", .path = u8"my saves/a b.pns", .text = "my saves/a b.pns" },
+    { .why = "a dotfile", .path = u8".hidden", .text = ".hidden" },
+    { .why = "trailing separator", .path = u8"saves/", .text = "saves/" },
 } };
+
+std::filesystem::path PathOfSample(const Sample& sample) {
+    return std::filesystem::path{ std::u8string{ sample.path } };
+}
 
 TEST_CASE("a path's text is its UTF-8 bytes") {
     u32 misses = 0;
     for (const Sample& sample : SAMPLES) {
-        if (core::PathText(std::filesystem::path{ std::u8string{ sample.path } }) != std::string{ sample.text }) {
+        if (core::PathText(PathOfSample(sample)) != sample.text) {
+            INFO(sample.why);
+            CHECK_MESSAGE(false, "wrong text");
             ++misses;
         }
     }
@@ -37,8 +47,11 @@ TEST_CASE("a path's text is its UTF-8 bytes") {
 TEST_CASE("a path read from its text is the same path") {
     u32 misses = 0;
     for (const Sample& sample : SAMPLES) {
-        const std::filesystem::path path{ std::u8string{ sample.path } };
-        if (core::PathOf(core::PathText(path)) != path) {
+        const std::filesystem::path path = PathOfSample(sample);
+        // native(): path's == ignores the separator, which is exactly what a round trip must keep.
+        if (core::PathOf(core::PathText(path)).native() != path.native()) {
+            INFO(sample.why);
+            CHECK_MESSAGE(false, "not the same path");
             ++misses;
         }
     }
