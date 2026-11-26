@@ -289,8 +289,8 @@ end
 -- pixi.toml (feature.profiler): the protocol must match. Both variants are required in every
 -- mode, so xmake-requires.lock always holds both instead of whichever mode was configured last.
 -- XMake keys requirements by their string, so the two spell the one exact version differently.
-add_requires("tracy-libdl v0.14.1", {alias = "tracy_on", configs = {tracy_enable = true, only_localhost = true}}) -- BSD-3-Clause; profiling builds only
-add_requires("tracy-libdl 0.14.1", {alias = "tracy_off", configs = {tracy_enable = false, only_localhost = true}}) -- BSD-3-Clause; profiling builds only
+add_requires("tracy-libdl v0.14.1", {alias = "tracy_on", configs = {tracy_enable = true, only_localhost = true, enforce_callstack = false, fibers = false}}) -- BSD-3-Clause; profiling builds only
+add_requires("tracy-libdl 0.14.1", {alias = "tracy_off", configs = {tracy_enable = false, only_localhost = true, enforce_callstack = false, fibers = false}}) -- BSD-3-Clause; profiling builds only
 
 -- One precompiled header per header and build folder, not one per target (each is 25 to 150 MB, and every target
 -- compiled its own): an owner target builds it (`shared_pch_owner`), fenced so that nothing that depends on it
