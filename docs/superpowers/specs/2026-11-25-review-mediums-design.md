@@ -55,7 +55,8 @@ This spec sorts all 107 into areas, says for each area what "fixed" means, and s
 
 - The other low and info findings outside a medium's cluster: no area closes them; the low and info pass (step 10 of
   the Order, added by the user 2026-11-26) rules or fixes each.
-- The README §7a rulings that touch no medium finding (affliction refresh, speed as difficulty, `-Wpadded` report, …).
+- The README §7a rulings that touch no medium finding (affliction refresh, speed as difficulty, `-Wpadded` report, …):
+  they stand as recorded; a low or info finding one of them answers closes in step 10 as "ruled", citing it.
 - Crash dumps (minidumps, crashpad, sentry-native): before external playtests, not now (GD-ROADMAP-SCOPE-08 says the same).
 - Autosave: it is a game-design question; the game-design brainstorm (D1) decides it.
 
@@ -182,7 +183,7 @@ have meant (test: `selftest`, beside `test_a_test_file_of_another_suite_is_refus
 **R12. Design and roadmap docs** (light; plan only). DESIGN-DOCS-01: 0001 sweep (removed agents and skills, the process
 now run by superpowers). DESIGN-DOCS-03: 0002's unbuilt rules marked as such (arenas, command merging). SPECS-ROADMAP-03:
 the phase table and chunk 5's statuses. GAP1-SWEEP-UP-BACKLOG-VS-CODE-01, -02: the backlog gets a status column and the
-missing classes (in the project memory, not the repo). Last of the fix areas, so the docs describe what R1-R11 built.
+missing classes (in the project memory, not the repo). Last of the fix areas (after R13, the backlog sweep and the low and info pass), so the docs describe what they built.
 
 **R13. Wasted work and a memory measure** (full; plan only). GAP1-THIRD-PARTY-LIBRARY-USAGE-02: `Host::Publish` culls a
 body before building its instance, pose and glow. GAP2-MEMORY-BUDGET-VS-0002-S13-02: Tracy plots and a `Bytes()` account
@@ -226,28 +227,30 @@ gamepad window moving, and whether the UI spike (S13) and chunk 8 move earlier.
 
 This is the project's what-next order (the user, 2026-11-26): every piece of work after phase 6's merged chunks comes from
 this table, and the backlog's old priority list points here. Two tracks run side by side: shared-routes (its own plan;
-stage 1 is PR #57, stage 2's plan waits for D1 and D2 per decision 4) and this work. Within this work:
+stage 1 is PR #57, which merges before any area touching its files, R5b's `journey.hpp` item included; stage 2's plan
+waits for D1 and D2 per decision 4) and this work. Within this work:
 
 | Step | Areas | Needs | Why here | Status |
 |---|---|---|---|---|
-| 1 | R1 | none | every later session loads less; shared-routes' tasks then add one-line rules (tell its next dispatch) | done, PR #56 |
-| 2 | R2, R11 (parallel) | R1 | R2 is small and stops start-up and save failures; R11 shares no files | R2 in progress; R11 not started |
+| 1 | R1 | none | every later session loads less; shared-routes' tasks then add one-line rules (tell its next dispatch) | done |
+| 2 | R2, R11 (parallel) | R1 | R2 is small and stops start-up and save failures; R11 shares no files |  |
 | 3 | R3 | R2 (`main.cpp`, `app.cpp`) | the silent-failure class |  |
 | 4 | R4 | R3 (the save job's error path) | before shared-routes stage 2 changes the save layout |  |
 | 5 | R5, R6 (parallel) | R4 for R5 (`host.cpp`) | concrete bugs |  |
 | 6 | R5b, R7 (spec first), R8 (parallel) | R5 for R5b; R6 for R7 (`core/logic.cpp`); R5b and R7 both touch the tick, so R7 rebases on R5b | R7's spec can be written during step 5 |  |
 | 7 | R9, R13 (parallel) | R8 for R9; R5 for R13 | |  |
 | 8 | R10 (spec first) | R8 | its spec can be written during step 7 |  |
-| 9 | Backlog sweep | R1-R11, R13 merged | walked with the user: each backlog item left after the fold-in below is fixed, parked with its trigger, or dropped; the fixes are grouped into branches by the files they share |  |
+| 9 | Backlog sweep | R1-R11 (R5b included), R13 merged | walked with the user: each backlog item left after the fold-in below is fixed, parked with its trigger, or dropped; the fixes are grouped into branches by the files they share |  |
 | 10 | Low and info pass | step 9 | every review finding no area closes ends fixed or ruled, as Goal 1's closings; first a triage table by review file, where a finding in code D2 or D3 will replace is ruled "superseded by D2/D3" rather than patched, then fix branches by area |  |
 | 11 | R12 | steps 9 and 10 | the docs describe what was built; the backlog's status column (GAP1-SWEEP-UP-BACKLOG-VS-CODE-01, -02) records the sweep's results |  |
 | 12 | D1, then D2, then D4 and D3 | R1-R12 | the review's items 8-10; shared-routes stage 2 is planned after D1 and D2 |  |
 | 13 | D5 | the user's hardware | S9 and S10 on D3D12 and Metal |  |
 
-Status is ticked off as work merges: the branch that finishes an area or step writes `done, PR #N` in its own pull
-request (several areas in a step: each named, as step 2), and the backlog items it closed leave the backlog after the
-merge. Each area's plan also takes the backlog items assigned to it in "Backlog items folded into the areas" (below), test-first
-where they are bugs. A spec for the next area may be written while the current one's pull request waits on CI (the root
+Status says only what is done (what is open now lives in the project memory's `in-flight.md`): the branch that finishes
+an area writes `done` (a step with several areas: `R2 done`, then `done` when the last one merges) in its own pull
+request, and the backlog items it closed leave the backlog after the merge. Each area's plan also takes the backlog
+items assigned to it in "Backlog items folded into the areas" (below), test-first where they are bugs; that table, not
+the area's paragraph, is the list. A spec for the next area may be written while the current one's pull request waits on CI (the root
 AGENTS.md's "never sit idle while CI runs").
 
 ## Decisions for the user (all four taken as recommended by the user, 2026-11-25)
