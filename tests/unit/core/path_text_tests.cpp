@@ -34,28 +34,28 @@ std::filesystem::path PathOfSample(const Sample& sample) {
 
 TEST_CASE("a path's text is its UTF-8 bytes") {
     u32 misses = 0;
+    std::string missed;
     for (const Sample& sample : SAMPLES) {
         if (core::PathText(PathOfSample(sample)) != sample.text) {
-            INFO(sample.why);
-            CHECK_MESSAGE(false, "wrong text");
             ++misses;
+            missed += std::format("[{}] ", sample.why);
         }
     }
-    CHECK(misses == 0);
+    CHECK_MESSAGE(misses == 0, missed);
 }
 
 TEST_CASE("a path read from its text is the same path") {
     u32 misses = 0;
+    std::string missed;
     for (const Sample& sample : SAMPLES) {
         const std::filesystem::path path = PathOfSample(sample);
         // native(): path's == ignores the separator, which is exactly what a round trip must keep.
         if (core::PathOf(core::PathText(path)).native() != path.native()) {
-            INFO(sample.why);
-            CHECK_MESSAGE(false, "not the same path");
             ++misses;
+            missed += std::format("[{}] ", sample.why);
         }
     }
-    CHECK(misses == 0);
+    CHECK_MESSAGE(misses == 0, missed);
 }
 
 } // namespace
