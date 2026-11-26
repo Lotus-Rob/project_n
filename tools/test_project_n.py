@@ -482,6 +482,23 @@ class CheckTest(unittest.TestCase):
             project_n.cmd_check(project_n.argparse.Namespace(container=False, sanitizers=False))
         self.assertEqual(ran, [])  # refused before running anything
 
+    def test_the_summary_says_which_sanitizer_check_only_built(self):
+        built = ["windows-msvc's address"]
+        self.assertEqual(project_n.check_summary(True, [], built),
+                         "check: all presets passed with every supported sanitizer; windows-msvc's address built, not run "
+                         "(MSVC sanitizer runs need native Windows)")
+        self.assertEqual(project_n.check_summary(True, [], []), "check: all presets passed with every supported sanitizer")
+        self.assertEqual(project_n.check_summary(False, [], []), "check: all presets passed")
+        self.assertEqual(project_n.check_summary(False, ["macos-clang"], []),
+                         "check: all presets passed (skipped macos-clang: not buildable on this host)")
+
+    def test_a_sanitizer_check_only_builds_for_msvc_off_windows(self):
+        with mock.patch.object(project_n, "HOST", "linux"):
+            self.assertEqual(project_n.sanitizer_builds_only([]), ["windows-msvc's address"])
+            self.assertEqual(project_n.sanitizer_builds_only(["windows-msvc"]), [])
+        with mock.patch.object(project_n, "HOST", "windows"):
+            self.assertEqual(project_n.sanitizer_builds_only([]), [])
+
     def container_check(self, out=None, **patches):
         tests, builds, references, out = [], [], [], out or io.StringIO()
         steps = {"clone_set_up": lambda: True, "cmd_selftest": lambda args: None, "commit_range": lambda: None,

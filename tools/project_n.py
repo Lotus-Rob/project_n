@@ -2390,10 +2390,23 @@ def cmd_check(args):
 
     try:
         skipped = check_steps(args, step)
-        print("check: all presets passed" + (" with every supported sanitizer" if args.sanitizers else "")
-              + (f" (skipped {', '.join(skipped)}: not buildable on this host)" if skipped else ""))
+        print(check_summary(args.sanitizers, skipped, sanitizer_builds_only(skipped) if args.sanitizers else []))
     finally:
         print(step_times_table(times), flush=True)
+
+
+def sanitizer_builds_only(skipped):
+    """The sanitizer checks `cmd_test` only builds, as "<preset>'s <sanitizer>": MSVC's runs need native Windows."""
+    if HOST == "windows":
+        return []
+    return [f"{p}'s {s}" for p in PRESETS if PRESETS[p]["plat"] == "windows" and p not in skipped for s in SANITIZERS[p]]
+
+
+def check_summary(sanitizers, skipped, built_only):
+    """The line `check` ends on: what passed, which sanitizer checks only built, which presets were skipped."""
+    return ("check: all presets passed" + (" with every supported sanitizer" if sanitizers else "")
+            + (f"; {', '.join(built_only)} built, not run (MSVC sanitizer runs need native Windows)" if built_only else "")
+            + (f" (skipped {', '.join(skipped)}: not buildable on this host)" if skipped else ""))
 
 
 def check_trees(args):
