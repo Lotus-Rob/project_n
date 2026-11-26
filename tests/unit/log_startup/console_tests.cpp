@@ -1,9 +1,9 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
-#include "core/log.hpp"
-
 #include <doctest/doctest.h>
 
 #ifdef _WIN32
+#include "core/log.hpp"
+
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
