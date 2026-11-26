@@ -20,7 +20,7 @@ namespace {
 // The console starts in another code page, so only Start can have switched it to UTF-8.
 TEST_CASE("Start sets the console's output code page to UTF-8") {
     if (GetConsoleOutputCP() == 0 && !AllocConsole()) {
-        MESSAGE("no console can be attached here");
+        WARN_MESSAGE(false, "no console can be attached here");
         return;
     }
     REQUIRE(SetConsoleOutputCP(437));
