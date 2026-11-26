@@ -8,6 +8,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
 #include <doctest/doctest.h>
+#include <yaml-cpp/yaml.h>
 
 namespace {
 
@@ -32,6 +33,7 @@ bool IsControl(u32 character) {
 /// text layout warns with.
 std::vector<u32> Missing(TTF_Font* font, std::string_view text) {
     std::vector<u32> missing;
+    // A byte sequence that isn't UTF-8 decodes to U+FFFD, which the font lacks, so it shows up as a missing U+FFFD.
     const char* next = text.data();
     std::size_t left = text.size();
     while (left > 0) {
@@ -46,7 +48,7 @@ std::vector<u32> Missing(TTF_Font* font, std::string_view text) {
 /// Checks `text` against `font`, naming `where` for each codepoint it lacks.
 void CheckCovered(TTF_Font* font, std::string_view text, const std::string& where) {
     for (const u32 character : Missing(font, text)) {
-        CHECK_MESSAGE(false, std::format("the font has no U+{:04X} (in {}: \"{}\")", character, where, text));
+        FAIL_CHECK("the font has no U+", std::format("{:04X}", character), " (in ", where, ": \"", text, "\")");
     }
 }
 
@@ -66,9 +68,22 @@ TEST_CASE("every codepoint of the shipped strings and names is in the font") {
         const std::unique_ptr<TTF_Font, FontCloser> font{ TTF_OpenFont(file.c_str(), POINT_SIZE) };
         const std::string error = SDL_GetError();
         REQUIRE_MESSAGE(font, error);
+        // Strings keeps no ID to key map, so the file's own keys give each ID its name.
+        std::vector<std::string> keys(strings->text.size(), "?");
+        const std::ifstream stream{ *assets / "data" / "strings.yaml" };
+        std::stringstream text;
+        text << stream.rdbuf();
+        for (const auto& entry : YAML::Load(text.str())) {
+            const auto key = entry.first.as<std::string>();
+            const std::optional<core::StringId> found = strings->Find(key);
+            if (!found) {
+                FAIL_CHECK("strings.yaml's ", key, " isn't in the loaded strings");
+                continue;
+            }
+            keys.at(std::to_underlying(*found)) = key;
+        }
         for (std::size_t id = 0; id < strings->text.size(); ++id) {
-            const std::string key =
-                id < core::STRINGS ? std::string{ core::STRING_NAMES.at(id) } : std::format("data string {}", id);
+            const std::string& key = keys.at(id);
             for (std::size_t language = 0; language < core::LANGUAGES; ++language) {
                 CheckCovered(
                     font.get(),

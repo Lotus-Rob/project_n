@@ -102,6 +102,8 @@ unit_tests("core_tests", "unit/core/*.cpp")
 unit_tests("game_tests", "unit/game/*.cpp", "game", true)
 unit_tests("platform_tests", "unit/platform/*.cpp", "platform")
 unit_tests("gfx_tests", "unit/gfx/*.cpp", "gfx", true) -- the shipped manifest (terrain_draw_tests.cpp), strings (text_layout_tests.cpp, which the glyph cache pre-warms) and font (ttf_tests.cpp)
+target("gfx_tests")
+    add_packages("yaml-cpp") -- font_coverage_tests.cpp reads strings.yaml's keys
     add_packages("libsdl3_ttf-wayland") -- private to gfx; its test reaches SDL3_ttf directly
 unit_tests("app_tests", "unit/app/*.cpp", "app", true)
 unit_tests("data_tests", "unit/data/*.cpp", "data", true)
