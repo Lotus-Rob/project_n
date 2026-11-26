@@ -191,31 +191,25 @@ gfx::Renderer RendererFor(platform::Window& window, core::SceneId scene, core::J
     std::expected<core::Strings, core::Error> strings = data::LoadStrings(Assets() / "data");
     const std::string stringsWhy = strings.error_or(core::Error{}).message;
     REQUIRE_MESSAGE(strings.has_value(), stringsWhy);
-    std::expected<gfx::Renderer, core::Error> renderer = gfx::Renderer::Create(
-        window,
-        Assets(),
-        test::TestManifest(),
-        std::make_shared<const core::Strings>(std::move(*strings)),
-        {},
-        core::UiColours{},
-        false
-    );
+    const std::shared_ptr<const core::Strings> shippedStrings = std::make_shared<const core::Strings>(std::move(*strings));
+    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
+    std::expected<gfx::Renderer, core::Error> renderer =
+        gfx::Renderer::Create(window, Assets(), manifest, shippedStrings, {}, core::UiColours{}, false);
     const std::string rendererWhy = renderer.error_or(core::Error{}).message;
     REQUIRE_MESSAGE(renderer.has_value(), rendererWhy);
     renderer->SetSeals(test::ShippedSeals());
     // Only the world's travellers carry names, and composing every name's glyphs ahead takes a second or two.
-    const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     if (manifest->SceneNamed(game::SceneName(game::WORLD_SCENE)) == std::optional{ scene }) {
         renderer->SetNames(test::ShippedNames());
     }
-    const std::shared_ptr<const core::WorldMap> world = test::ShippedWorld();
-    renderer->SetWorld(world, test::ShippedWorldLook(*test::TestManifest(), *world));
+    const std::shared_ptr<const core::WorldMap> world = test::ShippedWorld(*shippedStrings);
+    renderer->SetWorld(world, test::ShippedWorldLook(*manifest, *world));
     renderer->BeginScene(scene, jobs);
     std::expected<bool, core::Error> held = false;
     const u64 startedNs = platform::NowNs();
     while (held && !*held) {
         if (platform::NowNs() - startedNs > SCENE_LOAD_LIMIT_NS) {
-            FAIL("the scene ", test::TestManifest()->Scene(scene).name, " wasn't resident within a minute");
+            FAIL("the scene ", manifest->Scene(scene).name, " wasn't resident within a minute");
         }
         held = renderer->ContinueScene(std::numeric_limits<u64>::max());
     }

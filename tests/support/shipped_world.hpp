@@ -18,19 +18,30 @@
 
 namespace test {
 
-/// assets/data/world.yaml, read against the shipped strings. A test binary that can't read either stops at once, as
-/// TestManifest() does: every test that asks for the map would fail for that same reason, and one stop says it once.
-[[nodiscard]] inline std::shared_ptr<const core::WorldMap> ShippedWorld() {
+/// assets/data/world.yaml, read against `strings`, for a test that has loaded them already. A test binary that can't read
+/// the map stops at once, as TestManifest() does: every test that asks for it would fail for that same reason, and one
+/// stop says it once.
+[[nodiscard]] inline std::shared_ptr<const core::WorldMap> ShippedWorld(const core::Strings& strings) {
     std::expected<std::shared_ptr<const core::WorldMap>, core::Error> loaded =
-        platform::AssetsDirectory().and_then([](const std::filesystem::path& assets) {
-            return data::LoadStrings(assets / "data").and_then([&](const core::Strings& strings) {
-                return data::LoadWorldMap(assets / "data", strings);
-            });
+        platform::AssetsDirectory().and_then([&](const std::filesystem::path& assets) {
+            return data::LoadWorldMap(assets / "data", strings);
         });
     if (!loaded) {
         std::abort(); // every test after would fail for the same reason
     }
     return std::move(*loaded);
+}
+
+/// assets/data/world.yaml, read against the shipped strings (the overload above, with strings.yaml loaded here).
+[[nodiscard]] inline std::shared_ptr<const core::WorldMap> ShippedWorld() {
+    std::expected<core::Strings, core::Error> strings =
+        platform::AssetsDirectory().and_then([](const std::filesystem::path& assets) {
+            return data::LoadStrings(assets / "data");
+        });
+    if (!strings) {
+        std::abort(); // as above
+    }
+    return ShippedWorld(*strings);
 }
 
 } // namespace test
