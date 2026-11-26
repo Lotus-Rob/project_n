@@ -11,7 +11,9 @@
 #include "core/types.hpp"
 #include "core/world_map.hpp"
 
+#include <array>
 #include <cstddef>
+#include <limits>
 #include <optional>
 #include <vector>
 
@@ -115,7 +117,8 @@ private:
     void Begin(std::size_t slots);
     /// The cost so far of `slot`, or UNREACHABLE if this search hasn't reached it.
     [[nodiscard]] u32 CostOf(u32 slot) const;
-    /// Sets `slot`'s way to `cost`, by `via`, queued by `key`, if it betters what this search had for it.
+    /// Sets `slot`'s way to `cost`, by `via`, queued by `key`, if it betters what this search had for it. `key` is at
+    /// least the key of every slot settled so far.
     void Offer(u32 slot, u32 cost, u64 key, u32 via);
     /// Offers node `node` the way of `cost` by `via`, queued by that cost plus its estimate to the end.
     void OfferNode(const WorldMap& map, const RouteGraph& graph, const Ends& ends, u32 node, u64 cost, u32 via);
@@ -125,16 +128,19 @@ private:
     [[nodiscard]] bool Search(const WorldMap& map, const RouteGraph& graph, const Ends& ends);
     /// The route the search found, back from the end to the start.
     [[nodiscard]] GraphRoute Trace(const RouteGraph& graph, const Ends& ends) const;
+    /// Whether any slot is queued.
+    [[nodiscard]] bool Queued() const;
+    /// The least key queued, its slots moved to the front first; the queue must not be empty.
+    [[nodiscard]] u64 LeastKey();
     /// Takes the queued slot of the least (key, slot) off the queue and marks it settled.
     [[nodiscard]] u32 Pop();
-    /// Whether `first` pops before `second`.
-    [[nodiscard]] bool Before(u32 first, u32 second) const;
-    /// Moves the queued entry at `position` up towards the root until its parent pops first.
-    void SiftUp(std::size_t position);
-    /// Moves the queued entry at `position` down until both its children pop after it.
-    void SiftDown(std::size_t position);
-    /// Puts `slot` at `position` in the queue and records where it is.
-    void Place(std::size_t position, u32 slot);
+    /// The bucket `key` falls in: 0, the front, for the front's key, else one more than the highest bit in which it
+    /// differs from that key.
+    [[nodiscard]] u32 BucketOf(u64 key) const;
+    /// Queues `slot` by its key, in the bucket that key falls in.
+    void Enqueue(u32 slot);
+    /// Takes the queued `slot` out of its bucket above the front.
+    void Unlink(u32 slot);
 
     /// Each slot's cost so far, valid where its stamp is the search's.
     std::vector<u32> m_cost;
@@ -145,10 +151,21 @@ private:
     std::vector<u32> m_stamp;
     /// Each slot's queue key, its cost so far plus its estimate, valid where its stamp is the search's.
     std::vector<u64> m_key;
-    /// Each slot's place in the queue, or a mark that it is settled, valid where its stamp is the search's.
+    /// Each slot's bucket while it is queued, or a mark that it is settled, valid where its stamp is the search's.
     std::vector<u32> m_place;
-    /// The queue: a binary heap of slots by (key, slot), at most one entry a slot.
+    /// The next slot in each queued slot's bucket above the front, or none at the bucket's end.
+    std::vector<u32> m_next;
+    /// The previous slot in each queued slot's bucket above the front, or none at the bucket's start.
+    std::vector<u32> m_prev;
+    /// The queue's front: the queued slots whose key is m_least, a binary min-heap of slots, at most one entry a slot.
     std::vector<u32> m_queue;
+    /// The first slot of each bucket above the front, one for each bit a key may differ in, bucket b at b - 1, valid
+    /// where m_filled says it holds any.
+    std::array<u32, std::numeric_limits<u64>::digits> m_first{};
+    /// Which buckets above the front hold slots, bucket b as bit b - 1.
+    u64 m_filled = 0;
+    /// The front's key: no slot queued since it was set has a lesser one, as a search's keys never decrease.
+    u64 m_least = 0;
     /// The walk inside the start's block, from the start.
     SectorWalk m_fromWalk;
     /// The walk inside the end's block, to the end.
