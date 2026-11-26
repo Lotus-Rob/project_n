@@ -2337,6 +2337,55 @@ class SanitizerTest(unittest.TestCase):
         with self.assertRaises(project_n.Fail):
             project_n.test_filter("data_watch", "core_tests")
 
+    def test_doctest_case_count_reads_the_listings_last_line(self):
+        listing = "[doctest] listing all test case names\n====\nparse\n====\n[doctest] unskipped test cases passing the current filters: 1\n"
+        self.assertEqual(project_n.doctest_case_count(listing), 1)
+        self.assertEqual(project_n.doctest_case_count(listing.replace(": 1", ": 0")), 0)
+        self.assertEqual(project_n.doctest_case_count(""), 0)
+
+    def test_doctest_case_names_skip_the_listings_frame(self):
+        listing = "[doctest] listing all test case names\n====\nparse a path\n  parse b\n====\n[doctest] unskipped: 2\n"
+        self.assertEqual(project_n.doctest_case_names(listing), ["parse a path", "parse b"])
+
+    def test_candidates_are_the_closest_files_and_cases(self):
+        near = project_n.test_candidates("route_graph_tests", ["route_graph", "routes", "log"], ["a route graph case", "zzz"])
+        self.assertIn("route_graph", near)
+        self.assertNotIn("zzz", near)
+        self.assertEqual(project_n.test_candidates("qqqq", ["log"], ["zzz"]), [])
+
+    @staticmethod
+    def run_listing(counts, names="[doctest] x\n====\nparse path\n====\n"):
+        """cmd_test with --test and doctest's listing mocked: the filtered one prints `counts`, the full one `names`."""
+        def listing(target, bdir, filters=()):
+            return f"[doctest] unskipped test cases passing the current filters: {counts}\n" if filters else names
+        ran = []
+        with mock.patch.multiple(project_n, build=lambda *a: Path("build"), xmake_env=lambda bdir: {},
+                                 needs_container=lambda *a: False, run=lambda argv, env: ran.append(argv),
+                                 list_test_cases=listing):
+            project_n.cmd_test(project_n.argparse.Namespace(preset=project_n.NATIVE_PRESET, mode="debug", sanitizer="none",
+                                                            container=False, target="core_tests", test="nothing_like_it", args=[]))
+        return ran
+
+    def test_a_test_matching_no_file_and_no_case_is_refused_naming_candidates(self):
+        with self.assertRaises(project_n.Fail) as raised:
+            self.run_listing(0, "[doctest] x\n====\nnothing like that\n====\n")
+        self.assertIn("did you mean: nothing like that", str(raised.exception))
+
+    def test_a_test_matching_no_file_and_no_case_with_no_candidates_is_refused(self):
+        with self.assertRaises(project_n.Fail) as raised:
+            self.run_listing(0)
+        self.assertNotIn("did you mean", str(raised.exception))
+
+    def test_a_test_that_is_a_case_substring_still_runs(self):
+        self.assertEqual(self.run_listing(1), [["xmake", "run", "core_tests", "--test-case=*nothing_like_it*"]])
+
+    def test_list_test_cases_runs_the_listing_through_the_runner(self):
+        calls = []
+        done = mock.Mock(stdout="out")
+        with mock.patch.multiple(project_n, xmake_env=lambda bdir: {"E": "1"}, run=lambda argv, env, **kw: calls.append((argv, env)) or done):
+            self.assertEqual(project_n.list_test_cases("core_tests", Path("b"), ["--test-case=*x*"]), "out")
+        self.assertEqual(calls, [(["xmake", "run", "core_tests", "--list-test-cases", "--test-case=*x*"], {"E": "1"})])
+
     def test_names_group_test_files_by_suite(self):
         suites = project_n.test_names()
         self.assertIn("data_watch", suites["app_tests"])
@@ -2437,7 +2486,8 @@ class TestFilesTest(unittest.TestCase):
     def ran(target, test=None, args=(), preset=project_n.NATIVE_PRESET, sanitizer="none"):
         ran = []
         with mock.patch.multiple(project_n, build=lambda *a: Path("build"), xmake_env=lambda bdir: {},
-                                 needs_container=lambda *a: False, run=lambda argv, env: ran.append(argv)):
+                                 needs_container=lambda *a: False, run=lambda argv, env: ran.append(argv),
+                                 list_test_cases=lambda *a, **kw: "[doctest] unskipped test cases passing the current filters: 1"):
             project_n.cmd_test(project_n.argparse.Namespace(preset=preset, mode="debug", sanitizer=sanitizer,
                                                             container=False, target=target, test=test, args=list(args)))
         return ran
