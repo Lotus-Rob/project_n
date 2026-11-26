@@ -598,4 +598,30 @@ TEST_CASE("two places in each other's blocks each have their own edge to the oth
     );
 }
 
+TEST_CASE("two places of one sector are joined only by their own block edges") {
+    // Cities 0 and 1 both in sector 0, two meadow steps apart.
+    const core::WorldMap map = MustBuild(Source({ "0.1.....", "........", "........", "........" }));
+    const core::SectorGraph sector = Build(map, 0);
+    const auto first = static_cast<u16>(std::ranges::find(sector.nodes, At(map, 0, 0)) - sector.nodes.begin());
+    const auto second = static_cast<u16>(std::ranges::find(sector.nodes, At(map, 2, 0)) - sector.nodes.begin());
+    REQUIRE(first < sector.nodes.size());
+    REQUIRE(second < sector.nodes.size());
+    CHECK(std::ranges::none_of(sector.edges, [&](const core::SectorEdge& edge) {
+        return edge.from == first && edge.to == second;
+    }));
+    std::vector<core::SectorPlaceEdge> joining;
+    for (const core::SectorPlaceEdge& edge : sector.placeEdges) {
+        const bool there = edge.place == first && edge.tile == At(map, 2, 0);
+        const bool back = edge.place == second && edge.tile == At(map, 0, 0);
+        if (there || back) {
+            joining.push_back(edge);
+        }
+    }
+    CHECK(
+        joining == std::vector<core::SectorPlaceEdge>{
+                       { .place = static_cast<u16>(first), .tile = At(map, 2, 0), .cost = 20, .costBack = 20 },
+                       { .place = static_cast<u16>(second), .tile = At(map, 0, 0), .cost = 20, .costBack = 20 } }
+    );
+}
+
 } // namespace
