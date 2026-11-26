@@ -1,9 +1,9 @@
 // The routing benchmark (`routing_bench`): for each scale of the synthetic maps (tests/support/synthetic_map.hpp) it
 // - builds every profile's route graph and place table (the table within the travel rules' reach bound, bounded and
 //   unbounded ones apart) on the job system, best of 5, and prints their times, memory and counts;
-// - times the searches of a trip model (each city to its 20 nearest places) and of random pairs in bands of
-//   distance in tiles (0-15, 16-47, 48-79, 80-143, 144+), place to place and with a tile end, each alone: p99, mean, nodes
-//   settled;
+// - times the searches of a trip model (each city to its 20 nearest places) and of random pairs in bands of distance
+//   between the 16-tile blocks holding their ends (the same block, 1-2, 3-4, 5-8, 9 or more blocks apart, the larger of
+//   the columns' and rows' distance), place to place and with a tile end, each alone: p99, mean, nodes settled;
 // - makes the segments the trips use and sizes them with the routes;
 // - compares the routes' costs with core::FindRoute's cheapest on 20 maps and on two hostile ones (all meadow, wide
 //   biomes with a danger reach of 16): the worst route over the cheapest and the worst pair of each band.
@@ -52,16 +52,32 @@ struct Budgets {
     f64 tripMb;
 };
 
-/// The budgets of the scales in test::SYNTHETIC_SCALES, in its order.
-constexpr std::array<Budgets, test::SYNTHETIC_SCALES.size()> BUDGETS{ {
-    { .buildMs = 20.0, .memoryMb = 1.0, .searchMs = 0.1, .tripMb = 2.0 },
-    { .buildMs = 200.0, .memoryMb = 10.0, .searchMs = 0.5, .tripMb = 20.0 },
-    { .buildMs = 1000.0, .memoryMb = 50.0, .searchMs = 2.0, .tripMb = 100.0 },
+/// A scale's budgets.
+struct ScaleBudgets {
+    /// The scale, one of test::SYNTHETIC_SCALES.
+    u32 scale;
+    /// What it is held to.
+    Budgets budgets;
+};
+
+/// The budgets of each scale.
+constexpr std::array<ScaleBudgets, 3> BUDGETS{ {
+    { .scale = 1, .budgets = { .buildMs = 20.0, .memoryMb = 1.0, .searchMs = 0.1, .tripMb = 2.0 } },
+    { .scale = 10, .budgets = { .buildMs = 200.0, .memoryMb = 10.0, .searchMs = 0.5, .tripMb = 20.0 } },
+    { .scale = 50, .budgets = { .buildMs = 1000.0, .memoryMb = 50.0, .searchMs = 2.0, .tripMb = 100.0 } },
 } };
+static_assert(
+    std::ranges::all_of(
+        test::SYNTHETIC_SCALES,
+        [](u32 scale) { return std::ranges::contains(BUDGETS, scale, &ScaleBudgets::scale); },
+        &test::SyntheticScale::scale
+    ),
+    "every scale a synthetic map exists at has its budgets"
+);
 
 /// How many nearest places each city's trips go to.
 constexpr std::size_t TRIPS_PER_CITY = 20;
-/// How many far pairs are searched in each band of distance in tiles.
+/// How many far pairs are searched in each band of distance in blocks.
 constexpr u32 PAIRS_PER_BAND = 200;
 /// How many maps the quality check compares routes on, each its own seed.
 constexpr u32 QUALITY_MAPS = 20;
@@ -78,16 +94,33 @@ constexpr u32 PAIR_ATTEMPTS = 20'000;
 constexpr u32 BAND_UNIT = 16;
 /// The furthest distance in BAND_UNIT blocks each band holds: 0, 1-2, 3-4, 5-8 and further.
 constexpr std::array<u32, 5> BAND_LAST{ { 0, 2, 4, 8, std::numeric_limits<u32>::max() } };
-/// The names of the bands, in tiles of distance.
-constexpr std::array<std::string_view, BAND_LAST.size()> BAND_NAMES{ { "0-15", "16-47", "48-79", "80-143", "144+" } };
+/// The names of the bands, with the distances in tiles their pairs may lie apart: blocks d apart hold tiles from
+/// (d - 1) * BAND_UNIT + 1 to (d + 1) * BAND_UNIT - 1 apart, so the bands overlap in tiles.
+constexpr std::array<std::string_view, BAND_LAST.size()> BAND_NAMES{ {
+    "the same block (0-15 tiles)",
+    "1-2 blocks (1-47 tiles)",
+    "3-4 blocks (33-79 tiles)",
+    "5-8 blocks (65-143 tiles)",
+    "9+ blocks (129+ tiles)",
+} };
 /// The purposes of the pairs' draws: each end's pick of place or tile.
 constexpr u32 PURPOSE_FIRST = 1;
 constexpr u32 PURPOSE_SECOND = 2;
 
+/// Every scale a synthetic map exists at, smallest first.
+std::vector<u32> AllScales() {
+    std::vector<u32> scales;
+    scales.reserve(test::SYNTHETIC_SCALES.size());
+    for (const test::SyntheticScale& known : test::SYNTHETIC_SCALES) {
+        scales.push_back(known.scale);
+    }
+    return scales;
+}
+
 /// The parsed flags.
 struct Options {
     /// The maps' scales, in times the test map's area.
-    std::vector<u32> scales{ test::SYNTHETIC_SCALES.begin(), test::SYNTHETIC_SCALES.end() };
+    std::vector<u32> scales = AllScales();
     /// The sector's side in tiles.
     u32 sector = core::SECTOR_SIZE;
     /// The longest stretch of a border one gate serves.
@@ -213,7 +246,7 @@ bool SetScales(Options& options, std::string_view list) {
     std::vector<u32> scales;
     for (const auto part : std::views::split(list, ',')) {
         const auto scale = ParseNumber<u32>(std::string_view{ part.begin(), part.end() });
-        if (!scale || !std::ranges::contains(test::SYNTHETIC_SCALES, *scale)) {
+        if (!scale || !test::IsSyntheticScale(*scale)) {
             return false;
         }
         scales.push_back(*scale);
@@ -305,9 +338,9 @@ private:
 
 /// The budgets of `scale`, one of test::SYNTHETIC_SCALES.
 const Budgets& BudgetsOf(u32 scale) {
-    return BUDGETS.at(
-        static_cast<std::size_t>(std::ranges::find(test::SYNTHETIC_SCALES, scale) - test::SYNTHETIC_SCALES.begin())
-    );
+    const std::span<const ScaleBudgets> all{ BUDGETS };
+    const auto found = std::ranges::find(all, scale, &ScaleBudgets::scale);
+    return found->budgets;
 }
 
 /// A map with its routing rules and every profile's graph.
@@ -517,6 +550,18 @@ u64 CrossingEdges(const core::RouteGraph& graph) {
     return crossings;
 }
 
+/// How many edges of `graph` are a place's ways found in its block.
+u64 PlaceEdges(const core::RouteGraph& graph) {
+    u64 places = 0;
+    for (u32 edge = 0; edge < graph.Edges().size(); ++edge) {
+        places += graph.IsBlockEdge(edge) ? 1 : 0;
+    }
+    return places;
+}
+
+/// The bytes one edge holds in a graph: the edge itself and the link out of each of its nodes.
+constexpr std::size_t EDGE_BYTES = sizeof(core::GraphEdge) + (2 * sizeof(core::GraphLink));
+
 /// The label of a table's bound.
 std::string BoundLabel(u32 bound) {
     return bound == core::UNREACHABLE ? std::string{ "unbounded" } : std::format("bounded at {}", bound);
@@ -557,20 +602,23 @@ bool ReportBuild(
 
     Table memory;
     const f64 graphMb = static_cast<f64>(world.Graphs().Bytes()) / MEGABYTE;
-    memory.Add(
-        "memory, graphs and place tables",
-        graphMb + TableMegabytes(tables, true) + TableMegabytes(tables, false),
-        budgets.memoryMb,
-        "MB"
-    );
+    const f64 totalMb = graphMb + TableMegabytes(tables, true) + TableMegabytes(tables, false);
+    memory.Add("memory, graphs and place tables", totalMb, budgets.memoryMb, "MB");
     memory.Add("memory, all graphs", graphMb, 0.0, "MB");
+    f64 placeEdgeMb = 0.0;
     for (std::size_t profile = 0; profile < profiles.size(); ++profile) {
         const auto index = static_cast<core::ProfileIndex>(profile);
+        const f64 profileGraphMb = static_cast<f64>(world.Graphs().Of(index).Bytes()) / MEGABYTE;
+        const f64 profilePlaceMb = static_cast<f64>(PlaceEdges(world.Graphs().Of(index)) * EDGE_BYTES) / MEGABYTE;
+        placeEdgeMb += profilePlaceMb;
+        memory.Add(std::format("memory, {} graph", profiles[profile].key), profileGraphMb, 0.0, "MB");
+        memory.Add(std::format("memory, {} graph's place edges", profiles[profile].key), profilePlaceMb, 0.0, "MB");
         memory.Add(
-            std::format("memory, {} graph", profiles[profile].key),
-            static_cast<f64>(world.Graphs().Of(index).Bytes()) / MEGABYTE,
+            std::format("memory, {} graph's place edges, share of its graph", profiles[profile].key),
+            profilePlaceMb * 100.0 / std::max(profileGraphMb, 1.0 / MEGABYTE),
             0.0,
-            "MB"
+            "%",
+            1
         );
         memory.Add(
             std::format("memory, {} place table", profiles[profile].key),
@@ -579,6 +627,18 @@ bool ReportBuild(
             "MB"
         );
     }
+    memory.Add("memory, place edges of all graphs", placeEdgeMb, 0.0, "MB");
+    memory.Add(
+        "memory, place edges, share of all graphs", placeEdgeMb * 100.0 / std::max(graphMb, 1.0 / MEGABYTE), 0.0, "%", 1
+    );
+    memory.Add(
+        "memory, place edges, share of the graphs and place tables",
+        placeEdgeMb * 100.0 / std::max(totalMb, 1.0 / MEGABYTE),
+        0.0,
+        "%",
+        1
+    );
+    memory.Add("memory, graphs without their place edges", graphMb - placeEdgeMb, 0.0, "MB");
     over = memory.Print() || over;
 
     Table counts;
@@ -591,6 +651,22 @@ bool ReportBuild(
         const std::string& key = profiles[profile].key;
         counts.Add(std::format("{} nodes", key), static_cast<f64>(graph.Nodes()), 0.0, "", 0);
         counts.Add(std::format("{} edges", key), static_cast<f64>(graph.Edges().size()), 0.0, "", 0);
+        const auto placeEdges = static_cast<f64>(PlaceEdges(graph));
+        counts.Add(std::format("{} place edges", key), placeEdges, 0.0, "", 0);
+        counts.Add(
+            std::format("{} place edges, share of its edges", key),
+            placeEdges * 100.0 / static_cast<f64>(std::max<std::size_t>(graph.Edges().size(), 1)),
+            0.0,
+            "%",
+            1
+        );
+        counts.Add(
+            std::format("{} place edges a place", key),
+            placeEdges / static_cast<f64>(std::max<std::size_t>(world.Map().Places().size(), 1)),
+            0.0,
+            "",
+            1
+        );
         counts.Add(std::format("{} gates a sector", key), static_cast<f64>(CrossingEdges(graph)) / sectors, 0.0, "", 2);
     }
     static_cast<void>(counts.Print());
@@ -722,7 +798,8 @@ bool MeasureTrips(
     return segments.Print() || over;
 }
 
-/// The distance between two tiles in blocks of BAND_UNIT tiles: the larger of the distances in columns and rows.
+/// How many blocks apart the blocks of BAND_UNIT tiles holding two tiles lie: the larger of the distances between their
+/// block columns and block rows.
 u32 BlockDistance(const core::WorldMap& map, u32 first, u32 second) {
     const auto blockOf = [&](u32 tile) {
         return std::pair{ (tile % map.Columns()) / BAND_UNIT, (tile / map.Columns()) / BAND_UNIT };
@@ -734,7 +811,7 @@ u32 BlockDistance(const core::WorldMap& map, u32 first, u32 second) {
     return std::max(across, down);
 }
 
-/// The band `distance` blocks of BAND_UNIT tiles falls in.
+/// The band two tiles `distance` blocks of BAND_UNIT tiles apart fall in.
 std::size_t BandOf(u32 distance) {
     return static_cast<std::size_t>(
         std::ranges::find_if(BAND_LAST, [&](u32 last) { return distance <= last; }) - BAND_LAST.begin()
@@ -763,7 +840,7 @@ std::vector<u32> PlaceTiles(const core::WorldMap& map, core::ProfileIndex profil
     return tiles;
 }
 
-/// Draws pairs of tiles on one map, redrawing until a pair's ends lie in a band of distance in tiles.
+/// Draws pairs of tiles on one map, redrawing until a pair's ends lie in a band of distance in blocks.
 class PairDrawer {
 public:
     /// A drawer of pairs on `world` for `profile`, from `seed`.
@@ -855,7 +932,7 @@ SearchStats SearchBand(
     return stats;
 }
 
-/// Searches random pairs in each band of distance in tiles, each alone, for every profile: city to city, then city to a
+/// Searches random pairs in each band of distance in blocks, each alone, for every profile: city to city, then city to a
 /// tile; returns whether the far band's place-to-place p99 is over its budget.
 bool MeasureFarPairs(const Options& options, const Budgets& budgets, const World& world, core::RouteScratch* shared) {
     const std::span<const core::MovementProfile> profiles = world.Map().Profiles();
@@ -871,7 +948,7 @@ bool MeasureFarPairs(const Options& options, const Budgets& budgets, const World
                     .AddRows(
                         table,
                         std::format(
-                            "far pairs, {}, {}, {} tiles",
+                            "far pairs, {}, {}, {}",
                             profiles[index].key,
                             tileEnd ? "city to tile" : "city to city",
                             BAND_NAMES.at(band)
@@ -1017,17 +1094,14 @@ bool ReportQuality(std::string_view group, std::span<const core::MovementProfile
             if (result.compared + result.unmatched == 0) {
                 table.AddNote(
                     std::format(
-                        "quality, {}, {}, {} tiles: no pairs, budget not checked",
-                        group,
-                        profiles[profile].key,
-                        BAND_NAMES.at(band)
+                        "quality, {}, {}, {}: no pairs, budget not checked", group, profiles[profile].key, BAND_NAMES.at(band)
                     )
                 );
                 continue;
             }
             table.Add(
                 std::format(
-                    "quality, {}, {}, {} tiles ({} pairs, {:.2f}% over {:.0f}%, {} unmatched; worst: {}), worst over the "
+                    "quality, {}, {}, {} ({} pairs, {:.2f}% over {:.0f}%, {} unmatched; worst: {}), worst over the "
                     "cheapest",
                     group,
                     profiles[profile].key,
@@ -1093,23 +1167,30 @@ bool MeasureQuality(const Options& options, u32 scale, core::Jobs& jobs, const W
     return over;
 }
 
-/// Runs one search per graph, between the first and last city and from the first city to the last tile, that is not
-/// timed, so `scratch` is sized to the graphs before any timed search uses it.
+/// Runs searches per graph that are not timed, so `scratch` is sized before any timed search uses it: between the first
+/// and last city for the graph's arrays, and between two tiles by the map's centre, which no place stands on, for the
+/// walks over a start's and an end's block, there as large as the map's blocks get.
 void Warm(const World& world, core::RouteScratch& scratch) {
     SearchStats unused;
     const core::WorldMap& map = world.Map();
+    const auto tiles = static_cast<u32>(u64{ map.Columns() } * map.Rows());
     for (std::size_t index = 0; index < map.Profiles().size(); ++index) {
         const auto profile = static_cast<core::ProfileIndex>(index);
+        const auto plainFrom = [&](u32 tile) {
+            while (tile < tiles &&
+                   (map.CostAt(tile, profile) == core::IMPASSABLE_COST || map.PlaceAt(tile) != core::NO_PLACE)) {
+                ++tile;
+            }
+            return tile;
+        };
         const std::vector<u32> cities = PlaceTiles(map, profile, true);
-        u32 last = static_cast<u32>(u64{ map.Columns() } * map.Rows()) - 1;
-        while (last > 0 && map.CostAt(last, profile) == core::IMPASSABLE_COST) {
-            --last;
-        }
         if (cities.size() >= 2) {
             static_cast<void>(Timed(world, profile, cities.front(), cities.back(), &scratch, unused));
         }
-        if (!cities.empty()) {
-            static_cast<void>(Timed(world, profile, cities.front(), last, &scratch, unused));
+        const u32 centre = plainFrom(map.TileIndex({ .column = map.Columns() / 2, .row = map.Rows() / 2 }));
+        const u32 beside = centre < tiles ? plainFrom(centre + 1) : tiles;
+        if (beside < tiles) {
+            static_cast<void>(Timed(world, profile, centre, beside, &scratch, unused));
         }
     }
 }
@@ -1126,10 +1207,13 @@ bool Measure(const Options& options, u32 scale) {
             map, rules, { .jobs = &jobs, .sectorsPerChunk = options.chunk, .share = options.share }
         );
     });
-    const f64 serialMs = BestOf(1, [&] {
-        graphs.push_back(core::RouteGraphs::Build(map, rules, { .sectorsPerChunk = options.chunk, .share = options.share }));
-        return true;
-    });
+    const f64 serialMs =
+        static_cast<f64>(TimeNs([&] {
+            graphs.push_back(
+                core::RouteGraphs::Build(map, rules, { .sectorsPerChunk = options.chunk, .share = options.share })
+            );
+        })) /
+        NANOSECONDS_PER_MILLISECOND;
     const World world{ .mapPointer = &map, .rules = rules, .graphsPointer = &graphs.front() };
     PN_LOG_INFO(
         "scale {} ({} x {} tiles, {} places, sector {}, gate spacing {}, chunk {}, {}, {}):",

@@ -50,20 +50,32 @@ struct SyntheticOptions {
     SyntheticTerrain terrain = SyntheticTerrain::Noise;
 };
 
-/// The scales a synthetic map exists at, in times the shipped test map's area.
-inline constexpr std::array<u32, 3> SYNTHETIC_SCALES{ { 1, 10, 50 } };
+/// A scale a synthetic map exists at and its size there.
+struct SyntheticScale {
+    /// The scale, in times the shipped test map's area.
+    u32 scale;
+    /// The map's size at that scale.
+    SyntheticSize size;
+};
+
+/// The scales a synthetic map exists at, smallest first, each with its size.
+inline constexpr std::array<SyntheticScale, 3> SYNTHETIC_SCALES{ {
+    { .scale = 1, .size = { .columns = 150, .rows = 85, .cities = 6, .dangers = 10 } },
+    { .scale = 10, .size = { .columns = 474, .rows = 269, .cities = 60, .dangers = 100 } },
+    { .scale = 50, .size = { .columns = 1061, .rows = 601, .cities = 300, .dangers = 500 } },
+} };
+
+/// Whether a synthetic map exists at `scale`.
+[[nodiscard]] constexpr bool IsSyntheticScale(u32 scale) {
+    return std::ranges::contains(SYNTHETIC_SCALES, scale, &SyntheticScale::scale);
+}
 
 /// The size of the synthetic map `scale` times the shipped test map's area: only SYNTHETIC_SCALES exist. Any other scale
 /// is an error in a constant expression and stops the program otherwise.
 [[nodiscard]] constexpr SyntheticSize SyntheticSizeOf(u32 scale) {
-    constexpr std::array<SyntheticSize, SYNTHETIC_SCALES.size()> SIZES{ {
-        { .columns = 150, .rows = 85, .cities = 6, .dangers = 10 },
-        { .columns = 474, .rows = 269, .cities = 60, .dangers = 100 },
-        { .columns = 1061, .rows = 601, .cities = 300, .dangers = 500 },
-    } };
-    for (std::size_t i = 0; i < SYNTHETIC_SCALES.size(); ++i) {
-        if (SYNTHETIC_SCALES.at(i) == scale) {
-            return SIZES.at(i);
+    for (const SyntheticScale& known : SYNTHETIC_SCALES) {
+        if (known.scale == scale) {
+            return known.size;
         }
     }
     // Not a constant expression, so a bad scale in one fails to compile.
@@ -76,7 +88,9 @@ inline constexpr std::array<u32, 3> SYNTHETIC_SCALES{ { 1, 10, 50 } };
     if (places == 0) {
         return size;
     }
-    const u32 cities = std::clamp(places * size.cities / (size.cities + size.dangers), 2U, std::max(places, 2U));
+    // In 64 bits, as a large `places` times the cities would wrap; the share is at most `places`, so it fits back.
+    const auto share = static_cast<u32>(u64{ places } * size.cities / (u64{ size.cities } + size.dangers));
+    const u32 cities = std::clamp(share, 2U, std::max(places, 2U));
     return { .columns = size.columns, .rows = size.rows, .cities = cities, .dangers = places > cities ? places - cities : 0 };
 }
 
@@ -340,8 +354,16 @@ inline void PlaceOne(
     }
 }
 
-/// Adds the cities, then the dangers, to `source`.
+/// Adds the cities, then the dangers, to `source`. Stops the program when the map has fewer open tiles than places, as
+/// each place takes an open tile of its own and would otherwise be drawn for ever.
 inline void MakePlaces(core::WorldMapSource& source, const SyntheticSize& size, u64 seed) {
+    const auto open = static_cast<u64>(std::ranges::count_if(source.grid, Open));
+    if (u64{ size.cities } + size.dangers > open) {
+        std::println(
+            stderr, "{} places don't fit on the synthetic map's {} open tiles", u64{ size.cities } + size.dangers, open
+        );
+        std::abort();
+    }
     std::vector<bool> taken(source.grid.size(), false);
     for (u32 city = 0; city < size.cities; ++city) {
         PlaceOne(source, taken, CITY, seed, city, city);
