@@ -55,7 +55,7 @@ struct Session {
     explicit Session(
         const std::filesystem::path& folder,
         core::SceneKey scene = game::ARENA_SCENE,
-        const core::GameData& data = test::ShippedData(),
+        const core::GameData& data = test::SmallData(),
         u32 workers = WORKERS
     )
       : jobs{ workers }
@@ -65,12 +65,12 @@ struct Session {
         Start();
     }
 
-    // A game whose host starts from `start`, a host save it loads and enters before the logic is built (on the shipped
-    // data), as if its scene had been built so: a state no run reaches cheaply.
-    Session(const std::filesystem::path& folder, std::span<const std::byte> start)
+    // A game whose host starts from `start`, a host save it loads and enters before the logic is built (on `data`, which
+    // the save was made for), as if its scene had been built so: a state no run reaches cheaply.
+    Session(const std::filesystem::path& folder, std::span<const std::byte> start, core::GameData data = test::SmallData())
       : saves(folder / "slot.pns", jobs)
       , replays(folder / "replay.pnr", jobs)
-      , host(test::TestManifest(), game::ARENA_SCENE, test::ShippedData()) // parentheses: MSVC C4868
+      , host(test::TestManifest(), game::ARENA_SCENE, std::move(data)) // parentheses: MSVC C4868
       , started(StartFrom(host, start)) {
         Start();
     }
@@ -348,9 +348,12 @@ TEST_CASE("a replay on the world scene plays back with the same hashes") {
     constexpr u32 MAX_BURSTS = 100;
     constexpr std::size_t HASHES = 3; // the last on the recording's final tick
     constexpr core::Vec2 RIGHT{ .x = 1.0F, .y = 0.0F };
+    // The shipped data stays here: the start city's full sight clear of the map's edges, and the cities' crowd, are the
+    // shipped map's, which the small map's corner start and 100 people cannot stand in for.
+    const core::GameData data = test::ShippedData();
     const Folder folder{ "world" };
     {
-        Session recording(folder.Path(), game::WORLD_SCENE);
+        Session recording(folder.Path(), game::WORLD_SCENE, data);
         REQUIRE(recording.host.Player() != core::StableId{});
         // A new game has explored the whole diamond of its sight round the start city, which lies clear of the map's edges.
         CHECK(ExploredCount(recording.host.ExploredTiles()) == 25);
@@ -380,7 +383,7 @@ TEST_CASE("a replay on the world scene plays back with the same hashes") {
         recording.Burst(1);
     } // its job system finishes writing the replay
 
-    Session playing(folder.Path(), game::WORLD_SCENE);
+    Session playing(folder.Path(), game::WORLD_SCENE, data);
     playing.Send(core::ActionKind::PlayReplay);
     playing.Burst(1);
     REQUIRE(playing.replay.Playing());
@@ -499,9 +502,9 @@ TEST_CASE("a world clock reaching its month's end runs the month step through th
     // after that tick, publishing the transition, then runs it on the next.
     constexpr u64 BURST = 3;
     const Folder folder{ "month_end" };
-    const core::GameData shipped = test::ShippedData(); // what a Session started from a save runs on
-    const std::vector<std::byte> start = test::WorldSaveAt({ .ticks = game::TICKS_PER_MONTH - 1, .months = 0 }, &shipped);
-    Session session(folder.Path(), start);
+    const core::GameData data = test::SmallData();
+    const std::vector<std::byte> start = test::WorldSaveAt({ .ticks = game::TICKS_PER_MONTH - 1, .months = 0 }, &data);
+    Session session(folder.Path(), start, data);
     REQUIRE(session.started);
     REQUIRE(session.host.Current().key == game::WORLD_SCENE);
 
@@ -521,12 +524,11 @@ TEST_CASE("a world clock reaching its month's end runs the month step through th
     CHECK(session.host.Months() == 1);
 }
 
-/// A save of the world scene with the player's cultivator alone in it, on the start city's tile centre.
-std::vector<std::byte> CultivatorOnTheMap() {
+/// A save of the world scene with the player's cultivator alone in it, on the start city's tile centre of `data`'s map.
+std::vector<std::byte> CultivatorOnTheMap(const core::GameData& data) {
     core::State state{ game::DOMAINS, test::EMPTY_SAVE_SEED };
     const auto [player, entity] = state.Create(game::ACTIVE, core::IdRange::Scene);
-    const core::GameData shipped = test::ShippedData(); // what a Session started from a save runs on
-    const core::Vec2 start = shipped.world->StartCentre();
+    const core::Vec2 start = data.world->StartCentre();
     state[game::ACTIVE].Entities().emplace<game::Body>(entity, start, start);
     return test::ArenaSave(
         state,
@@ -542,7 +544,7 @@ std::vector<std::byte> CultivatorOnTheMap() {
         std::nullopt,
         game::Relationships{},
         {},
-        &shipped
+        &data
     );
 }
 
@@ -556,12 +558,13 @@ TEST_CASE("a replay with walk-tos on the world map plays back with the same hash
     // Where the walk-tos go, in tiles from the start city's.
     constexpr core::Vec2 EAST{ .x = 4.0F, .y = 0.0F };
     constexpr core::Vec2 SOUTH_EAST{ .x = 2.0F, .y = 2.0F };
-    const f32 tile = test::ShippedWorld()->TileSize();
-    const core::Vec2 start = test::ShippedWorld()->StartCentre();
-    const std::vector<std::byte> begin = CultivatorOnTheMap();
+    const core::GameData data = test::SmallData();
+    const f32 tile = data.world->TileSize();
+    const core::Vec2 start = data.world->StartCentre();
+    const std::vector<std::byte> begin = CultivatorOnTheMap(data);
     const Folder folder{ "walk_to" };
     {
-        Session recording(folder.Path(), begin);
+        Session recording(folder.Path(), begin, data);
         REQUIRE(recording.started);
         recording.Send(core::ActionKind::ToggleRecording);
         recording.Burst(1);
@@ -585,7 +588,7 @@ TEST_CASE("a replay with walk-tos on the world map plays back with the same hash
         recording.Burst(1);
     } // its job system finishes writing the replay
 
-    Session playing(folder.Path(), begin);
+    Session playing(folder.Path(), begin, data);
     REQUIRE(playing.started);
     playing.Send(core::ActionKind::PlayReplay);
     playing.Burst(1);
@@ -605,13 +608,14 @@ TEST_CASE("a replay recorded while walking plays back exploring the same tiles")
     constexpr u32 MAX_STEPS = 100;
     constexpr u32 MAX_BURSTS = 100;
     constexpr core::Vec2 EAST{ .x = 4.0F, .y = 0.0F }; // in tiles from the start city's
-    const f32 tile = test::ShippedWorld()->TileSize();
-    const core::Vec2 start = test::ShippedWorld()->StartCentre();
-    const std::vector<std::byte> begin = CultivatorOnTheMap();
+    const core::GameData data = test::SmallData();
+    const f32 tile = data.world->TileSize();
+    const core::Vec2 start = data.world->StartCentre();
+    const std::vector<std::byte> begin = CultivatorOnTheMap(data);
     const Folder folder{ "exploring" };
     std::vector<u64> explored;
     {
-        Session recording(folder.Path(), begin);
+        Session recording(folder.Path(), begin, data);
         REQUIRE(recording.started);
         recording.Send(core::ActionKind::ToggleRecording);
         recording.Burst(1);
@@ -632,7 +636,7 @@ TEST_CASE("a replay recorded while walking plays back exploring the same tiles")
         recording.Burst(1);
     } // its job system finishes writing the replay
 
-    Session playing(folder.Path(), begin);
+    Session playing(folder.Path(), begin, data);
     REQUIRE(playing.started);
     playing.Send(core::ActionKind::PlayReplay);
     playing.Burst(1);
@@ -660,6 +664,7 @@ TEST_CASE("the world ticked through an hour of walk-tos is the same on 1 and 4 w
     constexpr u64 MAX_BURSTS = 2 * TICKS / core::REPLAY_HASH_TICKS;
     const Folder folderOne{ "hour_one_worker" };
     const Folder folderMany{ "hour_many_workers" };
+    // The shipped data, on purpose: 50,000 NPCs are what gives 4 workers work to divide.
     Session one(folderOne.Path(), game::WORLD_SCENE, test::ShippedData(), 1);
     Session many(folderMany.Path(), game::WORLD_SCENE, test::ShippedData(), 4);
     REQUIRE(one.host.Current().key == game::WORLD_SCENE);
