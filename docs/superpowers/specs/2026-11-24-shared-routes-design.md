@@ -1,6 +1,6 @@
 # Layered routing: journeys as plans over a route graph built once per world
 
-Date: 2026-11-24, reworked 2026-11-25 · Status: **approved 2026-11-25** (builder check done on the rework; its five questions settled as Decisions 10-13, Goal 14's note and the place table's exception) · Builds on:
+Date: 2026-11-24, reworked 2026-11-25 · Status: **stage 1 implemented 2026-11-26** (see Outcome), stage 2 to plan; **approved 2026-11-25** (builder check done on the rework; its five questions settled as Decisions 10-13, Goal 14's note and the place table's exception) · Builds on:
 `2026-11-23-phase6-chunk5b-look-travellers-design.md` (its Outcome), `2026-11-22-roads-design.md` · Replaces two sweep-up
 backlog items: "NEXT DESIGN after the travellers branch: per-destination walk tables + journeys keep only their plan +
 NPCs set out from their city?" and "Journeys share their routes in the simulation"
@@ -87,12 +87,16 @@ A reader of any layer during the publish takes no lock and finds everything alre
    it carries that path's cost in each direction, which is what the search and the place table count.
 2. **A pure function of the map.** The graph depends only on the map, the profile and `ROUTING_VERSION` (Goal 12): the
    same on every machine and worker count, with `core/paths.hpp`'s fixed tie-breaks. Each sector is built from its own
-   tiles alone, so sectors build in parallel and one sector can be rebuilt alone.
+   tiles and those of its block (its sector and the up to eight round it, which its places' edges reach), so sectors
+   build in parallel and one sector can be rebuilt alone; node and edge IDs are positions, so a rebuilt sector means the
+   graph is assembled again (Outcome).
 3. **Segments on demand, then fixed.** An edge's tiles, cumulative step costs each way and walk table each way (today's
    `LegWalk` content, compact) are worked out the first time a route uses the edge and never change after. Memory goes
    to the ground actually travelled.
-4. **Any tile to any tile.** A route search joins the start and the end to their sectors' nodes by a search inside
-   those sectors, then searches the graph (A* with the map's distance estimate). A route between two places uses only
+4. **Any tile to any tile.** A route search joins the start and the end to the nodes of their blocks (each end's
+   sector and the up to eight round it) by a search inside those blocks, then searches the graph (A* with the map's
+   distance estimate); a place's own node needs no such search, and an end inside the start's block may take the
+   block's direct way (Outcome). A route between two places uses only
    shared segments; one from or to an arbitrary tile adds a short stretch of its own at that end. Unreachable gives no
    route.
 5. **Near-cheapest, stable routes.** A route's cost is within 5% of the true cheapest by tiles on a spread of sampled
@@ -208,9 +212,9 @@ A reader of any layer during the publish takes no lock and finds everything alre
 
 ## Decisions (the controller's calls, for the user to check)
 
-1. **Sectors are 16 × 16 tiles**, to be confirmed by measuring 8, 16 and 32 on the synthetic maps (build time, search
+1. **Sectors are 16 × 16 tiles** (built: 32 × 32, Outcome), to be confirmed by measuring 8, 16 and 32 on the synthetic maps (build time, search
    time, route quality); the size is part of `ROUTING_VERSION`.
-2. **Gates: the cheapest crossing of each run, and one more every 8 tiles of a longer run**, so open country gets
+2. **Gates: the cheapest crossing of each run, and one more every 8 tiles of a longer run** (built: every 4, Outcome), so open country gets
    enough gates to stay within Goal 5's 5% and roads always have their own. Tuned with Decision 1 by the same
    measurements.
 3. **One graph per profile**, built for every profile in the data; identical sectors may share storage (builder's
@@ -274,4 +278,111 @@ A reader of any layer during the publish takes no lock and finds everything alre
 
 ## Outcome
 
-(Written when implemented.)
+### Stage 1 (core routing), implemented 2026-11-26
+
+Plan: `docs/superpowers/plans/2026-11-25-shared-routes-stage1.md`. `core` gained the route graphs
+(`core/route_graph.*`), segments (`core/segments.*`), the route search (`core/route_search.*`), the place table
+(`core/place_table.*`), synthetic maps (`tests/support/synthetic_map.hpp`) and `routing_bench`
+(`tests/bench/routing.cpp`). Nothing in the game uses them yet; stage 2 switches it over.
+
+**Goal 14's budgets, met at every scale** (the last measuring run: release, linux-clang, 4 workers, machine idle, min
+to max of 3 runs; place-to-place searches between cities 144 tiles or more apart, the far band, which the 1× map lacks):
+
+| | 1× | 10× | 50× |
+|---|---|---|---|
+| Graph build and place tables (budget 20 ms / 0.2 s / 1 s) | 12.6-14.2 ms | 136-143 ms | 839-841 ms |
+| Graph and place tables in memory (1 / 10 / 50 MB) | 0.552 MB | 7.056 MB | 39.89 MB |
+| Place-to-place search p99, on foot / wary (0.1 / 0.5 / 2 ms) | trips 0.018 / 0.007 ms | far 0.193 / 0.208 ms | far 1.012 / 1.122 ms |
+| Segments and routes of the trip model (2 / 20 / 100 MB) | 0.299 MB | 4.317 MB | 22.78 MB |
+
+Route quality: on 20 seeded maps, a meadow map with no roads and a map of wide biomes with danger reach 16, at every
+scale, both profiles, both directions, 50 pairs a distance band (0-15, 16-47, 48-79, 80-143, 144+ tiles), every route
+within 5% of `core::FindRoute`'s cost; the worst 4.31% (10×). Goal 15 (against main on the test map) is stage 2's: until
+the game routes over the graph there is nothing of the game's to compare.
+
+**What changed from the design**
+
+- **Sectors 32 × 32, a gate every 4 tiles** (Decisions 1 and 2 said 16 and 8), `ROUTING_VERSION` 2. No size and
+  spacing held the 5% everywhere (round 2, below); 32/4 holds it from three sectors out at every scale, recipe and
+  profile, inside every budget.
+- **A tile end reaches the graph through its block**, its sector and the up to eight round it (Goal 4 said its own
+  sector). With sector legs, 15 of 40 sampled routes were within 5% (worst 15.3%): an end near a border had to detour
+  through its own sector's gate, and denser gates fixed it only past the 1× memory budget. A tile end, a gate's tile
+  included, walks its block both ways; when the end lies in the start's block the block's direct way wins unless the
+  graph's is strictly cheaper (the user's decision, 2026-11-25).
+- **A place's node has edges to every node of its block**, built with the graph from one block walk a place and shared
+  as segments, so place-to-place routes use the graph alone and the place table's cost stays the route's cost (the
+  user's decision, 2026-11-25). 40 of 40 sampled routes within 5%; build and memory about 1.7 times the sector-only
+  graph's, inside budget.
+- **Near places have their own cheapest way each way** (the user's decision, 2026-11-26): each place's block walk also
+  gives an edge to every other place of its block, whichever sector lists it, so a pair a few tiles apart no longer
+  walks one edge back at its `costBack` or keeps to one sector. No in-sector edge is built between two places: the block
+  edges cover the same pair at no more cost. This cleared round 2's last misses (up to 33% on pairs 9 to 160 units
+  apart); band 0-15 is now within 3.4%.
+- **One sector a build job** (`SECTORS_PER_CHUNK = 1`; the plan's start was 32).
+- **The search's queue is a radix heap** (buckets by cost, ties to the lowest slot), not a binary heap; an edge must
+  cost no less than the estimate across it, asserted in debug and documented on both sides.
+
+**The spikes** (rounds: `routing_bench`, release, 4 workers; full tables were in the plan's ledger, the numbers that
+decided each are here)
+
+- **S1, sector size and gate spacing.** Round 1 (build and memory): every pair inside both budgets at every scale. Round
+  2 (search and quality, 20 seeds, two hostile recipes) at 50×:
+
+  | sector / spacing | build | memory | far p99 on foot / wary | quality |
+  |---|---|---|---|---|
+  | 8 / 8 | 198 ms | 10.8 MB | 1.41 / 1.65 ms | up to 62% over |
+  | 16 / 16 | 157 ms | 7.0 MB | 0.48 / 0.58 ms | up to 36% over |
+  | 16 / 8 | 254 ms | 13.0 MB | 0.87 / 1.03 ms | up to 33% over |
+  | 16 / 4 | 482 ms | 32.4 MB | 1.83 / 2.18 ms | wary 14% over (band 48-79) |
+  | 16 / 2 | 1,041 ms | 99.1 MB | 4.24 / 4.99 ms | over memory at every scale |
+  | 24 / 8 | 375 ms | 14.3 MB | 0.66 / 0.76 ms | wary up to 20% over |
+  | 32 / 8 | 543 ms | 17.4 MB | 0.58 / 0.67 ms | wary up to 10% over (5-8 sectors) |
+  | 32 / 4 | 831 ms | 39.4 MB | 1.17 / 1.38 ms | within 5% from three sectors out |
+
+  The rule (lowest 50× search p99 among pairs inside every budget and the 5%) had no candidate. 32/4's only misses were
+  place pairs a few tiles apart (a danger site by a city), which the near-place edges answer; the user chose 32/4 with
+  them.
+- **S2, orthogonal crossings.** Kept. The meadow map with no roads stays within 1.6% at spacing 1, so the crossings'
+  direction isn't the cause; gate density drives the far bands' misses and short pairs' misses are design-level
+  (`costBack`, a middle node off the line). Diagonal crossings were not designed.
+- **S3, sharing sectors between profiles.** Shared build kept: building every sector per profile costs 16.5% / 17.4% /
+  13.9% more at 1× / 10× / 50× (rule: over 10%). Shared storage not needed: the graphs stayed under half the memory
+  budget at the defaults of the time; at 32/4 the graphs and place tables are 39.9 MB of 50 at 50×, still inside it.
+- **S4, sectors a build job.** 1: at 50× 140.1 ms against 142.3 (8), 148.6 (32), 143.5 (128); at 1× decisively, 2.9 ms
+  against 7.6 (32).
+- **S5, the kept workspace.** Stays. At 50× (16/8) it saves 29% / 39% of the trip searches' p99 and 54% of the time a
+  settled node, but only 1.4% of the far p99, where the search itself dominates.
+- **S6, the queue.** At 32/4 the 50× far p99 passed half its 2 ms budget, so the bucket queue was written and measured
+  against the binary heap: 0.943 against 1.150 ms on foot (18.0% faster), 1.091 against 1.355 ms wary (19.5%), 10× 20%
+  / 18%, trips at 1× 15-25%; build and memory unchanged. Kept (rule: over 10%).
+- **S7, batched segments.** Kept: at 50× the trip model's segments take 137.5 / 91.4 ms batched against 570.1 / 291.7 ms
+  one at a time. A segment tile costs 76 bytes on foot (78 at 32/4), the walk marks 63% / 54% of the segments' bytes
+  (61% / 44% at 32/4): stage 2's input for a compact form.
+- **S8, a coarser graph.** Not needed: the 50× far p99 is 1.012 / 1.122 ms at worst (2 ms budget); a far search settles
+  about 16% of the graph's nodes. City-to-tile searches (no budget row) take 2.1-2.2 ms p99 at 50× at 32/4, most of it
+  the two block walks of 96 × 96 tiles: stage 2 weighs them when trips to spots arrive.
+
+**Rulings made while building** (the plan's ledger held them; the ones that shaped the code)
+
+- Synthetic maps keep straight roads and turn any impassable tile on a road's line into meadow, so every city joins city
+  0 by road in one build with no change to `WorldMap`; generated maps' roads will bend more.
+- A gate's tile is a tile end like any other (block legs); only a place's node stands alone. It can only make a route
+  cheaper, and it fixed the 40th sampled route (1.063 → 1.0).
+- The hand-made test map lives once, in `tests/support/hand_map.hpp`, for the graph, segment and search tests.
+- `RouteGraph::IsCrossing` is the one crossing predicate (segments, `EdgeTiles` and tests used three copies).
+- The place table's search keeps one workspace a chunk of four cities; zero-filling it is about 136 KB a chunk at 50×,
+  negligible against the build. Its top band (no reach bound) is timed apart: 131 ms on foot at 50×, the wary band
+  0.96 ms; `Cost()` is its only accessor, so a bound for a highest power can come without callers changing.
+- No release clamp for an edge cheaper than the estimate: every edge kind meets the contract, debug asserts it, and a
+  clamp would cost in the search's hot loop.
+
+**Left to stage 2**
+
+- Prune a place's edges that pass through another node (about 54 a place: fine at 800 places, about 58 MB at 10,000).
+- Keep segments once for profiles whose costs agree, not once a profile.
+- `SegmentStore::Add` in parallel, or segments in a compact form, as S7's numbers say.
+- A map that changes: node and edge IDs are positions and a place's edges read its block, so a change rebuilds the
+  sectors whose blocks hold it and assembles the graphs again (Goal 2's "rebuilt alone" holds for the build, not the
+  IDs).
+- Goal 15's comparison against main, and the trip model's row measured on the test map with the shipped travel rules.
