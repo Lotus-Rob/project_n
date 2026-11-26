@@ -4,6 +4,7 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
 #include "core/math.hpp"
+#include "core/path_text.hpp"
 #include "core/profile.hpp"
 
 namespace core {
@@ -380,12 +381,12 @@ bool Logic::Load() {
         return false;
     }
     if (!Restore(*state, false)) {
-        PN_LOG_ERROR("not loaded: {} is malformed or from another version of the game", m_saves->Slot().string());
+        PN_LOG_ERROR("not loaded: {} is malformed or from another version of the game", PathText(m_saves->Slot()));
         return false;
     }
     PN_LOG_INFO(
         "loaded the game from {} at tick {}; timeline {} begins once the scene shown is left",
-        m_saves->Slot().string(),
+        PathText(m_saves->Slot()),
         m_counters.wall,
         m_epoch + 1
     );

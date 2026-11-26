@@ -2,6 +2,7 @@
 
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
+#include "core/path_text.hpp"
 #include "core/profile.hpp"
 #include "core/save_file.hpp"
 
@@ -16,7 +17,7 @@ void Saves::Write(std::vector<std::byte> state) {
     m_jobs->Background([slot = m_slot, bytes = std::move(state)] {
         const std::expected<void, Error> written = WriteSaveFile(slot, bytes);
         if (written) {
-            PN_LOG_INFO("saved the game to {}", slot.string());
+            PN_LOG_INFO("saved the game to {}", PathText(slot));
         }
         else {
             PN_LOG_ERROR("{}", written.error().message);
