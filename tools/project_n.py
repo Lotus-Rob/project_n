@@ -1223,9 +1223,10 @@ def design_references(path, text):
 
 
 def git_names(*args):
-    """The paths of a git command that lists them (`-z` is added): raw, where core.quotePath would
-    print a non-ASCII name quoted and octal-escaped."""
-    return [name for name in capture(["git", *args, "-z"]).split("\0") if name]
+    """The paths of a git command that lists them (`-z` follows the subcommand, ahead of any `--`
+    pathspecs): raw, where core.quotePath would print a non-ASCII name quoted and octal-escaped."""
+    command, *rest = args
+    return [name for name in capture(["git", command, "-z", *rest]).split("\0") if name]
 
 
 def design_reference_findings(files=None):
@@ -2197,8 +2198,8 @@ def cmd_setup(args):
 def check_staged_format():
     """The pre-commit hook: the staged content of each staged source, as it will be committed. A staged
     .clang-format (at any depth) or pixi.lock (the clang-format version) checks every source."""
-    staged = capture(["git", "diff", "--cached", "--name-only", "--no-renames"]).splitlines()
-    indexed = capture(["git", "ls-files"]).splitlines()  # the index, not the disk: a staged file may be gone
+    staged = git_names("diff", "--cached", "--name-only", "--no-renames")
+    indexed = git_names("ls-files")  # the index, not the disk: a staged file may be gone
     every = any(Path(f).name == ".clang-format" or f == "pixi.lock" for f in staged)
     files = sorted(f for f in (indexed if every else set(staged) & set(indexed)) if is_source(f))
     bad = []
@@ -3191,16 +3192,15 @@ DOC_COMMAND_RE = re.compile(r"(?:pixi run project_n|`project_n|\./dev) +([a-z][a
 def agent_doc_files():
     """Our agent docs, tracked or new, as repo-relative paths."""
     # Ours only (tracked or new): build/ holds xmake-repo's own AGENTS.md.
-    docs = capture(["git", "ls-files", "--cached", "--others", "--exclude-standard", "--",
-                    "*AGENTS.md", "*CLAUDE.md", ".claude/skills/*.md", ".claude/agents/*.md", "README.md"]).splitlines()
+    docs = git_names("ls-files", "--cached", "--others", "--exclude-standard", "--",
+                     "*AGENTS.md", "*CLAUDE.md", ".claude/skills/*.md", ".claude/agents/*.md", "README.md")
     return [d for d in docs if (ROOT / d).is_file()]  # is_file: deleted but not yet committed
 
 
 def command_quote_files():
     """Where a quoted command may stand: the agent docs, and the Doxygen in headers and `.dox` files, which hold
     what moved out of the AGENTS.md files."""
-    code = capture(["git", "ls-files", "--cached", "--others", "--exclude-standard", "--",
-                    "src/*.hpp", "src/*.dox"]).splitlines()
+    code = git_names("ls-files", "--cached", "--others", "--exclude-standard", "--", "src/*.hpp", "src/*.dox")
     return agent_doc_files() + [c for c in code if (ROOT / c).is_file()]
 
 
