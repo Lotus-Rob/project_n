@@ -1,4 +1,5 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/path_text.hpp"
 #include "data/manifest.hpp"
 #include "support/manifest.hpp"
 
@@ -141,6 +142,13 @@ TEST_CASE("a scene listing a sprite twice is refused with its line") {
         data::ParseManifest(With(std::format("sprites: [{}]", SPRITE_NAMES[0]), twice));
     REQUIRE_FALSE(manifest.has_value());
     CHECK(manifest.error_or(core::Error{}).message.starts_with("manifest line "));
+}
+
+TEST_CASE("a manifest that can't be opened is reported with its path as UTF-8") {
+    const std::filesystem::path missing = std::filesystem::temp_directory_path() / u8"项目_é_🎮" / "manifest.yaml";
+    const std::expected<core::Manifest, core::Error> manifest = data::LoadManifest(missing);
+    REQUIRE_FALSE(manifest.has_value());
+    CHECK(manifest.error().message == std::format("couldn't open {}", core::PathText(missing)));
 }
 
 } // namespace
