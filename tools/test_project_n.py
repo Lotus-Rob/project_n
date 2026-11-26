@@ -1863,12 +1863,22 @@ class NonUtf8FilesTest(unittest.TestCase):
     def test_files_not_in_utf8_are_reported(self):
         with temp_repo({"src/a.cpp": b"auto s = \"caf\xe9\";\n", "assets/data/x.yaml": b"\xef\xbb\xbfkey: 1\n"}):
             found = project_n.non_utf8_files(["src/a.cpp", "assets/data/x.yaml"])
-            self.assertEqual([f.split(":")[0] for f in found], ["src/a.cpp", "assets/data/x.yaml"])
-            self.assertIn("byte-order mark", found[1])
+            self.assertEqual([f.split(":")[0] for f in found], ["assets/data/x.yaml", "src/a.cpp"])
+            self.assertIn("byte-order mark", found[0])
 
     def test_utf8_files_and_binaries_are_not_reported(self):
         with temp_repo({"src/a.cpp": "auto s = u8\"项目_é_🎮\";\n".encode(), "assets/b.png": b"\x89PNG\xff\xfe\x00\xe9"}):
             self.assertEqual(project_n.non_utf8_files(["src/a.cpp", "assets/b.png", "src/deleted.cpp"]), [])
+
+    def test_extensionless_text_files_are_checked(self):
+        with temp_repo({"dev": b"#!/bin/sh\necho caf\xe9\n", ".clangd": b"\xef\xbb\xbfa: 1\n", "docs/Doxyfile": b"A = \xe9\n"}):
+            found = project_n.non_utf8_files([".clangd", "dev", "docs/Doxyfile"])
+            self.assertEqual([f.split(":")[0] for f in found], [".clangd", "dev", "docs/Doxyfile"])
+
+    def test_lfs_binaries_and_the_fuzz_corpus_are_not_checked(self):
+        with temp_repo({".gitattributes": "*.dat filter=lfs diff=lfs merge=lfs -text\n*.bin binary\n", "assets/a.dat": b"\xff\xfe\xe9\n",
+                        "tests/fuzz/corpus/yaml/seed": b"\xe9: [\n", "x.bin": b"\xe9\n", "assets/zero": b"\x00\xe9"}):
+            self.assertEqual(project_n.non_utf8_files(["assets/a.dat", "tests/fuzz/corpus/yaml/seed", "x.bin", "assets/zero"]), [])
 
 
 class StandardIncludeTest(unittest.TestCase):

@@ -1391,15 +1391,30 @@ def path_strings(sources):
     return found
 
 
-# Tracked files that are text, by extension: the others (images, fonts, shader binaries) are bytes.
-TEXT_SUFFIXES = (".cpp", ".hpp", ".h", ".c", ".hlsl", ".hlsli", ".lua", ".py", ".yaml", ".yml", ".toml", ".md", ".json")
+def text_files(paths):
+    """The paths git treats as text: neither its content looks binary (`i/-text`) nor its attributes
+    mark it binary (`-text`) or LFS-tracked, whose working-tree file is the binary the index holds a
+    pointer for. Two git calls for all paths."""
+    paths = sorted(paths)
+    if not paths:
+        return []
+    names = "\0".join(paths) + "\0"
+    attributes = subprocess.run(resolve(["git", "check-attr", "-z", "--stdin", "text", "filter"]), cwd=ROOT, check=True,
+                                input=names, capture_output=True, encoding="utf-8").stdout.split("\0")
+    excluded = {path for path, name, value in zip(attributes[0::3], attributes[1::3], attributes[2::3], strict=False)
+                if (name == "text" and value == "unset") or (name == "filter" and value == "lfs")}
+    listed = capture(["git", "ls-files", "--eol", "-z"]).split("\0")
+    excluded |= {entry.split("\t", 1)[1] for entry in listed if "\t" in entry and entry.startswith("i/-text")}
+    return [f for f in paths if f not in excluded]
 
 
 def non_utf8_files(paths):
     """`"<file>: <why>"` for each text file that is not valid UTF-8 or starts with a byte-order mark:
-    the compilers, the tools and the game all read UTF-8, never a code page."""
+    the compilers, the tools and the game all read UTF-8, never a code page. The fuzz corpus holds
+    malformed inputs on purpose."""
     found = []
-    for f in [f for f in paths if f.endswith(TEXT_SUFFIXES) and (ROOT / f).is_file()]:
+    candidates = [f for f in paths if (ROOT / f).is_file() and not f.startswith("tests/fuzz/corpus/")]
+    for f in text_files(candidates):
         data = (ROOT / f).read_bytes()
         if data.startswith(codecs.BOM_UTF8):
             found.append(f"{f}: starts with a byte-order mark")
