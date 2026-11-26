@@ -336,10 +336,14 @@ TEST_CASE("an end one tile from a sector border routes no dearer than through th
     CHECK(route.cost == 128);
 }
 
-/// A search over the open map of the pop-order test, with what it must cost, settle and relax, named for why it is there.
-struct TiedSearch {
+/// A search the pop-order test pins, with what it must cost, settle and relax, named for why it is there.
+struct PinnedSearch {
     /// Why the search is a sample.
     const char* name = "";
+    /// Whether it runs on the hand-drawn map rather than the open one.
+    bool hand = false;
+    /// The profile whose graph it searches.
+    core::ProfileIndex profile = core::WALKING;
     /// Where it starts.
     core::TilePoint from;
     /// Where it ends.
@@ -352,10 +356,11 @@ struct TiedSearch {
     u32 relaxed = 0;
 };
 
-TEST_CASE("a search pops equal keys lowest node first") {
-    // Meadow costs the same everywhere, so most keys tie; popping ties in another order settles and relaxes other nodes,
-    // which these counts catch even where the route stays the same.
-    const core::WorldMap map = MustBuild(Source(
+TEST_CASE("a search pops the least key first, equal keys lowest node first") {
+    // Popping in another order settles and relaxes other nodes, which these counts catch even where the route stays the
+    // same. The open map's meadow costs the same everywhere, so most of its keys tie; the hand-drawn map's road, ridge
+    // and danger spread keys out, so betterings move slots between buckets.
+    const core::WorldMap open = MustBuild(Source(
         { "........................",
           ".0......................",
           "........................",
@@ -373,9 +378,10 @@ TEST_CASE("a search pops equal keys lowest node first") {
           "........................",
           "........................" }
     ));
-    const core::RouteGraphs graphs = core::RouteGraphs::Build(map, SMALL_RULES);
-    const core::RouteGraph& graph = graphs.Of(core::WALKING);
-    const std::array<TiedSearch, 6> searches{ {
+    const core::RouteGraphs openGraphs = core::RouteGraphs::Build(open, SMALL_RULES);
+    const core::WorldMap hand = HandMap();
+    const core::RouteGraphs handGraphs = HandGraphs(hand);
+    const std::array<PinnedSearch, 21> searches{ {
         { .name = "from the place to the far corner",
           .from = { .column = 1, .row = 1 },
           .to = { .column = 23, .row = 15 },
@@ -412,11 +418,112 @@ TEST_CASE("a search pops equal keys lowest node first") {
           .cost = 170,
           .popped = 90,
           .relaxed = 139 },
+        { .name = "one step over a sector border, the direct way winning before any pop",
+          .from = { .column = 3, .row = 5 },
+          .to = { .column = 4, .row = 5 },
+          .cost = 10,
+          .popped = 0,
+          .relaxed = 37 },
+        { .name = "from the place into its block, the direct way ending the search",
+          .from = { .column = 1, .row = 1 },
+          .to = { .column = 6, .row = 2 },
+          .cost = 54,
+          .popped = 11,
+          .relaxed = 25 },
+        { .name = "from the place to just past its block, every bettering keeping its bucket",
+          .from = { .column = 1, .row = 1 },
+          .to = { .column = 13, .row = 1 },
+          .cost = 128,
+          .popped = 39,
+          .relaxed = 69 },
+        { .name = "along a row, betterings moving slots down a bucket",
+          .from = { .column = 0, .row = 7 },
+          .to = { .column = 23, .row = 7 },
+          .cost = 238,
+          .popped = 125,
+          .relaxed = 161 },
+        { .name = "down a column on a sector border, the widest tied front",
+          .from = { .column = 11, .row = 0 },
+          .to = { .column = 11, .row = 15 },
+          .cost = 158,
+          .popped = 86,
+          .relaxed = 131 },
+        { .name = "from a sector's corner to a tile on another's border",
+          .from = { .column = 4, .row = 4 },
+          .to = { .column = 19, .row = 11 },
+          .cost = 178,
+          .popped = 112,
+          .relaxed = 150 },
+        { .name = "three diagonal steps over a sector corner",
+          .from = { .column = 10, .row = 10 },
+          .to = { .column = 13, .row = 13 },
+          .cost = 42,
+          .popped = 7,
+          .relaxed = 59 },
+        { .name = "along the map's east edge",
+          .from = { .column = 23, .row = 15 },
+          .to = { .column = 23, .row = 0 },
+          .cost = 158,
+          .popped = 38,
+          .relaxed = 63 },
+        { .name = "along the road between two places, few keys",
+          .hand = true,
+          .from = { .column = 2, .row = 2 },
+          .to = { .column = 34, .row = 4 },
+          .cost = 133,
+          .popped = 10,
+          .relaxed = 42 },
+        { .name = "from a place onto a gate's tile",
+          .hand = true,
+          .from = { .column = 2, .row = 2 },
+          .to = { .column = 24, .row = 2 },
+          .cost = 88,
+          .popped = 7,
+          .relaxed = 39 },
+        { .name = "through the ridge's gap",
+          .hand = true,
+          .from = { .column = 2, .row = 16 },
+          .to = { .column = 20, .row = 12 },
+          .cost = 196,
+          .popped = 24,
+          .relaxed = 46 },
+        { .name = "corner to corner over the road and round the ridge, the most moves between buckets",
+          .hand = true,
+          .from = { .column = 0, .row = 23 },
+          .to = { .column = 39, .row = 0 },
+          .cost = 377,
+          .popped = 61,
+          .relaxed = 116 },
+        { .name = "from open ground onto the road within its block",
+          .hand = true,
+          .from = { .column = 30, .row = 12 },
+          .to = { .column = 34, .row = 4 },
+          .cost = 87,
+          .popped = 8,
+          .relaxed = 51 },
+        { .name = "wary, to the danger's pit through its reach",
+          .hand = true,
+          .profile = WARY,
+          .from = { .column = 20, .row = 12 },
+          .to = { .column = 37, .row = 18 },
+          .cost = 287,
+          .popped = 71,
+          .relaxed = 96 },
+        { .name = "wary, from the road's start to below the danger",
+          .hand = true,
+          .profile = WARY,
+          .from = { .column = 2, .row = 2 },
+          .to = { .column = 39, .row = 20 },
+          .cost = 287,
+          .popped = 62,
+          .relaxed = 102 },
     } };
     core::RouteScratch scratch;
     std::size_t differing = 0;
     std::string firstDiffering;
-    for (const TiedSearch& search : searches) {
+    for (const PinnedSearch& search : searches) {
+        const core::WorldMap& map = search.hand ? hand : open;
+        const core::RouteGraph& graph = (search.hand ? handGraphs : openGraphs).Of(search.profile);
         const core::GraphRoute route =
             Must(core::FindGraphRoute(map, graph, At(map, search.from), At(map, search.to), scratch));
         const core::SearchCounts counts = scratch.Counts();
