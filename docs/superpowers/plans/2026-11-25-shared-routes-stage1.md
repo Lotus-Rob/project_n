@@ -750,9 +750,40 @@ changes code, each test-first:
 - **S2, S3's storage or S8 goes to the user:** no code here; the user's answer becomes its own plan or task.
 - **Nothing changes code:** the task is the record alone.
 
+**As decided after round 2** (no sector size and gate spacing held the 5%; sector 32 / spacing 4 holds it from three
+sectors out at every scale, recipe and profile; every miss left is a place-to-place pair a few tiles apart; the user
+chose 32/4 plus near-place edges built into the graph). Waves: F1 = 10a; F2 = 10b and 10c at once (10b touches
+`route_graph.*`, 10c `route_search.*` only); then the controller's measuring run, alone.
+
+- [ ] **10a: the new constants** (`implementer: sonnet` · `review: light`). `SECTOR_SIZE = 32`, `GATE_SPACING = 4` in
+  `core/route_graph.hpp`; tests that assumed 16/8 by default say their sizes in their own `RoutingRules` rather than
+  being loosened. The benchmark's distance bands stop following `core::SECTOR_SIZE`: a bench constant of 16 tiles, the
+  unit round 2 measured in, so later runs compare with its tables; the labels name the band in tiles (0-15, 16-47,
+  48-79, 80-143, 144+), and `tests/AGENTS.md` follows if it names them. Gates: `test`, `lint --range`. Commit:
+  `perf(core): route over 32-tile sectors with a gate every 4 tiles`.
+- [ ] **10b: near places' own ways** (`implementer: opus` · `review: full`). `AddPlaceEdges` already walks each place's
+  block once; from that walk the place also gets an edge to every other place of its block, its own sector's and lower
+  sectors' included, so each direction between two near places has its own cheapest way inside its place's block
+  rather than the same tiles walked back at `costBack` or a way kept inside one sector. `RouteGraph::Assemble` takes
+  both edges between a pair; searches, segments and the place table change in nothing but the edges they see;
+  `ROUTING_VERSION` stays at 10a's 2 (one rise a branch); the `placeEdges` and `SectorPlaceEdge` comments say what they now hold. Test first:
+  hand-made maps where (a) two places of one sector are joined most cheaply by a way leaving the sector, and (b) the
+  way back between two places of neighbouring sectors is cheaper than the way there walked back; each fails today
+  (`FindGraphRoute`'s cost over `core::FindRoute`'s) and passes after, both directions, and `PlaceTable::Cost` equals
+  the route's cost for them. Determinism tests unchanged. Gates: `test`, `lint --range`. Commit:
+  `perf(core): join near places by their own cheapest ways`.
+- [ ] **10c: a bucket queue** (`implementer: opus` · `review: full`), as the S6 bullet above: the 50× far p99 at 32/4
+  is 1.17 / 1.38 ms, over half the 2 ms budget. Behind `FindGraphRoute`, same pop order, every search test unchanged;
+  the binary heap's code goes if it loses. Gates: `test`, `lint --range`. Commit: `perf(core): queue route searches
+  in buckets`.
+- [ ] **The measuring run** (the controller, alone, after F2): the benchmark at the new defaults, 3 reps. 10c is kept
+  only if the 50× far p99 is over 10% faster than the heap's (else reverted); 10b's quality: bands 0-15 and 16-47
+  tiles within 5%, and every band still within it; build, memory and search rows inside their budgets. A miss goes to
+  the user.
+
 Then the controller writes stage 1's part of the spec's Outcome (each spike's question, numbers and ruling), with the
 route graph's design review's items left to stage 2: place edges pruned where they pass through another node; segments
 kept once for twin profiles rather than per profile; `SegmentStore::Add` in parallel, or segments in a compact form, as
-S7's numbers say; a map change means the graphs are assembled again, and Goals 2 and 4 are reworded to say so; and a place's
-edge to a place sought only in the lower place's block. The branch then goes to `check`, the final review and the pull
+S7's numbers say; and a map change means the graphs are assembled again, and Goals 2 and 4 are reworded to say so (a
+place's edge to a place sought only in the lower place's block is answered by 10b). The branch then goes to `check`, the final review and the pull
 request.
