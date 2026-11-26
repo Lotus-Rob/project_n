@@ -35,7 +35,7 @@
 - MSVC `C1382` ("the PCH file has been rebuilt since ...obj") after a package's include paths change: XMake rebuilt the PCH but not the objects using it. `pixi run project_n clean --preset windows-msvc` and build again.
 - Leave the tree alone while `check` runs: it lints and builds what is on disk at each step, so a file written meanwhile fails clang-tidy falsely and hides the real failures after it → `cmd_check`.
 - `lint` runs one clang-tidy per unit (`tidy_units`), cached by `tidy_key` (cold rule: main and tags read none); its units are the changed `.cpp` files and those whose XMake records name a changed file (`lint_units`).
-- `reference` runs each case in its own process with its share of the cores and a timeout (`run_references`, `reference_share`, `REFERENCE_CASE_TIMEOUT`).
+- `reference` runs each case in its own process with its share of the cores and a timeout (`run_references`, `reference_share`, `REFERENCE_CASE_TIMEOUT`); a run with no failed case fails on a committed picture no case drew (`orphan_pictures`).
 - XMake takes an ancestor project over the current directory, and `utils.bin2c` still warns in a worktree's shader step ("we are building the project(<main checkout>)…"): benign → `resolve`.
 - `xmake f -v` is on purpose (it serialises package installs) → `configure`. `doctor` exits 3 for "problems found" → `DOCTOR_PROBLEMS`.
 - A worktree outside the repo fails to check out ("smudge filter lfs failed": Git LFS's filter needs Pixi to find `pixi.toml` further up) → `CLONE_CONFIG`.

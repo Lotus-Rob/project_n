@@ -1011,6 +1011,11 @@ def run_reference_case(exe, env, index):
     return result.stdout, result.returncode
 
 
+def orphan_pictures(committed, drawn):
+    """The PNGs committed in `committed` that no case drew into `drawn`, sorted."""
+    return sorted({p.name for p in committed.glob("*.png")} - {p.name for p in drawn.glob("*.png")})
+
+
 def run_references(preset, update=False, quiet=False):
     """Compare a built release's pictures of fixed scenes with tests/reference/, on Mesa's software
     Vulkan (Pixi's lavapipe environment) and without a display: every machine draws the same. Returns every case's
@@ -1042,13 +1047,17 @@ def run_references(preset, update=False, quiet=False):
                                                                  + "; ".join(failed) + "\n")
     if update:
         # Every committed view must be redrawn: a run that crashed part-way would update only some.
-        missing = sorted({p.name for p in (ROOT / "tests" / "reference").glob("*.png")} - {p.name for p in drawn.glob("*.png")})
+        missing = orphan_pictures(ROOT / "tests" / "reference", drawn)
         if missing:
             raise Fail(f"reference: nothing updated; the run didn't draw {', '.join(missing)}")
         for picture in drawn.glob("*.png"):
             shutil.copy(picture, ROOT / "tests" / "reference" / picture.name)
         print("reference: tests/reference/ updated; look at the pictures before committing them")
         return
+    # After the failure check above: a failed case may not have drawn its picture, and that is no orphan.
+    orphans = orphan_pictures(ROOT / "tests" / "reference", drawn)
+    if orphans:
+        raise Fail(f"reference: no case drew {', '.join(orphans)}: delete them or restore their case")
     # Lavapipe draws every case the same to the byte: a passing picture that differs has drifted within the tolerance.
     changed = [p.stem for p in sorted(drawn.glob("*.png"))
                if (ROOT / "tests" / "reference" / p.name).is_file()
