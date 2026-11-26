@@ -53,8 +53,8 @@ This spec sorts all 107 into areas, says for each area what "fixed" means, and s
 
 ## Non-goals
 
-- The other low and info findings outside a medium's cluster. They are a later pass (rule or fix, the user's
-  "every finding" rule), after this work.
+- The other low and info findings outside a medium's cluster: no area closes them; the low and info pass (step 10 of
+  the Order, added by the user 2026-11-26) rules or fixes each.
 - The README §7a rulings that touch no medium finding (affliction refresh, speed as difficulty, `-Wpadded` report, …).
 - Crash dumps (minidumps, crashpad, sentry-native): before external playtests, not now (GD-ROADMAP-SCOPE-08 says the same).
 - Autosave: it is a game-design question; the game-design brainstorm (D1) decides it.
@@ -224,7 +224,9 @@ gamepad window moving, and whether the UI spike (S13) and chunk 8 move earlier.
 
 ## Order
 
-Two tracks run side by side: shared-routes (its own plan, stage 1 now) and this work. Within this work:
+This is the project's what-next order (the user, 2026-11-26): every piece of work after phase 6's merged chunks comes from
+this table, and the backlog's old priority list points here. Two tracks run side by side: shared-routes (its own plan;
+stage 1 is PR #57, stage 2's plan waits for D1 and D2 per decision 4) and this work. Within this work:
 
 | Step | Areas | Needs | Why here |
 |---|---|---|---|
@@ -236,11 +238,15 @@ Two tracks run side by side: shared-routes (its own plan, stage 1 now) and this 
 | 6 | R5b, R7 (spec first), R8 (parallel) | R5 for R5b; R6 for R7 (`core/logic.cpp`); R5b and R7 both touch the tick, so R7 rebases on R5b | R7's spec can be written during step 5 |
 | 7 | R9, R13 (parallel) | R8 for R9; R5 for R13 | |
 | 8 | R10 (spec first) | R8 | its spec can be written during step 7 |
-| 9 | R12 | R1-R11 merged | the docs describe what was built |
-| 10 | D1, then D2, then D4 and D3 | R1-R12 | the review's items 8-10 |
+| 9 | Backlog sweep | R1-R11, R13 merged | walked with the user: each backlog item left after the fold-in below is fixed, parked with its trigger, or dropped; the fixes are grouped into branches by the files they share |
+| 10 | Low and info pass | step 9 | every review finding no area closes ends fixed or ruled, as Goal 1's closings; first a triage table by review file, where a finding in code D2 or D3 will replace is ruled "superseded by D2/D3" rather than patched, then fix branches by area |
+| 11 | R12 | steps 9 and 10 | the docs describe what was built; the backlog's status column (GAP1-SWEEP-UP-BACKLOG-VS-CODE-01, -02) records the sweep's results |
+| 12 | D1, then D2, then D4 and D3 | R1-R12 | the review's items 8-10; shared-routes stage 2 is planned after D1 and D2 |
+| 13 | D5 | the user's hardware | S9 and S10 on D3D12 and Metal |
 
-A spec for the next area may be written while the current one's pull request waits on CI (the root AGENTS.md's "never
-sit idle while CI runs").
+Each area's plan also takes the backlog items assigned to it in "Backlog items folded into the areas" (below), test-first
+where they are bugs. A spec for the next area may be written while the current one's pull request waits on CI (the root
+AGENTS.md's "never sit idle while CI runs").
 
 ## Decisions for the user (all four taken as recommended by the user, 2026-11-25)
 
@@ -443,3 +449,35 @@ Every medium finding, with the area that closes it. Each area's pull request upd
 | GFX-TEXT-01 | R6 | |
 | X-UNTRUSTED-INPUT-05 | R6 | |
 | DATA-YAML-CORE-08 | R8 | |
+
+### Backlog items folded into the areas
+
+Added by the user, 2026-11-26: open items of the project's sweep-up backlog (the project memory) that fit an area's files
+go into that area's plan; the rest wait for the backlog sweep (step 9). An item marked "already" is a finding the area
+closes anyway.
+
+| Backlog item | Area |
+|---|---|
+| Audit 1: quad-index uploads flagged done when recorded | R6, already (GFX-FEATURES-01) |
+| Audit 2: a malformed replay's claimed tick count reserves gigabytes (`ReadTicks`) | R4, with the amplification bounds |
+| Audit 3: `check --sanitizers` reports "every supported sanitizer" though Linux skips windows-msvc's ASan | R11 |
+| Audit 4: keyboard and gamepad casts aim at the mouse cursor | R10, already (the aim model) |
+| Audit 5: the held camera pan ignores focus | R8, with the focus-loss release |
+| Audit 6: `creatures.yaml`'s `walk_speed` is read unranged | R5, through DATA-COMBAT-01's shared ranged reader |
+| Audit 7: scene loading creates a transfer buffer and submit per sprite | R13 |
+| Audit 9: `reference` flags committed pictures with no case only under `--update` | R11 |
+| Audit 11: the travel journal's upper day clamp has no test | R5b |
+| Audit 12: paused frames still animate and re-upload | R7, already |
+| Audit 13: a leg's arrive ticks only asserted to fit u32 | R5b, already (X-CPP-SAFETY-03) |
+| Audit 15: the sight radius doesn't follow a `creatures.yaml` reload | R5 |
+| Cast queued behind the dash | R10, with decision 3's cast buffer |
+| Seal sprites checked only against the manifest, not the scene's list | R5 |
+| YAML alias amplification in unknown-key warnings | R5 |
+| `core/journey.hpp` includes `core/calendar.hpp` only its .cpp needs | R5b |
+| Split `renderer.cpp`'s world-map upload block into its own file | R6 |
+| A stopped build leaves 0-byte binaries XMake treats as up to date | R11 |
+| `reference_tests.cpp`'s `RendererFor` parses the manifest up to four times | R11 |
+| Reference drift guard: pictures drift within tolerance unnoticed | R11, with audit 9 |
+| `measure` counts `SubmitFrame`'s GPU wait as main-thread work | R13 |
+| The main-thread hitch after a month step (a measured spike first) | R13 |
+| Localisation to industry practice | D3, with the data-driven sweep, before chunk 6 |
