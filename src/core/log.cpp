@@ -41,10 +41,30 @@ std::atomic<quill::Logger*>& Started() {
     return logger;
 }
 
+#ifdef _WIN32
+/// The launching terminal's console output code page, which exit puts back: the console outlives
+/// the game, so a code page left at UTF-8 would change how the terminal shows the next program.
+u32& OriginalConsoleCodePage() {
+    static u32 codePage = 0;
+    return codePage;
+}
+
+void RestoreConsoleCodePage() noexcept {
+    SetConsoleOutputCP(OriginalConsoleCodePage());
+}
+#endif
+
 /// Quill writes UTF-8; the Windows console shows it as text only in its UTF-8 output code page.
-/// Every logger that reaches the console calls this first.
+/// Every logger that reaches the console calls this first, and before Quill's backend starts, so
+/// the restore at exit runs after the backend's final flush (exit handlers run in reverse).
 void UseUtf8Console() {
 #ifdef _WIN32
+    static const bool registered = [] {
+        // Zero: no console, so nothing to change now or to restore.
+        OriginalConsoleCodePage() = GetConsoleOutputCP();
+        return OriginalConsoleCodePage() != 0 && std::atexit(RestoreConsoleCodePage) == 0;
+    }();
+    static_cast<void>(registered);
     SetConsoleOutputCP(CP_UTF8);
 #endif
 }
