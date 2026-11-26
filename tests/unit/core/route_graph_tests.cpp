@@ -101,7 +101,7 @@ u32 WalkedBy(const core::WorldMap& map, core::ProfileIndex profile, const std::v
 enum class EdgeKind : u8 {
     Inside,   ///< A way inside one sector.
     Crossing, ///< A step over a border.
-    Block,    ///< A place's way to a node of a sector round its own.
+    Block,    ///< A place's way found inside its block, to a node round its sector or a place of its own.
 };
 
 /// What `graph` names its edge `edge`.
@@ -578,7 +578,7 @@ TEST_CASE("a place's block edges join it to every node of the sectors round its 
     CHECK(joined == round);
 }
 
-TEST_CASE("two places in each other's blocks share one edge, the lower sector's") {
+TEST_CASE("two places in each other's blocks each have their own edge to the other") {
     // City 0 in sector 0 and city 1 in sector 1, each in the other's block.
     const core::WorldMap map = MustBuild(Source({ "........", ".0...1..", "........", "........" }));
     const core::RouteGraphs graphs = core::RouteGraphs::Build(map, RULES);
@@ -591,8 +591,11 @@ TEST_CASE("two places in each other's blocks share one edge, the lower sector's"
             joining.push_back(way);
         }
     }
-    // Four meadow steps east each way.
-    CHECK(joining == std::vector<core::GraphEdge>{ { .from = first, .to = second, .cost = 40, .costBack = 40, .sector = 0 } });
+    // Four meadow steps east, and four back west.
+    CHECK(
+        joining == std::vector<core::GraphEdge>{ { .from = first, .to = second, .cost = 40, .costBack = 40, .sector = 0 },
+                                                 { .from = second, .to = first, .cost = 40, .costBack = 40, .sector = 1 } }
+    );
 }
 
 } // namespace

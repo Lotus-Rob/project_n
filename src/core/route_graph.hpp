@@ -161,11 +161,12 @@ struct SectorCrossing {
     [[nodiscard]] friend constexpr bool operator==(const SectorCrossing&, const SectorCrossing&) = default;
 };
 
-/// A way from one of a sector's places to a node of a sector round it: the cheapest inside the place's block.
+/// A way from one of a sector's places to a node of a sector round it or to another place of its own sector: the
+/// cheapest inside the place's block.
 struct SectorPlaceEdge {
     /// The place's index in SectorGraph::nodes, where the way starts.
     u16 place = 0;
-    /// The other node's tile, in one of the sectors round the place's.
+    /// The other node's tile: in one of the sectors round the place's, or another place of its own.
     u32 tile = 0;
     /// What walking the way from the place costs: the cheapest inside the block.
     u32 cost = 0;
@@ -185,8 +186,9 @@ struct SectorGraph {
     std::vector<SectorEdge> edges;
     /// The steps over the east and south borders, by (node, east before south).
     std::vector<SectorCrossing> crossings;
-    /// The ways from each place to every node of the sectors round its own, by (place, tile); none to a place of a lower
-    /// sector, whose own ways reach this one.
+    /// The ways from each place to every node of the sectors round its own and to every other place of its own, by
+    /// (place, tile). Two places near each other each have their own way to the other, so each direction costs its own
+    /// cheapest.
     std::vector<SectorPlaceEdge> placeEdges;
 
     /// Whether all are equal.
@@ -205,7 +207,7 @@ struct SectorGraph {
 );
 
 /// A way between two nodes of a route graph: inside one sector, a step over a border onto the node beside it, or a
-/// place's way to a node of a sector round its own (a block edge).
+/// place's way to a node of a sector round its own or to another place of its own sector (a block edge).
 struct GraphEdge {
     /// The node where the way starts: the lower one, but a block edge's place.
     u32 from = 0;
@@ -272,7 +274,8 @@ public:
     [[nodiscard]] std::span<const GraphEdge> Edges() const;
     /// Whether edge `edge` is a step over a border onto the node beside it, rather than a walked way.
     [[nodiscard]] bool IsCrossing(u32 edge) const;
-    /// Whether edge `edge` is a place's way to a node of a sector round its own.
+    /// Whether edge `edge` is a place's way found inside its block: to a node of a sector round its own, or to another
+    /// place of its own sector.
     [[nodiscard]] bool IsBlockEdge(u32 edge) const;
     /// The tiles of `map`, the graph's map, that edge `edge`'s way was found in: its place's block for a block edge,
     /// else its sector.
