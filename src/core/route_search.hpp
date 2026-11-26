@@ -67,7 +67,9 @@ class RouteScratch;
 /// of its block by the cheapest way inside that block, each priced in the direction walked. A route between two places
 /// uses the graph alone; otherwise, when the end lies in the start's block, the cheapest way inside that block is the
 /// route unless the graph's is strictly cheaper. It reads the map and the graph only, so threads may search at once,
-/// each with its own `scratch`.
+/// each with its own `scratch`. It relies on every edge's cost and costBack being a walk of StepCost steps, so never
+/// less than the estimate falls along it: its queue takes keys only in rising order and settles each node once. An edge
+/// cheaper than that breaks the search, and only debug and releasedbg builds catch it.
 [[nodiscard]] std::optional<GraphRoute> FindGraphRoute(
     const WorldMap& map,
     const RouteGraph& graph,
@@ -118,7 +120,7 @@ private:
     /// The cost so far of `slot`, or UNREACHABLE if this search hasn't reached it.
     [[nodiscard]] u32 CostOf(u32 slot) const;
     /// Sets `slot`'s way to `cost`, by `via`, queued by `key`, if it betters what this search had for it. `key` is at
-    /// least the key of every slot settled so far.
+    /// least the queue's least key.
     void Offer(u32 slot, u32 cost, u64 key, u32 via);
     /// Offers node `node` the way of `cost` by `via`, queued by that cost plus its estimate to the end.
     void OfferNode(const WorldMap& map, const RouteGraph& graph, const Ends& ends, u32 node, u64 cost, u32 via);
