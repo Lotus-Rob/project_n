@@ -1,4 +1,5 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/path_text.hpp"
 #include "platform/paths.hpp"
 
 #include <SDL3/SDL.h>
@@ -33,7 +34,7 @@ TEST_CASE("SDL3_ttf opens the game's font with its Chinese and Latin glyphs") {
     const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
     const std::string why = assets.error_or(core::Error{}).message;
     REQUIRE_MESSAGE(assets, why);
-    const std::string file = (*assets / "fonts" / "NotoSansSC-Regular.otf").string();
+    const std::string file = core::PathText(*assets / "fonts" / "NotoSansSC-Regular.otf");
     {
         const std::unique_ptr<TTF_Font, FontCloser> font{ TTF_OpenFont(file.c_str(), POINT_SIZE) };
         const std::string error = SDL_GetError();

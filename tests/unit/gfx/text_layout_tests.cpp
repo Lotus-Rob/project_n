@@ -1,6 +1,7 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/jobs.hpp"
 #include "core/names.hpp"
+#include "core/path_text.hpp"
 #include "core/strings.hpp"
 #include "data/strings.hpp"
 #include "gfx/text_layout.hpp"
@@ -78,7 +79,7 @@ struct Ink {
 
 Ink InkOf(u32 character) {
     REQUIRE(TTF_Init());
-    const std::string file = (Assets() / "fonts" / FONT_FILE).string();
+    const std::string file = core::PathText(Assets() / "fonts" / FONT_FILE);
     Ink ink{};
     {
         const std::unique_ptr<TTF_Font, FontCloser> font{ TTF_OpenFont(file.c_str(), gfx::SDF_BASE_PIXELS) };
@@ -93,7 +94,7 @@ Ink InkOf(u32 character) {
 // The shaping font's line height at the base size, in pixels.
 f32 LineHeight() {
     REQUIRE(TTF_Init());
-    const std::string file = (Assets() / "fonts" / FONT_FILE).string();
+    const std::string file = core::PathText(Assets() / "fonts" / FONT_FILE);
     f32 height = 0.0F;
     {
         const std::unique_ptr<TTF_Font, FontCloser> font{ TTF_OpenFont(file.c_str(), gfx::SDF_BASE_PIXELS) };
@@ -102,6 +103,18 @@ f32 LineHeight() {
     }
     TTF_Quit();
     return height;
+}
+
+TEST_CASE("the font opens from a folder named outside the ANSI code page") {
+    const std::filesystem::path folder = std::filesystem::temp_directory_path() / u8"project_n_font_项目_é_🎮";
+    std::filesystem::remove_all(folder);
+    std::filesystem::create_directories(folder);
+    std::filesystem::copy_file(Assets() / "fonts" / FONT_FILE, folder / FONT_FILE);
+    const std::expected<gfx::TextLayout, core::Error> layout = gfx::TextLayout::Open(folder);
+    const std::string error = layout.error_or(core::Error{}).message;
+    std::error_code ignored;
+    std::filesystem::remove_all(folder, ignored);
+    REQUIRE_MESSAGE(layout, error);
 }
 
 TEST_CASE("a text is laid out once, and each of its glyphs rasterised once") {

@@ -3,6 +3,7 @@
 #include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
+#include "core/path_text.hpp"
 #include "core/profile.hpp"
 #include "core/thread_safety.hpp"
 #include "gfx/internal/gpu.hpp"
@@ -449,7 +450,7 @@ std::expected<TextLayout, core::Error> TextLayout::Open(const std::filesystem::p
         return std::unexpected{ core::Error{ std::format("SDL3_ttf didn't start: {}", SDL_GetError()) } };
     }
     loaded->library.open = true;
-    const std::string file = (fonts / FONT_FILE).string();
+    const std::string file = core::PathText(fonts / FONT_FILE);
     loaded->shaping.reset(TTF_OpenFont(file.c_str(), SDF_BASE_PIXELS));
     bool opened = loaded->shaping != nullptr;
     {
