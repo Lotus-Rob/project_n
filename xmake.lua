@@ -17,6 +17,13 @@ rule("sanitizer")
         if sanitizer and sanitizer ~= "none" then
             target:set("policy", "build.sanitizer." .. sanitizer, true)
         end
+        -- gcc's -fsanitize=undefined leaves out float-cast-overflow (clang's includes it): add it, or
+        -- a float too big for its integer type converts silently.
+        if sanitizer == "undefined" and get_config("toolchain") == "pixi-gcc" then
+            target:add("cxflags", "-fsanitize=float-cast-overflow", {force = true})
+            target:add("ldflags", "-fsanitize=float-cast-overflow", {force = true})
+            target:add("shflags", "-fsanitize=float-cast-overflow", {force = true})
+        end
         -- The build the fuzz targets exist in (tests/xmake.lua): coverage hooks in our code too, so
         -- libFuzzer is guided through the readers it fuzzes, not only through the target's own file.
         if sanitizer == "address" and is_plat("linux") and get_config("toolchain") == "pixi-clang" then
