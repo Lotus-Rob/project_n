@@ -61,16 +61,16 @@ struct SearchCounts {
 class RouteScratch;
 
 /// The route from `from` to `target` over `graph`, the graph of its profile over `map`; none when `target` can't be
-/// entered or reached, or when the route would cost UNREACHABLE or more, as costs are counted in 32 bits (no map the game
-/// makes holds one). An end on a place that is a node starts or ends there alone: the graph's ways from a place already
-/// reach every node of its block. Any other start, a gate's tile included, reaches every node of its block (its sector
-/// and the up to eight round it) by the cheapest way kept inside the block, and any other end is reached from every node
-/// of its block by the cheapest way inside that block, each priced in the direction walked. A route between two places
-/// uses the graph alone; otherwise, when the end lies in the start's block, the cheapest way inside that block is the
-/// route unless the graph's is strictly cheaper. It reads the map and the graph only, so threads may search at once,
-/// each with its own `scratch`. It relies on every edge's cost and costBack being a walk of StepCost steps, so never
-/// less than the estimate falls along it: its queue takes keys only in rising order and settles each node once. An edge
-/// cheaper than that breaks the search, and only debug and releasedbg builds catch it.
+/// entered or reached, when `from` holds a place the profile can't enter (it has no node), or when the route would cost
+/// UNREACHABLE or more, as costs are counted in 32 bits (no map the game makes holds one). An end on a place that is a
+/// node starts or ends there alone: the graph's ways from a place already reach every node of its block. Any other start, a
+/// gate's tile included, reaches every node of its block (its sector and the up to eight round it) by the cheapest way kept
+/// inside the block, and any other end is reached from every node of its block by the cheapest way inside that block, each
+/// priced in the direction walked. A route between two places uses the graph alone; otherwise, when the end lies in the start's
+/// block, the cheapest way inside that block is the route unless the graph's is strictly cheaper. It reads the map and the
+/// graph only, so threads may search at once, each with its own `scratch`. It relies on every edge's cost and costBack being a
+/// walk of StepCost steps, so never less than the estimate falls along it: its queue takes keys only in rising order and
+/// settles each node once. An edge cheaper than that breaks the search, and only debug and releasedbg builds catch it.
 [[nodiscard]] std::optional<GraphRoute> FindGraphRoute(
     const WorldMap& map,
     const RouteGraph& graph,
