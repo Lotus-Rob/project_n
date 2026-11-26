@@ -1,5 +1,6 @@
 #include "data/internal/yaml.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/path_text.hpp"
 #include "core/tick_clock.hpp"
 
 namespace data::internal {
@@ -7,11 +8,11 @@ namespace data::internal {
 std::expected<std::string, core::Error> ReadText(const std::filesystem::path& path) {
     std::ifstream input{ path, std::ios::binary };
     if (!input) {
-        return std::unexpected{ core::Error{ std::format("couldn't open {}", path.string()) } };
+        return std::unexpected{ core::Error{ std::format("couldn't open {}", core::PathText(path)) } };
     }
     std::string text{ std::istreambuf_iterator<char>{ input }, std::istreambuf_iterator<char>{} };
     if (input.bad()) {
-        return std::unexpected{ core::Error{ std::format("couldn't read {}", path.string()) } };
+        return std::unexpected{ core::Error{ std::format("couldn't read {}", core::PathText(path)) } };
     }
     return text;
 }
@@ -21,7 +22,7 @@ std::expected<void, core::Error> WriteText(const std::filesystem::path& path, st
     output.write(text.data(), static_cast<std::streamsize>(text.size()));
     output.flush();
     if (!output) {
-        return std::unexpected{ core::Error{ std::format("couldn't write {}", path.string()) } };
+        return std::unexpected{ core::Error{ std::format("couldn't write {}", core::PathText(path)) } };
     }
     return {};
 }

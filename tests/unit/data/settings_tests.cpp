@@ -8,8 +8,8 @@ namespace {
 // A folder of its own under the system's temporary folder, removed when the test ends.
 class Scratch {
 public:
-    explicit Scratch(std::string_view name)
-      : m_folder{ std::filesystem::temp_directory_path() / std::format("project_n_settings_tests_{}", name) } {
+    explicit Scratch(const std::filesystem::path& name)
+      : m_folder{ std::filesystem::temp_directory_path() / (std::filesystem::path{ "project_n_settings_tests_" } += name) } {
         std::filesystem::remove_all(m_folder);
         std::filesystem::create_directories(m_folder);
     }
@@ -243,6 +243,18 @@ TEST_CASE("an edge_pan that isn't a boolean keeps its default with a warning") {
     CHECK(settings->edgePan);
     REQUIRE(warnings.size() == 1);
     CHECK(warnings[0] == "settings line 1: edge_pan is true or false, not maybe; true is used");
+}
+
+TEST_CASE("settings are written and read back in a folder named outside the ANSI code page") {
+    constexpr i32 WIDTH = 1234;
+    const Scratch scratch{ u8"项目_é_🎮" };
+    const core::Settings defaults = data::LoadSettings(scratch.File());
+    CHECK(std::filesystem::exists(scratch.File()));
+    CHECK(defaults.windowWidth == core::Settings{}.windowWidth);
+    core::Settings changed = defaults;
+    changed.windowWidth = WIDTH;
+    REQUIRE(data::SaveSettings(scratch.File(), changed).has_value());
+    CHECK(data::LoadSettings(scratch.File()).windowWidth == WIDTH);
 }
 
 } // namespace
