@@ -188,13 +188,15 @@ platform::Window OpenWindow() {
 // seals.yaml's looks (a scene's portal among them) and, for the world, the NPCs' names from names.yaml, as the game
 // draws them.
 gfx::Renderer RendererFor(platform::Window& window, core::SceneId scene, core::Jobs& jobs) {
-    std::expected<core::Strings, core::Error> strings = data::LoadStrings(Assets() / "data");
-    const std::string stringsWhy = strings.error_or(core::Error{}).message;
-    REQUIRE_MESSAGE(strings.has_value(), stringsWhy);
-    const std::shared_ptr<const core::Strings> shippedStrings = std::make_shared<const core::Strings>(std::move(*strings));
+    const std::shared_ptr<const core::Strings> strings = [] {
+        std::expected<core::Strings, core::Error> loaded = data::LoadStrings(Assets() / "data");
+        const std::string why = loaded.error_or(core::Error{}).message;
+        REQUIRE_MESSAGE(loaded.has_value(), why);
+        return std::make_shared<const core::Strings>(std::move(*loaded));
+    }();
     const std::shared_ptr<const core::Manifest> manifest = test::TestManifest();
     std::expected<gfx::Renderer, core::Error> renderer =
-        gfx::Renderer::Create(window, Assets(), manifest, shippedStrings, {}, core::UiColours{}, false);
+        gfx::Renderer::Create(window, Assets(), manifest, strings, {}, core::UiColours{}, false);
     const std::string rendererWhy = renderer.error_or(core::Error{}).message;
     REQUIRE_MESSAGE(renderer.has_value(), rendererWhy);
     renderer->SetSeals(test::ShippedSeals());
@@ -202,7 +204,7 @@ gfx::Renderer RendererFor(platform::Window& window, core::SceneId scene, core::J
     if (manifest->SceneNamed(game::SceneName(game::WORLD_SCENE)) == std::optional{ scene }) {
         renderer->SetNames(test::ShippedNames());
     }
-    const std::shared_ptr<const core::WorldMap> world = test::ShippedWorld(*shippedStrings);
+    const std::shared_ptr<const core::WorldMap> world = test::ShippedWorld(*strings);
     renderer->SetWorld(world, test::ShippedWorldLook(*manifest, *world));
     renderer->BeginScene(scene, jobs);
     std::expected<bool, core::Error> held = false;
