@@ -18,6 +18,7 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
 - `unit/pch.hpp` holds every standard header the tests use: test `.cpp` files never include standard headers (`lint` fails on one). Fuzz targets and the benchmark take the game's `src/pch.hpp` instead.
 - A new area is one line in `tests/xmake.lua`: `unit_tests("<area>_tests", "unit/<area>/*.cpp", "<module>")`; it links the module (default `core`) and runs Windows builds under Wine on Linux.
 - `tests/bench/headless.cpp` is the headless benchmark (`headless_bench`): built with the tests, not registered as one, run on request optimised; fails over its 2-worker budgets → its file header.
+- `tests/bench/routing.cpp` is the routing benchmark (`routing_bench`, over `tests/support/synthetic_map.hpp`'s maps): built with the tests, not registered, run on request, alone, never a gate; exits 1 over its scale budgets or a route 5% over the cheapest → its file header.
 - `tests/reference/` compares pictures of fixed scenes with the committed PNGs beside it: `reference_tests`, not registered as a test (needs a GPU); `project_n reference` runs it on software Vulkan → `tests/reference/reference_tests.cpp` header.
 - A change to shaders, sprites or a scene's layout that moves pixels needs `reference --update`, a look at the new pictures and the PNGs in the same commit → `.claude/skills/look-at-the-game/references/reference-pictures.md`.
 - A reference test never hangs: every wait or search loop has a bound that fails loudly, naming what never happened (`SCENE_LOAD_LIMIT_NS`, `MOST_TICKS_AFTER_CAST`); whole cases are bounded by `REFERENCE_CASE_TIMEOUT` in tools/project_n.py.
@@ -29,6 +30,7 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
 
 ## Commands
 - `pixi run project_n test --mode release --target headless_bench`: tick, publish and month-step times of the stress arena; exits 1 over a gate
+- `pixi run project_n test --mode release --target routing_bench [-- --scales 1,10,50 --places N --gate-spacing N --fresh-scratch ...]`: route graph, search and quality numbers; flags in its header
 - `pixi run project_n test --preset linux-clang --sanitizer address` (also `run --sanitizer ...` for the game)
 - `pixi run project_n reference` · `pixi run project_n reference --update`: take this run's pictures as the references
 - `pixi run project_n fuzz <name> [--time 60]`: new inputs and crash files land in `build/fuzz/<name>/`

@@ -1,3 +1,13 @@
 /// @defgroup core core
 /// Value types, pure functions and the facades every other module builds on: the frame contract,
 /// timing, the handover between threads, logging and profiling. Links no SDL.
+///
+/// @par Routing
+/// Routes between any two tiles over sectors, whole numbers with fixed tie-breaks (not used by the game yet):
+/// - `core/route_graph.hpp`: the map cut into sectors, each sector's graph of gates and places per profile
+///   (`BuildSector`, `SectorWalk`), and the graph of the whole map (`RouteGraph`, `RouteGraphs`, `ROUTING_VERSION`).
+/// - `core/route_search.hpp`: `FindGraphRoute`, an A* over a graph with the route's ends joined to their blocks, and the
+///   `RouteScratch` workspace.
+/// - `core/place_table.hpp`: `PlaceTable`, each city's cost to every place in reach, and `ReachBound`.
+/// - `core/segments.hpp`: `SegmentStore`, the tiles, costs and walk marks of the edges routes use, made once.
+/// - `core/paths.hpp`: the distance maps and `FindRoute`, the cheapest route the graph's routes are compared with.

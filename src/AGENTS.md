@@ -23,7 +23,7 @@ The YAML tables, hashed or presentation, and what reads each → `assets/AGENTS.
 - Comments in `.cpp` files only explain why, or a complexity the code can't show; never restate what the code does. No comment cites a spec, chunk, phase, plan, ruling, task or design doc (`lint` fails on one): say why in your words.
 - A comment directly above a function, method, lambda-holding variable or helper type that states its contract (returns, inputs' ranges, promises) is `///` Doxygen; one that only restates the body goes; a comment on what a constant or data table holds is its documentation and stays.
 - The arena (`game/scenes/arena.hpp`) is the growing demo scene: a new game or engine feature shows up in it, in the same branch, and joins the header's list.
-- Rules true only in `gfx` or `game`: `gfx/AGENTS.md`, `game/AGENTS.md`.
+- Rules true only in one module: `core/AGENTS.md`, `gfx/AGENTS.md`, `game/AGENTS.md`.
 - Third-party code: xmake-repo packages at exact versions, never vendored into `src/`.
 - `src/<module>/generated/` holds headers that `shaders` and `atlas` write (shader binaries, sprite names): never edit them by hand; `fmt` and `lint` skip them, and `lint` fails when they are stale.
 - A new module adds its directory's `module.dox`, an XMake target with `add_deps` on the modules below it, and its commit scope to `SCOPES` in tools/project_n.py.

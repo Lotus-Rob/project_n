@@ -1,8 +1,25 @@
-// The routing benchmark: builds every profile's route graph and place tables over the synthetic maps and reports the
-// builds' time, their memory and their counts; times the searches of a trip model and between far pairs, sizes the
-// segments the trips use, and compares the searches' costs with the cheapest routes'. It fails over a budget or over 5%
-// worse than the cheapest. Run it optimised, on a machine with nothing else running:
-// `pixi run project_n test --mode release --target routing_bench [-- <flags>]`, the flags are listed in FLAG_LIST.
+// The routing benchmark (`routing_bench`): for each scale of the synthetic maps (tests/support/synthetic_map.hpp) it
+// - builds every profile's route graph and place table (the table within the travel rules' reach bound, bounded and
+//   unbounded ones apart) on the job system, best of 5, and prints their times, memory and counts;
+// - times the searches of a trip model (each city to its 20 nearest places) and of random pairs in bands of sector
+//   distance (0, 1-2, 3-4, 5-8, 9+), place to place and with a tile end, each alone: p99, mean, nodes settled;
+// - makes the segments the trips use and sizes them with the routes;
+// - compares the routes' costs with core::FindRoute's cheapest on 20 maps and on two hostile ones (all meadow, wide
+//   biomes with a danger reach of 16): the worst route over the cheapest and the worst pair of each band.
+// It exits 1 over a budget (graph and place tables: 20 ms, 1 MB at 1x, 0.2 s, 10 MB at 10x, 1 s, 50 MB at 50x; one
+// place-to-place search's p99 in the far band: 0.1, 0.5, 2 ms; segments and routes of the trip model: 2, 20, 100 MB)
+// or when a route costs over 5% more than the cheapest. Run it optimised, on request and alone, never as a gate:
+// `pixi run project_n test --mode release --target routing_bench [-- <flags>]`. Flags:
+// --scales 1,10,50      the scales to run
+// --sector N            a sector's side in tiles (default 16)
+// --gate-spacing N      the longest stretch of a border one gate serves (default 8)
+// --workers N           the job system's workers (default 4)
+// --seed N              the maps' seed
+// --chunk N             sectors a chunk builds
+// --places N            places on each map instead of the scale's own
+// --no-share            build every profile's sectors, none copied from another profile
+// --fresh-scratch       every timed search gets a new workspace instead of one kept and warmed
+// --single-segments     make the trip model's segments one edge at a time instead of in one call
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/jobs.hpp"
 #include "core/log.hpp"
