@@ -267,8 +267,11 @@ TEST_CASE("Paths builds a map once and keeps it") {
     CHECK(paths.To(0, core::WALKING).Goal() == 0);
 }
 
+/// Two tiles of a route whose estimate is checked.
 struct EstimatePair {
+    /// The tile the route starts on.
     u32 from;
+    /// The tile it ends on.
     u32 to;
 };
 
@@ -282,9 +285,11 @@ TEST_CASE("the step estimate never exceeds a route's cost") {
                                                    { .from = 3, .to = 35 },
                                                    { .from = 36, .to = 2 },
                                                    { .from = 20, .to = 23 } } };
+    std::size_t unrouted = 0;
+    std::size_t over = 0;
     for (const EstimatePair& pair : PAIRS) {
         const std::vector<u32> route = core::FindRoute(map, core::WALKING, pair.from, pair.to);
-        REQUIRE_FALSE(route.empty());
+        unrouted += route.empty() ? 1 : 0;
         const core::TilePoint from = map.PointOf(pair.from);
         const core::TilePoint goal = map.PointOf(pair.to);
         const u64 estimate = core::StepEstimate(
@@ -292,8 +297,10 @@ TEST_CASE("the step estimate never exceeds a route's cost") {
             static_cast<i64>(goal.column) - static_cast<i64>(from.column),
             static_cast<i64>(goal.row) - static_cast<i64>(from.row)
         );
-        CHECK(estimate <= Walked(map, route));
+        over += !route.empty() && estimate > Walked(map, route) ? 1 : 0;
     }
+    CHECK(unrouted == 0);
+    CHECK(over == 0);
 
     core::MovementProfile blocked = profile;
     blocked.kindCosts.assign(blocked.kindCosts.size(), core::IMPASSABLE_COST);
