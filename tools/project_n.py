@@ -1222,10 +1222,16 @@ def design_references(path, text):
             if DESIGN_REFERENCE_RE.search(body)]
 
 
+def git_names(*args):
+    """The paths of a git command that lists them (`-z` is added): raw, where core.quotePath would
+    print a non-ASCII name quoted and octal-escaped."""
+    return [name for name in capture(["git", *args, "-z"]).split("\0") if name]
+
+
 def design_reference_findings(files=None):
     """Findings in the given files, or in every tracked and unignored file of the repository."""
     if files is None:
-        files = capture(["git", "ls-files", "--cached", "--others", "--exclude-standard"]).splitlines()
+        files = git_names("ls-files", "--cached", "--others", "--exclude-standard")
     found = []
     for f in design_reference_files(sorted(set(files))):
         if (ROOT / f).is_file():
@@ -1255,8 +1261,7 @@ def changed_files(rng):
     if not base:
         return None  # the base isn't in this clone (a force-pushed CI range): cover everything
     # Deleted and renamed-away paths count: deleting a nested .clang-tidy changes other files' results.
-    return set(capture(["git", "diff", "--name-only", "--no-renames", base]).splitlines()
-               + capture(["git", "ls-files", "--others", "--exclude-standard"]).splitlines())
+    return set(git_names("diff", "--name-only", "--no-renames", base) + git_names("ls-files", "--others", "--exclude-standard"))
 
 
 def scoped_sources(args):
@@ -1394,7 +1399,7 @@ def path_strings(sources):
 def text_files(paths):
     """The paths git treats as text: neither its content looks binary (`i/-text`) nor its attributes
     mark it binary (`-text`) or LFS-tracked, whose working-tree file is the binary the index holds a
-    pointer for. Two git calls for all paths."""
+    pointer for; an untracked file counts as binary by its working-tree content (`w/-text`). Two git calls for all paths."""
     paths = sorted(paths)
     if not paths:
         return []
@@ -1403,8 +1408,13 @@ def text_files(paths):
                                 input=names, capture_output=True, encoding="utf-8").stdout.split("\0")
     excluded = {path for path, name, value in zip(attributes[0::3], attributes[1::3], attributes[2::3], strict=False)
                 if (name == "text" and value == "unset") or (name == "filter" and value == "lfs")}
-    listed = capture(["git", "ls-files", "--eol", "-z"]).split("\0")
-    excluded |= {entry.split("\t", 1)[1] for entry in listed if "\t" in entry and entry.startswith("i/-text")}
+    # The index's entries and the untracked files (empty i/ field): a new binary is not text either.
+    listed = git_names("ls-files", "--eol", "--cached", "--others", "--exclude-standard")
+    for entry in listed:
+        info, _, path = entry.partition("\t")
+        fields = info.split()
+        if path and (fields[:1] == ["i/-text"] or fields[:2] == ["i/", "w/-text"]):
+            excluded.add(path)
     return [f for f in paths if f not in excluded]
 
 
@@ -2218,6 +2228,11 @@ def cmd_lint(args):
         return reenter(LINT_PRESET, ["lint", *(["--fix"] if args.fix else []), *(["--all"] if args.all else []),
                                      *(["--range", rng] if rng else [])])
     sources, changed = scoped_sources(args)
+    # First: the steps below read files as strict UTF-8 and would fail on a bad one with a traceback.
+    encoded = non_utf8_files(git_names("ls-files") if changed is None else sorted(changed))
+    if encoded:
+        raise Fail("these files are not UTF-8 or start with a byte-order mark; every text file is UTF-8 without one:\n"
+                   + "\n".join(encoded))
     referencing = design_reference_findings(None if changed is None else sorted(changed))
     if referencing:
         raise Fail("\n".join(referencing))
@@ -2252,9 +2267,6 @@ def cmd_lint(args):
     if paths:
         raise Fail("paths become text through core::PathText (core/path_text.hpp): path::string() uses the Windows ANSI "
                    "code page and throws outside it:\n" + "\n".join(paths))
-    encoded = non_utf8_files(capture(["git", "ls-files"]).splitlines() if changed is None else sorted(changed))
-    if encoded:
-        raise Fail("files are UTF-8 without a byte-order mark:\n" + "\n".join(encoded))
     check_api_docs(sources)
     if unequal_shader_pins():
         raise Fail(f"pin {', '.join(unequal_shader_pins())} to one version for linux-64 and win-64 in pixi.toml: "

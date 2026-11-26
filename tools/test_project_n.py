@@ -1881,6 +1881,41 @@ class NonUtf8FilesTest(unittest.TestCase):
             self.assertEqual(project_n.non_utf8_files(["assets/a.dat", "tests/fuzz/corpus/yaml/seed", "x.bin", "assets/zero"]), [])
 
 
+class NonUtf8ListingTest(unittest.TestCase):
+    """The listings behind the UTF-8 check give raw names and tell untracked binaries apart."""
+    NAME = "src/caf\u00e9.cpp"
+
+    def test_a_non_ascii_name_is_found_by_the_whole_repo_listing(self):
+        with temp_repo({self.NAME: b"auto s = \"caf\xe9\";\n"}):
+            self.assertEqual(project_n.git_names("ls-files"), [self.NAME])
+            found = project_n.non_utf8_files(project_n.git_names("ls-files"))
+            self.assertEqual([f.split(":")[0] for f in found], [self.NAME])
+
+    def test_a_non_ascii_name_is_found_by_changed_files(self):
+        with temp_repo({"src/a.cpp": "a"}) as root:
+            (root / self.NAME).write_bytes(b"caf\xe9\n")
+            (root / "src" / "b\u00e9.cpp").write_text("b", encoding="utf-8")
+            git(root, "add", "src/b\u00e9.cpp")
+            changed = project_n.changed_files(None)
+            self.assertEqual(changed, {self.NAME, "src/b\u00e9.cpp"})
+            self.assertEqual([f.split(":")[0] for f in project_n.non_utf8_files(sorted(changed))], [self.NAME])
+
+    def test_an_untracked_binary_is_not_reported(self):
+        with temp_repo({"src/a.cpp": "a"}) as root:
+            (root / "assets").mkdir()
+            (root / "assets" / "new.dat").write_bytes(b"\x00\xe9\xff")
+            (root / "assets" / "new.txt").write_bytes(b"caf\xe9\n")
+            found = project_n.non_utf8_files(sorted(project_n.changed_files(None)))
+            self.assertEqual([f.split(":")[0] for f in found], ["assets/new.txt"])
+
+    def test_lint_reports_a_non_utf8_source_before_any_step_that_decodes_it(self):
+        with temp_repo({"src/a.cpp": b"auto s = \"caf\xe9\";\n"}):
+            args = project_n.argparse.Namespace(container=False, fix=False, all=True, range=None)
+            with mock.patch.object(project_n, "IN_CONTAINER", True), self.assertRaises(project_n.Fail) as raised:
+                project_n.cmd_lint(args)
+            self.assertIn("src/a.cpp: not valid UTF-8", str(raised.exception))
+
+
 class StandardIncludeTest(unittest.TestCase):
     def test_a_standard_include_in_a_source_is_reported(self):
         with temp_repo({"src/game.cpp": '#include "core/log.hpp"\n#include <vector>\n'}):
