@@ -1,13 +1,14 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/frame.hpp"
 #include "core/instances.hpp"
-#include "core/jobs.hpp"
 #include "core/state.hpp"
 #include "game/combat.hpp"
 #include "game/components.hpp"
 #include "game/host.hpp"
 #include "game/npcs.hpp"
+#include "support/host.hpp"
 #include "support/manifest.hpp"
+#include "support/same.hpp"
 #include "support/seals.hpp"
 
 #include <doctest/doctest.h>
@@ -18,19 +19,21 @@ namespace {
 constexpr core::CombatRules RULES{};
 
 using core::atlas::SpriteId;
+using test::At;
+using test::FootOf;
+using test::FOX_HEALTH;
+using test::Foxes;
+using test::NearTheCrystal;
+using test::PublishedAt;
+using test::SameEvents;
 
 constexpr std::size_t FOXES = 12;
 constexpr i64 CULTIVATOR_HEALTH = 1'000;
-constexpr i64 FOX_HEALTH = 1'200;
 constexpr u64 AURA_TICK = 60;
 constexpr core::Rect GROUND{ .min = {}, .max = { .x = 1'920.0F, .y = 1'080.0F } };
 constexpr f32 ON_THE_EDGE = 1e-3F;
 constexpr u32 DISSOLVED = 0xFFFFU;
 constexpr u32 HALF_BITS = 16;
-
-core::TickCounters At(u64 tick) {
-    return { .wall = tick, .simulation = tick, .state = tick };
-}
 
 // Ticks `host` from `first` to `last`, holding nothing, ignoring its events.
 void Run(game::Host& host, u64 first, u64 last) {
@@ -41,15 +44,6 @@ void Run(game::Host& host, u64 first, u64 last) {
     }
 }
 
-// What `host` publishes at simulation tick `tick`.
-core::Snapshot Published(game::Host& host, u64 tick) {
-    core::Jobs jobs{ 1 };
-    core::Snapshot snapshot;
-    snapshot.simulationTick = tick;
-    host.Publish(snapshot, jobs, std::nullopt);
-    return snapshot;
-}
-
 const core::Registry& Entities(const game::Host& host) {
     return host.State()[game::ACTIVE].Entities();
 }
@@ -58,23 +52,8 @@ core::Entity EntityOf(const game::Host& host, core::StableId stableId) {
     return host.State()[game::ACTIVE].Find(stableId);
 }
 
-std::vector<core::StableId> Foxes(const game::Host& host) {
-    std::vector<core::StableId> foxes;
-    for (auto [entity, creature, stable] : Entities(host).view<const game::Creature, const core::StableId>().each()) {
-        if (creature.kind == game::CreatureKind::Fox) {
-            foxes.push_back(stable);
-        }
-    }
-    std::ranges::sort(foxes);
-    return foxes;
-}
-
 game::Health HealthOf(const game::Host& host, core::StableId stableId) {
     return Entities(host).get<game::Health>(EntityOf(host, stableId));
-}
-
-core::Vec2 FootOf(const game::Host& host, core::StableId stableId) {
-    return Entities(host).get<game::Body>(EntityOf(host, stableId)).current;
 }
 
 f32 Distance(core::Vec2 start, core::Vec2 end) {
@@ -100,18 +79,6 @@ TEST_CASE("every creature starts at its kind's health") {
         CHECK(HealthOf(host, fox).current == FOX_HEALTH);
         CHECK(HealthOf(host, fox).max == FOX_HEALTH);
     }
-}
-
-// Game data that walks the cultivator to 100 units from the crystal in one tick and circles the foxes 300 units round
-// it, which puts some of them in the aura's reach (as the arena's aura tests have it).
-core::GameData NearTheCrystal() {
-    constexpr f32 WALK_SPEED = 440.0F;
-    constexpr f32 FOX_ORBIT = 300.0F;
-    core::GameData data = game::BuiltInData();
-    data.cultivator.walkSpeed = WALK_SPEED;
-    data.fox.orbitRadius = FOX_ORBIT;
-    data.fox.orbitWobble = 0.0F;
-    return data;
 }
 
 // The arena near the crystal, the player walked to it on tick 1 and damaged by `wound` at tick 2, ticked to the aura's
@@ -272,7 +239,7 @@ TEST_CASE("a dying fox carries no ID, label or health bar") {
             Run(host, tick, tick);
         }
         INFO("tick ", tick);
-        const core::Snapshot snapshot = Published(host, tick);
+        const core::Snapshot snapshot = PublishedAt(host, tick);
         const std::optional<std::size_t> drawn = FoxInstanceAt(snapshot, FootOf(host, fox));
         REQUIRE(drawn.has_value());
         CHECK(snapshot.ids.at(drawn.value_or(0)) == core::StableId{});
@@ -302,7 +269,7 @@ TEST_CASE("the selection clears when the selected fox is removed") {
     host.Damage(fox, FOX_HEALTH, DEATH);
     Run(host, DEATH + 1, DEATH + RULES.dyingTicks - 1);
     CHECK(host.Selected() == fox);
-    CHECK_FALSE(Published(host, DEATH + RULES.dyingTicks - 1).selected.has_value()); // a dying fox isn't outlined
+    CHECK_FALSE(PublishedAt(host, DEATH + RULES.dyingTicks - 1).selected.has_value()); // a dying fox isn't outlined
     Run(host, DEATH + RULES.dyingTicks, DEATH + RULES.dyingTicks);
     CHECK(host.Selected() == core::StableId{});
 }
@@ -351,7 +318,7 @@ TEST_CASE("each living enemy in a combat scene reports its health over its head"
     const std::vector<core::StableId> foxes = Foxes(host);
     host.Damage(foxes.at(0), WOUND, TICK);
     host.Damage(foxes.at(1), FOX_HEALTH, TICK);
-    const core::Snapshot snapshot = Published(host, TICK);
+    const core::Snapshot snapshot = PublishedAt(host, TICK);
     CHECK(snapshot.healthBars.size() == FOXES - 1);
     CHECK_FALSE(std::ranges::contains(snapshot.healthBars, host.Player(), &core::HealthBar::entity));
     CHECK_FALSE(std::ranges::contains(snapshot.healthBars, foxes.at(1), &core::HealthBar::entity));
@@ -368,7 +335,7 @@ TEST_CASE("each living enemy in a combat scene reports its health over its head"
     }
 
     game::Host stress(test::TestManifest(), game::STRESS_SCENE);
-    CHECK(Published(stress, 0).healthBars.empty());
+    CHECK(PublishedAt(stress, 0).healthBars.empty());
 }
 
 TEST_CASE("new game data sets a creature's most health, keeping what it has up to it") {
@@ -638,7 +605,7 @@ TEST_CASE("new game data with a lower most Qi lowers the Qi held to it") {
 TEST_CASE("a casting player's state is published in a combat scene only") {
     game::Host host(test::TestManifest());
     CastAt(host, 1, core::Slot::Generator);
-    const core::Snapshot snapshot = Published(host, 1);
+    const core::Snapshot snapshot = PublishedAt(host, 1);
     REQUIRE(snapshot.caster.has_value());
     const core::CasterView view = snapshot.caster.value_or(core::CasterView{});
     CHECK(view.qi == QI_START + BOLT_GAIN);
@@ -648,7 +615,7 @@ TEST_CASE("a casting player's state is published in a combat scene only") {
     CHECK(view.readyTick.at(std::to_underlying(core::Slot::Generator)) == 1 + BOLT_COOLDOWN);
     CHECK(view.loadout.at(std::to_underlying(core::Slot::Spender)) == core::AbilityKind::PoisonLance);
     game::Host painted(test::TestManifest(), game::PAINTED_SCENE);
-    CHECK_FALSE(Published(painted, 1).caster.has_value());
+    CHECK_FALSE(PublishedAt(painted, 1).caster.has_value());
 }
 
 TEST_CASE("a cast's use ID carries the slot") {
@@ -770,7 +737,7 @@ std::vector<core::Event> StampedCast(game::Host& host, u64 tick, core::Slot slot
 
 // The only volley `host` publishes at `tick`.
 core::VolleyView OnlyVolley(game::Host& host, u64 tick) {
-    const core::Snapshot snapshot = Published(host, tick);
+    const core::Snapshot snapshot = PublishedAt(host, tick);
     REQUIRE(snapshot.volleys.size() == 1);
     return snapshot.volleys.empty() ? core::VolleyView{} : snapshot.volleys.front();
 }
@@ -905,7 +872,7 @@ TEST_CASE("each tick's hits are the swords arriving then whose target was alive 
     game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(FRAIL));
     const Aimed ready = ReadySwords(host, FRAIL, 2, 1);
     StampedCast(host, CAST, core::Slot::Special1, ready.point);
-    core::Snapshot before = Published(host, CAST);
+    core::Snapshot before = PublishedAt(host, CAST);
     REQUIRE(before.volleys.size() == 1);
     const core::Volley volley = before.volleys.front().volley;
     const u64 last = core::LastArrival(volley);
@@ -940,7 +907,7 @@ TEST_CASE("each tick's hits are the swords arriving then whose target was alive 
             }
             hitsTaken.at(index) += hits;
         }
-        before = Published(host, tick);
+        before = PublishedAt(host, tick);
         if (before.volleyTargets.size() != 2) {
             ++wrongDeath;
             continue;
@@ -974,7 +941,7 @@ TEST_CASE("two volleys on the same targets each end once, at their own last arri
     std::vector<core::Event> events = StampedCast(host, CAST, core::Slot::Special1, point);
     std::ranges::move(Play(host, CAST + 1, SECOND - 1), std::back_inserter(events));
     std::ranges::move(StampedCast(host, SECOND, core::Slot::Special1, point), std::back_inserter(events));
-    const core::Snapshot snapshot = Published(host, SECOND);
+    const core::Snapshot snapshot = PublishedAt(host, SECOND);
     REQUIRE(snapshot.volleys.size() == 2);
     REQUIRE(snapshot.volleys.front().volley.use != snapshot.volleys.back().volley.use);
     const u64 firstLast = core::LastArrival(snapshot.volleys.front().volley);
@@ -997,7 +964,7 @@ TEST_CASE("with none tagged, the swords strike the point and emit nothing but th
     game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
     Run(host, 1, CAST - 1);
     std::vector<core::Event> events = StampedCast(host, CAST, core::Slot::Special1, NOWHERE);
-    const core::Snapshot snapshot = Published(host, CAST);
+    const core::Snapshot snapshot = PublishedAt(host, CAST);
     REQUIRE(snapshot.volleys.size() == 1);
     REQUIRE(snapshot.volleyTargets.size() == 1);
     CHECK(snapshot.volleyTargets.front().entity == core::StableId{});
@@ -1109,7 +1076,7 @@ TEST_CASE("the bolt strikes the tagged enemy nearest the point") {
     const f32 bolt = game::BuiltInData().abilities.table.at(FIRE_BOLT).radius;
     REQUIRE(Distance(point, firstChest) < bolt); // both are tagged
     std::vector<core::Event> events = StampedCast(host, CAST, core::Slot::Generator, point);
-    const core::Snapshot snapshot = Published(host, CAST);
+    const core::Snapshot snapshot = PublishedAt(host, CAST);
     REQUIRE(snapshot.volleyTargets.size() == 1);
     CHECK(snapshot.volleyTargets.front().entity == second);
     const u64 arrival = core::ArrivalTick(OnlyVolley(host, CAST).volley, 0);
@@ -1126,7 +1093,7 @@ TEST_CASE("the snapshot carries each volley and its targets") {
     game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
     const Aimed ready = ReadySwords(host, AMPLE, TAGGED);
     StampedCast(host, CAST, core::Slot::Special1, ready.point);
-    const core::Snapshot snapshot = Published(host, CAST);
+    const core::Snapshot snapshot = PublishedAt(host, CAST);
     REQUIRE(snapshot.volleys.size() == 1);
     const core::VolleyView& view = snapshot.volleys.front();
     CHECK(view.ability == core::AbilityKind::FlyingSwords);
@@ -1180,7 +1147,7 @@ TEST_CASE("a scene change mid-volley ends every open use") {
     Run(host, 1, SWORDS_CAST - 1);
     const core::StableId fox = Foxes(host).front();
     std::vector<core::Event> events = StampedCast(host, SWORDS_CAST, core::Slot::Special1, ChestOf(host, fox));
-    const core::Snapshot cast = Published(host, SWORDS_CAST);
+    const core::Snapshot cast = PublishedAt(host, SWORDS_CAST);
     REQUIRE_FALSE(cast.volleys.empty());
     const core::Volley& swordsCast = cast.volleys.back().volley;
     REQUIRE(swordsCast.shape.waves >= 2);
@@ -1193,7 +1160,7 @@ TEST_CASE("a scene change mid-volley ends every open use") {
     const u64 boltCast = swordsEnd - (BURN_TICKS * RULES.afflictionPeriod);
     std::ranges::move(Play(host, SWORDS_CAST + 1, boltCast - 1), std::back_inserter(events));
     std::ranges::move(StampedCast(host, boltCast, core::Slot::Generator, ChestOf(host, fox)), std::back_inserter(events));
-    const core::Snapshot boltCastSnapshot = Published(host, boltCast);
+    const core::Snapshot boltCastSnapshot = PublishedAt(host, boltCast);
     const auto boltVolley =
         std::ranges::find(boltCastSnapshot.volleys, core::AbilityKind::FireBolt, &core::VolleyView::ability);
     REQUIRE(boltVolley != boltCastSnapshot.volleys.end());
@@ -1202,7 +1169,7 @@ TEST_CASE("a scene change mid-volley ends every open use") {
     REQUIRE(arrival < changeTick);
     REQUIRE((changeTick - arrival) % RULES.afflictionPeriod != 0); // the burn between its ticks
     std::ranges::move(Play(host, boltCast + 1, changeTick - 1), std::back_inserter(events));
-    const core::Snapshot before = Published(host, changeTick - 1);
+    const core::Snapshot before = PublishedAt(host, changeTick - 1);
     const auto inFlight = std::ranges::find(before.volleys, core::AbilityKind::FlyingSwords, &core::VolleyView::ability);
     REQUIRE(inFlight != before.volleys.end());
     std::vector<u32> due = WavesDueAfter(inFlight->volley, changeTick);
@@ -1224,22 +1191,13 @@ TEST_CASE("a scene change mid-volley ends every open use") {
     CHECK(CountKind(OfUse(events, swords), core::EventKind::UseEnded) == 0);
     const std::vector<core::Event> boltBefore = OfUse(events, bolt);
     CHECK(boltBefore.size() == BURN_TICKS); // its hit and every tick of its burn but the last
-    const core::Snapshot snapshot = Published(host, changeTick);
+    const core::Snapshot snapshot = PublishedAt(host, changeTick);
     CHECK(snapshot.volleys.empty());
     CHECK(snapshot.volleyTargets.empty());
     // To the last tick either use had an event due on, had the scene stayed.
     const std::vector<core::Event> later = Play(host, changeTick + 1, std::max(burnEnd, swordsEnd));
     CHECK(OfUse(later, bolt).empty());
     CHECK(OfUse(later, swords).empty());
-}
-
-// Whether two runs' events are the same, field by field.
-bool SameEvents(const std::vector<core::Event>& lhs, const std::vector<core::Event>& rhs) {
-    return std::ranges::equal(lhs, rhs, [](const core::Event& one, const core::Event& two) {
-        return one.tick == two.tick && one.kind == two.kind && one.hit == two.hit && one.use == two.use &&
-               one.target == two.target && one.value == two.value &&
-               std::bit_cast<u64>(one.position) == std::bit_cast<u64>(two.position);
-    });
 }
 
 TEST_CASE("new game data leaves a volley in flight as it was cast") {
@@ -1280,7 +1238,7 @@ TEST_CASE("new game data leaves a volley in flight as it was cast") {
     // The next cast takes the new data.
     const core::StableId fox = reloaded.tagged.front();
     StampedCast(reloadedHost, last + 2, core::Slot::Generator, ChestOf(reloadedHost, fox));
-    const core::Snapshot boltCast = Published(reloadedHost, last + 2);
+    const core::Snapshot boltCast = PublishedAt(reloadedHost, last + 2);
     REQUIRE_FALSE(boltCast.volleys.empty());
     const u64 arrival = core::ArrivalTick(boltCast.volleys.back().volley, 0); // the swords still fading before it
     const std::vector<core::Event> hits =
@@ -1420,7 +1378,7 @@ TEST_CASE("the lance's flash carries its element and fades after its ticks") {
     game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
     const Aimed ready = ReadyLance(host, 1);
     StampedCast(host, CAST, core::Slot::Spender, ready.point);
-    const core::Snapshot cast = Published(host, CAST);
+    const core::Snapshot cast = PublishedAt(host, CAST);
     REQUIRE(cast.flashes.size() == 1);
     CHECK(cast.flashes.front().point.x == ready.point.x);
     CHECK(cast.flashes.front().point.y == ready.point.y);
@@ -1429,9 +1387,9 @@ TEST_CASE("the lance's flash carries its element and fades after its ticks") {
     CHECK(cast.volleys.empty()); // a strike, not a volley
 
     Run(host, CAST + 1, CAST + RULES.flashTicks - 1);
-    CHECK(Published(host, CAST + RULES.flashTicks - 1).flashes.size() == 1);
+    CHECK(PublishedAt(host, CAST + RULES.flashTicks - 1).flashes.size() == 1);
     Run(host, CAST + RULES.flashTicks, CAST + RULES.flashTicks);
-    CHECK(Published(host, CAST + RULES.flashTicks).flashes.empty());
+    CHECK(PublishedAt(host, CAST + RULES.flashTicks).flashes.empty());
 }
 
 TEST_CASE("the lance's flash survives a save") {
@@ -1449,7 +1407,7 @@ TEST_CASE("the lance's flash survives a save") {
     REQUIRE(loaded.Load(reader, SAVED_AT));
     loaded.EnterScene(); // as the logic does at the swap
     CHECK(loaded.StateHash() == host.StateHash());
-    const core::Snapshot snapshot = Published(loaded, SAVED_AT);
+    const core::Snapshot snapshot = PublishedAt(loaded, SAVED_AT);
     REQUIRE(snapshot.flashes.size() == 1);
     CHECK(snapshot.flashes.front().point.x == ready.point.x);
     CHECK(snapshot.flashes.front().point.y == ready.point.y);
@@ -1458,7 +1416,7 @@ TEST_CASE("the lance's flash survives a save") {
     Run(host, SAVED_AT + 1, CAST + RULES.flashTicks);
     Run(loaded, SAVED_AT + 1, CAST + RULES.flashTicks);
     CHECK(loaded.StateHash() == host.StateHash());
-    CHECK(Published(loaded, CAST + RULES.flashTicks).flashes.empty());
+    CHECK(PublishedAt(loaded, CAST + RULES.flashTicks).flashes.empty());
 }
 
 // The seals: the flying swords raise one under their rings.
@@ -1475,14 +1433,14 @@ bool SameSeal(const core::Seal& lhs, const core::Seal& rhs) {
 
 // How many seals raised in play `host` publishes at `tick` (test::RaisedSeals()).
 std::size_t RaisedAt(game::Host& host, u64 tick) {
-    return test::RaisedSeals(Published(host, tick)).size();
+    return test::RaisedSeals(PublishedAt(host, tick)).size();
 }
 
 TEST_CASE("casting the swords raises one seal at the cast point until the last sword leaves") {
     game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
     const core::Vec2 point = ReadyBolt(host);
     StampedCast(host, CAST, core::Slot::Special1, point);
-    const core::Snapshot cast = Published(host, CAST);
+    const core::Snapshot cast = PublishedAt(host, CAST);
     REQUIRE(cast.volleys.size() == 1);
     const std::vector<core::Seal> raised = test::RaisedSeals(cast);
     REQUIRE(raised.size() == 1);
@@ -1510,7 +1468,7 @@ TEST_CASE("an ability without a seal raises none") {
     game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
     const core::Vec2 point = ReadyBolt(host);
     StampedCast(host, CAST, core::Slot::Generator, point);
-    const core::Snapshot snapshot = Published(host, CAST);
+    const core::Snapshot snapshot = PublishedAt(host, CAST);
     CHECK(snapshot.volleys.size() == 1);
     const std::vector<core::Seal> raised = test::RaisedSeals(snapshot);
     CHECK(raised.empty());
@@ -1520,7 +1478,7 @@ TEST_CASE("a seal survives a save and load mid-formation") {
     game::Host host(test::TestManifest(), game::ARENA_SCENE, Gathered(AMPLE));
     const core::Vec2 point = ReadyBolt(host);
     StampedCast(host, CAST, core::Slot::Special1, point);
-    const core::Snapshot cast = Published(host, CAST);
+    const core::Snapshot cast = PublishedAt(host, CAST);
     const std::vector<core::Seal> raisedAtCast = test::RaisedSeals(cast);
     REQUIRE(raisedAtCast.size() == 1);
     const core::Seal& raised = raisedAtCast.front();
@@ -1535,7 +1493,7 @@ TEST_CASE("a seal survives a save and load mid-formation") {
     REQUIRE(loaded.Load(reader, savedAt));
     loaded.EnterScene(); // as the logic does at the swap
     CHECK(loaded.StateHash() == host.StateHash());
-    const core::Snapshot snapshot = Published(loaded, savedAt);
+    const core::Snapshot snapshot = PublishedAt(loaded, savedAt);
     const std::vector<core::Seal> raisedLoaded = test::RaisedSeals(snapshot);
     REQUIRE(raisedLoaded.size() == 1);
     const bool same = SameSeal(raisedLoaded.front(), raised);
@@ -1679,10 +1637,10 @@ TEST_CASE("the data's combat rules set the lance's burst and its poison's period
             events.push_back(event);
         }
         if (tick == CAST + FLASH - 1) {
-            CHECK(Published(host, tick).flashes.size() == 1);
+            CHECK(PublishedAt(host, tick).flashes.size() == 1);
         }
         if (tick == CAST + FLASH) {
-            CHECK(Published(host, tick).flashes.empty());
+            CHECK(PublishedAt(host, tick).flashes.empty());
         }
     }
     constexpr u64 USE = game::CastUse(CAST, core::Slot::Spender);

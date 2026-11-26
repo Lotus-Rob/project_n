@@ -10,12 +10,14 @@
 #include "core/world_map.hpp"
 #include "game/npcs.hpp"
 #include "game/travel.hpp"
+#include "support/same.hpp"
 #include "support/world.hpp"
 
 #include <doctest/doctest.h>
 
 namespace {
 
+using test::SamePoint;
 using test::small::DESTINATION;
 using test::small::FORD_COST;
 using test::small::HOME;
@@ -589,11 +591,6 @@ std::vector<core::StableId> Residents(core::State& state, u32 count, u32 tile, u
         npcs.push_back(game::SpawnNpc(state, tile, home, power));
     }
     return npcs;
-}
-
-/// Whether `lhs` and `rhs` have the same bits, as determinism means.
-bool SamePoint(core::Vec2 lhs, core::Vec2 rhs) {
-    return std::bit_cast<u32>(lhs.x) == std::bit_cast<u32>(rhs.x) && std::bit_cast<u32>(lhs.y) == std::bit_cast<u32>(rhs.y);
 }
 
 /// The month of visits from `monthStart`, on one worker.
