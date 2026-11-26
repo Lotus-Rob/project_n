@@ -7,6 +7,7 @@ Standard library only. See tools/AGENTS.md.
 import argparse
 import ast
 import bisect
+import codecs
 import collections
 import concurrent.futures
 import dataclasses
@@ -1390,6 +1391,26 @@ def path_strings(sources):
     return found
 
 
+# Tracked files that are text, by extension: the others (images, fonts, shader binaries) are bytes.
+TEXT_SUFFIXES = (".cpp", ".hpp", ".h", ".c", ".hlsl", ".hlsli", ".lua", ".py", ".yaml", ".yml", ".toml", ".md", ".json")
+
+
+def non_utf8_files(paths):
+    """`"<file>: <why>"` for each text file that is not valid UTF-8 or starts with a byte-order mark:
+    the compilers, the tools and the game all read UTF-8, never a code page."""
+    found = []
+    for f in [f for f in paths if f.endswith(TEXT_SUFFIXES) and (ROOT / f).is_file()]:
+        data = (ROOT / f).read_bytes()
+        if data.startswith(codecs.BOM_UTF8):
+            found.append(f"{f}: starts with a byte-order mark")
+            continue
+        try:
+            data.decode("utf-8")
+        except UnicodeDecodeError as e:
+            found.append(f"{f}: not valid UTF-8 (byte {e.start})")
+    return found
+
+
 def bypassed_facades(sources):
     """Lines in src/ that go around a facade: all output goes through PN_LOG_*, and Quill, Tracy,
     EnTT and enkiTS are included only by their facade (FACADES) and its .cpp, so each library is
@@ -2216,6 +2237,9 @@ def cmd_lint(args):
     if paths:
         raise Fail("paths become text through core::PathText (core/path_text.hpp): path::string() uses the Windows ANSI "
                    "code page and throws outside it:\n" + "\n".join(paths))
+    encoded = non_utf8_files(capture(["git", "ls-files"]).splitlines() if changed is None else sorted(changed))
+    if encoded:
+        raise Fail("files are UTF-8 without a byte-order mark:\n" + "\n".join(encoded))
     check_api_docs(sources)
     if unequal_shader_pins():
         raise Fail(f"pin {', '.join(unequal_shader_pins())} to one version for linux-64 and win-64 in pixi.toml: "
