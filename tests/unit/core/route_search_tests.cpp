@@ -1,6 +1,7 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/jobs.hpp"
 #include "core/paths.hpp"
+#include "core/place_table.hpp"
 #include "core/random.hpp"
 #include "core/route_graph.hpp"
 #include "core/route_search.hpp"
@@ -397,6 +398,89 @@ TEST_CASE("routes on a synthetic map cost within 5% of the cheapest, each way") 
         CHECK(missing == 0);
         CHECK(worst <= 0);
     }
+}
+
+/// Sectors of 8 with one gate a border run, so a way between near places seldom passes a node of its own accord.
+constexpr core::RoutingRules NEAR_RULES{ .sectorSize = 8, .gateSpacing = 8 };
+/// What entering marsh costs, the terrain a test adds to the hand-drawn kinds.
+constexpr u16 MARSH_COST = 20;
+
+/// What one direction between two places costs: by the graph's route, by the cheapest route and in the place table.
+struct NearCosts {
+    /// The route's cost.
+    u32 route = 0;
+    /// What core::FindRoute's route costs.
+    u32 cheapest = 0;
+    /// The place table's cost.
+    u32 table = 0;
+};
+
+/// The costs from place `from` to place `target` of `map`, both cities, over `graph`.
+NearCosts CostsBetween(const core::WorldMap& map, const core::RouteGraph& graph, u16 from, u16 target) {
+    const u32 start = At(map, map.Places()[from].tile);
+    const u32 end = At(map, map.Places()[target].tile);
+    const core::GraphRoute route = Must(Fresh(map, graph, start, end));
+    CHECK(Walkable(map, graph, route, start, end));
+    return { .route = route.cost,
+             .cheapest = Cost(map, graph.Profile(), core::FindRoute(map, graph.Profile(), start, end)),
+             .table = core::PlaceTable::Build(map, graph).Cost(from, target) };
+}
+
+TEST_CASE("two places of one sector are joined by their cheapest way, one leaving the sector") {
+    // Cities 0 and 1 stand in sector 0 by its east border; the road beside them runs down sector 1, so the cheapest way
+    // steps over onto it and back, far from the border's one gate at the top.
+    const core::WorldMap map = MustBuild(Source(
+        { "........=...",
+          ".......0=...",
+          "........=...",
+          "........=...",
+          "........=...",
+          "........=...",
+          ".......1=...",
+          "........=..." }
+    ));
+    const core::RouteGraphs graphs = core::RouteGraphs::Build(map, NEAR_RULES);
+    const core::RouteGraph& graph = graphs.Of(core::WALKING);
+    REQUIRE(core::SectorOf(map, NEAR_RULES, At(map, 7, 1)) == core::SectorOf(map, NEAR_RULES, At(map, 7, 6)));
+    const NearCosts there = CostsBetween(map, graph, 0, 1);
+    const NearCosts back = CostsBetween(map, graph, 1, 0);
+    // A diagonal onto the road (5), three road tiles (12) and a diagonal off it (14), each way.
+    CHECK(there.cheapest == 31);
+    CHECK(back.cheapest == 31);
+    CHECK(there.route == there.cheapest);
+    CHECK(back.route == back.cheapest);
+    CHECK(there.table == there.route);
+    CHECK(back.table == back.route);
+}
+
+TEST_CASE("the way back between near places of neighbouring sectors is its own cheapest, not the way there walked back") {
+    // City 0 stands on marsh in sector 0, city 1 at the road's end in sector 1. The way there leaves the marsh by a
+    // diagonal onto the road; walked back, that diagonal enters the marsh (28), where the way back takes one more road
+    // tile and enters it straight (4 + 20).
+    core::WorldMapSource source = Source(
+        { "0.........", "=========1", "..........", "..........", "..........", "..........", "..........", ".........." }
+    );
+    source.kinds.push_back({ .name = "marsh", .symbol = '~', .cost = MARSH_COST });
+    source.grid[0] = static_cast<u8>(source.kinds.size() - 1);
+    const core::WorldMap map = MustBuild(std::move(source));
+    const core::RouteGraphs graphs = core::RouteGraphs::Build(map, NEAR_RULES);
+    const core::RouteGraph& graph = graphs.Of(core::WALKING);
+    const u32 first = At(map, 0, 0);
+    const u32 second = At(map, 9, 1);
+    REQUIRE(core::SectorOf(map, NEAR_RULES, first) + 1 == core::SectorOf(map, NEAR_RULES, second));
+    std::vector<u32> walkedBack = core::FindRoute(map, core::WALKING, first, second);
+    std::ranges::reverse(walkedBack);
+    const NearCosts there = CostsBetween(map, graph, 0, 1);
+    const NearCosts back = CostsBetween(map, graph, 1, 0);
+    // The diagonal onto the road (5), seven road tiles (28) and the city's meadow (10); back, eight road tiles (32), the
+    // one below the marsh (4) and the marsh (20).
+    CHECK(there.cheapest == 43);
+    CHECK(back.cheapest == 56);
+    CHECK(Cost(map, core::WALKING, walkedBack) == 60);
+    CHECK(there.route == there.cheapest);
+    CHECK(back.route == back.cheapest);
+    CHECK(there.table == there.route);
+    CHECK(back.table == back.route);
 }
 
 } // namespace

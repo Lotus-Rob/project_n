@@ -146,8 +146,8 @@ void CollectNodes(
     nodes.erase(repeats.begin(), repeats.end());
 }
 
-/// Adds to `graph`, sector `sector`'s, the ways from each of its places to every node of the sectors round it, found
-/// inside the block; a place of a lower sector is left out, as its own ways reach this sector's places.
+/// Adds to `graph`, sector `sector`'s, the ways from each of its places to every node of the sectors round it and to
+/// every other place of its own, found inside the block.
 void AddPlaceEdges(
     const WorldMap& map,
     ProfileIndex profile,
@@ -177,19 +177,22 @@ void AddPlaceEdges(
         nodes.clear();
         unused.clear();
         CollectNodes(map, profile, rules, round, nodes, unused);
-        for (const u32 tile : nodes) {
-            if (round > sector || map.PlaceAt(tile) == NO_PLACE) {
-                others.push_back(tile);
-            }
-        }
+        others.insert(others.end(), nodes.begin(), nodes.end());
     });
+    // Each place also gets its own way to every other place near it, whichever sector lists that one: the other's way
+    // walked back may cost more than the cheapest way back, and a way kept inside one sector may miss a cheaper one
+    // stepping out of it.
+    for (const u16 place : places) {
+        others.push_back(graph.nodes[place]);
+    }
     std::ranges::sort(others);
     const TileSpan block = BlockSpan(map, rules, sector);
     std::vector<u32> way;
     for (const u16 place : places) {
-        walk.WalkFrom(map, profile, block, graph.nodes[place]);
+        const u32 own = graph.nodes[place];
+        walk.WalkFrom(map, profile, block, own);
         for (const u32 tile : others) {
-            const u32 cost = walk.Cost(tile);
+            const u32 cost = tile == own ? UNREACHABLE : walk.Cost(tile);
             if (cost == UNREACHABLE) {
                 continue;
             }
@@ -504,7 +507,7 @@ void RouteGraph::AppendSector(u32 sector, const SectorGraph& built) {
     m_firstBlockEdge.push_back(static_cast<u32>(m_edges.size()));
     for (const SectorPlaceEdge& edge : built.placeEdges) {
         const u32 other = NodeAt(edge.tile);
-        PN_ASSERT(other != NO_NODE, "a place's block edge ends on a node of a sector round it");
+        PN_ASSERT(other != NO_NODE, "a place's block edge ends on a node of its block");
         if (other == NO_NODE) {
             continue;
         }
