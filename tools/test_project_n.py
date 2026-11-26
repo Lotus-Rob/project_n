@@ -745,6 +745,35 @@ class ReferenceTest(unittest.TestCase):
         self.references(update=True, committed=["a.png"], case=lambda index: ("", 0), draws={"a.png": b"drawn"})
         self.assertNotIn("changed", self.out)
 
+    def test_orphan_pictures_are_the_committed_names_no_case_drew_sorted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            committed, drawn = Path(tmp) / "committed", Path(tmp) / "drawn"
+            for folder, names in ((committed, ["z.png", "a.png", "kept.png", "notes.txt"]), (drawn, ["kept.png", "new.png"])):
+                folder.mkdir()
+                for name in names:
+                    (folder / name).write_bytes(b"x")
+            self.assertEqual(project_n.orphan_pictures(committed, drawn), ["a.png", "z.png"])
+            self.assertEqual(project_n.orphan_pictures(committed, committed), [])
+
+    def test_a_passing_run_fails_on_committed_pictures_no_case_drew(self):
+        with self.assertRaises(project_n.Fail) as raised:
+            self.references(update=False, committed=["b.png", "a.png", "c.png"], case=lambda index: ("", 0),
+                            draws={"c.png": b"committed"})
+        self.assertEqual(str(raised.exception), "reference: no case drew a.png, b.png: delete them or restore their case")
+
+    def test_a_failed_case_is_reported_alone_never_as_an_orphan_too(self):
+        with self.assertRaises(subprocess.CalledProcessError) as raised:  # case 2 failed before drawing b.png
+            self.references(update=False, committed=["a.png", "b.png"], case=lambda index: ("", 1 if index == 2 else 0),
+                            draws={"a.png": b"committed"})
+        self.assertIn("1 of 3 case(s) failed", raised.exception.stderr)
+        self.assertNotIn("no case drew", raised.exception.stderr)
+        self.assertNotIn("no case drew", self.out)
+
+    def test_update_keeps_its_own_message_for_pictures_not_drawn(self):
+        with self.assertRaises(project_n.Fail) as raised:
+            self.references(update=True, committed=["a.png", "b.png"], case=lambda index: ("", 0), draws={"a.png": b"x"})
+        self.assertEqual(str(raised.exception), "reference: nothing updated; the run didn't draw b.png")
+
     def test_the_case_count_is_read_from_doctest(self):
         line = "[doctest] unskipped test cases passing the current filters: 25\n"
         with mock.patch.object(project_n.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, line)):
