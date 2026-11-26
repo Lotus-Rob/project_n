@@ -12,6 +12,10 @@ namespace {
 constexpr u32 FROM_START = std::numeric_limits<u32>::max();
 /// The queue place of a slot the search has settled.
 constexpr u32 SETTLED = std::numeric_limits<u32>::max();
+/// No slot: the end of a bucket's list.
+constexpr u32 NO_SLOT = std::numeric_limits<u32>::max();
+/// The bucket of the slots whose key is the front's.
+constexpr u32 FRONT = 0;
 
 /// How a node reached over `link` was reached: its edge and direction in one number, which fits as a graph has fewer
 /// than half of u32's range of edges.
@@ -49,7 +53,9 @@ void RouteScratch::Begin(std::size_t slots) {
         m_stamp.resize(slots, 0);
         m_key.resize(slots);
         m_place.resize(slots);
-        // A slot is queued at most once at a time, so this bounds the queue.
+        m_next.resize(slots);
+        m_prev.resize(slots);
+        // A slot is queued at most once at a time, so this bounds the front.
         m_queue.reserve(slots);
     }
     ++m_search;
@@ -59,6 +65,8 @@ void RouteScratch::Begin(std::size_t slots) {
         m_search = 1;
     }
     m_queue.clear();
+    m_filled = 0;
+    m_least = 0;
     m_counts = {};
 }
 
@@ -71,69 +79,99 @@ void RouteScratch::Offer(u32 slot, u32 cost, u64 key, u32 via) {
     if (reached && cost >= m_cost[slot]) {
         return;
     }
+    // The buckets sort keys only from the front's up. A link, or the walk on to the end, costs at least what it lowers
+    // the estimate by, since every step costs at least the estimate's per-step floor, so no key offered falls below that.
+    PN_ASSERT(key >= m_least, "a search's keys never fall below the front's");
+    const bool queued = reached && m_place[slot] != SETTLED;
     m_stamp[slot] = m_search;
     m_cost[slot] = cost;
     m_key[slot] = key;
     m_via[slot] = via;
     ++m_counts.relaxed;
-    if (!reached || m_place[slot] == SETTLED) {
-        m_queue.push_back(slot);
-        Place(m_queue.size() - 1, slot);
+    if (queued) {
+        PN_ASSERT(m_place[slot] != FRONT, "a slot at the front has the least key a search can offer");
+        if (BucketOf(key) == m_place[slot]) {
+            return;
+        }
+        Unlink(slot);
     }
-    SiftUp(m_place[slot]);
+    Enqueue(slot);
+}
+
+bool RouteScratch::Queued() const {
+    return !m_queue.empty() || m_filled != 0;
+}
+
+u64 RouteScratch::LeastKey() {
+    if (m_queue.empty()) {
+        PN_ASSERT(m_filled != 0, "the queue holds a slot");
+        // The lowest filled bucket holds the least keys; with the front's key moved up to its least, every slot in it falls
+        // into a lower bucket, and those above keep theirs, as they differ from both keys in the same highest bit.
+        const auto bucket = static_cast<u32>(std::countr_zero(m_filled)) + 1;
+        m_filled &= ~(u64{ 1 } << (bucket - 1));
+        const u32 first = m_first[bucket - 1];
+        u64 least = std::numeric_limits<u64>::max();
+        for (u32 slot = first; slot != NO_SLOT; slot = m_next[slot]) {
+            least = std::min(least, m_key[slot]);
+        }
+        m_least = least;
+        for (u32 slot = first; slot != NO_SLOT;) {
+            const u32 next = m_next[slot];
+            Enqueue(slot);
+            slot = next;
+        }
+    }
+    return m_least;
 }
 
 u32 RouteScratch::Pop() {
-    const u32 top = m_queue.front();
-    const u32 last = m_queue.back();
+    static_cast<void>(LeastKey());
+    std::ranges::pop_heap(m_queue, std::greater{});
+    const u32 top = m_queue.back();
     m_queue.pop_back();
-    if (!m_queue.empty()) {
-        Place(0, last);
-        SiftDown(0);
-    }
     m_place[top] = SETTLED;
     return top;
 }
 
-bool RouteScratch::Before(u32 first, u32 second) const {
-    return std::pair{ m_key[first], first } < std::pair{ m_key[second], second };
+u32 RouteScratch::BucketOf(u64 key) const {
+    return static_cast<u32>(std::bit_width(key ^ m_least));
 }
 
-void RouteScratch::SiftUp(std::size_t position) {
-    const u32 slot = m_queue[position];
-    while (position > 0) {
-        const std::size_t parent = (position - 1) / 2;
-        if (!Before(slot, m_queue[parent])) {
-            break;
-        }
-        Place(position, m_queue[parent]);
-        position = parent;
+void RouteScratch::Enqueue(u32 slot) {
+    const u32 bucket = BucketOf(m_key[slot]);
+    m_place[slot] = bucket;
+    if (bucket == FRONT) {
+        m_queue.push_back(slot);
+        std::ranges::push_heap(m_queue, std::greater{});
+        return;
     }
-    Place(position, slot);
-}
-
-void RouteScratch::SiftDown(std::size_t position) {
-    const u32 slot = m_queue[position];
-    const std::size_t size = m_queue.size();
-    while (true) {
-        const std::size_t left = (position * 2) + 1;
-        if (left >= size) {
-            break;
-        }
-        const std::size_t right = left + 1;
-        const std::size_t child = right < size && Before(m_queue[right], m_queue[left]) ? right : left;
-        if (!Before(m_queue[child], slot)) {
-            break;
-        }
-        Place(position, m_queue[child]);
-        position = child;
+    const u64 bit = u64{ 1 } << (bucket - 1);
+    const u32 next = (m_filled & bit) != 0 ? m_first[bucket - 1] : NO_SLOT;
+    m_next[slot] = next;
+    m_prev[slot] = NO_SLOT;
+    if (next != NO_SLOT) {
+        m_prev[next] = slot;
     }
-    Place(position, slot);
+    m_first[bucket - 1] = slot;
+    m_filled |= bit;
 }
 
-void RouteScratch::Place(std::size_t position, u32 slot) {
-    m_queue[position] = slot;
-    m_place[slot] = static_cast<u32>(position);
+void RouteScratch::Unlink(u32 slot) {
+    const u32 bucket = m_place[slot];
+    const u32 next = m_next[slot];
+    const u32 prev = m_prev[slot];
+    if (prev != NO_SLOT) {
+        m_next[prev] = next;
+    }
+    else if (next != NO_SLOT) {
+        m_first[bucket - 1] = next;
+    }
+    else {
+        m_filled &= ~(u64{ 1 } << (bucket - 1));
+    }
+    if (next != NO_SLOT) {
+        m_prev[next] = prev;
+    }
 }
 
 void RouteScratch::OfferNode(const WorldMap& map, const RouteGraph& graph, const Ends& ends, u32 node, u64 cost, u32 via) {
@@ -169,9 +207,9 @@ void RouteScratch::Seed(const WorldMap& map, const RouteGraph& graph, const Ends
 
 bool RouteScratch::Search(const WorldMap& map, const RouteGraph& graph, const Ends& ends) {
     const u32 nodes = graph.Nodes();
-    while (!m_queue.empty()) {
+    while (Queued()) {
         // Every way left costs at least the queue's least key, so once that reaches the direct way, it wins.
-        if (ends.direct != UNREACHABLE && m_key[m_queue.front()] >= ends.direct) {
+        if (ends.direct != UNREACHABLE && LeastKey() >= ends.direct) {
             return false;
         }
         const u32 node = Pop();
