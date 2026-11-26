@@ -17,7 +17,8 @@
 
 namespace core {
 
-/// One edge's tiles with what walking them each way costs and the walk tables of both ways.
+/// One edge's tiles with what walking them each way costs and the walk tables of both ways. Empty, every table, when its
+/// graph was read with a map other than the one it was built from and the edge's way can't be walked there.
 struct Segment {
     /// The tiles from the edge's `from` node to its `to` node.
     std::vector<u32> tiles;
