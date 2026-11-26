@@ -78,6 +78,9 @@ end
 -- The highest warning level on every compiler, always as errors. Packages are unaffected:
 -- they're built separately, and their headers are system/external includes for our code.
 set_warnings("everything", "pedantic", "error")
+-- Sources and narrow string literals are UTF-8 on every compiler. MSVC would otherwise read a source
+-- without a BOM in the ANSI code page and re-encode every non-ASCII literal (u8"é" became mojibake).
+set_encodings("utf-8")
 
 local sanitized = get_config("sanitizer") and get_config("sanitizer") ~= "none"
 
