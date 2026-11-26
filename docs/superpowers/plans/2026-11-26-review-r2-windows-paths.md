@@ -26,6 +26,7 @@
 - The non-ASCII folder name in tests is `u8"项目_é_🎮"` (Chinese: outside every Western code page; é: inside 1252, so a code-page round trip that only half works shows; 🎮: outside the BMP). Built as `std::filesystem::path{ u8"..." }`, never from a narrow `std::string`.
 - The manifest is a build change: `check --container` from a main checkout, or CI's `container` job on the PR from a worktree.
 - Code comments say why, never cite the review, spec or plan.
+- UTF-8 everywhere (the user, 2026-11-26): every compiler reads sources and encodes narrow literals as UTF-8 (`set_encodings("utf-8")` in xmake.lua, added by Task 1's fix round after MSVC read `u8` literals in code page 1252), the Python tools read and write UTF-8 on every host, the windows-msvc executables run in the UTF-8 code page (Task 3), and the console shows UTF-8 (Task 5).
 
 ## Review Focus
 
@@ -43,6 +44,7 @@
 | 2 | 2 | Task 1's `core::PathText` / `core::PathOf` |
 | 3 | 3 | Task 2 (no `.string()` left in `src/` except `log.cpp:53`, which Task 3 owns) |
 | 4 | 4 | Task 3 (its `lint --all` needs `log.cpp:53` gone; it is small, so serial costs little) |
+| 5 | 5 | Task 4 (both edit lint in `tools/project_n.py` and its selftests) |
 
 ---
 
@@ -124,3 +126,24 @@ implementer: sonnet · review: light
 - [ ] **Step 3: Implement** `path_strings` and its `Fail` in lint: "paths become text through core::PathText (core/path_text.hpp): path::string() uses the Windows ANSI code page and throws outside it".
 - [ ] **Step 4: Run** `pixi run project_n selftest`, then `pixi run project_n lint --all`. Expected: PASS, no `.string()` left (Tasks 2-3 removed them).
 - [ ] **Step 5: Commit** `build(tools): reject path::string() in src/` with the AGENTS.md line; `pixi run project_n doctor --docs`.
+
+### Task 5: UTF-8 everywhere
+
+implementer: sonnet · review: full
+
+Added by the user's ruling (2026-11-26, after Task 1's review found MSVC reading sources in code page 1252): UTF-8 is the one text encoding, for sources, tools, data and the running game, on every host.
+
+**Files:**
+- Modify: `pixi.toml` (`PYTHONUTF8 = "1"` in the activation env of every platform: Python 3.14 still opens files in the locale's encoding, cp1252 on Windows, until 3.15 makes UTF-8 mode the default; its lock file in the same commit if pixi rewrites it), `src/core/log.cpp` or the Windows start-up path (the console's output code page set to UTF-8, `SetConsoleOutputCP(CP_UTF8)`, under `_WIN32`, so the console sink's UTF-8 shows as text), `tools/project_n.py` and `tools/test_project_n.py` (a lint step), the root `AGENTS.md` (one rule line under Rules: everything is UTF-8, how each layer gets it)
+- Test: `tools/test_project_n.py`
+
+**Interfaces:**
+- Produces: `def non_utf8_files(paths) -> list[str]`: `"<file>: <why>"` for each tracked text file (by `.gitattributes`/extension: sources, YAML, TOML, Markdown, Python, Lua, HLSL, JSON) that is not valid UTF-8 or starts with a byte-order mark; lint runs it over the diff, `--all` over every tracked file.
+
+- [ ] **Step 1: Write the failing selftests:** `test_files_not_in_utf8_are_reported` (a Latin-1 `é` byte 0xE9 in `src/a.cpp`; a BOM at the start of `assets/data/x.yaml` → both reported), `test_utf8_files_and_binaries_are_not_reported` (a UTF-8 `项目_é_🎮` in a `.cpp`; a `.png` with arbitrary bytes → none).
+- [ ] **Step 2: Run** `pixi run project_n selftest`: FAIL (`non_utf8_files` undefined).
+- [ ] **Step 3: Implement** the check and its `Fail` ("files are UTF-8 without a byte-order mark"); `pixi run project_n lint --all` must pass (fix any file it finds, in its own commit).
+- [ ] **Step 4: PYTHONUTF8** in pixi.toml; check with `pixi run python -c "import sys; print(sys.flags.utf8_mode)"` → `1` (native) and note that Windows hosts get the same env.
+- [ ] **Step 5: Console code page:** set at logging start on Windows; a windows-only doctest case `CHECK(GetConsoleOutputCP() == CP_UTF8)` after the logger starts, if the test process has a console under Wine; otherwise record why it can't be tested and verify by the code's read.
+- [ ] **Step 6: Run** `pixi run project_n selftest`, `pixi run project_n test`, `pixi run project_n test --preset windows-msvc --suite core_tests`, `pixi run project_n lint --range <task base>..HEAD`, `pixi run project_n doctor --docs`. The pixi.toml change is an environment change: CI's `container` jobs on the PR are its gate.
+- [ ] **Step 7: Commit** per layer (`build(pixi): run the Python tools in UTF-8 mode`, `build(tools): reject files that are not UTF-8`, `fix(core): show the Windows console in UTF-8`).
