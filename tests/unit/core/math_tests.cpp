@@ -310,7 +310,7 @@ constexpr std::array<Sample, PINNED_SAMPLES> BASES_AND_EXPONENTS{ {
     { "a fraction cubed", 0.5, 3.0 },
     { "e to the one", std::numbers::e, 1.0 },
     { "just under overflow", 2.0, 1023.0 },
-    { "one past the largest power of two", 2.0, 1024.0 },
+    { "two to the 1024th, finite: the product stays inside Exp's range", 2.0, 1024.0 },
     { "a subnormal result", 2.0, -1074.0 },
     { "negative base, odd exponent", -2.0, 3.0 },
     { "negative base, even exponent", -2.0, 2.0 },
@@ -339,11 +339,7 @@ constexpr std::array<Sample, PINNED_SAMPLES> POINTS{ {
     { "a tiny ratio", 1e-10, 1.0 },
     { "a huge ratio", 1e10, 1.0 },
     { "a subnormal y", SMALLEST_SUBNORMAL, 1.0 },
-    {
-        "both infinite",
-        std::numeric_limits<f64>::infinity(),
-        std::numeric_limits<f64>::infinity(),
-    },
+    { "both infinite", std::numeric_limits<f64>::infinity(), std::numeric_limits<f64>::infinity() },
     { "infinite y, negative infinite x", std::numeric_limits<f64>::infinity(), -std::numeric_limits<f64>::infinity() },
     { "finite y, negative infinite x", 1.0, -std::numeric_limits<f64>::infinity() },
     { "not a number", NOT_A_NUMBER, 1.0 },
@@ -499,7 +495,7 @@ constexpr Table PINNED{ {
         0x3fc0000000000001U, // a fraction cubed
         0x4005bf0a8b14576aU, // e to the one
         0x7fe000000000008dU, // just under overflow
-        0x7fefffffffffff2aU, // one past the largest power of two
+        0x7fefffffffffff2aU, // two to the 1024th, finite: the product stays inside Exp's range
         0x0000000000000001U, // a subnormal result
         0xc01ffffffffffffeU, // negative base, odd exponent
         0x4010000000000000U, // negative base, even exponent
