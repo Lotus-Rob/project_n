@@ -723,12 +723,12 @@ bool MeasureTrips(
 }
 
 /// The distance between two tiles in blocks of BAND_UNIT tiles: the larger of the distances in columns and rows.
-u32 SectorDistance(const core::WorldMap& map, u32 first, u32 second) {
-    const auto sectorOf = [&](u32 tile) {
+u32 BlockDistance(const core::WorldMap& map, u32 first, u32 second) {
+    const auto blockOf = [&](u32 tile) {
         return std::pair{ (tile % map.Columns()) / BAND_UNIT, (tile / map.Columns()) / BAND_UNIT };
     };
-    const auto [firstColumn, firstRow] = sectorOf(first);
-    const auto [secondColumn, secondRow] = sectorOf(second);
+    const auto [firstColumn, firstRow] = blockOf(first);
+    const auto [secondColumn, secondRow] = blockOf(second);
     const u32 across = std::max(firstColumn, secondColumn) - std::min(firstColumn, secondColumn);
     const u32 down = std::max(firstRow, secondRow) - std::min(firstRow, secondRow);
     return std::max(across, down);
@@ -791,7 +791,7 @@ public:
             const u32 first = End(places, kinds.firstPlace, band, index, PURPOSE_FIRST, attempt);
             const u32 second = End(places, kinds.secondPlace, band, index, PURPOSE_SECOND, attempt);
             const u64 key = (u64{ std::min(first, second) } << 32U) | std::max(first, second);
-            if (first != second && BandOf(SectorDistance(m_world->Map(), first, second)) == band && drawn.insert(key).second) {
+            if (first != second && BandOf(BlockDistance(m_world->Map(), first, second)) == band && drawn.insert(key).second) {
                 return std::pair{ first, second };
             }
         }
