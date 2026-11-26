@@ -233,12 +233,18 @@ bool RouteScratch::Search(const WorldMap& map, const RouteGraph& graph, const En
     return false;
 }
 
-GraphRoute RouteScratch::Trace(const RouteGraph& graph, const Ends& ends) const {
+std::optional<GraphRoute> RouteScratch::Trace(const RouteGraph& graph, const Ends& ends) const {
     GraphRoute route;
     u32 node = ends.goal;
     if (ends.targetNode == NO_NODE) {
         node = m_via[ends.goal];
         m_toWalk.Way(graph.NodeTile(node), route.tail);
+        // The walk priced this leg, so its way holds at least the node; were it empty (a graph read with a map it wasn't
+        // built from is the one misuse that could do it), the route would keep the leg's cost without its tiles.
+        PN_ASSERT(!route.tail.empty(), "the walk to the end has a way from the node it priced");
+        if (route.tail.empty()) {
+            return std::nullopt;
+        }
         if (route.tail.size() == 1) {
             route.tail.clear(); // the end is that node
         }
@@ -254,6 +260,10 @@ GraphRoute RouteScratch::Trace(const RouteGraph& graph, const Ends& ends) const 
     std::ranges::reverse(route.steps);
     if (ends.fromNode == NO_NODE) {
         m_fromWalk.Way(graph.NodeTile(node), route.head);
+        PN_ASSERT(!route.head.empty(), "the walk from the start has a way to the node it priced");
+        if (route.head.empty()) {
+            return std::nullopt;
+        }
         if (route.head.size() == 1) {
             route.head.clear(); // the start is that node
         }
@@ -326,6 +336,10 @@ std::optional<GraphRoute> FindGraphRoute(
     }
     GraphRoute route;
     scratch.m_fromWalk.Way(target, route.head);
+    PN_ASSERT(!route.head.empty(), "the walk from the start has a way to the end it priced");
+    if (route.head.empty()) {
+        return std::nullopt;
+    }
     route.cost = ends.direct;
     return route;
 }

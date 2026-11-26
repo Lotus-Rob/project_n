@@ -129,8 +129,9 @@ private:
     void Seed(const WorldMap& map, const RouteGraph& graph, const Ends& ends);
     /// Searches the graph from the seeded nodes; whether it reached the end more cheaply than the direct way.
     [[nodiscard]] bool Search(const WorldMap& map, const RouteGraph& graph, const Ends& ends);
-    /// The route the search found, back from the end to the start.
-    [[nodiscard]] GraphRoute Trace(const RouteGraph& graph, const Ends& ends) const;
+    /// The route the search found, back from the end to the start; none if a leg's walk gives no way to the node it
+    /// priced.
+    [[nodiscard]] std::optional<GraphRoute> Trace(const RouteGraph& graph, const Ends& ends) const;
     /// Whether any slot is queued.
     [[nodiscard]] bool Queued() const;
     /// The least key queued, its slots moved to the front first; the queue must not be empty.
