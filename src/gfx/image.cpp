@@ -1,25 +1,17 @@
 #include "gfx/image.hpp"
 
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/path_text.hpp"
 #include "gfx/internal/gpu.hpp"
 #include "gfx/internal/resources/png.hpp"
 #include "gfx/sprite_block.hpp"
 
 namespace gfx {
 
-namespace {
-
-std::string PngPath(const std::filesystem::path& file) {
-    const std::u8string utf8 = file.u8string(); // SDL's paths are UTF-8
-    return { utf8.begin(), utf8.end() };
-}
-
-} // namespace
-
 namespace internal {
 
 std::expected<Surface, core::Error> DecodePng(const std::filesystem::path& file) {
-    const std::string path = PngPath(file);
+    const std::string path = core::PathText(file);
     const Surface loaded{ SDL_LoadPNG(path.c_str()) };
     if (loaded == nullptr) {
         return std::unexpected{ core::Error{ std::format("{} wasn't loaded: {}", path, SDL_GetError()) } };
@@ -54,7 +46,7 @@ std::expected<Image, core::Error> LoadPng(const std::filesystem::path& file) {
 }
 
 std::expected<void, core::Error> SavePng(const Image& image, const std::filesystem::path& file) {
-    const std::string path = PngPath(file);
+    const std::string path = core::PathText(file);
     const internal::Surface surface{
         SDL_CreateSurface(static_cast<i32>(image.width), static_cast<i32>(image.height), SDL_PIXELFORMAT_RGBA32)
     };
