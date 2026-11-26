@@ -22,11 +22,11 @@ namespace core {
 class Jobs;
 
 /// The version of the routing rules: changes whenever a graph built from the same map would differ.
-inline constexpr u32 ROUTING_VERSION = 1;
+inline constexpr u32 ROUTING_VERSION = 2;
 /// A sector's side in tiles.
-inline constexpr u32 SECTOR_SIZE = 16;
+inline constexpr u32 SECTOR_SIZE = 32;
 /// The longest stretch of a border one gate serves, in tiles.
-inline constexpr u32 GATE_SPACING = 8;
+inline constexpr u32 GATE_SPACING = 4;
 /// The node of a tile that is none.
 inline constexpr u32 NO_NODE = std::numeric_limits<u32>::max();
 /// How many sectors one chunk of a parallel build builds, every profile's.

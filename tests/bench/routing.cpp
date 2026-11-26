@@ -1,8 +1,9 @@
 // The routing benchmark (`routing_bench`): for each scale of the synthetic maps (tests/support/synthetic_map.hpp) it
 // - builds every profile's route graph and place table (the table within the travel rules' reach bound, bounded and
 //   unbounded ones apart) on the job system, best of 5, and prints their times, memory and counts;
-// - times the searches of a trip model (each city to its 20 nearest places) and of random pairs in bands of sector
-//   distance (0, 1-2, 3-4, 5-8, 9+), place to place and with a tile end, each alone: p99, mean, nodes settled;
+// - times the searches of a trip model (each city to its 20 nearest places) and of random pairs in bands of
+//   distance in tiles (0-15, 16-47, 48-79, 80-143, 144+), place to place and with a tile end, each alone: p99, mean, nodes
+//   settled;
 // - makes the segments the trips use and sizes them with the routes;
 // - compares the routes' costs with core::FindRoute's cheapest on 20 maps and on two hostile ones (all meadow, wide
 //   biomes with a danger reach of 16): the worst route over the cheapest and the worst pair of each band.
@@ -11,8 +12,8 @@
 // 20, 100 MB) or when a route costs over 5% more than the cheapest. Run it optimised, on request and alone, never as a gate:
 // `pixi run project_n test --mode release --target routing_bench [-- <flags>]`. Flags:
 // --scales 1,10,50      the scales to run
-// --sector N            a sector's side in tiles (default 16)
-// --gate-spacing N      the longest stretch of a border one gate serves (default 8)
+// --sector N            a sector's side in tiles (default 32)
+// --gate-spacing N      the longest stretch of a border one gate serves (default 4)
 // --workers N           the job system's workers (default 4)
 // --seed N              the maps' seed
 // --chunk N             sectors a chunk builds
@@ -60,7 +61,7 @@ constexpr std::array<Budgets, test::SYNTHETIC_SCALES.size()> BUDGETS{ {
 
 /// How many nearest places each city's trips go to.
 constexpr std::size_t TRIPS_PER_CITY = 20;
-/// How many far pairs are searched in each band of sector distance.
+/// How many far pairs are searched in each band of distance in tiles.
 constexpr u32 PAIRS_PER_BAND = 200;
 /// How many maps the quality check compares routes on, each its own seed.
 constexpr u32 QUALITY_MAPS = 20;
@@ -72,11 +73,13 @@ constexpr f64 QUALITY_LIMIT_PERCENT = 5.0;
 constexpr f64 QUALITY_NOTICE_PERCENT = 2.0;
 /// How many ends a pair is redrawn for before its band is given up as empty.
 constexpr u32 PAIR_ATTEMPTS = 20'000;
-/// The furthest sector distance each band holds: the same sector, 1-2, 3-4, 5-8 and further. Distances are counted in
-/// core::SECTOR_SIZE tiles whatever sector size a run builds with, so every run draws the same pairs.
+/// The side in tiles of the blocks a pair's distance is counted in, whatever sector size a run builds with, so every run
+/// draws the same pairs.
+constexpr u32 BAND_UNIT = 16;
+/// The furthest distance in BAND_UNIT blocks each band holds: 0, 1-2, 3-4, 5-8 and further.
 constexpr std::array<u32, 5> BAND_LAST{ { 0, 2, 4, 8, std::numeric_limits<u32>::max() } };
-/// The names of the bands.
-constexpr std::array<std::string_view, BAND_LAST.size()> BAND_NAMES{ { "0", "1-2", "3-4", "5-8", "9+" } };
+/// The names of the bands, in tiles of distance.
+constexpr std::array<std::string_view, BAND_LAST.size()> BAND_NAMES{ { "0-15", "16-47", "48-79", "80-143", "144+" } };
 /// The purposes of the pairs' draws: each end's pick of place or tile.
 constexpr u32 PURPOSE_FIRST = 1;
 constexpr u32 PURPOSE_SECOND = 2;
@@ -719,10 +722,10 @@ bool MeasureTrips(
     return segments.Print() || over;
 }
 
-/// The distance between two tiles in sectors of core::SECTOR_SIZE tiles: the larger of the distances in columns and rows.
+/// The distance between two tiles in blocks of BAND_UNIT tiles: the larger of the distances in columns and rows.
 u32 SectorDistance(const core::WorldMap& map, u32 first, u32 second) {
     const auto sectorOf = [&](u32 tile) {
-        return std::pair{ (tile % map.Columns()) / core::SECTOR_SIZE, (tile / map.Columns()) / core::SECTOR_SIZE };
+        return std::pair{ (tile % map.Columns()) / BAND_UNIT, (tile / map.Columns()) / BAND_UNIT };
     };
     const auto [firstColumn, firstRow] = sectorOf(first);
     const auto [secondColumn, secondRow] = sectorOf(second);
@@ -731,7 +734,7 @@ u32 SectorDistance(const core::WorldMap& map, u32 first, u32 second) {
     return std::max(across, down);
 }
 
-/// The band `distance` sectors falls in.
+/// The band `distance` blocks of BAND_UNIT tiles falls in.
 std::size_t BandOf(u32 distance) {
     return static_cast<std::size_t>(
         std::ranges::find_if(BAND_LAST, [&](u32 last) { return distance <= last; }) - BAND_LAST.begin()
@@ -760,7 +763,7 @@ std::vector<u32> PlaceTiles(const core::WorldMap& map, core::ProfileIndex profil
     return tiles;
 }
 
-/// Draws pairs of tiles on one map, redrawing until a pair's ends lie in a band of sector distance.
+/// Draws pairs of tiles on one map, redrawing until a pair's ends lie in a band of distance in tiles.
 class PairDrawer {
 public:
     /// A drawer of pairs on `world` for `profile`, from `seed`.
@@ -852,7 +855,7 @@ SearchStats SearchBand(
     return stats;
 }
 
-/// Searches random pairs in each band of sector distance, each alone, for every profile: city to city, then city to a
+/// Searches random pairs in each band of distance in tiles, each alone, for every profile: city to city, then city to a
 /// tile; returns whether the far band's place-to-place p99 is over its budget.
 bool MeasureFarPairs(const Options& options, const Budgets& budgets, const World& world, core::RouteScratch* shared) {
     const std::span<const core::MovementProfile> profiles = world.Map().Profiles();
@@ -868,7 +871,7 @@ bool MeasureFarPairs(const Options& options, const Budgets& budgets, const World
                     .AddRows(
                         table,
                         std::format(
-                            "far pairs, {}, {}, {} sectors",
+                            "far pairs, {}, {}, {} tiles",
                             profiles[index].key,
                             tileEnd ? "city to tile" : "city to city",
                             BAND_NAMES.at(band)
@@ -1014,7 +1017,7 @@ bool ReportQuality(std::string_view group, std::span<const core::MovementProfile
             if (result.compared + result.unmatched == 0) {
                 table.AddNote(
                     std::format(
-                        "quality, {}, {}, {} sectors: no pairs, budget not checked",
+                        "quality, {}, {}, {} tiles: no pairs, budget not checked",
                         group,
                         profiles[profile].key,
                         BAND_NAMES.at(band)
@@ -1024,7 +1027,7 @@ bool ReportQuality(std::string_view group, std::span<const core::MovementProfile
             }
             table.Add(
                 std::format(
-                    "quality, {}, {}, {} sectors ({} pairs, {:.2f}% over {:.0f}%, {} unmatched; worst: {}), worst over the "
+                    "quality, {}, {}, {} tiles ({} pairs, {:.2f}% over {:.0f}%, {} unmatched; worst: {}), worst over the "
                     "cheapest",
                     group,
                     profiles[profile].key,
