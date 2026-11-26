@@ -3,10 +3,6 @@
 
 #include <doctest/doctest.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
 namespace {
 
 constexpr i32 EARLIER_RUNS = 10; // one more than Start keeps
@@ -63,16 +59,3 @@ TEST_CASE("debug messages reach the log file") {
 }
 
 } // namespace
-
-#ifdef _WIN32
-// Without a console (a redirected run) the code page is 0 and there is nothing to show text on.
-TEST_CASE("Start sets the console's output code page to UTF-8") {
-    StartedDirectory();
-    const UINT codePage = GetConsoleOutputCP();
-    if (codePage == 0) {
-        MESSAGE("no console attached");
-        return;
-    }
-    CHECK(codePage == CP_UTF8);
-}
-#endif

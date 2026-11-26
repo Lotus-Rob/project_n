@@ -41,16 +41,21 @@ std::atomic<quill::Logger*>& Started() {
     return logger;
 }
 
+/// Quill writes UTF-8; the Windows console shows it as text only in its UTF-8 output code page.
+/// Every logger that reaches the console calls this first.
+void UseUtf8Console() {
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+#endif
+}
+
 } // namespace
 
 void Start(const std::filesystem::path& directory) {
     if (Started().load(std::memory_order_acquire) != nullptr) {
         return;
     }
-#ifdef _WIN32
-    // Quill writes UTF-8; the console shows it as text only in its UTF-8 output code page.
-    SetConsoleOutputCP(CP_UTF8);
-#endif
+    UseUtf8Console();
     quill::Backend::start();
 
     auto console = quill::Frontend::create_or_get_sink<quill::ConsoleSink>("console");
@@ -96,6 +101,7 @@ quill::Logger* Root() {
     }
     // Before Start(): the console only, so an early message is still written, not lost.
     static quill::Logger* const early = [] {
+        UseUtf8Console();
         quill::Backend::start();
         return quill::Frontend::create_or_get_logger(
             EARLY_LOGGER_NAME, quill::Frontend::create_or_get_sink<quill::ConsoleSink>("console")

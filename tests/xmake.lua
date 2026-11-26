@@ -107,6 +107,7 @@ unit_tests("app_tests", "unit/app/*.cpp", "app", true)
 unit_tests("data_tests", "unit/data/*.cpp", "data", true)
 -- Logging start-up states: Quill's loggers live for the whole process, so each test needs its own.
 unit_tests("log_early_tests", {"unit/log_startup/main.cpp", "unit/log_startup/early_tests.cpp"})
+unit_tests("log_console_tests", {"unit/log_startup/main.cpp", "unit/log_startup/console_tests.cpp"})
 unit_tests("log_fallback_tests", {"unit/log_startup/main.cpp", "unit/log_startup/fallback_tests.cpp"})
 
 -- The headless benchmark: ticks a large world without a window or a GPU. Built
