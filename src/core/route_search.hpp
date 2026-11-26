@@ -61,7 +61,8 @@ struct SearchCounts {
 class RouteScratch;
 
 /// The route from `from` to `target` over `graph`, the graph of its profile over `map`; none when `target` can't be
-/// entered or reached. An end on a place that is a node starts or ends there alone: the graph's ways from a place already
+/// entered or reached, or when the route would cost UNREACHABLE or more, as costs are counted in 32 bits (no map the game
+/// makes holds one). An end on a place that is a node starts or ends there alone: the graph's ways from a place already
 /// reach every node of its block. Any other start, a gate's tile included, reaches every node of its block (its sector
 /// and the up to eight round it) by the cheapest way kept inside the block, and any other end is reached from every node
 /// of its block by the cheapest way inside that block, each priced in the direction walked. A route between two places
