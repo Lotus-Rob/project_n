@@ -1,7 +1,7 @@
 # tests/: unit, fuzz, benchmark and reference tests
 
 ## Scope
-doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every preset (Windows tests run under Wine in the container); fuzz targets, the headless benchmark and the reference pictures, built with them.
+doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every preset (Windows tests run under Wine in the container); fuzz targets, the headless and routing benchmarks and the reference pictures, built with them.
 
 ## Rules
 - A test is small, contained (no file, network, window, clock or shared state it doesn't need; independent of other tests), explicit (named after the behaviour, literal inputs, exact expected values) and tests one behaviour: `TEST_CASE("save header rejects a truncated file")`.
