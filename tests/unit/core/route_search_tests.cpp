@@ -336,6 +336,101 @@ TEST_CASE("an end one tile from a sector border routes no dearer than through th
     CHECK(route.cost == 128);
 }
 
+/// A search over the open map of the pop-order test, with what it must cost, settle and relax, named for why it is there.
+struct TiedSearch {
+    /// Why the search is a sample.
+    const char* name = "";
+    /// Where it starts.
+    core::TilePoint from;
+    /// Where it ends.
+    core::TilePoint to;
+    /// The route's cost.
+    u32 cost = 0;
+    /// How many nodes it settles.
+    u32 popped = 0;
+    /// How many times it sets or betters a way.
+    u32 relaxed = 0;
+};
+
+TEST_CASE("a search pops equal keys lowest node first") {
+    // Meadow costs the same everywhere, so most keys tie; popping ties in another order settles and relaxes other nodes,
+    // which these counts catch even where the route stays the same.
+    const core::WorldMap map = MustBuild(Source(
+        { "........................",
+          ".0......................",
+          "........................",
+          "........................",
+          "........................",
+          "........................",
+          "........................",
+          "........................",
+          "........................",
+          "........................",
+          "........................",
+          "........................",
+          "........................",
+          "........................",
+          "........................",
+          "........................" }
+    ));
+    const core::RouteGraphs graphs = core::RouteGraphs::Build(map, SMALL_RULES);
+    const core::RouteGraph& graph = graphs.Of(core::WALKING);
+    const std::array<TiedSearch, 6> searches{ {
+        { .name = "from the place to the far corner",
+          .from = { .column = 1, .row = 1 },
+          .to = { .column = 23, .row = 15 },
+          .cost = 282,
+          .popped = 138,
+          .relaxed = 170 },
+        { .name = "from the far corner to the place",
+          .from = { .column = 23, .row = 15 },
+          .to = { .column = 1, .row = 1 },
+          .cost = 282,
+          .popped = 131,
+          .relaxed = 190 },
+        { .name = "corner to corner, open ground at both ends",
+          .from = { .column = 0, .row = 15 },
+          .to = { .column = 23, .row = 0 },
+          .cost = 296,
+          .popped = 138,
+          .relaxed = 165 },
+        { .name = "the same corners the other way",
+          .from = { .column = 23, .row = 0 },
+          .to = { .column = 0, .row = 15 },
+          .cost = 296,
+          .popped = 137,
+          .relaxed = 169 },
+        { .name = "across the middle, ends off the sector borders",
+          .from = { .column = 5, .row = 8 },
+          .to = { .column = 20, .row = 3 },
+          .cost = 170,
+          .popped = 115,
+          .relaxed = 155 },
+        { .name = "across the middle the other way",
+          .from = { .column = 20, .row = 3 },
+          .to = { .column = 5, .row = 8 },
+          .cost = 170,
+          .popped = 90,
+          .relaxed = 139 },
+    } };
+    core::RouteScratch scratch;
+    std::size_t differing = 0;
+    std::string firstDiffering;
+    for (const TiedSearch& search : searches) {
+        const core::GraphRoute route =
+            Must(core::FindGraphRoute(map, graph, At(map, search.from), At(map, search.to), scratch));
+        const core::SearchCounts counts = scratch.Counts();
+        if (route.cost != search.cost || counts.popped != search.popped || counts.relaxed != search.relaxed) {
+            if (differing == 0) {
+                firstDiffering = search.name;
+            }
+            ++differing;
+        }
+    }
+    CAPTURE(firstDiffering);
+    CHECK(differing == 0);
+}
+
 /// The purposes of the synthetic routes' draws: each end's tile and place.
 constexpr u32 PURPOSE_FROM = 1;
 constexpr u32 PURPOSE_TO = 2;
