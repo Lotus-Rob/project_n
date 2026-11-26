@@ -32,8 +32,13 @@ std::filesystem::path StartedDirectory() {
     return directory;
 }
 
+// The fixture seeds project_n.log before Start, so only a line Quill wrote proves it opened that name.
 TEST_CASE("the log file is created in a folder named outside the ANSI code page") {
-    CHECK(std::filesystem::exists(StartedDirectory() / "project_n.log"));
+    const std::filesystem::path directory = StartedDirectory();
+    PN_LOG_INFO("a line for the folder outside the ANSI code page");
+    core::log::Root()->flush_log();
+
+    CHECK(Read(directory / "project_n.log").find("a line for the folder outside the ANSI code page") != std::string::npos);
 }
 
 TEST_CASE("Start keeps the previous run's log as project_n.1.log") {
