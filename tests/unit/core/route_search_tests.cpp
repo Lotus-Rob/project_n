@@ -295,6 +295,23 @@ TEST_CASE("an end that can't be entered or reached gives no route") {
     CHECK_FALSE(Fresh(carts, cartGraphs.Of(ADDED), At(carts, CITY_0), At(carts, CITY_1)).has_value());
 }
 
+TEST_CASE("a route from a place its profile can't enter gives no route") {
+    // City 1 stands on meadow right beside the road a cart keeps to, so a walk out of it would reach the road at once.
+    core::WorldMapSource source = Source({ "0===1...", "........", "........", "........" });
+    source.roads.push_back({ { .column = 0, .row = 0 } });
+    source.profiles = HandSource().profiles;
+    source.profiles.push_back(
+        { .key = "cart", .ticksPerCost = 1, .kindCosts = { core::IMPASSABLE_COST, core::IMPASSABLE_COST }, .features = {} }
+    );
+    const core::WorldMap carts = MustBuild(std::move(source));
+    const core::RouteGraphs graphs = core::RouteGraphs::Build(carts, SMALL_RULES);
+    const core::RouteGraph& cart = graphs.Of(ADDED);
+    REQUIRE(cart.PlaceNode(0) != core::NO_NODE);
+    REQUIRE(cart.PlaceNode(1) == core::NO_NODE);
+    CHECK_FALSE(Fresh(carts, cart, At(carts, 4, 0), At(carts, 0, 0)).has_value());
+    CHECK_FALSE(Fresh(carts, cart, At(carts, 4, 0), At(carts, 2, 0)).has_value());
+}
+
 TEST_CASE("a route from a tile that can't be entered leaves it") {
     const core::WorldMap map = HandMap();
     const core::RouteGraphs graphs = HandGraphs(map);

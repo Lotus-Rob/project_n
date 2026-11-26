@@ -277,6 +277,12 @@ std::optional<GraphRoute> FindGraphRoute(
     if (from >= tiles || target >= tiles || map.CostAt(target, profile) == IMPASSABLE_COST) {
         return std::nullopt;
     }
+    // A place the profile can't enter has no node, so no route from it: the place table, which reads only the graph,
+    // must agree with the routes it prices.
+    const u16 fromPlace = map.PlaceAt(from);
+    if (fromPlace != NO_PLACE && graph.PlaceNode(fromPlace) == NO_NODE) {
+        return std::nullopt;
+    }
     if (from == target) {
         GraphRoute still;
         still.head.push_back(from);
