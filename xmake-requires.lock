@@ -337,13 +337,13 @@
             },
             version = "v13.1.0"
         },
-        ["tracy-libdl 0.14.1#c33f0634"] = {
+        ["tracy-libdl 0.14.1#284ad963"] = {
             repo = {
                 url = "xmake/repo"
             },
             version = "v0.14.1"
         },
-        ["tracy-libdl v0.14.1#f3e9eb11"] = {
+        ["tracy-libdl v0.14.1#92e53efe"] = {
             repo = {
                 url = "xmake/repo"
             },
@@ -519,13 +519,13 @@
             },
             version = "v13.1.0"
         },
-        ["tracy-libdl 0.14.1#c33f0634"] = {
+        ["tracy-libdl 0.14.1#284ad963"] = {
             repo = {
                 url = "xmake/repo"
             },
             version = "v0.14.1"
         },
-        ["tracy-libdl v0.14.1#f3e9eb11"] = {
+        ["tracy-libdl v0.14.1#92e53efe"] = {
             repo = {
                 url = "xmake/repo"
             },
@@ -661,13 +661,13 @@
             },
             version = "v13.1.0"
         },
-        ["tracy-libdl 0.14.1#c33f0634"] = {
+        ["tracy-libdl 0.14.1#284ad963"] = {
             repo = {
                 url = "xmake/repo"
             },
             version = "v0.14.1"
         },
-        ["tracy-libdl v0.14.1#f3e9eb11"] = {
+        ["tracy-libdl v0.14.1#92e53efe"] = {
             repo = {
                 url = "xmake/repo"
             },
