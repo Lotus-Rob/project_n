@@ -3,7 +3,7 @@
 /// timing, the handover between threads, logging and profiling. Links no SDL.
 ///
 /// @par Routing
-/// Routes between any two tiles over sectors, whole numbers with fixed tie-breaks (not used by the game yet):
+/// Routes between any two tiles over sectors, whole numbers with fixed tie-breaks (the game uses only `core/paths.hpp` so far):
 /// - `core/route_graph.hpp`: the map cut into sectors, each sector's graph of gates and places per profile
 ///   (`BuildSector`, `SectorWalk`), and the graph of the whole map (`RouteGraph`, `RouteGraphs`, `ROUTING_VERSION`).
 /// - `core/route_search.hpp`: `FindGraphRoute`, an A* over a graph with the route's ends joined to their blocks, and the

@@ -7,8 +7,8 @@
 // - compares the routes' costs with core::FindRoute's cheapest on 20 maps and on two hostile ones (all meadow, wide
 //   biomes with a danger reach of 16): the worst route over the cheapest and the worst pair of each band.
 // It exits 1 over a budget (graph and place tables: 20 ms, 1 MB at 1x, 0.2 s, 10 MB at 10x, 1 s, 50 MB at 50x; one
-// place-to-place search's p99 in the far band: 0.1, 0.5, 2 ms; segments and routes of the trip model: 2, 20, 100 MB)
-// or when a route costs over 5% more than the cheapest. Run it optimised, on request and alone, never as a gate:
+// search's p99, in the trip model and place to place in the far band: 0.1, 0.5, 2 ms; segments and routes of the trip model: 2,
+// 20, 100 MB) or when a route costs over 5% more than the cheapest. Run it optimised, on request and alone, never as a gate:
 // `pixi run project_n test --mode release --target routing_bench [-- <flags>]`. Flags:
 // --scales 1,10,50      the scales to run
 // --sector N            a sector's side in tiles (default 16)
