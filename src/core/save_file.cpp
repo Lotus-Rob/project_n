@@ -2,6 +2,7 @@
 
 #include "core/archive.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/path_text.hpp"
 #include "core/profile.hpp"
 
 #include <zstd.h>
@@ -30,7 +31,7 @@ char* WritableChars(std::span<std::byte> bytes) {
 }
 
 Error FileError(std::string_view what, const std::filesystem::path& path, std::string_view why) {
-    return { .message = std::format("{} {}: {}", what, path.string(), why) };
+    return { .message = std::format("{} {}: {}", what, PathText(path), why) };
 }
 
 /// Zstandard's frames are written without a checksum, and a flipped bit inside a literal would decompress all the same.

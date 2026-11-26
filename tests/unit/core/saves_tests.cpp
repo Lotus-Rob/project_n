@@ -9,8 +9,8 @@ namespace {
 // A slot in a folder of its own, removed when the test ends.
 class Folder {
 public:
-    explicit Folder(std::string_view name)
-      : m_path{ std::filesystem::temp_directory_path() / std::format("project_n_saves_tests_{}", name) } {
+    explicit Folder(const std::filesystem::path& name)
+      : m_path{ std::filesystem::temp_directory_path() / (std::filesystem::path{ "project_n_saves_tests_" } += name) } {
         std::filesystem::remove_all(m_path);
     }
     Folder(const Folder&) = delete;
@@ -75,6 +75,19 @@ TEST_CASE("reading an empty slot fails") {
     core::Saves saves(folder.Slot(), jobs);
     const auto read = saves.Read();
     CHECK_FALSE(read.has_value());
+}
+
+TEST_CASE("a state is written and read back in a folder named outside the ANSI code page") {
+    constexpr std::size_t SIZE = 1'000;
+    constexpr u8 FILL = 3;
+    const Folder folder{ u8"项目_é_🎮" };
+    core::Jobs jobs{ 2 };
+    core::Saves saves(folder.Slot(), jobs);
+    saves.Write(State(SIZE, FILL));
+    const auto read = saves.Read();
+    REQUIRE(read.has_value());
+    CHECK(*read == State(SIZE, FILL));
+    CHECK(std::filesystem::exists(folder.Slot()));
 }
 
 } // namespace
