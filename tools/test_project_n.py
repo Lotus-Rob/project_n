@@ -145,7 +145,10 @@ def temp_repo(files):
             git(root, "init", "-q", "-b", "main")
             for name, text in files.items():
                 (root / name).parent.mkdir(parents=True, exist_ok=True)
-                (root / name).write_text(text)
+                if isinstance(text, bytes):
+                    (root / name).write_bytes(text)
+                else:
+                    (root / name).write_text(text, encoding="utf-8")
             git(root, "add", ".")
             git(root, "commit", "-q", "--no-verify", "-m", "init")
             yield root
@@ -1854,6 +1857,18 @@ class PathStringsTest(unittest.TestCase):
         with temp_repo({"src/core/a.cpp": '// p.string()\nauto a = "x.string()";\nauto b = Row{.string = x};\nauto c = std::string();\n', "tests/unit/b.cpp": "auto b = p.string();\n",
                         "tools/c.cpp": "auto c = p.string();\n"}):
             self.assertEqual(project_n.path_strings(["src/core/a.cpp", "tests/unit/b.cpp", "tools/c.cpp"]), [])
+
+
+class NonUtf8FilesTest(unittest.TestCase):
+    def test_files_not_in_utf8_are_reported(self):
+        with temp_repo({"src/a.cpp": b"auto s = \"caf\xe9\";\n", "assets/data/x.yaml": b"\xef\xbb\xbfkey: 1\n"}):
+            found = project_n.non_utf8_files(["src/a.cpp", "assets/data/x.yaml"])
+            self.assertEqual([f.split(":")[0] for f in found], ["src/a.cpp", "assets/data/x.yaml"])
+            self.assertIn("byte-order mark", found[1])
+
+    def test_utf8_files_and_binaries_are_not_reported(self):
+        with temp_repo({"src/a.cpp": "auto s = u8\"项目_é_🎮\";\n".encode(), "assets/b.png": b"\x89PNG\xff\xfe\x00\xe9"}):
+            self.assertEqual(project_n.non_utf8_files(["src/a.cpp", "assets/b.png", "src/deleted.cpp"]), [])
 
 
 class StandardIncludeTest(unittest.TestCase):
