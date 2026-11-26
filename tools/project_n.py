@@ -1376,7 +1376,7 @@ def code_of(line):
 
 
 # A path turned into text by the platform's narrow encoding instead of core::PathText.
-PATH_STRING_RE = re.compile(r"\.(?:generic_)?string\(\)")
+PATH_STRING_RE = re.compile(r"(?:\.|->)(?:generic_)?string\(\)")
 
 
 def path_strings(sources):

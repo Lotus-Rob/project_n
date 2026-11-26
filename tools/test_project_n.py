@@ -1843,13 +1843,15 @@ class PlatformMathsTest(unittest.TestCase):
 
 class PathStringsTest(unittest.TestCase):
     def test_path_strings_in_src_are_reported(self):
-        with temp_repo({"src/core/a.cpp": "auto a = p.string();\nauto b = p.filename().generic_string();\n"}):
+        with temp_repo({"src/core/a.cpp": "auto a = p.string();\nauto b = p.filename().generic_string();\nauto c = it->path().string();\nauto d = q->string();\n"}):
             self.assertEqual(project_n.path_strings(["src/core/a.cpp"]),
                              ["src/core/a.cpp:1: auto a = p.string();",
-                              "src/core/a.cpp:2: auto b = p.filename().generic_string();"])
+                              "src/core/a.cpp:2: auto b = p.filename().generic_string();",
+                              "src/core/a.cpp:3: auto c = it->path().string();",
+                              "src/core/a.cpp:4: auto d = q->string();"])
 
     def test_path_strings_in_comments_strings_and_other_folders_are_not(self):
-        with temp_repo({"src/core/a.cpp": '// p.string()\nauto a = "x.string()";\n', "tests/unit/b.cpp": "auto b = p.string();\n",
+        with temp_repo({"src/core/a.cpp": '// p.string()\nauto a = "x.string()";\nauto b = Row{.string = x};\nauto c = std::string();\n', "tests/unit/b.cpp": "auto b = p.string();\n",
                         "tools/c.cpp": "auto c = p.string();\n"}):
             self.assertEqual(project_n.path_strings(["src/core/a.cpp", "tests/unit/b.cpp", "tools/c.cpp"]), [])
 
