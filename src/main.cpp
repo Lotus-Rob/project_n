@@ -50,7 +50,7 @@ std::expected<u64, core::Error> QuitAfterNs(std::span<char*> args) {
 std::filesystem::path DataFolder(const std::filesystem::path& assets) {
 #ifdef PN_SOURCE_DATA
     std::error_code error;
-    if (const std::filesystem::path source{ PN_SOURCE_DATA }; std::filesystem::is_directory(source, error)) {
+    if (const std::filesystem::path source = core::PathOf(PN_SOURCE_DATA); std::filesystem::is_directory(source, error)) {
         return source;
     }
 #endif
