@@ -355,7 +355,8 @@ inline void PlaceOne(
 }
 
 /// Adds the cities, then the dangers, to `source`. Stops the program when the map has fewer open tiles than places, as
-/// each place takes an open tile of its own and would otherwise be drawn for ever.
+/// each place takes an open tile of its own and would otherwise be drawn for ever. Places that nearly fill the open
+/// tiles still fit, but slowly: the last ones redraw until they land on one of the few tiles left.
 inline void MakePlaces(core::WorldMapSource& source, const SyntheticSize& size, u64 seed) {
     const auto open = static_cast<u64>(std::ranges::count_if(source.grid, Open));
     if (u64{ size.cities } + size.dangers > open) {
