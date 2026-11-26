@@ -4,12 +4,18 @@
 /// Small maps drawn by hand in rows of symbols for the routing tests, and the 40 x 24 hand-drawn map whose sectors,
 /// gates, ridge, road and danger those tests route over.
 
-#include "core/profile.hpp"
 #include "core/route_graph.hpp"
 #include "core/types.hpp"
 #include "core/world_map.hpp"
 
 #include <doctest/doctest.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <format>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace test::hand {
 
