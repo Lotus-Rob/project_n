@@ -246,10 +246,11 @@ waits for D1 and D2 per decision 4) and this work. Within this work:
 | 12 | D1, then D2, then D4 and D3 | R1-R12 | the review's items 8-10; shared-routes stage 2 is planned after D1 and D2 |  |
 | 13 | D5 | the user's hardware | S9 and S10 on D3D12 and Metal |  |
 
-Status says only what is done (what is open now lives in the project memory's `in-flight.md`): the branch that finishes
-an area writes `done` (a step with several areas: `R2 done`, then `done` when the last one merges) in its own pull
-request, and the backlog items it closed leave the backlog after the merge. Each area's plan also takes the backlog
-items assigned to it in "Backlog items folded into the areas" (below), test-first where they are bugs; that table, not
+Status says only what is done (what is open now lives in the project memory's `in-flight.md`). An area's pull request
+marks its own paragraph above **Implemented**, as R1's is, so parallel areas never edit the same line; the step's Status
+becomes `done` in the pull request that, rebased on main, finds every other area of its step already implemented. The
+backlog items an area closed leave the backlog after its merge. Each area's plan also takes the backlog items assigned
+to it in "Backlog items folded into the areas" (below), test-first where they are bugs; that table, not
 the area's paragraph, is the list. A spec for the next area may be written while the current one's pull request waits on CI (the root
 AGENTS.md's "never sit idle while CI runs").
 
