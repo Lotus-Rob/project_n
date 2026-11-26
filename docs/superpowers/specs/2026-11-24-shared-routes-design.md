@@ -328,7 +328,7 @@ the game routes over the graph there is nothing of the game's to compare.
 
   The worst route at 16/8 (wary, 138 over the cheapest) lost 75 on its start leg, 56 on its end leg and 7 in the
   middle; the second worst 80 on its end leg, and gained 7 in the middle. The excess was in the legs kept to their own
-  sector, so diagonal crossings wouldn't have helped, and spacing 1 still missed by one route.
+  sector, so diagonal crossings wouldn't have helped, and spacing 1 still left 2 of the 40 routes over 5%.
 - **A place's node has edges to every node of its block**, built with the graph from one block walk a place and shared
   as segments, so place-to-place routes use the graph alone and the place table's cost stays the route's cost (the
   user's decision, 2026-11-25). 40 of 40 sampled routes within 5%; build and memory about 1.7 times the sector-only
