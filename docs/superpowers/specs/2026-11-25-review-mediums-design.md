@@ -95,6 +95,7 @@ X-CPP-SAFETY-01. One helper returning a path's UTF-8 bytes (from `u8string()`), 
 every path handed to SDL or SDL_ttf (`gfx/image.cpp` already converts; share one helper). `lint` rejects `.string()` on a
 path in `src/`. A UTF-8 `activeCodePage` manifest for windows-msvc builds (a build change: `check --container`). Test: save,
 settings and font loading under a folder named with non-ASCII characters (runs under Wine for windows-msvc).
+**Implemented** (Outcome: R2, below).
 
 **R3. Fail loudly** (full; plan only). X-RESILIENCE-02 (+ DESIGN-DOCS-06), X-RESILIENCE-01 (+ CORE-INFRA-01),
 X-RESILIENCE-04 (+ APP-MAIN-01, GD-ROADMAP-SCOPE-08's silent exit), X-RESILIENCE-03, GAP1-LOGGING-AND-COMMENT-RULE-CONFORMANCE-02.
@@ -321,6 +322,60 @@ Rulings made while building it:
   `commit-check` passes and each subject names its main change.
 - The plan's at-budget selftest input was one 8,191-character line, which breaks its own line budget; the check's
   tests use 81 lines of 99 characters plus one of 91 (8,192 bytes, the budget exactly) to test the same byte boundary.
+
+## Outcome: R2 (implemented)
+
+R2's plan (`docs/superpowers/plans/2026-11-26-review-r2-windows-paths.md`, five tasks in five waves; Task 5 added by the
+user's "UTF-8 everywhere" during Task 1) is built.
+
+- **One conversion:** `core::PathText` (a path's UTF-8 bytes, from `u8string()`) and `core::PathOf` (UTF-8 text back to a
+  path) in `core/path_text.hpp` replace the two private copies (`PngPath` in `gfx/image.cpp`, `FromUtf8` in
+  `platform/paths.cpp`) and every `.string()` the review listed: logs, errors, `TTF_OpenFont`, the save job, settings,
+  YAML, the log file name. The round trip is checked on named samples by their bytes and `native()`, so a changed
+  separator shows, not only an unequal path.
+- **Tests that fail without the fix** (RED recorded on windows-msvc under Wine): a save to a non-ASCII slot aborted the
+  process (SIGABRT in the background job); settings and the font failed with "No Unicode translation"; the log case logs
+  and reads back a unique line, so a file seeded by the fixture cannot pass it. The test folder is `u8"项目_é_🎮"`: outside
+  every Western code page, inside 1252, and outside the BMP.
+- **UTF-8 code page for windows-msvc executables:** `windows/utf8.manifest` (`activeCodePage` UTF-8) is embedded in every
+  Windows binary with `/MANIFEST:EMBED /MANIFESTINPUT`, and a manifest edit relinks them (`linkdepfiles`, as XMake's own
+  manifest rule does). Measured (spike S1): host Wine 10.0 reported `GetACP()` 1252 before and 65001 after, with the
+  RT_MANIFEST resource present; the windows-msvc tests also ran in the container's Wine. `core_tests` checks
+  `GetACP() == CP_UTF8` on every Windows run, so CI's native windows job is the native measurement.
+- **UTF-8 everywhere:** every compiler reads sources and encodes narrow literals as UTF-8 (`set_encodings("utf-8")`,
+  global); the Python tools run in UTF-8 mode (`PYTHONUTF8` in the Pixi environment); the logger sets the Windows
+  console's output code page to UTF-8 from `Start` and the early logger alike, and puts the launching console's code
+  page back at exit.
+- **`lint`:** rejects `.string()`, `.generic_string()` and `->string()` in `src/`, and any tracked or new text file that
+  is not UTF-8 or starts with a byte-order mark. Text is classified by git (content `-text`, a `-text`/`binary`
+  attribute, or LFS), so a new file type needs no edit; the fuzz corpus is exempt (malformed on purpose).
+
+Rulings made while building it:
+
+- MSVC read the raw `u8` literals of Task 1's samples in code page 1252 (3 of 10 missed): fixed with
+  `set_encodings("utf-8")` for every toolchain rather than escapes, since existing literals (`hud_tests`' 生命,
+  `tests/support/world.hpp`'s 王) were mojibake on windows-msvc too; GCC and Clang already read UTF-8.
+- The manifest goes in through linker flags, not `add_files(".manifest")` (XMake rejected it for these targets); the
+  manifest path is project-relative, which resolves because XMake links from the project folder.
+- `lint`'s `code_of()` is unchanged: its limits (block comments, multi-line raw strings) are shared by every check and no
+  such case occurs in `src/`; a hit inside a commented-out call costs nothing. `.string ()` with a space is not matched:
+  `fmt` never writes it.
+- Text files are classified by git rather than a suffix list, which missed tracked text files.
+- The console code-page tests each own a private console (`FreeConsole`, `AllocConsole`) in their own executable: the
+  inherited console is shared with the shell and with test processes running in parallel, so setting and asserting its
+  code page there raced and changed the caller's terminal. Where no console can be made (plain Wine), the case warns
+  instead of passing silently; CI's native windows job runs the assertions.
+- Each task's reviews and fixes: one fix pass each, Minors included; release builds of linux-gcc and windows-msvc passed
+  after Tasks 2, 3 and at the branch head.
+- The final review (Opus, and GLM-5.3-Flash, DeepSeek V4.1 Flash, GPT-6 Luna and Qwen3.8 Flash) found no Critical
+  issue. Fixed from it: the manifest's `<application>` now declares the `asm.v3` namespace Microsoft documents for
+  `activeCodePage` (Wine accepted it without; the native loader may not); the game restores the console's code page;
+  the debug data folder's path is built with `PathOf`; and `lint`'s git listings use raw (`-z`) names, since
+  `core.quotePath` quotes non-ASCII names, which then never matched a file. The UTF-8 check also classifies untracked
+  binaries and runs before any lint step that decodes files, so a non-UTF-8 source gets its message, not a traceback.
+- Rejected from it: including `<cstdlib>` in `log.cpp` for `std::atexit` (`pch.hpp` holds it, and a `.cpp` includes no
+  standard header). Accepted: a console test run straight from a terminal sends doctest's output to its new console;
+  under `xmake test` and CI the streams are redirected and unaffected.
 
 ## The findings and their areas
 
