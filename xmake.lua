@@ -70,10 +70,12 @@ rule_end()
 -- named relative to the project, which is XMake's working directory: under msvc-wine, mt.exe runs in
 -- Wine and would not know the Linux path an absolute one turns into.
 rule("utf8_code_page")
-    on_load(function (target)
+    on_config(function (target)
         if target:is_plat("windows") then
-            target:add("ldflags", "/MANIFEST:EMBED", "/MANIFESTINPUT:windows/utf8.manifest",
-                       {force = true})
+            local manifest = path.join("windows", "utf8.manifest")
+            target:add("ldflags", "/MANIFEST:EMBED", "/MANIFESTINPUT:" .. path.translate(manifest), {force = true})
+            -- XMake relinks only when the flags or these files change: an edited manifest must relink.
+            target:data_add("linkdepfiles", path.join(os.projectdir(), manifest))
         end
     end)
 rule_end()
