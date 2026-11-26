@@ -492,6 +492,11 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(project_n.check_summary(False, ["macos-clang"], []),
                          "check: all presets passed (skipped macos-clang: not buildable on this host)")
 
+    def test_the_summary_joins_what_only_built_and_what_was_skipped(self):
+        self.assertEqual(project_n.check_summary(True, ["macos-clang"], ["windows-msvc's address"]),
+                         "check: all presets passed with every supported sanitizer; windows-msvc's address built, not run "
+                         "(MSVC sanitizer runs need native Windows); skipped macos-clang: not buildable on this host")
+
     def test_a_sanitizer_check_only_builds_for_msvc_off_windows(self):
         with mock.patch.object(project_n, "HOST", "linux"):
             self.assertEqual(project_n.sanitizer_builds_only([]), ["windows-msvc's address"])
@@ -834,7 +839,7 @@ class ArtifactReferenceTest(unittest.TestCase):
         class Stop(Exception):
             pass
 
-        def stop(*args):
+        def stop(*args, **kwargs):
             raise Stop
 
         compared = []
@@ -974,7 +979,7 @@ class ObjectCacheTest(unittest.TestCase):
         class Stop(Exception):
             pass
 
-        def stop(*args):
+        def stop(*args, **kwargs):
             raise Stop
 
         with self.ci(self.tmp / "c", "refs/tags/v1.0.0"), \
@@ -990,7 +995,7 @@ class ObjectCacheTest(unittest.TestCase):
         class Stop(Exception):
             pass
 
-        def stop(*args):
+        def stop(*args, **kwargs):
             raise Stop
 
         deleted = []
@@ -2687,7 +2692,7 @@ class EmptyOutputsTest(unittest.TestCase):
             (folder / "app").write_bytes(b"")
             out, order = io.StringIO(), []
             with mock.patch.multiple(project_n, configure=lambda *a: Path("bdir"), xmake_env=lambda bdir: {},
-                                     binary_path=lambda *a: folder / "app", IN_CONTAINER=True,
+                                     binary_path=lambda *a, **k: folder / "app", IN_CONTAINER=True,
                                      run=lambda argv, env=None: order.append(((folder / "app").exists(), argv))), \
                  contextlib.redirect_stdout(out):
                 project_n.build("linux-gcc", "release")
@@ -2695,10 +2700,33 @@ class EmptyOutputsTest(unittest.TestCase):
             self.assertEqual(out.getvalue(), "build: removed 1 empty outputs a stopped build left: app\n")
             out = io.StringIO()
             with mock.patch.multiple(project_n, configure=lambda *a: Path("bdir"), xmake_env=lambda bdir: {},
-                                     binary_path=lambda *a: folder / "app", IN_CONTAINER=True, run=lambda argv, env=None: None), \
+                                     binary_path=lambda *a, **k: folder / "app", IN_CONTAINER=True, run=lambda argv, env=None: None), \
                  contextlib.redirect_stdout(out):
                 project_n.build("linux-gcc", "release")
             self.assertEqual(out.getvalue(), "")
+
+
+class SanitizerBuildFolderTest(unittest.TestCase):
+    def test_a_sanitizer_build_clears_its_own_tree_and_leaves_the_plain_one(self):
+        preset = "linux-gcc"
+        plat = project_n.PRESETS[preset]
+        cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            os.chdir(tmp)  # the build folders are relative to the working directory
+            try:
+                folders = {s: project_n.build_dir(preset, "debug", s) / plat["plat"] / plat["arch"] / "debug"
+                           for s in ("none", "address")}
+                for folder in folders.values():
+                    folder.mkdir(parents=True)
+                    (folder / project_n.APP).write_bytes(b"")
+                with mock.patch.multiple(project_n, configure=lambda *a: Path("bdir"), xmake_env=lambda bdir: {},
+                                         run=lambda argv, env=None: None), contextlib.redirect_stdout(io.StringIO()):
+                    project_n.build(preset, "debug", sanitizer="address")
+                self.assertNotEqual(folders["none"], folders["address"])
+                self.assertFalse((folders["address"] / project_n.APP).exists())
+                self.assertTrue((folders["none"] / project_n.APP).exists())
+            finally:
+                os.chdir(cwd)
 
 
 class HelpersTest(unittest.TestCase):
