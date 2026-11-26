@@ -9,6 +9,7 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
 #include "core/math.hpp"
+#include "core/path_text.hpp"
 #include "core/profile.hpp"
 #include "core/tick_clock.hpp"
 #include "data/animations.hpp"
@@ -97,10 +98,10 @@ bool DataWatch::Changed() {
     std::error_code error;
     Listing listing = List(m_folder, error);
     if (error && !std::exchange(m_unreadable, true)) {
-        PN_LOG_WARNING("the data folder {} can't be read: {}", m_folder.string(), error.message());
+        PN_LOG_WARNING("the data folder {} can't be read: {}", core::PathText(m_folder), error.message());
     }
     else if (!error && std::exchange(m_unreadable, false)) {
-        PN_LOG_INFO("the data folder {} can be read again", m_folder.string());
+        PN_LOG_INFO("the data folder {} can be read again", core::PathText(m_folder));
     }
     if (listing == m_seen) {
         return false;
@@ -266,7 +267,7 @@ App::App(platform::Window window, gfx::Renderer renderer, Options options)
     PN_LOG_INFO("job system running {} workers", m_jobs.Workers());
     if (HOT_RELOAD && !m_options.dataFolder.empty()) {
         m_dataWatch = DataWatch{ m_options.dataFolder };
-        PN_LOG_INFO("watching {} to reload the game data", m_options.dataFolder.string());
+        PN_LOG_INFO("watching {} to reload the game data", core::PathText(m_options.dataFolder));
     }
     // Started here, not in the initializer list: every member it uses is built by now.
     m_logic = std::jthread{ [this](const std::stop_token& stop) { RunLogic(stop); } };
