@@ -5,9 +5,11 @@
 /// The fork-join job system: a parallel-for over fixed-size chunks, run by
 /// worker threads and the thread that forks, which joins before it goes on. enkiTS behind our names.
 
+#include "core/error.hpp"
 #include "core/types.hpp"
 
 #include <cstddef>
+#include <expected>
 #include <functional>
 #include <memory>
 
@@ -35,15 +37,20 @@ public:
         /// Takes over `other`'s chunks; `other` is then done.
         Pending(Pending&& other) noexcept;
         Pending& operator=(Pending&&) = delete;
-        /// Waits for every chunk, working on chunks meanwhile.
+        /// Waits for every chunk, working on chunks meanwhile. Never throws: a chunk's exception that Done() never
+        /// rethrew is logged as an error instead.
         ~Pending();
 
         /// Whether every chunk has run and the job system is finished with them: what they wrote is then visible to the
-        /// caller, and the destructor returns at once, running no other work.
+        /// caller, and the destructor returns at once, running no other work. When a chunk threw, chunks not yet begun
+        /// were skipped, and the first call that would return true rethrows that exception instead; later calls return
+        /// true. Only the owning thread calls it: the rethrow takes the exception.
         [[nodiscard]] bool Done() const;
 
     private:
         friend class Jobs;
+        /// Done() without the rethrow: what the destructor, which must not throw, checks.
+        [[nodiscard]] bool Finished() const;
         struct Task;
         Jobs* m_jobs = nullptr;
         std::unique_ptr<Task> m_task;
@@ -85,6 +92,8 @@ public:
     /// Calls `body(chunk)` once for every chunk in [0, `chunks`), on the workers and this thread,
     /// and returns when every call has. A chunk is the unit of determinism: its work and results
     /// must not depend on which thread runs it or when, so the outcome is the same with 1 worker or 32.
+    /// When a chunk throws, chunks not yet begun are skipped, and once the rest have returned the first
+    /// exception caught is rethrown here.
     template<typename Body>
     void ParallelFor(u32 chunks, const Body& body) {
         Run(chunks, [](const void* callable, u32 chunk) { (*static_cast<const Body*>(callable))(chunk); }, &body);
@@ -96,12 +105,15 @@ public:
 
     /// Starts `work` on a worker at low priority and returns at once: for work that takes long and
     /// must never hold up a parallel-for's join (writing a save). One runs at a time: starting
-    /// another waits for the last first. The destructor waits for one still running. Only a
-    /// thread that may fork starts or waits for one, and the same thread each time.
+    /// another waits for the last first, dropping its failure (already logged). The destructor waits
+    /// for one still running. Only a thread that may fork starts or waits for one, and the same thread
+    /// each time. An exception `work` throws is logged as an error on its thread and kept for the wait.
     void Background(std::function<void()> work);
 
     /// Waits until the background job started last has finished; returns at once when none runs.
-    void WaitForBackground();
+    /// Fails with the job's exception (its `what()`, or "an exception of unknown type") when it threw,
+    /// on the first wait after it only: the failure is then cleared.
+    [[nodiscard]] std::expected<void, Error> WaitForBackground();
 
 private:
     void AssertMayFork() const;

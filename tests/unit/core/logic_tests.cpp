@@ -724,7 +724,7 @@ TEST_CASE("a save then a load restore the counters and the state, and start a ne
     static_cast<void>(rig.Burst(BEFORE));
     rig.handover.SendInput({ .kind = core::ActionKind::Save });
     CHECK(rig.Burst(1).stalled);
-    rig.jobs.WaitForBackground();
+    CHECK(rig.jobs.WaitForBackground());
     REQUIRE(std::filesystem::exists(slot.File()));
     const core::TickCounters saved = rig.logic.Counters();
     CHECK(saved.wall == BEFORE + 1);
@@ -782,7 +782,7 @@ TEST_CASE("a Load during a change is dropped") {
     Rig rig(slot.File());
     rig.handover.SendInput({ .kind = core::ActionKind::Save });
     static_cast<void>(rig.Burst(1));
-    rig.jobs.WaitForBackground();
+    CHECK(rig.jobs.WaitForBackground());
     REQUIRE(std::filesystem::exists(slot.File()));
     static_cast<void>(rig.Burst(TICKS));
     rig.handover.SendInput({ .kind = core::ActionKind::CycleScene });
@@ -810,7 +810,7 @@ TEST_CASE("a load is checked on its tick and restored at the swap") {
     static_cast<void>(rig.Burst(BEFORE));
     rig.handover.SendInput({ .kind = core::ActionKind::Save });
     static_cast<void>(rig.Burst(1));
-    rig.jobs.WaitForBackground();
+    CHECK(rig.jobs.WaitForBackground());
     const core::TickCounters saved = rig.logic.Counters();
     static_cast<void>(rig.Burst(AFTER));
 
@@ -870,7 +870,7 @@ TEST_CASE("a load into another scene waits for it to be resident") {
     Rig rig(slot.File());
     rig.handover.SendInput({ .kind = core::ActionKind::Save }); // in the start scene
     static_cast<void>(rig.Burst(1));
-    rig.jobs.WaitForBackground();
+    CHECK(rig.jobs.WaitForBackground());
     rig.handover.SendInput({ .kind = core::ActionKind::CycleScene });
     static_cast<void>(Settle(rig, rig.Burst(1)));
     REQUIRE(rig.simulation.key == OTHER_KEY);
@@ -1075,7 +1075,7 @@ std::vector<std::byte> RecordAcrossChange(const SaveSlot& slot, u32 late) {
     }
     rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
     static_cast<void>(rig.Burst(1));
-    rig.jobs.WaitForBackground();
+    CHECK(rig.jobs.WaitForBackground());
     std::expected<std::vector<std::byte>, core::Error> replay = core::ReadSaveFile(replayFile);
     REQUIRE(replay.has_value());
     return std::move(replay).value_or(std::vector<std::byte>{});
@@ -1117,7 +1117,7 @@ TEST_CASE("a Pause sent while recording during a scene change is recorded, so th
         }
         rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
         static_cast<void>(rig.Burst(1));
-        rig.jobs.WaitForBackground();
+        CHECK(rig.jobs.WaitForBackground());
     }
     Rig rig(slot.File(), replayFile);
     Play(rig);
@@ -1237,7 +1237,7 @@ Recording RecordSendingViews(const SaveSlot& slot, bool views) {
     const u64 hash = rig.logic.Hash();
     rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
     static_cast<void>(rig.Burst(1));
-    rig.jobs.WaitForBackground();
+    CHECK(rig.jobs.WaitForBackground());
     std::expected<std::vector<std::byte>, core::Error> replay = core::ReadSaveFile(replayFile);
     REQUIRE(replay.has_value());
     return { .replay = std::move(replay).value_or(std::vector<std::byte>{}), .hash = hash };
@@ -1259,7 +1259,7 @@ TEST_CASE("a Save arriving in the same tick as ToggleRecording still writes the 
     rig.handover.SendInput({ .kind = core::ActionKind::Save });
     rig.handover.SendInput({ .kind = core::ActionKind::ToggleRecording });
     static_cast<void>(rig.Burst(1));
-    rig.jobs.WaitForBackground();
+    CHECK(rig.jobs.WaitForBackground());
     const bool saved = std::filesystem::exists(slot.File());
     CHECK(saved);
 }
@@ -1274,7 +1274,7 @@ TEST_CASE("a load while recording finishes the recording and writes it") {
     static_cast<void>(rig.Burst(1));
     rig.handover.SendInput({ .kind = core::ActionKind::Load });
     static_cast<void>(rig.Burst(1));
-    rig.jobs.WaitForBackground();
+    CHECK(rig.jobs.WaitForBackground());
     CHECK_FALSE(rig.replay.Recording());
     CHECK(std::filesystem::exists(replayFile));
 }
@@ -1294,13 +1294,13 @@ TEST_CASE("a load while recording finishes the recording on its tick") {
     rig.handover.SendInput({ .kind = core::ActionKind::Load }); // into the start scene
     const BurstResult asked = rig.Burst(1);
     REQUIRE(asked.snapshot.sceneChange.stage == core::SceneStage::Leaving);
-    rig.jobs.WaitForBackground();
+    CHECK(rig.jobs.WaitForBackground());
     CHECK_FALSE(rig.replay.Recording());
     std::expected<std::vector<std::byte>, core::Error> onItsTick = core::ReadSaveFile(replayFile);
     REQUIRE(onItsTick.has_value());
 
     static_cast<void>(Settle(rig, asked));
-    rig.jobs.WaitForBackground();
+    CHECK(rig.jobs.WaitForBackground());
     CHECK_FALSE(rig.replay.Recording());
     std::expected<std::vector<std::byte>, core::Error> afterTheSwap = core::ReadSaveFile(replayFile);
     REQUIRE(afterTheSwap.has_value());
@@ -1360,7 +1360,7 @@ TEST_CASE("ReloadData while recording finishes the recording and writes it") {
     static_cast<void>(rig.Burst(1));
     rig.handover.SendInput({ .kind = core::ActionKind::ReloadData, .data = NewData() });
     static_cast<void>(rig.Burst(1));
-    rig.jobs.WaitForBackground();
+    CHECK(rig.jobs.WaitForBackground());
     CHECK_FALSE(rig.replay.Recording());
     CHECK(std::filesystem::exists(replayFile));
 }
@@ -1399,7 +1399,7 @@ TEST_CASE("a calendar step asked for on a sound load's tick goes with the old st
     Rig rig(slot.File());
     rig.handover.SendInput({ .kind = core::ActionKind::Save });
     static_cast<void>(rig.Burst(1));
-    rig.jobs.WaitForBackground();
+    CHECK(rig.jobs.WaitForBackground());
     rig.handover.SendInput({ .kind = core::ActionKind::AdvanceCalendar });
     rig.handover.SendInput({ .kind = core::ActionKind::Load });
     const BurstResult asked = rig.Burst(1);
@@ -1471,7 +1471,7 @@ TEST_CASE("logic stamps and publishes a tick's events") {
     Rig rig(slot.File());
     rig.handover.SendInput({ .kind = core::ActionKind::Save });
     static_cast<void>(rig.Burst(1));
-    rig.jobs.WaitForBackground();
+    CHECK(rig.jobs.WaitForBackground());
     rig.handover.SendInput({ .kind = core::ActionKind::Load });
     static_cast<void>(Settle(rig, rig.Burst(1))); // a new timeline: its epoch is not the events' default
     REQUIRE(rig.logic.Epoch() == EPOCH);

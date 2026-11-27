@@ -2,6 +2,7 @@
 
 #include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/log.hpp"
 #include "core/math.hpp"
 #include "core/profile.hpp"
 
@@ -12,6 +13,59 @@ namespace core {
 namespace {
 
 constexpr u32 OTHER_THREADS = 2; // the main thread and the logic thread
+
+/// What `error` says in a log line: its `what()` for a std::exception, else a stand-in.
+std::string Describe(const std::exception_ptr& error) {
+    try {
+        std::rethrow_exception(error);
+    }
+    catch (const std::exception& e) {
+        return e.what();
+    }
+    catch (...) {
+        return "an exception of unknown type";
+    }
+}
+
+/// The first exception thrown by any of a task's chunks, kept for the thread that joins it.
+class ChunkFailure {
+public:
+    /// Whether a chunk has thrown, so chunks not yet begun are skipped.
+    [[nodiscard]] bool Failed() const {
+        return m_failed.load(std::memory_order_relaxed);
+    }
+
+    /// Keeps the exception being handled, unless another chunk's came first.
+    void Catch() {
+        bool expected = false;
+        // The claim comes first, so only one thread ever writes the pointer; the joiner reads it after the join.
+        if (m_failed.compare_exchange_strong(expected, true, std::memory_order_relaxed)) {
+            m_error = std::current_exception();
+        }
+    }
+
+    /// Hands over the exception kept, once, after the join; null when none was or it was taken.
+    [[nodiscard]] std::exception_ptr Take() {
+        return std::exchange(m_error, nullptr);
+    }
+
+private:
+    std::atomic<bool> m_failed = false;
+    std::exception_ptr m_error = nullptr;
+};
+
+/// Runs `call(chunk)` for each chunk in `range` unless one has failed, keeping the first exception in `failure`.
+template<typename Call>
+void RunChunks(enki::TaskSetPartition range, ChunkFailure& failure, const Call& call) {
+    for (u32 chunk = range.start; chunk < range.end && !failure.Failed(); ++chunk) {
+        try {
+            call(chunk);
+        }
+        catch (...) {
+            failure.Catch();
+        }
+    }
+}
 
 /// One item per chunk: enkiTS divides a set by its thread count, so chunk boundaries, and with them the
 /// results, would otherwise depend on how many workers run.
@@ -37,18 +91,23 @@ public:
         return m_ran.load(std::memory_order_acquire);
     }
 
+    /// The first chunk's exception, null when none threw; only after the join.
+    [[nodiscard]] std::exception_ptr TakeFailure() {
+        return m_failure.Take();
+    }
+
     void ExecuteRange(enki::TaskSetPartition range, u32 /*threadnum*/) override {
         PN_PROFILE_ZONE();
         static_cast<void>(m_ran.load(std::memory_order_acquire));
-        for (u32 chunk = range.start; chunk < range.end; ++chunk) {
-            m_call(m_callable, chunk);
-        }
+        RunChunks(range, m_failure, [this](u32 chunk) { m_call(m_callable, chunk); });
+        // Skipped chunks count too: the join waits for the whole range, run or not.
         m_ran.fetch_add(range.end - range.start, std::memory_order_release);
     }
 
 private:
     void (*m_call)(const void*, u32) = nullptr;
     const void* m_callable = nullptr;
+    ChunkFailure m_failure;
     std::atomic<u32> m_ran = 0;
 };
 
@@ -70,6 +129,7 @@ struct Jobs::Pending::Task final : public enki::ITaskSet {
     void ExecuteRange(enki::TaskSetPartition range, u32 threadnum) override;
 
     std::function<void(u32)> body;
+    ChunkFailure failure;
     std::atomic<u32> ran = 0; // the fork and join as edges ThreadSanitizer sees (enkiTS isn't instrumented)
 };
 
@@ -77,9 +137,7 @@ struct Jobs::Pending::Task final : public enki::ITaskSet {
 void Jobs::Pending::Task::ExecuteRange(enki::TaskSetPartition range, u32 /*threadnum*/) {
     PN_PROFILE_ZONE();
     static_cast<void>(ran.load(std::memory_order_acquire)); // the fork: sees the body Start() moved in
-    for (u32 chunk = range.start; chunk < range.end; ++chunk) {
-        body(chunk);
-    }
+    RunChunks(range, failure, body);
     ran.fetch_add(range.end - range.start, std::memory_order_release);
 }
 
@@ -107,12 +165,21 @@ struct Jobs::Impl {
             return m_done.load(std::memory_order_acquire);
         }
 
+        /// Why the job failed, once, after Done(); nothing when it succeeded or the failure was taken.
+        [[nodiscard]] std::optional<Error> TakeFailure() {
+            return std::exchange(m_failure, std::nullopt);
+        }
+
         void ExecuteRange(enki::TaskSetPartition range, u32 threadnum) override;
 
     private:
         std::function<void()> m_work;
+        std::optional<Error> m_failure;
         std::atomic<bool> m_done = false;
     };
+
+    /// Waits until the background job started last has finished, if there is one.
+    void JoinBackground();
 
     enki::TaskScheduler scheduler{};
     u32 workers = 0;
@@ -124,8 +191,23 @@ struct Jobs::Impl {
 void Jobs::Impl::BackgroundTask::ExecuteRange(enki::TaskSetPartition /*range*/, u32 /*threadnum*/) {
     PN_PROFILE_ZONE();
     static_cast<void>(m_done.load(std::memory_order_acquire)); // the fork: sees the work Background() moved in
-    m_work();
+    try {
+        m_work();
+    }
+    catch (...) {
+        // Logged here, where it happened: a later wait may only drop it (the next Background() does).
+        m_failure = Error{ .message = Describe(std::current_exception()) };
+        PN_LOG_ERROR("a background job failed: {}", m_failure->message);
+    }
     m_done.store(true, std::memory_order_release);
+}
+
+void Jobs::Impl::JoinBackground() {
+    if (background) {
+        scheduler.WaitforTask(background.get());
+        const bool done = background->Done(); // loaded in every mode: it's the join's edge too
+        PN_ASSERT(done, "a background job's wait returned before it finished");
+    }
 }
 
 Jobs::Pending::Pending()
@@ -140,11 +222,26 @@ Jobs::Pending::Pending(Pending&& other) noexcept
 Jobs::Pending::~Pending() {
     if (m_task) {
         m_jobs->m_impl->scheduler.WaitforTask(m_task.get());
-        PN_ASSERT(Done(), "a pending job's wait returned before its chunks ran");
+        const bool finished = Finished(); // loaded in every mode: it's the join's edge too
+        PN_ASSERT(finished, "a pending job's wait returned before its chunks ran");
+        // A destructor can't rethrow, and the owner went without asking, so this is the failure's only trace.
+        if (const std::exception_ptr error = m_task->failure.Take()) {
+            PN_LOG_ERROR("started chunks failed and nobody took the failure: {}", Describe(error));
+        }
     }
 }
 
 bool Jobs::Pending::Done() const {
+    if (!Finished()) {
+        return false;
+    }
+    if (const std::exception_ptr error = m_task ? m_task->failure.Take() : nullptr) {
+        std::rethrow_exception(error);
+    }
+    return true;
+}
+
+bool Jobs::Pending::Finished() const {
     // Both: `ran` is the edge ThreadSanitizer sees, but enkiTS marks the task complete only after the last chunk returns,
     // and until then the destructor's wait would run other low-priority work (a scene's decode) on this thread.
     return !m_task || (m_task->ran.load(std::memory_order_acquire) == m_task->m_SetSize && m_task->GetIsComplete());
@@ -204,19 +301,22 @@ Jobs::Pending Jobs::Start(u32 chunks, std::function<void(u32)> body) {
 }
 
 void Jobs::Background(std::function<void()> work) {
-    WaitForBackground();
+    AssertMayFork();
+    // The last job's failure, if any, was logged on its thread and goes with it.
+    m_impl->JoinBackground();
     m_impl->background = std::make_unique<Impl::BackgroundTask>(std::move(work));
     m_impl->background->Fork();
     m_impl->scheduler.AddTaskSetToPipe(m_impl->background.get());
 }
 
-void Jobs::WaitForBackground() {
+std::expected<void, Error> Jobs::WaitForBackground() {
     PN_PROFILE_ZONE();
     AssertMayFork();
-    if (m_impl->background) {
-        m_impl->scheduler.WaitforTask(m_impl->background.get());
-        PN_ASSERT(m_impl->background->Done(), "a background job's wait returned before it finished");
+    m_impl->JoinBackground();
+    if (std::optional<Error> failure = m_impl->background ? m_impl->background->TakeFailure() : std::nullopt) {
+        return std::unexpected{ *std::move(failure) };
     }
+    return {};
 }
 
 void Jobs::Run(u32 chunks, void (*call)(const void*, u32), const void* callable) {
@@ -231,6 +331,9 @@ void Jobs::Run(u32 chunks, void (*call)(const void*, u32), const void* callable)
     m_impl->scheduler.WaitforTask(&task, enki::TASK_PRIORITY_HIGH);
     const u32 ran = task.Joined(); // loaded in every mode: it's the join's edge too
     PN_ASSERT(ran == chunks, "a parallel-for returned before all its chunks ran");
+    if (const std::exception_ptr error = task.TakeFailure()) {
+        std::rethrow_exception(error);
+    }
 }
 
 } // namespace core

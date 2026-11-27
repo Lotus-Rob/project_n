@@ -345,7 +345,7 @@ TEST_CASE("a glyph lands while another background job holds a worker") {
     const bool landed = text.Lay(CRANE, ACROSS).complete;
     const bool landedFirst = !gaveUp.load();
     release.store(true);
-    jobs.WaitForBackground();
+    CHECK(jobs.WaitForBackground());
     CHECK(landed);
     CHECK(landedFirst);
 }
