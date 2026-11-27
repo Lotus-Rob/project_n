@@ -1486,7 +1486,7 @@ class MeasureTest(unittest.TestCase):
         rows = {line.split()[0]: line for line in table.splitlines() if line.startswith(("burst", "swords"))}
         self.assertIn("87% paced", rows["burst"])
         self.assertNotIn("paced", rows["swords"])
-        self.assertIn(f"baseline: {project_n.MEASURE_EARLIER['swords']}", rows["swords"])
+        self.assertIn(f"baseline: {project_n.MEASURE_BASELINE['swords']}", rows["swords"])
 
     def test_a_hitch_names_its_largest_zones(self):
         timeline = project_n.frame_timeline(self.zones(*self.frames(0, 30)))
