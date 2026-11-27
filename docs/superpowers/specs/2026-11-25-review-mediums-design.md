@@ -384,9 +384,11 @@ R11's plan (`docs/superpowers/plans/2026-11-26-review-r11-tests-tooling.md`, nin
 alone and last) is built.
 
 - **Pinned `core::math` bits** (TESTS-CORE-01): 20 named samples each for `Sin`, `Cos`, `Exp`, `Log`, `Pow` and `Atan2`,
-  compared by bit pattern against a table per toolchain; a toolchain with no table fails and prints its table. Spike S1,
-  measured: the generated tables of linux-gcc, linux-clang and windows-msvc (under Wine, debug builds) are
-  byte-identical, so the three share one table. clang-arm64's is filled from the pull request's macOS CI log.
+  compared by bit pattern against a table per toolchain; a compiler and architecture with no table doesn't build, and
+  a skipped case prints a toolchain's table. Spike S1, measured: the generated tables of linux-gcc, linux-clang and
+  windows-msvc (under Wine, debug builds) are byte-identical, so the three share one table. clang-arm64 (the pull
+  request's macOS CI log, release build) differs from it in 11 of the 120 values, each by one unit in the last place
+  (1 of `Cos`, 6 of `Exp`, 1 of `Log`, 3 of `Pow`; `Sin` and `Atan2` agree), so it has its own table.
 - **Replay sessions on the small test data** (TESTS-GAME-01): the replay file's median went from 29.5 s to 14.0 s; the
   world-scene case and the skipped workers case keep the shipped data. Each guarded property was shown to fail with
   its guard's subject broken (walk-to, exploring, arena, cells, painted, no-save); the exploring case was rewritten
@@ -471,7 +473,7 @@ Measurements and the rulings they led to:
 - Rejected from it: giving the replay tests' temp folders unique names. The collision under parallel runs is real
   (seen once during Task 1) and older than this branch; it is TESTS-GAME-09's cluster, which the low and info pass
   (step 10) closes across all eight test files that share the pattern. The empty clang-arm64 table, raised by three
-  models, is the planned fill from the macOS CI log, not a defect of the design.
+  models, was the planned fill from the macOS CI log, not a defect of the design; it is filled now.
 
 ## The findings and their areas
 
