@@ -20,6 +20,7 @@
 #include "core/display_delay.hpp"
 #include "core/effects.hpp"
 #include "core/error.hpp"
+#include "core/failed_frames.hpp"
 #include "core/frame.hpp"
 #include "core/game_data.hpp"
 #include "core/jobs.hpp"
@@ -80,6 +81,9 @@ struct Options {
     /// The world map's look, read from `assets/data/world_look.yaml` against `manifest` and the map; debug builds reload it
     /// with the data.
     core::WorldLook worldLook{};
+    /// Make every frame fail to acquire (`--fail-frames`, debug and releasedbg builds), to see the game stop as it does for a
+    /// graphics card that stopped drawing.
+    bool failFrames = false;
     /// Quit by itself after this long (`--quit-after`); 0 never does.
     u64 quitAfterNs = 0;
     /// Send a debug burst of hits once a second (`--burst`), so a profile run sees the damage numbers' stress without a key
@@ -235,7 +239,7 @@ public:
     ~App();
 
     /// Runs the main loop until the player quits or `--quit-after` runs out (0); or says what failed when the logic thread
-    /// fails or a scene can't be loaded. The failure is returned, not logged: the caller reports it once.
+    /// fails, a scene can't be loaded, or frames keep failing. The failure is returned, not logged: the caller reports it once.
     [[nodiscard]] std::expected<void, Failure> Run();
 
 private:
@@ -266,6 +270,8 @@ private:
     void SteerCursor();
     void Cast(const platform::WindowState& state, const ControlEvent& control, platform::Device device, bool combat);
     void MoveCamera(const platform::WindowState& state, const core::Snapshot& drawn, f64 alpha);
+    // The failure that ends the game once frames have failed too long to be a hiccup; success while they haven't.
+    [[nodiscard]] std::expected<void, Failure> CheckFrames(bool visible);
     [[nodiscard]] std::expected<void, Failure> Present(const platform::WindowState& state);
     [[nodiscard]] std::expected<void, Failure> LoadScene(core::SceneId wanted);
     [[nodiscard]] std::optional<std::size_t> Hovered(
@@ -334,6 +340,7 @@ private:
     bool m_debugSight =
         false; // whether every tile counts as in sight, unexplored land staying under cloud (F3, `--debug-sight`)
     bool m_paused = false;
+    core::FailedFrames m_failedFrames;
     std::atomic<bool> m_logicFailed = false;
     std::mutex m_logicErrorMutex;
     core::Error m_logicError{}; // set under the mutex before m_logicFailed

@@ -33,4 +33,14 @@ TEST_CASE("a success after no failures reports none") {
     CHECK(failures.Succeed() == 0);
 }
 
+TEST_CASE("Failures counts the run and Succeed ends it") {
+    core::RepeatedFailure failures;
+    CHECK(failures.Failures() == 0);
+    static_cast<void>(failures.Fail());
+    static_cast<void>(failures.Fail());
+    CHECK(failures.Failures() == 2);
+    static_cast<void>(failures.Succeed());
+    CHECK(failures.Failures() == 0);
+}
+
 } // namespace

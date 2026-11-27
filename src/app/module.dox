@@ -10,6 +10,8 @@
 ///   the travellers between its cities (`game/scenes/world.hpp`). `--<name>` for each scene in `art/scenes.toml` the game
 ///   knows.
 /// - `--quit-after SECONDS`: quit by itself.
+/// - `--fail-frames` (debug and releasedbg builds): every frame fails to acquire, so the game stops after 3 seconds and
+///   120 frames with the dialog for a graphics card that stopped drawing, and the exit status 1.
 /// - `--zoom VALUE`: every scene starts at this zoom, from 0.25 (the farthest) to 2 (the closest), for
 ///   `profile -- --cast-swords --zoom 2`.
 /// - `--burst`: F7's burst once a second, for `profile -- --burst`.
