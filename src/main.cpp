@@ -60,7 +60,13 @@ std::filesystem::path DataFolder(const std::filesystem::path& assets) {
 
 /// A start-up failure: reported (logged and shown), and the game's exit status.
 i32 FailToStart(std::string_view what, const core::Error& error) {
-    platform::ReportStartFailure(what, error);
+    platform::ReportStartFailure(what, error, core::log::Folder());
+    return 1;
+}
+
+/// A failure after the game started: reported (logged and shown), and the game's exit status.
+i32 StopOnFailure(std::string_view what, const core::Error& error) {
+    platform::ReportFailure("project_n has stopped", what, error, core::log::Folder());
     return 1;
 }
 
@@ -155,7 +161,10 @@ i32 Run(const core::Settings& settings, app::Options options, bool fullscreen, s
     }
     options.settings = settings;
     app::App app(std::move(*window), std::move(*renderer), std::move(options));
-    return app.Run();
+    if (const std::expected<void, app::Failure> ran = app.Run(); !ran) {
+        return StopOnFailure(ran.error().what, ran.error().error);
+    }
+    return 0;
 }
 
 } // namespace
@@ -234,11 +243,9 @@ int main(int argc, char** argv) {
         return status;
     }
     catch (const std::exception& e) {
-        PN_LOG_CRITICAL("fatal: {}", e.what());
-        return 1;
+        return StopOnFailure("an unexpected error", core::Error{ e.what() });
     }
     catch (...) {
-        PN_LOG_CRITICAL("fatal: an exception of unknown type");
-        return 1;
+        return StopOnFailure("an unexpected error", core::Error{ "an exception of unknown type" });
     }
 }

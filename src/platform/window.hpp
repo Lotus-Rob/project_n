@@ -9,6 +9,7 @@
 #include "core/vec2.hpp"
 
 #include <expected>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -172,12 +173,22 @@ struct InputEvent {
 /// it can't be shown (with no display, say).
 void ShowError(std::string_view title, std::string_view message);
 
-/// Reports that the game can't start because `what` failed for `error`: logs it at Critical and
-/// shows it with `show` (a title, then the message), since a player who started the game from the
-/// desktop sees no console.
+/// Reports that the game stops because `what` failed for `error`: logs it at Critical and shows it with `show` (a title,
+/// then the message, which names `logFolder` under the failure unless it is empty), since a player who started the game
+/// from the desktop sees no console.
+void ReportFailure(
+    std::string_view title,
+    std::string_view what,
+    const core::Error& error,
+    const std::filesystem::path& logFolder,
+    const std::function<void(std::string_view, std::string_view)>& show = ShowError
+);
+
+/// Reports that the game can't start because `what` failed for `error`: ReportFailure() titled "project_n can't start".
 void ReportStartFailure(
     std::string_view what,
     const core::Error& error,
+    const std::filesystem::path& logFolder,
     const std::function<void(std::string_view, std::string_view)>& show = ShowError
 );
 

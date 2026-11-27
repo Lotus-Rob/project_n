@@ -5,7 +5,9 @@
 #include "app/click.hpp"
 #include "app/damage_numbers.hpp"
 #include "app/game.hpp"
+#include "app/loop_end.hpp"
 #include "app/view.hpp"
+#include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
 #include "core/math.hpp"
@@ -269,68 +271,102 @@ App::App(platform::Window window, gfx::Renderer renderer, Options options)
         m_dataWatch = DataWatch{ m_options.dataFolder };
         PN_LOG_INFO("watching {} to reload the game data", core::PathText(m_options.dataFolder));
     }
-    // Started here, not in the initializer list: every member it uses is built by now.
-    m_logic = std::jthread{ [this](const std::stop_token& stop) { RunLogic(stop); } };
+    // Started here, not in the initializer list: every member it uses is built by now. The thread gets its own copy of
+    // what it is built from, so it never reads m_options, which the main thread changes on a data reload.
+    m_logic = std::jthread{ [this,
+                             setup = GameSetup{ .manifest = m_options.manifest,
+                                                .scene = m_options.scene,
+                                                .data = m_options.data,
+                                                .saveSlot = m_options.saveSlot,
+                                                .replaySlot = m_options.replaySlot,
+                                                .startNs = m_startNs,
+                                                .now = platform::NowNs }](const std::stop_token& stop) mutable {
+        RunLogic(stop, std::move(setup));
+    } };
+}
+
+JobSystemStopLine::~JobSystemStopLine() {
+    PN_LOG_INFO("job system stopped");
 }
 
 App::~App() {
-    m_logic.request_stop();
-    m_logic.join();
+    StopLogic();
 }
 
-void App::RunLogic(const std::stop_token& stop) {
-    // An exception that escapes is logged and stops the game.
+void App::RunLogic(const std::stop_token& stop, GameSetup setup) {
+    // An exception that escapes stops the game; the main thread reports it.
+    const auto fail = [this](std::string text) {
+        const std::scoped_lock lock{ m_logicErrorMutex };
+        m_logicError = core::Error{ std::move(text) };
+        m_logicFailed = true;
+    };
     try {
         core::math::SetFloatingPointEnvironment();
         const core::Jobs::ThreadRegistration registration{ m_jobs };
         {
-            Game game(
-                m_handover,
-                m_jobs,
-                { .manifest = m_options.manifest,
-                  .scene = m_options.scene,
-                  .data = m_options.data,
-                  .saveSlot = m_options.saveSlot,
-                  .replaySlot = m_options.replaySlot,
-                  .startNs = m_startNs,
-                  .now = platform::NowNs }
-            );
+            Game game(m_handover, m_jobs, std::move(setup));
             game.Run(stop);
         } // a save in progress finishes here: a hang at shutdown shows as no "stopped" line
         PN_LOG_INFO("logic thread stopped");
     }
     catch (const std::exception& e) {
-        PN_LOG_CRITICAL("logic thread failed: {}", e.what());
-        m_logicFailed = true;
+        fail(e.what());
     }
     catch (...) {
-        PN_LOG_CRITICAL("logic thread failed: an exception of unknown type");
-        m_logicFailed = true;
+        fail("an exception of unknown type");
     }
 }
 
-i32 App::Run() {
+std::expected<void, Failure> App::Run() {
+    std::expected<void, Failure> ended = Loop();
+    // The logic thread keeps stepping until it is stopped, so it is stopped on every way out before its last word is read:
+    // a failure after the loop's last look would otherwise vanish.
+    StopLogic();
+    if (m_logicFailed) {
+        // The thread has joined: nothing writes the error any more.
+        if (ended) {
+            ended = std::unexpected{ Failure{ .what = "the game's logic failed", .error = m_logicError } };
+        }
+        else {
+            // The loop ended on a scene failure, which is the one reported.
+            PN_LOG_ERROR("the game's logic failed too: {}", m_logicError.message);
+        }
+    }
+    return ended;
+}
+
+void App::StopLogic() {
+    m_logic.request_stop();
+    if (m_logic.joinable()) {
+        m_logic.join();
+    }
+}
+
+std::expected<void, Failure> App::Loop() {
     for (;;) {
         PN_PROFILE_ZONE();
         const platform::WindowState& state = m_window.Poll(core::TICK_NS, m_inputs);
         FollowPath(platform::NowNs());
         HandleInput(state);
-        if (state.quitRequested || m_quit) {
-            PN_LOG_DEBUG("quit requested");
-            break;
+        const bool quitAfter = m_options.quitAfterNs != 0 && platform::NowNs() - m_startNs >= m_options.quitAfterNs;
+        const LoopEnd end = EndOf(m_logicFailed, state.quitRequested || m_quit, quitAfter);
+        if (end == LoopEnd::Failed) {
+            return {}; // Run() reads the logic thread's error once the thread has stopped
         }
-        if (m_options.quitAfterNs != 0 && platform::NowNs() - m_startNs >= m_options.quitAfterNs) {
-            PN_LOG_INFO("quitting after {} seconds, as --quit-after asked", m_options.quitAfterNs / core::NS_PER_SECOND);
+        if (end == LoopEnd::Quit) {
+            if (quitAfter) {
+                PN_LOG_INFO("quitting after {} seconds, as --quit-after asked", m_options.quitAfterNs / core::NS_PER_SECOND);
+            }
+            else {
+                PN_LOG_DEBUG("quit requested");
+            }
             break;
-        }
-        if (m_logicFailed) {
-            return 1;
         }
         WatchData(platform::NowNs());
         RepeatBurst(platform::NowNs());
         CastOnTimer(platform::NowNs());
-        if (!Present(state)) {
-            return 1;
+        if (std::expected<void, Failure> presented = Present(state); !presented) {
+            return presented;
         }
     }
     PN_LOG_INFO("shutting down; {} snapshots that moved were published after they were due", m_display.LateAdoptions());
@@ -340,7 +376,7 @@ i32 App::Run() {
         Milliseconds(m_delay.Lowest()),
         Milliseconds(m_delay.Highest())
     );
-    return 0;
+    return {};
 }
 
 void App::RepeatBurst(u64 nowNs) {
@@ -790,10 +826,10 @@ void App::MoveCamera(const platform::WindowState& state, const core::Snapshot& d
     }
 }
 
-bool App::LoadScene(core::SceneId wanted) {
+std::expected<void, Failure> App::LoadScene(core::SceneId wanted) {
     PN_PROFILE_ZONE();
     if (wanted == m_reported) {
-        return true;
+        return {};
     }
     // A load begun finishes first, wanted or not: the renderer loads one scene at a time.
     const core::SceneId scene = m_loading.value_or(wanted);
@@ -805,8 +841,8 @@ bool App::LoadScene(core::SceneId wanted) {
     const std::string& name = m_options.manifest->Scene(scene).name;
     const std::expected<bool, core::Error> held = m_renderer.ContinueScene(LOAD_BUDGET_NS);
     if (!held) {
-        PN_LOG_CRITICAL("the scene {} couldn't be loaded: {}", name, held.error().message);
-        return false;
+        return std::unexpected{ Failure{ .what = std::format("the scene {} couldn't be loaded", name),
+                                         .error = held.error() } };
     }
     if (*held) {
         m_loading.reset();
@@ -814,11 +850,12 @@ bool App::LoadScene(core::SceneId wanted) {
         m_handover.SendInput({ .kind = core::ActionKind::SceneResident, .scene = scene });
         PN_LOG_INFO("scene {} resident in {} ms", name, (platform::NowNs() - m_loadStartNs) / core::NS_PER_MS);
     }
-    return true;
+    return {};
 }
 
-bool App::Present(const platform::WindowState& state) {
+std::expected<void, Failure> App::Present(const platform::WindowState& state) {
     PN_PROFILE_ZONE();
+    std::optional<Failure> sceneFailure = std::nullopt;
     // PresentFrame drains the events every iteration, drawing or not, so the queue never grows.
     const bool presented = core::PresentFrame(
         m_display,
@@ -830,8 +867,9 @@ bool App::Present(const platform::WindowState& state) {
         platform::NowNs,
         // A scene's upload step can hold the acquired image for LOAD_BUDGET_NS before the draw; that delays nothing that
         // moves, as the logic runs no tick until the scene is resident.
-        [this](const core::Snapshot& drawn) {
-            if (!LoadScene(drawn.scene)) {
+        [this, &sceneFailure](const core::Snapshot& drawn) {
+            if (std::expected<void, Failure> loaded = LoadScene(drawn.scene); !loaded) {
+                sceneFailure = std::move(loaded.error());
                 return false;
             }
             // Nothing draws the ways out of and into a scene yet: each is reported played as soon as it shows.
@@ -890,8 +928,13 @@ bool App::Present(const platform::WindowState& state) {
         }
     );
     const core::Snapshot* drawn = m_display.Drawn();
-    if (!presented || drawn == nullptr) {
-        return presented;
+    if (!presented) {
+        // The frame stops only when the scene can't be loaded, which sets the failure.
+        PN_ASSERT(sceneFailure.has_value(), "a frame stopped without a failure");
+        return std::unexpected{ std::move(*sceneFailure) }; // NOLINT(bugprone-unchecked-optional-access): asserted above
+    }
+    if (drawn == nullptr) {
+        return {};
     }
     if (!state.visible) {
         // Hidden, numbers still age out, so the pool doesn't grow while nothing is drawn: by the earliest the render
@@ -902,7 +945,7 @@ bool App::Present(const platform::WindowState& state) {
         // Nothing draws the transition itself yet.
         platform::WaitUntilNs(platform::NowNs() + TRANSITION_FRAME_NS);
     }
-    return true;
+    return {};
 }
 
 } // namespace app

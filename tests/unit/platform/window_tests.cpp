@@ -41,6 +41,7 @@ TEST_CASE("a start-up failure is shown with what failed and why") {
     platform::ReportStartFailure(
         "the window couldn't be opened",
         core::Error{ "no display" },
+        std::filesystem::path{},
         [&shownTitle, &shownMessage](std::string_view title, std::string_view message) {
             shownTitle = title;
             shownMessage = message;
@@ -48,6 +49,35 @@ TEST_CASE("a start-up failure is shown with what failed and why") {
     );
     CHECK(shownTitle == "project_n can't start");
     CHECK(shownMessage == "the window couldn't be opened:\nno display");
+}
+
+TEST_CASE("a reported failure is shown with the log folder under it") {
+    std::string shownTitle;
+    std::string shownMessage;
+    platform::ReportFailure(
+        "project_n has stopped",
+        "the scene arena couldn't be loaded",
+        core::Error{ "bad sprite" },
+        std::filesystem::path{ u8"logs_é" },
+        [&shownTitle, &shownMessage](std::string_view title, std::string_view message) {
+            shownTitle = title;
+            shownMessage = message;
+        }
+    );
+    CHECK(shownTitle == "project_n has stopped");
+    CHECK(shownMessage == "the scene arena couldn't be loaded:\nbad sprite\n\nThe log is in:\nlogs_é");
+}
+
+TEST_CASE("a reported failure with no log folder says nothing about the log") {
+    std::string shownMessage;
+    platform::ReportFailure(
+        "project_n has stopped",
+        "the game's logic failed",
+        core::Error{ "boom" },
+        std::filesystem::path{},
+        [&shownMessage](std::string_view, std::string_view message) { shownMessage = message; }
+    );
+    CHECK(shownMessage == "the game's logic failed:\nboom");
 }
 
 TEST_CASE("a window moving between displays names each new one once, and its mode when that changes") {
