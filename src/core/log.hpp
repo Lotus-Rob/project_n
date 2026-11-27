@@ -22,12 +22,20 @@ namespace core::log {
 /// keeps the previous 9 (`project_n.1.log`, the newest, to `project_n.9.log`). With an empty
 /// `directory` it logs to the console only (the caller says why); with one that can't be used, it
 /// logs to the console only and warns why. Call it first thing in `main`; later calls change
-/// nothing. Messages still queued when the program exits are written before it ends.
+/// nothing. Messages still queued when the program exits are written before it ends, and so are
+/// those queued when it dies on SIGABRT, SIGFPE, SIGILL, SIGSEGV (SIGBUS where it exists), an
+/// unhandled Windows exception, or an uncaught C++ exception, which is named in the log first.
+/// On Windows that last part holds only for the thread that started the log (the C++ runtime keeps
+/// the terminate handler per thread), and Quill's unhandled-exception filter replaces the
+/// runtime's, so there the exception is not named.
 void Start(const std::filesystem::path& directory);
 
 /// The logger every `PN_LOG_*` macro writes to; use the macros instead. Before Start(), it writes
 /// to the console only.
 [[nodiscard]] quill::Logger* Root();
+
+/// The folder Start() writes its log file in; empty before Start() and when it logs to the console only.
+[[nodiscard]] const std::filesystem::path& Folder();
 
 } // namespace core::log
 
