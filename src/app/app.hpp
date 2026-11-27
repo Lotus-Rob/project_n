@@ -12,6 +12,7 @@
 #include "app/cast.hpp"
 #include "app/damage_numbers.hpp"
 #include "app/fog_fade.hpp"
+#include "app/game.hpp"
 #include "app/hud.hpp"
 #include "app/target_cursor.hpp"
 #include "app/view.hpp"
@@ -32,7 +33,6 @@
 #include "core/vec2.hpp"
 #include "core/world_look.hpp"
 #include "game/host.hpp"
-#include "gfx/camera.hpp"
 #include "gfx/renderer.hpp"
 #include "platform/window.hpp"
 
@@ -41,8 +41,10 @@
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stop_token>
+#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -196,6 +198,27 @@ void KeepWorld(const core::GameData& running, std::expected<core::GameData, core
 /// couldn't be read, or reads as it was, leaves `current` as it is.
 [[nodiscard]] bool KeepLook(core::WorldLook& current, std::expected<core::WorldLook, core::Error> read);
 
+/// Why the game stopped: what failed and the error behind it, as the dialog and the log say them.
+struct Failure {
+    /// What failed, as a clause the dialog can start with ("the game's logic failed").
+    std::string what;
+    /// Why.
+    core::Error error;
+};
+
+/// Logs that the job system stopped when it is destroyed; an App member declared before the job system, so the workers
+/// have joined by then.
+class JobSystemStopLine {
+public:
+    JobSystemStopLine() = default;
+    JobSystemStopLine(const JobSystemStopLine&) = delete;
+    JobSystemStopLine& operator=(const JobSystemStopLine&) = delete;
+    JobSystemStopLine(JobSystemStopLine&&) = delete;
+    JobSystemStopLine& operator=(JobSystemStopLine&&) = delete;
+    /// Logs the line.
+    ~JobSystemStopLine();
+};
+
 /// The main thread's systems (the job system, the window, the renderer, the handover and its display
 /// side, the camera, the damage numbers, the HUD) and the logic thread, which builds and runs a Game on the job system.
 /// A new system is a member of App (main thread) or of Game (logic thread), never passed in as loose arguments.
@@ -211,12 +234,17 @@ public:
     /// Stops the logic thread and waits for it, before the handover it uses goes.
     ~App();
 
-    /// Runs the main loop until the player quits or `--quit-after` runs out (0), or the logic
-    /// thread fails or a scene can't be loaded (1).
-    [[nodiscard]] i32 Run();
+    /// Runs the main loop until the player quits or `--quit-after` runs out (0); or says what failed when the logic thread
+    /// fails or a scene can't be loaded. The failure is returned, not logged: the caller reports it once.
+    [[nodiscard]] std::expected<void, Failure> Run();
 
 private:
-    void RunLogic(const std::stop_token& stop);
+    // The main loop: ends as its turns say, without stopping the logic thread. Success may mean the logic thread failed:
+    // its error is read by Run() once the thread has stopped, so that one that fails during the shutdown isn't lost.
+    [[nodiscard]] std::expected<void, Failure> Loop();
+    // Asks the logic thread to stop and waits for it; once is as good as many.
+    void StopLogic();
+    void RunLogic(const std::stop_token& stop, GameSetup setup);
     void HandleInput(const platform::WindowState& state);
     void NoteDevice(const platform::InputEvent& input);
     // Sends the held input when it changed: the player's Move, or `--camera-path`'s while it runs, timing its press.
@@ -238,8 +266,8 @@ private:
     void SteerCursor();
     void Cast(const platform::WindowState& state, const ControlEvent& control, platform::Device device, bool combat);
     void MoveCamera(const platform::WindowState& state, const core::Snapshot& drawn, f64 alpha);
-    [[nodiscard]] bool Present(const platform::WindowState& state);
-    [[nodiscard]] bool LoadScene(core::SceneId wanted);
+    [[nodiscard]] std::expected<void, Failure> Present(const platform::WindowState& state);
+    [[nodiscard]] std::expected<void, Failure> LoadScene(core::SceneId wanted);
     [[nodiscard]] std::optional<std::size_t> Hovered(
         const platform::WindowState& state,
         const core::Snapshot& drawn,
@@ -256,7 +284,9 @@ private:
     void FollowPath(u64 nowNs);
     void MeasureLatency(const core::Snapshot& drawn, f64 alpha);
 
-    // First, so it goes last: the logic thread registers with it, the renderer's loads run on it.
+    // Before the job system, so it is destroyed after it: its workers have joined when it speaks.
+    JobSystemStopLine m_jobsStopLine;
+    // Next, so it goes next to last: the logic thread registers with it, the renderer's loads run on it.
     core::Jobs m_jobs;
     platform::Window m_window;
     gfx::Renderer m_renderer;
@@ -305,7 +335,9 @@ private:
         false; // whether every tile counts as in sight, unexplored land staying under cloud (F3, `--debug-sight`)
     bool m_paused = false;
     std::atomic<bool> m_logicFailed = false;
-    std::jthread m_logic; // last, so it stops and joins before anything it uses goes
+    std::mutex m_logicErrorMutex;
+    core::Error m_logicError{}; // set under the mutex before m_logicFailed
+    std::jthread m_logic;       // last, so it stops and joins before anything it uses goes
 };
 
 } // namespace app

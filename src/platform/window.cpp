@@ -2,6 +2,7 @@
 
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/log.hpp"
+#include "core/path_text.hpp"
 #include "core/profile.hpp"
 
 #include <SDL3/SDL.h>
@@ -377,13 +378,28 @@ void ShowError(std::string_view title, std::string_view message) {
     }
 }
 
-void ReportStartFailure(
+void ReportFailure(
+    std::string_view title,
     std::string_view what,
     const core::Error& error,
+    const std::filesystem::path& logFolder,
     const std::function<void(std::string_view, std::string_view)>& show
 ) {
     PN_LOG_CRITICAL("{}: {}", what, error.message);
-    show("project_n can't start", std::format("{}:\n{}", what, error.message));
+    std::string message = std::format("{}:\n{}", what, error.message);
+    if (!logFolder.empty()) {
+        message += std::format("\n\nThe log is in:\n{}", core::PathText(logFolder));
+    }
+    show(title, message);
+}
+
+void ReportStartFailure(
+    std::string_view what,
+    const core::Error& error,
+    const std::filesystem::path& logFolder,
+    const std::function<void(std::string_view, std::string_view)>& show
+) {
+    ReportFailure("project_n can't start", what, error, logFolder, show);
 }
 
 std::optional<core::Vec2> Window::Cursor() const {
