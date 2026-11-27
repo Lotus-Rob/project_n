@@ -2719,8 +2719,8 @@ MEASURE_RUNS = {"world": (["--world", "--camera-path", "--travel-share", str(MEA
 MEASURE_WORKERS = 2
 # Fixed conditions: the display's native size, and a present the display's refresh doesn't pace.
 MEASURE_FLAGS = ["--fullscreen", "--workers", str(MEASURE_WORKERS), "--unpaced"]
-# The arena runs' numbers (each the median of three runs) with Tracy built without forced callstacks, on the
-# 165 Hz display, printed beside the new ones: main-thread work, as the frame time sits at the display's interval.
+# The arena runs' numbers (each the median of three runs) with Tracy built without forced callstacks or fibers, on
+# the 165 Hz display, printed beside the new ones: main-thread work, as the frame time sits at the display's interval.
 MEASURE_BASELINE = {"burst": "1.29/4.26/4.63 ms (median/p99/worst work, main thread)",
                     "swords": "1.24/4.12/4.77 ms (median/p99/worst work, main thread)",
                     "seals": "1.26/4.18/4.84 ms (median/p99/worst work, main thread)"}
