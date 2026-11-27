@@ -392,19 +392,21 @@ alone and last) is built.
   its guard's subject broken (walk-to, exploring, arena, cells, painted, no-save); the exploring case was rewritten
   across a month's jump because the first version passed with `ExploreRoute` doing nothing.
 - **Shared game test helpers** (TESTS-GAME-02): the local copies moved into `tests/support/`, each variant under its
-  own name (`LivingFoxes`, `SameEventsIgnoringTick`, `StepMonthFrozen`, `PublishedAt`, `PublishedSnapshot`);
-  `game_tests` has 388 cases before and after on linux-clang and windows-msvc.
+  own name (`LivingFoxes`, `SameEventsIgnoringTick`, `StepMonthFrozen`, `PublishedAt`, `PublishedSnapshot`,
+  `HostWithCultivatorAt` beside `AddCultivator`), and the two hand-built lone-cultivator world saves are one
+  (`LoneCultivatorSave`); `game_tests` has 388 cases before and after on linux-clang and windows-msvc.
 - **Font coverage** (X-TEXT-L10N-01): every codepoint of `strings.yaml` and `names.yaml` (both languages, characters
   and pinyin) is looked up in the shipped font, a miss naming its codepoint and its string's key. No glyph is missing.
 - **`test --test`** matching no test file and no case now fails, naming the closest files and cases; the listing is
-  taken with the run's own doctest arguments, so a skipped case named with `--no-skip` still runs, and a container run
+  taken with the run's own doctest arguments, so a skipped case named with `--no-skip` still runs (named without it,
+  the run fails saying so), and a container run
   is handed the name as given and checks it against its own build (the first version passed the computed filter in,
   so the check never ran there).
 - **`check --sanitizers`** says which sanitizer check only built (windows-msvc's AddressSanitizer off Windows) rather
   than "every supported sanitizer"; **`reference`** fails on a committed picture no case draws, not only under
   `--update`; **`build`** removes the 0-byte outputs a stopped build left in its own folder (a sanitizer build its own,
   never the plain one) before XMake takes them as up to date. `RendererFor` parses the manifest and the strings once
-  per reference case.
+  per call (it parsed the manifest up to four times).
 - **Tracy without forced callstacks or fibers** (GAP1-THIRD-PARTY-LIBRARY-USAGE-01), and `measure`'s baseline
   (`MEASURE_BASELINE`, shown as "baseline:") retaken with it: below.
 
@@ -487,13 +489,13 @@ Every medium finding, with the area that closes it. Each area's pull request upd
 | GAP1-SCENE-TRANSITION-FLOW-01 | R6 | |
 | GAP1-SWEEP-UP-BACKLOG-VS-CODE-01 | R12 | |
 | GAP1-SWEEP-UP-BACKLOG-VS-CODE-02 | R12 | |
-| GAP1-THIRD-PARTY-LIBRARY-USAGE-01 | R11 | |
+| GAP1-THIRD-PARTY-LIBRARY-USAGE-01 | R11 | fixed (measured by the A/B; Outcome: R11) |
 | GAP1-THIRD-PARTY-LIBRARY-USAGE-02 | R13 | |
 | GAP2-COORDINATE-SPACES-AND-PICKING-01 | R10 | |
 | GAP2-COORDINATE-SPACES-AND-PICKING-02 | R10 | |
 | GAP2-MEMORY-BUDGET-VS-0002-S13-01 | R13 | |
 | GAP2-MEMORY-BUDGET-VS-0002-S13-02 | R13 | |
-| GAP2-REPO-CONFIG-FILES-01 | R11 | |
+| GAP2-REPO-CONFIG-FILES-01 | R11 | fixed (gcc's undefined builds, not clang's; Outcome: R11) |
 | GD-COMBAT-SYSTEMS-01 | D1 | |
 | GD-COMBAT-SYSTEMS-02 | D3 | |
 | GD-COMBAT-SYSTEMS-03 | D1 | |
@@ -535,9 +537,9 @@ Every medium finding, with the area that closes it. Each area's pull request upd
 | SPECS-ROADMAP-04 | D4 | |
 | SPECS-ROADMAP-05 | D4 | |
 | SPECS-ROADMAP-06 | D4 | |
-| TESTS-CORE-01 | R11 | |
-| TESTS-GAME-01 | R11 | |
-| TESTS-GAME-02 | R11 | |
+| TESTS-CORE-01 | R11 | fixed |
+| TESTS-GAME-01 | R11 | fixed |
+| TESTS-GAME-02 | R11 | fixed |
 | TESTS-GAME-03 | R4 | |
 | TESTS-GAME-04 | R4 | |
 | X-ACCESSIBILITY-01 | R8 | |
@@ -553,8 +555,8 @@ Every medium finding, with the area that closes it. Each area's pull request upd
 | X-ARCHITECTURE-06 | D3 | |
 | X-ARCHITECTURE-07 | D3 | |
 | X-ARCHITECTURE-08 | R1 | amended |
-| X-CPP-SAFETY-01 | R2 | |
-| X-CPP-SAFETY-02 | R2 | |
+| X-CPP-SAFETY-01 | R2 | fixed |
+| X-CPP-SAFETY-02 | R2 | fixed |
 | X-DETERMINISM-01 | R4 | |
 | X-PERFORMANCE-01 | S | |
 | X-PERFORMANCE-02 | D2 | |
@@ -566,11 +568,11 @@ Every medium finding, with the area that closes it. Each area's pull request upd
 | X-RESILIENCE-04 | R3 | |
 | X-RESILIENCE-05 | R4 | |
 | X-RESILIENCE-06 | R4 | |
-| X-TEXT-L10N-01 | R11 | |
-| X-TEXT-L10N-02 | R2 | |
+| X-TEXT-L10N-01 | R11 | fixed |
+| X-TEXT-L10N-02 | R2 | fixed |
 | X-TEXT-L10N-03 | R8 | |
-| X-UNTRUSTED-INPUT-01 | R2 | |
-| X-UNTRUSTED-INPUT-02 | R2 | |
+| X-UNTRUSTED-INPUT-01 | R2 | fixed |
+| X-UNTRUSTED-INPUT-02 | R2 | fixed |
 
 ### The low findings added by the user
 
