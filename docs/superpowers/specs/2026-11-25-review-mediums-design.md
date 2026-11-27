@@ -109,6 +109,7 @@ X-RESILIENCE-04 (+ APP-MAIN-01, GD-ROADMAP-SCOPE-08's silent exit), X-RESILIENCE
 - APP-MAIN-02 (low): the debug-build data race on `m_options` at logic start.
 - A start-up banner: version and commit, preset and mode, OS, CPU count, GPU name.
 - 0002 §12 then says what is true.
+**Implemented** (Outcome: R3, below).
 
 **R4. Saves you can trust** (full; plan only). X-DETERMINISM-01 (+ DESIGN-DOCS-04, GD-WORLD-SIM-02), X-RESILIENCE-05
 (+ DESIGN-DOCS-05), X-RESILIENCE-06, GAP1-LOGGING-AND-COMMENT-RULE-CONFORMANCE-01, CORE-PERSIST-01, TESTS-GAME-03, TESTS-GAME-04.
@@ -236,7 +237,7 @@ waits for D1 and D2 per decision 4) and this work. Within this work:
 |---|---|---|---|---|
 | 1 | R1 | none | every later session loads less; shared-routes' tasks then add one-line rules (tell its next dispatch) | done |
 | 2 | R2, R11 (parallel) | R1 | R2 is small and stops start-up and save failures; R11 shares no files | done |
-| 3 | R3 | R2 (`main.cpp`, `app.cpp`) | the silent-failure class |  |
+| 3 | R3 | R2 (`main.cpp`, `app.cpp`) | the silent-failure class | done |
 | 4 | R4 | R3 (the save job's error path) | before shared-routes stage 2 changes the save layout |  |
 | 5 | R5, R6 (parallel) | R4 for R5 (`host.cpp`) | concrete bugs |  |
 | 6 | R5b, R7 (spec first), R8 (parallel) | R5 for R5b; R6 for R7 (`core/logic.cpp`); R5b and R7 both touch the tick, so R7 rebases on R5b | R7's spec can be written during step 5 |  |
@@ -378,6 +379,64 @@ Rulings made while building it:
   standard header). Accepted: a console test run straight from a terminal sends doctest's output to its new console;
   under `xmake test` and CI the streams are redirected and unaffected.
 
+## Outcome: R3 (implemented)
+
+R3's plan (`docs/superpowers/plans/2026-11-27-review-r3-fail-loudly.md`, six tasks in three waves) is built, with its six
+calls as the user approved them.
+
+- **Jobs carry exceptions:** every parallel-for chunk, started (low-priority) chunk and background job catches what it
+  throws. A parallel-for rethrows one exception on the joining thread once every chunk has finished or been skipped (the
+  rest skip, a second exception is dropped), so the task no longer unwinds under running workers; a started chunk
+  rethrows from `Pending::Done()` on the main thread, which polls it; a background job's failure comes back from
+  `WaitForBackground()` (`[[nodiscard]]`), logged once at Error, since the game survives a failed save. Checked under
+  ASan and TSan.
+- **The log survives a crash:** Quill's backend starts with its handler for SIGABRT, SIGFPE, SIGILL, SIGSEGV and SIGBUS
+  (SIGINT and SIGTERM stay with SDL, so Ctrl-C still quits through its quit event and logs a clean stop);
+  `std::set_terminate` names the uncaught exception and flushes, and a terminate inside that handler aborts rather than
+  recursing. `log_crash_tests` runs its own binary as a crashing child and reads the log back.
+- **Runtime failures show the dialog:** a logic-thread failure, a scene that fails to load, and an uncaught exception in
+  `main` end with "project_n has stopped", the failure and the log folder, and exit status 1. `App::Run` joins the logic
+  thread on every way out before its final check, so a failure in the same turn as a quit or `--quit-after`, or after
+  the loop, still sets the status; a scene failure wins over a simultaneous logic one, which is logged at Error.
+  `app::EndOf` decides the loop's end from a table of all eight combinations. The logic thread's setup is built in
+  `App`'s constructor, so it never reads `m_options` (APP-MAIN-02). "job system stopped" is logged once the workers
+  have joined.
+- **A graphics card that stops drawing:** `core::FailedFrames` calls the card lost after 120 failed frames in a row
+  spanning 3 seconds, then the same dialog ("the graphics card stopped drawing: N frames failed in a row over T s"); no
+  device rebuild. A frame that can't be judged (a minimised or hidden window) ends the run like a success. A debug and
+  releasedbg flag, `--fail-frames`, makes every acquire fail: the only way to check this path without pulling a card.
+- **A start-up banner:** the log opens with the version, commit (`-dirty` for a tracked local edit, not counting
+  `xmake-requires.lock`), preset and mode, then the OS, CPU count and the GPU's name. The build stamp is rewritten at
+  every configure, so it follows each `project_n` build.
+- **0002 §12, 0002.1 and `src/AGENTS.md`** say how failures are caught, logged and shown.
+
+Spikes, measured:
+
+- S1: a doctest case runs its own binary as a child and reads its exit status on linux-gcc, linux-clang and
+  windows-msvc under Wine (Wine needs the whole command quoted once more), so the crash cases run on every preset; no
+  skip.
+- S2: under Wine, `abort()` and SIGSEGV lost the last line until `quill::init_signal_handler` was also called for the
+  starting thread on Windows (the CRT's handlers are per thread); with it both cases pass.
+- S3: a failed acquire took about 6 µs (483,523 frames in 3.0 s unthrottled), under the 1 ms rule, so the loop pauses
+  10 ms after a failed frame. With the pause, the `--fail-frames` hand check stopped after 292-293 frames in 3.0 s:
+  the time bound decides, not the frame count.
+
+Rulings made while building it:
+
+- Failures the game survives (a background job, started chunks nobody took) log at Error, not the plan's Critical: a
+  failure is logged once, at its consequence's level.
+- The device-loss Critical line is folded into the failure's text, so `main` logs it once with the dialog.
+- `FirstFailure()`, not the plan's `LastFailure()`: it returns the run's first error.
+- The build stamp sets `always_update_configfiles`: XMake rewrote it only on a recheck, so the banner showed an old hash
+  (the plan's call 6 assumed every build configured). It costs three recompiles per commit.
+- `app.hpp` keeps including `game.hpp` (no forward declarations in headers, `src/AGENTS.md`).
+- Unverified here: Ctrl-C on native Windows (no Windows host; the crash handler leaves SIGINT alone, and SDL's handler
+  order is commented). On Windows `set_terminate` is per thread, so an uncaught exception on a raw thread aborts
+  without its name (job and logic threads catch at their entries); its fix is in the backlog. `./dev run` reports 255
+  for the game's status 1 (`xmake run` maps every non-zero status): in the backlog.
+- Each task's reviews and fixes: one fix pass each, Minors included; release builds of linux-gcc and windows-msvc, and
+  the new windows-msvc tests under Wine, passed after every task.
+
 ## Outcome: R11 (implemented)
 
 R11's plan (`docs/superpowers/plans/2026-11-26-review-r11-tests-tooling.md`, nine tasks in three waves, the Tracy task
@@ -482,8 +541,8 @@ Every medium finding, with the area that closes it. Each area's pull request upd
 | Finding | Area | Closing |
 |---|---|---|
 | APP-INPUT-UI-01 | R10 | |
-| APP-MAIN-01 | R3 | |
-| CORE-INFRA-01 | R3 | |
+| APP-MAIN-01 | R3 | fixed (the runtime dialog; Outcome: R3) |
+| CORE-INFRA-01 | R3 | fixed |
 | CORE-PERSIST-01 | R4 | |
 | CORE-WORLD-01 | S | |
 | CORE-WORLD-02 | S | |
@@ -494,13 +553,13 @@ Every medium finding, with the area that closes it. Each area's pull request upd
 | DESIGN-DOCS-03 | R12 | |
 | DESIGN-DOCS-04 | R4 | |
 | DESIGN-DOCS-05 | R4 | |
-| DESIGN-DOCS-06 | R3 | |
+| DESIGN-DOCS-06 | R3 | fixed |
 | GAME-COMBAT-01 | R5 | |
 | GAME-HOST-A-01 | R5 | |
 | GAP1-CLOCK-DISCIPLINE-PAUSE-01 | R7 | |
 | GAP1-CLOCK-DISCIPLINE-PAUSE-02 | R7 | |
 | GAP1-LOGGING-AND-COMMENT-RULE-CONFORMANCE-01 | R4 | |
-| GAP1-LOGGING-AND-COMMENT-RULE-CONFORMANCE-02 | R3 | |
+| GAP1-LOGGING-AND-COMMENT-RULE-CONFORMANCE-02 | R3 | fixed (the start-up banner) |
 | GAP1-SCENE-TRANSITION-FLOW-01 | R6 | |
 | GAP1-SWEEP-UP-BACKLOG-VS-CODE-01 | R12 | |
 | GAP1-SWEEP-UP-BACKLOG-VS-CODE-02 | R12 | |
@@ -526,7 +585,7 @@ Every medium finding, with the area that closes it. Each area's pull request upd
 | GD-ROADMAP-SCOPE-05 | D5 | |
 | GD-ROADMAP-SCOPE-06 | D4 | |
 | GD-ROADMAP-SCOPE-07 | R1 | amended |
-| GD-ROADMAP-SCOPE-08 | R3 | |
+| GD-ROADMAP-SCOPE-08 | R3 | fixed (its silent exit; Outcome: R3) |
 | GD-ROADMAP-SCOPE-09 | D1 | |
 | GD-TOI-COVERAGE-01 | D1 | |
 | GD-TOI-COVERAGE-02 | D1 | |
@@ -577,10 +636,10 @@ Every medium finding, with the area that closes it. Each area's pull request upd
 | X-PERFORMANCE-02 | D2 | |
 | X-PERFORMANCE-03 | D2 | |
 | X-PERFORMANCE-04 | S | |
-| X-RESILIENCE-01 | R3 | |
-| X-RESILIENCE-02 | R3 | |
-| X-RESILIENCE-03 | R3 | |
-| X-RESILIENCE-04 | R3 | |
+| X-RESILIENCE-01 | R3 | fixed |
+| X-RESILIENCE-02 | R3 | fixed |
+| X-RESILIENCE-03 | R3 | fixed (no device rebuild; Outcome: R3) |
+| X-RESILIENCE-04 | R3 | fixed |
 | X-RESILIENCE-05 | R4 | |
 | X-RESILIENCE-06 | R4 | |
 | X-TEXT-L10N-01 | R11 | fixed |
@@ -593,7 +652,7 @@ Every medium finding, with the area that closes it. Each area's pull request upd
 
 | Finding | Area | Closing |
 |---|---|---|
-| APP-MAIN-02 | R3 | |
+| APP-MAIN-02 | R3 | fixed |
 | CORE-PERSIST-03 | R4 | |
 | CORE-PERSIST-04 | R4 | |
 | X-DETERMINISM-02 | R4 | |
