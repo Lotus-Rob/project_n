@@ -440,7 +440,7 @@ def tag_ref():
 # flags: every define we pass (PN_ASSERTS, _FORTIFY_SOURCE, _GLIBCXX_ASSERTIONS, _LIBCPP_HARDENING_MODE,
 # _LIBCPP_DISABLE_AVAILABILITY, NDEBUG, packages' TRACY_*) is an ordinary macro that reaches the object only through
 # the preprocessed text, which is hashed; none is a compiler switch. The values the generated build_info.hpp holds
-# (the version, the data paths) are in that text too. Clang's text holds the precompiled header's headers as well,
+# (the version, the commit and build, the data paths) are in that text too. Clang's text holds the precompiled header's headers as well,
 # and its object compiles from that text alone.
 def build_cache_root():
     """BUILD_CACHE_ENV made absolute (podman takes a relative source for a volume name; XMake resolves --ccachedir

@@ -333,10 +333,31 @@ target("build_info")
     set_configdir("$(builddir)/generated")
     add_configfiles("src/build_info.hpp.in")
     add_includedirs("$(builddir)/generated", {public = true})
+    -- XMake rewrites config files only when the configuration changes, which would freeze the commit stamp; the
+    -- file is written only when its text differs, so only the sources that use the stamp recompile.
+    set_policy("build.always_update_configfiles", true)
     -- The game's version, stamped into replays (core/replay.cpp), which play back only in the build that made them.
     on_load(function (target)
         import("core.project.project")
         target:set("configvar", "PN_GAME_VERSION", project.version())
+        -- Refreshed at every configure (always_update_configfiles below), which every project_n build runs.
+        local commit = "unknown"
+        local head = try { function ()
+            return os.iorunv("git", {"-C", os.projectdir(), "rev-parse", "--short=12", "HEAD"})
+        end }
+        if head and #head:trim() > 0 then
+            commit = head:trim()
+            -- Not the lock file: XMake rewrites its order before this runs, without changing it.
+            local changes = try { function ()
+                return os.iorunv("git", {"--no-optional-locks", "-C", os.projectdir(), "status", "--porcelain", "--", ".", ":!xmake-requires.lock"})
+            end }
+            if changes and #changes:trim() > 0 then
+                commit = commit .. "-dirty"
+            end
+        end
+        target:set("configvar", "PN_GAME_COMMIT", commit)
+        local toolchain = (get_config("toolchain") or "unknown"):gsub("^pixi%-", "")
+        target:set("configvar", "PN_BUILD", string.format("%s-%s %s %s", get_config("plat"), get_config("arch"), toolchain, get_config("mode")))
     end)
     if is_mode("debug") then
         -- Debug builds read and watch the game data in the source tree, so an edit there reloads in
