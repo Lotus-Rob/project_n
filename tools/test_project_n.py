@@ -2448,6 +2448,18 @@ class SanitizerTest(unittest.TestCase):
         self.assertNotIn("matches no test file", str(raised.exception))
         self.assertEqual(listed, [["--test-case=*nothing_like_it*"], ["--test-case=*nothing_like_it*", "--no-skip"]])
 
+    def test_a_test_file_with_no_case_to_run_is_refused(self):
+        with self.assertRaises(project_n.Fail) as raised:
+            self.run_listing(0, test="math")
+        self.assertIn("math_tests.cpp holds no test case to run", str(raised.exception))
+        with self.assertRaises(project_n.Fail) as raised:
+            self.run_listing(0, test="math", skipped=1)
+        self.assertIn("matches only skipped cases", str(raised.exception))
+
+    def test_a_test_file_with_cases_runs_by_its_file(self):
+        ran = self.run_listing(3, test="math")
+        self.assertEqual(ran, [["xmake", "run", "core_tests", project_n.test_filter("math", "core_tests")]])
+
     def test_the_candidate_listing_keeps_no_skip_but_not_the_filter(self):
         listed = []
         with self.assertRaises(project_n.Fail):
