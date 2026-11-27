@@ -90,4 +90,22 @@ TEST_CASE("a state is written and read back in a folder named outside the ANSI c
     CHECK(std::filesystem::exists(folder.Slot()));
 }
 
+[[noreturn]] void FailTheDisk() {
+    throw std::runtime_error{ "disk" };
+}
+
+TEST_CASE("a read after a save that failed in the background still reads the save before it") {
+    constexpr std::size_t SIZE = 1'000;
+    constexpr u8 FILL = 5;
+    const Folder folder{ "failed" };
+    core::Jobs jobs{ 2 };
+    core::Saves saves(folder.Slot(), jobs);
+    saves.Write(State(SIZE, FILL));
+    REQUIRE(jobs.WaitForBackground());
+    jobs.Background(&FailTheDisk);
+    const auto read = saves.Read();
+    REQUIRE(read.has_value());
+    CHECK(*read == State(SIZE, FILL));
+}
+
 } // namespace

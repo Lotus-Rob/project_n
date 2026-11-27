@@ -19,7 +19,8 @@ Game::Game(core::GameHandover& handover, core::Jobs& jobs, GameSetup setup)
 }
 
 Game::~Game() {
-    m_jobs->WaitForBackground();
+    // A save or replay that failed was logged on its job's thread; nothing is left to do with it here.
+    [[maybe_unused]] const std::expected<void, core::Error> lastWrite = m_jobs->WaitForBackground();
     const core::TickCounters& counters = m_logic.Counters();
     PN_LOG_INFO("logic thread stopping after {} ticks, {} simulated", counters.wall, counters.simulation);
 }

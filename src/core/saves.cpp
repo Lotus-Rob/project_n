@@ -30,7 +30,10 @@ std::expected<std::vector<std::byte>, Error> Saves::Read() {
     if (m_slot.empty()) {
         return std::unexpected{ Error{ .message = "there is no folder for saves" } };
     }
-    m_jobs->WaitForBackground(); // a save still being written is the newest
+    // A save still being written is the newest.
+    if (const std::expected<void, Error> waited = m_jobs->WaitForBackground(); !waited) {
+        PN_LOG_WARNING("the save being written failed, so the one before it is read");
+    }
     return ReadSaveFile(m_slot);
 }
 

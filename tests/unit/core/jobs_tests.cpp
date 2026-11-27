@@ -104,7 +104,7 @@ TEST_CASE("a background job runs once, and waiting for it sees what it did") {
     core::Jobs jobs{ MANY_WORKERS };
     u32 runs = 0;
     jobs.Background([&runs] { ++runs; });
-    jobs.WaitForBackground();
+    CHECK(jobs.WaitForBackground());
     CHECK(runs == 1);
 }
 
@@ -113,13 +113,13 @@ TEST_CASE("starting a background job waits for the last one first") {
     std::vector<u32> order;
     jobs.Background([&order] { order.push_back(1); });
     jobs.Background([&order] { order.push_back(2); });
-    jobs.WaitForBackground();
+    CHECK(jobs.WaitForBackground());
     CHECK(order == std::vector<u32>{ 1, 2 });
 }
 
 TEST_CASE("waiting with no background job returns at once") {
     core::Jobs jobs{ 1 };
-    jobs.WaitForBackground();
+    CHECK(jobs.WaitForBackground());
     CHECK(jobs.Workers() == 1);
 }
 
@@ -164,7 +164,7 @@ TEST_CASE("a registered thread forks, joins and runs background jobs") {
         const core::Jobs::ThreadRegistration registration{ jobs };
         jobs.ParallelFor(CHUNKS, [&runs](u32 chunk) { ++runs[chunk]; });
         jobs.Background([&background] { ++background; });
-        jobs.WaitForBackground();
+        CHECK(jobs.WaitForBackground());
     } }.join();
     CHECK(std::ranges::all_of(runs, [](u32 count) { return count == 1; }));
     CHECK(background == 1);
@@ -197,6 +197,116 @@ TEST_CASE("a pending job found done runs no other work while it goes") {
         intrusions += intruded.load() ? 1 : 0;
     }
     CHECK(intrusions == 0);
+}
+
+/// Checks that a parallel-for on `workers` workers rethrows the exception one of its chunks throws on this thread,
+/// and that the job system then runs a whole parallel-for again.
+void CheckRethrowsAndRecovers(u32 workers) {
+    core::Jobs jobs{ workers };
+    CHECK_THROWS_WITH_AS(
+        jobs.ParallelFor(
+            64,
+            [](u32 chunk) {
+                if (chunk == 17) {
+                    throw std::runtime_error{ "chunk 17" };
+                }
+            }
+        ),
+        "chunk 17",
+        std::runtime_error
+    );
+    std::atomic<u32> ran = 0;
+    jobs.ParallelFor(64, [&ran](u32 /*chunk*/) { ++ran; });
+    CHECK(ran == 64);
+}
+
+TEST_CASE("a parallel-for rethrows a chunk's exception on the thread that forked") {
+    CheckRethrowsAndRecovers(4);
+}
+
+struct FailEveryChunk {
+    [[noreturn]] void operator()(u32 /*chunk*/) const {
+        throw std::runtime_error{ "all" };
+    }
+};
+
+[[noreturn]] void FailTheDisk() {
+    throw std::runtime_error{ "disk" };
+}
+
+TEST_CASE("a parallel-for whose every chunk throws rethrows one of them") {
+    core::Jobs jobs{ 4 };
+    CHECK_THROWS_AS(jobs.ParallelFor(64, FailEveryChunk{}), std::runtime_error);
+}
+
+TEST_CASE("a parallel-for with one worker rethrows too") {
+    CheckRethrowsAndRecovers(1);
+}
+
+TEST_CASE("started chunks' exception is rethrown by Done, once") {
+    core::Jobs jobs{ 2 };
+    const core::Jobs::Pending pending = jobs.Start(4, [](u32 chunk) {
+        if (chunk == 2) {
+            throw std::runtime_error{ "decode" };
+        }
+    });
+    CHECK_THROWS_WITH(
+        [&pending] {
+            while (!pending.Done()) {
+                std::this_thread::yield();
+            }
+        }(),
+        "decode"
+    );
+    CHECK(pending.Done());
+}
+
+TEST_CASE("after a chunk throws, the chunks not yet begun are skipped") {
+    core::Jobs jobs{ 1 };
+    std::atomic<u32> ran = 0;
+    // Started chunks run only on the one worker (Done() runs no work), so one at a time: the first to run throws
+    // before any other has begun.
+    const core::Jobs::Pending pending = jobs.Start(64, [&ran](u32 /*chunk*/) {
+        if (ran.fetch_add(1) == 0) {
+            throw std::runtime_error{ "first" };
+        }
+    });
+    CHECK_THROWS_WITH(
+        [&pending] {
+            while (!pending.Done()) {
+                std::this_thread::yield();
+            }
+        }(),
+        "first"
+    );
+    CHECK(ran == 1);
+}
+
+TEST_CASE("started chunks whose exception nobody took end without terminating") {
+    core::Jobs jobs{ 2 };
+    {
+        const core::Jobs::Pending pending = jobs.Start(4, [](u32 chunk) {
+            if (chunk == 2) {
+                throw std::runtime_error{ "decode" };
+            }
+        });
+    }
+    std::atomic<u32> ran = 0; // the job system still works afterwards
+    jobs.ParallelFor(64, [&ran](u32 /*chunk*/) { ++ran; });
+    CHECK(ran == 64);
+}
+
+TEST_CASE("a background job's exception is reported by the wait, once") {
+    core::Jobs jobs{ 2 };
+    jobs.Background(&FailTheDisk);
+    const std::expected<void, core::Error> first = jobs.WaitForBackground();
+    REQUIRE_FALSE(first);
+    CHECK(first.error().message == "disk");
+    CHECK(jobs.WaitForBackground());
+    bool ran = false;
+    jobs.Background([&ran] { ran = true; });
+    CHECK(jobs.WaitForBackground());
+    CHECK(ran);
 }
 
 } // namespace
