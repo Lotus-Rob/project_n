@@ -271,6 +271,34 @@ struct SetAside {
     return bytes;
 }
 
+/// A save of the world scene whose one entity is the player's cultivator standing at `foot`, the world at `clock`, for a
+/// game on `data`.
+[[nodiscard]] inline std::vector<std::byte> LoneCultivatorSave(
+    const core::GameData& data,
+    core::Vec2 foot,
+    const SavedClock& clock = {}
+) {
+    core::State state{ game::DOMAINS, EMPTY_SAVE_SEED };
+    const auto [player, entity] = state.Create(game::ACTIVE, core::IdRange::Scene);
+    state[game::ACTIVE].Entities().emplace<game::Body>(entity, foot, foot);
+    return ArenaSave(
+        state,
+        player,
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        game::WORLD_SCENE,
+        WORLD_VERSION,
+        ACTIVE_VERSION,
+        clock,
+        game::Travel{},
+        std::nullopt,
+        game::Relationships{},
+        {},
+        &data
+    );
+}
+
 /// A save of the world scene with nothing in it, at `clock`, written against the world a game on `data` makes (the small
 /// test data when null, as ArenaSave()): a host on that data loads it and runs its clock from there without a month of
 /// ticks first.

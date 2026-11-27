@@ -591,27 +591,9 @@ bool InStepArea(core::Vec2 point, core::Vec2 portal) {
 
 /// A host with the shipped data that has loaded and entered a save of the world scene whose one entity is the player's
 /// cultivator standing at `foot`, the world clock at `clock` in the first month.
-std::unique_ptr<game::Host> CultivatorAt(core::Vec2 foot, u64 clock) {
+std::unique_ptr<game::Host> HostWithCultivatorAt(core::Vec2 foot, u64 clock) {
     const core::GameData data = test::ShippedData();
-    core::State state{ game::DOMAINS, test::EMPTY_SAVE_SEED };
-    const auto [player, entity] = state.Create(game::ACTIVE, core::IdRange::Scene);
-    state[game::ACTIVE].Entities().emplace<game::Body>(entity, foot, foot);
-    const std::vector<std::byte> bytes = test::ArenaSave(
-        state,
-        player,
-        std::nullopt,
-        std::nullopt,
-        std::nullopt,
-        game::WORLD_SCENE,
-        test::WORLD_VERSION,
-        test::ACTIVE_VERSION,
-        { .ticks = clock },
-        game::Travel{},
-        std::nullopt,
-        game::Relationships{},
-        {},
-        &data
-    );
+    const std::vector<std::byte> bytes = test::LoneCultivatorSave(data, foot, { .ticks = clock });
     auto host = std::make_unique<game::Host>(test::TestManifest(), game::ARENA_SCENE, data);
     core::Reader reader{ bytes };
     REQUIRE(host->Load(reader, 0));
@@ -631,7 +613,7 @@ TEST_CASE("a month step that lands the cultivator on the portal never brings it 
     // How long after it sets out the walk first stands in the step area.
     i64 inside = -1;
     {
-        const std::unique_ptr<game::Host> probe = CultivatorAt(from, 0);
+        const std::unique_ptr<game::Host> probe = HostWithCultivatorAt(from, 0);
         Tick(*probe, 1, { .actions = walk, .held = {} });
         REQUIRE(probe->PlayerRoute().has_value());
         const core::Journey route = probe->PlayerRoute().value_or(core::Journey{});
@@ -642,7 +624,7 @@ TEST_CASE("a month step that lands the cultivator on the portal never brings it 
     REQUIRE(inside >= 2);
 
     // Set out so that M's jump to the next month's first tick lands the cultivator in the step area.
-    const std::unique_ptr<game::Host> host = CultivatorAt(from, game::TICKS_PER_MONTH - static_cast<u64>(inside));
+    const std::unique_ptr<game::Host> host = HostWithCultivatorAt(from, game::TICKS_PER_MONTH - static_cast<u64>(inside));
     Tick(*host, 1, { .actions = walk, .held = {} });
     REQUIRE_FALSE(host->Requested().has_value());
     StepMonth(*host, 2);
