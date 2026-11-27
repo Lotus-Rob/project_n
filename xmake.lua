@@ -340,7 +340,7 @@ target("build_info")
     on_load(function (target)
         import("core.project.project")
         target:set("configvar", "PN_GAME_VERSION", project.version())
-        -- Refreshed at every configure (always_update_configfiles below), which every project_n build runs.
+        -- Refreshed at every configure (always_update_configfiles above), which every project_n build runs.
         local commit = "unknown"
         local head = try { function ()
             return os.iorunv("git", {"-C", os.projectdir(), "rev-parse", "--short=12", "HEAD"})
