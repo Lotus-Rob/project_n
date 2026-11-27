@@ -48,6 +48,7 @@ doctest suites, registered in `tests/xmake.lua` and run by `xmake test` on every
 - `xmake test` runs a Windows `.exe` directly on Linux; the test targets call Wine themselves (`test_under_wine` in `tests/xmake.lua`), so no host binfmt is needed.
 - MSVC sanitizer builds compile and link in the container, but only run on native Windows: MSVC's ASan can't hot-patch Wine's system DLLs. Sanitizer link details → `xmake.lua`.
 - A test that opens a window but draws nothing uses SDL's `dummy` video driver, not `offscreen` (macOS lacks EGL) → `tests/unit/platform/window_tests.cpp`.
-- A reference bound to a member of a returned temporary dangles (`const auto& x = game::BuiltInData().abilities...`; GCC release read garbage and hung `check`): copy the value out. Same for `test::TestManifest()->...` → `tests/support/manifest.hpp`.
-- `reference --update` rewriting pictures your change didn't touch: they had drifted within `TOLERANCE`; look at them and commit them with the change that moved them → `.claude/skills/look-at-the-game/references/reference-pictures.md`.
+- A reference bound to a member of a returned temporary dangles (`const auto& x = game::BuiltInData().abilities...`; GCC release read garbage and hung `check`): copy the value out.
+- Only `test::TestManifest()` parses once; other `Shipped*()` helpers read per call: not in loops (that ran an hour under Windows ASan).
+- `reference --update` rewriting pictures your change didn't touch: they drifted within `TOLERANCE`; look, then commit them with the change that moved them → look-at-the-game's `reference-pictures.md`.
 - MSVC C4464 (windows-msvc only): an include path with `..`. Shared test headers in `tests/support/` are reached as `support/<name>` → `tests/xmake.lua`'s `with_manifest()`.
