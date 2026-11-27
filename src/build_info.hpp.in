@@ -5,6 +5,10 @@
 
 // The game's version (xmake.lua's set_version), stamped into replays.
 ${define PN_GAME_VERSION}
+// The commit the build was configured at (12 hex digits, "-dirty" after local changes, "unknown" without git), for the log.
+${define PN_GAME_COMMIT}
+// Platform, architecture, toolchain and mode, e.g. "linux-x86_64 clang release", for the log.
+${define PN_BUILD}
 // Debug builds only: the source tree's game data, read and watched instead of the copy beside the binary.
 ${define PN_SOURCE_DATA}
 // The fuzz corpus folder, where the save tests write their seeds.
