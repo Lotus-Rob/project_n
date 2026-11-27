@@ -2715,10 +2715,11 @@ MEASURE_RUNS = {"world": (["--world", "--camera-path", "--travel-share", str(MEA
 MEASURE_WORKERS = 2
 # Fixed conditions: the display's native size, and a present the display's refresh doesn't pace.
 MEASURE_FLAGS = ["--fullscreen", "--workers", str(MEASURE_WORKERS), "--unpaced"]
-# The arena runs' numbers from before the job system could be pinned, printed beside the new ones.
-MEASURE_EARLIER = {"burst": "0.43 ms median, 2.6 ms worst (main thread)",
-                   "swords": "1,000 swords 1.31/2.31/2.60 ms (median/p99/worst frame, at a volley's peak)",
-                   "seals": "~685 µs median frame"}
+# The arena runs' numbers (each the median of three runs' medians) with Tracy built without forced callstacks, on the
+# 165 Hz display, printed beside the new ones: main-thread work, as the frame time sits at the display's interval.
+MEASURE_EARLIER = {"burst": "2.43 ms median work, 6.2 ms worst (main thread)",
+                   "swords": "2.27/5.92/7.31 ms (median/p99/worst work, main thread)",
+                   "seals": "2.47/5.94/7.48 ms (median/p99/worst work, main thread)"}
 HITCH_MS = 16.7  # a frame whose work is longer misses a 60 Hz display's refresh
 # Each camera segment's start is measured apart: the camera cuts or turns onto new ground there.
 NEW_GROUND_SECONDS = 0.5
@@ -3026,7 +3027,7 @@ def measure_table(results, shimmer, cloud, ground):
         notes = [f"display {result.display}", *([note] if (note := latency_summary(result.latencies)) else []),
                  *([f"display delay {result.delay[0]:.1f} ms ({result.delay[1]:.1f} to {result.delay[2]:.1f})"]
                    if result.delay else []),
-                 *([f"earlier, unpinned: {MEASURE_EARLIER[result.name]}"] if result.name in MEASURE_EARLIER else []),
+                 *([f"baseline: {MEASURE_EARLIER[result.name]}"] if result.name in MEASURE_EARLIER else []),
                  *([f"untrusted: {'; '.join(result.reasons)}"] if result.reasons else [])]
         first_of_run = True
         for segment in result.segments:
