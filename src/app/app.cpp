@@ -9,6 +9,7 @@
 #include "app/view.hpp"
 #include "core/assert.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/error.hpp"
 #include "core/log.hpp"
 #include "core/math.hpp"
 #include "core/path_text.hpp"
@@ -25,8 +26,8 @@ namespace app {
 
 namespace {
 
-// A failed frame returns in microseconds (measured: 6 us), so without this wait after one the loop spins a core at hundreds of
-// thousands of frames a second until the graphics card counts as lost.
+// A failed frame returns in microseconds (measured: 6 us), so without this wait after a run of them the loop spins a core at
+// hundreds of thousands of frames a second until the graphics card counts as lost.
 constexpr std::chrono::milliseconds FAILED_FRAME_PAUSE{ 10 };
 // Frames during a calendar step's transition: few, leaving the cores to the step.
 constexpr u64 TRANSITION_FRAME_NS = core::NS_PER_SECOND / 20;
@@ -297,6 +298,11 @@ JobSystemStopLine::~JobSystemStopLine() {
 
 App::~App() {
     StopLogic();
+    // Run() reads the failure after the loop returns; one that escapes the loop (a started chunk's exception from Done())
+    // never gets there, so this is the failure's only trace.
+    if (m_logicFailed && !m_logicReported) {
+        PN_LOG_ERROR("the game's logic failed: {}", m_logicError.message);
+    }
 }
 
 void App::RunLogic(const std::stop_token& stop, GameSetup setup) {
@@ -315,11 +321,8 @@ void App::RunLogic(const std::stop_token& stop, GameSetup setup) {
         } // a save in progress finishes here: a hang at shutdown shows as no "stopped" line
         PN_LOG_INFO("logic thread stopped");
     }
-    catch (const std::exception& e) {
-        fail(e.what());
-    }
     catch (...) {
-        fail("an exception of unknown type");
+        fail(core::Describe(std::current_exception()));
     }
 }
 
@@ -330,6 +333,7 @@ std::expected<void, Failure> App::Run() {
     StopLogic();
     if (m_logicFailed) {
         // The thread has joined: nothing writes the error any more.
+        m_logicReported = true;
         if (ended) {
             ended = std::unexpected{ Failure{ .what = "the game's logic failed", .error = m_logicError } };
         }
@@ -377,7 +381,7 @@ std::expected<void, Failure> App::Loop() {
         if (std::expected<void, Failure> lost = CheckFrames(state.visible); !lost) {
             return lost;
         }
-        if (m_renderer.FailedFrames() > 0) {
+        if (core::PausesAfter(m_renderer.FailedFrames())) {
             std::this_thread::sleep_for(FAILED_FRAME_PAUSE);
         }
     }
@@ -960,11 +964,11 @@ std::expected<void, Failure> App::Present(const platform::WindowState& state) {
         }
     );
     const core::Snapshot* drawn = m_display.Drawn();
-    if (!presented) {
-        // The frame stops only when the scene can't be loaded, which sets the failure.
-        PN_ASSERT(sceneFailure.has_value(), "a frame stopped without a failure");
-        return std::unexpected{ std::move(*sceneFailure) }; // NOLINT(bugprone-unchecked-optional-access): asserted above
+    if (sceneFailure) {
+        return std::unexpected{ std::move(*sceneFailure) };
     }
+    // The frame stops only when the scene can't be loaded, which sets the failure.
+    PN_ASSERT(presented, "a frame stopped without a failure");
     if (drawn == nullptr) {
         return {};
     }

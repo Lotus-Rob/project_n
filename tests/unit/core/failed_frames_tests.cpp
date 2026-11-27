@@ -56,4 +56,23 @@ TEST_CASE("a run lasts from its first failed frame") {
     CHECK(frames.RunNs(START_NS + SECOND) == SECOND);
 }
 
+TEST_CASE("the loop pauses only once a run holds enough failed frames") {
+    struct PauseReading {
+        std::string_view why;
+        u64 failures;
+        bool pauses;
+    };
+    constexpr auto READINGS = std::to_array<PauseReading>({
+        { .why = "no failure", .failures = 0, .pauses = false },
+        { .why = "one transient failure", .failures = 1, .pauses = false },
+        { .why = "one short of the run", .failures = 9, .pauses = false },
+        { .why = "the run's first pause", .failures = 10, .pauses = true },
+        { .why = "a long run", .failures = 5000, .pauses = true },
+    });
+    for (const PauseReading& reading : READINGS) {
+        CAPTURE(reading.why);
+        CHECK(core::PausesAfter(reading.failures) == reading.pauses);
+    }
+}
+
 } // namespace
