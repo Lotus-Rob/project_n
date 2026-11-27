@@ -253,8 +253,8 @@ marks its own paragraph above **Implemented**, as R1's is, so parallel areas nev
 becomes `done` in the pull request that, rebased on main, finds every other area of its step already implemented. The
 backlog items an area closed leave the backlog after its merge. Each area's plan also takes the backlog items assigned
 to it in "Backlog items folded into the areas" (below), test-first where they are bugs; that table, not
-the area's paragraph, is the list. A spec for the next area may be written while the current one's pull request waits on CI (the root
-AGENTS.md's "never sit idle while CI runs").
+the area's paragraph, is the list. A spec for the next area may be written while the current one's pull request waits on CI (the global
+finishing rules' "never sit idle while CI runs").
 
 ## Decisions for the user (all four taken as recommended by the user, 2026-11-25)
 
