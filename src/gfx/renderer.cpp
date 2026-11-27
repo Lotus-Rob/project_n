@@ -439,6 +439,8 @@ struct Renderer::Impl {
     std::size_t openRun = 0;                 // the first of meshRuns a quad may join: none of the HUD's takes the world's texts
     std::vector<BarShown> barsShown;         // by entity: how much of each creature's health bar shows, from its label
     core::RepeatedFailure failures;
+    core::Error firstFailure{}; // the run's first error, which `failures` logged
+    bool failAcquires = false;  // `--fail-frames`
     core::RepeatedFailure overflows;
     core::RepeatedFailure meshOverflows;
     core::RepeatedFailure overlayOverflows;
@@ -1321,6 +1323,7 @@ void Renderer::Impl::Report(const std::expected<void, core::Error>& drawn) {
     PN_PROFILE_ZONE();
     if (!drawn) {
         if (failures.Fail()) {
+            firstFailure = drawn.error();
             PN_LOG_ERROR("frames are failing: {}", drawn.error().message);
         }
     }
@@ -1575,12 +1578,34 @@ std::expected<bool, core::Error> Renderer::ContinueScene(u64 budgetNs) {
 void Renderer::Acquire() {
     PN_PROFILE_ZONE();
     PN_ASSERT(!m_impl->frame, "Acquire() twice without a Draw() between");
+    if (m_impl->failAcquires) {
+        m_impl->Report(std::unexpected{ core::Error{ "frames fail on request" } });
+        return;
+    }
     std::expected<internal::Frame, core::Error> acquired = internal::AcquireFrame(m_impl->device.get(), m_impl->window);
     if (!acquired) {
         m_impl->Report(std::unexpected{ std::move(acquired.error()) });
         return;
     }
     m_impl->frame = *acquired;
+}
+
+void Renderer::FailAcquires() {
+    m_impl->failAcquires = true;
+}
+
+void Renderer::ForgetFailures() {
+    if (const u64 failed = m_impl->failures.Succeed(); failed > 0) {
+        PN_LOG_WARNING("{} failed frames ended without a verdict: the window can't be drawn to", failed);
+    }
+}
+
+u64 Renderer::FailedFrames() const {
+    return m_impl->failures.Failures();
+}
+
+const core::Error& Renderer::FirstFailure() const {
+    return m_impl->firstFailure;
 }
 
 void Renderer::Draw(

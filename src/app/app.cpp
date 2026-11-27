@@ -25,6 +25,9 @@ namespace app {
 
 namespace {
 
+// A failed frame returns in microseconds (measured: 6 us), so without this wait after one the loop spins a core at hundreds of
+// thousands of frames a second until the graphics card counts as lost.
+constexpr std::chrono::milliseconds FAILED_FRAME_PAUSE{ 10 };
 // Frames during a calendar step's transition: few, leaving the cores to the step.
 constexpr u64 TRANSITION_FRAME_NS = core::NS_PER_SECOND / 20;
 constexpr u64 DATA_CHECK_NS = core::NS_PER_SECOND / 2;
@@ -259,6 +262,9 @@ App::App(platform::Window window, gfx::Renderer renderer, Options options)
   , m_monthStep{ m_options.monthStepAt }
   , m_debugSight{ m_options.debugSight } {
     m_numberTexts.reserve(NUMBER_RESERVE);
+    if (m_options.failFrames) {
+        m_renderer.FailAcquires();
+    }
     ApplyEffects(m_options.effects);
     m_renderer.SetSeals(m_options.seals);
     m_renderer.SetWorld(m_options.data.world, m_options.worldLook);
@@ -368,6 +374,12 @@ std::expected<void, Failure> App::Loop() {
         if (std::expected<void, Failure> presented = Present(state); !presented) {
             return presented;
         }
+        if (std::expected<void, Failure> lost = CheckFrames(state.visible); !lost) {
+            return lost;
+        }
+        if (m_renderer.FailedFrames() > 0) {
+            std::this_thread::sleep_for(FAILED_FRAME_PAUSE);
+        }
     }
     PN_LOG_INFO("shutting down; {} snapshots that moved were published after they were due", m_display.LateAdoptions());
     PN_LOG_INFO(
@@ -377,6 +389,26 @@ std::expected<void, Failure> App::Loop() {
         Milliseconds(m_delay.Highest())
     );
     return {};
+}
+
+std::expected<void, Failure> App::CheckFrames(bool visible) {
+    PN_PROFILE_ZONE();
+    if (!visible) {
+        m_renderer.ForgetFailures();
+        m_failedFrames.Unjudged();
+        return {};
+    }
+    const u64 failed = m_renderer.FailedFrames();
+    const u64 nowNs = platform::NowNs();
+    if (!m_failedFrames.Lost(failed, nowNs)) {
+        return {};
+    }
+    const f64 seconds = static_cast<f64>(m_failedFrames.RunNs(nowNs)) / static_cast<f64>(core::NS_PER_SECOND);
+    return std::unexpected{ Failure{
+        .what = "the graphics card stopped drawing",
+        .error = core::Error{ std::format(
+            "{} frames failed in a row over {:.1f} s: {}", failed, seconds, m_renderer.FirstFailure().message
+        ) } } };
 }
 
 void App::RepeatBurst(u64 nowNs) {

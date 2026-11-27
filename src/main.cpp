@@ -225,6 +225,9 @@ int main(int argc, char** argv) {
             Run(userData ? data::LoadSettings(*userData / "settings.yaml") : core::Settings{},
                 {
                     .scene = scene,
+#ifdef PN_ASSERTS
+                    .failFrames = app::HasFlag(args, "--fail-frames"),
+#endif
                     .quitAfterNs = *quitAfterNs,
                     .burst = app::HasFlag(args, "--burst"),
                     .debugSight = app::HasFlag(args, "--debug-sight"),

@@ -98,6 +98,16 @@ public:
     /// flight and, with vsync, for the display. The time for alpha is read after it; Draw()
     /// follows before the next Acquire(). A failure is logged, and the Draw() after it does nothing.
     void Acquire();
+    /// Makes every Acquire() fail from now on without acquiring (`--fail-frames`), to see what the game does when the
+    /// graphics card stops drawing.
+    void FailAcquires();
+    /// Ends the run of failed frames for a frame that can't be judged (a minimised window), logging that it ended without a
+    /// verdict if any had failed: the next failure starts and logs a new run.
+    void ForgetFailures();
+    /// How many frames in a row have failed (0 once one is drawn, or after ForgetFailures()).
+    [[nodiscard]] u64 FailedFrames() const;
+    /// The first error of the current run of failed frames, as logged; empty message when none has failed.
+    [[nodiscard]] const core::Error& FirstFailure() const;
     /// Draws `snapshot` into the frame Acquire() acquired as `view` shows it, and presents it. Uploads its instances only when
     /// it isn't the snapshot drawn last; a snapshot of a scene it doesn't hold draws the backdrop only. The seals on the
     /// ground, with their light, draw over its ground and decals (Snapshot::groundBatches), under the rest

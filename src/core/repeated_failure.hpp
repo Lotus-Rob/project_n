@@ -19,6 +19,11 @@ public:
         return m_failures++ == 0;
     }
 
+    /// How many failures in a row the current run holds (0 when none).
+    [[nodiscard]] u64 Failures() const {
+        return m_failures;
+    }
+
     /// Records a success. Returns how many failures in a row it ended (0 when there were none).
     [[nodiscard]] u64 Succeed() {
         return std::exchange(m_failures, 0);
