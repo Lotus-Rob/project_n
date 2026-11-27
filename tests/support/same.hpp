@@ -21,8 +21,8 @@ namespace test {
 /// Whether two runs' events are the same, field by field, the tick each fell on included.
 [[nodiscard]] inline bool SameEvents(const std::vector<core::Event>& lhs, const std::vector<core::Event>& rhs) {
     return std::ranges::equal(lhs, rhs, [](const core::Event& one, const core::Event& two) {
-        return one.tick == two.tick && one.kind == two.kind && one.hit == two.hit && one.use == two.use &&
-               one.target == two.target && one.value == two.value &&
+        return one.tick == two.tick && one.epoch == two.epoch && one.cosmetic == two.cosmetic && one.kind == two.kind &&
+               one.hit == two.hit && one.use == two.use && one.target == two.target && one.value == two.value &&
                std::bit_cast<u64>(one.position) == std::bit_cast<u64>(two.position);
     });
 }
@@ -30,8 +30,9 @@ namespace test {
 /// Whether two runs' events are the same, field by field, except the tick each fell on.
 [[nodiscard]] inline bool SameEventsIgnoringTick(const std::vector<core::Event>& lhs, const std::vector<core::Event>& rhs) {
     return std::ranges::equal(lhs, rhs, [](const core::Event& one, const core::Event& two) {
-        return one.kind == two.kind && one.hit == two.hit && one.use == two.use && one.target == two.target &&
-               one.value == two.value && std::bit_cast<u64>(one.position) == std::bit_cast<u64>(two.position);
+        return one.epoch == two.epoch && one.cosmetic == two.cosmetic && one.kind == two.kind && one.hit == two.hit &&
+               one.use == two.use && one.target == two.target && one.value == two.value &&
+               std::bit_cast<u64>(one.position) == std::bit_cast<u64>(two.position);
     });
 }
 
