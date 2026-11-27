@@ -747,7 +747,7 @@ def remove_empty_outputs(folder):
 
 def build(preset, mode, sanitizer="none"):
     bdir = configure(preset, mode, sanitizer)
-    removed = remove_empty_outputs(binary_path(preset, mode, sanitizer=sanitizer).parent)
+    removed = remove_empty_outputs(ROOT / binary_path(preset, mode, sanitizer=sanitizer).parent)
     if removed:
         print(f"build: removed {len(removed)} empty outputs a stopped build left: {', '.join(removed)}")
     run(["xmake", "build"], env=xmake_env(bdir))

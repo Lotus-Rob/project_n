@@ -2721,17 +2721,19 @@ class SanitizerBuildFolderTest(unittest.TestCase):
     def test_a_sanitizer_build_clears_its_own_tree_and_leaves_the_plain_one(self):
         preset = "linux-gcc"
         plat = project_n.PRESETS[preset]
-        cwd = os.getcwd()
-        with tempfile.TemporaryDirectory() as tmp:
-            os.chdir(tmp)  # the build folders are relative to the working directory
+        # The build folders are the repository's, wherever the tool is run from: the working directory holds none.
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as elsewhere:
+            cwd = os.getcwd()
+            os.chdir(elsewhere)
             try:
-                folders = {s: project_n.build_dir(preset, "debug", s) / plat["plat"] / plat["arch"] / "debug"
+                folders = {s: Path(tmp) / project_n.build_dir(preset, "debug", s) / plat["plat"] / plat["arch"] / "debug"
                            for s in ("none", "address")}
                 for folder in folders.values():
                     folder.mkdir(parents=True)
                     (folder / project_n.APP).write_bytes(b"")
-                with mock.patch.multiple(project_n, configure=lambda *a: Path("bdir"), xmake_env=lambda bdir: {},
-                                         run=lambda argv, env=None: None), contextlib.redirect_stdout(io.StringIO()):
+                with mock.patch.multiple(project_n, ROOT=Path(tmp), configure=lambda *a: Path("bdir"),
+                                         xmake_env=lambda bdir: {}, run=lambda argv, env=None: None), \
+                        contextlib.redirect_stdout(io.StringIO()):
                     project_n.build(preset, "debug", sanitizer="address")
                 self.assertNotEqual(folders["none"], folders["address"])
                 self.assertFalse((folders["address"] / project_n.APP).exists())
