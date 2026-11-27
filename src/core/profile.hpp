@@ -24,8 +24,8 @@
 
 /// Measures the enclosing scope as a zone named after its function: `PN_PROFILE_ZONE();` at the
 /// top of every function that runs each frame, except one called once per item, thousands of times a frame: its caller's
-/// zone (or its job chunk's) measures it, because under a capture a zone costs its caller about 0.25 microseconds, many
-/// times a small function's work.
+/// zone (or its job chunk's) measures it, because under a capture a zone costs its caller time, many times a small
+/// function's work.
 // Not ZoneScoped: it ends in its own `;`, which leaves ours an empty statement (-Wextra-semi-stmt).
 #define PN_PROFILE_ZONE() ZoneNamed(pn_profile_zone, true)
 /// Ends a frame in the profiler's timeline: `PN_PROFILE_FRAME();` once per frame, after presenting.
