@@ -385,12 +385,150 @@ constexpr std::string_view TOOLCHAIN = "gcc-x64";
 #error "no core::math table key for this compiler and architecture: add one, then its table"
 #endif
 
-// msvc, clang-x64 and gcc-x64 agree on every bit, so they share the table below; clang-arm64 has none yet.
+// msvc, clang-x64 and gcc-x64 agree on every bit, so they share the second table; clang-arm64 rounds a few results
+// of Cos, Exp, Log and Pow one unit in the last place differently, so it has its own.
 #if defined(__clang__) && defined(__aarch64__)
-constexpr bool HAS_PINNED_TABLE = false;
-constexpr Table PINNED{};
+constexpr Table PINNED{ {
+    {
+        // Sin
+        0x0000000000000000U, // zero
+        0x0000000000000000U, // negative zero
+        0x0000000000000001U, // smallest subnormal
+        0x3ddb7cdfd9d7bdbbU, // tiny
+        0x3fdeaee8744b05f0U, // inside the first quarter turn
+        0x3fe6a09e667f3bccU, // the first reduction boundary, pi/4
+        0x3fe6a09e66e06ae8U, // just past the first reduction boundary
+        0x3feaed548f090ceeU, // one radian
+        0x3ff0000000000000U, // a quarter turn
+        0x3ca1a62633145c07U, // a half turn
+        0xbff0000000000000U, // three quarter turns
+        0xbcb1a62633145c07U, // a full turn
+        0xbfeaed548f090ceeU, // negative one radian
+        0x3fe1689ef5f34f52U, // negative ten
+        0xbfe03425b78c4db8U, // one hundred
+        0x3fea75cc150a206cU, // the end of the matched range
+        0x3fa24daa9c527e96U, // a large angle
+        0xbdd1a62633145c07U, // the largest accepted angle
+        0x7ff8000000000000U, // past the limit, NaN
+        0x7ff8000000000000U, // infinity, NaN
+    },
+    {
+        // Cos
+        0x3ff0000000000000U, // zero
+        0x3ff0000000000000U, // negative zero
+        0x3ff0000000000000U, // smallest subnormal
+        0x3ff0000000000000U, // tiny
+        0x3fec1528065b7d50U, // inside the first quarter turn
+        0x3fe6a09e667f3bcdU, // the first reduction boundary, pi/4
+        0x3fe6a09e661e0cb2U, // just past the first reduction boundary
+        0x3fe14a280fb5068cU, // one radian
+        0x3c91a62633145c07U, // a quarter turn
+        0xbff0000000000000U, // a half turn
+        0xbcaa79394c9e8a0aU, // three quarter turns
+        0x3ff0000000000000U, // a full turn
+        0x3fe14a280fb5068cU, // negative one radian
+        0xbfead9ac890c6b1fU, // negative ten
+        0x3feb981dbf665fdfU, // one hundred
+        0x3fe1ff026793f1bbU, // the end of the matched range
+        0xbfeffac3841b3da7U, // a large angle
+        0x3ff0000000000000U, // the largest accepted angle
+        0x7ff8000000000000U, // past the limit, NaN
+        0x7ff8000000000000U, // infinity, NaN
+    },
+    {
+        // Exp
+        0x3ff0000000000000U, // zero
+        0x3ff0000000000000U, // negative zero
+        0x3ff0000000000000U, // smallest subnormal
+        0x3ff000000006df38U, // tiny
+        0x3ff6a09e667f3bcdU, // the reduction boundary, ln(2)/2
+        0x3ff6b4802c805dedU, // just past the reduction boundary
+        0x3ffa61298e1e069cU, // one half
+        0x4005bf0a8b145769U, // one
+        0x3fd78b56362cef38U, // negative one
+        0x40d5829dcf95055fU, // ten
+        0x3f07cd79b5647c9bU, // negative ten
+        0x48f3494a9b171bf5U, // one hundred
+        0x6d045ba2a9f7e439U, // five hundred
+        0x7f0d945df4f8ec8eU, // the end of the matched range
+        0x7fefffffffffff2aU, // the largest accepted power
+        0x7ff0000000000000U, // just past it, infinity
+        0x00d14f2b0fb9307fU, // negative seven hundred
+        0x0000000000000001U, // a subnormal result
+        0x0000000000000000U, // past the smallest, zero
+        0x7ff8000000000000U, // not a number
+    },
+    {
+        // Log
+        0x0000000000000000U, // one
+        0xfff0000000000000U, // zero, minus infinity
+        0xfff0000000000000U, // negative zero, minus infinity
+        0xc0874385446d71c3U, // smallest subnormal
+        0xc086232bdd7abcd2U, // smallest normal
+        0xc085963447f87fb5U, // the start of the matched range
+        0xbfe62e42fefa39efU, // one half
+        0xbfd62e42fefa39eeU, // the mantissa boundary, sqrt(2)/2
+        0x3fd62e42fefa39f1U, // the other mantissa boundary, sqrt(2)
+        0x3fd62e42fefa39edU, // just under sqrt(2)
+        0x3fd9f323ecbf984cU, // one and a half
+        0x3fe62e42fefa39efU, // two
+        0x3ff0000000000000U, // e
+        0x40026bb1bbb55516U, // ten
+        0x402ba18a998fffa0U, // the end of the matched range
+        0x4085963447f87fb5U, // a huge value
+        0x40862e42fefa39efU, // the largest finite
+        0x7ff8000000000000U, // negative, NaN
+        0x7ff0000000000000U, // infinity
+        0x7ff8000000000000U, // not a number
+    },
+    {
+        // Pow
+        0x3ff0000000000000U, // exponent zero
+        0x3ff0000000000000U, // base one
+        0x3ffb333333333333U, // exponent one
+        0x44b77b5b0502583eU, // the matched base at the top of its range
+        0x3b25cdd75856ade1U, // the matched base at the bottom of its range
+        0x4090000000000000U, // an integer power of two
+        0x3ff6a09e667f3bcdU, // a square root
+        0x3f50624dd2f1a9f9U, // a negative power of ten
+        0x3fc0000000000001U, // a fraction cubed
+        0x4005bf0a8b145769U, // e to the one
+        0x7fe000000000008dU, // just under overflow
+        0x7fefffffffffff2aU, // two to the 1024th, finite: the product stays inside Exp's range
+        0x0000000000000001U, // a subnormal result
+        0xc01ffffffffffffeU, // negative base, odd exponent
+        0x4010000000000000U, // negative base, even exponent
+        0x7ff8000000000000U, // negative base, fractional exponent, NaN
+        0x0000000000000000U, // zero base, positive exponent
+        0x7ff0000000000000U, // zero base, negative exponent, infinity
+        0x7ff0000000000000U, // a huge base
+        0x7ff8000000000000U, // not a number base
+    },
+    {
+        // Atan2
+        0x0000000000000000U, // the origin
+        0x3ff921fb54442d18U, // the positive y axis
+        0x400921fb54442d18U, // the negative x axis
+        0x0000000000000000U, // the positive x axis
+        0xbff921fb54442d18U, // the negative y axis
+        0x3fe921fb54442d18U, // the first diagonal
+        0x3fd0c152382d7367U, // the ratio boundary, tan(pi/12)
+        0x3fd0e0a79a2559adU, // just past the ratio boundary
+        0x3fddac670561bb4eU, // ratio one half
+        0x3ff1b6e192ebbe44U, // ratio two
+        0x4002d97c7f3321d2U, // second quadrant
+        0xc002d97c7f3321d2U, // third quadrant
+        0xbfe921fb54442d18U, // fourth quadrant
+        0x3ddb7cdfd9d7bdbbU, // a tiny ratio
+        0x3ff921fb543d4de0U, // a huge ratio
+        0x0000000000000001U, // a subnormal y
+        0x3fe921fb54442d18U, // both infinite
+        0x4002d97c7f3321d2U, // infinite y, negative infinite x
+        0x400921fb54442d18U, // finite y, negative infinite x
+        0x7ff8000000000000U, // not a number
+    },
+} };
 #else
-constexpr bool HAS_PINNED_TABLE = true;
 constexpr Table PINNED{ {
     {
         // Sin
@@ -566,9 +704,6 @@ TEST_CASE("print the pinned core::math table" * doctest::skip()) {
 
 TEST_CASE("core::math gives its pinned bits on this toolchain") {
     const Table computed = Computed();
-    if (!HAS_PINNED_TABLE) {
-        FAIL("no pinned table for ", TOOLCHAIN, "; add this one:\n", TableSource(computed));
-    }
     for (std::size_t row = 0; row < PINNED_FUNCTIONS; ++row) {
         for (std::size_t col = 0; col < PINNED_SAMPLES; ++col) {
             CAPTURE(PinnedFunctions()[row].function);
