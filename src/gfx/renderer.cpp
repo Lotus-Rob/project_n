@@ -1394,8 +1394,15 @@ std::expected<Renderer, core::Error> Renderer::Create(
     if (!SDL_SetGPUSwapchainParameters(device, impl->window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode)) {
         return std::unexpected{ core::Error{ std::format("SDL_SetGPUSwapchainParameters failed: {}", SDL_GetError()) } };
     }
+    const SDL_PropertiesID gpuProperties = SDL_GetGPUDeviceProperties(device);
+    const auto gpuText = [gpuProperties](const char* property) {
+        return SDL_GetStringProperty(gpuProperties, property, "unknown");
+    };
     PN_LOG_INFO(
-        "GPU driver: {}, presenting with {}{}",
+        "GPU: {} ({} {}), driver {}, presenting with {}{}",
+        gpuText(SDL_PROP_GPU_DEVICE_NAME_STRING),
+        gpuText(SDL_PROP_GPU_DEVICE_DRIVER_NAME_STRING),
+        gpuText(SDL_PROP_GPU_DEVICE_DRIVER_VERSION_STRING),
         SDL_GetGPUDeviceDriver(device),
         PresentModeName(mode),
         DEBUG_MODE ? ", debug mode" : ""

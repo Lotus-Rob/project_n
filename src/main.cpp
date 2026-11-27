@@ -19,6 +19,7 @@
 #include "gfx/renderer.hpp"
 #include "platform/paths.hpp"
 #include "platform/sdl_log.hpp"
+#include "platform/system.hpp"
 #include "platform/window.hpp"
 
 namespace {
@@ -165,7 +166,8 @@ int main(int argc, char** argv) {
     if (!userData) {
         PN_LOG_WARNING("logs go to the console only: {}", userData.error().message);
     }
-    PN_LOG_NOTICE("project_n starting");
+    PN_LOG_NOTICE("project_n {} ({}), {}", PN_GAME_VERSION, PN_GAME_COMMIT, PN_BUILD);
+    PN_LOG_NOTICE("running on {}", platform::SystemSummary());
 #ifdef __clang__
 #pragma clang diagnostic push
 // The C runtime hands the arguments over as a pointer and a count: nothing can check them.
