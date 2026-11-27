@@ -4,12 +4,14 @@
 #include "core/road_curve.hpp"
 #include "support/meadow.hpp"
 #include "support/road_curves.hpp"
+#include "support/same.hpp"
 
 #include <doctest/doctest.h>
 
 namespace {
 
 using core::TilePoint;
+using test::SamePoint;
 
 constexpr f32 TILE_SIZE = 256.0F;
 constexpr f32 CLOSE = 0.001F;
@@ -285,11 +287,6 @@ f32 WorstExtraMove(
         worst = std::max(worst, drawn - walked);
     }
     return worst;
-}
-
-/// Whether two points have the same bits.
-bool SamePoint(core::Vec2 lhs, core::Vec2 rhs) {
-    return std::bit_cast<u64>(lhs) == std::bit_cast<u64>(rhs);
 }
 
 TEST_CASE("a walker at a road tile's centre mid-road is drawn on the curve") {
