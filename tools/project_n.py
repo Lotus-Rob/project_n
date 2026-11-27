@@ -908,9 +908,12 @@ def list_test_cases(target, bdir, filters=()):
 def check_test_matches(name, target, bdir, extra):
     """Fail a `--test` name that is no test file and selects no case of `target`: doctest passes a run that selects
     nothing, which hides a misspelt name. `extra` is the run's doctest arguments, the `--test-case` filter first: the
-    listing takes them all, as `--no-skip` and `-cs` change what a filter selects, and the candidates the rest."""
+    listing takes them all, as `--no-skip` and `-cs` change what a filter selects, and the candidates the rest. A name
+    that selects only skipped cases fails for that, as doctest lists none of them without `--no-skip`."""
     if doctest_case_count(list_test_cases(target, bdir, extra)):
         return
+    if not {"--no-skip", "-ns"} & set(extra) and doctest_case_count(list_test_cases(target, bdir, [*extra, "--no-skip"])):
+        raise Fail(f"--test {name} matches only skipped cases: run them with `-- --no-skip` after the name")
     cases = doctest_case_names(list_test_cases(target, bdir, extra[1:]))
     near = test_candidates(name, test_names().get(target, ()), cases)
     raise Fail(f"--test {name} matches no test file and no test case" + (f"; did you mean: {', '.join(near)}" if near else ""))
