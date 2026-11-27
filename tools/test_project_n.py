@@ -503,6 +503,8 @@ class CheckTest(unittest.TestCase):
             self.assertEqual(project_n.build_only_sanitizer_checks(["windows-msvc"]), [])
         with mock.patch.object(project_n, "HOST", "windows"):
             self.assertEqual(project_n.build_only_sanitizer_checks([]), [])
+            # In a container the run is under Wine again, whatever the host.
+            self.assertEqual(project_n.build_only_sanitizer_checks([], container=True), ["windows-msvc's address"])
 
     def container_check(self, out=None, **patches):
         tests, builds, references, out = [], [], [], out or io.StringIO()
@@ -2407,14 +2409,14 @@ class SanitizerTest(unittest.TestCase):
         self.assertEqual(project_n.test_candidates("qqqq", ["log"], ["zzz"]), [])
 
     @staticmethod
-    def run_listing(counts, names="[doctest] x\n====\nparse path\n====\n", args=(), listed=None, skipped=0):
+    def run_listing(counts, names="[doctest] x\n====\nparse path\n====\n", args=(), listed=None, skipped=0, test="nothing_like_it"):
         """cmd_test with --test and doctest's listing mocked: the one with the `--test-case` filter prints `counts`, plus
         `skipped` when it is asked for the skipped cases too; the other `names`; `listed` collects each listing's
         arguments."""
         def listing(target, bdir, filters=()):
             if listed is not None:
                 listed.append(list(filters))
-            filtered = any(f.startswith("--test-case=") for f in filters)
+            filtered = any(f.startswith(("--test-case=", "--source-file=")) for f in filters)
             count = counts + skipped if skipped and "--no-skip" in filters else counts
             return (f"[doctest] unskipped test cases passing the current filters: {count}\n" if filtered else names)
         ran = []
@@ -2422,7 +2424,7 @@ class SanitizerTest(unittest.TestCase):
                                  needs_container=lambda *a: False, run=lambda argv, env: ran.append(argv),
                                  list_test_cases=listing):
             project_n.cmd_test(project_n.argparse.Namespace(preset=project_n.NATIVE_PRESET, mode="debug", sanitizer="none",
-                                                            container=False, target="core_tests", test="nothing_like_it", args=list(args)))
+                                                            container=False, target="core_tests", test=test, args=list(args)))
         return ran
 
     def test_a_test_matching_no_file_and_no_case_is_refused_naming_candidates(self):

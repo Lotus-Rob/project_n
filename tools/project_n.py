@@ -2418,19 +2418,21 @@ def cmd_check(args):
 
     try:
         skipped = check_steps(args, step)
-        print(check_summary(args.sanitizers, skipped, build_only_sanitizer_checks(skipped) if args.sanitizers else []))
+        print(check_summary(args.sanitizers, skipped, build_only_sanitizer_checks(skipped, args.container) if args.sanitizers else []))
     finally:
         print(step_times_table(times), flush=True)
 
 
-def sanitizer_only_builds(preset, sanitizer):
-    """Whether a sanitizer test run only builds: MSVC's sanitizer runs need native Windows, not Wine."""
-    return PRESETS[preset]["plat"] == "windows" and sanitizer != "none" and HOST != "windows"
+def sanitizer_only_builds(preset, sanitizer, container=False):
+    """Whether a sanitizer test run only builds: MSVC's sanitizer runs need native Windows, not Wine, which is what a
+    `container` run gets on a Windows host too."""
+    return PRESETS[preset]["plat"] == "windows" and sanitizer != "none" and (HOST != "windows" or container)
 
 
-def build_only_sanitizer_checks(skipped):
-    """The sanitizer checks `cmd_test` only builds, as "<preset>'s <sanitizer>"."""
-    return [f"{p}'s {s}" for p in PRESETS if p not in skipped for s in SANITIZERS[p] if sanitizer_only_builds(p, s)]
+def build_only_sanitizer_checks(skipped, container=False):
+    """The sanitizer checks `cmd_test` only builds, as "<preset>'s <sanitizer>"; with `container`, in containers."""
+    return [f"{p}'s {s}" for p in PRESETS if p not in skipped for s in SANITIZERS[p]
+            if sanitizer_only_builds(p, s, container)]
 
 
 def check_summary(sanitizers, skipped, built_only):
