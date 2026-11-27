@@ -41,16 +41,22 @@ Run RunChild(const std::string& kind) {
     return run;
 }
 
+/// What Quill's crash handler writes once it has caught the death: only it writes this, so a line logged before the crash
+/// that merely beat the process to the file doesn't count as the handler's flush.
+constexpr std::string_view QUILL_CRASH_RECORD = "Program terminated unexpectedly";
+
 TEST_CASE("an abort leaves the lines logged before it in the file") {
     const Run run = RunChild("abort");
     CHECK(run.status != 0);
     CHECK(run.log.contains("last line before the crash"));
+    CHECK(run.log.contains(QUILL_CRASH_RECORD));
 }
 
 TEST_CASE("a segmentation fault leaves the lines logged before it in the file") {
     const Run run = RunChild("segv");
     CHECK(run.status != 0);
     CHECK(run.log.contains("last line before the crash"));
+    CHECK(run.log.contains(QUILL_CRASH_RECORD));
 }
 
 TEST_CASE("an exception that escapes a thread is named in the log") {
@@ -58,9 +64,20 @@ TEST_CASE("an exception that escapes a thread is named in the log") {
     CHECK(run.status != 0);
     CHECK(run.log.contains("last line before the crash"));
 #ifndef _WIN32
-    // The MSVC runtime keeps the terminate handler per thread, so one set by Start() never runs on
-    // another thread's exception: there the log has the lines and Quill's abort record only.
+    // On Windows Quill's unhandled-exception filter takes an uncaught exception before the terminate handler runs, so the log
+    // has the lines and Quill's record only.
     CHECK(run.log.contains("terminating: boom on a thread"));
+#endif
+}
+
+TEST_CASE("an exception that escapes the main thread is named in the log") {
+    const Run run = RunChild("main");
+    CHECK(run.status != 0);
+    CHECK(run.log.contains(QUILL_CRASH_RECORD));
+#ifndef _WIN32
+    // Measured under Wine: Quill's unhandled-exception filter takes the uncaught exception before the C++ runtime's terminate
+    // handler runs, so on Windows even the starting thread's exception isn't named; Quill's record is all the log holds.
+    CHECK(run.log.contains("terminating: boom on the main thread"));
 #endif
 }
 
