@@ -499,10 +499,10 @@ class CheckTest(unittest.TestCase):
 
     def test_a_sanitizer_check_only_builds_for_msvc_off_windows(self):
         with mock.patch.object(project_n, "HOST", "linux"):
-            self.assertEqual(project_n.sanitizer_builds_only([]), ["windows-msvc's address"])
-            self.assertEqual(project_n.sanitizer_builds_only(["windows-msvc"]), [])
+            self.assertEqual(project_n.build_only_sanitizer_checks([]), ["windows-msvc's address"])
+            self.assertEqual(project_n.build_only_sanitizer_checks(["windows-msvc"]), [])
         with mock.patch.object(project_n, "HOST", "windows"):
-            self.assertEqual(project_n.sanitizer_builds_only([]), [])
+            self.assertEqual(project_n.build_only_sanitizer_checks([]), [])
 
     def container_check(self, out=None, **patches):
         tests, builds, references, out = [], [], [], out or io.StringIO()

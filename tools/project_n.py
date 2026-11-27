@@ -2414,7 +2414,7 @@ def cmd_check(args):
 
     try:
         skipped = check_steps(args, step)
-        print(check_summary(args.sanitizers, skipped, sanitizer_builds_only(skipped) if args.sanitizers else []))
+        print(check_summary(args.sanitizers, skipped, build_only_sanitizer_checks(skipped) if args.sanitizers else []))
     finally:
         print(step_times_table(times), flush=True)
 
@@ -2424,7 +2424,7 @@ def sanitizer_only_builds(preset, sanitizer):
     return PRESETS[preset]["plat"] == "windows" and sanitizer != "none" and HOST != "windows"
 
 
-def sanitizer_builds_only(skipped):
+def build_only_sanitizer_checks(skipped):
     """The sanitizer checks `cmd_test` only builds, as "<preset>'s <sanitizer>"."""
     return [f"{p}'s {s}" for p in PRESETS if p not in skipped for s in SANITIZERS[p] if sanitizer_only_builds(p, s)]
 
