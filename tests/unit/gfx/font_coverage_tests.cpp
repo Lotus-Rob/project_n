@@ -1,5 +1,6 @@
 #include "core/cxx23.hpp" // IWYU pragma: keep
 #include "core/names.hpp"
+#include "core/path_text.hpp"
 #include "core/strings.hpp"
 #include "data/names.hpp"
 #include "data/strings.hpp"
@@ -37,7 +38,13 @@ std::vector<u32> Missing(TTF_Font* font, std::string_view text) {
     const char* next = text.data();
     std::size_t left = text.size();
     while (left > 0) {
+        const std::size_t before = left;
         const u32 character = SDL_StepUTF8(&next, &left);
+        if (left == before) { // the decoder stops at a NUL byte without stepping over it
+            next = std::next(next);
+            --left;
+            continue;
+        }
         if (!IsControl(character) && !TTF_FontHasGlyph(font, character) && !std::ranges::contains(missing, character)) {
             missing.push_back(character);
         }
@@ -57,7 +64,7 @@ TEST_CASE("every codepoint of the shipped strings and names is in the font") {
     const std::expected<std::filesystem::path, core::Error> assets = platform::AssetsDirectory();
     const std::string why = assets.error_or(core::Error{}).message;
     REQUIRE_MESSAGE(assets, why);
-    const std::string file = (*assets / "fonts" / "NotoSansSC-Regular.otf").string();
+    const std::string file = core::PathText(*assets / "fonts" / "NotoSansSC-Regular.otf");
     const std::expected<core::Strings, core::Error> strings = data::LoadStrings(*assets / "data");
     const std::string stringsWhy = strings.error_or(core::Error{}).message;
     REQUIRE_MESSAGE(strings, stringsWhy);
