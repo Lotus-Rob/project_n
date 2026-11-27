@@ -343,8 +343,9 @@ private:
     core::FailedFrames m_failedFrames;
     std::atomic<bool> m_logicFailed = false;
     std::mutex m_logicErrorMutex;
-    core::Error m_logicError{}; // set under the mutex before m_logicFailed
-    std::jthread m_logic;       // last, so it stops and joins before anything it uses goes
+    core::Error m_logicError{};   // set under the mutex before m_logicFailed
+    bool m_logicReported = false; // main thread only: Run() has returned or logged the logic thread's failure
+    std::jthread m_logic;         // last, so it stops and joins before anything it uses goes
 };
 
 } // namespace app
