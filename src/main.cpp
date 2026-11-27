@@ -2,6 +2,7 @@
 #include "build_info.hpp"
 #include "core/command_line.hpp"
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/error.hpp"
 #include "core/log.hpp"
 #include "core/path_text.hpp"
 #include "data/animations.hpp"
@@ -219,9 +220,10 @@ int main(int argc, char** argv) {
     if (*zoom != 1.0F) {
         PN_LOG_INFO("every scene starts at zoom {}", *zoom);
     }
+    i32 status = 1;
     try {
         // One save slot: there is no slot choice or screen for it yet.
-        const i32 status =
+        status =
             Run(userData ? data::LoadSettings(*userData / "settings.yaml") : core::Settings{},
                 {
                     .scene = scene,
@@ -242,13 +244,10 @@ int main(int argc, char** argv) {
                 },
                 app::HasFlag(args, "--fullscreen"),
                 *travelShare);
-        PN_LOG_NOTICE("project_n stopped with status {}", status);
-        return status;
-    }
-    catch (const std::exception& e) {
-        return StopOnFailure("an unexpected error", core::Error{ e.what() });
     }
     catch (...) {
-        return StopOnFailure("an unexpected error", core::Error{ "an exception of unknown type" });
+        status = StopOnFailure("an unexpected error", core::Error{ core::Describe(std::current_exception()) });
     }
+    PN_LOG_NOTICE("project_n stopped with status {}", status);
+    return status;
 }

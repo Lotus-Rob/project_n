@@ -1,6 +1,7 @@
 #include "core/log.hpp"
 
 #include "core/cxx23.hpp" // IWYU pragma: keep
+#include "core/error.hpp"
 #include "core/path_text.hpp"
 
 #ifdef _MSC_VER
@@ -72,22 +73,9 @@ std::filesystem::path& FolderStorage() {
     if (entered.test_and_set()) {
         std::abort();
     }
-    std::string what;
     const std::exception_ptr current = std::current_exception();
-    if (current == nullptr) {
-        what = "terminating with no active exception";
-    }
-    else {
-        try {
-            std::rethrow_exception(current);
-        }
-        catch (const std::exception& e) {
-            what = std::format("terminating: {}", e.what());
-        }
-        catch (...) {
-            what = "terminating: an exception of unknown type";
-        }
-    }
+    const std::string what =
+        current == nullptr ? "terminating with no active exception" : std::format("terminating: {}", Describe(current));
     PN_LOG_CRITICAL("{}", what);
     // flush_log waits for the backend: it never returns once the backend has stopped, and on the
     // backend's own thread it would throw.
