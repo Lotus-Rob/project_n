@@ -14,19 +14,6 @@ namespace {
 
 constexpr u32 OTHER_THREADS = 2; // the main thread and the logic thread
 
-/// What `error` says in a log line: its `what()` for a std::exception, else a stand-in.
-std::string Describe(const std::exception_ptr& error) {
-    try {
-        std::rethrow_exception(error);
-    }
-    catch (const std::exception& e) {
-        return e.what();
-    }
-    catch (...) {
-        return "an exception of unknown type";
-    }
-}
-
 /// The first exception thrown by any of a task's chunks, kept for the thread that joins it.
 class ChunkFailure {
 public:
