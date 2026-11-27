@@ -459,6 +459,19 @@ Measurements and the rulings they led to:
   the pull request's macOS job confirms it.
 - Each task's reviews: one fix pass each, Minors included; release builds of linux-gcc and windows-msvc passed after
   each wave and at the branch head.
+- The final review (Opus, and GLM-5.3-Flash, DeepSeek V4.1 Flash, GPT-6 Luna and Qwen3.8 Flash) found no Critical
+  issue. Fixed from it: the two `CultivatorAt` helpers that shared a name and the two hand-built lone-cultivator saves
+  (TESTS-GAME-02's last pair); the findings table's Closing cells; `--test` naming only skipped cases, or a test file
+  with no case left to run, fails for that reason (the check had covered only the case-name form); the shared event
+  comparison also compares `epoch` and `cosmetic`; `check --sanitizers --container` on a Windows host names
+  windows-msvc's AddressSanitizer as built only (its container runs under Wine); the empty-output cleanup is anchored
+  to the repository, not the working directory; the font check steps past a NUL byte (SDL's decoder stops on one
+  without advancing) and opens the font through `core::PathText`; the pinned table's toolchain key names its
+  architecture and refuses an unknown one rather than calling it gcc-x64; the last local `SamePoint`.
+- Rejected from it: giving the replay tests' temp folders unique names. The collision under parallel runs is real
+  (seen once during Task 1) and older than this branch; it is TESTS-GAME-09's cluster, which the low and info pass
+  (step 10) closes across all eight test files that share the pattern. The empty clang-arm64 table, raised by three
+  models, is the planned fill from the macOS CI log, not a defect of the design.
 
 ## The findings and their areas
 
