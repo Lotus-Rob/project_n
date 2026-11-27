@@ -289,6 +289,8 @@ end
 -- pixi.toml (feature.profiler): the protocol must match. Both variants are required in every
 -- mode, so xmake-requires.lock always holds both instead of whichever mode was configured last.
 -- XMake keys requirements by their string, so the two spell the one exact version differently.
+-- No forced callstack (every zone would walk the stack) and no fibers (nothing here uses them): the recipe's
+-- defaults turn both on, so keep these keys.
 add_requires("tracy-libdl v0.14.1", {alias = "tracy_on", configs = {tracy_enable = true, only_localhost = true, enforce_callstack = false, fibers = false}}) -- BSD-3-Clause; profiling builds only
 add_requires("tracy-libdl 0.14.1", {alias = "tracy_off", configs = {tracy_enable = false, only_localhost = true, enforce_callstack = false, fibers = false}}) -- BSD-3-Clause; profiling builds only
 
